@@ -42,6 +42,10 @@ before_install:
     conda install -q conda-build
     conda create -q -n test-environment python=$CONDA
     source activate test-environment
+    conda clean --index-cache
+    conda clean --lock
+    conda clean --tarballs -y
+    conda clean --packages -y
   fi
 install:
 - |
