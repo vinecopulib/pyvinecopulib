@@ -44,6 +44,4 @@ endif()
 
 add_test(NoArgs ${EXECUTABLE_OUTPUT_PATH}/pvBasicTest)
 add_test(1File ${EXECUTABLE_OUTPUT_PATH}/pvCommandLineArgsTest ${DATA_DIR}/input.txt)
-if (PYVINECOPULIB_USE_CUDA)
-  add_test(Cuda ${EXECUTABLE_OUTPUT_PATH}/mpCudaTest)
-endif()
+
