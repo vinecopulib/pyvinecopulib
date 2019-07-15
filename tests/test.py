@@ -1,5 +1,11 @@
-import pyvinecopulib as m
+import pyvinecopulib as pv
+import numpy as np
 
-assert m.__version__ == '0.0.1'
-assert m.add(1, 2) == 3
-assert m.subtract(1, 2) == -1
+def test_version():
+  assert pv.__version__ == 'dev'
+
+def test_simulate_uniform():
+  assert isinstance(
+    pv.simulate_uniform(10, 2, False, [1, 2]),
+    np.ndarray
+  )

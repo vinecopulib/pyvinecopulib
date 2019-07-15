@@ -27,6 +27,9 @@
 *.out
 *.app
 
+# Python stuff
+*.pyc
+
 # Emacs file
 *~
 
