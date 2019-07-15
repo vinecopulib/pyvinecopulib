@@ -1,3 +1,0 @@
-@CMAKE_SOURCE_DIR@/Code/Lib/mp*.h
-@CMAKE_SOURCE_DIR@/Code/Lib/mp*.cpp
-@CMAKE_SOURCE_DIR@/Code/CommandLineApps/mp*.cpp
