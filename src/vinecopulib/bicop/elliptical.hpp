@@ -7,12 +7,9 @@
 #pragma once
 
 #include <vinecopulib/bicop/parametric.hpp>
+#include <vinecopulib/misc/tools_constants.hpp>
 
 namespace vinecopulib {
-
-namespace constant {
-    constexpr double pi = 3.141592653589793238462643383279502884;
-}
 
 //! @brief An abstract class for elliptical copula families
 //!
@@ -25,17 +22,13 @@ namespace constant {
 class EllipticalBicop : public ParBicop
 {
 private:
-    // hfunction and its inverse
-    Eigen::VectorXd hfunc2(
-        const Eigen::Matrix<double, Eigen::Dynamic, 2> &u
-    );
+  // hfunction and its inverse
+  Eigen::VectorXd hfunc2(const Eigen::Matrix<double, Eigen::Dynamic, 2>& u);
 
-    Eigen::VectorXd hinv2(
-        const Eigen::Matrix<double, Eigen::Dynamic, 2> &u
-    );
+  Eigen::VectorXd hinv2(const Eigen::Matrix<double, Eigen::Dynamic, 2>& u);
 
-    // link between Kendall's tau and the par_bicop parameter
-    double parameters_to_tau(const Eigen::MatrixXd &parameters);
+  // link between Kendall's tau and the par_bicop parameter
+  double parameters_to_tau(const Eigen::MatrixXd& parameters);
 };
 }
 

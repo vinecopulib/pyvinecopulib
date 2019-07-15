@@ -18,48 +18,48 @@ namespace vinecopulib {
 class ParBicop : public AbstractBicop
 {
 protected:
-    // Getters and setters
-    Eigen::MatrixXd get_parameters() const;
+  // Getters and setters
+  Eigen::MatrixXd get_parameters() const;
 
-    Eigen::MatrixXd get_parameters_lower_bounds() const;
+  Eigen::MatrixXd get_parameters_lower_bounds() const;
 
-    Eigen::MatrixXd get_parameters_upper_bounds() const;
+  Eigen::MatrixXd get_parameters_upper_bounds() const;
 
-    void set_parameters(const Eigen::MatrixXd &parameters);
+  void set_parameters(const Eigen::MatrixXd& parameters);
 
-    void flip();
+  void flip();
 
-    // Data members
-    Eigen::MatrixXd parameters_;
-    Eigen::MatrixXd parameters_lower_bounds_;
-    Eigen::MatrixXd parameters_upper_bounds_;
+  // Data members
+  Eigen::MatrixXd parameters_;
+  Eigen::MatrixXd parameters_lower_bounds_;
+  Eigen::MatrixXd parameters_upper_bounds_;
 
-    void fit(const Eigen::Matrix<double, Eigen::Dynamic, 2> &data,
-             std::string method,
-             double,
-             const Eigen::VectorXd& weights);
+  void fit(const Eigen::Matrix<double, Eigen::Dynamic, 2>& data,
+           std::string method,
+           double,
+           const Eigen::VectorXd& weights);
 
-    double calculate_npars();
+  double calculate_npars();
 
-    virtual Eigen::VectorXd get_start_parameters(const double tau) = 0;
+  virtual Eigen::VectorXd get_start_parameters(const double tau) = 0;
 
 private:
-    double winsorize_tau(double tau) const;
+  double winsorize_tau(double tau) const;
 
-    void adjust_parameters_bounds(Eigen::MatrixXd &lb,
-                                  Eigen::MatrixXd &ub,
-                                  const double &tau,
-                                  const std::string method);
+  void adjust_parameters_bounds(Eigen::MatrixXd& lb,
+                                Eigen::MatrixXd& ub,
+                                const double& tau,
+                                const std::string method);
 
-    void check_parameters(const Eigen::MatrixXd &parameters);
+  void check_parameters(const Eigen::MatrixXd& parameters);
 
-    void check_parameters_size(const Eigen::MatrixXd &parameters);
+  void check_parameters_size(const Eigen::MatrixXd& parameters);
 
-    void check_parameters_upper(const Eigen::MatrixXd &parameters);
+  void check_parameters_upper(const Eigen::MatrixXd& parameters);
 
-    void check_parameters_lower(const Eigen::MatrixXd &parameters);
+  void check_parameters_lower(const Eigen::MatrixXd& parameters);
 
-    void check_fit_method(const std::string &method);
+  void check_fit_method(const std::string& method);
 };
 }
 

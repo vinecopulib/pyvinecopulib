@@ -9,24 +9,22 @@
 
 namespace vinecopulib {
 
-inline Eigen::VectorXd EllipticalBicop::hfunc2(
-    const Eigen::Matrix<double, Eigen::Dynamic, 2> &u
-)
+inline Eigen::VectorXd
+EllipticalBicop::hfunc2(const Eigen::Matrix<double, Eigen::Dynamic, 2>& u)
 {
-    return hfunc1(tools_eigen::swap_cols(u));
+  return hfunc1(tools_eigen::swap_cols(u));
 }
 
-inline Eigen::VectorXd EllipticalBicop::hinv2(
-    const Eigen::Matrix<double, Eigen::Dynamic, 2> &u
-)
+inline Eigen::VectorXd
+EllipticalBicop::hinv2(const Eigen::Matrix<double, Eigen::Dynamic, 2>& u)
 {
-    return hinv1(tools_eigen::swap_cols(u));
+  return hinv1(tools_eigen::swap_cols(u));
 }
 
 inline double
-EllipticalBicop::parameters_to_tau(const Eigen::MatrixXd &parameters)
+EllipticalBicop::parameters_to_tau(const Eigen::MatrixXd& parameters)
 {
-    double tau = (2 / constant::pi) * asin(parameters(0));
-    return tau;
+  double tau = (2 / constant::pi) * asin(parameters(0));
+  return tau;
 }
 }

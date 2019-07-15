@@ -18,42 +18,46 @@ namespace tools_interpolation {
 class InterpolationGrid
 {
 public:
-    InterpolationGrid()
-    {
-    }
+  InterpolationGrid() {}
 
-    InterpolationGrid(const Eigen::VectorXd &grid_points,
-                      const Eigen::MatrixXd &values,
-                      int norm_times = 3);
+  InterpolationGrid(const Eigen::VectorXd& grid_points,
+                    const Eigen::MatrixXd& values,
+                    int norm_times = 3);
 
-    Eigen::MatrixXd get_values() const;
+  Eigen::MatrixXd get_values() const;
 
-    void set_values(const Eigen::MatrixXd &values, int norm_times = 3);
+  void set_values(const Eigen::MatrixXd& values, int norm_times = 3);
 
-    void flip();
+  void flip();
 
-    void normalize_margins(int times);
+  void normalize_margins(int times);
 
-    Eigen::VectorXd interpolate(const Eigen::MatrixXd &x);
+  Eigen::VectorXd interpolate(const Eigen::MatrixXd& x);
 
-    Eigen::VectorXd integrate_1d(const Eigen::MatrixXd &u, size_t cond_var);
+  Eigen::VectorXd integrate_1d(const Eigen::MatrixXd& u, size_t cond_var);
 
-    Eigen::VectorXd integrate_2d(const Eigen::MatrixXd &u);
+  Eigen::VectorXd integrate_2d(const Eigen::MatrixXd& u);
 
 private:
+  Eigen::Matrix<ptrdiff_t, 1, 2> get_indices(double x0, double x1);
+  double bilinear_interpolation(double z11,
+                                double z12,
+                                double z21,
+                                double z22,
+                                double x1,
+                                double x2,
+                                double y1,
+                                double y2,
+                                double x,
+                                double y);
+  double int_on_grid(const double& upr,
+                     const Eigen::VectorXd& vals,
+                     const Eigen::VectorXd& grid);
 
-    Eigen::Matrix<ptrdiff_t, 1, 2> get_indices(double x0, double x1);
-    double bilinear_interpolation(double z11, double z12, double z21, double z22,
-                                  double x1, double x2, double y1, double y2,
-                                  double x, double y);
-    double int_on_grid(const double &upr, const Eigen::VectorXd &vals,
-                       const Eigen::VectorXd &grid);
-
-    Eigen::VectorXd grid_points_;
-    Eigen::MatrixXd values_;
+  Eigen::VectorXd grid_points_;
+  Eigen::MatrixXd values_;
 };
 }
-
 }
 
 #include <vinecopulib/misc/implementation/tools_interpolation.ipp>

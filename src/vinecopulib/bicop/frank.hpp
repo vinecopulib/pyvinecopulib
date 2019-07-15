@@ -20,31 +20,32 @@ namespace vinecopulib {
 class FrankBicop : public ArchimedeanBicop
 {
 public:
-    // constructor
-    FrankBicop();
+  // constructor
+  FrankBicop();
 
 private:
-    // generator, its inverse and derivatives for the archimedean copula
-    double generator(const double &u);
+  // generator, its inverse and derivatives for the archimedean copula
+  double generator(const double& u);
 
-    double generator_inv(const double &u);
+  double generator_inv(const double& u);
 
-    double generator_derivative(const double &u);
+  double generator_derivative(const double& u);
 
-    double generator_derivative2(const double &u);
+  double generator_derivative2(const double& u);
 
-    // pdf
-    Eigen::VectorXd pdf_raw(const Eigen::Matrix<double, Eigen::Dynamic, 2> &u);
+  // pdf
+  Eigen::VectorXd pdf_raw(const Eigen::Matrix<double, Eigen::Dynamic, 2>& u);
 
-    // link between Kendall's tau and the par_bicop parameter
-    Eigen::MatrixXd tau_to_parameters(const double &tau);
+  // link between Kendall's tau and the par_bicop parameter
+  Eigen::MatrixXd tau_to_parameters(const double& tau);
 
-    double parameters_to_tau(const Eigen::MatrixXd &par);
+  double parameters_to_tau(const Eigen::MatrixXd& par);
 
-    Eigen::VectorXd get_start_parameters(const double tau);
+  Eigen::VectorXd get_start_parameters(const double tau);
 };
 }
 
-double debyen(const double x, const int n);
+double
+debyen(const double x, const int n);
 
 #include <vinecopulib/bicop/implementation/frank.ipp>

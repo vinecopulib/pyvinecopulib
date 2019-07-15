@@ -3,3 +3,10 @@ project(pyvinecopulib)
 
 add_subdirectory(pybind11)
 pybind11_add_module(pyvinecopulib src/main.cpp)
+
+include(cmake/findDependencies.cmake      REQUIRED)
+
+include(cmake/findHeaders.cmake           REQUIRED)
+
+include_directories(src)
+include_directories(SYSTEM ${external_includes})

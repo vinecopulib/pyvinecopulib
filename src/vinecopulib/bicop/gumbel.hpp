@@ -20,36 +20,35 @@ namespace vinecopulib {
 class GumbelBicop : public ArchimedeanBicop
 {
 public:
-    // constructor
-    GumbelBicop();
+  // constructor
+  GumbelBicop();
 
 private:
-    // generator, its inverse and derivatives for the archimedean copula
-    double generator(const double &u);
+  // generator, its inverse and derivatives for the archimedean copula
+  double generator(const double& u);
 
-    double generator_inv(const double &u);
+  double generator_inv(const double& u);
 
-    double generator_derivative(const double &u);
+  double generator_derivative(const double& u);
 
-    double generator_derivative2(const double &u);
+  double generator_derivative2(const double& u);
 
-    // pdf
-    Eigen::VectorXd pdf_raw(const Eigen::Matrix<double, Eigen::Dynamic, 2> &u);
+  // pdf
+  Eigen::VectorXd pdf_raw(const Eigen::Matrix<double, Eigen::Dynamic, 2>& u);
 
-    // inverse hfunction
-    Eigen::VectorXd hinv1(
-        const Eigen::Matrix<double, Eigen::Dynamic, 2> &u
-    );
+  // inverse hfunction
+  Eigen::VectorXd hinv1(const Eigen::Matrix<double, Eigen::Dynamic, 2>& u);
 
-    // link between Kendall's tau and the par_bicop parameter
-    Eigen::MatrixXd tau_to_parameters(const double &tau);
+  // link between Kendall's tau and the par_bicop parameter
+  Eigen::MatrixXd tau_to_parameters(const double& tau);
 
-    double parameters_to_tau(const Eigen::MatrixXd &parameters);
+  double parameters_to_tau(const Eigen::MatrixXd& parameters);
 
-    Eigen::VectorXd get_start_parameters(const double tau);
+  Eigen::VectorXd get_start_parameters(const double tau);
 };
 }
 
-double qcondgum(double *q, double *u, double *de);
+double
+qcondgum(double* q, double* u, double* de);
 
 #include <vinecopulib/bicop/implementation/gumbel.ipp>

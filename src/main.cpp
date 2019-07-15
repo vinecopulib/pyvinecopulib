@@ -1,8 +1,7 @@
 #include <pybind11/pybind11.h>
-
-int add(int i, int j) {
-    return i + j;
-}
+#include <pybind11/stl.h>
+#include <pybind11/eigen.h>
+#include "vinecopulib.hpp"
 
 namespace py = pybind11;
 
@@ -20,7 +19,8 @@ PYBIND11_MODULE(pyvinecopulib, m) {
            subtract
     )pbdoc";
 
-    m.def("add", &add, R"pbdoc(
+    m.def("simulate_uniform", &vinecopulib::tools_stats::simulate_uniform, 
+        R"pbdoc(
         Add two numbers
 
         Some other explanation about the add function.
