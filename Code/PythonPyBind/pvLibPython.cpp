@@ -16,7 +16,7 @@
 #include "pvMyFunctions.h"
 
 // The name of the module should match that in CMakeLists.txt
-PYBIND11_MODULE(, m) {
+PYBIND11_MODULE(pyvinecopulib, m) {
     m.doc() = "pybind11 example wrapping pv::MyFirstAddFunction";
     m.def("my_first_add_function", &pv::MyFirstAddFunction, "A function which adds two numbers");
 }

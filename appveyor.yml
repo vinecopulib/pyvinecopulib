@@ -92,7 +92,7 @@ build_script:
     cmake -version
     mkdir build
     cd build
-    cmake -G "${Env:COMPILER}" -DBUILD_SUPERBUILD:BOOL=ON -DBUILD_TESTING:BOOL=ON -DBUILD_Boost:BOOL=ON -DBUILD_Python_PyBind:BOOL=ON -DBUILD_Eigen:BOOL=ON --config ${Env:CONFIGURATION} ..
+    cmake -G "${Env:COMPILER}" -DBUILD_SUPERBUILD:BOOL=ON -DBUILD_TESTING:BOOL=ON -DBUILD_Boost:BOOL=ON -DBUILD_Python_PyBind:BOOL=OFF -DBUILD_Python_Boost:BOOL=ON -DBUILD_Eigen:BOOL=ON -DBUILD_glog:BOOL=ON -DBUILD_gflags:BOOL=ON -DBUILD_VTK:BOOL=OFF -DBUILD_PCL:BOOL=ON -DBUILD_OpenCV:BOOL=ON --config ${Env:CONFIGURATION} ..
     if ($LastExitCode -ne 0) {throw $LastExitCode}
     cmake --build . --config ${Env:CONFIGURATION}
     if ($LastExitCode -ne 0) {throw $LastExitCode}

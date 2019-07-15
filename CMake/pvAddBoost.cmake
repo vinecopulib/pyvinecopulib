@@ -12,7 +12,7 @@
 #
 #============================================================================*/
 
-option(BUILD_Boost "Build Boost." ON)
+option(BUILD_Boost "Build Boost." OFF)
 
 if(BUILD_Boost)
 

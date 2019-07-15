@@ -59,7 +59,7 @@ include(mitkFunctionGetGccVersion)
 include(pvMacroInstallCommandLineApp)
 include(pvMacroInstallHeaders)
 include(pvMacroInstallLibrary)
-# include(pvMacroCreateGuiApplication)
+include(pvMacroCreateGuiApplication)
 
 
 ######################################################################
@@ -107,11 +107,30 @@ endif()
 # Also, if you don't want one, you can just search for the package name
 # (e.g. VTK) in this file, and remove all those lines you don't want.
 #######################################################################
-# include(pvAddgflags)
-# include(pvAddglog)
+include(pvAddgflags)
+include(pvAddglog)
 include(pvAddEigen)
+include(pvAddFLANN)
+include(pvAddVTK)
+include(pvAddArrayFire)
+include(pvAddOpenCV)
 include(pvAddBoost)
 include(pvAddPythonBindings)
+include(pvAddPCL)
+include(pvAddUnityWrapper)
+
+
+######################################################################
+# Add our Gui projects. If you don't want Gui stuff, remove this line.
+######################################################################
+include(pvAddGuiProjects)
+
+
+######################################################################
+# Make sure at this point in this file, VTK is the correct version.
+######################################################################
+include(pvSetupVTKBackend)
+
 
 ##############################################################################
 # Further variables for the external project names and locations are defined
@@ -137,6 +156,7 @@ include(${CMAKE_SOURCE_DIR}/Utilities/CppCheck/PYVINECOPULIBCppCheck.cmake)
 ######################################################################
 include(pvAddDocs)
 
+
 ######################################################################
 # Setting supported build types. Should ONLY be Release or Debug.
 ######################################################################
@@ -156,6 +176,13 @@ if(WIN32)
   set(CMAKE_CONFIGURATION_TYPES ${CMAKE_BUILD_TYPE} CACHE STRING "Build configurations to generate." FORCE)
   mark_as_advanced(CMAKE_CONFIGURATION_TYPES)
 endif()
+
+
+######################################################################
+# Check for Qt early, as VTK may need it in SuperBuild.
+######################################################################
+include(pvIncludeQt)
+
 
 ######################################################################
 # Choose C++ standard. Currently 11, as we try to support VS2013.
@@ -187,6 +214,16 @@ endif()
 # Force MSVC runtime. Depends on BUILD_SHARED_LIBS.
 ######################################################################
 include(pvSetupMSVCRuntime)
+
+
+######################################################################
+# Try finding CUDA/OpenMP/OpenMPI before SuperBuild, so that variables
+# are more likely to be set consistently throughout all dependencies.
+######################################################################
+include(pvIncludeCUDA)
+include(pvIncludeOpenMP)
+include(pvIncludeMPI)
+
 
 ######################################################################
 # Make sure Git is available, as SuperBuild may need to do updates.
@@ -265,6 +302,11 @@ include(pvIncludeglog)
 include(pvIncludeEigen)
 include(pvIncludeBoost)
 include(pvIncludePythonBindings)
+include(pvIncludeArrayFire)
+include(pvIncludeOpenCV)
+include(pvIncludeVTK)
+include(pvIncludePCL)
+
 
 ######################################################################
 # This must come after all the external packages that need

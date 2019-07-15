@@ -103,7 +103,7 @@ setup(
     description='A template project, to enable people to build nicely structured C++ projects.',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    ext_modules=[CMakeExtension('', sourcedir=dir_path)],
+    ext_modules=[CMakeExtension('pyvinecopulib', sourcedir=dir_path)],
     cmdclass=dict(build_ext=CMakeBuild),
     zip_safe=False,
     license='BSD-3 license',
