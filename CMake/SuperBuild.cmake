@@ -165,7 +165,7 @@ include(pvExternalProjectHelperMacros)
 ######################################################################
 # External projects
 ######################################################################
-foreach(p gflags glog Eigen Boost VTK OpenCV FLANN PCL ArrayFire)
+foreach(p Eigen Boost)
   include("CMake/ExternalProjects/${p}.cmake")
 endforeach()
 
@@ -184,7 +184,7 @@ if(NOT DEFINED SUPERBUILD_EXCLUDE_PYVINECOPULIBBUILD_TARGET OR NOT SUPERBUILD_EX
   endif()
 
   set(proj PYVINECOPULIB)
-  set(proj_DEPENDENCIES ${OpenCV_DEPENDS} ${Eigen_DEPENDS} ${Boost_DEPENDS} ${gflags_DEPENDS} ${glog_DEPENDS} ${VTK_DEPENDS} ${FLANN_DEPENDS} ${PCL_DEPENDS} ${ArrayFire_DEPENDS})
+  set(proj_DEPENDENCIES ${Eigen_DEPENDS} ${Boost_DEPENDS})
 
   ExternalProject_Add(${proj}
     LIST_SEPARATOR ^^
