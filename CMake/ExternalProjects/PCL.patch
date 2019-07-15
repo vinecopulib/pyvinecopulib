@@ -1,0 +1,17 @@
+diff --git c/cmake/pcl_find_qt5.cmake i/cmake/pcl_find_qt5.cmake
+index 67b7ce5..f6626e9 100644
+--- c/cmake/pcl_find_qt5.cmake
++++ i/cmake/pcl_find_qt5.cmake
+@@ -13,10 +13,10 @@ set(qt5_modules
+     # Qt5Network
+     # Qt5Qml
+     # Qt5Quick
+-    # Qt5SQL
++    Qt5SQL
+     # Qt5Test
+     # Qt5WebKit
+-    # Qt5WebKitWidgets
++    Qt5WebKitWidgets
+     Qt5Widgets
+ 
+ # Add-ons

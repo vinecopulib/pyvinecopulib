@@ -1,0 +1,189 @@
+#/*============================================================================
+#
+#  PYVINECOPULIB: A python interface to vinecopulib.
+#
+#  Copyright (c) University College London (UCL). All rights reserved.
+#
+#  This software is distributed WITHOUT ANY WARRANTY; without even
+#  the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+#  PURPOSE.
+#
+#  See LICENSE.txt in the top level directory for details.
+#
+#============================================================================*/
+
+# Inspired by: https://github.com/skvark/opencv-python
+#        and : https://github.com/matthew-brett/multibuild
+#        and : https://github.com/thompson318/ndicapi-wheels
+
+language: python
+# The Travis Python version is unrelated to the version we build and test
+# with.  This is set with the MB_PYTHON_VERSION variable.
+python: 3.6
+sudo: required
+dist: trusty
+services: docker
+
+# To Do: Where to put these?
+#        Most of these were deduced while testing various combinations of
+#        VTK, PCL, OpenCV etc. Your project  may be able to get away with a
+#        much smaller list, depending on your actual testing requirements.
+#
+#sudo apt-get update
+#sudo apt-get -yqq install build-essential
+#sudo apt-get -yqq install binutils-gold
+#sudo apt-get -yqq install freeglut3
+#sudo apt-get -yqq install freeglut3-dev
+#sudo apt-get -yqq install libglew-dev
+#sudo apt-get -yqq install libglew1.5-dev
+#sudo apt-get -yqq install libglm-dev
+#sudo apt-get -yqq install mesa-common-dev
+#sudo apt-get -yqq install mesa-utils-extra
+#sudo apt-get -yqq install libgl1-mesa-dev
+#sudo apt-get -yqq install libglapi-mesa
+
+env:
+  global:
+    - DO_PYTHON_BUILD="true"
+    - "PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'"
+    - REPO_DIR=.
+    - BUILD_COMMIT=HEAD
+    - BUILD_DEPENDS="numpy six wheel"
+    - TEST_DEPENDS="numpy six pytest"
+    - BDIST_PARAMS=""
+    - PLAT=x86_64
+    - UNICODE_WIDTH=32
+
+matrix:
+  fast_finish: true
+  exclude:
+    # Exclude the default Python 3.6 build
+    - python: 3.6
+  include:
+    # Builds for MacOS
+    - os: osx
+      language: generic
+      env:
+        - MB_PYTHON_VERSION=2.7
+        - BDIST_PARAMS="-- -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=10.7"
+    - os: osx
+      language: generic
+      env:
+        - MB_PYTHON_VERSION=3.6
+        - BDIST_PARAMS="-- -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=10.7"
+    - os: osx
+      language: generic
+      env:
+        - MB_PYTHON_VERSION=3.7
+        - BDIST_PARAMS="-- -DCMAKE_OSX_DEPLOYMENT_TARGET:STRING=10.7"
+   # Builds for Linux
+    - os: linux
+      env:
+        - MB_PYTHON_VERSION=2.7
+    - os: linux
+      env:
+        - MB_PYTHON_VERSION=2.7
+        - UNICODE_WIDTH=16
+    - os: linux
+      env:
+        - MB_PYTHON_VERSION=2.7
+        - PLAT=i686
+    - os: linux
+      env:
+        - MB_PYTHON_VERSION=2.7
+        - PLAT=i686
+        - UNICODE_WIDTH=16
+    - os: linux
+      env:
+        - MB_PYTHON_VERSION=3.5
+    - os: linux
+      env:
+        - MB_PYTHON_VERSION=3.5
+        - PLAT=i686
+    - os: linux
+      env:
+        - MB_PYTHON_VERSION=3.6
+    - os: linux
+      env:
+        - MB_PYTHON_VERSION=3.6
+        - PLAT=i686
+    - os: linux
+      env:
+        - MB_PYTHON_VERSION=3.7
+    - os: linux
+      env:
+        - MB_PYTHON_VERSION=3.7
+        - PLAT=i686
+
+before_install:
+    - source multibuild/common_utils.sh
+    - source multibuild/travis_steps.sh
+    - before_install
+
+install: |
+    echo "Starting main library build section."
+    if [ "${DO_PYTHON_BUILD}" == "true" ]; then
+
+      echo "DO_PYTHON_BUILD=true, so will do C++ and then build a wheel."
+
+      if [ -n "$IS_OSX" ]; then
+
+        # On Mac, it builds it inside the Travis Mac VM.
+        # So, you could add various homebrew commands to pre-install stuff,
+        # or if you are reading the travis documentation, you could use
+        # travis type directives like 'addons', which are normally configured above.
+
+        build_wheel $REPO_DIR $PLAT
+
+      else
+
+        # On Linux, this builds the C++ and then wheel
+        # inside a manylinux docker container (Centos 5).
+
+        DOCKER_IMAGE=quay.io/skvark/manylinux1_$PLAT
+        build_multilinux $PLAT "build_wheel $REPO_DIR"
+      fi
+
+    else
+
+      echo "DO_PYTHON_BUILD is not set to true, so will just do C++."
+
+      # This builds the C++ inside the Travis VM. On Linux  this will
+      # be the OS listed above, e.g. Ubuntu trusty. So, if your project
+      # is only doing C++ and not Python, you will need debian based
+      # 'sudo apt-get' type commands, either here, or if you are reading
+      # travis documentation, then using various travis type directives
+      # like 'addons', which are normally configured at the top of this file.
+
+      source travis_cmake_build.sh
+      cmake_build
+
+    fi
+    echo "Finished main library build section."
+
+script: |
+    echo "Starting to check if we are running tests on installed python wheel."
+    if [ "${DO_PYTHON_BUILD}" == "true" ]; then
+      echo "DO_PYTHON_BUILD is set to true, which means config.sh::run_tests() is called."
+      install_run $PLAT
+    else
+      echo "Nothing to do as DO_PYTHON_BUILD is not set to true."
+    fi
+    echo "Finished running tests on installed python wheel."
+
+after_success: |
+    echo "Starting to check if we are deploying to PyPi"
+    if [ -n "$TRAVIS_TAG" ]; then
+      if [ "${DO_PYTHON_BUILD}" == "true" ]; then
+        pip install twine
+        if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then
+          pip install --upgrade pyOpenSSL
+        fi
+        twine upload --repository pypi -u ${PYPI_USER} -p ${PYPI_PASS} --skip-existing wheelhouse/*
+      else
+        echo "Deployment skipped as DO_PYTHON_BUILD is not set to true."
+      fi
+    else
+      echo "Deployment skipped as git tag not set."
+    fi
+    echo "Finished any necessary deployment."

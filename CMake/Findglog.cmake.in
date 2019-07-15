@@ -1,0 +1,52 @@
+#/*============================================================================
+#
+#  PYVINECOPULIB: A python interface to vinecopulib.
+#
+#  Copyright (c) University College London (UCL). All rights reserved.
+#
+#  This software is distributed WITHOUT ANY WARRANTY; without even
+#  the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+#  PURPOSE.
+#
+#  See LICENSE.txt in the top level directory for details.
+#
+#============================================================================*/
+
+set(glog_FOUND)
+
+set(glog_DIR @glog_DIRECTORY@ CACHE PATH "Directory containing glog installation" FORCE)
+
+find_path(glog_INC
+  NAME logging.h
+  PATHS ${glog_DIR}/include/glog
+  NO_DEFAULT_PATH
+)
+
+set(glog_LIBRARY_DIR ${glog_DIR}/lib)
+set(glog_LIBRARY )
+
+if(${CMAKE_BUILD_TYPE} STREQUAL "Release")
+
+  find_library(glog_LIBRARY NAMES glog
+               PATHS ${glog_LIBRARY_DIR}
+               PATH_SUFFIXES Release
+               NO_DEFAULT_PATH)
+
+elseif(${CMAKE_BUILD_TYPE} STREQUAL "Debug")
+
+  find_library(glog_LIBRARY NAMES glog${PYVINECOPULIB_SUPERBUILD_DEBUG_POSTFIX}
+               PATHS ${glog_LIBRARY_DIR}
+               PATH_SUFFIXES Debug
+               NO_DEFAULT_PATH)
+
+endif()
+
+if(glog_LIBRARY AND glog_INC)
+  set(glog_FOUND 1)
+  get_filename_component(_inc_dir ${glog_INC} PATH)
+  set(glog_INCLUDE_DIR ${_inc_dir})
+endif()
+
+message( "PYVINECOPULIB Findglog.cmake: glog_INCLUDE_DIR: ${glog_INCLUDE_DIR}" )
+message( "PYVINECOPULIB Findglog.cmake: glog_LIBRARY_DIR: ${glog_LIBRARY_DIR}" )
+message( "PYVINECOPULIB Findglog.cmake: glog_LIBRARY:     ${glog_LIBRARY}" )

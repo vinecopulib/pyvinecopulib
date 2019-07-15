@@ -1,0 +1,9 @@
+[submodule "Code/Lib/PythonPyBind/pybind11"]
+	path = Code/PythonPyBind/pybind11
+	url = https://github.com/pybind/pybind11.git
+[submodule "Code/Lib/PythonBoost/pyboostcvconverter"]
+	path = Code/PythonBoost/pyboostcvconverter
+	url = https://github.com/Algomorph/pyboostcvconverter.git
+[submodule "multibuild"]
+	path = multibuild
+	url = https://github.com/matthew-brett/multibuild.git

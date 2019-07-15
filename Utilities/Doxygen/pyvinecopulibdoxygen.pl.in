@@ -1,0 +1,9 @@
+# for vxl files run the vxl_doxy.pl script, and use itkgroup.pl for all other files
+if ( $ARGV[0] =~ /(vxl|vcl|vnl)/) 
+{
+    system ("perl @PYVINECOPULIB_SOURCE_DIR@/Utilities/Doxygen/vxl_doxy.pl $ARGV[0]");
+}
+else
+{
+    system ("perl @PYVINECOPULIB_SOURCE_DIR@/Utilities/Doxygen/pyvinecopulibgroup.pl $ARGV[0]");
+}

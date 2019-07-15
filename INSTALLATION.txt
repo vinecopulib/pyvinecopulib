@@ -1,0 +1,7 @@
+Installation Instructions.
+--------------------------
+
+This is the @PYVINECOPULIB_PACKAGE_NAME@ software for whatever, version @PYVINECOPULIB_VERSION_STRING@.
+
+For all questions and queries please contact: @PYVINECOPULIB_CONTACT@.
+

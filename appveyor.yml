@@ -1,0 +1,159 @@
+#/*============================================================================
+#
+#  PYVINECOPULIB: A python interface to vinecopulib.
+#
+#  Copyright (c) University College London (UCL). All rights reserved.
+#
+#  This software is distributed WITHOUT ANY WARRANTY; without even
+#  the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+#  PURPOSE.
+#
+#  See LICENSE.txt in the top level directory for details.
+#
+#============================================================================*/
+
+version: "{build}"
+
+init:
+  - git config --global core.autocrlf input
+
+clone_folder: c:\projects\pyvinecopulib
+
+shallow_clone: false
+
+environment:
+  # Set DO_PYTHON_BUILD to false, if you are only interested in the C++ part.
+  DO_PYTHON_BUILD: true
+  USER:
+    secure: fUZFeIra+GVpjh8AFC8kpw==
+  PASS:
+    secure: p0rP3cr8gF2t+7jdtpH10XV2RbKw6JXW35nNCrT5rfY=
+  matrix:
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+      COMPILER: "Visual Studio 14 2015"
+      MB_PYTHON: "C:/Python35"
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+      COMPILER: "Visual Studio 14 2015 Win64"
+      MB_PYTHON: "C:/Python35-x64"
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+      COMPILER: "Visual Studio 14 2015"
+      MB_PYTHON: "C:/Python36"
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+      COMPILER: "Visual Studio 14 2015 Win64"
+      MB_PYTHON: "C:/Python36-x64"
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2017
+      COMPILER: "Visual Studio 15 2017"
+      MB_PYTHON: "C:/Python37"
+    - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2017
+      COMPILER: "Visual Studio 15 2017 Win64"
+      MB_PYTHON: "C:/Python37-x64"
+
+matrix:
+  # This is so that if any of the above builds fails, then the whole build fails early.
+  fast_finish: true
+    
+configuration:
+  - Release
+
+platform:
+  # Set to 'Any CPU', as it is the COMPILER string listed above that tells
+  # cmake to pick a generator for either a 64 or 32 bit build.
+  - Any CPU
+
+before_build:
+- ps: |
+    echo --------------------------------------------------------------------------------
+    echo "Doing before_build: PYTHON=${Env:MB_PYTHON}"
+    cd ${Env:APPVEYOR_BUILD_FOLDER}
+    pwd
+    ${Env:PATH} = "${Env:MB_PYTHON};${Env:MB_PYTHON}/Scripts;${Env:PATH}"
+    echo "${Env:PATH}"
+    git submodule update -q --init --recursive
+    if ($LastExitCode -ne 0) {throw $LastExitCode}
+    &"${Env:MB_PYTHON}/python.exe" -m pip install --upgrade pip
+    if ($LastExitCode -ne 0) {throw $LastExitCode}
+    &"${Env:MB_PYTHON}/python.exe" -m pip install --upgrade setuptools
+    if ($LastExitCode -ne 0) {throw $LastExitCode}
+    &"${Env:MB_PYTHON}/python.exe" -m pip install --upgrade six
+    if ($LastExitCode -ne 0) {throw $LastExitCode}
+    &"${Env:MB_PYTHON}/python.exe" -m pip install --upgrade numpy
+    if ($LastExitCode -ne 0) {throw $LastExitCode}
+    &"${Env:MB_PYTHON}/python.exe" -m pip install --upgrade --no-warn-script-location wheel
+    if ($LastExitCode -ne 0) {throw $LastExitCode}
+
+build_script:
+- ps: |
+    echo --------------------------------------------------------------------------------
+    echo "Building the C++ part: PYTHON=${Env:MB_PYTHON}, COMPILER=${Env:COMPILER}, CONFIGURATION=${Env:CONFIGURATION}"
+    cd ${Env:APPVEYOR_BUILD_FOLDER}
+    pwd
+    ${Env:PATH} = "${Env:MB_PYTHON};${Env:MB_PYTHON}/Scripts;${Env:PATH}"
+    echo "${Env:PATH}"
+    cmake -version
+    mkdir build
+    cd build
+    cmake -G "${Env:COMPILER}" -DBUILD_SUPERBUILD:BOOL=ON -DBUILD_TESTING:BOOL=ON -DBUILD_Boost:BOOL=ON -DBUILD_Python_PyBind:BOOL=OFF -DBUILD_Python_Boost:BOOL=ON -DBUILD_Eigen:BOOL=ON -DBUILD_glog:BOOL=ON -DBUILD_gflags:BOOL=ON -DBUILD_VTK:BOOL=OFF -DBUILD_PCL:BOOL=ON -DBUILD_OpenCV:BOOL=ON --config ${Env:CONFIGURATION} ..
+    if ($LastExitCode -ne 0) {throw $LastExitCode}
+    cmake --build . --config ${Env:CONFIGURATION}
+    if ($LastExitCode -ne 0) {throw $LastExitCode}
+
+test_script:
+- ps: |
+    echo --------------------------------------------------------------------------------
+    cd ${Env:APPVEYOR_BUILD_FOLDER}
+    pwd
+    cd build
+    pwd
+    cd PYVINECOPULIB-build
+    pwd
+    ctest -C ${Env:CONFIGURATION}
+    if ($LastExitCode -ne 0) {throw $LastExitCode}
+
+after_test:
+- ps: |
+    echo --------------------------------------------------------------------------------
+    echo "Building the Python wheel part:"
+    cd ${Env:APPVEYOR_BUILD_FOLDER}
+    pwd
+    ${Env:PATH} = "${Env:MB_PYTHON};${Env:MB_PYTHON}/Scripts;${Env:PATH}"
+    if (${Env:DO_PYTHON_BUILD} -eq "true") {
+      echo "Building python wheel."
+      &"${Env:MB_PYTHON}/python.exe" setup.py bdist_wheel
+      if ($LastExitCode -ne 0) {throw $LastExitCode}
+      echo "Finished building python wheel."
+      echo "Installing python wheel."
+      echo "Contents of dist directory:"
+      dir dist
+      $wheel_files = @(Get-ChildItem dist\* -include *.whl)
+      $wheel = $wheel_files[0]
+      echo "Wheel file is $wheel"
+      &"${Env:MB_PYTHON}/python.exe" -m pip install --upgrade --no-index --find-links dist/ $wheel
+      if ($LastExitCode -ne 0) {throw $LastExitCode}
+      echo "Finished installing python wheel."
+      echo "Running python tests."
+      &"${Env:MB_PYTHON}/python.exe" -m pip install pytest
+      if ($LastExitCode -ne 0) {throw $LastExitCode}
+      # Uncomment this when you actually have tests.
+      # &"${Env:MB_PYTHON}/python.exe" -m pytest -v -s Testing/
+      # if ($LastExitCode -ne 0) {throw $LastExitCode}
+      echo "Finished python tests."
+    }
+
+deploy_script:
+- ps: |
+    cd ${Env:APPVEYOR_BUILD_FOLDER}
+    pwd
+    if (${Env:APPVEYOR_REPO_TAG} -eq "true") {
+      if (${Env:DO_PYTHON_BUILD} -eq "true") {
+        &"${Env:MB_PYTHON}/python.exe" -m pip install twine
+        if ($LastExitCode -ne 0) {throw $LastExitCode}
+        &"${Env:MB_PYTHON}/python.exe" -m twine upload --repository pypi -u ${Env:USER} -p ${Env:PASS} --skip-existing dist/*
+        if ($LastExitCode -ne 0) {throw $LastExitCode}
+      }
+      else {
+        echo "DO_PYTHON_BUILD not set, deployment skipped."
+      }
+    }
+    else {
+      echo "Tag not set, deployment skipped."
+    }
