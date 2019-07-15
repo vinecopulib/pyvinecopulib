@@ -59,7 +59,7 @@ include(mitkFunctionGetGccVersion)
 include(pvMacroInstallCommandLineApp)
 include(pvMacroInstallHeaders)
 include(pvMacroInstallLibrary)
-include(pvMacroCreateGuiApplication)
+# include(pvMacroCreateGuiApplication)
 
 
 ######################################################################
