@@ -12,4 +12,4 @@
 #
 #============================================================================*/
 
-option(BUILD_Eigen "Build Eigen." OFF)
+option(BUILD_Eigen "Build Eigen." ON)
