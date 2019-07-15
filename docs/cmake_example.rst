@@ -1,1 +1,1 @@
-.. automodule:: cmake_example
+.. automodule:: pyvinecopulib

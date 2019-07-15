@@ -46,9 +46,9 @@ provides the ``pybind11_add_module`` function. It will take care of all the
 details needed to build a Python extension module on any platform.
 
 A working sample project, including a way to invoke CMake from :file:`setup.py` for
-PyPI integration, can be found in the [cmake_example]_  repository.
+PyPI integration, can be found in the [pyvinecopulib]_  repository.
 
-.. [cmake_example] https://github.com/pybind/cmake_example
+.. [pyvinecopulib] https://github.com/pybind/pyvinecopulib
 
 pybind11_add_module
 -------------------
@@ -148,7 +148,7 @@ See the `Config file`_ docstring for details of relevant CMake variables.
 Once detected, the aforementioned ``pybind11_add_module`` can be employed as
 before. The function usage and configuration variables are identical no matter
 if pybind11 is added as a subdirectory or found as an installed package. You
-can refer to the same [cmake_example]_ repository for a full sample project
+can refer to the same [pyvinecopulib]_ repository for a full sample project
 -- just swap out ``add_subdirectory`` for ``find_package``.
 
 .. _Config file: https://github.com/pybind/pybind11/blob/master/tools/pybind11Config.cmake.in

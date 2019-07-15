@@ -1,6 +1,6 @@
-# cmake_example for pybind11
+# pyvinecopulib for pybind11
 
-[![Build Status](https://travis-ci.org/pybind/cmake_example.svg?branch=master)](https://travis-ci.org/pybind/cmake_example)
+[![Build Status](https://travis-ci.org/pybind/pyvinecopulib.svg?branch=master)](https://travis-ci.org/pybind/pyvinecopulib)
 [![Build status](https://ci.appveyor.com/api/projects/status/57nnxfm4subeug43/branch/master?svg=true)](https://ci.appveyor.com/project/dean0x7d/cmake-example/branch/master)
 
 An example [pybind11](https://github.com/pybind/pybind11) module built with a
@@ -27,8 +27,8 @@ Just clone this repository and pip install. Note the `--recursive` option which 
 needed for the pybind11 submodule:
 
 ```bash
-git clone --recursive https://github.com/pybind/cmake_example.git
-pip install ./cmake_example
+git clone --recursive https://github.com/pybind/pyvinecopulib.git
+pip install ./pyvinecopulib
 ```
 
 With the `setup.py` file included in this example, the `pip install` command will
@@ -60,7 +60,7 @@ the extension module to generate beautiful documentation in a variety formats.
 The following command generates HTML-based reference documentation; for other
 formats please refer to the Sphinx manual:
 
- - `cd cmake_example/docs`
+ - `cd pyvinecopulib/docs`
  - `make html`
 
 
@@ -74,8 +74,8 @@ terms and conditions of this license.
 ## Test call
 
 ```python
-import cmake_example
-cmake_example.add(1, 2)
+import pyvinecopulib
+pyvinecopulib.add(1, 2)
 ```
 
 

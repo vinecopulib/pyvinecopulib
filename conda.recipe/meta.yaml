@@ -1,5 +1,5 @@
 package:
-  name: cmake_example
+  name: pyvinecopulib
   version: {{ environ.get('GIT_DESCRIBE_TAG', 'dev') }}
 
 build:
@@ -26,7 +26,7 @@ requirements:
 
 test:
   imports:
-    - cmake_example
+    - pyvinecopulib
 
 about:
   summary: An example project built with pybind11.
