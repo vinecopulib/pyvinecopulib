@@ -47,7 +47,7 @@ install:
     pip install --verbose dist/*.tar.gz
   elif [ -n "$CONDA" ]; then
     conda build conda.recipe
-    conda install --use-local cmake_example
+    conda install --use-local pyvinecopulib 
   fi
 script:
 - python tests/test.py
