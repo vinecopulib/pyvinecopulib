@@ -107,8 +107,8 @@ endif()
 # Also, if you don't want one, you can just search for the package name
 # (e.g. VTK) in this file, and remove all those lines you don't want.
 #######################################################################
-include(pvAddgflags)
-include(pvAddglog)
+# include(pvAddgflags)
+# include(pvAddglog)
 include(pvAddEigen)
 include(pvAddBoost)
 include(pvAddPythonBindings)
