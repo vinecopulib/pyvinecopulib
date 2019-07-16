@@ -40,6 +40,7 @@ build_script:
       7z x eigen.zip -o"C:\Libraries" -y > nul
       $env:BOOST_ROOT="C:\Libraries\boost_1_60_0"
       $env:EIGEN3_ROOT="C:\Libraries\eigen-eigen-323c052e1731"
+      $env:CMAKE_MODULE_PATH="C:\Libraries\eigen-eigen-323c052e1731\cmake;$env:CMAKE_MODULE_PATH"
       python setup.py sdist
       cd dist
       python -m pip install --verbose pyvinecopulib-0.0.1.tar.gz
