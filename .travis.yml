@@ -15,16 +15,16 @@ matrix:
     dist: xenial
   - os: osx
     env: PYTHON=2.7
-    osx_image: xcode8.3
+    # osx_image: xcode8.3
   - os: osx
     env: PYTHON=3.7
-    osx_image: xcode8.3
+    # osx_image: xcode8.3
   - os: osx
     env: CONDA=2.7
-    osx_image: xcode8.3
+    # osx_image: xcode8.3
   - os: osx
     env: CONDA=3.7
-    osx_image: xcode8.3
+    # osx_image: xcode8.3
 before_install:
   ### LINUX
   - if [ $TRAVIS_OS_NAME == linux ]; then sudo apt-get install --no-install-recommends -y libeigen3-dev libboost1.58-dev; fi
