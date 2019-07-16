@@ -34,7 +34,8 @@ before_install:
   - if [ $TRAVIS_OS_NAME == osx ]; then brew install eigen gsl doxygen graphviz; fi
 
   - if [ "$TRAVIS_OS_NAME" = "linux" ]; then export CXX=g++-5.4 CC=gcc-5.4; fi
-  - if [ -n "$PYTHON" ]; then
+  - |
+    if [ -n "$PYTHON" ]; then
       if [ "$TRAVIS_OS_NAME" = "osx" ]; then
         export PATH="/Users/travis/Library/Python/2.7/bin:$PATH"
         if [ "${PYTHON:0:1}" = "3" ]; then
@@ -57,7 +58,8 @@ before_install:
       source activate test-environment
     fi
 install:
-  - if [ -n "$PYTHON" ]; then
+  - |
+    if [ -n "$PYTHON" ]; then
       python setup.py sdist
       python -m pip install --verbose dist/*.tar.gz
     elif [ -n "$CONDA" ]; then
