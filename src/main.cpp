@@ -1,14 +1,13 @@
+#include <pybind11/eigen.h>
 #include <pybind11/pybind11.h>
-
-int add(int i, int j) {
-    return i + j;
-}
+#include <pybind11/stl.h>
+#include <vinecopulib.hpp>
 
 namespace py = pybind11;
 
-PYBIND11_MODULE(pyvinecopulib, m) {
-    m.doc() = R"pbdoc(
-        Pybind11 example plugin
+PYBIND11_MODULE(pyvinecopulib, pv) {
+  pv.doc() = R"pbdoc(
+        Pyvinecopulib library
         -----------------------
 
         .. currentmodule:: pyvinecopulib
@@ -16,25 +15,19 @@ PYBIND11_MODULE(pyvinecopulib, m) {
         .. autosummary::
            :toctree: _generate
 
-           add
-           subtract
+           simulate_uniform
     )pbdoc";
 
-    m.def("add", &add, R"pbdoc(
-        Add two numbers
+  pv.def("simulate_uniform", &vinecopulib::tools_stats::simulate_uniform,
+         R"pbdoc(
+        Simulate uniform random numbers.
 
-        Some other explanation about the add function.
+        Simulate a matrix of random numbers, with an option to get quasi random
+        numbers or a seed.
     )pbdoc");
-
-    m.def("subtract", [](int i, int j) { return i - j; }, R"pbdoc(
-        Subtract two numbers
-
-        Some other explanation about the subtract function.
-    )pbdoc");
-
 #ifdef VERSION_INFO
-    m.attr("__version__") = VERSION_INFO;
+  pv.attr("__version__") = VERSION_INFO;
 #else
-    m.attr("__version__") = "dev";
+  pv.attr("__version__") = "dev";
 #endif
 }

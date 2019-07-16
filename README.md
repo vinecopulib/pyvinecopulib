@@ -15,7 +15,6 @@
 * Visual Studio 2015 (required for all Python versions, see notes below)
 * CMake >= 3.1
 
-
 ## Installation
 
 Just clone this repository and pip install. Note the `--recursive` option which is
