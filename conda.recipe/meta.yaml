@@ -16,16 +16,19 @@ source:
 requirements:
   build:
     - python
+    - numpy >=1.14
     - setuptools
     - pybind11
     - cmake
 
   run:
     - python
+    - numpy >=1.14
     - vs2015_runtime  # [win]
 
 test:
   imports:
+    - numpy >=1.14
     - pyvinecopulib
 
 about:
