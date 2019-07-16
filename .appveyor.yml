@@ -39,7 +39,7 @@ build_script:
       wget http://bitbucket.org/eigen/eigen/get/3.3.2.zip -OutFile eigen.zip
       7z x eigen.zip -o"C:\Libraries" -y > nul
       $env:BOOST_ROOT="C:\Libraries\boost_1_60_0"
-      $env:EIGEN3_INCLUDE_DIR="C:\Libraries\eigen-eigen-323c052e1731"
+      $env:EIGEN3_ROOT="C:\Libraries\eigen-eigen-323c052e1731"
       python setup.py sdist
       cd dist
       python -m pip install --verbose pyvinecopulib-0.0.1.tar.gz
