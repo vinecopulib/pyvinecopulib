@@ -1,7 +1,7 @@
 # pyvinecopulib
 
-[![Build Status](https://travis-ci.org/pybind/pyvinecopulib.svg?branch=master)](https://travis-ci.org/pybind/pyvinecopulib)
-[![Build status](https://ci.appveyor.com/api/projects/status/57nnxfm4subeug43/branch/master?svg=true)](https://ci.appveyor.com/project/dean0x7d/cmake-example/branch/master)
+[![Build Status](https://travis-ci.org/vinecopulib/pyvinecopulib.svg?branch=master)](https://travis-ci.org/vinecopulib/pyvinecopulib)
+[![Build status](https://ci.appveyor.com/api/projects/status/2fn1v67sxdrmp2po/branch/master?svg=true)](https://ci.appveyor.com/project/vinecopulib/pyvinecopulib-x6s0i/branch/master)
 
 ## Prerequisites
 
