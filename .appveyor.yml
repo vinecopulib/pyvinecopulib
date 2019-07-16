@@ -39,10 +39,6 @@ build_script:
       curl https://bitbucket.org/eigen/eigen/get/3.3.7.zip -o "C:\eigen.zip"
       7z x "C:\eigen.zip" -o"C:\Libraries\"
       $env:EIGEN3_ROOT="C:\Libraries\eigen-eigen-323c052e1731"
-      ls "C:\Libraries\eigen-eigen-323c052e1731"
-      $env:EIGEN3_DIR="C:\Libraries\eigen-eigen-323c052e1731"
-      $env:CMAKE_MODULE_PATH="C:\Libraries\eigen-eigen-323c052e1731\cmake;$env:CMAKE_MODULE_PATH"
-      $env:CMAKE_INCLUDE_PATH="C:\Libraries\eigen-eigen-323c052e1731;$env:CMAKE_INCLUDE_PATH"
       $env:BOOST_ROOT="C:\Libraries\boost_1_60_0"
       python setup.py sdist
       cd dist
