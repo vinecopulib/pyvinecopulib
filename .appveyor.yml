@@ -9,10 +9,10 @@ environment:
     PYTHONWARNINGS: ignore:DEPRECATION
     MSSdk: 1
   matrix:
-  # - PYTHON: 27
-  # - PYTHON: 36
-  - CONDA: 27
-  - CONDA: 36
+  - PYTHON: 27
+    PYTHON_VERSION: 2.7
+  - PYTHON: 36
+    PYTHON_VERSION: 3.6
 clone_script:
 - cmd: git clone -q --recursive --branch=%APPVEYOR_REPO_BRANCH% https://github.com/%APPVEYOR_REPO_NAME%.git %APPVEYOR_BUILD_FOLDER%
 - cmd: git checkout -qf %APPVEYOR_REPO_COMMIT%
@@ -29,7 +29,7 @@ install:
       $env:PATH = "C:\Miniconda$env:CONDA\;C:\Miniconda$env:CONDA\Scripts\;$env:PATH"
       conda config --set always_yes yes --set changeps1 no
       conda config --add channels conda-forge
-      conda update -n base -c defaults conda
+      conda update -q conda
       conda install -q conda-build
     }
 build_script:
@@ -45,7 +45,12 @@ build_script:
       python -m pip install --verbose pyvinecopulib-0.0.1.tar.gz
       cd ..
     } else {
-      conda build -q conda.recipe --output-folder=build
+      $pattern = '[\]'
+      $string = "$pwd"
+      $string = $string -replace '[\]', '/'
+      echo "file://$string/build"
+      conda build -q conda.recipe --python=$PYTHON_VERSION --output-folder=build
+      conda config --add channels "file://$string/build"
       # TODO: conda install --use-local pyvinecopulib
     }
 test_script:
