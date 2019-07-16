@@ -5,25 +5,25 @@ matrix:
     env: PYTHON=2.7
     dist: xenial
   - os: linux
-    env: PYTHON=3.6
+    env: PYTHON=3.7
     dist: xenial
   - os: linux
     env: CONDA=2.7
     dist: xenial
   - os: linux
-    env: CONDA=3.6
+    env: CONDA=3.7
     dist: xenial
   - os: osx
     env: PYTHON=2.7
     osx_image: xcode8.3
   - os: osx
-    env: PYTHON=3.6
+    env: PYTHON=3.7
     osx_image: xcode8.3
   - os: osx
     env: CONDA=2.7
     osx_image: xcode8.3
   - os: osx
-    env: CONDA=3.6
+    env: CONDA=3.7
     osx_image: xcode8.3
 before_install:
   ### LINUX
@@ -63,7 +63,8 @@ install:
       python setup.py sdist
       python -m pip install --verbose dist/*.tar.gz
     elif [ -n "$CONDA" ]; then
-      conda build conda.recipe
+      conda install numpy=1.14
+      conda build --numpy 1.14 conda.recipe
       conda install --use-local pyvinecopulib
     fi
 script:

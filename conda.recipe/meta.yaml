@@ -19,6 +19,7 @@ requirements:
     - setuptools
     - pybind11
     - cmake
+    - numpy >=1.14
 
   run:
     - python

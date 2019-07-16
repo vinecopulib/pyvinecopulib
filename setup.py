@@ -55,13 +55,13 @@ class CMakeBuild(build_ext):
         subprocess.check_call(['cmake', ext.sourcedir] + cmake_args, cwd=self.build_temp, env=env)
         subprocess.check_call(['cmake', '--build', '.'] + build_args, cwd=self.build_temp)
 
-with open('requirements.txt') as f:
-    requirements = f.read().splitlines()
+#  with open('requirements.txt') as f:
+    #  requirements = f.read().splitlines()
 
 setup(
     name='pyvinecopulib',
     version='0.0.1',
-    install_requires=requirements,
+    #  install_requires=requirements,
     author='Thomas Nagler and Thibault Vatter',
     author_email='info@vinecopulib.org',
     description='A python interface to vinecopulib',
