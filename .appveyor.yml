@@ -40,7 +40,8 @@ build_script:
       wget http://bitbucket.org/eigen/eigen/get/3.3.2.zip -OutFile eigen.zip
       7z x eigen.zip -o"C:\Libraries" -y > nul
       cd "C:\Libraries\eigen-eigen-323c052e1731"
-      mkdir build && cd build
+      mkdir build
+      cd build
       cmake ..
       make install
       cd ..
