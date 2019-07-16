@@ -19,10 +19,10 @@ requirements:
     - setuptools
     - pybind11
     - cmake
-    - numpy >=1.14
 
   run:
     - python
+    - numpy >=1.14
     - vs2015_runtime  # [win]
 
 test:
