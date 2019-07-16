@@ -49,7 +49,7 @@ build_script:
       $string = $string -replace '[\\]', '/'
       echo "file://$string/build"
       conda build -q conda.recipe --python=$PYTHON_VERSION --output-folder=build
-      conda config --add channels "file://$string/build"
+      conda config --add channels "file:///$string/build"
       # TODO: conda install --use-local pyvinecopulib
     }
 test_script:
