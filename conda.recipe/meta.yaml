@@ -16,6 +16,7 @@ source:
 requirements:
   build:
     - python
+    - numpy >=1.14
     - setuptools
     - pybind11
     - cmake
