@@ -1,5 +1,6 @@
 include README.md LICENSE requirements.txt
 global-include CMakeLists.txt *.cmake
+include requirements.txt
 recursive-include src *
 recursive-include lib/pybind11/include *.h
 recursive-include lib/wdm/include *.hpp
