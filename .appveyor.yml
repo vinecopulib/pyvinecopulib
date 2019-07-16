@@ -9,8 +9,6 @@ environment:
     PYTHONWARNINGS: ignore:DEPRECATION
     MSSdk: 1
   matrix:
-  - CONDA: 27
-    PYTHON_VERSION: 2.7
   - CONDA: 36
     PYTHON_VERSION: 3.6
 clone_script:
@@ -47,18 +45,14 @@ build_script:
     } else {
       $string = "$pwd"
       $string = $string -replace '[\\]', '/'
-      echo "file://$string/build"
       conda build -q conda.recipe --python=$PYTHON_VERSION --output-folder=build
       conda config --add channels "file:///$string/build"
-      # TODO: conda install --use-local pyvinecopulib
+      conda install pyvinecopulib
     }
 test_script:
 - ps: |
-    if ($env:PYTHON) {
-      python -m pip install pytest
-      python -m pytest tests -r a
-    }
-      # TODO: test on conda
+    python -m pip install pytest
+    python -m pytest tests -r a
 
 # on_finish:
 #  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
