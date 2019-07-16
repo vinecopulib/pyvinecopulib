@@ -28,6 +28,8 @@
 *.app
 
 # Python stuff
+*.py[cod]
+*.egg-info
 *.pyc
 
 # Emacs file
@@ -36,6 +38,8 @@
 *.user
 
 #build, bin and Lion related dirs
+_build/
+_generate/
 include/git_revision.hpp
 bin/
 build/
