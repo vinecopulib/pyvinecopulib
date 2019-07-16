@@ -51,7 +51,7 @@ build_script:
       conda install --use-local pyvinecopulib
     }
 test_script:
-- ps: python tests\test.py
+- ps: python -m pytest tests\test.py -r a
 # on_finish:
 #  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
 
