@@ -36,7 +36,7 @@ install:
 build_script:
 - ps: |
     if ($env:PYTHON) {
-      wget http://bitbucket.org/eigen/eigen/get/3.3.7.zip -OutFile eigen.zip
+      curl https://bitbucket.org/eigen/eigen/get/3.3.7.zip --output eigen.zip
       7z x eigen.zip -o"C:\Libraries" -y > nul
       $env:Eigen3_ROOT="C:\Libraries\eigen-eigen-323c052e1731"
       ls "C:\Libraries\eigen-eigen-323c052e1731"
