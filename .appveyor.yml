@@ -38,11 +38,11 @@ build_script:
     if ($env:PYTHON) {
       curl https://bitbucket.org/eigen/eigen/get/3.3.7.zip -o "C:\eigen.zip"
       7z x "C:\eigen.zip" -o"C:\Libraries\"
-      $env:Eigen3_ROOT="C:\Libraries\eigen-eigen-323c052e1731"
+      $env:EIGEN3_ROOT="C:\Libraries\eigen-eigen-323c052e1731"
       ls "C:\Libraries\eigen-eigen-323c052e1731"
-      $env:Eigen3_DIR="C:\Libraries\eigen-eigen-323c052e1731\cmake"
+      $env:EIGEN3_DIR="C:\Libraries\eigen-eigen-323c052e1731"
       $env:CMAKE_MODULE_PATH="C:\Libraries\eigen-eigen-323c052e1731\cmake;$env:CMAKE_MODULE_PATH"
-      $env:CMAKE_INCLUDE_PATH="C:\Libraries\eigen-eigen-323c052e1731\cmake;$env:CMAKE_INCLUDE_PATH"
+      $env:CMAKE_INCLUDE_PATH="C:\Libraries\eigen-eigen-323c052e1731;$env:CMAKE_INCLUDE_PATH"
       $env:BOOST_ROOT="C:\Libraries\boost_1_60_0"
       python setup.py sdist
       cd dist
@@ -56,6 +56,6 @@ build_script:
     }
 test_script:
 - ps: python tests\test.py
-on_finish:
- - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
+# on_finish:
+#  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
 
