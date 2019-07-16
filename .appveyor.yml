@@ -46,7 +46,7 @@ build_script:
       cd ..
     } else {
       conda build -q conda.recipe --output-folder="build"
-      conda config --add channels "file:/$env:pwd/build"
+      conda config --add channels "file:/$pwd/build"
       conda create -q -n test-environment pyvinecopulib
       source activate test-environment
       conda install --use-local pyvinecopulib
