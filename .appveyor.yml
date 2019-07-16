@@ -37,7 +37,7 @@ build_script:
 - ps: |
     if ($env:PYTHON) {
       curl https://bitbucket.org/eigen/eigen/get/3.3.7.zip -o "C:\eigen.zip"
-      7z x "C:\eigen.zip" -o"C:\Libraries" -y > nul
+      7z x "C:\eigen.zip" -o"C:\Libraries\"
       $env:Eigen3_ROOT="C:\Libraries\eigen-eigen-323c052e1731"
       ls "C:\Libraries\eigen-eigen-323c052e1731"
       $env:Eigen3_DIR="C:\Libraries\eigen-eigen-323c052e1731\cmake"
@@ -56,3 +56,6 @@ build_script:
     }
 test_script:
 - ps: python tests\test.py
+on_finish:
+ - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
+
