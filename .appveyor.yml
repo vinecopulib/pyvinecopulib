@@ -29,7 +29,7 @@ install:
       $env:PATH = "C:\Miniconda$env:CONDA\;C:\Miniconda$env:CONDA\Scripts\;$env:PATH"
       conda config --set always_yes yes --set changeps1 no
       conda config --add channels conda-forge
-      conda update -n base conda
+      conda update conda --yes -q
       conda install -q conda-build
     }
 build_script:
