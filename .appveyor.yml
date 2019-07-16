@@ -31,7 +31,6 @@ install:
       conda config --add channels conda-forge
       conda update -n base -c defaults conda
       conda install -q conda-build
-      conda update -n base conda
     }
 build_script:
 - ps: |
