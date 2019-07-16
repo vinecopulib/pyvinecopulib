@@ -50,7 +50,7 @@ build_script:
       conda build -q conda.recipe --python=$PYTHON_VERSION --output-folder=build
       conda config --add channels "file:///$string/build"
       conda create -q -n test-environment python=$PYTHON_VERSION pyvinecopulib
-      source activate test-environment
+      activate test-environment
       # conda install pyvinecopulib
     }
 test_script:
