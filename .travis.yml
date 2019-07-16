@@ -33,7 +33,7 @@ before_install:
   - if [ $TRAVIS_OS_NAME == osx ]; then brew update; fi
   - if [ $TRAVIS_OS_NAME == osx ]; then brew install eigen doxygen graphviz; fi
 
-  - if [ "$TRAVIS_OS_NAME" = "linux" ]; then export CXX=g++-5.4.0 CC=gcc-5.4.0; fi
+  # - if [ "$TRAVIS_OS_NAME" = "linux" ]; then export CXX=g++-5.4.0 CC=gcc-5.4.0; fi
   - |
     if [ -n "$PYTHON" ]; then
       if [ "$TRAVIS_OS_NAME" = "osx" ]; then
