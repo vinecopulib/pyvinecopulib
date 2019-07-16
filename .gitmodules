@@ -1,4 +1,19 @@
 [submodule "pybind11"]
-	path = pybind11
+	path = lib/pybind11
 	url = https://github.com/pybind/pybind11.git
-	branch = master
+  branch = master
+
+[submodule "eigen3"]
+	path = lib/eigen3
+	url = https://github.com/eigenteam/eigen-git-mirror
+  branch = master
+
+[submodule "boost"]
+	path = lib/boost
+  url = https://github.com/boostorg/boost
+  branch = master
+
+[submodule "wdm"]
+	path = lib/wdm
+  url = https://github.com/tnagler/wdm
+  branch = master
