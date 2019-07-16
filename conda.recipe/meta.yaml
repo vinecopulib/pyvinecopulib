@@ -29,5 +29,5 @@ test:
     - pyvinecopulib
 
 about:
-  summary: An example project built with pybind11.
+  summary: A python interface to vinecopulib.
   license_file: LICENSE

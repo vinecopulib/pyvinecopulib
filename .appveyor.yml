@@ -1,21 +1,25 @@
 version: '{build}'
-image: Visual Studio 2017
+image: Visual Studio 2015
 platform:
 - x86
 - x64
 environment:
+  global:
+    DISTUTILS_USE_SDK: 1
+    PYTHONWARNINGS: ignore:DEPRECATION
+    MSSdk: 1
   matrix:
   - PYTHON: 27
   - PYTHON: 36
   - CONDA: 27
   - CONDA: 36
 install:
+- cmd: '"%VS140COMNTOOLS%\..\..\VC\vcvarsall.bat" %PLATFORM%'
 - ps: |
-    git submodule update -q --init --recursive
     if ($env:PYTHON) {
       if ($env:PLATFORM -eq "x64") { $env:PYTHON = "$env:PYTHON-x64" }
       $env:PATH = "C:\Python$env:PYTHON\;C:\Python$env:PYTHON\Scripts\;$env:PATH"
-      pip install --disable-pip-version-check --user --upgrade pip setuptools
+      python -m pip install --disable-pip-version-check --user --upgrade pip setuptools
     } elseif ($env:CONDA) {
       if ($env:CONDA -eq "27") { $env:CONDA = "" }
       if ($env:PLATFORM -eq "x64") { $env:CONDA = "$env:CONDA-x64" }
@@ -24,15 +28,20 @@ install:
       conda config --add channels conda-forge
       conda update -q conda
       conda install -q conda-build
+      conda update -n base conda
     }
 build_script:
 - ps: |
     if ($env:PYTHON) {
       python setup.py sdist
-      pip install --verbose dist\cmake_example-0.0.1.tar.gz
+      cd dist
+      python -m pip install --verbose pyvinecopulib-0.0.1.tar.gz
+      cd ..
     } else {
+      echo "conda build conda.recipe"
       conda build conda.recipe
-      conda install --use-local cmake_example
+      echo "conda install --use-local pyvinecopulib"
+      conda install --use-local pyvinecopulib
     }
 test_script:
 - ps: python tests\test.py

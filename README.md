@@ -1,12 +1,7 @@
-# pyvinecopulib for pybind11
+# pyvinecopulib
 
 [![Build Status](https://travis-ci.org/pybind/pyvinecopulib.svg?branch=master)](https://travis-ci.org/pybind/pyvinecopulib)
 [![Build status](https://ci.appveyor.com/api/projects/status/57nnxfm4subeug43/branch/master?svg=true)](https://ci.appveyor.com/project/dean0x7d/cmake-example/branch/master)
-
-An example [pybind11](https://github.com/pybind/pybind11) module built with a
-CMake-based build system. This is useful for C++ codebases that have an existing
-CMake project structure.
-
 
 ## Prerequisites
 
@@ -39,15 +34,15 @@ invoke CMake and build the pybind11 module as specified in `CMakeLists.txt`.
 
 **Compiler requirements**
 
-Pybind11 requires a C++11 compliant compiler, i.e Visual Studio 2015 on Windows.
+Pyvinecopulib requires a C++11 compliant compiler, i.e Visual Studio 2015 on Windows.
 This applies to all Python versions, including 2.7. Unlike regular C extension
-modules, it's perfectly fine to compile a pybind11 module with a VS version newer
-than the target Python's VS version. See the [FAQ] for more details.
+modules, it's perfectly fine to compile a pyvinecopulib module with a VS version newer
+than the target Python's VS version.
 
 **Runtime requirements**
 
 The Visual C++ 2015 redistributable packages are a runtime requirement for this
-project. It can be found [here][vs2015_runtime]. If you use the Anaconda Python
+project. If you use the Anaconda Python
 distribution, you can add `vs2015_runtime` as a platform-dependent runtime
 requirement for you package: see the `conda.recipe/meta.yaml` file in this example.
 
@@ -66,7 +61,7 @@ formats please refer to the Sphinx manual:
 
 ## License
 
-Pybind11 is provided under a BSD-style license that can be found in the LICENSE
+pyvinecopulib is provided under an MIT license that can be found in the LICENSE
 file. By using, distributing, or contributing to this project, you agree to the
 terms and conditions of this license.
 
@@ -78,6 +73,3 @@ import pyvinecopulib
 pyvinecopulib.add(1, 2)
 ```
 
-
-[FAQ]: http://pybind11.rtfd.io/en/latest/faq.html#working-with-ancient-visual-studio-2009-builds-on-windows
-[vs2015_runtime]: https://www.microsoft.com/en-us/download/details.aspx?id=48145
