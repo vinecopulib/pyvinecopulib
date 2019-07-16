@@ -27,6 +27,7 @@ requirements:
 
 test:
   imports:
+    - numpy >=1.14
     - pyvinecopulib
 
 about:
