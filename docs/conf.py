@@ -53,8 +53,8 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'pyvinecopulib'
-copyright = u'2016, Sylvain Corlay'
-author = u'Sylvain Corlay'
+copyright = u'2019, Thomas Nagler and Thibault Vatter'
+author = u'Thomas Nagler and Thibault Vatter'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -229,7 +229,7 @@ latex_elements = {
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
     (master_doc, 'pyvinecopulib.tex', u'pyvinecopulib Documentation',
-     u'Sylvain Corlay', 'manual'),
+     u'Thomas Nagler and Thibault Vatter', 'manual'),
 ]
 
 # The name of an image file (relative to this directory) to place at the top of

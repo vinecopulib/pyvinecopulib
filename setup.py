@@ -59,9 +59,9 @@ class CMakeBuild(build_ext):
 setup(
     name='pyvinecopulib',
     version='0.0.1',
-    author='Dean Moldovan',
-    author_email='dean0x7d@gmail.com',
-    description='A test project using pybind11 and CMake',
+    author='Thomas Nagler and Thibault Vatter',
+    author_email='info@vinecopulib.org',
+    description='A python interface to vinecopulib',
     long_description='',
     ext_modules=[CMakeExtension('pyvinecopulib')],
     cmdclass=dict(build_ext=CMakeBuild),
