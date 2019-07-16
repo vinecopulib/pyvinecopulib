@@ -29,12 +29,11 @@ install:
       $env:PATH = "C:\Miniconda$env:CONDA\;C:\Miniconda$env:CONDA\Scripts\;$env:PATH"
       conda config --set always_yes yes --set changeps1 no
       conda config --add channels conda-forge
-      conda update -n base -c defaults conda
+      conda update -n base conda
       conda install -q conda-build
     }
 build_script:
 - ps: |
-    echo "file://$pwd/build"
     curl https://bitbucket.org/eigen/eigen/get/3.3.7.zip -o "C:\eigen.zip"
     7z x "C:\eigen.zip" -o"C:\Libraries\"
     $env:EIGEN3_ROOT="C:\Libraries\eigen-eigen-323c052e1731"
@@ -46,7 +45,7 @@ build_script:
       python -m pip install --verbose pyvinecopulib-0.0.1.tar.gz
       cd ..
     } else {
-      conda build -q conda.recipe
+      conda build conda.recipe
       conda install --use-local pyvinecopulib
     }
 test_script:
