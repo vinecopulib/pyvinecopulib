@@ -21,7 +21,7 @@ Just clone this repository and pip install. Note the `--recursive` option which 
 needed for the pybind11 submodule:
 
 ```bash
-git clone --recursive https://github.com/pybind/pyvinecopulib.git
+git clone --recursive https://github.com/vinecopulib/pyvinecopulib.git
 pip install ./pyvinecopulib
 ```
 
@@ -68,7 +68,8 @@ terms and conditions of this license.
 ## Test call
 
 ```python
-import pyvinecopulib
-pyvinecopulib.add(1, 2)
+import pyvinecopulib as pv
+import numby as np
+pv.simulate_uniform(10, 2, False, [1, 2])
 ```
 
