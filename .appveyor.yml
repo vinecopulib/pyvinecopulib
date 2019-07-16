@@ -34,7 +34,7 @@ install:
     }
 build_script:
 - ps: |
-    echo "file:/$pwd/build"
+    echo "file://$pwd/build"
     curl https://bitbucket.org/eigen/eigen/get/3.3.7.zip -o "C:\eigen.zip"
     7z x "C:\eigen.zip" -o"C:\Libraries\"
     $env:EIGEN3_ROOT="C:\Libraries\eigen-eigen-323c052e1731"
@@ -47,7 +47,7 @@ build_script:
       cd ..
     } else {
       conda build -q conda.recipe --output-folder="build"
-      conda config --add channels "file:/$pwd/build"
+      conda config --add channels "file://$pwd/build"
       conda create -q -n test-environment pyvinecopulib
       source activate test-environment
       conda install --use-local pyvinecopulib
