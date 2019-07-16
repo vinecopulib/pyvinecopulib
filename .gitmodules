@@ -4,3 +4,7 @@
 [submodule "lib/pybind11"]
 	path = lib/pybind11
 	url = https://github.com/pybind/pybind11
+[submodule "lib/vinecopulib"]
+	path = lib/vinecopulib
+  url = https://github.com/vinecopulib/vinecopulib.git
+  branch = dev

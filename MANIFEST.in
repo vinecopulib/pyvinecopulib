@@ -4,3 +4,4 @@ include requirements.txt
 recursive-include src *
 recursive-include lib/pybind11/include *.h
 recursive-include lib/wdm/include *.hpp
+recursive-include lib/vinecopulib/include *.hpp *.ipp
