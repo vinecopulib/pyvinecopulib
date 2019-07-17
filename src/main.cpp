@@ -98,6 +98,11 @@ PYBIND11_MODULE(pyvinecopulib, pv) {
             "creates a specific bivariate copula model.",
             py::arg("family") = BicopFamily::indep, py::arg("rotation") = 0,
             py::arg("parameters") = Eigen::MatrixXd());
+  bicop.def(py::init<const Eigen::Matrix<double, Eigen::Dynamic, 2> &,
+                     const FitControlsBicop &>(),
+            "create a copula model from the data, equivalent to cop = Bicop(); "
+            "cop.select(data, controls).",
+            py::arg("data"), py::arg("controls") = FitControlsBicop());
   bicop.def_property_readonly("rotation", &Bicop::get_rotation);
   bicop.def_property_readonly("parameters", &Bicop::get_parameters);
   bicop.def_property_readonly("family", &Bicop::get_family);
