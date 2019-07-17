@@ -71,12 +71,13 @@ test_script:
 - ps: |
     python -m pytest tests -r a
 - ps: |
-    python -m pip install nbconvert jupyter_client ipykernel
-    python -m ipykernel install --user
-    foreach ($i in Get-ChildItem "examples" -Filter *.ipynb) {
-      jupyter nbconvert --to markdown --execute --stdout $i.fullame > "$($i.fullname).md.travis"
-      diff "$($i.fullname).md.repo" "$($i.fullname).md.travis"
-    }
+# TODO
+#    python -m pip install nbconvert jupyter_client ipykernel
+#    python -m ipykernel install --user
+#    foreach ($i in Get-ChildItem "examples" -Filter *.ipynb) {
+#      jupyter nbconvert --to markdown --execute --stdout $i.fullame > "$($i.fullname).md.travis"
+#      diff "$($i.fullname).md.repo" "$($i.fullname).md.travis"
+#    }
 
 # on_finish:
 #  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
