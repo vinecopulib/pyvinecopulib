@@ -50,12 +50,15 @@ build_script:
       conda build -q conda.recipe --python=$PYTHON_VERSION --output-folder=build
       conda config --add channels "file:///$string/build"
       conda create -q -n test-environment python=$PYTHON_VERSION pyvinecopulib pytest
-      conda activate test-environment
+      # for some reasone the env is not activated
+      activate test-environment
       conda info --envs
     }
 test_script:
 - ps: |
-    python -m pytest tests -r a
+    if ($env:PYTHON) {
+      python -m pytest tests -r a
+    }
 
 # on_finish:
 #  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
