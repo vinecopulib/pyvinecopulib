@@ -75,9 +75,8 @@ script:
       pip install nbconvert jupyter_client ipykernel
       python -m ipykernel install --user
       for i in examples/*.ipynb; do 
-        jupyter nbconvert --execute $i; 
-        sed -n "/<body>/,/<\/body>/p" $i > $i.body.travis;
-        diff $i.body.repo $i.body.travis
+        jupyter nbconvert --to markdown --execute --stdout $i > $i.md.travis; 
+        diff $i.md.repo $i.md.travis
       done;
     fi
 
