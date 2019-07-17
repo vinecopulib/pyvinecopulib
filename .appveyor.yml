@@ -28,10 +28,15 @@ install:
       if ($env:CONDA -eq "27") { $env:CONDA = "" }
       if ($env:PLATFORM -eq "x64") { $env:CONDA = "$env:CONDA-x64" }
       $env:PATH = "C:\Miniconda$env:CONDA\;C:\Miniconda$env:CONDA\Scripts\;$env:PATH"
+
       conda config --set always_yes yes --set changeps1 no
       conda config --add channels conda-forge
       conda update -q conda
-      conda install -q conda-build pytest
+
+      # nee pscondaenvs to activate envs in powershell 
+      # https://stackoverflow.com/a/52552397
+      conda install -n root -c pscondaenvs pscondaenvs
+      conda install -q conda-build pytest  # for unit tests
     }
 build_script:
 - ps: |
@@ -46,20 +51,18 @@ build_script:
       python -m pip install --verbose pyvinecopulib-0.0.1.tar.gz
       cd ..
     } else {
+      # path to file channel must not have back slashes
       $string = "$pwd"
       $string = $string -replace '[\\]', '/'
       conda build -q conda.recipe --python=$PYTHON_VERSION --output-folder=build
       conda config --add channels "file:///$string/build"
+
       conda create -q -n test-environment python=$PYTHON_VERSION pyvinecopulib pytest
-      # for some reasone the env is not activated
       activate test-environment
-      conda info --envs
     }
 test_script:
 - ps: |
-    if ($env:PYTHON) {
-      python -m pytest tests -r a
-    }
+    python -m pytest tests -r a
 
 # on_finish:
 #  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
