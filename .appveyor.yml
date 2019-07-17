@@ -9,9 +9,9 @@ environment:
     PYTHONWARNINGS: ignore:DEPRECATION
     MSSdk: 1
   matrix:
-  - CONDA: 36
-    PYTHON_VERSION: 3.6
-  - PYTHON: 27
+#  - CONDA: 36
+#    PYTHON_VERSION: 3.6
+#  - PYTHON: 27
   - PYTHON: 36
 clone_script:
 - cmd: git clone -q --recursive --branch=%APPVEYOR_REPO_BRANCH% https://github.com/%APPVEYOR_REPO_NAME%.git %APPVEYOR_BUILD_FOLDER%
