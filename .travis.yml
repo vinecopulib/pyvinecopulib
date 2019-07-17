@@ -67,3 +67,12 @@ install:
     fi
 script:
   - python tests/test.py
+
+  - if [ $TRAVIS_OS_NAME == linux ]; then sudo apt-get install --no-install-recommends -y jupyter-nbconvert; fi
+  - if [ $TRAVIS_OS_NAME == osx ]; then pip install nbconvert; fi
+  - |
+    for i in examples/*.ipynb; do 
+      jupyter nbconvert --execute $i; 
+      sed -n "/<body>/,/<\/body>/p" $i > $i.body.travis;
+      diff $i.body.repo $i.body.travis
+    done;
