@@ -33,7 +33,7 @@ test:
   requires:
     - pytest
   commands:
-    - py.test pyvinecopulb
+    - py.test pyvinecopulib
 
 
 about:
