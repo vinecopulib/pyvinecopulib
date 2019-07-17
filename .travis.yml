@@ -40,7 +40,7 @@ before_install:
           brew install python3;
         fi
       fi
-      python -m pip install --user virtualenv
+      python -m pip install --user virtualenv pytest
       virtualenv -p python${PYTHON:0:1} venv
       source venv/bin/activate
     elif [ -n "$CONDA" ]; then
@@ -61,9 +61,15 @@ install:
     elif [ -n "$CONDA" ]; then
       conda build -q conda.recipe --python=$CONDA --output-folder=build
       conda config --add channels "file://`pwd`/build"
-      conda create -q -n test-environment python=$CONDA pyvinecopulib
+      conda create -q -n test-environment python=$CONDA pyvinecopulib pytest
       source activate test-environment
-      # conda install --use-local pyvinecopulib
+      conda info --envs
     fi
 script:
-  - python tests/test.py
+  - |
+    if [ -n "$PYTHON" ]; then
+      python -m pip install pytest
+    else 
+      conda info --envs
+    fi
+    python -m pytest tests -r a
