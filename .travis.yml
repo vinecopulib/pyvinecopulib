@@ -68,8 +68,7 @@ install:
 script:
   - python tests/test.py
 
-  - if [ $TRAVIS_OS_NAME == linux ]; then sudo apt-get install --no-install-recommends -y jupyter-nbconvert; fi
-  - if [ $TRAVIS_OS_NAME == osx ]; then pip install nbconvert; fi
+  - pip install nbconvert jupyter_client
   - |
     for i in examples/*.ipynb; do 
       jupyter nbconvert --execute $i; 
