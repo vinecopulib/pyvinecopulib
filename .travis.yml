@@ -73,6 +73,7 @@ script:
     echo $PYTHON_VERSION
     if [ "${PYTHON_VERSION:7:1}" = "3" ]; then
       pip install nbconvert jupyter_client 
+      python -m ipykernel install --user
       for i in examples/*.ipynb; do 
         jupyter nbconvert --execute $i; 
         sed -n "/<body>/,/<\/body>/p" $i > $i.body.travis;
