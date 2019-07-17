@@ -73,9 +73,9 @@ script:
     if [ "${TRAVIS_PYTHON_VERSION:0:1}" = "3" ]; then
       pip install nbconvert jupyter_client 
       for i in examples/*.ipynb; do 
-	jupyter nbconvert --execute $i; 
-	sed -n "/<body>/,/<\/body>/p" $i > $i.body.travis;
-	diff $i.body.repo $i.body.travis
+        jupyter nbconvert --execute $i; 
+        sed -n "/<body>/,/<\/body>/p" $i > $i.body.travis;
+        diff $i.body.repo $i.body.travis
       done;
     fi
 
