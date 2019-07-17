@@ -69,5 +69,7 @@ script:
   - |
     if [ -n "$PYTHON" ]; then
       python -m pip install pytest
+    else 
+      conda info --envs
     fi
     python -m pytest tests -r a
