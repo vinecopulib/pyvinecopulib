@@ -72,7 +72,7 @@ script:
     PYTHON_VERSION=$(python --version)
     echo $PYTHON_VERSION
     if [ "${PYTHON_VERSION:7:1}" = "3" ]; then
-      pip install nbconvert jupyter_client 
+      pip install nbconvert jupyter_client ipykernel
       python -m ipykernel install --user
       for i in examples/*.ipynb; do 
         jupyter nbconvert --execute $i; 
