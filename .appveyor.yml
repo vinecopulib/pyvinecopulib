@@ -22,7 +22,7 @@ install:
     if ($env:PYTHON) {
       if ($env:PLATFORM -eq "x64") { $env:PYTHON = "$env:PYTHON-x64" }
       $env:PATH = "C:\Python$env:PYTHON\;C:\Python$env:PYTHON\Scripts\;$env:PATH"
-      python -m pip install --disable-pip-version-check --user --upgrade pip setuptools
+      python -m pip install --disable-pip-version-check --user --upgrade pip setuptools pytest
     } elseif ($env:CONDA) {
       if ($env:CONDA -eq "27") { $env:CONDA = "" }
       if ($env:PLATFORM -eq "x64") { $env:CONDA = "$env:CONDA-x64" }
@@ -51,14 +51,11 @@ build_script:
       conda config --add channels "file:///$string/build"
       conda create -q -n test-environment python=$PYTHON_VERSION pyvinecopulib pytest
       activate test-environment
-      python -m pytest tests -r a
+      conda info --envs
     }
 test_script:
 - ps: |
-    if ($env:PYTHON) {
-      python -m pip install pytest
-      python -m pytest tests -r a
-    }
+    python -m pytest tests -r a
 
 # on_finish:
 #  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
