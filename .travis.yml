@@ -40,7 +40,7 @@ before_install:
           brew install python3;
         fi
       fi
-      python -m pip install --user virtualenv
+      python -m pip install --user virtualenv pytest
       virtualenv -p python${PYTHON:0:1} venv
       source venv/bin/activate
     elif [ -n "$CONDA" ]; then
@@ -66,4 +66,8 @@ install:
       # conda install --use-local pyvinecopulib
     fi
 script:
-  - python tests/test.py
+  - |
+  if ($env:PYTHON) {
+    python -m pip install pytest
+    python -m pytest tests -r a
+  }

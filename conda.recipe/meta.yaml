@@ -30,6 +30,11 @@ test:
   imports:
     - numpy
     - pyvinecopulib
+  requires:
+    - pytest
+  commands:
+    - py.test pyvinecopulb
+
 
 about:
   summary: A python interface to vinecopulib.
