@@ -67,7 +67,7 @@ install:
     fi
 script:
   - |
-    if ($env:PYTHON) {
+    if [ -n "$PYTHON" ]; then
       python -m pip install pytest
       python -m pytest tests -r a
-    }
+    fi
