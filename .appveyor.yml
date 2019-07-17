@@ -23,11 +23,6 @@ clone_script:
       git fetch -q origin +refs/pull/$env:appveyor_pull_request_number/merge
       git checkout -qf FETCH_HEAD
     }
-- ps: |
-    foreach ($i in Get-ChildItem "examples" -Filter *.ipynb) {
-      Write-Output $i
-    }
-    Exit 1
 install:
 - cmd: '"%VS140COMNTOOLS%\..\..\VC\vcvarsall.bat" %PLATFORM%'
 - ps: |
@@ -71,6 +66,13 @@ test_script:
 - ps: |
     if ($env:PYTHON) {
       python -m pytest tests -r a
+    }
+- ps: |
+    python -m pip install nbconvert jupyter_client ipykernel
+    python -m ipykernel install --user
+    foreach ($i in Get-ChildItem "examples" -Filter *.ipynb) {
+      jupyter nbconvert --to markdown --execute --stdout $i.fullame > $i.md.travis
+      diff $i.fullname.md.repo $i.fullname.md.travis
     }
 
 # on_finish:
