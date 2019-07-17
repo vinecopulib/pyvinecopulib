@@ -61,8 +61,9 @@ install:
     elif [ -n "$CONDA" ]; then
       conda build -q conda.recipe --python=$CONDA --output-folder=build
       conda config --add channels "file://`pwd`/build"
-      conda create -q -n test-environment python=$CONDA pyvinecopulib
+      conda create -q -n test-environment python=$CONDA pyvinecopulib pytest
       source activate test-environment
+      python -m pytest tests -r a
       # conda install --use-local pyvinecopulib
     fi
 script:

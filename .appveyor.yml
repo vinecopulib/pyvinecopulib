@@ -51,7 +51,7 @@ build_script:
       conda config --add channels "file:///$string/build"
       conda create -q -n test-environment python=$PYTHON_VERSION pyvinecopulib pytest
       activate test-environment
-      pytest tests -r a
+      python -m pytest tests -r a
     }
 test_script:
 - ps: |
