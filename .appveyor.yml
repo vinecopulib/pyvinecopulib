@@ -14,8 +14,15 @@ environment:
 #  - PYTHON: 27
   - PYTHON: 36
 clone_script:
-- cmd: git clone -q --recursive --branch=%APPVEYOR_REPO_BRANCH% https://github.com/%APPVEYOR_REPO_NAME%.git %APPVEYOR_BUILD_FOLDER%
-- cmd: git checkout -qf %APPVEYOR_REPO_COMMIT%
+- ps:
+  if(-not $env:appveyor_pull_request_number) {
+    git clone -q --recursive --branch=$env:appveyor_repo_branch https://github.com/$env:appveyor_repo_name.git $env:appveyor_build_folder
+    git checkout -qf $env:appveyor_repo_commit
+  } else {
+    git clone -q --recursive https://github.com/$env:appveyor_repo_name.git $env:appveyor_build_folder
+    git fetch -q origin +refs/pull/$env:appveyor_pull_request_number/merge:
+    git checkout -qf FETCH_HEAD
+  }
 - ps: |
     foreach ($i in Get-ChildItem "examples" -Filter *.ipynb) {
       Write-Output $i
