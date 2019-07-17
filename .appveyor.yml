@@ -30,7 +30,7 @@ install:
       conda config --set always_yes yes --set changeps1 no
       conda config --add channels conda-forge
       conda update -q conda
-      conda install -q conda-build
+      conda install -q conda-build pytest
     }
 build_script:
 - ps: |
@@ -49,14 +49,16 @@ build_script:
       $string = $string -replace '[\\]', '/'
       conda build -q conda.recipe --python=$PYTHON_VERSION --output-folder=build
       conda config --add channels "file:///$string/build"
-      conda create -q -n test-environment python=$PYTHON_VERSION pyvinecopulib
+      conda create -q -n test-environment python=$PYTHON_VERSION pyvinecopulib pytest
       conda activate test-environment
-      # conda install pyvinecopulib
+      pytest tests -r a
     }
 test_script:
 - ps: |
-    python -m pip install pytest
-    python -m pytest tests -r a
+    if ($env:PYTHON) {
+      python -m pip install pytest
+      python -m pytest tests -r a
+    }
 
 # on_finish:
 #  - ps: $blockRdp = $true; iex ((new-object net.webclient).DownloadString('https://raw.githubusercontent.com/appveyor/ci/master/scripts/enable-rdp.ps1'))
