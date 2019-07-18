@@ -103,6 +103,10 @@ PYBIND11_MODULE(pyvinecopulib, pv) {
            "create a copula model from the data, equivalent to cop = Bicop(); "
            "cop.select(data, controls).",
            py::arg("data"), py::arg("controls") = FitControlsBicop())
+      .def(py::init<const char *>(), "creates from a JSON file.",
+           py::arg("filename"))
+      .def("to_json", &Bicop::to_json,
+           "writes the copula object into a JSON file.", py::arg("filename"))
       .def_property("rotation", &Bicop::get_rotation, &Bicop::set_rotation,
                     "The copula rotation.")
       .def_property("parameters", &Bicop::get_parameters,
@@ -172,7 +176,15 @@ PYBIND11_MODULE(pyvinecopulib, pv) {
       .def("hinv2", &Bicop::hinv2,
            "evaluates the inverse of the second h-function (hfunc2) w.r.t. the "
            "first argument.",
-           py::arg("u"));
+           py::arg("u"))
+      .def("simulate", &Bicop::simulate, "simulates from the bivariate model.",
+           py::arg("n"), py::arg("qrng") = false,
+           py::arg("seeds") = std::vector<int>())
+      .def("fit", &Bicop::fit,
+           "fits a bivariate copula (with fixed family) to data.",
+           py::arg("data"), py::arg("controls") = FitControlsBicop())
+      .def("select", &Bicop::select, "selects the best fitting model.",
+           py::arg("data"), py::arg("controls") = FitControlsBicop());
 
   pv.def("simulate_uniform", &tools_stats::simulate_uniform,
          R"pbdoc(
