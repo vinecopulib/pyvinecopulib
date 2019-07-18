@@ -135,26 +135,39 @@ PYBIND11_MODULE(pyvinecopulib, pv)
   py::class_<RVineStructure>(pv, "RVineStructure")
     .def(py::init<const Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
                   bool>(),
-         "creates array representation of regular vine structures.",
-          py::arg("mat"),
-          py::arg("check") = true)
-    .def_property_readonly("dim", &RVineStructure::get_dim)
-    .def_property_readonly("trunc_lvl", &RVineStructure::get_trunc_lvl)
-    .def_property_readonly("order", 
-      (std::vector<size_t> (RVineStructure::*)() const) &RVineStructure::get_order)
-    .def("truncate", &RVineStructure::truncate, py::arg("trunc_lvl"))
+         "creates an array representation of regular vine structures.",
+         py::arg("mat"),
+         py::arg("check") = true)
+    .def_property_readonly("dim", &RVineStructure::get_dim, "The dimension.")
+    .def_property_readonly(
+      "trunc_lvl", &RVineStructure::get_trunc_lvl, "The truncation level.")
+    .def_property_readonly("order",
+                           (std::vector<size_t>(RVineStructure::*)() const) &
+                             RVineStructure::get_order,
+                           "The variable order.")
+    .def("struct_array", 
+         &RVineStructure::struct_array,
+         py::arg("tree"), py::arg("edge"))
+    .def("min_array", 
+         &RVineStructure::min_array,
+         py::arg("tree"), py::arg("edge"))
+    .def("truncate",
+         &RVineStructure::truncate,
+         "The truncation level.",
+         py::arg("trunc_lvl"))
     .def_static("simulate",
                 &RVineStructure::simulate,
+                "simulates a random R-vine array.",
                 py::arg("d"),
                 py::arg("natural order") = false,
                 py::arg("seeds") = std::vector<size_t>())
-    .def("__repr__", [](const RVineStructure &rvs) {
-            return "<pyvinecopulib.RVineStructure>\n" + rvs.str();
-        });
+    .def("__repr__", [](const RVineStructure& rvs) {
+      return "<pyvinecopulib.RVineStructure>\n" + rvs.str();
+    });
 
 #ifdef VERSION_INFO
-      pv.attr("__version__") = VERSION_INFO;
+  pv.attr("__version__") = VERSION_INFO;
 #else
-      pv.attr("__version__") = "dev";
+  pv.attr("__version__") = "dev";
 #endif
 }
