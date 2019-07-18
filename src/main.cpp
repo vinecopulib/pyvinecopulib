@@ -93,22 +93,87 @@ PYBIND11_MODULE(pyvinecopulib, pv) {
       .def_property("num_threads", &FitControlsBicop::get_num_threads,
                     &FitControlsBicop::set_num_threads);
 
-  py::class_<Bicop> bicop(pv, "Bicop");
-  bicop.def(py::init<const BicopFamily, const int, const Eigen::MatrixXd &>(),
-            "creates a specific bivariate copula model.",
-            py::arg("family") = BicopFamily::indep, py::arg("rotation") = 0,
-            py::arg("parameters") = Eigen::MatrixXd());
-  bicop.def(py::init<const Eigen::Matrix<double, Eigen::Dynamic, 2> &,
-                     const FitControlsBicop &>(),
-            "create a copula model from the data, equivalent to cop = Bicop(); "
-            "cop.select(data, controls).",
-            py::arg("data"), py::arg("controls") = FitControlsBicop());
-  bicop.def_property_readonly("rotation", &Bicop::get_rotation);
-  bicop.def_property_readonly("parameters", &Bicop::get_parameters);
-  bicop.def_property_readonly("family", &Bicop::get_family);
-  bicop.def("__repr__", [](const Bicop &cop) {
-    return "<Bicop, family = " + cop.str() + ">";
-  });
+  py::class_<Bicop>(pv, "Bicop")
+      .def(py::init<const BicopFamily, const int, const Eigen::MatrixXd &>(),
+           "creates a specific bivariate copula model.",
+           py::arg("family") = BicopFamily::indep, py::arg("rotation") = 0,
+           py::arg("parameters") = Eigen::MatrixXd())
+      .def(py::init<const Eigen::Matrix<double, Eigen::Dynamic, 2> &,
+                    const FitControlsBicop &>(),
+           "create a copula model from the data, equivalent to cop = Bicop(); "
+           "cop.select(data, controls).",
+           py::arg("data"), py::arg("controls") = FitControlsBicop())
+      .def_property("rotation", &Bicop::get_rotation, &Bicop::set_rotation,
+                    "The copula rotation.")
+      .def_property("parameters", &Bicop::get_parameters,
+                    &Bicop::set_parameters, "The copula parameter(s).")
+      .def_property_readonly("family", &Bicop::get_family, "The copula family.")
+      .def_property_readonly("tau", &Bicop::get_tau, "The Kendall's tau.")
+      .def_property_readonly(
+          "npars", &Bicop::get_npars,
+          "The number of parameters. For nonparametric families, there is a "
+          "conceptually similar definition in the sense that it can be used in "
+          "the calculation of fit statistics.")
+      .def("loglik", &Bicop::loglik,
+           "computes the log-likelihood (for fitted objects, passing an "
+           "empty 'u' returns the fitted criterion).",
+           py::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>())
+      .def("nobs", &Bicop::get_nobs,
+           "returns the number of observations (for fitted objects only).")
+      .def("aic", &Bicop::aic,
+           "computes the Akaike Information Criterion (for fitted objects, "
+           "passing an empty 'u' returns the fitted criterion).",
+           py::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>())
+      .def("bic", &Bicop::bic,
+           "computes the Bayesian Information Criterion (for fitted objects, "
+           "passing an empty 'u' returns the fitted criterion).",
+           py::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>())
+      .def("mbic", &Bicop::mbic,
+           "computes the Modified Bayesian Information Criterion (for "
+           "fitted objects, passing an "
+           "empty 'u' returns the fitted criterion).",
+           py::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
+           py::arg("psi0") = 0.9)
+      .def("__repr__",
+           [](const Bicop &cop) {
+             return "<Bicop, family = " + cop.str() + ">";
+           })
+      .def("str", &Bicop::str,
+           "summarizes the model into a string (can be used for printing).")
+      .def("parameters_to_tau", &Bicop::parameters_to_tau,
+           "returns the Kendall's tau corresponding to the parameters passed "
+           "as arguments.",
+           py::arg("parameters"))
+      .def("tau_to_parameters", &Bicop::tau_to_parameters,
+           "returns the parameters corresponding to the Kendall's tau passed "
+           "as arguments.",
+           py::arg("tau"))
+      .def("flip", &Bicop::flip,
+           "adjust's the copula model to a change in the variable order.")
+      .def("parameters_lower_bounds", &Bicop::get_parameters_lower_bounds,
+           "returns the lower bounds for the copula's parameters.")
+      .def("parameters_upper_bounds", &Bicop::get_parameters_upper_bounds,
+           "returns the upper bounds for the copula's parameters.")
+      .def("pdf", &Bicop::pdf, "evaluates the copula density.", py::arg("u"))
+      .def("cdf", &Bicop::cdf, "evaluates the copula distribution.",
+           py::arg("u"))
+      .def("hfunc1", &Bicop::hfunc1,
+           "evaluates the first h-function, that is the partial derivative of "
+           "the copula distribution w.r.t. the first argument.",
+           py::arg("u"))
+      .def("hfunc2", &Bicop::hfunc2,
+           "evaluates the second h-function, that is the partial derivative of "
+           "the copula distribution w.r.t. the second argument.",
+           py::arg("u"))
+      .def("hinv1", &Bicop::hinv1,
+           "evaluates the inverse of the first h-function (hfunc1) w.r.t. the "
+           "second argument.",
+           py::arg("u"))
+      .def("hinv2", &Bicop::hinv2,
+           "evaluates the inverse of the second h-function (hfunc2) w.r.t. the "
+           "first argument.",
+           py::arg("u"));
+
   pv.def("simulate_uniform", &tools_stats::simulate_uniform,
          R"pbdoc(
         Simulate uniform random numbers.
