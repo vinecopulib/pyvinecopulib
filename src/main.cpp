@@ -145,9 +145,10 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          "computes the log-likelihood (for fitted objects, passing an "
          "empty 'u' returns the fitted criterion).",
          py::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>())
-    .def_property("nobs",
-                  &Bicop::get_nobs,
-                  "The number of observations (for fitted objects only).")
+    .def_property_readonly(
+      "nobs",
+      &Bicop::get_nobs,
+      "The number of observations (for fitted objects only).")
     .def("aic",
          &Bicop::aic,
          "computes the Akaike Information Criterion (for fitted objects, "
@@ -366,17 +367,17 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          "creates a vine copula with structure specified by an RVineStructure "
          "object; all pair-copulas are set to independence.",
          py::arg("structure"))
-    .def(py::init<const RVineStructure&>(),
+    .def(py::init<const Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
+                  const bool>(),
          "creates a vine copula with structure specified by an R-vine matrix; "
          "all pair-copulas are set to independence.",
-         py::arg("matrix"))
-    .def(py::init<const std::vector<std::vector<Bicop>>&,
-                  const RVineStructure&,
-                  const bool>(),
-         "creates an arbitrary vine copula model.",
-         py::arg("pair_copulas"),
-         py::arg("structure"),
+         py::arg("matrix"),
          py::arg("check") = true)
+    .def(
+      py::init<const std::vector<std::vector<Bicop>>&, const RVineStructure&>(),
+      "creates an arbitrary vine copula model.",
+      py::arg("pair_copulas"),
+      py::arg("structure"))
     .def(py::init<const std::vector<std::vector<Bicop>>&,
                   Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
                   const bool>(),
@@ -393,7 +394,7 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          py::arg("data"),
          py::arg("controls") = FitControlsVinecop())
     .def(py::init<const Eigen::MatrixXd&,
-                  const RvineStructure&,
+                  const RVineStructure&,
                   const FitControlsVinecop&>(),
          "constructs a vine copula model from data by creating a model and "
          "calling select_family().",
@@ -536,12 +537,6 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          "fitted objects, passing an empty 'u' returns the fitted criterion).",
          py::arg("u") = Eigen::MatrixXd(),
          py::arg("psi0") = 0.9,
-         py::arg("num_threads") = 1)
-    .def("",
-         &Vinecop::,
-         "computes the  (for fitted objects, passing an "
-         "empty 'u' returns the fitted criterion).",
-         py::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic>(),
          py::arg("num_threads") = 1);
 
 #ifdef VERSION_INFO
