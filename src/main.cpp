@@ -8,8 +8,12 @@ using namespace vinecopulib;
 
 PYBIND11_MODULE(pyvinecopulib, pv)
 {
+
+  /*   py::options options; */
+  /* options.disable_function_signatures(); */
+
   pv.doc() = R"pbdoc(
-        Pyvinecopulib library
+        pyvinecopulib library
         -----------------------
 
         .. currentmodule:: pyvinecopulib
@@ -17,7 +21,11 @@ PYBIND11_MODULE(pyvinecopulib, pv)
         .. autosummary::
            :toctree: _generate
 
-           simulate_uniform
+           Bicop
+           BicopFamily
+           FitControlsBicop
+           Vinecop
+           FitControlsVinecop
     )pbdoc";
 
   py::module pv_bicop_families =
