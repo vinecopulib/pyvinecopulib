@@ -8,8 +8,12 @@ using namespace vinecopulib;
 
 PYBIND11_MODULE(pyvinecopulib, pv)
 {
+
+  /*   py::options options; */
+  /* options.disable_function_signatures(); */
+
   pv.doc() = R"pbdoc(
-        Pyvinecopulib library
+        pyvinecopulib library
         -----------------------
 
         .. currentmodule:: pyvinecopulib
@@ -17,7 +21,11 @@ PYBIND11_MODULE(pyvinecopulib, pv)
         .. autosummary::
            :toctree: _generate
 
-           simulate_uniform
+           Bicop
+           BicopFamily
+           FitControlsBicop
+           Vinecop
+           FitControlsVinecop
     )pbdoc";
 
   py::module pv_bicop_families =
@@ -145,9 +153,10 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          "computes the log-likelihood (for fitted objects, passing an "
          "empty 'u' returns the fitted criterion).",
          py::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>())
-    .def("nobs",
-         &Bicop::get_nobs,
-         "returns the number of observations (for fitted objects only).")
+    .def_property_readonly(
+      "nobs",
+      &Bicop::get_nobs,
+      "The number of observations (for fitted objects only).")
     .def("aic",
          &Bicop::aic,
          "computes the Akaike Information Criterion (for fitted objects, "
@@ -166,7 +175,7 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          py::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
          py::arg("psi0") = 0.9)
     .def("__repr__",
-         [](const Bicop& cop) { return "<Bicop, family = " + cop.str() + ">"; })
+         [](const Bicop& cop) { return "<pyvinecopulib.Bicop>\n" + cop.str(); })
     .def("str",
          &Bicop::str,
          "summarizes the model into a string (can be used for printing).")
@@ -281,7 +290,7 @@ PYBIND11_MODULE(pyvinecopulib, pv)
       return "<pyvinecopulib.RVineStructure>\n" + rvs.str();
     });
 
-    py::class_<FitControlsVinecop>(pv, "FitControls")
+  py::class_<FitControlsVinecop>(pv, "FitControls")
     .def(py::init<std::vector<BicopFamily>,
                   std::string,
                   std::string,
@@ -340,9 +349,8 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     .def_property("weights",
                   &FitControlsVinecop::get_weights,
                   &FitControlsVinecop::set_weights)
-    .def_property("psi0", 
-                  &FitControlsVinecop::get_psi0, 
-                  &FitControlsVinecop::set_psi0)
+    .def_property(
+      "psi0", &FitControlsVinecop::get_psi0, &FitControlsVinecop::set_psi0)
     .def_property("preselect_families",
                   &FitControlsVinecop::get_preselect_families,
                   &FitControlsVinecop::set_preselect_families)
@@ -359,9 +367,189 @@ PYBIND11_MODULE(pyvinecopulib, pv)
                   &FitControlsVinecop::get_num_threads,
                   &FitControlsVinecop::set_num_threads);
 
+  py::class_<Vinecop>(pv, "Vinecop")
+    .def(py::init<const size_t>(),
+         "creates a D-vine with independence copulas.",
+         py::arg("d"))
+    .def(py::init<const RVineStructure&>(),
+         "creates a vine copula with structure specified by an RVineStructure "
+         "object; all pair-copulas are set to independence.",
+         py::arg("structure"))
+    .def(py::init<const Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
+                  const bool>(),
+         "creates a vine copula with structure specified by an R-vine matrix; "
+         "all pair-copulas are set to independence.",
+         py::arg("matrix"),
+         py::arg("check") = true)
+    .def(
+      py::init<const std::vector<std::vector<Bicop>>&, const RVineStructure&>(),
+      "creates an arbitrary vine copula model.",
+      py::arg("pair_copulas"),
+      py::arg("structure"))
+    .def(py::init<const std::vector<std::vector<Bicop>>&,
+                  Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
+                  const bool>(),
+         "creates an arbitrary vine copula model.",
+         py::arg("pair_copulas"),
+         py::arg("matrix"),
+         py::arg("check") = true)
+    .def(py::init<const std::string>(),
+         "creates a vine copula from a JSON file.",
+         py::arg("filename"))
+    .def(py::init<const Eigen::MatrixXd&, const FitControlsVinecop&>(),
+         "constructs a vine copula model from data by creating a model and "
+         "calling select_all().",
+         py::arg("data"),
+         py::arg("controls") = FitControlsVinecop())
+    .def(py::init<const Eigen::MatrixXd&,
+                  const RVineStructure&,
+                  const FitControlsVinecop&>(),
+         "constructs a vine copula model from data by creating a model and "
+         "calling select_family().",
+         py::arg("data"),
+         py::arg("structure"),
+         py::arg("controls") = FitControlsVinecop())
+    .def(py::init<const Eigen::MatrixXd&,
+                  const Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
+                  const FitControlsVinecop&,
+                  const bool>(),
+         "constructs a vine copula model from data by creating a model and "
+         "calling select_family().",
+         py::arg("data"),
+         py::arg("matrix"),
+         py::arg("controls") = FitControlsVinecop(),
+         py::arg("check") = true)
+    .def("to_json",
+         &Vinecop::to_json,
+         "write a vine copula to a JSON file.",
+         py::arg("filename"))
+    .def_property_readonly(
+      "trunc_lvl", &Vinecop::get_trunc_lvl, "The truncation level.")
+    .def_property_readonly("dim", &Vinecop::get_dim, "The dimension.")
+    /* .def("get_pair_copula", */
+    //      &Vinecop::get_pair_copula,
+    //      "extracts a pair-copula.",
+    //      py::arg("tree"),
+    //      py::arg("edge"))
+    // .def("get_family",
+    //      &Vinecop::get_family,
+    //      "extracts the family of a pair-copula.",
+    //      py::arg("tree"),
+    //      py::arg("edge"))
+    // .def("get_rotation",
+    //      &Vinecop::get_rotation,
+    //      "extracts the rotation of a pair-copula.",
+    //      py::arg("tree"),
+    //      py::arg("edge"))
+    // .def("get_parameters",
+    //      &Vinecop::get_parameters,
+    //      "extracts the parameters of a pair-copula.",
+    //      py::arg("tree"),
+    //      py::arg("edge"))
+    // .def("get_tau",
+    //      &Vinecop::get_tau,
+    //      "extracts the Kendall's tau of a pair-copula.",
+    //      py::arg("tree"),
+    /* py::arg("edge")) */
+    .def_property_readonly("get_all_pair_copulas",
+                           &Vinecop::get_all_pair_copulas,
+                           "extracts all pair-copulas.")
+    .def_property_readonly("get_all_families",
+                           &Vinecop::get_all_families,
+                           "extracts the families of all pair-copulas.")
+    .def_property_readonly("get_all_rotations",
+                           &Vinecop::get_all_rotations,
+                           "extracts the rotations of all pair-copulas.")
+    .def_property_readonly("get_all_parameters",
+                           &Vinecop::get_all_parameters,
+                           "extracts the parameters of all pair-copulas.")
+    .def_property_readonly("get_all_taus",
+                           &Vinecop::get_all_taus,
+                           "extracts the Kendall's taus of all pair-copulas.")
+    .def_property_readonly(
+      "order", &Vinecop::get_order, "The R-vine structure's order.")
+    .def_property_readonly(
+      "matrix", &Vinecop::get_matrix, "The R-vine structure's matrix.")
+    .def_property_readonly(
+      "structure", &Vinecop::get_rvine_structure, "The R-vine structure.")
+    .def_property_readonly(
+      "npars", &Vinecop::get_npars, "The total number of parameters.")
+    .def_property_readonly(
+      "nobs",
+      &Vinecop::get_nobs,
+      "The number of observations (for fitted objects only).")
+    .def_property_readonly("threshold",
+                           &Vinecop::get_threshold,
+                           "The threshold (for thresholded copulas only).")
+    .def("select_all",
+         &Vinecop::select_all,
+         "automatically fits and selects a vine copula model.",
+         py::arg("data"),
+         py::arg("controls") = FitControlsVinecop())
+    .def(
+      "select_families",
+      &Vinecop::select_families,
+      "automatically selects all pair-copula families and fits all parameters.",
+      py::arg("data"),
+      py::arg("controls") = FitControlsVinecop())
+    .def("pdf",
+         &Vinecop::pdf,
+         "returns the probability density function.",
+         py::arg("u"),
+         py::arg("num_threads") = 1)
+    .def("cdf",
+         &Vinecop::cdf,
+         "returns the cumulative distribution.",
+         py::arg("u"),
+         py::arg("N") = 10000,
+         py::arg("num_threads") = 1,
+         py::arg("seeds") = std::vector<int>())
+    .def("simulate",
+         &Vinecop::simulate,
+         "sample (quasi-)random numbers from the model.",
+         py::arg("n"),
+         py::arg("qrn") = false,
+         py::arg("num_threads") = 1,
+         py::arg("seed") = std::vector<int>())
+    .def("rosenblatt",
+         &Vinecop::rosenblatt,
+         "computes the Rosenblatt transform.",
+         py::arg("u"),
+         py::arg("num_threads") = 1)
+    .def("inverse_rosenblatt",
+         &Vinecop::inverse_rosenblatt,
+         "computes the inverse Rosenblatt transform.",
+         py::arg("u"),
+         py::arg("num_threads") = 1)
+    .def("loglik",
+         &Vinecop::loglik,
+         "computes the log-likelihood (for fitted objects, passing an "
+         "empty 'u' returns the fitted criterion).",
+         py::arg("u") = Eigen::MatrixXd(),
+         py::arg("num_threads") = 1)
+    .def("aic",
+         &Vinecop::aic,
+         "computes the Akaike Information Criterion (for fitted objects, "
+         "passing an empty 'u' returns the fitted criterion).",
+         py::arg("u") = Eigen::MatrixXd(),
+         py::arg("num_threads") = 1)
+    .def("bic",
+         &Vinecop::bic,
+         "computes the Bayesian Information Criterion (for fitted objects, "
+         "passing an empty 'u' returns the fitted criterion).",
+         py::arg("u") = Eigen::MatrixXd(),
+         py::arg("num_threads") = 1)
+    .def("mbicv",
+         &Vinecop::mbicv,
+         "computes the modified Bayesiand Information Criterion for Vines (for "
+         "fitted objects, passing an empty 'u' returns the fitted criterion).",
+         py::arg("u") = Eigen::MatrixXd(),
+         py::arg("psi0") = 0.9,
+         py::arg("num_threads") = 1);
+
 #ifdef VERSION_INFO
-    pv.attr("__version__") = VERSION_INFO;
+  pv.attr("__version__") = VERSION_INFO;
 #else
-    pv.attr("__version__") = "dev";
+  pv.attr("__version__") = "dev";
 #endif
 }
