@@ -103,7 +103,7 @@ PYBIND11_MODULE(pyvinecopulib, pv) {
            "create a copula model from the data, equivalent to cop = Bicop(); "
            "cop.select(data, controls).",
            py::arg("data"), py::arg("controls") = FitControlsBicop())
-      .def(py::init<const char *>(), "creates from a JSON file.",
+      .def(py::init<const std::string>(), "creates from a JSON file.",
            py::arg("filename"))
       .def("to_json", &Bicop::to_json,
            "writes the copula object into a JSON file.", py::arg("filename"))
