@@ -273,12 +273,13 @@ PYBIND11_MODULE(pyvinecopulib, pv)
                            "The variable order.")
     .def("struct_array",
          &RVineStructure::struct_array,
+         "accesses elements of the structure array.",
          py::arg("tree"),
          py::arg("edge"),
          py::arg("natural_order") = false)
     .def("truncate",
          &RVineStructure::truncate,
-         "The truncation level.",
+         "truncates the R-vine structure.",
          py::arg("trunc_lvl"))
     .def_static("simulate",
                 &RVineStructure::simulate,
@@ -556,7 +557,11 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          })
     .def("str",
          &Vinecop::str,
-         "summarizes the model into a string (can be used for printing).");
+         "summarizes the model into a string (can be used for printing).")
+    .def("truncate",
+         &Vinecop::truncate,
+         "truncates the vine copula model.",
+         py::arg("trunc_lvl"));
 
 #ifdef VERSION_INFO
   pv.attr("__version__") = VERSION_INFO;
