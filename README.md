@@ -5,20 +5,22 @@
 
 ## Prerequisites
 
+* CMake >= 3.2
+* Eigen3
+* Boost >= 1.56 (1.58 on windows)
+
 **On Unix (Linux, OS X)**
 
 * A compiler with C++11 support
-* CMake >= 2.8.12
 
 **On Windows**
 
 * Visual Studio 2015 (required for all Python versions, see notes below)
-* CMake >= 3.1
 
 ## Installation
 
-Just clone this repository and pip install. Note the `--recursive` option which is
-needed for the pybind11 submodule:
+Just clone this repository and pip install.
+Note the `--recursive` option which is needed for the pybind11, vinecopulib and wdm submodules:
 
 ```bash
 git clone --recursive https://github.com/vinecopulib/pyvinecopulib.git
@@ -65,11 +67,6 @@ file. By using, distributing, or contributing to this project, you agree to the
 terms and conditions of this license.
 
 
-## Test call
+## Examples 
 
-```python
-import pyvinecopulib as pv
-import numby as np
-pv.simulate_uniform(10, 2, False, [1, 2])
-```
-
+Jupyter notebooks with examples can be found in the examples folder.
