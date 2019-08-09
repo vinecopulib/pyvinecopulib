@@ -237,15 +237,6 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          py::arg("data"),
          py::arg("controls") = FitControlsBicop());
 
-  pv.def("simulate_uniform",
-         &tools_stats::simulate_uniform,
-         R"pbdoc(
-        Simulate uniform random numbers.
-
-        Simulate a matrix of random numbers, with an option to get quasi random
-        numbers or a seed.
-    )pbdoc");
-
   py::class_<RVineStructure>(pv, "RVineStructure")
     .def(py::init<const Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
                   bool>(),
@@ -557,6 +548,21 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     .def("str",
          &Vinecop::str,
          "summarizes the model into a string (can be used for printing).");
+
+  pv.def("simulate_uniform",
+         &tools_stats::simulate_uniform,
+         "simulate uniform random numbers.",
+         py::arg("n"),
+         py::arg("d"),
+         py::arg("qrng") = false,
+         py::arg("seeds") = std::vector<int>());
+
+  pv.def(
+    "to_pseudo_obs",
+    &tools_stats::to_pseudo_obs,
+    "applies the empirical probability integral transform to a data matrix.",
+    py::arg("x"),
+    py::arg("ties_method") = "average");
 
 #ifdef VERSION_INFO
   pv.attr("__version__") = VERSION_INFO;
