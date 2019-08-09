@@ -1,0 +1,134 @@
+
+
+```python
+# Import the library
+import pyvinecopulib as pv
+```
+
+
+```python
+# Create an independence bivariate copula
+pv.Bicop() 
+```
+
+
+
+
+    <pyvinecopulib.Bicop>
+    Independence
+
+
+
+
+```python
+# Create a Gaussian copula
+# See help(pv.BicopFamily) for the available families
+pv.Bicop(family = pv.BicopFamily.gaussian)
+```
+
+
+
+
+    <pyvinecopulib.Bicop>
+    Gaussian, parameters = 0
+
+
+
+
+```python
+# Create a 90 degrees rotated Clayon copula with parameter = 3
+pv.Bicop(family = pv.BicopFamily.clayton, rotation = 90, parameters = [3])
+```
+
+
+
+
+    <pyvinecopulib.Bicop>
+    Clayton 90°, parameters = 3
+
+
+
+
+```python
+# Create a t copula with correlation of 0.5 and 4 degrees of freedom
+# and showcase some methods
+cop = pv.Bicop(family = pv.BicopFamily.student, rotation = 0, parameters = [0.5, 4])
+u = cop.simulate(n = 10, seeds = [1, 2, 3])
+fcts = [cop.pdf, cop.cdf, 
+        cop.hfunc1, cop.hfunc2, 
+        cop.hinv1, cop.hinv2, 
+        cop.loglik, cop.aic, cop.bic]
+[f(u) for f in fcts]
+```
+
+
+
+
+    [array([0.7092173 , 0.4810942 , 0.81301356, 1.39839611, 2.0873499 ,
+            2.79384106, 1.11748814, 0.55365742, 1.94610848, 0.80483478]),
+     array([0.13932915, 0.28749817, 0.18307038, 0.61323437, 0.0331152 ,
+            0.0193519 , 0.40936082, 0.18184118, 0.78248955, 0.14523531]),
+     array([0.8170847 , 0.11345477, 0.12286857, 0.78638305, 0.10872534,
+            0.35645124, 0.77472657, 0.90877192, 0.76413881, 0.77807695]),
+     array([0.08241333, 0.96386291, 0.79699695, 0.52499938, 0.39444021,
+            0.09401172, 0.33903085, 0.08152695, 0.71452328, 0.09953434]),
+     array([0.39910753, 0.58076221, 0.32192543, 0.81770422, 0.04078053,
+            0.0190836 , 0.65748713, 0.58895048, 0.92393781, 0.37153588]),
+     array([0.26444729, 0.79267514, 0.44179055, 0.79869798, 0.04211888,
+            0.01956738, 0.59671571, 0.3699726 , 0.92303602, 0.26213502]),
+     0.7849333316959906,
+     2.430133336608019,
+     3.0353035225961107]
+
+
+
+
+```python
+# Different ways to fit a copula...
+u = cop.simulate(n = 1000, seeds = [1, 2, 3])
+
+# Create a new object an sets its parameters by fitting afterwards
+cop2 = pv.Bicop(pv.BicopFamily.student)
+cop2.fit(data = u)
+print(cop2)
+
+# Otherwise, define first an object to control the fits:
+#    - pv.FitControlsBicop objects store the controls
+#    - here, we only restrict the parametric family
+#    - see help(pv.FitControlsBicop) for more details
+# Then, create a copula from the data
+controls = pv.FitControlsBicop(family_set = [pv.BicopFamily.student])
+cop2 = pv.Bicop(data = u, controls = controls)
+print(cop2)
+```
+
+    <pyvinecopulib.Bicop>
+    Student, parameters = 0.515883
+     4.13667
+    <pyvinecopulib.Bicop>
+    Student, parameters = 0.515883
+     4.13667
+
+
+
+```python
+# Similarly, when the family is unkown,
+# there are two ways to also do model selection...
+
+# Create a new object an selects both its family and parameters afterwards
+cop3 = pv.Bicop()
+cop3.select(data = u)
+print(cop3)
+
+# Or create directly from data
+cop3 = pv.Bicop(data = u)
+print(cop3)
+```
+
+    <pyvinecopulib.Bicop>
+    Student, parameters = 0.515883
+     4.13667
+    <pyvinecopulib.Bicop>
+    Student, parameters = 0.515883
+     4.13667
+
