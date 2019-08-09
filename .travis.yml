@@ -75,7 +75,7 @@ script:
     python -m pytest tests -r a
   - |
     PYTHON_VERSION=$(python --version)
-    if [ "${PYTHON_VERSION:7:1}" = "3" ]; then
+    if [ "${PYTHON_VERSION:7:1}" = "3" ] && [ "$TRAVIS_OS_NAME" = "linux" ]; then
       pip install nbconvert jupyter_client ipykernel
       python -m ipykernel install --user
       for i in examples/*.ipynb; do 
