@@ -79,6 +79,7 @@ script:
       pip install nbconvert jupyter_client ipykernel
       python -m ipykernel install --user
       for i in examples/*.ipynb; do 
+        jupyter nbconvert --to markdown --stdout $i > $i.md.repo; 
         jupyter nbconvert --to markdown --execute --stdout $i > $i.md.travis; 
         diff $i.md.repo $i.md.travis
       done;
