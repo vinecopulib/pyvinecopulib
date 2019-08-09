@@ -286,11 +286,15 @@ PYBIND11_MODULE(pyvinecopulib, pv)
                 py::arg("d"),
                 py::arg("natural order") = false,
                 py::arg("seeds") = std::vector<size_t>())
-    .def("__repr__", [](const RVineStructure& rvs) {
-      return "<pyvinecopulib.RVineStructure>\n" + rvs.str();
-    });
+    .def("__repr__",
+         [](const RVineStructure& rvs) {
+           return "<pyvinecopulib.RVineStructure>\n" + rvs.str();
+         })
+    .def("str",
+         &RVineStructure::str,
+         "summarizes the model into a string (can be used for printing).");
 
-  py::class_<FitControlsVinecop>(pv, "FitControls")
+  py::class_<FitControlsVinecop>(pv, "FitControlsVinecop")
     .def(py::init<std::vector<BicopFamily>,
                   std::string,
                   std::string,
@@ -510,7 +514,7 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          py::arg("n"),
          py::arg("qrn") = false,
          py::arg("num_threads") = 1,
-         py::arg("seed") = std::vector<int>())
+         py::arg("seeds") = std::vector<int>())
     .def("rosenblatt",
          &Vinecop::rosenblatt,
          "computes the Rosenblatt transform.",
@@ -545,7 +549,14 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          "fitted objects, passing an empty 'u' returns the fitted criterion).",
          py::arg("u") = Eigen::MatrixXd(),
          py::arg("psi0") = 0.9,
-         py::arg("num_threads") = 1);
+         py::arg("num_threads") = 1)
+    .def("__repr__",
+         [](const Vinecop& cop) {
+           return "<pyvinecopulib.Vinecop>\n" + cop.str();
+         })
+    .def("str",
+         &Vinecop::str,
+         "summarizes the model into a string (can be used for printing).");
 
 #ifdef VERSION_INFO
   pv.attr("__version__") = VERSION_INFO;
