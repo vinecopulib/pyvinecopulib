@@ -32,6 +32,7 @@
 *.egg-info
 *.pyc
 dist/
+.ipynb_checkpoints/
 
 # Emacs file
 *~
