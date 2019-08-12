@@ -31,14 +31,7 @@ Advantages over VineCopula are
 * CMake >= 3.2
 * Eigen3
 * Boost >= 1.56 (1.58 on windows)
-
-**On Unix (Linux, OS X)**
-
-* A compiler with C++11 support
-
-**On Windows**
-
-* Visual Studio 2015 (required for all Python versions, see notes below)
+* A compiler with C++11 support (Linux, OS X) or Visual Studio 2015 (required for all Python versions, see notes below)
 
 ### Installation
 
@@ -49,22 +42,6 @@ Note the `--recursive` option which is needed for the pybind11, vinecopulib and 
 git clone --recursive https://github.com/vinecopulib/pyvinecopulib.git
 pip install ./pyvinecopulib
 ```
-
-#### Special notes for Windows
-
-**Compiler requirements**
-
-Pyvinecopulib requires a C++11 compliant compiler, i.e Visual Studio 2015 on Windows.
-This applies to all Python versions, including 2.7. Unlike regular C extension
-modules, it's perfectly fine to compile a pyvinecopulib module with a VS version newer
-than the target Python's VS version.
-
-**Runtime requirements**
-
-The Visual C++ 2015 redistributable packages are a runtime requirement for this
-project. If you use the Anaconda Python
-distribution, you can add `vs2015_runtime` as a platform-dependent runtime
-requirement for you package: see the `conda.recipe/meta.yaml` file in this example.
 
 ### Examples 
 
@@ -84,6 +61,22 @@ formats please refer to the Sphinx manual:
 pyvinecopulib is provided under an MIT license that can be found in the LICENSE
 file. By using, distributing, or contributing to this project, you agree to the
 terms and conditions of this license.
+
+### Special notes for Windows
+
+**Compiler requirements**
+
+Pyvinecopulib requires a C++11 compliant compiler, i.e Visual Studio 2015 on Windows.
+This applies to all Python versions, including 2.7. Unlike regular C extension
+modules, it's perfectly fine to compile a pyvinecopulib module with a VS version newer
+than the target Python's VS version.
+
+**Runtime requirements**
+
+The Visual C++ 2015 redistributable packages are a runtime requirement for this
+project. If you use the Anaconda Python
+distribution, you can add `vs2015_runtime` as a platform-dependent runtime
+requirement for you package: see the `conda.recipe/meta.yaml` file in this example.
 
 
 ### Contact
