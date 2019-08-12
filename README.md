@@ -25,19 +25,6 @@ Advantages over VineCopula are
 * shorter runtimes and lower memory consumption, especially in high dimensions,
 * nonparametric and multi-parameter families.
 
-### Contact
-
-If you have any questions regarding the library, feel free to
-[open an issue](https://github.com/pyvinecopulib/pyvinecopulib/issues/new) or
-send a mail to <info@vinecopulib.org>.
-
-### Documentation
-
-For documentation of the library's functionality and
-instructions how to use it, check out our
-[website](https://vinecopulib.github.io/vinecopulib/) or the `docs/` folder
-in this repository.
-
 ### Prerequisites
 
 * NumPy
@@ -63,7 +50,7 @@ git clone --recursive https://github.com/vinecopulib/pyvinecopulib.git
 pip install ./pyvinecopulib
 ```
 
-### Special notes for Windows
+#### Special notes for Windows
 
 **Compiler requirements**
 
@@ -79,6 +66,9 @@ project. If you use the Anaconda Python
 distribution, you can add `vs2015_runtime` as a platform-dependent runtime
 requirement for you package: see the `conda.recipe/meta.yaml` file in this example.
 
+### Examples 
+
+Jupyter notebooks with examples can be found in the examples folder.
 
 ### Building the documentation
 
@@ -96,6 +86,10 @@ file. By using, distributing, or contributing to this project, you agree to the
 terms and conditions of this license.
 
 
-### Examples 
+### Contact
 
-Jupyter notebooks with examples can be found in the examples folder.
+If you have any questions regarding the library, feel free to
+[open an issue](https://github.com/pyvinecopulib/pyvinecopulib/issues/new) or
+send a mail to <info@vinecopulib.org>.
+
+
