@@ -389,9 +389,10 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          py::arg("pair_copulas"),
          py::arg("matrix"),
          py::arg("check") = true)
-    .def(py::init<const std::string>(),
+    .def(py::init<const std::string, bool>(),
          "creates a vine copula from a JSON file.",
-         py::arg("filename"))
+         py::arg("filename"),
+         py::arg("check") = true)
     .def(py::init<const Eigen::MatrixXd&, const FitControlsVinecop&>(),
          "constructs a vine copula model from data by creating a model and "
          "calling select_all().",
