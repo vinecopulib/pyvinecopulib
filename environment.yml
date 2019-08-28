@@ -1,0 +1,5 @@
+name: pyvinecopulib
+channels:
+  - conda-forge
+dependencies:
+  - cmake
