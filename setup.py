@@ -8,11 +8,9 @@ from glob import glob
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 from distutils.version import LooseVersion
-import pdb
 
 class CMakeExtension(Extension):
     def __init__(self, name, sourcedir=''):
-        #  pdb.set_trace()
         lib = [y for x in os.walk('lib') for y in glob(os.path.join(x[0], '*'))]
         Extension.__init__(self, name, sources=lib)
         self.sourcedir = os.path.abspath(sourcedir)
