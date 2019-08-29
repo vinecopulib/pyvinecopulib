@@ -3,6 +3,7 @@ import re
 import sys
 import platform
 import subprocess
+from glob import glob
 
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
@@ -10,7 +11,10 @@ from distutils.version import LooseVersion
 
 class CMakeExtension(Extension):
     def __init__(self, name, sourcedir=''):
-        Extension.__init__(self, name, sources=[])
+        sources = [y for x in os.walk('lib')
+                   for y in glob(os.path.join(x[0], '*'))
+                   if os.path.isdir(y) == False]
+        Extension.__init__(self, name, sources=sources)
         self.sourcedir = os.path.abspath(sourcedir)
 
 
@@ -65,7 +69,8 @@ setup(
     author='Thomas Nagler and Thibault Vatter',
     author_email='info@vinecopulib.org',
     description='A python interface to vinecopulib',
-    long_description='',
+    long_description='TODO',
+    url="https://github.com/pyvinecopulib/",
     ext_modules=[CMakeExtension('pyvinecopulib')],
     cmdclass=dict(build_ext=CMakeBuild),
     zip_safe=False,
