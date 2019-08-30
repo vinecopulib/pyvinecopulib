@@ -6,7 +6,7 @@ pybind11_add_module(pyvinecopulib src/main.cpp)
 
 find_package(Threads                      REQUIRED)
 set(eigen3_INCLUDE_DIRS "lib/eigen")
-set(boost_INCLUDE_DIRS "lib/boost/lib")
+set(boost_INCLUDE_DIRS "lib/boost")
 set(wdm_INCLUDE_DIRS "lib/wdm/include")
 set(vinecopulib_INCLUDE_DIRS "lib/vinecopulib/include")
 set(external_INCLUDE_DIRS ${eigen3_INCLUDE_DIRS} ${boost_INCLUDE_DIRS} 
