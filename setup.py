@@ -9,11 +9,29 @@ from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 from distutils.version import LooseVersion
 
+
+if not os.path.isdir("lib/boost"):
+    import tarfile
+    boost_archive = glob(os.path.join("lib", "boost*.tar.gz"))[0]
+    tar = tarfile.open(boost_archive)
+    tar.extractall(path='lib')
+    tar.close()
+
+
+def get_sources(paths):
+    sources = []
+    for path in paths:
+        [sources.append(y) for x in os.walk(path)
+         for y in glob(os.path.join(x[0], '*'))
+         if not os.path.isdir(y)]
+    return sources
+
+
 class CMakeExtension(Extension):
     def __init__(self, name, sourcedir=''):
-        sources = [y for x in os.walk('lib')
-                   for y in glob(os.path.join(x[0], '*'))
-                   if os.path.isdir(y) == False]
+        paths = ['boost', 'eigen/unsupported', 'eigen/Eigen', 'pybind11',
+                 'vinecopulib/include', 'wdm/include']
+        sources = get_sources(['lib/' + path for path in paths])
         Extension.__init__(self, name, sources=sources)
         self.sourcedir = os.path.abspath(sourcedir)
 
