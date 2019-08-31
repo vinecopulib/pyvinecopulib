@@ -47,11 +47,6 @@ install:
     }
 build_script:
 - ps: |
-    curl https://bitbucket.org/eigen/eigen/get/3.3.7.zip -o "C:\eigen.zip"
-    7z x "C:\eigen.zip" -o"C:\Libraries\"
-    $env:EIGEN3_ROOT="C:\Libraries\eigen-eigen-323c052e1731"
-    $env:BOOST_ROOT="C:\Libraries\boost_1_60_0"
-
     if ($env:PYTHON) {
       python setup.py sdist
       cd dist
