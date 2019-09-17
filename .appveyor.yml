@@ -1,8 +1,8 @@
 version: '{build}'
 image: Visual Studio 2015
 platform:
- - x86
-- x64
+  - x86
+  - x64
 environment:
   global:
     DISTUTILS_USE_SDK: 1
