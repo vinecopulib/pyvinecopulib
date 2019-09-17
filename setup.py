@@ -14,17 +14,24 @@ if not os.path.isdir("lib/boost"):
     tar.close()
 
 
+def get_sources(paths):
+    sources = []
+    for path in paths:
+        [sources.append(y) for x in os.walk(path)
+         for y in glob(os.path.join(x[0], '*'))
+         if not os.path.isdir(y)]
+    return sources
+
+
+include_dirs = ['boost', 'eigen', 'eigen/unsupported',
+                'pybind11/include', 'vinecopulib/include', 'wdm/include']
+include_paths = ['lib/' + path for path in include_dirs]
 ext_modules = [
     Extension(
         'pyvinecopulib',
         ['src/main.cpp'],
-        include_dirs=[
-            'lib/boost',
-            'lib/eigen',
-            'lib/eigen/unsupported',
-            'lib/pybind11/include',
-            'lib/vinecopulib/include',
-            'lib/wdm/include'],
+        include_dirs=include_paths,
+        depends=get_sources(include_paths),
         language='c++'
     ),
 ]
