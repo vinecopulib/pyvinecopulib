@@ -16,7 +16,7 @@ if not os.path.isdir("lib/boost"):
 
 ext_modules = [
     Extension(
-        'python_example',
+        'pyvinecopulib',
         ['src/main.cpp'],
         include_dirs=[
             'lib/boost',
