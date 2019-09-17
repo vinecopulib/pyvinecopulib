@@ -1,13 +1,9 @@
 import os
-import re
 import sys
-import platform
-import subprocess
 from glob import glob
-
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
-from distutils.version import LooseVersion
+import setuptools
 
 
 if not os.path.isdir("lib/boost"):
@@ -18,64 +14,83 @@ if not os.path.isdir("lib/boost"):
     tar.close()
 
 
-def get_sources(paths):
-    sources = []
-    for path in paths:
-        [sources.append(y) for x in os.walk(path)
-         for y in glob(os.path.join(x[0], '*'))
-         if not os.path.isdir(y)]
-    return sources
+ext_modules = [
+    Extension(
+        'python_example',
+        ['src/main.cpp'],
+        include_dirs=[
+            'lib/boost',
+            'lib/eigen',
+            'lib/eigen/unsupported',
+            'lib/pybind11/include',
+            'lib/vinecopulib/include',
+            'lib/wdm/include'],
+        language='c++'
+    ),
+]
 
 
-class CMakeExtension(Extension):
-    def __init__(self, name, sourcedir=''):
-        paths = ['boost', 'eigen/unsupported', 'eigen/Eigen', 'pybind11',
-                 'vinecopulib/include', 'wdm/include']
-        sources = get_sources(['lib/' + path for path in paths])
-        Extension.__init__(self, name, sources=sources)
-        self.sourcedir = os.path.abspath(sourcedir)
-
-
-class CMakeBuild(build_ext):
-    def run(self):
+# As of Python 3.6, CCompiler has a `has_flag` method.
+# cf http://bugs.python.org/issue26689
+def has_flag(compiler, flagname):
+    """Return a boolean indicating whether a flag name is supported on
+    the specified compiler.
+    """
+    import tempfile
+    with tempfile.NamedTemporaryFile('w', suffix='.cpp') as f:
+        f.write('int main (int argc, char **argv) { return 0; }')
         try:
-            out = subprocess.check_output(['cmake', '--version'])
-        except OSError:
-            raise RuntimeError("CMake must be installed to build the following extensions: " +
-                               ", ".join(e.name for e in self.extensions))
+            compiler.compile([f.name], extra_postargs=[flagname])
+        except setuptools.distutils.errors.CompileError:
+            return False
+    return True
 
-        if platform.system() == "Windows":
-            cmake_version = LooseVersion(re.search(r'version\s*([\d.]+)', out.decode()).group(1))
-            if cmake_version < '3.1.0':
-                raise RuntimeError("CMake >= 3.1.0 is required on Windows")
 
+def cpp_flag(compiler):
+    """Return the -std=c++[11/14/17] compiler flag.
+    The newer version is prefered over c++11 (when it is available).
+    """
+    flags = ['-std=c++17', '-std=c++14', '-std=c++11']
+
+    for flag in flags:
+        if has_flag(compiler, flag): return flag
+
+    raise RuntimeError('Unsupported compiler -- at least C++11 support '
+                       'is needed!')
+
+
+class BuildExt(build_ext):
+    """A custom build extension for adding compiler-specific options."""
+    c_opts = {
+        'msvc': ['/EHsc'],
+        'unix': [],
+    }
+    l_opts = {
+        'msvc': [],
+        'unix': [],
+    }
+
+    if sys.platform == 'darwin':
+        darwin_opts = ['-stdlib=libc++', '-mmacosx-version-min=10.7']
+        c_opts['unix'] += darwin_opts
+        l_opts['unix'] += darwin_opts
+
+    def build_extensions(self):
+        ct = self.compiler.compiler_type
+        opts = self.c_opts.get(ct, [])
+        link_opts = self.l_opts.get(ct, [])
+        if ct == 'unix':
+            opts.append('-DVERSION_INFO="%s"' % self.distribution.get_version())
+            opts.append(cpp_flag(self.compiler))
+            if has_flag(self.compiler, '-fvisibility=hidden'):
+                opts.append('-fvisibility=hidden')
+        elif ct == 'msvc':
+            opts.append('/DVERSION_INFO=\\"%s\\"' % self.distribution.get_version())
         for ext in self.extensions:
-            self.build_extension(ext)
+            ext.extra_compile_args = opts
+            ext.extra_link_args = link_opts
+        build_ext.build_extensions(self)
 
-    def build_extension(self, ext):
-        extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
-        cmake_args = ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
-                      '-DPYTHON_EXECUTABLE=' + sys.executable]
-
-        cfg = 'Debug' if self.debug else 'Release'
-        build_args = ['--config', cfg]
-
-        if platform.system() == "Windows":
-            cmake_args += ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY_{}={}'.format(cfg.upper(), extdir)]
-            if sys.maxsize > 2**32:
-                cmake_args += ['-A', 'x64']
-            build_args += ['--', '/m']
-        else:
-            cmake_args += ['-DCMAKE_BUILD_TYPE=' + cfg]
-            build_args += ['--', '-j2']
-
-        env = os.environ.copy()
-        env['CXXFLAGS'] = '{} -DVERSION_INFO=\\"{}\\"'.format(env.get('CXXFLAGS', ''),
-                                                              self.distribution.get_version())
-        if not os.path.exists(self.build_temp):
-            os.makedirs(self.build_temp)
-        subprocess.check_call(['cmake', ext.sourcedir] + cmake_args, cwd=self.build_temp, env=env)
-        subprocess.check_call(['cmake', '--build', '.'] + build_args, cwd=self.build_temp)
 
 with open('requirements.txt') as f:
     requirements = f.read().splitlines()
@@ -89,7 +104,7 @@ setup(
     description='A python interface to vinecopulib',
     long_description='TODO',
     url="https://github.com/pyvinecopulib/",
-    ext_modules=[CMakeExtension('pyvinecopulib')],
-    cmdclass=dict(build_ext=CMakeBuild),
+    ext_modules=ext_modules,
+    cmdclass={'build_ext': BuildExt},
     zip_safe=False,
 )
