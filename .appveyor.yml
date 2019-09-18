@@ -37,10 +37,10 @@ install:
       $env:PATH = "C:\Miniconda$env:CONDA\;C:\Miniconda$env:CONDA\Scripts\;$env:PATH"
     }
 - cmd: |
-    IF NOT DEFINED PYTHON 'conda config --set always_yes yes --set changeps1 no'
-    IF NOT DEFINED PYTHON 'conda config --add channels conda-forge'
-    IF NOT DEFINED PYTHON 'conda update -q conda'
-    IF NOT DEFINED PYTHON 'conda install -q conda-build conda-verify pytest'
+    IF NOT DEFINED PYTHON conda config --set always_yes yes --set changeps1 no
+    IF NOT DEFINED PYTHON conda config --add channels conda-forge
+    IF NOT DEFINED PYTHON conda update -q conda
+    IF NOT DEFINED PYTHON conda install -q conda-build conda-verify pytest
 build_script:
 - ps: |
     if ($env:PYTHON) {
@@ -50,10 +50,12 @@ build_script:
       cd ..
     }
 - cmd: |
-    IF NOT DEFINED PYTHON 'conda build -q conda.recipe --python=%PYTHON_VERSION% --output-folder=build'
-    IF NOT DEFINED PYTHON 'conda config --add channels "file:///%cd:\=/%/build"'
-    IF NOT DEFINED PYTHON 'conda create -q -n test-environment python=%PYTHON_VERSION% pyvinecopulib pytest'
-    IF NOT DEFINED PYTHON 'activate test-environment'
+    IF NOT DEFINED PYTHON conda build -q conda.recipe --python=%PYTHON_VERSION% --output-folder=build
+    IF NOT DEFINED PYTHON SET string=%cd%
+    IF NOT DEFINED PYTHON SET string=%string:\=/%
+    IF NOT DEFINED PYTHON conda config --add channels "file:///%string%/build"
+    IF NOT DEFINED PYTHON conda create -q -n test-environment python=%PYTHON_VERSION% pyvinecopulib pytest
+    activate test-environment
 test_script:
 - ps: |
     python -m pytest tests -r a
