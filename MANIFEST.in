@@ -1,7 +1,7 @@
 include README.md LICENSE requirements.txt
 include requirements.txt
 recursive-include src *
-recursive-include lib/boost *.hpp
+recursive-include lib/boost *.hpp *.h
 recursive-include lib/eigen/Eigen *
 recursive-include lib/eigen/unsupported/Eigen *
 recursive-include lib/pybind11/include *.h
