@@ -61,8 +61,12 @@ build_script:
 
       conda create -q -n test-environment python=$PYTHON_VERSION pyvinecopulib pytest
       conda init powershell
+    }
+- ps: |
+    if ($env:CONDA) {
       conda activate test-environment
     }
+
 test_script:
 - ps: |
     python -m pytest tests -r a
