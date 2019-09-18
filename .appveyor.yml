@@ -55,11 +55,11 @@ build_script:
     IF NOT DEFINED PYTHON SET string=%string:\=/%
     IF NOT DEFINED PYTHON conda config --add channels "file:///%string%/build"
     IF NOT DEFINED PYTHON conda create -q -n test-environment python=%PYTHON_VERSION% pyvinecopulib pytest
-    activate test-environment
+    IF NOT DEFINED PYTHON activate test-environment && python -m pytest tests -r a ELSE pytest tests
 test_script:
-- ps: |
-    python -m pytest tests -r a
-- ps: |
+# - ps: |
+#     python -m pytest tests -r a
+# - ps: |
 # TODO
 #    python -m pip install nbconvert jupyter_client ipykernel
 #    python -m ipykernel install --user
