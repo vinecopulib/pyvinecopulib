@@ -5,12 +5,11 @@ from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 import setuptools
 
-
 if not os.path.isdir("lib/boost"):
     import tarfile
     boost_archive = glob(os.path.join("lib", "boost*.tar.gz"))[0]
     tar = tarfile.open(boost_archive)
-    tar.extractall(path='lib')
+    tar.extractall(path='lib/boost')
     tar.close()
 
 
