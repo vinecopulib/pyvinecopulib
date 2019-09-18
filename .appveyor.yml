@@ -55,7 +55,8 @@ build_script:
     IF NOT DEFINED PYTHON SET string=%string:\=/%
     IF NOT DEFINED PYTHON conda config --add channels "file:///%string%/build"
     IF NOT DEFINED PYTHON conda create -q -n test-environment python=%PYTHON_VERSION% pyvinecopulib pytest
-    IF NOT DEFINED PYTHON activate test-environment && python -m pytest tests -r a ELSE pytest tests
+    IF NOT DEFINED PYTHON activate test-environment && python -m pytest tests -r a
+    IF DEFINED PYTHON python -m pytest tests -r a
 test_script:
 # - ps: |
 #     python -m pytest tests -r a
