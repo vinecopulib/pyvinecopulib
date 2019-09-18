@@ -51,7 +51,9 @@ build_script:
     }
 - cmd: |
     IF NOT DEFINED PYTHON conda build -q conda.recipe --python=%PYTHON_VERSION% --output-folder=build
-    IF NOT DEFINED PYTHON conda config --add channels "file:///%cd:\=/%/build"
+    IF NOT DEFINED PYTHON SET string=%cd%
+    IF NOT DEFINED PYTHON SET string=%string:\=/%
+    IF NOT DEFINED PYTHON conda config --add channels "file:///%string%/build"
     IF NOT DEFINED PYTHON conda create -q -n test-environment python=%PYTHON_VERSION% pyvinecopulib pytest
     IF NOT DEFINED PYTHON activate test-environment
 test_script:
