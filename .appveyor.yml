@@ -9,8 +9,8 @@ environment:
     PYTHONWARNINGS: ignore:DEPRECATION
     MSSdk: 1
   matrix:
-#  - CONDA: 36
-#    PYTHON_VERSION: 3.6
+  - CONDA: 36
+    PYTHON_VERSION: 3.6
   - PYTHON: 27
   - PYTHON: 36
 clone_script:
@@ -51,7 +51,6 @@ build_script:
     }
 - cmd: |
     IF NOT DEFINED PYTHON conda build -q conda.recipe --python=%PYTHON_VERSION% --output-folder=build
-    :: (file:/// path may not contain backslashes)
     IF NOT DEFINED PYTHON conda config --add channels "file:///%cd:\=/%/build"
     IF NOT DEFINED PYTHON conda create -q -n test-environment python=%PYTHON_VERSION% pyvinecopulib pytest
     IF NOT DEFINED PYTHON activate test-environment
