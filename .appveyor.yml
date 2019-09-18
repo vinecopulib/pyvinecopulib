@@ -48,12 +48,10 @@ build_script:
       cd dist
       python -m pip install --verbose pyvinecopulib-0.0.1.tar.gz
       cd ..
-    } else {
-      # path to file channel must not have back slashes
-      $string = "$pwd"
-      $string = $string -replace '[\\]', '/'
     }
 - cmd: |
+    SET string=%cd%
+    SET string=%string:\=/%
     conda build -q conda.recipe --python=%PYTHON_VERSION% --output-folder=build
     conda config --add channels "file:///%string%/build"
 
