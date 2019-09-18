@@ -37,10 +37,12 @@ install:
       $env:PATH = "C:\Miniconda$env:CONDA\;C:\Miniconda$env:CONDA\Scripts\;$env:PATH"
     }
 - cmd: |
-    conda config --set always_yes yes --set changeps1 no
-    conda config --add channels conda-forge
-    conda update -q conda
-    conda install -q conda-build conda-verify pytest
+    IF NOT DEFINED PYTHON (
+      conda config --set always_yes yes --set changeps1 no
+      conda config --add channels conda-forge
+      conda update -q conda
+      conda install -q conda-build conda-verify pytest
+    )
 build_script:
 - ps: |
     if ($env:PYTHON) {
@@ -50,12 +52,14 @@ build_script:
       cd ..
     }
 - cmd: |
-    conda build -q conda.recipe --python=%PYTHON_VERSION% --output-folder=build
-    :: (file:/// path may not contain backslashes)
-    conda config --add channels "file:///%cd:\=/%/build"
+    IF NOT DEFINED PYTHON (
+      conda build -q conda.recipe --python=%PYTHON_VERSION% --output-folder=build
+      :: (file:/// path may not contain backslashes)
+      conda config --add channels "file:///%cd:\=/%/build"
 
-    conda create -q -n test-environment python=%PYTHON_VERSION% pyvinecopulib pytest
-    activate test-environment
+      conda create -q -n test-environment python=%PYTHON_VERSION% pyvinecopulib pytest
+      activate test-environment
+    )
 test_script:
 - ps: |
     python -m pytest tests -r a
