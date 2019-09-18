@@ -39,6 +39,7 @@ install:
       conda config --set always_yes yes --set changeps1 no
       conda config --add channels conda-forge
       conda update -q conda
+      conda init
 
       # nee pscondaenvs to activate envs in powershell 
       # https://stackoverflow.com/a/52552397
