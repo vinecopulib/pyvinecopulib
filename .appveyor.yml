@@ -35,16 +35,16 @@ install:
       if ($env:CONDA -eq "27") { $env:CONDA = "" }
       if ($env:PLATFORM -eq "x64") { $env:CONDA = "$env:CONDA-x64" }
       $env:PATH = "C:\Miniconda$env:CONDA\;C:\Miniconda$env:CONDA\Scripts\;$env:PATH"
-
-      conda config --set always_yes yes --set changeps1 no
-      conda config --add channels conda-forge
-      conda update -q conda
-
-      # nee pscondaenvs to activate envs in powershell 
-      # https://stackoverflow.com/a/52552397
-      conda install -n root -c pscondaenvs pscondaenvs
-      conda install -q conda-build conda-verify pytest  # for unit tests
     }
+- cmd: |
+    conda config --set always_yes yes --set changeps1 no
+    conda config --add channels conda-forge
+    conda update -q conda
+
+    # nee pscondaenvs to activate envs in powershell 
+    # https://stackoverflow.com/a/52552397
+    # conda install -n root -c pscondaenvs pscondaenvs
+    conda install -q conda-build conda-verify pytest  # for unit tests
 build_script:
 - ps: |
     if ($env:PYTHON) {
@@ -58,10 +58,10 @@ build_script:
       $string = $string -replace '[\\]', '/'
     }
 - cmd: |
-    conda build -q conda.recipe --python=$PYTHON_VERSION --output-folder=build
+    conda build -q conda.recipe --python=%PYTHON_VERSION% --output-folder=build
     conda config --add channels "file:///%string%/build"
 
-    conda create -q -n test-environment python=$PYTHON_VERSION pyvinecopulib pytest
+    conda create -q -n test-environment python=%PYTHON_VERSION% pyvinecopulib pytest
     activate test-environment
 test_script:
 - ps: |
