@@ -1,7 +1,7 @@
 version: '{build}'
 image: Visual Studio 2015
 platform:
-  - x86
+  # - x86
   - x64
 environment:
   global:
@@ -39,7 +39,6 @@ install:
       conda config --set always_yes yes --set changeps1 no
       conda config --add channels conda-forge
       conda update -q conda
-      conda init
 
       # nee pscondaenvs to activate envs in powershell 
       # https://stackoverflow.com/a/52552397
@@ -61,7 +60,7 @@ build_script:
       conda config --add channels "file:///$string/build"
 
       conda create -q -n test-environment python=$PYTHON_VERSION pyvinecopulib pytest
-      activate test-environment
+      source activate test-environment
     }
 test_script:
 - ps: |
