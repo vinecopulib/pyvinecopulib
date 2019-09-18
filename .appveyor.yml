@@ -50,10 +50,9 @@ build_script:
       cd ..
     }
 - cmd: |
-    SET string=%cd%
-    SET string=%string:\=/%
     conda build -q conda.recipe --python=%PYTHON_VERSION% --output-folder=build
-    conda config --add channels "file:///%string%/build"
+    :: (file:/// path may not contain backslashes)
+    conda config --add channels "file:///%cd:\=/%/build"
 
     conda create -q -n test-environment python=%PYTHON_VERSION% pyvinecopulib pytest
     activate test-environment
