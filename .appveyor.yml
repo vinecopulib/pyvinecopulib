@@ -56,8 +56,9 @@ build_script:
       # path to file channel must not have back slashes
       $string = "$pwd"
       $string = $string -replace '[\\]', '/'
+- cmd: |
       conda build -q conda.recipe --python=$PYTHON_VERSION --output-folder=build
-      conda config --add channels "file:///$string/build"
+      conda config --add channels "file:///%string%/build"
 
       conda create -q -n test-environment python=$PYTHON_VERSION pyvinecopulib pytest
       activate test-environment
