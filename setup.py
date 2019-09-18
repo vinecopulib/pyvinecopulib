@@ -54,12 +54,13 @@ def has_flag(compiler, flagname):
 
 def cpp_flag(compiler):
     """Return the -std=c++[11/14/17] compiler flag.
-    The newer version is prefered over c++11 (when it is available).
     """
-    flags = ['-std=c++17', '-std=c++14', '-std=c++11']
+    flags = ['-std=c++11']
+    #['-std=c++17', '-std=c++14', '-std=c++11']
 
     for flag in flags:
-        if has_flag(compiler, flag): return flag
+        if has_flag(compiler, flag):
+            return flag
 
     raise RuntimeError('Unsupported compiler -- at least C++11 support '
                        'is needed!')
