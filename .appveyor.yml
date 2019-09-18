@@ -39,6 +39,7 @@ install:
       conda config --set always_yes yes --set changeps1 no
       conda config --add channels conda-forge
       conda update -q conda
+      conda install conda=4.6.14
 
       # nee pscondaenvs to activate envs in powershell 
       # https://stackoverflow.com/a/52552397
@@ -60,13 +61,8 @@ build_script:
       conda config --add channels "file:///$string/build"
 
       conda create -q -n test-environment python=$PYTHON_VERSION pyvinecopulib pytest
-      conda init powershell
-    }
-- ps: |
-    if ($env:CONDA) {
       conda activate test-environment
     }
-
 test_script:
 - ps: |
     python -m pytest tests -r a
