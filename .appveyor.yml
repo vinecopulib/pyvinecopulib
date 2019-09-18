@@ -60,7 +60,8 @@ build_script:
       conda config --add channels "file:///$string/build"
 
       conda create -q -n test-environment python=$PYTHON_VERSION pyvinecopulib pytest
-      conda activate test-environment
+      conda init powershell
+      activate test-environment
     }
 test_script:
 - ps: |
