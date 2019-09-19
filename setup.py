@@ -54,7 +54,6 @@ def has_flag(compiler, flagname):
 
 def cpp_flag(compiler):
     """Return the -std=c++[11/14/17] compiler flag.
-    The newer version is prefered over c++11 (when it is available).
     """
     flags = ['-std=c++14', '-std=c++11']
 
@@ -78,7 +77,8 @@ class BuildExt(build_ext):
     }
 
     if sys.platform == 'darwin':
-        darwin_opts = ['-stdlib=libc++', '-mmacosx-version-min=10.7']
+        darwin_opts = ['-mmacosx-version-min=10.7']
+        #['-stdlib=libc++', '-mmacosx-version-min=10.7']
         c_opts['unix'] += darwin_opts
         l_opts['unix'] += darwin_opts
 
