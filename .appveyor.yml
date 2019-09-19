@@ -36,11 +36,12 @@ install:
       if ($env:PLATFORM -eq "x64") { $env:CONDA = "$env:CONDA-x64" }
       $env:PATH = "C:\Miniconda$env:CONDA\;C:\Miniconda$env:CONDA\Scripts\;$env:PATH"
     }
+# conda still has issues with ps, so we all conda stuff is executed using cmd
 - cmd: |
-    IF NOT DEFINED PYTHON conda config --set always_yes yes --set changeps1 no
-    IF NOT DEFINED PYTHON conda config --add channels conda-forge
-    IF NOT DEFINED PYTHON conda update -q conda
-    IF NOT DEFINED PYTHON conda install -q conda-build conda-verify pytest
+    IF DEFINED CONDA conda config --set always_yes yes --set changeps1 no
+    IF DEFINED CONDA conda config --add channels conda-forge
+    IF DEFINED CONDA conda update -q conda
+    IF DEFINED CONDA conda install -q conda-build conda-verify pytest
 build_script:
 - ps: |
     if ($env:PYTHON) {
@@ -49,15 +50,14 @@ build_script:
       python -m pip install --verbose pyvinecopulib-0.0.1.tar.gz
       cd ..
     }
+# the channel must not contain backslashes (they're replaced by %cd:\=/%)
 - cmd: |
-    IF NOT DEFINED PYTHON conda build -q conda.recipe --python=%PYTHON_VERSION% --output-folder=build
-    IF NOT DEFINED PYTHON SET string=%cd%
-    IF NOT DEFINED PYTHON SET string=%string:\=/%
-    IF NOT DEFINED PYTHON conda config --add channels "file:///%string%/build"
-    IF NOT DEFINED PYTHON conda create -q -n test-environment python=%PYTHON_VERSION% pyvinecopulib pytest
-    IF NOT DEFINED PYTHON activate test-environment && python -m pytest tests -r a
+    IF DEFINED CONDA conda build -q conda.recipe --python=%PYTHON_VERSION% --output-folder=build
+    IF DEFINED CONDA conda config --add channels "file:///%cd:\=/%/build"
+    IF DEFINED CONDA conda create -q -n test-environment python=%PYTHON_VERSION% pyvinecopulib pytest
+    IF DEFINED CONDA activate test-environment && python -m pytest tests -r a
     IF DEFINED PYTHON python -m pytest tests -r a
-test_script:
+# test_script:
 # - ps: |
 #     python -m pytest tests -r a
 # - ps: |
