@@ -15,66 +15,62 @@ matrix:
     dist: xenial
   - os: osx
     env: PYTHON=2.7
-    # osx_image: xcode8.3
   - os: osx
     env: PYTHON=3.7
-    # osx_image: xcode8.3
   - os: osx
     env: CONDA=2.7
-    # osx_image: xcode8.3
   - os: osx
     env: CONDA=3.7
-    # osx_image: xcode8.3
 before_install:
-  - |
-    if [ -n "$PYTHON" ]; then
-      if [ "$TRAVIS_OS_NAME" = "osx" ]; then
-        export PATH="/Users/travis/Library/Python/2.7/bin:$PATH"
-        if [ "${PYTHON:0:1}" = "3" ]; then
-          brew install python3;
-        fi
+- |
+  if [ -n "$PYTHON" ]; then
+    if [ "$TRAVIS_OS_NAME" = "osx" ]; then
+      export PATH="/Users/travis/Library/Python/2.7/bin:$PATH"
+      if [ "${PYTHON:0:1}" = "3" ]; then
+        brew install python3;
       fi
-      python -m pip install --user virtualenv pytest
-      virtualenv -p python${PYTHON:0:1} venv
-      source venv/bin/activate
-    elif [ -n "$CONDA" ]; then
-      if [ "$TRAVIS_OS_NAME" = "linux" ]; then OS=Linux-x86_64; else OS=MacOSX-x86_64; fi
-      wget -O miniconda.sh https://repo.continuum.io/miniconda/Miniconda${CONDA:0:1}-latest-$OS.sh
-      bash miniconda.sh -b -p $HOME/miniconda
-      export PATH="$HOME/miniconda/bin:$PATH"
-      conda config --set always_yes yes --set changeps1 no
-      conda config --add channels conda-forge
-      conda update -q conda
-      conda install -q conda-build
     fi
+    python -m pip install --user virtualenv pytest
+    virtualenv -p python${PYTHON:0:1} venv
+    source venv/bin/activate
+  elif [ -n "$CONDA" ]; then
+    if [ "$TRAVIS_OS_NAME" = "linux" ]; then OS=Linux-x86_64; else OS=MacOSX-x86_64; fi
+    wget -O miniconda.sh https://repo.continuum.io/miniconda/Miniconda${CONDA:0:1}-latest-$OS.sh
+    bash miniconda.sh -b -p $HOME/miniconda
+    export PATH="$HOME/miniconda/bin:$PATH"
+    conda config --set always_yes yes --set changeps1 no
+    conda config --add channels conda-forge
+    conda update -q conda
+    conda install -q conda-build
+  fi
 install:
-  - |
-    if [ -n "$PYTHON" ]; then
-      python setup.py sdist > /dev/null
-      python -m pip install --verbose dist/*.tar.gz
-    elif [ -n "$CONDA" ]; then
-      conda build -q conda.recipe --python=$CONDA --output-folder=build
-      conda config --add channels "file://`pwd`/build"
-      conda create -q -n test-environment python=$CONDA pyvinecopulib pytest
-      source activate test-environment
-      conda info --envs
-    fi
+- |
+  if [ -n "$PYTHON" ]; then
+    python setup.py sdist > /dev/null
+    python -m pip install --verbose dist/*.tar.gz
+  elif [ -n "$CONDA" ]; then
+    conda build -q conda.recipe --python=$CONDA --output-folder=build
+    conda config --add channels "file://`pwd`/build"
+    conda create -q -n test-environment python=$CONDA pyvinecopulib pytest
+    source activate test-environment
+    conda info --envs
+  fi
 script:
-  - |
-    if [ -n "$PYTHON" ]; then
-      python -m pip install pytest
-    else 
-      conda info --envs
-    fi
-    python -m pytest tests -r a
-  - |
-    PYTHON_VERSION=$(python --version)
-    if [ "${PYTHON_VERSION:7:1}" = "3" ] && [ "$TRAVIS_OS_NAME" = "linux" ]; then
-      pip install nbconvert jupyter_client ipykernel
-      python -m ipykernel install --user
-      for i in examples/*.ipynb; do 
-        jupyter nbconvert --to markdown --stdout $i > $i.md.repo; 
-        jupyter nbconvert --to markdown --execute --stdout $i > $i.md.travis; 
-        diff $i.md.repo $i.md.travis
-      done;
-    fi
+- "if [ -n \"$PYTHON\" ]; then\n  python -m pip install pytest\nelse \n  conda info
+  --envs\nfi\npython -m pytest tests -r a\n"
+- "PYTHON_VERSION=$(python --version)\nif [ \"${PYTHON_VERSION:7:1}\" = \"3\" ] &&
+  [ \"$TRAVIS_OS_NAME\" = \"linux\" ]; then\n  pip install nbconvert jupyter_client
+  ipykernel\n  python -m ipykernel install --user\n  for i in examples/*.ipynb; do
+  \n    jupyter nbconvert --to markdown --stdout $i > $i.md.repo; \n    jupyter nbconvert
+  --to markdown --execute --stdout $i > $i.md.travis; \n    diff $i.md.repo $i.md.travis\n
+  \ done;\nfi\n"
+deploy:
+  provider: pypi
+  user: "vinecopulib"
+  password:
+    secure: T6mNtHObBgq1CO8ryMXER11XK2W8h4k/DNAFEZGreJQOqQekUkhOe1gDZC2jiFZkNLzB9weGvQy3cmQwbK+XunSsAZ2ZycRLhn2PZkHh84fZLO8V+IrxlLU3Bjra7DYPoxdm6hNfQozLCXSvBWsKdLeqNMj8fWE8UVEB8x7wn0R2sTW/BU0Ll/Eu3w1ua5s9l3nnXMqYR07mNkHydABvhPG9et4ZYvp++/rfo/X5PtMMnradlJGYH96BCZUWHUcyaiKDnX1PtfoP3sWfFQtA0w5+EIMnrdZqKd9YF/y0+tXbDun3S6zoBxbP3au6EAbyt7wbqHvERg5kace5bDgLACXGYPYGObPMYChuLutoy8FcHR0cXhm5CzsHlXZJ3flEtXAf9TWDmN9lPHPNecOu3B59+NPaP8xzWAX6Fu7kRMvAWR9rQMTaa8YgVZPysfgK1QIBYu4JzjsnR24EohkhFWjkMMEfSDOtoUhDBHdw5ItAakXxYNByRQiMwbc0uZsmEwgvVFgRZX/aswlk/Lu/xMSBJE/zfLvnpkRsC3kzZXxb23RK7dlti5apmrtXFNAQ15uL1/bsp8+LU0A5+4XdiS3WIykxJmpF7Nx78DzWhaFyrfOWPezaaTzR/fE8JtkNBiJ8esHQUcZ0lxwJUyenD6zxbQoOgTPW1WwNfKEdtPs=
+  distributions: "sdist bdist_wheel"
+  skip_existing: true
+  on:
+    branch: shipping
+    # tags: true

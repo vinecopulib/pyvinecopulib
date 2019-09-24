@@ -1,1 +1,6 @@
+glob
 numpy>=1.14
+os
+setuptools
+sys
+tarfile
