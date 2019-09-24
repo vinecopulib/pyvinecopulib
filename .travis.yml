@@ -78,13 +78,13 @@ after_success:
     anaconda upload build/**/pyvinecopulib-*.tar.bz2
   fi
     # if [[ ]]; then      fi
-# deploy:
-  # provider: pypi
-  # user: "vinecopulib"
+deploy:
+  provider: pypi
+  user: "vinecopulib"
   # distributions: "sdist bdist_wheel"
-  # # skip_existing: true
-  # on:
-  #   branch: shipping
-  #   # tags: true
-  # password:
-    # secure: "eZWFq9fOptNzQg/DFw/Fhypthnv13oBbeAVtSOjN8EIXUO3ak0xlZnzvMCgldFkdpZHzvv89knnAX3TMyZQ6xLCKkegE+Byj8GOobgvhQ94p8ys/oYM/4LT3VwUCEzwOVEHbUjpZj7oapAGZ14XL9a4yioLfnsT1SPmOD6rdwcFznKKv6ANdaQcw0/1XQpPvEMhRQHZ/aCy7MBgnJV+5d7vubmaiDsTUifP//XRT+Pl+cJxINhgmeZSGyWHI1nBcfaeJ2GpnzHWio5QBCCRKwb45cB6EwUgNAyH6kYpwB1bZ5uX/W6GlC1JL/dQZ/iNP14JzqvJMeLJAEEBwn2THp7x4lcpF/aQ0VQSX7kC9szRzGG+3PvP7EaoLZ9YGhTXU/La8QjktUw8p7y/Oh1xKYooHJ9cx7iIsQre77fXNqMPwnWsRgYeYZrXdPYCqU3CS20iKT4/KQIewnMEuai/zt/hbd0iKh1cpWxxFXDddhWDYM0zVUX/eW7mtTxMSHpof0QF7RN2FnjL1NK8tdycXUyygYoQnVbh/doEzkaZb1v6f6K3grFK4J71KO176XXhmUTH+BeW75gU8uN4XgvlbdmSp9AWaQHzcFAzVgMvmdbvXvE9vOp+eqlmrK+RO2SwRjG16oyQUUC9sspWrlKr8VHu86JBdsNWa+xBfDML5XS8="
+  # skip_existing: true
+  on:
+    branch: shipping
+    # tags: true
+  password:
+    secure: "eZWFq9fOptNzQg/DFw/Fhypthnv13oBbeAVtSOjN8EIXUO3ak0xlZnzvMCgldFkdpZHzvv89knnAX3TMyZQ6xLCKkegE+Byj8GOobgvhQ94p8ys/oYM/4LT3VwUCEzwOVEHbUjpZj7oapAGZ14XL9a4yioLfnsT1SPmOD6rdwcFznKKv6ANdaQcw0/1XQpPvEMhRQHZ/aCy7MBgnJV+5d7vubmaiDsTUifP//XRT+Pl+cJxINhgmeZSGyWHI1nBcfaeJ2GpnzHWio5QBCCRKwb45cB6EwUgNAyH6kYpwB1bZ5uX/W6GlC1JL/dQZ/iNP14JzqvJMeLJAEEBwn2THp7x4lcpF/aQ0VQSX7kC9szRzGG+3PvP7EaoLZ9YGhTXU/La8QjktUw8p7y/Oh1xKYooHJ9cx7iIsQre77fXNqMPwnWsRgYeYZrXdPYCqU3CS20iKT4/KQIewnMEuai/zt/hbd0iKh1cpWxxFXDddhWDYM0zVUX/eW7mtTxMSHpof0QF7RN2FnjL1NK8tdycXUyygYoQnVbh/doEzkaZb1v6f6K3grFK4J71KO176XXhmUTH+BeW75gU8uN4XgvlbdmSp9AWaQHzcFAzVgMvmdbvXvE9vOp+eqlmrK+RO2SwRjG16oyQUUC9sspWrlKr8VHu86JBdsNWa+xBfDML5XS8="
