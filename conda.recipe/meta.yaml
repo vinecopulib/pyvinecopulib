@@ -13,12 +13,8 @@ source:
 requirements:
   build:
     - python
-    - glob
     - numpy >=1.14
-    - os
-    - sys
     - setuptools
-    - tarfile
 
   run:
     - python
