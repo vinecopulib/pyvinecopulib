@@ -69,8 +69,21 @@ deploy:
   user: "vinecopulib"
   password:
     secure: T6mNtHObBgq1CO8ryMXER11XK2W8h4k/DNAFEZGreJQOqQekUkhOe1gDZC2jiFZkNLzB9weGvQy3cmQwbK+XunSsAZ2ZycRLhn2PZkHh84fZLO8V+IrxlLU3Bjra7DYPoxdm6hNfQozLCXSvBWsKdLeqNMj8fWE8UVEB8x7wn0R2sTW/BU0Ll/Eu3w1ua5s9l3nnXMqYR07mNkHydABvhPG9et4ZYvp++/rfo/X5PtMMnradlJGYH96BCZUWHUcyaiKDnX1PtfoP3sWfFQtA0w5+EIMnrdZqKd9YF/y0+tXbDun3S6zoBxbP3au6EAbyt7wbqHvERg5kace5bDgLACXGYPYGObPMYChuLutoy8FcHR0cXhm5CzsHlXZJ3flEtXAf9TWDmN9lPHPNecOu3B59+NPaP8xzWAX6Fu7kRMvAWR9rQMTaa8YgVZPysfgK1QIBYu4JzjsnR24EohkhFWjkMMEfSDOtoUhDBHdw5ItAakXxYNByRQiMwbc0uZsmEwgvVFgRZX/aswlk/Lu/xMSBJE/zfLvnpkRsC3kzZXxb23RK7dlti5apmrtXFNAQ15uL1/bsp8+LU0A5+4XdiS3WIykxJmpF7Nx78DzWhaFyrfOWPezaaTzR/fE8JtkNBiJ8esHQUcZ0lxwJUyenD6zxbQoOgTPW1WwNfKEdtPs=
-  distributions: "sdist bdist_wheel"
+  # distributions: "sdist bdist_wheel"
   skip_existing: true
   on:
     branch: shipping
     # tags: true
+# after_success:
+# - |
+#   if [ -n "$CONDA" ]; then
+#     # Install the command line API for CONDA uploads
+#     conda install anaconda-client
+#     export ANACONDA_API_TOKEN=$CONDA_UPLOAD_TOKEN
+#     anaconda upload bld-dir/**/PACKAGENAME-*.tar.bz2
+#   fi
+#     - |
+#     # Only upload builds from tags
+#     if [[ $TRAVIS_PULL_REQUEST == false && $TRAVIS_REPO_SLUG == "org/pkgname"
+#           && $TRAVIS_BRANCH == $TRAVIS_TAG  && $TRAVIS_TAG != '' ]]; then
+          # fi
