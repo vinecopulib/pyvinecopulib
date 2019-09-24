@@ -80,7 +80,7 @@ script:
 deploy:
   provider: pypi
   user: "vinecopulib"
-  # distributions: "sdist bdist_wheel"
+  distributions: "sdist bdist_wheel"
   # skip_existing: true
   on:
     branch: shipping
