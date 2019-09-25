@@ -30,7 +30,7 @@ before_install:
         brew install python3;
       fi
     fi
-    python -m pip install --user virtualenv pytest
+    python -m pip install --user --upgrade virtualenv pytest setuptools wheel twine
     virtualenv -p python${PYTHON:0:1} venv
     source venv/bin/activate
   elif [ -n "$CONDA" ]; then
@@ -46,7 +46,7 @@ before_install:
 install:
 - |
   if [ -n "$PYTHON" ]; then
-    python setup.py sdist > /dev/null
+    python setup.py sdist bdist_wheel > /dev/null
     python -m pip install --verbose dist/*.tar.gz
   elif [ -n "$CONDA" ]; then
     conda build -q conda.recipe --python=$CONDA --output-folder=build
@@ -67,24 +67,22 @@ script:
 after_success:
 - |
   if [[ -n "$CONDA"
-        && $TRAVIS_PULL_REQUEST = false
-        && "$TRAVIS_REPO_SLUG" = "vinecopulib/pyvinecopulib" ]]; then
-  #       && $TRAVIS_BRANCH == $TRAVIS_TAG
-        # && $TRAVIS_TAG != '' ]; then
+         && $TRAVIS_PULL_REQUEST = false
+         && "$TRAVIS_REPO_SLUG" = "vinecopulib/pyvinecopulib" ]]; then
+        #  && $TRAVIS_BRANCH == $TRAVIS_TAG
+        #  && $TRAVIS_TAG != '' ]]; then
     # Install the command line API for CONDA uploads
     conda install anaconda-client
     # Export to conda
     export ANACONDA_API_TOKEN=$CONDA_UPLOAD_TOKEN
     anaconda upload build/**/pyvinecopulib-*.tar.bz2
   fi
-# deploy:
-  # provider: pypi
-  # user: "vinecopulib"
-  # # distributions: "sdist bdist_wheel"
-  # # skip_existing: true
-  # on:
-  #   branch: shipping
-  #   condition: "$CONDA" = "3.6"
-  #   # tags: true
-  # password:
-    # secure: "eZWFq9fOptNzQg/DFw/Fhypthnv13oBbeAVtSOjN8EIXUO3ak0xlZnzvMCgldFkdpZHzvv89knnAX3TMyZQ6xLCKkegE+Byj8GOobgvhQ94p8ys/oYM/4LT3VwUCEzwOVEHbUjpZj7oapAGZ14XL9a4yioLfnsT1SPmOD6rdwcFznKKv6ANdaQcw0/1XQpPvEMhRQHZ/aCy7MBgnJV+5d7vubmaiDsTUifP//XRT+Pl+cJxINhgmeZSGyWHI1nBcfaeJ2GpnzHWio5QBCCRKwb45cB6EwUgNAyH6kYpwB1bZ5uX/W6GlC1JL/dQZ/iNP14JzqvJMeLJAEEBwn2THp7x4lcpF/aQ0VQSX7kC9szRzGG+3PvP7EaoLZ9YGhTXU/La8QjktUw8p7y/Oh1xKYooHJ9cx7iIsQre77fXNqMPwnWsRgYeYZrXdPYCqU3CS20iKT4/KQIewnMEuai/zt/hbd0iKh1cpWxxFXDddhWDYM0zVUX/eW7mtTxMSHpof0QF7RN2FnjL1NK8tdycXUyygYoQnVbh/doEzkaZb1v6f6K3grFK4J71KO176XXhmUTH+BeW75gU8uN4XgvlbdmSp9AWaQHzcFAzVgMvmdbvXvE9vOp+eqlmrK+RO2SwRjG16oyQUUC9sspWrlKr8VHu86JBdsNWa+xBfDML5XS8="
+deploy:
+  provider: pypi
+  user: "vinecopulib"
+  skip_existing: true
+  on:
+    branch: shipping
+    # tags: true
+  password:
+    secure: "eZWFq9fOptNzQg/DFw/Fhypthnv13oBbeAVtSOjN8EIXUO3ak0xlZnzvMCgldFkdpZHzvv89knnAX3TMyZQ6xLCKkegE+Byj8GOobgvhQ94p8ys/oYM/4LT3VwUCEzwOVEHbUjpZj7oapAGZ14XL9a4yioLfnsT1SPmOD6rdwcFznKKv6ANdaQcw0/1XQpPvEMhRQHZ/aCy7MBgnJV+5d7vubmaiDsTUifP//XRT+Pl+cJxINhgmeZSGyWHI1nBcfaeJ2GpnzHWio5QBCCRKwb45cB6EwUgNAyH6kYpwB1bZ5uX/W6GlC1JL/dQZ/iNP14JzqvJMeLJAEEBwn2THp7x4lcpF/aQ0VQSX7kC9szRzGG+3PvP7EaoLZ9YGhTXU/La8QjktUw8p7y/Oh1xKYooHJ9cx7iIsQre77fXNqMPwnWsRgYeYZrXdPYCqU3CS20iKT4/KQIewnMEuai/zt/hbd0iKh1cpWxxFXDddhWDYM0zVUX/eW7mtTxMSHpof0QF7RN2FnjL1NK8tdycXUyygYoQnVbh/doEzkaZb1v6f6K3grFK4J71KO176XXhmUTH+BeW75gU8uN4XgvlbdmSp9AWaQHzcFAzVgMvmdbvXvE9vOp+eqlmrK+RO2SwRjG16oyQUUC9sspWrlKr8VHu86JBdsNWa+xBfDML5XS8="
