@@ -62,7 +62,7 @@ on_success:
     # Install the command line API for CONDA uploads
 - cmd: IF DEFINED CONDA conda install anaconda-client
     # Export to conda
-- cmd: IF DEFINED CONDA conda upload --user vinecopulib --token %CONDA_UPLOAD_TOKEN% build/**/pyvinecopulib-*.tar.bz2
+- cmd: IF DEFINED CONDA anaconda upload --user vinecopulib --token %CONDA_UPLOAD_TOKEN% build/**/pyvinecopulib-*.tar.bz2
 # - ps: |
 #     python -m pytest tests -r a
 # - ps: |
