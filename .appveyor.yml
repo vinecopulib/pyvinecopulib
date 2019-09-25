@@ -60,7 +60,6 @@ build_script:
 on_success:
 # IF %APPVEYOR_REPO_TAG% 
 - cmd: |
-    # Export to conda
     IF DEFINED CONDA activate test-environment && anaconda upload -u vinecopulib -t %CONDA_UPLOAD_TOKEN% build/**/pyvinecopulib-*.tar.bz2
 # - ps: |
 # TODO
