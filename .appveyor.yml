@@ -47,7 +47,7 @@ build_script:
     if ($env:PYTHON) {
       python setup.py sdist
       cd dist
-      python -m pip install --verbose pyvinecopulib-*.tar.gz
+      python -m pip install --verbose pyvinecopulib-0.0.1.tar.gz
       cd ..
     }
 # the channel must not contain backslashes (they're replaced by %cd:\=/%)
@@ -62,7 +62,7 @@ on_success:
 - cmd: IF DEFINED CONDA (
 #     IF "%APPVEYOR_REPO_NAME%" EQ "vinecopulib/pyvinecopulib" (
       # IF %APPVEYOR_REPO_TAG% (
-        conda --token %CONDA_UPLOAD_TOKEN% upload -u vinecopulib "file:///%cd:\=/%/build/**/*.tar.bz2" --force
+        conda --token %CONDA_UPLOAD_TOKEN% upload -u vinecopulib build/**/*.tar.bz2 --force
 #       ) 
     # )
   )
