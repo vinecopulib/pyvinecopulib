@@ -41,7 +41,7 @@ install:
     IF DEFINED CONDA conda config --set always_yes yes --set changeps1 no
     IF DEFINED CONDA conda config --add channels conda-forge
     IF DEFINED CONDA conda update -q conda
-    IF DEFINED CONDA conda install -q conda-build conda-verify pytest
+    IF DEFINED CONDA conda install -q conda-build conda-verify pytest anaconda-client
 build_script:
 - ps: |
     if ($env:PYTHON) {
@@ -59,12 +59,9 @@ build_script:
     IF DEFINED PYTHON python -m pytest tests -r a
 on_success:
 # IF %APPVEYOR_REPO_TAG% 
-    # Install the command line API for CONDA uploads
-- cmd: IF DEFINED CONDA conda install anaconda-client
+- cmd: |
     # Export to conda
-- cmd: IF DEFINED CONDA activate test-environment && anaconda upload -u vinecopulib -t %CONDA_UPLOAD_TOKEN% build/**/pyvinecopulib-*.tar.bz2
-# - ps: |
-#     python -m pytest tests -r a
+    IF DEFINED CONDA activate test-environment && anaconda upload -u vinecopulib -t %CONDA_UPLOAD_TOKEN% build/**/pyvinecopulib-*.tar.bz2
 # - ps: |
 # TODO
 #    python -m pip install nbconvert jupyter_client ipykernel
