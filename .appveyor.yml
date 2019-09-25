@@ -58,14 +58,8 @@ build_script:
     IF DEFINED CONDA activate test-environment && python -m pytest tests -r a
     IF DEFINED PYTHON python -m pytest tests -r a
 on_success:
-- cmd: 
-- cmd: IF DEFINED CONDA (
-#     IF "%APPVEYOR_REPO_NAME%" EQ "vinecopulib/pyvinecopulib" (
-      # IF %APPVEYOR_REPO_TAG% (
-        conda --token %CONDA_UPLOAD_TOKEN% upload -u vinecopulib build/**/*.tar.bz2 --force
-#       ) 
-    # )
-  )
+# IF %APPVEYOR_REPO_TAG% 
+- cmd: IF DEFINED CONDA conda --token %CONDA_UPLOAD_TOKEN% upload -u vinecopulib build/**/*.tar.bz2 --force
 # - ps: |
 #     python -m pytest tests -r a
 # - ps: |

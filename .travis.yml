@@ -81,7 +81,6 @@ deploy:
   user: "vinecopulib"
   skip_existing: true
   distributions: "sdist bdist_wheel"
-  server: https://test.pypi.org
   on:
     branch: master 
     tags: true
