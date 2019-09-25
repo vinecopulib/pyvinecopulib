@@ -59,7 +59,11 @@ build_script:
     IF DEFINED PYTHON python -m pytest tests -r a
 on_success:
 # IF %APPVEYOR_REPO_TAG% 
-- cmd: IF DEFINED CONDA conda --token %CONDA_UPLOAD_TOKEN% upload -u vinecopulib build/**/*.tar.bz2 --force
+    # Install the command line API for CONDA uploads
+- cmd: IF DEFINED CONDA conda install anaconda-client
+    # Export to conda
+- cmd: IF DEFINED CONDA conda --user vinecopulib --token %CONDA_UPLOAD_TOKEN% upload build/**/pyvinecopulib-*.tar.bz2
+# - cmd: IF DEFINED CONDA conda --token  upload -u vinecopulib build/**/*.tar.bz2 --force
 # - ps: |
 #     python -m pytest tests -r a
 # - ps: |

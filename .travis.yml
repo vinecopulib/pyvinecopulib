@@ -80,7 +80,6 @@ deploy:
   provider: pypi
   user: "vinecopulib"
   skip_existing: true
-  distributions: "sdist bdist_wheel"
   on:
     branch: master 
     tags: true
