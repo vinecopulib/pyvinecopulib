@@ -124,7 +124,7 @@ def get_files(paths):
 extract_boost()
 setup(
     name='pyvinecopulib',
-    version='0.0.1',
+    version='0.0.2',
     install_requires=get_requirements(),
     author='Thomas Nagler and Thibault Vatter',
     author_email='info@vinecopulib.org',
