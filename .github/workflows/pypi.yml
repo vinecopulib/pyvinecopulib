@@ -18,6 +18,11 @@ jobs:
             platform-vcvars: "x86_amd64"
             platform-msbuild: "x64"
         python-version: [3.6, 3.7]
+        exclude:
+          - platform: macos-latest
+            architecture: "x86"
+          - platform: ubuntu-latest
+            architecture: "x86"
 
     runs-on: ${{ matrix.platform }}
 
