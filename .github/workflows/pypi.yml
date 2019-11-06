@@ -56,13 +56,25 @@ jobs:
         pip install pytest
         pytest tests -r a
     - name: Publish distribution Test PyPI
-      if: job.status == 'success'
+      if: |
+        job.status == 'success' 
+          && contains(matrix.platform, 'ubuntu')
+          && contains(matrix.architecture, '64')
+          && contains(matrix.python-version, '3.6')
       uses: pypa/gh-action-pypi-publish@master
       with:
+        user: __token__
         password: ${{ secrets.test_pypi_password }}
         repository_url: https://test.pypi.org/legacy/
     - name: Publish distribution to PyPI
-      if: job.status == 'success' && startsWith(github.event.ref, 'refs/tags')
+      if: |
+        job.status == 'success' 
+          && contains(matrix.platform, 'ubuntu')
+          && contains(matrix.architecture, '64')
+          && contains(matrix.python-version, '3.6')
+          && github.event_name == 'push' 
+          && startsWith(github.event.ref, 'refs/tags')
       uses: pypa/gh-action-pypi-publish@master
       with:
+        user: __token__
         password: ${{ secrets.pypi_password }}

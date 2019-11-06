@@ -15,10 +15,13 @@ if not os.path.isdir("lib/boost"):
 
 def get_sources(paths):
     sources = []
+
     for path in paths:
         [sources.append(y) for x in os.walk(path)
          for y in glob(os.path.join(x[0], '*'))
+
          if not os.path.isdir(y)]
+
     return sources
 
 
@@ -49,6 +52,7 @@ def has_flag(compiler, flagname):
             compiler.compile([f.name], extra_postargs=[flagname])
         except setuptools.distutils.errors.CompileError:
             return False
+
     return True
 
 
@@ -58,7 +62,7 @@ def cpp_flag(compiler):
     flags = ['-std=c++14', '-std=c++11']
 
     for flag in flags:
-        if has_flag(compiler, flag): 
+        if has_flag(compiler, flag):
             return flag
 
     raise RuntimeError('Unsupported compiler -- at least C++11 support '
@@ -86,13 +90,18 @@ class BuildExt(build_ext):
         ct = self.compiler.compiler_type
         opts = self.c_opts.get(ct, [])
         link_opts = self.l_opts.get(ct, [])
+
         if ct == 'unix':
-            opts.append('-DVERSION_INFO="%s"' % self.distribution.get_version())
+            opts.append('-DVERSION_INFO="%s"' %
+                        self.distribution.get_version())
             opts.append(cpp_flag(self.compiler))
+
             if has_flag(self.compiler, '-fvisibility=hidden'):
                 opts.append('-fvisibility=hidden')
         elif ct == 'msvc':
-            opts.append('/DVERSION_INFO=\\"%s\\"' % self.distribution.get_version())
+            opts.append('/DVERSION_INFO=\\"%s\\"' %
+                        self.distribution.get_version())
+
         for ext in self.extensions:
             ext.extra_compile_args = opts
             ext.extra_link_args = link_opts
@@ -104,7 +113,8 @@ with open('requirements.txt') as f:
 
 setup(
     name='pyvinecopulib',
-    version='0.0.1',
+    use_scm_version=True,
+    setup_requires=['setuptools_scm'],
     install_requires=requirements,
     author='Thomas Nagler and Thibault Vatter',
     author_email='info@vinecopulib.org',
