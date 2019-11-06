@@ -47,11 +47,13 @@ jobs:
       run: |
         cmd "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" ${{ matrix.platform-vcvars }}
     - name: Install conda (windows)
+      if: contains(matrix.platform, 'windows')
       run: |
         Invoke-WebRequest -OutFile miniconda.exe https://repo.continuum.io/miniconda/Miniconda3-latest-${{matrix.platform-conda}}-${{matrix.architecture-conda}}.exe
         start /wait "" miniconda.exe
       shell: powershell
     - name: Install conda (ubuntu and macos)
+      if: ! contains(matrix.platform, 'windows')
       run: |
         wget -O miniconda.sh https://repo.continuum.io/miniconda/Miniconda3-latest-${{matrix.platform-conda}}-${{matrix.architecture-conda}}.sh
         bash miniconda.sh -b -p $HOME/miniconda
