@@ -46,9 +46,12 @@ jobs:
     - name: Create source distribution 
       run: |
         python setup.py sdist
+    - name: Visual Studio Command Prompt tool
+      if: contains(${{ matrix.platform }}, "windows")
+      run: |
+        cmd "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" ${{ matrix.platform-vcvars }}
     - name: Install package 
       run: |
-        cmd "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" ${{ matrix.platform-vcvars }} 8.1
         pip install --find-links=dist --verbose pyvinecopulib
     - name: Test with pytest
       run: |
