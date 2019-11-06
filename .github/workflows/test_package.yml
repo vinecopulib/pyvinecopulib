@@ -38,7 +38,7 @@ jobs:
         python setup.py sdist
     - name: Install package 
       run: |
-        pip install --verbose dist/*.tar.gz
+        pip install --find-links=dist --verbose pyvinecopulib
     - name: Test with pytest
       run: |
         pip install pytest
