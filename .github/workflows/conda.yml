@@ -9,8 +9,8 @@ jobs:
       fail-fast: false
       max-parallel: 12
       matrix:
-        # platform: [windows-latest]
-        platform: [ubuntu-latest, macos-latest]
+        platform: [windows-latest]
+        # platform: [ubuntu-latest, macos-latest]
         # platform: [ubuntu-latest, macos-latest, windows-latest]
         architecture: ["x86", "x64"]
         include:
@@ -46,7 +46,11 @@ jobs:
       if: contains(matrix.platform, 'windows')
       run: |
         cmd "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" ${{ matrix.platform-vcvars }}
-    - name: Install miniconda
+    - name: Install conda (windows)
+      run: |
+        Invoke-WebRequest -OutFile miniconda.exe https://repo.continuum.io/miniconda/Miniconda3-latest-${{matrix.platform-conda}}-${{matrix.architecture-conda}}.exe
+      shell: powershell
+    - name: Install conda (ubuntu and macos)
       run: |
         wget -O miniconda.sh https://repo.continuum.io/miniconda/Miniconda3-latest-${{matrix.platform-conda}}-${{matrix.architecture-conda}}.sh
         bash miniconda.sh -b -p $HOME/miniconda
