@@ -33,6 +33,7 @@ jobs:
         cmd "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" ${{ matrix.platform-vcvars }}
     - name: Install dependencies
       run: |
+        export PATH="$HOME/miniconda/bin:$PATH"
         conda config --set always_yes yes --set changeps1 no
         conda config --add channels conda-forge
         conda update -q conda
