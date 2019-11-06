@@ -50,7 +50,7 @@ jobs:
       if: contains(matrix.platform, 'windows')
       run: |
         Invoke-WebRequest -OutFile miniconda.exe https://repo.continuum.io/miniconda/Miniconda3-latest-${{matrix.platform-conda}}-${{matrix.architecture-conda}}.exe
-        start /wait "" miniconda.exe
+        Start-Process -FilePath "miniconda.exe"
       shell: powershell
     - name: Install conda (ubuntu and macos)
       if: contains(matrix.platform, 'windows') == false
