@@ -6,7 +6,7 @@ jobs:
   build:
 
     strategy:
-      fail-fast: false
+      # fail-fast: false
       max-parallel: 16
       matrix:
         platform: [windows-2016, windows-latest]
@@ -48,6 +48,7 @@ jobs:
         python setup.py sdist
     - name: Install package 
       run: |
+        call "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" ${{ matrix.platform-vcvars }} 8.1
         pip install --find-links=dist --verbose pyvinecopulib
     - name: Test with pytest
       run: |
