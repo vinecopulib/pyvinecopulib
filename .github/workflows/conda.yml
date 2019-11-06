@@ -31,19 +31,24 @@ jobs:
       if: contains(matrix.platform, 'windows')
       run: |
         cmd "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" ${{ matrix.platform-vcvars }}
+    - name: Install miniconda 
+            if [ ${{ matrix.platform }} = "ubuntu-latest" ]; then OS=Linux-x86_64; else OS=MacOSX-x86_64; fi
+            wget -O miniconda.sh https://repo.continuum.io/miniconda/Miniconda3-latest-$OS.sh
+            bash miniconda.sh -b -p $HOME/miniconda
     - name: Include conda in path
       run:  |
-        echo "::add-path::$CONDA/bin"
+        # echo "::add-path::$CONDA/bin"
+        echo "::add-path::$HOME/miniconda/bin"
     - name: Configure conda 
       run: |
-        sudo conda config --set always_yes yes --set changeps1 no
-        sudo conda config --add channels conda-forge
+        conda config --set always_yes yes --set changeps1 no
+        conda config --add channels conda-forge
     - name: Update conda 
       run: |
-        sudo conda update -q conda
+        conda update -q conda
     - name: Install build dependencies 
       run: |
-        sudo conda install -q conda-build conda-verify
+        conda install -q conda-build conda-verify
     - name: Build recipe 
       run: |
         conda build -q conda.recipe --python=${{ matrix.python-version }} --output-folder=build
