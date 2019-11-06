@@ -15,6 +15,7 @@ requirements:
     - python
     - numpy >=1.14
     - setuptools
+    - setuptools_scm
 
   run:
     - python
