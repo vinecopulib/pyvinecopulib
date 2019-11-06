@@ -1,6 +1,0 @@
-{
-    "name": "Test package",
-    "description": "Create and test the package on multiple platforms and Python versions.",
-    "iconName": "python",
-    "categories": ["Python"]
-}

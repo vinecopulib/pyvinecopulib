@@ -1,4 +1,4 @@
-name: Test package
+name: Test and deploy for PyPI
 
 on: [push]
 
@@ -7,7 +7,7 @@ jobs:
 
     strategy:
       fail-fast: false
-      max-parallel: 16
+      max-parallel: 12
       matrix:
         platform: [ubuntu-latest, macos-latest, windows-latest]
         architecture: ["x86", "x64"]
