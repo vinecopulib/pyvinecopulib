@@ -8,16 +8,16 @@ jobs:
       # fail-fast: false
       max-parallel: 12
       matrix:
-        # platform: [ubuntu-latest, windows-latest]
-        platform: [ubuntu-latest, macos-latest]
-        # architecture: ["x86", "x64"]
-        # include:
-        #   - architecture: "x86"
-        #     platform-vcvars: "x86"
-        #     platform-msbuild: "Win32"
-        #   - architecture: "x64"
-        #     platform-vcvars: "x86_amd64"
-            # platform-msbuild: "x64"
+        platform: [windows-latest]
+        # platform: [ubuntu-latest, macos-latest]
+        architecture: ["x86", "x64"]
+        include:
+          - architecture: "x86"
+            platform-vcvars: "x86"
+            platform-msbuild: "Win32"
+          - architecture: "x64"
+            platform-vcvars: "x86_amd64"
+            platform-msbuild: "x64"
         python-version: [3.6, 3.7]
 
     runs-on: ${{ matrix.platform }}
@@ -27,18 +27,15 @@ jobs:
       uses: actions/checkout@v1
       with:
         submodules: recursive
-    - name: Visual Studio Command Prompt tool
+    - name: Visual Studio Command Prompt tool (windows)
       if: contains(matrix.platform, 'windows')
       run: |
         cmd "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" ${{ matrix.platform-vcvars }}
-    - name: Install miniconda 
+    - name: Install miniconda (ubuntu and macos)
       run: |
         if [ ${{ matrix.platform }} = "ubuntu-latest" ]; then OS=Linux-x86_64; else OS=MacOSX-x86_64; fi
         wget -O miniconda.sh https://repo.continuum.io/miniconda/Miniconda3-latest-$OS.sh
         bash miniconda.sh -b -p $HOME/miniconda
-    - name: Include conda in path
-      run:  |
-        # echo "::add-path::$CONDA/bin"
         echo "::add-path::$HOME/miniconda/bin"
     - name: Configure conda 
       run: |
