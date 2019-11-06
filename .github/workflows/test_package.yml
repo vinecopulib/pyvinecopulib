@@ -35,7 +35,7 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude=lib
     - name: Install package 
       run: |
-        python setup.py sdist > /dev/null
+        python setup.py sdist
         pip install --verbose dist/*.tar.gz
     - name: Test with pytest
       run: |
