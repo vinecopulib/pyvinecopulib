@@ -9,7 +9,7 @@ jobs:
       max-parallel: 12
       matrix:
         # platform: [ubuntu-latest, windows-latest]
-        platform: [ubuntu-latest]
+        platform: [ubuntu-latest, macos-latest]
         # architecture: ["x86", "x64"]
         # include:
         #   - architecture: "x86"
@@ -33,8 +33,8 @@ jobs:
         cmd "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" ${{ matrix.platform-vcvars }}
     - name: Include conda in path
       run:  |
-        echo "::add-path::$CONDA/bin"
         sudo chmod 777 -R $CONDA/bin
+        echo "::add-path::$CONDA/bin"
     - name: Configure conda 
       run: |
         conda config --set always_yes yes --set changeps1 no
