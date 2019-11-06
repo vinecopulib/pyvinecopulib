@@ -33,18 +33,17 @@ jobs:
         cmd "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" ${{ matrix.platform-vcvars }}
     - name: Include conda in path
       run:  |
-        sudo chmod 777 -R $CONDA/bin
         echo "::add-path::$CONDA/bin"
     - name: Configure conda 
       run: |
-        conda config --set always_yes yes --set changeps1 no
-        conda config --add channels conda-forge
+        sudo conda config --set always_yes yes --set changeps1 no
+        sudo conda config --add channels conda-forge
     - name: Update conda 
       run: |
-        conda update -q conda
+        sudo conda update -q conda
     - name: Install build dependencies 
       run: |
-        conda install -q conda-build conda-verify
+        sudo conda install -q conda-build conda-verify
     - name: Build recipe 
       run: |
         conda build -q conda.recipe --python=${{ matrix.python-version }} --output-folder=build
