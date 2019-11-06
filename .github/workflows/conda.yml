@@ -8,8 +8,8 @@ jobs:
       # fail-fast: false
       max-parallel: 12
       matrix:
-        platform: [windows-latest]
-        # platform: [ubuntu-latest, macos-latest]
+        # platform: [windows-latest]
+        platform: [ubuntu-latest, macos-latest, windows-latest]
         architecture: ["x86", "x64"]
         include:
           - architecture: "x86"
@@ -31,7 +31,8 @@ jobs:
       if: contains(matrix.platform, 'windows')
       run: |
         cmd "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" ${{ matrix.platform-vcvars }}
-    - name: Install miniconda (ubuntu and macos)
+    - name: Install miniconda (macos)
+      if: contains(matrix.platform, 'macos')
       run: |
         if [ ${{ matrix.platform }} = "ubuntu-latest" ]; then OS=Linux-x86_64; else OS=MacOSX-x86_64; fi
         wget -O miniconda.sh https://repo.continuum.io/miniconda/Miniconda3-latest-$OS.sh
