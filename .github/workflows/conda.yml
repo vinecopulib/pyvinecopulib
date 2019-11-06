@@ -40,8 +40,7 @@ jobs:
         conda config --add channels conda-forge
     - name: Update conda 
       run: |
-        unset SUDO_UID SUDO_GID SUDO_USER
-        conda update -q conda
+        sudo conda update -q conda
     - name: Install build dependencies 
       run: |
         conda install -q conda-build conda-verify
