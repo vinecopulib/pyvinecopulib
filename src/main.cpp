@@ -395,14 +395,14 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          py::arg("check") = true)
     .def(py::init<const Eigen::MatrixXd&, const FitControlsVinecop&>(),
          "constructs a vine copula model from data by creating a model and "
-         "calling select_all().",
+         "calling select() to select the structure, families and parameters.",
          py::arg("data"),
          py::arg("controls") = FitControlsVinecop())
     .def(py::init<const Eigen::MatrixXd&,
                   const RVineStructure&,
                   const FitControlsVinecop&>(),
          "constructs a vine copula model from data by creating a model and "
-         "calling select_family().",
+         "calling select() to select the families and parameters.",
          py::arg("data"),
          py::arg("structure"),
          py::arg("controls") = FitControlsVinecop())
@@ -411,7 +411,7 @@ PYBIND11_MODULE(pyvinecopulib, pv)
                   const FitControlsVinecop&,
                   const bool>(),
          "constructs a vine copula model from data by creating a model and "
-         "calling select_family().",
+         "calling select() to select the families and parameters.",
          py::arg("data"),
          py::arg("matrix"),
          py::arg("controls") = FitControlsVinecop(),
@@ -478,17 +478,11 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     .def_property_readonly("threshold",
                            &Vinecop::get_threshold,
                            "The threshold (for thresholded copulas only).")
-    .def("select_all",
-         &Vinecop::select_all,
+    .def("select",
+         &Vinecop::select,
          "automatically fits and selects a vine copula model.",
          py::arg("data"),
          py::arg("controls") = FitControlsVinecop())
-    .def(
-      "select_families",
-      &Vinecop::select_families,
-      "automatically selects all pair-copula families and fits all parameters.",
-      py::arg("data"),
-      py::arg("controls") = FitControlsVinecop())
     .def("pdf",
          &Vinecop::pdf,
          "returns the probability density function.",
