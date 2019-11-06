@@ -53,7 +53,7 @@ jobs:
         start /wait "" miniconda.exe
       shell: powershell
     - name: Install conda (ubuntu and macos)
-      if: ! contains(matrix.platform, 'windows')
+      if: contains(matrix.platform, 'windows') == false
       run: |
         wget -O miniconda.sh https://repo.continuum.io/miniconda/Miniconda3-latest-${{matrix.platform-conda}}-${{matrix.architecture-conda}}.sh
         bash miniconda.sh -b -p $HOME/miniconda
