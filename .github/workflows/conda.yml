@@ -32,9 +32,10 @@ jobs:
       run: |
         cmd "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" ${{ matrix.platform-vcvars }}
     - name: Install miniconda 
-            if [ ${{ matrix.platform }} = "ubuntu-latest" ]; then OS=Linux-x86_64; else OS=MacOSX-x86_64; fi
-            wget -O miniconda.sh https://repo.continuum.io/miniconda/Miniconda3-latest-$OS.sh
-            bash miniconda.sh -b -p $HOME/miniconda
+      run: |
+        if [ ${{ matrix.platform }} = "ubuntu-latest" ]; then OS=Linux-x86_64; else OS=MacOSX-x86_64; fi
+        wget -O miniconda.sh https://repo.continuum.io/miniconda/Miniconda3-latest-$OS.sh
+        bash miniconda.sh -b -p $HOME/miniconda
     - name: Include conda in path
       run:  |
         # echo "::add-path::$CONDA/bin"
