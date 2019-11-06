@@ -9,7 +9,7 @@ jobs:
       fail-fast: false
       max-parallel: 16
       matrix:
-        platform: [windows-2016, windows-latest]
+        platform: [windows-latest]
         architecture: ["x86", "x64"]
         include:
           - architecture: "x86"
@@ -49,7 +49,7 @@ jobs:
     - name: Visual Studio Command Prompt tool
       if: contains(matrix.platform, 'windows')
       run: |
-        cmd "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" ${{ matrix.platform-vcvars }}
+        cmd "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" ${{ matrix.platform-vcvars }} -vcvars_ver=14.0
     - name: Install package 
       run: |
         pip install --find-links=dist --verbose pyvinecopulib
