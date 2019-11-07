@@ -67,7 +67,6 @@ jobs:
       uses: actions/upload-artifact@v1.0.0
       with:
         name: dist 
-        # name: "dist-${{ matrix.platform }}-${{ matrix.architecture }}"
         path: dist
  
   publish:
@@ -100,28 +99,7 @@ jobs:
       with:
         name: dist
         path: dist/
-#     - name: Download linux binaries
-      # uses: actions/download-artifact@master
-      # with:
-      #   name: dist-ubuntu-latest-x64
-#         path: dist/
-#     - name: Download macos binaries
-    #   uses: actions/download-artifact@master
-    #   with:
-    #     name: dist-macos-latest-x64
-    #     path: dist/
-    # - name: Download windows (64bit) binaries
-    #   uses: actions/download-artifact@master
-    #   with:
-    #     name: dist-windows-latest-x64
-    #     path: dist/
-    # - name: Download windows (32bit) binaries
-    #   uses: actions/download-artifact@master
-    #   with:
-    #     name: dist-windows-latest-x86
-        # path: dist/
     - name: pre-PyPI
-      #copy dist data to /dist, where PyPI Action expects it
       run: |
         sudo apt install rename
         cd dist
