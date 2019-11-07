@@ -37,6 +37,10 @@ jobs:
       uses: actions/setup-python@v1
       with:
         python-version: ${{ matrix.python-version }}
+    - name: Visual Studio Command Prompt tool
+      if: contains(matrix.platform, 'windows')
+      run: |
+        cmd "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.platform-vcvars }}
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
@@ -51,10 +55,6 @@ jobs:
     - name: Create source distribution 
       run: |
         python setup.py bdist_wheel 
-    - name: Visual Studio Command Prompt tool
-      if: contains(matrix.platform, 'windows')
-      run: |
-        cmd "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.platform-vcvars }}
     - name: Install package 
       run: |
         pip install --no-index --find-links=dist --verbose pyvinecopulib
@@ -69,8 +69,8 @@ jobs:
       # fail-fast: false
       max-parallel: 1
       matrix:
-        platform: ubuntu-latest
-        python-version: 3.6
+        platform: [ubuntu-latest]
+        python-version: [3.6]
     
     runs-on: ${{ matrix.platform }}
     
@@ -89,6 +89,35 @@ jobs:
     - name: Create source distribution 
       run: |
         python setup.py sdist
+    - name: Download linux binaries
+      uses: actions/download-artifact@master
+      with:
+        name: dist-ubuntu-latest
+        path: dist/
+    - name: Download macos binaries
+      uses: actions/download-artifact@master
+      with:
+        name: dist-macos-latest
+        path: dist/
+    - name: Download windows (64bit) binaries
+      uses: actions/download-artifact@master
+      with:
+        name: dist-windows-latest-x64
+        path: dist/
+    - name: Download windows (32bit) binaries
+      uses: actions/download-artifact@master
+      with:
+        name: dist-windows-latest-x86
+        path: dist/
+    - name: pre-PyPI
+      #copy dist data to /dist, where PyPI Action expects it
+      run: |
+        cd dist
+        mv `ls -1 pyvin*-linux_*.whl` `ls -1 pyvin*-linux_*.whl | sed -e's/linux/manylinux1/'` #rename to manylinux1 to make PYPI accept the package
+        rm *.egg #remove obsoleted egg format
+        rm requirements.txt # PIPY upload has problem with non-*.whl files 
+        cd ..
+        ls dist/
     - name: Publish distribution Test PyPI
       if: |
         job.status == 'success' 
