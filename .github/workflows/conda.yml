@@ -57,6 +57,7 @@ jobs:
       if: contains(matrix.platform, 'windows')
       run: |
         dir C:\Users\runneradmin\
+        dir C:\
       shell: cmd
     - name: Install conda (ubuntu and macos)
       if: contains(matrix.platform, 'windows') == false
