@@ -17,7 +17,7 @@ jobs:
           - architecture: "x64"
             platform-vcvars: "x86_amd64"
             platform-msbuild: "x64"
-        python-version: [3.5, 3.6, 3.7]
+        python-version: [3.6, 3.7]
         exclude:
           - platform: macos-latest
             architecture: "x86"
@@ -49,9 +49,6 @@ jobs:
     - name: Create source distribution 
       run: |
         python setup.py sdist
-      env:
-        DISTUTILS_USE_SDK: 1
-        py_vcruntime_redist: true
     - name: Visual Studio Command Prompt tool
       if: contains(matrix.platform, 'windows')
       run: |
@@ -59,9 +56,6 @@ jobs:
     - name: Install package 
       run: |
         pip install --find-links=dist --verbose pyvinecopulib
-      env:
-        DISTUTILS_USE_SDK: 1
-        py_vcruntime_redist: true
     - name: Test with pytest
       run: |
         pip install pytest
