@@ -49,6 +49,9 @@ jobs:
     - name: Create source distribution 
       run: |
         python setup.py sdist
+      env:
+        DISTUTILS_USE_SDK: 1
+        py_vcruntime_redist: true
     - name: Visual Studio Command Prompt tool
       if: contains(matrix.platform, 'windows')
       run: |
