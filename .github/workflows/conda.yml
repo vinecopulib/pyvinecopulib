@@ -51,8 +51,11 @@ jobs:
       run: |
         Invoke-WebRequest -URI https://repo.continuum.io/miniconda/Miniconda3-latest-${{matrix.platform-conda}}-${{matrix.architecture-conda}}.exe -OutFile "miniconda.exe"
         Start-Process -FilePath "miniconda.exe"
-        echo '::add-path::C:\Miniconda\;C:\Miniconda\Scripts\'
       shell: powershell
+    - name: Activate conda (windows)
+      if: contains(matrix.platform, 'windows')
+      run: CALL "C:\Miniconda\Scritps\activate.bat"
+      shell: cmd
     - name: Install conda (ubuntu and macos)
       if: contains(matrix.platform, 'windows') == false
       run: |
