@@ -56,6 +56,9 @@ jobs:
     - name: Install package 
       run: |
         pip install --find-links=dist --verbose pyvinecopulib
+      env:
+        DISTUTILS_USE_SDK: 1
+        py_vcruntime_redist: true
     - name: Test with pytest
       run: |
         pip install pytest
