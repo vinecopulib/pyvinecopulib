@@ -54,7 +54,13 @@ jobs:
         echo '::add-path::C:\Miniconda\;C:\Miniconda\Library\mingw-w64\bin;C:\Miniconda\Library\usr\bin;C:\Miniconda\Library\bin;C:\Miniconda\Scripts;C:\Miniconda\bin;C:\Miniconda\condabin'
     - name: Initialize powershell for conda (windows)
       if: contains(matrix.platform, 'windows')
-      run: conda init powershell
+      run: |
+        conda init powershell
+        dir C:\Miniconda\
+        dir C:\Miniconda\Library
+        dir C:\Miniconda\Library\usr
+        dir C:\Miniconda\bin
+        dir C:\Miniconda\condabin
     - name: Install conda (ubuntu and macos)
       if: contains(matrix.platform, 'windows') == false
       run: |
