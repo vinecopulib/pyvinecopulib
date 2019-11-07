@@ -51,16 +51,8 @@ jobs:
       run: |
         Invoke-WebRequest -URI https://repo.continuum.io/miniconda/Miniconda3-latest-${{matrix.platform-conda}}-${{matrix.architecture-conda}}.exe -OutFile "miniconda.exe"
         Start-Process -FilePath "miniconda.exe"
-        echo '::add-path::C:\Users\runneradmin\miniconda\;C:\Users\runneradmin\miniconda\Scripts\'
+        echo '::add-path::C:\Miniconda\;C:\Miniconda\Scripts\'
       shell: powershell
-    - name: Try hardcoded path(windows)
-      if: contains(matrix.platform, 'windows')
-      run: |
-        dir C:\Users\runneradmin\
-        dir C:\
-        dir C:\AppData
-        dir C:\ProgramData
-      shell: cmd
     - name: Install conda (ubuntu and macos)
       if: contains(matrix.platform, 'windows') == false
       run: |
