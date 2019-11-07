@@ -56,8 +56,9 @@ jobs:
     - name: Try hardcoded path(windows)
       if: contains(matrix.platform, 'windows')
       run: |
-        C:\Users\runneradmin\miniconda\Scripts\conda.exe config --set always_yes yes --set changeps1 no
-      shell: powershell
+        dir C:\Users\runneradmin\
+        'C:\Users\runneradmin\miniconda\Scripts\conda.exe' config --set always_yes yes --set changeps1 no
+      shell: cmd
     - name: Install conda (ubuntu and macos)
       if: contains(matrix.platform, 'windows') == false
       run: |
