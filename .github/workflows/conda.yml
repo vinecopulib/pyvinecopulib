@@ -52,6 +52,9 @@ jobs:
         Invoke-WebRequest -URI https://repo.continuum.io/miniconda/Miniconda3-latest-${{matrix.platform-conda}}-${{matrix.architecture-conda}}.exe -OutFile "miniconda.exe"
         Start-Process -FilePath "miniconda.exe"
         echo '::add-path::C:\Miniconda\;C:\Miniconda\Scripts\;C:\Miniconda\Library\bin'
+    - name: Initialiye powershell for conda(windows)
+      if: contains(matrix.platform, 'windows')
+      run: conda init powershell
     - name: Install conda (ubuntu and macos)
       if: contains(matrix.platform, 'windows') == false
       run: |
@@ -70,7 +73,6 @@ jobs:
         conda install -q conda-build conda-verify
     - name: Build recipe 
       run: |
-        conda init powershell
         activate
         conda build -q conda.recipe --python=${{ matrix.python-version }} --output-folder=build
     - name: Add conda channel 
