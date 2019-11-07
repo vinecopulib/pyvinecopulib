@@ -4,8 +4,7 @@ name: Test and deploy for conda
 on: [push]
 
 jobs:
-  build-and-publish:
-    
+  build:
     strategy:
       fail-fast: false
       max-parallel: 12
@@ -29,7 +28,7 @@ jobs:
             platform-vcvars: "x86_amd64"
             platform-msbuild: "x64"
             architecture-conda: "x86_64"
-        python-version: [3.6, 3.7]
+        python-version: [3.5, 3.6, 3.7]
         exclude:
           - platform: macos-latest
             architecture: "x86"
@@ -61,10 +60,10 @@ jobs:
         conda install -q conda-build conda-verify
     - name: Build recipe 
       run: |
-        conda build -q conda.recipe --python=${{ matrix.python-version }} --output-folder=build
+        conda build -q conda.recipe --python=${{ matrix.python-version }} --output-folder=dist
     - name: Add conda channel 
       run: |
-        conda config --add channels "file://`pwd`/build"
+        conda config --add channels "file://`pwd`/dist"
     - name: Install package
       run: |
         conda create -q -n test-environment python=${{ matrix.python-version }} pyvinecopulib pytest
