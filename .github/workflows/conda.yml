@@ -73,7 +73,6 @@ jobs:
         conda install -q conda-build conda-verify
     - name: Build recipe 
       run: |
-        activate
         conda build -q conda.recipe --python=${{ matrix.python-version }} --output-folder=build
     - name: Add conda channel 
       run: |
