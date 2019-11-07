@@ -38,12 +38,6 @@ The easiest way to install the latest release is to use `pip`:
 pip install pyvinecopulib
 ```
 
-Alternatively, `pyvinecopulib` is also available via `conda` (linux and macos only):
-
-```
-conda install -c vinecopulib pyvinecopulib
-```
-
 To install from source, just clone this repository and do `pip install`.
 Note the `--recursive` option which is needed for the `pybind11`, `vinecopulib` and `wdm` submodules:
 
