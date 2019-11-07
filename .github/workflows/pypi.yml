@@ -17,7 +17,7 @@ jobs:
           - architecture: "x64"
             platform-vcvars: "x86_amd64"
             platform-msbuild: "x64"
-        python-version: [3.6, 3.7]
+        python-version: [3.5, 3.6, 3.7]
         exclude:
           - platform: macos-latest
             architecture: "x86"
@@ -52,7 +52,7 @@ jobs:
     - name: Visual Studio Command Prompt tool
       if: contains(matrix.platform, 'windows')
       run: |
-        cmd "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" ${{ matrix.platform-vcvars }}
+        cmd "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.platform-vcvars }}
     - name: Install package 
       run: |
         pip install --find-links=dist --verbose pyvinecopulib

@@ -45,7 +45,7 @@ jobs:
     - name: Visual Studio Command Prompt tool (windows)
       if: contains(matrix.platform, 'windows')
       run: |
-        cmd "C:\Program Files (x86)\Microsoft Visual Studio 14.0\VC\vcvarsall.bat" ${{ matrix.platform-vcvars }}
+        cmd "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.platform-vcvars }}
     - name: Install conda (windows)
       if: contains(matrix.platform, 'windows')
       run: |
