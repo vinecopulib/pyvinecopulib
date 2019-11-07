@@ -16,7 +16,6 @@ requirements:
     - numpy >=1.14
     - setuptools
     - setuptools_scm
-    - {{ compiler('cxx') }}
 
   run:
     - python
