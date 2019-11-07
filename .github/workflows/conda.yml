@@ -56,11 +56,6 @@ jobs:
       if: contains(matrix.platform, 'windows')
       run: |
         conda init powershell
-        dir C:\Miniconda\
-        dir C:\Miniconda\Library
-        dir C:\Miniconda\Library\usr
-        dir C:\Miniconda\bin
-        dir C:\Miniconda\condabin
     - name: Install conda (ubuntu and macos)
       if: contains(matrix.platform, 'windows') == false
       run: |
