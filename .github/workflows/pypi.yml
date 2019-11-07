@@ -62,6 +62,11 @@ jobs:
       run: |
         pip install pytest
         pytest tests -r a
+    - name: Upload binaries
+      uses: actions/upload-artifact@v1.0.0
+      with:
+        name: "dist-${{ matrix.os }}"
+        path: dist
  
   publish:
    
