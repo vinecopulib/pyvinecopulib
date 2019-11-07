@@ -54,7 +54,7 @@ jobs:
       shell: powershell
     - name: Activate conda (windows)
       if: contains(matrix.platform, 'windows')
-      run: CALL "C:\Miniconda\Scritps\activate.bat"
+      run: CALL "C:\Miniconda\Scripts\activate.bat"
       shell: cmd
     - name: Install conda (ubuntu and macos)
       if: contains(matrix.platform, 'windows') == false
