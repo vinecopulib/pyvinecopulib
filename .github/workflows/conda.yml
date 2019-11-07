@@ -57,7 +57,11 @@ jobs:
       if: contains(matrix.platform, 'windows')
       run: |
         echo $env:PATH
-        $HOME\miniconda\Scripts\conda.exe config --set always_yes yes --set changeps1 no
+      shell: powershell
+    - name: Try hardcoded path(windows)
+      if: contains(matrix.platform, 'windows')
+      run: |
+        $env:HOME\miniconda\Scripts\conda.exe config --set always_yes yes --set changeps1 no
       shell: powershell
     - name: Install conda (ubuntu and macos)
       if: contains(matrix.platform, 'windows') == false
