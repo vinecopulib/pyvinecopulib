@@ -49,12 +49,12 @@ jobs:
     - name: Install conda (windows)
       if: contains(matrix.platform, 'windows')
       run: |
-        Invoke-WebRequest -URI https://repo.continuum.io/miniconda/Miniconda3-latest-${{matrix.platform-conda}}-${{matrix.architecture-conda}}.exe -OutFile "miniconda.exe"
-        Start-Process -FilePath "miniconda.exe"
+        Invoke-WebRequest -URI https://repo.continuum.io/miniconda/Miniconda3-latest-${{matrix.platform-conda}}-${{matrix.architecture-conda}}.exe -OutFile "miniconda_install.exe"
+        Start-Process -FilePath "miniconda_install.exe"
     - name: Initialize powershell for conda (windows)
       if: contains(matrix.platform, 'windows')
       run: |
-        Start-Process C:\Miniconda\Scripts\activate.bat
+        Start-process "cmd.exe" "/c C:\Miniconda\Scripts\activate.bat"
         conda init powershell
     - name: Install conda (ubuntu and macos)
       if: contains(matrix.platform, 'windows') == false
