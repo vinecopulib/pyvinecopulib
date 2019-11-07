@@ -1,10 +1,10 @@
 name: Test and deploy for conda 
 
-
 on: [push]
 
 jobs:
-  build:
+  build-and-publish:
+
     strategy:
       fail-fast: false
       max-parallel: 12
@@ -28,7 +28,7 @@ jobs:
             platform-vcvars: "x86_amd64"
             platform-msbuild: "x64"
             architecture-conda: "x86_64"
-        python-version: [3.5, 3.6, 3.7]
+        python-version: [3.6, 3.7]
         exclude:
           - platform: macos-latest
             architecture: "x86"
@@ -42,8 +42,7 @@ jobs:
       uses: actions/checkout@v1
       with:
         submodules: recursive
-    - name: Install conda
-      if: contains(matrix.platform, 'windows') == false
+    - name: Install miniconda
       run: |
         wget -O miniconda.sh https://repo.continuum.io/miniconda/Miniconda3-latest-${{matrix.platform-conda}}-${{matrix.architecture-conda}}.sh
         bash miniconda.sh -b -p $HOME/miniconda
