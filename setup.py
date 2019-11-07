@@ -1,42 +1,10 @@
 import os
 import sys
 from glob import glob
-from setuptools import setup, Extension
-from setuptools.command.build_ext import build_ext
+
 import setuptools
-
-if not os.path.isdir("lib/boost"):
-    import tarfile
-    boost_archive = glob(os.path.join("lib", "boost*.tar.gz"))[0]
-    tar = tarfile.open(boost_archive)
-    tar.extractall(path='lib/boost')
-    tar.close()
-
-
-def get_sources(paths):
-    sources = []
-
-    for path in paths:
-        [sources.append(y) for x in os.walk(path)
-         for y in glob(os.path.join(x[0], '*'))
-
-         if not os.path.isdir(y)]
-
-    return sources
-
-
-include_dirs = ['boost', 'eigen', 'eigen/unsupported',
-                'pybind11/include', 'vinecopulib/include', 'wdm/include']
-include_paths = ['lib/' + path for path in include_dirs]
-ext_modules = [
-    Extension(
-        'pyvinecopulib',
-        ['src/main.cpp'],
-        include_dirs=include_paths,
-        depends=get_sources(include_paths),
-        language='c++'
-    ),
-]
+from setuptools import Extension, setup
+from setuptools.command.build_ext import build_ext
 
 
 # As of Python 3.6, CCompiler has a `has_flag` method.
@@ -46,10 +14,10 @@ def has_flag(compiler, flagname):
     the specified compiler.
     """
     import tempfile
-    with tempfile.NamedTemporaryFile('w', suffix='.cpp') as f:
-        f.write('int main (int argc, char **argv) { return 0; }')
+    with tempfile.NamedTemporaryFile('w', suffix='.cpp') as file:
+        file.write('int main (int argc, char **argv) { return 0; }')
         try:
-            compiler.compile([f.name], extra_postargs=[flagname])
+            compiler.compile([file.name], extra_postargs=[flagname])
         except setuptools.distutils.errors.CompileError:
             return False
 
@@ -57,8 +25,7 @@ def has_flag(compiler, flagname):
 
 
 def cpp_flag(compiler):
-    """Return the -std=c++[11/14/17] compiler flag.
-    """
+    """Return the -std=c++[11/14/17] compiler flag."""
     flags = ['-std=c++14', '-std=c++11']
 
     for flag in flags:
@@ -82,7 +49,6 @@ class BuildExt(build_ext):
 
     if sys.platform == 'darwin':
         darwin_opts = ['-stdlib=libc++', '-mmacosx-version-min=10.7']
-        #['-stdlib=libc++', '-mmacosx-version-min=10.7']
         c_opts['unix'] += darwin_opts
         l_opts['unix'] += darwin_opts
 
@@ -108,8 +74,51 @@ class BuildExt(build_ext):
         build_ext.build_extensions(self)
 
 
-with open('requirements.txt') as f:
-    requirements = f.read().splitlines()
+def extract_boost():
+    """Extract boost if not already done."""
+
+    if not os.path.isdir("lib/boost"):
+        import tarfile
+        boost_archive = glob(os.path.join("lib", "boost*.tar.gz"))[0]
+        tar = tarfile.open(boost_archive)
+        tar.extractall(path='lib/boost')
+        tar.close()
+
+
+def get_requirements():
+    """Read and return requirements."""
+    with open('requirements.txt') as file:
+        requirements = file.read().splitlines()
+
+    return requirements
+
+
+def get_long_description():
+    """Read and return the long description."""
+    with open("README.md", "r") as file:
+        long_description = file.read()
+
+    return long_description
+
+
+def get_include_paths():
+    """Return the long description."""
+    include_dirs = ['boost', 'eigen', 'eigen/unsupported',
+                    'pybind11/include', 'vinecopulib/include', 'wdm/include']
+
+    return ['lib/' + path for path in include_dirs]
+
+
+def get_files(paths):
+    """Return a list with all the files in paths."""
+    sources = []
+
+    for path in paths:
+        tmp = [y for x in os.walk(path) for y in glob(
+            os.path.join(x[0], '*')) if not os.path.isdir(y)]
+        sources.append(tmp)
+
+    return sources
 
 
 def local_scheme(version):
@@ -119,17 +128,45 @@ def local_scheme(version):
     return ""
 
 
+extract_boost()
 setup(
     name='pyvinecopulib',
     use_scm_version={"local_scheme": local_scheme},
     setup_requires=['setuptools_scm'],
-    install_requires=requirements,
+    install_requires=get_requirements(),
     author='Thomas Nagler and Thibault Vatter',
     author_email='info@vinecopulib.org',
+    maintainer_email='info@vinecopulib.org',
     description='A python interface to vinecopulib',
-    long_description='TODO',
-    url="https://github.com/pyvinecopulib/",
-    ext_modules=ext_modules,
+    long_description=get_long_description(),
+    long_description_content_type="text/markdown",
+    url="https://github.com/vinecopulib/pyvinecopulib/",
+    license="MIT",
+    ext_modules=[
+        Extension(
+            'pyvinecopulib',
+            ['src/main.cpp'],
+            include_dirs=get_include_paths(),
+            depends=get_files(get_include_paths()),
+            language='c++'
+        ),
+    ],
     cmdclass={'build_ext': BuildExt},
     zip_safe=False,
+    classifiers=[
+        'Development Status :: 3 - Alpha',
+        'Intended Audience :: Financial and Insurance Industry',
+        'Intended Audience :: Healthcare Industry',
+        'Intended Audience :: Information Technology',
+        'Intended Audience :: Other Audience',
+        'Intended Audience :: Science/Research',
+        'Intended Audience :: Telecommunications Industry',
+        'Topic :: Scientific/Engineering',
+        'Topic :: Scientific/Engineering :: Mathematics',
+        'Programming Language :: C++',
+        'Programming Language :: Python :: 2.7',
+        'Programming Language :: Python :: 3.6',
+        'License :: OSI Approved :: MIT License'
+    ],
+    keywords='copula, vines copulas, pair-copulas constructions',
 )
