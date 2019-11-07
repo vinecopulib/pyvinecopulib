@@ -53,16 +53,6 @@ jobs:
         Start-Process -FilePath "miniconda.exe" -ArgumentList "/S","/D=$HOME\miniconda"
         echo '::add-path::C:\Users\runneradmin\miniconda\;C:\Users\runneradmin\miniconda\Scripts\'
       shell: powershell
-    - name: Check environment (windows)
-      if: contains(matrix.platform, 'windows')
-      run: |
-        echo $env:PATH
-      shell: powershell
-    - name: Try hardcoded path(windows)
-      if: contains(matrix.platform, 'windows')
-      run: |
-        $env:HOME\miniconda\Scripts\conda.exe config --set always_yes yes --set changeps1 no
-      shell: powershell
     - name: Install conda (ubuntu and macos)
       if: contains(matrix.platform, 'windows') == false
       run: |
