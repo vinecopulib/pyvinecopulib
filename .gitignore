@@ -28,6 +28,7 @@
 *.app
 
 # Python stuff
+.eggs/
 *.py[cod]
 *.egg-info
 *.pyc
