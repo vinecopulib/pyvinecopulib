@@ -50,7 +50,7 @@ jobs:
       if: contains(matrix.platform, 'windows')
       run: |
         Invoke-WebRequest -URI https://repo.continuum.io/miniconda/Miniconda3-latest-${{matrix.platform-conda}}-${{matrix.architecture-conda}}.exe -OutFile "miniconda.exe"
-        Start-Process -FilePath "miniconda2.exe" -ArgumentList "/D=C:\Users\runneradmin\miniconda"
+        Start-Process -FilePath "miniconda.exe" -ArgumentList "\D=C:\Users\runneradmin"
         echo '::add-path::C:\Users\runneradmin\miniconda\;C:\Users\runneradmin\miniconda\Scripts\'
       shell: powershell
     - name: Try hardcoded path(windows)
