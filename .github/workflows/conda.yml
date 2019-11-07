@@ -54,7 +54,7 @@ jobs:
     - name: Initialize powershell for conda (windows)
       if: contains(matrix.platform, 'windows')
       run: |
-        Start-Process C:\Miniconda\activate.bat
+        Start-Process C:\Miniconda\Scripts\activate.bat
         conda init powershell
     - name: Install conda (ubuntu and macos)
       if: contains(matrix.platform, 'windows') == false
