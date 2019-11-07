@@ -51,7 +51,7 @@ jobs:
       run: |
         Invoke-WebRequest -URI https://repo.continuum.io/miniconda/Miniconda3-latest-${{matrix.platform-conda}}-${{matrix.architecture-conda}}.exe -OutFile "miniconda.exe"
         Start-Process -FilePath "miniconda.exe"
-        echo '::add-path::C:\Miniconda\;C:\Miniconda\Scripts\'
+        echo '::add-path::C:\Miniconda\;C:\Miniconda\Scripts\;C:\Miniconda\Library\bin'
     - name: Install conda (ubuntu and macos)
       if: contains(matrix.platform, 'windows') == false
       run: |
