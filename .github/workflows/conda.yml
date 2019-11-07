@@ -51,8 +51,13 @@ jobs:
       run: |
         Invoke-WebRequest -OutFile miniconda.exe https://repo.continuum.io/miniconda/Miniconda3-latest-${{matrix.platform-conda}}-${{matrix.architecture-conda}}.exe
         Start-Process -FilePath "miniconda.exe" -ArgumentList "/S","/D=$HOME\miniconda"
-        $env:PATH += ";$HOME\miniconda\;$HOME\miniconda\Scripts\"
+        echo '::add-path::$HOME\miniconda\;$HOME\miniconda\Scripts\'
+      shell: powershell
+    - name: Check environment (windows)
+      if: contains(matrix.platform, 'windows')
+      run: |
         echo $env:PATH
+        $HOME\miniconda\Scripts\conda.exe config --set always_yes yes --set changeps1 no
       shell: powershell
     - name: Install conda (ubuntu and macos)
       if: contains(matrix.platform, 'windows') == false
