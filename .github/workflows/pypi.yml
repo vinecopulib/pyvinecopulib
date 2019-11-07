@@ -17,8 +17,10 @@ jobs:
           - architecture: "x64"
             platform-vcvars: "x86_amd64"
             platform-msbuild: "x64"
-        python-version: [3.6, 3.7]
+        python-version: [3.5, 3.6, 3.7]
         exclude:
+          - platform: windows-latest
+            python-version: 3.5
           - platform: macos-latest
             architecture: "x86"
           - platform: ubuntu-latest
