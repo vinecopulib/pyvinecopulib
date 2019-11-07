@@ -58,6 +58,8 @@ jobs:
       run: |
         dir C:\Users\runneradmin\
         dir C:\
+        dir C:\AppData
+        dir C:\ProgramData
       shell: cmd
     - name: Install conda (ubuntu and macos)
       if: contains(matrix.platform, 'windows') == false
