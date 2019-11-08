@@ -140,6 +140,10 @@ PYBIND11_MODULE(pyvinecopulib, pv)
                   &Bicop::get_parameters,
                   &Bicop::set_parameters,
                   "The copula parameter(s).")
+    .def_property("var_types",
+                  &Bicop::get_var_types,
+                  &Bicop::set_var_types,
+                  "The type of the two variables.")
     .def_property_readonly("family", &Bicop::get_family, "The copula family.")
     .def_property_readonly("tau", &Bicop::get_tau, "The Kendall's tau.")
     .def_property_readonly(
@@ -420,6 +424,10 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          &Vinecop::to_json,
          "write a vine copula to a JSON file.",
          py::arg("filename"))
+    .def_property("var_types",
+                  &Vinecop::get_var_types,
+                  &Vinecop::set_var_types,
+                  "The types of each variables.")
     .def_property_readonly(
       "trunc_lvl", &Vinecop::get_trunc_lvl, "The truncation level.")
     .def_property_readonly("dim", &Vinecop::get_dim, "The dimension.")
