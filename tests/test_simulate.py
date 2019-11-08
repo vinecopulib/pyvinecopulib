@@ -1,8 +1,5 @@
-import pyvinecopulib as pv
 import numpy as np
-
-#  def test_version():
-#  assert pv.__version__ == '0.0.1'
+import pyvinecopulib as pv
 
 
 def test_simulate_uniform():

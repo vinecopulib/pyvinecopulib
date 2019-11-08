@@ -290,6 +290,26 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          &RVineStructure::str,
          "summarizes the model into a string (can be used for printing).");
 
+  py::class_<DVineStructure>(pv, "DVineStructure")
+    .def(py::init<const std::vector<size_t>&>(),
+         "creates a D-vine with given ordering of variables.",
+         py::arg("order"))
+    .def(
+      py::init<const std::vector<size_t>&, size_t>(),
+      "creates a D-vine with given ordering of variables and truncation level.",
+      py::arg("order"),
+      py::arg("trunc_lvl"));
+
+  py::class_<CVineStructure>(pv, "CVineStructure")
+    .def(py::init<const std::vector<size_t>&>(),
+         "creates a C-vine with given ordering of variables.",
+         py::arg("order"))
+    .def(
+      py::init<const std::vector<size_t>&, size_t>(),
+      "creates a C-vine with given ordering of variables and truncation level.",
+      py::arg("order"),
+      py::arg("trunc_lvl"));
+
   py::class_<FitControlsVinecop>(pv, "FitControlsVinecop")
     .def(py::init<std::vector<BicopFamily>,
                   std::string,
