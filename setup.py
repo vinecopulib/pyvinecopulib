@@ -122,7 +122,7 @@ def get_files(paths):
 
 
 def local_scheme(version):
-    """Skip the local version (eg. +xyz of 0.6.1.dev4+gdf99fe2)
+    """Skip the local version (eg. +xyz of 0.6.1.dev4+xyz)
     to be able to upload to Test PyPI"""
 
     return ""
