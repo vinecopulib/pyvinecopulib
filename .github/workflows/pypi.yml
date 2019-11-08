@@ -105,14 +105,14 @@ jobs:
         rename 's/linux/manylinux1/' *linux* #rename to manylinux1 to make PYPI accept the package
         cd ..
         ls dist/
-    - name: Publish distribution Test PyPI
-      if: |
-        job.status == 'success' 
-      uses: pypa/gh-action-pypi-publish@master
-      with:
-        user: __token__
-        password: ${{ secrets.test_pypi_password }}
-        repository_url: https://test.pypi.org/legacy/
+#     - name: Publish distribution Test PyPI
+      # if: |
+      #   job.status == 'success' 
+      # uses: pypa/gh-action-pypi-publish@master
+      # with:
+      #   user: __token__
+      #   password: ${{ secrets.test_pypi_password }}
+        # repository_url: https://test.pypi.org/legacy/
     - name: Publish distribution to PyPI
       if: |
         job.status == 'success' 
