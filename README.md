@@ -28,15 +28,18 @@ Advantages over VineCopula are
 ### Prerequisites
 
 * NumPy
-* CMake >= 3.2
-* Eigen3
-* Boost >= 1.56 (1.58 on windows)
-* A compiler with C++11 support (Linux, OS X) or Visual Studio 2015 (required for all Python versions, see notes below)
+* To install from source: a compiler with C++11 support (Linux, OS X) or Visual Studio 2015 (required for all Python versions, see notes below)
 
 ### Installation
 
-Just clone this repository and pip install.
-Note the `--recursive` option which is needed for the pybind11, vinecopulib and wdm submodules:
+The easiest way to install the latest release is to use `pip`:
+
+```
+pip install pyvinecopulib
+```
+
+To install from source, just clone this repository and do `pip install`.
+Note the `--recursive` option which is needed for the `pybind11`, `vinecopulib` and `wdm` submodules:
 
 ```bash
 git clone --recursive https://github.com/vinecopulib/pyvinecopulib.git
@@ -84,5 +87,4 @@ requirement for you package: see the `conda.recipe/meta.yaml` file in this examp
 If you have any questions regarding the library, feel free to
 [open an issue](https://github.com/pyvinecopulib/pyvinecopulib/issues/new) or
 send a mail to <info@vinecopulib.org>.
-
 
