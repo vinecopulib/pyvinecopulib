@@ -109,7 +109,7 @@ jobs:
       if: |
         job.status == 'success' 
           && github.event_name == 'push' 
-          && github.ref == 'dev'
+          && github.event.ref == 'dev'
       uses: pypa/gh-action-pypi-publish@master
       with:
         user: __token__
