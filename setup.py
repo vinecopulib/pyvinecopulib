@@ -6,9 +6,10 @@ import setuptools
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
 
-
 # As of Python 3.6, CCompiler has a `has_flag` method.
 # cf http://bugs.python.org/issue26689
+
+
 def has_flag(compiler, flagname):
     """Return a boolean indicating whether a flag name is supported on
     the specified compiler.
@@ -67,6 +68,10 @@ class BuildExt(build_ext):
         elif ct == 'msvc':
             opts.append('/DVERSION_INFO=\\"%s\\"' %
                         self.distribution.get_version())
+        try:
+            self.compiler.compiler_so.remove("-Wstrict-prototypes")
+        except (AttributeError, ValueError):
+            pass
 
         for ext in self.extensions:
             ext.extra_compile_args = opts
@@ -101,10 +106,26 @@ def get_long_description():
     return long_description
 
 
+class get_pybind_include(object):
+    """Helper class to determine the pybind11 include path
+
+    The purpose of this class is to postpone importing pybind11
+    until it is actually installed, so that the ``get_include()``
+    method can be invoked. """
+
+    def __init__(self, user=False):
+        self.user = user
+
+    def __str__(self):
+        import pybind11
+
+        return pybind11.get_include(self.user)
+
+
 def get_include_paths():
     """Return the long description."""
     include_dirs = ['boost', 'eigen', 'eigen/unsupported',
-                    'pybind11/include', 'vinecopulib/include', 'wdm/include']
+                    'vinecopulib/include', 'wdm/include']
 
     return ['lib/' + path for path in include_dirs]
 
@@ -132,7 +153,7 @@ extract_boost()
 setup(
     name='pyvinecopulib',
     use_scm_version={"local_scheme": local_scheme},
-    setup_requires=['setuptools_scm'],
+    setup_requires=get_requirements()[0:2],
     install_requires=get_requirements(),
     author='Thomas Nagler and Thibault Vatter',
     author_email='info@vinecopulib.org',
@@ -146,7 +167,11 @@ setup(
         Extension(
             'pyvinecopulib',
             ['src/main.cpp'],
-            include_dirs=get_include_paths(),
+            include_dirs=[
+                # Path to pybind11 headers
+                get_pybind_include(),
+                get_pybind_include(user=True)
+            ] + get_include_paths(),
             depends=get_files(get_include_paths()),
             language='c++'
         ),
