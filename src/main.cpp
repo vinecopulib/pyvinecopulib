@@ -9,7 +9,7 @@ using namespace vinecopulib;
 PYBIND11_MODULE(pyvinecopulib, pv)
 {
 
-  /*   py::options options; */
+  /* py::options options; */
   /* options.disable_function_signatures(); */
 
   pv.doc() = R"pbdoc(
@@ -563,7 +563,7 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          py::arg("num_threads") = 1)
     .def("mbicv",
          &Vinecop::mbicv,
-         "computes the modified Bayesiand Information Criterion for Vines (for "
+         "computes the modified Bayesian Information Criterion for Vines (for "
          "fitted objects, passing an empty 'u' returns the fitted criterion).",
          py::arg("u") = Eigen::MatrixXd(),
          py::arg("psi0") = 0.9,
