@@ -28,11 +28,6 @@ jobs:
     runs-on: ${{ matrix.platform }}
 
     steps:
-    - name: Install dependencies
-      run: |
-        echo github.ref    
-        echo '${github.ref}'    
-        echo '${{github.ref}}'    
     - name: Checkout project 
       uses: actions/checkout@v1
       with:
@@ -114,7 +109,7 @@ jobs:
       if: |
         job.status == 'success' 
           && github.event_name == 'push' 
-          && contains(github.ref, 'dev')
+          && github.ref == 'refs/heads/dev'
       uses: pypa/gh-action-pypi-publish@master
       with:
         user: __token__
