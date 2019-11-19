@@ -1,7 +1,6 @@
 # pyvinecopulib
 
-[![Build Status](https://travis-ci.org/vinecopulib/pyvinecopulib.svg?branch=master)](https://travis-ci.org/vinecopulib/pyvinecopulib)
-[![Build status](https://ci.appveyor.com/api/projects/status/2fn1v67sxdrmp2po/branch/master?svg=true)](https://ci.appveyor.com/project/vinecopulib/pyvinecopulib-x6s0i/branch/master)
+[![Build Status](https://github.com/vinecopulib/pyvinecopulib/workflows/Build%20Status/badge.svg?branch=master)](https://github.com/vinecopulib/pyvinecopulib/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ### What are vine copulas?

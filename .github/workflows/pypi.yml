@@ -1,4 +1,4 @@
-name: Test and deploy for PyPI
+name: Build Status 
 
 on: [push]
 
