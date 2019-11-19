@@ -1,6 +1,6 @@
 name: Build Status 
 
-on: [push, tag]
+on: [push, create]
 
 jobs:
   build:
