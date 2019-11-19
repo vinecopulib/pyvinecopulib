@@ -153,7 +153,7 @@ extract_boost()
 setup(
     name='pyvinecopulib',
     use_scm_version={"local_scheme": local_scheme},
-    setup_requires=get_requirements()[0:2],
+    setup_requires=get_requirements()[0:3],
     install_requires=get_requirements(),
     author='Thomas Nagler and Thibault Vatter',
     author_email='info@vinecopulib.org',
