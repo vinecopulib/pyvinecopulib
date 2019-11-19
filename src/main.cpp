@@ -248,14 +248,21 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          py::arg("controls") = FitControlsBicop());
 
   py::class_<RVineStructure>(pv, "RVineStructure")
+    .def(py::init<const size_t&, const size_t&>(),
+         "instantiates an RVineStructure object to a D-vine for a given "
+         "dimension.",
+         py::arg("d") = static_cast<size_t>(1),
+         py::arg("trunc_lvl") = std::numeric_limits<size_t>::max())
     .def(py::init<const Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
                   bool>(),
-         "creates an array representation of regular vine structures.",
+         "instantiates an RVineStructure object to a D-vine with given "
+         "ordering of variables.",
          py::arg("mat"),
          py::arg("check") = true)
-    .def(py::init<const std::vector<size_t>&, bool>(),
+    .def(py::init<const std::vector<size_t>&, const size_t&, bool>(),
          "creates a D-vine with given ordering of variables.",
          py::arg("order"),
+         py::arg("trunc_lvl") = std::numeric_limits<size_t>::max(),
          py::arg("check") = true)
     .def(py::init<const std::string, bool>(),
          "creates a structure from a JSON file.",
