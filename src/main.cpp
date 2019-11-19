@@ -114,17 +114,23 @@ PYBIND11_MODULE(pyvinecopulib, pv)
                   &FitControlsBicop::set_num_threads);
 
   py::class_<Bicop>(pv, "Bicop")
-    .def(py::init<const BicopFamily, const int, const Eigen::MatrixXd&>(),
+    .def(py::init<const BicopFamily,
+                  const int,
+                  const Eigen::MatrixXd&,
+                  const std::vector<std::string>&>(),
          "creates a specific bivariate copula model.",
          py::arg("family") = BicopFamily::indep,
          py::arg("rotation") = 0,
-         py::arg("parameters") = Eigen::MatrixXd())
+         py::arg("parameters") = Eigen::MatrixXd(),
+         py::arg("var_types") = std::vector<std::string>(2, "c"))
     .def(py::init<const Eigen::Matrix<double, Eigen::Dynamic, 2>&,
-                  const FitControlsBicop&>(),
+                  const FitControlsBicop&,
+                  const std::vector<std::string>&>(),
          "create a copula model from the data, equivalent to cop = Bicop(); "
          "cop.select(data, controls).",
          py::arg("data"),
-         py::arg("controls") = FitControlsBicop())
+         py::arg("controls") = FitControlsBicop(),
+         py::arg("var_types") = std::vector<std::string>(2, "c"))
     .def(py::init<const std::string>(),
          "creates from a JSON file.",
          py::arg("filename"))
@@ -391,54 +397,44 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     .def(py::init<const size_t>(),
          "creates a D-vine with independence copulas.",
          py::arg("d"))
-    .def(py::init<const RVineStructure&>(),
-         "creates a vine copula with structure specified by an RVineStructure "
-         "object; all pair-copulas are set to independence.",
-         py::arg("structure"))
-    .def(py::init<const Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
-                  const bool>(),
-         "creates a vine copula with structure specified by an R-vine matrix; "
-         "all pair-copulas are set to independence.",
-         py::arg("matrix"),
-         py::arg("check") = true)
-    .def(
-      py::init<const std::vector<std::vector<Bicop>>&, const RVineStructure&>(),
-      "creates an arbitrary vine copula model.",
-      py::arg("pair_copulas"),
-      py::arg("structure"))
-    .def(py::init<const std::vector<std::vector<Bicop>>&,
-                  Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
-                  const bool>(),
+    .def(py::init<const RVineStructure&,
+                  const std::vector<std::vector<Bicop>>&,
+                  const std::vector<std::string>&>(),
          "creates an arbitrary vine copula model.",
-         py::arg("pair_copulas"),
+         py::arg("structure"),
+         py::arg("pair_copulas") = std::vector<size_t>(),
+         py::arg("var_types") = std::vector<std::string>())
+    .def(py::init<Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
+                  const std::vector<std::vector<Bicop>>&,
+                  const std::vector<std::string>&>(),
+         "creates an arbitrary vine copula model.",
          py::arg("matrix"),
-         py::arg("check") = true)
-    .def(py::init<const std::string, bool>(),
-         "creates a vine copula from a JSON file.",
-         py::arg("filename"),
-         py::arg("check") = true)
-    .def(py::init<const Eigen::MatrixXd&, const FitControlsVinecop&>(),
-         "constructs a vine copula model from data by creating a model and "
-         "calling select() to select the structure, families and parameters.",
-         py::arg("data"),
-         py::arg("controls") = FitControlsVinecop())
+         py::arg("pair_copulas") = std::vector<size_t>(),
+         py::arg("var_types") = std::vector<std::string>())
     .def(py::init<const Eigen::MatrixXd&,
                   const RVineStructure&,
+                  const std::vector<std::string>&,
                   const FitControlsVinecop&>(),
          "constructs a vine copula model from data by creating a model and "
-         "calling select() to select the families and parameters.",
+         "calling select().",
          py::arg("data"),
-         py::arg("structure"),
+         py::arg("structure") = RVineStructure(),
+         py::arg("var_types") = std::vector<std::string>(),
          py::arg("controls") = FitControlsVinecop())
     .def(py::init<const Eigen::MatrixXd&,
                   const Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
-                  const FitControlsVinecop&,
-                  const bool>(),
+                  const std::vector<std::string>&,
+                  const FitControlsVinecop&>(),
          "constructs a vine copula model from data by creating a model and "
-         "calling select() to select the families and parameters.",
+         "calling select().",
          py::arg("data"),
-         py::arg("matrix"),
-         py::arg("controls") = FitControlsVinecop(),
+         py::arg("matrix") =
+           Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>(),
+         py::arg("var_types") = std::vector<std::string>(),
+         py::arg("controls") = FitControlsVinecop())
+    .def(py::init<const std::string, bool>(),
+         "creates a vine copula from a JSON file.",
+         py::arg("filename"),
          py::arg("check") = true)
     .def("to_json",
          &Vinecop::to_json,
@@ -451,31 +447,31 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     .def_property_readonly(
       "trunc_lvl", &Vinecop::get_trunc_lvl, "The truncation level.")
     .def_property_readonly("dim", &Vinecop::get_dim, "The dimension.")
-    /* .def("get_pair_copula", */
-    //      &Vinecop::get_pair_copula,
-    //      "extracts a pair-copula.",
-    //      py::arg("tree"),
-    //      py::arg("edge"))
-    // .def("get_family",
-    //      &Vinecop::get_family,
-    //      "extracts the family of a pair-copula.",
-    //      py::arg("tree"),
-    //      py::arg("edge"))
-    // .def("get_rotation",
-    //      &Vinecop::get_rotation,
-    //      "extracts the rotation of a pair-copula.",
-    //      py::arg("tree"),
-    //      py::arg("edge"))
-    // .def("get_parameters",
-    //      &Vinecop::get_parameters,
-    //      "extracts the parameters of a pair-copula.",
-    //      py::arg("tree"),
-    //      py::arg("edge"))
-    // .def("get_tau",
-    //      &Vinecop::get_tau,
-    //      "extracts the Kendall's tau of a pair-copula.",
-    //      py::arg("tree"),
-    /* py::arg("edge")) */
+    .def("get_pair_copula",
+         &Vinecop::get_pair_copula,
+         "extracts a pair-copula.",
+         py::arg("tree"),
+         py::arg("edge"))
+    .def("get_family",
+         &Vinecop::get_family,
+         "extracts the family of a pair-copula.",
+         py::arg("tree"),
+         py::arg("edge"))
+    .def("get_rotation",
+         &Vinecop::get_rotation,
+         "extracts the rotation of a pair-copula.",
+         py::arg("tree"),
+         py::arg("edge"))
+    .def("get_parameters",
+         &Vinecop::get_parameters,
+         "extracts the parameters of a pair-copula.",
+         py::arg("tree"),
+         py::arg("edge"))
+    .def("get_tau",
+         &Vinecop::get_tau,
+         "extracts the kendall's tau of a pair-copula.",
+         py::arg("tree"),
+         py::arg("edge"))
     .def_property_readonly("get_all_pair_copulas",
                            &Vinecop::get_all_pair_copulas,
                            "extracts all pair-copulas.")
