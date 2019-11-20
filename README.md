@@ -55,10 +55,11 @@ Jupyter notebooks with examples can be found in the examples folder.
 
 ### Building the documentation
 
-Documentation for the example project is generated using Sphinx.
+Documentation for the example project is generated using Sphinx and the "Read the Docs" theme.
 The following command generates HTML-based reference documentation; for other
 formats please refer to the Sphinx manual:
 
+ * `pip install sphinx-rtd-theme`
  - `cd pyvinecopulib/docs`
  - `make html`
 

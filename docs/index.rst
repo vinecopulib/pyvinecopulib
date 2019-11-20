@@ -1,10 +1,15 @@
-pyvinecopulib Documentation
-============================
-
-Contents:
+Welcome to pyvinecopulib's documentation!
+=========================================
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 3
 
    pyvinecopulib
+
+Indices and tables
+==================
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`
 

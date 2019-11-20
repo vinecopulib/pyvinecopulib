@@ -13,22 +13,23 @@ PYBIND11_MODULE(pyvinecopulib, pv)
   /* options.disable_function_signatures(); */
 
   pv.doc() = R"pbdoc(
-        pyvinecopulib library
-        -----------------------
+  The pyvinecopulib package
+  -------------------------
 
-        .. currentmodule:: pyvinecopulib
+  .. currentmodule:: pyvinecopulib
 
-        .. autosummary::
-           :toctree: _generate
+  .. autosummary::
+     :toctree: _generate
 
-           Bicop
-           BicopFamily
-           FitControlsBicop
-           Vinecop
-           FitControlsVinecop
-    )pbdoc";
+     BicopFamily
+     bicop_families
+     Bicop
+     FitControlsBicop
+     Vinecop
+     FitControlsVinecop
+  )pbdoc";
 
-  py::module pv_bicop_families =
+  py::module bicop_families =
     pv.def_submodule("bicop_families",
                      "A submodule of 'pyvinecopulib' with convenience "
                      "definitions for bivariate families");
@@ -47,19 +48,19 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     .value("bb8", BicopFamily::bb8)
     .value("tll", BicopFamily::tll);
 
-  pv_bicop_families.attr("all") = bicop_families::all;
-  pv_bicop_families.attr("parametric") = bicop_families::parametric;
-  pv_bicop_families.attr("nonparametric") = bicop_families::nonparametric;
-  pv_bicop_families.attr("one_par") = bicop_families::one_par;
-  pv_bicop_families.attr("two_par") = bicop_families::two_par;
-  pv_bicop_families.attr("elliptical") = bicop_families::elliptical;
-  pv_bicop_families.attr("archimedean") = bicop_families::archimedean;
-  pv_bicop_families.attr("bb") = bicop_families::bb;
-  pv_bicop_families.attr("rotationless") = bicop_families::rotationless;
-  pv_bicop_families.attr("lt") = bicop_families::lt;
-  pv_bicop_families.attr("ut") = bicop_families::ut;
-  pv_bicop_families.attr("itau") = bicop_families::itau;
-  pv_bicop_families.attr("flip_by_rotation") = bicop_families::flip_by_rotation;
+  bicop_families.attr("all") = bicop_families::all;
+  bicop_families.attr("parametric") = bicop_families::parametric;
+  bicop_families.attr("nonparametric") = bicop_families::nonparametric;
+  bicop_families.attr("one_par") = bicop_families::one_par;
+  bicop_families.attr("two_par") = bicop_families::two_par;
+  bicop_families.attr("elliptical") = bicop_families::elliptical;
+  bicop_families.attr("archimedean") = bicop_families::archimedean;
+  bicop_families.attr("bb") = bicop_families::bb;
+  bicop_families.attr("rotationless") = bicop_families::rotationless;
+  bicop_families.attr("lt") = bicop_families::lt;
+  bicop_families.attr("ut") = bicop_families::ut;
+  bicop_families.attr("itau") = bicop_families::itau;
+  bicop_families.attr("flip_by_rotation") = bicop_families::flip_by_rotation;
 
   py::class_<FitControlsBicop>(pv, "FitControlsBicop")
     .def(py::init<std::vector<BicopFamily>,
@@ -71,7 +72,11 @@ PYBIND11_MODULE(pyvinecopulib, pv)
                   double,
                   bool,
                   size_t>(),
-         "creates the controls for fitting bivariate copula models.",
+         R"pbdoc(
+      Constructor for FitControlsBicop
+
+      Creates the controls for fitting bivariate copula models.
+      )pbdoc",
          py::arg("family_set") = bicop_families::all,
          py::arg("parametric_method") = "mle",
          py::arg("nonparametric_method") = "quadratic",
