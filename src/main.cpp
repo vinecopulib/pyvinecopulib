@@ -27,6 +27,9 @@ PYBIND11_MODULE(pyvinecopulib, pv)
      FitControlsBicop
      Vinecop
      FitControlsVinecop
+     CVineStructure
+     DVineStructure
+     RVineStructure
   )pbdoc";
 
   py::module bicop_families =
@@ -117,6 +120,13 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     .def_property("num_threads",
                   &FitControlsBicop::get_num_threads,
                   &FitControlsBicop::set_num_threads);
+  /* .def("__repr__", */
+  //      [](const FitControlsBicop& ctrls) {
+  //        return "<pyvinecopulib.FitControlsBicop>\n" + ctrls.str();
+  //      })
+  // .def("str",
+  //      &FitControlsBicop::str,
+  /* "summarizes the controls into a string (can be used for printing)."); */
 
   py::class_<Bicop>(pv, "Bicop")
     .def(py::init<const BicopFamily,
@@ -134,7 +144,7 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          "create a copula model from the data, equivalent to cop = Bicop(); "
          "cop.select(data, controls).",
          py::arg("data"),
-         py::arg("controls") = FitControlsBicop(),
+         py::arg_v("controls", FitControlsBicop(), "FitControlsBicop()"),
          py::arg("var_types") = std::vector<std::string>(2, "c"))
     .def(py::init<const std::string>(),
          "creates from a JSON file.",
@@ -245,12 +255,12 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          &Bicop::fit,
          "fits a bivariate copula (with fixed family) to data.",
          py::arg("data"),
-         py::arg("controls") = FitControlsBicop())
+         py::arg_v("controls", FitControlsBicop(), "FitControlsBicop()"))
     .def("select",
          &Bicop::select,
          "selects the best fitting model.",
          py::arg("data"),
-         py::arg("controls") = FitControlsBicop());
+         py::arg_v("controls", FitControlsBicop(), "FitControlsBicop()"));
 
   py::class_<RVineStructure>(pv, "RVineStructure")
     .def(py::init<const size_t&, const size_t&>(),
@@ -316,7 +326,14 @@ PYBIND11_MODULE(pyvinecopulib, pv)
       py::init<const std::vector<size_t>&, size_t>(),
       "creates a D-vine with given ordering of variables and truncation level.",
       py::arg("order"),
-      py::arg("trunc_lvl"));
+      py::arg("trunc_lvl"))
+    .def("__repr__",
+         [](const DVineStructure& rvs) {
+           return "<pyvinecopulib.DVineStructure>\n" + rvs.str();
+         })
+    .def("str",
+         &DVineStructure::str,
+         "summarizes the model into a string (can be used for printing).");
 
   py::class_<CVineStructure>(pv, "CVineStructure")
     .def(py::init<const std::vector<size_t>&>(),
@@ -326,7 +343,14 @@ PYBIND11_MODULE(pyvinecopulib, pv)
       py::init<const std::vector<size_t>&, size_t>(),
       "creates a C-vine with given ordering of variables and truncation level.",
       py::arg("order"),
-      py::arg("trunc_lvl"));
+      py::arg("trunc_lvl"))
+    .def("__repr__",
+         [](const CVineStructure& rvs) {
+           return "<pyvinecopulib.CVineStructure>\n" + rvs.str();
+         })
+    .def("str",
+         &CVineStructure::str,
+         "summarizes the model into a string (can be used for printing).");
 
   py::class_<FitControlsVinecop>(pv, "FitControlsVinecop")
     .def(py::init<std::vector<BicopFamily>,
@@ -404,6 +428,13 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     .def_property("num_threads",
                   &FitControlsVinecop::get_num_threads,
                   &FitControlsVinecop::set_num_threads);
+  /*   .def("__repr__", */
+  //    [](const FitControlsVinecop& ctrls) {
+  //      return "<pyvinecopulib.FitControlsRinecop>\n" + ctrls.str();
+  //    })
+  // .def("str",
+  //      &FitControlsVinecop::str,
+  /* "summarizes the controls into a string (can be used for printing)."); */
 
   py::class_<Vinecop>(pv, "Vinecop")
     .def(py::init<const size_t>(),
@@ -432,7 +463,7 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          py::arg("data"),
          py::arg("structure") = RVineStructure(),
          py::arg("var_types") = std::vector<std::string>(),
-         py::arg("controls") = FitControlsVinecop())
+         py::arg_v("controls", FitControlsVinecop(), "FitControlsVinecop()"))
     .def(py::init<const Eigen::MatrixXd&,
                   const Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
                   const std::vector<std::string>&,
@@ -443,7 +474,7 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          py::arg("matrix") =
            Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>(),
          py::arg("var_types") = std::vector<std::string>(),
-         py::arg("controls") = FitControlsVinecop())
+         py::arg_v("controls", FitControlsVinecop(), "FitControlsVinecop()"))
     .def(py::init<const std::string, bool>(),
          "creates a vine copula from a JSON file.",
          py::arg("filename"),
@@ -518,7 +549,7 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          &Vinecop::select,
          "automatically fits and selects a vine copula model.",
          py::arg("data"),
-         py::arg("controls") = FitControlsVinecop())
+         py::arg_v("controls", FitControlsVinecop(), "FitControlsVinecop()"))
     .def("pdf",
          &Vinecop::pdf,
          "returns the probability density function.",
