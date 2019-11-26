@@ -4,6 +4,7 @@
 #     mkdoc.py [-output=<file>] [-I<path> ..] [-quiet] [.. header files ..]
 #
 #  Extract documentation from C++ header files to use it in Python bindings
+#  Slightly modified from https://github.com/RobotLocomotion/drake/blob/master/third_party/com_github_pybind_pybind11/mkdoc.py
 #
 
 from collections import OrderedDict, defaultdict
@@ -12,13 +13,13 @@ import os
 import platform
 import re
 import shutil
+import subprocess
 import sys
 import textwrap
 
 from clang import cindex
 from clang.cindex import AccessSpecifier, CursorKind, TypeKind
 
-cindex.Config.set_library_path('/usr/lib/x86_64-linux-gnu')
 
 CLASS_KINDS = [
     CursorKind.CLASS_DECL,
@@ -67,7 +68,6 @@ CPP_OPERATORS = OrderedDict(
 
 # 'Broadphase' culling; do not recurse inside these symbols.
 SKIP_RECURSE_NAMES = [
-    'DRAKE_COPYABLE_DEMAND_COPY_CAN_COMPILE',
     'Eigen',
     'detail',
     'google',
@@ -81,7 +81,7 @@ SKIP_RECURSE_NAMES = [
 SKIP_RECURSE_EXCEPTIONS = [
     # TODO(eric.cousineau): Remove this once we figure out why not having
     # it breaks the doc generation process.
-    ('drake', 'multibody', 'internal'),
+    ('vinecopulib', 'multibody', 'internal'),
 ]
 
 # Filter based on partial names.
@@ -99,11 +99,11 @@ SKIP_ACCESS = [
     AccessSpecifier.PRIVATE,
 ]
 
-
 class Symbol(object):
     """
     Contains a cursor and additional processed metadata.
     """
+
     def __init__(self, cursor, name_chain, include, line, comment):
         self.cursor = cursor
         self.name_chain = name_chain
@@ -678,6 +678,7 @@ class SymbolTree(object):
 
     class Node(object):
         """Node for a given name chain."""
+
         def __init__(self):
             # First encountered occurrence of a symbol when extracting, used to
             # label symbols that do not have documentation. Will only be None
@@ -768,13 +769,25 @@ def choose_doc_var_names(symbols):
         # Force well-known methods to have well-known names.
         nonlocal symbols, result
         for i, cursor in enumerate([s.cursor for s in symbols]):
-            if "@exclude_from_pydrake_mkdoc" in symbols[i].comment:
+            if "@exclude_from_pyvinecopulib_mkdoc" in symbols[i].comment:
                 # Allow the user to opt-out this symbol from the documentation.
                 # This is useful when forming unique constexpr names is
                 # otherwise very difficult.  (Sometimes, C++ has *many* more
-                # static-typing convenience overloads that pydrake really
+                # static-typing convenience overloads that pyvinecopulib really
                 # needs, such as various kinds of Eigen<> template magic.)
                 result[i] = None
+                continue
+            elif "@pyvinecopulib_mkdoc_identifier" in symbols[i].comment:
+                comment = symbols[i].comment
+                # Allow the user to manually specify a doc_foo identifier.
+                match = re.search(
+                    r"@pyvinecopulib_mkdoc_identifier\{(.*?)\}",
+                    comment)
+                if not match:
+                    raise RuntimeError(
+                        "Malformed pyvinecopulib_mkdoc_identifier in " + comment)
+                (identifier,) = match.groups()
+                result[i] = "doc_" + identifier
                 continue
             elif len(symbols[i].comment) == 0 and not (
                     cursor.is_default_constructor() and (
@@ -816,10 +829,10 @@ def choose_doc_var_names(symbols):
                 # the argument types" heuristics.
                 result[i] = "doc_move"
             elif (  # Look for a constructor like Foo<T>(const Foo<U>&).
-                  cursor.kind == CursorKind.FUNCTION_TEMPLATE and
-                  cursor.semantic_parent.kind == CursorKind.CLASS_TEMPLATE and
-                  re.search(r"^(.*)<T>\(const \1<U> *&\)$",
-                            cursor.displayname)):
+                cursor.kind == CursorKind.FUNCTION_TEMPLATE and
+                cursor.semantic_parent.kind == CursorKind.CLASS_TEMPLATE and
+                re.search(r"^(.*)<T>\(const \1<U> *&\)$",
+                          cursor.displayname)):
                 # Special case for scalar conversion constructors; we want to
                 # have a nice short name for these, that doesn't necessarily
                 # conflte with any *other* 1-argument constructor.
@@ -845,7 +858,7 @@ def choose_doc_var_names(symbols):
     if is_unique(result):
         if not any(result):
             # Always generate a constexpr when there are no overloads, even if
-            # it's empty.  That way, pydrake can refer to the constant and any
+            # it's empty.  That way, pyvinecopulib can refer to the constant and any
             # future (single) API comment added to C++ will work automatically.
             result[0] = "doc"
         return result
@@ -941,12 +954,15 @@ def print_symbols(f, name, node, level=0):
         if doc_var is None:
             continue
         assert name_chain == symbol.name_chain
+        comment = re.sub(
+            r'@pyvinecopulib_mkdoc[a-z_]*\{.*\}', '',
+            symbol.comment)
         delim = "\n"
-        if "\n" not in symbol.comment and len(symbol.comment) < 40:
+        if "\n" not in comment and len(comment) < 40:
             delim = " "
         iprint('  // Source: {}:{}'.format(symbol.include, symbol.line))
         iprint('  const char* {} ={}R"""({})""";'.format(
-            doc_var, delim, symbol.comment))
+            doc_var, delim, comment.strip()))
     # Recurse into child elements.
     keys = sorted(node.children_map.keys())
     for key in keys:
@@ -985,23 +1001,32 @@ def main():
     parameters = ['-x', 'c++', '-D__MKDOC_PY__']
     filenames = []
 
+    library_file = None
     if platform.system() == 'Darwin':
-        dev_path = '/Applications/Xcode.app/Contents/Developer/'
-        lib_dir = dev_path + 'Toolchains/XcodeDefault.xctoolchain/usr/lib/'
-        sdk_dir = dev_path + 'Platforms/MacOSX.platform/Developer/SDKs'
-        libclang = lib_dir + 'libclang.dylib'
-
-        if os.path.exists(libclang):
-            cindex.Config.set_library_path(os.path.dirname(libclang))
-
-        if os.path.exists(sdk_dir):
-            sysroot_dir = os.path.join(sdk_dir, next(os.walk(sdk_dir))[1][0])
-            parameters.append('-isysroot')
-            parameters.append(sysroot_dir)
+        completed_process = subprocess.run(['xcrun', '--find', 'clang'],
+                                           stdout=subprocess.PIPE,
+                                           encoding='utf-8')
+        if completed_process.returncode == 0:
+            toolchain_dir = os.path.dirname(os.path.dirname(
+                completed_process.stdout.strip()))
+            library_file = os.path.join(
+                toolchain_dir, 'lib', 'libclang.dylib')
+        completed_process = subprocess.run(['xcrun', '--show-sdk-path'],
+                                           stdout=subprocess.PIPE,
+                                           encoding='utf-8')
+        if completed_process.returncode == 0:
+            sdkroot = completed_process.stdout.strip()
+            if os.path.exists(sdkroot):
+                parameters.append('-isysroot')
+                parameters.append(sdkroot)
+    elif platform.system() == 'Linux':
+        library_file = '/usr/lib/x86_64-linux-gnu/libclang.so'
+    if library_file and os.path.exists(library_file):
+        cindex.Config.set_library_path(os.path.dirname(library_file))
 
     quiet = False
     std = '-std=c++11'
-    root_name = 'mkdoc_doc'
+    root_name = 'pyvinecopulib_doc'
     ignore_patterns = []
     output_filename = None
 
@@ -1028,7 +1053,7 @@ def main():
                % sys.argv[0])
         sys.exit(1)
 
-    f = open(output_filename, 'w')
+    f = open(output_filename, 'w', encoding='utf-8')
     # N.B. We substitute the `GENERATED FILE...` bits in this fashion because
     # otherwise Reviewable gets confused.
     f.write('''#pragma once

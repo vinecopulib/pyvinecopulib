@@ -2,6 +2,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <vinecopulib.hpp>
+#include "docstr.hpp"
 
 namespace py = pybind11;
 using namespace vinecopulib;
@@ -9,8 +10,10 @@ using namespace vinecopulib;
 PYBIND11_MODULE(pyvinecopulib, pv)
 {
 
-  /* py::options options; */
-  /* options.disable_function_signatures(); */
+  py::options options;
+  options.disable_function_signatures();
+
+  constexpr auto& doc = pyvinecopulib_doc;
 
   pv.doc() = R"pbdoc(
   The pyvinecopulib package
