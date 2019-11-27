@@ -97,35 +97,31 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     .def_property("family_set",
                   &FitControlsBicop::get_family_set,
                   &FitControlsBicop::set_family_set,
-                  "The family set (see FitControlsBicop())")
-    .def_property(
-      "parametric_method",
-      &FitControlsBicop::get_parametric_method,
-      &FitControlsBicop::set_parametric_method,
-      "The fit method for parametric families (see FitControlsBicop())")
-    .def_property(
-      "nonparametric_method",
-      &FitControlsBicop::get_nonparametric_method,
-      &FitControlsBicop::set_nonparametric_method,
-      "The fit method for nonparametric families (see FitControlsBicop())")
-    .def_property(
-      "nonparametric_mult",
-      &FitControlsBicop::get_nonparametric_mult,
-      &FitControlsBicop::set_nonparametric_method,
-      "The multiplier for the smoothing parameters (see FitControlsBicop())")
+                  "The family set.")
+    .def_property("parametric_method",
+                  &FitControlsBicop::get_parametric_method,
+                  &FitControlsBicop::set_parametric_method,
+                  "The fit method for parametric families.")
+    .def_property("nonparametric_method",
+                  &FitControlsBicop::get_nonparametric_method,
+                  &FitControlsBicop::set_nonparametric_method,
+                  "The fit method for nonparametric families.")
+    .def_property("nonparametric_mult",
+                  &FitControlsBicop::get_nonparametric_mult,
+                  &FitControlsBicop::set_nonparametric_method,
+                  "The multiplier for the smoothing parameters.")
     .def_property("selection_criterion",
                   &FitControlsBicop::get_selection_criterion,
                   &FitControlsBicop::set_selection_criterion,
-                  "The selection criterion (see FitControlsBicop())")
+                  "The selection criterion.")
     .def_property("weights",
                   &FitControlsBicop::get_weights,
                   &FitControlsBicop::set_weights,
-                  "The weights for the observations (see FitControlsBicop())")
-    .def_property(
-      "psi0",
-      &FitControlsBicop::get_psi0,
-      &FitControlsBicop::set_psi0,
-      "The prior probability of non-independence (see FitControlsBicop())")
+                  "The weights for the observations.")
+    .def_property("psi0",
+                  &FitControlsBicop::get_psi0,
+                  &FitControlsBicop::set_psi0,
+                  "The prior probability of non-independence.")
     .def_property("preselect_families",
                   &FitControlsBicop::get_preselect_families,
                   &FitControlsBicop::set_preselect_families,
@@ -134,7 +130,7 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     .def_property("num_threads",
                   &FitControlsBicop::get_num_threads,
                   &FitControlsBicop::set_num_threads,
-                  "The number of threads (see FitControlsBicop())");
+                  "The number of threads.");
   /* .def("__repr__", */
   //      [](const FitControlsBicop& ctrls) {
   //        return "<pyvinecopulib.FitControlsBicop>\n" + ctrls.str();
@@ -401,69 +397,64 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     .def_property("family_set",
                   &FitControlsVinecop::get_family_set,
                   &FitControlsVinecop::set_family_set,
-                  "The family set (see FitControlsVinecop())")
-    .def_property(
-      "parametric_method",
-      &FitControlsVinecop::get_parametric_method,
-      &FitControlsVinecop::set_parametric_method,
-      "The fit method for parametric families (see FitControlsVinecop())")
-    .def_property(
-      "nonparametric_method",
-      &FitControlsVinecop::get_nonparametric_method,
-      &FitControlsVinecop::set_nonparametric_method,
-      "The fit method for nonparametric families (see FitControlsVinecop())")
-    .def_property(
-      "nonparametric_mult",
-      &FitControlsVinecop::get_nonparametric_mult,
-      &FitControlsVinecop::set_nonparametric_method,
-      "The multiplier for the smoothing parameters (see FitControlsVinecop())")
+                  "The family set.")
+    .def_property("parametric_method",
+                  &FitControlsVinecop::get_parametric_method,
+                  &FitControlsVinecop::set_parametric_method,
+                  "The fit method for parametric families.")
+    .def_property("nonparametric_method",
+                  &FitControlsVinecop::get_nonparametric_method,
+                  &FitControlsVinecop::set_nonparametric_method,
+                  "The fit method for nonparametric families.")
+    .def_property("nonparametric_mult",
+                  &FitControlsVinecop::get_nonparametric_mult,
+                  &FitControlsVinecop::set_nonparametric_method,
+                  "The multiplier for the smoothing parameters.")
     .def_property("trunc_lvl",
                   &FitControlsVinecop::get_trunc_lvl,
                   &FitControlsVinecop::set_trunc_lvl,
-                  "The truncation level (see FitControlsVinecop())")
+                  "The truncation level.")
     .def_property("tree_criterion",
                   &FitControlsVinecop::get_tree_criterion,
                   &FitControlsVinecop::set_tree_criterion,
-                  "The tree criterion (see FitControlsVinecop())")
+                  "The tree criterion.")
     .def_property("threshold",
                   &FitControlsVinecop::get_threshold,
                   &FitControlsVinecop::set_threshold,
-                  "The threshold (see FitControlsVinecop())")
+                  "The threshold.")
     .def_property("selection_criterion",
                   &FitControlsVinecop::get_selection_criterion,
                   &FitControlsVinecop::set_selection_criterion,
-                  "The selection criterion (see FitControlsVinecop())")
+                  "The selection criterion.")
     .def_property("weights",
                   &FitControlsVinecop::get_weights,
                   &FitControlsVinecop::set_weights,
-                  "The weights for the observations (see FitControlsVinecop())")
-    .def_property(
-      "psi0",
-      &FitControlsVinecop::get_psi0,
-      &FitControlsVinecop::set_psi0,
-      "The prior probability of non-independence (see FitControlsVinecop())")
+                  "The weights for the observations.")
+    .def_property("psi0",
+                  &FitControlsVinecop::get_psi0,
+                  &FitControlsVinecop::set_psi0,
+                  "The prior probability of non-independence.")
     .def_property("preselect_families",
                   &FitControlsVinecop::get_preselect_families,
                   &FitControlsVinecop::set_preselect_families,
                   "Whether to exclude families based on symmetry properties "
                   "(see FitControlsVinecop())")
-    .def_property(
-      "select_trunc_lvl",
-      &FitControlsVinecop::get_select_trunc_lvl,
-      &FitControlsVinecop::set_select_trunc_lvl,
-      "Whether to select the truncation level (see FitControlsVinecop())")
+    .def_property("select_trunc_lvl",
+                  &FitControlsVinecop::get_select_trunc_lvl,
+                  &FitControlsVinecop::set_select_trunc_lvl,
+                  "Whether to select the truncation level.")
     .def_property("select_threshold",
                   &FitControlsVinecop::get_select_threshold,
                   &FitControlsVinecop::set_select_threshold,
-                  "Whether to select the threshold (see FitControlsVinecop())")
+                  "Whether to select the threshold.")
     .def_property("show_trace",
                   &FitControlsVinecop::get_show_trace,
                   &FitControlsVinecop::set_show_trace,
-                  "Whether to show the trace (see FitControlsVinecop())")
+                  "Whether to show the trace.")
     .def_property("num_threads",
                   &FitControlsVinecop::get_num_threads,
                   &FitControlsVinecop::set_num_threads,
-                  "The number of threads (see FitControlsVinecop())");
+                  "The number of threads.");
   /*   .def("__repr__", */
   //    [](const FitControlsVinecop& ctrls) {
   //      return "<pyvinecopulib.FitControlsRinecop>\n" + ctrls.str();
