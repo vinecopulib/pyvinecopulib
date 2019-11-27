@@ -10,9 +10,6 @@ using namespace vinecopulib;
 PYBIND11_MODULE(pyvinecopulib, pv)
 {
 
-  py::options options;
-  options.disable_function_signatures();
-
   constexpr auto& doc = pyvinecopulib_doc;
   constexpr auto& bicop_doc = doc.vinecopulib.Bicop;
   constexpr auto& fitcontrolsbicop_doc = doc.vinecopulib.FitControlsBicop;
@@ -32,7 +29,6 @@ PYBIND11_MODULE(pyvinecopulib, pv)
      :toctree: _generate
 
      BicopFamily
-     bicop_families
      Bicop
      FitControlsBicop
      Vinecop
@@ -42,38 +38,35 @@ PYBIND11_MODULE(pyvinecopulib, pv)
      RVineStructure
   )pbdoc";
 
-  py::module bicop_families =
-    pv.def_submodule("bicop_families",
-                     "A submodule of 'pyvinecopulib' with convenience "
-                     "definitions for bivariate families");
-
   py::enum_<BicopFamily>(pv, "BicopFamily", py::arithmetic())
-    .value("indep", BicopFamily::indep)
-    .value("gaussian", BicopFamily::gaussian)
-    .value("student", BicopFamily::student)
-    .value("clayton", BicopFamily::clayton)
-    .value("gumbel", BicopFamily::gumbel)
-    .value("frank", BicopFamily::frank)
-    .value("joe", BicopFamily::joe)
-    .value("bb1", BicopFamily::bb1)
-    .value("bb6", BicopFamily::bb6)
-    .value("bb7", BicopFamily::bb7)
-    .value("bb8", BicopFamily::bb8)
-    .value("tll", BicopFamily::tll);
+    .value("indep", BicopFamily::indep, "Independence copula.")
+    .value("gaussian", BicopFamily::gaussian, "Gaussian copula.")
+    .value("student", BicopFamily::student, "Student t copula.")
+    .value("clayton", BicopFamily::clayton, "Clayton copula.")
+    .value("gumbel", BicopFamily::gumbel, "Gumbel copula.")
+    .value("frank", BicopFamily::frank, "Frank copula.")
+    .value("joe", BicopFamily::joe, "Joe copula.")
+    .value("bb1", BicopFamily::bb1, "BB1 copula.")
+    .value("bb6", BicopFamily::bb6, "BB6 copula.")
+    .value("bb7", BicopFamily::bb7, "BB7 copula.")
+    .value("bb8", BicopFamily::bb8, "BB8 copula.")
+    .value("tll",
+           BicopFamily::tll,
+           "Transformation local likelihood kernel estimator.");
 
-  bicop_families.attr("all") = bicop_families::all;
-  bicop_families.attr("parametric") = bicop_families::parametric;
-  bicop_families.attr("nonparametric") = bicop_families::nonparametric;
-  bicop_families.attr("one_par") = bicop_families::one_par;
-  bicop_families.attr("two_par") = bicop_families::two_par;
-  bicop_families.attr("elliptical") = bicop_families::elliptical;
-  bicop_families.attr("archimedean") = bicop_families::archimedean;
-  bicop_families.attr("bb") = bicop_families::bb;
-  bicop_families.attr("rotationless") = bicop_families::rotationless;
-  bicop_families.attr("lt") = bicop_families::lt;
-  bicop_families.attr("ut") = bicop_families::ut;
-  bicop_families.attr("itau") = bicop_families::itau;
-  bicop_families.attr("flip_by_rotation") = bicop_families::flip_by_rotation;
+  pv.attr("all") = bicop_families::all;
+  pv.attr("parametric") = bicop_families::parametric;
+  pv.attr("nonparametric") = bicop_families::nonparametric;
+  pv.attr("one_par") = bicop_families::one_par;
+  pv.attr("two_par") = bicop_families::two_par;
+  pv.attr("elliptical") = bicop_families::elliptical;
+  pv.attr("archimedean") = bicop_families::archimedean;
+  pv.attr("bb") = bicop_families::bb;
+  pv.attr("rotationless") = bicop_families::rotationless;
+  pv.attr("lt") = bicop_families::lt;
+  pv.attr("ut") = bicop_families::ut;
+  pv.attr("itau") = bicop_families::itau;
+  pv.attr("flip_by_rotation") = bicop_families::flip_by_rotation;
 
   py::class_<FitControlsBicop>(pv, "FitControlsBicop", fitcontrolsbicop_doc.doc)
     .def(py::init<std::vector<BicopFamily>,
@@ -237,12 +230,12 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     .def("fit",
          &Bicop::fit,
          py::arg("data"),
-         py::arg("controls") = FitControlsBicop(),
+         py::arg_v("controls", FitControlsBicop(), "FitControlsBicop()"),
          bicop_doc.fit.doc)
     .def("select",
          &Bicop::select,
          py::arg("data"),
-         py::arg("controls") = FitControlsBicop(),
+         py::arg_v("controls", FitControlsBicop(), "FitControlsBicop()"),
          bicop_doc.select.doc);
 
   py::class_<RVineStructure>(pv, "RVineStructure", rvinestructure_doc.doc)

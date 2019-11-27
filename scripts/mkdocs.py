@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-#
 #  Syntax:
 #     mkdoc.py [-output=<file>] [-I<path> ..] [-quiet] [.. header files ..]
 #
@@ -99,6 +97,7 @@ SKIP_ACCESS = [
     AccessSpecifier.PRIVATE,
 ]
 
+
 class Symbol(object):
     """
     Contains a cursor and additional processed metadata.
@@ -124,20 +123,26 @@ def is_accepted_cursor(cursor, name_chain):
     Determines if a symbol should be visited or not.
     """
     name = cursor.spelling
+
     if name in SKIP_RECURSE_NAMES:
         if tuple(name_chain) not in SKIP_RECURSE_EXCEPTIONS:
             return False
+
     for bad in SKIP_PARTIAL_NAMES:
         if bad in name:
             return False
+
     if cursor.access_specifier in SKIP_ACCESS:
         return False
     # TODO(eric.cousineau): Remove `cursor.is_default_method()`? May make
     # things unstable.
+
     if cursor.kind in CLASS_KINDS and not cursor.is_definition():
         # Don't process forward declarations.  If we did, we'd define the class
         # overview documentation twice; both cursors have a .raw_comment value.
+
         return False
+
     return True
 
 
@@ -146,12 +151,14 @@ def sanitize_name(name):
     Sanitizes a C++ symbol to be variable-friendly.
     """
     name = re.sub(r'type-parameter-0-([0-9]+)', r'T\1', name)
+
     for k, v in CPP_OPERATORS.items():
         name = name.replace('operator%s' % k, 'operator_%s' % v)
     name = re.sub('<.*>', '', name)
     name = name.replace('::', '_')
     name = ''.join([ch if ch.isalnum() else '_' for ch in name])
     name = re.sub('_+', '_', name)
+
     return name
 
 
@@ -160,6 +167,7 @@ def extract_comment(cursor, deprecations):
 
     # Start with the cursor's docstring.
     result = ''
+
     if cursor.raw_comment is not None:
         result = cursor.raw_comment
 
@@ -168,16 +176,19 @@ def extract_comment(cursor, deprecations):
     found = None  # The DRAKE_DEPRECATED cursor associated with `c`.
     possible_d = [
         d for d in deprecations
+
         if d.extent.start.file.name == c.extent.start.file.name
     ]
 
     # For a method declaration, the extent-begin-column for both will be
     # identical and the MACRO_INSTATIATION will end immediately prior to
     # the FUNCTION_DECL begin.
+
     for d in possible_d:
         if all([d.extent.start.column == c.extent.start.column,
                 (d.extent.end.line + 1) == c.extent.start.line]):
             found = d
+
             break
 
     # For a class declaration, the MACRO_INSTATIATION extent will lie fully
@@ -186,14 +197,17 @@ def extract_comment(cursor, deprecations):
     # so that we're sure NOT to match a deprecated inline method near the top
     # of the class, but we DO allow various whitespace arrangements of template
     # parameters, class decl, and macro.
+
     for d in possible_d:
         if all([d.extent.start.line >= c.extent.start.line,
                 d.extent.start.line <= (c.extent.start.line + 5),
                 d.extent.end.line <= c.extent.end.line]):
             found = d
+
             break
 
     # If no deprecations matched, we are done.
+
     if not found:
         return result
 
@@ -207,6 +221,7 @@ def extract_comment(cursor, deprecations):
     removal_date = tokens[2][1:-1]  # 1:-1 to strip quotes.
     message = "".join([
         x[1:-1]
+
         for x in tokens[4:-1]
     ])
 
@@ -229,24 +244,32 @@ def process_comment(comment):
 
     # Remove C++ comment syntax
     leading_spaces = float('inf')
+
     for s in comment.expandtabs(tabsize=4).splitlines():
         s = s.strip()
+
         if s.startswith('/*!'):
             s = s[3:]
+
         if s.startswith('/*'):
             s = s[2:].lstrip('*')
+
         if s.endswith('*/'):
             s = s[:-2].rstrip('*')
+
         if s.startswith('///') or s.startswith('//!'):
             s = s[3:]
+
         if s.startswith('*'):
             s = s[1:]
+
         if len(s) > 0:
             leading_spaces = min(leading_spaces, len(s) - len(s.lstrip()))
         result += s + '\n'
 
     if leading_spaces != float('inf'):
         result2 = ""
+
         for s in result.splitlines():
             result2 += s[leading_spaces:] + '\n'
         result = result2
@@ -283,6 +306,7 @@ def process_comment(comment):
         def repl(match):
             return '\n{}\n{}\n'.format(match.group(1),
                                        token * len(match.group(1)))
+
         return re.sub(pattern, repl, s, **kwargs)
 
     s = replace_with_header(r'## (.*?) ##', '-', s)
@@ -305,6 +329,7 @@ def process_comment(comment):
                r'\n\n$Returns ``\1``:\n\n', s)
 
     # Ordering is significant for command names with a common prefix.
+
     for in_, out_ in (
         ('result', 'Returns'),
         ('returns', 'Returns'),
@@ -373,6 +398,7 @@ def process_comment(comment):
 
     # Remove these commands that take no argument. Ordering is significant for
     # command names with a common prefix.
+
     for cmd_ in (
         '~english',
         '~',
@@ -396,6 +422,7 @@ def process_comment(comment):
         s = re.sub(r'[@\\]%s\s+' % cmd_, r'', s)
 
     # Remove these commands and their one optional single-word argument.
+
     for cmd_ in [
         'dir',
         'file',
@@ -403,6 +430,7 @@ def process_comment(comment):
         s = re.sub(r'[@\\]%s( +[\w:./]+)?\s+' % cmd_, r'', s)
 
     # Remove these commands and their one optional single-line argument.
+
     for cmd_ in [
         'mainpage',
         'name'
@@ -412,6 +440,7 @@ def process_comment(comment):
 
     # Remove these commands and their one single-word argument. Ordering is
     # significant for command names with a common prefix.
+
     for cmd_ in [
         'anchor',
         'copybrief',
@@ -442,6 +471,7 @@ def process_comment(comment):
 
     # Remove these commands and their one single-line argument. Ordering is
     # significant for command names with a common prefix.
+
     for cmd_ in [
         'addindex',
         'fn',
@@ -462,6 +492,7 @@ def process_comment(comment):
 
     # Remove these commands and their one single-word argument and one
     # optional single-line argument.
+
     for cmd_ in [
         'addtogroup',
         'weakgroup',
@@ -471,6 +502,7 @@ def process_comment(comment):
     # Remove these commands and their one single-word argument and one
     # single-line argument. Ordering is significant for command names with a
     # common prefix.
+
     for cmd_ in [
         'snippetdoc',
         'snippetlineno',
@@ -480,6 +512,7 @@ def process_comment(comment):
 
     # Remove these commands and their one single-word argument and two
     # optional single-word arguments.
+
     for cmd_ in [
         'category',
         'class',
@@ -492,6 +525,7 @@ def process_comment(comment):
 
     # Remove these commands and their one single-word argument, one optional
     # quoted argument, and one optional single-word arguments.
+
     for cmd_ in [
         'diafile',
         'dotfile',
@@ -502,6 +536,7 @@ def process_comment(comment):
             r'', s)
 
     # Remove these pairs of commands and any text in between.
+
     for start_, end_ in (
         ('cond', 'endcond'),
         ('docbookonly', 'enddocbookonly'),
@@ -581,6 +616,7 @@ def process_comment(comment):
     s = re.sub(r'[@\\]n\s+', r'\n\n', s)
 
     # Ordering of ---, --, @, and \ is significant.
+
     for escaped_ in (
         '---',
         '--',
@@ -610,6 +646,7 @@ def process_comment(comment):
 
     result = ''
     in_code_segment = False
+
     for x in re.split(r'(```)', s):
         if x == '```':
             if not in_code_segment:
@@ -623,6 +660,7 @@ def process_comment(comment):
             for y in re.split(r'(?: *\n *){2,}', x):
                 lines = re.split(r'(?: *\n *)', y)
                 # Do not reflow lists or section headings.
+
                 if (re.match('^(?:[*+\-]|[0-9]+[.)]) ', lines[0]) or
                     (len(lines) > 1 and
                      (lines[1] == '=' * len(lines[0]) or
@@ -630,6 +668,7 @@ def process_comment(comment):
                     result += y + '\n\n'
                 else:
                     wrapped = wrapper.fill(re.sub(r'\s+', ' ', y).strip())
+
                     if len(wrapped) > 0 and wrapped[0] == '$':
                         result += wrapped[1:] + '\n'
                         wrapper.initial_indent = \
@@ -638,6 +677,7 @@ def process_comment(comment):
                         if len(wrapped) > 0:
                             result += wrapped + '\n\n'
                         wrapper.initial_indent = wrapper.subsequent_indent = ''
+
     return result.rstrip().lstrip('\n')
 
 
@@ -647,13 +687,16 @@ def get_name_chain(cursor):
     """
     name_chain = [cursor.spelling]
     p = cursor.semantic_parent
+
     while p and p.kind != CursorKind.TRANSLATION_UNIT:
         piece = p.spelling
         name_chain.insert(0, piece)
         p = p.semantic_parent
     # Do not try to specify names for anonymous structs.
+
     while '' in name_chain:
         name_chain.remove('')
+
     return tuple(name_chain)
 
 
@@ -672,8 +715,10 @@ class SymbolTree(object):
         necessary.
         """
         node = self.root
+
         for piece in name_chain:
             node = node.get_child(piece)
+
         return node
 
     class Node(object):
@@ -697,43 +742,55 @@ def extract(include_file_map, cursor, symbol_tree, deprecations=None):
     """
     Extracts libclang cursors and add to a symbol tree.
     """
+
     if cursor.kind == CursorKind.TRANSLATION_UNIT:
         deprecations = []
+
         for i in cursor.get_children():
             if i.kind == CursorKind.MACRO_DEFINITION:
                 continue
+
             if i.kind == CursorKind.MACRO_INSTANTIATION:
                 if i.spelling == b'DRAKE_DEPRECATED':
                     deprecations.append(i)
+
                 continue
             extract(include_file_map, i, symbol_tree, deprecations)
+
         return
     assert cursor.location.file is not None, cursor.kind
     filename = cursor.location.file.name
     include = include_file_map.get(filename)
     line = cursor.location.line
+
     if include is None:
         return
     name_chain = get_name_chain(cursor)
+
     if not is_accepted_cursor(cursor, name_chain):
         return
     node = None
 
     def get_node():
         node = symbol_tree.get_node(name_chain)
+
         if node.first_symbol is None:
             node.first_symbol = Symbol(
                 cursor, name_chain, include, line, None)
+
         return node
 
     if cursor.kind in RECURSE_LIST:
         if node is None:
             node = get_node()
+
         for i in cursor.get_children():
             extract(include_file_map, i, symbol_tree, deprecations)
+
     if cursor.kind in PRINT_LIST:
         if node is None:
             node = get_node()
+
         if len(cursor.spelling) > 0:
             comment = extract_comment(cursor, deprecations)
             comment = process_comment(comment)
@@ -748,6 +805,7 @@ def choose_doc_var_names(symbols):
     a list element is None instead of str, then that symbol should be skipped
     (its documentation comment should *not* be emitted in this tool's output).
     """
+
     if len(symbols) == 0:
         return []
 
@@ -763,11 +821,13 @@ def choose_doc_var_names(symbols):
     def is_unique(candidate_result):
         # Are the non-None names in a candidate_result unique?
         trimmed = [x for x in candidate_result if x is not None]
+
         return len(trimmed) == len(set(trimmed))
 
     def specialize_well_known_doc_var_names():
         # Force well-known methods to have well-known names.
         nonlocal symbols, result
+
         for i, cursor in enumerate([s.cursor for s in symbols]):
             if "@exclude_from_pyvinecopulib_mkdoc" in symbols[i].comment:
                 # Allow the user to opt-out this symbol from the documentation.
@@ -776,6 +836,7 @@ def choose_doc_var_names(symbols):
                 # static-typing convenience overloads that pyvinecopulib really
                 # needs, such as various kinds of Eigen<> template magic.)
                 result[i] = None
+
                 continue
             elif "@pyvinecopulib_mkdoc_identifier" in symbols[i].comment:
                 comment = symbols[i].comment
@@ -783,11 +844,13 @@ def choose_doc_var_names(symbols):
                 match = re.search(
                     r"@pyvinecopulib_mkdoc_identifier\{(.*?)\}",
                     comment)
+
                 if not match:
                     raise RuntimeError(
                         "Malformed pyvinecopulib_mkdoc_identifier in " + comment)
                 (identifier,) = match.groups()
                 result[i] = "doc_" + identifier
+
                 continue
             elif len(symbols[i].comment) == 0 and not (
                     cursor.is_default_constructor() and (
@@ -805,6 +868,7 @@ def choose_doc_var_names(symbols):
                 # durable and so that function always participates in the
                 # overload naming set.
                 result[i] = None
+
                 continue
             elif any([symbols[i].comment == x.comment for x in symbols[:i]]):
                 # If a subsequent overload's API comment *exactly* matches a
@@ -817,6 +881,7 @@ def choose_doc_var_names(symbols):
                 # occasionally also useful for distinct function declarations
                 # that nevertheless have identical documentation.
                 result[i] = None
+
                 continue
             elif cursor.is_copy_constructor():
                 # Here, the semantics are distinct ("special member function")
@@ -840,14 +905,17 @@ def choose_doc_var_names(symbols):
             elif "\nDeprecated:" in symbols[i].comment:
                 result[i] = "doc_deprecated" + result[i][3:]
                 # Don't consolidate as if this were a "well known" name.
+
                 continue
             else:
                 # If no special cases matched, leave the name alone.
+
                 continue
             # A special case *did* match (we didn't hit the "else" above.)
             # When we have more than one identical well-known name (e.g,
             # separate declaration and definition doc_copy), use the first.
             assert result[i] is not None
+
             if result[i] in result[:i]:
                 result[i] = None
 
@@ -855,15 +923,18 @@ def choose_doc_var_names(symbols):
     # things unique (once the well-known heuristics are applied), ship it.
     result = ["doc"] * len(symbols)
     specialize_well_known_doc_var_names()
+
     if is_unique(result):
         if not any(result):
             # Always generate a constexpr when there are no overloads, even if
             # it's empty.  That way, pyvinecopulib can refer to the constant and any
             # future (single) API comment added to C++ will work automatically.
             result[0] = "doc"
+
         return result
 
     # All of the below heuristics only work for function overloads.
+
     if symbols[0].cursor.type.kind != TypeKind.FUNCTIONPROTO:
         return failure_result
 
@@ -876,45 +947,55 @@ def choose_doc_var_names(symbols):
     # These list-of-lists are indexed by [#overload][#argument].
     overload_arg_types = [
         [t.spelling for t in s.cursor.type.argument_types()]
+
         for s in symbols
     ]
     overload_arg_names = [
         [a.spelling for a in s.cursor.get_arguments()]
+
         for s in symbols
     ]
 
     # The argument count might be sufficient to disambiguate.
     result = ["doc_{}args".format(len(types)) for types in overload_arg_types]
     specialize_well_known_doc_var_names()
+
     if is_unique(result):
         return result
 
     # The parameter names (falling back to the parameter type, when we don't
     # know the name) might be sufficient to disambiguate.
+
     for i, arg_types in enumerate(overload_arg_types):
         if result[i] is None:
             continue
         arg_names = overload_arg_names[i] or [""] * len(arg_types)
+
         for arg_name, arg_type in zip(arg_names, arg_types):
             token = arg_name or sanitize_name(arg_type).replace("_", "")
             result[i] = result[i] + "_" + token
     specialize_well_known_doc_var_names()
+
     if is_unique(result):
         return result
 
     # Adding in the const-ness might be sufficient to disambiguate.
+
     for i, sym in enumerate(symbols):
         if result[i] is None:
             continue
+
         if sym.cursor.is_const_method():
             result[i] = result[i] + "_const"
         else:
             result[i] = result[i] + "_nonconst"
     specialize_well_known_doc_var_names()
+
     if is_unique(result):
         return result
 
     # As a last resort, return a random one, with a bogus name.
+
     return failure_result
 
 
@@ -928,6 +1009,7 @@ def print_symbols(f, name, node, level=0):
         f.write((indent + s).rstrip() + "\n")
 
     name_var = name
+
     if not node.first_symbol:
         assert level == 0
         full_name = name
@@ -936,6 +1018,7 @@ def print_symbols(f, name, node, level=0):
         assert name == name_chain[-1]
         full_name = "::".join(name_chain)
         # Override variable.
+
         if node.first_symbol.cursor.kind == CursorKind.CONSTRUCTOR:
             name_var = "ctor"
 
@@ -944,12 +1027,14 @@ def print_symbols(f, name, node, level=0):
     assert len(name_var) > 0, node.first_symbol.sorting_key()
     iprint('// Symbol: {}'.format(full_name))
     modifier = ""
+
     if level == 0:
         modifier = "constexpr "
     iprint('{}struct /* {} */ {{'.format(modifier, name_var))
     # Print documentation items.
     symbol_iter = sorted(node.doc_symbols, key=Symbol.sorting_key)
     doc_vars = choose_doc_var_names(symbol_iter)
+
     for symbol, doc_var in zip(symbol_iter, doc_vars):
         if doc_var is None:
             continue
@@ -958,6 +1043,7 @@ def print_symbols(f, name, node, level=0):
             r'@pyvinecopulib_mkdoc[a-z_]*\{.*\}', '',
             symbol.comment)
         delim = "\n"
+
         if "\n" not in comment and len(comment) < 40:
             delim = " "
         iprint('  // Source: {}:{}'.format(symbol.include, symbol.line))
@@ -965,6 +1051,7 @@ def print_symbols(f, name, node, level=0):
             doc_var, delim, comment.strip()))
     # Recurse into child elements.
     keys = sorted(node.children_map.keys())
+
     for key in keys:
         child = node.children_map[key]
         print_symbols(f, key, child, level=level + 1)
@@ -990,6 +1077,7 @@ class FileDict(object):
 
     def __getitem__(self, file):
         key = self._key(file)
+
         return self._d[key]
 
     def __setitem__(self, file, value):
@@ -1002,10 +1090,12 @@ def main():
     filenames = []
 
     library_file = None
+
     if platform.system() == 'Darwin':
         completed_process = subprocess.run(['xcrun', '--find', 'clang'],
                                            stdout=subprocess.PIPE,
                                            encoding='utf-8')
+
         if completed_process.returncode == 0:
             toolchain_dir = os.path.dirname(os.path.dirname(
                 completed_process.stdout.strip()))
@@ -1014,13 +1104,16 @@ def main():
         completed_process = subprocess.run(['xcrun', '--show-sdk-path'],
                                            stdout=subprocess.PIPE,
                                            encoding='utf-8')
+
         if completed_process.returncode == 0:
             sdkroot = completed_process.stdout.strip()
+
             if os.path.exists(sdkroot):
                 parameters.append('-isysroot')
                 parameters.append(sdkroot)
     elif platform.system() == 'Linux':
         library_file = '/usr/lib/x86_64-linux-gnu/libclang.so'
+
     if library_file and os.path.exists(library_file):
         cindex.Config.set_library_path(os.path.dirname(library_file))
 
