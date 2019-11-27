@@ -303,6 +303,27 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          py::arg("order"),
          py::arg("trunc_lvl"),
          dvinestructure_doc.ctor.doc_2args)
+    .def("to_json",
+         &RVineStructure::to_json,
+         py::arg("filename"),
+         rvinestructure_doc.to_json.doc)
+    .def_property_readonly("dim", &RVineStructure::get_dim, "The dimension.")
+    .def_property_readonly(
+      "trunc_lvl", &RVineStructure::get_trunc_lvl, "The truncation level.")
+    .def_property_readonly("order",
+                           (std::vector<size_t>(RVineStructure::*)() const) &
+                             RVineStructure::get_order,
+                           "The variable order.")
+    .def("struct_array",
+         &RVineStructure::struct_array,
+         py::arg("tree"),
+         py::arg("edge"),
+         py::arg("natural_order") = false,
+         rvinestructure_doc.struct_array.doc)
+    .def("truncate",
+         &RVineStructure::truncate,
+         py::arg("trunc_lvl"),
+         rvinestructure_doc.truncate.doc)
     .def("__repr__",
          [](const DVineStructure& rvs) {
            return "<pyvinecopulib.DVineStructure>\n" + rvs.str();
@@ -317,6 +338,27 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          py::arg("order"),
          py::arg("trunc_lvl"),
          cvinestructure_doc.ctor.doc_2args)
+    .def("to_json",
+         &RVineStructure::to_json,
+         py::arg("filename"),
+         rvinestructure_doc.to_json.doc)
+    .def_property_readonly("dim", &RVineStructure::get_dim, "The dimension.")
+    .def_property_readonly(
+      "trunc_lvl", &RVineStructure::get_trunc_lvl, "The truncation level.")
+    .def_property_readonly("order",
+                           (std::vector<size_t>(RVineStructure::*)() const) &
+                             RVineStructure::get_order,
+                           "The variable order.")
+    .def("struct_array",
+         &RVineStructure::struct_array,
+         py::arg("tree"),
+         py::arg("edge"),
+         py::arg("natural_order") = false,
+         rvinestructure_doc.struct_array.doc)
+    .def("truncate",
+         &RVineStructure::truncate,
+         py::arg("trunc_lvl"),
+         rvinestructure_doc.truncate.doc)
     .def("__repr__",
          [](const CVineStructure& rvs) {
            return "<pyvinecopulib.CVineStructure>\n" + rvs.str();
