@@ -1,3 +1,4 @@
+#include "docstr.hpp"
 #include <pybind11/eigen.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -9,8 +10,15 @@ using namespace vinecopulib;
 PYBIND11_MODULE(pyvinecopulib, pv)
 {
 
-  /* py::options options; */
-  /* options.disable_function_signatures(); */
+  constexpr auto& doc = pyvinecopulib_doc;
+  constexpr auto& bicop_doc = doc.vinecopulib.Bicop;
+  constexpr auto& bicopfamily_doc = doc.vinecopulib.BicopFamily;
+  constexpr auto& fitcontrolsbicop_doc = doc.vinecopulib.FitControlsBicop;
+  constexpr auto& rvinestructure_doc = doc.vinecopulib.RVineStructure;
+  constexpr auto& dvinestructure_doc = doc.vinecopulib.DVineStructure;
+  constexpr auto& cvinestructure_doc = doc.vinecopulib.CVineStructure;
+  constexpr auto& vinecop_doc = doc.vinecopulib.Vinecop;
+  constexpr auto& fitcontrolsvinecop_doc = doc.vinecopulib.FitControlsVinecop;
 
   pv.doc() = R"pbdoc(
   The pyvinecopulib package
@@ -22,7 +30,6 @@ PYBIND11_MODULE(pyvinecopulib, pv)
      :toctree: _generate
 
      BicopFamily
-     bicop_families
      Bicop
      FitControlsBicop
      Vinecop
@@ -32,40 +39,36 @@ PYBIND11_MODULE(pyvinecopulib, pv)
      RVineStructure
   )pbdoc";
 
-  py::module bicop_families =
-    pv.def_submodule("bicop_families",
-                     "A submodule of 'pyvinecopulib' with convenience "
-                     "definitions for bivariate families");
+  py::enum_<BicopFamily>(
+    pv, "BicopFamily", py::arithmetic(), bicopfamily_doc.doc)
+    .value("indep", BicopFamily::indep, bicopfamily_doc.indep.doc)
+    .value("gaussian", BicopFamily::gaussian, bicopfamily_doc.gaussian.doc)
+    .value("student", BicopFamily::student, bicopfamily_doc.student.doc)
+    .value("clayton", BicopFamily::clayton, bicopfamily_doc.clayton.doc)
+    .value("gumbel", BicopFamily::gumbel, bicopfamily_doc.gumbel.doc)
+    .value("frank", BicopFamily::frank, bicopfamily_doc.indep.doc)
+    .value("joe", BicopFamily::joe, bicopfamily_doc.joe.doc)
+    .value("bb1", BicopFamily::bb1, bicopfamily_doc.bb1.doc)
+    .value("bb6", BicopFamily::bb6, bicopfamily_doc.bb6.doc)
+    .value("bb7", BicopFamily::bb7, bicopfamily_doc.bb7.doc)
+    .value("bb8", BicopFamily::bb8, bicopfamily_doc.bb8.doc)
+    .value("tll", BicopFamily::tll, bicopfamily_doc.tll.doc);
 
-  py::enum_<BicopFamily>(pv, "BicopFamily", py::arithmetic())
-    .value("indep", BicopFamily::indep)
-    .value("gaussian", BicopFamily::gaussian)
-    .value("student", BicopFamily::student)
-    .value("clayton", BicopFamily::clayton)
-    .value("gumbel", BicopFamily::gumbel)
-    .value("frank", BicopFamily::frank)
-    .value("joe", BicopFamily::joe)
-    .value("bb1", BicopFamily::bb1)
-    .value("bb6", BicopFamily::bb6)
-    .value("bb7", BicopFamily::bb7)
-    .value("bb8", BicopFamily::bb8)
-    .value("tll", BicopFamily::tll);
+  pv.attr("all") = bicop_families::all;
+  pv.attr("parametric") = bicop_families::parametric;
+  pv.attr("nonparametric") = bicop_families::nonparametric;
+  pv.attr("one_par") = bicop_families::one_par;
+  pv.attr("two_par") = bicop_families::two_par;
+  pv.attr("elliptical") = bicop_families::elliptical;
+  pv.attr("archimedean") = bicop_families::archimedean;
+  pv.attr("bb") = bicop_families::bb;
+  pv.attr("rotationless") = bicop_families::rotationless;
+  pv.attr("lt") = bicop_families::lt;
+  pv.attr("ut") = bicop_families::ut;
+  pv.attr("itau") = bicop_families::itau;
+  pv.attr("flip_by_rotation") = bicop_families::flip_by_rotation;
 
-  bicop_families.attr("all") = bicop_families::all;
-  bicop_families.attr("parametric") = bicop_families::parametric;
-  bicop_families.attr("nonparametric") = bicop_families::nonparametric;
-  bicop_families.attr("one_par") = bicop_families::one_par;
-  bicop_families.attr("two_par") = bicop_families::two_par;
-  bicop_families.attr("elliptical") = bicop_families::elliptical;
-  bicop_families.attr("archimedean") = bicop_families::archimedean;
-  bicop_families.attr("bb") = bicop_families::bb;
-  bicop_families.attr("rotationless") = bicop_families::rotationless;
-  bicop_families.attr("lt") = bicop_families::lt;
-  bicop_families.attr("ut") = bicop_families::ut;
-  bicop_families.attr("itau") = bicop_families::itau;
-  bicop_families.attr("flip_by_rotation") = bicop_families::flip_by_rotation;
-
-  py::class_<FitControlsBicop>(pv, "FitControlsBicop")
+  py::class_<FitControlsBicop>(pv, "FitControlsBicop", fitcontrolsbicop_doc.doc)
     .def(py::init<std::vector<BicopFamily>,
                   std::string,
                   std::string,
@@ -75,11 +78,7 @@ PYBIND11_MODULE(pyvinecopulib, pv)
                   double,
                   bool,
                   size_t>(),
-         R"pbdoc(
-      Constructor for FitControlsBicop
-
-      Creates the controls for fitting bivariate copula models.
-      )pbdoc",
+         fitcontrolsbicop_doc.ctor.doc_9args,
          py::arg("family_set") = bicop_families::all,
          py::arg("parametric_method") = "mle",
          py::arg("nonparametric_method") = "quadratic",
@@ -97,29 +96,45 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     /* py::arg("nonparametric_method"), py::arg("mult") = 1.0) */
     .def_property("family_set",
                   &FitControlsBicop::get_family_set,
-                  &FitControlsBicop::set_family_set)
-    .def_property("parametric_method",
-                  &FitControlsBicop::get_parametric_method,
-                  &FitControlsBicop::set_parametric_method)
-    .def_property("nonparametric_method",
-                  &FitControlsBicop::get_nonparametric_method,
-                  &FitControlsBicop::set_nonparametric_method)
-    .def_property("nonparametric_mult",
-                  &FitControlsBicop::get_nonparametric_mult,
-                  &FitControlsBicop::set_nonparametric_method)
+                  &FitControlsBicop::set_family_set,
+                  "The family set (see FitControlsBicop())")
+    .def_property(
+      "parametric_method",
+      &FitControlsBicop::get_parametric_method,
+      &FitControlsBicop::set_parametric_method,
+      "The fit method for parametric families (see FitControlsBicop())")
+    .def_property(
+      "nonparametric_method",
+      &FitControlsBicop::get_nonparametric_method,
+      &FitControlsBicop::set_nonparametric_method,
+      "The fit method for nonparametric families (see FitControlsBicop())")
+    .def_property(
+      "nonparametric_mult",
+      &FitControlsBicop::get_nonparametric_mult,
+      &FitControlsBicop::set_nonparametric_method,
+      "The multiplier for the smoothing parameters (see FitControlsBicop())")
     .def_property("selection_criterion",
                   &FitControlsBicop::get_selection_criterion,
-                  &FitControlsBicop::set_selection_criterion)
+                  &FitControlsBicop::set_selection_criterion,
+                  "The selection criterion (see FitControlsBicop())")
+    .def_property("weights",
+                  &FitControlsBicop::get_weights,
+                  &FitControlsBicop::set_weights,
+                  "The weights for the observations (see FitControlsBicop())")
     .def_property(
-      "weights", &FitControlsBicop::get_weights, &FitControlsBicop::set_weights)
-    .def_property(
-      "psi0", &FitControlsBicop::get_psi0, &FitControlsBicop::set_psi0)
+      "psi0",
+      &FitControlsBicop::get_psi0,
+      &FitControlsBicop::set_psi0,
+      "The prior probability of non-independence (see FitControlsBicop())")
     .def_property("preselect_families",
                   &FitControlsBicop::get_preselect_families,
-                  &FitControlsBicop::set_preselect_families)
+                  &FitControlsBicop::set_preselect_families,
+                  "Whether to exclude families based on symmetry properties "
+                  "(see FitControlsBicop())")
     .def_property("num_threads",
                   &FitControlsBicop::get_num_threads,
-                  &FitControlsBicop::set_num_threads);
+                  &FitControlsBicop::set_num_threads,
+                  "The number of threads (see FitControlsBicop())");
   /* .def("__repr__", */
   //      [](const FitControlsBicop& ctrls) {
   //        return "<pyvinecopulib.FitControlsBicop>\n" + ctrls.str();
@@ -128,31 +143,27 @@ PYBIND11_MODULE(pyvinecopulib, pv)
   //      &FitControlsBicop::str,
   /* "summarizes the controls into a string (can be used for printing)."); */
 
-  py::class_<Bicop>(pv, "Bicop")
+  py::class_<Bicop>(pv, "Bicop", bicop_doc.doc)
     .def(py::init<const BicopFamily,
                   const int,
                   const Eigen::MatrixXd&,
                   const std::vector<std::string>&>(),
-         "creates a specific bivariate copula model.",
          py::arg("family") = BicopFamily::indep,
          py::arg("rotation") = 0,
          py::arg("parameters") = Eigen::MatrixXd(),
-         py::arg("var_types") = std::vector<std::string>(2, "c"))
+         py::arg("var_types") = std::vector<std::string>(2, "c"),
+         bicop_doc.ctor.doc_4args_family_rotation_parameters_var_types)
     .def(py::init<const Eigen::Matrix<double, Eigen::Dynamic, 2>&,
                   const FitControlsBicop&,
                   const std::vector<std::string>&>(),
-         "create a copula model from the data, equivalent to cop = Bicop(); "
-         "cop.select(data, controls).",
          py::arg("data"),
          py::arg_v("controls", FitControlsBicop(), "FitControlsBicop()"),
-         py::arg("var_types") = std::vector<std::string>(2, "c"))
+         py::arg("var_types") = std::vector<std::string>(2, "c"),
+         bicop_doc.ctor.doc_3args_data_controls_var_types)
     .def(py::init<const std::string>(),
-         "creates from a JSON file.",
-         py::arg("filename"))
-    .def("to_json",
-         &Bicop::to_json,
-         "writes the copula object into a JSON file.",
-         py::arg("filename"))
+         py::arg("filename"),
+         bicop_doc.ctor.doc_1args_filename)
+    .def("to_json", &Bicop::to_json, py::arg("filename"), bicop_doc.to_json.doc)
     .def_property("rotation",
                   &Bicop::get_rotation,
                   &Bicop::set_rotation,
@@ -167,126 +178,89 @@ PYBIND11_MODULE(pyvinecopulib, pv)
                   "The type of the two variables.")
     .def_property_readonly("family", &Bicop::get_family, "The copula family.")
     .def_property_readonly("tau", &Bicop::get_tau, "The Kendall's tau.")
-    .def_property_readonly(
-      "npars",
-      &Bicop::get_npars,
-      "The number of parameters. For nonparametric families, there is a "
-      "conceptually similar definition in the sense that it can be used in "
-      "the calculation of fit statistics.")
+    .def_property_readonly("npars", &Bicop::get_npars, bicop_doc.get_npars.doc)
     .def("loglik",
          &Bicop::loglik,
-         "computes the log-likelihood (for fitted objects, passing an "
-         "empty 'u' returns the fitted criterion).",
-         py::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>())
-    .def_property_readonly(
-      "nobs",
-      &Bicop::get_nobs,
-      "The number of observations (for fitted objects only).")
+         py::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
+         bicop_doc.loglik.doc)
+    .def_property_readonly("nobs", &Bicop::get_nobs, bicop_doc.get_nobs.doc)
     .def("aic",
          &Bicop::aic,
-         "computes the Akaike Information Criterion (for fitted objects, "
-         "passing an empty 'u' returns the fitted criterion).",
-         py::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>())
+         py::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
+         bicop_doc.aic.doc)
     .def("bic",
          &Bicop::bic,
-         "computes the Bayesian Information Criterion (for fitted objects, "
-         "passing an empty 'u' returns the fitted criterion).",
-         py::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>())
+         py::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
+         bicop_doc.bic.doc)
     .def("mbic",
          &Bicop::mbic,
-         "computes the Modified Bayesian Information Criterion (for "
-         "fitted objects, passing an "
-         "empty 'u' returns the fitted criterion).",
          py::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
-         py::arg("psi0") = 0.9)
+         py::arg("psi0") = 0.9,
+         bicop_doc.mbic.doc)
     .def("__repr__",
          [](const Bicop& cop) { return "<pyvinecopulib.Bicop>\n" + cop.str(); })
-    .def("str",
-         &Bicop::str,
-         "summarizes the model into a string (can be used for printing).")
+    .def("str", &Bicop::str, bicop_doc.str.doc)
     .def("parameters_to_tau",
          &Bicop::parameters_to_tau,
-         "returns the Kendall's tau corresponding to the parameters passed "
-         "as arguments.",
-         py::arg("parameters"))
+         py::arg("parameters"),
+         bicop_doc.parameters_to_tau.doc)
     .def("tau_to_parameters",
          &Bicop::tau_to_parameters,
-         "returns the parameters corresponding to the Kendall's tau passed "
-         "as arguments.",
-         py::arg("tau"))
-    .def("flip",
-         &Bicop::flip,
-         "adjust's the copula model to a change in the variable order.")
+         py::arg("tau"),
+         bicop_doc.tau_to_parameters.doc)
+    .def("flip", &Bicop::flip, bicop_doc.flip.doc)
     .def("parameters_lower_bounds",
          &Bicop::get_parameters_lower_bounds,
-         "returns the lower bounds for the copula's parameters.")
+         bicop_doc.get_parameters_lower_bounds.doc)
     .def("parameters_upper_bounds",
          &Bicop::get_parameters_upper_bounds,
-         "returns the upper bounds for the copula's parameters.")
-    .def("pdf", &Bicop::pdf, "evaluates the copula density.", py::arg("u"))
-    .def("cdf", &Bicop::cdf, "evaluates the copula distribution.", py::arg("u"))
-    .def("hfunc1",
-         &Bicop::hfunc1,
-         "evaluates the first h-function, that is the partial derivative of "
-         "the copula distribution w.r.t. the first argument.",
-         py::arg("u"))
-    .def("hfunc2",
-         &Bicop::hfunc2,
-         "evaluates the second h-function, that is the partial derivative of "
-         "the copula distribution w.r.t. the second argument.",
-         py::arg("u"))
-    .def("hinv1",
-         &Bicop::hinv1,
-         "evaluates the inverse of the first h-function (hfunc1) w.r.t. the "
-         "second argument.",
-         py::arg("u"))
-    .def("hinv2",
-         &Bicop::hinv2,
-         "evaluates the inverse of the second h-function (hfunc2) w.r.t. the "
-         "first argument.",
-         py::arg("u"))
+         bicop_doc.get_parameters_upper_bounds.doc)
+    .def("pdf", &Bicop::pdf, py::arg("u"), bicop_doc.pdf.doc)
+    .def("cdf", &Bicop::cdf, py::arg("u"), bicop_doc.cdf.doc)
+    .def("hfunc1", &Bicop::hfunc1, py::arg("u"), bicop_doc.hfunc1.doc)
+    .def("hfunc2", &Bicop::hfunc2, py::arg("u"), bicop_doc.hfunc2.doc)
+    .def("hinv1", &Bicop::hinv1, py::arg("u"), bicop_doc.hinv1.doc)
+    .def("hinv2", &Bicop::hinv2, py::arg("u"), bicop_doc.hinv2.doc)
     .def("simulate",
          &Bicop::simulate,
-         "simulates from the bivariate model.",
          py::arg("n"),
          py::arg("qrng") = false,
-         py::arg("seeds") = std::vector<int>())
+         py::arg("seeds") = std::vector<int>(),
+         bicop_doc.simulate.doc)
     .def("fit",
          &Bicop::fit,
-         "fits a bivariate copula (with fixed family) to data.",
          py::arg("data"),
-         py::arg_v("controls", FitControlsBicop(), "FitControlsBicop()"))
+         py::arg_v("controls", FitControlsBicop(), "FitControlsBicop()"),
+         bicop_doc.fit.doc)
     .def("select",
          &Bicop::select,
-         "selects the best fitting model.",
          py::arg("data"),
-         py::arg_v("controls", FitControlsBicop(), "FitControlsBicop()"));
+         py::arg_v("controls", FitControlsBicop(), "FitControlsBicop()"),
+         bicop_doc.select.doc);
 
-  py::class_<RVineStructure>(pv, "RVineStructure")
+  py::class_<RVineStructure>(pv, "RVineStructure", rvinestructure_doc.doc)
     .def(py::init<const size_t&, const size_t&>(),
-         "instantiates an RVineStructure object to a D-vine for a given "
-         "dimension.",
          py::arg("d") = static_cast<size_t>(1),
-         py::arg("trunc_lvl") = std::numeric_limits<size_t>::max())
+         py::arg("trunc_lvl") = std::numeric_limits<size_t>::max(),
+         rvinestructure_doc.ctor.doc_2args_d_trunc_lvl)
     .def(py::init<const Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
                   bool>(),
-         "instantiates an RVineStructure object to a D-vine with given "
-         "ordering of variables.",
          py::arg("mat"),
-         py::arg("check") = true)
+         py::arg("check") = true,
+         rvinestructure_doc.ctor.doc_2args_mat_check)
     .def(py::init<const std::vector<size_t>&, const size_t&, bool>(),
-         "creates a D-vine with given ordering of variables.",
          py::arg("order"),
          py::arg("trunc_lvl") = std::numeric_limits<size_t>::max(),
-         py::arg("check") = true)
+         py::arg("check") = true,
+         rvinestructure_doc.ctor.doc_3args_order_trunc_lvl_check)
     .def(py::init<const std::string, bool>(),
-         "creates a structure from a JSON file.",
          py::arg("filename"),
-         py::arg("check") = true)
+         py::arg("check") = true,
+         rvinestructure_doc.ctor.doc_2args_filename_check)
     .def("to_json",
          &RVineStructure::to_json,
-         "writes the structure in a JSON file.",
-         py::arg("filename"))
+         py::arg("filename"),
+         rvinestructure_doc.to_json.doc)
     .def_property_readonly("dim", &RVineStructure::get_dim, "The dimension.")
     .def_property_readonly(
       "trunc_lvl", &RVineStructure::get_trunc_lvl, "The truncation level.")
@@ -296,63 +270,56 @@ PYBIND11_MODULE(pyvinecopulib, pv)
                            "The variable order.")
     .def("struct_array",
          &RVineStructure::struct_array,
-         "accesses elements of the structure array.",
          py::arg("tree"),
          py::arg("edge"),
-         py::arg("natural_order") = false)
+         py::arg("natural_order") = false,
+         rvinestructure_doc.struct_array.doc)
     .def("truncate",
          &RVineStructure::truncate,
-         "truncates the R-vine structure.",
-         py::arg("trunc_lvl"))
+         py::arg("trunc_lvl"),
+         rvinestructure_doc.truncate.doc)
     .def_static("simulate",
                 &RVineStructure::simulate,
-                "simulates a random R-vine array.",
                 py::arg("d"),
                 py::arg("natural order") = false,
-                py::arg("seeds") = std::vector<size_t>())
+                py::arg("seeds") = std::vector<size_t>(),
+                rvinestructure_doc.simulate.doc)
     .def("__repr__",
          [](const RVineStructure& rvs) {
            return "<pyvinecopulib.RVineStructure>\n" + rvs.str();
          })
-    .def("str",
-         &RVineStructure::str,
-         "summarizes the model into a string (can be used for printing).");
+    .def("str", &RVineStructure::str, rvinestructure_doc.str.doc);
 
-  py::class_<DVineStructure>(pv, "DVineStructure")
+  py::class_<DVineStructure>(pv, "DVineStructure", dvinestructure_doc.doc)
     .def(py::init<const std::vector<size_t>&>(),
-         "creates a D-vine with given ordering of variables.",
-         py::arg("order"))
-    .def(
-      py::init<const std::vector<size_t>&, size_t>(),
-      "creates a D-vine with given ordering of variables and truncation level.",
-      py::arg("order"),
-      py::arg("trunc_lvl"))
+         py::arg("order"),
+         dvinestructure_doc.ctor.doc_1args)
+    .def(py::init<const std::vector<size_t>&, size_t>(),
+         py::arg("order"),
+         py::arg("trunc_lvl"),
+         dvinestructure_doc.ctor.doc_2args)
     .def("__repr__",
          [](const DVineStructure& rvs) {
            return "<pyvinecopulib.DVineStructure>\n" + rvs.str();
          })
-    .def("str",
-         &DVineStructure::str,
-         "summarizes the model into a string (can be used for printing).");
+    .def("str", &DVineStructure::str, rvinestructure_doc.str.doc);
 
-  py::class_<CVineStructure>(pv, "CVineStructure")
+  py::class_<CVineStructure>(pv, "CVineStructure", cvinestructure_doc.doc)
     .def(py::init<const std::vector<size_t>&>(),
-         "creates a C-vine with given ordering of variables.",
+         cvinestructure_doc.ctor.doc_1args,
          py::arg("order"))
-    .def(
-      py::init<const std::vector<size_t>&, size_t>(),
-      "creates a C-vine with given ordering of variables and truncation level.",
-      py::arg("order"),
-      py::arg("trunc_lvl"))
+    .def(py::init<const std::vector<size_t>&, size_t>(),
+         py::arg("order"),
+         py::arg("trunc_lvl"),
+         cvinestructure_doc.ctor.doc_2args)
     .def("__repr__",
          [](const CVineStructure& rvs) {
            return "<pyvinecopulib.CVineStructure>\n" + rvs.str();
          })
-    .def("str",
-         &CVineStructure::str,
-         "summarizes the model into a string (can be used for printing).");
+    .def("str", &CVineStructure::str, rvinestructure_doc.str.doc);
 
-  py::class_<FitControlsVinecop>(pv, "FitControlsVinecop")
+  py::class_<FitControlsVinecop>(
+    pv, "FitControlsVinecop", fitcontrolsvinecop_doc.doc)
     .def(py::init<std::vector<BicopFamily>,
                   std::string,
                   std::string,
@@ -368,7 +335,6 @@ PYBIND11_MODULE(pyvinecopulib, pv)
                   bool,
                   bool,
                   size_t>(),
-         "creates the controls for fitting bivariate copula models.",
          py::arg("family_set") = bicop_families::all,
          py::arg("parametric_method") = "mle",
          py::arg("nonparametric_method") = "quadratic",
@@ -383,51 +349,74 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          py::arg("select_trunc_lvl") = false,
          py::arg("select_threshold") = false,
          py::arg("show_trace") = false,
-         py::arg("num_threads") = 1)
+         py::arg("num_threads") = 1,
+         fitcontrolsvinecop_doc.ctor.doc_15args)
     .def_property("family_set",
                   &FitControlsVinecop::get_family_set,
-                  &FitControlsVinecop::set_family_set)
-    .def_property("parametric_method",
-                  &FitControlsVinecop::get_parametric_method,
-                  &FitControlsVinecop::set_parametric_method)
-    .def_property("nonparametric_method",
-                  &FitControlsVinecop::get_nonparametric_method,
-                  &FitControlsVinecop::set_nonparametric_method)
-    .def_property("nonparametric_mult",
-                  &FitControlsVinecop::get_nonparametric_mult,
-                  &FitControlsVinecop::set_nonparametric_method)
+                  &FitControlsVinecop::set_family_set,
+                  "The family set (see FitControlsVinecop())")
+    .def_property(
+      "parametric_method",
+      &FitControlsVinecop::get_parametric_method,
+      &FitControlsVinecop::set_parametric_method,
+      "The fit method for parametric families (see FitControlsVinecop())")
+    .def_property(
+      "nonparametric_method",
+      &FitControlsVinecop::get_nonparametric_method,
+      &FitControlsVinecop::set_nonparametric_method,
+      "The fit method for nonparametric families (see FitControlsVinecop())")
+    .def_property(
+      "nonparametric_mult",
+      &FitControlsVinecop::get_nonparametric_mult,
+      &FitControlsVinecop::set_nonparametric_method,
+      "The multiplier for the smoothing parameters (see FitControlsVinecop())")
     .def_property("trunc_lvl",
                   &FitControlsVinecop::get_trunc_lvl,
-                  &FitControlsVinecop::set_trunc_lvl)
+                  &FitControlsVinecop::set_trunc_lvl,
+                  "The truncation level (see FitControlsVinecop())")
     .def_property("tree_criterion",
                   &FitControlsVinecop::get_tree_criterion,
-                  &FitControlsVinecop::set_tree_criterion)
+                  &FitControlsVinecop::set_tree_criterion,
+                  "The tree criterion (see FitControlsVinecop())")
     .def_property("threshold",
                   &FitControlsVinecop::get_threshold,
-                  &FitControlsVinecop::set_threshold)
+                  &FitControlsVinecop::set_threshold,
+                  "The threshold (see FitControlsVinecop())")
     .def_property("selection_criterion",
                   &FitControlsVinecop::get_selection_criterion,
-                  &FitControlsVinecop::set_selection_criterion)
+                  &FitControlsVinecop::set_selection_criterion,
+                  "The selection criterion (see FitControlsVinecop())")
     .def_property("weights",
                   &FitControlsVinecop::get_weights,
-                  &FitControlsVinecop::set_weights)
+                  &FitControlsVinecop::set_weights,
+                  "The weights for the observations (see FitControlsVinecop())")
     .def_property(
-      "psi0", &FitControlsVinecop::get_psi0, &FitControlsVinecop::set_psi0)
+      "psi0",
+      &FitControlsVinecop::get_psi0,
+      &FitControlsVinecop::set_psi0,
+      "The prior probability of non-independence (see FitControlsVinecop())")
     .def_property("preselect_families",
                   &FitControlsVinecop::get_preselect_families,
-                  &FitControlsVinecop::set_preselect_families)
-    .def_property("select_trunc_lvl",
-                  &FitControlsVinecop::get_select_trunc_lvl,
-                  &FitControlsVinecop::set_select_trunc_lvl)
+                  &FitControlsVinecop::set_preselect_families,
+                  "Whether to exclude families based on symmetry properties "
+                  "(see FitControlsVinecop())")
+    .def_property(
+      "select_trunc_lvl",
+      &FitControlsVinecop::get_select_trunc_lvl,
+      &FitControlsVinecop::set_select_trunc_lvl,
+      "Whether to select the truncation level (see FitControlsVinecop())")
     .def_property("select_threshold",
                   &FitControlsVinecop::get_select_threshold,
-                  &FitControlsVinecop::set_select_threshold)
+                  &FitControlsVinecop::set_select_threshold,
+                  "Whether to select the threshold (see FitControlsVinecop())")
     .def_property("show_trace",
                   &FitControlsVinecop::get_show_trace,
-                  &FitControlsVinecop::set_show_trace)
+                  &FitControlsVinecop::set_show_trace,
+                  "Whether to show the trace (see FitControlsVinecop())")
     .def_property("num_threads",
                   &FitControlsVinecop::get_num_threads,
-                  &FitControlsVinecop::set_num_threads);
+                  &FitControlsVinecop::set_num_threads,
+                  "The number of threads (see FitControlsVinecop())");
   /*   .def("__repr__", */
   //    [](const FitControlsVinecop& ctrls) {
   //      return "<pyvinecopulib.FitControlsRinecop>\n" + ctrls.str();
@@ -436,53 +425,49 @@ PYBIND11_MODULE(pyvinecopulib, pv)
   //      &FitControlsVinecop::str,
   /* "summarizes the controls into a string (can be used for printing)."); */
 
-  py::class_<Vinecop>(pv, "Vinecop")
-    .def(py::init<const size_t>(),
-         "creates a D-vine with independence copulas.",
-         py::arg("d"))
+  py::class_<Vinecop>(pv, "Vinecop", vinecop_doc.doc)
+    .def(py::init<const size_t>(), vinecop_doc.ctor.doc_1args_d, py::arg("d"))
     .def(py::init<const RVineStructure&,
                   const std::vector<std::vector<Bicop>>&,
                   const std::vector<std::string>&>(),
-         "creates an arbitrary vine copula model.",
          py::arg("structure"),
          py::arg("pair_copulas") = std::vector<size_t>(),
-         py::arg("var_types") = std::vector<std::string>())
+         py::arg("var_types") = std::vector<std::string>(),
+         vinecop_doc.ctor.doc_3args_structure_pair_copulas_var_types)
     .def(py::init<Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
                   const std::vector<std::vector<Bicop>>&,
                   const std::vector<std::string>&>(),
-         "creates an arbitrary vine copula model.",
          py::arg("matrix"),
          py::arg("pair_copulas") = std::vector<size_t>(),
-         py::arg("var_types") = std::vector<std::string>())
+         py::arg("var_types") = std::vector<std::string>(),
+         vinecop_doc.ctor.doc_3args_matrix_pair_copulas_var_types)
     .def(py::init<const Eigen::MatrixXd&,
                   const RVineStructure&,
                   const std::vector<std::string>&,
                   const FitControlsVinecop&>(),
-         "constructs a vine copula model from data by creating a model and "
-         "calling select().",
          py::arg("data"),
          py::arg("structure") = RVineStructure(),
          py::arg("var_types") = std::vector<std::string>(),
-         py::arg_v("controls", FitControlsVinecop(), "FitControlsVinecop()"))
+         py::arg_v("controls", FitControlsVinecop(), "FitControlsVinecop()"),
+         vinecop_doc.ctor.doc_4args_data_structure_var_types_controls)
     .def(py::init<const Eigen::MatrixXd&,
                   const Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
                   const std::vector<std::string>&,
                   const FitControlsVinecop&>(),
-         "constructs a vine copula model from data by creating a model and "
-         "calling select().",
          py::arg("data"),
          py::arg("matrix") =
            Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>(),
          py::arg("var_types") = std::vector<std::string>(),
-         py::arg_v("controls", FitControlsVinecop(), "FitControlsVinecop()"))
+         py::arg_v("controls", FitControlsVinecop(), "FitControlsVinecop()"),
+         vinecop_doc.ctor.doc_4args_data_matrix_var_types_controls)
     .def(py::init<const std::string, bool>(),
-         "creates a vine copula from a JSON file.",
          py::arg("filename"),
-         py::arg("check") = true)
+         py::arg("check") = true,
+         vinecop_doc.ctor.doc_2args_filename_check)
     .def("to_json",
          &Vinecop::to_json,
-         "write a vine copula to a JSON file.",
-         py::arg("filename"))
+         py::arg("filename"),
+         vinecop_doc.to_json.doc)
     .def_property("var_types",
                   &Vinecop::get_var_types,
                   &Vinecop::set_var_types,
@@ -547,74 +532,68 @@ PYBIND11_MODULE(pyvinecopulib, pv)
                            "The threshold (for thresholded copulas only).")
     .def("select",
          &Vinecop::select,
-         "automatically fits and selects a vine copula model.",
          py::arg("data"),
-         py::arg_v("controls", FitControlsVinecop(), "FitControlsVinecop()"))
+         py::arg_v("controls", FitControlsVinecop(), "FitControlsVinecop()"),
+         vinecop_doc.select.doc)
     .def("pdf",
          &Vinecop::pdf,
-         "returns the probability density function.",
          py::arg("u"),
-         py::arg("num_threads") = 1)
+         py::arg("num_threads") = 1,
+         vinecop_doc.pdf.doc)
     .def("cdf",
          &Vinecop::cdf,
-         "returns the cumulative distribution.",
          py::arg("u"),
          py::arg("N") = 10000,
          py::arg("num_threads") = 1,
-         py::arg("seeds") = std::vector<int>())
+         py::arg("seeds") = std::vector<int>(),
+         vinecop_doc.cdf.doc)
     .def("simulate",
          &Vinecop::simulate,
-         "sample (quasi-)random numbers from the model.",
          py::arg("n"),
          py::arg("qrn") = false,
          py::arg("num_threads") = 1,
-         py::arg("seeds") = std::vector<int>())
+         py::arg("seeds") = std::vector<int>(),
+         vinecop_doc.simulate.doc)
     .def("rosenblatt",
          &Vinecop::rosenblatt,
-         "computes the Rosenblatt transform.",
          py::arg("u"),
-         py::arg("num_threads") = 1)
+         py::arg("num_threads") = 1,
+         vinecop_doc.rosenblatt.doc)
     .def("inverse_rosenblatt",
          &Vinecop::inverse_rosenblatt,
-         "computes the inverse Rosenblatt transform.",
          py::arg("u"),
-         py::arg("num_threads") = 1)
+         py::arg("num_threads") = 1,
+         vinecop_doc.inverse_rosenblatt.doc)
     .def("loglik",
          &Vinecop::loglik,
-         "computes the log-likelihood (for fitted objects, passing an "
-         "empty 'u' returns the fitted criterion).",
          py::arg("u") = Eigen::MatrixXd(),
-         py::arg("num_threads") = 1)
+         py::arg("num_threads") = 1,
+         vinecop_doc.loglik.doc)
     .def("aic",
          &Vinecop::aic,
-         "computes the Akaike Information Criterion (for fitted objects, "
-         "passing an empty 'u' returns the fitted criterion).",
          py::arg("u") = Eigen::MatrixXd(),
-         py::arg("num_threads") = 1)
+         py::arg("num_threads") = 1,
+         vinecop_doc.aic.doc)
     .def("bic",
          &Vinecop::bic,
-         "computes the Bayesian Information Criterion (for fitted objects, "
-         "passing an empty 'u' returns the fitted criterion).",
          py::arg("u") = Eigen::MatrixXd(),
-         py::arg("num_threads") = 1)
+         py::arg("num_threads") = 1,
+         vinecop_doc.bic.doc)
     .def("mbicv",
          &Vinecop::mbicv,
-         "computes the modified Bayesian Information Criterion for Vines (for "
-         "fitted objects, passing an empty 'u' returns the fitted criterion).",
          py::arg("u") = Eigen::MatrixXd(),
          py::arg("psi0") = 0.9,
-         py::arg("num_threads") = 1)
+         py::arg("num_threads") = 1,
+         vinecop_doc.mbicv.doc)
     .def("__repr__",
          [](const Vinecop& cop) {
            return "<pyvinecopulib.Vinecop>\n" + cop.str();
          })
-    .def("str",
-         &Vinecop::str,
-         "summarizes the model into a string (can be used for printing).")
+    .def("str", &Vinecop::str, vinecop_doc.str.doc)
     .def("truncate",
          &Vinecop::truncate,
-         "truncates the vine copula model.",
-         py::arg("trunc_lvl"));
+         py::arg("trunc_lvl"),
+         vinecop_doc.truncate.doc);
 
   pv.def("simulate_uniform",
          &tools_stats::simulate_uniform,

@@ -61,7 +61,7 @@ formats please refer to the Sphinx manual:
 
  * `pip install sphinx-rtd-theme`
  - `cd pyvinecopulib/docs`
- - `make html`
+ - `python3 serve_sphinx.py`
 
 ### License
 
