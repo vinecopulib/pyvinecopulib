@@ -111,7 +111,7 @@ def preview_main(gen_script, default_port):
         help="Port for serving doc pages with a HTTP server.")
     args = parser.parse_args()
     # Choose an arbitrary location for generating documentation.
-    out_dir = abspath("sphinx-tmp")
+    out_dir = abspath("_build")
 
     if isdir(out_dir):
         rmtree(out_dir)

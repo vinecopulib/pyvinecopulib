@@ -12,6 +12,7 @@ PYBIND11_MODULE(pyvinecopulib, pv)
 
   constexpr auto& doc = pyvinecopulib_doc;
   constexpr auto& bicop_doc = doc.vinecopulib.Bicop;
+  constexpr auto& bicopfamily_doc = doc.vinecopulib.BicopFamily;
   constexpr auto& fitcontrolsbicop_doc = doc.vinecopulib.FitControlsBicop;
   constexpr auto& rvinestructure_doc = doc.vinecopulib.RVineStructure;
   constexpr auto& dvinestructure_doc = doc.vinecopulib.DVineStructure;
@@ -38,21 +39,20 @@ PYBIND11_MODULE(pyvinecopulib, pv)
      RVineStructure
   )pbdoc";
 
-  py::enum_<BicopFamily>(pv, "BicopFamily", py::arithmetic())
-    .value("indep", BicopFamily::indep, "Independence copula.")
-    .value("gaussian", BicopFamily::gaussian, "Gaussian copula.")
-    .value("student", BicopFamily::student, "Student t copula.")
-    .value("clayton", BicopFamily::clayton, "Clayton copula.")
-    .value("gumbel", BicopFamily::gumbel, "Gumbel copula.")
-    .value("frank", BicopFamily::frank, "Frank copula.")
-    .value("joe", BicopFamily::joe, "Joe copula.")
-    .value("bb1", BicopFamily::bb1, "BB1 copula.")
-    .value("bb6", BicopFamily::bb6, "BB6 copula.")
-    .value("bb7", BicopFamily::bb7, "BB7 copula.")
-    .value("bb8", BicopFamily::bb8, "BB8 copula.")
-    .value("tll",
-           BicopFamily::tll,
-           "Transformation local likelihood kernel estimator.");
+  py::enum_<BicopFamily>(
+    pv, "BicopFamily", py::arithmetic(), bicopfamily_doc.doc)
+    .value("indep", BicopFamily::indep, bicopfamily_doc.indep.doc)
+    .value("gaussian", BicopFamily::gaussian, bicopfamily_doc.gaussian.doc)
+    .value("student", BicopFamily::student, bicopfamily_doc.student.doc)
+    .value("clayton", BicopFamily::clayton, bicopfamily_doc.clayton.doc)
+    .value("gumbel", BicopFamily::gumbel, bicopfamily_doc.gumbel.doc)
+    .value("frank", BicopFamily::frank, bicopfamily_doc.indep.doc)
+    .value("joe", BicopFamily::joe, bicopfamily_doc.joe.doc)
+    .value("bb1", BicopFamily::bb1, bicopfamily_doc.bb1.doc)
+    .value("bb6", BicopFamily::bb6, bicopfamily_doc.bb6.doc)
+    .value("bb7", BicopFamily::bb7, bicopfamily_doc.bb7.doc)
+    .value("bb8", BicopFamily::bb8, bicopfamily_doc.bb8.doc)
+    .value("tll", BicopFamily::tll, bicopfamily_doc.tll.doc);
 
   pv.attr("all") = bicop_families::all;
   pv.attr("parametric") = bicop_families::parametric;
