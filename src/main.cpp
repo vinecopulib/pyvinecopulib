@@ -178,12 +178,18 @@ PYBIND11_MODULE(pyvinecopulib, pv)
                   "The type of the two variables.")
     .def_property_readonly("family", &Bicop::get_family, "The copula family.")
     .def_property_readonly("tau", &Bicop::get_tau, "The Kendall's tau.")
-    .def_property_readonly("npars", &Bicop::get_npars, bicop_doc.get_npars.doc)
+    .def_property_readonly("npars",
+                           &Bicop::get_npars,
+                           "The number of parameters (for nonparametric "
+                           "families, a conceptually similar definition).")
     .def("loglik",
          &Bicop::loglik,
          py::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
          bicop_doc.loglik.doc)
-    .def_property_readonly("nobs", &Bicop::get_nobs, bicop_doc.get_nobs.doc)
+    .def_property_readonly(
+      "nobs",
+      &Bicop::get_nobs,
+      "The number of observations (only for fitted objects).")
     .def("aic",
          &Bicop::aic,
          py::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
@@ -208,7 +214,6 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          &Bicop::tau_to_parameters,
          py::arg("tau"),
          bicop_doc.tau_to_parameters.doc)
-    .def("flip", &Bicop::flip, bicop_doc.flip.doc)
     .def("parameters_lower_bounds",
          &Bicop::get_parameters_lower_bounds,
          bicop_doc.get_parameters_lower_bounds.doc)
