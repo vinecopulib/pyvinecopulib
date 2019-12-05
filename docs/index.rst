@@ -3,7 +3,26 @@
 pyvinecopulib
 =============
 
+.. toctree::
+    :maxdepth: 1
+
 .. automodule:: pyvinecopulib
-    :members:
-    :undoc-members:
-    :show-inheritance:
+.. autosummary:: 
+    :toctree: _generate
+
+    pyvinecopulib
+    BicopFamily
+    Bicop
+    FitControlsBicop
+    Vinecop
+    FitControlsVinecop
+    CVineStructure
+    DVineStructure
+    RVineStructure
+
+Functions
+=========
+.. autofunction:: to_pseudo_obs
+.. autofunction:: simulate_uniform
+.. autofunction:: ghalton
+.. autofunction:: sobol

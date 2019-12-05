@@ -2,11 +2,30 @@
 Generates documentation for `pyvinecopulib`.
 """
 
-from os.path import abspath, dirname, isabs, join
 import sys
+from os.path import abspath, dirname, isabs, join
 
 import pyvinecopulib
+
 from sphinx_base import gen_main
+
+CLASSES = [
+    "BicopFamily",
+    "Bicop",
+    "FitControlsBicop",
+    "Vinecop",
+    "FitControlsVinecop",
+    "CVineStructure",
+    "DVineStructure",
+    "RVineStructure"
+]
+
+FUNCTIONS = [
+    "to_pseudo_obs",
+    "simulate_uniform",
+    "ghalton",
+    "sobol"
+]
 
 EXCLUDE = [
 ]
@@ -70,22 +89,36 @@ def write_module(f_name, name, verbose):
         f.write("=" * len(rst_name) + "\n")
         f.write("\n")
 
-        if len(subs) > 0:
-            f.write(".. toctree::\n")
-            f.write("    :maxdepth: 1\n")
-            f.write("\n")
+        f.write(".. toctree::\n")
+        f.write("    :maxdepth: 1\n")
+        f.write("\n")
 
-            for sub in subs:
-                f.write("    {}\n".format(sub))
-            f.write("\n\n")
+        for sub in subs:
+            f.write("    {}\n".format(sub))
+
         f.write(".. automodule:: {}\n".format(name))
-        f.write("    :members:\n")
-        # See if there's a corresponding private CcPybind library.
+#          f.write("    :members:\n")
+        #  # See if there's a corresponding private CcPybind library.
+        #
+        #  if has_cc_imported_symbols(name):
+        #      f.write("    :imported-members:\n")
+        #  f.write("    :undoc-members:\n")
+        #  f.write("    :show-inheritance:\n\n")
 
-        if has_cc_imported_symbols(name):
-            f.write("    :imported-members:\n")
-        f.write("    :undoc-members:\n")
-        f.write("    :show-inheritance:\n")
+        f.write(".. autosummary:: \n")
+        f.write("    :toctree: _generate\n\n")
+
+        f.write("    pyvinecopulib\n")
+
+        for i in CLASSES:
+            f.write("    {}\n".format(i))
+
+        f.write("\nFunctions\n")
+        f.write("=========\n")
+
+        for i in FUNCTIONS:
+            f.write(".. autofunction:: {}\n".format(i))
+
     f_dir = dirname(f_name)
 
     for sub in subs:
