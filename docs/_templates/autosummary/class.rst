@@ -6,11 +6,13 @@
 
 .. autoclass:: {{ objname }}
 
+   {% if objname != 'BicopFamily' %}
    {% block attributes %}
    {% if attributes %}
    .. rubric:: Attributes
 
    .. autosummary::
+      :nosignatures:
    {% for item in attributes %}
       ~{{ objname }}.{{ item }}
    {%- endfor %}
@@ -29,3 +31,4 @@
    {%- endfor %}
    {% endif %}
    {% endblock %}
+   {% endif %}

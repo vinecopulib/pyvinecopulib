@@ -171,9 +171,9 @@ def extract_comment(cursor, deprecations):
     if cursor.raw_comment is not None:
         result = cursor.raw_comment
 
-    # Look for a DRAKE_DEPRECATED macro.
+    # Look for a DEPRECATED macro.
     c = cursor  # The cursor whose deprecation macro we want to find.
-    found = None  # The DRAKE_DEPRECATED cursor associated with `c`.
+    found = None  # The DEPRECATED cursor associated with `c`.
     possible_d = [
         d for d in deprecations
 
@@ -193,7 +193,7 @@ def extract_comment(cursor, deprecations):
 
     # For a class declaration, the MACRO_INSTATIATION extent will lie fully
     # within the CLASS_DECL extent, near the top.  Allow up to 5 lines between
-    # the `class Foo` or `template <> class Foo` and the DRAKE_DEPRECATED macro
+    # the `class Foo` or `template <> class Foo` and the DEPRECATED macro
     # so that we're sure NOT to match a deprecated inline method near the top
     # of the class, but we DO allow various whitespace arrangements of template
     # parameters, class decl, and macro.
@@ -211,10 +211,10 @@ def extract_comment(cursor, deprecations):
     if not found:
         return result
 
-    # Extract the DRAKE_DEPRECATED macro arguments.
+    # Extract the DEPRECATED macro arguments.
     tokens = [x.spelling for x in found.get_tokens()]
     assert len(tokens) >= 6, tokens
-    assert tokens[0] == b'DRAKE_DEPRECATED', tokens
+    assert tokens[0] == b'DEPRECATED', tokens
     assert tokens[1] == b'(', tokens
     assert tokens[3] == b',', tokens
     assert tokens[-1] == b')', tokens
@@ -228,7 +228,7 @@ def extract_comment(cursor, deprecations):
     # Append the deprecation text.
     result += (
         " (Deprecated.) \deprecated {} " +
-        "This will be removed from Drake on or after {}.").format(
+        "This will be removed from vinecopulib on or after {}.").format(
             message, removal_date)
 
     return result
@@ -256,6 +256,9 @@ def process_comment(comment):
 
         if s.endswith('*/'):
             s = s[:-2].rstrip('*')
+
+        if s.startswith('///<'):
+            s = s[4:]
 
         if s.startswith('///') or s.startswith('//!'):
             s = s[3:]
@@ -291,8 +294,10 @@ def process_comment(comment):
         r'([\s\-,;:!.()]+)__([^\s_]+|[^\s_].*?[^\s_])__([\s\-,;:!.()]+)',
         r'\1**\2**\3', s, flags=re.DOTALL)
     # Convert `typewriter` to ``typewriter``.
-    s = re.sub(r'([\s\-,;:!.()]+)`([^\s`]|[^\s`].*?[^\s`])`([\s\-,;:!.()]+)',
-               r'\1``\2``\3', s, flags=re.DOTALL)
+    rr = r'([\s\-,;:!.()]+)`([^\s`]|[^\s`].*?[^\s`])`([\s\-,;:!.()]+)'
+    while re.search(rr, s):
+        s = re.sub(rr, r'\1``\2``\3', s, flags=re.DOTALL)
+
     # Convert [Link](https://example.org) to `Link <https://example.org>`_.
     s = re.sub(r'\[(.*?)\]\(([\w:.?/#]+)\)', r'`\1 <\2>`_', s,
                flags=re.DOTALL)
@@ -393,7 +398,7 @@ def process_comment(comment):
     s = re.sub(r'[@\\]f\{([\w*]+)\}\s*(.*?)\s*[@\\]f\}',
                r'\n\n.. math:: \\begin{\1}\2\\end{\1}\n\n', s, flags=re.DOTALL)
 
-    # Drake-specific Doxygen aliases.
+    # vinecopulib-specific Doxygen aliases.
     s = re.sub(r'[@\\]default\s+', r'\n$*Default:* ', s)
 
     # Remove these commands that take no argument. Ordering is significant for
@@ -751,7 +756,7 @@ def extract(include_file_map, cursor, symbol_tree, deprecations=None):
                 continue
 
             if i.kind == CursorKind.MACRO_INSTANTIATION:
-                if i.spelling == b'DRAKE_DEPRECATED':
+                if i.spelling == b'DEPRECATED':
                     deprecations.append(i)
 
                 continue

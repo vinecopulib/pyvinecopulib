@@ -11,6 +11,7 @@ PYBIND11_MODULE(pyvinecopulib, pv)
 {
 
   constexpr auto& doc = pyvinecopulib_doc;
+  constexpr auto& tools_stat_doc = doc.vinecopulib.tools_stats;
   constexpr auto& bicop_doc = doc.vinecopulib.Bicop;
   constexpr auto& bicopfamily_doc = doc.vinecopulib.BicopFamily;
   constexpr auto& fitcontrolsbicop_doc = doc.vinecopulib.FitControlsBicop;
@@ -23,36 +24,43 @@ PYBIND11_MODULE(pyvinecopulib, pv)
   pv.doc() = R"pbdoc(
   The pyvinecopulib package
   -------------------------
-
-  .. currentmodule:: pyvinecopulib
-
-  .. autosummary::
-     :toctree: _generate
-
-     BicopFamily
-     Bicop
-     FitControlsBicop
-     Vinecop
-     FitControlsVinecop
-     CVineStructure
-     DVineStructure
-     RVineStructure
   )pbdoc";
 
-  py::enum_<BicopFamily>(
-    pv, "BicopFamily", py::arithmetic(), bicopfamily_doc.doc)
+  py::enum_<BicopFamily>(pv, "BicopFamily", py::arithmetic(), R"pbdoc(
+   A bivariate copula family identifier.
+
+   The following convenient sets of families are also provided:
+
+   - ``all`` contains all the families,
+   - ``parametric`` contains the parametric families (all except ``tll``),
+   - ``nonparametric`` contains the nonparametric families
+     (``indep`` and ``tll``)
+   - ``onepar`` contains the parametric families with a single parameter,
+     (``gaussian``, ``clayton``, ``gumbel``, ``frank``, and ``joe``),
+   - ``twopar`` contains the parametric families with two parameters
+     (``student``, ``bb1``, ``bb6``, ``bb7``, and ``bb8``),
+   - ``elliptical`` contains the elliptical families,
+   - ``archimedean`` contains the archimedean families,
+   - ``BB`` contains the BB families,
+   - ``itau`` families for which estimation by Kendall's tau inversion is
+     available (``indep``, ``gaussian``, ``student``, ``clayton``,
+     ``gumbel``, ``frank``, ``joe``),
+   - ``lt`` contains the families that are lower-tail dependent,
+   - ``ut`` contains the families that are upper-tail dependent.
+   )pbdoc")
     .value("indep", BicopFamily::indep, bicopfamily_doc.indep.doc)
     .value("gaussian", BicopFamily::gaussian, bicopfamily_doc.gaussian.doc)
     .value("student", BicopFamily::student, bicopfamily_doc.student.doc)
     .value("clayton", BicopFamily::clayton, bicopfamily_doc.clayton.doc)
     .value("gumbel", BicopFamily::gumbel, bicopfamily_doc.gumbel.doc)
-    .value("frank", BicopFamily::frank, bicopfamily_doc.indep.doc)
+    .value("frank", BicopFamily::frank, bicopfamily_doc.frank.doc)
     .value("joe", BicopFamily::joe, bicopfamily_doc.joe.doc)
     .value("bb1", BicopFamily::bb1, bicopfamily_doc.bb1.doc)
     .value("bb6", BicopFamily::bb6, bicopfamily_doc.bb6.doc)
     .value("bb7", BicopFamily::bb7, bicopfamily_doc.bb7.doc)
     .value("bb8", BicopFamily::bb8, bicopfamily_doc.bb8.doc)
-    .value("tll", BicopFamily::tll, bicopfamily_doc.tll.doc);
+    .value("tll", BicopFamily::tll, bicopfamily_doc.tll.doc)
+    .export_values();
 
   pv.attr("all") = bicop_families::all;
   pv.attr("parametric") = bicop_families::parametric;
@@ -62,11 +70,9 @@ PYBIND11_MODULE(pyvinecopulib, pv)
   pv.attr("elliptical") = bicop_families::elliptical;
   pv.attr("archimedean") = bicop_families::archimedean;
   pv.attr("bb") = bicop_families::bb;
-  pv.attr("rotationless") = bicop_families::rotationless;
   pv.attr("lt") = bicop_families::lt;
   pv.attr("ut") = bicop_families::ut;
   pv.attr("itau") = bicop_families::itau;
-  pv.attr("flip_by_rotation") = bicop_families::flip_by_rotation;
 
   py::class_<FitControlsBicop>(pv, "FitControlsBicop", fitcontrolsbicop_doc.doc)
     .def(py::init<std::vector<BicopFamily>,
@@ -126,7 +132,7 @@ PYBIND11_MODULE(pyvinecopulib, pv)
                   &FitControlsBicop::get_preselect_families,
                   &FitControlsBicop::set_preselect_families,
                   "Whether to exclude families based on symmetry properties "
-                  "(see FitControlsBicop())")
+                  "(see ``FitControlsBicop``)")
     .def_property("num_threads",
                   &FitControlsBicop::get_num_threads,
                   &FitControlsBicop::set_num_threads,
@@ -291,7 +297,8 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          })
     .def("str", &RVineStructure::str, rvinestructure_doc.str.doc);
 
-  py::class_<DVineStructure>(pv, "DVineStructure", dvinestructure_doc.doc)
+  py::class_<DVineStructure, RVineStructure>(
+    pv, "DVineStructure", dvinestructure_doc.doc)
     .def(py::init<const std::vector<size_t>&>(),
          py::arg("order"),
          dvinestructure_doc.ctor.doc_1args)
@@ -299,34 +306,12 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          py::arg("order"),
          py::arg("trunc_lvl"),
          dvinestructure_doc.ctor.doc_2args)
-    .def("to_json",
-         &RVineStructure::to_json,
-         py::arg("filename"),
-         rvinestructure_doc.to_json.doc)
-    .def_property_readonly("dim", &RVineStructure::get_dim, "The dimension.")
-    .def_property_readonly(
-      "trunc_lvl", &RVineStructure::get_trunc_lvl, "The truncation level.")
-    .def_property_readonly("order",
-                           (std::vector<size_t>(RVineStructure::*)() const) &
-                             RVineStructure::get_order,
-                           "The variable order.")
-    .def("struct_array",
-         &RVineStructure::struct_array,
-         py::arg("tree"),
-         py::arg("edge"),
-         py::arg("natural_order") = false,
-         rvinestructure_doc.struct_array.doc)
-    .def("truncate",
-         &RVineStructure::truncate,
-         py::arg("trunc_lvl"),
-         rvinestructure_doc.truncate.doc)
-    .def("__repr__",
-         [](const DVineStructure& rvs) {
-           return "<pyvinecopulib.DVineStructure>\n" + rvs.str();
-         })
-    .def("str", &DVineStructure::str, rvinestructure_doc.str.doc);
+    .def("__repr__", [](const DVineStructure& rvs) {
+      return "<pyvinecopulib.DVineStructure>\n" + rvs.str();
+    });
 
-  py::class_<CVineStructure>(pv, "CVineStructure", cvinestructure_doc.doc)
+  py::class_<CVineStructure, RVineStructure>(
+    pv, "CVineStructure", cvinestructure_doc.doc)
     .def(py::init<const std::vector<size_t>&>(),
          cvinestructure_doc.ctor.doc_1args,
          py::arg("order"))
@@ -334,32 +319,9 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          py::arg("order"),
          py::arg("trunc_lvl"),
          cvinestructure_doc.ctor.doc_2args)
-    .def("to_json",
-         &RVineStructure::to_json,
-         py::arg("filename"),
-         rvinestructure_doc.to_json.doc)
-    .def_property_readonly("dim", &RVineStructure::get_dim, "The dimension.")
-    .def_property_readonly(
-      "trunc_lvl", &RVineStructure::get_trunc_lvl, "The truncation level.")
-    .def_property_readonly("order",
-                           (std::vector<size_t>(RVineStructure::*)() const) &
-                             RVineStructure::get_order,
-                           "The variable order.")
-    .def("struct_array",
-         &RVineStructure::struct_array,
-         py::arg("tree"),
-         py::arg("edge"),
-         py::arg("natural_order") = false,
-         rvinestructure_doc.struct_array.doc)
-    .def("truncate",
-         &RVineStructure::truncate,
-         py::arg("trunc_lvl"),
-         rvinestructure_doc.truncate.doc)
-    .def("__repr__",
-         [](const CVineStructure& rvs) {
-           return "<pyvinecopulib.CVineStructure>\n" + rvs.str();
-         })
-    .def("str", &CVineStructure::str, rvinestructure_doc.str.doc);
+    .def("__repr__", [](const CVineStructure& rvs) {
+      return "<pyvinecopulib.CVineStructure>\n" + rvs.str();
+    });
 
   py::class_<FitControlsVinecop>(
     pv, "FitControlsVinecop", fitcontrolsvinecop_doc.doc)
@@ -434,11 +396,11 @@ PYBIND11_MODULE(pyvinecopulib, pv)
                   &FitControlsVinecop::get_psi0,
                   &FitControlsVinecop::set_psi0,
                   "The prior probability of non-independence.")
-    .def_property("preselect_families",
-                  &FitControlsVinecop::get_preselect_families,
-                  &FitControlsVinecop::set_preselect_families,
-                  "Whether to exclude families based on symmetry properties "
-                  "(see FitControlsVinecop())")
+    .def_property(
+      "preselect_families",
+      &FitControlsVinecop::get_preselect_families,
+      &FitControlsVinecop::set_preselect_families,
+      "Preselection based on symmetry properties (see ``__init__``).")
     .def_property("select_trunc_lvl",
                   &FitControlsVinecop::get_select_trunc_lvl,
                   &FitControlsVinecop::set_select_trunc_lvl,
@@ -515,44 +477,41 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     .def_property_readonly("dim", &Vinecop::get_dim, "The dimension.")
     .def("get_pair_copula",
          &Vinecop::get_pair_copula,
-         "extracts a pair-copula.",
+         "Gets a pair-copula.",
          py::arg("tree"),
          py::arg("edge"))
     .def("get_family",
          &Vinecop::get_family,
-         "extracts the family of a pair-copula.",
+         "Gets the family of a pair-copula.",
          py::arg("tree"),
          py::arg("edge"))
     .def("get_rotation",
          &Vinecop::get_rotation,
-         "extracts the rotation of a pair-copula.",
+         "Gets the rotation of a pair-copula.",
          py::arg("tree"),
          py::arg("edge"))
     .def("get_parameters",
          &Vinecop::get_parameters,
-         "extracts the parameters of a pair-copula.",
+         "Gets the parameters of a pair-copula.",
          py::arg("tree"),
          py::arg("edge"))
     .def("get_tau",
          &Vinecop::get_tau,
-         "extracts the kendall's tau of a pair-copula.",
+         "Gets the kendall's tau of a pair-copula.",
          py::arg("tree"),
          py::arg("edge"))
-    .def_property_readonly("get_all_pair_copulas",
-                           &Vinecop::get_all_pair_copulas,
-                           "extracts all pair-copulas.")
-    .def_property_readonly("get_all_families",
-                           &Vinecop::get_all_families,
-                           "extracts the families of all pair-copulas.")
-    .def_property_readonly("get_all_rotations",
+    .def_property_readonly(
+      "pair_copulas", &Vinecop::get_all_pair_copulas, "All pair-copulas.")
+    .def_property_readonly(
+      "families", &Vinecop::get_all_families, "Families of all pair-copulas.")
+    .def_property_readonly("rotations",
                            &Vinecop::get_all_rotations,
-                           "extracts the rotations of all pair-copulas.")
-    .def_property_readonly("get_all_parameters",
+                           "The rotations of all pair-copulas.")
+    .def_property_readonly("parameters",
                            &Vinecop::get_all_parameters,
-                           "extracts the parameters of all pair-copulas.")
-    .def_property_readonly("get_all_taus",
-                           &Vinecop::get_all_taus,
-                           "extracts the Kendall's taus of all pair-copulas.")
+                           "The parameters of all pair-copulas.")
+    .def_property_readonly(
+      "taus", &Vinecop::get_all_taus, "The Kendall's taus of all pair-copulas.")
     .def_property_readonly(
       "order", &Vinecop::get_order, "The R-vine structure's order.")
     .def_property_readonly(
@@ -635,18 +594,31 @@ PYBIND11_MODULE(pyvinecopulib, pv)
 
   pv.def("simulate_uniform",
          &tools_stats::simulate_uniform,
-         "simulate uniform random numbers.",
+         tools_stat_doc.simulate_uniform.doc,
          py::arg("n"),
          py::arg("d"),
          py::arg("qrng") = false,
          py::arg("seeds") = std::vector<int>());
 
-  pv.def(
-    "to_pseudo_obs",
-    &tools_stats::to_pseudo_obs,
-    "applies the empirical probability integral transform to a data matrix.",
-    py::arg("x"),
-    py::arg("ties_method") = "average");
+  pv.def("sobol",
+         &tools_stats::sobol,
+         tools_stat_doc.sobol.doc,
+         py::arg("n"),
+         py::arg("d"),
+         py::arg("seeds") = std::vector<int>());
+
+  pv.def("ghalton",
+         &tools_stats::ghalton,
+         tools_stat_doc.ghalton.doc,
+         py::arg("n"),
+         py::arg("d"),
+         py::arg("seeds") = std::vector<int>());
+
+  pv.def("to_pseudo_obs",
+         &tools_stats::to_pseudo_obs,
+         tools_stat_doc.to_pseudo_obs.doc,
+         py::arg("x"),
+         py::arg("ties_method") = "average");
 
 #ifdef VERSION_INFO
   pv.attr("__version__") = VERSION_INFO;
