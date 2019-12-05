@@ -14,7 +14,9 @@ git fetch --all
 pip install .
 
 # build html docs from sphinx files
-python3 docs/serve_sphinx.py
+cd docs
+python3 serve_sphinx.py --generates=True
+cd ..
 
 # create or use orphaned gh-pages branch
 if [ $(git branch --list "$branch_name") ]
@@ -32,6 +34,7 @@ if [ -d "$doc_directory" ]
 then
 	ls | grep -v _build | xargs rm -r
 	mv _build/* . && rm -rf _build
+  touch .nojekyll
 	git add .
 	git commit -m "new pages version $(date)"
 	git push origin gh-pages

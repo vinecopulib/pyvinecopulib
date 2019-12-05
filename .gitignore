@@ -28,6 +28,7 @@
 *.app
 
 # Python stuff
+index.rst
 .eggs/
 *.py[cod]
 *.egg-info

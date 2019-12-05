@@ -1,14 +1,14 @@
 import argparse
-from http.server import SimpleHTTPRequestHandler
 import os
-from os import listdir, symlink, mkdir
+import sys
+import tempfile
+import webbrowser
+from http.server import SimpleHTTPRequestHandler
+from os import listdir, mkdir, symlink
 from os.path import abspath, dirname, isabs, isdir, isfile, join
 from shutil import rmtree
 from socketserver import TCPServer
 from subprocess import check_call
-import sys
-import tempfile
-import webbrowser
 
 _SPHINX_BUILD = "sphinx_build.py"
 
@@ -109,6 +109,9 @@ def preview_main(gen_script, default_port):
     parser.add_argument(
         "--port", type=int, default=default_port, metavar='PORT',
         help="Port for serving doc pages with a HTTP server.")
+    parser.add_argument(
+        "--generates", type='bool', default=False, metavar='BOOL',
+        help="Only generates.")
     args = parser.parse_args()
     # Choose an arbitrary location for generating documentation.
     out_dir = abspath("_build")
@@ -119,30 +122,32 @@ def preview_main(gen_script, default_port):
     check_call([sys.executable, gen_script, "--out_dir", out_dir])
     print("Sphinx preview docs are available at:")
     file_url = "file://{}".format(join(out_dir, "index.html"))
-    browser_url = file_url
-    print()
-    print("  {}".format(file_url))
-    # Serve the current directory for local browsing. Required for MacOS.
-    # N.B. We serve the preview via a HTTP server because it is necessary for
-    # certain browsers (Safari on MacOS, possibly Chrome) due to local file
-    # restrictions.
-    os.chdir(out_dir)
-    sockaddr = ("127.0.0.1", args.port)
-    TCPServer.allow_reuse_address = True
-    httpd = TCPServer(sockaddr, _Handler)
-    http_url = "http://{}:{}/index.html".format(*sockaddr)
-    print()
-    print("  {}".format(http_url))
-    # Default to using HTTP serving only on MacOS; on Ubuntu, it can spit
-    # out errors and exceptions about broken pipes, 404 files, etc.
 
-    if sys.platform == "darwin":
-        browser_url = http_url
-    # Try the default browser.
+    if not args.generates:
+        browser_url = file_url
+        print()
+        print("  {}".format(file_url))
+        # Serve the current directory for local browsing. Required for MacOS.
+        # N.B. We serve the preview via a HTTP server because it is necessary for
+        # certain browsers (Safari on MacOS, possibly Chrome) due to local file
+        # restrictions.
+        os.chdir(out_dir)
+        sockaddr = ("127.0.0.1", args.port)
+        TCPServer.allow_reuse_address = True
+        httpd = TCPServer(sockaddr, _Handler)
+        http_url = "http://{}:{}/index.html".format(*sockaddr)
+        print()
+        print("  {}".format(http_url))
+        # Default to using HTTP serving only on MacOS; on Ubuntu, it can spit
+        # out errors and exceptions about broken pipes, 404 files, etc.
 
-    if args.browser:
-        webbrowser.open(browser_url)
-    # Wait for server.
-    print()
-    print("Serving and waiting ... use Ctrl-C to exit.")
-    httpd.serve_forever()
+        if sys.platform == "darwin":
+            browser_url = http_url
+        # Try the default browser.
+
+        if args.browser:
+            webbrowser.open(browser_url)
+        # Wait for server.
+        print()
+        print("Serving and waiting ... use Ctrl-C to exit.")
+        httpd.serve_forever()
