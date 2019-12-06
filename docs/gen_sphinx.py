@@ -80,7 +80,6 @@ def has_cc_imported_symbols(name):
 def write_module(f_name, name, verbose):
     if verbose:
         print("Write: {}".format(name))
-    subs = get_submodules(name)
     with open(f_name, 'w') as f:
         f.write(".. GENERATED FILE DO NOT EDIT\n")
         f.write("\n")
@@ -93,36 +92,17 @@ def write_module(f_name, name, verbose):
         f.write("    :maxdepth: 1\n")
         f.write("\n")
 
-        for sub in subs:
-            f.write("    {}\n".format(sub))
-
         f.write(".. automodule:: {}\n".format(name))
-#          f.write("    :members:\n")
-        #  # See if there's a corresponding private CcPybind library.
-        #
-        #  if has_cc_imported_symbols(name):
-        #      f.write("    :imported-members:\n")
-        #  f.write("    :undoc-members:\n")
-        #  f.write("    :show-inheritance:\n\n")
-
         f.write(".. autosummary:: \n")
         f.write("    :toctree: _generate\n\n")
 
-        f.write("    pyvinecopulib\n")
-
         for i in CLASSES:
             f.write("    {}\n".format(i))
-
         f.write("\nFunctions\n")
-        f.write("=========\n")
+        f.write("=========\n\n")
 
         for i in FUNCTIONS:
             f.write(".. autofunction:: {}\n".format(i))
-
-    f_dir = dirname(f_name)
-
-    for sub in subs:
-        write_module(join(f_dir, sub) + ".rst", sub, verbose)
 
 
 def write_doc_modules(output_dir, verbose=False):
@@ -134,7 +114,9 @@ def write_doc_modules(output_dir, verbose=False):
 
 
 def main():
+
     input_dir = dirname(abspath(__file__))
+    # Generate.
     gen_main(
         input_dir=input_dir, strict=False, src_func=write_doc_modules)
     # TODO(eric.cousineau): Do some simple linting if this is run under

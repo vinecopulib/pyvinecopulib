@@ -56,6 +56,7 @@ def gen_main(input_dir, strict, src_func=None):
     # Optionally generate additional input files as source.
 
     if src_func:
+        __import__('pdb').set_trace()
         src_func(src_dir)
     print("Generating documentation...")
 
@@ -113,17 +114,21 @@ def preview_main(gen_script, default_port):
         "--generates", type='bool', default=False, metavar='BOOL',
         help="Only generates.")
     args = parser.parse_args()
-    # Choose an arbitrary location for generating documentation.
-    out_dir = abspath("_build")
 
-    if isdir(out_dir):
-        rmtree(out_dir)
-    # Generate.
-    check_call([sys.executable, gen_script, "--out_dir", out_dir])
-    print("Sphinx preview docs are available at:")
-    file_url = "file://{}".format(join(out_dir, "index.html"))
+    if args.generates:
+        from gen_sphinx import write_doc_modules
+        write_doc_modules(dirname(gen_script))
+    else:
+        # Choose an arbitrary location for generating documentation.
+        out_dir = abspath("_build")
 
-    if not args.generates:
+        if isdir(out_dir):
+            rmtree(out_dir)
+        # Generate.
+        check_call([sys.executable, gen_script, "--out_dir", out_dir])
+        print("Sphinx preview docs are available at:")
+        file_url = "file://{}".format(join(out_dir, "index.html"))
+
         browser_url = file_url
         print()
         print("  {}".format(file_url))
