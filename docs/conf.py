@@ -5,14 +5,15 @@
 import os
 import sys
 
+# Sphinx extension modules
+import sphinx_rtd_theme
 from pkg_resources import get_distribution
 
 # -- General configuration ------------------------------------------------
 
-# Sphinx extension modules
-import sphinx_rtd_theme
 extensions = [
     'sphinx.ext.autodoc',
+    'sphinx.ext.githubpages',
     'sphinx.ext.mathjax',
     'sphinx_rtd_theme',
     'sphinx.ext.autosummary',
