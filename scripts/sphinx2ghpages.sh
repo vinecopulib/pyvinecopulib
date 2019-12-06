@@ -32,10 +32,10 @@ fi
 
 if [ -d "$doc_directory" ]
 then
-	ls | grep -v _build | xargs rm -r
-	mv _build/* . && rm -rf _build
+	mv docs/_build/* . && rm -rf docs lib src examples tests .github MANIFEST.in requirements.txt setup.py
+  mv _build/* . && rm -rf _build
   touch .nojekyll
-	git add .
+	git add -A
 	git commit -m "new pages version $(date)"
 	git push origin gh-pages
 	# github.com recognizes gh-pages branch and create pages
