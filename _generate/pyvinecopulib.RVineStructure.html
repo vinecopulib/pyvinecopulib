@@ -1,0 +1,316 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>RVineStructure &mdash; pyvinecopulib 0.2.1.dev1 documentation</title>
+  
+
+  
+  
+  
+  
+
+  
+  <script type="text/javascript" src="../_static/js/modernizr.min.js"></script>
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script type="text/javascript" src="../_static/jquery.js"></script>
+        <script type="text/javascript" src="../_static/underscore.js"></script>
+        <script type="text/javascript" src="../_static/doctools.js"></script>
+        <script type="text/javascript" src="../_static/language_data.js"></script>
+        <script async="async" type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="RVineStructure.__init__" href="pyvinecopulib.RVineStructure.__init__.html" />
+    <link rel="prev" title="DVineStructure.truncate" href="pyvinecopulib.DVineStructure.truncate.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> pyvinecopulib
+          
+
+          
+            
+            <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo"/>
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0.2
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.BicopFamily.html">BicopFamily</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.Bicop.html">Bicop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.FitControlsBicop.html">FitControlsBicop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.Vinecop.html">Vinecop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.FitControlsVinecop.html">FitControlsVinecop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.CVineStructure.html">CVineStructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.DVineStructure.html">DVineStructure</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">RVineStructure</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.RVineStructure.__init__.html">RVineStructure.__init__</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.RVineStructure.simulate.html">RVineStructure.simulate</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.RVineStructure.str.html">RVineStructure.str</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.RVineStructure.struct_array.html">RVineStructure.struct_array</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.RVineStructure.to_json.html">RVineStructure.to_json</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.RVineStructure.truncate.html">RVineStructure.truncate</a></li>
+</ul>
+</li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">pyvinecopulib</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html">Docs</a> &raquo;</li>
+        
+      <li>RVineStructure</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="rvinestructure">
+<h1>RVineStructure<a class="headerlink" href="#rvinestructure" title="Permalink to this headline">¶</a></h1>
+<dl class="class">
+<dt id="pyvinecopulib.RVineStructure">
+<em class="property">class </em><code class="sig-name descname">RVineStructure</code><a class="headerlink" href="#pyvinecopulib.RVineStructure" title="Permalink to this definition">¶</a></dt>
+<dd><p>A class for R-vine structures.</p>
+<p>RVineStructure objects encode the tree structure of the vine, i.e. the
+conditioned/conditioning variables of each edge. It is represented by
+a triangular array. An exemplary array is</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">4</span> <span class="mi">4</span> <span class="mi">4</span> <span class="mi">4</span>
+<span class="mi">3</span> <span class="mi">3</span> <span class="mi">3</span>
+<span class="mi">2</span> <span class="mi">2</span>
+<span class="mi">1</span>
+</pre></div>
+</div>
+<p>which encodes the following pair-copulas:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>| tree | edge | pair-copulas   |
+|------|------|----------------|
+| 0    | 0    | ``(1, 4)``       |
+|      | 1    | ``(2, 4)``       |
+|      | 2    | ``(3, 4)``       |
+| 1    | 0    | ``(1, 3; 4)``    |
+|      | 1    | ``(2, 3; 4)``    |
+| 2    | 0    | ``(1, 2; 3, 4)`` |
+</pre></div>
+</div>
+<p>Denoting by <code class="docutils literal notranslate"><span class="pre">M[i,</span> <span class="pre">j]</span></code> the array entry in row <code class="docutils literal notranslate"><span class="pre">i</span></code> and column <code class="docutils literal notranslate"><span class="pre">j</span></code>,
+the pair-copula index for edge <code class="docutils literal notranslate"><span class="pre">e</span></code> in tree <code class="docutils literal notranslate"><span class="pre">t</span></code> of a <code class="docutils literal notranslate"><span class="pre">d</span></code>
+dimensional vine is <code class="docutils literal notranslate"><span class="pre">(M[d</span> <span class="pre">-</span> <span class="pre">1</span> <span class="pre">-</span> <span class="pre">e,</span> <span class="pre">e],</span> <span class="pre">M[t,</span> <span class="pre">e];</span> <span class="pre">M[t</span> <span class="pre">-</span> <span class="pre">1,</span> <span class="pre">e],</span> <span class="pre">...,</span>
+<span class="pre">M[0,</span> <span class="pre">e])</span></code>. Less formally, 1. Start with the counter-diagonal element
+of column <code class="docutils literal notranslate"><span class="pre">e</span></code> (first conditioned variable). 2. Jump up to the
+element in row <code class="docutils literal notranslate"><span class="pre">t</span></code> (second conditioned variable). 3. Gather all
+entries further up in column <code class="docutils literal notranslate"><span class="pre">e</span></code> (conditioning set).</p>
+<p>A valid R-vine array must satisfy several conditions which are checked
+when <code class="docutils literal notranslate"><span class="pre">RVineStructure()</span></code> is called: 1. It only contains numbers
+between 1 and d. 2. The diagonal must contain the numbers 1, …, d.
+3. The diagonal entry of a column must not be contained in any column
+further to the right. 4. The entries of a column must be contained in
+all columns to the left. 5. The proximity condition must hold: For all
+t = 1, …, d - 2 and e = 0, …, d - t - 1 there must exist an index
+j &gt; d, such that <code class="docutils literal notranslate"><span class="pre">(M[t,</span> <span class="pre">e],</span> <span class="pre">{M[0,</span> <span class="pre">e],</span> <span class="pre">...,</span> <span class="pre">M[t-1,</span> <span class="pre">e]})</span></code> equals
+either <code class="docutils literal notranslate"><span class="pre">(M[d-j-1,</span> <span class="pre">j],</span> <span class="pre">{M[0,</span> <span class="pre">j],</span> <span class="pre">...,</span> <span class="pre">M[t-1,</span> <span class="pre">j]})</span></code> or <code class="docutils literal notranslate"><span class="pre">(M[t-1,</span> <span class="pre">j],</span>
+<span class="pre">{M[d-j-1,</span> <span class="pre">j],</span> <span class="pre">M[0,</span> <span class="pre">j],</span> <span class="pre">...,</span> <span class="pre">M[t-2,</span> <span class="pre">j]})</span></code>.</p>
+<p>An R-vine array is said to be in natural order when the anti-diagonal
+entries are <span class="math notranslate nohighlight">\(1, \dots, d\)</span> (from left to right). The exemplary
+arrray above is in natural order. Any R-vine array can be
+characterized by the diagonal entries (called order) and the entries
+below the diagonal of the corresponding R-vine array in natural order.
+Since most algorithms work with the structure in natural order, this
+is how RVineStructure stores the structure internally.</p>
+<p class="rubric">Attributes</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">dim</span></code></p></td>
+<td><p>The dimension.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">order</span></code></p></td>
+<td><p>The variable order.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">trunc_lvl</span></code></p></td>
+<td><p>The truncation level.</p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Methods</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.RVineStructure.__init__.html#pyvinecopulib.RVineStructure.__init__" title="pyvinecopulib.RVineStructure.__init__"><code class="xref py py-obj docutils literal notranslate"><span class="pre">__init__</span></code></a></p></td>
+<td><p>Overloaded function.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.RVineStructure.simulate.html#pyvinecopulib.RVineStructure.simulate" title="pyvinecopulib.RVineStructure.simulate"><code class="xref py py-obj docutils literal notranslate"><span class="pre">simulate</span></code></a></p></td>
+<td><p>Randomly sample a regular vine structure.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.RVineStructure.str.html#pyvinecopulib.RVineStructure.str" title="pyvinecopulib.RVineStructure.str"><code class="xref py py-obj docutils literal notranslate"><span class="pre">str</span></code></a></p></td>
+<td><p>Converts the structure to a string representation (most useful for printing).</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.RVineStructure.struct_array.html#pyvinecopulib.RVineStructure.struct_array" title="pyvinecopulib.RVineStructure.struct_array"><code class="xref py py-obj docutils literal notranslate"><span class="pre">struct_array</span></code></a></p></td>
+<td><p>Accesses elements of the structure array.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.RVineStructure.to_json.html#pyvinecopulib.RVineStructure.to_json" title="pyvinecopulib.RVineStructure.to_json"><code class="xref py py-obj docutils literal notranslate"><span class="pre">to_json</span></code></a></p></td>
+<td><p>Write the structure into a JSON file.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.RVineStructure.truncate.html#pyvinecopulib.RVineStructure.truncate" title="pyvinecopulib.RVineStructure.truncate"><code class="xref py py-obj docutils literal notranslate"><span class="pre">truncate</span></code></a></p></td>
+<td><p>Truncates the R-vine structure.</p></td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="pyvinecopulib.RVineStructure.__init__.html" class="btn btn-neutral float-right" title="RVineStructure.__init__" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="pyvinecopulib.DVineStructure.truncate.html" class="btn btn-neutral float-left" title="DVineStructure.truncate" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+
+    </p>
+  </div> 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

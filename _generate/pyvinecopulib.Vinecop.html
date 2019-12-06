@@ -1,0 +1,359 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Vinecop &mdash; pyvinecopulib 0.2.1.dev1 documentation</title>
+  
+
+  
+  
+  
+  
+
+  
+  <script type="text/javascript" src="../_static/js/modernizr.min.js"></script>
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script type="text/javascript" src="../_static/jquery.js"></script>
+        <script type="text/javascript" src="../_static/underscore.js"></script>
+        <script type="text/javascript" src="../_static/doctools.js"></script>
+        <script type="text/javascript" src="../_static/language_data.js"></script>
+        <script async="async" type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Vinecop.__init__" href="pyvinecopulib.Vinecop.__init__.html" />
+    <link rel="prev" title="FitControlsBicop.__init__" href="pyvinecopulib.FitControlsBicop.__init__.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> pyvinecopulib
+          
+
+          
+            
+            <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo"/>
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0.2
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.BicopFamily.html">BicopFamily</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.Bicop.html">Bicop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.FitControlsBicop.html">FitControlsBicop</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Vinecop</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.__init__.html">Vinecop.__init__</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.aic.html">Vinecop.aic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.bic.html">Vinecop.bic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.cdf.html">Vinecop.cdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_family.html">Vinecop.get_family</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_pair_copula.html">Vinecop.get_pair_copula</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_parameters.html">Vinecop.get_parameters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_rotation.html">Vinecop.get_rotation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_tau.html">Vinecop.get_tau</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.inverse_rosenblatt.html">Vinecop.inverse_rosenblatt</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.loglik.html">Vinecop.loglik</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.mbicv.html">Vinecop.mbicv</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.pdf.html">Vinecop.pdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.rosenblatt.html">Vinecop.rosenblatt</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.select.html">Vinecop.select</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.simulate.html">Vinecop.simulate</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.str.html">Vinecop.str</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.to_json.html">Vinecop.to_json</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.truncate.html">Vinecop.truncate</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.FitControlsVinecop.html">FitControlsVinecop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.CVineStructure.html">CVineStructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.DVineStructure.html">DVineStructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.RVineStructure.html">RVineStructure</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">pyvinecopulib</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html">Docs</a> &raquo;</li>
+        
+      <li>Vinecop</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="vinecop">
+<h1>Vinecop<a class="headerlink" href="#vinecop" title="Permalink to this headline">¶</a></h1>
+<dl class="class">
+<dt id="pyvinecopulib.Vinecop">
+<em class="property">class </em><code class="sig-name descname">Vinecop</code><a class="headerlink" href="#pyvinecopulib.Vinecop" title="Permalink to this definition">¶</a></dt>
+<dd><p>A class for vine copula models.</p>
+<p>A vine copula model is characterized by its structure (see
+<code class="docutils literal notranslate"><span class="pre">RVineStructure</span></code> objects) and the pair-copulas.</p>
+<p class="rubric">Attributes</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">dim</span></code></p></td>
+<td><p>The dimension.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">families</span></code></p></td>
+<td><p>Families of all pair-copulas.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">matrix</span></code></p></td>
+<td><p>The R-vine structure’s matrix.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">nobs</span></code></p></td>
+<td><p>The number of observations (for fitted objects only).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">npars</span></code></p></td>
+<td><p>The total number of parameters.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">order</span></code></p></td>
+<td><p>The R-vine structure’s order.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">pair_copulas</span></code></p></td>
+<td><p>All pair-copulas.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">parameters</span></code></p></td>
+<td><p>The parameters of all pair-copulas.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">rotations</span></code></p></td>
+<td><p>The rotations of all pair-copulas.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">structure</span></code></p></td>
+<td><p>The R-vine structure.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">taus</span></code></p></td>
+<td><p>The Kendall’s taus of all pair-copulas.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">threshold</span></code></p></td>
+<td><p>The threshold (for thresholded copulas only).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">trunc_lvl</span></code></p></td>
+<td><p>The truncation level.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">var_types</span></code></p></td>
+<td><p>The types of each variables.</p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Methods</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Vinecop.__init__.html#pyvinecopulib.Vinecop.__init__" title="pyvinecopulib.Vinecop.__init__"><code class="xref py py-obj docutils literal notranslate"><span class="pre">__init__</span></code></a></p></td>
+<td><p>Overloaded function.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Vinecop.aic.html#pyvinecopulib.Vinecop.aic" title="pyvinecopulib.Vinecop.aic"><code class="xref py py-obj docutils literal notranslate"><span class="pre">aic</span></code></a></p></td>
+<td><p>Evaluates the Akaike information criterion (AIC).</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Vinecop.bic.html#pyvinecopulib.Vinecop.bic" title="pyvinecopulib.Vinecop.bic"><code class="xref py py-obj docutils literal notranslate"><span class="pre">bic</span></code></a></p></td>
+<td><p>Evaluates the Bayesian information criterion (BIC).</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Vinecop.cdf.html#pyvinecopulib.Vinecop.cdf" title="pyvinecopulib.Vinecop.cdf"><code class="xref py py-obj docutils literal notranslate"><span class="pre">cdf</span></code></a></p></td>
+<td><p>Evaluates the copula distribution.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Vinecop.get_family.html#pyvinecopulib.Vinecop.get_family" title="pyvinecopulib.Vinecop.get_family"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_family</span></code></a></p></td>
+<td><p>Gets the family of a pair-copula.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Vinecop.get_pair_copula.html#pyvinecopulib.Vinecop.get_pair_copula" title="pyvinecopulib.Vinecop.get_pair_copula"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_pair_copula</span></code></a></p></td>
+<td><p>Gets a pair-copula.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Vinecop.get_parameters.html#pyvinecopulib.Vinecop.get_parameters" title="pyvinecopulib.Vinecop.get_parameters"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_parameters</span></code></a></p></td>
+<td><p>Gets the parameters of a pair-copula.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Vinecop.get_rotation.html#pyvinecopulib.Vinecop.get_rotation" title="pyvinecopulib.Vinecop.get_rotation"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_rotation</span></code></a></p></td>
+<td><p>Gets the rotation of a pair-copula.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Vinecop.get_tau.html#pyvinecopulib.Vinecop.get_tau" title="pyvinecopulib.Vinecop.get_tau"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_tau</span></code></a></p></td>
+<td><p>Gets the kendall’s tau of a pair-copula.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Vinecop.inverse_rosenblatt.html#pyvinecopulib.Vinecop.inverse_rosenblatt" title="pyvinecopulib.Vinecop.inverse_rosenblatt"><code class="xref py py-obj docutils literal notranslate"><span class="pre">inverse_rosenblatt</span></code></a></p></td>
+<td><p>Evaluates the inverse Rosenblatt transform.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Vinecop.loglik.html#pyvinecopulib.Vinecop.loglik" title="pyvinecopulib.Vinecop.loglik"><code class="xref py py-obj docutils literal notranslate"><span class="pre">loglik</span></code></a></p></td>
+<td><p>Evaluates the log-likelihood.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Vinecop.mbicv.html#pyvinecopulib.Vinecop.mbicv" title="pyvinecopulib.Vinecop.mbicv"><code class="xref py py-obj docutils literal notranslate"><span class="pre">mbicv</span></code></a></p></td>
+<td><p>Evaluates the modified Bayesian information criterion for vines (mBICV).</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Vinecop.pdf.html#pyvinecopulib.Vinecop.pdf" title="pyvinecopulib.Vinecop.pdf"><code class="xref py py-obj docutils literal notranslate"><span class="pre">pdf</span></code></a></p></td>
+<td><p>Evaluates the copula density.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Vinecop.rosenblatt.html#pyvinecopulib.Vinecop.rosenblatt" title="pyvinecopulib.Vinecop.rosenblatt"><code class="xref py py-obj docutils literal notranslate"><span class="pre">rosenblatt</span></code></a></p></td>
+<td><p>Evaluates the Rosenblatt transform for a vine copula model.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Vinecop.select.html#pyvinecopulib.Vinecop.select" title="pyvinecopulib.Vinecop.select"><code class="xref py py-obj docutils literal notranslate"><span class="pre">select</span></code></a></p></td>
+<td><p>Automatically fits and selects a vine copula model.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Vinecop.simulate.html#pyvinecopulib.Vinecop.simulate" title="pyvinecopulib.Vinecop.simulate"><code class="xref py py-obj docutils literal notranslate"><span class="pre">simulate</span></code></a></p></td>
+<td><p>Simulates from a vine copula model, see <code class="docutils literal notranslate"><span class="pre">inverse_rosenblatt()</span></code>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Vinecop.str.html#pyvinecopulib.Vinecop.str" title="pyvinecopulib.Vinecop.str"><code class="xref py py-obj docutils literal notranslate"><span class="pre">str</span></code></a></p></td>
+<td><p>Summarizes the model into a string (can be used for printing).</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Vinecop.to_json.html#pyvinecopulib.Vinecop.to_json" title="pyvinecopulib.Vinecop.to_json"><code class="xref py py-obj docutils literal notranslate"><span class="pre">to_json</span></code></a></p></td>
+<td><p>Write the copula object into a JSON file.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Vinecop.truncate.html#pyvinecopulib.Vinecop.truncate" title="pyvinecopulib.Vinecop.truncate"><code class="xref py py-obj docutils literal notranslate"><span class="pre">truncate</span></code></a></p></td>
+<td><p>Truncates the vine copula model.</p></td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="pyvinecopulib.Vinecop.__init__.html" class="btn btn-neutral float-right" title="Vinecop.__init__" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="pyvinecopulib.FitControlsBicop.__init__.html" class="btn btn-neutral float-left" title="FitControlsBicop.__init__" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+
+    </p>
+  </div> 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

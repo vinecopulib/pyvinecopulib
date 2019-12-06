@@ -1,0 +1,274 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Vinecop.select &mdash; pyvinecopulib 0.2.1.dev1 documentation</title>
+  
+
+  
+  
+  
+  
+
+  
+  <script type="text/javascript" src="../_static/js/modernizr.min.js"></script>
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script type="text/javascript" src="../_static/jquery.js"></script>
+        <script type="text/javascript" src="../_static/underscore.js"></script>
+        <script type="text/javascript" src="../_static/doctools.js"></script>
+        <script type="text/javascript" src="../_static/language_data.js"></script>
+        <script async="async" type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Vinecop.simulate" href="pyvinecopulib.Vinecop.simulate.html" />
+    <link rel="prev" title="Vinecop.rosenblatt" href="pyvinecopulib.Vinecop.rosenblatt.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> pyvinecopulib
+          
+
+          
+            
+            <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo"/>
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0.2
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.BicopFamily.html">BicopFamily</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.Bicop.html">Bicop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.FitControlsBicop.html">FitControlsBicop</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="pyvinecopulib.Vinecop.html">Vinecop</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.__init__.html">Vinecop.__init__</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.aic.html">Vinecop.aic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.bic.html">Vinecop.bic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.cdf.html">Vinecop.cdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_family.html">Vinecop.get_family</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_pair_copula.html">Vinecop.get_pair_copula</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_parameters.html">Vinecop.get_parameters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_rotation.html">Vinecop.get_rotation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_tau.html">Vinecop.get_tau</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.inverse_rosenblatt.html">Vinecop.inverse_rosenblatt</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.loglik.html">Vinecop.loglik</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.mbicv.html">Vinecop.mbicv</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.pdf.html">Vinecop.pdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.rosenblatt.html">Vinecop.rosenblatt</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Vinecop.select</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.simulate.html">Vinecop.simulate</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.str.html">Vinecop.str</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.to_json.html">Vinecop.to_json</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.truncate.html">Vinecop.truncate</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.FitControlsVinecop.html">FitControlsVinecop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.CVineStructure.html">CVineStructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.DVineStructure.html">DVineStructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.RVineStructure.html">RVineStructure</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">pyvinecopulib</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="pyvinecopulib.Vinecop.html">Vinecop</a> &raquo;</li>
+        
+      <li>Vinecop.select</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="vinecop-select">
+<h1>Vinecop.select<a class="headerlink" href="#vinecop-select" title="Permalink to this headline">¶</a></h1>
+<dl class="method">
+<dt id="pyvinecopulib.Vinecop.select">
+<code class="sig-prename descclassname">Vinecop.</code><code class="sig-name descname">select</code><span class="sig-paren">(</span><em class="sig-param">self: pyvinecopulib.Vinecop, data: numpy.ndarray[float64[m, n]], controls: pyvinecopulib.FitControlsVinecop = FitControlsVinecop()</em><span class="sig-paren">)</span> &#x2192; None<a class="headerlink" href="#pyvinecopulib.Vinecop.select" title="Permalink to this definition">¶</a></dt>
+<dd><p>Automatically fits and selects a vine copula model.</p>
+<p><code class="docutils literal notranslate"><span class="pre">select()</span></code> behaves differently depending on its current truncation
+level and the truncation level specified in the controls, respectively
+called <code class="docutils literal notranslate"><span class="pre">trunc_lvl</span></code> and <code class="docutils literal notranslate"><span class="pre">controls.trunc_lvl</span></code> in what follows.
+Essentially, <code class="docutils literal notranslate"><span class="pre">controls.trunc_lvl</span></code> defines the object’s truncation
+level after calling <code class="docutils literal notranslate"><span class="pre">select()</span></code>: - If <code class="docutils literal notranslate"><span class="pre">controls.trunc_lvl</span> <span class="pre">&lt;=</span>
+<span class="pre">trunc_lvl</span></code>, the families and parameters for all pairs in trees
+smaller or equal to <code class="docutils literal notranslate"><span class="pre">controls.trunc_lvl</span></code> are selected, using the
+current structure. - If <code class="docutils literal notranslate"><span class="pre">controls.trunc_lvl</span> <span class="pre">&gt;</span> <span class="pre">trunc_lvl</span></code>,
+<code class="docutils literal notranslate"><span class="pre">select()</span></code> behaves as above for all trees that are smaller or equal
+to <code class="docutils literal notranslate"><span class="pre">trunc_lvl</span></code>, and then it selects the structure for higher trees
+along with the families and parameters. This includes the case where
+<code class="docutils literal notranslate"><span class="pre">trunc_lvl</span> <span class="pre">=</span> <span class="pre">0</span></code>, namely where the structure is fully unspecified.</p>
+<p>Selection of the structure is performed using the algorithm of
+Dissmann, J. F., E. C. Brechmann, C. Czado, and D. Kurowicka (2013).
+<em>Selecting and estimating regular vine copulae and application to
+financial returns.</em> Computational Statistics &amp; Data Analysis, 59 (1),
+52-69.</p>
+<p>When at least one variable is discrete, two types of “observations”
+are required: the first <span class="math notranslate nohighlight">\(n \times d\)</span> block contains realizations
+of <span class="math notranslate nohighlight">\(F_Y(Y), F_X(X)\)</span>; the second <span class="math notranslate nohighlight">\(n \times d\)</span> block
+contains realizations of <span class="math notranslate nohighlight">\(F_Y(Y^-), F_X(X^-), ...\)</span>. The minus
+indicates a left-sided limit of the cdf. For continuous variables the
+left limit and the cdf itself coincide. For, e.g., an integer-valued
+variable, it holds <span class="math notranslate nohighlight">\(F_Y(Y^-) = F_Y(Y - 1)\)</span>. Continuous variables
+in the second block can be omitted.</p>
+<dl class="simple">
+<dt>Parameter <code class="docutils literal notranslate"><span class="pre">data</span></code>:</dt><dd><p><span class="math notranslate nohighlight">\(n \times (d + k)\)</span> or <span class="math notranslate nohighlight">\(n \times 2d\)</span> matrix of
+observations, where <span class="math notranslate nohighlight">\(k\)</span> is the number of discrete variables.</p>
+</dd>
+<dt>Parameter <code class="docutils literal notranslate"><span class="pre">controls</span></code>:</dt><dd><p>The controls to the algorithm (see FitControlsVinecop).</p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="pyvinecopulib.Vinecop.simulate.html" class="btn btn-neutral float-right" title="Vinecop.simulate" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="pyvinecopulib.Vinecop.rosenblatt.html" class="btn btn-neutral float-left" title="Vinecop.rosenblatt" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+
+    </p>
+  </div> 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

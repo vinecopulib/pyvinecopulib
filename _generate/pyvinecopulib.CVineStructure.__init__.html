@@ -1,0 +1,247 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>CVineStructure.__init__ &mdash; pyvinecopulib 0.2.1.dev1 documentation</title>
+  
+
+  
+  
+  
+  
+
+  
+  <script type="text/javascript" src="../_static/js/modernizr.min.js"></script>
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script type="text/javascript" src="../_static/jquery.js"></script>
+        <script type="text/javascript" src="../_static/underscore.js"></script>
+        <script type="text/javascript" src="../_static/doctools.js"></script>
+        <script type="text/javascript" src="../_static/language_data.js"></script>
+        <script async="async" type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="CVineStructure.simulate" href="pyvinecopulib.CVineStructure.simulate.html" />
+    <link rel="prev" title="CVineStructure" href="pyvinecopulib.CVineStructure.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> pyvinecopulib
+          
+
+          
+            
+            <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo"/>
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0.2
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.BicopFamily.html">BicopFamily</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.Bicop.html">Bicop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.FitControlsBicop.html">FitControlsBicop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.Vinecop.html">Vinecop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.FitControlsVinecop.html">FitControlsVinecop</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="pyvinecopulib.CVineStructure.html">CVineStructure</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">CVineStructure.__init__</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.CVineStructure.simulate.html">CVineStructure.simulate</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.CVineStructure.str.html">CVineStructure.str</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.CVineStructure.struct_array.html">CVineStructure.struct_array</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.CVineStructure.to_json.html">CVineStructure.to_json</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.CVineStructure.truncate.html">CVineStructure.truncate</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.DVineStructure.html">DVineStructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.RVineStructure.html">RVineStructure</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">pyvinecopulib</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="pyvinecopulib.CVineStructure.html">CVineStructure</a> &raquo;</li>
+        
+      <li>CVineStructure.__init__</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="cvinestructure-init">
+<h1>CVineStructure.__init__<a class="headerlink" href="#cvinestructure-init" title="Permalink to this headline">¶</a></h1>
+<dl class="method">
+<dt id="pyvinecopulib.CVineStructure.__init__">
+<code class="sig-prename descclassname">CVineStructure.</code><code class="sig-name descname">__init__</code><span class="sig-paren">(</span><em class="sig-param">*args</em>, <em class="sig-param">**kwargs</em><span class="sig-paren">)</span><a class="headerlink" href="#pyvinecopulib.CVineStructure.__init__" title="Permalink to this definition">¶</a></dt>
+<dd><p>Overloaded function.</p>
+<ol class="arabic simple">
+<li><p>__init__(self: pyvinecopulib.CVineStructure, order: List[int]) -&gt; None</p></li>
+</ol>
+<dl class="simple">
+<dt>Parameter <code class="docutils literal notranslate"><span class="pre">order</span></code>:</dt><dd><p>The order of variables in the C-vine (diagonal entries in the
+R-vine array); must be a permutation of 1, …, d.</p>
+</dd>
+</dl>
+<ol class="arabic simple" start="2">
+<li><p>__init__(self: pyvinecopulib.CVineStructure, order: List[int], trunc_lvl: int) -&gt; None</p></li>
+</ol>
+<dl class="simple">
+<dt>Parameter <code class="docutils literal notranslate"><span class="pre">order</span></code>:</dt><dd><p>The order of variables in the C-vine (diagonal entries in the
+R-vine array); must be a permutation of 1, …, d.</p>
+</dd>
+<dt>Parameter <code class="docutils literal notranslate"><span class="pre">trunc_lvl</span></code>:</dt><dd><p>The truncation level.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="pyvinecopulib.CVineStructure.simulate.html" class="btn btn-neutral float-right" title="CVineStructure.simulate" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="pyvinecopulib.CVineStructure.html" class="btn btn-neutral float-left" title="CVineStructure" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+
+    </p>
+  </div> 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

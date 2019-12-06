@@ -1,0 +1,257 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Vinecop.loglik &mdash; pyvinecopulib 0.2.1.dev1 documentation</title>
+  
+
+  
+  
+  
+  
+
+  
+  <script type="text/javascript" src="../_static/js/modernizr.min.js"></script>
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script type="text/javascript" src="../_static/jquery.js"></script>
+        <script type="text/javascript" src="../_static/underscore.js"></script>
+        <script type="text/javascript" src="../_static/doctools.js"></script>
+        <script type="text/javascript" src="../_static/language_data.js"></script>
+        <script async="async" type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Vinecop.mbicv" href="pyvinecopulib.Vinecop.mbicv.html" />
+    <link rel="prev" title="Vinecop.inverse_rosenblatt" href="pyvinecopulib.Vinecop.inverse_rosenblatt.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> pyvinecopulib
+          
+
+          
+            
+            <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo"/>
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0.2
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.BicopFamily.html">BicopFamily</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.Bicop.html">Bicop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.FitControlsBicop.html">FitControlsBicop</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="pyvinecopulib.Vinecop.html">Vinecop</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.__init__.html">Vinecop.__init__</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.aic.html">Vinecop.aic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.bic.html">Vinecop.bic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.cdf.html">Vinecop.cdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_family.html">Vinecop.get_family</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_pair_copula.html">Vinecop.get_pair_copula</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_parameters.html">Vinecop.get_parameters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_rotation.html">Vinecop.get_rotation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_tau.html">Vinecop.get_tau</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.inverse_rosenblatt.html">Vinecop.inverse_rosenblatt</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Vinecop.loglik</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.mbicv.html">Vinecop.mbicv</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.pdf.html">Vinecop.pdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.rosenblatt.html">Vinecop.rosenblatt</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.select.html">Vinecop.select</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.simulate.html">Vinecop.simulate</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.str.html">Vinecop.str</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.to_json.html">Vinecop.to_json</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.truncate.html">Vinecop.truncate</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.FitControlsVinecop.html">FitControlsVinecop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.CVineStructure.html">CVineStructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.DVineStructure.html">DVineStructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.RVineStructure.html">RVineStructure</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">pyvinecopulib</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html">Docs</a> &raquo;</li>
+        
+          <li><a href="pyvinecopulib.Vinecop.html">Vinecop</a> &raquo;</li>
+        
+      <li>Vinecop.loglik</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="vinecop-loglik">
+<h1>Vinecop.loglik<a class="headerlink" href="#vinecop-loglik" title="Permalink to this headline">¶</a></h1>
+<dl class="method">
+<dt id="pyvinecopulib.Vinecop.loglik">
+<code class="sig-prename descclassname">Vinecop.</code><code class="sig-name descname">loglik</code><span class="sig-paren">(</span><em class="sig-param">self: pyvinecopulib.Vinecop</em>, <em class="sig-param">u: numpy.ndarray[float64[m</em>, <em class="sig-param">n]] = array([]</em>, <em class="sig-param">shape=(0</em>, <em class="sig-param">0)</em>, <em class="sig-param">dtype=float64)</em>, <em class="sig-param">num_threads: int = 1</em><span class="sig-paren">)</span> &#x2192; float<a class="headerlink" href="#pyvinecopulib.Vinecop.loglik" title="Permalink to this definition">¶</a></dt>
+<dd><p>Evaluates the log-likelihood.</p>
+<p>The log-likelihood is defined as</p>
+<div class="math notranslate nohighlight">
+\[\mathrm{loglik} = \sum_{i = 1}^n \log c(U_{1, i}, ..., U_{d,\]</div>
+<p>i}),</p>
+<p>where <span class="math notranslate nohighlight">\(c\)</span> is the copula density <code class="docutils literal notranslate"><span class="pre">pdf()</span></code>.</p>
+<dl class="simple">
+<dt>Parameter <code class="docutils literal notranslate"><span class="pre">u</span></code>:</dt><dd><p>An <span class="math notranslate nohighlight">\(n \times (d + k)\)</span> or <span class="math notranslate nohighlight">\(n \times 2d\)</span> matrix of
+evaluation points, where <span class="math notranslate nohighlight">\(k\)</span> is the number of discrete
+variables (see <code class="docutils literal notranslate"><span class="pre">select()</span></code>).</p>
+</dd>
+<dt>Parameter <code class="docutils literal notranslate"><span class="pre">num_threads</span></code>:</dt><dd><p>The number of threads to use for computations; if greater than 1,
+the function will be applied concurrently to <code class="docutils literal notranslate"><span class="pre">num_threads</span></code>
+batches of <code class="docutils literal notranslate"><span class="pre">u</span></code>.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="pyvinecopulib.Vinecop.mbicv.html" class="btn btn-neutral float-right" title="Vinecop.mbicv" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="pyvinecopulib.Vinecop.inverse_rosenblatt.html" class="btn btn-neutral float-left" title="Vinecop.inverse_rosenblatt" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+
+    </p>
+  </div> 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>

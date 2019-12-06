@@ -1,0 +1,342 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>Bicop &mdash; pyvinecopulib 0.2.1.dev1 documentation</title>
+  
+
+  
+  
+  
+  
+
+  
+  <script type="text/javascript" src="../_static/js/modernizr.min.js"></script>
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script type="text/javascript" src="../_static/jquery.js"></script>
+        <script type="text/javascript" src="../_static/underscore.js"></script>
+        <script type="text/javascript" src="../_static/doctools.js"></script>
+        <script type="text/javascript" src="../_static/language_data.js"></script>
+        <script async="async" type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
+
+  
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Bicop.__init__" href="pyvinecopulib.Bicop.__init__.html" />
+    <link rel="prev" title="BicopFamily" href="pyvinecopulib.BicopFamily.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="../index.html" class="icon icon-home"> pyvinecopulib
+          
+
+          
+            
+            <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo"/>
+          
+          </a>
+
+          
+            
+            
+              <div class="version">
+                0.2
+              </div>
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.BicopFamily.html">BicopFamily</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Bicop</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.__init__.html">Bicop.__init__</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.aic.html">Bicop.aic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.bic.html">Bicop.bic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.cdf.html">Bicop.cdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.fit.html">Bicop.fit</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.hfunc1.html">Bicop.hfunc1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.hfunc2.html">Bicop.hfunc2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.hinv1.html">Bicop.hinv1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.hinv2.html">Bicop.hinv2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.loglik.html">Bicop.loglik</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.mbic.html">Bicop.mbic</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.parameters_lower_bounds.html">Bicop.parameters_lower_bounds</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.parameters_to_tau.html">Bicop.parameters_to_tau</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.parameters_upper_bounds.html">Bicop.parameters_upper_bounds</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.pdf.html">Bicop.pdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.select.html">Bicop.select</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.simulate.html">Bicop.simulate</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.str.html">Bicop.str</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.tau_to_parameters.html">Bicop.tau_to_parameters</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.to_json.html">Bicop.to_json</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.FitControlsBicop.html">FitControlsBicop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.Vinecop.html">Vinecop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.FitControlsVinecop.html">FitControlsVinecop</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.CVineStructure.html">CVineStructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.DVineStructure.html">DVineStructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="pyvinecopulib.RVineStructure.html">RVineStructure</a></li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">pyvinecopulib</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="../index.html">Docs</a> &raquo;</li>
+        
+      <li>Bicop</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="bicop">
+<h1>Bicop<a class="headerlink" href="#bicop" title="Permalink to this headline">¶</a></h1>
+<dl class="class">
+<dt id="pyvinecopulib.Bicop">
+<em class="property">class </em><code class="sig-name descname">Bicop</code><a class="headerlink" href="#pyvinecopulib.Bicop" title="Permalink to this definition">¶</a></dt>
+<dd><p>A class for bivariate copula models.</p>
+<p>The copula model is fully characterized by the family, rotation, and
+parameters.</p>
+<p class="rubric">Attributes</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">family</span></code></p></td>
+<td><p>The copula family.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">nobs</span></code></p></td>
+<td><p>The number of observations (only for fitted objects).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">npars</span></code></p></td>
+<td><p>The number of parameters (for nonparametric families, a conceptually similar definition).</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">parameters</span></code></p></td>
+<td><p>The copula parameter(s).</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">rotation</span></code></p></td>
+<td><p>The copula rotation.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">tau</span></code></p></td>
+<td><p>The Kendall’s tau.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">var_types</span></code></p></td>
+<td><p>The type of the two variables.</p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Methods</p>
+<table class="longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.__init__.html#pyvinecopulib.Bicop.__init__" title="pyvinecopulib.Bicop.__init__"><code class="xref py py-obj docutils literal notranslate"><span class="pre">__init__</span></code></a></p></td>
+<td><p>Overloaded function.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.aic.html#pyvinecopulib.Bicop.aic" title="pyvinecopulib.Bicop.aic"><code class="xref py py-obj docutils literal notranslate"><span class="pre">aic</span></code></a></p></td>
+<td><p>Evaluates the Akaike information criterion (AIC).</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.bic.html#pyvinecopulib.Bicop.bic" title="pyvinecopulib.Bicop.bic"><code class="xref py py-obj docutils literal notranslate"><span class="pre">bic</span></code></a></p></td>
+<td><p>Evaluates the Bayesian information criterion (BIC).</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.cdf.html#pyvinecopulib.Bicop.cdf" title="pyvinecopulib.Bicop.cdf"><code class="xref py py-obj docutils literal notranslate"><span class="pre">cdf</span></code></a></p></td>
+<td><p>Evaluates the copula distribution.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.fit.html#pyvinecopulib.Bicop.fit" title="pyvinecopulib.Bicop.fit"><code class="xref py py-obj docutils literal notranslate"><span class="pre">fit</span></code></a></p></td>
+<td><p>Fits a bivariate copula (with fixed family) to data.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.hfunc1.html#pyvinecopulib.Bicop.hfunc1" title="pyvinecopulib.Bicop.hfunc1"><code class="xref py py-obj docutils literal notranslate"><span class="pre">hfunc1</span></code></a></p></td>
+<td><p>Evaluates the first h-function.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.hfunc2.html#pyvinecopulib.Bicop.hfunc2" title="pyvinecopulib.Bicop.hfunc2"><code class="xref py py-obj docutils literal notranslate"><span class="pre">hfunc2</span></code></a></p></td>
+<td><p>Evaluates the second h-function.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.hinv1.html#pyvinecopulib.Bicop.hinv1" title="pyvinecopulib.Bicop.hinv1"><code class="xref py py-obj docutils literal notranslate"><span class="pre">hinv1</span></code></a></p></td>
+<td><p>Evaluates the inverse of the first h-function.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.hinv2.html#pyvinecopulib.Bicop.hinv2" title="pyvinecopulib.Bicop.hinv2"><code class="xref py py-obj docutils literal notranslate"><span class="pre">hinv2</span></code></a></p></td>
+<td><p>Evaluates the inverse of the second h-function.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.loglik.html#pyvinecopulib.Bicop.loglik" title="pyvinecopulib.Bicop.loglik"><code class="xref py py-obj docutils literal notranslate"><span class="pre">loglik</span></code></a></p></td>
+<td><p>Evaluates the log-likelihood.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.mbic.html#pyvinecopulib.Bicop.mbic" title="pyvinecopulib.Bicop.mbic"><code class="xref py py-obj docutils literal notranslate"><span class="pre">mbic</span></code></a></p></td>
+<td><p>Evaluates the modified Bayesian information criterion (mBIC).</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.parameters_lower_bounds.html#pyvinecopulib.Bicop.parameters_lower_bounds" title="pyvinecopulib.Bicop.parameters_lower_bounds"><code class="xref py py-obj docutils literal notranslate"><span class="pre">parameters_lower_bounds</span></code></a></p></td>
+<td><p>Gets lower bounds for copula parameters.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.parameters_to_tau.html#pyvinecopulib.Bicop.parameters_to_tau" title="pyvinecopulib.Bicop.parameters_to_tau"><code class="xref py py-obj docutils literal notranslate"><span class="pre">parameters_to_tau</span></code></a></p></td>
+<td><p>Converts the copula parameters to Kendall’s <span class="math notranslate nohighlight">\(tau\)</span>.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.parameters_upper_bounds.html#pyvinecopulib.Bicop.parameters_upper_bounds" title="pyvinecopulib.Bicop.parameters_upper_bounds"><code class="xref py py-obj docutils literal notranslate"><span class="pre">parameters_upper_bounds</span></code></a></p></td>
+<td><p>Gets upper bounds for copula parameters.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.pdf.html#pyvinecopulib.Bicop.pdf" title="pyvinecopulib.Bicop.pdf"><code class="xref py py-obj docutils literal notranslate"><span class="pre">pdf</span></code></a></p></td>
+<td><p>Evaluates the copula density.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.select.html#pyvinecopulib.Bicop.select" title="pyvinecopulib.Bicop.select"><code class="xref py py-obj docutils literal notranslate"><span class="pre">select</span></code></a></p></td>
+<td><p>Selects the best fitting model.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.simulate.html#pyvinecopulib.Bicop.simulate" title="pyvinecopulib.Bicop.simulate"><code class="xref py py-obj docutils literal notranslate"><span class="pre">simulate</span></code></a></p></td>
+<td><p>Simulates from a bivariate copula.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.str.html#pyvinecopulib.Bicop.str" title="pyvinecopulib.Bicop.str"><code class="xref py py-obj docutils literal notranslate"><span class="pre">str</span></code></a></p></td>
+<td><p>Summarizes the model into a string (can be used for printing).</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.tau_to_parameters.html#pyvinecopulib.Bicop.tau_to_parameters" title="pyvinecopulib.Bicop.tau_to_parameters"><code class="xref py py-obj docutils literal notranslate"><span class="pre">tau_to_parameters</span></code></a></p></td>
+<td><p>Converts a Kendall’s <span class="math notranslate nohighlight">\(\tau\)</span> into copula parameters.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.to_json.html#pyvinecopulib.Bicop.to_json" title="pyvinecopulib.Bicop.to_json"><code class="xref py py-obj docutils literal notranslate"><span class="pre">to_json</span></code></a></p></td>
+<td><p>Write the copula object into a JSON file.</p></td>
+</tr>
+</tbody>
+</table>
+</dd></dl>
+
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="pyvinecopulib.Bicop.__init__.html" class="btn btn-neutral float-right" title="Bicop.__init__" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
+      
+      
+        <a href="pyvinecopulib.BicopFamily.html" class="btn btn-neutral float-left" title="BicopFamily" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+
+    </p>
+  </div> 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>
