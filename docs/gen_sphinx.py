@@ -114,7 +114,6 @@ def write_doc_modules(output_dir, verbose=False):
 
 
 def main():
-
     input_dir = dirname(abspath(__file__))
     # Generate.
     gen_main(
