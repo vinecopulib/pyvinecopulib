@@ -26,7 +26,10 @@ Advantages over VineCopula are
 
 ### Prerequisites
 
-* NumPy
+* numpy (>=1.14)
+* pybind11 (>=2.4)
+* setuptools (>=30.3.0)
+* setuptools_scm (>=2.0.0)
 * To install from source: a compiler with C++11 support (Linux, OS X) or Visual Studio 2015 (required for all Python versions, see notes below)
 
 ### Installation
@@ -38,10 +41,11 @@ pip install pyvinecopulib
 ```
 
 To install from source, just clone this repository and do `pip install`.
-Note the `--recursive` option which is needed for the `pybind11`, `vinecopulib` and `wdm` submodules:
+Note the `--recursive` option which is needed for the `eigen`, `vinecopulib` and `wdm` submodules:
 
 ```bash
 git clone --recursive https://github.com/vinecopulib/pyvinecopulib.git
+pip install -r ./pyvinecopulib/requirements.txt
 pip install ./pyvinecopulib
 ```
 
@@ -51,12 +55,13 @@ Jupyter notebooks with examples can be found in the examples folder.
 
 ### Building the documentation
 
-Documentation for the example project is generated using Sphinx.
+Documentation for the example project is generated using Sphinx and the "Read the Docs" theme.
 The following command generates HTML-based reference documentation; for other
 formats please refer to the Sphinx manual:
 
+ * `pip install sphinx-rtd-theme`
  - `cd pyvinecopulib/docs`
- - `make html`
+ - `python3 serve_sphinx.py`
 
 ### License
 
@@ -68,18 +73,13 @@ terms and conditions of this license.
 
 **Compiler requirements**
 
-Pyvinecopulib requires a C++11 compliant compiler, i.e Visual Studio 2015 on Windows.
-This applies to all Python versions, including 2.7. Unlike regular C extension
-modules, it's perfectly fine to compile a pyvinecopulib module with a VS version newer
-than the target Python's VS version.
+This package requires a C++11 compliant compiler, i.e Visual Studio 2015 on Windows.
+Unlike regular C extension modules, it's perfectly fine to compile a pyvinecopulib module with a VS version newer than the target Python's VS version.
 
 **Runtime requirements**
 
 The Visual C++ 2015 redistributable packages are a runtime requirement for this
-project. If you use the Anaconda Python
-distribution, you can add `vs2015_runtime` as a platform-dependent runtime
-requirement for you package: see the `conda.recipe/meta.yaml` file in this example.
-
+project.
 
 ### Contact
 
