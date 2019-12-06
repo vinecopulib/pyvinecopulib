@@ -38,8 +38,8 @@ copyright = u'2019, Thomas Nagler and Thibault Vatter'
 author = u'Thomas Nagler and Thibault Vatter'
 
 # The version info.
-release = get_distribution('pyvinecopulib').version
-version = '.'.join(release.split('.')[:2])
+#  release = get_distribution('pyvinecopulib').version
+#  version = '.'.join(release.split('.')[:2])
 
 # -- Options for HTML output -------------------------------------------------
 
