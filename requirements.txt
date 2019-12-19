@@ -1,0 +1,5 @@
+pybind11>=2.4
+setuptools>=30.3.0
+setuptools_scm>=2.0.0
+numpy>=1.14
+
