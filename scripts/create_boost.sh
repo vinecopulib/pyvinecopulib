@@ -61,18 +61,18 @@ fi
 
 if [ -d "${boostdir}" ]; then
     echo "Old boost library exists (${boostdir}), removing it ."
-    rm -rf ${boostdir}
+    rm -rf "${boostdir}"
 fi
 
-for i in $(find ${libdir} -iname *.tar.gz); do
+for i in $(find "${libdir}" -iname *.tar.gz); do
   echo "Old archive ($i) exists, removing it."
-  rm -rf $i
+  rm -rf "$i"
 done
 
 ## (6) Unpack boost -- note that for tarballs straight from Debian we need a rename step
 echo "Unpacking ${boosttargz} into ${libdir}."
 #(cd ${libdir} && tar xfz ${boostsources} && mv boost*-*.orig/ ${boostver})
-(cd ${libdir} && tar xfz ${boostsources})
+(cd "${libdir}" && tar xfz "${boostsources}")
 # exit -1
 
 ## (7) Install Boost libraries
@@ -88,20 +88,20 @@ boostlibs="bind concept config container date_time detail exception functional i
 
 ## this copies the Boost libraries listed in ${boostlibs} from the
 ## Boost sources in ${boostroot} into the target directory ${libdir}
-bcp --boost=${boostroot}  ${boostlibs}  ${libdir}   > /dev/null  2>&1
+bcp --boost="${boostroot}"  "${boostlibs}"  "${libdir}"   > /dev/null  2>&1
 
 ## (8) Some post processing and cleanup
 echo "Post-processing and cleanup"
-rm -rf ${libdir}/libs \
-       ${libdir}/Jamroot \
-       ${libdir}/boost.png \
-       ${libdir}/doc \
-       ${libdir}/boost.css \
-       ${libdir}/rst.css \
-       ${boostroot}
+rm -rf "${libdir}/libs" \
+       "${libdir}/Jamroot" \
+       "${libdir}/boost.png" \
+       "${libdir}/doc" \
+       "${libdir}/boost.css" \
+       "${libdir}/rst.css" \
+       "${boostroot}"
 
 ## (9) Create archive to be committed
-(cd ${libdir} && tar -zcf ${libdir}/${boosttargz} boost)
+(cd "${libdir}" && tar -zcf "${libdir}/${boosttargz}" boost)
 
 ## (10) And done
 echo "Now check with 'git status' and add and commit as needed."
