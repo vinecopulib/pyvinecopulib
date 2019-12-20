@@ -2,11 +2,7 @@
 #
 # pyvinecopulib documentation build configuration file
 
-import os
-import sys
-
 # Sphinx extension modules
-import sphinx_rtd_theme
 from pkg_resources import get_distribution
 
 # -- General configuration ------------------------------------------------

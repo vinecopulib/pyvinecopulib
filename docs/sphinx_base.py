@@ -10,8 +10,6 @@ from shutil import rmtree
 from socketserver import TCPServer
 from subprocess import check_call
 
-_SPHINX_BUILD = "sphinx_build.py"
-
 
 def _die(s):
     print(s, file=sys.stderr)
@@ -26,7 +24,6 @@ def gen_main(input_dir, strict, src_func=None):
         src_func: (optional) Callable of form `f(src_dir)` which will introduce
             additional source files to `src_dir`.
     """
-    assert isfile(_SPHINX_BUILD), "Please execute via 'bazel run'"
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--out_dir", type=str, required=True,
@@ -68,7 +65,7 @@ def gen_main(input_dir, strict, src_func=None):
             "-T",  # Traceback (for plugin)
         ]
     check_call([
-        sys.executable, _SPHINX_BUILD,
+        sys.executable, "sphinx_build.py",
         "-b", "html",  # HTML output.
         "-a", "-E",  # Don't use caching.
         "-d", doctree_dir] + warning_args + [
@@ -100,7 +97,6 @@ def preview_main(gen_script, default_port):
         gen_script: Generation script, required to generate docs.
         default_port: Default port for local HTTP server.
     """
-    assert isfile(_SPHINX_BUILD), "Please execute via 'bazel run'"
     parser = argparse.ArgumentParser()
     parser.register('type', 'bool', _str2bool)
     parser.add_argument(
