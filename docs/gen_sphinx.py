@@ -5,8 +5,6 @@ Generates documentation for `pyvinecopulib`.
 import sys
 from os.path import abspath, dirname, isabs, join
 
-import pyvinecopulib
-
 from sphinx_base import gen_main
 
 CLASSES = [
