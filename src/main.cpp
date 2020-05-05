@@ -136,14 +136,12 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     .def_property("num_threads",
                   &FitControlsBicop::get_num_threads,
                   &FitControlsBicop::set_num_threads,
-                  "The number of threads.");
-  /* .def("__repr__", */
-  //      [](const FitControlsBicop& ctrls) {
-  //        return "<pyvinecopulib.FitControlsBicop>\n" + ctrls.str();
-  //      })
-  // .def("str",
-  //      &FitControlsBicop::str,
-  /* "summarizes the controls into a string (can be used for printing)."); */
+                  "The number of threads.")
+    .def("__repr__",
+         [](const FitControlsBicop& controls) {
+           return "<pyvinecopulib.FitControlsBicop>\n" + controls.str();
+         })
+    .def("str", &FitControlsBicop::str, fitcontrolsbicop_doc.str.doc);
 
   py::class_<Bicop>(pv, "Bicop", bicop_doc.doc)
     .def(py::init<const BicopFamily,
@@ -416,14 +414,12 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     .def_property("num_threads",
                   &FitControlsVinecop::get_num_threads,
                   &FitControlsVinecop::set_num_threads,
-                  "The number of threads.");
-  /*   .def("__repr__", */
-  //    [](const FitControlsVinecop& ctrls) {
-  //      return "<pyvinecopulib.FitControlsRinecop>\n" + ctrls.str();
-  //    })
-  // .def("str",
-  //      &FitControlsVinecop::str,
-  /* "summarizes the controls into a string (can be used for printing)."); */
+                  "The number of threads.")
+    .def("__repr__",
+         [](const FitControlsVinecop& controls) {
+           return "<pyvinecopulib.FitControlsVinecop>\n" + controls.str();
+         })
+    .def("str", &FitControlsVinecop::str, fitcontrolsvinecop_doc.str.doc);
 
   py::class_<Vinecop>(pv, "Vinecop", vinecop_doc.doc)
     .def(py::init<const size_t>(), vinecop_doc.ctor.doc_1args_d, py::arg("d"))
