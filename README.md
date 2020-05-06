@@ -2,6 +2,8 @@
 
 [![Build Status](https://github.com/vinecopulib/pyvinecopulib/workflows/Build%20Status/badge.svg?branch=master)](https://github.com/vinecopulib/pyvinecopulib/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/3c0056d3ca5244a5ba6a2b32f87be4cf)](https://www.codacy.com/gh/vinecopulib/pyvinecopulib?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=vinecopulib/pyvinecopulib&amp;utm_campaign=Badge_Grade)
+[![Documentation](https://img.shields.io/website/http/vinecopulib.github.io/pyvinecopulib.svg)](https://vinecopulib.github.io/pyvinecopulib/)
 
 ### What are vine copulas?
 
@@ -13,7 +15,7 @@ You can find a comprehensive list of publications and other materials on
 
 ### What is pyvinecopulib?
 
-pyvinecopulib is the python interface to vinecopulib, a header-only C++ library for vine copula models based on
+[pyvinecopulib](https://vinecopulib.github.io/pyvinecopulib/) is the python interface to vinecopulib, a header-only C++ library for vine copula models based on
 [Eigen](http://eigen.tuxfamily.org/index.php?title=Main_Page). It provides
 high-performance implementations of the core features of the popular
 [VineCopula R library](https://github.com/tnagler/VineCopula), in particular
