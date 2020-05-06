@@ -8,7 +8,7 @@
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <title>RVineStructure.__init__ &mdash; pyvinecopulib 0.5.0 documentation</title>
+  <title>RVineStructure.__init__ &mdash; pyvinecopulib 0.5.2 documentation</title>
   
 
   
@@ -64,7 +64,7 @@
             
             
               <div class="version">
-                0.5
+                0.5.2
               </div>
             
           
@@ -178,7 +178,7 @@
 <ol class="arabic simple">
 <li><p>__init__(self: pyvinecopulib.RVineStructure, d: int = 1, trunc_lvl: int = 18446744073709551615) -&gt; None</p></li>
 </ol>
-<p>Instantiates an RVineStructure object to a D-vine for a given.
+<p>Instantiates an RVineStructure object to a D-vine for a given
 dimension.</p>
 <dl class="simple">
 <dt>Parameter <code class="docutils literal notranslate"><span class="pre">d</span></code>:</dt><dd><p>The dimension.</p>
@@ -189,7 +189,7 @@ dimension.</p>
 <ol class="arabic simple" start="2">
 <li><p>__init__(self: pyvinecopulib.RVineStructure, mat: numpy.ndarray[uint64[m, n]], check: bool = True) -&gt; None</p></li>
 </ol>
-<p>Instantiates an RVineStructure object from a matrix representing an.
+<p>Instantiates an RVineStructure object from a matrix representing an
 R-vine array.</p>
 <p>The matrix must contain zeros in the lower right triangle and the
 upper left triangle must be a valid R-vine array. Truncated vines can
@@ -210,8 +210,8 @@ truncation level. Example of a 1-truncated matrix:</p>
 <ol class="arabic simple" start="3">
 <li><p>__init__(self: pyvinecopulib.RVineStructure, order: List[int], trunc_lvl: int = 18446744073709551615, check: bool = True) -&gt; None</p></li>
 </ol>
-<p>Instantiates an RVineStructure object to a D-vine with given ordering.
-of variables.</p>
+<p>Instantiates an RVineStructure object to a D-vine with a given
+ordering of the variables.</p>
 <dl class="simple">
 <dt>Parameter <code class="docutils literal notranslate"><span class="pre">order</span></code>:</dt><dd><p>The order of variables in the D-vine (diagonal entries in the
 R-vine array); must be a permutation of 1, …, d.</p>
