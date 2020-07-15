@@ -35,7 +35,7 @@ author = u'Thomas Nagler and Thibault Vatter'
 
 # The version info.
 release = get_distribution('pyvinecopulib').version
-version = '.'.join(release.split('.')[:2])
+version = '.'.join(release.split('.')[:3])
 
 # -- Options for HTML output -------------------------------------------------
 
