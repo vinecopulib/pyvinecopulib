@@ -543,7 +543,7 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     .def("simulate",
          &Vinecop::simulate,
          py::arg("n"),
-         py::arg("qrn") = false,
+         py::arg("qrng") = false,
          py::arg("num_threads") = 1,
          py::arg("seeds") = std::vector<int>(),
          vinecop_doc.simulate.doc)
