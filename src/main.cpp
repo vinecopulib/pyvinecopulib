@@ -35,13 +35,13 @@ PYBIND11_MODULE(pyvinecopulib, pv)
    - ``parametric`` contains the parametric families (all except ``tll``),
    - ``nonparametric`` contains the nonparametric families
      (``indep`` and ``tll``)
-   - ``onepar`` contains the parametric families with a single parameter,
+   - ``one_par`` contains the parametric families with a single parameter,
      (``gaussian``, ``clayton``, ``gumbel``, ``frank``, and ``joe``),
-   - ``twopar`` contains the parametric families with two parameters
+   - ``two_par`` contains the parametric families with two parameters
      (``student``, ``bb1``, ``bb6``, ``bb7``, and ``bb8``),
    - ``elliptical`` contains the elliptical families,
    - ``archimedean`` contains the archimedean families,
-   - ``BB`` contains the BB families,
+   - ``bb`` contains the BB families,
    - ``itau`` families for which estimation by Kendall's tau inversion is
      available (``indep``, ``gaussian``, ``student``, ``clayton``,
      ``gumbel``, ``frank``, ``joe``),
@@ -543,7 +543,7 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     .def("simulate",
          &Vinecop::simulate,
          py::arg("n"),
-         py::arg("qrn") = false,
+         py::arg("qrng") = false,
          py::arg("num_threads") = 1,
          py::arg("seeds") = std::vector<int>(),
          vinecop_doc.simulate.doc)
