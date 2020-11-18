@@ -66,8 +66,13 @@ class BuildExt(build_ext):
             if has_flag(self.compiler, '-fvisibility=hidden'):
                 opts.append('-fvisibility=hidden')
         elif ct == 'msvc':
-            opts.append('/DVERSION_INFO=\\"%s\\"' %
-                        self.distribution.get_version())
+            # https://github.com/ovalhub/pyicu/pull/136#issuecomment-666874935
+            if sys.version_info >= (3,9):
+                opts.append('-DVERSION_INFO="%s"' %
+                    self.distribution.get_version())
+            else:
+                opts.append('/DVERSION_INFO=\\"%s\\"' %
+                     self.distribution.get_version())
         try:
             self.compiler.compiler_so.remove("-Wstrict-prototypes")
         except (AttributeError, ValueError):
@@ -193,6 +198,7 @@ setup(
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
         'License :: OSI Approved :: MIT License'
     ],
     keywords='copula, vines copulas, pair-copulas constructions',
