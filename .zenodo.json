@@ -1,0 +1,24 @@
+{
+    "title": "pyvinecopulib",
+    "description": "<p><a href=\"https://vinecopulib.github.io/pyvinecopulib/\">pyvinecopulib</a> is the python interface to <a href=\"https://vinecopulib.github.io/vinecopulib/\">vinecopulib</a>, a header-only C++ library for vine copula models based on Eigen. It provides high-performance implementations of the core features of the popular VineCopula R library, in particular inference algorithms for both vine copula and bivariate copula models.</p>",
+    "keywords": [
+        "dependence",
+        "copula",
+        "vine",
+        "pair copula construction",
+        "simulation"
+    ],
+    "upload_type": "software",
+    "access_right": "open",
+    "license": "MIT",
+    "creators": [
+        {
+            "orcid": "0000-0003-1855-0046",
+            "name": "Nagler, Thomas"
+        },
+        {
+            "orcid": "0000-0001-9212-0218",
+            "name": "Vatter, Thibault"
+        }
+    ]
+}
