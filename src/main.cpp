@@ -163,7 +163,7 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     .def(py::init<const std::string>(),
          py::arg("filename"),
          bicop_doc.ctor.doc_1args_filename)
-    .def("to_json", &Bicop::to_json, py::arg("filename"), bicop_doc.to_json.doc)
+    .def("to_json", &Bicop::to_file, py::arg("filename"), bicop_doc.to_file.doc)
     .def_property("rotation",
                   &Bicop::get_rotation,
                   &Bicop::set_rotation,
@@ -263,9 +263,9 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          py::arg("check") = true,
          rvinestructure_doc.ctor.doc_2args_filename_check)
     .def("to_json",
-         &RVineStructure::to_json,
+         &RVineStructure::to_file,
          py::arg("filename"),
-         rvinestructure_doc.to_json.doc)
+         rvinestructure_doc.to_file.doc)
     .def_property_readonly("dim", &RVineStructure::get_dim, "The dimension.")
     .def_property_readonly(
       "trunc_lvl", &RVineStructure::get_trunc_lvl, "The truncation level.")
@@ -461,9 +461,9 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          py::arg("check") = true,
          vinecop_doc.ctor.doc_2args_filename_check)
     .def("to_json",
-         &Vinecop::to_json,
+         &Vinecop::to_file,
          py::arg("filename"),
-         vinecop_doc.to_json.doc)
+         vinecop_doc.to_file.doc)
     .def_property("var_types",
                   &Vinecop::get_var_types,
                   &Vinecop::set_var_types,
