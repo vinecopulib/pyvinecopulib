@@ -1,39 +1,44 @@
 
 
 <!DOCTYPE html>
-<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
-<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<html class="writer-html5" lang="en" >
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8" />
   
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   
-  <title>FitControlsVinecop.__init__ &mdash; pyvinecopulib 0.5.2 documentation</title>
+  <title>FitControlsVinecop.__init__ &mdash; pyvinecopulib 0.6.0 documentation</title>
   
-
-  
-  
-  
-  
-
-  
-  <script type="text/javascript" src="../_static/js/modernizr.min.js"></script>
-  
-    
-      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
-        <script type="text/javascript" src="../_static/jquery.js"></script>
-        <script type="text/javascript" src="../_static/underscore.js"></script>
-        <script type="text/javascript" src="../_static/doctools.js"></script>
-        <script type="text/javascript" src="../_static/language_data.js"></script>
-        <script async="async" type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
-    
-    <script type="text/javascript" src="../_static/js/theme.js"></script>
-
-    
 
   
   <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
   <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="FitControlsVinecop.str" href="pyvinecopulib.FitControlsVinecop.str.html" />
@@ -64,7 +69,7 @@
             
             
               <div class="version">
-                0.5.2
+                0.6.0
               </div>
             
           
@@ -81,6 +86,7 @@
           
         </div>
 
+        
         <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
           
             
@@ -106,6 +112,7 @@
             
           
         </div>
+        
       </div>
     </nav>
 
@@ -140,11 +147,13 @@
 
 
 
+
+
 <div role="navigation" aria-label="breadcrumbs navigation">
 
   <ul class="wy-breadcrumbs">
     
-      <li><a href="../index.html">Docs</a> &raquo;</li>
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
         
           <li><a href="pyvinecopulib.FitControlsVinecop.html">FitControlsVinecop</a> &raquo;</li>
         
@@ -153,7 +162,7 @@
     
       <li class="wy-breadcrumbs-aside">
         
-            
+          
         
       </li>
     
@@ -167,9 +176,9 @@
             
   <div class="section" id="fitcontrolsvinecop-init">
 <h1>FitControlsVinecop.__init__<a class="headerlink" href="#fitcontrolsvinecop-init" title="Permalink to this headline">¶</a></h1>
-<dl class="method">
-<dt id="pyvinecopulib.FitControlsVinecop.__init__">
-<code class="sig-prename descclassname">FitControlsVinecop.</code><code class="sig-name descname">__init__</code><span class="sig-paren">(</span><em class="sig-param">self: pyvinecopulib.FitControlsVinecop, family_set: List[pyvinecopulib.BicopFamily] = [BicopFamily.indep, BicopFamily.gaussian, BicopFamily.student, BicopFamily.clayton, BicopFamily.gumbel, BicopFamily.frank, BicopFamily.joe, BicopFamily.bb1, BicopFamily.bb6, BicopFamily.bb7, BicopFamily.bb8, BicopFamily.tll], parametric_method: str = 'mle', nonparametric_method: str = 'quadratic', nonparametric_mult: float = 1.0, trunc_lvl: int = 18446744073709551615, tree_criterion: str = 'tau', threshold: float = 0.0, selection_criterion: str = 'bic', weights: numpy.ndarray[float64[m, 1]] = array([], dtype=float64), psi0: float = 0.9, preselect_families: bool = True, select_trunc_lvl: bool = False, select_threshold: bool = False, show_trace: bool = False, num_threads: int = 1</em><span class="sig-paren">)</span> &#x2192; None<a class="headerlink" href="#pyvinecopulib.FitControlsVinecop.__init__" title="Permalink to this definition">¶</a></dt>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyvinecopulib.FitControlsVinecop.__init__">
+<span class="sig-prename descclassname"><span class="pre">FitControlsVinecop.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">self:</span> <span class="pre">pyvinecopulib.FitControlsVinecop,</span> <span class="pre">family_set:</span> <span class="pre">List[pyvinecopulib.BicopFamily]</span> <span class="pre">=</span> <span class="pre">[&lt;BicopFamily.indep:</span> <span class="pre">0&gt;,</span> <span class="pre">&lt;BicopFamily.gaussian:</span> <span class="pre">1&gt;,</span> <span class="pre">&lt;BicopFamily.student:</span> <span class="pre">2&gt;,</span> <span class="pre">&lt;BicopFamily.clayton:</span> <span class="pre">3&gt;,</span> <span class="pre">&lt;BicopFamily.gumbel:</span> <span class="pre">4&gt;,</span> <span class="pre">&lt;BicopFamily.frank:</span> <span class="pre">5&gt;,</span> <span class="pre">&lt;BicopFamily.joe:</span> <span class="pre">6&gt;,</span> <span class="pre">&lt;BicopFamily.bb1:</span> <span class="pre">7&gt;,</span> <span class="pre">&lt;BicopFamily.bb6:</span> <span class="pre">8&gt;,</span> <span class="pre">&lt;BicopFamily.bb7:</span> <span class="pre">9&gt;,</span> <span class="pre">&lt;BicopFamily.bb8:</span> <span class="pre">10&gt;,</span> <span class="pre">&lt;BicopFamily.tll:</span> <span class="pre">11&gt;],</span> <span class="pre">parametric_method:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'mle',</span> <span class="pre">nonparametric_method:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'quadratic',</span> <span class="pre">nonparametric_mult:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">1.0,</span> <span class="pre">trunc_lvl:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">18446744073709551615,</span> <span class="pre">tree_criterion:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'tau',</span> <span class="pre">threshold:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">0.0,</span> <span class="pre">selection_criterion:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'bic',</span> <span class="pre">weights:</span> <span class="pre">numpy.ndarray[numpy.float64[m,</span> <span class="pre">1]]</span> <span class="pre">=</span> <span class="pre">array([],</span> <span class="pre">dtype=float64),</span> <span class="pre">psi0:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">0.9,</span> <span class="pre">preselect_families:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">True,</span> <span class="pre">select_trunc_lvl:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">False,</span> <span class="pre">select_threshold:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">False,</span> <span class="pre">show_trace:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">False,</span> <span class="pre">num_threads:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">1</span></em><span class="sig-paren">)</span> &#x2192; <span class="pre">None</span><a class="headerlink" href="#pyvinecopulib.FitControlsVinecop.__init__" title="Permalink to this definition">¶</a></dt>
 <dd><p>Instantiates custom controls for fitting vine copula models.</p>
 <dl class="simple">
 <dt>Parameter <code class="docutils literal notranslate"><span class="pre">family_set</span></code>:</dt><dd><p>The set of copula families to consider (if empty, then all
@@ -221,16 +230,10 @@ threads supported by the implementation.</p>
            
           </div>
           <footer>
-  
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
-      
-        <a href="pyvinecopulib.FitControlsVinecop.str.html" class="btn btn-neutral float-right" title="FitControlsVinecop.str" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
-      
-      
-        <a href="pyvinecopulib.FitControlsVinecop.html" class="btn btn-neutral float-left" title="FitControlsVinecop" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
-      
+        <a href="pyvinecopulib.FitControlsVinecop.str.html" class="btn btn-neutral float-right" title="FitControlsVinecop.str" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="pyvinecopulib.FitControlsVinecop.html" class="btn btn-neutral float-left" title="FitControlsVinecop" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
     </div>
-  
 
   <hr/>
 
@@ -241,7 +244,6 @@ threads supported by the implementation.</p>
   </div> 
 
 </footer>
-
         </div>
       </div>
 
@@ -249,7 +251,6 @@ threads supported by the implementation.</p>
 
   </div>
   
-
 
   <script type="text/javascript">
       jQuery(function () {

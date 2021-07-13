@@ -1,39 +1,45 @@
 
 
 <!DOCTYPE html>
-<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
-<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<html class="writer-html5" lang="en" >
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8" />
   
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   
-  <title>pyvinecopulib &mdash; pyvinecopulib 0.5.2 documentation</title>
+  <title>pyvinecopulib &mdash; pyvinecopulib 0.6.0 documentation</title>
   
-
-  
-  
-  
-  
-
-  
-  <script type="text/javascript" src="_static/js/modernizr.min.js"></script>
-  
-    
-      <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
-        <script type="text/javascript" src="_static/jquery.js"></script>
-        <script type="text/javascript" src="_static/underscore.js"></script>
-        <script type="text/javascript" src="_static/doctools.js"></script>
-        <script type="text/javascript" src="_static/language_data.js"></script>
-        <script async="async" type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
-    
-    <script type="text/javascript" src="_static/js/theme.js"></script>
-
-    
 
   
   <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
   <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+        <script src="_static/jquery.js"></script>
+        <script src="_static/underscore.js"></script>
+        <script src="_static/doctools.js"></script>
+        <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+
+    
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="BicopFamily" href="_generate/pyvinecopulib.BicopFamily.html" /> 
@@ -63,7 +69,7 @@
             
             
               <div class="version">
-                0.5.2
+                0.6.0
               </div>
             
           
@@ -80,6 +86,7 @@
           
         </div>
 
+        
         <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
           
             
@@ -101,6 +108,7 @@
             
           
         </div>
+        
       </div>
     </nav>
 
@@ -135,18 +143,20 @@
 
 
 
+
+
 <div role="navigation" aria-label="breadcrumbs navigation">
 
   <ul class="wy-breadcrumbs">
     
-      <li><a href="#">Docs</a> &raquo;</li>
+      <li><a href="#" class="icon icon-home"></a> &raquo;</li>
         
       <li>pyvinecopulib</li>
     
     
       <li class="wy-breadcrumbs-aside">
         
-            
+          
         
       </li>
     
@@ -200,9 +210,9 @@
 </div>
 <div class="section" id="functions">
 <h1>Functions<a class="headerlink" href="#functions" title="Permalink to this headline">¶</a></h1>
-<dl class="function">
-<dt id="pyvinecopulib.to_pseudo_obs">
-<code class="sig-name descname">to_pseudo_obs</code><span class="sig-paren">(</span><em class="sig-param">x: numpy.ndarray[float64[m, n]], ties_method: str = 'average'</em><span class="sig-paren">)</span> &#x2192; numpy.ndarray[float64[m, n]]<a class="headerlink" href="#pyvinecopulib.to_pseudo_obs" title="Permalink to this definition">¶</a></dt>
+<dl class="py function">
+<dt class="sig sig-object py" id="pyvinecopulib.to_pseudo_obs">
+<span class="sig-name descname"><span class="pre">to_pseudo_obs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ties_method</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">str</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">'average'</span></span></em><span class="sig-paren">)</span> &#x2192; <span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><a class="headerlink" href="#pyvinecopulib.to_pseudo_obs" title="Permalink to this definition">¶</a></dt>
 <dd><p>Applies the empirical probability integral transform to a data matrix.</p>
 <p>Gives pseudo-observations from the copula by applying the empirical
 distribution function (scaled by <span class="math notranslate nohighlight">\(n + 1\)</span>) to each margin/column.</p>
@@ -221,9 +231,9 @@ distribution function (scaled by <span class="math notranslate nohighlight">\(n 
 </dl>
 </dd></dl>
 
-<dl class="function">
-<dt id="pyvinecopulib.simulate_uniform">
-<code class="sig-name descname">simulate_uniform</code><span class="sig-paren">(</span><em class="sig-param">n: int</em>, <em class="sig-param">d: int</em>, <em class="sig-param">qrng: bool = False</em>, <em class="sig-param">seeds: List[int] = []</em><span class="sig-paren">)</span> &#x2192; numpy.ndarray[float64[m, n]]<a class="headerlink" href="#pyvinecopulib.simulate_uniform" title="Permalink to this definition">¶</a></dt>
+<dl class="py function">
+<dt class="sig sig-object py" id="pyvinecopulib.simulate_uniform">
+<span class="sig-name descname"><span class="pre">simulate_uniform</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">qrng</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">bool</span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seeds</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">[]</span></span></em><span class="sig-paren">)</span> &#x2192; <span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><a class="headerlink" href="#pyvinecopulib.simulate_uniform" title="Permalink to this definition">¶</a></dt>
 <dd><p>Simulates from the multivariate uniform distribution.</p>
 <dl class="simple">
 <dt>Parameter <code class="docutils literal notranslate"><span class="pre">n</span></code>:</dt><dd><p>Number of observations.</p>
@@ -250,9 +260,9 @@ are used for <span class="math notranslate nohighlight">\(d \leq 300\)</span> an
 </dl>
 </dd></dl>
 
-<dl class="function">
-<dt id="pyvinecopulib.ghalton">
-<code class="sig-name descname">ghalton</code><span class="sig-paren">(</span><em class="sig-param">n: int</em>, <em class="sig-param">d: int</em>, <em class="sig-param">seeds: List[int] = []</em><span class="sig-paren">)</span> &#x2192; numpy.ndarray[float64[m, n]]<a class="headerlink" href="#pyvinecopulib.ghalton" title="Permalink to this definition">¶</a></dt>
+<dl class="py function">
+<dt class="sig sig-object py" id="pyvinecopulib.ghalton">
+<span class="sig-name descname"><span class="pre">ghalton</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seeds</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">[]</span></span></em><span class="sig-paren">)</span> &#x2192; <span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><a class="headerlink" href="#pyvinecopulib.ghalton" title="Permalink to this definition">¶</a></dt>
 <dd><p>Simulates from the multivariate Generalized Halton Sequence.</p>
 <p>For more information on Generalized Halton Sequence, see Faure, H.,
 Lemieux, C. (2009). Generalized Halton Sequences in 2008: A
@@ -277,9 +287,9 @@ the quasi-random number generator is seeded randomly.</p>
 </dl>
 </dd></dl>
 
-<dl class="function">
-<dt id="pyvinecopulib.sobol">
-<code class="sig-name descname">sobol</code><span class="sig-paren">(</span><em class="sig-param">n: int</em>, <em class="sig-param">d: int</em>, <em class="sig-param">seeds: List[int] = []</em><span class="sig-paren">)</span> &#x2192; numpy.ndarray[float64[m, n]]<a class="headerlink" href="#pyvinecopulib.sobol" title="Permalink to this definition">¶</a></dt>
+<dl class="py function">
+<dt class="sig sig-object py" id="pyvinecopulib.sobol">
+<span class="sig-name descname"><span class="pre">sobol</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seeds</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">List</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">[]</span></span></em><span class="sig-paren">)</span> &#x2192; <span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span><a class="headerlink" href="#pyvinecopulib.sobol" title="Permalink to this definition">¶</a></dt>
 <dd><p>Simulates from the multivariate Sobol sequence.</p>
 <p>For more information on the Sobol sequence, see S. Joe and F. Y. Kuo
 (2008), constructing Sobol sequences with better two-dimensional
@@ -311,14 +321,9 @@ the quasi-random number generator is seeded randomly.</p>
            
           </div>
           <footer>
-  
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
-      
-        <a href="_generate/pyvinecopulib.BicopFamily.html" class="btn btn-neutral float-right" title="BicopFamily" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
-      
-      
+        <a href="_generate/pyvinecopulib.BicopFamily.html" class="btn btn-neutral float-right" title="BicopFamily" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
-  
 
   <hr/>
 
@@ -329,7 +334,6 @@ the quasi-random number generator is seeded randomly.</p>
   </div> 
 
 </footer>
-
         </div>
       </div>
 
@@ -337,7 +341,6 @@ the quasi-random number generator is seeded randomly.</p>
 
   </div>
   
-
 
   <script type="text/javascript">
       jQuery(function () {

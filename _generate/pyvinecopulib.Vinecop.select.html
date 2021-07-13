@@ -1,39 +1,45 @@
 
 
 <!DOCTYPE html>
-<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
-<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<html class="writer-html5" lang="en" >
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8" />
   
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   
-  <title>Vinecop.select &mdash; pyvinecopulib 0.5.2 documentation</title>
+  <title>Vinecop.select &mdash; pyvinecopulib 0.6.0 documentation</title>
   
-
-  
-  
-  
-  
-
-  
-  <script type="text/javascript" src="../_static/js/modernizr.min.js"></script>
-  
-    
-      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
-        <script type="text/javascript" src="../_static/jquery.js"></script>
-        <script type="text/javascript" src="../_static/underscore.js"></script>
-        <script type="text/javascript" src="../_static/doctools.js"></script>
-        <script type="text/javascript" src="../_static/language_data.js"></script>
-        <script async="async" type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
-    
-    <script type="text/javascript" src="../_static/js/theme.js"></script>
-
-    
 
   
   <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
   <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="Vinecop.simulate" href="pyvinecopulib.Vinecop.simulate.html" />
@@ -64,7 +70,7 @@
             
             
               <div class="version">
-                0.5.2
+                0.6.0
               </div>
             
           
@@ -81,6 +87,7 @@
           
         </div>
 
+        
         <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
           
             
@@ -123,6 +130,7 @@
             
           
         </div>
+        
       </div>
     </nav>
 
@@ -157,11 +165,13 @@
 
 
 
+
+
 <div role="navigation" aria-label="breadcrumbs navigation">
 
   <ul class="wy-breadcrumbs">
     
-      <li><a href="../index.html">Docs</a> &raquo;</li>
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
         
           <li><a href="pyvinecopulib.Vinecop.html">Vinecop</a> &raquo;</li>
         
@@ -170,7 +180,7 @@
     
       <li class="wy-breadcrumbs-aside">
         
-            
+          
         
       </li>
     
@@ -184,9 +194,9 @@
             
   <div class="section" id="vinecop-select">
 <h1>Vinecop.select<a class="headerlink" href="#vinecop-select" title="Permalink to this headline">¶</a></h1>
-<dl class="method">
-<dt id="pyvinecopulib.Vinecop.select">
-<code class="sig-prename descclassname">Vinecop.</code><code class="sig-name descname">select</code><span class="sig-paren">(</span><em class="sig-param">self: pyvinecopulib.Vinecop, data: numpy.ndarray[float64[m, n]], controls: pyvinecopulib.FitControlsVinecop = FitControlsVinecop()</em><span class="sig-paren">)</span> &#x2192; None<a class="headerlink" href="#pyvinecopulib.Vinecop.select" title="Permalink to this definition">¶</a></dt>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyvinecopulib.Vinecop.select">
+<span class="sig-prename descclassname"><span class="pre">Vinecop.</span></span><span class="sig-name descname"><span class="pre">select</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="pyvinecopulib.Vinecop.html#pyvinecopulib.Vinecop" title="pyvinecopulib.Vinecop"><span class="pre">pyvinecopulib.Vinecop</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">controls</span></span><span class="p"><span class="pre">:</span></span> <span class="n"><a class="reference internal" href="pyvinecopulib.FitControlsVinecop.html#pyvinecopulib.FitControlsVinecop" title="pyvinecopulib.FitControlsVinecop"><span class="pre">pyvinecopulib.FitControlsVinecop</span></a></span> <span class="o"><span class="pre">=</span></span> <span class="default_value"><span class="pre">FitControlsVinecop()</span></span></em><span class="sig-paren">)</span> &#x2192; <span class="pre">None</span><a class="headerlink" href="#pyvinecopulib.Vinecop.select" title="Permalink to this definition">¶</a></dt>
 <dd><p>Automatically fits and selects a vine copula model.</p>
 <p><code class="docutils literal notranslate"><span class="pre">select()</span></code> behaves differently depending on its current truncation
 level and the truncation level specified in the controls, respectively
@@ -204,7 +214,8 @@ along with the families and parameters. This includes the case where
 Dissmann, J. F., E. C. Brechmann, C. Czado, and D. Kurowicka (2013).
 <em>Selecting and estimating regular vine copulae and application to
 financial returns.</em> Computational Statistics &amp; Data Analysis, 59 (1),
-52-69.</p>
+52-69. The dependence measure used to select trees (default: Kendall’s
+tau) is corrected for ties (see the wdm library).</p>
 <p>When at least one variable is discrete, two types of “observations”
 are required: the first <span class="math notranslate nohighlight">\(n \times d\)</span> block contains realizations
 of <span class="math notranslate nohighlight">\(F_Y(Y), F_X(X)\)</span>; the second <span class="math notranslate nohighlight">\(n \times d\)</span> block
@@ -229,16 +240,10 @@ observations, where <span class="math notranslate nohighlight">\(k\)</span> is t
            
           </div>
           <footer>
-  
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
-      
-        <a href="pyvinecopulib.Vinecop.simulate.html" class="btn btn-neutral float-right" title="Vinecop.simulate" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
-      
-      
-        <a href="pyvinecopulib.Vinecop.rosenblatt.html" class="btn btn-neutral float-left" title="Vinecop.rosenblatt" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
-      
+        <a href="pyvinecopulib.Vinecop.simulate.html" class="btn btn-neutral float-right" title="Vinecop.simulate" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="pyvinecopulib.Vinecop.rosenblatt.html" class="btn btn-neutral float-left" title="Vinecop.rosenblatt" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
     </div>
-  
 
   <hr/>
 
@@ -249,7 +254,6 @@ observations, where <span class="math notranslate nohighlight">\(k\)</span> is t
   </div> 
 
 </footer>
-
         </div>
       </div>
 
@@ -257,7 +261,6 @@ observations, where <span class="math notranslate nohighlight">\(k\)</span> is t
 
   </div>
   
-
 
   <script type="text/javascript">
       jQuery(function () {

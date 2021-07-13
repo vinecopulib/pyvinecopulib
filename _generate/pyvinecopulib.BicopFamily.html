@@ -1,39 +1,44 @@
 
 
 <!DOCTYPE html>
-<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
-<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<html class="writer-html5" lang="en" >
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8" />
   
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   
-  <title>BicopFamily &mdash; pyvinecopulib 0.5.2 documentation</title>
+  <title>BicopFamily &mdash; pyvinecopulib 0.6.0 documentation</title>
   
-
-  
-  
-  
-  
-
-  
-  <script type="text/javascript" src="../_static/js/modernizr.min.js"></script>
-  
-    
-      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
-        <script type="text/javascript" src="../_static/jquery.js"></script>
-        <script type="text/javascript" src="../_static/underscore.js"></script>
-        <script type="text/javascript" src="../_static/doctools.js"></script>
-        <script type="text/javascript" src="../_static/language_data.js"></script>
-        <script async="async" type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS-MML_HTMLorMML"></script>
-    
-    <script type="text/javascript" src="../_static/js/theme.js"></script>
-
-    
 
   
   <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
   <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+
+  
+  
+
+  
+  
+
+  
+
+  
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="../_static/js/theme.js"></script>
+
+    
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="Bicop" href="pyvinecopulib.Bicop.html" />
@@ -64,7 +69,7 @@
             
             
               <div class="version">
-                0.5.2
+                0.6.0
               </div>
             
           
@@ -81,6 +86,7 @@
           
         </div>
 
+        
         <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
           
             
@@ -102,6 +108,7 @@
             
           
         </div>
+        
       </div>
     </nav>
 
@@ -136,18 +143,20 @@
 
 
 
+
+
 <div role="navigation" aria-label="breadcrumbs navigation">
 
   <ul class="wy-breadcrumbs">
     
-      <li><a href="../index.html">Docs</a> &raquo;</li>
+      <li><a href="../index.html" class="icon icon-home"></a> &raquo;</li>
         
       <li>BicopFamily</li>
     
     
       <li class="wy-breadcrumbs-aside">
         
-            
+          
         
       </li>
     
@@ -161,9 +170,9 @@
             
   <div class="section" id="bicopfamily">
 <h1>BicopFamily<a class="headerlink" href="#bicopfamily" title="Permalink to this headline">¶</a></h1>
-<dl class="class">
-<dt id="pyvinecopulib.BicopFamily">
-<em class="property">class </em><code class="sig-name descname">BicopFamily</code><a class="headerlink" href="#pyvinecopulib.BicopFamily" title="Permalink to this definition">¶</a></dt>
+<dl class="py class">
+<dt class="sig sig-object py" id="pyvinecopulib.BicopFamily">
+<em class="property"><span class="pre">class</span> </em><span class="sig-name descname"><span class="pre">BicopFamily</span></span><a class="headerlink" href="#pyvinecopulib.BicopFamily" title="Permalink to this definition">¶</a></dt>
 <dd><blockquote>
 <div><p>A bivariate copula family identifier.</p>
 <p>The following convenient sets of families are also provided:</p>
@@ -172,13 +181,13 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">parametric</span></code> contains the parametric families (all except <code class="docutils literal notranslate"><span class="pre">tll</span></code>),</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">nonparametric</span></code> contains the nonparametric families
 (<code class="docutils literal notranslate"><span class="pre">indep</span></code> and <code class="docutils literal notranslate"><span class="pre">tll</span></code>)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">onepar</span></code> contains the parametric families with a single parameter,
+<li><p><code class="docutils literal notranslate"><span class="pre">one_par</span></code> contains the parametric families with a single parameter,
 (<code class="docutils literal notranslate"><span class="pre">gaussian</span></code>, <code class="docutils literal notranslate"><span class="pre">clayton</span></code>, <code class="docutils literal notranslate"><span class="pre">gumbel</span></code>, <code class="docutils literal notranslate"><span class="pre">frank</span></code>, and <code class="docutils literal notranslate"><span class="pre">joe</span></code>),</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">twopar</span></code> contains the parametric families with two parameters
+<li><p><code class="docutils literal notranslate"><span class="pre">two_par</span></code> contains the parametric families with two parameters
 (<code class="docutils literal notranslate"><span class="pre">student</span></code>, <code class="docutils literal notranslate"><span class="pre">bb1</span></code>, <code class="docutils literal notranslate"><span class="pre">bb6</span></code>, <code class="docutils literal notranslate"><span class="pre">bb7</span></code>, and <code class="docutils literal notranslate"><span class="pre">bb8</span></code>),</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">elliptical</span></code> contains the elliptical families,</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">archimedean</span></code> contains the archimedean families,</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">BB</span></code> contains the BB families,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bb</span></code> contains the BB families,</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">itau</span></code> families for which estimation by Kendall’s tau inversion is
 available (<code class="docutils literal notranslate"><span class="pre">indep</span></code>, <code class="docutils literal notranslate"><span class="pre">gaussian</span></code>, <code class="docutils literal notranslate"><span class="pre">student</span></code>, <code class="docutils literal notranslate"><span class="pre">clayton</span></code>,
 <code class="docutils literal notranslate"><span class="pre">gumbel</span></code>, <code class="docutils literal notranslate"><span class="pre">frank</span></code>, <code class="docutils literal notranslate"><span class="pre">joe</span></code>),</p></li>
@@ -210,16 +219,10 @@ available (<code class="docutils literal notranslate"><span class="pre">indep</s
            
           </div>
           <footer>
-  
     <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
-      
-        <a href="pyvinecopulib.Bicop.html" class="btn btn-neutral float-right" title="Bicop" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right"></span></a>
-      
-      
-        <a href="../index.html" class="btn btn-neutral float-left" title="pyvinecopulib" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
-      
+        <a href="pyvinecopulib.Bicop.html" class="btn btn-neutral float-right" title="Bicop" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="../index.html" class="btn btn-neutral float-left" title="pyvinecopulib" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
     </div>
-  
 
   <hr/>
 
@@ -230,7 +233,6 @@ available (<code class="docutils literal notranslate"><span class="pre">indep</s
   </div> 
 
 </footer>
-
         </div>
       </div>
 
@@ -238,7 +240,6 @@ available (<code class="docutils literal notranslate"><span class="pre">indep</s
 
   </div>
   
-
 
   <script type="text/javascript">
       jQuery(function () {
