@@ -219,6 +219,8 @@ variables the left limit and the cdf itself coincide. For, e.g., an
 integer-valued variable, it holds :math:`F_{X_k}(X_k^-) = F_{X_k}(X_k
 - 1)`.
 
+Incomplete observations (i.e., ones with a NaN value) are discarded.
+
 Parameter ``data``:
     An :math:`n \times (2 + k)` matrix of observations contained in
     :math:`(0, 1)`, where :math:`k` is the number of discrete
@@ -499,6 +501,8 @@ minus indicates a left-sided limit of the cdf. For continuous
 variables the left limit and the cdf itself coincide. For, e.g., an
 integer-valued variable, it holds :math:`F_{X_k}(X_k^-) = F_{X_k}(X_k
 - 1)`.
+
+Incomplete observations (i.e., ones with a NaN value) are discarded.
 
 Parameter ``data``:
     An :math:`n \times (2 + k)` matrix of observations contained in
@@ -2273,6 +2277,10 @@ left limit and the cdf itself coincide. For, e.g., an integer-valued
 variable, it holds :math:`F_Y(Y^-) = F_Y(Y - 1)`. Continuous variables
 in the second block can be omitted.
 
+If there are missing data (i.e., NaN entries), incomplete observations are 
+discarded before fitting a pair-copula. This is done on a pair-by-pair basis
+so that the maximal available information is used.
+
 Parameter ``data``:
     :math:`n \times (d + k)` or :math:`n \times 2d` matrix of
     observations, where :math:`k` is the number of discrete variables.
@@ -2301,6 +2309,10 @@ left limit and the cdf itself coincide. For, e.g., an integer-valued
 variable, it holds :math:`F_Y(Y^-) = F_Y(Y - 1)`. Continuous variables
 in the second block can be omitted.
 
+If there are missing data (i.e., NaN entries), incomplete observations are 
+discarded before fitting a pair-copula. This is done on a pair-by-pair basis
+so that the maximal available information is used.
+
 Parameter ``data``:
     :math:`n \times (d + k)` or :math:`n \times 2d` matrix of
     observations, where :math:`k` is the number of discrete variables.
@@ -2323,6 +2335,10 @@ indicates a left-sided limit of the cdf. For continuous variables the
 left limit and the cdf itself coincide. For, e.g., an integer-valued
 variable, it holds :math:`F_Y(Y^-) = F_Y(Y - 1)`. Continuous variables
 in the second block can be omitted.
+
+If there are missing data (i.e., NaN entries), incomplete observations are 
+discarded before fitting a pair-copula. This is done on a pair-by-pair basis
+so that the maximal available information is used.
 
 Parameter ``data``:
     :math:`n \times (d + k)` or :math:`n \times 2d` matrix of
