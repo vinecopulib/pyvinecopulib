@@ -2103,6 +2103,32 @@ requiring less than 1 GB is :math:`n = 1000`, :math:`d = 200`.
 
 Only works for continous models.
 
+The Rosenblatt transform (Rosenblatt, 1952) math:`U = T(V)` of a random 
+vector math:`V = (V_1,\ldots,V_d) ~ F` is defined as
+
+.. math:: U_1= F(V_1), U_{2} = F(V_{2}|V_1), \ldots, U_d =F(V_d|V_1,\ldots,V_{d-1}), 
+
+where math:`F(v_k|v_1,\ldots,v_{k-1})` is the conditional distribution of
+math:`V_k` given  math:`V_1 \ldots, V_{k-1}, k = 2,\ldots,d`. The vector 
+math:`U = (U_1, \dots, U_d)` then contains independent standard uniform 
+variables. The inverse operation
+
+.. math:: V_1 = F^{-1}(U_1), V_{2} = F^{-1}(U_2|U_1), \ldots, V_d =F^{-1}(U_d|U_1,\ldots,U_{d-1}) 
+
+can be used to simulate from a distribution. For any distribution math:`F`, if
+math:`U` is a vector of independent random variables, math:`V = T^{-1}(U)`
+has distribution math:`F`.
+
+The formulas above assume a vine copula model with order math:`d, \dots, 1`.
+More generally, `Vinecop::rosenblatt()` returns the variables
+
+.. math: U_{M[d - j, j]}= F(V_{M[d - j, j]} | V_{M[d - j - 1, j - 1]}, \dots, V_{M[0, 0]}), 
+
+where math:`M` is the structure matrix. Similarly, `Vinecop::inverse_rosenblatt()`
+returns
+
+.. math: V_{M[d - j, j]}= F^{-1}(U_{M[d - j, j]} | U_{M[d - j - 1, j - 1]}, \dots, U_{M[0, 0]}).
+
 Parameter ``u``:
     An :math:`n \times d` matrix of evaluation points.
 
