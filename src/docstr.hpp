@@ -219,6 +219,8 @@ variables the left limit and the cdf itself coincide. For, e.g., an
 integer-valued variable, it holds :math:`F_{X_k}(X_k^-) = F_{X_k}(X_k
 - 1)`.
 
+Incomplete observations (i.e., ones with a NaN value) are discarded.
+
 Parameter ``data``:
     An :math:`n \times (2 + k)` matrix of observations contained in
     :math:`(0, 1)`, where :math:`k` is the number of discrete
@@ -499,6 +501,8 @@ minus indicates a left-sided limit of the cdf. For continuous
 variables the left limit and the cdf itself coincide. For, e.g., an
 integer-valued variable, it holds :math:`F_{X_k}(X_k^-) = F_{X_k}(X_k
 - 1)`.
+
+Incomplete observations (i.e., ones with a NaN value) are discarded.
 
 Parameter ``data``:
     An :math:`n \times (2 + k)` matrix of observations contained in
@@ -2099,6 +2103,32 @@ requiring less than 1 GB is :math:`n = 1000`, :math:`d = 200`.
 
 Only works for continous models.
 
+The Rosenblatt transform (Rosenblatt, 1952) math:`U = T(V)` of a random 
+vector math:`V = (V_1,\ldots,V_d) ~ F` is defined as
+
+.. math:: U_1= F(V_1), U_{2} = F(V_{2}|V_1), \ldots, U_d =F(V_d|V_1,\ldots,V_{d-1}), 
+
+where math:`F(v_k|v_1,\ldots,v_{k-1})` is the conditional distribution of
+math:`V_k` given  math:`V_1 \ldots, V_{k-1}, k = 2,\ldots,d`. The vector 
+math:`U = (U_1, \dots, U_d)` then contains independent standard uniform 
+variables. The inverse operation
+
+.. math:: V_1 = F^{-1}(U_1), V_{2} = F^{-1}(U_2|U_1), \ldots, V_d =F^{-1}(U_d|U_1,\ldots,U_{d-1}) 
+
+can be used to simulate from a distribution. For any distribution math:`F`, if
+math:`U` is a vector of independent random variables, math:`V = T^{-1}(U)`
+has distribution math:`F`.
+
+The formulas above assume a vine copula model with order math:`d, \dots, 1`.
+More generally, `Vinecop::rosenblatt()` returns the variables
+
+.. math: U_{M[d - j, j]}= F(V_{M[d - j, j]} | V_{M[d - j - 1, j - 1]}, \dots, V_{M[0, 0]}), 
+
+where math:`M` is the structure matrix. Similarly, `Vinecop::inverse_rosenblatt()`
+returns
+
+.. math: V_{M[d - j, j]}= F^{-1}(U_{M[d - j, j]} | U_{M[d - j - 1, j - 1]}, \dots, U_{M[0, 0]}).
+
 Parameter ``u``:
     An :math:`n \times d` matrix of evaluation points.
 
@@ -2273,6 +2303,10 @@ left limit and the cdf itself coincide. For, e.g., an integer-valued
 variable, it holds :math:`F_Y(Y^-) = F_Y(Y - 1)`. Continuous variables
 in the second block can be omitted.
 
+If there are missing data (i.e., NaN entries), incomplete observations are 
+discarded before fitting a pair-copula. This is done on a pair-by-pair basis
+so that the maximal available information is used.
+
 Parameter ``data``:
     :math:`n \times (d + k)` or :math:`n \times 2d` matrix of
     observations, where :math:`k` is the number of discrete variables.
@@ -2301,6 +2335,10 @@ left limit and the cdf itself coincide. For, e.g., an integer-valued
 variable, it holds :math:`F_Y(Y^-) = F_Y(Y - 1)`. Continuous variables
 in the second block can be omitted.
 
+If there are missing data (i.e., NaN entries), incomplete observations are 
+discarded before fitting a pair-copula. This is done on a pair-by-pair basis
+so that the maximal available information is used.
+
 Parameter ``data``:
     :math:`n \times (d + k)` or :math:`n \times 2d` matrix of
     observations, where :math:`k` is the number of discrete variables.
@@ -2323,6 +2361,10 @@ indicates a left-sided limit of the cdf. For continuous variables the
 left limit and the cdf itself coincide. For, e.g., an integer-valued
 variable, it holds :math:`F_Y(Y^-) = F_Y(Y - 1)`. Continuous variables
 in the second block can be omitted.
+
+If there are missing data (i.e., NaN entries), incomplete observations are 
+discarded before fitting a pair-copula. This is done on a pair-by-pair basis
+so that the maximal available information is used.
 
 Parameter ``data``:
     :math:`n \times (d + k)` or :math:`n \times 2d` matrix of
