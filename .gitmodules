@@ -1,10 +1,12 @@
 [submodule "lib/wdm"]
 	path = lib/wdm
 	url = https://github.com/tnagler/wdm
+	shallow = true
 [submodule "lib/vinecopulib"]
 	path = lib/vinecopulib
   url = https://github.com/vinecopulib/vinecopulib.git
-  branch = dev
+	shallow = true
 [submodule "lib/eigen"]
 	path = lib/eigen
 	url = https://github.com/eigenteam/eigen-git-mirror
+	shallow = true
