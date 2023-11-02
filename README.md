@@ -12,7 +12,7 @@ Vine copulas are a flexible class of dependence models consisting of bivariate
 building blocks (see e.g.,
 [Aas et al., 2009](https://mediatum.ub.tum.de/doc/1083600/1083600.pdf)).
 You can find a comprehensive list of publications and other materials on
-[vine-copula.org](http://www.statistics.ma.tum.de/en/research/vine-copula-models/).
+[vine-copula.org](http://vine-copula.org).
 
 ### What is pyvinecopulib?
 
