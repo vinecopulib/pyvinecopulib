@@ -19,8 +19,6 @@ jobs:
             platform-msbuild: "x64"
         python-version: ["3.8", "3.9", "3.10", "3.11"]
         exclude:
-          - platform: windows-latest
-            python-version: 3.5
           - platform: macos-latest
             architecture: "x86"
           - platform: ubuntu-latest
@@ -54,7 +52,10 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude=lib
     - name: Create wheel distribution 
       run: |
-        pip wheel --no-deps .
+        pip wheel --no-deps . -w dist
+    - name: List wheel files
+      run: |
+        ls dist   
     - name: Install package 
       run: |
         pip install --no-index --find-links=dist --verbose pyvinecopulib
