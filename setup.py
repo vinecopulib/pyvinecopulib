@@ -25,7 +25,7 @@ setup(
                               'lib/vinecopulib/include', 'lib/wdm/include'
                           ],
                           language='c++',
-                          cxx_std=14)
+                          cxx_std=17)
     ],
     cmdclass={'build_ext': build_ext},
     zip_safe=False,
