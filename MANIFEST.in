@@ -1,4 +1,4 @@
-include README.md LICENSE requirements.txt
+include README.md LICENSE 
 recursive-include src *
 recursive-include lib/boost *.hpp *.h
 recursive-include lib/eigen/Eigen *
