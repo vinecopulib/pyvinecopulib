@@ -54,7 +54,7 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude=lib
     - name: Create wheel distribution 
       run: |
-        python setup.py bdist_wheel 
+        pip wheel --no-deps .
     - name: Install package 
       run: |
         pip install --no-index --find-links=dist --verbose pyvinecopulib
