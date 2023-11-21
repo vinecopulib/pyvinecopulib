@@ -22,6 +22,7 @@ high-performance implementations of the core features of the popular
 [VineCopula R library](https://github.com/tnagler/VineCopula), in particular
 inference algorithms for both vine copula and bivariate copula models.
 Advantages over VineCopula are  
+
 * a stand-alone C++ library with interfaces to both R and Python,
 * a sleaker and more modern API,
 * shorter runtimes and lower memory consumption, especially in high dimensions,
@@ -48,11 +49,10 @@ Note the `--recursive` option which is needed for the `eigen`, `vinecopulib` and
 
 ```bash
 git clone --recursive https://github.com/vinecopulib/pyvinecopulib.git
-pip install -r ./pyvinecopulib/requirements.txt
 pip install ./pyvinecopulib
 ```
 
-### Examples 
+### Examples
 
 Jupyter notebooks with examples can be found in the examples folder.
 
@@ -63,16 +63,15 @@ instructions how to use it, check out our
 [website](https://vinecopulib.github.io/pyvinecopulib/) or the `docs/` folder
 in this repository.
 
-
 #### Building the documentation
 
 Documentation for the example project is generated using Sphinx and the "Read the Docs" theme.
 The following command generates HTML-based reference documentation; for other
 formats please refer to the Sphinx manual:
 
- * `pip install sphinx-rtd-theme`
- - `cd pyvinecopulib/docs`
- - `python3 serve_sphinx.py`
+* `pip install sphinx-rtd-theme`
+* `cd pyvinecopulib/docs`
+* `python3 serve_sphinx.py`
 
 ### License
 
@@ -97,4 +96,3 @@ project.
 If you have any questions regarding the library, feel free to
 [open an issue](https://github.com/pyvinecopulib/pyvinecopulib/issues/new) or
 send a mail to <info@vinecopulib.org>.
-

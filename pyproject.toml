@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=64.0.0", "setuptools_scm>=8.0.0", "pybind11>=2.10.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyvinecopulib"
+dynamic = ["version"]
+authors = [
+  { name="Thibault Vatter", email="info@vinecopulib.com" },
+  { name="Thomas Nagler", email="info@vinecopulib.com" },
+]
+description = "A python interface to vinecopulib"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.8"
+keywords = ['copula', 'vines copulas', 'pair-copulas constructions']
+classifiers = [
+        'Development Status :: 3 - Alpha',
+        'Intended Audience :: Financial and Insurance Industry',
+        'Intended Audience :: Healthcare Industry',
+        'Intended Audience :: Information Technology',
+        'Intended Audience :: Other Audience',
+        'Intended Audience :: Science/Research',
+        'Intended Audience :: Telecommunications Industry',
+        'Topic :: Scientific/Engineering',
+        'Topic :: Scientific/Engineering :: Mathematics',
+        'Programming Language :: C++',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'License :: OSI Approved :: MIT License'
+]
+dependencies = [
+  'pybind11>=2.10.0',
+  'setuptools>=64.0.0',
+  'setuptools_scm>=8.0.0',
+  'numpy>=1.14'
+]
+
+[tool.setuptools_scm]
+
+[project.urls]
+Homepage = "https://github.com/vinecopulib/pyvinecopulib/"
+Documentation = "https://vinecopulib.github.io/pyvinecopulib"
+Repository = "https://github.com/vinecopulib/pyvinecopulib.git"
+Issues = "https://github.com/vinecopulib/pyvinecopulib/issues"
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "src"
+]
