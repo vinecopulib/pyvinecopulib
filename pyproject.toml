@@ -12,7 +12,7 @@ authors = [
 description = "A python interface to vinecopulib"
 readme = "README.md"
 license = {file = "LICENSE"}
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 keywords = ['copula', 'vines copulas', 'pair-copulas constructions']
 classifiers = [
         'Development Status :: 3 - Alpha',
@@ -25,7 +25,6 @@ classifiers = [
         'Topic :: Scientific/Engineering',
         'Topic :: Scientific/Engineering :: Mathematics',
         'Programming Language :: C++',
-        'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
