@@ -31,11 +31,14 @@ classifiers = [
         'Programming Language :: Python :: 3.11',
         'License :: OSI Approved :: MIT License'
 ]
+dependencies = [
+  'pybind11>=2.10.0',
+  'setuptools>=64.0.0',
+  'setuptools_scm>=8.0.0',
+  'numpy>=1.14'
+]
 
 [tool.setuptools_scm]
-
-[tool.setuptools.dynamic]
-dependencies = { file = ["requirements.txt"] }
 
 [project.urls]
 Homepage = "https://github.com/vinecopulib/pyvinecopulib/"
