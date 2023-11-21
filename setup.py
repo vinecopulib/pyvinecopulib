@@ -23,7 +23,9 @@ setup(
                               'lib/boost', 'lib/eigen',
                               'lib/eigen/unsupported',
                               'lib/vinecopulib/include', 'lib/wdm/include'
-                          ])
+                          ],
+                          language='c++',
+                          cxx_std=11)
     ],
     cmdclass={'build_ext': build_ext},
     zip_safe=False,
