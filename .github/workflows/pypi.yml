@@ -55,7 +55,12 @@ jobs:
         python -m build --wheel
     - name: Install package 
       run: |
-        pip install --no-index --find-links=dist --verbose pyvinecopulib
+        if ls dist/vinecopulib-*.whl 1> /dev/null 2>&1; then
+          pip install --find-links=dist --pre mypackage
+        else
+          echo "Wheel file for mypackage not found in dist/."
+          exit 1
+        fi
     - name: Test with pytest
       run: |
         pip install pytest
