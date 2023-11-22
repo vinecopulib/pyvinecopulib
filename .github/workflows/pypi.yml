@@ -17,7 +17,7 @@ jobs:
           - architecture: "x64"
             platform-vcvars: "x86_amd64"
             platform-msbuild: "x64"
-        python-version: ["3.8", "3.9", "3.10", "3.11"]
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
         exclude:
           - platform: macos-latest
             architecture: "x86"
@@ -39,30 +39,26 @@ jobs:
       if: contains(matrix.platform, 'windows')
       run: |
         cmd "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.platform-vcvars }}
-    - name: Install dependencies
+    - name: Upgrade pip and install build/lint/test dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install wheel
-        pip install -r requirements/default.txt
+        pip install flake8 build pytest
     - name: Lint with flake8
       run: |
-        pip install flake8
         # stop the build if there are Python syntax errors or undefined names
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=lib
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude=lib
     - name: Create wheel distribution 
       run: |
-        pip wheel --no-deps . -w dist
-    - name: List wheel files
+        python -m build --wheel
+    - name: Install package (prevents pip from looking for PyPI's version)
       run: |
-        ls dist   
-    - name: Install package 
-      run: |
+        python scripts/generate_requirements.py
+        pip install -r requirements_default.txt
         pip install --no-index --find-links=dist --verbose pyvinecopulib
     - name: Test with pytest
       run: |
-        pip install pytest
         pytest tests -r a
     - name: Upload binaries
       uses: actions/upload-artifact@v3
@@ -89,14 +85,13 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: ${{ matrix.python-version }}
-    - name: Install dependencies
+    - name: Upgrade pip and install build dependency
       run: |
         python -m pip install --upgrade pip
-        pip install wheel
-        pip install -r requirements/default.txt
+        pip install build
     - name: Create source distribution 
       run: |
-        python setup.py sdist
+        python -m build --sdist
     - name: Download binaries
       uses: actions/download-artifact@v3
       with:
