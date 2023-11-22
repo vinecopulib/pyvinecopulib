@@ -2,9 +2,8 @@
 """Generate *.txt (e.g., requirements.txt) files from pyproject.toml."""
 
 import sys
-
-import sys
 from pathlib import Path
+from typing import List
 
 try:  # standard module since Python 3.11
   import tomllib as toml
@@ -23,12 +22,12 @@ header = [
 ]
 
 
-def generate_requirement_file(name: str, req_list: list[str]) -> None:
+def generate_requirement_file(name: str, req_list: List[str]) -> None:
   req_fname = repo_dir / f"{name}.txt"
   req_fname.write_text("\n".join(header + req_list) + "\n")
 
 
-def main(name: str="requirements_default") -> None:
+def main(name: str = "requirements_default") -> None:
   pyproject = toml.loads((repo_dir / "pyproject.toml").read_text())
 
   generate_requirement_file(name, pyproject["project"]["dependencies"])
