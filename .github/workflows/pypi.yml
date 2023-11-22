@@ -53,12 +53,15 @@ jobs:
     - name: Create wheel distribution 
       run: |
         python -m build --wheel
+    - name: List wheel files
+      run: |
+        ls dist
     - name: Install package 
       run: |
-        if ls dist/vinecopulib-*.whl 1> /dev/null 2>&1; then
-          pip install --find-links=dist --pre mypackage
+        if ls dist/pyvinecopulib-*.whl 1> /dev/null 2>&1; then
+          pip install --find-links=dist --pre pyvinecopulib
         else
-          echo "Wheel file for mypackage not found in dist/."
+          echo "Wheel file for pyvinecopulib not found in dist/."
           exit 1
         fi
     - name: Test with pytest
