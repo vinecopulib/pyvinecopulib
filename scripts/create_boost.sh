@@ -12,13 +12,13 @@
 
 ## (1) Adjust these variables as needed
 ## -- repo where the boost will be packaged
-pkgdir="${HOME}/Dropbox/github/pyvinecopulib"
+pkgdir="${HOME}/dev/py/pyvinecopulib"
 ## -- repo where the boost sources are currently 
 srcdir="${HOME}/Downloads"
 ## -- current boost sources, placed eg in ${pkgdir}
-boosttargz="boost_1_71_0.tar.gz"
+boosttargz="boost_1_84_0.tar.gz"
 ## -- current package version and date (and other metadata as needed)
-date="2019-08-30"
+date="2024-01-24"
 
 ## (2) Additional resources we require and need to test for
 ## 'progs' lists the programs we need
