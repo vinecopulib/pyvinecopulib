@@ -1,6 +1,6 @@
 # Import the required libraries
-import pyvinecopulib as pv
 import numpy as np
+import pyvinecopulib as pv
 
 # Simulate some data
 np.random.seed(1234)  # seed for the random generator
