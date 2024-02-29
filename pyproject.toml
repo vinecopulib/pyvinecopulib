@@ -56,4 +56,5 @@ pythonpath = [
 
 [tool.cibuildwheel]
 test-requires = "pytest"
-test-command = "pytest tests -r a"
+test-command = "pytest {project}/tests -r a"
+build = "cp3{9,10,11,12}-*"
