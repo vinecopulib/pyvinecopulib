@@ -64,70 +64,73 @@ jobs:
     - name: Test with pytest
       run: |
         pytest tests -r a
+    - name: Build wheels
+      uses: pypa/cibuildwheel@v2.16.5
     - name: Upload binaries
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: dist 
-        path: dist
- 
-  publish:
+        name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
+        path: ./wheelhouse/*.whl
+
+  build_sdist:
+    runs-on: ubuntu-latest
     needs: build
-    strategy:
-      max-parallel: 1
-      matrix:
-        platform: [ubuntu-latest]
-        python-version: [3.8]
-    
-    runs-on: ${{ matrix.platform }}
-    
     steps:
     - name: Checkout project 
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         submodules: recursive
     - name: Get history and tags for SCM versioning to work
       run: |
         git fetch --prune --unshallow
         git fetch --depth=1 origin +refs/tags/*:refs/tags/*
-    - name: Set up Python ${{ matrix.python-version }}
+    - name: Set up Python 3.8
       uses: actions/setup-python@v4
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: 3.8
     - name: Upgrade pip and install build dependency
       run: |
         python -m pip install --upgrade pip
         pip install build
     - name: Create source distribution 
       run: |
-        python -m build --sdist
-    - name: Download binaries
-      uses: actions/download-artifact@v3
+        pipx run build --sdist
+    - name: Upload binaries
+      uses: actions/upload-artifact@v4
       with:
-        name: dist
-        path: dist/
-    - name: pre-PyPI
-      run: |
-        sudo apt install rename
-        cd dist
-        rename 's/linux/manylinux1/' *linux* #rename to manylinux1 to make PYPI accept the package
-        cd ..
-        ls dist/
-    - name: Publish distribution Test PyPI
-      if: |
-        job.status == 'success' 
-          && github.event_name == 'push' 
-          && github.ref == 'refs/heads/dev'
-      uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        user: __token__
-        password: ${{ secrets.test_pypi_password }}
-        repository_url: https://test.pypi.org/legacy/
-    - name: Publish distribution to PyPI
-      if: |
-        job.status == 'success' 
-          && github.event_name == 'push' 
-          && startsWith(github.event.ref, 'refs/tags')
-      uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        user: __token__
-        password: ${{ secrets.pypi_password }}
+        name: cibw-sdist
+        path: dist/*.tar.gz
+
+  upload_to_pypi:
+    needs: [build, build_sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download cibw artifacts
+        uses: actions/download-artifact@v4
+        with:
+          # unpacks all CIBW artifacts into dist/
+          pattern: cibw-*
+          path: dist
+          merge-multiple: true
+      - name: Publish distribution Test PyPI
+        if: |
+          job.status == 'success' 
+            && github.event_name == 'push' 
+            && github.ref == 'refs/heads/dev'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.test_pypi_password }}
+          repository_url: https://test.pypi.org/legacy/
+      - name: Publish distribution to PyPI
+        if: |
+          job.status == 'success' 
+            && github.event_name == 'push' 
+            && startsWith(github.event.ref, 'refs/tags')
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.pypi_password }}
