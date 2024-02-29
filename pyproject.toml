@@ -56,4 +56,4 @@ pythonpath = [
 
 [tool.cibuildwheel]
 test-requires = "pytest"
-test-command = "pytest pyvinecopulib/tests"
+test-command = "pytest tests -r a"

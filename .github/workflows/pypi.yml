@@ -24,6 +24,7 @@ jobs:
           - platform: ubuntu-latest
             architecture: "x86"
 
+    name: Build wheels on ${{ matrix.platform }}
     runs-on: ${{ matrix.platform }}
 
     steps:
