@@ -53,3 +53,7 @@ Issues = "https://github.com/vinecopulib/pyvinecopulib/issues"
 pythonpath = [
   "src"
 ]
+
+[tool.cibuildwheel]
+test-requires = "pytest"
+test-command = "pytest pyvinecopulib/tests"
