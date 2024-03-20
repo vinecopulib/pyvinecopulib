@@ -10,6 +10,7 @@ jobs:
       matrix:
         # macos-13 is an intel runner, macos-14 is apple silicon
         python: [38, 39, 310, 311, 312]
+        os: [ubuntu-latest, windows-latest, macos-13, macos-14]
         include:
           - os: ubuntu-latest
             platform_id: manylinux_x86_64
@@ -21,7 +22,7 @@ jobs:
             platform_id: macosx_arm64
 
 
-    name: Build wheel on ${{ matrix.os }} for cp${{ matrix.python }}-${{ matrix.platform_id }}
+    name: Build and test wheel on ${{ matrix.os }} for cp${{ matrix.python }}-${{ matrix.platform_id }}
     runs-on: ${{ matrix.os }}
 
     steps:
