@@ -8,7 +8,8 @@ jobs:
       max-parallel: 16
       fail-fast: false
       matrix:
-        platform: [ubuntu-latest, macos-latest, windows-latest]
+        # macos-13 is an intel runner, macos-14 is apple silicon
+        platform: [ubuntu-latest, windows-latest, macos-13, macos-14]
         architecture: ["x86", "x64"]
         include:
           - architecture: "x86"
@@ -17,13 +18,15 @@ jobs:
           - architecture: "x64"
             platform-vcvars: "x86_amd64"
             platform-msbuild: "x64"
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
         exclude:
-          - platform: macos-latest
+          - platform: macos-13
+            architecture: "x86"
+          - platform: macos-14
             architecture: "x86"
           - platform: ubuntu-latest
             architecture: "x86"
 
+    name: Build wheels on ${{ matrix.platform }}
     runs-on: ${{ matrix.platform }}
 
     steps:
@@ -31,95 +34,88 @@ jobs:
       uses: actions/checkout@v3
       with:
         submodules: recursive
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
+    - name: Get history and tags for SCM versioning to work
+      run: |
+        git fetch --prune --unshallow
+        git fetch --depth=1 origin +refs/tags/*:refs/tags/*
     - name: Visual Studio Command Prompt tool
       if: contains(matrix.platform, 'windows')
       run: |
         cmd "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.platform-vcvars }}
-    - name: Upgrade pip and install build/lint/test dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install flake8 build pytest
     - name: Lint with flake8
       run: |
+        pip3 install flake8
         # stop the build if there are Python syntax errors or undefined names
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=lib
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude=lib
-    - name: Create wheel distribution 
-      run: |
-        python -m build --wheel
-    - name: Install package (prevents pip from looking for PyPI's version)
-      run: |
-        python scripts/generate_requirements.py
-        pip install -r requirements_default.txt
-        pip install --no-index --find-links=dist --verbose pyvinecopulib
-    - name: Test with pytest
-      run: |
-        pytest tests -r a
+    - name: Build wheels and test wheels
+      uses: pypa/cibuildwheel@v2.16.5
     - name: Upload binaries
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: dist 
-        path: dist
- 
-  publish:
+        name: cibw-wheels-${{ matrix.platform }}-${{ strategy.job-index }}
+        path: ./wheelhouse/*.whl
+
+  build_sdist:
+    runs-on: ubuntu-latest
     needs: build
-    strategy:
-      max-parallel: 1
-      matrix:
-        platform: [ubuntu-latest]
-        python-version: [3.8]
-    
-    runs-on: ${{ matrix.platform }}
-    
     steps:
     - name: Checkout project 
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         submodules: recursive
-    - name: Set up Python ${{ matrix.python-version }}
+    - name: Get history and tags for SCM versioning to work
+      run: |
+        git fetch --prune --unshallow
+        git fetch --depth=1 origin +refs/tags/*:refs/tags/*
+    - name: Set up Python 3.8
       uses: actions/setup-python@v4
       with:
-        python-version: ${{ matrix.python-version }}
+        python-version: 3.8
     - name: Upgrade pip and install build dependency
       run: |
         python -m pip install --upgrade pip
         pip install build
     - name: Create source distribution 
       run: |
-        python -m build --sdist
-    - name: Download binaries
-      uses: actions/download-artifact@v3
+        pipx run build --sdist
+    - name: Upload binaries
+      uses: actions/upload-artifact@v4
       with:
-        name: dist
-        path: dist/
-    - name: pre-PyPI
-      run: |
-        sudo apt install rename
-        cd dist
-        rename 's/linux/manylinux1/' *linux* #rename to manylinux1 to make PYPI accept the package
-        cd ..
-        ls dist/
-    - name: Publish distribution Test PyPI
-      if: |
-        job.status == 'success' 
-          && github.event_name == 'push' 
-          && github.ref == 'refs/heads/dev'
-      uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        user: __token__
-        password: ${{ secrets.test_pypi_password }}
-        repository_url: https://test.pypi.org/legacy/
-    - name: Publish distribution to PyPI
-      if: |
-        job.status == 'success' 
-          && github.event_name == 'push' 
-          && startsWith(github.event.ref, 'refs/tags')
-      uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        user: __token__
-        password: ${{ secrets.pypi_password }}
+        name: cibw-sdist
+        path: dist/*.tar.gz
+
+  upload_to_pypi:
+    needs: [build, build_sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download cibw artifacts
+        uses: actions/download-artifact@v4
+        with:
+          # unpacks all CIBW artifacts into dist/
+          pattern: cibw-*
+          path: dist
+          merge-multiple: true
+      - name: Publish distribution Test PyPI
+        if: |
+          job.status == 'success' 
+            && github.event_name == 'push' 
+            && github.ref == 'refs/heads/dev'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.test_pypi_password }}
+          repository_url: https://test.pypi.org/legacy/
+      - name: Publish distribution to PyPI
+        if: |
+          job.status == 'success' 
+            && github.event_name == 'push' 
+            && startsWith(github.event.ref, 'refs/tags')
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.pypi_password }}
