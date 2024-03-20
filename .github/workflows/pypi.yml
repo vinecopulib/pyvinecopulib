@@ -9,25 +9,20 @@ jobs:
       fail-fast: false
       matrix:
         # macos-13 is an intel runner, macos-14 is apple silicon
-        platform: [ubuntu-latest, windows-latest, macos-13, macos-14]
-        architecture: ["x86", "x64"]
+        python: [38, 39, 310, 311, 312]
         include:
-          - architecture: "x86"
-            platform-vcvars: "x86"
-            platform-msbuild: "Win32"
-          - architecture: "x64"
-            platform-vcvars: "x86_amd64"
-            platform-msbuild: "x64"
-        exclude:
-          - platform: macos-13
-            architecture: "x86"
-          - platform: macos-14
-            architecture: "x86"
-          - platform: ubuntu-latest
-            architecture: "x86"
+          - os: ubuntu-latest
+            platform_id: manylinux_x86_64
+          - os: windows-latest
+            platform_id: win_amd64
+          - os: macos-13
+            platform_id: macosx_x86_64
+          - os: macos-14
+            platform_id: macosx_arm64
 
-    name: Build wheels on ${{ matrix.platform }}
-    runs-on: ${{ matrix.platform }}
+
+    name: Build wheel on ${{ matrix.os }} for cp${{ matrix.python }}-${{ matrix.platform_id }}
+    runs-on: ${{ matrix.os }}
 
     steps:
     - name: Checkout project 
@@ -38,10 +33,6 @@ jobs:
       run: |
         git fetch --prune --unshallow
         git fetch --depth=1 origin +refs/tags/*:refs/tags/*
-    - name: Visual Studio Command Prompt tool
-      if: contains(matrix.platform, 'windows')
-      run: |
-        cmd "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.platform-vcvars }}
     - name: Lint with flake8
       run: |
         pip3 install flake8
@@ -49,12 +40,15 @@ jobs:
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=lib
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude=lib
-    - name: Build wheels and test wheels
+    - name: Build and test wheels
       uses: pypa/cibuildwheel@v2.16.5
+      env:
+        CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.platform_id }}
+        CIBW_ARCHS: all
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
-        name: cibw-wheels-${{ matrix.platform }}-${{ strategy.job-index }}
+        name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
         path: ./wheelhouse/*.whl
 
   build_sdist:
