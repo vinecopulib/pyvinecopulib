@@ -14,8 +14,16 @@ jobs:
         include:
           - os: ubuntu-latest
             platform_id: manylinux_x86_64
+          - os: ubuntu-latest
+            platform_id: manylinux_i686
+          - os: ubuntu-latest
+            platform_id: musllinux_x86_64
+          - os: ubuntu-latest
+            platform_id: musllinux_i686
           - os: windows-latest
             platform_id: win_amd64
+          - os: windows-latest
+            platform_id: win32
           - os: macos-13
             platform_id: macosx_x86_64
           - os: macos-14
