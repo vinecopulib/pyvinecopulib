@@ -15,10 +15,10 @@ jobs:
           # - { os: ubuntu-latest, cibw_id: manylinux_i686,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
           # - { os: ubuntu-latest, cibw_id: musllinux_x86_64,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
           # - { os: ubuntu-latest, cibw_id: musllinux_i686,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
-          # - { os: macos-13,    cibw_id: macosx_x86_64, name: Clang,  cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # intel runner
-          # - { os: macos-14,    cibw_id: macosx_arm64, name: Clang,  cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # apple silicon runner
-          # - { os: windows-latest,  cibw_id: win32, name: x32, cc: cl,    cxx: cl,      platform: x32, root_install_dir: 'D:\'}
-          # - { os: windows-latest,  cibw_id: win_amd64, name: x64, cc: cl,    cxx: cl,      platform: x64, root_install_dir: 'D:\'}
+          - { os: macos-13,    cibw_id: macosx_x86_64, name: Clang,  cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # intel runner
+          - { os: macos-14,    cibw_id: macosx_arm64, name: Clang,  cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # apple silicon runner
+          - { os: windows-latest,  cibw_id: win32, name: x32, cc: cl,    cxx: cl,      platform: x32, root_install_dir: 'D:\'}
+          - { os: windows-latest,  cibw_id: win_amd64, name: x64, cc: cl,    cxx: cl,      platform: x64, root_install_dir: 'D:\'}
     env:
       BOOST_VERSION: 1.84.0
       EIGEN_VERSION: 3.4.0
