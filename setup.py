@@ -6,7 +6,6 @@ from setuptools import setup
 
 
 def find_include_dirs():
-  print(os.environ)
   boost_include = os.environ.get("Boost_INCLUDE_DIR")
   if not boost_include:
     raise RuntimeError("Boost_INCLUDE_DIR environment variables must be set.")
@@ -14,6 +13,14 @@ def find_include_dirs():
   eigen_include = os.environ.get("EIGEN3_INCLUDE_DIR")
   if not eigen_include:
     raise RuntimeError("EIGEN3_INCLUDE_DIR environment variables must be set.")
+
+  # List the contents of the include directories for debugging
+  print(f"Contents of Boost include directory: {os.listdir(boost_include)}")
+  print(f"Contents of Eigen include directory: {os.listdir(eigen_include)}")
+  if os.path.isdir(os.path.join(eigen_include, "unsupported")):
+    print(
+      f"Contents of Eigen unsupported directory: {os.listdir(os.path.join(eigen_include, 'unsupported'))}"
+    )
 
   include_dirs = [
     boost_include,

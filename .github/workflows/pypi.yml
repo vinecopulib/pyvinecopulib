@@ -52,8 +52,8 @@ jobs:
       run: |
         # use the virtual environment on macOS and Linux
         if [ "${{ matrix.cfg.os }}" != "windows-latest" ]; then
-          python3 -m venv ${PYTHON_VENV_ROOT}
-          source ${PYTHON_VENV_ROOT}/bin/activate
+        python3 -m venv ${PYTHON_VENV_ROOT}
+        source ${PYTHON_VENV_ROOT}/bin/activate
         fi
         pip3 install flake8
         # stop the build if there are Python syntax errors or undefined names
