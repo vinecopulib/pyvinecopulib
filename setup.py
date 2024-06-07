@@ -6,6 +6,7 @@ from setuptools import setup
 
 
 def find_include_dirs():
+  print(os.environ)
   boost_include = os.environ.get("Boost_INCLUDE_DIR")
   if not boost_include:
     raise RuntimeError("Boost_INCLUDE_DIR environment variables must be set.")
