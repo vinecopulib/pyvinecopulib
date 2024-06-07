@@ -16,23 +16,23 @@ def find_include_dirs():
   if not eigen_include:
     raise RuntimeError("EIGEN3_INCLUDE_DIR environment variables must be set.")
 
-  # Debugging: Print the include directories
-  print(f"Boost include directory: {boost_include}")
-  print(f"Eigen include directory: {eigen_include}")
+  # # Debugging: Print the include directories
+  # print(f"Boost include directory: {boost_include}")
+  # print(f"Eigen include directory: {eigen_include}")
 
-  # Check if directories exist and are accessible
-  if not os.path.isdir(boost_include):
-    raise RuntimeError(f"Boost include directory not found: {boost_include}")
-  if not os.path.isdir(eigen_include):
-    raise RuntimeError(f"Eigen include directory not found: {eigen_include}")
+  # # Check if directories exist and are accessible
+  # if not os.path.isdir(boost_include):
+  #   raise RuntimeError(f"Boost include directory not found: {boost_include}")
+  # if not os.path.isdir(eigen_include):
+  #   raise RuntimeError(f"Eigen include directory not found: {eigen_include}")
 
-  # List the contents of the include directories for debugging
-  print(f"Contents of Boost include directory: {os.listdir(boost_include)}")
-  print(f"Contents of Eigen include directory: {os.listdir(eigen_include)}")
-  if os.path.isdir(os.path.join(eigen_include, "unsupported")):
-    print(
-      f"Contents of Eigen unsupported directory: {os.listdir(os.path.join(eigen_include, 'unsupported'))}"
-    )
+  # # List the contents of the include directories for debugging
+  # print(f"Contents of Boost include directory: {os.listdir(boost_include)}")
+  # print(f"Contents of Eigen include directory: {os.listdir(eigen_include)}")
+  # if os.path.isdir(os.path.join(eigen_include, "unsupported")):
+  #   print(
+  #     f"Contents of Eigen unsupported directory: {os.listdir(os.path.join(eigen_include, 'unsupported'))}"
+  #   )
 
   include_dirs = [
     boost_include,
