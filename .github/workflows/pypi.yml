@@ -9,30 +9,56 @@ jobs:
       matrix:
         # macos-13 is an intel runner, macos-14 is apple silicon
         python: [38, 39, 310, 311, 312]
-        os:
-          - [ubuntu-latest, manylinux_x86_64]
-          - [ubuntu-latest, manylinux_i686]
-          - [ubuntu-latest, musllinux_x86_64]
-          - [ubuntu-latest, musllinux_i686]
-          - [windows-latest, win_amd64]
-          - [windows-latest, win32]
-          - [macos-13, macosx_x86_64]
-          - [macos-14, macosx_arm64]
+        cfg:
+          - { os: ubuntu-latest, cibw_id: manylinux_x86_64,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
+          - { os: ubuntu-latest, cibw_id: manylinux_i686,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
+          - { os: ubuntu-latest, cibw_id: musllinux_x86_64,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
+          - { os: ubuntu-latest, cibw_id: musllinux_i686,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
+          - { os: macos-13,    cibw_id: macosx_x86_64, name: Clang,  cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # intel runner
+          - { os: macos-14,    cibw_id: macosx_arm64, name: Clang,  cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # apple silicon runner
+          - { os: windows-latest,  cibw_id: win32, name: x32, cc: cl,    cxx: cl,      platform: x32, root_install_dir: 'D:\'}
+          - { os: windows-latest,  cibw_id: win_amd64, name: x64, cc: cl,    cxx: cl,      platform: x64, root_install_dir: 'D:\'}
+    env:
+      BOOST_VERSION: 1.84.0
+      EIGEN_VERSION: 3.4.0
 
 
-
-    name: Build and test on ${{ matrix.os[0] }} for cp${{ matrix.python }}-${{ matrix.os[1] }}
-    runs-on: ${{ matrix.os[0] }}
+    name: Build and test on ${{ matrix.cfg.os }} for cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
+    runs-on: ${{ matrix.cfg.os }}
 
     steps:
     - name: Checkout project 
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         submodules: recursive
     - name: Get history and tags for SCM versioning to work
       run: |
         git fetch --prune --unshallow
         git fetch --depth=1 origin +refs/tags/*:refs/tags/*
+    - name: Install dependencies
+      id: install-dependencies
+      uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@better-actions
+      with:
+          os: ${{ matrix.cfg.os }}
+          platform: ${{ matrix.cfg.platform }}
+          boost_install_dir: ${{ matrix.cfg.root_install_dir }}
+          eigen_install_dir: ${{ matrix.cfg.root_install_dir }}
+          boost_version: ${{ env.BOOST_VERSION }}
+          eigen_version: ${{ env.EIGEN_VERSION }}
+          wdm: 'false'
+    - name: Set environment variables and path
+      run:   |
+          echo "CC=${{ matrix.cfg.cc }}" >> $GITHUB_ENV
+          echo "CXX=${{ matrix.cfg.cxx }}" >> $GITHUB_ENV
+          echo "BOOST_ROOT=${{ steps.install-dependencies.outputs.BOOST_ROOT }}" >>   $GITHUB_ENV
+          echo "Boost_INCLUDE_DIR =${{ steps.install-dependencies.outputs.BOOST_ROOT }}/  include" >> $GITHUB_ENV
+          echo "EIGEN3_INCLUDE_DIR=${{ steps.install-dependencies.outputs.EIGEN3_ROOT }}/ include/eigen3" >> $GITHUB_ENV
+          if [ "${{ matrix.cfg.os }}" == "windows-latest" ]; then
+            cmd "C:\Program Files (x86)\Microsoft Visual  Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.cfg. platform }}
+            echo "D:\a\vinecopulib\kde1d-cpp\release" >> $GITHUB_PATH
+            echo "D:\a\vinecopulib\kde1d-cpp\release\Release" >> $GITHUB_PATH
+          fi
+      shell: bash
     - name: Lint with flake8
       run: |
         pip3 install flake8
@@ -43,12 +69,12 @@ jobs:
     - name: Build and test wheels
       uses: pypa/cibuildwheel@v2.16.5
       env:
-        CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.os[1] }}
+        CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
         CIBW_ARCHS: all
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
-        name: cibw-wheels-${{ matrix.os }}-${{ matrix.python }}-${{ matrix.os[1] }}
+        name: cibw-wheels-${{ matrix.cfg.os }}-${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
         path: ./wheelhouse/*.whl
 
   build_sdist:
