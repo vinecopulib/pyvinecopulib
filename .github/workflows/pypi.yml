@@ -62,7 +62,7 @@ jobs:
       env:
         CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
         CIBW_ARCHS: all
-        CIBW_ENVIRONMENT: Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=${{steps.install-dependencies.outputs.EIGEN3_ROOT}}/include/eigen3
+        CIBW_ENVIRONMENT: "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=${{steps.install-dependencies.outputs.EIGEN3_ROOT}}/include/eigen3"
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
