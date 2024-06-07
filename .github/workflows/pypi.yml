@@ -62,6 +62,10 @@ jobs:
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude=lib
     - name: Check Boost and Eigen directories
       run: |
+          echo "Current working directory:"
+          pwd
+          echo "Environment variables:"
+          printenv
           echo "Checking Boost and Eigen directories..."
           if [ -d "${{ steps.install-dependencies.outputs.BOOST_ROOT }}/include" ]; then
             echo "Boost include directory exists: ${{ steps.install-dependencies.outputs.BOOST_ROOT }}/include"
