@@ -11,13 +11,13 @@ jobs:
         python: [38, 39, 310, 311, 312]
         cfg:
           - { os: ubuntu-latest, cibw_id: manylinux_x86_64,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
-          - { os: ubuntu-latest, cibw_id: manylinux_i686,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
-          - { os: ubuntu-latest, cibw_id: musllinux_x86_64,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
-          - { os: ubuntu-latest, cibw_id: musllinux_i686,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
-          - { os: macos-13,    cibw_id: macosx_x86_64, name: Clang,  cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # intel runner
-          - { os: macos-14,    cibw_id: macosx_arm64, name: Clang,  cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # apple silicon runner
-          - { os: windows-latest,  cibw_id: win32, name: x32, cc: cl,    cxx: cl,      platform: x32, root_install_dir: 'D:\'}
-          - { os: windows-latest,  cibw_id: win_amd64, name: x64, cc: cl,    cxx: cl,      platform: x64, root_install_dir: 'D:\'}
+          # - { os: ubuntu-latest, cibw_id: manylinux_i686,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
+          # - { os: ubuntu-latest, cibw_id: musllinux_x86_64,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
+          # - { os: ubuntu-latest, cibw_id: musllinux_i686,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
+          # - { os: macos-13,    cibw_id: macosx_x86_64, name: Clang,  cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # intel runner
+          # - { os: macos-14,    cibw_id: macosx_arm64, name: Clang,  cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # apple silicon runner
+          # - { os: windows-latest,  cibw_id: win32, name: x32, cc: cl,    cxx: cl,      platform: x32, root_install_dir: 'D:\'}
+          # - { os: windows-latest,  cibw_id: win_amd64, name: x64, cc: cl,    cxx: cl,      platform: x64, root_install_dir: 'D:\'}
     env:
       BOOST_VERSION: 1.84.0
       EIGEN_VERSION: 3.4.0
@@ -49,15 +49,13 @@ jobs:
           wdm: 'false'
     - name: Set environment variables and path
       run:   |
-          echo "CC=${{ matrix.cfg.cc }}" >> $GITHUB_ENV
-          echo "CXX=${{ matrix.cfg.cxx }}" >> $GITHUB_ENV
-          echo "BOOST_ROOT=${{ steps.install-dependencies.outputs.BOOST_ROOT }}" >>   $GITHUB_ENV
-          echo "Boost_INCLUDE_DIR =${{ steps.install-dependencies.outputs.BOOST_ROOT }}/include" >> $GITHUB_ENV
-          echo "EIGEN3_INCLUDE_DIR=${{ steps.install-dependencies.outputs.EIGEN3_ROOT }}/include/eigen3" >> $GITHUB_ENV
+          echo "CC=${{matrix.cfg.cc}}" >> $GITHUB_ENV
+          echo "CXX=${{matrix.cfg.cxx}}" >> $GITHUB_ENV
+          echo "BOOST_ROOT=${{steps.install-dependencies.outputs.BOOST_ROOT}}" >>   $GITHUB_ENV
+          echo "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include" >> $GITHUB_ENV
+          echo "EIGEN3_INCLUDE_DIR=${{ steps.install-dependencies.outputs.EIGEN3_ROOT}}/include/eigen3" >> $GITHUB_ENV
           if [ "${{ matrix.cfg.os }}" == "windows-latest" ]; then
             cmd "C:\Program Files (x86)\Microsoft Visual  Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.cfg. platform }}
-            echo "D:\a\vinecopulib\kde1d-cpp\release" >> $GITHUB_PATH
-            echo "D:\a\vinecopulib\kde1d-cpp\release\Release" >> $GITHUB_PATH
           fi
       shell: bash
     - name: Lint with flake8
