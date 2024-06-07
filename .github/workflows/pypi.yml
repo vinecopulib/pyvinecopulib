@@ -21,6 +21,7 @@ jobs:
     env:
       BOOST_VERSION: 1.84.0
       EIGEN_VERSION: 3.4.0
+      PYTHON_VENV_ROOT: ${{ github.workspace }}/src/python-venv
 
 
     name: Build and test on ${{ matrix.cfg.os }} for cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
@@ -51,8 +52,8 @@ jobs:
           echo "CC=${{ matrix.cfg.cc }}" >> $GITHUB_ENV
           echo "CXX=${{ matrix.cfg.cxx }}" >> $GITHUB_ENV
           echo "BOOST_ROOT=${{ steps.install-dependencies.outputs.BOOST_ROOT }}" >>   $GITHUB_ENV
-          echo "Boost_INCLUDE_DIR =${{ steps.install-dependencies.outputs.BOOST_ROOT }}/  include" >> $GITHUB_ENV
-          echo "EIGEN3_INCLUDE_DIR=${{ steps.install-dependencies.outputs.EIGEN3_ROOT }}/ include/eigen3" >> $GITHUB_ENV
+          echo "Boost_INCLUDE_DIR =${{ steps.install-dependencies.outputs.BOOST_ROOT }}/include" >> $GITHUB_ENV
+          echo "EIGEN3_INCLUDE_DIR=${{ steps.install-dependencies.outputs.EIGEN3_ROOT }}/include/eigen3" >> $GITHUB_ENV
           if [ "${{ matrix.cfg.os }}" == "windows-latest" ]; then
             cmd "C:\Program Files (x86)\Microsoft Visual  Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.cfg. platform }}
             echo "D:\a\vinecopulib\kde1d-cpp\release" >> $GITHUB_PATH
@@ -61,6 +62,8 @@ jobs:
       shell: bash
     - name: Lint with flake8
       run: |
+        python3 -m venv ${PYTHON_VENV_ROOT}
+        source ${PYTHON_VENV_ROOT}/bin/activate
         pip3 install flake8
         # stop the build if there are Python syntax errors or undefined names
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=lib
