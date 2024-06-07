@@ -22,7 +22,7 @@ jobs:
     env:
       BOOST_VERSION: 1.84.0
       EIGEN_VERSION: 3.4.0
-      PYTHON_VENV_ROOT: ${{ github.workspace }}/src/python-venv
+      PYTHON_VENV_ROOT: ${{github.workspace}}/src/python-venv
 
 
     name: Build and test on ${{ matrix.cfg.os }} for cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
@@ -50,8 +50,11 @@ jobs:
           wdm: 'false'
     - name: Lint with flake8
       run: |
-        python3 -m venv ${PYTHON_VENV_ROOT}
-        source ${PYTHON_VENV_ROOT}/bin/activate
+        # use the virtual environment on macOS and Linux
+        if [ "${{ matrix.cfg.os }}" != "windows-latest" ]; then
+          python3 -m venv ${PYTHON_VENV_ROOT}
+          source ${PYTHON_VENV_ROOT}/bin/activate
+        fi
         pip3 install flake8
         # stop the build if there are Python syntax errors or undefined names
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=lib
