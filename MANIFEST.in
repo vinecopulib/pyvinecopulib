@@ -2,6 +2,3 @@ include README.md LICENSE
 recursive-include src *
 recursive-include lib/wdm/include *.hpp
 recursive-include lib/vinecopulib/include *.hpp *.ipp
-recursive-include Boost_INCLUDE_DIR/boost *.hpp *.h
-recursive-include EIGEN3_INCLUDE_DIR/eigen/Eigen *
-recursive-include EIGEN3_INCLUDE_DIR/eigen/unsupported/Eigen *

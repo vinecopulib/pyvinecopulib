@@ -4,6 +4,8 @@ from pathlib import Path
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 from setuptools import setup
 
+print("Present working directory: ", os.getcwd())
+
 
 def find_include_dirs():
   boost_include = os.environ.get("Boost_INCLUDE_DIR")
