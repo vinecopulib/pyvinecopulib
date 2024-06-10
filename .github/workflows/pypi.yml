@@ -85,8 +85,7 @@ jobs:
       shell: bash
     - name: Check choco Eigen
       run: |
-        choco list --local-only
-        Get-ChildItem -Path C:\ -Recurse -Filter eigen3
+        choco list -l
         Get-ChildItem -Path "C:\ProgramData\chocolatey\lib\eigen*" -Recurse
     - name: Build and test wheels
       uses: pypa/cibuildwheel@v2.16.5
