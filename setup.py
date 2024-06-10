@@ -5,6 +5,7 @@ from pybind11.setup_helpers import Pybind11Extension, build_ext
 from setuptools import setup
 
 print("Present working directory: ", os.getcwd())
+print("Environment variables: ", os.environ)
 
 
 def find_include_dirs():
