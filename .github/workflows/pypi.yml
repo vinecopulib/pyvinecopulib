@@ -102,7 +102,7 @@ jobs:
         python-version: 3.8
     - name: Upgrade pip and install build dependency
       run: |
-        echo "Boost_INCLUDE_DIR =${{steps.install-dependencies.outputs.BOOST_ROOT}}/include" >> $GITHUB_ENV
+        echo "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include" >> $GITHUB_ENV
         echo "EIGEN3_INCLUDE_DIR=/home/runner/work/include/eigen3" >> $GITHUB_ENV
         python -m pip install --upgrade pip
         pip install build
