@@ -75,11 +75,11 @@ jobs:
             exit 1
           fi
   
-          if [ -d '${{steps.install-dependencies.outputs.EIGEN3_ROOT}}include\eigen3' ]; then
-            echo 'Eigen include directory exists: ${{steps.install-dependencies.outputs.EIGEN3_ROOT}}include\eigen3'
-            ls -la '${{steps.install-dependencies.outputs.EIGEN3_ROOT}}include\eigen3'
+          if [ -d '${{matrix.cfg.root_install_dir}}eigen\include\eigen3' ]; then
+            echo 'Eigen include directory exists: ${{matrix.cfg.root_install_dir}}eigen\include\eigen3'
+            ls -la '${{matrix.cfg.root_install_dir}}eigen\include\eigen3'
           else
-            echo 'Eigen include directory does not exist: ${{steps.install-dependencies.outputs.EIGEN3_ROOT}}include\eigen3'
+            echo 'Eigen include directory does not exist: ${{matrix.cfg.root_install_dir}}eigen\include\eigen3'
             exit 1
           fi
       shell: bash
@@ -88,7 +88,7 @@ jobs:
       env:
         CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
         CIBW_ARCHS: all
-        CIBW_ENVIRONMENT_WINDOWS: Boost_INCLUDE_DIR='${{steps.install-dependencies.outputs.BOOST_ROOT}}\include' EIGEN3_INCLUDE_DIR='${{steps.install-dependencies.outputs.EIGEN3_ROOT}}include\eigen3'
+        CIBW_ENVIRONMENT_WINDOWS: Boost_INCLUDE_DIR='${{steps.install-dependencies.outputs.BOOST_ROOT}}\include' EIGEN3_INCLUDE_DIR='${{matrix.cfg.root_install_dir}}eigen\include\eigen3'
         CIBW_ENVIRONMENT_MACOS: "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=${{matrix.cfg.root_install_dir}}/include/eigen3"
         CIBW_ENVIRONMENT_LINUX: "Boost_INCLUDE_DIR=/host${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=/host${{matrix.cfg.root_install_dir}}/include/eigen3"
         CIBW_ENVIRONMENT_PASS_LINUX: "Boost_INCLUDE_DIR EIGEN3_INCLUDE_DIR"
