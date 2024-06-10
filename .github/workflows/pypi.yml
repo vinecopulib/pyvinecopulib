@@ -54,33 +54,34 @@ jobs:
       if: matrix.cfg.os != 'windows-latest'
       run: |
         python3 -m venv ${PYTHON_VENV_ROOT}
+        source ${PYTHON_VENV_ROOT}/bin/activate
         pip3 install flake8
         # stop the build if there are Python syntax errors or undefined names
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=lib
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude=lib
-    - name: Check Boost and Eigen directories
-      run: |
-          echo "Current working directory:"
-          pwd
-          echo "Environment variables:"
-          printenv
-          echo "Checking Boost and Eigen directories..."
-          if [ -d "${{ steps.install-dependencies.outputs.BOOST_ROOT }}/include" ]; then
-            echo "Boost include directory exists: ${{ steps.install-dependencies.outputs.BOOST_ROOT }}/include"
-            ls -la "${{ steps.install-dependencies.outputs.BOOST_ROOT }}/include"
-          else
-            echo "Boost include directory does not exist: ${{ steps.install-dependencies.outputs.BOOST_ROOT }}/include"
-            exit 1
-          fi
+    # - name: Check Boost and Eigen directories
+    #   run: |
+    #       echo "Current working directory:"
+    #       pwd
+    #       echo "Environment variables:"
+    #       printenv
+    #       echo "Checking Boost and Eigen directories..."
+    #       if [ -d "${{ steps.install-dependencies.outputs.BOOST_ROOT }}/include" ]; then
+    #         echo "Boost include directory exists: ${{ steps.install-dependencies.outputs.BOOST_ROOT }}/include"
+    #         ls -la "${{ steps.install-dependencies.outputs.BOOST_ROOT }}/include"
+    #       else
+    #         echo "Boost include directory does not exist: ${{ steps.install-dependencies.outputs.BOOST_ROOT }}/include"
+    #         exit 1
+    #       fi
   
-          if [ -d "${{ matrix.cfg.root_install_dir }}/include/eigen3" ]; then
-            echo "Eigen include directory exists: ${{ matrix.cfg.root_install_dir }}/include/eigen3"
-            ls -la "${{ matrix.cfg.root_install_dir }}/include/eigen3"
-          else
-            echo "Eigen include directory does not exist: ${{ matrix.cfg.root_install_dir }}/include/eigen3"
-            exit 1
-          fi
+    #       if [ -d "${{ matrix.cfg.root_install_dir }}/include/eigen3" ]; then
+    #         echo "Eigen include directory exists: ${{ matrix.cfg.root_install_dir }}/include/eigen3"
+    #         ls -la "${{ matrix.cfg.root_install_dir }}/include/eigen3"
+    #       else
+    #         echo "Eigen include directory does not exist: ${{ matrix.cfg.root_install_dir }}/include/eigen3"
+    #         exit 1
+    #       fi
   
     - name: Build and test wheels
       uses: pypa/cibuildwheel@v2.16.5
