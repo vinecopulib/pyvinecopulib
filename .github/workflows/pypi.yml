@@ -75,11 +75,11 @@ jobs:
             exit 1
           fi
   
-          if [ -d '${{matrix.cfg.root_install_dir}}eigen\include\eigen3' ]; then
-            echo 'Eigen include directory exists: ${{matrix.cfg.root_install_dir}}eigen\include\eigen3'
-            ls -la '${{matrix.cfg.root_install_dir}}eigen\include\eigen3'
+          if [ -d '${{matrix.cfg.root_install_dir}}' ]; then
+            echo 'Eigen include directory exists: ${{matrix.cfg.root_install_dir}}'
+            ls -la '${{matrix.cfg.root_install_dir}}'
           else
-            echo 'Eigen include directory does not exist: ${{matrix.cfg.root_install_dir}}eigen\include\eigen3'
+            echo 'Eigen include directory does not exist: ${{matrix.cfg.root_install_dir}}'
             exit 1
           fi
       shell: bash
