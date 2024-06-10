@@ -109,6 +109,8 @@ jobs:
         pip install build
     - name: Create source distribution 
       run: |
+        echo $Boost_INCLUDE_DIR
+        echo $EIGEN3_INCLUDE_DIR
         pipx run build --sdist
     - name: Upload binaries
       uses: actions/upload-artifact@v4
