@@ -2,6 +2,10 @@ name: Build Status
 
 on: [push, pull_request]
 
+env:
+  BOOST_VERSION: 1.84.0
+  EIGEN_VERSION: 3.4.0
+
 jobs:
   build:
     strategy:
@@ -12,16 +16,14 @@ jobs:
         python: [38]
         cfg:
           - { os: ubuntu-latest, cibw_id: manylinux_x86_64,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
-          # - { os: ubuntu-latest, cibw_id: manylinux_i686,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
-          # - { os: ubuntu-latest, cibw_id: musllinux_x86_64,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
-          # - { os: ubuntu-latest, cibw_id: musllinux_i686,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
-          # - { os: macos-13,    cibw_id: macosx_x86_64, name: Clang,  cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # intel runner
-          # - { os: macos-14,    cibw_id: macosx_arm64, name: Clang,  cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # apple silicon runner
-          # - { os: windows-latest,  cibw_id: win32, name: x32, cc: cl,    cxx: cl,      platform: x32, root_install_dir: 'D:\'}
-          # - { os: windows-latest,  cibw_id: win_amd64, name: x64, cc: cl,    cxx: cl,      platform: x64, root_install_dir: 'D:\'}
+          - { os: ubuntu-latest, cibw_id: manylinux_i686,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
+          - { os: ubuntu-latest, cibw_id: musllinux_x86_64,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
+          - { os: ubuntu-latest, cibw_id: musllinux_i686,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
+          - { os: macos-13,    cibw_id: macosx_x86_64, name: Clang,  cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # intel runner
+          - { os: macos-14,    cibw_id: macosx_arm64, name: Clang,  cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # apple silicon runner
+          - { os: windows-latest,  cibw_id: win32, name: x32, cc: cl,    cxx: cl,      platform: x32, root_install_dir: 'D:\'}
+          - { os: windows-latest,  cibw_id: win_amd64, name: x64, cc: cl,    cxx: cl,      platform: x64, root_install_dir: 'D:\'}
     env:
-      BOOST_VERSION: 1.84.0
-      EIGEN_VERSION: 3.4.0
       PYTHON_VENV_ROOT: ${{github.workspace}}/src/python-venv
 
 
@@ -88,7 +90,8 @@ jobs:
       env:
         CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
         CIBW_ARCHS: all
-        # CIBW_ENVIRONMENT: "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=${{matrix.cfg.root_install_dir}}/include/eigen3"
+        CIBW_ENVIRONMENT_WINDOWS: 'Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}\include EIGEN3_INCLUDE_DIR=${{matrix.cfg.root_install_dir}}\include\eigen3'
+        CIBW_ENVIRONMENT_MACOS: "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=${{matrix.cfg.root_install_dir}}/include/eigen3"
         CIBW_ENVIRONMENT_LINUX: "Boost_INCLUDE_DIR=/host${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=/host${{matrix.cfg.root_install_dir}}/include/eigen3"
         CIBW_ENVIRONMENT_PASS_LINUX: "Boost_INCLUDE_DIR EIGEN3_INCLUDE_DIR"
 
@@ -110,6 +113,15 @@ jobs:
       run: |
         git fetch --prune --unshallow
         git fetch --depth=1 origin +refs/tags/*:refs/tags/*
+    - name: Install dependencies
+      id: install-dependencies
+      uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@better-actions
+      with:
+          os: 'ubuntu-latest'
+          boost_install_dir: '/home/runner/work'
+          eigen_install_dir: '/home/runner/work'
+          boost_version: ${{ env.BOOST_VERSION }}
+          eigen_version: ${{ env.EIGEN_VERSION }}
     - name: Set up Python 3.8
       uses: actions/setup-python@v4
       with:
