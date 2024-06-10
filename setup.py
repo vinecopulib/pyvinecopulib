@@ -9,6 +9,7 @@ print("Environment variables: ", os.environ)
 
 
 def find_include_dirs():
+  print("Environment variables: ", os.environ)
   boost_include = os.environ.get("Boost_INCLUDE_DIR")
   if not boost_include:
     raise RuntimeError("Boost_INCLUDE_DIR environment variables must be set.")
