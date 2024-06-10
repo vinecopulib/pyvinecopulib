@@ -51,12 +51,9 @@ jobs:
           eigen_version: ${{ env.EIGEN_VERSION }}
           wdm: 'false'
     - name: Lint with flake8
+      if: matrix.cfg.os != 'windows-latest'
       run: |
-        # use the virtual environment on macOS and Linux
-        if [ "${{ matrix.cfg.os }}" != "windows-latest" ]; then
         python3 -m venv ${PYTHON_VENV_ROOT}
-        source ${PYTHON_VENV_ROOT}/bin/activate
-        fi
         pip3 install flake8
         # stop the build if there are Python syntax errors or undefined names
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=lib
