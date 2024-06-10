@@ -60,39 +60,39 @@ jobs:
         flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=lib
         # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude=lib
-    - name: Check Boost and Eigen directories
-      run: |
-          echo "Current working directory:"
-          pwd
-          echo "Environment variables:"
-          printenv
-          echo "Checking Boost and Eigen directories..."
-          if [ -d '${{steps.install-dependencies.outputs.BOOST_ROOT}}\include' ]; then
-            echo 'Boost include directory exists: ${{steps.install-dependencies.outputs.BOOST_ROOT}}\include'
-            ls -la '${{steps.install-dependencies.outputs.BOOST_ROOT}}\include'
-          else
-            echo 'Boost include directory does not exist: ${{steps.install-dependencies.outputs.BOOST_ROOT}}\include'
-            exit 1
-          fi
+    # - name: Check Boost and Eigen directories
+    #   run: |
+    #       echo "Current working directory:"
+    #       pwd
+    #       echo "Environment variables:"
+    #       printenv
+    #       echo "Checking Boost and Eigen directories..."
+    #       if [ -d '${{steps.install-dependencies.outputs.BOOST_ROOT}}\include' ]; then
+    #         echo 'Boost include directory exists: ${{steps.install-dependencies.outputs.BOOST_ROOT}}\include'
+    #         ls -la '${{steps.install-dependencies.outputs.BOOST_ROOT}}\include'
+    #       else
+    #         echo 'Boost include directory does not exist: ${{steps.install-dependencies.outputs.BOOST_ROOT}}\include'
+    #         exit 1
+    #       fi
   
-          if [ -d '${{matrix.cfg.root_install_dir}}a' ]; then
-            echo 'Eigen include directory exists: ${{matrix.cfg.root_install_dir}}a'
-            ls -la '${{matrix.cfg.root_install_dir}}a'
-          else
-            echo 'Eigen include directory does not exist: ${{matrix.cfg.root_install_dir}}a'
-            exit 1
-          fi
-      shell: bash
-    - name: Check choco Eigen
-      run: |
-        choco list -l
-        Get-ChildItem -Path "C:\ProgramData\chocolatey\lib\eigen*" -Recurse
+    #       if [ -d '${{matrix.cfg.root_install_dir}}a' ]; then
+    #         echo 'Eigen include directory exists: ${{matrix.cfg.root_install_dir}}a'
+    #         ls -la '${{matrix.cfg.root_install_dir}}a'
+    #       else
+    #         echo 'Eigen include directory does not exist: ${{matrix.cfg.root_install_dir}}a'
+    #         exit 1
+    #       fi
+    #   shell: bash
+    # - name: Check choco Eigen
+    #   run: |
+    #     choco list -l
+    #     Get-ChildItem -Path "C:\ProgramData\chocolatey\lib\eigen*" -Recurse
     - name: Build and test wheels
       uses: pypa/cibuildwheel@v2.16.5
       env:
         CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
         CIBW_ARCHS: all
-        CIBW_ENVIRONMENT_WINDOWS: Boost_INCLUDE_DIR='${{steps.install-dependencies.outputs.BOOST_ROOT}}\include' EIGEN3_INCLUDE_DIR='${{matrix.cfg.root_install_dir}}eigen\include\eigen3'
+        CIBW_ENVIRONMENT_WINDOWS: Boost_INCLUDE_DIR='${{steps.install-dependencies.outputs.BOOST_ROOT}}\include' EIGEN3_INCLUDE_DIR='C:\ProgramData\chocolatey\lib\eigen\include'
         CIBW_ENVIRONMENT_MACOS: "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=${{matrix.cfg.root_install_dir}}/include/eigen3"
         CIBW_ENVIRONMENT_LINUX: "Boost_INCLUDE_DIR=/host${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=/host${{matrix.cfg.root_install_dir}}/include/eigen3"
         CIBW_ENVIRONMENT_PASS_LINUX: "Boost_INCLUDE_DIR EIGEN3_INCLUDE_DIR"
