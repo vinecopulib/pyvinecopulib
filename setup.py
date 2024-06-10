@@ -5,12 +5,11 @@ from pybind11.setup_helpers import Pybind11Extension, build_ext
 from setuptools import setup
 
 print("Present working directory: ", os.getcwd())
-print("Environment variables: ", os.environ)
 
 
 def find_include_dirs():
-  print("Environment variables: ", os.environ)
   boost_include = os.environ.get("Boost_INCLUDE_DIR")
+  print("Boost include: ", boost_include)
   if not boost_include:
     raise RuntimeError("Boost_INCLUDE_DIR environment variables must be set.")
 
