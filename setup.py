@@ -8,12 +8,12 @@ print("Present working directory: ", os.getcwd())
 
 
 def find_include_dirs():
-  boost_include = os.environ.get("Boost_INCLUDE_DIR")
+  boost_include = os.environ["Boost_INCLUDE_DIR"]
   print("Boost include: ", boost_include)
   if not boost_include:
     raise RuntimeError("Boost_INCLUDE_DIR environment variables must be set.")
 
-  eigen_include = os.environ.get("EIGEN3_INCLUDE_DIR")
+  eigen_include = os.environ["EIGEN3_INCLUDE_DIR"]
   if not eigen_include:
     raise RuntimeError("EIGEN3_INCLUDE_DIR environment variables must be set.")
 
