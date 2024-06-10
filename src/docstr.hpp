@@ -35,7 +35,13 @@ The copula model is fully characterized by the family, rotation, and
 parameters.)""";
       // Symbol: vinecopulib::Bicop::Bicop
       struct /* ctor */ {
-        // Source: vinecopulib/bicop/class.hpp:27
+        // Source: vinecopulib/bicop/class.hpp:36
+        const char* doc_copy =
+R"""(Copy constructor (deep copy)
+
+Parameter ``other``:
+    Bicop object to copy.)""";
+        // Source: vinecopulib/bicop/implementation/class.ipp:26
         const char* doc_4args_family_rotation_parameters_var_types =
 R"""(Instantiates a specific bivariate copula model.
 
@@ -53,7 +59,7 @@ Parameter ``parameters``:
 Parameter ``var_types``:
     Two strings specifying the types of the variables, e.g., ``("c",
     "d")`` means first variable continuous, second discrete.)""";
-        // Source: vinecopulib/bicop/class.hpp:32
+        // Source: vinecopulib/bicop/implementation/class.ipp:51
         const char* doc_3args_data_controls_var_types =
 R"""(Instantiates from data.
 
@@ -69,34 +75,28 @@ Parameter ``controls``:
 Parameter ``var_types``:
     Two strings specifying the types of the variables, e.g., ``("c",
     "d")`` means first variable continuous, second discrete.)""";
-        // Source: vinecopulib/bicop/class.hpp:36
-        const char* doc_copy =
-R"""(Copy constructor (deep copy)
-
-Parameter ``other``:
-    Bicop object to copy.)""";
-        // Source: vinecopulib/bicop/class.hpp:38
-        const char* doc_1args_filename =
-R"""(Instantiates from a JSON file.
-
-The input file contains four attributes: ``"family"``, ``"rotation"``,
-``"parameters"``, ``"var_types"`` respectively a string for the family
-name, an integer for the rotation, and a numeric matrix for the
-parameters, and a list of two strings for the variable types.
-
-Parameter ``filename``:
-    The name of the JSON file to read.)""";
-        // Source: vinecopulib/bicop/class.hpp:40
+        // Source: vinecopulib/bicop/implementation/class.ipp:90
         const char* doc_1args_input =
 R"""(Instantiates from a nlohmann::json object.
 
 Parameter ``input``:
     The nlohmann::json object to convert from (see ``to_json()`` for
     the structure of the input).)""";
+        // Source: vinecopulib/bicop/implementation/class.ipp:114
+        const char* doc_1args_filename =
+R"""(Instantiates from a JSON file.
+
+The input file contains four attributes: ``"fam"``, ``"rot"``,
+``"par"``, ``"vt"`` respectively a string for the family name, an
+integer for the rotation, and a numeric matrix for the parameters, and
+a list of two strings for the variable types.
+
+Parameter ``filename``:
+    The name of the JSON file to read.)""";
       } ctor;
       // Symbol: vinecopulib::Bicop::aic
       struct /* aic */ {
-        // Source: vinecopulib/bicop/class.hpp:104
+        // Source: vinecopulib/bicop/implementation/class.ipp:386
         const char* doc =
 R"""(Evaluates the Akaike information criterion (AIC).
 
@@ -121,7 +121,7 @@ Parameter ``u``:
       } as_continuous;
       // Symbol: vinecopulib::Bicop::bic
       struct /* bic */ {
-        // Source: vinecopulib/bicop/class.hpp:106
+        // Source: vinecopulib/bicop/implementation/class.ipp:403
         const char* doc =
 R"""(Evaluates the Bayesian information criterion (BIC).
 
@@ -141,7 +141,7 @@ Parameter ``u``:
       } bic;
       // Symbol: vinecopulib::Bicop::cdf
       struct /* cdf */ {
-        // Source: vinecopulib/bicop/class.hpp:79
+        // Source: vinecopulib/bicop/implementation/class.ipp:181
         const char* doc =
 R"""(Evaluates the copula distribution.
 
@@ -155,48 +155,48 @@ Returns:
       } cdf;
       // Symbol: vinecopulib::Bicop::check_data
       struct /* check_data */ {
-        // Source: vinecopulib/bicop/implementation/class.ipp:579
+        // Source: vinecopulib/bicop/implementation/class.ipp:581
         const char* doc = R"""()""";
       } check_data;
       // Symbol: vinecopulib::Bicop::check_data_dim
       struct /* check_data_dim */ {
-        // Source: vinecopulib/bicop/implementation/class.ipp:586
+        // Source: vinecopulib/bicop/implementation/class.ipp:588
         const char* doc = R"""()""";
       } check_data_dim;
       // Symbol: vinecopulib::Bicop::check_fitted
       struct /* check_fitted */ {
-        // Source: vinecopulib/bicop/implementation/class.ipp:971
+        // Source: vinecopulib/bicop/implementation/class.ipp:980
         const char* doc =
 R"""(Checks whether the Bicop object was fitted to data.)""";
       } check_fitted;
       // Symbol: vinecopulib::Bicop::check_rotation
       struct /* check_rotation */ {
-        // Source: vinecopulib/bicop/implementation/class.ipp:944
+        // Source: vinecopulib/bicop/implementation/class.ipp:953
         const char* doc =
 R"""(Checks whether the supplied rotation is valid (only 0, 90, 180, 270
 allowd).)""";
       } check_rotation;
       // Symbol: vinecopulib::Bicop::check_var_types
       struct /* check_var_types */ {
-        // Source: vinecopulib/bicop/implementation/class.ipp:982
+        // Source: vinecopulib/bicop/implementation/class.ipp:991
         const char* doc =
 R"""(Checks whether var_types have the correct length and are either "c" or
 "d".)""";
       } check_var_types;
       // Symbol: vinecopulib::Bicop::check_weights_size
       struct /* check_weights_size */ {
-        // Source: vinecopulib/bicop/implementation/class.ipp:961
+        // Source: vinecopulib/bicop/implementation/class.ipp:970
         const char* doc =
 R"""(Checks whether weights and data have matching sizes.)""";
       } check_weights_size;
       // Symbol: vinecopulib::Bicop::compute_mbic_penalty
       struct /* compute_mbic_penalty */ {
-        // Source: vinecopulib/bicop/implementation/class.ipp:550
+        // Source: vinecopulib/bicop/implementation/class.ipp:552
         const char* doc = R"""()""";
       } compute_mbic_penalty;
       // Symbol: vinecopulib::Bicop::fit
       struct /* fit */ {
-        // Source: vinecopulib/bicop/class.hpp:95
+        // Source: vinecopulib/bicop/implementation/class.ipp:749
         const char* doc =
 R"""(Fits a bivariate copula (with fixed family) to data.
 
@@ -237,12 +237,12 @@ R"""(Adjusts the copula model to a change in the variable order.)""";
       } flip;
       // Symbol: vinecopulib::Bicop::flip_abstract_var_types
       struct /* flip_abstract_var_types */ {
-        // Source: vinecopulib/bicop/implementation/class.ipp:608
+        // Source: vinecopulib/bicop/implementation/class.ipp:610
         const char* doc = R"""()""";
       } flip_abstract_var_types;
       // Symbol: vinecopulib::Bicop::format_data
       struct /* format_data */ {
-        // Source: vinecopulib/bicop/implementation/class.ipp:868
+        // Source: vinecopulib/bicop/implementation/class.ipp:877
         const char* doc =
 R"""(Adds an additional column if there's only one discrete variable;
 removes superfluous columns for continuous variables. (continuous
@@ -260,7 +260,7 @@ models only require two columns, discrete models always four))""";
       } get_bic;
       // Symbol: vinecopulib::Bicop::get_bicop
       struct /* get_bicop */ {
-        // Source: vinecopulib/bicop/implementation/class.ipp:704
+        // Source: vinecopulib/bicop/implementation/class.ipp:708
         const char* doc = R"""()""";
       } get_bicop;
       // Symbol: vinecopulib::Bicop::get_family
@@ -270,7 +270,7 @@ models only require two columns, discrete models always four))""";
       } get_family;
       // Symbol: vinecopulib::Bicop::get_family_name
       struct /* get_family_name */ {
-        // Source: vinecopulib/bicop/class.hpp:52
+        // Source: vinecopulib/bicop/implementation/class.ipp:491
         const char* doc = R"""(Gets the copula family as a string.)""";
       } get_family_name;
       // Symbol: vinecopulib::Bicop::get_loglik
@@ -287,13 +287,13 @@ R"""(Gets the modified bic (only for fitted objects).)""";
       } get_mbic;
       // Symbol: vinecopulib::Bicop::get_n_discrete
       struct /* get_n_discrete */ {
-        // Source: vinecopulib/bicop/implementation/class.ipp:996
+        // Source: vinecopulib/bicop/implementation/class.ipp:1005
         const char* doc =
 R"""(Returns the number of discrete variables.)""";
       } get_n_discrete;
       // Symbol: vinecopulib::Bicop::get_nobs
       struct /* get_nobs */ {
-        // Source: vinecopulib/bicop/class.hpp:63
+        // Source: vinecopulib/bicop/implementation/class.ipp:520
         const char* doc =
 R"""(Gets the number of observations (only for fitted objects).)""";
       } get_nobs;
@@ -308,18 +308,18 @@ in the sense that it can be used in the calculation of fit statistics.)""";
       } get_npars;
       // Symbol: vinecopulib::Bicop::get_parameters
       struct /* get_parameters */ {
-        // Source: vinecopulib/bicop/class.hpp:56
+        // Source: vinecopulib/bicop/implementation/class.ipp:505
         const char* doc = R"""(Gets the parameters.)""";
       } get_parameters;
       // Symbol: vinecopulib::Bicop::get_parameters_lower_bounds
       struct /* get_parameters_lower_bounds */ {
-        // Source: vinecopulib/bicop/class.hpp:120
+        // Source: vinecopulib/bicop/implementation/class.ipp:693
         const char* doc =
 R"""(Gets lower bounds for copula parameters.)""";
       } get_parameters_lower_bounds;
       // Symbol: vinecopulib::Bicop::get_parameters_upper_bounds
       struct /* get_parameters_upper_bounds */ {
-        // Source: vinecopulib/bicop/class.hpp:122
+        // Source: vinecopulib/bicop/implementation/class.ipp:700
         const char* doc =
 R"""(Gets upper bounds for copula parameters.)""";
       } get_parameters_upper_bounds;
@@ -335,12 +335,12 @@ R"""(Gets upper bounds for copula parameters.)""";
       } get_tau;
       // Symbol: vinecopulib::Bicop::get_var_types
       struct /* get_var_types */ {
-        // Source: vinecopulib/bicop/class.hpp:74
+        // Source: vinecopulib/bicop/implementation/class.ipp:642
         const char* doc = R"""(Gets variable types.)""";
       } get_var_types;
       // Symbol: vinecopulib::Bicop::hfunc1
       struct /* hfunc1 */ {
-        // Source: vinecopulib/bicop/class.hpp:81
+        // Source: vinecopulib/bicop/implementation/class.ipp:207
         const char* doc =
 R"""(Evaluates the first h-function.
 
@@ -354,7 +354,7 @@ Parameter ``u``:
       } hfunc1;
       // Symbol: vinecopulib::Bicop::hfunc2
       struct /* hfunc2 */ {
-        // Source: vinecopulib/bicop/class.hpp:83
+        // Source: vinecopulib/bicop/implementation/class.ipp:239
         const char* doc =
 R"""(Evaluates the second h-function.
 
@@ -368,7 +368,7 @@ Parameter ``u``:
       } hfunc2;
       // Symbol: vinecopulib::Bicop::hinv1
       struct /* hinv1 */ {
-        // Source: vinecopulib/bicop/class.hpp:85
+        // Source: vinecopulib/bicop/implementation/class.ipp:272
         const char* doc =
 R"""(Evaluates the inverse of the first h-function.
 
@@ -382,7 +382,7 @@ Parameter ``u``:
       } hinv1;
       // Symbol: vinecopulib::Bicop::hinv2
       struct /* hinv2 */ {
-        // Source: vinecopulib/bicop/class.hpp:87
+        // Source: vinecopulib/bicop/implementation/class.ipp:305
         const char* doc =
 R"""(Evaluates the inverse of the second h-function.
 
@@ -396,7 +396,7 @@ Parameter ``u``:
       } hinv2;
       // Symbol: vinecopulib::Bicop::loglik
       struct /* loglik */ {
-        // Source: vinecopulib/bicop/class.hpp:102
+        // Source: vinecopulib/bicop/implementation/class.ipp:364
         const char* doc =
 R"""(Evaluates the log-likelihood.
 
@@ -413,7 +413,7 @@ Parameter ``u``:
       } loglik;
       // Symbol: vinecopulib::Bicop::mbic
       struct /* mbic */ {
-        // Source: vinecopulib/bicop/class.hpp:108
+        // Source: vinecopulib/bicop/implementation/class.ipp:430
         const char* doc =
 R"""(Evaluates the modified Bayesian information criterion (mBIC).
 
@@ -438,7 +438,7 @@ Parameter ``psi0``:
       } mbic;
       // Symbol: vinecopulib::Bicop::parameters_to_tau
       struct /* parameters_to_tau */ {
-        // Source: vinecopulib/bicop/class.hpp:114
+        // Source: vinecopulib/bicop/implementation/class.ipp:469
         const char* doc =
 R"""(Converts the copula parameters to Kendall's :math:`tau`.
 
@@ -448,7 +448,7 @@ Parameter ``parameters``:
       } parameters_to_tau;
       // Symbol: vinecopulib::Bicop::pdf
       struct /* pdf */ {
-        // Source: vinecopulib/bicop/class.hpp:77
+        // Source: vinecopulib/bicop/implementation/class.ipp:169
         const char* doc =
 R"""(Evaluates the copula density.
 
@@ -465,7 +465,7 @@ Returns:
       } pdf;
       // Symbol: vinecopulib::Bicop::prep_for_abstract
       struct /* prep_for_abstract */ {
-        // Source: vinecopulib/bicop/implementation/class.ipp:933
+        // Source: vinecopulib/bicop/implementation/class.ipp:942
         const char* doc =
 R"""(Prepares data for use with the ``AbstractBicop`` class: - add an
 additional column if there's only one discrete variable. - trim the
@@ -475,7 +475,7 @@ rotate the data appropriately (``AbstractBicop`` is always
       } prep_for_abstract;
       // Symbol: vinecopulib::Bicop::rotate_data
       struct /* rotate_data */ {
-        // Source: vinecopulib/bicop/implementation/class.ipp:897
+        // Source: vinecopulib/bicop/implementation/class.ipp:906
         const char* doc =
 R"""(Rotates the data corresponding to the models rotation.
 
@@ -484,7 +484,7 @@ Parameter ``u``:
       } rotate_data;
       // Symbol: vinecopulib::Bicop::select
       struct /* select */ {
-        // Source: vinecopulib/bicop/class.hpp:98
+        // Source: vinecopulib/bicop/implementation/class.ipp:794
         const char* doc =
 R"""(Selects the best fitting model.
 
@@ -524,7 +524,7 @@ Parameter ``controls``:
       } set_rotation;
       // Symbol: vinecopulib::Bicop::set_var_types
       struct /* set_var_types */ {
-        // Source: vinecopulib/bicop/class.hpp:72
+        // Source: vinecopulib/bicop/implementation/class.ipp:628
         const char* doc =
 R"""(Sets variable types.
 
@@ -534,7 +534,7 @@ Parameter ``var_types``:
       } set_var_types;
       // Symbol: vinecopulib::Bicop::simulate
       struct /* simulate */ {
-        // Source: vinecopulib/bicop/class.hpp:89
+        // Source: vinecopulib/bicop/implementation/class.ipp:344
         const char* doc =
 R"""(Simulates from a bivariate copula.
 
@@ -558,13 +558,13 @@ Returns:
       } simulate;
       // Symbol: vinecopulib::Bicop::str
       struct /* str */ {
-        // Source: vinecopulib/bicop/class.hpp:112
+        // Source: vinecopulib/bicop/implementation/class.ipp:676
         const char* doc =
 R"""(Summarizes the model into a string (can be used for printing).)""";
       } str;
       // Symbol: vinecopulib::Bicop::tau_to_parameters
       struct /* tau_to_parameters */ {
-        // Source: vinecopulib/bicop/class.hpp:116
+        // Source: vinecopulib/bicop/implementation/class.ipp:459
         const char* doc =
 R"""(Converts a Kendall's :math:`\tau` into copula parameters.
 
@@ -575,30 +575,31 @@ Parameter ``tau``:
       } tau_to_parameters;
       // Symbol: vinecopulib::Bicop::to_file
       struct /* to_file */ {
-        // Source: vinecopulib/bicop/class.hpp:47
+        // Source: vinecopulib/bicop/implementation/class.ipp:155
         const char* doc =
 R"""(Write the copula object into a JSON file.
 
-The written file contains four attributes: ``"family"``,
-``"rotation"``, ``"parameters"``, ``"var_types"`` respectively a
+The written file contains four attributes: ``"fam"``, ``"rot"``,
+``"par"``, ``"vt"``, ``"nobs"``, ``"ll"``, ``"npars"`` respectively a
 string for the family name, an integer for the rotation, and a numeric
-matrix for the parameters, and a list of two strings for the variable
-types.
+matrix for the parameters, a list of two strings for the variable
+types, an integer for the number of observations (if fitted), a double
+for the log-likelihood (if fitted), and a double for the number of
+parameters (can be non-integer in nonparametric models).
 
 Parameter ``filename``:
     The name of the file to write.)""";
       } to_file;
       // Symbol: vinecopulib::Bicop::to_json
       struct /* to_json */ {
-        // Source: vinecopulib/bicop/class.hpp:45
+        // Source: vinecopulib/bicop/implementation/class.ipp:128
         const char* doc =
 R"""(Convert the copula into a nlohmann::json object.
 
-The nlohmann::json is contains of three values named ``"family"``,
-``"rotation"``, ``"parameters"``, ``"var_types"``, respectively a
-string for the family name, an integer for the rotation, a numeric
-matrix for the parameters and a list of two strings for the variables
-types.
+The nlohmann::json is contains of three values named ``"fam"``,
+``"rot"``, ``"par"``, ``"vt"``, respectively a string for the family
+name, an integer for the rotation, a numeric matrix for the parameters
+and a list of two strings for the variables types.
 
 Returns:
     the nlohmann::json object containing the copula.)""";
@@ -670,12 +671,6 @@ Returns:
 R"""(Transformation local likelihood kernel estimator)""";
       } tll;
     } BicopFamily;
-    // Symbol: vinecopulib::BicopPtr
-    struct /* BicopPtr */ {
-      // Source: vinecopulib/bicop/class.hpp:16
-      const char* doc =
-R"""(A shared pointer to an object of class AbstracBicop.)""";
-    } BicopPtr;
     // Symbol: vinecopulib::CVineStructure
     struct /* CVineStructure */ {
       // Source: vinecopulib/vinecop/rvine_structure.hpp:178
@@ -745,7 +740,7 @@ Parameter ``trunc_lvl``:
 R"""(A class for controlling fits of bivariate copula models.)""";
       // Symbol: vinecopulib::FitControlsBicop::FitControlsBicop
       struct /* ctor */ {
-        // Source: vinecopulib/bicop/fit_controls.hpp:20
+        // Source: vinecopulib/bicop/implementation/fit_controls.ipp:34
         const char* doc_9args =
 R"""(Instantiates the controls for fitting bivariate copula models.
 
@@ -783,14 +778,14 @@ Parameter ``num_threads``:
     Number of concurrent threads to use while fitting copulas for
     different families; never uses more than the number of concurrent
     threads supported by the implementation.)""";
-        // Source: vinecopulib/bicop/fit_controls.hpp:30
+        // Source: vinecopulib/bicop/implementation/fit_controls.ipp:58
         const char* doc_1args =
 R"""(Instantiates default controls except for the parameteric method.
 
 Parameter ``parametric_method``:
     The fit method for parametric families; possible choices:
     ``"mle"``, ``"itau"``.)""";
-        // Source: vinecopulib/bicop/fit_controls.hpp:32
+        // Source: vinecopulib/bicop/implementation/fit_controls.ipp:70
         const char* doc_2args =
 R"""(Instantiates default controls except for the nonparametric method.
 
@@ -829,12 +824,12 @@ Parameter ``nonparametric_mult``:
       } check_selection_criterion;
       // Symbol: vinecopulib::FitControlsBicop::get_family_set
       struct /* get_family_set */ {
-        // Source: vinecopulib/bicop/fit_controls.hpp:36
+        // Source: vinecopulib/bicop/implementation/fit_controls.ipp:132
         const char* doc = R"""(returns the family set.)""";
       } get_family_set;
       // Symbol: vinecopulib::FitControlsBicop::get_nonparametric_method
       struct /* get_nonparametric_method */ {
-        // Source: vinecopulib/bicop/fit_controls.hpp:40
+        // Source: vinecopulib/bicop/implementation/fit_controls.ipp:146
         const char* doc = R"""(returns the nonparametric method.)""";
       } get_nonparametric_method;
       // Symbol: vinecopulib::FitControlsBicop::get_nonparametric_mult
@@ -845,12 +840,12 @@ R"""(returns the nonparametric bandwidth multiplier.)""";
       } get_nonparametric_mult;
       // Symbol: vinecopulib::FitControlsBicop::get_num_threads
       struct /* get_num_threads */ {
-        // Source: vinecopulib/bicop/fit_controls.hpp:52
+        // Source: vinecopulib/bicop/implementation/fit_controls.ipp:160
         const char* doc = R"""(returns the number of threads.)""";
       } get_num_threads;
       // Symbol: vinecopulib::FitControlsBicop::get_parametric_method
       struct /* get_parametric_method */ {
-        // Source: vinecopulib/bicop/fit_controls.hpp:38
+        // Source: vinecopulib/bicop/implementation/fit_controls.ipp:139
         const char* doc = R"""(returns the parametric method.)""";
       } get_parametric_method;
       // Symbol: vinecopulib::FitControlsBicop::get_preselect_families
@@ -871,7 +866,7 @@ R"""(returns the baseline probability for mBIC selection.)""";
       } get_selection_criterion;
       // Symbol: vinecopulib::FitControlsBicop::get_weights
       struct /* get_weights */ {
-        // Source: vinecopulib/bicop/fit_controls.hpp:46
+        // Source: vinecopulib/bicop/implementation/fit_controls.ipp:173
         const char* doc = R"""(returns the observation weights.)""";
       } get_weights;
       // Symbol: vinecopulib::FitControlsBicop::process_num_threads
@@ -882,11 +877,11 @@ R"""(returns the baseline probability for mBIC selection.)""";
       // Symbol: vinecopulib::FitControlsBicop::set_family_set
       struct /* set_family_set */ {
         // Source: vinecopulib/bicop/fit_controls.hpp:55
-        const char* doc = R"""(Sets the family set.)""";
+        const char* doc = R"""()""";
       } set_family_set;
       // Symbol: vinecopulib::FitControlsBicop::set_nonparametric_method
       struct /* set_nonparametric_method */ {
-        // Source: vinecopulib/bicop/fit_controls.hpp:59
+        // Source: vinecopulib/bicop/implementation/fit_controls.ipp:209
         const char* doc = R"""(Sets the nonparmetric method.)""";
       } set_nonparametric_method;
       // Symbol: vinecopulib::FitControlsBicop::set_nonparametric_mult
@@ -896,12 +891,12 @@ R"""(returns the baseline probability for mBIC selection.)""";
       } set_nonparametric_mult;
       // Symbol: vinecopulib::FitControlsBicop::set_num_threads
       struct /* set_num_threads */ {
-        // Source: vinecopulib/bicop/fit_controls.hpp:71
+        // Source: vinecopulib/bicop/implementation/fit_controls.ipp:256
         const char* doc = R"""(Sets the number of threads.)""";
       } set_num_threads;
       // Symbol: vinecopulib::FitControlsBicop::set_parametric_method
       struct /* set_parametric_method */ {
-        // Source: vinecopulib/bicop/fit_controls.hpp:57
+        // Source: vinecopulib/bicop/implementation/fit_controls.ipp:201
         const char* doc = R"""(Sets the parametric method.)""";
       } set_parametric_method;
       // Symbol: vinecopulib::FitControlsBicop::set_preselect_families
@@ -916,17 +911,17 @@ R"""(returns the baseline probability for mBIC selection.)""";
       } set_psi0;
       // Symbol: vinecopulib::FitControlsBicop::set_selection_criterion
       struct /* set_selection_criterion */ {
-        // Source: vinecopulib/bicop/fit_controls.hpp:63
+        // Source: vinecopulib/bicop/implementation/fit_controls.ipp:225
         const char* doc = R"""(Sets the selection criterion.)""";
       } set_selection_criterion;
       // Symbol: vinecopulib::FitControlsBicop::set_weights
       struct /* set_weights */ {
-        // Source: vinecopulib/bicop/fit_controls.hpp:65
+        // Source: vinecopulib/bicop/implementation/fit_controls.ipp:233
         const char* doc = R"""(Sets the observation weights.)""";
       } set_weights;
       // Symbol: vinecopulib::FitControlsBicop::str
       struct /* str */ {
-        // Source: vinecopulib/bicop/fit_controls.hpp:74
+        // Source: vinecopulib/bicop/implementation/fit_controls.ipp:278
         const char* doc =
 R"""(Summarizes the controls into a string (can be used for printing).)""";
       } str;
@@ -946,36 +941,6 @@ R"""(A class for controlling fits of vine copula models.)""";
         // Source: vinecopulib/vinecop/fit_controls.hpp:28
         const char* doc_0args =
 R"""(Instantiates default controls for fitting vine copula models.)""";
-        // Source: vinecopulib/vinecop/fit_controls.hpp:47
-        const char* doc_8args =
-R"""(Instantiates custom controls for fitting vine copula models.
-
-Parameter ``trunc_lvl``:
-    Truncation level for truncated vines.
-
-Parameter ``tree_criterion``:
-    The criterion for selecting the maximum spanning tree ("tau",
-    "hoeffd" and "rho" implemented so far).
-
-Parameter ``threshold``:
-    For thresholded vines (0 = no threshold).
-
-Parameter ``show_trace``:
-    Whether to show a trace of the building progress.
-
-Parameter ``select_trunc_lvl``:
-    Whether the truncation shall be selected automatically.
-
-Parameter ``select_threshold``:
-    Whether the threshold parameter shall be selected automatically.
-
-Parameter ``controls``:
-    See FitControlsBicop.
-
-Parameter ``num_threads``:
-    Number of concurrent threads to use while fitting pair copulas
-    within a tree; never uses more than the number returned by
-    `std::thread::hardware_concurrency()``.)""";
         // Source: vinecopulib/vinecop/implementation/fit_controls.ipp:56
         const char* doc_15args =
 R"""(Instantiates custom controls for fitting vine copula models.
@@ -1033,6 +998,36 @@ Parameter ``num_threads``:
     Number of concurrent threads to use while fitting pair copulas
     within a tree; never uses more than the number of concurrent
     threads supported by the implementation.)""";
+        // Source: vinecopulib/vinecop/implementation/fit_controls.ipp:104
+        const char* doc_8args =
+R"""(Instantiates custom controls for fitting vine copula models.
+
+Parameter ``trunc_lvl``:
+    Truncation level for truncated vines.
+
+Parameter ``tree_criterion``:
+    The criterion for selecting the maximum spanning tree ("tau",
+    "hoeffd" and "rho" implemented so far).
+
+Parameter ``threshold``:
+    For thresholded vines (0 = no threshold).
+
+Parameter ``show_trace``:
+    Whether to show a trace of the building progress.
+
+Parameter ``select_trunc_lvl``:
+    Whether the truncation shall be selected automatically.
+
+Parameter ``select_threshold``:
+    Whether the threshold parameter shall be selected automatically.
+
+Parameter ``controls``:
+    See FitControlsBicop.
+
+Parameter ``num_threads``:
+    Number of concurrent threads to use while fitting pair copulas
+    within a tree; never uses more than the number returned by
+    `std::thread::hardware_concurrency()``.)""";
       } ctor;
       // Symbol: vinecopulib::FitControlsVinecop::check_threshold
       struct /* check_threshold */ {
@@ -1080,13 +1075,13 @@ R"""(returns whether to show a trace is during fitting.)""";
       } get_threshold;
       // Symbol: vinecopulib::FitControlsVinecop::get_tree_criterion
       struct /* get_tree_criterion */ {
-        // Source: vinecopulib/vinecop/fit_controls.hpp:61
+        // Source: vinecopulib/vinecop/implementation/fit_controls.ipp:177
         const char* doc =
 R"""(returns the criterion for tree selection.)""";
       } get_tree_criterion;
       // Symbol: vinecopulib::FitControlsVinecop::get_trunc_lvl
       struct /* get_trunc_lvl */ {
-        // Source: vinecopulib/vinecop/fit_controls.hpp:59
+        // Source: vinecopulib/vinecop/implementation/fit_controls.ipp:149
         const char* doc = R"""(returns the truncation level.)""";
       } get_trunc_lvl;
       // Symbol: vinecopulib::FitControlsVinecop::get_truncation_level
@@ -1135,12 +1130,12 @@ R"""(returns whether to show a trace is during fitting.)""";
       } set_threshold;
       // Symbol: vinecopulib::FitControlsVinecop::set_tree_criterion
       struct /* set_tree_criterion */ {
-        // Source: vinecopulib/vinecop/fit_controls.hpp:80
+        // Source: vinecopulib/vinecop/implementation/fit_controls.ipp:184
         const char* doc = R"""(Sets the criterion for tree selection.)""";
       } set_tree_criterion;
       // Symbol: vinecopulib::FitControlsVinecop::set_trunc_lvl
       struct /* set_trunc_lvl */ {
-        // Source: vinecopulib/vinecop/fit_controls.hpp:78
+        // Source: vinecopulib/vinecop/implementation/fit_controls.ipp:156
         const char* doc = R"""(Sets the truncation level.)""";
       } set_trunc_lvl;
       // Symbol: vinecopulib::FitControlsVinecop::set_truncation_level
@@ -1150,7 +1145,7 @@ R"""(returns whether to show a trace is during fitting.)""";
       } set_truncation_level;
       // Symbol: vinecopulib::FitControlsVinecop::str
       struct /* str */ {
-        // Source: vinecopulib/vinecop/fit_controls.hpp:94
+        // Source: vinecopulib/vinecop/implementation/fit_controls.ipp:267
         const char* doc =
 R"""(Summarizes the controls into a string (can be used for printing).)""";
       } str;
@@ -1618,44 +1613,14 @@ A vine copula model is characterized by its structure (see
       struct /* ctor */ {
         // Source: vinecopulib/vinecop/class.hpp:29
         const char* doc_0args = R"""()""";
-        // Source: vinecopulib/vinecop/class.hpp:31
+        // Source: vinecopulib/vinecop/implementation/class.ipp:20
         const char* doc_1args_d =
 R"""(Instantiates a D-vine with all pair-copulas set to independence.
 
 Parameter ``d``:
     The dimension (= number of variables) of the model.)""";
-        // Source: vinecopulib/vinecop/class.hpp:57
-        const char* doc_2args_filename_check =
-R"""(Instantiates from a JSON file.
-
-The input file contains 2 attributes : ``"structure"`` for the vine
-structure, which itself contains attributes ``"array"`` for the
-structure triangular array and ``"order"`` for the order vector, and
-``"pair copulas"``. ``"pair copulas"`` contains a list of attributes
-for the trees (``"tree1"``, ``"tree2"``, etc), each containing a list
-of attributes for the edges (``"pc1"``, ``"pc2"``, etc). See the
-corresponding method of ``Bicop`` objects for the encoding of
-pair-copulas.
-
-Parameter ``filename``:
-    The name of the JSON file to read.
-
-Parameter ``check``:
-    Whether to check if the ``"structure"`` node of the input
-    represents a valid R-vine structure.)""";
-        // Source: vinecopulib/vinecop/class.hpp:58
-        const char* doc_2args_input_check =
-R"""(Instantiates from a nlohmann::json object.
-
-Parameter ``input``:
-    The nlohmann::json object to convert from (see ``to_json()`` for
-    the structure of the input).
-
-Parameter ``check``:
-    Whether to check if the ``"structure"`` node represents a valid
-    R-vine structure.)""";
         // Source: vinecopulib/vinecop/implementation/class.ipp:32
-        const char* doc_3args_structure_pair_copulas_var_types =
+        const char* doc_2args_structure_constint =
 R"""(Instantiates an arbitrary vine copula model.
 
 Parameter ``structure``:
@@ -1671,7 +1636,7 @@ Parameter ``var_types``:
     "d")`` means first variable continuous, second discrete. If empty,
     then all variables are set as continuous.)""";
         // Source: vinecopulib/vinecop/implementation/class.ipp:58
-        const char* doc_3args_matrix_pair_copulas_var_types =
+        const char* doc_2args_matrix_constint =
 R"""(Instantiates an arbitrary vine copula model.
 
 Parameter ``matrix``:
@@ -1729,10 +1694,40 @@ Parameter ``var_types``:
 
 Parameter ``controls``:
     See ``FitControlsVinecop()``.)""";
+        // Source: vinecopulib/vinecop/implementation/class.ipp:129
+        const char* doc_2args_input_check =
+R"""(Instantiates from a nlohmann::json object.
+
+Parameter ``input``:
+    The nlohmann::json object to convert from (see ``to_json()`` for
+    the structure of the input).
+
+Parameter ``check``:
+    Whether to check if the ``"structure"`` node represents a valid
+    R-vine structure.)""";
+        // Source: vinecopulib/vinecop/implementation/class.ipp:178
+        const char* doc_2args_filename_check =
+R"""(Instantiates from a JSON file.
+
+The input file contains 2 attributes : ``"structure"`` for the vine
+structure, which itself contains attributes ``"array"`` for the
+structure triangular array and ``"order"`` for the order vector, and
+``"pair copulas"``. ``"pair copulas"`` contains a list of attributes
+for the trees (``"tree1"``, ``"tree2"``, etc), each containing a list
+of attributes for the edges (``"pc1"``, ``"pc2"``, etc). See the
+corresponding method of ``Bicop`` objects for the encoding of
+pair-copulas.
+
+Parameter ``filename``:
+    The name of the JSON file to read.
+
+Parameter ``check``:
+    Whether to check if the ``"structure"`` node of the input
+    represents a valid R-vine structure.)""";
       } ctor;
       // Symbol: vinecopulib::Vinecop::aic
       struct /* aic */ {
-        // Source: vinecopulib/vinecop/class.hpp:150
+        // Source: vinecopulib/vinecop/implementation/class.ipp:963
         const char* doc =
 R"""(Evaluates the Akaike information criterion (AIC).
 
@@ -1757,7 +1752,7 @@ Parameter ``num_threads``:
       } aic;
       // Symbol: vinecopulib::Vinecop::bic
       struct /* bic */ {
-        // Source: vinecopulib/vinecop/class.hpp:153
+        // Source: vinecopulib/vinecop/implementation/class.ipp:984
         const char* doc =
 R"""(Evaluates the Bayesian information criterion (BIC).
 
@@ -1782,12 +1777,12 @@ Parameter ``num_threads``:
       } bic;
       // Symbol: vinecopulib::Vinecop::calculate_mbicv_penalty
       struct /* calculate_mbicv_penalty */ {
-        // Source: vinecopulib/vinecop/class.hpp:181
+        // Source: vinecopulib/vinecop/implementation/class.ipp:615
         const char* doc = R"""(Computes the penalty term for mBICV.)""";
       } calculate_mbicv_penalty;
       // Symbol: vinecopulib::Vinecop::cdf
       struct /* cdf */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:859
+        // Source: vinecopulib/vinecop/implementation/class.ipp:868
         const char* doc =
 R"""(Evaluates the copula distribution.
 
@@ -1814,19 +1809,19 @@ Parameter ``seeds``:
       } cdf;
       // Symbol: vinecopulib::Vinecop::check_data
       struct /* check_data */ {
-        // Source: vinecopulib/vinecop/class.hpp:178
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1289
         const char* doc =
 R"""(Checks if dimension d of the data matches the dimension of the vine.)""";
       } check_data;
       // Symbol: vinecopulib::Vinecop::check_data_dim
       struct /* check_data_dim */ {
-        // Source: vinecopulib/vinecop/class.hpp:177
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1266
         const char* doc =
 R"""(Checks if dimension d of the data matches the dimension of the vine.)""";
       } check_data_dim;
       // Symbol: vinecopulib::Vinecop::check_enough_data
       struct /* check_enough_data */ {
-        // Source: vinecopulib/vinecop/class.hpp:185
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1342
         const char* doc = R"""(Checks if data size is large enough.)""";
       } check_enough_data;
       // Symbol: vinecopulib::Vinecop::check_fitted
@@ -1841,7 +1836,7 @@ R"""(Checks if dimension d of the data matches the dimension of the vine.)""";
       } check_indices;
       // Symbol: vinecopulib::Vinecop::check_pair_copulas_rvine_structure
       struct /* check_pair_copulas_rvine_structure */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:1246
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1297
         const char* doc =
 R"""(Checks if pair copulas are compatible with the R-vine structure.)""";
       } check_pair_copulas_rvine_structure;
@@ -1852,13 +1847,13 @@ R"""(Checks if pair copulas are compatible with the R-vine structure.)""";
       } check_var_types;
       // Symbol: vinecopulib::Vinecop::check_weights_size
       struct /* check_weights_size */ {
-        // Source: vinecopulib/vinecop/class.hpp:183
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1332
         const char* doc =
 R"""(Checks if weights are compatible with the data.)""";
       } check_weights_size;
       // Symbol: vinecopulib::Vinecop::collapse_data
       struct /* collapse_data */ {
-        // Source: vinecopulib/vinecop/class.hpp:192
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1416
         const char* doc =
 R"""(Removes superfluous columns for continuous data.)""";
       } collapse_data;
@@ -1880,56 +1875,6 @@ R"""(Gets the AIC.
 
 The function throws an error if model has not been fitted to data.)""";
       } get_aic;
-      // Symbol: vinecopulib::Vinecop::get_all_families
-      struct /* get_all_families */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:404
-        const char* doc =
-R"""(Gets the families of all pair copulas.
-
-Returns:
-    a nested std::vector with entry ``[t][e]`` corresponding to edge
-    ``e`` in tree ``t``.)""";
-      } get_all_families;
-      // Symbol: vinecopulib::Vinecop::get_all_pair_copulas
-      struct /* get_all_pair_copulas */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:380
-        const char* doc =
-R"""(Gets all pair copulas.
-
-Returns:
-    a nested std::vector with entry ``[t][e]`` corresponding to edge
-    ``e`` in tree ``t``.)""";
-      } get_all_pair_copulas;
-      // Symbol: vinecopulib::Vinecop::get_all_parameters
-      struct /* get_all_parameters */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:488
-        const char* doc =
-R"""(Gets the parameters of all pair copulas.
-
-Returns:
-    a nested std::vector with entry ``[t][e]`` corresponding to edge
-    ``e`` in tree ``t``.)""";
-      } get_all_parameters;
-      // Symbol: vinecopulib::Vinecop::get_all_rotations
-      struct /* get_all_rotations */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:436
-        const char* doc =
-R"""(Gets the rotations of all pair copulas.
-
-Returns:
-    a nested std::vector with entry ``[t][e]`` corresponding to edge
-    ``e`` in tree ``t``.)""";
-      } get_all_rotations;
-      // Symbol: vinecopulib::Vinecop::get_all_taus
-      struct /* get_all_taus */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:506
-        const char* doc =
-R"""(Gets the Kendall's :math:`tau`s of all pair copulas.
-
-Returns:
-    a nested std::vector with entry ``[t][e]`` corresponding to edge
-    ``e`` in tree ``t``.)""";
-      } get_all_taus;
       // Symbol: vinecopulib::Vinecop::get_bic
       struct /* get_bic */ {
         // Source: vinecopulib/vinecop/class.hpp:116
@@ -1940,13 +1885,13 @@ The function throws an error if model has not been fitted to data.)""";
       } get_bic;
       // Symbol: vinecopulib::Vinecop::get_dim
       struct /* get_dim */ {
-        // Source: vinecopulib/vinecop/class.hpp:101
+        // Source: vinecopulib/vinecop/implementation/class.ipp:530
         const char* doc =
 R"""(Gets the dimension of the vine copula model.)""";
       } get_dim;
       // Symbol: vinecopulib::Vinecop::get_family
       struct /* get_family */ {
-        // Source: vinecopulib/vinecop/class.hpp:79
+        // Source: vinecopulib/vinecop/implementation/class.ipp:399
         const char* doc =
 R"""(Gets the family of a pair copula.
 
@@ -1965,7 +1910,7 @@ to data).)""";
       } get_loglik;
       // Symbol: vinecopulib::Vinecop::get_matrix
       struct /* get_matrix */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:542
+        // Source: vinecopulib/vinecop/implementation/class.ipp:551
         const char* doc =
 R"""(Gets the structure matrix of the vine copula model.)""";
       } get_matrix;
@@ -1985,7 +1930,7 @@ R"""(Returns the number of discrete variables.)""";
       } get_n_discrete;
       // Symbol: vinecopulib::Vinecop::get_nobs
       struct /* get_nobs */ {
-        // Source: vinecopulib/vinecop/class.hpp:114
+        // Source: vinecopulib/vinecop/implementation/class.ipp:577
         const char* doc =
 R"""(Gets the number of observations used for the fit.
 
@@ -2000,13 +1945,13 @@ Bicop::get_npars()).)""";
       } get_npars;
       // Symbol: vinecopulib::Vinecop::get_order
       struct /* get_order */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:528
+        // Source: vinecopulib/vinecop/implementation/class.ipp:537
         const char* doc =
 R"""(Gets the order vector of the vine copula model.)""";
       } get_order;
       // Symbol: vinecopulib::Vinecop::get_pair_copula
       struct /* get_pair_copula */ {
-        // Source: vinecopulib/vinecop/class.hpp:77
+        // Source: vinecopulib/vinecop/implementation/class.ipp:375
         const char* doc =
 R"""(Gets a pair copula.
 
@@ -2018,7 +1963,7 @@ Parameter ``edge``:
       } get_pair_copula;
       // Symbol: vinecopulib::Vinecop::get_parameters
       struct /* get_parameters */ {
-        // Source: vinecopulib/vinecop/class.hpp:83
+        // Source: vinecopulib/vinecop/implementation/class.ipp:463
         const char* doc =
 R"""(Gets the parameters of a pair copula.
 
@@ -2030,7 +1975,7 @@ Parameter ``edge``:
       } get_parameters;
       // Symbol: vinecopulib::Vinecop::get_rotation
       struct /* get_rotation */ {
-        // Source: vinecopulib/vinecop/class.hpp:81
+        // Source: vinecopulib/vinecop/implementation/class.ipp:431
         const char* doc =
 R"""(Gets the rotation of a pair copula.
 
@@ -2048,7 +1993,7 @@ R"""(Gets the structure matrix of the vine copula model.)""";
       } get_rvine_structure;
       // Symbol: vinecopulib::Vinecop::get_struct_array
       struct /* get_struct_array */ {
-        // Source: vinecopulib/vinecop/class.hpp:109
+        // Source: vinecopulib/vinecop/implementation/class.ipp:559
         const char* doc =
 R"""(Gets the above diagonal coefficients of the vine copula model.
 
@@ -2057,7 +2002,7 @@ Parameter ``natural_order``:
       } get_struct_array;
       // Symbol: vinecopulib::Vinecop::get_tau
       struct /* get_tau */ {
-        // Source: vinecopulib/vinecop/class.hpp:85
+        // Source: vinecopulib/vinecop/implementation/class.ipp:477
         const char* doc =
 R"""(Gets the Kendall's :math:`tau` of a pair copula.
 
@@ -2083,12 +2028,12 @@ Usually zero except ``select_threshold == TRUE`` in
       } get_trunc_lvl;
       // Symbol: vinecopulib::Vinecop::get_var_types
       struct /* get_var_types */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:729
+        // Source: vinecopulib/vinecop/implementation/class.ipp:738
         const char* doc = R"""(Gets the variable types.)""";
       } get_var_types;
       // Symbol: vinecopulib::Vinecop::inverse_rosenblatt
       struct /* inverse_rosenblatt */ {
-        // Source: vinecopulib/vinecop/class.hpp:135
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1172
         const char* doc =
 R"""(Evaluates the inverse Rosenblatt transform.
 
@@ -2103,43 +2048,48 @@ requiring less than 1 GB is :math:`n = 1000`, :math:`d = 200`.
 
 Only works for continous models.
 
-The Rosenblatt transform (Rosenblatt, 1952) math:`U = T(V)` of a random 
-vector math:`V = (V_1,\ldots,V_d) ~ F` is defined as
-
-.. math:: U_1= F(V_1), U_{2} = F(V_{2}|V_1), \ldots, U_d =F(V_d|V_1,\ldots,V_{d-1}), 
-
-where math:`F(v_k|v_1,\ldots,v_{k-1})` is the conditional distribution of
-math:`V_k` given  math:`V_1 \ldots, V_{k-1}, k = 2,\ldots,d`. The vector 
-math:`U = (U_1, \dots, U_d)` then contains independent standard uniform 
-variables. The inverse operation
-
-.. math:: V_1 = F^{-1}(U_1), V_{2} = F^{-1}(U_2|U_1), \ldots, V_d =F^{-1}(U_d|U_1,\ldots,U_{d-1}) 
-
-can be used to simulate from a distribution. For any distribution math:`F`, if
-math:`U` is a vector of independent random variables, math:`V = T^{-1}(U)`
-has distribution math:`F`.
-
-The formulas above assume a vine copula model with order math:`d, \dots, 1`.
-More generally, `Vinecop::rosenblatt()` returns the variables
-
-.. math: U_{M[d - j, j]}= F(V_{M[d - j, j]} | V_{M[d - j - 1, j - 1]}, \dots, V_{M[0, 0]}), 
-
-where math:`M` is the structure matrix. Similarly, `Vinecop::inverse_rosenblatt()`
-returns
-
-.. math: V_{M[d - j, j]}= F^{-1}(U_{M[d - j, j]} | U_{M[d - j - 1, j - 1]}, \dots, U_{M[0, 0]}).
-
 Parameter ``u``:
     An :math:`n \times d` matrix of evaluation points.
 
 Parameter ``num_threads``:
     The number of threads to use for computations; if greater than 1,
     the function will be applied concurrently to ``num_threads``
-    batches of ``u``.)""";
+    batches of ``u``.
+
+The Rosenblatt transform (Rosenblatt, 1952) :math:`U = T(V)` of a
+random vector :math:`V = (V_1,\ldots,V_d) ~ F` is defined as
+
+.. math:: U_1= F(V_1), U_{2} = F(V_{2}|V_1), \ldots, U_d
+=F(V_d|V_1,\ldots,V_{d-1}),
+
+where :math:`F(v_k|v_1,\ldots,v_{k-1})` is the conditional
+distribution of :math:`V_k` given :math:`V_1 \ldots, V_{k-1}, k =
+2,\ldots,d`. The vector :math:`U = (U_1, \dots, U_d)` then contains
+independent standard uniform variables. The inverse operation
+
+.. math:: V_1 = F^{-1}(U_1), V_{2} = F^{-1}(U_2|U_1), \ldots, V_d
+=F^{-1}(U_d|U_1,\ldots,U_{d-1})
+
+can be used to simulate from a distribution. For any copula :math:`F`,
+if :math:`U` is a vector of independent random variables, :math:`V =
+T^{-1}(U)` has distribution :math:`F`.
+
+The formulas above assume a vine copula model with order :math:`d,
+\dots, 1`. More generally, ``Vinecop::rosenblatt()`` returns the
+variables
+
+.. math:: U_{M[d - j, j]}= F(V_{M[d - j, j]} | V_{M[d - j - 1, j -
+1]}, \dots, V_{M[0, 0]}),
+
+where :math:`M` is the structure matrix. Similarly,
+``Vinecop::inverse_rosenblatt()`` returns
+
+.. math:: V_{M[d - j, j]}= F^{-1}(U_{M[d - j, j]} | U_{M[d - j - 1, j
+- 1]}, \dots, U_{M[0, 0]}).)""";
       } inverse_rosenblatt;
       // Symbol: vinecopulib::Vinecop::loglik
       struct /* loglik */ {
-        // Source: vinecopulib/vinecop/class.hpp:147
+        // Source: vinecopulib/vinecop/implementation/class.ipp:938
         const char* doc =
 R"""(Evaluates the log-likelihood.
 
@@ -2165,26 +2115,9 @@ Parameter ``num_threads``:
         // Source: vinecopulib/vinecop/class.hpp:173
         const char* doc = R"""()""";
       } loglik_;
-      // Symbol: vinecopulib::Vinecop::make_pair_copula_store
-      struct /* make_pair_copula_store */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:243
-        const char* doc =
-R"""(Initializes object for storing pair copulas.
-
-Parameter ``d``:
-    Dimension of the vine copula.
-
-Parameter ``trunc_lvl``:
-    A truncation level (optional).
-
-Returns:
-    A nested list such that ``pc_store[t][e]`` contains a Bicop.
-    object for the pair copula corresponding to tree ``t`` and edge
-    ``e``.)""";
-      } make_pair_copula_store;
       // Symbol: vinecopulib::Vinecop::mbicv
       struct /* mbicv */ {
-        // Source: vinecopulib/vinecop/class.hpp:156
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1013
         const char* doc =
 R"""(Evaluates the modified Bayesian information criterion for vines
 (mBICV).
@@ -2221,14 +2154,9 @@ Parameter ``num_threads``:
         // Source: vinecopulib/vinecop/class.hpp:174
         const char* doc = R"""()""";
       } nobs_;
-      // Symbol: vinecopulib::Vinecop::pair_copulas_
-      struct /* pair_copulas_ */ {
-        // Source: vinecopulib/vinecop/class.hpp:171
-        const char* doc = R"""()""";
-      } pair_copulas_;
       // Symbol: vinecopulib::Vinecop::pdf
       struct /* pdf */ {
-        // Source: vinecopulib/vinecop/class.hpp:120
+        // Source: vinecopulib/vinecop/implementation/class.ipp:757
         const char* doc =
 R"""(Evaluates the copula density.
 
@@ -2247,7 +2175,7 @@ Parameter ``num_threads``:
       } pdf;
       // Symbol: vinecopulib::Vinecop::rosenblatt
       struct /* rosenblatt */ {
-        // Source: vinecopulib/vinecop/class.hpp:133
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1069
         const char* doc =
 R"""(Evaluates the Rosenblatt transform for a vine copula model.
 
@@ -2261,7 +2189,38 @@ Parameter ``u``:
 Parameter ``num_threads``:
     The number of threads to use for computations; if greater than 1,
     the function will be applied concurrently to ``num_threads``
-    batches of ``u``.)""";
+    batches of ``u``.
+
+The Rosenblatt transform (Rosenblatt, 1952) :math:`U = T(V)` of a
+random vector :math:`V = (V_1,\ldots,V_d) ~ F` is defined as
+
+.. math:: U_1= F(V_1), U_{2} = F(V_{2}|V_1), \ldots, U_d
+=F(V_d|V_1,\ldots,V_{d-1}),
+
+where :math:`F(v_k|v_1,\ldots,v_{k-1})` is the conditional
+distribution of :math:`V_k` given :math:`V_1 \ldots, V_{k-1}, k =
+2,\ldots,d`. The vector :math:`U = (U_1, \dots, U_d)` then contains
+independent standard uniform variables. The inverse operation
+
+.. math:: V_1 = F^{-1}(U_1), V_{2} = F^{-1}(U_2|U_1), \ldots, V_d
+=F^{-1}(U_d|U_1,\ldots,U_{d-1})
+
+can be used to simulate from a distribution. For any copula :math:`F`,
+if :math:`U` is a vector of independent random variables, :math:`V =
+T^{-1}(U)` has distribution :math:`F`.
+
+The formulas above assume a vine copula model with order :math:`d,
+\dots, 1`. More generally, ``Vinecop::rosenblatt()`` returns the
+variables
+
+.. math:: U_{M[d - j, j]}= F(V_{M[d - j, j]} | V_{M[d - j - 1, j -
+1]}, \dots, V_{M[0, 0]}),
+
+where :math:`M` is the structure matrix. Similarly,
+``Vinecop::inverse_rosenblatt()`` returns
+
+.. math:: V_{M[d - j, j]}= F^{-1}(U_{M[d - j, j]} | U_{M[d - j - 1, j
+- 1]}, \dots, U_{M[0, 0]}).)""";
       } rosenblatt;
       // Symbol: vinecopulib::Vinecop::rvine_structure_
       struct /* rvine_structure_ */ {
@@ -2270,7 +2229,7 @@ Parameter ``num_threads``:
       } rvine_structure_;
       // Symbol: vinecopulib::Vinecop::select
       struct /* select */ {
-        // Source: vinecopulib/vinecop/class.hpp:65
+        // Source: vinecopulib/vinecop/implementation/class.ipp:290
         const char* doc =
 R"""(Automatically fits and selects a vine copula model.
 
@@ -2303,9 +2262,9 @@ left limit and the cdf itself coincide. For, e.g., an integer-valued
 variable, it holds :math:`F_Y(Y^-) = F_Y(Y - 1)`. Continuous variables
 in the second block can be omitted.
 
-If there are missing data (i.e., NaN entries), incomplete observations are 
-discarded before fitting a pair-copula. This is done on a pair-by-pair basis
-so that the maximal available information is used.
+If there are missing data (i.e., NaN entries), incomplete observations
+are discarded before fitting a pair-copula. This is done on a
+pair-by-pair basis so that the maximal available information is used.
 
 Parameter ``data``:
     :math:`n \times (d + k)` or :math:`n \times 2d` matrix of
@@ -2316,7 +2275,7 @@ Parameter ``controls``:
       } select;
       // Symbol: vinecopulib::Vinecop::select_all
       struct /* select_all */ {
-        // Source: vinecopulib/vinecop/class.hpp:68
+        // Source: vinecopulib/vinecop/implementation/class.ipp:331
         const char* doc =
 R"""(Automatically fits and selects a vine copula model.
 
@@ -2335,10 +2294,6 @@ left limit and the cdf itself coincide. For, e.g., an integer-valued
 variable, it holds :math:`F_Y(Y^-) = F_Y(Y - 1)`. Continuous variables
 in the second block can be omitted.
 
-If there are missing data (i.e., NaN entries), incomplete observations are 
-discarded before fitting a pair-copula. This is done on a pair-by-pair basis
-so that the maximal available information is used.
-
 Parameter ``data``:
     :math:`n \times (d + k)` or :math:`n \times 2d` matrix of
     observations, where :math:`k` is the number of discrete variables.
@@ -2348,7 +2303,7 @@ Parameter ``controls``:
       } select_all;
       // Symbol: vinecopulib::Vinecop::select_families
       struct /* select_families */ {
-        // Source: vinecopulib/vinecop/class.hpp:72
+        // Source: vinecopulib/vinecop/implementation/class.ipp:359
         const char* doc =
 R"""(Automatically selects all pair-copula families and fits all.
 parameters.
@@ -2362,9 +2317,9 @@ left limit and the cdf itself coincide. For, e.g., an integer-valued
 variable, it holds :math:`F_Y(Y^-) = F_Y(Y - 1)`. Continuous variables
 in the second block can be omitted.
 
-If there are missing data (i.e., NaN entries), incomplete observations are 
-discarded before fitting a pair-copula. This is done on a pair-by-pair basis
-so that the maximal available information is used.
+If there are missing data (i.e., NaN entries), incomplete observations
+are discarded before fitting a pair-copula. This is done on a
+pair-by-pair basis so that the maximal available information is used.
 
 Parameter ``data``:
     :math:`n \times (d + k)` or :math:`n \times 2d` matrix of
@@ -2375,7 +2330,7 @@ Parameter ``controls``:
       } select_families;
       // Symbol: vinecopulib::Vinecop::set_all_pair_copulas
       struct /* set_all_pair_copulas */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:663
+        // Source: vinecopulib/vinecop/implementation/class.ipp:672
         const char* doc =
 R"""(Sets all pair-copulas.
 
@@ -2392,7 +2347,7 @@ because var_types_ is mutable.)""";
       } set_continuous_var_types;
       // Symbol: vinecopulib::Vinecop::set_var_types
       struct /* set_var_types */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:653
+        // Source: vinecopulib/vinecop/implementation/class.ipp:662
         const char* doc =
 R"""(Sets variable types.
 
@@ -2402,7 +2357,7 @@ Parameter ``var_types``:
       } set_var_types;
       // Symbol: vinecopulib::Vinecop::set_var_types_internal
       struct /* set_var_types_internal */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:693
+        // Source: vinecopulib/vinecop/implementation/class.ipp:702
         const char* doc =
 R"""(Sets variable types.
 
@@ -2412,7 +2367,7 @@ Parameter ``var_types``:
       } set_var_types_internal;
       // Symbol: vinecopulib::Vinecop::simulate
       struct /* simulate */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:902
+        // Source: vinecopulib/vinecop/implementation/class.ipp:911
         const char* doc =
 R"""(Simulates from a vine copula model, see ``inverse_rosenblatt()``.
 
@@ -2438,7 +2393,7 @@ Returns:
       } simulate;
       // Symbol: vinecopulib::Vinecop::str
       struct /* str */ {
-        // Source: vinecopulib/vinecop/class.hpp:166
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1434
         const char* doc =
 R"""(Summarizes the model into a string (can be used for printing).)""";
       } str;
@@ -2449,7 +2404,7 @@ R"""(Summarizes the model into a string (can be used for printing).)""";
       } threshold_;
       // Symbol: vinecopulib::Vinecop::to_file
       struct /* to_file */ {
-        // Source: vinecopulib/vinecop/class.hpp:62
+        // Source: vinecopulib/vinecop/implementation/class.ipp:231
         const char* doc =
 R"""(Writes the copula object into a JSON file.
 
@@ -2467,7 +2422,7 @@ Parameter ``filename``:
       } to_file;
       // Symbol: vinecopulib::Vinecop::to_json
       struct /* to_json */ {
-        // Source: vinecopulib/vinecop/class.hpp:61
+        // Source: vinecopulib/vinecop/implementation/class.ipp:194
         const char* doc =
 R"""(Converts the copula into a nlohmann::json object.
 
@@ -2485,7 +2440,7 @@ Returns:
       } to_json;
       // Symbol: vinecopulib::Vinecop::truncate
       struct /* truncate */ {
-        // Source: vinecopulib/vinecop/class.hpp:164
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1384
         const char* doc =
 R"""(Truncates the vine copula model.
 
@@ -2511,7 +2466,7 @@ Parameter ``trunc_lvl``:
     } family_bimap;
     // Symbol: vinecopulib::get_family_enum
     struct /* get_family_enum */ {
-      // Source: vinecopulib/bicop/family.hpp:35
+      // Source: vinecopulib/bicop/implementation/family.ipp:45
       const char* doc =
 R"""(Converts a string name into a BicopFamily.
 
@@ -2520,7 +2475,7 @@ Parameter ``family``:
     } get_family_enum;
     // Symbol: vinecopulib::get_family_name
     struct /* get_family_name */ {
-      // Source: vinecopulib/bicop/family.hpp:32
+      // Source: vinecopulib/bicop/implementation/family.ipp:37
       const char* doc =
 R"""(Converts a BicopFamily into a string with its name.
 
@@ -2534,13 +2489,13 @@ Parameter ``family``:
     struct /* tools_stats */ {
       // Symbol: vinecopulib::tools_stats::ace
       struct /* ace */ {
-        // Source: vinecopulib/misc/implementation/tools_stats.ipp:189
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:197
         const char* doc =
 R"""(alternating conditional expectation algorithm)""";
       } ace;
       // Symbol: vinecopulib::tools_stats::cef
       struct /* cef */ {
-        // Source: vinecopulib/misc/implementation/tools_stats.ipp:167
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:175
         const char* doc =
 R"""(helper routine for ace (In R, this would be win(x[ind], wl)[ranks]))""";
       } cef;
@@ -2578,7 +2533,7 @@ Returns:
       } dt;
       // Symbol: vinecopulib::tools_stats::ghalton
       struct /* ghalton */ {
-        // Source: vinecopulib/misc/implementation/tools_stats.ipp:316
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:325
         const char* doc =
 R"""(Simulates from the multivariate Generalized Halton Sequence.
 
@@ -2602,13 +2557,13 @@ Returns:
       } ghalton;
       // Symbol: vinecopulib::tools_stats::pairwise_mcor
       struct /* pairwise_mcor */ {
-        // Source: vinecopulib/misc/implementation/tools_stats.ipp:295
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:303
         const char* doc =
 R"""(calculates the pairwise maximum correlation coefficient.)""";
       } pairwise_mcor;
       // Symbol: vinecopulib::tools_stats::pbvnorm
       struct /* pbvnorm */ {
-        // Source: vinecopulib/misc/implementation/tools_stats.ipp:593
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:603
         const char* doc =
 R"""(Compute bivariate normal probabilities.
 
@@ -2630,7 +2585,7 @@ Returns:
       } pbvnorm;
       // Symbol: vinecopulib::tools_stats::pbvt
       struct /* pbvt */ {
-        // Source: vinecopulib/misc/implementation/tools_stats.ipp:468
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:478
         const char* doc =
 R"""(Computes bivariate t probabilities.
 
@@ -2735,7 +2690,7 @@ Returns:
       } simulate_uniform;
       // Symbol: vinecopulib::tools_stats::sobol
       struct /* sobol */ {
-        // Source: vinecopulib/misc/implementation/tools_stats.ipp:377
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:387
         const char* doc =
 R"""(Simulates from the multivariate Sobol sequence.
 
@@ -2798,7 +2753,7 @@ Returns:
       } to_pseudo_obs_1d;
       // Symbol: vinecopulib::tools_stats::win
       struct /* win */ {
-        // Source: vinecopulib/misc/implementation/tools_stats.ipp:143
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:151
         const char* doc = R"""(window smoother)""";
       } win;
     } tools_stats;

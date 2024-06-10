@@ -2,64 +2,33 @@ name: Build Status
 
 on: [push, pull_request]
 
+env:
+  BOOST_VERSION: 1.84.0
+  EIGEN_VERSION: 3.4.0
+
 jobs:
   build:
     strategy:
-      max-parallel: 16
       fail-fast: false
       matrix:
         # macos-13 is an intel runner, macos-14 is apple silicon
-        platform: [ubuntu-latest, windows-latest, macos-13, macos-14]
-        architecture: ["x86", "x64"]
-        include:
-          - architecture: "x86"
-            platform-vcvars: "x86"
-            platform-msbuild: "Win32"
-          - architecture: "x64"
-            platform-vcvars: "x86_amd64"
-            platform-msbuild: "x64"
-        exclude:
-          - platform: macos-13
-            architecture: "x86"
-          - platform: macos-14
-            architecture: "x86"
-          - platform: ubuntu-latest
-            architecture: "x86"
+        python: [38, 39, 310, 311, 312]
+        cfg:
+          - { os: ubuntu-latest, cibw_id: manylinux_x86_64,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
+          - { os: ubuntu-latest, cibw_id: manylinux_i686,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
+          - { os: ubuntu-latest, cibw_id: musllinux_x86_64,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
+          - { os: ubuntu-latest, cibw_id: musllinux_i686,   name: GNU,    cc: gcc,   cxx: g++,     platform: x64, root_install_dir: '/home/runner/work'}
+          - { os: macos-13,    cibw_id: macosx_x86_64, name: Clang,  cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # intel runner
+          - { os: macos-14,    cibw_id: macosx_arm64, name: Clang,  cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # apple silicon runner
+          - { os: windows-latest,  cibw_id: win32, name: x32, cc: cl,    cxx: cl,      platform: x32, root_install_dir: 'D:\'}
+          - { os: windows-latest,  cibw_id: win_amd64, name: x64, cc: cl,    cxx: cl,      platform: x64, root_install_dir: 'D:\'}
+    env:
+      PYTHON_VENV_ROOT: ${{github.workspace}}/src/python-venv
 
-    name: Build wheels on ${{ matrix.platform }}
-    runs-on: ${{ matrix.platform }}
 
-    steps:
-    - name: Checkout project 
-      uses: actions/checkout@v3
-      with:
-        submodules: recursive
-    - name: Get history and tags for SCM versioning to work
-      run: |
-        git fetch --prune --unshallow
-        git fetch --depth=1 origin +refs/tags/*:refs/tags/*
-    - name: Visual Studio Command Prompt tool
-      if: contains(matrix.platform, 'windows')
-      run: |
-        cmd "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.platform-vcvars }}
-    - name: Lint with flake8
-      run: |
-        pip3 install flake8
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=lib
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude=lib
-    - name: Build wheels and test wheels
-      uses: pypa/cibuildwheel@v2.16.5
-    - name: Upload binaries
-      uses: actions/upload-artifact@v4
-      with:
-        name: cibw-wheels-${{ matrix.platform }}-${{ strategy.job-index }}
-        path: ./wheelhouse/*.whl
+    name: Build and test on ${{ matrix.cfg.os }} for cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
+    runs-on: ${{ matrix.cfg.os }}
 
-  build_sdist:
-    runs-on: ubuntu-latest
-    needs: build
     steps:
     - name: Checkout project 
       uses: actions/checkout@v4
@@ -69,16 +38,77 @@ jobs:
       run: |
         git fetch --prune --unshallow
         git fetch --depth=1 origin +refs/tags/*:refs/tags/*
+    - name: Install dependencies
+      id: install-dependencies
+      uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@better-actions
+      with:
+          os: ${{ matrix.cfg.os }}
+          platform: ${{ matrix.cfg.platform }}
+          boost_install_dir: ${{ matrix.cfg.root_install_dir }}
+          eigen_install_dir: ${{ matrix.cfg.root_install_dir }}
+          boost_version: ${{ env.BOOST_VERSION }}
+          eigen_version: ${{ env.EIGEN_VERSION }}
+          wdm: 'false'
+    - name: Lint with flake8
+      if: matrix.cfg.os != 'windows-latest'
+      run: |
+        python3 -m venv ${PYTHON_VENV_ROOT}
+        source ${PYTHON_VENV_ROOT}/bin/activate
+        pip3 install flake8
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=lib
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude=lib
+    - name: Build and test wheels
+      uses: pypa/cibuildwheel@v2.16.5
+      env:
+        CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
+        CIBW_ARCHS: all
+        CIBW_ENVIRONMENT_WINDOWS: Boost_INCLUDE_DIR='${{steps.install-dependencies.outputs.BOOST_ROOT}}\include' EIGEN3_INCLUDE_DIR='C:\ProgramData\chocolatey\lib\eigen\include'
+        CIBW_ENVIRONMENT_MACOS: "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=${{matrix.cfg.root_install_dir}}/include/eigen3"
+        CIBW_ENVIRONMENT_LINUX: "Boost_INCLUDE_DIR=/host${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=/host${{matrix.cfg.root_install_dir}}/include/eigen3"
+        CIBW_ENVIRONMENT_PASS_LINUX: "Boost_INCLUDE_DIR EIGEN3_INCLUDE_DIR"
+    - name: Upload binaries
+      uses: actions/upload-artifact@v4
+      with:
+        name: cibw-wheels-${{ matrix.cfg.os }}-${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
+        path: ./wheelhouse/*.whl
+
+  build_sdist:
+    runs-on: ubuntu-latest
+    # needs: build
+    steps:
+    - name: Checkout project 
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    - name: Get history and tags for SCM versioning to work
+      run: |
+        git fetch --prune --unshallow
+        git fetch --depth=1 origin +refs/tags/*:refs/tags/*
+    - name: Install dependencies
+      id: install-dependencies
+      uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@better-actions
+      with:
+          os: 'ubuntu-latest'
+          boost_install_dir: '/home/runner/work'
+          eigen_install_dir: '/home/runner/work'
+          boost_version: ${{ env.BOOST_VERSION }}
+          eigen_version: ${{ env.EIGEN_VERSION }}
     - name: Set up Python 3.8
       uses: actions/setup-python@v4
       with:
         python-version: 3.8
     - name: Upgrade pip and install build dependency
       run: |
+        echo "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include" >> $GITHUB_ENV
+        echo "EIGEN3_INCLUDE_DIR=/home/runner/work/include/eigen3" >> $GITHUB_ENV
         python -m pip install --upgrade pip
         pip install build
     - name: Create source distribution 
       run: |
+        export Boost_INCLUDE_DIR=$Boost_INCLUDE_DIR
+        export EIGEN3_INCLUDE_DIR=$EIGEN3_INCLUDE_DIR
         pipx run build --sdist
     - name: Upload binaries
       uses: actions/upload-artifact@v4
@@ -87,7 +117,7 @@ jobs:
         path: dist/*.tar.gz
 
   upload_to_pypi:
-    needs: [build, build_sdist]
+    needs: build
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

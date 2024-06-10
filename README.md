@@ -31,10 +31,13 @@ Advantages over VineCopula are
 ### Prerequisites
 
 * numpy (>=1.14)
-* pybind11 (>=2.4)
-* setuptools (>=30.3.0)
-* setuptools_scm (>=2.0.0)
-* To install from source: a compiler with C++11 support (Linux, OS X) or Visual Studio 2015 (required for all Python versions, see notes below)
+* To install from source:
+    * pybind11 (>=2.4)
+    * setuptools (>=30.3.0)
+    * setuptools_scm (>=2.0.0)
+    * a compiler with C++11 support (Linux, OS X) or Visual Studio 2015 (required for all Python versions, see notes below)
+    * Eigen (the environment variable `EIGEN3_INCLUDE_DIR` must be set to the directory containing the Eigen headers)
+    * boost (the environment variable `Boost_INCLUDE_DIR` must be set to the directory containing the boost headers)
 
 ### Installation
 
@@ -45,12 +48,14 @@ pip install pyvinecopulib
 ```
 
 To install from source, just clone this repository and do `pip install`.
-Note the `--recursive` option which is needed for the `eigen`, `vinecopulib` and `wdm` submodules:
+Note the `--recursive` option which is needed for the `vinecopulib` and `wdm` submodules:
 
 ```bash
 git clone --recursive https://github.com/vinecopulib/pyvinecopulib.git
 pip install ./pyvinecopulib
 ```
+
+Note that Eigen and Boost need to be available on your system for the build to succeed, using the environment variables `EIGEN3_INCLUDE_DIR` and `Boost_INCLUDE_DIR` respectively.
 
 ### Examples
 
