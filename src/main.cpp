@@ -429,14 +429,14 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          py::arg("structure"),
          py::arg("pair_copulas") = std::vector<size_t>(),
          py::arg("var_types") = std::vector<std::string>(),
-         vinecop_doc.ctor.doc_3args_structure_pair_copulas_var_types)
+         vinecop_doc.ctor.doc_2args_structure_constint)
     .def(py::init<Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
                   const std::vector<std::vector<Bicop>>&,
                   const std::vector<std::string>&>(),
          py::arg("matrix"),
          py::arg("pair_copulas") = std::vector<size_t>(),
          py::arg("var_types") = std::vector<std::string>(),
-         vinecop_doc.ctor.doc_3args_matrix_pair_copulas_var_types)
+         vinecop_doc.ctor.doc_2args_matrix_constint)
     .def(py::init<const Eigen::MatrixXd&,
                   const RVineStructure&,
                   const std::vector<std::string>&,
