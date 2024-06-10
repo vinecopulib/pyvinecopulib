@@ -9,6 +9,7 @@ print("Present working directory: ", os.getcwd())
 
 def find_include_dirs():
   boost_include = os.environ["Boost_INCLUDE_DIR"]
+  print("Environment variables: ", os.environ)
   print("Boost include: ", boost_include)
   if not boost_include:
     raise RuntimeError("Boost_INCLUDE_DIR environment variables must be set.")
