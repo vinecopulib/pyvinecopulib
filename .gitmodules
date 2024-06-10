@@ -6,7 +6,3 @@
 	path = lib/vinecopulib
   url = https://github.com/vinecopulib/vinecopulib.git
 	shallow = true
-[submodule "lib/eigen"]
-	path = lib/eigen
-	url = https://github.com/eigenteam/eigen-git-mirror
-	shallow = true
