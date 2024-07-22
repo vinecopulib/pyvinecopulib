@@ -41,11 +41,61 @@ Advantages over VineCopula are
 
 ### Installation
 
-The easiest way to install the latest release is to use `pip`:
+#### With pip
+
+The latest release can be installed using `pip`:
 
 ```
 pip install pyvinecopulib
 ```
+
+#### With conda
+
+Installing `pyvinecopulib` from the `conda-forge` channel can be achieved by adding `conda-forge` to your channels with:
+
+```
+conda config --add channels conda-forge
+conda config --set channel_priority strict
+```
+
+Once the `conda-forge` channel has been enabled, `pyvinecopulib` can be installed with `conda`:
+
+```
+conda install pyvinecopulib
+```
+
+or with `mamba`:
+
+```
+mamba install pyvinecopulib
+```
+
+It is possible to list all of the versions of `pyvinecopulib` available on your platform with `conda`:
+
+```
+conda search pyvinecopulib --channel conda-forge
+```
+
+or with `mamba`:
+
+```
+mamba search pyvinecopulib --channel conda-forge
+```
+
+Alternatively, `mamba repoquery` may provide more information:
+
+```
+# Search all versions available on your platform:
+mamba repoquery search pyvinecopulib --channel conda-forge
+
+# List packages depending on `pyvinecopulib`:
+mamba repoquery whoneeds pyvinecopulib --channel conda-forge
+
+# List dependencies of `pyvinecopulib`:
+mamba repoquery depends pyvinecopulib --channel conda-forge
+```
+
+#### From source
 
 To install from source, just clone this repository and do `pip install`.
 Note the `--recursive` option which is needed for the `vinecopulib` and `wdm` submodules:
