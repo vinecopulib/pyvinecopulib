@@ -1,4 +1,5 @@
 #include "docstr.hpp"
+#include "stats.hpp"
 #include <pybind11/eigen.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -20,6 +21,10 @@ PYBIND11_MODULE(pyvinecopulib, pv)
   constexpr auto& cvinestructure_doc = doc.vinecopulib.CVineStructure;
   constexpr auto& vinecop_doc = doc.vinecopulib.Vinecop;
   constexpr auto& fitcontrolsvinecop_doc = doc.vinecopulib.FitControlsVinecop;
+
+  py::module_ stats =
+    pv.def_submodule("stats", "Misc statistics tools for vine copulas");
+  init_stats(stats);
 
   pv.doc() = R"pbdoc(
   The pyvinecopulib package
@@ -587,34 +592,6 @@ PYBIND11_MODULE(pyvinecopulib, pv)
          &Vinecop::truncate,
          py::arg("trunc_lvl"),
          vinecop_doc.truncate.doc);
-
-  pv.def("simulate_uniform",
-         &tools_stats::simulate_uniform,
-         tools_stat_doc.simulate_uniform.doc,
-         py::arg("n"),
-         py::arg("d"),
-         py::arg("qrng") = false,
-         py::arg("seeds") = std::vector<int>());
-
-  pv.def("sobol",
-         &tools_stats::sobol,
-         tools_stat_doc.sobol.doc,
-         py::arg("n"),
-         py::arg("d"),
-         py::arg("seeds") = std::vector<int>());
-
-  pv.def("ghalton",
-         &tools_stats::ghalton,
-         tools_stat_doc.ghalton.doc,
-         py::arg("n"),
-         py::arg("d"),
-         py::arg("seeds") = std::vector<int>());
-
-  pv.def("to_pseudo_obs",
-         &tools_stats::to_pseudo_obs,
-         tools_stat_doc.to_pseudo_obs.doc,
-         py::arg("x"),
-         py::arg("ties_method") = "average");
 
 #ifdef VERSION_INFO
   pv.attr("__version__") = VERSION_INFO;
