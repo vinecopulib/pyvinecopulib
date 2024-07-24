@@ -6,3 +6,7 @@
 	path = lib/vinecopulib
   url = https://github.com/vinecopulib/vinecopulib.git
 	shallow = true
+[submodule "lib/kde1d"]
+	path = kde1d
+	url = https://github.com/vinecopulib/kde1d-cpp.git
+  shallow = true
