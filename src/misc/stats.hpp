@@ -1,5 +1,4 @@
-#ifndef STATS_H
-#define STATS_H
+#pragma once
 
 #include "docstr.hpp"
 #include <pybind11/eigen.h>
@@ -45,5 +44,3 @@ init_stats(py::module_& m)
         py::arg("x"),
         py::arg("ties_method") = "average");
 }
-
-#endif // STATS_H
