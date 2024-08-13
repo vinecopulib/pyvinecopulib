@@ -13,8 +13,7 @@ inline void
 init_vinecop_class(py::module_& module)
 {
 
-  constexpr auto& doc = pyvinecopulib_doc;
-  constexpr auto& vinecop_doc = doc.vinecopulib.Vinecop;
+  constexpr auto& vinecop_doc = pyvinecopulib_doc.vinecopulib.Vinecop;
 
   py::class_<Vinecop>(module, "Vinecop", vinecop_doc.doc)
     .def(py::init<const size_t>(), vinecop_doc.ctor.doc_1args_d, py::arg("d"))
@@ -181,5 +180,21 @@ init_vinecop_class(py::module_& module)
     .def("truncate",
          &Vinecop::truncate,
          py::arg("trunc_lvl"),
-         vinecop_doc.truncate.doc);
+         vinecop_doc.truncate.doc)
+    .def(
+      "plot",
+      [](const Vinecop& cop) {
+        auto python_helpers_plotting =
+          py::module_::import("pyvinecopulib._python_helpers.vinecop");
+
+        // Import the Python plotting function
+        py::object vinecop_plot = python_helpers_plotting.attr("vinecop_plot");
+
+        // Call the plotting function with the current object
+        vinecop_plot(py::cast(cop));
+      },
+      py::cast<std::string>(
+        py::module_::import("pyvinecopulib._python_helpers.vinecop")
+          .attr("VINECOP_PLOT_DOC"))
+        .c_str());
 }
