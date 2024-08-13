@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 from pybind11.setup_helpers import Pybind11Extension, build_ext
-from setuptools import setup
+from setuptools import find_packages, setup
 
 
 def find_include_dirs():
@@ -31,7 +31,7 @@ def find_include_dirs():
 include_dirs = find_include_dirs()
 include_dirs.append("lib/vinecopulib/include")
 include_dirs.append("lib/wdm/include")
-include_dirs.append("src")
+include_dirs.append("src/vinecopulib_wrapper")
 
 setup(
   name="pyvinecopulib",
@@ -39,13 +39,18 @@ setup(
   long_description_content_type="text/markdown",
   ext_modules=[
     Pybind11Extension(
-      "pyvinecopulib",
-      ["src/main.cpp"],
+      "vinecopulib_wrapper",
+      ["src/vinecopulib_wrapper/main.cpp"],
       include_dirs=include_dirs,
       language="c++",
       cxx_std=17,
     )
   ],
   cmdclass={"build_ext": build_ext},
+  packages=find_packages(),  # Automatically find all Python packages
+  package_dir={
+    "pyvinecopulib": "pyvinecopulib"
+  },  # Map the package to the directory
   zip_safe=False,
+  install_requires=["matplotlib", "numpy", "pybind11"],  # Required dependencies
 )

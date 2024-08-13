@@ -16,7 +16,7 @@ init_bicop_class(py::module_& module)
   constexpr auto& doc = pyvinecopulib_doc;
   constexpr auto& bicop_doc = doc.vinecopulib.Bicop;
 
-  py::class_<Bicop>(module, "Bicop", bicop_doc.doc)
+  py::class_<Bicop>(module, "BicopCpp", bicop_doc.doc)
     .def(py::init<const BicopFamily,
                   const int,
                   const Eigen::MatrixXd&,

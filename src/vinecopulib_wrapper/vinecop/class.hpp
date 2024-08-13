@@ -16,7 +16,7 @@ init_vinecop_class(py::module_& module)
   constexpr auto& doc = pyvinecopulib_doc;
   constexpr auto& vinecop_doc = doc.vinecopulib.Vinecop;
 
-  py::class_<Vinecop>(module, "Vinecop", vinecop_doc.doc)
+  py::class_<Vinecop>(module, "VinecopCpp", vinecop_doc.doc)
     .def(py::init<const size_t>(), vinecop_doc.ctor.doc_1args_d, py::arg("d"))
     .def(py::init<const RVineStructure&,
                   const std::vector<std::vector<Bicop>>&,

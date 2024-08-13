@@ -18,7 +18,8 @@ init_vinecop_rvine_structure(py::module_& module)
   constexpr auto& dvinestructure_doc = doc.vinecopulib.DVineStructure;
   constexpr auto& cvinestructure_doc = doc.vinecopulib.CVineStructure;
 
-  py::class_<RVineStructure>(module, "RVineStructure", rvinestructure_doc.doc)
+  py::class_<RVineStructure>(
+    module, "RVineStructureCpp", rvinestructure_doc.doc)
     .def(py::init<const size_t&, const size_t&>(),
          py::arg("d") = static_cast<size_t>(1),
          py::arg("trunc_lvl") = std::numeric_limits<size_t>::max(),
@@ -71,7 +72,7 @@ init_vinecop_rvine_structure(py::module_& module)
     .def("str", &RVineStructure::str, rvinestructure_doc.str.doc);
 
   py::class_<DVineStructure, RVineStructure>(
-    module, "DVineStructure", dvinestructure_doc.doc)
+    module, "DVineStructureCpp", dvinestructure_doc.doc)
     .def(py::init<const std::vector<size_t>&>(),
          py::arg("order"),
          dvinestructure_doc.ctor.doc_1args)
@@ -84,7 +85,7 @@ init_vinecop_rvine_structure(py::module_& module)
     });
 
   py::class_<CVineStructure, RVineStructure>(
-    module, "CVineStructure", cvinestructure_doc.doc)
+    module, "CVineStructureCpp", cvinestructure_doc.doc)
     .def(py::init<const std::vector<size_t>&>(),
          cvinestructure_doc.ctor.doc_1args,
          py::arg("order"))

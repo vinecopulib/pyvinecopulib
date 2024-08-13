@@ -17,7 +17,7 @@ init_vinecop_fit_controls(py::module_& module)
   constexpr auto& fitcontrolsvinecop_doc = doc.vinecopulib.FitControlsVinecop;
 
   py::class_<FitControlsVinecop>(
-    module, "FitControlsVinecop", fitcontrolsvinecop_doc.doc)
+    module, "FitControlsVinecopCpp", fitcontrolsvinecop_doc.doc)
     .def(py::init<std::vector<BicopFamily>,
                   std::string,
                   std::string,

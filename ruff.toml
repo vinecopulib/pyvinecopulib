@@ -6,5 +6,5 @@ extend-include = ["*.ipynb"]
 
 # Ignore some import violations when not needed
 [lint.per-file-ignores]
-"__init__.py" = ["E402"]
-"**/{tests,docs,tools}/*" = ["E402"]
+"__init__.py" = ["E402", "F401"]
+"**/{tests,docs,tools}/*" = ["E402", "F401"]

@@ -16,7 +16,7 @@ init_bicop_family(py::module_& module)
   constexpr auto& doc = pyvinecopulib_doc;
   constexpr auto& bicopfamily_doc = doc.vinecopulib.BicopFamily;
 
-  py::enum_<BicopFamily>(module, "BicopFamily", py::arithmetic(), R"pbdoc(
+  py::enum_<BicopFamily>(module, "BicopFamilyCpp", py::arithmetic(), R"pbdoc(
    A bivariate copula family identifier.
 
    The following convenient sets of families are also provided:

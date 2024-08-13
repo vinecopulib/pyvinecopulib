@@ -13,10 +13,10 @@
 namespace py = pybind11;
 using namespace vinecopulib;
 
-PYBIND11_MODULE(pyvinecopulib, pv)
+PYBIND11_MODULE(vinecopulib_wrapper, pv)
 {
   pv.doc() = R"pbdoc(
-  The pyvinecopulib package
+  Wrappers for the pyvinecopulib package
   -------------------------
   )pbdoc";
 
@@ -24,10 +24,12 @@ PYBIND11_MODULE(pyvinecopulib, pv)
     pv.def_submodule("stats", "Misc statistics tools for vine copulas");
   init_stats(stats);
 
+  // Initialize the bicop wrapper classes
   init_bicop_family(pv);
   init_bicop_fit_controls(pv);
   init_bicop_class(pv);
 
+  // Initialize the vinecop wrapper classes
   init_vinecop_rvine_structure(pv);
   init_vinecop_fit_controls(pv);
   init_vinecop_class(pv);
