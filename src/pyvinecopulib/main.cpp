@@ -15,9 +15,7 @@ PYBIND11_MODULE(_pyvinecopulib, pv)
   -------------------------
   )pbdoc";
 
-  py::module_ stats =
-    pv.def_submodule("stats", "Misc statistics tools for vine copulas");
-  init_stats(stats);
+  init_stats(pv);
 
   init_bicop_family(pv);
   init_bicop_fit_controls(pv);
