@@ -49,7 +49,7 @@ jobs:
         PYTHON_MINOR=${PYTHON_DIGITS:1}
 
         # Combine the major and minor versions
-        PYTHON_VERSION="${PYTHON_MAJOR}.${PYTHON_MINOR}"
+        PYTHON_VERSION="${PYTHON_MAJOR}.${PYTHON_MINOR}.0"
 
         # Export the resulting PYTHON_VERSION
         # echo "PYTHON_VERSION=${PYTHON_VERSION}" >> $GITHUB_ENV
