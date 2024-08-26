@@ -1,4 +1,5 @@
 import math
+from typing import List
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -93,7 +94,7 @@ def get_graph(tree, vc):
 
 def vinecop_plot(
   cop,
-  tree: list[int] = None,
+  tree: List[int] = None,
   add_edge_labels=True,
   layout: str = "graphviz",
 ) -> None:
