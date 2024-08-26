@@ -38,10 +38,29 @@ jobs:
       run: |
         git fetch --prune --unshallow
         git fetch --depth=1 origin +refs/tags/*:refs/tags/*
+    - name: Determine Python Version
+      id: determine-python-version
+      run: |
+        PYTHON_DIGITS=${{ matrix.python }}
+
+        # Extract the first digit for the major version
+        PYTHON_MAJOR=${PYTHON_DIGITS:0:1}
+        # Extract the rest of the string for the minor version, handling two-digit minors
+        PYTHON_MINOR=${PYTHON_DIGITS:1}
+
+        # Combine the major and minor versions
+        PYTHON_VERSION="${PYTHON_MAJOR}.${PYTHON_MINOR}"
+
+        # Export the resulting PYTHON_VERSION
+        # echo "PYTHON_VERSION=${PYTHON_VERSION}" >> $GITHUB_ENV
+
+        # Set the resulting PYTHON_VERSION as an output
+        echo "::set-output name=python_version::${PYTHON_VERSION}"
+      shell: bash
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: ${{ matrix.python }}
+        python-version: ${{ steps.determine-python-version.outputs.python_version  }}
         architecture: ${{ matrix.cfg.architecture }}
     - name: Install dependencies
       id: install-dependencies

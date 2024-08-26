@@ -12,7 +12,7 @@ BICOP_PLOT_DOC = """
 
     Parameters
     ----------
-    type : str (default="contour")
+    plot_type : str (default="contour")
         The type of plot to generate. Either "contour" or "surface".
     margin_type : str (default="unif")
         The type of margins to use. Either "unif", "norm", or "exp".
@@ -31,8 +31,8 @@ BICOP_PLOT_DOC = """
     >>> import pyvinecopulib as pv
     >>> cop = pv.Bicop(family=pv.BicopFamily.gaussian, parameters=[0.5])
     >>> cop.plot() # surface plot of copula density
-    >>> cop.plot(type="contour", margin_type="norm") # contour plot with normal margins
-    >>> cop.plot(type="contour", margin_type="unif") # contour plot of copula density
+    >>> cop.plot(plot_type="contour", margin_type="norm") # contour plot with normal margins
+    >>> cop.plot(plot_type="contour", margin_type="unif") # contour plot of copula density
 """
 
 def get_default_xylim(margin_type):
@@ -46,10 +46,10 @@ def get_default_xylim(margin_type):
     raise ValueError("Unknown margin type")
 
 
-def get_default_grid_size(type):
-  if type == "contour":
+def get_default_grid_size(plot_type):
+  if plot_type == "contour":
     return 100
-  elif type == "surface":
+  elif plot_type == "surface":
     return 40
   else:
     raise ValueError("Unknown plot type")
@@ -57,14 +57,14 @@ def get_default_grid_size(type):
 
 def bicop_plot(
   cop,
-  type: str = "surface",
+  plot_type: str = "surface",
   margin_type: str = "unif",
   xylim: tuple = None,
   grid_size: int = None,
 ):
   """{}""".format(BICOP_PLOT_DOC)
 
-  if type not in ["contour", "surface"]:
+  if plot_type not in ["contour", "surface"]:
     raise ValueError("Unknown type")
 
   if margin_type not in ["unif", "norm", "exp"]:
@@ -74,10 +74,10 @@ def bicop_plot(
     xylim = get_default_xylim(margin_type)
 
   if grid_size is None:
-    grid_size = get_default_grid_size(type)
+    grid_size = get_default_grid_size(plot_type)
 
   if margin_type == "unif":
-    if type == "contour":
+    if plot_type == "contour":
       points = np.linspace(1e-5, 1 - 1e-5, grid_size)
     else:
       points = np.linspace(1, grid_size, grid_size) / (grid_size + 1)
@@ -97,7 +97,7 @@ def bicop_plot(
     xlabel = "z1"
     ylabel = "z2"
   elif margin_type == "exp":
-    ll = 1e-2 if type == "contour" else 1e-1
+    ll = 1e-2 if plot_type == "contour" else 1e-1
     points = expon_cdf(np.linspace(ll, xylim[1], grid_size))
     g = np.meshgrid(points, points)
     points = expon_ppf(g[0][0])
@@ -145,13 +145,13 @@ def bicop_plot(
   jet_colors = LinearSegmentedColormap.from_list("jet_colors", colors, N=100)
 
   ## plot
-  if type == "contour":
+  if plot_type == "contour":
     contour = plt.contour(points, points, dens, levels=levels, cmap="gray")
     plt.clabel(contour, inline=True, fontsize=8, fmt="%1.2f")
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.show()
-  elif type == "surface":
+  elif plot_type == "surface":
     fig = plt.figure()
     ax = fig.add_subplot(111, projection="3d")
     ax.view_init(elev=30, azim=-110)
