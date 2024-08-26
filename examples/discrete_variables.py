@@ -1,7 +1,8 @@
 # Import the required libraries
+import math
+
 import numpy as np
 import pyvinecopulib as pv
-from scipy.stats import poisson
 
 # Simulate dummy data
 np.random.seed(1234)  # seed for the random generator
@@ -22,10 +23,32 @@ str(fit_cont)
 
 # Model for discrete data
 # Transform to Poisson margins
-x_poisson = poisson.ppf(u, 1)
+# Percent Point Function (Inverse CDF, PPF)
+@np.vectorize
+def poisson_ppf(p, mu):
+  cumulative_prob = 0.0
+  k = 0
+  while cumulative_prob < p:
+    cumulative_prob += math.exp(-mu) * (mu**k) / math.factorial(k)
+    if cumulative_prob >= p:
+      return k
+    k += 1
+  return k  # In case p is exactly 1
 
-# using Poisson(1) transformation
-u_disc = np.hstack((poisson.cdf(x_poisson, 1), poisson.cdf(x_poisson - 1, 1)))
+
+x_poisson = poisson_ppf(u, 1)
+
+
+# Using Poisson(1) transformation
+# Cumulative Distribution Function (CDF)
+@np.vectorize
+def poisson_cdf(k, mu):
+  return sum(
+    math.exp(-mu) * (mu**i) / math.factorial(i) for i in range(int(k) + 1)
+  )
+
+
+u_disc = np.hstack((poisson_cdf(x_poisson, 1), poisson_cdf(x_poisson - 1, 1)))
 
 # Fit vine copula model for discrete data
 fit_disc = pv.Vinecop(u_disc, var_types=["d"] * 5, controls=controls)
@@ -33,12 +56,12 @@ str(fit_disc)
 
 # Model for mixed data
 # Transform first variable to Poisson margin
-x_poisson_mixed = poisson.ppf(u[:, 0], 1)
+x_poisson_mixed = poisson_ppf(u[:, 0], 1)
 u_disc_mixed = np.hstack(
   (
-    poisson.cdf(x_poisson_mixed, 1).reshape(-1, 1),
+    poisson_cdf(x_poisson_mixed, 1).reshape(-1, 1),
     u[:, 1:5],
-    poisson.cdf(x_poisson_mixed - 1, 1).reshape(-1, 1),
+    poisson_cdf(x_poisson_mixed - 1, 1).reshape(-1, 1),
   )
 )
 

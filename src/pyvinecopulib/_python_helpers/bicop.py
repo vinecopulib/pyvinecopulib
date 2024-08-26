@@ -1,7 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
-from scipy.stats import expon, norm
+
+from .stats import expon_cdf, expon_pdf, expon_ppf, norm_cdf, norm_pdf, norm_ppf
 
 BICOP_PLOT_DOC = """
     Generates a plot for the Bicop object.
@@ -88,19 +89,19 @@ def bicop_plot(
     xlabel = "u1"
     ylabel = "u2"
   elif margin_type == "norm":
-    points = norm.cdf(np.linspace(xylim[0], xylim[1], grid_size))
+    points = norm_cdf(np.linspace(xylim[0], xylim[1], grid_size))
     g = np.meshgrid(points, points)
-    points = norm.ppf(g[0][0])
-    adj = np.outer(norm.pdf(points), norm.pdf(points))
+    points = norm_ppf(g[0][0])
+    adj = np.outer(norm_pdf(points), norm_pdf(points))
     levels = [0.01, 0.025, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5]
     xlabel = "z1"
     ylabel = "z2"
   elif margin_type == "exp":
     ll = 1e-2 if type == "contour" else 1e-1
-    points = expon.cdf(np.linspace(ll, xylim[1], grid_size))
+    points = expon_cdf(np.linspace(ll, xylim[1], grid_size))
     g = np.meshgrid(points, points)
-    points = expon.ppf(g[0][0])
-    adj = np.outer(expon.pdf(points), expon.pdf(points))
+    points = expon_ppf(g[0][0])
+    adj = np.outer(expon_pdf(points), expon_pdf(points))
     levels = [0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.3, 0.5]
     xlabel = "e1"
     ylabel = "e2"
