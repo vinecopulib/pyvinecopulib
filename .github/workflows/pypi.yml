@@ -20,7 +20,6 @@ jobs:
           - { os: ubuntu-latest, cibw_id: musllinux_i686, cc: gcc, cxx: g++, platform: x86, root_install_dir: '/home/runner/work'}
           - { os: macos-13, cibw_id: macosx_x86_64, cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # intel runner
           - { os: macos-14, cibw_id: macosx_arm64, cc: clang, cxx: clang++, platform: arm64, root_install_dir: '/Users/runner/work'} # apple silicon runner
-          - { os: windows-latest, cibw_id: win32, cc: cl, cxx: cl, platform: x32, root_install_dir: 'D:\'}
           - { os: windows-latest, cibw_id: win_amd64, cc: cl, cxx: cl, platform: x64, root_install_dir: 'D:\'}
     env:
       PYTHON_VENV_ROOT: ${{github.workspace}}/src/python-venv
