@@ -7,8 +7,7 @@ from .stats import expon_cdf, expon_pdf, expon_ppf, norm_cdf, norm_pdf, norm_ppf
 BICOP_PLOT_DOC = """
     Generates a plot for the Bicop object.
 
-    This is a dummy plotting function for demonstration purposes.
-    In reality, you'd plot something relevant from the `cop` object.
+    This method generates a contour or surface plot of the copula density. It can be used to visualize the copula density with different types of margins.
 
     Parameters
     ----------

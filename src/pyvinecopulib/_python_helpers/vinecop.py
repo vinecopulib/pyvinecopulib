@@ -8,12 +8,16 @@ import numpy as np
 VINECOP_PLOT_DOC = """
     Generates a plot for the Vinecop object.
 
-    This is a dummy plotting function for demonstration purposes.
-    In reality, you'd plot something relevant from the `cop` object.
+    This method generates a plot of the vine copula structure. It can be used to visualize the tree structure of the vine copula.
 
     Parameters
     ----------
-    cop : The Vinecop object
+    tree: List[int] (default=None)
+        The tree indice(s) to plot. If None, all trees are plotted.
+    add_edge_labels: bool (default=True)
+        Whether to add edge labels to the plot.
+    layout: str (default="graphviz")
+        The layout to use for plotting. Either "graphviz" or "spring_layout".
 
     Returns
     -------
