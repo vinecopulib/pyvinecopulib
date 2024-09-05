@@ -48,6 +48,8 @@ init_vinecop_rvine_structure(py::module_& module)
                            (std::vector<size_t>(RVineStructure::*)() const) &
                              RVineStructure::get_order,
                            "The variable order.")
+    .def_property_readonly(
+      "matrix", &RVineStructure::get_matrix, rvinestructure_doc.get_matrix.doc)
     .def("struct_array",
          &RVineStructure::struct_array,
          py::arg("tree"),

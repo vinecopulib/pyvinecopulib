@@ -13,8 +13,7 @@ inline void
 init_bicop_class(py::module_& module)
 {
 
-  constexpr auto& doc = pyvinecopulib_doc;
-  constexpr auto& bicop_doc = doc.vinecopulib.Bicop;
+  constexpr auto& bicop_doc = pyvinecopulib_doc.vinecopulib.Bicop;
 
   py::class_<Bicop>(module, "Bicop", bicop_doc.doc)
     .def(py::init<const BicopFamily,
@@ -114,5 +113,29 @@ init_bicop_class(py::module_& module)
          &Bicop::select,
          py::arg("data"),
          py::arg_v("controls", FitControlsBicop(), "FitControlsBicop()"),
-         bicop_doc.select.doc);
+         bicop_doc.select.doc)
+    .def(
+      "plot",
+      [](const Bicop& cop,
+         const std::string& type = "surface",
+         const std::string& margin_type = "unif",
+         py::object xylim = py::none(),
+         py::object grid_size = py::none()) {
+        auto python_helpers_plotting =
+          py::module_::import("pyvinecopulib._python_helpers.bicop");
+
+        // Import the Python plotting function
+        py::object bicop_plot = python_helpers_plotting.attr("bicop_plot");
+
+        // Call the Python function with the provided arguments
+        bicop_plot(py::cast(cop), type, margin_type, xylim, grid_size);
+      },
+      py::arg("type") = "surface",
+      py::arg("margin_type") = "unif",
+      py::arg("xylim") = py::none(),
+      py::arg("grid_size") = py::none(),
+      py::cast<std::string>(
+        py::module_::import("pyvinecopulib._python_helpers.bicop")
+          .attr("BICOP_PLOT_DOC"))
+        .c_str());
 }

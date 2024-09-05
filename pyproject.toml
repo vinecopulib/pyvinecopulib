@@ -33,7 +33,10 @@ classifiers = [
         'License :: OSI Approved :: MIT License'
 ]
 dependencies = [
-  'numpy>=1.14'
+  'numpy>=1.14',
+  'matplotlib>=3.0',
+  'networkx>=3.0',
+  'pydot>=3.0',
 ]
 
 [tool.setuptools_scm]

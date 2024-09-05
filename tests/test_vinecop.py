@@ -18,7 +18,7 @@ def random_data(d=5, n=1000):
 def test_vinecop():
   d = 5
   n = 1000
-  u = pv.stats.to_pseudo_obs(random_data(d, n))
+  u = pv.to_pseudo_obs(random_data(d, n))
 
   controls = pv.FitControlsVinecop(family_set=[pv.BicopFamily.gaussian])
   cop = pv.Vinecop(u, controls=controls)

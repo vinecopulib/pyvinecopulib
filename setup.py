@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 from pybind11.setup_helpers import Pybind11Extension, build_ext
-from setuptools import setup
+from setuptools import find_packages, setup
 
 
 def find_include_dirs():
@@ -31,21 +31,27 @@ def find_include_dirs():
 include_dirs = find_include_dirs()
 include_dirs.append("lib/vinecopulib/include")
 include_dirs.append("lib/wdm/include")
-include_dirs.append("src")
+include_dirs.append("src/include")
 
 setup(
   name="pyvinecopulib",
   long_description=(Path("setup.py").parent / "README.md").read_text(),
   long_description_content_type="text/markdown",
+  packages=find_packages(
+    where="src"
+  ),  # Finds and includes all Python packages in src/
+  package_dir={"": "src"},  # Maps the source directory
   ext_modules=[
     Pybind11Extension(
-      "pyvinecopulib",
-      ["src/main.cpp"],
+      "_pyvinecopulib",
+      ["src/pyvinecopulib/main.cpp"],
       include_dirs=include_dirs,
       language="c++",
       cxx_std=17,
     )
   ],
   cmdclass={"build_ext": build_ext},
+  include_package_data=True,
   zip_safe=False,
+  # extra_compile_args=["-g"],  # Add debug symbols
 )
