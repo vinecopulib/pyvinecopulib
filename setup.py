@@ -31,6 +31,7 @@ def find_include_dirs():
 include_dirs = find_include_dirs()
 include_dirs.append("lib/vinecopulib/include")
 include_dirs.append("lib/wdm/include")
+include_dirs.append("src")
 
 setup(
   name="pyvinecopulib",
