@@ -30,7 +30,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'pyvinecopulib'
-copyright = u'2021, Thomas Nagler and Thibault Vatter'
+copyright = "2024, Thomas Nagler and Thibault Vatter"
 author = u'Thomas Nagler and Thibault Vatter'
 
 # The version info.

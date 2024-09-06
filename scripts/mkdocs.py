@@ -6,10 +6,8 @@
 #
 
 import os
-import platform
 import re
 import shutil
-import subprocess
 import sys
 import textwrap
 from collections import OrderedDict, defaultdict
@@ -1101,33 +1099,6 @@ def main():
   parameters = ['-x', 'c++', '-D__MKDOC_PY__']
   filenames = []
 
-  library_file = None
-
-  if platform.system() == 'Darwin':
-    completed_process = subprocess.run(['xcrun', '--find', 'clang'],
-                                       stdout=subprocess.PIPE,
-                                       encoding='utf-8')
-
-    if completed_process.returncode == 0:
-      toolchain_dir = os.path.dirname(
-          os.path.dirname(completed_process.stdout.strip()))
-      library_file = os.path.join(toolchain_dir, 'lib', 'libclang.dylib')
-    completed_process = subprocess.run(['xcrun', '--show-sdk-path'],
-                                       stdout=subprocess.PIPE,
-                                       encoding='utf-8')
-
-    if completed_process.returncode == 0:
-      sdkroot = completed_process.stdout.strip()
-
-      if os.path.exists(sdkroot):
-        parameters.append('-isysroot')
-        parameters.append(sdkroot)
-  elif platform.system() == 'Linux':
-    library_file = '/usr/lib/x86_64-linux-gnu/libclang.so'
-
-  if library_file and os.path.exists(library_file):
-    cindex.Config.set_library_path(os.path.dirname(library_file))
-
   quiet = False
   std = '-std=c++11'
   root_name = 'pyvinecopulib_doc'
@@ -1139,6 +1110,8 @@ def main():
       quiet = True
     elif item.startswith('-output='):
       output_filename = item[len('-output='):]
+    elif item.startswith("-library_file="):
+      library_file = item[len("-library_file=") :]
     elif item.startswith('-std='):
       std = item
     elif item.startswith('-root-name='):
@@ -1149,6 +1122,13 @@ def main():
       parameters.append(item)
     else:
       filenames.append(item)
+
+  if library_file and os.path.exists(library_file):
+    # cindex.Config.set_library_path(os.path.dirname(library_file))
+    cindex.Config.set_library_file(library_file)
+  else:
+    eprint("Unable to find libclang library file.")
+    sys.exit(1)
 
   parameters.append(std)
 
@@ -1204,6 +1184,7 @@ def main():
   # files, and parse. Use a tempdir that is relative to the output file for
   # usage with Bazel.
   tmpdir = output_filename + ".tmp_artifacts"
+  shutil.rmtree(tmpdir, ignore_errors=True)
   os.mkdir(tmpdir)
   glue_filename = os.path.join(tmpdir, "mkdoc_glue.h")
   with open(glue_filename, 'w') as glue_f:
