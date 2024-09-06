@@ -15,7 +15,8 @@ using namespace vinecopulib;
 class ScopedModuleNameOverride
 {
 public:
-  explicit ScopedModuleNameOverride(py::module m, std::string name)
+  explicit ScopedModuleNameOverride(const py::module& m,
+                                    const std::string& name)
     : module_(std::move(m))
   {
     original_name_ = module_.attr("__name__");
