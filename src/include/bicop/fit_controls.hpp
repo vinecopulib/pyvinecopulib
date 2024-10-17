@@ -16,7 +16,8 @@ init_bicop_fit_controls(py::module_& module)
   constexpr auto& doc = pyvinecopulib_doc;
   constexpr auto& fitcontrolsbicop_doc = doc.vinecopulib.FitControlsBicop;
 
-  py::class_<FitControlsBicop>(module, "FitControlsBicop", fitcontrolsbicop_doc.doc)
+  py::class_<FitControlsBicop>(
+    module, "FitControlsBicop", fitcontrolsbicop_doc.doc)
     .def(py::init<std::vector<BicopFamily>,
                   std::string,
                   std::string,
@@ -74,7 +75,7 @@ init_bicop_fit_controls(py::module_& module)
                   &FitControlsBicop::get_preselect_families,
                   &FitControlsBicop::set_preselect_families,
                   "Whether to exclude families based on symmetry properties "
-                  "(see ``FitControlsBicop``)")
+                  "of the data.")
     .def_property("num_threads",
                   &FitControlsBicop::get_num_threads,
                   &FitControlsBicop::set_num_threads,

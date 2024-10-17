@@ -23,14 +23,14 @@ init_vinecop_class(py::module_& module)
          py::arg("structure"),
          py::arg("pair_copulas") = std::vector<size_t>(),
          py::arg("var_types") = std::vector<std::string>(),
-         vinecop_doc.ctor.doc_2args_structure_constint)
+         vinecop_doc.ctor.doc_3args_structure_pair_copulas_var_types)
     .def(py::init<Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
                   const std::vector<std::vector<Bicop>>&,
                   const std::vector<std::string>&>(),
          py::arg("matrix"),
          py::arg("pair_copulas") = std::vector<size_t>(),
          py::arg("var_types") = std::vector<std::string>(),
-         vinecop_doc.ctor.doc_2args_matrix_constint)
+         vinecop_doc.ctor.doc_3args_matrix_pair_copulas_var_types)
     .def(py::init<const Eigen::MatrixXd&,
                   const RVineStructure&,
                   const std::vector<std::string>&,
@@ -122,6 +122,12 @@ init_vinecop_class(py::module_& module)
          py::arg("data"),
          py::arg_v("controls", FitControlsVinecop(), "FitControlsVinecop()"),
          vinecop_doc.select.doc)
+    .def("fit",
+         &Vinecop::fit,
+         py::arg("data"),
+         py::arg_v("controls", FitControlsBicop(), "FitControlsBicop()"),
+         py::arg("num_threads") = 1,
+         vinecop_doc.fit.doc)
     .def("pdf",
          &Vinecop::pdf,
          py::arg("u"),
@@ -145,6 +151,8 @@ init_vinecop_class(py::module_& module)
          &Vinecop::rosenblatt,
          py::arg("u"),
          py::arg("num_threads") = 1,
+         py::arg("randomize_discrete") = true,
+         py::arg("seeds") = std::vector<int>(),
          vinecop_doc.rosenblatt.doc)
     .def("inverse_rosenblatt",
          &Vinecop::inverse_rosenblatt,

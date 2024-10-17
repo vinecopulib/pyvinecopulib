@@ -32,7 +32,9 @@ init_vinecop_fit_controls(py::module_& module)
                   bool,
                   bool,
                   bool,
-                  size_t>(),
+                  bool,
+                  size_t,
+                  std::string>(),
          py::arg("family_set") = bicop_families::all,
          py::arg("parametric_method") = "mle",
          py::arg("nonparametric_method") = "quadratic",
@@ -46,9 +48,11 @@ init_vinecop_fit_controls(py::module_& module)
          py::arg("preselect_families") = true,
          py::arg("select_trunc_lvl") = false,
          py::arg("select_threshold") = false,
+         py::arg("select_families") = true,
          py::arg("show_trace") = false,
          py::arg("num_threads") = 1,
-         fitcontrolsvinecop_doc.ctor.doc_15args)
+         py::arg("mst_algorithm") = "prim",
+         fitcontrolsvinecop_doc.ctor.doc_17args)
     .def_property("family_set",
                   &FitControlsVinecop::get_family_set,
                   &FitControlsVinecop::set_family_set,
@@ -89,11 +93,11 @@ init_vinecop_fit_controls(py::module_& module)
                   &FitControlsVinecop::get_psi0,
                   &FitControlsVinecop::set_psi0,
                   "The prior probability of non-independence.")
-    .def_property(
-      "preselect_families",
-      &FitControlsVinecop::get_preselect_families,
-      &FitControlsVinecop::set_preselect_families,
-      "Preselection based on symmetry properties (see ``__init__``).")
+    .def_property("preselect_families",
+                  &FitControlsVinecop::get_preselect_families,
+                  &FitControlsVinecop::set_preselect_families,
+                  "Whether to exclude families based on symmetry properties "
+                  "of the data.")
     .def_property("select_trunc_lvl",
                   &FitControlsVinecop::get_select_trunc_lvl,
                   &FitControlsVinecop::set_select_trunc_lvl,
@@ -102,6 +106,10 @@ init_vinecop_fit_controls(py::module_& module)
                   &FitControlsVinecop::get_select_threshold,
                   &FitControlsVinecop::set_select_threshold,
                   "Whether to select the threshold.")
+    .def_property("select_families",
+                  &FitControlsVinecop::get_select_families,
+                  &FitControlsVinecop::set_select_families,
+                  "Whether to select the families.")
     .def_property("show_trace",
                   &FitControlsVinecop::get_show_trace,
                   &FitControlsVinecop::set_show_trace,

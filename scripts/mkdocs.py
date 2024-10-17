@@ -249,6 +249,61 @@ def extract_comment(cursor, deprecations):
   return result
 
 
+def transform_docstring(docstring):
+  transformed_docstring = docstring.strip()
+
+  # Identify and process the Parameters section
+  params_section = ""
+  params_match = re.search(
+    r"(Parameter ``.*?``:\n.*?)(?=\n\n|\Z)", transformed_docstring, re.DOTALL
+  )
+
+  if params_match:
+    params = re.findall(
+      r"Parameter ``(.*?)``:\n(.*?)(?=\n\n|\Z)",
+      transformed_docstring,
+      re.DOTALL,
+    )
+    params_section = "Parameters\n----------\n"
+    for param_name, description in params:
+      formatted_description = "\n    ".join(
+        line.strip() for line in description.strip().splitlines()
+      )
+      params_section += f"{param_name} :\n    {formatted_description}\n\n"
+    # Remove the original parameter sections from the docstring
+    transformed_docstring = re.sub(
+      r"(Parameter ``.*?``:\n.*?)(?=\n\n|\Z)",
+      "",
+      transformed_docstring,
+      flags=re.DOTALL,
+    ).strip()
+
+  # Identify and process the Returns section
+  return_section = ""
+  returns_match = re.search(
+    r"Returns:\n(.*?)(?=\n\n|\Z)", transformed_docstring, re.DOTALL
+  )
+
+  if returns_match:
+    return_description = returns_match.group(1).strip()
+    return_section = "Returns\n-------\n" + "\n    ".join(
+      line.strip() for line in return_description.splitlines()
+    )
+    # Remove the original return section from the docstring
+    transformed_docstring = re.sub(
+      r"Returns:\n.*?(?=\n\n|\Z)", "", transformed_docstring, flags=re.DOTALL
+    ).strip()
+
+  # Reconstruct the docstring with the correct order
+  final_docstring = transformed_docstring
+  if params_section:
+    final_docstring += "\n\n" + params_section.strip()
+  if return_section:
+    final_docstring += "\n\n" + return_section.strip()
+
+  return final_docstring
+
+
 # TODO(jamiesnape): Refactor into multiple functions and unit test.
 def process_comment(comment):
   """
@@ -667,7 +722,7 @@ def process_comment(comment):
   wrapper.drop_whitespace = True
   wrapper.expand_tabs = True
   wrapper.replace_whitespace = True
-  wrapper.width = 70
+  wrapper.width = 100
   wrapper.initial_indent = wrapper.subsequent_indent = ''
 
   result = ''
@@ -683,13 +738,16 @@ def process_comment(comment):
     elif in_code_segment:
       result += '    '.join(('\n' + x.strip()).splitlines(True))
     else:
-      for y in re.split(r'(?: *\n *){2,}', x):
+      for y in re.findall(r"(.*?)(?:\n{2,}|\Z)", x, re.DOTALL):
         lines = re.split(r'(?: *\n *)', y)
         # Do not reflow lists or section headings.
 
-        if (re.match('^(?:[*+\-]|[0-9]+[.)]) ', lines[0])
-            or (len(lines) > 1 and (lines[1] == '=' * len(lines[0])
-                                    or lines[1] == '-' * len(lines[0])))):
+        if re.match(r"^\s*(?:[*+\-]|[0-9]+[.)]) ", lines[0]) or (
+          len(lines) > 1
+          and (
+            lines[1] == "=" * len(lines[0]) or lines[1] == "-" * len(lines[0])
+          )
+        ):
           result += y + '\n\n'
         else:
           wrapped = wrapper.fill(re.sub(r'\s+', ' ', y).strip())
@@ -703,7 +761,19 @@ def process_comment(comment):
               result += wrapped + '\n\n'
             wrapper.initial_indent = wrapper.subsequent_indent = ''
 
-  return result.rstrip().lstrip('\n')
+  import pdb
+
+  # if "counter-diagonal" in result:
+  #   pdb.set_trace()
+  # Transform ALL C++ method calls to Python method calls.
+  # Be careful not to mistake code blocks for method calls.
+  result = re.sub(r"``(.*?)::(.*?)``", r"``\1.\2``", result)
+
+  result = result.rstrip().lstrip("\n")
+  try:
+    return transform_docstring(result)
+  except Exception:
+    pdb.set_trace()
 
 
 def get_name_chain(cursor):

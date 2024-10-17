@@ -21,6 +21,7 @@ def test_vinecop():
   u = pv.to_pseudo_obs(random_data(d, n))
 
   controls = pv.FitControlsVinecop(family_set=[pv.BicopFamily.gaussian])
+  assert controls.family_set == [pv.BicopFamily.gaussian]
   cop = pv.Vinecop(u, controls=controls)
 
   # Test get_pair_copula method
