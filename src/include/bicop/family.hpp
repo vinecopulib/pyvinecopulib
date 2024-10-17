@@ -48,8 +48,7 @@ init_bicop_family(py::module_& module)
    - ``flip_by_rotation`` contains families that can be flipped by rotation 
      (``clayton``, ``gumbel``, ``frank`` , ``joe``, ``bb1``, ``bb6``, ``bb7``, ``bb8``, ``tawn``),
    - ``rotationless`` contains families that don't have a rotation 
-     because they already cover positive and negative dependence
-      (``indep``, ``gaussian``, ``student``, ``frank``, ``tll``).
+     because they already cover positive and negative dependence (``indep``, ``gaussian``, ``student``, ``frank``, ``tll``).
    )pbdoc")
     .value("indep", BicopFamily::indep, bicopfamily_doc.indep.doc)
     .value("gaussian", BicopFamily::gaussian, bicopfamily_doc.gaussian.doc)

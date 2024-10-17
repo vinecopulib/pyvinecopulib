@@ -12,9 +12,9 @@ BICOP_PLOT_DOC = """
     Parameters
     ----------
     plot_type : str (default="contour")
-        The type of plot to generate. Either "contour" or "surface".
+        The type of plot to generate. Either `"contour"` or `"surface"`.
     margin_type : str (default="unif")
-        The type of margins to use. Either "unif", "norm", or "exp".
+        The type of margins to use. Either `"unif"`, `"norm"`, or `"exp"`.
     xylim : tuple (default=None)
         The limits for the x and y axes. Automatically set if None.
     grid_size : int (default=None)
@@ -22,16 +22,17 @@ BICOP_PLOT_DOC = """
 
     Returns
     -------
-    None
-        The function generates a plot and shows it using matplotlib.
+    Nothing, the function generates a plot and shows it using matplotlib.
 
     Usage
     -----
-    >>> import pyvinecopulib as pv
-    >>> cop = pv.Bicop(family=pv.BicopFamily.gaussian, parameters=[0.5])
-    >>> cop.plot() # surface plot of copula density
-    >>> cop.plot(plot_type="contour", margin_type="norm") # contour plot with normal margins
-    >>> cop.plot(plot_type="contour", margin_type="unif") # contour plot of copula density
+    .. code-block:: python
+
+        import pyvinecopulib as pv
+        cop = pv.Bicop(family=pv.BicopFamily.gaussian, parameters=[0.5])
+        cop.plot() # surface plot of copula density
+        cop.plot(plot_type="contour", margin_type="norm") # contour plot with normal margins
+        cop.plot(plot_type="contour", margin_type="unif") # contour plot of copula density
 """
 
 def get_default_xylim(margin_type):

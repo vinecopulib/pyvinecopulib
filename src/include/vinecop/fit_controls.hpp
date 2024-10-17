@@ -89,11 +89,11 @@ init_vinecop_fit_controls(py::module_& module)
                   &FitControlsVinecop::get_psi0,
                   &FitControlsVinecop::set_psi0,
                   "The prior probability of non-independence.")
-    .def_property(
-      "preselect_families",
-      &FitControlsVinecop::get_preselect_families,
-      &FitControlsVinecop::set_preselect_families,
-      "Preselection based on symmetry properties (see ``__init__``).")
+    .def_property("preselect_families",
+                  &FitControlsVinecop::get_preselect_families,
+                  &FitControlsVinecop::set_preselect_families,
+                  "Whether to exclude families based on symmetry properties "
+                  "of the data.")
     .def_property("select_trunc_lvl",
                   &FitControlsVinecop::get_select_trunc_lvl,
                   &FitControlsVinecop::set_select_trunc_lvl,

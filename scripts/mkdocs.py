@@ -722,7 +722,7 @@ def process_comment(comment):
   wrapper.drop_whitespace = True
   wrapper.expand_tabs = True
   wrapper.replace_whitespace = True
-  wrapper.width = 70
+  wrapper.width = 100
   wrapper.initial_indent = wrapper.subsequent_indent = ''
 
   result = ''
@@ -738,13 +738,16 @@ def process_comment(comment):
     elif in_code_segment:
       result += '    '.join(('\n' + x.strip()).splitlines(True))
     else:
-      for y in re.split(r'(?: *\n *){2,}', x):
+      for y in re.findall(r"(.*?)(?:\n{2,}|\Z)", x, re.DOTALL):
         lines = re.split(r'(?: *\n *)', y)
         # Do not reflow lists or section headings.
 
-        if (re.match('^(?:[*+\-]|[0-9]+[.)]) ', lines[0])
-            or (len(lines) > 1 and (lines[1] == '=' * len(lines[0])
-                                    or lines[1] == '-' * len(lines[0])))):
+        if re.match(r"^\s*(?:[*+\-]|[0-9]+[.)]) ", lines[0]) or (
+          len(lines) > 1
+          and (
+            lines[1] == "=" * len(lines[0]) or lines[1] == "-" * len(lines[0])
+          )
+        ):
           result += y + '\n\n'
         else:
           wrapped = wrapper.fill(re.sub(r'\s+', ' ', y).strip())
@@ -760,9 +763,15 @@ def process_comment(comment):
 
   import pdb
 
+  # if "counter-diagonal" in result:
+  #   pdb.set_trace()
+  # Transform ALL C++ method calls to Python method calls.
+  # Be careful not to mistake code blocks for method calls.
+  result = re.sub(r"``(.*?)::(.*?)``", r"``\1.\2``", result)
+
   result = result.rstrip().lstrip("\n")
   try:
-    return transform_docstring(result.replace("\\", "\\\\"))
+    return transform_docstring(result)
   except Exception:
     pdb.set_trace()
 
