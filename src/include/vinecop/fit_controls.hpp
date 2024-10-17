@@ -48,7 +48,7 @@ init_vinecop_fit_controls(py::module_& module)
          py::arg("select_threshold") = false,
          py::arg("show_trace") = false,
          py::arg("num_threads") = 1,
-         fitcontrolsvinecop_doc.ctor.doc_15args)
+         fitcontrolsvinecop_doc.ctor.doc_17args)
     .def_property("family_set",
                   &FitControlsVinecop::get_family_set,
                   &FitControlsVinecop::set_family_set,
