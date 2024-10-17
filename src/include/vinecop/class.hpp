@@ -122,6 +122,12 @@ init_vinecop_class(py::module_& module)
          py::arg("data"),
          py::arg_v("controls", FitControlsVinecop(), "FitControlsVinecop()"),
          vinecop_doc.select.doc)
+    .def("fit",
+         &Vinecop::fit,
+         py::arg("data"),
+         py::arg_v("controls", FitControlsBicop(), "FitControlsBicop()"),
+         py::arg("num_threads") = 1,
+         vinecop_doc.fit.doc)
     .def("pdf",
          &Vinecop::pdf,
          py::arg("u"),
