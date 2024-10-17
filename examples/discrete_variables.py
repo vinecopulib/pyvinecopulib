@@ -21,6 +21,7 @@ controls = pv.FitControlsVinecop(family_set=[pv.BicopFamily.gaussian])
 fit_cont = pv.Vinecop(u, controls=controls)
 str(fit_cont)
 
+
 # Model for discrete data
 # Transform to Poisson margins
 # Percent Point Function (Inverse CDF, PPF)
