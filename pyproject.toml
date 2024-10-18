@@ -33,7 +33,17 @@ classifiers = [
         'License :: OSI Approved :: MIT License'
 ]
 dependencies = [
-  'numpy>=1.14'
+  'numpy>=1.14',
+  'matplotlib>=3.0',
+  'networkx>=3.0',
+  'pydot>=3.0',
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy",
+  "ruff",
+  "pytest",
 ]
 
 [tool.setuptools_scm]
@@ -49,6 +59,9 @@ Issues = "https://github.com/vinecopulib/pyvinecopulib/issues"
 [tool.pytest.ini_options]
 pythonpath = [
   "src"
+]
+testpaths = [
+  "tests"
 ]
 
 [tool.cibuildwheel]
