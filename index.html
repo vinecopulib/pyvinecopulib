@@ -1,24 +1,22 @@
+
+
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" data-content_root="./">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>pyvinecopulib &mdash; pyvinecopulib 0.6.6 documentation</title>
+  <title>pyvinecopulib &mdash; pyvinecopulib 0.6.7 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=fa44fd50" />
-      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=7ab3649f" />
 
   
-  <!--[if lt IE 9]>
-    <script src="_static/js/html5shiv.min.js"></script>
-  <![endif]-->
-  
-        <script src="_static/jquery.js?v=5d32c60e"></script>
-        <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="_static/documentation_options.js?v=d129ce28"></script>
-        <script src="_static/doctools.js?v=888ff710"></script>
-        <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
-        <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=b5e61e6c"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
@@ -37,9 +35,6 @@
             pyvinecopulib
               <img src="_static/pyvinecopulib.png" class="logo" alt="Logo"/>
           </a>
-              <div class="version">
-                0.6.6
-              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -84,11 +79,10 @@
              
   <section id="pyvinecopulib">
 <h1>pyvinecopulib<a class="headerlink" href="#pyvinecopulib" title="Link to this heading"></a></h1>
+<section id="classes">
+<h2>Classes<a class="headerlink" href="#classes" title="Link to this heading"></a></h2>
 <div class="toctree-wrapper compound">
 </div>
-<section id="the-pyvinecopulib-package">
-<span id="module-pyvinecopulib"></span><h2>The pyvinecopulib package<a class="headerlink" href="#the-pyvinecopulib-package" title="Link to this heading"></a></h2>
-</section>
 <table class="autosummary longtable docutils align-default">
 <tbody>
 <tr class="row-odd"><td><p><a class="reference internal" href="_generate/pyvinecopulib.BicopFamily.html#pyvinecopulib.BicopFamily" title="pyvinecopulib.BicopFamily"><code class="xref py py-obj docutils literal notranslate"><span class="pre">BicopFamily</span></code></a></p></td>
@@ -119,24 +113,23 @@
 </table>
 </section>
 <section id="functions">
-<h1>Functions<a class="headerlink" href="#functions" title="Link to this heading"></a></h1>
+<h2>Functions<a class="headerlink" href="#functions" title="Link to this heading"></a></h2>
 <dl class="py function">
 <dt class="sig sig-object py" id="pyvinecopulib.to_pseudo_obs">
 <span class="sig-name descname"><span class="pre">to_pseudo_obs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">x</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ties_method</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'average'</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#pyvinecopulib.to_pseudo_obs" title="Link to this definition"></a></dt>
 <dd><p>Applies the empirical probability integral transform to a data matrix.</p>
-<p>Gives pseudo-observations from the copula by applying the empirical
-distribution function (scaled by <span class="math notranslate nohighlight">\(n + 1\)</span>) to each margin/column.</p>
-<dl class="simple">
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">x</span></code>:</dt><dd><p>A matrix of real numbers.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">ties_method</span></code>:</dt><dd><p>Indicates how to treat ties; same as in R, see
-<a class="reference external" href="https://stat.ethz.ch/R-manual/R-devel/library/base/html/rank.html">https://stat.ethz.ch/R-manual/R-devel/library/base/html/rank.html</a>.</p>
-</dd>
-</dl>
+<p>Gives pseudo-observations from the copula by applying the empirical distribution function (scaled by
+<span class="math notranslate nohighlight">\(n + 1\)</span>) to each margin/column.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>Pseudo-observations of the copula, i.e. <span class="math notranslate nohighlight">\(F_X(x)\)</span>
-(column-wise).</p>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> – A matrix of real numbers.</p></li>
+<li><p><strong>ties_method</strong> – Indicates how to treat ties; same as in R, see
+<a class="reference external" href="https://stat.ethz.ch/R-manual/R-devel/library/base/html/rank.html">https://stat.ethz.ch/R-manual/R-devel/library/base/html/rank.html</a>.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Pseudo-observations of the copula, i.e. <span class="math notranslate nohighlight">\(F_X(x)\)</span> (column-wise).</p>
 </dd>
 </dl>
 </dd></dl>
@@ -145,27 +138,20 @@ distribution function (scaled by <span class="math notranslate nohighlight">\(n 
 <dt class="sig sig-object py" id="pyvinecopulib.simulate_uniform">
 <span class="sig-name descname"><span class="pre">simulate_uniform</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">qrng</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seeds</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">[]</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#pyvinecopulib.simulate_uniform" title="Link to this definition"></a></dt>
 <dd><p>Simulates from the multivariate uniform distribution.</p>
-<dl class="simple">
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">n</span></code>:</dt><dd><p>Number of observations.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">d</span></code>:</dt><dd><p>Dimension.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">qrng</span></code>:</dt><dd><p>If true, quasi-numbers are generated.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">seeds</span></code>:</dt><dd><p>Seeds of the random number generator; if empty (default), the
-random number generator is seeded randomly.</p>
-</dd>
-</dl>
-<p>If <code class="docutils literal notranslate"><span class="pre">qrng</span> <span class="pre">=</span> <span class="pre">TRUE</span></code>, generalized Halton sequences (see <code class="docutils literal notranslate"><span class="pre">ghalton()</span></code>)
-are used for <span class="math notranslate nohighlight">\(d \leq 300\)</span> and Sobol sequences otherwise (see
-<code class="docutils literal notranslate"><span class="pre">sobol()</span></code>).</p>
+<p>If <code class="docutils literal notranslate"><span class="pre">qrng</span> <span class="pre">=</span> <span class="pre">TRUE</span></code>, generalized Halton sequences (see <code class="docutils literal notranslate"><span class="pre">ghalton()</span></code>) are used for <span class="math notranslate nohighlight">\(d \leq 300\)</span>
+and Sobol sequences otherwise (see <code class="docutils literal notranslate"><span class="pre">sobol()</span></code>).</p>
 <dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>math:<cite>mathrm{U}[0,
-1]</cite> random variables.</p>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n</strong> – Number of observations.</p></li>
+<li><p><strong>d</strong> – Dimension.</p></li>
+<li><p><strong>qrng</strong> – If true, quasi-numbers are generated.</p></li>
+<li><p><strong>seeds</strong> – Seeds of the random number generator; if empty (default), the random number generator is seeded
+randomly.</p></li>
+</ul>
 </dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>An <span class="math notranslate nohighlight">\(n \times d\)</span> matrix of independent</p>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>An <span class="math notranslate nohighlight">\(n \times d\)</span> matrix of independent <span class="math notranslate nohighlight">\(\mathrm{U}[0, 1]\)</span> random variables.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -174,25 +160,19 @@ are used for <span class="math notranslate nohighlight">\(d \leq 300\)</span> an
 <dt class="sig sig-object py" id="pyvinecopulib.ghalton">
 <span class="sig-name descname"><span class="pre">ghalton</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seeds</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">[]</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#pyvinecopulib.ghalton" title="Link to this definition"></a></dt>
 <dd><p>Simulates from the multivariate Generalized Halton Sequence.</p>
-<p>For more information on Generalized Halton Sequence, see Faure, H.,
-Lemieux, C. (2009). Generalized Halton Sequences in 2008: A
-Comparative Study. ACM-TOMACS 19(4), Article 15.</p>
-<dl class="simple">
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">n</span></code>:</dt><dd><p>Number of observations.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">d</span></code>:</dt><dd><p>Dimension.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">seeds</span></code>:</dt><dd><p>Seeds to scramble the quasi-random numbers; if empty (default),
-the quasi-random number generator is seeded randomly.</p>
-</dd>
-</dl>
+<p>For more information on Generalized Halton Sequence, see Faure, H., Lemieux, C. (2009). Generalized
+Halton Sequences in 2008: A Comparative Study. ACM-TOMACS 19(4), Article 15.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>math:<cite>mathrm{U}[0,
-1]</cite> variables.</p>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n</strong> – Number of observations.</p></li>
+<li><p><strong>d</strong> – Dimension.</p></li>
+<li><p><strong>seeds</strong> – Seeds to scramble the quasi-random numbers; if empty (default), the quasi-random number
+generator is seeded randomly.</p></li>
+</ul>
 </dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>An <span class="math notranslate nohighlight">\(n \times d\)</span> matrix of quasi-random</p>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>An <span class="math notranslate nohighlight">\(n \times d\)</span> matrix of quasi-random <span class="math notranslate nohighlight">\(\mathrm{U}[0, 1]\)</span> variables.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -201,29 +181,24 @@ the quasi-random number generator is seeded randomly.</p>
 <dt class="sig sig-object py" id="pyvinecopulib.sobol">
 <span class="sig-name descname"><span class="pre">sobol</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seeds</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">[]</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#pyvinecopulib.sobol" title="Link to this definition"></a></dt>
 <dd><p>Simulates from the multivariate Sobol sequence.</p>
-<p>For more information on the Sobol sequence, see S. Joe and F. Y. Kuo
-(2008), constructing Sobol sequences with better two-dimensional
-projections, SIAM J. Sci. Comput. 30, 2635–2654.</p>
-<dl class="simple">
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">n</span></code>:</dt><dd><p>Number of observations.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">d</span></code>:</dt><dd><p>Dimension.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">seeds</span></code>:</dt><dd><p>Seeds to scramble the quasi-random numbers; if empty (default),
-the quasi-random number generator is seeded randomly.</p>
-</dd>
-</dl>
+<p>For more information on the Sobol sequence, see S. Joe and F. Y. Kuo (2008), constructing Sobol
+sequences with better two-dimensional projections, SIAM J. Sci. Comput. 30, 2635–2654.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>math:<cite>mathrm{U}[0,
-1]</cite> variables.</p>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n</strong> – Number of observations.</p></li>
+<li><p><strong>d</strong> – Dimension.</p></li>
+<li><p><strong>seeds</strong> – Seeds to scramble the quasi-random numbers; if empty (default), the quasi-random number
+generator is seeded randomly.</p></li>
+</ul>
 </dd>
-<dt class="field-even">Return type<span class="colon">:</span></dt>
-<dd class="field-even"><p>An <span class="math notranslate nohighlight">\(n \times d\)</span> matrix of quasi-random</p>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>An <span class="math notranslate nohighlight">\(n \times d\)</span> matrix of quasi-random <span class="math notranslate nohighlight">\(\mathrm{U}[0, 1]\)</span> variables.</p>
 </dd>
 </dl>
 </dd></dl>
 
+</section>
 </section>
 
 

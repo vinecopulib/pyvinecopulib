@@ -1,23 +1,21 @@
+
+
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" data-content_root="../">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CVineStructure &mdash; pyvinecopulib 0.6.6 documentation</title>
+  <title>CVineStructure &mdash; pyvinecopulib 0.6.7 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=7ab3649f" />
 
   
-  <!--[if lt IE 9]>
-    <script src="../_static/js/html5shiv.min.js"></script>
-  <![endif]-->
-  
-        <script src="../_static/jquery.js?v=5d32c60e"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../_static/documentation_options.js?v=d129ce28"></script>
-        <script src="../_static/doctools.js?v=888ff710"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=b5e61e6c"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -37,9 +35,6 @@
             pyvinecopulib
               <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo"/>
           </a>
-              <div class="version">
-                0.6.6
-              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -97,23 +92,25 @@
 <dt class="sig sig-object py" id="pyvinecopulib.CVineStructure">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">CVineStructure</span></span><a class="headerlink" href="#pyvinecopulib.CVineStructure" title="Link to this definition"></a></dt>
 <dd><p>A class for C-vine structures.</p>
-<p>C-vines are a special class of R-vines where each tree is a star. A
-C-vine structure is determined entirely by the order of variables. For
-example, if the order is <code class="docutils literal notranslate"><span class="pre">{1,</span> <span class="pre">2,</span> <span class="pre">3,</span> <span class="pre">4}</span></code>, the first tree in the vine
-connects variable 4 with all others, the second tree connects variable
-3 with all others, etc.</p>
-<p>Note that <code class="docutils literal notranslate"><span class="pre">CVineStructure</span></code> objects inherit the methods and
-attributes of <code class="docutils literal notranslate"><span class="pre">RVineStructure</span></code> objects.</p>
+<p>C-vines are a special class of R-vines where each tree is a star. A C-vine structure is determined
+entirely by the order of variables. For example, if the order is <code class="docutils literal notranslate"><span class="pre">{1,</span> <span class="pre">2,</span> <span class="pre">3,</span> <span class="pre">4}</span></code>, the first tree in
+the vine connects variable 4 with all others, the second tree connects variable 3 with all others,
+etc.</p>
+<p>Note that <a class="reference internal" href="#pyvinecopulib.CVineStructure" title="pyvinecopulib.CVineStructure"><code class="xref py py-class docutils literal notranslate"><span class="pre">CVineStructure</span></code></a> objects inherit the methods and attributes of <a class="reference internal" href="pyvinecopulib.RVineStructure.html#pyvinecopulib.RVineStructure" title="pyvinecopulib.RVineStructure"><code class="xref py py-class docutils literal notranslate"><span class="pre">RVineStructure</span></code></a>
+objects.</p>
 <p class="rubric">Attributes</p>
 <table class="autosummary longtable docutils align-default">
 <tbody>
 <tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">dim</span></code></p></td>
 <td><p>The dimension.</p></td>
 </tr>
-<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">order</span></code></p></td>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">matrix</span></code></p></td>
+<td><p>Gets the R-vine matrix representation.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">order</span></code></p></td>
 <td><p>The variable order.</p></td>
 </tr>
-<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">trunc_lvl</span></code></p></td>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">trunc_lvl</span></code></p></td>
 <td><p>The truncation level.</p></td>
 </tr>
 </tbody>
@@ -122,7 +119,7 @@ attributes of <code class="docutils literal notranslate"><span class="pre">RVine
 <table class="autosummary longtable docutils align-default">
 <tbody>
 <tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.CVineStructure.__init__.html#pyvinecopulib.CVineStructure.__init__" title="pyvinecopulib.CVineStructure.__init__"><code class="xref py py-obj docutils literal notranslate"><span class="pre">__init__</span></code></a></p></td>
-<td><p>Overloaded function.</p></td>
+<td><p>Creates a new instance of the class.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.CVineStructure.simulate.html#pyvinecopulib.CVineStructure.simulate" title="pyvinecopulib.CVineStructure.simulate"><code class="xref py py-obj docutils literal notranslate"><span class="pre">simulate</span></code></a></p></td>
 <td><p>Randomly sample a regular vine structure.</p></td>

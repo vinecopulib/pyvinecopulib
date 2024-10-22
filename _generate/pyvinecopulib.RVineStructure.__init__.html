@@ -1,23 +1,21 @@
+
+
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" data-content_root="../">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RVineStructure.__init__ &mdash; pyvinecopulib 0.6.6 documentation</title>
+  <title>RVineStructure.__init__ &mdash; pyvinecopulib 0.6.7 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=7ab3649f" />
 
   
-  <!--[if lt IE 9]>
-    <script src="../_static/js/html5shiv.min.js"></script>
-  <![endif]-->
-  
-        <script src="../_static/jquery.js?v=5d32c60e"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../_static/documentation_options.js?v=d129ce28"></script>
-        <script src="../_static/doctools.js?v=888ff710"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=b5e61e6c"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -37,9 +35,6 @@
             pyvinecopulib
               <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo"/>
           </a>
-              <div class="version">
-                0.6.6
-              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -100,63 +95,69 @@
 <dl class="py method">
 <dt class="sig sig-object py" id="pyvinecopulib.RVineStructure.__init__">
 <span class="sig-prename descclassname"><span class="pre">RVineStructure.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyvinecopulib.RVineStructure.__init__" title="Link to this definition"></a></dt>
-<dd><p>Overloaded function.</p>
+<dd><p>Creates a new instance of the class.</p>
 <ol class="arabic simple">
 <li><p>__init__(self: pyvinecopulib.RVineStructure, d: int = 1, trunc_lvl: int = 18446744073709551615) -&gt; None</p></li>
 </ol>
-<p>Instantiates an RVineStructure object to a D-vine for a given
-dimension.</p>
-<dl class="simple">
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">d</span></code>:</dt><dd><p>The dimension.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">trunc_lvl</span></code>:</dt><dd><p>The truncation level. By default, it is dim - 1.</p>
+<p>Instantiates as a D-vine for a given dimension.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>d</strong> – The dimension.</p></li>
+<li><p><strong>trunc_lvl</strong> – The truncation level. By default, it is dim - 1.</p></li>
+</ul>
 </dd>
 </dl>
 <ol class="arabic simple" start="2">
 <li><p>__init__(self: pyvinecopulib.RVineStructure, mat: numpy.ndarray[numpy.uint64[m, n]], check: bool = True) -&gt; None</p></li>
 </ol>
-<p>Instantiates an RVineStructure object from a matrix representing an
-R-vine array.</p>
-<p>The matrix must contain zeros in the lower right triangle and the
-upper left triangle must be a valid R-vine array. Truncated vines can
-be encoded by putting zeros above the digonal in all rows below the
-truncation level. Example of a 1-truncated matrix:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">4</span> <span class="mi">4</span> <span class="mi">4</span> <span class="mi">4</span>
-<span class="mi">0</span> <span class="mi">0</span> <span class="mi">3</span> <span class="mi">0</span>
-<span class="mi">0</span> <span class="mi">2</span> <span class="mi">0</span> <span class="mi">0</span>
-<span class="mi">1</span> <span class="mi">0</span> <span class="mi">0</span> <span class="mi">0</span>
-</pre></div>
-</div>
+<blockquote>
+<div><p>Instantiates an RVineStructure object from a matrix representing an R-vine array. The matrix must contain zeros in the lower right triangle and the upper left triangle must be a valid R-vine array. Truncated vines can be encoded by putting zeros above the digonal in all rows below the truncation level. Example of a 1-truncated matrix</p>
+</div></blockquote>
 <dl class="simple">
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">mat</span></code>:</dt><dd><p>A matrix representing a valid R-vine array.</p>
+<dt>:</dt><dd><p>4 4 4 4
+0 0 3 0
+0 2 0 0
+1 0 0 0</p>
 </dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">check</span></code>:</dt><dd><p>Whether <code class="docutils literal notranslate"><span class="pre">mat</span></code> shall be checked for validity.</p>
+</dl>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mat</strong> – A matrix representing a valid R-vine array.</p></li>
+<li><p><strong>check</strong> – Whether <code class="docutils literal notranslate"><span class="pre">mat</span></code> shall be checked for validity.</p></li>
+</ul>
 </dd>
 </dl>
 <ol class="arabic simple" start="3">
 <li><p>__init__(self: pyvinecopulib.RVineStructure, order: list[int], trunc_lvl: int = 18446744073709551615, check: bool = True) -&gt; None</p></li>
 </ol>
-<p>Instantiates an RVineStructure object to a D-vine with a given
-ordering of the variables.</p>
-<dl class="simple">
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">order</span></code>:</dt><dd><p>The order of variables in the D-vine (diagonal entries in the
-R-vine array); must be a permutation of 1, …, d.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">trunc_lvl</span></code>:</dt><dd><p>The truncation level. By default, it is d - 1.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">check</span></code>:</dt><dd><p>Whether <a href="#id1"><span class="problematic" id="id2">`</span></a>order shall be checked for validity.</p>
+<blockquote>
+<div><p>Instantiates as a D-vine with a given ordering of the variables.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>order</strong> – The order of variables in the D-vine (diagonal entries in the R-vine array); must be a
+permutation of 1, …, d.</p></li>
+<li><p><strong>trunc_lvl</strong> – The truncation level. By default, it is d - 1.</p></li>
+<li><p><strong>check</strong> – Whether <a href="#id1"><span class="problematic" id="id2">`</span></a>order shall be checked for validity.</p></li>
+</ul>
 </dd>
 </dl>
 <ol class="arabic simple" start="4">
 <li><p>__init__(self: pyvinecopulib.RVineStructure, filename: str, check: bool = True) -&gt; None</p></li>
 </ol>
-<p>Instantiates an RVineStructure from a JSON file.</p>
-<p>The file needs to contain two values: <code class="docutils literal notranslate"><span class="pre">&quot;array&quot;</span></code> for the structure
-triangular array and <code class="docutils literal notranslate"><span class="pre">&quot;order&quot;</span></code> for the order vector.</p>
-<dl class="simple">
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">filename</span></code>:</dt><dd><p>The name of the JSON file to read.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">check</span></code>:</dt><dd><p>Whether to check if the input represents a valid R-vine matrix.</p>
+<blockquote>
+<div><p>Instantiates an RVineStructure from a JSON file. The file needs to contain two valuesThe file needs to contain two values: <code class="docutils literal notranslate"><span class="pre">&quot;array&quot;</span></code> for the structure triangular array and <code class="docutils literal notranslate"><span class="pre">&quot;order&quot;</span></code>
+for the order vector.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>filename</strong> – The name of the JSON file to read.</p></li>
+<li><p><strong>check</strong> – Whether to check if the input represents a valid R-vine matrix.</p></li>
+</ul>
 </dd>
 </dl>
 </dd></dl>

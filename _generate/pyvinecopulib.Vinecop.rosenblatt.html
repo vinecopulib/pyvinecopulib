@@ -1,29 +1,27 @@
+
+
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" data-content_root="../">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Vinecop.rosenblatt &mdash; pyvinecopulib 0.6.6 documentation</title>
+  <title>Vinecop.rosenblatt &mdash; pyvinecopulib 0.6.7 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=7ab3649f" />
 
   
-  <!--[if lt IE 9]>
-    <script src="../_static/js/html5shiv.min.js"></script>
-  <![endif]-->
-  
-        <script src="../_static/jquery.js?v=5d32c60e"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../_static/documentation_options.js?v=d129ce28"></script>
-        <script src="../_static/doctools.js?v=888ff710"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
-        <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=b5e61e6c"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="Vinecop.select" href="pyvinecopulib.Vinecop.select.html" />
-    <link rel="prev" title="Vinecop.pdf" href="pyvinecopulib.Vinecop.pdf.html" /> 
+    <link rel="prev" title="Vinecop.plot" href="pyvinecopulib.Vinecop.plot.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -38,9 +36,6 @@
             pyvinecopulib
               <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo"/>
           </a>
-              <div class="version">
-                0.6.6
-              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -59,6 +54,7 @@
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.aic.html">Vinecop.aic</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.bic.html">Vinecop.bic</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.cdf.html">Vinecop.cdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.fit.html">Vinecop.fit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_family.html">Vinecop.get_family</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_pair_copula.html">Vinecop.get_pair_copula</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_parameters.html">Vinecop.get_parameters</a></li>
@@ -68,6 +64,7 @@
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.loglik.html">Vinecop.loglik</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.mbicv.html">Vinecop.mbicv</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.pdf.html">Vinecop.pdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.plot.html">Vinecop.plot</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Vinecop.rosenblatt</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#pyvinecopulib.Vinecop.rosenblatt"><code class="docutils literal notranslate"><span class="pre">Vinecop.rosenblatt()</span></code></a></li>
 </ul>
@@ -113,47 +110,55 @@
 <h1>Vinecop.rosenblatt<a class="headerlink" href="#vinecop-rosenblatt" title="Link to this heading"></a></h1>
 <dl class="py method">
 <dt class="sig sig-object py" id="pyvinecopulib.Vinecop.rosenblatt">
-<span class="sig-prename descclassname"><span class="pre">Vinecop.</span></span><span class="sig-name descname"><span class="pre">rosenblatt</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="pyvinecopulib.Vinecop.html#pyvinecopulib.Vinecop" title="pyvinecopulib.Vinecop"><span class="pre">pyvinecopulib.Vinecop</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">u</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_threads</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#pyvinecopulib.Vinecop.rosenblatt" title="Link to this definition"></a></dt>
+<span class="sig-prename descclassname"><span class="pre">Vinecop.</span></span><span class="sig-name descname"><span class="pre">rosenblatt</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="pyvinecopulib.Vinecop.html#pyvinecopulib.Vinecop" title="pyvinecopulib.Vinecop"><span class="pre">pyvinecopulib.Vinecop</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">u</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_threads</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">randomize_discrete</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seeds</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">[]</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#pyvinecopulib.Vinecop.rosenblatt" title="Link to this definition"></a></dt>
 <dd><p>Evaluates the Rosenblatt transform for a vine copula model.</p>
-<p>The Rosenblatt transform converts data from this model into
-independent uniform variates. Only works for continuous data.</p>
-<dl class="simple">
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">u</span></code>:</dt><dd><p>An <span class="math notranslate nohighlight">\(n \times d\)</span> or <span class="math notranslate nohighlight">\(n \times 2d\)</span> matrix of evaluation
-points.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">num_threads</span></code>:</dt><dd><p>The number of threads to use for computations; if greater than 1,
-the function will be applied concurrently to <code class="docutils literal notranslate"><span class="pre">num_threads</span></code>
-batches of <code class="docutils literal notranslate"><span class="pre">u</span></code>.</p>
-</dd>
-</dl>
-<p>The Rosenblatt transform (Rosenblatt, 1952) <span class="math notranslate nohighlight">\(U = T(V)\)</span> of a
-random vector <span class="math notranslate nohighlight">\(V = (V_1,\ldots,V_d) ~ F\)</span> is defined as</p>
+<p>The Rosenblatt transform converts data from this model into independent uniform variates.</p>
+<p>The Rosenblatt transform (Rosenblatt, 1952) <span class="math notranslate nohighlight">\(U = T(V)\)</span> of a random vector <span class="math notranslate nohighlight">\(V =
+(V_1,\ldots,V_d) ~ F\)</span> is defined as</p>
 <div class="math notranslate nohighlight">
-\[U_1= F(V_1), U_{2} = F(V_{2}|V_1), \ldots, U_d\]</div>
-<p>=F(V_d|V_1,ldots,V_{d-1}),</p>
-<p>where <span class="math notranslate nohighlight">\(F(v_k|v_1,\ldots,v_{k-1})\)</span> is the conditional
-distribution of <span class="math notranslate nohighlight">\(V_k\)</span> given <span class="math notranslate nohighlight">\(V_1 \ldots, V_{k-1}, k =
-2,\ldots,d\)</span>. The vector <span class="math notranslate nohighlight">\(U = (U_1, \dots, U_d)\)</span> then contains
+\[U_1= F(V_1), U_{2} = F(V_{2}|V_1), \ldots, U_d =F(V_d|V_1,\ldots,V_{d-1}),\]</div>
+<p>where <span class="math notranslate nohighlight">\(F(v_k|v_1,\ldots,v_{k-1})\)</span> is the conditional distribution of <span class="math notranslate nohighlight">\(V_k\)</span> given
+<span class="math notranslate nohighlight">\(V_1 \ldots, V_{k-1}, k = 2,\ldots,d\)</span>. The vector <span class="math notranslate nohighlight">\(U = (U_1, \dots, U_d)\)</span> then contains
 independent standard uniform variables. The inverse operation</p>
 <div class="math notranslate nohighlight">
-\[V_1 = F^{-1}(U_1), V_{2} = F^{-1}(U_2|U_1), \ldots, V_d\]</div>
-<p>=F^{-1}(U_d|U_1,ldots,U_{d-1})</p>
-<p>can be used to simulate from a distribution. For any copula <span class="math notranslate nohighlight">\(F\)</span>,
-if <span class="math notranslate nohighlight">\(U\)</span> is a vector of independent random variables, <span class="math notranslate nohighlight">\(V =
-T^{-1}(U)\)</span> has distribution <span class="math notranslate nohighlight">\(F\)</span>.</p>
-<p>The formulas above assume a vine copula model with order <span class="math notranslate nohighlight">\(d,
-\dots, 1\)</span>. More generally, <code class="docutils literal notranslate"><span class="pre">Vinecop::rosenblatt()</span></code> returns the
-variables</p>
+\[V_1 = F^{-1}(U_1), V_{2} = F^{-1}(U_2|U_1), \ldots, V_d =F^{-1}(U_d|U_1,\ldots,U_{d-1})\]</div>
+<p>can be used to simulate from a distribution. For any copula <span class="math notranslate nohighlight">\(F\)</span>, if <span class="math notranslate nohighlight">\(U\)</span> is a vector of
+independent random variables, <span class="math notranslate nohighlight">\(V = T^{-1}(U)\)</span> has distribution <span class="math notranslate nohighlight">\(F\)</span>.</p>
+<p>The formulas above assume a vine copula model with order <span class="math notranslate nohighlight">\(d, \dots, 1\)</span>. More generally,
+<a class="reference internal" href="#pyvinecopulib.Vinecop.rosenblatt" title="pyvinecopulib.Vinecop.rosenblatt"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Vinecop.rosenblatt()</span></code></a> returns the variables</p>
 <div class="math notranslate nohighlight">
-\[U_{M[d - j, j]}= F(V_{M[d - j, j]} | V_{M[d - j - 1, j -\]</div>
-<p>1]}, dots, V_{M[0, 0]}),</p>
-<p>where <span class="math notranslate nohighlight">\(M\)</span> is the structure matrix. Similarly,
-<code class="docutils literal notranslate"><span class="pre">Vinecop::inverse_rosenblatt()</span></code> returns</p>
+\[U_{M[d - j, j]}= F(V_{M[d - j, j]} | V_{M[d - j - 1, j - 1]}, \dots, V_{M[0, 0]}),\]</div>
+<p>where <span class="math notranslate nohighlight">\(M\)</span> is the structure matrix. Similarly, <a class="reference internal" href="pyvinecopulib.Vinecop.inverse_rosenblatt.html#pyvinecopulib.Vinecop.inverse_rosenblatt" title="pyvinecopulib.Vinecop.inverse_rosenblatt"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Vinecop.inverse_rosenblatt()</span></code></a> computes</p>
 <div class="math notranslate nohighlight">
-\[V_{M[d - j, j]}= F^{-1}(U_{M[d - j, j]} | U_{M[d - j - 1, j\]</div>
-<ul class="simple">
-<li><p>1]}, dots, U_{M[0, 0]}).</p></li>
+\[V_{M[d - j, j]}= F^{-1}(U_{M[d - j, j]} | U_{M[d - j - 1, j - 1]}, \dots, U_{M[0, 0]}).\]</div>
+<p>If some variables have atoms, Brockwell (10.1016/j.spl.2007.02.008) proposed a simple randomization
+scheme to ensure that output is still independent uniform if the model is correct. The
+transformation reads</p>
+<div class="math notranslate nohighlight">
+\[U_{M[d - j, j]}= W_{d - j} F(V_{M[d - j, j]} | V_{M[d - j - 1, j - 1]}, \dots, V_{M[0,\]</div>
+<p>0]}) + (1 - W_{d - j}) F^-(V_{M[d - j, j]} | V_{M[d - j - 1, j - 1]}, dots, V_{M[0, 0]}),</p>
+<p>where <span class="math notranslate nohighlight">\(F^-\)</span> is the left limit of the conditional cdf and <span class="math notranslate nohighlight">\(W_1, \dots, W_d\)</span> are are
+independent standard uniform random variables. This is used by default. If you are interested in the
+conditional probabilities</p>
+<div class="math notranslate nohighlight">
+\[F(V_{M[d - j, j]} | V_{M[d - j - 1, j - 1]}, \dots, V_{M[0, 0]}),\]</div>
+<p>set <code class="docutils literal notranslate"><span class="pre">randomize_discrete</span> <span class="pre">=</span> <span class="pre">FALSE</span></code>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>u</strong> – An <span class="math notranslate nohighlight">\(n \times d\)</span> matrix of evaluation points.</p></li>
+<li><p><strong>num_threads</strong> – The number of threads to use for computations; if greater than 1, the function will be applied
+concurrently to <code class="docutils literal notranslate"><span class="pre">num_threads</span></code> batches of <code class="docutils literal notranslate"><span class="pre">u</span></code>.</p></li>
+<li><p><strong>randomize_discrete</strong> – Whether to randomize the transform for discrete variables; see Details.</p></li>
+<li><p><strong>seeds</strong> – Seeds to scramble the quasi-random numbers; if empty (default), the random number
+quasi-generator is seeded randomly. Only relevant if there are discrete variables and
+<code class="docutils literal notranslate"><span class="pre">randomize_discrete</span> <span class="pre">=</span> <span class="pre">TRUE</span></code>.</p></li>
 </ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>An <span class="math notranslate nohighlight">\(n \times d\)</span> matrix of independent uniform variates.</p>
+</dd>
+</dl>
 </dd></dl>
 
 </section>
@@ -162,7 +167,7 @@ variables</p>
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="pyvinecopulib.Vinecop.pdf.html" class="btn btn-neutral float-left" title="Vinecop.pdf" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="pyvinecopulib.Vinecop.plot.html" class="btn btn-neutral float-left" title="Vinecop.plot" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="pyvinecopulib.Vinecop.select.html" class="btn btn-neutral float-right" title="Vinecop.select" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 

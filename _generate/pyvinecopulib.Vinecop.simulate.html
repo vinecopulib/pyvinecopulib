@@ -1,24 +1,22 @@
+
+
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" data-content_root="../">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Vinecop.simulate &mdash; pyvinecopulib 0.6.6 documentation</title>
+  <title>Vinecop.simulate &mdash; pyvinecopulib 0.6.7 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=7ab3649f" />
 
   
-  <!--[if lt IE 9]>
-    <script src="../_static/js/html5shiv.min.js"></script>
-  <![endif]-->
-  
-        <script src="../_static/jquery.js?v=5d32c60e"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../_static/documentation_options.js?v=d129ce28"></script>
-        <script src="../_static/doctools.js?v=888ff710"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
-        <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=b5e61e6c"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -38,9 +36,6 @@
             pyvinecopulib
               <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo"/>
           </a>
-              <div class="version">
-                0.6.6
-              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -59,6 +54,7 @@
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.aic.html">Vinecop.aic</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.bic.html">Vinecop.bic</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.cdf.html">Vinecop.cdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.fit.html">Vinecop.fit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_family.html">Vinecop.get_family</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_pair_copula.html">Vinecop.get_pair_copula</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_parameters.html">Vinecop.get_parameters</a></li>
@@ -68,6 +64,7 @@
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.loglik.html">Vinecop.loglik</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.mbicv.html">Vinecop.mbicv</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.pdf.html">Vinecop.pdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.plot.html">Vinecop.plot</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.rosenblatt.html">Vinecop.rosenblatt</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.select.html">Vinecop.select</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Vinecop.simulate</a><ul>
@@ -115,23 +112,22 @@
 <dt class="sig sig-object py" id="pyvinecopulib.Vinecop.simulate">
 <span class="sig-prename descclassname"><span class="pre">Vinecop.</span></span><span class="sig-name descname"><span class="pre">simulate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="pyvinecopulib.Vinecop.html#pyvinecopulib.Vinecop" title="pyvinecopulib.Vinecop"><span class="pre">pyvinecopulib.Vinecop</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">qrng</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_threads</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seeds</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">[]</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#pyvinecopulib.Vinecop.simulate" title="Link to this definition"></a></dt>
 <dd><p>Simulates from a vine copula model, see <code class="docutils literal notranslate"><span class="pre">inverse_rosenblatt()</span></code>.</p>
-<p>Simulated data is always a continous <span class="math notranslate nohighlight">\(n \times d\)</span> matrix.</p>
-<dl class="simple">
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">n</span></code>:</dt><dd><p>Number of observations.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">qrng</span></code>:</dt><dd><p>Set to true for quasi-random numbers.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">num_threads</span></code>:</dt><dd><p>The number of threads to use for computations; if greater than 1,
-the function will generate <code class="docutils literal notranslate"><span class="pre">n</span></code> samples concurrently in
-<code class="docutils literal notranslate"><span class="pre">num_threads</span></code> batches.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">seeds</span></code>:</dt><dd><p>Seeds of the random number generator; if empty (default), the
-random number generator is seeded randomly.</p>
-</dd>
-</dl>
+<p>Simulated data is always a continous <span class="math notranslate nohighlight">\(n \times d\)</span> matrix. Sampling from a vine copula model is
+done by first generating <span class="math notranslate nohighlight">\(n \times d\)</span> uniform random numbers and then applying the inverse
+Rosenblatt transformation.</p>
 <dl class="field-list simple">
-<dt class="field-odd">Returns<span class="colon">:</span></dt>
-<dd class="field-odd"><p>An <span class="math notranslate nohighlight">\(n \times d\)</span> matrix of samples from the copula model.</p>
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n</strong> – Number of observations.</p></li>
+<li><p><strong>qrng</strong> – Set to true for quasi-random numbers.</p></li>
+<li><p><strong>num_threads</strong> – The number of threads to use for computations; if greater than 1, the function will generate
+<code class="docutils literal notranslate"><span class="pre">n</span></code> samples concurrently in <code class="docutils literal notranslate"><span class="pre">num_threads</span></code> batches.</p></li>
+<li><p><strong>seeds</strong> – Seeds of the random number generator; if empty (default), the random number generator is seeded
+randomly.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>An <span class="math notranslate nohighlight">\(n \times d\)</span> matrix of samples from the copula model.</p>
 </dd>
 </dl>
 </dd></dl>

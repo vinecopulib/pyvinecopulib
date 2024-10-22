@@ -1,28 +1,26 @@
+
+
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" data-content_root="../">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Vinecop.pdf &mdash; pyvinecopulib 0.6.6 documentation</title>
+  <title>Vinecop.pdf &mdash; pyvinecopulib 0.6.7 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=7ab3649f" />
 
   
-  <!--[if lt IE 9]>
-    <script src="../_static/js/html5shiv.min.js"></script>
-  <![endif]-->
-  
-        <script src="../_static/jquery.js?v=5d32c60e"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../_static/documentation_options.js?v=d129ce28"></script>
-        <script src="../_static/doctools.js?v=888ff710"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
-        <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=b5e61e6c"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Vinecop.rosenblatt" href="pyvinecopulib.Vinecop.rosenblatt.html" />
+    <link rel="next" title="Vinecop.plot" href="pyvinecopulib.Vinecop.plot.html" />
     <link rel="prev" title="Vinecop.mbicv" href="pyvinecopulib.Vinecop.mbicv.html" /> 
 </head>
 
@@ -38,9 +36,6 @@
             pyvinecopulib
               <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo"/>
           </a>
-              <div class="version">
-                0.6.6
-              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -59,6 +54,7 @@
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.aic.html">Vinecop.aic</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.bic.html">Vinecop.bic</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.cdf.html">Vinecop.cdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.fit.html">Vinecop.fit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_family.html">Vinecop.get_family</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_pair_copula.html">Vinecop.get_pair_copula</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_parameters.html">Vinecop.get_parameters</a></li>
@@ -71,6 +67,7 @@
 <li class="toctree-l3"><a class="reference internal" href="#pyvinecopulib.Vinecop.pdf"><code class="docutils literal notranslate"><span class="pre">Vinecop.pdf()</span></code></a></li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.plot.html">Vinecop.plot</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.rosenblatt.html">Vinecop.rosenblatt</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.select.html">Vinecop.select</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.simulate.html">Vinecop.simulate</a></li>
@@ -115,16 +112,25 @@
 <dt class="sig sig-object py" id="pyvinecopulib.Vinecop.pdf">
 <span class="sig-prename descclassname"><span class="pre">Vinecop.</span></span><span class="sig-name descname"><span class="pre">pdf</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="pyvinecopulib.Vinecop.html#pyvinecopulib.Vinecop" title="pyvinecopulib.Vinecop"><span class="pre">pyvinecopulib.Vinecop</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">u</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_threads</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="m"><span class="pre">1</span></span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#pyvinecopulib.Vinecop.pdf" title="Link to this definition"></a></dt>
 <dd><p>Evaluates the copula density.</p>
-<p>The copula density is defined as joint density divided by marginal
-densities, irrespective of variable types.</p>
-<dl class="simple">
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">u</span></code>:</dt><dd><p>An <span class="math notranslate nohighlight">\(n \times (d + k)\)</span> or <span class="math notranslate nohighlight">\(n \times 2d\)</span> matrix of
-evaluation points, where <span class="math notranslate nohighlight">\(k\)</span> is the number of discrete
-variables (see <code class="docutils literal notranslate"><span class="pre">select()</span></code>).</p>
+<p>The copula density is defined as joint density divided by marginal densities, irrespective of
+variable types.</p>
+<p>When at least one variable is discrete, two types of “observations” are required in <code class="docutils literal notranslate"><span class="pre">u</span></code>: the first
+<span class="math notranslate nohighlight">\(n \; x \; d\)</span> block contains realizations of <span class="math notranslate nohighlight">\(F_{X_j}(X_j)\)</span>. The second <span class="math notranslate nohighlight">\(n \; x \;
+d\)</span> block contains realizations of <span class="math notranslate nohighlight">\(F_{X_j}(X_j^-)\)</span>. The minus indicates a left-sided limit of
+the cdf. For, e.g., an integer-valued variable, it holds <span class="math notranslate nohighlight">\(F_{X_j}(X_j^-) = F_{X_j}(X_j - 1)\)</span>.
+For continuous variables the left limit and the cdf itself coincide. Respective columns can be
+omitted in the second block.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>u</strong> – An <span class="math notranslate nohighlight">\(n \times (d + k)\)</span> or <span class="math notranslate nohighlight">\(n \times 2d\)</span> matrix of evaluation points, where <span class="math notranslate nohighlight">\(k\)</span>
+is the number of discrete variables (see <a class="reference internal" href="pyvinecopulib.Vinecop.select.html#pyvinecopulib.Vinecop.select" title="pyvinecopulib.Vinecop.select"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Vinecop.select()</span></code></a>).</p></li>
+<li><p><strong>num_threads</strong> – The number of threads to use for computations; if greater than 1, the function will be applied
+concurrently to <code class="docutils literal notranslate"><span class="pre">num_threads</span></code> batches of <code class="docutils literal notranslate"><span class="pre">u</span></code>.</p></li>
+</ul>
 </dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">num_threads</span></code>:</dt><dd><p>The number of threads to use for computations; if greater than 1,
-the function will be applied concurrently to <code class="docutils literal notranslate"><span class="pre">num_threads</span></code>
-batches of <code class="docutils literal notranslate"><span class="pre">u</span></code>.</p>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>A vector of length <code class="docutils literal notranslate"><span class="pre">n</span></code> containing the copula density values.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -136,7 +142,7 @@ batches of <code class="docutils literal notranslate"><span class="pre">u</span>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="pyvinecopulib.Vinecop.mbicv.html" class="btn btn-neutral float-left" title="Vinecop.mbicv" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="pyvinecopulib.Vinecop.rosenblatt.html" class="btn btn-neutral float-right" title="Vinecop.rosenblatt" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="pyvinecopulib.Vinecop.plot.html" class="btn btn-neutral float-right" title="Vinecop.plot" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

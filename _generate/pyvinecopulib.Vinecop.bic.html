@@ -1,24 +1,22 @@
+
+
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" data-content_root="../">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Vinecop.bic &mdash; pyvinecopulib 0.6.6 documentation</title>
+  <title>Vinecop.bic &mdash; pyvinecopulib 0.6.7 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=7ab3649f" />
 
   
-  <!--[if lt IE 9]>
-    <script src="../_static/js/html5shiv.min.js"></script>
-  <![endif]-->
-  
-        <script src="../_static/jquery.js?v=5d32c60e"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../_static/documentation_options.js?v=d129ce28"></script>
-        <script src="../_static/doctools.js?v=888ff710"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
-        <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=b5e61e6c"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -38,9 +36,6 @@
             pyvinecopulib
               <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo"/>
           </a>
-              <div class="version">
-                0.6.6
-              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -62,6 +57,7 @@
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.cdf.html">Vinecop.cdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.fit.html">Vinecop.fit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_family.html">Vinecop.get_family</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_pair_copula.html">Vinecop.get_pair_copula</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_parameters.html">Vinecop.get_parameters</a></li>
@@ -71,6 +67,7 @@
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.loglik.html">Vinecop.loglik</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.mbicv.html">Vinecop.mbicv</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.pdf.html">Vinecop.pdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.plot.html">Vinecop.plot</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.rosenblatt.html">Vinecop.rosenblatt</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.select.html">Vinecop.select</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.simulate.html">Vinecop.simulate</a></li>
@@ -118,18 +115,20 @@
 <p>The BIC is defined as</p>
 <div class="math notranslate nohighlight">
 \[\mathrm{BIC} = -2\, \mathrm{loglik} + \log(n) p,\]</div>
-<p>where <span class="math notranslate nohighlight">\(\mathrm{loglik}\)</span> is the log-liklihood (see <code class="docutils literal notranslate"><span class="pre">loglik()</span></code>)
-and <span class="math notranslate nohighlight">\(p\)</span> is the (effective) number of parameters of the model.
-The BIC is a consistent model selection criterion for nonparametric
-models.</p>
-<dl class="simple">
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">u</span></code>:</dt><dd><p>An <span class="math notranslate nohighlight">\(n \times (d + k)\)</span> or <span class="math notranslate nohighlight">\(n \times 2d\)</span> matrix of
-evaluation points, where <span class="math notranslate nohighlight">\(k\)</span> is the number of discrete
-variables (see <code class="docutils literal notranslate"><span class="pre">select()</span></code>).</p>
+<p>where <span class="math notranslate nohighlight">\(\mathrm{loglik}\)</span> is the log-liklihood (see <a class="reference internal" href="pyvinecopulib.Vinecop.loglik.html#pyvinecopulib.Vinecop.loglik" title="pyvinecopulib.Vinecop.loglik"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Vinecop.loglik()</span></code></a>) and <span class="math notranslate nohighlight">\(p\)</span> is the
+(effective) number of parameters of the model. The BIC is a consistent model selection criterion for
+nonparametric models.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>u</strong> – An <span class="math notranslate nohighlight">\(n \times (d + k)\)</span> or <span class="math notranslate nohighlight">\(n \times 2d\)</span> matrix of evaluation points, where <span class="math notranslate nohighlight">\(k\)</span>
+is the number of discrete variables (see <a class="reference internal" href="pyvinecopulib.Vinecop.select.html#pyvinecopulib.Vinecop.select" title="pyvinecopulib.Vinecop.select"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Vinecop.select()</span></code></a> or <a class="reference internal" href="pyvinecopulib.Vinecop.pdf.html#pyvinecopulib.Vinecop.pdf" title="pyvinecopulib.Vinecop.pdf"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Vinecop.pdf()</span></code></a>).</p></li>
+<li><p><strong>num_threads</strong> – The number of threads to use for computations; if greater than 1, the function will be applied
+concurrently to <code class="docutils literal notranslate"><span class="pre">num_threads</span></code> batches of <code class="docutils literal notranslate"><span class="pre">u</span></code>.</p></li>
+</ul>
 </dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">num_threads</span></code>:</dt><dd><p>The number of threads to use for computations; if greater than 1,
-the function will be applied concurrently to <code class="docutils literal notranslate"><span class="pre">num_threads</span></code>
-batches of <code class="docutils literal notranslate"><span class="pre">u</span></code>.</p>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>The BIC as a double.</em></p>
 </dd>
 </dl>
 </dd></dl>

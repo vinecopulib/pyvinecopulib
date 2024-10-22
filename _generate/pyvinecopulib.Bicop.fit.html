@@ -1,24 +1,22 @@
+
+
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" data-content_root="../">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bicop.fit &mdash; pyvinecopulib 0.6.6 documentation</title>
+  <title>Bicop.fit &mdash; pyvinecopulib 0.6.7 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=7ab3649f" />
 
   
-  <!--[if lt IE 9]>
-    <script src="../_static/js/html5shiv.min.js"></script>
-  <![endif]-->
-  
-        <script src="../_static/jquery.js?v=5d32c60e"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../_static/documentation_options.js?v=d129ce28"></script>
-        <script src="../_static/doctools.js?v=888ff710"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
-        <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=b5e61e6c"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -38,9 +36,6 @@
             pyvinecopulib
               <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo"/>
           </a>
-              <div class="version">
-                0.6.6
-              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -71,6 +66,7 @@
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.parameters_to_tau.html">Bicop.parameters_to_tau</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.parameters_upper_bounds.html">Bicop.parameters_upper_bounds</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.pdf.html">Bicop.pdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.plot.html">Bicop.plot</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.select.html">Bicop.select</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.simulate.html">Bicop.simulate</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.str.html">Bicop.str</a></li>
@@ -116,30 +112,26 @@
 <dt class="sig sig-object py" id="pyvinecopulib.Bicop.fit">
 <span class="sig-prename descclassname"><span class="pre">Bicop.</span></span><span class="sig-name descname"><span class="pre">fit</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="pyvinecopulib.Bicop.html#pyvinecopulib.Bicop" title="pyvinecopulib.Bicop"><span class="pre">pyvinecopulib.Bicop</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">data</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">controls</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="pyvinecopulib.FitControlsBicop.html#pyvinecopulib.FitControlsBicop" title="pyvinecopulib.FitControlsBicop"><span class="pre">pyvinecopulib.FitControlsBicop</span></a></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">FitControlsBicop()</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyvinecopulib.Bicop.fit" title="Link to this definition"></a></dt>
 <dd><p>Fits a bivariate copula (with fixed family) to data.</p>
-<p>For parametric models, two different methods are available. <code class="docutils literal notranslate"><span class="pre">&quot;mle&quot;</span></code>
-fits the parameters by maximum-likelihood. <code class="docutils literal notranslate"><span class="pre">&quot;itau&quot;</span></code> uses inversion
-of Kendall’s <span class="math notranslate nohighlight">\(\tau\)</span>, but is only available for one-parameter
-families and the Student t copula. For the latter, there is a
-one-to-one transformation for the first parameter, the second is found
-by profile likelihood optimization (with accuracy of at least 0.5).
-Nonparametric families have specialized methods, no specification is
+<p>For parametric models, two different methods are available. <code class="docutils literal notranslate"><span class="pre">&quot;mle&quot;</span></code> fits the parameters by
+maximum-likelihood. <code class="docutils literal notranslate"><span class="pre">&quot;itau&quot;</span></code> uses inversion of Kendall’s <span class="math notranslate nohighlight">\(\tau\)</span>, but is only available for
+one-parameter families and the Student t copula. For the latter, there is a one-to-one
+transformation for the first parameter, the second is found by profile likelihood optimization (with
+accuracy of at least 0.5). Nonparametric families have specialized methods, no specification is
 required.</p>
-<p>When at least one variable is discrete, two types of “observations”
-are required: the first <span class="math notranslate nohighlight">\(n \times 2\)</span> block contains realizations
-of <span class="math notranslate nohighlight">\(F_{X_1}(X_1), F_{X_2}(X_2)\)</span>. Let <span class="math notranslate nohighlight">\(k\)</span> denote the number
-of discrete variables (either one or two). Then the second <span class="math notranslate nohighlight">\(n
-\times k\)</span> block contains realizations of <span class="math notranslate nohighlight">\(F_{X_k}(X_k^-)\)</span>. The
-minus indicates a left-sided limit of the cdf. For continuous
-variables the left limit and the cdf itself coincide. For, e.g., an
-integer-valued variable, it holds <span class="math notranslate nohighlight">\(F_{X_k}(X_k^-) = F_{X_k}(X_k
-- 1)\)</span>.</p>
+<p>When at least one variable is discrete, two types of “observations” are required: the first <span class="math notranslate nohighlight">\(n
+\times 2\)</span> block contains realizations of <span class="math notranslate nohighlight">\(F_{X_1}(X_1), F_{X_2}(X_2)\)</span>. Let <span class="math notranslate nohighlight">\(k\)</span> denote
+the number of discrete variables (either one or two). Then the second <span class="math notranslate nohighlight">\(n \times k\)</span> block
+contains realizations of <span class="math notranslate nohighlight">\(F_{X_k}(X_k^-)\)</span>. The minus indicates a left-sided limit of the cdf.
+For continuous variables the left limit and the cdf itself coincide. For, e.g., an integer-valued
+variable, it holds <span class="math notranslate nohighlight">\(F_{X_k}(X_k^-) = F_{X_k}(X_k - 1)\)</span>.</p>
 <p>Incomplete observations (i.e., ones with a NaN value) are discarded.</p>
-<dl class="simple">
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">data</span></code>:</dt><dd><p>An <span class="math notranslate nohighlight">\(n \times (2 + k)\)</span> matrix of observations contained in
-<span class="math notranslate nohighlight">\((0, 1)\)</span>, where <span class="math notranslate nohighlight">\(k\)</span> is the number of discrete
-variables.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">controls</span></code>:</dt><dd><p>The controls (see FitControlsBicop).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>data</strong> – An <span class="math notranslate nohighlight">\(n \times (2 + k)\)</span> matrix of observations contained in <span class="math notranslate nohighlight">\((0, 1)\)</span>, where <span class="math notranslate nohighlight">\(k\)</span>
+is the number of discrete variables.</p></li>
+<li><p><strong>controls</strong> – The controls (see <a class="reference internal" href="pyvinecopulib.FitControlsBicop.html#pyvinecopulib.FitControlsBicop" title="pyvinecopulib.FitControlsBicop"><code class="xref py py-class docutils literal notranslate"><span class="pre">FitControlsBicop</span></code></a>).</p></li>
+</ul>
 </dd>
 </dl>
 </dd></dl>

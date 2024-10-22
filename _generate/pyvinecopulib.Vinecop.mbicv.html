@@ -1,24 +1,22 @@
+
+
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" data-content_root="../">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Vinecop.mbicv &mdash; pyvinecopulib 0.6.6 documentation</title>
+  <title>Vinecop.mbicv &mdash; pyvinecopulib 0.6.7 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=7ab3649f" />
 
   
-  <!--[if lt IE 9]>
-    <script src="../_static/js/html5shiv.min.js"></script>
-  <![endif]-->
-  
-        <script src="../_static/jquery.js?v=5d32c60e"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../_static/documentation_options.js?v=d129ce28"></script>
-        <script src="../_static/doctools.js?v=888ff710"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
-        <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=b5e61e6c"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -38,9 +36,6 @@
             pyvinecopulib
               <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo"/>
           </a>
-              <div class="version">
-                0.6.6
-              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -59,6 +54,7 @@
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.aic.html">Vinecop.aic</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.bic.html">Vinecop.bic</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.cdf.html">Vinecop.cdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.fit.html">Vinecop.fit</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_family.html">Vinecop.get_family</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_pair_copula.html">Vinecop.get_pair_copula</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.get_parameters.html">Vinecop.get_parameters</a></li>
@@ -71,6 +67,7 @@
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.pdf.html">Vinecop.pdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.plot.html">Vinecop.plot</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.rosenblatt.html">Vinecop.rosenblatt</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.select.html">Vinecop.select</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Vinecop.simulate.html">Vinecop.simulate</a></li>
@@ -114,30 +111,28 @@
 <dl class="py method">
 <dt class="sig sig-object py" id="pyvinecopulib.Vinecop.mbicv">
 <span class="sig-prename descclassname"><span class="pre">Vinecop.</span></span><span class="sig-name descname"><span class="pre">mbicv</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="pyvinecopulib.Vinecop.html#pyvinecopulib.Vinecop" title="pyvinecopulib.Vinecop"><span class="pre">pyvinecopulib.Vinecop</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">u</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">array([],</span> <span class="pre">shape=(0,</span> <span class="pre">0),</span> <span class="pre">dtype=float64)</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">psi0</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">0.9</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">num_threads</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">1</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">float</span></span></span><a class="headerlink" href="#pyvinecopulib.Vinecop.mbicv" title="Link to this definition"></a></dt>
-<dd><p>Evaluates the modified Bayesian information criterion for vines
-(mBICV).</p>
+<dd><p>Evaluates the modified Bayesian information criterion for vines (mBICV).</p>
 <p>The mBICV is defined as</p>
 <div class="math notranslate nohighlight">
-\[\mathrm{mBICV} = -2\, \mathrm{loglik} + \log(n) p, - 2 *\]</div>
-<p>sum_{t=1}^(d - 1) {q_t log(psi_0^t) - (d - t - q_t) log(1
--psi_0^t)},</p>
-<p>where <span class="math notranslate nohighlight">\(\mathrm{loglik}\)</span> is the log-liklihood, <span class="math notranslate nohighlight">\(p\)</span> is the
-(effective) number of parameters of the model, <span class="math notranslate nohighlight">\(t\)</span> is the tree
-level, <span class="math notranslate nohighlight">\(\psi_0\)</span> is the prior probability of having a
-non-independence copula in the first tree, and <span class="math notranslate nohighlight">\(q_t\)</span> is the
-number of non-independence copulas in tree <span class="math notranslate nohighlight">\(t\)</span>; The vBIC is a
-consistent model selection criterion for parametric sparse vine copula
-models when <span class="math notranslate nohighlight">\(d = o(\sqrt{n \log n})\)</span>.</p>
-<dl class="simple">
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">u</span></code>:</dt><dd><p>An <span class="math notranslate nohighlight">\(n \times (d + k)\)</span> or <span class="math notranslate nohighlight">\(n \times 2d\)</span> matrix of
-evaluation points, where <span class="math notranslate nohighlight">\(k\)</span> is the number of discrete
-variables (see <code class="docutils literal notranslate"><span class="pre">select()</span></code>).</p>
+\[\mathrm{mBICV} = -2\, \mathrm{loglik} + \log(n) p, - 2 * \sum_{t=1}^(d - 1) \{q_t\]</div>
+<p>log(psi_0^t) - (d - t - q_t) log(1 -psi_0^t)},</p>
+<p>where <span class="math notranslate nohighlight">\(\mathrm{loglik}\)</span> is the log-liklihood, <span class="math notranslate nohighlight">\(p\)</span> is the (effective) number of
+parameters of the model, <span class="math notranslate nohighlight">\(t\)</span> is the tree level, <span class="math notranslate nohighlight">\(\psi_0\)</span> is the prior probability of
+having a non-independence copula in the first tree, and <span class="math notranslate nohighlight">\(q_t\)</span> is the number of
+non-independence copulas in tree <span class="math notranslate nohighlight">\(t\)</span>; The vBIC is a consistent model selection criterion for
+parametric sparse vine copula models when <span class="math notranslate nohighlight">\(d = o(\sqrt{n \log n})\)</span>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>u</strong> – An <span class="math notranslate nohighlight">\(n \times (d + k)\)</span> or <span class="math notranslate nohighlight">\(n \times 2d\)</span> matrix of evaluation points, where <span class="math notranslate nohighlight">\(k\)</span>
+is the number of discrete variables (see <a class="reference internal" href="pyvinecopulib.Vinecop.select.html#pyvinecopulib.Vinecop.select" title="pyvinecopulib.Vinecop.select"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Vinecop.select()</span></code></a> or <a class="reference internal" href="pyvinecopulib.Vinecop.pdf.html#pyvinecopulib.Vinecop.pdf" title="pyvinecopulib.Vinecop.pdf"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Vinecop.pdf()</span></code></a>).</p></li>
+<li><p><strong>psi0</strong> – Baseline prior probability of a non-independence copula.</p></li>
+<li><p><strong>num_threads</strong> – The number of threads to use for computations; if greater than 1, the function will be applied
+concurrently to <code class="docutils literal notranslate"><span class="pre">num_threads</span></code> batches of <code class="docutils literal notranslate"><span class="pre">u</span></code>.</p></li>
+</ul>
 </dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">psi0</span></code>:</dt><dd><p>Baseline prior probability of a non-independence copula.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">num_threads</span></code>:</dt><dd><p>The number of threads to use for computations; if greater than 1,
-the function will be applied concurrently to <code class="docutils literal notranslate"><span class="pre">num_threads</span></code>
-batches of <code class="docutils literal notranslate"><span class="pre">u</span></code>.</p>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>The mBICV as a double.</em></p>
 </dd>
 </dl>
 </dd></dl>

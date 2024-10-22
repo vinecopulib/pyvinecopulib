@@ -1,23 +1,21 @@
+
+
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" data-content_root="../">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>BicopFamily &mdash; pyvinecopulib 0.6.6 documentation</title>
+  <title>BicopFamily &mdash; pyvinecopulib 0.6.7 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=7ab3649f" />
 
   
-  <!--[if lt IE 9]>
-    <script src="../_static/js/html5shiv.min.js"></script>
-  <![endif]-->
-  
-        <script src="../_static/jquery.js?v=5d32c60e"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../_static/documentation_options.js?v=d129ce28"></script>
-        <script src="../_static/doctools.js?v=888ff710"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=b5e61e6c"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -37,9 +35,6 @@
             pyvinecopulib
               <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo"/>
           </a>
-              <div class="version">
-                0.6.6
-              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -102,14 +97,26 @@
 (<code class="docutils literal notranslate"><span class="pre">gaussian</span></code>, <code class="docutils literal notranslate"><span class="pre">clayton</span></code>, <code class="docutils literal notranslate"><span class="pre">gumbel</span></code>, <code class="docutils literal notranslate"><span class="pre">frank</span></code>, and <code class="docutils literal notranslate"><span class="pre">joe</span></code>),</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">two_par</span></code> contains the parametric families with two parameters
 (<code class="docutils literal notranslate"><span class="pre">student</span></code>, <code class="docutils literal notranslate"><span class="pre">bb1</span></code>, <code class="docutils literal notranslate"><span class="pre">bb6</span></code>, <code class="docutils literal notranslate"><span class="pre">bb7</span></code>, and <code class="docutils literal notranslate"><span class="pre">bb8</span></code>),</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">elliptical</span></code> contains the elliptical families,</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">archimedean</span></code> contains the archimedean families,</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">bb</span></code> contains the BB families,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">three_par</span></code> contains the parametric families with three parameters
+(<code class="docutils literal notranslate"><span class="pre">tawn</span></code>),</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">elliptical</span></code> contains the elliptical families (<code class="docutils literal notranslate"><span class="pre">gaussian</span></code> and
+<code class="docutils literal notranslate"><span class="pre">student</span></code>),</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">archimedean</span></code> contains the archimedean families (<code class="docutils literal notranslate"><span class="pre">clayton</span></code>,
+<code class="docutils literal notranslate"><span class="pre">gumbel</span></code>, <code class="docutils literal notranslate"><span class="pre">frank</span></code>, <code class="docutils literal notranslate"><span class="pre">joe</span></code>, <code class="docutils literal notranslate"><span class="pre">bb1</span></code>, <code class="docutils literal notranslate"><span class="pre">bb6</span></code>, <code class="docutils literal notranslate"><span class="pre">bb7</span></code>, and <code class="docutils literal notranslate"><span class="pre">bb8</span></code>),</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">extreme_value</span></code> contains the extreme value families (<code class="docutils literal notranslate"><span class="pre">tawn</span></code> and
+<code class="docutils literal notranslate"><span class="pre">gumbel</span></code>),</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bb</span></code> contains the BB families (<code class="docutils literal notranslate"><span class="pre">bb1</span></code>, <code class="docutils literal notranslate"><span class="pre">bb6</span></code>, <code class="docutils literal notranslate"><span class="pre">bb7</span></code>, and <code class="docutils literal notranslate"><span class="pre">bb8</span></code>),</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">itau</span></code> families for which estimation by Kendall’s tau inversion is
 available (<code class="docutils literal notranslate"><span class="pre">indep</span></code>, <code class="docutils literal notranslate"><span class="pre">gaussian</span></code>, <code class="docutils literal notranslate"><span class="pre">student</span></code>, <code class="docutils literal notranslate"><span class="pre">clayton</span></code>,
 <code class="docutils literal notranslate"><span class="pre">gumbel</span></code>, <code class="docutils literal notranslate"><span class="pre">frank</span></code>, <code class="docutils literal notranslate"><span class="pre">joe</span></code>),</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">lt</span></code> contains the families that are lower-tail dependent,</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ut</span></code> contains the families that are upper-tail dependent.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lt</span></code> contains the families that are lower-tail dependent (<code class="docutils literal notranslate"><span class="pre">clayton</span></code>,
+<code class="docutils literal notranslate"><span class="pre">bb1</span></code>, <code class="docutils literal notranslate"><span class="pre">bb7</span></code>,  <code class="docutils literal notranslate"><span class="pre">tawn</span></code>),</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ut</span></code> contains the families that are upper-tail dependent (<code class="docutils literal notranslate"><span class="pre">gumbel</span></code>,
+<code class="docutils literal notranslate"><span class="pre">joe</span></code>, <code class="docutils literal notranslate"><span class="pre">bb1</span></code>, <code class="docutils literal notranslate"><span class="pre">bb6</span></code>, <code class="docutils literal notranslate"><span class="pre">bb7</span></code>, <code class="docutils literal notranslate"><span class="pre">bb8</span></code>, <code class="docutils literal notranslate"><span class="pre">tawn</span></code>),</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">flip_by_rotation</span></code> contains families that can be flipped by rotation
+(<code class="docutils literal notranslate"><span class="pre">clayton</span></code>, <code class="docutils literal notranslate"><span class="pre">gumbel</span></code>, <code class="docutils literal notranslate"><span class="pre">frank</span></code> , <code class="docutils literal notranslate"><span class="pre">joe</span></code>, <code class="docutils literal notranslate"><span class="pre">bb1</span></code>, <code class="docutils literal notranslate"><span class="pre">bb6</span></code>, <code class="docutils literal notranslate"><span class="pre">bb7</span></code>, <code class="docutils literal notranslate"><span class="pre">bb8</span></code>, <code class="docutils literal notranslate"><span class="pre">tawn</span></code>),</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">rotationless</span></code> contains families that don’t have a rotation
+because they already cover positive and negative dependence (<code class="docutils literal notranslate"><span class="pre">indep</span></code>, <code class="docutils literal notranslate"><span class="pre">gaussian</span></code>, <code class="docutils literal notranslate"><span class="pre">student</span></code>, <code class="docutils literal notranslate"><span class="pre">frank</span></code>, <code class="docutils literal notranslate"><span class="pre">tll</span></code>).</p></li>
 </ul>
 </div></blockquote>
 <p>Members:</p>
@@ -125,6 +132,7 @@ available (<code class="docutils literal notranslate"><span class="pre">indep</s
 <p>bb6 : BB6 copula</p>
 <p>bb7 : BB7 copula</p>
 <p>bb8 : BB8 copula</p>
+<p>tawn : Tawn copula</p>
 <p>tll : Transformation local likelihood kernel estimator</p>
 </div></blockquote>
 </dd></dl>

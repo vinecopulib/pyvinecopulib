@@ -1,23 +1,21 @@
+
+
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" data-content_root="../">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>DVineStructure.simulate &mdash; pyvinecopulib 0.6.6 documentation</title>
+  <title>DVineStructure.simulate &mdash; pyvinecopulib 0.6.7 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=7ab3649f" />
 
   
-  <!--[if lt IE 9]>
-    <script src="../_static/js/html5shiv.min.js"></script>
-  <![endif]-->
-  
-        <script src="../_static/jquery.js?v=5d32c60e"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../_static/documentation_options.js?v=d129ce28"></script>
-        <script src="../_static/doctools.js?v=888ff710"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=b5e61e6c"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -37,9 +35,6 @@
             pyvinecopulib
               <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo"/>
           </a>
-              <div class="version">
-                0.6.6
-              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -101,21 +96,19 @@
 <dt class="sig sig-object py" id="pyvinecopulib.DVineStructure.simulate">
 <em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">DVineStructure.</span></span><span class="sig-name descname"><span class="pre">simulate</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">d:</span> <span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">natural</span> <span class="pre">order:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seeds:</span> <span class="pre">list[int]</span> <span class="pre">=</span> <span class="pre">[]</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="pyvinecopulib.RVineStructure.html#pyvinecopulib.RVineStructure" title="pyvinecopulib.RVineStructure"><span class="pre">pyvinecopulib.RVineStructure</span></a></span></span><a class="headerlink" href="#pyvinecopulib.DVineStructure.simulate" title="Link to this definition"></a></dt>
 <dd><p>Randomly sample a regular vine structure.</p>
-<dl class="simple">
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">d</span></code>:</dt><dd><p>The dimension.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">natural_order</span></code>:</dt><dd><p>Should the sampled structure be in natural order?</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">seeds</span></code>:</dt><dd><p>Seeds of the random number generator; if empty (default), the
-random number generator is seeded randomly.</p>
+<p>Simulates from a uniform distribution over all R-vine structures on d variables</p>
+<p>Implementation of Algorithm 13 in Harry Joe’s 2014 book (p. 288), but there’s a typo: the end of
+line 6 in the book should be ‘column j’ instead of ‘column k’.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>d</strong> – The dimension.</p></li>
+<li><p><strong>natural_order</strong> – Should the sampled structure be in natural order?</p></li>
+<li><p><strong>seeds</strong> – Seeds of the random number generator; if empty (default), the random number generator is seeded
+randomly.</p></li>
+</ul>
 </dd>
 </dl>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>Implementation of Algorithm 13 in Harry Joe’s 2014 book (p. 288),
-but there’s a typo: the end of line 6 in the book should be
-‘column j’ instead of ‘column k’.</p>
-</div>
 </dd></dl>
 
 </section>

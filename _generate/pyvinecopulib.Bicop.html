@@ -1,24 +1,22 @@
+
+
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" data-content_root="../">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bicop &mdash; pyvinecopulib 0.6.6 documentation</title>
+  <title>Bicop &mdash; pyvinecopulib 0.6.7 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=7ab3649f" />
 
   
-  <!--[if lt IE 9]>
-    <script src="../_static/js/html5shiv.min.js"></script>
-  <![endif]-->
-  
-        <script src="../_static/jquery.js?v=5d32c60e"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../_static/documentation_options.js?v=d129ce28"></script>
-        <script src="../_static/doctools.js?v=888ff710"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
-        <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=b5e61e6c"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -38,9 +36,6 @@
             pyvinecopulib
               <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo"/>
           </a>
-              <div class="version">
-                0.6.6
-              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -68,6 +63,7 @@
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.parameters_to_tau.html">Bicop.parameters_to_tau</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.parameters_upper_bounds.html">Bicop.parameters_upper_bounds</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.pdf.html">Bicop.pdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.plot.html">Bicop.plot</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.select.html">Bicop.select</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.simulate.html">Bicop.simulate</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.str.html">Bicop.str</a></li>
@@ -112,8 +108,27 @@
 <dt class="sig sig-object py" id="pyvinecopulib.Bicop">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">Bicop</span></span><a class="headerlink" href="#pyvinecopulib.Bicop" title="Link to this definition"></a></dt>
 <dd><p>A class for bivariate copula models.</p>
-<p>The copula model is fully characterized by the family, rotation, and
-parameters.</p>
+<p>The model is fully characterized by the family, rotation (one of <code class="docutils literal notranslate"><span class="pre">0</span></code>, <code class="docutils literal notranslate"><span class="pre">90</span></code>, <code class="docutils literal notranslate"><span class="pre">180</span></code>, <code class="docutils literal notranslate"><span class="pre">270</span></code>), a
+matrix of parameters, and variable types (two strings, one for each variable, either <code class="docutils literal notranslate"><span class="pre">&quot;c&quot;</span></code> for
+continuous or <code class="docutils literal notranslate"><span class="pre">&quot;d&quot;</span></code> for discrete).</p>
+<p>Implemented families (see <a class="reference internal" href="pyvinecopulib.BicopFamily.html#pyvinecopulib.BicopFamily" title="pyvinecopulib.BicopFamily"><code class="xref py py-class docutils literal notranslate"><span class="pre">BicopFamily</span></code></a>):</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">|</span> <span class="nb">type</span>          <span class="o">|</span> <span class="n">full</span> <span class="n">name</span>             <span class="o">|</span> <span class="n">string</span> <span class="n">identifier</span>     <span class="o">|</span>
+<span class="o">|---------------|-----------------------|-----------------------|</span>
+<span class="o">|</span> <span class="o">-</span>             <span class="o">|</span> <span class="n">Independence</span>          <span class="o">|</span> <span class="s2">&quot;indep&quot;</span>               <span class="o">|</span>
+<span class="o">|</span> <span class="n">Elliptical</span>    <span class="o">|</span> <span class="n">Gaussian</span>              <span class="o">|</span> <span class="s2">&quot;gaussian&quot;</span>            <span class="o">|</span>
+<span class="o">|</span>               <span class="o">|</span> <span class="n">Student</span> <span class="n">t</span>             <span class="o">|</span> <span class="s2">&quot;student&quot;</span>             <span class="o">|</span>
+<span class="o">|</span> <span class="n">Archimedean</span>   <span class="o">|</span> <span class="n">Clayton</span>               <span class="o">|</span> <span class="s2">&quot;clayton&quot;</span>             <span class="o">|</span>
+<span class="o">|</span>               <span class="o">|</span> <span class="n">Gumbel</span>                <span class="o">|</span> <span class="s2">&quot;gumbel&quot;</span>              <span class="o">|</span>
+<span class="o">|</span>               <span class="o">|</span> <span class="n">Frank</span>                 <span class="o">|</span> <span class="s2">&quot;frank&quot;</span>               <span class="o">|</span>
+<span class="o">|</span>               <span class="o">|</span> <span class="n">Joe</span>                   <span class="o">|</span> <span class="s2">&quot;joe&quot;</span>                 <span class="o">|</span>
+<span class="o">|</span>               <span class="o">|</span> <span class="n">Clayton</span><span class="o">-</span><span class="n">Gumbel</span> <span class="p">(</span><span class="n">BB1</span><span class="p">)</span>  <span class="o">|</span> <span class="s2">&quot;bb1&quot;</span>                 <span class="o">|</span>
+<span class="o">|</span>               <span class="o">|</span> <span class="n">Joe</span><span class="o">-</span><span class="n">Gumbel</span> <span class="p">(</span><span class="n">BB6</span><span class="p">)</span>      <span class="o">|</span> <span class="s2">&quot;bb6&quot;</span>                 <span class="o">|</span>
+<span class="o">|</span>               <span class="o">|</span> <span class="n">Joe</span><span class="o">-</span><span class="n">Clayton</span> <span class="p">(</span><span class="n">BB7</span><span class="p">)</span>     <span class="o">|</span> <span class="s2">&quot;bb7&quot;</span>                 <span class="o">|</span>
+<span class="o">|</span>               <span class="o">|</span> <span class="n">Joe</span><span class="o">-</span><span class="n">Frank</span> <span class="p">(</span><span class="n">BB8</span><span class="p">)</span>       <span class="o">|</span> <span class="s2">&quot;bb8&quot;</span>                 <span class="o">|</span>
+<span class="o">|</span> <span class="n">Extreme</span><span class="o">-</span><span class="n">Value</span> <span class="o">|</span> <span class="n">Tawn</span>                  <span class="o">|</span> <span class="s2">&quot;tawn&quot;</span>                <span class="o">|</span>
+<span class="o">|</span> <span class="n">Nonparametric</span> <span class="o">|</span> <span class="n">Transformation</span> <span class="n">kernel</span> <span class="o">|</span> <span class="s2">&quot;tll&quot;</span>                 <span class="o">|</span>
+</pre></div>
+</div>
 <p class="rubric">Attributes</p>
 <table class="autosummary longtable docutils align-default">
 <tbody>
@@ -144,7 +159,7 @@ parameters.</p>
 <table class="autosummary longtable docutils align-default">
 <tbody>
 <tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.__init__.html#pyvinecopulib.Bicop.__init__" title="pyvinecopulib.Bicop.__init__"><code class="xref py py-obj docutils literal notranslate"><span class="pre">__init__</span></code></a></p></td>
-<td><p>Overloaded function.</p></td>
+<td><p>Creates a new instance of the class.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.aic.html#pyvinecopulib.Bicop.aic" title="pyvinecopulib.Bicop.aic"><code class="xref py py-obj docutils literal notranslate"><span class="pre">aic</span></code></a></p></td>
 <td><p>Evaluates the Akaike information criterion (AIC).</p></td>
@@ -188,19 +203,22 @@ parameters.</p>
 <tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.pdf.html#pyvinecopulib.Bicop.pdf" title="pyvinecopulib.Bicop.pdf"><code class="xref py py-obj docutils literal notranslate"><span class="pre">pdf</span></code></a></p></td>
 <td><p>Evaluates the copula density.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.select.html#pyvinecopulib.Bicop.select" title="pyvinecopulib.Bicop.select"><code class="xref py py-obj docutils literal notranslate"><span class="pre">select</span></code></a></p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.plot.html#pyvinecopulib.Bicop.plot" title="pyvinecopulib.Bicop.plot"><code class="xref py py-obj docutils literal notranslate"><span class="pre">plot</span></code></a></p></td>
+<td><p>Generates a plot for the Bicop object.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.select.html#pyvinecopulib.Bicop.select" title="pyvinecopulib.Bicop.select"><code class="xref py py-obj docutils literal notranslate"><span class="pre">select</span></code></a></p></td>
 <td><p>Selects the best fitting model.</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.simulate.html#pyvinecopulib.Bicop.simulate" title="pyvinecopulib.Bicop.simulate"><code class="xref py py-obj docutils literal notranslate"><span class="pre">simulate</span></code></a></p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.simulate.html#pyvinecopulib.Bicop.simulate" title="pyvinecopulib.Bicop.simulate"><code class="xref py py-obj docutils literal notranslate"><span class="pre">simulate</span></code></a></p></td>
 <td><p>Simulates from a bivariate copula.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.str.html#pyvinecopulib.Bicop.str" title="pyvinecopulib.Bicop.str"><code class="xref py py-obj docutils literal notranslate"><span class="pre">str</span></code></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.str.html#pyvinecopulib.Bicop.str" title="pyvinecopulib.Bicop.str"><code class="xref py py-obj docutils literal notranslate"><span class="pre">str</span></code></a></p></td>
 <td><p>Summarizes the model into a string (can be used for printing).</p></td>
 </tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.tau_to_parameters.html#pyvinecopulib.Bicop.tau_to_parameters" title="pyvinecopulib.Bicop.tau_to_parameters"><code class="xref py py-obj docutils literal notranslate"><span class="pre">tau_to_parameters</span></code></a></p></td>
-<td><p>Converts a Kendall's <span class="math notranslate nohighlight">\(\tau\)</span> into copula parameters.</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.tau_to_parameters.html#pyvinecopulib.Bicop.tau_to_parameters" title="pyvinecopulib.Bicop.tau_to_parameters"><code class="xref py py-obj docutils literal notranslate"><span class="pre">tau_to_parameters</span></code></a></p></td>
+<td><p>Converts a Kendall's <span class="math notranslate nohighlight">\(\tau\)</span> into copula parameters for one-parameter families.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.to_json.html#pyvinecopulib.Bicop.to_json" title="pyvinecopulib.Bicop.to_json"><code class="xref py py-obj docutils literal notranslate"><span class="pre">to_json</span></code></a></p></td>
+<tr class="row-odd"><td><p><a class="reference internal" href="pyvinecopulib.Bicop.to_json.html#pyvinecopulib.Bicop.to_json" title="pyvinecopulib.Bicop.to_json"><code class="xref py py-obj docutils literal notranslate"><span class="pre">to_json</span></code></a></p></td>
 <td><p>Write the copula object into a JSON file.</p></td>
 </tr>
 </tbody>

@@ -1,24 +1,22 @@
+
+
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" data-content_root="../">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bicop.tau_to_parameters &mdash; pyvinecopulib 0.6.6 documentation</title>
+  <title>Bicop.tau_to_parameters &mdash; pyvinecopulib 0.6.7 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=7ab3649f" />
 
   
-  <!--[if lt IE 9]>
-    <script src="../_static/js/html5shiv.min.js"></script>
-  <![endif]-->
-  
-        <script src="../_static/jquery.js?v=5d32c60e"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../_static/documentation_options.js?v=d129ce28"></script>
-        <script src="../_static/doctools.js?v=888ff710"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
-        <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=b5e61e6c"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -38,9 +36,6 @@
             pyvinecopulib
               <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo"/>
           </a>
-              <div class="version">
-                0.6.6
-              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -68,6 +63,7 @@
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.parameters_to_tau.html">Bicop.parameters_to_tau</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.parameters_upper_bounds.html">Bicop.parameters_upper_bounds</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.pdf.html">Bicop.pdf</a></li>
+<li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.plot.html">Bicop.plot</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.select.html">Bicop.select</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.simulate.html">Bicop.simulate</a></li>
 <li class="toctree-l2"><a class="reference internal" href="pyvinecopulib.Bicop.str.html">Bicop.str</a></li>
@@ -115,10 +111,10 @@
 <dl class="py method">
 <dt class="sig sig-object py" id="pyvinecopulib.Bicop.tau_to_parameters">
 <span class="sig-prename descclassname"><span class="pre">Bicop.</span></span><span class="sig-name descname"><span class="pre">tau_to_parameters</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="pyvinecopulib.Bicop.html#pyvinecopulib.Bicop" title="pyvinecopulib.Bicop"><span class="pre">pyvinecopulib.Bicop</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">tau</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">numpy.ndarray</span><span class="p"><span class="pre">[</span></span><span class="pre">numpy.float64</span><span class="p"><span class="pre">[</span></span><span class="pre">m</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">n</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#pyvinecopulib.Bicop.tau_to_parameters" title="Link to this definition"></a></dt>
-<dd><p>Converts a Kendall’s <span class="math notranslate nohighlight">\(\tau\)</span> into copula parameters.</p>
-<p>It only works for one-parameter families.</p>
-<dl class="simple">
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">tau</span></code>:</dt><dd><p>A value in <span class="math notranslate nohighlight">\((-1, 1)\)</span>.</p>
+<dd><p>Converts a Kendall’s <span class="math notranslate nohighlight">\(\tau\)</span> into copula parameters for one-parameter families.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><p><strong>tau</strong> – A value in <span class="math notranslate nohighlight">\((-1, 1)\)</span>.</p>
 </dd>
 </dl>
 </dd></dl>

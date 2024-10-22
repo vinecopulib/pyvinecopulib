@@ -1,23 +1,21 @@
+
+
 <!DOCTYPE html>
 <html class="writer-html5" lang="en" data-content_root="../">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FitControlsBicop.__init__ &mdash; pyvinecopulib 0.6.6 documentation</title>
+  <title>FitControlsBicop.__init__ &mdash; pyvinecopulib 0.6.7 documentation</title>
       <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
-      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=7ab3649f" />
 
   
-  <!--[if lt IE 9]>
-    <script src="../_static/js/html5shiv.min.js"></script>
-  <![endif]-->
-  
-        <script src="../_static/jquery.js?v=5d32c60e"></script>
-        <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-        <script src="../_static/documentation_options.js?v=d129ce28"></script>
-        <script src="../_static/doctools.js?v=888ff710"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=b5e61e6c"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/js/theme.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
@@ -37,9 +35,6 @@
             pyvinecopulib
               <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo"/>
           </a>
-              <div class="version">
-                0.6.6
-              </div>
 <div role="search">
   <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
@@ -95,34 +90,23 @@
 <h1>FitControlsBicop.__init__<a class="headerlink" href="#fitcontrolsbicop-init" title="Link to this heading"></a></h1>
 <dl class="py method">
 <dt class="sig sig-object py" id="pyvinecopulib.FitControlsBicop.__init__">
-<span class="sig-prename descclassname"><span class="pre">FitControlsBicop.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">self:</span> <span class="pre">pyvinecopulib.FitControlsBicop,</span> <span class="pre">family_set:</span> <span class="pre">list[pyvinecopulib.BicopFamily]</span> <span class="pre">=</span> <span class="pre">[&lt;BicopFamily.indep:</span> <span class="pre">0&gt;,</span> <span class="pre">&lt;BicopFamily.gaussian:</span> <span class="pre">1&gt;,</span> <span class="pre">&lt;BicopFamily.student:</span> <span class="pre">2&gt;,</span> <span class="pre">&lt;BicopFamily.clayton:</span> <span class="pre">3&gt;,</span> <span class="pre">&lt;BicopFamily.gumbel:</span> <span class="pre">4&gt;,</span> <span class="pre">&lt;BicopFamily.frank:</span> <span class="pre">5&gt;,</span> <span class="pre">&lt;BicopFamily.joe:</span> <span class="pre">6&gt;,</span> <span class="pre">&lt;BicopFamily.bb1:</span> <span class="pre">7&gt;,</span> <span class="pre">&lt;BicopFamily.bb6:</span> <span class="pre">8&gt;,</span> <span class="pre">&lt;BicopFamily.bb7:</span> <span class="pre">9&gt;,</span> <span class="pre">&lt;BicopFamily.bb8:</span> <span class="pre">10&gt;,</span> <span class="pre">&lt;BicopFamily.tll:</span> <span class="pre">11&gt;],</span> <span class="pre">parametric_method:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'mle',</span> <span class="pre">nonparametric_method:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'quadratic',</span> <span class="pre">nonparametric_mult:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">1.0,</span> <span class="pre">selection_criterion:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'bic',</span> <span class="pre">weights:</span> <span class="pre">numpy.ndarray[numpy.float64[m,</span> <span class="pre">1]]</span> <span class="pre">=</span> <span class="pre">array([],</span> <span class="pre">dtype=float64),</span> <span class="pre">psi0:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">0.9,</span> <span class="pre">preselect_families:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">True,</span> <span class="pre">num_threads:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">1</span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyvinecopulib.FitControlsBicop.__init__" title="Link to this definition"></a></dt>
+<span class="sig-prename descclassname"><span class="pre">FitControlsBicop.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">self:</span> <span class="pre">pyvinecopulib.FitControlsBicop,</span> <span class="pre">family_set:</span> <span class="pre">list[pyvinecopulib.BicopFamily]</span> <span class="pre">=</span> <span class="pre">[&lt;BicopFamily.indep:</span> <span class="pre">0&gt;,</span> <span class="pre">&lt;BicopFamily.gaussian:</span> <span class="pre">1&gt;,</span> <span class="pre">&lt;BicopFamily.student:</span> <span class="pre">2&gt;,</span> <span class="pre">&lt;BicopFamily.clayton:</span> <span class="pre">3&gt;,</span> <span class="pre">&lt;BicopFamily.gumbel:</span> <span class="pre">4&gt;,</span> <span class="pre">&lt;BicopFamily.frank:</span> <span class="pre">5&gt;,</span> <span class="pre">&lt;BicopFamily.joe:</span> <span class="pre">6&gt;,</span> <span class="pre">&lt;BicopFamily.bb1:</span> <span class="pre">7&gt;,</span> <span class="pre">&lt;BicopFamily.bb6:</span> <span class="pre">8&gt;,</span> <span class="pre">&lt;BicopFamily.bb7:</span> <span class="pre">9&gt;,</span> <span class="pre">&lt;BicopFamily.bb8:</span> <span class="pre">10&gt;,</span> <span class="pre">&lt;BicopFamily.tawn:</span> <span class="pre">11&gt;,</span> <span class="pre">&lt;BicopFamily.tll:</span> <span class="pre">12&gt;],</span> <span class="pre">parametric_method:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'mle',</span> <span class="pre">nonparametric_method:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'quadratic',</span> <span class="pre">nonparametric_mult:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">1.0,</span> <span class="pre">selection_criterion:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'bic',</span> <span class="pre">weights:</span> <span class="pre">numpy.ndarray[numpy.float64[m,</span> <span class="pre">1]]</span> <span class="pre">=</span> <span class="pre">array([],</span> <span class="pre">dtype=float64),</span> <span class="pre">psi0:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">0.9,</span> <span class="pre">preselect_families:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">True,</span> <span class="pre">num_threads:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">1</span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyvinecopulib.FitControlsBicop.__init__" title="Link to this definition"></a></dt>
 <dd><p>Instantiates the controls for fitting bivariate copula models.</p>
-<dl class="simple">
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">family_set</span></code>:</dt><dd><p>The set of copula families to consider (if empty, then all
-families are included).</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">parametric_method</span></code>:</dt><dd><p>The fit method for parametric families; possible choices:
-<code class="docutils literal notranslate"><span class="pre">&quot;mle&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;itau&quot;</span></code>.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">nonparametric_method</span></code>:</dt><dd><p>The fit method for the local-likelihood nonparametric family
-(TLLs); possible choices: <code class="docutils literal notranslate"><span class="pre">&quot;constant&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;linear&quot;</span></code>,
-<code class="docutils literal notranslate"><span class="pre">&quot;quadratic&quot;</span></code>.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">nonparametric_mult</span></code>:</dt><dd><p>A factor with which the smoothing parameters are multiplied.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">selection_criterion</span></code>:</dt><dd><p>The selection criterion (<code class="docutils literal notranslate"><span class="pre">&quot;loglik&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;aic&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;bic&quot;</span></code>).</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">weights</span></code>:</dt><dd><p>A vector of weights for the observations.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">psi0</span></code>:</dt><dd><p>Only for <a href="#id1"><span class="problematic" id="id2">`</span></a>selection_criterion = “mbic”, the prior probability of
-non-independence.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">preselect_families</span></code>:</dt><dd><p>Whether to exclude families before fitting based on symmetry
-properties of the data.</p>
-</dd>
-<dt>Parameter <code class="docutils literal notranslate"><span class="pre">num_threads</span></code>:</dt><dd><p>Number of concurrent threads to use while fitting copulas for
-different families; never uses more than the number of concurrent
-threads supported by the implementation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>family_set</strong> – The set of copula families to consider (if empty, then all families are included).</p></li>
+<li><p><strong>parametric_method</strong> – The fit method for parametric families; possible choices: <code class="docutils literal notranslate"><span class="pre">&quot;mle&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;itau&quot;</span></code>.</p></li>
+<li><p><strong>nonparametric_method</strong> – The fit method for the local-likelihood nonparametric family (TLLs); possible choices:
+<code class="docutils literal notranslate"><span class="pre">&quot;constant&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;linear&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;quadratic&quot;</span></code>.</p></li>
+<li><p><strong>nonparametric_mult</strong> – A factor with which the smoothing parameters are multiplied.</p></li>
+<li><p><strong>selection_criterion</strong> – The selection criterion (<code class="docutils literal notranslate"><span class="pre">&quot;loglik&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;aic&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;bic&quot;</span></code>).</p></li>
+<li><p><strong>weights</strong> – A vector of weights for the observations.</p></li>
+<li><p><strong>psi0</strong> – Only for <code class="docutils literal notranslate"><span class="pre">selection_criterion</span> <span class="pre">=</span> <span class="pre">&quot;mbic&quot;</span></code>, the prior probability of non-independence.</p></li>
+<li><p><strong>preselect_families</strong> – Whether to exclude families before fitting based on symmetry properties of the data.</p></li>
+<li><p><strong>num_threads</strong> – Number of concurrent threads to use while fitting copulas for different families; never uses
+more than the number of concurrent threads supported by the implementation.</p></li>
+</ul>
 </dd>
 </dl>
 </dd></dl>
