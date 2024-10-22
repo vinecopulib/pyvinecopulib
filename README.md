@@ -134,9 +134,9 @@ Documentation for the example project is generated using Sphinx and the "Read th
 The following command generates HTML-based reference documentation; for other
 formats please refer to the Sphinx manual:
 
-* `pip install sphinx-rtd-theme`
+* `pip install sphinx-rtd-theme sphinx-autodoc-typehints`
 * `cd pyvinecopulib/docs`
-* `python3 serve_sphinx.py`
+* `python serve_sphinx.py`
 
 ### License
 

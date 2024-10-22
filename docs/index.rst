@@ -1,7 +1,12 @@
 .. GENERATED FILE DO NOT EDIT
 
+=============
 pyvinecopulib
 =============
+
+
+Classes
+========
 
 .. toctree::
     :maxdepth: 1
