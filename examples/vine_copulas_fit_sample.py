@@ -12,7 +12,7 @@ cov = np.dot(cov.transpose(), cov)  # make it non-negative definite
 x = np.random.multivariate_normal(mean, cov, n)
 
 # Transform copula data using the empirical distribution
-u = pv.to_pseudo_obs(x)
+u = pv.stats.to_pseudo_obs(x)
 
 # Fit a Gaussian vine
 # (i.e., properly specified since the data is multivariate normal)

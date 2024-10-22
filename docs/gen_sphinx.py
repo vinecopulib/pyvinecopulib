@@ -2,10 +2,13 @@
 Generates documentation for `pyvinecopulib`.
 """
 
+import argparse
+import os
 import sys
+import tempfile
+from os import listdir, mkdir, symlink
 from os.path import abspath, dirname, isabs, join
-
-from sphinx_base import gen_main
+from shutil import rmtree
 
 CLASSES = [
     "BicopFamily",
@@ -104,21 +107,104 @@ def write_module(f_name, name, verbose):
 
 
 def write_doc_modules(output_dir, verbose=False):
-    if not isabs(output_dir):
-        raise RuntimeError(
-            "Please provide an absolute path: {}".format(output_dir))
-    index_file = join(output_dir, "index.rst")
-    write_module(index_file, "pyvinecopulib", verbose)
+  if not isabs(output_dir):
+    raise RuntimeError("Please provide an absolute path: {}".format(output_dir))
+  index_file = join(output_dir, "index.rst")
+  write_module(index_file, "pyvinecopulib", verbose)
+
+
+def _die(s):
+  print(s, file=sys.stderr)
+  exit(1)
+
+
+def gen_main(input_dir, strict, src_func=None):
+  """Main entry point for generation.
+  Args:
+      input_dir: Directory which contains initial input files.
+      strict: Determines if Sphinx warnings should be interpreted as errors.
+      src_func: (optional) Callable of form `f(src_dir)` which will introduce
+          additional source files to `src_dir`.
+  """
+  parser = argparse.ArgumentParser()
+  parser.add_argument(
+    "--out_dir",
+    type=str,
+    required=True,
+    help="Output directory. Does not have to exist beforehand.",
+  )
+  parser.add_argument(
+    "--debug",
+    action="store_true",
+    help="If enabled, leaves intermediate files that are otherwise " "deleted.",
+  )
+  args = parser.parse_args()
+  out_dir = args.out_dir
+
+  if out_dir == "<test>":
+    out_dir = join(os.environ["TEST_TMPDIR"], "doc")
+
+  if not isabs(out_dir):
+    _die("--out_dir must be absolute path: {}".format(out_dir))
+  # Use default temp directory, handling both `bazel run` and `bazel test`.
+  tmp_dir = tempfile.mkdtemp(dir=os.environ.get("TEST_TMPDIR"))
+  doctree_dir = join(tmp_dir, "doctrees")
+  src_dir = join(tmp_dir, "src")
+  # Symlink inputs to src dir (so that we can also generate doc modules).
+  mkdir(src_dir)
+
+  for f in listdir(input_dir):
+    src_f = join(src_dir, f)
+    symlink(join(input_dir, f), src_f)
+  # Optionally generate additional input files as source.
+
+  if src_func:
+    src_func(src_dir)
+  print("Generating documentation...")
+
+  if strict:
+    # Turn warnings into errors; else be quiet.
+    warning_args = ["-W", "-N", "-q"]
+  else:
+    warning_args = [
+      "-N",
+      "-Q",  # Be very quiet.
+      "-T",  # Traceback (for plugin)
+    ]
+
+  os.environ["LANG"] = "en_US.UTF-8"
+  sphinx_args = (
+    [
+      "-b",
+      "html",  # HTML output.
+      "-a",
+      "-E",  # Don't use caching.
+      "-d",
+      doctree_dir,
+    ]
+    + warning_args
+    + [
+      src_dir,  # Source dir.
+      out_dir,
+    ]
+  )
+  try:
+    from sphinx.cmd.build import main as sphinx_main
+  except ImportError:
+    from sphinx import main as sphinx_main
+
+  sphinx_main(sphinx_args)
+
+  if not args.debug:
+    rmtree(tmp_dir)
+  else:
+    print("DEBUG: Temporary files: {}".format(tmp_dir))
 
 
 def main():
-    input_dir = dirname(abspath(__file__))
-    # Generate.
-    gen_main(
-        input_dir=input_dir, strict=False, src_func=write_doc_modules)
-    # TODO(eric.cousineau): Do some simple linting if this is run under
-    # `bazel test` (e.g. scan for instances of `TemporaryName`, scan for raw
-    # C++ types in type signatures, etc).
+  input_dir = dirname(abspath(__file__))
+  # Generate.
+  gen_main(input_dir=input_dir, strict=False, src_func=write_doc_modules)
 
 
 if __name__ == "__main__":

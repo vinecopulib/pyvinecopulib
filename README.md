@@ -31,6 +31,9 @@ Advantages over VineCopula are
 ### Prerequisites
 
 * numpy (>=1.14)
+* matplotlib (>=3.0),
+* networkx (>=3.0),
+* pydot (>=3.0),
 * To install from source:
     * pybind11 (>=2.4)
     * setuptools (>=30.3.0)
@@ -97,15 +100,22 @@ mamba repoquery depends pyvinecopulib --channel conda-forge
 
 #### From source
 
-To install from source, just clone this repository and do `pip install`.
+To install from source, Eigen and Boost need to be available on your system for the build to succeed, using the environment variables `EIGEN3_INCLUDE_DIR` and `Boost_INCLUDE_DIR` respectively.
+On Linux, you can install the required packages and set the environment variables as follows:
+
+```bash
+sudo apt-get install libeigen3-dev libboost-all-dev
+export Boost_INCLUDE_DIR=/usr/include
+export EIGEN3_INCLUDE_DIR=/usr/include/eigen3
+```
+
+Then, just clone this repository and do `pip install`.
 Note the `--recursive` option which is needed for the `vinecopulib` and `wdm` submodules:
 
 ```bash
 git clone --recursive https://github.com/vinecopulib/pyvinecopulib.git
 pip install ./pyvinecopulib
 ```
-
-Note that Eigen and Boost need to be available on your system for the build to succeed, using the environment variables `EIGEN3_INCLUDE_DIR` and `Boost_INCLUDE_DIR` respectively.
 
 ### Examples
 

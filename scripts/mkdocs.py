@@ -6,10 +6,8 @@
 #
 
 import os
-import platform
 import re
 import shutil
-import subprocess
 import sys
 import textwrap
 from collections import OrderedDict, defaultdict
@@ -249,6 +247,61 @@ def extract_comment(cursor, deprecations):
                  message, removal_date)
 
   return result
+
+
+def transform_docstring(docstring):
+  transformed_docstring = docstring.strip()
+
+  # Identify and process the Parameters section
+  params_section = ""
+  params_match = re.search(
+    r"(Parameter ``.*?``:\n.*?)(?=\n\n|\Z)", transformed_docstring, re.DOTALL
+  )
+
+  if params_match:
+    params = re.findall(
+      r"Parameter ``(.*?)``:\n(.*?)(?=\n\n|\Z)",
+      transformed_docstring,
+      re.DOTALL,
+    )
+    params_section = "Parameters\n----------\n"
+    for param_name, description in params:
+      formatted_description = "\n    ".join(
+        line.strip() for line in description.strip().splitlines()
+      )
+      params_section += f"{param_name} :\n    {formatted_description}\n\n"
+    # Remove the original parameter sections from the docstring
+    transformed_docstring = re.sub(
+      r"(Parameter ``.*?``:\n.*?)(?=\n\n|\Z)",
+      "",
+      transformed_docstring,
+      flags=re.DOTALL,
+    ).strip()
+
+  # Identify and process the Returns section
+  return_section = ""
+  returns_match = re.search(
+    r"Returns:\n(.*?)(?=\n\n|\Z)", transformed_docstring, re.DOTALL
+  )
+
+  if returns_match:
+    return_description = returns_match.group(1).strip()
+    return_section = "Returns\n-------\n" + "\n    ".join(
+      line.strip() for line in return_description.splitlines()
+    )
+    # Remove the original return section from the docstring
+    transformed_docstring = re.sub(
+      r"Returns:\n.*?(?=\n\n|\Z)", "", transformed_docstring, flags=re.DOTALL
+    ).strip()
+
+  # Reconstruct the docstring with the correct order
+  final_docstring = transformed_docstring
+  if params_section:
+    final_docstring += "\n\n" + params_section.strip()
+  if return_section:
+    final_docstring += "\n\n" + return_section.strip()
+
+  return final_docstring
 
 
 # TODO(jamiesnape): Refactor into multiple functions and unit test.
@@ -669,7 +722,7 @@ def process_comment(comment):
   wrapper.drop_whitespace = True
   wrapper.expand_tabs = True
   wrapper.replace_whitespace = True
-  wrapper.width = 70
+  wrapper.width = 100
   wrapper.initial_indent = wrapper.subsequent_indent = ''
 
   result = ''
@@ -685,13 +738,16 @@ def process_comment(comment):
     elif in_code_segment:
       result += '    '.join(('\n' + x.strip()).splitlines(True))
     else:
-      for y in re.split(r'(?: *\n *){2,}', x):
+      for y in re.findall(r"(.*?)(?:\n{2,}|\Z)", x, re.DOTALL):
         lines = re.split(r'(?: *\n *)', y)
         # Do not reflow lists or section headings.
 
-        if (re.match('^(?:[*+\-]|[0-9]+[.)]) ', lines[0])
-            or (len(lines) > 1 and (lines[1] == '=' * len(lines[0])
-                                    or lines[1] == '-' * len(lines[0])))):
+        if re.match(r"^\s*(?:[*+\-]|[0-9]+[.)]) ", lines[0]) or (
+          len(lines) > 1
+          and (
+            lines[1] == "=" * len(lines[0]) or lines[1] == "-" * len(lines[0])
+          )
+        ):
           result += y + '\n\n'
         else:
           wrapped = wrapper.fill(re.sub(r'\s+', ' ', y).strip())
@@ -705,7 +761,19 @@ def process_comment(comment):
               result += wrapped + '\n\n'
             wrapper.initial_indent = wrapper.subsequent_indent = ''
 
-  return result.rstrip().lstrip('\n')
+  import pdb
+
+  # if "counter-diagonal" in result:
+  #   pdb.set_trace()
+  # Transform ALL C++ method calls to Python method calls.
+  # Be careful not to mistake code blocks for method calls.
+  result = re.sub(r"``(.*?)::(.*?)``", r"``\1.\2``", result)
+
+  result = result.rstrip().lstrip("\n")
+  try:
+    return transform_docstring(result)
+  except Exception:
+    pdb.set_trace()
 
 
 def get_name_chain(cursor):
@@ -1101,33 +1169,6 @@ def main():
   parameters = ['-x', 'c++', '-D__MKDOC_PY__']
   filenames = []
 
-  library_file = None
-
-  if platform.system() == 'Darwin':
-    completed_process = subprocess.run(['xcrun', '--find', 'clang'],
-                                       stdout=subprocess.PIPE,
-                                       encoding='utf-8')
-
-    if completed_process.returncode == 0:
-      toolchain_dir = os.path.dirname(
-          os.path.dirname(completed_process.stdout.strip()))
-      library_file = os.path.join(toolchain_dir, 'lib', 'libclang.dylib')
-    completed_process = subprocess.run(['xcrun', '--show-sdk-path'],
-                                       stdout=subprocess.PIPE,
-                                       encoding='utf-8')
-
-    if completed_process.returncode == 0:
-      sdkroot = completed_process.stdout.strip()
-
-      if os.path.exists(sdkroot):
-        parameters.append('-isysroot')
-        parameters.append(sdkroot)
-  elif platform.system() == 'Linux':
-    library_file = '/usr/lib/x86_64-linux-gnu/libclang.so'
-
-  if library_file and os.path.exists(library_file):
-    cindex.Config.set_library_path(os.path.dirname(library_file))
-
   quiet = False
   std = '-std=c++11'
   root_name = 'pyvinecopulib_doc'
@@ -1139,6 +1180,8 @@ def main():
       quiet = True
     elif item.startswith('-output='):
       output_filename = item[len('-output='):]
+    elif item.startswith("-library_file="):
+      library_file = item[len("-library_file=") :]
     elif item.startswith('-std='):
       std = item
     elif item.startswith('-root-name='):
@@ -1149,6 +1192,13 @@ def main():
       parameters.append(item)
     else:
       filenames.append(item)
+
+  if library_file and os.path.exists(library_file):
+    # cindex.Config.set_library_path(os.path.dirname(library_file))
+    cindex.Config.set_library_file(library_file)
+  else:
+    eprint("Unable to find libclang library file.")
+    sys.exit(1)
 
   parameters.append(std)
 
@@ -1204,6 +1254,7 @@ def main():
   # files, and parse. Use a tempdir that is relative to the output file for
   # usage with Bazel.
   tmpdir = output_filename + ".tmp_artifacts"
+  shutil.rmtree(tmpdir, ignore_errors=True)
   os.mkdir(tmpdir)
   glue_filename = os.path.join(tmpdir, "mkdoc_glue.h")
   with open(glue_filename, 'w') as glue_f:
