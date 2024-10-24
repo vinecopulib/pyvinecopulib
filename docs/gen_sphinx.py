@@ -79,31 +79,35 @@ def has_cc_imported_symbols(name):
 
 
 def write_module(f_name, name, verbose):
-    if verbose:
-        print("Write: {}".format(name))
-    with open(f_name, 'w') as f:
-        f.write(".. GENERATED FILE DO NOT EDIT\n")
-        f.write("\n")
-        rst_name = name.replace("_", "\\_")
-        f.write("{}\n".format(rst_name))
-        f.write("=" * len(rst_name) + "\n")
-        f.write("\n")
+  if verbose:
+    print("Write: {}".format(name))
+  with open(f_name, "w") as f:
+    f.write(".. GENERATED FILE DO NOT EDIT\n")
+    f.write("\n")
+    rst_name = name.replace("_", "\\_")
+    f.write("=" * len(rst_name) + "\n")
+    f.write("{}\n".format(rst_name))
+    f.write("=" * len(rst_name) + "\n")
+    f.write("\n")
 
-        f.write(".. toctree::\n")
-        f.write("    :maxdepth: 1\n")
-        f.write("\n")
+    f.write("\nClasses\n")
+    f.write("========\n\n")
 
-        f.write(".. automodule:: {}\n".format(name))
-        f.write(".. autosummary:: \n")
-        f.write("    :toctree: _generate\n\n")
+    f.write(".. toctree::\n")
+    f.write("    :maxdepth: 1\n")
+    f.write("\n")
 
-        for i in CLASSES:
-            f.write("    {}\n".format(i))
-        f.write("\nFunctions\n")
-        f.write("=========\n\n")
+    f.write(".. automodule:: {}\n".format(name))
+    f.write(".. autosummary:: \n")
+    f.write("    :toctree: _generate\n\n")
 
-        for i in FUNCTIONS:
-            f.write(".. autofunction:: {}\n".format(i))
+    for i in CLASSES:
+      f.write("    {}\n".format(i))
+    f.write("\nFunctions\n")
+    f.write("=========\n\n")
+
+    for i in FUNCTIONS:
+      f.write(".. autofunction:: {}\n".format(i))
 
 
 def write_doc_modules(output_dir, verbose=False):
