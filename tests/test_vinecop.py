@@ -14,7 +14,6 @@ def random_data(d=5, n=1000):
   x = np.random.multivariate_normal(mean, cov, n)
   return x
 
-
 def test_vinecop():
   d = 5
   n = 1000

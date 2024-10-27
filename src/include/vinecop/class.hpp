@@ -23,14 +23,14 @@ init_vinecop_class(py::module_& module)
          py::arg("structure"),
          py::arg("pair_copulas") = std::vector<size_t>(),
          py::arg("var_types") = std::vector<std::string>(),
-         vinecop_doc.ctor.doc_3args_structure_pair_copulas_var_types)
+         vinecop_doc.ctor.doc_2args_structure_constint)
     .def(py::init<Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
                   const std::vector<std::vector<Bicop>>&,
                   const std::vector<std::string>&>(),
          py::arg("matrix"),
          py::arg("pair_copulas") = std::vector<size_t>(),
          py::arg("var_types") = std::vector<std::string>(),
-         vinecop_doc.ctor.doc_3args_matrix_pair_copulas_var_types)
+         vinecop_doc.ctor.doc_2args_matrix_constint)
     .def(py::init<const Eigen::MatrixXd&,
                   const RVineStructure&,
                   const std::vector<std::string>&,
@@ -180,11 +180,16 @@ init_vinecop_class(py::module_& module)
          py::arg("psi0") = 0.9,
          py::arg("num_threads") = 1,
          vinecop_doc.mbicv.doc)
-    .def("__repr__",
-         [](const Vinecop& cop) {
-           return "<pyvinecopulib.Vinecop>\n" + cop.str();
-         })
-    .def("str", &Vinecop::str, vinecop_doc.str.doc)
+    .def(
+      "__repr__",
+      [](const Vinecop& cop) { return "<pyvinecopulib.Vinecop> " + cop.str(); })
+    .def(
+      "str",
+      [](const Vinecop& cop, const std::vector<size_t>& trees = {}) {
+        return "<pyvinecopulib.Vinecop> " + cop.str(trees);
+      },
+      py::arg("trees") = std::vector<size_t>{},
+      vinecop_doc.str.doc)
     .def("truncate",
          &Vinecop::truncate,
          py::arg("trunc_lvl"),
@@ -194,7 +199,8 @@ init_vinecop_class(py::module_& module)
       [](const Vinecop& cop,
          py::object tree = py::none(),
          bool add_edge_labels = true,
-         const std::string& layout = "graphviz") {
+         const std::string& layout = "graphviz",
+         py::object vars_names = py::none()) {
         auto python_helpers_plotting =
           py::module_::import("pyvinecopulib._python_helpers.vinecop");
 
@@ -202,11 +208,12 @@ init_vinecop_class(py::module_& module)
         py::object vinecop_plot = python_helpers_plotting.attr("vinecop_plot");
 
         // Call the Python function with the C++ object and additional arguments
-        vinecop_plot(py::cast(cop), tree, add_edge_labels, layout);
+        vinecop_plot(py::cast(cop), tree, add_edge_labels, layout, vars_names);
       },
       py::arg("tree") = py::none(),
       py::arg("add_edge_labels") = true,
       py::arg("layout") = "graphviz",
+      py::arg("vars_names") = py::none(),
       py::cast<std::string>(
         py::module_::import("pyvinecopulib._python_helpers.vinecop")
           .attr("VINECOP_PLOT_DOC"))

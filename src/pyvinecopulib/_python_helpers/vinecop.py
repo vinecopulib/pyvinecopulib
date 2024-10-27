@@ -18,6 +18,8 @@ VINECOP_PLOT_DOC = """
         Whether to add edge labels to the plot.
     layout: str (default="graphviz")
         The layout to use for plotting. Either "graphviz" or "spring_layout".
+    vars_names: List[str] (default=None)
+        The names of the variables for the vine model. If None, the indices are used.
 
     Returns
     -------
@@ -33,20 +35,24 @@ VINECOP_PLOT_DOC = """
         u = np.random.uniform(0, 1, size=(20, 10))
         vc = vc = pv.Vinecop(u, controls=pv.FitControlsVinecop(family_set=[pv.BicopFamily.indep]))
         vc.plot(tree=[0, 1, 2]) # Plots the first three trees
+        vars_names = ["X" + str(i) for i in range(10)]
+        vc.plot(vars_names=vars_names) # Using variable names for the plot
 """
 
 
-def get_name(vc, tree, edge):
+def get_name(vc, tree, edge, vars_names=None):
   M = vc.matrix
   d = M.shape[0]  # Number of rows (equivalent to nrow(M) in R)
 
   # Conditioned set
   bef_indices = [d - edge - 1, tree]  # Adjusted for zero-indexing
-  bef = ",".join([str(M[i, edge]) for i in bef_indices])
+  bef = ",".join([vars_names[int(M[i, edge]) - 1] for i in bef_indices])
 
   # Conditioning set
   if tree > 0:
-    aft = ",".join([str(M[i - 1, edge]) for i in range(tree, 0, -1)])
+    aft = ",".join(
+      [vars_names[int(M[i - 1, edge]) - 1] for i in range(tree, 0, -1)]
+    )
   else:
     aft = ""
 
@@ -57,7 +63,7 @@ def get_name(vc, tree, edge):
   return bef + sep + aft
 
 
-def get_graph(tree, vc):
+def get_graph(tree, vc, vars_names):
   M = vc.matrix
   d = vc.dim
 
@@ -86,13 +92,15 @@ def get_graph(tree, vc):
         ind_i.append(j)
     adj_mat[ind_i[0], ind_i[1]] = 1
     adj_mat[ind_i[1], ind_i[0]] = 1
-    edge_labels[(ind_i[0], ind_i[1])] = get_name(vc, tree, i)
+    edge_labels[(ind_i[0], ind_i[1])] = get_name(vc, tree, i, vars_names)
 
   # Node labels
   if tree > 0:
-    node_labels = {i: get_name(vc, tree - 1, i) for i in range(d - tree)}
+    node_labels = {
+      i: get_name(vc, tree - 1, i, vars_names) for i in range(d - tree)
+    }
   else:
-    node_labels = {j: str(M[d - j - 1, j]) for j in range(d)}
+    node_labels = {j: vars_names[int(M[d - j - 1, j]) - 1] for j in range(d)}
 
   return adj_mat, node_labels, edge_labels
 
@@ -102,6 +110,7 @@ def vinecop_plot(
   tree: List[int] = None,
   add_edge_labels=True,
   layout: str = "graphviz",
+  vars_names: List[str] = None,
 ) -> None:
   """{}""".format(VINECOP_PLOT_DOC)
 
@@ -115,6 +124,14 @@ def vinecop_plot(
 
   if "spring_layout" in layout:  # change to spring_layout if needed
     layout = "spring_layout"
+
+  if vars_names is not None:
+    if len(vars_names) != cop.dim:
+      raise ValueError(
+        "The number of variable names must be equal to the dimension of the vine copula."
+      )
+  else:
+    vars_names = [str(i) for i in range(cop.dim)]
 
   mat = cop.matrix
   if len(tree) > 3:
@@ -142,7 +159,7 @@ def vinecop_plot(
   for t in tree:
     ax[row, col].set_title("Tree {}".format(t))
     ax[row, col].margins(0.2)
-    adj_mat, node_labels, edge_labels = get_graph(t, cop)
+    adj_mat, node_labels, edge_labels = get_graph(t, cop, vars_names)
     g = nx.from_numpy_array(adj_mat)
     # try to avoid crossing edges, there is no straight solution for it, there are other options as well, but this works fine
     # There is also an implementation of graphviz:
