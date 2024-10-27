@@ -117,6 +117,13 @@ git clone --recursive https://github.com/vinecopulib/pyvinecopulib.git
 pip install ./pyvinecopulib
 ```
 
+If the required dependencies are not installed, a reproducible environment, which also include stuff requirement for the library's development and documentation, can be created using:
+
+```bash
+mamba create -n pyvinecopulib numpy mypy ruff pytest sphinx-rtd-theme sphinx-autodoc-typehints pydot networkx matplotlib pybind11 setuptools-scm python=3.11
+mamba activate pyvinecopulib
+```
+
 ### Examples
 
 Jupyter notebooks with examples can be found in the examples folder.
