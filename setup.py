@@ -48,6 +48,7 @@ setup(
       include_dirs=include_dirs,
       language="c++",
       cxx_std=17,
+      extra_compile_args=["-O3"],
     )
   ],
   cmdclass={"build_ext": build_ext},
