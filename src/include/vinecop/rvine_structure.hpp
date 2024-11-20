@@ -56,6 +56,21 @@ init_vinecop_rvine_structure(py::module_& module)
          py::arg("edge"),
          py::arg("natural_order") = false,
          rvinestructure_doc.struct_array.doc)
+    .def("min_array",
+         &RVineStructure::min_array,
+         py::arg("tree"),
+         py::arg("edge"),
+         rvinestructure_doc.min_array.doc)
+    .def("needed_hfunc1",
+         &RVineStructure::needed_hfunc1,
+         py::arg("tree"),
+         py::arg("edge"),
+         rvinestructure_doc.needed_hfunc1.doc)
+    .def("needed_hfunc2",
+         &RVineStructure::needed_hfunc2,
+         py::arg("tree"),
+         py::arg("edge"),
+         rvinestructure_doc.needed_hfunc2.doc)
     .def("truncate",
          &RVineStructure::truncate,
          py::arg("trunc_lvl"),
