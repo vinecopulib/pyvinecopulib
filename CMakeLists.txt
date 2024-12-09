@@ -78,9 +78,11 @@ find_package(nanobind CONFIG REQUIRED)
 
 include_directories(SYSTEM ${external_includes})
 include_directories(${vinecopulib_INCLUDE_DIRS} ${pyvinecopulib_INCLUDE_DIRS})
-nanobind_add_module(_pyvinecopulib NB_STATIC src/pyvinecopulib/main.cpp)
+nanobind_add_module(pyvinecopulib_ext
+  NB_STATIC
+  src/pyvinecopulib/pyvinecopulib_ext.cpp)
 
-# target_compile_definitions(_pyvinecopulib PRIVATE VERSION_INFO=${PROJECT_VERSION})
+target_compile_definitions(pyvinecopulib_ext PRIVATE VERSION_INFO=\"${PROJECT_VERSION}\")
 
 # Install directive for scikit-build-core
-install(TARGETS _pyvinecopulib LIBRARY DESTINATION pyvinecopulib)
+install(TARGETS pyvinecopulib_ext LIBRARY DESTINATION pyvinecopulib)

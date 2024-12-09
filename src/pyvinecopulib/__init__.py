@@ -1,1 +1,1 @@
-from _pyvinecopulib import *
+from .pyvinecopulib_ext import *

@@ -29,11 +29,11 @@ private:
   nb::object original_name_;
 };
 
-NB_MODULE(_pyvinecopulib, pv)
+NB_MODULE(pyvinecopulib_ext, pv)
 {
 
   // Ensure that members of this module display as `pyvinecopulib.X` rather than
-  // `pyvinecopulib.pyvinecopulib.X`.
+  // `pyvinecopulib.pyvinecopulib_ext.X`.
   ScopedModuleNameOverride name_override(pv, "pyvinecopulib");
 
   pv.doc() = R"pbdoc(
