@@ -80,7 +80,7 @@ include_directories(SYSTEM ${external_includes})
 include_directories(${vinecopulib_INCLUDE_DIRS} ${pyvinecopulib_INCLUDE_DIRS})
 nanobind_add_module(pyvinecopulib_ext
   NB_STATIC
-  src/pyvinecopulib/pyvinecopulib_ext.cpp)
+  src/pyvinecopulib_ext.cpp)
 
 target_compile_definitions(pyvinecopulib_ext PRIVATE VERSION_INFO=\"${PROJECT_VERSION}\")
 
