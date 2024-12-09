@@ -1,10 +1,10 @@
 #include "pyvinecopulib.hpp"
-#include <pybind11/eigen.h>
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
+#include <nanobind/eigen/dense.h>
+#include <nanobind/nanobind.h>
+// #include <nanobind/stl.h>
 #include <vinecopulib.hpp>
 
-namespace py = pybind11;
+namespace nb = nanobind;
 using namespace vinecopulib;
 
 /// Overrides the `__name__` of a module.  Classes defined by pybind11 use the
@@ -15,7 +15,7 @@ using namespace vinecopulib;
 class ScopedModuleNameOverride
 {
 public:
-  explicit ScopedModuleNameOverride(const py::module& m,
+  explicit ScopedModuleNameOverride(const nb::module_& m,
                                     const std::string& name)
     : module_(std::move(m))
   {
@@ -25,16 +25,16 @@ public:
   ~ScopedModuleNameOverride() { module_.attr("__name__") = original_name_; }
 
 private:
-  py::module module_;
-  py::object original_name_;
+  nb::module_ module_;
+  nb::object original_name_;
 };
 
-PYBIND11_MODULE(_pyvinecopulib, pv)
+NB_MODULE(_pyvinecopulib, pv)
 {
 
   // Ensure that members of this module display as `pyvinecopulib.X` rather than
   // `pyvinecopulib.pyvinecopulib.X`.
-  ScopedModuleNameOverride name_override(pv, "pyvinecopulib");
+  // ScopedModuleNameOverride name_override(pv, "pyvinecopulib");
 
   pv.doc() = R"pbdoc(
   The pyvinecopulib package
