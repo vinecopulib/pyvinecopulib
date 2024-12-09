@@ -1,0 +1,4 @@
+include README.md LICENSE pyproject.toml
+recursive-include src *.py *.hpp *.cpp
+recursive-include lib/wdm/include *.hpp
+recursive-include lib/vinecopulib/include *.hpp *.ipp

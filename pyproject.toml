@@ -51,7 +51,7 @@ dev = [
 minimum-version = "0.4"
 
 # Setuptools-style build caching in a local directory
-build-dir = "build/{wheel_tag}"
+# build-dir = "build/{wheel_tag}"
 
 [project.urls]
 Homepage = "https://github.com/vinecopulib/pyvinecopulib/"
