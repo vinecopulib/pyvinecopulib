@@ -84,7 +84,7 @@ jobs:
         git fetch --depth=1 origin +refs/tags/*:refs/tags/*
     - name: Install dependencies
       id: install-dependencies
-      uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@better-actions
+      uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@dev
       with:
           os: 'ubuntu-latest'
           boost_install_dir: '/home/runner/work'

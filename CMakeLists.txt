@@ -2,7 +2,10 @@ cmake_minimum_required(VERSION 3.5)
 
 set(CMAKE_CXX_STANDARD 17)
 
-project(pyvinecopulib)
+project(
+  ${SKBUILD_PROJECT_NAME}
+  VERSION ${SKBUILD_PROJECT_VERSION}
+  LANGUAGES CXX)
 
 if (NOT SKBUILD)
   message(WARNING "\
@@ -39,6 +42,15 @@ set(pyvinecopulib_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/src/include)
 # BUILD_TESTING is turned off
 set(BUILD_TESTING OFF)
 
+# Look for Eigen3 and Boost
+if(DEFINED ENV{EIGEN3_INCLUDE_DIR})
+  set(EIGEN3_INCLUDE_DIR $ENV{EIGEN3_INCLUDE_DIR})
+endif()
+
+if(DEFINED ENV{Boost_INCLUDE_DIR})
+  set(Boost_INCLUDE_DIRS $ENV{Boost_INCLUDE_DIR})
+endif()
+
 include(lib/vinecopulib/cmake/findDependencies.cmake      REQUIRED)
 
 if (CMAKE_VERSION VERSION_LESS 3.18)
@@ -67,6 +79,8 @@ find_package(nanobind CONFIG REQUIRED)
 include_directories(SYSTEM ${external_includes})
 include_directories(${vinecopulib_INCLUDE_DIRS} ${pyvinecopulib_INCLUDE_DIRS})
 nanobind_add_module(_pyvinecopulib NB_STATIC src/pyvinecopulib/main.cpp)
+
+# target_compile_definitions(_pyvinecopulib PRIVATE VERSION_INFO=${PROJECT_VERSION})
 
 # Install directive for scikit-build-core
 install(TARGETS _pyvinecopulib LIBRARY DESTINATION pyvinecopulib)
