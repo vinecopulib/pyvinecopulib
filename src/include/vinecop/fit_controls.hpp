@@ -37,7 +37,7 @@ init_vinecop_fit_controls(py::module_& module)
                   std::string>(),
          py::arg("family_set") = bicop_families::all,
          py::arg("parametric_method") = "mle",
-         py::arg("nonparametric_method") = "quadratic",
+         py::arg("nonparametric_method") = "constant",
          py::arg("nonparametric_mult") = 1.0,
          py::arg("trunc_lvl") = std::numeric_limits<size_t>::max(),
          py::arg("tree_criterion") = "tau",

@@ -30,7 +30,7 @@ init_bicop_fit_controls(py::module_& module)
          fitcontrolsbicop_doc.ctor.doc_9args,
          py::arg("family_set") = bicop_families::all,
          py::arg("parametric_method") = "mle",
-         py::arg("nonparametric_method") = "quadratic",
+         py::arg("nonparametric_method") = "constant",
          py::arg("nonparametric_mult") = 1.0,
          py::arg("selection_criterion") = "bic",
          py::arg("weights") = Eigen::VectorXd(),
