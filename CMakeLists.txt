@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 
 project(pyvinecopulib)
 
@@ -58,6 +58,10 @@ execute_process(
   OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_ROOT)
 message(STATUS "nanobind_ROOT= ${nanobind_ROOT}")
 list(APPEND CMAKE_PREFIX_PATH "${nanobind_ROOT}")
+if (POLICY CMP0074)
+  # find_package() uses <PackageName>_ROOT variables
+  cmake_policy(SET CMP0074 NEW)
+endif ()
 find_package(nanobind CONFIG REQUIRED)
 
 include_directories(SYSTEM ${external_includes})

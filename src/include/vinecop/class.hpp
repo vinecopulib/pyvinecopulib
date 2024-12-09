@@ -191,30 +191,29 @@ init_vinecop_class(nb::module_& module)
     .def("truncate",
          &Vinecop::truncate,
          nb::arg("trunc_lvl"),
-         vinecop_doc.truncate.doc);
-  // .def(
-  //   "plot",
-  //   [](const Vinecop& cop,
-  //      nb::object tree = nb::none(),
-  //      bool add_edge_labels = true,
-  //      const std::string& layout = "graphviz",
-  //      nb::object vars_names = nb::none()) {
-  //     auto python_helpers_plotting =
-  //       nb::module_::import_("pyvinecopulib._python_helpers.vinecop");
+         vinecop_doc.truncate.doc)
+    .def(
+      "plot",
+      [](const Vinecop& cop,
+         nb::object tree = nb::none(),
+         bool add_edge_labels = true,
+         const std::string& layout = "graphviz",
+         nb::object vars_names = nb::none()) {
+        auto python_helpers_plotting =
+          nb::module_::import_("pyvinecopulib._python_helpers.vinecop");
 
-  //     // Import the Python plotting function
-  //     nb::object vinecop_plot = python_helpers_plotting.attr("vinecop_plot");
+        // Import the Python plotting function
+        nb::object vinecop_plot = python_helpers_plotting.attr("vinecop_plot");
 
-  //     // Call the Python function with the C++ object and additional
-  //     arguments vinecop_plot(nb::cast(cop), tree, add_edge_labels, layout,
-  //     vars_names);
-  //   },
-  //   nb::arg("tree") = nb::none(),
-  //   nb::arg("add_edge_labels") = true,
-  //   nb::arg("layout") = "graphviz",
-  //   nb::arg("vars_names") = nb::none(),
-  //   nb::cast<std::string>(
-  //     nb::module_::import_("pyvinecopulib._python_helpers.vinecop")
-  //       .attr("VINECOP_PLOT_DOC"))
-  //     .c_str());
+        // Call the Python function with the C++ object and additional arguments
+        vinecop_plot(nb::cast(cop), tree, add_edge_labels, layout, vars_names);
+      },
+      nb::arg("tree") = nb::none(),
+      nb::arg("add_edge_labels") = true,
+      nb::arg("layout") = "graphviz",
+      nb::arg("vars_names") = nb::none(),
+      nb::cast<std::string>(
+        nb::module_::import_("pyvinecopulib._python_helpers.vinecop")
+          .attr("VINECOP_PLOT_DOC"))
+        .c_str());
 }

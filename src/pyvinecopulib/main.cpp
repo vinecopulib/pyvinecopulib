@@ -34,7 +34,7 @@ NB_MODULE(_pyvinecopulib, pv)
 
   // Ensure that members of this module display as `pyvinecopulib.X` rather than
   // `pyvinecopulib.pyvinecopulib.X`.
-  // ScopedModuleNameOverride name_override(pv, "pyvinecopulib");
+  ScopedModuleNameOverride name_override(pv, "pyvinecopulib");
 
   pv.doc() = R"pbdoc(
   The pyvinecopulib package

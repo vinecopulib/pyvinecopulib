@@ -112,29 +112,29 @@ init_bicop_class(nb::module_& module)
          &Bicop::select,
          nb::arg("data"),
          nb::arg("controls") = FitControlsBicop(),
-         bicop_doc.select.doc);
-  // .def(
-  //   "plot",
-  //   [](const Bicop& cop,
-  //      const std::string& type = "surface",
-  //      const std::string& margin_type = "unif",
-  //      nb::object xylim = nb::none(),
-  //      nb::object grid_size = nb::none()) {
-  //     auto python_helpers_plotting =
-  //       nb::module_::import("pyvinecopulib._python_helpers.bicop");
+         bicop_doc.select.doc)
+    .def(
+      "plot",
+      [](const Bicop& cop,
+         const std::string& type = "surface",
+         const std::string& margin_type = "unif",
+         nb::object xylim = nb::none(),
+         nb::object grid_size = nb::none()) {
+        auto python_helpers_plotting =
+          nb::module_::import_("pyvinecopulib._python_helpers.bicop");
 
-  //     // Import the Python plotting function
-  //     nb::object bicop_plot = python_helpers_plotting.attr("bicop_plot");
+        // Import the Python plotting function
+        nb::object bicop_plot = python_helpers_plotting.attr("bicop_plot");
 
-  //     // Call the Python function with the provided arguments
-  //     bicop_plot(nb::cast(cop), type, margin_type, xylim, grid_size);
-  //   },
-  //   nb::arg("type") = "surface",
-  //   nb::arg("margin_type") = "unif",
-  //   nb::arg("xylim") = nb::none(),
-  //   nb::arg("grid_size") = nb::none(),
-  //   nb::cast<std::string>(
-  //     nb::module_::import("pyvinecopulib._python_helpers.bicop")
-  //       .attr("BICOP_PLOT_DOC"))
-  //     .c_str());
+        // Call the Python function with the provided arguments
+        bicop_plot(nb::cast(cop), type, margin_type, xylim, grid_size);
+      },
+      nb::arg("type") = "surface",
+      nb::arg("margin_type") = "unif",
+      nb::arg("xylim") = nb::none(),
+      nb::arg("grid_size") = nb::none(),
+      nb::cast<std::string>(
+        nb::module_::import_("pyvinecopulib._python_helpers.bicop")
+          .attr("BICOP_PLOT_DOC"))
+        .c_str());
 }
