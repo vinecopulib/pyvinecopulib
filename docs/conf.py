@@ -5,7 +5,7 @@
 # Sphinx extension modules
 
 import inspect
-import types
+import re
 from typing import Any
 
 import sphinx.ext.autodoc as autodoc
@@ -25,7 +25,7 @@ def isnbfunc(obj: Any) -> bool:
   )
 
 
-def isfunction(obj: Any) -> types.FunctionType:
+def isfunction(obj: Any) -> bool:
   """Check if the object is a user-defined function.
   Partial objects are unwrapped before checking them.
   .. seealso:: :external+python:func:`inspect.isfunction`
@@ -33,10 +33,22 @@ def isfunction(obj: Any) -> types.FunctionType:
   return inspect.isfunction(sphinxinspect.unpartial(obj)) or isnbfunc(obj)
 
 
+def isroutine(obj: Any) -> bool:
+  """Check if the object is a kind of function or method.
+
+  Partial objects are unwrapped before checking them.
+
+  .. seealso:: :external+python:func:`inspect.isroutine`
+  """
+  return inspect.isroutine(sphinxinspect.unpartial(obj)) or isnbfunc(obj)
+
+
 sphinxinspect.isfunction = isfunction
+sphinxinspect.isroutine = isroutine
 
 # show the body of the function
 assert autodoc.inspect.isfunction is isfunction
+assert autodoc.inspect.isroutine is isroutine
 
 
 # Define the patched method
@@ -81,6 +93,14 @@ napoleon_use_rtype = False
 napoleon_custom_sections = [("Usage", "Usage")]
 autosummary_generate = True
 
+autodoc_default_options = {
+  "members": True,
+  "undoc-members": True,
+  "private-members": True,
+  "special-members": "__init__",
+  "show-inheritance": True,
+}
+
 # The suffix(es) of source filenames.
 source_suffix = ".rst"
 
@@ -117,51 +137,9 @@ pygments_style = "sphinx"
 
 html_logo = "_static/pyvinecopulib.png"
 
-# -- Custom Docstring Reformatting for Overloaded Methods -------------------
-
-import re
-
-
-def process_overloaded(docstring):
-  import pdb
-
-  pdb.set_trace()
-  # Split by what looks like an overload indicator (e.g., '1. __init__(' or '2. __init__(')
-  overloads = re.split(r"(\d+\.\s__init__\()", docstring)
-
-  # Prepare list to store formatted sections
-  formatted_overloads = ["Creates a new instance of the class.\n\n"]
-
-  # Rebuild each overload without :param/:type misinterpretation
-  for i in range(1, len(overloads), 4):
-    # Recombine marker with the content and re-add original text
-    overload_doc = overloads[i] + overloads[i + 1]
-
-    # Remove any unwanted ":param " at the end of the line
-    overload_doc = re.sub(r":param $", "", overload_doc)
-
-    # The :param occurences befpre the first double line break are not needed
-    # Identify the first double line break
-    first_double_line_break = overload_doc.find("\n\n")
-    # Remove the :param occurences before the first double line break
-    overload_doc = (
-      re.sub(r":param", "", overload_doc[:first_double_line_break])
-      + overload_doc[first_double_line_break:]
-    )
-    # Similarly, the : at the end of lines are not needed
-    overload_doc = re.sub(r":\n", "", overload_doc)
-
-    # Instances of :type are not needed
-    overload_doc = re.sub(r":type ", "", overload_doc)
-
-    # Add the cleaned overload to the list
-    overload_section = f"{overload_doc.strip()}\n\n\n"
-    formatted_overloads.append(overload_section)
-
-  return "\n".join(formatted_overloads)
-
 
 def autodoc_process_docstring(app, what, name, obj, options, lines):
+  print(f"Processing: {what}, {name}")
 
   # Join the existing lines and try to reformat the docstring
   docstring = "\n".join(lines)
@@ -183,18 +161,18 @@ def autodoc_process_docstring(app, what, name, obj, options, lines):
   for cls in classes:
     docstring = re.sub(r"``" + cls + "``", r":class:`" + cls + "`", docstring)
 
-  overloaded_classes_constructors = {
-    "pyvinecopulib." + cls + ".__init__"
-    for cls in [
-      "Bicop",
-      "Vinecop",
-      "CVineStructure",
-      "DVineStructure",
-      "RVineStructure",
-    ]
-  }
-  if name in overloaded_classes_constructors:
-    docstring = process_overloaded(docstring)
+  # overloaded_classes_constructors = {
+  #   "pyvinecopulib." + cls + ".__init__"
+  #   for cls in [
+  #     "Bicop",
+  #     "Vinecop",
+  #     "CVineStructure",
+  #     "DVineStructure",
+  #     "RVineStructure",
+  #   ]
+  # }
+  # if name in overloaded_classes_constructors:
+  #   docstring = process_overloaded(docstring)
   # Clear lines and replace with the cleaned, structured overloads
   lines.clear()
   lines.extend(docstring.splitlines())

@@ -9,11 +9,46 @@ namespace nb = nanobind;
 using namespace nb::literals;
 using namespace vinecopulib;
 
+// Factory function to create a Bicop from family, rotation, parameters, and
+// variable types
+inline Bicop
+from_family(const BicopFamily& family,
+            int rotation = 0,
+            const Eigen::MatrixXd& parameters = Eigen::MatrixXd(),
+            const std::vector<std::string>& var_types = { "c", "c" })
+{
+  return Bicop(family, rotation, parameters, var_types);
+}
+
+// Factory function to create a Bicop from data, controls, and variable types
+inline Bicop
+bc_from_data(const Eigen::Matrix<double, Eigen::Dynamic, 2>& data,
+             const FitControlsBicop& controls = FitControlsBicop(),
+             const std::vector<std::string>& var_types = { "c", "c" })
+{
+  return Bicop(data, controls, var_types);
+}
+
+// Factory function to create a Bicop from a filename
+inline Bicop
+bc_from_file(const std::string& filename)
+{
+  return Bicop(filename);
+}
+
 inline void
 init_bicop_class(nb::module_& module)
 {
 
   constexpr auto& bicop_doc = pyvinecopulib_doc.vinecopulib.Bicop;
+
+  const char* default_constructor_doc =
+    R"""(Default constructor for the ``Bicop`` class.
+
+The default constructor uses ``Bicop.from_family()`` to instantiate an
+independent bivariate copula. It can then be used to select a model from data using ``Bicop.select()``. Or if a ``BicopFamily`` is passed to the constructor, then the method ``Bicop.fit()`` can be used to fit the copula to data.
+To instantiate directly from data or from a file, use ``Bicop.from_data()``
+and ``Bicop.from_file()`` respectively.)""";
 
   nb::class_<Bicop>(module, "Bicop", bicop_doc.doc)
     .def(nb::init<const BicopFamily,
@@ -24,18 +59,26 @@ init_bicop_class(nb::module_& module)
          "rotation"_a = 0,
          "parameters"_a = Eigen::MatrixXd(),
          "var_types"_a = std::vector<std::string>(2, "c"),
-         bicop_doc.ctor.doc_4args_family_rotation_parameters_var_types)
-    .def(nb::init<const Eigen::Matrix<double, Eigen::Dynamic, 2>&,
-                  const FitControlsBicop&,
-                  const std::vector<std::string>&>(),
-         "data"_a,
-         "controls"_a.sig("FitControlsBicop()") = FitControlsBicop(),
-         "var_types"_a = std::vector<std::string>(2, "c"),
-         bicop_doc.ctor.doc_3args_data_controls_var_types)
-    .def(nb::init<const std::string>(),
-         "filename"_a,
-         bicop_doc.ctor.doc_1args_filename)
-    .def("to_json", &Bicop::to_file, "filename"_a, bicop_doc.to_file.doc)
+         default_constructor_doc) // Default constructor
+    .def_static("from_family",
+                &from_family,
+                "family"_a = BicopFamily::indep,
+                "rotation"_a = 0,
+                "parameters"_a = Eigen::MatrixXd(),
+                "var_types"_a = std::vector<std::string>(2, "c"),
+                bicop_doc.ctor.doc_4args_family_rotation_parameters_var_types)
+    .def_static("from_data",
+                &bc_from_data,
+                "data"_a,
+                "controls"_a.sig("FitControlsBicop()") = FitControlsBicop(),
+                "var_types"_a = std::vector<std::string>(2, "c"),
+                bicop_doc.ctor.doc_3args_data_controls_var_types)
+    .def_static("from_file",
+                &bc_from_file,
+                "filename"_a,
+                bicop_doc.ctor.doc_1args_filename)
+    .def("to_file", &Bicop::to_file, "filename"_a, bicop_doc.to_file.doc)
+    .def("to_json", &Bicop::to_json, bicop_doc.to_json.doc)
     .def_prop_rw("rotation",
                  &Bicop::get_rotation,
                  &Bicop::set_rotation,
