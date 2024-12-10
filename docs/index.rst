@@ -1,8 +1,8 @@
 .. GENERATED FILE DO NOT EDIT
 
-=============
-pyvinecopulib
-=============
+=================================
+pyvinecopulib 0.7.0 Documentation
+=================================
 
 
 Classes

@@ -78,13 +78,13 @@ def has_cc_imported_symbols(name):
     return False
 
 
-def write_module(f_name, name, verbose):
+def write_module(f_name, name, version, verbose):
   if verbose:
     print("Write: {}".format(name))
   with open(f_name, "w") as f:
     f.write(".. GENERATED FILE DO NOT EDIT\n")
     f.write("\n")
-    rst_name = name.replace("_", "\\_")
+    rst_name = name.replace("_", "\\_") + " " + version + " Documentation"
     f.write("=" * len(rst_name) + "\n")
     f.write("{}\n".format(rst_name))
     f.write("=" * len(rst_name) + "\n")
@@ -114,7 +114,10 @@ def write_doc_modules(output_dir, verbose=False):
   if not isabs(output_dir):
     raise RuntimeError("Please provide an absolute path: {}".format(output_dir))
   index_file = join(output_dir, "index.rst")
-  write_module(index_file, "pyvinecopulib", verbose)
+  import pyvinecopulib as pv
+
+  version = pv.__version__
+  write_module(index_file, "pyvinecopulib", version, verbose)
 
 
 def _die(s):

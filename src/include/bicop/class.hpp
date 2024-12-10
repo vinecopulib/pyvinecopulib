@@ -29,7 +29,7 @@ init_bicop_class(nb::module_& module)
                   const FitControlsBicop&,
                   const std::vector<std::string>&>(),
          nb::arg("data"),
-         nb::arg("controls") = FitControlsBicop(),
+         nb::arg("controls").sig("FitControlsBicop()") = FitControlsBicop(),
          nb::arg("var_types") = std::vector<std::string>(2, "c"),
          bicop_doc.ctor.doc_3args_data_controls_var_types)
     .def(nb::init<const std::string>(),
@@ -85,12 +85,12 @@ init_bicop_class(nb::module_& module)
          &Bicop::tau_to_parameters,
          nb::arg("tau"),
          bicop_doc.tau_to_parameters.doc)
-    .def("parameters_lower_bounds",
-         &Bicop::get_parameters_lower_bounds,
-         bicop_doc.get_parameters_lower_bounds.doc)
-    .def("parameters_upper_bounds",
-         &Bicop::get_parameters_upper_bounds,
-         bicop_doc.get_parameters_upper_bounds.doc)
+    .def_prop_ro("parameters_lower_bounds",
+                 &Bicop::get_parameters_lower_bounds,
+                 bicop_doc.get_parameters_lower_bounds.doc)
+    .def_prop_ro("parameters_upper_bounds",
+                 &Bicop::get_parameters_upper_bounds,
+                 bicop_doc.get_parameters_upper_bounds.doc)
     .def("pdf", &Bicop::pdf, nb::arg("u"), bicop_doc.pdf.doc)
     .def("cdf", &Bicop::cdf, nb::arg("u"), bicop_doc.cdf.doc)
     .def("hfunc1", &Bicop::hfunc1, nb::arg("u"), bicop_doc.hfunc1.doc)
@@ -106,12 +106,12 @@ init_bicop_class(nb::module_& module)
     .def("fit",
          &Bicop::fit,
          nb::arg("data"),
-         nb::arg("controls") = FitControlsBicop(),
+         nb::arg("controls").sig("FitControlsBicop()") = FitControlsBicop(),
          bicop_doc.fit.doc)
     .def("select",
          &Bicop::select,
          nb::arg("data"),
-         nb::arg("controls") = FitControlsBicop(),
+         nb::arg("controls").sig("FitControlsBicop()") = FitControlsBicop(),
          bicop_doc.select.doc)
     .def(
       "plot",

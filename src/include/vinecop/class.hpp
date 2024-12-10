@@ -39,7 +39,7 @@ init_vinecop_class(nb::module_& module)
          nb::arg("data"),
          nb::arg("structure") = RVineStructure(),
          nb::arg("var_types") = std::vector<std::string>(),
-         nb::arg("controls") = FitControlsVinecop(),
+         nb::arg("controls").sig("FitControlsVinecop()") = FitControlsVinecop(),
          vinecop_doc.ctor.doc_4args_data_structure_var_types_controls)
     .def(nb::init<const Eigen::MatrixXd&,
                   const Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
@@ -49,7 +49,7 @@ init_vinecop_class(nb::module_& module)
          nb::arg("matrix") =
            Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>(),
          nb::arg("var_types") = std::vector<std::string>(),
-         nb::arg("controls") = FitControlsVinecop(),
+         nb::arg("controls").sig("FitControlsVinecop()") = FitControlsVinecop(),
          vinecop_doc.ctor.doc_4args_data_matrix_var_types_controls)
     .def(nb::init<const std::string, bool>(),
          nb::arg("filename"),
@@ -118,12 +118,12 @@ init_vinecop_class(nb::module_& module)
     .def("select",
          &Vinecop::select,
          nb::arg("data"),
-         nb::arg("controls") = FitControlsVinecop(),
+         nb::arg("controls").sig("FitControlsVinecop()") = FitControlsVinecop(),
          vinecop_doc.select.doc)
     .def("fit",
          &Vinecop::fit,
          nb::arg("data"),
-         nb::arg("controls") = FitControlsBicop(),
+         nb::arg("controls").sig("FitControlsBicop()") = FitControlsBicop(),
          nb::arg("num_threads") = 1,
          vinecop_doc.fit.doc)
     .def("pdf",
