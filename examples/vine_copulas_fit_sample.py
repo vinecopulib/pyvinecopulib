@@ -18,7 +18,7 @@ u = pv.to_pseudo_obs(x)
 # Fit a Gaussian vine
 # (i.e., properly specified since the data is multivariate normal)
 controls = pv.FitControlsVinecop(family_set=[pv.BicopFamily.gaussian])
-cop = pv.Vinecop(u, controls=controls)
+cop = pv.Vinecop.from_data(u, controls=controls)
 
 # Sample from the copula
 n_sim = 1000

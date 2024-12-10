@@ -33,7 +33,7 @@ VINECOP_PLOT_DOC = """
         import numpy as np
         np.random.seed(1234)
         u = np.random.uniform(0, 1, size=(20, 10))
-        vc = vc = pv.Vinecop(u, controls=pv.FitControlsVinecop(family_set=[pv.BicopFamily.indep]))
+        vc = vc = pv.Vinecop.from_data(u, controls=pv.FitControlsVinecop(family_set=[pv.BicopFamily.indep]))
         vc.plot(tree=[0, 1, 2]) # Plots the first three trees
         vars_names = ["X" + str(i) for i in range(10)]
         vc.plot(vars_names=vars_names) # Using variable names for the plot
@@ -41,7 +41,7 @@ VINECOP_PLOT_DOC = """
 
 
 def get_name(vc, tree, edge, vars_names=None):
-  M = vc.matrix
+  M = vc.matrix()
   d = M.shape[0]  # Number of rows (equivalent to nrow(M) in R)
 
   # Conditioned set
@@ -64,7 +64,7 @@ def get_name(vc, tree, edge, vars_names=None):
 
 
 def get_graph(tree, vc, vars_names):
-  M = vc.matrix
+  M = vc.matrix()
   d = vc.dim
 
   adj_mat = np.zeros((d - tree, d - tree), dtype=int)
@@ -82,6 +82,8 @@ def get_graph(tree, vc, vars_names):
   for j in range(d - tree - 1):
     rows = np.array([d - j - 1, *range(tree, -1, -1)])
     edges[j, :] = M[rows, j]
+
+  print(M)
 
   # Build adjacency matrix by matching vertices and edges
   edge_labels = {}
@@ -133,7 +135,7 @@ def vinecop_plot(
   else:
     vars_names = [str(i) for i in range(cop.dim)]
 
-  mat = cop.matrix
+  mat = cop.matrix()
   if len(tree) > 3:
     n_col = 2
   else:

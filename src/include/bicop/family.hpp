@@ -1,22 +1,23 @@
 #pragma once
 
 #include "docstr.hpp"
-#include <pybind11/eigen.h>
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
+#include <nanobind/eigen/dense.h>
+#include <nanobind/nanobind.h>
+#include <nanobind/stl/string.h>
+#include <nanobind/stl/vector.h>
 #include <vinecopulib.hpp>
 
-namespace py = pybind11;
+namespace nb = nanobind;
 using namespace vinecopulib;
 
 inline void
-init_bicop_family(py::module_& module)
+init_bicop_family(nb::module_& module)
 {
 
   constexpr auto& doc = pyvinecopulib_doc;
   constexpr auto& bicopfamily_doc = doc.vinecopulib.BicopFamily;
 
-  py::enum_<BicopFamily>(module, "BicopFamily", py::arithmetic(), R"pbdoc(
+  nb::enum_<BicopFamily>(module, "BicopFamily", nb::is_arithmetic(), R"pbdoc(
    A bivariate copula family identifier.
 
    The following convenient sets of families are also provided:

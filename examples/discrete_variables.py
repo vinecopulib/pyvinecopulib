@@ -2,6 +2,7 @@
 import math
 
 import numpy as np
+
 import pyvinecopulib as pv
 
 # Simulate dummy data
@@ -18,7 +19,7 @@ controls = pv.FitControlsVinecop(family_set=[pv.BicopFamily.gaussian])
 
 
 # A continuous example
-fit_cont = pv.Vinecop(u, controls=controls)
+fit_cont = pv.Vinecop.from_data(u, controls=controls)
 str(fit_cont)
 
 
@@ -52,7 +53,7 @@ def poisson_cdf(k, mu):
 u_disc = np.hstack((poisson_cdf(x_poisson, 1), poisson_cdf(x_poisson - 1, 1)))
 
 # Fit vine copula model for discrete data
-fit_disc = pv.Vinecop(u_disc, var_types=["d"] * 5, controls=controls)
+fit_disc = pv.Vinecop.from_data(u_disc, var_types=["d"] * 5, controls=controls)
 str(fit_disc)
 
 # Model for mixed data
@@ -67,7 +68,7 @@ u_disc_mixed = np.hstack(
 )
 
 # Fit vine copula model for mixed data
-fit_mixed = pv.Vinecop(
+fit_mixed = pv.Vinecop.from_data(
   u_disc_mixed, var_types=["d"] + ["c"] * 4, controls=controls
 )
 str(fit_mixed)
