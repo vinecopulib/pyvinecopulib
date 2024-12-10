@@ -1,6 +1,6 @@
 #ifdef _MSC_VER
-#ifndef snprintf
-#define snprintf _snprintf
+#ifndef _snprintf
+#define _snprintf snprintf
 #endif
 #endif
 
