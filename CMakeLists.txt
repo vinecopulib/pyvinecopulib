@@ -86,7 +86,7 @@ nanobind_add_module(
   src/pyvinecopulib_ext.cpp
 )
 
-# target_compile_definitions(pyvinecopulib_ext PRIVATE VERSION_INFO=\"${PROJECT_VERSION}\")
+target_compile_definitions(pyvinecopulib_ext PRIVATE VERSION_INFO=\"${PROJECT_VERSION}\")
 
 # Install directive for scikit-build-core
 install(TARGETS pyvinecopulib_ext
