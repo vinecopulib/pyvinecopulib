@@ -93,14 +93,6 @@ napoleon_use_rtype = False
 napoleon_custom_sections = [("Usage", "Usage")]
 autosummary_generate = True
 
-autodoc_default_options = {
-  "members": True,
-  "undoc-members": True,
-  "private-members": True,
-  "special-members": "__init__",
-  "show-inheritance": True,
-}
-
 # The suffix(es) of source filenames.
 source_suffix = ".rst"
 

@@ -103,6 +103,7 @@ def write_module(f_name, name, version, verbose):
 
     for i in CLASSES:
       f.write("    {}\n".format(i))
+
     f.write("\nFunctions\n")
     f.write("=========\n\n")
 

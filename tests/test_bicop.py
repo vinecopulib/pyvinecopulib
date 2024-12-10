@@ -19,7 +19,7 @@ def test_bicop():
   # Test initialization with arguments
   data = np.array([[0.1, 0.2], [0.3, 0.4]])
   controls = pv.FitControlsBicop()
-  bicop = pv.Bicop(data, controls)
+  bicop = pv.Bicop.from_data(data, controls)
 
   assert bicop.family == pv.BicopFamily.indep
   assert bicop.rotation == 0
@@ -30,9 +30,9 @@ def test_bicop():
   test_folder = "test_dump"
   os.makedirs(test_folder, exist_ok=True)
   filename = test_folder + "/test_bicop.json"
-  bicop.to_json(filename)
+  bicop.to_file(filename)
   assert os.path.exists(filename)
-  new_bicop = pv.Bicop(filename)
+  new_bicop = pv.Bicop.from_file(filename)
   assert bicop.family == new_bicop.family
   assert bicop.rotation == new_bicop.rotation
   assert bicop.parameters.shape == new_bicop.parameters.shape
@@ -93,11 +93,11 @@ def test_bicop():
   assert isinstance(parameters, np.ndarray)
 
   # Test parameters_lower_bounds method
-  lower_bounds = bicop.parameters_lower_bounds()
+  lower_bounds = bicop.parameters_lower_bounds
   assert isinstance(lower_bounds, np.ndarray)
 
   # Test parameters_upper_bounds method
-  upper_bounds = bicop.parameters_upper_bounds()
+  upper_bounds = bicop.parameters_upper_bounds
   assert isinstance(upper_bounds, np.ndarray)
 
   for method in ["pdf", "cdf", "hfunc1", "hfunc2", "hinv1", "hinv2"]:

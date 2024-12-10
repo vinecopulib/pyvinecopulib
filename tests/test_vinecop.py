@@ -2,6 +2,7 @@ import os
 import shutil
 
 import numpy as np
+
 import pyvinecopulib as pv
 
 
@@ -21,7 +22,7 @@ def test_vinecop():
 
   controls = pv.FitControlsVinecop(family_set=[pv.BicopFamily.gaussian])
   assert controls.family_set == [pv.BicopFamily.gaussian]
-  cop = pv.Vinecop(u, controls=controls)
+  cop = pv.Vinecop.from_data(u, controls=controls)
 
   # Test get_pair_copula method
   pair_copula = cop.get_pair_copula(0, 0)
@@ -80,8 +81,8 @@ def test_vinecop():
   test_folder = "test_dump"
   os.makedirs(test_folder, exist_ok=True)
   filename = test_folder + "/test_vinecop.json"
-  cop.to_json(filename)
-  new_cop = pv.Vinecop(filename)
+  cop.to_file(filename)
+  new_cop = pv.Vinecop.from_file(filename)
   assert new_cop.dim == cop.dim
   assert new_cop.trunc_lvl == cop.trunc_lvl
   assert new_cop.order == cop.order

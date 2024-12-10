@@ -3,9 +3,9 @@
 #include "docstr.hpp"
 #include <nanobind/eigen/dense.h>
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/optional.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
-#include <optional>  // For std::optional
 #include <stdexcept> // For std::invalid_argument
 #include <vinecopulib.hpp>
 
@@ -15,13 +15,13 @@ using namespace vinecopulib;
 
 // Factory function to create a Vinecop from dimensionality
 inline Vinecop
-from_dimension(const size_t d)
+vc_from_dimension(const size_t d)
 {
   return Vinecop(d);
 }
 
 inline Vinecop
-from_structure_or_matrix(
+vc_from_structure_or_matrix(
   std::optional<RVineStructure> structure = std::nullopt,
   std::optional<Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>> matrix =
     std::nullopt,
@@ -62,8 +62,8 @@ vc_from_data(
     // Use the matrix-based constructor
     return Vinecop(data, *matrix, var_types, controls);
   } else {
-    throw std::invalid_argument(
-      "Either 'structure' or 'matrix' must be provided.");
+    // Use the default constructor
+    return Vinecop(data, RVineStructure(), var_types, controls);
   }
 }
 
@@ -99,12 +99,16 @@ are:
   ----------
   data :
       Input data matrix.
+
   structure :
       RVine structure. Provide either this or `matrix`, but not both.
+
   matrix :
       RVine matrix. Provide either this or `structure`, but not both.
+
   var_types :
-      Variable types. Defaults to all continuous.
+      Variable types for each variable (e.g., 'c' for continuous, 'd' for discrete). Defaults to all continuous.
+
   controls :
       Fit controls for the vinecop. Defaults to the default constructor.
   )""";
@@ -116,20 +120,23 @@ are:
   ----------
   structure :
       Vinecop structure. Provide either this or `matrix`, but not both.
+
   matrix : Eigen::Matrix, optional
       Vinecop matrix. Provide either this or `structure`, but not both.
+
   pair_copulas : list of list of Bicop, optional
       Pairwise copulas for each edge in the vine. Defaults to an empty list.
+
   var_types :
-      Variable types. Defaults to all continuous.
+      Variable types for each variable (e.g., 'c' for continuous, 'd' for discrete). Defaults to all continuous.
   )""";
 
   nb::class_<Vinecop>(module, "Vinecop", vinecop_doc.doc)
     .def(nb::init<const size_t>(), default_constructor_doc, "d"_a)
     .def_static(
-      "from_dimension", &from_dimension, "d"_a, vinecop_doc.ctor.doc_1args_d)
+      "from_dimension", &vc_from_dimension, "d"_a, vinecop_doc.ctor.doc_1args_d)
     .def_static("from_structure_or_matrix",
-                &from_structure_or_matrix,
+                &vc_from_structure_or_matrix,
                 "structure"_a = std::nullopt,
                 "matrix"_a = std::nullopt,
                 "pair_copulas"_a = std::vector<std::vector<Bicop>>(),
@@ -141,7 +148,7 @@ are:
                 "structure"_a = std::nullopt,
                 "matrix"_a = std::nullopt,
                 "var_types"_a = std::vector<std::string>(),
-                "controls"_a = FitControlsVinecop(),
+                "controls"_a.sig("FitControlsVinecop()") = FitControlsVinecop(),
                 from_data_doc)
     .def_static("from_file",
                 &vc_from_file,
