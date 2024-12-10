@@ -8,6 +8,7 @@
 #include <vinecopulib.hpp>
 
 namespace nb = nanobind;
+using namespace nb::literals;
 using namespace vinecopulib;
 
 inline void
@@ -21,26 +22,26 @@ init_vinecop_rvine_structure(nb::module_& module)
 
   nb::class_<RVineStructure>(module, "RVineStructure", rvinestructure_doc.doc)
     .def(nb::init<const size_t&, const size_t&>(),
-         nb::arg("d") = static_cast<size_t>(1),
-         nb::arg("trunc_lvl") = std::numeric_limits<size_t>::max(),
+         "d"_a = static_cast<size_t>(1),
+         "trunc_lvl"_a = std::numeric_limits<size_t>::max(),
          rvinestructure_doc.ctor.doc_2args_d_trunc_lvl)
     .def(nb::init<const Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>&,
                   bool>(),
-         nb::arg("mat"),
-         nb::arg("check") = true,
+         "mat"_a,
+         "check"_a = true,
          rvinestructure_doc.ctor.doc_2args_mat_check)
     .def(nb::init<const std::vector<size_t>&, const size_t&, bool>(),
-         nb::arg("order"),
-         nb::arg("trunc_lvl") = std::numeric_limits<size_t>::max(),
-         nb::arg("check") = true,
+         "order"_a,
+         "trunc_lvl"_a = std::numeric_limits<size_t>::max(),
+         "check"_a = true,
          rvinestructure_doc.ctor.doc_3args_order_trunc_lvl_check)
     .def(nb::init<const std::string, bool>(),
-         nb::arg("filename"),
-         nb::arg("check") = true,
+         "filename"_a,
+         "check"_a = true,
          rvinestructure_doc.ctor.doc_2args_filename_check)
     .def("to_json",
          &RVineStructure::to_file,
-         nb::arg("filename"),
+         "filename"_a,
          rvinestructure_doc.to_file.doc)
     .def_prop_ro("dim", &RVineStructure::get_dim, "The dimension.")
     .def_prop_ro(
@@ -53,34 +54,34 @@ init_vinecop_rvine_structure(nb::module_& module)
       "matrix", &RVineStructure::get_matrix, rvinestructure_doc.get_matrix.doc)
     .def("struct_array",
          &RVineStructure::struct_array,
-         nb::arg("tree"),
-         nb::arg("edge"),
-         nb::arg("natural_order") = false,
+         "tree"_a,
+         "edge"_a,
+         "natural_order"_a = false,
          rvinestructure_doc.struct_array.doc)
     .def("min_array",
          &RVineStructure::min_array,
-         nb::arg("tree"),
-         nb::arg("edge"),
+         "tree"_a,
+         "edge"_a,
          rvinestructure_doc.min_array.doc)
     .def("needed_hfunc1",
          &RVineStructure::needed_hfunc1,
-         nb::arg("tree"),
-         nb::arg("edge"),
+         "tree"_a,
+         "edge"_a,
          rvinestructure_doc.needed_hfunc1.doc)
     .def("needed_hfunc2",
          &RVineStructure::needed_hfunc2,
-         nb::arg("tree"),
-         nb::arg("edge"),
+         "tree"_a,
+         "edge"_a,
          rvinestructure_doc.needed_hfunc2.doc)
     .def("truncate",
          &RVineStructure::truncate,
-         nb::arg("trunc_lvl"),
+         "trunc_lvl"_a,
          rvinestructure_doc.truncate.doc)
     .def_static("simulate",
                 &RVineStructure::simulate,
-                nb::arg("d"),
-                nb::arg("natural order") = false,
-                nb::arg("seeds") = std::vector<size_t>(),
+                "d"_a,
+                "natural order"_a = false,
+                "seeds"_a = std::vector<size_t>(),
                 rvinestructure_doc.simulate.doc)
     .def("__repr__",
          [](const RVineStructure& rvs) {
@@ -91,11 +92,11 @@ init_vinecop_rvine_structure(nb::module_& module)
   nb::class_<DVineStructure, RVineStructure>(
     module, "DVineStructure", dvinestructure_doc.doc)
     .def(nb::init<const std::vector<size_t>&>(),
-         nb::arg("order"),
+         "order"_a,
          dvinestructure_doc.ctor.doc_1args)
     .def(nb::init<const std::vector<size_t>&, size_t>(),
-         nb::arg("order"),
-         nb::arg("trunc_lvl"),
+         "order"_a,
+         "trunc_lvl"_a,
          dvinestructure_doc.ctor.doc_2args)
     .def("__repr__", [](const DVineStructure& rvs) {
       return "<pyvinecopulib.DVineStructure>\n" + rvs.str();
@@ -105,10 +106,10 @@ init_vinecop_rvine_structure(nb::module_& module)
     module, "CVineStructure", cvinestructure_doc.doc)
     .def(nb::init<const std::vector<size_t>&>(),
          cvinestructure_doc.ctor.doc_1args,
-         nb::arg("order"))
+         "order"_a)
     .def(nb::init<const std::vector<size_t>&, size_t>(),
-         nb::arg("order"),
-         nb::arg("trunc_lvl"),
+         "order"_a,
+         "trunc_lvl"_a,
          cvinestructure_doc.ctor.doc_2args)
     .def("__repr__", [](const CVineStructure& rvs) {
       return "<pyvinecopulib.CVineStructure>\n" + rvs.str();

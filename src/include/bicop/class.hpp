@@ -3,10 +3,10 @@
 #include "docstr.hpp"
 #include <nanobind/eigen/dense.h>
 #include <nanobind/nanobind.h>
-// #include <nanobind/stl.h>
 #include <vinecopulib.hpp>
 
 namespace nb = nanobind;
+using namespace nb::literals;
 using namespace vinecopulib;
 
 inline void
@@ -20,22 +20,22 @@ init_bicop_class(nb::module_& module)
                   const int,
                   const Eigen::MatrixXd&,
                   const std::vector<std::string>&>(),
-         nb::arg("family") = BicopFamily::indep,
-         nb::arg("rotation") = 0,
-         nb::arg("parameters") = Eigen::MatrixXd(),
-         nb::arg("var_types") = std::vector<std::string>(2, "c"),
+         "family"_a = BicopFamily::indep,
+         "rotation"_a = 0,
+         "parameters"_a = Eigen::MatrixXd(),
+         "var_types"_a = std::vector<std::string>(2, "c"),
          bicop_doc.ctor.doc_4args_family_rotation_parameters_var_types)
     .def(nb::init<const Eigen::Matrix<double, Eigen::Dynamic, 2>&,
                   const FitControlsBicop&,
                   const std::vector<std::string>&>(),
-         nb::arg("data"),
-         nb::arg("controls").sig("FitControlsBicop()") = FitControlsBicop(),
-         nb::arg("var_types") = std::vector<std::string>(2, "c"),
+         "data"_a,
+         "controls"_a.sig("FitControlsBicop()") = FitControlsBicop(),
+         "var_types"_a = std::vector<std::string>(2, "c"),
          bicop_doc.ctor.doc_3args_data_controls_var_types)
     .def(nb::init<const std::string>(),
-         nb::arg("filename"),
+         "filename"_a,
          bicop_doc.ctor.doc_1args_filename)
-    .def("to_json", &Bicop::to_file, nb::arg("filename"), bicop_doc.to_file.doc)
+    .def("to_json", &Bicop::to_file, "filename"_a, bicop_doc.to_file.doc)
     .def_prop_rw("rotation",
                  &Bicop::get_rotation,
                  &Bicop::set_rotation,
@@ -56,34 +56,34 @@ init_bicop_class(nb::module_& module)
                  "families, a conceptually similar definition).")
     .def("loglik",
          &Bicop::loglik,
-         nb::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
+         "u"_a = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
          bicop_doc.loglik.doc)
     .def_prop_ro("nobs",
                  &Bicop::get_nobs,
                  "The number of observations (only for fitted objects).")
     .def("aic",
          &Bicop::aic,
-         nb::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
+         "u"_a = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
          bicop_doc.aic.doc)
     .def("bic",
          &Bicop::bic,
-         nb::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
+         "u"_a = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
          bicop_doc.bic.doc)
     .def("mbic",
          &Bicop::mbic,
-         nb::arg("u") = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
-         nb::arg("psi0") = 0.9,
+         "u"_a = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
+         "psi0"_a = 0.9,
          bicop_doc.mbic.doc)
     .def("__repr__",
          [](const Bicop& cop) { return "<pyvinecopulib.Bicop>\n" + cop.str(); })
     .def("str", &Bicop::str, bicop_doc.str.doc)
     .def("parameters_to_tau",
          &Bicop::parameters_to_tau,
-         nb::arg("parameters"),
+         "parameters"_a,
          bicop_doc.parameters_to_tau.doc)
     .def("tau_to_parameters",
          &Bicop::tau_to_parameters,
-         nb::arg("tau"),
+         "tau"_a,
          bicop_doc.tau_to_parameters.doc)
     .def_prop_ro("parameters_lower_bounds",
                  &Bicop::get_parameters_lower_bounds,
@@ -91,27 +91,27 @@ init_bicop_class(nb::module_& module)
     .def_prop_ro("parameters_upper_bounds",
                  &Bicop::get_parameters_upper_bounds,
                  bicop_doc.get_parameters_upper_bounds.doc)
-    .def("pdf", &Bicop::pdf, nb::arg("u"), bicop_doc.pdf.doc)
-    .def("cdf", &Bicop::cdf, nb::arg("u"), bicop_doc.cdf.doc)
-    .def("hfunc1", &Bicop::hfunc1, nb::arg("u"), bicop_doc.hfunc1.doc)
-    .def("hfunc2", &Bicop::hfunc2, nb::arg("u"), bicop_doc.hfunc2.doc)
-    .def("hinv1", &Bicop::hinv1, nb::arg("u"), bicop_doc.hinv1.doc)
-    .def("hinv2", &Bicop::hinv2, nb::arg("u"), bicop_doc.hinv2.doc)
+    .def("pdf", &Bicop::pdf, "u"_a, bicop_doc.pdf.doc)
+    .def("cdf", &Bicop::cdf, "u"_a, bicop_doc.cdf.doc)
+    .def("hfunc1", &Bicop::hfunc1, "u"_a, bicop_doc.hfunc1.doc)
+    .def("hfunc2", &Bicop::hfunc2, "u"_a, bicop_doc.hfunc2.doc)
+    .def("hinv1", &Bicop::hinv1, "u"_a, bicop_doc.hinv1.doc)
+    .def("hinv2", &Bicop::hinv2, "u"_a, bicop_doc.hinv2.doc)
     .def("simulate",
          &Bicop::simulate,
-         nb::arg("n"),
-         nb::arg("qrng") = false,
-         nb::arg("seeds") = std::vector<int>(),
+         "n"_a,
+         "qrng"_a = false,
+         "seeds"_a = std::vector<int>(),
          bicop_doc.simulate.doc)
     .def("fit",
          &Bicop::fit,
-         nb::arg("data"),
-         nb::arg("controls").sig("FitControlsBicop()") = FitControlsBicop(),
+         "data"_a,
+         "controls"_a.sig("FitControlsBicop()") = FitControlsBicop(),
          bicop_doc.fit.doc)
     .def("select",
          &Bicop::select,
-         nb::arg("data"),
-         nb::arg("controls").sig("FitControlsBicop()") = FitControlsBicop(),
+         "data"_a,
+         "controls"_a.sig("FitControlsBicop()") = FitControlsBicop(),
          bicop_doc.select.doc)
     .def(
       "plot",
@@ -129,10 +129,10 @@ init_bicop_class(nb::module_& module)
         // Call the Python function with the provided arguments
         bicop_plot(nb::cast(cop), type, margin_type, xylim, grid_size);
       },
-      nb::arg("type") = "surface",
-      nb::arg("margin_type") = "unif",
-      nb::arg("xylim") = nb::none(),
-      nb::arg("grid_size") = nb::none(),
+      "type"_a = "surface",
+      "margin_type"_a = "unif",
+      "xylim"_a = nb::none(),
+      "grid_size"_a = nb::none(),
       nb::cast<std::string>(
         nb::module_::import_("pyvinecopulib._python_helpers.bicop")
           .attr("BICOP_PLOT_DOC"))

@@ -8,6 +8,7 @@
 #include <vinecopulib.hpp>
 
 namespace nb = nanobind;
+using namespace nb::literals;
 using namespace vinecopulib;
 
 inline void
@@ -29,21 +30,21 @@ init_bicop_fit_controls(nb::module_& module)
                   bool,
                   size_t>(),
          fitcontrolsbicop_doc.ctor.doc_9args,
-         nb::arg("family_set") = bicop_families::all,
-         nb::arg("parametric_method") = "mle",
-         nb::arg("nonparametric_method") = "constant",
-         nb::arg("nonparametric_mult") = 1.0,
-         nb::arg("selection_criterion") = "bic",
-         nb::arg("weights") = Eigen::VectorXd(),
-         nb::arg("psi0") = 0.9,
-         nb::arg("preselect_families") = true,
-         nb::arg("num_threads") = 1)
+         "family_set"_a = bicop_families::all,
+         "parametric_method"_a = "mle",
+         "nonparametric_method"_a = "constant",
+         "nonparametric_mult"_a = 1.0,
+         "selection_criterion"_a = "bic",
+         "weights"_a = Eigen::VectorXd(),
+         "psi0"_a = 0.9,
+         "preselect_families"_a = true,
+         "num_threads"_a = 1)
     /*      .def(nb::init<std::string>(), */
     //      "creates default controls except for the parameteric method.",
-    //      nb::arg("parametric_method"))
+    //      "parametric_method"_a)
     // .def(nb::init<std::string, double>(),
     //      "creates default controls except for the nonparametric method.",
-    /* nb::arg("nonparametric_method"), nb::arg("mult") = 1.0) */
+    /* "nonparametric_method"_a, "mult"_a = 1.0) */
     .def_prop_rw("family_set",
                  &FitControlsBicop::get_family_set,
                  &FitControlsBicop::set_family_set,

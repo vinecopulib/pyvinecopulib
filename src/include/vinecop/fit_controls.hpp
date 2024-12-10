@@ -8,6 +8,7 @@
 #include <vinecopulib.hpp>
 
 namespace nb = nanobind;
+using namespace nb::literals;
 using namespace vinecopulib;
 
 inline void
@@ -36,23 +37,23 @@ init_vinecop_fit_controls(nb::module_& module)
                   bool,
                   size_t,
                   std::string>(),
-         nb::arg("family_set") = bicop_families::all,
-         nb::arg("parametric_method") = "mle",
-         nb::arg("nonparametric_method") = "constant",
-         nb::arg("nonparametric_mult") = 1.0,
-         nb::arg("trunc_lvl") = std::numeric_limits<size_t>::max(),
-         nb::arg("tree_criterion") = "tau",
-         nb::arg("threshold") = 0.0,
-         nb::arg("selection_criterion") = "bic",
-         nb::arg("weights") = Eigen::VectorXd(),
-         nb::arg("psi0") = 0.9,
-         nb::arg("preselect_families") = true,
-         nb::arg("select_trunc_lvl") = false,
-         nb::arg("select_threshold") = false,
-         nb::arg("select_families") = true,
-         nb::arg("show_trace") = false,
-         nb::arg("num_threads") = 1,
-         nb::arg("mst_algorithm") = "prim",
+         "family_set"_a = bicop_families::all,
+         "parametric_method"_a = "mle",
+         "nonparametric_method"_a = "constant",
+         "nonparametric_mult"_a = 1.0,
+         "trunc_lvl"_a = std::numeric_limits<size_t>::max(),
+         "tree_criterion"_a = "tau",
+         "threshold"_a = 0.0,
+         "selection_criterion"_a = "bic",
+         "weights"_a = Eigen::VectorXd(),
+         "psi0"_a = 0.9,
+         "preselect_families"_a = true,
+         "select_trunc_lvl"_a = false,
+         "select_threshold"_a = false,
+         "select_families"_a = true,
+         "show_trace"_a = false,
+         "num_threads"_a = 1,
+         "mst_algorithm"_a = "prim",
          fitcontrolsvinecop_doc.ctor.doc_17args)
     .def_prop_rw("family_set",
                  &FitControlsVinecop::get_family_set,
