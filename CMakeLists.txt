@@ -3,9 +3,10 @@ cmake_minimum_required(VERSION 3.5)
 set(CMAKE_CXX_STANDARD 17)
 
 project(
-  ${SKBUILD_PROJECT_NAME}
+  pyvinecopulib
   VERSION ${SKBUILD_PROJECT_VERSION}
-  LANGUAGES CXX)
+  LANGUAGES CXX
+)
 
 if (NOT SKBUILD)
   message(WARNING "\
@@ -53,36 +54,41 @@ endif()
 
 include(lib/vinecopulib/cmake/findDependencies.cmake      REQUIRED)
 
-if (CMAKE_VERSION VERSION_LESS 3.18)
-  set(DEV_MODULE Development)
-else()
-  set(DEV_MODULE Development.Module)
-endif()
-
-find_package(Python 3.8 COMPONENTS Interpreter ${DEV_MODULE} REQUIRED)
-
-include(lib/vinecopulib/cmake/printInfo.cmake             REQUIRED)
+# Try to import all Python components potentially needed by nanobind
+find_package(Python 3.8
+  REQUIRED COMPONENTS Interpreter Development.Module
+  OPTIONAL_COMPONENTS Development.SABIModule)
 message(STATUS "Python_EXECUTABLE= ${Python_EXECUTABLE}")
 
-
-execute_process(
-  COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
-  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_ROOT)
-message(STATUS "nanobind_ROOT= ${nanobind_ROOT}")
-list(APPEND CMAKE_PREFIX_PATH "${nanobind_ROOT}")
-if (POLICY CMP0074)
-  # find_package() uses <PackageName>_ROOT variables
-  cmake_policy(SET CMP0074 NEW)
-endif ()
+# Import nanobind through CMake's find_package mechanism
 find_package(nanobind CONFIG REQUIRED)
+
+include(lib/vinecopulib/cmake/printInfo.cmake             REQUIRED)
 
 include_directories(SYSTEM ${external_includes})
 include_directories(${vinecopulib_INCLUDE_DIRS} ${pyvinecopulib_INCLUDE_DIRS})
-nanobind_add_module(pyvinecopulib_ext
-  NB_STATIC
-  src/pyvinecopulib_ext.cpp)
 
-target_compile_definitions(pyvinecopulib_ext PRIVATE VERSION_INFO=\"${PROJECT_VERSION}\")
+nanobind_add_module(
+  pyvinecopulib_ext
+  # Target the stable ABI for Python 3.12+, which reduces
+  # the number of binary wheels that must be built. This
+  # does nothing on older Python versions
+  STABLE_ABI
+
+  # Build libnanobind statically and merge it into the
+  # extension (which itself remains a shared library)
+  #
+  # If your project builds multiple extensions, you can
+  # replace this flag by NB_SHARED to conserve space by
+  # reusing a shared libnanobind across libraries
+  NB_STATIC
+
+  src/pyvinecopulib_ext.cpp
+)
+
+# target_compile_definitions(pyvinecopulib_ext PRIVATE VERSION_INFO=\"${PROJECT_VERSION}\")
 
 # Install directive for scikit-build-core
-install(TARGETS pyvinecopulib_ext LIBRARY DESTINATION pyvinecopulib)
+install(TARGETS pyvinecopulib_ext
+    LIBRARY DESTINATION pyvinecopulib
+)
