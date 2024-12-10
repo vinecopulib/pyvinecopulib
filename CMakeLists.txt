@@ -1,8 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
 
 project(
   pyvinecopulib
@@ -36,11 +34,6 @@ endif()
 include(lib/vinecopulib/cmake/options.cmake               REQUIRED)
 
 include(lib/vinecopulib/cmake/compilerDefOpt.cmake        REQUIRED)
-
-if (WIN32)
-    # Define snprintf as _snprintf for Windows builds
-    add_compile_definitions(snprintf=_snprintf)
-endif()
 
 # wdm_INCLUDE_DIRS is lib/wdm/include
 set(wdm_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/lib/wdm/include)
