@@ -5,6 +5,7 @@
 # Sphinx extension modules
 
 import inspect
+import os
 import re
 from typing import Any
 
@@ -86,6 +87,7 @@ extensions = [
   "sphinx_rtd_theme",
   "sphinx.ext.autosummary",
   "sphinx.ext.napoleon",
+  "recommonmark",
 ]
 
 napoleon_include_init_with_doc = True
@@ -94,7 +96,7 @@ napoleon_custom_sections = [("Usage", "Usage")]
 autosummary_generate = True
 
 # The suffix(es) of source filenames.
-source_suffix = ".rst"
+source_suffix = [".rst", ".md"]
 
 # For the templates.
 templates_path = ["_templates"]
@@ -110,6 +112,11 @@ author = "Thomas Nagler and Thibault Vatter"
 # The version info.
 release = get_distribution("pyvinecopulib").version
 version = ".".join(release.split(".")[:3])
+
+# Specify additional files to copy
+html_extra_path = [
+  os.path.abspath(os.path.join(os.path.dirname(__file__), "../CHANGELOG.md"))
+]
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -131,7 +138,7 @@ html_logo = "_static/pyvinecopulib.png"
 
 
 def autodoc_process_docstring(app, what, name, obj, options, lines):
-  print(f"Processing: {what}, {name}")
+  # print(f"Processing: {what}, {name}")
 
   # Join the existing lines and try to reformat the docstring
   docstring = "\n".join(lines)
@@ -153,23 +160,27 @@ def autodoc_process_docstring(app, what, name, obj, options, lines):
   for cls in classes:
     docstring = re.sub(r"``" + cls + "``", r":class:`" + cls + "`", docstring)
 
-  # overloaded_classes_constructors = {
-  #   "pyvinecopulib." + cls + ".__init__"
-  #   for cls in [
-  #     "Bicop",
-  #     "Vinecop",
-  #     "CVineStructure",
-  #     "DVineStructure",
-  #     "RVineStructure",
-  #   ]
-  # }
-  # if name in overloaded_classes_constructors:
-  #   docstring = process_overloaded(docstring)
   # Clear lines and replace with the cleaned, structured overloads
   lines.clear()
   lines.extend(docstring.splitlines())
 
+# Enable support for recommonmark features
+from recommonmark.transform import AutoStructify
+
 
 # Register the event handler with Sphinx
 def setup(app):
+  app.add_config_value(
+    "recommonmark_config",
+    {
+      "enable_auto_toc_tree": True,
+      "auto_toc_maxdepth": 2,
+    },
+    True,
+  )
+  app.add_transform(AutoStructify)
   app.connect("autodoc-process-docstring", autodoc_process_docstring)
+
+
+# Allow .md files to be included
+source_suffix = [".rst", ".md"]

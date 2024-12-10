@@ -1,4 +1,4 @@
-include README.md LICENSE pyproject.toml CMakeLists.txt
+include README.md include CHANGELOG.md LICENSE pyproject.toml CMakeLists.txt
 recursive-include src *.py *.hpp *.cpp
 recursive-include lib/wdm/include *.hpp
 recursive-include lib/vinecopulib/include *.hpp *.ipp *.cmake

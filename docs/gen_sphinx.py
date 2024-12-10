@@ -3,12 +3,23 @@ Generates documentation for `pyvinecopulib`.
 """
 
 import argparse
+import importlib.metadata
 import os
 import sys
 import tempfile
 from os import listdir, mkdir, symlink
 from os.path import abspath, dirname, isabs, join
 from shutil import rmtree
+
+
+def get_description(package_name):
+  """Retrieve the Description field from package metadata."""
+  try:
+    metadata = importlib.metadata.metadata(package_name)
+    return metadata.get("Description")
+  except importlib.metadata.PackageNotFoundError:
+    raise RuntimeError(f"The package '{package_name}' is not installed.")
+
 
 CLASSES = [
     "BicopFamily",
@@ -84,7 +95,8 @@ def write_module(f_name, name, version, verbose):
   with open(f_name, "w") as f:
     f.write(".. GENERATED FILE DO NOT EDIT\n")
     f.write("\n")
-    rst_name = name.replace("_", "\\_") + " " + version + " Documentation"
+    # rst_name = name.replace("_", "\\_") + " " + version + " Documentation"
+    rst_name = "API Documentation"
     f.write("=" * len(rst_name) + "\n")
     f.write("{}\n".format(rst_name))
     f.write("=" * len(rst_name) + "\n")
@@ -110,15 +122,21 @@ def write_module(f_name, name, version, verbose):
     for i in FUNCTIONS:
       f.write(".. autofunction:: {}\n".format(i))
 
-
 def write_doc_modules(output_dir, verbose=False):
   if not isabs(output_dir):
     raise RuntimeError("Please provide an absolute path: {}".format(output_dir))
-  index_file = join(output_dir, "index.rst")
+  features_file = join(output_dir, "features.rst")
+  print("Writing features to: {}".format(features_file))
   import pyvinecopulib as pv
 
+  description = get_description("pyvinecopulib")
+  description_file = join(output_dir, "description.md")
+  print("Writing description to: {}".format(description_file))
+  with open(description_file, "w") as f:
+    f.write(description)
+
   version = pv.__version__
-  write_module(index_file, "pyvinecopulib", version, verbose)
+  write_module(features_file, "pyvinecopulib", version, verbose)
 
 
 def _die(s):

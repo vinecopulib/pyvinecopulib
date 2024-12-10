@@ -202,11 +202,11 @@ are:
       "taus", &Vinecop::get_all_taus, "The Kendall's taus of all pair-copulas.")
     .def_prop_ro("order", &Vinecop::get_order, "The R-vine structure's order.")
     .def_prop_ro(
-      "matrix", &Vinecop::get_matrix, "The R-vine structure's matrix.")
-    .def_prop_ro(
       "structure", &Vinecop::get_rvine_structure, "The R-vine structure.")
     .def_prop_ro(
       "npars", &Vinecop::get_npars, "The total number of parameters.")
+    .def(
+      "matrix", &Vinecop::get_matrix, "Extracts the R-vine structure's matrix.")
     .def_prop_ro("nobs",
                  &Vinecop::get_nobs,
                  "The number of observations (for fitted objects only).")

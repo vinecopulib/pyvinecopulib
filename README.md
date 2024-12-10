@@ -73,31 +73,6 @@ or with `mamba`:
 mamba install pyvinecopulib
 ```
 
-It is possible to list all of the versions of `pyvinecopulib` available on your platform with `conda`:
-
-```
-conda search pyvinecopulib --channel conda-forge
-```
-
-or with `mamba`:
-
-```
-mamba search pyvinecopulib --channel conda-forge
-```
-
-Alternatively, `mamba repoquery` may provide more information:
-
-```
-# Search all versions available on your platform:
-mamba repoquery search pyvinecopulib --channel conda-forge
-
-# List packages depending on `pyvinecopulib`:
-mamba repoquery whoneeds pyvinecopulib --channel conda-forge
-
-# List dependencies of `pyvinecopulib`:
-mamba repoquery depends pyvinecopulib --channel conda-forge
-```
-
 #### From source
 
 To install from source, Eigen and Boost need to be available on your system for the build to succeed, using the environment variables `EIGEN3_INCLUDE_DIR` and `Boost_INCLUDE_DIR` respectively.

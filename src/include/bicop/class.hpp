@@ -12,10 +12,10 @@ using namespace vinecopulib;
 // Factory function to create a Bicop from family, rotation, parameters, and
 // variable types
 inline Bicop
-from_family(const BicopFamily& family,
-            int rotation = 0,
-            const Eigen::MatrixXd& parameters = Eigen::MatrixXd(),
-            const std::vector<std::string>& var_types = { "c", "c" })
+bc_from_family(const BicopFamily& family,
+               int rotation,
+               const nb::DRef<Eigen::MatrixXd>& parameters,
+               const std::vector<std::string>& var_types = { "c", "c" })
 {
   return Bicop(family, rotation, parameters, var_types);
 }
@@ -53,7 +53,7 @@ and ``Bicop.from_file()`` respectively.)""";
   nb::class_<Bicop>(module, "Bicop", bicop_doc.doc)
     .def(nb::init<const BicopFamily,
                   const int,
-                  const Eigen::MatrixXd&,
+                  const nb::DRef<Eigen::MatrixXd>&,
                   const std::vector<std::string>&>(),
          "family"_a = BicopFamily::indep,
          "rotation"_a = 0,
@@ -61,7 +61,7 @@ and ``Bicop.from_file()`` respectively.)""";
          "var_types"_a = std::vector<std::string>(2, "c"),
          default_constructor_doc) // Default constructor
     .def_static("from_family",
-                &from_family,
+                &bc_from_family,
                 "family"_a = BicopFamily::indep,
                 "rotation"_a = 0,
                 "parameters"_a = Eigen::MatrixXd(),
@@ -83,10 +83,13 @@ and ``Bicop.from_file()`` respectively.)""";
                  &Bicop::get_rotation,
                  &Bicop::set_rotation,
                  "The copula rotation.")
-    .def_prop_rw("parameters",
-                 &Bicop::get_parameters,
-                 &Bicop::set_parameters,
-                 "The copula parameter(s).")
+    .def_prop_rw(
+      "parameters",
+      &Bicop::get_parameters,
+      [](Bicop& self, const nb::DRef<Eigen::MatrixXd>& parameters) {
+        self.set_parameters(parameters);
+      },
+      "The copula parameter(s).")
     .def_prop_rw("var_types",
                  &Bicop::get_var_types,
                  &Bicop::set_var_types,

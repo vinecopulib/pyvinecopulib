@@ -1,33 +1,11 @@
-.. GENERATED FILE DO NOT EDIT
-
-=================================
-pyvinecopulib 0.7.0 Documentation
-=================================
-
-
-Classes
-========
-
 .. toctree::
-    :maxdepth: 1
+   :maxdepth: 2
+   :caption: Contents
 
-.. automodule:: pyvinecopulib
-.. autosummary:: 
-    :toctree: _generate
+   description
+   features
+   changes
 
-    BicopFamily
-    Bicop
-    FitControlsBicop
-    Vinecop
-    FitControlsVinecop
-    CVineStructure
-    DVineStructure
-    RVineStructure
-
-Functions
-=========
-
-.. autofunction:: to_pseudo_obs
-.. autofunction:: simulate_uniform
-.. autofunction:: ghalton
-.. autofunction:: sobol
+.. genindex::
+.. modindex::
+.. search::
