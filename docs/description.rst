@@ -1,2 +1,2 @@
-.. include:: description.md
-   :parser: recommonmark
+.. include:: README.md
+      :parser: recommonmark

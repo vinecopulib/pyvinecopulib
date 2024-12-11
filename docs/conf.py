@@ -9,9 +9,9 @@ import os
 import re
 from typing import Any
 
+import pyvinecopulib as pv
 import sphinx.ext.autodoc as autodoc
 import sphinx.util.inspect as sphinxinspect
-from pkg_resources import get_distribution
 from sphinx.ext.autodoc import AttributeDocumenter, ModuleDocumenter
 
 # -- Monkey-patch the autodoc module for nanobind compatibility ------------
@@ -87,6 +87,7 @@ extensions = [
   "sphinx_rtd_theme",
   "sphinx.ext.autosummary",
   "sphinx.ext.napoleon",
+  "nbsphinx",
   "recommonmark",
 ]
 
@@ -94,6 +95,7 @@ napoleon_include_init_with_doc = True
 napoleon_use_rtype = False
 napoleon_custom_sections = [("Usage", "Usage")]
 autosummary_generate = True
+nbsphinx_execute = "never"
 
 # The suffix(es) of source filenames.
 source_suffix = [".rst", ".md"]
@@ -110,7 +112,7 @@ copyright = "2024, Thomas Nagler and Thibault Vatter"
 author = "Thomas Nagler and Thibault Vatter"
 
 # The version info.
-release = get_distribution("pyvinecopulib").version
+release = pv.__version__
 version = ".".join(release.split(".")[:3])
 
 # Specify additional files to copy
@@ -135,6 +137,8 @@ add_module_names = False
 pygments_style = "sphinx"
 
 html_logo = "_static/pyvinecopulib.png"
+
+html_extra_path = ["../examples/"]
 
 
 def autodoc_process_docstring(app, what, name, obj, options, lines):
@@ -174,6 +178,7 @@ def setup(app):
     "recommonmark_config",
     {
       "enable_auto_toc_tree": True,
+      "enable_auto_doc_ref": False,
       "auto_toc_maxdepth": 2,
     },
     True,

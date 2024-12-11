@@ -42,6 +42,12 @@ FUNCTIONS = [
 EXCLUDE = [
 ]
 
+EXTRA_FILES = [
+  "../examples",
+  "../README.md",
+  "../CHANGELOG.md",
+]
+
 
 def get_submodules(name):
     prefix = name + "."
@@ -122,18 +128,64 @@ def write_module(f_name, name, version, verbose):
     for i in FUNCTIONS:
       f.write(".. autofunction:: {}\n".format(i))
 
+def write_examples(output_dir, verbose=False):
+  """
+  Generate an examples.rst file that links to all .ipynb files in the input_dir.
+
+  Parameters:
+      output_dir (str): Path to the directory where examples.rst will be written.
+  """
+  if not isabs(output_dir):
+    raise RuntimeError("Please provide an absolute path: {}".format(output_dir))
+  if not os.path.isdir(output_dir):
+    raise ValueError(
+      f"The output directory '{output_dir}' does not exist or is not a directory."
+    )
+
+  # Find all .ipynb files in the examples/ directory
+  examples_dir = join(output_dir, "examples")
+  notebooks = [f for f in os.listdir(examples_dir) if f.endswith(".ipynb")]
+
+  if not notebooks:
+    raise ValueError(
+      f"No .ipynb files were found in the input directory '{examples_dir}'."
+    )
+
+  # Sort notebooks alphabetically
+  notebooks.sort()
+
+  # Path to the output file
+  output_file = os.path.join(output_dir, "examples.rst")
+
+  # Write the examples.rst content
+  with open(output_file, "w") as rst_file:
+    # Header
+    rst_file.write("Examples\n========\n\n")
+    rst_file.write(
+      "The following example notebooks are included in this documentation:\n\n"
+    )
+
+    # Toctree with :titlesonly:
+    rst_file.write(".. toctree::\n")
+    rst_file.write("   :maxdepth: 1\n")
+    rst_file.write("   :titlesonly:\n\n")
+
+    # Add each notebook to the toctree
+    for notebook in notebooks:
+      notebook_base = os.path.splitext(notebook)[0]  # Remove .ipynb extension
+      rst_file.write(f"   examples/{notebook_base}\n")
+
+  if verbose:
+    print(f"examples.rst has been written to {output_file}")
+
+
 def write_doc_modules(output_dir, verbose=False):
   if not isabs(output_dir):
     raise RuntimeError("Please provide an absolute path: {}".format(output_dir))
   features_file = join(output_dir, "features.rst")
-  print("Writing features to: {}".format(features_file))
+  if verbose:
+    print("Writing features to: {}".format(features_file))
   import pyvinecopulib as pv
-
-  description = get_description("pyvinecopulib")
-  description_file = join(output_dir, "description.md")
-  print("Writing description to: {}".format(description_file))
-  with open(description_file, "w") as f:
-    f.write(description)
 
   version = pv.__version__
   write_module(features_file, "pyvinecopulib", version, verbose)
@@ -144,12 +196,12 @@ def _die(s):
   exit(1)
 
 
-def gen_main(input_dir, strict, src_func=None):
+def gen_main(input_dir, strict, src_funcs=None, extra_files=None):
   """Main entry point for generation.
   Args:
       input_dir: Directory which contains initial input files.
       strict: Determines if Sphinx warnings should be interpreted as errors.
-      src_func: (optional) Callable of form `f(src_dir)` which will introduce
+      src_funcs: (optional) Callable of form `f(src_dir)` which will introduce
           additional source files to `src_dir`.
   """
   parser = argparse.ArgumentParser()
@@ -163,6 +215,11 @@ def gen_main(input_dir, strict, src_func=None):
     "--debug",
     action="store_true",
     help="If enabled, leaves intermediate files that are otherwise " "deleted.",
+  )
+  parser.add_argument(
+    "--verbose",
+    action="store_true",
+    help="If enabled, print more information.",
   )
   args = parser.parse_args()
   out_dir = args.out_dir
@@ -181,12 +238,27 @@ def gen_main(input_dir, strict, src_func=None):
 
   for f in listdir(input_dir):
     src_f = join(src_dir, f)
+    src_path = join(input_dir, f)
+    if args.verbose:
+      print("Symlink: {} -> {}".format(src_path, src_f))
     symlink(join(input_dir, f), src_f)
-  # Optionally generate additional input files as source.
 
-  if src_func:
-    src_func(src_dir)
-  print("Generating documentation...")
+  # Symlink additional files or directories
+  if extra_files is not None:
+    for extra in extra_files:
+      extra_path = abspath(extra)
+      extra_dest = join(src_dir, os.path.basename(extra))
+      if args.verbose:
+        print("Symlink: {} -> {}".format(extra_path, extra_dest))
+      if os.path.isdir(extra_path):
+        symlink(extra_path, extra_dest)
+      elif os.path.isfile(extra_path):
+        symlink(extra_path, extra_dest)
+
+  # Optionally generate additional input files as source.
+  if src_funcs is not None:
+    for src_func in src_funcs:
+      src_func(src_dir)
 
   if strict:
     # Turn warnings into errors; else be quiet.
@@ -229,8 +301,12 @@ def gen_main(input_dir, strict, src_func=None):
 
 def main():
   input_dir = dirname(abspath(__file__))
-  # Generate.
-  gen_main(input_dir=input_dir, strict=False, src_func=write_doc_modules)
+  gen_main(
+    input_dir=input_dir,
+    strict=False,
+    src_funcs=[write_doc_modules, write_examples],
+    extra_files=EXTRA_FILES,
+  )
 
 
 if __name__ == "__main__":
