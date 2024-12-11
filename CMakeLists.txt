@@ -36,8 +36,8 @@ include(lib/vinecopulib/cmake/options.cmake               REQUIRED)
 include(lib/vinecopulib/cmake/compilerDefOpt.cmake        REQUIRED)
 
 # wdm_INCLUDE_DIRS is lib/wdm/include
-set(wdm_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/lib/wdm/include)
 set(vinecopulib_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/lib/vinecopulib/include)
+set(wdm_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/lib/wdm/include)
 set(pyvinecopulib_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/src/include)
 
 # BUILD_TESTING is turned off
@@ -74,6 +74,9 @@ nanobind_add_module(
   # the number of binary wheels that must be built. This
   # does nothing on older Python versions
   STABLE_ABI
+
+  # Enable link-time optimization for the extension
+  LTO
 
   # Build libnanobind statically and merge it into the
   # extension (which itself remains a shared library)

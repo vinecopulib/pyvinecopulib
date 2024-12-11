@@ -42,6 +42,7 @@ NB_MODULE(pyvinecopulib_ext, pv)
   )pbdoc";
 
   init_stats(pv);
+  init_benchmark(pv);
 
   init_bicop_family(pv);
   init_bicop_fit_controls(pv);

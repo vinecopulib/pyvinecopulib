@@ -5,6 +5,7 @@
 #include "bicop/class.hpp"
 #include "bicop/family.hpp"
 #include "bicop/fit_controls.hpp"
+#include "misc/benchmark.hpp"
 #include "misc/stats.hpp"
 #include "vinecop/class.hpp"
 #include "vinecop/fit_controls.hpp"
