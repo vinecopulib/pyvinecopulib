@@ -85,7 +85,7 @@ and ``Bicop.from_file()`` respectively.)""";
                  "The copula rotation.")
     .def_prop_rw(
       "parameters",
-      &Bicop::get_parameters,
+      [](Bicop& self) { return nb::cast(self.get_parameters()); },
       [](Bicop& self, const nb::DRef<Eigen::MatrixXd>& parameters) {
         self.set_parameters(parameters);
       },
@@ -131,12 +131,18 @@ and ``Bicop.from_file()`` respectively.)""";
          &Bicop::tau_to_parameters,
          "tau"_a,
          bicop_doc.tau_to_parameters.doc)
-    .def_prop_ro("parameters_lower_bounds",
-                 &Bicop::get_parameters_lower_bounds,
-                 bicop_doc.get_parameters_lower_bounds.doc)
-    .def_prop_ro("parameters_upper_bounds",
-                 &Bicop::get_parameters_upper_bounds,
-                 bicop_doc.get_parameters_upper_bounds.doc)
+    .def_prop_ro(
+      "parameters_lower_bounds",
+      [](const Bicop& self) {
+        return nb::cast(self.get_parameters_lower_bounds());
+      },
+      bicop_doc.get_parameters_lower_bounds.doc)
+    .def_prop_ro(
+      "parameters_upper_bounds",
+      [](const Bicop& self) {
+        return nb::cast(self.get_parameters_upper_bounds());
+      },
+      bicop_doc.get_parameters_upper_bounds.doc)
     .def("pdf", &Bicop::pdf, "u"_a, bicop_doc.pdf.doc)
     .def("cdf", &Bicop::cdf, "u"_a, bicop_doc.cdf.doc)
     .def("hfunc1", &Bicop::hfunc1, "u"_a, bicop_doc.hfunc1.doc)

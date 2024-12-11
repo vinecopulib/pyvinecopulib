@@ -21,7 +21,7 @@ vc_from_dimension(const size_t d)
 }
 
 inline Vinecop
-vc_from_structure_or_matrix(
+vc_from_structure(
   std::optional<RVineStructure> structure = std::nullopt,
   std::optional<Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>> matrix =
     std::nullopt,
@@ -87,7 +87,7 @@ The default constructor uses ``Vinecop.from_dimension()`` to instantiate an
 empty vine copula of a given dimension. It can then be used to select a model from data using ``Vinecop.select()``. Alternatives to instantiate vine copulas
 are:
 
-- ``Vinecop.from_structure_or_matrix()``: Instantiate a vine copula from a structure or a matrix, as well as optional pair-copulas and variable types.
+- ``Vinecop.from_structure()``: Instantiate a vine copula from a structure or a matrix, as well as optional pair-copulas and variable types.
 - ``Vinecop.from_data()``: Instantiate a vine copula from data, as well as optional structure or matrix, pair-copulas, and variable types.
 
 )""";
@@ -113,7 +113,7 @@ are:
       Fit controls for the vinecop. Defaults to the default constructor.
   )""";
 
-  const char* from_structure_or_matrix_doc = R"""(
+  const char* from_structure_doc = R"""(
   Factory function to create a Vinecop using either a structure or a matrix.
 
   Parameters
@@ -135,13 +135,13 @@ are:
     .def(nb::init<const size_t>(), default_constructor_doc, "d"_a)
     .def_static(
       "from_dimension", &vc_from_dimension, "d"_a, vinecop_doc.ctor.doc_1args_d)
-    .def_static("from_structure_or_matrix",
-                &vc_from_structure_or_matrix,
+    .def_static("from_structure",
+                &vc_from_structure,
                 "structure"_a = std::nullopt,
                 "matrix"_a = std::nullopt,
                 "pair_copulas"_a = std::vector<std::vector<Bicop>>(),
                 "var_types"_a = std::vector<std::string>(),
-                from_structure_or_matrix_doc)
+                from_structure_doc)
     .def_static("from_data",
                 &vc_from_data,
                 "data"_a,
@@ -178,11 +178,14 @@ are:
          "Gets the rotation of a pair-copula.",
          "tree"_a,
          "edge"_a)
-    .def("get_parameters",
-         &Vinecop::get_parameters,
-         "Gets the parameters of a pair-copula.",
-         "tree"_a,
-         "edge"_a)
+    .def(
+      "get_parameters",
+      [](const Vinecop& self, size_t tree, size_t edge) {
+        return nb::cast(self.get_parameters(tree, edge));
+      },
+      "Gets the parameters of a pair-copula.",
+      "tree"_a,
+      "edge"_a)
     .def("get_tau",
          &Vinecop::get_tau,
          "Gets the kendall's tau of a pair-copula.",
@@ -205,8 +208,10 @@ are:
       "structure", &Vinecop::get_rvine_structure, "The R-vine structure.")
     .def_prop_ro(
       "npars", &Vinecop::get_npars, "The total number of parameters.")
-    .def(
-      "matrix", &Vinecop::get_matrix, "Extracts the R-vine structure's matrix.")
+    .def_prop_ro(
+      "matrix",
+      [](const Vinecop& self) { return nb::cast(self.get_matrix()); },
+      "Extracts the R-vine structure's matrix.")
     .def_prop_ro("nobs",
                  &Vinecop::get_nobs,
                  "The number of observations (for fitted objects only).")
