@@ -74,7 +74,15 @@ The main build time prerequisites are:
 * nanobind (>=1.3.2),
 * a compiler with C++14 support.
 
-To install from source, Eigen and Boost also need to be available on your system for the build to succeed, using the environment variables `EIGEN3_INCLUDE_DIR` and `Boost_INCLUDE_DIR` respectively.
+To install from source, `Eigen` and `Boost` also need to be available, and CMake will try to find suitable versions automatically.
+A reproducible environment, also including requirements for the `pyvinecopulib`'s development and documentation, can be created using:
+
+```bash
+mamba create -n pyvinecopulib eigen boost nanobind scikit-build-core numpy pydot networkx matplotlib mypy ruff pytest sphinx-rtd-theme sphinx-autodoc-typehints nbsphinx recommonmark python=3.11
+mamba activate pyvinecopulib
+```
+
+You can also specify the location if `Eigen` and `Boost` manually using the environment variables `EIGEN3_INCLUDE_DIR` and `Boost_INCLUDE_DIR` respectively.
 On Linux, you can install the required packages and set the environment variables as follows:
 
 ```bash
@@ -91,12 +99,6 @@ git clone --recursive https://github.com/vinecopulib/pyvinecopulib.git
 pip install ./pyvinecopulib
 ```
 
-If the required dependencies are not installed, a reproducible environment, which also include stuff requirement for the library's development and documentation, can be created using:
-
-```bash
-mamba create -n pyvinecopulib  nanobind scikit-build-core numpy pydot networkx matplotlib mypy ruff pytest sphinx-rtd-theme sphinx-autodoc-typehints nbsphinx recommonmark python=3.11
-mamba activate pyvinecopulib
-```
 
 ### Building the documentation
 
