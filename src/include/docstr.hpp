@@ -112,11 +112,14 @@ input :
     input).)""";
         // Source: vinecopulib/bicop/implementation/class.ipp:114
         const char* doc_1args_filename =
-R"""(Instantiates from a JSON file.
+          R"""(Instantiates from a JSON file.
 
-The input file contains four attributes: ``"fam"``, ``"rot"``, ``"par"``, ``"vt"`` respectively a
-string for the family name, an integer for the rotation, and a numeric matrix for the parameters,
-and a list of two strings for the variable types.
+The input file contains four attributes:
+
+- ``"fam"``: A string for the family name.
+- ``"rot"``: An integer for the rotation.
+- ``"par"``: A numeric matrix for the parameters.
+- ``"vt"``: A list of two strings for the variable types.
 
 Parameters
 ----------

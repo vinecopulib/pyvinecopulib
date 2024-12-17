@@ -12,7 +12,7 @@ from shutil import rmtree
 from socketserver import TCPServer
 from subprocess import check_call
 
-from gen_sphinx import write_doc_modules
+from gen_sphinx import write_doc_modules, write_examples
 
 
 class _Handler(SimpleHTTPRequestHandler):
@@ -60,6 +60,7 @@ def preview_main(gen_script, default_port):
 
   if args.generates:
     write_doc_modules(dirname(gen_script))
+    write_examples(dirname(gen_script))
   else:
     # Choose an arbitrary location for generating documentation.
     out_dir = abspath("_build")
