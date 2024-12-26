@@ -44,5 +44,6 @@ init_stats(nb::module_& m)
         &tools_stats::to_pseudo_obs,
         tools_stat_doc.to_pseudo_obs.doc,
         "x"_a,
-        "ties_method"_a = "average");
+        "ties_method"_a = "average",
+        "weights"_a = Eigen::VectorXd());
 }
