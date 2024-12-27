@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(
   pyvinecopulib
@@ -77,6 +78,9 @@ nanobind_add_module(
 
   # Enable link-time optimization for the extension
   LTO
+
+  # Don’t perform optimizations to minimize binary size.
+  NOMINSIZE
 
   # Build libnanobind statically and merge it into the
   # extension (which itself remains a shared library)
