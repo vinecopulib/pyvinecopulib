@@ -36,12 +36,12 @@ jobs:
       run: |
         git fetch --prune --unshallow
         git fetch --depth=1 origin +refs/tags/*:refs/tags/*
+    # Install native ARM64 Python 3.8 on macOS-14 ARM64
     - name: Install ARM64 Python 3.8
       if: matrix.cfg.os == 'macos-14' && matrix.cfg.platform == 'arm64' && matrix.python == 38
-      run: |
-        brew install pyenv
-        pyenv install --skip-existing 3.8.17 --arch arm64
-        pyenv global 3.8.17
+      uses: actions/setup-python@v5
+      with:
+        python-version: 3.8
     - name: Debug Architecture
       if: matrix.cfg.os == 'macos-14' && matrix.cfg.platform == 'arm64'
       run: |
