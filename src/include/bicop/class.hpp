@@ -44,6 +44,54 @@ bc_from_json(const std::string& json)
   return Bicop(json_obj);
 }
 
+// Factory functions to create from kwargs
+inline void
+bc_from_kwargs(Bicop* cop, const nb::kwargs& kwargs)
+{
+  // Extract and validate keys
+  bool has_data = kwargs.contains("data");
+  bool has_filename = kwargs.contains("filename");
+  bool has_json = kwargs.contains("json");
+
+  // Validate mutually exclusive parameters
+  int count_factories = has_data + has_filename + has_json;
+  if (count_factories > 1) {
+    throw std::invalid_argument(
+      "Only one of 'data', 'filename', or 'json' can be specified.");
+  }
+
+  // Handle defaults for family, rotation, parameters, and var_types
+  auto family = kwargs.contains("family")
+                  ? nb::cast<BicopFamily>(kwargs["family"])
+                  : BicopFamily::indep;
+  auto rotation =
+    kwargs.contains("rotation") ? nb::cast<int>(kwargs["rotation"]) : 0;
+  auto parameters = kwargs.contains("parameters")
+                      ? nb::cast<Eigen::MatrixXd>(kwargs["parameters"])
+                      : Eigen::MatrixXd();
+  auto var_types = kwargs.contains("var_types")
+                     ? nb::cast<std::vector<std::string>>(kwargs["var_types"])
+                     : std::vector<std::string>(2, "c");
+
+  // Handle specific cases
+  if (has_data) {
+    const auto& data =
+      nb::cast<Eigen::Matrix<double, Eigen::Dynamic, 2>>(kwargs["data"]);
+    auto controls = kwargs.contains("controls")
+                      ? nb::cast<FitControlsBicop>(kwargs["controls"])
+                      : FitControlsBicop();
+    new (cop) Bicop(data, controls, var_types);
+  } else if (has_filename) {
+    const std::string& filename = nb::cast<std::string>(kwargs["filename"]);
+    new (cop) Bicop(filename);
+  } else if (has_json) {
+    auto json = nlohmann::json::parse(nb::cast<std::string>(kwargs["json"]));
+    new (cop) Bicop(json);
+  } else {
+    new (cop) Bicop(family, rotation, parameters, var_types);
+  }
+}
+
 inline void
 init_bicop_class(nb::module_& module)
 {
@@ -55,19 +103,22 @@ init_bicop_class(nb::module_& module)
 
 The default constructor uses ``Bicop.from_family()`` to instantiate an
 independent bivariate copula. It can then be used to select a model from data using ``Bicop.select()``. Or if a ``BicopFamily`` is passed to the constructor, then the method ``Bicop.fit()`` can be used to fit the copula to data.
-To instantiate directly from data or from a file, use ``Bicop.from_data()``
-and ``Bicop.from_file()`` respectively.)""";
+Alternatives to instantiate bivariate copulas are:
+
+- ``Bicop.from_family()``: Instantiate from a family, rotation, parameters, and variable types.
+- ``Bicop.from_data()``: Instantiate from data, as well as optional controls and variable types.
+- ``Bicop.from_file()``: Instantiate from a file.
+- ``Bicop.from_json()``: Instantiate from a JSON string.)""";
 
   nb::class_<Bicop>(module, "Bicop", bicop_doc.doc)
-    .def(nb::init<const BicopFamily,
-                  const int,
-                  const nb::DRef<Eigen::MatrixXd>&,
-                  const std::vector<std::string>&>(),
-         "family"_a = BicopFamily::indep,
-         "rotation"_a = 0,
-         "parameters"_a = Eigen::MatrixXd(),
-         "var_types"_a = std::vector<std::string>(2, "c"),
-         default_constructor_doc) // Default constructor
+    .def(
+      "__init__",
+      [](Bicop* cop, const nb::kwargs& kwargs) {
+        // Use bc_from_kwargs to construct the object
+        bc_from_kwargs(cop, kwargs);
+      },
+      "kwargs"_a,
+      default_constructor_doc)
     .def_static("from_family",
                 &bc_from_family,
                 "family"_a = BicopFamily::indep,
