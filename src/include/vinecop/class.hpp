@@ -74,6 +74,14 @@ vc_from_file(const std::string& filename, bool check = true)
   return Vinecop(filename, check);
 }
 
+// Factory function to create a Vinecop from a JSON string
+inline Vinecop
+vc_from_json(const std::string& json, bool check = true)
+{
+  nlohmann::json json_obj = nlohmann::json::parse(json);
+  return Vinecop(json_obj, check);
+}
+
 inline void
 init_vinecop_class(nb::module_& module)
 {
@@ -87,9 +95,10 @@ The default constructor uses ``Vinecop.from_dimension()`` to instantiate an
 empty vine copula of a given dimension. It can then be used to select a model from data using ``Vinecop.select()``. Alternatives to instantiate vine copulas
 are:
 
-- ``Vinecop.from_structure()``: Instantiate a vine copula from a structure or a matrix, as well as optional pair-copulas and variable types.
-- ``Vinecop.from_data()``: Instantiate a vine copula from data, as well as optional structure or matrix, pair-copulas, and variable types.
-
+- ``Vinecop.from_structure()``: Instantiate from an R-vine structure or matrix, as well as optional pair-copulas and variable types.
+- ``Vinecop.from_data()``: Instantiate from data, as well as optional structure or matrix, pair-copulas, and variable types.
+- ``Vinecop.from_file()``: Instantiate from a file.
+- ``Vinecop.from_json()``: Instantiate from a JSON string.
 )""";
 
   const char* from_data_doc = R"""(
@@ -155,8 +164,16 @@ are:
                 "filename"_a,
                 "check"_a = true,
                 vinecop_doc.ctor.doc_2args_filename_check)
+    .def_static("from_json",
+                &vc_from_json,
+                "json"_a,
+                "check"_a = true,
+                vinecop_doc.ctor.doc_2args_input_check)
     .def("to_file", &Vinecop::to_file, "filename"_a, vinecop_doc.to_file.doc)
-    .def("to_json", &Vinecop::to_json, vinecop_doc.to_json.doc)
+    .def(
+      "to_json",
+      [](Vinecop& self) -> std::string { return self.to_json().dump(); },
+      vinecop_doc.to_json.doc)
     .def_prop_rw("var_types",
                  &Vinecop::get_var_types,
                  &Vinecop::set_var_types,

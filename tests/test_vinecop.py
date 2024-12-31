@@ -78,6 +78,10 @@ def test_vinecop():
   assert isinstance(cop.structure, pv.RVineStructure)
 
   # Test to_json and from_json
+  new_cop = pv.Vinecop.from_json(cop.to_json())
+  assert new_cop.dim == cop.dim
+  assert new_cop.trunc_lvl == cop.trunc_lvl
+  assert new_cop.order == cop.order
   test_folder = "test_dump"
   os.makedirs(test_folder, exist_ok=True)
   filename = test_folder + "/test_vinecop.json"

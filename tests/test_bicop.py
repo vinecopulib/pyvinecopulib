@@ -27,6 +27,11 @@ def test_bicop():
   assert bicop.var_types == ["c", "c"]
 
   # Test to_json method
+  new_bicop = pv.Bicop.from_json(bicop.to_json())
+  assert bicop.family == new_bicop.family
+  assert bicop.rotation == new_bicop.rotation
+  assert bicop.parameters.shape == new_bicop.parameters.shape
+  assert bicop.var_types == new_bicop.var_types
   test_folder = "test_dump"
   os.makedirs(test_folder, exist_ok=True)
   filename = test_folder + "/test_bicop.json"
