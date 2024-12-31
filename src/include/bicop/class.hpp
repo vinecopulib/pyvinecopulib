@@ -36,6 +36,14 @@ bc_from_file(const std::string& filename)
   return Bicop(filename);
 }
 
+// Factory function to create a Bicop from json
+inline Bicop
+bc_from_json(const std::string& json)
+{
+  nlohmann::json json_obj = nlohmann::json::parse(json);
+  return Bicop(json_obj);
+}
+
 inline void
 init_bicop_class(nb::module_& module)
 {
@@ -77,8 +85,13 @@ and ``Bicop.from_file()`` respectively.)""";
                 &bc_from_file,
                 "filename"_a,
                 bicop_doc.ctor.doc_1args_filename)
+    .def_static(
+      "from_json", &bc_from_json, "json"_a, bicop_doc.ctor.doc_1args_input)
     .def("to_file", &Bicop::to_file, "filename"_a, bicop_doc.to_file.doc)
-    .def("to_json", &Bicop::to_json, bicop_doc.to_json.doc)
+    .def(
+      "to_json",
+      [](Bicop& self) -> std::string { return self.to_json().dump(); },
+      bicop_doc.to_json.doc)
     .def_prop_rw("rotation",
                  &Bicop::get_rotation,
                  &Bicop::set_rotation,

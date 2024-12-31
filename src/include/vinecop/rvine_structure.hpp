@@ -44,6 +44,13 @@ rv_from_file(const std::string& filename, bool check = true)
   return RVineStructure(filename, check);
 }
 
+// Factory function to create RVineStructure from a JSON string
+inline RVineStructure
+rv_from_json(const std::string& json, bool check = true)
+{
+  return RVineStructure(json, check);
+}
+
 inline void
 init_vinecop_rvine_structure(nb::module_& module)
 {
@@ -57,12 +64,13 @@ init_vinecop_rvine_structure(nb::module_& module)
     R"""(Default constructor for the ``RVineStructure`` class.
 
 The default constructor uses ``RVineStructure.from_dimension()`` to instantiate
-a default structure of a given dimension and for a given truncation level.
+a default structure of a given dimension and truncation level.
 Alternatives to instantiate structures are:
 
-- ``RVineStructure.from_matrix()``: Instantiate a structure from a matrix.
-- ``RVineStructure.from_order()``: Instantiate a structure from an order vector.
-- ``RVineStructure.from_file()``: Instantiate a structure from a file.
+- ``RVineStructure.from_order()``: Instantiate from an order vector.
+- ``RVineStructure.from_matrix()``: Instantiate from a matrix.
+- ``RVineStructure.from_file()``: Instantiate from a file.
+- ``RVineStructure.from_json()``: Instantiate from a JSON string.
 )""";
 
   nb::class_<RVineStructure>(module, "RVineStructure", rvinestructure_doc.doc)
@@ -91,11 +99,19 @@ Alternatives to instantiate structures are:
                 "filename"_a,
                 "check"_a = true,
                 rvinestructure_doc.ctor.doc_2args_filename_check)
+    .def_static("from_json",
+                &rv_from_json,
+                "json"_a,
+                "check"_a = true,
+                rvinestructure_doc.ctor.doc_2args_input_check)
     .def("to_file",
          &RVineStructure::to_file,
          "filename"_a,
          rvinestructure_doc.to_file.doc)
-    .def("to_json", &RVineStructure::to_json, rvinestructure_doc.to_json.doc)
+    .def(
+      "to_json",
+      [](const RVineStructure& self) { return self.to_json().dump(); },
+      rvinestructure_doc.to_json.doc)
     .def_prop_ro("dim", &RVineStructure::get_dim, "The dimension.")
     .def_prop_ro(
       "trunc_lvl", &RVineStructure::get_trunc_lvl, "The truncation level.")
