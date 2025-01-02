@@ -95,8 +95,8 @@ The default constructor uses ``Vinecop.from_dimension()`` to instantiate an
 empty vine copula of a given dimension. It can then be used to select a model from data using ``Vinecop.select()``. Alternatives to instantiate vine copulas
 are:
 
-- ``Vinecop.from_structure()``: Instantiate from an R-vine structure or matrix, as well as optional pair-copulas and variable types.
-- ``Vinecop.from_data()``: Instantiate from data, as well as optional structure or matrix, pair-copulas, and variable types.
+- ``Vinecop.from_data()``: Instantiate from data, as well as an optional ``FitControlsVinecop``, an ``RVineStructure`` or matrix, and variable types.
+- ``Vinecop.from_structure()``: Instantiate from an ``RVineStructure`` or matrix, as well as optional pair-copulas and variable types.
 - ``Vinecop.from_file()``: Instantiate from a file.
 - ``Vinecop.from_json()``: Instantiate from a JSON string.
 )""";
@@ -110,7 +110,7 @@ are:
       Input data matrix.
 
   structure :
-      RVine structure. Provide either this or `matrix`, but not both.
+      An ``RVineStructure``. Provide either this or `matrix`, but not both.
 
   matrix :
       RVine matrix. Provide either this or `structure`, but not both.
@@ -128,12 +128,12 @@ are:
   Parameters
   ----------
   structure :
-      Vinecop structure. Provide either this or `matrix`, but not both.
+      An ``RVineStructure``. Provide either this or `matrix`, but not both.
 
-  matrix : Eigen::Matrix, optional
+  matrix :
       Vinecop matrix. Provide either this or `structure`, but not both.
 
-  pair_copulas : list of list of Bicop, optional
+  pair_copulas :
       Pairwise copulas for each edge in the vine. Defaults to an empty list.
 
   var_types :

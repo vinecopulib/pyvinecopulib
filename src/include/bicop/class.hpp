@@ -55,10 +55,17 @@ init_bicop_class(nb::module_& module)
 
 The default constructor uses ``Bicop.from_family()`` to instantiate an
 independent bivariate copula. It can then be used to select a model from data using ``Bicop.select()``. Or if a ``BicopFamily`` is passed to the constructor, then the method ``Bicop.fit()`` can be used to fit the copula to data.
-To instantiate directly from data or from a file, use ``Bicop.from_data()``
-and ``Bicop.from_file()`` respectively.)""";
+
+Alternatives to instantiate bivariate copulas are:
+
+- ``Bicop.from_family()``: Instantiate from a family, rotation, parameters, and variable types.
+- ``Bicop.from_data()``: Instantiate from data, as well as optional controls and variable types.
+- ``Bicop.from_file()``: Instantiate from a file.
+- ``Bicop.from_json()``: Instantiate from a JSON string.
+)""";
 
   nb::class_<Bicop>(module, "Bicop", bicop_doc.doc)
+    // Default constructor
     .def(nb::init<const BicopFamily,
                   const int,
                   const nb::DRef<Eigen::MatrixXd>&,
@@ -67,7 +74,7 @@ and ``Bicop.from_file()`` respectively.)""";
          "rotation"_a = 0,
          "parameters"_a = Eigen::MatrixXd(),
          "var_types"_a = std::vector<std::string>(2, "c"),
-         default_constructor_doc) // Default constructor
+         default_constructor_doc)
     .def_static("from_family",
                 &bc_from_family,
                 "family"_a = BicopFamily::indep,
