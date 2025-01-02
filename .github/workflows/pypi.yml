@@ -106,12 +106,20 @@ jobs:
         echo "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include" >> $GITHUB_ENV
         echo "EIGEN3_INCLUDE_DIR=/home/runner/work/include/eigen3" >> $GITHUB_ENV
         python -m pip install --upgrade pip
-        pip install build
+        pip install build pytest
     - name: Create source distribution 
       run: |
         export Boost_INCLUDE_DIR=$Boost_INCLUDE_DIR
         export EIGEN3_INCLUDE_DIR=$EIGEN3_INCLUDE_DIR
         pipx run build --sdist
+    - name: Install source distribution
+      run: |
+        export Boost_INCLUDE_DIR=$Boost_INCLUDE_DIR
+        export EIGEN3_INCLUDE_DIR=$EIGEN3_INCLUDE_DIR
+        pip install dist/*.tar.gz
+    - name: Run tests
+      run: |
+        pytest tests/ -r a
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
