@@ -184,7 +184,7 @@ R"""(Evaluates the copula distribution.
 
 When at least one variable is discrete, more than two columns are required for ``u``: the first
 :math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1), F_{X_2}(x_2))`. The second
-:math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1^-), F_{X_1}(x_1^-))`. The
+:math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1^-), F_{X_2}(x_2^-))`. The
 minus indicates a left-sided limit of the cdf. For, e.g., an integer-valued variable, it holds
 :math:`F_{X_1}(x_1^-) = F_{X_1}(x_1 - 1)`. For continuous variables the left limit and the cdf
 itself coincide. Respective columns can be omitted in the second block.
@@ -388,7 +388,7 @@ The first h-function is :math:`h_1(u_1, u_2) = P(U_2 \le u_2 | U_1 = u_1)`.
 
 When at least one variable is discrete, more than two columns are required for ``u``: the first
 :math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1), F_{X_2}(x_2))`. The second
-:math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1^-), F_{X_1}(x_1^-))`. The
+:math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1^-), F_{X_2}(x_2^-))`. The
 minus indicates a left-sided limit of the cdf. For, e.g., an integer-valued variable, it holds
 :math:`F_{X_1}(x_1^-) = F_{X_1}(x_1 - 1)`. For continuous variables the left limit and the cdf
 itself coincide. Respective columns can be omitted in the second block.
@@ -413,7 +413,7 @@ The second h-function is :math:`h_2(u_1, u_2) = P(U_1 \le u_1 | U_2 = u_2)`.
 
 When at least one variable is discrete, more than two columns are required for ``u``: the first
 :math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1), F_{X_2}(x_2))`. The second
-:math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1^-), F_{X_1}(x_1^-))`. The
+:math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1^-), F_{X_2}(x_2^-))`. The
 minus indicates a left-sided limit of the cdf. For, e.g., an integer-valued variable, it holds
 :math:`F_{X_1}(x_1^-) = F_{X_1}(x_1 - 1)`. For continuous variables the left limit and the cdf
 itself coincide. Respective columns can be omitted in the second block.
@@ -439,7 +439,7 @@ w.r.t. the second argument.
 
 When at least one variable is discrete, more than two columns are required for ``u``: the first
 :math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1), F_{X_2}(x_2))`. The second
-:math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1^-), F_{X_1}(x_1^-))`. The
+:math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1^-), F_{X_2}(x_2^-))`. The
 minus indicates a left-sided limit of the cdf. For, e.g., an integer-valued variable, it holds
 :math:`F_{X_1}(x_1^-) = F_{X_1}(x_1 - 1)`. For continuous variables the left limit and the cdf
 itself coincide. Respective columns can be omitted in the second block.
@@ -465,7 +465,7 @@ calculated w.r.t. the first argument.
 
 When at least one variable is discrete, more than two columns are required for ``u``: the first
 :math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1), F_{X_2}(x_2))`. The second
-:math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1^-), F_{X_1}(x_1^-))`. The
+:math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1^-), F_{X_2}(x_2^-))`. The
 minus indicates a left-sided limit of the cdf. For, e.g., an integer-valued variable, it holds
 :math:`F_{X_1}(x_1^-) = F_{X_1}(x_1 - 1)`. For continuous variables the left limit and the cdf
 itself coincide. Respective columns can be omitted in the second block.
@@ -494,7 +494,7 @@ where :math:`c` is the copula density, see ``Bicop.pdf()``.
 
 When at least one variable is discrete, more than two columns are required for ``u``: the first
 :math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1), F_{X_2}(x_2))`. The second
-:math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1^-), F_{X_1}(x_1^-))`. The
+:math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1^-), F_{X_2}(x_2^-))`. The
 minus indicates a left-sided limit of the cdf. For, e.g., an integer-valued variable, it holds
 :math:`F_{X_1}(x_1^-) = F_{X_1}(x_1 - 1)`. For continuous variables the left limit and the cdf
 itself coincide. Respective columns can be omitted in the second block.
@@ -559,7 +559,7 @@ variable types.
 
 When at least one variable is discrete, more than two columns are required for ``u``: the first
 :math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1), F_{X_2}(x_2))`. The second
-:math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1^-), F_{X_1}(x_1^-))`. The
+:math:`n \times 2` block contains realizations of :math:`(F_{X_1}(x_1^-), F_{X_2}(x_2^-))`. The
 minus indicates a left-sided limit of the cdf. For, e.g., an integer-valued variable, it holds
 :math:`F_{X_1}(x_1^-) = F_{X_1}(x_1 - 1)`. For continuous variables the left limit and the cdf
 itself coincide. Respective columns can be omitted in the second block.
@@ -2022,19 +2022,19 @@ A vector of length ``n`` containing the copula distribution values.)""";
       } cdf;
       // Symbol: vinecopulib::Vinecop::check_data
       struct /* check_data */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:1514
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1515
         const char* doc =
 R"""(Checks if dimension d of the data matches the dimension of the vine.)""";
       } check_data;
       // Symbol: vinecopulib::Vinecop::check_data_dim
       struct /* check_data_dim */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:1487
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1488
         const char* doc =
 R"""(Checks if dimension d of the data matches the dimension of the vine.)""";
       } check_data_dim;
       // Symbol: vinecopulib::Vinecop::check_enough_data
       struct /* check_enough_data */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:1567
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1568
         const char* doc = R"""(Checks if data size is large enough.)""";
       } check_enough_data;
       // Symbol: vinecopulib::Vinecop::check_fitted
@@ -2049,7 +2049,7 @@ R"""(Checks if dimension d of the data matches the dimension of the vine.)""";
       } check_indices;
       // Symbol: vinecopulib::Vinecop::check_pair_copulas_rvine_structure
       struct /* check_pair_copulas_rvine_structure */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:1522
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1523
         const char* doc =
 R"""(Checks if pair copulas are compatible with the R-vine structure.)""";
       } check_pair_copulas_rvine_structure;
@@ -2060,13 +2060,13 @@ R"""(Checks if pair copulas are compatible with the R-vine structure.)""";
       } check_var_types;
       // Symbol: vinecopulib::Vinecop::check_weights_size
       struct /* check_weights_size */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:1557
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1558
         const char* doc =
 R"""(Checks if weights are compatible with the data.)""";
       } check_weights_size;
       // Symbol: vinecopulib::Vinecop::collapse_data
       struct /* collapse_data */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:1651
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1652
         const char* doc =
 R"""(Removes superfluous columns for continuous data.)""";
       } collapse_data;
@@ -2278,7 +2278,7 @@ Usually zero except ``select_threshold == TRUE`` in ``FitControlsVinecop()``).)"
       } get_var_types;
       // Symbol: vinecopulib::Vinecop::inverse_rosenblatt
       struct /* inverse_rosenblatt */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:1396
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1397
         const char* doc =
 R"""(Evaluates the inverse Rosenblatt transform.
 
@@ -2679,7 +2679,7 @@ An :math:`n \times d` matrix of samples from the copula model.)""";
       } simulate;
       // Symbol: vinecopulib::Vinecop::str
       struct /* str */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:1670
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1671
         const char* doc =
 R"""(Summarizes the model into a string (can be used for printing).
 
@@ -2728,7 +2728,7 @@ the nlohmann::json object containing the copula.)""";
       } to_json;
       // Symbol: vinecopulib::Vinecop::truncate
       struct /* truncate */ {
-        // Source: vinecopulib/vinecop/implementation/class.ipp:1612
+        // Source: vinecopulib/vinecop/implementation/class.ipp:1613
         const char* doc =
 R"""(Truncates the vine copula model.
 
@@ -2783,26 +2783,71 @@ family :
     } tools_select;
     // Symbol: vinecopulib::tools_stats
     struct /* tools_stats */ {
+      // Symbol: vinecopulib::tools_stats::BoxCovering
+      struct /* BoxCovering */ {
+        // Source: vinecopulib/misc/tools_stats.hpp:122
+        const char* doc = R"""()""";
+        // Symbol: vinecopulib::tools_stats::BoxCovering::Box
+        struct /* Box */ {
+          // Source: vinecopulib/misc/tools_stats.hpp:131
+          const char* doc = R"""()""";
+          // Symbol: vinecopulib::tools_stats::BoxCovering::Box::Box
+          struct /* ctor */ {
+            // Source: vinecopulib/misc/implementation/tools_stats.ipp:223
+            const char* doc = R"""(Create a single box.)""";
+          } ctor;
+          // Symbol: vinecopulib::tools_stats::BoxCovering::Box::indices_
+          struct /* indices_ */ {
+            // Source: vinecopulib/misc/tools_stats.hpp:137
+            const char* doc = R"""()""";
+          } indices_;
+          // Symbol: vinecopulib::tools_stats::BoxCovering::Box::lower_
+          struct /* lower_ */ {
+            // Source: vinecopulib/misc/tools_stats.hpp:135
+            const char* doc = R"""()""";
+          } lower_;
+          // Symbol: vinecopulib::tools_stats::BoxCovering::Box::upper_
+          struct /* upper_ */ {
+            // Source: vinecopulib/misc/tools_stats.hpp:136
+            const char* doc = R"""()""";
+          } upper_;
+        } Box;
+        // Symbol: vinecopulib::tools_stats::BoxCovering::BoxCovering
+        struct /* ctor */ {
+          // Source: vinecopulib/misc/implementation/tools_stats.ipp:150
+          const char* doc = R"""()""";
+        } ctor;
+        // Symbol: vinecopulib::tools_stats::BoxCovering::get_box_indices
+        struct /* get_box_indices */ {
+          // Source: vinecopulib/misc/implementation/tools_stats.ipp:178
+          const char* doc = R"""()""";
+        } get_box_indices;
+        // Symbol: vinecopulib::tools_stats::BoxCovering::swap_sample
+        struct /* swap_sample */ {
+          // Source: vinecopulib/misc/implementation/tools_stats.ipp:210
+          const char* doc = R"""()""";
+        } swap_sample;
+      } BoxCovering;
       // Symbol: vinecopulib::tools_stats::ace
       struct /* ace */ {
-        // Source: vinecopulib/misc/implementation/tools_stats.ipp:196
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:327
         const char* doc =
 R"""(alternating conditional expectation algorithm)""";
       } ace;
       // Symbol: vinecopulib::tools_stats::cef
       struct /* cef */ {
-        // Source: vinecopulib/misc/implementation/tools_stats.ipp:174
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:305
         const char* doc =
 R"""(helper routine for ace (In R, this would be win(x[ind], wl)[ranks]))""";
       } cef;
       // Symbol: vinecopulib::tools_stats::dependence_matrix
       struct /* dependence_matrix */ {
-        // Source: vinecopulib/misc/tools_stats.hpp:114
+        // Source: vinecopulib/misc/tools_stats.hpp:154
         const char* doc = R"""()""";
       } dependence_matrix;
       // Symbol: vinecopulib::tools_stats::dnorm
       struct /* dnorm */ {
-        // Source: vinecopulib/misc/tools_stats.hpp:22
+        // Source: vinecopulib/misc/tools_stats.hpp:25
         const char* doc =
 R"""(Density function of the Standard normal distribution.
 
@@ -2817,7 +2862,7 @@ An :math:`n \times d` matrix of evaluated densities.)""";
       } dnorm;
       // Symbol: vinecopulib::tools_stats::dt
       struct /* dt */ {
-        // Source: vinecopulib/misc/tools_stats.hpp:62
+        // Source: vinecopulib/misc/tools_stats.hpp:61
         const char* doc =
 R"""(Density function of the Student t distribution.
 
@@ -2833,9 +2878,14 @@ Returns
 -------
 An :math:`n \times d` matrix of evaluated densities.)""";
       } dt;
+      // Symbol: vinecopulib::tools_stats::find_latent_sample
+      struct /* find_latent_sample */ {
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:236
+        const char* doc = R"""()""";
+      } find_latent_sample;
       // Symbol: vinecopulib::tools_stats::ghalton
       struct /* ghalton */ {
-        // Source: vinecopulib/misc/implementation/tools_stats.ipp:324
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:455
         const char* doc =
 R"""(Simulates from the multivariate Generalized Halton Sequence.
 
@@ -2860,13 +2910,13 @@ An :math:`n \times d` matrix of quasi-random :math:`\mathrm{U}[0, 1]` variables.
       } ghalton;
       // Symbol: vinecopulib::tools_stats::pairwise_mcor
       struct /* pairwise_mcor */ {
-        // Source: vinecopulib/misc/implementation/tools_stats.ipp:302
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:433
         const char* doc =
 R"""(calculates the pairwise maximum correlation coefficient.)""";
       } pairwise_mcor;
       // Symbol: vinecopulib::tools_stats::pbvnorm
       struct /* pbvnorm */ {
-        // Source: vinecopulib/misc/implementation/tools_stats.ipp:602
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:733
         const char* doc =
 R"""(Compute bivariate normal probabilities.
 
@@ -2889,7 +2939,7 @@ An :math:`n \times 1` vector of probabilities.)""";
       } pbvnorm;
       // Symbol: vinecopulib::tools_stats::pbvt
       struct /* pbvt */ {
-        // Source: vinecopulib/misc/implementation/tools_stats.ipp:477
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:608
         const char* doc =
 R"""(Computes bivariate t probabilities.
 
@@ -2915,7 +2965,7 @@ An :math:`n \times 1` vector of probabilities.)""";
       } pbvt;
       // Symbol: vinecopulib::tools_stats::pnorm
       struct /* pnorm */ {
-        // Source: vinecopulib/misc/tools_stats.hpp:35
+        // Source: vinecopulib/misc/tools_stats.hpp:37
         const char* doc =
 R"""(Distribution function of the Standard normal distribution.
 
@@ -2930,7 +2980,7 @@ An :math:`n \times d` matrix of evaluated probabilities.)""";
       } pnorm;
       // Symbol: vinecopulib::tools_stats::pt
       struct /* pt */ {
-        // Source: vinecopulib/misc/tools_stats.hpp:76
+        // Source: vinecopulib/misc/tools_stats.hpp:75
         const char* doc =
 R"""(Distribution function of the Student t distribution.
 
@@ -2948,7 +2998,7 @@ An :math:`n \times d` matrix of evaluated probabilities.)""";
       } pt;
       // Symbol: vinecopulib::tools_stats::qnorm
       struct /* qnorm */ {
-        // Source: vinecopulib/misc/tools_stats.hpp:48
+        // Source: vinecopulib/misc/tools_stats.hpp:49
         const char* doc =
 R"""(Quantile function of the Standard normal distribution.
 
@@ -2963,7 +3013,7 @@ An :math:`n \times d` matrix of evaluated quantiles.)""";
       } qnorm;
       // Symbol: vinecopulib::tools_stats::qt
       struct /* qt */ {
-        // Source: vinecopulib/misc/tools_stats.hpp:90
+        // Source: vinecopulib/misc/tools_stats.hpp:89
         const char* doc =
 R"""(Quantile function of the Student t distribution.
 
@@ -2979,9 +3029,34 @@ Returns
 -------
 An :math:`n \times d` matrix of evaluated quantiles.)""";
       } qt;
+      // Symbol: vinecopulib::tools_stats::simulate_normal
+      struct /* simulate_normal */ {
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:79
+        const char* doc =
+R"""(Simulates from independendent normals.
+
+Parameters
+----------
+n :
+    Number of observations.
+
+d :
+    Dimension.
+
+qrng :
+    If true, quasi-numbers are generated.
+
+seeds :
+    Seeds of the random number generator; if empty (default), the random number generator is seeded
+    randomly. //!
+
+Returns
+-------
+An :math:`n \times d` matrix of independent :math:`\mathrm{N}(0, 1)` random variables.)""";
+      } simulate_normal;
       // Symbol: vinecopulib::tools_stats::simulate_uniform
       struct /* simulate_uniform */ {
-        // Source: vinecopulib/misc/implementation/tools_stats.ipp:32
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:36
         const char* doc =
 R"""(Simulates from the multivariate uniform distribution.
 
@@ -3009,7 +3084,7 @@ An :math:`n \times d` matrix of independent :math:`\mathrm{U}[0, 1]` random vari
       } simulate_uniform;
       // Symbol: vinecopulib::tools_stats::sobol
       struct /* sobol */ {
-        // Source: vinecopulib/misc/implementation/tools_stats.ipp:386
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:517
         const char* doc =
 R"""(Simulates from the multivariate Sobol sequence.
 
@@ -3034,7 +3109,7 @@ An :math:`n \times d` matrix of quasi-random :math:`\mathrm{U}[0, 1]` variables.
       } sobol;
       // Symbol: vinecopulib::tools_stats::to_pseudo_obs
       struct /* to_pseudo_obs */ {
-        // Source: vinecopulib/misc/implementation/tools_stats.ipp:76
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:100
         const char* doc =
 R"""(Applies the empirical probability integral transform to a data matrix.
 
@@ -3050,13 +3125,16 @@ ties_method :
     Indicates how to treat ties; same as in R, see
     https://stat.ethz.ch/R-manual/R-devel/library/base/html/rank.html.
 
+weights :
+    Vector of weights for the observations.
+
 Returns
 -------
 Pseudo-observations of the copula, i.e. :math:`F_X(x)` (column-wise).)""";
       } to_pseudo_obs;
       // Symbol: vinecopulib::tools_stats::to_pseudo_obs_1d
       struct /* to_pseudo_obs_1d */ {
-        // Source: vinecopulib/misc/implementation/tools_stats.ipp:96
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:124
         const char* doc =
 R"""(Applies the empirical probability integral transform to a data vector.
 
@@ -3072,13 +3150,16 @@ ties_method :
     Indicates how to treat ties; same as in R, see
     https://stat.ethz.ch/R-manual/R-devel/library/base/html/rank.html.
 
+weights :
+    Vector of weights for the observations.
+
 Returns
 -------
 Pseudo-observations of the copula, i.e. :math:`F_X(x)`.)""";
       } to_pseudo_obs_1d;
       // Symbol: vinecopulib::tools_stats::win
       struct /* win */ {
-        // Source: vinecopulib/misc/implementation/tools_stats.ipp:150
+        // Source: vinecopulib/misc/implementation/tools_stats.ipp:281
         const char* doc = R"""(window smoother)""";
       } win;
     } tools_stats;
