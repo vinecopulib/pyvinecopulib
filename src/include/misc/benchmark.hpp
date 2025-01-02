@@ -1,3 +1,5 @@
+#pragma once
+
 #include <chrono>
 #include <iostream>
 #include <nanobind/eigen/dense.h>
