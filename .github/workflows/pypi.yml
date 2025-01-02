@@ -112,6 +112,14 @@ jobs:
         export Boost_INCLUDE_DIR=$Boost_INCLUDE_DIR
         export EIGEN3_INCLUDE_DIR=$EIGEN3_INCLUDE_DIR
         pipx run build --sdist
+    - name: Install source distribution
+      run: |
+        export Boost_INCLUDE_DIR=$Boost_INCLUDE_DIR
+        export EIGEN3_INCLUDE_DIR=$EIGEN3_INCLUDE_DIR
+        pip install dist/*.tar.gz
+    - name: Run tests with coverage
+      run: |
+        pytest --cov=pyvinecopulib --cov-report=xml --cov-report=term tests/
     - name: Upload binaries
       uses: actions/upload-artifact@v4
       with:
