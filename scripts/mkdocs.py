@@ -769,6 +769,9 @@ def process_comment(comment):
   # Be careful not to mistake code blocks for method calls.
   result = re.sub(r"``(.*?)::(.*?)``", r"``\1.\2``", result)
 
+  # JSON strings are used in the Python API
+  result = re.sub(r"``nlohmann\.json``", r"JSON-like `str`", result)
+
   result = result.rstrip().lstrip("\n")
   try:
     return transform_docstring(result)

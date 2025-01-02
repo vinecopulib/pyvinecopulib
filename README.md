@@ -72,13 +72,13 @@ The main build time prerequisites are:
 
 * scikit-build-core (>=0.4.3),
 * nanobind (>=1.3.2),
-* a compiler with C++14 support.
+* a compiler with C++17 support.
 
 To install from source, `Eigen` and `Boost` also need to be available, and CMake will try to find suitable versions automatically.
 A reproducible environment, also including requirements for the `pyvinecopulib`'s development and documentation, can be created using:
 
 ```bash
-mamba create -n pyvinecopulib eigen boost nanobind scikit-build-core numpy pydot networkx matplotlib mypy ruff pytest sphinx-rtd-theme sphinx-autodoc-typehints nbsphinx recommonmark python=3.11
+mamba create -n pyvinecopulib eigen boost nanobind scikit-build-core numpy pydot networkx matplotlib mypy ruff pytest sphinx-rtd-theme sphinx-autodoc-typehints nbsphinx myst-parser python=3.11
 mamba activate pyvinecopulib
 ```
 
