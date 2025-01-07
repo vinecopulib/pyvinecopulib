@@ -9,10 +9,11 @@ import os
 import re
 from typing import Any
 
-import pyvinecopulib as pv
 import sphinx.ext.autodoc as autodoc
 import sphinx.util.inspect as sphinxinspect
 from sphinx.ext.autodoc import AttributeDocumenter, ModuleDocumenter
+
+import pyvinecopulib as pv
 
 # -- Monkey-patch the autodoc module for nanobind compatibility ------------
 
@@ -88,7 +89,7 @@ extensions = [
   "sphinx.ext.autosummary",
   "sphinx.ext.napoleon",
   "nbsphinx",
-  "recommonmark",
+  "myst_parser",
 ]
 
 napoleon_include_init_with_doc = True
@@ -98,7 +99,10 @@ autosummary_generate = True
 nbsphinx_execute = "never"
 
 # The suffix(es) of source filenames.
-source_suffix = [".rst", ".md"]
+source_suffix = {
+  ".rst": "restructuredtext",
+  ".md": "markdown",
+}
 
 # For the templates.
 templates_path = ["_templates"]
@@ -141,12 +145,7 @@ html_logo = "_static/pyvinecopulib.png"
 html_extra_path = ["../examples/"]
 
 
-def autodoc_process_docstring(app, what, name, obj, options, lines):
-  # print(f"Processing: {what}, {name}")
-
-  # Join the existing lines and try to reformat the docstring
-  docstring = "\n".join(lines)
-
+def process_cross_references(content: str, is_docstring: bool = True) -> str:
   classes = [
     "BicopFamily",
     "Bicop",
@@ -158,34 +157,59 @@ def autodoc_process_docstring(app, what, name, obj, options, lines):
     "FitControlsVinecop",
   ]
 
+  meth_ref = r":meth:`" if is_docstring else r"{py:meth}`"
+  cls_ref = r":class:`" if is_docstring else r"{py:class}`"
+
   # Try convert references to methods or classes to cross-references
-  docstring = re.sub(r"``(\w+)\.(\w+)\(\)``", r":meth:`\1.\2`", docstring)
-  docstring = re.sub(r"``(\w+)\.(\w+)``", r":class:`\1.\2`", docstring)
+  content = re.sub(r"``(\w+)\.(\w+)\(\)``", rf"{meth_ref}\1.\2`", content)
+  content = re.sub(r"``(\w+)\.(\w+)``", f"{cls_ref}\1.\2`", content)
   for cls in classes:
-    docstring = re.sub(r"``" + cls + "``", r":class:`" + cls + "`", docstring)
+    content = re.sub(rf"``{cls}``", rf"{cls_ref}{cls}`", content)
+
+  return content
+
+
+def autodoc_process_docstring(app, what, name, obj, options, lines):
+  # print(f"Processing: {what}, {name}")
+
+  # Join the existing lines and try to reformat the docstring
+  docstring = "\n".join(lines)
+
+  # Process cross-references
+  docstring = process_cross_references(docstring)
 
   # Clear lines and replace with the cleaned, structured overloads
   lines.clear()
   lines.extend(docstring.splitlines())
 
-# Enable support for recommonmark features
-from recommonmark.transform import AutoStructify
+def preprocess_markdown(app, docname, source):
+  """
+  Preprocess Markdown files before inclusion in the documentation.
+  """
+  # Apply only to specific Markdown files, e.g., CHANGELOG.md
+  if docname == "CHANGELOG":
+    # Inject the currentmodule directive at the beginning
+    source[0] = (
+      "```{eval-rst}\n.. currentmodule:: pyvinecopulib\n```\n" + source[0]
+    )
+    # Process cross-references without requiring the module name
+    source[0] = process_cross_references(source[0], is_docstring=False)
 
 
-# Register the event handler with Sphinx
+# Register Sphinx setup with recommonmark configuration and autodoc
 def setup(app):
-  app.add_config_value(
-    "recommonmark_config",
-    {
-      "enable_auto_toc_tree": True,
-      "enable_auto_doc_ref": False,
-      "auto_toc_maxdepth": 2,
-    },
-    True,
-  )
-  app.add_transform(AutoStructify)
+  """
+  Configure Sphinx to handle autodoc and preprocess Markdown files.
+  """
+  # Register the autodoc docstring processor
   app.connect("autodoc-process-docstring", autodoc_process_docstring)
+
+  # Register the Markdown preprocessor
+  app.connect("source-read", preprocess_markdown)
 
 
 # Allow .md files to be included
-source_suffix = [".rst", ".md"]
+source_suffix = {
+  ".rst": "restructuredtext",
+  ".md": "markdown",
+}

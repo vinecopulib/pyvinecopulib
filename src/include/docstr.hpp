@@ -103,12 +103,12 @@ var_types :
     continuous, second discrete.)""";
         // Source: vinecopulib/bicop/implementation/class.ipp:90
         const char* doc_1args_input =
-R"""(Instantiates from a ``nlohmann.json`` object.
+R"""(Instantiates from a JSON-like `str` object.
 
 Parameters
 ----------
 input :
-    The ``nlohmann.json`` object to convert from (see ``to_json()`` for the structure of the
+    The JSON-like `str` object to convert from (see ``to_json()`` for the structure of the
     input).)""";
         // Source: vinecopulib/bicop/implementation/class.ipp:114
         const char* doc_1args_filename =
@@ -708,13 +708,13 @@ filename :
         const char* doc =
 R"""(Convert the copula into a nlohmann::json object.
 
-The ``nlohmann.json`` is contains of three values named ``"fam"``, ``"rot"``, ``"par"``, ``"vt"``,
+The JSON-like `str` is contains of three values named ``"fam"``, ``"rot"``, ``"par"``, ``"vt"``,
 respectively a string for the family name, an integer for the rotation, a numeric matrix for the
 parameters and a list of two strings for the variables types.
 
 Returns
 -------
-The ``nlohmann.json`` object containing the copula.)""";
+The JSON-like `str` object containing the copula.)""";
       } to_json;
     } Bicop;
     // Symbol: vinecopulib::BicopFamily
@@ -1458,12 +1458,12 @@ check :
     Whether ``order`` and ``struct_array`` shall be checked for validity.)""";
         // Source: vinecopulib/vinecop/implementation/rvine_structure.ipp:145
         const char* doc_2args_input_check =
-R"""(Instantiates from a ``nlohmann.json`` object.
+R"""(Instantiates from a JSON-like `str` object.
 
 Parameters
 ----------
 input :
-    The ``nlohmann.json`` object to convert from (see ``to_json()`` for the structure of the
+    The JSON-like `str` object to convert from (see ``to_json()`` for the structure of the
     input).
 
 check :
@@ -1750,14 +1750,14 @@ filename :
       struct /* to_json */ {
         // Source: vinecopulib/vinecop/implementation/rvine_structure.ipp:173
         const char* doc =
-R"""(Converts the structure into a ``nlohmann.json`` object.
+R"""(Converts the structure into a JSON-like `str` object.
 
-The ``nlohmann.json`` object contains two nodes: ``"array"`` for the structure triangular array and
+The JSON-like `str` object contains two nodes: ``"array"`` for the structure triangular array and
 ``"order"`` for the order vector.
 
 Returns
 -------
-The ``nlohmann.json`` object containing the structure.)""";
+The JSON-like `str` object containing the structure.)""";
       } to_json;
       // Symbol: vinecopulib::RVineStructure::to_natural_order
       struct /* to_natural_order */ {
@@ -2716,7 +2716,7 @@ filename :
         const char* doc =
 R"""(Converts the copula into a nlohmann::json object.
 
-The ``nlohmann.json`` object contains two nodes : ``"structure"`` for the vine structure, which
+The JSON-like `str` object contains two nodes : ``"structure"`` for the vine structure, which
 itself contains nodes ``"array"`` for the structure triangular array and ``"order"`` for the order
 vector, and ``"pair copulas"``. The former two encode the R-Vine structure and the latter is a list
 of child nodes for the trees (``"tree1"``, ``"tree2"``, etc), each containing a list of child nodes
