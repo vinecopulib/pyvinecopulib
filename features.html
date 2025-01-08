@@ -1,0 +1,255 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en"  data-content_root="./">
+
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>API Documentation &mdash; pyvinecopulib 0.7.0 documentation</title>
+  <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=fa44fd50" />
+  <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+  <script src="_static/jquery.js?v=5d32c60e"></script>
+  <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+  <script src="_static/documentation_options.js?v=423e15eb"></script>
+  <script src="_static/doctools.js?v=9bcbadda"></script>
+  <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+  <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+  <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+  <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <script src="_static/js/theme.js"></script>
+  <link rel="index" title="Index" href="genindex.html" />
+  <link rel="search" title="Search" href="search.html" />
+  <link rel="next" title="BicopFamily" href="_generate/pyvinecopulib.BicopFamily.html" />
+  <link rel="prev" title="pyvinecopulib" href="README.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html"  class="icon icon-home" >
+            pyvinecopulib 0.7.0
+            <img src="_static/pyvinecopulib.png" class="logo" alt="Logo" />
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation"
+          aria-label="Navigation menu">
+          <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="README.html">pyvinecopulib</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">API Documentation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#classes">Classes</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="_generate/pyvinecopulib.BicopFamily.html">BicopFamily</a></li>
+<li class="toctree-l3"><a class="reference internal" href="_generate/pyvinecopulib.Bicop.html">Bicop</a></li>
+<li class="toctree-l3"><a class="reference internal" href="_generate/pyvinecopulib.FitControlsBicop.html">FitControlsBicop</a></li>
+<li class="toctree-l3"><a class="reference internal" href="_generate/pyvinecopulib.Vinecop.html">Vinecop</a></li>
+<li class="toctree-l3"><a class="reference internal" href="_generate/pyvinecopulib.FitControlsVinecop.html">FitControlsVinecop</a></li>
+<li class="toctree-l3"><a class="reference internal" href="_generate/pyvinecopulib.CVineStructure.html">CVineStructure</a></li>
+<li class="toctree-l3"><a class="reference internal" href="_generate/pyvinecopulib.DVineStructure.html">DVineStructure</a></li>
+<li class="toctree-l3"><a class="reference internal" href="_generate/pyvinecopulib.RVineStructure.html">RVineStructure</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#functions">Functions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#pyvinecopulib.to_pseudo_obs"><code class="docutils literal notranslate"><span class="pre">to_pseudo_obs()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyvinecopulib.simulate_uniform"><code class="docutils literal notranslate"><span class="pre">simulate_uniform()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyvinecopulib.ghalton"><code class="docutils literal notranslate"><span class="pre">ghalton()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyvinecopulib.sobol"><code class="docutils literal notranslate"><span class="pre">sobol()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="CHANGELOG.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+        <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+        <a href="index.html">pyvinecopulib 0.7.0</a>
+      </nav>
+
+      <div class="wy-nav-content">
+          <div class="rst-content">
+            <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">API Documentation</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+            <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+              <div itemprop="articleBody">
+                
+  <section id="api-documentation">
+<h1>API Documentation<a class="headerlink" href="#api-documentation" title="Link to this heading"></a></h1>
+<section id="classes">
+<h2>Classes<a class="headerlink" href="#classes" title="Link to this heading"></a></h2>
+<div class="toctree-wrapper compound">
+</div>
+<table class="autosummary longtable docutils align-default">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="_generate/pyvinecopulib.BicopFamily.html#pyvinecopulib.BicopFamily" title="pyvinecopulib.BicopFamily"><code class="xref py py-obj docutils literal notranslate"><span class="pre">BicopFamily</span></code></a>(value[, names, module, ...])</p></td>
+<td><p>A bivariate copula family identifier.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="_generate/pyvinecopulib.Bicop.html#pyvinecopulib.Bicop" title="pyvinecopulib.Bicop"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Bicop</span></code></a>(*args, **kwargs)</p></td>
+<td><p>A class for bivariate copula models.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="_generate/pyvinecopulib.FitControlsBicop.html#pyvinecopulib.FitControlsBicop" title="pyvinecopulib.FitControlsBicop"><code class="xref py py-obj docutils literal notranslate"><span class="pre">FitControlsBicop</span></code></a>(*args, **kwargs)</p></td>
+<td><p>A class for controlling fits of bivariate copula models.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="_generate/pyvinecopulib.Vinecop.html#pyvinecopulib.Vinecop" title="pyvinecopulib.Vinecop"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Vinecop</span></code></a>(*args, **kwargs)</p></td>
+<td><p>A class for vine copula models.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="_generate/pyvinecopulib.FitControlsVinecop.html#pyvinecopulib.FitControlsVinecop" title="pyvinecopulib.FitControlsVinecop"><code class="xref py py-obj docutils literal notranslate"><span class="pre">FitControlsVinecop</span></code></a>(*args, **kwargs)</p></td>
+<td><p>A class for controlling fits of vine copula models.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="_generate/pyvinecopulib.CVineStructure.html#pyvinecopulib.CVineStructure" title="pyvinecopulib.CVineStructure"><code class="xref py py-obj docutils literal notranslate"><span class="pre">CVineStructure</span></code></a>(*args, **kwargs)</p></td>
+<td><p>A class for C-vine structures.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="_generate/pyvinecopulib.DVineStructure.html#pyvinecopulib.DVineStructure" title="pyvinecopulib.DVineStructure"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DVineStructure</span></code></a>(*args, **kwargs)</p></td>
+<td><p>A class for D-vine structures.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="_generate/pyvinecopulib.RVineStructure.html#pyvinecopulib.RVineStructure" title="pyvinecopulib.RVineStructure"><code class="xref py py-obj docutils literal notranslate"><span class="pre">RVineStructure</span></code></a>(*args, **kwargs)</p></td>
+<td><p>A class for R-vine structures.</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="functions">
+<h2>Functions<a class="headerlink" href="#functions" title="Link to this heading"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="pyvinecopulib.to_pseudo_obs">
+<span class="sig-name descname"><span class="pre">to_pseudo_obs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">x:</span> <span class="pre">numpy.ndarray[dtype=float64,</span> <span class="pre">shape=(*,</span> <span class="pre">*),</span> <span class="pre">order='F'],</span> <span class="pre">ties_method:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'average',</span> <span class="pre">weights:</span> <span class="pre">numpy.ndarray[dtype=float64,</span> <span class="pre">shape=(*),</span> <span class="pre">order='C']</span> <span class="pre">=</span> <span class="pre">array([],</span> <span class="pre">dtype=float64),</span> <span class="pre">seeds:</span> <span class="pre">collections.abc.Sequence[int]</span> <span class="pre">=</span> <span class="pre">[]</span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">numpy.ndarray[dtype=float64,</span> <span class="pre">shape=(*,</span> <span class="pre">*),</span> <span class="pre">order='F']</span></span></span><a class="headerlink" href="#pyvinecopulib.to_pseudo_obs" title="Link to this definition"></a></dt>
+<dd><p>Applies the empirical probability integral transform to a data matrix.</p>
+<p>Gives pseudo-observations from the copula by applying the empirical distribution function (scaled by
+<span class="math notranslate nohighlight">\(n + 1\)</span>) to each margin/column.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> – A matrix of real numbers.</p></li>
+<li><p><strong>ties_method</strong> – Indicates how to treat ties; same as in R, see
+<a class="reference external" href="https://stat.ethz.ch/R-manual/R-devel/library/base/html/rank.html">https://stat.ethz.ch/R-manual/R-devel/library/base/html/rank.html</a>.</p></li>
+<li><p><strong>weights</strong> – Vector of weights for the observations.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>Pseudo-observations of the copula, i.e. <span class="math notranslate nohighlight">\(F_X(x)\)</span> (column-wise).</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyvinecopulib.simulate_uniform">
+<span class="sig-name descname"><span class="pre">simulate_uniform</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">qrng</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seeds</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">collections.abc.Sequence</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">[]</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">numpy.ndarray[dtype=float64,</span> <span class="pre">shape=(*,</span> <span class="pre">*),</span> <span class="pre">order='F']</span></span></span><a class="headerlink" href="#pyvinecopulib.simulate_uniform" title="Link to this definition"></a></dt>
+<dd><p>Simulates from the multivariate uniform distribution.</p>
+<p>If <code class="docutils literal notranslate"><span class="pre">qrng</span> <span class="pre">=</span> <span class="pre">TRUE</span></code>, generalized Halton sequences (see <code class="docutils literal notranslate"><span class="pre">ghalton()</span></code>) are used for <span class="math notranslate nohighlight">\(d \leq 300\)</span>
+and Sobol sequences otherwise (see <code class="docutils literal notranslate"><span class="pre">sobol()</span></code>).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n</strong> – Number of observations.</p></li>
+<li><p><strong>d</strong> – Dimension.</p></li>
+<li><p><strong>qrng</strong> – If true, quasi-numbers are generated.</p></li>
+<li><p><strong>seeds</strong> – Seeds of the random number generator; if empty (default), the random number generator is seeded
+randomly.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>An <span class="math notranslate nohighlight">\(n \times d\)</span> matrix of independent <span class="math notranslate nohighlight">\(\mathrm{U}[0, 1]\)</span> random variables.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyvinecopulib.ghalton">
+<span class="sig-name descname"><span class="pre">ghalton</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seeds</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">collections.abc.Sequence</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">[]</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">numpy.ndarray[dtype=float64,</span> <span class="pre">shape=(*,</span> <span class="pre">*),</span> <span class="pre">order='F']</span></span></span><a class="headerlink" href="#pyvinecopulib.ghalton" title="Link to this definition"></a></dt>
+<dd><p>Simulates from the multivariate Generalized Halton Sequence.</p>
+<p>For more information on Generalized Halton Sequence, see Faure, H., Lemieux, C. (2009). Generalized
+Halton Sequences in 2008: A Comparative Study. ACM-TOMACS 19(4), Article 15.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n</strong> – Number of observations.</p></li>
+<li><p><strong>d</strong> – Dimension.</p></li>
+<li><p><strong>seeds</strong> – Seeds to scramble the quasi-random numbers; if empty (default), the quasi-random number
+generator is seeded randomly.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>An <span class="math notranslate nohighlight">\(n \times d\)</span> matrix of quasi-random <span class="math notranslate nohighlight">\(\mathrm{U}[0, 1]\)</span> variables.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyvinecopulib.sobol">
+<span class="sig-name descname"><span class="pre">sobol</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">n</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">d</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">seeds</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">collections.abc.Sequence</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">[]</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">numpy.ndarray[dtype=float64,</span> <span class="pre">shape=(*,</span> <span class="pre">*),</span> <span class="pre">order='F']</span></span></span><a class="headerlink" href="#pyvinecopulib.sobol" title="Link to this definition"></a></dt>
+<dd><p>Simulates from the multivariate Sobol sequence.</p>
+<p>For more information on the Sobol sequence, see S. Joe and F. Y. Kuo (2008), constructing Sobol
+sequences with better two-dimensional projections, SIAM J. Sci. Comput. 30, 2635–2654.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>n</strong> – Number of observations.</p></li>
+<li><p><strong>d</strong> – Dimension.</p></li>
+<li><p><strong>seeds</strong> – Seeds to scramble the quasi-random numbers; if empty (default), the quasi-random number
+generator is seeded randomly.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p>An <span class="math notranslate nohighlight">\(n \times d\)</span> matrix of quasi-random <span class="math notranslate nohighlight">\(\mathrm{U}[0, 1]\)</span> variables.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+</section>
+
+
+              </div>
+            </div>
+            <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="README.html" class="btn btn-neutral float-left" title="pyvinecopulib" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="_generate/pyvinecopulib.BicopFamily.html" class="btn btn-neutral float-right" title="BicopFamily" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p></p>
+  </div>
+
+   
+
+</footer>
+          </div>
+        </div>
+    </section>
+  </div>
+  <script>
+    jQuery(function () {
+      SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+
+</html>

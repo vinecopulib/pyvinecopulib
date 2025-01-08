@@ -1,0 +1,221 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en"  data-content_root="./">
+
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Changelog &mdash; pyvinecopulib 0.7.0 documentation</title>
+  <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=fa44fd50" />
+  <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+
+  
+  <script src="_static/jquery.js?v=5d32c60e"></script>
+  <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+  <script src="_static/documentation_options.js?v=423e15eb"></script>
+  <script src="_static/doctools.js?v=9bcbadda"></script>
+  <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+  <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+  <script src="_static/js/theme.js"></script>
+  <link rel="index" title="Index" href="genindex.html" />
+  <link rel="search" title="Search" href="search.html" />
+  <link rel="next" title="Examples" href="examples.html" />
+  <link rel="prev" title="RVineStructure.truncate" href="_generate/pyvinecopulib.RVineStructure.truncate.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html"  class="icon icon-home" >
+            pyvinecopulib 0.7.0
+            <img src="_static/pyvinecopulib.png" class="logo" alt="Logo" />
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation"
+          aria-label="Navigation menu">
+          <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="README.html">pyvinecopulib</a></li>
+<li class="toctree-l1"><a class="reference internal" href="features.html">API Documentation</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Changelog</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#id1">0.7.0</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#breaking-api-changes-in-pyvinecopulib">Breaking API changes in <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#new-features-in-pyvinecopulib">New features in <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#bug-fixes-in-pyvinecopulib">Bug fixes in <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#changes-in-vinecopulib">Changes in <code class="docutils literal notranslate"><span class="pre">vinecopulib</span></code></a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#new-features">New features</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#bug-fixes">Bug fixes</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+        <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+        <a href="index.html">pyvinecopulib 0.7.0</a>
+      </nav>
+
+      <div class="wy-nav-content">
+          <div class="rst-content">
+            <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Changelog</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+            <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+              <div itemprop="articleBody">
+                
+  <section id="changelog">
+<h1>Changelog<a class="headerlink" href="#changelog" title="Link to this heading"></a></h1>
+<section id="id1">
+<h2>0.7.0<a class="headerlink" href="#id1" title="Link to this heading"></a></h2>
+<p>This version introduces a switch to nanobind as a backend (#160): i.e., the C++ bindings, now use <a class="reference external" href="https://nanobind.readthedocs.io/">nanobind</a> instead of <a class="reference external" href="https://pybind11.readthedocs.io/">pybind11</a>.
+It allows for considerable performance improvements (~8x speedup in our latest benchmarks) and smaller binaries.</p>
+<section id="breaking-api-changes-in-pyvinecopulib">
+<h3>Breaking API changes in <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code><a class="headerlink" href="#breaking-api-changes-in-pyvinecopulib" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p>Removal of the overloaded constructors:</p>
+<ul>
+<li><p>For all classes, only one constructor is now available.
+The reason is that the overloaded constructors were un-Pythonic, error-prone, and could not be properly documented with Sphinx.
+They have been replaced by a single constructor for each class, along with factory <code class="docutils literal notranslate"><span class="pre">from_xzy</span></code> methods.</p></li>
+<li><p>For the <a class="reference internal" href="_generate/pyvinecopulib.Bicop.html#pyvinecopulib.Bicop" title="pyvinecopulib.Bicop"><code class="xref py py-class docutils literal notranslate"><span class="pre">Bicop</span></code></a> class:</p>
+<ul>
+<li><p><a class="reference internal" href="_generate/pyvinecopulib.Bicop.from_family.html#pyvinecopulib.Bicop.from_family" title="pyvinecopulib.Bicop.from_family"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Bicop.from_family()</span></code></a>: Instantiate from a family, rotation, parameters, and variable types.</p></li>
+<li><p><a class="reference internal" href="_generate/pyvinecopulib.Bicop.from_data.html#pyvinecopulib.Bicop.from_data" title="pyvinecopulib.Bicop.from_data"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Bicop.from_data()</span></code></a>: Instantiate from data, as well as optional controls and variable types.</p></li>
+<li><p><a class="reference internal" href="_generate/pyvinecopulib.Bicop.from_file.html#pyvinecopulib.Bicop.from_file" title="pyvinecopulib.Bicop.from_file"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Bicop.from_file()</span></code></a>: Instantiate from a file.</p></li>
+<li><p><a class="reference internal" href="_generate/pyvinecopulib.Bicop.from_json.html#pyvinecopulib.Bicop.from_json" title="pyvinecopulib.Bicop.from_json"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Bicop.from_json()</span></code></a>: Instantiate from a JSON-like string.</p></li>
+</ul>
+</li>
+<li><p>For the <a class="reference internal" href="_generate/pyvinecopulib.Vinecop.html#pyvinecopulib.Vinecop" title="pyvinecopulib.Vinecop"><code class="xref py py-class docutils literal notranslate"><span class="pre">Vinecop</span></code></a> class:</p>
+<ul>
+<li><p><a class="reference internal" href="_generate/pyvinecopulib.Vinecop.from_dimension.html#pyvinecopulib.Vinecop.from_dimension" title="pyvinecopulib.Vinecop.from_dimension"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Vinecop.from_dimension()</span></code></a>: Instantiate an empty vine copula of a given dimension.</p></li>
+<li><p><a class="reference internal" href="_generate/pyvinecopulib.Vinecop.from_data.html#pyvinecopulib.Vinecop.from_data" title="pyvinecopulib.Vinecop.from_data"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Vinecop.from_data()</span></code></a>: Instantiate from data, as well as an optional <a class="reference internal" href="_generate/pyvinecopulib.FitControlsVinecop.html#pyvinecopulib.FitControlsVinecop" title="pyvinecopulib.FitControlsVinecop"><code class="xref py py-class docutils literal notranslate"><span class="pre">FitControlsVinecop</span></code></a>, an <a class="reference internal" href="_generate/pyvinecopulib.RVineStructure.html#pyvinecopulib.RVineStructure" title="pyvinecopulib.RVineStructure"><code class="xref py py-class docutils literal notranslate"><span class="pre">RVineStructure</span></code></a> or matrix, and variable types.</p></li>
+<li><p><a class="reference internal" href="_generate/pyvinecopulib.Vinecop.from_structure.html#pyvinecopulib.Vinecop.from_structure" title="pyvinecopulib.Vinecop.from_structure"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Vinecop.from_structure()</span></code></a>: Instantiate from an <a class="reference internal" href="_generate/pyvinecopulib.RVineStructure.html#pyvinecopulib.RVineStructure" title="pyvinecopulib.RVineStructure"><code class="xref py py-class docutils literal notranslate"><span class="pre">RVineStructure</span></code></a> or matrix, as well as optional pair-copulas and variable types.</p></li>
+<li><p><a class="reference internal" href="_generate/pyvinecopulib.Vinecop.from_file.html#pyvinecopulib.Vinecop.from_file" title="pyvinecopulib.Vinecop.from_file"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Vinecop.from_file()</span></code></a>: Instantiate from a file.</p></li>
+<li><p><a class="reference internal" href="_generate/pyvinecopulib.Vinecop.from_json.html#pyvinecopulib.Vinecop.from_json" title="pyvinecopulib.Vinecop.from_json"><code class="xref py py-meth docutils literal notranslate"><span class="pre">Vinecop.from_json()</span></code></a>: Instantiate from a JSON-like string.</p></li>
+</ul>
+</li>
+<li><p>For the <a class="reference internal" href="_generate/pyvinecopulib.RVineStructure.html#pyvinecopulib.RVineStructure" title="pyvinecopulib.RVineStructure"><code class="xref py py-class docutils literal notranslate"><span class="pre">RVineStructure</span></code></a> class:</p>
+<ul>
+<li><p><a class="reference internal" href="_generate/pyvinecopulib.RVineStructure.from_dimension.html#pyvinecopulib.RVineStructure.from_dimension" title="pyvinecopulib.RVineStructure.from_dimension"><code class="xref py py-meth docutils literal notranslate"><span class="pre">RVineStructure.from_dimension()</span></code></a>: Instantiate a default structure of a given dimension and truncation level.</p></li>
+<li><p><a class="reference internal" href="_generate/pyvinecopulib.RVineStructure.from_order.html#pyvinecopulib.RVineStructure.from_order" title="pyvinecopulib.RVineStructure.from_order"><code class="xref py py-meth docutils literal notranslate"><span class="pre">RVineStructure.from_order()</span></code></a>: Instantiate from an order vector.</p></li>
+<li><p><a class="reference internal" href="_generate/pyvinecopulib.RVineStructure.from_matrix.html#pyvinecopulib.RVineStructure.from_matrix" title="pyvinecopulib.RVineStructure.from_matrix"><code class="xref py py-meth docutils literal notranslate"><span class="pre">RVineStructure.from_matrix()</span></code></a>: Instantiate from a matrix.</p></li>
+<li><p><a class="reference internal" href="_generate/pyvinecopulib.RVineStructure.from_file.html#pyvinecopulib.RVineStructure.from_file" title="pyvinecopulib.RVineStructure.from_file"><code class="xref py py-meth docutils literal notranslate"><span class="pre">RVineStructure.from_file()</span></code></a>: Instantiate from a file.</p></li>
+<li><p><a class="reference internal" href="_generate/pyvinecopulib.RVineStructure.from_json.html#pyvinecopulib.RVineStructure.from_json" title="pyvinecopulib.RVineStructure.from_json"><code class="xref py py-meth docutils literal notranslate"><span class="pre">RVineStructure.from_json()</span></code></a>: Instantiate from a JSON-like string.</p></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="new-features-in-pyvinecopulib">
+<h3>New features in <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code><a class="headerlink" href="#new-features-in-pyvinecopulib" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p>Expose more structure methods to python (#157)</p></li>
+<li><p>Switch to nanobind as a backend (#160)</p></li>
+<li><p>New IO methods for <code class="docutils literal notranslate"><span class="pre">Bicop</span></code> and <code class="docutils literal notranslate"><span class="pre">Vinecop</span></code> classes to use JSON-like strings (#160)</p></li>
+<li><p>Extensive documentation revamp (#160)</p></li>
+<li><p>Adding a benchmark example (#160)</p></li>
+<li><p>Convertion of all examples to Jupyter notebooks (#160)</p></li>
+</ul>
+</section>
+<section id="bug-fixes-in-pyvinecopulib">
+<h3>Bug fixes in <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code><a class="headerlink" href="#bug-fixes-in-pyvinecopulib" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p>Install and test source distribution (#164)</p></li>
+</ul>
+</section>
+<section id="changes-in-vinecopulib">
+<h3>Changes in <code class="docutils literal notranslate"><span class="pre">vinecopulib</span></code><a class="headerlink" href="#changes-in-vinecopulib" title="Link to this heading"></a></h3>
+<p>These changes originate from the underlying C++ library, <a class="reference external" href="https://github.com/vinecopulib/vinecopulib"><code class="docutils literal notranslate"><span class="pre">vinecopulib</span></code></a>, which powers <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code>.</p>
+<section id="new-features">
+<h4>New features<a class="headerlink" href="#new-features" title="Link to this heading"></a></h4>
+<ul class="simple">
+<li><p>Use analytical derivatives in discrete pdf/hfuncs (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/572">#572</a>)</p></li>
+<li><p>Allow for alternative for <code class="docutils literal notranslate"><span class="pre">&quot;prim&quot;</span></code> vs <code class="docutils literal notranslate"><span class="pre">&quot;kruskal&quot;</span></code> in MST-based model selection (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/577">#577</a>)</p></li>
+<li><p>Improve the dependencies install script to use it in other projects (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/576">#576</a>)</p></li>
+<li><p>Add tawn copula (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/579">#579</a>)</p></li>
+<li><p>Improve doc (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/580">#580</a>, <a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/585">#585</a>, <a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/607">#607</a>)</p></li>
+<li><p>Allow for the discrete Rosenblatt transform (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/581">#581</a>)</p></li>
+<li><p>Add <code class="docutils literal notranslate"><span class="pre">Vinecop::fit()</span></code> (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/584">#584</a>)</p></li>
+<li><p>Improve <code class="docutils literal notranslate"><span class="pre">Bicop::str()</span></code> (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/588">#588</a>) and <code class="docutils literal notranslate"><span class="pre">Vinecop::str()</span></code> (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/589">#589</a>)</p></li>
+<li><p>Properly handle discrete variables for the TLL family (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/597">#597</a>)</p></li>
+<li><p>Weighted pseudo-observations (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/602">#602</a>)</p></li>
+<li><p>Cross-platform random numbers and add seeds options to <code class="docutils literal notranslate"><span class="pre">to_pseudo_obs</span></code> (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/603">#603</a>)</p></li>
+<li><p>Improve performance by</p>
+<ul>
+<li><p>aligning with the <code class="docutils literal notranslate"><span class="pre">R</span></code> defaults (e.g., <code class="docutils literal notranslate"><span class="pre">BOOST_NO_AUTO_PTR</span></code>, <code class="docutils literal notranslate"><span class="pre">BOOST_ALLOW_DEPRECATED_HEADERS</span></code>, <code class="docutils literal notranslate"><span class="pre">BOOST_MATH_PROMOTE_DOUBLE_POLICY=false</span></code>, <code class="docutils literal notranslate"><span class="pre">std::string</span> <span class="pre">nonparametric_method</span> <span class="pre">=</span> <span class="pre">&quot;constant&quot;</span></code> for the TLL instead of <code class="docutils literal notranslate"><span class="pre">&quot;quadratic&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">-O3</span> <span class="pre">-march=native</span></code> compiler flags) and add benchmarking example (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/592">#592</a>, <a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/611">#611</a>, <a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/613">#613</a>),</p></li>
+<li><p>using <code class="docutils literal notranslate"><span class="pre">Eigen</span></code> element-wise operations instead of <code class="docutils literal notranslate"><span class="pre">boost</span></code> whenever possible (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/598">#598</a>, <a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/612">#612</a>),</p></li>
+<li><p>using binary search in the TLL for <code class="docutils literal notranslate"><span class="pre">get_indices</span></code> (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/613">#613</a>).</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="bug-fixes">
+<h4>Bug fixes<a class="headerlink" href="#bug-fixes" title="Link to this heading"></a></h4>
+<ul class="simple">
+<li><p>Improve stability in BB7 PDF (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/573">#573</a>)</p></li>
+<li><p>Revamped CI/CD pipeline, tests discoverable by CTest, boost version on windows ((<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/commit/66cf8b0">66cf8b0</a>))</p></li>
+<li><p>Fix ASAN issues (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/583">#583</a>)</p></li>
+<li><p>Fix interface includes and other CMake issue (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/586">#586</a>, <a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/599">#599</a>, <a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/601">#601</a>, <a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/608">#608</a>), by &#64;jschueller</p></li>
+</ul>
+</section>
+</section>
+</section>
+</section>
+
+
+              </div>
+            </div>
+            <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="_generate/pyvinecopulib.RVineStructure.truncate.html" class="btn btn-neutral float-left" title="RVineStructure.truncate" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="examples.html" class="btn btn-neutral float-right" title="Examples" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p></p>
+  </div>
+
+   
+
+</footer>
+          </div>
+        </div>
+    </section>
+  </div>
+  <script>
+    jQuery(function () {
+      SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+
+</html>

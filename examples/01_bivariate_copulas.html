@@ -1,0 +1,401 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en"  data-content_root="../">
+
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Introduction to the bivariate copula (Bicop) API &mdash; pyvinecopulib 0.7.0 documentation</title>
+  <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
+  <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+  <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+  <script src="../_static/jquery.js?v=5d32c60e"></script>
+  <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+  <script src="../_static/documentation_options.js?v=423e15eb"></script>
+  <script src="../_static/doctools.js?v=9bcbadda"></script>
+  <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+  <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+  <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+  <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <script src="../_static/js/theme.js"></script>
+  <link rel="index" title="Index" href="../genindex.html" />
+  <link rel="search" title="Search" href="../search.html" />
+  <link rel="next" title="Introduction to the vine copula (Vinecop) API" href="02_vine_copulas.html" />
+  <link rel="prev" title="Examples" href="../examples.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html"  class="icon icon-home" >
+            pyvinecopulib 0.7.0
+            <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo" />
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation"
+          aria-label="Navigation menu">
+          <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../README.html">pyvinecopulib</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../features.html">API Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../CHANGELOG.html">Changelog</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../examples.html">Examples</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Introduction to the bivariate copula (<code class="docutils literal notranslate"><span class="pre">Bicop</span></code>) API</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#Import-the-library">Import the library</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Create-an-independence-bivariate-copula">Create an independence bivariate copula</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Create-and-plot-a-Gaussian-copula">Create and plot a Gaussian copula</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Some-other-families">Some other families</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Different-ways-to-fit-a-copula...">Different ways to fit a copula…</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Similarly,-when-the-family-is-unkown,-there-are-two-ways-to-also-do-model-selection...">Similarly, when the family is unkown, there are two ways to also do model selection…</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="02_vine_copulas.html">Introduction to the vine copula (<code class="docutils literal notranslate"><span class="pre">Vinecop</span></code>) API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="03_vine_copulas_fit_sample.html">Fitting a vine copula on dataset and sampling from the model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="03_vine_copulas_fit_sample.html#Simulate-some-data">Simulate some data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="04_discrete_variables.html">Vine copulas for discrete variables</a></li>
+<li class="toctree-l2"><a class="reference internal" href="05_benchmark.html">Benchmarking performance</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+        <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+        <a href="../index.html">pyvinecopulib 0.7.0</a>
+      </nav>
+
+      <div class="wy-nav-content">
+          <div class="rst-content">
+            <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../examples.html">Examples</a></li>
+      <li class="breadcrumb-item active">Introduction to the bivariate copula (<code class="docutils literal notranslate"><span class="pre">Bicop</span></code>) API</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+            <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+              <div itemprop="articleBody">
+                
+  <section id="Introduction-to-the-bivariate-copula-(Bicop)-API">
+<h1>Introduction to the bivariate copula (<code class="docutils literal notranslate"><span class="pre">Bicop</span></code>) API<a class="headerlink" href="#Introduction-to-the-bivariate-copula-(Bicop)-API" title="Link to this heading"></a></h1>
+<section id="Import-the-library">
+<h2>Import the library<a class="headerlink" href="#Import-the-library" title="Link to this heading"></a></h2>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">pyvinecopulib</span> <span class="k">as</span> <span class="nn">pv</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+</pre></div>
+</div>
+</div>
+</section>
+<section id="Create-an-independence-bivariate-copula">
+<h2>Create an independence bivariate copula<a class="headerlink" href="#Create-an-independence-bivariate-copula" title="Link to this heading"></a></h2>
+<p>The default constructor of the <code class="docutils literal notranslate"><span class="pre">Bicop</span></code> class creates an independence bivariate copula.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">pv</span><span class="o">.</span><span class="n">Bicop</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+&lt;pyvinecopulib.Bicop&gt;
+Bivariate copula:
+  family = Independence
+  rotation = 0
+  var_types = c,c
+</pre></div></div>
+</div>
+</section>
+<section id="Create-and-plot-a-Gaussian-copula">
+<h2>Create and plot a Gaussian copula<a class="headerlink" href="#Create-and-plot-a-Gaussian-copula" title="Link to this heading"></a></h2>
+<p>See help(pv.BicopFamily) for the available families</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">cop</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">Bicop</span><span class="p">(</span><span class="n">family</span><span class="o">=</span><span class="n">pv</span><span class="o">.</span><span class="n">BicopFamily</span><span class="o">.</span><span class="n">gaussian</span><span class="p">,</span> <span class="n">parameters</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mf">0.5</span><span class="p">]]))</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">cop</span><span class="p">)</span>
+<span class="n">cop</span><span class="o">.</span><span class="n">plot</span><span class="p">()</span>  <span class="c1"># surface plot of copula density</span>
+<span class="n">cop</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="nb">type</span><span class="o">=</span><span class="s2">&quot;contour&quot;</span><span class="p">,</span> <span class="n">margin_type</span><span class="o">=</span><span class="s2">&quot;norm&quot;</span><span class="p">)</span>  <span class="c1"># contour plot with normal margins</span>
+<span class="n">cop</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="nb">type</span><span class="o">=</span><span class="s2">&quot;contour&quot;</span><span class="p">,</span> <span class="n">margin_type</span><span class="o">=</span><span class="s2">&quot;unif&quot;</span><span class="p">)</span>  <span class="c1"># contour plot of copula density</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+&lt;pyvinecopulib.Bicop&gt;
+Bivariate copula:
+  family = Gaussian
+  rotation = 0
+  var_types = c,c
+  parameters = 0.5
+
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/examples_01_bivariate_copulas_5_1.png" src="../_images/examples_01_bivariate_copulas_5_1.png" />
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/examples_01_bivariate_copulas_5_2.png" src="../_images/examples_01_bivariate_copulas_5_2.png" />
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/examples_01_bivariate_copulas_5_3.png" src="../_images/examples_01_bivariate_copulas_5_3.png" />
+</div>
+</div>
+</section>
+<section id="Some-other-families">
+<h2>Some other families<a class="headerlink" href="#Some-other-families" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p>A 90 degrees rotated Clayon copula with parameter = 3</p></li>
+<li><p>A t copula with correlation of 0.5 and 4 degrees of freedom and showcase some methods</p></li>
+</ul>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span>
+  <span class="n">pv</span><span class="o">.</span><span class="n">Bicop</span><span class="p">(</span>
+    <span class="n">family</span><span class="o">=</span><span class="n">pv</span><span class="o">.</span><span class="n">BicopFamily</span><span class="o">.</span><span class="n">clayton</span><span class="p">,</span> <span class="n">rotation</span><span class="o">=</span><span class="mi">90</span><span class="p">,</span> <span class="n">parameters</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mf">3.0</span><span class="p">]])</span>
+  <span class="p">)</span>
+<span class="p">)</span>
+
+<span class="n">cop</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">Bicop</span><span class="p">(</span><span class="n">family</span><span class="o">=</span><span class="n">pv</span><span class="o">.</span><span class="n">BicopFamily</span><span class="o">.</span><span class="n">student</span><span class="p">,</span> <span class="n">parameters</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mf">0.5</span><span class="p">],</span> <span class="p">[</span><span class="mi">4</span><span class="p">]]))</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">cop</span><span class="p">)</span>
+<span class="n">u</span> <span class="o">=</span> <span class="n">cop</span><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">seeds</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">])</span>
+<span class="n">fcts</span> <span class="o">=</span> <span class="p">[</span>
+  <span class="n">cop</span><span class="o">.</span><span class="n">pdf</span><span class="p">,</span>
+  <span class="n">cop</span><span class="o">.</span><span class="n">cdf</span><span class="p">,</span>
+  <span class="n">cop</span><span class="o">.</span><span class="n">hfunc1</span><span class="p">,</span>
+  <span class="n">cop</span><span class="o">.</span><span class="n">hfunc2</span><span class="p">,</span>
+  <span class="n">cop</span><span class="o">.</span><span class="n">hinv1</span><span class="p">,</span>
+  <span class="n">cop</span><span class="o">.</span><span class="n">hinv2</span><span class="p">,</span>
+  <span class="n">cop</span><span class="o">.</span><span class="n">loglik</span><span class="p">,</span>
+  <span class="n">cop</span><span class="o">.</span><span class="n">aic</span><span class="p">,</span>
+  <span class="n">cop</span><span class="o">.</span><span class="n">bic</span><span class="p">,</span>
+<span class="p">]</span>
+<span class="p">[</span><span class="n">f</span><span class="p">(</span><span class="n">u</span><span class="p">)</span> <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">fcts</span><span class="p">]</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+&lt;pyvinecopulib.Bicop&gt;
+Bivariate copula:
+  family = Clayton
+  rotation = 90
+  var_types = c,c
+  parameters = 3
+
+&lt;pyvinecopulib.Bicop&gt;
+Bivariate copula:
+  family = Student
+  rotation = 0
+  var_types = c,c
+  parameters = 0.5
+  4
+
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+[array([0.7092173 , 0.4810942 , 0.81301356, 1.39839611, 2.0873499 ,
+        2.79384106, 1.11748814, 0.55365742, 1.94610848, 0.80483478]),
+ array([0.13932915, 0.28749817, 0.18307038, 0.61323437, 0.0331152 ,
+        0.0193519 , 0.40936082, 0.18184118, 0.78248955, 0.14523531]),
+ array([0.8170847 , 0.11345477, 0.12286857, 0.78638305, 0.10872534,
+        0.35645124, 0.77472657, 0.90877192, 0.76413881, 0.77807695]),
+ array([0.08241333, 0.96386291, 0.79699695, 0.52499938, 0.39444021,
+        0.09401172, 0.33903085, 0.08152695, 0.71452328, 0.09953434]),
+ array([0.39910753, 0.58076221, 0.32192543, 0.81770422, 0.04078053,
+        0.0190836 , 0.65748713, 0.58895048, 0.92393781, 0.37153588]),
+ array([0.26444729, 0.79267514, 0.44179055, 0.79869798, 0.04211888,
+        0.01956738, 0.59671571, 0.3699726 , 0.92303602, 0.26213502]),
+ 0.7849333316959906,
+ 2.430133336608019,
+ 3.0353035225961107]
+</pre></div></div>
+</div>
+</section>
+<section id="Different-ways-to-fit-a-copula...">
+<h2>Different ways to fit a copula…<a class="headerlink" href="#Different-ways-to-fit-a-copula..." title="Link to this heading"></a></h2>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">u</span> <span class="o">=</span> <span class="n">cop</span><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">seeds</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">])</span>
+
+<span class="c1"># Create a new object an sets its parameters by fitting afterwards</span>
+<span class="n">cop2</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">Bicop</span><span class="p">(</span><span class="n">pv</span><span class="o">.</span><span class="n">BicopFamily</span><span class="o">.</span><span class="n">student</span><span class="p">)</span>
+<span class="n">cop2</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">u</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">cop2</span><span class="p">)</span>
+
+<span class="c1"># Otherwise, define first an object to control the fits:</span>
+<span class="c1">#    - pv.FitControlsBicop objects store the controls</span>
+<span class="c1">#    - here, we only restrict the parametric family</span>
+<span class="c1">#    - see help(pv.FitControlsBicop) for more details</span>
+<span class="c1"># Then, create a copula from the data</span>
+<span class="n">controls</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">FitControlsBicop</span><span class="p">(</span><span class="n">family_set</span><span class="o">=</span><span class="p">[</span><span class="n">pv</span><span class="o">.</span><span class="n">BicopFamily</span><span class="o">.</span><span class="n">student</span><span class="p">])</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">controls</span><span class="p">)</span>
+<span class="n">cop3</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">Bicop</span><span class="o">.</span><span class="n">from_data</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">u</span><span class="p">,</span> <span class="n">controls</span><span class="o">=</span><span class="n">controls</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">cop3</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+&lt;pyvinecopulib.Bicop&gt;
+Bivariate copula:
+  family = Student
+  rotation = 0
+  var_types = c,c
+  parameters = 0.52
+ 4.1
+
+&lt;pyvinecopulib.FitControlsBicop&gt;
+Family set: Student
+Parametric method: mle
+Nonparametric method: constant
+Nonparametric multiplier: 1
+Weights: no
+Selection criterion: bic
+Preselect families: yes
+mBIC prior probability: 0.9
+Number of threads: 1
+
+&lt;pyvinecopulib.Bicop&gt;
+Bivariate copula:
+  family = Student
+  rotation = 0
+  var_types = c,c
+  parameters = 0.52
+ 4.1
+
+</pre></div></div>
+</div>
+</section>
+<section id="Similarly,-when-the-family-is-unkown,-there-are-two-ways-to-also-do-model-selection...">
+<h2>Similarly, when the family is unkown, there are two ways to also do model selection…<a class="headerlink" href="#Similarly,-when-the-family-is-unkown,-there-are-two-ways-to-also-do-model-selection..." title="Link to this heading"></a></h2>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create a new object an selects both its family and parameters afterwards</span>
+<span class="n">cop4</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">Bicop</span><span class="p">()</span>
+<span class="n">cop4</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">u</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">cop4</span><span class="p">)</span>
+
+<span class="c1"># Or create directly from data</span>
+<span class="n">cop5</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">Bicop</span><span class="o">.</span><span class="n">from_data</span><span class="p">(</span><span class="n">data</span><span class="o">=</span><span class="n">u</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">cop5</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+&lt;pyvinecopulib.Bicop&gt;
+Bivariate copula:
+  family = Student
+  rotation = 0
+  var_types = c,c
+  parameters = 0.52
+ 4.1
+
+&lt;pyvinecopulib.Bicop&gt;
+Bivariate copula:
+  family = Student
+  rotation = 0
+  var_types = c,c
+  parameters = 0.52
+ 4.1
+
+</pre></div></div>
+</div>
+</section>
+</section>
+
+
+              </div>
+            </div>
+            <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../examples.html" class="btn btn-neutral float-left" title="Examples" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="02_vine_copulas.html" class="btn btn-neutral float-right" title="Introduction to the vine copula (Vinecop) API" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p></p>
+  </div>
+
+   
+
+</footer>
+          </div>
+        </div>
+    </section>
+  </div>
+  <script>
+    jQuery(function () {
+      SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+
+</html>

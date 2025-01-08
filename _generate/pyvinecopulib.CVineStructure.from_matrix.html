@@ -1,0 +1,169 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en"  data-content_root="../">
+
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CVineStructure.from_matrix &mdash; pyvinecopulib 0.7.0 documentation</title>
+  <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
+  <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+
+  
+  <script src="../_static/jquery.js?v=5d32c60e"></script>
+  <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+  <script src="../_static/documentation_options.js?v=423e15eb"></script>
+  <script src="../_static/doctools.js?v=9bcbadda"></script>
+  <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+  <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+  <script src="../_static/js/theme.js"></script>
+  <link rel="index" title="Index" href="../genindex.html" />
+  <link rel="search" title="Search" href="../search.html" />
+  <link rel="next" title="CVineStructure.from_order" href="pyvinecopulib.CVineStructure.from_order.html" />
+  <link rel="prev" title="CVineStructure.from_json" href="pyvinecopulib.CVineStructure.from_json.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../index.html"  class="icon icon-home" >
+            pyvinecopulib 0.7.0
+            <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo" />
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation"
+          aria-label="Navigation menu">
+          <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../README.html">pyvinecopulib</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../features.html">API Documentation</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../features.html#classes">Classes</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="pyvinecopulib.BicopFamily.html">BicopFamily</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pyvinecopulib.Bicop.html">Bicop</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pyvinecopulib.FitControlsBicop.html">FitControlsBicop</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pyvinecopulib.Vinecop.html">Vinecop</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pyvinecopulib.FitControlsVinecop.html">FitControlsVinecop</a></li>
+<li class="toctree-l3 current"><a class="reference internal" href="pyvinecopulib.CVineStructure.html">CVineStructure</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.CVineStructure.html#pyvinecopulib.CVineStructure"><code class="docutils literal notranslate"><span class="pre">CVineStructure</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.CVineStructure.__init__.html">CVineStructure.__init__</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.CVineStructure.from_dimension.html">CVineStructure.from_dimension</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.CVineStructure.from_file.html">CVineStructure.from_file</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.CVineStructure.from_json.html">CVineStructure.from_json</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">CVineStructure.from_matrix</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.CVineStructure.from_order.html">CVineStructure.from_order</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.CVineStructure.min_array.html">CVineStructure.min_array</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.CVineStructure.needed_hfunc1.html">CVineStructure.needed_hfunc1</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.CVineStructure.needed_hfunc2.html">CVineStructure.needed_hfunc2</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.CVineStructure.simulate.html">CVineStructure.simulate</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.CVineStructure.str.html">CVineStructure.str</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.CVineStructure.struct_array.html">CVineStructure.struct_array</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.CVineStructure.to_file.html">CVineStructure.to_file</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.CVineStructure.to_json.html">CVineStructure.to_json</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.CVineStructure.truncate.html">CVineStructure.truncate</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="pyvinecopulib.DVineStructure.html">DVineStructure</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pyvinecopulib.RVineStructure.html">RVineStructure</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../features.html#functions">Functions</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../CHANGELOG.html">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../examples.html">Examples</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+        <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+        <a href="../index.html">pyvinecopulib 0.7.0</a>
+      </nav>
+
+      <div class="wy-nav-content">
+          <div class="rst-content">
+            <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../features.html">API Documentation</a></li>
+          <li class="breadcrumb-item"><a href="pyvinecopulib.CVineStructure.html">CVineStructure</a></li>
+      <li class="breadcrumb-item active">CVineStructure.from_matrix</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+            <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+              <div itemprop="articleBody">
+                
+  <section id="cvinestructure-from-matrix">
+<h1>CVineStructure.from_matrix<a class="headerlink" href="#cvinestructure-from-matrix" title="Link to this heading"></a></h1>
+<dl class="py method">
+<dt class="sig sig-object py" id="pyvinecopulib.CVineStructure.from_matrix">
+<span class="sig-prename descclassname"><span class="pre">CVineStructure.</span></span><span class="sig-name descname"><span class="pre">from_matrix</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">mat:</span> <span class="pre">numpy.ndarray[dtype=uint64,</span> <span class="pre">shape=(*,</span> <span class="pre">*),</span> <span class="pre">order='F'],</span> <span class="pre">check:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">True</span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="pyvinecopulib.RVineStructure.html#pyvinecopulib.RVineStructure" title="pyvinecopulib.RVineStructure"><span class="pre">pyvinecopulib.RVineStructure</span></a></span></span><a class="headerlink" href="#pyvinecopulib.CVineStructure.from_matrix" title="Link to this definition"></a></dt>
+<dd><p>Instantiates an RVineStructure object from a matrix representing an R-vine array.</p>
+<p>The matrix must contain zeros in the lower right triangle and the upper left triangle must be a
+valid R-vine array. Truncated vines can be encoded by putting zeros above the digonal in all rows
+below the truncation level. Example of a 1-truncated matrix:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">4</span> <span class="mi">4</span> <span class="mi">4</span> <span class="mi">4</span>
+<span class="mi">0</span> <span class="mi">0</span> <span class="mi">3</span> <span class="mi">0</span>
+<span class="mi">0</span> <span class="mi">2</span> <span class="mi">0</span> <span class="mi">0</span>
+<span class="mi">1</span> <span class="mi">0</span> <span class="mi">0</span> <span class="mi">0</span>
+</pre></div>
+</div>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mat</strong> – A matrix representing a valid R-vine array.</p></li>
+<li><p><strong>check</strong> – Whether <code class="docutils literal notranslate"><span class="pre">mat</span></code> shall be checked for validity.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+
+
+              </div>
+            </div>
+            <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="pyvinecopulib.CVineStructure.from_json.html" class="btn btn-neutral float-left" title="CVineStructure.from_json" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="pyvinecopulib.CVineStructure.from_order.html" class="btn btn-neutral float-right" title="CVineStructure.from_order" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p></p>
+  </div>
+
+   
+
+</footer>
+          </div>
+        </div>
+    </section>
+  </div>
+  <script>
+    jQuery(function () {
+      SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+
+</html>
