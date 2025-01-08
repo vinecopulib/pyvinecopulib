@@ -1,10 +1,12 @@
 # pyvinecopulib
 
-[![Build Status](https://github.com/vinecopulib/pyvinecopulib/workflows/Build%20Status/badge.svg?branch=main)](https://github.com/vinecopulib/pyvinecopulib/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Codacy Badge](https://api.codacy.com/project/badge/Grade/3c0056d3ca5244a5ba6a2b32f87be4cf)](https://www.codacy.com/gh/vinecopulib/pyvinecopulib?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=vinecopulib/pyvinecopulib&amp;utm_campaign=Badge_Grade)
 [![Documentation](https://img.shields.io/website/http/vinecopulib.github.io/pyvinecopulib.svg)](https://vinecopulib.github.io/pyvinecopulib/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Build Status](https://github.com/vinecopulib/pyvinecopulib/actions/workflows/pypi.yml/badge.svg)](https://github.com/vinecopulib/pyvinecopulib/actions/workflows/pypi.yml)
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/3c0056d3ca5244a5ba6a2b32f87be4cf)](https://www.codacy.com/gh/vinecopulib/pyvinecopulib?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=vinecopulib/pyvinecopulib&amp;utm_campaign=Badge_Grade)
 [![DOI](https://zenodo.org/badge/196999069.svg)](https://zenodo.org/badge/latestdoi/196999069)
+
+## Introduction
 
 ### What are vine copulas?
 
@@ -28,79 +30,59 @@ Advantages over VineCopula are
 * shorter runtimes and lower memory consumption, especially in high dimensions,
 * nonparametric and multi-parameter families.
 
-### Prerequisites
+### License
 
-* numpy (>=1.14)
-* matplotlib (>=3.0),
-* networkx (>=3.0),
-* pydot (>=3.0),
-* To install from source:
-    * pybind11 (>=2.4)
-    * setuptools (>=30.3.0)
-    * setuptools_scm (>=2.0.0)
-    * a compiler with C++11 support (Linux, OS X) or Visual Studio 2015 (required for all Python versions, see notes below)
-    * Eigen (the environment variable `EIGEN3_INCLUDE_DIR` must be set to the directory containing the Eigen headers)
-    * boost (the environment variable `Boost_INCLUDE_DIR` must be set to the directory containing the boost headers)
+pyvinecopulib is provided under an MIT license that can be found in the LICENSE
+file. By using, distributing, or contributing to this project, you agree to the
+terms and conditions of this license.
 
-### Installation
+### Contact
 
-#### With pip
+If you have any questions regarding the library, feel free to
+[open an issue](https://github.com/pyvinecopulib/pyvinecopulib/issues/new) or
+send a mail to <info@vinecopulib.org>.
+
+## Installation
+
+### With pip
 
 The latest release can be installed using `pip`:
 
-```
+```bash
 pip install pyvinecopulib
 ```
 
-#### With conda
+### With conda
 
-Installing `pyvinecopulib` from the `conda-forge` channel can be achieved by adding `conda-forge` to your channels with:
+Similarly, it can be installed with `conda`:
 
-```
-conda config --add channels conda-forge
-conda config --set channel_priority strict
-```
-
-Once the `conda-forge` channel has been enabled, `pyvinecopulib` can be installed with `conda`:
-
-```
-conda install pyvinecopulib
+```bash
+conda install conda-forge::pyvinecopulib
 ```
 
-or with `mamba`:
+Or with `mamba`:
 
-```
-mamba install pyvinecopulib
-```
-
-It is possible to list all of the versions of `pyvinecopulib` available on your platform with `conda`:
-
-```
-conda search pyvinecopulib --channel conda-forge
+```bash
+mamba install conda-forge::pyvinecopulib
 ```
 
-or with `mamba`:
+### From source
 
-```
-mamba search pyvinecopulib --channel conda-forge
-```
+The main build time prerequisites are:
 
-Alternatively, `mamba repoquery` may provide more information:
+* scikit-build-core (>=0.4.3),
+* nanobind (>=1.3.2),
+* a compiler with C++17 support.
 
-```
-# Search all versions available on your platform:
-mamba repoquery search pyvinecopulib --channel conda-forge
+To install from source, `Eigen` and `Boost` also need to be available, and CMake will try to find suitable versions automatically.
+A reproducible environment, also including requirements for the `pyvinecopulib`'s development and documentation, can be created using:
 
-# List packages depending on `pyvinecopulib`:
-mamba repoquery whoneeds pyvinecopulib --channel conda-forge
-
-# List dependencies of `pyvinecopulib`:
-mamba repoquery depends pyvinecopulib --channel conda-forge
+```bash
+mamba create -n pyvinecopulib eigen boost nanobind scikit-build-core numpy pydot networkx matplotlib mypy ruff pytest sphinx-rtd-theme sphinx-autodoc-typehints nbsphinx myst-parser python=3.11
+mamba activate pyvinecopulib
 ```
 
-#### From source
-
-To install from source, Eigen and Boost need to be available on your system for the build to succeed, using the environment variables `EIGEN3_INCLUDE_DIR` and `Boost_INCLUDE_DIR` respectively.
+You can also specify the location if `Eigen` and `Boost` manually using the environment variables `EIGEN3_INCLUDE_DIR` and `Boost_INCLUDE_DIR` respectively.
 On Linux, you can install the required packages and set the environment variables as follows:
 
 ```bash
@@ -117,54 +99,13 @@ git clone --recursive https://github.com/vinecopulib/pyvinecopulib.git
 pip install ./pyvinecopulib
 ```
 
-If the required dependencies are not installed, a reproducible environment, which also include stuff requirement for the library's development and documentation, can be created using:
 
-```bash
-mamba create -n pyvinecopulib numpy mypy ruff pytest sphinx-rtd-theme sphinx-autodoc-typehints pydot networkx matplotlib pybind11 setuptools-scm python=3.11
-mamba activate pyvinecopulib
-```
-
-### Examples
-
-Jupyter notebooks with examples can be found in the examples folder.
-
-### Documentation
-
-For documentation of the `pyvinecopulib`'s functionality and
-instructions how to use it, check out our
-[website](https://vinecopulib.github.io/pyvinecopulib/) or the `docs/` folder
-in this repository.
-
-#### Building the documentation
+### Building the documentation
 
 Documentation for the example project is generated using Sphinx and the "Read the Docs" theme.
 The following command generates HTML-based reference documentation; for other
 formats please refer to the Sphinx manual:
 
-* `pip install sphinx-rtd-theme sphinx-autodoc-typehints`
+* `pip install sphinx-rtd-theme sphinx-autodoc-typehints nbsphinx recommonmark`
 * `cd pyvinecopulib/docs`
 * `python serve_sphinx.py`
-
-### License
-
-pyvinecopulib is provided under an MIT license that can be found in the LICENSE
-file. By using, distributing, or contributing to this project, you agree to the
-terms and conditions of this license.
-
-### Special notes for Windows
-
-**Compiler requirements**
-
-This package requires a C++11 compliant compiler, i.e Visual Studio 2015 on Windows.
-Unlike regular C extension modules, it's perfectly fine to compile a pyvinecopulib module with a VS version newer than the target Python's VS version.
-
-**Runtime requirements**
-
-The Visual C++ 2015 redistributable packages are a runtime requirement for this
-project.
-
-### Contact
-
-If you have any questions regarding the library, feel free to
-[open an issue](https://github.com/pyvinecopulib/pyvinecopulib/issues/new) or
-send a mail to <info@vinecopulib.org>.

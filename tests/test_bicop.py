@@ -3,6 +3,7 @@ import shutil
 
 import numpy as np
 import pytest
+
 import pyvinecopulib as pv
 
 
@@ -16,9 +17,9 @@ def test_bicop():
   assert bicop.var_types == ["c", "c"]
 
   # Test initialization with arguments
-  data = [[0.1, 0.2], [0.3, 0.4]]
+  data = np.array([[0.1, 0.2], [0.3, 0.4]])
   controls = pv.FitControlsBicop()
-  bicop = pv.Bicop(data, controls)
+  bicop = pv.Bicop.from_data(data, controls)
 
   assert bicop.family == pv.BicopFamily.indep
   assert bicop.rotation == 0
@@ -26,12 +27,17 @@ def test_bicop():
   assert bicop.var_types == ["c", "c"]
 
   # Test to_json method
+  new_bicop = pv.Bicop.from_json(bicop.to_json())
+  assert bicop.family == new_bicop.family
+  assert bicop.rotation == new_bicop.rotation
+  assert bicop.parameters.shape == new_bicop.parameters.shape
+  assert bicop.var_types == new_bicop.var_types
   test_folder = "test_dump"
   os.makedirs(test_folder, exist_ok=True)
   filename = test_folder + "/test_bicop.json"
-  bicop.to_json(filename)
+  bicop.to_file(filename)
   assert os.path.exists(filename)
-  new_bicop = pv.Bicop(filename)
+  new_bicop = pv.Bicop.from_file(filename)
   assert bicop.family == new_bicop.family
   assert bicop.rotation == new_bicop.rotation
   assert bicop.parameters.shape == new_bicop.parameters.shape
@@ -44,7 +50,7 @@ def test_bicop():
   with pytest.raises(RuntimeError):
     bicop.rotation = 45
 
-  bicop.parameters = [3]
+  bicop.parameters = np.array([[3.0]])
   assert bicop.parameters.shape == (1, 1)
 
   bicop.var_types = ["d", "d"]
@@ -58,7 +64,7 @@ def test_bicop():
 
   # Test loglik method
   bicop.var_types = ["c", "c"]
-  u = [[0.1, 0.2], [0.3, 0.4]]
+  u = np.array([[0.1, 0.2], [0.3, 0.4]])
   loglik = bicop.loglik(u)
   assert isinstance(loglik, float)
 
@@ -82,7 +88,7 @@ def test_bicop():
   assert isinstance(bicop.str(), str)
 
   # Test parameters_to_tau method
-  parameters = [[0.5, 0.6], [0.7, 0.8]]
+  parameters = np.array([[0.5, 0.6], [0.7, 0.8]])
   tau = bicop.parameters_to_tau(parameters)
   assert isinstance(tau, float)
 
@@ -92,11 +98,11 @@ def test_bicop():
   assert isinstance(parameters, np.ndarray)
 
   # Test parameters_lower_bounds method
-  lower_bounds = bicop.parameters_lower_bounds()
+  lower_bounds = bicop.parameters_lower_bounds
   assert isinstance(lower_bounds, np.ndarray)
 
   # Test parameters_upper_bounds method
-  upper_bounds = bicop.parameters_upper_bounds()
+  upper_bounds = bicop.parameters_upper_bounds
   assert isinstance(upper_bounds, np.ndarray)
 
   for method in ["pdf", "cdf", "hfunc1", "hfunc2", "hinv1", "hinv2"]:
@@ -112,14 +118,12 @@ def test_bicop():
   assert samples.shape == (n, 2)
 
   # Test fit method
-  data = [[0.1, 0.2], [0.3, 0.4]]
   controls = pv.FitControlsBicop()
-  bicop.fit(data, controls)
+  bicop.fit(u, controls)
 
   # Test select method
-  data = [[0.1, 0.2], [0.3, 0.4]]
   controls = pv.FitControlsBicop()
-  bicop.select(data, controls)
+  bicop.select(u, controls)
 
   # Clean up
   shutil.rmtree(test_folder)

@@ -100,3 +100,5 @@ _deps
 CMakeUserPresets.json
 
 pyvinecopulib-*.json
+
+.mypy_cache/
