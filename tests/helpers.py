@@ -19,17 +19,14 @@ def compare_properties(obj1, obj2, attrs, subclass=False):
   else:
     assert type(obj1) is type(obj2), "Objects must be of the same type"
   for attr in attrs:
-    try:
-      val1 = getattr(obj1, attr)
-      val2 = getattr(obj2, attr)
-      if isinstance(val1, np.ndarray):
-        assert isinstance(val2, np.ndarray) and np.array_equal(
-          val1, val2
-        ), f"Mismatch in {attr}: {val1} != {val2}"
-      else:
-        assert val1 == val2, f"Mismatch in {attr}: {val1} != {val2}"
-    except AttributeError:
-      pass  # Skip inaccessible attributes
+    val1 = getattr(obj1, attr)
+    val2 = getattr(obj2, attr)
+    if isinstance(val1, np.ndarray):
+      assert isinstance(val2, np.ndarray) and np.array_equal(
+        val1, val2
+      ), f"Mismatch in {attr}: {val1} != {val2}"
+    else:
+      assert val1 == val2, f"Mismatch in {attr}: {val1} != {val2}"
 
 
 def compare_bicop(cop1, cop2):
@@ -42,8 +39,8 @@ def compare_vinecop(cop1, cop2):
   compare_properties(cop1, cop2, attrs)
 
   d = cop1.dim
-  # Ensure the deserialized object has the same attributes as the original
-  for t in range(d):
+  trunc_lvl = cop1.trunc_lvl
+  for t in range(trunc_lvl):
     for e in range(d - t - 1):
       bicop1 = cop1.get_pair_copula(t, e)
       bicop2 = cop2.get_pair_copula(t, e)
