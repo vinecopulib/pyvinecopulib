@@ -330,5 +330,21 @@ are:
       nb::cast<std::string>(
         nb::module_::import_("pyvinecopulib._python_helpers.vinecop")
           .attr("VINECOP_PLOT_DOC"))
-        .c_str());
+        .c_str())
+    .def("__getstate__",
+         [](const Vinecop& cop) {
+           return std::make_tuple(cop.get_rvine_structure().to_json().dump(),
+                                  cop.get_all_pair_copulas(),
+                                  cop.get_var_types());
+         })
+    .def("__setstate__",
+         [](Vinecop& cop,
+            std::tuple<std::string,
+                       std::vector<std::vector<Bicop>>,
+                       std::vector<std::string>> state) {
+           nlohmann::json json_obj = nlohmann::json::parse(std::get<0>(state));
+           RVineStructure structure = RVineStructure(json_obj);
+           new (&cop)
+             Vinecop(structure, std::get<1>(state), std::get<2>(state));
+         });
 }

@@ -4,6 +4,7 @@
 #include <nanobind/eigen/dense.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/string.h>
+#include <nanobind/stl/tuple.h>
 #include <nanobind/stl/vector.h>
 #include <vinecopulib.hpp>
 
@@ -86,5 +87,38 @@ init_bicop_fit_controls(nb::module_& module)
          [](const FitControlsBicop& controls) {
            return "<pyvinecopulib.FitControlsBicop>\n" + controls.str();
          })
-    .def("str", &FitControlsBicop::str, fitcontrolsbicop_doc.str.doc);
+    .def("str", &FitControlsBicop::str, fitcontrolsbicop_doc.str.doc)
+    .def("__getstate__",
+         [](const FitControlsBicop& controls) {
+           return std::make_tuple(controls.get_family_set(),
+                                  controls.get_parametric_method(),
+                                  controls.get_nonparametric_method(),
+                                  controls.get_nonparametric_mult(),
+                                  controls.get_selection_criterion(),
+                                  controls.get_weights(),
+                                  controls.get_psi0(),
+                                  controls.get_preselect_families(),
+                                  controls.get_num_threads());
+         })
+    .def("__setstate__",
+         [](FitControlsBicop& controls,
+            std::tuple<std::vector<BicopFamily>,
+                       std::string,
+                       std::string,
+                       double,
+                       std::string,
+                       const Eigen::VectorXd&,
+                       double,
+                       bool,
+                       size_t> state) {
+           new (&controls) FitControlsBicop(std::get<0>(state),
+                                            std::get<1>(state),
+                                            std::get<2>(state),
+                                            std::get<3>(state),
+                                            std::get<4>(state),
+                                            std::get<5>(state),
+                                            std::get<6>(state),
+                                            std::get<7>(state),
+                                            std::get<8>(state));
+         });
 }

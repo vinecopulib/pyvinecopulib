@@ -4,6 +4,7 @@
 #include <nanobind/eigen/dense.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/string.h>
+#include <nanobind/stl/tuple.h>
 #include <nanobind/stl/vector.h>
 #include <vinecopulib.hpp>
 
@@ -120,9 +121,70 @@ init_vinecop_fit_controls(nb::module_& module)
                  &FitControlsVinecop::get_num_threads,
                  &FitControlsVinecop::set_num_threads,
                  "The number of threads.")
+    .def_prop_rw("mst_algorithm",
+                 &FitControlsVinecop::get_mst_algorithm,
+                 &FitControlsVinecop::set_mst_algorithm,
+                 "The minimum spanning tree algorithm.")
     .def("__repr__",
          [](const FitControlsVinecop& controls) {
            return "<pyvinecopulib.FitControlsVinecop>\n" + controls.str();
          })
-    .def("str", &FitControlsVinecop::str, fitcontrolsvinecop_doc.str.doc);
+    .def("str", &FitControlsVinecop::str, fitcontrolsvinecop_doc.str.doc)
+    .def("__getstate__",
+         [](const FitControlsVinecop& controls) {
+           return std::make_tuple(controls.get_family_set(),
+                                  controls.get_parametric_method(),
+                                  controls.get_nonparametric_method(),
+                                  controls.get_nonparametric_mult(),
+                                  controls.get_trunc_lvl(),
+                                  controls.get_tree_criterion(),
+                                  controls.get_threshold(),
+                                  controls.get_selection_criterion(),
+                                  controls.get_weights(),
+                                  controls.get_psi0(),
+                                  controls.get_preselect_families(),
+                                  controls.get_select_trunc_lvl(),
+                                  controls.get_select_threshold(),
+                                  controls.get_select_families(),
+                                  controls.get_show_trace(),
+                                  controls.get_num_threads(),
+                                  controls.get_mst_algorithm());
+         })
+    .def("__setstate__",
+         [](FitControlsVinecop& controls,
+            std::tuple<std::vector<BicopFamily>,
+                       std::string,
+                       std::string,
+                       double,
+                       size_t,
+                       std::string,
+                       double,
+                       std::string,
+                       Eigen::VectorXd,
+                       double,
+                       bool,
+                       bool,
+                       bool,
+                       bool,
+                       bool,
+                       size_t,
+                       std::string> state) {
+           new (&controls) FitControlsVinecop(std::get<0>(state),
+                                              std::get<1>(state),
+                                              std::get<2>(state),
+                                              std::get<3>(state),
+                                              std::get<4>(state),
+                                              std::get<5>(state),
+                                              std::get<6>(state),
+                                              std::get<7>(state),
+                                              std::get<8>(state),
+                                              std::get<9>(state),
+                                              std::get<10>(state),
+                                              std::get<11>(state),
+                                              std::get<12>(state),
+                                              std::get<13>(state),
+                                              std::get<14>(state),
+                                              std::get<15>(state),
+                                              std::get<16>(state));
+         });
 }
