@@ -15,6 +15,8 @@ from .helpers import (
 
 def test_fitcontrolsbicop():
   original_controls = pv.FitControlsBicop()
+  original_controls.family_set = pv.itau
+  original_controls.parametric_method = "itau"
 
   # Serialize the object
   serialized = pickle.dumps(original_controls)
@@ -40,6 +42,8 @@ def test_fitcontrolsbicop():
 def test_fitcontrolsvinecop():
   # Create an instance of FitControlsVinecop with some configuration
   original_controls = pv.FitControlsVinecop()
+  original_controls.family_set = pv.itau
+  original_controls.parametric_method = "itau"
 
   # Serialize the object
   serialized = pickle.dumps(original_controls)
