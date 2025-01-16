@@ -46,8 +46,6 @@ init_bicop_family(nb::module_& module)
      ``bb1``, ``bb7``,  ``tawn``),
    - ``ut`` contains the families that are upper-tail dependent (``gumbel``,
      ``joe``, ``bb1``, ``bb6``, ``bb7``, ``bb8``, ``tawn``),
-   - ``flip_by_rotation`` contains families that can be flipped by rotation 
-     (``clayton``, ``gumbel``, ``frank`` , ``joe``, ``bb1``, ``bb6``, ``bb7``, ``bb8``, ``tawn``),
    - ``rotationless`` contains families that don't have a rotation 
      because they already cover positive and negative dependence (``indep``, ``gaussian``, ``student``, ``frank``, ``tll``).
    )pbdoc")
@@ -80,5 +78,4 @@ init_bicop_family(nb::module_& module)
   module.attr("lt") = bicop_families::lt;
   module.attr("ut") = bicop_families::ut;
   module.attr("itau") = bicop_families::itau;
-  module.attr("flip_by_rotation") = bicop_families::flip_by_rotation;
 }

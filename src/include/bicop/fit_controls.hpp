@@ -29,6 +29,7 @@ init_bicop_fit_controls(nb::module_& module)
                   const Eigen::VectorXd&,
                   double,
                   bool,
+                  bool,
                   size_t>(),
          fitcontrolsbicop_doc.ctor.doc_9args,
          "family_set"_a = bicop_families::all,
@@ -39,6 +40,7 @@ init_bicop_fit_controls(nb::module_& module)
          "weights"_a = Eigen::VectorXd(),
          "psi0"_a = 0.9,
          "preselect_families"_a = true,
+         "allow_rotations"_a = true,
          "num_threads"_a = 1)
     /*      .def(nb::init<std::string>(), */
     //      "creates default controls except for the parameteric method.",
@@ -79,6 +81,10 @@ init_bicop_fit_controls(nb::module_& module)
                  &FitControlsBicop::set_preselect_families,
                  "Whether to exclude families based on symmetry properties "
                  "of the data.")
+    .def_prop_rw("allow_rotations",
+                 &FitControlsBicop::get_allow_rotations,
+                 &FitControlsBicop::set_allow_rotations,
+                 "Whether to allow rotations for the families.")
     .def_prop_rw("num_threads",
                  &FitControlsBicop::get_num_threads,
                  &FitControlsBicop::set_num_threads,
@@ -98,6 +104,7 @@ init_bicop_fit_controls(nb::module_& module)
                                   controls.get_weights(),
                                   controls.get_psi0(),
                                   controls.get_preselect_families(),
+                                  controls.get_allow_rotations(),
                                   controls.get_num_threads());
          })
     .def("__setstate__",
@@ -110,15 +117,20 @@ init_bicop_fit_controls(nb::module_& module)
                        const Eigen::VectorXd&,
                        double,
                        bool,
+                       bool,
                        size_t> state) {
-           new (&controls) FitControlsBicop(std::get<0>(state),
-                                            std::get<1>(state),
-                                            std::get<2>(state),
-                                            std::get<3>(state),
-                                            std::get<4>(state),
-                                            std::get<5>(state),
-                                            std::get<6>(state),
-                                            std::get<7>(state),
-                                            std::get<8>(state));
+           FitControlsConfig config;
+           config.family_set = std::get<0>(state);
+           config.parametric_method = std::get<1>(state);
+           config.nonparametric_method = std::get<2>(state);
+           config.nonparametric_mult = std::get<3>(state);
+           config.selection_criterion = std::get<4>(state);
+           config.weights = std::get<5>(state);
+           config.psi0 = std::get<6>(state);
+           config.preselect_families = std::get<7>(state);
+           config.allow_rotations = std::get<8>(state);
+           config.num_threads = std::get<9>(state);
+
+           new (&controls) FitControlsBicop(config);
          });
 }

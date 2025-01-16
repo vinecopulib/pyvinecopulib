@@ -37,7 +37,8 @@ init_vinecop_fit_controls(nb::module_& module)
                   bool,
                   bool,
                   size_t,
-                  std::string>(),
+                  std::string,
+                  bool>(),
          "family_set"_a = bicop_families::all,
          "parametric_method"_a = "mle",
          "nonparametric_method"_a = "constant",
@@ -55,6 +56,7 @@ init_vinecop_fit_controls(nb::module_& module)
          "show_trace"_a = false,
          "num_threads"_a = 1,
          "mst_algorithm"_a = "prim",
+         "allow_rotations"_a = true,
          fitcontrolsvinecop_doc.ctor.doc_17args)
     .def_prop_rw("family_set",
                  &FitControlsVinecop::get_family_set,
@@ -125,6 +127,10 @@ init_vinecop_fit_controls(nb::module_& module)
                  &FitControlsVinecop::get_mst_algorithm,
                  &FitControlsVinecop::set_mst_algorithm,
                  "The minimum spanning tree algorithm.")
+    .def_prop_rw("allow_rotations",
+                 &FitControlsVinecop::get_allow_rotations,
+                 &FitControlsVinecop::set_allow_rotations,
+                 "Whether to allow rotations for the families.")
     .def("__repr__",
          [](const FitControlsVinecop& controls) {
            return "<pyvinecopulib.FitControlsVinecop>\n" + controls.str();
@@ -148,7 +154,8 @@ init_vinecop_fit_controls(nb::module_& module)
                                   controls.get_select_families(),
                                   controls.get_show_trace(),
                                   controls.get_num_threads(),
-                                  controls.get_mst_algorithm());
+                                  controls.get_mst_algorithm(),
+                                  controls.get_allow_rotations());
          })
     .def("__setstate__",
          [](FitControlsVinecop& controls,
@@ -168,23 +175,28 @@ init_vinecop_fit_controls(nb::module_& module)
                        bool,
                        bool,
                        size_t,
-                       std::string> state) {
-           new (&controls) FitControlsVinecop(std::get<0>(state),
-                                              std::get<1>(state),
-                                              std::get<2>(state),
-                                              std::get<3>(state),
-                                              std::get<4>(state),
-                                              std::get<5>(state),
-                                              std::get<6>(state),
-                                              std::get<7>(state),
-                                              std::get<8>(state),
-                                              std::get<9>(state),
-                                              std::get<10>(state),
-                                              std::get<11>(state),
-                                              std::get<12>(state),
-                                              std::get<13>(state),
-                                              std::get<14>(state),
-                                              std::get<15>(state),
-                                              std::get<16>(state));
+                       std::string,
+                       bool> state) {
+           FitControlsConfig config;
+           config.family_set = std::get<0>(state);
+           config.parametric_method = std::get<1>(state);
+           config.nonparametric_method = std::get<2>(state);
+           config.nonparametric_mult = std::get<3>(state);
+           config.trunc_lvl = std::get<4>(state);
+           config.tree_criterion = std::get<5>(state);
+           config.threshold = std::get<6>(state);
+           config.selection_criterion = std::get<7>(state);
+           config.weights = std::get<8>(state);
+           config.psi0 = std::get<9>(state);
+           config.preselect_families = std::get<10>(state);
+           config.select_trunc_lvl = std::get<11>(state);
+           config.select_threshold = std::get<12>(state);
+           config.select_families = std::get<13>(state);
+           config.show_trace = std::get<14>(state);
+           config.num_threads = std::get<15>(state);
+           config.mst_algorithm = std::get<16>(state);
+           config.allow_rotations = std::get<17>(state);
+
+           new (&controls) FitControlsVinecop(config);
          });
 }
