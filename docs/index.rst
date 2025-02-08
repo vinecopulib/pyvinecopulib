@@ -15,10 +15,6 @@ pyvinecopulib
    :target: https://github.com/vinecopulib/pyvinecopulib/actions/workflows/pypi.yml
    :alt: Build Status
 
-.. image:: https://api.codacy.com/project/badge/Grade/3c0056d3ca5244a5ba6a2b32f87be4cf
-   :target: https://www.codacy.com/gh/vinecopulib/pyvinecopulib?utm_source=github.com&utm_medium=referral&utm_content=vinecopulib/pyvinecopulib&utm_campaign=Badge_Grade
-   :alt: Codacy Badge
-
 .. image:: https://zenodo.org/badge/196999069.svg
    :target: https://zenodo.org/badge/latestdoi/196999069
    :alt: DOI
