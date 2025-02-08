@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.1
+
+## Bug fixes in `pyvinecopulib`
+
+## New features in `pyvinecopulib`
+
+* Add pickle support for all classes (#168)
+
 ## 0.7.0
 
 This version introduces a switch to nanobind as a backend (#160): i.e., the C++ bindings, now use [nanobind](https://nanobind.readthedocs.io/) instead of [pybind11](https://pybind11.readthedocs.io/).
