@@ -4,6 +4,8 @@
 
 ## Bug fixes in `pyvinecopulib`
 
+* Upgrade nanobind to allow for single row matrices (fix #169 and #170)
+
 ## New features in `pyvinecopulib`
 
 * Add pickle support for all classes (#168)
