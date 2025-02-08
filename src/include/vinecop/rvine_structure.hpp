@@ -48,7 +48,8 @@ rv_from_file(const std::string& filename, bool check = true)
 inline RVineStructure
 rv_from_json(const std::string& json, bool check = true)
 {
-  return RVineStructure(json, check);
+  nlohmann::json json_obj = nlohmann::json::parse(json);
+  return RVineStructure(json_obj, check);
 }
 
 inline void
@@ -158,7 +159,15 @@ Alternatives to instantiate structures are:
          [](const RVineStructure& rvs) {
            return "<pyvinecopulib.RVineStructure>\n" + rvs.str();
          })
-    .def("str", &RVineStructure::str, rvinestructure_doc.str.doc);
+    .def("str", &RVineStructure::str, rvinestructure_doc.str.doc)
+    .def("__getstate__",
+         [](const RVineStructure& rvinestruct) {
+           return rvinestruct.to_json().dump();
+         })
+    .def("__setstate__", [](RVineStructure& rvinestruct, std::string state) {
+      nlohmann::json json_obj = nlohmann::json::parse(state);
+      new (&rvinestruct) RVineStructure(json_obj);
+    });
 
   nb::class_<DVineStructure, RVineStructure>(
     module, "DVineStructure", dvinestructure_doc.doc)
