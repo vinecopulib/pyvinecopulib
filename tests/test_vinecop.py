@@ -42,6 +42,13 @@ def test_vinecop():
     assert isinstance(values, np.ndarray)
     assert values.shape == (n,)
 
+  # Test passing a single row of data (#169 & #170 fix)
+  u1 = u[0, :].reshape(1, d)
+  for method in ["pdf", "cdf"]:
+    values = getattr(cop, method)(u1)
+    assert isinstance(values, np.ndarray)
+    assert values.shape == (1,)
+
   # Test simulate method
   simulated_data = cop.simulate(n)
   assert simulated_data.shape == (n, d)

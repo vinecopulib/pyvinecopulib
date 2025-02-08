@@ -63,12 +63,12 @@ def test_bicop():
     bicop.npars = 2
 
   # Test passing a single row of data (#169 & #170 fix)
+  bicop.var_types = ["c", "c"]
   u = np.array([[0.1, 0.2]])
   d = bicop.pdf(u)
   assert isinstance(d, np.ndarray) and d.shape == (1,)
 
   # Test loglik method
-  bicop.var_types = ["c", "c"]
   u = np.array([[0.1, 0.2], [0.3, 0.4]])
   loglik = bicop.loglik(u)
   assert isinstance(loglik, float)
