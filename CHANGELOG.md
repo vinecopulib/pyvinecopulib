@@ -9,6 +9,25 @@
 ## New features in `pyvinecopulib`
 
 * Add pickle support for all classes (#168)
+* Add `allow_rotation` option to `FitControlsBicop` and `FitControlsVinecop` (#168)
+
+## Changes in `vinecopulib`
+
+These changes originate from the underlying C++ library, [`vinecopulib`](https://github.com/vinecopulib/vinecopulib), which powers `pyvinecopulib`.
+
+### NEW FEATURES
+
+* add `allow_rotation` option to `FitControlsBicop` and `FitControlsVinecop`
+  to allow for the rotation of the pair copulas ([#628](https://github.com/vinecopulib/vinecopulib/pull/628)).
+* add a `FitControlsConfig` struct to create flexible and yet safe constructors
+  for `FitControlsBicop` and `FitControlsVinecop` ([#629](https://github.com/vinecopulib/vinecopulib/pull/629)).
+
+### BUG FIXES
+
+* restrict parameter range for fitting Tawn copulas; fix handling of their
+  shape/argument order ([#620](https://github.com/vinecopulib/vinecopulib/pull/620)).
+* compute and save loglik/nobs in `Vinecop::fit()` ([#623](https://github.com/vinecopulib/vinecopulib/pull/623))
+* disable unwanted compiler output related to BOOST_CONCEPT checks ([#624](https://github.com/vinecopulib/vinecopulib/pull/624))
 
 ## 0.7.0
 

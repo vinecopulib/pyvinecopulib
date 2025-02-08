@@ -36,30 +36,22 @@ def process_changelog(text, repo_url):
 
 # Example changelog
 changelog_text = """
-#### New features
+### NEW FEATURES
 
-* Use analytical derivatives in discrete pdf/hfuncs (#572)
-* Allow for alternative for `"prim"` vs `"kruskal"` in MST-based model selection (#577)
-* Improve the dependencies install script to use it in other projects (#576)
-* Add tawn copula (#579)
-* Improve doc (#580, #585, #607)
-* Allow for the discrete Rosenblatt transform (#581)
-* Add `Vinecop::fit()` (#584)
-* Improve `Bicop::str()` (#588) and `Vinecop::str()` (#589)
-* Properly handle discrete variables for the TLL family (#597)
-* Weighted pseudo-observations (#602)
-* Cross-platform random numbers and add seeds options to `to_pseudo_obs` (#603)
-* Improve performance by
-    * aligning with the `R` defaults (e.g., `BOOST_NO_AUTO_PTR`, `BOOST_ALLOW_DEPRECATED_HEADERS`, `BOOST_MATH_PROMOTE_DOUBLE_POLICY=false`, `std::string nonparametric_method = "constant"` for the TLL instead of `"quadratic"`, `-O3 -march=native` compiler flags) and add benchmarking example (#592, #611, #613),
-    * using `Eigen` element-wise operations instead of `boost` whenever possible (#598, #612),
-    * using binary search in the TLL for `get_indices` (#613).
+* add `allow_rotation` option to `FitControlsBicop` and `FitControlsVinecop`
+  to allow for the rotation of the pair copulas (#628).
 
-#### Bug fixes
+* add a `FitControlsConfig` struct to create flexible and yet safe constructors
+  for `FitControlsBicop` and `FitControlsVinecop` (#629).
 
-* Improve stability in BB7 PDF (#573)
-* Revamped CI/CD pipeline, tests discoverable by CTest, boost version on windows (66cf8b0)
-* Fix ASAN issues (#583)
-* Fix interface includes and other CMake issue (#586, #599, #601, #608), by @jschueller
+### BUG FIXES
+
+* restrict parameter range for fitting Tawn copulas; fix handling of their 
+  shape/argument order (#620).
+
+* compute and save loglik/nobs in `Vinecop::fit()` (#623)
+
+* disable unwanted compiler output related to BOOST_CONCEPT checks (#624)
 """
 
 # Repository URL
