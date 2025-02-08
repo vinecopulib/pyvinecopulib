@@ -11,9 +11,9 @@
 * Add pickle support for all classes (#168)
 * Add `allow_rotation` option to `FitControlsBicop` and `FitControlsVinecop` (#168)
 
-## Changes in `vinecopulib`
+## Changes in `vinecopulib` version 0.7.1
 
-These changes originate from the underlying C++ library, [`vinecopulib`](https://github.com/vinecopulib/vinecopulib), which powers `pyvinecopulib`.
+These changes originate from the latest release of [`vinecopulib`](https://github.com/vinecopulib/vinecopulib/releases/tag/v0.7.1), the C++ library which powers `pyvinecopulib`.
 
 ### NEW FEATURES
 
