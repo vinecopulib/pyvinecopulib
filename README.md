@@ -3,7 +3,6 @@
 [![Documentation](https://img.shields.io/website/http/vinecopulib.github.io/pyvinecopulib.svg)](https://vinecopulib.github.io/pyvinecopulib/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build Status](https://github.com/vinecopulib/pyvinecopulib/actions/workflows/pypi.yml/badge.svg)](https://github.com/vinecopulib/pyvinecopulib/actions/workflows/pypi.yml)
-[![Codacy Badge](https://api.codacy.com/project/badge/Grade/3c0056d3ca5244a5ba6a2b32f87be4cf)](https://www.codacy.com/gh/vinecopulib/pyvinecopulib?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=vinecopulib/pyvinecopulib&amp;utm_campaign=Badge_Grade)
 [![DOI](https://zenodo.org/badge/196999069.svg)](https://zenodo.org/badge/latestdoi/196999069)
 
 ## Introduction
@@ -71,7 +70,7 @@ mamba install conda-forge::pyvinecopulib
 The main build time prerequisites are:
 
 * scikit-build-core (>=0.4.3),
-* nanobind (>=1.3.2),
+* nanobind (>=2.5.0),
 * a compiler with C++17 support.
 
 To install from source, `Eigen` and `Boost` also need to be available, and CMake will try to find suitable versions automatically.

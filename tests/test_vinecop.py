@@ -5,15 +5,8 @@ import numpy as np
 
 import pyvinecopulib as pv
 
+from .helpers import compare_rvinestructure, compare_vinecop, random_data
 
-def random_data(d=5, n=1000):
-  # Simulate some data
-  np.random.seed(1234)  # seed for the random generator
-  mean = np.random.normal(size=d)  # mean vector
-  cov = np.random.normal(size=(d, d))  # covariance matrix
-  cov = np.dot(cov.transpose(), cov)  # make it non-negative definite
-  x = np.random.multivariate_normal(mean, cov, n)
-  return x
 
 def test_vinecop():
   d = 5
@@ -49,6 +42,13 @@ def test_vinecop():
     assert isinstance(values, np.ndarray)
     assert values.shape == (n,)
 
+  # Test passing a single row of data (#169 & #170 fix)
+  u1 = u[0, :].reshape(1, d)
+  for method in ["pdf", "cdf"]:
+    values = getattr(cop, method)(u1)
+    assert isinstance(values, np.ndarray)
+    assert values.shape == (1,)
+
   # Test simulate method
   simulated_data = cop.simulate(n)
   assert simulated_data.shape == (n, d)
@@ -79,17 +79,40 @@ def test_vinecop():
 
   # Test to_json and from_json
   new_cop = pv.Vinecop.from_json(cop.to_json())
-  assert new_cop.dim == cop.dim
-  assert new_cop.trunc_lvl == cop.trunc_lvl
-  assert new_cop.order == cop.order
+  compare_vinecop(cop, new_cop)
   test_folder = "test_dump"
   os.makedirs(test_folder, exist_ok=True)
   filename = test_folder + "/test_vinecop.json"
   cop.to_file(filename)
   new_cop = pv.Vinecop.from_file(filename)
-  assert new_cop.dim == cop.dim
-  assert new_cop.trunc_lvl == cop.trunc_lvl
-  assert new_cop.order == cop.order
+  compare_vinecop(cop, new_cop)
+
+  # Clean up
+  shutil.rmtree(test_folder)
+
+
+def test_rvinestructure():
+  # Test RVineStructure class
+  rvine = pv.RVineStructure(5)
+  assert isinstance(rvine, pv.RVineStructure)
+  assert rvine.dim == 5
+  assert rvine.matrix.shape == (5, 5)
+  assert rvine.trunc_lvl == 4
+  assert rvine.order == list(range(1, 6))
+
+  # Should be the same as the previous one
+  dvine = pv.DVineStructure(rvine.order)
+  compare_rvinestructure(dvine, rvine, True)
+
+  # Test to_json and from_json
+  new_rvine = pv.RVineStructure.from_json(rvine.to_json())
+  compare_rvinestructure(rvine, new_rvine)
+  test_folder = "test_dump"
+  os.makedirs(test_folder, exist_ok=True)
+  filename = test_folder + "/test_rvine.json"
+  rvine.to_file(filename)
+  new_rvine = pv.RVineStructure.from_file(filename)
+  compare_rvinestructure(rvine, new_rvine)
 
   # Clean up
   shutil.rmtree(test_folder)

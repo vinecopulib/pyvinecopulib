@@ -3,6 +3,7 @@
 #include "docstr.hpp"
 #include <nanobind/eigen/dense.h>
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/tuple.h>
 #include <vinecopulib.hpp>
 
 namespace nb = nanobind;
@@ -208,5 +209,23 @@ Alternatives to instantiate bivariate copulas are:
       nb::cast<std::string>(
         nb::module_::import_("pyvinecopulib._python_helpers.bicop")
           .attr("BICOP_PLOT_DOC"))
-        .c_str());
+        .c_str())
+    .def("__getstate__",
+         [](const Bicop& cop) {
+           return std::make_tuple(cop.get_family(),
+                                  cop.get_rotation(),
+                                  cop.get_parameters(),
+                                  cop.get_var_types());
+         })
+    .def("__setstate__",
+         [](Bicop& cop,
+            std::tuple<BicopFamily,
+                       int,
+                       const Eigen::MatrixXd&,
+                       std::vector<std::string>> state) {
+           new (&cop) Bicop(std::get<0>(state),
+                            std::get<1>(state),
+                            std::get<2>(state),
+                            std::get<3>(state));
+         });
 }

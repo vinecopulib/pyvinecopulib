@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.7.1
+
+## Bug fixes in `pyvinecopulib`
+
+* Upgrade nanobind to allow for single row matrices (fix #169 and #170)
+
+## New features in `pyvinecopulib`
+
+* Add pickle support for all classes (#168)
+* Add `allow_rotation` option to `FitControlsBicop` and `FitControlsVinecop` (#168)
+
+## Changes in `vinecopulib` version 0.7.1
+
+These changes originate from the latest release of [`vinecopulib`](https://github.com/vinecopulib/vinecopulib/releases/tag/v0.7.1), the C++ library which powers `pyvinecopulib`.
+
+### NEW FEATURES
+
+* add `allow_rotation` option to `FitControlsBicop` and `FitControlsVinecop`
+  to allow for the rotation of the pair copulas ([#628](https://github.com/vinecopulib/vinecopulib/pull/628)).
+* add a `FitControlsConfig` struct to create flexible and yet safe constructors
+  for `FitControlsBicop` and `FitControlsVinecop` ([#629](https://github.com/vinecopulib/vinecopulib/pull/629)).
+
+### BUG FIXES
+
+* restrict parameter range for fitting Tawn copulas; fix handling of their
+  shape/argument order ([#620](https://github.com/vinecopulib/vinecopulib/pull/620)).
+* compute and save loglik/nobs in `Vinecop::fit()` ([#623](https://github.com/vinecopulib/vinecopulib/pull/623))
+* disable unwanted compiler output related to BOOST_CONCEPT checks ([#624](https://github.com/vinecopulib/vinecopulib/pull/624))
+
 ## 0.7.0
 
 This version introduces a switch to nanobind as a backend (#160): i.e., the C++ bindings, now use [nanobind](https://nanobind.readthedocs.io/) instead of [pybind11](https://pybind11.readthedocs.io/).
