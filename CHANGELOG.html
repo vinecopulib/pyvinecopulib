@@ -7,14 +7,14 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Changelog &mdash; pyvinecopulib 0.7.0 documentation</title>
+  <title>Changelog &mdash; pyvinecopulib 0.7.1 documentation</title>
   <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=fa44fd50" />
   <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
 
   
   <script src="_static/jquery.js?v=5d32c60e"></script>
   <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-  <script src="_static/documentation_options.js?v=423e15eb"></script>
+  <script src="_static/documentation_options.js?v=26f1c5af"></script>
   <script src="_static/doctools.js?v=9bcbadda"></script>
   <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
   <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -34,7 +34,7 @@
           
           
           <a href="index.html"  class="icon icon-home" >
-            pyvinecopulib 0.7.0
+            pyvinecopulib 0.7.1
             <img src="_static/pyvinecopulib.png" class="logo" alt="Logo" />
           </a>
 <div role="search">
@@ -50,13 +50,23 @@
 <li class="toctree-l1"><a class="reference internal" href="README.html">pyvinecopulib</a></li>
 <li class="toctree-l1"><a class="reference internal" href="features.html">API Documentation</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Changelog</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#id1">0.7.0</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#breaking-api-changes-in-pyvinecopulib">Breaking API changes in <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code></a></li>
-<li class="toctree-l3"><a class="reference internal" href="#new-features-in-pyvinecopulib">New features in <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="#id1">0.7.1</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#bug-fixes-in-pyvinecopulib">Bug fixes in <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#new-features-in-pyvinecopulib">New features in <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#changes-in-vinecopulib-version-0-7-1">Changes in <code class="docutils literal notranslate"><span class="pre">vinecopulib</span></code> version 0.7.1</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#new-features">NEW FEATURES</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#bug-fixes">BUG FIXES</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#id2">0.7.0</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#breaking-api-changes-in-pyvinecopulib">Breaking API changes in <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id3">New features in <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#id4">Bug fixes in <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#changes-in-vinecopulib">Changes in <code class="docutils literal notranslate"><span class="pre">vinecopulib</span></code></a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#new-features">New features</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#bug-fixes">Bug fixes</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id5">New features</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#id6">Bug fixes</a></li>
 </ul>
 </li>
 </ul>
@@ -72,7 +82,7 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
         <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-        <a href="index.html">pyvinecopulib 0.7.0</a>
+        <a href="index.html">pyvinecopulib 0.7.1</a>
       </nav>
 
       <div class="wy-nav-content">
@@ -92,7 +102,45 @@
   <section id="changelog">
 <h1>Changelog<a class="headerlink" href="#changelog" title="Link to this heading"></a></h1>
 <section id="id1">
-<h2>0.7.0<a class="headerlink" href="#id1" title="Link to this heading"></a></h2>
+<h2>0.7.1<a class="headerlink" href="#id1" title="Link to this heading"></a></h2>
+<section id="bug-fixes-in-pyvinecopulib">
+<h3>Bug fixes in <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code><a class="headerlink" href="#bug-fixes-in-pyvinecopulib" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p>Upgrade nanobind to allow for single row matrices (fix #169 and #170)</p></li>
+</ul>
+</section>
+<section id="new-features-in-pyvinecopulib">
+<h3>New features in <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code><a class="headerlink" href="#new-features-in-pyvinecopulib" title="Link to this heading"></a></h3>
+<ul class="simple">
+<li><p>Add pickle support for all classes (#168)</p></li>
+<li><p>Add <code class="docutils literal notranslate"><span class="pre">allow_rotation</span></code> option to <code class="docutils literal notranslate"><span class="pre">FitControlsBicop</span></code> and <code class="docutils literal notranslate"><span class="pre">FitControlsVinecop</span></code> (#168)</p></li>
+</ul>
+</section>
+<section id="changes-in-vinecopulib-version-0-7-1">
+<h3>Changes in <code class="docutils literal notranslate"><span class="pre">vinecopulib</span></code> version 0.7.1<a class="headerlink" href="#changes-in-vinecopulib-version-0-7-1" title="Link to this heading"></a></h3>
+<p>These changes originate from the latest release of <a class="reference external" href="https://github.com/vinecopulib/vinecopulib/releases/tag/v0.7.1"><code class="docutils literal notranslate"><span class="pre">vinecopulib</span></code></a>, the C++ library which powers <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code>.</p>
+<section id="new-features">
+<h4>NEW FEATURES<a class="headerlink" href="#new-features" title="Link to this heading"></a></h4>
+<ul class="simple">
+<li><p>add <code class="docutils literal notranslate"><span class="pre">allow_rotation</span></code> option to <code class="docutils literal notranslate"><span class="pre">FitControlsBicop</span></code> and <code class="docutils literal notranslate"><span class="pre">FitControlsVinecop</span></code>
+to allow for the rotation of the pair copulas (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/628">#628</a>).</p></li>
+<li><p>add a <code class="docutils literal notranslate"><span class="pre">FitControlsConfig</span></code> struct to create flexible and yet safe constructors
+for <code class="docutils literal notranslate"><span class="pre">FitControlsBicop</span></code> and <code class="docutils literal notranslate"><span class="pre">FitControlsVinecop</span></code> (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/629">#629</a>).</p></li>
+</ul>
+</section>
+<section id="bug-fixes">
+<h4>BUG FIXES<a class="headerlink" href="#bug-fixes" title="Link to this heading"></a></h4>
+<ul class="simple">
+<li><p>restrict parameter range for fitting Tawn copulas; fix handling of their
+shape/argument order (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/620">#620</a>).</p></li>
+<li><p>compute and save loglik/nobs in <code class="docutils literal notranslate"><span class="pre">Vinecop::fit()</span></code> (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/623">#623</a>)</p></li>
+<li><p>disable unwanted compiler output related to BOOST_CONCEPT checks (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/624">#624</a>)</p></li>
+</ul>
+</section>
+</section>
+</section>
+<section id="id2">
+<h2>0.7.0<a class="headerlink" href="#id2" title="Link to this heading"></a></h2>
 <p>This version introduces a switch to nanobind as a backend (#160): i.e., the C++ bindings, now use <a class="reference external" href="https://nanobind.readthedocs.io/">nanobind</a> instead of <a class="reference external" href="https://pybind11.readthedocs.io/">pybind11</a>.
 It allows for considerable performance improvements (~8x speedup in our latest benchmarks) and smaller binaries.</p>
 <section id="breaking-api-changes-in-pyvinecopulib">
@@ -133,8 +181,8 @@ They have been replaced by a single constructor for each class, along with facto
 </li>
 </ul>
 </section>
-<section id="new-features-in-pyvinecopulib">
-<h3>New features in <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code><a class="headerlink" href="#new-features-in-pyvinecopulib" title="Link to this heading"></a></h3>
+<section id="id3">
+<h3>New features in <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code><a class="headerlink" href="#id3" title="Link to this heading"></a></h3>
 <ul class="simple">
 <li><p>Expose more structure methods to python (#157)</p></li>
 <li><p>Switch to nanobind as a backend (#160)</p></li>
@@ -144,8 +192,8 @@ They have been replaced by a single constructor for each class, along with facto
 <li><p>Convertion of all examples to Jupyter notebooks (#160)</p></li>
 </ul>
 </section>
-<section id="bug-fixes-in-pyvinecopulib">
-<h3>Bug fixes in <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code><a class="headerlink" href="#bug-fixes-in-pyvinecopulib" title="Link to this heading"></a></h3>
+<section id="id4">
+<h3>Bug fixes in <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code><a class="headerlink" href="#id4" title="Link to this heading"></a></h3>
 <ul class="simple">
 <li><p>Install and test source distribution (#164)</p></li>
 </ul>
@@ -153,8 +201,8 @@ They have been replaced by a single constructor for each class, along with facto
 <section id="changes-in-vinecopulib">
 <h3>Changes in <code class="docutils literal notranslate"><span class="pre">vinecopulib</span></code><a class="headerlink" href="#changes-in-vinecopulib" title="Link to this heading"></a></h3>
 <p>These changes originate from the underlying C++ library, <a class="reference external" href="https://github.com/vinecopulib/vinecopulib"><code class="docutils literal notranslate"><span class="pre">vinecopulib</span></code></a>, which powers <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code>.</p>
-<section id="new-features">
-<h4>New features<a class="headerlink" href="#new-features" title="Link to this heading"></a></h4>
+<section id="id5">
+<h4>New features<a class="headerlink" href="#id5" title="Link to this heading"></a></h4>
 <ul class="simple">
 <li><p>Use analytical derivatives in discrete pdf/hfuncs (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/572">#572</a>)</p></li>
 <li><p>Allow for alternative for <code class="docutils literal notranslate"><span class="pre">&quot;prim&quot;</span></code> vs <code class="docutils literal notranslate"><span class="pre">&quot;kruskal&quot;</span></code> in MST-based model selection (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/577">#577</a>)</p></li>
@@ -176,8 +224,8 @@ They have been replaced by a single constructor for each class, along with facto
 </li>
 </ul>
 </section>
-<section id="bug-fixes">
-<h4>Bug fixes<a class="headerlink" href="#bug-fixes" title="Link to this heading"></a></h4>
+<section id="id6">
+<h4>Bug fixes<a class="headerlink" href="#id6" title="Link to this heading"></a></h4>
 <ul class="simple">
 <li><p>Improve stability in BB7 PDF (<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/pull/573">#573</a>)</p></li>
 <li><p>Revamped CI/CD pipeline, tests discoverable by CTest, boost version on windows ((<a class="reference external" href="https://github.com/vinecopulib/vinecopulib/commit/66cf8b0">66cf8b0</a>))</p></li>

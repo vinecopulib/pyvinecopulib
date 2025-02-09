@@ -7,14 +7,14 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FitControlsBicop.__init__ &mdash; pyvinecopulib 0.7.0 documentation</title>
+  <title>FitControlsBicop.__init__ &mdash; pyvinecopulib 0.7.1 documentation</title>
   <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
   <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
 
   
   <script src="../_static/jquery.js?v=5d32c60e"></script>
   <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-  <script src="../_static/documentation_options.js?v=423e15eb"></script>
+  <script src="../_static/documentation_options.js?v=26f1c5af"></script>
   <script src="../_static/doctools.js?v=9bcbadda"></script>
   <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
   <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
@@ -34,7 +34,7 @@
           
           
           <a href="../index.html"  class="icon icon-home" >
-            pyvinecopulib 0.7.0
+            pyvinecopulib 0.7.1
             <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo" />
           </a>
 <div role="search">
@@ -78,7 +78,7 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
         <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-        <a href="../index.html">pyvinecopulib 0.7.0</a>
+        <a href="../index.html">pyvinecopulib 0.7.1</a>
       </nav>
 
       <div class="wy-nav-content">
@@ -101,7 +101,7 @@
 <h1>FitControlsBicop.__init__<a class="headerlink" href="#fitcontrolsbicop-init" title="Link to this heading"></a></h1>
 <dl class="py method">
 <dt class="sig sig-object py" id="pyvinecopulib.FitControlsBicop.__init__">
-<span class="sig-prename descclassname"><span class="pre">FitControlsBicop.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">self,</span> <span class="pre">family_set:</span> <span class="pre">collections.abc.Sequence[pyvinecopulib.BicopFamily]</span> <span class="pre">=</span> <span class="pre">[BicopFamily.indep,</span> <span class="pre">BicopFamily.gaussian,</span> <span class="pre">BicopFamily.student,</span> <span class="pre">BicopFamily.clayton,</span> <span class="pre">BicopFamily.gumbel,</span> <span class="pre">BicopFamily.frank,</span> <span class="pre">BicopFamily.joe,</span> <span class="pre">BicopFamily.bb1,</span> <span class="pre">BicopFamily.bb6,</span> <span class="pre">BicopFamily.bb7,</span> <span class="pre">BicopFamily.bb8,</span> <span class="pre">BicopFamily.tawn,</span> <span class="pre">BicopFamily.tll],</span> <span class="pre">parametric_method:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'mle',</span> <span class="pre">nonparametric_method:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'constant',</span> <span class="pre">nonparametric_mult:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">1.0,</span> <span class="pre">selection_criterion:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'bic',</span> <span class="pre">weights:</span> <span class="pre">numpy.ndarray[dtype=float64,</span> <span class="pre">shape=(*),</span> <span class="pre">order='C']</span> <span class="pre">=</span> <span class="pre">array([],</span> <span class="pre">dtype=float64),</span> <span class="pre">psi0:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">0.9,</span> <span class="pre">preselect_families:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">True,</span> <span class="pre">num_threads:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">1</span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyvinecopulib.FitControlsBicop.__init__" title="Link to this definition"></a></dt>
+<span class="sig-prename descclassname"><span class="pre">FitControlsBicop.</span></span><span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">self,</span> <span class="pre">family_set:</span> <span class="pre">collections.abc.Sequence[pyvinecopulib.BicopFamily]</span> <span class="pre">=</span> <span class="pre">[BicopFamily.indep,</span> <span class="pre">BicopFamily.gaussian,</span> <span class="pre">BicopFamily.student,</span> <span class="pre">BicopFamily.clayton,</span> <span class="pre">BicopFamily.gumbel,</span> <span class="pre">BicopFamily.frank,</span> <span class="pre">BicopFamily.joe,</span> <span class="pre">BicopFamily.bb1,</span> <span class="pre">BicopFamily.bb6,</span> <span class="pre">BicopFamily.bb7,</span> <span class="pre">BicopFamily.bb8,</span> <span class="pre">BicopFamily.tawn,</span> <span class="pre">BicopFamily.tll],</span> <span class="pre">parametric_method:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'mle',</span> <span class="pre">nonparametric_method:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'constant',</span> <span class="pre">nonparametric_mult:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">1.0,</span> <span class="pre">selection_criterion:</span> <span class="pre">str</span> <span class="pre">=</span> <span class="pre">'bic',</span> <span class="pre">weights:</span> <span class="pre">numpy.ndarray[dtype=float64,</span> <span class="pre">shape=(*),</span> <span class="pre">order='C']</span> <span class="pre">=</span> <span class="pre">array([],</span> <span class="pre">dtype=float64),</span> <span class="pre">psi0:</span> <span class="pre">float</span> <span class="pre">=</span> <span class="pre">0.9,</span> <span class="pre">preselect_families:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">True,</span> <span class="pre">allow_rotations:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">True,</span> <span class="pre">num_threads:</span> <span class="pre">int</span> <span class="pre">=</span> <span class="pre">1</span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyvinecopulib.FitControlsBicop.__init__" title="Link to this definition"></a></dt>
 <dd><p>Instantiates the controls for fitting bivariate copula models.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
