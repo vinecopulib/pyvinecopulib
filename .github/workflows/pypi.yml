@@ -20,7 +20,7 @@ jobs:
           - { os: macos-14, cibw_id: macosx_arm64, cc: clang, cxx: clang++, platform: arm64, root_install_dir: '/Users/runner/work'}
           - { os: windows-latest, cibw_id: win_amd64, cc: cl, cxx: cl, platform: x64, root_install_dir: 'D:\'}
     env:
-      PYTHON_VENV_ROOT: ${{github.workspace}}/src/python-venv
+      PYTHON_VENV_ROOT: ${{github.workspace}}/.venv
 
 
     name: Build and test on ${{ matrix.cfg.os }} for cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
