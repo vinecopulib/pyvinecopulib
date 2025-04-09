@@ -21,27 +21,29 @@ init_bicop_fit_controls(nb::module_& module)
 
   nb::class_<FitControlsBicop>(
     module, "FitControlsBicop", fitcontrolsbicop_doc.doc)
-    .def(nb::init<std::vector<BicopFamily>,
-                  std::string,
-                  std::string,
-                  double,
-                  std::string,
-                  const Eigen::VectorXd&,
-                  double,
-                  bool,
-                  bool,
-                  size_t>(),
-         fitcontrolsbicop_doc.ctor.doc_9args,
-         "family_set"_a = bicop_families::all,
-         "parametric_method"_a = "mle",
-         "nonparametric_method"_a = "constant",
-         "nonparametric_mult"_a = 1.0,
-         "selection_criterion"_a = "bic",
-         "weights"_a = Eigen::VectorXd(),
-         "psi0"_a = 0.9,
-         "preselect_families"_a = true,
-         "allow_rotations"_a = true,
-         "num_threads"_a = 1)
+    .def(
+      nb::init<std::vector<BicopFamily>,
+               std::string,
+               std::string,
+               double,
+               std::string,
+               const Eigen::VectorXd&,
+               double,
+               bool,
+               bool,
+               size_t>(),
+      fitcontrolsbicop_doc.ctor
+        .doc_10args_family_set_parametric_method_nonparametric_method_nonparametric_mult_selection_criterion_weights_psi0_preselect_families_allow_rotations_num_threads,
+      "family_set"_a = bicop_families::all,
+      "parametric_method"_a = "mle",
+      "nonparametric_method"_a = "constant",
+      "nonparametric_mult"_a = 1.0,
+      "selection_criterion"_a = "bic",
+      "weights"_a = Eigen::VectorXd(),
+      "psi0"_a = 0.9,
+      "preselect_families"_a = true,
+      "allow_rotations"_a = true,
+      "num_threads"_a = 1)
     /*      .def(nb::init<std::string>(), */
     //      "creates default controls except for the parameteric method.",
     //      "parametric_method"_a)
