@@ -69,7 +69,9 @@ def test_fitcontrolsvinecop():
     "select_families",
     "show_trace",
     "num_threads",
-    "mst_algorithm",
+    "tree_algorithm",
+    "allow_rotations",
+    "seeds",
   ]
   compare_properties(original_controls, deserialized_controls, attrs)
 
