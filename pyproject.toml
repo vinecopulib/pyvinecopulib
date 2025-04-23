@@ -1,50 +1,47 @@
 [build-system]
-requires = ["scikit-build-core >=0.4.3", "nanobind >=2.5.0"]
+requires = ["scikit-build-core>=0.4.3", "nanobind>=2.5.0"]
 build-backend = "scikit_build_core.build"
 
 [project]
 name = "pyvinecopulib"
 version = "0.7.1"
 authors = [
-  { name="Thibault Vatter", email="info@vinecopulib.com" },
-  { name="Thomas Nagler", email="info@vinecopulib.com" },
+  { name = "Thibault Vatter", email = "info@vinecopulib.com" },
+  { name = "Thomas Nagler", email = "info@vinecopulib.com" },
 ]
 description = "A python interface to vinecopulib"
 readme = "README.md"
-license = {file = "LICENSE"}
+license = { file = "LICENSE" }
 requires-python = ">=3.8"
 keywords = ['copula', 'vines copulas', 'pair-copulas constructions']
 classifiers = [
-        'Development Status :: 3 - Alpha',
-        'Intended Audience :: Financial and Insurance Industry',
-        'Intended Audience :: Healthcare Industry',
-        'Intended Audience :: Information Technology',
-        'Intended Audience :: Other Audience',
-        'Intended Audience :: Science/Research',
-        'Intended Audience :: Telecommunications Industry',
-        'Topic :: Scientific/Engineering',
-        'Topic :: Scientific/Engineering :: Mathematics',
-        'Programming Language :: C++',
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9',
-        'Programming Language :: Python :: 3.10',
-        'Programming Language :: Python :: 3.11',
-        'Programming Language :: Python :: 3.12',
-        'License :: OSI Approved :: MIT License'
+  'Development Status :: 3 - Alpha',
+  'Intended Audience :: Financial and Insurance Industry',
+  'Intended Audience :: Healthcare Industry',
+  'Intended Audience :: Information Technology',
+  'Intended Audience :: Other Audience',
+  'Intended Audience :: Science/Research',
+  'Intended Audience :: Telecommunications Industry',
+  'Topic :: Scientific/Engineering',
+  'Topic :: Scientific/Engineering :: Mathematics',
+  'Programming Language :: C++',
+  'Programming Language :: Python :: 3.8',
+  'Programming Language :: Python :: 3.9',
+  'Programming Language :: Python :: 3.10',
+  'Programming Language :: Python :: 3.11',
+  'Programming Language :: Python :: 3.12',
+  'License :: OSI Approved :: MIT License',
 ]
-dependencies = [
-  'numpy>=1.14',
-  'matplotlib>=3.0',
-  'networkx>=3.0',
-  'pydot>=3.0',
-]
+dependencies = ['numpy>=1.14', 'matplotlib>=3.0', 'networkx>=3.0', 'pydot>=3.0']
 
 [project.optional-dependencies]
 dev = [
   # "mypy>=1.15",
   "ruff==0.11.6",
   "pytest>=8.0",
+  "nbmake",
 ]
+examples = ["jupyterlab"]
 
 [project.urls]
 Homepage = "https://github.com/vinecopulib/pyvinecopulib/"
@@ -71,7 +68,7 @@ test-command = "pytest {project}/tests"
 test-requires = "pytest"
 
 # Don't test Python 3.8 wheels on macOS/arm64
-test-skip="cp38-macosx_*:arm64"
+test-skip = "cp38-macosx_*:arm64"
 
 # Needed for full C++17 support
 [tool.cibuildwheel.macos.environment]
