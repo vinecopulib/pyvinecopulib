@@ -100,20 +100,11 @@ install(TARGETS pyvinecopulib_ext
     LIBRARY DESTINATION pyvinecopulib
 )
 
-# nanobind_add_stub(
-#     pyvinecopulib_stub
-#     INSTALL_TIME
-#     MODULE pyvinecopulib
-#     OUTPUT pyvinecopulib/pyvinecopulib.pyi
-#     PYTHON_PATH .
-#     MARKER_FILE pyvinecopulib/py.typed
-# )
-
 nanobind_add_stub(
   pyvinecopulib_stub 
   INSTALL_TIME
   MODULE pyvinecopulib.pyvinecopulib_ext
   OUTPUT "pyvinecopulib/__init__.pyi"
   MARKER_FILE "pyvinecopulib/py.typed"
-  PYTHON_PATH "."
+  PYTHON_PATH "pyvinecopulib"
 )
