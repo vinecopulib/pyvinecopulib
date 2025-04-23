@@ -77,7 +77,7 @@ cd pyvinecopulib
 The main build time prerequisites are:
 
 * scikit-build-core (>=0.4.3),
-* nanobind (>=2.5.0),
+* nanobind (>=2.7.0),
 * a compiler with C++17 support.
 
 To install from source, `Eigen` and `Boost` also need to be available, and CMake will try to find suitable versions automatically.

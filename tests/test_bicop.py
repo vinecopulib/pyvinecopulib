@@ -49,6 +49,7 @@ def test_bicop(test_dump_folder: str) -> None:
 
   bicop.parameters = np.array([[3.0]])
   assert bicop.parameters.shape == (1, 1)
+  assert bicop.parameters[0, 0] == 3.0
 
   bicop.var_types = ["d", "d"]
   assert bicop.var_types == ["d", "d"]
@@ -102,10 +103,12 @@ def test_bicop(test_dump_folder: str) -> None:
   # Test parameters_lower_bounds method
   lower_bounds = bicop.parameters_lower_bounds
   assert isinstance(lower_bounds, np.ndarray)
+  assert lower_bounds == np.array([1.0])
 
   # Test parameters_upper_bounds method
   upper_bounds = bicop.parameters_upper_bounds
   assert isinstance(upper_bounds, np.ndarray)
+  assert upper_bounds == np.array([50.0])
 
   for method in ["pdf", "cdf", "hfunc1", "hfunc2", "hinv1", "hinv2"]:
     values = getattr(bicop, method)(u)

@@ -195,14 +195,11 @@ are:
          "Gets the rotation of a pair-copula.",
          "tree"_a,
          "edge"_a)
-    .def(
-      "get_parameters",
-      [](const Vinecop& self, size_t tree, size_t edge) {
-        return nb::cast(self.get_parameters(tree, edge));
-      },
-      "Gets the parameters of a pair-copula.",
-      "tree"_a,
-      "edge"_a)
+    .def("get_parameters",
+         &Vinecop::get_parameters,
+         "Gets the parameters of a pair-copula.",
+         "tree"_a,
+         "edge"_a)
     .def("get_tau",
          &Vinecop::get_tau,
          "Gets the kendall's tau of a pair-copula.",
@@ -226,9 +223,7 @@ are:
     .def_prop_ro(
       "npars", &Vinecop::get_npars, "The total number of parameters.")
     .def_prop_ro(
-      "matrix",
-      [](const Vinecop& self) { return nb::cast(self.get_matrix()); },
-      "Extracts the R-vine structure's matrix.")
+      "matrix", &Vinecop::get_matrix, "Extracts the R-vine structure's matrix.")
     .def_prop_ro("nobs",
                  &Vinecop::get_nobs,
                  "The number of observations (for fitted objects only).")

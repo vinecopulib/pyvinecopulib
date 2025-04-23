@@ -4,13 +4,18 @@ from .helpers import compare_rvinestructure
 
 
 def test_rvinestructure(test_dump_folder: str) -> None:
+  d = 5
   # Test RVineStructure class
-  rvine = pv.RVineStructure(5)
+  rvine = pv.RVineStructure(d)
   assert isinstance(rvine, pv.RVineStructure)
-  assert rvine.dim == 5
-  assert rvine.matrix.shape == (5, 5)
-  assert rvine.trunc_lvl == 4
-  assert rvine.order == list(range(1, 6))
+  assert rvine.dim == d
+  assert rvine.trunc_lvl == d - 1
+  assert rvine.order == list(range(1, d + 1))
+  matrix = rvine.matrix
+  assert isinstance(matrix, np.ndarray)
+  assert matrix.shape == (d, d)
+  assert matrix.dtype == np.uint64
+  assert np.all(np.logical_and(matrix >= 0, matrix <= d))
 
   # Should be the same as the previous one
   dvine = pv.DVineStructure(rvine.order)

@@ -13,6 +13,7 @@ else:
     )
     sys.exit(1)
 
+
 def parse_pyproject_toml() -> dict:
   pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
   return tomllib.loads(pyproject_path.read_text())
