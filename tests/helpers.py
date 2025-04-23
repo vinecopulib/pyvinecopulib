@@ -13,18 +13,18 @@ def random_data(d=5, n=1000):
 
 def compare_properties(obj1, obj2, attrs, subclass=False):
   if subclass:
-    assert issubclass(
-      type(obj1), type(obj2)
-    ), "Objects must be of the same type"
+    assert issubclass(type(obj1), type(obj2)), (
+      "Objects must be of the same type"
+    )
   else:
     assert type(obj1) is type(obj2), "Objects must be of the same type"
   for attr in attrs:
     val1 = getattr(obj1, attr)
     val2 = getattr(obj2, attr)
     if isinstance(val1, np.ndarray):
-      assert isinstance(val2, np.ndarray) and np.array_equal(
-        val1, val2
-      ), f"Mismatch in {attr}: {val1} != {val2}"
+      assert isinstance(val2, np.ndarray) and np.array_equal(val1, val2), (
+        f"Mismatch in {attr}: {val1} != {val2}"
+      )
     else:
       assert val1 == val2, f"Mismatch in {attr}: {val1} != {val2}"
 

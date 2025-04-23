@@ -182,6 +182,7 @@ def autodoc_process_docstring(app, what, name, obj, options, lines):
   lines.clear()
   lines.extend(docstring.splitlines())
 
+
 def preprocess_markdown(app, docname, source):
   """
   Preprocess Markdown files before inclusion in the documentation.

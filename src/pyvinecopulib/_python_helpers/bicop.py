@@ -36,6 +36,7 @@ BICOP_PLOT_DOC = """
         cop.plot(plot_type="contour", margin_type="unif") # contour plot of copula density
 """
 
+
 def get_default_xylim(margin_type):
   if margin_type == "unif":
     return (1e-2, 1 - 1e-2)
