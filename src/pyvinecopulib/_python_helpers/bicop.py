@@ -1,8 +1,9 @@
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
+from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 from .stats import expon_cdf, expon_pdf, expon_ppf, norm_cdf, norm_pdf, norm_ppf
 
@@ -157,7 +158,7 @@ def bicop_plot(
     plt.show()
   elif plot_type == "surface":
     fig = plt.figure()
-    ax = fig.add_subplot(111, projection="3d")
+    ax = cast(Axes3D, fig.add_subplot(111, projection="3d"))
     ax.view_init(elev=30, azim=-110)
     X, Y = np.meshgrid(points, points)
     ax.plot_surface(X, Y, dens, cmap=jet_colors, edgecolor="none", shade=False)

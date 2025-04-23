@@ -13,12 +13,15 @@ else:
     )
     sys.exit(1)
 
+def parse_pyproject_toml() -> dict:
+  pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+  return tomllib.loads(pyproject_path.read_text())
+
 
 def get_dependencies(
   groups: list[str], include_core: bool = False, include_build: bool = False
 ) -> list[str]:
-  pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
-  data = tomllib.loads(pyproject_path.read_text())
+  data = parse_pyproject_toml()
 
   project = data.get("project", {})
   build_sys = data.get("build-system", {})

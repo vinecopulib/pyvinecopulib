@@ -1,5 +1,4 @@
 import math
-from typing import List
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -12,13 +11,13 @@ VINECOP_PLOT_DOC = """
 
     Parameters
     ----------
-    tree: List[int] (default=None)
+    tree: list[int] (default=None)
         The tree indice(s) to plot. If None, all trees are plotted.
     add_edge_labels: bool (default=True)
         Whether to add edge labels to the plot.
     layout: str (default="graphviz")
         The layout to use for plotting. Either "graphviz" or "spring_layout".
-    vars_names: List[str] (default=None)
+    vars_names: list[str] (default=None)
         The names of the variables for the vine model. If None, the indices are used.
 
     Returns
@@ -107,10 +106,10 @@ def get_graph(tree, vc, vars_names):
 
 def vinecop_plot(
   cop,
-  tree: List[int] = None,
+  tree: list[int] = None,
   add_edge_labels=True,
   layout: str = "graphviz",
-  vars_names: List[str] = None,
+  vars_names: list[str] = None,
 ) -> None:
   """{}""".format(VINECOP_PLOT_DOC)
 
