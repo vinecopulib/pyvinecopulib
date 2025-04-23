@@ -111,7 +111,7 @@ def test_bicop():
   # Test parameters_upper_bounds method
   upper_bounds = bicop.parameters_upper_bounds
   assert isinstance(upper_bounds, np.ndarray)
-  assert lower_bounds == np.array([50.0])
+  assert upper_bounds == np.array([50.0])
 
   for method in ["pdf", "cdf", "hfunc1", "hfunc2", "hinv1", "hinv2"]:
     values = getattr(bicop, method)(u)
