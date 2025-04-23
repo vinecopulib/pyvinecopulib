@@ -102,5 +102,5 @@ def preview_main(gen_script, default_port):
 
 
 if __name__ == "__main__":
-    gen_script = join(dirname(abspath(__file__)), "gen_sphinx.py")
-    preview_main(gen_script=gen_script, default_port=8001)
+  gen_script = join(dirname(abspath(__file__)), "gen_sphinx.py")
+  preview_main(gen_script=gen_script, default_port=8001)

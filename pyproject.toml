@@ -76,3 +76,15 @@ test-skip="cp38-macosx_*:arm64"
 # Needed for full C++17 support
 [tool.cibuildwheel.macos.environment]
 MACOSX_DEPLOYMENT_TARGET = "10.14"
+
+[tool.ruff]
+line-length = 80
+indent-width = 2
+
+# Include notebooks
+extend-include = ["*.ipynb"]
+exclude = ["lib"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F403", "F405"]
+# "**/{tests,docs,tools}/*" = ["E402"]
