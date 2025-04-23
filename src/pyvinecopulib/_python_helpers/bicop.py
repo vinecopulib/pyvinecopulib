@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -39,7 +39,7 @@ BICOP_PLOT_DOC = """
 """
 
 
-def get_default_xylim(margin_type: str) -> tuple:
+def get_default_xylim(margin_type: str) -> tuple[float, float]:
   if margin_type == "unif":
     return (1e-2, 1 - 1e-2)
   elif margin_type == "norm":
@@ -50,7 +50,7 @@ def get_default_xylim(margin_type: str) -> tuple:
     raise ValueError("Unknown margin type")
 
 
-def get_default_grid_size(plot_type: str) -> tuple:
+def get_default_grid_size(plot_type: str) -> int:
   if plot_type == "contour":
     return 100
   elif plot_type == "surface":
@@ -63,8 +63,8 @@ def bicop_plot(
   cop: Any,
   plot_type: str = "surface",
   margin_type: str = "unif",
-  xylim: tuple = None,
-  grid_size: int = None,
+  xylim: Optional[tuple[float, float]] = None,
+  grid_size: Optional[int] = None,
 ) -> None:
   """{}""".format(BICOP_PLOT_DOC)
 
