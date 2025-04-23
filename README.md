@@ -77,7 +77,7 @@ To install from source, `Eigen` and `Boost` also need to be available, and CMake
 A reproducible environment, also including requirements for the `pyvinecopulib`'s development and documentation, can be created using:
 
 ```bash
-mamba create -n pyvinecopulib eigen boost nanobind scikit-build-core numpy pydot networkx matplotlib mypy ruff pytest sphinx-rtd-theme sphinx-autodoc-typehints nbsphinx myst-parser python=3.11
+mamba create -n pyvinecopulib eigen boost nanobind scikit-build-core numpy pydot networkx matplotlib mypy ruff pytest nbmake jupyterlab sphinx-rtd-theme sphinx-autodoc-typehints nbsphinx myst-parser python=3.11
 mamba activate pyvinecopulib
 ```
 
