@@ -12,7 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         # macos-13 is an intel runner, macos-14 is apple silicon
-        python: [38, 39, 310, 311, 312]
+        python: [39, 310, 311, 312, 313]
         cfg:
           - {
               os: ubuntu-latest,
@@ -62,12 +62,10 @@ jobs:
         run: |
           git fetch --prune --unshallow
           git fetch --depth=1 origin +refs/tags/*:refs/tags/*
-      # Install native ARM64 Python 3.8 on macOS-14 ARM64
-      - name: Install ARM64 Python 3.8
-        if: matrix.cfg.os == 'macos-14' && matrix.cfg.platform == 'arm64' && matrix.python == 38
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: 3.8
+          python-version: 3.11
       - name: Install dependencies
         id: install-dependencies
         uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@dev
@@ -109,7 +107,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: [38, 39, 310, 311, 312]
+        python: [39, 310, 311, 312, 313]
         cfg:
           - { os: ubuntu-latest, cibw_id: manylinux_x86_64, platform: x64 }
           - { os: ubuntu-latest, cibw_id: musllinux_x86_64, platform: x64 }
@@ -176,10 +174,10 @@ jobs:
           eigen_install_dir: "/home/runner/work"
           boost_version: ${{ env.BOOST_VERSION }}
           eigen_version: ${{ env.EIGEN_VERSION }}
-      - name: Set up Python 3.8
-        uses: actions/setup-python@v4
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.8
+          python-version: 3.11
       - name: Upgrade pip and install build dependency
         run: |
           echo "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include" >> $GITHUB_ENV
