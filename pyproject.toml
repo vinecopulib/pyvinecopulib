@@ -44,7 +44,9 @@ dev = [
   "mypy",
   "ruff",
   "pytest",
+  "nbmake",
 ]
+example = ["jupyterlab"]
 
 [project.urls]
 Homepage = "https://github.com/vinecopulib/pyvinecopulib/"
