@@ -109,10 +109,9 @@ jobs:
       matrix:
         python: [39, 310, 311, 312, 313]
         cfg:
-          - { os: ubuntu-latest, cibw_id: manylinux_x86_64, platform: x64 }
-          - { os: ubuntu-latest, cibw_id: musllinux_x86_64, platform: x64 }
-          - { os: macos-14, cibw_id: macosx_arm64, platform: arm64 }
-          - { os: windows-latest, cibw_id: win_amd64, platform: x64 }
+          - { os: ubuntu-latest, cibw_id: manylinux_x86_64}
+          - { os: macos-14, cibw_id: macosx_arm64}
+          - { os: windows-latest, cibw_id: win_amd64}
 
     name: Notebook test on ${{ matrix.cfg.os }} for cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
 
@@ -133,6 +132,18 @@ jobs:
         with:
           python-version: ${{ steps.pyver.outputs.version }}
 
+      - name: Install Graphviz
+        shell: bash
+        run: |
+          if [[ "${{ matrix.cfg.os }}" == "ubuntu-latest" ]]; then
+            sudo apt-get update
+            sudo apt-get install -y graphviz
+          elif [[ "${{ matrix.cfg.os }}" == "macos-14" ]]; then
+            brew install graphviz
+          elif [[ "${{ matrix.cfg.os }}" == "windows-latest" ]]; then
+            choco install graphviz -y
+          fi
+
       - name: Install dev and examples dependencies
         run: |
           pip install tomli  # needed for Python < 3.11
@@ -146,6 +157,7 @@ jobs:
           path: dist/
 
       - name: Install wheel
+        shell: bash
         run: |
           pip install dist/*.whl
 
