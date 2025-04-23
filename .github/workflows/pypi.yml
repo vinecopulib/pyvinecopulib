@@ -123,6 +123,7 @@ jobs:
       
       - name: Infer full Python version
         id: pyver
+        shell: bash
         run: |
           short="${{ matrix.python }}"
           major="${short:0:1}"
@@ -134,16 +135,21 @@ jobs:
         with:
           python-version: ${{ steps.pyver.outputs.version }}
 
+      - name: Install dev and examples dependencies
+        run: |
+          pip install tomli  # needed for Python < 3.11
+          python scripts/get_dependencies.py dev examples --as-requirements > requirements.txt
+          pip install -r requirements.txt
+
       - name: Download built wheel
         uses: actions/download-artifact@v4
         with:
           name: cibw-wheels-${{ matrix.cfg.os }}-${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
           path: dist/
 
-      - name: Install wheel and notebook dependencies
+      - name: Install wheel
         run: |
           pip install dist/*.whl
-          pip install .[examples] .[test]
 
       - name: Run example notebooks
         run: |
