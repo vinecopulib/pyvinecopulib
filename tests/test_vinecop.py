@@ -18,29 +18,40 @@ def test_vinecop():
   cop = pv.Vinecop.from_data(u, controls=controls)
 
   # Test get_pair_copula method
-  pair_copula = cop.get_pair_copula(0, 0)
-  assert isinstance(pair_copula, pv.Bicop)
+  for t in range(1, d):
+    for e in range(d - t - 1):
+      pair_copula = cop.get_pair_copula(t, e)
+      assert isinstance(pair_copula, pv.Bicop)
 
-  # Test get_family method
-  family = cop.get_family(0, 0)
-  assert family == pv.BicopFamily.gaussian
+      # Test get_family method
+      family = cop.get_family(0, 0)
+      assert family == pv.BicopFamily.gaussian
 
-  # Test get_rotation method
-  rotation = cop.get_rotation(0, 0)
-  assert rotation == 0
+      # Test get_rotation method
+      rotation = cop.get_rotation(0, 0)
+      assert rotation == 0
 
-  # Test get_parameters method
-  parameters = cop.get_parameters(0, 0)
-  assert isinstance(parameters, np.ndarray)
+      # Test get_parameters method
+      parameters = cop.get_parameters(0, 0)
+      assert isinstance(parameters, np.ndarray)
+      assert parameters.shape == (1, 1)
+      assert -1 < parameters[0, 0] < 1
 
-  # Test get_tau method
-  tau = cop.get_tau(0, 0)
-  assert isinstance(tau, float)
+      # Test get_tau method
+      tau = cop.get_tau(0, 0)
+      assert isinstance(tau, float)
 
   for method in ["pdf", "cdf"]:
     values = getattr(cop, method)(u)
     assert isinstance(values, np.ndarray)
     assert values.shape == (n,)
+    assert values.dtype == np.float64
+
+  for method in ["rosenblatt", "inverse_rosenblatt"]:
+    values = getattr(cop, method)(u)
+    assert isinstance(values, np.ndarray)
+    assert values.shape == (n, d)
+    assert values.dtype == np.float64
 
   # Test passing a single row of data (#169 & #170 fix)
   u1 = u[0, :].reshape(1, d)
@@ -75,7 +86,13 @@ def test_vinecop():
 
   # Test order and structure
   assert isinstance(cop.order, list)
+  assert set(cop.order) == set(range(1, d + 1))
   assert isinstance(cop.structure, pv.RVineStructure)
+  matrix = cop.matrix
+  assert isinstance(matrix, np.ndarray)
+  assert matrix.shape == (d, d)
+  assert matrix.dtype == np.uint64
+  assert np.all(np.logical_and(matrix >= 0, matrix <= d))
 
   # Test to_json and from_json
   new_cop = pv.Vinecop.from_json(cop.to_json())
@@ -92,13 +109,18 @@ def test_vinecop():
 
 
 def test_rvinestructure():
+  d = 5
   # Test RVineStructure class
-  rvine = pv.RVineStructure(5)
+  rvine = pv.RVineStructure(d)
   assert isinstance(rvine, pv.RVineStructure)
-  assert rvine.dim == 5
-  assert rvine.matrix.shape == (5, 5)
-  assert rvine.trunc_lvl == 4
-  assert rvine.order == list(range(1, 6))
+  assert rvine.dim == d
+  assert rvine.trunc_lvl == d - 1
+  assert rvine.order == list(range(1, d + 1))
+  matrix = rvine.matrix
+  assert isinstance(matrix, np.ndarray)
+  assert matrix.shape == (d, d)
+  assert matrix.dtype == np.uint64
+  assert np.all(np.logical_and(matrix >= 0, matrix <= d))
 
   # Should be the same as the previous one
   dvine = pv.DVineStructure(rvine.order)
