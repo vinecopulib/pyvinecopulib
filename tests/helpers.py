@@ -26,10 +26,10 @@ def compare_properties(
   for attr in attrs:
     val1 = getattr(obj1, attr)
     val2 = getattr(obj2, attr)
-    if isinstance(val1, NDArray[np.float64]):
-      assert isinstance(val2, NDArray[np.float64]) and np.array_equal(
-        val1, val2
-      ), f"Mismatch in {attr}: {val1} != {val2}"
+    if isinstance(val1, np.ndarray):
+      assert isinstance(val2, np.ndarray) and np.array_equal(val1, val2), (
+        f"Mismatch in {attr}: {val1} != {val2}"
+      )
     else:
       assert val1 == val2, f"Mismatch in {attr}: {val1} != {val2}"
 
