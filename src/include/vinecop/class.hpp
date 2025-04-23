@@ -226,9 +226,7 @@ are:
     .def_prop_ro(
       "npars", &Vinecop::get_npars, "The total number of parameters.")
     .def_prop_ro(
-      "matrix",
-      [](const Vinecop& self) { return nb::cast(self.get_matrix()); },
-      "Extracts the R-vine structure's matrix.")
+      "matrix", &Vinecop::get_matrix, "Extracts the R-vine structure's matrix.")
     .def_prop_ro("nobs",
                  &Vinecop::get_nobs,
                  "The number of observations (for fitted objects only).")
