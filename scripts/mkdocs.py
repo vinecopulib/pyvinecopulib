@@ -540,7 +540,7 @@ def process_comment(comment):
 
   for cmd_ in [
     "mainpage",
-    "name" "overload",
+    "nameoverload",
   ]:
     s = re.sub(r"[@\\]%s( +.*)?\s+" % cmd_, r"", s)
 

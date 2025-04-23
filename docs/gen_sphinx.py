@@ -84,7 +84,7 @@ def has_cc_imported_symbols(name):
     if test in sys.modules:
       raise RuntimeError(
         (
-          "The module `{}` should not exist; instead, only `{}` should " "exist"
+          "The module `{}` should not exist; instead, only `{}` should exist"
         ).format(test, name)
       )
 
@@ -211,7 +211,7 @@ def gen_main(input_dir, strict, src_funcs=None, extra_files=None):
   parser.add_argument(
     "--debug",
     action="store_true",
-    help="If enabled, leaves intermediate files that are otherwise " "deleted.",
+    help="If enabled, leaves intermediate files that are otherwise deleted.",
   )
   parser.add_argument(
     "--verbose",

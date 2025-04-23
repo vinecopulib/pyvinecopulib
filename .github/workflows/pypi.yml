@@ -57,7 +57,7 @@ jobs:
       run: |
         python3 -m venv ${PYTHON_VENV_ROOT}
         source ${PYTHON_VENV_ROOT}/bin/activate
-        pip install ruff
+        pip install .[dev]
         ruff format --check
         ruff check
     - name: Build and test wheels
