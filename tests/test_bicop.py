@@ -3,11 +3,12 @@ import shutil
 
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 import pyvinecopulib as pv
 
 
-def test_bicop():
+def test_bicop() -> None:
   bicop = pv.Bicop()
 
   # Test default initialization
@@ -66,7 +67,7 @@ def test_bicop():
   bicop.var_types = ["c", "c"]
   u = np.array([[0.1, 0.2]])
   d = bicop.pdf(u)
-  assert isinstance(d, np.ndarray) and d.shape == (1,)
+  assert isinstance(d, NDArray[np.float64]) and d.shape == (1,)
 
   # Test loglik method
   u = np.array([[0.1, 0.2], [0.3, 0.4]])
@@ -100,19 +101,19 @@ def test_bicop():
   # Test tau_to_parameters method
   tau = 0.5
   parameters = bicop.tau_to_parameters(tau)
-  assert isinstance(parameters, np.ndarray)
+  assert isinstance(parameters, NDArray[np.float64])
 
   # Test parameters_lower_bounds method
   lower_bounds = bicop.parameters_lower_bounds
-  assert isinstance(lower_bounds, np.ndarray)
+  assert isinstance(lower_bounds, NDArray[np.float64])
 
   # Test parameters_upper_bounds method
   upper_bounds = bicop.parameters_upper_bounds
-  assert isinstance(upper_bounds, np.ndarray)
+  assert isinstance(upper_bounds, NDArray[np.float64])
 
   for method in ["pdf", "cdf", "hfunc1", "hfunc2", "hinv1", "hinv2"]:
     values = getattr(bicop, method)(u)
-    assert isinstance(values, np.ndarray)
+    assert isinstance(values, NDArray[np.float64])
     assert values.shape == (2,)
 
   # Test simulate method

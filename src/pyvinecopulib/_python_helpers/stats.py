@@ -1,24 +1,25 @@
 import math
 
 import numpy as np
+from numpy.typing import NDArray
 
 
 # https://stackoverflow.com/questions/42381244/pure-python-inverse-error-function
 # This is a pure Python implementation of the inverse error function from the scipy library.
-def polevl(x, coefs, N):
-  ans = 0
+def polevl(x: float, coefs: list[float], N: int) -> float:
+  ans = 0.0
   power = len(coefs) - 1
-  for coef in coefs:
+  for coef in coefs[:N]:
     ans += coef * x**power
     power -= 1
   return ans
 
 
-def p1evl(x, coefs, N):
+def p1evl(x: float, coefs: list[float], N: int) -> float:
   return polevl(x, [1] + coefs, N)
 
 
-def inv_erf(z):
+def inv_erf(z: float) -> float:
   if z < -1 or z > 1:
     raise ValueError("`z` must be between -1 and 1 inclusive")
 
@@ -30,7 +31,7 @@ def inv_erf(z):
     return -math.inf
 
   # From scipy special/cephes/ndrti.c
-  def ndtri(y):
+  def ndtri(y: float) -> float:
     # approximation for 0 <= abs(z - 0.5) <= 3/8
     P0 = [
       -5.99633501014107895267e1,
@@ -141,32 +142,38 @@ erfinv_vec = np.vectorize(inv_erf)
 
 
 # Cumulative Distribution Function (CDF)
-def norm_cdf(x, mean=0, std=1):
-  return 0.5 * (1 + erf_vec((x - mean) / (std * np.sqrt(2))))
+def norm_cdf(
+  x: NDArray[np.float64], mean: float = 0, std: float = 1
+) -> NDArray[np.float64]:
+  return np.asarray(0.5 * (1 + erf_vec((x - mean) / (std * np.sqrt(2)))))
 
 
 # Percent Point Function (Inverse CDF, PPF)
-def norm_ppf(p, mean=0, std=1):
-  return mean + std * np.sqrt(2) * erfinv_vec(2 * p - 1)
+def norm_ppf(
+  p: NDArray[np.float64], mean: float = 0, std: float = 1
+) -> NDArray[np.float64]:
+  return np.asarray(mean + std * np.sqrt(2) * erfinv_vec(2 * p - 1))
 
 
 # Probability Density Function (PDF)
-def norm_pdf(x, mean=0, std=1):
-  return (1 / (std * np.sqrt(2 * np.pi))) * np.exp(
-    -0.5 * ((x - mean) / std) ** 2
+def norm_pdf(
+  x: NDArray[np.float64], mean: float = 0, std: float = 1
+) -> NDArray[np.float64]:
+  return np.asarray(
+    (1 / (std * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mean) / std) ** 2)
   )
 
 
 # Cumulative Distribution Function (CDF)
-def expon_cdf(x, scale=1):
-  return 1 - np.exp(-x / scale)
+def expon_cdf(x: NDArray[np.float64], scale: float = 1) -> NDArray[np.float64]:
+  return np.asarray(1 - np.exp(-x / scale))
 
 
 # Percent Point Function (Inverse CDF, PPF)
-def expon_ppf(p, scale=1):
-  return -scale * np.log(1 - p)
+def expon_ppf(p: NDArray[np.float64], scale: float = 1) -> NDArray[np.float64]:
+  return np.asarray(-scale * np.log(1 - p))
 
 
 # Probability Density Function (PDF)
-def expon_pdf(x, scale=1):
-  return (1 / scale) * np.exp(-x / scale)
+def expon_pdf(x: NDArray[np.float64], scale: float = 1) -> NDArray[np.float64]:
+  return np.asarray((1 / scale) * np.exp(-x / scale))

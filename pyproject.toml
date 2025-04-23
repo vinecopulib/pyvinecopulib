@@ -12,7 +12,7 @@ authors = [
 description = "A python interface to vinecopulib"
 readme = "README.md"
 license = {file = "LICENSE"}
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 keywords = ['copula', 'vines copulas', 'pair-copulas constructions']
 classifiers = [
         'Development Status :: 3 - Alpha',
@@ -25,11 +25,11 @@ classifiers = [
         'Topic :: Scientific/Engineering',
         'Topic :: Scientific/Engineering :: Mathematics',
         'Programming Language :: C++',
-        'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: 3.13',
         'License :: OSI Approved :: MIT License'
 ]
 dependencies = [
@@ -41,7 +41,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  # "mypy>=1.15",
+  "mypy>=1.15",
   "ruff==0.11.6",
   "pytest>=8.0",
 ]
@@ -88,3 +88,13 @@ exclude = ["lib"]
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F403", "F405"]
 # "**/{tests,docs,tools}/*" = ["E402"]
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+ignore_missing_imports = true
+pretty = true
+show_error_codes = true
+warn_unused_configs = true
+files = ["src", "tests"]
+exclude = "scripts|docs|examples"

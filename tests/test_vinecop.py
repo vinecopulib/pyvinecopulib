@@ -2,13 +2,14 @@ import os
 import shutil
 
 import numpy as np
+from numpy.typing import NDArray
 
 import pyvinecopulib as pv
 
 from .helpers import compare_rvinestructure, compare_vinecop, random_data
 
 
-def test_vinecop():
+def test_vinecop() -> None:
   d = 5
   n = 1000
   u = pv.to_pseudo_obs(random_data(d, n))
@@ -31,7 +32,7 @@ def test_vinecop():
 
   # Test get_parameters method
   parameters = cop.get_parameters(0, 0)
-  assert isinstance(parameters, np.ndarray)
+  assert isinstance(parameters, NDArray[np.float64])
 
   # Test get_tau method
   tau = cop.get_tau(0, 0)
@@ -39,14 +40,14 @@ def test_vinecop():
 
   for method in ["pdf", "cdf"]:
     values = getattr(cop, method)(u)
-    assert isinstance(values, np.ndarray)
+    assert isinstance(values, NDArray[np.float64])
     assert values.shape == (n,)
 
   # Test passing a single row of data (#169 & #170 fix)
   u1 = u[0, :].reshape(1, d)
   for method in ["pdf", "cdf"]:
     values = getattr(cop, method)(u1)
-    assert isinstance(values, np.ndarray)
+    assert isinstance(values, NDArray[np.float64])
     assert values.shape == (1,)
 
   # Test simulate method
@@ -91,7 +92,7 @@ def test_vinecop():
   shutil.rmtree(test_folder)
 
 
-def test_rvinestructure():
+def test_rvinestructure() -> None:
   # Test RVineStructure class
   rvine = pv.RVineStructure(5)
   assert isinstance(rvine, pv.RVineStructure)

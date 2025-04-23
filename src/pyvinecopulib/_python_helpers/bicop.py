@@ -1,3 +1,5 @@
+from typing import Any
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
@@ -37,7 +39,7 @@ BICOP_PLOT_DOC = """
 """
 
 
-def get_default_xylim(margin_type):
+def get_default_xylim(margin_type: str) -> tuple:
   if margin_type == "unif":
     return (1e-2, 1 - 1e-2)
   elif margin_type == "norm":
@@ -48,7 +50,7 @@ def get_default_xylim(margin_type):
     raise ValueError("Unknown margin type")
 
 
-def get_default_grid_size(plot_type):
+def get_default_grid_size(plot_type: str) -> tuple:
   if plot_type == "contour":
     return 100
   elif plot_type == "surface":
@@ -58,12 +60,12 @@ def get_default_grid_size(plot_type):
 
 
 def bicop_plot(
-  cop,
+  cop: Any,
   plot_type: str = "surface",
   margin_type: str = "unif",
   xylim: tuple = None,
   grid_size: int = None,
-):
+) -> None:
   """{}""".format(BICOP_PLOT_DOC)
 
   if plot_type not in ["contour", "surface"]:
