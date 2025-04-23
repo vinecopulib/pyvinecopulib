@@ -120,11 +120,19 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Infer full Python version
+        id: pyver
+        run: |
+          short="${{ matrix.python }}"
+          major="${short:0:1}"
+          minor="${short:1}"
+          echo "version=$major.$minor" >> $GITHUB_OUTPUT
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python }}
+          python-version: ${{ steps.pyver.outputs.version }}
 
       - name: Download built wheel
         uses: actions/download-artifact@v4
