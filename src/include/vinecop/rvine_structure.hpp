@@ -150,7 +150,7 @@ Alternatives to instantiate structures are:
     .def_static("simulate",
                 &RVineStructure::simulate,
                 "d"_a,
-                "natural order"_a = false,
+                "natural_order"_a = false,
                 "seeds"_a = std::vector<size_t>(),
                 rvinestructure_doc.simulate.doc)
     .def("__repr__",

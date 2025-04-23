@@ -95,6 +95,15 @@ jobs:
           CIBW_ENVIRONMENT_MACOS: "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=${{matrix.cfg.root_install_dir}}/include/eigen3"
           CIBW_ENVIRONMENT_LINUX: "Boost_INCLUDE_DIR=/host${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=/host${{matrix.cfg.root_install_dir}}/include/eigen3"
           CIBW_ENVIRONMENT_PASS_LINUX: "Boost_INCLUDE_DIR EIGEN3_INCLUDE_DIR"
+      - name: Inspect built wheel contents
+        shell: bash  # Ensures consistent behavior across OSes
+        run: |
+          echo "Checking stub files in wheel:"
+          wheel=$(ls wheelhouse/*.whl)
+          unzip -l "$wheel" | grep -E '(__init__\.pyi|py\.typed)' || {
+            echo "::error ::Expected stub or marker files not found in $wheel"
+            exit 1
+          }
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:

@@ -5,6 +5,7 @@
 #  Slightly modified from https://github.com/RobotLocomotion/drake/blob/master/third_party/com_github_pybind_pybind11/mkdoc.py
 #
 
+import argparse
 import os
 import re
 import shutil
@@ -12,6 +13,7 @@ import sys
 import textwrap
 from collections import OrderedDict, defaultdict
 from fnmatch import fnmatch
+from pathlib import Path
 
 from clang import cindex
 from clang.cindex import AccessSpecifier, CursorKind, TypeKind
@@ -124,6 +126,14 @@ SKIP_PARTIAL_NAMES = [
 SKIP_ACCESS = [
   AccessSpecifier.PRIVATE,
 ]
+
+
+def get_eigen_include(env_name: str) -> str:
+  return str(Path.home() / f"miniforge3/envs/{env_name}/include/eigen3")
+
+
+def get_boost_include(env_name: str) -> str:
+  return str(Path.home() / f"miniforge3/envs/{env_name}/include")
 
 
 class Symbol(object):
@@ -1206,33 +1216,83 @@ class FileDict(object):
     self._d[key] = value
 
 
+def parse_args():
+  parser = argparse.ArgumentParser(
+    description="Generate docstrings from C++ headers."
+  )
+
+  parser.add_argument(
+    "filenames",
+    nargs="+",
+    help="C++ headers to process (must be relative to -I include paths)",
+  )
+  parser.add_argument(
+    "-I",
+    dest="include_dirs",
+    action="append",
+    default=[],
+    help="Include directories (can be specified multiple times)",
+  )
+  parser.add_argument(
+    "-output",
+    dest="output_filename",
+    required=True,
+    help="Path to the output .hpp file",
+  )
+  parser.add_argument(
+    "-library_file",
+    help="Path to libclang shared library",
+  )
+  parser.add_argument(
+    "-std",
+    default="c++11",
+    help="C++ standard to use (default: c++11)",
+  )
+  parser.add_argument(
+    "-root-name",
+    default="pyvinecopulib_doc",
+    help="Root name for the output symbol tree (default: pyvinecopulib_doc)",
+  )
+  parser.add_argument(
+    "-exclude-hdr-patterns",
+    dest="ignore_patterns",
+    action="append",
+    default=[],
+    help="Glob patterns to exclude headers from parsing",
+  )
+  parser.add_argument(
+    "-quiet",
+    action="store_true",
+    help="Suppress verbose output",
+  )
+  parser.add_argument(
+    "-env",
+    default="pyvinecopulib",
+    help="Conda environment name (default: 'pyvinecopulib')",
+  )
+  return parser.parse_args()
+
+
 def main():
-  parameters = ["-x", "c++", "-D__MKDOC_PY__"]
-  filenames = []
+  args = parse_args()
 
-  quiet = False
-  std = "-std=c++11"
-  root_name = "pyvinecopulib_doc"
-  ignore_patterns = []
-  output_filename = None
+  output_filename = args.output_filename
+  library_file = args.library_file
+  root_name = args.root_name
+  quiet = args.quiet
+  filenames = args.filenames
+  ignore_patterns = args.ignore_patterns
+  env_name = args.env
 
-  for item in sys.argv[1:]:
-    if item == "-quiet":
-      quiet = True
-    elif item.startswith("-output="):
-      output_filename = item[len("-output=") :]
-    elif item.startswith("-library_file="):
-      library_file = item[len("-library_file=") :]
-    elif item.startswith("-std="):
-      std = item
-    elif item.startswith("-root-name="):
-      root_name = item[len("-root-name=") :]
-    elif item.startswith("-exclude-hdr-patterns="):
-      ignore_patterns.append(item[len("-exclude-hdr-patterns=") :])
-    elif item.startswith("-"):
-      parameters.append(item)
-    else:
-      filenames.append(item)
+  parameters = [
+    "-x",
+    "c++",
+    "-D__MKDOC_PY__",
+    f"-std={args.std}",
+  ]
+  parameters.extend([f"-I{inc}" for inc in args.include_dirs])
+  parameters.append(f"-isystem{get_eigen_include(env_name)}")
+  parameters.append(f"-isystem{get_boost_include(env_name)}")
 
   if library_file and os.path.exists(library_file):
     # cindex.Config.set_library_path(os.path.dirname(library_file))
@@ -1240,8 +1300,6 @@ def main():
   else:
     eprint("Unable to find libclang library file.")
     sys.exit(1)
-
-  parameters.append(std)
 
   if output_filename is None or len(filenames) == 0:
     eprint(
@@ -1265,8 +1323,6 @@ def main():
   )
 
   # Determine project include directories.
-  # N.B. For simplicity when using with Bazel, we do not try to get canonical
-  # file paths for determining include files.
   include_paths = []
   for param in parameters:
     # Only check for normal include directories.
@@ -1312,6 +1368,7 @@ def main():
     if not quiet:
       eprint("Parse headers...")
     index = cindex.Index(cindex.conf.lib.clang_createIndex(False, True))
+    eprint(parameters)
     translation_unit = index.parse(
       glue_filename,
       parameters,

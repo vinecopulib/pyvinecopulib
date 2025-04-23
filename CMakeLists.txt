@@ -99,12 +99,3 @@ target_compile_definitions(pyvinecopulib_ext PRIVATE VERSION_INFO=\"${PROJECT_VE
 install(TARGETS pyvinecopulib_ext
     LIBRARY DESTINATION pyvinecopulib
 )
-
-nanobind_add_stub(
-  pyvinecopulib_stub 
-  INSTALL_TIME
-  MODULE pyvinecopulib.pyvinecopulib_ext
-  OUTPUT "pyvinecopulib/__init__.pyi"
-  MARKER_FILE "pyvinecopulib/py.typed"
-  PYTHON_PATH "pyvinecopulib"
-)

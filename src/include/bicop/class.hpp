@@ -202,8 +202,7 @@ Alternatives to instantiate bivariate copulas are:
          "grid_size"_a = nb::none(),
          get_helper_doc("pyvinecopulib._python_helpers.bicop",
                         "BICOP_PLOT_DOC",
-                        "Plot the bivariate copula (extended doc
-                        unavailable) ")
+                        "Plot the bivariate copula (extended doc unavailable) ")
            .c_str())
     .def("__getstate__",
          [](const Bicop& cop) {

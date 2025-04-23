@@ -77,7 +77,7 @@ def test_fitcontrolsvinecop() -> None:
 
 
 def test_bicop() -> None:
-  original_bicop = pv.Bicop(pv.BicopFamily.gaussian)
+  original_bicop = pv.Bicop(pv.gaussian)
   original_bicop.parameters = np.array([[0.5]])
 
   # Serialize the object
@@ -109,8 +109,8 @@ def test_vinecop() -> None:
   n = 1000
   u = pv.to_pseudo_obs(random_data(d, n))
 
-  controls = pv.FitControlsVinecop(family_set=[pv.BicopFamily.gaussian])
-  assert controls.family_set == [pv.BicopFamily.gaussian]
+  controls = pv.FitControlsVinecop(family_set=[pv.gaussian])
+  assert controls.family_set == [pv.gaussian]
   original_cop = pv.Vinecop.from_data(u, controls=controls)
 
   # Serialize the object

@@ -106,6 +106,16 @@ Finally, you can build and install `pyvinecopulib` using `pip`:
 pip install .
 ```
 
+Stubs can then be generated using:
+
+```bash
+PYTHONPATH=$(python -c "import site; print(site.getsitepackages()[0])") \
+              python -m nanobind.stubgen \
+                -m pyvinecopulib.pyvinecopulib_ext \
+                -o src/pyvinecopulib/__init__.pyi \
+                -M src/pyvinecopulib/py.typed
+```
+
 Note that the `generate_requirements.py` script can also be used to generate a `requirements.txt` file for use with `pip` via the `--format` option:
 
 ```bash

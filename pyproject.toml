@@ -1,5 +1,5 @@
 [build-system]
-requires = ["scikit-build-core>=0.4.3", "nanobind>=2.7.0"]
+requires = ["scikit-build-core>=0.5.0", "nanobind>=2.7.0"]
 build-backend = "scikit_build_core.build"
 
 [project]
@@ -97,3 +97,6 @@ show_error_codes = true
 warn_unused_configs = true
 files = ["src", "tests"]
 exclude = "scripts|docs|examples"
+
+
+

@@ -1,3 +1,5 @@
+import numpy as np
+
 import pyvinecopulib as pv
 
 from .helpers import compare_rvinestructure

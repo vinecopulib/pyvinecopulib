@@ -10,7 +10,7 @@ def test_bicop(test_dump_folder: str) -> None:
   bicop = pv.Bicop()
 
   # Test default initialization
-  assert bicop.family == pv.BicopFamily.indep
+  assert bicop.family == pv.indep
   assert bicop.rotation == 0
   assert bicop.parameters.shape == (0, 0)
   assert bicop.var_types == ["c", "c"]
@@ -20,7 +20,7 @@ def test_bicop(test_dump_folder: str) -> None:
   controls = pv.FitControlsBicop()
   bicop = pv.Bicop.from_data(data, controls)
 
-  assert bicop.family == pv.BicopFamily.indep
+  assert bicop.family == pv.indep
   assert bicop.rotation == 0
   assert bicop.parameters.shape == (0, 0)
   assert bicop.var_types == ["c", "c"]
@@ -41,7 +41,7 @@ def test_bicop(test_dump_folder: str) -> None:
   assert bicop.var_types == new_bicop.var_types
 
   # Test properties
-  bicop = pv.Bicop(family=pv.BicopFamily.gumbel, rotation=90)
+  bicop = pv.Bicop(family=pv.gumbel, rotation=90)
   bicop.rotation = 0
   assert bicop.rotation == 0
   with pytest.raises(RuntimeError):
@@ -118,7 +118,7 @@ def test_bicop(test_dump_folder: str) -> None:
   # Test simulate method
   n = 100
   qrng = False
-  seeds = []
+  seeds: list[int] = []
   samples = bicop.simulate(n, qrng, seeds)
   assert samples.shape == (n, 2)
 
