@@ -8,8 +8,6 @@ version = "0.7.3"
 authors = [
   { name = "Thibault Vatter", email = "info@vinecopulib.com" },
   { name = "Thomas Nagler", email = "info@vinecopulib.com" },
-  { name = "Thibault Vatter", email = "info@vinecopulib.com" },
-  { name = "Thomas Nagler", email = "info@vinecopulib.com" },
 ]
 description = "A python interface to vinecopulib"
 readme = "README.md"
@@ -46,7 +44,6 @@ doc = [
   "sphinx-autodoc-typehints",
   "myst-parser",
 ]
-examples = ["jupyterlab"]
 
 [project.urls]
 Homepage = "https://github.com/vinecopulib/pyvinecopulib/"
