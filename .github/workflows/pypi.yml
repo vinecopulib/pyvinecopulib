@@ -14,7 +14,6 @@ jobs:
       matrix:
         # macos-13 is an intel runner, macos-14 is apple silicon
         python: [39, 310, 311, 312, 313]
-        python: [39, 310, 311, 312, 313]
         cfg:
           - {
               os: ubuntu-latest,
