@@ -12,14 +12,6 @@ from pathlib import Path
 from types import BuiltinFunctionType, FunctionType
 from typing import Optional
 
-try:
-  import pyvinecopulib
-except ImportError as e:
-  raise ImportError(
-    "pyvinecopulib could not be imported. Make sure the correct conda environment is active "
-    f"and contains the package.\nOriginal error: {e}"
-  )
-
 
 def wrap_known_types(sig: str, known_types: set[str]) -> str:
   for name in known_types:
