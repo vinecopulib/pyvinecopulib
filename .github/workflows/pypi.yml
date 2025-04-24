@@ -7,7 +7,39 @@ env:
   EIGEN_VERSION: 3.4.0
 
 jobs:
+  lint-typecheck:
+    name: Lint and Type Check (Ubuntu)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dev dependencies
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install --upgrade pip
+          pip install tomli  # Python <3.11 compat
+          python scripts/get_dependencies.py dev --as-requirements > requirements.txt
+          pip install -r requirements.txt
+
+      - name: Run format check
+        run: ruff format --check
+
+      - name: Run ruff lint
+        run: ruff check
+
+      - name: Run mypy type check
+        run: mypy
+
   build:
+    needs: lint-typecheck
     strategy:
       fail-fast: false
       matrix:
@@ -47,8 +79,6 @@ jobs:
               platform: x64,
               root_install_dir: 'D:\',
             }
-    env:
-      PYTHON_VENV_ROOT: ${{github.workspace}}/.venv
 
     name: Build and test on ${{ matrix.cfg.os }} for cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
     runs-on: ${{ matrix.cfg.os }}
@@ -77,17 +107,6 @@ jobs:
           boost_version: ${{ env.BOOST_VERSION }}
           eigen_version: ${{ env.EIGEN_VERSION }}
           wdm: "false"
-      - name: Lint and type check
-        if: matrix.cfg.os != 'windows-latest'
-        run: |
-          python3 -m venv ${PYTHON_VENV_ROOT}
-          source ${PYTHON_VENV_ROOT}/bin/activate
-          pip install tomli  # needed for Python < 3.11
-          python scripts/get_dependencies.py dev --as-requirements > requirements.txt
-          pip install -r requirements.txt
-          ruff format --check
-          ruff check
-          mypy
       - name: Build and test wheels
         uses: pypa/cibuildwheel@v2.20.0
         env:
