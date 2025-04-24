@@ -102,3 +102,5 @@ CMakeUserPresets.json
 pyvinecopulib-*.json
 
 .mypy_cache/
+environment.yml
+requirements.txt

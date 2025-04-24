@@ -38,7 +38,8 @@ init_vinecop_fit_controls(nb::module_& module)
                   bool,
                   size_t,
                   std::string,
-                  bool>(),
+                  bool,
+                  std::vector<int>>(),
          "family_set"_a = bicop_families::all,
          "parametric_method"_a = "mle",
          "nonparametric_method"_a = "constant",
@@ -55,9 +56,10 @@ init_vinecop_fit_controls(nb::module_& module)
          "select_families"_a = true,
          "show_trace"_a = false,
          "num_threads"_a = 1,
-         "mst_algorithm"_a = "prim",
+         "tree_algorithm"_a = "mst_prim",
          "allow_rotations"_a = true,
-         fitcontrolsvinecop_doc.ctor.doc_17args)
+         "seeds"_a = std::vector<int>(),
+         fitcontrolsvinecop_doc.ctor.doc_19args)
     .def_prop_rw("family_set",
                  &FitControlsVinecop::get_family_set,
                  &FitControlsVinecop::set_family_set,
@@ -123,19 +125,30 @@ init_vinecop_fit_controls(nb::module_& module)
                  &FitControlsVinecop::get_num_threads,
                  &FitControlsVinecop::set_num_threads,
                  "The number of threads.")
-    .def_prop_rw("mst_algorithm",
-                 &FitControlsVinecop::get_mst_algorithm,
-                 &FitControlsVinecop::set_mst_algorithm,
-                 "The minimum spanning tree algorithm.")
+    .def_prop_rw("tree_algorithm",
+                 &FitControlsVinecop::get_tree_algorithm,
+                 &FitControlsVinecop::set_tree_algorithm,
+                 "The spanning tree algorithm.")
     .def_prop_rw("allow_rotations",
                  &FitControlsVinecop::get_allow_rotations,
                  &FitControlsVinecop::set_allow_rotations,
                  "Whether to allow rotations for the families.")
-    .def("__repr__",
-         [](const FitControlsVinecop& controls) {
-           return "<pyvinecopulib.FitControlsVinecop>\n" + controls.str();
-         })
-    .def("str", &FitControlsVinecop::str, fitcontrolsvinecop_doc.str.doc)
+    .def_prop_rw("seeds",
+                 &FitControlsVinecop::get_seeds,
+                 &FitControlsVinecop::set_seeds,
+                 "The seeds for the random number generator.")
+    .def(
+      "__repr__",
+      [](const FitControlsVinecop& controls) {
+        return "<pyvinecopulib.FitControlsVinecop>\n" + controls.str();
+      },
+      fitcontrolsvinecop_doc.str.doc)
+    .def(
+      "__str__",
+      [](const FitControlsVinecop& controls) {
+        return "<pyvinecopulib.FitControlsVinecop>\n" + controls.str();
+      },
+      fitcontrolsvinecop_doc.str.doc)
     .def("__getstate__",
          [](const FitControlsVinecop& controls) {
            return std::make_tuple(controls.get_family_set(),
@@ -154,8 +167,9 @@ init_vinecop_fit_controls(nb::module_& module)
                                   controls.get_select_families(),
                                   controls.get_show_trace(),
                                   controls.get_num_threads(),
-                                  controls.get_mst_algorithm(),
-                                  controls.get_allow_rotations());
+                                  controls.get_tree_algorithm(),
+                                  controls.get_allow_rotations(),
+                                  controls.get_seeds());
          })
     .def("__setstate__",
          [](FitControlsVinecop& controls,
@@ -176,7 +190,8 @@ init_vinecop_fit_controls(nb::module_& module)
                        bool,
                        size_t,
                        std::string,
-                       bool> state) {
+                       bool,
+                       std::vector<int>> state) {
            FitControlsConfig config;
            config.family_set = std::get<0>(state);
            config.parametric_method = std::get<1>(state);
@@ -194,8 +209,9 @@ init_vinecop_fit_controls(nb::module_& module)
            config.select_families = std::get<13>(state);
            config.show_trace = std::get<14>(state);
            config.num_threads = std::get<15>(state);
-           config.mst_algorithm = std::get<16>(state);
+           config.tree_algorithm = std::get<16>(state);
            config.allow_rotations = std::get<17>(state);
+           config.seeds = std::get<18>(state);
 
            new (&controls) FitControlsVinecop(config);
          });

@@ -13,7 +13,7 @@ from .helpers import (
 )
 
 
-def test_fitcontrolsbicop():
+def test_fitcontrolsbicop() -> None:
   original_controls = pv.FitControlsBicop()
   original_controls.family_set = pv.itau
   original_controls.parametric_method = "itau"
@@ -39,7 +39,7 @@ def test_fitcontrolsbicop():
   compare_properties(original_controls, deserialized_controls, attrs)
 
 
-def test_fitcontrolsvinecop():
+def test_fitcontrolsvinecop() -> None:
   # Create an instance of FitControlsVinecop with some configuration
   original_controls = pv.FitControlsVinecop()
   original_controls.family_set = pv.itau
@@ -69,13 +69,15 @@ def test_fitcontrolsvinecop():
     "select_families",
     "show_trace",
     "num_threads",
-    "mst_algorithm",
+    "tree_algorithm",
+    "allow_rotations",
+    "seeds",
   ]
   compare_properties(original_controls, deserialized_controls, attrs)
 
 
-def test_bicop():
-  original_bicop = pv.Bicop(pv.BicopFamily.gaussian)
+def test_bicop() -> None:
+  original_bicop = pv.Bicop(pv.gaussian)
   original_bicop.parameters = np.array([[0.5]])
 
   # Serialize the object
@@ -88,7 +90,7 @@ def test_bicop():
   compare_bicop(original_bicop, deserialized_bicop)
 
 
-def test_rvinestructure():
+def test_rvinestructure() -> None:
   # Create an instance of RVineStructure with some configuration
   original_structure = pv.RVineStructure.simulate(5)
 
@@ -102,13 +104,13 @@ def test_rvinestructure():
   compare_rvinestructure(original_structure, deserialized_structure)
 
 
-def test_vinecop():
+def test_vinecop() -> None:
   d = 5
   n = 1000
   u = pv.to_pseudo_obs(random_data(d, n))
 
-  controls = pv.FitControlsVinecop(family_set=[pv.BicopFamily.gaussian])
-  assert controls.family_set == [pv.BicopFamily.gaussian]
+  controls = pv.FitControlsVinecop(family_set=[pv.gaussian])
+  assert controls.family_set == [pv.gaussian]
   original_cop = pv.Vinecop.from_data(u, controls=controls)
 
   # Serialize the object

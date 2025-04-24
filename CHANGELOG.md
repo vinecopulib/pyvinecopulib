@@ -1,33 +1,93 @@
 # Changelog
 
+## 0.7.3
+
+### Breaking API changes in `pyvinecopulib`
+
+* Rename the `mst_algorithm` argument in `FitControlsVinecop` to `tree_algorithm` to match the underlying C++ API (#178).
+    * The accepted values are now `"mst_prim"`, `"mst_kruskal"` instead of `"prim"` and `"kruskal"`.
+* Drop support for Python 3.8. Add support for Python 3.13 (#181).
+
+### New features in `pyvinecopulib`
+
+* Add support for random spanning trees in structure selection via `tree_algorithm="random_weighted"` and `"random_unweighted"` using Wilson's algorithm, enabling uniform or weight-proportional tree sampling (#178).
+* Upgrade to `nanobind` v0.2.7, which removes the need for casting hacks and improves compatibility (#180).
+* Introduce a `format()` method and improve `__str__` output for the `Vinecop` class (#144, #185).
+* Add PEP 561-compatible stub files and full static type annotations across the package. Enable `mypy` checks in CI (#144).
+* Add `.[dev]` and `.[examples]` extras in `pyproject.toml` for installing development and example dependencies (#181, #182, #183).
+* Replace `flake8` with `ruff` for linting and add code formatting checks (#182).
+* Execute and test Jupyter notebooks in CI, including Graphviz rendering (#181).
+
+### Bug fixes in `pyvinecopulib`
+
+* Fix non-deterministic structure selection in multithreaded environments by decoupling criterion computation from edge insertion (#178, [vinecopulib#640](https://github.com/vinecopulib/vinecopulib/pull/640)).
+* Refactor unit test environment setup and cleanup; remove stale directories in tests (#183).
+* Fix documentation rendering and improve docstrings across the package (#144, #185).
+
+### Changes in `vinecopulib` version 0.7.3
+
+These changes originate from the [`release 0.7.3 of vinecopulib`](https://github.com/vinecopulib/vinecopulib/releases/tag/v0.7.3), the C++ library which powers `pyvinecopulib`.
+
+### BREAKING API CHANGES
+
+* The `mst_algorithm` option to `FitControlsVinecop` has been renamed to `tree_algorithm` to
+  allow for alternative spanning tree algorithms ([#637](https://github.com/vinecopulib/vinecopulib/pull/637)).
+* `tree_algorithm`'s default value is now `"mst_prim"` instead of `"prim"`, and `"mst_kruskal"`
+  replaces `"kruskal"` ([#637](https://github.com/vinecopulib/vinecopulib/pull/637)).
+* The CMake option `VINECOPULIB_BUILD_SHARED_LIBS` has been changed to `VINECOPULIB_PRECOMPILED`
+  to better reflect its purpose ([#641](https://github.com/vinecopulib/vinecopulib/pull/641)).
+
+### NEW FEATURES
+
+* Allow for random spanning trees as alternatives to the MST-based structure selection using
+  `tree_algorithm` in `FitControlsVinecop` with `"random_weighted"` or `"random_unweighted"`
+  ([#637](https://github.com/vinecopulib/vinecopulib/pull/637)).
+
+### BUG FIXES
+
+* Decouple edge insertion from criterion computation in `VinecopSelector` to fix randomness
+  issues in structure selection when using multiple threads ([#640](https://github.com/vinecopulib/vinecopulib/pull/640))
+
+### Changes in `vinecopulib` version 0.7.2
+
+These changes originate from the [`release 0.7.2 of vinecopulib`](https://github.com/vinecopulib/vinecopulib/releases/tag/v0.7.2), the C++ library which powers `pyvinecopulib`.
+
+### BUG FIXES
+
+* More build system updates by @jschueller ([#633](https://github.com/vinecopulib/vinecopulib/pull/633))
+
+* Fix deprecation warning in json header ([#634](https://github.com/vinecopulib/vinecopulib/pull/634))
+
+* Fix TLL speed issues related to FFT ([#635](https://github.com/vinecopulib/vinecopulib/pull/635))
+
 ## 0.7.1
 
-## Bug fixes in `pyvinecopulib`
-
-* Upgrade nanobind to allow for single row matrices (fix #169 and #170)
-
-## New features in `pyvinecopulib`
+### New features in `pyvinecopulib`
 
 * Add pickle support for all classes (#168)
 * Add `allow_rotation` option to `FitControlsBicop` and `FitControlsVinecop` (#168)
 
-## Changes in `vinecopulib` version 0.7.1
+### Bug fixes in `pyvinecopulib`
+
+* Upgrade nanobind to allow for single row matrices (fix #169 and #170)
+
+### Changes in `vinecopulib` version 0.7.1
 
 These changes originate from the latest release of [`vinecopulib`](https://github.com/vinecopulib/vinecopulib/releases/tag/v0.7.1), the C++ library which powers `pyvinecopulib`.
 
-### NEW FEATURES
+#### NEW FEATURES
 
-* add `allow_rotation` option to `FitControlsBicop` and `FitControlsVinecop`
+* Add `allow_rotation` option to `FitControlsBicop` and `FitControlsVinecop`
   to allow for the rotation of the pair copulas ([#628](https://github.com/vinecopulib/vinecopulib/pull/628)).
-* add a `FitControlsConfig` struct to create flexible and yet safe constructors
+* Add a `FitControlsConfig` struct to create flexible and yet safe constructors
   for `FitControlsBicop` and `FitControlsVinecop` ([#629](https://github.com/vinecopulib/vinecopulib/pull/629)).
 
-### BUG FIXES
+#### BUG FIXES
 
-* restrict parameter range for fitting Tawn copulas; fix handling of their
+* Restrict parameter range for fitting Tawn copulas; fix handling of their
   shape/argument order ([#620](https://github.com/vinecopulib/vinecopulib/pull/620)).
-* compute and save loglik/nobs in `Vinecop::fit()` ([#623](https://github.com/vinecopulib/vinecopulib/pull/623))
-* disable unwanted compiler output related to BOOST_CONCEPT checks ([#624](https://github.com/vinecopulib/vinecopulib/pull/624))
+* Compute and save loglik/nobs in `Vinecop::fit()` ([#623](https://github.com/vinecopulib/vinecopulib/pull/623))
+* Disable unwanted compiler output related to BOOST_CONCEPT checks ([#624](https://github.com/vinecopulib/vinecopulib/pull/624))
 
 ## 0.7.0
 

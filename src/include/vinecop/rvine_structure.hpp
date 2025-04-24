@@ -117,13 +117,11 @@ Alternatives to instantiate structures are:
     .def_prop_ro(
       "trunc_lvl", &RVineStructure::get_trunc_lvl, "The truncation level.")
     .def_prop_ro("order",
-                 (std::vector<size_t>(RVineStructure::*)() const) &
+                 (std::vector<size_t> (RVineStructure::*)() const) &
                    RVineStructure::get_order,
                  "The variable order.")
     .def_prop_ro(
-      "matrix",
-      [](const RVineStructure& self) { return nb::cast(self.get_matrix()); },
-      rvinestructure_doc.get_matrix.doc)
+      "matrix", &RVineStructure::get_matrix, rvinestructure_doc.get_matrix.doc)
     .def("struct_array",
          &RVineStructure::struct_array,
          "tree"_a,
@@ -152,14 +150,21 @@ Alternatives to instantiate structures are:
     .def_static("simulate",
                 &RVineStructure::simulate,
                 "d"_a,
-                "natural order"_a = false,
+                "natural_order"_a = false,
                 "seeds"_a = std::vector<size_t>(),
                 rvinestructure_doc.simulate.doc)
-    .def("__repr__",
-         [](const RVineStructure& rvs) {
-           return "<pyvinecopulib.RVineStructure>\n" + rvs.str();
-         })
-    .def("str", &RVineStructure::str, rvinestructure_doc.str.doc)
+    .def(
+      "__repr__",
+      [](const RVineStructure& rvs) {
+        return "<pyvinecopulib.RVineStructure>\n" + rvs.str();
+      },
+      rvinestructure_doc.str.doc)
+    .def(
+      "__str__",
+      [](const RVineStructure& rvs) {
+        return "<pyvinecopulib.RVineStructure>\n" + rvs.str();
+      },
+      rvinestructure_doc.str.doc)
     .def("__getstate__",
          [](const RVineStructure& rvinestruct) {
            return rvinestruct.to_json().dump();

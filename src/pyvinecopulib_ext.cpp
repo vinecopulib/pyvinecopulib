@@ -18,8 +18,8 @@ public:
   explicit ScopedModuleNameOverride(const nb::module_& m,
                                     const std::string& name)
     : module_(std::move(m))
+    , original_name_(module_.attr("__name__"))
   {
-    original_name_ = module_.attr("__name__");
     module_.attr("__name__") = name;
   }
   ~ScopedModuleNameOverride() { module_.attr("__name__") = original_name_; }
