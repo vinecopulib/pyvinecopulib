@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "pyvinecopulib"
-version = "0.7.1"
+version = "0.7.3"
 authors = [
   { name = "Thibault Vatter", email = "info@vinecopulib.com" },
   { name = "Thomas Nagler", email = "info@vinecopulib.com" },
