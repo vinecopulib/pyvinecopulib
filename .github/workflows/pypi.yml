@@ -20,23 +20,16 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dev dependencies
+      - name: Lint and type check
         run: |
-          python -m venv .venv
+          python3 -m venv .venv
           source .venv/bin/activate
-          pip install --upgrade pip
-          pip install tomli  # Python <3.11 compat
+          pip install tomli  # Needed for Python < 3.11
           python scripts/get_dependencies.py dev --as-requirements > requirements.txt
           pip install -r requirements.txt
-
-      - name: Run format check
-        run: ruff format --check
-
-      - name: Run ruff lint
-        run: ruff check
-
-      - name: Run mypy type check
-        run: mypy
+          ruff format --check
+          ruff check
+          mypy
 
   build:
     needs: lint-typecheck
