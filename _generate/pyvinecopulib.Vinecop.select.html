@@ -1,22 +1,22 @@
 
 
 <!DOCTYPE html>
-<html class="writer-html5" lang="en"  data-content_root="../">
+<html class="writer-html5" lang="en" >
 
 <head>
-  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Vinecop.select &mdash; pyvinecopulib 0.7.1 documentation</title>
-  <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
-  <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+  <title>Vinecop.select &mdash; pyvinecopulib 0.7.3 documentation</title>
+  <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+  <link rel="stylesheet" type="text/css" href="../_static/css/theme.css" />
 
   
-  <script src="../_static/jquery.js?v=5d32c60e"></script>
-  <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-  <script src="../_static/documentation_options.js?v=26f1c5af"></script>
-  <script src="../_static/doctools.js?v=9bcbadda"></script>
-  <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+  <script src="../_static/jquery.js"></script>
+  <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+  <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+  <script src="../_static/doctools.js"></script>
+  <script src="../_static/sphinx_highlight.js"></script>
   <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
   <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
   <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
@@ -36,7 +36,7 @@
           
           
           <a href="../index.html"  class="icon icon-home" >
-            pyvinecopulib 0.7.1
+            pyvinecopulib 0.7.3
             <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo" />
           </a>
 <div role="search">
@@ -62,6 +62,7 @@
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.bic.html">Vinecop.bic</a></li>
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.cdf.html">Vinecop.cdf</a></li>
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.fit.html">Vinecop.fit</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.format.html">Vinecop.format</a></li>
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.from_data.html">Vinecop.from_data</a></li>
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.from_dimension.html">Vinecop.from_dimension</a></li>
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.from_file.html">Vinecop.from_file</a></li>
@@ -80,7 +81,6 @@
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.rosenblatt.html">Vinecop.rosenblatt</a></li>
 <li class="toctree-l4 current"><a class="current reference internal" href="#">Vinecop.select</a></li>
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.simulate.html">Vinecop.simulate</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.str.html">Vinecop.str</a></li>
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.to_file.html">Vinecop.to_file</a></li>
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.to_json.html">Vinecop.to_json</a></li>
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.truncate.html">Vinecop.truncate</a></li>
@@ -105,7 +105,7 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
         <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-        <a href="../index.html">pyvinecopulib 0.7.1</a>
+        <a href="../index.html">pyvinecopulib 0.7.3</a>
       </nav>
 
       <div class="wy-nav-content">
@@ -125,10 +125,10 @@
               <div itemprop="articleBody">
                 
   <section id="vinecop-select">
-<h1>Vinecop.select<a class="headerlink" href="#vinecop-select" title="Link to this heading"></a></h1>
+<h1>Vinecop.select<a class="headerlink" href="#vinecop-select" title="Permalink to this heading"></a></h1>
 <dl class="py method">
 <dt class="sig sig-object py" id="pyvinecopulib.Vinecop.select">
-<span class="sig-prename descclassname"><span class="pre">Vinecop.</span></span><span class="sig-name descname"><span class="pre">select</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">self,</span> <span class="pre">data:</span> <span class="pre">numpy.ndarray[dtype=float64,</span> <span class="pre">shape=(*,</span> <span class="pre">*),</span> <span class="pre">order='F'],</span> <span class="pre">controls:</span> <span class="pre">pyvinecopulib.FitControlsVinecop</span> <span class="pre">=</span> <span class="pre">FitControlsVinecop()</span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyvinecopulib.Vinecop.select" title="Link to this definition"></a></dt>
+<span class="sig-prename descclassname"><span class="pre">Vinecop.</span></span><span class="sig-name descname"><span class="pre">select</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">self,</span> <span class="pre">data:</span> <span class="pre">numpy.ndarray[dtype=float64,</span> <span class="pre">shape=(*,</span> <span class="pre">*),</span> <span class="pre">order='F'],</span> <span class="pre">controls:</span> <span class="pre">pyvinecopulib.FitControlsVinecop</span> <span class="pre">=</span> <span class="pre">FitControlsVinecop()</span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyvinecopulib.Vinecop.select" title="Permalink to this definition"></a></dt>
 <dd><p>In other words, <code class="docutils literal notranslate"><span class="pre">select()</span></code> behaves differently depending on its current truncation level and the
 truncation level specified in the controls, respectively called <code class="docutils literal notranslate"><span class="pre">trunc_lvl</span></code> and
 <code class="xref py py-class docutils literal notranslate"><span class="pre">.</span></code> in what follows. Essentially, <code class="xref py py-class docutils literal notranslate"><span class="pre">.</span></code> defines the object’s
@@ -148,7 +148,22 @@ structure is fully unspecified.</p></li>
 <p>Selection of the structure is performed using the algorithm of Dissmann, J. F., E. C. Brechmann, C.
 Czado, and D. Kurowicka (2013). <em>Selecting and estimating regular vine copulae and application to
 financial returns.</em> Computational Statistics &amp; Data Analysis, 59 (1), 52-69. The dependence measure
-used to select trees (default: Kendall’s tau) is corrected for ties (see the <a class="reference external" href="https://github.com/tnagler/wdm">wdm</a> library).</p>
+used to select trees (default: Kendall’s tau) is corrected for ties (see the <a class="reference external" href="https://github.com/tnagler/wdm">wdm</a> library). The dependence measure can be changed using the
+<code class="xref py py-class docutils literal notranslate"><span class="pre">.</span></code>, which can be set to <code class="docutils literal notranslate"><span class="pre">&quot;tau&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;rho&quot;</span></code> or <code class="docutils literal notranslate"><span class="pre">&quot;hoeffd&quot;</span></code>. Both Prim’s
+(default: <code class="docutils literal notranslate"><span class="pre">&quot;mst_prim&quot;</span></code>) and Kruskal’s ()``”mst_kruskal”<a href="#id1"><span class="problematic" id="id2">``</span></a>) algorithms are available through
+<code class="xref py py-class docutils literal notranslate"><span class="pre">.</span></code> for the maximum spanning tree selection. An alternative to the maximum
+spanning tree selection is to use random spanning trees, which can be selected using
+<code class="xref py py-class docutils literal notranslate"><span class="pre">.</span></code> and come in two flavors, both using Wilson’s algorithm loop erased
+random walks:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>“random_weighted”` generates a random spanning tree with probability
+proportional to the product of the weights (i.e., the dependence) of
+the edges in the tree.</p></li>
+<li><p>“random_unweighted”` generates a random spanning tree uniformly over all
+spanning trees satisfying the proximity condition.</p></li>
+</ul>
+</div></blockquote>
 <p>If the <code class="docutils literal notranslate"><span class="pre">controls</span></code> object has been instantiated with <code class="docutils literal notranslate"><span class="pre">select_families</span> <span class="pre">=</span> <span class="pre">false</span></code>, then the method
 simply updates the parameters of the pair-copulas without selecting the families or the structure.
 In this case, this is equivalent to calling <code class="docutils literal notranslate"><span class="pre">fit()</span></code> for each pair-copula, albeit potentially in

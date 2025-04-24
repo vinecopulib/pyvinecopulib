@@ -42,7 +42,7 @@ dist/
 
 #build, bin and Lion related dirs
 _build/
-#_generate/
+_generate/
 include/git_revision.hpp
 bin/
 build/
@@ -98,3 +98,9 @@ compile_commands.json
 CTestTestfile.cmake
 _deps
 CMakeUserPresets.json
+
+pyvinecopulib-*.json
+
+.mypy_cache/
+environment.yml
+requirements.txt

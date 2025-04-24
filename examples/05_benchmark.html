@@ -1,23 +1,23 @@
 
 
 <!DOCTYPE html>
-<html class="writer-html5" lang="en"  data-content_root="../">
+<html class="writer-html5" lang="en" >
 
 <head>
-  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Benchmarking performance &mdash; pyvinecopulib 0.7.1 documentation</title>
-  <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
-  <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
-  <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css?v=2aa19091" />
+  <title>Benchmarking performance &mdash; pyvinecopulib 0.7.3 documentation</title>
+  <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+  <link rel="stylesheet" type="text/css" href="../_static/css/theme.css" />
+  <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css" />
 
   
-  <script src="../_static/jquery.js?v=5d32c60e"></script>
-  <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-  <script src="../_static/documentation_options.js?v=26f1c5af"></script>
-  <script src="../_static/doctools.js?v=9bcbadda"></script>
-  <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+  <script src="../_static/jquery.js"></script>
+  <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+  <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+  <script src="../_static/doctools.js"></script>
+  <script src="../_static/sphinx_highlight.js"></script>
   <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
   <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
   <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
@@ -36,7 +36,7 @@
           
           
           <a href="../index.html"  class="icon icon-home" >
-            pyvinecopulib 0.7.1
+            pyvinecopulib 0.7.3
             <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo" />
           </a>
 <div role="search">
@@ -75,7 +75,7 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
         <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-        <a href="../index.html">pyvinecopulib 0.7.1</a>
+        <a href="../index.html">pyvinecopulib 0.7.3</a>
       </nav>
 
       <div class="wy-nav-content">
@@ -94,32 +94,32 @@
               <div itemprop="articleBody">
                 
   <section id="Benchmarking-performance">
-<h1>Benchmarking performance<a class="headerlink" href="#Benchmarking-performance" title="Link to this heading"></a></h1>
+<h1>Benchmarking performance<a class="headerlink" href="#Benchmarking-performance" title="Permalink to this heading"></a></h1>
 <section id="Import-the-required-libraries">
-<h2>Import the required libraries<a class="headerlink" href="#Import-the-required-libraries" title="Link to this heading"></a></h2>
+<h2>Import the required libraries<a class="headerlink" href="#Import-the-required-libraries" title="Permalink to this heading"></a></h2>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">timeit</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">timeit</span>
 
-<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 
-<span class="kn">import</span> <span class="nn">pyvinecopulib</span> <span class="k">as</span> <span class="nn">pv</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pyvinecopulib</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pv</span>
 
-<span class="kn">from</span> <span class="nn">collections</span> <span class="kn">import</span> <span class="n">defaultdict</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">collections</span><span class="w"> </span><span class="kn">import</span> <span class="n">defaultdict</span>
 
 
-<span class="k">def</span> <span class="nf">print_results</span><span class="p">(</span><span class="n">results</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">print_results</span><span class="p">(</span><span class="n">results</span><span class="p">,</span> <span class="n">name</span><span class="p">):</span>
   <span class="nb">print</span><span class="p">(</span>
-    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">: min=</span><span class="si">{</span><span class="nb">min</span><span class="p">(</span><span class="n">results</span><span class="p">)</span><span class="o">*</span><span class="mi">1000</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">, mean=</span><span class="si">{</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">results</span><span class="p">)</span><span class="o">*</span><span class="mi">1000</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">, max=</span><span class="si">{</span><span class="nb">max</span><span class="p">(</span><span class="n">results</span><span class="p">)</span><span class="o">*</span><span class="mi">1000</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">: min=</span><span class="si">{</span><span class="nb">min</span><span class="p">(</span><span class="n">results</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">1000</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">, mean=</span><span class="si">{</span><span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">results</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">1000</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">, max=</span><span class="si">{</span><span class="nb">max</span><span class="p">(</span><span class="n">results</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">1000</span><span class="si">:</span><span class="s2">.6f</span><span class="si">}</span><span class="s2">&quot;</span>
   <span class="p">)</span>
 </pre></div>
 </div>
 </div>
 </section>
 <section id="Set-the-parameters-for-the-benchmark">
-<h2>Set the parameters for the benchmark<a class="headerlink" href="#Set-the-parameters-for-the-benchmark" title="Link to this heading"></a></h2>
+<h2>Set the parameters for the benchmark<a class="headerlink" href="#Set-the-parameters-for-the-benchmark" title="Permalink to this heading"></a></h2>
 <div class="nbinput nblast docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
 </pre></div>
@@ -131,7 +131,7 @@
 <span class="n">repeats</span> <span class="o">=</span> <span class="mi">5</span>
 
 
-<span class="k">def</span> <span class="nf">generate_data</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_data</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">d</span><span class="p">,</span> <span class="n">seed</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
   <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">seed</span><span class="p">)</span>
   <span class="c1"># Generate data</span>
   <span class="n">x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="n">n</span><span class="p">)[:,</span> <span class="n">np</span><span class="o">.</span><span class="n">newaxis</span><span class="p">]</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span>
@@ -144,26 +144,26 @@
   <span class="k">return</span> <span class="n">u</span>
 
 
-<span class="k">def</span> <span class="nf">generate_data_bicop</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">seed</span><span class="p">):</span>
-  <span class="n">cop</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">Bicop</span><span class="p">(</span><span class="n">family</span><span class="o">=</span><span class="n">pv</span><span class="o">.</span><span class="n">BicopFamily</span><span class="o">.</span><span class="n">gaussian</span><span class="p">,</span> <span class="n">parameters</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mf">0.5</span><span class="p">]]))</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_data_bicop</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">seed</span><span class="p">):</span>
+  <span class="n">cop</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">Bicop</span><span class="p">(</span><span class="n">family</span><span class="o">=</span><span class="n">pv</span><span class="o">.</span><span class="n">gaussian</span><span class="p">,</span> <span class="n">parameters</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mf">0.5</span><span class="p">]]))</span>
   <span class="k">return</span> <span class="n">cop</span><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">seeds</span><span class="o">=</span><span class="p">[</span><span class="n">seed</span><span class="p">])</span>
 </pre></div>
 </div>
 </div>
 </section>
 <section id="Bivariate-copula-benchmark">
-<h2>Bivariate copula benchmark<a class="headerlink" href="#Bivariate-copula-benchmark" title="Link to this heading"></a></h2>
+<h2>Bivariate copula benchmark<a class="headerlink" href="#Bivariate-copula-benchmark" title="Permalink to this heading"></a></h2>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
 </pre></div>
 </div>
-<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="k">def</span> <span class="nf">itau_bicop</span><span class="p">(</span><span class="n">u</span><span class="p">):</span>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="k">def</span><span class="w"> </span><span class="nf">itau_bicop</span><span class="p">(</span><span class="n">u</span><span class="p">):</span>
   <span class="n">pv</span><span class="o">.</span><span class="n">Bicop</span><span class="o">.</span><span class="n">from_data</span><span class="p">(</span>
     <span class="n">u</span><span class="p">,</span> <span class="n">controls</span><span class="o">=</span><span class="n">pv</span><span class="o">.</span><span class="n">FitControlsBicop</span><span class="p">(</span><span class="n">family_set</span><span class="o">=</span><span class="n">pv</span><span class="o">.</span><span class="n">itau</span><span class="p">,</span> <span class="n">num_threads</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
   <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">itau_par_method_bicop</span><span class="p">(</span><span class="n">u</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">itau_par_method_bicop</span><span class="p">(</span><span class="n">u</span><span class="p">):</span>
   <span class="n">pv</span><span class="o">.</span><span class="n">Bicop</span><span class="o">.</span><span class="n">from_data</span><span class="p">(</span>
     <span class="n">u</span><span class="p">,</span>
     <span class="n">controls</span><span class="o">=</span><span class="n">pv</span><span class="o">.</span><span class="n">FitControlsBicop</span><span class="p">(</span>
@@ -172,7 +172,7 @@
   <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">tll_bicop</span><span class="p">(</span><span class="n">u</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">tll_bicop</span><span class="p">(</span><span class="n">u</span><span class="p">):</span>
   <span class="n">pv</span><span class="o">.</span><span class="n">Bicop</span><span class="o">.</span><span class="n">from_data</span><span class="p">(</span>
     <span class="n">u</span><span class="p">,</span> <span class="n">controls</span><span class="o">=</span><span class="n">pv</span><span class="o">.</span><span class="n">FitControlsBicop</span><span class="p">(</span><span class="n">family_set</span><span class="o">=</span><span class="p">[</span><span class="n">pv</span><span class="o">.</span><span class="n">tll</span><span class="p">],</span> <span class="n">num_threads</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
   <span class="p">)</span>
@@ -208,14 +208,14 @@
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 Unit (milliseconds, bicop):
-itau: min=123.781500, mean=158.124035, max=194.445451
-itau_par_method: min=15.090303, mean=15.579065, max=16.112944
-tll: min=10.359186, mean=10.865059, max=11.747164
+itau: min=134.766681, mean=227.786324, max=290.670977
+itau_par_method: min=20.589506, mean=21.285831, max=23.578367
+tll: min=11.247802, mean=11.617707, max=11.900096
 </pre></div></div>
 </div>
 </section>
 <section id="Vine-copula-benchmark">
-<h2>Vine copula benchmark<a class="headerlink" href="#Vine-copula-benchmark" title="Link to this heading"></a></h2>
+<h2>Vine copula benchmark<a class="headerlink" href="#Vine-copula-benchmark" title="Permalink to this heading"></a></h2>
 <div class="nbinput docutils container">
 <div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
 </pre></div>
@@ -229,15 +229,15 @@ tll: min=10.359186, mean=10.865059, max=11.747164
 
 
 <span class="c1"># Define two different configurations of the `vinecop` function</span>
-<span class="k">def</span> <span class="nf">vinecop_itau</span><span class="p">(</span><span class="n">u</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">vinecop_itau</span><span class="p">(</span><span class="n">u</span><span class="p">):</span>
   <span class="k">return</span> <span class="n">pv</span><span class="o">.</span><span class="n">Vinecop</span><span class="o">.</span><span class="n">from_data</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">controls</span><span class="o">=</span><span class="n">controls_itau</span><span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">vinecop_itau_par_method</span><span class="p">(</span><span class="n">u</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">vinecop_itau_par_method</span><span class="p">(</span><span class="n">u</span><span class="p">):</span>
   <span class="k">return</span> <span class="n">pv</span><span class="o">.</span><span class="n">Vinecop</span><span class="o">.</span><span class="n">from_data</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">controls</span><span class="o">=</span><span class="n">controls_itau_par_method</span><span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">vinecop_tll</span><span class="p">(</span><span class="n">u</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">vinecop_tll</span><span class="p">(</span><span class="n">u</span><span class="p">):</span>
   <span class="k">return</span> <span class="n">pv</span><span class="o">.</span><span class="n">Vinecop</span><span class="o">.</span><span class="n">from_data</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">controls</span><span class="o">=</span><span class="n">controls_tll</span><span class="p">)</span>
 
 
@@ -284,9 +284,9 @@ tll: min=10.359186, mean=10.865059, max=11.747164
 <div class="output_area docutils container">
 <div class="highlight"><pre>
 Unit (milliseconds):
-itau: min=1292.573257, mean=1431.472346, max=1668.332229
-itau_par_method: min=152.453643, mean=156.847319, max=165.724582
-tll: min=130.542070, mean=132.526385, max=133.676751
+itau: min=1613.363917, mean=1872.592578, max=2094.827519
+itau_par_method: min=198.184067, mean=207.710620, max=212.484254
+tll: min=132.396423, mean=134.724716, max=137.676346
 </pre></div></div>
 </div>
 </section>

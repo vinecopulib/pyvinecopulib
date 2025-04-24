@@ -1,22 +1,22 @@
 
 
 <!DOCTYPE html>
-<html class="writer-html5" lang="en"  data-content_root="../">
+<html class="writer-html5" lang="en" >
 
 <head>
-  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>BicopFamily &mdash; pyvinecopulib 0.7.1 documentation</title>
-  <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
-  <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+  <title>BicopFamily &mdash; pyvinecopulib 0.7.3 documentation</title>
+  <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+  <link rel="stylesheet" type="text/css" href="../_static/css/theme.css" />
 
   
-  <script src="../_static/jquery.js?v=5d32c60e"></script>
-  <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-  <script src="../_static/documentation_options.js?v=26f1c5af"></script>
-  <script src="../_static/doctools.js?v=9bcbadda"></script>
-  <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+  <script src="../_static/jquery.js"></script>
+  <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+  <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+  <script src="../_static/doctools.js"></script>
+  <script src="../_static/sphinx_highlight.js"></script>
   <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
   <script src="../_static/js/theme.js"></script>
   <link rel="index" title="Index" href="../genindex.html" />
@@ -34,7 +34,7 @@
           
           
           <a href="../index.html"  class="icon icon-home" >
-            pyvinecopulib 0.7.1
+            pyvinecopulib 0.7.3
             <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo" />
           </a>
 <div role="search">
@@ -76,7 +76,7 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
         <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-        <a href="../index.html">pyvinecopulib 0.7.1</a>
+        <a href="../index.html">pyvinecopulib 0.7.3</a>
       </nav>
 
       <div class="wy-nav-content">
@@ -95,18 +95,37 @@
               <div itemprop="articleBody">
                 
   <section id="bicopfamily">
-<h1>BicopFamily<a class="headerlink" href="#bicopfamily" title="Link to this heading"></a></h1>
+<h1>BicopFamily<a class="headerlink" href="#bicopfamily" title="Permalink to this heading"></a></h1>
 <dl class="py class">
 <dt class="sig sig-object py" id="pyvinecopulib.BicopFamily">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">BicopFamily</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">value</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">qualname</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">boundary</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyvinecopulib.BicopFamily" title="Link to this definition"></a></dt>
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">BicopFamily</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">value</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">module</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">qualname</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">boundary</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#pyvinecopulib.BicopFamily" title="Permalink to this definition"></a></dt>
 <dd><p>A bivariate copula family identifier.</p>
-<p>The following convenient sets of families are also provided:</p>
-<ul class="simple">
+<p>Contains the following families:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">indep</span></code>: Independent copula,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">gaussian</span></code>: Gaussian copula,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">student</span></code>: Student t copula,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">clayton</span></code>: Clayton copula,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">gumbel</span></code>: Gumbel copula,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">frank</span></code>: Frank copula,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">joe</span></code>: Joe copula,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bb1</span></code>: BB1 copula,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bb6</span></code>: BB6 copula,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bb7</span></code>: BB7 copula,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bb8</span></code>: BB8 copula,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tawn</span></code>: Tawn copula,</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tll</span></code>: Transformation local-likelihood (nonparametric) copula.</p></li>
+</ul>
+</div></blockquote>
+<p>The following convenient sets of families are provided:</p>
+<blockquote>
+<div><ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">all</span></code> contains all the families,</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">parametric</span></code> contains the parametric families (all except <code class="docutils literal notranslate"><span class="pre">tll</span></code>),</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">nonparametric</span></code> contains the nonparametric families
-(<code class="docutils literal notranslate"><span class="pre">indep</span></code> and <code class="docutils literal notranslate"><span class="pre">tll</span></code>)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">one_par</span></code> contains the parametric families with a single parameter,
+(<code class="docutils literal notranslate"><span class="pre">indep</span></code> and <code class="docutils literal notranslate"><span class="pre">tll</span></code>),</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">one_par</span></code> contains the parametric families with a single parameter
 (<code class="docutils literal notranslate"><span class="pre">gaussian</span></code>, <code class="docutils literal notranslate"><span class="pre">clayton</span></code>, <code class="docutils literal notranslate"><span class="pre">gumbel</span></code>, <code class="docutils literal notranslate"><span class="pre">frank</span></code>, and <code class="docutils literal notranslate"><span class="pre">joe</span></code>),</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">two_par</span></code> contains the parametric families with two parameters
 (<code class="docutils literal notranslate"><span class="pre">student</span></code>, <code class="docutils literal notranslate"><span class="pre">bb1</span></code>, <code class="docutils literal notranslate"><span class="pre">bb6</span></code>, <code class="docutils literal notranslate"><span class="pre">bb7</span></code>, and <code class="docutils literal notranslate"><span class="pre">bb8</span></code>),</p></li>
@@ -118,17 +137,20 @@
 <code class="docutils literal notranslate"><span class="pre">gumbel</span></code>, <code class="docutils literal notranslate"><span class="pre">frank</span></code>, <code class="docutils literal notranslate"><span class="pre">joe</span></code>, <code class="docutils literal notranslate"><span class="pre">bb1</span></code>, <code class="docutils literal notranslate"><span class="pre">bb6</span></code>, <code class="docutils literal notranslate"><span class="pre">bb7</span></code>, and <code class="docutils literal notranslate"><span class="pre">bb8</span></code>),</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">extreme_value</span></code> contains the extreme value families (<code class="docutils literal notranslate"><span class="pre">tawn</span></code> and
 <code class="docutils literal notranslate"><span class="pre">gumbel</span></code>),</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">bb</span></code> contains the BB families (<code class="docutils literal notranslate"><span class="pre">bb1</span></code>, <code class="docutils literal notranslate"><span class="pre">bb6</span></code>, <code class="docutils literal notranslate"><span class="pre">bb7</span></code>, and <code class="docutils literal notranslate"><span class="pre">bb8</span></code>),</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">bb</span></code> contains the BB families (<code class="docutils literal notranslate"><span class="pre">bb1</span></code>, <code class="docutils literal notranslate"><span class="pre">bb6</span></code>, <code class="docutils literal notranslate"><span class="pre">bb7</span></code>, and
+<code class="docutils literal notranslate"><span class="pre">bb8</span></code>),</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">itau</span></code> families for which estimation by Kendall’s tau inversion is
 available (<code class="docutils literal notranslate"><span class="pre">indep</span></code>, <code class="docutils literal notranslate"><span class="pre">gaussian</span></code>, <code class="docutils literal notranslate"><span class="pre">student</span></code>, <code class="docutils literal notranslate"><span class="pre">clayton</span></code>,
 <code class="docutils literal notranslate"><span class="pre">gumbel</span></code>, <code class="docutils literal notranslate"><span class="pre">frank</span></code>, <code class="docutils literal notranslate"><span class="pre">joe</span></code>),</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">lt</span></code> contains the families that are lower-tail dependent (<code class="docutils literal notranslate"><span class="pre">clayton</span></code>,
-<code class="docutils literal notranslate"><span class="pre">bb1</span></code>, <code class="docutils literal notranslate"><span class="pre">bb7</span></code>,  <code class="docutils literal notranslate"><span class="pre">tawn</span></code>),</p></li>
+<code class="docutils literal notranslate"><span class="pre">bb1</span></code>, <code class="docutils literal notranslate"><span class="pre">bb7</span></code>, <code class="docutils literal notranslate"><span class="pre">tawn</span></code>),</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">ut</span></code> contains the families that are upper-tail dependent (<code class="docutils literal notranslate"><span class="pre">gumbel</span></code>,
 <code class="docutils literal notranslate"><span class="pre">joe</span></code>, <code class="docutils literal notranslate"><span class="pre">bb1</span></code>, <code class="docutils literal notranslate"><span class="pre">bb6</span></code>, <code class="docutils literal notranslate"><span class="pre">bb7</span></code>, <code class="docutils literal notranslate"><span class="pre">bb8</span></code>, <code class="docutils literal notranslate"><span class="pre">tawn</span></code>),</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">rotationless</span></code> contains families that don’t have a rotation
-because they already cover positive and negative dependence (<code class="docutils literal notranslate"><span class="pre">indep</span></code>, <code class="docutils literal notranslate"><span class="pre">gaussian</span></code>, <code class="docutils literal notranslate"><span class="pre">student</span></code>, <code class="docutils literal notranslate"><span class="pre">frank</span></code>, <code class="docutils literal notranslate"><span class="pre">tll</span></code>).</p></li>
+because they already cover positive and negative dependence (<code class="docutils literal notranslate"><span class="pre">indep</span></code>,
+<code class="docutils literal notranslate"><span class="pre">gaussian</span></code>, <code class="docutils literal notranslate"><span class="pre">student</span></code>, <code class="docutils literal notranslate"><span class="pre">frank</span></code>, <code class="docutils literal notranslate"><span class="pre">tll</span></code>).</p></li>
 </ul>
+</div></blockquote>
 </dd></dl>
 
 </section>

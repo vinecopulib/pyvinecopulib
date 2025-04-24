@@ -1,22 +1,22 @@
 
 
 <!DOCTYPE html>
-<html class="writer-html5" lang="en"  data-content_root="../">
+<html class="writer-html5" lang="en" >
 
 <head>
-  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Vinecop.plot &mdash; pyvinecopulib 0.7.1 documentation</title>
-  <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
-  <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
+  <title>Vinecop.plot &mdash; pyvinecopulib 0.7.3 documentation</title>
+  <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+  <link rel="stylesheet" type="text/css" href="../_static/css/theme.css" />
 
   
-  <script src="../_static/jquery.js?v=5d32c60e"></script>
-  <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-  <script src="../_static/documentation_options.js?v=26f1c5af"></script>
-  <script src="../_static/doctools.js?v=9bcbadda"></script>
-  <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+  <script src="../_static/jquery.js"></script>
+  <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+  <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+  <script src="../_static/doctools.js"></script>
+  <script src="../_static/sphinx_highlight.js"></script>
   <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
   <script src="../_static/js/theme.js"></script>
   <link rel="index" title="Index" href="../genindex.html" />
@@ -34,7 +34,7 @@
           
           
           <a href="../index.html"  class="icon icon-home" >
-            pyvinecopulib 0.7.1
+            pyvinecopulib 0.7.3
             <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo" />
           </a>
 <div role="search">
@@ -60,6 +60,7 @@
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.bic.html">Vinecop.bic</a></li>
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.cdf.html">Vinecop.cdf</a></li>
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.fit.html">Vinecop.fit</a></li>
+<li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.format.html">Vinecop.format</a></li>
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.from_data.html">Vinecop.from_data</a></li>
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.from_dimension.html">Vinecop.from_dimension</a></li>
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.from_file.html">Vinecop.from_file</a></li>
@@ -78,7 +79,6 @@
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.rosenblatt.html">Vinecop.rosenblatt</a></li>
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.select.html">Vinecop.select</a></li>
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.simulate.html">Vinecop.simulate</a></li>
-<li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.str.html">Vinecop.str</a></li>
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.to_file.html">Vinecop.to_file</a></li>
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.to_json.html">Vinecop.to_json</a></li>
 <li class="toctree-l4"><a class="reference internal" href="pyvinecopulib.Vinecop.truncate.html">Vinecop.truncate</a></li>
@@ -103,7 +103,7 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
         <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-        <a href="../index.html">pyvinecopulib 0.7.1</a>
+        <a href="../index.html">pyvinecopulib 0.7.3</a>
       </nav>
 
       <div class="wy-nav-content">
@@ -123,19 +123,19 @@
               <div itemprop="articleBody">
                 
   <section id="vinecop-plot">
-<h1>Vinecop.plot<a class="headerlink" href="#vinecop-plot" title="Link to this heading"></a></h1>
+<h1>Vinecop.plot<a class="headerlink" href="#vinecop-plot" title="Permalink to this heading"></a></h1>
 <dl class="py method">
 <dt class="sig sig-object py" id="pyvinecopulib.Vinecop.plot">
-<span class="sig-prename descclassname"><span class="pre">Vinecop.</span></span><span class="sig-name descname"><span class="pre">plot</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tree</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">object</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">add_edge_labels</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">layout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'graphviz'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vars_names</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">object</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyvinecopulib.Vinecop.plot" title="Link to this definition"></a></dt>
+<span class="sig-prename descclassname"><span class="pre">Vinecop.</span></span><span class="sig-name descname"><span class="pre">plot</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">self</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tree</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">object</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">add_edge_labels</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">layout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'graphviz'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">vars_names</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">object</span><span class="w"> </span><span class="p"><span class="pre">|</span></span><span class="w"> </span><span class="pre">None</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#pyvinecopulib.Vinecop.plot" title="Permalink to this definition"></a></dt>
 <dd><p>Generates a plot for the Vinecop object.</p>
 <p>This method generates a plot of the vine copula structure. It can be used to visualize the tree structure of the vine copula.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters<span class="colon">:</span></dt>
 <dd class="field-odd"><ul class="simple">
-<li><p><strong>tree</strong> (<em>List</em><em>[</em><em>int</em><em>] </em><em>(</em><em>default=None</em><em>)</em>) – The tree indice(s) to plot. If None, all trees are plotted.</p></li>
+<li><p><strong>tree</strong> (<em>list</em><em>[</em><em>int</em><em>] </em><em>(</em><em>default=None</em><em>)</em>) – The tree indice(s) to plot. If None, all trees are plotted.</p></li>
 <li><p><strong>add_edge_labels</strong> (<em>bool</em><em> (</em><em>default=True</em><em>)</em>) – Whether to add edge labels to the plot.</p></li>
 <li><p><strong>layout</strong> (<em>str</em><em> (</em><em>default=&quot;graphviz&quot;</em><em>)</em>) – The layout to use for plotting. Either “graphviz” or “spring_layout”.</p></li>
-<li><p><strong>vars_names</strong> (<em>List</em><em>[</em><em>str</em><em>] </em><em>(</em><em>default=None</em><em>)</em>) – The names of the variables for the vine model. If None, the indices are used.</p></li>
+<li><p><strong>vars_names</strong> (<em>list</em><em>[</em><em>str</em><em>] </em><em>(</em><em>default=None</em><em>)</em>) – The names of the variables for the vine model. If None, the indices are used.</p></li>
 </ul>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
@@ -143,8 +143,8 @@
 </dd>
 </dl>
 <p class="rubric">Usage</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">pyvinecopulib</span> <span class="k">as</span> <span class="nn">pv</span>
-<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">pyvinecopulib</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pv</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">1234</span><span class="p">)</span>
 <span class="n">u</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="mi">20</span><span class="p">,</span> <span class="mi">10</span><span class="p">))</span>
 <span class="n">vc</span> <span class="o">=</span> <span class="n">vc</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">Vinecop</span><span class="o">.</span><span class="n">from_data</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">controls</span><span class="o">=</span><span class="n">pv</span><span class="o">.</span><span class="n">FitControlsVinecop</span><span class="p">(</span><span class="n">family_set</span><span class="o">=</span><span class="p">[</span><span class="n">pv</span><span class="o">.</span><span class="n">BicopFamily</span><span class="o">.</span><span class="n">indep</span><span class="p">]))</span>
