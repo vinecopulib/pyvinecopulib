@@ -43,6 +43,8 @@ doc = [
   "sphinx-autodoc-typehints>=1.19.1",
   "nbsphinx>=0.8.9",
   "myst-parser>=0.18.1",
+  "nbconvert<7",
+  "lxml[html_clean]",
 ]
 
 [project.urls]
