@@ -7,32 +7,8 @@ env:
   EIGEN_VERSION: 3.4.0
 
 jobs:
-  lint-typecheck:
-    name: Lint and Type Check (Ubuntu)
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Lint and type check
-        run: |
-          python3 -m venv .venv
-          source .venv/bin/activate
-          pip install tomli  # Needed for Python < 3.11
-          python scripts/get_dependencies.py dev --as-requirements > requirements.txt
-          pip install -r requirements.txt
-          ruff format --check
-          ruff check
-          mypy
 
   build:
-    needs: lint-typecheck
     strategy:
       fail-fast: false
       matrix:
@@ -212,12 +188,23 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: 3.11
+      - name: Lint and type check
+        run: |
+          python3 -m venv .venv
+          source .venv/bin/activate
+          pip install tomli  # Needed for Python < 3.11
+          python scripts/get_dependencies.py dev --as-requirements > requirements.txt
+          pip install -r requirements.txt
+          ruff format --check
+          ruff check
+          mypy
       - name: Upgrade pip and install build dependency
         run: |
+          source .venv/bin/activate
           echo "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include" >> $GITHUB_ENV
           echo "EIGEN3_INCLUDE_DIR=/home/runner/work/include/eigen3" >> $GITHUB_ENV
           python -m pip install --upgrade pip
-          pip install build pytest
+          pip install build
       - name: Create source distribution
         run: |
           export Boost_INCLUDE_DIR=$Boost_INCLUDE_DIR
@@ -238,7 +225,7 @@ jobs:
           path: dist/*.tar.gz
 
   upload_to_pypi:
-    needs: build
+    needs: [build_sdist, test-notebooks]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
