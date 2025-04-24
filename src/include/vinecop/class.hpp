@@ -310,11 +310,16 @@ are:
          vinecop_doc.mbicv.doc)
     .def(
       "__repr__",
-      [](const Vinecop& cop) { return "<pyvinecopulib.Vinecop> " + cop.str(); })
+      [](const Vinecop& cop) { return "<pyvinecopulib.Vinecop> " + cop.str(); },
+      vinecop_doc.str.doc)
     .def(
-      "str",
+      "__str__",
+      [](const Vinecop& cop) { return "<pyvinecopulib.Vinecop> " + cop.str(); },
+      vinecop_doc.str.doc)
+    .def(
+      "format",
       [](const Vinecop& cop, const std::vector<size_t>& trees = {}) {
-        return "<pyvinecopulib.Vinecop> " + cop.str(trees);
+        return cop.str(trees);
       },
       "trees"_a = std::vector<size_t>{},
       vinecop_doc.str.doc)
@@ -326,9 +331,9 @@ are:
          "add_edge_labels"_a = true,
          "layout"_a = "graphviz",
          "vars_names"_a = nb::none(),
-         get_helper_doc("pyvinecopulib._python_helpers.vinecop",
-                        "VINECOP_PLOT_DOC",
-                        "Plot the vine copula (extended doc unavailable)")
+         python_doc_helper("pyvinecopulib._python_helpers.vinecop",
+                           "VINECOP_PLOT_DOC",
+                           "Plot the vine copula (extended doc unavailable)")
            .c_str())
     .def("__getstate__",
          [](const Vinecop& cop) {

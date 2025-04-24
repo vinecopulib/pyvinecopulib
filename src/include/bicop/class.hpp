@@ -155,9 +155,14 @@ Alternatives to instantiate bivariate copulas are:
          "u"_a = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
          "psi0"_a = 0.9,
          bicop_doc.mbic.doc)
-    .def("__repr__",
-         [](const Bicop& cop) { return "<pyvinecopulib.Bicop>\n" + cop.str(); })
-    .def("str", &Bicop::str, bicop_doc.str.doc)
+    .def(
+      "__repr__",
+      [](const Bicop& cop) { return "<pyvinecopulib.Bicop> " + cop.str(); },
+      bicop_doc.str.doc)
+    .def(
+      "__str__",
+      [](const Bicop& cop) { return "<pyvinecopulib.Bicop> " + cop.str(); },
+      bicop_doc.str.doc)
     .def("parameters_to_tau",
          &Bicop::parameters_to_tau,
          "parameters"_a,
@@ -194,16 +199,17 @@ Alternatives to instantiate bivariate copulas are:
          "data"_a,
          "controls"_a.sig("FitControlsBicop()") = FitControlsBicop(),
          bicop_doc.select.doc)
-    .def("plot",
-         &bicop_plot_wrapper,
-         "type"_a = "surface",
-         "margin_type"_a = "unif",
-         "xylim"_a = nb::none(),
-         "grid_size"_a = nb::none(),
-         get_helper_doc("pyvinecopulib._python_helpers.bicop",
+    .def(
+      "plot",
+      &bicop_plot_wrapper,
+      "type"_a = "surface",
+      "margin_type"_a = "unif",
+      "xylim"_a = nb::none(),
+      "grid_size"_a = nb::none(),
+      python_doc_helper("pyvinecopulib._python_helpers.bicop",
                         "BICOP_PLOT_DOC",
                         "Plot the bivariate copula (extended doc unavailable) ")
-           .c_str())
+        .c_str())
     .def("__getstate__",
          [](const Bicop& cop) {
            return std::make_tuple(cop.get_family(),

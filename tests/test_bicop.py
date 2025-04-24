@@ -58,7 +58,7 @@ def test_bicop(test_dump_folder: str) -> None:
   assert isinstance(bicop.tau, float)
   assert bicop.npars == 1
   with pytest.raises(AttributeError):
-    bicop.npars = 2
+    bicop.npars = 2 # type: ignore[misc]
 
   # Test passing a single row of data (#169 & #170 fix)
   bicop.var_types = ["c", "c"]
@@ -88,7 +88,7 @@ def test_bicop(test_dump_folder: str) -> None:
   assert isinstance(repr(bicop), str)
 
   # Test str method
-  assert isinstance(bicop.str(), str)
+  assert isinstance(str(bicop), str)
 
   # Test parameters_to_tau method
   parameters = np.array([[0.5, 0.6], [0.7, 0.8]])

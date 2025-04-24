@@ -77,7 +77,7 @@ jobs:
           boost_version: ${{ env.BOOST_VERSION }}
           eigen_version: ${{ env.EIGEN_VERSION }}
           wdm: "false"
-      - name: Lint with ruff
+      - name: Lint and type check
         if: matrix.cfg.os != 'windows-latest'
         run: |
           python3 -m venv ${PYTHON_VENV_ROOT}
@@ -87,6 +87,7 @@ jobs:
           pip install -r requirements.txt
           ruff format --check
           ruff check
+          mypy
       - name: Build and test wheels
         uses: pypa/cibuildwheel@v2.20.0
         env:

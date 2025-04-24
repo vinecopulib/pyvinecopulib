@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate __init__.pyi from __all__, including improved typing for BicopFamily constants and groups.
+Generate __init__.pyi from __all__
 """
 
 import argparse
@@ -23,11 +23,24 @@ except ImportError as e:
 
 def wrap_known_types(sig: str, known_types: set[str]) -> str:
   for name in known_types:
+    # Replace list of constants like [BicopFamily.indep, BicopFamily.gaussian, ...]
+    sig = re.sub(
+            rf"= *\[{name}\.\w+(?: *, *{name}\.\w+)*\]",
+            "= ...",
+            sig,
+        )
+
     # Replace default constructor calls like FitControlsBicop() with ...
     sig = re.sub(rf"= *{name}\s*\(\)", "= ...", sig)
 
-    # Wrap standalone type names (not followed by '(')
+    # Replace constant access like BicopFamily.indep with ...
+    sig = re.sub(rf"= *{name}\s*\.\w+", "= ...", sig)
+
+    # Wrap standalone type names (not followed by '(' or '.')
     sig = re.sub(rf"\b{name}\b(?!\s*\()", f'"{name}"', sig)
+    
+    # # # Wrap standalone type names (except when followed by a '.')
+    # sig = re.sub(rf"\b{name}\b(?!\s*\.)", f'"{name}"', sig)
 
   return sig
 
@@ -67,6 +80,33 @@ def render_nanobind_function_stub(
   lines.append(f"{indent_str}...\n")
   return lines
 
+def infer_method_decorator(name: str, docstring: str) -> Optional[str]:
+    """Infer whether a method should be decorated as static or classmethod."""
+    if not docstring:
+        return []
+
+    first_line = docstring.strip().splitlines()[0]
+    sig_pattern = re.compile(rf"^{re.escape(name)}\((.*?)\)\s*(->.*)?$")
+    match = sig_pattern.match(first_line)
+    if not match:
+        return []
+
+    args_str = match.group(1)
+    if not args_str.strip():
+        return []
+
+    args = []
+    for arg in args_str.split(","):
+        name_part = arg.strip().split(":", 1)[0].strip()
+        if name_part:
+            args.append(name_part)
+    if not args:
+        return "@staticmethod"
+    if "cls" in args and "self" not in args:
+        return "@classmethod"
+    if "self" not in args:
+        return "@staticmethod"
+    return None  # regular instance method
 
 def render_class_stub(
   cls, name: str, known_types: Optional[set[str]] = None, indent: int = 2
@@ -84,17 +124,21 @@ def render_class_stub(
     return lines
 
   for attr_name in dir(cls):
-    if attr_name.startswith("_"):
+    if attr_name.startswith("_") and attr_name != "__init__":
       continue
 
     try:
-      attr = getattr(cls, attr_name)
+        attr = getattr(cls, attr_name)
     except Exception:
-      continue
+        continue
 
     if callable(attr) and hasattr(attr, "__doc__"):
+      doc = inspect.getdoc(attr) or ""
+      decorator = infer_method_decorator(attr_name, doc)
+      if decorator:
+        lines.append(f"\n{inner_indent}{decorator}")
       fct_lines = [
-        (" " * indent) + line
+        inner_indent + line
         for line in render_nanobind_function_stub(
           attr, attr_name, known_types=known_types, indent=indent
         )
@@ -102,7 +146,11 @@ def render_class_stub(
       lines.extend(fct_lines)
     elif isinstance(attr, property) or inspect.isdatadescriptor(attr):
       lines.append(f"{inner_indent}@property")
+      doc = inspect.getdoc(attr) or ""
       lines.append(f"{inner_indent}def {attr_name}(self) -> Any: ...")
+      if attr.fset is not None:
+        lines.append(f"{inner_indent}@{attr_name}.setter")
+        lines.append(f"{inner_indent}def {attr_name}(self, value: Any) -> None: ...")
 
   lines.append("")  # Final newline
   return lines
