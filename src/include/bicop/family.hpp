@@ -18,37 +18,55 @@ init_bicop_family(nb::module_& module)
   constexpr auto& bicopfamily_doc = doc.vinecopulib.BicopFamily;
 
   nb::enum_<BicopFamily>(module, "BicopFamily", R"pbdoc(
-   A bivariate copula family identifier.
-
-   The following convenient sets of families are also provided:
-
-   - ``all`` contains all the families,
-   - ``parametric`` contains the parametric families (all except ``tll``),
-   - ``nonparametric`` contains the nonparametric families
-     (``indep`` and ``tll``)
-   - ``one_par`` contains the parametric families with a single parameter,
-     (``gaussian``, ``clayton``, ``gumbel``, ``frank``, and ``joe``),
-   - ``two_par`` contains the parametric families with two parameters
-     (``student``, ``bb1``, ``bb6``, ``bb7``, and ``bb8``),
-   - ``three_par`` contains the parametric families with three parameters
-     (``tawn``),
-   - ``elliptical`` contains the elliptical families (``gaussian`` and
-     ``student``),
-   - ``archimedean`` contains the archimedean families (``clayton``,
-     ``gumbel``, ``frank``, ``joe``, ``bb1``, ``bb6``, ``bb7``, and ``bb8``),
-   - ``extreme_value`` contains the extreme value families (``tawn`` and
-     ``gumbel``),
-   - ``bb`` contains the BB families (``bb1``, ``bb6``, ``bb7``, and ``bb8``),
-   - ``itau`` families for which estimation by Kendall's tau inversion is
-     available (``indep``, ``gaussian``, ``student``, ``clayton``,
-     ``gumbel``, ``frank``, ``joe``),
-   - ``lt`` contains the families that are lower-tail dependent (``clayton``,
-     ``bb1``, ``bb7``,  ``tawn``),
-   - ``ut`` contains the families that are upper-tail dependent (``gumbel``,
-     ``joe``, ``bb1``, ``bb6``, ``bb7``, ``bb8``, ``tawn``),
-   - ``rotationless`` contains families that don't have a rotation 
-     because they already cover positive and negative dependence (``indep``, ``gaussian``, ``student``, ``frank``, ``tll``).
-   )pbdoc")
+    A bivariate copula family identifier.
+ 
+    Contains the following families:
+ 
+      - ``indep``: Independent copula,
+      - ``gaussian``: Gaussian copula,
+      - ``student``: Student t copula,
+      - ``clayton``: Clayton copula,
+      - ``gumbel``: Gumbel copula,
+      - ``frank``: Frank copula,
+      - ``joe``: Joe copula,
+      - ``bb1``: BB1 copula,
+      - ``bb6``: BB6 copula,
+      - ``bb7``: BB7 copula,
+      - ``bb8``: BB8 copula,
+      - ``tawn``: Tawn copula,
+      - ``tll``: Transformation local-likelihood (nonparametric) copula.
+ 
+    The following convenient sets of families are provided:
+ 
+      - ``all`` contains all the families,
+      - ``parametric`` contains the parametric families (all except ``tll``),
+      - ``nonparametric`` contains the nonparametric families
+        (``indep`` and ``tll``),
+      - ``one_par`` contains the parametric families with a single parameter
+        (``gaussian``, ``clayton``, ``gumbel``, ``frank``, and ``joe``),
+      - ``two_par`` contains the parametric families with two parameters
+        (``student``, ``bb1``, ``bb6``, ``bb7``, and ``bb8``),
+      - ``three_par`` contains the parametric families with three parameters
+        (``tawn``),
+      - ``elliptical`` contains the elliptical families (``gaussian`` and
+        ``student``),
+      - ``archimedean`` contains the archimedean families (``clayton``,
+        ``gumbel``, ``frank``, ``joe``, ``bb1``, ``bb6``, ``bb7``, and ``bb8``),
+      - ``extreme_value`` contains the extreme value families (``tawn`` and
+        ``gumbel``),
+      - ``bb`` contains the BB families (``bb1``, ``bb6``, ``bb7``, and 
+        ``bb8``),
+      - ``itau`` families for which estimation by Kendall's tau inversion is
+        available (``indep``, ``gaussian``, ``student``, ``clayton``,
+        ``gumbel``, ``frank``, ``joe``),
+      - ``lt`` contains the families that are lower-tail dependent (``clayton``,
+        ``bb1``, ``bb7``, ``tawn``),
+      - ``ut`` contains the families that are upper-tail dependent (``gumbel``,
+        ``joe``, ``bb1``, ``bb6``, ``bb7``, ``bb8``, ``tawn``),
+      - ``rotationless`` contains families that don't have a rotation 
+        because they already cover positive and negative dependence (``indep``, 
+        ``gaussian``, ``student``, ``frank``, ``tll``).
+    )pbdoc")
     .value("indep", BicopFamily::indep, bicopfamily_doc.indep.doc)
     .value("gaussian", BicopFamily::gaussian, bicopfamily_doc.gaussian.doc)
     .value("student", BicopFamily::student, bicopfamily_doc.student.doc)

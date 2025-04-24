@@ -36,22 +36,25 @@ def process_changelog(text, repo_url):
 
 # Example changelog
 changelog_text = """
+### BREAKING API CHANGES
+
+* The `mst_algorithm` option to `FitControlsVinecop` has been renamed to `tree_algorithm` to
+  allow for alternative spanning tree algorithms (#637).
+* `tree_algorithm`'s default value is now `"mst_prim"` instead of `"prim"`, and `"mst_kruskal"`
+  replaces `"kruskal"` (#637).
+* The CMake option `VINECOPULIB_BUILD_SHARED_LIBS` has been changed to `VINECOPULIB_PRECOMPILED`
+  to better reflect its purpose (#641).
+
 ### NEW FEATURES
 
-* add `allow_rotation` option to `FitControlsBicop` and `FitControlsVinecop`
-  to allow for the rotation of the pair copulas (#628).
-
-* add a `FitControlsConfig` struct to create flexible and yet safe constructors
-  for `FitControlsBicop` and `FitControlsVinecop` (#629).
+* Allow for random spanning trees as alternatives to the MST-based structure selection using
+  `tree_algorithm` in `FitControlsVinecop` with `"random_weighted"` or `"random_unweighted"`
+  (#637).
 
 ### BUG FIXES
 
-* restrict parameter range for fitting Tawn copulas; fix handling of their 
-  shape/argument order (#620).
-
-* compute and save loglik/nobs in `Vinecop::fit()` (#623)
-
-* disable unwanted compiler output related to BOOST_CONCEPT checks (#624)
+* Decouple edge insertion from criterion computation in `VinecopSelector` to fix randomness
+  issues in structure selection when using multiple threads (#640)
 """
 
 # Repository URL

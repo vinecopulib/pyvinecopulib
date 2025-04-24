@@ -137,11 +137,18 @@ init_vinecop_fit_controls(nb::module_& module)
                  &FitControlsVinecop::get_seeds,
                  &FitControlsVinecop::set_seeds,
                  "The seeds for the random number generator.")
-    .def("__repr__",
-         [](const FitControlsVinecop& controls) {
-           return "<pyvinecopulib.FitControlsVinecop>\n" + controls.str();
-         })
-    .def("str", &FitControlsVinecop::str, fitcontrolsvinecop_doc.str.doc)
+    .def(
+      "__repr__",
+      [](const FitControlsVinecop& controls) {
+        return "<pyvinecopulib.FitControlsVinecop>\n" + controls.str();
+      },
+      fitcontrolsvinecop_doc.str.doc)
+    .def(
+      "__str__",
+      [](const FitControlsVinecop& controls) {
+        return "<pyvinecopulib.FitControlsVinecop>\n" + controls.str();
+      },
+      fitcontrolsvinecop_doc.str.doc)
     .def("__getstate__",
          [](const FitControlsVinecop& controls) {
            return std::make_tuple(controls.get_family_set(),

@@ -67,21 +67,31 @@ mamba install conda-forge::pyvinecopulib
 
 ### From source
 
+Start by cloning this repository, noting the `--recursive` option which is needed for the `vinecopulib` and `wdm` submodules:
+
+```bash
+git clone --recursive https://github.com/vinecopulib/pyvinecopulib.git
+cd pyvinecopulib
+```
+
 The main build time prerequisites are:
 
 * scikit-build-core (>=0.4.3),
-* nanobind (>=2.5.0),
+* nanobind (>=2.7.0),
 * a compiler with C++17 support.
 
 To install from source, `Eigen` and `Boost` also need to be available, and CMake will try to find suitable versions automatically.
+
+The recommended way to install `pyvinecopulib` from source is to use `conda` or `mamba`.
 A reproducible environment, also including requirements for the `pyvinecopulib`'s development and documentation, can be created using:
 
 ```bash
-mamba create -n pyvinecopulib eigen boost nanobind scikit-build-core numpy pydot networkx matplotlib mypy ruff pytest nbmake jupyterlab sphinx-rtd-theme sphinx-autodoc-typehints nbsphinx myst-parser python=3.11
+python scripts/generate_requirements.py --format yml # from pyvinecopulib's root
+mamba env create -f environment.yml
 mamba activate pyvinecopulib
 ```
 
-You can also specify the location if `Eigen` and `Boost` manually using the environment variables `EIGEN3_INCLUDE_DIR` and `Boost_INCLUDE_DIR` respectively.
+Alternatively, you can specify manually the location of `Eigen` and `Boost` using the environment variables `EIGEN3_INCLUDE_DIR` and `Boost_INCLUDE_DIR` respectively.
 On Linux, you can install the required packages and set the environment variables as follows:
 
 ```bash
@@ -90,14 +100,27 @@ export Boost_INCLUDE_DIR=/usr/include
 export EIGEN3_INCLUDE_DIR=/usr/include/eigen3
 ```
 
-Then, just clone this repository and do `pip install`.
-Note the `--recursive` option which is needed for the `vinecopulib` and `wdm` submodules:
+Finally, you can build and install `pyvinecopulib` using `pip`:
 
 ```bash
-git clone --recursive https://github.com/vinecopulib/pyvinecopulib.git
-pip install ./pyvinecopulib
+pip install .
 ```
 
+Stubs can then be generated using:
+
+```bash
+PYTHONPATH=$(python -c "import site; print(site.getsitepackages()[0])") \
+              python -m nanobind.stubgen \
+                -m pyvinecopulib.pyvinecopulib_ext \
+                -o src/pyvinecopulib/__init__.pyi \
+                -M src/pyvinecopulib/py.typed
+```
+
+Note that the `generate_requirements.py` script can also be used to generate a `requirements.txt` file for use with `pip` via the `--format` option:
+
+```bash
+python scripts/generate_requirements.py --format txt
+```
 
 ### Building the documentation
 
@@ -105,6 +128,7 @@ Documentation for the example project is generated using Sphinx and the "Read th
 The following command generates HTML-based reference documentation; for other
 formats please refer to the Sphinx manual:
 
-* `pip install sphinx-rtd-theme sphinx-autodoc-typehints nbsphinx recommonmark`
-* `cd pyvinecopulib/docs`
-* `python serve_sphinx.py`
+```bash
+cd docs
+python serve_sphinx.py
+```

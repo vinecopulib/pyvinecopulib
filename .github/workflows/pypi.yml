@@ -7,11 +7,13 @@ env:
   EIGEN_VERSION: 3.4.0
 
 jobs:
+
   build:
     strategy:
       fail-fast: false
       matrix:
         # macos-13 is an intel runner, macos-14 is apple silicon
+        python: [39, 310, 311, 312, 313]
         python: [39, 310, 311, 312, 313]
         cfg:
           - {
@@ -47,8 +49,6 @@ jobs:
               platform: x64,
               root_install_dir: 'D:\',
             }
-    env:
-      PYTHON_VENV_ROOT: ${{github.workspace}}/.venv
 
     name: Build and test on ${{ matrix.cfg.os }} for cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
     runs-on: ${{ matrix.cfg.os }}
@@ -77,16 +77,6 @@ jobs:
           boost_version: ${{ env.BOOST_VERSION }}
           eigen_version: ${{ env.EIGEN_VERSION }}
           wdm: "false"
-      - name: Lint with ruff
-        if: matrix.cfg.os != 'windows-latest'
-        run: |
-          python3 -m venv ${PYTHON_VENV_ROOT}
-          source ${PYTHON_VENV_ROOT}/bin/activate
-          pip install tomli  # needed for Python < 3.11
-          python scripts/get_dependencies.py dev --as-requirements > requirements.txt
-          pip install -r requirements.txt
-          ruff format --check
-          ruff check
       - name: Build and test wheels
         uses: pypa/cibuildwheel@v2.20.0
         env:
@@ -95,6 +85,15 @@ jobs:
           CIBW_ENVIRONMENT_MACOS: "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=${{matrix.cfg.root_install_dir}}/include/eigen3"
           CIBW_ENVIRONMENT_LINUX: "Boost_INCLUDE_DIR=/host${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=/host${{matrix.cfg.root_install_dir}}/include/eigen3"
           CIBW_ENVIRONMENT_PASS_LINUX: "Boost_INCLUDE_DIR EIGEN3_INCLUDE_DIR"
+      - name: Inspect built wheel contents
+        shell: bash  # Ensures consistent behavior across OSes
+        run: |
+          echo "Checking stub files in wheel:"
+          wheel=$(ls wheelhouse/*.whl)
+          unzip -l "$wheel" | grep -E '(__init__\.pyi|py\.typed)' || {
+            echo "::error ::Expected stub or marker files not found in $wheel"
+            exit 1
+          }
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
@@ -109,9 +108,9 @@ jobs:
       matrix:
         python: [39, 310, 311, 312, 313]
         cfg:
-          - { os: ubuntu-latest, cibw_id: manylinux_x86_64}
-          - { os: macos-14, cibw_id: macosx_arm64}
-          - { os: windows-latest, cibw_id: win_amd64}
+          - { os: ubuntu-latest, cibw_id: manylinux_x86_64 }
+          - { os: macos-14, cibw_id: macosx_arm64 }
+          - { os: windows-latest, cibw_id: win_amd64 }
 
     name: Notebook test on ${{ matrix.cfg.os }} for cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
 
@@ -195,7 +194,15 @@ jobs:
           echo "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include" >> $GITHUB_ENV
           echo "EIGEN3_INCLUDE_DIR=/home/runner/work/include/eigen3" >> $GITHUB_ENV
           python -m pip install --upgrade pip
-          pip install build pytest
+          pip install build
+      - name: Lint and type check
+        run: |
+          pip install tomli  # Needed for Python < 3.11
+          python scripts/get_dependencies.py dev --as-requirements > requirements.txt
+          pip install -r requirements.txt
+          ruff format --check
+          ruff check
+          mypy
       - name: Create source distribution
         run: |
           export Boost_INCLUDE_DIR=$Boost_INCLUDE_DIR
@@ -216,7 +223,7 @@ jobs:
           path: dist/*.tar.gz
 
   upload_to_pypi:
-    needs: build
+    needs: [build_sdist, test-notebooks]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

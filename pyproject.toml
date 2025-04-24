@@ -1,10 +1,10 @@
 [build-system]
-requires = ["scikit-build-core>=0.4.3", "nanobind>=2.5.0"]
+requires = ["scikit-build-core>=0.5.0", "nanobind>=2.7.0"]
 build-backend = "scikit_build_core.build"
 
 [project]
 name = "pyvinecopulib"
-version = "0.7.1"
+version = "0.7.3"
 authors = [
   { name = "Thibault Vatter", email = "info@vinecopulib.com" },
   { name = "Thomas Nagler", email = "info@vinecopulib.com" },
@@ -12,7 +12,8 @@ authors = [
 description = "A python interface to vinecopulib"
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.8"
+requires-python = ">=3.9"
+dependencies = ['numpy>=1.14', 'matplotlib>=3.0', 'networkx>=3.0', 'pydot>=3.0']
 keywords = ['copula', 'vines copulas', 'pair-copulas constructions']
 classifiers = [
   'Development Status :: 3 - Alpha',
@@ -25,23 +26,24 @@ classifiers = [
   'Topic :: Scientific/Engineering',
   'Topic :: Scientific/Engineering :: Mathematics',
   'Programming Language :: C++',
-  'Programming Language :: Python :: 3.8',
   'Programming Language :: Python :: 3.9',
   'Programming Language :: Python :: 3.10',
   'Programming Language :: Python :: 3.11',
   'Programming Language :: Python :: 3.12',
+  'Programming Language :: Python :: 3.13',
   'License :: OSI Approved :: MIT License',
 ]
-dependencies = ['numpy>=1.14', 'matplotlib>=3.0', 'networkx>=3.0', 'pydot>=3.0']
 
 [project.optional-dependencies]
-dev = [
-  # "mypy>=1.15",
-  "ruff==0.11.6",
-  "pytest>=8.0",
-  "nbmake",
-]
+dev = ["mypy>=1.15", "ruff==0.11.6", "pytest>=8.0", "nbmake"]
 examples = ["jupyterlab"]
+doc = [
+  "sphinx==7.0",
+  "nbsphinx==0.9.2",
+  "sphinx-rtd-theme",
+  "sphinx-autodoc-typehints",
+  "myst-parser",
+]
 
 [project.urls]
 Homepage = "https://github.com/vinecopulib/pyvinecopulib/"
@@ -85,3 +87,13 @@ exclude = ["lib"]
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F403", "F405"]
 # "**/{tests,docs,tools}/*" = ["E402"]
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+ignore_missing_imports = true
+pretty = true
+show_error_codes = true
+warn_unused_configs = true
+files = ["src", "tests"]
+exclude = "scripts|docs|examples"

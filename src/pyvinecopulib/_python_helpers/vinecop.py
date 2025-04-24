@@ -1,9 +1,10 @@
 import math
-from typing import List
+from typing import Any, Optional
 
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
+from numpy.typing import NDArray
 
 VINECOP_PLOT_DOC = """
     Generates a plot for the Vinecop object.
@@ -12,13 +13,13 @@ VINECOP_PLOT_DOC = """
 
     Parameters
     ----------
-    tree: List[int] (default=None)
+    tree: list[int] (default=None)
         The tree indice(s) to plot. If None, all trees are plotted.
     add_edge_labels: bool (default=True)
         Whether to add edge labels to the plot.
     layout: str (default="graphviz")
         The layout to use for plotting. Either "graphviz" or "spring_layout".
-    vars_names: List[str] (default=None)
+    vars_names: list[str] (default=None)
         The names of the variables for the vine model. If None, the indices are used.
 
     Returns
@@ -40,7 +41,7 @@ VINECOP_PLOT_DOC = """
 """
 
 
-def get_name(vc, tree, edge, vars_names=None):
+def get_name(vc: Any, tree: int, edge: int, vars_names: list[str]) -> str:
   M = vc.matrix
   d = M.shape[0]  # Number of rows (equivalent to nrow(M) in R)
 
@@ -63,7 +64,9 @@ def get_name(vc, tree, edge, vars_names=None):
   return bef + sep + aft
 
 
-def get_graph(tree, vc, vars_names):
+def get_graph(
+  tree: int, vc: Any, vars_names: list[str]
+) -> tuple[NDArray[np.int_], dict[int, str], dict[tuple[int, int], str]]:
   M = vc.matrix
   d = vc.dim
 
@@ -106,11 +109,11 @@ def get_graph(tree, vc, vars_names):
 
 
 def vinecop_plot(
-  cop,
-  tree: List[int] = None,
-  add_edge_labels=True,
+  cop: Any,
+  tree: Optional[list[int]] = None,
+  add_edge_labels: bool = True,
   layout: str = "graphviz",
-  vars_names: List[str] = None,
+  vars_names: Optional[list[str]] = None,
 ) -> None:
   """{}""".format(VINECOP_PLOT_DOC)
 
