@@ -2,27 +2,27 @@
 
 ## 0.7.1
 
-## Bug fixes in `pyvinecopulib`
+### Bug fixes in `pyvinecopulib`
 
 * Upgrade nanobind to allow for single row matrices (fix #169 and #170)
 
-## New features in `pyvinecopulib`
+### New features in `pyvinecopulib`
 
 * Add pickle support for all classes (#168)
 * Add `allow_rotation` option to `FitControlsBicop` and `FitControlsVinecop` (#168)
 
-## Changes in `vinecopulib` version 0.7.1
+### Changes in `vinecopulib` version 0.7.1
 
 These changes originate from the latest release of [`vinecopulib`](https://github.com/vinecopulib/vinecopulib/releases/tag/v0.7.1), the C++ library which powers `pyvinecopulib`.
 
-### NEW FEATURES
+#### NEW FEATURES
 
 * add `allow_rotation` option to `FitControlsBicop` and `FitControlsVinecop`
   to allow for the rotation of the pair copulas ([#628](https://github.com/vinecopulib/vinecopulib/pull/628)).
 * add a `FitControlsConfig` struct to create flexible and yet safe constructors
   for `FitControlsBicop` and `FitControlsVinecop` ([#629](https://github.com/vinecopulib/vinecopulib/pull/629)).
 
-### BUG FIXES
+#### BUG FIXES
 
 * restrict parameter range for fitting Tawn copulas; fix handling of their
   shape/argument order ([#620](https://github.com/vinecopulib/vinecopulib/pull/620)).

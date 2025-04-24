@@ -96,7 +96,7 @@ napoleon_include_init_with_doc = True
 napoleon_use_rtype = False
 napoleon_custom_sections = [("Usage", "Usage")]
 autosummary_generate = True
-nbsphinx_execute = "always"
+nbsphinx_execute = "never"
 
 # The suffix(es) of source filenames.
 source_suffix = {

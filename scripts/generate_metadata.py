@@ -115,6 +115,11 @@ def main():
 
   if not args.no_examples:
     examples_dir = Path("examples")
+    for file in examples_dir.glob("*.ipynb"):
+      subprocess.run(
+      ["jupyter", "nbconvert", "--to", "notebook", "--execute", "--inplace", file],
+    check=True
+)
     inject_image_metadata(examples_dir)
 
 
