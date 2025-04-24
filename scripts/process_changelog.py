@@ -2,8 +2,8 @@ import re
 
 
 def process_changelog(text, repo_url):
-  # Match individual PR numbers (#123)
-  pr_pattern = r"#(\d+)"
+  # # Match individual PR numbers (#123)
+  # pr_pattern = r"#(\d+)"
 
   # Match commit hashes (abcdef0) or similar
   commit_pattern = r"\b[0-9a-f]{7,40}\b"

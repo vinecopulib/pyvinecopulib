@@ -91,11 +91,18 @@ init_bicop_fit_controls(nb::module_& module)
                  &FitControlsBicop::get_num_threads,
                  &FitControlsBicop::set_num_threads,
                  "The number of threads.")
-    .def("__repr__",
-         [](const FitControlsBicop& controls) {
-           return "<pyvinecopulib.FitControlsBicop>\n" + controls.str();
-         })
-    .def("str", &FitControlsBicop::str, fitcontrolsbicop_doc.str.doc)
+    .def(
+      "__repr__",
+      [](const FitControlsBicop& controls) {
+        return "<pyvinecopulib.FitControlsBicop>\n" + controls.str();
+      },
+      fitcontrolsbicop_doc.str.doc)
+    .def(
+      "__str__",
+      [](const FitControlsBicop& controls) {
+        return "<pyvinecopulib.FitControlsBicop>\n" + controls.str();
+      },
+      fitcontrolsbicop_doc.str.doc)
     .def("__getstate__",
          [](const FitControlsBicop& controls) {
            return std::make_tuple(controls.get_family_set(),

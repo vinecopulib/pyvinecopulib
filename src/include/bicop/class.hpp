@@ -1,6 +1,7 @@
 #pragma once
 
 #include "docstr.hpp"
+#include "misc/helpers.hpp"
 #include <nanobind/eigen/dense.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/tuple.h>
@@ -9,6 +10,19 @@
 namespace nb = nanobind;
 using namespace nb::literals;
 using namespace vinecopulib;
+
+// Wrapper function to call the Python bicop_plot function
+inline void
+bicop_plot_wrapper(const Bicop& cop,
+                   const std::string& type,
+                   const std::string& margin_type,
+                   nb::object xylim,
+                   nb::object grid_size)
+{
+  auto mod = nb::module_::import_("pyvinecopulib._python_helpers.bicop");
+  auto bicop_plot = mod.attr("bicop_plot");
+  bicop_plot(nb::cast(cop), type, margin_type, xylim, grid_size);
+}
 
 // Factory function to create a Bicop from family, rotation, parameters, and
 // variable types
@@ -141,9 +155,14 @@ Alternatives to instantiate bivariate copulas are:
          "u"_a = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
          "psi0"_a = 0.9,
          bicop_doc.mbic.doc)
-    .def("__repr__",
-         [](const Bicop& cop) { return "<pyvinecopulib.Bicop>\n" + cop.str(); })
-    .def("str", &Bicop::str, bicop_doc.str.doc)
+    .def(
+      "__repr__",
+      [](const Bicop& cop) { return "<pyvinecopulib.Bicop> " + cop.str(); },
+      bicop_doc.str.doc)
+    .def(
+      "__str__",
+      [](const Bicop& cop) { return "<pyvinecopulib.Bicop> " + cop.str(); },
+      bicop_doc.str.doc)
     .def("parameters_to_tau",
          &Bicop::parameters_to_tau,
          "parameters"_a,
@@ -182,27 +201,14 @@ Alternatives to instantiate bivariate copulas are:
          bicop_doc.select.doc)
     .def(
       "plot",
-      [](const Bicop& cop,
-         const std::string& type = "surface",
-         const std::string& margin_type = "unif",
-         nb::object xylim = nb::none(),
-         nb::object grid_size = nb::none()) {
-        auto python_helpers_plotting =
-          nb::module_::import_("pyvinecopulib._python_helpers.bicop");
-
-        // Import the Python plotting function
-        nb::object bicop_plot = python_helpers_plotting.attr("bicop_plot");
-
-        // Call the Python function with the provided arguments
-        bicop_plot(nb::cast(cop), type, margin_type, xylim, grid_size);
-      },
+      &bicop_plot_wrapper,
       "type"_a = "surface",
       "margin_type"_a = "unif",
       "xylim"_a = nb::none(),
       "grid_size"_a = nb::none(),
-      nb::cast<std::string>(
-        nb::module_::import_("pyvinecopulib._python_helpers.bicop")
-          .attr("BICOP_PLOT_DOC"))
+      python_doc_helper("pyvinecopulib._python_helpers.bicop",
+                        "BICOP_PLOT_DOC",
+                        "Plot the bivariate copula (extended doc unavailable) ")
         .c_str())
     .def("__getstate__",
          [](const Bicop& cop) {

@@ -150,14 +150,21 @@ Alternatives to instantiate structures are:
     .def_static("simulate",
                 &RVineStructure::simulate,
                 "d"_a,
-                "natural order"_a = false,
+                "natural_order"_a = false,
                 "seeds"_a = std::vector<size_t>(),
                 rvinestructure_doc.simulate.doc)
-    .def("__repr__",
-         [](const RVineStructure& rvs) {
-           return "<pyvinecopulib.RVineStructure>\n" + rvs.str();
-         })
-    .def("str", &RVineStructure::str, rvinestructure_doc.str.doc)
+    .def(
+      "__repr__",
+      [](const RVineStructure& rvs) {
+        return "<pyvinecopulib.RVineStructure>\n" + rvs.str();
+      },
+      rvinestructure_doc.str.doc)
+    .def(
+      "__str__",
+      [](const RVineStructure& rvs) {
+        return "<pyvinecopulib.RVineStructure>\n" + rvs.str();
+      },
+      rvinestructure_doc.str.doc)
     .def("__getstate__",
          [](const RVineStructure& rvinestruct) {
            return rvinestruct.to_json().dump();

@@ -22,25 +22,19 @@ def get_description(package_name):
 
 
 CLASSES = [
-    "BicopFamily",
-    "Bicop",
-    "FitControlsBicop",
-    "Vinecop",
-    "FitControlsVinecop",
-    "CVineStructure",
-    "DVineStructure",
-    "RVineStructure"
+  "BicopFamily",
+  "Bicop",
+  "FitControlsBicop",
+  "Vinecop",
+  "FitControlsVinecop",
+  "CVineStructure",
+  "DVineStructure",
+  "RVineStructure",
 ]
 
-FUNCTIONS = [
-    "to_pseudo_obs",
-    "simulate_uniform",
-    "ghalton",
-    "sobol"
-]
+FUNCTIONS = ["to_pseudo_obs", "simulate_uniform", "ghalton", "sobol"]
 
-EXCLUDE = [
-]
+EXCLUDE = []
 
 EXTRA_FILES = [
   "../examples",
@@ -50,49 +44,51 @@ EXTRA_FILES = [
 
 
 def get_submodules(name):
-    prefix = name + "."
-    out = []
+  prefix = name + "."
+  out = []
 
-    for s_name in sys.modules.keys():
-        if s_name in EXCLUDE:
-            continue
+  for s_name in sys.modules.keys():
+    if s_name in EXCLUDE:
+      continue
 
-        if not s_name.startswith(prefix):
-            continue
-        sub = s_name[len(prefix):]
-        # Ensure its an immediate child.
+    if not s_name.startswith(prefix):
+      continue
+    sub = s_name[len(prefix) :]
+    # Ensure its an immediate child.
 
-        if "." in sub or sub.startswith("_"):
-            continue
-        # For some reason, things like `pyvinecopulib.common` has submodules like
-        # `inspect`, etc, whose value in `sys.modules` are none. Ignore those.
-        # TODO(eric.cousineau): Figure out where these come from, and remove
-        # them.
+    if "." in sub or sub.startswith("_"):
+      continue
+    # For some reason, things like `pyvinecopulib.common` has submodules like
+    # `inspect`, etc, whose value in `sys.modules` are none. Ignore those.
+    # TODO(eric.cousineau): Figure out where these come from, and remove
+    # them.
 
-        if sys.modules[s_name] is None:
-            continue
-        out.append(s_name)
+    if sys.modules[s_name] is None:
+      continue
+    out.append(s_name)
 
-    return sorted(out)
+  return sorted(out)
 
 
 def has_cc_imported_symbols(name):
-    # Check for `module_py`.
+  # Check for `module_py`.
 
-    if name + "._module_py" in sys.modules:
-        return True
-    pieces = name.split(".")
+  if name + "._module_py" in sys.modules:
+    return True
+  pieces = name.split(".")
 
-    if len(pieces) > 1:
-        sub = pieces[-1]
-        test = ".".join(pieces[:-1] + ["_{}_py".format(sub)])
+  if len(pieces) > 1:
+    sub = pieces[-1]
+    test = ".".join(pieces[:-1] + ["_{}_py".format(sub)])
 
-        if test in sys.modules:
-            raise RuntimeError(
-                ("The module `{}` should not exist; instead, only `{}` should "
-                 "exist").format(test, name))
+    if test in sys.modules:
+      raise RuntimeError(
+        (
+          "The module `{}` should not exist; instead, only `{}` should exist"
+        ).format(test, name)
+      )
 
-    return False
+  return False
 
 
 def write_module(f_name, name, version, verbose):
@@ -127,6 +123,7 @@ def write_module(f_name, name, version, verbose):
 
     for i in FUNCTIONS:
       f.write(".. autofunction:: {}\n".format(i))
+
 
 def write_examples(output_dir, verbose=False):
   """
@@ -214,7 +211,7 @@ def gen_main(input_dir, strict, src_funcs=None, extra_files=None):
   parser.add_argument(
     "--debug",
     action="store_true",
-    help="If enabled, leaves intermediate files that are otherwise " "deleted.",
+    help="If enabled, leaves intermediate files that are otherwise deleted.",
   )
   parser.add_argument(
     "--verbose",
@@ -310,4 +307,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+  main()

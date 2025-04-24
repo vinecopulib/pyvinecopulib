@@ -1,6 +1,9 @@
+from typing import Any, Optional, cast
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
+from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 from .stats import expon_cdf, expon_pdf, expon_ppf, norm_cdf, norm_pdf, norm_ppf
 
@@ -36,7 +39,8 @@ BICOP_PLOT_DOC = """
         cop.plot(plot_type="contour", margin_type="unif") # contour plot of copula density
 """
 
-def get_default_xylim(margin_type):
+
+def get_default_xylim(margin_type: str) -> tuple[float, float]:
   if margin_type == "unif":
     return (1e-2, 1 - 1e-2)
   elif margin_type == "norm":
@@ -47,7 +51,7 @@ def get_default_xylim(margin_type):
     raise ValueError("Unknown margin type")
 
 
-def get_default_grid_size(plot_type):
+def get_default_grid_size(plot_type: str) -> int:
   if plot_type == "contour":
     return 100
   elif plot_type == "surface":
@@ -57,12 +61,12 @@ def get_default_grid_size(plot_type):
 
 
 def bicop_plot(
-  cop,
+  cop: Any,
   plot_type: str = "surface",
   margin_type: str = "unif",
-  xylim: tuple = None,
-  grid_size: int = None,
-):
+  xylim: Optional[tuple[float, float]] = None,
+  grid_size: Optional[int] = None,
+) -> None:
   """{}""".format(BICOP_PLOT_DOC)
 
   if plot_type not in ["contour", "surface"]:
@@ -154,7 +158,7 @@ def bicop_plot(
     plt.show()
   elif plot_type == "surface":
     fig = plt.figure()
-    ax = fig.add_subplot(111, projection="3d")
+    ax = cast(Axes3D, fig.add_subplot(111, projection="3d"))
     ax.view_init(elev=30, azim=-110)
     X, Y = np.meshgrid(points, points)
     ax.plot_surface(X, Y, dens, cmap=jet_colors, edgecolor="none", shade=False)

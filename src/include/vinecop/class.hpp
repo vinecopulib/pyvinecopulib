@@ -1,6 +1,7 @@
 #pragma once
 
 #include "docstr.hpp"
+#include "misc/helpers.hpp"
 #include <nanobind/eigen/dense.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/optional.h>
@@ -12,6 +13,24 @@
 namespace nb = nanobind;
 using namespace nb::literals;
 using namespace vinecopulib;
+
+inline void
+vinecop_plot_wrapper(const Vinecop& cop,
+                     nb::object tree,
+                     bool add_edge_labels,
+                     const std::string& layout,
+                     nb::object vars_names)
+{
+  // Import the vinecop helper Python module
+  auto mod = nb::module_::import_("pyvinecopulib._python_helpers.vinecop");
+
+  // Import the Python plotting function
+  auto vinecop_plot = mod.attr("vinecop_plot");
+
+  // Call the Python function with the C++ object and additional
+  // arguments
+  vinecop_plot(nb::cast(cop), tree, add_edge_labels, layout, vars_names);
+}
 
 // Factory function to create a Vinecop from dimensionality
 inline Vinecop
@@ -291,41 +310,31 @@ are:
          vinecop_doc.mbicv.doc)
     .def(
       "__repr__",
-      [](const Vinecop& cop) { return "<pyvinecopulib.Vinecop> " + cop.str(); })
+      [](const Vinecop& cop) { return "<pyvinecopulib.Vinecop> " + cop.str(); },
+      vinecop_doc.str.doc)
     .def(
-      "str",
+      "__str__",
+      [](const Vinecop& cop) { return "<pyvinecopulib.Vinecop> " + cop.str(); },
+      vinecop_doc.str.doc)
+    .def(
+      "format",
       [](const Vinecop& cop, const std::vector<size_t>& trees = {}) {
-        return "<pyvinecopulib.Vinecop> " + cop.str(trees);
+        return cop.str(trees);
       },
       "trees"_a = std::vector<size_t>{},
       vinecop_doc.str.doc)
     .def(
       "truncate", &Vinecop::truncate, "trunc_lvl"_a, vinecop_doc.truncate.doc)
-    .def(
-      "plot",
-      [](const Vinecop& cop,
-         nb::object tree = nb::none(),
-         bool add_edge_labels = true,
-         const std::string& layout = "graphviz",
-         nb::object vars_names = nb::none()) {
-        auto python_helpers_plotting =
-          nb::module_::import_("pyvinecopulib._python_helpers.vinecop");
-
-        // Import the Python plotting function
-        nb::object vinecop_plot = python_helpers_plotting.attr("vinecop_plot");
-
-        // Call the Python function with the C++ object and additional
-        // arguments
-        vinecop_plot(nb::cast(cop), tree, add_edge_labels, layout, vars_names);
-      },
-      "tree"_a = nb::none(),
-      "add_edge_labels"_a = true,
-      "layout"_a = "graphviz",
-      "vars_names"_a = nb::none(),
-      nb::cast<std::string>(
-        nb::module_::import_("pyvinecopulib._python_helpers.vinecop")
-          .attr("VINECOP_PLOT_DOC"))
-        .c_str())
+    .def("plot",
+         &vinecop_plot_wrapper,
+         "tree"_a = nb::none(),
+         "add_edge_labels"_a = true,
+         "layout"_a = "graphviz",
+         "vars_names"_a = nb::none(),
+         python_doc_helper("pyvinecopulib._python_helpers.vinecop",
+                           "VINECOP_PLOT_DOC",
+                           "Plot the vine copula (extended doc unavailable)")
+           .c_str())
     .def("__getstate__",
          [](const Vinecop& cop) {
            return std::make_tuple(cop.get_rvine_structure().to_json().dump(),
