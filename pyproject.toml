@@ -66,7 +66,7 @@ wheel.py-api = "cp312"
 build-verbosity = 1
 
 # Run pytest to ensure that the package was correctly built
-test-command = "pytest {project}/tests --no-cov"
+test-command = "pytest {project}/tests"
 test-requires = "pytest"
 
 # Don't test Python 3.8 wheels on macOS/arm64
