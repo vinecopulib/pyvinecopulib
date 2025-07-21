@@ -1,5 +1,5 @@
 from . import pyvinecopulib_ext
-from .pyvinecopulib_ext import (  # type: ignore[import]
+from .pyvinecopulib_ext import (
   Bicop,
   BicopFamily,
   CVineStructure,

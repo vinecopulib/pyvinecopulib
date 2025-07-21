@@ -35,7 +35,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["mypy>=1.15", "ruff==0.11.6", "pytest>=8.0", "nbmake"]
+dev = ["mypy>=1.15", "ruff==0.11.6", "pytest>=8.0", "nbmake", "pre-commit", "bandit[toml]", "build"]
 examples = ["jupyterlab"]
 doc = [
   "sphinx==7.0",
@@ -97,3 +97,7 @@ show_error_codes = true
 warn_unused_configs = true
 files = ["src", "tests"]
 exclude = "scripts|docs|examples"
+
+[tool.bandit]
+exclude_dirs = ["tests", "docs", "examples", "lib", "build"]
+skips = ["B101"]  # Skip assert_used test
