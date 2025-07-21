@@ -104,3 +104,7 @@ pyvinecopulib-*.json
 .mypy_cache/
 environment.yml
 requirements.txt
+
+.coverage
+.coverage.*
+coverage.xml
