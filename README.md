@@ -106,14 +106,18 @@ Finally, you can build and install `pyvinecopulib` using `pip`:
 pip install .
 ```
 
-Stubs can then be generated using:
+Stubs and documentation can then be generated using the custom scripts:
 
 ```bash
-PYTHONPATH=$(python -c "import site; print(site.getsitepackages()[0])") \
-              python -m nanobind.stubgen \
-                -m pyvinecopulib.pyvinecopulib_ext \
-                -o src/pyvinecopulib/__init__.pyi \
-                -M src/pyvinecopulib/py.typed
+python scripts/generate_metadata.py --env pyvinecopulib
+```
+
+Or use the Makefile for convenience:
+
+```bash
+make metadata    # Generate all (stubs, docstrings, examples)
+make stubs       # Generate type stubs only
+make docstrings  # Generate C++ docstrings only
 ```
 
 Note that the `generate_requirements.py` script can also be used to generate a `requirements.txt` file for use with `pip` via the `--format` option:
@@ -175,7 +179,11 @@ Use `make help` to see all available commands. Key commands include:
 | `make docs` | Build documentation |
 | `make docs-serve` | Serve documentation locally |
 | `make clean` | Clean build artifacts |
-| `make stubs` | Generate type stubs |
+| `make stubs` | Generate type stubs (custom script) |
+| `make docstrings` | Generate C++ docstrings |
+| `make metadata` | Generate all metadata (stubs, docstrings, examples) |
+| `make examples` | Process and execute example notebooks |
+| `make clear-cache` | Clear Python cache files |
 
 ### Pre-commit Hooks
 
@@ -263,5 +271,7 @@ This ensures all tests pass, documentation builds correctly, and examples work.
 - Use `make quick-check` frequently during development for fast feedback
 - Pre-commit hooks automatically fix many formatting issues
 - Run `make check-all` before pushing changes to ensure quality
+* Use `make metadata` to regenerate stubs and docstrings after C++ changes
+* The project uses custom scripts in `scripts/` for stub generation (not nanobind's default)
 - Keep commits focused and write clear commit messages
 - Add tests for new functionality
