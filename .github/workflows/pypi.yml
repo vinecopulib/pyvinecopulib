@@ -212,6 +212,11 @@ jobs:
           export Boost_INCLUDE_DIR=$Boost_INCLUDE_DIR
           export EIGEN3_INCLUDE_DIR=$EIGEN3_INCLUDE_DIR
           pip install dist/*.tar.gz
+      - name: Install dev dependencies for testing
+        run: |
+          pip install tomli  # Needed for Python < 3.11
+          python scripts/get_dependencies.py dev --as-requirements > requirements.txt
+          pip install -r requirements.txt
       - name: Run tests
         run: |
           pytest tests/ -r a
@@ -237,8 +242,8 @@ jobs:
           merge-multiple: true
       - name: Publish distribution Test PyPI
         if: |
-          job.status == 'success' 
-            && github.base_ref == 'main' 
+          job.status == 'success'
+            && github.base_ref == 'main'
             && github.head_ref == 'dev'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
@@ -247,8 +252,8 @@ jobs:
           repository-url: https://test.pypi.org/legacy/
       - name: Publish distribution to PyPI
         if: |
-          job.status == 'success' 
-            && github.event_name == 'push' 
+          job.status == 'success'
+            && github.event_name == 'push'
             && startsWith(github.event.ref, 'refs/tags')
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
