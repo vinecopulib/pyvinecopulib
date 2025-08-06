@@ -1,6 +1,7 @@
 from typing import Optional
 
 import numpy as np
+
 import pyvinecopulib as pv
 
 ALGORITHMS = ["jck", "wilson"]
@@ -61,9 +62,14 @@ class VinesForest:
         vine = pv.Vinecop.from_data(data=data, controls=self.controls)
       self.vines.append((seed_i, vine))
 
-  def loglik(self, data: Optional[np.ndarray] = None) -> np.ndarray:
+  def loglik(
+    self, data: Optional[np.ndarray] = None, per_observation: bool = False
+  ) -> np.ndarray:
     if not self.vines:
       raise ValueError("VinesForest not fitted yet")
     if data is None:
       data = np.ndarray(shape=(0, 0), dtype=np.float64)
-    return np.array([vine.loglik(data) for _, vine in self.vines])
+    if not per_observation:
+      return np.array([vine.loglik(data) for _, vine in self.vines])
+    else:
+      return np.concatenate([vine.pdf(data) for _, vine in self.vines]).log()
