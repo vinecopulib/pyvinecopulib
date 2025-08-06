@@ -35,7 +35,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["mypy>=1.15", "ruff==0.11.6", "pytest>=8.0", "nbmake", "pre-commit", "bandit[toml]", "build", "pytest-cov", "coverage[toml]"]
+dev = ["mypy>=1.15", "ruff==0.11.6", "pytest>=8.0", "nbmake", "pre-commit", "bandit[toml]", "pytest-cov", "coverage[toml]"]
 examples = ["jupyterlab"]
 doc = [
   "sphinx==7.0",

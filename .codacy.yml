@@ -3,5 +3,5 @@ exclude_paths:
   - 'lib/**'
   - 'docs/**'
   - 'scripts/**'
-  - 'src/docstr.hpp'
+  - 'src/include/docstr.hpp'
   - '**.md'
