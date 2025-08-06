@@ -171,7 +171,12 @@ def expon_cdf(x: NDArray[np.float64], scale: float = 1) -> NDArray[np.float64]:
 
 # Percent Point Function (Inverse CDF, PPF)
 def expon_ppf(p: NDArray[np.float64], scale: float = 1) -> NDArray[np.float64]:
-  return np.asarray(-scale * np.log(1 - p))
+  p = np.asarray(p)
+  result = np.empty_like(p)
+  mask = p == 1.0
+  result[mask] = np.inf
+  result[~mask] = -scale * np.log(1 - p[~mask])
+  return result
 
 
 # Probability Density Function (PDF)

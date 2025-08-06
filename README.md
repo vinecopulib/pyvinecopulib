@@ -22,7 +22,7 @@ You can find a comprehensive list of publications and other materials on
 high-performance implementations of the core features of the popular
 [VineCopula R library](https://github.com/tnagler/VineCopula), in particular
 inference algorithms for both vine copula and bivariate copula models.
-Advantages over VineCopula are  
+Advantages over VineCopula are
 
 * a stand-alone C++ library with interfaces to both R and Python,
 * a sleaker and more modern API,
@@ -106,14 +106,18 @@ Finally, you can build and install `pyvinecopulib` using `pip`:
 pip install .
 ```
 
-Stubs can then be generated using:
+Stubs and documentation can then be generated using the custom scripts:
 
 ```bash
-PYTHONPATH=$(python -c "import site; print(site.getsitepackages()[0])") \
-              python -m nanobind.stubgen \
-                -m pyvinecopulib.pyvinecopulib_ext \
-                -o src/pyvinecopulib/__init__.pyi \
-                -M src/pyvinecopulib/py.typed
+python scripts/generate_metadata.py --env pyvinecopulib
+```
+
+Or use the Makefile for convenience:
+
+```bash
+make metadata    # Generate all (stubs, docstrings, examples)
+make stubs       # Generate type stubs only
+make docstrings  # Generate C++ docstrings only
 ```
 
 Note that the `generate_requirements.py` script can also be used to generate a `requirements.txt` file for use with `pip` via the `--format` option:
@@ -132,3 +136,142 @@ formats please refer to the Sphinx manual:
 cd docs
 python serve_sphinx.py
 ```
+
+## Development
+
+This project includes comprehensive development tools including pre-commit hooks and a Makefile to streamline development workflow.
+
+### Quick Development Setup
+
+1. **Clone and setup environment**:
+   ```bash
+   git clone --recursive https://github.com/vinecopulib/pyvinecopulib.git
+   cd pyvinecopulib
+   make env-conda                    # Create conda environment
+   conda activate pyvinecopulib      # Activate environment
+   ```
+
+2. **Setup development tools**:
+   ```bash
+   make dev-setup                    # Install dependencies and pre-commit hooks
+   ```
+
+3. **Development workflow**:
+   ```bash
+   make quick-check                  # Run fast checks (lint, type-check, test)
+   make check-all                    # Run comprehensive checks before commit
+   ```
+
+### Development Commands
+
+Use `make help` to see all available commands. Key commands include:
+
+| Command | Description |
+|---------|-------------|
+| `make install-dev` | Install development dependencies |
+| `make test` | Run all tests |
+| `make test-fast` | Run tests without coverage |
+| `make test-examples` | Run example notebooks |
+| `make lint` | Run code linting with ruff |
+| `make format` | Format code with ruff |
+| `make type-check` | Run type checking with mypy |
+| `make security` | Run security checks with bandit |
+| `make docs` | Build documentation |
+| `make docs-serve` | Serve documentation locally |
+| `make clean` | Clean build artifacts |
+| `make stubs` | Generate type stubs (custom script) |
+| `make docstrings` | Generate C++ docstrings |
+| `make metadata` | Generate all metadata (stubs, docstrings, examples) |
+| `make examples` | Process and execute example notebooks |
+| `make clear-cache` | Clear Python cache files |
+
+### Pre-commit Hooks
+
+Pre-commit hooks automatically run code quality checks before each commit:
+
+- **Ruff**: Python linting and code formatting
+- **MyPy**: Type checking with project configuration
+- **Bandit**: Security vulnerability scanning
+- **Clang-format**: C++ code formatting (src/ directory only)
+- **CMake-format**: CMake file formatting
+- **General hooks**: Trailing whitespace, YAML/TOML validation, etc.
+
+Install hooks with:
+```bash
+make pre-commit-install
+```
+
+Run manually on all files:
+```bash
+make pre-commit
+```
+
+### Development Workflow
+
+1. **Start new feature/fix**:
+   ```bash
+   git checkout -b feature/my-feature
+   ```
+
+2. **During development** (run frequently):
+   ```bash
+   make quick-check                  # Fast feedback loop
+   ```
+
+3. **Before committing**:
+   ```bash
+   make check-all                    # Comprehensive quality checks
+   git add .
+   git commit -m "Add new feature"   # Pre-commit hooks run automatically
+   ```
+
+### Code Style Guidelines
+
+- **Python**: Follow PEP 8, enforced by ruff
+- **C++**: Follow Google style guide, enforced by clang-format
+- **Type hints**: Required for all Python code
+- **Documentation**: Use docstrings for all public functions
+
+### Testing
+
+- **All tests**: `make test`
+- **Fast tests**: `make test-fast` (for quick development feedback)
+- **Example notebooks**: `make test-examples`
+- **Performance benchmarks**: `make benchmark`
+
+### Environment Management
+
+The project uses conda for environment management. The Makefile automatically detects conda environments:
+
+```bash
+make env-conda                        # Create new environment
+conda activate pyvinecopulib          # Activate environment
+make env-update                       # Update existing environment
+make update-deps                      # Update dependency files
+```
+
+### Release Process
+
+Before releasing, run comprehensive checks:
+```bash
+make release-check
+```
+
+This ensures all tests pass, documentation builds correctly, and examples work.
+
+### Troubleshooting
+
+- **Build issues**: `make debug-build`
+- **Installation issues**: `make debug-install`
+- **Project status**: `make status`
+- **Clean everything**: `make git-clean` (⚠️ destructive)
+
+### Development Tips
+
+- Use `make quick-check` frequently during development for fast feedback
+- Pre-commit hooks automatically fix many formatting issues
+- Run `make check-all` before pushing changes to ensure quality
+* Use `make metadata` to regenerate stubs and docstrings after C++ changes
+* The project uses custom scripts in `scripts/` for stub generation (not nanobind's default)
+- Keep commits focused and write clear commit messages
+- Add tests for new functionality
