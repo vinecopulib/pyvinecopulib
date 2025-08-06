@@ -1231,6 +1231,7 @@ class FitControlsBicop:
     parametric_method: str = "mle",
     nonparametric_method: str = "constant",
     nonparametric_mult: float = 1.0,
+    nonparametric_grid_size: int = 30,
     selection_criterion: str = "bic",
     weights: ArrayLike = ...,
     psi0: float = 0.9,
@@ -1287,6 +1288,10 @@ class FitControlsBicop:
   @family_set.setter
   def family_set(self, value: Any) -> None: ...
   @property
+  def nonparametric_grid_size(self) -> Any: ...
+  @nonparametric_grid_size.setter
+  def nonparametric_grid_size(self, value: Any) -> None: ...
+  @property
   def nonparametric_method(self) -> Any: ...
   @nonparametric_method.setter
   def nonparametric_method(self, value: Any) -> None: ...
@@ -1329,6 +1334,7 @@ class FitControlsVinecop:
     parametric_method: str = "mle",
     nonparametric_method: str = "constant",
     nonparametric_mult: float = 1.0,
+    nonparametric_grid_size: int = 30,
     trunc_lvl: int = 18446744073709551615,
     tree_criterion: str = "tau",
     threshold: float = 0.0,
@@ -1429,6 +1435,10 @@ class FitControlsVinecop:
   def family_set(self) -> Any: ...
   @family_set.setter
   def family_set(self, value: Any) -> None: ...
+  @property
+  def nonparametric_grid_size(self) -> Any: ...
+  @nonparametric_grid_size.setter
+  def nonparametric_grid_size(self, value: Any) -> None: ...
   @property
   def nonparametric_method(self) -> Any: ...
   @nonparametric_method.setter
