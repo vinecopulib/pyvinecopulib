@@ -1,6 +1,7 @@
 import argparse
 import subprocess
 from pathlib import Path
+
 import nbformat
 
 
@@ -47,32 +48,54 @@ def generate_docstrings(env_name: str) -> None:
   print("Generating C++ docstrings...")
   print("-------------------")
   print("Conda environment:", env_name)
+
   clang_lib = Path.home() / f"miniforge3/envs/{env_name}/lib/libclang.so"
   print("Clang library path:", clang_lib)
-  headers = subprocess.check_output(
-    [
-      "find",
-      "lib/vinecopulib/include",
-      "-regextype",
-      "awk",
-      "-regex",
-      ".*(class|controls|family|structure|stats)\\.(hpp|ipp)",
-      "-print",
-    ],
-    text=True,
-  ).splitlines()
+
+  include_dirs = [
+    "lib/vinecopulib/include",
+    "lib/wdm/include",
+    "lib/kde1d/include",
+  ]
+  header_name_substrings = [
+    "class",
+    "controls",
+    "family",
+    "structure",
+    "stats",
+    "wdm",
+    "kde1d",
+  ]
+
+  # collect headers from both include dirs
+  headers: list[str] = []
+  for inc in include_dirs:
+    out = subprocess.check_output(
+      [
+        "find",
+        inc,
+        "-regextype",
+        "awk",
+        "-regex",
+        f".*({'|'.join(header_name_substrings)})\\.(hpp|ipp)",
+        "-print",
+      ],
+      text=True,
+    )
+    headers.extend(out.splitlines())
+
   print("Found headers:\n", "\n  ".join(headers))
 
   cmd = [
     "python3",
     "scripts/generate_docstring.py",
-    "-I",
-    "lib/vinecopulib/include",
+    *[arg for d in include_dirs for arg in ("-I", d)],
     "-output",
     "src/include/docstr.hpp",
     "-library_file",
     str(clang_lib),
   ] + headers
+
   subprocess.run(cmd, check=True)
 
 
