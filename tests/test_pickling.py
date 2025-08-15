@@ -6,6 +6,7 @@ import pyvinecopulib as pv
 
 from .helpers import (
   compare_bicop,
+  compare_kde1d,
   compare_properties,
   compare_rvinestructure,
   compare_vinecop,
@@ -102,6 +103,41 @@ def test_rvinestructure() -> None:
 
   # Ensure the deserialized object has the same attributes as the original
   compare_rvinestructure(original_structure, deserialized_structure)
+
+
+def test_kde1d() -> None:
+  # Test with unfitted Kde1d object first
+  original_kde = pv.Kde1d(
+    xmin=-5.0,
+    xmax=5.0,
+    type="continuous",
+    multiplier=1.5,
+    degree=1,
+    bandwidth=0.1,
+  )
+
+  # Serialize the unfitted object
+  serialized = pickle.dumps(original_kde)
+
+  # Deserialize the object
+  deserialized_kde = pickle.loads(serialized)
+
+  # Assert that the deserialized object's properties match the original (unfitted)
+  compare_kde1d(original_kde, deserialized_kde)
+
+  # Now test with fitted model
+  np.random.seed(1234)
+  x = np.random.normal(0, 1, 100)
+  original_kde.fit(x)
+
+  # Serialize the fitted object
+  serialized_fitted = pickle.dumps(original_kde)
+
+  # Deserialize the fitted object
+  deserialized_fitted = pickle.loads(serialized_fitted)
+
+  # Assert that the deserialized fitted object's properties match the original
+  compare_kde1d(original_kde, deserialized_fitted)
 
 
 def test_vinecop() -> None:

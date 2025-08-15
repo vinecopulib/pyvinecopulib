@@ -52,6 +52,29 @@ def compare_vinecop(cop1: Any, cop2: Any) -> None:
       compare_bicop(bicop1, bicop2)
 
 
+def compare_kde1d(kde1: Any, kde2: Any, from_grid: bool = False) -> None:
+  # Check if models are fitted by testing grid_points
+  is_fitted1 = len(kde1.grid_points) > 0
+  is_fitted2 = len(kde2.grid_points) > 0
+
+  # Both should have same fitted status
+  assert is_fitted1 == is_fitted2, (
+    f"Fitted status mismatch: {is_fitted1} != {is_fitted2}"
+  )
+
+  # Always compare basic properties
+  attrs = ["xmin", "xmax", "type"]
+
+  if is_fitted1:
+    # For fitted models: compare grid data and prob0
+    attrs += ["prob0", "grid_points", "values"]
+  else:
+    # For unfitted models: compare fitting parameters
+    attrs += ["multiplier", "bandwidth", "degree"]
+
+  compare_properties(kde1, kde2, attrs)
+
+
 def compare_rvinestructure(
   struct1: Any, struct2: Any, subclass: bool = False
 ) -> None:

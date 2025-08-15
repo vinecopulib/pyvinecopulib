@@ -43,9 +43,6 @@ install-examples: ## Install examples dependencies
 install-all: ## Install all dependencies (dev, docs, examples)
 	$(PIP_INSTALL) -e ".[dev,doc,examples]"
 
-build: ## Build the package
-	$(PYTHON) -m build
-
 clean: ## Clean build artifacts
 	rm -rf build/
 	rm -rf dist/
