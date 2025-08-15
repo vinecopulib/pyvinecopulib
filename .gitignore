@@ -108,3 +108,4 @@ requirements.txt
 .coverage.*
 coverage.xml
 examples/forests/data/*.csv
+examples/forests/uci/data/

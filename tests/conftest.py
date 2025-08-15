@@ -5,7 +5,7 @@ from typing import Iterator
 import pytest
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def test_dump_folder() -> Iterator[str]:
   folder = "test_dump"
   os.makedirs(folder, exist_ok=True)
