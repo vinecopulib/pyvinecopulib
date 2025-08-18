@@ -6,6 +6,7 @@ from .pyvinecopulib_ext import (
   DVineStructure,
   FitControlsBicop,
   FitControlsVinecop,
+  Kde1d,
   RVineStructure,
   Vinecop,
   all,
@@ -55,6 +56,7 @@ __all__ = [
   "CVineStructure",
   "DVineStructure",
   "BicopFamily",
+  "Kde1d",
   # Functions
   "simulate_uniform",
   "sobol",
