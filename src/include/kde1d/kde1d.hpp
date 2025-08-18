@@ -112,54 +112,47 @@ inline void init_kde1d(nb::module_& module) {
 
       // Serialization support
       .def("__getstate__",
-           [](const Kde1d& kde) -> nb::object {
-             // Check if model is fitted by testing if loglik is not NaN
-             bool is_fitted = !(kde.get_loglik() != kde.get_loglik());
-
-             if (is_fitted) {
+           [](const Kde1d& kde) {
+             nb::dict s;
+             const bool fitted = kde.get_grid_points().size() > 0;
+             s["fitted"] = fitted;
+             s["xmin"] = kde.get_xmin();
+             s["xmax"] = kde.get_xmax();
+             s["type"] = kde.get_type_str();
+             if (fitted) {
                // For fitted models: save all data needed to reconstruct
-               return nb::make_tuple(kde.get_xmin(), kde.get_xmax(),
-                                     kde.get_type_str(), kde.get_prob0(),
-                                     kde.get_grid_points(), kde.get_values(),
-                                     kde.get_loglik(), kde.get_edf(),
-                                     true);  // fitted flag
+               s["prob0"] = kde.get_prob0();
+               s["grid_points"] = kde.get_grid_points();
+               s["values"] = kde.get_values();
              } else {
                // For unfitted models: save parameters only
-               return nb::make_tuple(kde.get_xmin(), kde.get_xmax(),
-                                     kde.get_type_str(), kde.get_multiplier(),
-                                     kde.get_bandwidth(),
-                                     static_cast<double>(kde.get_degree()),
-                                     false);  // fitted flag
+               s["multiplier"] = kde.get_multiplier();
+               s["bandwidth"] = kde.get_bandwidth();
+               s["degree"] = static_cast<std::size_t>(kde.get_degree());
              }
+             return s;
            })
-      .def("__setstate__", [](Kde1d& kde, nb::tuple state) {
-        bool is_fitted = nb::cast<bool>(state[state.size() - 1]);
 
-        if (is_fitted) {
-          // For fitted models, construct from grid
-          double xmin = nb::cast<double>(state[0]);
-          double xmax = nb::cast<double>(state[1]);
-          std::string type_str = nb::cast<std::string>(state[2]);
-          double prob0 = nb::cast<double>(state[3]);
-          Eigen::VectorXd grid_points = nb::cast<Eigen::VectorXd>(state[4]);
-          Eigen::VectorXd values = nb::cast<Eigen::VectorXd>(state[5]);
+      .def("__setstate__", [](Kde1d& kde, nb::dict s) {
+        const bool fitted = nb::cast<bool>(s["fitted"]);
+        const double xmin = nb::cast<double>(s["xmin"]);
+        const double xmax = nb::cast<double>(s["xmax"]);
+        const std::string type = nb::cast<std::string>(s["type"]);
 
+        if (fitted) {
+          const double prob0 = nb::cast<double>(s["prob0"]);
+          const Eigen::VectorXd grid_points =
+              nb::cast<Eigen::VectorXd>(s["grid_points"]);
+          const Eigen::VectorXd values = nb::cast<Eigen::VectorXd>(s["values"]);
           // Create interpolation grid and construct object
           interp::InterpolationGrid grid(grid_points, values, 0);
-          new (&kde) Kde1d(grid, xmin, xmax, type_str, prob0);
-
-          // Note: loglik and edf are read-only calculated properties,
-          // they will be recalculated based on the grid
+          new (&kde) Kde1d(grid, xmin, xmax, type, prob0);
         } else {
           // For unfitted models, construct from parameters
-          double xmin = nb::cast<double>(state[0]);
-          double xmax = nb::cast<double>(state[1]);
-          std::string type_str = nb::cast<std::string>(state[2]);
-          double multiplier = nb::cast<double>(state[3]);
-          double bandwidth = nb::cast<double>(state[4]);
-          size_t degree = static_cast<size_t>(nb::cast<double>(state[5]));
-
-          new (&kde) Kde1d(xmin, xmax, type_str, multiplier, bandwidth, degree);
+          const double multiplier = nb::cast<double>(s["multiplier"]);
+          const double bandwidth = nb::cast<double>(s["bandwidth"]);
+          const std::size_t degree = nb::cast<std::size_t>(s["degree"]);
+          new (&kde) Kde1d(xmin, xmax, type, multiplier, bandwidth, degree);
         }
       });
 }
