@@ -1552,6 +1552,7 @@ class Kde1d:
     multiplier: float = 1.0,
     bandwidth: float | None = None,
     degree: int = 2,
+    grid_size: int = 400,
   ) -> None:
     """
 
@@ -1577,6 +1578,9 @@ class Kde1d:
     degree : int, optional
         Degree of the local polynomial. Either 0, 1, or 2 for log-constant,
         log-linear, and log-quadratic fitting, respectively. Default is 2.
+    grid_size : int, optional
+        Number of grid points for the interpolation grid. Must be at least 4.
+        Default is 400.
     """
     ...
 
@@ -1676,6 +1680,7 @@ class Kde1d:
     multiplier: float = 1.0,
     bandwidth: float | None = None,
     degree: int = 2,
+    grid_size: int = 400,
   ) -> "Kde1d":
     """
 
@@ -1699,6 +1704,9 @@ class Kde1d:
         Bandwidth parameter (``NaN`` for automatic selection). Default is ``NaN``.
     degree : int, optional
         Degree of the local polynomial (0, 1, or 2). Default is 2.
+    grid_size : int, optional
+        Number of grid points for the interpolation grid. Must be at least 4.
+        Default is 400.
 
     Returns
     -------
@@ -1709,6 +1717,8 @@ class Kde1d:
 
   @property
   def grid_points(self) -> Any: ...
+  @property
+  def grid_size(self) -> Any: ...
   @property
   def loglik(self) -> Any: ...
   @property

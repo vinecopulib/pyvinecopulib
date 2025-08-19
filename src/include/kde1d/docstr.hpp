@@ -72,6 +72,9 @@ bandwidth : float, optional
 degree : int, optional
     Degree of the local polynomial. Either 0, 1, or 2 for log-constant,
     log-linear, and log-quadratic fitting, respectively. Default is 2.
+grid_size : int, optional
+    Number of grid points for the interpolation grid. Must be at least 4.
+    Default is 400.
 )""";
 
 constexpr const char* kde1d_from_params_doc = R"""(
@@ -95,6 +98,9 @@ bandwidth : float, optional
     Bandwidth parameter (``NaN`` for automatic selection). Default is ``NaN``.
 degree : int, optional
     Degree of the local polynomial (0, 1, or 2). Default is 2.
+grid_size : int, optional
+    Number of grid points for the interpolation grid. Must be at least 4.
+    Default is 400.
 
 Returns
 -------
@@ -250,6 +256,8 @@ constexpr const char* prob0_doc =
 constexpr const char* multiplier_doc = R"""(Bandwidth multiplier.)""";
 constexpr const char* bandwidth_doc = R"""(Bandwidth parameter.)""";
 constexpr const char* degree_doc = R"""(Degree of the local polynomial.)""";
+constexpr const char* grid_size_doc =
+    R"""(Number of grid points for interpolation.)""";
 constexpr const char* loglik_doc = R"""(Log-likelihood of the fitted model.)""";
 constexpr const char* edf_doc = R"""(Effective degrees of freedom.)""";
 constexpr const char* grid_points_doc =

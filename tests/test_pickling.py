@@ -116,6 +116,7 @@ def test_kde1d() -> None:
     multiplier=1.5,
     degree=1,
     bandwidth=0.1,
+    grid_size=100,
   )
 
   # Serialize the unfitted object
