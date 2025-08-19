@@ -15,10 +15,17 @@ def test_kde1d_initialization() -> None:
   assert kde.multiplier == 1.0
   assert kde.bandwidth != kde.bandwidth  # NaN check (not fitted yet)
   assert kde.degree == 2
+  assert kde.grid_size == 400  # Default grid size
 
   # Test initialization with arguments
   kde = pv.Kde1d(
-    xmin=0.0, xmax=1.0, type="discrete", multiplier=25, bandwidth=0.1, degree=1
+    xmin=0.0,
+    xmax=1.0,
+    type="discrete",
+    multiplier=25,
+    bandwidth=0.1,
+    degree=1,
+    grid_size=200,
   )
   assert kde.xmin == 0.0
   assert kde.xmax == 1.0
@@ -26,6 +33,7 @@ def test_kde1d_initialization() -> None:
   assert kde.multiplier == 25
   assert kde.bandwidth == 0.1
   assert kde.degree == 1
+  assert kde.grid_size == 200
 
   # Test zero-inflated type
   kde = pv.Kde1d(type="zero_inflated")
@@ -82,6 +90,7 @@ def test_kde1d_properties() -> None:
     multiplier=2.0,
     bandwidth=0.5,
     degree=1,
+    grid_size=100,
   )
 
   # Test read-only properties
@@ -91,6 +100,7 @@ def test_kde1d_properties() -> None:
   assert kde.multiplier == 2.0
   assert kde.bandwidth == 0.5
   assert kde.degree == 1
+  assert kde.grid_size == 100
   assert kde.prob0 == 0.0  # Default for non-zero-inflated
 
   # Test that properties are read-only
