@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 from sklearn.model_selection import train_test_split
 
@@ -35,7 +37,10 @@ class VinesForest:
   def fit(
     self,
     data: np.ndarray,
+    data_val: Optional[np.ndarray] = None,
   ) -> None:
+    d = data.shape[1]
+
     # Set seed and create random number generator
     rng = np.random.default_rng(self.seed)
 
@@ -46,9 +51,19 @@ class VinesForest:
     # Save the initial control seed
     initial_controls_seed = self.controls.seeds
 
-    train, val = train_test_split(
-      data, train_size=self.train_val_split, random_state=self.seed
-    )
+    # If no validation data is provided, we split the data into train and validation
+    if data_val is None:
+      train, val = train_test_split(
+        data, train_size=self.train_val_split, random_state=self.seed
+      )
+    else:
+      if data_val.shape[1] != d:
+        raise ValueError(
+          f"Validation data must have the same number of dimensions as training data. Expected {d}, got {data_val.shape[1]}"
+        )
+      # If validation data is provided, we use it directly
+      train = data
+      val = data_val
     self.vine_dissman = pv.Vinecop.from_data(data=train, controls=self.controls)
     self.loglik_dissman = np.log(self.vine_dissman.pdf(val))
 
@@ -59,7 +74,7 @@ class VinesForest:
 
       # If the algorithm is jck, we simulate the structure
       structure = (
-        pv.RVineStructure.simulate(data.shape[1], seeds=seeds)
+        pv.RVineStructure.simulate(d, seeds=seeds)
         if self.algorithm == "jck"
         else None
       )

@@ -19,7 +19,8 @@ class GAS:
 
 
 def load_data(file):
-  data = pd.read_pickle(file)
+  # data = pd.read_pickle(file)
+  data = pd.read_csv(file, index_col=False)
   # data = pd.read_pickle(file).sample(frac=0.25)
   # data.to_pickle(file)
   data.drop("Meth", axis=1, inplace=True)

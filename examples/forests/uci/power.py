@@ -21,6 +21,29 @@ def load_data(file):
   return np.load(file)
 
 
+def load_data_split(file):
+  rng = np.random.RandomState(42)
+
+  data = load_data(file)
+  rng.shuffle(data)
+  N = data.shape[0]
+
+  data = np.delete(data, 3, axis=1)
+  data = np.delete(data, 1, axis=1)
+
+  # remove the last column
+  data = np.delete(data, -1, axis=1)
+
+  # 10% / # 10% / 80% split
+  N_validate_test = int(0.1 * N)
+  data_test = data[-N_validate_test:]
+  data = data[0:-N_validate_test]
+  data_validate = data[-N_validate_test:]
+  data_train = data[0:-N_validate_test]
+
+  return data_train, data_validate, data_test
+
+
 def load_data_split_with_noise(file):
   rng = np.random.RandomState(42)
 
