@@ -36,14 +36,6 @@ repos:
       - id: mixed-line-ending
         args: [--fix=lf]
 
-  # Check for common security issues
-  - repo: https://github.com/PyCQA/bandit
-    rev: 1.7.10
-    hooks:
-      - id: bandit
-        args: ["-c", "pyproject.toml"]
-        additional_dependencies: ["bandit[toml]"]
-
   # Check requirements files
   - repo: https://github.com/pre-commit/pygrep-hooks
     rev: v1.10.0

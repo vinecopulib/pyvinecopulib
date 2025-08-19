@@ -175,7 +175,6 @@ Use `make help` to see all available commands. Key commands include:
 | `make lint` | Run code linting with ruff |
 | `make format` | Format code with ruff |
 | `make type-check` | Run type checking with mypy |
-| `make security` | Run security checks with bandit |
 | `make docs` | Build documentation |
 | `make docs-serve` | Serve documentation locally |
 | `make clean` | Clean build artifacts |
@@ -190,8 +189,7 @@ Use `make help` to see all available commands. Key commands include:
 Pre-commit hooks automatically run code quality checks before each commit:
 
 - **Ruff**: Python linting and code formatting
-- **MyPy**: Type checking with project configuration
-- **Bandit**: Security vulnerability scanning
+* **MyPy**: Type checking with project configuration
 - **Clang-format**: C++ code formatting (src/ directory only)
 - **CMake-format**: CMake file formatting
 - **General hooks**: Trailing whitespace, YAML/TOML validation, etc.

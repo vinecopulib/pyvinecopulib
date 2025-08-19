@@ -116,51 +116,61 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
           fitcontrolsvinecop_doc.str.doc)
       .def("__getstate__",
            [](const FitControlsVinecop& controls) {
-             return std::make_tuple(
-                 controls.get_family_set(), controls.get_parametric_method(),
-                 controls.get_nonparametric_method(),
-                 controls.get_nonparametric_mult(),
-                 controls.get_nonparametric_grid_size(),
-                 controls.get_trunc_lvl(), controls.get_tree_criterion(),
-                 controls.get_threshold(), controls.get_selection_criterion(),
-                 controls.get_weights(), controls.get_psi0(),
-                 controls.get_preselect_families(),
-                 controls.get_select_trunc_lvl(),
-                 controls.get_select_threshold(),
-                 controls.get_select_families(), controls.get_show_trace(),
-                 controls.get_num_threads(), controls.get_tree_algorithm(),
-                 controls.get_allow_rotations(), controls.get_seeds());
+             nb::dict state;
+             state["family_set"] = controls.get_family_set();
+             state["parametric_method"] = controls.get_parametric_method();
+             state["nonparametric_method"] =
+                 controls.get_nonparametric_method();
+             state["nonparametric_mult"] = controls.get_nonparametric_mult();
+             state["nonparametric_grid_size"] =
+                 controls.get_nonparametric_grid_size();
+             state["trunc_lvl"] = controls.get_trunc_lvl();
+             state["tree_criterion"] = controls.get_tree_criterion();
+             state["threshold"] = controls.get_threshold();
+             state["selection_criterion"] = controls.get_selection_criterion();
+             state["weights"] = controls.get_weights();
+             state["psi0"] = controls.get_psi0();
+             state["preselect_families"] = controls.get_preselect_families();
+             state["select_trunc_lvl"] = controls.get_select_trunc_lvl();
+             state["select_threshold"] = controls.get_select_threshold();
+             state["select_families"] = controls.get_select_families();
+             state["show_trace"] = controls.get_show_trace();
+             state["num_threads"] = controls.get_num_threads();
+             state["tree_algorithm"] = controls.get_tree_algorithm();
+             state["allow_rotations"] = controls.get_allow_rotations();
+             state["seeds"] = controls.get_seeds();
+             return state;
            })
-      .def(
-          "__setstate__",
-          [](FitControlsVinecop& controls,
-             std::tuple<std::vector<BicopFamily>, std::string, std::string,
-                        double, size_t, size_t, std::string, double,
-                        std::string, Eigen::VectorXd, double, bool, bool, bool,
-                        bool, bool, size_t, std::string, bool, std::vector<int>>
-                 state) {
-            FitControlsConfig config;
-            config.family_set = std::get<0>(state);
-            config.parametric_method = std::get<1>(state);
-            config.nonparametric_method = std::get<2>(state);
-            config.nonparametric_mult = std::get<3>(state);
-            config.nonparametric_grid_size = std::get<4>(state);
-            config.trunc_lvl = std::get<5>(state);
-            config.tree_criterion = std::get<6>(state);
-            config.threshold = std::get<7>(state);
-            config.selection_criterion = std::get<8>(state);
-            config.weights = std::get<9>(state);
-            config.psi0 = std::get<10>(state);
-            config.preselect_families = std::get<11>(state);
-            config.select_trunc_lvl = std::get<12>(state);
-            config.select_threshold = std::get<13>(state);
-            config.select_families = std::get<14>(state);
-            config.show_trace = std::get<15>(state);
-            config.num_threads = std::get<16>(state);
-            config.tree_algorithm = std::get<17>(state);
-            config.allow_rotations = std::get<18>(state);
-            config.seeds = std::get<19>(state);
 
-            new (&controls) FitControlsVinecop(config);
-          });
+      .def("__setstate__", [](FitControlsVinecop& controls, nb::dict state) {
+        FitControlsConfig config;
+        config.family_set =
+            nb::cast<std::vector<BicopFamily>>(state["family_set"]);
+        config.parametric_method =
+            nb::cast<std::string>(state["parametric_method"]);
+        config.nonparametric_method =
+            nb::cast<std::string>(state["nonparametric_method"]);
+        config.nonparametric_mult =
+            nb::cast<double>(state["nonparametric_mult"]);
+        config.nonparametric_grid_size =
+            nb::cast<std::size_t>(state["nonparametric_grid_size"]);
+        config.trunc_lvl = nb::cast<std::size_t>(state["trunc_lvl"]);
+        config.tree_criterion = nb::cast<std::string>(state["tree_criterion"]);
+        config.threshold = nb::cast<double>(state["threshold"]);
+        config.selection_criterion =
+            nb::cast<std::string>(state["selection_criterion"]);
+        config.weights = nb::cast<Eigen::VectorXd>(state["weights"]);
+        config.psi0 = nb::cast<double>(state["psi0"]);
+        config.preselect_families = nb::cast<bool>(state["preselect_families"]);
+        config.select_trunc_lvl = nb::cast<bool>(state["select_trunc_lvl"]);
+        config.select_threshold = nb::cast<bool>(state["select_threshold"]);
+        config.select_families = nb::cast<bool>(state["select_families"]);
+        config.show_trace = nb::cast<bool>(state["show_trace"]);
+        config.num_threads = nb::cast<std::size_t>(state["num_threads"]);
+        config.tree_algorithm = nb::cast<std::string>(state["tree_algorithm"]);
+        config.allow_rotations = nb::cast<bool>(state["allow_rotations"]);
+        config.seeds = nb::cast<std::vector<int>>(state["seeds"]);
+
+        new (&controls) FitControlsVinecop(std::move(config));
+      });
 }

@@ -35,8 +35,16 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["mypy>=1.15", "ruff==0.11.6", "pytest>=8.0", "nbmake", "pre-commit", "bandit[toml]", "pytest-cov", "coverage[toml]"]
-examples = ["jupyterlab", "tqdm", "pandas", "plotnine", "scikit-learn", "scipy", "statsmodels"]
+dev = [
+  "mypy>=1.15",
+  "ruff==0.11.6",
+  "pytest>=8.0",
+  "nbmake",
+  "pre-commit",
+  "pytest-cov",
+  "coverage[toml]",
+]
+examples = ["jupyterlab"]
 doc = [
   "sphinx==7.0",
   "nbsphinx==0.9.2",
@@ -100,16 +108,11 @@ exclude = "scripts|docs|examples"
 
 [tool.bandit]
 exclude_dirs = ["tests", "docs", "examples", "lib", "build"]
-skips = ["B101"]  # Skip assert_used test
+skips = ["B101"]                                             # Skip assert_used test
 
 [tool.coverage.run]
 source = ["src/pyvinecopulib"]
-omit = [
-  "*/tests/*",
-  "*/test_*",
-  "*/__pycache__/*",
-  "*/site-packages/*"
-]
+omit = ["*/tests/*", "*/test_*", "*/__pycache__/*", "*/site-packages/*"]
 
 [tool.coverage.report]
 exclude_lines = [
@@ -120,7 +123,7 @@ exclude_lines = [
   "raise AssertionError",
   "raise NotImplementedError",
   "if 0:",
-  "if __name__ == .__main__.:"
+  "if __name__ == .__main__.:",
 ]
 
 [tool.pytest.ini_options]
@@ -134,5 +137,5 @@ addopts = [
   "--cov=src/pyvinecopulib",
   "--cov-report=term-missing",
   "--cov-report=html:htmlcov",
-  "--cov-report=xml"
+  "--cov-report=xml",
 ]

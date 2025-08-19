@@ -90,34 +90,43 @@ inline void init_bicop_fit_controls(nb::module_& module) {
           fitcontrolsbicop_doc.str.doc)
       .def("__getstate__",
            [](const FitControlsBicop& controls) {
-             return std::make_tuple(
-                 controls.get_family_set(), controls.get_parametric_method(),
-                 controls.get_nonparametric_method(),
-                 controls.get_nonparametric_mult(),
-                 controls.get_nonparametric_grid_size(),
-                 controls.get_selection_criterion(), controls.get_weights(),
-                 controls.get_psi0(), controls.get_preselect_families(),
-                 controls.get_allow_rotations(), controls.get_num_threads());
+             nb::dict state;
+             state["family_set"] = controls.get_family_set();
+             state["parametric_method"] = controls.get_parametric_method();
+             state["nonparametric_method"] =
+                 controls.get_nonparametric_method();
+             state["nonparametric_mult"] = controls.get_nonparametric_mult();
+             state["nonparametric_grid_size"] =
+                 controls.get_nonparametric_grid_size();
+             state["selection_criterion"] = controls.get_selection_criterion();
+             state["weights"] = controls.get_weights();
+             state["psi0"] = controls.get_psi0();
+             state["preselect_families"] = controls.get_preselect_families();
+             state["allow_rotations"] = controls.get_allow_rotations();
+             state["num_threads"] = controls.get_num_threads();
+             return state;
            })
-      .def("__setstate__",
-           [](FitControlsBicop& controls,
-              std::tuple<std::vector<BicopFamily>, std::string, std::string,
-                         double, size_t, std::string, const Eigen::VectorXd&,
-                         double, bool, bool, size_t>
-                  state) {
-             FitControlsConfig config;
-             config.family_set = std::get<0>(state);
-             config.parametric_method = std::get<1>(state);
-             config.nonparametric_method = std::get<2>(state);
-             config.nonparametric_mult = std::get<3>(state);
-             config.nonparametric_grid_size = std::get<4>(state);
-             config.selection_criterion = std::get<5>(state);
-             config.weights = std::get<6>(state);
-             config.psi0 = std::get<7>(state);
-             config.preselect_families = std::get<8>(state);
-             config.allow_rotations = std::get<9>(state);
-             config.num_threads = std::get<10>(state);
 
-             new (&controls) FitControlsBicop(config);
-           });
+      .def("__setstate__", [](FitControlsBicop& controls, nb::dict state) {
+        FitControlsConfig config;
+        config.family_set =
+            nb::cast<std::vector<BicopFamily>>(state["family_set"]);
+        config.parametric_method =
+            nb::cast<std::string>(state["parametric_method"]);
+        config.nonparametric_method =
+            nb::cast<std::string>(state["nonparametric_method"]);
+        config.nonparametric_mult =
+            nb::cast<double>(state["nonparametric_mult"]);
+        config.nonparametric_grid_size =
+            nb::cast<std::size_t>(state["nonparametric_grid_size"]);
+        config.selection_criterion =
+            nb::cast<std::string>(state["selection_criterion"]);
+        config.weights = nb::cast<Eigen::VectorXd>(state["weights"]);
+        config.psi0 = nb::cast<double>(state["psi0"]);
+        config.preselect_families = nb::cast<bool>(state["preselect_families"]);
+        config.allow_rotations = nb::cast<bool>(state["allow_rotations"]);
+        config.num_threads = nb::cast<std::size_t>(state["num_threads"]);
+
+        new (&controls) FitControlsBicop(std::move(config));
+      });
 }

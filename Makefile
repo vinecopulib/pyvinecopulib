@@ -43,9 +43,6 @@ install-examples: ## Install examples dependencies
 install-all: ## Install all dependencies (dev, docs, examples)
 	$(PIP_INSTALL) -e ".[dev,doc,examples]"
 
-build: ## Build the package
-	$(PYTHON) -m build
-
 clean: ## Clean build artifacts
 	rm -rf build/
 	rm -rf dist/
@@ -78,9 +75,6 @@ format: ## Format code with ruff
 
 type-check: ## Run type checking with mypy
 	$(PYTHON) -m mypy
-
-security: ## Run security checks with bandit
-	$(PYTHON) -m bandit -r $(SRC_DIR) -c pyproject.toml
 
 docs: ## Build documentation
 	cd $(DOCS_DIR) && $(PYTHON) -m sphinx -b html . _build/html

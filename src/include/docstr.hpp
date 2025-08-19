@@ -6,6 +6,9 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #endif
+// #include "kde1d.hpp"
+// #include "kde1d/kde1d.hpp"
+// #include "kde1d/stats.hpp"
 // #include "vinecopulib/bicop/class.hpp"
 // #include "vinecopulib/bicop/family.hpp"
 // #include "vinecopulib/bicop/fit_controls.hpp"
@@ -21,9 +24,343 @@
 // #include "vinecopulib/vinecop/implementation/fit_controls.ipp"
 // #include "vinecopulib/vinecop/implementation/rvine_structure.ipp"
 // #include "vinecopulib/vinecop/rvine_structure.hpp"
+// #include "wdm.hpp"
 
 // Symbol: pyvinecopulib_doc
 constexpr struct /* pyvinecopulib_doc */ {
+  // Symbol: kde1d
+  struct /* kde1d */ {
+    // Symbol: kde1d::Kde1d
+    struct /* Kde1d */ {
+      // Source: kde1d/kde1d.hpp:20
+      const char* doc = R"""(Local-polynomial density estimation in 1-d.)""";
+      // Symbol: kde1d::Kde1d::Kde1d
+      struct /* ctor */ {
+        // Source: kde1d/kde1d.hpp:24
+        const char* doc_was_unable_to_choose_unambiguous_names = R"""()""";
+      } ctor;
+      // Symbol: kde1d::Kde1d::calculate_infl
+      struct /* calculate_infl */ {
+        // Source: kde1d/kde1d.hpp:625
+        const char* doc =
+            R"""(calculate influence for data point for density estimate based on quantities pre-computed in
+``fit_lp()``.)""";
+      } calculate_infl;
+      // Symbol: kde1d::Kde1d::cdf
+      struct /* cdf */ {
+        // Source: kde1d/kde1d.hpp:56
+        const char* doc =
+            R"""(computes the cdf of the kernel density estimate by numerical integration.
+
+Parameters
+----------
+x :
+    vector of evaluation points.
+
+check_fitted :
+    an optional logical to bypass the check.
+
+Returns
+-------
+a vector of cdf values.)""";
+      } cdf;
+      // Symbol: kde1d::Kde1d::fit
+      struct /* fit */ {
+        // Source: kde1d/kde1d.hpp:50
+        const char* doc =
+            R"""(Parameters
+----------
+x :
+    vector of observations
+
+weights :
+    vector of weights for each observation (optional).)""";
+      } fit;
+      // Symbol: kde1d::Kde1d::get_bandwidth
+      struct /* get_bandwidth */ {
+        // Source: kde1d/kde1d.hpp:73
+        const char* doc = R"""()""";
+      } get_bandwidth;
+      // Symbol: kde1d::Kde1d::get_degree
+      struct /* get_degree */ {
+        // Source: kde1d/kde1d.hpp:74
+        const char* doc = R"""()""";
+      } get_degree;
+      // Symbol: kde1d::Kde1d::get_edf
+      struct /* get_edf */ {
+        // Source: kde1d/kde1d.hpp:75
+        const char* doc = R"""()""";
+      } get_edf;
+      // Symbol: kde1d::Kde1d::get_grid_points
+      struct /* get_grid_points */ {
+        // Source: kde1d/kde1d.hpp:66
+        const char* doc = R"""()""";
+      } get_grid_points;
+      // Symbol: kde1d::Kde1d::get_loglik
+      struct /* get_loglik */ {
+        // Source: kde1d/kde1d.hpp:76
+        const char* doc = R"""()""";
+      } get_loglik;
+      // Symbol: kde1d::Kde1d::get_multiplier
+      struct /* get_multiplier */ {
+        // Source: kde1d/kde1d.hpp:72
+        const char* doc = R"""()""";
+      } get_multiplier;
+      // Symbol: kde1d::Kde1d::get_prob0
+      struct /* get_prob0 */ {
+        // Source: kde1d/kde1d.hpp:71
+        const char* doc = R"""()""";
+      } get_prob0;
+      // Symbol: kde1d::Kde1d::get_type
+      struct /* get_type */ {
+        // Source: kde1d/kde1d.hpp:69
+        const char* doc = R"""()""";
+      } get_type;
+      // Symbol: kde1d::Kde1d::get_type_str
+      struct /* get_type_str */ {
+        // Source: kde1d/kde1d.hpp:70
+        const char* doc = R"""()""";
+      } get_type_str;
+      // Symbol: kde1d::Kde1d::get_values
+      struct /* get_values */ {
+        // Source: kde1d/kde1d.hpp:65
+        const char* doc = R"""()""";
+      } get_values;
+      // Symbol: kde1d::Kde1d::get_xmax
+      struct /* get_xmax */ {
+        // Source: kde1d/kde1d.hpp:68
+        const char* doc = R"""()""";
+      } get_xmax;
+      // Symbol: kde1d::Kde1d::get_xmin
+      struct /* get_xmin */ {
+        // Source: kde1d/kde1d.hpp:67
+        const char* doc = R"""()""";
+      } get_xmin;
+      // Symbol: kde1d::Kde1d::pdf
+      struct /* pdf */ {
+        // Source: kde1d/kde1d.hpp:54
+        const char* doc =
+            R"""(computes the pdf of the kernel density estimate by interpolation.
+
+Parameters
+----------
+x :
+    vector of evaluation points.
+
+check_fitted :
+    an optional logical to bypass the check.
+
+Returns
+-------
+a vector of pdf values.)""";
+      } pdf;
+      // Symbol: kde1d::Kde1d::quantile
+      struct /* quantile */ {
+        // Source: kde1d/kde1d.hpp:58
+        const char* doc =
+            R"""(computes the cdf of the kernel density estimate by numerical inversion.
+
+Parameters
+----------
+x :
+    vector of evaluation points.
+
+check_fitted :
+    an optional logical to bypass the check.
+
+Returns
+-------
+a vector of quantiles.)""";
+      } quantile;
+      // Symbol: kde1d::Kde1d::select_bandwidth
+      struct /* select_bandwidth */ {
+        // Source: kde1d/kde1d.hpp:788
+        const char* doc = R"""()""";
+      } select_bandwidth;
+      // Symbol: kde1d::Kde1d::set_interpolation_grid
+      struct /* set_interpolation_grid */ {
+        // Source: kde1d/kde1d.hpp:91
+        const char* doc = R"""()""";
+      } set_interpolation_grid;
+      // Symbol: kde1d::Kde1d::set_xmin_xmax
+      struct /* set_xmin_xmax */ {
+        // Source: kde1d/kde1d.hpp:77
+        const char* doc = R"""()""";
+      } set_xmin_xmax;
+      // Symbol: kde1d::Kde1d::simulate
+      struct /* simulate */ {
+        // Source: kde1d/kde1d.hpp:533
+        const char* doc =
+            R"""(simulates data from the model.
+
+Parameters
+----------
+n :
+    the number of observations to simulate.
+
+seeds :
+    an optional vector of seeds.
+
+check_fitted :
+    an optional logical to bypass the check.
+
+Returns
+-------
+simulated observations from the kernel density.)""";
+      } simulate;
+      // Symbol: kde1d::Kde1d::str
+      struct /* str */ {
+        // Source: kde1d/kde1d.hpp:79
+        const char* doc = R"""()""";
+      } str;
+    } Kde1d;
+    // Symbol: kde1d::VarType
+    struct /* VarType */ {
+      // Source: kde1d/kde1d.hpp:12
+      const char* doc = R"""()""";
+      // Symbol: kde1d::VarType::continuous
+      struct /* continuous */ {
+        // Source: kde1d/kde1d.hpp:14
+        const char* doc = R"""()""";
+      } continuous;
+      // Symbol: kde1d::VarType::discrete
+      struct /* discrete */ {
+        // Source: kde1d/kde1d.hpp:15
+        const char* doc = R"""()""";
+      } discrete;
+      // Symbol: kde1d::VarType::zero_inflated
+      struct /* zero_inflated */ {
+        // Source: kde1d/kde1d.hpp:16
+        const char* doc = R"""()""";
+      } zero_inflated;
+    } VarType;
+    // Symbol: kde1d::stats
+    struct /* stats */ {
+      // Symbol: kde1d::stats::dnorm
+      struct /* dnorm */ {
+        // Source: kde1d/stats.hpp:21
+        const char* doc =
+            R"""(standard normal density
+
+Parameters
+----------
+x :
+    evaluation points.
+
+Returns
+-------
+matrix of pdf values.)""";
+      } dnorm;
+      // Symbol: kde1d::stats::dnorm_drv
+      struct /* dnorm_drv */ {
+        // Source: kde1d/stats.hpp:33
+        const char* doc =
+            R"""(standard normal density
+
+Parameters
+----------
+x :
+    evaluation points.
+
+drv :
+    order of the derivative
+
+Returns
+-------
+matrix of pdf values.)""";
+      } dnorm_drv;
+      // Symbol: kde1d::stats::equi_jitter
+      struct /* equi_jitter */ {
+        // Source: kde1d/stats.hpp:151
+        const char* doc = R"""()""";
+      } equi_jitter;
+      // Symbol: kde1d::stats::pnorm
+      struct /* pnorm */ {
+        // Source: kde1d/stats.hpp:52
+        const char* doc =
+            R"""(standard normal cdf
+
+Parameters
+----------
+x :
+    evaluation points.
+
+Returns
+-------
+matrix of cdf values.)""";
+      } pnorm;
+      // Symbol: kde1d::stats::qnorm
+      struct /* qnorm */ {
+        // Source: kde1d/stats.hpp:63
+        const char* doc =
+            R"""(standard normal quantiles
+
+Parameters
+----------
+x :
+    evaluation points.
+
+Returns
+-------
+matrix of quantiles.)""";
+      } qnorm;
+      // Symbol: kde1d::stats::quantile
+      struct /* quantile */ {
+        // Source: kde1d/stats.hpp:75
+        const char* doc_2args =
+            R"""(empirical quantiles
+
+Parameters
+----------
+x :
+    data.
+
+q :
+    evaluation points.
+
+Returns
+-------
+vector of quantiles.)""";
+        // Source: kde1d/stats.hpp:102
+        const char* doc_3args =
+            R"""(empirical quantiles
+
+Parameters
+----------
+x :
+    data.
+
+q :
+    evaluation points.
+
+w :
+    vector of weights.
+
+Returns
+-------
+vector of quantiles.)""";
+      } quantile;
+      // Symbol: kde1d::stats::simulate_uniform
+      struct /* simulate_uniform */ {
+        // Source: kde1d/stats.hpp:207
+        const char* doc =
+            R"""(simulates from the standard uniform distribution.
+
+Parameters
+----------
+n :
+    number of observations.
+
+seeds :
+    seeds of the random number generator; if empty (default), the random number generator is seeded
+    randomly.
+
+Returns
+-------
+An size n vector of independent :math:`\mathrm{U}[0, 1]` random variables.)""";
+      } simulate_uniform;
+    } stats;
+  } kde1d;
   // Symbol: vinecopulib
   struct /* vinecopulib */ {
     // Symbol: vinecopulib::Bicop
@@ -3551,6 +3888,117 @@ Pseudo-observations of the copula, i.e. :math:`F_X(x)`.)""";
       } win;
     } tools_stats;
   } vinecopulib;
+  // Symbol: wdm
+  struct /* wdm */ {
+    // Symbol: wdm::Indep_test
+    struct /* Indep_test */ {
+      // Source: wdm.hpp:74
+      const char* doc =
+          R"""(Independence test
+
+The test calcualtes asymptotic p-values of independence tests based on (weighted) dependence
+measures.
+
+Available methods: - ``"pearson"``, ``"prho"``, ``"cor"``: Pearson correlation - ``"spearman"``,
+``"srho"``, ``"rho"``: Spearman's :math:`\rho` - ``"kendall"``, ``"ktau"``, ``"tau"``: Kendall's
+:math:`\tau` - ``"blomqvist"``, ``"bbeta"``, ``"beta"``: Blomqvist's :math:`\beta` -
+``"hoeffding"``, ``"hoeffd"``, ``"d"``: Hoeffding's :math:`D`)""";
+      // Symbol: wdm::Indep_test::Indep_test
+      struct /* ctor */ {
+        // Source: wdm.hpp:76
+        const char* doc_0args = R"""()""";
+        // Source: wdm.hpp:87
+        const char* doc_6args =
+            R"""(Parameters
+----------
+x :
+    , y input data.
+
+method :
+    the dependence measure; see class details for possible values.
+
+weights :
+    an optional vector of weights for the data.
+
+remove_missing :
+    if ``True``, all observations containing a ``nan`` are removed; otherwise throws an error if
+    ``nan`s are present.
+
+alternative :
+    indicates the alternative hypothesis and must be one of ``"two-sided"``, `"greater"`` or
+    ``"less"``; `"greater"`` corresponds to positive association, ``"less"`` to negative
+    association. For Hoeffding's :math:`D`, only ``"two-sided"`` is allowed.)""";
+      } ctor;
+      // Symbol: wdm::Indep_test::alternative
+      struct /* alternative */ {
+        // Source: wdm.hpp:114
+        const char* doc = R"""(the alternative hypothesis used for the test)""";
+      } alternative;
+      // Symbol: wdm::Indep_test::estimate
+      struct /* estimate */ {
+        // Source: wdm.hpp:120
+        const char* doc = R"""(the estimated dependence measure)""";
+      } estimate;
+      // Symbol: wdm::Indep_test::method
+      struct /* method */ {
+        // Source: wdm.hpp:111
+        const char* doc = R"""(the method used for the test)""";
+      } method;
+      // Symbol: wdm::Indep_test::n_eff
+      struct /* n_eff */ {
+        // Source: wdm.hpp:117
+        const char* doc = R"""(the effective sample size in the test)""";
+      } n_eff;
+      // Symbol: wdm::Indep_test::p_value
+      struct /* p_value */ {
+        // Source: wdm.hpp:126
+        const char* doc = R"""(the p-value)""";
+      } p_value;
+      // Symbol: wdm::Indep_test::statistic
+      struct /* statistic */ {
+        // Source: wdm.hpp:123
+        const char* doc = R"""(the test statistic)""";
+      } statistic;
+    } Indep_test;
+    // Symbol: wdm::wdm
+    struct /* wdm */ {
+      // Source: wdm.hpp:36
+      const char* doc =
+          R"""(calculates (weighted) dependence measures.
+
+
+
+
+
+
+
+
+
+Available methods: - ``"pearson"``, `"prho"``, ``"cor"``: Pearson correlation - ``"spearman"``,
+``"srho"``, ``"rho"``: Spearman's :math:`\rho` - ``"kendall"``, ``"ktau"``, ``"tau"``: Kendall's
+:math:`\tau` - ``"blomqvist"``, ``"bbeta"``, ``"beta"``: Blomqvist's :math:`\beta` -
+``"hoeffding"``, ``"hoeffd"``, ``"d"``: Hoeffding's :math:`D`
+
+Parameters
+----------
+x :
+    , y input data.
+
+method :
+    the dependence measure; see details for possible values.
+
+weights :
+    an optional vector of weights for the data.
+
+remove_missing :
+    if ``True``, all observations containing a ``nan`` are removed; otherwise throws an error if
+    ``nan`s are present.
+
+Returns
+-------
+the dependence measure)""";
+    } wdm;
+  } wdm;
 } pyvinecopulib_doc;
 
 #if defined(__GNUG__)
