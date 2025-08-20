@@ -41,14 +41,14 @@ constexpr struct /* pyvinecopulib_doc */ {
       } ctor;
       // Symbol: kde1d::Kde1d::calculate_infl
       struct /* calculate_infl */ {
-        // Source: kde1d/kde1d.hpp:625
+        // Source: kde1d/kde1d.hpp:660
         const char* doc =
             R"""(calculate influence for data point for density estimate based on quantities pre-computed in
 ``fit_lp()``.)""";
       } calculate_infl;
       // Symbol: kde1d::Kde1d::cdf
       struct /* cdf */ {
-        // Source: kde1d/kde1d.hpp:56
+        // Source: kde1d/kde1d.hpp:58
         const char* doc =
             R"""(computes the cdf of the kernel density estimate by numerical integration.
 
@@ -66,7 +66,7 @@ a vector of cdf values.)""";
       } cdf;
       // Symbol: kde1d::Kde1d::fit
       struct /* fit */ {
-        // Source: kde1d/kde1d.hpp:50
+        // Source: kde1d/kde1d.hpp:52
         const char* doc =
             R"""(Parameters
 ----------
@@ -76,69 +76,79 @@ x :
 weights :
     vector of weights for each observation (optional).)""";
       } fit;
+      // Symbol: kde1d::Kde1d::get_actual_grid_size
+      struct /* get_actual_grid_size */ {
+        // Source: kde1d/kde1d.hpp:78
+        const char* doc = R"""()""";
+      } get_actual_grid_size;
       // Symbol: kde1d::Kde1d::get_bandwidth
       struct /* get_bandwidth */ {
-        // Source: kde1d/kde1d.hpp:73
+        // Source: kde1d/kde1d.hpp:75
         const char* doc = R"""()""";
       } get_bandwidth;
       // Symbol: kde1d::Kde1d::get_degree
       struct /* get_degree */ {
-        // Source: kde1d/kde1d.hpp:74
+        // Source: kde1d/kde1d.hpp:76
         const char* doc = R"""()""";
       } get_degree;
       // Symbol: kde1d::Kde1d::get_edf
       struct /* get_edf */ {
-        // Source: kde1d/kde1d.hpp:75
+        // Source: kde1d/kde1d.hpp:79
         const char* doc = R"""()""";
       } get_edf;
       // Symbol: kde1d::Kde1d::get_grid_points
       struct /* get_grid_points */ {
-        // Source: kde1d/kde1d.hpp:66
+        // Source: kde1d/kde1d.hpp:68
         const char* doc = R"""()""";
       } get_grid_points;
+      // Symbol: kde1d::Kde1d::get_grid_size
+      struct /* get_grid_size */ {
+        // Source: kde1d/kde1d.hpp:77
+        const char* doc = R"""()""";
+      } get_grid_size;
       // Symbol: kde1d::Kde1d::get_loglik
       struct /* get_loglik */ {
-        // Source: kde1d/kde1d.hpp:76
+        // Source: kde1d/kde1d.hpp:80
         const char* doc = R"""()""";
       } get_loglik;
       // Symbol: kde1d::Kde1d::get_multiplier
       struct /* get_multiplier */ {
-        // Source: kde1d/kde1d.hpp:72
+        // Source: kde1d/kde1d.hpp:74
         const char* doc = R"""()""";
       } get_multiplier;
       // Symbol: kde1d::Kde1d::get_prob0
       struct /* get_prob0 */ {
-        // Source: kde1d/kde1d.hpp:71
+        // Source: kde1d/kde1d.hpp:73
         const char* doc = R"""()""";
       } get_prob0;
       // Symbol: kde1d::Kde1d::get_type
       struct /* get_type */ {
-        // Source: kde1d/kde1d.hpp:69
+        // Source: kde1d/kde1d.hpp:71
         const char* doc = R"""()""";
       } get_type;
       // Symbol: kde1d::Kde1d::get_type_str
       struct /* get_type_str */ {
-        // Source: kde1d/kde1d.hpp:70
+        // Source: kde1d/kde1d.hpp:72
         const char* doc = R"""()""";
       } get_type_str;
       // Symbol: kde1d::Kde1d::get_values
       struct /* get_values */ {
-        // Source: kde1d/kde1d.hpp:65
+        // Source: kde1d/kde1d.hpp:67
         const char* doc = R"""()""";
       } get_values;
       // Symbol: kde1d::Kde1d::get_xmax
       struct /* get_xmax */ {
-        // Source: kde1d/kde1d.hpp:68
+        // Source: kde1d/kde1d.hpp:70
         const char* doc = R"""()""";
       } get_xmax;
       // Symbol: kde1d::Kde1d::get_xmin
       struct /* get_xmin */ {
-        // Source: kde1d/kde1d.hpp:67
+        // Source: kde1d/kde1d.hpp:69
         const char* doc = R"""()""";
       } get_xmin;
       // Symbol: kde1d::Kde1d::pdf
       struct /* pdf */ {
-        // Source: kde1d/kde1d.hpp:54
+        // Source: kde1d/kde1d.hpp:56
         const char* doc =
             R"""(computes the pdf of the kernel density estimate by interpolation.
 
@@ -156,7 +166,7 @@ a vector of pdf values.)""";
       } pdf;
       // Symbol: kde1d::Kde1d::quantile
       struct /* quantile */ {
-        // Source: kde1d/kde1d.hpp:58
+        // Source: kde1d/kde1d.hpp:60
         const char* doc =
             R"""(computes the cdf of the kernel density estimate by numerical inversion.
 
@@ -174,22 +184,22 @@ a vector of quantiles.)""";
       } quantile;
       // Symbol: kde1d::Kde1d::select_bandwidth
       struct /* select_bandwidth */ {
-        // Source: kde1d/kde1d.hpp:788
+        // Source: kde1d/kde1d.hpp:823
         const char* doc = R"""()""";
       } select_bandwidth;
       // Symbol: kde1d::Kde1d::set_interpolation_grid
       struct /* set_interpolation_grid */ {
-        // Source: kde1d/kde1d.hpp:91
+        // Source: kde1d/kde1d.hpp:95
         const char* doc = R"""()""";
       } set_interpolation_grid;
       // Symbol: kde1d::Kde1d::set_xmin_xmax
       struct /* set_xmin_xmax */ {
-        // Source: kde1d/kde1d.hpp:77
+        // Source: kde1d/kde1d.hpp:81
         const char* doc = R"""()""";
       } set_xmin_xmax;
       // Symbol: kde1d::Kde1d::simulate
       struct /* simulate */ {
-        // Source: kde1d/kde1d.hpp:533
+        // Source: kde1d/kde1d.hpp:565
         const char* doc =
             R"""(simulates data from the model.
 
@@ -210,7 +220,7 @@ simulated observations from the kernel density.)""";
       } simulate;
       // Symbol: kde1d::Kde1d::str
       struct /* str */ {
-        // Source: kde1d/kde1d.hpp:79
+        // Source: kde1d/kde1d.hpp:83
         const char* doc = R"""()""";
       } str;
     } Kde1d;

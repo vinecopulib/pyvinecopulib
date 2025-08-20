@@ -17,7 +17,10 @@ repos:
     rev: v1.15.0
     hooks:
       - id: mypy
-        additional_dependencies: [types-requests, types-setuptools]
+        additional_dependencies:
+          - pytest
+          - types-requests
+          - types-setuptools
         pass_filenames: false
         args: [--config-file=pyproject.toml]
 
