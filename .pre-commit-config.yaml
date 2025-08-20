@@ -18,7 +18,6 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies:
-          - "mypy==1.15.0"
           - pytest
           - types-requests
           - types-setuptools
