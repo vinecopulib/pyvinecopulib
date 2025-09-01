@@ -46,14 +46,15 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
                    &FitControlsVinecop::get_nonparametric_method,
                    &FitControlsVinecop::set_nonparametric_method,
                    "The fit method for nonparametric families.")
-      .def_prop_rw("nonparametric_mult",
-                   &FitControlsVinecop::get_nonparametric_mult,
-                   &FitControlsVinecop::set_nonparametric_method,
-                   "The multiplier for the smoothing parameters.")
+      .def_prop_rw(
+          "nonparametric_mult", &FitControlsVinecop::get_nonparametric_mult,
+          &FitControlsVinecop::set_nonparametric_mult,
+          "A factor with which the smoothing parameters are multiplied.")
       .def_prop_rw("nonparametric_grid_size",
                    &FitControlsVinecop::get_nonparametric_grid_size,
                    &FitControlsVinecop::set_nonparametric_grid_size,
-                   "The grid size for nonparametric families.")
+                   "The grid size for the post-estimation interpolation in "
+                   "nonparametric models.")
       .def_prop_rw("trunc_lvl", &FitControlsVinecop::get_trunc_lvl,
                    &FitControlsVinecop::set_trunc_lvl, "The truncation level.")
       .def_prop_rw("tree_criterion", &FitControlsVinecop::get_tree_criterion,

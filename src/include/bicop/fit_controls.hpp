@@ -48,14 +48,15 @@ inline void init_bicop_fit_controls(nb::module_& module) {
                    &FitControlsBicop::get_nonparametric_method,
                    &FitControlsBicop::set_nonparametric_method,
                    "The fit method for nonparametric families.")
-      .def_prop_rw("nonparametric_mult",
-                   &FitControlsBicop::get_nonparametric_mult,
-                   &FitControlsBicop::set_nonparametric_method,
-                   "The multiplier for the smoothing parameters.")
+      .def_prop_rw(
+          "nonparametric_mult", &FitControlsBicop::get_nonparametric_mult,
+          &FitControlsBicop::set_nonparametric_mult,
+          "A factor with which the smoothing parameters are multiplied.")
       .def_prop_rw("nonparametric_grid_size",
                    &FitControlsBicop::get_nonparametric_grid_size,
                    &FitControlsBicop::set_nonparametric_grid_size,
-                   "The grid size for nonparametric families.")
+                   "The grid size for the post-estimation interpolation in "
+                   "nonparametric models.")
       .def_prop_rw("selection_criterion",
                    &FitControlsBicop::get_selection_criterion,
                    &FitControlsBicop::set_selection_criterion,
