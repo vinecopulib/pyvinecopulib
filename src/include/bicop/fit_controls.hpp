@@ -22,15 +22,16 @@ inline void init_bicop_fit_controls(nb::module_& module) {
                                fitcontrolsbicop_doc.doc)
       .def(
           nb::init<std::vector<BicopFamily>, std::string, std::string, double,
-                   std::string, const Eigen::VectorXd&, double, bool, bool,
-                   size_t>(),
+                   size_t, std::string, const Eigen::VectorXd&, double, bool,
+                   bool, size_t>(),
           fitcontrolsbicop_doc.ctor
-              .doc_10args_family_set_parametric_method_nonparametric_method_nonparametric_mult_selection_criterion_weights_psi0_preselect_families_allow_rotations_num_threads,
+              .doc_11args_family_set_parametric_method_nonparametric_method_nonparametric_mult_nonparametric_grid_size_selection_criterion_weights_psi0_preselect_families_allow_rotations_num_threads,
           "family_set"_a = bicop_families::all, "parametric_method"_a = "mle",
           "nonparametric_method"_a = "constant", "nonparametric_mult"_a = 1.0,
-          "selection_criterion"_a = "bic", "weights"_a = Eigen::VectorXd(),
-          "psi0"_a = 0.9, "preselect_families"_a = true,
-          "allow_rotations"_a = true, "num_threads"_a = 1)
+          "nonparametric_grid_size"_a = 30, "selection_criterion"_a = "bic",
+          "weights"_a = Eigen::VectorXd(), "psi0"_a = 0.9,
+          "preselect_families"_a = true, "allow_rotations"_a = true,
+          "num_threads"_a = 1)
       /*      .def(nb::init<std::string>(), */
       //      "creates default controls except for the parameteric method.",
       //      "parametric_method"_a)
@@ -47,10 +48,15 @@ inline void init_bicop_fit_controls(nb::module_& module) {
                    &FitControlsBicop::get_nonparametric_method,
                    &FitControlsBicop::set_nonparametric_method,
                    "The fit method for nonparametric families.")
-      .def_prop_rw("nonparametric_mult",
-                   &FitControlsBicop::get_nonparametric_mult,
-                   &FitControlsBicop::set_nonparametric_method,
-                   "The multiplier for the smoothing parameters.")
+      .def_prop_rw(
+          "nonparametric_mult", &FitControlsBicop::get_nonparametric_mult,
+          &FitControlsBicop::set_nonparametric_mult,
+          "A factor with which the smoothing parameters are multiplied.")
+      .def_prop_rw("nonparametric_grid_size",
+                   &FitControlsBicop::get_nonparametric_grid_size,
+                   &FitControlsBicop::set_nonparametric_grid_size,
+                   "The grid size for the post-estimation interpolation in "
+                   "nonparametric models.")
       .def_prop_rw("selection_criterion",
                    &FitControlsBicop::get_selection_criterion,
                    &FitControlsBicop::set_selection_criterion,
@@ -91,6 +97,8 @@ inline void init_bicop_fit_controls(nb::module_& module) {
              state["nonparametric_method"] =
                  controls.get_nonparametric_method();
              state["nonparametric_mult"] = controls.get_nonparametric_mult();
+             state["nonparametric_grid_size"] =
+                 controls.get_nonparametric_grid_size();
              state["selection_criterion"] = controls.get_selection_criterion();
              state["weights"] = controls.get_weights();
              state["psi0"] = controls.get_psi0();
@@ -110,6 +118,8 @@ inline void init_bicop_fit_controls(nb::module_& module) {
             nb::cast<std::string>(state["nonparametric_method"]);
         config.nonparametric_mult =
             nb::cast<double>(state["nonparametric_mult"]);
+        config.nonparametric_grid_size =
+            nb::cast<std::size_t>(state["nonparametric_grid_size"]);
         config.selection_criterion =
             nb::cast<std::string>(state["selection_criterion"]);
         config.weights = nb::cast<Eigen::VectorXd>(state["weights"]);
