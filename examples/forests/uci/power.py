@@ -16,6 +16,69 @@ class POWER:
 
     self.n_dims = self.trn.x.shape[1]
 
+  def get_controls(self):
+    grid_size = [2000] * 6
+    multiplier = [1e-2] * 6
+    margins_controls = {
+      0: {
+        "kde": {
+          "xmin": self.trn.x[:, 0].min(),
+          "type": "continuous",
+          "degree": 0,
+          "grid_size": grid_size[0],
+          "multiplier": multiplier[0],
+        }
+      },
+      1: {
+        "kde": {
+          "type": "continuous",
+          "degree": 0,
+          "grid_size": grid_size[1],
+          "multiplier": multiplier[1],
+        }
+      },
+      2: {
+        "kde": {
+          "type": "continuous",
+          "degree": 0,
+          "grid_size": grid_size[2],
+          "multiplier": multiplier[2],
+        }
+      },
+      3: {
+        "kde": {
+          "type": "continuous",
+          "degree": 0,
+          "grid_size": grid_size[3],
+          "multiplier": multiplier[3],
+        }
+      },
+      4: {
+        "kde": {
+          "type": "continuous",
+          "degree": 0,
+          "grid_size": grid_size[4],
+          "multiplier": multiplier[4],
+        }
+      },
+      5: {
+        "kde": {
+          "type": "continuous",
+          "degree": 0,
+          "grid_size": grid_size[5],
+          "multiplier": multiplier[5],
+        }
+      },
+      # 5: {
+      #   "uniform": {
+      #     "xmin": x_trn[:, 5].min(),
+      #     "xmax": x_trn[:, 5].max(),
+      #     "type": "continuous",
+      #   }
+      # },
+    }
+    return margins_controls
+
 
 def load_data(file):
   return np.load(file)
