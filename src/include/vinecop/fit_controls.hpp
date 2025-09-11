@@ -21,11 +21,12 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
   nb::class_<FitControlsVinecop>(module, "FitControlsVinecop",
                                  fitcontrolsvinecop_doc.doc)
       .def(nb::init<std::vector<BicopFamily>, std::string, std::string, double,
-                    size_t, std::string, double, std::string,
+                    size_t, size_t, std::string, double, std::string,
                     const Eigen::VectorXd&, double, bool, bool, bool, bool,
                     bool, size_t, std::string, bool, std::vector<int>>(),
            "family_set"_a = bicop_families::all, "parametric_method"_a = "mle",
            "nonparametric_method"_a = "constant", "nonparametric_mult"_a = 1.0,
+           "nonparametric_grid_size"_a = 30,
            "trunc_lvl"_a = std::numeric_limits<size_t>::max(),
            "tree_criterion"_a = "tau", "threshold"_a = 0.0,
            "selection_criterion"_a = "bic", "weights"_a = Eigen::VectorXd(),
@@ -34,7 +35,7 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
            "select_families"_a = true, "show_trace"_a = false,
            "num_threads"_a = 1, "tree_algorithm"_a = "mst_prim",
            "allow_rotations"_a = true, "seeds"_a = std::vector<int>(),
-           fitcontrolsvinecop_doc.ctor.doc_19args)
+           fitcontrolsvinecop_doc.ctor.doc_20args)
       .def_prop_rw("family_set", &FitControlsVinecop::get_family_set,
                    &FitControlsVinecop::set_family_set, "The family set.")
       .def_prop_rw("parametric_method",
@@ -45,10 +46,15 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
                    &FitControlsVinecop::get_nonparametric_method,
                    &FitControlsVinecop::set_nonparametric_method,
                    "The fit method for nonparametric families.")
-      .def_prop_rw("nonparametric_mult",
-                   &FitControlsVinecop::get_nonparametric_mult,
-                   &FitControlsVinecop::set_nonparametric_method,
-                   "The multiplier for the smoothing parameters.")
+      .def_prop_rw(
+          "nonparametric_mult", &FitControlsVinecop::get_nonparametric_mult,
+          &FitControlsVinecop::set_nonparametric_mult,
+          "A factor with which the smoothing parameters are multiplied.")
+      .def_prop_rw("nonparametric_grid_size",
+                   &FitControlsVinecop::get_nonparametric_grid_size,
+                   &FitControlsVinecop::set_nonparametric_grid_size,
+                   "The grid size for the post-estimation interpolation in "
+                   "nonparametric models.")
       .def_prop_rw("trunc_lvl", &FitControlsVinecop::get_trunc_lvl,
                    &FitControlsVinecop::set_trunc_lvl, "The truncation level.")
       .def_prop_rw("tree_criterion", &FitControlsVinecop::get_tree_criterion,
@@ -117,6 +123,8 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
              state["nonparametric_method"] =
                  controls.get_nonparametric_method();
              state["nonparametric_mult"] = controls.get_nonparametric_mult();
+             state["nonparametric_grid_size"] =
+                 controls.get_nonparametric_grid_size();
              state["trunc_lvl"] = controls.get_trunc_lvl();
              state["tree_criterion"] = controls.get_tree_criterion();
              state["threshold"] = controls.get_threshold();
@@ -145,6 +153,8 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
             nb::cast<std::string>(state["nonparametric_method"]);
         config.nonparametric_mult =
             nb::cast<double>(state["nonparametric_mult"]);
+        config.nonparametric_grid_size =
+            nb::cast<std::size_t>(state["nonparametric_grid_size"]);
         config.trunc_lvl = nb::cast<std::size_t>(state["trunc_lvl"]);
         config.tree_criterion = nb::cast<std::string>(state["tree_criterion"]);
         config.threshold = nb::cast<double>(state["threshold"]);
