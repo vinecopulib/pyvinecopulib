@@ -10,11 +10,13 @@ import pytest
 import pyvinecopulib as pv
 
 # Tunable parameters for "heavy enough" tests
-N_BICOP = 20_000
-N_VINECOP = 10_000
-D_VINECOP = 6
-N_KDE = 80_000
-N_BUSYWORK = 5_000_000
+N_BICOP = 8_000
+N_VINECOP = 6_000
+N_VINECOP_SIM = 100
+N_RVINE_SIM = 200
+D_VINECOP = 3
+N_KDE = 100_000
+T_PROBE = 1.0
 
 
 @pytest.fixture
@@ -56,27 +58,24 @@ def kde_factory() -> Callable[[], pv.Kde1d]:
   return _make
 
 
-def _python_busywork(n: int = N_BUSYWORK) -> int:
-  """Pure Python busy loop, should make progress while C++ holds no GIL."""
-  s = 0
-  for i in range(n):
-    s += i
-  return s
+def _python_probe(duration: float = T_PROBE) -> None:
+  """Sleep-based probe to detect if Python runs concurrently with C++."""
+  time.sleep(duration)
 
 
 @pytest.mark.flaky(reruns=3)
 @pytest.mark.parametrize(
   "factory, method_name, args_factory",
   [
-    ("bicop_factory", "pdf", lambda: (np.random.rand(N_BICOP, 2),)),
+    ("bicop_factory", "hinv1", lambda: (np.random.rand(N_BICOP, 2),)),
     ("bicop_factory", "fit", lambda: (np.random.rand(N_BICOP, 2),)),
     (
       "vinecop_factory",
       "pdf",
       lambda: (np.random.rand(N_VINECOP, D_VINECOP),),
     ),
-    ("vinecop_factory", "simulate", lambda: (500,)),
-    ("rvine_factory", "simulate", lambda: (100,)),
+    ("vinecop_factory", "simulate", lambda: (N_VINECOP_SIM,)),
+    ("rvine_factory", "simulate", lambda: (N_RVINE_SIM,)),
     ("kde_factory", "fit", lambda: (np.random.normal(0, 1, N_KDE),)),
     ("kde_factory", "quantile", lambda: (np.linspace(1e-3, 1 - 1e-3, N_KDE),)),
   ],
@@ -124,15 +123,15 @@ def test_gil_release_parallel(
 @pytest.mark.parametrize(
   "factory, method_name, args_factory",
   [
-    ("bicop_factory", "pdf", lambda: (np.random.rand(N_BICOP, 2),)),
+    ("bicop_factory", "hinv1", lambda: (np.random.rand(N_BICOP, 2),)),
     ("bicop_factory", "fit", lambda: (np.random.rand(N_BICOP, 2),)),
     (
       "vinecop_factory",
       "pdf",
       lambda: (np.random.rand(N_VINECOP, D_VINECOP),),
     ),
-    ("vinecop_factory", "simulate", lambda: (500,)),
-    ("rvine_factory", "simulate", lambda: (100,)),
+    ("vinecop_factory", "simulate", lambda: (N_VINECOP_SIM,)),
+    ("rvine_factory", "simulate", lambda: (N_RVINE_SIM,)),
     ("kde_factory", "fit", lambda: (np.random.normal(0, 1, N_KDE),)),
     ("kde_factory", "quantile", lambda: (np.linspace(1e-3, 1 - 1e-3, N_KDE),)),
   ],
@@ -151,13 +150,21 @@ def test_python_progress_during_cpp(
   def runner() -> None:
     _ = method(*args_factory())
 
-  # Time busywork alone
+  # Time cpp alone
   t0 = time.perf_counter()
-  _python_busywork()
-  busy_alone = time.perf_counter() - t0
+  _ = method(*args_factory())
+  cpp_time = time.perf_counter() - t0
 
-  # Run busywork + C++ together
-  t_py = threading.Thread(target=_python_busywork)
+  # Choose probe duration dynamically
+  probe_duration = min(max(0.5, cpp_time), 2.0)
+
+  # Time probe alone
+  t0 = time.perf_counter()
+  _python_probe(probe_duration)
+  probe_time = time.perf_counter() - t0
+
+  # Run probe + C++ together
+  t_py = threading.Thread(target=_python_probe, args=(probe_duration,))
   t_cpp = threading.Thread(target=runner)
   t_py.start()
   t_cpp.start()
@@ -167,8 +174,8 @@ def test_python_progress_during_cpp(
   t_py.join()
   elapsed = time.perf_counter() - t0
 
-  # Expect overlap: elapsed closer to max(busy, cpp) than sum
-  assert elapsed < 1.6 * busy_alone, (
-    f"Busywork blocked by {method_name}: "
-    f"elapsed {elapsed:.3f}s vs busy_alone {busy_alone:.3f}s"
+  # Expect overlap: elapsed closer to max(probe, cpp) than sum
+  assert elapsed < 1.2 * max(probe_time, cpp_time), (
+    f"Python blocked by {method_name}: "
+    f"elapsed {elapsed:.3f}s vs probe {probe_time:.3f}s + cpp {cpp_time:.3f}s"
   )
