@@ -1,5 +1,6 @@
 # tests/test_gil_release.py
 
+import platform
 import threading
 import time
 from typing import Callable
@@ -8,6 +9,12 @@ import numpy as np
 import pytest
 
 import pyvinecopulib as pv
+
+if "musl" in platform.libc_ver()[0]:
+  pytest.skip(
+    "Skip GIL release timing tests on musllinux (unstable timing)",
+    allow_module_level=True,
+  )
 
 # Tunable parameters for "heavy enough" tests
 N_BICOP = 8_000
