@@ -1,7 +1,10 @@
 import uuid
 from pathlib import Path
 
+import matplotlib
 import pytest
+
+matplotlib.use("Agg")
 
 # # Per-test unique directory, xdist-friendly (each worker gets its own base dir)
 # @pytest.fixture(scope="function")
