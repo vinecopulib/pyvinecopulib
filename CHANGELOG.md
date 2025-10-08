@@ -8,6 +8,7 @@
 - Add support for weighted dependence measures `wdm` (#194)
 - Add an argument to control the nonparametric grid size in both `Kde1d` and `Bicop` (#191, #192)
 - Release GIL for C++-only operations (#193)
+- Add support for Python 3.14 (#200)
 
 ### Bug fixes in `pyvinecopulib`
 
