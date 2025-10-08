@@ -169,7 +169,7 @@ jobs:
             exit 1
           }
 
-  installs_and_unit_tests:
+  install_and_unit_test:
     needs: build
     runs-on: ${{ matrix.cfg.os }}
     strategy:
@@ -180,7 +180,7 @@ jobs:
           - { os: ubuntu-latest, cibw_id: manylinux_x86_64 }
           - { os: macos-14, cibw_id: macosx_arm64 }
           - { os: windows-latest, cibw_id: win_amd64 }
-    name: Unit tests on ${{ matrix.cfg.os }} for cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
+    name: Install wheel and run unit tests on ${{ matrix.cfg.os }} for cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
     steps:
       - uses: actions/checkout@v4
       - name: Infer full Python version
@@ -320,7 +320,7 @@ jobs:
           path: dist/*.tar.gz
 
   upload_to_pypi:
-    needs: [build_sdist, check_wheels, installs_and_unit_tests]
+    needs: [build_sdist, check_wheels, install_and_unit_test]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
