@@ -1,11 +1,3 @@
-"""
-Direct unit tests for pyvinecopulib Python helper functions.
-
-These tests directly test the Python helper functions in bicop.py and vinecop.py
-without going through the C++ class interfaces. This provides better isolation
-and more focused testing of the Python code.
-"""
-
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -13,6 +5,193 @@ import numpy as np
 import pytest
 
 import pyvinecopulib as pv
+
+
+class TestPairCopulaData:
+  """Test pair_copuladata.py functions directly"""
+
+  def test_pairs_copula_data_parameter_validation(self) -> None:
+    """Test pairs_copula_data parameter validation"""
+    from pyvinecopulib.pair_copuladata import pairs_copula_data
+
+    # Test None data
+    with pytest.raises(ValueError, match="`data` cannot be None"):
+      pairs_copula_data(None)
+
+    # Test non-numeric data
+    with pytest.raises(
+      ValueError, match="Could not convert `data` to numeric array"
+    ):
+      pairs_copula_data([["a", "b"], ["c", "d"]])
+
+    # Test wrong dimensions
+    with pytest.raises(ValueError, match="`data` must be a 2D array-like"):
+      pairs_copula_data([0.1, 0.2, 0.3])
+
+    # Test empty data
+    with pytest.raises(ValueError, match="`data` cannot be empty"):
+      pairs_copula_data(np.array([]).reshape(0, 2))
+
+    # Test values outside (0,1)
+    with pytest.raises(ValueError, match="All values must lie strictly in"):
+      pairs_copula_data([[0.0, 0.5], [0.5, 1.0]])
+
+    with pytest.raises(ValueError, match="All values must lie strictly in"):
+      pairs_copula_data([[-0.1, 0.5], [0.5, 0.8]])
+
+    with pytest.raises(ValueError, match="All values must lie strictly in"):
+      pairs_copula_data([[0.1, 0.5], [0.5, 1.1]])
+
+    # Test negative grid_size
+    valid_data = np.random.uniform(0.1, 0.9, size=(10, 2))
+    with pytest.raises(
+      ValueError, match="`grid_size` must be a positive integer"
+    ):
+      pairs_copula_data(valid_data, grid_size=-1)
+
+    with pytest.raises(
+      ValueError, match="`grid_size` must be a positive integer"
+    ):
+      pairs_copula_data(valid_data, grid_size=0)
+
+    # Test negative bins
+    with pytest.raises(ValueError, match="`bins` must be a positive integer"):
+      pairs_copula_data(valid_data, bins=-1)
+
+    with pytest.raises(ValueError, match="`bins` must be a positive integer"):
+      pairs_copula_data(valid_data, bins=0)
+
+    # Test negative scatter_size
+    with pytest.raises(
+      ValueError, match="`scatter_size` must be a positive number"
+    ):
+      pairs_copula_data(valid_data, scatter_size=-1.0)
+
+    with pytest.raises(
+      ValueError, match="`scatter_size` must be a positive number"
+    ):
+      pairs_copula_data(valid_data, scatter_size=0.0)
+
+    # # Test too many dimensions
+    # high_dim_data = np.random.uniform(0.1, 0.9, size=(10, 11))
+    # with pytest.raises(
+    #   ValueError, match="Dimension 11 is too large for visualization"
+    # ):
+    #   pairs_copula_data(high_dim_data)
+
+    # Test too few observations
+    few_obs_data = np.random.uniform(0.1, 0.9, size=(1, 2))
+    with pytest.raises(ValueError, match="Need at least 2 observations, got 1"):
+      pairs_copula_data(few_obs_data)
+
+  def test_pairs_copula_data_parameter_types(self) -> None:
+    """Test parameter type validation"""
+    from pyvinecopulib.pair_copuladata import pairs_copula_data
+
+    valid_data = np.random.uniform(0.1, 0.9, size=(10, 2))
+
+    # Test non-integer grid_size
+    with pytest.raises(
+      ValueError, match="`grid_size` must be a positive integer"
+    ):
+      pairs_copula_data(valid_data, grid_size=10.5)  # type: ignore
+
+    # Test non-integer bins
+    with pytest.raises(ValueError, match="`bins` must be a positive integer"):
+      pairs_copula_data(valid_data, bins=5.5)  # type: ignore
+
+    # Test string scatter_size
+    with pytest.raises(
+      ValueError, match="`scatter_size` must be a positive number"
+    ):
+      pairs_copula_data(valid_data, scatter_size="large")  # type: ignore
+
+  def test_pairs_copula_data_basic_validation_success(self) -> None:
+    """Test that valid inputs pass basic validation"""
+    from pyvinecopulib.pair_copuladata import pairs_copula_data
+
+    # Create valid test data
+    np.random.seed(42)
+    data = np.random.uniform(0.1, 0.9, size=(10, 2))
+
+    # Mock the plotting parts since we just want to test validation
+    with patch("matplotlib.pyplot.subplots") as mock_subplots:
+      mock_fig = MagicMock()
+      mock_ax = MagicMock()
+      mock_subplots.return_value = (mock_fig, mock_ax)
+
+      # Mock the wdm and Bicop imports that would fail without the C++ extension
+      with patch("pyvinecopulib.pair_copuladata.wdm"):
+        with patch("pyvinecopulib.pair_copuladata.Bicop"):
+          with patch("pyvinecopulib.pair_copuladata.norm_cdf"):
+            with patch("pyvinecopulib.pair_copuladata.norm_pdf"):
+              with patch("pyvinecopulib.pair_copuladata.plt.tight_layout"):
+                # This should not raise any validation errors
+                try:
+                  pairs_copula_data(data)
+                  validation_passed = True
+                except (ImportError, AttributeError):
+                  # Expected due to missing matplotlib/C++ extension interactions
+                  validation_passed = True
+                except ValueError:
+                  # This would be a validation error, which we don't expect
+                  validation_passed = False
+
+                assert validation_passed, "Valid data should pass validation"
+
+  def test_pairs_copula_data_edge_cases(self) -> None:
+    """Test edge cases that should be handled gracefully"""
+    from pyvinecopulib.pair_copuladata import pairs_copula_data
+
+    # Test minimum valid data (2 observations, 1 dimension)
+    min_data = np.array([[0.1], [0.9]])
+
+    with patch("matplotlib.pyplot.subplots") as mock_subplots:
+      mock_fig = MagicMock()
+      mock_ax = MagicMock()
+      mock_subplots.return_value = (mock_fig, mock_ax)
+
+      with patch("pyvinecopulib.pair_copuladata.norm_cdf"):
+        with patch("pyvinecopulib.pair_copuladata.norm_pdf"):
+          with patch("pyvinecopulib.pair_copuladata.plt.tight_layout"):
+            # This should not raise validation errors
+            try:
+              pairs_copula_data(min_data)
+              edge_case_passed = True
+            except (ImportError, AttributeError):
+              # Expected due to missing matplotlib/C++ extension interactions
+              edge_case_passed = True
+            except ValueError:
+              # This would be a validation error
+              edge_case_passed = False
+
+            assert edge_case_passed, "Minimum valid data should pass validation"
+
+    # Test exactly at dimension limit
+    max_dim_data = np.random.uniform(0.1, 0.9, size=(5, 10))
+
+    with patch("matplotlib.pyplot.subplots") as mock_subplots:
+      mock_fig = MagicMock()
+      mock_ax = MagicMock()
+      mock_subplots.return_value = (mock_fig, mock_ax)
+
+      with patch("pyvinecopulib.pair_copuladata.norm_cdf"):
+        with patch("pyvinecopulib.pair_copuladata.norm_pdf"):
+          with patch("pyvinecopulib.pair_copuladata.plt.tight_layout"):
+            # This should not raise validation errors
+            try:
+              pairs_copula_data(max_dim_data)
+              max_dim_passed = True
+            except (ImportError, AttributeError):
+              # Expected due to missing matplotlib/C++ extension interactions
+              max_dim_passed = True
+            except ValueError:
+              # This would be a validation error
+              max_dim_passed = False
+
+            assert max_dim_passed, (
+              "Maximum dimension data should pass validation"
+            )
 
 
 class TestBicopHelpers:

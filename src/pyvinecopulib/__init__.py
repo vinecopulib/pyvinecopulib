@@ -1,4 +1,5 @@
 from . import pyvinecopulib_ext
+from .pair_copuladata import pairs_copula_data
 from .pyvinecopulib_ext import (
   Bicop,
   BicopFamily,
@@ -41,6 +42,7 @@ from .pyvinecopulib_ext import (
   to_pseudo_obs,
   two_par,
   ut,
+  wdm,
 )
 
 # Version is that of the extension
@@ -58,11 +60,13 @@ __all__ = [
   "BicopFamily",
   "Kde1d",
   # Functions
+  "benchmark",
+  "ghalton",
+  "pairs_copula_data",
   "simulate_uniform",
   "sobol",
-  "ghalton",
   "to_pseudo_obs",
-  "benchmark",
+  "wdm",
   # Bicop families
   "indep",
   "gaussian",
