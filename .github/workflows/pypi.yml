@@ -287,7 +287,13 @@ jobs:
             exit 1
           fi
 
-          echo "Listing wheel structure:"
+          echo "Listing wheel structure (before flattening):"
+          find dist -type f -name '*.whl' -printf "%P\n" | sort
+
+          find dist -type f -name '*.whl' -exec mv -f {} dist/ \;
+          find dist -mindepth 1 -type d -empty -delete
+
+          echo "Listing wheel structure (after flattening):"
           find dist -type f -name '*.whl' -printf "%P\n" | sort
 
           python3 -m pip install --quiet --no-cache-dir twine
