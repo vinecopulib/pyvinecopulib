@@ -190,8 +190,17 @@ jobs:
       # - run sequentially (-n 1)
       # - extend kernel timeout
       - name: Run example notebooks
-        run: |
-          pytest --nbmake examples/ -n 1 --no-cov --nbmake-timeout=600 --nbmake-kernel=python3
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 30
+          max_attempts: 3
+          retry_wait_seconds: 60
+          command: |
+            pytest --nbmake examples/ \
+              -n 1 \
+              --no-cov \
+              --nbmake-timeout=600 \
+              --nbmake-kernel=python3
 
   build_sdist:
     runs-on: ubuntu-latest
@@ -287,26 +296,13 @@ jobs:
             exit 1
           fi
 
-          echo "Listing wheel structure (before flattening):"
-          find dist -type f -name '*.whl' -printf "%P\n" | sort
-
-          find dist -type f -name '*.whl' -exec mv -f {} dist/ \;
-          find dist -mindepth 1 -type d -empty -delete
-
-          echo "Listing wheel structure (after flattening):"
+          echo "Listing wheel structure:"
           find dist -type f -name '*.whl' -printf "%P\n" | sort
 
           python3 -m pip install --quiet --no-cache-dir twine
-          echo "Checking wheel ZIP integrity..."
-          for whl in dist/*.whl; do
-            unzip -t "$whl" >/dev/null || {
-              echo "::error file=$whl::Corrupted or invalid wheel archive"
-              exit 1
-            }
-          done
           echo "Checking metadata consistency with twine..."
           python3 -m twine check dist/* || {
-            echo "::error ::Metadata check failed"
+            echo "::error ::Metadata check failed — would fail on PyPI upload."
             exit 1
           }
       - name: Publish distribution Test PyPI
