@@ -41,6 +41,7 @@ from .pyvinecopulib_ext import (
   to_pseudo_obs,
   two_par,
   ut,
+  wdm,
 )
 
 # Version is that of the extension
@@ -63,6 +64,7 @@ __all__ = [
   "ghalton",
   "to_pseudo_obs",
   "benchmark",
+  "wdm",
   # Bicop families
   "indep",
   "gaussian",
