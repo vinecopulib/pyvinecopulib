@@ -5,6 +5,7 @@ on: [push, pull_request]
 env:
   BOOST_VERSION: 1.84.0
   EIGEN_VERSION: 3.4.0
+  EXPECTED_WHEEL_COUNT: 20  # 5 Python versions × 4 platforms
 
 jobs:
 
@@ -90,20 +91,27 @@ jobs:
           CIBW_ENVIRONMENT_LINUX: "Boost_INCLUDE_DIR=/host${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=/host${{matrix.cfg.root_install_dir}}/include/eigen3"
           CIBW_ENVIRONMENT_PASS_LINUX: "Boost_INCLUDE_DIR EIGEN3_INCLUDE_DIR"
       - name: Inspect built wheel contents
-        shell: bash  # Ensures consistent behavior across OSes
+        shell: bash
         run: |
-          echo "Checking stub files in wheel:"
+          echo "Inspecting built wheel(s):"
           wheel=$(ls wheelhouse/*.whl)
 
-          # Verify the wheel is a valid ZIP archive
+          # 1. Verify the wheel is a valid ZIP archive
           unzip -t "$wheel" >/dev/null || {
             echo "::error file=$wheel::Corrupted or invalid wheel archive"
             exit 1
           }
 
-          # Check for stub or typing marker files
+          # 2. Check for stub or typing marker files
           unzip -l "$wheel" | grep -E '(__init__\.pyi|py\.typed)' || {
             echo "::error ::Expected stub or marker files not found in $wheel"
+            exit 1
+          }
+
+          # 3. Verify wheel metadata and long description
+          python3 -m pip install --quiet --no-cache-dir twine
+          python3 -m twine check wheelhouse/*.whl || {
+            echo "::error ::Metadata check failed"
             exit 1
           }
       - name: Upload binaries
@@ -172,9 +180,13 @@ jobs:
         run: |
           pip install dist/*.whl
 
+      # Override pytest defaults (in pyproject.toml):
+      # - disable coverage (not meaningful for notebooks)
+      # - run sequentially (-n 1)
+      # - extend kernel timeout
       - name: Run example notebooks
         run: |
-          pytest --nbmake examples/
+          pytest --nbmake examples/ -n 1 --no-cov --nbmake-timeout=600 --nbmake-kernel=python3
 
   build_sdist:
     runs-on: ubuntu-latest
@@ -253,6 +265,33 @@ jobs:
           pattern: cibw-*
           path: dist
           merge-multiple: true
+      - name: Verify downloaded wheel integrity and metadata
+        run: |
+          echo "Verifying downloaded artifacts in dist/"
+
+          N_WHEELS=$(find dist -type f -name '*.whl' | wc -l)
+          N_EXPECTED=${EXPECTED_WHEEL_COUNT:-0}
+          echo "Found $N_WHEELS wheel(s); expected $N_EXPECTED"
+
+          if [ "$N_WHEELS" -ne "$N_EXPECTED" ]; then
+            echo "::error ::Expected $N_EXPECTED wheels, found $N_WHEELS. Some matrix jobs failed or artifacts missing."
+            ls -1 dist/
+            exit 1
+          fi
+
+          python3 -m pip install --quiet --no-cache-dir twine
+          echo "Checking wheel ZIP integrity..."
+          for whl in dist/*.whl; do
+            unzip -t "$whl" >/dev/null || {
+              echo "::error file=$whl::Corrupted or invalid wheel archive"
+              exit 1
+            }
+          done
+          echo "Checking metadata consistency with twine..."
+          python3 -m twine check dist/* || {
+            echo "::error ::Metadata check failed"
+            exit 1
+          }
       - name: Publish distribution Test PyPI
         if: |
           job.status == 'success'
