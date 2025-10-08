@@ -1,4 +1,4 @@
-name: Build, test, and publish to PyPI
+name: Build Status
 
 on:
   push:
