@@ -261,11 +261,15 @@ jobs:
       - name: Wait for all CIBW artifacts to be available
         shell: bash
         run: |
-          echo "Waiting for cibw-* artifacts..."
+          echo "Waiting for cibw-* artifacts in workflow run $GITHUB_RUN_ID..."
+          curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" \
+            | jq '.artifacts | length'
           for i in {1..10}; do
             count=$(curl -sf -H "Authorization: Bearer $GITHUB_TOKEN" \
               "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" \
               | jq -r '.artifacts[]?.name' 2>/dev/null | grep -E '^cibw-' | sort -u | wc -l || echo 0)
+            count=$(echo "$count" | tr -dc '0-9')
             echo "Attempt $i: Found $count cibw-* artifacts (expecting $EXPECTED_WHEEL_COUNT)."
             if [ "$count" -ge "$EXPECTED_WHEEL_COUNT" ]; then
               echo "All artifacts visible."
