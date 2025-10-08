@@ -6,7 +6,7 @@ import pytest
 import pyvinecopulib as pv
 
 
-def test_bicop(test_dump_folder: str) -> None:
+def test_bicop(unique_json_path: str) -> None:
   bicop = pv.Bicop()
 
   # Test default initialization
@@ -31,7 +31,7 @@ def test_bicop(test_dump_folder: str) -> None:
   assert bicop.rotation == new_bicop.rotation
   assert bicop.parameters.shape == new_bicop.parameters.shape
   assert bicop.var_types == new_bicop.var_types
-  filename = test_dump_folder + "/test_bicop.json"
+  filename = os.fspath(unique_json_path)
   bicop.to_file(filename)
   assert os.path.exists(filename)
   new_bicop = pv.Bicop.from_file(filename)

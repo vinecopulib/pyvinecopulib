@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 
 import pyvinecopulib as pv
@@ -5,7 +7,7 @@ import pyvinecopulib as pv
 from .helpers import compare_rvinestructure
 
 
-def test_rvinestructure(test_dump_folder: str) -> None:
+def test_rvinestructure(unique_json_path: str) -> None:
   d = 5
   # Test RVineStructure class
   rvine = pv.RVineStructure(d)
@@ -26,7 +28,7 @@ def test_rvinestructure(test_dump_folder: str) -> None:
   # Test to_json and from_json
   new_rvine = pv.RVineStructure.from_json(rvine.to_json())
   compare_rvinestructure(rvine, new_rvine)
-  filename = test_dump_folder + "/test_rvine.json"
+  filename = os.fspath(unique_json_path)
   rvine.to_file(filename)
   new_rvine = pv.RVineStructure.from_file(filename)
   compare_rvinestructure(rvine, new_rvine)

@@ -75,25 +75,30 @@ Alternatives to instantiate bivariate copulas are:
            "family"_a = BicopFamily::indep, "rotation"_a = 0,
            "parameters"_a = Eigen::MatrixXd(),
            "var_types"_a = std::vector<std::string>(2, "c"),
-           default_constructor_doc)
+           default_constructor_doc, nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_family", &bc_from_family,
                   "family"_a = BicopFamily::indep, "rotation"_a = 0,
                   "parameters"_a = Eigen::MatrixXd(),
                   "var_types"_a = std::vector<std::string>(2, "c"),
-                  bicop_doc.ctor.doc_4args_family_rotation_parameters_var_types)
+                  bicop_doc.ctor.doc_4args_family_rotation_parameters_var_types,
+                  nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_data", &bc_from_data, "data"_a,
                   "controls"_a.sig("FitControlsBicop()") = FitControlsBicop(),
                   "var_types"_a = std::vector<std::string>(2, "c"),
-                  bicop_doc.ctor.doc_3args_data_controls_var_types)
+                  bicop_doc.ctor.doc_3args_data_controls_var_types,
+                  nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_file", &bc_from_file, "filename"_a,
-                  bicop_doc.ctor.doc_1args_filename)
+                  bicop_doc.ctor.doc_1args_filename,
+                  nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_json", &bc_from_json, "json"_a,
-                  bicop_doc.ctor.doc_1args_input)
-      .def("to_file", &Bicop::to_file, "filename"_a, bicop_doc.to_file.doc)
+                  bicop_doc.ctor.doc_1args_input,
+                  nb::call_guard<nb::gil_scoped_release>())
+      .def("to_file", &Bicop::to_file, "filename"_a, bicop_doc.to_file.doc,
+           nb::call_guard<nb::gil_scoped_release>())
       .def(
           "to_json",
           [](Bicop& self) -> std::string { return self.to_json().dump(); },
-          bicop_doc.to_json.doc)
+          bicop_doc.to_json.doc, nb::call_guard<nb::gil_scoped_release>())
       .def_prop_rw("rotation", &Bicop::get_rotation, &Bicop::set_rotation,
                    "The copula rotation.")
       .def_prop_rw(
@@ -101,7 +106,7 @@ Alternatives to instantiate bivariate copulas are:
           [](Bicop& self, const nb::DRef<Eigen::MatrixXd>& parameters) {
             self.set_parameters(parameters);
           },
-          "The copula parameter(s).")
+          "The copula parameter(s).", nb::call_guard<nb::gil_scoped_release>())
       .def_prop_rw("var_types", &Bicop::get_var_types, &Bicop::set_var_types,
                    "The type of the two variables.")
       .def_prop_ro("family", &Bicop::get_family, "The copula family.")
@@ -111,18 +116,18 @@ Alternatives to instantiate bivariate copulas are:
                    "families, a conceptually similar definition).")
       .def("loglik", &Bicop::loglik,
            "u"_a = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
-           bicop_doc.loglik.doc)
+           bicop_doc.loglik.doc, nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("nobs", &Bicop::get_nobs,
                    "The number of observations (only for fitted objects).")
       .def("aic", &Bicop::aic,
            "u"_a = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
-           bicop_doc.aic.doc)
+           bicop_doc.aic.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("bic", &Bicop::bic,
            "u"_a = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
-           bicop_doc.bic.doc)
+           bicop_doc.bic.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("mbic", &Bicop::mbic,
            "u"_a = Eigen::Matrix<double, Eigen::Dynamic, 2>(), "psi0"_a = 0.9,
-           bicop_doc.mbic.doc)
+           bicop_doc.mbic.doc, nb::call_guard<nb::gil_scoped_release>())
       .def(
           "__repr__",
           [](const Bicop& cop) { return "<pyvinecopulib.Bicop> " + cop.str(); },
@@ -132,29 +137,40 @@ Alternatives to instantiate bivariate copulas are:
           [](const Bicop& cop) { return "<pyvinecopulib.Bicop> " + cop.str(); },
           bicop_doc.str.doc)
       .def("parameters_to_tau", &Bicop::parameters_to_tau, "parameters"_a,
-           bicop_doc.parameters_to_tau.doc)
+           bicop_doc.parameters_to_tau.doc,
+           nb::call_guard<nb::gil_scoped_release>())
       .def("tau_to_parameters", &Bicop::tau_to_parameters, "tau"_a,
-           bicop_doc.tau_to_parameters.doc)
+           bicop_doc.tau_to_parameters.doc,
+           nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("parameters_lower_bounds",
                    &Bicop::get_parameters_lower_bounds,
-                   bicop_doc.get_parameters_lower_bounds.doc)
+                   bicop_doc.get_parameters_lower_bounds.doc,
+                   nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("parameters_upper_bounds",
                    &Bicop::get_parameters_upper_bounds,
-                   bicop_doc.get_parameters_upper_bounds.doc)
-      .def("pdf", &Bicop::pdf, "u"_a, bicop_doc.pdf.doc)
-      .def("cdf", &Bicop::cdf, "u"_a, bicop_doc.cdf.doc)
-      .def("hfunc1", &Bicop::hfunc1, "u"_a, bicop_doc.hfunc1.doc)
-      .def("hfunc2", &Bicop::hfunc2, "u"_a, bicop_doc.hfunc2.doc)
-      .def("hinv1", &Bicop::hinv1, "u"_a, bicop_doc.hinv1.doc)
-      .def("hinv2", &Bicop::hinv2, "u"_a, bicop_doc.hinv2.doc)
+                   bicop_doc.get_parameters_upper_bounds.doc,
+                   nb::call_guard<nb::gil_scoped_release>())
+      .def("pdf", &Bicop::pdf, "u"_a, bicop_doc.pdf.doc,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("cdf", &Bicop::cdf, "u"_a, bicop_doc.cdf.doc,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("hfunc1", &Bicop::hfunc1, "u"_a, bicop_doc.hfunc1.doc,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("hfunc2", &Bicop::hfunc2, "u"_a, bicop_doc.hfunc2.doc,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("hinv1", &Bicop::hinv1, "u"_a, bicop_doc.hinv1.doc,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("hinv2", &Bicop::hinv2, "u"_a, bicop_doc.hinv2.doc,
+           nb::call_guard<nb::gil_scoped_release>())
       .def("simulate", &Bicop::simulate, "n"_a, "qrng"_a = false,
-           "seeds"_a = std::vector<int>(), bicop_doc.simulate.doc)
+           "seeds"_a = std::vector<int>(), bicop_doc.simulate.doc,
+           nb::call_guard<nb::gil_scoped_release>())
       .def("fit", &Bicop::fit, "data"_a,
            "controls"_a.sig("FitControlsBicop()") = FitControlsBicop(),
-           bicop_doc.fit.doc)
+           bicop_doc.fit.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("select", &Bicop::select, "data"_a,
            "controls"_a.sig("FitControlsBicop()") = FitControlsBicop(),
-           bicop_doc.select.doc)
+           bicop_doc.select.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("plot", &bicop_plot_wrapper, "type"_a = "surface",
            "margin_type"_a = "unif", "xylim"_a = nb::none(),
            "grid_size"_a = nb::none(),

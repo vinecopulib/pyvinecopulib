@@ -10,6 +10,7 @@
 #include <kde1d.hpp>
 
 #include "kde1d/docstr.hpp"
+#include "misc/helpers.hpp"
 
 namespace nb = nanobind;
 using namespace nb::literals;
@@ -45,6 +46,15 @@ inline void kde1d_set_xmin_xmax(Kde1d& self,
   self.set_xmin_xmax(xmin.value_or(NAN), xmax.value_or(NAN));
 }
 
+// Wrapper function to call the Python kde1d_plot function
+inline void kde1d_plot_wrapper(const Kde1d& kde, nb::object xlim,
+                               nb::object ylim, int grid_size,
+                               bool show_zero_mass) {
+  auto mod = nb::module_::import_("pyvinecopulib._python_helpers.kde1d");
+  auto kde1d_plot = mod.attr("kde1d_plot");
+  kde1d_plot(nb::cast(kde), xlim, ylim, grid_size, show_zero_mass);
+}
+
 inline void init_kde1d(nb::module_& module) {
   nb::class_<Kde1d>(module, "Kde1d", kde1d_docstrings::kde1d_class_doc)
       // Default constructor
@@ -61,16 +71,19 @@ inline void init_kde1d(nb::module_& module) {
           "xmin"_a = std::nullopt, "xmax"_a = std::nullopt,
           "type"_a = "continuous", "multiplier"_a = 1.0,
           "bandwidth"_a = std::nullopt, "degree"_a = 2, "grid_size"_a = 400,
-          kde1d_docstrings::kde1d_constructor_doc)
+          kde1d_docstrings::kde1d_constructor_doc,
+          nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_params", &kde1d_from_params, "xmin"_a = std::nullopt,
                   "xmax"_a = std::nullopt, "type"_a = "continuous",
                   "multiplier"_a = 1.0, "bandwidth"_a = std::nullopt,
                   "degree"_a = 2, "grid_size"_a = 400,
-                  kde1d_docstrings::kde1d_from_params_doc)
+                  kde1d_docstrings::kde1d_from_params_doc,
+                  nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_grid", &kde1d_from_grid, "grid_points"_a, "values"_a,
                   "xmin"_a = std::nullopt, "xmax"_a = std::nullopt,
                   "type"_a = "continuous", "prob0"_a = 0.0,
-                  kde1d_docstrings::kde1d_from_grid_doc)
+                  kde1d_docstrings::kde1d_from_grid_doc,
+                  nb::call_guard<nb::gil_scoped_release>())
 
       // Properties (getters)
       .def_prop_ro("xmin", &Kde1d::get_xmin, kde1d_docstrings::xmin_doc)
@@ -87,22 +100,33 @@ inline void init_kde1d(nb::module_& module) {
       .def_prop_ro("loglik", &Kde1d::get_loglik, kde1d_docstrings::loglik_doc)
       .def_prop_ro("edf", &Kde1d::get_edf, kde1d_docstrings::edf_doc)
       .def_prop_ro("grid_points", &Kde1d::get_grid_points,
-                   kde1d_docstrings::grid_points_doc)
-      .def_prop_ro("values", &Kde1d::get_values, kde1d_docstrings::values_doc)
+                   kde1d_docstrings::grid_points_doc,
+                   nb::call_guard<nb::gil_scoped_release>())
+      .def_prop_ro("values", &Kde1d::get_values, kde1d_docstrings::values_doc,
+                   nb::call_guard<nb::gil_scoped_release>())
 
       // Methods
       .def("fit", &Kde1d::fit, "x"_a, "weights"_a = Eigen::VectorXd(),
-           kde1d_docstrings::fit_doc)
+           kde1d_docstrings::fit_doc, nb::call_guard<nb::gil_scoped_release>())
       .def("pdf", &Kde1d::pdf, "x"_a, "check_fitted"_a = true,
-           kde1d_docstrings::pdf_doc)
+           kde1d_docstrings::pdf_doc, nb::call_guard<nb::gil_scoped_release>())
       .def("cdf", &Kde1d::cdf, "x"_a, "check_fitted"_a = true,
-           kde1d_docstrings::cdf_doc)
+           kde1d_docstrings::cdf_doc, nb::call_guard<nb::gil_scoped_release>())
       .def("quantile", &Kde1d::quantile, "x"_a, "check_fitted"_a = true,
-           kde1d_docstrings::quantile_doc)
+           kde1d_docstrings::quantile_doc,
+           nb::call_guard<nb::gil_scoped_release>())
       .def("simulate", &Kde1d::simulate, "n"_a, "seeds"_a = std::vector<int>(),
-           "check_fitted"_a = true, kde1d_docstrings::simulate_doc)
+           "check_fitted"_a = true, kde1d_docstrings::simulate_doc,
+           nb::call_guard<nb::gil_scoped_release>())
       .def("set_xmin_xmax", &kde1d_set_xmin_xmax, "xmin"_a = std::nullopt,
            "xmax"_a = std::nullopt, kde1d_docstrings::set_xmin_xmax_doc)
+      .def("plot", &kde1d_plot_wrapper, "xlim"_a = nb::none(),
+           "ylim"_a = nb::none(), "grid_size"_a = 200,
+           "show_zero_mass"_a = true,
+           python_doc_helper("pyvinecopulib._python_helpers.kde1d",
+                             "KDE1D_PLOT_DOC",
+                             "Plot the KDE (extended doc unavailable) ")
+               .c_str())
 
       // String representation
       .def(
