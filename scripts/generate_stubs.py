@@ -37,6 +37,39 @@ def wrap_known_types(sig: str, known_types: set[str]) -> str:
   return sig
 
 
+def render_python_function_stub(
+  fct, name: str, known_types: Optional[set[str]] = None, indent: int = 2
+) -> list[str]:
+  """Render stub for regular Python functions using inspect.signature()"""
+  import inspect
+
+  lines = []
+  indent_str = " " * indent
+
+  try:
+    sig = inspect.signature(fct)
+    sig_str = str(sig)
+
+    # Convert the signature to the proper format
+    if known_types:
+      sig_str = wrap_known_types(sig_str, known_types)
+
+    lines.append(f"def {name}{sig_str}:")
+  except Exception:
+    lines.append(f"def {name}(*args, **kwargs):")
+
+  # Add docstring if available
+  doc = inspect.getdoc(fct)
+  if doc:
+    lines.append(f'{indent_str}"""')
+    for line in doc.splitlines():
+      lines.append(f"{indent_str}{line}")
+    lines.append(f'{indent_str}"""')
+
+  lines.append(f"{indent_str}...\n")
+  return lines
+
+
 def render_nanobind_function_stub(
   fct, name: str, known_types: Optional[set[str]] = None, indent: int = 2
 ) -> list[str]:
@@ -155,6 +188,16 @@ def render_class_stub(
 def cleanup_stub(stub: str) -> str:
   # Replace any annotation like numpy.ndarray[...] with ArrayLike
   stub = re.sub(r"numpy\.ndarray\[.*?\]", "ArrayLike", stub)
+  stub = re.sub(r"np\.ndarray\[.*?\]", "ArrayLike", stub)
+  stub = re.sub(r"\bnumpy\.ndarray\b", "ArrayLike", stub)
+  stub = re.sub(r"\bnp\.ndarray\b", "ArrayLike", stub)
+
+  # Replace complex ArrayLike Union types with simple ArrayLike
+  stub = re.sub(
+    r"Union\[numpy\._typing\._array_like\._Buffer, numpy\._typing\._array_like\._SupportsArray\[numpy\.dtype\[Any\]\], numpy\._typing\._nested_sequence\._NestedSequence\[numpy\._typing\._array_like\._SupportsArray\[numpy\.dtype\[Any\]\]\], complex, bytes, str, numpy\._typing\._nested_sequence\._NestedSequence\[complex \| bytes \| str\]\]",
+    "ArrayLike",
+    stub,
+  )
 
   # Replace default values like = array([], dtype=float64) or np.array([], dtype=np.float64)
   stub = re.sub(r"= *(?:np\.)?array\(\[\], *dtype=.*?\)", "= ...", stub)
@@ -170,6 +213,10 @@ def cleanup_stub(stub: str) -> str:
 
   # Remove pyvinecopulib. prefix from types
   stub = re.sub(r"\bpyvinecopulib\.", "", stub)
+
+  # Clean up matplotlib types
+  stub = re.sub(r"matplotlib\.figure\.Figure", "Figure", stub)
+  stub = re.sub(r"matplotlib\.axes\._axes\.Axes", "Axes", stub)
 
   return stub
 
@@ -187,8 +234,10 @@ def generate_stub(site_dir: str, output_path: Path, indent: int = 2):
 
   lines = [
     "import collections",
-    "from typing import Any",
+    "from typing import Any, Optional",
     "from numpy.typing import ArrayLike",
+    "from matplotlib.figure import Figure",
+    "from matplotlib.axes import Axes",
     "",
   ]
 
@@ -204,11 +253,26 @@ def generate_stub(site_dir: str, output_path: Path, indent: int = 2):
       or type(obj).__name__ == "nb_func"
     ):
       try:
-        lines.extend(
-          render_nanobind_function_stub(
-            obj, name, known_types=known_types, indent=indent
+        # Check if this is a nanobind function or regular Python function
+        if (
+          type(obj).__name__ == "nb_func"
+          or hasattr(obj, "__module__")
+          and obj.__module__
+          and "pyvinecopulib_ext" in obj.__module__
+        ):
+          # This is a nanobind function, use the existing logic
+          lines.extend(
+            render_nanobind_function_stub(
+              obj, name, known_types=known_types, indent=indent
+            )
           )
-        )
+        else:
+          # This is a regular Python function, use inspect.signature
+          lines.extend(
+            render_python_function_stub(
+              obj, name, known_types=known_types, indent=indent
+            )
+          )
       except Exception as e:
         lines.append(
           f"{indent_str}# def {name}(...):  # signature unavailable ({e})"

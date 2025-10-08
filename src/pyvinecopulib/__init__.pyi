@@ -1,6 +1,8 @@
 import collections
-from typing import Any
+from typing import Any, Optional
 from numpy.typing import ArrayLike
+from matplotlib.figure import Figure
+from matplotlib.axes import Axes
 
 class Bicop:
   """
@@ -2997,6 +2999,39 @@ lt: list[BicopFamily] = ...
 nonparametric: list[BicopFamily] = ...
 
 one_par: list[BicopFamily] = ...
+
+def pairs_copula_data(
+  data: ArrayLike,
+  main: str = "",
+  cols: Optional[list[str]] = None,
+  grid_size: int = 50,
+  bins: int = 20,
+  scatter_size: float = 6.0,
+) -> tuple[Figure, Axes]:
+  """
+  Pair plot for copula data U in (0,1)^d using pure Matplotlib.
+  - Lower: bivariate copula density contours (fitted with pyvinecopulib), drawn in z-space.
+  - Upper: scatter with Kendall's tau annotation (copula space).
+  - Diagonal: histograms (copula space).
+
+  Parameters
+  ----------
+  data : (n,d) array-like
+      Copula data with entries strictly in (0,1).
+  main : str
+      Figure title.
+  grid_size : int
+      Resolution of the contour grid per dimension (lower panels). Must be positive.
+  bins : int
+      Number of histogram bins (diagonal). Must be positive.
+  scatter_size : float
+      Marker size for upper-panel scatter. Must be positive.
+
+  Returns
+  -------
+  fig, axes : matplotlib Figure and Axes array of shape (d, d)
+  """
+  ...
 
 parametric: list[BicopFamily] = ...
 
