@@ -76,9 +76,13 @@ jobs:
           boost_version: ${{ env.BOOST_VERSION }}
           eigen_version: ${{ env.EIGEN_VERSION }}
           wdm: "false"
+      - name: Clean build artefacts
+        run: |
+          rm -rf build wheelhouse
       - name: Build and test wheels
         uses: pypa/cibuildwheel@v2.20.0
         env:
+          CIBW_REBUILD: 1
           CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
           CIBW_ENVIRONMENT_WINDOWS: Boost_INCLUDE_DIR='${{steps.install-dependencies.outputs.BOOST_ROOT}}\include' EIGEN3_INCLUDE_DIR='C:\ProgramData\chocolatey\lib\eigen\include'
           CIBW_ENVIRONMENT_MACOS: "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=${{matrix.cfg.root_install_dir}}/include/eigen3"
@@ -89,6 +93,14 @@ jobs:
         run: |
           echo "Checking stub files in wheel:"
           wheel=$(ls wheelhouse/*.whl)
+
+          # Verify the wheel is a valid ZIP archive
+          unzip -t "$wheel" >/dev/null || {
+            echo "::error file=$wheel::Corrupted or invalid wheel archive"
+            exit 1
+          }
+
+          # Check for stub or typing marker files
           unzip -l "$wheel" | grep -E '(__init__\.pyi|py\.typed)' || {
             echo "::error ::Expected stub or marker files not found in $wheel"
             exit 1
