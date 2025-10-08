@@ -125,7 +125,7 @@ jobs:
           name: cibw-wheels-${{ matrix.cfg.os }}-${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
           path: ./wheelhouse/*.whl
 
-  check-wheels:
+  check_wheels:
     needs: build
     runs-on: ubuntu-latest
     environment: pypi
@@ -169,7 +169,7 @@ jobs:
             exit 1
           }
 
-  test:
+  installs_and_unit_tests:
     needs: build
     runs-on: ${{ matrix.cfg.os }}
     strategy:
@@ -320,7 +320,7 @@ jobs:
           path: dist/*.tar.gz
 
   upload_to_pypi:
-    needs: [build_sdist, test-notebooks]
+    needs: [build_sdist, check_wheels, installs_and_unit_tests]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
