@@ -1,8 +1,9 @@
 import collections
 from typing import Any, Optional
-from numpy.typing import ArrayLike
-from matplotlib.figure import Figure
+
 from matplotlib.axes import Axes
+from matplotlib.figure import Figure
+from numpy.typing import ArrayLike
 
 class Bicop:
   """
@@ -1515,7 +1516,7 @@ class FitControlsVinecop:
 
 class Kde1d:
   """
-  Univariate local-polynomial likelihood kernel density estimation.
+  A class for univariate kernel density estimation.
 
   The ``Kde1d`` class provides methods for univariate kernel density estimation
   using local polynomial fitting. It can handle data with bounded, unbounded,
@@ -1538,16 +1539,42 @@ class Kde1d:
   >>> fit = pv.Kde1d()
   >>> fit.fit(x)
   >>> pdf_vals = fit.pdf(np.array([0.0]))
+  >>> fit.plot(x)
   >>>
   >>> # Bounded data
   >>> x = np.random.gamma(1, size=500)
   >>> fit = pv.Kde1d(xmin=0.0, degree=1)
   >>> fit.fit(x)
+  >>> fit.plot(x)
   >>>
   >>> # Discrete data
   >>> x = np.random.binomial(5, 0.5, 500)
   >>> fit = pv.Kde1d(xmin=0, xmax=5, type="discrete")
   >>> fit.fit(x)
+  >>> fit.plot(x)
+
+  References
+  ----------
+  Geenens, G. (2014). *Probit transformation for kernel density estimation on
+  the unit interval.* Journal of the American Statistical Association,
+  109(505), 346–358.
+  [arXiv:1303.4121](https://arxiv.org/abs/1303.4121)
+
+  Geenens, G., & Wang, C. (2018). *Local-likelihood transformation kernel
+  density estimation for positive random variables.* Journal of Computational
+  and Graphical Statistics, 27(4), 822–835.
+  [arXiv:1602.04862](https://arxiv.org/abs/1602.04862)
+
+  Loader, C. (2006). *Local Regression and Likelihood.* Springer Science &
+  Business Media.
+
+  Nagler, T. (2018a). *A generic approach to nonparametric function estimation
+  with mixed data.* Statistics & Probability Letters, 137, 326–330.
+  [arXiv:1704.07457](https://arxiv.org/abs/1704.07457)
+
+  Nagler, T. (2018b). *Asymptotic analysis of the jittering kernel density
+  estimator.* Mathematical Methods of Statistics, 27, 32–46.
+  [arXiv:1705.05431](https://arxiv.org/abs/1705.05431)
   """
   def __init__(
     self,
@@ -1747,6 +1774,69 @@ class Kde1d:
     -------
     array_like
         Vector of pdf values at the evaluation points.
+    """
+    ...
+
+  def plot(
+    self,
+    xlim: object | None = None,
+    ylim: object | None = None,
+    grid_size: int = 200,
+    show_zero_mass: bool = True,
+  ) -> None:
+    """
+
+    Generates a plot for the Kde1d object.
+
+    This method creates a line plot for continuous data, a point plot for discrete data,
+    and handles zero-inflated data with special point marking at zero.
+
+    Parameters
+    ----------
+    xlim : tuple (default=None)
+        The limits for the x axis. Automatically set if None.
+    ylim : tuple (default=None)
+        The limits for the y axis. Automatically set if None.
+    grid_size : int (default=200)
+        The number of grid points to use for continuous data.
+    show_zero_mass : bool (default=True)
+        Whether to show the point mass at zero for zero-inflated data.
+    **kwargs
+        Additional keyword arguments passed to matplotlib plotting functions.
+
+    Returns
+    -------
+    Nothing, the function generates a plot and shows it using matplotlib.
+
+    Usage
+    -----
+    .. code-block:: python
+
+        import pyvinecopulib as pv
+        import numpy as np
+        import matplotlib.pyplot as plt
+
+        # Continuous data
+        np.random.seed(123)
+        x = np.random.beta(0.5, 2.0, 100)
+        kde = pv.Kde1d()
+        kde.fit(x)
+
+        plt.figure(figsize=(10, 6))
+        kde.plot()
+
+        # Discrete data
+        x_discrete = np.random.poisson(3, 100)
+        kde_discrete = pv.Kde1d(type="discrete")
+        kde_discrete.fit(x_discrete)
+        kde_discrete.plot()
+
+        # Zero-inflated data
+        x_zi = np.random.exponential(2, 100)
+        x_zi[np.random.choice(100, 30, replace=False)] = 0
+        kde_zi = pv.Kde1d(xmin=0, type="zero-inflated")
+        kde_zi.fit(x_zi)
+        kde_zi.plot()
     """
     ...
 

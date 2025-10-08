@@ -4,8 +4,10 @@
 
 ### New features in `pyvinecopulib`
 
-- Add support for 1d data with the `Kde1d` Python bindings (#189)
+- Add support for 1d data with the `Kde1d` Python bindings (#189, #198)
+- Add support for weighted dependence measures `wdm` (#194)
 - Add an argument to control the nonparametric grid size in both `Kde1d` and `Bicop` (#191, #192)
+- Release GIL for C++-only operations (#193)
 
 ### Bug fixes in `pyvinecopulib`
 
