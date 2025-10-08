@@ -87,7 +87,7 @@ jobs:
         run: |
           rm -rf build wheelhouse
       - name: Build and test wheels
-        uses: pypa/cibuildwheel@v2.20.0
+        uses: pypa/cibuildwheel@v3.2.0
         env:
           CIBW_REBUILD: 1
           CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
@@ -286,6 +286,9 @@ jobs:
             ls -1 dist/
             exit 1
           fi
+
+          echo "Listing wheel structure:"
+          find dist -type f -name '*.whl' -printf "%P\n" | sort
 
           python3 -m pip install --quiet --no-cache-dir twine
           echo "Checking wheel ZIP integrity..."

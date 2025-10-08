@@ -76,6 +76,9 @@ wheel.py-api = "cp312"
 # Necessary to see build output from the actual compilation
 build-verbosity = 1
 
+# Disable free-threading builds on all platforms
+skip = "cp3??t-*"
+
 # Run pytest to ensure that the package was correctly built
 test-command = "pytest -n auto {project}/tests"
 test-requires = ["pytest-cov", "pytest-xdist", "pytest-rerunfailures"]
