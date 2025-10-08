@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         # macos-13 is an intel runner, macos-14 is apple silicon
-        python: [39, 310, 311, 312, 313, 314]
+        python: [39, 310, 311, 312]
         cfg:
           - {
               os: ubuntu-latest,
@@ -115,8 +115,8 @@ jobs:
 
           # 3. Verify wheel metadata and long description
           python3 -m pip install --quiet --no-cache-dir twine
-          python3 -m twine check wheelhouse/*.whl || {
-            echo "::error ::Metadata check failed"
+          python3 -m twine check --strict wheelhouse/*.whl || {
+            echo "::error ::Metadata check failed — would fail on PyPI upload."
             exit 1
           }
       - name: Upload binaries
@@ -125,7 +125,51 @@ jobs:
           name: cibw-wheels-${{ matrix.cfg.os }}-${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
           path: ./wheelhouse/*.whl
 
-  test-notebooks:
+  check-wheels:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      actions: read
+      contents: read
+
+    name: Verify all built wheels
+
+    steps:
+      - name: Download cibw artifacts
+        uses: actions/download-artifact@v5
+        with:
+          # unpacks all CIBW artifacts into dist/
+          pattern: cibw-*
+          path: dist
+          merge-multiple: true
+        continue-on-error: true
+      - name: Verify downloaded wheel integrity and metadata
+        run: |
+          echo "Verifying downloaded artifacts in dist/"
+
+          N_WHEELS=$(find dist -type f -name '*.whl' | wc -l)
+          N_EXPECTED=${EXPECTED_WHEEL_COUNT:-0}
+          echo "Found $N_WHEELS wheel(s); expected $N_EXPECTED"
+
+          if [ "$N_WHEELS" -ne "$N_EXPECTED" ]; then
+            echo "::error ::Expected $N_EXPECTED wheels, found $N_WHEELS. Some matrix jobs failed or artifacts missing."
+            ls -1 dist/
+            exit 1
+          fi
+
+          echo "Listing wheel structure:"
+          find dist -type f -name '*.whl' -printf "%P\n" | sort
+
+          python3 -m pip install --quiet --no-cache-dir twine
+          echo "Checking metadata consistency with twine..."
+          python3 -m twine check --strict dist/* || {
+            echo "::error ::Metadata check failed — would fail on PyPI upload."
+            exit 1
+          }
+
+  test:
     needs: build
     runs-on: ${{ matrix.cfg.os }}
     strategy:
@@ -136,12 +180,9 @@ jobs:
           - { os: ubuntu-latest, cibw_id: manylinux_x86_64 }
           - { os: macos-14, cibw_id: macosx_arm64 }
           - { os: windows-latest, cibw_id: win_amd64 }
-
-    name: Notebook test on ${{ matrix.cfg.os }} for cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
-
+    name: Unit tests on ${{ matrix.cfg.os }} for cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
     steps:
       - uses: actions/checkout@v4
-
       - name: Infer full Python version
         id: pyver
         shell: bash
@@ -150,12 +191,10 @@ jobs:
           major="${short:0:1}"
           minor="${short:1}"
           echo "version=$major.$minor" >> $GITHUB_OUTPUT
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ steps.pyver.outputs.version }}
-
       - name: Install Graphviz
         shell: bash
         run: |
@@ -167,29 +206,43 @@ jobs:
           elif [[ "${{ matrix.cfg.os }}" == "windows-latest" ]]; then
             choco install graphviz -y
           fi
-
       - name: Install dev and examples dependencies
         run: |
           pip install tomli  # needed for Python < 3.11
           python scripts/get_dependencies.py dev examples --as-requirements > requirements.txt
           pip install -r requirements.txt
-
-      - name: Download built wheel
+      # For Python <= 3.11: download its exact artifact
+      - name: Download built wheel (<=3.11)
+        if: ${{ matrix.python <= 311 }}
         uses: actions/download-artifact@v4
         with:
           name: cibw-wheels-${{ matrix.cfg.os }}-${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
           path: dist/
-
+      # For Python >= 3.12: reuse the 3.12 ABI3 artifact
+      - name: Download built wheel (>=3.12)
+        if: ${{ matrix.python >= 312 }}
+        uses: actions/download-artifact@v4
+        with:
+          name: cibw-wheels-${{ matrix.cfg.os }}-312-${{ matrix.cfg.cibw_id }}
+          path: dist/
       - name: Install wheel
         shell: bash
         run: |
           pip install dist/*.whl
-
+      - name: Run tests
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 30
+          max_attempts: 3
+          retry_wait_seconds: 60
+          shell: bash
+          command: |
+            pytest tests/ -r a
       # Override pytest defaults (in pyproject.toml):
       # - disable coverage (not meaningful for notebooks)
       # - run sequentially (-n 1)
       # - extend kernel timeout
-      - name: Run example notebooks
+      - name: Run notebooks as unit tests
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 30
@@ -282,7 +335,6 @@ jobs:
           pattern: cibw-*
           path: dist
           merge-multiple: true
-        continue-on-error: true
       - name: Verify downloaded wheel integrity and metadata
         run: |
           echo "Verifying downloaded artifacts in dist/"
