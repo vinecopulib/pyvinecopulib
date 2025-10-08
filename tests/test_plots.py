@@ -27,6 +27,7 @@ def assert_called_once_or_twice_with(
   if not any(call == args for call in calls):
     raise AssertionError(f"Expected to be called with args {args}, got {calls}")
 
+
 class TestPairCopulaData:
   """Test pair_copuladata.py functions directly"""
 
@@ -743,6 +744,182 @@ class TestVinecopHelpers:
                   assert args[1] == 1  # n_col
 
 
+class TestKde1dHelpers:
+  """Test kde1d.py helper functions directly"""
+
+  def test_make_plotting_grid_continuous(self) -> None:
+    """Test make_plotting_grid function for continuous data"""
+    from pyvinecopulib._python_helpers.kde1d import make_plotting_grid
+
+    # Create a mock Kde1d object
+    mock_kde = MagicMock()
+    mock_kde.type = "continuous"
+    mock_kde.grid_points = np.linspace(0, 5, 50)
+    mock_kde.xmin = np.nan
+    mock_kde.xmax = np.nan
+
+    grid = make_plotting_grid(mock_kde, grid_size=100)
+
+    # Check properties
+    assert isinstance(grid, np.ndarray)
+    assert len(grid) == 100
+    assert grid[0] >= mock_kde.grid_points.min()
+    assert grid[-1] <= mock_kde.grid_points.max()
+
+  def test_make_plotting_grid_discrete(self) -> None:
+    """Test make_plotting_grid function for discrete data"""
+    from pyvinecopulib._python_helpers.kde1d import make_plotting_grid
+
+    # Create a mock Kde1d object
+    mock_kde = MagicMock()
+    mock_kde.type = "discrete"
+    mock_kde.grid_points = np.arange(0, 10)
+    mock_kde.xmin = np.nan
+    mock_kde.xmax = np.nan
+
+    grid = make_plotting_grid(mock_kde, grid_size=100)
+
+    # Check properties
+    assert isinstance(grid, np.ndarray)
+    assert all(x == int(x) for x in grid)  # All should be integers
+    assert grid.min() >= 0
+    assert grid.max() <= 9
+
+  def test_make_plotting_grid_zero_inflated(self) -> None:
+    """Test make_plotting_grid function for zero-inflated data"""
+    from pyvinecopulib._python_helpers.kde1d import make_plotting_grid
+
+    # Create a mock Kde1d object
+    mock_kde = MagicMock()
+    mock_kde.type = "zero-inflated"
+    mock_kde.grid_points = np.linspace(0, 5, 50)
+    mock_kde.xmin = np.nan
+    mock_kde.xmax = np.nan
+
+    grid = make_plotting_grid(mock_kde, grid_size=100)
+
+    # Check properties
+    assert isinstance(grid, np.ndarray)
+    assert 0 not in grid  # Zero should be excluded for zero-inflated
+
+  def test_make_plotting_grid_with_bounds(self) -> None:
+    """Test make_plotting_grid function with specified bounds"""
+    from pyvinecopulib._python_helpers.kde1d import make_plotting_grid
+
+    # Create a mock Kde1d object with bounds
+    mock_kde = MagicMock()
+    mock_kde.type = "continuous"
+    mock_kde.grid_points = np.linspace(1, 4, 50)
+    mock_kde.xmin = 0.0
+    mock_kde.xmax = 5.0
+
+    grid = make_plotting_grid(mock_kde, grid_size=100)
+
+    # Check bounds are respected
+    assert grid[0] == 0.0
+    assert grid[-1] == 5.0
+
+  def test_kde1d_plot_parameter_validation(self) -> None:
+    """Test kde1d_plot parameter validation"""
+    from pyvinecopulib._python_helpers.kde1d import kde1d_plot
+
+    # Create a mock kde object that appears unfitted
+    mock_kde = MagicMock()
+    mock_kde.grid_points = np.array([])  # Empty grid indicates unfitted
+
+    # Test unfitted kde raises error
+    with pytest.raises(ValueError, match="Kde1d object must be fitted"):
+      kde1d_plot(mock_kde)
+
+  @patch("matplotlib.pyplot.show")
+  @patch("matplotlib.pyplot.plot")
+  def test_kde1d_plot_continuous(self, mock_plot: Any, mock_show: Any) -> None:
+    """Test kde1d_plot with continuous data"""
+    from pyvinecopulib._python_helpers.kde1d import kde1d_plot
+
+    # Create a mock fitted kde object
+    mock_kde = MagicMock()
+    mock_kde.type = "continuous"
+    mock_kde.grid_points = np.linspace(0, 5, 50)
+    mock_kde.xmin = np.nan
+    mock_kde.xmax = np.nan
+    mock_kde.pdf.return_value = np.ones(100) * 0.5
+
+    # Test continuous plot
+    kde1d_plot(mock_kde, grid_size=100)
+
+    # Verify matplotlib functions were called
+    mock_plot.assert_called()
+    mock_show.assert_called_once()
+
+  @patch("matplotlib.pyplot.show")
+  @patch("matplotlib.pyplot.plot")
+  def test_kde1d_plot_discrete(self, mock_plot: Any, mock_show: Any) -> None:
+    """Test kde1d_plot with discrete data"""
+    from pyvinecopulib._python_helpers.kde1d import kde1d_plot
+
+    # Create a mock fitted kde object
+    mock_kde = MagicMock()
+    mock_kde.type = "discrete"
+    mock_kde.grid_points = np.arange(0, 10)
+    mock_kde.xmin = np.nan
+    mock_kde.xmax = np.nan
+    mock_kde.pdf.return_value = np.ones(10) * 0.1
+
+    # Test discrete plot
+    kde1d_plot(mock_kde, grid_size=50)
+
+    # Verify matplotlib functions were called
+    mock_plot.assert_called()
+    mock_show.assert_called_once()
+
+  @patch("matplotlib.pyplot.show")
+  @patch("matplotlib.pyplot.plot")
+  def test_kde1d_plot_zero_inflated(
+    self, mock_plot: Any, mock_show: Any
+  ) -> None:
+    """Test kde1d_plot with zero-inflated data"""
+    from pyvinecopulib._python_helpers.kde1d import kde1d_plot
+
+    # Create a mock fitted kde object
+    mock_kde = MagicMock()
+    mock_kde.type = "zero-inflated"
+    mock_kde.grid_points = np.linspace(0, 5, 50)
+    mock_kde.xmin = np.nan
+    mock_kde.xmax = np.nan
+    mock_kde.pdf.return_value = np.ones(100) * 0.2
+
+    # Test zero-inflated plot
+    kde1d_plot(mock_kde, grid_size=100, show_zero_mass=True)
+
+    # Verify matplotlib functions were called (should be called twice - main plot + zero point)
+    assert mock_plot.call_count >= 1
+    mock_show.assert_called_once()
+
+  @patch("matplotlib.pyplot.show")
+  @patch("matplotlib.pyplot.plot")
+  def test_kde1d_plot_custom_limits(
+    self, mock_plot: Any, mock_show: Any
+  ) -> None:
+    """Test kde1d_plot with custom axis limits"""
+    from pyvinecopulib._python_helpers.kde1d import kde1d_plot
+
+    # Create a mock fitted kde object
+    mock_kde = MagicMock()
+    mock_kde.type = "continuous"
+    mock_kde.grid_points = np.linspace(0, 5, 50)
+    mock_kde.xmin = np.nan
+    mock_kde.xmax = np.nan
+    mock_kde.pdf.return_value = np.ones(100) * 0.5
+
+    # Test with custom limits
+    kde1d_plot(mock_kde, xlim=(1, 4), ylim=(0, 1), grid_size=100)
+
+    # Verify matplotlib functions were called
+    mock_plot.assert_called()
+    mock_show.assert_called_once()
+
+
 class TestPlotDocstrings:
   """Test that docstrings are properly defined"""
 
@@ -763,6 +940,15 @@ class TestPlotDocstrings:
     assert len(VINECOP_PLOT_DOC) > 0
     assert "Parameters" in VINECOP_PLOT_DOC
     assert "Returns" in VINECOP_PLOT_DOC
+
+  def test_kde1d_plot_doc(self) -> None:
+    """Test KDE1D_PLOT_DOC is defined"""
+    from pyvinecopulib._python_helpers.kde1d import KDE1D_PLOT_DOC
+
+    assert isinstance(KDE1D_PLOT_DOC, str)
+    assert len(KDE1D_PLOT_DOC) > 0
+    assert "Parameters" in KDE1D_PLOT_DOC
+    assert "Returns" in KDE1D_PLOT_DOC
 
 
 class TestEdgeCases:

@@ -10,6 +10,7 @@
 #include <kde1d.hpp>
 
 #include "kde1d/docstr.hpp"
+#include "misc/helpers.hpp"
 
 namespace nb = nanobind;
 using namespace nb::literals;
@@ -43,6 +44,15 @@ inline void kde1d_set_xmin_xmax(Kde1d& self,
                                 std::optional<double> xmin = std::nullopt,
                                 std::optional<double> xmax = std::nullopt) {
   self.set_xmin_xmax(xmin.value_or(NAN), xmax.value_or(NAN));
+}
+
+// Wrapper function to call the Python kde1d_plot function
+inline void kde1d_plot_wrapper(const Kde1d& kde, nb::object xlim,
+                               nb::object ylim, int grid_size,
+                               bool show_zero_mass) {
+  auto mod = nb::module_::import_("pyvinecopulib._python_helpers.kde1d");
+  auto kde1d_plot = mod.attr("kde1d_plot");
+  kde1d_plot(nb::cast(kde), xlim, ylim, grid_size, show_zero_mass);
 }
 
 inline void init_kde1d(nb::module_& module) {
@@ -110,6 +120,13 @@ inline void init_kde1d(nb::module_& module) {
            nb::call_guard<nb::gil_scoped_release>())
       .def("set_xmin_xmax", &kde1d_set_xmin_xmax, "xmin"_a = std::nullopt,
            "xmax"_a = std::nullopt, kde1d_docstrings::set_xmin_xmax_doc)
+      .def("plot", &kde1d_plot_wrapper, "xlim"_a = nb::none(),
+           "ylim"_a = nb::none(), "grid_size"_a = 200,
+           "show_zero_mass"_a = true,
+           python_doc_helper("pyvinecopulib._python_helpers.kde1d",
+                             "KDE1D_PLOT_DOC",
+                             "Plot the KDE (extended doc unavailable) ")
+               .c_str())
 
       // String representation
       .def(
