@@ -27,6 +27,7 @@ def assert_called_once_or_twice_with(
   if not any(call == args for call in calls):
     raise AssertionError(f"Expected to be called with args {args}, got {calls}")
 
+
 class TestPairCopulaData:
   """Test pair_copuladata.py functions directly"""
 
@@ -773,6 +774,8 @@ class TestKde1dHelpers:
     mock_kde = MagicMock()
     mock_kde.type = "discrete"
     mock_kde.grid_points = np.arange(0, 10)
+    mock_kde.xmin = np.nan
+    mock_kde.xmax = np.nan
 
     grid = make_plotting_grid(mock_kde, grid_size=100)
 
@@ -859,6 +862,8 @@ class TestKde1dHelpers:
     mock_kde = MagicMock()
     mock_kde.type = "discrete"
     mock_kde.grid_points = np.arange(0, 10)
+    mock_kde.xmin = np.nan
+    mock_kde.xmax = np.nan
     mock_kde.pdf.return_value = np.ones(10) * 0.1
 
     # Test discrete plot

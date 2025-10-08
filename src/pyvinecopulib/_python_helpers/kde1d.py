@@ -127,12 +127,27 @@ def kde1d_plot(
   else:
     # Auto-set x limits with some padding
     try:
-      if not np.isnan(kde.xmin) and not np.isnan(kde.xmax):
-        plt.xlim(kde.xmin, kde.xmax)
+      # Safely check if xmin and xmax are valid scalar values
+      xmin_val = getattr(kde, "xmin", np.nan)
+      xmax_val = getattr(kde, "xmax", np.nan)
+
+      # Convert to scalar if needed and check if they're finite
+      if hasattr(xmin_val, "size") and hasattr(xmin_val, "item"):
+        xmin_val = xmin_val.item() if xmin_val.size > 0 else np.nan
+      if hasattr(xmax_val, "size") and hasattr(xmax_val, "item"):
+        xmax_val = xmax_val.item() if xmax_val.size > 0 else np.nan
+
+      if (
+        np.isscalar(xmin_val)
+        and np.isscalar(xmax_val)
+        and np.isfinite(xmin_val)
+        and np.isfinite(xmax_val)
+      ):
+        plt.xlim(xmin_val, xmax_val)
       else:
         x_range = ev.max() - ev.min()
         plt.xlim(ev.min() - 0.05 * x_range, ev.max() + 0.05 * x_range)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, AttributeError):
       # Handle case where xmin/xmax might be arrays or other types
       x_range = ev.max() - ev.min()
       plt.xlim(ev.min() - 0.05 * x_range, ev.max() + 0.05 * x_range)
