@@ -267,6 +267,52 @@ jobs:
           pattern: cibw-*
           path: dist
           merge-multiple: true
+        continue-on-error: true
+
+      - name: Verify wheel count and retry if incomplete
+        if: always()  # run even if previous step "failed" or returned no artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          N_WHEELS=$(find dist -type f -name '*.whl' | wc -l | tr -d ' ')
+          N_EXPECTED=${EXPECTED_WHEEL_COUNT:-0}
+          echo "Initial download via actions/download-artifact found $N_WHEELS wheel(s); expected $N_EXPECTED."
+
+          if [ "$N_WHEELS" -ge "$N_EXPECTED" ]; then
+            echo "All expected wheels already present."
+            exit 0
+          fi
+
+          echo "Missing wheels. Falling back to gh CLI with retries..."
+          max_attempts=5
+          delay=20
+
+          for attempt in $(seq 1 $max_attempts); do
+            echo "Attempt $attempt: re-downloading cibw-* artifacts..."
+            rm -rf dist/*
+            gh run download "$GITHUB_RUN_ID" --pattern "cibw-*" --dir dist || true
+
+            N_WHEELS=$(find dist -type f -name '*.whl' | wc -l | tr -d ' ')
+            echo "Found $N_WHEELS wheel(s) after attempt $attempt."
+
+            if [ "$N_WHEELS" -ge "$N_EXPECTED" ]; then
+              echo "All expected wheels successfully downloaded after retry."
+              exit 0
+            fi
+
+            if [ "$attempt" -lt "$max_attempts" ]; then
+              echo "Still missing wheels (expected $N_EXPECTED, found $N_WHEELS). Retrying in ${delay}s..."
+              sleep "$delay"
+            else
+              echo "::error ::Expected $N_EXPECTED wheels, found $N_WHEELS after $max_attempts attempts."
+              ls -1 dist/ || true
+              exit 1
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Verify downloaded wheel integrity and metadata
         run: |
           echo "Verifying downloaded artifacts in dist/"
