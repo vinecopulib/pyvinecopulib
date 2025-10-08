@@ -195,6 +195,7 @@ jobs:
           timeout_minutes: 30
           max_attempts: 3
           retry_wait_seconds: 60
+          shell: bash
           command: |
             pytest --nbmake examples/ \
               -n 1 \
