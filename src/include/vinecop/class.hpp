@@ -144,35 +144,41 @@ are:
   )""";
 
   nb::class_<Vinecop>(module, "Vinecop", vinecop_doc.doc)
-      .def(nb::init<const size_t>(), default_constructor_doc, "d"_a)
+      .def(nb::init<const size_t>(), default_constructor_doc, "d"_a,
+           nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_dimension", &vc_from_dimension, "d"_a,
-                  vinecop_doc.ctor.doc_1args_d)
+                  vinecop_doc.ctor.doc_1args_d,
+                  nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_structure", &vc_from_structure,
                   "structure"_a = std::nullopt, "matrix"_a = std::nullopt,
                   "pair_copulas"_a = std::vector<std::vector<Bicop>>(),
                   "var_types"_a = std::vector<std::string>(),
-                  from_structure_doc)
+                  from_structure_doc, nb::call_guard<nb::gil_scoped_release>())
       .def_static(
           "from_data", &vc_from_data, "data"_a, "structure"_a = std::nullopt,
           "matrix"_a = std::nullopt, "var_types"_a = std::vector<std::string>(),
           "controls"_a.sig("FitControlsVinecop()") = FitControlsVinecop(),
-          from_data_doc)
+          from_data_doc, nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_file", &vc_from_file, "filename"_a, "check"_a = true,
-                  vinecop_doc.ctor.doc_2args_filename_check)
+                  vinecop_doc.ctor.doc_2args_filename_check,
+                  nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_json", &vc_from_json, "json"_a, "check"_a = true,
-                  vinecop_doc.ctor.doc_2args_input_check)
-      .def("to_file", &Vinecop::to_file, "filename"_a, vinecop_doc.to_file.doc)
+                  vinecop_doc.ctor.doc_2args_input_check,
+                  nb::call_guard<nb::gil_scoped_release>())
+      .def("to_file", &Vinecop::to_file, "filename"_a, vinecop_doc.to_file.doc,
+           nb::call_guard<nb::gil_scoped_release>())
       .def(
           "to_json",
           [](Vinecop& self) -> std::string { return self.to_json().dump(); },
-          vinecop_doc.to_json.doc)
+          vinecop_doc.to_json.doc, nb::call_guard<nb::gil_scoped_release>())
       .def_prop_rw("var_types", &Vinecop::get_var_types,
-                   &Vinecop::set_var_types, "The types of each variables.")
+                   &Vinecop::set_var_types, "The types of each variables.",
+                   nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("trunc_lvl", &Vinecop::get_trunc_lvl,
                    "The truncation level.")
       .def_prop_ro("dim", &Vinecop::get_dim, "The dimension.")
       .def("get_pair_copula", &Vinecop::get_pair_copula, "Gets a pair-copula.",
-           "tree"_a, "edge"_a)
+           "tree"_a, "edge"_a, nb::call_guard<nb::gil_scoped_release>())
       .def("get_family", &Vinecop::get_family,
            "Gets the family of a pair-copula.", "tree"_a, "edge"_a)
       .def("get_rotation", &Vinecop::get_rotation,
@@ -182,53 +188,66 @@ are:
       .def("get_tau", &Vinecop::get_tau,
            "Gets the kendall's tau of a pair-copula.", "tree"_a, "edge"_a)
       .def_prop_ro("pair_copulas", &Vinecop::get_all_pair_copulas,
-                   "All pair-copulas.")
+                   "All pair-copulas.",
+                   nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("families", &Vinecop::get_all_families,
-                   "Families of all pair-copulas.")
+                   "Families of all pair-copulas.",
+                   nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("rotations", &Vinecop::get_all_rotations,
-                   "The rotations of all pair-copulas.")
+                   "The rotations of all pair-copulas.",
+                   nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("parameters", &Vinecop::get_all_parameters,
-                   "The parameters of all pair-copulas.")
+                   "The parameters of all pair-copulas.",
+                   nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("taus", &Vinecop::get_all_taus,
-                   "The Kendall's taus of all pair-copulas.")
+                   "The Kendall's taus of all pair-copulas.",
+                   nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("order", &Vinecop::get_order,
-                   "The R-vine structure's order.")
+                   "The R-vine structure's order.",
+                   nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("structure", &Vinecop::get_rvine_structure,
-                   "The R-vine structure.")
+                   "The R-vine structure.",
+                   nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("npars", &Vinecop::get_npars,
                    "The total number of parameters.")
       .def_prop_ro("matrix", &Vinecop::get_matrix,
-                   "Extracts the R-vine structure's matrix.")
+                   "Extracts the R-vine structure's matrix.",
+                   nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("nobs", &Vinecop::get_nobs,
                    "The number of observations (for fitted objects only).")
       .def_prop_ro("threshold", &Vinecop::get_threshold,
                    "The threshold (for thresholded copulas only).")
       .def("select", &Vinecop::select, "data"_a,
            "controls"_a.sig("FitControlsVinecop()") = FitControlsVinecop(),
-           vinecop_doc.select.doc)
+           vinecop_doc.select.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("fit", &Vinecop::fit, "data"_a,
            "controls"_a.sig("FitControlsBicop()") = FitControlsBicop(),
-           "num_threads"_a = 1, vinecop_doc.fit.doc)
+           "num_threads"_a = 1, vinecop_doc.fit.doc,
+           nb::call_guard<nb::gil_scoped_release>())
       .def("pdf", &Vinecop::pdf, "u"_a, "num_threads"_a = 1,
-           vinecop_doc.pdf.doc)
+           vinecop_doc.pdf.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("cdf", &Vinecop::cdf, "u"_a, "N"_a = 10000, "num_threads"_a = 1,
-           "seeds"_a = std::vector<int>(), vinecop_doc.cdf.doc)
+           "seeds"_a = std::vector<int>(), vinecop_doc.cdf.doc,
+           nb::call_guard<nb::gil_scoped_release>())
       .def("simulate", &Vinecop::simulate, "n"_a, "qrng"_a = false,
            "num_threads"_a = 1, "seeds"_a = std::vector<int>(),
-           vinecop_doc.simulate.doc)
+           vinecop_doc.simulate.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("rosenblatt", &Vinecop::rosenblatt, "u"_a, "num_threads"_a = 1,
            "randomize_discrete"_a = true, "seeds"_a = std::vector<int>(),
-           vinecop_doc.rosenblatt.doc)
+           vinecop_doc.rosenblatt.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("inverse_rosenblatt", &Vinecop::inverse_rosenblatt, "u"_a,
-           "num_threads"_a = 1, vinecop_doc.inverse_rosenblatt.doc)
+           "num_threads"_a = 1, vinecop_doc.inverse_rosenblatt.doc,
+           nb::call_guard<nb::gil_scoped_release>())
       .def("loglik", &Vinecop::loglik, "u"_a = Eigen::MatrixXd(),
-           "num_threads"_a = 1, vinecop_doc.loglik.doc)
+           "num_threads"_a = 1, vinecop_doc.loglik.doc,
+           nb::call_guard<nb::gil_scoped_release>())
       .def("aic", &Vinecop::aic, "u"_a = Eigen::MatrixXd(), "num_threads"_a = 1,
-           vinecop_doc.aic.doc)
+           vinecop_doc.aic.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("bic", &Vinecop::bic, "u"_a = Eigen::MatrixXd(), "num_threads"_a = 1,
-           vinecop_doc.bic.doc)
+           vinecop_doc.bic.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("mbicv", &Vinecop::mbicv, "u"_a = Eigen::MatrixXd(), "psi0"_a = 0.9,
-           "num_threads"_a = 1, vinecop_doc.mbicv.doc)
+           "num_threads"_a = 1, vinecop_doc.mbicv.doc,
+           nb::call_guard<nb::gil_scoped_release>())
       .def(
           "__repr__",
           [](const Vinecop& cop) {
@@ -248,7 +267,7 @@ are:
           },
           "trees"_a = std::vector<size_t>{}, vinecop_doc.str.doc)
       .def("truncate", &Vinecop::truncate, "trunc_lvl"_a,
-           vinecop_doc.truncate.doc)
+           vinecop_doc.truncate.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("plot", &vinecop_plot_wrapper, "tree"_a = nb::none(),
            "add_edge_labels"_a = true, "layout"_a = "graphviz",
            "vars_names"_a = nb::none(),

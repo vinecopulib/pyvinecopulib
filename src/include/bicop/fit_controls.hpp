@@ -31,7 +31,7 @@ inline void init_bicop_fit_controls(nb::module_& module) {
           "nonparametric_grid_size"_a = 30, "selection_criterion"_a = "bic",
           "weights"_a = Eigen::VectorXd(), "psi0"_a = 0.9,
           "preselect_families"_a = true, "allow_rotations"_a = true,
-          "num_threads"_a = 1)
+          "num_threads"_a = 1, nb::call_guard<nb::gil_scoped_release>())
       /*      .def(nb::init<std::string>(), */
       //      "creates default controls except for the parameteric method.",
       //      "parametric_method"_a)
@@ -39,7 +39,8 @@ inline void init_bicop_fit_controls(nb::module_& module) {
       //      "creates default controls except for the nonparametric method.",
       /* "nonparametric_method"_a, "mult"_a = 1.0) */
       .def_prop_rw("family_set", &FitControlsBicop::get_family_set,
-                   &FitControlsBicop::set_family_set, "The family set.")
+                   &FitControlsBicop::set_family_set, "The family set.",
+                   nb::call_guard<nb::gil_scoped_release>())
       .def_prop_rw("parametric_method",
                    &FitControlsBicop::get_parametric_method,
                    &FitControlsBicop::set_parametric_method,

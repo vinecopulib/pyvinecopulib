@@ -10,6 +10,8 @@
 
 #include "docstr.hpp"
 
+#include "docstr.hpp"
+
 namespace nb = nanobind;
 using namespace nb::literals;
 using namespace vinecopulib;
@@ -49,18 +51,21 @@ inline void init_stats(nb::module_& m) {
 
   m.def("simulate_uniform", &tools_stats::simulate_uniform,
         tools_stat_doc.simulate_uniform.doc, "n"_a, "d"_a, "qrng"_a = false,
-        "seeds"_a = std::vector<int>());
+        "seeds"_a = std::vector<int>(),
+        nb::call_guard<nb::gil_scoped_release>());
 
   m.def("sobol", &tools_stats::sobol, tools_stat_doc.sobol.doc, "n"_a, "d"_a,
-        "seeds"_a = std::vector<int>());
+        "seeds"_a = std::vector<int>(),
+        nb::call_guard<nb::gil_scoped_release>());
 
   m.def("ghalton", &tools_stats::ghalton, tools_stat_doc.ghalton.doc, "n"_a,
-        "d"_a, "seeds"_a = std::vector<int>());
+        "d"_a, "seeds"_a = std::vector<int>(),
+        nb::call_guard<nb::gil_scoped_release>());
 
   m.def("to_pseudo_obs", &tools_stats::to_pseudo_obs,
         tools_stat_doc.to_pseudo_obs.doc, "x"_a, "ties_method"_a = "average",
-        "weights"_a = Eigen::VectorXd(), "seeds"_a = std::vector<int>());
-
+        "weights"_a = Eigen::VectorXd(), "seeds"_a = std::vector<int>(),
+        nb::call_guard<nb::gil_scoped_release>());
   m.def("wdm",
         static_cast<double (*)(const Eigen::VectorXd&, const Eigen::VectorXd&,
                                std::string, Eigen::VectorXd, bool)>(&wdm::wdm),

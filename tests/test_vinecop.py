@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 
 import pyvinecopulib as pv
@@ -5,7 +7,7 @@ import pyvinecopulib as pv
 from .helpers import compare_vinecop, random_data
 
 
-def test_vinecop(test_dump_folder: str) -> None:
+def test_vinecop(unique_json_path: str) -> None:
   d = 5
   n = 1000
   u = pv.to_pseudo_obs(random_data(d, n))
@@ -94,7 +96,7 @@ def test_vinecop(test_dump_folder: str) -> None:
   # Test to_json and from_json
   new_cop = pv.Vinecop.from_json(cop.to_json())
   compare_vinecop(cop, new_cop)
-  filename = test_dump_folder + "/test_vinecop.json"
+  filename = os.fspath(unique_json_path)
   cop.to_file(filename)
   new_cop = pv.Vinecop.from_file(filename)
   compare_vinecop(cop, new_cop)
