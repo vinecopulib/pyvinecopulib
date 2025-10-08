@@ -35,9 +35,11 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
            "select_families"_a = true, "show_trace"_a = false,
            "num_threads"_a = 1, "tree_algorithm"_a = "mst_prim",
            "allow_rotations"_a = true, "seeds"_a = std::vector<int>(),
-           fitcontrolsvinecop_doc.ctor.doc_20args)
+           fitcontrolsvinecop_doc.ctor.doc_20args,
+           nb::call_guard<nb::gil_scoped_release>())
       .def_prop_rw("family_set", &FitControlsVinecop::get_family_set,
-                   &FitControlsVinecop::set_family_set, "The family set.")
+                   &FitControlsVinecop::set_family_set, "The family set.",
+                   nb::call_guard<nb::gil_scoped_release>())
       .def_prop_rw("parametric_method",
                    &FitControlsVinecop::get_parametric_method,
                    &FitControlsVinecop::set_parametric_method,

@@ -1,6 +1,8 @@
 import collections
-from typing import Any
+from typing import Any, Optional
 from numpy.typing import ArrayLike
+from matplotlib.figure import Figure
+from matplotlib.axes import Axes
 
 class Bicop:
   """
@@ -1231,6 +1233,7 @@ class FitControlsBicop:
     parametric_method: str = "mle",
     nonparametric_method: str = "constant",
     nonparametric_mult: float = 1.0,
+    nonparametric_grid_size: int = 30,
     selection_criterion: str = "bic",
     weights: ArrayLike = ...,
     psi0: float = 0.9,
@@ -1255,7 +1258,10 @@ class FitControlsBicop:
         ``"constant"``, ``"linear"``, ``"quadratic"``.
 
     nonparametric_mult :
-        A factor with which the smoothing parameters are multiplied.
+        A factor with which the smoothing parameters are multiplied (default: 1.0).
+
+    nonparametric_grid_size :
+        The grid size for the post-estimation interpolation in nonparametric models (default: 30).
 
     selection_criterion :
         The selection criterion (``"loglik"``, ``"aic"`` or ``"bic"``) for the pair copula families.
@@ -1286,6 +1292,10 @@ class FitControlsBicop:
   def family_set(self) -> Any: ...
   @family_set.setter
   def family_set(self, value: Any) -> None: ...
+  @property
+  def nonparametric_grid_size(self) -> Any: ...
+  @nonparametric_grid_size.setter
+  def nonparametric_grid_size(self, value: Any) -> None: ...
   @property
   def nonparametric_method(self) -> Any: ...
   @nonparametric_method.setter
@@ -1329,6 +1339,7 @@ class FitControlsVinecop:
     parametric_method: str = "mle",
     nonparametric_method: str = "constant",
     nonparametric_mult: float = 1.0,
+    nonparametric_grid_size: int = 30,
     trunc_lvl: int = 18446744073709551615,
     tree_criterion: str = "tau",
     threshold: float = 0.0,
@@ -1429,6 +1440,10 @@ class FitControlsVinecop:
   def family_set(self) -> Any: ...
   @family_set.setter
   def family_set(self, value: Any) -> None: ...
+  @property
+  def nonparametric_grid_size(self) -> Any: ...
+  @nonparametric_grid_size.setter
+  def nonparametric_grid_size(self, value: Any) -> None: ...
   @property
   def nonparametric_method(self) -> Any: ...
   @nonparametric_method.setter
@@ -2985,6 +3000,39 @@ nonparametric: list[BicopFamily] = ...
 
 one_par: list[BicopFamily] = ...
 
+def pairs_copula_data(
+  data: ArrayLike,
+  main: str = "",
+  cols: Optional[list[str]] = None,
+  grid_size: int = 50,
+  bins: int = 20,
+  scatter_size: float = 6.0,
+) -> tuple[Figure, Axes]:
+  """
+  Pair plot for copula data U in (0,1)^d using pure Matplotlib.
+  - Lower: bivariate copula density contours (fitted with pyvinecopulib), drawn in z-space.
+  - Upper: scatter with Kendall's tau annotation (copula space).
+  - Diagonal: histograms (copula space).
+
+  Parameters
+  ----------
+  data : (n,d) array-like
+      Copula data with entries strictly in (0,1).
+  main : str
+      Figure title.
+  grid_size : int
+      Resolution of the contour grid per dimension (lower panels). Must be positive.
+  bins : int
+      Number of histogram bins (diagonal). Must be positive.
+  scatter_size : float
+      Marker size for upper-panel scatter. Must be positive.
+
+  Returns
+  -------
+  fig, axes : matplotlib Figure and Axes array of shape (d, d)
+  """
+  ...
+
 parametric: list[BicopFamily] = ...
 
 rotationless: list[BicopFamily] = ...
@@ -3090,3 +3138,42 @@ def to_pseudo_obs(
 two_par: list[BicopFamily] = ...
 
 ut: list[BicopFamily] = ...
+
+def wdm(
+  x: ArrayLike,
+  y: ArrayLike,
+  method: str,
+  weights: ArrayLike = ...,
+  remove_missing: bool = True,
+) -> float:
+  """
+
+  Calculates (weighted) dependence measures.
+
+  This function computes various measures of dependence between two variables, optionally
+  using observation weights.
+
+  Parameters
+  ----------
+  x, y :
+      Input data vectors.
+  method :
+      The dependence measure to compute. Possible values are:
+
+      - ``"pearson"``, ``"prho"``, ``"cor"`` : Pearson correlation
+      - ``"spearman"``, ``"srho"``, ``"rho"`` : Spearman’s :math:`\rho`
+      - ``"kendall"``, ``"ktau"``, ``"tau"`` : Kendall’s :math:`\tau`
+      - ``"blomqvist"``, ``"bbeta"``, ``"beta"`` : Blomqvist’s :math:`\beta`
+      - ``"hoeffding"``, ``"hoeffd"``, ``"d"`` : Hoeffding’s :math:`D`
+  weights :
+      Optional vector of observation weights.
+  remove_missing :
+      If ``True``, all observations containing a ``NaN`` are removed. Otherwise, an error is raised
+      if missing values are present.
+
+  Returns
+  -------
+  float
+      The computed dependence measure.
+  """
+  ...
