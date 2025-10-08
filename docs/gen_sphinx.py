@@ -30,9 +30,10 @@ CLASSES = [
   "CVineStructure",
   "DVineStructure",
   "RVineStructure",
+  "Kde1d",
 ]
 
-FUNCTIONS = ["to_pseudo_obs", "simulate_uniform", "ghalton", "sobol"]
+FUNCTIONS = ["to_pseudo_obs", "simulate_uniform", "wdm", "ghalton", "sobol"]
 
 EXCLUDE = []
 

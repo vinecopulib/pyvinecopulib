@@ -155,6 +155,7 @@ def process_cross_references(content: str, is_docstring: bool = True) -> str:
     "RVineStructure",
     "FitControlsBicop",
     "FitControlsVinecop",
+    "Kde1d",
   ]
 
   meth_ref = r":meth:`" if is_docstring else r"{py:meth}`"
