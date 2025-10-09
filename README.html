@@ -7,11 +7,11 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>pyvinecopulib &mdash; pyvinecopulib 0.7.3 documentation</title>
+  <title>pyvinecopulib &mdash; pyvinecopulib 0.7.5 documentation</title>
   <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
   <link rel="stylesheet" type="text/css" href="_static/css/theme.css" />
 
-  
+
   <script src="_static/jquery.js"></script>
   <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
   <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
@@ -22,19 +22,19 @@
   <link rel="index" title="Index" href="genindex.html" />
   <link rel="search" title="Search" href="search.html" />
   <link rel="next" title="API Documentation" href="features.html" />
-  <link rel="prev" title="pyvinecopulib" href="index.html" /> 
+  <link rel="prev" title="pyvinecopulib" href="index.html" />
 </head>
 
-<body class="wy-body-for-nav"> 
+<body class="wy-body-for-nav">
   <div class="wy-grid-for-nav">
     <nav data-toggle="wy-nav-shift" class="wy-nav-side">
       <div class="wy-side-scroll">
         <div class="wy-side-nav-search" >
 
-          
-          
+
+
           <a href="index.html"  class="icon icon-home" >
-            pyvinecopulib 0.7.3
+            pyvinecopulib 0.7.5
             <img src="_static/pyvinecopulib.png" class="logo" alt="Logo" />
           </a>
 <div role="search">
@@ -62,6 +62,19 @@
 <li class="toctree-l3"><a class="reference internal" href="#building-the-documentation">Building the documentation</a></li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="#development">Development</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#quick-development-setup">Quick Development Setup</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#development-commands">Development Commands</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pre-commit-hooks">Pre-commit Hooks</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#development-workflow">Development Workflow</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#code-style-guidelines">Code Style Guidelines</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#testing">Testing</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#environment-management">Environment Management</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#release-process">Release Process</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#troubleshooting">Troubleshooting</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#development-tips">Development Tips</a></li>
+</ul>
+</li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="features.html">API Documentation</a></li>
@@ -75,7 +88,7 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
         <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-        <a href="index.html">pyvinecopulib 0.7.3</a>
+        <a href="index.html">pyvinecopulib 0.7.5</a>
       </nav>
 
       <div class="wy-nav-content">
@@ -91,7 +104,7 @@
 </div>
             <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
               <div itemprop="articleBody">
-                
+
   <section id="pyvinecopulib">
 <h1>pyvinecopulib<a class="headerlink" href="#pyvinecopulib" title="Permalink to this heading"></a></h1>
 <p><a class="reference external" href="https://vinecopulib.github.io/pyvinecopulib/"><img alt="Documentation" src="https://img.shields.io/website/http/vinecopulib.github.io/pyvinecopulib.svg" /></a>
@@ -188,12 +201,14 @@ On Linux, you can install the required packages and set the environment variable
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>pip<span class="w"> </span>install<span class="w"> </span>.
 </pre></div>
 </div>
-<p>Stubs can then be generated using:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">PYTHONPATH</span><span class="o">=</span><span class="k">$(</span>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import site; print(site.getsitepackages()[0])&quot;</span><span class="k">)</span><span class="w"> </span><span class="se">\</span>
-<span class="w">              </span>python<span class="w"> </span>-m<span class="w"> </span>nanobind.stubgen<span class="w"> </span><span class="se">\</span>
-<span class="w">                </span>-m<span class="w"> </span>pyvinecopulib.pyvinecopulib_ext<span class="w"> </span><span class="se">\</span>
-<span class="w">                </span>-o<span class="w"> </span>src/pyvinecopulib/__init__.pyi<span class="w"> </span><span class="se">\</span>
-<span class="w">                </span>-M<span class="w"> </span>src/pyvinecopulib/py.typed
+<p>Stubs and documentation can then be generated using the custom scripts:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>scripts/generate_metadata.py<span class="w"> </span>--env<span class="w"> </span>pyvinecopulib
+</pre></div>
+</div>
+<p>Or use the Makefile for convenience:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>metadata<span class="w">    </span><span class="c1"># Generate all (stubs, docstrings, examples)</span>
+make<span class="w"> </span>stubs<span class="w">       </span><span class="c1"># Generate type stubs only</span>
+make<span class="w"> </span>docstrings<span class="w">  </span><span class="c1"># Generate C++ docstrings only</span>
 </pre></div>
 </div>
 <p>Note that the <code class="docutils literal notranslate"><span class="pre">generate_requirements.py</span></code> script can also be used to generate a <code class="docutils literal notranslate"><span class="pre">requirements.txt</span></code> file for use with <code class="docutils literal notranslate"><span class="pre">pip</span></code> via the <code class="docutils literal notranslate"><span class="pre">--format</span></code> option:</p>
@@ -212,6 +227,198 @@ python<span class="w"> </span>serve_sphinx.py
 </div>
 </section>
 </section>
+<section id="development">
+<h2>Development<a class="headerlink" href="#development" title="Permalink to this heading"></a></h2>
+<p>This project includes comprehensive development tools including pre-commit hooks and a Makefile to streamline development workflow.</p>
+<section id="quick-development-setup">
+<h3>Quick Development Setup<a class="headerlink" href="#quick-development-setup" title="Permalink to this heading"></a></h3>
+<ol class="arabic">
+<li><p><strong>Clone and setup environment</strong>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>--recursive<span class="w"> </span>https://github.com/vinecopulib/pyvinecopulib.git
+<span class="nb">cd</span><span class="w"> </span>pyvinecopulib
+make<span class="w"> </span>env-conda<span class="w">                    </span><span class="c1"># Create conda environment</span>
+conda<span class="w"> </span>activate<span class="w"> </span>pyvinecopulib<span class="w">      </span><span class="c1"># Activate environment</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>Setup development tools</strong>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>dev-setup<span class="w">                    </span><span class="c1"># Install dependencies and pre-commit hooks</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>Development workflow</strong>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>quick-check<span class="w">                  </span><span class="c1"># Run fast checks (lint, type-check, test)</span>
+make<span class="w"> </span>check-all<span class="w">                    </span><span class="c1"># Run comprehensive checks before commit</span>
+</pre></div>
+</div>
+</li>
+</ol>
+</section>
+<section id="development-commands">
+<h3>Development Commands<a class="headerlink" href="#development-commands" title="Permalink to this heading"></a></h3>
+<p>Use <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">help</span></code> to see all available commands. Key commands include:</p>
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Command</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">install-dev</span></code></p></td>
+<td><p>Install development dependencies</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">test</span></code></p></td>
+<td><p>Run all tests</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">test-fast</span></code></p></td>
+<td><p>Run tests without coverage</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">test-examples</span></code></p></td>
+<td><p>Run example notebooks</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">lint</span></code></p></td>
+<td><p>Run code linting with ruff</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">format</span></code></p></td>
+<td><p>Format code with ruff</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">type-check</span></code></p></td>
+<td><p>Run type checking with mypy</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">docs</span></code></p></td>
+<td><p>Build documentation</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">docs-serve</span></code></p></td>
+<td><p>Serve documentation locally</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">clean</span></code></p></td>
+<td><p>Clean build artifacts</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">stubs</span></code></p></td>
+<td><p>Generate type stubs (custom script)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">docstrings</span></code></p></td>
+<td><p>Generate C++ docstrings</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">metadata</span></code></p></td>
+<td><p>Generate all metadata (stubs, docstrings, examples)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">examples</span></code></p></td>
+<td><p>Process and execute example notebooks</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">clear-cache</span></code></p></td>
+<td><p>Clear Python cache files</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="pre-commit-hooks">
+<h3>Pre-commit Hooks<a class="headerlink" href="#pre-commit-hooks" title="Permalink to this heading"></a></h3>
+<p>Pre-commit hooks automatically run code quality checks before each commit:</p>
+<ul class="simple">
+<li><p><strong>Ruff</strong>: Python linting and code formatting</p></li>
+</ul>
+<ul class="simple">
+<li><p><strong>MyPy</strong>: Type checking with project configuration</p></li>
+</ul>
+<ul class="simple">
+<li><p><strong>Clang-format</strong>: C++ code formatting (src/ directory only)</p></li>
+<li><p><strong>CMake-format</strong>: CMake file formatting</p></li>
+<li><p><strong>General hooks</strong>: Trailing whitespace, YAML/TOML validation, etc.</p></li>
+</ul>
+<p>Install hooks with:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>pre-commit-install
+</pre></div>
+</div>
+<p>Run manually on all files:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>pre-commit
+</pre></div>
+</div>
+</section>
+<section id="development-workflow">
+<h3>Development Workflow<a class="headerlink" href="#development-workflow" title="Permalink to this heading"></a></h3>
+<ol class="arabic">
+<li><p><strong>Start new feature/fix</strong>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>checkout<span class="w"> </span>-b<span class="w"> </span>feature/my-feature
+</pre></div>
+</div>
+</li>
+<li><p><strong>During development</strong> (run frequently):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>quick-check<span class="w">                  </span><span class="c1"># Fast feedback loop</span>
+</pre></div>
+</div>
+</li>
+<li><p><strong>Before committing</strong>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>check-all<span class="w">                    </span><span class="c1"># Comprehensive quality checks</span>
+git<span class="w"> </span>add<span class="w"> </span>.
+git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;Add new feature&quot;</span><span class="w">   </span><span class="c1"># Pre-commit hooks run automatically</span>
+</pre></div>
+</div>
+</li>
+</ol>
+</section>
+<section id="code-style-guidelines">
+<h3>Code Style Guidelines<a class="headerlink" href="#code-style-guidelines" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>Python</strong>: Follow PEP 8, enforced by ruff</p></li>
+<li><p><strong>C++</strong>: Follow Google style guide, enforced by clang-format</p></li>
+<li><p><strong>Type hints</strong>: Required for all Python code</p></li>
+<li><p><strong>Documentation</strong>: Use docstrings for all public functions</p></li>
+</ul>
+</section>
+<section id="testing">
+<h3>Testing<a class="headerlink" href="#testing" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>All tests</strong>: <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">test</span></code></p></li>
+<li><p><strong>Fast tests</strong>: <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">test-fast</span></code> (for quick development feedback)</p></li>
+<li><p><strong>Example notebooks</strong>: <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">test-examples</span></code></p></li>
+<li><p><strong>Performance benchmarks</strong>: <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">benchmark</span></code></p></li>
+</ul>
+</section>
+<section id="environment-management">
+<h3>Environment Management<a class="headerlink" href="#environment-management" title="Permalink to this heading"></a></h3>
+<p>The project uses conda for environment management. The Makefile automatically detects conda environments:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>env-conda<span class="w">                        </span><span class="c1"># Create new environment</span>
+conda<span class="w"> </span>activate<span class="w"> </span>pyvinecopulib<span class="w">          </span><span class="c1"># Activate environment</span>
+make<span class="w"> </span>env-update<span class="w">                       </span><span class="c1"># Update existing environment</span>
+make<span class="w"> </span>update-deps<span class="w">                      </span><span class="c1"># Update dependency files</span>
+</pre></div>
+</div>
+</section>
+<section id="release-process">
+<h3>Release Process<a class="headerlink" href="#release-process" title="Permalink to this heading"></a></h3>
+<p>Before releasing, run comprehensive checks:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>make<span class="w"> </span>release-check
+</pre></div>
+</div>
+<p>This ensures all tests pass, documentation builds correctly, and examples work.</p>
+</section>
+<section id="troubleshooting">
+<h3>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p><strong>Build issues</strong>: <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">debug-build</span></code></p></li>
+<li><p><strong>Installation issues</strong>: <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">debug-install</span></code></p></li>
+<li><p><strong>Project status</strong>: <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">status</span></code></p></li>
+<li><p><strong>Clean everything</strong>: <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">git-clean</span></code> (⚠️ destructive)</p></li>
+</ul>
+</section>
+<section id="development-tips">
+<h3>Development Tips<a class="headerlink" href="#development-tips" title="Permalink to this heading"></a></h3>
+<ul class="simple">
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">quick-check</span></code> frequently during development for fast feedback</p></li>
+<li><p>Pre-commit hooks automatically fix many formatting issues</p></li>
+<li><p>Run <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">check-all</span></code> before pushing changes to ensure quality</p></li>
+</ul>
+<ul class="simple">
+<li><p>Use <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">metadata</span></code> to regenerate stubs and docstrings after C++ changes</p></li>
+<li><p>The project uses custom scripts in <code class="docutils literal notranslate"><span class="pre">scripts/</span></code> for stub generation (not nanobind’s default)</p></li>
+</ul>
+<ul class="simple">
+<li><p>Keep commits focused and write clear commit messages</p></li>
+<li><p>Add tests for new functionality</p></li>
+</ul>
+</section>
+</section>
 </section>
 
 
@@ -228,7 +435,7 @@ python<span class="w"> </span>serve_sphinx.py
     <p></p>
   </div>
 
-   
+
 
 </footer>
           </div>
@@ -239,7 +446,7 @@ python<span class="w"> </span>serve_sphinx.py
     jQuery(function () {
       SphinxRtdTheme.Navigation.enable(true);
       });
-  </script> 
+  </script>
 
 </body>
 

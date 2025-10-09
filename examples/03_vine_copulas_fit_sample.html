@@ -7,12 +7,12 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Fitting a vine copula on dataset and sampling from the model &mdash; pyvinecopulib 0.7.3 documentation</title>
+  <title>Fitting a vine copula on dataset and sampling from the model &mdash; pyvinecopulib 0.7.5 documentation</title>
   <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
   <link rel="stylesheet" type="text/css" href="../_static/css/theme.css" />
   <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css" />
 
-  
+
   <script src="../_static/jquery.js"></script>
   <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
   <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
@@ -25,19 +25,19 @@
   <link rel="index" title="Index" href="../genindex.html" />
   <link rel="search" title="Search" href="../search.html" />
   <link rel="next" title="Vine copulas for discrete variables" href="04_discrete_variables.html" />
-  <link rel="prev" title="Introduction to the vine copula (Vinecop) API" href="02_vine_copulas.html" /> 
+  <link rel="prev" title="The vine copula (Vinecop) API" href="02_vine_copulas.html" />
 </head>
 
-<body class="wy-body-for-nav"> 
+<body class="wy-body-for-nav">
   <div class="wy-grid-for-nav">
     <nav data-toggle="wy-nav-shift" class="wy-nav-side">
       <div class="wy-side-scroll">
         <div class="wy-side-nav-search" >
 
-          
-          
+
+
           <a href="../index.html"  class="icon icon-home" >
-            pyvinecopulib 0.7.3
+            pyvinecopulib 0.7.5
             <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo" />
           </a>
 <div role="search">
@@ -54,8 +54,8 @@
 <li class="toctree-l1"><a class="reference internal" href="../features.html">API Documentation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../CHANGELOG.html">Changelog</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="../examples.html">Examples</a><ul class="current">
-<li class="toctree-l2"><a class="reference internal" href="01_bivariate_copulas.html">Introduction to the bivariate copula (<code class="docutils literal notranslate"><span class="pre">Bicop</span></code>) API</a></li>
-<li class="toctree-l2"><a class="reference internal" href="02_vine_copulas.html">Introduction to the vine copula (<code class="docutils literal notranslate"><span class="pre">Vinecop</span></code>) API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="01_bivariate_copulas.html">The bivariate copula (<code class="docutils literal notranslate"><span class="pre">Bicop</span></code>) API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="02_vine_copulas.html">The vine copula (<code class="docutils literal notranslate"><span class="pre">Vinecop</span></code>) API</a></li>
 <li class="toctree-l2 current"><a class="current reference internal" href="#">Fitting a vine copula on dataset and sampling from the model</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#Import-the-required-libraries">Import the required libraries</a></li>
 </ul>
@@ -67,6 +67,8 @@
 </li>
 <li class="toctree-l2"><a class="reference internal" href="04_discrete_variables.html">Vine copulas for discrete variables</a></li>
 <li class="toctree-l2"><a class="reference internal" href="05_benchmark.html">Benchmarking performance</a></li>
+<li class="toctree-l2"><a class="reference internal" href="06_weighted_dependence_measures.html">The weighted dependence measures (<code class="docutils literal notranslate"><span class="pre">wdm</span></code>) API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="07_kde1d.html">The univariate kernel density estimation (<code class="docutils literal notranslate"><span class="pre">Kde1d</span></code>) API</a></li>
 </ul>
 </li>
 </ul>
@@ -77,7 +79,7 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
         <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-        <a href="../index.html">pyvinecopulib 0.7.3</a>
+        <a href="../index.html">pyvinecopulib 0.7.5</a>
       </nav>
 
       <div class="wy-nav-content">
@@ -94,7 +96,7 @@
 </div>
             <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
               <div itemprop="articleBody">
-                
+
   <section id="Fitting-a-vine-copula-on-dataset-and-sampling-from-the-model">
 <h1>Fitting a vine copula on dataset and sampling from the model<a class="headerlink" href="#Fitting-a-vine-copula-on-dataset-and-sampling-from-the-model" title="Permalink to this heading"></a></h1>
 <section id="Import-the-required-libraries">
@@ -134,9 +136,42 @@
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Transform copula data using the empirical distribution</span>
 <span class="n">u</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">to_pseudo_obs</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
-
-
-<span class="c1"># Fit a Gaussian vine</span>
+<span class="c1"># Visualize the pair-copula data</span>
+<span class="n">pv</span><span class="o">.</span><span class="n">pairs_copula_data</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">scatter_size</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+(&lt;Figure size 1400x1400 with 25 Axes&gt;,
+ array([[&lt;Axes: ylabel=&#39;var1&#39;&gt;, &lt;Axes: &gt;, &lt;Axes: &gt;, &lt;Axes: &gt;, &lt;Axes: &gt;],
+        [&lt;Axes: ylabel=&#39;var2 (z)&#39;&gt;, &lt;Axes: &gt;, &lt;Axes: &gt;, &lt;Axes: &gt;,
+         &lt;Axes: &gt;],
+        [&lt;Axes: ylabel=&#39;var3 (z)&#39;&gt;, &lt;Axes: &gt;, &lt;Axes: &gt;, &lt;Axes: &gt;,
+         &lt;Axes: &gt;],
+        [&lt;Axes: ylabel=&#39;var4 (z)&#39;&gt;, &lt;Axes: &gt;, &lt;Axes: &gt;, &lt;Axes: &gt;,
+         &lt;Axes: &gt;],
+        [&lt;Axes: xlabel=&#39;var1 (z)&#39;, ylabel=&#39;var5 (z)&#39;&gt;,
+         &lt;Axes: xlabel=&#39;var2 (z)&#39;&gt;, &lt;Axes: xlabel=&#39;var3 (z)&#39;&gt;,
+         &lt;Axes: xlabel=&#39;var4 (z)&#39;&gt;, &lt;Axes: xlabel=&#39;var5&#39;&gt;]], dtype=object))
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/examples_03_vine_copulas_fit_sample_5_1.png" src="../_images/examples_03_vine_copulas_fit_sample_5_1.png" />
+</div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Fit a Gaussian vine</span>
 <span class="c1"># (i.e., properly specified since the data is multivariate normal)</span>
 <span class="n">controls</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">FitControlsVinecop</span><span class="p">(</span><span class="n">family_set</span><span class="o">=</span><span class="p">[</span><span class="n">pv</span><span class="o">.</span><span class="n">gaussian</span><span class="p">])</span>
 <span class="n">cop</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">Vinecop</span><span class="o">.</span><span class="n">from_data</span><span class="p">(</span><span class="n">u</span><span class="p">,</span> <span class="n">controls</span><span class="o">=</span><span class="n">controls</span><span class="p">)</span>
@@ -168,14 +203,48 @@ tree edge conditioned variables conditioning variables var_types   family rotati
 <section id="Sample-from-the-model">
 <h2>Sample from the model<a class="headerlink" href="#Sample-from-the-model" title="Permalink to this heading"></a></h2>
 <div class="nbinput docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
 </pre></div>
 </div>
 <div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Sample from the copula</span>
 <span class="n">n_sim</span> <span class="o">=</span> <span class="mi">1000</span>
 <span class="n">u_sim</span> <span class="o">=</span> <span class="n">cop</span><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">n_sim</span><span class="p">,</span> <span class="n">seeds</span><span class="o">=</span><span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">])</span>
-
-<span class="c1"># Transform back simulations to the original scale</span>
+<span class="c1"># Visualize the simulated pair-copula data</span>
+<span class="n">pv</span><span class="o">.</span><span class="n">pairs_copula_data</span><span class="p">(</span><span class="n">u_sim</span><span class="p">,</span> <span class="n">scatter_size</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+(&lt;Figure size 1400x1400 with 25 Axes&gt;,
+ array([[&lt;Axes: ylabel=&#39;var1&#39;&gt;, &lt;Axes: &gt;, &lt;Axes: &gt;, &lt;Axes: &gt;, &lt;Axes: &gt;],
+        [&lt;Axes: ylabel=&#39;var2 (z)&#39;&gt;, &lt;Axes: &gt;, &lt;Axes: &gt;, &lt;Axes: &gt;,
+         &lt;Axes: &gt;],
+        [&lt;Axes: ylabel=&#39;var3 (z)&#39;&gt;, &lt;Axes: &gt;, &lt;Axes: &gt;, &lt;Axes: &gt;,
+         &lt;Axes: &gt;],
+        [&lt;Axes: ylabel=&#39;var4 (z)&#39;&gt;, &lt;Axes: &gt;, &lt;Axes: &gt;, &lt;Axes: &gt;,
+         &lt;Axes: &gt;],
+        [&lt;Axes: xlabel=&#39;var1 (z)&#39;, ylabel=&#39;var5 (z)&#39;&gt;,
+         &lt;Axes: xlabel=&#39;var2 (z)&#39;&gt;, &lt;Axes: xlabel=&#39;var3 (z)&#39;&gt;,
+         &lt;Axes: xlabel=&#39;var4 (z)&#39;&gt;, &lt;Axes: xlabel=&#39;var5&#39;&gt;]], dtype=object))
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/examples_03_vine_copulas_fit_sample_8_1.png" src="../_images/examples_03_vine_copulas_fit_sample_8_1.png" />
+</div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Transform back simulations to the original scale</span>
 <span class="n">x_sim</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">asarray</span><span class="p">([</span><span class="n">np</span><span class="o">.</span><span class="n">quantile</span><span class="p">(</span><span class="n">x</span><span class="p">[:,</span> <span class="n">i</span><span class="p">],</span> <span class="n">u_sim</span><span class="p">[:,</span> <span class="n">i</span><span class="p">])</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">d</span><span class="p">)])</span>
 
 <span class="c1"># Both the mean and covariance matrix look ok!</span>
@@ -185,7 +254,7 @@ tree edge conditioned variables conditioning variables var_types   family rotati
 </div>
 </div>
 <div class="nboutput nblast docutils container">
-<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
 </pre></div>
 </div>
 <div class="output_area docutils container">
@@ -209,7 +278,7 @@ tree edge conditioned variables conditioning variables var_types   family rotati
               </div>
             </div>
             <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="02_vine_copulas.html" class="btn btn-neutral float-left" title="Introduction to the vine copula (Vinecop) API" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="02_vine_copulas.html" class="btn btn-neutral float-left" title="The vine copula (Vinecop) API" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="04_discrete_variables.html" class="btn btn-neutral float-right" title="Vine copulas for discrete variables" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
@@ -219,7 +288,7 @@ tree edge conditioned variables conditioning variables var_types   family rotati
     <p></p>
   </div>
 
-   
+
 
 </footer>
           </div>
@@ -230,7 +299,7 @@ tree edge conditioned variables conditioning variables var_types   family rotati
     jQuery(function () {
       SphinxRtdTheme.Navigation.enable(true);
       });
-  </script> 
+  </script>
 
 </body>
 

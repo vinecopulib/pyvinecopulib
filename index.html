@@ -7,11 +7,11 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>pyvinecopulib &mdash; pyvinecopulib 0.7.3 documentation</title>
+  <title>pyvinecopulib &mdash; pyvinecopulib 0.7.5 documentation</title>
   <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
   <link rel="stylesheet" type="text/css" href="_static/css/theme.css" />
 
-  
+
   <script src="_static/jquery.js"></script>
   <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
   <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
@@ -21,19 +21,19 @@
   <script src="_static/js/theme.js"></script>
   <link rel="index" title="Index" href="genindex.html" />
   <link rel="search" title="Search" href="search.html" />
-  <link rel="next" title="pyvinecopulib" href="README.html" /> 
+  <link rel="next" title="pyvinecopulib" href="README.html" />
 </head>
 
-<body class="wy-body-for-nav"> 
+<body class="wy-body-for-nav">
   <div class="wy-grid-for-nav">
     <nav data-toggle="wy-nav-shift" class="wy-nav-side">
       <div class="wy-side-scroll">
         <div class="wy-side-nav-search" >
 
-          
-          
+
+
           <a href="#"  class="icon icon-home" >
-            pyvinecopulib 0.7.3
+            pyvinecopulib 0.7.5
             <img src="_static/pyvinecopulib.png" class="logo" alt="Logo" />
           </a>
 <div role="search">
@@ -58,7 +58,7 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
         <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-        <a href="#">pyvinecopulib 0.7.3</a>
+        <a href="#">pyvinecopulib 0.7.5</a>
       </nav>
 
       <div class="wy-nav-content">
@@ -74,7 +74,7 @@
 </div>
             <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
               <div itemprop="articleBody">
-                
+
   <section id="pyvinecopulib">
 <h1>pyvinecopulib<a class="headerlink" href="#pyvinecopulib" title="Permalink to this heading"></a></h1>
 <a class="reference external image-reference" href="https://vinecopulib.github.io/pyvinecopulib/"><img alt="Documentation" src="https://img.shields.io/website/http/vinecopulib.github.io/pyvinecopulib.svg" /></a>
@@ -86,6 +86,7 @@
 <li class="toctree-l1"><a class="reference internal" href="README.html">pyvinecopulib</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="README.html#introduction">Introduction</a></li>
 <li class="toctree-l2"><a class="reference internal" href="README.html#installation">Installation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="README.html#development">Development</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="features.html">API Documentation</a><ul>
@@ -94,18 +95,22 @@
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="CHANGELOG.html">Changelog</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="CHANGELOG.html#id1">0.7.3</a></li>
-<li class="toctree-l2"><a class="reference internal" href="CHANGELOG.html#id3">0.7.1</a></li>
-<li class="toctree-l2"><a class="reference internal" href="CHANGELOG.html#id8">0.7.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="CHANGELOG.html#id1">0.7.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="CHANGELOG.html#id2">0.7.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="CHANGELOG.html#id3">0.7.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="CHANGELOG.html#id7">0.7.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="CHANGELOG.html#id12">0.7.0</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="examples.html">Examples</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="examples/01_bivariate_copulas.html">Introduction to the bivariate copula (<code class="docutils literal notranslate"><span class="pre">Bicop</span></code>) API</a></li>
-<li class="toctree-l2"><a class="reference internal" href="examples/02_vine_copulas.html">Introduction to the vine copula (<code class="docutils literal notranslate"><span class="pre">Vinecop</span></code>) API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="examples/01_bivariate_copulas.html">The bivariate copula (<code class="docutils literal notranslate"><span class="pre">Bicop</span></code>) API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="examples/02_vine_copulas.html">The vine copula (<code class="docutils literal notranslate"><span class="pre">Vinecop</span></code>) API</a></li>
 <li class="toctree-l2"><a class="reference internal" href="examples/03_vine_copulas_fit_sample.html">Fitting a vine copula on dataset and sampling from the model</a></li>
 <li class="toctree-l2"><a class="reference internal" href="examples/03_vine_copulas_fit_sample.html#Simulate-some-data">Simulate some data</a></li>
 <li class="toctree-l2"><a class="reference internal" href="examples/04_discrete_variables.html">Vine copulas for discrete variables</a></li>
 <li class="toctree-l2"><a class="reference internal" href="examples/05_benchmark.html">Benchmarking performance</a></li>
+<li class="toctree-l2"><a class="reference internal" href="examples/06_weighted_dependence_measures.html">The weighted dependence measures (<code class="docutils literal notranslate"><span class="pre">wdm</span></code>) API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="examples/07_kde1d.html">The univariate kernel density estimation (<code class="docutils literal notranslate"><span class="pre">Kde1d</span></code>) API</a></li>
 </ul>
 </li>
 </ul>
@@ -125,7 +130,7 @@
     <p></p>
   </div>
 
-   
+
 
 </footer>
           </div>
@@ -136,7 +141,7 @@
     jQuery(function () {
       SphinxRtdTheme.Navigation.enable(true);
       });
-  </script> 
+  </script>
 
 </body>
 

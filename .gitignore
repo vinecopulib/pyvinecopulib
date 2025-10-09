@@ -91,7 +91,6 @@ CMakeCache.txt
 CMakeFiles
 CMakeScripts
 Testing
-Makefile
 cmake_install.cmake
 install_manifest.txt
 compile_commands.json
@@ -104,3 +103,10 @@ pyvinecopulib-*.json
 .mypy_cache/
 environment.yml
 requirements.txt
+
+.coverage
+.coverage.*
+coverage.xml
+examples/forests
+examples/forests/uci
+examples/forests/data

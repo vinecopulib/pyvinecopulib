@@ -1,0 +1,722 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The univariate kernel density estimation (Kde1d) API &mdash; pyvinecopulib 0.7.5 documentation</title>
+  <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+  <link rel="stylesheet" type="text/css" href="../_static/css/theme.css" />
+  <link rel="stylesheet" type="text/css" href="../_static/nbsphinx-code-cells.css" />
+
+
+  <script src="../_static/jquery.js"></script>
+  <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+  <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+  <script src="../_static/doctools.js"></script>
+  <script src="../_static/sphinx_highlight.js"></script>
+  <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+  <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+  <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <script src="../_static/js/theme.js"></script>
+  <link rel="index" title="Index" href="../genindex.html" />
+  <link rel="search" title="Search" href="../search.html" />
+  <link rel="prev" title="The weighted dependence measures (wdm) API" href="06_weighted_dependence_measures.html" />
+</head>
+
+<body class="wy-body-for-nav">
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+
+
+          <a href="../index.html"  class="icon icon-home" >
+            pyvinecopulib 0.7.5
+            <img src="../_static/pyvinecopulib.png" class="logo" alt="Logo" />
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation"
+          aria-label="Navigation menu">
+          <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../README.html">pyvinecopulib</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../features.html">API Documentation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../CHANGELOG.html">Changelog</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../examples.html">Examples</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="01_bivariate_copulas.html">The bivariate copula (<code class="docutils literal notranslate"><span class="pre">Bicop</span></code>) API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="02_vine_copulas.html">The vine copula (<code class="docutils literal notranslate"><span class="pre">Vinecop</span></code>) API</a></li>
+<li class="toctree-l2"><a class="reference internal" href="03_vine_copulas_fit_sample.html">Fitting a vine copula on dataset and sampling from the model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="03_vine_copulas_fit_sample.html#Simulate-some-data">Simulate some data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="04_discrete_variables.html">Vine copulas for discrete variables</a></li>
+<li class="toctree-l2"><a class="reference internal" href="05_benchmark.html">Benchmarking performance</a></li>
+<li class="toctree-l2"><a class="reference internal" href="06_weighted_dependence_measures.html">The weighted dependence measures (<code class="docutils literal notranslate"><span class="pre">wdm</span></code>) API</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">The univariate kernel density estimation (<code class="docutils literal notranslate"><span class="pre">Kde1d</span></code>) API</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#Key-Features">Key Features</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#Setup-and-Imports">Setup and Imports</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#1.-Unbounded-Continuous-Data">1. Unbounded Continuous Data</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#2.-Bounded-Continuous-Data">2. Bounded Continuous Data</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#3.-Discrete-Data">3. Discrete Data</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#4.-Zero-Inflated-Data">4. Zero-Inflated Data</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#5.-Weighted-Density-Estimation">5. Weighted Density Estimation</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#6.-Plots,-Simulation-and-Additional-Features">6. Plots, Simulation and Additional Features</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+        <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+        <a href="../index.html">pyvinecopulib 0.7.5</a>
+      </nav>
+
+      <div class="wy-nav-content">
+          <div class="rst-content">
+            <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../examples.html">Examples</a></li>
+      <li class="breadcrumb-item active">The univariate kernel density estimation (<code class="docutils literal notranslate"><span class="pre">Kde1d</span></code>) API</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+            <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+              <div itemprop="articleBody">
+
+  <section id="The-univariate-kernel-density-estimation-(Kde1d)-API">
+<h1>The univariate kernel density estimation (<code class="docutils literal notranslate"><span class="pre">Kde1d</span></code>) API<a class="headerlink" href="#The-univariate-kernel-density-estimation-(Kde1d)-API" title="Permalink to this heading"></a></h1>
+<p>This notebook demonstrates the usage of the <code class="docutils literal notranslate"><span class="pre">Kde1d</span></code> class from <code class="docutils literal notranslate"><span class="pre">pyvinecopulib</span></code> for various types of kernel density estimation tasks. Each section includes data generation, model fitting, evaluation, and visualization:</p>
+<ol class="arabic simple">
+<li><p><strong>Unbounded continuous data</strong>: Standard kernel density estimation with automatic bandwidth selection</p></li>
+<li><p><strong>Bounded continuous data</strong>: Boundary-corrected estimation with custom degree parameters</p></li>
+<li><p><strong>Discrete data</strong>: Specialized estimation for integer-valued data</p></li>
+<li><p><strong>Zero-inflated data</strong>: Handling excess zeros with mixed continuous-discrete models</p></li>
+<li><p><strong>Weighted estimation</strong>: Incorporating observation weights in the estimation process</p></li>
+<li><p><strong>Simulation and inference</strong>: Generating samples and computing quantiles from fitted densities</p></li>
+</ol>
+<section id="Key-Features">
+<h2>Key Features<a class="headerlink" href="#Key-Features" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>Automatic boundary correction for bounded data</p></li>
+<li><p>Support for different polynomial degrees</p></li>
+<li><p>Automatic bandwidth selection</p></li>
+<li><p>Comprehensive statistical interface (pdf, cdf, quantile, simulate, plot)</p></li>
+</ul>
+<section id="Setup-and-Imports">
+<h3>Setup and Imports<a class="headerlink" href="#Setup-and-Imports" title="Permalink to this heading"></a></h3>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">scipy.stats</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">stats</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pyvinecopulib</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pv</span>
+
+<span class="c1"># Set random seed for reproducibility</span>
+<span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="mi">42</span><span class="p">)</span>
+
+<span class="c1"># Configure matplotlib for better plots</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">style</span><span class="o">.</span><span class="n">use</span><span class="p">(</span><span class="s2">&quot;default&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">rcParams</span><span class="p">[</span><span class="s2">&quot;figure.figsize&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">6</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">rcParams</span><span class="p">[</span><span class="s2">&quot;font.size&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">11</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Libraries imported successfully!&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;pyvinecopulib version: </span><span class="si">{</span><span class="n">pv</span><span class="o">.</span><span class="n">__version__</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Libraries imported successfully!
+pyvinecopulib version: 0.7.4
+</pre></div></div>
+</div>
+</section>
+<section id="1.-Unbounded-Continuous-Data">
+<h3>1. Unbounded Continuous Data<a class="headerlink" href="#1.-Unbounded-Continuous-Data" title="Permalink to this heading"></a></h3>
+<p>Let’s start with the simplest case: unbounded continuous data using a normal distribution.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Generate normal data</span>
+<span class="n">x_normal</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">500</span><span class="p">)</span>
+
+<span class="c1"># Create and fit Kde1d object</span>
+<span class="n">kde_normal</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">Kde1d</span><span class="p">()</span>  <span class="c1"># Default constructor for continuous unbounded data</span>
+<span class="n">kde_normal</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">x_normal</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Kde1d fitted to normal data: </span><span class="si">{</span><span class="n">kde_normal</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Log-likelihood: </span><span class="si">{</span><span class="n">kde_normal</span><span class="o">.</span><span class="n">loglik</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Effective degrees of freedom: </span><span class="si">{</span><span class="n">kde_normal</span><span class="o">.</span><span class="n">edf</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># Evaluate density at specific points</span>
+<span class="n">eval_points</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">2.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">])</span>
+<span class="n">density_values</span> <span class="o">=</span> <span class="n">kde_normal</span><span class="o">.</span><span class="n">pdf</span><span class="p">(</span><span class="n">eval_points</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Density evaluation:&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">point</span><span class="p">,</span> <span class="n">density</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">eval_points</span><span class="p">,</span> <span class="n">density_values</span><span class="p">):</span>
+  <span class="n">true_density</span> <span class="o">=</span> <span class="n">stats</span><span class="o">.</span><span class="n">norm</span><span class="o">.</span><span class="n">pdf</span><span class="p">(</span><span class="n">point</span><span class="p">)</span>  <span class="c1"># True normal density for comparison</span>
+  <span class="nb">print</span><span class="p">(</span>
+    <span class="sa">f</span><span class="s2">&quot;x = </span><span class="si">{</span><span class="n">point</span><span class="si">:</span><span class="s2">4.1f</span><span class="si">}</span><span class="s2">: estimated = </span><span class="si">{</span><span class="n">density</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, true = </span><span class="si">{</span><span class="n">true_density</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, diff = </span><span class="si">{</span><span class="nb">abs</span><span class="p">(</span><span class="n">density</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">true_density</span><span class="p">)</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span>
+  <span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Kde1d fitted to normal data: &lt;pyvinecopulib.Kde1d&gt; Kde1d(xmin=nan, xmax=nan, type=&#39;continuous&#39;, bandwidth=0.763029, multiplier=1, degree=2)
+Number of grid points: 401
+Log-likelihood: -696.9225
+Effective degrees of freedom: 7.00
+
+Density evaluation:
+x =  0.0: estimated = 0.4084, true = 0.3989, diff = 0.0095
+x = -1.0: estimated = 0.2512, true = 0.2420, diff = 0.0092
+x =  1.0: estimated = 0.2350, true = 0.2420, diff = 0.0070
+x = -2.0: estimated = 0.0428, true = 0.0540, diff = 0.0112
+x =  2.0: estimated = 0.0526, true = 0.0540, diff = 0.0014
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Plot the density estimate</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
+<span class="c1"># Add true density for comparison</span>
+<span class="n">x_range</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+<span class="n">true_density</span> <span class="o">=</span> <span class="n">stats</span><span class="o">.</span><span class="n">norm</span><span class="o">.</span><span class="n">pdf</span><span class="p">(</span><span class="n">x_range</span><span class="p">)</span>
+<span class="n">kde_density</span> <span class="o">=</span> <span class="n">kde_normal</span><span class="o">.</span><span class="n">pdf</span><span class="p">(</span><span class="n">x_range</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x_range</span><span class="p">,</span> <span class="n">kde_density</span><span class="p">,</span> <span class="s2">&quot;b-&quot;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;KDE&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x_range</span><span class="p">,</span> <span class="n">true_density</span><span class="p">,</span> <span class="s2">&quot;r--&quot;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;True&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;Unbounded Continuous Data: Normal Distribution&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;x&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s2">&quot;Density&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/examples_07_kde1d_5_0.png" src="../_images/examples_07_kde1d_5_0.png" />
+</div>
+</div>
+</section>
+<section id="2.-Bounded-Continuous-Data">
+<h3>2. Bounded Continuous Data<a class="headerlink" href="#2.-Bounded-Continuous-Data" title="Permalink to this heading"></a></h3>
+<p>Now let’s work with bounded data using gamma and beta distributions.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Generate gamma and betadata</span>
+<span class="n">x_gamma</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">gamma</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+<span class="n">x_beta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">beta</span><span class="p">(</span><span class="n">a</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">b</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+
+<span class="c1"># Create Kde1d for bounded data (gamma distribution)</span>
+<span class="c1"># Set xmin=0 since gamma distribution is defined on [0, ∞)</span>
+<span class="n">kde_gamma</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">Kde1d</span><span class="p">(</span><span class="n">xmin</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">kde_gamma</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">x_gamma</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Kde1d fitted to gamma data (bounded at 0): </span><span class="si">{</span><span class="n">kde_gamma</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Log-likelihood: </span><span class="si">{</span><span class="n">kde_gamma</span><span class="o">.</span><span class="n">loglik</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Effective degrees of freedom: </span><span class="si">{</span><span class="n">kde_gamma</span><span class="o">.</span><span class="n">edf</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># Create Kde1d for bounded data (beta distribution)</span>
+<span class="c1"># Set xmin=0 and xmax=1 since beta distribution is defined on [0, 1]</span>
+<span class="n">kde_beta</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">Kde1d</span><span class="p">(</span><span class="n">xmin</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">xmax</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">kde_beta</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">x_beta</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Kde1d fitted to beta data (bounded between 0 and 1): </span><span class="si">{</span><span class="n">kde_beta</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Log-likelihood: </span><span class="si">{</span><span class="n">kde_beta</span><span class="o">.</span><span class="n">loglik</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Effective degrees of freedom: </span><span class="si">{</span><span class="n">kde_beta</span><span class="o">.</span><span class="n">edf</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Kde1d fitted to gamma data (bounded at 0): &lt;pyvinecopulib.Kde1d&gt; Kde1d(xmin=0, xmax=nan, type=&#39;continuous&#39;, bandwidth=0.813595, multiplier=1, degree=2)
+Log-likelihood: -491.5955
+Effective degrees of freedom: 7.68
+Kde1d fitted to beta data (bounded between 0 and 1): &lt;pyvinecopulib.Kde1d&gt; Kde1d(xmin=0, xmax=1, type=&#39;continuous&#39;, bandwidth=0.36799, multiplier=1, degree=2)
+Log-likelihood: 235.5237
+Effective degrees of freedom: 6.12
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[18]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Overlay true density for comparison - Manual plotting approach</span>
+<span class="n">eps</span> <span class="o">=</span> <span class="mf">1e-2</span>  <span class="c1"># Small epsilon to avoid boundary issues</span>
+<span class="n">x_range_gamma</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span> <span class="o">+</span> <span class="n">eps</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+<span class="n">true_density_gamma</span> <span class="o">=</span> <span class="n">stats</span><span class="o">.</span><span class="n">gamma</span><span class="o">.</span><span class="n">pdf</span><span class="p">(</span><span class="n">x_range_gamma</span><span class="p">,</span> <span class="n">a</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>  <span class="c1"># True gamma density</span>
+<span class="n">kde_density_gamma</span> <span class="o">=</span> <span class="n">kde_gamma</span><span class="o">.</span><span class="n">pdf</span><span class="p">(</span><span class="n">x_range_gamma</span><span class="p">)</span>
+<span class="n">x_range_beta</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mi">0</span> <span class="o">+</span> <span class="n">eps</span><span class="p">,</span> <span class="mi">1</span> <span class="o">-</span> <span class="n">eps</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+<span class="n">true_density_beta</span> <span class="o">=</span> <span class="n">stats</span><span class="o">.</span><span class="n">beta</span><span class="o">.</span><span class="n">pdf</span><span class="p">(</span><span class="n">x_range_beta</span><span class="p">,</span> <span class="n">a</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">b</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>  <span class="c1"># True beta density</span>
+<span class="n">kde_density_beta</span> <span class="o">=</span> <span class="n">kde_beta</span><span class="o">.</span><span class="n">pdf</span><span class="p">(</span><span class="n">x_range_beta</span><span class="p">)</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
+
+
+<span class="n">plt</span><span class="o">.</span><span class="n">subplot</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x_range_gamma</span><span class="p">,</span> <span class="n">kde_density_gamma</span><span class="p">,</span> <span class="s2">&quot;b-&quot;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;KDE&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+  <span class="n">x_range_gamma</span><span class="p">,</span> <span class="n">true_density_gamma</span><span class="p">,</span> <span class="s2">&quot;r--&quot;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;True density&quot;</span>
+<span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;x&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s2">&quot;Density&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;Lower Bounded KDE&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">)</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">subplot</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x_range_beta</span><span class="p">,</span> <span class="n">kde_density_beta</span><span class="p">,</span> <span class="s2">&quot;b-&quot;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;KDE&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+  <span class="n">x_range_beta</span><span class="p">,</span> <span class="n">true_density_beta</span><span class="p">,</span> <span class="s2">&quot;r--&quot;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;True density&quot;</span>
+<span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;x&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s2">&quot;Density&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;Lower and Upper Bounded KDE&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">)</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/examples_07_kde1d_8_0.png" src="../_images/examples_07_kde1d_8_0.png" />
+</div>
+</div>
+</section>
+<section id="3.-Discrete-Data">
+<h3>3. Discrete Data<a class="headerlink" href="#3.-Discrete-Data" title="Permalink to this heading"></a></h3>
+<p>For discrete data, we need to specify the type as “discrete” and set appropriate bounds.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[20]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Generate discrete data (binomial distribution)</span>
+<span class="n">x_binomial</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">binomial</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+
+<span class="c1"># Create Kde1d for discrete data</span>
+<span class="c1"># Set type=&quot;discrete&quot; and specify bounds [0, 5] since binomial(n=5) has support on {0,1,2,3,4,5}</span>
+<span class="n">kde_discrete</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">Kde1d</span><span class="p">(</span><span class="n">xmin</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">xmax</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;discrete&quot;</span><span class="p">)</span>
+<span class="n">kde_discrete</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">x_binomial</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Kde1d fitted to discrete data (binomial): </span><span class="si">{</span><span class="n">kde_discrete</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Log-likelihood: </span><span class="si">{</span><span class="n">kde_discrete</span><span class="o">.</span><span class="n">loglik</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Effective degrees of freedom: </span><span class="si">{</span><span class="n">kde_discrete</span><span class="o">.</span><span class="n">edf</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># Evaluate density at integer points (the support of binomial distribution)</span>
+<span class="n">eval_points_discrete</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">])</span>
+<span class="n">density_discrete</span> <span class="o">=</span> <span class="n">kde_discrete</span><span class="o">.</span><span class="n">pdf</span><span class="p">(</span><span class="n">eval_points_discrete</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">))</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Density evaluation for discrete data:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Point | Estimated | True (Binom) | Empirical Frequency&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;------|-----------|--------------|---------------&quot;</span><span class="p">)</span>
+<span class="n">frequency_counts</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">bincount</span><span class="p">(</span><span class="n">x_binomial</span><span class="p">,</span> <span class="n">minlength</span><span class="o">=</span><span class="mi">6</span><span class="p">)</span>
+<span class="n">empirical_frequencies</span> <span class="o">=</span> <span class="n">frequency_counts</span> <span class="o">/</span> <span class="nb">len</span><span class="p">(</span><span class="n">x_binomial</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">point</span> <span class="ow">in</span> <span class="n">eval_points_discrete</span><span class="p">:</span>
+  <span class="n">estimated</span> <span class="o">=</span> <span class="n">kde_discrete</span><span class="o">.</span><span class="n">pdf</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="nb">float</span><span class="p">(</span><span class="n">point</span><span class="p">)]))[</span><span class="mi">0</span><span class="p">]</span>
+  <span class="n">true_density</span> <span class="o">=</span> <span class="n">stats</span><span class="o">.</span><span class="n">binom</span><span class="o">.</span><span class="n">pmf</span><span class="p">(</span><span class="n">point</span><span class="p">,</span> <span class="n">n</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">p</span><span class="o">=</span><span class="mf">0.5</span><span class="p">)</span>
+  <span class="n">count</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">x_binomial</span> <span class="o">==</span> <span class="n">point</span><span class="p">)</span>
+  <span class="nb">print</span><span class="p">(</span>
+    <span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">point</span><span class="si">}</span><span class="s2">   |   </span><span class="si">{</span><span class="n">estimated</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">  |    </span><span class="si">{</span><span class="n">true_density</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">    |      </span><span class="si">{</span><span class="n">empirical_frequencies</span><span class="p">[</span><span class="n">point</span><span class="p">]</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span>
+  <span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Kde1d fitted to discrete data (binomial): &lt;pyvinecopulib.Kde1d&gt; Kde1d(xmin=0, xmax=5, type=&#39;discrete&#39;, bandwidth=1.11374, multiplier=1, degree=2)
+Log-likelihood: -758.9803
+Effective degrees of freedom: 4.02
+
+Density evaluation for discrete data:
+Point | Estimated | True (Binom) | Empirical Frequency
+------|-----------|--------------|---------------
+  0   |   0.0375  |    0.0312    |      0.0360
+  1   |   0.1642  |    0.1562    |      0.1640
+  2   |   0.3173  |    0.3125    |      0.3160
+  3   |   0.3094  |    0.3125    |      0.3140
+  4   |   0.1451  |    0.1562    |      0.1440
+  5   |   0.0266  |    0.0312    |      0.0260
+</pre></div></div>
+</div>
+</section>
+<section id="4.-Zero-Inflated-Data">
+<h3>4. Zero-Inflated Data<a class="headerlink" href="#4.-Zero-Inflated-Data" title="Permalink to this heading"></a></h3>
+<p>Zero-inflated data requires special treatment using the “zero-inflated” type to handle the excess zeros.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[26]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Generate zero-inflated data (exponential with added zeros)</span>
+<span class="n">x_zi</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">exponential</span><span class="p">(</span><span class="n">scale</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">500</span><span class="p">)</span>
+<span class="n">zero_indices</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="mi">500</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">replace</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="n">x_zi</span><span class="p">[</span><span class="n">zero_indices</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+
+<span class="c1"># Create Kde1d for zero-inflated data</span>
+<span class="c1"># Set type=&quot;zero-inflated&quot; and xmin=0 since we know the data is non-negative</span>
+<span class="n">kde_zi</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">Kde1d</span><span class="p">(</span><span class="n">xmin</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="s2">&quot;zero-inflated&quot;</span><span class="p">)</span>
+<span class="n">kde_zi</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">x_zi</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Kde1d fitted to zero-inflated data: </span><span class="si">{</span><span class="n">kde_zi</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Log-likelihood: </span><span class="si">{</span><span class="n">kde_zi</span><span class="o">.</span><span class="n">loglik</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Effective degrees of freedom: </span><span class="si">{</span><span class="n">kde_zi</span><span class="o">.</span><span class="n">edf</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Probability at zero (prob0): </span><span class="si">{</span><span class="n">kde_zi</span><span class="o">.</span><span class="n">prob0</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+
+<span class="c1"># Evaluate density at specific points including zero</span>
+<span class="n">eval_points_zi</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">2.0</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">,</span> <span class="mf">6.0</span><span class="p">])</span>
+<span class="n">density_zi</span> <span class="o">=</span> <span class="n">kde_zi</span><span class="o">.</span><span class="n">pdf</span><span class="p">(</span><span class="n">eval_points_zi</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Density evaluation for zero-inflated data:&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">point</span><span class="p">,</span> <span class="n">density</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">eval_points_zi</span><span class="p">,</span> <span class="n">density_zi</span><span class="p">):</span>
+  <span class="k">if</span> <span class="n">point</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;x = </span><span class="si">{</span><span class="n">point</span><span class="si">:</span><span class="s2">4.1f</span><span class="si">}</span><span class="s2">: estimated = </span><span class="si">{</span><span class="n">density</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> (includes point mass)&quot;</span><span class="p">)</span>
+  <span class="k">else</span><span class="p">:</span>
+    <span class="c1"># True density for continuous part: 0.6 * exp(-x/2) / 2</span>
+    <span class="n">true_continuous</span> <span class="o">=</span> <span class="mf">0.6</span> <span class="o">*</span> <span class="n">stats</span><span class="o">.</span><span class="n">expon</span><span class="o">.</span><span class="n">pdf</span><span class="p">(</span><span class="n">point</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span>
+      <span class="sa">f</span><span class="s2">&quot;x = </span><span class="si">{</span><span class="n">point</span><span class="si">:</span><span class="s2">4.1f</span><span class="si">}</span><span class="s2">: estimated = </span><span class="si">{</span><span class="n">density</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, true continuous = </span><span class="si">{</span><span class="n">true_continuous</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Kde1d fitted to zero-inflated data: &lt;pyvinecopulib.Kde1d&gt; Kde1d(xmin=0, xmax=nan, type=&#39;zero-inflated&#39;, bandwidth=0.768109, multiplier=1, degree=2)
+Log-likelihood: -628.2624
+Effective degrees of freedom: 8.48
+Probability at zero (prob0): 0.4000
+
+Density evaluation for zero-inflated data:
+x =  0.0: estimated = 0.4000 (includes point mass)
+x =  0.5: estimated = 0.4139, true continuous = 0.2336
+x =  1.0: estimated = 0.2476, true continuous = 0.1820
+x =  2.0: estimated = 0.0721, true continuous = 0.1104
+x =  4.0: estimated = 0.0087, true continuous = 0.0406
+x =  6.0: estimated = 0.0000, true continuous = 0.0149
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[29]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">x_range</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="mf">0.1</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+<span class="n">kde_density_zi</span> <span class="o">=</span> <span class="n">kde_zi</span><span class="o">.</span><span class="n">pdf</span><span class="p">(</span><span class="n">x_range</span><span class="p">)</span>
+<span class="n">true_density_zi</span> <span class="o">=</span> <span class="mf">0.6</span> <span class="o">*</span> <span class="n">stats</span><span class="o">.</span><span class="n">expon</span><span class="o">.</span><span class="n">pdf</span><span class="p">(</span><span class="n">x_range</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="c1"># Plot the zero-inflated density estimate</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+  <span class="n">x_range</span><span class="p">,</span> <span class="n">kde_density_zi</span><span class="p">,</span> <span class="s2">&quot;b-&quot;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;KDE (continuous part)&quot;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">2</span>
+<span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+  <span class="n">x_range</span><span class="p">,</span> <span class="n">true_density_zi</span><span class="p">,</span> <span class="s2">&quot;r--&quot;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;True (continuous part)&quot;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">2</span>
+<span class="p">)</span>
+<span class="c1"># Add point mass at zero</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+  <span class="mi">0</span><span class="p">,</span>
+  <span class="n">kde_zi</span><span class="o">.</span><span class="n">prob0</span><span class="p">,</span>
+  <span class="s2">&quot;bo&quot;</span><span class="p">,</span>
+  <span class="n">markersize</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
+  <span class="n">label</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;Estimated point mass at zero (</span><span class="si">{</span><span class="n">kde_zi</span><span class="o">.</span><span class="n">prob0</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">,</span>
+  <span class="n">markerfacecolor</span><span class="o">=</span><span class="s2">&quot;blue&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+  <span class="mi">0</span><span class="p">,</span>
+  <span class="mf">0.4</span><span class="p">,</span>
+  <span class="s2">&quot;ro&quot;</span><span class="p">,</span>
+  <span class="n">markersize</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span>
+  <span class="n">label</span><span class="o">=</span><span class="s2">&quot;True point mass at zero (0.4)&quot;</span><span class="p">,</span>
+  <span class="n">markerfacecolor</span><span class="o">=</span><span class="s2">&quot;red&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;Zero-Inflated Data: Exponential with 40% Zeros&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;x&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s2">&quot;Density&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">xlim</span><span class="p">(</span><span class="o">-</span><span class="mf">0.5</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/examples_07_kde1d_13_0.png" src="../_images/examples_07_kde1d_13_0.png" />
+</div>
+</div>
+</section>
+<section id="5.-Weighted-Density-Estimation">
+<h3>5. Weighted Density Estimation<a class="headerlink" href="#5.-Weighted-Density-Estimation" title="Permalink to this heading"></a></h3>
+<p>Kde1d supports weighted estimation, useful for bootstrap procedures or when observations have different importance.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[30]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Generate data for weighted estimation</span>
+<span class="n">x_weighted</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">normal</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>
+<span class="n">weights</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">exponential</span><span class="p">(</span><span class="n">scale</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>  <span class="c1"># Random weights</span>
+
+<span class="c1"># Weighted estimation - fit the same data with and without weights</span>
+<span class="n">kde_weighted</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">Kde1d</span><span class="p">()</span>
+<span class="n">kde_weighted</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">x_weighted</span><span class="p">,</span> <span class="n">weights</span><span class="p">)</span>
+
+<span class="n">kde_unweighted</span> <span class="o">=</span> <span class="n">pv</span><span class="o">.</span><span class="n">Kde1d</span><span class="p">()</span>
+<span class="n">kde_unweighted</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">x_weighted</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Weighted vs. Unweighted estimation:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span>
+  <span class="sa">f</span><span class="s2">&quot;Weighted   - Bandwidth: </span><span class="si">{</span><span class="n">kde_weighted</span><span class="o">.</span><span class="n">bandwidth</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, Log-likelihood: </span><span class="si">{</span><span class="n">kde_weighted</span><span class="o">.</span><span class="n">loglik</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span>
+  <span class="sa">f</span><span class="s2">&quot;Unweighted - Bandwidth: </span><span class="si">{</span><span class="n">kde_unweighted</span><span class="o">.</span><span class="n">bandwidth</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">, Log-likelihood: </span><span class="si">{</span><span class="n">kde_unweighted</span><span class="o">.</span><span class="n">loglik</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="p">)</span>
+
+<span class="c1"># Compare density estimates at specific points</span>
+<span class="n">eval_points_weight</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">])</span>
+<span class="n">density_weighted</span> <span class="o">=</span> <span class="n">kde_weighted</span><span class="o">.</span><span class="n">pdf</span><span class="p">(</span><span class="n">eval_points_weight</span><span class="p">)</span>
+<span class="n">density_unweighted</span> <span class="o">=</span> <span class="n">kde_unweighted</span><span class="o">.</span><span class="n">pdf</span><span class="p">(</span><span class="n">eval_points_weight</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Density comparison (weighted vs. unweighted):&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Point | Weighted | Unweighted | Difference&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;------|----------|------------|------------&quot;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">point</span><span class="p">,</span> <span class="n">w_dens</span><span class="p">,</span> <span class="n">uw_dens</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
+  <span class="n">eval_points_weight</span><span class="p">,</span> <span class="n">density_weighted</span><span class="p">,</span> <span class="n">density_unweighted</span>
+<span class="p">):</span>
+  <span class="n">diff</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="n">w_dens</span> <span class="o">-</span> <span class="n">uw_dens</span><span class="p">)</span>
+  <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  </span><span class="si">{</span><span class="n">point</span><span class="si">:</span><span class="s2">2.0f</span><span class="si">}</span><span class="s2">  |  </span><span class="si">{</span><span class="n">w_dens</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">  |   </span><span class="si">{</span><span class="n">uw_dens</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">   |   </span><span class="si">{</span><span class="n">diff</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="nb">print</span><span class="p">(</span>
+  <span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Weight statistics: min=</span><span class="si">{</span><span class="n">weights</span><span class="o">.</span><span class="n">min</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, max=</span><span class="si">{</span><span class="n">weights</span><span class="o">.</span><span class="n">max</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, mean=</span><span class="si">{</span><span class="n">weights</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Weighted vs. Unweighted estimation:
+Weighted   - Bandwidth: 1.0910, Log-likelihood: -126.7015
+Unweighted - Bandwidth: 0.8605, Log-likelihood: -136.2553
+
+Density comparison (weighted vs. unweighted):
+Point | Weighted | Unweighted | Difference
+------|----------|------------|------------
+  -2  |  0.0454  |   0.0512   |   0.0058
+  -1  |  0.2374  |   0.2064   |   0.0310
+   0  |  0.4691  |   0.4371   |   0.0320
+   1  |  0.2244  |   0.2512   |   0.0268
+   2  |  0.0194  |   0.0463   |   0.0269
+
+Weight statistics: min=0.006, max=4.020, mean=0.916
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[32]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">x_range</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">linspace</span><span class="p">(</span><span class="o">-</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">200</span><span class="p">)</span>
+<span class="n">true_density</span> <span class="o">=</span> <span class="n">stats</span><span class="o">.</span><span class="n">norm</span><span class="o">.</span><span class="n">pdf</span><span class="p">(</span><span class="n">x_range</span><span class="p">)</span>
+<span class="n">kde_density_weighted</span> <span class="o">=</span> <span class="n">kde_weighted</span><span class="o">.</span><span class="n">pdf</span><span class="p">(</span><span class="n">x_range</span><span class="p">)</span>
+<span class="n">kde_density_unweighted</span> <span class="o">=</span> <span class="n">kde_unweighted</span><span class="o">.</span><span class="n">pdf</span><span class="p">(</span><span class="n">x_range</span><span class="p">)</span>
+
+<span class="c1"># Plot comparison of weighted vs. unweighted estimates</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x_range</span><span class="p">,</span> <span class="n">kde_density_weighted</span><span class="p">,</span> <span class="s2">&quot;b-&quot;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Weighted KDE&quot;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span>
+  <span class="n">x_range</span><span class="p">,</span> <span class="n">kde_density_unweighted</span><span class="p">,</span> <span class="s2">&quot;g--&quot;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Unweighted KDE&quot;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">2</span>
+<span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">x_range</span><span class="p">,</span> <span class="n">true_density</span><span class="p">,</span> <span class="s2">&quot;r:&quot;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;True Density&quot;</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;Weighted vs. Unweighted Density Estimation&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;x&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s2">&quot;Density&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/examples_07_kde1d_16_0.png" src="../_images/examples_07_kde1d_16_0.png" />
+</div>
+</div>
+</section>
+<section id="6.-Plots,-Simulation-and-Additional-Features">
+<h3>6. Plots, Simulation and Additional Features<a class="headerlink" href="#6.-Plots,-Simulation-and-Additional-Features" title="Permalink to this heading"></a></h3>
+<p>The Kde1d class also supports plotting directly, simulation from the fitted density and more.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[ ]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">kde_normal</span><span class="o">.</span><span class="n">plot</span><span class="p">()</span>
+
+<span class="c1"># Simulate from fitted density</span>
+<span class="n">simulated_data</span> <span class="o">=</span> <span class="n">kde_normal</span><span class="o">.</span><span class="n">simulate</span><span class="p">(</span><span class="n">n</span><span class="o">=</span><span class="mi">1000</span><span class="p">,</span> <span class="n">seeds</span><span class="o">=</span><span class="p">[</span><span class="mi">123</span><span class="p">])</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Simulation from fitted normal density:&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Original data: mean=</span><span class="si">{</span><span class="n">x_normal</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, std=</span><span class="si">{</span><span class="n">x_normal</span><span class="o">.</span><span class="n">std</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span>
+  <span class="sa">f</span><span class="s2">&quot;Simulated data: mean=</span><span class="si">{</span><span class="n">simulated_data</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">, std=</span><span class="si">{</span><span class="n">simulated_data</span><span class="o">.</span><span class="n">std</span><span class="p">()</span><span class="si">:</span><span class="s2">.3f</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="p">)</span>
+
+<span class="c1"># CDF and quantile functions</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">CDF and quantile evaluation for normal kde:&quot;</span><span class="p">)</span>
+<span class="n">test_points</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">])</span>
+<span class="n">cdf_values</span> <span class="o">=</span> <span class="n">kde_normal</span><span class="o">.</span><span class="n">cdf</span><span class="p">(</span><span class="n">test_points</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;CDF at [-1, 0, 1]: </span><span class="si">{</span><span class="n">cdf_values</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="n">quantiles</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.75</span><span class="p">])</span>
+<span class="n">quantile_values</span> <span class="o">=</span> <span class="n">kde_normal</span><span class="o">.</span><span class="n">quantile</span><span class="p">(</span><span class="n">quantiles</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Quantiles at [0.25, 0.5, 0.75]: </span><span class="si">{</span><span class="n">quantile_values</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># True values for comparison</span>
+<span class="n">true_cdf</span> <span class="o">=</span> <span class="n">stats</span><span class="o">.</span><span class="n">norm</span><span class="o">.</span><span class="n">cdf</span><span class="p">(</span><span class="n">test_points</span><span class="p">)</span>
+<span class="n">true_quantiles</span> <span class="o">=</span> <span class="n">stats</span><span class="o">.</span><span class="n">norm</span><span class="o">.</span><span class="n">ppf</span><span class="p">(</span><span class="n">quantiles</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;True CDF values: </span><span class="si">{</span><span class="n">true_cdf</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;True quantiles: </span><span class="si">{</span><span class="n">true_quantiles</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># Plot histogram of simulated data vs. original</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">12</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">subplot</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">x_normal</span><span class="p">,</span> <span class="n">bins</span><span class="o">=</span><span class="mi">20</span><span class="p">,</span> <span class="n">density</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Original data&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span>
+  <span class="n">simulated_data</span><span class="p">,</span> <span class="n">bins</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">density</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.7</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Simulated data&quot;</span>
+<span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;Histogram Comparison&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;x&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s2">&quot;Density&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">)</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">subplot</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+
+<span class="c1"># Q-Q plot</span>
+<span class="n">stats</span><span class="o">.</span><span class="n">probplot</span><span class="p">(</span><span class="n">simulated_data</span><span class="p">,</span> <span class="n">dist</span><span class="o">=</span><span class="n">stats</span><span class="o">.</span><span class="n">norm</span><span class="p">,</span> <span class="n">plot</span><span class="o">=</span><span class="n">plt</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;Q-Q Plot: Simulated vs. Normal&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.3</span><span class="p">)</span>
+
+<span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">show</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/examples_07_kde1d_18_0.png" src="../_images/examples_07_kde1d_18_0.png" />
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Simulation from fitted normal density:
+Original data: mean=0.007, std=0.980
+Simulated data: mean=0.029, std=0.922
+
+CDF and quantile evaluation for normal kde:
+CDF at [-1, 0, 1]: [0.149304   0.5003765  0.84513907]
+Quantiles at [0.25, 0.5, 0.75]: [-0.65620319 -0.00092187  0.65901036]
+True CDF values: [0.15865525 0.5        0.84134475]
+True quantiles: [-0.67448975  0.          0.67448975]
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../_images/examples_07_kde1d_18_2.png" src="../_images/examples_07_kde1d_18_2.png" />
+</div>
+</div>
+</section>
+</section>
+</section>
+
+
+              </div>
+            </div>
+            <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="06_weighted_dependence_measures.html" class="btn btn-neutral float-left" title="The weighted dependence measures (wdm) API" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p></p>
+  </div>
+
+
+
+</footer>
+          </div>
+        </div>
+    </section>
+  </div>
+  <script>
+    jQuery(function () {
+      SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+</body>
+
+</html>

@@ -7,11 +7,11 @@
   <meta charset="utf-8" /><meta name="generator" content="Docutils 0.19: https://docutils.sourceforge.io/" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>API Documentation &mdash; pyvinecopulib 0.7.3 documentation</title>
+  <title>API Documentation &mdash; pyvinecopulib 0.7.5 documentation</title>
   <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
   <link rel="stylesheet" type="text/css" href="_static/css/theme.css" />
 
-  
+
   <script src="_static/jquery.js"></script>
   <script src="_static/_sphinx_javascript_frameworks_compat.js"></script>
   <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
@@ -24,19 +24,19 @@
   <link rel="index" title="Index" href="genindex.html" />
   <link rel="search" title="Search" href="search.html" />
   <link rel="next" title="BicopFamily" href="_generate/pyvinecopulib.BicopFamily.html" />
-  <link rel="prev" title="pyvinecopulib" href="README.html" /> 
+  <link rel="prev" title="pyvinecopulib" href="README.html" />
 </head>
 
-<body class="wy-body-for-nav"> 
+<body class="wy-body-for-nav">
   <div class="wy-grid-for-nav">
     <nav data-toggle="wy-nav-shift" class="wy-nav-side">
       <div class="wy-side-scroll">
         <div class="wy-side-nav-search" >
 
-          
-          
+
+
           <a href="index.html"  class="icon icon-home" >
-            pyvinecopulib 0.7.3
+            pyvinecopulib 0.7.5
             <img src="_static/pyvinecopulib.png" class="logo" alt="Logo" />
           </a>
 <div role="search">
@@ -60,11 +60,13 @@
 <li class="toctree-l3"><a class="reference internal" href="_generate/pyvinecopulib.CVineStructure.html">CVineStructure</a></li>
 <li class="toctree-l3"><a class="reference internal" href="_generate/pyvinecopulib.DVineStructure.html">DVineStructure</a></li>
 <li class="toctree-l3"><a class="reference internal" href="_generate/pyvinecopulib.RVineStructure.html">RVineStructure</a></li>
+<li class="toctree-l3"><a class="reference internal" href="_generate/pyvinecopulib.Kde1d.html">Kde1d</a></li>
 </ul>
 </li>
 <li class="toctree-l2"><a class="reference internal" href="#functions">Functions</a><ul>
 <li class="toctree-l3"><a class="reference internal" href="#pyvinecopulib.to_pseudo_obs"><code class="docutils literal notranslate"><span class="pre">to_pseudo_obs()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#pyvinecopulib.simulate_uniform"><code class="docutils literal notranslate"><span class="pre">simulate_uniform()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pyvinecopulib.wdm"><code class="docutils literal notranslate"><span class="pre">wdm()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#pyvinecopulib.ghalton"><code class="docutils literal notranslate"><span class="pre">ghalton()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#pyvinecopulib.sobol"><code class="docutils literal notranslate"><span class="pre">sobol()</span></code></a></li>
 </ul>
@@ -81,7 +83,7 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
         <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-        <a href="index.html">pyvinecopulib 0.7.3</a>
+        <a href="index.html">pyvinecopulib 0.7.5</a>
       </nav>
 
       <div class="wy-nav-content">
@@ -97,7 +99,7 @@
 </div>
             <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
               <div itemprop="articleBody">
-                
+
   <section id="api-documentation">
 <h1>API Documentation<a class="headerlink" href="#api-documentation" title="Permalink to this heading"></a></h1>
 <section id="classes">
@@ -129,6 +131,9 @@
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="_generate/pyvinecopulib.RVineStructure.html#pyvinecopulib.RVineStructure" title="pyvinecopulib.RVineStructure"><code class="xref py py-obj docutils literal notranslate"><span class="pre">RVineStructure</span></code></a>(*args, **kwargs)</p></td>
 <td><p>A class for R-vine structures.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="_generate/pyvinecopulib.Kde1d.html#pyvinecopulib.Kde1d" title="pyvinecopulib.Kde1d"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Kde1d</span></code></a>(*args, **kwargs)</p></td>
+<td><p>A class for univariate kernel density estimation.</p></td>
 </tr>
 </tbody>
 </table>
@@ -174,6 +179,37 @@ randomly.</p></li>
 </dd>
 <dt class="field-even">Returns<span class="colon">:</span></dt>
 <dd class="field-even"><p>An <span class="math notranslate nohighlight">\(n \times d\)</span> matrix of independent <span class="math notranslate nohighlight">\(\mathrm{U}[0, 1]\)</span> random variables.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="pyvinecopulib.wdm">
+<span class="sig-name descname"><span class="pre">wdm</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="pre">x:</span> <span class="pre">numpy.ndarray[dtype=float64,</span> <span class="pre">shape=(*),</span> <span class="pre">order='C'],</span> <span class="pre">y:</span> <span class="pre">numpy.ndarray[dtype=float64,</span> <span class="pre">shape=(*),</span> <span class="pre">order='C'],</span> <span class="pre">method:</span> <span class="pre">str,</span> <span class="pre">weights:</span> <span class="pre">numpy.ndarray[dtype=float64,</span> <span class="pre">shape=(*),</span> <span class="pre">order='C']</span> <span class="pre">=</span> <span class="pre">array([],</span> <span class="pre">dtype=float64),</span> <span class="pre">remove_missing:</span> <span class="pre">bool</span> <span class="pre">=</span> <span class="pre">True</span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">float</span></span></span><a class="headerlink" href="#pyvinecopulib.wdm" title="Permalink to this definition"></a></dt>
+<dd><p>Calculates (weighted) dependence measures.</p>
+<p>This function computes various measures of dependence between two variables, optionally
+using observation weights.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters<span class="colon">:</span></dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>x</strong> – Input data vectors.</p></li>
+<li><p><strong>y</strong> – Input data vectors.</p></li>
+<li><p><strong>method</strong> – <p>The dependence measure to compute. Possible values are:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;pearson&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;prho&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;cor&quot;</span></code> : Pearson correlation</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;spearman&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;srho&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;rho&quot;</span></code> : Spearman’s <span class="math notranslate nohighlight">\(\rho\)</span></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;kendall&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;ktau&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;tau&quot;</span></code> : Kendall’s <span class="math notranslate nohighlight">\(\tau\)</span></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;blomqvist&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;bbeta&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;beta&quot;</span></code> : Blomqvist’s <span class="math notranslate nohighlight">\(\beta\)</span></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">&quot;hoeffding&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;hoeffd&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;d&quot;</span></code> : Hoeffding’s <span class="math notranslate nohighlight">\(D\)</span></p></li>
+</ul>
+</p></li>
+<li><p><strong>weights</strong> – Optional vector of observation weights.</p></li>
+<li><p><strong>remove_missing</strong> – If <code class="docutils literal notranslate"><span class="pre">True</span></code>, all observations containing a <code class="docutils literal notranslate"><span class="pre">NaN</span></code> are removed. Otherwise, an error is raised
+if missing values are present.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns<span class="colon">:</span></dt>
+<dd class="field-even"><p><em>float</em> – The computed dependence measure.</p>
 </dd>
 </dl>
 </dd></dl>
@@ -237,7 +273,7 @@ generator is seeded randomly.</p></li>
     <p></p>
   </div>
 
-   
+
 
 </footer>
           </div>
@@ -248,7 +284,7 @@ generator is seeded randomly.</p></li>
     jQuery(function () {
       SphinxRtdTheme.Navigation.enable(true);
       });
-  </script> 
+  </script>
 
 </body>
 
