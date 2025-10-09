@@ -42,7 +42,6 @@ dist/
 
 #build, bin and Lion related dirs
 _build/
-_generate/
 include/git_revision.hpp
 bin/
 build/
