@@ -111,7 +111,7 @@ docstrings: ## Regenerate src/include/docstr.hpp via the build (alias)
 	$(PIP_INSTALL) -e . --no-build-isolation
 
 examples: ## Process and execute example notebooks (used by docs)
-	$(PYTHON) scripts/generate_metadata.py
+	$(PYTHON) scripts/regenerate_notebooks.py
 
 metadata: stubs examples ## Regenerate all generated artifacts (docstrings + stubs + notebooks)
 

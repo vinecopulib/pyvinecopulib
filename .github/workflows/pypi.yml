@@ -257,14 +257,27 @@ jobs:
               --nbmake-kernel=python3
 
   regenerate_notebooks:
-    # On every PR to main (the release-prep flow), re-execute the example
-    # notebooks against the freshly built wheel and commit any output
-    # changes back to the PR branch. RTD relies on the committed cell
-    # outputs (nbsphinx_execute = "never" in docs/conf.py), so this job is
-    # what keeps them fresh without manual intervention before release.
-    name: Regenerate notebook outputs (PRs to main)
+    # Fires automatically on every PR to main (the release-prep flow), and
+    # opt-in on any other PR via the `regenerate-notebooks` label — handy
+    # for testing this workflow against `dev`, or refreshing outputs early
+    # when a feature branch changes plotting code.
+    #
+    # To use the opt-in path: open the PR and add the label
+    # `regenerate-notebooks` (`gh pr edit <PR> --add-label regenerate-notebooks`),
+    # then push a commit so the workflow re-evaluates (the trigger types
+    # below don't include `labeled`, so labeling alone won't re-fire).
+    #
+    # RTD relies on the committed cell outputs (nbsphinx_execute = "never"
+    # in docs/conf.py), so this job is what keeps them fresh without
+    # manual intervention before release.
+    name: Regenerate notebook outputs
     needs: build
-    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    if: |
+      github.event_name == 'pull_request'
+      && (
+        github.base_ref == 'main'
+        || contains(github.event.pull_request.labels.*.name, 'regenerate-notebooks')
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: write  # required to push the auto-commit back to the PR branch
@@ -295,7 +308,7 @@ jobs:
           pip install "pyvinecopulib[examples]" --no-deps  # extras only; wheel above is the package
           pip install jupyter nbconvert nbformat
       - name: Re-execute notebooks
-        run: python scripts/generate_metadata.py
+        run: python scripts/regenerate_notebooks.py
       - name: Commit and push refreshed notebooks
         run: |
           if git diff --quiet -- examples/; then

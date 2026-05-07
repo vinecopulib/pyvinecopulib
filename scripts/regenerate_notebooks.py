@@ -1,8 +1,8 @@
 """Re-execute example notebooks and inject image metadata for nbsphinx.
 
-Docstring (`src/include/docstr.hpp`) and stub (`src/pyvinecopulib/__init__.pyi`)
-generation are now handled by CMake at build time; this script is responsible
-only for the notebook flow used by docs/Phase 2.
+Docstring and stub generation happen at C++ build time via CMake custom
+commands (see CMakeLists.txt); this script handles only the notebook
+flow used by the docs pipeline.
 """
 
 import argparse
