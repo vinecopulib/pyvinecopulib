@@ -1,0 +1,31 @@
+# Read the Docs configuration.
+# Reference: https://docs.readthedocs.com/platform/stable/config-file/v2.html
+#
+# RTD installs the published wheel from PyPI rather than building from source
+# (the project's C++ build needs Boost, Eigen, and libclang, which is heavier
+# than RTD's runners are sized for). The trade-off is that doc builds reflect
+# the most recent PyPI release, not the current source tree — that's exactly
+# what we want for the "stable" version, and PR previews fall back to the
+# latest PyPI version (the CI mirror in pypi.yml validates docs against the
+# wheel built from the PR).
+
+version: 2
+
+build:
+  os: ubuntu-22.04
+  tools:
+    python: "3.11"
+  apt_packages:
+    - graphviz
+  jobs:
+    post_install:
+      # Install the published wheel + doc/examples extras in one go.
+      # The extras (`doc`, `examples`) are declared in pyproject.toml and
+      # pulled from PyPI's metadata for the resolved version.
+      - pip install "pyvinecopulib[doc,examples]"
+
+sphinx:
+  configuration: docs/conf.py
+  # RTD itself stays lenient; the strict -W gate lives in pypi.yml's
+  # verify_docs_build job (Phase 5) so PRs are blocked before a tag ships.
+  fail_on_warning: false
