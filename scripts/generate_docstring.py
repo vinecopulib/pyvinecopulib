@@ -791,6 +791,18 @@ def process_comment(comment):
     else:
       for y in re.findall(r"(.*?)(?:\n{2,}|\Z)", x, re.DOTALL):
         lines = re.split(r"(?: *\n *)", y)
+
+        # Don't reflow .. math:: directives. Textwrap would put the
+        # equation continuation on an unindented next line, which RST
+        # parses as "explicit markup ends without a blank line". Keep the
+        # whole directive on a single (long) line — the docstr.hpp output
+        # is machine-generated, so line length doesn't matter.
+        collapsed = re.sub(r"\s+", " ", y).strip()
+        if collapsed.startswith(".. math::"):
+          result += collapsed + "\n\n"
+          wrapper.initial_indent = wrapper.subsequent_indent = ""
+          continue
+
         # Do not reflow lists or section headings.
 
         if re.match(r"^\s*(?:[*+\-]|[0-9]+[.)]) ", lines[0]) or (

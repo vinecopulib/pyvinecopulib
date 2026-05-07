@@ -98,11 +98,12 @@ napoleon_custom_sections = [("Usage", "Usage")]
 autosummary_generate = True
 nbsphinx_execute = "never"
 
-# autosummary fires "stub file not found" warnings on the first build
-# because the toctree directive runs before its own stub-generation pass
-# completes; the stubs do exist on the second build. Suppress so a fresh
-# (single-pass) RTD/CI build doesn't trip the strict `-W` flag in Phase 5.
-suppress_warnings = ["autosummary"]
+# Warning categories silenced for fresh single-pass builds:
+#   - `autosummary`: stub files don't exist when the toctree first reads
+#     them; they're generated mid-build, so a clean build always emits this.
+#   - `myst.header`: index.rst inlines a slice of README.md (`:start-line: 8`)
+#     that starts at an H2, which myst-parser flags. Cosmetic.
+suppress_warnings = ["autosummary", "myst.header"]
 
 # The suffix(es) of source filenames.
 source_suffix = {

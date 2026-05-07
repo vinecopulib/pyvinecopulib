@@ -28,5 +28,5 @@ pyvinecopulib
    examples
 
 .. include:: README.md
-      :parser: recommonmark
+      :parser: myst_parser.sphinx_
       :start-line: 8

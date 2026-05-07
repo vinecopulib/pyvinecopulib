@@ -1,8 +1,8 @@
 # Changelog
 
-### 0.7.6
+## 0.7.6
 
-This release was only used to bump the `vinecopulib
+This release was only used to pull the latest changes from `vinecopulib`'s `dev` branch, which includes some bug fixes.
 
 ## 0.7.5
 

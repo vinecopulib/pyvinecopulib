@@ -169,6 +169,51 @@ jobs:
             exit 1
           }
 
+  verify_docs_build:
+    # Mirrors the Read the Docs build (.readthedocs.yaml) against the wheel
+    # built from this PR — so an issue that would surface on RTD only after
+    # a tag-and-publish cycle is caught here instead. Stricter than RTD
+    # (uses -W to fail on warnings) so doc regressions get blocked at PR
+    # time rather than rendering subtly broken on the published site.
+    name: Verify docs build (RTD mirror)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+      - name: Set up Python 3.11
+        # Match .readthedocs.yaml's build.tools.python.
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Graphviz
+        # Match .readthedocs.yaml's apt_packages.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y graphviz
+      - name: Download built wheel (cp311 manylinux ubuntu)
+        uses: actions/download-artifact@v4
+        with:
+          name: cibw-wheels-ubuntu-latest-311-manylinux_x86_64
+          path: dist/
+      - name: Install wheel + doc/examples extras
+        # Equivalent to RTD's `pip install "pyvinecopulib[doc,examples]"`,
+        # except sourced from this PR's wheel rather than PyPI's published
+        # version — so the docs reflect the PR's actual API surface.
+        run: |
+          WHEEL=$(ls dist/*.whl)
+          pip install "${WHEEL}[doc,examples]"
+      - name: Build HTML docs
+        # -W: warnings as errors. Catches doc regressions (broken cross-refs,
+        # malformed docstrings, etc.) before they reach RTD.
+        run: python -m sphinx -W -b html docs docs/_build/html
+      - name: Upload built HTML for PR review
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-html
+          path: docs/_build/html/
+          retention-days: 14
+
   install_and_unit_test:
     needs: build
     runs-on: ${{ matrix.cfg.os }}
