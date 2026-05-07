@@ -1,8 +1,9 @@
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
+from mpl_toolkits.mplot3d.axis3d import XAxis as XAxis3D, YAxis as YAxis3D
 
 from .stats import expon_cdf, expon_pdf, expon_ppf, norm_cdf, norm_pdf, norm_ppf
 
@@ -167,10 +168,11 @@ def bicop_plot(
     ax.set_ylim(xylim)
     ax.set_zlim(zlim)
     ax.set_box_aspect([1, 1, 1])
-    # ax is the Axes3D variant whose XAxis/YAxis/ZAxis have a `pane` attribute,
-    # but ty narrows to the 2D base which doesn't.
-    ax.xaxis.pane.fill = False  # ty: ignore[unresolved-attribute]
-    ax.yaxis.pane.fill = False  # ty: ignore[unresolved-attribute]
+    # ax is Axes3D, but matplotlib's stubs declare ax.xaxis / ax.yaxis as
+    # the 2D XAxis / YAxis (which lack `pane`). Cast to the 3D variants.
+    # ax.zaxis is already typed correctly as the 3D ZAxis.
+    cast(XAxis3D, ax.xaxis).pane.fill = False
+    cast(YAxis3D, ax.yaxis).pane.fill = False
     ax.zaxis.pane.fill = False
     ax.grid(False)
     plt.draw()
