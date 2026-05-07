@@ -11,7 +11,10 @@
 requires = [
   "scikit-build-core>=0.5.0",
   "nanobind>=2.7.0",
-  "libclang>=18,<20",
+  # libclang >= 19 is required on Windows: MSVC's STL headers contain a
+  # static_assert that __clang_major__ >= 19 when parsed by clang. Older
+  # libclang versions fail to parse the STL during docstring extraction.
+  "libclang>=19,<21",
   "numpy>=1.14",
   "matplotlib>=3.0",
   "networkx>=3.0",
