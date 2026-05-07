@@ -26,14 +26,24 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install libclang (system) and Python bindings
+      - name: Install libclang Python bindings (use bundled .so)
+        # Avoids apt/pip libclang version skew: the libclang PyPI package
+        # ships its own .so that the bindings are guaranteed to match.
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libclang-dev
-          LIBCLANG_PATH=$(ls /usr/lib/x86_64-linux-gnu/libclang-*.so* 2>/dev/null | head -1)
-          test -n "$LIBCLANG_PATH" || { echo "::error::libclang not found after apt install"; exit 1; }
-          echo "LIBCLANG_PATH=$LIBCLANG_PATH" >> $GITHUB_ENV
           pip install libclang nbformat
+          LIBCLANG_PATH=$(python -c "
+          import glob, os, sysconfig
+          site = sysconfig.get_paths()['purelib']
+          matches = sorted(glob.glob(os.path.join(site, '**', 'libclang*.so*'), recursive=True))
+          print(matches[0] if matches else '')
+          ")
+          if [ -z "$LIBCLANG_PATH" ] || [ ! -f "$LIBCLANG_PATH" ]; then
+            echo "::error::Could not locate bundled libclang.so"
+            python -c "import sysconfig; print('site:', sysconfig.get_paths()['purelib'])"
+            exit 1
+          fi
+          echo "Found bundled libclang at: $LIBCLANG_PATH"
+          echo "LIBCLANG_PATH=$LIBCLANG_PATH" >> $GITHUB_ENV
       - name: Regenerate docstr.hpp
         run: python scripts/generate_metadata.py --no-stubs --no-examples
       - name: Verify no drift
