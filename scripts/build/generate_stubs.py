@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
-"""
-Generate __init__.pyi from __all__
+"""Generate src/pyvinecopulib/__init__.pyi from the built extension.
+
+Invoked by CMake's POST_BUILD step (see CMakeLists.txt). At that point the
+just-built `.so` lives in the CMake build dir and the pure-Python sources
+live in `src/pyvinecopulib/` — neither location alone is a complete
+package. This script stages both into a tempdir, prepends it to sys.path,
+imports the assembled package, walks `__all__`, and writes the stub.
 """
 
 import argparse
 import importlib
 import inspect
 import re
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 from types import BuiltinFunctionType, FunctionType
 from typing import Optional
@@ -304,37 +311,61 @@ def generate_stub(site_dir, output_path: Path, indent: int = 2):
 
 
 def main():
-  parser = argparse.ArgumentParser(
-    description="Generate .pyi stub for pyvinecopulib from __all__."
+  parser = argparse.ArgumentParser(description=__doc__)
+  parser.add_argument(
+    "--source-pkg-dir",
+    required=True,
+    type=Path,
+    help="Source pyvinecopulib/ directory (contains __init__.py).",
   )
   parser.add_argument(
-    "site_dir",
-    nargs="?",
-    default=None,
-    help="Optional path prepended to sys.path. If omitted, the script "
-    "relies on the existing sys.path / PYTHONPATH to import pyvinecopulib.",
-  )
-  parser.add_argument(
-    "--indent", type=int, default=2, help="Indentation level (spaces)"
+    "--ext-so",
+    required=True,
+    type=Path,
+    help="Path to the freshly built pyvinecopulib_ext shared library.",
   )
   parser.add_argument(
     "--output",
+    required=True,
     type=Path,
-    default=Path("src/pyvinecopulib/__init__.pyi"),
-    help="Output .pyi path (default: src/pyvinecopulib/__init__.pyi)",
+    help="Output __init__.pyi path.",
   )
   parser.add_argument(
     "--py-typed",
     type=Path,
-    default=Path("src/pyvinecopulib/py.typed"),
-    help="Path to py.typed marker (default: src/pyvinecopulib/py.typed)",
+    default=None,
+    help="Optional path to py.typed marker (defaults to <output dir>/py.typed).",
+  )
+  parser.add_argument(
+    "--indent", type=int, default=2, help="Indentation level (spaces)."
   )
   args = parser.parse_args()
 
-  args.output.parent.mkdir(parents=True, exist_ok=True)
-  generate_stub(args.site_dir, args.output, indent=args.indent)
-  args.py_typed.parent.mkdir(parents=True, exist_ok=True)
-  args.py_typed.write_text("", encoding="utf-8")
+  if not args.ext_so.exists():
+    sys.exit(f"Extension not found at: {args.ext_so}")
+  if not args.source_pkg_dir.is_dir():
+    sys.exit(f"Source package dir not found: {args.source_pkg_dir}")
+
+  py_typed = args.py_typed or (args.output.parent / "py.typed")
+
+  # Stage the assembled package (sources + freshly built .so) into a
+  # tempdir so importlib finds a complete module to introspect.
+  with tempfile.TemporaryDirectory(prefix="pyvinecopulib-stubs-") as tmp:
+    site = Path(tmp)
+    pkg = site / "pyvinecopulib"
+    shutil.copytree(
+      args.source_pkg_dir,
+      pkg,
+      ignore=shutil.ignore_patterns(
+        "__init__.pyi", "py.typed", "*.so", "*.pyd", "*.dylib", "__pycache__"
+      ),
+    )
+    shutil.copy2(args.ext_so, pkg / args.ext_so.name)
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    generate_stub(str(site), args.output, indent=args.indent)
+    py_typed.parent.mkdir(parents=True, exist_ok=True)
+    py_typed.write_text("", encoding="utf-8")
 
 
 if __name__ == "__main__":

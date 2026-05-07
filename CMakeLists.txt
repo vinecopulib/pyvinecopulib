@@ -84,8 +84,9 @@ include_directories(${vinecopulib_INCLUDE_DIRS} ${kde1d_INCLUDE_DIRS}
 # ==============================================================================
 
 execute_process(
-  COMMAND "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/find_libclang.py"
-          --search-paths "${CMAKE_PREFIX_PATH}"
+  COMMAND
+    "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/build/find_libclang.py"
+    --search-paths "${CMAKE_PREFIX_PATH}"
   OUTPUT_VARIABLE LIBCLANG_PATH
   OUTPUT_STRIP_TRAILING_WHITESPACE)
 if(NOT LIBCLANG_PATH OR NOT EXISTS "${LIBCLANG_PATH}")
@@ -127,16 +128,16 @@ set(DOCSTR_OUTPUT "${CMAKE_SOURCE_DIR}/src/include/docstr.hpp")
 add_custom_command(
   OUTPUT "${DOCSTR_OUTPUT}"
   COMMAND
-    "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/generate_docstring.py"
-    -std "c++${CMAKE_CXX_STANDARD}" -I
-    "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include" -I
-    "${CMAKE_SOURCE_DIR}/lib/wdm/include" -I
+    "${Python_EXECUTABLE}"
+    "${CMAKE_SOURCE_DIR}/scripts/build/generate_docstring.py" -std
+    "c++${CMAKE_CXX_STANDARD}" -I "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include"
+    -I "${CMAKE_SOURCE_DIR}/lib/wdm/include" -I
     "${CMAKE_SOURCE_DIR}/lib/kde1d/include" -isystem "${EIGEN3_INCLUDE_DIR}"
     -isystem "${Boost_INCLUDE_DIRS}" -output "${DOCSTR_OUTPUT}" -library_file
     "${LIBCLANG_PATH}" ${DOCSTR_INPUT_HEADERS}
   DEPENDS ${DOCSTR_INPUT_HEADERS}
-          "${CMAKE_SOURCE_DIR}/scripts/generate_docstring.py"
-          "${CMAKE_SOURCE_DIR}/scripts/find_libclang.py"
+          "${CMAKE_SOURCE_DIR}/scripts/build/generate_docstring.py"
+          "${CMAKE_SOURCE_DIR}/scripts/build/find_libclang.py"
   COMMENT "Generating docstr.hpp from C++ headers via libclang"
   VERBATIM)
 
@@ -168,15 +169,16 @@ target_compile_definitions(pyvinecopulib_ext
 # ==============================================================================
 # Generated stubs: src/pyvinecopulib/__init__.pyi
 #
-# After the extension is built, stage the package + the just-built .so in a
-# tempdir and run scripts/generate_stubs.py against it. Output is gitignored.
+# After the extension is built, scripts/build/generate_stubs.py stages the
+# package + the just-built .so in a tempdir and writes the .pyi against it.
+# Output is gitignored.
 # ==============================================================================
 
 add_custom_command(
   TARGET pyvinecopulib_ext
   POST_BUILD
   COMMAND
-    "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/build_stubs.py"
+    "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/build/generate_stubs.py"
     --source-pkg-dir "${CMAKE_SOURCE_DIR}/src/pyvinecopulib" --ext-so
     "$<TARGET_FILE:pyvinecopulib_ext>" --output
     "${CMAKE_SOURCE_DIR}/src/pyvinecopulib/__init__.pyi" --py-typed

@@ -24,8 +24,9 @@ pyvinecopulib
 
    README
    features
-   CHANGELOG
    examples
+   CHANGELOG
+   CONTRIBUTING
 
 .. include:: README.md
       :parser: myst_parser.sphinx_

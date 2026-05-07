@@ -119,6 +119,7 @@ src/pyvinecopulib/py.typed
 # Sphinx source-tree staging (populated by docs/conf.py at build time).
 docs/README.md
 docs/CHANGELOG.md
+docs/CONTRIBUTING.md
 docs/examples
 docs/features.rst
 docs/examples.rst

@@ -118,156 +118,21 @@ For an editable install (recommended for development), use `--no-build-isolation
 pip install -e . --no-build-isolation
 ```
 
-Note that the `generate_requirements.py` script can also be used to generate a `requirements.txt` file for use with `pip` via the `--format` option:
+## Documentation
+
+Stable docs are published at <https://pyvinecopulib.readthedocs.io>. They are
+rebuilt automatically by Read the Docs whenever a new release is tagged on
+`main` and published to PyPI.
+
+To build the documentation locally:
 
 ```bash
-python scripts/generate_requirements.py --format txt
+make docs           # one-shot HTML build → docs/_build/html/
+make docs-serve     # live-reload dev server (sphinx-autobuild)
 ```
 
-### Building the documentation
+## Contributing
 
-Documentation for the example project is generated using Sphinx and the "Read the Docs" theme.
-The following command generates HTML-based reference documentation; for other
-formats please refer to the Sphinx manual:
-
-```bash
-cd docs
-python serve_sphinx.py
-```
-
-## Development
-
-This project includes comprehensive development tools including pre-commit hooks and a Makefile to streamline development workflow.
-
-### Quick Development Setup
-
-1. **Clone and setup environment**:
-   ```bash
-   git clone --recursive https://github.com/vinecopulib/pyvinecopulib.git
-   cd pyvinecopulib
-   make env-conda                    # Create conda environment
-   conda activate pyvinecopulib      # Activate environment
-   ```
-
-2. **Setup development tools**:
-   ```bash
-   make dev-setup                    # Install dependencies and pre-commit hooks
-   ```
-
-3. **Development workflow**:
-   ```bash
-   make quick-check                  # Run fast checks (lint, type-check, test)
-   make check-all                    # Run comprehensive checks before commit
-   ```
-
-### Development Commands
-
-Use `make help` to see all available commands. Key commands include:
-
-| Command | Description |
-|---------|-------------|
-| `make install-dev` | Install development dependencies |
-| `make test` | Run all tests |
-| `make test-fast` | Run tests without coverage |
-| `make test-examples` | Run example notebooks |
-| `make lint` | Run code linting with ruff |
-| `make format` | Format code with ruff |
-| `make type-check` | Run type checking with ty |
-| `make docs` | Build documentation |
-| `make docs-serve` | Serve documentation locally |
-| `make clean` | Clean build artifacts |
-| `make stubs` | Trigger an editable rebuild (regenerates `__init__.pyi`) |
-| `make docstrings` | Trigger an editable rebuild (regenerates `docstr.hpp`) |
-| `make metadata` | Rebuild + re-execute example notebooks |
-| `make examples` | Process and execute example notebooks |
-| `make clear-cache` | Clear Python cache files |
-
-### Pre-commit Hooks
-
-Pre-commit hooks automatically run code quality checks before each commit:
-
-- **Ruff**: Python linting and code formatting
-- **ty**: Type checking with project configuration (Astral's type checker)
-- **Clang-format**: C++ code formatting (src/ directory only)
-- **CMake-format**: CMake file formatting
-- **General hooks**: Trailing whitespace, YAML/TOML validation, etc.
-
-Install hooks with:
-```bash
-make pre-commit-install
-```
-
-Run manually on all files:
-```bash
-make pre-commit
-```
-
-### Development Workflow
-
-1. **Start new feature/fix**:
-   ```bash
-   git checkout -b feature/my-feature
-   ```
-
-2. **During development** (run frequently):
-   ```bash
-   make quick-check                  # Fast feedback loop
-   ```
-
-3. **Before committing**:
-   ```bash
-   make check-all                    # Comprehensive quality checks
-   git add .
-   git commit -m "Add new feature"   # Pre-commit hooks run automatically
-   ```
-
-### Code Style Guidelines
-
-- **Python**: Follow PEP 8, enforced by ruff
-- **C++**: Follow Google style guide, enforced by clang-format
-- **Type hints**: Required for all Python code
-- **Documentation**: Use docstrings for all public functions
-
-### Testing
-
-- **All tests**: `make test`
-- **Fast tests**: `make test-fast` (for quick development feedback)
-- **Example notebooks**: `make test-examples`
-- **Performance benchmarks**: `make benchmark`
-
-### Environment Management
-
-The project uses conda for environment management. The Makefile automatically detects conda environments:
-
-```bash
-make env-conda                        # Create new environment
-conda activate pyvinecopulib          # Activate environment
-make env-update                       # Update existing environment
-make update-deps                      # Update dependency files
-```
-
-### Release Process
-
-Before releasing, run comprehensive checks:
-```bash
-make release-check
-```
-
-This ensures all tests pass, documentation builds correctly, and examples work.
-
-### Troubleshooting
-
-- **Build issues**: `make debug-build`
-- **Installation issues**: `make debug-install`
-- **Project status**: `make status`
-- **Clean everything**: `make git-clean` (⚠️ destructive)
-
-### Development Tips
-
-- Use `make quick-check` frequently during development for fast feedback
-- Pre-commit hooks automatically fix many formatting issues
-- Run `make check-all` before pushing changes to ensure quality
-- After C++ changes, an editable install with `editable.rebuild = true` (set in `pyproject.toml`) automatically regenerates `docstr.hpp` and `__init__.pyi` on the next `import pyvinecopulib`. No manual step needed.
-- The project uses custom scripts in `scripts/` for stub generation (not nanobind's default), invoked from CMake at build time.
-- Keep commits focused and write clear commit messages
-- Add tests for new functionality
+Development setup, the build pipeline, the Makefile + pre-commit conventions,
+the CI workflow, and the release flow are all documented in
+[CONTRIBUTING.md](CONTRIBUTING.md).

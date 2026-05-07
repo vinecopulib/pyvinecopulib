@@ -246,7 +246,7 @@ def _stage_repo_files(docs_dir, repo_root):
   so the toctree in index.rst can reference them by name."""
   import shutil
 
-  to_stage = ["README.md", "CHANGELOG.md", "examples"]
+  to_stage = ["README.md", "examples", "CHANGELOG.md", "CONTRIBUTING.md"]
   for name in to_stage:
     src = os.path.join(repo_root, name)
     dst = os.path.join(docs_dir, name)
