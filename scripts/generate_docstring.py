@@ -800,7 +800,7 @@ def process_comment(comment):
               result += wrapped + "\n\n"
             wrapper.initial_indent = wrapper.subsequent_indent = ""
 
-  import pdb
+  # import pdb
 
   # if "counter-diagonal" in result:
   #   pdb.set_trace()
@@ -815,7 +815,7 @@ def process_comment(comment):
   try:
     return transform_docstring(result)
   except Exception:
-    pdb.set_trace()
+    # pdb.set_trace()
 
 
 def get_name_chain(cursor):
