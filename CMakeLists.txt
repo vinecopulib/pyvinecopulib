@@ -85,6 +85,7 @@ include_directories(${vinecopulib_INCLUDE_DIRS} ${kde1d_INCLUDE_DIRS}
 
 execute_process(
   COMMAND "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/find_libclang.py"
+          --search-paths "${CMAKE_PREFIX_PATH}"
   OUTPUT_VARIABLE LIBCLANG_PATH
   OUTPUT_STRIP_TRAILING_WHITESPACE)
 if(NOT LIBCLANG_PATH OR NOT EXISTS "${LIBCLANG_PATH}")
@@ -180,3 +181,10 @@ add_custom_command(
 
 # Install directive for scikit-build-core
 install(TARGETS pyvinecopulib_ext LIBRARY DESTINATION pyvinecopulib)
+
+# Explicitly install the generated stub and py.typed marker into the wheel. Both
+# are gitignored build artifacts; scikit-build-core's git-ls-files-based package
+# discovery would otherwise skip them.
+install(FILES "${CMAKE_SOURCE_DIR}/src/pyvinecopulib/__init__.pyi"
+              "${CMAKE_SOURCE_DIR}/src/pyvinecopulib/py.typed"
+        DESTINATION pyvinecopulib)

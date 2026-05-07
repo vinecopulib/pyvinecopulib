@@ -3,7 +3,19 @@
 # CMakeLists.txt (scripts/generate_docstring.py uses clang.cindex). The
 # version range is intentionally narrow so docstring output is stable
 # across CI runners and end-user builds.
-requires = ["scikit-build-core>=0.5.0", "nanobind>=2.7.0", "libclang>=18,<20"]
+#
+# numpy/matplotlib/networkx are also needed at build time: the CMake
+# POST_BUILD step (scripts/build_stubs.py) imports the freshly built
+# pyvinecopulib package to walk its public API, and the package transitively
+# imports these (nanobind ndarray bindings, pair_copuladata, _python_helpers).
+requires = [
+  "scikit-build-core>=0.5.0",
+  "nanobind>=2.7.0",
+  "libclang>=18,<20",
+  "numpy>=1.14",
+  "matplotlib>=3.0",
+  "networkx>=3.0",
+]
 build-backend = "scikit_build_core.build"
 
 [project]
