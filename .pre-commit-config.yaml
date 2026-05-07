@@ -32,12 +32,16 @@ repos:
         pass_filenames: false
         args: [--config-file=pyproject.toml]
 
-  # General code quality hooks
+  # General code quality hooks. Whitespace-modifying hooks skip the
+  # auto-generated files (docstr.hpp, __init__.pyi) so they don't
+  # ping-pong with regen-docstrings/regen-stubs.
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        exclude: &generated_files ^(src/pyvinecopulib/__init__\.pyi|src/include/docstr\.hpp)$
       - id: end-of-file-fixer
+        exclude: *generated_files
       - id: check-yaml
       - id: check-toml
       - id: check-json
@@ -46,6 +50,7 @@ repos:
       - id: debug-statements
       - id: mixed-line-ending
         args: [--fix=lf]
+        exclude: *generated_files
 
   # Check requirements files
   - repo: https://github.com/pre-commit/pygrep-hooks
