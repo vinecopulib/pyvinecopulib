@@ -127,9 +127,11 @@ def kde1d_plot(
   else:
     # Auto-set x limits with some padding
     try:
-      # Safely check if xmin and xmax are valid scalar values
-      xmin_val = getattr(kde, "xmin", np.nan)
-      xmax_val = getattr(kde, "xmax", np.nan)
+      # Safely check if xmin and xmax are valid scalar values. Annotated as
+      # Any because they may be float, ndarray, or absent (default np.nan);
+      # ty can't narrow across the hasattr guards on its own.
+      xmin_val: Any = getattr(kde, "xmin", np.nan)
+      xmax_val: Any = getattr(kde, "xmax", np.nan)
 
       # Convert to scalar if needed and check if they're finite
       if hasattr(xmin_val, "size") and hasattr(xmin_val, "item"):

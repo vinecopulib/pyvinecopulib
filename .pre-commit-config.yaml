@@ -1,6 +1,12 @@
 # Pre-commit hooks for pyvinecopulib
 # Run pre-commit install after cloning the repo to enable these hooks
 
+ci:
+  # ty runs against the locally installed package; pre-commit.ci can't
+  # build the C++ extension, so skip there.
+  skip:
+    - ty
+
 repos:
   # Ruff for linting and formatting
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -12,17 +18,18 @@ repos:
       # Run the formatter
       - id: ruff-format
 
-  # Type checking with mypy
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.15.0
+  # Type checking with ty (Astral's type checker). ty is alpha and
+  # doesn't yet ship a stable pre-commit repo, so we run it as a local
+  # hook against the dev env's installed copy. Skipped on pre-commit.ci
+  # since it requires the project + ty installed.
+  - repo: local
     hooks:
-      - id: mypy
-        additional_dependencies:
-          - pytest
-          - types-requests
-          - types-setuptools
+      - id: ty
+        name: ty type checker
+        language: system
+        entry: ty check
         pass_filenames: false
-        args: [--config-file=pyproject.toml]
+        types_or: [python, pyi]
 
   # General code quality hooks. Whitespace-modifying hooks skip the
   # auto-generated files.

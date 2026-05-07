@@ -294,11 +294,11 @@ jobs:
           pip install -r requirements.txt
           # Install editable so the CMake build generates
           # src/pyvinecopulib/__init__.pyi (now gitignored, build-time only)
-          # into the source tree where mypy can see it.
+          # into the source tree where ty can see it.
           pip install -e .
           ruff format --check
           ruff check
-          mypy
+          ty check
       - name: Create source distribution
         run: |
           export Boost_INCLUDE_DIR=$Boost_INCLUDE_DIR

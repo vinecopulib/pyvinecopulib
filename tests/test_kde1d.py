@@ -105,9 +105,9 @@ def test_kde1d_properties() -> None:
 
   # Test that properties are read-only
   with pytest.raises(AttributeError):
-    kde.xmin = 0.0  # type: ignore[misc]
+    kde.xmin = 0.0  # ty: ignore[invalid-assignment]
   with pytest.raises(AttributeError):
-    kde.multiplier = 1.0  # type: ignore[misc]
+    kde.multiplier = 1.0  # ty: ignore[invalid-assignment]
 
 
 def test_kde1d_fit_and_methods() -> None:

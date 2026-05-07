@@ -73,8 +73,8 @@ lint: ## Run linting with ruff
 format: ## Format code with ruff
 	$(PYTHON) -m ruff format $(SRC_DIR) $(TEST_DIR)
 
-type-check: ## Run type checking with mypy
-	$(PYTHON) -m mypy
+type-check: ## Run type checking with ty
+	$(PYTHON) -m ty check
 
 docs: ## Build documentation
 	cd $(DOCS_DIR) && $(PYTHON) -m sphinx -b html . _build/html

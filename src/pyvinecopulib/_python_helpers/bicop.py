@@ -1,9 +1,8 @@
-from typing import Any, Optional, cast
+from typing import Any, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
-from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 from .stats import expon_cdf, expon_pdf, expon_ppf, norm_cdf, norm_pdf, norm_ppf
 
@@ -158,7 +157,7 @@ def bicop_plot(
     plt.show()
   elif plot_type == "surface":
     fig = plt.figure()
-    ax = cast(Axes3D, fig.add_subplot(111, projection="3d"))
+    ax = fig.add_subplot(111, projection="3d")
     ax.view_init(elev=30, azim=-110)
     X, Y = np.meshgrid(points, points)
     ax.plot_surface(X, Y, dens, cmap=jet_colors, edgecolor="none", shade=False)
@@ -168,8 +167,10 @@ def bicop_plot(
     ax.set_ylim(xylim)
     ax.set_zlim(zlim)
     ax.set_box_aspect([1, 1, 1])
-    ax.xaxis.pane.fill = False
-    ax.yaxis.pane.fill = False
+    # ax is the Axes3D variant whose XAxis/YAxis/ZAxis have a `pane` attribute,
+    # but ty narrows to the 2D base which doesn't.
+    ax.xaxis.pane.fill = False  # ty: ignore[unresolved-attribute]
+    ax.yaxis.pane.fill = False  # ty: ignore[unresolved-attribute]
     ax.zaxis.pane.fill = False
     ax.grid(False)
     plt.draw()

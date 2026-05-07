@@ -56,7 +56,8 @@ classifiers = [
 
 [project.optional-dependencies]
 dev = [
-  "mypy>=1.15",
+  # Astral's type checker (replaces mypy for toolchain consistency with ruff).
+  "ty",
   "ruff==0.11.6",
   "pytest>=8.0",
   "pytest-rerunfailures",
@@ -129,19 +130,17 @@ exclude = ["lib", "src/pyvinecopulib/__init__.pyi"]
 "__init__.py" = ["F403", "F405"]
 # "**/{tests,docs,tools}/*" = ["E402"]
 
-[tool.mypy]
-# Recent mypy versions (>= 1.18) dropped 3.9 as a python_version target.
-# The package's runtime support floor is still 3.9 (see requires-python),
-# but type-checking against 3.10 semantics is acceptable since none of our
-# source uses 3.10+ syntax that would silently slip past mypy.
-python_version = "3.10"
-strict = true
-ignore_missing_imports = true
-pretty = true
-show_error_codes = true
-warn_unused_configs = true
-files = ["src", "tests"]
-exclude = "scripts|docs|examples"
+[tool.ty.src]
+include = ["src", "tests"]
+
+[tool.ty.environment]
+python-version = "3.9"
+
+[tool.ty.rules]
+# `from .pyvinecopulib_ext import ...` references the C++ extension shared
+# library. ty can't introspect a `.so` so resolution fails; the type info
+# is provided by src/pyvinecopulib/__init__.pyi which ty reads instead.
+unresolved-import = "ignore"
 
 [tool.bandit]
 exclude_dirs = ["tests", "docs", "examples", "lib", "build"]
