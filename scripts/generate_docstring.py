@@ -1151,7 +1151,20 @@ def print_symbols(f, name, node, level=0):
   name_var = name
 
   if not node.first_symbol:
-    assert level == 0
+    if level > 0:
+      # Phantom intermediate node: an intermediate namespace/class along a
+      # name_chain whose own cursor wasn't directly visited by extract()
+      # (e.g. libclang elided it on this platform), but whose descendants
+      # were. Observed on Windows. Emit a wrapper struct preserving the
+      # path so binding code's pyvinecopulib_doc.<a>.<b>.<c> lookups still
+      # compile; doc_symbols is empty for phantoms so no docs are dropped.
+      name_var = sanitize_name(name)
+      iprint("// Symbol: (synthesized intermediate)")
+      iprint("struct /* %s */ {" % name_var)
+      for k in sorted(node.children_map.keys()):
+        print_symbols(f, k, node.children_map[k], level=level + 1)
+      iprint("} %s;" % name_var)
+      return
     full_name = name
   else:
     name_chain = node.first_symbol.name_chain
