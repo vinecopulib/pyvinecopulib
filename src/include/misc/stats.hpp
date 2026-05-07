@@ -10,8 +10,6 @@
 
 #include "docstr.hpp"
 
-#include "docstr.hpp"
-
 namespace nb = nanobind;
 using namespace nb::literals;
 using namespace vinecopulib;
