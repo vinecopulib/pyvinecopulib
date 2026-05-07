@@ -1306,6 +1306,11 @@ def main():
     "-x",
     "c++",
     "-D__MKDOC_PY__",
+    # Bypass MSVC STL's __clang_major__ >= 19 static_assert when parsing on
+    # Windows. PyPI's libclang tops out at 18.x; the define is defined by
+    # MSVC STL itself as the official escape hatch and is harmless on other
+    # platforms (it just isn't referenced by libstdc++/libc++).
+    "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH",
     f"-std={args.std}",
   ]
   parameters.extend([f"-I{inc}" for inc in args.include_dirs])

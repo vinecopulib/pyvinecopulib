@@ -124,7 +124,8 @@ add_custom_command(
   OUTPUT "${DOCSTR_OUTPUT}"
   COMMAND
     "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/generate_docstring.py"
-    -I "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include" -I
+    -std "c++${CMAKE_CXX_STANDARD}" -I
+    "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include" -I
     "${CMAKE_SOURCE_DIR}/lib/wdm/include" -I
     "${CMAKE_SOURCE_DIR}/lib/kde1d/include" -isystem "${EIGEN3_INCLUDE_DIR}"
     -isystem "${Boost_INCLUDE_DIRS}" -output "${DOCSTR_OUTPUT}" -library_file
