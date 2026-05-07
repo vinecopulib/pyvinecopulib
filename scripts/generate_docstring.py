@@ -800,10 +800,6 @@ def process_comment(comment):
               result += wrapped + "\n\n"
             wrapper.initial_indent = wrapper.subsequent_indent = ""
 
-  # import pdb
-
-  # if "counter-diagonal" in result:
-  #   pdb.set_trace()
   # Transform ALL C++ method calls to Python method calls.
   # Be careful not to mistake code blocks for method calls.
   result = re.sub(r"``(.*?)::(.*?)``", r"``\1.\2``", result)
@@ -815,6 +811,7 @@ def process_comment(comment):
   try:
     return transform_docstring(result)
   except Exception:
+    pass
     # pdb.set_trace()
 
 
