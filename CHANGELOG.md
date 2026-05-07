@@ -1,5 +1,9 @@
 # Changelog
 
+### 0.7.6
+
+This release was only used to bump the `vinecopulib
+
 ## 0.7.5
 
 ### New features in `pyvinecopulib`

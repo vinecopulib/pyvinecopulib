@@ -77,13 +77,15 @@ type-check: ## Run type checking with ty
 	$(PYTHON) -m ty check
 
 docs: ## Build documentation
-	cd $(DOCS_DIR) && $(PYTHON) -m sphinx -b html . _build/html
+	$(PYTHON) -m sphinx -b html $(DOCS_DIR) $(DOCS_DIR)/_build/html
 
-docs-serve: ## Serve documentation locally
-	cd $(DOCS_DIR) && $(PYTHON) serve_sphinx.py
+docs-serve: ## Serve documentation locally with live reload
+	$(PYTHON) -m sphinx_autobuild $(DOCS_DIR) $(DOCS_DIR)/_build/html
 
 docs-clean: ## Clean documentation build
-	cd $(DOCS_DIR) && rm -rf _build/
+	rm -rf $(DOCS_DIR)/_build $(DOCS_DIR)/_generate \
+	       $(DOCS_DIR)/features.rst $(DOCS_DIR)/examples.rst \
+	       $(DOCS_DIR)/README.md $(DOCS_DIR)/CHANGELOG.md $(DOCS_DIR)/examples
 
 pre-commit-install: ## Install pre-commit hooks
 	$(PIP_INSTALL) pre-commit

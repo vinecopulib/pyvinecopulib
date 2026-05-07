@@ -115,3 +115,12 @@ examples/forests/data
 src/include/docstr.hpp
 src/pyvinecopulib/__init__.pyi
 src/pyvinecopulib/py.typed
+
+# Sphinx source-tree staging (populated by docs/conf.py at build time).
+docs/README.md
+docs/CHANGELOG.md
+docs/examples
+docs/features.rst
+docs/examples.rst
+docs/_generate
+docs/_build
