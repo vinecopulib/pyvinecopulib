@@ -79,7 +79,7 @@ doc = [
 
 [project.urls]
 Homepage = "https://github.com/vinecopulib/pyvinecopulib/"
-Documentation = "https://vinecopulib.github.io/pyvinecopulib"
+Documentation = "https://pyvinecopulib.readthedocs.io"
 Repository = "https://github.com/vinecopulib/pyvinecopulib.git"
 Issues = "https://github.com/vinecopulib/pyvinecopulib/issues"
 

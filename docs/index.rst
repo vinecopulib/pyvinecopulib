@@ -3,8 +3,8 @@
 pyvinecopulib
 =============
 
-.. image:: https://img.shields.io/website/http/vinecopulib.github.io/pyvinecopulib.svg
-   :target: https://vinecopulib.github.io/pyvinecopulib/
+.. image:: https://readthedocs.org/projects/pyvinecopulib/badge/?version=latest
+   :target: https://pyvinecopulib.readthedocs.io
    :alt: Documentation
 
 .. image:: https://img.shields.io/badge/License-MIT-yellow.svg
