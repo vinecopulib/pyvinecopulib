@@ -300,15 +300,22 @@ def _write_examples_rst(out_path, examples_dir):
       f.write(f"   examples/{os.path.splitext(nb)[0]}\n")
 
 
-def _setup_dynamic_sources(app):
-  """builder-inited hook: stage files and write generated RST."""
-  docs_dir = os.path.dirname(os.path.abspath(__file__))
-  repo_root = os.path.dirname(docs_dir)
-  _stage_repo_files(docs_dir, repo_root)
-  _write_features_rst(os.path.join(docs_dir, "features.rst"))
-  _write_examples_rst(
-    os.path.join(docs_dir, "examples.rst"), os.path.join(docs_dir, "examples")
-  )
+# Stage README/CHANGELOG/CONTRIBUTING/examples + generate features.rst /
+# examples.rst eagerly at conf.py load time. Doing this at module level
+# (rather than in a `builder-inited` hook) is required because
+# sphinx.ext.autosummary's stub-generation also runs at builder-inited
+# and races with us — if features.rst doesn't exist before autosummary's
+# scan, the `:toctree:` stubs are never written, the per-class pages
+# never render, and on a single-pass build the cross-links from the API
+# index (features.html) point at non-existent _generate/*.html files.
+_DOCS_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(_DOCS_DIR)
+_stage_repo_files(_DOCS_DIR, _REPO_ROOT)
+_write_features_rst(os.path.join(_DOCS_DIR, "features.rst"))
+_write_examples_rst(
+  os.path.join(_DOCS_DIR, "examples.rst"),
+  os.path.join(_DOCS_DIR, "examples"),
+)
 
 
 # Register Sphinx setup with recommonmark configuration and autodoc
@@ -316,9 +323,6 @@ def setup(app):
   """
   Configure Sphinx to handle autodoc and preprocess Markdown files.
   """
-  # Stage README/CHANGELOG/examples + generate features.rst/examples.rst
-  app.connect("builder-inited", _setup_dynamic_sources)
-
   # Register the autodoc docstring processor
   app.connect("autodoc-process-docstring", autodoc_process_docstring)
 
