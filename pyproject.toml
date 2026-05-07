@@ -72,6 +72,12 @@ build-dir = "build/{wheel_tag}"
 # Build stable ABI wheels for CPython 3.12+
 wheel.py-api = "cp312"
 
+# Auto-rebuild the C++ extension on import in editable installs, so the
+# regen-stubs pre-commit hook always sees fresh bindings without a manual
+# reinstall. No effect on wheel builds or CI. Use:
+#   pip install -e . --no-build-isolation
+editable.rebuild = true
+
 [tool.cibuildwheel]
 # Necessary to see build output from the actual compilation
 build-verbosity = 1

@@ -2,10 +2,12 @@
 # Run pre-commit install after cloning the repo to enable these hooks
 
 ci:
-  # regen-docstrings needs a local libclang install; pre-commit.ci doesn't
-  # have one. The authoritative drift gate lives in .github/workflows/pypi.yml.
+  # regen-docstrings and regen-stubs need a local libclang install / a built
+  # editable install of pyvinecopulib; pre-commit.ci has neither. The
+  # authoritative drift gates live in .github/workflows/pypi.yml.
   skip:
     - regen-docstrings
+    - regen-stubs
 
 repos:
   # Ruff for linting and formatting
@@ -68,15 +70,28 @@ repos:
         files: ^src/.*\.(c|cc|cpp|cxx|h|hpp|hxx)$
         args: [--style=Google]
 
-  # Regenerate src/include/docstr.hpp when C++ headers in lib/ change.
-  # Requires libclang locally (set LIBCLANG_PATH if not in a conda env named
-  # via --env). Skipped on pre-commit.ci (see ci.skip above); the
-  # authoritative gate is verify_docstrings in .github/workflows/pypi.yml.
+  # Regenerate generated artifacts when their inputs change. Both hooks fail
+  # on diff so the developer notices immediately. Skipped on pre-commit.ci
+  # (see ci.skip above); the authoritative gates live in pypi.yml.
   - repo: local
     hooks:
+      # Regenerate src/include/docstr.hpp when C++ headers in lib/ change.
+      # Requires libclang locally (set LIBCLANG_PATH if not in a conda env
+      # named via --env).
       - id: regen-docstrings
         name: Regenerate docstr.hpp from C++ headers
         language: system
         entry: bash -c 'python scripts/generate_metadata.py --no-stubs --no-examples && git diff --exit-code src/include/docstr.hpp'
         pass_filenames: false
         files: '^(lib/(vinecopulib|wdm|kde1d)/include/.*\.(hpp|ipp)|scripts/generate_(metadata|docstring)\.py|src/include/docstr\.hpp)$'
+
+      # Regenerate src/pyvinecopulib/__init__.pyi when bindings or Python
+      # surface change. Requires an editable install (`pip install -e .
+      # --no-build-isolation`); editable.rebuild=true in pyproject.toml keeps
+      # the extension fresh on import.
+      - id: regen-stubs
+        name: Regenerate __init__.pyi from the installed extension
+        language: system
+        entry: bash -c 'python scripts/generate_stubs.py "$(python -c "import site; print(site.getsitepackages()[0])")" && git diff --exit-code src/pyvinecopulib/__init__.pyi'
+        pass_filenames: false
+        files: '^(src/pyvinecopulib/(__init__\.py|pair_copuladata\.py|__init__\.pyi|_python_helpers/.*)|src/pyvinecopulib_ext\.cpp|src/include/.*\.(hpp|cpp)|scripts/generate_stubs\.py)$'

@@ -226,6 +226,14 @@ def generate_stub(site_dir: str, output_path: Path, indent: int = 2):
   pkg = importlib.import_module("pyvinecopulib")
   names = sorted(getattr(pkg, "__all__", []))
 
+  if not names:
+    raise SystemExit(
+      f"Refusing to overwrite {output_path}: imported pyvinecopulib has an "
+      f"empty __all__ (module path: {getattr(pkg, '__file__', '<namespace>')}).\n"
+      "The C++ extension is likely not built into this environment. "
+      "Run 'pip install -e . --no-build-isolation' and retry."
+    )
+
   known_types = {
     name for name in names if inspect.isclass(getattr(pkg, name, None))
   }
