@@ -1,4 +1,4 @@
-# Contributing to pyvinecopulib
+# Contributing
 
 This guide covers the dev-side workflow: setting up an environment, the
 build pipeline, the Makefile + pre-commit conventions, and the release
