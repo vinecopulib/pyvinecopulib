@@ -76,9 +76,13 @@ cd pyvinecopulib
 
 The main build time prerequisites are:
 
-* scikit-build-core (>=0.4.3),
+* scikit-build-core (>=0.5.0),
 * nanobind (>=2.7.0),
+* libclang (>=18) — used to regenerate `src/include/docstr.hpp` from the C++ headers as a step of the build,
+* numpy / matplotlib / networkx — imported by the post-build stub-generation step,
 * a compiler with C++17 support.
+
+When installing via `pip install .` (the default), all of these are pulled into an isolated build environment automatically via `[build-system] requires` in `pyproject.toml`; you don't need to install them yourself.
 
 To install from source, `Eigen` and `Boost` also need to be available, and CMake will try to find suitable versions automatically.
 
@@ -106,18 +110,12 @@ Finally, you can build and install `pyvinecopulib` using `pip`:
 pip install .
 ```
 
-Stubs and documentation can then be generated using the custom scripts:
+The build automatically regenerates `src/include/docstr.hpp` (from the C++ headers via libclang) and `src/pyvinecopulib/__init__.pyi` (from the freshly built extension). Both files are gitignored — they're pure build artifacts.
+
+For an editable install (recommended for development), use `--no-build-isolation` so the conda env's libclang is reused and `editable.rebuild = true` regenerates everything on each `import`:
 
 ```bash
-python scripts/generate_metadata.py --env pyvinecopulib
-```
-
-Or use the Makefile for convenience:
-
-```bash
-make metadata    # Generate all (stubs, docstrings, examples)
-make stubs       # Generate type stubs only
-make docstrings  # Generate C++ docstrings only
+pip install -e . --no-build-isolation
 ```
 
 Note that the `generate_requirements.py` script can also be used to generate a `requirements.txt` file for use with `pip` via the `--format` option:
@@ -174,13 +172,13 @@ Use `make help` to see all available commands. Key commands include:
 | `make test-examples` | Run example notebooks |
 | `make lint` | Run code linting with ruff |
 | `make format` | Format code with ruff |
-| `make type-check` | Run type checking with mypy |
+| `make type-check` | Run type checking with ty |
 | `make docs` | Build documentation |
 | `make docs-serve` | Serve documentation locally |
 | `make clean` | Clean build artifacts |
-| `make stubs` | Generate type stubs (custom script) |
-| `make docstrings` | Generate C++ docstrings |
-| `make metadata` | Generate all metadata (stubs, docstrings, examples) |
+| `make stubs` | Trigger an editable rebuild (regenerates `__init__.pyi`) |
+| `make docstrings` | Trigger an editable rebuild (regenerates `docstr.hpp`) |
+| `make metadata` | Rebuild + re-execute example notebooks |
 | `make examples` | Process and execute example notebooks |
 | `make clear-cache` | Clear Python cache files |
 
@@ -189,7 +187,7 @@ Use `make help` to see all available commands. Key commands include:
 Pre-commit hooks automatically run code quality checks before each commit:
 
 - **Ruff**: Python linting and code formatting
-* **MyPy**: Type checking with project configuration
+- **ty**: Type checking with project configuration (Astral's type checker)
 - **Clang-format**: C++ code formatting (src/ directory only)
 - **CMake-format**: CMake file formatting
 - **General hooks**: Trailing whitespace, YAML/TOML validation, etc.
@@ -269,7 +267,7 @@ This ensures all tests pass, documentation builds correctly, and examples work.
 - Use `make quick-check` frequently during development for fast feedback
 - Pre-commit hooks automatically fix many formatting issues
 - Run `make check-all` before pushing changes to ensure quality
-* Use `make metadata` to regenerate stubs and docstrings after C++ changes
-* The project uses custom scripts in `scripts/` for stub generation (not nanobind's default)
+- After C++ changes, an editable install with `editable.rebuild = true` (set in `pyproject.toml`) automatically regenerates `docstr.hpp` and `__init__.pyi` on the next `import pyvinecopulib`. No manual step needed.
+- The project uses custom scripts in `scripts/` for stub generation (not nanobind's default), invoked from CMake at build time.
 - Keep commits focused and write clear commit messages
 - Add tests for new functionality
