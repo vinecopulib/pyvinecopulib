@@ -17,35 +17,35 @@ jobs:
   verify_docstrings:
     name: Verify src/include/docstr.hpp is up to date
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        # Required so subsequent steps run inside the activated micromamba env
+        # (CONDA_PREFIX, PATH, etc. are set by the env activation hooks).
+        shell: bash -el {0}
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
         with:
           submodules: recursive
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - name: Set up conda env (mirrors local for libclang/eigen/boost parity)
+        # Using the same conda-forge packages the local dev env uses
+        # eliminates libclang-version skew and missing-Eigen/Boost headers,
+        # both of which would otherwise produce a different docstr.hpp than
+        # what was generated locally.
+        uses: mamba-org/setup-micromamba@v2
         with:
-          python-version: "3.11"
-      - name: Install libclang Python bindings (use bundled .so)
-        # Avoids apt/pip libclang version skew: the libclang PyPI package
-        # ships its own .so that the bindings are guaranteed to match.
-        run: |
-          pip install libclang nbformat
-          LIBCLANG_PATH=$(python -c "
-          import glob, os, sysconfig
-          site = sysconfig.get_paths()['purelib']
-          matches = sorted(glob.glob(os.path.join(site, '**', 'libclang*.so*'), recursive=True))
-          print(matches[0] if matches else '')
-          ")
-          if [ -z "$LIBCLANG_PATH" ] || [ ! -f "$LIBCLANG_PATH" ]; then
-            echo "::error::Could not locate bundled libclang.so"
-            python -c "import sysconfig; print('site:', sysconfig.get_paths()['purelib'])"
-            exit 1
-          fi
-          echo "Found bundled libclang at: $LIBCLANG_PATH"
-          echo "LIBCLANG_PATH=$LIBCLANG_PATH" >> $GITHUB_ENV
+          environment-name: pyvinecopulib
+          create-args: >-
+            python=3.11
+            python-clang
+            eigen
+            boost
+            nbformat
+          condarc: |
+            channels:
+              - conda-forge
       - name: Regenerate docstr.hpp
-        run: python scripts/generate_metadata.py --no-stubs --no-examples
+        run: python scripts/generate_metadata.py --env pyvinecopulib --no-stubs --no-examples
       - name: Verify no drift
         run: |
           if ! git diff --exit-code src/include/docstr.hpp; then

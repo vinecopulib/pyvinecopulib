@@ -129,10 +129,21 @@ SKIP_ACCESS = [
 
 
 def get_eigen_include(env_name: str) -> str:
+  # Resolution order: explicit env var > active conda env > miniforge fallback.
+  if "EIGEN3_INCLUDE_DIR" in os.environ:
+    return os.environ["EIGEN3_INCLUDE_DIR"]
+  conda_prefix = os.environ.get("CONDA_PREFIX")
+  if conda_prefix:
+    return str(Path(conda_prefix) / "include" / "eigen3")
   return str(Path.home() / f"miniforge3/envs/{env_name}/include/eigen3")
 
 
 def get_boost_include(env_name: str) -> str:
+  if "Boost_INCLUDE_DIR" in os.environ:
+    return os.environ["Boost_INCLUDE_DIR"]
+  conda_prefix = os.environ.get("CONDA_PREFIX")
+  if conda_prefix:
+    return str(Path(conda_prefix) / "include")
   return str(Path.home() / f"miniforge3/envs/{env_name}/include")
 
 

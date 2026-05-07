@@ -49,10 +49,15 @@ def generate_docstrings(env_name: str) -> None:
   print("Generating C++ docstrings...")
   print("-------------------")
 
+  # Resolution order: explicit env var > active conda env > miniforge fallback.
   env_path = os.environ.get("LIBCLANG_PATH")
+  conda_prefix = os.environ.get("CONDA_PREFIX")
   if env_path:
     clang_lib = Path(env_path)
     print("Clang library path (from LIBCLANG_PATH):", clang_lib)
+  elif conda_prefix:
+    clang_lib = Path(conda_prefix) / "lib" / "libclang.so"
+    print("Clang library path (from CONDA_PREFIX):", clang_lib)
   else:
     print("Conda environment:", env_name)
     clang_lib = Path.home() / f"miniforge3/envs/{env_name}/lib/libclang.so"
