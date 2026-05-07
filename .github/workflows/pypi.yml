@@ -304,8 +304,10 @@ jobs:
           path: dist/
       - name: Install wheel + examples extras
         run: |
-          pip install dist/*.whl
-          pip install "pyvinecopulib[examples]" --no-deps  # extras only; wheel above is the package
+          # `<wheel>[examples]` installs the local wheel and pulls in the
+          # extras (jupyterlab, scipy) without going to PyPI for the package.
+          WHEEL=$(ls dist/*.whl)
+          pip install "${WHEEL}[examples]"
           pip install jupyter nbconvert nbformat
       - name: Re-execute notebooks
         run: python scripts/regenerate_notebooks.py
