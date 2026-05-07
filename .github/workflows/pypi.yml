@@ -306,6 +306,11 @@ jobs:
           pipx run build --sdist
       - name: Install source distribution
         run: |
+          # The lint step installed pyvinecopulib editable; its meta-path
+          # finder ('_pyvinecopulib_editable.py') would otherwise trigger a
+          # CMake rebuild during the sdist's POST_BUILD stub-gen import,
+          # using the outer env (which doesn't have the build deps).
+          pip uninstall -y pyvinecopulib
           export Boost_INCLUDE_DIR=$Boost_INCLUDE_DIR
           export EIGEN3_INCLUDE_DIR=$EIGEN3_INCLUDE_DIR
           pip install dist/*.tar.gz

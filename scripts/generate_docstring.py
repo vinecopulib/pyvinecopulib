@@ -1402,6 +1402,12 @@ def main():
   glue_filename = os.path.join(tmpdir, "mkdoc_glue.h")
   with open(glue_filename, "w") as glue_f:
     for include_file in sorted(include_files):
+      # .ipp files are reached transitively via each .hpp's bottom include
+      # and have no include guards; #include'ing them directly here would
+      # cause every symbol in them to be redefined when the .hpp is also
+      # in the include set (breaks the Windows build).
+      if include_file.endswith(".ipp"):
+        continue
       line = '#include "{}"'.format(include_file)
       glue_f.write(line + "\n")
       f.write("// " + line + "\n")

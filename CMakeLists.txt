@@ -98,25 +98,29 @@ if(NOT LIBCLANG_PATH OR NOT EXISTS "${LIBCLANG_PATH}")
 endif()
 message(STATUS "Found libclang: ${LIBCLANG_PATH}")
 
-# Headers parsed for docstring extraction. Mirrors the substring filter used by
-# the previous scripts/generate_metadata.py (class/controls/family/structure
-# /stats/wdm/kde1d × .hpp/.ipp). Globs run at CMake configure time.
+# Headers parsed for docstring extraction. Both .hpp and .ipp are passed: the
+# script tracks both in its include-file map (so symbols defined in .ipp
+# implementation files are extracted), but only #includes .hpp files in the glue
+# translation unit (.ipp content reaches libclang transitively via each .hpp's
+# bottom include, and double inclusion would break Windows since .ipp has no
+# include guards). Patterns end with `<key>.<ext>` (no trailing wildcard) to
+# avoid matching unrelated files like `tools_stats_ghalton.hpp`.
 file(
   GLOB_RECURSE
   DOCSTR_INPUT_HEADERS
-  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*class*.hpp"
-  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*class*.ipp"
-  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*controls*.hpp"
-  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*controls*.ipp"
-  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*family*.hpp"
-  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*family*.ipp"
-  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*structure*.hpp"
-  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*structure*.ipp"
-  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*stats*.hpp"
-  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*stats*.ipp"
-  "${CMAKE_SOURCE_DIR}/lib/wdm/include/*wdm*.hpp"
-  "${CMAKE_SOURCE_DIR}/lib/kde1d/include/*kde1d*.hpp"
-  "${CMAKE_SOURCE_DIR}/lib/kde1d/include/*stats*.hpp")
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*class.hpp"
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*class.ipp"
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*controls.hpp"
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*controls.ipp"
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*family.hpp"
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*family.ipp"
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*structure.hpp"
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*structure.ipp"
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*stats.hpp"
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*stats.ipp"
+  "${CMAKE_SOURCE_DIR}/lib/wdm/include/*wdm.hpp"
+  "${CMAKE_SOURCE_DIR}/lib/kde1d/include/*kde1d.hpp"
+  "${CMAKE_SOURCE_DIR}/lib/kde1d/include/*stats.hpp")
 
 set(DOCSTR_OUTPUT "${CMAKE_SOURCE_DIR}/src/include/docstr.hpp")
 
