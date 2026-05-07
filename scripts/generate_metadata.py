@@ -1,4 +1,5 @@
 import argparse
+import os
 import subprocess
 from pathlib import Path
 
@@ -47,10 +48,22 @@ def inject_image_metadata(examples_dir: Path) -> None:
 def generate_docstrings(env_name: str) -> None:
   print("Generating C++ docstrings...")
   print("-------------------")
-  print("Conda environment:", env_name)
 
-  clang_lib = Path.home() / f"miniforge3/envs/{env_name}/lib/libclang.so"
-  print("Clang library path:", clang_lib)
+  env_path = os.environ.get("LIBCLANG_PATH")
+  if env_path:
+    clang_lib = Path(env_path)
+    print("Clang library path (from LIBCLANG_PATH):", clang_lib)
+  else:
+    print("Conda environment:", env_name)
+    clang_lib = Path.home() / f"miniforge3/envs/{env_name}/lib/libclang.so"
+    print("Clang library path:", clang_lib)
+
+  if not clang_lib.exists():
+    raise FileNotFoundError(
+      f"libclang not found at {clang_lib}. "
+      "Set LIBCLANG_PATH to the libclang shared library, "
+      "or install python-clang in the conda env named via --env."
+    )
 
   include_dirs = [
     "lib/vinecopulib/include",

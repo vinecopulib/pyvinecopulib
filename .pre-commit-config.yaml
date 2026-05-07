@@ -1,6 +1,12 @@
 # Pre-commit hooks for pyvinecopulib
 # Run pre-commit install after cloning the repo to enable these hooks
 
+ci:
+  # regen-docstrings needs a local libclang install; pre-commit.ci doesn't
+  # have one. The authoritative drift gate lives in .github/workflows/pypi.yml.
+  skip:
+    - regen-docstrings
+
 repos:
   # Ruff for linting and formatting
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -61,3 +67,16 @@ repos:
       - id: clang-format
         files: ^src/.*\.(c|cc|cpp|cxx|h|hpp|hxx)$
         args: [--style=Google]
+
+  # Regenerate src/include/docstr.hpp when C++ headers in lib/ change.
+  # Requires libclang locally (set LIBCLANG_PATH if not in a conda env named
+  # via --env). Skipped on pre-commit.ci (see ci.skip above); the
+  # authoritative gate is verify_docstrings in .github/workflows/pypi.yml.
+  - repo: local
+    hooks:
+      - id: regen-docstrings
+        name: Regenerate docstr.hpp from C++ headers
+        language: system
+        entry: bash -c 'python scripts/generate_metadata.py --no-stubs --no-examples && git diff --exit-code src/include/docstr.hpp'
+        pass_filenames: false
+        files: '^(lib/(vinecopulib|wdm|kde1d)/include/.*\.(hpp|ipp)|scripts/generate_(metadata|docstring)\.py|src/include/docstr\.hpp)$'
