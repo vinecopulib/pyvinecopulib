@@ -237,7 +237,7 @@ jobs:
           retry_wait_seconds: 60
           shell: bash
           command: |
-            pytest tests/ -r a
+            pytest tests/ -r a -n 1 --no-cov
       # Override pytest defaults (in pyproject.toml):
       # - disable coverage (not meaningful for notebooks)
       # - run sequentially (-n 1)
