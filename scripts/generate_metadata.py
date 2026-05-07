@@ -1,5 +1,11 @@
+"""Re-execute example notebooks and inject image metadata for nbsphinx.
+
+Docstring (`src/include/docstr.hpp`) and stub (`src/pyvinecopulib/__init__.pyi`)
+generation are now handled by CMake at build time; this script is responsible
+only for the notebook flow used by docs/Phase 2.
+"""
+
 import argparse
-import os
 import subprocess
 from pathlib import Path
 
@@ -45,135 +51,30 @@ def inject_image_metadata(examples_dir: Path) -> None:
       print(f"{nb_path}: no updates needed.")
 
 
-def generate_docstrings(env_name: str) -> None:
-  print("Generating C++ docstrings...")
-  print("-------------------")
-
-  # Resolution order: explicit env var > active conda env > miniforge fallback.
-  env_path = os.environ.get("LIBCLANG_PATH")
-  conda_prefix = os.environ.get("CONDA_PREFIX")
-  if env_path:
-    clang_lib = Path(env_path)
-    print("Clang library path (from LIBCLANG_PATH):", clang_lib)
-  elif conda_prefix:
-    clang_lib = Path(conda_prefix) / "lib" / "libclang.so"
-    print("Clang library path (from CONDA_PREFIX):", clang_lib)
-  else:
-    print("Conda environment:", env_name)
-    clang_lib = Path.home() / f"miniforge3/envs/{env_name}/lib/libclang.so"
-    print("Clang library path:", clang_lib)
-
-  if not clang_lib.exists():
-    raise FileNotFoundError(
-      f"libclang not found at {clang_lib}. "
-      "Set LIBCLANG_PATH to the libclang shared library, "
-      "or install python-clang in the conda env named via --env."
-    )
-
-  include_dirs = [
-    "lib/vinecopulib/include",
-    "lib/wdm/include",
-    "lib/kde1d/include",
-  ]
-  header_name_substrings = [
-    "class",
-    "controls",
-    "family",
-    "structure",
-    "stats",
-    "wdm",
-    "kde1d",
-  ]
-
-  # collect headers from both include dirs
-  headers: list[str] = []
-  for inc in include_dirs:
-    out = subprocess.check_output(
-      [
-        "find",
-        inc,
-        "-regextype",
-        "awk",
-        "-regex",
-        f".*({'|'.join(header_name_substrings)})\\.(hpp|ipp)",
-        "-print",
-      ],
-      text=True,
-    )
-    headers.extend(out.splitlines())
-
-  print("Found headers:\n", "\n  ".join(headers))
-
-  cmd = [
-    "python3",
-    "scripts/generate_docstring.py",
-    *[arg for d in include_dirs for arg in ("-I", d)],
-    "-output",
-    "src/include/docstr.hpp",
-    "-library_file",
-    str(clang_lib),
-  ] + headers
-
-  subprocess.run(cmd, check=True)
-
-
-def generate_stubs(env_name: str) -> None:
-  print("Generating stub files...")
-  print("-------------------")
-  env_python = Path.home() / f"miniforge3/envs/{env_name}/bin/python"
-
-  site_packages = subprocess.check_output(
-    [str(env_python), "-c", "import site; print(site.getsitepackages()[0])"],
-    text=True,
-  ).strip()
-
-  cmd = [str(env_python), "scripts/generate_stubs.py", site_packages]
-  subprocess.run(cmd, check=True)
-
-
 def main():
-  parser = argparse.ArgumentParser(
-    description="Generate documentation and stub files."
-  )
+  parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument(
-    "--env", type=str, default="pyvinecopulib", help="Conda environment name"
+    "--examples-dir",
+    type=Path,
+    default=Path("examples"),
+    help="Directory containing example notebooks (default: examples).",
   )
-  parser.add_argument(
-    "--no-docstrings", action="store_true", help="Skip C++ docstring generation"
-  )
-  parser.add_argument(
-    "--no-stubs", action="store_true", help="Skip stub file generation"
-  )
-  parser.add_argument(
-    "--no-examples",
-    action="store_true",
-    help="Inject image metadata into Jupyter notebooks (for nbsphinx).",
-  )
-
   args = parser.parse_args()
 
-  if not args.no_docstrings:
-    generate_docstrings(args.env)
-
-  if not args.no_stubs:
-    generate_stubs(args.env)
-
-  if not args.no_examples:
-    examples_dir = Path("examples")
-    for file in examples_dir.glob("*.ipynb"):
-      subprocess.run(
-        [
-          "jupyter",
-          "nbconvert",
-          "--to",
-          "notebook",
-          "--execute",
-          "--inplace",
-          file,
-        ],
-        check=True,
-      )
-    inject_image_metadata(examples_dir)
+  for file in sorted(args.examples_dir.glob("*.ipynb")):
+    subprocess.run(
+      [
+        "jupyter",
+        "nbconvert",
+        "--to",
+        "notebook",
+        "--execute",
+        "--inplace",
+        str(file),
+      ],
+      check=True,
+    )
+  inject_image_metadata(args.examples_dir)
 
 
 if __name__ == "__main__":

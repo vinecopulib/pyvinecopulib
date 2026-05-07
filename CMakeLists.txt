@@ -73,6 +73,69 @@ include_directories(SYSTEM ${external_includes})
 include_directories(${vinecopulib_INCLUDE_DIRS} ${kde1d_INCLUDE_DIRS}
                     ${pyvinecopulib_INCLUDE_DIRS})
 
+# ==============================================================================
+# Generated docstrings: src/include/docstr.hpp
+#
+# Regenerated on every configure/build via libclang parsing of the C++ headers
+# in lib/. The output is gitignored — the build is the single source of truth,
+# eliminating the need for a regenerate-and-diff drift gate. libclang is
+# declared as a build-system requirement in pyproject.toml, so isolated builds
+# pull a known-good version automatically.
+# ==============================================================================
+
+execute_process(
+  COMMAND "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/find_libclang.py"
+  OUTPUT_VARIABLE LIBCLANG_PATH
+  OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT LIBCLANG_PATH OR NOT EXISTS "${LIBCLANG_PATH}")
+  message(
+    FATAL_ERROR
+      "Could not locate libclang. Required at build time to regenerate "
+      "src/include/docstr.hpp. Install via 'pip install libclang' (already "
+      "in [build-system] requires for isolated builds) or include "
+      "python-clang in your conda env.")
+endif()
+message(STATUS "Found libclang: ${LIBCLANG_PATH}")
+
+# Headers parsed for docstring extraction. Mirrors the substring filter used by
+# the previous scripts/generate_metadata.py (class/controls/family/structure
+# /stats/wdm/kde1d × .hpp/.ipp). Globs run at CMake configure time.
+file(
+  GLOB_RECURSE
+  DOCSTR_INPUT_HEADERS
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*class*.hpp"
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*class*.ipp"
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*controls*.hpp"
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*controls*.ipp"
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*family*.hpp"
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*family*.ipp"
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*structure*.hpp"
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*structure*.ipp"
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*stats*.hpp"
+  "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include/*stats*.ipp"
+  "${CMAKE_SOURCE_DIR}/lib/wdm/include/*wdm*.hpp"
+  "${CMAKE_SOURCE_DIR}/lib/kde1d/include/*kde1d*.hpp"
+  "${CMAKE_SOURCE_DIR}/lib/kde1d/include/*stats*.hpp")
+
+set(DOCSTR_OUTPUT "${CMAKE_SOURCE_DIR}/src/include/docstr.hpp")
+
+add_custom_command(
+  OUTPUT "${DOCSTR_OUTPUT}"
+  COMMAND
+    "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/generate_docstring.py"
+    -I "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include" -I
+    "${CMAKE_SOURCE_DIR}/lib/wdm/include" -I
+    "${CMAKE_SOURCE_DIR}/lib/kde1d/include" -isystem "${EIGEN3_INCLUDE_DIR}"
+    -isystem "${Boost_INCLUDE_DIRS}" -output "${DOCSTR_OUTPUT}" -library_file
+    "${LIBCLANG_PATH}" ${DOCSTR_INPUT_HEADERS}
+  DEPENDS ${DOCSTR_INPUT_HEADERS}
+          "${CMAKE_SOURCE_DIR}/scripts/generate_docstring.py"
+          "${CMAKE_SOURCE_DIR}/scripts/find_libclang.py"
+  COMMENT "Generating docstr.hpp from C++ headers via libclang"
+  VERBATIM)
+
+add_custom_target(generate_docstr DEPENDS "${DOCSTR_OUTPUT}")
+
 nanobind_add_module(
   pyvinecopulib_ext
   # Target the stable ABI for Python 3.12+, which reduces the number of binary
@@ -90,8 +153,30 @@ nanobind_add_module(
   NB_STATIC
   src/pyvinecopulib_ext.cpp)
 
+# Ensure docstr.hpp exists before pyvinecopulib_ext.cpp is compiled.
+add_dependencies(pyvinecopulib_ext generate_docstr)
+
 target_compile_definitions(pyvinecopulib_ext
                            PRIVATE VERSION_INFO=\"${PROJECT_VERSION}\")
+
+# ==============================================================================
+# Generated stubs: src/pyvinecopulib/__init__.pyi
+#
+# After the extension is built, stage the package + the just-built .so in a
+# tempdir and run scripts/generate_stubs.py against it. Output is gitignored.
+# ==============================================================================
+
+add_custom_command(
+  TARGET pyvinecopulib_ext
+  POST_BUILD
+  COMMAND
+    "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/build_stubs.py"
+    --source-pkg-dir "${CMAKE_SOURCE_DIR}/src/pyvinecopulib" --ext-so
+    "$<TARGET_FILE:pyvinecopulib_ext>" --output
+    "${CMAKE_SOURCE_DIR}/src/pyvinecopulib/__init__.pyi" --py-typed
+    "${CMAKE_SOURCE_DIR}/src/pyvinecopulib/py.typed"
+  COMMENT "Generating __init__.pyi from the just-built extension"
+  VERBATIM)
 
 # Install directive for scikit-build-core
 install(TARGETS pyvinecopulib_ext LIBRARY DESTINATION pyvinecopulib)

@@ -1,5 +1,9 @@
 [build-system]
-requires = ["scikit-build-core>=0.5.0", "nanobind>=2.7.0"]
+# libclang is needed at build time for the docstring generation step in
+# CMakeLists.txt (scripts/generate_docstring.py uses clang.cindex). The
+# version range is intentionally narrow so docstring output is stable
+# across CI runners and end-user builds.
+requires = ["scikit-build-core>=0.5.0", "nanobind>=2.7.0", "libclang>=18,<20"]
 build-backend = "scikit_build_core.build"
 
 [project]

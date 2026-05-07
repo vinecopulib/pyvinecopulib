@@ -221,8 +221,9 @@ def cleanup_stub(stub: str) -> str:
   return stub
 
 
-def generate_stub(site_dir: str, output_path: Path, indent: int = 2):
-  sys.path.insert(0, site_dir)
+def generate_stub(site_dir, output_path: Path, indent: int = 2):
+  if site_dir:
+    sys.path.insert(0, site_dir)
   pkg = importlib.import_module("pyvinecopulib")
   names = sorted(getattr(pkg, "__all__", []))
 
@@ -306,15 +307,34 @@ def main():
   parser = argparse.ArgumentParser(
     description="Generate .pyi stub for pyvinecopulib from __all__."
   )
-  parser.add_argument("site_dir", help="Path to site-packages directory")
+  parser.add_argument(
+    "site_dir",
+    nargs="?",
+    default=None,
+    help="Optional path prepended to sys.path. If omitted, the script "
+    "relies on the existing sys.path / PYTHONPATH to import pyvinecopulib.",
+  )
   parser.add_argument(
     "--indent", type=int, default=2, help="Indentation level (spaces)"
   )
+  parser.add_argument(
+    "--output",
+    type=Path,
+    default=Path("src/pyvinecopulib/__init__.pyi"),
+    help="Output .pyi path (default: src/pyvinecopulib/__init__.pyi)",
+  )
+  parser.add_argument(
+    "--py-typed",
+    type=Path,
+    default=Path("src/pyvinecopulib/py.typed"),
+    help="Path to py.typed marker (default: src/pyvinecopulib/py.typed)",
+  )
   args = parser.parse_args()
 
-  output_path = Path("src/pyvinecopulib/__init__.pyi")
-  generate_stub(args.site_dir, output_path, indent=args.indent)
-  Path("src/pyvinecopulib/py.typed").write_text("", encoding="utf-8")
+  args.output.parent.mkdir(parents=True, exist_ok=True)
+  generate_stub(args.site_dir, args.output, indent=args.indent)
+  args.py_typed.parent.mkdir(parents=True, exist_ok=True)
+  args.py_typed.write_text("", encoding="utf-8")
 
 
 if __name__ == "__main__":

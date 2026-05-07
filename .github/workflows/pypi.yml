@@ -14,46 +14,6 @@ env:
 
 jobs:
 
-  verify_docstrings:
-    name: Verify src/include/docstr.hpp is up to date
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        # Required so subsequent steps run inside the activated micromamba env
-        # (CONDA_PREFIX, PATH, etc. are set by the env activation hooks).
-        shell: bash -el {0}
-    steps:
-      - name: Checkout project
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - name: Set up conda env (mirrors local for libclang/eigen/boost parity)
-        # Using the same conda-forge packages the local dev env uses
-        # eliminates libclang-version skew and missing-Eigen/Boost headers,
-        # both of which would otherwise produce a different docstr.hpp than
-        # what was generated locally.
-        uses: mamba-org/setup-micromamba@v2
-        with:
-          environment-name: pyvinecopulib
-          create-args: >-
-            python=3.11
-            python-clang
-            eigen
-            boost
-            nbformat
-          condarc: |
-            channels:
-              - conda-forge
-      - name: Regenerate docstr.hpp
-        run: python scripts/generate_metadata.py --env pyvinecopulib --no-stubs --no-examples
-      - name: Verify no drift
-        run: |
-          if ! git diff --exit-code src/include/docstr.hpp; then
-            echo "::error::src/include/docstr.hpp is out of date with the C++ headers in lib/."
-            echo "Run 'make docstrings' locally and commit the result."
-            exit 1
-          fi
-
   build:
     strategy:
       fail-fast: false
@@ -209,36 +169,6 @@ jobs:
             exit 1
           }
 
-  verify_stubs:
-    name: Verify src/pyvinecopulib/__init__.pyi is up to date
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout project
-        uses: actions/checkout@v4
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Download built wheel (cp312 ABI3, ubuntu)
-        uses: actions/download-artifact@v4
-        with:
-          name: cibw-wheels-ubuntu-latest-312-manylinux_x86_64
-          path: dist/
-      - name: Install wheel
-        run: pip install dist/*.whl
-      - name: Regenerate __init__.pyi
-        run: |
-          SITE=$(python -c "import site; print(site.getsitepackages()[0])")
-          python scripts/generate_stubs.py "$SITE"
-      - name: Verify no drift
-        run: |
-          if ! git diff --exit-code src/pyvinecopulib/__init__.pyi; then
-            echo "::error::src/pyvinecopulib/__init__.pyi is out of date with the built extension."
-            echo "Run 'make stubs' locally and commit the result."
-            exit 1
-          fi
-
   install_and_unit_test:
     needs: build
     runs-on: ${{ matrix.cfg.os }}
@@ -390,7 +320,7 @@ jobs:
           path: dist/*.tar.gz
 
   upload_to_pypi:
-    needs: [build_sdist, check_wheels, install_and_unit_test, verify_docstrings, verify_stubs]
+    needs: [build_sdist, check_wheels, install_and_unit_test]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

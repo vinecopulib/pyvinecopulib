@@ -1274,9 +1274,19 @@ def parse_args():
     help="Suppress verbose output",
   )
   parser.add_argument(
+    "-isystem",
+    dest="isystem_dirs",
+    action="append",
+    default=[],
+    help="System include directories (can be specified multiple times). "
+    "Pass Eigen and Boost here from CMake.",
+  )
+  parser.add_argument(
     "-env",
-    default="pyvinecopulib",
-    help="Conda environment name (default: 'pyvinecopulib')",
+    default=None,
+    help="(Legacy) Conda environment name; only used if -isystem flags are "
+    "not provided, in which case Eigen/Boost are looked up under "
+    "~/miniforge3/envs/<env>/include[/eigen3].",
   )
   return parser.parse_args()
 
@@ -1299,8 +1309,14 @@ def main():
     f"-std={args.std}",
   ]
   parameters.extend([f"-I{inc}" for inc in args.include_dirs])
-  parameters.append(f"-isystem{get_eigen_include(env_name)}")
-  parameters.append(f"-isystem{get_boost_include(env_name)}")
+  if args.isystem_dirs:
+    parameters.extend([f"-isystem{inc}" for inc in args.isystem_dirs])
+  else:
+    # Legacy fallback: derive Eigen/Boost paths from env name / CONDA_PREFIX
+    # / EIGEN3_INCLUDE_DIR / Boost_INCLUDE_DIR. CMake passes -isystem
+    # explicitly, so this branch only runs for stand-alone CLI invocations.
+    parameters.append(f"-isystem{get_eigen_include(env_name)}")
+    parameters.append(f"-isystem{get_boost_include(env_name)}")
 
   if library_file and os.path.exists(library_file):
     # cindex.Config.set_library_path(os.path.dirname(library_file))
