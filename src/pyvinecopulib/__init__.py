@@ -1,17 +1,10 @@
 """pyvinecopulib — Python interface to vinecopulib.
 
-The public API is organized into four subpackages:
-
-- :mod:`pyvinecopulib.core` — `Bicop`, `Vinecop`, fit controls, vine structures.
-- :mod:`pyvinecopulib.families` — `BicopFamily` and family constants/groups.
-- :mod:`pyvinecopulib.utils` — `Kde1d`, `wdm`, `to_pseudo_obs`, `pairs_copula_data`, etc.
-- :mod:`pyvinecopulib.sklearn` — sklearn-compatible vine estimators (optional extra).
-
-Core types (``Bicop``, ``Vinecop``, structures, controls, ``BicopFamily``,
-``to_pseudo_obs``) are also re-exported at the top level for convenience. The
-noisier aliases (family constants like ``pyvinecopulib.gaussian`` and utilities
-like ``pyvinecopulib.Kde1d``) still resolve at the top level for backward
-compatibility but emit a ``DeprecationWarning`` on access.
+Public API is organized into four subpackages: :mod:`~pyvinecopulib.core`,
+:mod:`~pyvinecopulib.families`, :mod:`~pyvinecopulib.utils`, and
+:mod:`~pyvinecopulib.sklearn` (optional extra). Core types are re-exported
+at the top level; noisier aliases (family constants, utilities) still
+resolve there but emit a ``DeprecationWarning`` on access.
 """
 
 from . import core, families, pyvinecopulib_ext, utils
@@ -55,8 +48,7 @@ def __getattr__(name: str):
   if name in _DEPRECATED_TOP_LEVEL:
     return _resolve_deprecated(name)
   if name == "sklearn":
-    # Lazy import so that vanilla `import pyvinecopulib` doesn't require
-    # scikit-learn — only `import pyvinecopulib.sklearn` does.
+    # Lazy: only `import pyvinecopulib.sklearn` should trigger the extra.
     import importlib
 
     return importlib.import_module("pyvinecopulib.sklearn")

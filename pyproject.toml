@@ -1,19 +1,12 @@
 [build-system]
-# libclang is needed at build time for the docstring generation step in
-# CMakeLists.txt (scripts/build/generate_docstring.py uses clang.cindex).
-# The version range is intentionally narrow so docstring output is stable
-# across CI runners and end-user builds.
-#
-# numpy/matplotlib/networkx are also needed at build time: the CMake
-# POST_BUILD step (scripts/build/generate_stubs.py) imports the freshly built
-# pyvinecopulib package to walk its public API, and the package transitively
-# imports these (nanobind ndarray bindings, pair_copuladata, _python_helpers).
+# libclang: docstring generation. numpy/matplotlib/networkx: imported by
+# the POST_BUILD stub-gen step. Mirror these in [dependency-groups].build
+# below so `uv sync --group build` can populate `--no-build-isolation`
+# rebuilds. libclang pinned to 18.x: PyPI's package tops out there and we
+# bypass the MSVC>=19 check via -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH.
 requires = [
   "scikit-build-core>=0.5.0",
   "nanobind>=2.7.0",
-  # PyPI's libclang package tops out at 18.x. MSVC STL on Windows wants
-  # Clang >= 19, but we bypass that check by passing
-  # -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH from CMakeLists.txt.
   "libclang>=18,<19",
   "numpy>=1.14",
   "matplotlib>=3.0",
@@ -53,13 +46,10 @@ classifiers = [
   'License :: OSI Approved :: MIT License',
 ]
 
-# User-facing optional extras (ship with the wheel, installable via
-# `pip install pyvinecopulib[<extra>]` or `uv sync --extra <extra>`).
+# Wheel-shipped extras. `sklearn` pins numpy>=2.0 for
+# np.quantile(weights=...) used by VineRegressor.
 [project.optional-dependencies]
 examples = ["jupyterlab", "scipy"]
-# Scikit-learn-compatible vine estimators (pyvinecopulib.sklearn). Pinned
-# numpy>=2.0 because VineRegressor uses np.quantile(weights=...), which
-# was added in NumPy 2.0.
 sklearn = ["scikit-learn>=1.4", "numpy>=2.0"]
 doc = [
   "sphinx==7.0",
@@ -70,17 +60,10 @@ doc = [
   "myst-parser",
 ]
 
-# PEP 735 dependency groups for development/CI workflows. These are NOT
-# shipped with the wheel; install them with `uv sync --group <name>` (or
-# pip 25+ `pip install --group <name>`). The standard local-dev workflow
-# is documented in CONTRIBUTING.md.
+# PEP 735 dependency groups for dev/CI. Not shipped with the wheel.
+# `build` mirrors [build-system].requires plus ninja/cmake so editable
+# rebuilds find their tools in the project venv. Keep in sync manually.
 [dependency-groups]
-# Build-system deps duplicated from [build-system].requires so they are
-# available under `uv sync` for `uv pip install -e . --no-build-isolation`
-# and for the editable.rebuild auto-rebuild path. `ninja` and `cmake` are
-# added on top of `[build-system].requires` so scikit-build-core's cached
-# paths stay valid in the project venv across editable rebuilds. Keep
-# in sync manually.
 build = [
   "scikit-build-core>=0.5.0",
   "nanobind>=2.7.0",
@@ -98,14 +81,8 @@ test = [
   "pytest-xdist>=3.6",
   "coverage[toml]",
 ]
-notebooks = [
-  "nbmake",
-  "jupyter",
-  "nbconvert",
-  "nbformat",
-]
+notebooks = ["nbmake", "jupyter", "nbconvert", "nbformat"]
 dev = [
-  # Astral's type checker (replaces mypy for toolchain consistency with ruff).
   "ty",
   "ruff==0.11.6",
   "pre-commit",
@@ -120,58 +97,32 @@ Repository = "https://github.com/vinecopulib/pyvinecopulib.git"
 Issues = "https://github.com/vinecopulib/pyvinecopulib/issues"
 
 [tool.scikit-build]
-# Protect the configuration against future changes in scikit-build-core
 minimum-version = "0.4"
-
-# Setuptools-style build caching in a local directory
 build-dir = "build/{wheel_tag}"
-
-# Build stable ABI wheels for CPython 3.12+
-wheel.py-api = "cp312"
-
-# Auto-rebuild the C++ extension on import in editable installs, so the
-# regen-stubs pre-commit hook always sees fresh bindings without a manual
-# reinstall. No effect on wheel builds or CI. Use:
-#   pip install -e . --no-build-isolation
+wheel.py-api = "cp312"  # stable ABI for CPython 3.12+
 editable.rebuild = true
-
-# scikit-build-core's default sdist exclude list filters out anything
-# under a path named `build/` (intended for the C++ build dir). That
-# also catches `scripts/build/`, which holds build-time helpers we
-# absolutely need in the sdist — force them back in.
-sdist.include = ["scripts/build/**"]
+# Force scripts/** back in: scikit-build-core's default sdist exclude
+# drops `build/`-named dirs, which also caught scripts/build.
+sdist.include = ["scripts/**"]
 
 [tool.cibuildwheel]
-# Necessary to see build output from the actual compilation
 build-verbosity = 1
-
-# Disable free-threading builds on all platforms
-skip = "cp3??t-*"
-
-# Run pytest to ensure that the package was correctly built. Serial
-# execution — see the note in [tool.pytest.ini_options] addopts above
-# for why we avoid pytest-xdist in CI.
+skip = "cp3??t-*"  # no free-threading builds
 test-command = "pytest {project}/tests"
 test-requires = ["pytest-cov", "pytest-rerunfailures"]
 
-# Needed for full C++17 support
 [tool.cibuildwheel.macos.environment]
-MACOSX_DEPLOYMENT_TARGET = "10.14"
+MACOSX_DEPLOYMENT_TARGET = "10.14"  # full C++17 support
 
 [tool.ruff]
 line-length = 80
 indent-width = 2
-
-# Include notebooks
 extend-include = ["*.ipynb"]
-# Exclude vendored libs and auto-generated stub files (regenerated by
-# scripts/build/generate_stubs.py; not human-edited). Glob covers the
-# top-level stub and the per-subpackage stubs.
+# Exclude vendored libs and auto-generated stubs.
 exclude = ["lib", "src/pyvinecopulib/**/__init__.pyi", "src/pyvinecopulib/__init__.pyi"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F403", "F405"]
-# "**/{tests,docs,tools}/*" = ["E402"]
 
 [tool.ty.src]
 include = ["src", "tests"]
@@ -180,9 +131,8 @@ include = ["src", "tests"]
 python-version = "3.9"
 
 [tool.ty.rules]
-# `from .pyvinecopulib_ext import ...` references the C++ extension shared
-# library. ty can't introspect a `.so` so resolution fails; the type info
-# is provided by src/pyvinecopulib/__init__.pyi which ty reads instead.
+# Ignore unresolved imports of the C++ extension `.so`; type info comes
+# from the generated .pyi files.
 unresolved-import = "ignore"
 
 [tool.bandit]

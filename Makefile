@@ -1,133 +1,45 @@
-# Makefile for pyvinecopulib development.
-#
-# Thin wrappers around `uv` for the standard workflows. `uv` manages the
-# Python environment and dependency groups (see `pyproject.toml`'s
-# `[dependency-groups]`); scikit-build-core handles the native build.
-#
-# Quick start (see CONTRIBUTING.md for the full story):
-#   make sync                  # install all Python deps + editable build
-#   make quick-check           # ruff + ty + fast tests
-#   make check-all             # lint + type-check + full tests + coverage
-.PHONY: help sync install clean test test-fast test-examples \
-        coverage coverage-open lint format type-check docs docs-serve \
-        docs-clean pre-commit-install pre-commit stubs docstrings \
-        examples metadata dev-setup quick-check check-all release-check \
-        build sdist wheel
+# Thin wrappers around `uv` for the standard dev / CI workflows.
+# See CONTRIBUTING.md for the full story.
+.PHONY: help sync clean check format test test-examples docs sdist build notebooks
 .DEFAULT_GOAL := help
 
 UV := uv
 
-SRC_DIR := src
-TEST_DIR := tests
-DOCS_DIR := docs
-EXAMPLES_DIR := examples
-
 help: ## Show this help message
-	@echo "pyvinecopulib development commands:"
-	@echo
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
-# --- Environment / install --------------------------------------------------
-
-sync: ## Sync all extras and dev/test/notebooks groups, then editable build
+sync: ## Install all deps + editable build + pre-commit hooks
 	$(UV) sync --all-extras --group dev --group test --group notebooks
 	$(UV) pip install -e . --no-build-isolation
-
-install: ## Editable install only (no dep sync; assumes deps are present)
-	$(UV) pip install -e . --no-build-isolation
-
-# --- Cleaning ---------------------------------------------------------------
-
-clean: ## Clean build artifacts
-	rm -rf build/ dist/ *.egg-info/
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	find . -type f -name "*.pyc" -delete
-	find . -type f -name "*.pyo" -delete
-
-# --- Tests ------------------------------------------------------------------
-
-test: ## Run all tests with coverage
-	$(UV) run pytest $(TEST_DIR) -v -n auto
-
-test-fast: ## Run tests without coverage, fail-fast
-	$(UV) run pytest $(TEST_DIR) -x --no-cov -n auto
-
-test-examples: ## Execute example notebooks as tests
-	$(UV) run pytest --nbmake $(EXAMPLES_DIR)
-
-coverage: ## Generate coverage report only (run tests first)
-	$(UV) run coverage report --show-missing
-	$(UV) run coverage html
-
-coverage-open: ## Open coverage report in browser
-	$(UV) run python -c "import webbrowser; webbrowser.open('htmlcov/index.html')"
-
-# --- Lint / format / types --------------------------------------------------
-
-lint: ## Run linting with ruff (auto-fix)
-	$(UV) run ruff check $(SRC_DIR) $(TEST_DIR) --fix
-
-format: ## Format code with ruff
-	$(UV) run ruff format $(SRC_DIR) $(TEST_DIR)
-
-type-check: ## Run type checking with ty
-	$(UV) run ty check
-
-# --- Docs -------------------------------------------------------------------
-
-docs: ## Build documentation
-	$(UV) run sphinx-build -b html $(DOCS_DIR) $(DOCS_DIR)/_build/html
-
-docs-serve: ## Serve documentation locally with live reload
-	$(UV) run sphinx-autobuild $(DOCS_DIR) $(DOCS_DIR)/_build/html
-
-docs-clean: ## Clean documentation build
-	rm -rf $(DOCS_DIR)/_build $(DOCS_DIR)/_generate \
-	       $(DOCS_DIR)/features.rst $(DOCS_DIR)/examples.rst \
-	       $(DOCS_DIR)/README.md $(DOCS_DIR)/CHANGELOG.md $(DOCS_DIR)/examples
-
-# --- Pre-commit -------------------------------------------------------------
-
-pre-commit-install: ## Install pre-commit hooks
 	$(UV) run pre-commit install
 
-pre-commit: ## Run pre-commit on all files
-	$(UV) run pre-commit run --all-files
+clean: ## Wipe build artifacts and Python caches
+	rm -rf build/ dist/ *.egg-info/
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
-# --- Build artifacts --------------------------------------------------------
+check: ## Read-only lint + format-check + type-check (CI-safe)
+	$(UV) run ruff check src tests
+	$(UV) run ruff format --check src tests
+	$(UV) run ty check
 
-build: ## Build both sdist and wheel via uv (PEP 517)
-	$(UV) build
+format: ## Apply ruff autofixes + format
+	$(UV) run ruff check --fix src tests
+	$(UV) run ruff format src tests
+
+test: ## Run pytest suite
+	$(UV) run pytest tests/
+
+test-examples: ## Execute example notebooks as tests
+	$(UV) run pytest --nbmake examples/
+
+docs: ## Build HTML documentation
+	$(UV) run sphinx-build -W -b html docs docs/_build/html
 
 sdist: ## Build source distribution only
 	$(UV) build --sdist
 
-wheel: ## Build a wheel for the current platform only
-	$(UV) build --wheel
+build: ## Build sdist and wheel
+	$(UV) build
 
-# docstr.hpp and the per-subpackage .pyi files are regenerated by CMake on
-# every editable rebuild (see CMakeLists.txt). The simplest refresh is to
-# reinstall editable, which triggers the CMake custom commands.
-stubs: ## Regenerate src/pyvinecopulib/**/__init__.pyi via the build (alias)
-	$(UV) pip install -e . --no-build-isolation
-
-docstrings: ## Regenerate src/include/docstr.hpp via the build (alias)
-	$(UV) pip install -e . --no-build-isolation
-
-examples: ## Re-execute example notebooks (used by docs)
+notebooks: ## Re-execute example notebooks
 	$(UV) run python scripts/regenerate_notebooks.py
-
-metadata: stubs examples ## Regenerate all generated artifacts (docstrings + stubs + notebooks)
-
-# --- Composite workflows ----------------------------------------------------
-
-dev-setup: sync pre-commit-install ## Complete dev setup (sync + pre-commit hooks)
-	@echo "Development environment setup complete."
-	@echo "Run 'make help' to see available commands."
-
-quick-check: lint type-check test-fast ## Fast pre-push check
-
-check-all: lint type-check test ## Full pre-PR check (lint + type-check + tests with coverage)
-
-release-check: clean check-all test-examples docs ## Pre-release checks
-	@echo "All release checks passed."
