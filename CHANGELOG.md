@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+### `pyvinecopulib.sklearn`: VineRegressor and VineDensity
+
+Two scikit-learn-compatible vine-copula estimators ship in the new
+`pyvinecopulib.sklearn` submodule:
+
+- `VineRegressor` — sklearn-style regressor that fits a vine copula to the
+  joint distribution of `(X, y)` and predicts conditional means / quantiles.
+- `VineDensity` — sklearn-style density estimator with `score_samples`,
+  `score`, `sample`, and `pdf` methods.
+
+Both follow the `BaseEstimator` / `RegressorMixin` / `DensityMixin` protocols
+and handle mixed continuous/discrete inputs (DataFrame or ndarray).
+
+Install via the optional extra:
+
+```bash
+pip install pyvinecopulib[sklearn]
+```
+
+### Dependency changes
+
+- `numpy>=2.0` is now a project-wide requirement (was `>=1.14`).
+  `VineRegressor` needs `np.quantile(weights=...)` from NumPy 2.0; rather
+  than pinning it only under `[sklearn]`, we bump everywhere — the wheel
+  is now built and tested against the 2.x ABI consistently.
+- `[sklearn]` extra: drops the redundant `numpy>=2.0` and adds
+  `pandas>=2.0` (used by `VineBase.expand_factors` for DataFrame inputs).
+
 ## 1.0.0
 
 ### Breaking API changes in `pyvinecopulib`

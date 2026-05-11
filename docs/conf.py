@@ -253,6 +253,10 @@ DOCSTRING_SUBPACKAGES = {
       "benchmark",
     ],
   },
+  "sklearn": {
+    "classes": ["VineDensity", "VineRegressor"],
+    "functions": [],
+  },
 }
 
 # Kept for backward compatibility with downstream tools that consume these

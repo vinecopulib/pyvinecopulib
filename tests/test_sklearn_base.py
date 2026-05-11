@@ -1,0 +1,243 @@
+"""
+Tests for VineBase functionality.
+"""
+
+import numpy as np
+import pandas as pd
+import pytest
+
+pytest.importorskip("sklearn")
+
+from pyvinecopulib.sklearn import VineDensity  # noqa: E402
+from pyvinecopulib.sklearn._base import expand_factors  # noqa: E402
+
+
+def test_expand_factors_numeric_unchanged() -> None:
+  """Test that numeric columns remain unchanged."""
+  df = pd.DataFrame({"x1": [1.0, 2.0, 3.0], "x2": [4, 5, 6]})
+  result: pd.DataFrame = expand_factors(df)
+
+  pd.testing.assert_frame_equal(result, df)
+
+
+def test_expand_factors_ordered_categorical_unchanged() -> None:
+  """Test that ordered categoricals remain unchanged."""
+  df = pd.DataFrame(
+    {"cat": pd.Categorical(["low", "med", "high"], ordered=True)}
+  )
+  result: pd.DataFrame = expand_factors(df)
+  pd.testing.assert_frame_equal(result, df)
+
+
+def test_expand_factors_unordered_categorical_expanded() -> None:
+  """Test that unordered categoricals are expanded into dummies."""
+  df = pd.DataFrame({"color": pd.Categorical(["red", "blue", "red", "green"])})
+  result = expand_factors(df)
+
+  # Should have 2 columns (drop first level 'blue')
+  assert result.shape == (4, 2)
+  assert list(result.columns) == ["color_green", "color_red"]
+
+  # Check values
+  assert result["color_red"].tolist() == [1, 0, 1, 0]
+  assert result["color_green"].tolist() == [0, 0, 0, 1]
+
+  # Check that dummies are ordered categorical
+  assert isinstance(result["color_red"].dtype, pd.CategoricalDtype)
+  assert result["color_red"].dtype.ordered
+
+
+def test_expand_factors_mixed_columns() -> None:
+  """Test DataFrame with mixed column types."""
+  df = pd.DataFrame(
+    {
+      "numeric": [1.0, 2.0, 3.0],
+      "ordered": pd.Categorical(["a", "b", "c"], ordered=True),
+      "unordered": pd.Categorical(["x", "y", "x"]),
+    }
+  )
+  result = expand_factors(df)
+
+  # Should have 3 columns: numeric, ordered, unordered_y
+  assert result.shape == (3, 3)
+  assert list(result.columns) == ["numeric", "ordered", "unordered_y"]
+
+  # Check numeric unchanged
+  assert result["numeric"].tolist() == [1.0, 2.0, 3.0]
+
+  # Check dummy
+  assert result["unordered_y"].tolist() == [0, 1, 0]
+
+
+def test_vinebase_array_input_validation(
+  sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+  """Test array input validation and processing."""
+  X, _, _ = sample_array_data
+  density: VineDensity = VineDensity()
+
+  # Test successful array processing
+  X_processed = density._check_and_expand_fit(X)
+  assert isinstance(X_processed, np.ndarray)
+  assert X_processed.shape == X.shape
+  assert density.n_features_in_ == 2
+  assert density.schema is not None
+  assert len(density.schema["kde1d_types"]) == 2
+  assert all(t == "continuous" for t in density.schema["kde1d_types"])
+
+
+def test_vinebase_dataframe_expansion(
+  sample_dataframe_data: tuple[pd.DataFrame, list[str]],
+) -> None:
+  """Test DataFrame expansion and schema creation."""
+  X_df, expected_expanded_cols = sample_dataframe_data
+  density: VineDensity = VineDensity()
+
+  # Test DataFrame processing
+  X_processed = density._check_and_expand_fit(X_df)
+  assert isinstance(X_processed, np.ndarray)
+  assert X_processed.shape[0] == len(X_df)
+  assert X_processed.shape[1] == len(expected_expanded_cols)
+
+  # Check that original columns are stored
+  assert density._used_columns == list(X_df.columns)
+  assert density._expanded_columns == expected_expanded_cols
+
+  # Check schema creation
+  expected_types = [
+    "continuous",
+    "continuous",
+    "discrete",
+    "discrete",
+    "continuous",
+  ]
+  assert density.schema is not None
+  assert density.schema["kde1d_types"] == expected_types
+
+
+def test_vinebase_dataframe_prediction_validation(
+  sample_dataframe_data: tuple[pd.DataFrame, list[str]],
+) -> None:
+  """Test DataFrame validation during prediction."""
+  X_df, expected_expanded_cols = sample_dataframe_data
+  density = VineDensity()
+  density.fit(X_df)
+
+  # Test successful prediction with matching DataFrame
+  X_test = X_df.iloc[:10].copy()
+  X_processed = density._check_and_expand_predict(X_test)
+  assert isinstance(X_processed, np.ndarray)
+  assert X_processed.shape == (10, len(expected_expanded_cols))
+
+  # Test error with wrong columns
+  X_wrong = X_test.drop("cont1", axis=1)
+  with pytest.raises(ValueError, match="Column names/order do not match"):
+    density._check_and_expand_predict(X_wrong)
+
+
+def test_vinebase_schema_parameter(
+  sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+  """Test pre-specified schema parameter."""
+  X, _, _ = sample_array_data
+  schema = {"kde1d_types": ["continuous", "discrete"]}
+  density = VineDensity(schema=schema)
+
+  density._check_and_expand_fit(X)
+  assert density.schema is not None
+  assert density.schema["kde1d_types"] == ["continuous", "discrete"]
+
+  # Test schema length mismatch
+  wrong_schema = {"kde1d_types": ["continuous"]}  # Too short
+  density_wrong = VineDensity(schema=wrong_schema)
+  with pytest.raises(ValueError):
+    density_wrong._check_and_expand_fit(X)
+
+
+def test_vinebase_marginal_fitting(
+  sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+  """Test marginal distribution fitting."""
+  X, _, _ = sample_array_data
+  density = VineDensity()
+  X_processed = density._check_and_expand_fit(X)
+  assert isinstance(X_processed, np.ndarray)
+  density._fit_marginals(X_processed)
+
+  # Check that marginals are fitted
+  assert len(density._x_kde1d) == 2
+
+  assert all(hasattr(kde, "fit") for kde in density._x_kde1d)
+
+
+def test_vinebase_pseudoobservations(
+  sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+  """Test pseudo-observation transformation."""
+  X, _, _ = sample_array_data
+  density = VineDensity()
+  X_processed = density._check_and_expand_fit(X)
+  assert isinstance(X_processed, np.ndarray)
+  density._fit_marginals(X_processed)
+
+  U = density._to_u_scale(X_processed)
+
+  # Check shape and range
+  assert U.shape == X_processed.shape
+  assert np.all(U >= 0)
+  assert np.all(U <= 1)
+
+  # Check that values are approximately uniform
+  for j in range(U.shape[1]):
+    # Kolmogorov-Smirnov test would be ideal, but just check basic distribution
+    assert 0.1 < np.mean(U[:, j]) < 0.9
+
+
+def test_vinebase_pdf_samples_unified_method(
+  sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+  regression_data: tuple[np.ndarray, np.ndarray, np.ndarray, float],
+) -> None:
+  """Test the unified _pdf_samples method."""
+  X, _, _ = sample_array_data
+  X_reg, y_reg, _, _ = regression_data
+
+  # Test density estimation case
+  density = VineDensity()
+  density.fit(X)
+
+  X_test = X[:20]
+
+  # Test different modes
+  log_full = density._pdf_samples(X_test, log=True, copula_only=False)
+  log_copula = density._pdf_samples(X_test, log=True, copula_only=True)
+  pdf_full = density._pdf_samples(X_test, log=False, copula_only=False)
+  pdf_copula = density._pdf_samples(X_test, log=False, copula_only=True)
+
+  # Check shapes and types
+  assert isinstance(log_full, np.ndarray)
+  assert log_full.shape == (20,)
+  assert np.allclose(pdf_full, np.exp(log_full))
+  assert np.allclose(pdf_copula, np.exp(log_copula))
+
+  # Test joint density case (using VineRegressor-like setup)
+  from pyvinecopulib.sklearn import VineRegressor
+
+  regressor = VineRegressor()
+  regressor.fit(X_reg[:200], y_reg[:200])
+
+  X_test_reg = X_reg[200:220]
+  y_test_reg = y_reg[200:220]
+
+  # Test joint density
+  log_joint = regressor._pdf_samples(
+    X_test_reg, y=y_test_reg, log=True, copula_only=False
+  )
+  copula_joint = regressor._pdf_samples(
+    X_test_reg, y=y_test_reg, log=True, copula_only=True
+  )
+
+  assert isinstance(log_joint, np.ndarray)
+  assert log_joint.shape == (20,)
+
+  assert isinstance(copula_joint, np.ndarray)
+  assert copula_joint.shape == (20,)
