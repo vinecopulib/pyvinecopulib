@@ -99,6 +99,12 @@ wheel.py-api = "cp312"
 #   pip install -e . --no-build-isolation
 editable.rebuild = true
 
+# scikit-build-core's default sdist exclude list filters out anything
+# under a path named `build/` (intended for the C++ build dir). That
+# also catches `scripts/build/`, which holds build-time helpers we
+# absolutely need in the sdist — force them back in.
+sdist.include = ["scripts/build/**"]
+
 [tool.cibuildwheel]
 # Necessary to see build output from the actual compilation
 build-verbosity = 1
