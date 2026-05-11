@@ -348,9 +348,16 @@ def main():
 
   py_typed = args.py_typed or (args.output.parent / "py.typed")
 
-  # Stage the assembled package (sources + freshly built .so) into a
+  # Stage the assembled package (sources + freshly built .so/.pyd) into a
   # tempdir so importlib finds a complete module to introspect.
-  with tempfile.TemporaryDirectory(prefix="pyvinecopulib-stubs-") as tmp:
+  #
+  # Use mkdtemp + best-effort rmtree rather than TemporaryDirectory: on
+  # Windows the imported .pyd stays locked by the current process for
+  # the lifetime of the interpreter, which would make
+  # TemporaryDirectory's strict cleanup raise PermissionError after the
+  # stub was already written successfully.
+  tmp = tempfile.mkdtemp(prefix="pyvinecopulib-stubs-")
+  try:
     site = Path(tmp)
     pkg = site / "pyvinecopulib"
     shutil.copytree(
@@ -366,6 +373,8 @@ def main():
     generate_stub(str(site), args.output, indent=args.indent)
     py_typed.parent.mkdir(parents=True, exist_ok=True)
     py_typed.write_text("", encoding="utf-8")
+  finally:
+    shutil.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":
