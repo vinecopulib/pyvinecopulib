@@ -430,10 +430,12 @@ jobs:
       - name: Install source distribution into fresh venv
         # Separate venv so the editable install's meta-path finder
         # doesn't trigger a CMake rebuild during the sdist install.
+        # Order matters: `uv sync` prunes anything outside its lock
+        # resolution, so the sdist install must come AFTER the sync.
         run: |
           uv venv .venv-sdist --python 3.11
-          VIRTUAL_ENV="$PWD/.venv-sdist" uv pip install dist/*.tar.gz
           VIRTUAL_ENV="$PWD/.venv-sdist" uv sync --no-install-project --group test --active
+          VIRTUAL_ENV="$PWD/.venv-sdist" uv pip install dist/*.tar.gz
       - name: Run tests against installed sdist
         # UV_NO_SYNC: exercise the sdist install, not an editable rebuild.
         env:
