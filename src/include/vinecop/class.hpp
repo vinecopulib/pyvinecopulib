@@ -251,13 +251,13 @@ are:
       .def(
           "__repr__",
           [](const Vinecop& cop) {
-            return "<pyvinecopulib.Vinecop> " + cop.str();
+            return "<pyvinecopulib.core.Vinecop> " + cop.str();
           },
           vinecop_doc.str.doc)
       .def(
           "__str__",
           [](const Vinecop& cop) {
-            return "<pyvinecopulib.Vinecop> " + cop.str();
+            return "<pyvinecopulib.core.Vinecop> " + cop.str();
           },
           vinecop_doc.str.doc)
       .def(

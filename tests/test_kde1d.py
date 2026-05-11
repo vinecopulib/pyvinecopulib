@@ -8,7 +8,7 @@ def test_kde1d_initialization() -> None:
   """Test different ways of initializing Kde1d objects."""
 
   # Test default initialization
-  kde = pv.Kde1d()
+  kde = pv.utils.Kde1d()
   assert kde.xmin != kde.xmin  # NaN check
   assert kde.xmax != kde.xmax  # NaN check
   assert kde.type == "continuous"
@@ -18,7 +18,7 @@ def test_kde1d_initialization() -> None:
   assert kde.grid_size == 400  # Default grid size
 
   # Test initialization with arguments
-  kde = pv.Kde1d(
+  kde = pv.utils.Kde1d(
     xmin=0.0,
     xmax=1.0,
     type="discrete",
@@ -36,7 +36,7 @@ def test_kde1d_initialization() -> None:
   assert kde.grid_size == 200
 
   # Test zero-inflated type
-  kde = pv.Kde1d(type="zero_inflated")
+  kde = pv.utils.Kde1d(type="zero_inflated")
   assert kde.type == "zero-inflated"
 
 
@@ -44,7 +44,7 @@ def test_kde1d_factory_methods() -> None:
   """Test static factory methods."""
 
   # Test from_params
-  kde = pv.Kde1d.from_params(
+  kde = pv.utils.Kde1d.from_params(
     xmin=0.0, xmax=1.0, type="continuous", multiplier=1.2
   )
   assert kde.xmin == 0.0
@@ -58,7 +58,7 @@ def test_kde1d_factory_methods() -> None:
   # Simple Gaussian-like density values
   values = np.exp(-0.5 * grid_points**2) / np.sqrt(2 * np.pi)
 
-  kde_from_grid = pv.Kde1d.from_grid(
+  kde_from_grid = pv.utils.Kde1d.from_grid(
     grid_points=grid_points,
     values=values,
     xmin=-2.0,
@@ -83,7 +83,7 @@ def test_kde1d_factory_methods() -> None:
 def test_kde1d_properties() -> None:
   """Test all properties of Kde1d objects."""
 
-  kde = pv.Kde1d(
+  kde = pv.utils.Kde1d(
     xmin=-1.0,
     xmax=1.0,
     type="continuous",
@@ -118,7 +118,7 @@ def test_kde1d_fit_and_methods() -> None:
   x = np.random.normal(0, 1, 100)
 
   # Test fitting
-  kde = pv.Kde1d()
+  kde = pv.utils.Kde1d()
   kde.fit(x)
 
   # After fitting, should have valid loglik and edf
@@ -178,7 +178,7 @@ def test_kde1d_weighted_fit() -> None:
   x = np.random.normal(0, 1, 50)
   weights = np.random.exponential(1, 50)
 
-  kde = pv.Kde1d()
+  kde = pv.utils.Kde1d()
   kde.fit(x, weights)
 
   # Should still work and produce valid results
@@ -196,7 +196,7 @@ def test_kde1d_discrete_data() -> None:
   np.random.seed(1234)
   x = np.random.binomial(10, 0.3, 100).astype(float)
 
-  kde = pv.Kde1d(xmin=0, xmax=10, type="discrete")
+  kde = pv.utils.Kde1d(xmin=0, xmax=10, type="discrete")
   kde.fit(x)
 
   # Test evaluation at integer points
@@ -213,7 +213,7 @@ def test_kde1d_bounded_data() -> None:
   np.random.seed(1234)
   x = np.random.beta(2, 5, 100)  # Data in [0,1]
 
-  kde = pv.Kde1d(xmin=0.0, xmax=1.0)
+  kde = pv.utils.Kde1d(xmin=0.0, xmax=1.0)
   kde.fit(x)
 
   # Test evaluation
@@ -234,7 +234,7 @@ def test_kde1d_bounded_data() -> None:
 def test_kde1d_set_boundaries() -> None:
   """Test setting boundaries after initialization."""
 
-  kde = pv.Kde1d()
+  kde = pv.utils.Kde1d()
   kde.set_xmin_xmax(xmin=-2.0, xmax=2.0)
 
   # Note: The boundaries are set but we need to check if they're reflected
@@ -248,7 +248,7 @@ def test_kde1d_check_fitted_parameter() -> None:
   x = np.random.normal(0, 1, 50)
   eval_points = np.array([0.0])
 
-  kde = pv.Kde1d()
+  kde = pv.utils.Kde1d()
 
   # Should raise an error when not fitted (with check_fitted=True, default)
   with pytest.raises(RuntimeError):
@@ -278,7 +278,7 @@ def test_kde1d_single_point_evaluation() -> None:
   np.random.seed(1234)
   x = np.random.normal(0, 1, 100)
 
-  kde = pv.Kde1d()
+  kde = pv.utils.Kde1d()
   kde.fit(x)
 
   # Test with single point
@@ -290,7 +290,7 @@ def test_kde1d_single_point_evaluation() -> None:
 def test_kde1d_string_representation() -> None:
   """Test string representation methods."""
 
-  kde = pv.Kde1d()
+  kde = pv.utils.Kde1d()
 
   # Test __repr__ and __str__
   repr_str = repr(kde)
@@ -298,14 +298,14 @@ def test_kde1d_string_representation() -> None:
 
   assert isinstance(repr_str, str)
   assert isinstance(str_str, str)
-  assert "<pyvinecopulib.Kde1d>" in repr_str
-  assert "<pyvinecopulib.Kde1d>" in str_str
+  assert "<pyvinecopulib.utils.Kde1d>" in repr_str
+  assert "<pyvinecopulib.utils.Kde1d>" in str_str
 
 
 def test_kde1d_error_conditions() -> None:
   """Test various error conditions."""
 
-  kde = pv.Kde1d()
+  kde = pv.utils.Kde1d()
 
   # Test with invalid data (empty array)
   with pytest.raises((RuntimeError, ValueError)):
@@ -323,7 +323,7 @@ def test_kde1d_different_degrees() -> None:
   x = np.random.normal(0, 1, 100)
 
   for degree in [0, 1, 2]:
-    kde = pv.Kde1d(degree=degree)
+    kde = pv.utils.Kde1d(degree=degree)
     assert kde.degree == degree
 
     kde.fit(x)
@@ -342,7 +342,7 @@ def test_kde1d_zero_inflated() -> None:
   x = np.concatenate([x, zeros])
   np.random.shuffle(x)
 
-  kde = pv.Kde1d(xmin=0.0, type="zero_inflated")
+  kde = pv.utils.Kde1d(xmin=0.0, type="zero_inflated")
   kde.fit(x)
 
   # Check that prob0 is estimated
@@ -367,7 +367,7 @@ def test_kde1d_large_data() -> None:
   np.random.seed(1234)
   x = np.random.normal(0, 1, 1000)
 
-  kde = pv.Kde1d()
+  kde = pv.utils.Kde1d()
   kde.fit(x)
 
   # Should handle large datasets

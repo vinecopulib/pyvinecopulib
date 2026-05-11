@@ -131,11 +131,15 @@ inline void init_kde1d(nb::module_& module) {
       // String representation
       .def(
           "__repr__",
-          [](const Kde1d& kde) { return "<pyvinecopulib.Kde1d> " + kde.str(); },
+          [](const Kde1d& kde) {
+            return "<pyvinecopulib.utils.Kde1d> " + kde.str();
+          },
           "Return string representation of the Kde1d object.")
       .def(
           "__str__",
-          [](const Kde1d& kde) { return "<pyvinecopulib.Kde1d> " + kde.str(); },
+          [](const Kde1d& kde) {
+            return "<pyvinecopulib.utils.Kde1d> " + kde.str();
+          },
           "Return string representation of the Kde1d object.")
 
       // Serialization support

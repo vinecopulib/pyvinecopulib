@@ -1,5 +1,60 @@
 # Changelog
 
+## 1.0.0
+
+### Breaking API changes in `pyvinecopulib`
+
+The public API is now organized into four subpackages. Existing top-level
+imports continue to work for backward compatibility, but the family constants
+and most utilities emit a `DeprecationWarning` on access pointing at the new
+canonical location. The deprecated aliases are scheduled for removal in 2.0.
+
+| New canonical location | Names |
+| --- | --- |
+| `pyvinecopulib.core` | `Bicop`, `Vinecop`, `FitControlsBicop`, `FitControlsVinecop`, `RVineStructure`, `CVineStructure`, `DVineStructure`, `BicopFamily` |
+| `pyvinecopulib.families` | `BicopFamily`, plus the constants (`indep`, `gaussian`, `student`, `clayton`, `gumbel`, `frank`, `joe`, `bb1`, `bb6`, `bb7`, `bb8`, `tawn`, `tll`) and the family groups (`all`, `parametric`, `nonparametric`, `one_par`, `two_par`, `three_par`, `elliptical`, `archimedean`, `extreme_value`, `bb`, `rotationless`, `lt`, `ut`, `itau`) |
+| `pyvinecopulib.utils` | `Kde1d`, `wdm`, `to_pseudo_obs`, `pairs_copula_data`, `sobol`, `ghalton`, `simulate_uniform`, `benchmark` |
+| `pyvinecopulib.sklearn` | (placeholder; estimator classes ship in a follow-up release) |
+
+#### Kept at the top level indefinitely (no warning)
+
+`Bicop`, `Vinecop`, `RVineStructure`, `CVineStructure`, `DVineStructure`,
+`FitControlsBicop`, `FitControlsVinecop`, `BicopFamily`,
+`to_pseudo_obs`, `__version__`.
+
+#### Deprecated on access (warn, still resolves)
+
+All family constants and groups (`indep`, `gaussian`, ..., `parametric`,
+`nonparametric`, ..., `itau`); `Kde1d`, `wdm`, `sobol`, `ghalton`,
+`simulate_uniform`, `benchmark`, `pairs_copula_data`. Use the canonical
+subpackage path (`pyvinecopulib.families.<name>` or
+`pyvinecopulib.utils.<name>`) to silence the warning.
+
+#### `repr` and pickle now use canonical module paths
+
+The C++ bindings now set `__module__` (and the hardcoded repr strings) per
+subpackage: `Bicop.__module__ == "pyvinecopulib.core"`,
+`BicopFamily.__module__ == "pyvinecopulib.families"`,
+`Kde1d.__module__ == "pyvinecopulib.utils"`, etc. New pickles serialize via
+the canonical path; pre-1.0 pickles still load via the deprecated top-level
+alias (with a DeprecationWarning for symbols that fell off the kept list).
+
+#### File renames
+
+- `pyvinecopulib.pair_copuladata` (module) → `pyvinecopulib.utils.pairs_copula_data` (module). The function `pairs_copula_data` itself is unchanged.
+
+### Build / packaging
+
+- The `[sklearn]` optional extra was added (currently a placeholder; will
+  install `scikit-learn>=1.4` and `numpy>=2.0` for the upcoming
+  `pyvinecopulib.sklearn` estimators).
+- Type stubs are now emitted per subpackage. The top-level stub also includes
+  `def __getattr__(name: str) -> Any: ...` so static checkers don't flag access
+  to deprecated names.
+- `pytest` is configured to treat `pyvinecopulib`-originated
+  `DeprecationWarning`s as errors so internal code stays on the canonical
+  import paths.
+
 ## 0.7.6
 
 This release was only used to pull the latest changes from `vinecopulib`'s `dev` branch, which includes some bug fixes.

@@ -28,27 +28,38 @@ class ScopedModuleNameOverride {
 };
 
 NB_MODULE(pyvinecopulib_ext, pv) {
-  // Ensure that members of this module display as `pyvinecopulib.X` rather than
-  // `pyvinecopulib.pyvinecopulib_ext.X`.
-  ScopedModuleNameOverride name_override(pv, "pyvinecopulib");
-
   pv.doc() = R"pbdoc(
   The pyvinecopulib package
   -------------------------
   )pbdoc";
 
-  init_stats(pv);
-  init_benchmark(pv);
+  // Bind each class with __module__ set to the subpackage where the symbol
+  // is canonically located (mirrors the pure-Python pyvinecopulib.{core,
+  // families,utils} layout). Drives the module path embedded in pickles —
+  // the corresponding repr strings are hardcoded per-class to match.
+  //
+  // Order matters: init_bicop_family (binds BicopFamily) must come before
+  // init_bicop_class / init_bicop_fit_controls, which reference it.
+  {
+    ScopedModuleNameOverride n(pv, "pyvinecopulib.families");
+    init_bicop_family(pv);
+  }
 
-  init_bicop_family(pv);
-  init_bicop_fit_controls(pv);
-  init_bicop_class(pv);
+  {
+    ScopedModuleNameOverride n(pv, "pyvinecopulib.core");
+    init_bicop_fit_controls(pv);
+    init_bicop_class(pv);
+    init_vinecop_rvine_structure(pv);
+    init_vinecop_fit_controls(pv);
+    init_vinecop_class(pv);
+  }
 
-  init_kde1d(pv);
-
-  init_vinecop_rvine_structure(pv);
-  init_vinecop_fit_controls(pv);
-  init_vinecop_class(pv);
+  {
+    ScopedModuleNameOverride n(pv, "pyvinecopulib.utils");
+    init_stats(pv);
+    init_benchmark(pv);
+    init_kde1d(pv);
+  }
 
 #ifdef VERSION_INFO
   pv.attr("__version__") = VERSION_INFO;

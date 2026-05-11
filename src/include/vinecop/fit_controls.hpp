@@ -108,13 +108,13 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
       .def(
           "__repr__",
           [](const FitControlsVinecop& controls) {
-            return "<pyvinecopulib.FitControlsVinecop>\n" + controls.str();
+            return "<pyvinecopulib.core.FitControlsVinecop>\n" + controls.str();
           },
           fitcontrolsvinecop_doc.str.doc)
       .def(
           "__str__",
           [](const FitControlsVinecop& controls) {
-            return "<pyvinecopulib.FitControlsVinecop>\n" + controls.str();
+            return "<pyvinecopulib.core.FitControlsVinecop>\n" + controls.str();
           },
           fitcontrolsvinecop_doc.str.doc)
       .def("__getstate__",

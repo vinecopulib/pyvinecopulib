@@ -12,8 +12,8 @@ def test_vinecop(unique_json_path: str) -> None:
   n = 1000
   u = pv.to_pseudo_obs(random_data(d, n))
 
-  controls = pv.FitControlsVinecop(family_set=[pv.gaussian])
-  assert controls.family_set == [pv.gaussian]
+  controls = pv.FitControlsVinecop(family_set=[pv.families.gaussian])
+  assert controls.family_set == [pv.families.gaussian]
   cop = pv.Vinecop.from_data(u, controls=controls)
 
   # Test get_pair_copula method
@@ -24,7 +24,7 @@ def test_vinecop(unique_json_path: str) -> None:
 
       # Test get_family method
       family = cop.get_family(0, 0)
-      assert family == pv.gaussian
+      assert family == pv.families.gaussian
 
       # Test get_rotation method
       rotation = cop.get_rotation(0, 0)
