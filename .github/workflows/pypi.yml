@@ -186,11 +186,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install Graphviz
-        # Match .readthedocs.yaml's apt_packages.
+      - name: Install Graphviz + Pandoc
+        # graphviz: matches .readthedocs.yaml's apt_packages.
+        # pandoc: needed by nbsphinx to convert notebook markdown
         run: |
           sudo apt-get update
-          sudo apt-get install -y graphviz
+          sudo apt-get install -y graphviz pandoc
       - name: Download built wheel (cp311 manylinux ubuntu)
         uses: actions/download-artifact@v4
         with:
