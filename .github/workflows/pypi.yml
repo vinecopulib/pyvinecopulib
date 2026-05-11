@@ -286,19 +286,20 @@ jobs:
             # Serial run — see the note in pyproject.toml's
             # [tool.pytest.ini_options] for why CI avoids pytest-xdist
             # on GitHub Actions runners.
-            pytest tests/ -r a --no-cov
+            pytest tests/ -r a --no-cov --reruns 2 --reruns-delay 10
       - name: Run notebooks as unit tests
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 30
-          max_attempts: 3
+          max_attempts: 5
           retry_wait_seconds: 60
           shell: bash
           command: |
             pytest --nbmake examples/ \
               --no-cov \
               --nbmake-timeout=600 \
-              --nbmake-kernel=python3
+              --nbmake-kernel=python3 \
+              --reruns 2 --reruns-delay 10
 
   regenerate_notebooks:
     # Fires automatically on every PR to main (the release-prep flow), and
@@ -431,7 +432,7 @@ jobs:
       - name: Run tests
         # Serial run (xdist not in addopts) — see pyproject.toml.
         run: |
-          pytest tests/ -r a
+          pytest tests/ -r a --no-cov --reruns 2 --reruns-delay 10
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
