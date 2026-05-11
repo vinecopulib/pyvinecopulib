@@ -10,7 +10,7 @@ def test_bicop(unique_json_path: str) -> None:
   bicop = pv.Bicop()
 
   # Test default initialization
-  assert bicop.family == pv.indep
+  assert bicop.family == pv.families.indep
   assert bicop.rotation == 0
   assert bicop.parameters.shape == (0, 0)
   assert bicop.var_types == ["c", "c"]
@@ -20,7 +20,7 @@ def test_bicop(unique_json_path: str) -> None:
   controls = pv.FitControlsBicop()
   bicop = pv.Bicop.from_data(data, controls)
 
-  assert bicop.family == pv.indep
+  assert bicop.family == pv.families.indep
   assert bicop.rotation == 0
   assert bicop.parameters.shape == (0, 0)
   assert bicop.var_types == ["c", "c"]
@@ -41,7 +41,7 @@ def test_bicop(unique_json_path: str) -> None:
   assert bicop.var_types == new_bicop.var_types
 
   # Test properties
-  bicop = pv.Bicop(family=pv.gumbel, rotation=90)
+  bicop = pv.Bicop(family=pv.families.gumbel, rotation=90)
   bicop.rotation = 0
   assert bicop.rotation == 0
   with pytest.raises(RuntimeError):

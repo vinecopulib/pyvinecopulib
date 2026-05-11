@@ -130,11 +130,15 @@ Alternatives to instantiate bivariate copulas are:
            bicop_doc.mbic.doc, nb::call_guard<nb::gil_scoped_release>())
       .def(
           "__repr__",
-          [](const Bicop& cop) { return "<pyvinecopulib.Bicop> " + cop.str(); },
+          [](const Bicop& cop) {
+            return "<pyvinecopulib.core.Bicop> " + cop.str();
+          },
           bicop_doc.str.doc)
       .def(
           "__str__",
-          [](const Bicop& cop) { return "<pyvinecopulib.Bicop> " + cop.str(); },
+          [](const Bicop& cop) {
+            return "<pyvinecopulib.core.Bicop> " + cop.str();
+          },
           bicop_doc.str.doc)
       .def("parameters_to_tau", &Bicop::parameters_to_tau, "parameters"_a,
            bicop_doc.parameters_to_tau.doc,

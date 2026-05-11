@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
-"""Generate src/pyvinecopulib/__init__.pyi from the built extension.
+"""Generate stub files for pyvinecopulib and its subpackages.
 
 Invoked by CMake's POST_BUILD step (see CMakeLists.txt). At that point the
 just-built `.so` lives in the CMake build dir and the pure-Python sources
 live in `src/pyvinecopulib/` — neither location alone is a complete
 package. This script stages both into a tempdir, prepends it to sys.path,
-imports the assembled package, walks `__all__`, and writes the stub.
+imports each requested module, walks its `__all__`, and writes a `.pyi`.
+
+Multiple modules can be targeted in a single invocation via repeated
+``--module-output PKG:PATH`` flags. Modules whose import raises
+``ImportError`` (e.g. ``pyvinecopulib.sklearn`` when scikit-learn isn't
+on the build machine) are skipped with a warning rather than failing
+the build.
 """
 
 import argparse
@@ -218,7 +224,8 @@ def cleanup_stub(stub: str) -> str:
   # stub = re.sub(r"= *FitControlsBicop\(\)", "= ...", stub)
   # stub = re.sub(r"= *FitControlsVinecop\(\)", "= ...", stub)
 
-  # Remove pyvinecopulib. prefix from types
+  # Remove pyvinecopulib.<subpkg>. and pyvinecopulib. prefixes from types
+  stub = re.sub(r"\bpyvinecopulib\.[a-z_]+\.", "", stub)
   stub = re.sub(r"\bpyvinecopulib\.", "", stub)
 
   # Clean up matplotlib types
@@ -228,19 +235,36 @@ def cleanup_stub(stub: str) -> str:
   return stub
 
 
-def generate_stub(site_dir, output_path: Path, indent: int = 2):
-  if site_dir:
-    sys.path.insert(0, site_dir)
-  pkg = importlib.import_module("pyvinecopulib")
+def generate_stub(
+  module_name: str,
+  output_path: Path,
+  indent: int = 2,
+) -> None:
+  """Render a `.pyi` stub for ``module_name`` to ``output_path``.
+
+  Assumes ``sys.path`` is already configured so that ``importlib.import_module``
+  picks up the staged package.
+  """
+  pkg = importlib.import_module(module_name)
   names = sorted(getattr(pkg, "__all__", []))
 
-  if not names:
+  # Empty __all__ for the top-level package is almost always a build artifact
+  # leak (C++ extension not staged correctly). For subpackages it's
+  # legitimate (e.g. the sklearn placeholder), so only the top level is
+  # guarded.
+  if not names and module_name == "pyvinecopulib":
     raise SystemExit(
-      f"Refusing to overwrite {output_path}: imported pyvinecopulib has an "
+      f"Refusing to overwrite {output_path}: imported {module_name} has an "
       f"empty __all__ (module path: {getattr(pkg, '__file__', '<namespace>')}).\n"
       "The C++ extension is likely not built into this environment. "
       "Run 'pip install -e . --no-build-isolation' and retry."
     )
+
+  # We use the C++-extension BicopFamily for isinstance checks regardless of
+  # which subpackage we're stubbing — every subpackage that exposes family
+  # constants gets them from the same extension.
+  ext = importlib.import_module("pyvinecopulib.pyvinecopulib_ext")
+  family_cls = ext.BicopFamily
 
   known_types = {
     name for name in names if inspect.isclass(getattr(pkg, name, None))
@@ -259,6 +283,31 @@ def generate_stub(site_dir, output_path: Path, indent: int = 2):
 
   for name in names:
     obj = getattr(pkg, name, None)
+
+    # Subpackages re-exported via `__all__` (e.g. "core", "families" at the
+    # top level) — render as a module reference.
+    if inspect.ismodule(obj):
+      lines.append(f"from . import {name} as {name}\n")
+      continue
+
+    # If a class is canonically defined in a sibling/sub module of this
+    # one (e.g. Bicop in pyvinecopulib.core, BicopFamily in
+    # pyvinecopulib.families), emit a relative-import alias instead of
+    # redefining the class. This keeps static type identity consistent
+    # across re-exports — `pyvinecopulib.Bicop`, `pyvinecopulib.core.Bicop`,
+    # and `pyvinecopulib.core.<method-returning-Bicop>` all resolve to the
+    # same type at type-check time.
+    canonical = obj.__module__ if inspect.isclass(obj) else None
+    if (
+      canonical
+      and canonical != module_name
+      and isinstance(canonical, str)
+      and _is_same_package(canonical, module_name)
+    ):
+      relative_import = _relative_import_spec(canonical, module_name)
+      if relative_import:
+        lines.append(f"{relative_import} import {name} as {name}\n")
+        continue
 
     if inspect.isclass(obj):
       lines.extend(
@@ -294,20 +343,67 @@ def generate_stub(site_dir, output_path: Path, indent: int = 2):
           f"{indent_str}# def {name}(...):  # signature unavailable ({e})"
         )
         lines.append(f"{indent_str}...\n")
-    elif isinstance(obj, pkg.BicopFamily):
+    elif isinstance(obj, family_cls):
       lines.append(f"{name}: BicopFamily = ...\n")
-    elif isinstance(obj, list) and all(
-      isinstance(x, pkg.BicopFamily) for x in obj
-    ):
+    elif isinstance(obj, list) and all(isinstance(x, family_cls) for x in obj):
       lines.append(f"{name}: list[BicopFamily] = ...\n")
     elif name == "__version__" and isinstance(obj, str):
       lines.append("__version__: str = ...\n")
     else:
       lines.append(f"{name}: Any = ...\n")
 
+  # If the module defines its own __getattr__ (e.g. for warn-on-access
+  # deprecation), emit a permissive stub so static checkers don't flag
+  # access to deprecated names as errors.
+  module_dict = vars(pkg)
+  if "__getattr__" in module_dict and callable(module_dict["__getattr__"]):
+    lines.append("def __getattr__(name: str) -> Any: ...\n")
+
   stub = cleanup_stub("\n".join(lines))
+  output_path.parent.mkdir(parents=True, exist_ok=True)
   output_path.write_text(stub, encoding="utf-8")
-  print(f"Wrote stub for {len(names)} symbols to {output_path}")
+  print(f"Wrote stub for {len(names)} symbols ({module_name}) to {output_path}")
+
+
+def _is_same_package(target: str, current: str) -> bool:
+  """Return True if target and current share a common top-level package."""
+  return target.split(".", 1)[0] == current.split(".", 1)[0]
+
+
+def _relative_import_spec(target: str, current: str) -> str:
+  """Build a `from ...x.y` import prefix for `target` relative to `current`.
+
+  Both inputs are dotted module paths. Returns "" if the import can't be
+  expressed (e.g. fully unrelated packages).
+  """
+  t = target.split(".")
+  c = current.split(".")
+  # Find longest common prefix
+  i = 0
+  while i < len(t) and i < len(c) and t[i] == c[i]:
+    i += 1
+  if i == 0:
+    return ""
+  # Up `len(c) - i` levels, then down through t[i:]
+  dots = "." * (len(c) - i + 1)
+  tail = ".".join(t[i:])
+  return f"from {dots}{tail}"
+
+
+def _parse_module_output(spec: str) -> tuple[str, Path]:
+  """Parse a ``PKG:PATH`` spec from --module-output."""
+  if ":" not in spec:
+    raise argparse.ArgumentTypeError(
+      f"Expected --module-output in PKG:PATH form, got {spec!r}"
+    )
+  module_name, _, output = spec.partition(":")
+  module_name = module_name.strip()
+  output = output.strip()
+  if not module_name or not output:
+    raise argparse.ArgumentTypeError(
+      f"--module-output requires non-empty PKG and PATH, got {spec!r}"
+    )
+  return module_name, Path(output)
 
 
 def main():
@@ -325,28 +421,36 @@ def main():
     help="Path to the freshly built pyvinecopulib_ext shared library.",
   )
   parser.add_argument(
-    "--output",
-    required=True,
-    type=Path,
-    help="Output __init__.pyi path.",
+    "--module-output",
+    action="append",
+    default=[],
+    type=_parse_module_output,
+    metavar="PKG:PATH",
+    help=(
+      "Repeatable: emit a stub for module PKG at PATH. "
+      "Modules whose import raises ImportError are skipped with a warning."
+    ),
   )
   parser.add_argument(
     "--py-typed",
     type=Path,
     default=None,
-    help="Optional path to py.typed marker (defaults to <output dir>/py.typed).",
+    help="Optional path to py.typed marker (defaults to <source-pkg-dir>/py.typed).",
   )
   parser.add_argument(
     "--indent", type=int, default=2, help="Indentation level (spaces)."
   )
   args = parser.parse_args()
 
+  if not args.module_output:
+    sys.exit("At least one --module-output PKG:PATH is required.")
+
   if not args.ext_so.exists():
     sys.exit(f"Extension not found at: {args.ext_so}")
   if not args.source_pkg_dir.is_dir():
     sys.exit(f"Source package dir not found: {args.source_pkg_dir}")
 
-  py_typed = args.py_typed or (args.output.parent / "py.typed")
+  py_typed = args.py_typed or (args.source_pkg_dir / "py.typed")
 
   # Stage the assembled package (sources + freshly built .so/.pyd) into a
   # tempdir so importlib finds a complete module to introspect.
@@ -369,8 +473,22 @@ def main():
     )
     shutil.copy2(args.ext_so, pkg / args.ext_so.name)
 
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    generate_stub(str(site), args.output, indent=args.indent)
+    sys.path.insert(0, str(site))
+    try:
+      for module_name, output_path in args.module_output:
+        try:
+          generate_stub(module_name, output_path, indent=args.indent)
+        except ImportError as e:
+          # Expected for optional subpackages like pyvinecopulib.sklearn
+          # when scikit-learn isn't installed on the build machine.
+          print(
+            f"Skipping {module_name}: import failed ({e}). "
+            f"No stub written to {output_path}.",
+            file=sys.stderr,
+          )
+    finally:
+      sys.path.remove(str(site))
+
     py_typed.parent.mkdir(parents=True, exist_ok=True)
     py_typed.write_text("", encoding="utf-8")
   finally:

@@ -221,23 +221,47 @@ def preprocess_markdown(app, docname, source):
 # lets plain `sphinx-build docs <out>` work end-to-end. All staged paths are
 # gitignored.
 
+# Public API surface, grouped by subpackage. Documentation references the
+# canonical location of each symbol (pyvinecopulib.<subpkg>.<name>); the
+# top-level aliases still work but are intentionally not documented.
+DOCSTRING_SUBPACKAGES = {
+  "core": {
+    "classes": [
+      "Bicop",
+      "FitControlsBicop",
+      "Vinecop",
+      "FitControlsVinecop",
+      "CVineStructure",
+      "DVineStructure",
+      "RVineStructure",
+    ],
+    "functions": [],
+  },
+  "families": {
+    "classes": ["BicopFamily"],
+    "functions": [],
+  },
+  "utils": {
+    "classes": ["Kde1d"],
+    "functions": [
+      "to_pseudo_obs",
+      "simulate_uniform",
+      "wdm",
+      "ghalton",
+      "sobol",
+      "pairs_copula_data",
+      "benchmark",
+    ],
+  },
+}
+
+# Kept for backward compatibility with downstream tools that consume these
+# names. Synthesized from DOCSTRING_SUBPACKAGES.
 DOCSTRING_CLASSES = [
-  "BicopFamily",
-  "Bicop",
-  "FitControlsBicop",
-  "Vinecop",
-  "FitControlsVinecop",
-  "CVineStructure",
-  "DVineStructure",
-  "RVineStructure",
-  "Kde1d",
+  cls for sub in DOCSTRING_SUBPACKAGES.values() for cls in sub["classes"]
 ]
 DOCSTRING_FUNCTIONS = [
-  "to_pseudo_obs",
-  "simulate_uniform",
-  "wdm",
-  "ghalton",
-  "sobol",
+  fn for sub in DOCSTRING_SUBPACKAGES.values() for fn in sub["functions"]
 ]
 
 
@@ -264,21 +288,34 @@ def _stage_repo_files(docs_dir, repo_root):
 
 
 def _write_features_rst(out_path):
-  """Generate the auto-summary RST for the public API."""
+  """Generate the auto-summary RST for the public API.
+
+  One section per subpackage (core / families / utils), each with an
+  autosummary toctree of its classes and (if any) explicit autofunctions.
+  """
   rst_name = "API Documentation"
   bar = "=" * len(rst_name)
   with open(out_path, "w") as f:
     f.write(".. GENERATED FILE DO NOT EDIT\n\n")
     f.write(f"{bar}\n{rst_name}\n{bar}\n\n")
-    f.write("Classes\n========\n\n")
-    f.write(".. toctree::\n    :maxdepth: 1\n\n")
-    f.write(".. automodule:: pyvinecopulib\n")
-    f.write(".. autosummary:: \n    :toctree: _generate\n\n")
-    for cls in DOCSTRING_CLASSES:
-      f.write(f"    {cls}\n")
-    f.write("\nFunctions\n=========\n\n")
-    for fn in DOCSTRING_FUNCTIONS:
-      f.write(f".. autofunction:: {fn}\n")
+    for subpkg, contents in DOCSTRING_SUBPACKAGES.items():
+      module = f"pyvinecopulib.{subpkg}"
+      header = f"``{module}``"
+      f.write(f"{header}\n{'-' * len(header)}\n\n")
+      f.write(f".. automodule:: {module}\n\n")
+      classes = contents.get("classes", [])
+      if classes:
+        f.write("Classes\n^^^^^^^\n\n")
+        f.write(".. autosummary::\n    :toctree: _generate\n\n")
+        for cls in classes:
+          f.write(f"    {module}.{cls}\n")
+        f.write("\n")
+      functions = contents.get("functions", [])
+      if functions:
+        f.write("Functions\n^^^^^^^^^\n\n")
+        for fn in functions:
+          f.write(f".. autofunction:: {module}.{fn}\n")
+        f.write("\n")
 
 
 def _write_examples_rst(out_path, examples_dir):

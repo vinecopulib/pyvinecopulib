@@ -1,0 +1,70 @@
+"""Bicop family constants and groupings.
+
+Re-exports the `BicopFamily` enum plus the individual family constants
+(`indep`, `gaussian`, ...) and the named family groups (`all`, `parametric`,
+...) from the C++ extension.
+"""
+
+from ..pyvinecopulib_ext import (
+  BicopFamily,
+  all,
+  archimedean,
+  bb,
+  bb1,
+  bb6,
+  bb7,
+  bb8,
+  clayton,
+  elliptical,
+  extreme_value,
+  frank,
+  gaussian,
+  gumbel,
+  indep,
+  itau,
+  joe,
+  lt,
+  nonparametric,
+  one_par,
+  parametric,
+  rotationless,
+  student,
+  tawn,
+  three_par,
+  tll,
+  two_par,
+  ut,
+)
+
+__all__ = [
+  "BicopFamily",
+  # Individual families
+  "indep",
+  "gaussian",
+  "student",
+  "clayton",
+  "gumbel",
+  "frank",
+  "joe",
+  "bb1",
+  "bb6",
+  "bb7",
+  "bb8",
+  "tawn",
+  "tll",
+  # Family groups
+  "all",
+  "parametric",
+  "nonparametric",
+  "one_par",
+  "two_par",
+  "three_par",
+  "elliptical",
+  "archimedean",
+  "extreme_value",
+  "bb",
+  "rotationless",
+  "lt",
+  "ut",
+  "itau",
+]

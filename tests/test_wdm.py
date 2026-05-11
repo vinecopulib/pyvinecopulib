@@ -40,7 +40,7 @@ class TestWdm:
 
     for method in methods:
       # Should not raise an error and return a float
-      result = pv.wdm(self.x_independent, self.y_independent, method)
+      result = pv.utils.wdm(self.x_independent, self.y_independent, method)
       assert isinstance(result, float)
       assert not np.isnan(result)
       assert not np.isinf(result)
@@ -51,54 +51,66 @@ class TestWdm:
 
     # Pearson aliases
     pearson_methods = ["pearson", "prho", "cor"]
-    pearson_results = [pv.wdm(x, y, method) for method in pearson_methods]
+    pearson_results = [pv.utils.wdm(x, y, method) for method in pearson_methods]
     for result in pearson_results[1:]:
       assert_allclose(result, pearson_results[0], rtol=1e-15)
 
     # Spearman aliases
     spearman_methods = ["spearman", "srho", "rho"]
-    spearman_results = [pv.wdm(x, y, method) for method in spearman_methods]
+    spearman_results = [
+      pv.utils.wdm(x, y, method) for method in spearman_methods
+    ]
     for result in spearman_results[1:]:
       assert_allclose(result, spearman_results[0], rtol=1e-15)
 
     # Kendall aliases
     kendall_methods = ["kendall", "ktau", "tau"]
-    kendall_results = [pv.wdm(x, y, method) for method in kendall_methods]
+    kendall_results = [pv.utils.wdm(x, y, method) for method in kendall_methods]
     for result in kendall_results[1:]:
       assert_allclose(result, kendall_results[0], rtol=1e-15)
 
     # Blomqvist aliases
     blomqvist_methods = ["blomqvist", "bbeta", "beta"]
-    blomqvist_results = [pv.wdm(x, y, method) for method in blomqvist_methods]
+    blomqvist_results = [
+      pv.utils.wdm(x, y, method) for method in blomqvist_methods
+    ]
     for result in blomqvist_results[1:]:
       assert_allclose(result, blomqvist_results[0], rtol=1e-15)
 
     # Hoeffding aliases
     hoeffding_methods = ["hoeffding", "hoeffd", "d"]
-    hoeffding_results = [pv.wdm(x, y, method) for method in hoeffding_methods]
+    hoeffding_results = [
+      pv.utils.wdm(x, y, method) for method in hoeffding_methods
+    ]
     for result in hoeffding_results[1:]:
       assert_allclose(result, hoeffding_results[0], rtol=1e-15)
 
   def test_wdm_perfect_correlations(self) -> None:
     """Test with perfect correlations"""
     # Perfect positive correlation
-    pearson_pos = pv.wdm(self.x_perfect, self.y_perfect, "pearson")
+    pearson_pos = pv.utils.wdm(self.x_perfect, self.y_perfect, "pearson")
     assert_allclose(pearson_pos, 1.0, atol=1e-10)
 
-    spearman_pos = pv.wdm(self.x_perfect, self.y_perfect, "spearman")
+    spearman_pos = pv.utils.wdm(self.x_perfect, self.y_perfect, "spearman")
     assert_allclose(spearman_pos, 1.0, atol=1e-10)
 
-    kendall_pos = pv.wdm(self.x_perfect, self.y_perfect, "kendall")
+    kendall_pos = pv.utils.wdm(self.x_perfect, self.y_perfect, "kendall")
     assert_allclose(kendall_pos, 1.0, atol=1e-10)
 
     # Perfect negative correlation
-    pearson_neg = pv.wdm(self.x_perfect_neg, self.y_perfect_neg, "pearson")
+    pearson_neg = pv.utils.wdm(
+      self.x_perfect_neg, self.y_perfect_neg, "pearson"
+    )
     assert_allclose(pearson_neg, -1.0, atol=1e-10)
 
-    spearman_neg = pv.wdm(self.x_perfect_neg, self.y_perfect_neg, "spearman")
+    spearman_neg = pv.utils.wdm(
+      self.x_perfect_neg, self.y_perfect_neg, "spearman"
+    )
     assert_allclose(spearman_neg, -1.0, atol=1e-10)
 
-    kendall_neg = pv.wdm(self.x_perfect_neg, self.y_perfect_neg, "kendall")
+    kendall_neg = pv.utils.wdm(
+      self.x_perfect_neg, self.y_perfect_neg, "kendall"
+    )
     assert_allclose(kendall_neg, -1.0, atol=1e-10)
 
   def test_wdm_independence(self) -> None:
@@ -106,7 +118,7 @@ class TestWdm:
     methods = ["pearson", "spearman", "kendall", "blomqvist"]
 
     for method in methods:
-      result = pv.wdm(self.x_independent, self.y_independent, method)
+      result = pv.utils.wdm(self.x_independent, self.y_independent, method)
       # For independent data, correlation should be close to zero
       assert abs(result) < 0.2  # Allow some variation due to randomness
 
@@ -116,8 +128,8 @@ class TestWdm:
     weights = np.ones(len(x))
 
     # Uniform weights should give same result as unweighted
-    unweighted = pv.wdm(x, y, "pearson")
-    weighted_uniform = pv.wdm(x, y, "pearson", weights)
+    unweighted = pv.utils.wdm(x, y, "pearson")
+    weighted_uniform = pv.utils.wdm(x, y, "pearson", weights)
     assert_allclose(unweighted, weighted_uniform, rtol=1e-10)
 
   def test_wdm_weights_half_zero(self) -> None:
@@ -136,8 +148,10 @@ class TestWdm:
     methods = ["pearson", "spearman", "kendall", "blomqvist"]
 
     for method in methods:
-      weighted_result = pv.wdm(x, y, method, weights)
-      unweighted_second_half = pv.wdm(x_second_half, y_second_half, method)
+      weighted_result = pv.utils.wdm(x, y, method, weights)
+      unweighted_second_half = pv.utils.wdm(
+        x_second_half, y_second_half, method
+      )
       assert_allclose(weighted_result, unweighted_second_half, rtol=1e-12)
 
   def test_wdm_weights_scaling(self) -> None:
@@ -150,9 +164,9 @@ class TestWdm:
     methods = ["pearson", "spearman", "kendall"]
 
     for method in methods:
-      result1 = pv.wdm(x, y, method, weights1)
-      result2 = pv.wdm(x, y, method, weights2)
-      result3 = pv.wdm(x, y, method, weights3)
+      result1 = pv.utils.wdm(x, y, method, weights1)
+      result2 = pv.utils.wdm(x, y, method, weights2)
+      result3 = pv.utils.wdm(x, y, method, weights3)
 
       assert_allclose(result1, result2, rtol=1e-12)
       assert_allclose(result1, result3, rtol=1e-12)
@@ -163,7 +177,7 @@ class TestWdm:
     weights = np.zeros(len(x))
 
     # Zero weights should return NaN
-    result = pv.wdm(x, y, "pearson", weights)
+    result = pv.utils.wdm(x, y, "pearson", weights)
     assert np.isnan(result)
 
   def test_wdm_input_validation(self) -> None:
@@ -173,17 +187,17 @@ class TestWdm:
     # Test mismatched lengths
     x_short = x[:-10]
     with pytest.raises((ValueError, RuntimeError)):
-      pv.wdm(x_short, y, "pearson")
+      pv.utils.wdm(x_short, y, "pearson")
 
     # Test empty arrays - returns NaN
     x_empty = np.array([])
     y_empty = np.array([])
-    result = pv.wdm(x_empty, y_empty, "pearson")
+    result = pv.utils.wdm(x_empty, y_empty, "pearson")
     assert np.isnan(result)
 
     # Test invalid method
     with pytest.raises((ValueError, RuntimeError)):
-      pv.wdm(x, y, "invalid_method")
+      pv.utils.wdm(x, y, "invalid_method")
 
   def test_wdm_weights_length_mismatch(self) -> None:
     """Test weights with wrong length"""
@@ -191,7 +205,7 @@ class TestWdm:
     weights_wrong = np.ones(len(x) - 5)
 
     with pytest.raises((ValueError, RuntimeError)):
-      pv.wdm(x, y, "pearson", weights_wrong)
+      pv.utils.wdm(x, y, "pearson", weights_wrong)
 
   def test_wdm_missing_values_remove_true(self) -> None:
     """Test behavior with missing values when remove_missing=True"""
@@ -199,7 +213,7 @@ class TestWdm:
     y = np.array([2.0, 4.0, 6.0, np.nan, 10.0])
 
     # Should work with remove_missing=True (default)
-    result = pv.wdm(x, y, "pearson", remove_missing=True)
+    result = pv.utils.wdm(x, y, "pearson", remove_missing=True)
     assert isinstance(result, float)
     assert not np.isnan(result)
 
@@ -210,7 +224,7 @@ class TestWdm:
 
     # Should raise error with remove_missing=False
     with pytest.raises((ValueError, RuntimeError)):
-      pv.wdm(x, y, "pearson", remove_missing=False)
+      pv.utils.wdm(x, y, "pearson", remove_missing=False)
 
   def test_wdm_monotonic_transformation(self) -> None:
     """Test that rank-based methods are invariant to monotonic transformations"""
@@ -222,12 +236,12 @@ class TestWdm:
     y_transformed = np.log(np.abs(y) + 1) * np.sign(y)
 
     # Spearman and Kendall should be unchanged
-    spearman_orig = pv.wdm(x, y, "spearman")
-    spearman_trans = pv.wdm(x_transformed, y_transformed, "spearman")
+    spearman_orig = pv.utils.wdm(x, y, "spearman")
+    spearman_trans = pv.utils.wdm(x_transformed, y_transformed, "spearman")
     assert_allclose(spearman_orig, spearman_trans, rtol=1e-10)
 
-    kendall_orig = pv.wdm(x, y, "kendall")
-    kendall_trans = pv.wdm(x_transformed, y_transformed, "kendall")
+    kendall_orig = pv.utils.wdm(x, y, "kendall")
+    kendall_trans = pv.utils.wdm(x_transformed, y_transformed, "kendall")
     assert_allclose(kendall_orig, kendall_trans, rtol=1e-10)
 
   def test_wdm_sign_consistency(self) -> None:
@@ -235,12 +249,12 @@ class TestWdm:
     # Positive correlation
     methods = ["pearson", "spearman", "kendall"]
     for method in methods:
-      result_pos = pv.wdm(self.x_positive, self.y_positive, method)
+      result_pos = pv.utils.wdm(self.x_positive, self.y_positive, method)
       assert result_pos > 0, (
         f"{method} should be positive for positive correlation"
       )
 
-      result_neg = pv.wdm(self.x_negative, self.y_negative, method)
+      result_neg = pv.utils.wdm(self.x_negative, self.y_negative, method)
       assert result_neg < 0, (
         f"{method} should be negative for negative correlation"
       )
@@ -258,8 +272,8 @@ class TestWdm:
     ]
 
     for method in symmetric_methods:
-      result_xy = pv.wdm(x, y, method)
-      result_yx = pv.wdm(y, x, method)
+      result_xy = pv.utils.wdm(x, y, method)
+      result_yx = pv.utils.wdm(y, x, method)
       assert_allclose(result_xy, result_yx, rtol=1e-15)
 
   def test_wdm_weights_different_values(self) -> None:
@@ -269,20 +283,20 @@ class TestWdm:
 
     # Linear weights
     weights_linear = np.linspace(0.1, 2.0, n)
-    result_linear = pv.wdm(x, y, "pearson", weights_linear)
+    result_linear = pv.utils.wdm(x, y, "pearson", weights_linear)
     assert isinstance(result_linear, float)
     assert not np.isnan(result_linear)
 
     # Exponential weights
     weights_exp = np.exp(np.linspace(-2, 2, n))
-    result_exp = pv.wdm(x, y, "pearson", weights_exp)
+    result_exp = pv.utils.wdm(x, y, "pearson", weights_exp)
     assert isinstance(result_exp, float)
     assert not np.isnan(result_exp)
 
     # Random weights
     np.random.seed(123)
     weights_random = np.random.uniform(0.1, 2.0, n)
-    result_random = pv.wdm(x, y, "pearson", weights_random)
+    result_random = pv.utils.wdm(x, y, "pearson", weights_random)
     assert isinstance(result_random, float)
     assert not np.isnan(result_random)
 
@@ -293,7 +307,7 @@ class TestWdm:
     y_const = np.ones(self.n) * 2
 
     # Pearson correlation with constants should be undefined (NaN)
-    result = pv.wdm(x_const, y_const, "pearson")
+    result = pv.utils.wdm(x_const, y_const, "pearson")
     assert np.isnan(result)
 
     # Single different value
@@ -301,7 +315,7 @@ class TestWdm:
     x_almost_const[-1] = 2.0
     y_varied = np.random.normal(0, 1, self.n)
 
-    result = pv.wdm(x_almost_const, y_varied, "pearson")
+    result = pv.utils.wdm(x_almost_const, y_varied, "pearson")
     assert isinstance(result, float)
     # Should not be NaN as there is some variation
     assert not np.isnan(result) or True  # Allow NaN in edge cases
@@ -314,13 +328,13 @@ class TestWdm:
     # Size 2
     x2 = np.array([1.0, 2.0])
     y2 = np.array([3.0, 4.0])
-    result2 = pv.wdm(x2, y2, method)
+    result2 = pv.utils.wdm(x2, y2, method)
     assert isinstance(result2, float)
 
     # Size 3
     x3 = np.array([1.0, 2.0, 3.0])
     y3 = np.array([1.0, 3.0, 2.0])
-    result3 = pv.wdm(x3, y3, method)
+    result3 = pv.utils.wdm(x3, y3, method)
     assert isinstance(result3, float)
 
   def test_wdm_type_consistency(self) -> None:
@@ -329,12 +343,12 @@ class TestWdm:
     methods = ["pearson", "spearman", "kendall", "blomqvist", "hoeffding"]
 
     for method in methods:
-      result = pv.wdm(x, y, method)
+      result = pv.utils.wdm(x, y, method)
       assert isinstance(result, float), f"Method {method} should return float"
 
       # With weights
       weights = np.ones(len(x))
-      result_weighted = pv.wdm(x, y, method, weights)
+      result_weighted = pv.utils.wdm(x, y, method, weights)
       assert isinstance(result_weighted, float), (
         f"Method {method} with weights should return float"
       )
@@ -347,19 +361,19 @@ class TestWdm:
     # Test with one zero weight in the middle
     weights_one_zero = np.ones(n)
     weights_one_zero[n // 2] = 0.0
-    result = pv.wdm(x, y, "pearson", weights_one_zero)
+    result = pv.utils.wdm(x, y, "pearson", weights_one_zero)
     assert isinstance(result, float)
     assert not np.isnan(result)
 
     # Test with alternating weights (0, 1, 0, 1, ...)
     weights_alternating = np.zeros(n)
     weights_alternating[::2] = 1.0
-    result_alt = pv.wdm(x, y, "pearson", weights_alternating)
+    result_alt = pv.utils.wdm(x, y, "pearson", weights_alternating)
 
     # Should match unweighted on even indices
     x_even = x[::2]
     y_even = y[::2]
-    result_even = pv.wdm(x_even, y_even, "pearson")
+    result_even = pv.utils.wdm(x_even, y_even, "pearson")
     assert_allclose(result_alt, result_even, rtol=1e-12)
 
   def test_wdm_weights_numerical_precision(self) -> None:
@@ -369,13 +383,13 @@ class TestWdm:
 
     # Very small but non-zero weights
     weights_tiny = np.full(n, 1e-10)
-    result_tiny = pv.wdm(x, y, "pearson", weights_tiny)
+    result_tiny = pv.utils.wdm(x, y, "pearson", weights_tiny)
 
     # Should be similar to unweighted (weights are uniform)
-    result_unweighted = pv.wdm(x, y, "pearson")
+    result_unweighted = pv.utils.wdm(x, y, "pearson")
     assert_allclose(result_tiny, result_unweighted, rtol=1e-6)
 
     # Very large weights (should also work)
     weights_large = np.full(n, 1e6)
-    result_large = pv.wdm(x, y, "pearson", weights_large)
+    result_large = pv.utils.wdm(x, y, "pearson", weights_large)
     assert_allclose(result_large, result_unweighted, rtol=1e-12)

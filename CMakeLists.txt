@@ -167,11 +167,14 @@ target_compile_definitions(pyvinecopulib_ext
                            PRIVATE VERSION_INFO=\"${PROJECT_VERSION}\")
 
 # ==============================================================================
-# Generated stubs: src/pyvinecopulib/__init__.pyi
+# Generated stubs: one __init__.pyi per public (sub)package.
 #
 # After the extension is built, scripts/build/generate_stubs.py stages the
-# package + the just-built .so in a tempdir and writes the .pyi against it.
-# Output is gitignored.
+# package + the just-built .so in a tempdir and writes a .pyi for each requested
+# module. Outputs are gitignored.
+#
+# pyvinecopulib.sklearn is optional (requires scikit-learn on the build
+# machine); the generator emits a warning and skips it if the import fails.
 # ==============================================================================
 
 add_custom_command(
@@ -180,18 +183,39 @@ add_custom_command(
   COMMAND
     "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/build/generate_stubs.py"
     --source-pkg-dir "${CMAKE_SOURCE_DIR}/src/pyvinecopulib" --ext-so
-    "$<TARGET_FILE:pyvinecopulib_ext>" --output
-    "${CMAKE_SOURCE_DIR}/src/pyvinecopulib/__init__.pyi" --py-typed
-    "${CMAKE_SOURCE_DIR}/src/pyvinecopulib/py.typed"
-  COMMENT "Generating __init__.pyi from the just-built extension"
+    "$<TARGET_FILE:pyvinecopulib_ext>" --py-typed
+    "${CMAKE_SOURCE_DIR}/src/pyvinecopulib/py.typed" --module-output
+    "pyvinecopulib:${CMAKE_SOURCE_DIR}/src/pyvinecopulib/__init__.pyi"
+    --module-output
+    "pyvinecopulib.core:${CMAKE_SOURCE_DIR}/src/pyvinecopulib/core/__init__.pyi"
+    --module-output
+    "pyvinecopulib.families:${CMAKE_SOURCE_DIR}/src/pyvinecopulib/families/__init__.pyi"
+    --module-output
+    "pyvinecopulib.utils:${CMAKE_SOURCE_DIR}/src/pyvinecopulib/utils/__init__.pyi"
+    --module-output
+    "pyvinecopulib.sklearn:${CMAKE_SOURCE_DIR}/src/pyvinecopulib/sklearn/__init__.pyi"
+  COMMENT
+    "Generating per-subpackage __init__.pyi stubs from the just-built extension"
   VERBATIM)
 
 # Install directive for scikit-build-core
 install(TARGETS pyvinecopulib_ext LIBRARY DESTINATION pyvinecopulib)
 
-# Explicitly install the generated stub and py.typed marker into the wheel. Both
+# Explicitly install the generated stubs and py.typed marker into the wheel. All
 # are gitignored build artifacts; scikit-build-core's git-ls-files-based package
-# discovery would otherwise skip them.
+# discovery would otherwise skip them. The sklearn stub is OPTIONAL: it's only
+# produced if scikit-learn is available on the build machine, so the install
+# rule must tolerate its absence.
 install(FILES "${CMAKE_SOURCE_DIR}/src/pyvinecopulib/__init__.pyi"
               "${CMAKE_SOURCE_DIR}/src/pyvinecopulib/py.typed"
         DESTINATION pyvinecopulib)
+install(FILES "${CMAKE_SOURCE_DIR}/src/pyvinecopulib/core/__init__.pyi"
+        DESTINATION pyvinecopulib/core)
+install(FILES "${CMAKE_SOURCE_DIR}/src/pyvinecopulib/families/__init__.pyi"
+        DESTINATION pyvinecopulib/families)
+install(FILES "${CMAKE_SOURCE_DIR}/src/pyvinecopulib/utils/__init__.pyi"
+        DESTINATION pyvinecopulib/utils)
+install(
+  FILES "${CMAKE_SOURCE_DIR}/src/pyvinecopulib/sklearn/__init__.pyi"
+  DESTINATION pyvinecopulib/sklearn
+  OPTIONAL)

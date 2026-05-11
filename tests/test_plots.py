@@ -33,7 +33,7 @@ class TestPairCopulaData:
 
   def test_pairs_copula_data_parameter_validation(self) -> None:
     """Test pairs_copula_data parameter validation"""
-    from pyvinecopulib.pair_copuladata import pairs_copula_data
+    from pyvinecopulib.utils import pairs_copula_data
 
     # Test None data
     with pytest.raises(ValueError, match="`data` cannot be None"):
@@ -107,7 +107,7 @@ class TestPairCopulaData:
 
   def test_pairs_copula_data_parameter_types(self) -> None:
     """Test parameter type validation"""
-    from pyvinecopulib.pair_copuladata import pairs_copula_data
+    from pyvinecopulib.utils import pairs_copula_data
 
     valid_data = np.random.uniform(0.1, 0.9, size=(10, 2))
 
@@ -129,7 +129,7 @@ class TestPairCopulaData:
 
   def test_pairs_copula_data_basic_validation_success(self) -> None:
     """Test that valid inputs pass basic validation"""
-    from pyvinecopulib.pair_copuladata import pairs_copula_data
+    from pyvinecopulib.utils import pairs_copula_data
 
     # Create valid test data
     np.random.seed(42)
@@ -142,11 +142,13 @@ class TestPairCopulaData:
       mock_subplots.return_value = (mock_fig, mock_ax)
 
       # Mock the wdm and Bicop imports that would fail without the C++ extension
-      with patch("pyvinecopulib.pair_copuladata.wdm"):
-        with patch("pyvinecopulib.pair_copuladata.Bicop"):
-          with patch("pyvinecopulib.pair_copuladata.norm_cdf"):
-            with patch("pyvinecopulib.pair_copuladata.norm_pdf"):
-              with patch("pyvinecopulib.pair_copuladata.plt.tight_layout"):
+      with patch("pyvinecopulib.utils.pairs_copula_data.wdm"):
+        with patch("pyvinecopulib.utils.pairs_copula_data.Bicop"):
+          with patch("pyvinecopulib.utils.pairs_copula_data.norm_cdf"):
+            with patch("pyvinecopulib.utils.pairs_copula_data.norm_pdf"):
+              with patch(
+                "pyvinecopulib.utils.pairs_copula_data.plt.tight_layout"
+              ):
                 # This should not raise any validation errors
                 try:
                   pairs_copula_data(data)
@@ -162,7 +164,7 @@ class TestPairCopulaData:
 
   def test_pairs_copula_data_edge_cases(self) -> None:
     """Test edge cases that should be handled gracefully"""
-    from pyvinecopulib.pair_copuladata import pairs_copula_data
+    from pyvinecopulib.utils import pairs_copula_data
 
     # Test minimum valid data (2 observations, 1 dimension)
     min_data = np.array([[0.1], [0.9]])
@@ -172,9 +174,9 @@ class TestPairCopulaData:
       mock_ax = MagicMock()
       mock_subplots.return_value = (mock_fig, mock_ax)
 
-      with patch("pyvinecopulib.pair_copuladata.norm_cdf"):
-        with patch("pyvinecopulib.pair_copuladata.norm_pdf"):
-          with patch("pyvinecopulib.pair_copuladata.plt.tight_layout"):
+      with patch("pyvinecopulib.utils.pairs_copula_data.norm_cdf"):
+        with patch("pyvinecopulib.utils.pairs_copula_data.norm_pdf"):
+          with patch("pyvinecopulib.utils.pairs_copula_data.plt.tight_layout"):
             # This should not raise validation errors
             try:
               pairs_copula_data(min_data)
@@ -196,9 +198,9 @@ class TestPairCopulaData:
       mock_ax = MagicMock()
       mock_subplots.return_value = (mock_fig, mock_ax)
 
-      with patch("pyvinecopulib.pair_copuladata.norm_cdf"):
-        with patch("pyvinecopulib.pair_copuladata.norm_pdf"):
-          with patch("pyvinecopulib.pair_copuladata.plt.tight_layout"):
+      with patch("pyvinecopulib.utils.pairs_copula_data.norm_cdf"):
+        with patch("pyvinecopulib.utils.pairs_copula_data.norm_pdf"):
+          with patch("pyvinecopulib.utils.pairs_copula_data.plt.tight_layout"):
             # This should not raise validation errors
             try:
               pairs_copula_data(max_dim_data)
@@ -369,7 +371,7 @@ class TestVinecopHelpers:
     np.random.seed(1234)
     data = np.random.uniform(0, 1, size=(50, 4))
     self.vinecop = pv.Vinecop.from_data(
-      data, controls=pv.FitControlsVinecop(family_set=[pv.indep])
+      data, controls=pv.FitControlsVinecop(family_set=[pv.families.indep])
     )
 
   def test_get_name(self) -> None:
@@ -976,7 +978,7 @@ class TestEdgeCases:
     np.random.seed(1234)
     data = np.random.uniform(0, 1, size=(50, 3))
     vinecop = pv.Vinecop.from_data(
-      data, controls=pv.FitControlsVinecop(family_set=[pv.indep])
+      data, controls=pv.FitControlsVinecop(family_set=[pv.families.indep])
     )
 
     vars_names = ["A", "B", "C"]

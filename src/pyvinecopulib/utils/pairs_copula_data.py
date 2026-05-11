@@ -6,8 +6,8 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from numpy.typing import ArrayLike
 
-from ._python_helpers.stats import norm_cdf, norm_pdf
-from .pyvinecopulib_ext import (
+from .._python_helpers.stats import norm_cdf, norm_pdf
+from ..pyvinecopulib_ext import (
   Bicop,
   BicopFamily,
   FitControlsBicop,

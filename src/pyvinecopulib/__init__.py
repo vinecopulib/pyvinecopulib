@@ -1,101 +1,67 @@
-from . import pyvinecopulib_ext
-from .pair_copuladata import pairs_copula_data
-from .pyvinecopulib_ext import (
+"""pyvinecopulib — Python interface to vinecopulib.
+
+The public API is organized into four subpackages:
+
+- :mod:`pyvinecopulib.core` — `Bicop`, `Vinecop`, fit controls, vine structures.
+- :mod:`pyvinecopulib.families` — `BicopFamily` and family constants/groups.
+- :mod:`pyvinecopulib.utils` — `Kde1d`, `wdm`, `to_pseudo_obs`, `pairs_copula_data`, etc.
+- :mod:`pyvinecopulib.sklearn` — sklearn-compatible vine estimators (optional extra).
+
+Core types (``Bicop``, ``Vinecop``, structures, controls, ``BicopFamily``,
+``to_pseudo_obs``) are also re-exported at the top level for convenience. The
+noisier aliases (family constants like ``pyvinecopulib.gaussian`` and utilities
+like ``pyvinecopulib.Kde1d``) still resolve at the top level for backward
+compatibility but emit a ``DeprecationWarning`` on access.
+"""
+
+from . import core, families, pyvinecopulib_ext, utils
+from ._deprecations import _DEPRECATED_TOP_LEVEL, _resolve_deprecated
+from .core import (
   Bicop,
   BicopFamily,
   CVineStructure,
   DVineStructure,
   FitControlsBicop,
   FitControlsVinecop,
-  Kde1d,
   RVineStructure,
   Vinecop,
-  all,
-  archimedean,
-  bb,
-  bb1,
-  bb6,
-  bb7,
-  bb8,
-  benchmark,
-  clayton,
-  elliptical,
-  extreme_value,
-  frank,
-  gaussian,
-  ghalton,
-  gumbel,
-  indep,
-  itau,
-  joe,
-  lt,
-  nonparametric,
-  one_par,
-  parametric,
-  rotationless,
-  simulate_uniform,
-  sobol,
-  student,
-  tawn,
-  three_par,
-  tll,
-  to_pseudo_obs,
-  two_par,
-  ut,
-  wdm,
 )
+from .utils import to_pseudo_obs
 
-# Version is that of the extension
 __version__ = pyvinecopulib_ext.__version__
 
 __all__ = [
-  # Core classes
+  # Core types kept at the top level indefinitely
   "Bicop",
-  "Vinecop",
+  "BicopFamily",
+  "CVineStructure",
+  "DVineStructure",
   "FitControlsBicop",
   "FitControlsVinecop",
   "RVineStructure",
-  "CVineStructure",
-  "DVineStructure",
-  "BicopFamily",
-  "Kde1d",
-  # Functions
-  "benchmark",
-  "ghalton",
-  "pairs_copula_data",
-  "simulate_uniform",
-  "sobol",
+  "Vinecop",
   "to_pseudo_obs",
-  "wdm",
-  # Bicop families
-  "indep",
-  "gaussian",
-  "student",
-  "clayton",
-  "gumbel",
-  "frank",
-  "joe",
-  "bb1",
-  "bb6",
-  "bb7",
-  "bb8",
-  "tawn",
-  "tll",
-  # Family groups
-  "all",
-  "parametric",
-  "nonparametric",
-  "one_par",
-  "two_par",
-  "three_par",
-  "elliptical",
-  "archimedean",
-  "extreme_value",
-  "bb",
-  "rotationless",
-  "lt",
-  "ut",
-  "itau",
+  # Subpackages
+  "core",
+  "families",
+  "utils",
+  "sklearn",
   # Version
   "__version__",
 ]
+
+
+def __getattr__(name: str):
+  if name in _DEPRECATED_TOP_LEVEL:
+    return _resolve_deprecated(name)
+  if name == "sklearn":
+    # Lazy import so that vanilla `import pyvinecopulib` doesn't require
+    # scikit-learn — only `import pyvinecopulib.sklearn` does.
+    import importlib
+
+    return importlib.import_module("pyvinecopulib.sklearn")
+  raise AttributeError(f"module 'pyvinecopulib' has no attribute {name!r}")
+
+
+def __dir__():
+  return sorted(set(__all__) | set(_DEPRECATED_TOP_LEVEL))

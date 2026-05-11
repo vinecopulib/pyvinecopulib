@@ -23,7 +23,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "pyvinecopulib"
-version = "0.7.6"
+version = "1.0.0"
 authors = [
   { name = "Thibault Vatter", email = "info@vinecopulib.com" },
   { name = "Thomas Nagler", email = "info@vinecopulib.com" },
@@ -68,6 +68,10 @@ dev = [
   "coverage[toml]",
 ]
 examples = ["jupyterlab", "scipy"]
+# Scikit-learn-compatible vine estimators (pyvinecopulib.sklearn). Pinned
+# numpy>=2.0 because VineRegressor uses np.quantile(weights=...), which
+# was added in NumPy 2.0.
+sklearn = ["scikit-learn>=1.4", "numpy>=2.0"]
 doc = [
   "sphinx==7.0",
   "nbsphinx==0.9.2",
@@ -193,4 +197,11 @@ addopts = [
 ]
 markers = [
   "flaky: mark a test as flaky and allow reruns",
+]
+# Treat our own DeprecationWarnings as errors so internal code stays on the
+# canonical (post-1.0) import paths. Unrelated upstream warnings (jupyter,
+# matplotlib, etc.) are unaffected. The message regex matches both
+# `pyvinecopulib.NAME` and `pyvinecopulib.SUBPKG.NAME` patterns we emit.
+filterwarnings = [
+  "error:`pyvinecopulib\\.:DeprecationWarning",
 ]

@@ -81,13 +81,13 @@ inline void init_bicop_fit_controls(nb::module_& module) {
       .def(
           "__repr__",
           [](const FitControlsBicop& controls) {
-            return "<pyvinecopulib.FitControlsBicop>\n" + controls.str();
+            return "<pyvinecopulib.core.FitControlsBicop>\n" + controls.str();
           },
           fitcontrolsbicop_doc.str.doc)
       .def(
           "__str__",
           [](const FitControlsBicop& controls) {
-            return "<pyvinecopulib.FitControlsBicop>\n" + controls.str();
+            return "<pyvinecopulib.core.FitControlsBicop>\n" + controls.str();
           },
           fitcontrolsbicop_doc.str.doc)
       .def("__getstate__",

@@ -131,13 +131,13 @@ Alternatives to instantiate structures are:
       .def(
           "__repr__",
           [](const RVineStructure& rvs) {
-            return "<pyvinecopulib.RVineStructure>\n" + rvs.str();
+            return "<pyvinecopulib.core.RVineStructure>\n" + rvs.str();
           },
           rvinestructure_doc.str.doc)
       .def(
           "__str__",
           [](const RVineStructure& rvs) {
-            return "<pyvinecopulib.RVineStructure>\n" + rvs.str();
+            return "<pyvinecopulib.core.RVineStructure>\n" + rvs.str();
           },
           rvinestructure_doc.str.doc)
       .def("__getstate__",
@@ -156,7 +156,7 @@ Alternatives to instantiate structures are:
            dvinestructure_doc.ctor.doc_2args,
            nb::call_guard<nb::gil_scoped_release>())
       .def("__repr__", [](const DVineStructure& rvs) {
-        return "<pyvinecopulib.DVineStructure>\n" + rvs.str();
+        return "<pyvinecopulib.core.DVineStructure>\n" + rvs.str();
       });
 
   nb::class_<CVineStructure, RVineStructure>(module, "CVineStructure",
@@ -166,6 +166,6 @@ Alternatives to instantiate structures are:
            cvinestructure_doc.ctor.doc_2args,
            nb::call_guard<nb::gil_scoped_release>())
       .def("__repr__", [](const CVineStructure& rvs) {
-        return "<pyvinecopulib.CVineStructure>\n" + rvs.str();
+        return "<pyvinecopulib.core.CVineStructure>\n" + rvs.str();
       });
 }
