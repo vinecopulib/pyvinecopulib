@@ -58,7 +58,7 @@ def test_bicop(unique_json_path: str) -> None:
   assert isinstance(bicop.tau, float)
   assert bicop.npars == 1
   with pytest.raises(AttributeError):
-    bicop.npars = 2  # type: ignore[misc]
+    setattr(bicop, "npars", 2)
 
   # Test passing a single row of data (#169 & #170 fix)
   bicop.var_types = ["c", "c"]

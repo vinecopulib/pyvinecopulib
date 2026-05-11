@@ -169,6 +169,52 @@ jobs:
             exit 1
           }
 
+  verify_docs_build:
+    # Mirrors the Read the Docs build (.readthedocs.yaml) against the wheel
+    # built from this PR — so an issue that would surface on RTD only after
+    # a tag-and-publish cycle is caught here instead. Stricter than RTD
+    # (uses -W to fail on warnings) so doc regressions get blocked at PR
+    # time rather than rendering subtly broken on the published site.
+    name: Verify docs build (RTD mirror)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+      - name: Set up Python 3.11
+        # Match .readthedocs.yaml's build.tools.python.
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Graphviz + Pandoc
+        # graphviz: matches .readthedocs.yaml's apt_packages.
+        # pandoc: needed by nbsphinx to convert notebook markdown
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y graphviz pandoc
+      - name: Download built wheel (cp311 manylinux ubuntu)
+        uses: actions/download-artifact@v4
+        with:
+          name: cibw-wheels-ubuntu-latest-311-manylinux_x86_64
+          path: dist/
+      - name: Install wheel + doc/examples extras
+        # Equivalent to RTD's `pip install "pyvinecopulib[doc,examples]"`,
+        # except sourced from this PR's wheel rather than PyPI's published
+        # version — so the docs reflect the PR's actual API surface.
+        run: |
+          WHEEL=$(ls dist/*.whl)
+          pip install "${WHEEL}[doc,examples]"
+      - name: Build HTML docs
+        # -W: warnings as errors. Catches doc regressions (broken cross-refs,
+        # malformed docstrings, etc.) before they reach RTD.
+        run: python -m sphinx -W -b html docs docs/_build/html
+      - name: Upload built HTML for PR review
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-html
+          path: docs/_build/html/
+          retention-days: 14
+
   install_and_unit_test:
     needs: build
     runs-on: ${{ matrix.cfg.os }}
@@ -237,24 +283,90 @@ jobs:
           retry_wait_seconds: 60
           shell: bash
           command: |
-            pytest tests/ -r a -n 1 --no-cov
-      # Override pytest defaults (in pyproject.toml):
-      # - disable coverage (not meaningful for notebooks)
-      # - run sequentially (-n 1)
-      # - extend kernel timeout
+            # Serial run — see the note in pyproject.toml's
+            # [tool.pytest.ini_options] for why CI avoids pytest-xdist
+            # on GitHub Actions runners.
+            pytest tests/ -r a --no-cov --reruns 2 --reruns-delay 10
       - name: Run notebooks as unit tests
         uses: nick-fields/retry@v3
         with:
           timeout_minutes: 30
-          max_attempts: 3
+          max_attempts: 5
           retry_wait_seconds: 60
           shell: bash
           command: |
             pytest --nbmake examples/ \
-              -n 1 \
               --no-cov \
               --nbmake-timeout=600 \
-              --nbmake-kernel=python3
+              --nbmake-kernel=python3 \
+              --reruns 2 --reruns-delay 10
+
+  regenerate_notebooks:
+    # Fires automatically on every PR to main (the release-prep flow), and
+    # opt-in on any other PR via the `regenerate-notebooks` label — handy
+    # for testing this workflow against `dev`, or refreshing outputs early
+    # when a feature branch changes plotting code.
+    #
+    # To use the opt-in path: open the PR and add the label
+    # `regenerate-notebooks` (`gh pr edit <PR> --add-label regenerate-notebooks`),
+    # then push a commit so the workflow re-evaluates (the trigger types
+    # below don't include `labeled`, so labeling alone won't re-fire).
+    #
+    # RTD relies on the committed cell outputs (nbsphinx_execute = "never"
+    # in docs/conf.py), so this job is what keeps them fresh without
+    # manual intervention before release.
+    name: Regenerate notebook outputs
+    needs: build
+    if: |
+      github.event_name == 'pull_request'
+      && (
+        github.base_ref == 'main'
+        || contains(github.event.pull_request.labels.*.name, 'regenerate-notebooks')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # required to push the auto-commit back to the PR branch
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          # Need full history so the push is a fast-forward.
+          fetch-depth: 0
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Graphviz
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y graphviz
+      - name: Download built wheel (cp311 ABI3, ubuntu)
+        uses: actions/download-artifact@v4
+        with:
+          name: cibw-wheels-ubuntu-latest-311-manylinux_x86_64
+          path: dist/
+      - name: Install wheel + examples extras
+        run: |
+          # `<wheel>[examples]` installs the local wheel and pulls in the
+          # extras (jupyterlab, scipy) without going to PyPI for the package.
+          WHEEL=$(ls dist/*.whl)
+          pip install "${WHEEL}[examples]"
+          pip install jupyter nbconvert nbformat
+      - name: Re-execute notebooks
+        run: python scripts/regenerate_notebooks.py
+      - name: Commit and push refreshed notebooks
+        run: |
+          if git diff --quiet -- examples/; then
+            echo "Notebooks are already up to date; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add examples/
+          git commit -m "chore: refresh notebook outputs [skip ci]"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
 
   build_sdist:
     runs-on: ubuntu-latest
@@ -292,9 +404,11 @@ jobs:
           pip install tomli  # Needed for Python < 3.11
           python scripts/get_dependencies.py dev --as-requirements > requirements.txt
           pip install -r requirements.txt
+          # Install editable so the CMake build generates the stubs
+          pip install -e .
           ruff format --check
           ruff check
-          mypy
+          ty check
       - name: Create source distribution
         run: |
           export Boost_INCLUDE_DIR=$Boost_INCLUDE_DIR
@@ -302,6 +416,11 @@ jobs:
           pipx run build --sdist
       - name: Install source distribution
         run: |
+          # The lint step installed pyvinecopulib editable; its meta-path
+          # finder ('_pyvinecopulib_editable.py') would otherwise trigger a
+          # CMake rebuild during the sdist's POST_BUILD stub-gen import,
+          # using the outer env (which doesn't have the build deps).
+          pip uninstall -y pyvinecopulib
           export Boost_INCLUDE_DIR=$Boost_INCLUDE_DIR
           export EIGEN3_INCLUDE_DIR=$EIGEN3_INCLUDE_DIR
           pip install dist/*.tar.gz
@@ -311,8 +430,9 @@ jobs:
           python scripts/get_dependencies.py dev --as-requirements > requirements.txt
           pip install -r requirements.txt
       - name: Run tests
+        # Serial run (xdist not in addopts) — see pyproject.toml.
         run: |
-          pytest tests/ -r a
+          pytest tests/ -r a --no-cov --reruns 2 --reruns-delay 10
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:

@@ -129,10 +129,21 @@ SKIP_ACCESS = [
 
 
 def get_eigen_include(env_name: str) -> str:
+  # Resolution order: explicit env var > active conda env > miniforge fallback.
+  if "EIGEN3_INCLUDE_DIR" in os.environ:
+    return os.environ["EIGEN3_INCLUDE_DIR"]
+  conda_prefix = os.environ.get("CONDA_PREFIX")
+  if conda_prefix:
+    return str(Path(conda_prefix) / "include" / "eigen3")
   return str(Path.home() / f"miniforge3/envs/{env_name}/include/eigen3")
 
 
 def get_boost_include(env_name: str) -> str:
+  if "Boost_INCLUDE_DIR" in os.environ:
+    return os.environ["Boost_INCLUDE_DIR"]
+  conda_prefix = os.environ.get("CONDA_PREFIX")
+  if conda_prefix:
+    return str(Path(conda_prefix) / "include")
   return str(Path.home() / f"miniforge3/envs/{env_name}/include")
 
 
@@ -780,6 +791,18 @@ def process_comment(comment):
     else:
       for y in re.findall(r"(.*?)(?:\n{2,}|\Z)", x, re.DOTALL):
         lines = re.split(r"(?: *\n *)", y)
+
+        # Don't reflow .. math:: directives. Textwrap would put the
+        # equation continuation on an unindented next line, which RST
+        # parses as "explicit markup ends without a blank line". Keep the
+        # whole directive on a single (long) line — the docstr.hpp output
+        # is machine-generated, so line length doesn't matter.
+        collapsed = re.sub(r"\s+", " ", y).strip()
+        if collapsed.startswith(".. math::"):
+          result += collapsed + "\n\n"
+          wrapper.initial_indent = wrapper.subsequent_indent = ""
+          continue
+
         # Do not reflow lists or section headings.
 
         if re.match(r"^\s*(?:[*+\-]|[0-9]+[.)]) ", lines[0]) or (
@@ -800,10 +823,6 @@ def process_comment(comment):
               result += wrapped + "\n\n"
             wrapper.initial_indent = wrapper.subsequent_indent = ""
 
-  import pdb
-
-  # if "counter-diagonal" in result:
-  #   pdb.set_trace()
   # Transform ALL C++ method calls to Python method calls.
   # Be careful not to mistake code blocks for method calls.
   result = re.sub(r"``(.*?)::(.*?)``", r"``\1.\2``", result)
@@ -815,7 +834,8 @@ def process_comment(comment):
   try:
     return transform_docstring(result)
   except Exception:
-    pdb.set_trace()
+    pass
+    # pdb.set_trace()
 
 
 def get_name_chain(cursor):
@@ -1143,7 +1163,20 @@ def print_symbols(f, name, node, level=0):
   name_var = name
 
   if not node.first_symbol:
-    assert level == 0
+    if level > 0:
+      # Phantom intermediate node: an intermediate namespace/class along a
+      # name_chain whose own cursor wasn't directly visited by extract()
+      # (e.g. libclang elided it on this platform), but whose descendants
+      # were. Observed on Windows. Emit a wrapper struct preserving the
+      # path so binding code's pyvinecopulib_doc.<a>.<b>.<c> lookups still
+      # compile; doc_symbols is empty for phantoms so no docs are dropped.
+      name_var = sanitize_name(name)
+      iprint("// Symbol: (synthesized intermediate)")
+      iprint("struct /* %s */ {" % name_var)
+      for k in sorted(node.children_map.keys()):
+        print_symbols(f, k, node.children_map[k], level=level + 1)
+      iprint("} %s;" % name_var)
+      return
     full_name = name
   else:
     name_chain = node.first_symbol.name_chain
@@ -1266,9 +1299,19 @@ def parse_args():
     help="Suppress verbose output",
   )
   parser.add_argument(
+    "-isystem",
+    dest="isystem_dirs",
+    action="append",
+    default=[],
+    help="System include directories (can be specified multiple times). "
+    "Pass Eigen and Boost here from CMake.",
+  )
+  parser.add_argument(
     "-env",
-    default="pyvinecopulib",
-    help="Conda environment name (default: 'pyvinecopulib')",
+    default=None,
+    help="(Legacy) Conda environment name; only used if -isystem flags are "
+    "not provided, in which case Eigen/Boost are looked up under "
+    "~/miniforge3/envs/<env>/include[/eigen3].",
   )
   return parser.parse_args()
 
@@ -1288,11 +1331,22 @@ def main():
     "-x",
     "c++",
     "-D__MKDOC_PY__",
+    # Bypass MSVC STL's __clang_major__ >= 19 static_assert when parsing on
+    # Windows. PyPI's libclang tops out at 18.x; the define is defined by
+    # MSVC STL itself as the official escape hatch and is harmless on other
+    # platforms (it just isn't referenced by libstdc++/libc++).
+    "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH",
     f"-std={args.std}",
   ]
   parameters.extend([f"-I{inc}" for inc in args.include_dirs])
-  parameters.append(f"-isystem{get_eigen_include(env_name)}")
-  parameters.append(f"-isystem{get_boost_include(env_name)}")
+  if args.isystem_dirs:
+    parameters.extend([f"-isystem{inc}" for inc in args.isystem_dirs])
+  else:
+    # Legacy fallback: derive Eigen/Boost paths from env name / CONDA_PREFIX
+    # / EIGEN3_INCLUDE_DIR / Boost_INCLUDE_DIR. CMake passes -isystem
+    # explicitly, so this branch only runs for stand-alone CLI invocations.
+    parameters.append(f"-isystem{get_eigen_include(env_name)}")
+    parameters.append(f"-isystem{get_boost_include(env_name)}")
 
   if library_file and os.path.exists(library_file):
     # cindex.Config.set_library_path(os.path.dirname(library_file))
@@ -1360,6 +1414,12 @@ def main():
   glue_filename = os.path.join(tmpdir, "mkdoc_glue.h")
   with open(glue_filename, "w") as glue_f:
     for include_file in sorted(include_files):
+      # .ipp files are reached transitively via each .hpp's bottom include
+      # and have no include guards; #include'ing them directly here would
+      # cause every symbol in them to be redefined when the .hpp is also
+      # in the include set (breaks the Windows build).
+      if include_file.endswith(".ipp"):
+        continue
       line = '#include "{}"'.format(include_file)
       glue_f.write(line + "\n")
       f.write("// " + line + "\n")

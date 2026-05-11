@@ -66,7 +66,6 @@ __all__ = [
   "simulate_uniform",
   "sobol",
   "to_pseudo_obs",
-  "benchmark",
   "wdm",
   # Bicop families
   "indep",

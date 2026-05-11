@@ -98,6 +98,13 @@ napoleon_custom_sections = [("Usage", "Usage")]
 autosummary_generate = True
 nbsphinx_execute = "never"
 
+# Warning categories silenced for fresh single-pass builds:
+#   - `autosummary`: stub files don't exist when the toctree first reads
+#     them; they're generated mid-build, so a clean build always emits this.
+#   - `myst.header`: index.rst inlines a slice of README.md (`:start-line: 8`)
+#     that starts at an H2, which myst-parser flags. Cosmetic.
+suppress_warnings = ["autosummary", "myst.header"]
+
 # The suffix(es) of source filenames.
 source_suffix = {
   ".rst": "restructuredtext",
@@ -110,6 +117,16 @@ templates_path = ["_templates"]
 # The master toctree document.
 master_doc = "index"
 
+# Don't scan build outputs or jupyter checkpoint dirs as source documents.
+# Without `_build` here, sphinx would re-discover its own output (which
+# includes converted notebooks) and register every notebook twice. Note
+# `_generate` is intentionally NOT excluded — autosummary writes stub
+# files there and needs sphinx to read them back as source documents.
+exclude_patterns = [
+  "_build",
+  "**/.ipynb_checkpoints",
+]
+
 # General information about the project.
 project = "pyvinecopulib"
 copyright = "2024, Thomas Nagler and Thibault Vatter"
@@ -119,10 +136,11 @@ author = "Thomas Nagler and Thibault Vatter"
 release = pv.__version__
 version = ".".join(release.split(".")[:3])
 
-# Specify additional files to copy
-html_extra_path = [
-  os.path.abspath(os.path.join(os.path.dirname(__file__), "../CHANGELOG.md"))
-]
+# Note: don't set `html_extra_path = ["examples"]` here. nbsphinx processes
+# the staged docs/examples/*.ipynb as documents (toctree-targets); putting
+# the same directory in html_extra_path would treat it as raw extra files
+# and shadow nbsphinx's document registration, leaving the toctree entries
+# unresolved.
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -141,8 +159,6 @@ add_module_names = False
 pygments_style = "sphinx"
 
 html_logo = "_static/pyvinecopulib.png"
-
-html_extra_path = ["../examples/"]
 
 
 def process_cross_references(content: str, is_docstring: bool = True) -> str:
@@ -196,6 +212,110 @@ def preprocess_markdown(app, docname, source):
     )
     # Process cross-references without requiring the module name
     source[0] = process_cross_references(source[0], is_docstring=False)
+
+
+# --- Dynamic source staging --------------------------------------------------
+# Equivalent of the (now-retired) docs/gen_sphinx.py driver: stage the repo's
+# README, CHANGELOG, and examples/ dir into the docs source tree at build
+# time, and write the generated features.rst / examples.rst toctrees. This
+# lets plain `sphinx-build docs <out>` work end-to-end. All staged paths are
+# gitignored.
+
+DOCSTRING_CLASSES = [
+  "BicopFamily",
+  "Bicop",
+  "FitControlsBicop",
+  "Vinecop",
+  "FitControlsVinecop",
+  "CVineStructure",
+  "DVineStructure",
+  "RVineStructure",
+  "Kde1d",
+]
+DOCSTRING_FUNCTIONS = [
+  "to_pseudo_obs",
+  "simulate_uniform",
+  "wdm",
+  "ghalton",
+  "sobol",
+]
+
+
+def _stage_repo_files(docs_dir, repo_root):
+  """Symlink (or copy on Windows) repo-root files into the docs source dir
+  so the toctree in index.rst can reference them by name."""
+  import shutil
+
+  to_stage = ["README.md", "examples", "CHANGELOG.md", "CONTRIBUTING.md"]
+  for name in to_stage:
+    src = os.path.join(repo_root, name)
+    dst = os.path.join(docs_dir, name)
+    if os.path.lexists(dst):
+      # Already present (a previous build, or hand-placed). Trust it.
+      continue
+    try:
+      os.symlink(src, dst)
+    except (OSError, NotImplementedError):
+      # Fallback for Windows runners without symlink permission.
+      if os.path.isdir(src):
+        shutil.copytree(src, dst)
+      else:
+        shutil.copy2(src, dst)
+
+
+def _write_features_rst(out_path):
+  """Generate the auto-summary RST for the public API."""
+  rst_name = "API Documentation"
+  bar = "=" * len(rst_name)
+  with open(out_path, "w") as f:
+    f.write(".. GENERATED FILE DO NOT EDIT\n\n")
+    f.write(f"{bar}\n{rst_name}\n{bar}\n\n")
+    f.write("Classes\n========\n\n")
+    f.write(".. toctree::\n    :maxdepth: 1\n\n")
+    f.write(".. automodule:: pyvinecopulib\n")
+    f.write(".. autosummary:: \n    :toctree: _generate\n\n")
+    for cls in DOCSTRING_CLASSES:
+      f.write(f"    {cls}\n")
+    f.write("\nFunctions\n=========\n\n")
+    for fn in DOCSTRING_FUNCTIONS:
+      f.write(f".. autofunction:: {fn}\n")
+
+
+def _write_examples_rst(out_path, examples_dir):
+  """Generate the toctree linking to all example notebooks."""
+  if not os.path.isdir(examples_dir):
+    return
+  notebooks = sorted(
+    f for f in os.listdir(examples_dir) if f.endswith(".ipynb")
+  )
+  if not notebooks:
+    return
+  with open(out_path, "w") as f:
+    f.write("Examples\n========\n\n")
+    f.write(
+      "The following example notebooks are included in this documentation:\n\n"
+    )
+    f.write(".. toctree::\n   :maxdepth: 1\n   :titlesonly:\n\n")
+    for nb in notebooks:
+      f.write(f"   examples/{os.path.splitext(nb)[0]}\n")
+
+
+# Stage README/CHANGELOG/CONTRIBUTING/examples + generate features.rst /
+# examples.rst eagerly at conf.py load time. Doing this at module level
+# (rather than in a `builder-inited` hook) is required because
+# sphinx.ext.autosummary's stub-generation also runs at builder-inited
+# and races with us — if features.rst doesn't exist before autosummary's
+# scan, the `:toctree:` stubs are never written, the per-class pages
+# never render, and on a single-pass build the cross-links from the API
+# index (features.html) point at non-existent _generate/*.html files.
+_DOCS_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.dirname(_DOCS_DIR)
+_stage_repo_files(_DOCS_DIR, _REPO_ROOT)
+_write_features_rst(os.path.join(_DOCS_DIR, "features.rst"))
+_write_examples_rst(
+  os.path.join(_DOCS_DIR, "examples.rst"),
+  os.path.join(_DOCS_DIR, "examples"),
+)
 
 
 # Register Sphinx setup with recommonmark configuration and autodoc

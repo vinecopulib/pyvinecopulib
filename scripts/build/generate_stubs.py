@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
-"""
-Generate __init__.pyi from __all__
+"""Generate src/pyvinecopulib/__init__.pyi from the built extension.
+
+Invoked by CMake's POST_BUILD step (see CMakeLists.txt). At that point the
+just-built `.so` lives in the CMake build dir and the pure-Python sources
+live in `src/pyvinecopulib/` — neither location alone is a complete
+package. This script stages both into a tempdir, prepends it to sys.path,
+imports the assembled package, walks `__all__`, and writes the stub.
 """
 
 import argparse
 import importlib
 import inspect
 import re
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 from types import BuiltinFunctionType, FunctionType
 from typing import Optional
@@ -221,10 +228,19 @@ def cleanup_stub(stub: str) -> str:
   return stub
 
 
-def generate_stub(site_dir: str, output_path: Path, indent: int = 2):
-  sys.path.insert(0, site_dir)
+def generate_stub(site_dir, output_path: Path, indent: int = 2):
+  if site_dir:
+    sys.path.insert(0, site_dir)
   pkg = importlib.import_module("pyvinecopulib")
   names = sorted(getattr(pkg, "__all__", []))
+
+  if not names:
+    raise SystemExit(
+      f"Refusing to overwrite {output_path}: imported pyvinecopulib has an "
+      f"empty __all__ (module path: {getattr(pkg, '__file__', '<namespace>')}).\n"
+      "The C++ extension is likely not built into this environment. "
+      "Run 'pip install -e . --no-build-isolation' and retry."
+    )
 
   known_types = {
     name for name in names if inspect.isclass(getattr(pkg, name, None))
@@ -295,18 +311,70 @@ def generate_stub(site_dir: str, output_path: Path, indent: int = 2):
 
 
 def main():
-  parser = argparse.ArgumentParser(
-    description="Generate .pyi stub for pyvinecopulib from __all__."
-  )
-  parser.add_argument("site_dir", help="Path to site-packages directory")
+  parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument(
-    "--indent", type=int, default=2, help="Indentation level (spaces)"
+    "--source-pkg-dir",
+    required=True,
+    type=Path,
+    help="Source pyvinecopulib/ directory (contains __init__.py).",
+  )
+  parser.add_argument(
+    "--ext-so",
+    required=True,
+    type=Path,
+    help="Path to the freshly built pyvinecopulib_ext shared library.",
+  )
+  parser.add_argument(
+    "--output",
+    required=True,
+    type=Path,
+    help="Output __init__.pyi path.",
+  )
+  parser.add_argument(
+    "--py-typed",
+    type=Path,
+    default=None,
+    help="Optional path to py.typed marker (defaults to <output dir>/py.typed).",
+  )
+  parser.add_argument(
+    "--indent", type=int, default=2, help="Indentation level (spaces)."
   )
   args = parser.parse_args()
 
-  output_path = Path("src/pyvinecopulib/__init__.pyi")
-  generate_stub(args.site_dir, output_path, indent=args.indent)
-  Path("src/pyvinecopulib/py.typed").write_text("", encoding="utf-8")
+  if not args.ext_so.exists():
+    sys.exit(f"Extension not found at: {args.ext_so}")
+  if not args.source_pkg_dir.is_dir():
+    sys.exit(f"Source package dir not found: {args.source_pkg_dir}")
+
+  py_typed = args.py_typed or (args.output.parent / "py.typed")
+
+  # Stage the assembled package (sources + freshly built .so/.pyd) into a
+  # tempdir so importlib finds a complete module to introspect.
+  #
+  # Use mkdtemp + best-effort rmtree rather than TemporaryDirectory: on
+  # Windows the imported .pyd stays locked by the current process for
+  # the lifetime of the interpreter, which would make
+  # TemporaryDirectory's strict cleanup raise PermissionError after the
+  # stub was already written successfully.
+  tmp = tempfile.mkdtemp(prefix="pyvinecopulib-stubs-")
+  try:
+    site = Path(tmp)
+    pkg = site / "pyvinecopulib"
+    shutil.copytree(
+      args.source_pkg_dir,
+      pkg,
+      ignore=shutil.ignore_patterns(
+        "__init__.pyi", "py.typed", "*.so", "*.pyd", "*.dylib", "__pycache__"
+      ),
+    )
+    shutil.copy2(args.ext_so, pkg / args.ext_so.name)
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    generate_stub(str(site), args.output, indent=args.indent)
+    py_typed.parent.mkdir(parents=True, exist_ok=True)
+    py_typed.write_text("", encoding="utf-8")
+  finally:
+    shutil.rmtree(tmp, ignore_errors=True)
 
 
 if __name__ == "__main__":

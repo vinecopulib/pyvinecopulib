@@ -1,6 +1,6 @@
 # pyvinecopulib
 
-[![Documentation](https://img.shields.io/website/http/vinecopulib.github.io/pyvinecopulib.svg)](https://vinecopulib.github.io/pyvinecopulib/)
+[![Documentation](https://readthedocs.org/projects/pyvinecopulib/badge/?version=latest)](https://pyvinecopulib.readthedocs.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build Status](https://github.com/vinecopulib/pyvinecopulib/actions/workflows/pypi.yml/badge.svg)](https://github.com/vinecopulib/pyvinecopulib/actions/workflows/pypi.yml)
 [![DOI](https://zenodo.org/badge/196999069.svg)](https://zenodo.org/badge/latestdoi/196999069)
@@ -76,9 +76,13 @@ cd pyvinecopulib
 
 The main build time prerequisites are:
 
-* scikit-build-core (>=0.4.3),
+* scikit-build-core (>=0.5.0),
 * nanobind (>=2.7.0),
+* libclang (>=18) — used to regenerate `src/include/docstr.hpp` from the C++ headers as a step of the build,
+* numpy / matplotlib / networkx — imported by the post-build stub-generation step,
 * a compiler with C++17 support.
+
+When installing via `pip install .` (the default), all of these are pulled into an isolated build environment automatically via `[build-system] requires` in `pyproject.toml`; you don't need to install them yourself.
 
 To install from source, `Eigen` and `Boost` also need to be available, and CMake will try to find suitable versions automatically.
 
@@ -106,170 +110,29 @@ Finally, you can build and install `pyvinecopulib` using `pip`:
 pip install .
 ```
 
-Stubs and documentation can then be generated using the custom scripts:
+The build automatically regenerates `src/include/docstr.hpp` (from the C++ headers via libclang) and `src/pyvinecopulib/__init__.pyi` (from the freshly built extension). Both files are gitignored — they're pure build artifacts.
+
+For an editable install (recommended for development), use `--no-build-isolation` so the conda env's libclang is reused and `editable.rebuild = true` regenerates everything on each `import`:
 
 ```bash
-python scripts/generate_metadata.py --env pyvinecopulib
+pip install -e . --no-build-isolation
 ```
 
-Or use the Makefile for convenience:
+## Documentation
+
+Stable docs are published at <https://pyvinecopulib.readthedocs.io>. They are
+rebuilt automatically by Read the Docs whenever a new release is tagged on
+`main` and published to PyPI.
+
+To build the documentation locally:
 
 ```bash
-make metadata    # Generate all (stubs, docstrings, examples)
-make stubs       # Generate type stubs only
-make docstrings  # Generate C++ docstrings only
+make docs           # one-shot HTML build → docs/_build/html/
+make docs-serve     # live-reload dev server (sphinx-autobuild)
 ```
 
-Note that the `generate_requirements.py` script can also be used to generate a `requirements.txt` file for use with `pip` via the `--format` option:
+## Contributing
 
-```bash
-python scripts/generate_requirements.py --format txt
-```
-
-### Building the documentation
-
-Documentation for the example project is generated using Sphinx and the "Read the Docs" theme.
-The following command generates HTML-based reference documentation; for other
-formats please refer to the Sphinx manual:
-
-```bash
-cd docs
-python serve_sphinx.py
-```
-
-## Development
-
-This project includes comprehensive development tools including pre-commit hooks and a Makefile to streamline development workflow.
-
-### Quick Development Setup
-
-1. **Clone and setup environment**:
-   ```bash
-   git clone --recursive https://github.com/vinecopulib/pyvinecopulib.git
-   cd pyvinecopulib
-   make env-conda                    # Create conda environment
-   conda activate pyvinecopulib      # Activate environment
-   ```
-
-2. **Setup development tools**:
-   ```bash
-   make dev-setup                    # Install dependencies and pre-commit hooks
-   ```
-
-3. **Development workflow**:
-   ```bash
-   make quick-check                  # Run fast checks (lint, type-check, test)
-   make check-all                    # Run comprehensive checks before commit
-   ```
-
-### Development Commands
-
-Use `make help` to see all available commands. Key commands include:
-
-| Command | Description |
-|---------|-------------|
-| `make install-dev` | Install development dependencies |
-| `make test` | Run all tests |
-| `make test-fast` | Run tests without coverage |
-| `make test-examples` | Run example notebooks |
-| `make lint` | Run code linting with ruff |
-| `make format` | Format code with ruff |
-| `make type-check` | Run type checking with mypy |
-| `make docs` | Build documentation |
-| `make docs-serve` | Serve documentation locally |
-| `make clean` | Clean build artifacts |
-| `make stubs` | Generate type stubs (custom script) |
-| `make docstrings` | Generate C++ docstrings |
-| `make metadata` | Generate all metadata (stubs, docstrings, examples) |
-| `make examples` | Process and execute example notebooks |
-| `make clear-cache` | Clear Python cache files |
-
-### Pre-commit Hooks
-
-Pre-commit hooks automatically run code quality checks before each commit:
-
-- **Ruff**: Python linting and code formatting
-* **MyPy**: Type checking with project configuration
-- **Clang-format**: C++ code formatting (src/ directory only)
-- **CMake-format**: CMake file formatting
-- **General hooks**: Trailing whitespace, YAML/TOML validation, etc.
-
-Install hooks with:
-```bash
-make pre-commit-install
-```
-
-Run manually on all files:
-```bash
-make pre-commit
-```
-
-### Development Workflow
-
-1. **Start new feature/fix**:
-   ```bash
-   git checkout -b feature/my-feature
-   ```
-
-2. **During development** (run frequently):
-   ```bash
-   make quick-check                  # Fast feedback loop
-   ```
-
-3. **Before committing**:
-   ```bash
-   make check-all                    # Comprehensive quality checks
-   git add .
-   git commit -m "Add new feature"   # Pre-commit hooks run automatically
-   ```
-
-### Code Style Guidelines
-
-- **Python**: Follow PEP 8, enforced by ruff
-- **C++**: Follow Google style guide, enforced by clang-format
-- **Type hints**: Required for all Python code
-- **Documentation**: Use docstrings for all public functions
-
-### Testing
-
-- **All tests**: `make test`
-- **Fast tests**: `make test-fast` (for quick development feedback)
-- **Example notebooks**: `make test-examples`
-- **Performance benchmarks**: `make benchmark`
-
-### Environment Management
-
-The project uses conda for environment management. The Makefile automatically detects conda environments:
-
-```bash
-make env-conda                        # Create new environment
-conda activate pyvinecopulib          # Activate environment
-make env-update                       # Update existing environment
-make update-deps                      # Update dependency files
-```
-
-### Release Process
-
-Before releasing, run comprehensive checks:
-```bash
-make release-check
-```
-
-This ensures all tests pass, documentation builds correctly, and examples work.
-
-### Troubleshooting
-
-- **Build issues**: `make debug-build`
-- **Installation issues**: `make debug-install`
-- **Project status**: `make status`
-- **Clean everything**: `make git-clean` (⚠️ destructive)
-
-### Development Tips
-
-- Use `make quick-check` frequently during development for fast feedback
-- Pre-commit hooks automatically fix many formatting issues
-- Run `make check-all` before pushing changes to ensure quality
-* Use `make metadata` to regenerate stubs and docstrings after C++ changes
-* The project uses custom scripts in `scripts/` for stub generation (not nanobind's default)
-- Keep commits focused and write clear commit messages
-- Add tests for new functionality
+Development setup, the build pipeline, the Makefile + pre-commit conventions,
+the CI workflow, and the release flow are all documented in
+[CONTRIBUTING.md](CONTRIBUTING.md).
