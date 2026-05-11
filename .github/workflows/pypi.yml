@@ -214,6 +214,8 @@ jobs:
           WHEEL=$(ls dist/*.whl)
           uv pip install "${WHEEL}[doc,examples]"
       - name: Build HTML docs (warnings as errors)
+        env:
+          UV_NO_SYNC: "1"
         run: make docs
       - name: Upload built HTML for PR review
         uses: actions/upload-artifact@v4
@@ -290,7 +292,10 @@ jobs:
         run: |
           uv pip install dist/*.whl
       - name: Run tests
+        # UV_NO_SYNC: test the pre-installed wheel, not an editable rebuild.
         uses: nick-fields/retry@v3
+        env:
+          UV_NO_SYNC: "1"
         with:
           timeout_minutes: 30
           max_attempts: 3
@@ -301,6 +306,8 @@ jobs:
             uv run pytest tests/ -r a --no-cov --reruns 2 --reruns-delay 10
       - name: Run notebooks as unit tests
         uses: nick-fields/retry@v3
+        env:
+          UV_NO_SYNC: "1"
         with:
           timeout_minutes: 30
           max_attempts: 5
@@ -362,6 +369,8 @@ jobs:
           WHEEL=$(ls dist/*.whl)
           uv pip install "${WHEEL}"
       - name: Re-execute notebooks
+        env:
+          UV_NO_SYNC: "1"
         run: make notebooks
       - name: Commit and push refreshed notebooks
         run: |
@@ -426,6 +435,9 @@ jobs:
           VIRTUAL_ENV="$PWD/.venv-sdist" uv pip install dist/*.tar.gz
           VIRTUAL_ENV="$PWD/.venv-sdist" uv sync --no-install-project --group test --active
       - name: Run tests against installed sdist
+        # UV_NO_SYNC: exercise the sdist install, not an editable rebuild.
+        env:
+          UV_NO_SYNC: "1"
         run: |
           VIRTUAL_ENV="$PWD/.venv-sdist" uv run --active \
             pytest tests/ -r a --no-cov --reruns 2 --reruns-delay 10
