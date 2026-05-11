@@ -84,9 +84,8 @@ include_directories(${vinecopulib_INCLUDE_DIRS} ${kde1d_INCLUDE_DIRS}
 # ==============================================================================
 
 execute_process(
-  COMMAND
-    "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/build/find_libclang.py"
-    --search-paths "${CMAKE_PREFIX_PATH}"
+  COMMAND "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/find_libclang.py"
+          --search-paths "${CMAKE_PREFIX_PATH}"
   OUTPUT_VARIABLE LIBCLANG_PATH
   OUTPUT_STRIP_TRAILING_WHITESPACE)
 if(NOT LIBCLANG_PATH OR NOT EXISTS "${LIBCLANG_PATH}")
@@ -128,16 +127,16 @@ set(DOCSTR_OUTPUT "${CMAKE_SOURCE_DIR}/src/include/docstr.hpp")
 add_custom_command(
   OUTPUT "${DOCSTR_OUTPUT}"
   COMMAND
-    "${Python_EXECUTABLE}"
-    "${CMAKE_SOURCE_DIR}/scripts/build/generate_docstring.py" -std
-    "c++${CMAKE_CXX_STANDARD}" -I "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include"
-    -I "${CMAKE_SOURCE_DIR}/lib/wdm/include" -I
+    "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/generate_docstring.py"
+    -std "c++${CMAKE_CXX_STANDARD}" -I
+    "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include" -I
+    "${CMAKE_SOURCE_DIR}/lib/wdm/include" -I
     "${CMAKE_SOURCE_DIR}/lib/kde1d/include" -isystem "${EIGEN3_INCLUDE_DIR}"
     -isystem "${Boost_INCLUDE_DIRS}" -output "${DOCSTR_OUTPUT}" -library_file
     "${LIBCLANG_PATH}" ${DOCSTR_INPUT_HEADERS}
   DEPENDS ${DOCSTR_INPUT_HEADERS}
-          "${CMAKE_SOURCE_DIR}/scripts/build/generate_docstring.py"
-          "${CMAKE_SOURCE_DIR}/scripts/build/find_libclang.py"
+          "${CMAKE_SOURCE_DIR}/scripts/generate_docstring.py"
+          "${CMAKE_SOURCE_DIR}/scripts/find_libclang.py"
   COMMENT "Generating docstr.hpp from C++ headers via libclang"
   VERBATIM)
 
@@ -166,22 +165,16 @@ add_dependencies(pyvinecopulib_ext generate_docstr)
 target_compile_definitions(pyvinecopulib_ext
                            PRIVATE VERSION_INFO=\"${PROJECT_VERSION}\")
 
-# ==============================================================================
-# Generated stubs: one __init__.pyi per public (sub)package.
-#
-# After the extension is built, scripts/build/generate_stubs.py stages the
-# package + the just-built .so in a tempdir and writes a .pyi for each requested
-# module. Outputs are gitignored.
-#
-# pyvinecopulib.sklearn is optional (requires scikit-learn on the build
-# machine); the generator emits a warning and skips it if the import fails.
-# ==============================================================================
+# Generated stubs: scripts/generate_stubs.py writes one __init__.pyi per public
+# (sub)package after the extension links. Outputs are gitignored. The
+# pyvinecopulib.sklearn stub is OPTIONAL — it's only produced when scikit-learn
+# is available on the build machine.
 
 add_custom_command(
   TARGET pyvinecopulib_ext
   POST_BUILD
   COMMAND
-    "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/build/generate_stubs.py"
+    "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/generate_stubs.py"
     --source-pkg-dir "${CMAKE_SOURCE_DIR}/src/pyvinecopulib" --ext-so
     "$<TARGET_FILE:pyvinecopulib_ext>" --py-typed
     "${CMAKE_SOURCE_DIR}/src/pyvinecopulib/py.typed" --module-output
@@ -201,11 +194,8 @@ add_custom_command(
 # Install directive for scikit-build-core
 install(TARGETS pyvinecopulib_ext LIBRARY DESTINATION pyvinecopulib)
 
-# Explicitly install the generated stubs and py.typed marker into the wheel. All
-# are gitignored build artifacts; scikit-build-core's git-ls-files-based package
-# discovery would otherwise skip them. The sklearn stub is OPTIONAL: it's only
-# produced if scikit-learn is available on the build machine, so the install
-# rule must tolerate its absence.
+# Install the generated stubs + py.typed marker explicitly (they're gitignored,
+# so scikit-build-core's git-ls-files discovery skips them).
 install(FILES "${CMAKE_SOURCE_DIR}/src/pyvinecopulib/__init__.pyi"
               "${CMAKE_SOURCE_DIR}/src/pyvinecopulib/py.typed"
         DESTINATION pyvinecopulib)

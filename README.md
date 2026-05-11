@@ -89,11 +89,9 @@ To install from source, `Eigen` and `Boost` also need to be available, and CMake
 The recommended way to install `pyvinecopulib` from source is to use `conda`/`mamba` for the native build prerequisites and [`uv`](https://docs.astral.sh/uv/) for the Python side:
 
 ```bash
-mamba create -n pyvinecopulib python=3.11 boost eigen 'python-clang=18.*'
+mamba create -n pyvinecopulib python=3.11 boost eigen 'python-clang=18.*' uv
 mamba activate pyvinecopulib
-pip install uv
-uv sync --all-extras --group dev --group test --group notebooks
-uv pip install -e . --no-build-isolation
+make sync
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full developer workflow.

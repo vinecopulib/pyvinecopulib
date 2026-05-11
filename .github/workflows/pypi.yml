@@ -68,8 +68,8 @@ jobs:
           git fetch --prune --unshallow
           git fetch --depth=1 origin +refs/tags/*:refs/tags/*
       - name: Set up Python 3.11
-        # cibuildwheel manages its own Pythons per-wheel, but a host Python
-        # is needed for the wheel-inspection step below (uvx twine check).
+        # Host Python for the post-build `uvx twine check`; cibuildwheel
+        # uses its own per-wheel Pythons.
         uses: actions/setup-python@v5
         with:
           python-version: 3.11
@@ -178,11 +178,8 @@ jobs:
           }
 
   verify_docs_build:
-    # Mirrors the Read the Docs build (.readthedocs.yaml) against the wheel
-    # built from this PR — so an issue that would surface on RTD only after
-    # a tag-and-publish cycle is caught here instead. Stricter than RTD
-    # (uses -W to fail on warnings) so doc regressions get blocked at PR
-    # time rather than rendering subtly broken on the published site.
+    # RTD-mirror against this PR's wheel; `-W` blocks doc regressions at
+    # PR time rather than after a tag-and-publish cycle.
     name: Verify docs build (RTD mirror)
     needs: build
     runs-on: ubuntu-latest
@@ -210,17 +207,14 @@ jobs:
           name: cibw-wheels-ubuntu-latest-311-manylinux_x86_64
           path: dist/
       - name: Install wheel + doc/examples extras
-        # Equivalent to RTD's `pip install "pyvinecopulib[doc,examples]"`,
-        # except sourced from this PR's wheel rather than PyPI's published
-        # version — so the docs reflect the PR's actual API surface.
+        # Source the PR's wheel rather than PyPI's published version so the
+        # docs reflect the PR's actual API surface.
         run: |
           uv venv --python 3.11
           WHEEL=$(ls dist/*.whl)
           uv pip install "${WHEEL}[doc,examples]"
-      - name: Build HTML docs
-        # -W: warnings as errors. Catches doc regressions (broken cross-refs,
-        # malformed docstrings, etc.) before they reach RTD.
-        run: uv run sphinx-build -W -b html docs docs/_build/html
+      - name: Build HTML docs (warnings as errors)
+        run: make docs
       - name: Upload built HTML for PR review
         uses: actions/upload-artifact@v4
         with:
@@ -271,14 +265,11 @@ jobs:
             choco install graphviz -y
           fi
       - name: Create uv venv and install test/notebooks deps
+        # --no-install-project: we test the cibuildwheel-produced wheel,
+        # not a source build.
         shell: bash
         run: |
           uv venv --python ${{ steps.pyver.outputs.version }}
-          # Install only the dep groups + extras needed for the test
-          # run; the wheel itself is installed in the next step. The
-          # --no-install-project flag is essential: we don't want uv to
-          # build the project from source — we want to test the
-          # cibuildwheel-produced wheel.
           uv sync --no-install-project --group test --group notebooks --extra examples
       # For Python <= 3.11: download its exact artifact
       - name: Download built wheel (<=3.11)
@@ -305,10 +296,8 @@ jobs:
           max_attempts: 3
           retry_wait_seconds: 60
           shell: bash
+          # Serial — see the note in pyproject.toml's pytest config.
           command: |
-            # Serial run — see the note in pyproject.toml's
-            # [tool.pytest.ini_options] for why CI avoids pytest-xdist
-            # on GitHub Actions runners.
             uv run pytest tests/ -r a --no-cov --reruns 2 --reruns-delay 10
       - name: Run notebooks as unit tests
         uses: nick-fields/retry@v3
@@ -325,19 +314,10 @@ jobs:
               --reruns 2 --reruns-delay 10
 
   regenerate_notebooks:
-    # Fires automatically on every PR to main (the release-prep flow), and
-    # opt-in on any other PR via the `regenerate-notebooks` label — handy
-    # for testing this workflow against `dev`, or refreshing outputs early
-    # when a feature branch changes plotting code.
-    #
-    # To use the opt-in path: open the PR and add the label
-    # `regenerate-notebooks` (`gh pr edit <PR> --add-label regenerate-notebooks`),
-    # then push a commit so the workflow re-evaluates (the trigger types
-    # below don't include `labeled`, so labeling alone won't re-fire).
-    #
-    # RTD relies on the committed cell outputs (nbsphinx_execute = "never"
-    # in docs/conf.py), so this job is what keeps them fresh without
-    # manual intervention before release.
+    # Runs on PRs to `main` (release-prep) or any PR labelled
+    # `regenerate-notebooks` (push a commit after labelling, the trigger
+    # doesn't include `labeled`). RTD reads committed cell outputs, so
+    # this keeps them fresh before release.
     name: Regenerate notebook outputs
     needs: build
     if: |
@@ -378,14 +358,11 @@ jobs:
       - name: Install wheel + examples extras + notebooks group
         run: |
           uv venv --python 3.11
-          # Install the notebooks dependency group (jupyter, nbconvert,
-          # nbformat, nbmake) and the examples extra (jupyterlab, scipy);
-          # then drop the cibuildwheel wheel on top.
           uv sync --no-install-project --group notebooks --extra examples
           WHEEL=$(ls dist/*.whl)
           uv pip install "${WHEEL}"
       - name: Re-execute notebooks
-        run: uv run python scripts/regenerate_notebooks.py
+        run: make notebooks
       - name: Commit and push refreshed notebooks
         run: |
           if git diff --quiet -- examples/; then
@@ -433,28 +410,22 @@ jobs:
           echo "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include" >> $GITHUB_ENV
           echo "EIGEN3_INCLUDE_DIR=/home/runner/work/include/eigen3" >> $GITHUB_ENV
       - name: Sync dev/test deps + editable install
-        # The editable install is necessary so the CMake build emits the
-        # per-subpackage .pyi stubs that the sdist ships with.
+        # Editable install seeds the .pyi stubs that ship with the sdist.
         run: |
           uv sync --all-extras --group dev --group test
           uv pip install -e . --no-build-isolation
       - name: Lint and type-check
-        run: |
-          uv run ruff format --check
-          uv run ruff check
-          uv run ty check
+        run: make check
       - name: Build source distribution
-        run: uv build --sdist
+        run: make sdist
       - name: Install source distribution into fresh venv
-        # Use a separate venv so the editable install's meta-path finder
-        # (`_pyvinecopulib_editable.py`) doesn't trigger a CMake rebuild
-        # when the sdist's POST_BUILD stub-gen step imports the package.
+        # Separate venv so the editable install's meta-path finder
+        # doesn't trigger a CMake rebuild during the sdist install.
         run: |
           uv venv .venv-sdist --python 3.11
           VIRTUAL_ENV="$PWD/.venv-sdist" uv pip install dist/*.tar.gz
           VIRTUAL_ENV="$PWD/.venv-sdist" uv sync --no-install-project --group test --active
       - name: Run tests against installed sdist
-        # Serial run (xdist not in addopts) — see pyproject.toml.
         run: |
           VIRTUAL_ENV="$PWD/.venv-sdist" uv run --active \
             pytest tests/ -r a --no-cov --reruns 2 --reruns-delay 10

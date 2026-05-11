@@ -267,8 +267,7 @@ def generate_stub(
   family_cls = ext.BicopFamily
 
   def _safe_getattr(obj_name):
-    # Same rationale as the loop below: tolerate lazy imports raising
-    # ImportError (e.g. unbuilt extras).
+    # Tolerate lazy imports raising ImportError (e.g. unbuilt extras).
     try:
       return getattr(pkg, obj_name, None)
     except ImportError:
@@ -288,31 +287,21 @@ def generate_stub(
   ]
 
   for name in names:
-    # `getattr` may trigger a lazy import (e.g. the top-level
-    # pyvinecopulib.__getattr__ resolves `sklearn` by importing
-    # pyvinecopulib.sklearn, which raises ImportError on build machines
-    # that don't have scikit-learn). Treat unimportable names as
-    # subpackage references and emit a `from . import` line so the stub
-    # at least advertises their existence.
+    # `getattr` may trigger a lazy submodule import (e.g. sklearn) that
+    # fails on build machines without the extra deps installed; fall
+    # back to a `from . import` placeholder.
     try:
       obj = getattr(pkg, name, None)
     except ImportError:
       lines.append(f"from . import {name} as {name}\n")
       continue
 
-    # Subpackages re-exported via `__all__` (e.g. "core", "families" at the
-    # top level) — render as a module reference.
     if inspect.ismodule(obj):
       lines.append(f"from . import {name} as {name}\n")
       continue
 
-    # If a class is canonically defined in a sibling/sub module of this
-    # one (e.g. Bicop in pyvinecopulib.core, BicopFamily in
-    # pyvinecopulib.families), emit a relative-import alias instead of
-    # redefining the class. This keeps static type identity consistent
-    # across re-exports — `pyvinecopulib.Bicop`, `pyvinecopulib.core.Bicop`,
-    # and `pyvinecopulib.core.<method-returning-Bicop>` all resolve to the
-    # same type at type-check time.
+    # Cross-subpackage canonical class: emit a relative import alias so
+    # static type identity stays consistent across re-exports.
     canonical = obj.__module__ if inspect.isclass(obj) else None
     if (
       canonical
