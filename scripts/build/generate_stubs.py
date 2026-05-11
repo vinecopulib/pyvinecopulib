@@ -266,9 +266,15 @@ def generate_stub(
   ext = importlib.import_module("pyvinecopulib.pyvinecopulib_ext")
   family_cls = ext.BicopFamily
 
-  known_types = {
-    name for name in names if inspect.isclass(getattr(pkg, name, None))
-  }
+  def _safe_getattr(obj_name):
+    # Same rationale as the loop below: tolerate lazy imports raising
+    # ImportError (e.g. unbuilt extras).
+    try:
+      return getattr(pkg, obj_name, None)
+    except ImportError:
+      return None
+
+  known_types = {name for name in names if inspect.isclass(_safe_getattr(name))}
 
   indent_str = " " * indent
 
@@ -282,7 +288,17 @@ def generate_stub(
   ]
 
   for name in names:
-    obj = getattr(pkg, name, None)
+    # `getattr` may trigger a lazy import (e.g. the top-level
+    # pyvinecopulib.__getattr__ resolves `sklearn` by importing
+    # pyvinecopulib.sklearn, which raises ImportError on build machines
+    # that don't have scikit-learn). Treat unimportable names as
+    # subpackage references and emit a `from . import` line so the stub
+    # at least advertises their existence.
+    try:
+      obj = getattr(pkg, name, None)
+    except ImportError:
+      lines.append(f"from . import {name} as {name}\n")
+      continue
 
     # Subpackages re-exported via `__all__` (e.g. "core", "families" at the
     # top level) — render as a module reference.

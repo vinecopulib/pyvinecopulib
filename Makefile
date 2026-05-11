@@ -1,23 +1,22 @@
-# Makefile for pyvinecopulib development
-.PHONY: help install install-dev install-docs build clean test test-fast test-cov test-examples coverage coverage-open lint format type-check security docs docs-serve pre-commit update-deps check-all release
+# Makefile for pyvinecopulib development.
+#
+# Thin wrappers around `uv` for the standard workflows. `uv` manages the
+# Python environment and dependency groups (see `pyproject.toml`'s
+# `[dependency-groups]`); scikit-build-core handles the native build.
+#
+# Quick start (see CONTRIBUTING.md for the full story):
+#   make sync                  # install all Python deps + editable build
+#   make quick-check           # ruff + ty + fast tests
+#   make check-all             # lint + type-check + full tests + coverage
+.PHONY: help sync install clean test test-fast test-examples \
+        coverage coverage-open lint format type-check docs docs-serve \
+        docs-clean pre-commit-install pre-commit stubs docstrings \
+        examples metadata dev-setup quick-check check-all release-check \
+        build sdist wheel
 .DEFAULT_GOAL := help
 
-# Python and package manager commands
-# Prefer conda/mamba if available, fallback to pip
-CONDA := $(shell command -v mamba 2> /dev/null || command -v conda 2> /dev/null)
-PYTHON := python
-PIP := pip
+UV := uv
 
-# Check if we're in a conda environment
-ifdef CONDA_DEFAULT_ENV
-	PKG_INSTALL := $(CONDA) install -c conda-forge
-	PIP_INSTALL := $(PIP) install
-else
-	PKG_INSTALL := $(PIP) install
-	PIP_INSTALL := $(PIP) install
-endif
-
-# Project directories
 SRC_DIR := src
 TEST_DIR := tests
 DOCS_DIR := docs
@@ -28,139 +27,107 @@ help: ## Show this help message
 	@echo
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-install: ## Install the package in development mode
-	$(PIP_INSTALL) -e .
+# --- Environment / install --------------------------------------------------
 
-install-dev: ## Install development dependencies
-	$(PIP_INSTALL) -e ".[dev]"
+sync: ## Sync all extras and dev/test/notebooks groups, then editable build
+	$(UV) sync --all-extras --group dev --group test --group notebooks
+	$(UV) pip install -e . --no-build-isolation
 
-install-docs: ## Install documentation dependencies
-	$(PIP_INSTALL) -e ".[doc]"
+install: ## Editable install only (no dep sync; assumes deps are present)
+	$(UV) pip install -e . --no-build-isolation
 
-install-examples: ## Install examples dependencies
-	$(PIP_INSTALL) -e ".[examples]"
-
-install-all: ## Install all dependencies (dev, docs, examples)
-	$(PIP_INSTALL) -e ".[dev,doc,examples]"
+# --- Cleaning ---------------------------------------------------------------
 
 clean: ## Clean build artifacts
-	rm -rf build/
-	rm -rf dist/
-	rm -rf *.egg-info/
+	rm -rf build/ dist/ *.egg-info/
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete
 	find . -type f -name "*.pyo" -delete
 
-test: ## Run all tests (with coverage if installed)
-	$(PYTHON) -m pytest $(TEST_DIR) -v -n auto
+# --- Tests ------------------------------------------------------------------
 
-test-fast: ## Run tests without coverage
-	$(PYTHON) -m pytest $(TEST_DIR) -x --no-cov -n auto
+test: ## Run all tests with coverage
+	$(UV) run pytest $(TEST_DIR) -v -n auto
 
-test-examples: ## Run example notebooks
-	$(PYTHON) -m pytest --nbmake $(EXAMPLES_DIR)
+test-fast: ## Run tests without coverage, fail-fast
+	$(UV) run pytest $(TEST_DIR) -x --no-cov -n auto
+
+test-examples: ## Execute example notebooks as tests
+	$(UV) run pytest --nbmake $(EXAMPLES_DIR)
 
 coverage: ## Generate coverage report only (run tests first)
-	$(PYTHON) -m coverage report --show-missing
-	$(PYTHON) -m coverage html
+	$(UV) run coverage report --show-missing
+	$(UV) run coverage html
 
 coverage-open: ## Open coverage report in browser
-	$(PYTHON) -c "import webbrowser; webbrowser.open('htmlcov/index.html')"
+	$(UV) run python -c "import webbrowser; webbrowser.open('htmlcov/index.html')"
 
-lint: ## Run linting with ruff
-	$(PYTHON) -m ruff check $(SRC_DIR) $(TEST_DIR) --fix
+# --- Lint / format / types --------------------------------------------------
+
+lint: ## Run linting with ruff (auto-fix)
+	$(UV) run ruff check $(SRC_DIR) $(TEST_DIR) --fix
 
 format: ## Format code with ruff
-	$(PYTHON) -m ruff format $(SRC_DIR) $(TEST_DIR)
+	$(UV) run ruff format $(SRC_DIR) $(TEST_DIR)
 
 type-check: ## Run type checking with ty
-	$(PYTHON) -m ty check
+	$(UV) run ty check
+
+# --- Docs -------------------------------------------------------------------
 
 docs: ## Build documentation
-	$(PYTHON) -m sphinx -b html $(DOCS_DIR) $(DOCS_DIR)/_build/html
+	$(UV) run sphinx-build -b html $(DOCS_DIR) $(DOCS_DIR)/_build/html
 
 docs-serve: ## Serve documentation locally with live reload
-	$(PYTHON) -m sphinx_autobuild $(DOCS_DIR) $(DOCS_DIR)/_build/html
+	$(UV) run sphinx-autobuild $(DOCS_DIR) $(DOCS_DIR)/_build/html
 
 docs-clean: ## Clean documentation build
 	rm -rf $(DOCS_DIR)/_build $(DOCS_DIR)/_generate \
 	       $(DOCS_DIR)/features.rst $(DOCS_DIR)/examples.rst \
 	       $(DOCS_DIR)/README.md $(DOCS_DIR)/CHANGELOG.md $(DOCS_DIR)/examples
 
+# --- Pre-commit -------------------------------------------------------------
+
 pre-commit-install: ## Install pre-commit hooks
-	$(PIP_INSTALL) pre-commit
-	pre-commit install
+	$(UV) run pre-commit install
 
 pre-commit: ## Run pre-commit on all files
-	pre-commit run --all-files
+	$(UV) run pre-commit run --all-files
 
-update-deps: ## Update dependencies
-	$(PYTHON) scripts/generate_requirements.py --format txt
-	$(PYTHON) scripts/generate_requirements.py --format yml
+# --- Build artifacts --------------------------------------------------------
 
-clear-cache: ## Clear Python cache files
-	zsh scripts/clear_cache.sh
+build: ## Build both sdist and wheel via uv (PEP 517)
+	$(UV) build
 
-check-all: lint type-check security test-cov ## Run all quality checks
+sdist: ## Build source distribution only
+	$(UV) build --sdist
 
-# docstr.hpp and __init__.pyi are regenerated by CMake on every build (see
-# CMakeLists.txt). The simplest way to refresh them locally is to (re)install
-# editable, which triggers the CMake custom commands.
-stubs: ## Regenerate src/pyvinecopulib/__init__.pyi via the build (alias)
-	$(PIP_INSTALL) -e . --no-build-isolation
+wheel: ## Build a wheel for the current platform only
+	$(UV) build --wheel
+
+# docstr.hpp and the per-subpackage .pyi files are regenerated by CMake on
+# every editable rebuild (see CMakeLists.txt). The simplest refresh is to
+# reinstall editable, which triggers the CMake custom commands.
+stubs: ## Regenerate src/pyvinecopulib/**/__init__.pyi via the build (alias)
+	$(UV) pip install -e . --no-build-isolation
 
 docstrings: ## Regenerate src/include/docstr.hpp via the build (alias)
-	$(PIP_INSTALL) -e . --no-build-isolation
+	$(UV) pip install -e . --no-build-isolation
 
-examples: ## Process and execute example notebooks (used by docs)
-	$(PYTHON) scripts/regenerate_notebooks.py
+examples: ## Re-execute example notebooks (used by docs)
+	$(UV) run python scripts/regenerate_notebooks.py
 
 metadata: stubs examples ## Regenerate all generated artifacts (docstrings + stubs + notebooks)
 
-# Development workflow commands
-dev-setup: install-all pre-commit-install ## Complete development setup
-	@echo "Development environment setup complete!"
+# --- Composite workflows ----------------------------------------------------
+
+dev-setup: sync pre-commit-install ## Complete dev setup (sync + pre-commit hooks)
+	@echo "Development environment setup complete."
 	@echo "Run 'make help' to see available commands."
 
-quick-check: lint type-check test-fast ## Quick development check (fast)
+quick-check: lint type-check test-fast ## Fast pre-push check
 
-# Release workflow
+check-all: lint type-check test ## Full pre-PR check (lint + type-check + tests with coverage)
+
 release-check: clean check-all test-examples docs ## Pre-release checks
-	@echo "All release checks passed!"
-
-# Environment management
-env-conda: ## Create conda environment
-	$(PYTHON) scripts/generate_requirements.py --format yml
-	$(CONDA) env create -f environment.yml
-
-env-update: ## Update conda environment
-	$(PYTHON) scripts/generate_requirements.py --format yml
-	$(CONDA) env update -f environment.yml
-
-env-activate: ## Show command to activate conda environment
-	@echo "Run: conda activate pyvinecopulib"
-
-# Git helpers
-git-clean: ## Clean git working directory
-	git clean -fdx
-
-status: ## Show project status
-	@echo "=== Git Status ==="
-	git status --porcelain
-	@echo
-	@echo "=== Python Environment ==="
-	$(PYTHON) --version
-	@echo
-	@echo "=== Installed Packages ==="
-	$(PIP) list | head -20
-
-# Debugging helpers
-debug-build: ## Debug build issues
-	$(PYTHON) -m build --wheel -v
-
-debug-install: ## Debug installation issues
-	$(PIP_INSTALL) -e . -v
-
-# Performance testing
-benchmark: ## Run performance benchmarks
-	$(PYTHON) -m pytest $(EXAMPLES_DIR)/05_benchmark.ipynb --nbmake
+	@echo "All release checks passed."

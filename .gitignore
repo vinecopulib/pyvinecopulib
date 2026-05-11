@@ -101,8 +101,15 @@ CMakeUserPresets.json
 pyvinecopulib-*.json
 
 .mypy_cache/
+
+# Legacy artifacts of the retired scripts/generate_requirements.py.
+# Kept in .gitignore for one release cycle so stragglers don't get committed.
 environment.yml
 requirements.txt
+
+# uv virtual environments (created by `uv venv` / `uv sync`)
+.venv
+.venv-*
 
 .coverage
 .coverage.*
@@ -130,3 +137,4 @@ docs/examples.rst
 docs/_generate
 docs/_build
 newstuff/
+uv.lock
