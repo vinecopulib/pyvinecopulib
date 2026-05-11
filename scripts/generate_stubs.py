@@ -296,19 +296,12 @@ def generate_stub(
       lines.append(f"from . import {name} as {name}\n")
       continue
 
-    # Subpackages re-exported via `__all__` (e.g. "core", "families" at the
-    # top level) — render as a module reference.
     if inspect.ismodule(obj):
       lines.append(f"from . import {name} as {name}\n")
       continue
 
-    # If a class is canonically defined in a sibling/sub module of this
-    # one (e.g. Bicop in pyvinecopulib.core, BicopFamily in
-    # pyvinecopulib.families), emit a relative-import alias instead of
-    # redefining the class. This keeps static type identity consistent
-    # across re-exports — `pyvinecopulib.Bicop`, `pyvinecopulib.core.Bicop`,
-    # and `pyvinecopulib.core.<method-returning-Bicop>` all resolve to the
-    # same type at type-check time.
+    # Cross-subpackage canonical class: emit a relative import alias so
+    # static type identity stays consistent across re-exports.
     canonical = obj.__module__ if inspect.isclass(obj) else None
     if (
       canonical

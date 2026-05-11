@@ -1,20 +1,16 @@
-"""Deprecation table for module-level __getattr__ in pyvinecopulib/__init__.py.
+"""Warn-on-access table for the top-level deprecation shim.
 
-When a user accesses a name in `_DEPRECATED_TOP_LEVEL` (e.g. `pyvinecopulib.gaussian`),
-`_resolve_deprecated` emits a DeprecationWarning pointing at the new home
-(e.g. `pyvinecopulib.families.gaussian`) and returns the resolved attribute.
-Access via the canonical new path does NOT warn.
-
-The intent is to phase out these top-level aliases in the next major release.
+`pyvinecopulib.__getattr__` calls `_resolve_deprecated(name)`, which emits
+a `DeprecationWarning` and returns the symbol from its canonical subpackage.
+Slated for removal in the next major release.
 """
 
 import importlib
 import warnings
 from typing import Any
 
-# name -> (subpackage, attr_name in subpackage)
+# name -> (subpackage, attr_name)
 _DEPRECATED_TOP_LEVEL: dict[str, tuple[str, str]] = {
-  # Family constants -> families
   "indep": ("families", "indep"),
   "gaussian": ("families", "gaussian"),
   "student": ("families", "student"),
@@ -28,7 +24,6 @@ _DEPRECATED_TOP_LEVEL: dict[str, tuple[str, str]] = {
   "bb8": ("families", "bb8"),
   "tawn": ("families", "tawn"),
   "tll": ("families", "tll"),
-  # Family groups -> families
   "all": ("families", "all"),
   "parametric": ("families", "parametric"),
   "nonparametric": ("families", "nonparametric"),
@@ -43,9 +38,6 @@ _DEPRECATED_TOP_LEVEL: dict[str, tuple[str, str]] = {
   "lt": ("families", "lt"),
   "ut": ("families", "ut"),
   "itau": ("families", "itau"),
-  # Utilities -> utils. Kde1d is safe to deprecate: the C++ binding sets
-  # Kde1d.__module__ = "pyvinecopulib.utils" so new pickles already use
-  # the canonical path; only pre-1.0 pickles fall through this shim.
   "Kde1d": ("utils", "Kde1d"),
   "wdm": ("utils", "wdm"),
   "sobol": ("utils", "sobol"),
@@ -62,6 +54,6 @@ def _resolve_deprecated(name: str) -> Any:
     f"`pyvinecopulib.{name}` is deprecated; use "
     f"`pyvinecopulib.{subpkg}.{attr}` instead.",
     DeprecationWarning,
-    stacklevel=3,  # skip __getattr__ and _resolve_deprecated frames
+    stacklevel=3,
   )
   return getattr(importlib.import_module(f"pyvinecopulib.{subpkg}"), attr)
