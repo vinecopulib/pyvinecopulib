@@ -128,6 +128,9 @@ exclude = ["lib", "src/pyvinecopulib/**/__init__.pyi", "src/pyvinecopulib/__init
 include = ["src", "tests"]
 
 [tool.ty.environment]
+# Type-check against the 3.9 baseline. The runtime floor is 3.10
+# (see requires-python), but bumping ty here triggers a wave of
+# numpy-stub overload false-positives (ty is still alpha).
 python-version = "3.9"
 
 [tool.ty.rules]
