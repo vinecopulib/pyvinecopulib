@@ -1,7 +1,7 @@
 import math
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import ArrayLike, NDArray
 
 
 # https://stackoverflow.com/questions/42381244/pure-python-inverse-error-function
@@ -143,35 +143,39 @@ erfinv_vec = np.vectorize(inv_erf)
 
 # Cumulative Distribution Function (CDF)
 def norm_cdf(
-  x: NDArray[np.float64], mean: float = 0, std: float = 1
+  x: ArrayLike, mean: float = 0, std: float = 1
 ) -> NDArray[np.float64]:
+  x = np.asarray(x, dtype=np.float64)
   return np.asarray(0.5 * (1 + erf_vec((x - mean) / (std * np.sqrt(2)))))
 
 
 # Percent Point Function (Inverse CDF, PPF)
 def norm_ppf(
-  p: NDArray[np.float64], mean: float = 0, std: float = 1
+  p: ArrayLike, mean: float = 0, std: float = 1
 ) -> NDArray[np.float64]:
+  p = np.asarray(p, dtype=np.float64)
   return np.asarray(mean + std * np.sqrt(2) * erfinv_vec(2 * p - 1))
 
 
 # Probability Density Function (PDF)
 def norm_pdf(
-  x: NDArray[np.float64], mean: float = 0, std: float = 1
+  x: ArrayLike, mean: float = 0, std: float = 1
 ) -> NDArray[np.float64]:
+  x = np.asarray(x, dtype=np.float64)
   return np.asarray(
     (1 / (std * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mean) / std) ** 2)
   )
 
 
 # Cumulative Distribution Function (CDF)
-def expon_cdf(x: NDArray[np.float64], scale: float = 1) -> NDArray[np.float64]:
+def expon_cdf(x: ArrayLike, scale: float = 1) -> NDArray[np.float64]:
+  x = np.asarray(x, dtype=np.float64)
   return np.asarray(1 - np.exp(-x / scale))
 
 
 # Percent Point Function (Inverse CDF, PPF)
-def expon_ppf(p: NDArray[np.float64], scale: float = 1) -> NDArray[np.float64]:
-  p = np.asarray(p)
+def expon_ppf(p: ArrayLike, scale: float = 1) -> NDArray[np.float64]:
+  p = np.asarray(p, dtype=np.float64)
   result = np.empty_like(p)
   mask = p == 1.0
   result[mask] = np.inf
@@ -180,5 +184,6 @@ def expon_ppf(p: NDArray[np.float64], scale: float = 1) -> NDArray[np.float64]:
 
 
 # Probability Density Function (PDF)
-def expon_pdf(x: NDArray[np.float64], scale: float = 1) -> NDArray[np.float64]:
+def expon_pdf(x: ArrayLike, scale: float = 1) -> NDArray[np.float64]:
+  x = np.asarray(x, dtype=np.float64)
   return np.asarray((1 / scale) * np.exp(-x / scale))

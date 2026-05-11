@@ -134,9 +134,9 @@ def kde1d_plot(
       xmax_val = getattr(kde, "xmax", np.nan)
 
       if isinstance(xmin_val, np.ndarray):
-        xmin_val = xmin_val.item() if xmin_val.size > 0 else np.nan
+        xmin_val = float(xmin_val) if xmin_val.size > 0 else np.nan
       if isinstance(xmax_val, np.ndarray):
-        xmax_val = xmax_val.item() if xmax_val.size > 0 else np.nan
+        xmax_val = float(xmax_val) if xmax_val.size > 0 else np.nan
 
       if (
         np.isscalar(xmin_val)

@@ -37,7 +37,7 @@ class TestPairCopulaData:
 
     # Test None data
     with pytest.raises(ValueError, match="`data` cannot be None"):
-      pairs_copula_data(None)
+      pairs_copula_data(None)  # ty: ignore[invalid-argument-type]
 
     # Test non-numeric data
     with pytest.raises(
