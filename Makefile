@@ -52,10 +52,10 @@ clean: ## Clean build artifacts
 	find . -type f -name "*.pyo" -delete
 
 test: ## Run all tests (with coverage if installed)
-	$(PYTHON) -m pytest $(TEST_DIR) -v
+	$(PYTHON) -m pytest $(TEST_DIR) -v -n auto
 
 test-fast: ## Run tests without coverage
-	$(PYTHON) -m pytest $(TEST_DIR) -x --no-cov
+	$(PYTHON) -m pytest $(TEST_DIR) -x --no-cov -n auto
 
 test-examples: ## Run example notebooks
 	$(PYTHON) -m pytest --nbmake $(EXAMPLES_DIR)

@@ -112,9 +112,11 @@ build-verbosity = 1
 # Disable free-threading builds on all platforms
 skip = "cp3??t-*"
 
-# Run pytest to ensure that the package was correctly built
-test-command = "pytest -n auto {project}/tests"
-test-requires = ["pytest-cov", "pytest-xdist", "pytest-rerunfailures"]
+# Run pytest to ensure that the package was correctly built. Serial
+# execution — see the note in [tool.pytest.ini_options] addopts above
+# for why we avoid pytest-xdist in CI.
+test-command = "pytest {project}/tests"
+test-requires = ["pytest-cov", "pytest-rerunfailures"]
 
 # Don't test Python 3.8 wheels on macOS/arm64
 test-skip = "cp38-macosx_*:arm64"
@@ -174,8 +176,14 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+# NOTE: don't put `-n auto` here. pytest-xdist's subprocess workers
+# fork+import native extensions (pyvinecopulib_ext, numpy, matplotlib,
+# kiwisolver, zmq) on every test session, which intermittently crashes
+# the worker on GitHub Actions runners with "node down: Not properly
+# terminated" and aborts the run. Parallelism is enabled per-target in
+# the Makefile (`make test`) where it's worth the trade-off; CI runs
+# serially.
 addopts = [
-  "-n", "auto",
   "--strict-markers",
   "--strict-config",
   "--cov=src/pyvinecopulib",

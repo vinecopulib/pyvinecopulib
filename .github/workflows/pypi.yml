@@ -283,7 +283,10 @@ jobs:
           retry_wait_seconds: 60
           shell: bash
           command: |
-            pytest tests/ -r a -p no:xdist --no-cov
+            # Serial run — see the note in pyproject.toml's
+            # [tool.pytest.ini_options] for why CI avoids pytest-xdist
+            # on GitHub Actions runners.
+            pytest tests/ -r a --no-cov
       - name: Run notebooks as unit tests
         uses: nick-fields/retry@v3
         with:
@@ -293,7 +296,6 @@ jobs:
           shell: bash
           command: |
             pytest --nbmake examples/ \
-              -p no:xdist \
               --no-cov \
               --nbmake-timeout=600 \
               --nbmake-kernel=python3
@@ -401,9 +403,7 @@ jobs:
           pip install tomli  # Needed for Python < 3.11
           python scripts/get_dependencies.py dev --as-requirements > requirements.txt
           pip install -r requirements.txt
-          # Install editable so the CMake build generates
-          # src/pyvinecopulib/__init__.pyi (now gitignored, build-time only)
-          # into the source tree where ty can see it.
+          # Install editable so the CMake build generates the stubs
           pip install -e .
           ruff format --check
           ruff check
@@ -429,8 +429,9 @@ jobs:
           python scripts/get_dependencies.py dev --as-requirements > requirements.txt
           pip install -r requirements.txt
       - name: Run tests
+        # Serial run (xdist not in addopts) — see pyproject.toml.
         run: |
-          pytest tests/ -r a -p no:xdist
+          pytest tests/ -r a
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
