@@ -282,11 +282,7 @@ jobs:
           retry_wait_seconds: 60
           shell: bash
           command: |
-            pytest tests/ -r a -n 1 --no-cov
-      # Override pytest defaults (in pyproject.toml):
-      # - disable coverage (not meaningful for notebooks)
-      # - run sequentially (-n 1)
-      # - extend kernel timeout
+            pytest tests/ -r a -p no:xdist --no-cov
       - name: Run notebooks as unit tests
         uses: nick-fields/retry@v3
         with:
@@ -296,7 +292,7 @@ jobs:
           shell: bash
           command: |
             pytest --nbmake examples/ \
-              -n 1 \
+              -p no:xdist \
               --no-cov \
               --nbmake-timeout=600 \
               --nbmake-kernel=python3
@@ -433,7 +429,7 @@ jobs:
           pip install -r requirements.txt
       - name: Run tests
         run: |
-          pytest tests/ -r a
+          pytest tests/ -r a -p no:xdist
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
