@@ -142,13 +142,11 @@ class TestPairCopulaData:
       mock_subplots.return_value = (mock_fig, mock_ax)
 
       # Mock the wdm and Bicop imports that would fail without the C++ extension
-      with patch("pyvinecopulib.utils.pairs_copula_data.wdm"):
-        with patch("pyvinecopulib.utils.pairs_copula_data.Bicop"):
-          with patch("pyvinecopulib.utils.pairs_copula_data.norm_cdf"):
-            with patch("pyvinecopulib.utils.pairs_copula_data.norm_pdf"):
-              with patch(
-                "pyvinecopulib.utils.pairs_copula_data.plt.tight_layout"
-              ):
+      with patch("pyvinecopulib.utils._pair_plots.wdm"):
+        with patch("pyvinecopulib.utils._pair_plots.Bicop"):
+          with patch("pyvinecopulib.utils._pair_plots.norm_cdf"):
+            with patch("pyvinecopulib.utils._pair_plots.norm_pdf"):
+              with patch("pyvinecopulib.utils._pair_plots.plt.tight_layout"):
                 # This should not raise any validation errors
                 try:
                   pairs_copula_data(data)
@@ -174,9 +172,9 @@ class TestPairCopulaData:
       mock_ax = MagicMock()
       mock_subplots.return_value = (mock_fig, mock_ax)
 
-      with patch("pyvinecopulib.utils.pairs_copula_data.norm_cdf"):
-        with patch("pyvinecopulib.utils.pairs_copula_data.norm_pdf"):
-          with patch("pyvinecopulib.utils.pairs_copula_data.plt.tight_layout"):
+      with patch("pyvinecopulib.utils._pair_plots.norm_cdf"):
+        with patch("pyvinecopulib.utils._pair_plots.norm_pdf"):
+          with patch("pyvinecopulib.utils._pair_plots.plt.tight_layout"):
             # This should not raise validation errors
             try:
               pairs_copula_data(min_data)
@@ -198,9 +196,9 @@ class TestPairCopulaData:
       mock_ax = MagicMock()
       mock_subplots.return_value = (mock_fig, mock_ax)
 
-      with patch("pyvinecopulib.utils.pairs_copula_data.norm_cdf"):
-        with patch("pyvinecopulib.utils.pairs_copula_data.norm_pdf"):
-          with patch("pyvinecopulib.utils.pairs_copula_data.plt.tight_layout"):
+      with patch("pyvinecopulib.utils._pair_plots.norm_cdf"):
+        with patch("pyvinecopulib.utils._pair_plots.norm_pdf"):
+          with patch("pyvinecopulib.utils._pair_plots.plt.tight_layout"):
             # This should not raise validation errors
             try:
               pairs_copula_data(max_dim_data)

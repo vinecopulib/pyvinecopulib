@@ -9,7 +9,7 @@ from ..pyvinecopulib_ext import (
   to_pseudo_obs,
   wdm,
 )
-from .pairs_copula_data import pairs_copula_data
+from ._pair_plots import pairs_copula_data
 
 __all__ = [
   "Kde1d",

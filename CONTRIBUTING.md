@@ -95,8 +95,8 @@ Hooks run on every commit. Manage with `make pre-commit-install` /
 
 `.github/workflows/pypi.yml` is the single workflow. Jobs:
 
-- **`build`** — cibuildwheel matrix (16 wheels: Linux glibc/musl, macOS arm64,
-  Windows × cp39/cp310/cp311/cp312-ABI3).
+- **`build`** — cibuildwheel matrix (12 wheels: Linux glibc/musl, macOS arm64,
+  Windows × cp310/cp311/cp312-ABI3).
 - **`check_wheels`** — counts and twine-checks wheel artifacts.
 - **`verify_docs_build`** — RTD-equivalent doc build with `-W` (warnings as
   errors). Uploads `docs-html` artifact for PR review.
