@@ -6,27 +6,62 @@ flow. End-user install instructions live in [README.md](README.md).
 
 ## Quick start
 
-1. Clone with submodules and create a conda env:
+The Python environment is managed by [`uv`](https://docs.astral.sh/uv/) on
+top of a Python interpreter you provide. Native build deps (Boost, Eigen,
+libclang) are easiest to install via conda/mamba, but anything that
+supplies them works.
+
+1. Clone with submodules:
 
    ```bash
    git clone --recursive https://github.com/vinecopulib/pyvinecopulib.git
    cd pyvinecopulib
-   make env-conda                # creates the `pyvinecopulib` conda env
-   conda activate pyvinecopulib
    ```
 
-2. Install development dependencies and the package in editable mode, plus
-   pre-commit hooks:
+2. Provide native build deps and a Python ≥ 3.9 interpreter. The recommended
+   recipe (mirrors the maintainers' setup):
 
    ```bash
-   make dev-setup
+   mamba create -n pyvinecopulib python=3.11 boost eigen 'python-clang=18.*'
+   mamba activate pyvinecopulib
    ```
 
-3. Iterate:
+3. Install `uv` (one-off; if it's not already on your `PATH`):
+
+   ```bash
+   pip install uv
+   ```
+
+4. Sync all dependency groups + extras, then perform the editable install
+   (the editable install must run after the sync because scikit-build-core
+   needs the build-system deps in place):
+
+   ```bash
+   make dev-setup                # = make sync + pre-commit install
+   ```
+
+   Under the hood `make sync` runs:
+
+   ```bash
+   uv sync --all-extras --group dev --group test --group notebooks
+   uv pip install -e . --no-build-isolation
+   ```
+
+5. Iterate:
 
    ```bash
    make quick-check              # ruff + ty + fast tests
    make check-all                # lint + type-check + tests with coverage
+   ```
+
+   Or call uv directly when you don't want the Make wrapper:
+
+   ```bash
+   uv run pytest
+   uv run ruff format --check
+   uv run ruff check
+   uv run ty check
+   uv build                      # sdist + wheel
    ```
 
 ## Repository layout
@@ -62,22 +97,42 @@ single source of truth. With `editable.rebuild = true` in
 `pyproject.toml`, importing `pyvinecopulib` after a C++ edit triggers a
 rebuild and refresh on the spot.
 
+## Dependency layout
+
+User-facing extras live under `[project.optional-dependencies]` in
+`pyproject.toml` (`doc`, `examples`, `sklearn`) — these ship with the wheel
+and end users install them via `pip install pyvinecopulib[<extra>]`.
+
+Developer-only deps live under PEP 735 `[dependency-groups]`:
+
+| Group | What it pulls |
+|---|---|
+| `test` | `pytest`, `pytest-cov`, `pytest-rerunfailures`, `pytest-xdist`, `coverage[toml]`. |
+| `notebooks` | `nbmake`, `jupyter`, `nbconvert`, `nbformat` (for the notebook-test + regen workflows). |
+| `dev` | `ruff`, `ty`, `pre-commit`, `twine`. |
+
+Activate them with `uv sync --group <name>` (combine with `--all-extras` /
+`--extra <name>` as needed). The generated `requirements.txt` /
+`environment.yml` workflow was retired — `uv sync` is the single source of
+truth.
+
 ## Makefile cheatsheet
 
 `make help` lists everything. Most-used:
 
 | Command | Purpose |
 |---|---|
-| `make dev-setup` | One-shot: install dev/doc/examples extras + pre-commit hooks. |
+| `make sync` | `uv sync` all groups/extras + editable install. |
+| `make dev-setup` | `make sync` + install pre-commit hooks. |
 | `make quick-check` | Fast feedback: lint + type-check + tests without coverage. |
 | `make check-all` | Pre-push: lint + type-check + tests with coverage. |
 | `make test` / `make test-fast` / `make test-examples` | Test variants. |
 | `make lint` / `make format` | Ruff. |
 | `make type-check` | ty. |
-| `make docs` | Build HTML documentation. |
-| `make docs-serve` | Live-reload server (`sphinx-autobuild`). |
-| `make clear-cache` | Wipe Python caches and build dirs. |
+| `make docs` / `make docs-serve` | Build / live-serve HTML documentation. |
+| `make build` / `make sdist` / `make wheel` | `uv build` artifacts. |
 | `make examples` | Re-execute notebooks (used by the docs/release flow; runs `scripts/regenerate_notebooks.py`). |
+| `make clean` | Wipe Python caches and build dirs. |
 
 ## Pre-commit hooks
 
@@ -138,12 +193,13 @@ release PR.
 ## Troubleshooting
 
 - **`docstr.hpp` looks stale or import fails after C++ changes**: re-run
-  `pip install -e . --no-build-isolation` — `editable.rebuild = true`
+  `uv pip install -e . --no-build-isolation` — `editable.rebuild = true`
   handles most cases, but a fresh manual install fixes anything weird.
-- **Build issues**: `make debug-build` for verbose output.
-- **Project status**: `make status` shows git + Python + installed deps.
-- **Nuclear option**: `make git-clean` (⚠️ removes everything not
-  tracked by git).
+- **`uv` can't find the native build deps**: confirm `boost`, `eigen`, and
+  a libclang ≤ 18 are reachable from your active env (`mamba list | grep
+  -E 'boost|eigen|clang'`).
+- **Nuclear option**: `git clean -fdx` (⚠️ removes everything not tracked
+  by git).
 
 ## Tips
 

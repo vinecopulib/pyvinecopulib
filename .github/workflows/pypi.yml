@@ -68,10 +68,16 @@ jobs:
           git fetch --prune --unshallow
           git fetch --depth=1 origin +refs/tags/*:refs/tags/*
       - name: Set up Python 3.11
+        # cibuildwheel manages its own Pythons per-wheel, but a host Python
+        # is needed for the wheel-inspection step below (uvx twine check).
         uses: actions/setup-python@v5
         with:
           python-version: 3.11
-      - name: Install dependencies
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install C++ dependencies
         id: install-dependencies
         uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@dev
         with:
@@ -114,8 +120,7 @@ jobs:
           }
 
           # 3. Verify wheel metadata and long description
-          python3 -m pip install --quiet --no-cache-dir twine
-          python3 -m twine check --strict wheelhouse/*.whl || {
+          uvx --quiet twine check --strict wheelhouse/*.whl || {
             echo "::error ::Metadata check failed — would fail on PyPI upload."
             exit 1
           }
@@ -137,6 +142,10 @@ jobs:
     name: Verify all built wheels
 
     steps:
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
       - name: Download cibw artifacts
         uses: actions/download-artifact@v5
         with:
@@ -162,9 +171,8 @@ jobs:
           echo "Listing wheel structure:"
           find dist -type f -name '*.whl' -printf "%P\n" | sort
 
-          python3 -m pip install --quiet --no-cache-dir twine
           echo "Checking metadata consistency with twine..."
-          python3 -m twine check --strict dist/* || {
+          uvx --quiet twine check --strict dist/* || {
             echo "::error ::Metadata check failed — would fail on PyPI upload."
             exit 1
           }
@@ -186,6 +194,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
       - name: Install Graphviz + Pandoc
         # graphviz: matches .readthedocs.yaml's apt_packages.
         # pandoc: needed by nbsphinx to convert notebook markdown
@@ -202,12 +214,13 @@ jobs:
         # except sourced from this PR's wheel rather than PyPI's published
         # version — so the docs reflect the PR's actual API surface.
         run: |
+          uv venv --python 3.11
           WHEEL=$(ls dist/*.whl)
-          pip install "${WHEEL}[doc,examples]"
+          uv pip install "${WHEEL}[doc,examples]"
       - name: Build HTML docs
         # -W: warnings as errors. Catches doc regressions (broken cross-refs,
         # malformed docstrings, etc.) before they reach RTD.
-        run: python -m sphinx -W -b html docs docs/_build/html
+        run: uv run sphinx-build -W -b html docs docs/_build/html
       - name: Upload built HTML for PR review
         uses: actions/upload-artifact@v4
         with:
@@ -241,6 +254,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ steps.pyver.outputs.version }}
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
       - name: Install Graphviz
         shell: bash
         run: |
@@ -252,11 +270,16 @@ jobs:
           elif [[ "${{ matrix.cfg.os }}" == "windows-latest" ]]; then
             choco install graphviz -y
           fi
-      - name: Install dev and examples dependencies
+      - name: Create uv venv and install test/notebooks deps
+        shell: bash
         run: |
-          pip install tomli  # needed for Python < 3.11
-          python scripts/get_dependencies.py dev examples --as-requirements > requirements.txt
-          pip install -r requirements.txt
+          uv venv --python ${{ steps.pyver.outputs.version }}
+          # Install only the dep groups + extras needed for the test
+          # run; the wheel itself is installed in the next step. The
+          # --no-install-project flag is essential: we don't want uv to
+          # build the project from source — we want to test the
+          # cibuildwheel-produced wheel.
+          uv sync --no-install-project --group test --group notebooks --extra examples
       # For Python <= 3.11: download its exact artifact
       - name: Download built wheel (<=3.11)
         if: ${{ matrix.python <= 311 }}
@@ -271,10 +294,10 @@ jobs:
         with:
           name: cibw-wheels-${{ matrix.cfg.os }}-312-${{ matrix.cfg.cibw_id }}
           path: dist/
-      - name: Install wheel
+      - name: Install wheel into uv venv
         shell: bash
         run: |
-          pip install dist/*.whl
+          uv pip install dist/*.whl
       - name: Run tests
         uses: nick-fields/retry@v3
         with:
@@ -286,7 +309,7 @@ jobs:
             # Serial run — see the note in pyproject.toml's
             # [tool.pytest.ini_options] for why CI avoids pytest-xdist
             # on GitHub Actions runners.
-            pytest tests/ -r a --no-cov --reruns 2 --reruns-delay 10
+            uv run pytest tests/ -r a --no-cov --reruns 2 --reruns-delay 10
       - name: Run notebooks as unit tests
         uses: nick-fields/retry@v3
         with:
@@ -295,7 +318,7 @@ jobs:
           retry_wait_seconds: 60
           shell: bash
           command: |
-            pytest --nbmake examples/ \
+            uv run pytest --nbmake examples/ \
               --no-cov \
               --nbmake-timeout=600 \
               --nbmake-kernel=python3 \
@@ -338,6 +361,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
       - name: Install Graphviz
         run: |
           sudo apt-get update
@@ -347,15 +375,17 @@ jobs:
         with:
           name: cibw-wheels-ubuntu-latest-311-manylinux_x86_64
           path: dist/
-      - name: Install wheel + examples extras
+      - name: Install wheel + examples extras + notebooks group
         run: |
-          # `<wheel>[examples]` installs the local wheel and pulls in the
-          # extras (jupyterlab, scipy) without going to PyPI for the package.
+          uv venv --python 3.11
+          # Install the notebooks dependency group (jupyter, nbconvert,
+          # nbformat, nbmake) and the examples extra (jupyterlab, scipy);
+          # then drop the cibuildwheel wheel on top.
+          uv sync --no-install-project --group notebooks --extra examples
           WHEEL=$(ls dist/*.whl)
-          pip install "${WHEEL}[examples]"
-          pip install jupyter nbconvert nbformat
+          uv pip install "${WHEEL}"
       - name: Re-execute notebooks
-        run: python scripts/regenerate_notebooks.py
+        run: uv run python scripts/regenerate_notebooks.py
       - name: Commit and push refreshed notebooks
         run: |
           if git diff --quiet -- examples/; then
@@ -380,7 +410,7 @@ jobs:
         run: |
           git fetch --prune --unshallow
           git fetch --depth=1 origin +refs/tags/*:refs/tags/*
-      - name: Install dependencies
+      - name: Install C++ dependencies
         id: install-dependencies
         uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@dev
         with:
@@ -393,46 +423,41 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: 3.11
-      - name: Upgrade pip and install build dependency
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+      - name: Export Boost / Eigen include paths
         run: |
           echo "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include" >> $GITHUB_ENV
           echo "EIGEN3_INCLUDE_DIR=/home/runner/work/include/eigen3" >> $GITHUB_ENV
-          python -m pip install --upgrade pip
-          pip install build
-      - name: Lint and type check
+      - name: Sync dev/test deps + editable install
+        # The editable install is necessary so the CMake build emits the
+        # per-subpackage .pyi stubs that the sdist ships with.
         run: |
-          pip install tomli  # Needed for Python < 3.11
-          python scripts/get_dependencies.py dev --as-requirements > requirements.txt
-          pip install -r requirements.txt
-          # Install editable so the CMake build generates the stubs
-          pip install -e .
-          ruff format --check
-          ruff check
-          ty check
-      - name: Create source distribution
+          uv sync --all-extras --group dev --group test
+          uv pip install -e . --no-build-isolation
+      - name: Lint and type-check
         run: |
-          export Boost_INCLUDE_DIR=$Boost_INCLUDE_DIR
-          export EIGEN3_INCLUDE_DIR=$EIGEN3_INCLUDE_DIR
-          pipx run build --sdist
-      - name: Install source distribution
+          uv run ruff format --check
+          uv run ruff check
+          uv run ty check
+      - name: Build source distribution
+        run: uv build --sdist
+      - name: Install source distribution into fresh venv
+        # Use a separate venv so the editable install's meta-path finder
+        # (`_pyvinecopulib_editable.py`) doesn't trigger a CMake rebuild
+        # when the sdist's POST_BUILD stub-gen step imports the package.
         run: |
-          # The lint step installed pyvinecopulib editable; its meta-path
-          # finder ('_pyvinecopulib_editable.py') would otherwise trigger a
-          # CMake rebuild during the sdist's POST_BUILD stub-gen import,
-          # using the outer env (which doesn't have the build deps).
-          pip uninstall -y pyvinecopulib
-          export Boost_INCLUDE_DIR=$Boost_INCLUDE_DIR
-          export EIGEN3_INCLUDE_DIR=$EIGEN3_INCLUDE_DIR
-          pip install dist/*.tar.gz
-      - name: Install dev dependencies for testing
-        run: |
-          pip install tomli  # Needed for Python < 3.11
-          python scripts/get_dependencies.py dev --as-requirements > requirements.txt
-          pip install -r requirements.txt
-      - name: Run tests
+          uv venv .venv-sdist --python 3.11
+          VIRTUAL_ENV="$PWD/.venv-sdist" uv pip install dist/*.tar.gz
+          VIRTUAL_ENV="$PWD/.venv-sdist" uv sync --no-install-project --group test --active
+      - name: Run tests against installed sdist
         # Serial run (xdist not in addopts) — see pyproject.toml.
         run: |
-          pytest tests/ -r a --no-cov --reruns 2 --reruns-delay 10
+          VIRTUAL_ENV="$PWD/.venv-sdist" uv run --active \
+            pytest tests/ -r a --no-cov --reruns 2 --reruns-delay 10
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
@@ -448,6 +473,10 @@ jobs:
       actions: read
       contents: read
     steps:
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
       - name: Download cibw artifacts
         uses: actions/download-artifact@v5
         with:
@@ -472,9 +501,8 @@ jobs:
           echo "Listing wheel structure:"
           find dist -type f -name '*.whl' -printf "%P\n" | sort
 
-          python3 -m pip install --quiet --no-cache-dir twine
           echo "Checking metadata consistency with twine..."
-          python3 -m twine check dist/* || {
+          uvx --quiet twine check dist/* || {
             echo "::error ::Metadata check failed — would fail on PyPI upload."
             exit 1
           }

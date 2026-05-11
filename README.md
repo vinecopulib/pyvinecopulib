@@ -86,14 +86,17 @@ When installing via `pip install .` (the default), all of these are pulled into 
 
 To install from source, `Eigen` and `Boost` also need to be available, and CMake will try to find suitable versions automatically.
 
-The recommended way to install `pyvinecopulib` from source is to use `conda` or `mamba`.
-A reproducible environment, also including requirements for the `pyvinecopulib`'s development and documentation, can be created using:
+The recommended way to install `pyvinecopulib` from source is to use `conda`/`mamba` for the native build prerequisites and [`uv`](https://docs.astral.sh/uv/) for the Python side:
 
 ```bash
-python scripts/generate_requirements.py --format yml # from pyvinecopulib's root
-mamba env create -f environment.yml
+mamba create -n pyvinecopulib python=3.11 boost eigen 'python-clang=18.*'
 mamba activate pyvinecopulib
+pip install uv
+uv sync --all-extras --group dev --group test --group notebooks
+uv pip install -e . --no-build-isolation
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full developer workflow.
 
 Alternatively, you can specify manually the location of `Eigen` and `Boost` using the environment variables `EIGEN3_INCLUDE_DIR` and `Boost_INCLUDE_DIR` respectively.
 On Linux, you can install the required packages and set the environment variables as follows:
