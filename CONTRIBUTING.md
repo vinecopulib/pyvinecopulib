@@ -101,8 +101,8 @@ general whitespace/TOML/JSON checks. `make sync` installs them.
 
 `.github/workflows/pypi.yml` is the single workflow. Jobs:
 
-- **`build`** — cibuildwheel matrix (16 wheels: Linux glibc/musl, macOS arm64,
-  Windows × cp39/cp310/cp311/cp312-ABI3).
+- **`build`** — cibuildwheel matrix (12 wheels: Linux glibc/musl, macOS arm64,
+  Windows × cp310/cp311/cp312-ABI3).
 - **`check_wheels`** — counts and twine-checks artifacts.
 - **`verify_docs_build`** — RTD-mirror doc build with `-W`.
 - **`install_and_unit_test`** — installs each wheel and runs pytest + notebook

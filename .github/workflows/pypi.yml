@@ -10,7 +10,7 @@ on:
 env:
   BOOST_VERSION: 1.84.0
   EIGEN_VERSION: 3.4.0
-  EXPECTED_WHEEL_COUNT: 16  # 4 platforms × 4 unique wheels (ABI3 covers 3.12+)
+  EXPECTED_WHEEL_COUNT: 12  # 4 platforms × 3 unique wheels (cp310, cp311, cp312-ABI3 covers 3.12+)
 
 jobs:
 
@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         # macos-13 is an intel runner, macos-14 is apple silicon
-        python: [39, 310, 311, 312]
+        python: [310, 311, 312]
         cfg:
           - {
               os: ubuntu-latest,
@@ -228,7 +228,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: [39, 310, 311, 312, 313, 314]
+        python: [310, 311, 312, 313, 314]
         cfg:
           - { os: ubuntu-latest, cibw_id: manylinux_x86_64 }
           - { os: macos-14, cibw_id: macosx_arm64 }

@@ -24,7 +24,7 @@ authors = [
 description = "A python interface to vinecopulib"
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = ['numpy>=1.14', 'matplotlib>=3.0', 'networkx>=3.0', 'pydot>=3.0']
 keywords = ['copula', 'vines copulas', 'pair-copulas constructions']
 classifiers = [
@@ -38,7 +38,6 @@ classifiers = [
   'Topic :: Scientific/Engineering',
   'Topic :: Scientific/Engineering :: Mathematics',
   'Programming Language :: C++',
-  'Programming Language :: Python :: 3.9',
   'Programming Language :: Python :: 3.10',
   'Programming Language :: Python :: 3.11',
   'Programming Language :: Python :: 3.12',
@@ -111,7 +110,6 @@ build-verbosity = 1
 skip = "cp3??t-*"  # no free-threading builds
 test-command = "pytest {project}/tests"
 test-requires = ["pytest-cov", "pytest-rerunfailures"]
-test-skip = "cp38-macosx_*:arm64"
 
 [tool.cibuildwheel.macos.environment]
 MACOSX_DEPLOYMENT_TARGET = "10.14"  # full C++17 support
@@ -130,6 +128,9 @@ exclude = ["lib", "src/pyvinecopulib/**/__init__.pyi", "src/pyvinecopulib/__init
 include = ["src", "tests"]
 
 [tool.ty.environment]
+# Type-check against the 3.9 baseline. The runtime floor is 3.10
+# (see requires-python), but bumping ty here triggers a wave of
+# numpy-stub overload false-positives (ty is still alpha).
 python-version = "3.9"
 
 [tool.ty.rules]
