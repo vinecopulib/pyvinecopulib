@@ -37,6 +37,16 @@ include(lib/vinecopulib/cmake/options.cmake REQUIRED)
 
 include(lib/vinecopulib/cmake/compilerDefOpt.cmake REQUIRED)
 
+# Inside cibuildwheel, replace upstream's `-march=native` (great for local
+# builds, fatal for distributed wheels) with `-march=x86-64-v3`: Haswell/Zen
+# baseline with AVX2 + FMA + BMI2, runs on every CPU released since ~2013.
+# GitHub Actions's `ubuntu-latest` pool is all v3+, so the doc/test jobs that
+# load the wheel stay SIGILL-free. Local editable builds keep `-march=native`.
+if(DEFINED ENV{CIBUILDWHEEL})
+  string(REGEX REPLACE "(^| )-march=native( |$)" " -march=x86-64-v3 "
+                       CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+endif()
+
 # wdm_INCLUDE_DIRS is lib/wdm/include
 set(vinecopulib_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/lib/vinecopulib/include)
 set(wdm_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/lib/wdm/include)

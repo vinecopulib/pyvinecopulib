@@ -60,6 +60,16 @@ uv build            # sdist + wheel
 source of truth. `editable.rebuild = true` re-runs the build on import after
 C++ edits.
 
+Because `ty` reads those `.pyi` files for type info, run an editable build
+before `ty check`:
+
+```bash
+uv pip install -ve . --no-build-isolation
+uv run ty check src tests
+```
+
+`make sync` does both in one shot; `make check` then calls `ty` directly.
+
 ## Dependency layout
 
 User-facing extras (`doc`, `examples`, `sklearn`) live under

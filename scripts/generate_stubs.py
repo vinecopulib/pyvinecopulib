@@ -199,11 +199,24 @@ def render_class_stub(
 
 
 def cleanup_stub(stub: str) -> str:
-  # Replace any annotation like numpy.ndarray[...] with ArrayLike
-  stub = re.sub(r"numpy\.ndarray\[.*?\]", "ArrayLike", stub)
-  stub = re.sub(r"np\.ndarray\[.*?\]", "ArrayLike", stub)
-  stub = re.sub(r"\bnumpy\.ndarray\b", "ArrayLike", stub)
-  stub = re.sub(r"\bnp\.ndarray\b", "ArrayLike", stub)
+  # Distinguish input vs return positions in `def …(...) -> ...:` lines:
+  #   - inputs accept the broad `ArrayLike` (lists, scalars, buffers …)
+  #   - returns are concretely `NDArray[Any]` (subscriptable, supports
+  #     arithmetic — accurate for nanobind output).
+  ndarray_pattern = re.compile(
+    r"numpy\.ndarray\[.*?\]|np\.ndarray\[.*?\]|\bnumpy\.ndarray\b|\bnp\.ndarray\b"
+  )
+
+  def _rewrite_def_line(match: re.Match) -> str:
+    signature, return_annot = match.group(1), match.group(2)
+    signature = ndarray_pattern.sub("ArrayLike", signature)
+    return_annot = ndarray_pattern.sub("NDArray[Any]", return_annot)
+    return f"def {signature} -> {return_annot}:"
+
+  stub = re.sub(r"def ([^\n]+?) -> ([^\n]+?):", _rewrite_def_line, stub)
+  # Anything ndarray outside `def …:` lines (e.g. attribute annotations)
+  # falls back to ArrayLike for safety.
+  stub = ndarray_pattern.sub("ArrayLike", stub)
 
   # Replace complex ArrayLike Union types with simple ArrayLike
   stub = re.sub(
@@ -280,7 +293,7 @@ def generate_stub(
   lines = [
     "import collections",
     "from typing import Any, Optional",
-    "from numpy.typing import ArrayLike",
+    "from numpy.typing import ArrayLike, NDArray",
     "from matplotlib.figure import Figure",
     "from matplotlib.axes import Axes",
     "",

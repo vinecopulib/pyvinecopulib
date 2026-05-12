@@ -128,15 +128,16 @@ exclude = ["lib", "src/pyvinecopulib/**/__init__.pyi", "src/pyvinecopulib/__init
 include = ["src", "tests"]
 
 [tool.ty.environment]
-# Type-check against the 3.9 baseline. The runtime floor is 3.10
-# (see requires-python), but bumping ty here triggers a wave of
-# numpy-stub overload false-positives (ty is still alpha).
-python-version = "3.9"
+python-version = "3.10"
 
 [tool.ty.rules]
-# Ignore unresolved imports of the C++ extension `.so`; type info comes
-# from the generated .pyi files.
-unresolved-import = "ignore"
+unresolved-import = "error"
+
+[tool.ty.analysis]
+# The C++ extension is a compiled `.so` produced by the editable build;
+# ty can't introspect it directly. Type info comes from the generated
+# .pyi files under src/pyvinecopulib/.
+allowed-unresolved-imports = ["pyvinecopulib.pyvinecopulib_ext"]
 
 [tool.bandit]
 exclude_dirs = ["tests", "docs", "examples", "lib", "build"]
