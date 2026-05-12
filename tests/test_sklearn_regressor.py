@@ -170,17 +170,22 @@ def test_parameter_variations(regression_setup, use_grid, normalize_weights):
   assert np.all(np.isfinite(pred))
 
 
-def test_copula_only_pdf(fitted_regressor):
-  """Test that regressor PDF uses copula-only mode."""
+def test_pdf_copula_only_flag(fitted_regressor):
+  """`pdf(copula_only=...)` toggles between full joint and copula-only."""
   regressor, _, X_test, _, y_test, _ = fitted_regressor
 
-  # Get PDF from regressor (should be copula-only)
-  copula_pdf = regressor.pdf(X_test, y_test)
+  joint_pdf = regressor.pdf(X_test, y_test)
+  joint_direct = regressor._pdf_samples(
+    X_test, y=y_test, log=False, copula_only=False
+  )
+  np.testing.assert_allclose(joint_pdf, joint_direct, rtol=1e-12)
 
-  # Get copula-only from base method
+  copula_pdf = regressor.pdf(X_test, y_test, copula_only=True)
   copula_direct = regressor._pdf_samples(
     X_test, y=y_test, log=False, copula_only=True
   )
-
-  # Should be the same
   np.testing.assert_allclose(copula_pdf, copula_direct, rtol=1e-12)
+
+  # The two modes differ unless all marginals integrate to 1 at the test
+  # points by coincidence; on real data they should be clearly distinct.
+  assert not np.allclose(joint_pdf, copula_pdf)

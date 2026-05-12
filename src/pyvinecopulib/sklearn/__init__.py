@@ -1,6 +1,18 @@
-"""Scikit-learn compatible vine estimators.
+"""Scikit-learn-compatible vine-copula estimators.
 
-Requires scikit-learn. Install with `pip install pyvinecopulib[sklearn]`.
+This subpackage exposes two non-parametric estimators built on the
+core :mod:`pyvinecopulib.core` and :mod:`pyvinecopulib.utils` machinery:
+
+- :class:`VineDensity` — joint-density estimator.
+- :class:`VineRegressor` — conditional mean / quantile regressor.
+
+Both follow the standard pipeline of marginal kernel-density
+estimation, transformation to pseudo-observations, and a vine-copula
+fit on those pseudo-observations; see the class docstrings for the
+full methodology and references.
+
+Requires scikit-learn and pandas. Install with
+``pip install pyvinecopulib[sklearn]``.
 """
 
 try:

@@ -13,7 +13,18 @@ Two scikit-learn-compatible vine-copula estimators ship in the new
   `score`, `sample`, and `pdf` methods.
 
 Both follow the `BaseEstimator` / `RegressorMixin` / `DensityMixin` protocols
-and handle mixed continuous/discrete inputs (DataFrame or ndarray).
+and handle mixed continuous/discrete inputs (DataFrame or ndarray). Class
+docstrings now include the full methodology — Sklar / pair-copula
+factorization, Kde1d marginals, and the estimating-equation framework for
+mean / quantile prediction — with references to Bedford & Cooke (2002),
+Aas et al. (2009), Kraus & Czado (2017), and Nagler & Vatter (2024).
+
+`VineRegressor.pdf(copula_only=...)` is now a real keyword argument: it
+previously hard-coded `copula_only=True`, ignoring any user override. The
+default is now `False` (full joint density `f(y, x)`); pass
+`copula_only=True` to recover the pre-1.0 behaviour. `VineDensity.pdf` had
+the symmetric bug in the other direction (parameter accepted but ignored)
+and is fixed analogously.
 
 Install via the optional extra:
 

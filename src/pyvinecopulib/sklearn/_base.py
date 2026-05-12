@@ -1,14 +1,100 @@
 import numpy as np
 import pandas as pd
-import pyvinecopulib as pv
 from sklearn.base import BaseEstimator
+
+import pyvinecopulib as pv
+
+# Shared docstring fragments interpolated into VineDensity / VineRegressor
+# class docstrings via f-strings. Defined once here, used by both subclasses
+# so changes propagate without copy-paste.
+
+_DOC_PIPELINE = r"""**Estimation pipeline.** The estimator follows a
+three-step pipeline shared with :class:`VineDensity` /
+:class:`VineRegressor`:
+
+1. **Marginals.** A univariate kernel density estimator
+   (:class:`pyvinecopulib.utils.Kde1d`) is fitted to each feature
+   column. Continuous and ordered-discrete dtypes are inferred from the
+   input (or read from a user-supplied ``schema``); unordered
+   categoricals are first expanded into ordered ``{0, 1}`` dummies by
+   :func:`pyvinecopulib.sklearn._base.expand_factors`.
+
+2. **Pseudo-observations.** Each marginal CDF is applied to its column
+   to produce pseudo-observations :math:`U_j = \hat F_j(X_j) \in [0, 1]`.
+   For discrete columns the left limit :math:`\hat F_j(X_j^-)` is also
+   computed and stacked, so the vine sees a continuous proxy for the
+   discrete margin.
+
+3. **Vine copula.** A vine copula is fitted to the pseudo-observations
+   with :meth:`pyvinecopulib.core.Vinecop.from_data`, using the
+   ``structure``, ``controls``, and (where relevant) variable-type
+   tags. The default ``controls`` use the nonparametric ``tll`` pair
+   family for every edge.
+"""
+
+_DOC_FACTORIZATION = r"""**Joint-density factorization.** Both
+estimators rely on Sklar's theorem, which expresses the joint density
+as a product of marginals and a copula density,
+
+.. math::
+
+   f(\mathbf{x})
+   = c\bigl(F_1(x_1), \ldots, F_d(x_d)\bigr)\,
+     \prod_{j=1}^{d} f_j(x_j),
+
+and on the pair-copula construction of Bedford & Cooke (2002) and
+Aas et al. (2009), which writes :math:`c` as a product of bivariate
+(pair-)copulas indexed by a vine structure. The ``copula_only=True`` flag on
+:meth:`pdf` returns the copula factor :math:`c(\mathbf{u})` alone,
+without the marginal product.
+"""
+
+_DOC_DISCRETE = r"""**Discrete variables.** Discrete (or expanded
+unordered-categorical) columns are handled via the Kde1d
+``type="discrete"`` mode: pseudo-observations stack
+:math:`\hat F_j(X_j)` and :math:`\hat F_j(X_j^-)` so that the vine
+copula evaluation sees the appropriate (continuous) proxy. This is
+done transparently by :meth:`fit` and :meth:`pdf`.
+"""
+
+_DOC_REFERENCES = r"""References
+----------
+- Bedford, T. and Cooke, R. M. (2002).
+  *Vines--a new graphical model for dependent random variables.*
+  The Annals of Statistics, 30(4), 1031--1068.
+- Aas, K., Czado, C., Frigessi, A. and Bakken, H. (2009).
+  *Pair-copula constructions of multiple dependence.*
+  Insurance: Mathematics and Economics, 44(2), 182--198.
+- Nagler, T. and Vatter, T. (2024).
+  *Solving Estimating Equations With Copulas.*
+  Journal of the American Statistical Association, 119(546), 1168--1180.
+"""
 
 
 def expand_factors(df: pd.DataFrame) -> pd.DataFrame:
-  """
-  - Keep numeric and ordered categoricals unchanged.
-  - Expand unordered categoricals into 0/1 dummies, dropping the first level.
-  - Dummies are cast to ordered categorical with levels {0,1}.
+  """Expand unordered categoricals to ordered ``{0, 1}`` dummies.
+
+  Unordered categorical columns are not directly usable by the vine
+  copula (which assumes orderable marginals). This helper one-hot
+  encodes them, drops the first level (avoiding collinearity), and
+  re-casts each dummy to an ordered categorical with levels
+  ``[0, 1]`` so they pass through Kde1d's ``"discrete"`` mode
+  unchanged. Numeric and already-ordered categorical columns are
+  passed through.
+
+  Parameters
+  ----------
+  df : pandas.DataFrame
+      Input DataFrame. Columns may be numeric, ordered categorical, or
+      unordered categorical. Any other dtype raises ``ValueError``.
+
+  Returns
+  -------
+  pandas.DataFrame
+      DataFrame with unordered categoricals expanded. Dummy columns are
+      named ``"<original>_<category>"`` (matching R's
+      ``model.matrix`` convention, dropping the first level), and
+      typed as ordered categorical over ``[0, 1]``.
   """
   out_parts: list[pd.Series | pd.DataFrame] = []
 
