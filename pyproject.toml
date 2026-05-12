@@ -1,9 +1,5 @@
 [build-system]
-# libclang: docstring generation. numpy/matplotlib/networkx: imported by
-# the POST_BUILD stub-gen step. Mirror these in [dependency-groups].build
-# below so `uv sync --group build` can populate `--no-build-isolation`
-# rebuilds. libclang pinned to 18.x: PyPI's package tops out there and we
-# bypass the MSVC>=19 check via -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH.
+# Mirror [dependency-groups].build so `--no-build-isolation` rebuilds work.
 requires = [
   "scikit-build-core>=0.5.0",
   "nanobind>=2.7.0",
@@ -46,8 +42,6 @@ classifiers = [
   'License :: OSI Approved :: MIT License',
 ]
 
-# Wheel-shipped extras. `sklearn` adds pandas for the DataFrame
-# handling in VineBase.expand_factors.
 [project.optional-dependencies]
 examples = ["jupyterlab", "scipy"]
 sklearn = ["scikit-learn>=1.4", "pandas>=2.0"]
@@ -60,9 +54,6 @@ doc = [
   "myst-parser",
 ]
 
-# PEP 735 dependency groups for dev/CI. Not shipped with the wheel.
-# `build` mirrors [build-system].requires plus ninja/cmake so editable
-# rebuilds find their tools in the project venv. Keep in sync manually.
 [dependency-groups]
 build = [
   "scikit-build-core>=0.5.0",
@@ -99,26 +90,25 @@ Issues = "https://github.com/vinecopulib/pyvinecopulib/issues"
 [tool.scikit-build]
 minimum-version = "0.4"
 build-dir = "build/{wheel_tag}"
-wheel.py-api = "cp312"  # stable ABI for CPython 3.12+
+wheel.py-api = "cp312"
 editable.rebuild = true
-# Force scripts/** back in: scikit-build-core's default sdist exclude
-# drops `build/`-named dirs, which also caught scripts/build.
+# scikit-build-core's default sdist exclude drops `build/`-named dirs,
+# which also catches scripts/build.
 sdist.include = ["scripts/**"]
 
 [tool.cibuildwheel]
 build-verbosity = 1
-skip = "cp3??t-*"  # no free-threading builds
+skip = "cp3??t-*"
 test-command = "pytest {project}/tests"
 test-requires = ["pytest-cov", "pytest-rerunfailures"]
 
 [tool.cibuildwheel.macos.environment]
-MACOSX_DEPLOYMENT_TARGET = "10.14"  # full C++17 support
+MACOSX_DEPLOYMENT_TARGET = "10.14"
 
 [tool.ruff]
 line-length = 80
 indent-width = 2
 extend-include = ["*.ipynb"]
-# Exclude vendored libs and auto-generated stubs.
 exclude = ["lib", "src/pyvinecopulib/**/__init__.pyi", "src/pyvinecopulib/__init__.pyi"]
 
 [tool.ruff.lint.per-file-ignores]
@@ -134,14 +124,12 @@ python-version = "3.10"
 unresolved-import = "error"
 
 [tool.ty.analysis]
-# The C++ extension is a compiled `.so` produced by the editable build;
-# ty can't introspect it directly. Type info comes from the generated
-# .pyi files under src/pyvinecopulib/.
+# ty can't introspect the compiled .so; the .pyi stubs cover it.
 allowed-unresolved-imports = ["pyvinecopulib.pyvinecopulib_ext"]
 
 [tool.bandit]
 exclude_dirs = ["tests", "docs", "examples", "lib", "build"]
-skips = ["B101"]                                             # Skip assert_used test
+skips = ["B101"]
 
 [tool.coverage.run]
 source = ["src/pyvinecopulib"]
@@ -164,13 +152,8 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-# NOTE: don't put `-n auto` here. pytest-xdist's subprocess workers
-# fork+import native extensions (pyvinecopulib_ext, numpy, matplotlib,
-# kiwisolver, zmq) on every test session, which intermittently crashes
-# the worker on GitHub Actions runners with "node down: Not properly
-# terminated" and aborts the run. Parallelism is enabled per-target in
-# the Makefile (`make test`) where it's worth the trade-off; CI runs
-# serially.
+# Don't add `-n auto` here: xdist workers intermittently crash on GHA
+# when re-importing native extensions ("node down: Not properly terminated").
 addopts = [
   "--strict-markers",
   "--strict-config",
@@ -183,9 +166,7 @@ markers = [
   "flaky: mark a test as flaky and allow reruns",
 ]
 # Treat our own DeprecationWarnings as errors so internal code stays on the
-# canonical (post-1.0) import paths. Unrelated upstream warnings (jupyter,
-# matplotlib, etc.) are unaffected. The message regex matches both
-# `pyvinecopulib.NAME` and `pyvinecopulib.SUBPKG.NAME` patterns we emit.
+# post-1.0 import paths. Matches `pyvinecopulib.NAME` and `pyvinecopulib.SUB.NAME`.
 filterwarnings = [
   "error:`pyvinecopulib\\.:DeprecationWarning",
 ]

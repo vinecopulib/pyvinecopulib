@@ -1,8 +1,4 @@
-# -*- coding: utf-8 -*-
-#
-# pyvinecopulib documentation build configuration file
-
-# Sphinx extension modules
+# pyvinecopulib documentation build configuration file.
 
 import inspect
 import os
@@ -15,11 +11,10 @@ from sphinx.ext.autodoc import AttributeDocumenter, ModuleDocumenter
 
 import pyvinecopulib as pv
 
-# -- Monkey-patch the autodoc module for nanobind compatibility ------------
+# Monkey-patch sphinx's autodoc to recognise nanobind's nb_func as a routine.
 
 
 def isnbfunc(obj: Any) -> bool:
-  """Check if the object is nanobind.nb_func."""
   return (
     hasattr(type(obj), "__module__")
     and type(obj).__module__ == "nanobind"
@@ -28,57 +23,39 @@ def isnbfunc(obj: Any) -> bool:
 
 
 def isfunction(obj: Any) -> bool:
-  """Check if the object is a user-defined function.
-  Partial objects are unwrapped before checking them.
-  .. seealso:: :external+python:func:`inspect.isfunction`
-  """
   return inspect.isfunction(sphinxinspect.unpartial(obj)) or isnbfunc(obj)
 
 
 def isroutine(obj: Any) -> bool:
-  """Check if the object is a kind of function or method.
-
-  Partial objects are unwrapped before checking them.
-
-  .. seealso:: :external+python:func:`inspect.isroutine`
-  """
   return inspect.isroutine(sphinxinspect.unpartial(obj)) or isnbfunc(obj)
 
 
 sphinxinspect.isfunction = isfunction
 sphinxinspect.isroutine = isroutine
 
-# show the body of the function
 assert autodoc.inspect.isfunction is isfunction
 assert autodoc.inspect.isroutine is isroutine
 
 
-# Define the patched method
 @classmethod
 def patched_can_document_member(
   cls, member: Any, membername: str, isattr: bool, parent: Any
 ) -> bool:
-  """
-  Patched version of AttributeDocumenter's can_document_member.
-  """
   if isinstance(parent, ModuleDocumenter):
     return False
   if sphinxinspect.isroutine(member):
-    return False  # New behavior: routines are not attributes
+    return False
   if sphinxinspect.isattributedescriptor(member):
     return True
   return not sphinxinspect.isroutine(member) and not isinstance(member, type)
 
 
-# Apply the patch
 AttributeDocumenter.can_document_member = patched_can_document_member
 
 assert inspect.getsource(
   AttributeDocumenter.can_document_member
 ) == inspect.getsource(patched_can_document_member)
 
-
-# -- General configuration ------------------------------------------------
 
 extensions = [
   "sphinx.ext.autodoc",
@@ -98,51 +75,31 @@ napoleon_custom_sections = [("Usage", "Usage")]
 autosummary_generate = True
 nbsphinx_execute = "never"
 
-# Warning categories silenced for fresh single-pass builds:
-#   - `autosummary`: stub files don't exist when the toctree first reads
-#     them; they're generated mid-build, so a clean build always emits this.
-#   - `myst.header`: index.rst inlines a slice of README.md (`:start-line: 8`)
-#     that starts at an H2, which myst-parser flags. Cosmetic.
+# `autosummary`: stub files don't exist on first toctree read (single-pass build).
+# `myst.header`: index.rst inlines a slice of README.md starting at H2.
 suppress_warnings = ["autosummary", "myst.header"]
 
-# The suffix(es) of source filenames.
 source_suffix = {
   ".rst": "restructuredtext",
   ".md": "markdown",
 }
 
-# For the templates.
 templates_path = ["_templates"]
-
-# The master toctree document.
 master_doc = "index"
 
-# Don't scan build outputs or jupyter checkpoint dirs as source documents.
-# Without `_build` here, sphinx would re-discover its own output (which
-# includes converted notebooks) and register every notebook twice. Note
-# `_generate` is intentionally NOT excluded — autosummary writes stub
-# files there and needs sphinx to read them back as source documents.
-exclude_patterns = [
-  "_build",
-  "**/.ipynb_checkpoints",
-]
+# Don't exclude `_generate` — autosummary writes stubs there and sphinx
+# reads them back as source documents.
+exclude_patterns = ["_build", "**/.ipynb_checkpoints"]
 
-# General information about the project.
 project = "pyvinecopulib"
 copyright = "2024, Thomas Nagler and Thibault Vatter"
 author = "Thomas Nagler and Thibault Vatter"
 
-# The version info.
 release = pv.__version__
 version = ".".join(release.split(".")[:3])
 
-# Note: don't set `html_extra_path = ["examples"]` here. nbsphinx processes
-# the staged docs/examples/*.ipynb as documents (toctree-targets); putting
-# the same directory in html_extra_path would treat it as raw extra files
-# and shadow nbsphinx's document registration, leaving the toctree entries
-# unresolved.
-
-# -- Options for HTML output -------------------------------------------------
+# Don't set `html_extra_path = ["examples"]` — nbsphinx registers the
+# staged notebooks as documents, and html_extra_path would shadow that.
 
 html_theme = "sphinx_rtd_theme"
 
@@ -177,7 +134,6 @@ def process_cross_references(content: str, is_docstring: bool = True) -> str:
   meth_ref = r":meth:`" if is_docstring else r"{py:meth}`"
   cls_ref = r":class:`" if is_docstring else r"{py:class}`"
 
-  # Try convert references to methods or classes to cross-references
   content = re.sub(r"``(\w+)\.(\w+)\(\)``", rf"{meth_ref}\1.\2`", content)
   content = re.sub(r"``(\w+)\.(\w+)``", f"{cls_ref}\1.\2`", content)
   for cls in classes:
@@ -187,43 +143,23 @@ def process_cross_references(content: str, is_docstring: bool = True) -> str:
 
 
 def autodoc_process_docstring(app, what, name, obj, options, lines):
-  # print(f"Processing: {what}, {name}")
-
-  # Join the existing lines and try to reformat the docstring
-  docstring = "\n".join(lines)
-
-  # Process cross-references
-  docstring = process_cross_references(docstring)
-
-  # Clear lines and replace with the cleaned, structured overloads
+  docstring = process_cross_references("\n".join(lines))
   lines.clear()
   lines.extend(docstring.splitlines())
 
 
 def preprocess_markdown(app, docname, source):
-  """
-  Preprocess Markdown files before inclusion in the documentation.
-  """
-  # Apply only to specific Markdown files, e.g., CHANGELOG.md
   if docname == "CHANGELOG":
-    # Inject the currentmodule directive at the beginning
     source[0] = (
       "```{eval-rst}\n.. currentmodule:: pyvinecopulib\n```\n" + source[0]
     )
-    # Process cross-references without requiring the module name
     source[0] = process_cross_references(source[0], is_docstring=False)
 
 
-# --- Dynamic source staging --------------------------------------------------
-# Equivalent of the (now-retired) docs/gen_sphinx.py driver: stage the repo's
-# README, CHANGELOG, and examples/ dir into the docs source tree at build
-# time, and write the generated features.rst / examples.rst toctrees. This
-# lets plain `sphinx-build docs <out>` work end-to-end. All staged paths are
-# gitignored.
-
-# Public API surface, grouped by subpackage. Documentation references the
-# canonical location of each symbol (pyvinecopulib.<subpkg>.<name>); the
-# top-level aliases still work but are intentionally not documented.
+# Stage README/CHANGELOG/CONTRIBUTING/examples into the docs source tree and
+# write features.rst / examples.rst toctrees so plain `sphinx-build` works.
+# Documentation references the canonical pyvinecopulib.<subpkg>.<name>;
+# top-level aliases still resolve but aren't documented.
 DOCSTRING_SUBPACKAGES = {
   "core": {
     "classes": [
@@ -259,8 +195,6 @@ DOCSTRING_SUBPACKAGES = {
   },
 }
 
-# Kept for backward compatibility with downstream tools that consume these
-# names. Synthesized from DOCSTRING_SUBPACKAGES.
 DOCSTRING_CLASSES = [
   cls for sub in DOCSTRING_SUBPACKAGES.values() for cls in sub["classes"]
 ]
@@ -270,8 +204,7 @@ DOCSTRING_FUNCTIONS = [
 
 
 def _stage_repo_files(docs_dir, repo_root):
-  """Symlink (or copy on Windows) repo-root files into the docs source dir
-  so the toctree in index.rst can reference them by name."""
+  """Symlink (or copy on Windows) repo-root files into the docs source dir."""
   import shutil
 
   to_stage = ["README.md", "examples", "CHANGELOG.md", "CONTRIBUTING.md"]
@@ -279,12 +212,10 @@ def _stage_repo_files(docs_dir, repo_root):
     src = os.path.join(repo_root, name)
     dst = os.path.join(docs_dir, name)
     if os.path.lexists(dst):
-      # Already present (a previous build, or hand-placed). Trust it.
       continue
     try:
       os.symlink(src, dst)
     except (OSError, NotImplementedError):
-      # Fallback for Windows runners without symlink permission.
       if os.path.isdir(src):
         shutil.copytree(src, dst)
       else:
@@ -292,14 +223,7 @@ def _stage_repo_files(docs_dir, repo_root):
 
 
 def _write_features_rst(out_path):
-  """Generate the auto-summary RST for the public API.
-
-  One section per subpackage (core / families / utils), each with an
-  autosummary toctree for its classes and for its free functions. The
-  toctree directive generates one detail page per object under
-  `_generate/` and a one-line-summary table on the module landing
-  page, matching sklearn's `sklearn.metrics`-style layout.
-  """
+  """Generate API documentation RST: one section per subpackage."""
   rst_name = "API Documentation"
   bar = "=" * len(rst_name)
   with open(out_path, "w") as f:
@@ -345,14 +269,9 @@ def _write_examples_rst(out_path, examples_dir):
       f.write(f"   examples/{os.path.splitext(nb)[0]}\n")
 
 
-# Stage README/CHANGELOG/CONTRIBUTING/examples + generate features.rst /
-# examples.rst eagerly at conf.py load time. Doing this at module level
-# (rather than in a `builder-inited` hook) is required because
-# sphinx.ext.autosummary's stub-generation also runs at builder-inited
-# and races with us — if features.rst doesn't exist before autosummary's
-# scan, the `:toctree:` stubs are never written, the per-class pages
-# never render, and on a single-pass build the cross-links from the API
-# index (features.html) point at non-existent _generate/*.html files.
+# Stage docs and write features.rst / examples.rst at conf.py load time.
+# Must be eager (not `builder-inited`), otherwise it races with autosummary's
+# stub generation and the per-class pages never render on a single-pass build.
 _DOCS_DIR = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.dirname(_DOCS_DIR)
 _stage_repo_files(_DOCS_DIR, _REPO_ROOT)
@@ -363,19 +282,11 @@ _write_examples_rst(
 )
 
 
-# Register Sphinx setup with recommonmark configuration and autodoc
 def setup(app):
-  """
-  Configure Sphinx to handle autodoc and preprocess Markdown files.
-  """
-  # Register the autodoc docstring processor
   app.connect("autodoc-process-docstring", autodoc_process_docstring)
-
-  # Register the Markdown preprocessor
   app.connect("source-read", preprocess_markdown)
 
 
-# Allow .md files to be included
 source_suffix = {
   ".rst": "restructuredtext",
   ".md": "markdown",

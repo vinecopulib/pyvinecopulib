@@ -44,7 +44,6 @@ class VineRegressor(VineBase, RegressorMixin):
         Example: {"kde1d_types": ["continuous", "discrete", "continuous", ...]}
         Supported types are "continuous" and "discrete" (for ordered variables).
     """
-    # Validate types for pyvinecopulib compatibility
     if controls is not None and not isinstance(controls, pv.FitControlsVinecop):
       raise TypeError(
         f"controls must be pv.FitControlsVinecop or None, got {type(controls).__name__}"
@@ -60,7 +59,6 @@ class VineRegressor(VineBase, RegressorMixin):
       schema=schema,
     )
 
-    # Regressor-specific parameters
     self.mean = mean
     if quantiles is None:
       self.quantiles = None
@@ -73,23 +71,16 @@ class VineRegressor(VineBase, RegressorMixin):
 
   def fit(self, X: np.ndarray, y: np.ndarray) -> "VineRegressor":
     """Fit the regressor, a vine copula to joint distribution of (X, y)."""
-
-    # Check and possibly expand inputs
     X, y = self._check_and_expand_fit(X, y)
-
-    # Fit marginal distributions
     self._fit_marginals(X, y)
 
-    # Convert to pseudo-observations
     uy_train = self._to_u_scale(y, is_y=True)
     ux = self._to_u_scale(X)
 
-    # Fit vine copula to (U_Y, U_X)
     assert self.schema is not None  # Guaranteed after _check_and_expand_fit
     var_types = ["c"] + [x[0] for x in self.schema["kde1d_types"]]
     self._fit_vine(np.column_stack([uy_train, ux]), var_types=var_types)
 
-    # Store training data for predictions
     if not self.use_grid:
       self._y_train = y
       self._uy_train = uy_train
@@ -133,7 +124,6 @@ class VineRegressor(VineBase, RegressorMixin):
     ux = self._to_u_scale(X)
     n_test = ux.shape[0]
 
-    # Ensure odd number of grid points
     if n_grid % 2 == 0:
       n_grid += 1
 
@@ -144,8 +134,7 @@ class VineRegressor(VineBase, RegressorMixin):
     w = np.ones(n_grid)
     w[1:-1:2] = 4
     w[2:-1:2] = 2
-    h = 1.0 / (n_grid - 1)  # grid spacing
-    simpson_factor = h / 3.0
+    simpson_factor = 1.0 / (n_grid - 1) / 3.0
 
     out = np.empty(n_test)
 
@@ -157,10 +146,7 @@ class VineRegressor(VineBase, RegressorMixin):
 
       vals = self._vine.pdf(u, num_threads=self.controls.num_threads)
       vals = np.asarray(vals).reshape(end - start, n_grid)
-
-      # Simpson's integration
-      c_x = simpson_factor * (vals * w[None, :]).sum(axis=1)
-      out[start:end] = c_x
+      out[start:end] = simpson_factor * (vals * w[None, :]).sum(axis=1)
 
     return np.log(np.clip(out, eps, None)) if log else out
 

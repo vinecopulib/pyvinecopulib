@@ -1,17 +1,10 @@
 #!/usr/bin/env python3
-"""Generate stub files for pyvinecopulib and its subpackages.
+"""Generate `.pyi` stubs for pyvinecopulib subpackages.
 
-Invoked by CMake's POST_BUILD step (see CMakeLists.txt). At that point the
-just-built `.so` lives in the CMake build dir and the pure-Python sources
-live in `src/pyvinecopulib/` — neither location alone is a complete
-package. This script stages both into a tempdir, prepends it to sys.path,
-imports each requested module, walks its `__all__`, and writes a `.pyi`.
-
-Multiple modules can be targeted in a single invocation via repeated
-``--module-output PKG:PATH`` flags. Modules whose import raises
-``ImportError`` (e.g. ``pyvinecopulib.sklearn`` when scikit-learn isn't
-on the build machine) are skipped with a warning rather than failing
-the build.
+CMake POST_BUILD invokes this after linking the extension. Sources and the
+freshly built `.so` are staged into a tempdir so importlib sees a complete
+package. Modules whose import raises ImportError (e.g. `pyvinecopulib.sklearn`
+without scikit-learn) are skipped with a warning.
 """
 
 import argparse
@@ -28,25 +21,10 @@ from typing import Optional
 
 def wrap_known_types(sig: str, known_types: set[str]) -> str:
   for name in known_types:
-    # Replace list of constants like [BicopFamily.indep, BicopFamily.gaussian, ...]
-    sig = re.sub(
-      rf"= *\[{name}\.\w+(?: *, *{name}\.\w+)*\]",
-      "= ...",
-      sig,
-    )
-
-    # Replace default constructor calls like FitControlsBicop() with ...
+    sig = re.sub(rf"= *\[{name}\.\w+(?: *, *{name}\.\w+)*\]", "= ...", sig)
     sig = re.sub(rf"= *{name}\s*\(\)", "= ...", sig)
-
-    # Replace constant access like BicopFamily.indep with ...
     sig = re.sub(rf"= *{name}\s*\.\w+", "= ...", sig)
-
-    # Wrap standalone type names (not followed by '(' or '.')
     sig = re.sub(rf"\b{name}\b(?!\s*\()", f'"{name}"', sig)
-
-    # # # Wrap standalone type names (except when followed by a '.')
-    # sig = re.sub(rf"\b{name}\b(?!\s*\.)", f'"{name}"', sig)
-
   return sig
 
 
@@ -62,16 +40,12 @@ def render_python_function_stub(
   try:
     sig = inspect.signature(fct)
     sig_str = str(sig)
-
-    # Convert the signature to the proper format
     if known_types:
       sig_str = wrap_known_types(sig_str, known_types)
-
     lines.append(f"def {name}{sig_str}:")
   except Exception:
     lines.append(f"def {name}(*args, **kwargs):")
 
-  # Add docstring if available
   doc = inspect.getdoc(fct)
   if doc:
     lines.append(f'{indent_str}"""')
@@ -199,15 +173,11 @@ def render_class_stub(
 
 
 def cleanup_stub(stub: str) -> str:
-  # Distinguish input vs return positions in `def …(...) -> ...:` lines:
-  #   - inputs accept the broad `ArrayLike` (lists, scalars, buffers …)
-  #   - returns are concretely `NDArray[Any]` (subscriptable, supports
-  #     arithmetic — accurate for nanobind output).
+  # In `def …(...) -> ...:` lines: inputs become `ArrayLike` (lists, scalars,
+  # buffers), returns become `NDArray[Any]` (subscriptable, supports arithmetic).
   # Match `numpy.ndarray[ … ]` / `np.ndarray[ … ]` with up to two levels of
   # nested brackets in the parameter list (covers `ndarray[tuple[Any, ...],
-  # dtype[Any]]`-style annotations emitted by recent nanobind versions).
-  # The plain non-greedy `.*?` previously used here breaks on the first `]`,
-  # producing trailing-`]` syntax errors in the generated stubs.
+  # dtype[Any]]`-style annotations from `inspect.signature` / `NDArray[Any]`).
   ndarray_pattern = re.compile(
     r"(?:numpy|np)\.ndarray\[(?:[^\[\]]|\[(?:[^\[\]]|\[[^\[\]]*\])*\])*\]"
     r"|\bnumpy\.ndarray\b|\bnp\.ndarray\b"
@@ -220,18 +190,14 @@ def cleanup_stub(stub: str) -> str:
     return f"def {signature} -> {return_annot}:"
 
   stub = re.sub(r"def ([^\n]+?) -> ([^\n]+?):", _rewrite_def_line, stub)
-  # Anything ndarray outside `def …:` lines (e.g. attribute annotations)
-  # falls back to ArrayLike for safety.
   stub = ndarray_pattern.sub("ArrayLike", stub)
 
-  # Replace complex ArrayLike Union types with simple ArrayLike
   stub = re.sub(
     r"Union\[numpy\._typing\._array_like\._Buffer, numpy\._typing\._array_like\._SupportsArray\[numpy\.dtype\[Any\]\], numpy\._typing\._nested_sequence\._NestedSequence\[numpy\._typing\._array_like\._SupportsArray\[numpy\.dtype\[Any\]\]\], complex, bytes, str, numpy\._typing\._nested_sequence\._NestedSequence\[complex \| bytes \| str\]\]",
     "ArrayLike",
     stub,
   )
 
-  # Replace default values like = array([], dtype=float64) or np.array([], dtype=np.float64)
   stub = re.sub(r"= *(?:np\.)?array\(\[\], *dtype=.*?\)", "= ...", stub)
   stub = re.sub(
     r"= *(?:np\.)?array\(\[\], *(?:shape=\([^\)]*\), *)?dtype=[^)]*\)",
@@ -239,15 +205,9 @@ def cleanup_stub(stub: str) -> str:
     stub,
   )
 
-  # # Replace FitControlsBicop() and FitControlsVinecop() with ...
-  # stub = re.sub(r"= *FitControlsBicop\(\)", "= ...", stub)
-  # stub = re.sub(r"= *FitControlsVinecop\(\)", "= ...", stub)
-
-  # Remove pyvinecopulib.<subpkg>. and pyvinecopulib. prefixes from types
   stub = re.sub(r"\bpyvinecopulib\.[a-z_]+\.", "", stub)
   stub = re.sub(r"\bpyvinecopulib\.", "", stub)
 
-  # Clean up matplotlib types
   stub = re.sub(r"matplotlib\.figure\.Figure", "Figure", stub)
   stub = re.sub(r"matplotlib\.axes\._axes\.Axes", "Axes", stub)
 
@@ -267,10 +227,8 @@ def generate_stub(
   pkg = importlib.import_module(module_name)
   names = sorted(getattr(pkg, "__all__", []))
 
-  # Empty __all__ for the top-level package is almost always a build artifact
-  # leak (C++ extension not staged correctly). For subpackages it's
-  # legitimate (e.g. the sklearn placeholder), so only the top level is
-  # guarded.
+  # Empty top-level __all__ ⇒ C++ extension not staged. Subpackages legitimately
+  # have empty __all__ (e.g. sklearn placeholder).
   if not names and module_name == "pyvinecopulib":
     raise SystemExit(
       f"Refusing to overwrite {output_path}: imported {module_name} has an "
@@ -279,14 +237,10 @@ def generate_stub(
       "Run 'pip install -e . --no-build-isolation' and retry."
     )
 
-  # We use the C++-extension BicopFamily for isinstance checks regardless of
-  # which subpackage we're stubbing — every subpackage that exposes family
-  # constants gets them from the same extension.
   ext = importlib.import_module("pyvinecopulib.pyvinecopulib_ext")
   family_cls = ext.BicopFamily
 
   def _safe_getattr(obj_name):
-    # Tolerate lazy imports raising ImportError (e.g. unbuilt extras).
     try:
       return getattr(pkg, obj_name, None)
     except ImportError:
@@ -306,9 +260,8 @@ def generate_stub(
   ]
 
   for name in names:
-    # `getattr` may trigger a lazy submodule import (e.g. sklearn) that
-    # fails on build machines without the extra deps installed; fall
-    # back to a `from . import` placeholder.
+    # `getattr` may trigger a lazy submodule import that fails when the
+    # corresponding extra isn't installed (e.g. sklearn on build machines).
     try:
       obj = getattr(pkg, name, None)
     except ImportError:
@@ -319,8 +272,7 @@ def generate_stub(
       lines.append(f"from . import {name} as {name}\n")
       continue
 
-    # Cross-subpackage canonical class: emit a relative import alias so
-    # static type identity stays consistent across re-exports.
+    # Cross-subpackage canonical class: emit a relative re-export alias.
     canonical = obj.__module__ if inspect.isclass(obj) else None
     if (
       canonical
@@ -342,21 +294,18 @@ def generate_stub(
       or type(obj).__name__ == "nb_func"
     ):
       try:
-        # Check if this is a nanobind function or regular Python function
         if (
           type(obj).__name__ == "nb_func"
           or hasattr(obj, "__module__")
           and obj.__module__
           and "pyvinecopulib_ext" in obj.__module__
         ):
-          # This is a nanobind function, use the existing logic
           lines.extend(
             render_nanobind_function_stub(
               obj, name, known_types=known_types, indent=indent
             )
           )
         else:
-          # This is a regular Python function, use inspect.signature
           lines.extend(
             render_python_function_stub(
               obj, name, known_types=known_types, indent=indent
@@ -376,9 +325,8 @@ def generate_stub(
     else:
       lines.append(f"{name}: Any = ...\n")
 
-  # If the module defines its own __getattr__ (e.g. for warn-on-access
-  # deprecation), emit a permissive stub so static checkers don't flag
-  # access to deprecated names as errors.
+  # Emit a permissive __getattr__ stub when the module has one, so static
+  # checkers don't flag access to (e.g.) warn-on-access deprecated names.
   module_dict = vars(pkg)
   if "__getattr__" in module_dict and callable(module_dict["__getattr__"]):
     lines.append("def __getattr__(name: str) -> Any: ...\n")
@@ -476,14 +424,10 @@ def main():
 
   py_typed = args.py_typed or (args.source_pkg_dir / "py.typed")
 
-  # Stage the assembled package (sources + freshly built .so/.pyd) into a
-  # tempdir so importlib finds a complete module to introspect.
-  #
-  # Use mkdtemp + best-effort rmtree rather than TemporaryDirectory: on
-  # Windows the imported .pyd stays locked by the current process for
-  # the lifetime of the interpreter, which would make
-  # TemporaryDirectory's strict cleanup raise PermissionError after the
-  # stub was already written successfully.
+  # Stage sources + freshly built .so/.pyd in a tempdir so importlib sees a
+  # complete package. mkdtemp + best-effort rmtree (not TemporaryDirectory):
+  # Windows holds the imported .pyd locked for the interpreter's lifetime,
+  # which would make TemporaryDirectory's strict cleanup raise.
   tmp = tempfile.mkdtemp(prefix="pyvinecopulib-stubs-")
   try:
     site = Path(tmp)
@@ -503,8 +447,7 @@ def main():
         try:
           generate_stub(module_name, output_path, indent=args.indent)
         except ImportError as e:
-          # Expected for optional subpackages like pyvinecopulib.sklearn
-          # when scikit-learn isn't installed on the build machine.
+          # Optional subpackages (e.g. sklearn without scikit-learn installed).
           print(
             f"Skipping {module_name}: import failed ({e}). "
             f"No stub written to {output_path}.",

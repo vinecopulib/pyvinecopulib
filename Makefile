@@ -1,5 +1,4 @@
-# Thin wrappers around `uv` for the standard dev / CI workflows.
-# See CONTRIBUTING.md for the full story.
+# Thin wrappers around `uv`. See CONTRIBUTING.md.
 .PHONY: help sync clean check format test test-examples docs sdist build notebooks
 .DEFAULT_GOAL := help
 

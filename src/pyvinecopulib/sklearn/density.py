@@ -40,7 +40,6 @@ class VineDensity(VineBase, DensityMixin):
         Example: {"kde1d_types": ["continuous", "discrete", "continuous", ...]}
         Supported types are "continuous" and "discrete" (for ordered variables).
     """
-    # Validate types for pyvinecopulib compatibility
     if controls is not None and not isinstance(controls, pv.FitControlsVinecop):
       raise TypeError(
         f"controls must be pv.FitControlsVinecop or None, got {type(controls).__name__}"
@@ -70,23 +69,16 @@ class VineDensity(VineBase, DensityMixin):
     self : VineDensity
         Fitted estimator.
     """
-    # Check and expand inputs (no y for density estimation)
     result = self._check_and_expand_fit(X)
-    # _check_and_expand_fit returns just X when y is None
-    assert isinstance(result, np.ndarray)
+    assert isinstance(result, np.ndarray)  # y is None ⇒ scalar X return
     X = result
 
-    # Fit marginal distributions
     self._fit_marginals(X)
-
-    # Convert to pseudo-observations
     U = self._to_u_scale(X)
 
-    # Fit vine copula
     assert self.schema is not None  # Guaranteed after _check_and_expand_fit
     var_types = [x[0] for x in self.schema["kde1d_types"]]
     self._fit_vine(U, var_types=var_types)
-
     return self
 
   def score_samples(self, X: np.ndarray | pd.DataFrame) -> np.ndarray:
@@ -107,7 +99,7 @@ class VineDensity(VineBase, DensityMixin):
 
   def score(
     self,
-    X: Any,  # Accepts MatrixLike per parent DensityMixin; runtime validates np.ndarray or pd.DataFrame
+    X: Any,  # MatrixLike per DensityMixin; runtime accepts ndarray/DataFrame.
     y: Any = None,
   ) -> float:
     """
@@ -132,12 +124,10 @@ class VineDensity(VineBase, DensityMixin):
         If X is a sparse matrix or other unsupported array type.
     """
 
-    # Convert DataFrame to ndarray if needed
     if isinstance(X, pd.DataFrame):
       X = X.to_numpy()
     elif not isinstance(X, np.ndarray):
       try:
-        # Try to convert other array-like types
         X = np.asarray(X)
       except Exception as e:
         raise TypeError(f"Unsupported array type {type(X)} for scoring") from e
@@ -163,16 +153,10 @@ class VineDensity(VineBase, DensityMixin):
     if not hasattr(self, "_vine"):
       raise RuntimeError("Model not fitted yet.")
 
-    # Sample from vine copula
-    U_sampled_raw = self._vine.simulate(n_samples, seeds=seeds)
-    U_sampled = np.asarray(U_sampled_raw)
-
-    # Transform back to original scale using inverse CDF
+    U_sampled = np.asarray(self._vine.simulate(n_samples, seeds=seeds))
     X_sampled = np.empty((n_samples, self.n_features_in_))
-
     for j in range(self.n_features_in_):
       X_sampled[:, j] = self._x_kde1d[j].quantile(U_sampled[:, j])
-
     return X_sampled
 
   def pdf(self, X: np.ndarray, copula_only: bool = False) -> np.ndarray:

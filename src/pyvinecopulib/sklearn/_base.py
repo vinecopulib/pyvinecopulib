@@ -13,27 +13,18 @@ def expand_factors(df: pd.DataFrame) -> pd.DataFrame:
   out_parts: list[pd.Series | pd.DataFrame] = []
 
   for colname, x in df.items():
-    # Numeric: leave as-is
     if pd.api.types.is_numeric_dtype(x):
       out_parts.append(x)
-
-    # Categorical ordered: leave as-is
     elif isinstance(x.dtype, pd.CategoricalDtype) and x.dtype.ordered:
       out_parts.append(x)
-
-    # Categorical unordered: expand
     elif isinstance(x.dtype, pd.CategoricalDtype) and not x.dtype.ordered:
-      dummies = pd.get_dummies(x, drop_first=True)
-      # cast each dummy to ordered categorical {0,1}
-      dummies_int = dummies.astype("int")
-      # Convert each column individually to ordered categorical
+      dummies_int = pd.get_dummies(x, drop_first=True).astype("int")
       for col in dummies_int.columns:
         dummies_int[col] = pd.Categorical(
           dummies_int[col], categories=[0, 1], ordered=True
         )
-      # rename columns to match R's levels[-1]
-      new_names = [f"{colname}_{cat}" for cat in x.cat.categories[1:]]
-      dummies_int.columns = new_names
+      # Names match R's levels[-1].
+      dummies_int.columns = [f"{colname}_{cat}" for cat in x.cat.categories[1:]]
       out_parts.append(dummies_int)
 
     else:
@@ -110,7 +101,6 @@ class VineBase(BaseEstimator):
     y : ndarray or None
         Processed y if provided, None otherwise.
     """
-    # Check inputs
     if not isinstance(X, np.ndarray) and not isinstance(X, pd.DataFrame):
       raise ValueError("X must be a numpy array or pandas DataFrame")
 
@@ -120,7 +110,6 @@ class VineBase(BaseEstimator):
       if not X.shape[0] == y.shape[0]:
         raise ValueError("X and y must have the same number of samples.")
 
-    # Discrete variables handling when the input is a DataFrame
     if isinstance(X, pd.DataFrame):
       if self.schema is not None:
         raise ValueError("When schema is already set, X must be a numpy array.")
@@ -148,7 +137,6 @@ class VineBase(BaseEstimator):
           "schema['kde1d_types'] length does not match number of features in X."
         )
 
-    # Either way, we now know the number of features after expansion
     self.n_features_in_ = X.shape[1]
 
     if self.schema is None:
@@ -175,34 +163,24 @@ class VineBase(BaseEstimator):
         Processed and expanded X.
     """
     if isinstance(X, np.ndarray):
-      # Numeric array, just check shape
       if X.shape[1] != self.n_features_in_:
         raise ValueError("X has wrong number of features.")
       return X
 
     elif isinstance(X, pd.DataFrame):
-      # Check original columns
       if list(X.columns) != self._used_columns:
         raise ValueError("Column names/order do not match training data.")
 
-      # Enforce dtypes/categories
       for col in self._used_columns:
         dtype_expected = self._dtypes[col]
         if isinstance(dtype_expected, pd.CategoricalDtype):
           if not isinstance(X[col].dtype, pd.CategoricalDtype):
             raise ValueError(f"Column {col} must be categorical.")
-          # align categories
           X[col] = X[col].cat.set_categories(
             dtype_expected.categories, ordered=dtype_expected.ordered
           )
-        # numeric check is lighter (float/int are ok)
 
-      # Expand factors
-      X_exp = expand_factors(X)
-
-      # Reorder to match training
-      X_exp = X_exp[self._expanded_columns]
-
+      X_exp = expand_factors(X)[self._expanded_columns]
       return X_exp.to_numpy()
 
     else:
@@ -228,7 +206,6 @@ class VineBase(BaseEstimator):
     y : ndarray or None
         Target values (unchanged) if provided, None otherwise.
     """
-    # Fit 1d KDEs for X marginals
     self._x_kde1d = []
     assert self.schema is not None  # Guaranteed after _check_and_expand_fit
     for j in range(self.n_features_in_):
@@ -236,7 +213,6 @@ class VineBase(BaseEstimator):
       kde.fit(X[:, j])
       self._x_kde1d.append(kde)
 
-    # Fit 1d KDE for y marginal if provided
     if y is not None:
       self._y_kde1d = pv.utils.Kde1d()
       self._y_kde1d.fit(y)
@@ -274,7 +250,7 @@ class VineBase(BaseEstimator):
     Z = np.asarray(Z)
 
     if is_y:
-      # For the response we always treat it continuous -> plain PIT
+      # Response is always treated continuous -> plain PIT.
       result = self._y_kde1d.cdf(Z.squeeze(), check_fitted=False)
       return np.asarray(result).reshape(-1, 1)
 
@@ -285,17 +261,11 @@ class VineBase(BaseEstimator):
     for j in range(n_features):
       kde = self._x_kde1d[j]
       zj = Z[:, j]
-
-      # always get the main PIT
-      u = kde.cdf(zj, check_fitted=False)
-      u_cols.append(u)
-
+      u_cols.append(kde.cdf(zj, check_fitted=False))
       if kde.type == "discrete":
-        # compute sub-CDF: F(x^-)
-        u_sub = kde.cdf(zj - 1, check_fitted=False)
-        u_sub_cols.append(u_sub)
+        # Sub-CDF F(x^-) for the discrete component.
+        u_sub_cols.append(kde.cdf(zj - 1, check_fitted=False))
 
-    # Clamp to (0,1) to avoid numerical issues
     eps = 1e-10
     u_cols = [np.clip(u, eps, 1 - eps) for u in u_cols]
     if u_sub_cols:
@@ -367,33 +337,24 @@ class VineBase(BaseEstimator):
     if not hasattr(self, "_vine"):
       raise RuntimeError("Model not fitted yet.")
 
-    # Check inputs
     X = self._check_and_expand_predict(X)
     if y is not None:
       y = np.asarray(y).reshape(-1, 1)
       if X.shape[0] != y.shape[0]:
         raise ValueError("X and y must have the same number of samples.")
-
-    # Convert to pseudo-observations
-    if y is not None:
-      uy = self._to_u_scale(y, is_y=True)
-      ux = self._to_u_scale(X)
-      U = np.column_stack([uy, ux])
+      U = np.column_stack([self._to_u_scale(y, is_y=True), self._to_u_scale(X)])
     else:
       U = self._to_u_scale(X)
 
-    # Compute copula density
     pdf_vals = np.asarray(
       self._vine.pdf(U, num_threads=self.controls.num_threads)
     )
     log_c = np.asarray(np.log(pdf_vals))
 
-    # Return only copula part if requested
     if copula_only:
       return np.asarray(log_c if log else np.exp(log_c))
 
-    # Add marginal densities for full joint density
-    # Clamp to >1e-10 to avoid log(0)
+    # Marginal densities; clamp >0 to avoid log(0).
     eps = 1e-10
     f_x = np.array(
       [
