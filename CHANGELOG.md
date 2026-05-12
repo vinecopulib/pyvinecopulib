@@ -10,21 +10,29 @@ Two scikit-learn-compatible vine-copula estimators ship in the new
 - `VineRegressor` — sklearn-style regressor that fits a vine copula to the
   joint distribution of `(X, y)` and predicts conditional means / quantiles.
 - `VineDensity` — sklearn-style density estimator with `score_samples`,
-  `score`, `sample`, and `pdf` methods.
+  `score`, `sample`, `pdf`, and `cdf` methods.
 
 Both follow the `BaseEstimator` / `RegressorMixin` / `DensityMixin` protocols
 and handle mixed continuous/discrete inputs (DataFrame or ndarray). Class
-docstrings now include the full methodology — Sklar / pair-copula
+docstrings include the full methodology — Sklar / pair-copula
 factorization, Kde1d marginals, and the estimating-equation framework for
 mean / quantile prediction — with references to Bedford & Cooke (2002),
 Aas et al. (2009), Kraus & Czado (2017), and Nagler & Vatter (2024).
 
-`VineRegressor.pdf(copula_only=...)` is now a real keyword argument: it
-previously hard-coded `copula_only=True`, ignoring any user override. The
-default is now `False` (full joint density `f(y, x)`); pass
-`copula_only=True` to recover the pre-1.0 behaviour. `VineDensity.pdf` had
-the symmetric bug in the other direction (parameter accepted but ignored)
-and is fixed analogously.
+API surface tightened before v1:
+
+- `VineRegressor.pdf` removed. Sklearn regressors don't expose density
+  methods; users who need the joint or conditional density can call
+  `pyvinecopulib.core.Vinecop.pdf` on the underlying fitted vine, or wait
+  for the forest classes that surface ensemble-level log-likelihoods.
+- `VineDensity.pdf(copula_only=...)` is now a real keyword argument (was
+  documented but ignored).
+- `VineDensity.cdf(X, N=10000, seeds=None)` added: returns the joint CDF
+  via Monte-Carlo integration of the fitted vine copula.
+- `schema` (both classes) and `normalize_weights` (regressor) are no
+  longer `__init__` parameters. They remain settable via the
+  `_schema` / `_normalize_weights` attributes for advanced / ensemble
+  use; `clone()` won't preserve non-default values for these knobs.
 
 Install via the optional extra:
 

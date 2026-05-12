@@ -136,7 +136,6 @@ class VineBase(BaseEstimator):
     controls: pv.FitControlsVinecop | None = None,
     structure: pv.RVineStructure | None = None,
     batch_size: int = 100,
-    schema: dict[str, list[str]] | None = None,
   ) -> None:
     """
     Base vine copula estimator.
@@ -152,11 +151,16 @@ class VineBase(BaseEstimator):
         - 1 = "loop" mode (minimal memory, slowest)
         - n_test = "stack" mode (maximal memory, fastest)
         - in between = trade-off
-    schema : dict | None, default=None
-        Pre-specified metadata about the input. If None, it will be inferred from the training data.
-        Currently, only _kde1d_types is used.
-        Example: {"kde1d_types": ["continuous", "discrete", "continuous", ...]}
-        Supported types are "continuous" and "discrete" (for ordered variables).
+
+    Notes
+    -----
+    Advanced / ensemble use: ``self._schema`` (a dict with key
+    ``"kde1d_types"``) can be assigned between construction and
+    :meth:`fit` to override the auto-inferred marginal types
+    (``"continuous"`` / ``"discrete"``). It is not exposed as an
+    ``__init__`` parameter because casual users should never need it,
+    and exposing it would clutter the sklearn-facing signature.
+    Non-default values are not preserved by :func:`sklearn.base.clone`.
     """
     if controls is None:
       controls = pv.FitControlsVinecop(
@@ -165,7 +169,7 @@ class VineBase(BaseEstimator):
     self.controls = controls
     self.structure = structure
     self.batch_size = batch_size
-    self.schema = schema
+    self._schema: dict[str, list[str]] | None = None
 
   def _check_and_expand_fit(
     self, X: np.ndarray | pd.DataFrame, y: np.ndarray | None = None
@@ -197,8 +201,10 @@ class VineBase(BaseEstimator):
         raise ValueError("X and y must have the same number of samples.")
 
     if isinstance(X, pd.DataFrame):
-      if self.schema is not None:
-        raise ValueError("When schema is already set, X must be a numpy array.")
+      if self._schema is not None:
+        raise ValueError(
+          "When self._schema is already set, X must be a numpy array."
+        )
       self._used_columns = list(X.columns)
       self._dtypes = X.dtypes.to_dict()
       self._categories = {
@@ -215,8 +221,8 @@ class VineBase(BaseEstimator):
     elif isinstance(X, np.ndarray):
       kde1d_types = (
         ["continuous"] * X.shape[1]
-        if (self.schema is None) or ("kde1d_types" not in self.schema)
-        else self.schema["kde1d_types"]
+        if (self._schema is None) or ("kde1d_types" not in self._schema)
+        else self._schema["kde1d_types"]
       )
       if len(kde1d_types) != X.shape[1]:
         raise ValueError(
@@ -225,8 +231,8 @@ class VineBase(BaseEstimator):
 
     self.n_features_in_ = X.shape[1]
 
-    if self.schema is None:
-      self.schema = {
+    if self._schema is None:
+      self._schema = {
         "kde1d_types": kde1d_types,
       }
 
@@ -293,9 +299,9 @@ class VineBase(BaseEstimator):
         Target values (unchanged) if provided, None otherwise.
     """
     self._x_kde1d = []
-    assert self.schema is not None  # Guaranteed after _check_and_expand_fit
+    assert self._schema is not None  # Guaranteed after _check_and_expand_fit
     for j in range(self.n_features_in_):
-      kde = pv.utils.Kde1d(type=self.schema["kde1d_types"][j])
+      kde = pv.utils.Kde1d(type=self._schema["kde1d_types"][j])
       kde.fit(X[:, j])
       self._x_kde1d.append(kde)
 
@@ -378,8 +384,8 @@ class VineBase(BaseEstimator):
     self
     """
     if var_types is None:
-      assert self.schema is not None  # Guaranteed after _check_and_expand_fit
-      var_types = [x[0] for x in self.schema["kde1d_types"]]
+      assert self._schema is not None  # Guaranteed after _check_and_expand_fit
+      var_types = [x[0] for x in self._schema["kde1d_types"]]
 
     self._vine = pv.Vinecop.from_data(
       data=U,

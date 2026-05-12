@@ -83,9 +83,9 @@ def test_vinebase_array_input_validation(
   assert isinstance(X_processed, np.ndarray)
   assert X_processed.shape == X.shape
   assert density.n_features_in_ == 2
-  assert density.schema is not None
-  assert len(density.schema["kde1d_types"]) == 2
-  assert all(t == "continuous" for t in density.schema["kde1d_types"])
+  assert density._schema is not None
+  assert len(density._schema["kde1d_types"]) == 2
+  assert all(t == "continuous" for t in density._schema["kde1d_types"])
 
 
 def test_vinebase_dataframe_expansion(
@@ -113,8 +113,8 @@ def test_vinebase_dataframe_expansion(
     "discrete",
     "continuous",
   ]
-  assert density.schema is not None
-  assert density.schema["kde1d_types"] == expected_types
+  assert density._schema is not None
+  assert density._schema["kde1d_types"] == expected_types
 
 
 def test_vinebase_dataframe_prediction_validation(
@@ -137,21 +137,22 @@ def test_vinebase_dataframe_prediction_validation(
     density._check_and_expand_predict(X_wrong)
 
 
-def test_vinebase_schema_parameter(
+def test_vinebase_schema_attribute(
   sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
 ) -> None:
-  """Test pre-specified schema parameter."""
+  """`_schema` attribute can override the auto-inferred schema."""
   X, _, _ = sample_array_data
   schema = {"kde1d_types": ["continuous", "discrete"]}
-  density = VineDensity(schema=schema)
+  density = VineDensity()
+  density._schema = schema
 
   density._check_and_expand_fit(X)
-  assert density.schema is not None
-  assert density.schema["kde1d_types"] == ["continuous", "discrete"]
+  assert density._schema is not None
+  assert density._schema["kde1d_types"] == ["continuous", "discrete"]
 
-  # Test schema length mismatch
-  wrong_schema = {"kde1d_types": ["continuous"]}  # Too short
-  density_wrong = VineDensity(schema=wrong_schema)
+  # Schema length mismatch raises.
+  density_wrong = VineDensity()
+  density_wrong._schema = {"kde1d_types": ["continuous"]}  # Too short
   with pytest.raises(ValueError):
     density_wrong._check_and_expand_fit(X)
 

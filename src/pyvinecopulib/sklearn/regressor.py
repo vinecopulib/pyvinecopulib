@@ -21,8 +21,6 @@ class VineRegressor(VineBase, RegressorMixin):
     structure: object | None = None,
     batch_size: int = 100,
     use_grid: bool = True,
-    normalize_weights: bool = True,
-    schema: dict[str, list[str]] | None = None,
   ) -> None:
     """Sklearn-compatible vine-copula regressor.
 
@@ -63,14 +61,16 @@ class VineRegressor(VineBase, RegressorMixin):
           factor. Cheaper when ``n_train`` is large because the grid
           size is fixed (independent of ``n``); see Nagler & Vatter
           (2024) and the supplement to that paper.
-    normalize_weights : bool, default=True
-        Normalise each test row's weights to sum to 1. Disabling is
-        only useful in ensemble settings.
-    schema : dict, optional
-        Pre-specified ``X`` column metadata. If ``None``, inferred
-        from the training data. Currently only the ``"kde1d_types"``
-        key is used, e.g. ``{"kde1d_types": ["continuous", "discrete",
-        ...]}``.
+
+    Notes
+    -----
+    Advanced / ensemble use: ``self._normalize_weights`` (default
+    ``True``) can be assigned between construction and :meth:`fit` to
+    disable the row-wise sum-to-one normalisation of weights inside
+    :meth:`_iter_weights`. Forest wrappers set it to ``False`` so they
+    can average raw weights across trees and normalise once at the
+    ensemble level. Non-default values are not preserved by
+    :func:`sklearn.base.clone`.
     """
     if controls is not None and not isinstance(controls, pv.FitControlsVinecop):
       raise TypeError(
@@ -84,7 +84,6 @@ class VineRegressor(VineBase, RegressorMixin):
       controls=controls,
       structure=structure,
       batch_size=batch_size,
-      schema=schema,
     )
 
     self.mean = mean
@@ -95,7 +94,7 @@ class VineRegressor(VineBase, RegressorMixin):
     if (not self.mean) and (self.quantiles is None):
       raise ValueError("At least one of mean or quantiles must be enabled.")
     self.use_grid = use_grid
-    self.normalize_weights = normalize_weights
+    self._normalize_weights: bool = True
 
   def fit(self, X: np.ndarray, y: np.ndarray) -> "VineRegressor":
     """Fit a vine copula to the joint distribution of ``(Y, X)``.
@@ -118,7 +117,7 @@ class VineRegressor(VineBase, RegressorMixin):
     self : VineRegressor
         Fitted estimator. ``self._vine``, ``self._x_kde1d``,
         ``self._y_kde1d``, ``self._y_train``, ``self._uy_train``,
-        ``self.schema`` and ``self.n_features_in_`` are set.
+        ``self._schema`` and ``self.n_features_in_`` are set.
     """
     X, y = self._check_and_expand_fit(X, y)
     self._fit_marginals(X, y)
@@ -126,8 +125,8 @@ class VineRegressor(VineBase, RegressorMixin):
     uy_train = self._to_u_scale(y, is_y=True)
     ux = self._to_u_scale(X)
 
-    assert self.schema is not None  # Guaranteed after _check_and_expand_fit
-    var_types = ["c"] + [x[0] for x in self.schema["kde1d_types"]]
+    assert self._schema is not None  # Guaranteed after _check_and_expand_fit
+    var_types = ["c"] + [x[0] for x in self._schema["kde1d_types"]]
     self._fit_vine(np.column_stack([uy_train, ux]), var_types=var_types)
 
     if not self.use_grid:
@@ -139,40 +138,6 @@ class VineRegressor(VineBase, RegressorMixin):
       self._uy_train = np.asarray(uy_cdf).reshape(-1, 1)
       self._y_density = self._y_kde1d.values[np.newaxis, :]
     return self
-
-  def pdf(
-    self,
-    X: np.ndarray,
-    y: np.ndarray,
-    log: bool = False,
-    copula_only: bool = False,
-  ) -> np.ndarray:
-    """Evaluate the joint density :math:`f(y, x)` at paired test points.
-
-    Returns the joint density of the response and covariates,
-    :math:`\\hat f(y, \\mathbf{x}) = \\hat c\\bigl(\\hat F_Y(y),
-    \\hat F_X(\\mathbf{x})\\bigr)\\, \\hat f_Y(y)\\,
-    \\prod_j \\hat f_j(x_j)`. Set ``copula_only=True`` to skip the
-    marginal-density product and return only the copula factor.
-
-    Parameters
-    ----------
-    X : ndarray of shape (n_samples, n_features)
-        Test covariates. Must match the training schema.
-    y : ndarray of shape (n_samples,)
-        Test responses, paired row-wise with ``X``.
-    log : bool, default=False
-        If ``True`` return the log-density.
-    copula_only : bool, default=False
-        If ``True``, return the copula factor only (skip marginal
-        densities). Useful in ensemble averaging.
-
-    Returns
-    -------
-    ndarray of shape (n_samples,)
-        Joint density (or log-density) values.
-    """
-    return self._pdf_samples(X, y=y, log=log, copula_only=copula_only)
 
   def _copula_marginal_density(
     self, X: np.ndarray, log: bool = False, n_grid: int = 101
@@ -291,7 +256,7 @@ class VineRegressor(VineBase, RegressorMixin):
       w = np.asarray(w).reshape(end - start, n_train)
       if self.use_grid:
         w *= self._y_density
-      if self.normalize_weights:
+      if self._normalize_weights:
         w /= np.sum(w, axis=1, keepdims=True)
 
       yield w, start, end

@@ -20,7 +20,6 @@ class VineDensity(VineBase, DensityMixin):
     controls: object | None = None,
     structure: object | None = None,
     batch_size: int = 100,
-    schema: dict[str, list[str]] | None = None,
   ) -> None:
     """Vine-copula based density estimator.
 
@@ -35,13 +34,6 @@ class VineDensity(VineBase, DensityMixin):
     batch_size : int, default=100
         Number of test points processed per batch when evaluating the
         density. Higher values trade memory for throughput.
-    schema : dict, optional
-        Pre-specified column metadata. If ``None``, inferred from the
-        training data. Currently only the ``"kde1d_types"`` key is
-        used, e.g. ``{"kde1d_types": ["continuous", "discrete", ...]}``.
-        Supported types are ``"continuous"`` and ``"discrete"`` (the
-        latter for ordered variables; unordered categoricals are
-        expanded to dummies via :func:`expand_factors` first).
     """
     if controls is not None and not isinstance(controls, pv.FitControlsVinecop):
       raise TypeError(
@@ -55,7 +47,6 @@ class VineDensity(VineBase, DensityMixin):
       controls=controls,
       structure=structure,
       batch_size=batch_size,
-      schema=schema,
     )
 
   def fit(self, X: np.ndarray | pd.DataFrame) -> "VineDensity":
@@ -76,7 +67,7 @@ class VineDensity(VineBase, DensityMixin):
     -------
     self : VineDensity
         Fitted estimator. ``self._vine``, ``self._x_kde1d``,
-        ``self.schema`` and ``self.n_features_in_`` are set.
+        ``self._schema`` and ``self.n_features_in_`` are set.
     """
     result = self._check_and_expand_fit(X)
     assert isinstance(result, np.ndarray)  # y is None ⇒ scalar X return
@@ -85,8 +76,8 @@ class VineDensity(VineBase, DensityMixin):
     self._fit_marginals(X)
     U = self._to_u_scale(X)
 
-    assert self.schema is not None  # Guaranteed after _check_and_expand_fit
-    var_types = [x[0] for x in self.schema["kde1d_types"]]
+    assert self._schema is not None  # Guaranteed after _check_and_expand_fit
+    var_types = [x[0] for x in self._schema["kde1d_types"]]
     self._fit_vine(U, var_types=var_types)
     return self
 
@@ -197,6 +188,52 @@ class VineDensity(VineBase, DensityMixin):
     """
     return self._pdf_samples(X, y=None, log=False, copula_only=copula_only)
 
+  def cdf(
+    self,
+    X: np.ndarray | pd.DataFrame,
+    N: int = 10000,
+    seeds: list[int] | None = None,
+  ) -> np.ndarray:
+    """Evaluate the joint CDF at the given samples.
+
+    Returns :math:`\\hat F(\\mathbf{x}) = \\hat C\\bigl(\\hat F_1(x_1),
+    \\ldots, \\hat F_d(x_d)\\bigr)` by applying the marginal CDFs to
+    each column to obtain pseudo-observations, then evaluating the
+    fitted copula CDF via :meth:`pyvinecopulib.core.Vinecop.cdf`.
+
+    Parameters
+    ----------
+    X : ndarray or DataFrame of shape (n_samples, n_features)
+        Test samples.
+    N : int, default=10000
+        Number of quasi-random points used by :meth:`Vinecop.cdf` for
+        the Monte-Carlo integration; larger ``N`` gives more accurate
+        CDF values at the cost of more compute.
+    seeds : list of int, optional
+        Seeds forwarded to the underlying quasi-random generator. If
+        ``None``, the generator is seeded randomly (results then
+        differ from one call to the next).
+
+    Returns
+    -------
+    ndarray of shape (n_samples,)
+        Joint CDF values in :math:`[0, 1]`.
+
+    Notes
+    -----
+    Because the underlying copula CDF is approximated by Monte-Carlo
+    quasi-random integration, values are stochastic for fixed inputs
+    unless ``seeds`` is provided. Use a larger ``N`` if the noise
+    floor is significant for your application.
+    """
+    if not hasattr(self, "_vine"):
+      raise RuntimeError("Model not fitted yet.")
+    X = self._check_and_expand_predict(X)
+    U = self._to_u_scale(X)
+    return np.asarray(
+      self._vine.cdf(U, N=N, seeds=seeds if seeds is not None else [])
+    )
+
 
 VineDensity.__doc__ = f"""Vine-copula based density estimator.
 
@@ -220,6 +257,7 @@ Examples
 >>> density = VineDensity().fit(X)
 >>> density.score_samples(X[:3])          # log-density at first three rows
 >>> density.pdf(X[:3])                    # density on the natural scale
+>>> density.cdf(X[:3])                    # joint CDF (MC-approximated)
 >>> samples = density.sample(n_samples=100)
 
 {_DOC_REFERENCES}

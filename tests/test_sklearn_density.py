@@ -75,6 +75,37 @@ def test_pdf_log_consistency(fitted_density):
   np.testing.assert_allclose(densities, np.exp(log_scores), rtol=1e-10)
 
 
+def test_cdf_shapes_and_range(fitted_density):
+  """CDF returns values in [0, 1] with the right shape."""
+  density, X = fitted_density
+  X_test = X[:20]
+  cdf_vals = density.cdf(X_test, seeds=[1, 2, 3])
+
+  assert isinstance(cdf_vals, np.ndarray)
+  assert cdf_vals.shape == (20,)
+  assert np.all(cdf_vals >= 0.0)
+  assert np.all(cdf_vals <= 1.0)
+  assert np.all(np.isfinite(cdf_vals))
+
+
+def test_cdf_monotone_along_axis(fitted_density):
+  """CDF is approximately monotone along a single-coordinate sweep."""
+  density, X = fitted_density
+  # Build a path: sweep x_1 from its 5th to 95th percentile, fix x_2 at the median.
+  x1_lo, x1_hi = np.quantile(X[:, 0], [0.05, 0.95])
+  x2_med = np.median(X[:, 1])
+  X_sweep = np.column_stack(
+    [np.linspace(x1_lo, x1_hi, 30), np.full(30, x2_med)]
+  )
+  cdf_sweep = density.cdf(X_sweep, N=20000, seeds=[42, 43, 44])
+  # Should be roughly non-decreasing along the sweep; allow some MC noise.
+  diffs = np.diff(cdf_sweep)
+  assert (diffs > -0.05).all(), (
+    f"CDF should be approx. non-decreasing, got {diffs}"
+  )
+  assert cdf_sweep[-1] > cdf_sweep[0]
+
+
 def test_score_method(fitted_density):
   """Test score method."""
   density, X = fitted_density

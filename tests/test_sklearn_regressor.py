@@ -79,24 +79,6 @@ def test_predict_mean_and_quantiles(regression_setup):
   assert pred_both.shape == (len(X_test), 3)  # mean + 2 quantiles
 
 
-def test_pdf_shapes_and_types(fitted_regressor):
-  """Test pdf method shapes and types."""
-  regressor, _, X_test, _, y_test, _ = fitted_regressor
-
-  pdf_vals = regressor.pdf(X_test, y_test)
-  log_pdf_vals = regressor.pdf(X_test, y_test, log=True)
-
-  # Check shapes and types
-  assert isinstance(pdf_vals, np.ndarray)
-  assert isinstance(log_pdf_vals, np.ndarray)
-  assert pdf_vals.shape == (len(X_test),)
-  assert log_pdf_vals.shape == (len(X_test),)
-
-  # Check positivity and consistency
-  assert np.all(pdf_vals > 0)
-  np.testing.assert_allclose(pdf_vals, np.exp(log_pdf_vals), rtol=1e-10)
-
-
 def test_prediction_accuracy(fitted_regressor):
   """Test prediction accuracy against true mean."""
   regressor, _, X_test, _, y_test, true_mean = fitted_regressor
@@ -140,11 +122,6 @@ def test_wrong_dimensions(fitted_regressor):
   with pytest.raises(ValueError):
     regressor.predict(X_wrong)
 
-  # Wrong y dimension for pdf
-  y_wrong = np.random.randn(len(X_test), 2)  # Should be 1D
-  with pytest.raises(ValueError):
-    regressor.pdf(X_test, y_wrong)
-
 
 def test_invalid_configuration():
   """Test invalid regressor configurations."""
@@ -154,14 +131,11 @@ def test_invalid_configuration():
 
 
 @pytest.mark.parametrize("use_grid", [True, False])
-@pytest.mark.parametrize("normalize_weights", [True, False])
-def test_parameter_variations(regression_setup, use_grid, normalize_weights):
+def test_parameter_variations(regression_setup, use_grid):
   """Test different parameter combinations."""
-  X_train, X_test, y_train, y_test, _, _ = regression_setup
+  X_train, X_test, y_train, _, _, _ = regression_setup
 
-  regressor = VineRegressor(
-    mean=True, use_grid=use_grid, normalize_weights=normalize_weights
-  )
+  regressor = VineRegressor(mean=True, use_grid=use_grid)
   regressor.fit(X_train, y_train)
   pred = regressor.predict(X_test)
 
@@ -170,22 +144,20 @@ def test_parameter_variations(regression_setup, use_grid, normalize_weights):
   assert np.all(np.isfinite(pred))
 
 
-def test_pdf_copula_only_flag(fitted_regressor):
-  """`pdf(copula_only=...)` toggles between full joint and copula-only."""
-  regressor, _, X_test, _, y_test, _ = fitted_regressor
+def test_normalize_weights_attribute(regression_setup):
+  """`_normalize_weights` attribute toggles row-wise weight normalisation."""
+  X_train, X_test, y_train, _, _, _ = regression_setup
 
-  joint_pdf = regressor.pdf(X_test, y_test)
-  joint_direct = regressor._pdf_samples(
-    X_test, y=y_test, log=False, copula_only=False
-  )
-  np.testing.assert_allclose(joint_pdf, joint_direct, rtol=1e-12)
+  reg_default = VineRegressor(mean=True).fit(X_train, y_train)
+  pred_default = reg_default.predict(X_test)
 
-  copula_pdf = regressor.pdf(X_test, y_test, copula_only=True)
-  copula_direct = regressor._pdf_samples(
-    X_test, y=y_test, log=False, copula_only=True
-  )
-  np.testing.assert_allclose(copula_pdf, copula_direct, rtol=1e-12)
+  reg_raw = VineRegressor(mean=True)
+  reg_raw._normalize_weights = False
+  reg_raw.fit(X_train, y_train)
+  pred_raw = reg_raw.predict(X_test)
 
-  # The two modes differ unless all marginals integrate to 1 at the test
-  # points by coincidence; on real data they should be clearly distinct.
-  assert not np.allclose(joint_pdf, copula_pdf)
+  # With normalised weights, rows sum to 1 and the prediction is a
+  # convex combination of training responses; without normalisation it
+  # picks up the absolute scale of the copula density, so outputs
+  # generally differ.
+  assert not np.allclose(pred_default, pred_raw)
