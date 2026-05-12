@@ -3,10 +3,12 @@ Tests for VineBase functionality.
 """
 
 import numpy as np
-import pandas as pd
 import pytest
 
 pytest.importorskip("sklearn")
+pytest.importorskip("pandas")
+
+import pandas as pd  # noqa: E402
 
 from pyvinecopulib.sklearn import VineDensity  # noqa: E402
 from pyvinecopulib.sklearn._base import expand_factors  # noqa: E402
