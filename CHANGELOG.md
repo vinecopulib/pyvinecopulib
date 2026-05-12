@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Linux wheels: two micro-architecture variants
+
+Linux x86_64 wheels now ship in two variants per Python tag:
+
+- `manylinux_x86_64` / `musllinux_x86_64` — Haswell/Zen 1 baseline
+  (AVX2 + FMA + BMI2; `-march=x86-64-v3`). Runs on every CPU shipped
+  since ~2013.
+- `manylinux_x86_64_v4` / `musllinux_x86_64_v4` — Skylake-X / Zen 4
+  baseline (AVX-512; `-march=x86-64-v4`). ~25–40 % faster than v3 on
+  the TLL fitting path.
+
+pip ≥ 24.0 automatically picks the most-specific compatible wheel based
+on the local CPU. macOS arm64 and Windows wheels are unchanged.
+
+The previous wheels baked in `-march=native` against whatever CPU the
+CI build runner happened to have, which could SIGILL on weaker
+runtime CPUs. The v3/v4 split fixes that and lets AVX-512 users keep
+their performance.
+
 ## 1.0.0
 
 ### Breaking API changes in `pyvinecopulib`

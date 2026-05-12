@@ -38,13 +38,27 @@ include(lib/vinecopulib/cmake/options.cmake REQUIRED)
 include(lib/vinecopulib/cmake/compilerDefOpt.cmake REQUIRED)
 
 # Inside cibuildwheel, replace upstream's `-march=native` (great for local
-# builds, fatal for distributed wheels) with `-march=x86-64-v3`: Haswell/Zen
-# baseline with AVX2 + FMA + BMI2, runs on every CPU released since ~2013.
-# GitHub Actions's `ubuntu-latest` pool is all v3+, so the doc/test jobs that
-# load the wheel stay SIGILL-free. Local editable builds keep `-march=native`.
+# builds, fatal for distributed wheels) with a portable micro-arch level baked
+# into the wheel. The level is picked by the workflow matrix per wheel variant
+# via `PYVINECOPULIB_MARCH`:
+#
+# * `x86-64-v3` (default): Haswell/Zen 1 baseline (AVX2, FMA, BMI2). Tags the
+#   wheel as plain `manylinux_x86_64` / `musllinux_x86_64`.
+# * `x86-64-v4`: Skylake-X / Zen 4 baseline (AVX-512). Tags the wheel as
+#   `manylinux_x86_64_v4` / `musllinux_x86_64_v4`. pip ≥ 24.0 picks this
+#   automatically on AVX-512-capable hardware.
+#
+# Local editable builds keep `-march=native` because neither CIBUILDWHEEL nor
+# PYVINECOPULIB_MARCH is set.
 if(DEFINED ENV{CIBUILDWHEEL})
-  string(REGEX REPLACE "(^| )-march=native( |$)" " -march=x86-64-v3 "
-                       CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+  if(DEFINED ENV{PYVINECOPULIB_MARCH})
+    set(_pyvinecopulib_march "$ENV{PYVINECOPULIB_MARCH}")
+  else()
+    set(_pyvinecopulib_march "x86-64-v3")
+  endif()
+  string(REGEX
+         REPLACE "(^| )-march=native( |$)" " -march=${_pyvinecopulib_march} "
+                 CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
 endif()
 
 # wdm_INCLUDE_DIRS is lib/wdm/include

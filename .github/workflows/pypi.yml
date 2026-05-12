@@ -10,7 +10,11 @@ on:
 env:
   BOOST_VERSION: 1.84.0
   EIGEN_VERSION: 3.4.0
-  EXPECTED_WHEEL_COUNT: 12  # 4 platforms × 3 unique wheels (cp310, cp311, cp312-ABI3 covers 3.12+)
+  # 3 unique Python tags (cp310, cp311, cp312-ABI3 covers 3.12+) ×
+  # 6 platform tags (manylinux + musllinux × {x86_64, x86_64_v4},
+  # macosx_arm64, win_amd64). pip picks the AVX-512 variant on
+  # AVX-512-capable Linux CPUs; otherwise the x86_64 (v3) variant.
+  EXPECTED_WHEEL_COUNT: 18
 
 jobs:
 
@@ -21,6 +25,9 @@ jobs:
         # macos-13 is an intel runner, macos-14 is apple silicon
         python: [310, 311, 312]
         cfg:
+          # `march` (Linux-only) drives the CMake `-march=` override
+          # via PYVINECOPULIB_MARCH below. Unset for macOS/Windows —
+          # neither uses `-march=native` upstream.
           - {
               os: ubuntu-latest,
               cibw_id: manylinux_x86_64,
@@ -28,6 +35,16 @@ jobs:
               cxx: g++,
               platform: x64,
               root_install_dir: "/home/runner/work",
+              march: x86-64-v3,
+            }
+          - {
+              os: ubuntu-latest,
+              cibw_id: manylinux_x86_64_v4,
+              cc: gcc,
+              cxx: g++,
+              platform: x64,
+              root_install_dir: "/home/runner/work",
+              march: x86-64-v4,
             }
           - {
               os: ubuntu-latest,
@@ -36,6 +53,16 @@ jobs:
               cxx: g++,
               platform: x64,
               root_install_dir: "/home/runner/work",
+              march: x86-64-v3,
+            }
+          - {
+              os: ubuntu-latest,
+              cibw_id: musllinux_x86_64_v4,
+              cc: gcc,
+              cxx: g++,
+              platform: x64,
+              root_install_dir: "/home/runner/work",
+              march: x86-64-v4,
             }
           # - { os: macos-13, cibw_id: macosx_x86_64, cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # intel runner
           - {
@@ -99,8 +126,8 @@ jobs:
           CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
           CIBW_ENVIRONMENT_WINDOWS: Boost_INCLUDE_DIR='${{steps.install-dependencies.outputs.BOOST_ROOT}}\include' EIGEN3_INCLUDE_DIR='C:\ProgramData\chocolatey\lib\eigen\include'
           CIBW_ENVIRONMENT_MACOS: "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=${{matrix.cfg.root_install_dir}}/include/eigen3"
-          CIBW_ENVIRONMENT_LINUX: "Boost_INCLUDE_DIR=/host${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=/host${{matrix.cfg.root_install_dir}}/include/eigen3"
-          CIBW_ENVIRONMENT_PASS_LINUX: "Boost_INCLUDE_DIR EIGEN3_INCLUDE_DIR"
+          CIBW_ENVIRONMENT_LINUX: "Boost_INCLUDE_DIR=/host${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=/host${{matrix.cfg.root_install_dir}}/include/eigen3 PYVINECOPULIB_MARCH=${{ matrix.cfg.march }}"
+          CIBW_ENVIRONMENT_PASS_LINUX: "Boost_INCLUDE_DIR EIGEN3_INCLUDE_DIR PYVINECOPULIB_MARCH"
       - name: Inspect built wheel contents
         shell: bash
         run: |
