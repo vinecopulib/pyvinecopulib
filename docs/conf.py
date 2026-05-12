@@ -77,9 +77,20 @@ nbsphinx_execute = "never"
 
 # `autosummary`: stub files don't exist on first toctree read (single-pass build).
 # `myst.header`: index.rst inlines a slice of README.md starting at H2.
-# `ref.ref`: sklearn's inherited docstrings (`get_metadata_routing` etc.)
-# link to sklearn's own :ref: labels that don't resolve in our doc.
-suppress_warnings = ["autosummary", "myst.header", "ref.ref"]
+suppress_warnings = ["autosummary", "myst.header"]
+
+
+# Members inherited from sklearn carry docstrings that :ref:/:term: into
+# sklearn's own doc tree, which doesn't resolve in pyvinecopulib's build.
+# Drop them — return None (not `skip`) for non-matching names because
+# autosummary hard-codes `skip=False` when emitting this event, and a
+# returned False would force-include otherwise-private members.
+def _skip_sklearn_inherited(app, what, name, obj, skip, options):
+  mod = getattr(obj, "__module__", "")
+  if isinstance(mod, str) and mod.startswith("sklearn"):
+    return True
+  return None
+
 
 source_suffix = {
   ".rst": "restructuredtext",
@@ -287,6 +298,7 @@ _write_examples_rst(
 def setup(app):
   app.connect("autodoc-process-docstring", autodoc_process_docstring)
   app.connect("source-read", preprocess_markdown)
+  app.connect("autodoc-skip-member", _skip_sklearn_inherited)
 
 
 source_suffix = {
