@@ -203,7 +203,12 @@ DOCSTRING_SUBPACKAGES = {
     ],
   },
   "sklearn": {
-    "classes": ["VineDensity", "VineRegressor"],
+    "classes": [
+      "VineDensity",
+      "VineForestDensity",
+      "VineForestRegressor",
+      "VineRegressor",
+    ],
     "functions": [],
   },
 }
