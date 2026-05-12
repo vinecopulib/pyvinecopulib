@@ -67,10 +67,19 @@ class VineForestBase(BaseEstimator, ABC):
         Number of base estimators in the ensemble (before MCS-based
         pruning).
     vines_sampling : {"uniform", "local"}, default="uniform"
-        How random structures are generated. ``"uniform"`` samples
-        uniformly over R-vine structures via Joe's algorithm;
-        ``"local"`` perturbs the Dissmann structure using a weighted
-        random walk on the structure space.
+        How random structures are generated.
+
+        - ``"uniform"`` draws uniformly over all R-vine structures
+          via Joe's generation algorithm (Joe, Cooke & Kurowicka 2011;
+          Algorithm 13 of Joe 2014); see
+          :meth:`pyvinecopulib.core.RVineStructure.simulate`.
+        - ``"local"`` draws each tree :math:`T` from the
+          Kendall's-:math:`\\tau`-weighted distribution
+          :math:`P(T) \\propto \\prod_{(j, k) \\in T}
+          |\\hat\\tau_{j, k}|` (with the Dissmann MST as its mode)
+          via Wilson's loop-erased random walk (Wilson 1996), exposed
+          as the ``"random_weighted"`` tree algorithm in
+          :class:`pyvinecopulib.core.FitControlsVinecop`.
     bootstrap : bool, default=True
         If ``True``, each random estimator is fit on a bootstrap
         resample of the training set.

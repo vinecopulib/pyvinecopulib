@@ -14,9 +14,13 @@ Two scikit-learn-compatible vine-copula estimators ship in the new
 - `VineForestDensity` / `VineForestRegressor` — ensembles of the above
   built via random search over vine structures and pruned by a model
   confidence set (MCS) on a held-out validation split. Predictions
-  average across surviving structures; survivor selection uses the
-  dual-split DA test from Hansen, Lunde & Nason (2011) refined by Kim,
-  Olsen, Nagler & Vatter (2025).
+  average across surviving structures. Structures are sampled either
+  uniformly via Joe's algorithm (Joe, Cooke & Kurowicka 2011) or
+  locally via Wilson's loop-erased random walk weighted by Kendall's
+  τ (Wilson 1996); survivor selection uses a dual-split DA test
+  adapted from the discrete-argmin-inference framework of Kim &
+  Ramdas (2025), with Hansen, Lunde & Nason (2011) providing the
+  foundational MCS definition.
 
 Both follow the `BaseEstimator` / `RegressorMixin` / `DensityMixin` protocols
 and handle mixed continuous/discrete inputs (DataFrame or ndarray). Class
