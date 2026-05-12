@@ -77,7 +77,9 @@ nbsphinx_execute = "never"
 
 # `autosummary`: stub files don't exist on first toctree read (single-pass build).
 # `myst.header`: index.rst inlines a slice of README.md starting at H2.
-suppress_warnings = ["autosummary", "myst.header"]
+# `ref.ref`: sklearn's inherited docstrings (`get_metadata_routing` etc.)
+# link to sklearn's own :ref: labels that don't resolve in our doc.
+suppress_warnings = ["autosummary", "myst.header", "ref.ref"]
 
 source_suffix = {
   ".rst": "restructuredtext",
