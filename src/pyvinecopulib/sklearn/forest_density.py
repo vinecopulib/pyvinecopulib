@@ -46,7 +46,12 @@ class VineForestDensity(VineForestBase, DensityMixin):
     n_vines : int, default=100
         Number of random base estimators (before MCS pruning).
     vines_sampling : {"uniform", "local"}, default="uniform"
-        Random-structure generator. See :class:`VineForestBase`.
+        Random-structure generator. ``"uniform"`` draws uniformly over
+        R-vines via Joe's algorithm (Joe, Cooke & Kurowicka 2011);
+        ``"local"`` draws each tree from the Kendall's-:math:`\\tau`-
+        weighted distribution (Dissmann MST as the mode) via Wilson's
+        loop-erased random walk (Wilson 1996). See
+        :class:`VineForestBase` for the full description.
     bootstrap : bool, default=True
         Bootstrap-resample the training set for each base estimator.
     val_fraction : float, default=0.25
