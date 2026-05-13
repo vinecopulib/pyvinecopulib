@@ -92,6 +92,11 @@ minimum-version = "0.4"
 build-dir = "build/{wheel_tag}"
 wheel.py-api = "cp312"
 editable.rebuild = true
+# Pipe the rebuild output instead of streaming to sys.stderr — keeps
+# notebook executions clean and lets `pytest --nbmake` run locally
+# (Jupyter's OutStream doesn't implement fileno(), which the streaming
+# subprocess call needs).
+editable.verbose = false
 # scikit-build-core's default sdist exclude drops `build/`-named dirs,
 # which also catches scripts/build.
 sdist.include = ["scripts/**"]
