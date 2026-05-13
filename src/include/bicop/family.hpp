@@ -19,7 +19,9 @@ inline void init_bicop_family(nb::module_& module) {
   nb::enum_<BicopFamily>(module, "BicopFamily", R"pbdoc(
     A bivariate copula family identifier.
 
-    Contains the following families:
+    Members of this enum are the family tags used throughout the API
+    (e.g. as values inside ``FitControlsBicop.family_set`` or returned
+    by :meth:`pyvinecopulib.core.Bicop.family`):
 
       - ``indep``: Independent copula,
       - ``gaussian``: Gaussian copula,
@@ -35,36 +37,9 @@ inline void init_bicop_family(nb::module_& module) {
       - ``tawn``: Tawn copula,
       - ``tll``: Transformation local-likelihood (nonparametric) copula.
 
-    The following convenient sets of families are provided:
-
-      - ``all`` contains all the families,
-      - ``parametric`` contains the parametric families (all except ``tll``),
-      - ``nonparametric`` contains the nonparametric families
-        (``indep`` and ``tll``),
-      - ``one_par`` contains the parametric families with a single parameter
-        (``gaussian``, ``clayton``, ``gumbel``, ``frank``, and ``joe``),
-      - ``two_par`` contains the parametric families with two parameters
-        (``student``, ``bb1``, ``bb6``, ``bb7``, and ``bb8``),
-      - ``three_par`` contains the parametric families with three parameters
-        (``tawn``),
-      - ``elliptical`` contains the elliptical families (``gaussian`` and
-        ``student``),
-      - ``archimedean`` contains the archimedean families (``clayton``,
-        ``gumbel``, ``frank``, ``joe``, ``bb1``, ``bb6``, ``bb7``, and ``bb8``),
-      - ``extreme_value`` contains the extreme value families (``tawn`` and
-        ``gumbel``),
-      - ``bb`` contains the BB families (``bb1``, ``bb6``, ``bb7``, and
-        ``bb8``),
-      - ``itau`` families for which estimation by Kendall's tau inversion is
-        available (``indep``, ``gaussian``, ``student``, ``clayton``,
-        ``gumbel``, ``frank``, ``joe``),
-      - ``lt`` contains the families that are lower-tail dependent (``clayton``,
-        ``bb1``, ``bb7``, ``tawn``),
-      - ``ut`` contains the families that are upper-tail dependent (``gumbel``,
-        ``joe``, ``bb1``, ``bb6``, ``bb7``, ``bb8``, ``tawn``),
-      - ``rotationless`` contains families that don't have a rotation
-        because they already cover positive and negative dependence (``indep``,
-        ``gaussian``, ``student``, ``frank``, ``tll``).
+    See the :mod:`pyvinecopulib.families` module documentation for the
+    named family-group constants (``parametric``, ``elliptical``,
+    ``archimedean``, ``bb``, ``itau``, ...).
     )pbdoc")
       .value("indep", BicopFamily::indep, bicopfamily_doc.indep.doc)
       .value("gaussian", BicopFamily::gaussian, bicopfamily_doc.gaussian.doc)
