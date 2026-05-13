@@ -10,6 +10,7 @@ from ._base import (
   _DOC_FACTORIZATION,
   _DOC_PIPELINE,
   _DOC_REFERENCES,
+  _DOC_WRAPPER,
   VineBase,
 )
 
@@ -25,12 +26,17 @@ class VineDensity(VineBase, DensityMixin):
 
     Parameters
     ----------
-    controls : pyvinecopulib.core.FitControlsVinecop, optional
-        Controls for the vine copula fit. If ``None``, defaults to the
-        nonparametric ``tll`` pair family with a single thread.
-    structure : pyvinecopulib.core.RVineStructure, optional
-        Pre-specified vine structure. If ``None``, the structure is
-        selected automatically via :meth:`Vinecop.from_data`.
+    controls : :class:`pyvinecopulib.core.FitControlsVinecop`, optional
+        Controls forwarded to the underlying vine copula fit
+        (:meth:`pyvinecopulib.core.Vinecop.from_data`). If ``None``,
+        defaults to the nonparametric ``tll`` pair family with a
+        single thread.
+    structure : :class:`pyvinecopulib.core.RVineStructure`, optional
+        Pre-specified vine structure. If ``None``, structure
+        selection is delegated to
+        :meth:`pyvinecopulib.core.Vinecop.from_data` (which runs the
+        Dissmann algorithm by default — see ``controls.tree_algorithm``
+        for the alternative random-tree options).
     batch_size : int, default=100
         Number of test points processed per batch when evaluating the
         density. Higher values trade memory for throughput.
@@ -236,6 +242,7 @@ structure. After fitting, :meth:`pdf` / :meth:`score_samples` evaluate
 the density at new points and :meth:`sample` draws from the fitted
 joint distribution.
 
+{_DOC_WRAPPER}
 {_DOC_PIPELINE}
 {_DOC_FACTORIZATION}
 {_DOC_DISCRETE}

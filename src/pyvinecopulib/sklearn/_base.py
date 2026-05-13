@@ -8,6 +8,21 @@ import pyvinecopulib as pv
 # class docstrings via f-strings. Defined once here, used by both subclasses
 # so changes propagate without copy-paste.
 
+_DOC_WRAPPER = r"""**Relation to the core API.** This estimator is a
+thin scikit-learn wrapper around the lower-level pyvinecopulib
+machinery. Marginals are estimated with
+:class:`pyvinecopulib.utils.Kde1d`; the joint copula is fit by
+:meth:`pyvinecopulib.core.Vinecop.from_data`, accepting an optional
+:class:`pyvinecopulib.core.RVineStructure` (``structure`` argument) and
+a :class:`pyvinecopulib.core.FitControlsVinecop` (``controls`` argument)
+for the family set, threading, structure-selection algorithm, etc.
+The sklearn class on top adds the standard ``fit`` / ``predict``-style
+interface, ``DataFrame`` input handling with auto-inferred
+``continuous`` / ``discrete`` schema, and batched evaluation; reach
+for the underlying classes whenever you need control beyond the
+sklearn convenience layer.
+"""
+
 _DOC_PIPELINE = r"""**Estimation pipeline.** The estimator follows a
 three-step pipeline shared with :class:`VineDensity` /
 :class:`VineRegressor`:

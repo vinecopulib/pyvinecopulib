@@ -8,6 +8,7 @@ from ._base import (
   _DOC_FACTORIZATION,
   _DOC_PIPELINE,
   _DOC_REFERENCES,
+  _DOC_WRAPPER,
   VineBase,
 )
 
@@ -36,13 +37,17 @@ class VineRegressor(VineBase, RegressorMixin):
     quantiles : list of float or ndarray, optional
         Quantile levels in ``(0, 1)`` to predict. If ``None``, quantile
         prediction is disabled.
-    controls : pyvinecopulib.core.FitControlsVinecop, optional
-        Controls for the vine copula fit. Defaults to the ``tll``
-        nonparametric pair family with a single thread.
-    structure : pyvinecopulib.core.RVineStructure, optional
-        Pre-specified vine structure on ``(Y, X_1, ..., X_d)``. If
-        ``None``, structure is selected automatically. ``Y`` always
-        occupies the first dimension.
+    controls : :class:`pyvinecopulib.core.FitControlsVinecop`, optional
+        Controls forwarded to the underlying vine copula fit
+        (:meth:`pyvinecopulib.core.Vinecop.from_data`). If ``None``,
+        defaults to the ``tll`` nonparametric pair family with a
+        single thread.
+    structure : :class:`pyvinecopulib.core.RVineStructure`, optional
+        Pre-specified vine structure on ``(Y, X_1, ..., X_d)``. ``Y``
+        always occupies the first dimension. If ``None``, structure
+        selection is delegated to
+        :meth:`pyvinecopulib.core.Vinecop.from_data` (Dissmann
+        algorithm by default).
     batch_size : int, default=100
         Number of test points processed per batch in :meth:`predict`.
         ``1`` minimises memory at the cost of speed; ``n_test`` is the
@@ -378,6 +383,7 @@ and the conditional quantile is the weighted quantile of
 :math:`\\{{y_i\\}}_i` via :func:`numpy.quantile` with
 ``method="inverted_cdf"``.
 
+{_DOC_WRAPPER}
 {_DOC_PIPELINE}
 {_DOC_FACTORIZATION}
 {_DOC_DISCRETE}
