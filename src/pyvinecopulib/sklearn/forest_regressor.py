@@ -7,11 +7,11 @@ from sklearn.base import RegressorMixin
 from ._base import (
   _DOC_DISCRETE,
   _DOC_FACTORIZATION,
-  _DOC_FOREST,
   _DOC_PIPELINE,
   _DOC_REFERENCES,
+  _DOC_WRAPPER,
 )
-from ._forest_base import VineForestBase
+from ._forest_base import _DOC_FOREST, _DOC_FOREST_REFERENCES, VineForestBase
 from .regressor import VineRegressor
 
 
@@ -224,6 +224,7 @@ conditional weights :math:`w_i(x)` from the single-vine estimating
 equation framework are averaged across survivors before being used
 to compute conditional means or quantiles.
 
+{_DOC_WRAPPER}
 {_DOC_FOREST}
 {_DOC_PIPELINE}
 {_DOC_FACTORIZATION}
@@ -242,5 +243,4 @@ Examples
 ... ).fit(X[:200], y[:200])
 >>> forest.predict(X[200:205])           # columns: mean, q10, q50, q90
 
-{_DOC_REFERENCES}
-"""
+{_DOC_REFERENCES}{_DOC_FOREST_REFERENCES}"""

@@ -72,42 +72,6 @@ copula evaluation sees the appropriate (continuous) proxy. This is
 done transparently by :meth:`fit` and :meth:`pdf`.
 """
 
-_DOC_FOREST = r"""**Forest construction.** The ensemble is built via
-hold-out random search with model-confidence-set (MCS) survivor
-selection:
-
-1. **Validation split.** A fraction ``val_fraction`` of the training
-   data is held out for survivor selection.
-2. **Random search.** ``n_vines`` candidate vine structures are
-   sampled. When ``vines_sampling="uniform"``, the structure is drawn
-   uniformly over R-vines via Joe's generation algorithm (Joe,
-   Cooke & Kurowicka 2011; Algorithm 13 of Joe 2014; implemented in
-   :meth:`pyvinecopulib.core.RVineStructure.simulate`). When
-   ``"local"``, each tree :math:`T` is drawn from the
-   Kendall's-:math:`\tau`-weighted distribution
-   :math:`P(T) \propto \prod_{(j, k) \in T} |\hat\tau_{j, k}|`
-   (with the Dissmann maximum spanning tree as its mode) via Wilson's
-   loop-erased random walk (Wilson 1996); pyvinecopulib exposes this
-   as the ``"random_weighted"`` tree algorithm in
-   :class:`pyvinecopulib.core.FitControlsVinecop`. Each candidate is
-   fit on a bootstrap resample of the training portion.
-3. **Survivor selection.** Each candidate's per-sample log-likelihood
-   is evaluated on the validation set. The resulting :math:`n_{\text{val}}
-   \times M` loss matrix is fed to a dual-split DA test — adapted by
-   the forest paper from the discrete-argmin-inference framework of
-   Kim & Ramdas (2025) — to compute the model confidence set (Hansen,
-   Lunde & Nason 2011 for the foundational definition). ``method``
-   selects between marginal per-model coverage (``"da_mcs_marg"``) and
-   uniform / familywise coverage (``"da_mcs_unif"``).
-   ``add_dissmann=True`` adds the Dissmann-structure baseline as an
-   extra candidate.
-4. **Prediction averaging.** Survivors are refit on the full training
-   data; predictions are averaged across survivors at evaluation time.
-   For the regressor, the conditional weights derived from
-   :math:`c_{Y, X}` are averaged then row-normalised once at the
-   ensemble level.
-"""
-
 _DOC_REFERENCES = r"""References
 ----------
 - Bedford, T. and Cooke, R. M. (2002).

@@ -7,11 +7,11 @@ from sklearn.base import DensityMixin
 from ._base import (
   _DOC_DISCRETE,
   _DOC_FACTORIZATION,
-  _DOC_FOREST,
   _DOC_PIPELINE,
   _DOC_REFERENCES,
+  _DOC_WRAPPER,
 )
-from ._forest_base import VineForestBase
+from ._forest_base import _DOC_FOREST, _DOC_FOREST_REFERENCES, VineForestBase
 from .density import VineDensity
 
 
@@ -257,6 +257,7 @@ confidence set (MCS) on a held-out validation split, and predictions
 are averaged across survivors. Targets the random-search-plus-MCS
 methodology of the underlying paper.
 
+{_DOC_WRAPPER}
 {_DOC_FOREST}
 {_DOC_PIPELINE}
 {_DOC_FACTORIZATION}
@@ -274,5 +275,4 @@ Examples
 >>> forest.cdf(X[200:205], seeds=[0])     # ensemble-averaged joint CDF
 >>> forest.sample(n_samples=5)            # mixture sampling
 
-{_DOC_REFERENCES}
-"""
+{_DOC_REFERENCES}{_DOC_FOREST_REFERENCES}"""
