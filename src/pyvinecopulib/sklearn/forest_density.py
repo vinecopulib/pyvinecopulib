@@ -254,8 +254,8 @@ VineForestDensity.__doc__ = f"""Forest of vine-copula density estimators.
 An ensemble of :class:`VineDensity` base learners fitted on randomly
 sampled vine structures. Survivors are selected via a model
 confidence set (MCS) on a held-out validation split, and predictions
-are averaged across survivors. Targets the random-search-plus-MCS
-methodology of the underlying paper.
+are averaged across survivors. Implements the random-search-plus-MCS
+methodology of Vatter & Nagler (2026).
 
 {_DOC_WRAPPER}
 {_DOC_FOREST}
