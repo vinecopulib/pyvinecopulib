@@ -105,6 +105,56 @@ class VineForestBase(BaseEstimator, ABC):
     verbose : bool, default=False
         Emit a warning if no random estimator beats the default.
     """
+    if not isinstance(base_class, type):
+      raise TypeError(
+        f"base_class must be a class, got {type(base_class).__name__}"
+      )
+    if base_params is not None and not isinstance(base_params, dict):
+      raise TypeError(
+        f"base_params must be dict or None, got {type(base_params).__name__}"
+      )
+    if not isinstance(n_vines, int) or isinstance(n_vines, bool):
+      raise TypeError(f"n_vines must be int, got {type(n_vines).__name__}")
+    if n_vines < 1:
+      raise ValueError(f"n_vines must be >= 1, got {n_vines}")
+    if vines_sampling not in {"uniform", "local"}:
+      raise ValueError(
+        f"vines_sampling must be 'uniform' or 'local', got {vines_sampling!r}"
+      )
+    if not isinstance(bootstrap, bool):
+      raise TypeError(f"bootstrap must be bool, got {type(bootstrap).__name__}")
+    if not isinstance(val_fraction, (int, float)) or isinstance(
+      val_fraction, bool
+    ):
+      raise TypeError(
+        f"val_fraction must be float, got {type(val_fraction).__name__}"
+      )
+    if not (0.0 <= val_fraction < 1.0):
+      raise ValueError(f"val_fraction must be in [0, 1), got {val_fraction}")
+    if not isinstance(best_only, bool):
+      raise TypeError(f"best_only must be bool, got {type(best_only).__name__}")
+    if method not in _VALID_METHODS:
+      raise ValueError(
+        f"method must be one of {sorted(str(m) for m in _VALID_METHODS)}, "
+        f"got {method!r}"
+      )
+    if not isinstance(alpha, (int, float)) or isinstance(alpha, bool):
+      raise TypeError(f"alpha must be float, got {type(alpha).__name__}")
+    if not (0.0 < alpha < 1.0):
+      raise ValueError(f"alpha must be in (0, 1), got {alpha}")
+    if not isinstance(add_dissmann, bool):
+      raise TypeError(
+        f"add_dissmann must be bool, got {type(add_dissmann).__name__}"
+      )
+    if not isinstance(seed, int) or isinstance(seed, bool):
+      raise TypeError(f"seed must be int, got {type(seed).__name__}")
+    if not isinstance(n_jobs, int) or isinstance(n_jobs, bool):
+      raise TypeError(f"n_jobs must be int, got {type(n_jobs).__name__}")
+    if n_jobs == 0 or n_jobs < -1:
+      raise ValueError(f"n_jobs must be -1 or >= 1, got {n_jobs}")
+    if not isinstance(verbose, bool):
+      raise TypeError(f"verbose must be bool, got {type(verbose).__name__}")
+
     self.base_class = base_class
     self.base_params = {} if base_params is None else base_params
     self.n_vines = n_vines
@@ -115,11 +165,6 @@ class VineForestBase(BaseEstimator, ABC):
     self.seed = seed
     self.n_jobs = n_jobs
     self.verbose = verbose
-    if method not in _VALID_METHODS:
-      raise ValueError(
-        f"method must be one of {sorted(str(m) for m in _VALID_METHODS)}, "
-        f"got {method!r}"
-      )
     self.method = method
     self.alpha = alpha
     self.add_dissmann = add_dissmann

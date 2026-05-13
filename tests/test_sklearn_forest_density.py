@@ -25,6 +25,37 @@ def fitted_forest_density(sample_array_data):
   return forest, X
 
 
+@pytest.mark.parametrize(
+  "kwargs, exc",
+  [
+    ({"base_params": "bad"}, TypeError),
+    ({"n_vines": 0}, ValueError),
+    ({"n_vines": -3}, ValueError),
+    ({"n_vines": 1.5}, TypeError),
+    ({"n_vines": True}, TypeError),
+    ({"vines_sampling": "random"}, ValueError),
+    ({"bootstrap": "yes"}, TypeError),
+    ({"val_fraction": -0.1}, ValueError),
+    ({"val_fraction": 1.0}, ValueError),
+    ({"val_fraction": "half"}, TypeError),
+    ({"best_only": 1}, TypeError),
+    ({"method": "mcs"}, ValueError),
+    ({"alpha": 0.0}, ValueError),
+    ({"alpha": 1.0}, ValueError),
+    ({"alpha": "0.05"}, TypeError),
+    ({"add_dissmann": 0}, TypeError),
+    ({"seed": "42"}, TypeError),
+    ({"n_jobs": 0}, ValueError),
+    ({"n_jobs": -2}, ValueError),
+    ({"verbose": 1}, TypeError),
+  ],
+)
+def test_constructor_validation(kwargs, exc):
+  """Bad constructor arguments raise at __init__ time."""
+  with pytest.raises(exc):
+    VineForestDensity(**kwargs)
+
+
 def test_fit_properties(fitted_forest_density):
   forest, _ = fitted_forest_density
   assert hasattr(forest, "_estimators")
@@ -112,17 +143,50 @@ def test_sample_method(fitted_forest_density, n_samples):
   assert np.all(np.isfinite(samples))
 
 
-def test_sample_from_estimator(fitted_forest_density):
-  forest, _ = fitted_forest_density
-  n_estimators = len(forest._estimators)
-  for i in range(n_estimators):
-    samples = forest.sample_from_estimator(i, 5)
-    assert isinstance(samples, np.ndarray)
-    assert samples.shape == (5, 2)
-    assert np.all(np.isfinite(samples))
+def test_cdf_shapes_and_range(fitted_forest_density):
+  """Ensemble CDF returns values in [0, 1] with the right shape."""
+  forest, X = fitted_forest_density
+  X_test = X[:20]
+  cdf_vals = forest.cdf(X_test, seeds=[1, 2, 3])
+  assert isinstance(cdf_vals, np.ndarray)
+  assert cdf_vals.shape == (20,)
+  assert np.all(cdf_vals >= 0.0)
+  assert np.all(cdf_vals <= 1.0)
+  assert np.all(np.isfinite(cdf_vals))
 
-  with pytest.raises(ValueError):
-    forest.sample_from_estimator(n_estimators, 1)
+
+def test_cdf_monotone_along_axis(fitted_forest_density):
+  """Ensemble CDF is approximately monotone along a single-axis sweep."""
+  forest, X = fitted_forest_density
+  x1_lo, x1_hi = np.quantile(X[:, 0], [0.05, 0.95])
+  x2_med = np.median(X[:, 1])
+  X_sweep = np.column_stack(
+    [np.linspace(x1_lo, x1_hi, 30), np.full(30, x2_med)]
+  )
+  cdf_sweep = forest.cdf(X_sweep, N=20000, seeds=[42, 43, 44])
+  diffs = np.diff(cdf_sweep)
+  assert (diffs > -0.05).all(), (
+    f"CDF should be approx. non-decreasing, got {diffs}"
+  )
+  assert cdf_sweep[-1] > cdf_sweep[0]
+
+
+def test_sample_uses_one_call_per_estimator(fitted_forest_density, monkeypatch):
+  """sample(n) calls each base estimator's .sample at most once."""
+  forest, _ = fitted_forest_density
+  call_counts = {id(est): 0 for est in forest._estimators}
+  for est in forest._estimators:
+    original = est.sample
+
+    def counted_sample(*args, _est=est, _orig=original, **kwargs):
+      call_counts[id(_est)] += 1
+      return _orig(*args, **kwargs)
+
+    monkeypatch.setattr(est, "sample", counted_sample)
+
+  forest.sample(50)
+  for count in call_counts.values():
+    assert count <= 1
 
 
 def test_ensemble_vs_single_estimator(sample_array_data):
