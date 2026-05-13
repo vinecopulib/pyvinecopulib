@@ -30,6 +30,23 @@ def fitted_density(sample_array_data):
   return density, X
 
 
+@pytest.mark.parametrize(
+  "kwargs, exc",
+  [
+    ({"batch_size": 0}, ValueError),
+    ({"batch_size": -1}, ValueError),
+    ({"batch_size": 1.5}, TypeError),
+    ({"batch_size": True}, TypeError),
+    ({"controls": "bad"}, TypeError),
+    ({"structure": "bad"}, TypeError),
+  ],
+)
+def test_constructor_validation(kwargs, exc):
+  """Bad constructor arguments raise at __init__ time."""
+  with pytest.raises(exc):
+    VineDensity(**kwargs)
+
+
 def test_fit_properties(fitted_density):
   """Test properties after fitting."""
   density, _ = fitted_density

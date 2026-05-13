@@ -17,8 +17,8 @@ class VineRegressor(VineBase, RegressorMixin):
     self,
     mean: bool = True,
     quantiles: list[float] | np.ndarray | None = None,
-    controls: object | None = None,
-    structure: object | None = None,
+    controls: pv.FitControlsVinecop | None = None,
+    structure: pv.RVineStructure | None = None,
     batch_size: int = 100,
     use_grid: bool = True,
   ) -> None:
@@ -72,14 +72,11 @@ class VineRegressor(VineBase, RegressorMixin):
     ensemble level. Non-default values are not preserved by
     :func:`sklearn.base.clone`.
     """
-    if controls is not None and not isinstance(controls, pv.FitControlsVinecop):
-      raise TypeError(
-        f"controls must be pv.FitControlsVinecop or None, got {type(controls).__name__}"
-      )
-    if structure is not None and not isinstance(structure, pv.RVineStructure):
-      raise TypeError(
-        f"structure must be pv.RVineStructure or None, got {type(structure).__name__}"
-      )
+    if not isinstance(mean, bool):
+      raise TypeError(f"mean must be bool, got {type(mean).__name__}")
+    if not isinstance(use_grid, bool):
+      raise TypeError(f"use_grid must be bool, got {type(use_grid).__name__}")
+
     super().__init__(
       controls=controls,
       structure=structure,
@@ -90,7 +87,14 @@ class VineRegressor(VineBase, RegressorMixin):
     if quantiles is None:
       self.quantiles = None
     else:
-      self.quantiles = np.atleast_1d(quantiles)
+      q_arr = np.atleast_1d(np.asarray(quantiles, dtype=float))
+      if q_arr.ndim != 1 or q_arr.size == 0:
+        raise ValueError(
+          f"quantiles must be a non-empty 1d sequence, got {quantiles!r}"
+        )
+      if np.any(q_arr <= 0) or np.any(q_arr >= 1):
+        raise ValueError(f"quantiles must lie in (0, 1), got {quantiles!r}")
+      self.quantiles = q_arr
     if (not self.mean) and (self.quantiles is None):
       raise ValueError("At least one of mean or quantiles must be enabled.")
     self.use_grid = use_grid

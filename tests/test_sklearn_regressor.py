@@ -130,6 +130,28 @@ def test_invalid_configuration():
     VineRegressor(mean=False, quantiles=None)
 
 
+@pytest.mark.parametrize(
+  "kwargs, exc",
+  [
+    ({"mean": "yes"}, TypeError),
+    ({"use_grid": 1}, TypeError),
+    ({"batch_size": 0}, ValueError),
+    ({"batch_size": -3}, ValueError),
+    ({"batch_size": 1.5}, TypeError),
+    ({"batch_size": True}, TypeError),
+    ({"controls": "bad"}, TypeError),
+    ({"structure": "bad"}, TypeError),
+    ({"quantiles": [0.0, 0.5]}, ValueError),
+    ({"quantiles": [0.5, 1.0]}, ValueError),
+    ({"quantiles": []}, ValueError),
+  ],
+)
+def test_constructor_validation(kwargs, exc):
+  """Bad constructor arguments raise at __init__ time."""
+  with pytest.raises(exc):
+    VineRegressor(**kwargs)
+
+
 @pytest.mark.parametrize("use_grid", [True, False])
 def test_parameter_variations(regression_setup, use_grid):
   """Test different parameter combinations."""

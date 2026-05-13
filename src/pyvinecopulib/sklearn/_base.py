@@ -162,6 +162,23 @@ class VineBase(BaseEstimator):
     and exposing it would clutter the sklearn-facing signature.
     Non-default values are not preserved by :func:`sklearn.base.clone`.
     """
+    if controls is not None and not isinstance(controls, pv.FitControlsVinecop):
+      raise TypeError(
+        "controls must be pv.FitControlsVinecop or None, "
+        f"got {type(controls).__name__}"
+      )
+    if structure is not None and not isinstance(structure, pv.RVineStructure):
+      raise TypeError(
+        "structure must be pv.RVineStructure or None, "
+        f"got {type(structure).__name__}"
+      )
+    if not isinstance(batch_size, int) or isinstance(batch_size, bool):
+      raise TypeError(
+        f"batch_size must be int, got {type(batch_size).__name__}"
+      )
+    if batch_size < 1:
+      raise ValueError(f"batch_size must be >= 1, got {batch_size}")
+
     if controls is None:
       controls = pv.FitControlsVinecop(
         family_set=[pv.families.tll], trunc_lvl=20, num_threads=1

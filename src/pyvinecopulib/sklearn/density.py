@@ -17,8 +17,8 @@ from ._base import (
 class VineDensity(VineBase, DensityMixin):
   def __init__(
     self,
-    controls: object | None = None,
-    structure: object | None = None,
+    controls: pv.FitControlsVinecop | None = None,
+    structure: pv.RVineStructure | None = None,
     batch_size: int = 100,
   ) -> None:
     """Vine-copula based density estimator.
@@ -35,14 +35,6 @@ class VineDensity(VineBase, DensityMixin):
         Number of test points processed per batch when evaluating the
         density. Higher values trade memory for throughput.
     """
-    if controls is not None and not isinstance(controls, pv.FitControlsVinecop):
-      raise TypeError(
-        f"controls must be pv.FitControlsVinecop or None, got {type(controls).__name__}"
-      )
-    if structure is not None and not isinstance(structure, pv.RVineStructure):
-      raise TypeError(
-        f"structure must be pv.RVineStructure or None, got {type(structure).__name__}"
-      )
     super().__init__(
       controls=controls,
       structure=structure,
