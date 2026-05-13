@@ -64,8 +64,9 @@ class VineRegressor(VineBase, RegressorMixin):
           training response set is replaced by the Kde1d grid points
           and the weights pick up an extra :math:`\\hat f_Y(y_g)`
           factor. Cheaper when ``n_train`` is large because the grid
-          size is fixed (independent of ``n``); see Nagler & Vatter
-          (2024) and the supplement to that paper.
+          size stays fixed (independent of ``n_train``); see
+          Nagler & Vatter (2024), and the supplement to Vatter & Nagler
+          (2026) for the grid-variant derivation.
 
     Notes
     -----

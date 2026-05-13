@@ -83,6 +83,9 @@ _DOC_REFERENCES = r"""References
 - Nagler, T. and Vatter, T. (2024).
   *Solving Estimating Equations With Copulas.*
   Journal of the American Statistical Association, 119(546), 1168--1180.
+- Vatter, T. and Nagler, T. (2026).
+  *Throwing Vines at the Wall: Structure Learning via Random Search.*
+  arXiv preprint arXiv:2510.20035.
 """
 
 
