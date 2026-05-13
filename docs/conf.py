@@ -291,7 +291,10 @@ def _write_features_rst(out_path):
   """Generate the auto-summary RST for the public API.
 
   One section per subpackage (core / families / utils), each with an
-  autosummary toctree of its classes and (if any) explicit autofunctions.
+  autosummary toctree for its classes and for its free functions. The
+  toctree directive generates one detail page per object under
+  `_generate/` and a one-line-summary table on the module landing
+  page, matching sklearn's `sklearn.metrics`-style layout.
   """
   rst_name = "API Documentation"
   bar = "=" * len(rst_name)
@@ -313,8 +316,9 @@ def _write_features_rst(out_path):
       functions = contents.get("functions", [])
       if functions:
         f.write("Functions\n^^^^^^^^^\n\n")
+        f.write(".. autosummary::\n    :toctree: _generate\n\n")
         for fn in functions:
-          f.write(f".. autofunction:: {module}.{fn}\n")
+          f.write(f"    {module}.{fn}\n")
         f.write("\n")
 
 

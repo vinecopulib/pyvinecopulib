@@ -203,8 +203,14 @@ def cleanup_stub(stub: str) -> str:
   #   - inputs accept the broad `ArrayLike` (lists, scalars, buffers …)
   #   - returns are concretely `NDArray[Any]` (subscriptable, supports
   #     arithmetic — accurate for nanobind output).
+  # Match `numpy.ndarray[ … ]` / `np.ndarray[ … ]` with up to two levels of
+  # nested brackets in the parameter list (covers `ndarray[tuple[Any, ...],
+  # dtype[Any]]`-style annotations emitted by recent nanobind versions).
+  # The plain non-greedy `.*?` previously used here breaks on the first `]`,
+  # producing trailing-`]` syntax errors in the generated stubs.
   ndarray_pattern = re.compile(
-    r"numpy\.ndarray\[.*?\]|np\.ndarray\[.*?\]|\bnumpy\.ndarray\b|\bnp\.ndarray\b"
+    r"(?:numpy|np)\.ndarray\[(?:[^\[\]]|\[(?:[^\[\]]|\[[^\[\]]*\])*\])*\]"
+    r"|\bnumpy\.ndarray\b|\bnp\.ndarray\b"
   )
 
   def _rewrite_def_line(match: re.Match) -> str:
