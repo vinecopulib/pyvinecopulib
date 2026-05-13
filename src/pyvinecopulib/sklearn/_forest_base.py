@@ -52,8 +52,8 @@ selection:
 3. **Survivor selection.** Each candidate's per-sample log-likelihood
    is evaluated on the validation set. The resulting :math:`n_{\text{val}}
    \times M` loss matrix is fed to a dual-split DA test — adapted by
-   the forest paper from the discrete-argmin-inference framework of
-   Kim & Ramdas (2025) — to compute the model confidence set (Hansen,
+   Vatter & Nagler (2026) from the discrete-argmin-inference framework
+   of Kim & Ramdas (2025) — to compute the model confidence set (Hansen,
    Lunde & Nason 2011 for the foundational definition). ``method``
    selects between marginal per-model coverage (``"da_mcs_marg"``) and
    uniform / familywise coverage (``"da_mcs_unif"``).
