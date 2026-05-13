@@ -37,6 +37,27 @@ def fitted_forest_regressor(regression_setup):
   return forest, X_train, X_test, y_train, y_test, true_mean
 
 
+@pytest.mark.parametrize(
+  "kwargs, exc",
+  [
+    ({"n_vines": 0}, ValueError),
+    ({"vines_sampling": "random"}, ValueError),
+    ({"val_fraction": -0.1}, ValueError),
+    ({"val_fraction": 1.0}, ValueError),
+    ({"alpha": 0.0}, ValueError),
+    ({"alpha": 1.0}, ValueError),
+    ({"method": "mcs"}, ValueError),
+    ({"n_jobs": 0}, ValueError),
+    ({"seed": "42"}, TypeError),
+    ({"verbose": 1}, TypeError),
+  ],
+)
+def test_constructor_validation(kwargs, exc):
+  """Bad constructor arguments raise at __init__ time."""
+  with pytest.raises(exc):
+    VineForestRegressor(**kwargs)
+
+
 def test_fit_properties(fitted_forest_regressor):
   forest, _, _, _, _, _ = fitted_forest_regressor
   assert hasattr(forest, "_estimators")
