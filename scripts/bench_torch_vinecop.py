@@ -4,16 +4,21 @@
 For each (n, d) cell in the grid:
   - generate n correlated pseudo-obs of dim d (Gaussian latent),
   - fit a pv.Vinecop with the TLL family (single thread),
-  - wrap with TorchVinecop,
-  - time pv.Vinecop.<method>(u) vs bc.<method>(u, impl="legacy")
-    vs bc.<method>(u, impl="lazy") across `--repeats` runs,
+  - time pv.Vinecop.<method>(u, num_threads=t) for every t in --threads,
+  - time TorchVinecop.<method>(u, impl=...) for every combination of
+    --devices x --cache x {legacy, lazy},
   - report the median wall-clock per call (in milliseconds).
 
-Both torch and pv are pinned to a single thread so the comparison is
-apples-to-apples.
+The TorchVinecop CPU runs are pinned to a single torch thread so they
+stay apples-to-apples with the legacy/laptop numbers; the C++ side gets
+swept across --threads explicitly.
 
-Outputs a CSV table to --output (default: stdout) with columns
-  method, n, d, t_cpp_ms, t_legacy_ms, t_lazy_ms.
+Outputs a long-format CSV (one row per timed configuration) to --output
+(default: stdout) with columns:
+    method, n, d, backend, threads, device, cache_integrals, impl, time_ms
+
+For C++ rows, device / cache_integrals / impl are empty.
+For torch rows, threads is empty.
 """
 
 from __future__ import annotations
@@ -35,6 +40,25 @@ def _parse_int_list(s: str) -> list[int]:
   return [int(x) for x in s.split(",") if x.strip()]
 
 
+def _parse_str_list(s: str) -> list[str]:
+  return [x.strip() for x in s.split(",") if x.strip()]
+
+
+def _parse_bool_list(s: str) -> list[bool]:
+  out: list[bool] = []
+  for raw in s.split(","):
+    tok = raw.strip().lower()
+    if not tok:
+      continue
+    if tok in ("1", "true", "yes", "y", "t"):
+      out.append(True)
+    elif tok in ("0", "false", "no", "n", "f"):
+      out.append(False)
+    else:
+      raise argparse.ArgumentTypeError(f"not a bool: {raw!r}")
+  return out
+
+
 def _simulate(n: int, d: int, seed: int) -> np.ndarray:
   rng = np.random.default_rng(seed)
   base = rng.standard_normal(size=(n, 1))
@@ -42,39 +66,103 @@ def _simulate(n: int, d: int, seed: int) -> np.ndarray:
   return pv.to_pseudo_obs(0.6 * base + 0.4 * noise)
 
 
-def _time_repeats(fn, repeats: int) -> float:
-  """Median wall-clock per call, in milliseconds."""
+def _time_repeats(fn, repeats: int, sync=None) -> float:
+  """Median wall-clock per call, in milliseconds. `sync()` is called
+  around each timed run so CUDA kernels are fully drained."""
+  if sync is not None:
+    sync()
   fn()  # warm-up
+  if sync is not None:
+    sync()
   times = []
   for _ in range(repeats):
+    if sync is not None:
+      sync()
     t0 = time.perf_counter()
     fn()
+    if sync is not None:
+      sync()
     times.append(time.perf_counter() - t0)
   return 1000.0 * median(times)
 
 
+METHODS = ("pdf", "rosenblatt", "inverse_rosenblatt")
+
+
 def _bench_cell(
-  n: int, d: int, repeats: int, seed: int
-) -> list[tuple[str, int, int, float, float, float]]:
+  n: int,
+  d: int,
+  threads: list[int],
+  devices: list[str],
+  caches: list[bool],
+  impls: list[str],
+  repeats: int,
+  seed: int,
+) -> list[dict]:
   u_fit = _simulate(n=n, d=d, seed=seed)
   ctl = pv.FitControlsVinecop(family_set=[pv.families.tll], num_threads=1)
   cop = pv.Vinecop.from_data(u_fit, controls=ctl)
-  bc = TorchVinecop.from_vinecop(cop)
 
   rng = np.random.default_rng(seed + 1)
   u_eval = rng.uniform(0.05, 0.95, size=(n, d))
-  u_t = torch.from_numpy(u_eval)
 
-  rows: list[tuple[str, int, int, float, float, float]] = []
-  for name, fn_cpp, fn_torch in [
-    ("pdf", cop.pdf, bc.pdf),
-    ("rosenblatt", cop.rosenblatt, bc.rosenblatt),
-    ("inverse_rosenblatt", cop.inverse_rosenblatt, bc.inverse_rosenblatt),
-  ]:
-    t_cpp = _time_repeats(lambda: fn_cpp(u_eval), repeats)
-    t_legacy = _time_repeats(lambda: fn_torch(u_t, impl="legacy"), repeats)
-    t_lazy = _time_repeats(lambda: fn_torch(u_t, impl="lazy"), repeats)
-    rows.append((name, n, d, t_cpp, t_legacy, t_lazy))
+  rows: list[dict] = []
+
+  # ---- C++ side --------------------------------------------------------
+  for method in METHODS:
+    cpp_fn = getattr(cop, method)
+    for t in threads:
+      ms = _time_repeats(lambda: cpp_fn(u_eval, num_threads=t), repeats)
+      rows.append(
+        {
+          "method": method,
+          "n": n,
+          "d": d,
+          "backend": "cpp",
+          "threads": t,
+          "device": "",
+          "cache_integrals": "",
+          "impl": "",
+          "time_ms": ms,
+        }
+      )
+
+  # ---- Torch side ------------------------------------------------------
+  for device in devices:
+    sync = torch.cuda.synchronize if device.startswith("cuda") else None
+    for cache in caches:
+      bc = TorchVinecop.from_vinecop(
+        cop, cache_integrals=cache, device=torch.device(device)
+      )
+      u_t = torch.from_numpy(u_eval).to(device)
+      if sync is not None:
+        sync()
+      for method in METHODS:
+        torch_fn = getattr(bc, method)
+        for impl in impls:
+          ms = _time_repeats(
+            lambda fn=torch_fn, u=u_t, i=impl: fn(u, impl=i),
+            repeats,
+            sync=sync,
+          )
+          rows.append(
+            {
+              "method": method,
+              "n": n,
+              "d": d,
+              "backend": "torch",
+              "threads": "",
+              "device": device,
+              "cache_integrals": str(cache).lower(),
+              "impl": impl,
+              "time_ms": ms,
+            }
+          )
+      # Free GPU memory before building the next variant
+      del bc, u_t
+      if sync is not None:
+        torch.cuda.empty_cache()
+
   return rows
 
 
@@ -82,9 +170,33 @@ def main() -> None:
   ap = argparse.ArgumentParser(
     description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
   )
-  ap.add_argument("--n", default="500,2000,10000", type=_parse_int_list)
+  ap.add_argument("--n", default="500,2000", type=_parse_int_list)
   ap.add_argument("--d", default="5,10,20,40", type=_parse_int_list)
-  ap.add_argument("--repeats", default=5, type=int)
+  ap.add_argument(
+    "--threads",
+    default="1,16",
+    type=_parse_int_list,
+    help="C++ thread counts to sweep (default: 1,16).",
+  )
+  ap.add_argument(
+    "--devices",
+    default="cpu,cuda",
+    type=_parse_str_list,
+    help="Torch devices to sweep (default: cpu,cuda).",
+  )
+  ap.add_argument(
+    "--cache",
+    default="false,true",
+    type=_parse_bool_list,
+    help="cache_integrals values to sweep (default: false,true).",
+  )
+  ap.add_argument(
+    "--impls",
+    default="legacy,lazy",
+    type=_parse_str_list,
+    help="TorchVinecop impl variants to sweep (default: legacy,lazy).",
+  )
+  ap.add_argument("--repeats", default=3, type=int)
   ap.add_argument("--seed", default=42, type=int)
   ap.add_argument(
     "--output",
@@ -95,25 +207,45 @@ def main() -> None:
 
   torch.set_num_threads(1)
 
+  devices = list(args.devices)
+  if "cuda" in devices and not torch.cuda.is_available():
+    print(
+      "# WARNING: cuda requested but not available; skipping.",
+      file=sys.stderr,
+    )
+    devices = [d for d in devices if not d.startswith("cuda")]
+
   out = sys.stdout if args.output == "-" else open(args.output, "w", newline="")
-  writer = csv.writer(out)
-  writer.writerow(["method", "n", "d", "t_cpp_ms", "t_legacy_ms", "t_lazy_ms"])
+  fieldnames = [
+    "method",
+    "n",
+    "d",
+    "backend",
+    "threads",
+    "device",
+    "cache_integrals",
+    "impl",
+    "time_ms",
+  ]
+  writer = csv.DictWriter(out, fieldnames=fieldnames)
+  writer.writeheader()
   out.flush()
   for n in args.n:
     for d in args.d:
       print(f"# cell n={n} d={d}", file=sys.stderr, flush=True)
-      rows = _bench_cell(n=n, d=d, repeats=args.repeats, seed=args.seed)
+      rows = _bench_cell(
+        n=n,
+        d=d,
+        threads=args.threads,
+        devices=devices,
+        caches=args.cache,
+        impls=args.impls,
+        repeats=args.repeats,
+        seed=args.seed,
+      )
       for row in rows:
-        writer.writerow(
-          [
-            row[0],
-            row[1],
-            row[2],
-            f"{row[3]:.3f}",
-            f"{row[4]:.3f}",
-            f"{row[5]:.3f}",
-          ]
-        )
+        row["time_ms"] = f"{row['time_ms']:.3f}"
+        writer.writerow(row)
         out.flush()
   if args.output != "-":
     out.close()
