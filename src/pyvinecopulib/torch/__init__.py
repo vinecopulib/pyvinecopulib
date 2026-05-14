@@ -22,6 +22,7 @@ except ImportError as e:
   ) from e
 
 from .bicop import TorchBicop
+from .vinecop import TorchVinecop
 from ._interp import InterpolationGrid2D
 
-__all__ = ["TorchBicop", "InterpolationGrid2D"]
+__all__ = ["TorchBicop", "TorchVinecop", "InterpolationGrid2D"]
