@@ -9,7 +9,7 @@ help: ## Show this help message
 
 sync: ## Install all deps + editable build + pre-commit hooks
 	$(UV) sync --all-extras --group dev --group test --group notebooks
-	$(UV) pip install -e . --no-build-isolation
+	$(UV) pip install -e . --no-build-isolation --python .venv
 	$(UV) run pre-commit install
 
 clean: ## Wipe build artifacts and Python caches
