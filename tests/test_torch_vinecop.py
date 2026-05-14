@@ -183,3 +183,55 @@ def test_pdf_shape_validation() -> None:
 
   with pytest.raises(ValueError, match=r"shape \(n, 4\)"):
     bc.pdf(torch.zeros(10, 5, dtype=torch.float64))
+
+
+# --------------------------------------------------------------------- #
+# `impl="lazy"` equivalence: dict-based bookkeeping must give identical
+# results to the legacy impl (same math, different bookkeeping).
+# --------------------------------------------------------------------- #
+
+
+def test_pdf_lazy_matches_legacy() -> None:
+  u_fit = _simulate(d=5, n=2000, seed=101)
+  cop_tll = _fit_tll_vine(u_fit)
+  bc = TorchVinecop.from_vinecop(cop_tll)
+  u_eval = _eval_grid(500, d=5, seed=111)
+  u_t = torch.from_numpy(u_eval)
+  out_legacy = bc.pdf(u_t, impl="legacy").numpy()
+  out_lazy = bc.pdf(u_t, impl="lazy").numpy()
+  np.testing.assert_allclose(out_lazy, out_legacy, atol=1e-12, rtol=1e-12)
+
+
+def test_rosenblatt_lazy_matches_legacy() -> None:
+  u_fit = _simulate(d=5, n=2000, seed=102)
+  cop_tll = _fit_tll_vine(u_fit)
+  bc = TorchVinecop.from_vinecop(cop_tll)
+  u_eval = _eval_grid(500, d=5, seed=112)
+  u_t = torch.from_numpy(u_eval)
+  out_legacy = bc.rosenblatt(u_t, impl="legacy").numpy()
+  out_lazy = bc.rosenblatt(u_t, impl="lazy").numpy()
+  np.testing.assert_allclose(out_lazy, out_legacy, atol=1e-12, rtol=1e-12)
+
+
+def test_inverse_rosenblatt_lazy_matches_legacy() -> None:
+  u_fit = _simulate(d=5, n=2000, seed=103)
+  cop_tll = _fit_tll_vine(u_fit)
+  bc = TorchVinecop.from_vinecop(cop_tll)
+  rng = np.random.default_rng(113)
+  w = rng.uniform(0.05, 0.95, size=(400, 5))
+  w_t = torch.from_numpy(w)
+  out_legacy = bc.inverse_rosenblatt(w_t, impl="legacy").numpy()
+  out_lazy = bc.inverse_rosenblatt(w_t, impl="lazy").numpy()
+  # The two paths invoke ITP independently; tolerances mirror the
+  # existing inverse_rosenblatt agreement test against pv.Vinecop.
+  np.testing.assert_allclose(out_lazy, out_legacy, atol=1e-5, rtol=1e-5)
+
+
+def test_invalid_impl_raises() -> None:
+  u_fit = _simulate(d=3, n=500, seed=104)
+  cop_tll = _fit_tll_vine(u_fit)
+  bc = TorchVinecop.from_vinecop(cop_tll)
+  u_t = torch.from_numpy(_eval_grid(20, d=3, seed=114))
+  for fn in (bc.pdf, bc.rosenblatt, bc.inverse_rosenblatt):
+    with pytest.raises(ValueError, match="impl must be"):
+      fn(u_t, impl="bogus")
