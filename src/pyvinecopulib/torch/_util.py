@@ -4,8 +4,14 @@
 used to invert h-functions (``hinv1`` / ``hinv2``). It mirrors C++
 ``tools_eigen::invert_f``: 35 iterations, no host-side early-exit. The
 fixed iteration count keeps the entire op sequence elementwise and
-data-independent, which is required for ``torch.cuda.CUDAGraph`` capture.
-At 35 iters the bracket-width accuracy is ``0.5**35 ≈ 6e-11``.
+data-independent. Bracket accuracy at 35 iters is ``0.5**35 ≈ 6e-11``.
+
+(Note: a safeguarded Newton-Raphson alternative was prototyped but
+abandoned. The cached-h-or-trapezoidal ``hfunc`` is piecewise-linear with
+clamping near the boundaries; Newton steps consistently overshot and the
+bracket safeguard fell back to bisection on every iter, eliminating the
+expected speedup. Bisection is the right algorithm for this kind of
+function.)
 """
 
 from __future__ import annotations
