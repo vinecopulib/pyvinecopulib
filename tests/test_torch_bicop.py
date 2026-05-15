@@ -102,6 +102,59 @@ def test_from_bicop_rejects_rotated() -> None:
     TorchBicop.from_bicop(_FakeCop())  # type: ignore[arg-type]
 
 
+# --------------------------------------------------------------------------- #
+# TorchBicop.from_data — pure-torch TLL fit                                    #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("n", [500, 2000])
+@pytest.mark.parametrize("rho", [0.3, 0.6, 0.9])
+def test_from_data_matches_cpp(n: int, rho: float) -> None:
+  """The pure-torch TLL constant fit produces the same density grid as
+  ``pv.Bicop.from_data`` to machine precision after the standard
+  ``normalize_margins(3)`` round in :class:`InterpolationGrid2D`.
+  """
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[rho]]))
+  u_np = cop.simulate(n, seeds=[1, 2, 3])
+  cop_cpp = pv.Bicop.from_data(
+    u_np,
+    controls=pv.FitControlsBicop(family_set=[pv.families.tll], num_threads=1),
+  )
+  bc_torch = TorchBicop.from_data(u_np)
+  np.testing.assert_allclose(
+    bc_torch.interp_grid.values.numpy(),
+    cop_cpp.parameters,
+    atol=1e-11,
+    rtol=1e-11,
+  )
+
+
+def test_from_data_evaluates_consistently() -> None:
+  """Fit on data, evaluate pdf/cdf/hfunc/hinv — sanity checks: finite,
+  in-range, hinv round-trips. Doesn't pin to a reference; the
+  matches-vs-cpp test covers the fit accuracy."""
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
+  u_np = cop.simulate(1000, seeds=[11, 22, 33])
+  bc = TorchBicop.from_data(u_np)
+
+  u_eval = _eval_grid(300, seed=99)
+  u_t = torch.from_numpy(u_eval)
+
+  pdf = bc.pdf(u_t)
+  assert pdf.isfinite().all() and (pdf > 0).all()
+  cdf = bc.cdf(u_t)
+  assert ((cdf > 0) & (cdf < 1)).all()
+  h1 = bc.hfunc1(u_t)
+  h2 = bc.hfunc2(u_t)
+  assert ((h1 >= 0) & (h1 <= 1)).all()
+  assert ((h2 >= 0) & (h2 <= 1)).all()
+
+  # hinv round-trip
+  u2 = bc.hinv1(u_t).unsqueeze(-1)
+  back = bc.hfunc1(torch.cat([u_t[:, 0:1], u2], dim=-1)).numpy()
+  np.testing.assert_allclose(back, u_eval[:, 1], atol=1e-9, rtol=1e-9)
+
+
 def test_cached_integrals_smoke() -> None:
   """Sanity check that ``cache_integrals=True`` produces finite outputs in
   range. We don't pin it to the trapezoidal path — the two paths agree only
