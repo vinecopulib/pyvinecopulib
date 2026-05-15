@@ -274,6 +274,8 @@ class BatchedTreeLevel(torch.nn.Module):
   h1_cache: Tensor | None
   h2_cache: Tensor | None
   cdf_cache: Tensor | None
+  hinv1_cache: Tensor | None
+  hinv2_cache: Tensor | None
   is_indep: Tensor
   col0_src: Tensor
   col1_src: Tensor
@@ -288,6 +290,8 @@ class BatchedTreeLevel(torch.nn.Module):
     h1_cache: Tensor | None,
     h2_cache: Tensor | None,
     cdf_cache: Tensor | None,
+    hinv1_cache: Tensor | None,
+    hinv2_cache: Tensor | None,
     is_indep: Tensor,
     col0_src: Tensor,
     col1_src: Tensor,
@@ -301,11 +305,15 @@ class BatchedTreeLevel(torch.nn.Module):
       self.register_buffer("h1_cache", h1_cache)
       self.register_buffer("h2_cache", h2_cache)
       self.register_buffer("cdf_cache", cdf_cache)
+      self.register_buffer("hinv1_cache", hinv1_cache)
+      self.register_buffer("hinv2_cache", hinv2_cache)
       self._has_cache = True
     else:
       self.h1_cache = None
       self.h2_cache = None
       self.cdf_cache = None
+      self.hinv1_cache = None
+      self.hinv2_cache = None
       self._has_cache = False
     self.register_buffer("is_indep", is_indep)
     self.register_buffer("col0_src", col0_src)
@@ -367,6 +375,36 @@ class BatchedTreeLevel(torch.nn.Module):
     h = raw.clamp(0.0, 1.0)
     return torch.where(
       self.is_indep[:, None], u[..., 0].clamp(_TRIM_LO, _TRIM_HI), h
+    )
+
+  def hinv1(self, grid_points: Tensor, u: Tensor) -> Tensor:
+    """Per-pair hinv1. Requires ``cache_integrals=True`` — the precomputed
+    ``hinv1_cache`` collapses the C++ bisection cascade to one bilinear
+    interp per call. Without the cache the batched cascade can still
+    invert via bisection in the caller; this method raises so the caller
+    fails fast rather than silently routing through a slow path."""
+    if self.hinv1_cache is None:
+      raise RuntimeError(
+        "BatchedTreeLevel.hinv1 requires cache_integrals=True; build the "
+        "TorchBicop / TorchVinecop with cache_integrals=True to populate "
+        "the hinv1 cache."
+      )
+    raw = interp_at_batched(grid_points, self.hinv1_cache, u).clamp(0.0, 1.0)
+    return torch.where(
+      self.is_indep[:, None], u[..., 1].clamp(_TRIM_LO, _TRIM_HI), raw
+    )
+
+  def hinv2(self, grid_points: Tensor, u: Tensor) -> Tensor:
+    """Per-pair hinv2. See :meth:`hinv1` for the cache requirement."""
+    if self.hinv2_cache is None:
+      raise RuntimeError(
+        "BatchedTreeLevel.hinv2 requires cache_integrals=True; build the "
+        "TorchBicop / TorchVinecop with cache_integrals=True to populate "
+        "the hinv2 cache."
+      )
+    raw = interp_at_batched(grid_points, self.hinv2_cache, u).clamp(0.0, 1.0)
+    return torch.where(
+      self.is_indep[:, None], u[..., 0].clamp(_TRIM_LO, _TRIM_HI), raw
     )
 
 
@@ -437,6 +475,8 @@ class BatchedVine(torch.nn.Module):
       h1_list: list[Tensor | None] = []
       h2_list: list[Tensor | None] = []
       cdf_list: list[Tensor | None] = []
+      hinv1_list: list[Tensor | None] = []
+      hinv2_list: list[Tensor | None] = []
       is_indep: list[bool] = []
       col0_src: list[int] = []
       col1_src: list[int] = []
@@ -455,6 +495,8 @@ class BatchedVine(torch.nn.Module):
         h1_list.append(bc._hfunc1_cache)
         h2_list.append(bc._hfunc2_cache)
         cdf_list.append(bc._cdf_cache)
+        hinv1_list.append(bc._hinv1_cache)
+        hinv2_list.append(bc._hinv2_cache)
         is_indep.append(bool(bc.is_indep))
         col0_src.append(e)
         col1_src.append(m - 1)
@@ -466,6 +508,8 @@ class BatchedVine(torch.nn.Module):
       h1_cache: Tensor | None
       h2_cache: Tensor | None
       cdf_cache: Tensor | None
+      hinv1_cache: Tensor | None
+      hinv2_cache: Tensor | None
       if all_have_cache:
         h1_cache = torch.stack(cast(list[Tensor], h1_list), dim=0).to(
           device=device
@@ -476,14 +520,22 @@ class BatchedVine(torch.nn.Module):
         cdf_cache = torch.stack(cast(list[Tensor], cdf_list), dim=0).to(
           device=device
         )
+        hinv1_cache = torch.stack(cast(list[Tensor], hinv1_list), dim=0).to(
+          device=device
+        )
+        hinv2_cache = torch.stack(cast(list[Tensor], hinv2_list), dim=0).to(
+          device=device
+        )
       else:
-        h1_cache = h2_cache = cdf_cache = None
+        h1_cache = h2_cache = cdf_cache = hinv1_cache = hinv2_cache = None
 
       level = BatchedTreeLevel(
         values=values,
         h1_cache=h1_cache,
         h2_cache=h2_cache,
         cdf_cache=cdf_cache,
+        hinv1_cache=hinv1_cache,
+        hinv2_cache=hinv2_cache,
         is_indep=torch.tensor(is_indep, dtype=torch.bool, device=device),
         col0_src=torch.tensor(col0_src, dtype=torch.long, device=device),
         col1_src=torch.tensor(col1_src, dtype=torch.long, device=device),

@@ -151,6 +151,12 @@ def _bench_cell(
               # use_graph=True only valid on CUDA tensors.
               if use_graph and not device.startswith("cuda"):
                 continue
+              # inverse_rosenblatt with use_graph=True captures the
+              # entire bisection cascade (35 iters x O(d^2) per-pair
+              # ops); the CUDA Graph pool exceeds 11 GB at d >= 20.
+              # Skip — the headline win is on pdf/rosenblatt.
+              if use_graph and method == "inverse_rosenblatt":
+                continue
               ms = _time_repeats(
                 lambda fn=torch_fn, u=u_t, i=impl, b=batched, g=use_graph: fn(
                   u, impl=i, batched=b, use_graph=g
@@ -173,6 +179,14 @@ def _bench_cell(
                   "time_ms": ms,
                 }
               )
+              # Each `use_graph=True` capture parks a private CUDA Graph
+              # pool on the device; without an eviction step those pools
+              # accumulate across configs and can OOM on larger cells
+              # (d >= 20). Drop after every timed config so each capture
+              # starts from a clean pool.
+              if use_graph and sync is not None:
+                bc.clear_graph_cache()
+                torch.cuda.empty_cache()
       # Free GPU memory before building the next variant
       del bc, u_t
       if sync is not None:

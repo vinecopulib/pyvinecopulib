@@ -243,12 +243,19 @@ class InterpolationGrid2D(torch.nn.Module):
   # --------------------------------------------------------------------- #
 
   @torch.no_grad()
-  def build_caches(self) -> tuple[Tensor, Tensor, Tensor]:
-    """Precompute ``cdf`` / ``hfunc1`` / ``hfunc2`` at every grid node.
+  def build_caches(self) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+    """Precompute ``cdf`` / ``hfunc1`` / ``hfunc2`` / ``hinv1`` / ``hinv2``
+    at every grid node.
 
-    Returns three ``(m, m)`` tensors; ``TorchBicop`` stores these as buffers
-    and bilinearly interpolates them when ``cache_integrals=True``.
+    Returns five ``(m, m)`` tensors; ``TorchBicop`` stores them as buffers
+    and bilinearly interpolates them when ``cache_integrals=True``. The
+    inverse-h-function caches are built by inverting the just-computed
+    h-function caches via a single batched bisection over the full
+    ``m^2`` grid (each call is then one lookup instead of 35 iterations
+    of bisection at eval time).
     """
+    from ._util import solve_bisection
+
     m = self.grid_points.shape[0]
     gi, gj = torch.meshgrid(self.grid_points, self.grid_points, indexing="ij")
     grid_pairs = torch.stack(
@@ -257,7 +264,44 @@ class InterpolationGrid2D(torch.nn.Module):
     cdf_vals = self.integrate_2d(grid_pairs).reshape(m, m)
     h1_vals = self.integrate_1d(grid_pairs, cond_var=1).reshape(m, m)
     h2_vals = self.integrate_1d(grid_pairs, cond_var=2).reshape(m, m)
-    return cdf_vals, h1_vals, h2_vals
+
+    # hinv1: for each grid point (g_i, g_j), solve hfunc1((g_i, u2)) = g_j
+    # for u2. Use the just-built h1_vals cache so the bisection's inner
+    # function is a fast bilinear interp.
+    a = grid_pairs[:, 0:1]
+    p = grid_pairs[:, 1:2]
+
+    def _fun_hinv1(u2: Tensor) -> Tensor:
+      u_e = torch.cat([a, u2], dim=-1)
+      return (
+        self.interp_at(h1_vals, u_e).clamp(_TRIM_LO, _TRIM_HI).unsqueeze(-1) - p
+      )
+
+    hinv1_vals = (
+      solve_bisection(_fun_hinv1, torch.zeros_like(p), torch.ones_like(p))
+      .squeeze(-1)
+      .clamp(0.0, 1.0)
+      .reshape(m, m)
+    )
+
+    # hinv2: symmetric — solve hfunc2((u1, g_j)) = g_i for u1.
+    b = grid_pairs[:, 1:2]
+    p = grid_pairs[:, 0:1]
+
+    def _fun_hinv2(u1: Tensor) -> Tensor:
+      u_e = torch.cat([u1, b], dim=-1)
+      return (
+        self.interp_at(h2_vals, u_e).clamp(_TRIM_LO, _TRIM_HI).unsqueeze(-1) - p
+      )
+
+    hinv2_vals = (
+      solve_bisection(_fun_hinv2, torch.zeros_like(p), torch.ones_like(p))
+      .squeeze(-1)
+      .clamp(0.0, 1.0)
+      .reshape(m, m)
+    )
+
+    return cdf_vals, h1_vals, h2_vals, hinv1_vals, hinv2_vals
 
   @torch.no_grad()
   def interp_at(self, cache: Tensor, u: Tensor) -> Tensor:

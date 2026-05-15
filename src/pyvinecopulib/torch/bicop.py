@@ -43,12 +43,15 @@ class TorchBicop(torch.nn.Module):
   values:
     Square ``(m, m)`` tensor of density values on the tensor-product grid.
   cache_integrals:
-    If ``True``, precompute ``cdf`` / ``hfunc1`` / ``hfunc2`` at every grid
-    node (three extra ``m × m`` buffers, ≈21 KiB at ``m=30``). ``cdf``/
-    ``hfunc`` calls then use one bilinear lookup on the cached grid —
-    much faster for large batches, with a small interpolation gap between
-    grid nodes vs. the on-the-fly trapezoidal integration. Default
-    ``False`` matches the C++ implementation exactly.
+    If ``True``, precompute ``cdf`` / ``hfunc1`` / ``hfunc2`` / ``hinv1`` /
+    ``hinv2`` at every grid node (five extra ``m × m`` buffers, ≈36 KiB
+    at ``m=30``). ``cdf`` / ``hfunc`` / ``hinv`` calls then use one
+    bilinear lookup on the cached grid — much faster for large batches
+    (``hinv`` in particular drops from 35 bisection iterations to a
+    single interp), with a small interpolation gap between grid nodes
+    (~1e-3 mean / ~1e-2 max relative to the on-the-fly trapezoidal +
+    bisection path). Default ``False`` matches the C++ implementation
+    exactly.
   norm_times:
     Number of margin-normalization rounds; passed through to
     :class:`InterpolationGrid2D`. The C++ default is 3; pass 0 to skip
@@ -96,14 +99,20 @@ class TorchBicop(torch.nn.Module):
 
     self._cache_integrals = bool(cache_integrals)
     if self._cache_integrals and not self.is_indep:
-      cdf_vals, h1_vals, h2_vals = self.interp_grid.build_caches()
+      cdf_vals, h1_vals, h2_vals, hinv1_vals, hinv2_vals = (
+        self.interp_grid.build_caches()
+      )
       self.register_buffer("_cdf_cache", cdf_vals)
       self.register_buffer("_hfunc1_cache", h1_vals)
       self.register_buffer("_hfunc2_cache", h2_vals)
+      self.register_buffer("_hinv1_cache", hinv1_vals)
+      self.register_buffer("_hinv2_cache", hinv2_vals)
     else:
       self._cdf_cache = None
       self._hfunc1_cache = None
       self._hfunc2_cache = None
+      self._hinv1_cache = None
+      self._hinv2_cache = None
 
   # --------------------------------------------------------------------- #
   # Constructors                                                           #
@@ -260,11 +269,15 @@ class TorchBicop(torch.nn.Module):
     """Inverse of ``hfunc1`` w.r.t. the second argument.
 
     Given ``u = [u1, p]`` with shape ``(n, 2)``, returns ``u2`` such that
-    ``hfunc1((u1, u2)) = p``.
+    ``hfunc1((u1, u2)) = p``. With ``cache_integrals=True`` this is a
+    single bilinear interp on the precomputed ``_hinv1_cache``; otherwise
+    each call runs a fresh bisection on top of the on-the-fly h-function.
     """
     u = self._prep(u)
     if self.is_indep:
       return u[:, 1].clamp(_TRIM_LO, _TRIM_HI)
+    if self._hinv1_cache is not None:
+      return self.interp_grid.interp_at(self._hinv1_cache, u).clamp(0.0, 1.0)
     a = u[:, 0:1]
     p = u[:, 1:2]
 
@@ -280,11 +293,13 @@ class TorchBicop(torch.nn.Module):
     """Inverse of ``hfunc2`` w.r.t. the first argument.
 
     Given ``u = [p, u2]`` with shape ``(n, 2)``, returns ``u1`` such that
-    ``hfunc2((u1, u2)) = p``.
+    ``hfunc2((u1, u2)) = p``. See :meth:`hinv1` for the cache semantics.
     """
     u = self._prep(u)
     if self.is_indep:
       return u[:, 0].clamp(_TRIM_LO, _TRIM_HI)
+    if self._hinv2_cache is not None:
+      return self.interp_grid.interp_at(self._hinv2_cache, u).clamp(0.0, 1.0)
     p = u[:, 0:1]
     b = u[:, 1:2]
 

@@ -165,11 +165,50 @@ def test_cached_integrals_smoke() -> None:
   cop_tll = _fit_tll(u_fit)
 
   bc_cache = TorchBicop.from_bicop(cop_tll, cache_integrals=True)
+  # All five caches must be populated for a non-indep pair.
+  assert bc_cache._cdf_cache is not None
+  assert bc_cache._hfunc1_cache is not None
+  assert bc_cache._hfunc2_cache is not None
+  assert bc_cache._hinv1_cache is not None
+  assert bc_cache._hinv2_cache is not None
+
   u_t = torch.from_numpy(_eval_grid(200, seed=42))
-  for fn in (bc_cache.cdf, bc_cache.hfunc1, bc_cache.hfunc2):
+  for fn in (
+    bc_cache.cdf,
+    bc_cache.hfunc1,
+    bc_cache.hfunc2,
+    bc_cache.hinv1,
+    bc_cache.hinv2,
+  ):
     out = fn(u_t)
     assert torch.isfinite(out).all()
     assert (out >= 0.0).all() and (out <= 1.0).all()
+
+
+def test_cached_hinv_speedup() -> None:
+  """``cache_integrals=True`` should make ``hinv1`` / ``hinv2`` a single
+  bilinear interp instead of 35 iters of bisection. Verify the cached
+  path matches the bisection path to within bilinear-interp precision
+  (~1e-2 max, the usual gap between the cached integral and the
+  trapezoidal recomputation at off-node points).
+  """
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  u_fit = cop.simulate(2000, seeds=[1, 2, 3])
+  cop_tll = _fit_tll(u_fit)
+
+  bc_bisect = TorchBicop.from_bicop(cop_tll, cache_integrals=False)
+  bc_cached = TorchBicop.from_bicop(cop_tll, cache_integrals=True)
+
+  u_t = torch.from_numpy(_eval_grid(500, seed=77))
+  for which in ("hinv1", "hinv2"):
+    out_bisect = getattr(bc_bisect, which)(u_t).numpy()
+    out_cached = getattr(bc_cached, which)(u_t).numpy()
+    diff = np.abs(out_bisect - out_cached)
+    # Bilinear-interp gap between the cached hinv and the bisection-on-
+    # cached-h path (the latter converges to ~1e-9 of h's cache; the
+    # former lives off-grid).
+    assert diff.max() < 2e-2, f"{which}: max diff {diff.max():.3e}"
+    assert diff.mean() < 3e-3, f"{which}: mean diff {diff.mean():.3e}"
 
 
 def test_independent_bicop() -> None:
