@@ -6,7 +6,7 @@ For each (n, d) cell in the grid:
   - fit a pv.Vinecop with the TLL family (single thread),
   - time pv.Vinecop.<method>(u, num_threads=t) for every t in --threads,
   - time TorchVinecop.<method>(u, ...) for every combination of
-    --devices x --cache x --impls x --batched x --use-graph,
+    --devices x --cache x --impls x --batched,
   - report the median wall-clock per call (in milliseconds).
 
 The TorchVinecop CPU runs are pinned to a single torch thread so they
@@ -16,11 +16,10 @@ across --threads explicitly.
 Outputs a long-format CSV (one row per timed configuration) to --output
 (default: stdout) with columns:
     method, n, d, backend, threads, device, cache_integrals, impl,
-    batched, use_graph, time_ms
+    batched, time_ms
 
-For C++ rows, device / cache_integrals / impl / batched / use_graph are
-empty. For torch rows, threads is empty. use_graph=True rows are only
-emitted for CUDA devices.
+For C++ rows, device / cache_integrals / impl / batched are empty.
+For torch rows, threads is empty.
 """
 
 from __future__ import annotations
@@ -99,7 +98,6 @@ def _bench_cell(
   caches: list[bool],
   impls: list[str],
   batched_modes: list[bool],
-  use_graph_modes: list[bool],
   repeats: int,
   seed: int,
 ) -> list[dict]:
@@ -128,7 +126,6 @@ def _bench_cell(
           "cache_integrals": "",
           "impl": "",
           "batched": "",
-          "use_graph": "",
           "time_ms": ms,
         }
       )
@@ -147,46 +144,27 @@ def _bench_cell(
         torch_fn = getattr(bc, method)
         for impl in impls:
           for batched in batched_modes:
-            for use_graph in use_graph_modes:
-              # use_graph=True only valid on CUDA tensors.
-              if use_graph and not device.startswith("cuda"):
-                continue
-              # inverse_rosenblatt with use_graph=True captures the
-              # entire bisection cascade (35 iters x O(d^2) per-pair
-              # ops); the CUDA Graph pool exceeds 11 GB at d >= 20.
-              # Skip — the headline win is on pdf/rosenblatt.
-              if use_graph and method == "inverse_rosenblatt":
-                continue
-              ms = _time_repeats(
-                lambda fn=torch_fn, u=u_t, i=impl, b=batched, g=use_graph: fn(
-                  u, impl=i, batched=b, use_graph=g
-                ),
-                repeats,
-                sync=sync,
-              )
-              rows.append(
-                {
-                  "method": method,
-                  "n": n,
-                  "d": d,
-                  "backend": "torch",
-                  "threads": "",
-                  "device": device,
-                  "cache_integrals": str(cache).lower(),
-                  "impl": impl,
-                  "batched": str(batched).lower(),
-                  "use_graph": str(use_graph).lower(),
-                  "time_ms": ms,
-                }
-              )
-              # Each `use_graph=True` capture parks a private CUDA Graph
-              # pool on the device; without an eviction step those pools
-              # accumulate across configs and can OOM on larger cells
-              # (d >= 20). Drop after every timed config so each capture
-              # starts from a clean pool.
-              if use_graph and sync is not None:
-                bc.clear_graph_cache()
-                torch.cuda.empty_cache()
+            ms = _time_repeats(
+              lambda fn=torch_fn, u=u_t, i=impl, b=batched: fn(
+                u, impl=i, batched=b
+              ),
+              repeats,
+              sync=sync,
+            )
+            rows.append(
+              {
+                "method": method,
+                "n": n,
+                "d": d,
+                "backend": "torch",
+                "threads": "",
+                "device": device,
+                "cache_integrals": str(cache).lower(),
+                "impl": impl,
+                "batched": str(batched).lower(),
+                "time_ms": ms,
+              }
+            )
       # Free GPU memory before building the next variant
       del bc, u_t
       if sync is not None:
@@ -231,13 +209,6 @@ def main() -> None:
     type=_parse_bool_list,
     help="batched=True/False values to sweep (default: false,true).",
   )
-  ap.add_argument(
-    "--use-graph",
-    default="false",
-    type=_parse_bool_list,
-    help="use_graph=True/False values to sweep (default: false). "
-    "use_graph=True is only meaningful on CUDA devices.",
-  )
   ap.add_argument("--repeats", default=3, type=int)
   ap.add_argument("--seed", default=42, type=int)
   ap.add_argument(
@@ -268,7 +239,6 @@ def main() -> None:
     "cache_integrals",
     "impl",
     "batched",
-    "use_graph",
     "time_ms",
   ]
   writer = csv.DictWriter(out, fieldnames=fieldnames)
@@ -285,7 +255,6 @@ def main() -> None:
         caches=args.cache,
         impls=args.impls,
         batched_modes=args.batched,
-        use_graph_modes=args.use_graph,
         repeats=args.repeats,
         seed=args.seed,
       )
