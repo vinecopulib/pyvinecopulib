@@ -83,11 +83,11 @@ def test_hinv_roundtrip() -> None:
 
   u2 = bc.hinv1(u_t).unsqueeze(-1)
   back = bc.hfunc1(torch.cat([u_t[:, 0:1], u2], dim=-1)).numpy()
-  np.testing.assert_allclose(back, u_eval[:, 1], atol=1e-5, rtol=1e-5)
+  np.testing.assert_allclose(back, u_eval[:, 1], atol=1e-9, rtol=1e-9)
 
   u1 = bc.hinv2(u_t).unsqueeze(-1)
   back = bc.hfunc2(torch.cat([u1, u_t[:, 1:2]], dim=-1)).numpy()
-  np.testing.assert_allclose(back, u_eval[:, 0], atol=1e-5, rtol=1e-5)
+  np.testing.assert_allclose(back, u_eval[:, 0], atol=1e-9, rtol=1e-9)
 
 
 def _rotate_data_np(u: np.ndarray, rotation: int) -> np.ndarray:
@@ -192,11 +192,11 @@ def test_hinv_roundtrip_with_rotation(rotation: int) -> None:
 
   u2 = bc.hinv1(u_t).unsqueeze(-1)
   back1 = bc.hfunc1(torch.cat([u_t[:, 0:1], u2], dim=-1)).numpy()
-  np.testing.assert_allclose(back1, u[:, 1], atol=1e-5, rtol=1e-5)
+  np.testing.assert_allclose(back1, u[:, 1], atol=1e-9, rtol=1e-9)
 
   u1 = bc.hinv2(u_t).unsqueeze(-1)
   back2 = bc.hfunc2(torch.cat([u1, u_t[:, 1:2]], dim=-1)).numpy()
-  np.testing.assert_allclose(back2, u[:, 0], atol=1e-5, rtol=1e-5)
+  np.testing.assert_allclose(back2, u[:, 0], atol=1e-9, rtol=1e-9)
 
 
 def test_cached_integrals_smoke() -> None:

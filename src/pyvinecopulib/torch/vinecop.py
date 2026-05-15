@@ -315,20 +315,19 @@ class TorchVinecop(torch.nn.Module):
   ) -> Tensor:
     """Inverse Rosenblatt transform: independent uniforms → dependent.
 
-    ``use_graph=True`` is not yet supported: the ITP root-finder has a
-    data-dependent ``.all()`` early-exit per iteration that prevents
-    single-shot graph capture.
+    See :meth:`pdf` for the semantics of ``use_graph``. The fixed-iter
+    ``solve_bisection`` root-finder has no host-side early-exit, so the
+    inverse cascade is single-shot graph-capturable.
     """
     _check_impl(impl)
+    fn = (
+      self._inverse_rosenblatt_legacy
+      if impl == "legacy"
+      else self._inverse_rosenblatt_lazy
+    )
     if use_graph:
-      raise NotImplementedError(
-        "use_graph=True is not yet supported on inverse_rosenblatt: "
-        "the ITP root-finder uses a data-dependent early-exit that "
-        "cannot be captured as a single CUDA Graph."
-      )
-    if impl == "legacy":
-      return self._inverse_rosenblatt_legacy(u)
-    return self._inverse_rosenblatt_lazy(u)
+      return self._graph_call("inverse_rosenblatt", fn, u, impl)
+    return fn(u)
 
   # --------------------------------------------------------------------- #
   # CUDA Graph capture / replay                                            #

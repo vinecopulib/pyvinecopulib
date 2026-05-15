@@ -81,7 +81,8 @@ def test_inverse_rosenblatt_matches_pvvinecop() -> None:
 
   out_torch = bc.inverse_rosenblatt(torch.from_numpy(w)).numpy()
   out_cpp = cop_tll.inverse_rosenblatt(w)
-  np.testing.assert_allclose(out_torch, out_cpp, atol=1e-5, rtol=1e-5)
+  # Bisection at n_iter=35 gives bracket-width accuracy 0.5**35 ≈ 6e-11.
+  np.testing.assert_allclose(out_torch, out_cpp, atol=1e-9, rtol=1e-9)
 
 
 def test_inverse_rosenblatt_roundtrip() -> None:
@@ -96,7 +97,10 @@ def test_inverse_rosenblatt_roundtrip() -> None:
   u_eval = rng.uniform(0.05, 0.95, size=(400, 5))
   u_t = torch.from_numpy(u_eval)
   back = bc.inverse_rosenblatt(bc.rosenblatt(u_t)).numpy()
-  np.testing.assert_allclose(back, u_eval, atol=1e-5, rtol=1e-5)
+  # Bisection error compounds through the d-1 cascade levels of
+  # inverse_rosenblatt; per-call accuracy of ~6e-11 amplifies near
+  # flat conditional CDFs.
+  np.testing.assert_allclose(back, u_eval, atol=1e-6, rtol=1e-6)
 
 
 def test_independent_vine_short_circuits() -> None:
@@ -222,9 +226,9 @@ def test_inverse_rosenblatt_lazy_matches_legacy() -> None:
   w_t = torch.from_numpy(w)
   out_legacy = bc.inverse_rosenblatt(w_t, impl="legacy").numpy()
   out_lazy = bc.inverse_rosenblatt(w_t, impl="lazy").numpy()
-  # The two paths invoke ITP independently; tolerances mirror the
-  # existing inverse_rosenblatt agreement test against pv.Vinecop.
-  np.testing.assert_allclose(out_lazy, out_legacy, atol=1e-5, rtol=1e-5)
+  # Both paths invoke the same bisection root-finder, just in different
+  # iteration orders; agree to machine precision modulo a few ULPs.
+  np.testing.assert_allclose(out_lazy, out_legacy, atol=1e-12, rtol=1e-12)
 
 
 def test_invalid_impl_raises() -> None:
@@ -250,16 +254,8 @@ def test_use_graph_requires_cuda_tensor() -> None:
     bc.pdf(u_t, use_graph=True)
 
 
-def test_use_graph_rejected_on_inverse_rosenblatt() -> None:
-  u_fit = _simulate(d=4, n=500, seed=210)
-  bc = TorchVinecop.from_vinecop(_fit_tll_vine(u_fit))
-  u_t = torch.from_numpy(_eval_grid(50, d=4, seed=211))
-  with pytest.raises(NotImplementedError, match="ITP"):
-    bc.inverse_rosenblatt(u_t, use_graph=True)
-
-
 @requires_cuda
-@pytest.mark.parametrize("method", ["pdf", "rosenblatt"])
+@pytest.mark.parametrize("method", ["pdf", "rosenblatt", "inverse_rosenblatt"])
 @pytest.mark.parametrize("impl", ["legacy", "lazy"])
 def test_use_graph_matches_eager(method: str, impl: str) -> None:
   u_fit = _simulate(d=6, n=1000, seed=220)
