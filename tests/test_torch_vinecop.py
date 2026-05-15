@@ -241,6 +241,85 @@ def test_invalid_impl_raises() -> None:
       fn(u_t, impl="bogus")
 
 
+# --------------------------------------------------------------------- #
+# Batched cascade                                                        #
+# --------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("impl", ["legacy", "lazy"])
+@pytest.mark.parametrize("cache", [False, True])
+def test_pdf_batched_matches_legacy(impl: str, cache: bool) -> None:
+  u_fit = _simulate(d=10, n=800, seed=300)
+  cop_tll = _fit_tll_vine(u_fit)
+  bc = TorchVinecop.from_vinecop(cop_tll, cache_integrals=cache)
+  u_t = torch.from_numpy(_eval_grid(500, d=10, seed=310))
+  ref = bc.pdf(u_t, impl=impl, batched=False).numpy()
+  got = bc.pdf(u_t, impl=impl, batched=True).numpy()
+  np.testing.assert_allclose(got, ref, atol=1e-12, rtol=1e-12)
+
+
+@pytest.mark.parametrize("impl", ["legacy", "lazy"])
+@pytest.mark.parametrize("cache", [False, True])
+def test_rosenblatt_batched_matches_legacy(impl: str, cache: bool) -> None:
+  u_fit = _simulate(d=10, n=800, seed=301)
+  cop_tll = _fit_tll_vine(u_fit)
+  bc = TorchVinecop.from_vinecop(cop_tll, cache_integrals=cache)
+  u_t = torch.from_numpy(_eval_grid(500, d=10, seed=311))
+  ref = bc.rosenblatt(u_t, impl=impl, batched=False).numpy()
+  got = bc.rosenblatt(u_t, impl=impl, batched=True).numpy()
+  np.testing.assert_allclose(got, ref, atol=1e-13, rtol=1e-13)
+
+
+@pytest.mark.parametrize("impl", ["legacy", "lazy"])
+def test_inverse_rosenblatt_batched_falls_back(impl: str) -> None:
+  """``batched=True`` on inverse_rosenblatt routes to legacy in v1
+  (cross-tree dependencies block a clean tree-level batched traversal).
+  Output must be bit-equal to the non-batched path."""
+  u_fit = _simulate(d=6, n=600, seed=302)
+  cop_tll = _fit_tll_vine(u_fit)
+  bc = TorchVinecop.from_vinecop(cop_tll)
+  w_t = torch.from_numpy(_eval_grid(300, d=6, seed=312))
+  ref = bc.inverse_rosenblatt(w_t, impl=impl, batched=False).numpy()
+  got = bc.inverse_rosenblatt(w_t, impl=impl, batched=True).numpy()
+  np.testing.assert_array_equal(got, ref)
+
+
+def test_batched_matches_cpp_pdf() -> None:
+  """End-to-end: torch batched pdf vs pv.Vinecop on the same fit."""
+  u_fit = _simulate(d=8, n=1000, seed=320)
+  cop_tll = _fit_tll_vine(u_fit)
+  bc = TorchVinecop.from_vinecop(cop_tll)
+  u_eval = _eval_grid(400, d=8, seed=330)
+  out_torch = bc.pdf(torch.from_numpy(u_eval), batched=True).numpy()
+  out_cpp = cop_tll.pdf(u_eval)
+  np.testing.assert_allclose(out_torch, out_cpp, atol=1e-10, rtol=1e-10)
+
+
+def test_batched_matches_cpp_rosenblatt() -> None:
+  u_fit = _simulate(d=8, n=1000, seed=321)
+  cop_tll = _fit_tll_vine(u_fit)
+  bc = TorchVinecop.from_vinecop(cop_tll)
+  u_eval = _eval_grid(400, d=8, seed=331)
+  out_torch = bc.rosenblatt(torch.from_numpy(u_eval), batched=True).numpy()
+  out_cpp = cop_tll.rosenblatt(u_eval)
+  np.testing.assert_allclose(out_torch, out_cpp, atol=1e-10, rtol=1e-10)
+
+
+def test_batched_to_device_invalidates() -> None:
+  """``.to()`` should drop the lazily-built BatchedVine so the next
+  batched call rebuilds it on the new device."""
+  u_fit = _simulate(d=5, n=500, seed=322)
+  bc = TorchVinecop.from_vinecop(_fit_tll_vine(u_fit))
+  u_t = torch.from_numpy(_eval_grid(50, d=5, seed=332))
+  bc.pdf(u_t, batched=True)  # build the BatchedVine
+  assert bc._batched is not None
+  bc.to(torch.float32)
+  assert bc._batched is None
+  # And the re-build on the new dtype produces a finite output.
+  out = bc.pdf(u_t.to(torch.float32), batched=True)
+  assert torch.isfinite(out).all()
+
+
 requires_cuda = pytest.mark.skipif(
   not torch.cuda.is_available(), reason="CUDA not available"
 )

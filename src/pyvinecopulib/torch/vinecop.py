@@ -39,6 +39,7 @@ from ..pyvinecopulib_ext import (
   indep as _INDEP_FAMILY,
   tll as _TLL_FAMILY,
 )
+from ._batched import BatchedVine
 from ._interp import _TRIM_HI, _TRIM_LO
 from .bicop import TorchBicop
 
@@ -110,12 +111,17 @@ class TorchVinecop(torch.nn.Module):
     self._build_lazy_structure()
 
     # CUDA Graph cache (see `use_graph=` on pdf/rosenblatt). Keyed by
-    # (method_name, impl, shape, dtype, device.index). Cleared by
+    # (method_name, impl, batched, shape, dtype, device.index). Cleared by
     # `_apply` so .to()/.cuda()/.cpu() can't leave stale graphs behind.
     self._graph_cache: dict[
-      tuple[str, str, tuple[int, ...], torch.dtype, int],
+      tuple[str, str, bool, tuple[int, ...], torch.dtype, int],
       tuple[Tensor, Tensor, "torch.cuda.CUDAGraph"],
     ] = {}
+
+    # Lazy-built stacked-per-tree-level state (see `batched=` on the public
+    # methods). Constructed on first batched call; cleared in `_apply` so
+    # device moves invalidate it.
+    self._batched: Optional["BatchedVine"] = None
 
   # --------------------------------------------------------------------- #
   # Constructor                                                            #
@@ -277,12 +283,23 @@ class TorchVinecop(torch.nn.Module):
   # --------------------------------------------------------------------- #
 
   def pdf(
-    self, u: Tensor, *, impl: str = "legacy", use_graph: bool = False
+    self,
+    u: Tensor,
+    *,
+    impl: str = "legacy",
+    batched: bool = False,
+    use_graph: bool = False,
   ) -> Tensor:
     """Bivariate-cascaded copula density at ``u``.
 
     See :meth:`_pdf_legacy` and :meth:`_pdf_lazy` for the two
     implementations; both produce numerically equivalent output.
+
+    ``batched=True`` evaluates every pair-copula at one tree level in a
+    single batched bicop call (one ``(N_t, m, m)`` interp per tree level
+    instead of N_t scalar interps). Orthogonal to ``impl`` — the dense
+    (legacy) and dict-based (lazy) storage strategies still apply; only
+    the per-level inner loop is collapsed.
 
     ``use_graph=True`` (CUDA only) captures the call once via
     :class:`torch.cuda.CUDAGraph` and replays it on subsequent calls
@@ -291,43 +308,85 @@ class TorchVinecop(torch.nn.Module):
     ``torch.no_grad()`` — autograd is unavailable in graph mode.
     """
     _check_impl(impl)
-    fn = self._pdf_legacy if impl == "legacy" else self._pdf_lazy
+    fn = self._pick_pdf(impl, batched)
     if use_graph:
-      return self._graph_call("pdf", fn, u, impl)
+      return self._graph_call("pdf", fn, u, impl, batched)
     return fn(u)
 
   def rosenblatt(
-    self, u: Tensor, *, impl: str = "legacy", use_graph: bool = False
+    self,
+    u: Tensor,
+    *,
+    impl: str = "legacy",
+    batched: bool = False,
+    use_graph: bool = False,
   ) -> Tensor:
     """Rosenblatt transform: dependent uniforms ``u`` → independent ``w``.
 
-    See :meth:`pdf` for the semantics of ``use_graph``.
+    See :meth:`pdf` for the semantics of ``batched`` and ``use_graph``.
     """
     _check_impl(impl)
-    fn = self._rosenblatt_legacy if impl == "legacy" else self._rosenblatt_lazy
+    fn = self._pick_rosenblatt(impl, batched)
     if use_graph:
-      return self._graph_call("rosenblatt", fn, u, impl)
+      return self._graph_call("rosenblatt", fn, u, impl, batched)
     return fn(u)
 
   @torch.no_grad()
   def inverse_rosenblatt(
-    self, u: Tensor, *, impl: str = "legacy", use_graph: bool = False
+    self,
+    u: Tensor,
+    *,
+    impl: str = "legacy",
+    batched: bool = False,
+    use_graph: bool = False,
   ) -> Tensor:
     """Inverse Rosenblatt transform: independent uniforms → dependent.
 
-    See :meth:`pdf` for the semantics of ``use_graph``. The fixed-iter
-    ``solve_bisection`` root-finder has no host-side early-exit, so the
-    inverse cascade is single-shot graph-capturable.
+    See :meth:`pdf` for the semantics of ``batched`` and ``use_graph``.
+    The fixed-iter ``solve_bisection`` root-finder has no host-side
+    early-exit, so the inverse cascade is single-shot graph-capturable
+    for both ``batched=True`` and ``batched=False``.
     """
     _check_impl(impl)
-    fn = (
+    fn = self._pick_inverse_rosenblatt(impl, batched)
+    if use_graph:
+      return self._graph_call("inverse_rosenblatt", fn, u, impl, batched)
+    return fn(u)
+
+  # --------------------------------------------------------------------- #
+  # Dispatch helpers                                                       #
+  # --------------------------------------------------------------------- #
+
+  def _pick_pdf(self, impl: str, batched: bool):
+    if batched:
+      return (
+        self._pdf_batched_legacy if impl == "legacy" else self._pdf_batched_lazy
+      )
+    return self._pdf_legacy if impl == "legacy" else self._pdf_lazy
+
+  def _pick_rosenblatt(self, impl: str, batched: bool):
+    if batched:
+      return (
+        self._rosenblatt_batched_legacy
+        if impl == "legacy"
+        else self._rosenblatt_batched_lazy
+      )
+    return (
+      self._rosenblatt_legacy if impl == "legacy" else self._rosenblatt_lazy
+    )
+
+  def _pick_inverse_rosenblatt(self, impl: str, batched: bool):
+    if batched:
+      return (
+        self._inverse_rosenblatt_batched_legacy
+        if impl == "legacy"
+        else self._inverse_rosenblatt_batched_lazy
+      )
+    return (
       self._inverse_rosenblatt_legacy
       if impl == "legacy"
       else self._inverse_rosenblatt_lazy
     )
-    if use_graph:
-      return self._graph_call("inverse_rosenblatt", fn, u, impl)
-    return fn(u)
 
   # --------------------------------------------------------------------- #
   # CUDA Graph capture / replay                                            #
@@ -336,8 +395,13 @@ class TorchVinecop(torch.nn.Module):
   def _apply(self, fn, *args, **kwargs):
     # `.to()`, `.cuda()`, `.cpu()` all route through `_apply`. Cached
     # graphs are tied to the old device's allocator/buffers, so drop them
-    # whenever the module is moved.
+    # whenever the module is moved. The BatchedVine container holds
+    # buffers too — `super()._apply` will move them, but we drop the
+    # whole structure so it gets re-baked from the (already-moved) source
+    # pair_copulas on next use; that keeps the wire-up tensors aligned
+    # with the destination dtype/device.
     self._graph_cache.clear()
+    self._batched = None
     return super()._apply(fn, *args, **kwargs)
 
   def clear_graph_cache(self) -> None:
@@ -355,6 +419,7 @@ class TorchVinecop(torch.nn.Module):
     method_fn,
     u: Tensor,
     impl: str,
+    batched: bool = False,
   ) -> Tensor:
     if not u.is_cuda:
       raise ValueError(
@@ -363,6 +428,7 @@ class TorchVinecop(torch.nn.Module):
     key = (
       method_name,
       impl,
+      batched,
       tuple(u.shape),
       u.dtype,
       u.device.index if u.device.index is not None else 0,
@@ -854,3 +920,127 @@ class TorchVinecop(torch.nn.Module):
       while len(cur) > 1:
         cur = _visit_count(cur, is_hinv=True)
     return ref_count, source_list
+
+  # ====================================================================== #
+  # Batched cascades (`batched=True`)                                        #
+  # ====================================================================== #
+  #
+  # Lazy-built BatchedVine (stacked / pre-baked per-tree-level state). Same
+  # cascade math as the unbatched paths, but each tree level fires a single
+  # batched bicop call instead of a Python loop over edges.
+
+  def _ensure_batched(self) -> "BatchedVine":
+    if self._batched is None:
+      self._batched = BatchedVine.from_torch_vinecop(self)
+    return self._batched
+
+  # ---- pdf ------------------------------------------------------------- #
+
+  def _pdf_batched_legacy(self, u: Tensor) -> Tensor:
+    """Batched pdf with dense ``(n, d)`` scratch (legacy storage).
+
+    Mirrors :meth:`_pdf_legacy` exactly except the inner per-edge loop is
+    collapsed into one :meth:`BatchedTreeLevel.pdf` call per tree level.
+    """
+    u = self._prep(u, "pdf")
+    n = u.shape[0]
+    ref = self._ref_tensor()
+    dtype, device = ref.dtype, ref.device
+    d, trunc_lvl = self.d, self.trunc_lvl
+
+    if trunc_lvl == 0:
+      return torch.ones(n, dtype=dtype, device=device)
+
+    bv = self._ensure_batched()
+    hfunc1 = torch.zeros(n, d, dtype=dtype, device=device)
+    hfunc2 = torch.empty(n, d, dtype=dtype, device=device)
+    for j in range(d):
+      hfunc2[:, j] = u[:, self.order[j] - 1]
+
+    log_pdf = torch.zeros(n, dtype=dtype, device=device)
+    for t in range(trunc_lvl):
+      lvl = bv.level(t)
+      u_e = lvl.gather_inputs(hfunc1, hfunc2)  # (N_t, n, 2)
+      log_pdf = log_pdf + lvl.log_pdf(bv.grid_points, u_e).sum(dim=0)
+      # Update next-tree inputs: compute h1/h2 for every pair, then
+      # selectively overwrite columns whose needs_h{1,2} flag is set.
+      N_t = lvl.n_pairs
+      h1_new = lvl.hfunc1(bv.grid_points, u_e).t()  # (n, N_t)
+      h2_new = lvl.hfunc2(bv.grid_points, u_e).t()
+      hfunc1[:, :N_t] = torch.where(
+        lvl.needs_h1[None, :], h1_new, hfunc1[:, :N_t]
+      )
+      hfunc2[:, :N_t] = torch.where(
+        lvl.needs_h2[None, :], h2_new, hfunc2[:, :N_t]
+      )
+    return log_pdf.exp()
+
+  def _pdf_batched_lazy(self, u: Tensor) -> Tensor:
+    """Same as :meth:`_pdf_batched_legacy`: once a tree level fires one
+    batched bicop call, the per-edge dict-vs-dense distinction collapses
+    (both impls store one ``(n, d)`` scratch pair across the cascade).
+    Kept under a separate name so callers can parametrize on ``impl``
+    consistently with the non-batched paths.
+    """
+    return self._pdf_batched_legacy(u)
+
+  # ---- rosenblatt ------------------------------------------------------ #
+
+  def _rosenblatt_batched_legacy(self, u: Tensor) -> Tensor:
+    """Batched rosenblatt with dense ``(n, d)`` scratch."""
+    u = self._prep(u, "rosenblatt")
+    n = u.shape[0]
+    ref = self._ref_tensor()
+    dtype, device = ref.dtype, ref.device
+    d, trunc_lvl = self.d, self.trunc_lvl
+
+    bv = self._ensure_batched()
+    hfunc2 = torch.empty(n, d, dtype=dtype, device=device)
+    for j in range(d):
+      hfunc2[:, j] = u[:, self.order[j] - 1]
+    hfunc1 = hfunc2.clone()
+
+    for t in range(trunc_lvl):
+      lvl = bv.level(t)
+      u_e = lvl.gather_inputs(hfunc1, hfunc2)
+      N_t = lvl.n_pairs
+      h1_new = lvl.hfunc1(bv.grid_points, u_e).t()
+      h2_new = lvl.hfunc2(bv.grid_points, u_e).t()
+      # hfunc2 is unconditionally overwritten at every edge in the
+      # legacy cascade (`hfunc2[:, edge] = cop.hfunc2(u_e)`); hfunc1 is
+      # gated by needs_h1.
+      hfunc2[:, :N_t] = h2_new
+      hfunc1[:, :N_t] = torch.where(
+        lvl.needs_h1[None, :], h1_new, hfunc1[:, :N_t]
+      )
+
+    out = torch.empty(n, d, dtype=dtype, device=device)
+    for j in range(d):
+      out[:, j] = hfunc2[:, self.inverse_order[j]]
+    return out.clamp(_TRIM_LO, _TRIM_HI)
+
+  def _rosenblatt_batched_lazy(self, u: Tensor) -> Tensor:
+    # Same rationale as ``_pdf_batched_lazy``: batched-per-level fan-out
+    # makes dict-vs-dense moot.
+    return self._rosenblatt_batched_legacy(u)
+
+  # ---- inverse_rosenblatt --------------------------------------------- #
+
+  @torch.no_grad()
+  def _inverse_rosenblatt_batched_legacy(self, u: Tensor) -> Tensor:
+    """``batched=True`` fallback for inverse_rosenblatt.
+
+    The inverse cascade's dependency graph isn't tree-level batchable:
+    iteration ``(var, tree)`` reads ``hfunc1[tree, m-1, :]`` which was
+    written at ``(m-1, tree-1)`` — a different tree level. A tree-outer
+    reordering therefore needs a full DAG topological sort across the
+    ``(var, tree)`` lattice, not just within-tree waves. That's a v2
+    rewrite; for v1 we route ``batched=True`` to the per-pair legacy
+    cascade (still bit-equal to C++ via :func:`solve_bisection`).
+    """
+    return self._inverse_rosenblatt_legacy(u)
+
+  @torch.no_grad()
+  def _inverse_rosenblatt_batched_lazy(self, u: Tensor) -> Tensor:
+    """Same fallback as :meth:`_inverse_rosenblatt_batched_legacy`."""
+    return self._inverse_rosenblatt_lazy(u)
