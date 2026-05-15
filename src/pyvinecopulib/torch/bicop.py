@@ -24,15 +24,15 @@ from ._util import make_normal_grid, solve_bisection
 
 _LOG_FLOOR: float = -13.815510557964274  # log(1e-6); same as torchvinecopulib
 
-_VALID_ROTATIONS = (0, 90, 180, 270)
-
 
 class TorchBicop(torch.nn.Module):
   """PyTorch bivariate copula on an interpolation grid.
 
   This is the PyTorch analogue of ``KernelBicop`` (and the TLL family): it
   stores the fitted density on an ``m × m`` grid in ``[0, 1]^2`` and exposes
-  the standard copula evaluation API.
+  the standard copula evaluation API. Non-zero copula rotations are not
+  supported — TLL/kernel pair-copulas in pyvinecopulib always have
+  ``rotation=0`` (the family is non-parametric).
 
   Parameters
   ----------
@@ -42,9 +42,6 @@ class TorchBicop(torch.nn.Module):
     ``0`` and ``1`` to avoid extrapolation.
   values:
     Square ``(m, m)`` tensor of density values on the tensor-product grid.
-  rotation:
-    Counter-clockwise copula rotation in degrees; one of
-    ``{0, 90, 180, 270}``.
   cache_integrals:
     If ``True``, precompute ``cdf`` / ``hfunc1`` / ``hfunc2`` at every grid
     node (three extra ``m × m`` buffers, ≈21 KiB at ``m=30``). ``cdf``/
@@ -61,26 +58,18 @@ class TorchBicop(torch.nn.Module):
     ``torch.float64`` for parity with the C++ evaluation.
   """
 
-  rotation: int
   is_indep: bool
 
   def __init__(
     self,
     grid_points: Optional[Tensor] = None,
     values: Optional[Tensor] = None,
-    rotation: int = 0,
     cache_integrals: bool = False,
     norm_times: int = 3,
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> None:
     super().__init__()
-    if rotation not in _VALID_ROTATIONS:
-      raise ValueError(
-        f"rotation must be one of {_VALID_ROTATIONS}; got {rotation}"
-      )
-    self.rotation = int(rotation)
-
     if grid_points is None and values is None:
       # Independent-copula short-circuit: pdf=1 everywhere, cdf=u1*u2, etc.
       self.is_indep = True
@@ -140,6 +129,11 @@ class TorchBicop(torch.nn.Module):
         f"from_bicop expects a kernel-family bicop (e.g. pv.tll); "
         f"got family={cop.family!r}"
       )
+    if int(cop.rotation) != 0:
+      raise ValueError(
+        "TorchBicop is rotation-less. TLL pair-copulas in pyvinecopulib "
+        f"always have rotation=0; got rotation={int(cop.rotation)!r}."
+      )
 
     values_np = cop.parameters
     if values_np.ndim != 2 or values_np.shape[0] != values_np.shape[1]:
@@ -155,37 +149,11 @@ class TorchBicop(torch.nn.Module):
     return cls(
       grid_points=grid_points,
       values=values,
-      rotation=int(cop.rotation),
       cache_integrals=cache_integrals,
       norm_times=0,
       device=device,
       dtype=dtype,
     )
-
-  # --------------------------------------------------------------------- #
-  # Rotation plumbing                                                      #
-  # --------------------------------------------------------------------- #
-
-  def _rotate_input(self, u: Tensor) -> Tensor:
-    """Counter-clockwise rotation of ``u`` to the 0deg frame.
-
-    Mirrors ``Bicop::rotate_data`` (class.ipp). The underlying interpolation
-    grid is always queried at the rotated coordinates.
-    """
-    r = self.rotation
-    if r == 0:
-      return u
-    if r == 90:
-      # swap columns then 1 - new col 1
-      out = u[:, [1, 0]].clone()
-      out[:, 1] = 1.0 - out[:, 1]
-      return out
-    if r == 180:
-      return 1.0 - u
-    # r == 270
-    out = u[:, [1, 0]].clone()
-    out[:, 0] = 1.0 - out[:, 0]
-    return out
 
   # --------------------------------------------------------------------- #
   # Densities                                                              #
@@ -199,7 +167,7 @@ class TorchBicop(torch.nn.Module):
     )
     if u.ndim != 2 or u.shape[1] != 2:
       raise ValueError(f"u must have shape (n, 2); got {tuple(u.shape)}")
-    # Trim to (1e-10, 1 - 1e-10) before rotation, mirroring Bicop::prep_for_abstract.
+    # Trim to (1e-10, 1 - 1e-10), mirroring Bicop::prep_for_abstract.
     return u.clamp(_TRIM_LO, _TRIM_HI)
 
   def pdf(self, u: Tensor) -> Tensor:
@@ -207,8 +175,7 @@ class TorchBicop(torch.nn.Module):
     u = self._prep(u)
     if self.is_indep:
       return torch.ones(u.shape[0], dtype=u.dtype, device=u.device)
-    u_rot = self._rotate_input(u)
-    return self.interp_grid.interpolate(u_rot).clamp_min(1e-20)
+    return self.interp_grid.interpolate(u).clamp_min(1e-20)
 
   def log_pdf(self, u: Tensor) -> Tensor:
     """``log pdf`` with safe handling of ``-inf`` / ``nan``."""
@@ -219,93 +186,37 @@ class TorchBicop(torch.nn.Module):
     u = self._prep(u)
     if self.is_indep:
       return (u[:, 0] * u[:, 1]).clamp(_TRIM_LO, _TRIM_HI)
-    u_rot = self._rotate_input(u)
     if self._cdf_cache is not None:
-      p = self.interp_grid.interp_at(self._cdf_cache, u_rot)
-    else:
-      p = self.interp_grid.integrate_2d(u_rot)
-    r = self.rotation
-    if r == 90:
-      return u[:, 1] - p
-    if r == 180:
-      return p - 1.0 + u[:, 0] + u[:, 1]
-    if r == 270:
-      return u[:, 0] - p
-    return p
+      return self.interp_grid.interp_at(self._cdf_cache, u)
+    return self.interp_grid.integrate_2d(u)
 
   # --------------------------------------------------------------------- #
   # h-functions                                                            #
   # --------------------------------------------------------------------- #
 
-  def _hfunc_raw(self, u_rot: Tensor, cond_var: int) -> Tensor:
+  def _hfunc_raw(self, u: Tensor, cond_var: int) -> Tensor:
     cache = self._hfunc1_cache if cond_var == 1 else self._hfunc2_cache
     if cache is not None:
-      return self.interp_grid.interp_at(cache, u_rot).clamp(_TRIM_LO, _TRIM_HI)
-    return self.interp_grid.integrate_1d(u_rot, cond_var=cond_var)
+      return self.interp_grid.interp_at(cache, u).clamp(_TRIM_LO, _TRIM_HI)
+    return self.interp_grid.integrate_1d(u, cond_var=cond_var)
 
   def hfunc1(self, u: Tensor) -> Tensor:
     """``H1(u1, u2) = P(U2 <= u2 | U1 = u1)``."""
     u = self._prep(u)
     if self.is_indep:
       return u[:, 1].clamp(_TRIM_LO, _TRIM_HI)
-    u_rot = self._rotate_input(u)
-    r = self.rotation
-    if r == 0:
-      h = self._hfunc_raw(u_rot, 1)
-    elif r == 90:
-      h = self._hfunc_raw(u_rot, 2)
-    elif r == 180:
-      h = 1.0 - self._hfunc_raw(u_rot, 1)
-    else:  # r == 270
-      h = 1.0 - self._hfunc_raw(u_rot, 2)
-    return h.clamp(0.0, 1.0)
+    return self._hfunc_raw(u, 1).clamp(0.0, 1.0)
 
   def hfunc2(self, u: Tensor) -> Tensor:
     """``H2(u1, u2) = P(U1 <= u1 | U2 = u2)``."""
     u = self._prep(u)
     if self.is_indep:
       return u[:, 0].clamp(_TRIM_LO, _TRIM_HI)
-    u_rot = self._rotate_input(u)
-    r = self.rotation
-    if r == 0:
-      h = self._hfunc_raw(u_rot, 2)
-    elif r == 90:
-      h = 1.0 - self._hfunc_raw(u_rot, 1)
-    elif r == 180:
-      h = 1.0 - self._hfunc_raw(u_rot, 2)
-    else:  # r == 270
-      h = self._hfunc_raw(u_rot, 1)
-    return h.clamp(0.0, 1.0)
+    return self._hfunc_raw(u, 2).clamp(0.0, 1.0)
 
   # --------------------------------------------------------------------- #
-  # Inverse h-functions (numerical via ITP).                               #
+  # Inverse h-functions (numerical via bisection).                         #
   # --------------------------------------------------------------------- #
-
-  @torch.no_grad()
-  def _hinv1_raw(self, u_rot: Tensor) -> Tensor:
-    """At rotation 0: solve ``hfunc1((u_rot[:, 0], x)) = u_rot[:, 1]`` for ``x``."""
-    a = u_rot[:, 0:1]
-    p = u_rot[:, 1:2]
-
-    def fun(x: Tensor) -> Tensor:
-      u_eval = torch.cat([a, x], dim=-1)
-      return self._hfunc_raw(u_eval, 1).unsqueeze(-1) - p
-
-    x = solve_bisection(fun, x_a=torch.zeros_like(p), x_b=torch.ones_like(p))
-    return x.squeeze(-1).clamp(0.0, 1.0)
-
-  @torch.no_grad()
-  def _hinv2_raw(self, u_rot: Tensor) -> Tensor:
-    """At rotation 0: solve ``hfunc2((x, u_rot[:, 1])) = u_rot[:, 0]`` for ``x``."""
-    p = u_rot[:, 0:1]
-    b = u_rot[:, 1:2]
-
-    def fun(x: Tensor) -> Tensor:
-      u_eval = torch.cat([x, b], dim=-1)
-      return self._hfunc_raw(u_eval, 2).unsqueeze(-1) - p
-
-    x = solve_bisection(fun, x_a=torch.zeros_like(p), x_b=torch.ones_like(p))
-    return x.squeeze(-1).clamp(0.0, 1.0)
 
   @torch.no_grad()
   def hinv1(self, u: Tensor) -> Tensor:
@@ -317,16 +228,15 @@ class TorchBicop(torch.nn.Module):
     u = self._prep(u)
     if self.is_indep:
       return u[:, 1].clamp(_TRIM_LO, _TRIM_HI)
-    u_rot = self._rotate_input(u)
-    r = self.rotation
-    if r == 0:
-      return self._hinv1_raw(u_rot)
-    if r == 90:
-      return self._hinv2_raw(u_rot)
-    if r == 180:
-      return (1.0 - self._hinv1_raw(u_rot)).clamp(0.0, 1.0)
-    # r == 270
-    return (1.0 - self._hinv2_raw(u_rot)).clamp(0.0, 1.0)
+    a = u[:, 0:1]
+    p = u[:, 1:2]
+
+    def fun(x: Tensor) -> Tensor:
+      u_eval = torch.cat([a, x], dim=-1)
+      return self._hfunc_raw(u_eval, 1).unsqueeze(-1) - p
+
+    x = solve_bisection(fun, x_a=torch.zeros_like(p), x_b=torch.ones_like(p))
+    return x.squeeze(-1).clamp(0.0, 1.0)
 
   @torch.no_grad()
   def hinv2(self, u: Tensor) -> Tensor:
@@ -338,16 +248,15 @@ class TorchBicop(torch.nn.Module):
     u = self._prep(u)
     if self.is_indep:
       return u[:, 0].clamp(_TRIM_LO, _TRIM_HI)
-    u_rot = self._rotate_input(u)
-    r = self.rotation
-    if r == 0:
-      return self._hinv2_raw(u_rot)
-    if r == 90:
-      return (1.0 - self._hinv1_raw(u_rot)).clamp(0.0, 1.0)
-    if r == 180:
-      return (1.0 - self._hinv2_raw(u_rot)).clamp(0.0, 1.0)
-    # r == 270
-    return self._hinv1_raw(u_rot)
+    p = u[:, 0:1]
+    b = u[:, 1:2]
+
+    def fun(x: Tensor) -> Tensor:
+      u_eval = torch.cat([x, b], dim=-1)
+      return self._hfunc_raw(u_eval, 2).unsqueeze(-1) - p
+
+    x = solve_bisection(fun, x_a=torch.zeros_like(p), x_b=torch.ones_like(p))
+    return x.squeeze(-1).clamp(0.0, 1.0)
 
   # --------------------------------------------------------------------- #
   # Sampling                                                               #

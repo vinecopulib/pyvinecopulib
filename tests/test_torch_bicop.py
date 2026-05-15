@@ -2,8 +2,7 @@
 
 Skipped when PyTorch isn't installed. Compares the torch ``TorchBicop``
 against the C++ ``pv.Bicop`` (TLL family) for ``pdf`` / ``cdf`` / ``hfunc``
-on the same fitted interpolation grid; verifies ``hinv`` round-trips; and
-spot-checks the rotation handling on an asymmetric Clayton sample.
+on the same fitted interpolation grid and verifies ``hinv`` round-trips.
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ def _eval_grid(n: int, seed: int = 0) -> np.ndarray:
   return rng.uniform(0.02, 0.98, size=(n, 2))
 
 
-def test_pdf_matches_pvbicop_rotation_0() -> None:
+def test_pdf_matches_pvbicop() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
   u_fit = cop.simulate(2000, seeds=[1, 2, 3])
   cop_tll = _fit_tll(u_fit)
@@ -42,7 +41,7 @@ def test_pdf_matches_pvbicop_rotation_0() -> None:
   np.testing.assert_allclose(out_torch, out_cpp, atol=1e-10, rtol=1e-10)
 
 
-def test_cdf_matches_pvbicop_rotation_0() -> None:
+def test_cdf_matches_pvbicop() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
   u_fit = cop.simulate(2000, seeds=[1, 2, 3])
   cop_tll = _fit_tll(u_fit)
@@ -55,7 +54,7 @@ def test_cdf_matches_pvbicop_rotation_0() -> None:
   np.testing.assert_allclose(out_torch, out_cpp, atol=1e-10, rtol=1e-10)
 
 
-def test_hfunc_matches_pvbicop_rotation_0() -> None:
+def test_hfunc_matches_pvbicop() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
   u_fit = cop.simulate(2000, seeds=[1, 2, 3])
   cop_tll = _fit_tll(u_fit)
@@ -90,113 +89,17 @@ def test_hinv_roundtrip() -> None:
   np.testing.assert_allclose(back, u_eval[:, 0], atol=1e-9, rtol=1e-9)
 
 
-def _rotate_data_np(u: np.ndarray, rotation: int) -> np.ndarray:
-  """Numpy mirror of ``Bicop::rotate_data`` (class.ipp). Counter-clockwise."""
-  out = u.copy()
-  if rotation == 0:
-    return out
-  if rotation == 90:
-    out = out[:, [1, 0]]
-    out[:, 1] = 1.0 - out[:, 1]
-    return out
-  if rotation == 180:
-    return 1.0 - out
-  if rotation == 270:
-    out = out[:, [1, 0]]
-    out[:, 0] = 1.0 - out[:, 0]
-    return out
-  raise ValueError(rotation)
+def test_from_bicop_rejects_rotated() -> None:
+  """TLL pair-copulas in pyvinecopulib always have rotation=0; the
+  TorchBicop wrapper enforces this at construction."""
 
+  class _FakeCop:
+    family = _fit_tll(_eval_grid(100, seed=0)).family
+    rotation = 90
+    parameters = np.eye(2)
 
-@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
-def test_rotations_apply_canonical_formulas(rotation: int) -> None:
-  """TorchBicop must mirror ``Bicop``'s rotation handling end-to-end.
-
-  TLL is rotationless on the C++ side, so we can't ask ``pv.Bicop`` to fit a
-  rotated TLL directly. Instead we fit a rotation-0 TLL, construct a
-  ``TorchBicop`` with the same grid but an arbitrary rotation, and compare
-  against the rotation formulas from ``class.ipp`` applied to the underlying
-  rotation-0 evaluations.
-  """
-  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
-  u_fit = cop.simulate(2000, seeds=[7, 8, 9])
-  cop_tll = _fit_tll(u_fit)
-  assert cop_tll.rotation == 0
-
-  bc_zero = TorchBicop.from_bicop(cop_tll)
-  bc_rot = TorchBicop(
-    grid_points=bc_zero.interp_grid.grid_points,
-    values=bc_zero.interp_grid.values,
-    rotation=rotation,
-    norm_times=0,
-  )
-
-  u = _eval_grid(400, seed=30 + rotation)
-  u_t = torch.from_numpy(u)
-  u_rot = _rotate_data_np(u, rotation)
-
-  pdf_exp = cop_tll.pdf(u_rot)  # |Jacobian| = 1 for any rotation
-  np.testing.assert_allclose(
-    bc_rot.pdf(u_t).numpy(), pdf_exp, atol=1e-10, rtol=1e-10
-  )
-
-  cdf0 = cop_tll.cdf(u_rot)
-  if rotation == 0:
-    cdf_exp = cdf0
-  elif rotation == 90:
-    cdf_exp = u[:, 1] - cdf0
-  elif rotation == 180:
-    cdf_exp = cdf0 - 1.0 + u[:, 0] + u[:, 1]
-  else:
-    cdf_exp = u[:, 0] - cdf0
-  np.testing.assert_allclose(
-    bc_rot.cdf(u_t).numpy(), cdf_exp, atol=1e-10, rtol=1e-10
-  )
-
-  if rotation == 0:
-    h1_exp = cop_tll.hfunc1(u_rot)
-    h2_exp = cop_tll.hfunc2(u_rot)
-  elif rotation == 90:
-    h1_exp = cop_tll.hfunc2(u_rot)
-    h2_exp = 1.0 - cop_tll.hfunc1(u_rot)
-  elif rotation == 180:
-    h1_exp = 1.0 - cop_tll.hfunc1(u_rot)
-    h2_exp = 1.0 - cop_tll.hfunc2(u_rot)
-  else:
-    h1_exp = 1.0 - cop_tll.hfunc2(u_rot)
-    h2_exp = cop_tll.hfunc1(u_rot)
-  np.testing.assert_allclose(
-    bc_rot.hfunc1(u_t).numpy(), h1_exp, atol=1e-10, rtol=1e-10
-  )
-  np.testing.assert_allclose(
-    bc_rot.hfunc2(u_t).numpy(), h2_exp, atol=1e-10, rtol=1e-10
-  )
-
-
-@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
-def test_hinv_roundtrip_with_rotation(rotation: int) -> None:
-  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.7]]))
-  u_fit = cop.simulate(2000, seeds=[4, 5, 6])
-  cop_tll = _fit_tll(u_fit)
-
-  bc_zero = TorchBicop.from_bicop(cop_tll)
-  bc = TorchBicop(
-    grid_points=bc_zero.interp_grid.grid_points,
-    values=bc_zero.interp_grid.values,
-    rotation=rotation,
-    norm_times=0,
-  )
-
-  u = _eval_grid(400, seed=70 + rotation)
-  u_t = torch.from_numpy(u)
-
-  u2 = bc.hinv1(u_t).unsqueeze(-1)
-  back1 = bc.hfunc1(torch.cat([u_t[:, 0:1], u2], dim=-1)).numpy()
-  np.testing.assert_allclose(back1, u[:, 1], atol=1e-9, rtol=1e-9)
-
-  u1 = bc.hinv2(u_t).unsqueeze(-1)
-  back2 = bc.hfunc2(torch.cat([u1, u_t[:, 1:2]], dim=-1)).numpy()
-  np.testing.assert_allclose(back2, u[:, 0], atol=1e-9, rtol=1e-9)
+  with pytest.raises(ValueError, match="rotation"):
+    TorchBicop.from_bicop(_FakeCop())  # type: ignore[arg-type]
 
 
 def test_cached_integrals_smoke() -> None:
