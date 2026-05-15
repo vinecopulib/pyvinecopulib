@@ -103,7 +103,8 @@ def test_inverse_rosenblatt_roundtrip() -> None:
   np.testing.assert_allclose(back, u_eval, atol=1e-6, rtol=1e-6)
 
 
-def test_independent_vine_short_circuits() -> None:
+@pytest.mark.parametrize("batched", [False, True])
+def test_independent_vine_short_circuits(batched: bool) -> None:
   d = 4
   structure = pv.RVineStructure.from_order([1, 2, 3, 4])
   # Build a vine with all-independent pair copulas.
@@ -120,17 +121,21 @@ def test_independent_vine_short_circuits() -> None:
   u_t = torch.from_numpy(u)
 
   np.testing.assert_allclose(
-    bc.pdf(u_t).numpy(), np.ones(200), atol=1e-12, rtol=0
+    bc.pdf(u_t, batched=batched).numpy(), np.ones(200), atol=1e-12, rtol=0
   )
   np.testing.assert_allclose(
-    bc.rosenblatt(u_t).numpy(), u, atol=1e-10, rtol=1e-10
+    bc.rosenblatt(u_t, batched=batched).numpy(), u, atol=1e-10, rtol=1e-10
   )
   np.testing.assert_allclose(
-    bc.inverse_rosenblatt(u_t).numpy(), u, atol=1e-10, rtol=1e-10
+    bc.inverse_rosenblatt(u_t, batched=batched).numpy(),
+    u,
+    atol=1e-10,
+    rtol=1e-10,
   )
 
 
-def test_truncated_vine_pdf() -> None:
+@pytest.mark.parametrize("batched", [False, True])
+def test_truncated_vine_pdf(batched: bool) -> None:
   u_fit = _simulate(d=6, n=2000, seed=5)
   cop_tll = _fit_tll_vine(u_fit, trunc_lvl=2)
   assert cop_tll.structure.trunc_lvl == 2
@@ -140,7 +145,7 @@ def test_truncated_vine_pdf() -> None:
 
   u_eval = _eval_grid(300, d=6, seed=15)
   np.testing.assert_allclose(
-    bc.pdf(torch.from_numpy(u_eval)).numpy(),
+    bc.pdf(torch.from_numpy(u_eval), batched=batched).numpy(),
     cop_tll.pdf(u_eval),
     atol=1e-10,
     rtol=1e-10,

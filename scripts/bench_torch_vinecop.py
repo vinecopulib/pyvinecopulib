@@ -5,20 +5,22 @@ For each (n, d) cell in the grid:
   - generate n correlated pseudo-obs of dim d (Gaussian latent),
   - fit a pv.Vinecop with the TLL family (single thread),
   - time pv.Vinecop.<method>(u, num_threads=t) for every t in --threads,
-  - time TorchVinecop.<method>(u, impl=...) for every combination of
-    --devices x --cache x {legacy, lazy},
+  - time TorchVinecop.<method>(u, ...) for every combination of
+    --devices x --cache x --impls x --batched x --use-graph,
   - report the median wall-clock per call (in milliseconds).
 
 The TorchVinecop CPU runs are pinned to a single torch thread so they
-stay apples-to-apples with the legacy/laptop numbers; the C++ side gets
-swept across --threads explicitly.
+stay apples-to-apples with the laptop numbers; the C++ side gets swept
+across --threads explicitly.
 
 Outputs a long-format CSV (one row per timed configuration) to --output
 (default: stdout) with columns:
-    method, n, d, backend, threads, device, cache_integrals, impl, time_ms
+    method, n, d, backend, threads, device, cache_integrals, impl,
+    batched, use_graph, time_ms
 
-For C++ rows, device / cache_integrals / impl are empty.
-For torch rows, threads is empty.
+For C++ rows, device / cache_integrals / impl / batched / use_graph are
+empty. For torch rows, threads is empty. use_graph=True rows are only
+emitted for CUDA devices.
 """
 
 from __future__ import annotations
@@ -96,6 +98,8 @@ def _bench_cell(
   devices: list[str],
   caches: list[bool],
   impls: list[str],
+  batched_modes: list[bool],
+  use_graph_modes: list[bool],
   repeats: int,
   seed: int,
 ) -> list[dict]:
@@ -123,6 +127,8 @@ def _bench_cell(
           "device": "",
           "cache_integrals": "",
           "impl": "",
+          "batched": "",
+          "use_graph": "",
           "time_ms": ms,
         }
       )
@@ -140,24 +146,33 @@ def _bench_cell(
       for method in METHODS:
         torch_fn = getattr(bc, method)
         for impl in impls:
-          ms = _time_repeats(
-            lambda fn=torch_fn, u=u_t, i=impl: fn(u, impl=i),
-            repeats,
-            sync=sync,
-          )
-          rows.append(
-            {
-              "method": method,
-              "n": n,
-              "d": d,
-              "backend": "torch",
-              "threads": "",
-              "device": device,
-              "cache_integrals": str(cache).lower(),
-              "impl": impl,
-              "time_ms": ms,
-            }
-          )
+          for batched in batched_modes:
+            for use_graph in use_graph_modes:
+              # use_graph=True only valid on CUDA tensors.
+              if use_graph and not device.startswith("cuda"):
+                continue
+              ms = _time_repeats(
+                lambda fn=torch_fn, u=u_t, i=impl, b=batched, g=use_graph: fn(
+                  u, impl=i, batched=b, use_graph=g
+                ),
+                repeats,
+                sync=sync,
+              )
+              rows.append(
+                {
+                  "method": method,
+                  "n": n,
+                  "d": d,
+                  "backend": "torch",
+                  "threads": "",
+                  "device": device,
+                  "cache_integrals": str(cache).lower(),
+                  "impl": impl,
+                  "batched": str(batched).lower(),
+                  "use_graph": str(use_graph).lower(),
+                  "time_ms": ms,
+                }
+              )
       # Free GPU memory before building the next variant
       del bc, u_t
       if sync is not None:
@@ -196,6 +211,19 @@ def main() -> None:
     type=_parse_str_list,
     help="TorchVinecop impl variants to sweep (default: legacy,lazy).",
   )
+  ap.add_argument(
+    "--batched",
+    default="false,true",
+    type=_parse_bool_list,
+    help="batched=True/False values to sweep (default: false,true).",
+  )
+  ap.add_argument(
+    "--use-graph",
+    default="false",
+    type=_parse_bool_list,
+    help="use_graph=True/False values to sweep (default: false). "
+    "use_graph=True is only meaningful on CUDA devices.",
+  )
   ap.add_argument("--repeats", default=3, type=int)
   ap.add_argument("--seed", default=42, type=int)
   ap.add_argument(
@@ -225,6 +253,8 @@ def main() -> None:
     "device",
     "cache_integrals",
     "impl",
+    "batched",
+    "use_graph",
     "time_ms",
   ]
   writer = csv.DictWriter(out, fieldnames=fieldnames)
@@ -240,6 +270,8 @@ def main() -> None:
         devices=devices,
         caches=args.cache,
         impls=args.impls,
+        batched_modes=args.batched,
+        use_graph_modes=args.use_graph,
         repeats=args.repeats,
         seed=args.seed,
       )
