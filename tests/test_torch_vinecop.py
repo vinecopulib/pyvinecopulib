@@ -71,6 +71,50 @@ def test_rosenblatt_matches_pvvinecop() -> None:
   np.testing.assert_allclose(out_torch, out_cpp, atol=1e-10, rtol=1e-10)
 
 
+@pytest.mark.parametrize(
+  "method,cache,max_abs,mean_abs",
+  [
+    # cache=False is bisection-precise at every step (forward cascades are
+    # exact trapezoidal). Vine-level error stays at machine precision for
+    # pdf/rosenblatt and at bisection convergence for inverse_rosenblatt.
+    ("pdf", False, 1e-11, 1e-13),
+    ("rosenblatt", False, 1e-10, 1e-13),
+    ("inverse_rosenblatt", False, 1e-8, 1e-9),
+    # cache=True replaces every integration / inversion with a bilinear
+    # interp on a 30x30 grid — the per-pair ~1e-3 mean error compounds
+    # through the d-1 cascade levels. pdf is unbounded so the *max* error
+    # in absolute terms can be O(1); rosenblatt / inverse_rosenblatt are
+    # u-space and bounded so their max stays around the bicop-level cap.
+    # These bounds are loose — they pin the floor, not optimize against it.
+    ("pdf", True, 1e1, 1e-1),
+    ("rosenblatt", True, 1.0, 5e-2),
+    ("inverse_rosenblatt", True, 5e-2, 5e-3),
+  ],
+)
+def test_cache_integrals_precision_floor(
+  method: str, cache: bool, max_abs: float, mean_abs: float
+) -> None:
+  """Pin the precision floor for each cache mode at a moderately-deep vine.
+
+  ``cache_integrals=False`` is the right choice for likelihood / sampling
+  applications: every per-pair integration and inversion is exact (modulo
+  bisection convergence), so the cascade preserves precision. Setting
+  ``cache=True`` is the right choice when ~1e-3 u-space error is
+  acceptable and per-call speed matters — typically pdf-only workloads
+  where the bilinear-interp gap is small compared to downstream noise.
+  """
+  d = 10
+  u_fit = _simulate(d=d, n=2000, seed=1)
+  cop_tll = _fit_tll_vine(u_fit)
+  bc = TorchVinecop.from_vinecop(cop_tll, cache_integrals=cache)
+  u_eval = _eval_grid(500, d=d, seed=2)
+  out_cpp = getattr(cop_tll, method)(u_eval)
+  out_torch = getattr(bc, method)(torch.from_numpy(u_eval)).numpy()
+  diff = np.abs(out_torch - out_cpp)
+  assert diff.max() < max_abs, f"{method}/{cache}: max {diff.max():.2e}"
+  assert diff.mean() < mean_abs, f"{method}/{cache}: mean {diff.mean():.2e}"
+
+
 def test_inverse_rosenblatt_matches_pvvinecop() -> None:
   u_fit = _simulate(d=5, n=2000, seed=3)
   cop_tll = _fit_tll_vine(u_fit)
