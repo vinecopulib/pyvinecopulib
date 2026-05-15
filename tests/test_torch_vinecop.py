@@ -235,3 +235,69 @@ def test_invalid_impl_raises() -> None:
   for fn in (bc.pdf, bc.rosenblatt, bc.inverse_rosenblatt):
     with pytest.raises(ValueError, match="impl must be"):
       fn(u_t, impl="bogus")
+
+
+requires_cuda = pytest.mark.skipif(
+  not torch.cuda.is_available(), reason="CUDA not available"
+)
+
+
+def test_use_graph_requires_cuda_tensor() -> None:
+  u_fit = _simulate(d=4, n=500, seed=200)
+  bc = TorchVinecop.from_vinecop(_fit_tll_vine(u_fit))
+  u_t = torch.from_numpy(_eval_grid(50, d=4, seed=201))
+  with pytest.raises(ValueError, match="CUDA tensor"):
+    bc.pdf(u_t, use_graph=True)
+
+
+def test_use_graph_rejected_on_inverse_rosenblatt() -> None:
+  u_fit = _simulate(d=4, n=500, seed=210)
+  bc = TorchVinecop.from_vinecop(_fit_tll_vine(u_fit))
+  u_t = torch.from_numpy(_eval_grid(50, d=4, seed=211))
+  with pytest.raises(NotImplementedError, match="ITP"):
+    bc.inverse_rosenblatt(u_t, use_graph=True)
+
+
+@requires_cuda
+@pytest.mark.parametrize("method", ["pdf", "rosenblatt"])
+@pytest.mark.parametrize("impl", ["legacy", "lazy"])
+def test_use_graph_matches_eager(method: str, impl: str) -> None:
+  u_fit = _simulate(d=6, n=1000, seed=220)
+  bc = TorchVinecop.from_vinecop(
+    _fit_tll_vine(u_fit), device=torch.device("cuda")
+  )
+  u_t = torch.from_numpy(_eval_grid(400, d=6, seed=221)).cuda()
+  fn = getattr(bc, method)
+  eager = fn(u_t, impl=impl)
+  graphed = fn(u_t, impl=impl, use_graph=True)
+  # CUDA Graph replays the *same* kernels on the *same* workspace —
+  # the result is bit-exact, not just within a tolerance.
+  assert (eager - graphed).abs().max().item() == 0.0
+
+
+@requires_cuda
+def test_use_graph_cache_invalidated_on_to() -> None:
+  u_fit = _simulate(d=4, n=500, seed=230)
+  bc = TorchVinecop.from_vinecop(
+    _fit_tll_vine(u_fit), device=torch.device("cuda")
+  )
+  u_t = torch.from_numpy(_eval_grid(100, d=4, seed=231)).cuda()
+  bc.pdf(u_t, use_graph=True)
+  assert len(bc._graph_cache) == 1
+  bc.to(torch.device("cuda"))  # no-op move; still routes through _apply
+  assert len(bc._graph_cache) == 0
+
+
+@requires_cuda
+def test_use_graph_recaptures_on_shape_change() -> None:
+  u_fit = _simulate(d=4, n=500, seed=240)
+  bc = TorchVinecop.from_vinecop(
+    _fit_tll_vine(u_fit), device=torch.device("cuda")
+  )
+  u_t1 = torch.from_numpy(_eval_grid(50, d=4, seed=241)).cuda()
+  u_t2 = torch.from_numpy(_eval_grid(200, d=4, seed=242)).cuda()
+  bc.pdf(u_t1, use_graph=True)
+  bc.pdf(u_t2, use_graph=True)
+  assert len(bc._graph_cache) == 2
+  bc.clear_graph_cache()
+  assert len(bc._graph_cache) == 0

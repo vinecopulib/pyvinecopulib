@@ -109,6 +109,14 @@ class TorchVinecop(torch.nn.Module):
     # Lazy-impl metadata (built once, used by all `_*_lazy` methods).
     self._build_lazy_structure()
 
+    # CUDA Graph cache (see `use_graph=` on pdf/rosenblatt). Keyed by
+    # (method_name, impl, shape, dtype, device.index). Cleared by
+    # `_apply` so .to()/.cuda()/.cpu() can't leave stale graphs behind.
+    self._graph_cache: dict[
+      tuple[str, str, tuple[int, ...], torch.dtype, int],
+      tuple[Tensor, Tensor, "torch.cuda.CUDAGraph"],
+    ] = {}
+
   # --------------------------------------------------------------------- #
   # Constructor                                                            #
   # --------------------------------------------------------------------- #
@@ -268,31 +276,130 @@ class TorchVinecop(torch.nn.Module):
   # Public entry points (dispatch on `impl`)                               #
   # --------------------------------------------------------------------- #
 
-  def pdf(self, u: Tensor, *, impl: str = "legacy") -> Tensor:
+  def pdf(
+    self, u: Tensor, *, impl: str = "legacy", use_graph: bool = False
+  ) -> Tensor:
     """Bivariate-cascaded copula density at ``u``.
 
     See :meth:`_pdf_legacy` and :meth:`_pdf_lazy` for the two
     implementations; both produce numerically equivalent output.
+
+    ``use_graph=True`` (CUDA only) captures the call once via
+    :class:`torch.cuda.CUDAGraph` and replays it on subsequent calls
+    with matching shape/dtype, skipping the per-launch driver overhead
+    that dominates eager-mode CUDA. The captured graph runs under
+    ``torch.no_grad()`` — autograd is unavailable in graph mode.
     """
     _check_impl(impl)
-    if impl == "legacy":
-      return self._pdf_legacy(u)
-    return self._pdf_lazy(u)
+    fn = self._pdf_legacy if impl == "legacy" else self._pdf_lazy
+    if use_graph:
+      return self._graph_call("pdf", fn, u, impl)
+    return fn(u)
 
-  def rosenblatt(self, u: Tensor, *, impl: str = "legacy") -> Tensor:
-    """Rosenblatt transform: dependent uniforms ``u`` → independent ``w``."""
+  def rosenblatt(
+    self, u: Tensor, *, impl: str = "legacy", use_graph: bool = False
+  ) -> Tensor:
+    """Rosenblatt transform: dependent uniforms ``u`` → independent ``w``.
+
+    See :meth:`pdf` for the semantics of ``use_graph``.
+    """
     _check_impl(impl)
-    if impl == "legacy":
-      return self._rosenblatt_legacy(u)
-    return self._rosenblatt_lazy(u)
+    fn = self._rosenblatt_legacy if impl == "legacy" else self._rosenblatt_lazy
+    if use_graph:
+      return self._graph_call("rosenblatt", fn, u, impl)
+    return fn(u)
 
   @torch.no_grad()
-  def inverse_rosenblatt(self, u: Tensor, *, impl: str = "legacy") -> Tensor:
-    """Inverse Rosenblatt transform: independent uniforms → dependent."""
+  def inverse_rosenblatt(
+    self, u: Tensor, *, impl: str = "legacy", use_graph: bool = False
+  ) -> Tensor:
+    """Inverse Rosenblatt transform: independent uniforms → dependent.
+
+    ``use_graph=True`` is not yet supported: the ITP root-finder has a
+    data-dependent ``.all()`` early-exit per iteration that prevents
+    single-shot graph capture.
+    """
     _check_impl(impl)
+    if use_graph:
+      raise NotImplementedError(
+        "use_graph=True is not yet supported on inverse_rosenblatt: "
+        "the ITP root-finder uses a data-dependent early-exit that "
+        "cannot be captured as a single CUDA Graph."
+      )
     if impl == "legacy":
       return self._inverse_rosenblatt_legacy(u)
     return self._inverse_rosenblatt_lazy(u)
+
+  # --------------------------------------------------------------------- #
+  # CUDA Graph capture / replay                                            #
+  # --------------------------------------------------------------------- #
+
+  def _apply(self, fn, *args, **kwargs):
+    # `.to()`, `.cuda()`, `.cpu()` all route through `_apply`. Cached
+    # graphs are tied to the old device's allocator/buffers, so drop them
+    # whenever the module is moved.
+    self._graph_cache.clear()
+    return super()._apply(fn, *args, **kwargs)
+
+  def clear_graph_cache(self) -> None:
+    """Discard captured CUDA Graphs and their pinned input/output buffers.
+
+    Call this if the cache has grown across many input shapes and you
+    want to reclaim GPU memory. The next ``use_graph=True`` call will
+    recapture lazily.
+    """
+    self._graph_cache.clear()
+
+  def _graph_call(
+    self,
+    method_name: str,
+    method_fn,
+    u: Tensor,
+    impl: str,
+  ) -> Tensor:
+    if not u.is_cuda:
+      raise ValueError(
+        f"use_graph=True requires a CUDA tensor; got u.device={u.device}"
+      )
+    key = (
+      method_name,
+      impl,
+      tuple(u.shape),
+      u.dtype,
+      u.device.index if u.device.index is not None else 0,
+    )
+    entry = self._graph_cache.get(key)
+    if entry is None:
+      entry = self._capture_graph(method_fn, u)
+      self._graph_cache[key] = entry
+    static_u, static_out, graph = entry
+    static_u.copy_(u)
+    graph.replay()
+    return static_out.clone()
+
+  @torch.no_grad()
+  def _capture_graph(
+    self,
+    method_fn,
+    u: Tensor,
+  ) -> tuple[Tensor, Tensor, "torch.cuda.CUDAGraph"]:
+    static_u = u.detach().clone()
+
+    # Warmup on a side stream is required before capture so that any
+    # one-shot allocations (workspace tensors, lazy caches) are settled
+    # before the capturing stream sees them.
+    side = torch.cuda.Stream()
+    side.wait_stream(torch.cuda.current_stream())
+    with torch.cuda.stream(side):
+      for _ in range(3):
+        method_fn(static_u)
+    torch.cuda.current_stream().wait_stream(side)
+    torch.cuda.synchronize()
+
+    graph = torch.cuda.CUDAGraph()
+    with torch.cuda.graph(graph):
+      static_out = method_fn(static_u)
+    return static_u, static_out, graph
 
   # --------------------------------------------------------------------- #
   # pdf — legacy impl                                                     #
