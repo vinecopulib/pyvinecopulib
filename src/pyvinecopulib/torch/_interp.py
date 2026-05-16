@@ -254,7 +254,7 @@ class InterpolationGrid2D(torch.nn.Module):
     ``m^2`` grid (each call is then one lookup instead of 35 iterations
     of bisection at eval time).
     """
-    from ._util import solve_bisection
+    from ._util import solve_itp
 
     m = self.grid_points.shape[0]
     gi, gj = torch.meshgrid(self.grid_points, self.grid_points, indexing="ij")
@@ -278,7 +278,7 @@ class InterpolationGrid2D(torch.nn.Module):
       )
 
     hinv1_vals = (
-      solve_bisection(_fun_hinv1, torch.zeros_like(p), torch.ones_like(p))
+      solve_itp(_fun_hinv1, torch.zeros_like(p), torch.ones_like(p))
       .squeeze(-1)
       .clamp(0.0, 1.0)
       .reshape(m, m)
@@ -295,7 +295,7 @@ class InterpolationGrid2D(torch.nn.Module):
       )
 
     hinv2_vals = (
-      solve_bisection(_fun_hinv2, torch.zeros_like(p), torch.ones_like(p))
+      solve_itp(_fun_hinv2, torch.zeros_like(p), torch.ones_like(p))
       .squeeze(-1)
       .clamp(0.0, 1.0)
       .reshape(m, m)

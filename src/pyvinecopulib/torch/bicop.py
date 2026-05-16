@@ -20,7 +20,7 @@ from torch import Tensor
 
 from ..pyvinecopulib_ext import Bicop, tll as _TLL_FAMILY
 from ._interp import InterpolationGrid2D, _TRIM_LO, _TRIM_HI
-from ._util import make_normal_grid, solve_bisection
+from ._util import make_normal_grid, solve_itp
 
 _LOG_FLOOR: float = -13.815510557964274  # log(1e-6); same as torchvinecopulib
 
@@ -285,7 +285,7 @@ class TorchBicop(torch.nn.Module):
       u_eval = torch.cat([a, x], dim=-1)
       return self._hfunc_raw(u_eval, 1).unsqueeze(-1) - p
 
-    x = solve_bisection(fun, x_a=torch.zeros_like(p), x_b=torch.ones_like(p))
+    x = solve_itp(fun, x_a=torch.zeros_like(p), x_b=torch.ones_like(p))
     return x.squeeze(-1).clamp(0.0, 1.0)
 
   @torch.no_grad()
@@ -307,7 +307,7 @@ class TorchBicop(torch.nn.Module):
       u_eval = torch.cat([x, b], dim=-1)
       return self._hfunc_raw(u_eval, 2).unsqueeze(-1) - p
 
-    x = solve_bisection(fun, x_a=torch.zeros_like(p), x_b=torch.ones_like(p))
+    x = solve_itp(fun, x_a=torch.zeros_like(p), x_b=torch.ones_like(p))
     return x.squeeze(-1).clamp(0.0, 1.0)
 
   # --------------------------------------------------------------------- #
