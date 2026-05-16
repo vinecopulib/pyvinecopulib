@@ -19,7 +19,7 @@ Section 2 — Vine precision. For each d:
   - compute IAE = mean |fit.pdf - true.pdf| on M=10k iid points.
 
 Outputs a long-format CSV to --output (default stdout) with columns:
-    section, family, params, d, n, quantity, cache, IAE
+    section, family, params, d, n, quantity, cache, grid_type, IAE
 """
 
 from __future__ import annotations
@@ -79,7 +79,9 @@ def _bicop_fit(bc: TorchBicop, u_t: torch.Tensor) -> dict[str, np.ndarray]:
   }
 
 
-def _run_bicop_section(n_list: list[int], m_eval: int, seed: int) -> list[dict]:
+def _run_bicop_section(
+  n_list: list[int], grid_types: list[str], m_eval: int, seed: int
+) -> list[dict]:
   rows: list[dict] = []
   rng_master = np.random.default_rng(seed)
   for fam_label, fam, params in _BICOP_SPECS:
@@ -95,24 +97,28 @@ def _run_bicop_section(n_list: list[int], m_eval: int, seed: int) -> list[dict]:
       u_eval_t = torch.from_numpy(u_eval)
 
       truths = _bicop_truth(cop_true, u_eval)
-      for cache in (False, True):
-        bc_fit = TorchBicop.from_data(
-          torch.from_numpy(u_true), cache_integrals=cache
-        )
-        fits = _bicop_fit(bc_fit, u_eval_t)
-        for q in truths:
-          rows.append(
-            {
-              "section": "bicop",
-              "family": fam_label,
-              "params": ";".join(f"{p:g}" for p in params),
-              "d": 2,
-              "n": n,
-              "quantity": q,
-              "cache": int(cache),
-              "IAE": _iae(fits[q], truths[q]),
-            }
+      for grid_type in grid_types:
+        for cache in (False, True):
+          bc_fit = TorchBicop.from_data(
+            torch.from_numpy(u_true),
+            cache_integrals=cache,
+            grid_type=grid_type,
           )
+          fits = _bicop_fit(bc_fit, u_eval_t)
+          for q in truths:
+            rows.append(
+              {
+                "section": "bicop",
+                "family": fam_label,
+                "params": ";".join(f"{p:g}" for p in params),
+                "d": 2,
+                "n": n,
+                "quantity": q,
+                "cache": int(cache),
+                "grid_type": grid_type,
+                "IAE": _iae(fits[q], truths[q]),
+              }
+            )
       print(
         f"# bicop {fam_label}({params}) n={n} done", file=sys.stderr, flush=True
       )
@@ -139,7 +145,7 @@ def _build_gaussian_vine(d: int, structure_seed: int) -> pv.Vinecop:
 
 
 def _run_vine_section(
-  d_list: list[int], n: int, m_eval: int, seed: int
+  d_list: list[int], grid_types: list[str], n: int, m_eval: int, seed: int
 ) -> list[dict]:
   rows: list[dict] = []
   rng_master = np.random.default_rng(seed)
@@ -155,25 +161,28 @@ def _run_vine_section(
     u_eval_t = torch.from_numpy(u_eval)
     truth_pdf = cop_true.pdf(u_eval)
 
-    for cache in (False, True):
-      vc_fit = TorchVinecop.from_data(
-        torch.from_numpy(u_true),
-        cop_true.structure,
-        cache_integrals=cache,
-      )
-      fit_pdf = vc_fit.pdf(u_eval_t).numpy()
-      rows.append(
-        {
-          "section": "vine",
-          "family": "gaussian",
-          "params": "rho_t=0.6*0.7^t",
-          "d": d,
-          "n": n,
-          "quantity": "pdf",
-          "cache": int(cache),
-          "IAE": _iae(fit_pdf, truth_pdf),
-        }
-      )
+    for grid_type in grid_types:
+      for cache in (False, True):
+        vc_fit = TorchVinecop.from_data(
+          torch.from_numpy(u_true),
+          cop_true.structure,
+          cache_integrals=cache,
+          grid_type=grid_type,
+        )
+        fit_pdf = vc_fit.pdf(u_eval_t).numpy()
+        rows.append(
+          {
+            "section": "vine",
+            "family": "gaussian",
+            "params": "rho_t=0.6*0.7^t",
+            "d": d,
+            "n": n,
+            "quantity": "pdf",
+            "cache": int(cache),
+            "grid_type": grid_type,
+            "IAE": _iae(fit_pdf, truth_pdf),
+          }
+        )
     print(f"# vine d={d} done", file=sys.stderr, flush=True)
   return rows
 
@@ -219,18 +228,24 @@ def main() -> None:
     default="bicop,vine",
     help="Which sections to run (default: bicop,vine).",
   )
+  ap.add_argument(
+    "--grid-types",
+    default="normal,linear",
+    help="Storage-grid types to sweep (default: normal,linear).",
+  )
   ap.add_argument("--output", default="-")
   args = ap.parse_args()
 
   torch.set_num_threads(1)
   sections = {s.strip() for s in args.sections.split(",") if s.strip()}
+  grid_types = [g.strip() for g in args.grid_types.split(",") if g.strip()]
 
   rows: list[dict] = []
   if "bicop" in sections:
-    rows += _run_bicop_section(args.n_bicop, args.m_eval, args.seed)
+    rows += _run_bicop_section(args.n_bicop, grid_types, args.m_eval, args.seed)
   if "vine" in sections:
     rows += _run_vine_section(
-      args.d_vine, args.n_vine, args.m_eval, args.seed + 1
+      args.d_vine, grid_types, args.n_vine, args.m_eval, args.seed + 1
     )
 
   out = sys.stdout if args.output == "-" else open(args.output, "w", newline="")
@@ -244,6 +259,7 @@ def main() -> None:
       "n",
       "quantity",
       "cache",
+      "grid_type",
       "IAE",
     ],
   )
