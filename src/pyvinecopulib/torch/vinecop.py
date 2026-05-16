@@ -163,6 +163,83 @@ class TorchVinecop(torch.nn.Module):
 
     return cls(pair_copulas=pair_copulas_torch, structure=cop.structure)
 
+  @classmethod
+  def from_data(
+    cls,
+    u,
+    structure,
+    *,
+    grid_size: int = 30,
+    mult: float = 1.0,
+    cache_integrals: bool = False,
+    device: Optional[torch.device] = None,
+    dtype: torch.dtype = torch.float64,
+  ) -> "TorchVinecop":
+    """Fit a pure-PyTorch TLL vine on ``u`` given a fixed ``structure``.
+
+    Tree-by-tree cascade mirroring ``Vinecop::select_families`` with a
+    user-provided structure: at each ``(tree, edge)`` we collect the pair
+    of pseudo-obs columns (``col0``, ``col1``) by the same rule as the
+    legacy pdf/rosenblatt cascade, fit a :class:`TorchBicop` on them via
+    :meth:`TorchBicop.from_data`, then propagate ``hfunc1`` / ``hfunc2``
+    forward according to ``needed_hfunc1`` / ``needed_hfunc2``.
+
+    The structure is *fixed* (not selected); this measures pair-copula
+    estimation error only, matching ``pv.Vinecop.from_data(u,
+    controls=FitControlsVinecop(family_set=[tll], structure=...))`` to
+    machine precision (per-pair agreement is ~1e-11; the cascade
+    preserves this when ``cache_integrals=False``).
+
+    Args:
+      u: ``(n, d)`` pseudo-observations; np.ndarray or Tensor.
+      structure: :class:`pyvinecopulib.RVineStructure` describing the vine
+        skeleton.
+      grid_size, mult: forwarded to :meth:`TorchBicop.from_data`.
+      cache_integrals, device, dtype: forwarded to :meth:`TorchBicop.from_data`.
+    """
+    u_t = torch.as_tensor(u, dtype=dtype, device=device)
+    if u_t.ndim != 2:
+      raise ValueError(f"u must be 2-D; got shape {tuple(u_t.shape)}")
+    n, d = u_t.shape
+    if int(structure.dim) != d:
+      raise ValueError(
+        f"structure.dim={structure.dim} does not match u.shape[1]={d}"
+      )
+
+    order = [int(s) for s in structure.order]
+    hfunc1 = torch.zeros(n, d, dtype=dtype, device=u_t.device)
+    hfunc2 = torch.empty(n, d, dtype=dtype, device=u_t.device)
+    for j in range(d):
+      hfunc2[:, j] = u_t[:, order[j] - 1]
+
+    trunc_lvl = int(structure.trunc_lvl)
+    pair_copulas: list[list[TorchBicop]] = []
+    s = structure
+    for tree in range(trunc_lvl):
+      tree_pairs: list[TorchBicop] = []
+      for edge in range(d - tree - 1):
+        m = int(s.min_array(tree, edge))
+        sarr = int(s.struct_array(tree, edge, natural_order=True))
+        col0 = hfunc2[:, edge]
+        col1 = hfunc2[:, m - 1] if m == sarr else hfunc1[:, m - 1]
+        u_e = torch.stack([col0, col1], dim=-1)
+        bc = TorchBicop.from_data(
+          u_e,
+          grid_size=grid_size,
+          mult=mult,
+          cache_integrals=cache_integrals,
+          device=u_t.device,
+          dtype=dtype,
+        )
+        tree_pairs.append(bc)
+        if s.needed_hfunc1(tree, edge):
+          hfunc1[:, edge] = bc.hfunc1(u_e)
+        if s.needed_hfunc2(tree, edge):
+          hfunc2[:, edge] = bc.hfunc2(u_e)
+      pair_copulas.append(tree_pairs)
+
+    return cls(pair_copulas=pair_copulas, structure=structure)
+
   # --------------------------------------------------------------------- #
   # Helpers                                                                #
   # --------------------------------------------------------------------- #

@@ -359,6 +359,48 @@ def test_batched_matches_cpp_rosenblatt() -> None:
   np.testing.assert_allclose(out_torch, out_cpp, atol=1e-10, rtol=1e-10)
 
 
+@pytest.mark.parametrize("d", [5, 10])
+def test_from_data_matches_from_vinecop(d: int) -> None:
+  """``TorchVinecop.from_data(u, structure)`` should agree with
+  ``pv.Vinecop.from_data(u, controls=..., structure=structure)`` to machine
+  precision. Note: this is the *fixed-structure* C++ path. Freely-selected
+  C++ Vinecop.from_data produces a different pair-copula orientation per
+  edge (the graph-traversal order during selection differs from the order
+  used when the structure is passed in), so the comparison target is the
+  fixed-structure refit.
+  """
+  u_fit = _simulate(d=d, n=1500, seed=400 + d)
+  # First, get a structure (any TLL fit will do).
+  structure = _fit_tll_vine(u_fit).structure
+  # Now refit C++ with that structure passed in.
+  cop_cpp_fixed = pv.Vinecop.from_data(
+    u_fit, controls=_TLL_CONTROLS, structure=structure
+  )
+
+  bc_cpp = TorchVinecop.from_vinecop(cop_cpp_fixed)
+  bc_torch = TorchVinecop.from_data(torch.from_numpy(u_fit), structure)
+
+  u_eval = torch.from_numpy(_eval_grid(400, d=d, seed=410 + d))
+  np.testing.assert_allclose(
+    bc_torch.pdf(u_eval).numpy(),
+    bc_cpp.pdf(u_eval).numpy(),
+    atol=1e-9,
+    rtol=1e-9,
+  )
+  np.testing.assert_allclose(
+    bc_torch.rosenblatt(u_eval).numpy(),
+    bc_cpp.rosenblatt(u_eval).numpy(),
+    atol=1e-9,
+    rtol=1e-9,
+  )
+  np.testing.assert_allclose(
+    bc_torch.inverse_rosenblatt(u_eval).numpy(),
+    bc_cpp.inverse_rosenblatt(u_eval).numpy(),
+    atol=1e-9,
+    rtol=1e-9,
+  )
+
+
 def test_batched_to_device_invalidates() -> None:
   """``.to()`` should drop the lazily-built BatchedVine so the next
   batched call rebuilds it on the new device."""
