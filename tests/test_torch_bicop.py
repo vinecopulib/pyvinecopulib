@@ -241,3 +241,87 @@ def test_from_bicop_rejects_non_kernel_family() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   with pytest.raises(ValueError, match="kernel-family"):
     TorchBicop.from_bicop(cop)
+
+
+# --------------------------------------------------------------------------- #
+# TorchBicop linear-grid path                                                  #
+# --------------------------------------------------------------------------- #
+
+
+def test_linear_grid_roundtrip_and_range() -> None:
+  """``grid_type='linear'`` produces a usable fit: hinv round-trips and
+  all outputs are in-range. The linear-vs-normal disagreement on pdf is
+  small (~5e-2 max) since both fit the same KDE in z-space and only the
+  storage grid differs.
+  """
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
+  u_fit = cop.simulate(2000, seeds=[10, 11, 12])
+  bc_lin = TorchBicop.from_data(u_fit, grid_type="linear")
+  bc_nrm = TorchBicop.from_data(u_fit, grid_type="normal")
+
+  assert bc_lin.interp_grid._is_linear is True
+  assert bc_nrm.interp_grid._is_linear is False
+  # Linear grid points are equispaced after the [0,1] endpoint clamp.
+  gp = bc_lin.interp_grid.grid_points.numpy()
+  d = np.diff(gp[1:-1])
+  assert np.allclose(d, d[0], atol=1e-12), "interior spacing must be uniform"
+
+  u_t = torch.from_numpy(_eval_grid(300, seed=99))
+  pdf = bc_lin.pdf(u_t)
+  cdf = bc_lin.cdf(u_t)
+  h1 = bc_lin.hfunc1(u_t)
+  h2 = bc_lin.hfunc2(u_t)
+  assert (pdf > 0).all() and torch.isfinite(pdf).all()
+  assert ((cdf > 0) & (cdf < 1)).all()
+  assert ((h1 >= 0) & (h1 <= 1)).all()
+  assert ((h2 >= 0) & (h2 <= 1)).all()
+
+  # hinv round-trip
+  u2 = bc_lin.hinv1(u_t).unsqueeze(-1)
+  back = bc_lin.hfunc1(torch.cat([u_t[:, 0:1], u2], dim=-1)).numpy()
+  np.testing.assert_allclose(back, u_t[:, 1].numpy(), atol=1e-9, rtol=1e-9)
+
+
+def test_linear_grid_cell_index_matches_searchsorted() -> None:
+  """The O(1) floor-based cell index for the linear grid must agree with
+  the generic searchsorted-based cell index — same indices at every input.
+  """
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.4]]))
+  u_fit = cop.simulate(500, seeds=[1, 2, 3])
+  bc_lin = TorchBicop.from_data(u_fit, grid_type="linear")
+  grid = bc_lin.interp_grid
+
+  u = torch.linspace(0.0, 1.0, 1001, dtype=torch.float64)
+  # O(1) floor path
+  fast_idx = grid._cell_index(u)
+  # Force the searchsorted path for the same grid
+  grid._is_linear = False
+  slow_idx = grid._cell_index(u)
+  grid._is_linear = True
+  assert torch.equal(fast_idx, slow_idx)
+
+
+def test_linear_grid_cached_integrals_consistent() -> None:
+  """``cache_integrals=True`` must build all five caches and produce in-
+  range outputs on the linear grid as well as on the normal grid."""
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  u_fit = cop.simulate(1500, seeds=[7, 8, 9])
+  bc = TorchBicop.from_data(u_fit, grid_type="linear", cache_integrals=True)
+  assert bc._cdf_cache is not None
+  assert bc._hfunc1_cache is not None
+  assert bc._hfunc2_cache is not None
+  assert bc._hinv1_cache is not None
+  assert bc._hinv2_cache is not None
+
+  u_t = torch.from_numpy(_eval_grid(300, seed=21))
+  for fn in (bc.cdf, bc.hfunc1, bc.hfunc2, bc.hinv1, bc.hinv2):
+    out = fn(u_t)
+    assert torch.isfinite(out).all()
+    assert ((out >= 0.0) & (out <= 1.0)).all()
+
+
+def test_linear_rejects_invalid_grid_type() -> None:
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.4]]))
+  u_fit = cop.simulate(200, seeds=[1, 2, 3])
+  with pytest.raises(ValueError, match="grid_type"):
+    TorchBicop.from_data(u_fit, grid_type="quadratic")

@@ -214,7 +214,10 @@ def _fit_local_likelihood_constant(
 
 
 def fit_tll_constant(
-  u: Tensor, grid_size: int = 30, mult: float = 1.0
+  u: Tensor,
+  grid_size: int = 30,
+  mult: float = 1.0,
+  grid_type: str = "normal",
 ) -> tuple[Tensor, Tensor]:
   """Fit a TLL pair-copula via local-constant kernel density estimation.
 
@@ -225,15 +228,20 @@ def fit_tll_constant(
     grid_size: number of grid points per axis (default 30; matches C++).
     mult: bandwidth multiplier passed through to ``select_bandwidth``;
       the C++ default is 1.
+    grid_type: either ``"normal"`` (default, matches C++ — grid_points are
+      ``pnorm(linspace(-3.25, 3.25, m))``) or ``"linear"`` (grid_points
+      are uniformly spaced on ``[Phi(-3.25), 1-Phi(-3.25)]``, with the
+      InterpolationGrid2D constructor forcing the endpoints to exactly
+      0 / 1). The linear option matches the z-range of the normal grid so
+      bandwidth selection is unaffected; only the *storage* grid changes,
+      enabling O(1) cell-finding at eval time.
 
   Returns:
-    A ``(grid_points, values)`` pair. ``grid_points`` is the canonical
-    ``pnorm(linspace(-3.25, 3.25, m))`` grid (un-forced endpoints —
-    the :class:`InterpolationGrid2D` constructor will clamp them to
-    exactly 0 and 1 for the stored grid). ``values`` is the
-    unnormalized ``(m, m)`` density; callers should pass it through
-    ``InterpolationGrid2D(grid_points, values, norm_times=3)`` to match
-    the C++ ``Bicop.parameters`` output to machine precision.
+    A ``(grid_points, values)`` pair. ``values`` is the unnormalized
+    ``(m, m)`` density; callers should pass it through
+    ``InterpolationGrid2D(grid_points, values, norm_times=3,
+    is_linear=(grid_type == "linear"))`` to match the C++
+    ``Bicop.parameters`` output to machine precision for ``"normal"``.
   """
   if u.ndim != 2 or u.shape[1] != 2:
     raise ValueError(f"u must have shape (n, 2); got {tuple(u.shape)}")
@@ -241,6 +249,10 @@ def fit_tll_constant(
     raise ValueError(f"grid_size must be >= 2; got {grid_size}")
   if mult <= 0:
     raise ValueError(f"mult must be > 0; got {mult}")
+  if grid_type not in ("normal", "linear"):
+    raise ValueError(
+      f"grid_type must be 'normal' or 'linear'; got {grid_type!r}"
+    )
 
   dtype, device = u.dtype, u.device
 
@@ -251,16 +263,29 @@ def fit_tll_constant(
   # Bandwidth selection.
   B = _select_bandwidth_constant(z_data) * mult
 
-  # Construct the un-forced grid that C++ uses for the FIT positions
-  # (the InterpolationGrid2D constructor will force 0/1 on the stored
-  # grid; here we want the actual pnorm-spaced values).
-  z_lin = torch.linspace(-3.25, 3.25, grid_size, dtype=dtype, device=device)
-  grid_points = 0.5 * (1.0 + torch.erf(z_lin / _SQRT_2))
+  if grid_type == "normal":
+    # C++ default: linspace(-3.25, 3.25) in z-space, pnorm to u-space.
+    z_lin = torch.linspace(-3.25, 3.25, grid_size, dtype=dtype, device=device)
+    grid_points = 0.5 * (1.0 + torch.erf(z_lin / _SQRT_2))
+  else:
+    # Truly uniform u-space grid for O(1) cell-finding at eval time. KDE
+    # eval needs finite z, so we clip the endpoints to the same z-range
+    # as the normal grid (|z| <= 3.25, i.e. u in [Phi(-3.25), 1-Phi(-3.25)])
+    # before applying qnorm; the resulting interior z-grid spans the same
+    # support as the normal grid, only the storage positions differ.
+    grid_points = torch.linspace(
+      0.0, 1.0, grid_size, dtype=dtype, device=device
+    )
+    u_lo = 0.5 * (1.0 + math.erf(-3.25 / _SQRT_2))
+    grid_points_kde = grid_points.clamp(u_lo, 1.0 - u_lo)
 
   # Expand grid (row-major matches the C++ Eigen::Map<...>().transpose()
-  # reshape in TllBicop::fit at the values-assembly step).
-  g_i = grid_points.repeat_interleave(grid_size)
-  g_j = grid_points.repeat(grid_size)
+  # reshape in TllBicop::fit at the values-assembly step). For the linear
+  # storage grid the z-coords come from the clipped variant so qnorm stays
+  # finite; the density is still stored at the un-clipped uniform grid.
+  src = grid_points_kde if grid_type == "linear" else grid_points
+  g_i = src.repeat_interleave(grid_size)
+  g_j = src.repeat(grid_size)
   grid_2d = torch.stack([g_i, g_j], dim=-1)
   z = _qnorm(grid_2d)
 

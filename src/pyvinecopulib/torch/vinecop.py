@@ -172,6 +172,7 @@ class TorchVinecop(torch.nn.Module):
     grid_size: int = 30,
     mult: float = 1.0,
     cache_integrals: bool = False,
+    grid_type: str = "normal",
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchVinecop":
@@ -194,7 +195,7 @@ class TorchVinecop(torch.nn.Module):
       u: ``(n, d)`` pseudo-observations; np.ndarray or Tensor.
       structure: :class:`pyvinecopulib.RVineStructure` describing the vine
         skeleton.
-      grid_size, mult: forwarded to :meth:`TorchBicop.from_data`.
+      grid_size, mult, grid_type: forwarded to :meth:`TorchBicop.from_data`.
       cache_integrals, device, dtype: forwarded to :meth:`TorchBicop.from_data`.
     """
     u_t = torch.as_tensor(u, dtype=dtype, device=device)
@@ -228,6 +229,7 @@ class TorchVinecop(torch.nn.Module):
           grid_size=grid_size,
           mult=mult,
           cache_integrals=cache_integrals,
+          grid_type=grid_type,
           device=u_t.device,
           dtype=dtype,
         )

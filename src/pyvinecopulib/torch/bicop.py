@@ -69,6 +69,7 @@ class TorchBicop(torch.nn.Module):
     values: Optional[Tensor] = None,
     cache_integrals: bool = False,
     norm_times: int = 3,
+    is_linear: bool = False,
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> None:
@@ -95,6 +96,7 @@ class TorchBicop(torch.nn.Module):
       grid_points=grid_points,
       values=values,
       norm_times=norm_times_eff,
+      is_linear=is_linear,
     )
 
     self._cache_integrals = bool(cache_integrals)
@@ -171,32 +173,41 @@ class TorchBicop(torch.nn.Module):
     grid_size: int = 30,
     mult: float = 1.0,
     cache_integrals: bool = False,
+    grid_type: str = "normal",
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchBicop":
     """Fit a TLL bicop on pseudo-observations and wrap in a ``TorchBicop``.
 
     Pure-PyTorch port of the C++ ``TllBicop::fit`` for the ``constant``
-    method (the C++ default). The output matches
-    ``pv.Bicop.from_data(u, controls=FitControlsBicop(family_set=[tll]))``
-    to machine precision (worst case observed: ~1e-12 across (n, ρ) in
+    method (the C++ default). With ``grid_type="normal"`` the output
+    matches ``pv.Bicop.from_data(u,
+    controls=FitControlsBicop(family_set=[tll]))`` to machine precision
+    (worst case observed: ~1e-12 across (n, ρ) in
     ``{500, 2000} × {0.3, 0.6, 0.9}``).
 
     Args:
       u: ``(n, 2)`` pseudo-observations; np.ndarray or Tensor.
       grid_size: density grid size per axis (default 30; matches C++).
       mult: bandwidth multiplier (default 1; matches C++).
+      grid_type: ``"normal"`` (default, matches C++ — Phi-spaced grid) or
+        ``"linear"`` (uniform grid on [0, 1] with O(1) cell-finding at
+        eval time). Both build the KDE on the same z-range so bandwidth
+        selection is unaffected; only the storage grid changes.
       cache_integrals, device, dtype: same semantics as :meth:`__init__`.
     """
     from ._fit_tll import fit_tll_constant
 
     u_t = torch.as_tensor(u, dtype=dtype, device=device)
-    grid_points, values = fit_tll_constant(u_t, grid_size=grid_size, mult=mult)
+    grid_points, values = fit_tll_constant(
+      u_t, grid_size=grid_size, mult=mult, grid_type=grid_type
+    )
     return cls(
       grid_points=grid_points,
       values=values,
       cache_integrals=cache_integrals,
       norm_times=3,
+      is_linear=(grid_type == "linear"),
       device=device,
       dtype=dtype,
     )

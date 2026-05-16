@@ -34,6 +34,7 @@ class InterpolationGrid2D(torch.nn.Module):
     grid_points: Tensor,
     values: Tensor,
     norm_times: int = 3,
+    is_linear: bool = False,
   ) -> None:
     super().__init__()
     if values.ndim != 2 or values.shape[0] != values.shape[1]:
@@ -50,6 +51,10 @@ class InterpolationGrid2D(torch.nn.Module):
 
     self.register_buffer("grid_points", grid_points.contiguous())
     self.register_buffer("values", values.clone().contiguous())
+    # When ``is_linear`` is True the grid is assumed to be ``linspace(0, 1, m)``
+    # (with the endpoint clamp above leaving it unchanged), so cell-finding is
+    # O(1) — ``floor(u * (m - 1))`` — instead of an O(log m) ``searchsorted``.
+    self._is_linear = bool(is_linear)
     self.normalize_margins(norm_times)
 
   # --------------------------------------------------------------------- #
@@ -88,6 +93,9 @@ class InterpolationGrid2D(torch.nn.Module):
   def _cell_index(self, u: Tensor) -> Tensor:
     """Cell index for each value of ``u`` (shape preserved), clamped to ``[0, m-2]``."""
     m = self.grid_points.shape[0]
+    if self._is_linear:
+      # Uniform grid on [0, 1] — O(1) cell-finding via floor.
+      return (u * (m - 1)).long().clamp(0, m - 2)
     return (
       torch.searchsorted(self.grid_points, u.contiguous(), right=False) - 1
     ).clamp(0, m - 2)
@@ -116,9 +124,12 @@ class InterpolationGrid2D(torch.nn.Module):
     cumulative = torch.cat([zero, trap.cumsum(dim=-1)], dim=-1)  # (..., m)
 
     upr_clamped = upr.clamp(0.0, 1.0)
-    cell = (
-      torch.searchsorted(grid, upr_clamped.contiguous(), right=False) - 1
-    ).clamp(0, m - 2)  # (...,)
+    if self._is_linear:
+      cell = (upr_clamped * (m - 1)).long().clamp(0, m - 2)  # (...,)
+    else:
+      cell = (
+        torch.searchsorted(grid, upr_clamped.contiguous(), right=False) - 1
+      ).clamp(0, m - 2)  # (...,)
 
     cell_exp = cell.unsqueeze(-1)
     v_k = torch.gather(vals, dim=-1, index=cell_exp).squeeze(-1)
