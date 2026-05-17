@@ -230,18 +230,46 @@ class TorchBicop(torch.nn.Module):
     return u.clamp(_TRIM_LO, _TRIM_HI)
 
   def pdf(self, u: Tensor) -> Tensor:
-    """Bivariate copula density at ``u``."""
+    """Bivariate copula density ``c(u1, u2)`` at the query points ``u``.
+
+    Args:
+      u: ``(n, 2)`` tensor of pseudo-observations in ``[0, 1]^2``. Inputs
+        outside the unit square are clamped to ``[1e-10, 1 - 1e-10]``;
+        ``NaN`` propagates through the bilinear interpolation.
+
+    Returns:
+      ``(n,)`` tensor of density values; clamped to a strictly-positive
+      floor of ``1e-20`` so subsequent ``log`` calls stay finite.
+    """
     u = self._prep(u)
     if self.is_indep:
       return torch.ones(u.shape[0], dtype=u.dtype, device=u.device)
     return self.interp_grid.interpolate(u).clamp_min(1e-20)
 
   def log_pdf(self, u: Tensor) -> Tensor:
-    """``log pdf`` with safe handling of ``-inf`` / ``nan``."""
+    """``log c(u1, u2)`` with safe handling of ``-inf`` / ``NaN``.
+
+    Equivalent to ``pdf(u).log()`` but replaces ``-inf`` (from the
+    density floor) with a fixed lower bound and ``+inf`` / ``NaN`` with
+    finite sentinels — useful when the result feeds into an autograd
+    loss.
+    """
     return self.pdf(u).log().nan_to_num(neginf=_LOG_FLOOR, posinf=0.0)
 
   def cdf(self, u: Tensor) -> Tensor:
-    """Bivariate copula CDF at ``u``."""
+    """Bivariate copula CDF ``C(u1, u2) = ∫_0^{u1} ∫_0^{u2} c(s, t) ds dt``.
+
+    Computed via :meth:`InterpolationGrid2D.integrate_2d` (nested
+    trapezoidal integration) when ``cache_integrals=False``, or via a
+    single bilinear interp on the precomputed cache when
+    ``cache_integrals=True``.
+
+    Args:
+      u: ``(n, 2)`` tensor of pseudo-observations in ``[0, 1]^2``.
+
+    Returns:
+      ``(n,)`` tensor of CDF values in ``[1e-10, 1 - 1e-10]``.
+    """
     u = self._prep(u)
     if self.is_indep:
       return (u[:, 0] * u[:, 1]).clamp(_TRIM_LO, _TRIM_HI)
@@ -260,14 +288,35 @@ class TorchBicop(torch.nn.Module):
     return self.interp_grid.integrate_1d(u, cond_var=cond_var)
 
   def hfunc1(self, u: Tensor) -> Tensor:
-    """``H1(u1, u2) = P(U2 <= u2 | U1 = u1)``."""
+    """First h-function: ``H1(u1, u2) = P(U2 ≤ u2 | U1 = u1)``.
+
+    Computed via :meth:`InterpolationGrid2D.integrate_1d` with
+    ``cond_var=1`` when ``cache_integrals=False``, or via a single
+    bilinear interp on the precomputed ``hfunc1`` cache when
+    ``cache_integrals=True``.
+
+    Args:
+      u: ``(n, 2)`` tensor of pseudo-observations in ``[0, 1]^2``.
+
+    Returns:
+      ``(n,)`` tensor of conditional CDF values in ``[0, 1]``.
+    """
     u = self._prep(u)
     if self.is_indep:
       return u[:, 1].clamp(_TRIM_LO, _TRIM_HI)
     return self._hfunc_raw(u, 1).clamp(0.0, 1.0)
 
   def hfunc2(self, u: Tensor) -> Tensor:
-    """``H2(u1, u2) = P(U1 <= u1 | U2 = u2)``."""
+    """Second h-function: ``H2(u1, u2) = P(U1 ≤ u1 | U2 = u2)``.
+
+    Symmetric to :meth:`hfunc1` with the conditioning variable swapped.
+
+    Args:
+      u: ``(n, 2)`` tensor of pseudo-observations in ``[0, 1]^2``.
+
+    Returns:
+      ``(n,)`` tensor of conditional CDF values in ``[0, 1]``.
+    """
     u = self._prep(u)
     if self.is_indep:
       return u[:, 0].clamp(_TRIM_LO, _TRIM_HI)
@@ -279,12 +328,20 @@ class TorchBicop(torch.nn.Module):
 
   @torch.no_grad()
   def hinv1(self, u: Tensor) -> Tensor:
-    """Inverse of ``hfunc1`` w.r.t. the second argument.
+    """Inverse of :meth:`hfunc1` w.r.t. the second argument.
 
-    Given ``u = [u1, p]`` with shape ``(n, 2)``, returns ``u2`` such that
-    ``hfunc1((u1, u2)) = p``. With ``cache_integrals=True`` this is a
-    single bilinear interp on the precomputed ``_hinv1_cache``; otherwise
-    each call runs a fresh bisection on top of the on-the-fly h-function.
+    Given ``u = [u1, p]`` of shape ``(n, 2)``, returns ``u2`` such that
+    ``H1(u1, u2) = p``. With ``cache_integrals=True`` this is a single
+    bilinear interp on the precomputed ``hinv1`` cache; otherwise each
+    call runs the fixed-iter vectorized ITP root-finder
+    (:func:`._util.solve_itp`) over the on-the-fly h-function.
+
+    Args:
+      u: ``(n, 2)`` tensor where column 0 is ``u1`` and column 1 is the
+        target probability ``p``.
+
+    Returns:
+      ``(n,)`` tensor of ``u2`` values in ``[0, 1]``.
     """
     u = self._prep(u)
     if self.is_indep:
@@ -303,10 +360,18 @@ class TorchBicop(torch.nn.Module):
 
   @torch.no_grad()
   def hinv2(self, u: Tensor) -> Tensor:
-    """Inverse of ``hfunc2`` w.r.t. the first argument.
+    """Inverse of :meth:`hfunc2` w.r.t. the first argument.
 
-    Given ``u = [p, u2]`` with shape ``(n, 2)``, returns ``u1`` such that
-    ``hfunc2((u1, u2)) = p``. See :meth:`hinv1` for the cache semantics.
+    Given ``u = [p, u2]`` of shape ``(n, 2)``, returns ``u1`` such that
+    ``H2(u1, u2) = p``. See :meth:`hinv1` for the cache vs. ITP-bisection
+    semantics.
+
+    Args:
+      u: ``(n, 2)`` tensor where column 0 is the target probability ``p``
+        and column 1 is ``u2``.
+
+    Returns:
+      ``(n,)`` tensor of ``u1`` values in ``[0, 1]``.
     """
     u = self._prep(u)
     if self.is_indep:
@@ -334,7 +399,25 @@ class TorchBicop(torch.nn.Module):
     seed: Optional[int] = 42,
     is_sobol: bool = False,
   ) -> Tensor:
-    """Draw ``num_sample`` samples via inverse Rosenblatt (``hinv1``)."""
+    """Draw ``num_sample`` joint samples from the fitted copula.
+
+    Uses the inverse Rosenblatt scheme: sample two independent uniforms
+    ``(U1, P)``, then set ``U2 = hinv1((U1, P))`` so that ``(U1, U2)``
+    has the fitted joint distribution.
+
+    Args:
+      num_sample: Number of samples to draw (must be ``> 0``).
+      seed: Optional RNG seed. ``None`` keeps the global / Sobol RNG
+        state.
+      is_sobol: If ``True``, draw the base uniforms from a scrambled
+        Sobol sequence (better low-discrepancy in 2-D) instead of
+        pseudo-random uniforms.
+
+    Returns:
+      ``(num_sample, 2)`` tensor of samples in ``(0, 1)^2``.
+    """
+    if num_sample <= 0:
+      raise ValueError(f"num_sample must be > 0; got {num_sample}")
     device = self.interp_grid.values.device
     dtype = self.interp_grid.values.dtype
     if is_sobol:

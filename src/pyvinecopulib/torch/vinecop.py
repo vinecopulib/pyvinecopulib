@@ -52,12 +52,35 @@ def _check_impl(impl: str) -> None:
 
 
 class TorchVinecop(torch.nn.Module):
-  """PyTorch evaluator over an R-vine of :class:`TorchBicop` pair copulas.
+  """PyTorch R-vine copula evaluator built on :class:`TorchBicop`.
 
-  Port of the C++ ``Vinecop`` class's ``pdf`` / ``rosenblatt`` /
-  ``inverse_rosenblatt`` entry points. Continuous-only; single batch; no
-  threading. The fit lives on the C++ side — this class just consumes the
-  resulting per-edge density grids and the vine structure.
+  Mirrors the public surface of :class:`pyvinecopulib.Vinecop` —
+  ``pdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` — but keeps the
+  entire evaluation chain in PyTorch so the vine can move to GPU with
+  ``.to(device)`` and compose with autograd-aware downstream code.
+  Continuous variables only, single batch, no threading. Pair-copula
+  fits come from :meth:`from_data` (pure-torch TLL fit) or
+  :meth:`from_vinecop` (lifts a C++-fitted :class:`pyvinecopulib.Vinecop`).
+
+  Each public entry point accepts two orthogonal kwargs:
+
+  * ``impl="legacy"`` (default) — direct port of the C++
+    ``Vinecop::pdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` cascades
+    with dense ``(n, d)`` scratch matrices. Byte-for-byte agreement with
+    :class:`pyvinecopulib.Vinecop` on the same fit.
+  * ``impl="lazy"`` — dict-based bookkeeping where pseudo-observations
+    are keyed by ``(v, *cond_ing)`` and materialized on first access.
+    A reference-counted upward walk frees intermediate pseudo-obs as
+    soon as they're no longer needed. Equivalent math; smaller peak
+    memory. Inspired by Cheng, Vatter, Nagler & Chen (2025),
+    *Vine Copulas as Differentiable Computational Graphs*,
+    arXiv:2506.13318.
+  * ``batched=True`` — stacks every pair-copula at one tree level and
+    fires a single batched bicop call per level instead of a Python
+    loop over edges. Available for ``pdf`` and ``rosenblatt`` only;
+    ``inverse_rosenblatt(batched=True)`` raises ``NotImplementedError``
+    because the inverse cascade has cross-tree dependencies that don't
+    reduce to per-level wavefronts.
 
   Parameters
   ----------
@@ -68,8 +91,9 @@ class TorchVinecop(torch.nn.Module):
     has ``d - 1`` edges, tree 1 has ``d - 2``, etc., up to ``trunc_lvl``.
   structure:
     The R-vine structure (a :class:`pyvinecopulib.RVineStructure`) whose
-    accessors describe how to walk the trees. Held as-is so the inner
-    loops query it directly.
+    accessors (``min_array``, ``struct_array``, ``needed_hfunc1`` /
+    ``needed_hfunc2``) describe how to walk the trees. Held as-is so
+    the inner loops query it directly.
   """
 
   d: int
@@ -360,16 +384,26 @@ class TorchVinecop(torch.nn.Module):
     impl: str = "legacy",
     batched: bool = False,
   ) -> Tensor:
-    """Bivariate-cascaded copula density at ``u``.
+    """Vine copula density ``c(u_1, ..., u_d)`` at the query points ``u``.
 
-    See :meth:`_pdf_legacy` and :meth:`_pdf_lazy` for the two
-    implementations; both produce numerically equivalent output.
+    Computes the joint copula density as a product of pair-copula
+    densities over the vine's edges — same expression as
+    :meth:`pyvinecopulib.Vinecop.pdf`, evaluated entirely in PyTorch.
 
-    ``batched=True`` evaluates every pair-copula at one tree level in a
-    single batched bicop call (one ``(N_t, m, m)`` interp per tree level
-    instead of N_t scalar interps). Orthogonal to ``impl`` — the dense
-    (legacy) and dict-based (lazy) storage strategies still apply; only
-    the per-level inner loop is collapsed.
+    Args:
+      u: ``(n, d)`` tensor of pseudo-observations in ``[0, 1]^d`` where
+        ``d = self.d``. Inputs are clamped to ``[1e-10, 1 - 1e-10]``.
+      impl: Either ``"legacy"`` (direct C++ cascade port, dense
+        ``(n, d)`` scratch) or ``"lazy"`` (dict-based pseudo-obs with
+        ref-counted GC, see Cheng et al. 2025). Both produce
+        numerically identical outputs.
+      batched: If ``True``, evaluate every pair-copula at one tree level
+        in a single batched bicop call (one ``(N_t, m, m)`` interp per
+        tree level instead of N_t scalar interps). Orthogonal to
+        ``impl``.
+
+    Returns:
+      ``(n,)`` tensor of joint density values.
     """
     _check_impl(impl)
     fn = self._pick_pdf(impl, batched)
@@ -384,7 +418,19 @@ class TorchVinecop(torch.nn.Module):
   ) -> Tensor:
     """Rosenblatt transform: dependent uniforms ``u`` → independent ``w``.
 
-    See :meth:`pdf` for the semantics of ``batched``.
+    Maps a sample from the fitted copula to a sample of independent
+    standard uniforms. Specifically, for each row of ``u`` the output
+    column ``j`` is the conditional CDF of ``U_j`` given the preceding
+    variables in the vine's natural order. See :meth:`pyvinecopulib.Vinecop.rosenblatt`
+    for the mathematical definition.
+
+    Args:
+      u: ``(n, d)`` tensor of pseudo-observations in ``[0, 1]^d``.
+      impl: ``"legacy"`` or ``"lazy"`` — see :meth:`pdf`.
+      batched: Per-tree-level batched dispatch — see :meth:`pdf`.
+
+    Returns:
+      ``(n, d)`` tensor of independent uniforms in ``[1e-10, 1 - 1e-10]``.
     """
     _check_impl(impl)
     fn = self._pick_rosenblatt(impl, batched)
@@ -400,7 +446,20 @@ class TorchVinecop(torch.nn.Module):
   ) -> Tensor:
     """Inverse Rosenblatt transform: independent uniforms → dependent.
 
-    See :meth:`pdf` for the semantics of ``batched``.
+    Inverts :meth:`rosenblatt`: maps independent standard uniforms to a
+    sample of the fitted copula. Useful for simulation / sampling.
+
+    Args:
+      u: ``(n, d)`` tensor of independent uniforms in ``[0, 1]^d``.
+      impl: ``"legacy"`` or ``"lazy"`` — see :meth:`pdf`.
+      batched: **Must be** ``False``. The inverse cascade has a
+        cross-tree dependency that the per-tree-level wavefront used
+        by ``pdf`` / ``rosenblatt`` cannot satisfy; ``batched=True``
+        raises :class:`NotImplementedError`.
+
+    Returns:
+      ``(n, d)`` tensor of dependent uniforms in ``[1e-10, 1 - 1e-10]``,
+      distributed as the fitted copula.
     """
     _check_impl(impl)
     fn = self._pick_inverse_rosenblatt(impl, batched)

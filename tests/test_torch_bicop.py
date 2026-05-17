@@ -325,3 +325,51 @@ def test_linear_rejects_invalid_grid_type() -> None:
   u_fit = cop.simulate(200, seeds=[1, 2, 3])
   with pytest.raises(ValueError, match="grid_type"):
     TorchBicop.from_data(u_fit, grid_type="quadratic")
+
+
+# --------------------------------------------------------------------------- #
+# User-facing input validation                                                #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+  "op", ["pdf", "cdf", "hfunc1", "hfunc2", "hinv1", "hinv2"]
+)
+def test_eval_rejects_wrong_input_shape(op: str) -> None:
+  """Every eval entry point requires (n, 2) and raises ValueError otherwise."""
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
+  u_fit = cop.simulate(500, seeds=[1, 2, 3])
+  bc = TorchBicop.from_data(u_fit)
+  fn = getattr(bc, op)
+  with pytest.raises(ValueError, match=r"shape \(n, 2\)"):
+    fn(torch.zeros(100, dtype=torch.float64))  # 1-D
+  with pytest.raises(ValueError, match=r"shape \(n, 2\)"):
+    fn(torch.zeros(100, 3, dtype=torch.float64))  # wrong second dim
+
+
+def test_from_data_rejects_wrong_input_shape() -> None:
+  """`from_data` rejects inputs that aren't ``(n, 2)``."""
+  with pytest.raises(ValueError, match="must have shape"):
+    TorchBicop.from_data(torch.zeros(100, dtype=torch.float64))
+  with pytest.raises(ValueError, match="must have shape"):
+    TorchBicop.from_data(torch.zeros(100, 3, dtype=torch.float64))
+
+
+def test_from_data_rejects_bad_args() -> None:
+  """`from_data` rejects grid_size < 2 and mult <= 0."""
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
+  u_fit = cop.simulate(200, seeds=[1, 2, 3])
+  with pytest.raises(ValueError, match="grid_size"):
+    TorchBicop.from_data(u_fit, grid_size=1)
+  with pytest.raises(ValueError, match="mult"):
+    TorchBicop.from_data(u_fit, mult=0.0)
+
+
+def test_sample_rejects_nonpositive_num_sample() -> None:
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
+  u_fit = cop.simulate(200, seeds=[1, 2, 3])
+  bc = TorchBicop.from_data(u_fit)
+  with pytest.raises(ValueError, match="num_sample"):
+    bc.sample(num_sample=0)
+  with pytest.raises(ValueError, match="num_sample"):
+    bc.sample(num_sample=-5)

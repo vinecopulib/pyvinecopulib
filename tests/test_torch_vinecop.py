@@ -420,3 +420,39 @@ def test_batched_to_device_invalidates() -> None:
   # And the re-build on the new dtype produces a finite output.
   out = bc.pdf(u_t.to(torch.float32), batched=True)
   assert torch.isfinite(out).all()
+
+
+# --------------------------------------------------------------------------- #
+# User-facing input validation for TorchVinecop                                #
+# --------------------------------------------------------------------------- #
+
+
+def test_from_data_rejects_non_2d_u() -> None:
+  """``TorchVinecop.from_data`` rejects 1-D / 3-D inputs."""
+  structure = pv.RVineStructure.simulate(5, seeds=[1])
+  with pytest.raises(ValueError, match="must be 2-D"):
+    TorchVinecop.from_data(torch.zeros(100, dtype=torch.float64), structure)
+  with pytest.raises(ValueError, match="must be 2-D"):
+    TorchVinecop.from_data(
+      torch.zeros(100, 5, 2, dtype=torch.float64), structure
+    )
+
+
+def test_from_data_rejects_structure_dim_mismatch() -> None:
+  """``TorchVinecop.from_data`` rejects ``structure.dim != u.shape[1]``."""
+  structure = pv.RVineStructure.simulate(5, seeds=[1])  # d=5
+  with pytest.raises(ValueError, match="does not match"):
+    TorchVinecop.from_data(torch.zeros(100, 7, dtype=torch.float64), structure)
+
+
+@pytest.mark.parametrize("op", ["pdf", "rosenblatt", "inverse_rosenblatt"])
+def test_eval_rejects_wrong_input_shape(op: str) -> None:
+  """Every eval entry point requires ``(n, d)`` and raises otherwise."""
+  d = 5
+  u_fit = _simulate(d=d, n=400, seed=520)
+  bc = TorchVinecop.from_vinecop(_fit_tll_vine(u_fit))
+  fn = getattr(bc, op)
+  with pytest.raises(ValueError):
+    fn(torch.zeros(100, dtype=torch.float64))  # 1-D
+  with pytest.raises(ValueError):
+    fn(torch.zeros(100, d + 1, dtype=torch.float64))  # wrong second dim
