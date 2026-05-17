@@ -156,10 +156,17 @@ def _run_vine_section(
       int(x) for x in rng_master.integers(1, 2**31 - 1, size=3, endpoint=False)
     )
     u_true = cop_true.simulate(n, seeds=sim_seeds)
+    # Single eval sample: iid uniforms on [0.02, 0.98]^d. This keeps the
+    # IAEs comparable across pdf / rosenblatt / inverse_rosenblatt (the
+    # last expects independent uniforms anyway). Sampling from the true
+    # joint would push pdf IAE into tail regions where density values
+    # are huge, making the metric dominated by a handful of points.
     eval_seed = int(rng_master.integers(1, 2**31 - 1))
     u_eval = _u_eval(np.random.default_rng(eval_seed), m_eval, d=d)
     u_eval_t = torch.from_numpy(u_eval)
     truth_pdf = cop_true.pdf(u_eval)
+    truth_rosen = cop_true.rosenblatt(u_eval)
+    truth_inv = cop_true.inverse_rosenblatt(u_eval)
 
     for grid_type in grid_types:
       for cache in (False, True):
@@ -170,17 +177,32 @@ def _run_vine_section(
           grid_type=grid_type,
         )
         fit_pdf = vc_fit.pdf(u_eval_t).numpy()
+        fit_rosen = vc_fit.rosenblatt(u_eval_t).numpy()
+        fit_inv = vc_fit.inverse_rosenblatt(u_eval_t).numpy()
+        base = {
+          "section": "vine",
+          "family": "gaussian",
+          "params": "rho_t=0.6*0.7^t",
+          "d": d,
+          "n": n,
+          "cache": int(cache),
+          "grid_type": grid_type,
+        }
+        rows.append(
+          {**base, "quantity": "pdf", "IAE": _iae(fit_pdf, truth_pdf)}
+        )
         rows.append(
           {
-            "section": "vine",
-            "family": "gaussian",
-            "params": "rho_t=0.6*0.7^t",
-            "d": d,
-            "n": n,
-            "quantity": "pdf",
-            "cache": int(cache),
-            "grid_type": grid_type,
-            "IAE": _iae(fit_pdf, truth_pdf),
+            **base,
+            "quantity": "rosenblatt",
+            "IAE": _iae(fit_rosen, truth_rosen),
+          }
+        )
+        rows.append(
+          {
+            **base,
+            "quantity": "inverse_rosenblatt",
+            "IAE": _iae(fit_inv, truth_inv),
           }
         )
     print(f"# vine d={d} done", file=sys.stderr, flush=True)
