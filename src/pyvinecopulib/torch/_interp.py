@@ -7,6 +7,7 @@ same partial-cell handling as the C++ implementation.
 
 from __future__ import annotations
 
+import math
 
 import torch
 from torch import Tensor
@@ -14,6 +15,15 @@ from torch import Tensor
 _TRIM_LO: float = 1e-10
 _TRIM_HI: float = 1.0 - 1e-10
 _STRIP_FLOOR: float = 1e-4
+
+_SQRT_2 = math.sqrt(2.0)
+# u_lo = Phi(-3.25); the lower end of the "effective" support that the C++
+# normal grid evaluates the TLL KDE over. Reused by ``make_kde_eval_points``
+# below so the linear grid sees the same z-range.
+_NORMAL_GRID_U_LO: float = 0.5 * (1.0 + math.erf(-3.25 / _SQRT_2))
+_NORMAL_GRID_Z_LIMIT: float = 3.25
+
+GRID_TYPES = ("normal", "linear")
 
 
 class InterpolationGrid2D(torch.nn.Module):
@@ -56,6 +66,71 @@ class InterpolationGrid2D(torch.nn.Module):
     # O(1) — ``floor(u * (m - 1))`` — instead of an O(log m) ``searchsorted``.
     self._is_linear = bool(is_linear)
     self.normalize_margins(norm_times)
+
+  # --------------------------------------------------------------------- #
+  # Grid construction (factories shared by all callers)                    #
+  # --------------------------------------------------------------------- #
+
+  @staticmethod
+  def make_grid_points(
+    grid_type: str, m: int, dtype: torch.dtype = torch.float64
+  ) -> Tensor:
+    """Storage grid for a kernel-style bicop on ``[0, 1]^2``.
+
+    Mirrors ``KernelBicop::make_normal_grid`` in the C++ library. Endpoints
+    are forced to exactly 0 / 1 (same as the :class:`InterpolationGrid2D`
+    constructor will do) so callers never need to special-case the boundary.
+
+    Args:
+      grid_type: ``"normal"`` (``Phi(linspace(-3.25, 3.25, m))``, matches
+        C++) or ``"linear"`` (``linspace(0, 1, m)``, uniform; supports the
+        O(1) cell-finding path in :meth:`_cell_index`).
+      m: number of grid points per axis.
+      dtype: floating-point dtype.
+    """
+    if grid_type not in GRID_TYPES:
+      raise ValueError(
+        f"grid_type must be one of {GRID_TYPES}; got {grid_type!r}"
+      )
+    if grid_type == "linear":
+      return torch.linspace(0.0, 1.0, m, dtype=dtype)
+    z = torch.linspace(
+      -_NORMAL_GRID_Z_LIMIT, _NORMAL_GRID_Z_LIMIT, m, dtype=dtype
+    )
+    grid = 0.5 * (1.0 + torch.erf(z / _SQRT_2))
+    grid[0] = 0.0
+    grid[-1] = 1.0
+    return grid
+
+  @staticmethod
+  def make_kde_eval_points(
+    grid_type: str, m: int, dtype: torch.dtype = torch.float64
+  ) -> Tensor:
+    """U-space points used by the TLL KDE evaluator.
+
+    For ``"normal"``: identical to :meth:`make_grid_points` — the KDE
+    evaluates at the same un-forced ``Phi(linspace(-3.25, 3.25))`` grid
+    that C++ uses, and the storage-grid endpoints get force-clamped to
+    0 / 1 inside the :class:`InterpolationGrid2D` constructor (the density
+    values are NOT recomputed, matching C++ exactly).
+
+    For ``"linear"``: ``linspace(0, 1, m)`` clamped to
+    ``[Phi(-3.25), 1 - Phi(-3.25)]`` so ``qnorm`` stays finite at the
+    endpoints — the same trick as the normal grid, only the storage
+    coordinate system is uniform on ``[0, 1]``.
+    """
+    if grid_type not in GRID_TYPES:
+      raise ValueError(
+        f"grid_type must be one of {GRID_TYPES}; got {grid_type!r}"
+      )
+    if grid_type == "normal":
+      z = torch.linspace(
+        -_NORMAL_GRID_Z_LIMIT, _NORMAL_GRID_Z_LIMIT, m, dtype=dtype
+      )
+      return 0.5 * (1.0 + torch.erf(z / _SQRT_2))
+    return torch.linspace(0.0, 1.0, m, dtype=dtype).clamp(
+      _NORMAL_GRID_U_LO, 1.0 - _NORMAL_GRID_U_LO
+    )
 
   # --------------------------------------------------------------------- #
   # Margin normalization (port of InterpolationGrid::normalize_margins).  #

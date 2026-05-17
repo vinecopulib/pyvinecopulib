@@ -499,7 +499,8 @@ class BatchedVine(torch.nn.Module):
     # Pull a reference tensor to get device.
     device = tvc._ref_tensor().device
 
-    # The grid is shared by all pairs (same `make_normal_grid(m, dtype)`).
+    # The grid is shared by all pairs (built once via
+    # `InterpolationGrid2D.make_grid_points`).
     grid_points = tvc._pair(0, 0).interp_grid.grid_points
     # The grid type is also shared: all pair-copulas in a TorchVinecop come
     # from the same fit pipeline, so they all use the same storage grid.

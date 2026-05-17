@@ -32,6 +32,8 @@ import torch
 import torch.nn.functional as F
 from torch import Tensor
 
+from ._interp import InterpolationGrid2D
+
 _SQRT_2 = math.sqrt(2.0)
 _SQRT_2PI_INV = 1.0 / math.sqrt(2.0 * math.pi)
 
@@ -249,11 +251,6 @@ def fit_tll_constant(
     raise ValueError(f"grid_size must be >= 2; got {grid_size}")
   if mult <= 0:
     raise ValueError(f"mult must be > 0; got {mult}")
-  if grid_type not in ("normal", "linear"):
-    raise ValueError(
-      f"grid_type must be 'normal' or 'linear'; got {grid_type!r}"
-    )
-
   dtype, device = u.dtype, u.device
 
   # Pseudo-observations + qnorm to z-space.
@@ -263,29 +260,23 @@ def fit_tll_constant(
   # Bandwidth selection.
   B = _select_bandwidth_constant(z_data) * mult
 
-  if grid_type == "normal":
-    # C++ default: linspace(-3.25, 3.25) in z-space, pnorm to u-space.
-    z_lin = torch.linspace(-3.25, 3.25, grid_size, dtype=dtype, device=device)
-    grid_points = 0.5 * (1.0 + torch.erf(z_lin / _SQRT_2))
-  else:
-    # Truly uniform u-space grid for O(1) cell-finding at eval time. KDE
-    # eval needs finite z, so we clip the endpoints to the same z-range
-    # as the normal grid (|z| <= 3.25, i.e. u in [Phi(-3.25), 1-Phi(-3.25)])
-    # before applying qnorm; the resulting interior z-grid spans the same
-    # support as the normal grid, only the storage positions differ.
-    grid_points = torch.linspace(
-      0.0, 1.0, grid_size, dtype=dtype, device=device
-    )
-    u_lo = 0.5 * (1.0 + math.erf(-3.25 / _SQRT_2))
-    grid_points_kde = grid_points.clamp(u_lo, 1.0 - u_lo)
+  # Storage and KDE-eval grids come from the centralized factory on
+  # InterpolationGrid2D so any future grid type lives in one place.
+  # For "normal" the two coincide and match C++; for "linear" the KDE
+  # eval grid is uniform-then-clamped so qnorm stays finite while the
+  # storage grid is the unclipped linspace(0, 1, m) — the resulting
+  # densities at u=0/1 are stored at z=±3.25 (same trick as C++).
+  grid_points = InterpolationGrid2D.make_grid_points(
+    grid_type, grid_size, dtype=dtype
+  ).to(device=device)
+  kde_points = InterpolationGrid2D.make_kde_eval_points(
+    grid_type, grid_size, dtype=dtype
+  ).to(device=device)
 
   # Expand grid (row-major matches the C++ Eigen::Map<...>().transpose()
-  # reshape in TllBicop::fit at the values-assembly step). For the linear
-  # storage grid the z-coords come from the clipped variant so qnorm stays
-  # finite; the density is still stored at the un-clipped uniform grid.
-  src = grid_points_kde if grid_type == "linear" else grid_points
-  g_i = src.repeat_interleave(grid_size)
-  g_j = src.repeat(grid_size)
+  # reshape in TllBicop::fit at the values-assembly step).
+  g_i = kde_points.repeat_interleave(grid_size)
+  g_j = kde_points.repeat(grid_size)
   grid_2d = torch.stack([g_i, g_j], dim=-1)
   z = _qnorm(grid_2d)
 

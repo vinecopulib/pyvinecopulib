@@ -20,7 +20,7 @@ from torch import Tensor
 
 from ..pyvinecopulib_ext import Bicop, tll as _TLL_FAMILY
 from ._interp import InterpolationGrid2D, _TRIM_LO, _TRIM_HI
-from ._util import make_normal_grid, solve_itp
+from ._util import solve_itp
 
 _LOG_FLOOR: float = -13.815510557964274  # log(1e-6); same as torchvinecopulib
 
@@ -153,7 +153,9 @@ class TorchBicop(torch.nn.Module):
         f"got shape {values_np.shape}"
       )
     m = values_np.shape[0]
-    grid_points = make_normal_grid(m, dtype=dtype).to(device=device)
+    grid_points = InterpolationGrid2D.make_grid_points(
+      "normal", m, dtype=dtype
+    ).to(device=device)
     values = torch.as_tensor(values_np, dtype=dtype, device=device)
     # The grid stored on cop is already normalized; skip renormalization
     # to avoid drifting away from the C++ values.

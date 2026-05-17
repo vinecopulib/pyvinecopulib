@@ -1020,7 +1020,7 @@ class TorchVinecop(torch.nn.Module):
     reordering therefore needs a full DAG topological sort across the
     ``(var, tree)`` lattice, not just within-tree waves. That's a v2
     rewrite; for v1 we route ``batched=True`` to the per-pair legacy
-    cascade (still bit-equal to C++ via :func:`solve_bisection`).
+    cascade (still bit-equal to C++ via :func:`solve_itp`).
     """
     return self._inverse_rosenblatt_legacy(u)
 
