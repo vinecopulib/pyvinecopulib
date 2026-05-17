@@ -159,6 +159,11 @@ def _bench_cell(
           torch_fn = getattr(bc, method)
           for impl in impls:
             for batched in batched_modes:
+              # batched=True is not implemented for inverse_rosenblatt
+              # (the inverse cascade's deps aren't tree-level batchable).
+              # Skip rather than crash so the rest of the sweep proceeds.
+              if method == "inverse_rosenblatt" and batched:
+                continue
               ms = _time_repeats(
                 lambda fn=torch_fn, u=u_t, i=impl, b=batched: fn(
                   u, impl=i, batched=b
