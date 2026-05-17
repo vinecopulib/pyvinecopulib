@@ -175,12 +175,14 @@ def test_independent_vine_short_circuits(batched: bool) -> None:
   np.testing.assert_allclose(
     bc.rosenblatt(u_t, batched=batched).numpy(), u, atol=1e-10, rtol=1e-10
   )
-  np.testing.assert_allclose(
-    bc.inverse_rosenblatt(u_t, batched=batched).numpy(),
-    u,
-    atol=1e-10,
-    rtol=1e-10,
-  )
+  # inverse_rosenblatt with batched=True now raises; only check batched=False.
+  if not batched:
+    np.testing.assert_allclose(
+      bc.inverse_rosenblatt(u_t, batched=batched).numpy(),
+      u,
+      atol=1e-10,
+      rtol=1e-10,
+    )
 
 
 @pytest.mark.parametrize("batched", [False, True])
@@ -325,17 +327,21 @@ def test_rosenblatt_batched_matches_legacy(impl: str, cache: bool) -> None:
 
 
 @pytest.mark.parametrize("impl", ["legacy", "lazy"])
-def test_inverse_rosenblatt_batched_falls_back(impl: str) -> None:
-  """``batched=True`` on inverse_rosenblatt routes to legacy in v1
-  (cross-tree dependencies block a clean tree-level batched traversal).
-  Output must be bit-equal to the non-batched path."""
+def test_inverse_rosenblatt_batched_raises(impl: str) -> None:
+  """``batched=True`` on inverse_rosenblatt raises NotImplementedError.
+
+  The inverse cascade's dependency graph is genuinely 2-D (some
+  iterations depend on values at a *different* tree level), so the
+  per-tree-level wavefront that works for pdf / rosenblatt doesn't
+  apply. Raising surfaces the limitation explicitly instead of silently
+  routing to the slower non-batched path.
+  """
   u_fit = _simulate(d=6, n=600, seed=302)
   cop_tll = _fit_tll_vine(u_fit)
   bc = TorchVinecop.from_vinecop(cop_tll)
   w_t = torch.from_numpy(_eval_grid(300, d=6, seed=312))
-  ref = bc.inverse_rosenblatt(w_t, impl=impl, batched=False).numpy()
-  got = bc.inverse_rosenblatt(w_t, impl=impl, batched=True).numpy()
-  np.testing.assert_array_equal(got, ref)
+  with pytest.raises(NotImplementedError, match="batched=True"):
+    bc.inverse_rosenblatt(w_t, impl=impl, batched=True)
 
 
 def test_batched_matches_cpp_pdf() -> None:

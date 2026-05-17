@@ -1012,19 +1012,34 @@ class TorchVinecop(torch.nn.Module):
 
   @torch.no_grad()
   def _inverse_rosenblatt_batched_legacy(self, u: Tensor) -> Tensor:
-    """``batched=True`` fallback for inverse_rosenblatt.
+    """``batched=True`` is not supported for inverse_rosenblatt.
 
-    The inverse cascade's dependency graph isn't tree-level batchable:
-    iteration ``(var, tree)`` reads ``hfunc1[tree, m-1, :]`` which was
-    written at ``(m-1, tree-1)`` — a different tree level. A tree-outer
-    reordering therefore needs a full DAG topological sort across the
-    ``(var, tree)`` lattice, not just within-tree waves. That's a v2
-    rewrite; for v1 we route ``batched=True`` to the per-pair legacy
-    cascade (still bit-equal to C++ via :func:`solve_itp`).
+    The forward (pdf / rosenblatt) cascade batches over edges within a
+    single tree level because every input to tree ``t`` is produced at
+    tree ``t-1`` — a clean wavefront. The inverse cascade's dependency
+    graph is genuinely 2-D: iteration ``(var, tree)`` reads either
+    ``hinv2[tree, m-1]`` (a same-tree, cross-var dep, satisfiable by
+    in-tree wavefronts) OR ``hfunc1[tree, m-1]`` (a cross-tree dep
+    written at iter ``(m-1, tree-1)``). Tree-by-tree decreasing-``t``
+    can't satisfy the latter because ``tree-1`` is the *future* tree
+    going downward. A full topological sort over the ``(var, tree)``
+    lattice could expose any latent parallelism — best-case Θ(d) waves
+    for D-vine-like structures, worst-case Θ(d²) waves (sequential).
+    Deferred to v2; for now, raise so the caller picks ``batched=False``.
     """
-    return self._inverse_rosenblatt_legacy(u)
+    raise NotImplementedError(
+      "batched=True is not implemented for inverse_rosenblatt. "
+      "The inverse cascade has a 2-D dependency graph that does not "
+      "reduce to per-tree-level waves. Pass batched=False instead."
+    )
 
   @torch.no_grad()
   def _inverse_rosenblatt_batched_lazy(self, u: Tensor) -> Tensor:
-    """Same fallback as :meth:`_inverse_rosenblatt_batched_legacy`."""
-    return self._inverse_rosenblatt_lazy(u)
+    """``batched=True`` is not supported for inverse_rosenblatt — see
+    :meth:`_inverse_rosenblatt_batched_legacy` for the dependency-graph
+    reason. Raises ``NotImplementedError``."""
+    raise NotImplementedError(
+      "batched=True is not implemented for inverse_rosenblatt. "
+      "The inverse cascade has a 2-D dependency graph that does not "
+      "reduce to per-tree-level waves. Pass batched=False instead."
+    )
