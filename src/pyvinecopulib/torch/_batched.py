@@ -35,16 +35,25 @@ _STRIP_FLOOR: float = 1e-4
 # --------------------------------------------------------------------------- #
 
 
-def _batched_cell_index(grid_points: Tensor, u: Tensor) -> Tensor:
-  """Per-element cell index, clamped to ``[0, m-2]``. Preserves ``u``'s shape."""
+def _batched_cell_index(
+  grid_points: Tensor, u: Tensor, is_linear: bool = False
+) -> Tensor:
+  """Per-element cell index, clamped to ``[0, m-2]``. Preserves ``u``'s shape.
+
+  When ``is_linear`` is True the grid is assumed to be ``linspace(0, 1, m)``
+  and the index is computed as ``floor(u * (m - 1))`` — O(1) vs the O(log m)
+  ``searchsorted`` of the default path.
+  """
   m = grid_points.shape[0]
+  if is_linear:
+    return (u * (m - 1)).long().clamp(0, m - 2)
   return (
     torch.searchsorted(grid_points, u.contiguous(), right=False) - 1
   ).clamp(0, m - 2)
 
 
 def interpolate_batched(
-  grid_points: Tensor, values: Tensor, u: Tensor
+  grid_points: Tensor, values: Tensor, u: Tensor, is_linear: bool = False
 ) -> Tensor:
   """Batched bilinear interpolation.
 
@@ -68,8 +77,8 @@ def interpolate_batched(
   u = u.clamp(0.0, 1.0)
   N, n, _ = u.shape
 
-  i = _batched_cell_index(grid_points, u[..., 0])  # (N, n)
-  j = _batched_cell_index(grid_points, u[..., 1])  # (N, n)
+  i = _batched_cell_index(grid_points, u[..., 0], is_linear)  # (N, n)
+  j = _batched_cell_index(grid_points, u[..., 1], is_linear)  # (N, n)
 
   N_idx = (
     torch.arange(N, device=values.device).unsqueeze(-1).expand(N, n)
@@ -96,14 +105,16 @@ def interpolate_batched(
   ) / denom
 
 
-def interp_at_batched(grid_points: Tensor, cache: Tensor, u: Tensor) -> Tensor:
+def interp_at_batched(
+  grid_points: Tensor, cache: Tensor, u: Tensor, is_linear: bool = False
+) -> Tensor:
   """Bilinearly interpolate a stacked precomputed cache.
 
   Same shape contract as :func:`interpolate_batched`; the distinction is
   semantic — ``cache`` is a precomputed integral grid (e.g. h-func or cdf),
   whereas ``values`` in :func:`interpolate_batched` is the pdf grid.
   """
-  return interpolate_batched(grid_points, cache, u)
+  return interpolate_batched(grid_points, cache, u, is_linear)
 
 
 # --------------------------------------------------------------------------- #
@@ -112,7 +123,7 @@ def interp_at_batched(grid_points: Tensor, cache: Tensor, u: Tensor) -> Tensor:
 
 
 def int_on_grid_batched(
-  grid_points: Tensor, upr: Tensor, vals: Tensor
+  grid_points: Tensor, upr: Tensor, vals: Tensor, is_linear: bool = False
 ) -> Tensor:
   """Vectorized trapezoidal integral of ``(grid_points, vals)`` from 0 to ``upr``.
 
@@ -129,9 +140,12 @@ def int_on_grid_batched(
   cumulative = torch.cat([zero, trap.cumsum(dim=-1)], dim=-1)
 
   upr_clamped = upr.clamp(0.0, 1.0)
-  cell = (
-    torch.searchsorted(grid_points, upr_clamped.contiguous(), right=False) - 1
-  ).clamp(0, m - 2)
+  if is_linear:
+    cell = (upr_clamped * (m - 1)).long().clamp(0, m - 2)
+  else:
+    cell = (
+      torch.searchsorted(grid_points, upr_clamped.contiguous(), right=False) - 1
+    ).clamp(0, m - 2)
 
   cell_exp = cell.unsqueeze(-1)
   v_k = torch.gather(vals, dim=-1, index=cell_exp).squeeze(-1)
@@ -148,7 +162,11 @@ def int_on_grid_batched(
 
 
 def integrate_1d_batched(
-  grid_points: Tensor, values: Tensor, u: Tensor, cond_var: int
+  grid_points: Tensor,
+  values: Tensor,
+  u: Tensor,
+  cond_var: int,
+  is_linear: bool = False,
 ) -> Tensor:
   """Batched conditional 1-D integral.
 
@@ -180,7 +198,7 @@ def integrate_1d_batched(
     u_free = u[..., 0]
     fixed_axis = 2  # columns
 
-  cell = _batched_cell_index(grid_points, u_fixed)  # (N, n)
+  cell = _batched_cell_index(grid_points, u_fixed, is_linear)  # (N, n)
   g_lo = grid_points[cell]
   g_hi = grid_points[cell + 1]
   t = ((u_fixed - g_lo) / (g_hi - g_lo)).unsqueeze(-1)  # (N, n, 1)
@@ -203,15 +221,15 @@ def integrate_1d_batched(
 
   strip = ((1.0 - t) * v_lo + t * v_hi).clamp_min(_STRIP_FLOOR)  # (N, n, m)
 
-  numer = int_on_grid_batched(grid_points, u_free, strip)  # (N, n)
+  numer = int_on_grid_batched(grid_points, u_free, strip, is_linear)  # (N, n)
   denom = int_on_grid_batched(
-    grid_points, torch.ones_like(u_free), strip
+    grid_points, torch.ones_like(u_free), strip, is_linear
   )  # (N, n)
   return (numer / denom).clamp(_TRIM_LO, _TRIM_HI)
 
 
 def integrate_2d_batched(
-  grid_points: Tensor, values: Tensor, u: Tensor
+  grid_points: Tensor, values: Tensor, u: Tensor, is_linear: bool = False
 ) -> Tensor:
   """Batched bivariate CDF (trapezoidal-trapezoidal).
 
@@ -231,10 +249,14 @@ def integrate_2d_batched(
   # the query axis).
   upr_inner = u2.unsqueeze(-1).expand(N, n, m)
   vals_inner = values.unsqueeze(1).expand(N, n, m, m)
-  strip = int_on_grid_batched(grid_points, upr_inner, vals_inner)  # (N, n, m)
+  strip = int_on_grid_batched(
+    grid_points, upr_inner, vals_inner, is_linear
+  )  # (N, n, m)
 
   # Outer pass: integrate strip[k, l, :] up to u1[k, l].
-  return int_on_grid_batched(grid_points, u1, strip).clamp(_TRIM_LO, _TRIM_HI)
+  return int_on_grid_batched(grid_points, u1, strip, is_linear).clamp(
+    _TRIM_LO, _TRIM_HI
+  )
 
 
 # --------------------------------------------------------------------------- #
@@ -298,6 +320,7 @@ class BatchedTreeLevel(torch.nn.Module):
     col1_use_h1: Tensor,
     needs_h1: Tensor,
     needs_h2: Tensor,
+    is_linear: bool = False,
   ) -> None:
     super().__init__()
     self.register_buffer("values", values)
@@ -321,6 +344,7 @@ class BatchedTreeLevel(torch.nn.Module):
     self.register_buffer("col1_use_h1", col1_use_h1)
     self.register_buffer("needs_h1", needs_h1)
     self.register_buffer("needs_h2", needs_h2)
+    self._is_linear = bool(is_linear)
 
   @property
   def has_cache(self) -> bool:
@@ -347,7 +371,9 @@ class BatchedTreeLevel(torch.nn.Module):
 
   def pdf(self, grid_points: Tensor, u: Tensor) -> Tensor:
     """Per-pair pdf at the stacked queries. Indep slots return 1."""
-    raw = interpolate_batched(grid_points, self.values, u).clamp_min(1e-20)
+    raw = interpolate_batched(
+      grid_points, self.values, u, self._is_linear
+    ).clamp_min(1e-20)
     return torch.where(self.is_indep[:, None], torch.ones_like(raw), raw)
 
   def log_pdf(self, grid_points: Tensor, u: Tensor) -> Tensor:
@@ -359,9 +385,11 @@ class BatchedTreeLevel(torch.nn.Module):
     on ``values`` at every call.
     """
     if self.h1_cache is not None:
-      raw = interp_at_batched(grid_points, self.h1_cache, u)
+      raw = interp_at_batched(grid_points, self.h1_cache, u, self._is_linear)
     else:
-      raw = integrate_1d_batched(grid_points, self.values, u, cond_var=1)
+      raw = integrate_1d_batched(
+        grid_points, self.values, u, cond_var=1, is_linear=self._is_linear
+      )
     h = raw.clamp(0.0, 1.0)
     return torch.where(
       self.is_indep[:, None], u[..., 1].clamp(_TRIM_LO, _TRIM_HI), h
@@ -369,9 +397,11 @@ class BatchedTreeLevel(torch.nn.Module):
 
   def hfunc2(self, grid_points: Tensor, u: Tensor) -> Tensor:
     if self.h2_cache is not None:
-      raw = interp_at_batched(grid_points, self.h2_cache, u)
+      raw = interp_at_batched(grid_points, self.h2_cache, u, self._is_linear)
     else:
-      raw = integrate_1d_batched(grid_points, self.values, u, cond_var=2)
+      raw = integrate_1d_batched(
+        grid_points, self.values, u, cond_var=2, is_linear=self._is_linear
+      )
     h = raw.clamp(0.0, 1.0)
     return torch.where(
       self.is_indep[:, None], u[..., 0].clamp(_TRIM_LO, _TRIM_HI), h
@@ -389,7 +419,9 @@ class BatchedTreeLevel(torch.nn.Module):
         "TorchBicop / TorchVinecop with cache_integrals=True to populate "
         "the hinv1 cache."
       )
-    raw = interp_at_batched(grid_points, self.hinv1_cache, u).clamp(0.0, 1.0)
+    raw = interp_at_batched(
+      grid_points, self.hinv1_cache, u, self._is_linear
+    ).clamp(0.0, 1.0)
     return torch.where(
       self.is_indep[:, None], u[..., 1].clamp(_TRIM_LO, _TRIM_HI), raw
     )
@@ -402,7 +434,9 @@ class BatchedTreeLevel(torch.nn.Module):
         "TorchBicop / TorchVinecop with cache_integrals=True to populate "
         "the hinv2 cache."
       )
-    raw = interp_at_batched(grid_points, self.hinv2_cache, u).clamp(0.0, 1.0)
+    raw = interp_at_batched(
+      grid_points, self.hinv2_cache, u, self._is_linear
+    ).clamp(0.0, 1.0)
     return torch.where(
       self.is_indep[:, None], u[..., 0].clamp(_TRIM_LO, _TRIM_HI), raw
     )
@@ -467,6 +501,9 @@ class BatchedVine(torch.nn.Module):
 
     # The grid is shared by all pairs (same `make_normal_grid(m, dtype)`).
     grid_points = tvc._pair(0, 0).interp_grid.grid_points
+    # The grid type is also shared: all pair-copulas in a TorchVinecop come
+    # from the same fit pipeline, so they all use the same storage grid.
+    is_linear = bool(tvc._pair(0, 0).interp_grid._is_linear)
 
     levels: list[BatchedTreeLevel] = []
     for t in range(trunc_lvl):
@@ -542,6 +579,7 @@ class BatchedVine(torch.nn.Module):
         col1_use_h1=torch.tensor(col1_use_h1, dtype=torch.bool, device=device),
         needs_h1=torch.tensor(needs_h1_list, dtype=torch.bool, device=device),
         needs_h2=torch.tensor(needs_h2_list, dtype=torch.bool, device=device),
+        is_linear=is_linear,
       )
       levels.append(level)
 
