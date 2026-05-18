@@ -19,11 +19,20 @@ trackable.
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 pytest.importorskip("sklearn")
 
 from sklearn.utils.estimator_checks import parametrize_with_checks  # noqa: E402
+
+# ``xfail_strict`` was added in sklearn 1.7; on older versions we fall
+# back to the default (strict) and rely on the ``expected_failed_checks``
+# list staying accurate for the available checks.
+_PWC_KWARGS: dict = {}
+if "xfail_strict" in inspect.signature(parametrize_with_checks).parameters:
+  _PWC_KWARGS["xfail_strict"] = False
 
 from pyvinecopulib.sklearn import (  # noqa: E402
   VineDensity,
@@ -181,10 +190,7 @@ def _expected_failed_checks(estimator):
 @parametrize_with_checks(
   [est for est, _ in _ESTIMATORS],
   expected_failed_checks=_expected_failed_checks,
-  # Some opt-outs end up *passing* on certain sklearn versions
-  # (e.g. ``check_estimators_dtypes`` is more lenient in 1.8); allow
-  # those XPASSes rather than failing the suite.
-  xfail_strict=False,
+  **_PWC_KWARGS,
 )
 def test_sklearn_compliance(estimator, check):
   check(estimator)
