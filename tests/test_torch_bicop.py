@@ -14,7 +14,7 @@ import pyvinecopulib as pv
 
 torch = pytest.importorskip("torch")
 
-from pyvinecopulib.torch import TorchBicop  # noqa: E402
+from pyvinecopulib.torch import FitControlsTorchBicop, TorchBicop  # noqa: E402
 
 _TLL_CONTROLS = pv.FitControlsBicop(family_set=[pv.families.tll], num_threads=1)
 
@@ -256,8 +256,12 @@ def test_linear_grid_roundtrip_and_range() -> None:
   """
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   u_fit = cop.simulate(2000, seeds=[10, 11, 12])
-  bc_lin = TorchBicop.from_data(u_fit, grid_type="linear")
-  bc_nrm = TorchBicop.from_data(u_fit, grid_type="normal")
+  bc_lin = TorchBicop.from_data(
+    u_fit, FitControlsTorchBicop(grid_type="linear")
+  )
+  bc_nrm = TorchBicop.from_data(
+    u_fit, FitControlsTorchBicop(grid_type="normal")
+  )
 
   assert bc_lin.interp_grid._is_linear is True
   assert bc_nrm.interp_grid._is_linear is False
@@ -288,7 +292,9 @@ def test_linear_grid_cell_index_matches_searchsorted() -> None:
   """
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.4]]))
   u_fit = cop.simulate(500, seeds=[1, 2, 3])
-  bc_lin = TorchBicop.from_data(u_fit, grid_type="linear")
+  bc_lin = TorchBicop.from_data(
+    u_fit, FitControlsTorchBicop(grid_type="linear")
+  )
   grid = bc_lin.interp_grid
 
   u = torch.linspace(0.0, 1.0, 1001, dtype=torch.float64)
@@ -306,7 +312,9 @@ def test_linear_grid_cached_integrals_consistent() -> None:
   range outputs on the linear grid as well as on the normal grid."""
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
   u_fit = cop.simulate(1500, seeds=[7, 8, 9])
-  bc = TorchBicop.from_data(u_fit, grid_type="linear", cache_integrals=True)
+  bc = TorchBicop.from_data(
+    u_fit, FitControlsTorchBicop(grid_type="linear"), cache_integrals=True
+  )
   assert bc._cdf_cache is not None
   assert bc._hfunc1_cache is not None
   assert bc._hfunc2_cache is not None
@@ -324,7 +332,7 @@ def test_linear_rejects_invalid_grid_type() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.4]]))
   u_fit = cop.simulate(200, seeds=[1, 2, 3])
   with pytest.raises(ValueError, match="grid_type"):
-    TorchBicop.from_data(u_fit, grid_type="quadratic")
+    TorchBicop.from_data(u_fit, FitControlsTorchBicop(grid_type="quadratic"))
 
 
 # --------------------------------------------------------------------------- #
@@ -360,9 +368,15 @@ def test_from_data_rejects_bad_args() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   u_fit = cop.simulate(200, seeds=[1, 2, 3])
   with pytest.raises(ValueError, match="grid_size"):
-    TorchBicop.from_data(u_fit, grid_size=1)
+    TorchBicop.from_data(u_fit, FitControlsTorchBicop(grid_size=1))
   with pytest.raises(ValueError, match="mult"):
-    TorchBicop.from_data(u_fit, mult=0.0)
+    TorchBicop.from_data(u_fit, FitControlsTorchBicop(mult=0.0))
+
+
+def test_from_data_rejects_unknown_method() -> None:
+  """`FitControlsTorchBicop` rejects unknown ``method`` values up-front."""
+  with pytest.raises(ValueError, match="unknown method"):
+    FitControlsTorchBicop(method="bogus")
 
 
 def test_simulate_rejects_nonpositive_n() -> None:
@@ -396,3 +410,46 @@ def test_simulate_alias_of_sample() -> None:
   via_sample_q = bc.sample(num_sample=64, seed=11, is_sobol=True)
   via_simulate_q = bc.simulate(n=64, qrng=True, seeds=[11])
   assert torch.allclose(via_sample_q, via_simulate_q)
+
+
+# ---------------------------------------------------------------------------
+# InterpolationGrid2D.normalize_margins(tol=...) early-stop
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_margins_tol_converges() -> None:
+  """``tol`` early-stops once margins are uniform to the requested
+  precision. The default ``tol=None`` path keeps fixed-budget semantics
+  for C++ TLL parity."""
+  from pyvinecopulib.torch import InterpolationGrid2D
+
+  # Deliberately skewed initial density on a 16x16 linear grid.
+  m = 16
+  grid = torch.linspace(0.0, 1.0, m, dtype=torch.float64)
+  rng = np.random.default_rng(0)
+  values = torch.from_numpy(rng.uniform(0.5, 1.5, size=(m, m)))
+
+  # times=50 with tol=1e-12 should converge to marginals within tol.
+  ig = InterpolationGrid2D(grid, values, norm_times=50, norm_tol=1e-12)
+  dgrid = ig.grid_points[1:] - ig.grid_points[:-1]
+  row_int = 0.5 * ((ig.values[:, :-1] + ig.values[:, 1:]) * dgrid).sum(-1)
+  col_int = 0.5 * (
+    (ig.values[:-1, :] + ig.values[1:, :]) * dgrid.unsqueeze(-1)
+  ).sum(0)
+  assert (row_int - 1.0).abs().max().item() < 1e-10
+  assert (col_int - 1.0).abs().max().item() < 1e-10
+
+
+def test_normalize_margins_default_tol_is_fixed_budget() -> None:
+  """``tol=None`` (default) preserves the fixed-budget loop — same number
+  of divides every time, matching the C++ TLL pipeline's
+  ``normalize_margins(3)`` byte-for-byte. We verify this indirectly by
+  checking that the standard ``from_data`` path still matches C++ to
+  machine precision (covered by ``test_from_data_matches_cpp``); here we
+  just spot-check that the constructor accepts the default."""
+  from pyvinecopulib.torch import InterpolationGrid2D
+
+  grid = torch.linspace(0.0, 1.0, 8, dtype=torch.float64)
+  values = torch.ones(8, 8, dtype=torch.float64)
+  # Should not raise; tol is optional.
+  InterpolationGrid2D(grid, values, norm_times=3)

@@ -1,19 +1,25 @@
-"""PyTorch ``BiCop`` module — port of the kernel/TLL bivariate copula.
+"""PyTorch ``BiCop`` module — kernel/TLL bivariate copula on a grid.
 
-Consumes the fitted grid from :class:`pyvinecopulib.Bicop` (with the ``tll``
-family). The evaluation chain (``pdf`` / ``cdf`` / ``hfunc`` / ``hinv`` /
-``sample``) lives entirely in PyTorch, so it can be moved to GPU and
-combined with autograd-aware downstream code.
+The evaluation chain (``pdf`` / ``cdf`` / ``hfunc`` / ``hinv`` /
+``simulate``) lives entirely in PyTorch, so it can be moved to GPU and
+composed with autograd-aware downstream code.
 
-Fitting is intentionally not provided here: the underlying TLL kernel
-estimator is computed in the C++ library, and the user is expected to
-construct an instance via :meth:`TorchBicop.from_bicop` after fitting with
-``pv.Bicop(family=tll)``.
+Three constructors are provided:
+
+* :meth:`TorchBicop.from_data` — fit on pseudo-observations directly in
+  PyTorch. Dispatches on the ``method`` field of a
+  :class:`FitControlsTorchBicop`: ``"tll"`` (default, machine-precision
+  parity with the C++ TLL fit) or ``"vdc"`` (vine-denoising-copula
+  pretrained estimator, optional dep).
+* :meth:`TorchBicop.from_bicop` — lift a fitted C++
+  :class:`pyvinecopulib.Bicop` (``tll`` family) into the torch backend.
+* ``TorchBicop(grid_points=..., values=...)`` — construct from an
+  externally-prepared density grid.
 """
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import torch
 from torch import Tensor
@@ -21,6 +27,9 @@ from torch import Tensor
 from ..pyvinecopulib_ext import Bicop, tll as _TLL_FAMILY
 from ._interp import InterpolationGrid2D, _TRIM_LO, _TRIM_HI
 from ._util import solve_itp
+
+if TYPE_CHECKING:
+  from ._controls import FitControlsTorchBicop
 
 _LOG_FLOOR: float = -13.815510557964274  # log(1e-6); same as torchvinecopulib
 
@@ -172,44 +181,77 @@ class TorchBicop(torch.nn.Module):
   def from_data(
     cls,
     u,
-    grid_size: int = 30,
-    mult: float = 1.0,
+    controls: Optional["FitControlsTorchBicop"] = None,
+    *,
     cache_integrals: bool = False,
-    grid_type: str = "normal",
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchBicop":
-    """Fit a TLL bicop on pseudo-observations and wrap in a ``TorchBicop``.
+    """Fit a bicop on pseudo-observations and wrap in a ``TorchBicop``.
 
-    Pure-PyTorch port of the C++ ``TllBicop::fit`` for the ``constant``
-    method (the C++ default). With ``grid_type="normal"`` the output
-    matches ``pv.Bicop.from_data(u,
-    controls=FitControlsBicop(family_set=[tll]))`` to machine precision
-    (worst case observed: ~1e-12 across (n, ρ) in
-    ``{500, 2000} × {0.3, 0.6, 0.9}``).
+    Dispatches on ``controls.method``:
+
+    * ``"tll"`` (default) — pure-PyTorch port of the C++ ``TllBicop::fit``
+      for the ``constant`` method. With ``grid_type="normal"`` the output
+      matches ``pv.Bicop.from_data(u,
+      controls=FitControlsBicop(family_set=[tll]))`` to machine precision
+      (worst case observed: ~1e-12 across (n, ρ) in
+      ``{500, 2000} × {0.3, 0.6, 0.9}``).
+    * ``"vdc"`` — Kempner Institute's `vine-denoising-copula
+      <https://github.com/KempnerInstitute/vine-denoising-copula>`_
+      pretrained denoiser / diffusion estimator. vdc is not on PyPI yet;
+      install via ``pip install "vine-denoising-copula @
+      git+https://github.com/KempnerInstitute/vine-denoising-copula"``.
+      Raises ``ImportError`` if unavailable. The first call on each
+      ``(model_id, device)`` pair pulls the checkpoint from HuggingFace
+      and caches it in memory.
 
     Args:
       u: ``(n, 2)`` pseudo-observations; np.ndarray or Tensor.
-      grid_size: density grid size per axis (default 30; matches C++).
-      mult: bandwidth multiplier (default 1; matches C++).
-      grid_type: ``"normal"`` (default, matches C++ — Phi-spaced grid) or
-        ``"linear"`` (uniform grid on [0, 1] with O(1) cell-finding at
-        eval time). Both build the KDE on the same z-range so bandwidth
-        selection is unaffected; only the storage grid changes.
-      cache_integrals, device, dtype: same semantics as :meth:`__init__`.
+      controls: :class:`FitControlsTorchBicop` instance specifying the
+        method and method-specific parameters. ``None`` defaults to
+        ``FitControlsTorchBicop()`` (TLL, grid_size=30, normal grid).
+      cache_integrals: see :meth:`__init__`.
+      device, dtype: see :meth:`__init__`.
     """
-    from ._fit_tll import fit_tll_constant
+    from ._controls import FitControlsTorchBicop
+
+    if controls is None:
+      controls = FitControlsTorchBicop()
 
     u_t = torch.as_tensor(u, dtype=dtype, device=device)
-    grid_points, values = fit_tll_constant(
-      u_t, grid_size=grid_size, mult=mult, grid_type=grid_type
-    )
+    if u_t.ndim != 2 or u_t.shape[1] != 2:
+      raise ValueError(f"u must have shape (n, 2); got {tuple(u_t.shape)}")
+
+    if controls.method == "tll":
+      from ._fit_tll import fit_tll_constant
+
+      grid_points, values = fit_tll_constant(
+        u_t,
+        grid_size=controls.grid_size,
+        mult=controls.mult,
+        grid_type=controls.grid_type,
+      )
+      return cls(
+        grid_points=grid_points,
+        values=values,
+        cache_integrals=cache_integrals,
+        norm_times=3,
+        is_linear=(controls.grid_type == "linear"),
+        device=device,
+        dtype=dtype,
+      )
+
+    # method == "vdc" — already validated by FitControlsTorchBicop.__post_init__.
+    from ._fit_vdc import fit_vdc
+
+    grid_points, values = fit_vdc(u_t, controls, device=device, dtype=dtype)
     return cls(
       grid_points=grid_points,
       values=values,
       cache_integrals=cache_integrals,
-      norm_times=3,
-      is_linear=(grid_type == "linear"),
+      norm_times=0,  # vdc's IPFP has already enforced uniform marginals
+      is_linear=False,  # padded grid has 2 half-cells at the boundaries
       device=device,
       dtype=dtype,
     )

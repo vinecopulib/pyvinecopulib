@@ -1,25 +1,30 @@
 #!/usr/bin/env python
-"""Bench TorchBicop / pv.Bicop on the TLL constant family.
+"""Bench TorchBicop / pv.Bicop bicop fitters on a shared Gaussian sample.
 
 Two modes selected via ``--mode``:
 
 * ``fit`` (default) — time the from_data fit:
     - simulate n pseudo-obs via a Gaussian copula,
     - time ``pv.Bicop.from_data`` with TLL family per thread count,
-    - time ``TorchBicop.from_data`` per device and grid_type.
+    - time ``TorchBicop.from_data`` per device and grid_type (TLL),
+    - (optional) time ``TorchBicop.from_data(method="vdc")`` per device
+      when the ``vine-denoising-copula`` package is installed.
   Output columns:
-    mode, n, backend, threads, device, grid_type, time_ms
+    mode, n, backend, threads, device, grid_type, grid_size, time_ms
 
 * ``eval`` — fit once, time the eval ops (pdf, cdf, hfunc1, hfunc2,
   hinv1, hinv2) on a separate ``n_eval`` sample:
-    - C++ baseline: same fit, no grid_type axis (TLL only has normal).
-    - Torch sweep: device x grid_type x cache_integrals.
+    - C++ baseline: fit at each requested grid_size; no grid_type axis
+      (TLL only has the Phi-spaced grid in C++).
+    - Torch sweep: device x grid_type x grid_size x cache_integrals.
+    - VDC sweep: device x cache_integrals (grid_type fixed to
+      ``"cell-centers"``; grid_size fixed at 64 by the pretrained model).
   Output columns:
     mode, op, n_fit, n_eval, backend, threads, device,
-    cache_integrals, grid_type, time_ms
+    cache_integrals, grid_type, grid_size, time_ms
 
 For ``cpp`` rows, ``device`` / ``cache_integrals`` / ``grid_type`` are
-empty. For ``torch`` rows, ``threads`` is empty.
+empty. For ``torch`` / ``vdc`` rows, ``threads`` is empty.
 """
 
 from __future__ import annotations
@@ -34,7 +39,14 @@ import numpy as np
 import torch
 
 import pyvinecopulib as pv
-from pyvinecopulib.torch import TorchBicop
+from pyvinecopulib.torch import FitControlsTorchBicop, TorchBicop
+
+try:
+  import vdc as _vdc  # noqa: F401
+
+  _HAS_VDC = True
+except ImportError:
+  _HAS_VDC = False
 
 
 def _parse_int_list(s: str) -> list[int]:
@@ -88,38 +100,93 @@ def _time_repeats(fn, repeats: int, sync=None) -> float:
 # --------------------------------------------------------------------------- #
 
 
+_VDC_PRETRAINED_GRID_SIZE = 64  # vdc-denoiser-m64-v1
+
+
 def _bench_fit(
   n: int,
   threads: list[int],
   devices: list[str],
   grid_types: list[str],
+  grid_sizes: list[int],
+  backends: list[str],
   repeats: int,
   seed: int,
 ) -> list[dict]:
   u_np = _simulate(n=n, seed=seed)
   rows: list[dict] = []
 
-  for t in threads:
-    ctl = pv.FitControlsBicop(family_set=[pv.families.tll], num_threads=t)
-    ms = _time_repeats(lambda: pv.Bicop.from_data(u_np, controls=ctl), repeats)
-    rows.append(
-      {
-        "mode": "fit",
-        "n": n,
-        "backend": "cpp",
-        "threads": t,
-        "device": "",
-        "grid_type": "",
-        "time_ms": ms,
-      }
-    )
+  if "cpp" in backends:
+    for t in threads:
+      for g in grid_sizes:
+        ctl = pv.FitControlsBicop(
+          family_set=[pv.families.tll],
+          num_threads=t,
+          nonparametric_grid_size=g,
+        )
+        ms = _time_repeats(
+          lambda c=ctl: pv.Bicop.from_data(u_np, controls=c), repeats
+        )
+        rows.append(
+          {
+            "mode": "fit",
+            "n": n,
+            "backend": "cpp",
+            "threads": t,
+            "device": "",
+            "grid_type": "",
+            "grid_size": g,
+            "time_ms": ms,
+          }
+        )
 
-  for device in devices:
-    sync = torch.cuda.synchronize if device.startswith("cuda") else None
-    u_t = torch.from_numpy(u_np).to(device)
-    for grid_type in grid_types:
+  if "torch" in backends:
+    for device in devices:
+      sync = torch.cuda.synchronize if device.startswith("cuda") else None
+      u_t = torch.from_numpy(u_np).to(device)
+      for grid_type in grid_types:
+        for g in grid_sizes:
+          ctl_torch = FitControlsTorchBicop(grid_type=grid_type, grid_size=g)
+          ms = _time_repeats(
+            lambda u=u_t, c=ctl_torch: TorchBicop.from_data(u, c),
+            repeats,
+            sync=sync,
+          )
+          rows.append(
+            {
+              "mode": "fit",
+              "n": n,
+              "backend": "torch",
+              "threads": "",
+              "device": device,
+              "grid_type": grid_type,
+              "grid_size": g,
+              "time_ms": ms,
+            }
+          )
+
+  if "vdc" in backends and _HAS_VDC:
+    # Pre-warm the bundle cache so HuggingFace download / first model
+    # load is excluded from the timed window. Catch upstream-broken vdc
+    # builds (missing vdc.inference / vdc.vine submodules) and skip
+    # gracefully — same gate as tests/test_torch_bicop_vdc.py.
+    from pyvinecopulib.torch._fit_vdc import _load_bundle
+
+    ctl_vdc = FitControlsTorchBicop(method="vdc")
+    for device in devices:
+      sync = torch.cuda.synchronize if device.startswith("cuda") else None
+      try:
+        _load_bundle(ctl_vdc.vdc_model_id, device)
+      except ModuleNotFoundError as e:
+        print(
+          f"# WARNING: vdc backend unavailable on device={device} due to "
+          f"upstream packaging issue ({e}); skipping.",
+          file=sys.stderr,
+        )
+        continue
+      u_t = torch.from_numpy(u_np).to(device)
       ms = _time_repeats(
-        lambda u=u_t, g=grid_type: TorchBicop.from_data(u, grid_type=g),
+        lambda u=u_t, c=ctl_vdc, d=device: TorchBicop.from_data(u, c, device=d),
         repeats,
         sync=sync,
       )
@@ -127,10 +194,11 @@ def _bench_fit(
         {
           "mode": "fit",
           "n": n,
-          "backend": "torch",
+          "backend": "vdc",
           "threads": "",
           "device": device,
-          "grid_type": grid_type,
+          "grid_type": "cell-centers",
+          "grid_size": _VDC_PRETRAINED_GRID_SIZE,
           "time_ms": ms,
         }
       )
@@ -151,7 +219,9 @@ def _bench_eval(
   threads: list[int],
   devices: list[str],
   grid_types: list[str],
+  grid_sizes: list[int],
   caches: list[bool],
+  backends: list[str],
   repeats: int,
   seed: int,
 ) -> list[dict]:
@@ -160,37 +230,93 @@ def _bench_eval(
   u_eval_np = rng.uniform(0.05, 0.95, size=(n_eval, 2))
   rows: list[dict] = []
 
-  # C++ baseline: fit once per thread count (the threading affects fit, not
-  # eval), then time eval ops. TLL only has the Phi-spaced grid in C++.
-  for t in threads:
-    ctl = pv.FitControlsBicop(family_set=[pv.families.tll], num_threads=t)
-    cop = pv.Bicop.from_data(u_fit_np, controls=ctl)
-    for op in _EVAL_OPS:
-      cpp_fn = getattr(cop, op)
-      ms = _time_repeats(lambda fn=cpp_fn: fn(u_eval_np), repeats)
-      rows.append(
-        {
-          "mode": "eval",
-          "op": op,
-          "n_fit": n_fit,
-          "n_eval": n_eval,
-          "backend": "cpp",
-          "threads": t,
-          "device": "",
-          "cache_integrals": "",
-          "grid_type": "",
-          "time_ms": ms,
-        }
-      )
+  # C++ baseline: fit once per (thread, grid_size); threading affects fit, not
+  # eval. TLL only has the Phi-spaced grid in C++.
+  if "cpp" in backends:
+    for t in threads:
+      for g in grid_sizes:
+        ctl = pv.FitControlsBicop(
+          family_set=[pv.families.tll],
+          num_threads=t,
+          nonparametric_grid_size=g,
+        )
+        cop = pv.Bicop.from_data(u_fit_np, controls=ctl)
+        for op in _EVAL_OPS:
+          cpp_fn = getattr(cop, op)
+          ms = _time_repeats(lambda fn=cpp_fn: fn(u_eval_np), repeats)
+          rows.append(
+            {
+              "mode": "eval",
+              "op": op,
+              "n_fit": n_fit,
+              "n_eval": n_eval,
+              "backend": "cpp",
+              "threads": t,
+              "device": "",
+              "cache_integrals": "",
+              "grid_type": "",
+              "grid_size": g,
+              "time_ms": ms,
+            }
+          )
 
-  for device in devices:
-    sync = torch.cuda.synchronize if device.startswith("cuda") else None
-    u_fit_t = torch.from_numpy(u_fit_np).to(device)
-    u_eval_t = torch.from_numpy(u_eval_np).to(device)
-    for grid_type in grid_types:
+  if "torch" in backends:
+    for device in devices:
+      sync = torch.cuda.synchronize if device.startswith("cuda") else None
+      u_fit_t = torch.from_numpy(u_fit_np).to(device)
+      u_eval_t = torch.from_numpy(u_eval_np).to(device)
+      for grid_type in grid_types:
+        for g in grid_sizes:
+          for cache in caches:
+            bc = TorchBicop.from_data(
+              u_fit_t,
+              FitControlsTorchBicop(grid_type=grid_type, grid_size=g),
+              cache_integrals=cache,
+            )
+            for op in _EVAL_OPS:
+              torch_fn = getattr(bc, op)
+              ms = _time_repeats(
+                lambda fn=torch_fn, u=u_eval_t: fn(u), repeats, sync=sync
+              )
+              rows.append(
+                {
+                  "mode": "eval",
+                  "op": op,
+                  "n_fit": n_fit,
+                  "n_eval": n_eval,
+                  "backend": "torch",
+                  "threads": "",
+                  "device": device,
+                  "cache_integrals": str(cache).lower(),
+                  "grid_type": grid_type,
+                  "grid_size": g,
+                  "time_ms": ms,
+                }
+              )
+            del bc
+            if sync is not None:
+              torch.cuda.empty_cache()
+
+  if "vdc" in backends and _HAS_VDC:
+    from pyvinecopulib.torch._fit_vdc import _load_bundle
+
+    ctl_vdc = FitControlsTorchBicop(method="vdc")
+    for device in devices:
+      sync = torch.cuda.synchronize if device.startswith("cuda") else None
+      try:
+        _load_bundle(ctl_vdc.vdc_model_id, device)
+      except ModuleNotFoundError as e:
+        print(
+          f"# WARNING: vdc backend unavailable on device={device} due to "
+          f"upstream packaging issue ({e}); skipping.",
+          file=sys.stderr,
+        )
+        continue
+      u_fit_t = torch.from_numpy(u_fit_np).to(device)
+      u_eval_t = torch.from_numpy(u_eval_np).to(device)
       for cache in caches:
         bc = TorchBicop.from_data(
-          u_fit_t, grid_type=grid_type, cache_integrals=cache
+          u_fit_t, ctl_vdc, cache_integrals=cache, device=device
         )
         for op in _EVAL_OPS:
           torch_fn = getattr(bc, op)
@@ -203,11 +329,12 @@ def _bench_eval(
               "op": op,
               "n_fit": n_fit,
               "n_eval": n_eval,
-              "backend": "torch",
+              "backend": "vdc",
               "threads": "",
               "device": device,
               "cache_integrals": str(cache).lower(),
-              "grid_type": grid_type,
+              "grid_type": "cell-centers",
+              "grid_size": _VDC_PRETRAINED_GRID_SIZE,
               "time_ms": ms,
             }
           )
@@ -258,10 +385,25 @@ def main() -> None:
     help="TorchBicop grid types to sweep (default: normal,linear).",
   )
   ap.add_argument(
+    "--grid-sizes",
+    default="30,64",
+    type=_parse_int_list,
+    help=(
+      "Density-grid sizes to sweep for cpp/torch (default: 30,64). "
+      "vdc is fixed at 64 by the pretrained model."
+    ),
+  )
+  ap.add_argument(
     "--cache",
     default="false,true",
     type=_parse_bool_list,
     help="cache_integrals values to sweep (eval mode only; default false,true).",
+  )
+  ap.add_argument(
+    "--backends",
+    default="cpp,torch,vdc",
+    type=_parse_str_list,
+    help="Backends to bench (default: cpp,torch,vdc).",
   )
   ap.add_argument("--repeats", default=3, type=int)
   ap.add_argument("--seed", default=42, type=int)
@@ -278,6 +420,15 @@ def main() -> None:
     )
     devices = [d for d in devices if not d.startswith("cuda")]
 
+  backends = list(args.backends)
+  if "vdc" in backends and not _HAS_VDC:
+    print(
+      "# WARNING: vdc not installed; skipping vdc backend "
+      "(install with `pip install pyvinecopulib[vdc]`).",
+      file=sys.stderr,
+    )
+    backends = [b for b in backends if b != "vdc"]
+
   if args.mode == "fit":
     fieldnames = [
       "mode",
@@ -286,6 +437,7 @@ def main() -> None:
       "threads",
       "device",
       "grid_type",
+      "grid_size",
       "time_ms",
     ]
   else:
@@ -299,6 +451,7 @@ def main() -> None:
       "device",
       "cache_integrals",
       "grid_type",
+      "grid_size",
       "time_ms",
     ]
 
@@ -314,6 +467,8 @@ def main() -> None:
         threads=args.threads,
         devices=devices,
         grid_types=args.grid_types,
+        grid_sizes=args.grid_sizes,
+        backends=backends,
         repeats=args.repeats,
         seed=args.seed,
       )
@@ -324,7 +479,9 @@ def main() -> None:
         threads=args.threads,
         devices=devices,
         grid_types=args.grid_types,
+        grid_sizes=args.grid_sizes,
         caches=args.cache,
+        backends=backends,
         repeats=args.repeats,
         seed=args.seed,
       )

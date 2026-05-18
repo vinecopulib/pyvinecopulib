@@ -284,9 +284,12 @@ class TorchVinecop(torch.nn.Module):
       u: ``(n, d)`` pseudo-observations; np.ndarray or Tensor.
       structure: :class:`pyvinecopulib.RVineStructure` describing the vine
         skeleton.
-      grid_size, mult, grid_type: forwarded to :meth:`TorchBicop.from_data`.
+      grid_size, mult, grid_type: forwarded to :meth:`TorchBicop.from_data`
+        via a :class:`FitControlsTorchBicop`.
       cache_integrals, device, dtype: forwarded to :meth:`TorchBicop.from_data`.
     """
+    from ._controls import FitControlsTorchBicop
+
     u_t = torch.as_tensor(u, dtype=dtype, device=device)
     if u_t.ndim != 2:
       raise ValueError(f"u must be 2-D; got shape {tuple(u_t.shape)}")
@@ -295,6 +298,10 @@ class TorchVinecop(torch.nn.Module):
       raise ValueError(
         f"structure.dim={structure.dim} does not match u.shape[1]={d}"
       )
+
+    bc_controls = FitControlsTorchBicop(
+      method="tll", grid_size=grid_size, mult=mult, grid_type=grid_type
+    )
 
     order = [int(s) for s in structure.order]
     hfunc1 = torch.zeros(n, d, dtype=dtype, device=u_t.device)
@@ -315,10 +322,8 @@ class TorchVinecop(torch.nn.Module):
         u_e = torch.stack([col0, col1], dim=-1)
         bc = TorchBicop.from_data(
           u_e,
-          grid_size=grid_size,
-          mult=mult,
+          bc_controls,
           cache_integrals=cache_integrals,
-          grid_type=grid_type,
           device=u_t.device,
           dtype=dtype,
         )
