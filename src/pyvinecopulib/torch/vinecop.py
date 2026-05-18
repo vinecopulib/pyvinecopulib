@@ -31,14 +31,17 @@ from __future__ import annotations
 from collections import Counter
 from typing import Optional, cast
 
+import numpy as np
 import torch
 from torch import Tensor
 
 from ..pyvinecopulib_ext import (
+  RVineStructure,
   Vinecop,
   indep as _INDEP_FAMILY,
   tll as _TLL_FAMILY,
 )
+from ..utils import simulate_uniform as _simulate_uniform
 from ._batched import BatchedVine
 from ._interp import _TRIM_HI, _TRIM_LO
 from .bicop import TorchBicop
@@ -186,6 +189,68 @@ class TorchVinecop(torch.nn.Module):
       pair_copulas_torch.append(tree_list)
 
     return cls(pair_copulas=pair_copulas_torch, structure=cop.structure)
+
+  @classmethod
+  def from_structure(
+    cls,
+    structure: Optional[RVineStructure] = None,
+    matrix: Optional[np.ndarray] = None,
+    pair_copulas: list[list[TorchBicop]] = [],
+    var_types: list[str] = [],
+    *,
+    device: Optional[torch.device] = None,
+    dtype: torch.dtype = torch.float64,
+  ) -> "TorchVinecop":
+    """Build a ``TorchVinecop`` from a structure (or matrix) and pair-copulas.
+
+    Mirror of :meth:`pyvinecopulib.Vinecop.from_structure`. When
+    ``pair_copulas`` is empty, every edge is populated with an
+    independence :class:`TorchBicop` so the resulting vine is the
+    independence copula on ``d`` variables.
+
+    Parameters
+    ----------
+    structure:
+      An :class:`pyvinecopulib.RVineStructure`. Provide either this or
+      ``matrix``, but not both.
+    matrix:
+      RVine structure matrix. Provide either this or ``structure``, but
+      not both.
+    pair_copulas:
+      Nested list of :class:`TorchBicop`, indexed ``[tree][edge]`` with
+      tree ``t`` containing ``d - 1 - t`` edges. Defaults to an empty
+      list, in which case every edge is filled with the independence
+      copula.
+    var_types:
+      Variable types for each variable. Only ``"c"`` (continuous) is
+      supported. Defaults to all-continuous.
+    device, dtype:
+      Standard placement / precision controls for the independence
+      pair-copulas that fill missing edges. Defaults match
+      :class:`TorchBicop`.
+    """
+    if (structure is None) == (matrix is None):
+      raise ValueError("Provide exactly one of `structure` or `matrix`.")
+    if structure is None:
+      structure = RVineStructure.from_matrix(np.asarray(matrix))
+
+    d = int(structure.dim)
+    if var_types and len(var_types) != d:
+      raise ValueError(f"var_types has {len(var_types)} entries, expected {d}")
+    if any(v != "c" for v in var_types):
+      raise NotImplementedError(
+        "TorchVinecop is continuous-only; got var_types="
+        f"{var_types!r}. Discrete variables are not yet supported."
+      )
+
+    trunc_lvl = int(structure.trunc_lvl)
+    if not pair_copulas:
+      # Independence vine: TorchBicop() defaults to the independence copula.
+      pair_copulas = [
+        [TorchBicop(device=device, dtype=dtype) for _ in range(d - 1 - t)]
+        for t in range(trunc_lvl)
+      ]
+    return cls(pair_copulas=pair_copulas, structure=structure)
 
   @classmethod
   def from_data(
@@ -380,6 +445,7 @@ class TorchVinecop(torch.nn.Module):
   def pdf(
     self,
     u: Tensor,
+    num_threads: int = 1,
     *,
     impl: str = "legacy",
     batched: bool = False,
@@ -393,6 +459,11 @@ class TorchVinecop(torch.nn.Module):
     Args:
       u: ``(n, d)`` tensor of pseudo-observations in ``[0, 1]^d`` where
         ``d = self.d``. Inputs are clamped to ``[1e-10, 1 - 1e-10]``.
+      num_threads: Accepted for API parity with :meth:`pyvinecopulib.Vinecop.pdf`;
+        ignored here. For CPU intraop parallelism call
+        ``torch.set_num_threads(N)`` globally before evaluating —
+        that mutates global state and is unsafe with concurrent
+        workers (e.g. joblib).
       impl: Either ``"legacy"`` (direct C++ cascade port, dense
         ``(n, d)`` scratch) or ``"lazy"`` (dict-based pseudo-obs with
         ref-counted GC, see Cheng et al. 2025). Both produce
@@ -405,6 +476,7 @@ class TorchVinecop(torch.nn.Module):
     Returns:
       ``(n,)`` tensor of joint density values.
     """
+    del num_threads  # parity hint; not used (see docstring)
     _check_impl(impl)
     fn = self._pick_pdf(impl, batched)
     return fn(u)
@@ -412,6 +484,7 @@ class TorchVinecop(torch.nn.Module):
   def rosenblatt(
     self,
     u: Tensor,
+    num_threads: int = 1,
     *,
     impl: str = "legacy",
     batched: bool = False,
@@ -426,12 +499,15 @@ class TorchVinecop(torch.nn.Module):
 
     Args:
       u: ``(n, d)`` tensor of pseudo-observations in ``[0, 1]^d``.
+      num_threads: Accepted for API parity with :meth:`pyvinecopulib.Vinecop.rosenblatt`;
+        ignored here (see :meth:`pdf` for the rationale).
       impl: ``"legacy"`` or ``"lazy"`` — see :meth:`pdf`.
       batched: Per-tree-level batched dispatch — see :meth:`pdf`.
 
     Returns:
       ``(n, d)`` tensor of independent uniforms in ``[1e-10, 1 - 1e-10]``.
     """
+    del num_threads
     _check_impl(impl)
     fn = self._pick_rosenblatt(impl, batched)
     return fn(u)
@@ -440,6 +516,7 @@ class TorchVinecop(torch.nn.Module):
   def inverse_rosenblatt(
     self,
     u: Tensor,
+    num_threads: int = 1,
     *,
     impl: str = "legacy",
     batched: bool = False,
@@ -451,6 +528,8 @@ class TorchVinecop(torch.nn.Module):
 
     Args:
       u: ``(n, d)`` tensor of independent uniforms in ``[0, 1]^d``.
+      num_threads: Accepted for API parity with :meth:`pyvinecopulib.Vinecop.inverse_rosenblatt`;
+        ignored here (see :meth:`pdf` for the rationale).
       impl: ``"legacy"`` or ``"lazy"`` — see :meth:`pdf`.
       batched: **Must be** ``False``. The inverse cascade has a
         cross-tree dependency that the per-tree-level wavefront used
@@ -461,9 +540,123 @@ class TorchVinecop(torch.nn.Module):
       ``(n, d)`` tensor of dependent uniforms in ``[1e-10, 1 - 1e-10]``,
       distributed as the fitted copula.
     """
+    del num_threads
     _check_impl(impl)
     fn = self._pick_inverse_rosenblatt(impl, batched)
     return fn(u)
+
+  # --------------------------------------------------------------------- #
+  # simulate / cdf — parity with pv.Vinecop                                #
+  # --------------------------------------------------------------------- #
+
+  @torch.no_grad()
+  def simulate(
+    self,
+    n: int,
+    qrng: bool = False,
+    num_threads: int = 1,
+    seeds: list[int] = [],
+    *,
+    impl: str = "legacy",
+    device: Optional[torch.device] = None,
+    dtype: Optional[torch.dtype] = None,
+  ) -> Tensor:
+    """Simulate ``n`` samples from the fitted copula.
+
+    Mirror of :meth:`pyvinecopulib.Vinecop.simulate`: draws
+    ``(n, d)`` independent uniforms (pseudo-random by default,
+    quasi-random when ``qrng=True``) and pushes them through
+    :meth:`inverse_rosenblatt`.
+
+    Args:
+      n: Number of samples to draw.
+      qrng: If ``True``, use a Halton / Sobol low-discrepancy sequence
+        (via :func:`pyvinecopulib.utils.simulate_uniform`) for the
+        underlying uniforms; otherwise draw pseudo-random uniforms with
+        ``torch.rand`` (seeded from ``seeds[0]`` when provided).
+      num_threads: Accepted for API parity; ignored on the torch
+        backend (see :meth:`pdf`).
+      seeds: When ``qrng=True``, forwarded to
+        :func:`pyvinecopulib.utils.simulate_uniform`. When ``qrng=False``,
+        the first entry seeds a fresh :class:`torch.Generator`; if empty
+        the global RNG state is used.
+      impl: ``"legacy"`` or ``"lazy"`` for the inverse-Rosenblatt
+        cascade. See :meth:`pdf`.
+      device, dtype: Override the device / dtype of the returned tensor.
+        Defaults match the fitted vine's internal grid.
+
+    Returns:
+      ``(n, d)`` tensor of dependent uniforms in ``[1e-10, 1 - 1e-10]``.
+    """
+    del num_threads
+    ref = self._ref_tensor()
+    target_dtype = dtype if dtype is not None else ref.dtype
+    target_device = device if device is not None else ref.device
+
+    if qrng:
+      u_np = _simulate_uniform(n, self.d, qrng=True, seeds=list(seeds))
+      u = torch.as_tensor(u_np, dtype=target_dtype, device=target_device)
+    else:
+      gen: Optional[torch.Generator] = None
+      if seeds:
+        gen = torch.Generator(device=target_device).manual_seed(int(seeds[0]))
+      u = torch.rand(
+        n, self.d, generator=gen, dtype=target_dtype, device=target_device
+      )
+    return self.inverse_rosenblatt(u, impl=impl)
+
+  @torch.no_grad()
+  def cdf(
+    self,
+    u: Tensor,
+    N: int = 10000,
+    qrng: bool = True,
+    num_threads: int = 1,
+    seeds: list[int] = [],
+    *,
+    impl: str = "legacy",
+    block_size: int = 4096,
+  ) -> Tensor:
+    """Joint CDF ``F(u_i)`` for each query row ``u_i`` via quasi-MC.
+
+    Mirror of :meth:`pyvinecopulib.Vinecop.cdf`. Draws ``N`` samples
+    from the fitted copula (via :meth:`simulate`) and estimates the
+    joint CDF at each query row as the empirical fraction of samples
+    componentwise-dominated by that row.
+
+    Args:
+      u: ``(m, d)`` tensor of query points in ``[0, 1]^d``.
+      N: Number of Monte-Carlo samples used for the estimate. Larger
+        ``N`` gives more accurate CDF values at the cost of more
+        compute.
+      qrng: If ``True`` (default — matches the C++ default for
+        ``cdf``), draw quasi-random samples; otherwise pseudo-random.
+      num_threads: Accepted for API parity; ignored on the torch
+        backend (see :meth:`pdf`).
+      seeds: Forwarded to :meth:`simulate` for reproducibility.
+      impl: Forwarded to the underlying :meth:`simulate` /
+        :meth:`inverse_rosenblatt` call.
+      block_size: Number of query rows processed per iteration of the
+        outer loop. The dominance check materialises a
+        ``(block, N, d)`` tensor of booleans, so smaller blocks keep
+        peak memory in check at the cost of more Python overhead.
+
+    Returns:
+      ``(m,)`` tensor of CDF values in ``[0, 1]``.
+    """
+    del num_threads
+    u_t = self._prep(u, "cdf")
+    samples = self.simulate(N, qrng=qrng, seeds=seeds, impl=impl)
+    m = u_t.shape[0]
+    out = torch.empty(m, dtype=u_t.dtype, device=u_t.device)
+    for start in range(0, m, block_size):
+      end = min(start + block_size, m)
+      # (block, 1, d) <= (1, N, d) -> all over last dim -> (block, N) -> mean
+      dominated = (samples.unsqueeze(0) <= u_t[start:end].unsqueeze(1)).all(
+        dim=-1
+      )
+      out[start:end] = dominated.to(u_t.dtype).mean(dim=1)
+    return out
 
   # --------------------------------------------------------------------- #
   # Dispatch helpers                                                       #

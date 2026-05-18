@@ -252,7 +252,7 @@ jobs:
         shell: bash
         run: |
           uv venv --python ${{ steps.pyver.outputs.version }}
-          uv sync --no-install-project --group test --group notebooks --extra examples --extra sklearn
+          uv sync --no-install-project --group test --group notebooks --extra examples --extra sklearn --extra torch
       - name: Download built wheel (<=3.11)
         if: ${{ matrix.python <= 311 }}
         uses: actions/download-artifact@v4
@@ -340,7 +340,7 @@ jobs:
       - name: Install wheel + examples extras + notebooks group
         run: |
           uv venv --python 3.11
-          uv sync --no-install-project --group notebooks --extra examples
+          uv sync --no-install-project --group notebooks --extra examples --extra torch
           WHEEL=$(ls dist/*.whl)
           uv pip install "${WHEEL}"
       - name: Re-execute notebooks

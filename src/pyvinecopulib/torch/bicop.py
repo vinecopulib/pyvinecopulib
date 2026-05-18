@@ -393,47 +393,73 @@ class TorchBicop(torch.nn.Module):
   # --------------------------------------------------------------------- #
 
   @torch.no_grad()
+  def simulate(
+    self,
+    n: int = 100,
+    qrng: bool = False,
+    seeds: list[int] = [],
+  ) -> Tensor:
+    """Draw ``n`` joint samples from the fitted copula.
+
+    Mirror of :meth:`pyvinecopulib.Bicop.simulate`. Uses the inverse
+    Rosenblatt scheme: sample two independent uniforms ``(U1, P)``,
+    then set ``U2 = hinv1((U1, P))`` so that ``(U1, U2)`` has the
+    fitted joint distribution.
+
+    Args:
+      n: Number of samples to draw (must be ``> 0``).
+      qrng: If ``True``, draw the base uniforms from a scrambled Sobol
+        sequence (better low-discrepancy in 2-D) instead of
+        pseudo-random uniforms.
+      seeds: When ``qrng=True``, the first entry seeds the
+        :class:`torch.quasirandom.SobolEngine` scramble. When
+        ``qrng=False``, the first entry seeds the global torch RNG
+        before the ``torch.rand`` call. Empty list keeps the existing
+        global state.
+
+    Returns:
+      ``(n, 2)`` tensor of samples in ``(0, 1)^2``.
+    """
+    if n <= 0:
+      raise ValueError(f"n must be > 0; got {n}")
+    device = self.interp_grid.values.device
+    dtype = self.interp_grid.values.dtype
+    seed = int(seeds[0]) if seeds else None
+    if qrng:
+      kwargs = {"dimension": 2, "scramble": True}
+      if seed is not None:
+        kwargs["seed"] = seed
+      u = (
+        torch.quasirandom.SobolEngine(**kwargs)
+        .draw(n=n, dtype=dtype)
+        .to(device=device)
+      )
+    else:
+      if seed is not None:
+        torch.manual_seed(seed)
+      u = torch.rand(n, 2, dtype=dtype, device=device)
+    if self.is_indep:
+      return u
+    u2 = self.hinv1(u).unsqueeze(-1)
+    return torch.cat([u[:, 0:1], u2], dim=-1)
+
+  @torch.no_grad()
   def sample(
     self,
     num_sample: int = 100,
     seed: Optional[int] = 42,
     is_sobol: bool = False,
   ) -> Tensor:
-    """Draw ``num_sample`` joint samples from the fitted copula.
+    """Deprecated alias for :meth:`simulate`.
 
-    Uses the inverse Rosenblatt scheme: sample two independent uniforms
-    ``(U1, P)``, then set ``U2 = hinv1((U1, P))`` so that ``(U1, U2)``
-    has the fitted joint distribution.
-
-    Args:
-      num_sample: Number of samples to draw (must be ``> 0``).
-      seed: Optional RNG seed. ``None`` keeps the global / Sobol RNG
-        state.
-      is_sobol: If ``True``, draw the base uniforms from a scrambled
-        Sobol sequence (better low-discrepancy in 2-D) instead of
-        pseudo-random uniforms.
-
-    Returns:
-      ``(num_sample, 2)`` tensor of samples in ``(0, 1)^2``.
+    .. deprecated::
+       Use :meth:`simulate` with ``n``, ``qrng``, ``seeds``. The old
+       parameter names are kept as a thin pass-through within the
+       ``feature/torch-bicop`` branch and will be removed before the
+       next stable release.
     """
-    if num_sample <= 0:
-      raise ValueError(f"num_sample must be > 0; got {num_sample}")
-    device = self.interp_grid.values.device
-    dtype = self.interp_grid.values.dtype
-    if is_sobol:
-      kwargs = {"dimension": 2, "scramble": True}
-      if seed is not None:
-        kwargs["seed"] = seed
-      u = (
-        torch.quasirandom.SobolEngine(**kwargs)
-        .draw(n=num_sample, dtype=dtype)
-        .to(device=device)
-      )
-    else:
-      if seed is not None:
-        torch.manual_seed(seed)
-      u = torch.rand(num_sample, 2, dtype=dtype, device=device)
-    if self.is_indep:
-      return u
-    u2 = self.hinv1(u).unsqueeze(-1)
-    return torch.cat([u[:, 0:1], u2], dim=-1)
+    return self.simulate(
+      n=num_sample,
+      qrng=is_sobol,
+      seeds=[seed] if seed is not None else [],
+    )

@@ -456,3 +456,123 @@ def test_eval_rejects_wrong_input_shape(op: str) -> None:
     fn(torch.zeros(100, dtype=torch.float64))  # 1-D
   with pytest.raises(ValueError):
     fn(torch.zeros(100, d + 1, dtype=torch.float64))  # wrong second dim
+
+
+# ---------------------------------------------------------------------------
+# API alignment with pv.Vinecop (from_structure, simulate, cdf, num_threads)
+# ---------------------------------------------------------------------------
+
+
+def test_from_structure_pair_copulas_matches_init():
+  """from_structure(structure, pair_copulas) builds the same vine as
+  TorchVinecop(pair_copulas, structure)."""
+  rng = np.random.default_rng(0)
+  U = rng.uniform(0.001, 0.999, (300, 3))
+  cop = _fit_tll_vine(U)
+  from pyvinecopulib.torch import TorchBicop
+
+  pcs = [[TorchBicop.from_bicop(b) for b in row] for row in cop.pair_copulas]
+  via_init = TorchVinecop(pair_copulas=pcs, structure=cop.structure)
+  via_factory = TorchVinecop.from_structure(
+    structure=cop.structure, pair_copulas=pcs
+  )
+
+  u_t = torch.from_numpy(U[:10])
+  assert torch.allclose(via_init.pdf(u_t), via_factory.pdf(u_t))
+
+
+def test_from_structure_empty_is_independence_vine():
+  """No pair_copulas -> every edge is an independence TorchBicop;
+  pdf is identically 1."""
+  s = pv.RVineStructure.simulate(4, seeds=[1, 2, 3, 4, 5])
+  tv = TorchVinecop.from_structure(structure=s)
+  u = torch.rand(50, 4, dtype=torch.float64)
+  assert torch.allclose(
+    tv.pdf(u), torch.ones(50, dtype=torch.float64), atol=1e-12
+  )
+
+
+def test_from_structure_matrix_path():
+  """Matrix kwarg routes through RVineStructure.from_matrix."""
+  s = pv.RVineStructure.simulate(3, seeds=[1, 2, 3, 4, 5])
+  mat = np.asarray(s.matrix, dtype=np.uint64)
+  tv = TorchVinecop.from_structure(matrix=mat)
+  assert tv.d == 3
+  assert tv.trunc_lvl == 2
+
+
+def test_from_structure_rejects_both_or_neither():
+  s = pv.RVineStructure.simulate(3, seeds=[1, 2, 3, 4, 5])
+  with pytest.raises(ValueError, match="exactly one"):
+    TorchVinecop.from_structure()
+  with pytest.raises(ValueError, match="exactly one"):
+    TorchVinecop.from_structure(
+      structure=s, matrix=np.asarray(s.matrix, dtype=np.uint64)
+    )
+
+
+def test_from_structure_rejects_discrete_var_types():
+  s = pv.RVineStructure.simulate(3, seeds=[1, 2, 3, 4, 5])
+  with pytest.raises(NotImplementedError, match="continuous-only"):
+    TorchVinecop.from_structure(structure=s, var_types=["c", "d", "c"])
+
+
+def test_simulate_seeded_reproducible():
+  rng = np.random.default_rng(0)
+  U = rng.uniform(0.001, 0.999, (300, 3))
+  tv = TorchVinecop.from_vinecop(_fit_tll_vine(U))
+
+  a = tv.simulate(n=200, seeds=[42])
+  b = tv.simulate(n=200, seeds=[42])
+  assert torch.allclose(a, b)
+  c = tv.simulate(n=200, seeds=[43])
+  assert not torch.allclose(a, c)
+
+
+def test_simulate_qrng_runs_and_returns_uniforms():
+  """qrng=True draws Halton/Sobol via pv.utils.simulate_uniform, then
+  pushes through inverse_rosenblatt. We check basic shape + range."""
+  rng = np.random.default_rng(0)
+  U = rng.uniform(0.001, 0.999, (300, 3))
+  tv = TorchVinecop.from_vinecop(_fit_tll_vine(U))
+
+  s = tv.simulate(n=500, qrng=True, seeds=[1, 2, 3])
+  assert s.shape == (500, 3)
+  assert (s > 0).all() and (s < 1).all()
+
+
+def test_cdf_matches_cpp_within_mc_error():
+  rng = np.random.default_rng(0)
+  U = rng.uniform(0.001, 0.999, (300, 3))
+  cop = _fit_tll_vine(U)
+  tv = TorchVinecop.from_vinecop(cop)
+  query = torch.from_numpy(U[:10])
+
+  cdf_torch = tv.cdf(query, N=20000, qrng=True, seeds=[1, 2, 3]).numpy()
+  cdf_cpp = np.asarray(cop.cdf(U[:10], N=20000, seeds=[1, 2, 3]))
+  # Both are MC estimates with N=20000; agree to ~3 sig figs.
+  np.testing.assert_allclose(cdf_torch, cdf_cpp, atol=2e-2)
+
+
+def test_pdf_accepts_num_threads_no_op():
+  rng = np.random.default_rng(0)
+  U = rng.uniform(0.001, 0.999, (200, 3))
+  tv = TorchVinecop.from_vinecop(_fit_tll_vine(U))
+  u_t = torch.from_numpy(U[:10])
+  p1 = tv.pdf(u_t, num_threads=1)
+  p4 = tv.pdf(u_t, num_threads=4)
+  assert torch.allclose(p1, p4)
+
+
+def test_rosenblatt_inverse_rosenblatt_accept_num_threads():
+  rng = np.random.default_rng(0)
+  U = rng.uniform(0.001, 0.999, (200, 3))
+  tv = TorchVinecop.from_vinecop(_fit_tll_vine(U))
+  u_t = torch.from_numpy(U[:5])
+  # Just confirm the kwarg is accepted; behaviour is identical.
+  r1 = tv.rosenblatt(u_t, num_threads=1)
+  r4 = tv.rosenblatt(u_t, num_threads=4)
+  assert torch.allclose(r1, r4)
+  ir1 = tv.inverse_rosenblatt(u_t, num_threads=1)
+  ir4 = tv.inverse_rosenblatt(u_t, num_threads=4)
+  assert torch.allclose(ir1, ir4)

@@ -365,11 +365,34 @@ def test_from_data_rejects_bad_args() -> None:
     TorchBicop.from_data(u_fit, mult=0.0)
 
 
-def test_sample_rejects_nonpositive_num_sample() -> None:
+def test_simulate_rejects_nonpositive_n() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   u_fit = cop.simulate(200, seeds=[1, 2, 3])
   bc = TorchBicop.from_data(u_fit)
-  with pytest.raises(ValueError, match="num_sample"):
+  with pytest.raises(ValueError, match="must be > 0"):
+    bc.simulate(n=0)
+  with pytest.raises(ValueError, match="must be > 0"):
+    bc.simulate(n=-5)
+  # Legacy alias still validates through the same code path.
+  with pytest.raises(ValueError, match="must be > 0"):
     bc.sample(num_sample=0)
-  with pytest.raises(ValueError, match="num_sample"):
-    bc.sample(num_sample=-5)
+
+
+# ---------------------------------------------------------------------------
+# API alignment with pv.Bicop (simulate naming + alias)
+# ---------------------------------------------------------------------------
+
+
+def test_simulate_alias_of_sample() -> None:
+  """The deprecated sample(num_sample, seed, is_sobol) routes through
+  simulate(n, qrng, seeds) and produces identical output."""
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
+  u_fit = cop.simulate(200, seeds=[1, 2, 3])
+  bc = TorchBicop.from_data(u_fit)
+  via_sample = bc.sample(num_sample=50, seed=7, is_sobol=False)
+  via_simulate = bc.simulate(n=50, qrng=False, seeds=[7])
+  assert torch.allclose(via_sample, via_simulate)
+  # qrng / Sobol path
+  via_sample_q = bc.sample(num_sample=64, seed=11, is_sobol=True)
+  via_simulate_q = bc.simulate(n=64, qrng=True, seeds=[11])
+  assert torch.allclose(via_sample_q, via_simulate_q)
