@@ -123,8 +123,54 @@ _FOREST_REGRESSOR_EXTRA = {
 }
 
 
+# Checks that actually pass on each estimator despite living in the
+# baseline skip list. Listed here so they get popped before
+# ``parametrize_with_checks`` sees the dict — otherwise pytest emits
+# XPASS noise. Shrink the per-estimator list as the underlying check
+# semantics shift across sklearn versions; the matching baseline
+# entries can move into ``_GENUINE_OPT_OUTS`` once the pass is
+# universal.
+_KNOWN_PASSING_PER_ESTIMATOR: dict[str, tuple[str, ...]] = {
+  "VineDensity": (
+    "check_estimators_dtypes",
+    "check_fit2d_1feature",
+    "check_fit2d_predict1d",
+    "check_pipeline_consistency",
+  ),
+  "VineRegressor": (
+    "check_estimators_dtypes",
+    "check_fit2d_1feature",
+  ),
+  "VineForestDensity": (),
+  "VineForestRegressor": (
+    "check_dict_unchanged",
+    "check_dont_overwrite_parameters",
+    "check_estimators_dtypes",
+    "check_estimators_fit_returns_self",
+    "check_estimators_overwrite_params",
+    "check_estimators_pickle",
+    "check_estimators_pickle(readonly_memmap=True)",
+    "check_f_contiguous_array_estimator",
+    "check_fit2d_1feature",
+    "check_fit_check_is_fitted",
+    "check_fit_idempotent",
+    "check_methods_sample_order_invariance",
+    "check_methods_subset_invariance",
+    "check_n_features_in",
+    "check_positive_only_tag_during_fit",
+    "check_readonly_memmap_input",
+  ),
+}
+
+
+def _prune(skips: dict[str, str], cls_name: str) -> dict[str, str]:
+  for k in _KNOWN_PASSING_PER_ESTIMATOR.get(cls_name, ()):
+    skips.pop(k, None)
+  return skips
+
+
 def _density_opt_outs() -> dict[str, str]:
-  return dict(_GENUINE_OPT_OUTS)
+  return _prune(dict(_GENUINE_OPT_OUTS), "VineDensity")
 
 
 def _regressor_opt_outs() -> dict[str, str]:
@@ -143,20 +189,20 @@ def _regressor_opt_outs() -> dict[str, str]:
       ),
     }
   )
-  return d
+  return _prune(d, "VineRegressor")
 
 
 def _forest_density_opt_outs() -> dict[str, str]:
   d = dict(_GENUINE_OPT_OUTS)
   d.update(_FOREST_EXTRA_OPT_OUTS)
-  return d
+  return _prune(d, "VineForestDensity")
 
 
 def _forest_regressor_opt_outs() -> dict[str, str]:
   d = _regressor_opt_outs()
   d.update(_FOREST_EXTRA_OPT_OUTS)
   d.update(_FOREST_REGRESSOR_EXTRA)
-  return d
+  return _prune(d, "VineForestRegressor")
 
 
 # ---------------------------------------------------------------------------

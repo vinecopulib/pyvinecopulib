@@ -105,11 +105,14 @@ class TestResolveBackend:
 
 class TestVinecopBackendWith:
   def test_with_num_threads_returns_new_instance(self):
+    # ``FitControlsVinecop`` clamps ``num_threads`` to the number of
+    # available CPU cores, so use a value that's safe on any CI
+    # runner (≥ 2 cores).
     b = VinecopBackend()
-    b2 = b.with_num_threads(8)
+    b2 = b.with_num_threads(2)
     assert b is not b2
     assert b2.controls is not None
-    assert b2.controls.num_threads == 8
+    assert b2.controls.num_threads == 2
 
   def test_with_random_structure(self):
     b = VinecopBackend()
