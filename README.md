@@ -9,25 +9,66 @@
 
 ### What are vine copulas?
 
-Vine copulas are a flexible class of dependence models consisting of bivariate
-building blocks (see e.g.,
+Sklar's theorem factorises every joint distribution into one-dimensional
+**marginals** and a **copula** that carries the dependence between
+variables. A vine copula decomposes that copula into bivariate building
+blocks — **pair copulas** — arranged on a sequence of trees called an
+**R-vine** (Bedford & Cooke, 2002;
 [Aas et al., 2009](https://mediatum.ub.tum.de/doc/1083600/1083600.pdf)).
-You can find a comprehensive list of publications and other materials on
+The decomposition makes pair-by-pair estimation scale gracefully into
+high dimensions and gives a natural place to drop in non-parametric
+pair-copula estimators like Transformed Local Likelihood (TLL).
+
+A short primer is available in the `docs/concepts.rst` page on
+[Read the Docs](https://pyvinecopulib.readthedocs.io); a
+comprehensive list of publications lives on
 [vine-copula.org](http://vine-copula.org).
 
 ### What is pyvinecopulib?
 
-[pyvinecopulib](https://vinecopulib.github.io/pyvinecopulib/) is the python interface to vinecopulib, a header-only C++ library for vine copula models based on
-[Eigen](http://eigen.tuxfamily.org/index.php?title=Main_Page). It provides
-high-performance implementations of the core features of the popular
-[VineCopula R library](https://github.com/tnagler/VineCopula), in particular
-inference algorithms for both vine copula and bivariate copula models.
-Advantages over VineCopula are
+[pyvinecopulib](https://vinecopulib.github.io/pyvinecopulib/) is the
+Python interface to vinecopulib, a header-only C++ library for vine
+copula models based on
+[Eigen](http://eigen.tuxfamily.org/index.php?title=Main_Page). It
+provides high-performance implementations of the core features of the
+popular [VineCopula R library](https://github.com/tnagler/VineCopula),
+in particular inference algorithms for both vine copula and bivariate
+copula models. Advantages over VineCopula are
 
 * a stand-alone C++ library with interfaces to both R and Python,
-* a sleaker and more modern API,
-* shorter runtimes and lower memory consumption, especially in high dimensions,
+* a sleeker and more modern API,
+* shorter runtimes and lower memory consumption, especially in high
+  dimensions,
 * nonparametric and multi-parameter families.
+
+### Optional backends
+
+Two opt-in subpackages extend the core library:
+
+* `pyvinecopulib.sklearn` — scikit-learn-compatible estimators
+  (`VineDensity`, `VineRegressor`, plus forest variants). Drop a vine
+  into any sklearn pipeline:
+
+  ```python
+  from pyvinecopulib.sklearn import VineDensity
+  density = VineDensity().fit(X)             # default backend (C++)
+  density.score_samples(X[:3]); density.cdf(X[:3])
+  ```
+
+  Install with `pip install pyvinecopulib[sklearn]`.
+
+* `pyvinecopulib.torch` — pure-PyTorch evaluators (`TorchBicop`,
+  `TorchVinecop`) for GPU placement and autograd:
+
+  ```python
+  from pyvinecopulib.sklearn import VineDensity
+  from pyvinecopulib.sklearn.backends import TorchVinecopBackend
+  density_gpu = VineDensity(backend=TorchVinecopBackend()).fit(X)
+  ```
+
+  Install with `pip install pyvinecopulib[torch]`. The amortized
+  `method="vdc"` path (Safaai 2026, arXiv:2604.20568) additionally
+  needs `pip install pyvinecopulib[vdc]`.
 
 ### License
 

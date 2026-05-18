@@ -1,33 +1,54 @@
 """Scikit-learn-compatible vine-copula estimators.
 
-This subpackage exposes four non-parametric estimators that act as
-thin scikit-learn wrappers around the core pyvinecopulib machinery:
+This subpackage wraps the core pyvinecopulib machinery behind the
+standard sklearn ``BaseEstimator`` / ``fit`` / ``predict`` interface.
+Four estimators ship:
 
-- :class:`VineDensity` — single-vine joint-density estimator built on
-  top of :class:`pyvinecopulib.core.Vinecop` and
-  :class:`pyvinecopulib.utils.Kde1d`.
-- :class:`VineRegressor` — single-vine conditional mean / quantile
-  regressor on the same primitives.
-- :class:`VineForestDensity` — ensemble of :class:`VineDensity`
-  learners with random-search structure generation and MCS-based
-  survivor selection.
-- :class:`VineForestRegressor` — ensemble of :class:`VineRegressor`
-  learners, same construction.
+- :class:`VineDensity` — non-parametric joint-density estimator. Fits
+  univariate marginals with :class:`pyvinecopulib.utils.Kde1d`, then a
+  vine copula on the resulting pseudo-observations. Exposes
+  ``score_samples`` / ``pdf`` / ``cdf`` / ``sample``.
+- :class:`VineRegressor` — non-parametric conditional mean / quantile
+  regressor built from a vine copula over ``(Y, X)``. Predictions are
+  weighted statistics of the training responses.
+- :class:`VineForestDensity` and :class:`VineForestRegressor` —
+  ensembles of the above, fit on randomly sampled vine structures and
+  pruned via a model-confidence-set selector. Predictions average
+  across surviving members.
 
-All four follow the standard pipeline of marginal kernel-density
-estimation, transformation to pseudo-observations, and a vine-copula
-fit on those pseudo-observations; the forest variants additionally
-run a random search over vine structures and prune the candidate
-pool via a model confidence set. The wrappers add the standard
-``fit`` / ``predict``-style sklearn interface, ``DataFrame`` input
-handling with auto-inferred ``continuous`` / ``discrete`` column
-types, and batched evaluation. All low-level fitting knobs (pair
-family, threading, structure-selection algorithm, …) are passed
-through to :class:`pyvinecopulib.core.FitControlsVinecop` and
-:class:`pyvinecopulib.core.RVineStructure` — reach for those
-directly whenever you need control beyond the sklearn convenience
-layer. See the class docstrings for the full methodology and
-references.
+If you have not used vine copulas before, the
+:doc:`concepts page </concepts>` introduces pair copulas, R-vines,
+and the default *Transformed Local Likelihood* (TLL) pair-copula
+family in ~5 minutes.
+
+Backends
+--------
+
+By default the estimators run on the C++/nanobind backend
+(:class:`pyvinecopulib.Vinecop`), so the sklearn module **does not
+require PyTorch**. Pass a configured
+:class:`~pyvinecopulib.sklearn.backends.TorchVinecopBackend` via the
+``backend=`` kwarg to route through the torch backend instead — see
+:mod:`pyvinecopulib.sklearn.backends` for a comparison and examples.
+
+DataFrame input
+---------------
+
+Every estimator accepts both NumPy arrays and pandas DataFrames.
+DataFrames may mix numeric, ordered-categorical, and
+unordered-categorical columns; the latter are expanded to
+ordered ``{0, 1}`` dummies before fitting, and the same expansion is
+re-applied at predict time.
+
+Low-level knobs
+---------------
+
+Pair family, threading, structure-selection algorithm, etc. are
+passed through to :class:`pyvinecopulib.core.FitControlsVinecop` and
+:class:`pyvinecopulib.core.RVineStructure` (carried inside the
+backend object). Reach for those directly whenever you need control
+beyond the sklearn convenience layer. See each class docstring for
+the full methodology and references.
 
 Requires scikit-learn, pandas, joblib, and scipy. Install with
 ``pip install pyvinecopulib[sklearn]``.
@@ -41,14 +62,26 @@ except ImportError as e:
     "Install it with `pip install pyvinecopulib[sklearn]`."
   ) from e
 
+from . import backends
+from .backends import (
+  TorchVinecopBackend,
+  VinecopBackend,
+  VinecopLike,
+  resolve_backend,
+)
 from .density import VineDensity
 from .forest_density import VineForestDensity
 from .forest_regressor import VineForestRegressor
 from .regressor import VineRegressor
 
 __all__ = [
+  "TorchVinecopBackend",
   "VineDensity",
   "VineForestDensity",
   "VineForestRegressor",
   "VineRegressor",
+  "VinecopBackend",
+  "VinecopLike",
+  "backends",
+  "resolve_backend",
 ]

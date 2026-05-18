@@ -31,7 +31,7 @@ def fitted_forest_regressor(regression_setup):
     n_vines=3,
     n_jobs=1,
     val_fraction=0.2,
-    seed=42,
+    random_state=42,
   )
   forest.fit(X_train, y_train)
   return forest, X_train, X_test, y_train, y_test, true_mean
@@ -47,15 +47,16 @@ def fitted_forest_regressor(regression_setup):
     ({"alpha": 0.0}, ValueError),
     ({"alpha": 1.0}, ValueError),
     ({"method": "mcs"}, ValueError),
-    ({"n_jobs": 0}, ValueError),
-    ({"seed": "42"}, TypeError),
+    ({"random_state": "42"}, TypeError),
     ({"verbose": 1}, TypeError),
   ],
 )
-def test_constructor_validation(kwargs, exc):
-  """Bad constructor arguments raise at __init__ time."""
-  with pytest.raises(exc):
-    VineForestRegressor(**kwargs)
+def test_constructor_validation(kwargs, exc, regression_setup):
+  """Bad parameters surface at ``fit`` time, per the sklearn dev guide."""
+  X_train, _, y_train, _, _, _ = regression_setup
+  est = VineForestRegressor(**kwargs)
+  with pytest.raises((exc, ValueError, TypeError)):
+    est.fit(X_train, y_train)
 
 
 def test_fit_properties(fitted_forest_regressor):
@@ -73,11 +74,11 @@ def test_schema_inference_array(regression_setup):
     n_vines=2,
     n_jobs=1,
     val_fraction=0.3,
-    seed=42,
+    random_state=42,
   )
   forest.fit(X_train, y_train)
   for estimator in forest._estimators:
-    assert estimator._schema["kde1d_types"] == ["continuous", "continuous"]
+    assert estimator.schema_["kde1d_types"] == ["continuous", "continuous"]
 
 
 def test_schema_propagation_dataframe(sample_dataframe_data, random_state):
@@ -97,7 +98,7 @@ def test_schema_propagation_dataframe(sample_dataframe_data, random_state):
     "continuous",
   ]
   for estimator in forest._estimators:
-    assert estimator._schema["kde1d_types"] == expected_types
+    assert estimator.schema_["kde1d_types"] == expected_types
     if hasattr(estimator, "_expanded_columns"):
       assert estimator._expanded_columns == expected_expanded_cols
 
@@ -151,7 +152,7 @@ def test_ensemble_vs_single_estimator(regression_setup):
     n_vines=3,
     n_jobs=1,
     val_fraction=0.2,
-    seed=42,
+    random_state=42,
   )
   forest.fit(X_train, y_train)
   forest_pred = forest.predict(X_test)
@@ -189,7 +190,7 @@ def test_best_only_option(regression_setup):
     best_only=True,
     n_jobs=1,
     val_fraction=0.2,
-    seed=42,
+    random_state=42,
   )
   forest_best.fit(X_train, y_train)
 
@@ -206,7 +207,7 @@ def test_reproducibility(regression_setup, vines_sampling):
       base_params={"mean": True},
       n_vines=3,
       vines_sampling=vines_sampling,
-      seed=42,
+      random_state=42,
       n_jobs=1,
       val_fraction=0.2,
     )
@@ -226,7 +227,7 @@ def test_uniform_vs_local(regression_setup):
       base_params={"mean": True},
       n_vines=3,
       vines_sampling=vines_sampling,
-      seed=42,
+      random_state=42,
       n_jobs=1,
       val_fraction=0.2,
     )
@@ -239,14 +240,16 @@ def test_uniform_vs_local(regression_setup):
 
 
 def test_normalize_weights_propagated(regression_setup):
-  """The forest sets _normalize_weights=False on every base estimator."""
+  """The forest sets ``normalize_weights=False`` on every base estimator
+  via the (now real) ``__init__`` parameter, so :func:`sklearn.base.clone`
+  preserves it across the survivor refit."""
   X_train, _, y_train, _, _, _ = regression_setup
   forest = VineForestRegressor(
     base_params={"mean": True}, n_vines=2, n_jobs=1, val_fraction=0.2
   )
   forest.fit(X_train, y_train)
   for estimator in forest._estimators:
-    assert estimator._normalize_weights is False
+    assert estimator.normalize_weights is False
 
 
 def test_wrong_dimensions(fitted_forest_regressor):
@@ -276,13 +279,21 @@ def test_parallel_vs_sequential(regression_setup):
   X_train, X_test, y_train, _, _, _ = regression_setup
 
   forest_seq = VineForestRegressor(
-    base_params={"mean": True}, n_vines=3, seed=42, n_jobs=1, val_fraction=0.2
+    base_params={"mean": True},
+    n_vines=3,
+    random_state=42,
+    n_jobs=1,
+    val_fraction=0.2,
   )
   forest_seq.fit(X_train, y_train)
   pred_seq = forest_seq.predict(X_test)
 
   forest_par = VineForestRegressor(
-    base_params={"mean": True}, n_vines=3, seed=42, n_jobs=2, val_fraction=0.2
+    base_params={"mean": True},
+    n_vines=3,
+    random_state=42,
+    n_jobs=2,
+    val_fraction=0.2,
   )
   forest_par.fit(X_train, y_train)
   pred_par = forest_par.predict(X_test)

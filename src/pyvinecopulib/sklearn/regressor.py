@@ -1,7 +1,6 @@
 import numpy as np
 from sklearn.base import RegressorMixin
-
-import pyvinecopulib as pv
+from sklearn.utils.validation import check_is_fitted
 
 from ._base import (
   _DOC_DISCRETE,
@@ -14,14 +13,24 @@ from ._base import (
 
 
 class VineRegressor(VineBase, RegressorMixin):
+  # Inherits VineBase._parameter_constraints; extend with regressor knobs.
+  _parameter_constraints: dict = {
+    **VineBase._parameter_constraints,
+    "mean": ["boolean"],
+    "quantiles": ["array-like", None],
+    "use_grid": ["boolean"],
+    "normalize_weights": ["boolean"],
+  }
+
   def __init__(
     self,
     mean: bool = True,
-    quantiles: list[float] | np.ndarray | None = None,
-    controls: pv.FitControlsVinecop | None = None,
-    structure: pv.RVineStructure | None = None,
+    quantiles=None,
+    backend=None,
     batch_size: int = 100,
     use_grid: bool = True,
+    normalize_weights: bool = True,
+    random_state=None,
   ) -> None:
     """Sklearn-compatible vine-copula regressor.
 
@@ -34,20 +43,15 @@ class VineRegressor(VineBase, RegressorMixin):
     mean : bool, default=True
         If ``True``, predict the conditional mean. Set to ``False`` to
         get quantile-only predictions (``quantiles`` must then be set).
-    quantiles : list of float or ndarray, optional
+    quantiles : array-like, optional
         Quantile levels in ``(0, 1)`` to predict. If ``None``, quantile
         prediction is disabled.
-    controls : :class:`pyvinecopulib.core.FitControlsVinecop`, optional
-        Controls forwarded to the underlying vine copula fit
-        (:meth:`pyvinecopulib.core.Vinecop.from_data`). If ``None``,
-        defaults to the ``tll`` nonparametric pair family with a
-        single thread.
-    structure : :class:`pyvinecopulib.core.RVineStructure`, optional
-        Pre-specified vine structure on ``(Y, X_1, ..., X_d)``. ``Y``
-        always occupies the first dimension. If ``None``, structure
-        selection is delegated to
-        :meth:`pyvinecopulib.core.Vinecop.from_data` (Dissmann
-        algorithm by default).
+    backend : :class:`~pyvinecopulib.sklearn.backends.VinecopBackend` or compatible, optional
+        Backend strategy bundling fit-time controls and an optional
+        pre-specified structure on ``(Y, X_1, ..., X_d)`` (``Y`` always
+        in the first dimension). ``None`` (default) resolves to
+        :class:`~pyvinecopulib.sklearn.backends.VinecopBackend` at fit
+        time, which uses the C++ backend with the ``tll`` pair family.
     batch_size : int, default=100
         Number of test points processed per batch in :meth:`predict`.
         ``1`` minimises memory at the cost of speed; ``n_test`` is the
@@ -63,48 +67,25 @@ class VineRegressor(VineBase, RegressorMixin):
         - ``True`` (importance weighting over a marginal grid): the
           training response set is replaced by the Kde1d grid points
           and the weights pick up an extra :math:`\\hat f_Y(y_g)`
-          factor. Cheaper when ``n_train`` is large because the grid
-          size stays fixed (independent of ``n_train``); see
-          Nagler & Vatter (2024), and the supplement to Vatter & Nagler
-          (2026) for the grid-variant derivation.
-
-    Notes
-    -----
-    Advanced / ensemble use: ``self._normalize_weights`` (default
-    ``True``) can be assigned between construction and :meth:`fit` to
-    disable the row-wise sum-to-one normalisation of weights inside
-    :meth:`_iter_weights`. Forest wrappers set it to ``False`` so they
-    can average raw weights across trees and normalise once at the
-    ensemble level. Non-default values are not preserved by
-    :func:`sklearn.base.clone`.
+          factor.
+    normalize_weights : bool, default=True
+        If ``True`` (default), the per-row weights produced by
+        :meth:`_iter_weights` are normalised to sum to one. Forest
+        wrappers set this to ``False`` so they can average raw weights
+        across trees and normalise once at the ensemble level.
+    random_state : int, RandomState, Generator or None
+        Stored as-is; resolved via
+        :func:`sklearn.utils.check_random_state` in ``fit``. Currently
+        unused at runtime by the regressor itself but available to
+        backend-side stochastic operations.
     """
-    if not isinstance(mean, bool):
-      raise TypeError(f"mean must be bool, got {type(mean).__name__}")
-    if not isinstance(use_grid, bool):
-      raise TypeError(f"use_grid must be bool, got {type(use_grid).__name__}")
-
     super().__init__(
-      controls=controls,
-      structure=structure,
-      batch_size=batch_size,
+      backend=backend, batch_size=batch_size, random_state=random_state
     )
-
     self.mean = mean
-    if quantiles is None:
-      self.quantiles = None
-    else:
-      q_arr = np.atleast_1d(np.asarray(quantiles, dtype=float))
-      if q_arr.ndim != 1 or q_arr.size == 0:
-        raise ValueError(
-          f"quantiles must be a non-empty 1d sequence, got {quantiles!r}"
-        )
-      if np.any(q_arr <= 0) or np.any(q_arr >= 1):
-        raise ValueError(f"quantiles must lie in (0, 1), got {quantiles!r}")
-      self.quantiles = q_arr
-    if (not self.mean) and (self.quantiles is None):
-      raise ValueError("At least one of mean or quantiles must be enabled.")
+    self.quantiles = quantiles
     self.use_grid = use_grid
-    self._normalize_weights: bool = True
+    self.normalize_weights = normalize_weights
 
   def fit(self, X: np.ndarray, y: np.ndarray) -> "VineRegressor":
     """Fit a vine copula to the joint distribution of ``(Y, X)``.
@@ -125,18 +106,40 @@ class VineRegressor(VineBase, RegressorMixin):
     Returns
     -------
     self : VineRegressor
-        Fitted estimator. ``self._vine``, ``self._x_kde1d``,
+        Fitted estimator. Sets ``self._vine``, ``self._x_kde1d``,
         ``self._y_kde1d``, ``self._y_train``, ``self._uy_train``,
-        ``self._schema`` and ``self.n_features_in_`` are set.
+        ``self.schema_``, ``self.structure_``, ``self.backend_``,
+        ``self.random_state_``, ``self.quantiles_``,
+        ``self.n_features_in_``, and ``self.feature_names_in_``
+        (for DataFrame input).
     """
-    X, y = self._check_and_expand_fit(X, y)
+    self._validate_params()
+    if y is None:
+      raise ValueError("VineRegressor.fit requires y.")
+    X, y = self._validate_input(X, y, reset=True)
+    self._resolve_runtime_state()
+    if self.quantiles is None and not self.mean:
+      raise ValueError("At least one of mean or quantiles must be enabled.")
+    if self.quantiles is not None:
+      q_arr = np.atleast_1d(np.asarray(self.quantiles, dtype=float))
+      if q_arr.ndim != 1 or q_arr.size == 0:
+        raise ValueError(
+          f"quantiles must be a non-empty 1d sequence, got {self.quantiles!r}"
+        )
+      if np.any(q_arr <= 0) or np.any(q_arr >= 1):
+        raise ValueError(
+          f"quantiles must lie in (0, 1), got {self.quantiles!r}"
+        )
+      self.quantiles_ = q_arr
+    else:
+      self.quantiles_ = None
     self._fit_marginals(X, y)
 
     uy_train = self._to_u_scale(y, is_y=True)
     ux = self._to_u_scale(X)
 
-    assert self._schema is not None  # Guaranteed after _check_and_expand_fit
-    var_types = ["c"] + [x[0] for x in self._schema["kde1d_types"]]
+    assert self.schema_ is not None
+    var_types = ["c"] + [x[0] for x in self.schema_["kde1d_types"]]
     self._fit_vine(np.column_stack([uy_train, ux]), var_types=var_types)
 
     if not self.use_grid:
@@ -181,8 +184,7 @@ class VineRegressor(VineBase, RegressorMixin):
     ndarray of shape (n_samples,)
         Marginal copula density :math:`c_X(u_X)` (or its log).
     """
-    if not hasattr(self, "_vine"):
-      raise RuntimeError("Model not fitted yet.")
+    check_is_fitted(self, attributes=["_vine"])
 
     X = np.asarray(X)
     ux = self._to_u_scale(X)
@@ -208,7 +210,7 @@ class VineRegressor(VineBase, RegressorMixin):
       uy_rep = np.tile(uy_nodes, (end - start, 1))
       u = np.column_stack([uy_rep, ux_batch])
 
-      vals = self._vine.pdf(u, num_threads=self.controls.num_threads)
+      vals = self.backend_.pdf(self._vine, u)
       vals = np.asarray(vals).reshape(end - start, n_grid)
       out[start:end] = simpson_factor * (vals * w[None, :]).sum(axis=1)
 
@@ -262,11 +264,11 @@ class VineRegressor(VineBase, RegressorMixin):
       uy_rep = np.tile(self._uy_train, (end - start, 1)).reshape(-1, 1)
       u_test = np.column_stack([uy_rep, ux_batch])
 
-      w = self._vine.pdf(u_test, num_threads=self.controls.num_threads)
+      w = self.backend_.pdf(self._vine, u_test)
       w = np.asarray(w).reshape(end - start, n_train)
       if self.use_grid:
         w *= self._y_density
-      if self._normalize_weights:
+      if self.normalize_weights:
         w /= np.sum(w, axis=1, keepdims=True)
 
       yield w, start, end
@@ -292,8 +294,9 @@ class VineRegressor(VineBase, RegressorMixin):
         first (if enabled), then quantiles in the order requested.
     """
     n_test = X.shape[0]
+    quantiles = self.quantiles_
     n_outputs = (1 if self.mean else 0) + (
-      len(self.quantiles) if self.quantiles is not None else 0
+      len(quantiles) if quantiles is not None else 0
     )
     y_pred = np.empty((n_test, n_outputs))
 
@@ -302,19 +305,17 @@ class VineRegressor(VineBase, RegressorMixin):
       if self.mean:
         y_pred[start:end, col] = w @ self._y_train
         col += 1
-      if self.quantiles is not None:
+      if quantiles is not None:
         batch_preds = [
           np.quantile(
             a=self._y_train,
-            q=self.quantiles,
+            q=quantiles,
             weights=row_w,
             method="inverted_cdf",
           )
           for row_w in w
         ]
-        y_pred[start:end, col : col + len(self.quantiles)] = np.vstack(
-          batch_preds
-        )
+        y_pred[start:end, col : col + len(quantiles)] = np.vstack(batch_preds)
 
     return y_pred.squeeze()
 
@@ -346,7 +347,8 @@ class VineRegressor(VineBase, RegressorMixin):
         ordered: mean (if ``self.mean``), then quantiles in
         ``self.quantiles`` order.
     """
-    X = self._check_and_expand_predict(X)
+    check_is_fitted(self, attributes=["_vine"])
+    X = self._validate_input(X, reset=False)
     return self._predict_from_iter(X, self._iter_weights)
 
 
@@ -398,6 +400,25 @@ Examples
 >>> y = X @ [1.5, -0.8, 0.4] + 0.2 * rng.standard_normal(200)
 >>> est = VineRegressor(quantiles=[0.1, 0.5, 0.9]).fit(X, y)
 >>> est.predict(X[:5])          # columns: mean, q10, q50, q90
+
+Use the PyTorch backend for GPU placement / autograd:
+
+>>> from pyvinecopulib.sklearn.backends import TorchVinecopBackend
+>>> est_gpu = VineRegressor(
+...     backend=TorchVinecopBackend(), quantiles=[0.1, 0.5, 0.9],
+... ).fit(X, y)
+
+See also
+--------
+
+* :class:`VineDensity` — sister density estimator on the same
+  primitives.
+* :class:`VineForestRegressor` — ensemble variant.
+* :class:`pyvinecopulib.sklearn.backends.VinecopBackend`,
+  :class:`pyvinecopulib.sklearn.backends.TorchVinecopBackend` — the
+  two backend choices.
+* :class:`pyvinecopulib.core.Vinecop` — the underlying vine-copula
+  class if you need control beyond the sklearn convenience layer.
 
 {_DOC_REFERENCES}
 """

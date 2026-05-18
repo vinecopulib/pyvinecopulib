@@ -27,7 +27,7 @@ class VineForestRegressor(VineForestBase, RegressorMixin):
     method: str | None = "da_mcs_marg",
     alpha: float = 0.05,
     add_dissmann: bool = True,
-    seed: int = 42,
+    random_state=None,
     n_jobs: int = 1,
     verbose: bool = False,
   ) -> None:
@@ -86,7 +86,7 @@ class VineForestRegressor(VineForestBase, RegressorMixin):
       method=method,
       alpha=alpha,
       add_dissmann=add_dissmann,
-      seed=seed,
+      random_state=random_state,
       n_jobs=n_jobs,
       verbose=verbose,
     )
@@ -94,11 +94,12 @@ class VineForestRegressor(VineForestBase, RegressorMixin):
   def _create_base_estimator(self) -> VineRegressor:
     # The base learner emits raw (un-normalised) weights so the
     # forest can average across trees and normalise once at the
-    # ensemble level. `_normalize_weights` is no longer an __init__
-    # parameter on VineRegressor; set it via attribute access.
-    est = VineRegressor(**self.base_params)
-    est._normalize_weights = False
-    return est
+    # ensemble level. ``normalize_weights`` is a real ``__init__``
+    # parameter on :class:`VineRegressor`, so the override is just a
+    # standard kwarg — clone()-safe.
+    params = self._resolved_base_params()
+    params.setdefault("normalize_weights", False)
+    return VineRegressor(**params)
 
   def _loglik_estimator(self, estimator, X, y=None):
     """Conditional log-density log f(y | x) per row.

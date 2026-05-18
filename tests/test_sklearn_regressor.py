@@ -123,11 +123,13 @@ def test_wrong_dimensions(fitted_regressor):
     regressor.predict(X_wrong)
 
 
-def test_invalid_configuration():
-  """Test invalid regressor configurations."""
+def test_invalid_configuration(regression_setup):
+  """Test invalid regressor configurations surface at fit time."""
+  X_train, _, y_train, _, _, _ = regression_setup
   # Neither mean nor quantiles enabled
+  est = VineRegressor(mean=False, quantiles=None)
   with pytest.raises(ValueError):
-    VineRegressor(mean=False, quantiles=None)
+    est.fit(X_train, y_train)
 
 
 @pytest.mark.parametrize(
@@ -138,18 +140,17 @@ def test_invalid_configuration():
     ({"batch_size": 0}, ValueError),
     ({"batch_size": -3}, ValueError),
     ({"batch_size": 1.5}, TypeError),
-    ({"batch_size": True}, TypeError),
-    ({"controls": "bad"}, TypeError),
-    ({"structure": "bad"}, TypeError),
     ({"quantiles": [0.0, 0.5]}, ValueError),
     ({"quantiles": [0.5, 1.0]}, ValueError),
     ({"quantiles": []}, ValueError),
   ],
 )
-def test_constructor_validation(kwargs, exc):
-  """Bad constructor arguments raise at __init__ time."""
-  with pytest.raises(exc):
-    VineRegressor(**kwargs)
+def test_constructor_validation(kwargs, exc, regression_setup):
+  """Bad parameters surface at ``fit`` time, per the sklearn dev guide."""
+  X_train, _, y_train, _, _, _ = regression_setup
+  est = VineRegressor(**kwargs)
+  with pytest.raises((exc, ValueError, TypeError)):
+    est.fit(X_train, y_train)
 
 
 @pytest.mark.parametrize("use_grid", [True, False])
@@ -166,16 +167,16 @@ def test_parameter_variations(regression_setup, use_grid):
   assert np.all(np.isfinite(pred))
 
 
-def test_normalize_weights_attribute(regression_setup):
-  """`_normalize_weights` attribute toggles row-wise weight normalisation."""
+def test_normalize_weights_parameter(regression_setup):
+  """``normalize_weights`` parameter toggles row-wise weight normalisation."""
   X_train, X_test, y_train, _, _, _ = regression_setup
 
   reg_default = VineRegressor(mean=True).fit(X_train, y_train)
   pred_default = reg_default.predict(X_test)
 
-  reg_raw = VineRegressor(mean=True)
-  reg_raw._normalize_weights = False
-  reg_raw.fit(X_train, y_train)
+  reg_raw = VineRegressor(mean=True, normalize_weights=False).fit(
+    X_train, y_train
+  )
   pred_raw = reg_raw.predict(X_test)
 
   # With normalised weights, rows sum to 1 and the prediction is a

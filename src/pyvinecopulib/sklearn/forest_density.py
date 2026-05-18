@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 from joblib import Parallel, delayed
 from sklearn.base import DensityMixin
+from sklearn.utils.validation import check_is_fitted, check_random_state
 
 from ._base import (
   _DOC_DISCRETE,
@@ -27,7 +28,7 @@ class VineForestDensity(VineForestBase, DensityMixin):
     method: str | None = "da_mcs_marg",
     alpha: float = 0.05,
     add_dissmann: bool = True,
-    seed: int = 42,
+    random_state=None,
     n_jobs: int = 1,
     verbose: bool = False,
   ) -> None:
@@ -84,13 +85,13 @@ class VineForestDensity(VineForestBase, DensityMixin):
       method=method,
       alpha=alpha,
       add_dissmann=add_dissmann,
-      seed=seed,
+      random_state=random_state,
       n_jobs=n_jobs,
       verbose=verbose,
     )
 
   def _create_base_estimator(self) -> VineDensity:
-    return VineDensity(**self.base_params)
+    return VineDensity(**self._resolved_base_params())
 
   def _loglik_estimator(self, estimator, X, y=None):
     return estimator.score_samples(X)
@@ -172,7 +173,7 @@ class VineForestDensity(VineForestBase, DensityMixin):
 
     return np.mean(pdf_list, axis=0)
 
-  def cdf(self, X, N: int = 10000, seeds=None):
+  def cdf(self, X, N: int = 10000, random_state=None):
     """Ensemble-averaged joint CDF.
 
     Evaluates :meth:`VineDensity.cdf` for each surviving base
@@ -184,12 +185,12 @@ class VineForestDensity(VineForestBase, DensityMixin):
     X : ndarray or DataFrame of shape (n_samples, n_features)
         Test samples.
     N : int, default=10000
-        Number of quasi-random points used by :meth:`Vinecop.cdf`.
-    seeds : list of int, optional
-        Seeds forwarded to each estimator's CDF call. Note that the
-        same ``seeds`` are reused across estimators — that's fine
-        because each estimator has its own underlying vine, so the
-        quasi-MC streams remain effectively independent.
+        Number of quasi-random points used by the per-estimator
+        quasi-MC integration.
+    random_state : int, RandomState, Generator or None
+        Forwarded to each estimator's ``cdf`` call. If ``None``
+        (default), each surviving estimator reuses the RNG resolved at
+        its own fit time.
 
     Returns
     -------
@@ -200,7 +201,7 @@ class VineForestDensity(VineForestBase, DensityMixin):
 
     outer_n_jobs = self._adjust_estimators_num_threads(self._estimators)
     cdf_list = Parallel(n_jobs=outer_n_jobs)(
-      delayed(estimator.cdf)(X, N=N, seeds=seeds)
+      delayed(estimator.cdf)(X, N=N, random_state=random_state)
       for estimator in self._estimators
     )
 
@@ -228,24 +229,24 @@ class VineForestDensity(VineForestBase, DensityMixin):
     ndarray of shape (n_samples, n_features)
         Generated samples in the original feature scale.
     """
-    self._check_fitted()
+    check_is_fitted(self, attributes=["_estimators"])
     if not isinstance(n_samples, int) or isinstance(n_samples, bool):
       raise TypeError(f"n_samples must be int, got {type(n_samples).__name__}")
     if n_samples < 1:
       raise ValueError(f"n_samples must be >= 1, got {n_samples}")
 
-    rng = np.random.default_rng(self.seed)
+    rng = check_random_state(self.random_state)
     M = len(self._estimators)
     counts = rng.multinomial(n_samples, [1.0 / M] * M)
-    sub_seeds = rng.integers(0, 2**31 - 1, size=M)
+    sub_seeds = rng.randint(0, 2**31 - 1, size=M)
 
     parts = [
-      est.sample(n_samples=int(count), seeds=[int(seed)])
+      est.sample(n_samples=int(count), random_state=int(seed))
       for est, count, seed in zip(self._estimators, counts, sub_seeds)
       if count > 0
     ]
     samples = np.concatenate(parts, axis=0)
-    rng.shuffle(samples, axis=0)
+    rng.shuffle(samples)  # legacy RandomState shuffles along axis 0 by default
     return samples
 
 

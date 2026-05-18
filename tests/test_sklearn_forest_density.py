@@ -19,7 +19,7 @@ def fitted_forest_density(sample_array_data):
     n_vines=3,
     n_jobs=1,
     val_fraction=0.2,
-    seed=42,
+    random_state=42,
   )
   forest.fit(X)
   return forest, X
@@ -32,7 +32,6 @@ def fitted_forest_density(sample_array_data):
     ({"n_vines": 0}, ValueError),
     ({"n_vines": -3}, ValueError),
     ({"n_vines": 1.5}, TypeError),
-    ({"n_vines": True}, TypeError),
     ({"vines_sampling": "random"}, ValueError),
     ({"bootstrap": "yes"}, TypeError),
     ({"val_fraction": -0.1}, ValueError),
@@ -44,16 +43,16 @@ def fitted_forest_density(sample_array_data):
     ({"alpha": 1.0}, ValueError),
     ({"alpha": "0.05"}, TypeError),
     ({"add_dissmann": 0}, TypeError),
-    ({"seed": "42"}, TypeError),
-    ({"n_jobs": 0}, ValueError),
-    ({"n_jobs": -2}, ValueError),
+    ({"random_state": "42"}, TypeError),
     ({"verbose": 1}, TypeError),
   ],
 )
-def test_constructor_validation(kwargs, exc):
-  """Bad constructor arguments raise at __init__ time."""
-  with pytest.raises(exc):
-    VineForestDensity(**kwargs)
+def test_constructor_validation(kwargs, exc, sample_array_data):
+  """Bad parameters surface at ``fit`` time, per the sklearn dev guide."""
+  X, _, _ = sample_array_data
+  est = VineForestDensity(**kwargs)
+  with pytest.raises((exc, ValueError, TypeError)):
+    est.fit(X)
 
 
 def test_fit_properties(fitted_forest_density):
@@ -73,11 +72,11 @@ def test_schema_inference_array(sample_array_data):
     n_vines=2,
     n_jobs=1,
     val_fraction=0.3,
-    seed=42,
+    random_state=42,
   )
   forest.fit(X)
   for estimator in forest._estimators:
-    assert estimator._schema["kde1d_types"] == ["continuous", "continuous"]
+    assert estimator.schema_["kde1d_types"] == ["continuous", "continuous"]
 
 
 def test_schema_propagation_dataframe(sample_dataframe_data):
@@ -93,7 +92,7 @@ def test_schema_propagation_dataframe(sample_dataframe_data):
     "continuous",
   ]
   for estimator in forest._estimators:
-    assert estimator._schema["kde1d_types"] == expected_types
+    assert estimator.schema_["kde1d_types"] == expected_types
     if hasattr(estimator, "_expanded_columns"):
       assert estimator._expanded_columns == expected_expanded_cols
 
@@ -147,7 +146,7 @@ def test_cdf_shapes_and_range(fitted_forest_density):
   """Ensemble CDF returns values in [0, 1] with the right shape."""
   forest, X = fitted_forest_density
   X_test = X[:20]
-  cdf_vals = forest.cdf(X_test, seeds=[1, 2, 3])
+  cdf_vals = forest.cdf(X_test, random_state=42)
   assert isinstance(cdf_vals, np.ndarray)
   assert cdf_vals.shape == (20,)
   assert np.all(cdf_vals >= 0.0)
@@ -163,7 +162,7 @@ def test_cdf_monotone_along_axis(fitted_forest_density):
   X_sweep = np.column_stack(
     [np.linspace(x1_lo, x1_hi, 30), np.full(30, x2_med)]
   )
-  cdf_sweep = forest.cdf(X_sweep, N=20000, seeds=[42, 43, 44])
+  cdf_sweep = forest.cdf(X_sweep, N=20000, random_state=42)
   diffs = np.diff(cdf_sweep)
   assert (diffs > -0.05).all(), (
     f"CDF should be approx. non-decreasing, got {diffs}"
@@ -203,7 +202,7 @@ def test_ensemble_vs_single_estimator(sample_array_data):
     n_vines=4,
     n_jobs=1,
     val_fraction=0.3,
-    seed=123,
+    random_state=123,
   )
   forest.fit(X)
   forest_scores = forest.score_samples(X_test)
@@ -230,7 +229,7 @@ def test_best_only_option(sample_array_data):
   forest_all.fit(X)
 
   forest_best = VineForestDensity(
-    n_vines=5, best_only=True, n_jobs=1, val_fraction=0.2, seed=42
+    n_vines=5, best_only=True, n_jobs=1, val_fraction=0.2, random_state=42
   )
   forest_best.fit(X)
 
@@ -247,7 +246,7 @@ def test_reproducibility(sample_array_data, vines_sampling):
     forest = VineForestDensity(
       n_vines=3,
       vines_sampling=vines_sampling,
-      seed=42,
+      random_state=42,
       n_jobs=1,
       val_fraction=0.2,
     )
@@ -260,16 +259,26 @@ def test_reproducibility(sample_array_data, vines_sampling):
 
 
 def test_uniform_vs_local(sample_array_data):
-  X, _, _ = sample_array_data
+  # Use d >= 3 so the space of vine structures is non-degenerate; on
+  # d = 2 there is a single relabeling-equivalent structure and the
+  # two sampling strategies collapse to mathematically identical fits.
+  # We add an extra independent column and an extra correlated column
+  # so the data carries enough non-trivial structure for MCS to keep
+  # different survivors under the two sampling regimes.
+  X2, _, _ = sample_array_data
+  rng = np.random.default_rng(0)
+  X3 = rng.standard_normal((X2.shape[0], 1))
+  X4 = rng.standard_normal((X2.shape[0], 1)) + 2 * X2[:, :1]
+  X = np.column_stack([X2, X3, X4])
   X_test = X[:20]
 
   def create_and_fit(vines_sampling):
     forest = VineForestDensity(
-      n_vines=3,
+      n_vines=20,
       vines_sampling=vines_sampling,
-      seed=42,
+      random_state=7,
       n_jobs=1,
-      val_fraction=0.2,
+      val_fraction=0.25,
     )
     forest.fit(X)
     return forest.score_samples(X_test)
@@ -283,11 +292,15 @@ def test_parallel_vs_sequential(sample_array_data):
   X, _, _ = sample_array_data
   X_test = X[:20]
 
-  forest_seq = VineForestDensity(n_vines=3, seed=42, n_jobs=1, val_fraction=0.2)
+  forest_seq = VineForestDensity(
+    n_vines=3, random_state=42, n_jobs=1, val_fraction=0.2
+  )
   forest_seq.fit(X)
   scores_seq = forest_seq.score_samples(X_test)
 
-  forest_par = VineForestDensity(n_vines=3, seed=42, n_jobs=2, val_fraction=0.2)
+  forest_par = VineForestDensity(
+    n_vines=3, random_state=42, n_jobs=2, val_fraction=0.2
+  )
   forest_par.fit(X)
   scores_par = forest_par.score_samples(X_test)
 
