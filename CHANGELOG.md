@@ -11,6 +11,16 @@ Two scikit-learn-compatible vine-copula estimators ship in the new
   joint distribution of `(X, y)` and predicts conditional means / quantiles.
 - `VineDensity` — sklearn-style density estimator with `score_samples`,
   `score`, `sample`, `pdf`, and `cdf` methods.
+- `VineForestDensity` / `VineForestRegressor` — ensembles of the above
+  built via random search over vine structures and pruned by a model
+  confidence set (MCS) on a held-out validation split. Predictions
+  average across surviving structures. Structures are sampled either
+  uniformly via Joe's algorithm (Joe, Cooke & Kurowicka 2011) or
+  locally via Wilson's loop-erased random walk weighted by Kendall's
+  τ (Wilson 1996); survivor selection uses a dual-split DA test
+  adapted from the discrete-argmin-inference framework of Kim &
+  Ramdas (2025), with Hansen, Lunde & Nason (2011) providing the
+  foundational MCS definition.
 
 Both follow the `BaseEstimator` / `RegressorMixin` / `DensityMixin` protocols
 and handle mixed continuous/discrete inputs (DataFrame or ndarray). Class
@@ -34,7 +44,9 @@ API surface tightened before v1:
   `_schema` / `_normalize_weights` attributes for advanced / ensemble
   use; `clone()` won't preserve non-default values for these knobs.
 
-Install via the optional extra:
+The `[sklearn]` extra now pins `joblib>=1.3` and `scipy>=1.10` explicitly
+(both are transitive sklearn dependencies today; pinning them
+self-documents the forest requirement). Install via:
 
 ```bash
 pip install pyvinecopulib[sklearn]
