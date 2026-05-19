@@ -499,24 +499,3 @@ class TorchBicop(torch.nn.Module):
       return u
     u2 = self.hinv1(u).unsqueeze(-1)
     return torch.cat([u[:, 0:1], u2], dim=-1)
-
-  @torch.no_grad()
-  def sample(
-    self,
-    num_sample: int = 100,
-    seed: Optional[int] = 42,
-    is_sobol: bool = False,
-  ) -> Tensor:
-    """Deprecated alias for :meth:`simulate`.
-
-    .. deprecated::
-       Use :meth:`simulate` with ``n``, ``qrng``, ``seeds``. The old
-       parameter names are kept as a thin pass-through within the
-       ``feature/torch-bicop`` branch and will be removed before the
-       next stable release.
-    """
-    return self.simulate(
-      n=num_sample,
-      qrng=is_sobol,
-      seeds=[seed] if seed is not None else [],
-    )

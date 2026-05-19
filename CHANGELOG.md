@@ -112,7 +112,7 @@ constructor exactly once.
 
 ### `pyvinecopulib.torch`: `FitControlsTorchVinecop`
 
-`TorchVinecop.from_data` now accepts a
+`TorchVinecop.from_data` takes a single
 `controls=FitControlsTorchVinecop(...)` argument mirroring
 `pv.Vinecop.from_data(controls=...)`. The dataclass bundles:
 
@@ -120,11 +120,6 @@ constructor exactly once.
 - vine-level placement / precision knobs (`cache_integrals`, `device`,
   `dtype`);
 - runtime cascade knobs (`impl`, `batched`).
-
-The previous inline kwargs on `from_data` (`grid_size`, `mult`,
-`cache_integrals`, `grid_type`, `device`, `dtype`) keep working for
-one cycle on `feature/torch-bicop` with a `DeprecationWarning`, then
-will be removed before the next stable release.
 
 ### `pyvinecopulib.torch`: pluggable bicop fitters via `FitControlsTorchBicop`
 
@@ -203,10 +198,9 @@ either backend uniformly:
   `pv.Vinecop`; on the torch backend it is a documented no-op. For CPU
   intraop parallelism call `torch.set_num_threads(N)` globally — note
   that mutates global state and is unsafe with concurrent workers.
-- `TorchBicop.simulate(n, qrng=False, seeds=[])` — new method matching
-  `pv.Bicop.simulate`. The previous `TorchBicop.sample(num_sample,
-  seed, is_sobol)` is kept as a deprecated alias that forwards to
-  `simulate(...)` and will be removed before the next stable release.
+- The previous `TorchBicop.sample(num_sample, seed, is_sobol)` is
+  renamed to `TorchBicop.simulate(n, qrng=False, seeds=[])` to mirror
+  `pv.Bicop.simulate`.
 
 ### CI
 

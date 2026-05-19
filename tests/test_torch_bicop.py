@@ -220,18 +220,18 @@ def test_independent_bicop() -> None:
   assert torch.allclose(bc.hfunc2(u), u[:, 0])
 
 
-def test_sample_smoke() -> None:
+def test_simulate_smoke() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   u_fit = cop.simulate(2000, seeds=[20, 21, 22])
   cop_tll = _fit_tll(u_fit)
   bc = TorchBicop.from_bicop(cop_tll)
 
-  samples = bc.sample(num_sample=1000, seed=0, is_sobol=False)
+  samples = bc.simulate(n=1000, qrng=False, seeds=[0])
   assert samples.shape == (1000, 2)
   assert torch.isfinite(samples).all()
   assert ((samples > 0.0) & (samples < 1.0)).all()
 
-  samples_sobol = bc.sample(num_sample=500, seed=0, is_sobol=True)
+  samples_sobol = bc.simulate(n=500, qrng=True, seeds=[0])
   assert samples_sobol.shape == (500, 2)
   assert torch.isfinite(samples_sobol).all()
   assert ((samples_sobol > 0.0) & (samples_sobol < 1.0)).all()
@@ -387,29 +387,6 @@ def test_simulate_rejects_nonpositive_n() -> None:
     bc.simulate(n=0)
   with pytest.raises(ValueError, match="must be > 0"):
     bc.simulate(n=-5)
-  # Legacy alias still validates through the same code path.
-  with pytest.raises(ValueError, match="must be > 0"):
-    bc.sample(num_sample=0)
-
-
-# ---------------------------------------------------------------------------
-# API alignment with pv.Bicop (simulate naming + alias)
-# ---------------------------------------------------------------------------
-
-
-def test_simulate_alias_of_sample() -> None:
-  """The deprecated sample(num_sample, seed, is_sobol) routes through
-  simulate(n, qrng, seeds) and produces identical output."""
-  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
-  u_fit = cop.simulate(200, seeds=[1, 2, 3])
-  bc = TorchBicop.from_data(u_fit)
-  via_sample = bc.sample(num_sample=50, seed=7, is_sobol=False)
-  via_simulate = bc.simulate(n=50, qrng=False, seeds=[7])
-  assert torch.allclose(via_sample, via_simulate)
-  # qrng / Sobol path
-  via_sample_q = bc.sample(num_sample=64, seed=11, is_sobol=True)
-  via_simulate_q = bc.simulate(n=64, qrng=True, seeds=[11])
-  assert torch.allclose(via_sample_q, via_simulate_q)
 
 
 # ---------------------------------------------------------------------------

@@ -57,7 +57,7 @@ from ..pyvinecopulib_ext import (
 )
 from ..utils import simulate_uniform as _simulate_uniform
 from ._batched import BatchedVine
-from ._controls import FitControlsTorchBicop, FitControlsTorchVinecop
+from ._controls import FitControlsTorchVinecop
 from ._interp import _TRIM_HI, _TRIM_LO
 from .bicop import TorchBicop
 
@@ -273,14 +273,6 @@ class TorchVinecop(torch.nn.Module):
     u,
     structure,
     controls: Optional[FitControlsTorchVinecop] = None,
-    *,
-    # Deprecated inline kwargs — kept for one cycle on this branch.
-    grid_size: Optional[int] = None,
-    mult: Optional[float] = None,
-    cache_integrals: Optional[bool] = None,
-    grid_type: Optional[str] = None,
-    device: Optional[torch.device] = None,
-    dtype: Optional[torch.dtype] = None,
   ) -> "TorchVinecop":
     """Fit a pure-PyTorch TLL vine on ``u`` given a fixed ``structure``.
 
@@ -299,58 +291,13 @@ class TorchVinecop(torch.nn.Module):
 
     Args:
       u: ``(n, d)`` pseudo-observations; np.ndarray or Tensor.
-      structure: :class:`pyvinecopulib.RVineStructure` describing the vine
-        skeleton.
+      structure: :class:`pyvinecopulib.RVineStructure` describing the
+        vine skeleton.
       controls: :class:`FitControlsTorchVinecop` bundling the
         pair-copula fit controls together with vine-level placement /
         cascade knobs. Defaults to ``FitControlsTorchVinecop()`` (TLL,
         grid_size=30, normal grid, float64).
-      grid_size, mult, cache_integrals, grid_type, device, dtype:
-        **Deprecated.** Inline kwargs preserved for one cycle. Pass
-        them via ``controls=FitControlsTorchVinecop(
-        bicop_controls=FitControlsTorchBicop(grid_size=..., mult=...,
-        grid_type=...), cache_integrals=..., device=..., dtype=...)``
-        instead.
     """
-    import warnings
-
-    inline_supplied = {
-      "grid_size": grid_size,
-      "mult": mult,
-      "cache_integrals": cache_integrals,
-      "grid_type": grid_type,
-      "device": device,
-      "dtype": dtype,
-    }
-    inline_used = {k: v for k, v in inline_supplied.items() if v is not None}
-    if inline_used and controls is not None:
-      raise TypeError(
-        "TorchVinecop.from_data: pass either a `controls=` "
-        "FitControlsTorchVinecop, or the deprecated inline kwargs "
-        f"({sorted(inline_used)}), not both."
-      )
-    if inline_used:
-      warnings.warn(
-        "TorchVinecop.from_data inline kwargs "
-        f"({sorted(inline_used)}) are deprecated; bundle them in a "
-        "FitControlsTorchVinecop and pass via controls=. The inline "
-        "form will be removed before the next stable release.",
-        DeprecationWarning,
-        stacklevel=2,
-      )
-      controls = FitControlsTorchVinecop(
-        bicop_controls=FitControlsTorchBicop(
-          method="tll",
-          grid_size=grid_size if grid_size is not None else 30,
-          mult=mult if mult is not None else 1.0,
-          grid_type=grid_type if grid_type is not None else "normal",
-        ),
-        cache_integrals=cache_integrals
-        if cache_integrals is not None
-        else False,
-        device=device,
-        dtype=dtype,
-      )
     if controls is None:
       controls = FitControlsTorchVinecop()
 
