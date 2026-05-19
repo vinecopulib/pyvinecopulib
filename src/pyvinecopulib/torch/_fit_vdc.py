@@ -1,44 +1,40 @@
 """vdc-based fitter for :class:`TorchBicop`.
 
-Wraps the Kempner Institute's `vine-denoising-copula
-<https://github.com/KempnerInstitute/vine-denoising-copula>`_ pretrained
-estimator (arXiv 2604.20568): vdc takes a ``(n, 2)`` pseudo-observation
-sample and produces an ``(m, m)`` density grid on the cell-centered
-grid ``(0.5/m, 1.5/m, …, (m-0.5)/m)``. We replicate-pad that grid to
-``(m+2, m+2)`` on ``[0, cell-centers..., 1]`` and hand it to the existing
-:class:`InterpolationGrid2D`, which then provides ``pdf`` / ``cdf`` /
-``hfunc`` / ``hinv`` / sampling exactly as for the TLL fit.
+Drives ``TorchBicop.from_data(..., controls=FitControlsTorchBicop(
+method="vdc"))`` by routing to the pretrained amortized vine-copula
+estimator of:
 
-Why replicate-pad works: vdc's ``copula_project`` IPFP enforces
-midpoint-rule uniform marginals on the cell-center grid (``sum_i
-density[i, j] * (1/m) = 1``). The trapezoidal integral of the
-replicate-padded density on ``[0, 1]`` coincides with that midpoint sum
-at every cell center, so marginals stay uniform without re-running
-``normalize_margins`` and the h-function values at cell centers match
-vdc's ``(cumsum - 0.5*density) * (1/m)`` formula exactly.
+    Safaai, H. (2026). *Amortized Vine Copulas for High-Dimensional
+    Density and Information Estimation.* arXiv preprint
+    arXiv:2604.20568. <https://arxiv.org/abs/2604.20568>
 
-The ``vdc`` package is imported lazily so ``pyvinecopulib.torch``
-imports cleanly without it. With ``uv``, install via the ``[vdc]``
-extra (pyvinecopulib's ``pyproject.toml`` maps it to the GitHub repo
-through ``[tool.uv.sources]``)::
+Reference implementation:
+`KempnerInstitute/vine-denoising-copula
+<https://github.com/KempnerInstitute/vine-denoising-copula>`_. The
+``vdc`` package is imported lazily, so ``pyvinecopulib.torch``
+imports cleanly without it.
+
+Install via the ``[vdc]`` extra under uv (pyvinecopulib's
+``pyproject.toml`` maps the dependency to the GitHub repo through
+``[tool.uv.sources]``)::
 
     uv sync --extra vdc                  # in a pyvinecopulib checkout
     uv pip install "pyvinecopulib[vdc]"  # from an arbitrary uv project
 
-Plain pip doesn't read ``[tool.uv.sources]``, so install vdc directly::
+Plain pip does not read ``[tool.uv.sources]``, so install vdc
+directly::
 
     pip install "vine-denoising-copula @ git+https://github.com/KempnerInstitute/vine-denoising-copula"
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
 import torch
 from torch import Tensor
 
-if TYPE_CHECKING:  # pragma: no cover
-  from ._controls import FitControlsTorchBicop
+from ._controls import FitControlsTorchBicop
 
 # (model_id, device-str) -> LoadedPretrainedModel.
 _BUNDLE_CACHE: dict[tuple[str, str], Any] = {}
@@ -186,6 +182,19 @@ def _load_bundle(model_id: str, device: Optional[torch.device | str]):
   return _BUNDLE_CACHE[key]
 
 
+# Why replicate-pad works:
+#
+# vdc emits the density on cell centers `(0.5/m, 1.5/m, ..., (m-0.5)/m)`
+# in `[0, 1]^2`. Its `copula_project` IPFP enforces midpoint-rule
+# uniform marginals on that grid (`sum_i density[i, j] * (1/m) = 1`).
+# Replicate-padding to `[0, cell-centers..., 1]` makes the trapezoidal
+# integral on the padded grid coincide with the midpoint cumsum at
+# every cell center, so:
+#   (a) marginals stay uniform without re-running normalize_margins;
+#   (b) h-function values at cell centers match vdc's
+#       `(cumsum - 0.5 * density) * (1/m)` formula exactly.
+# That's why `TorchBicop` is constructed with `norm_times=0` on the
+# vdc path — the padded grid is already exactly uniform-marginal.
 def _replicate_pad(density: Tensor) -> tuple[Tensor, Tensor]:
   """Pad a cell-centered ``(m, m)`` density to a ``(m+2, m+2)`` grid that
   spans ``[0, 1]``.
@@ -193,9 +202,7 @@ def _replicate_pad(density: Tensor) -> tuple[Tensor, Tensor]:
   Returns ``(grid_points, padded_values)`` ready for the
   :class:`TorchBicop` constructor. The padded grid points are
   ``[0, 0.5/m, 1.5/m, …, (m-0.5)/m, 1]`` (length ``m+2``); padded values
-  replicate the first/last row and column. With this padding the
-  trapezoidal integral on the padded grid equals vdc's midpoint cumsum
-  at every cell center — see this module's docstring for the algebra.
+  replicate the first/last row and column.
   """
   if density.ndim != 2 or density.shape[0] != density.shape[1]:
     raise ValueError(
@@ -216,7 +223,7 @@ def _replicate_pad(density: Tensor) -> tuple[Tensor, Tensor]:
 
 def fit_vdc(
   u: Tensor,
-  controls: "FitControlsTorchBicop",
+  controls: FitControlsTorchBicop,
   *,
   device: Optional[torch.device | str],
   dtype: torch.dtype,

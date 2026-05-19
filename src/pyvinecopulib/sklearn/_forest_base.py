@@ -12,13 +12,15 @@ from __future__ import annotations
 
 import warnings
 from abc import ABC, abstractmethod
+from numbers import Integral, Real
 from typing import Any
 
 import numpy as np
-import pyvinecopulib as pv
 from joblib import Parallel, delayed
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import train_test_split
+from sklearn.utils._param_validation import Interval, StrOptions
+from sklearn.utils.validation import check_is_fitted, check_random_state
 
 from ._mcs import da_mcs_marg, da_mcs_unif
 
@@ -89,7 +91,28 @@ class VineForestBase(BaseEstimator, ABC):
   the base-learner type (``VineDensity`` or ``VineRegressor``) and
   the per-estimator log-likelihood used to score candidates against
   the validation set.
+
+  Per the scikit-learn developer guide, ``__init__`` performs no
+  validation; ``_parameter_constraints`` + ``_validate_params()`` run
+  at fit time. Fitted attributes use the trailing-underscore
+  convention.
   """
+
+  _parameter_constraints: dict = {
+    "base_class": [type],
+    "base_params": [dict, None],
+    "n_vines": [Interval(Integral, 1, None, closed="left")],
+    "vines_sampling": [StrOptions({"uniform", "local"})],
+    "bootstrap": ["boolean"],
+    "val_fraction": [Interval(Real, 0.0, 1.0, closed="left")],
+    "best_only": ["boolean"],
+    "method": [StrOptions({"da_mcs_marg", "da_mcs_unif"}), None],
+    "alpha": [Interval(Real, 0.0, 1.0, closed="neither")],
+    "add_dissmann": ["boolean"],
+    "random_state": ["random_state"],
+    "n_jobs": [Integral, None],
+    "verbose": ["boolean"],
+  }
 
   def __init__(
     self,
@@ -103,7 +126,7 @@ class VineForestBase(BaseEstimator, ABC):
     method: str | None = "da_mcs_marg",
     alpha: float = 0.05,
     add_dissmann: bool = True,
-    seed: int = 42,
+    random_state=None,
     n_jobs: int = 1,
     verbose: bool = False,
   ) -> None:
@@ -153,87 +176,43 @@ class VineForestBase(BaseEstimator, ABC):
         Significance level for the MCS selectors.
     add_dissmann : bool, default=True
         Add the Dissmann-structure baseline as an extra candidate.
-    seed : int, default=42
-        Random seed for reproducibility.
+    random_state : int, RandomState, Generator or None
+        Seeds reproducibility across random structure generation,
+        bootstrap resampling, and MCS randomisation. Stored as-is;
+        resolved via :func:`sklearn.utils.check_random_state` in
+        ``_fit_ensemble``.
     n_jobs : int, default=1
         Number of joblib workers for parallel fit / predict.
     verbose : bool, default=False
         Emit a warning if no random estimator beats the default.
     """
-    if not isinstance(base_class, type):
-      raise TypeError(
-        f"base_class must be a class, got {type(base_class).__name__}"
-      )
-    if base_params is not None and not isinstance(base_params, dict):
-      raise TypeError(
-        f"base_params must be dict or None, got {type(base_params).__name__}"
-      )
-    if not isinstance(n_vines, int) or isinstance(n_vines, bool):
-      raise TypeError(f"n_vines must be int, got {type(n_vines).__name__}")
-    if n_vines < 1:
-      raise ValueError(f"n_vines must be >= 1, got {n_vines}")
-    if vines_sampling not in {"uniform", "local"}:
-      raise ValueError(
-        f"vines_sampling must be 'uniform' or 'local', got {vines_sampling!r}"
-      )
-    if not isinstance(bootstrap, bool):
-      raise TypeError(f"bootstrap must be bool, got {type(bootstrap).__name__}")
-    if not isinstance(val_fraction, (int, float)) or isinstance(
-      val_fraction, bool
-    ):
-      raise TypeError(
-        f"val_fraction must be float, got {type(val_fraction).__name__}"
-      )
-    if not (0.0 <= val_fraction < 1.0):
-      raise ValueError(f"val_fraction must be in [0, 1), got {val_fraction}")
-    if not isinstance(best_only, bool):
-      raise TypeError(f"best_only must be bool, got {type(best_only).__name__}")
-    if method not in _VALID_METHODS:
-      raise ValueError(
-        f"method must be one of {sorted(str(m) for m in _VALID_METHODS)}, "
-        f"got {method!r}"
-      )
-    if not isinstance(alpha, (int, float)) or isinstance(alpha, bool):
-      raise TypeError(f"alpha must be float, got {type(alpha).__name__}")
-    if not (0.0 < alpha < 1.0):
-      raise ValueError(f"alpha must be in (0, 1), got {alpha}")
-    if not isinstance(add_dissmann, bool):
-      raise TypeError(
-        f"add_dissmann must be bool, got {type(add_dissmann).__name__}"
-      )
-    if not isinstance(seed, int) or isinstance(seed, bool):
-      raise TypeError(f"seed must be int, got {type(seed).__name__}")
-    if not isinstance(n_jobs, int) or isinstance(n_jobs, bool):
-      raise TypeError(f"n_jobs must be int, got {type(n_jobs).__name__}")
-    if n_jobs == 0 or n_jobs < -1:
-      raise ValueError(f"n_jobs must be -1 or >= 1, got {n_jobs}")
-    if not isinstance(verbose, bool):
-      raise TypeError(f"verbose must be bool, got {type(verbose).__name__}")
-
     self.base_class = base_class
-    self.base_params = {} if base_params is None else base_params
+    self.base_params = base_params
     self.n_vines = n_vines
     self.vines_sampling = vines_sampling
     self.bootstrap = bootstrap
     self.val_fraction = val_fraction
     self.best_only = best_only
-    self.seed = seed
+    self.random_state = random_state
     self.n_jobs = n_jobs
     self.verbose = verbose
     self.method = method
     self.alpha = alpha
     self.add_dissmann = add_dissmann
 
+  def _resolved_base_params(self) -> dict[str, Any]:
+    """Return a defensive copy of ``base_params`` for forwarding to the
+    base estimator. Defers validation to fit time."""
+    return {} if self.base_params is None else dict(self.base_params)
+
   @abstractmethod
   def _create_base_estimator(self):
-    """Build a fresh base estimator with any forest-specific overrides applied.
-
-    Subclasses use this in place of :func:`sklearn.base.clone` so
-    that attribute-set overrides (e.g. ``_normalize_weights = False``
-    on the regressor) survive the round-trip — ``clone`` would
-    re-instantiate from ``__init__`` parameters only and reset such
-    attributes to their defaults.
-    """
+    """Build a fresh base estimator with any forest-specific overrides
+    applied. After the sklearn-guide refactor, ``normalize_weights`` is
+    a real ``__init__`` parameter on :class:`VineRegressor`, so this
+    method is now equivalent to ``self.base_class(**base_params)`` and
+    a follow-up :func:`sklearn.base.clone` round-trip preserves all
+    state."""
 
   @abstractmethod
   def _loglik_estimator(self, estimator, X, y=None):
@@ -250,11 +229,16 @@ class VineForestBase(BaseEstimator, ABC):
     if self.val_fraction > 0:
       if y is not None:
         X_train, X_val, y_train, y_val = train_test_split(
-          X, y, test_size=self.val_fraction, random_state=self.seed
+          X,
+          y,
+          test_size=self.val_fraction,
+          random_state=self._split_rng_seed,
         )
       else:
         X_train, X_val = train_test_split(
-          X, test_size=self.val_fraction, random_state=self.seed
+          X,
+          test_size=self.val_fraction,
+          random_state=self._split_rng_seed,
         )
         y_train, y_val = None, None
     else:
@@ -272,28 +256,33 @@ class VineForestBase(BaseEstimator, ABC):
     y_val: np.ndarray | None,
   ):
     """Fit a single random estimator and score it on the validation set."""
-    # `_create_base_estimator()` (not clone) so any attribute-set
-    # overrides like `_normalize_weights = False` are re-applied.
+    # ``_create_base_estimator()`` returns a fresh, fully-cloneable
+    # instance built from ``base_params``; since
+    # ``normalize_weights`` is now a real init parameter, no
+    # post-init attribute mutation is needed (and ``clone()`` would
+    # preserve everything anyway).
     estimator = self._create_base_estimator()
 
     # Propagate the schema inferred on the full input (in particular,
     # discrete-vs-continuous flags from DataFrame columns) — by this
     # point X_train is a pre-expanded numpy array, so the base
     # estimator's own inference would default everything to continuous.
-    if self._base_estimator._schema is not None:
-      estimator._schema = dict(self._base_estimator._schema)
+    if getattr(self._base_estimator, "schema_", None) is not None:
+      estimator.schema_ = dict(self._base_estimator.schema_)
 
     local_rng = np.random.default_rng(seed)
     local_seeds = [int(x) for x in local_rng.integers(0, 2**31 - 1, size=5)]
 
+    from .backends import resolve_backend
+
+    parent_backend = resolve_backend(estimator.backend)
     if self.vines_sampling == "uniform":
       structure_size = X_train.shape[1] + int(y_train is not None)
-      estimator.structure = pv.RVineStructure.simulate(
+      estimator.backend = parent_backend.with_random_structure(
         structure_size, seeds=local_seeds
       )
     elif self.vines_sampling == "local":
-      estimator.controls.tree_algorithm = "random_weighted"
-      estimator.controls.seeds = local_seeds
+      estimator.backend = parent_backend.with_local_random(local_seeds)
     else:
       raise ValueError(f"Unknown vines_sampling method: {self.vines_sampling}")
 
@@ -312,12 +301,18 @@ class VineForestBase(BaseEstimator, ABC):
     self, X: np.ndarray, y: np.ndarray | None = None
   ) -> "VineForestBase":
     """Core ensemble fitting pipeline."""
+    self._validate_params()
+    self.random_state_ = check_random_state(self.random_state)
+    # `train_test_split` wants a plain seed/RandomState, not a Generator.
+    # Derive a stable int from the resolved RNG so `_split_data` reuses
+    # it across the default-estimator + survivor splits.
+    self._split_rng_seed = int(self.random_state_.randint(0, 2**31 - 1))
     self._base_estimator = self._create_base_estimator()
 
     if y is not None:
-      X, _ = self._base_estimator._check_and_expand_fit(X, y)
+      X, _ = self._base_estimator._validate_input(X, y, reset=True)
     else:
-      X = self._base_estimator._check_and_expand_fit(X)
+      X = self._base_estimator._validate_input(X, reset=True)
     self.n_features_in_ = X.shape[1]
 
     X_train, X_val, y_train, y_val = self._split_data(X, y)
@@ -326,8 +321,8 @@ class VineForestBase(BaseEstimator, ABC):
     # inferred schema so fitting on the already-expanded numpy doesn't
     # default everything back to continuous.
     default = self._create_base_estimator()
-    if self._base_estimator._schema is not None:
-      default._schema = dict(self._base_estimator._schema)
+    if getattr(self._base_estimator, "schema_", None) is not None:
+      default.schema_ = dict(self._base_estimator.schema_)
     if y_train is not None:
       default.fit(X_train, y_train)
     else:
@@ -335,8 +330,7 @@ class VineForestBase(BaseEstimator, ABC):
     default_loglik = self._loglik_estimator(default, X_val, y_val)
     default_loglik_val = default_loglik.mean()
 
-    rng = np.random.default_rng(self.seed)
-    seeds = rng.integers(0, 2**31 - 1, size=self.n_vines)
+    seeds = self.random_state_.randint(0, 2**31 - 1, size=self.n_vines)
 
     def _fit_one(seed):
       return self._fit_random_estimator(seed, X_train, y_train, X_val, y_val)
@@ -353,7 +347,7 @@ class VineForestBase(BaseEstimator, ABC):
     else:
       # Negative logliks → losses; selector minimises losses.
       nll = -np.array([loglik for _, loglik in results]).T
-      mcs_rng = np.random.default_rng(self.seed)
+      mcs_rng = np.random.default_rng(self._split_rng_seed)
       mcs_fn = da_mcs_unif if self.method == "da_mcs_unif" else da_mcs_marg
       mcs = mcs_fn(nll, alpha=self.alpha, randomize=True, rng=mcs_rng)
       survivors = mcs["decision"]
@@ -402,20 +396,30 @@ class VineForestBase(BaseEstimator, ABC):
     return self
 
   def _adjust_estimators_num_threads(self, estimators: list) -> int:
-    """Allocate `n_jobs` across the outer (estimator) and inner (thread) loops."""
+    """Allocate ``n_jobs`` across the outer (estimator) and inner (thread)
+    loops. Routes through each estimator's backend via
+    ``with_num_threads``: the C++ backend rebinds
+    ``controls.num_threads``; the torch backend treats it as a no-op."""
     n_estimators = len(estimators)
     outer_n_jobs = min(self.n_jobs, n_estimators)
     if n_estimators < self.n_jobs:
       num_threads = max(1, self.n_jobs // n_estimators)
+      from .backends import resolve_backend
+
       for estimator in estimators:
-        estimator.controls.num_threads = num_threads
+        target = (
+          estimator.backend_
+          if hasattr(estimator, "backend_")
+          else resolve_backend(estimator.backend)
+        )
+        estimator.backend = target.with_num_threads(num_threads)
+        if hasattr(estimator, "backend_"):
+          # Keep the pinned post-fit backend in sync so subsequent
+          # pdf/cdf calls observe the new thread count.
+          estimator.backend_ = resolve_backend(estimator.backend)
     return outer_n_jobs
 
-  def _check_fitted(self) -> None:
-    if not hasattr(self, "_estimators"):
-      raise ValueError(f"{self.__class__.__name__} not fitted yet.")
-
   def _prepare_prediction_data(self, X: np.ndarray) -> np.ndarray:
-    self._check_fitted()
-    result = self._base_estimator._check_and_expand_predict(X)
+    check_is_fitted(self, attributes=["_estimators"])
+    result = self._base_estimator._validate_input(X, reset=False)
     return np.asarray(result)

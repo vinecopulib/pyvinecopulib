@@ -2,8 +2,8 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-import pyvinecopulib as pv
 from sklearn.base import DensityMixin
+from sklearn.utils.validation import check_is_fitted
 
 from ._base import (
   _DOC_DISCRETE,
@@ -18,36 +18,35 @@ from ._base import (
 class VineDensity(VineBase, DensityMixin):
   def __init__(
     self,
-    controls: pv.FitControlsVinecop | None = None,
-    structure: pv.RVineStructure | None = None,
+    backend=None,
     batch_size: int = 100,
+    random_state=None,
   ) -> None:
     """Vine-copula based density estimator.
 
     Parameters
     ----------
-    controls : :class:`pyvinecopulib.core.FitControlsVinecop`, optional
-        Controls forwarded to the underlying vine copula fit
-        (:meth:`pyvinecopulib.core.Vinecop.from_data`). If ``None``,
-        defaults to the nonparametric ``tll`` pair family with a
-        single thread.
-    structure : :class:`pyvinecopulib.core.RVineStructure`, optional
-        Pre-specified vine structure. If ``None``, structure
-        selection is delegated to
-        :meth:`pyvinecopulib.core.Vinecop.from_data` (which runs the
-        Dissmann algorithm by default — see ``controls.tree_algorithm``
-        for the alternative random-tree options).
+    backend : :class:`~pyvinecopulib.sklearn.backends.VinecopBackend` or compatible, optional
+        Backend strategy bundling fit-time controls and an optional
+        pre-specified structure. ``None`` (default) resolves to
+        :class:`~pyvinecopulib.sklearn.backends.VinecopBackend` at fit
+        time, which uses :meth:`pyvinecopulib.core.Vinecop.from_data`
+        with the nonparametric ``tll`` pair family. Pass
+        :class:`~pyvinecopulib.sklearn.backends.TorchVinecopBackend`
+        for the PyTorch backend.
     batch_size : int, default=100
         Number of test points processed per batch when evaluating the
         density. Higher values trade memory for throughput.
+    random_state : int, RandomState, Generator or None
+        Seeds the RNG used by stochastic operations (``cdf`` quasi-MC,
+        ``sample``). Stored as-is and resolved via
+        :func:`sklearn.utils.check_random_state` inside ``fit``.
     """
     super().__init__(
-      controls=controls,
-      structure=structure,
-      batch_size=batch_size,
+      backend=backend, batch_size=batch_size, random_state=random_state
     )
 
-  def fit(self, X: np.ndarray | pd.DataFrame) -> "VineDensity":
+  def fit(self, X, y=None) -> "VineDensity":
     """Fit the density estimator to the training data.
 
     Runs the shared three-step pipeline (marginal KDEs →
@@ -60,22 +59,23 @@ class VineDensity(VineBase, DensityMixin):
         Training data. ``DataFrame`` input may mix numeric, ordered
         categorical, and unordered categorical columns; the latter are
         expanded to ordered ``{0, 1}`` dummies before fitting.
+    y : ignored
+        Present for sklearn API compatibility.
 
     Returns
     -------
     self : VineDensity
-        Fitted estimator. ``self._vine``, ``self._x_kde1d``,
-        ``self._schema`` and ``self.n_features_in_`` are set.
+        Fitted estimator. Sets ``self._vine``, ``self._x_kde1d``,
+        ``self.schema_``, ``self.structure_``, ``self.backend_``,
+        ``self.random_state_``, ``self.n_features_in_``, and
+        ``self.feature_names_in_`` (for DataFrame input).
     """
-    result = self._check_and_expand_fit(X)
-    assert isinstance(result, np.ndarray)  # y is None ⇒ scalar X return
-    X = result
-
+    self._validate_params()
+    X = self._validate_input(X, reset=True)
+    self._resolve_runtime_state()
     self._fit_marginals(X)
     U = self._to_u_scale(X)
-
-    assert self._schema is not None  # Guaranteed after _check_and_expand_fit
-    var_types = [x[0] for x in self._schema["kde1d_types"]]
+    var_types = [x[0] for x in self.schema_["kde1d_types"]]
     self._fit_vine(U, var_types=var_types)
     return self
 
@@ -134,7 +134,7 @@ class VineDensity(VineBase, DensityMixin):
 
     return float(self.score_samples(X).mean())
 
-  def sample(self, n_samples: int = 1, seeds: list[int] = [42]) -> np.ndarray:
+  def sample(self, n_samples: int = 1, random_state=None) -> np.ndarray:
     """Draw samples from the fitted joint density.
 
     Draws :math:`U \\sim C` via :meth:`Vinecop.simulate` and pushes
@@ -145,18 +145,28 @@ class VineDensity(VineBase, DensityMixin):
     ----------
     n_samples : int, default=1
         Number of samples to generate.
-    seeds : list of int, default=[42]
-        Seeds forwarded to :meth:`Vinecop.simulate` for reproducibility.
+    random_state : int, RandomState, Generator or None
+        If ``None`` (default), reuses the RNG resolved at ``fit`` time
+        (``self.random_state_``). Otherwise resolved fresh via
+        :func:`sklearn.utils.check_random_state` for this call only —
+        useful for getting independent draws without re-fitting.
 
     Returns
     -------
     ndarray of shape (n_samples, n_features)
         Generated samples in the original feature scale.
     """
-    if not hasattr(self, "_vine"):
-      raise RuntimeError("Model not fitted yet.")
+    check_is_fitted(self, attributes=["_vine"])
+    if random_state is None:
+      rng = self.random_state_
+    else:
+      from sklearn.utils.validation import check_random_state
 
-    U_sampled = np.asarray(self._vine.simulate(n_samples, seeds=seeds))
+      rng = check_random_state(random_state)
+    seeds = [int(x) for x in rng.randint(0, 2**31 - 1, size=5)]
+    U_sampled = np.asarray(
+      self.backend_.simulate(self._vine, n_samples, seeds=seeds)
+    )
     X_sampled = np.empty((n_samples, self.n_features_in_))
     for j in range(self.n_features_in_):
       X_sampled[:, j] = self._x_kde1d[j].quantile(U_sampled[:, j])
@@ -188,29 +198,30 @@ class VineDensity(VineBase, DensityMixin):
 
   def cdf(
     self,
-    X: np.ndarray | pd.DataFrame,
+    X,
     N: int = 10000,
-    seeds: list[int] | None = None,
+    random_state=None,
   ) -> np.ndarray:
     """Evaluate the joint CDF at the given samples.
 
     Returns :math:`\\hat F(\\mathbf{x}) = \\hat C\\bigl(\\hat F_1(x_1),
     \\ldots, \\hat F_d(x_d)\\bigr)` by applying the marginal CDFs to
     each column to obtain pseudo-observations, then evaluating the
-    fitted copula CDF via :meth:`pyvinecopulib.core.Vinecop.cdf`.
+    fitted copula CDF via the configured backend's quasi-Monte-Carlo
+    routine.
 
     Parameters
     ----------
     X : ndarray or DataFrame of shape (n_samples, n_features)
         Test samples.
     N : int, default=10000
-        Number of quasi-random points used by :meth:`Vinecop.cdf` for
-        the Monte-Carlo integration; larger ``N`` gives more accurate
-        CDF values at the cost of more compute.
-    seeds : list of int, optional
-        Seeds forwarded to the underlying quasi-random generator. If
-        ``None``, the generator is seeded randomly (results then
-        differ from one call to the next).
+        Number of quasi-random points used by the Monte-Carlo
+        integration; larger ``N`` gives more accurate CDF values at the
+        cost of more compute.
+    random_state : int, RandomState, Generator or None
+        If ``None`` (default), reuses the RNG resolved at ``fit`` time
+        (``self.random_state_``). Otherwise resolved fresh via
+        :func:`sklearn.utils.check_random_state` for this call.
 
     Returns
     -------
@@ -220,17 +231,25 @@ class VineDensity(VineBase, DensityMixin):
     Notes
     -----
     Because the underlying copula CDF is approximated by Monte-Carlo
-    quasi-random integration, values are stochastic for fixed inputs
-    unless ``seeds`` is provided. Use a larger ``N`` if the noise
+    quasi-random integration, values are stochastic across calls with
+    different ``random_state`` values. Use a larger ``N`` if the noise
     floor is significant for your application.
     """
-    if not hasattr(self, "_vine"):
-      raise RuntimeError("Model not fitted yet.")
-    X = self._check_and_expand_predict(X)
+    check_is_fitted(self, attributes=["_vine"])
+    if not self.backend_.supports_cdf:
+      raise NotImplementedError(
+        f"backend '{self.backend_.name}' does not support cdf()."
+      )
+    X = self._validate_input(X, reset=False)
     U = self._to_u_scale(X)
-    return np.asarray(
-      self._vine.cdf(U, N=N, seeds=seeds if seeds is not None else [])
-    )
+    if random_state is None:
+      rng = self.random_state_
+    else:
+      from sklearn.utils.validation import check_random_state
+
+      rng = check_random_state(random_state)
+    seeds = [int(x) for x in rng.randint(0, 2**31 - 1, size=5)]
+    return np.asarray(self.backend_.cdf(self._vine, U, N=N, seeds=seeds))
 
 
 VineDensity.__doc__ = f"""Vine-copula based density estimator.
@@ -258,6 +277,22 @@ Examples
 >>> density.pdf(X[:3])                    # density on the natural scale
 >>> density.cdf(X[:3])                    # joint CDF (MC-approximated)
 >>> samples = density.sample(n_samples=100)
+
+Use the PyTorch backend for GPU placement / autograd:
+
+>>> from pyvinecopulib.sklearn.backends import TorchVinecopBackend
+>>> density_gpu = VineDensity(backend=TorchVinecopBackend()).fit(X)
+
+See also
+--------
+
+* :class:`VineRegressor` — sister regressor on the same primitives.
+* :class:`VineForestDensity` — ensemble variant.
+* :class:`pyvinecopulib.sklearn.backends.VinecopBackend`,
+  :class:`pyvinecopulib.sklearn.backends.TorchVinecopBackend` — the
+  two backend choices.
+* :class:`pyvinecopulib.core.Vinecop` — the underlying vine-copula
+  class if you need control beyond the sklearn convenience layer.
 
 {_DOC_REFERENCES}
 """

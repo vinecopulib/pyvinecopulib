@@ -1,29 +1,43 @@
-"""PyTorch ``TorchVinecop`` — port of the multivariate vinecop evaluation chain.
+"""PyTorch evaluator for a fitted R-vine copula.
 
-Wraps a fitted :class:`pyvinecopulib.Vinecop` (with TLL pair copulas) and
-exposes :meth:`pdf`, :meth:`rosenblatt`, and :meth:`inverse_rosenblatt`
-on top of :class:`TorchBicop` for every pair copula. The whole evaluation
-chain stays in PyTorch, so the vine can move to GPU and be composed with
-autograd-aware downstream code.
+Wraps a fitted :class:`pyvinecopulib.Vinecop` (with *Transformed Local
+Likelihood* pair copulas — :data:`pyvinecopulib.families.tll`) and
+exposes ``pdf`` / ``cdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` /
+``simulate`` on top of :class:`TorchBicop` for every pair copula. The
+whole evaluation chain stays in PyTorch, so the vine can move to GPU
+with ``.to("cuda")`` and be composed with autograd-aware downstream
+code.
 
-Each entry point ships with two equivalent implementations, switchable
-via the ``impl=`` kwarg:
+The two routes to a fitted vine are :meth:`TorchVinecop.from_vinecop`
+(lift a C++-fitted :class:`pyvinecopulib.Vinecop`) and
+:meth:`TorchVinecop.from_data` (fit directly from pseudo-observations
+in pure PyTorch given a fixed structure). Fit-time controls live on
+:class:`FitControlsTorchVinecop`, which mirrors
+:class:`pyvinecopulib.FitControlsVinecop`.
 
-- ``impl="legacy"`` (default) — direct port of the C++ Vinecop's
-  tree-by-tree h-function cascade in :func:`Vinecop::pdf` /
-  :func:`Vinecop::rosenblatt` / :func:`Vinecop::inverse_rosenblatt`.
-  Dense ``(n, d)`` scratch matrices, fixed pv-natural traversal order,
-  byte-for-byte agreement with ``pv.Vinecop``.
-- ``impl="lazy"`` — dict-based bookkeeping inspired by
-  ``torchvinecopulib.VineCop``. Pseudo-obs are keyed by
-  ``(v, *cond_ing)`` and materialized on first access; per-level
-  garbage collection keeps live memory smaller, with no compute change.
-  ``inverse_rosenblatt`` additionally uses a reference-counted walk to
-  free intermediate pseudo-obs as soon as they're no longer needed.
+Each entry point ships with two equivalent cascade implementations,
+switchable via the ``impl=`` kwarg:
 
-Fitting is delegated to the C++ library; use
-:meth:`TorchVinecop.from_vinecop` after fitting with
-``pv.Vinecop.from_data(..., controls=FitControlsVinecop(family_set=[pv.tll]))``.
+- ``impl="legacy"`` (default) — direct port of the C++
+  :class:`pyvinecopulib.Vinecop` tree-by-tree h-function cascade in
+  ``Vinecop::pdf`` / ``Vinecop::rosenblatt`` /
+  ``Vinecop::inverse_rosenblatt``. Dense ``(n, d)`` scratch matrices,
+  fixed natural-order traversal, byte-for-byte agreement with the C++
+  evaluator on the same fit.
+- ``impl="lazy"`` — dict-based bookkeeping introduced by Cheng,
+  Vatter, Nagler & Chen (2025), *Vine Copulas as Differentiable
+  Computational Graphs*, arXiv:2506.13318. Pseudo-obs are keyed by
+  ``(v, *cond_ing)`` and materialised on first access; per-level
+  garbage collection keeps live memory smaller, with no compute
+  change. ``inverse_rosenblatt`` additionally uses a reference-counted
+  walk to free intermediate pseudo-obs as soon as they're no longer
+  needed.
+
+See also
+--------
+
+* :class:`pyvinecopulib.Vinecop` — the C++ counterpart.
+* :class:`FitControlsTorchVinecop` — fit-time controls.
 """
 
 from __future__ import annotations
@@ -43,6 +57,7 @@ from ..pyvinecopulib_ext import (
 )
 from ..utils import simulate_uniform as _simulate_uniform
 from ._batched import BatchedVine
+from ._controls import FitControlsTorchVinecop
 from ._interp import _TRIM_HI, _TRIM_LO
 from .bicop import TorchBicop
 
@@ -257,13 +272,7 @@ class TorchVinecop(torch.nn.Module):
     cls,
     u,
     structure,
-    *,
-    grid_size: int = 30,
-    mult: float = 1.0,
-    cache_integrals: bool = False,
-    grid_type: str = "normal",
-    device: Optional[torch.device] = None,
-    dtype: torch.dtype = torch.float64,
+    controls: Optional[FitControlsTorchVinecop] = None,
   ) -> "TorchVinecop":
     """Fit a pure-PyTorch TLL vine on ``u`` given a fixed ``structure``.
 
@@ -278,19 +287,23 @@ class TorchVinecop(torch.nn.Module):
     estimation error only, matching ``pv.Vinecop.from_data(u,
     controls=FitControlsVinecop(family_set=[tll], structure=...))`` to
     machine precision (per-pair agreement is ~1e-11; the cascade
-    preserves this when ``cache_integrals=False``).
+    preserves this when ``controls.cache_integrals=False``).
 
     Args:
       u: ``(n, d)`` pseudo-observations; np.ndarray or Tensor.
-      structure: :class:`pyvinecopulib.RVineStructure` describing the vine
-        skeleton.
-      grid_size, mult, grid_type: forwarded to :meth:`TorchBicop.from_data`
-        via a :class:`FitControlsTorchBicop`.
-      cache_integrals, device, dtype: forwarded to :meth:`TorchBicop.from_data`.
+      structure: :class:`pyvinecopulib.RVineStructure` describing the
+        vine skeleton.
+      controls: :class:`FitControlsTorchVinecop` bundling the
+        pair-copula fit controls together with vine-level placement /
+        cascade knobs. Defaults to ``FitControlsTorchVinecop()`` (TLL,
+        grid_size=30, normal grid, float64).
     """
-    from ._controls import FitControlsTorchBicop
+    if controls is None:
+      controls = FitControlsTorchVinecop()
 
-    u_t = torch.as_tensor(u, dtype=dtype, device=device)
+    eff_dtype = controls.dtype if controls.dtype is not None else torch.float64
+    eff_device = controls.device
+    u_t = torch.as_tensor(u, dtype=eff_dtype, device=eff_device)
     if u_t.ndim != 2:
       raise ValueError(f"u must be 2-D; got shape {tuple(u_t.shape)}")
     n, d = u_t.shape
@@ -299,13 +312,11 @@ class TorchVinecop(torch.nn.Module):
         f"structure.dim={structure.dim} does not match u.shape[1]={d}"
       )
 
-    bc_controls = FitControlsTorchBicop(
-      method="tll", grid_size=grid_size, mult=mult, grid_type=grid_type
-    )
+    bc_controls = controls.bicop_controls
 
     order = [int(s) for s in structure.order]
-    hfunc1 = torch.zeros(n, d, dtype=dtype, device=u_t.device)
-    hfunc2 = torch.empty(n, d, dtype=dtype, device=u_t.device)
+    hfunc1 = torch.zeros(n, d, dtype=eff_dtype, device=u_t.device)
+    hfunc2 = torch.empty(n, d, dtype=eff_dtype, device=u_t.device)
     for j in range(d):
       hfunc2[:, j] = u_t[:, order[j] - 1]
 
@@ -323,9 +334,9 @@ class TorchVinecop(torch.nn.Module):
         bc = TorchBicop.from_data(
           u_e,
           bc_controls,
-          cache_integrals=cache_integrals,
+          cache_integrals=controls.cache_integrals,
           device=u_t.device,
-          dtype=dtype,
+          dtype=eff_dtype,
         )
         tree_pairs.append(bc)
         if s.needed_hfunc1(tree, edge):

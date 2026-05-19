@@ -1,26 +1,44 @@
+from numbers import Integral
+
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
+from sklearn.utils._param_validation import Interval
+from sklearn.utils.validation import check_is_fitted, check_random_state
 
 import pyvinecopulib as pv
+
+from .backends import resolve_backend
 
 # Shared docstring fragments interpolated into VineDensity / VineRegressor
 # class docstrings via f-strings. Defined once here, used by both subclasses
 # so changes propagate without copy-paste.
 
-_DOC_WRAPPER = r"""**Relation to the core API.** This estimator is a
-thin scikit-learn wrapper around the lower-level pyvinecopulib
-machinery. Marginals are estimated with
-:class:`pyvinecopulib.utils.Kde1d`; the joint copula is fit by
-:meth:`pyvinecopulib.core.Vinecop.from_data`, accepting an optional
-:class:`pyvinecopulib.core.RVineStructure` (``structure`` argument) and
-a :class:`pyvinecopulib.core.FitControlsVinecop` (``controls`` argument)
-for the family set, threading, structure-selection algorithm, etc.
-The sklearn class on top adds the standard ``fit`` / ``predict``-style
-interface, ``DataFrame`` input handling with auto-inferred
-``continuous`` / ``discrete`` schema, and batched evaluation; reach
-for the underlying classes whenever you need control beyond the
-sklearn convenience layer.
+_DOC_WRAPPER = r"""**Relation to the core API.** ``fit()`` runs
+the standard pyvinecopulib pipeline — univariate marginals
+(:class:`pyvinecopulib.utils.Kde1d`) followed by a vine-copula fit on
+the resulting pseudo-observations — and stashes the fitted state
+under the canonical sklearn attribute names (``n_features_in_``,
+``feature_names_in_``, plus ``schema_``, ``structure_``,
+``backend_``, ``random_state_``, and private ``_vine`` /
+``_x_kde1d`` / ``_y_kde1d``).
+
+The fit and runtime calls route through a **backend** object passed
+via the ``backend=`` keyword. The default backend
+(:class:`~pyvinecopulib.sklearn.backends.VinecopBackend`) wraps
+:class:`pyvinecopulib.core.Vinecop` and requires no extra
+dependencies. Pass
+:class:`~pyvinecopulib.sklearn.backends.TorchVinecopBackend` to route
+through the PyTorch evaluator instead — useful for GPU placement or
+autograd through the vine cascade. See
+:mod:`pyvinecopulib.sklearn.backends` for the full comparison.
+
+Low-level knobs (pair family, threading, structure-selection
+algorithm, …) live on the backend's ``controls`` field — a
+:class:`pyvinecopulib.core.FitControlsVinecop` for the default
+backend, or a :class:`pyvinecopulib.torch.FitControlsTorchVinecop`
+for the torch one. The :doc:`concepts page </concepts>` covers the
+underlying vine-copula construction in ~5 minutes.
 """
 
 _DOC_PIPELINE = r"""**Estimation pipeline.** The estimator follows a
@@ -29,22 +47,26 @@ three-step pipeline shared with :class:`VineDensity` /
 
 1. **Marginals.** A univariate kernel density estimator
    (:class:`pyvinecopulib.utils.Kde1d`) is fitted to each feature
-   column. Continuous and ordered-discrete dtypes are inferred from the
-   input (or read from a user-supplied ``schema``); unordered
-   categoricals are first expanded into ordered ``{0, 1}`` dummies by
+   column. Continuous and ordered-discrete dtypes are inferred from
+   the input; unordered categoricals are first expanded into ordered
+   ``{0, 1}`` dummies by
    :func:`pyvinecopulib.sklearn._base.expand_factors`.
 
-2. **Pseudo-observations.** Each marginal CDF is applied to its column
-   to produce pseudo-observations :math:`U_j = \hat F_j(X_j) \in [0, 1]`.
-   For discrete columns the left limit :math:`\hat F_j(X_j^-)` is also
-   computed and stacked, so the vine sees a continuous proxy for the
-   discrete margin.
+2. **Pseudo-observations.** Each marginal CDF is applied to its
+   column to produce pseudo-observations
+   :math:`U_j = \hat F_j(X_j) \in [0, 1]`. For discrete columns the
+   left limit :math:`\hat F_j(X_j^-)` is also computed and stacked,
+   so the vine sees a continuous proxy for the discrete margin.
 
-3. **Vine copula.** A vine copula is fitted to the pseudo-observations
-   with :meth:`pyvinecopulib.core.Vinecop.from_data`, using the
-   ``structure``, ``controls``, and (where relevant) variable-type
-   tags. The default ``controls`` use the nonparametric ``tll`` pair
-   family for every edge.
+3. **Vine copula.** A vine copula is fitted to the
+   pseudo-observations via the configured backend's
+   :meth:`fit_vine`. The default backend uses
+   :meth:`pyvinecopulib.core.Vinecop.from_data` with the
+   non-parametric :data:`pyvinecopulib.families.tll` (Transformed
+   Local Likelihood) pair-copula family. Pass a configured
+   :class:`~pyvinecopulib.sklearn.backends.TorchVinecopBackend` via
+   ``backend=`` to route the same pipeline through the PyTorch
+   evaluator instead.
 """
 
 _DOC_FACTORIZATION = r"""**Joint-density factorization.** Both
@@ -145,173 +167,140 @@ class VineBase(BaseEstimator):
   - Marginal distribution fitting (Kde1d)
   - Data preprocessing and validation
   - Pseudo-observation transformation
-  - Vine copula fitting
+  - Vine copula fitting (via a backend strategy object)
   - Batched operations
+
+  Per the scikit-learn developer guide, ``__init__`` only stores
+  parameters as-is; validation runs lazily in ``fit()`` via
+  ``_validate_params()``. Fitted attributes use the trailing-underscore
+  convention.
   """
+
+  _parameter_constraints: dict = {
+    "backend": [object, None],
+    "batch_size": [Interval(Integral, 1, None, closed="left")],
+    "random_state": ["random_state"],
+  }
 
   def __init__(
     self,
-    controls: pv.FitControlsVinecop | None = None,
-    structure: pv.RVineStructure | None = None,
+    backend=None,
     batch_size: int = 100,
+    random_state=None,
   ) -> None:
     """
     Base vine copula estimator.
 
     Parameters
     ----------
-    controls : pv.FitControlsVinecop, optional
-        Controls for vinecop fitting. If None, defaults to tll family with 1 thread.
-    structure : pv.RVineStructure, optional
-        Vine structure. If None, structure will be selected automatically.
+    backend : :class:`~pyvinecopulib.sklearn.backends.VinecopBackend` or compatible, optional
+        Backend strategy that holds fit-time controls (incl. an optional
+        :class:`pyvinecopulib.FitControlsVinecop` for the default C++
+        backend or :class:`pyvinecopulib.torch.FitControlsTorchVinecop`
+        for the torch backend) and an optional structure. ``None``
+        (default) resolves to a default-constructed
+        :class:`~pyvinecopulib.sklearn.backends.VinecopBackend` at fit
+        time.
     batch_size : int, default=100
         Number of test points to process per batch when making predictions.
         - 1 = "loop" mode (minimal memory, slowest)
         - n_test = "stack" mode (maximal memory, fastest)
         - in between = trade-off
-
-    Notes
-    -----
-    Advanced / ensemble use: ``self._schema`` (a dict with key
-    ``"kde1d_types"``) can be assigned between construction and
-    :meth:`fit` to override the auto-inferred marginal types
-    (``"continuous"`` / ``"discrete"``). It is not exposed as an
-    ``__init__`` parameter because casual users should never need it,
-    and exposing it would clutter the sklearn-facing signature.
-    Non-default values are not preserved by :func:`sklearn.base.clone`.
+    random_state : int, RandomState, Generator or None
+        Seeds the RNG used by stochastic operations (e.g. simulate,
+        cdf quasi-MC, structure simulation). Stored as-is; resolved via
+        :func:`sklearn.utils.check_random_state` inside ``fit``.
     """
-    if controls is not None and not isinstance(controls, pv.FitControlsVinecop):
-      raise TypeError(
-        "controls must be pv.FitControlsVinecop or None, "
-        f"got {type(controls).__name__}"
-      )
-    if structure is not None and not isinstance(structure, pv.RVineStructure):
-      raise TypeError(
-        "structure must be pv.RVineStructure or None, "
-        f"got {type(structure).__name__}"
-      )
-    if not isinstance(batch_size, int) or isinstance(batch_size, bool):
-      raise TypeError(
-        f"batch_size must be int, got {type(batch_size).__name__}"
-      )
-    if batch_size < 1:
-      raise ValueError(f"batch_size must be >= 1, got {batch_size}")
-
-    if controls is None:
-      controls = pv.FitControlsVinecop(
-        family_set=[pv.families.tll], trunc_lvl=20, num_threads=1
-      )
-    self.controls = controls
-    self.structure = structure
+    self.backend = backend
     self.batch_size = batch_size
-    self._schema: dict[str, list[str]] | None = None
+    self.random_state = random_state
 
-  def _check_and_expand_fit(
-    self, X: np.ndarray | pd.DataFrame, y: np.ndarray | None = None
-  ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
-    """
-    Check and expand input data for fitting.
+  def _validate_input(
+    self,
+    X,
+    y=None,
+    *,
+    reset: bool,
+  ):
+    """Validate the ``X`` (and optional ``y``) input.
+
+    For DataFrames, captures the canonical
+    :attr:`feature_names_in_`, expands unordered categoricals via
+    :func:`expand_factors`, and infers ``kde1d_types``. For ndarrays,
+    captures :attr:`n_features_in_` and assumes all-continuous unless
+    a previously-set ``schema_["kde1d_types"]`` says otherwise.
 
     Parameters
     ----------
-    X : array-like
-        Input features.
+    X : ndarray or DataFrame
     y : array-like, optional
-        Target values. If None, only X is processed (for density estimation).
-
-    Returns
-    -------
-    X : ndarray
-        Processed and expanded X.
-    y : ndarray or None
-        Processed y if provided, None otherwise.
+    reset : bool
+        If ``True`` (called from ``fit``), set fitted attributes; if
+        ``False`` (called from ``predict``-style methods), validate
+        against the previously-set ones.
     """
-    if not isinstance(X, np.ndarray) and not isinstance(X, pd.DataFrame):
+    if not isinstance(X, (np.ndarray, pd.DataFrame)):
       raise ValueError("X must be a numpy array or pandas DataFrame")
-
     if y is not None:
-      if not isinstance(y, np.ndarray):
-        raise ValueError("y must be a numpy array")
-      if not X.shape[0] == y.shape[0]:
+      y = np.asarray(y)
+      if X.shape[0] != y.shape[0]:
         raise ValueError("X and y must have the same number of samples.")
 
     if isinstance(X, pd.DataFrame):
-      if self._schema is not None:
-        raise ValueError(
-          "When self._schema is already set, X must be a numpy array."
-        )
-      self._used_columns = list(X.columns)
-      self._dtypes = X.dtypes.to_dict()
-      self._categories = {
-        c: X[c].cat.categories
-        for c in X.select_dtypes(include="category").columns
-      }
-      X = expand_factors(X)
-      self._expanded_columns = list(X.columns)
-      kde1d_types = [
-        "discrete" if isinstance(dtype, pd.CategoricalDtype) else "continuous"
-        for dtype in X.dtypes
-      ]
-      X = X.to_numpy()
-    elif isinstance(X, np.ndarray):
-      kde1d_types = (
-        ["continuous"] * X.shape[1]
-        if (self._schema is None) or ("kde1d_types" not in self._schema)
-        else self._schema["kde1d_types"]
-      )
-      if len(kde1d_types) != X.shape[1]:
-        raise ValueError(
-          "schema['kde1d_types'] length does not match number of features in X."
-        )
-
-    self.n_features_in_ = X.shape[1]
-
-    if self._schema is None:
-      self._schema = {
-        "kde1d_types": kde1d_types,
-      }
-
-    return X if y is None else (X, y)
-
-  def _check_and_expand_predict(
-    self, X: np.ndarray | pd.DataFrame
-  ) -> np.ndarray:
-    """
-    Check and expand input data for prediction.
-
-    Parameters
-    ----------
-    X : array-like
-        Input features.
-
-    Returns
-    -------
-    X : ndarray
-        Processed and expanded X.
-    """
-    if isinstance(X, np.ndarray):
-      if X.shape[1] != self.n_features_in_:
-        raise ValueError("X has wrong number of features.")
-      return X
-
-    elif isinstance(X, pd.DataFrame):
-      if list(X.columns) != self._used_columns:
-        raise ValueError("Column names/order do not match training data.")
-
-      for col in self._used_columns:
-        dtype_expected = self._dtypes[col]
-        if isinstance(dtype_expected, pd.CategoricalDtype):
-          if not isinstance(X[col].dtype, pd.CategoricalDtype):
-            raise ValueError(f"Column {col} must be categorical.")
-          X[col] = X[col].cat.set_categories(
-            dtype_expected.categories, ordered=dtype_expected.ordered
-          )
-
-      X_exp = expand_factors(X)[self._expanded_columns]
-      return X_exp.to_numpy()
-
+      if reset:
+        self.feature_names_in_ = np.asarray(X.columns, dtype=object)
+        self._dtypes = X.dtypes.to_dict()
+        self._categories = {
+          c: X[c].cat.categories
+          for c in X.select_dtypes(include="category").columns
+        }
+        X_exp = expand_factors(X)
+        self._expanded_columns = list(X_exp.columns)
+        kde1d_types = [
+          "discrete" if isinstance(dtype, pd.CategoricalDtype) else "continuous"
+          for dtype in X_exp.dtypes
+        ]
+        self.schema_ = {"kde1d_types": kde1d_types}
+        self.n_features_in_ = X_exp.shape[1]
+        X_arr = X_exp.to_numpy()
+      else:
+        check_is_fitted(self, attributes=["feature_names_in_"])
+        if list(X.columns) != list(self.feature_names_in_):
+          raise ValueError("Column names/order do not match training data.")
+        for col in self.feature_names_in_:
+          dtype_expected = self._dtypes[col]
+          if isinstance(dtype_expected, pd.CategoricalDtype):
+            if not isinstance(X[col].dtype, pd.CategoricalDtype):
+              raise ValueError(f"Column {col} must be categorical.")
+            X[col] = X[col].cat.set_categories(
+              dtype_expected.categories, ordered=dtype_expected.ordered
+            )
+        X_arr = expand_factors(X)[self._expanded_columns].to_numpy()
     else:
-      raise ValueError("X must be a numpy array or pandas DataFrame")
+      if reset:
+        # If a caller (forest) pre-set schema_ to override kde1d_types,
+        # honour it; otherwise default to all-continuous.
+        existing = getattr(self, "schema_", None)
+        if existing is not None and "kde1d_types" in existing:
+          kde1d_types = existing["kde1d_types"]
+          if len(kde1d_types) != X.shape[1]:
+            raise ValueError(
+              "schema_['kde1d_types'] length does not match number of "
+              "features in X."
+            )
+        else:
+          kde1d_types = ["continuous"] * X.shape[1]
+        self.schema_ = {"kde1d_types": kde1d_types}
+        self.n_features_in_ = X.shape[1]
+      else:
+        check_is_fitted(self, attributes=["n_features_in_"])
+        if X.shape[1] != self.n_features_in_:
+          raise ValueError("X has wrong number of features.")
+      X_arr = X
+
+    if y is not None:
+      return X_arr, y
+    return X_arr
 
   def _fit_marginals(
     self, X: np.ndarray, y: np.ndarray | None = None
@@ -334,9 +323,11 @@ class VineBase(BaseEstimator):
         Target values (unchanged) if provided, None otherwise.
     """
     self._x_kde1d = []
-    assert self._schema is not None  # Guaranteed after _check_and_expand_fit
+    assert (
+      self.schema_ is not None
+    )  # Guaranteed after _validate_input(reset=True)
     for j in range(self.n_features_in_):
-      kde = pv.utils.Kde1d(type=self._schema["kde1d_types"][j])
+      kde = pv.utils.Kde1d(type=self.schema_["kde1d_types"][j])
       kde.fit(X[:, j])
       self._x_kde1d.append(kde)
 
@@ -346,6 +337,19 @@ class VineBase(BaseEstimator):
       return X, y
     else:
       return X
+
+  def _resolve_runtime_state(self) -> None:
+    """Resolve the random-state and backend at fit time. Sets
+    ``self.random_state_`` and ``self.backend_`` so subclasses can reuse
+    them throughout ``fit`` and post-fit methods.
+    """
+    self.random_state_ = check_random_state(self.random_state)
+    self.backend_ = resolve_backend(self.backend)
+
+  def _draw_seeds(self, size: int = 5) -> list[int]:
+    """Derive a list of ints suitable for C++ ``seeds=[...]`` kwargs
+    from the resolved RNG. Reproducible iff ``random_state_`` is."""
+    return [int(x) for x in self.random_state_.randint(0, 2**31 - 1, size=size)]
 
   def _to_u_scale(self, Z: np.ndarray, is_y: bool = False) -> np.ndarray:
     """
@@ -366,9 +370,7 @@ class VineBase(BaseEstimator):
         If is_y=False: shape (n_samples, d [+ optional discrete sub-columns]).
         If is_y=True : shape (n_samples, 1).
     """
-    if not hasattr(self, "_x_kde1d"):
-      raise RuntimeError("Model not fitted yet.")
-
+    check_is_fitted(self, attributes=["_x_kde1d"])
     if is_y and not hasattr(self, "_y_kde1d"):
       raise RuntimeError(
         "Target marginal not fitted (y was not provided during fit)."
@@ -419,16 +421,19 @@ class VineBase(BaseEstimator):
     self
     """
     if var_types is None:
-      assert self._schema is not None  # Guaranteed after _check_and_expand_fit
-      var_types = [x[0] for x in self._schema["kde1d_types"]]
+      assert (
+        self.schema_ is not None
+      )  # Guaranteed after _validate_input(reset=True)
+      var_types = [x[0] for x in self.schema_["kde1d_types"]]
 
-    self._vine = pv.Vinecop.from_data(
-      data=U,
-      structure=self.structure,
-      var_types=var_types,
-      controls=self.controls,
-    )
-    self.structure = self._vine.structure
+    backend = self.backend_
+    if not backend.supports_discrete and any(t == "d" for t in var_types):
+      raise NotImplementedError(
+        f"backend '{backend.name}' is continuous-only; got var_types="
+        f"{var_types!r}. Use VinecopBackend for discrete margins."
+      )
+    self._vine = backend.fit_vine(U, var_types=var_types)
+    self.structure_ = backend.structure_of(self._vine)
     return self
 
   # `copula_only` is unused by the standalone estimators; it's kept so a
@@ -461,10 +466,9 @@ class VineBase(BaseEstimator):
     density : ndarray of shape (n_samples,)
         Density or log-density values.
     """
-    if not hasattr(self, "_vine"):
-      raise RuntimeError("Model not fitted yet.")
+    check_is_fitted(self, attributes=["_vine"])
 
-    X = self._check_and_expand_predict(X)
+    X = self._validate_input(X, reset=False)
     if y is not None:
       y = np.asarray(y).reshape(-1, 1)
       if X.shape[0] != y.shape[0]:
@@ -473,9 +477,7 @@ class VineBase(BaseEstimator):
     else:
       U = self._to_u_scale(X)
 
-    pdf_vals = np.asarray(
-      self._vine.pdf(U, num_threads=self.controls.num_threads)
-    )
+    pdf_vals = np.asarray(self.backend_.pdf(self._vine, U))
     log_c = np.asarray(np.log(pdf_vals))
 
     if copula_only:

@@ -24,6 +24,7 @@ pyvinecopulib
 
    README
    features
+   concepts
    examples
    CHANGELOG
    CONTRIBUTING

@@ -79,13 +79,13 @@ def test_vinebase_array_input_validation(
   density: VineDensity = VineDensity()
 
   # Test successful array processing
-  X_processed = density._check_and_expand_fit(X)
+  X_processed = density._validate_input(X, reset=True)
   assert isinstance(X_processed, np.ndarray)
   assert X_processed.shape == X.shape
   assert density.n_features_in_ == 2
-  assert density._schema is not None
-  assert len(density._schema["kde1d_types"]) == 2
-  assert all(t == "continuous" for t in density._schema["kde1d_types"])
+  assert density.schema_ is not None
+  assert len(density.schema_["kde1d_types"]) == 2
+  assert all(t == "continuous" for t in density.schema_["kde1d_types"])
 
 
 def test_vinebase_dataframe_expansion(
@@ -95,14 +95,14 @@ def test_vinebase_dataframe_expansion(
   X_df, expected_expanded_cols = sample_dataframe_data
   density: VineDensity = VineDensity()
 
-  # Test DataFrame processing
-  X_processed = density._check_and_expand_fit(X_df)
+  # Test DataFrame processing via the canonical sklearn-style helper
+  X_processed = density._validate_input(X_df, reset=True)
   assert isinstance(X_processed, np.ndarray)
   assert X_processed.shape[0] == len(X_df)
   assert X_processed.shape[1] == len(expected_expanded_cols)
 
-  # Check that original columns are stored
-  assert density._used_columns == list(X_df.columns)
+  # Check that original columns are stored under the canonical sklearn name
+  assert list(density.feature_names_in_) == list(X_df.columns)
   assert density._expanded_columns == expected_expanded_cols
 
   # Check schema creation
@@ -113,8 +113,8 @@ def test_vinebase_dataframe_expansion(
     "discrete",
     "continuous",
   ]
-  assert density._schema is not None
-  assert density._schema["kde1d_types"] == expected_types
+  assert density.schema_ is not None
+  assert density.schema_["kde1d_types"] == expected_types
 
 
 def test_vinebase_dataframe_prediction_validation(
@@ -127,34 +127,34 @@ def test_vinebase_dataframe_prediction_validation(
 
   # Test successful prediction with matching DataFrame
   X_test = X_df.iloc[:10].copy()
-  X_processed = density._check_and_expand_predict(X_test)
+  X_processed = density._validate_input(X_test, reset=False)
   assert isinstance(X_processed, np.ndarray)
   assert X_processed.shape == (10, len(expected_expanded_cols))
 
   # Test error with wrong columns
   X_wrong = X_test.drop("cont1", axis=1)
   with pytest.raises(ValueError, match="Column names/order do not match"):
-    density._check_and_expand_predict(X_wrong)
+    density._validate_input(X_wrong, reset=False)
 
 
 def test_vinebase_schema_attribute(
   sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
 ) -> None:
-  """`_schema` attribute can override the auto-inferred schema."""
+  """Pre-set ``schema_`` overrides the auto-inferred schema."""
   X, _, _ = sample_array_data
   schema = {"kde1d_types": ["continuous", "discrete"]}
   density = VineDensity()
-  density._schema = schema
+  density.schema_ = schema
 
-  density._check_and_expand_fit(X)
-  assert density._schema is not None
-  assert density._schema["kde1d_types"] == ["continuous", "discrete"]
+  density._validate_input(X, reset=True)
+  assert density.schema_ is not None
+  assert density.schema_["kde1d_types"] == ["continuous", "discrete"]
 
   # Schema length mismatch raises.
   density_wrong = VineDensity()
-  density_wrong._schema = {"kde1d_types": ["continuous"]}  # Too short
+  density_wrong.schema_ = {"kde1d_types": ["continuous"]}  # Too short
   with pytest.raises(ValueError):
-    density_wrong._check_and_expand_fit(X)
+    density_wrong._validate_input(X, reset=True)
 
 
 def test_vinebase_marginal_fitting(
@@ -163,7 +163,7 @@ def test_vinebase_marginal_fitting(
   """Test marginal distribution fitting."""
   X, _, _ = sample_array_data
   density = VineDensity()
-  X_processed = density._check_and_expand_fit(X)
+  X_processed = density._validate_input(X, reset=True)
   assert isinstance(X_processed, np.ndarray)
   density._fit_marginals(X_processed)
 
@@ -179,7 +179,7 @@ def test_vinebase_pseudoobservations(
   """Test pseudo-observation transformation."""
   X, _, _ = sample_array_data
   density = VineDensity()
-  X_processed = density._check_and_expand_fit(X)
+  X_processed = density._validate_input(X, reset=True)
   assert isinstance(X_processed, np.ndarray)
   density._fit_marginals(X_processed)
 

@@ -1,47 +1,61 @@
-"""PyTorch ``BiCop`` module — kernel/TLL bivariate copula on a grid.
+"""PyTorch evaluator for a bivariate pair copula on a density grid.
 
 The evaluation chain (``pdf`` / ``cdf`` / ``hfunc`` / ``hinv`` /
-``simulate``) lives entirely in PyTorch, so it can be moved to GPU and
-composed with autograd-aware downstream code.
+``simulate``) lives entirely in PyTorch, so the pair copula can be
+moved to GPU with ``.to("cuda")`` and composed with autograd-aware
+downstream code.
 
 Three constructors are provided:
 
-* :meth:`TorchBicop.from_data` — fit on pseudo-observations directly in
-  PyTorch. Dispatches on the ``method`` field of a
-  :class:`FitControlsTorchBicop`: ``"tll"`` (default, machine-precision
-  parity with the C++ TLL fit) or ``"vdc"`` (vine-denoising-copula
-  pretrained estimator, optional dep).
+* :meth:`TorchBicop.from_data` — fit on pseudo-observations directly
+  in PyTorch. Dispatches on the ``method`` field of a
+  :class:`FitControlsTorchBicop`. ``"tll"`` (default) is the
+  *Transformed Local Likelihood* kernel density estimator (Geenens
+  2014; Nagler 2018), the non-parametric family the C++ library
+  exposes as :data:`pyvinecopulib.families.tll`; this path matches
+  the C++ ``pv.Bicop.from_data(u, family_set=[pv.families.tll])``
+  fit to machine precision. ``"vdc"`` plugs in the pretrained
+  amortized estimator of Safaai (2026) — see
+  :class:`FitControlsTorchBicop` for the citation and install notes.
 * :meth:`TorchBicop.from_bicop` — lift a fitted C++
-  :class:`pyvinecopulib.Bicop` (``tll`` family) into the torch backend.
+  :class:`pyvinecopulib.Bicop` (TLL family) into the torch backend.
+  Useful when you already fit on the C++ side and want GPU /
+  autograd evaluation downstream.
 * ``TorchBicop(grid_points=..., values=...)`` — construct from an
-  externally-prepared density grid.
+  externally-prepared ``(m, m)`` density grid.
+
+See also
+--------
+
+* :class:`pyvinecopulib.Bicop` — the C++ counterpart.
+* :class:`FitControlsTorchBicop` — fit-time controls.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import Optional
 
 import torch
 from torch import Tensor
 
 from ..pyvinecopulib_ext import Bicop, tll as _TLL_FAMILY
+from ._controls import FitControlsTorchBicop
 from ._interp import InterpolationGrid2D, _TRIM_LO, _TRIM_HI
 from ._util import solve_itp
-
-if TYPE_CHECKING:
-  from ._controls import FitControlsTorchBicop
 
 _LOG_FLOOR: float = -13.815510557964274  # log(1e-6); same as torchvinecopulib
 
 
 class TorchBicop(torch.nn.Module):
-  """PyTorch bivariate copula on an interpolation grid.
+  """PyTorch evaluator for a bivariate copula stored as a density grid.
 
-  This is the PyTorch analogue of ``KernelBicop`` (and the TLL family): it
-  stores the fitted density on an ``m × m`` grid in ``[0, 1]^2`` and exposes
-  the standard copula evaluation API. Non-zero copula rotations are not
-  supported — TLL/kernel pair-copulas in pyvinecopulib always have
-  ``rotation=0`` (the family is non-parametric).
+  The fitted density lives on an ``m × m`` grid in ``[0, 1]^2`` and is
+  evaluated by bilinear interpolation. This is the torch counterpart
+  of the non-parametric pair-copula path in :class:`pyvinecopulib.Bicop`
+  (specifically the *Transformed Local Likelihood* /
+  :data:`pyvinecopulib.families.tll` family). Non-zero copula rotations
+  are not supported — TLL pair-copulas in pyvinecopulib always have
+  ``rotation=0`` because the family is itself non-parametric.
 
   Parameters
   ----------
@@ -181,7 +195,7 @@ class TorchBicop(torch.nn.Module):
   def from_data(
     cls,
     u,
-    controls: Optional["FitControlsTorchBicop"] = None,
+    controls: Optional[FitControlsTorchBicop] = None,
     *,
     cache_integrals: bool = False,
     device: Optional[torch.device] = None,
@@ -197,14 +211,17 @@ class TorchBicop(torch.nn.Module):
       controls=FitControlsBicop(family_set=[tll]))`` to machine precision
       (worst case observed: ~1e-12 across (n, ρ) in
       ``{500, 2000} × {0.3, 0.6, 0.9}``).
-    * ``"vdc"`` — Kempner Institute's `vine-denoising-copula
-      <https://github.com/KempnerInstitute/vine-denoising-copula>`_
-      pretrained denoiser / diffusion estimator. vdc is not on PyPI yet;
-      install via ``pip install "vine-denoising-copula @
-      git+https://github.com/KempnerInstitute/vine-denoising-copula"``.
+    * ``"vdc"`` — the pretrained amortized vine-copula estimator of
+      Safaai, H. (2026), *Amortized Vine Copulas for High-Dimensional
+      Density and Information Estimation*, arXiv:2604.20568
+      (<https://arxiv.org/abs/2604.20568>). Reference implementation:
+      `KempnerInstitute/vine-denoising-copula
+      <https://github.com/KempnerInstitute/vine-denoising-copula>`_.
+      Not on PyPI yet; install via ``pip install "vine-denoising-copula
+      @ git+https://github.com/KempnerInstitute/vine-denoising-copula"``.
       Raises ``ImportError`` if unavailable. The first call on each
-      ``(model_id, device)`` pair pulls the checkpoint from HuggingFace
-      and caches it in memory.
+      ``(model_id, device)`` pair pulls the checkpoint from
+      HuggingFace and caches it in memory.
 
     Args:
       u: ``(n, 2)`` pseudo-observations; np.ndarray or Tensor.
@@ -214,8 +231,6 @@ class TorchBicop(torch.nn.Module):
       cache_integrals: see :meth:`__init__`.
       device, dtype: see :meth:`__init__`.
     """
-    from ._controls import FitControlsTorchBicop
-
     if controls is None:
       controls = FitControlsTorchBicop()
 
@@ -484,24 +499,3 @@ class TorchBicop(torch.nn.Module):
       return u
     u2 = self.hinv1(u).unsqueeze(-1)
     return torch.cat([u[:, 0:1], u2], dim=-1)
-
-  @torch.no_grad()
-  def sample(
-    self,
-    num_sample: int = 100,
-    seed: Optional[int] = 42,
-    is_sobol: bool = False,
-  ) -> Tensor:
-    """Deprecated alias for :meth:`simulate`.
-
-    .. deprecated::
-       Use :meth:`simulate` with ``n``, ``qrng``, ``seeds``. The old
-       parameter names are kept as a thin pass-through within the
-       ``feature/torch-bicop`` branch and will be removed before the
-       next stable release.
-    """
-    return self.simulate(
-      n=num_sample,
-      qrng=is_sobol,
-      seeds=[seed] if seed is not None else [],
-    )

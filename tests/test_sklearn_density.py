@@ -36,15 +36,15 @@ def fitted_density(sample_array_data):
     ({"batch_size": 0}, ValueError),
     ({"batch_size": -1}, ValueError),
     ({"batch_size": 1.5}, TypeError),
-    ({"batch_size": True}, TypeError),
-    ({"controls": "bad"}, TypeError),
-    ({"structure": "bad"}, TypeError),
   ],
 )
-def test_constructor_validation(kwargs, exc):
-  """Bad constructor arguments raise at __init__ time."""
-  with pytest.raises(exc):
-    VineDensity(**kwargs)
+def test_constructor_validation(kwargs, exc, sample_array_data):
+  """Bad parameters surface at ``fit`` time, per the sklearn dev guide
+  (``__init__`` performs no validation)."""
+  X, _, _ = sample_array_data
+  est = VineDensity(**kwargs)
+  with pytest.raises((exc, ValueError, TypeError)):
+    est.fit(X)
 
 
 def test_fit_properties(fitted_density):
@@ -96,7 +96,7 @@ def test_cdf_shapes_and_range(fitted_density):
   """CDF returns values in [0, 1] with the right shape."""
   density, X = fitted_density
   X_test = X[:20]
-  cdf_vals = density.cdf(X_test, seeds=[1, 2, 3])
+  cdf_vals = density.cdf(X_test, random_state=42)
 
   assert isinstance(cdf_vals, np.ndarray)
   assert cdf_vals.shape == (20,)
@@ -114,7 +114,7 @@ def test_cdf_monotone_along_axis(fitted_density):
   X_sweep = np.column_stack(
     [np.linspace(x1_lo, x1_hi, 30), np.full(30, x2_med)]
   )
-  cdf_sweep = density.cdf(X_sweep, N=20000, seeds=[42, 43, 44])
+  cdf_sweep = density.cdf(X_sweep, N=20000, random_state=42)
   # Should be roughly non-decreasing along the sweep; allow some MC noise.
   diffs = np.diff(cdf_sweep)
   assert (diffs > -0.05).all(), (

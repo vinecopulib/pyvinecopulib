@@ -2,6 +2,125 @@
 
 ## Unreleased
 
+### `pyvinecopulib.sklearn`: backend system + scikit-learn-developer-guide cleanup
+
+The sklearn module gains a thin public backend layer plus a focused
+sweep of fixes against the
+[scikit-learn third-party-estimator developer guide](https://scikit-learn.org/stable/developers/develop.html).
+Both pieces land in the same PR so the rename touches each
+constructor exactly once.
+
+**Backend system** — new module `pyvinecopulib.sklearn.backends`:
+
+- `VinecopBackend` (default) wraps `pyvinecopulib.Vinecop`; holds an
+  optional `FitControlsVinecop` and an optional structure.
+- `TorchVinecopBackend` wraps `pyvinecopulib.torch.TorchVinecop`; holds
+  an optional `FitControlsTorchVinecop` (new — see torch entry below)
+  and an optional structure. Constructing this class is the explicit
+  opt-in signal that PyTorch is required.
+- `VinecopLike` is a `runtime_checkable` Protocol describing the
+  shared post-fit surface — `pdf(u, num_threads=, ...)`,
+  `cdf(u, N, num_threads, seeds, ...)`,
+  `simulate(n, qrng, num_threads, seeds, ...)`, plus a `structure`
+  attribute. After PR1's `TorchVinecop` API alignment both
+  `pv.Vinecop` and `pv.torch.TorchVinecop` satisfy the Protocol
+  structurally.
+- Estimators take a single `backend=` keyword; no string shortcuts
+  (`backend="cpp"` / `"torch"` are no longer accepted — pass instances
+  instead).
+
+**Breaking sklearn-side API changes** (pre-release surface):
+
+- `VineDensity(controls=..., structure=...)` →
+  `VineDensity(backend=VinecopBackend(controls=..., structure=...))`.
+- `VineRegressor` gains a real `normalize_weights=True` `__init__`
+  parameter; the previous post-init `_normalize_weights` attribute is
+  gone. Forests pass `normalize_weights=False` through `base_params`,
+  and `sklearn.base.clone()` now preserves it.
+- `seed`-style kwargs renamed to canonical `random_state` across the
+  forest classes and on `VineDensity.sample` / `VineDensity.cdf` /
+  `VineForestDensity.cdf`. The legacy `seeds=` and `seed=` kwargs
+  are removed without a deprecation alias.
+
+**scikit-learn-developer-guide fixes**:
+
+- `__init__` now performs no validation on any estimator; per-class
+  `_parameter_constraints` dicts + `_validate_params()` calls at the
+  top of `fit()` replace the hand-rolled `isinstance`/`raise` blocks.
+- DataFrame inputs now populate the canonical `feature_names_in_`
+  (previously `_used_columns`).
+- `schema_` (with trailing underscore) replaces `_schema` so
+  `sklearn.base.clone()` round-trips correctly.
+- `random_state_` (resolved RNG) and `backend_` (resolved backend
+  pinned at fit time) are set as standard fitted attributes.
+- Every post-fit method now calls
+  `sklearn.utils.validation.check_is_fitted`.
+- `base_params` is defensively copied at fit time so callers can't
+  mutate the forest's view of it.
+
+**Testing**:
+
+- New `tests/test_sklearn_backends.py` exercises Protocol conformance,
+  capability flags, `with_*` immutability, lazy torch isolation, clone
+  round-trip, `feature_names_in_`, and cross-backend parity.
+- New `tests/test_sklearn_check_estimator.py` runs
+  `parametrize_with_checks` on every estimator. Genuine opt-outs
+  (sparse inputs, 1-D / 1-feature degeneracies, complex inputs,
+  density-log score in `Pipeline.score`, quantile-stacked regressor
+  output) and known WIP items (memmap inputs, pickling round-trip,
+  permutation invariance, `__sklearn_tags__` upgrades, …) are
+  enumerated in the file as `expected_failed_checks` with one-line
+  rationales each. The TODO-marked entries are intended to shrink in
+  follow-up PRs.
+
+**Documentation**:
+
+- New Sphinx page `docs/concepts.rst` introduces Sklar's theorem,
+  pair-copula construction / R-vines, and the default Transformed
+  Local Likelihood (TLL) family in a ~5-minute read. Linked from the
+  index toctree.
+- The `pyvinecopulib.sklearn` module docstring now front-loads the
+  "what does the default backend do" answer (no PyTorch required)
+  and links to the concepts page.
+- `pyvinecopulib.sklearn.backends` gains a "which backend should I
+  pick?" subsection summarising the C++/torch trade-off (threading
+  vs GPU vs autograd vs family-set coverage).
+- `VineDensity` / `VineRegressor` class docstrings get short
+  "use-the-torch-backend" examples and a "See also" block linking at
+  the backend module and `pv.Vinecop`.
+- `pyvinecopulib.torch` module docstring spells out TLL
+  (*Transformed Local Likelihood*, Geenens 2014; Nagler 2018),
+  motivates GPU / autograd / pipeline use-cases, and adds bibliographic
+  references for VDC (Safaai 2026), the lazy-cascade design (Cheng
+  et al. 2025), and TLL.
+- `TorchBicop` / `TorchVinecop` class docstrings drop the
+  `KernelBicop` aside in favour of plain-language descriptions and
+  pick up reciprocal "See also" cross-refs at `pv.Bicop` / `pv.Vinecop`.
+- `torch/_fit_vdc.py`: the IPFP / replicate-pad justification moves
+  from the module docstring into an inline comment next to the
+  function it actually documents; the module docstring is now a
+  short user-facing summary anchored on the Safaai (2026) citation.
+- README's "What are vine copulas?" expanded into a one-paragraph
+  primer; a new "Optional backends" subsection introduces the
+  sklearn and torch surfaces with one example each.
+
+**Hygiene**:
+
+- Removed `if TYPE_CHECKING:` guards in `torch/bicop.py` and
+  `torch/_fit_vdc.py` — the gated import (`FitControlsTorchBicop`)
+  was never a real cycle, so it now lives at module top.
+
+### `pyvinecopulib.torch`: `FitControlsTorchVinecop`
+
+`TorchVinecop.from_data` takes a single
+`controls=FitControlsTorchVinecop(...)` argument mirroring
+`pv.Vinecop.from_data(controls=...)`. The dataclass bundles:
+
+- a nested `FitControlsTorchBicop` (per-pair fit controls);
+- vine-level placement / precision knobs (`cache_integrals`, `device`,
+  `dtype`);
+- runtime cascade knobs (`impl`, `batched`).
+
 ### `pyvinecopulib.torch`: pluggable bicop fitters via `FitControlsTorchBicop`
 
 `TorchBicop.from_data` now dispatches on a `FitControlsTorchBicop`
@@ -11,16 +130,19 @@ alternative bicop fitters behind a single API. Two methods ship today:
 - `method="tll"` (default) — the existing pure-torch TLL constant fit,
   unchanged in behaviour and still matching the C++ TLL fit to machine
   precision.
-- `method="vdc"` — Kempner Institute's
-  [vine-denoising-copula](https://github.com/KempnerInstitute/vine-denoising-copula)
-  pretrained denoiser / diffusion estimator (arXiv 2604.20568). vdc is
-  not on PyPI yet; the `[vdc]` extra resolves it from GitHub via
-  `[tool.uv.sources]` (`uv sync --extra vdc`). Plain pip users install
-  with
+- `method="vdc"` — the pretrained amortized vine-copula estimator
+  introduced by Safaai, H. (2026), *Amortized Vine Copulas for
+  High-Dimensional Density and Information Estimation*,
+  [arXiv:2604.20568](https://arxiv.org/abs/2604.20568). Reference
+  implementation:
+  [KempnerInstitute/vine-denoising-copula](https://github.com/KempnerInstitute/vine-denoising-copula).
+  Not on PyPI yet; the `[vdc]` extra resolves it from GitHub via
+  `[tool.uv.sources]` (`uv sync --extra vdc`). Plain pip users
+  install with
   `pip install "vine-denoising-copula @ git+https://github.com/KempnerInstitute/vine-denoising-copula"`.
   The resulting `TorchBicop` reuses the standard interpolation-grid
-  evaluation chain, so `pdf` / `cdf` / `hfunc` / `hinv` / `simulate` are
-  identical to the TLL path.
+  evaluation chain, so `pdf` / `cdf` / `hfunc` / `hinv` / `simulate`
+  are identical to the TLL path.
   > **Upstream status**: vdc 0.1.0 on `main` ships an incomplete wheel —
   > `vdc.load_pretrained_model` references `vdc.inference` /
   > `vdc.vine.copula_diffusion` (not packaged). We ship a `sys.modules`
@@ -76,10 +198,9 @@ either backend uniformly:
   `pv.Vinecop`; on the torch backend it is a documented no-op. For CPU
   intraop parallelism call `torch.set_num_threads(N)` globally — note
   that mutates global state and is unsafe with concurrent workers.
-- `TorchBicop.simulate(n, qrng=False, seeds=[])` — new method matching
-  `pv.Bicop.simulate`. The previous `TorchBicop.sample(num_sample,
-  seed, is_sobol)` is kept as a deprecated alias that forwards to
-  `simulate(...)` and will be removed before the next stable release.
+- The previous `TorchBicop.sample(num_sample, seed, is_sobol)` is
+  renamed to `TorchBicop.simulate(n, qrng=False, seeds=[])` to mirror
+  `pv.Bicop.simulate`.
 
 ### CI
 
