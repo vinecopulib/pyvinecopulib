@@ -10,7 +10,7 @@ on:
 env:
   BOOST_VERSION: 1.84.0
   EIGEN_VERSION: 3.4.0
-  EXPECTED_WHEEL_COUNT: 12  # 4 platforms × 3 unique wheels (cp310, cp311, cp312-ABI3 covers 3.12+)
+  EXPECTED_WHEEL_COUNT: 12  # 4 platforms × cp310/cp311/cp312-ABI3
 
 jobs:
 
@@ -68,8 +68,7 @@ jobs:
           git fetch --prune --unshallow
           git fetch --depth=1 origin +refs/tags/*:refs/tags/*
       - name: Set up Python 3.11
-        # Host Python for the post-build `uvx twine check`; cibuildwheel
-        # uses its own per-wheel Pythons.
+        # Host Python for `uvx twine check`; cibw uses its own per-wheel Pythons.
         uses: actions/setup-python@v5
         with:
           python-version: 3.11
@@ -104,22 +103,15 @@ jobs:
       - name: Inspect built wheel contents
         shell: bash
         run: |
-          echo "Inspecting built wheel(s):"
           wheel=$(ls wheelhouse/*.whl)
-
-          # 1. Verify the wheel is a valid ZIP archive
           unzip -t "$wheel" >/dev/null || {
             echo "::error file=$wheel::Corrupted or invalid wheel archive"
             exit 1
           }
-
-          # 2. Check for stub or typing marker files
           unzip -l "$wheel" | grep -E '(__init__\.pyi|py\.typed)' || {
             echo "::error ::Expected stub or marker files not found in $wheel"
             exit 1
           }
-
-          # 3. Verify wheel metadata and long description
           uvx --quiet twine check --strict wheelhouse/*.whl || {
             echo "::error ::Metadata check failed — would fail on PyPI upload."
             exit 1
@@ -149,37 +141,30 @@ jobs:
       - name: Download cibw artifacts
         uses: actions/download-artifact@v5
         with:
-          # unpacks all CIBW artifacts into dist/
           pattern: cibw-*
           path: dist
           merge-multiple: true
         continue-on-error: true
       - name: Verify downloaded wheel integrity and metadata
         run: |
-          echo "Verifying downloaded artifacts in dist/"
-
           N_WHEELS=$(find dist -type f -name '*.whl' | wc -l)
           N_EXPECTED=${EXPECTED_WHEEL_COUNT:-0}
           echo "Found $N_WHEELS wheel(s); expected $N_EXPECTED"
 
           if [ "$N_WHEELS" -ne "$N_EXPECTED" ]; then
-            echo "::error ::Expected $N_EXPECTED wheels, found $N_WHEELS. Some matrix jobs failed or artifacts missing."
+            echo "::error ::Expected $N_EXPECTED wheels, found $N_WHEELS."
             ls -1 dist/
             exit 1
           fi
 
-          echo "Listing wheel structure:"
           find dist -type f -name '*.whl' -printf "%P\n" | sort
-
-          echo "Checking metadata consistency with twine..."
           uvx --quiet twine check --strict dist/* || {
             echo "::error ::Metadata check failed — would fail on PyPI upload."
             exit 1
           }
 
   verify_docs_build:
-    # RTD-mirror against this PR's wheel; `-W` blocks doc regressions at
-    # PR time rather than after a tag-and-publish cycle.
+    # RTD mirror against the PR's wheel; `-W` catches doc regressions pre-tag.
     name: Verify docs build (RTD mirror)
     needs: build
     runs-on: ubuntu-latest
@@ -187,7 +172,6 @@ jobs:
       - name: Checkout project
         uses: actions/checkout@v4
       - name: Set up Python 3.11
-        # Match .readthedocs.yaml's build.tools.python.
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -196,8 +180,6 @@ jobs:
         with:
           enable-cache: true
       - name: Install Graphviz + Pandoc
-        # graphviz: matches .readthedocs.yaml's apt_packages.
-        # pandoc: needed by nbsphinx to convert notebook markdown
         run: |
           sudo apt-get update
           sudo apt-get install -y graphviz pandoc
@@ -206,13 +188,12 @@ jobs:
         with:
           name: cibw-wheels-ubuntu-latest-311-manylinux_x86_64
           path: dist/
-      - name: Install wheel + doc/examples extras
-        # Source the PR's wheel rather than PyPI's published version so the
-        # docs reflect the PR's actual API surface.
+      - name: Install wheel + doc/examples/sklearn extras
+        # `[sklearn]` is needed for autosummary to introspect pyvinecopulib.sklearn.
         run: |
           uv venv --python 3.11
           WHEEL=$(ls dist/*.whl)
-          uv pip install "${WHEEL}[doc,examples]"
+          uv pip install "${WHEEL}[doc,examples,sklearn]"
       - name: Build HTML docs (warnings as errors)
         env:
           UV_NO_SYNC: "1"
@@ -267,21 +248,18 @@ jobs:
             choco install graphviz -y
           fi
       - name: Create uv venv and install test/notebooks deps
-        # --no-install-project: we test the cibuildwheel-produced wheel,
-        # not a source build.
+        # --no-install-project: we test the cibw wheel, not a source build.
         shell: bash
         run: |
           uv venv --python ${{ steps.pyver.outputs.version }}
-          uv sync --no-install-project --group test --group notebooks --extra examples
-      # For Python <= 3.11: download its exact artifact
+          uv sync --no-install-project --group test --group notebooks --extra examples --extra sklearn
       - name: Download built wheel (<=3.11)
         if: ${{ matrix.python <= 311 }}
         uses: actions/download-artifact@v4
         with:
           name: cibw-wheels-${{ matrix.cfg.os }}-${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
           path: dist/
-      # For Python >= 3.12: reuse the 3.12 ABI3 artifact
-      - name: Download built wheel (>=3.12)
+      - name: Download built wheel (>=3.12, reuses 3.12 ABI3 artifact)
         if: ${{ matrix.python >= 312 }}
         uses: actions/download-artifact@v4
         with:
@@ -293,6 +271,7 @@ jobs:
           uv pip install dist/*.whl
       - name: Run tests
         # UV_NO_SYNC: test the pre-installed wheel, not an editable rebuild.
+        # Serial — see pyproject.toml's pytest config.
         uses: nick-fields/retry@v3
         env:
           UV_NO_SYNC: "1"
@@ -301,7 +280,6 @@ jobs:
           max_attempts: 3
           retry_wait_seconds: 60
           shell: bash
-          # Serial — see the note in pyproject.toml's pytest config.
           command: |
             uv run pytest tests/ -r a --no-cov --reruns 2 --reruns-delay 10
       - name: Run notebooks as unit tests
@@ -321,10 +299,8 @@ jobs:
               --reruns 2 --reruns-delay 10
 
   regenerate_notebooks:
-    # Runs on PRs to `main` (release-prep) or any PR labelled
-    # `regenerate-notebooks` (push a commit after labelling, the trigger
-    # doesn't include `labeled`). RTD reads committed cell outputs, so
-    # this keeps them fresh before release.
+    # PRs to `main` or PRs labelled `regenerate-notebooks` (push a commit
+    # after labelling — the trigger doesn't include `labeled`).
     name: Regenerate notebook outputs
     needs: build
     if: |
@@ -342,7 +318,6 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
-          # Need full history so the push is a fast-forward.
           fetch-depth: 0
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
@@ -428,16 +403,14 @@ jobs:
       - name: Build source distribution
         run: make sdist
       - name: Install source distribution into fresh venv
-        # Separate venv so the editable install's meta-path finder
-        # doesn't trigger a CMake rebuild during the sdist install.
-        # Order matters: `uv sync` prunes anything outside its lock
-        # resolution, so the sdist install must come AFTER the sync.
+        # Separate venv: the editable meta-path finder would trigger a
+        # CMake rebuild during the sdist install. Order matters — `uv sync`
+        # prunes anything outside its lock, so the sdist install runs after.
         run: |
           uv venv .venv-sdist --python 3.11
           VIRTUAL_ENV="$PWD/.venv-sdist" uv sync --no-install-project --group test --active
           VIRTUAL_ENV="$PWD/.venv-sdist" uv pip install dist/*.tar.gz
       - name: Run tests against installed sdist
-        # UV_NO_SYNC: exercise the sdist install, not an editable rebuild.
         env:
           UV_NO_SYNC: "1"
         run: |
@@ -465,28 +438,22 @@ jobs:
       - name: Download cibw artifacts
         uses: actions/download-artifact@v5
         with:
-          # unpacks all CIBW artifacts into dist/
           pattern: cibw-*
           path: dist
           merge-multiple: true
       - name: Verify downloaded wheel integrity and metadata
         run: |
-          echo "Verifying downloaded artifacts in dist/"
-
           N_WHEELS=$(find dist -type f -name '*.whl' | wc -l)
           N_EXPECTED=${EXPECTED_WHEEL_COUNT:-0}
           echo "Found $N_WHEELS wheel(s); expected $N_EXPECTED"
 
           if [ "$N_WHEELS" -ne "$N_EXPECTED" ]; then
-            echo "::error ::Expected $N_EXPECTED wheels, found $N_WHEELS. Some matrix jobs failed or artifacts missing."
+            echo "::error ::Expected $N_EXPECTED wheels, found $N_WHEELS."
             ls -1 dist/
             exit 1
           fi
 
-          echo "Listing wheel structure:"
           find dist -type f -name '*.whl' -printf "%P\n" | sort
-
-          echo "Checking metadata consistency with twine..."
           uvx --quiet twine check dist/* || {
             echo "::error ::Metadata check failed — would fail on PyPI upload."
             exit 1

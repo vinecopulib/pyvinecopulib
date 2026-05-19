@@ -33,13 +33,10 @@ NB_MODULE(pyvinecopulib_ext, pv) {
   -------------------------
   )pbdoc";
 
-  // Bind each class with __module__ set to the subpackage where the symbol
-  // is canonically located (mirrors the pure-Python pyvinecopulib.{core,
-  // families,utils} layout). Drives the module path embedded in pickles —
-  // the corresponding repr strings are hardcoded per-class to match.
-  //
-  // Order matters: init_bicop_family (binds BicopFamily) must come before
-  // init_bicop_class / init_bicop_fit_controls, which reference it.
+  // Set __module__ per subpackage so pickles use pyvinecopulib.{core,families,
+  // utils}.X (the corresponding repr strings are hardcoded to match).
+  // init_bicop_family must run before init_bicop_class /
+  // init_bicop_fit_controls.
   {
     ScopedModuleNameOverride n(pv, "pyvinecopulib.families");
     init_bicop_family(pv);

@@ -1,7 +1,5 @@
 """Warn-on-access table for the top-level deprecation shim.
 
-`pyvinecopulib.__getattr__` calls `_resolve_deprecated(name)`, which emits
-a `DeprecationWarning` and returns the symbol from its canonical subpackage.
 Slated for removal in the next major release.
 """
 
@@ -9,7 +7,6 @@ import importlib
 import warnings
 from typing import Any
 
-# name -> (subpackage, attr_name)
 _DEPRECATED_TOP_LEVEL: dict[str, tuple[str, str]] = {
   "indep": ("families", "indep"),
   "gaussian": ("families", "gaussian"),

@@ -24,7 +24,6 @@ from .utils import to_pseudo_obs
 __version__ = pyvinecopulib_ext.__version__
 
 __all__ = [
-  # Core types kept at the top level indefinitely
   "Bicop",
   "BicopFamily",
   "CVineStructure",
@@ -34,12 +33,10 @@ __all__ = [
   "RVineStructure",
   "Vinecop",
   "to_pseudo_obs",
-  # Subpackages
   "core",
   "families",
   "utils",
   "sklearn",
-  # Version
   "__version__",
 ]
 
@@ -48,7 +45,7 @@ def __getattr__(name: str):
   if name in _DEPRECATED_TOP_LEVEL:
     return _resolve_deprecated(name)
   if name == "sklearn":
-    # Lazy: only `import pyvinecopulib.sklearn` should trigger the extra.
+    # Lazy: only `import pyvinecopulib.sklearn` triggers the extra.
     import importlib
 
     return importlib.import_module("pyvinecopulib.sklearn")

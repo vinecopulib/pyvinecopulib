@@ -37,26 +37,20 @@ include(lib/vinecopulib/cmake/options.cmake REQUIRED)
 
 include(lib/vinecopulib/cmake/compilerDefOpt.cmake REQUIRED)
 
-# Inside cibuildwheel, replace upstream's `-march=native` (great for local
-# builds, fatal for distributed wheels) with `-march=x86-64-v3`: Haswell/Zen
-# baseline with AVX2 + FMA + BMI2, runs on every CPU released since ~2013.
-# GitHub Actions's `ubuntu-latest` pool is all v3+, so the doc/test jobs that
-# load the wheel stay SIGILL-free. Local editable builds keep `-march=native`.
+# Replace upstream's `-march=native` with v3 for distributed wheels so they run
+# on every CPU since ~2013. Editable builds keep `-march=native`.
 if(DEFINED ENV{CIBUILDWHEEL})
   string(REGEX REPLACE "(^| )-march=native( |$)" " -march=x86-64-v3 "
                        CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
 endif()
 
-# wdm_INCLUDE_DIRS is lib/wdm/include
 set(vinecopulib_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/lib/vinecopulib/include)
 set(wdm_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/lib/wdm/include)
 set(kde1d_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/lib/kde1d/include)
 set(pyvinecopulib_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/src/include)
 
-# BUILD_TESTING is turned off
 set(BUILD_TESTING OFF)
 
-# Look for Eigen3 and Boost
 if(DEFINED ENV{EIGEN3_INCLUDE_DIR})
   set(EIGEN3_INCLUDE_DIR $ENV{EIGEN3_INCLUDE_DIR})
 endif()
@@ -67,14 +61,12 @@ endif()
 
 include(lib/vinecopulib/cmake/findDependencies.cmake REQUIRED)
 
-# Try to import all Python components potentially needed by nanobind
 find_package(
   Python 3.8 REQUIRED
   COMPONENTS Interpreter Development.Module
   OPTIONAL_COMPONENTS Development.SABIModule)
 message(STATUS "Python_EXECUTABLE= ${Python_EXECUTABLE}")
 
-# Import nanobind through CMake's find_package mechanism
 find_package(nanobind CONFIG REQUIRED)
 
 include(lib/vinecopulib/cmake/printInfo.cmake REQUIRED)
@@ -83,16 +75,8 @@ include_directories(SYSTEM ${external_includes})
 include_directories(${vinecopulib_INCLUDE_DIRS} ${kde1d_INCLUDE_DIRS}
                     ${pyvinecopulib_INCLUDE_DIRS})
 
-# ==============================================================================
-# Generated docstrings: src/include/docstr.hpp
-#
-# Regenerated on every configure/build via libclang parsing of the C++ headers
-# in lib/. The output is gitignored — the build is the single source of truth,
-# eliminating the need for a regenerate-and-diff drift gate. libclang is
-# declared as a build-system requirement in pyproject.toml, so isolated builds
-# pull a known-good version automatically.
-# ==============================================================================
-
+# Regenerate src/include/docstr.hpp from the C++ headers via libclang.
+# Gitignored: the build is the single source of truth.
 execute_process(
   COMMAND "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/find_libclang.py"
           --search-paths "${CMAKE_PREFIX_PATH}"
@@ -101,20 +85,16 @@ execute_process(
 if(NOT LIBCLANG_PATH OR NOT EXISTS "${LIBCLANG_PATH}")
   message(
     FATAL_ERROR
-      "Could not locate libclang. Required at build time to regenerate "
-      "src/include/docstr.hpp. Install via 'pip install libclang' (already "
-      "in [build-system] requires for isolated builds) or include "
-      "python-clang in your conda env.")
+      "Could not locate libclang. Install via 'pip install libclang' "
+      "(already in [build-system] requires) or include python-clang in "
+      "your conda env.")
 endif()
 message(STATUS "Found libclang: ${LIBCLANG_PATH}")
 
-# Headers parsed for docstring extraction. Both .hpp and .ipp are passed: the
-# script tracks both in its include-file map (so symbols defined in .ipp
-# implementation files are extracted), but only #includes .hpp files in the glue
-# translation unit (.ipp content reaches libclang transitively via each .hpp's
-# bottom include, and double inclusion would break Windows since .ipp has no
-# include guards). Patterns end with `<key>.<ext>` (no trailing wildcard) to
-# avoid matching unrelated files like `tools_stats_ghalton.hpp`.
+# Both .hpp and .ipp are passed so the script can extract symbols defined in
+# .ipp files; the glue TU only #includes .hpp to avoid Windows redefinitions
+# (.ipp lacks include guards). Trailing `<key>.<ext>` (no wildcard) prevents
+# matching unrelated files like `tools_stats_ghalton.hpp`.
 file(
   GLOB_RECURSE
   DOCSTR_INPUT_HEADERS
@@ -152,34 +132,16 @@ add_custom_command(
 
 add_custom_target(generate_docstr DEPENDS "${DOCSTR_OUTPUT}")
 
-nanobind_add_module(
-  pyvinecopulib_ext
-  # Target the stable ABI for Python 3.12+, which reduces the number of binary
-  # wheels that must be built. This does nothing on older Python versions
-  STABLE_ABI
-  # Enable link-time optimization for the extension
-  LTO
-  # Don’t perform optimizations to minimize binary size.
-  NOMINSIZE
-  # Build libnanobind statically and merge it into the extension (which itself
-  # remains a shared library)
-  #
-  # If your project builds multiple extensions, you can replace this flag by
-  # NB_SHARED to conserve space by reusing a shared libnanobind across libraries
-  NB_STATIC
-  src/pyvinecopulib_ext.cpp)
+nanobind_add_module(pyvinecopulib_ext STABLE_ABI LTO NOMINSIZE NB_STATIC
+                    src/pyvinecopulib_ext.cpp)
 
-# Ensure docstr.hpp exists before pyvinecopulib_ext.cpp is compiled.
 add_dependencies(pyvinecopulib_ext generate_docstr)
 
 target_compile_definitions(pyvinecopulib_ext
                            PRIVATE VERSION_INFO=\"${PROJECT_VERSION}\")
 
-# Generated stubs: scripts/generate_stubs.py writes one __init__.pyi per public
-# (sub)package after the extension links. Outputs are gitignored. The
-# pyvinecopulib.sklearn stub is OPTIONAL — it's only produced when scikit-learn
-# is available on the build machine.
-
+# Generate per-subpackage __init__.pyi stubs. The sklearn stub is OPTIONAL (only
+# produced when scikit-learn is available at build time).
 add_custom_command(
   TARGET pyvinecopulib_ext
   POST_BUILD
@@ -201,11 +163,9 @@ add_custom_command(
     "Generating per-subpackage __init__.pyi stubs from the just-built extension"
   VERBATIM)
 
-# Install directive for scikit-build-core
 install(TARGETS pyvinecopulib_ext LIBRARY DESTINATION pyvinecopulib)
 
-# Install the generated stubs + py.typed marker explicitly (they're gitignored,
-# so scikit-build-core's git-ls-files discovery skips them).
+# Install stubs + py.typed explicitly (gitignored, so git-ls-files skips them).
 install(FILES "${CMAKE_SOURCE_DIR}/src/pyvinecopulib/__init__.pyi"
               "${CMAKE_SOURCE_DIR}/src/pyvinecopulib/py.typed"
         DESTINATION pyvinecopulib)

@@ -1,5 +1,54 @@
 # Changelog
 
+## Unreleased
+
+### `pyvinecopulib.sklearn`: VineRegressor and VineDensity
+
+Two scikit-learn-compatible vine-copula estimators ship in the new
+`pyvinecopulib.sklearn` submodule:
+
+- `VineRegressor` — sklearn-style regressor that fits a vine copula to the
+  joint distribution of `(X, y)` and predicts conditional means / quantiles.
+- `VineDensity` — sklearn-style density estimator with `score_samples`,
+  `score`, `sample`, `pdf`, and `cdf` methods.
+
+Both follow the `BaseEstimator` / `RegressorMixin` / `DensityMixin` protocols
+and handle mixed continuous/discrete inputs (DataFrame or ndarray). Class
+docstrings include the full methodology — Sklar / pair-copula
+factorization, Kde1d marginals, and the estimating-equation framework for
+mean / quantile prediction — with references to Bedford & Cooke (2002),
+Aas et al. (2009), Kraus & Czado (2017), and Nagler & Vatter (2024).
+
+API surface tightened before v1:
+
+- `VineRegressor.pdf` removed. Sklearn regressors don't expose density
+  methods; users who need the joint or conditional density can call
+  `pyvinecopulib.core.Vinecop.pdf` on the underlying fitted vine, or wait
+  for the forest classes that surface ensemble-level log-likelihoods.
+- `VineDensity.pdf(copula_only=...)` is now a real keyword argument (was
+  documented but ignored).
+- `VineDensity.cdf(X, N=10000, seeds=None)` added: returns the joint CDF
+  via Monte-Carlo integration of the fitted vine copula.
+- `schema` (both classes) and `normalize_weights` (regressor) are no
+  longer `__init__` parameters. They remain settable via the
+  `_schema` / `_normalize_weights` attributes for advanced / ensemble
+  use; `clone()` won't preserve non-default values for these knobs.
+
+Install via the optional extra:
+
+```bash
+pip install pyvinecopulib[sklearn]
+```
+
+### Dependency changes
+
+- `numpy>=2.0` is now a project-wide requirement (was `>=1.14`).
+  `VineRegressor` needs `np.quantile(weights=...)` from NumPy 2.0; rather
+  than pinning it only under `[sklearn]`, we bump everywhere — the wheel
+  is now built and tested against the 2.x ABI consistently.
+- `[sklearn]` extra: drops the redundant `numpy>=2.0` and adds
+  `pandas>=2.0` (used by `VineBase.expand_factors` for DataFrame inputs).
+
 ## 1.0.0
 
 ### Breaking API changes in `pyvinecopulib`
