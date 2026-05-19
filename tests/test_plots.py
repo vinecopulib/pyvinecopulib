@@ -372,6 +372,16 @@ class TestVinecopHelpers:
       data, controls=pv.FitControlsVinecop(family_set=[pv.families.indep])
     )
 
+  def teardown_method(self) -> None:
+    """Drop nanobind-backed instances so they don't accumulate when
+    ``torch`` is imported alongside the test suite — torch's atexit
+    handlers run before nanobind's and break the cleanup chain.
+    """
+    del self.vinecop
+    import gc
+
+    gc.collect()
+
   def test_get_name(self) -> None:
     """Test get_name function"""
     from pyvinecopulib._python_helpers.vinecop import get_name

@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+### `pyvinecopulib.torch`: align `TorchVinecop` / `TorchBicop` with their `pv.Vinecop` / `pv.Bicop` counterparts
+
+The torch evaluators now mirror the post-fit surface of the C++ classes
+so downstream code (and the upcoming sklearn backend layer) can treat
+either backend uniformly:
+
+- `TorchVinecop.from_structure(structure | matrix, pair_copulas, var_types)`
+  — new class method matching `pv.Vinecop.from_structure`. When
+  `pair_copulas` is empty, every edge is populated with an independence
+  `TorchBicop`, yielding the independence copula on `d` variables.
+- `TorchVinecop.simulate(n, qrng=False, num_threads=1, seeds=[])` —
+  new convenience method matching `pv.Vinecop.simulate`. Internally
+  draws pseudo-random uniforms (`torch.rand` seeded from `seeds[0]`) or
+  quasi-random uniforms (via `pyvinecopulib.utils.simulate_uniform`)
+  and pushes them through `inverse_rosenblatt`.
+- `TorchVinecop.cdf(u, N=10000, qrng=True, num_threads=1, seeds=[])` —
+  new method that estimates the joint CDF via quasi-Monte-Carlo,
+  matching `pv.Vinecop.cdf` to within MC error. A `block_size` kwarg
+  caps the peak `(block, N, d)` scratch tensor for large query
+  matrices.
+- `TorchVinecop.pdf` / `rosenblatt` / `inverse_rosenblatt` now accept a
+  `num_threads` keyword (default `1`) for signature parity with
+  `pv.Vinecop`; on the torch backend it is a documented no-op. For CPU
+  intraop parallelism call `torch.set_num_threads(N)` globally — note
+  that mutates global state and is unsafe with concurrent workers.
+- `TorchBicop.simulate(n, qrng=False, seeds=[])` — new method matching
+  `pv.Bicop.simulate`. The previous `TorchBicop.sample(num_sample,
+  seed, is_sobol)` is kept as a deprecated alias that forwards to
+  `simulate(...)` and will be removed before the next stable release.
+
+### CI
+
+The notebook test and regenerate-notebooks jobs now install
+`--extra torch` so that `examples/10_torch_backend.ipynb` can execute
+under `nbmake`.
+
 ### `pyvinecopulib.sklearn`: VineRegressor and VineDensity
 
 Two scikit-learn-compatible vine-copula estimators ship in the new
