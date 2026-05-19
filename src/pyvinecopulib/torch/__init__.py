@@ -1,13 +1,17 @@
 """PyTorch backend for the TLL / kernel bivariate and vine copulas.
 
 This subpackage mirrors :mod:`pyvinecopulib.core`'s evaluation chain in
-pure PyTorch. It exposes three classes:
+pure PyTorch. It exposes:
 
-* :class:`TorchBicop` — a ``torch.nn.Module`` evaluator for a single TLL
-  pair copula. Built either from a fitted :class:`pyvinecopulib.Bicop`
-  (:meth:`TorchBicop.from_bicop`) or directly from data via a pure-torch
-  TLL fit (:meth:`TorchBicop.from_data`). Exposes ``pdf`` / ``cdf`` /
-  ``hfunc1`` / ``hfunc2`` / ``hinv1`` / ``hinv2`` / ``sample``.
+* :class:`TorchBicop` — a ``torch.nn.Module`` evaluator for a single
+  bivariate pair copula on a density grid. Built either from a fitted
+  :class:`pyvinecopulib.Bicop` (:meth:`TorchBicop.from_bicop`) or
+  directly from data via :meth:`TorchBicop.from_data` (which dispatches
+  on :class:`FitControlsTorchBicop` — pure-torch TLL by default;
+  ``method="vdc"`` plugs in the optional `vine-denoising-copula
+  <https://github.com/KempnerInstitute/vine-denoising-copula>`_
+  pretrained estimator). Exposes ``pdf`` / ``cdf`` / ``hfunc1`` /
+  ``hfunc2`` / ``hinv1`` / ``hinv2`` / ``simulate``.
 
 * :class:`TorchVinecop` — a ``torch.nn.Module`` evaluator for an R-vine
   built on top of :class:`TorchBicop` pair copulas. Provides ``pdf`` /
@@ -16,6 +20,11 @@ pure PyTorch. It exposes three classes:
   (``impl="legacy"``, byte-for-byte agreement with
   :class:`pyvinecopulib.Vinecop`) and a dict-based reformulation
   (``impl="lazy"``) following Cheng, Vatter, Nagler & Chen (2025).
+
+* :class:`FitControlsTorchBicop` — fit-time controls for
+  :meth:`TorchBicop.from_data`. Mirrors
+  :class:`pyvinecopulib.FitControlsBicop`; carries the ``method``
+  selector plus method-specific parameters.
 
 * :class:`InterpolationGrid2D` — the underlying bilinear-interpolation
   grid (re-exported for advanced users). Provides static factories for
@@ -34,6 +43,15 @@ References
 Installation
 ------------
 Requires PyTorch. Install with ``pip install pyvinecopulib[torch]``.
+
+The optional ``method="vdc"`` path additionally requires the
+`vine-denoising-copula
+<https://github.com/KempnerInstitute/vine-denoising-copula>`_ package,
+which is not yet on PyPI. The ``[vdc]`` extra resolves it from GitHub
+via ``[tool.uv.sources]`` for uv users (``uv sync --extra vdc``); for
+plain pip, install directly::
+
+    pip install "vine-denoising-copula @ git+https://github.com/KempnerInstitute/vine-denoising-copula"
 """
 
 try:
@@ -47,5 +65,11 @@ except ImportError as e:
 from .bicop import TorchBicop
 from .vinecop import TorchVinecop
 from ._interp import InterpolationGrid2D
+from ._controls import FitControlsTorchBicop
 
-__all__ = ["TorchBicop", "TorchVinecop", "InterpolationGrid2D"]
+__all__ = [
+  "TorchBicop",
+  "TorchVinecop",
+  "InterpolationGrid2D",
+  "FitControlsTorchBicop",
+]

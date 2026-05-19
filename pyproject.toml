@@ -53,6 +53,14 @@ sklearn = [
 torch = [
   "torch>=2.0",
 ]
+vdc = [
+  "torch>=2.0",
+  # vine-denoising-copula is not on PyPI yet; see [tool.uv.sources] below
+  # for the dev-time GitHub source. End users on plain pip should install
+  # it directly:
+  #   pip install "vine-denoising-copula @ git+https://github.com/KempnerInstitute/vine-denoising-copula"
+  "vine-denoising-copula",
+]
 doc = [
   "sphinx==7.0",
   "nbsphinx==0.9.2",
@@ -94,6 +102,13 @@ Homepage = "https://github.com/vinecopulib/pyvinecopulib/"
 Documentation = "https://pyvinecopulib.readthedocs.io"
 Repository = "https://github.com/vinecopulib/pyvinecopulib.git"
 Issues = "https://github.com/vinecopulib/pyvinecopulib/issues"
+
+[tool.uv.sources]
+# vine-denoising-copula is not yet published to PyPI. Map the bare
+# requirement (from [project.optional-dependencies].vdc) to the GitHub
+# repo so `uv sync --extra vdc` works locally. Remove this entry once
+# the upstream publishes a PyPI release.
+vine-denoising-copula = { git = "https://github.com/KempnerInstitute/vine-denoising-copula" }
 
 [tool.scikit-build]
 minimum-version = "0.4"

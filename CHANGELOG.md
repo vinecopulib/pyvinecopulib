@@ -2,6 +2,55 @@
 
 ## Unreleased
 
+### `pyvinecopulib.torch`: pluggable bicop fitters via `FitControlsTorchBicop`
+
+`TorchBicop.from_data` now dispatches on a `FitControlsTorchBicop`
+dataclass (mirroring `pv.FitControlsBicop`), opening the door to
+alternative bicop fitters behind a single API. Two methods ship today:
+
+- `method="tll"` (default) — the existing pure-torch TLL constant fit,
+  unchanged in behaviour and still matching the C++ TLL fit to machine
+  precision.
+- `method="vdc"` — Kempner Institute's
+  [vine-denoising-copula](https://github.com/KempnerInstitute/vine-denoising-copula)
+  pretrained denoiser / diffusion estimator (arXiv 2604.20568). vdc is
+  not on PyPI yet; the `[vdc]` extra resolves it from GitHub via
+  `[tool.uv.sources]` (`uv sync --extra vdc`). Plain pip users install
+  with
+  `pip install "vine-denoising-copula @ git+https://github.com/KempnerInstitute/vine-denoising-copula"`.
+  The resulting `TorchBicop` reuses the standard interpolation-grid
+  evaluation chain, so `pdf` / `cdf` / `hfunc` / `hinv` / `simulate` are
+  identical to the TLL path.
+  > **Upstream status**: vdc 0.1.0 on `main` ships an incomplete wheel —
+  > `vdc.load_pretrained_model` references `vdc.inference` /
+  > `vdc.vine.copula_diffusion` (not packaged). We ship a `sys.modules`
+  > shim in `pyvinecopulib.torch._fit_vdc._install_upstream_shims` that
+  > injects the two missing submodules with trivial stubs (the real
+  > `scatter_to_hist` from `vdc.data.hist` is loaded directly via
+  > `importlib.util`; `sample_density_grid` is stubbed since it's only
+  > used in the diffusion-checkpoint path; `DiffusionCopulaModel` is
+  > stubbed since it's import-referenced but never instantiated during
+  > inference). The shim is installed at the first
+  > `_load_bundle(...)` call and becomes a no-op once upstream restores
+  > the missing subpackages.
+  >
+  > **Released-checkpoint accuracy caveat**: on the standard
+  > Gaussian/Clayton precision bench (m=64, n ∈ {500, 2000, 10000}), the
+  > `vdc-denoiser-m64-v1` checkpoint produces 10–20× worse pdf IAE than
+  > the pure-torch TLL fit, with massive density spikes at the
+  > anti-diagonal corners even for iid uniform samples (mean |pdf - 1| ≈
+  > 0.9). The integration is correct and ready to use, but for parametric
+  > targets TLL remains the better choice today.
+
+The signature change is **breaking** for callers who passed `grid_size`,
+`mult`, or `grid_type` as keyword arguments to `from_data`: those now
+live on `FitControlsTorchBicop(...)`. `cache_integrals`, `device`, and
+`dtype` remain direct keyword arguments on `from_data`.
+
+`InterpolationGrid2D.normalize_margins` additionally accepts an optional
+`tol` for early-stop (default `None` preserves byte-for-byte parity with
+the C++ TLL pipeline).
+
 ### `pyvinecopulib.torch`: align `TorchVinecop` / `TorchBicop` with their `pv.Vinecop` / `pv.Bicop` counterparts
 
 The torch evaluators now mirror the post-fit surface of the C++ classes

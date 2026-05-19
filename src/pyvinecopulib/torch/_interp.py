@@ -45,6 +45,7 @@ class InterpolationGrid2D(torch.nn.Module):
     values: Tensor,
     norm_times: int = 3,
     is_linear: bool = False,
+    norm_tol: float | None = None,
   ) -> None:
     super().__init__()
     if values.ndim != 2 or values.shape[0] != values.shape[1]:
@@ -65,7 +66,7 @@ class InterpolationGrid2D(torch.nn.Module):
     # (with the endpoint clamp above leaving it unchanged), so cell-finding is
     # O(1) — ``floor(u * (m - 1))`` — instead of an O(log m) ``searchsorted``.
     self._is_linear = bool(is_linear)
-    self.normalize_margins(norm_times)
+    self.normalize_margins(norm_times, tol=norm_tol)
 
   # --------------------------------------------------------------------- #
   # Grid construction (factories shared by all callers)                    #
@@ -137,11 +138,21 @@ class InterpolationGrid2D(torch.nn.Module):
   # --------------------------------------------------------------------- #
 
   @torch.no_grad()
-  def normalize_margins(self, times: int) -> None:
+  def normalize_margins(self, times: int, tol: float | None = None) -> None:
     """Renormalize ``values`` so both margins integrate to 1.
 
-    Same algorithm as the C++ ``normalize_margins``: alternating row / column
-    trapezoidal-integral divides, repeated ``times`` rounds.
+    Same algorithm as the C++ ``normalize_margins``: alternating row /
+    column trapezoidal-integral divides, repeated up to ``times`` rounds.
+
+    Args:
+      times: maximum number of normalization rounds. ``times=3`` matches
+        the C++ TLL pipeline byte-for-byte.
+      tol: optional convergence tolerance. When provided, iteration stops
+        as soon as the largest absolute deviation of the row+col
+        integrals from 1 drops below ``tol``. Default ``None`` preserves
+        the C++ "fixed-budget" semantics — useful for parity-sensitive
+        callers. Setting e.g. ``tol=1e-9`` together with a generous
+        ``times=50`` reproduces vdc-style IPFP-to-convergence.
     """
     if times <= 0:
       return
@@ -155,6 +166,13 @@ class InterpolationGrid2D(torch.nn.Module):
         (self.values[:-1, :] + self.values[1:, :]) * dgrid.unsqueeze(-1)
       ).sum(dim=0)
       self.values.div_(col_int.clamp_min(1e-20))
+      if tol is not None:
+        err = max(
+          (row_int - 1.0).abs().max().item(),
+          (col_int - 1.0).abs().max().item(),
+        )
+        if err < tol:
+          break
 
   @torch.no_grad()
   def flip(self) -> None:
