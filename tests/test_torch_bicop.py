@@ -33,7 +33,11 @@ def test_pdf_matches_pvbicop() -> None:
   u_fit = cop.simulate(2000, seeds=[1, 2, 3])
   cop_tll = _fit_tll(u_fit)
 
-  bc = TorchBicop.from_bicop(cop_tll)
+  # Pin cache=False: this test verifies parity with the C++ on-the-fly
+  # integration math at 1e-10. The default cache_integrals=True uses
+  # bilinear-interp on the cache, which intentionally introduces a
+  # ~1e-3 IAE gap and is covered by test_cached_*_smoke below.
+  bc = TorchBicop.from_bicop(cop_tll, cache_integrals=False)
   u_eval = _eval_grid(500, seed=11)
 
   out_torch = bc.pdf(torch.from_numpy(u_eval)).numpy()
@@ -46,7 +50,8 @@ def test_cdf_matches_pvbicop() -> None:
   u_fit = cop.simulate(2000, seeds=[1, 2, 3])
   cop_tll = _fit_tll(u_fit)
 
-  bc = TorchBicop.from_bicop(cop_tll)
+  # Pin cache=False — C++ parity at 1e-10; see test_pdf_matches_pvbicop.
+  bc = TorchBicop.from_bicop(cop_tll, cache_integrals=False)
   u_eval = _eval_grid(500, seed=12)
 
   out_torch = bc.cdf(torch.from_numpy(u_eval)).numpy()
@@ -59,7 +64,8 @@ def test_hfunc_matches_pvbicop() -> None:
   u_fit = cop.simulate(2000, seeds=[1, 2, 3])
   cop_tll = _fit_tll(u_fit)
 
-  bc = TorchBicop.from_bicop(cop_tll)
+  # Pin cache=False — C++ parity at 1e-10; see test_pdf_matches_pvbicop.
+  bc = TorchBicop.from_bicop(cop_tll, cache_integrals=False)
   u_eval = _eval_grid(500, seed=13)
   u_t = torch.from_numpy(u_eval)
 
@@ -76,7 +82,9 @@ def test_hinv_roundtrip() -> None:
   u_fit = cop.simulate(2000, seeds=[4, 5, 6])
   cop_tll = _fit_tll(u_fit)
 
-  bc = TorchBicop.from_bicop(cop_tll)
+  # Pin cache=False so the round-trip is exact (atol=1e-9). The cached
+  # path round-trips only to ~1e-3 — covered by test_cached_hinv_speedup.
+  bc = TorchBicop.from_bicop(cop_tll, cache_integrals=False)
   u_eval = _eval_grid(400, seed=21)
   u_t = torch.from_numpy(u_eval)
 
@@ -132,10 +140,13 @@ def test_from_data_matches_cpp(n: int, rho: float) -> None:
 def test_from_data_evaluates_consistently() -> None:
   """Fit on data, evaluate pdf/cdf/hfunc/hinv — sanity checks: finite,
   in-range, hinv round-trips. Doesn't pin to a reference; the
-  matches-vs-cpp test covers the fit accuracy."""
+  matches-vs-cpp test covers the fit accuracy.
+
+  Pin cache_integrals=False so the hinv round-trip below holds to
+  ITP-precision (~1e-9); the cached path round-trips only to ~1e-3."""
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   u_np = cop.simulate(1000, seeds=[11, 22, 33])
-  bc = TorchBicop.from_data(u_np)
+  bc = TorchBicop.from_data(u_np, cache_integrals=False)
 
   u_eval = _eval_grid(300, seed=99)
   u_t = torch.from_numpy(u_eval)
@@ -256,11 +267,14 @@ def test_linear_grid_roundtrip_and_range() -> None:
   """
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   u_fit = cop.simulate(2000, seeds=[10, 11, 12])
+  # cache=False so the hinv round-trip below holds at 1e-9 (the cached
+  # path round-trips only to ~1e-3 — that's covered by
+  # test_cached_hinv_speedup).
   bc_lin = TorchBicop.from_data(
-    u_fit, FitControlsTorchBicop(grid_type="linear")
+    u_fit, FitControlsTorchBicop(grid_type="linear"), cache_integrals=False
   )
   bc_nrm = TorchBicop.from_data(
-    u_fit, FitControlsTorchBicop(grid_type="normal")
+    u_fit, FitControlsTorchBicop(grid_type="normal"), cache_integrals=False
   )
 
   assert bc_lin.interp_grid._is_linear is True

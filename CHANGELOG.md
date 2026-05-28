@@ -110,6 +110,26 @@ constructor exactly once.
   `torch/_fit_vdc.py` — the gated import (`FitControlsTorchBicop`)
   was never a real cycle, so it now lives at module top.
 
+### `pyvinecopulib.torch`: better defaults (cache + batched)
+
+Defaults flipped based on a fresh bicop + vine bench (`scripts/bench_torch_bicop_fit.py
+--mode eval` and `scripts/bench_torch_vinecop.py`, normal grid, `m=30`,
+cpu + cuda, `d ∈ {5, 10, 20}` × `n ∈ {200, 1000, 2000, 10000}`):
+
+- `cache_integrals=True` is now the default everywhere it was `False`
+  (`TorchBicop.__init__` / `from_data` / `from_bicop`,
+  `TorchVinecop.from_vinecop`, `FitControlsTorchVinecop.cache_integrals`).
+  The eval bench showed cached lookups are 80–300× faster on cpu and
+  2–80× faster on cuda for `cdf` / `hfunc` / `hinv`, with a small
+  bilinear-interp gap (~1e-3 IAE / ~1e-2 max). Tests that need
+  on-the-fly precision pin `cache_integrals=False` explicitly.
+- `TorchVinecop.pdf` / `rosenblatt` / `inverse_rosenblatt` now take
+  `batched: Optional[bool] = None`. `None` resolves per-device via the
+  new `_default_batched()` helper: `True` on cuda (3–7× faster across
+  every `(d, n)` we benched), `False` on cpu (`batched=False` wins
+  above `n ≈ 2000`). `inverse_rosenblatt` resolves `None` to `False`
+  (the only valid choice). Users can still override explicitly.
+
 ### `pyvinecopulib.torch`: `FitControlsTorchVinecop`
 
 `TorchVinecop.from_data` takes a single
