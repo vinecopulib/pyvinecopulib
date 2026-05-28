@@ -340,7 +340,7 @@ jobs:
       - name: Install wheel + examples extras + notebooks group
         run: |
           uv venv --python 3.11
-          uv sync --no-install-project --group notebooks --extra examples --extra torch
+          uv sync --no-install-project --group notebooks --extra examples --extra sklearn --extra torch
           WHEEL=$(ls dist/*.whl)
           uv pip install "${WHEEL}"
       - name: Re-execute notebooks
