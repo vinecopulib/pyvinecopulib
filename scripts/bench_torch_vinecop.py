@@ -39,7 +39,11 @@ import numpy as np
 import torch
 
 import pyvinecopulib as pv
-from pyvinecopulib.torch import TorchVinecop
+from pyvinecopulib.torch import (
+  FitControlsTorchBicop,
+  FitControlsTorchVinecop,
+  TorchVinecop,
+)
 
 
 def _parse_int_list(s: str) -> list[int]:
@@ -148,9 +152,11 @@ def _bench_cell(
         bc = TorchVinecop.from_data(
           torch.from_numpy(u_fit).to(device),
           cop.structure,
-          cache_integrals=cache,
-          grid_type=grid_type,
-          device=torch.device(device),
+          controls=FitControlsTorchVinecop(
+            bicop_controls=FitControlsTorchBicop(grid_type=grid_type),
+            cache_integrals=cache,
+            device=torch.device(device),
+          ),
         )
         u_t = torch.from_numpy(u_eval).to(device)
         if sync is not None:

@@ -98,7 +98,10 @@ class TorchVinecop(torch.nn.Module):
     loop over edges. Available for ``pdf`` and ``rosenblatt`` only;
     ``inverse_rosenblatt(batched=True)`` raises ``NotImplementedError``
     because the inverse cascade has cross-tree dependencies that don't
-    reduce to per-level wavefronts.
+    reduce to per-level wavefronts. The default ``batched=None`` picks
+    per-device: ``True`` on CUDA (3–7× faster across all (d, n) we
+    benched), ``False`` on CPU (where the per-pair path wins for
+    ``n ≥ 2000``).
 
   Parameters
   ----------
@@ -165,7 +168,7 @@ class TorchVinecop(torch.nn.Module):
   def from_vinecop(
     cls,
     cop: Vinecop,
-    cache_integrals: bool = False,
+    cache_integrals: bool = True,
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchVinecop":
@@ -367,6 +370,24 @@ class TorchVinecop(torch.nn.Module):
     # Every TorchBicop registers its interpolation grid; reuse the first.
     return self._pair(0, 0).interp_grid.values
 
+  def _default_batched(self) -> bool:
+    """Pick a sensible ``batched`` default based on the fitted device.
+
+    Empirical finding from ``scripts/bench_torch_vinecop.py`` (PR
+    after #216, d ∈ {5, 10, 20} × n ∈ {200, 1000, 2000, 10000}):
+
+    * On CUDA, ``batched=True`` is **3–7× faster** at every (d, n)
+      because per-call kernel-launch overhead dominates the non-batched
+      cascade.
+    * On CPU torch, ``batched=False`` wins once ``n ≥ 2000`` (the
+      regime that actually matters); ``batched=True`` is only faster at
+      small ``n`` where overhead dominates either way.
+
+    So we default to ``True`` on CUDA, ``False`` on CPU. Users can
+    still override explicitly via ``batched=True`` / ``False``.
+    """
+    return self._ref_tensor().device.type == "cuda"
+
   def _prep(self, u: Tensor, name: str) -> Tensor:
     ref = self._ref_tensor()
     u = torch.as_tensor(u, dtype=ref.dtype, device=ref.device)
@@ -464,7 +485,7 @@ class TorchVinecop(torch.nn.Module):
     num_threads: int = 1,
     *,
     impl: str = "legacy",
-    batched: bool = False,
+    batched: Optional[bool] = None,
   ) -> Tensor:
     """Vine copula density ``c(u_1, ..., u_d)`` at the query points ``u``.
 
@@ -487,13 +508,17 @@ class TorchVinecop(torch.nn.Module):
       batched: If ``True``, evaluate every pair-copula at one tree level
         in a single batched bicop call (one ``(N_t, m, m)`` interp per
         tree level instead of N_t scalar interps). Orthogonal to
-        ``impl``.
+        ``impl``. Default ``None`` picks per-device: ``True`` on CUDA
+        (3–7× speedup) and ``False`` on CPU (where the dense per-pair
+        path wins above ``n ≈ 2000``). See :meth:`_default_batched`.
 
     Returns:
       ``(n,)`` tensor of joint density values.
     """
     del num_threads  # parity hint; not used (see docstring)
     _check_impl(impl)
+    if batched is None:
+      batched = self._default_batched()
     fn = self._pick_pdf(impl, batched)
     return fn(u)
 
@@ -503,7 +528,7 @@ class TorchVinecop(torch.nn.Module):
     num_threads: int = 1,
     *,
     impl: str = "legacy",
-    batched: bool = False,
+    batched: Optional[bool] = None,
   ) -> Tensor:
     """Rosenblatt transform: dependent uniforms ``u`` → independent ``w``.
 
@@ -519,12 +544,15 @@ class TorchVinecop(torch.nn.Module):
         ignored here (see :meth:`pdf` for the rationale).
       impl: ``"legacy"`` or ``"lazy"`` — see :meth:`pdf`.
       batched: Per-tree-level batched dispatch — see :meth:`pdf`.
+        Default ``None`` picks per-device (True on CUDA, False on CPU).
 
     Returns:
       ``(n, d)`` tensor of independent uniforms in ``[1e-10, 1 - 1e-10]``.
     """
     del num_threads
     _check_impl(impl)
+    if batched is None:
+      batched = self._default_batched()
     fn = self._pick_rosenblatt(impl, batched)
     return fn(u)
 
@@ -535,7 +563,7 @@ class TorchVinecop(torch.nn.Module):
     num_threads: int = 1,
     *,
     impl: str = "legacy",
-    batched: bool = False,
+    batched: Optional[bool] = None,
   ) -> Tensor:
     """Inverse Rosenblatt transform: independent uniforms → dependent.
 
@@ -547,9 +575,10 @@ class TorchVinecop(torch.nn.Module):
       num_threads: Accepted for API parity with :meth:`pyvinecopulib.Vinecop.inverse_rosenblatt`;
         ignored here (see :meth:`pdf` for the rationale).
       impl: ``"legacy"`` or ``"lazy"`` — see :meth:`pdf`.
-      batched: **Must be** ``False``. The inverse cascade has a
-        cross-tree dependency that the per-tree-level wavefront used
-        by ``pdf`` / ``rosenblatt`` cannot satisfy; ``batched=True``
+      batched: **Must be** ``False`` (or left at the default ``None``,
+        which resolves to ``False`` here). The inverse cascade has a
+        cross-tree dependency that the per-tree-level wavefront used by
+        ``pdf`` / ``rosenblatt`` cannot satisfy; ``batched=True``
         raises :class:`NotImplementedError`.
 
     Returns:
@@ -558,6 +587,8 @@ class TorchVinecop(torch.nn.Module):
     """
     del num_threads
     _check_impl(impl)
+    if batched is None:
+      batched = False
     fn = self._pick_inverse_rosenblatt(impl, batched)
     return fn(u)
 

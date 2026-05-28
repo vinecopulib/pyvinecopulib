@@ -16,7 +16,7 @@ import pyvinecopulib as pv
 
 torch = pytest.importorskip("torch")
 
-from pyvinecopulib.torch import TorchVinecop  # noqa: E402
+from pyvinecopulib.torch import FitControlsTorchVinecop, TorchVinecop  # noqa: E402
 
 _TLL_CONTROLS = pv.FitControlsVinecop(
   family_set=[pv.families.tll], num_threads=1
@@ -51,7 +51,11 @@ def test_pdf_matches_pvvinecop() -> None:
   u_fit = _simulate(d=5, n=2000, seed=1)
   cop_tll = _fit_tll_vine(u_fit)
 
-  bc = TorchVinecop.from_vinecop(cop_tll)
+  # Pin cache=False — this test verifies vine-level parity with the C++
+  # on-the-fly cascade at 1e-10. The default cache_integrals=True uses
+  # bilinear interp; its precision floor is pinned separately in
+  # test_cache_integrals_precision_floor.
+  bc = TorchVinecop.from_vinecop(cop_tll, cache_integrals=False)
   u_eval = _eval_grid(500, d=5, seed=11)
 
   out_torch = bc.pdf(torch.from_numpy(u_eval)).numpy()
@@ -63,7 +67,8 @@ def test_rosenblatt_matches_pvvinecop() -> None:
   u_fit = _simulate(d=5, n=2000, seed=2)
   cop_tll = _fit_tll_vine(u_fit)
 
-  bc = TorchVinecop.from_vinecop(cop_tll)
+  # Pin cache=False — see test_pdf_matches_pvvinecop.
+  bc = TorchVinecop.from_vinecop(cop_tll, cache_integrals=False)
   u_eval = _eval_grid(500, d=5, seed=12)
 
   out_torch = bc.rosenblatt(torch.from_numpy(u_eval)).numpy()
@@ -119,7 +124,10 @@ def test_inverse_rosenblatt_matches_pvvinecop() -> None:
   u_fit = _simulate(d=5, n=2000, seed=3)
   cop_tll = _fit_tll_vine(u_fit)
 
-  bc = TorchVinecop.from_vinecop(cop_tll)
+  # Pin cache=False — C++ parity at 1e-9 via the bisection-precise
+  # on-the-fly cascade. The cached path's precision floor is checked
+  # by test_cache_integrals_precision_floor.
+  bc = TorchVinecop.from_vinecop(cop_tll, cache_integrals=False)
   # Inverse-rosenblatt takes independent uniforms; sample fresh.
   w = _eval_grid(400, d=5, seed=13)
 
@@ -133,7 +141,10 @@ def test_inverse_rosenblatt_roundtrip() -> None:
   u_fit = _simulate(d=5, n=2000, seed=4)
   cop_tll = _fit_tll_vine(u_fit)
 
-  bc = TorchVinecop.from_vinecop(cop_tll)
+  # Pin cache=False so the per-pair forward/inverse cascade is
+  # bisection-precise; the round-trip identity requires the on-the-fly
+  # path to hit the 99-percentile tolerance below.
+  bc = TorchVinecop.from_vinecop(cop_tll, cache_integrals=False)
   rng = np.random.default_rng(14)
   u_eval = rng.uniform(0.1, 0.9, size=(400, 5))
   u_t = torch.from_numpy(u_eval)
@@ -165,7 +176,11 @@ def test_independent_vine_short_circuits(batched: bool) -> None:
     structure=structure, pair_copulas=pair_copulas
   )
 
-  bc = TorchVinecop.from_vinecop(cop)
+  # cache_integrals doesn't matter for the all-independence short-circuit
+  # (every pair short-circuits to pdf=1, hfunc=u, etc.), but we pin
+  # cache=False so the 1e-10 / 1e-12 tolerances below hold under either
+  # default.
+  bc = TorchVinecop.from_vinecop(cop, cache_integrals=False)
   u = _eval_grid(200, d=d, seed=21)
   u_t = torch.from_numpy(u)
 
@@ -191,7 +206,8 @@ def test_truncated_vine_pdf(batched: bool) -> None:
   cop_tll = _fit_tll_vine(u_fit, trunc_lvl=2)
   assert cop_tll.structure.trunc_lvl == 2
 
-  bc = TorchVinecop.from_vinecop(cop_tll)
+  # cache=False for 1e-10 C++ parity.
+  bc = TorchVinecop.from_vinecop(cop_tll, cache_integrals=False)
   assert bc.trunc_lvl == 2
 
   u_eval = _eval_grid(300, d=6, seed=15)
@@ -348,7 +364,8 @@ def test_batched_matches_cpp_pdf() -> None:
   """End-to-end: torch batched pdf vs pv.Vinecop on the same fit."""
   u_fit = _simulate(d=8, n=1000, seed=320)
   cop_tll = _fit_tll_vine(u_fit)
-  bc = TorchVinecop.from_vinecop(cop_tll)
+  # cache=False for 1e-10 C++ parity.
+  bc = TorchVinecop.from_vinecop(cop_tll, cache_integrals=False)
   u_eval = _eval_grid(400, d=8, seed=330)
   out_torch = bc.pdf(torch.from_numpy(u_eval), batched=True).numpy()
   out_cpp = cop_tll.pdf(u_eval)
@@ -358,7 +375,8 @@ def test_batched_matches_cpp_pdf() -> None:
 def test_batched_matches_cpp_rosenblatt() -> None:
   u_fit = _simulate(d=8, n=1000, seed=321)
   cop_tll = _fit_tll_vine(u_fit)
-  bc = TorchVinecop.from_vinecop(cop_tll)
+  # cache=False for 1e-10 C++ parity.
+  bc = TorchVinecop.from_vinecop(cop_tll, cache_integrals=False)
   u_eval = _eval_grid(400, d=8, seed=331)
   out_torch = bc.rosenblatt(torch.from_numpy(u_eval), batched=True).numpy()
   out_cpp = cop_tll.rosenblatt(u_eval)
@@ -383,8 +401,14 @@ def test_from_data_matches_from_vinecop(d: int) -> None:
     u_fit, controls=_TLL_CONTROLS, structure=structure
   )
 
-  bc_cpp = TorchVinecop.from_vinecop(cop_cpp_fixed)
-  bc_torch = TorchVinecop.from_data(torch.from_numpy(u_fit), structure)
+  # Pin cache=False so the per-pair cascade is bisection-precise — needed
+  # to match at 1e-9 (the cached path round-trips only to ~1e-3).
+  bc_cpp = TorchVinecop.from_vinecop(cop_cpp_fixed, cache_integrals=False)
+  bc_torch = TorchVinecop.from_data(
+    torch.from_numpy(u_fit),
+    structure,
+    controls=FitControlsTorchVinecop(cache_integrals=False),
+  )
 
   u_eval = torch.from_numpy(_eval_grid(400, d=d, seed=410 + d))
   np.testing.assert_allclose(

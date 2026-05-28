@@ -66,15 +66,14 @@ class TorchBicop(torch.nn.Module):
   values:
     Square ``(m, m)`` tensor of density values on the tensor-product grid.
   cache_integrals:
-    If ``True``, precompute ``cdf`` / ``hfunc1`` / ``hfunc2`` / ``hinv1`` /
-    ``hinv2`` at every grid node (five extra ``m × m`` buffers, ≈36 KiB
-    at ``m=30``). ``cdf`` / ``hfunc`` / ``hinv`` calls then use one
-    bilinear lookup on the cached grid — much faster for large batches
-    (``hinv`` in particular drops from 35 bisection iterations to a
-    single interp), with a small interpolation gap between grid nodes
-    (~1e-3 mean / ~1e-2 max relative to the on-the-fly trapezoidal +
-    bisection path). Default ``False`` matches the C++ implementation
-    exactly.
+    If ``True`` (default), precompute ``cdf`` / ``hfunc1`` / ``hfunc2`` /
+    ``hinv1`` / ``hinv2`` at every grid node (five extra ``m × m``
+    buffers, ≈36 KiB at ``m=30``). ``cdf`` / ``hfunc`` / ``hinv`` calls
+    then use one bilinear lookup on the cached grid — dramatically
+    faster (~80–300× on the bicop-level eval bench), with a small
+    interpolation gap between grid nodes (~1e-3 mean / ~1e-2 max
+    relative to the on-the-fly trapezoidal + bisection path). Set to
+    ``False`` for byte-for-byte parity with the C++ on-the-fly path.
   norm_times:
     Number of margin-normalization rounds; passed through to
     :class:`InterpolationGrid2D`. The C++ default is 3; pass 0 to skip
@@ -90,7 +89,7 @@ class TorchBicop(torch.nn.Module):
     self,
     grid_points: Optional[Tensor] = None,
     values: Optional[Tensor] = None,
-    cache_integrals: bool = False,
+    cache_integrals: bool = True,
     norm_times: int = 3,
     is_linear: bool = False,
     device: Optional[torch.device] = None,
@@ -147,7 +146,7 @@ class TorchBicop(torch.nn.Module):
   def from_bicop(
     cls,
     cop: Bicop,
-    cache_integrals: bool = False,
+    cache_integrals: bool = True,
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchBicop":
@@ -197,7 +196,7 @@ class TorchBicop(torch.nn.Module):
     u,
     controls: Optional[FitControlsTorchBicop] = None,
     *,
-    cache_integrals: bool = False,
+    cache_integrals: bool = True,
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchBicop":

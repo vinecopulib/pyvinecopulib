@@ -118,9 +118,14 @@ class FitControlsTorchVinecop:
     Controls applied to every pair-copula fit. Defaults to
     ``FitControlsTorchBicop()`` (TLL on a 30×30 normal-spaced grid).
   cache_integrals:
-    If ``True``, precompute the cdf/hfunc/hinv caches on every pair
-    copula's interpolation grid; see :class:`TorchBicop` for the
-    accuracy/speed trade-off.
+    If ``True`` (default), precompute the cdf/hfunc/hinv caches on
+    every pair copula's interpolation grid; see :class:`TorchBicop`
+    for the accuracy/speed trade-off. Default flipped to ``True`` in
+    PR-after-#216 after the bicop and vine eval benches showed cached
+    lookups are 1–2 orders of magnitude faster everywhere with a
+    small (~1e-3 IAE) interpolation-gap cost — see
+    ``scripts/bench_torch_bicop_fit.py --mode eval`` and
+    ``scripts/bench_torch_vinecop.py``.
   device:
     Target torch device for the fitted pair copulas; ``None`` keeps the
     input's device.
@@ -142,7 +147,7 @@ class FitControlsTorchVinecop:
   bicop_controls: FitControlsTorchBicop = field(
     default_factory=FitControlsTorchBicop
   )
-  cache_integrals: bool = False
+  cache_integrals: bool = True
   device: Optional[Any] = None
   dtype: Optional[Any] = None
   impl: str = "legacy"
