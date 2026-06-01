@@ -44,6 +44,7 @@ jobs:
               cxx: clang++,
               platform: x64,
               root_install_dir: "/Users/runner/work",
+              macos_target: "10.13",
             }
           - {
               os: macos-15,
@@ -52,6 +53,7 @@ jobs:
               cxx: clang++,
               platform: arm64,
               root_install_dir: "/Users/runner/work",
+              macos_target: "11.0",
             }
           - {
               os: windows-latest,
@@ -103,14 +105,10 @@ jobs:
         env:
           CIBW_REBUILD: 1
           CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
-          # The pip `libclang` wheel ships no builtin/intrinsic headers, which
-          # the docstr.hpp generation needs. manylinux's libclang finds them by
-          # default; musllinux (Alpine) does not, so install a system clang
-          # there to supply a resource dir (`clang -print-resource-dir`). No-op
-          # on manylinux; macOS/Windows are unaffected (AppleClang / MSVC).
-          CIBW_BEFORE_ALL_LINUX: "command -v apk >/dev/null 2>&1 && apk add clang || true"
           CIBW_ENVIRONMENT_WINDOWS: Boost_INCLUDE_DIR='${{steps.install-dependencies.outputs.BOOST_ROOT}}\include' EIGEN3_INCLUDE_DIR='C:\ProgramData\chocolatey\lib\eigen\include'
-          CIBW_ENVIRONMENT_MACOS: "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=${{matrix.cfg.root_install_dir}}/include/eigen3"
+          # MACOSX_DEPLOYMENT_TARGET >= 10.13 is required by nanobind's aligned
+          # operator new/delete (the x86_64 default is 10.9). arm64 uses 11.0.
+          CIBW_ENVIRONMENT_MACOS: "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=${{matrix.cfg.root_install_dir}}/include/eigen3 MACOSX_DEPLOYMENT_TARGET=${{matrix.cfg.macos_target}}"
           CIBW_ENVIRONMENT_LINUX: "Boost_INCLUDE_DIR=/host${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=/host${{matrix.cfg.root_install_dir}}/include/eigen3"
           CIBW_ENVIRONMENT_PASS_LINUX: "Boost_INCLUDE_DIR EIGEN3_INCLUDE_DIR"
       - name: Inspect built wheel contents

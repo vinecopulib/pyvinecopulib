@@ -1803,16 +1803,23 @@ def main():
       parameters,
       options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD,
     )
-    # Fail loudly on fatal parse errors. A partial AST (e.g. when libclang
-    # cannot find the C++ standard library or Eigen/Boost headers) otherwise
-    # silently produces a docstr.hpp with whole symbols missing and overload
-    # names mis-disambiguated, which only surfaces later as cryptic
-    # "no member named ..." errors when the bindings are compiled. Surface
-    # the real cause here instead.
+    # Fail loudly on *fatal* parse errors only. A fatal diagnostic (e.g. a
+    # missing C++ standard-library / Eigen / Boost header, or clang's
+    # "too many errors" stop) truncates the AST, so docstr.hpp would silently
+    # lose whole symbols and mis-disambiguate overloads — which only surfaces
+    # later as cryptic "no member named ..." compile errors. Surface that here.
+    #
+    # We deliberately do NOT abort on plain `error:`-severity diagnostics.
+    # libclang is not a full compiler, and parsing Eigen/Boost pulls in
+    # vendor intrinsic headers (xmmintrin.h, arm_neon.h, ...) whose builtins
+    # are version-specific; libclang emits ~100 harmless errors there. Those
+    # do not stop parsing or affect the *declarations* docstrings are read
+    # from. CMake passes `-ferror-limit=0` so this error noise never trips
+    # clang's default 20-error limit (which would itself become a fatal).
     fatal = [
       d
       for d in translation_unit.diagnostics
-      if d.severity >= cindex.Diagnostic.Error
+      if d.severity >= cindex.Diagnostic.Fatal
     ]
     if fatal:
       eprint(

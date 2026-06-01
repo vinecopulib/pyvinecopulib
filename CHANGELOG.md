@@ -35,8 +35,8 @@
 - Add a `pyvinecopulib[sklearn]` extra (`scikit-learn>=1.4`, `pandas>=2.0`, `joblib>=1.3`, `scipy>=1.10`), a `pyvinecopulib[torch]` extra (`torch>=2.0`), and a `pyvinecopulib[vdc]` extra resolving `vine-denoising-copula` from GitHub via `[tool.uv.sources]` (#211, #216, #217).
 - Treat `pyvinecopulib`-originated `DeprecationWarning`s as errors under pytest so internal call sites stay on the canonical import paths (#207).
 - Install `--extra torch` in the notebook-test and regenerate-notebooks CI jobs so `examples/10_torch_backend.ipynb` executes under `nbmake` (#216).
-- Fix osx / musllinux wheel builds: feed libclang a clang `-resource-dir` plus the compiler's filtered system include dirs (and the macOS SDK sysroot) so `docstr.hpp` generation no longer silently drops symbols, and abort generation on any fatal libclang diagnostic.
-- Migrate macOS CI to `macos-15` and re-add `macos-15-intel`; wheel matrix is now 5 platforms × 3 ABI (15 wheels).
+- Fix osx / musllinux wheel builds: feed libclang the compiler's implicit system include dirs (plus `-ferror-limit=0` and the macOS SDK sysroot) so the C++ stdlib / intrinsic headers resolve, and abort `docstr.hpp` generation only on *fatal* libclang diagnostics (intrinsic-header `error`s are benign and no longer silently drop symbols).
+- Migrate macOS CI to `macos-15` and re-add `macos-15-intel` (`MACOSX_DEPLOYMENT_TARGET=10.13` for nanobind's aligned `new`/`delete`); wheel matrix is now 5 platforms × 3 ABI (15 wheels).
 
 ### Bug fixes in `pyvinecopulib`
 
