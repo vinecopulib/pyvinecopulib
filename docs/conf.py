@@ -64,14 +64,28 @@ extensions = [
   "sphinx.ext.mathjax",
   "sphinx_rtd_theme",
   "sphinx.ext.autosummary",
-  "sphinx.ext.napoleon",
+  "numpydoc",
   "nbsphinx",
   "myst_parser",
 ]
 
-napoleon_include_init_with_doc = True
-napoleon_use_rtype = False
-napoleon_custom_sections = [("Usage", "Usage")]
+# numpydoc owns the Numpy-style section parser; we keep
+# `sphinx_autodoc_typehints` alongside it for the type-from-annotation
+# injection. The two settings below prevent typehints from emitting a
+# separate `:rtype:` that would collide with numpydoc's inline rendering
+# of the Returns type (mirrors what `napoleon_use_rtype = False` did
+# under the old extension).
+typehints_use_rtype = False
+typehints_document_rtype = False
+
+# Don't write a separate class-members toctree — render `__init__`
+# content inside the class docstring instead (the closest equivalent of
+# the old `napoleon_include_init_with_doc = True`).
+numpydoc_class_members_toctree = False
+# Don't synthesise a Notes / References / See Also section header when
+# the docstring doesn't have one; we control that explicitly.
+numpydoc_show_class_members = True
+numpydoc_show_inherited_class_members = False
 autosummary_generate = True
 nbsphinx_execute = "never"
 
@@ -80,14 +94,18 @@ nbsphinx_execute = "never"
 suppress_warnings = ["autosummary", "myst.header"]
 
 
-# Members inherited from sklearn carry docstrings that :ref:/:term: into
-# sklearn's own doc tree, which doesn't resolve in pyvinecopulib's build.
-# Drop them — return None (not `skip`) for non-matching names because
-# autosummary hard-codes `skip=False` when emitting this event, and a
-# returned False would force-include otherwise-private members.
-def _skip_sklearn_inherited(app, what, name, obj, skip, options):
+# Members inherited from sklearn / torch carry docstrings that
+# :ref:/:term: into their own doc trees, which don't resolve in
+# pyvinecopulib's build (sklearn) or have RST that numpydoc rejects
+# (torch.nn.Module). Drop them — return None (not `skip`) for
+# non-matching names because autosummary hard-codes `skip=False`
+# when emitting this event, and a returned False would force-include
+# otherwise-private members.
+def _skip_inherited(app, what, name, obj, skip, options):
   mod = getattr(obj, "__module__", "")
-  if isinstance(mod, str) and mod.startswith("sklearn"):
+  if isinstance(mod, str) and (
+    mod.startswith("sklearn") or mod.startswith("torch")
+  ):
     return True
   return None
 
@@ -142,15 +160,49 @@ def process_cross_references(content: str, is_docstring: bool = True) -> str:
     "FitControlsBicop",
     "FitControlsVinecop",
     "Kde1d",
+    "VineDensity",
+    "VineRegressor",
+    "VineForestDensity",
+    "VineForestRegressor",
+    "TorchBicop",
+    "TorchVinecop",
+    "FitControlsTorchBicop",
+    "FitControlsTorchVinecop",
+    "VinecopBackend",
+    "TorchVinecopBackend",
+  ]
+  modules = [
+    "pyvinecopulib.core",
+    "pyvinecopulib.families",
+    "pyvinecopulib.utils",
+    "pyvinecopulib.sklearn",
+    "pyvinecopulib.sklearn.backends",
+    "pyvinecopulib.torch",
   ]
 
   meth_ref = r":meth:`" if is_docstring else r"{py:meth}`"
   cls_ref = r":class:`" if is_docstring else r"{py:class}`"
+  mod_ref = r":mod:`" if is_docstring else r"{py:mod}`"
 
-  content = re.sub(r"``(\w+)\.(\w+)\(\)``", rf"{meth_ref}\1.\2`", content)
-  content = re.sub(r"``(\w+)\.(\w+)``", f"{cls_ref}\1.\2`", content)
+  # Docstrings (RST) use double backticks; markdown sources use single.
+  bt = "``" if is_docstring else "`"
+  # Anchor outside the literal so we don't match the middle of a chain
+  # like `pyvinecopulib.torch.TorchBicop` — `(?<!\w)` / `(?!\w)` give a
+  # word boundary that ignores dots, while the backticks themselves
+  # pin the start and end.
+  class_alt = "|".join(re.escape(c) for c in classes)
+  content = re.sub(
+    rf"{bt}({class_alt})\.(\w+)\(\){bt}", rf"{meth_ref}\1.\2`", content
+  )
+  content = re.sub(
+    rf"{bt}({class_alt})\.(\w+){bt}", rf"{cls_ref}\1.\2`", content
+  )
   for cls in classes:
-    content = re.sub(rf"``{cls}``", rf"{cls_ref}{cls}`", content)
+    content = re.sub(rf"{bt}{cls}{bt}", rf"{cls_ref}{cls}`", content)
+  # Module references — longest-prefix first so `pyvinecopulib.sklearn.backends`
+  # wins over `pyvinecopulib.sklearn`.
+  for mod in sorted(modules, key=len, reverse=True):
+    content = re.sub(rf"{bt}{re.escape(mod)}{bt}", rf"{mod_ref}{mod}`", content)
 
   return content
 
@@ -162,7 +214,7 @@ def autodoc_process_docstring(app, what, name, obj, options, lines):
 
 
 def preprocess_markdown(app, docname, source):
-  if docname == "CHANGELOG":
+  if docname in {"CHANGELOG", "README"}:
     source[0] = (
       "```{eval-rst}\n.. currentmodule:: pyvinecopulib\n```\n" + source[0]
     )
@@ -211,6 +263,24 @@ DOCSTRING_SUBPACKAGES = {
     ],
     "functions": [],
   },
+  "sklearn.backends": {
+    "classes": [
+      "VinecopBackend",
+      "TorchVinecopBackend",
+      "VinecopLike",
+    ],
+    "functions": ["resolve_backend"],
+  },
+  "torch": {
+    "classes": [
+      "TorchBicop",
+      "TorchVinecop",
+      "FitControlsTorchBicop",
+      "FitControlsTorchVinecop",
+      "InterpolationGrid2D",
+    ],
+    "functions": [],
+  },
 }
 
 DOCSTRING_CLASSES = [
@@ -238,6 +308,23 @@ def _stage_repo_files(docs_dir, repo_root):
         shutil.copytree(src, dst)
       else:
         shutil.copy2(src, dst)
+
+  # index.rst inlines README.md via `.. include:: README.md`, which
+  # bypasses the `source-read` event — so the standalone README page
+  # picks up cross-references via preprocess_markdown, but the inlined
+  # landing-page copy does not. Materialise a rewritten copy here at
+  # configure time so both rendered pages stay in sync.
+  readme_src = os.path.join(docs_dir, "README.md")
+  readme_inlined = os.path.join(docs_dir, "_README_inlined.md")
+  if os.path.isfile(readme_src):
+    readme = open(readme_src).read()
+    readme = process_cross_references(readme, is_docstring=False)
+    # Drop the first 8 lines (title + badges) — matches the historical
+    # `.. include:: README.md :start-line: 8`.
+    readme = "\n".join(readme.splitlines()[8:])
+    with open(readme_inlined, "w") as f:
+      f.write("```{eval-rst}\n.. currentmodule:: pyvinecopulib\n```\n")
+      f.write(readme)
 
 
 def _write_features_rst(out_path):
@@ -303,7 +390,7 @@ _write_examples_rst(
 def setup(app):
   app.connect("autodoc-process-docstring", autodoc_process_docstring)
   app.connect("source-read", preprocess_markdown)
-  app.connect("autodoc-skip-member", _skip_sklearn_inherited)
+  app.connect("autodoc-skip-member", _skip_inherited)
 
 
 source_suffix = {

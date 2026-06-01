@@ -19,9 +19,9 @@ The decomposition makes pair-by-pair estimation scale gracefully into
 high dimensions and gives a natural place to drop in non-parametric
 pair-copula estimators like Transformed Local Likelihood (TLL).
 
-A short primer is available in the `docs/concepts.rst` page on
-[Read the Docs](https://pyvinecopulib.readthedocs.io); a
-comprehensive list of publications lives on
+A short primer is available on the
+[concepts page](https://pyvinecopulib.readthedocs.io/en/latest/concepts.html);
+a comprehensive list of publications lives on
 [vine-copula.org](http://vine-copula.org).
 
 ### What is pyvinecopulib?
@@ -66,9 +66,7 @@ Two opt-in subpackages extend the core library:
   density_gpu = VineDensity(backend=TorchVinecopBackend()).fit(X)
   ```
 
-  Install with `pip install pyvinecopulib[torch]`. The amortized
-  `method="vdc"` path (Safaai 2026, arXiv:2604.20568) additionally
-  needs `pip install pyvinecopulib[vdc]`.
+  Install with `pip install pyvinecopulib[torch]`.
 
 ### License
 
@@ -135,7 +133,8 @@ mamba activate pyvinecopulib
 make sync
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full developer workflow.
+See the [contributing guide](https://pyvinecopulib.readthedocs.io/en/latest/CONTRIBUTING.html)
+for the full developer workflow.
 
 Alternatively, you can specify manually the location of `Eigen` and `Boost` using the environment variables `EIGEN3_INCLUDE_DIR` and `Boost_INCLUDE_DIR` respectively.
 On Linux, you can install the required packages and set the environment variables as follows:
@@ -176,5 +175,5 @@ make docs-serve     # live-reload dev server (sphinx-autobuild)
 ## Contributing
 
 Development setup, the build pipeline, the Makefile + pre-commit conventions,
-the CI workflow, and the release flow are all documented in
-[CONTRIBUTING.md](CONTRIBUTING.md).
+the CI workflow, and the release flow are all documented in the
+[contributing guide](https://pyvinecopulib.readthedocs.io/en/latest/CONTRIBUTING.html).

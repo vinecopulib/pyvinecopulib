@@ -136,6 +136,32 @@ general whitespace/TOML/JSON checks. `make sync` installs them.
 - C++: Google style (clang-format).
 - Type hints required on Python source; `ty` checks them.
 
+## Docstring convention
+
+All public-API docstrings follow the **numpydoc** convention
+(<https://numpydoc.readthedocs.io/en/latest/format.html>). Section
+headings (`Parameters`, `Returns`, `Raises`, `Notes`, `Warnings`,
+`See Also`, `References`, `Examples`), parameter and return
+formatting, and reference numbering use numpydoc's strict grammar.
+Every parameter and return value carries a type (use the
+`name : type` form, e.g. `u : ndarray, shape (n, 2), dtype float`).
+
+C++-derived docstrings inherit the convention via
+`scripts/generate_docstring.py`, which translates Doxygen tags
+(`@param`, `@return`, `@note`,
+`@warning`, `@exception`, `@see`) to the matching numpydoc sections
+and emits Python type annotations on each parameter / return.
+Edit the C++ source comment to change the rendered Python
+docstring; do not hand-edit the generated `src/include/docstr.hpp`.
+
+Enforcement runs through `numpydoc.validation` at pre-commit time
+(and ad-hoc via `uv run python -m numpydoc lint <path>`); the
+active rule set is configured in `[tool.numpydoc_validation]` in
+`pyproject.toml`. Internal modules (`_python_helpers`, `_base`,
+`_forest_base`, `_mcs`, `_batched`, `_fit_tll`, `_fit_vdc`,
+`_util`, `_interp`, `_deprecations`) are excluded by path —
+they're off-contract per AGENTS.md §"Module boundaries".
+
 ## Troubleshooting
 
 - **Build fails after C++ changes**: re-run `make sync` (or `uv pip install

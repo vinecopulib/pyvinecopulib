@@ -1,346 +1,70 @@
 # Changelog
 
-## Unreleased
-
-### `pyvinecopulib.sklearn`: backend system + scikit-learn-developer-guide cleanup
-
-The sklearn module gains a thin public backend layer plus a focused
-sweep of fixes against the
-[scikit-learn third-party-estimator developer guide](https://scikit-learn.org/stable/developers/develop.html).
-Both pieces land in the same PR so the rename touches each
-constructor exactly once.
-
-**Backend system** — new module `pyvinecopulib.sklearn.backends`:
-
-- `VinecopBackend` (default) wraps `pyvinecopulib.Vinecop`; holds an
-  optional `FitControlsVinecop` and an optional structure.
-- `TorchVinecopBackend` wraps `pyvinecopulib.torch.TorchVinecop`; holds
-  an optional `FitControlsTorchVinecop` (new — see torch entry below)
-  and an optional structure. Constructing this class is the explicit
-  opt-in signal that PyTorch is required.
-- `VinecopLike` is a `runtime_checkable` Protocol describing the
-  shared post-fit surface — `pdf(u, num_threads=, ...)`,
-  `cdf(u, N, num_threads, seeds, ...)`,
-  `simulate(n, qrng, num_threads, seeds, ...)`, plus a `structure`
-  attribute. After PR1's `TorchVinecop` API alignment both
-  `pv.Vinecop` and `pv.torch.TorchVinecop` satisfy the Protocol
-  structurally.
-- Estimators take a single `backend=` keyword; no string shortcuts
-  (`backend="cpp"` / `"torch"` are no longer accepted — pass instances
-  instead).
-
-**Breaking sklearn-side API changes** (pre-release surface):
-
-- `VineDensity(controls=..., structure=...)` →
-  `VineDensity(backend=VinecopBackend(controls=..., structure=...))`.
-- `VineRegressor` gains a real `normalize_weights=True` `__init__`
-  parameter; the previous post-init `_normalize_weights` attribute is
-  gone. Forests pass `normalize_weights=False` through `base_params`,
-  and `sklearn.base.clone()` now preserves it.
-- `seed`-style kwargs renamed to canonical `random_state` across the
-  forest classes and on `VineDensity.sample` / `VineDensity.cdf` /
-  `VineForestDensity.cdf`. The legacy `seeds=` and `seed=` kwargs
-  are removed without a deprecation alias.
-
-**scikit-learn-developer-guide fixes**:
-
-- `__init__` now performs no validation on any estimator; per-class
-  `_parameter_constraints` dicts + `_validate_params()` calls at the
-  top of `fit()` replace the hand-rolled `isinstance`/`raise` blocks.
-- DataFrame inputs now populate the canonical `feature_names_in_`
-  (previously `_used_columns`).
-- `schema_` (with trailing underscore) replaces `_schema` so
-  `sklearn.base.clone()` round-trips correctly.
-- `random_state_` (resolved RNG) and `backend_` (resolved backend
-  pinned at fit time) are set as standard fitted attributes.
-- Every post-fit method now calls
-  `sklearn.utils.validation.check_is_fitted`.
-- `base_params` is defensively copied at fit time so callers can't
-  mutate the forest's view of it.
-
-**Testing**:
-
-- New `tests/test_sklearn_backends.py` exercises Protocol conformance,
-  capability flags, `with_*` immutability, lazy torch isolation, clone
-  round-trip, `feature_names_in_`, and cross-backend parity.
-- New `tests/test_sklearn_check_estimator.py` runs
-  `parametrize_with_checks` on every estimator. Genuine opt-outs
-  (sparse inputs, 1-D / 1-feature degeneracies, complex inputs,
-  density-log score in `Pipeline.score`, quantile-stacked regressor
-  output) and known WIP items (memmap inputs, pickling round-trip,
-  permutation invariance, `__sklearn_tags__` upgrades, …) are
-  enumerated in the file as `expected_failed_checks` with one-line
-  rationales each. The TODO-marked entries are intended to shrink in
-  follow-up PRs.
-
-**Documentation**:
-
-- New Sphinx page `docs/concepts.rst` introduces Sklar's theorem,
-  pair-copula construction / R-vines, and the default Transformed
-  Local Likelihood (TLL) family in a ~5-minute read. Linked from the
-  index toctree.
-- The `pyvinecopulib.sklearn` module docstring now front-loads the
-  "what does the default backend do" answer (no PyTorch required)
-  and links to the concepts page.
-- `pyvinecopulib.sklearn.backends` gains a "which backend should I
-  pick?" subsection summarising the C++/torch trade-off (threading
-  vs GPU vs autograd vs family-set coverage).
-- `VineDensity` / `VineRegressor` class docstrings get short
-  "use-the-torch-backend" examples and a "See also" block linking at
-  the backend module and `pv.Vinecop`.
-- `pyvinecopulib.torch` module docstring spells out TLL
-  (*Transformed Local Likelihood*, Geenens 2014; Nagler 2018),
-  motivates GPU / autograd / pipeline use-cases, and adds bibliographic
-  references for VDC (Safaai 2026), the lazy-cascade design (Cheng
-  et al. 2025), and TLL.
-- `TorchBicop` / `TorchVinecop` class docstrings drop the
-  `KernelBicop` aside in favour of plain-language descriptions and
-  pick up reciprocal "See also" cross-refs at `pv.Bicop` / `pv.Vinecop`.
-- `torch/_fit_vdc.py`: the IPFP / replicate-pad justification moves
-  from the module docstring into an inline comment next to the
-  function it actually documents; the module docstring is now a
-  short user-facing summary anchored on the Safaai (2026) citation.
-- README's "What are vine copulas?" expanded into a one-paragraph
-  primer; a new "Optional backends" subsection introduces the
-  sklearn and torch surfaces with one example each.
-
-**Hygiene**:
-
-- Removed `if TYPE_CHECKING:` guards in `torch/bicop.py` and
-  `torch/_fit_vdc.py` — the gated import (`FitControlsTorchBicop`)
-  was never a real cycle, so it now lives at module top.
-
-### `pyvinecopulib.torch`: better defaults (cache + batched)
-
-Defaults flipped based on a fresh bicop + vine bench (`scripts/bench_torch_bicop_fit.py
---mode eval` and `scripts/bench_torch_vinecop.py`, normal grid, `m=30`,
-cpu + cuda, `d ∈ {5, 10, 20}` × `n ∈ {200, 1000, 2000, 10000}`):
-
-- `cache_integrals=True` is now the default everywhere it was `False`
-  (`TorchBicop.__init__` / `from_data` / `from_bicop`,
-  `TorchVinecop.from_vinecop`, `FitControlsTorchVinecop.cache_integrals`).
-  The eval bench showed cached lookups are 80–300× faster on cpu and
-  2–80× faster on cuda for `cdf` / `hfunc` / `hinv`, with a small
-  bilinear-interp gap (~1e-3 IAE / ~1e-2 max). Tests that need
-  on-the-fly precision pin `cache_integrals=False` explicitly.
-- `TorchVinecop.pdf` / `rosenblatt` / `inverse_rosenblatt` now take
-  `batched: Optional[bool] = None`. `None` resolves per-device via the
-  new `_default_batched()` helper: `True` on cuda (3–7× faster across
-  every `(d, n)` we benched), `False` on cpu (`batched=False` wins
-  above `n ≈ 2000`). `inverse_rosenblatt` resolves `None` to `False`
-  (the only valid choice). Users can still override explicitly.
-
-### `pyvinecopulib.torch`: `FitControlsTorchVinecop`
-
-`TorchVinecop.from_data` takes a single
-`controls=FitControlsTorchVinecop(...)` argument mirroring
-`pv.Vinecop.from_data(controls=...)`. The dataclass bundles:
-
-- a nested `FitControlsTorchBicop` (per-pair fit controls);
-- vine-level placement / precision knobs (`cache_integrals`, `device`,
-  `dtype`);
-- runtime cascade knobs (`impl`, `batched`).
-
-### `pyvinecopulib.torch`: pluggable bicop fitters via `FitControlsTorchBicop`
-
-`TorchBicop.from_data` now dispatches on a `FitControlsTorchBicop`
-dataclass (mirroring `pv.FitControlsBicop`), opening the door to
-alternative bicop fitters behind a single API. Two methods ship today:
-
-- `method="tll"` (default) — the existing pure-torch TLL constant fit,
-  unchanged in behaviour and still matching the C++ TLL fit to machine
-  precision.
-- `method="vdc"` — the pretrained amortized vine-copula estimator
-  introduced by Safaai, H. (2026), *Amortized Vine Copulas for
-  High-Dimensional Density and Information Estimation*,
-  [arXiv:2604.20568](https://arxiv.org/abs/2604.20568). Reference
-  implementation:
-  [KempnerInstitute/vine-denoising-copula](https://github.com/KempnerInstitute/vine-denoising-copula).
-  Not on PyPI yet; the `[vdc]` extra resolves it from GitHub via
-  `[tool.uv.sources]` (`uv sync --extra vdc`). Plain pip users
-  install with
-  `pip install "vine-denoising-copula @ git+https://github.com/KempnerInstitute/vine-denoising-copula"`.
-  The resulting `TorchBicop` reuses the standard interpolation-grid
-  evaluation chain, so `pdf` / `cdf` / `hfunc` / `hinv` / `simulate`
-  are identical to the TLL path.
-  > **Upstream status**: vdc 0.1.0 on `main` ships an incomplete wheel —
-  > `vdc.load_pretrained_model` references `vdc.inference` /
-  > `vdc.vine.copula_diffusion` (not packaged). We ship a `sys.modules`
-  > shim in `pyvinecopulib.torch._fit_vdc._install_upstream_shims` that
-  > injects the two missing submodules with trivial stubs (the real
-  > `scatter_to_hist` from `vdc.data.hist` is loaded directly via
-  > `importlib.util`; `sample_density_grid` is stubbed since it's only
-  > used in the diffusion-checkpoint path; `DiffusionCopulaModel` is
-  > stubbed since it's import-referenced but never instantiated during
-  > inference). The shim is installed at the first
-  > `_load_bundle(...)` call and becomes a no-op once upstream restores
-  > the missing subpackages.
-  >
-  > **Released-checkpoint accuracy caveat**: on the standard
-  > Gaussian/Clayton precision bench (m=64, n ∈ {500, 2000, 10000}), the
-  > `vdc-denoiser-m64-v1` checkpoint produces 10–20× worse pdf IAE than
-  > the pure-torch TLL fit, with massive density spikes at the
-  > anti-diagonal corners even for iid uniform samples (mean |pdf - 1| ≈
-  > 0.9). The integration is correct and ready to use, but for parametric
-  > targets TLL remains the better choice today.
-
-The signature change is **breaking** for callers who passed `grid_size`,
-`mult`, or `grid_type` as keyword arguments to `from_data`: those now
-live on `FitControlsTorchBicop(...)`. `cache_integrals`, `device`, and
-`dtype` remain direct keyword arguments on `from_data`.
-
-`InterpolationGrid2D.normalize_margins` additionally accepts an optional
-`tol` for early-stop (default `None` preserves byte-for-byte parity with
-the C++ TLL pipeline).
-
-### `pyvinecopulib.torch`: align `TorchVinecop` / `TorchBicop` with their `pv.Vinecop` / `pv.Bicop` counterparts
-
-The torch evaluators now mirror the post-fit surface of the C++ classes
-so downstream code (and the upcoming sklearn backend layer) can treat
-either backend uniformly:
-
-- `TorchVinecop.from_structure(structure | matrix, pair_copulas, var_types)`
-  — new class method matching `pv.Vinecop.from_structure`. When
-  `pair_copulas` is empty, every edge is populated with an independence
-  `TorchBicop`, yielding the independence copula on `d` variables.
-- `TorchVinecop.simulate(n, qrng=False, num_threads=1, seeds=[])` —
-  new convenience method matching `pv.Vinecop.simulate`. Internally
-  draws pseudo-random uniforms (`torch.rand` seeded from `seeds[0]`) or
-  quasi-random uniforms (via `pyvinecopulib.utils.simulate_uniform`)
-  and pushes them through `inverse_rosenblatt`.
-- `TorchVinecop.cdf(u, N=10000, qrng=True, num_threads=1, seeds=[])` —
-  new method that estimates the joint CDF via quasi-Monte-Carlo,
-  matching `pv.Vinecop.cdf` to within MC error. A `block_size` kwarg
-  caps the peak `(block, N, d)` scratch tensor for large query
-  matrices.
-- `TorchVinecop.pdf` / `rosenblatt` / `inverse_rosenblatt` now accept a
-  `num_threads` keyword (default `1`) for signature parity with
-  `pv.Vinecop`; on the torch backend it is a documented no-op. For CPU
-  intraop parallelism call `torch.set_num_threads(N)` globally — note
-  that mutates global state and is unsafe with concurrent workers.
-- The previous `TorchBicop.sample(num_sample, seed, is_sobol)` is
-  renamed to `TorchBicop.simulate(n, qrng=False, seeds=[])` to mirror
-  `pv.Bicop.simulate`.
-
-### CI
-
-The notebook test and regenerate-notebooks jobs now install
-`--extra torch` so that `examples/10_torch_backend.ipynb` can execute
-under `nbmake`.
-
-### `pyvinecopulib.sklearn`: VineRegressor and VineDensity
-
-Two scikit-learn-compatible vine-copula estimators ship in the new
-`pyvinecopulib.sklearn` submodule:
-
-- `VineRegressor` — sklearn-style regressor that fits a vine copula to the
-  joint distribution of `(X, y)` and predicts conditional means / quantiles.
-- `VineDensity` — sklearn-style density estimator with `score_samples`,
-  `score`, `sample`, `pdf`, and `cdf` methods.
-- `VineForestDensity` / `VineForestRegressor` — ensembles of the above
-  built via random search over vine structures and pruned by a model
-  confidence set (MCS) on a held-out validation split. Predictions
-  average across surviving structures. Structures are sampled either
-  uniformly via Joe's algorithm (Joe, Cooke & Kurowicka 2011) or
-  locally via Wilson's loop-erased random walk weighted by Kendall's
-  τ (Wilson 1996); survivor selection uses a dual-split DA test
-  adapted from the discrete-argmin-inference framework of Kim &
-  Ramdas (2025), with Hansen, Lunde & Nason (2011) providing the
-  foundational MCS definition.
-
-Both follow the `BaseEstimator` / `RegressorMixin` / `DensityMixin` protocols
-and handle mixed continuous/discrete inputs (DataFrame or ndarray). Class
-docstrings include the full methodology — Sklar / pair-copula
-factorization, Kde1d marginals, and the estimating-equation framework for
-mean / quantile prediction — with references to Bedford & Cooke (2002),
-Aas et al. (2009), Kraus & Czado (2017), and Nagler & Vatter (2024).
-
-API surface tightened before v1:
-
-- `VineRegressor.pdf` removed. Sklearn regressors don't expose density
-  methods; users who need the joint or conditional density can call
-  `pyvinecopulib.core.Vinecop.pdf` on the underlying fitted vine, or wait
-  for the forest classes that surface ensemble-level log-likelihoods.
-- `VineDensity.pdf(copula_only=...)` is now a real keyword argument (was
-  documented but ignored).
-- `VineDensity.cdf(X, N=10000, seeds=None)` added: returns the joint CDF
-  via Monte-Carlo integration of the fitted vine copula.
-- `schema` (both classes) and `normalize_weights` (regressor) are no
-  longer `__init__` parameters. They remain settable via the
-  `_schema` / `_normalize_weights` attributes for advanced / ensemble
-  use; `clone()` won't preserve non-default values for these knobs.
-
-The `[sklearn]` extra now pins `joblib>=1.3` and `scipy>=1.10` explicitly
-(both are transitive sklearn dependencies today; pinning them
-self-documents the forest requirement). Install via:
-
-```bash
-pip install pyvinecopulib[sklearn]
-```
-
-### Dependency changes
-
-- `numpy>=2.0` is now a project-wide requirement (was `>=1.14`).
-  `VineRegressor` needs `np.quantile(weights=...)` from NumPy 2.0; rather
-  than pinning it only under `[sklearn]`, we bump everywhere — the wheel
-  is now built and tested against the 2.x ABI consistently.
-- `[sklearn]` extra: drops the redundant `numpy>=2.0` and adds
-  `pandas>=2.0` (used by `VineBase.expand_factors` for DataFrame inputs).
-
 ## 1.0.0
 
 ### Breaking API changes in `pyvinecopulib`
 
-The public API is now organized into four subpackages. Existing top-level
-imports continue to work for backward compatibility, but the family constants
-and most utilities emit a `DeprecationWarning` on access pointing at the new
-canonical location. The deprecated aliases are scheduled for removal in 2.0.
+- Reorganize the public API into the `core` / `families` / `utils` / `sklearn` subpackages (#207).
+    - Top-level classes (`Bicop`, `Vinecop`, `RVineStructure`, `CVineStructure`, `DVineStructure`, `FitControlsBicop`, `FitControlsVinecop`, `BicopFamily`) and `to_pseudo_obs` are kept at the top level indefinitely.
+    - Family constants / groups (`indep`, `gaussian`, …, `parametric`, …, `itau`), `Kde1d`, `wdm`, `sobol`, `ghalton`, `simulate_uniform`, `benchmark`, `pairs_copula_data` still resolve at the top level but emit a `DeprecationWarning` on access pointing at the canonical subpackage path. Aliases are scheduled for removal in 2.0.
+    - `repr` and pickle now use canonical module paths (`Bicop.__module__ == "pyvinecopulib.core"`, `Kde1d.__module__ == "pyvinecopulib.utils"`, etc.); pre-1.0 pickles still load via the deprecated aliases.
+- `pyvinecopulib.sklearn` estimators take a single `backend=` keyword (#218).
+    - `VineDensity(controls=..., structure=..., seed=...)` → `VineDensity(backend=VinecopBackend(controls=..., structure=...), random_state=...)`. Same shape change for `VineRegressor` / `VineForestDensity` / `VineForestRegressor`. No string shortcuts; pass a `VinecopBackend` or `TorchVinecopBackend` instance.
+    - `seed`-style kwargs renamed to `random_state` across the forests and on `VineDensity.sample` / `VineDensity.cdf` / `VineForestDensity.cdf`. Legacy `seed` / `seeds` kwargs removed without a deprecation alias.
+    - `VineRegressor` gains a real `normalize_weights=True` `__init__` parameter; the previous post-init `_normalize_weights` attribute is gone.
+- `TorchBicop.from_data` now dispatches on `controls=FitControlsTorchBicop(...)` (#217). Callers who passed `grid_size`, `mult`, or `grid_type` as keyword arguments must move them onto the dataclass. `cache_integrals`, `device`, and `dtype` remain direct kwargs on `from_data`.
+- `TorchBicop.sample(num_sample, seed, is_sobol)` renamed to `TorchBicop.simulate(n, qrng=False, seeds=[])` for parity with `pv.Bicop.simulate` (#216).
 
-| New canonical location | Names |
-| --- | --- |
-| `pyvinecopulib.core` | `Bicop`, `Vinecop`, `FitControlsBicop`, `FitControlsVinecop`, `RVineStructure`, `CVineStructure`, `DVineStructure`, `BicopFamily` |
-| `pyvinecopulib.families` | `BicopFamily`, plus the constants (`indep`, `gaussian`, `student`, `clayton`, `gumbel`, `frank`, `joe`, `bb1`, `bb6`, `bb7`, `bb8`, `tawn`, `tll`) and the family groups (`all`, `parametric`, `nonparametric`, `one_par`, `two_par`, `three_par`, `elliptical`, `archimedean`, `extreme_value`, `bb`, `rotationless`, `lt`, `ut`, `itau`) |
-| `pyvinecopulib.utils` | `Kde1d`, `wdm`, `to_pseudo_obs`, `pairs_copula_data`, `sobol`, `ghalton`, `simulate_uniform`, `benchmark` |
-| `pyvinecopulib.sklearn` | (placeholder; estimator classes ship in a follow-up release) |
+### New features in `pyvinecopulib`
 
-#### Kept at the top level indefinitely (no warning)
-
-`Bicop`, `Vinecop`, `RVineStructure`, `CVineStructure`, `DVineStructure`,
-`FitControlsBicop`, `FitControlsVinecop`, `BicopFamily`,
-`to_pseudo_obs`, `__version__`.
-
-#### Deprecated on access (warn, still resolves)
-
-All family constants and groups (`indep`, `gaussian`, ..., `parametric`,
-`nonparametric`, ..., `itau`); `Kde1d`, `wdm`, `sobol`, `ghalton`,
-`simulate_uniform`, `benchmark`, `pairs_copula_data`. Use the canonical
-subpackage path (`pyvinecopulib.families.<name>` or
-`pyvinecopulib.utils.<name>`) to silence the warning.
-
-#### `repr` and pickle now use canonical module paths
-
-The C++ bindings now set `__module__` (and the hardcoded repr strings) per
-subpackage: `Bicop.__module__ == "pyvinecopulib.core"`,
-`BicopFamily.__module__ == "pyvinecopulib.families"`,
-`Kde1d.__module__ == "pyvinecopulib.utils"`, etc. New pickles serialize via
-the canonical path; pre-1.0 pickles still load via the deprecated top-level
-alias (with a DeprecationWarning for symbols that fell off the kept list).
-
-#### File renames
-
-- `pyvinecopulib.pair_copuladata` (module) → `pyvinecopulib.utils.pairs_copula_data` (module). The function `pairs_copula_data` itself is unchanged.
+- Add `pyvinecopulib.sklearn` with scikit-learn-compatible `VineDensity` and `VineRegressor` estimators following the `BaseEstimator` / `DensityMixin` / `RegressorMixin` protocols, with mixed continuous/discrete input handling (DataFrame or ndarray) (#211).
+- Add `VineForestDensity` and `VineForestRegressor`: ensembles of vine estimators sampled either uniformly (Joe's algorithm) or via Wilson's Kendall's-τ-weighted random walk, pruned by a model-confidence-set survivor test on a held-out split (#213).
+- Add the `pyvinecopulib.torch` subpackage: pure-PyTorch `TorchBicop` / `TorchVinecop` evaluators (`nn.Module` subclasses) for GPU placement, autograd, and `nn.Module` pipeline composition. The torch cascade matches the C++ TLL fit to machine precision (#216).
+- Add a sklearn-side backend layer (`pyvinecopulib.sklearn.backends`): `VinecopBackend` (default, C++) and `TorchVinecopBackend` (opt-in PyTorch) implement a shared `VinecopLike` protocol so the same estimator class routes through either backend (#218).
+- Add the optional amortized `method="vdc"` pair-copula fit (Safaai 2026, [arXiv:2604.20568](https://arxiv.org/abs/2604.20568)) behind the `[vdc]` extra; reference implementation [KempnerInstitute/vine-denoising-copula](https://github.com/KempnerInstitute/vine-denoising-copula) (#217).
+- Add `TorchVinecop.from_structure`, `TorchVinecop.simulate`, and `TorchVinecop.cdf` (quasi-MC) so the torch evaluators mirror their `pv.Vinecop` counterparts (#216).
+- Flip torch defaults based on a bicop + vine benchmark sweep: `cache_integrals=True` everywhere (80–300× faster `cdf` / `hfunc` / `hinv` on cpu, 2–80× on cuda), `batched` resolves device-aware via `_default_batched()` (`True` on cuda, `False` on cpu) (#219).
+- Add a tutorial-style `docs/concepts.rst` introducing Sklar's theorem, pair-copula construction, R-vines, and the TLL family in a ~5-minute read (#218).
+- Use Sphinx autosummary on the four subpackage landing pages so module docstrings, classes, and free functions get their own indexed pages (#214).
 
 ### Build / packaging
 
-- The `[sklearn]` optional extra was added (currently a placeholder; will
-  install `scikit-learn>=1.4` and `numpy>=2.0` for the upcoming
-  `pyvinecopulib.sklearn` estimators).
-- Type stubs are now emitted per subpackage. The top-level stub also includes
-  `def __getattr__(name: str) -> Any: ...` so static checkers don't flag access
-  to deprecated names.
-- `pytest` is configured to treat `pyvinecopulib`-originated
-  `DeprecationWarning`s as errors so internal code stays on the canonical
-  import paths.
+- Migrate to `uv` + `scikit-build-core` for the editable / wheel build pipeline, with `[build-system].requires` mirroring the dev `[dependency-groups]` so `--no-build-isolation` works out of the box (#209).
+- Replace `mypy` with `ty` (Astral's type checker, alpha) and enable strict checks against a Python 3.10 baseline; only `pyvinecopulib.pyvinecopulib_ext` is allowed as an unresolved import (#210).
+- Refactor the build / docs / examples pipeline into a thin Makefile over `uv run` and rework `scripts/regenerate_notebooks.py` (#205).
+- Add a `pyvinecopulib[sklearn]` extra (`scikit-learn>=1.4`, `pandas>=2.0`, `joblib>=1.3`, `scipy>=1.10`), a `pyvinecopulib[torch]` extra (`torch>=2.0`), and a `pyvinecopulib[vdc]` extra resolving `vine-denoising-copula` from GitHub via `[tool.uv.sources]` (#211, #216, #217).
+- Treat `pyvinecopulib`-originated `DeprecationWarning`s as errors under pytest so internal call sites stay on the canonical import paths (#207).
+- Install `--extra torch` in the notebook-test and regenerate-notebooks CI jobs so `examples/10_torch_backend.ipynb` executes under `nbmake` (#216).
+
+### Bug fixes in `pyvinecopulib`
+
+- Port the `integrate_2d` marginal-renormalisation fix to the torch backend (`InterpolationGrid2D.integrate_2d` and `integrate_2d_batched`) so `TorchBicop.cdf` enforces ``C(1, u_2) = u_2`` exactly, matching the post-vinecopulib#667 C++ CDF to machine precision on the on-the-fly path ([vinecopulib#667](https://github.com/vinecopulib/vinecopulib/pull/667)).
+
+### Dependency changes
+
+- `numpy>=2.0` is now a project-wide requirement (was `>=1.14`); `VineRegressor` needs `np.quantile(weights=...)` from NumPy 2.0 (#211).
+- `[sklearn]` extra adds `pandas>=2.0` (used by `VineBase.expand_factors` for DataFrame inputs) (#211).
+
+### Changes in `vinecopulib`
+
+#### NEW FEATURES
+
+- Early exit in vine selection when the structure is already a tree, avoiding redundant work in `select` ([vinecopulib#661](https://github.com/vinecopulib/vinecopulib/pull/661)).
+- Per-family parameter / rotation / tail-dependence documentation on the `BicopFamily` enum members, surfaced through the Python `families` subpackage (#214, [vinecopulib#668](https://github.com/vinecopulib/vinecopulib/pull/668)).
+- Numpydoc-compliant `//!` comments on every property getter / setter in the Python-binding surface, surfaced through the pyvinecopulib autosummary pages (#214, [vinecopulib#670](https://github.com/vinecopulib/vinecopulib/pull/670)).
+
+#### BUG FIXES
+
+- Fix `integrade_2d` numerical handling on the bivariate-copula CDF path ([vinecopulib#667](https://github.com/vinecopulib/vinecopulib/pull/667)).
+- Fix a typo in `pdf_d_d` and tighten the threshold under which the analytical derivative is preferred over the finite-difference fallback ([vinecopulib#664](https://github.com/vinecopulib/vinecopulib/pull/664)).
+- Drop an unused fit-controls option ([vinecopulib#662](https://github.com/vinecopulib/vinecopulib/pull/662)).
+- Fix Doxygen typos surfaced by the `libclang` extractor ([vinecopulib#665](https://github.com/vinecopulib/vinecopulib/pull/665)).
+- Bump CI off the deprecated `macos-13` runner ([vinecopulib#663](https://github.com/vinecopulib/vinecopulib/pull/663)).
+
+### Changes in `kde1d`
+
+- Numpydoc-compliant `//!` getter-return docstrings on `Kde1d`, surfaced through `pyvinecopulib.utils.Kde1d` (#214, [kde1d#26](https://github.com/vinecopulib/kde1d-cpp/pull/26)).
+- Capitalize method first words, add a fit-summary, and fix the quantile description ([kde1d#27](https://github.com/vinecopulib/kde1d-cpp/pull/27)).
 
 ## 0.7.6
 

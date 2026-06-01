@@ -1,7 +1,7 @@
 """Bivariate copula families.
 
 Every bivariate copula model in pyvinecopulib (and every pair-copula
-inside a vine) belongs to one of the families listed below. The
+inside a vine) belongs to one of the families documented below. The
 :class:`BicopFamily` enum holds the family tag; the module-level
 constants ``indep``, ``gaussian``, ... are aliases for the enum members
 so that callers can write ``family_set=[gaussian, student]`` without
@@ -11,28 +11,32 @@ the qualified prefix. The named family-group constants (``parametric``,
 :class:`pyvinecopulib.core.FitControlsVinecop` to constrain the
 fitting search space.
 
-Available families
-------------------
+See Also
+--------
+pyvinecopulib.core.Bicop : Bivariate copula model. Its ``family``
+    attribute is a `BicopFamily` value.
+pyvinecopulib.core.FitControlsBicop, pyvinecopulib.core.FitControlsVinecop
+    Their ``family_set`` argument accepts any of the lists above
+    (or a custom subset).
 
-Grouped by mathematical class:
+Notes
+-----
+**Available families**, grouped by mathematical class:
 
-- **Independence** — ``indep``.
-- **Elliptical** — ``gaussian``, ``student``.
-- **Archimedean** (single-parameter) — ``clayton``, ``gumbel``,
+- *Independence* — ``indep``.
+- *Elliptical* — ``gaussian``, ``student``.
+- *Archimedean* (single-parameter) — ``clayton``, ``gumbel``,
   ``frank``, ``joe``.
-- **Archimedean — BB family (two-parameter extensions)** — ``bb1``,
+- *Archimedean — BB family* (two-parameter extensions) — ``bb1``,
   ``bb6``, ``bb7``, ``bb8``.
-- **Extreme-value** — ``tawn`` (three parameters); ``gumbel`` is also
+- *Extreme-value* — ``tawn`` (three parameters); ``gumbel`` is also
   an extreme-value copula.
-- **Nonparametric** — ``tll`` (transformation local-likelihood
+- *Nonparametric* — ``tll`` (transformation local-likelihood
   estimator).
 
 See :class:`BicopFamily` for the per-member identifier.
 
-Family groups
--------------
-
-Convenience lists of :class:`BicopFamily` values:
+**Family groups** — convenience lists of :class:`BicopFamily` values:
 
 - ``all`` — every family above.
 - ``parametric`` — every family except ``tll``.
@@ -58,15 +62,9 @@ Convenience lists of :class:`BicopFamily` values:
   dependence and therefore have no rotation
   (``indep``, ``gaussian``, ``student``, ``frank``, ``tll``).
 
-See also
---------
-:class:`pyvinecopulib.core.Bicop`
-    Bivariate copula model. Its ``family`` attribute is a
-    :class:`BicopFamily` value.
-:class:`pyvinecopulib.core.FitControlsBicop`,
-:class:`pyvinecopulib.core.FitControlsVinecop`
-    Their ``family_set`` argument accepts any of the lists above (or a
-    custom subset).
+The :doc:`concepts page </concepts>` provides a tabular overview of
+every family above with parameter ranges, rotations, tail
+dependence, and closed-form Kendall's :math:`\\tau`.
 """
 
 from ..pyvinecopulib_ext import (

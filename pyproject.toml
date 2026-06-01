@@ -43,7 +43,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-examples = ["jupyterlab", "scipy"]
+examples = ["jupyterlab", "scipy", "xlrd>=2.0"]
 sklearn = [
   "scikit-learn>=1.4",
   "pandas>=2.0",
@@ -68,6 +68,7 @@ doc = [
   "sphinx-autodoc-typehints",
   "sphinx-autobuild",
   "myst-parser",
+  "numpydoc>=1.7",
 ]
 
 [dependency-groups]
@@ -158,6 +159,47 @@ allowed-unresolved-imports = ["pyvinecopulib.pyvinecopulib_ext"]
 [tool.bandit]
 exclude_dirs = ["tests", "docs", "examples", "lib", "build"]
 skips = ["B101"]
+
+[tool.numpydoc_validation]
+# Public-API docstrings follow the numpydoc spec
+# (https://numpydoc.readthedocs.io/en/latest/format.html). Enforced via
+# `pre-commit run numpydoc-validation` and runnable ad-hoc with
+# `uv run numpydoc lint src/pyvinecopulib`.
+#
+# Active check codes (see https://numpydoc.readthedocs.io/en/latest/validation.html).
+# GL01 (summary must start on the line after the opening triple-quote)
+# is OFF: it's opinionated, contradicts numpydoc's own format-spec
+# example (`"""Short summary."""`), and major projects (scikit-learn) sit
+# on the other side. We allow both same-line and newline-first
+# summaries; SS01/SS02 still enforce that the summary exists and starts
+# capitalised.
+checks = [
+  "GL02", "GL03", "GL05", "GL07",
+  "PR01", "PR02", "PR03", "PR05", "PR07",
+  "RT01", "RT04",
+  "SS01", "SS02",
+]
+exclude = [
+  # Private methods (single-underscore prefix, not dunder) inside the
+  # public modules: still off-contract per the underscore-prefix rule.
+  '\._[a-z][a-zA-Z0-9_]*$',
+]
+# File-path patterns for internal helpers (AGENTS.md §"Module boundaries"):
+# not part of any public contract. The numpydoc hook resolves modules to
+# their `Path.stem`, so we match by file path here rather than by dotted
+# module name.
+exclude_files = [
+  'src/pyvinecopulib/_python_helpers/.*\.py$',
+  'src/pyvinecopulib/_deprecations\.py$',
+  'src/pyvinecopulib/sklearn/_mcs\.py$',
+  'src/pyvinecopulib/sklearn/_base\.py$',
+  'src/pyvinecopulib/sklearn/_forest_base\.py$',
+  'src/pyvinecopulib/torch/_batched\.py$',
+  'src/pyvinecopulib/torch/_fit_tll\.py$',
+  'src/pyvinecopulib/torch/_fit_vdc\.py$',
+  'src/pyvinecopulib/torch/_util\.py$',
+  'src/pyvinecopulib/torch/_interp\.py$',
+]
 
 [tool.coverage.run]
 source = ["src/pyvinecopulib"]

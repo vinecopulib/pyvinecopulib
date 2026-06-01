@@ -29,6 +29,5 @@ pyvinecopulib
    CHANGELOG
    CONTRIBUTING
 
-.. include:: README.md
+.. include:: _README_inlined.md
       :parser: myst_parser.sphinx_
-      :start-line: 8

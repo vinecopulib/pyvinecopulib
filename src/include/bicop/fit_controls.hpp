@@ -39,45 +39,45 @@ inline void init_bicop_fit_controls(nb::module_& module) {
       //      "creates default controls except for the nonparametric method.",
       /* "nonparametric_method"_a, "mult"_a = 1.0) */
       .def_prop_rw("family_set", &FitControlsBicop::get_family_set,
-                   &FitControlsBicop::set_family_set, "The family set.",
+                   &FitControlsBicop::set_family_set,
+                   fitcontrolsbicop_doc.get_family_set.doc,
                    nb::call_guard<nb::gil_scoped_release>())
       .def_prop_rw("parametric_method",
                    &FitControlsBicop::get_parametric_method,
                    &FitControlsBicop::set_parametric_method,
-                   "The fit method for parametric families.")
+                   fitcontrolsbicop_doc.get_parametric_method.doc)
       .def_prop_rw("nonparametric_method",
                    &FitControlsBicop::get_nonparametric_method,
                    &FitControlsBicop::set_nonparametric_method,
-                   "The fit method for nonparametric families.")
-      .def_prop_rw(
-          "nonparametric_mult", &FitControlsBicop::get_nonparametric_mult,
-          &FitControlsBicop::set_nonparametric_mult,
-          "A factor with which the smoothing parameters are multiplied.")
+                   fitcontrolsbicop_doc.get_nonparametric_method.doc)
+      .def_prop_rw("nonparametric_mult",
+                   &FitControlsBicop::get_nonparametric_mult,
+                   &FitControlsBicop::set_nonparametric_mult,
+                   fitcontrolsbicop_doc.get_nonparametric_mult.doc)
       .def_prop_rw("nonparametric_grid_size",
                    &FitControlsBicop::get_nonparametric_grid_size,
                    &FitControlsBicop::set_nonparametric_grid_size,
-                   "The grid size for the post-estimation interpolation in "
-                   "nonparametric models.")
+                   fitcontrolsbicop_doc.get_nonparametric_grid_size.doc)
       .def_prop_rw("selection_criterion",
                    &FitControlsBicop::get_selection_criterion,
                    &FitControlsBicop::set_selection_criterion,
-                   "The selection criterion.")
+                   fitcontrolsbicop_doc.get_selection_criterion.doc)
       .def_prop_rw("weights", &FitControlsBicop::get_weights,
                    &FitControlsBicop::set_weights,
-                   "The weights for the observations.")
+                   fitcontrolsbicop_doc.get_weights.doc)
       .def_prop_rw("psi0", &FitControlsBicop::get_psi0,
                    &FitControlsBicop::set_psi0,
-                   "The prior probability of non-independence.")
+                   fitcontrolsbicop_doc.get_psi0.doc)
       .def_prop_rw("preselect_families",
                    &FitControlsBicop::get_preselect_families,
                    &FitControlsBicop::set_preselect_families,
-                   "Whether to exclude families based on symmetry properties "
-                   "of the data.")
+                   fitcontrolsbicop_doc.get_preselect_families.doc)
       .def_prop_rw("allow_rotations", &FitControlsBicop::get_allow_rotations,
                    &FitControlsBicop::set_allow_rotations,
-                   "Whether to allow rotations for the families.")
+                   fitcontrolsbicop_doc.get_allow_rotations.doc)
       .def_prop_rw("num_threads", &FitControlsBicop::get_num_threads,
-                   &FitControlsBicop::set_num_threads, "The number of threads.")
+                   &FitControlsBicop::set_num_threads,
+                   fitcontrolsbicop_doc.get_num_threads.doc)
       .def(
           "__repr__",
           [](const FitControlsBicop& controls) {

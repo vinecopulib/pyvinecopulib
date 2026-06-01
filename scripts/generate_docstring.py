@@ -287,8 +287,292 @@ def extract_comment(cursor, deprecations):
   return result
 
 
-def transform_docstring(docstring):
+# Canonical shape + dtype convention used across the library docstrings
+# (both auto-extracted from C++ and hand-written Python). Eigen's
+# dynamic-sized types do not carry compile-time shape, so we use the
+# numpydoc-friendly placeholder names `(n, m)` / `(n,)`.
+_C_TO_NUMPY_TYPES = {
+  "Eigen::MatrixXd": "ndarray, shape (n, m), dtype float",
+  "Eigen::VectorXd": "ndarray, shape (n,), dtype float",
+  "Eigen::MatrixXi": "ndarray, shape (n, m), dtype int",
+  "Eigen::VectorXi": "ndarray, shape (n,), dtype int",
+  "Eigen::MatrixXb": "ndarray, shape (n, m), dtype bool",
+  "Eigen::VectorXb": "ndarray, shape (n,), dtype bool",
+  "Eigen::ArrayXd": "ndarray, shape (n,), dtype float",
+  "Eigen::ArrayXi": "ndarray, shape (n,), dtype int",
+  "std::string": "str",
+  "std::filesystem::path": "str",
+  "nlohmann::json": "JSON-like dict",
+  "double": "float",
+  "float": "float",
+  "int": "int",
+  "unsigned int": "int",
+  "size_t": "int",
+  "ptrdiff_t": "int",
+  "uint8_t": "int",
+  "uint16_t": "int",
+  "uint32_t": "int",
+  "uint64_t": "int",
+  "int8_t": "int",
+  "int16_t": "int",
+  "int32_t": "int",
+  "int64_t": "int",
+  "bool": "bool",
+  "void": "",
+}
+
+
+def c_type_to_numpy_type(c_spelling: str) -> str:
+  """Translate a C++ type spelling to its numpydoc-friendly Python form.
+
+  Strips `const`, references, and `volatile`, then consults
+  `_C_TO_NUMPY_TYPES`. Recursively unwraps `std::optional<T>` (→
+  `"<T>, optional"`), `std::vector<T>` (→ `"list of <T>"`), and the
+  Eigen `Matrix<...>` family (→ `"ndarray"` with int / bool subtype
+  when detectable from the scalar template arg). Unrecognised
+  spellings fall through verbatim so the emitted docstring is still
+  informative.
+  """
+  if not c_spelling:
+    return ""
+  s = c_spelling.strip()
+  # Strip cv-qualifiers and references; libclang reports these
+  # via `cursor.type.spelling` for parameter types.
+  for prefix in ("const ", "volatile "):
+    if s.startswith(prefix):
+      s = s[len(prefix) :]
+  for suffix in (" const", " volatile", "&&", "&"):
+    if s.endswith(suffix):
+      s = s[: -len(suffix)]
+  s = s.strip()
+
+  # `std::optional<T>` → `"<T>, optional"`. Greedy `(.+)` so nested
+  # templates (`std::optional<std::vector<T>>`) match the outermost
+  # closing angle bracket.
+  m = re.match(r"^std::optional<\s*(.+)\s*>$", s)
+  if m:
+    inner = c_type_to_numpy_type(m.group(1))
+    return f"{inner}, optional" if inner else "optional"
+
+  # `std::vector<T>` → `"list of <T>"`. Greedy `(.+)` again — see above.
+  m = re.match(r"^std::vector<\s*(.+)\s*>$", s)
+  if m:
+    inner = c_type_to_numpy_type(m.group(1))
+    return f"list of {inner}" if inner else "list"
+
+  # `std::function<...>` → `Callable`.
+  if s.startswith("std::function<"):
+    return "Callable"
+
+  # Eigen matrix templates with explicit scalar args. We can't tell
+  # if it's a vector (`Rows == 1` or `Cols == 1`) vs a matrix from
+  # libclang's spelling alone in our codebase (typical usage is the
+  # `MatrixXd` / `VectorXd` aliases above), so default to the matrix
+  # shape `(n, m)`.
+  m = re.match(r"^Eigen::Matrix<\s*([^,>]+)\s*,", s)
+  if m:
+    scalar = m.group(1).strip()
+    if scalar in ("size_t", "ptrdiff_t") or scalar.endswith("int"):
+      return "ndarray, shape (n, m), dtype int"
+    if scalar == "bool":
+      return "ndarray, shape (n, m), dtype bool"
+    return "ndarray, shape (n, m), dtype float"
+
+  if s.startswith("TriangularArray<"):
+    return "ndarray of int"
+
+  return _C_TO_NUMPY_TYPES.get(s, s)
+
+
+def _return_type_from_tokens(cursor):
+  """Recover a function's return type by scanning its source tokens.
+
+  libclang's `cursor.result_type.spelling` silently collapses
+  templated return types (e.g. `std::vector<BicopFamily>`) to their
+  fallback primitive (`int`) when it can't fully instantiate the
+  template — a known parse-time limitation in our codebase. The
+  raw source tokens are the reliable ground truth: everything
+  before the function's spelling token IS the return type, modulo
+  storage-class and attribute keywords.
+
+  Returns ``None`` when tokens cannot be read (out-of-band cursors,
+  forward declarations without source, etc.).
+  """
+  if cursor is None:
+    return None
+  name = getattr(cursor, "spelling", "")
+  if not name:
+    return None
+  try:
+    tokens = list(cursor.get_tokens())
+  except Exception:
+    return None
+  if not tokens:
+    return None
+  # Find the cursor's spelling token; everything to its left is the
+  # return type (after stripping inline / virtual / static / etc.).
+  skip = {"inline", "virtual", "static", "constexpr", "explicit", "friend"}
+  parts = []
+  for tok in tokens:
+    spelling = tok.spelling
+    if spelling == name:
+      break
+    if spelling in skip:
+      continue
+    parts.append(spelling)
+  if not parts:
+    return None
+  # Join, then collapse spurious whitespace around angle brackets,
+  # commas, namespace separators.
+  joined = " ".join(parts)
+  joined = re.sub(r"\s*<\s*", "<", joined)
+  joined = re.sub(r"\s*>\s*", ">", joined)
+  joined = re.sub(r"\s*,\s*", ", ", joined)
+  joined = re.sub(r"\s*::\s*", "::", joined)
+  # Out-of-class definitions (e.g. `Eigen::VectorXd Bicop::pdf(...)`)
+  # include the `ClassName::` qualifier between the return type and
+  # the function spelling. Strip any number of trailing `Class::`
+  # qualifiers. Match the bare identifier right before the final `::`
+  # — `[A-Za-z_]\w*` — regardless of what precedes it (could be a
+  # space, or the closing `>` of a templated type like
+  # `std::vector<std::vector<T>>Vinecop::`).
+  while True:
+    m = re.search(r"\b([A-Za-z_]\w*)::$", joined)
+    if not m or m.group(1) in ("std", "Eigen"):
+      # Don't strip `std::` / `Eigen::` namespace prefixes of an
+      # incomplete type expression — those shouldn't be at the end
+      # anyway, but guard against accidents.
+      break
+    joined = joined[: m.start(1)].rstrip()
+  return joined.strip()
+
+
+def _extract_cursor_types(cursor):
+  """Pull ``(param_types, return_type)`` from a libclang function cursor.
+
+  Returns ``({param_name: c_type_spelling}, return_type_spelling)`` or
+  ``(None, None)`` if `cursor` doesn't expose the necessary attributes
+  (e.g. when called on non-function cursors during recursion). The
+  return type is read from the cursor's source tokens (see
+  `_return_type_from_tokens`) — libclang's `result_type.spelling`
+  collapses templated returns to a wrong primitive in this codebase.
+  """
+  if cursor is None or not hasattr(cursor, "type"):
+    return None, None
+  try:
+    # Map parameter name → type spelling.
+    param_types: dict = {}
+    for child in cursor.get_children():
+      if child.kind == CursorKind.PARM_DECL and child.spelling:
+        # Same rationale as for return types: prefer the source
+        # tokens, but fall back to libclang's spelling when token
+        # parsing fails (e.g. for parameters in macro expansions).
+        token_type = None
+        try:
+          tokens = [t.spelling for t in child.get_tokens()]
+          if child.spelling in tokens:
+            idx = tokens.index(child.spelling)
+            if idx > 0:
+              joined = " ".join(tokens[:idx])
+              joined = re.sub(r"\s*<\s*", "<", joined)
+              joined = re.sub(r"\s*>\s*", ">", joined)
+              joined = re.sub(r"\s*,\s*", ", ", joined)
+              joined = re.sub(r"\s*::\s*", "::", joined)
+              token_type = joined.strip() or None
+        except Exception:
+          pass
+        param_types[child.spelling] = token_type or child.type.spelling
+    return_type = _return_type_from_tokens(cursor)
+    if not return_type:
+      return_type = (
+        cursor.result_type.spelling
+        if cursor.result_type and cursor.result_type.spelling
+        else None
+      )
+    return (param_types or None), return_type
+  except Exception:
+    return None, None
+
+
+_DOXY_SECTION_PATTERNS = [
+  # (key in `$<Header>:` form, numpydoc header, underline char)
+  ("Note", "Notes", "-"),
+  ("Warning", "Warnings", "-"),
+  ("See also", "See Also", "-"),
+]
+
+
+def _convert_doxy_sections(docstring: str) -> str:
+  """Reformat `$Note:` / `$Warning:` / `$See also:` blobs into
+  numpydoc sections.
+
+  Doxygen tags `@note`, `@warning`, `@see` / `@sa` are converted by
+  `process_comment` into intermediate `$Note:` / `$Warning:` /
+  `$See also:` paragraphs. Reflow each into the canonical numpydoc
+  block with the proper section header + underline.
+  """
+  for key, header, ch in _DOXY_SECTION_PATTERNS:
+    # Capture: a `$<Key>:` line followed by indented or wrapped body.
+    pattern = rf"\${key}:\s*\n((?:.+\n?)+?)(?=\n\n|\Z)"
+
+    def repl(m, header=header, ch=ch):
+      body = m.group(1).strip()
+      lines = [line.strip() for line in body.splitlines()]
+      body = "\n".join(lines)
+      return f"\n\n{header}\n{ch * len(header)}\n{body}\n"
+
+    docstring = re.sub(pattern, repl, docstring)
+  return docstring
+
+
+def _convert_doxy_raises(docstring: str) -> str:
+  """Reformat `$Raises:` blobs into a numpydoc Raises section.
+
+  Doxygen `@throws ExceptionType description` / `@exception ...`
+  arrive as `$Raises:\\n<body>` after `process_comment`. The body
+  may start with the exception class name or be a plain
+  description. Emit:
+
+  ::
+
+      Raises
+      ------
+      <ExceptionType>
+          <description>
+
+  When the leading token doesn't look like an identifier we fall
+  back to `RuntimeError` — that's how the C++ side surfaces in
+  Python via nanobind by default.
+  """
+  pattern = r"\$Raises:\s*\n((?:.+\n?)+?)(?=\n\n|\Z)"
+
+  def repl(m):
+    body = m.group(1).strip()
+    # Try to peel a leading C++ exception class name (a single
+    # identifier on the first whitespace-separated token).
+    first_token, *rest = body.split(None, 1)
+    if re.match(r"^[A-Z][A-Za-z0-9_:]*$", first_token):
+      exc = first_token.split("::")[-1]  # strip namespace
+      description = (rest[0] if rest else "").strip()
+    else:
+      exc = "RuntimeError"
+      description = body
+    description = "\n    ".join(
+      line.strip() for line in description.splitlines() if line.strip()
+    )
+    if description:
+      return f"\n\nRaises\n------\n{exc}\n    {description}\n"
+    return f"\n\nRaises\n------\n{exc}\n"
+
+  return re.sub(pattern, repl, docstring)
+
+
+def transform_docstring(docstring, cursor=None):
   transformed_docstring = docstring.strip()
+
+  # Pull (param_name → c_type) and the return type from the cursor.
+  # Both are None when the caller didn't supply a cursor.
+  param_types, return_c_type = _extract_cursor_types(cursor)
 
   # Identify and process the Parameters section
   params_section = ""
@@ -307,7 +591,13 @@ def transform_docstring(docstring):
       formatted_description = "\n    ".join(
         line.strip() for line in description.strip().splitlines()
       )
-      params_section += f"{param_name} :\n    {formatted_description}\n\n"
+      type_str = ""
+      if param_types and param_name in param_types:
+        type_str = c_type_to_numpy_type(param_types[param_name])
+      type_suffix = f" : {type_str}" if type_str else " :"
+      params_section += (
+        f"{param_name}{type_suffix}\n    {formatted_description}\n\n"
+      )
     # Remove the original parameter sections from the docstring
     transformed_docstring = re.sub(
       r"(Parameter ``.*?``:\n.*?)(?=\n\n|\Z)",
@@ -324,13 +614,41 @@ def transform_docstring(docstring):
 
   if returns_match:
     return_description = returns_match.group(1).strip()
-    return_section = "Returns\n-------\n" + "\n    ".join(
+    formatted_return = "\n    ".join(
       line.strip() for line in return_description.splitlines()
     )
+    return_type = c_type_to_numpy_type(return_c_type) if return_c_type else ""
+    if return_type:
+      return_section = (
+        f"Returns\n-------\n{return_type}\n    {formatted_return}"
+      )
+    else:
+      return_section = f"Returns\n-------\n    {formatted_return}"
     # Remove the original return section from the docstring
     transformed_docstring = re.sub(
       r"Returns:\n.*?(?=\n\n|\Z)", "", transformed_docstring, flags=re.DOTALL
     ).strip()
+
+  # Lift the remaining Doxygen-derived section markers (Note,
+  # Warning, See also, Raises) to proper numpydoc sections.
+  transformed_docstring = _convert_doxy_sections(transformed_docstring)
+  transformed_docstring = _convert_doxy_raises(transformed_docstring)
+
+  # If the entire docstring was a `@return ...` clause (no body, no
+  # Parameters block — common for property getters with only an
+  # `@return` annotation) AND we have no return type to emit, flatten
+  # to a plain leading sentence. When a return type *is* available
+  # (the post-PR-#670 norm), we keep the proper `Returns` block —
+  # numpydoc parses it as an attribute summary cleanly.
+  if (
+    not transformed_docstring
+    and return_section
+    and not params_section
+    and not return_c_type
+  ):
+    return_description = returns_match.group(1).strip()
+    flat = " ".join(line.strip() for line in return_description.splitlines())
+    return flat[0].upper() + flat[1:] if flat else ""
 
   # Reconstruct the docstring with the correct order
   final_docstring = transformed_docstring
@@ -343,7 +661,7 @@ def transform_docstring(docstring):
 
 
 # TODO(jamiesnape): Refactor into multiple functions and unit test.
-def process_comment(comment):
+def process_comment(comment, cursor=None):
   """
   Converts Doxygen-formatted string to look presentable in a Python
   docstring.
@@ -509,8 +827,14 @@ def process_comment(comment):
   s = replace_with_header(r"[@\\]subsection\s+\w+\s+(.*)", "-", s)
   s = re.sub(r"[@\\]subsubsection\s+\w+\s+(.*)", r"\n**\1**\n", s)
 
-  # Doxygen LaTeX commands.
-  s = re.sub(r"[@\\]f\$\s*(.*?)\s*[@\\]f\$", r":math:`\1`", s, flags=re.DOTALL)
+  # Doxygen LaTeX commands. The trailing `\ ` (escaped space) after the
+  # closing backtick of the inline math directive keeps RST happy when
+  # the math is immediately followed by a word character (e.g.
+  # `:math:`tau`s` would otherwise parse the trailing `s` as the start
+  # of an inline phrase reference).
+  s = re.sub(
+    r"[@\\]f\$\s*(.*?)\s*[@\\]f\$", r":math:`\1`\\ ", s, flags=re.DOTALL
+  )
   s = re.sub(
     r"[@\\]f\[\s*(.*?)\s*[@\\]f\]", r"\n\n.. math:: \1\n\n", s, flags=re.DOTALL
   )
@@ -832,7 +1156,7 @@ def process_comment(comment):
 
   result = result.rstrip().lstrip("\n")
   try:
-    return transform_docstring(result)
+    return transform_docstring(result, cursor=cursor)
   except Exception:
     pass
     # pdb.set_trace()
@@ -949,7 +1273,40 @@ def extract(include_file_map, cursor, symbol_tree, deprecations=None):
 
     if len(cursor.spelling) > 0:
       comment = extract_comment(cursor, deprecations)
-      comment = process_comment(comment)
+      comment = process_comment(comment, cursor=cursor)
+      # Dedupe declaration + definition cursors that refer to the same
+      # C++ entity (same USR AND same type signature). Headers that
+      # comment both the declaration (in `*.hpp`) and the inline
+      # definition (in `implementation/*.ipp`) would otherwise produce
+      # two Symbols with differing comments, which
+      # `choose_doc_var_names` cannot disambiguate and falls back to
+      # `doc_was_unable_to_choose_unambiguous_names`. The type-signature
+      # check guards against accidentally collapsing legitimate
+      # overloads whose USR happens to collide.
+      usr = cursor.get_usr() if hasattr(cursor, "get_usr") else None
+      cursor_type = cursor.type.spelling if cursor.type is not None else ""
+      if usr:
+        for j, existing in enumerate(node.doc_symbols):
+          existing_usr = (
+            existing.cursor.get_usr()
+            if hasattr(existing.cursor, "get_usr")
+            else None
+          )
+          existing_type = (
+            existing.cursor.type.spelling
+            if existing.cursor.type is not None
+            else ""
+          )
+          if (
+            existing_usr
+            and existing_usr == usr
+            and existing_type == cursor_type
+          ):
+            if len(comment) > len(existing.comment):
+              node.doc_symbols[j] = Symbol(
+                cursor, name_chain, include, line, comment
+              )
+            return
       symbol = Symbol(cursor, name_chain, include, line, comment)
       node.doc_symbols.append(symbol)
 

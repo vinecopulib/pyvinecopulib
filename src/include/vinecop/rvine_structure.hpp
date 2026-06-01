@@ -98,13 +98,14 @@ Alternatives to instantiate structures are:
           [](const RVineStructure& self) { return self.to_json().dump(); },
           rvinestructure_doc.to_json.doc,
           nb::call_guard<nb::gil_scoped_release>())
-      .def_prop_ro("dim", &RVineStructure::get_dim, "The dimension.")
+      .def_prop_ro("dim", &RVineStructure::get_dim,
+                   rvinestructure_doc.get_dim.doc)
       .def_prop_ro("trunc_lvl", &RVineStructure::get_trunc_lvl,
-                   "The truncation level.")
+                   rvinestructure_doc.get_trunc_lvl.doc)
       .def_prop_ro("order",
                    (std::vector<size_t>(RVineStructure::*)() const) &
                        RVineStructure::get_order,
-                   "The variable order.",
+                   rvinestructure_doc.get_order.doc_0args,
                    nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("matrix", &RVineStructure::get_matrix,
                    rvinestructure_doc.get_matrix.doc,

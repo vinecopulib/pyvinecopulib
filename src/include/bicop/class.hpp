@@ -100,25 +100,23 @@ Alternatives to instantiate bivariate copulas are:
           [](Bicop& self) -> std::string { return self.to_json().dump(); },
           bicop_doc.to_json.doc, nb::call_guard<nb::gil_scoped_release>())
       .def_prop_rw("rotation", &Bicop::get_rotation, &Bicop::set_rotation,
-                   "The copula rotation.")
+                   bicop_doc.get_rotation.doc)
       .def_prop_rw(
           "parameters", &Bicop::get_parameters,
           [](Bicop& self, const nb::DRef<Eigen::MatrixXd>& parameters) {
             self.set_parameters(parameters);
           },
-          "The copula parameter(s).", nb::call_guard<nb::gil_scoped_release>())
+          bicop_doc.get_parameters.doc,
+          nb::call_guard<nb::gil_scoped_release>())
       .def_prop_rw("var_types", &Bicop::get_var_types, &Bicop::set_var_types,
-                   "The type of the two variables.")
-      .def_prop_ro("family", &Bicop::get_family, "The copula family.")
-      .def_prop_ro("tau", &Bicop::get_tau, "The Kendall's tau.")
-      .def_prop_ro("npars", &Bicop::get_npars,
-                   "The number of parameters (for nonparametric "
-                   "families, a conceptually similar definition).")
+                   bicop_doc.get_var_types.doc)
+      .def_prop_ro("family", &Bicop::get_family, bicop_doc.get_family.doc)
+      .def_prop_ro("tau", &Bicop::get_tau, bicop_doc.get_tau.doc)
+      .def_prop_ro("npars", &Bicop::get_npars, bicop_doc.get_npars.doc)
       .def("loglik", &Bicop::loglik,
            "u"_a = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
            bicop_doc.loglik.doc, nb::call_guard<nb::gil_scoped_release>())
-      .def_prop_ro("nobs", &Bicop::get_nobs,
-                   "The number of observations (only for fitted objects).")
+      .def_prop_ro("nobs", &Bicop::get_nobs, bicop_doc.get_nobs.doc)
       .def("aic", &Bicop::aic,
            "u"_a = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
            bicop_doc.aic.doc, nb::call_guard<nb::gil_scoped_release>())

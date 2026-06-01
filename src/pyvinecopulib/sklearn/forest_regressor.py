@@ -9,7 +9,6 @@ from ._base import (
   _DOC_FACTORIZATION,
   _DOC_PIPELINE,
   _DOC_REFERENCES,
-  _DOC_WRAPPER,
 )
 from ._forest_base import _DOC_FOREST, _DOC_FOREST_REFERENCES, VineForestBase
 from .regressor import VineRegressor
@@ -33,27 +32,23 @@ class VineForestRegressor(VineForestBase, RegressorMixin):
   ) -> None:
     """Ensemble of vine-copula regressors with random structures.
 
-    Builds ``n_vines`` :class:`VineRegressor` base learners on
-    randomly sampled vine structures, prunes them via the model
-    confidence set (MCS), and averages the conditional weights across
-    survivors before computing predictions. See the class docstring
-    for the full methodology.
+    Builds ``n_vines`` `VineRegressor` base learners on randomly
+    sampled vine structures, prunes them via the model confidence
+    set (MCS), and averages the conditional weights across
+    survivors before computing predictions.
 
     Parameters
     ----------
-    base_params : dict, optional
-        Keyword arguments forwarded to each :class:`VineRegressor`
+    base_params : dict or None, default=None
+        Keyword arguments forwarded to each `VineRegressor`
         ``__init__``. Example:
         ``{"quantiles": [0.1, 0.5, 0.9], "batch_size": 200}``.
     n_vines : int, default=100
-        Number of random base estimators (before MCS pruning).
+        Number of random base estimators before MCS pruning.
     vines_sampling : {"uniform", "local"}, default="uniform"
-        Random-structure generator. ``"uniform"`` draws uniformly over
-        R-vines via Joe's algorithm (Joe, Cooke & Kurowicka 2011);
-        ``"local"`` draws each tree from the Kendall's-:math:`\\tau`-
-        weighted distribution (Dissmann MST as the mode) via Wilson's
-        loop-erased random walk (Wilson 1996). See
-        :class:`VineForestBase` for the full description.
+        Random-structure generator: ``"uniform"`` (Joe's algorithm)
+        or ``"local"`` (Kendall's-tau-weighted via Wilson's
+        loop-erased random walk).
     bootstrap : bool, default=True
         Bootstrap-resample the training set for each base estimator.
     val_fraction : float, default=0.25
@@ -61,15 +56,15 @@ class VineForestRegressor(VineForestBase, RegressorMixin):
         disables validation.
     best_only : bool, default=False
         Keep only the single best survivor rather than the full MCS.
-    method : {"da_mcs_marg", "da_mcs_unif", None}, default="da_mcs_marg"
-        Survivor-selection method. ``None`` keeps anything strictly
+    method : {"da_mcs_marg", "da_mcs_unif"} or None, default="da_mcs_marg"
+        Survivor-selection method. `None` keeps anything strictly
         better than the Dissmann baseline.
     alpha : float, default=0.05
         Significance level for the MCS selector.
     add_dissmann : bool, default=True
-        Include the Dissmann-structure baseline among the candidates.
-    seed : int, default=42
-        Random seed for reproducibility.
+        Include the Dissmann-structure baseline among candidates.
+    random_state : int, RandomState instance or None, default=None
+        Seed for reproducibility.
     n_jobs : int, default=1
         Number of joblib workers used during fit and predict.
     verbose : bool, default=False
@@ -102,18 +97,14 @@ class VineForestRegressor(VineForestBase, RegressorMixin):
     return VineRegressor(**params)
 
   def _loglik_estimator(self, estimator, X, y=None):
-    """Conditional log-density log f(y | x) per row.
+    """Conditional log-density :math:`\\log f_{Y \\mid X}(y \\mid x)` per row.
 
-    Uses the same three-term identity as the single-vine regressor's
-    private hooks:
+    Uses the three-term identity
 
     .. math::
 
        \\log f_{Y \\mid X}(y \\mid x)
          = \\log c_{Y, X}(u_y, u_x) - \\log c_X(u_x) + \\log f_Y(y).
-
-    Y-only inputs (``y is None``) aren't supported on the regressor
-    forest — by construction ``fit(X, y)`` always supplies a target.
     """
     if y is None:
       raise ValueError(
@@ -130,44 +121,45 @@ class VineForestRegressor(VineForestBase, RegressorMixin):
     return log_c_joint - log_c_x + log_f_y
 
   def fit(self, X, y):
-    """Fit the ensemble of vine regressors.
+    """Fits the ensemble of vine regressors.
 
     Parameters
     ----------
-    X : ndarray of shape (n_samples, n_features)
+    X : ndarray, shape (n_samples, n_features), dtype float
         Training covariates.
-    y : ndarray of shape (n_samples,)
+    y : ndarray, shape (n_samples,), dtype float
         Training responses.
 
     Returns
     -------
     self : VineForestRegressor
+        The fitted estimator.
     """
     return self._fit_ensemble(X, y)
 
   def _iter_weights(self, X):
-    """Yield batched ensemble-averaged conditional weights.
+    """Yields batched ensemble-averaged conditional weights.
 
-    Iterates over batches of ``X`` and, for each batch, averages the
-    raw weights produced by every surviving :class:`VineRegressor`
-    (recall that the forest sets ``_normalize_weights = False`` on
-    each base learner so the unnormalised copula densities can be
-    averaged sensibly). The averaged weights are then row-normalised
-    once at the ensemble level.
+    Iterates over batches of ``X`` and, for each batch, averages
+    the raw weights produced by every surviving `VineRegressor`
+    (the forest sets ``_normalize_weights = False`` on each base
+    learner so the unnormalised copula densities can be averaged
+    sensibly). Weights are row-normalised once at the ensemble
+    level.
 
     Parameters
     ----------
-    X : ndarray of shape (n_test, n_features)
+    X : ndarray, shape (n_test, n_features), dtype float
         Test covariates on the original (un-transformed) scale.
 
     Yields
     ------
-    weights : ndarray of shape (batch, n_train_or_grid)
+    weights : ndarray, shape (batch, n_train_or_grid), dtype float
         Row-normalised ensemble weights for the current batch.
     start : int
-        Index of the first row in this batch.
+        Index of the first row in the batch.
     end : int
-        Index one past the last row in this batch.
+        One past the index of the last row in the batch.
     """
     n_test = X.shape[0]
     batch_size = self._estimators[0].batch_size
@@ -190,27 +182,25 @@ class VineForestRegressor(VineForestBase, RegressorMixin):
         yield avg, start, end
 
   def predict(self, X):
-    """Predict conditional mean and/or quantiles from the ensemble.
+    """Predicts conditional mean and/or quantiles from the ensemble.
 
-    For each test row :math:`x`, computes the ensemble-averaged
-    weights via :meth:`_iter_weights` and applies the same weighted
-    statistics as :meth:`VineRegressor.predict`: weighted average of
-    training responses for the mean, weighted quantile (inverted CDF)
-    for each requested level.
+    Computes ensemble-averaged weights via `_iter_weights` and
+    applies the same weighted statistics as `VineRegressor.predict`:
+    weighted average of training responses for the mean, weighted
+    quantile (inverted CDF) for each requested level.
 
     Parameters
     ----------
-    X : ndarray or DataFrame of shape (n_samples, n_features)
+    X : ndarray, shape (n_samples, n_features), dtype float, or DataFrame
         Test covariates.
 
     Returns
     -------
-    ndarray
-        Predictions of shape ``(n_samples,)`` if a single output is
-        requested (mean *or* a single quantile), or
-        ``(n_samples, n_outputs)`` otherwise. Output columns are
-        ordered: mean (if enabled), then quantiles in the order
-        configured on the base estimator.
+    ndarray, shape (n_samples,) or (n_samples, n_outputs), dtype float
+        Predictions. Shape ``(n_samples,)`` if only one output is
+        requested, otherwise ``(n_samples, n_outputs)``. Output
+        columns are ordered: mean (if enabled), then quantiles in
+        the order configured on the base estimator.
     """
     X = self._prepare_prediction_data(X)
     return self._estimators[0]._predict_from_iter(X, self._iter_weights)
@@ -218,14 +208,13 @@ class VineForestRegressor(VineForestBase, RegressorMixin):
 
 VineForestRegressor.__doc__ = f"""Forest of vine-copula regressors.
 
-An ensemble of :class:`VineRegressor` base learners fitted on
-randomly sampled vine structures. Survivors are selected via a model
+An ensemble of `VineRegressor` base learners fitted on randomly
+sampled vine structures. Survivors are selected via a model
 confidence set (MCS) on a held-out validation split, and the
 conditional weights :math:`w_i(x)` from the single-vine estimating
 equation framework are averaged across survivors before being used
 to compute conditional means or quantiles.
 
-{_DOC_WRAPPER}
 {_DOC_FOREST}
 {_DOC_PIPELINE}
 {_DOC_FACTORIZATION}
@@ -242,6 +231,6 @@ Examples
 ...     base_params={{"quantiles": [0.1, 0.5, 0.9]}},
 ...     n_vines=10, n_jobs=1,
 ... ).fit(X[:200], y[:200])
->>> forest.predict(X[200:205])           # columns: mean, q10, q50, q90
+>>> forest.predict(X[200:205])
 
 {_DOC_REFERENCES}{_DOC_FOREST_REFERENCES}"""

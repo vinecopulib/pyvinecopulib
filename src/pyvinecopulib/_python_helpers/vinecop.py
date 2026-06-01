@@ -26,18 +26,19 @@ VINECOP_PLOT_DOC = """
     -------
     Nothing, the function generates a plot and shows it using matplotlib.
 
-    Usage
-    -----
-    .. code-block:: python
-
-        import pyvinecopulib as pv
-        import numpy as np
-        np.random.seed(1234)
-        u = np.random.uniform(0, 1, size=(20, 10))
-        vc = vc = pv.Vinecop.from_data(u, controls=pv.FitControlsVinecop(family_set=[pv.BicopFamily.indep]))
-        vc.plot(tree=[0, 1, 2]) # Plots the first three trees
-        vars_names = ["X" + str(i) for i in range(10)]
-        vc.plot(vars_names=vars_names) # Using variable names for the plot
+    Examples
+    --------
+    >>> import pyvinecopulib as pv
+    >>> import numpy as np
+    >>> np.random.seed(1234)
+    >>> u = np.random.uniform(0, 1, size=(20, 10))
+    >>> vc = pv.Vinecop.from_data(
+    ...     u,
+    ...     controls=pv.FitControlsVinecop(family_set=[pv.BicopFamily.indep]),
+    ... )
+    >>> vc.plot(tree=[0, 1, 2])  # Plots the first three trees
+    >>> vars_names = ["X" + str(i) for i in range(10)]
+    >>> vc.plot(vars_names=vars_names)
 """
 
 

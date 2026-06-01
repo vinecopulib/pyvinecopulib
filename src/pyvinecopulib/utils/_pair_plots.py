@@ -23,28 +23,36 @@ def pairs_copula_data(
   bins: int = 20,
   scatter_size: float = 6.0,
 ) -> tuple[Figure, NDArray[Any]]:
-  """
-  Pair plot for copula data U in (0,1)^d using pure Matplotlib.
-  - Lower: bivariate copula density contours (fitted with pyvinecopulib), drawn in z-space.
-  - Upper: scatter with Kendall's tau annotation (copula space).
-  - Diagonal: histograms (copula space).
+  """Pair plot for copula data ``U`` in ``(0, 1)^d``.
+
+  Renders three panel types via pure Matplotlib: lower panels show
+  bivariate copula density contours (fitted with pyvinecopulib) in
+  z-space; upper panels show the scatter plus a Kendall's tau
+  annotation in copula space; the diagonal holds histograms.
 
   Parameters
   ----------
-  data : (n,d) array-like
-      Copula data with entries strictly in (0,1).
-  main : str
+  data : array-like, shape (n, d)
+      Copula data with entries strictly in ``(0, 1)``.
+  main : str, default=""
       Figure title.
-  grid_size : int
-      Resolution of the contour grid per dimension (lower panels). Must be positive.
-  bins : int
+  cols : list of str or None, default=None
+      Per-column labels (length ``d``). When `None`, columns are
+      labelled ``"u1"`` … ``"ud"``.
+  grid_size : int, default=50
+      Resolution of the contour grid per dimension (lower panels).
+      Must be positive.
+  bins : int, default=20
       Number of histogram bins (diagonal). Must be positive.
-  scatter_size : float
+  scatter_size : float, default=6.0
       Marker size for upper-panel scatter. Must be positive.
 
   Returns
   -------
-  fig, axes : matplotlib Figure and Axes array of shape (d, d)
+  fig : Figure
+      The matplotlib `Figure` containing the panel grid.
+  axes : ndarray, shape (d, d), dtype object
+      Array of matplotlib `Axes` objects, indexed ``[row, col]``.
   """
   # Input validation
   if data is None:

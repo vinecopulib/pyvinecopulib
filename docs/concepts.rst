@@ -1,137 +1,728 @@
 Concepts
 ========
 
-A short tour of the ideas behind ``pyvinecopulib`` for readers
-arriving from scikit-learn or PyTorch. Five minutes here will make
-the rest of the API documentation much easier to read.
+A self-contained tour of the ideas behind ``pyvinecopulib``. The
+emphasis is on the formulas you'll see in docstrings and the API
+classes that implement them. Skimming this page first should make
+the rest of the documentation much easier to navigate; revisit it
+whenever a docstring throws an unfamiliar symbol your way.
 
-What is a copula?
------------------
+.. contents::
+   :local:
+   :depth: 2
 
-By **Sklar's theorem**, every joint distribution
-:math:`F(x_1, \ldots, x_d)` factorises as
+
+.. _concepts-sklar:
+
+Sklar's theorem and pseudo-observations
+---------------------------------------
+
+A *copula* is a multivariate distribution with uniform-:math:`[0, 1]`
+marginals. By **Sklar's theorem** (Sklar, 1959), every joint
+distribution :math:`F` on :math:`\mathbb{R}^d` factorises as
 
 .. math::
 
    F(x_1, \ldots, x_d) \;=\; C\bigl(F_1(x_1), \ldots, F_d(x_d)\bigr),
 
 where :math:`F_1, \ldots, F_d` are the **marginal CDFs** and
-:math:`C: [0, 1]^d \to [0, 1]` is the **copula** — a multivariate CDF
-on the unit cube with uniform marginals. The marginals carry the
-shape of each variable on its own; the copula carries the dependence
-between them.
-
-Plugging the chain rule in gives an equally clean factorisation of
-the joint density:
+:math:`C : [0, 1]^d \to [0, 1]` is the copula. When the marginals
+are continuous :math:`C` is unique. Differentiating both sides gives
+the corresponding density factorisation
 
 .. math::
 
-   f(x_1, \ldots, x_d) \;=\; c\bigl(F_1(x_1), \ldots, F_d(x_d)\bigr)
-   \,\prod_{j=1}^{d} f_j(x_j),
+   f(x_1, \ldots, x_d)
+   \;=\;
+   c\bigl(F_1(x_1), \ldots, F_d(x_d)\bigr) \,
+   \prod_{j=1}^{d} f_j(x_j),
 
-so estimating :math:`f` reduces to (a) fitting :math:`d` univariate
-densities and (b) fitting one copula density :math:`c` on the
-pseudo-observations :math:`u_j = \hat F_j(x_j)`.
+so the log-likelihood splits cleanly into a sum of marginal
+log-likelihoods and a copula log-likelihood:
 
-The first half is well-trodden — pyvinecopulib uses
-:class:`pyvinecopulib.utils.Kde1d` for the marginals. The interesting
-part is :math:`c`.
+.. math::
 
-Pair-copula construction and R-vines
-------------------------------------
+   \log f(\mathbf x)
+   \;=\;
+   \log c\bigl(F_1(x_1), \ldots, F_d(x_d)\bigr)
+   \;+\; \sum_{j=1}^{d} \log f_j(x_j).
+
+This justifies a two-step **inference-functions-for-margins**
+estimator (Joe & Xu, 1996): first fit the
+:math:`d` univariate marginals; then fit the copula on the
+**pseudo-observations**
+
+.. math::
+
+   \hat u_{ij} \;=\; \hat F_j(x_{ij}),
+   \qquad i = 1, \ldots, n, \; j = 1, \ldots, d.
+
+The univariate side is well-trodden — pyvinecopulib uses
+:class:`pyvinecopulib.utils.Kde1d` (a boundary-corrected 1-d KDE that
+also handles ordered-discrete data) for the marginals. Two
+convenience helpers convert raw data to pseudo-observations and
+measure dependence on them:
+
+* :func:`pyvinecopulib.utils.to_pseudo_obs` ranks each column to
+  :math:`(0, 1)`, the canonical input shape for the copula classes.
+* :func:`pyvinecopulib.utils.wdm` computes weighted versions of
+  Kendall's :math:`\tau`, Spearman's :math:`\rho`, Blomqvist's
+  :math:`\beta`, Hoeffding's :math:`D`, and Pearson correlation —
+  margin-free dependence measures that drive both diagnostics and
+  Dissmann's structure-selection heuristic.
+
+The interesting part is :math:`c`, and the rest of this page is
+about how pyvinecopulib represents and fits it.
+
+
+.. _concepts-bivariate:
+
+Bivariate copulas
+-----------------
+
+The atomic object is the bivariate copula
+:class:`pyvinecopulib.core.Bicop`. It exposes the standard surface
+expected from a :math:`d = 2` distribution on
+:math:`[0, 1]^2`:
+
+* :math:`c(u_1, u_2)` — copula density —
+  :meth:`pyvinecopulib.core.Bicop.pdf`;
+* :math:`C(u_1, u_2)` — copula CDF —
+  :meth:`pyvinecopulib.core.Bicop.cdf`;
+* random sampling on :math:`[0, 1]^2` —
+  :meth:`pyvinecopulib.core.Bicop.simulate`.
+
+Pair copulas inside a vine also need **h-functions**, the partial
+conditional CDFs
+
+.. _concepts-h-functions:
+
+.. math::
+
+   h_1(u_1, u_2) \;&=\; \mathbb{P}(U_2 \le u_2 \mid U_1 = u_1)
+   \;=\; \frac{\partial C(u_1, u_2)}{\partial u_1}, \\[4pt]
+   h_2(u_1, u_2) \;&=\; \mathbb{P}(U_1 \le u_1 \mid U_2 = u_2)
+   \;=\; \frac{\partial C(u_1, u_2)}{\partial u_2},
+
+and their inverses :math:`h_1^{-1}`, :math:`h_2^{-1}`. These map to
+
+* :meth:`pyvinecopulib.core.Bicop.hfunc1`,
+  :meth:`pyvinecopulib.core.Bicop.hfunc2`,
+* :meth:`pyvinecopulib.core.Bicop.hinv1`,
+  :meth:`pyvinecopulib.core.Bicop.hinv2`.
+
+H-functions are the workhorse of vine evaluation: they turn the
+:math:`[0, 1]^2` outputs of one tree into the conditional
+pseudo-observations consumed by the next, and their inverses drive
+:meth:`pyvinecopulib.core.Vinecop.simulate` and
+:meth:`pyvinecopulib.core.Vinecop.inverse_rosenblatt`.
+
+Every :class:`Bicop` belongs to one of the families catalogued in
+:ref:`concepts-families` below; switch families via
+:class:`pyvinecopulib.core.FitControlsBicop`.
+
+
+.. _concepts-vines:
+
+Vine structures
+---------------
 
 Estimating a fully-flexible :math:`d`-dimensional copula directly is
-hard once :math:`d` is larger than a handful. The **pair-copula
-construction** (PCC) of Bedford & Cooke (2002) sidesteps that by
-decomposing :math:`c` into a product of **bivariate** building blocks
-indexed by a tree structure called an **R-vine**:
+hard once :math:`d` is larger than a handful. **Pair-copula
+constructions** (Joe, 1996; Bedford & Cooke, 2001, 2002)
+sidestep that by decomposing the joint copula density into a product
+of :math:`d(d-1)/2` bivariate building blocks. The order of
+conditioning is encoded by a graphical object called a *vine*.
 
-* The bottom tree edges are unconditional pair copulas.
-* Higher-tree edges are conditional pair copulas of the form
-  :math:`c_{j, k \mid S}`, where :math:`S` is a small "conditioning"
-  set.
+.. admonition:: Definition (regular vine)
 
-An R-vine is a sequence of :math:`d - 1` trees encoding which
-conditional pair copulas to use; each pair copula can be fit
-independently of the others. Aas et al. (2009) popularised this
-construction by demonstrating that pair-copula models scale far
-better than direct multivariate alternatives in finance and beyond.
+   A **regular vine** (R-vine) on :math:`d` variables is a sequence
+   of trees :math:`(V_t, E_t)`, :math:`t = 1, \ldots, d - 1`, with
 
-In ``pyvinecopulib`` the R-vine structure lives on
-:class:`pyvinecopulib.RVineStructure`, and the fitted vine itself
-lives on :class:`pyvinecopulib.Vinecop`. The :class:`Vinecop` exposes
-the standard surface — ``pdf``, ``cdf``, ``simulate``,
-``rosenblatt`` / ``inverse_rosenblatt`` — and the corresponding
-``TorchVinecop`` from :mod:`pyvinecopulib.torch` mirrors that surface
-in pure PyTorch for GPU / autograd workflows.
+   * :math:`V_1 = \{1, \ldots, d\}`,
+   * :math:`V_t = E_{t-1}` for :math:`t \ge 2`,
+   * the **proximity condition**: two nodes in :math:`(V_{t+1}, E_{t+1})`
+     are connected only if the corresponding edges in
+     :math:`(V_t, E_t)` share a node.
 
-The TLL family
---------------
+A vine *copula* labels each edge :math:`e \in E_t` with a
+conditioned set :math:`\{j_e, k_e\}` and a conditioning set
+:math:`D_e \subset \{1, \ldots, d\} \setminus \{j_e, k_e\}`, plus a
+bivariate **pair-copula** :math:`c_{j_e, k_e \mid D_e}` describing
+the conditional dependence between :math:`U_{j_e}` and
+:math:`U_{k_e}` given :math:`\mathbf U_{D_e}`. See Czado & Nagler
+(2022) for a textbook treatment.
 
-The default pair-copula family in ``pyvinecopulib`` is **TLL** —
-*Transformed Local Likelihood*, a non-parametric kernel estimator
-introduced by Geenens (2014) and extended by Nagler (2018). TLL
-estimates the copula density on a grid in the inverse-normal
-(:math:`\Phi^{-1}`) transformed space, where the local-likelihood
-machinery is well-behaved at the boundary of the unit square. Each
-grid cell's density is set to maximise a locally-weighted likelihood
-with a bandwidth chosen automatically.
+In pyvinecopulib the structure object is
+:class:`pyvinecopulib.core.RVineStructure`, with the two well-known
+specialisations
 
-Why TLL is the default:
+* :class:`pyvinecopulib.core.DVineStructure` — every tree is a
+  path; convenient for ordered-conditioning regression.
+* :class:`pyvinecopulib.core.CVineStructure` — every tree is a
+  star; convenient when one variable drives the others.
 
-* It captures arbitrary non-Gaussian-like dependence shapes (heavy
-  tails, asymmetric dependence) without committing to a parametric
-  family.
-* It composes cleanly with the vine: every pair copula on every edge
-  uses the same evaluator, so fits scale predictably with :math:`d`.
-* It is the family the PyTorch backend
-  (:class:`pyvinecopulib.torch.TorchBicop`) supports natively — the
-  density grid is the natural representation for GPU / autograd
-  evaluation.
+Both can be passed anywhere an R-vine is accepted, and
+:meth:`RVineStructure.simulate` draws structures uniformly at
+random (Joe, 2011) — the basis of the
+:ref:`concepts-structure-selection` section below.
 
-The C++ library exposes the family as
-:data:`pyvinecopulib.families.tll`. If you have a clear parametric
-prior — Gaussian, Clayton, Gumbel, etc. — pass it via
-:class:`pyvinecopulib.FitControlsVinecop.family_set` instead.
+
+.. _concepts-pcc:
+
+Pair-copula construction
+------------------------
+
+With the structure fixed, the vine-copula density factorises as
+
+.. math::
+
+   c(\mathbf u)
+   \;=\;
+   \prod_{t = 1}^{d - 1} \prod_{e \in E_t}
+   c_{j_e, k_e \mid D_e}\!\bigl(
+   u_{j_e \mid D_e}, \; u_{k_e \mid D_e} \,\big|\, \mathbf u_{D_e}
+   \bigr),
+
+where the conditional pseudo-observations
+:math:`u_{j_e \mid D_e} = C_{j_e \mid D_e}(u_{j_e} \mid \mathbf u_{D_e})`
+are obtained tree-by-tree from h-functions of the lower-tree pair
+copulas. Concretely, if an edge in tree :math:`t + 1` has
+conditioned set :math:`\{j, k\}` and conditioning set
+:math:`D \cup \{\ell\}`, then
+
+.. math::
+
+   u_{j \mid D \cup \{\ell\}}
+   \;=\;
+   h_1\!\bigl(u_{j \mid D}, \; u_{\ell \mid D};\;
+              c_{j, \ell \mid D}\bigr),
+
+i.e. the conditional pseudo-obs at level :math:`t + 1` is an
+h-function of the pair-copula one level down. This recursive
+structure is what
+:meth:`pyvinecopulib.core.Vinecop.rosenblatt` evaluates forward
+(data :math:`\to` independent uniforms) and what
+:meth:`pyvinecopulib.core.Vinecop.inverse_rosenblatt` evaluates
+backward (uniforms :math:`\to` data — used by
+:meth:`pyvinecopulib.core.Vinecop.simulate`).
+
+CDF evaluation is harder: there is no closed form for
+:math:`C(\mathbf u)` in general, so
+:meth:`pyvinecopulib.core.Vinecop.cdf` uses Monte-Carlo integration
+with the quasi-random uniforms produced by
+:func:`pyvinecopulib.utils.simulate_uniform`
+(:func:`~pyvinecopulib.utils.sobol` or
+:func:`~pyvinecopulib.utils.ghalton` sequences). Increase ``N`` to
+trade compute for accuracy.
+
+The same factorisation backs the PyTorch port
+:class:`pyvinecopulib.torch.TorchVinecop` (every pair copula is a
+:class:`pyvinecopulib.torch.TorchBicop`), with two equivalent
+cascade implementations: ``impl="legacy"`` matches the C++ cascade
+byte-for-byte, while ``impl="lazy"`` uses the dict-based
+reformulation of Cheng, Vatter, Nagler & Chen (2025).
+
+
+.. _concepts-simplifying:
+
+Simplifying assumption
+----------------------
+
+The conditional pair-copulas in the previous section may, in
+principle, depend on the conditioning value
+:math:`\mathbf u_{D_e}`. The **simplifying assumption** states
+that they do not:
+
+.. math::
+
+   c_{j_e, k_e \mid D_e}(u, v \mid \mathbf u_{D_e})
+   \;\equiv\;
+   c_{j_e, k_e \mid D_e}(u, v),
+   \qquad \forall \mathbf u_{D_e}.
+
+Under this assumption the model reduces to a collection of
+two-dimensional copulas, which is what makes vines practical.
+The choice of vine structure becomes load-bearing — different
+structures yield different approximations of the same true
+density. See Stoeber, Joe & Czado (2013), Spanhel & Kurz (2019)
+and Nagler (2025) for the theoretical discussion. Every fit in
+:class:`pyvinecopulib.core.Vinecop` (and hence the sklearn /
+torch wrappers) uses the simplified model;
+:class:`pyvinecopulib.core.FitControlsVinecop` controls *which*
+families to consider, *which* structures to search, and *how* to
+truncate the model in higher dimensions.
+
+
+.. _concepts-families:
+
+Available families
+------------------
+
+Every pair-copula in pyvinecopulib belongs to one of the families
+below. The first column links the family constant, which lives on
+:mod:`pyvinecopulib.families` and can be passed to
+:attr:`pyvinecopulib.core.FitControlsBicop.family_set`
+(or the same attribute on
+:class:`pyvinecopulib.core.FitControlsVinecop`) to restrict the
+fit-time search space.
+
+Parameter ranges below are the conventional textbook ones; the
+exact bounds the C++ library enforces are visible via
+:meth:`pyvinecopulib.core.Bicop.get_parameters_lower_bounds` and
+:meth:`pyvinecopulib.core.Bicop.get_parameters_upper_bounds`. The
+"Kendall's :math:`\tau`" column lists the closed-form mapping where
+one exists; otherwise :meth:`pyvinecopulib.core.Bicop.parameters_to_tau`
+(and its inverse :meth:`~pyvinecopulib.core.Bicop.tau_to_parameters`)
+implement the numerical conversion.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 14 22 15 6 16 10 13 16
+
+   * - Family
+     - Identifier
+     - Type
+     - Pars
+     - Range
+     - Rotations
+     - Tail dep.
+     - Kendall's :math:`\tau`
+   * - Independence
+     - :data:`pyvinecopulib.families.indep`
+     - —
+     - 0
+     - —
+     - none
+     - none
+     - :math:`0`
+   * - Gaussian
+     - :data:`pyvinecopulib.families.gaussian`
+     - elliptical
+     - 1
+     - :math:`\rho \in (-1, 1)`
+     - rotationless
+     - none
+     - :math:`(2/\pi) \arcsin \rho`
+   * - Student
+     - :data:`pyvinecopulib.families.student`
+     - elliptical
+     - 2
+     - :math:`\rho \in (-1, 1)`, :math:`\nu > 2`
+     - rotationless
+     - symmetric
+     - :math:`(2/\pi) \arcsin \rho`
+   * - Clayton
+     - :data:`pyvinecopulib.families.clayton`
+     - Archimedean
+     - 1
+     - :math:`\theta > 0`
+     - 0° / 90° / 180° / 270°
+     - lower
+     - :math:`\theta / (\theta + 2)`
+   * - Gumbel
+     - :data:`pyvinecopulib.families.gumbel`
+     - Arch. / EV
+     - 1
+     - :math:`\theta \ge 1`
+     - 0° / 90° / 180° / 270°
+     - upper
+     - :math:`1 - 1/\theta`
+   * - Frank
+     - :data:`pyvinecopulib.families.frank`
+     - Archimedean
+     - 1
+     - :math:`\theta \in \mathbb{R} \setminus \{0\}`
+     - rotationless
+     - none
+     - via Debye function
+   * - Joe
+     - :data:`pyvinecopulib.families.joe`
+     - Archimedean
+     - 1
+     - :math:`\theta \ge 1`
+     - 0° / 90° / 180° / 270°
+     - upper
+     - series expansion
+   * - BB1
+     - :data:`pyvinecopulib.families.bb1`
+     - Arch. (2-par)
+     - 2
+     - :math:`\theta > 0`, :math:`\delta \ge 1`
+     - 0° / 90° / 180° / 270°
+     - lower + upper
+     - closed form
+   * - BB6
+     - :data:`pyvinecopulib.families.bb6`
+     - Arch. (2-par)
+     - 2
+     - :math:`\theta \ge 1`, :math:`\delta \ge 1`
+     - 0° / 90° / 180° / 270°
+     - upper
+     - closed form
+   * - BB7
+     - :data:`pyvinecopulib.families.bb7`
+     - Arch. (2-par)
+     - 2
+     - :math:`\theta \ge 1`, :math:`\delta > 0`
+     - 0° / 90° / 180° / 270°
+     - lower + upper
+     - closed form
+   * - BB8
+     - :data:`pyvinecopulib.families.bb8`
+     - Arch. (2-par)
+     - 2
+     - :math:`\theta \ge 1`, :math:`\delta \in (0, 1]`
+     - 0° / 90° / 180° / 270°
+     - upper
+     - closed form
+   * - Tawn
+     - :data:`pyvinecopulib.families.tawn`
+     - extreme-value
+     - 3
+     - bounded; see C++ bounds
+     - 0° / 90° / 180° / 270°
+     - upper (asymmetric)
+     - via Pickands :math:`A`
+   * - TLL
+     - :data:`pyvinecopulib.families.tll`
+     - nonparametric
+     - —
+     - —
+     - data-driven
+     - data-driven
+     - rank-based
+
+The non-elliptical, non-radially-symmetric parametric families are
+labelled with a *rotation* in
+:math:`\{0°, 90°, 180°, 270°\}`; rotation 0° is the base form
+(positive dependence, lower-tail-heavy for Clayton, upper-tail-heavy
+for Gumbel / Joe, …), 180° is the *survival* copula (covers the
+opposite tail), and 90° / 270° provide negative dependence variants.
+:meth:`pyvinecopulib.core.Bicop.flip` flips between rotations
+0° :math:`\leftrightarrow` 180° and 90° :math:`\leftrightarrow` 270°.
+
+Family-group constants (also in :mod:`pyvinecopulib.families`) are
+pre-built lists you can pass directly to
+:attr:`~pyvinecopulib.core.FitControlsBicop.family_set`:
+
+* ``all`` — every family listed above.
+* ``parametric`` — every family except ``tll``.
+* ``nonparametric`` — ``indep`` and ``tll``.
+* ``one_par`` / ``two_par`` / ``three_par`` — grouped by parameter
+  count (one-parameter parametric / two-parameter parametric /
+  three-parameter parametric).
+* ``elliptical`` — ``gaussian``, ``student``.
+* ``archimedean`` — ``clayton``, ``gumbel``, ``frank``, ``joe``,
+  ``bb1``, ``bb6``, ``bb7``, ``bb8``.
+* ``extreme_value`` — ``tawn``, ``gumbel``.
+* ``bb`` — ``bb1``, ``bb6``, ``bb7``, ``bb8``.
+* ``rotationless`` — families that already cover both positive
+  and negative dependence (``indep``, ``gaussian``, ``student``,
+  ``frank``, ``tll``).
+* ``lt`` / ``ut`` — families with lower- / upper-tail dependence.
+* ``itau`` — families that support estimation by Kendall's-:math:`\tau`
+  inversion (``indep``, ``gaussian``, ``student``, ``clayton``,
+  ``gumbel``, ``frank``, ``joe``).
+
+The notebook ``examples/01_bivariate_copulas.ipynb`` walks through
+a fit on synthetic data for several of these families;
+``examples/05_benchmark.ipynb`` runs
+:func:`pyvinecopulib.utils.benchmark` to compare them on standard
+test problems.
+
+
+.. _concepts-estimation:
+
+Estimation
+----------
+
+Vine fitting is a two-step procedure inherited from
+:ref:`concepts-sklar`:
+
+1. **Marginals.** Each :math:`F_j` is estimated independently —
+   :class:`pyvinecopulib.utils.Kde1d` (a boundary-corrected 1-d
+   KDE) is the default both for the sklearn estimators and the
+   notebook examples. ``Kde1d`` supports continuous,
+   ordered-discrete, and unordered-categorical input via its
+   ``type`` argument.
+2. **Copula.** Given pseudo-observations
+   :math:`\hat U_{i \cdot} = (\hat F_1(X_{i,1}), \ldots, \hat F_d(X_{i,d}))`,
+   the joint copula is fit by
+   :meth:`pyvinecopulib.core.Vinecop.from_data` (or
+   :meth:`pyvinecopulib.core.Vinecop.select` for in-place
+   re-fitting).
+
+The pair-copula estimator on each edge depends on the chosen
+family. Three regimes are available via
+:class:`pyvinecopulib.core.FitControlsBicop`:
+
+* **Maximum likelihood** (``parametric_method="mle"``) — the
+  default for parametric families; numerically optimises the
+  per-edge log-likelihood under the family's parameter
+  constraints.
+* **Kendall's :math:`\tau` inversion**
+  (``parametric_method="itau"``) — restricted to families in the
+  ``itau`` group; uses
+  :meth:`Bicop.tau_to_parameters` to back out the parameters from
+  the empirical :math:`\hat\tau`. Cheaper than MLE and the
+  conventional choice for very high-dimensional vines.
+* **Nonparametric TLL** (family ``tll`` —
+  :data:`pyvinecopulib.families.tll`) — *Transformed Local
+  Likelihood* (Geenens, 2014; Nagler, 2018).
+  The copula density is estimated on a grid in the
+  inverse-normal-transformed space
+  :math:`(z_1, z_2) = (\Phi^{-1}(u_1), \Phi^{-1}(u_2))`, where
+  local-likelihood machinery is well-behaved at the boundary of
+  the unit square. Bandwidth selection is automatic; the
+  ``nonparametric_method`` and ``nonparametric_mult`` knobs on
+  ``FitControlsBicop`` tune the kernel order and the
+  bandwidth multiplier respectively.
+
+TLL is the default family for both the C++ and PyTorch backends
+because it captures arbitrary non-Gaussian-like dependence (heavy
+tails, asymmetry) without committing to a parametric form, and
+because its density-grid representation is exactly what
+:class:`pyvinecopulib.torch.TorchBicop` consumes for GPU and
+autograd evaluation.
+
+Family selection across the parametric set runs by AIC / BIC /
+mBIC inside :meth:`pyvinecopulib.core.Bicop.select`; choose the
+selection criterion via
+:attr:`pyvinecopulib.core.FitControlsBicop.selection_criterion`.
+
+
+.. _concepts-structure-selection:
+
+Structure selection
+-------------------
+
+The vine structure :math:`\mathcal V` is rarely known in advance,
+and the number of regular vines on :math:`d` variables grows as
+:math:`2^{(d-3)(d-2)/2 - 1} d!` (Morales-Napoles, 2011; Joe, 2011)
+— super-exponential, so exhaustive search is infeasible beyond a
+handful of variables. Two algorithms are exposed via
+:attr:`pyvinecopulib.core.FitControlsVinecop.tree_algorithm`:
+
+* ``"mst_prim"`` — Dissmann's greedy heuristic (Dissmann et al.,
+  2013), which is the default. Builds the trees one at a time as
+  maximum-spanning-trees weighted by absolute Kendall's :math:`\tau`
+  (or the criterion of your choice — see
+  :attr:`~pyvinecopulib.core.FitControlsVinecop.tree_criterion`).
+  It is fast and remains the de-facto standard (Czado & Nagler,
+  2022).
+* ``"random_weighted"`` — Wilson-weighted random spanning trees;
+  draws a random structure with edge probabilities proportional to
+  the absolute dependence on each candidate edge. Used to seed the
+  random search ensembles below.
+
+When better accuracy matters more than runtime, the sklearn
+forest estimators do a *Bayesian-style hold-out random search*
+over a set of candidate structures and combine the survivors via a
+*model confidence set* (MCS) — see :ref:`concepts-forests`. The
+underlying algorithm is described in Vatter & Nagler (2026).
+
+Vine truncation
+~~~~~~~~~~~~~~~
+
+For sparse models in higher dimensions, set
+:attr:`pyvinecopulib.core.FitControlsVinecop.trunc_lvl` to an
+integer :math:`T < d - 1`: pair copulas in trees
+:math:`T + 1, \ldots, d - 1` are forced to ``indep``, reducing
+both fit time and statistical degrees of freedom. The same effect
+can be triggered automatically via the mBIC criterion (Nagler,
+2019).
+
+
+.. _concepts-forests:
+
+Vine forests and regression
+---------------------------
+
+When a single greedy fit is not enough, pyvinecopulib offers
+ensemble estimators in :mod:`pyvinecopulib.sklearn`. The recipe is:
+
+1. Generate :math:`M` candidate structures
+   :math:`\Theta = \{\mathcal V_1, \ldots, \mathcal V_M\}` —
+   either uniformly at random (Joe's algorithm) or by
+   Wilson-weighted local random walks around the Dissmann
+   structure.
+2. Fit a vine on each candidate.
+3. Score each candidate on a held-out validation split with a
+   loss :math:`L` (negative log-likelihood for density
+   estimation; conditional log-likelihood for regression).
+4. Run a model-confidence-set selector (Hansen, Lunde & Nason,
+   2011) on the loss matrix to retain only candidates statistically
+   indistinguishable from the best one. The implementation uses
+   the dual-argmin (DA) test of Kim, Ramdas & Tibshirani (2025); see
+   :mod:`pyvinecopulib.sklearn` for ``method="da_mcs_marg"``
+   (per-model coverage; default) vs ``method="da_mcs_unif"``
+   (familywise coverage).
+5. Combine the survivors :math:`\hat\Theta` into the **MCS
+   mixture**
+
+   .. math::
+
+      \hat f_{\hat\Theta}(\mathbf z)
+      \;=\;
+      \frac{1}{|\hat\Theta|}
+      \sum_{\mathcal V \in \hat\Theta}
+      \hat f_{\mathcal V, \mathcal D}(\mathbf z).
+
+This is what
+:class:`pyvinecopulib.sklearn.VineForestDensity` does for
+joint-density estimation. The single-vine variant
+:class:`pyvinecopulib.sklearn.VineDensity` skips steps 1–4 and
+fits one structure (Dissmann by default).
+
+Vine regression
+~~~~~~~~~~~~~~~
+
+For conditional inference, fix one variable as the response
+:math:`Y` and stack it with the predictors to model the joint
+distribution :math:`(Y, \mathbf X)`. Any conditional summary
+of interest is then solved out of the estimating equation
+(Nagler, 2018)
+
+.. math::
+
+   \int \psi_\beta(y) \,
+   \hat f_{\hat\Theta}(y \mid \mathbf x)
+   \, dy \;=\; 0,
+
+with :math:`\psi_\beta(y) = y - \beta` recovering the
+conditional mean :math:`\beta(\mathbf x) = \mathbb E[Y \mid \mathbf X = \mathbf x]`
+and :math:`\psi_\beta(y) = \mathbb 1\{y < \beta(\mathbf x)\} - \tau`
+recovering the conditional :math:`\tau`-quantile. In practice the
+integral is replaced by a weighted sum over a grid
+:math:`\{y_1, \ldots, y_G\}`:
+
+.. math::
+
+   \sum_{g = 1}^G \psi_\beta(y_g) \,
+   \hat f_Y(y_g)
+   \sum_{\mathcal V \in \hat\Theta}
+   \hat c_{\mathcal V, \mathcal D}\!\bigl(
+   \hat F_Y(\mathbf x), \, \hat F_Y(y_g)
+   \bigr)
+   \;\approx\; 0,
+
+which :class:`pyvinecopulib.sklearn.VineRegressor` (single vine)
+and :class:`pyvinecopulib.sklearn.VineForestRegressor` (MCS
+ensemble) solve numerically. Pass the quantile levels you want
+via the ``quantiles=`` constructor argument; the predicted
+conditional mean is always returned when ``mean=True``.
+
+The forest classes share the same MCS plumbing as the density
+forest, and parallelise over candidates via joblib
+(``n_jobs=``).
+
 
 Where to next
 -------------
 
-* :class:`pyvinecopulib.Vinecop` and :class:`pyvinecopulib.Bicop` —
-  the C++ classes that do the actual fitting and evaluation.
-* :mod:`pyvinecopulib.sklearn` — scikit-learn-compatible vine-copula
-  estimators (:class:`~pyvinecopulib.sklearn.VineDensity`,
-  :class:`~pyvinecopulib.sklearn.VineRegressor`, plus forest
-  variants). The sklearn module wraps the marginal + copula
-  pipeline behind a single ``.fit`` / ``.predict`` interface and
-  can route either through the C++ default or the PyTorch backend.
-* :mod:`pyvinecopulib.torch` — PyTorch evaluators for
+* :class:`pyvinecopulib.core.Bicop` and
+  :class:`pyvinecopulib.core.Vinecop` — the C++/nanobind classes
+  that implement everything above. The notebooks
+  ``examples/01_bivariate_copulas.ipynb``,
+  ``examples/02_vine_copulas.ipynb``, and
+  ``examples/03_vine_copulas_fit_sample.ipynb`` walk through
+  end-to-end use.
+* :mod:`pyvinecopulib.sklearn` — scikit-learn-compatible
+  estimators :class:`~pyvinecopulib.sklearn.VineDensity`,
+  :class:`~pyvinecopulib.sklearn.VineRegressor`, plus the forest
+  variants :class:`~pyvinecopulib.sklearn.VineForestDensity` and
+  :class:`~pyvinecopulib.sklearn.VineForestRegressor`. The
+  notebooks ``examples/08_sklearn_estimators.ipynb`` and
+  ``examples/09_sklearn_forest.ipynb`` demonstrate them. Both
+  forests accept a backend (default C++, optional PyTorch) via
+  :mod:`pyvinecopulib.sklearn.backends`.
+* :mod:`pyvinecopulib.torch` — PyTorch evaluators
   :class:`~pyvinecopulib.torch.TorchBicop` and
-  :class:`~pyvinecopulib.torch.TorchVinecop`. Pick this when you
-  need GPU placement, autograd, or composition with other
-  ``torch.nn.Module`` code.
-* :mod:`pyvinecopulib.utils` — :class:`Kde1d` for the marginals,
-  plus quasi-random uniform generators (``sobol``, ``ghalton``,
-  ``simulate_uniform``) used by quasi-MC integration.
+  :class:`~pyvinecopulib.torch.TorchVinecop` for GPU placement and
+  autograd. Notebook ``examples/10_torch_backend.ipynb``.
+* :mod:`pyvinecopulib.utils` —
+  :class:`~pyvinecopulib.utils.Kde1d` for the marginals (notebook
+  ``examples/07_kde1d.ipynb``);
+  :func:`~pyvinecopulib.utils.wdm` for weighted dependence
+  measures (notebook ``examples/06_weighted_dependence_measures.ipynb``);
+  :func:`~pyvinecopulib.utils.sobol`,
+  :func:`~pyvinecopulib.utils.ghalton`,
+  :func:`~pyvinecopulib.utils.simulate_uniform` for the
+  low-discrepancy sequences that back Monte-Carlo CDF evaluation;
+  :func:`~pyvinecopulib.utils.to_pseudo_obs` and
+  :func:`~pyvinecopulib.utils.pairs_copula_data` for input
+  preparation and pair-plot diagnostics.
+* The :doc:`features` page is the autogenerated API reference; the
+  :doc:`examples` toctree lists all worked notebooks.
+
+The ``examples/04_discrete_variables.ipynb`` notebook covers the
+discrete-margin extension (Panagiotelis, Czado & Joe, 2012; Funk,
+Nagler & Czado, 2025), which replaces the marginal CDF derivatives in
+:ref:`concepts-sklar` by finite differences (transparent to the
+user — pass ``var_types=["d", ...]`` to
+:meth:`pyvinecopulib.core.Vinecop.from_data` or set
+``type="d"`` on :class:`pyvinecopulib.utils.Kde1d`).
+
 
 References
 ----------
 
-* Bedford, T. & Cooke, R. M. (2002). *Vines — a new graphical model
-  for dependent random variables.* Annals of Statistics 30(4),
+* **Sklar (1959).** *Fonctions de répartition à n dimensions et
+  leurs marges.* Publ. Inst. Statist. Univ. Paris 8, 229–231.
+* **Bedford & Cooke (2001, 2002).** *Probability density
+  decomposition for conditionally dependent random variables
+  modeled by vines* / *Vines — a new graphical model for dependent
+  random variables.* Annals of Mathematics and Artificial
+  Intelligence 32, 245–268 / Annals of Statistics 30(4),
   1031–1068.
-* Aas, K., Czado, C., Frigessi, A. & Bakken, H. (2009). *Pair-copula
-  constructions of multiple dependence.* Insurance: Mathematics and
-  Economics 44(2), 182–198.
-* Geenens, G. (2014). *Probit Transformation for Kernel Density
+* **Joe (1996).** *Families of m-variate distributions with given
+  margins and m(m-1)/2 bivariate dependence parameters.* In:
+  *Distributions with Fixed Marginals and Related Topics* (IMS
+  Lecture Notes 28), 120–141.
+* **Joe & Xu (1996).** *The estimation method of inference
+  functions for margins for multivariate models.* Technical
+  Report 166, Department of Statistics, University of British
+  Columbia.
+* **Aas, Czado, Frigessi & Bakken (2009).** *Pair-copula
+  constructions of multiple dependence.* Insurance: Mathematics
+  and Economics 44(2), 182–198.
+* **Dissmann, Brechmann, Czado & Kurowicka (2013).** *Selecting
+  and estimating regular vine copulae and application to financial
+  returns.* Computational Statistics & Data Analysis 59, 52–69.
+* **Joe (2011).** *Dependence comparisons of vine copulae with four
+  or more variables.* In: *Dependence Modeling: Vine Copula
+  Handbook*, 139–164.
+* **Geenens (2014).** *Probit Transformation for Kernel Density
   Estimation on the Unit Interval.* JASA 109(505), 346–358.
-* Nagler, T. (2018). *A Generic Approach to Nonparametric Function
-  Estimation with Mixed Data.* Statistics & Probability Letters 137,
-  326–330.
-* Cheng, B., Vatter, T., Nagler, T. & Chen, V. (2025). *Vine Copulas
-  as Differentiable Computational Graphs.* arXiv:2506.13318 — basis
-  for the lazy / batched torch cascades.
-* Safaai, H. (2026). *Amortized Vine Copulas for High-Dimensional
+* **Hansen, Lunde & Nason (2011).** *The Model Confidence Set.*
+  Econometrica 79(2), 453–497.
+* **Nagler (2018).** *A Generic Approach to Nonparametric Function
+  Estimation with Mixed Data.* Statistics & Probability Letters
+  137, 326–330.
+* **Nagler, Schepsmeier, Stoeber, Brechmann, Graeler & Erhardt
+  (2018).** *VineCopula: Statistical inference of vine copulas.*
+  R package.
+* **Nagler (2019).** *Model selection in sparse high-dimensional
+  vine copula models with an application to portfolio risk.*
+  Journal of Multivariate Analysis 172, 180–198.
+* **Spanhel & Kurz (2019).** *Simplified vine copula models:
+  approximations based on the simplifying assumption.* Electronic
+  Journal of Statistics 13(1), 1254–1291.
+* **Czado & Nagler (2022).** *Vine Copula Based Modeling.* Annual
+  Review of Statistics and Its Application 9, 453–477.
+* **Panagiotelis, Czado & Joe (2012).** *Pair Copula Constructions
+  for Multivariate Discrete Data.* JASA 107(499), 1063–1072.
+* **Funk, Nagler & Czado (2025).** *Discrete and mixed
+  pair-copula constructions revisited.* (In press.)
+* **Kim, Ramdas & Tibshirani (2025).** *Locally simultaneous
+  inference for the model confidence set.* arXiv:2410.16092.
+* **Cheng, Vatter, Nagler & Chen (2025).** *Vine Copulas as
+  Differentiable Computational Graphs.* arXiv:2506.13318 — the
+  basis for the lazy / batched torch cascades.
+* **Vatter & Nagler (2026).** *Throwing Vines at the Wall:
+  Structure Learning via Random Search.* (Preprint.)
+* **Safaai (2026).** *Amortized Vine Copulas for High-Dimensional
   Density and Information Estimation.* arXiv:2604.20568 — the
   pretrained estimator behind ``method="vdc"`` on
   :class:`~pyvinecopulib.torch.TorchBicop`.
