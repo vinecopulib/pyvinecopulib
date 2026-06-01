@@ -35,6 +35,8 @@
 - Add a `pyvinecopulib[sklearn]` extra (`scikit-learn>=1.4`, `pandas>=2.0`, `joblib>=1.3`, `scipy>=1.10`), a `pyvinecopulib[torch]` extra (`torch>=2.0`), and a `pyvinecopulib[vdc]` extra resolving `vine-denoising-copula` from GitHub via `[tool.uv.sources]` (#211, #216, #217).
 - Treat `pyvinecopulib`-originated `DeprecationWarning`s as errors under pytest so internal call sites stay on the canonical import paths (#207).
 - Install `--extra torch` in the notebook-test and regenerate-notebooks CI jobs so `examples/10_torch_backend.ipynb` executes under `nbmake` (#216).
+- Fix osx / musllinux wheel builds: feed libclang a clang `-resource-dir` plus the compiler's filtered system include dirs (and the macOS SDK sysroot) so `docstr.hpp` generation no longer silently drops symbols, and abort generation on any fatal libclang diagnostic.
+- Migrate macOS CI to `macos-15` and re-add `macos-15-intel`; wheel matrix is now 5 platforms × 3 ABI (15 wheels).
 
 ### Bug fixes in `pyvinecopulib`
 

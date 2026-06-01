@@ -10,7 +10,7 @@ on:
 env:
   BOOST_VERSION: 1.84.0
   EIGEN_VERSION: 3.4.0
-  EXPECTED_WHEEL_COUNT: 12  # 4 platforms × cp310/cp311/cp312-ABI3
+  EXPECTED_WHEEL_COUNT: 15  # 5 platforms × cp310/cp311/cp312-ABI3
 
 jobs:
 
@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macos-13 is an intel runner, macos-14 is apple silicon
+        # macos-15-intel is the Intel runner, macos-15 is Apple silicon.
         python: [310, 311, 312]
         cfg:
           - {
@@ -37,9 +37,16 @@ jobs:
               platform: x64,
               root_install_dir: "/home/runner/work",
             }
-          # - { os: macos-13, cibw_id: macosx_x86_64, cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # intel runner
           - {
-              os: macos-14,
+              os: macos-15-intel,
+              cibw_id: macosx_x86_64,
+              cc: clang,
+              cxx: clang++,
+              platform: x64,
+              root_install_dir: "/Users/runner/work",
+            }
+          - {
+              os: macos-15,
               cibw_id: macosx_arm64,
               cc: clang,
               cxx: clang++,
@@ -96,6 +103,12 @@ jobs:
         env:
           CIBW_REBUILD: 1
           CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
+          # The pip `libclang` wheel ships no builtin/intrinsic headers, which
+          # the docstr.hpp generation needs. manylinux's libclang finds them by
+          # default; musllinux (Alpine) does not, so install a system clang
+          # there to supply a resource dir (`clang -print-resource-dir`). No-op
+          # on manylinux; macOS/Windows are unaffected (AppleClang / MSVC).
+          CIBW_BEFORE_ALL_LINUX: "command -v apk >/dev/null 2>&1 && apk add clang || true"
           CIBW_ENVIRONMENT_WINDOWS: Boost_INCLUDE_DIR='${{steps.install-dependencies.outputs.BOOST_ROOT}}\include' EIGEN3_INCLUDE_DIR='C:\ProgramData\chocolatey\lib\eigen\include'
           CIBW_ENVIRONMENT_MACOS: "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=${{matrix.cfg.root_install_dir}}/include/eigen3"
           CIBW_ENVIRONMENT_LINUX: "Boost_INCLUDE_DIR=/host${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=/host${{matrix.cfg.root_install_dir}}/include/eigen3"
@@ -214,7 +227,8 @@ jobs:
         python: [310, 311, 312, 313, 314]
         cfg:
           - { os: ubuntu-latest, cibw_id: manylinux_x86_64 }
-          - { os: macos-14, cibw_id: macosx_arm64 }
+          - { os: macos-15-intel, cibw_id: macosx_x86_64 }
+          - { os: macos-15, cibw_id: macosx_arm64 }
           - { os: windows-latest, cibw_id: win_amd64 }
     name: Install wheel and run unit tests on ${{ matrix.cfg.os }} for cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
     steps:
@@ -242,7 +256,7 @@ jobs:
           if [[ "${{ matrix.cfg.os }}" == "ubuntu-latest" ]]; then
             sudo apt-get update
             sudo apt-get install -y graphviz
-          elif [[ "${{ matrix.cfg.os }}" == "macos-14" ]]; then
+          elif [[ "${{ matrix.cfg.os }}" == macos-* ]]; then
             brew install graphviz
           elif [[ "${{ matrix.cfg.os }}" == "windows-latest" ]]; then
             choco install graphviz -y
