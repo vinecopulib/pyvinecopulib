@@ -18,6 +18,17 @@ repos:
       # Run the formatter
       - id: ruff-format
 
+  # Security linting with bandit. Reads [tool.bandit] (skips, etc.) from
+  # pyproject.toml; scoped to the shipped package + build scripts. Keep
+  # `rev` in sync with the bandit pin in [dependency-groups].dev.
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.4
+    hooks:
+      - id: bandit
+        args: ["-c", "pyproject.toml"]
+        additional_dependencies: ["bandit[toml]"]
+        files: ^(src/pyvinecopulib|scripts)/.*\.py$
+
   # Type checking with ty (Astral's type checker). ty is alpha and
   # doesn't yet ship a stable pre-commit repo, so we run it as a local
   # hook against the dev env's installed copy. Skipped on pre-commit.ci
