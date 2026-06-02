@@ -16,10 +16,11 @@ clean: ## Wipe build artifacts and Python caches
 	rm -rf build/ dist/ *.egg-info/
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
-check: ## Read-only lint + format-check + type-check (CI-safe)
+check: ## Read-only lint + format-check + type-check + security-lint (CI-safe)
 	$(UV) run ruff check src tests
 	$(UV) run ruff format --check src tests
 	$(UV) run ty check
+	$(UV) run bandit -c pyproject.toml -q -r src/pyvinecopulib scripts
 
 format: ## Apply ruff autofixes + format
 	$(UV) run ruff check --fix src tests

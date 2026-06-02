@@ -31,6 +31,7 @@
 
 - Migrate to `uv` + `scikit-build-core` for the editable / wheel build pipeline, with `[build-system].requires` mirroring the dev `[dependency-groups]` so `--no-build-isolation` works out of the box (#209).
 - Replace `mypy` with `ty` (Astral's type checker, alpha) and enable strict checks against a Python 3.10 baseline; only `pyvinecopulib.pyvinecopulib_ext` is allowed as an unresolved import (#210).
+- Add `bandit` security linting to `make check` and pre-commit (scanning `src/pyvinecopulib` + `scripts`). The previously-unused `[tool.bandit]` config silently excluded everything (`"lib"` matched `pyvinecopulib`); the config is fixed and the surfaced findings resolved.
 - Refactor the build / docs / examples pipeline into a thin Makefile over `uv run` and rework `scripts/regenerate_notebooks.py` (#205).
 - Add a `pyvinecopulib[sklearn]` extra (`scikit-learn>=1.4`, `pandas>=2.0`, `joblib>=1.3`, `scipy>=1.10`), a `pyvinecopulib[torch]` extra (`torch>=2.0`), and a `pyvinecopulib[vdc]` extra resolving `vine-denoising-copula` from GitHub via `[tool.uv.sources]` (#211, #216, #217).
 - Treat `pyvinecopulib`-originated `DeprecationWarning`s as errors under pytest so internal call sites stay on the canonical import paths (#207).

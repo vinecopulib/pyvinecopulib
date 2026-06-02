@@ -280,7 +280,7 @@ def extract_comment(cursor, deprecations):
 
   # Append the deprecation text.
   result += (
-    " (Deprecated.) \deprecated {} "
+    r" (Deprecated.) \deprecated {} "
     + "This will be removed from vinecopulib on or after {}."
   ).format(message, removal_date)
 
@@ -480,7 +480,8 @@ def _extract_cursor_types(cursor):
               joined = re.sub(r"\s*::\s*", "::", joined)
               token_type = joined.strip() or None
         except Exception:
-          pass
+          # Token parsing is best-effort; fall back to libclang's spelling.
+          token_type = None
         param_types[child.spelling] = token_type or child.type.spelling
     return_type = _return_type_from_tokens(cursor)
     if not return_type:
@@ -1077,14 +1078,14 @@ def process_comment(comment, cursor=None):
     "---",
     "--",
     "::",
-    "\.",
+    r"\.",
     '"',
     "&",
     "#",
     "%",
     "<",
     ">",
-    "\$",
+    r"\$",
     "@",
     "\\\\",
   ):
@@ -1158,8 +1159,9 @@ def process_comment(comment, cursor=None):
   try:
     return transform_docstring(result, cursor=cursor)
   except Exception:
-    pass
-    # pdb.set_trace()
+    # numpydoc transformation is best-effort; on failure keep the
+    # cleaned-but-untransformed text rather than dropping the docstring.
+    return result
 
 
 def get_name_chain(cursor):

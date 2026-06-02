@@ -93,6 +93,7 @@ notebooks = ["nbmake", "jupyter", "nbconvert", "nbformat"]
 dev = [
   "ty",
   "ruff==0.11.6",
+  "bandit[toml]==1.9.4",
   "pre-commit",
   "twine",
   { include-group = "build" },
@@ -157,7 +158,12 @@ unresolved-import = "error"
 allowed-unresolved-imports = ["pyvinecopulib.pyvinecopulib_ext"]
 
 [tool.bandit]
-exclude_dirs = ["tests", "docs", "examples", "lib", "build"]
+# bandit is run with explicit targets (`src/pyvinecopulib scripts`) from the
+# Makefile `check` target and the pre-commit hook, so no `exclude_dirs` is
+# needed. (The previous `exclude_dirs = [..., "lib", ...]` silently matched
+# `src/pyvinecopulib` as a substring and excluded everything.)
+# B101 (assert_used): asserts are used intentionally as internal invariants in
+# src and as best-effort guards in the build scripts; keep them.
 skips = ["B101"]
 
 [tool.numpydoc_validation]
