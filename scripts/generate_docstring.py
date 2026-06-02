@@ -280,7 +280,7 @@ def extract_comment(cursor, deprecations):
 
   # Append the deprecation text.
   result += (
-    " (Deprecated.) \deprecated {} "
+    r" (Deprecated.) \deprecated {} "
     + "This will be removed from vinecopulib on or after {}."
   ).format(message, removal_date)
 
@@ -1078,14 +1078,14 @@ def process_comment(comment, cursor=None):
     "---",
     "--",
     "::",
-    "\.",
+    r"\.",
     '"',
     "&",
     "#",
     "%",
     "<",
     ">",
-    "\$",
+    r"\$",
     "@",
     "\\\\",
   ):

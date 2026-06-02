@@ -31,14 +31,16 @@ repos:
 
   # Type checking with ty (Astral's type checker). ty is alpha and
   # doesn't yet ship a stable pre-commit repo, so we run it as a local
-  # hook against the dev env's installed copy. Skipped on pre-commit.ci
-  # since it requires the project + ty installed.
+  # hook against the dev env's installed copy. Invoked via `uv run
+  # --no-sync` so a plain `git commit` finds ty in the project venv
+  # without needing it activated on PATH (and without triggering a
+  # rebuild). Skipped on pre-commit.ci, which can't build the extension.
   - repo: local
     hooks:
       - id: ty
         name: ty type checker
         language: system
-        entry: ty check
+        entry: uv run --no-sync ty check
         pass_filenames: false
         types_or: [python, pyi]
 
