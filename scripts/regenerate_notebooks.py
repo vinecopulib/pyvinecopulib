@@ -6,7 +6,11 @@ flow used by the docs pipeline.
 """
 
 import argparse
-import subprocess
+
+# subprocess is only used to run the trusted, hardcoded `jupyter nbconvert`
+# command below (no shell, no user-controlled executable).
+import subprocess  # nosec B404
+import sys
 from pathlib import Path
 
 import nbformat
@@ -62,8 +66,13 @@ def main():
   args = parser.parse_args()
 
   for file in sorted(args.examples_dir.glob("*.ipynb")):
-    subprocess.run(
+    # Run jupyter via the current interpreter (full path, not a PATH lookup)
+    # so the executable is unambiguous; args are hardcoded plus a local
+    # notebook path, shell=False. Safe to run.
+    subprocess.run(  # nosec B603
       [
+        sys.executable,
+        "-m",
         "jupyter",
         "nbconvert",
         "--to",

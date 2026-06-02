@@ -14,8 +14,15 @@ on that vine. Two concrete backends ship:
   optional :class:`pyvinecopulib.RVineStructure`. Constructing this
   class triggers the torch import (it's the explicit opt-in signal).
 
-Which backend should I pick?
-----------------------------
+The :class:`VinecopLike` Protocol describes the shared post-fit
+surface that both :class:`pyvinecopulib.Vinecop` and
+:class:`pyvinecopulib.torch.TorchVinecop` satisfy structurally;
+downstream code can type against it whenever it only needs runtime
+evaluation, not fitting.
+
+Notes
+-----
+**Which backend should I pick?**
 
 Stay on the default (:class:`VinecopBackend`) when you want the
 fastest CPU-bound vine fits, multi-threaded evaluation
@@ -26,14 +33,14 @@ family — all backed by the C++/nanobind core.
 
 Switch to :class:`TorchVinecopBackend` when you need any of:
 
-- **GPU placement** — drop a fitted vine on the GPU with
+- *GPU placement* — drop a fitted vine on the GPU with
   ``.to("cuda")`` and evaluate batched ``pdf`` / ``cdf`` /
   ``simulate`` calls there.
-- **Autograd** — the entire cascade is built from differentiable
+- *Autograd* — the entire cascade is built from differentiable
   PyTorch ops, so gradients flow back through ``pdf`` / Rosenblatt
   outputs to any upstream parameters (e.g. learned marginals or
   feature transforms).
-- **Composition with PyTorch pipelines** — the vine is a
+- *Composition with PyTorch pipelines* — the vine is a
   ``torch.nn.Module`` that drops into any other model.
 
 The torch backend currently supports the TLL family only (which is
@@ -41,12 +48,8 @@ both the default and what the GPU path is built around) and the
 optional ``"vdc"`` amortized estimator of Safaai (2026); other
 parametric families require :class:`VinecopBackend`.
 
-The :class:`VinecopLike` Protocol describes the shared post-fit
-surface that both :class:`pyvinecopulib.Vinecop` and
-:class:`pyvinecopulib.torch.TorchVinecop` satisfy structurally;
-downstream code can type against it whenever it only needs runtime
-evaluation, not fitting.
-
+Examples
+--------
 Pass a configured backend instance to any sklearn estimator via
 ``backend=``::
 
@@ -81,13 +84,13 @@ import pyvinecopulib as pv
 
 @runtime_checkable
 class VinecopLike(Protocol):
-  """Post-fit duck-type satisfied by both :class:`pyvinecopulib.Vinecop`
-  and :class:`pyvinecopulib.torch.TorchVinecop`.
+  """Post-fit duck-type for vine-copula evaluators.
 
-  The Protocol covers only the runtime methods sklearn estimators
-  consume. Backend strategy objects (:class:`VinecopBackend`,
-  :class:`TorchVinecopBackend`) absorb signature differences for
-  *fit-time* configuration.
+  Satisfied structurally by both `pyvinecopulib.Vinecop` and
+  `pyvinecopulib.torch.TorchVinecop`. Covers only the runtime
+  methods sklearn estimators consume; backend strategy objects
+  (`VinecopBackend`, `TorchVinecopBackend`) absorb signature
+  differences for fit-time configuration.
   """
 
   structure: pv.RVineStructure
@@ -120,12 +123,21 @@ def _default_cpp_controls() -> pv.FitControlsVinecop:
 
 
 class VinecopBackend:
-  """C++/nanobind backend (default). Wraps :class:`pyvinecopulib.Vinecop`.
+  """C++/nanobind backend (default). Wraps `pyvinecopulib.Vinecop`.
 
-  Per the scikit-learn developer guide, ``__init__`` performs no
-  validation and stores constructor arguments verbatim; the
-  default :class:`pyvinecopulib.FitControlsVinecop` is materialised
-  lazily in :meth:`fit_vine` when ``controls is None``.
+  Stores constructor arguments verbatim per the scikit-learn
+  developer guide; the default `FitControlsVinecop` is materialised
+  lazily in `fit_vine` when ``controls is None``.
+
+  Parameters
+  ----------
+  controls :
+      A `FitControlsVinecop` instance bundling pair-family / threading
+      / structure-selection knobs. `None` defaults to TLL with
+      `trunc_lvl=20`.
+  structure :
+      An optional pre-specified `RVineStructure`. When provided,
+      `fit_vine` skips structure selection.
   """
 
   name: ClassVar[str] = "vinecop"
@@ -213,34 +225,33 @@ class VinecopBackend:
 
 
 class TorchVinecopBackend:
-  """PyTorch backend. Wraps :class:`pyvinecopulib.torch.TorchVinecop`.
+  """PyTorch backend. Wraps `pyvinecopulib.torch.TorchVinecop`.
 
-  Pick this backend when you need GPU placement (``.to("cuda")``),
-  autograd through the vine cascade, or composition with other
-  :class:`torch.nn.Module` code. The C++ backend
-  (:class:`VinecopBackend`) is generally faster on CPU for the same
-  problem; see the module docstring for the full trade-off summary.
+  Pick this backend for GPU placement (``.to("cuda")``), autograd
+  through the vine cascade, or composition with other
+  ``torch.nn.Module`` code. The default `VinecopBackend` is generally
+  faster on CPU for the same problem.
 
-  Constructing this class imports torch — it's the explicit opt-in
-  signal that PyTorch is required for this estimator. ``__init__``
-  performs no validation per the sklearn developer guide; the default
-  :class:`pyvinecopulib.torch.FitControlsTorchVinecop` is materialised
-  lazily in :meth:`fit_vine`.
+  Constructing this class imports torch — the explicit opt-in signal
+  that PyTorch is required. The default `FitControlsTorchVinecop` is
+  materialised lazily in `fit_vine`.
+
+  Parameters
+  ----------
+  controls :
+      A `FitControlsTorchVinecop` instance bundling cascade /
+      placement / precision knobs. `None` resolves to defaults at
+      fit time.
+  structure :
+      An optional pre-specified `RVineStructure`. When provided,
+      `fit_vine` skips structure selection.
 
   Notes
   -----
-  ``with_num_threads`` is a no-op on this backend; for CPU intraop
+  `with_num_threads` is a no-op on this backend; for CPU intraop
   parallelism call ``torch.set_num_threads(N)`` globally before
   evaluating. The sklearn forest's outer parallelism (via joblib)
   still applies independently.
-
-  See also
-  --------
-
-  * :class:`VinecopBackend` — the default (C++) backend.
-  * :class:`pyvinecopulib.torch.TorchVinecop` — the wrapped class.
-  * :class:`pyvinecopulib.torch.FitControlsTorchVinecop` — fit-time
-    controls.
   """
 
   name: ClassVar[str] = "torch_vinecop"
@@ -361,13 +372,24 @@ class TorchVinecopBackend:
 
 
 def resolve_backend(backend: Any) -> Any:
-  """Coerce a user-supplied ``backend=`` value to a concrete backend.
+  """Coerces a user-supplied ``backend=`` value to a concrete backend.
 
-  - ``None`` → :class:`VinecopBackend` (default-constructed).
-  - A backend-like instance (anything implementing ``fit_vine`` /
-    ``pdf`` / ``cdf`` / ``simulate`` / ``structure_of``) → returned
-    as-is.
-  - Anything else → ``TypeError``.
+  Parameters
+  ----------
+  backend :
+      `None` (returns a default-constructed `VinecopBackend`); a
+      backend-like instance implementing ``fit_vine`` / ``pdf`` /
+      ``cdf`` / ``simulate`` / ``structure_of`` (returned as-is);
+      anything else raises `TypeError`.
+
+  Returns
+  -------
+  A concrete backend instance.
+
+  Raises
+  ------
+  TypeError
+      If ``backend`` does not satisfy the duck-typed interface.
   """
   if backend is None:
     return VinecopBackend()

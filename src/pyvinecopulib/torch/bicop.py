@@ -24,11 +24,10 @@ Three constructors are provided:
 * ``TorchBicop(grid_points=..., values=...)`` — construct from an
   externally-prepared ``(m, m)`` density grid.
 
-See also
+See Also
 --------
-
-* :class:`pyvinecopulib.Bicop` — the C++ counterpart.
-* :class:`FitControlsTorchBicop` — fit-time controls.
+pyvinecopulib.Bicop : The C++ counterpart.
+FitControlsTorchBicop : Fit-time controls.
 """
 
 from __future__ import annotations
@@ -49,38 +48,42 @@ _LOG_FLOOR: float = -13.815510557964274  # log(1e-6); same as torchvinecopulib
 class TorchBicop(torch.nn.Module):
   """PyTorch evaluator for a bivariate copula stored as a density grid.
 
-  The fitted density lives on an ``m × m`` grid in ``[0, 1]^2`` and is
-  evaluated by bilinear interpolation. This is the torch counterpart
-  of the non-parametric pair-copula path in :class:`pyvinecopulib.Bicop`
-  (specifically the *Transformed Local Likelihood* /
-  :data:`pyvinecopulib.families.tll` family). Non-zero copula rotations
-  are not supported — TLL pair-copulas in pyvinecopulib always have
-  ``rotation=0`` because the family is itself non-parametric.
+  Torch counterpart of the non-parametric pair-copula path in
+  `Bicop` (the *Transformed Local Likelihood* /
+  `pyvinecopulib.families.tll` family). The fitted density lives on
+  an ``m x m`` grid in ``[0, 1]^2`` and is evaluated by bilinear
+  interpolation. Non-zero copula rotations are not supported — TLL
+  pair-copulas always have ``rotation=0``.
 
   Parameters
   ----------
-  grid_points:
-    1-D tensor of strictly increasing grid points on ``[0, 1]`` (the same
-    grid is used along both axes). Endpoints will be clipped to exactly
-    ``0`` and ``1`` to avoid extrapolation.
-  values:
-    Square ``(m, m)`` tensor of density values on the tensor-product grid.
-  cache_integrals:
-    If ``True`` (default), precompute ``cdf`` / ``hfunc1`` / ``hfunc2`` /
-    ``hinv1`` / ``hinv2`` at every grid node (five extra ``m × m``
-    buffers, ≈36 KiB at ``m=30``). ``cdf`` / ``hfunc`` / ``hinv`` calls
-    then use one bilinear lookup on the cached grid — dramatically
-    faster (~80–300× on the bicop-level eval bench), with a small
-    interpolation gap between grid nodes (~1e-3 mean / ~1e-2 max
-    relative to the on-the-fly trapezoidal + bisection path). Set to
-    ``False`` for byte-for-byte parity with the C++ on-the-fly path.
-  norm_times:
-    Number of margin-normalization rounds; passed through to
-    :class:`InterpolationGrid2D`. The C++ default is 3; pass 0 to skip
-    when the grid already integrates to uniform margins.
-  device, dtype:
-    Standard module placement / precision controls. ``dtype`` defaults to
-    ``torch.float64`` for parity with the C++ evaluation.
+  grid_points : Tensor, shape (m,), dtype float
+      Strictly increasing 1-D tensor of grid points on ``[0, 1]``
+      (the same grid is used along both axes). Endpoints are
+      clipped to exactly ``0`` and ``1`` to avoid extrapolation.
+  values : Tensor, shape (m, m), dtype float
+      Density values on the tensor-product grid.
+  cache_integrals : bool, default=True
+      If ``True``, precompute ``cdf`` / ``hfunc1`` / ``hfunc2`` /
+      ``hinv1`` / ``hinv2`` at every grid node so subsequent calls
+      are a single bilinear lookup (~80–300x faster with a ~1e-3
+      mean IAE cost relative to the on-the-fly trapezoidal +
+      bisection path).
+  norm_times : int, default=3
+      Number of margin-normalization rounds. Matches the C++
+      default. Pass ``0`` to skip when the grid already integrates
+      to uniform margins.
+  is_linear : bool, default=False
+      Internal flag selecting the linear-grid fast-path in the
+      underlying :class:`InterpolationGrid2D`. Set by
+      :meth:`from_data` when ``grid_type="linear"``; users
+      normally do not pass it directly.
+  device : torch.device or None, default=None
+      Placement of the underlying tensors. ``None`` keeps them on
+      the input's device.
+  dtype : torch.dtype, default=torch.float64
+      Precision of the underlying tensors. ``torch.float64`` mirrors
+      the C++ evaluation.
   """
 
   is_indep: bool
@@ -150,12 +153,35 @@ class TorchBicop(torch.nn.Module):
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchBicop":
-    """Build a ``TorchBicop`` from a fitted :class:`pyvinecopulib.Bicop`.
+    """Lifts a fitted `Bicop` into the torch backend.
 
-    The source ``cop`` is expected to be a kernel-based family (``tll``).
-    The interpolation grid is reconstructed from
-    ``cop.parameters`` (the fitted ``m × m`` density grid) and the
-    canonical normal-scale grid points used by the C++ library.
+    The resulting `TorchBicop` is a ``torch.nn.Module`` (so
+    ``.to("cuda")`` moves the density grid in one line) built from a
+    differentiable bilinear interpolator, with autograd flowing
+    through every ``pdf`` / ``cdf`` / ``hfunc`` / ``hinv`` call.
+
+    Parameters
+    ----------
+    cop : Bicop
+        A fitted `pyvinecopulib.Bicop` of the TLL family at
+        ``rotation=0`` (the only shape `TorchBicop` represents
+        directly). The density values are taken straight from
+        ``cop.parameters``; the grid coordinates come from
+        `InterpolationGrid2D.make_grid_points` with the canonical
+        Phi-spaced normal grid the C++ library uses. The grid is
+        already normalised, so renormalisation is skipped (parity
+        is typically ``< 1e-12`` per cell on fresh fits).
+    cache_integrals : bool, default=True
+        See `TorchBicop.__init__`.
+    device : torch.device or None, default=None
+        See `TorchBicop.__init__`.
+    dtype : torch.dtype, default=torch.float64
+        See `TorchBicop.__init__`.
+
+    Returns
+    -------
+    TorchBicop
+        A `TorchBicop` mirroring ``cop`` on the torch backend.
     """
     if cop.family != _TLL_FAMILY:
       raise ValueError(
@@ -200,35 +226,31 @@ class TorchBicop(torch.nn.Module):
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchBicop":
-    """Fit a bicop on pseudo-observations and wrap in a ``TorchBicop``.
+    """Fits a bicop on pseudo-observations and wraps in a `TorchBicop`.
 
-    Dispatches on ``controls.method``:
+    Dispatches on ``controls.method`` (``"tll"`` for pure-torch
+    Transformed Local Likelihood, matching the C++ TLL fit to
+    machine precision; ``"vdc"`` for the pretrained amortized
+    estimator of Safaai, 2026).
 
-    * ``"tll"`` (default) — pure-PyTorch port of the C++ ``TllBicop::fit``
-      for the ``constant`` method. With ``grid_type="normal"`` the output
-      matches ``pv.Bicop.from_data(u,
-      controls=FitControlsBicop(family_set=[tll]))`` to machine precision
-      (worst case observed: ~1e-12 across (n, ρ) in
-      ``{500, 2000} × {0.3, 0.6, 0.9}``).
-    * ``"vdc"`` — the pretrained amortized vine-copula estimator of
-      Safaai, H. (2026), *Amortized Vine Copulas for High-Dimensional
-      Density and Information Estimation*, arXiv:2604.20568
-      (<https://arxiv.org/abs/2604.20568>). Reference implementation:
-      `KempnerInstitute/vine-denoising-copula
-      <https://github.com/KempnerInstitute/vine-denoising-copula>`_.
-      Not on PyPI yet; install via ``pip install "vine-denoising-copula
-      @ git+https://github.com/KempnerInstitute/vine-denoising-copula"``.
-      Raises ``ImportError`` if unavailable. The first call on each
-      ``(model_id, device)`` pair pulls the checkpoint from
-      HuggingFace and caches it in memory.
+    Parameters
+    ----------
+    u : ndarray or Tensor, shape (n, 2), dtype float
+        Pseudo-observations.
+    controls : FitControlsTorchBicop or None, default=None
+        Fit-time controls. `None` defaults to TLL with
+        ``grid_size=30`` on the normal-spaced grid.
+    cache_integrals : bool, default=True
+        See `TorchBicop.__init__`.
+    device : torch.device or None, default=None
+        See `TorchBicop.__init__`.
+    dtype : torch.dtype, default=torch.float64
+        See `TorchBicop.__init__`.
 
-    Args:
-      u: ``(n, 2)`` pseudo-observations; np.ndarray or Tensor.
-      controls: :class:`FitControlsTorchBicop` instance specifying the
-        method and method-specific parameters. ``None`` defaults to
-        ``FitControlsTorchBicop()`` (TLL, grid_size=30, normal grid).
-      cache_integrals: see :meth:`__init__`.
-      device, dtype: see :meth:`__init__`.
+    Returns
+    -------
+    TorchBicop
+        A fitted `TorchBicop`.
     """
     if controls is None:
       controls = FitControlsTorchBicop()
@@ -286,16 +308,20 @@ class TorchBicop(torch.nn.Module):
     return u.clamp(_TRIM_LO, _TRIM_HI)
 
   def pdf(self, u: Tensor) -> Tensor:
-    """Bivariate copula density ``c(u1, u2)`` at the query points ``u``.
+    """Evaluates the bivariate copula density ``c(u1, u2)``.
 
-    Args:
-      u: ``(n, 2)`` tensor of pseudo-observations in ``[0, 1]^2``. Inputs
-        outside the unit square are clamped to ``[1e-10, 1 - 1e-10]``;
-        ``NaN`` propagates through the bilinear interpolation.
+    Parameters
+    ----------
+    u : Tensor, shape (n, 2), dtype float
+        Pseudo-observations in ``[0, 1]^2``. Inputs outside the
+        unit square are clamped to ``[1e-10, 1 - 1e-10]``; ``NaN``
+        propagates through the interpolation.
 
-    Returns:
-      ``(n,)`` tensor of density values; clamped to a strictly-positive
-      floor of ``1e-20`` so subsequent ``log`` calls stay finite.
+    Returns
+    -------
+    Tensor, shape (n,), dtype float
+        Density values, clamped to a strictly-positive floor of
+        ``1e-20``.
     """
     u = self._prep(u)
     if self.is_indep:
@@ -303,28 +329,45 @@ class TorchBicop(torch.nn.Module):
     return self.interp_grid.interpolate(u).clamp_min(1e-20)
 
   def log_pdf(self, u: Tensor) -> Tensor:
-    """``log c(u1, u2)`` with safe handling of ``-inf`` / ``NaN``.
+    """Evaluates ``log c(u1, u2)`` with safe handling of ``-inf`` / ``NaN``.
 
     Equivalent to ``pdf(u).log()`` but replaces ``-inf`` (from the
-    density floor) with a fixed lower bound and ``+inf`` / ``NaN`` with
-    finite sentinels — useful when the result feeds into an autograd
-    loss.
+    density floor) with a fixed lower bound and ``+inf`` / ``NaN``
+    with finite sentinels.
+
+    Parameters
+    ----------
+    u : Tensor, shape (n, 2), dtype float
+        Pseudo-observations in ``[0, 1]^2``.
+
+    Returns
+    -------
+    Tensor, shape (n,), dtype float
+        Log-density values, finite everywhere.
     """
     return self.pdf(u).log().nan_to_num(neginf=_LOG_FLOOR, posinf=0.0)
 
   def cdf(self, u: Tensor) -> Tensor:
-    """Bivariate copula CDF ``C(u1, u2) = ∫_0^{u1} ∫_0^{u2} c(s, t) ds dt``.
+    """Evaluates the bivariate copula CDF.
 
-    Computed via :meth:`InterpolationGrid2D.integrate_2d` (nested
-    trapezoidal integration) when ``cache_integrals=False``, or via a
-    single bilinear interp on the precomputed cache when
+    .. math::
+
+       C(u_1, u_2) = \\int_0^{u_1} \\int_0^{u_2} c(s, t)\\, ds\\, dt.
+
+    Computed via nested trapezoidal integration when
+    ``cache_integrals=False``, or via a single bilinear
+    interpolation on the precomputed cache when
     ``cache_integrals=True``.
 
-    Args:
-      u: ``(n, 2)`` tensor of pseudo-observations in ``[0, 1]^2``.
+    Parameters
+    ----------
+    u : Tensor, shape (n, 2), dtype float
+        Pseudo-observations in ``[0, 1]^2``.
 
-    Returns:
-      ``(n,)`` tensor of CDF values in ``[1e-10, 1 - 1e-10]``.
+    Returns
+    -------
+    Tensor, shape (n,), dtype float
+        CDF values in ``[1e-10, 1 - 1e-10]``.
     """
     u = self._prep(u)
     if self.is_indep:
@@ -344,18 +387,21 @@ class TorchBicop(torch.nn.Module):
     return self.interp_grid.integrate_1d(u, cond_var=cond_var)
 
   def hfunc1(self, u: Tensor) -> Tensor:
-    """First h-function: ``H1(u1, u2) = P(U2 ≤ u2 | U1 = u1)``.
+    """Evaluates the first h-function.
 
-    Computed via :meth:`InterpolationGrid2D.integrate_1d` with
-    ``cond_var=1`` when ``cache_integrals=False``, or via a single
-    bilinear interp on the precomputed ``hfunc1`` cache when
-    ``cache_integrals=True``.
+    .. math::
 
-    Args:
-      u: ``(n, 2)`` tensor of pseudo-observations in ``[0, 1]^2``.
+       h_1(u_1, u_2) = \\mathbb{P}(U_2 \\le u_2 \\mid U_1 = u_1).
 
-    Returns:
-      ``(n,)`` tensor of conditional CDF values in ``[0, 1]``.
+    Parameters
+    ----------
+    u : Tensor, shape (n, 2), dtype float
+        Pseudo-observations in ``[0, 1]^2``.
+
+    Returns
+    -------
+    Tensor, shape (n,), dtype float
+        Conditional CDF values in ``[0, 1]``.
     """
     u = self._prep(u)
     if self.is_indep:
@@ -363,15 +409,21 @@ class TorchBicop(torch.nn.Module):
     return self._hfunc_raw(u, 1).clamp(0.0, 1.0)
 
   def hfunc2(self, u: Tensor) -> Tensor:
-    """Second h-function: ``H2(u1, u2) = P(U1 ≤ u1 | U2 = u2)``.
+    """Evaluates the second h-function.
 
-    Symmetric to :meth:`hfunc1` with the conditioning variable swapped.
+    .. math::
 
-    Args:
-      u: ``(n, 2)`` tensor of pseudo-observations in ``[0, 1]^2``.
+       h_2(u_1, u_2) = \\mathbb{P}(U_1 \\le u_1 \\mid U_2 = u_2).
 
-    Returns:
-      ``(n,)`` tensor of conditional CDF values in ``[0, 1]``.
+    Parameters
+    ----------
+    u : Tensor, shape (n, 2), dtype float
+        Pseudo-observations in ``[0, 1]^2``.
+
+    Returns
+    -------
+    Tensor, shape (n,), dtype float
+        Conditional CDF values in ``[0, 1]``.
     """
     u = self._prep(u)
     if self.is_indep:
@@ -384,20 +436,24 @@ class TorchBicop(torch.nn.Module):
 
   @torch.no_grad()
   def hinv1(self, u: Tensor) -> Tensor:
-    """Inverse of :meth:`hfunc1` w.r.t. the second argument.
+    """Inverts `hfunc1` w.r.t. the second argument.
 
-    Given ``u = [u1, p]`` of shape ``(n, 2)``, returns ``u2`` such that
-    ``H1(u1, u2) = p``. With ``cache_integrals=True`` this is a single
-    bilinear interp on the precomputed ``hinv1`` cache; otherwise each
-    call runs the fixed-iter vectorized ITP root-finder
-    (:func:`._util.solve_itp`) over the on-the-fly h-function.
+    Given ``u = [u1, p]``, returns ``u2`` such that
+    ``H1(u1, u2) = p``. With ``cache_integrals=True`` this is a
+    single bilinear interpolation on the precomputed cache;
+    otherwise each call runs a fixed-iter vectorised ITP
+    root-finder over the on-the-fly h-function.
 
-    Args:
-      u: ``(n, 2)`` tensor where column 0 is ``u1`` and column 1 is the
-        target probability ``p``.
+    Parameters
+    ----------
+    u : Tensor, shape (n, 2), dtype float
+        Column 0 is ``u1``; column 1 is the target probability
+        ``p``.
 
-    Returns:
-      ``(n,)`` tensor of ``u2`` values in ``[0, 1]``.
+    Returns
+    -------
+    Tensor, shape (n,), dtype float
+        ``u2`` values in ``[0, 1]``.
     """
     u = self._prep(u)
     if self.is_indep:
@@ -416,18 +472,22 @@ class TorchBicop(torch.nn.Module):
 
   @torch.no_grad()
   def hinv2(self, u: Tensor) -> Tensor:
-    """Inverse of :meth:`hfunc2` w.r.t. the first argument.
+    """Inverts `hfunc2` w.r.t. the first argument.
 
-    Given ``u = [p, u2]`` of shape ``(n, 2)``, returns ``u1`` such that
-    ``H2(u1, u2) = p``. See :meth:`hinv1` for the cache vs. ITP-bisection
+    Given ``u = [p, u2]``, returns ``u1`` such that
+    ``H2(u1, u2) = p``. See `hinv1` for the cache vs. ITP-bisection
     semantics.
 
-    Args:
-      u: ``(n, 2)`` tensor where column 0 is the target probability ``p``
-        and column 1 is ``u2``.
+    Parameters
+    ----------
+    u : Tensor, shape (n, 2), dtype float
+        Column 0 is the target probability ``p``; column 1 is
+        ``u2``.
 
-    Returns:
-      ``(n,)`` tensor of ``u1`` values in ``[0, 1]``.
+    Returns
+    -------
+    Tensor, shape (n,), dtype float
+        ``u1`` values in ``[0, 1]``.
     """
     u = self._prep(u)
     if self.is_indep:
@@ -455,26 +515,30 @@ class TorchBicop(torch.nn.Module):
     qrng: bool = False,
     seeds: list[int] = [],
   ) -> Tensor:
-    """Draw ``n`` joint samples from the fitted copula.
+    """Draws ``n`` joint samples from the fitted copula.
 
-    Mirror of :meth:`pyvinecopulib.Bicop.simulate`. Uses the inverse
-    Rosenblatt scheme: sample two independent uniforms ``(U1, P)``,
-    then set ``U2 = hinv1((U1, P))`` so that ``(U1, U2)`` has the
-    fitted joint distribution.
+    Uses the inverse Rosenblatt scheme: sample two independent
+    uniforms ``(U1, P)`` and set ``U2 = hinv1((U1, P))`` so that
+    ``(U1, U2)`` has the fitted joint distribution.
 
-    Args:
-      n: Number of samples to draw (must be ``> 0``).
-      qrng: If ``True``, draw the base uniforms from a scrambled Sobol
-        sequence (better low-discrepancy in 2-D) instead of
-        pseudo-random uniforms.
-      seeds: When ``qrng=True``, the first entry seeds the
-        :class:`torch.quasirandom.SobolEngine` scramble. When
-        ``qrng=False``, the first entry seeds the global torch RNG
-        before the ``torch.rand`` call. Empty list keeps the existing
-        global state.
+    Parameters
+    ----------
+    n : int, default=100
+        Number of samples to draw (must be ``> 0``).
+    qrng : bool, default=False
+        If ``True``, draw the base uniforms from a scrambled Sobol
+        sequence instead of pseudo-random uniforms.
+    seeds : list of int, default=[]
+        When ``qrng=True`` the first entry seeds the
+        ``torch.quasirandom.SobolEngine`` scramble; when
+        ``qrng=False`` it seeds the global torch RNG before the
+        ``torch.rand`` call. Empty list keeps the existing global
+        state.
 
-    Returns:
-      ``(n, 2)`` tensor of samples in ``(0, 1)^2``.
+    Returns
+    -------
+    Tensor, shape (n, 2), dtype float
+        Samples in ``(0, 1)^2``.
     """
     if n <= 0:
       raise ValueError(f"n must be > 0; got {n}")

@@ -76,18 +76,34 @@ class InterpolationGrid2D(torch.nn.Module):
   def make_grid_points(
     grid_type: str, m: int, dtype: torch.dtype = torch.float64
   ) -> Tensor:
-    """Storage grid for a kernel-style bicop on ``[0, 1]^2``.
+    r"""Builds the storage grid for a kernel-style bicop on ``[0, 1]^2``.
 
-    Mirrors ``KernelBicop::make_normal_grid`` in the C++ library. Endpoints
-    are forced to exactly 0 / 1 (same as the :class:`InterpolationGrid2D`
-    constructor will do) so callers never need to special-case the boundary.
+    Mirrors ``KernelBicop::make_normal_grid`` in the C++ library.
+    Endpoints are forced to exactly ``0`` / ``1`` (same as the
+    `InterpolationGrid2D` constructor) so callers never need to
+    special-case the boundary.
 
-    Args:
-      grid_type: ``"normal"`` (``Phi(linspace(-3.25, 3.25, m))``, matches
-        C++) or ``"linear"`` (``linspace(0, 1, m)``, uniform; supports the
-        O(1) cell-finding path in :meth:`_cell_index`).
-      m: number of grid points per axis.
-      dtype: floating-point dtype.
+    The ``"normal"`` grid uses :math:`u_i = \Phi(z_i)` with
+    :math:`z_i` uniformly spaced on :math:`[-3.25, 3.25]` and
+    :math:`\Phi` the standard-normal CDF — the natural domain of
+    the TLL density. The ``"linear"`` grid uses
+    :math:`u_i = i / (m - 1)`; it trades boundary distortion for
+    O(1) cell-finding.
+
+    Parameters
+    ----------
+    grid_type : {"normal", "linear"}
+        ``"normal"`` (Phi-spaced) or ``"linear"`` (uniform on
+        ``[0, 1]``).
+    m : int
+        Number of grid points per axis.
+    dtype : torch.dtype, default=torch.float64
+        Floating-point dtype.
+
+    Returns
+    -------
+    Tensor, shape (m,), dtype float
+        Grid points on ``[0, 1]``.
     """
     if grid_type not in GRID_TYPES:
       raise ValueError(
@@ -323,7 +339,10 @@ class InterpolationGrid2D(torch.nn.Module):
 
     Implementation: trapezoidally integrate each row ``values[k, :]`` up to
     ``u2`` to get an ``(n, m)`` strip, then trapezoidally integrate that
-    strip along ``grid_points`` up to ``u1``. Clamped to ``[1e-10, 1-1e-10]``.
+    strip along ``grid_points`` up to ``u1``. The result is renormalised
+    by the full-strip outer integral so C(1, u2) = u2 holds exactly —
+    matches the post-vinecopulib#667 C++ behaviour. Clamped to
+    ``[1e-10, 1-1e-10]``.
     """
     u = u.clamp(0.0, 1.0)
     n = u.shape[0]
@@ -339,8 +358,22 @@ class InterpolationGrid2D(torch.nn.Module):
     vals_inner = self.values.unsqueeze(0).expand(n, m, m)
     strip = self._int_on_grid(upr_inner, vals_inner)  # (n, m)
 
-    # Outer pass: integrate strip[i, :] up to u1[i].
-    return self._int_on_grid(u1, strip).clamp(_TRIM_LO, _TRIM_HI)
+    # Outer pass: integrate strip[i, :] up to u1[i], then renormalise by
+    # the integral over the full first axis so the marginal-uniform
+    # property C(1, u2) = u2 holds exactly. Guard the degenerate
+    # `tmpint1 = 0` case (true CDF is then 0): in C++ this never
+    # arises because Bicop.cdf trims inputs to (1e-10, 1-1e-10) before
+    # reaching integrate_2d; the torch port also caches at raw grid
+    # endpoints via `build_caches`, where u2 = 0 yields strip = 0 and
+    # tmpint1 = 0.
+    tmpint = self._int_on_grid(u1, strip)
+    tmpint1 = self._int_on_grid(torch.ones_like(u1), strip)
+    out = torch.where(
+      tmpint1 > 0,
+      tmpint * u2 / tmpint1.clamp_min(_TRIM_LO),
+      torch.zeros_like(tmpint),
+    )
+    return out.clamp(_TRIM_LO, _TRIM_HI)
 
   # --------------------------------------------------------------------- #
   # Cached evaluation grids (optional, see TorchBicop(cache_integrals=…)). #

@@ -14,64 +14,26 @@ from .backends import resolve_backend
 # class docstrings via f-strings. Defined once here, used by both subclasses
 # so changes propagate without copy-paste.
 
-_DOC_WRAPPER = r"""**Relation to the core API.** ``fit()`` runs
-the standard pyvinecopulib pipeline — univariate marginals
-(:class:`pyvinecopulib.utils.Kde1d`) followed by a vine-copula fit on
-the resulting pseudo-observations — and stashes the fitted state
-under the canonical sklearn attribute names (``n_features_in_``,
-``feature_names_in_``, plus ``schema_``, ``structure_``,
-``backend_``, ``random_state_``, and private ``_vine`` /
-``_x_kde1d`` / ``_y_kde1d``).
+_DOC_PIPELINE = r"""The estimator follows the standard pyvinecopulib
+two-step pipeline: a univariate kernel density estimator
+(`Kde1d`) is fit to each column, the marginal CDFs transform the data
+to pseudo-observations
+:math:`U_j = \hat F_j(X_j) \in [0, 1]`, and a vine copula is fit on
+the pseudo-observations. For discrete columns the left limit
+:math:`\hat F_j(X_j^-)` is also stacked so the vine sees a continuous
+proxy. Unordered categoricals are first expanded to ordered
+``{0, 1}`` dummies via `expand_factors`.
 
-The fit and runtime calls route through a **backend** object passed
-via the ``backend=`` keyword. The default backend
-(:class:`~pyvinecopulib.sklearn.backends.VinecopBackend`) wraps
-:class:`pyvinecopulib.core.Vinecop` and requires no extra
-dependencies. Pass
-:class:`~pyvinecopulib.sklearn.backends.TorchVinecopBackend` to route
-through the PyTorch evaluator instead — useful for GPU placement or
-autograd through the vine cascade. See
-:mod:`pyvinecopulib.sklearn.backends` for the full comparison.
-
-Low-level knobs (pair family, threading, structure-selection
-algorithm, …) live on the backend's ``controls`` field — a
-:class:`pyvinecopulib.core.FitControlsVinecop` for the default
-backend, or a :class:`pyvinecopulib.torch.FitControlsTorchVinecop`
-for the torch one. The :doc:`concepts page </concepts>` covers the
-underlying vine-copula construction in ~5 minutes.
+Fit-time configuration is bundled in a backend object passed via
+``backend=``. The default `VinecopBackend` wraps `Vinecop` and has
+no extra dependencies; `TorchVinecopBackend` routes the same
+pipeline through the PyTorch evaluator (GPU / autograd). See the
+:doc:`concepts page </concepts>` for the underlying vine-copula
+construction.
 """
 
-_DOC_PIPELINE = r"""**Estimation pipeline.** The estimator follows a
-three-step pipeline shared with :class:`VineDensity` /
-:class:`VineRegressor`:
-
-1. **Marginals.** A univariate kernel density estimator
-   (:class:`pyvinecopulib.utils.Kde1d`) is fitted to each feature
-   column. Continuous and ordered-discrete dtypes are inferred from
-   the input; unordered categoricals are first expanded into ordered
-   ``{0, 1}`` dummies by
-   :func:`pyvinecopulib.sklearn._base.expand_factors`.
-
-2. **Pseudo-observations.** Each marginal CDF is applied to its
-   column to produce pseudo-observations
-   :math:`U_j = \hat F_j(X_j) \in [0, 1]`. For discrete columns the
-   left limit :math:`\hat F_j(X_j^-)` is also computed and stacked,
-   so the vine sees a continuous proxy for the discrete margin.
-
-3. **Vine copula.** A vine copula is fitted to the
-   pseudo-observations via the configured backend's
-   :meth:`fit_vine`. The default backend uses
-   :meth:`pyvinecopulib.core.Vinecop.from_data` with the
-   non-parametric :data:`pyvinecopulib.families.tll` (Transformed
-   Local Likelihood) pair-copula family. Pass a configured
-   :class:`~pyvinecopulib.sklearn.backends.TorchVinecopBackend` via
-   ``backend=`` to route the same pipeline through the PyTorch
-   evaluator instead.
-"""
-
-_DOC_FACTORIZATION = r"""**Joint-density factorization.** Both
-estimators rely on Sklar's theorem, which expresses the joint density
-as a product of marginals and a copula density,
+_DOC_FACTORIZATION = r"""By Sklar's theorem the joint density
+factorises as
 
 .. math::
 
@@ -79,35 +41,34 @@ as a product of marginals and a copula density,
    = c\bigl(F_1(x_1), \ldots, F_d(x_d)\bigr)\,
      \prod_{j=1}^{d} f_j(x_j),
 
-and on the pair-copula construction of Bedford & Cooke (2002) and
-Aas et al. (2009), which writes :math:`c` as a product of bivariate
-(pair-)copulas indexed by a vine structure. The ``copula_only=True`` flag on
-:meth:`pdf` returns the copula factor :math:`c(\mathbf{u})` alone,
-without the marginal product.
+with :math:`c` further decomposed into pair copulas indexed by a
+vine structure (Bedford & Cooke, 2002; Aas et al., 2009). Passing
+``copula_only=True`` to `pdf` returns the copula factor
+:math:`c(\mathbf{u})` alone.
 """
 
-_DOC_DISCRETE = r"""**Discrete variables.** Discrete (or expanded
-unordered-categorical) columns are handled via the Kde1d
-``type="discrete"`` mode: pseudo-observations stack
-:math:`\hat F_j(X_j)` and :math:`\hat F_j(X_j^-)` so that the vine
-copula evaluation sees the appropriate (continuous) proxy. This is
-done transparently by :meth:`fit` and :meth:`pdf`.
+_DOC_DISCRETE = r"""Discrete (or expanded unordered-categorical)
+columns are handled via `Kde1d`'s ``type="discrete"`` mode:
+pseudo-observations stack :math:`\hat F_j(X_j)` and
+:math:`\hat F_j(X_j^-)` so the vine evaluation sees the appropriate
+continuous proxy. Handled transparently by `fit` and `pdf`.
 """
 
 _DOC_REFERENCES = r"""References
 ----------
-- Bedford, T. and Cooke, R. M. (2002).
-  *Vines--a new graphical model for dependent random variables.*
-  The Annals of Statistics, 30(4), 1031--1068.
-- Aas, K., Czado, C., Frigessi, A. and Bakken, H. (2009).
-  *Pair-copula constructions of multiple dependence.*
-  Insurance: Mathematics and Economics, 44(2), 182--198.
-- Nagler, T. and Vatter, T. (2024).
-  *Solving Estimating Equations With Copulas.*
-  Journal of the American Statistical Association, 119(546), 1168--1180.
-- Vatter, T. and Nagler, T. (2026).
-  *Throwing Vines at the Wall: Structure Learning via Random Search.*
-  arXiv preprint arXiv:2510.20035.
+.. [1] Bedford, T. and Cooke, R. M. (2002).
+       *Vines--a new graphical model for dependent random variables.*
+       The Annals of Statistics, 30(4), 1031--1068.
+.. [2] Aas, K., Czado, C., Frigessi, A. and Bakken, H. (2009).
+       *Pair-copula constructions of multiple dependence.*
+       Insurance: Mathematics and Economics, 44(2), 182--198.
+.. [3] Nagler, T. and Vatter, T. (2024).
+       *Solving Estimating Equations With Copulas.*
+       Journal of the American Statistical Association, 119(546),
+       1168--1180.
+.. [4] Vatter, T. and Nagler, T. (2026).
+       *Throwing Vines at the Wall: Structure Learning via Random
+       Search.* arXiv preprint arXiv:2510.20035.
 """
 
 
@@ -188,28 +149,26 @@ class VineBase(BaseEstimator):
     batch_size: int = 100,
     random_state=None,
   ) -> None:
-    """
-    Base vine copula estimator.
+    """Base vine copula estimator.
 
     Parameters
     ----------
-    backend : :class:`~pyvinecopulib.sklearn.backends.VinecopBackend` or compatible, optional
-        Backend strategy that holds fit-time controls (incl. an optional
-        :class:`pyvinecopulib.FitControlsVinecop` for the default C++
-        backend or :class:`pyvinecopulib.torch.FitControlsTorchVinecop`
-        for the torch backend) and an optional structure. ``None``
-        (default) resolves to a default-constructed
-        :class:`~pyvinecopulib.sklearn.backends.VinecopBackend` at fit
-        time.
+    backend : VinecopBackend or compatible, default=None
+        Backend strategy that holds fit-time controls (a
+        `FitControlsVinecop` for the default C++ backend or a
+        `FitControlsTorchVinecop` for the torch backend) and an
+        optional structure. `None` resolves to a default
+        `VinecopBackend` at fit time.
     batch_size : int, default=100
-        Number of test points to process per batch when making predictions.
-        - 1 = "loop" mode (minimal memory, slowest)
-        - n_test = "stack" mode (maximal memory, fastest)
-        - in between = trade-off
-    random_state : int, RandomState, Generator or None
-        Seeds the RNG used by stochastic operations (e.g. simulate,
-        cdf quasi-MC, structure simulation). Stored as-is; resolved via
-        :func:`sklearn.utils.check_random_state` inside ``fit``.
+        Number of test points to process per batch when making
+        predictions. ``1`` minimises memory at the cost of speed;
+        ``n_test`` is the opposite extreme; intermediate values
+        trade off memory and throughput.
+    random_state : int, RandomState instance or None, default=None
+        Seeds the RNG used by stochastic operations (e.g.
+        `simulate`, `cdf` quasi-MC, structure simulation). Stored
+        as-is; resolved via `sklearn.utils.check_random_state`
+        inside `fit`.
     """
     self.backend = backend
     self.batch_size = batch_size

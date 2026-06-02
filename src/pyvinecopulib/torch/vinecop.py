@@ -33,11 +33,10 @@ switchable via the ``impl=`` kwarg:
   walk to free intermediate pseudo-obs as soon as they're no longer
   needed.
 
-See also
+See Also
 --------
-
-* :class:`pyvinecopulib.Vinecop` — the C++ counterpart.
-* :class:`FitControlsTorchVinecop` — fit-time controls.
+pyvinecopulib.Vinecop : The C++ counterpart.
+FitControlsTorchVinecop : Fit-time controls.
 """
 
 from __future__ import annotations
@@ -70,51 +69,37 @@ def _check_impl(impl: str) -> None:
 
 
 class TorchVinecop(torch.nn.Module):
-  """PyTorch R-vine copula evaluator built on :class:`TorchBicop`.
+  """PyTorch R-vine copula evaluator built on `TorchBicop`.
 
-  Mirrors the public surface of :class:`pyvinecopulib.Vinecop` —
-  ``pdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` — but keeps the
-  entire evaluation chain in PyTorch so the vine can move to GPU with
-  ``.to(device)`` and compose with autograd-aware downstream code.
-  Continuous variables only, single batch, no threading. Pair-copula
-  fits come from :meth:`from_data` (pure-torch TLL fit) or
-  :meth:`from_vinecop` (lifts a C++-fitted :class:`pyvinecopulib.Vinecop`).
+  Mirrors the public surface of `pyvinecopulib.Vinecop` — ``pdf`` /
+  ``rosenblatt`` / ``inverse_rosenblatt`` / ``simulate`` — but keeps
+  the entire evaluation chain in PyTorch so the vine can move to
+  GPU with ``.to(device)`` and compose with autograd-aware
+  downstream code. Continuous variables only, single batch, no
+  threading. Build a `TorchVinecop` via `from_data` (pure-torch TLL
+  fit) or `from_vinecop` (lifts a C++-fitted `Vinecop`).
 
-  Each public entry point accepts two orthogonal kwargs:
-
-  * ``impl="legacy"`` (default) — direct port of the C++
-    ``Vinecop::pdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` cascades
-    with dense ``(n, d)`` scratch matrices. Byte-for-byte agreement with
-    :class:`pyvinecopulib.Vinecop` on the same fit.
-  * ``impl="lazy"`` — dict-based bookkeeping where pseudo-observations
-    are keyed by ``(v, *cond_ing)`` and materialized on first access.
-    A reference-counted upward walk frees intermediate pseudo-obs as
-    soon as they're no longer needed. Equivalent math; smaller peak
-    memory. Inspired by Cheng, Vatter, Nagler & Chen (2025),
-    *Vine Copulas as Differentiable Computational Graphs*,
-    arXiv:2506.13318.
-  * ``batched=True`` — stacks every pair-copula at one tree level and
-    fires a single batched bicop call per level instead of a Python
-    loop over edges. Available for ``pdf`` and ``rosenblatt`` only;
-    ``inverse_rosenblatt(batched=True)`` raises ``NotImplementedError``
-    because the inverse cascade has cross-tree dependencies that don't
-    reduce to per-level wavefronts. The default ``batched=None`` picks
-    per-device: ``True`` on CUDA (3–7× faster across all (d, n) we
-    benched), ``False`` on CPU (where the per-pair path wins for
-    ``n ≥ 2000``).
+  Public entry points accept two orthogonal cascade kwargs:
+  ``impl`` selects ``"legacy"`` (direct port of the C++ cascade,
+  dense ``(n, d)`` scratch, byte-for-byte parity with `Vinecop`) or
+  ``"lazy"`` (dict-based bookkeeping with ref-counted GC; Cheng,
+  Vatter, Nagler & Chen, 2025), and ``batched`` fires a single
+  batched bicop call per tree level. ``inverse_rosenblatt(batched=True)``
+  raises (cross-tree deps in the inverse cascade). The default
+  ``batched=None`` resolves to ``True`` on CUDA (3–7x faster) and
+  ``False`` on CPU.
 
   Parameters
   ----------
-  pair_copulas:
-    Nested list (or :class:`torch.nn.ModuleList` of
-    :class:`torch.nn.ModuleList`) of :class:`TorchBicop`, indexed
-    ``[tree][edge]`` and shaped like ``Vinecop::pair_copulas_``: tree 0
-    has ``d - 1`` edges, tree 1 has ``d - 2``, etc., up to ``trunc_lvl``.
-  structure:
-    The R-vine structure (a :class:`pyvinecopulib.RVineStructure`) whose
-    accessors (``min_array``, ``struct_array``, ``needed_hfunc1`` /
-    ``needed_hfunc2``) describe how to walk the trees. Held as-is so
-    the inner loops query it directly.
+  pair_copulas : list of list of TorchBicop
+      Indexed ``[tree][edge]`` and shaped like
+      ``Vinecop::pair_copulas_``: tree 0 has ``d - 1`` edges, tree 1
+      has ``d - 2``, etc., up to ``trunc_lvl``. May also be passed
+      as a `torch.nn.ModuleList` of `torch.nn.ModuleList`.
+  structure : RVineStructure
+      Vine structure whose accessors (``min_array``,
+      ``struct_array``, ``needed_hfunc1`` / ``needed_hfunc2``)
+      describe how to walk the trees.
   """
 
   d: int
@@ -172,11 +157,29 @@ class TorchVinecop(torch.nn.Module):
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchVinecop":
-    """Build a ``TorchVinecop`` from a fitted :class:`pyvinecopulib.Vinecop`.
+    """Lifts a fitted `Vinecop` into the torch backend.
 
-    Each pair copula in ``cop.pair_copulas`` must be a ``tll`` or
-    independence family; anything else raises. Discrete variables are
-    not yet supported.
+    Each pair copula is lifted via `TorchBicop.from_bicop`, so the
+    resulting cascade matches the C++ evaluator to within
+    bilinear-interpolation precision on the shared grid.
+
+    Parameters
+    ----------
+    cop : Vinecop
+        A fitted `pyvinecopulib.Vinecop` whose pair copulas are all
+        TLL or independence families. Discrete variables are not
+        supported.
+    cache_integrals : bool, default=True
+        Forwarded to `TorchBicop.from_bicop` for every pair copula.
+    device : torch.device or None, default=None
+        Placement of the underlying tensors.
+    dtype : torch.dtype, default=torch.float64
+        Precision of the underlying tensors.
+
+    Returns
+    -------
+    TorchVinecop
+        A `TorchVinecop` mirroring ``cop``.
     """
     var_types = list(cop.var_types)
     if any(v != "c" for v in var_types):
@@ -219,33 +222,31 @@ class TorchVinecop(torch.nn.Module):
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchVinecop":
-    """Build a ``TorchVinecop`` from a structure (or matrix) and pair-copulas.
-
-    Mirror of :meth:`pyvinecopulib.Vinecop.from_structure`. When
-    ``pair_copulas`` is empty, every edge is populated with an
-    independence :class:`TorchBicop` so the resulting vine is the
-    independence copula on ``d`` variables.
+    """Builds a `TorchVinecop` from a structure (or matrix) and pair-copulas.
 
     Parameters
     ----------
-    structure:
-      An :class:`pyvinecopulib.RVineStructure`. Provide either this or
-      ``matrix``, but not both.
-    matrix:
-      RVine structure matrix. Provide either this or ``structure``, but
-      not both.
-    pair_copulas:
-      Nested list of :class:`TorchBicop`, indexed ``[tree][edge]`` with
-      tree ``t`` containing ``d - 1 - t`` edges. Defaults to an empty
-      list, in which case every edge is filled with the independence
-      copula.
-    var_types:
-      Variable types for each variable. Only ``"c"`` (continuous) is
-      supported. Defaults to all-continuous.
-    device, dtype:
-      Standard placement / precision controls for the independence
-      pair-copulas that fill missing edges. Defaults match
-      :class:`TorchBicop`.
+    structure : RVineStructure or None, default=None
+        Vine structure. Provide either this or ``matrix``.
+    matrix : ndarray, shape (d, d), dtype int, or None, default=None
+        RVine structure matrix. Provide either this or
+        ``structure``.
+    pair_copulas : list of list of TorchBicop, default=[]
+        Indexed ``[tree][edge]`` with tree ``t`` containing
+        ``d - 1 - t`` edges. An empty list fills every edge with
+        the independence copula.
+    var_types : list of str, default=[]
+        Per-variable types. Only ``"c"`` (continuous) is supported.
+    device : torch.device or None, default=None
+        Placement of the independence pair copulas that fill
+        missing edges.
+    dtype : torch.dtype, default=torch.float64
+        Precision of the underlying tensors.
+
+    Returns
+    -------
+    TorchVinecop
+        A `TorchVinecop`.
     """
     if (structure is None) == (matrix is None):
       raise ValueError("Provide exactly one of `structure` or `matrix`.")
@@ -277,29 +278,32 @@ class TorchVinecop(torch.nn.Module):
     structure,
     controls: Optional[FitControlsTorchVinecop] = None,
   ) -> "TorchVinecop":
-    """Fit a pure-PyTorch TLL vine on ``u`` given a fixed ``structure``.
+    """Fits a pure-PyTorch TLL vine on ``u`` given a fixed structure.
 
-    Tree-by-tree cascade mirroring ``Vinecop::select_families`` with a
-    user-provided structure: at each ``(tree, edge)`` we collect the pair
-    of pseudo-obs columns (``col0``, ``col1``) by the same rule as the
-    legacy pdf/rosenblatt cascade, fit a :class:`TorchBicop` on them via
-    :meth:`TorchBicop.from_data`, then propagate ``hfunc1`` / ``hfunc2``
-    forward according to ``needed_hfunc1`` / ``needed_hfunc2``.
+    Tree-by-tree cascade mirroring ``Vinecop::select_families`` with
+    a user-provided structure: at each ``(tree, edge)`` collects the
+    pair of pseudo-obs columns by the same rule as the legacy
+    pdf/rosenblatt cascade, fits a `TorchBicop` on them via
+    `TorchBicop.from_data`, then propagates ``hfunc1`` / ``hfunc2``
+    forward. The structure is *fixed* (not selected); the cascade
+    matches the C++ TLL fit to machine precision when
+    ``cache_integrals=False``.
 
-    The structure is *fixed* (not selected); this measures pair-copula
-    estimation error only, matching ``pv.Vinecop.from_data(u,
-    controls=FitControlsVinecop(family_set=[tll], structure=...))`` to
-    machine precision (per-pair agreement is ~1e-11; the cascade
-    preserves this when ``controls.cache_integrals=False``).
+    Parameters
+    ----------
+    u : ndarray or Tensor, shape (n, d), dtype float
+        Pseudo-observations.
+    structure : RVineStructure
+        Vine skeleton.
+    controls : FitControlsTorchVinecop or None, default=None
+        Pair-copula fit controls bundled with vine-level placement /
+        cascade knobs. `None` defaults to TLL on a 30x30
+        normal-spaced grid, float64.
 
-    Args:
-      u: ``(n, d)`` pseudo-observations; np.ndarray or Tensor.
-      structure: :class:`pyvinecopulib.RVineStructure` describing the
-        vine skeleton.
-      controls: :class:`FitControlsTorchVinecop` bundling the
-        pair-copula fit controls together with vine-level placement /
-        cascade knobs. Defaults to ``FitControlsTorchVinecop()`` (TLL,
-        grid_size=30, normal grid, float64).
+    Returns
+    -------
+    TorchVinecop
+        A fitted `TorchVinecop`.
     """
     if controls is None:
       controls = FitControlsTorchVinecop()
@@ -487,33 +491,34 @@ class TorchVinecop(torch.nn.Module):
     impl: str = "legacy",
     batched: Optional[bool] = None,
   ) -> Tensor:
-    """Vine copula density ``c(u_1, ..., u_d)`` at the query points ``u``.
+    """Evaluates the vine-copula density ``c(u_1, ..., u_d)``.
 
     Computes the joint copula density as a product of pair-copula
     densities over the vine's edges — same expression as
-    :meth:`pyvinecopulib.Vinecop.pdf`, evaluated entirely in PyTorch.
+    `Vinecop.pdf`, evaluated entirely in PyTorch.
 
-    Args:
-      u: ``(n, d)`` tensor of pseudo-observations in ``[0, 1]^d`` where
-        ``d = self.d``. Inputs are clamped to ``[1e-10, 1 - 1e-10]``.
-      num_threads: Accepted for API parity with :meth:`pyvinecopulib.Vinecop.pdf`;
-        ignored here. For CPU intraop parallelism call
-        ``torch.set_num_threads(N)`` globally before evaluating —
-        that mutates global state and is unsafe with concurrent
-        workers (e.g. joblib).
-      impl: Either ``"legacy"`` (direct C++ cascade port, dense
-        ``(n, d)`` scratch) or ``"lazy"`` (dict-based pseudo-obs with
-        ref-counted GC, see Cheng et al. 2025). Both produce
-        numerically identical outputs.
-      batched: If ``True``, evaluate every pair-copula at one tree level
-        in a single batched bicop call (one ``(N_t, m, m)`` interp per
-        tree level instead of N_t scalar interps). Orthogonal to
-        ``impl``. Default ``None`` picks per-device: ``True`` on CUDA
-        (3–7× speedup) and ``False`` on CPU (where the dense per-pair
-        path wins above ``n ≈ 2000``). See :meth:`_default_batched`.
+    Parameters
+    ----------
+    u : Tensor, shape (n, d), dtype float
+        Pseudo-observations in ``[0, 1]^d``. Inputs are clamped to
+        ``[1e-10, 1 - 1e-10]``.
+    num_threads : int, default=1
+        Accepted for API parity with `Vinecop.pdf`; ignored. For
+        CPU intraop parallelism call ``torch.set_num_threads(N)``
+        globally before evaluating.
+    impl : {"legacy", "lazy"}, default="legacy"
+        ``"legacy"`` uses dense ``(n, d)`` scratch and matches C++;
+        ``"lazy"`` is dict-based with ref-counted GC (Cheng et al.,
+        2025). Both produce numerically identical outputs.
+    batched : bool or None, default=None
+        If ``True``, fires a single batched bicop call per tree
+        level. `None` resolves to ``True`` on CUDA, ``False`` on
+        CPU.
 
-    Returns:
-      ``(n,)`` tensor of joint density values.
+    Returns
+    -------
+    Tensor, shape (n,), dtype float
+        Joint density values.
     """
     del num_threads  # parity hint; not used (see docstring)
     _check_impl(impl)
@@ -530,24 +535,27 @@ class TorchVinecop(torch.nn.Module):
     impl: str = "legacy",
     batched: Optional[bool] = None,
   ) -> Tensor:
-    """Rosenblatt transform: dependent uniforms ``u`` → independent ``w``.
+    """Rosenblatt transform: dependent uniforms to independent uniforms.
 
-    Maps a sample from the fitted copula to a sample of independent
-    standard uniforms. Specifically, for each row of ``u`` the output
-    column ``j`` is the conditional CDF of ``U_j`` given the preceding
-    variables in the vine's natural order. See :meth:`pyvinecopulib.Vinecop.rosenblatt`
-    for the mathematical definition.
+    For each row of ``u``, the output column ``j`` is the
+    conditional CDF of :math:`U_j` given the preceding variables in
+    the vine's natural order.
 
-    Args:
-      u: ``(n, d)`` tensor of pseudo-observations in ``[0, 1]^d``.
-      num_threads: Accepted for API parity with :meth:`pyvinecopulib.Vinecop.rosenblatt`;
-        ignored here (see :meth:`pdf` for the rationale).
-      impl: ``"legacy"`` or ``"lazy"`` — see :meth:`pdf`.
-      batched: Per-tree-level batched dispatch — see :meth:`pdf`.
-        Default ``None`` picks per-device (True on CUDA, False on CPU).
+    Parameters
+    ----------
+    u : Tensor, shape (n, d), dtype float
+        Pseudo-observations in ``[0, 1]^d``.
+    num_threads : int, default=1
+        Accepted for API parity with `Vinecop.rosenblatt`; ignored.
+    impl : {"legacy", "lazy"}, default="legacy"
+        See `pdf`.
+    batched : bool or None, default=None
+        See `pdf`.
 
-    Returns:
-      ``(n, d)`` tensor of independent uniforms in ``[1e-10, 1 - 1e-10]``.
+    Returns
+    -------
+    Tensor, shape (n, d), dtype float
+        Independent uniforms in ``[1e-10, 1 - 1e-10]``.
     """
     del num_threads
     _check_impl(impl)
@@ -565,25 +573,32 @@ class TorchVinecop(torch.nn.Module):
     impl: str = "legacy",
     batched: Optional[bool] = None,
   ) -> Tensor:
-    """Inverse Rosenblatt transform: independent uniforms → dependent.
+    """Inverse Rosenblatt transform: independent to dependent uniforms.
 
-    Inverts :meth:`rosenblatt`: maps independent standard uniforms to a
-    sample of the fitted copula. Useful for simulation / sampling.
+    Inverts `rosenblatt`: maps independent standard uniforms to a
+    sample of the fitted copula. Useful for simulation.
 
-    Args:
-      u: ``(n, d)`` tensor of independent uniforms in ``[0, 1]^d``.
-      num_threads: Accepted for API parity with :meth:`pyvinecopulib.Vinecop.inverse_rosenblatt`;
-        ignored here (see :meth:`pdf` for the rationale).
-      impl: ``"legacy"`` or ``"lazy"`` — see :meth:`pdf`.
-      batched: **Must be** ``False`` (or left at the default ``None``,
-        which resolves to ``False`` here). The inverse cascade has a
-        cross-tree dependency that the per-tree-level wavefront used by
-        ``pdf`` / ``rosenblatt`` cannot satisfy; ``batched=True``
-        raises :class:`NotImplementedError`.
+    Parameters
+    ----------
+    u : Tensor, shape (n, d), dtype float
+        Independent uniforms in ``[0, 1]^d``.
+    num_threads : int, default=1
+        Accepted for API parity with `Vinecop.inverse_rosenblatt`;
+        ignored.
+    impl : {"legacy", "lazy"}, default="legacy"
+        See `pdf`.
+    batched : bool or None, default=None
+        Must be ``False`` or ``None`` (resolves to ``False``). The
+        inverse cascade has cross-tree dependencies that the
+        per-tree-level wavefront used by `pdf` / `rosenblatt`
+        cannot satisfy; ``batched=True`` raises
+        `NotImplementedError`.
 
-    Returns:
-      ``(n, d)`` tensor of dependent uniforms in ``[1e-10, 1 - 1e-10]``,
-      distributed as the fitted copula.
+    Returns
+    -------
+    Tensor, shape (n, d), dtype float
+        Dependent uniforms in ``[1e-10, 1 - 1e-10]``, distributed
+        as the fitted copula.
     """
     del num_threads
     _check_impl(impl)
@@ -608,32 +623,39 @@ class TorchVinecop(torch.nn.Module):
     device: Optional[torch.device] = None,
     dtype: Optional[torch.dtype] = None,
   ) -> Tensor:
-    """Simulate ``n`` samples from the fitted copula.
+    """Simulates ``n`` samples from the fitted copula.
 
-    Mirror of :meth:`pyvinecopulib.Vinecop.simulate`: draws
-    ``(n, d)`` independent uniforms (pseudo-random by default,
+    Draws ``(n, d)`` independent uniforms (pseudo-random by default,
     quasi-random when ``qrng=True``) and pushes them through
-    :meth:`inverse_rosenblatt`.
+    `inverse_rosenblatt`.
 
-    Args:
-      n: Number of samples to draw.
-      qrng: If ``True``, use a Halton / Sobol low-discrepancy sequence
-        (via :func:`pyvinecopulib.utils.simulate_uniform`) for the
-        underlying uniforms; otherwise draw pseudo-random uniforms with
-        ``torch.rand`` (seeded from ``seeds[0]`` when provided).
-      num_threads: Accepted for API parity; ignored on the torch
-        backend (see :meth:`pdf`).
-      seeds: When ``qrng=True``, forwarded to
-        :func:`pyvinecopulib.utils.simulate_uniform`. When ``qrng=False``,
-        the first entry seeds a fresh :class:`torch.Generator`; if empty
-        the global RNG state is used.
-      impl: ``"legacy"`` or ``"lazy"`` for the inverse-Rosenblatt
-        cascade. See :meth:`pdf`.
-      device, dtype: Override the device / dtype of the returned tensor.
-        Defaults match the fitted vine's internal grid.
+    Parameters
+    ----------
+    n : int
+        Number of samples to draw.
+    qrng : bool, default=False
+        If ``True``, use a low-discrepancy sequence via
+        `pyvinecopulib.utils.simulate_uniform`; otherwise draw
+        pseudo-random uniforms with ``torch.rand``.
+    num_threads : int, default=1
+        Accepted for API parity; ignored on the torch backend.
+    seeds : list of int, default=[]
+        When ``qrng=True``, forwarded to `simulate_uniform`. When
+        ``qrng=False``, the first entry seeds a fresh
+        ``torch.Generator``.
+    impl : {"legacy", "lazy"}, default="legacy"
+        See `pdf`.
+    device : torch.device or None, default=None
+        Override the device of the returned tensor. `None` matches
+        the fitted vine's internal grid.
+    dtype : torch.dtype or None, default=None
+        Override the dtype of the returned tensor. `None` matches
+        the fitted vine's internal grid.
 
-    Returns:
-      ``(n, d)`` tensor of dependent uniforms in ``[1e-10, 1 - 1e-10]``.
+    Returns
+    -------
+    Tensor, shape (n, d), dtype float
+        Dependent uniforms in ``[1e-10, 1 - 1e-10]``.
     """
     del num_threads
     ref = self._ref_tensor()
@@ -664,32 +686,38 @@ class TorchVinecop(torch.nn.Module):
     impl: str = "legacy",
     block_size: int = 4096,
   ) -> Tensor:
-    """Joint CDF ``F(u_i)`` for each query row ``u_i`` via quasi-MC.
+    """Evaluates the joint CDF at each query row via quasi-MC.
 
-    Mirror of :meth:`pyvinecopulib.Vinecop.cdf`. Draws ``N`` samples
-    from the fitted copula (via :meth:`simulate`) and estimates the
-    joint CDF at each query row as the empirical fraction of samples
-    componentwise-dominated by that row.
+    Draws ``N`` samples from the fitted copula (via `simulate`) and
+    estimates the joint CDF at each query row as the empirical
+    fraction of samples componentwise-dominated by that row.
 
-    Args:
-      u: ``(m, d)`` tensor of query points in ``[0, 1]^d``.
-      N: Number of Monte-Carlo samples used for the estimate. Larger
-        ``N`` gives more accurate CDF values at the cost of more
-        compute.
-      qrng: If ``True`` (default — matches the C++ default for
-        ``cdf``), draw quasi-random samples; otherwise pseudo-random.
-      num_threads: Accepted for API parity; ignored on the torch
-        backend (see :meth:`pdf`).
-      seeds: Forwarded to :meth:`simulate` for reproducibility.
-      impl: Forwarded to the underlying :meth:`simulate` /
-        :meth:`inverse_rosenblatt` call.
-      block_size: Number of query rows processed per iteration of the
-        outer loop. The dominance check materialises a
-        ``(block, N, d)`` tensor of booleans, so smaller blocks keep
-        peak memory in check at the cost of more Python overhead.
+    Parameters
+    ----------
+    u : Tensor, shape (m, d), dtype float
+        Query points in ``[0, 1]^d``.
+    N : int, default=10000
+        Number of Monte-Carlo samples used for the estimate.
+    qrng : bool, default=True
+        If ``True`` (matching the C++ default for ``cdf``), draw
+        quasi-random samples; otherwise pseudo-random.
+    num_threads : int, default=1
+        Accepted for API parity; ignored.
+    seeds : list of int, default=[]
+        Forwarded to `simulate` for reproducibility.
+    impl : {"legacy", "lazy"}, default="legacy"
+        Forwarded to the underlying `simulate` /
+        `inverse_rosenblatt` call.
+    block_size : int, default=4096
+        Number of query rows processed per outer-loop iteration.
+        The dominance check materialises a ``(block, N, d)``
+        tensor of booleans, so smaller blocks keep peak memory
+        in check.
 
-    Returns:
-      ``(m,)`` tensor of CDF values in ``[0, 1]``.
+    Returns
+    -------
+    Tensor, shape (m,), dtype float
+        CDF values in ``[0, 1]``.
     """
     del num_threads
     u_t = self._prep(u, "cdf")

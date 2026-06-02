@@ -143,7 +143,10 @@ def render_class_stub(
 
     try:
       attr = getattr(cls, attr_name)
-    except Exception:
+    except Exception as exc:
+      # Some bound attributes raise on access (e.g. nanobind descriptors);
+      # skip them but log so the omission isn't silent.
+      print(f"skip {cls.__name__}.{attr_name}: {exc}", file=sys.stderr)
       continue
 
     if callable(attr) and hasattr(attr, "__doc__"):

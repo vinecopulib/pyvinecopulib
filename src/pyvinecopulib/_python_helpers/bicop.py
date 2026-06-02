@@ -27,16 +27,16 @@ BICOP_PLOT_DOC = """
     -------
     Nothing, the function generates a plot and shows it using matplotlib.
 
-    Usage
-    -----
-    .. code-block:: python
-
-        import pyvinecopulib as pv
-        import numpy as np
-        cop = pv.Bicop(family=pv.BicopFamily.gaussian, parameters=np.array([[0.5]]))
-        cop.plot() # surface plot of copula density
-        cop.plot(plot_type="contour", margin_type="norm") # contour plot with normal margins
-        cop.plot(plot_type="contour", margin_type="unif") # contour plot of copula density
+    Examples
+    --------
+    >>> import pyvinecopulib as pv
+    >>> import numpy as np
+    >>> cop = pv.Bicop(
+    ...     family=pv.BicopFamily.gaussian, parameters=np.array([[0.5]]),
+    ... )
+    >>> cop.plot()  # surface plot of copula density
+    >>> cop.plot(plot_type="contour", margin_type="norm")
+    >>> cop.plot(plot_type="contour", margin_type="unif")
 """
 
 

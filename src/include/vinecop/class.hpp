@@ -172,51 +172,59 @@ are:
           [](Vinecop& self) -> std::string { return self.to_json().dump(); },
           vinecop_doc.to_json.doc, nb::call_guard<nb::gil_scoped_release>())
       .def_prop_rw("var_types", &Vinecop::get_var_types,
-                   &Vinecop::set_var_types, "The types of each variables.",
+                   &Vinecop::set_var_types, vinecop_doc.get_var_types.doc,
                    nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("trunc_lvl", &Vinecop::get_trunc_lvl,
-                   "The truncation level.")
-      .def_prop_ro("dim", &Vinecop::get_dim, "The dimension.")
-      .def("get_pair_copula", &Vinecop::get_pair_copula, "Gets a pair-copula.",
-           "tree"_a, "edge"_a, nb::call_guard<nb::gil_scoped_release>())
+                   vinecop_doc.get_trunc_lvl.doc)
+      .def_prop_ro("dim", &Vinecop::get_dim, vinecop_doc.get_dim.doc)
+      // The five `(tree, edge)` getters below take parameters libclang
+      // can't disambiguate against the `get_all_*` bulk variants, so the
+      // auto-extracted constant falls back to
+      // `doc_was_unable_to_choose_unambiguous_names`. Keep short
+      // hand-written literals for these — the upstream `//!` comments
+      // are richer but only surface in the Doxygen-built C++ docs.
+      .def("get_pair_copula", &Vinecop::get_pair_copula,
+           "Gets the pair copula at the given (tree, edge) position.", "tree"_a,
+           "edge"_a, nb::call_guard<nb::gil_scoped_release>())
       .def("get_family", &Vinecop::get_family,
-           "Gets the family of a pair-copula.", "tree"_a, "edge"_a)
+           "Gets the family of the pair copula at the given (tree, edge).",
+           "tree"_a, "edge"_a)
       .def("get_rotation", &Vinecop::get_rotation,
-           "Gets the rotation of a pair-copula.", "tree"_a, "edge"_a)
+           "Gets the rotation (degrees) of the pair copula at the given "
+           "(tree, edge).",
+           "tree"_a, "edge"_a)
       .def("get_parameters", &Vinecop::get_parameters,
-           "Gets the parameters of a pair-copula.", "tree"_a, "edge"_a)
+           "Gets the parameter matrix of the pair copula at the given "
+           "(tree, edge).",
+           "tree"_a, "edge"_a)
       .def("get_tau", &Vinecop::get_tau,
-           "Gets the kendall's tau of a pair-copula.", "tree"_a, "edge"_a)
+           "Gets Kendall's tau of the pair copula at the given (tree, edge).",
+           "tree"_a, "edge"_a)
       .def_prop_ro("pair_copulas", &Vinecop::get_all_pair_copulas,
-                   "All pair-copulas.",
+                   vinecop_doc.get_all_pair_copulas.doc,
                    nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("families", &Vinecop::get_all_families,
-                   "Families of all pair-copulas.",
+                   vinecop_doc.get_all_families.doc,
                    nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("rotations", &Vinecop::get_all_rotations,
-                   "The rotations of all pair-copulas.",
+                   vinecop_doc.get_all_rotations.doc,
                    nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("parameters", &Vinecop::get_all_parameters,
-                   "The parameters of all pair-copulas.",
+                   vinecop_doc.get_all_parameters.doc,
                    nb::call_guard<nb::gil_scoped_release>())
-      .def_prop_ro("taus", &Vinecop::get_all_taus,
-                   "The Kendall's taus of all pair-copulas.",
+      .def_prop_ro("taus", &Vinecop::get_all_taus, vinecop_doc.get_all_taus.doc,
                    nb::call_guard<nb::gil_scoped_release>())
-      .def_prop_ro("order", &Vinecop::get_order,
-                   "The R-vine structure's order.",
+      .def_prop_ro("order", &Vinecop::get_order, vinecop_doc.get_order.doc,
                    nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("structure", &Vinecop::get_rvine_structure,
-                   "The R-vine structure.",
+                   vinecop_doc.get_rvine_structure.doc,
                    nb::call_guard<nb::gil_scoped_release>())
-      .def_prop_ro("npars", &Vinecop::get_npars,
-                   "The total number of parameters.")
-      .def_prop_ro("matrix", &Vinecop::get_matrix,
-                   "Extracts the R-vine structure's matrix.",
+      .def_prop_ro("npars", &Vinecop::get_npars, vinecop_doc.get_npars.doc)
+      .def_prop_ro("matrix", &Vinecop::get_matrix, vinecop_doc.get_matrix.doc,
                    nb::call_guard<nb::gil_scoped_release>())
-      .def_prop_ro("nobs", &Vinecop::get_nobs,
-                   "The number of observations (for fitted objects only).")
+      .def_prop_ro("nobs", &Vinecop::get_nobs, vinecop_doc.get_nobs.doc)
       .def_prop_ro("threshold", &Vinecop::get_threshold,
-                   "The threshold (for thresholded copulas only).")
+                   vinecop_doc.get_threshold.doc)
       .def("select", &Vinecop::select, "data"_a,
            "controls"_a.sig("FitControlsVinecop()") = FitControlsVinecop(),
            vinecop_doc.select.doc, nb::call_guard<nb::gil_scoped_release>())

@@ -1,4 +1,4 @@
-"""pyvinecopulib — Python interface to vinecopulib.
+"""Python interface to vinecopulib.
 
 Public API is organized into four subpackages: :mod:`~pyvinecopulib.core`,
 :mod:`~pyvinecopulib.families`, :mod:`~pyvinecopulib.utils`, and

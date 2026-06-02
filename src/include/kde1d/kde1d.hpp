@@ -9,12 +9,47 @@
 
 #include <kde1d.hpp>
 
-#include "kde1d/docstr.hpp"
+#include "docstr.hpp"
 #include "misc/helpers.hpp"
 
 namespace nb = nanobind;
 using namespace nb::literals;
 using namespace kde1d;
+
+constexpr auto& kde1d_doc = pyvinecopulib_doc.kde1d.Kde1d;
+
+// Python-binding-only docstring for the unified `__init__` factory — the
+// upstream C++ class has four constructor overloads that libclang cannot
+// disambiguate (so the auto-extracted `kde1d_doc.ctor.doc_*` falls back to
+// `doc_was_unable_to_choose_unambiguous_names`). Keep this hand-written
+// since the Python signature does not match any single C++ overload.
+constexpr const char* kde1d_constructor_doc = R"""(
+Constructs a `Kde1d` instance.
+
+Parameters
+----------
+xmin :
+    Lower bound for the support of the density. `NaN` means no
+    boundary.
+xmax :
+    Upper bound for the support of the density. `NaN` means no
+    boundary.
+type :
+    Variable type. One of ``"continuous"``, ``"discrete"``, or
+    ``"zero_inflated"``.
+multiplier :
+    Bandwidth multiplier. The actual bandwidth used is
+    ``bandwidth * multiplier``.
+bandwidth :
+    Bandwidth parameter. `None` / `NaN` selects the bandwidth
+    automatically via the plug-in methodology.
+degree :
+    Degree of the local polynomial (0, 1, or 2 for log-constant,
+    log-linear, or log-quadratic fitting).
+grid_size :
+    Number of grid points for the interpolation grid (must be
+    >= 4).
+)""";
 
 // Factory function to create a Kde1d from xmin, xmax, type string, multiplier,
 // bandwidth, degree
@@ -56,7 +91,7 @@ inline void kde1d_plot_wrapper(const Kde1d& kde, nb::object xlim,
 }
 
 inline void init_kde1d(nb::module_& module) {
-  nb::class_<Kde1d>(module, "Kde1d", kde1d_docstrings::kde1d_class_doc)
+  nb::class_<Kde1d>(module, "Kde1d", kde1d_doc.doc)
       // Default constructor
       .def(
           "__init__",
@@ -71,55 +106,54 @@ inline void init_kde1d(nb::module_& module) {
           "xmin"_a = std::nullopt, "xmax"_a = std::nullopt,
           "type"_a = "continuous", "multiplier"_a = 1.0,
           "bandwidth"_a = std::nullopt, "degree"_a = 2, "grid_size"_a = 400,
-          kde1d_docstrings::kde1d_constructor_doc,
-          nb::call_guard<nb::gil_scoped_release>())
+          kde1d_constructor_doc, nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_params", &kde1d_from_params, "xmin"_a = std::nullopt,
                   "xmax"_a = std::nullopt, "type"_a = "continuous",
                   "multiplier"_a = 1.0, "bandwidth"_a = std::nullopt,
-                  "degree"_a = 2, "grid_size"_a = 400,
-                  kde1d_docstrings::kde1d_from_params_doc,
+                  "degree"_a = 2, "grid_size"_a = 400, kde1d_constructor_doc,
                   nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_grid", &kde1d_from_grid, "grid_points"_a, "values"_a,
                   "xmin"_a = std::nullopt, "xmax"_a = std::nullopt,
                   "type"_a = "continuous", "prob0"_a = 0.0,
-                  kde1d_docstrings::kde1d_from_grid_doc,
+                  "Constructs a `Kde1d` from a pre-computed interpolation "
+                  "grid (skipping the kernel-density fit).",
                   nb::call_guard<nb::gil_scoped_release>())
 
-      // Properties (getters)
-      .def_prop_ro("xmin", &Kde1d::get_xmin, kde1d_docstrings::xmin_doc)
-      .def_prop_ro("xmax", &Kde1d::get_xmax, kde1d_docstrings::xmax_doc)
-      .def_prop_ro("type", &Kde1d::get_type_str, kde1d_docstrings::type_doc)
-      .def_prop_ro("prob0", &Kde1d::get_prob0, kde1d_docstrings::prob0_doc)
+      // Properties (getters) — auto-extracted from `lib/kde1d` upstream
+      // `//!` comments.
+      .def_prop_ro("xmin", &Kde1d::get_xmin, kde1d_doc.get_xmin.doc)
+      .def_prop_ro("xmax", &Kde1d::get_xmax, kde1d_doc.get_xmax.doc)
+      .def_prop_ro("type", &Kde1d::get_type_str, kde1d_doc.get_type_str.doc)
+      .def_prop_ro("prob0", &Kde1d::get_prob0, kde1d_doc.get_prob0.doc)
       .def_prop_ro("multiplier", &Kde1d::get_multiplier,
-                   kde1d_docstrings::multiplier_doc)
+                   kde1d_doc.get_multiplier.doc)
       .def_prop_ro("bandwidth", &Kde1d::get_bandwidth,
-                   kde1d_docstrings::bandwidth_doc)
-      .def_prop_ro("degree", &Kde1d::get_degree, kde1d_docstrings::degree_doc)
+                   kde1d_doc.get_bandwidth.doc)
+      .def_prop_ro("degree", &Kde1d::get_degree, kde1d_doc.get_degree.doc)
       .def_prop_ro("grid_size", &Kde1d::get_grid_size,
-                   kde1d_docstrings::grid_size_doc)
-      .def_prop_ro("loglik", &Kde1d::get_loglik, kde1d_docstrings::loglik_doc)
-      .def_prop_ro("edf", &Kde1d::get_edf, kde1d_docstrings::edf_doc)
+                   kde1d_doc.get_grid_size.doc)
+      .def_prop_ro("loglik", &Kde1d::get_loglik, kde1d_doc.get_loglik.doc)
+      .def_prop_ro("edf", &Kde1d::get_edf, kde1d_doc.get_edf.doc)
       .def_prop_ro("grid_points", &Kde1d::get_grid_points,
-                   kde1d_docstrings::grid_points_doc,
+                   kde1d_doc.get_grid_points.doc,
                    nb::call_guard<nb::gil_scoped_release>())
-      .def_prop_ro("values", &Kde1d::get_values, kde1d_docstrings::values_doc,
+      .def_prop_ro("values", &Kde1d::get_values, kde1d_doc.get_values.doc,
                    nb::call_guard<nb::gil_scoped_release>())
 
-      // Methods
+      // Methods — auto-extracted from `lib/kde1d` upstream `//!` comments.
       .def("fit", &Kde1d::fit, "x"_a, "weights"_a = Eigen::VectorXd(),
-           kde1d_docstrings::fit_doc, nb::call_guard<nb::gil_scoped_release>())
+           kde1d_doc.fit.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("pdf", &Kde1d::pdf, "x"_a, "check_fitted"_a = true,
-           kde1d_docstrings::pdf_doc, nb::call_guard<nb::gil_scoped_release>())
+           kde1d_doc.pdf.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("cdf", &Kde1d::cdf, "x"_a, "check_fitted"_a = true,
-           kde1d_docstrings::cdf_doc, nb::call_guard<nb::gil_scoped_release>())
+           kde1d_doc.cdf.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("quantile", &Kde1d::quantile, "x"_a, "check_fitted"_a = true,
-           kde1d_docstrings::quantile_doc,
-           nb::call_guard<nb::gil_scoped_release>())
+           kde1d_doc.quantile.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("simulate", &Kde1d::simulate, "n"_a, "seeds"_a = std::vector<int>(),
-           "check_fitted"_a = true, kde1d_docstrings::simulate_doc,
+           "check_fitted"_a = true, kde1d_doc.simulate.doc,
            nb::call_guard<nb::gil_scoped_release>())
       .def("set_xmin_xmax", &kde1d_set_xmin_xmax, "xmin"_a = std::nullopt,
-           "xmax"_a = std::nullopt, kde1d_docstrings::set_xmin_xmax_doc)
+           "xmax"_a = std::nullopt, kde1d_doc.set_xmin_xmax.doc)
       .def("plot", &kde1d_plot_wrapper, "xlim"_a = nb::none(),
            "ylim"_a = nb::none(), "grid_size"_a = 200,
            "show_zero_mass"_a = true,

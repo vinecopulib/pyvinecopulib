@@ -21,37 +21,31 @@ If you have not used vine copulas before, the
 and the default *Transformed Local Likelihood* (TLL) pair-copula
 family in ~5 minutes.
 
-Backends
---------
+Requires scikit-learn, pandas, joblib, and scipy. Install with
+``pip install pyvinecopulib[sklearn]``.
 
-By default the estimators run on the C++/nanobind backend
-(:class:`pyvinecopulib.Vinecop`), so the sklearn module **does not
-require PyTorch**. Pass a configured
+Notes
+-----
+**Backends.** By default the estimators run on the C++/nanobind
+backend (:class:`pyvinecopulib.Vinecop`), so the sklearn module
+**does not require PyTorch**. Pass a configured
 :class:`~pyvinecopulib.sklearn.backends.TorchVinecopBackend` via the
 ``backend=`` kwarg to route through the torch backend instead — see
 :mod:`pyvinecopulib.sklearn.backends` for a comparison and examples.
 
-DataFrame input
----------------
-
-Every estimator accepts both NumPy arrays and pandas DataFrames.
-DataFrames may mix numeric, ordered-categorical, and
-unordered-categorical columns; the latter are expanded to
-ordered ``{0, 1}`` dummies before fitting, and the same expansion is
+**DataFrame input.** Every estimator accepts both NumPy arrays and
+pandas DataFrames. DataFrames may mix numeric, ordered-categorical,
+and unordered-categorical columns; the latter are expanded to ordered
+``{0, 1}`` dummies before fitting, and the same expansion is
 re-applied at predict time.
 
-Low-level knobs
----------------
-
-Pair family, threading, structure-selection algorithm, etc. are
-passed through to :class:`pyvinecopulib.core.FitControlsVinecop` and
+**Low-level knobs.** Pair family, threading, structure-selection
+algorithm, etc. are passed through to
+:class:`pyvinecopulib.core.FitControlsVinecop` and
 :class:`pyvinecopulib.core.RVineStructure` (carried inside the
 backend object). Reach for those directly whenever you need control
 beyond the sklearn convenience layer. See each class docstring for
 the full methodology and references.
-
-Requires scikit-learn, pandas, joblib, and scipy. Install with
-``pip install pyvinecopulib[sklearn]``.
 """
 
 try:

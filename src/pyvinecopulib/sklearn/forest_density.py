@@ -10,7 +10,6 @@ from ._base import (
   _DOC_FACTORIZATION,
   _DOC_PIPELINE,
   _DOC_REFERENCES,
-  _DOC_WRAPPER,
 )
 from ._forest_base import _DOC_FOREST, _DOC_FOREST_REFERENCES, VineForestBase
 from .density import VineDensity
@@ -34,25 +33,23 @@ class VineForestDensity(VineForestBase, DensityMixin):
   ) -> None:
     """Ensemble of vine-copula density estimators with random structures.
 
-    Builds ``n_vines`` :class:`VineDensity` base learners on randomly
-    sampled vine structures, prunes them via the model confidence set
-    (MCS), and averages the per-sample density values at predict
-    time. See the class docstring for the full methodology.
+    Builds ``n_vines`` `VineDensity` base learners on randomly
+    sampled vine structures, prunes them via the model confidence
+    set (MCS), and averages the per-sample density values at
+    predict time.
 
     Parameters
     ----------
-    base_params : dict, optional
-        Keyword arguments forwarded to each :class:`VineDensity`
+    base_params : dict or None, default=None
+        Keyword arguments forwarded to each `VineDensity`
         ``__init__``. Example: ``{"batch_size": 200}``.
     n_vines : int, default=100
-        Number of random base estimators (before MCS pruning).
+        Number of random base estimators before MCS pruning.
     vines_sampling : {"uniform", "local"}, default="uniform"
-        Random-structure generator. ``"uniform"`` draws uniformly over
-        R-vines via Joe's algorithm (Joe, Cooke & Kurowicka 2011);
-        ``"local"`` draws each tree from the Kendall's-:math:`\\tau`-
-        weighted distribution (Dissmann MST as the mode) via Wilson's
-        loop-erased random walk (Wilson 1996). See
-        :class:`VineForestBase` for the full description.
+        Random-structure generator. ``"uniform"`` draws uniformly
+        over R-vines via Joe's algorithm; ``"local"`` draws each
+        tree from the Kendall's-tau-weighted distribution
+        (Dissmann MST as mode) via Wilson's loop-erased random walk.
     bootstrap : bool, default=True
         Bootstrap-resample the training set for each base estimator.
     val_fraction : float, default=0.25
@@ -60,15 +57,15 @@ class VineForestDensity(VineForestBase, DensityMixin):
         disables validation.
     best_only : bool, default=False
         Keep only the single best survivor rather than the full MCS.
-    method : {"da_mcs_marg", "da_mcs_unif", None}, default="da_mcs_marg"
-        Survivor-selection method. ``None`` keeps anything strictly
+    method : {"da_mcs_marg", "da_mcs_unif"} or None, default="da_mcs_marg"
+        Survivor-selection method. `None` keeps anything strictly
         better than the Dissmann baseline.
     alpha : float, default=0.05
         Significance level for the MCS selector.
     add_dissmann : bool, default=True
-        Include the Dissmann-structure baseline among the candidates.
-    seed : int, default=42
-        Random seed for reproducibility.
+        Include the Dissmann-structure baseline among candidates.
+    random_state : int, RandomState instance or None, default=None
+        Seed for reproducibility.
     n_jobs : int, default=1
         Number of joblib workers used during fit and pdf evaluation.
     verbose : bool, default=False
@@ -97,35 +94,37 @@ class VineForestDensity(VineForestBase, DensityMixin):
     return estimator.score_samples(X)
 
   def fit(self, X):
-    """Fit the ensemble of vine density estimators.
+    """Fits the ensemble of vine density estimators.
 
     Parameters
     ----------
-    X : ndarray or DataFrame of shape (n_samples, n_features)
+    X : ndarray, shape (n_samples, n_features), dtype float, or DataFrame
         Training data.
 
     Returns
     -------
     self : VineForestDensity
+        The fitted estimator.
     """
     return self._fit_ensemble(X)
 
   def score_samples(self, X):
     """Log of the ensemble-averaged density at each sample.
 
-    Returns :math:`\\log \\hat f_{\\text{ens}}(x)` where the ensemble
-    density is the simple average over surviving base estimators,
+    Returns :math:`\\log \\hat f_{\\text{ens}}(x)` where the
+    ensemble density is the simple average over surviving base
+    estimators
     :math:`\\hat f_{\\text{ens}}(x) = M^{-1} \\sum_{m=1}^M
     \\hat f_m(x)`.
 
     Parameters
     ----------
-    X : ndarray or DataFrame of shape (n_samples, n_features)
+    X : ndarray, shape (n_samples, n_features), dtype float, or DataFrame
         Test samples.
 
     Returns
     -------
-    ndarray of shape (n_samples,)
+    ndarray, shape (n_samples,), dtype float
         Log-density values.
     """
     return np.log(self.pdf(X))
@@ -135,33 +134,33 @@ class VineForestDensity(VineForestBase, DensityMixin):
 
     Parameters
     ----------
-    X : ndarray or DataFrame of shape (n_samples, n_features)
+    X : ndarray, shape (n_samples, n_features), dtype float, or DataFrame
         Test samples.
-    y : ignored
-        Present for API compatibility with ``DensityMixin.score``.
+    y : None
+        Ignored; present for `DensityMixin.score` compatibility.
 
     Returns
     -------
     float
-        Mean of :meth:`score_samples` over the rows of ``X``.
+        Mean of `score_samples(X)` over the rows of ``X``.
     """
     return float(self.score_samples(X).mean())
 
   def pdf(self, X):
     """Ensemble-averaged joint density.
 
-    Evaluates :class:`VineDensity.pdf` for each surviving base
-    estimator in parallel and averages the resulting per-sample
-    density values.
+    Evaluates `VineDensity.pdf` for each surviving base estimator
+    in parallel and averages the resulting per-sample density
+    values.
 
     Parameters
     ----------
-    X : ndarray or DataFrame of shape (n_samples, n_features)
+    X : ndarray, shape (n_samples, n_features), dtype float, or DataFrame
         Test samples.
 
     Returns
     -------
-    ndarray of shape (n_samples,)
+    ndarray, shape (n_samples,), dtype float
         Density values.
     """
     X = self._prepare_prediction_data(X)
@@ -176,25 +175,24 @@ class VineForestDensity(VineForestBase, DensityMixin):
   def cdf(self, X, N: int = 10000, random_state=None):
     """Ensemble-averaged joint CDF.
 
-    Evaluates :meth:`VineDensity.cdf` for each surviving base
-    estimator in parallel (each call runs its own quasi-MC
-    integration) and averages the resulting per-sample CDF values.
+    Evaluates `VineDensity.cdf` for each surviving base estimator
+    in parallel (each call runs its own quasi-MC integration) and
+    averages the resulting per-sample CDF values.
 
     Parameters
     ----------
-    X : ndarray or DataFrame of shape (n_samples, n_features)
+    X : ndarray, shape (n_samples, n_features), dtype float, or DataFrame
         Test samples.
     N : int, default=10000
         Number of quasi-random points used by the per-estimator
         quasi-MC integration.
-    random_state : int, RandomState, Generator or None
-        Forwarded to each estimator's ``cdf`` call. If ``None``
-        (default), each surviving estimator reuses the RNG resolved at
-        its own fit time.
+    random_state : int, RandomState instance or None, default=None
+        Forwarded to each estimator's `cdf` call. `None` reuses each
+        estimator's RNG resolved at its fit time.
 
     Returns
     -------
-    ndarray of shape (n_samples,)
+    ndarray, shape (n_samples,), dtype float
         CDF values in :math:`[0, 1]`.
     """
     X = self._prepare_prediction_data(X)
@@ -208,16 +206,13 @@ class VineForestDensity(VineForestBase, DensityMixin):
     return np.mean(cdf_list, axis=0)
 
   def sample(self, n_samples: int = 1):
-    """Draw samples from the ensemble (mixture-of-densities) distribution.
+    """Draws samples from the ensemble (mixture-of-densities) distribution.
 
     Allocates :math:`n_\\text{samples}` draws across the :math:`M`
-    survivors via a single multinomial draw (uniform mixture weights
-    :math:`1/M`), calls each estimator's :meth:`VineDensity.sample`
-    once with its assigned count, concatenates, and shuffles the rows
-    so the output is row-exchangeable. One ``estimator.sample(...)``
-    call per surviving estimator (instead of ``n_samples`` calls of
-    size 1) — important for the cost of the underlying
-    :meth:`Vinecop.simulate`.
+    survivors via a single multinomial draw (uniform mixture
+    weights :math:`1/M`), calls each estimator's
+    `VineDensity.sample` once with its assigned count, concatenates,
+    and shuffles the rows so the output is row-exchangeable.
 
     Parameters
     ----------
@@ -226,7 +221,7 @@ class VineForestDensity(VineForestBase, DensityMixin):
 
     Returns
     -------
-    ndarray of shape (n_samples, n_features)
+    ndarray, shape (n_samples, n_features), dtype float
         Generated samples in the original feature scale.
     """
     check_is_fitted(self, attributes=["_estimators"])
@@ -252,13 +247,12 @@ class VineForestDensity(VineForestBase, DensityMixin):
 
 VineForestDensity.__doc__ = f"""Forest of vine-copula density estimators.
 
-An ensemble of :class:`VineDensity` base learners fitted on randomly
+An ensemble of `VineDensity` base learners fitted on randomly
 sampled vine structures. Survivors are selected via a model
-confidence set (MCS) on a held-out validation split, and predictions
-are averaged across survivors. Implements the random-search-plus-MCS
-methodology of Vatter & Nagler (2026).
+confidence set (MCS) on a held-out validation split, and
+predictions are averaged across survivors. Implements the
+random-search-plus-MCS methodology of Vatter & Nagler (2026).
 
-{_DOC_WRAPPER}
 {_DOC_FOREST}
 {_DOC_PIPELINE}
 {_DOC_FACTORIZATION}
@@ -271,9 +265,6 @@ Examples
 >>> rng = np.random.default_rng(0)
 >>> X = rng.standard_normal((300, 3))
 >>> forest = VineForestDensity(n_vines=10, n_jobs=1).fit(X[:200])
->>> forest.score_samples(X[200:205])      # log-density per row
->>> forest.pdf(X[200:205])                # ensemble-averaged density
->>> forest.cdf(X[200:205], seeds=[0])     # ensemble-averaged joint CDF
->>> forest.sample(n_samples=5)            # mixture sampling
+>>> forest.score_samples(X[200:205])
 
 {_DOC_REFERENCES}{_DOC_FOREST_REFERENCES}"""

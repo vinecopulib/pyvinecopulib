@@ -7,7 +7,6 @@ from ._base import (
   _DOC_FACTORIZATION,
   _DOC_PIPELINE,
   _DOC_REFERENCES,
-  _DOC_WRAPPER,
   VineBase,
 )
 
@@ -34,50 +33,43 @@ class VineRegressor(VineBase, RegressorMixin):
   ) -> None:
     """Sklearn-compatible vine-copula regressor.
 
-    Predicts the conditional mean :math:`\\hat{\\mathbb{E}}[Y \\mid X = x]`
-    and/or conditional quantiles using the weighted-sample estimator
-    derived in the class docstring.
+    Predicts the conditional mean
+    :math:`\\hat{\\mathbb{E}}[Y \\mid X = x]` and/or conditional
+    quantiles using the weighted-sample estimator derived in the
+    class docstring.
 
     Parameters
     ----------
     mean : bool, default=True
-        If ``True``, predict the conditional mean. Set to ``False`` to
-        get quantile-only predictions (``quantiles`` must then be set).
-    quantiles : array-like, optional
-        Quantile levels in ``(0, 1)`` to predict. If ``None``, quantile
-        prediction is disabled.
-    backend : :class:`~pyvinecopulib.sklearn.backends.VinecopBackend` or compatible, optional
-        Backend strategy bundling fit-time controls and an optional
-        pre-specified structure on ``(Y, X_1, ..., X_d)`` (``Y`` always
-        in the first dimension). ``None`` (default) resolves to
-        :class:`~pyvinecopulib.sklearn.backends.VinecopBackend` at fit
-        time, which uses the C++ backend with the ``tll`` pair family.
+        If ``True``, predict the conditional mean. Set to ``False``
+        to get quantile-only predictions (``quantiles`` must then be
+        set).
+    quantiles : array-like of float, shape (n_quantiles,), default=None
+        Quantile levels in ``(0, 1)`` to predict. ``None`` disables
+        quantile prediction.
+    backend : VinecopBackend or compatible, default=None
+        Backend instance bundling fit-time controls and an optional
+        pre-specified structure on ``(Y, X_1, ..., X_d)`` (`Y`
+        always in the first dimension). `None` resolves to a default
+        `VinecopBackend` with the `tll` pair family at fit time.
     batch_size : int, default=100
-        Number of test points processed per batch in :meth:`predict`.
-        ``1`` minimises memory at the cost of speed; ``n_test`` is the
-        opposite extreme; intermediate values trade off memory and
-        throughput.
+        Number of test points processed per batch in `predict`.
     use_grid : bool, default=True
         Controls how training responses are represented for the
-        weighted-sample predictor:
-
-        - ``False`` (importance weighting over training rows): weights
-          are :math:`w_i(x) \\propto c_{Y,X}(\\hat F_Y(y_i),
-          \\hat F_X(x))` for :math:`i = 1, \\dots, n_{\\text{train}}`.
-        - ``True`` (importance weighting over a marginal grid): the
-          training response set is replaced by the Kde1d grid points
-          and the weights pick up an extra :math:`\\hat f_Y(y_g)`
-          factor.
+        weighted-sample predictor. ``False`` uses importance
+        weighting over training rows with
+        :math:`w_i(x) \\propto c_{Y,X}(\\hat F_Y(y_i),
+        \\hat F_X(x))`. ``True`` (default) uses the Kde1d grid
+        points and an extra :math:`\\hat f_Y(y_g)` factor.
     normalize_weights : bool, default=True
-        If ``True`` (default), the per-row weights produced by
-        :meth:`_iter_weights` are normalised to sum to one. Forest
-        wrappers set this to ``False`` so they can average raw weights
-        across trees and normalise once at the ensemble level.
-    random_state : int, RandomState, Generator or None
-        Stored as-is; resolved via
-        :func:`sklearn.utils.check_random_state` in ``fit``. Currently
-        unused at runtime by the regressor itself but available to
-        backend-side stochastic operations.
+        If ``True`` (default), per-row weights produced by
+        `_iter_weights` are normalised to sum to one. Forest
+        wrappers set this to ``False`` so they can average raw
+        weights across trees and normalise once at the ensemble
+        level.
+    random_state : int, RandomState instance or None, default=None
+        Seeds the RNG used by stochastic operations. Resolved via
+        `sklearn.utils.check_random_state` inside `fit`.
     """
     super().__init__(
       backend=backend, batch_size=batch_size, random_state=random_state
@@ -88,30 +80,19 @@ class VineRegressor(VineBase, RegressorMixin):
     self.normalize_weights = normalize_weights
 
   def fit(self, X: np.ndarray, y: np.ndarray) -> "VineRegressor":
-    """Fit a vine copula to the joint distribution of ``(Y, X)``.
-
-    Runs the shared three-step pipeline (marginal KDEs →
-    pseudo-observations → vine copula) on the joint vector
-    :math:`(Y, X_1, \\dots, X_d)`, with :math:`Y` in the first
-    position and treated as continuous. See the class docstring for
-    the full mathematical setup.
+    """Fits a vine copula to the joint distribution of ``(Y, X)``.
 
     Parameters
     ----------
-    X : ndarray of shape (n_samples, n_features)
+    X : ndarray, shape (n_samples, n_features), dtype float
         Training covariates.
-    y : ndarray of shape (n_samples,)
+    y : ndarray, shape (n_samples,), dtype float
         Training responses (continuous).
 
     Returns
     -------
     self : VineRegressor
-        Fitted estimator. Sets ``self._vine``, ``self._x_kde1d``,
-        ``self._y_kde1d``, ``self._y_train``, ``self._uy_train``,
-        ``self.schema_``, ``self.structure_``, ``self.backend_``,
-        ``self.random_state_``, ``self.quantiles_``,
-        ``self.n_features_in_``, and ``self.feature_names_in_``
-        (for DataFrame input).
+        The fitted estimator.
     """
     self._validate_params()
     if y is None:
@@ -155,34 +136,27 @@ class VineRegressor(VineBase, RegressorMixin):
   def _copula_marginal_density(
     self, X: np.ndarray, log: bool = False, n_grid: int = 101
   ) -> np.ndarray:
-    """Numerical approximation of :math:`c_X(u_X)`.
+    """Computes :math:`c_X(u_X) = \\int_0^1 c_{Y, X}(u_Y, u_X)\\, du_Y`.
 
-    Computes
-
-    .. math::
-
-       c_X(u_X) = \\int_0^1 c_{Y, X}(u_Y, u_X)\\, du_Y
-
-    by Simpson's rule on a uniform grid in :math:`[0, 1]`. Used
-    internally by forest-style ensembles to evaluate the conditional
-    log-likelihood
-    :math:`\\log f_{Y \\mid X}(y \\mid x) = \\log c_{Y,X}(u_Y, u_X) -
-    \\log c_X(u_X) + \\log f_Y(y)`; not normally called by users.
+    Numerical approximation via Simpson's rule. Used internally by
+    forest-style ensembles for the conditional log-likelihood
+    :math:`\\log f_{Y \\mid X}(y \\mid x) = \\log c_{Y,X}(u_Y, u_X)
+    - \\log c_X(u_X) + \\log f_Y(y)`.
 
     Parameters
     ----------
-    X : ndarray of shape (n_samples, n_features)
+    X : ndarray, shape (n_samples, n_features), dtype float
         Conditioning covariates.
     log : bool, default=False
-        Whether to return the log-density.
+        If ``True``, return the log-density.
     n_grid : int, default=101
-        Number of integration nodes. Simpson's rule requires an odd
-        count; an even value is silently incremented.
+        Number of Simpson nodes. An even value is silently
+        incremented.
 
     Returns
     -------
-    ndarray of shape (n_samples,)
-        Marginal copula density :math:`c_X(u_X)` (or its log).
+    ndarray, shape (n_samples,), dtype float
+        Marginal copula densities :math:`c_X(u_X)` (or their log).
     """
     check_is_fitted(self, attributes=["_vine"])
 
@@ -219,9 +193,9 @@ class VineRegressor(VineBase, RegressorMixin):
   # Generator form (`yield (w, start, end)` per batch) is preserved so a
   # future forest PR can interleave batches across trees in `_predict_from_iter`.
   def _iter_weights(self, X):
-    """Yield batched conditional weights for the weighted-sample predictor.
+    """Yields batched conditional weights for the weighted-sample predictor.
 
-    For each batch of test rows, computes weights
+    For each batch of test rows, computes
 
     .. math::
 
@@ -231,27 +205,24 @@ class VineRegressor(VineBase, RegressorMixin):
             \\text{if } \\texttt{use\\_grid = False}, \\\\
          c_{Y, X}\\bigl(\\hat F_Y(y_g), \\hat F_X(x)\\bigr)\\,
          \\hat f_Y(y_g) &
-            \\text{if } \\texttt{use\\_grid = True},
+            \\text{if } \\texttt{use\\_grid = True}.
        \\end{cases}
 
-    over the training responses (``use_grid=False``) or the Kde1d
-    grid points (``use_grid=True``). Weights are normalised row-wise
-    when ``normalize_weights=True``. The generator shape lets a
-    future forest implementation interleave batches across trees.
+    Weights are normalised row-wise when ``normalize_weights=True``.
 
     Parameters
     ----------
-    X : ndarray of shape (n_test, n_features)
+    X : ndarray, shape (n_test, n_features), dtype float
         Test covariates on the original (un-transformed) scale.
 
     Yields
     ------
-    w : ndarray of shape (batch, n_train_or_grid)
-        Weights for the current batch.
+    w : ndarray, shape (batch, n_train_or_grid), dtype float
+        Per-row weights for the current batch.
     start : int
-        Index of the first row in this batch.
+        Index of the first row in the batch.
     end : int
-        Index one past the last row in this batch.
+        One past the index of the last row in the batch.
     """
     X = np.asarray(X)
     n_test = X.shape[0]
@@ -274,24 +245,24 @@ class VineRegressor(VineBase, RegressorMixin):
       yield w, start, end
 
   def _predict_from_iter(self, X, iter_weights):
-    """Combine batched weights with training responses to form predictions.
+    """Combines batched weights with training responses to form predictions.
 
     Parameters
     ----------
-    X : ndarray of shape (n_samples, n_features)
+    X : ndarray, shape (n_samples, n_features), dtype float
         Test covariates (already validated / expanded).
-    iter_weights : callable
-        Generator returning ``(weights, start, end)`` triples. Usually
-        :meth:`_iter_weights`, but a forest ensemble can pass an
+    iter_weights : Callable
+        Generator yielding ``(weights, start, end)`` triples.
+        Usually `_iter_weights`, but a forest ensemble can pass an
         averaged-across-trees variant.
 
     Returns
     -------
-    ndarray
-        Predictions of shape ``(n_samples,)`` when a single output is
-        produced (mean or single quantile) or
-        ``(n_samples, n_outputs)`` otherwise. Column order is mean
-        first (if enabled), then quantiles in the order requested.
+    ndarray, shape (n_samples,) or (n_samples, n_outputs), dtype float
+        Predictions. Shape ``(n_samples,)`` when a single output is
+        produced (mean or single quantile), ``(n_samples, n_outputs)``
+        otherwise. Column order is mean first (if enabled), then
+        quantiles in the order requested.
     """
     n_test = X.shape[0]
     quantiles = self.quantiles_
@@ -320,32 +291,29 @@ class VineRegressor(VineBase, RegressorMixin):
     return y_pred.squeeze()
 
   def predict(self, X):
-    """Predict the conditional mean and/or quantiles of ``Y`` given ``X``.
+    """Predicts the conditional mean and/or quantiles of ``Y`` given ``X``.
 
-    For each test row :math:`x`, computes the weights
-    :math:`w_i(x)` described in :meth:`_iter_weights` and returns the
-    weighted statistics:
-
-    - **Mean**: :math:`\\hat{\\mathbb{E}}[Y \\mid X = x] = \\sum_i
-      w_i(x)\\, y_i` (closed-form solution of the estimating equation
-      :math:`\\int (y - \\beta) \\hat f(y \\mid x)\\, dy = 0`).
-    - **Quantile** :math:`\\tau`: weighted quantile of ``self._y_train``
-      with the same weights, computed via
-      :func:`numpy.quantile` with ``method="inverted_cdf"``.
+    Computes weights :math:`w_i(x)` from the fitted copula
+    (`_iter_weights`) and returns the weighted statistics:
+    :math:`\\hat{\\mathbb{E}}[Y \\mid X = x] = \\sum_i w_i(x)\\, y_i`
+    for the mean (closed-form solution of the estimating equation
+    :math:`\\int (y - \\beta) \\hat f(y \\mid x)\\, dy = 0`) and the
+    weighted quantile via :func:`numpy.quantile` with
+    ``method="inverted_cdf"`` for each requested level.
 
     Parameters
     ----------
-    X : ndarray or DataFrame of shape (n_samples, n_features)
+    X : ndarray, shape (n_samples, n_features), dtype float, or DataFrame
         Test covariates. Must match the training schema.
 
     Returns
     -------
-    ndarray
-        Predictions of shape ``(n_samples,)`` if only one output is
-        requested (mean *or* a single quantile), or
-        ``(n_samples, n_outputs)`` otherwise. Output columns are
-        ordered: mean (if ``self.mean``), then quantiles in
-        ``self.quantiles`` order.
+    ndarray, shape (n_samples,) or (n_samples, n_outputs), dtype float
+        Predictions. Shape ``(n_samples,)`` if only one output is
+        requested (mean or a single quantile), otherwise
+        ``(n_samples, n_outputs)``. Output columns are ordered:
+        mean (if `self.mean`), then quantiles in `self.quantiles`
+        order.
     """
     check_is_fitted(self, attributes=["_vine"])
     X = self._validate_input(X, reset=False)
@@ -356,37 +324,28 @@ VineRegressor.__doc__ = f"""Vine-copula based regressor (mean and quantile).
 
 A scikit-learn-compatible non-parametric regressor that predicts the
 conditional mean :math:`\\mathbb{{E}}[Y \\mid X = x]` and/or
-conditional :math:`\\tau`-quantiles of ``Y`` given covariates ``X``,
+conditional :math:`\\tau`-quantiles of ``Y`` given covariates ``X``
 by fitting a vine copula to the joint distribution of :math:`(Y, X)`
 and reducing prediction to a weighted statistic of the training
 responses.
 
-**Estimating-equation framework.** Following Nagler & Vatter (2024),
-for a target functional :math:`\\beta(x)` characterised by
-:math:`\\mathbb{{E}}[\\psi_\\beta(Y) \\mid X = x] = 0` we plug in the
-fitted conditional density :math:`\\hat f_{{Y \\mid X}}(\\cdot \\mid x)`
-and solve
+For a target functional :math:`\\beta(x)` characterised by
+:math:`\\mathbb{{E}}[\\psi_\\beta(Y) \\mid X = x] = 0` (Nagler &
+Vatter, 2024), the fitted conditional density
+:math:`\\hat f_{{Y \\mid X}}(\\cdot \\mid x)` solves
 
 .. math::
 
-   \\int \\psi_\\beta(y)\\, \\hat f_{{Y \\mid X}}(y \\mid x)\\, dy = 0.
+   \\int \\psi_\\beta(y)\\, \\hat f_{{Y \\mid X}}(y \\mid x)\\, dy
+   = 0.
 
-Two standard choices of :math:`\\psi_\\beta` give
+Setting :math:`\\psi_\\beta(y) = y - \\beta` recovers the
+conditional mean (a closed-form weighted average of the training
+responses); setting :math:`\\psi_\\beta(y) =
+\\mathbf{{1}}\\{{y < \\beta\\}} - \\tau` recovers the conditional
+:math:`\\tau`-quantile (a weighted quantile via
+:func:`numpy.quantile` with ``method="inverted_cdf"``).
 
-- :math:`\\psi_\\beta(y) = y - \\beta` → conditional mean,
-- :math:`\\psi_\\beta(y) = \\mathbf{{1}}\\{{y < \\beta\\}} - \\tau` →
-  conditional :math:`\\tau`-quantile.
-
-Both reduce in practice to weighted statistics of the training
-responses. With weights :math:`w_i(x) \\propto c_{{Y, X}}(\\hat F_Y(y_i),
-\\hat F_X(x))` derived from the copula density (and optionally
-reweighted by :math:`\\hat f_Y` on a fixed grid; see ``use_grid``),
-the conditional mean is :math:`\\sum_i w_i(x)\\, y_i` (closed form)
-and the conditional quantile is the weighted quantile of
-:math:`\\{{y_i\\}}_i` via :func:`numpy.quantile` with
-``method="inverted_cdf"``.
-
-{_DOC_WRAPPER}
 {_DOC_PIPELINE}
 {_DOC_FACTORIZATION}
 {_DOC_DISCRETE}
@@ -399,26 +358,7 @@ Examples
 >>> X = rng.standard_normal((200, 3))
 >>> y = X @ [1.5, -0.8, 0.4] + 0.2 * rng.standard_normal(200)
 >>> est = VineRegressor(quantiles=[0.1, 0.5, 0.9]).fit(X, y)
->>> est.predict(X[:5])          # columns: mean, q10, q50, q90
-
-Use the PyTorch backend for GPU placement / autograd:
-
->>> from pyvinecopulib.sklearn.backends import TorchVinecopBackend
->>> est_gpu = VineRegressor(
-...     backend=TorchVinecopBackend(), quantiles=[0.1, 0.5, 0.9],
-... ).fit(X, y)
-
-See also
---------
-
-* :class:`VineDensity` — sister density estimator on the same
-  primitives.
-* :class:`VineForestRegressor` — ensemble variant.
-* :class:`pyvinecopulib.sklearn.backends.VinecopBackend`,
-  :class:`pyvinecopulib.sklearn.backends.TorchVinecopBackend` — the
-  two backend choices.
-* :class:`pyvinecopulib.core.Vinecop` — the underlying vine-copula
-  class if you need control beyond the sklearn convenience layer.
+>>> est.predict(X[:5])
 
 {_DOC_REFERENCES}
 """

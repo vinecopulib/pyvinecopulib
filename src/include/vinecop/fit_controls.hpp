@@ -17,6 +17,11 @@ using namespace vinecopulib;
 inline void init_vinecop_fit_controls(nb::module_& module) {
   constexpr auto& doc = pyvinecopulib_doc;
   constexpr auto& fitcontrolsvinecop_doc = doc.vinecopulib.FitControlsVinecop;
+  // Inherited properties (`family_set`, `parametric_method`, …)
+  // surface in the FitControlsBicop entry of `pyvinecopulib_doc`,
+  // not under FitControlsVinecop. Reference the parent class's docs
+  // for those.
+  constexpr auto& fitcontrolsbicop_doc = doc.vinecopulib.FitControlsBicop;
 
   nb::class_<FitControlsVinecop>(module, "FitControlsVinecop",
                                  fitcontrolsvinecop_doc.doc)
@@ -37,74 +42,83 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
            "allow_rotations"_a = true, "seeds"_a = std::vector<int>(),
            fitcontrolsvinecop_doc.ctor.doc_20args,
            nb::call_guard<nb::gil_scoped_release>())
+      // Inherited from FitControlsBicop — reference its docs.
       .def_prop_rw("family_set", &FitControlsVinecop::get_family_set,
-                   &FitControlsVinecop::set_family_set, "The family set.",
+                   &FitControlsVinecop::set_family_set,
+                   fitcontrolsbicop_doc.get_family_set.doc,
                    nb::call_guard<nb::gil_scoped_release>())
       .def_prop_rw("parametric_method",
                    &FitControlsVinecop::get_parametric_method,
                    &FitControlsVinecop::set_parametric_method,
-                   "The fit method for parametric families.")
+                   fitcontrolsbicop_doc.get_parametric_method.doc)
       .def_prop_rw("nonparametric_method",
                    &FitControlsVinecop::get_nonparametric_method,
                    &FitControlsVinecop::set_nonparametric_method,
-                   "The fit method for nonparametric families.")
-      .def_prop_rw(
-          "nonparametric_mult", &FitControlsVinecop::get_nonparametric_mult,
-          &FitControlsVinecop::set_nonparametric_mult,
-          "A factor with which the smoothing parameters are multiplied.")
+                   fitcontrolsbicop_doc.get_nonparametric_method.doc)
+      .def_prop_rw("nonparametric_mult",
+                   &FitControlsVinecop::get_nonparametric_mult,
+                   &FitControlsVinecop::set_nonparametric_mult,
+                   fitcontrolsbicop_doc.get_nonparametric_mult.doc)
       .def_prop_rw("nonparametric_grid_size",
                    &FitControlsVinecop::get_nonparametric_grid_size,
                    &FitControlsVinecop::set_nonparametric_grid_size,
-                   "The grid size for the post-estimation interpolation in "
-                   "nonparametric models.")
+                   fitcontrolsbicop_doc.get_nonparametric_grid_size.doc)
+      // Vinecop-specific knobs.
       .def_prop_rw("trunc_lvl", &FitControlsVinecop::get_trunc_lvl,
-                   &FitControlsVinecop::set_trunc_lvl, "The truncation level.")
+                   &FitControlsVinecop::set_trunc_lvl,
+                   fitcontrolsvinecop_doc.get_trunc_lvl.doc)
       .def_prop_rw("tree_criterion", &FitControlsVinecop::get_tree_criterion,
                    &FitControlsVinecop::set_tree_criterion,
-                   "The tree criterion.")
+                   fitcontrolsvinecop_doc.get_tree_criterion.doc)
       .def_prop_rw("threshold", &FitControlsVinecop::get_threshold,
-                   &FitControlsVinecop::set_threshold, "The threshold.")
+                   &FitControlsVinecop::set_threshold,
+                   fitcontrolsvinecop_doc.get_threshold.doc)
+      // Inherited.
       .def_prop_rw("selection_criterion",
                    &FitControlsVinecop::get_selection_criterion,
                    &FitControlsVinecop::set_selection_criterion,
-                   "The selection criterion.")
+                   fitcontrolsbicop_doc.get_selection_criterion.doc)
       .def_prop_rw("weights", &FitControlsVinecop::get_weights,
                    &FitControlsVinecop::set_weights,
-                   "The weights for the observations.")
+                   fitcontrolsbicop_doc.get_weights.doc)
       .def_prop_rw("psi0", &FitControlsVinecop::get_psi0,
                    &FitControlsVinecop::set_psi0,
-                   "The prior probability of non-independence.")
+                   fitcontrolsbicop_doc.get_psi0.doc)
       .def_prop_rw("preselect_families",
                    &FitControlsVinecop::get_preselect_families,
                    &FitControlsVinecop::set_preselect_families,
-                   "Whether to exclude families based on symmetry properties "
-                   "of the data.")
+                   fitcontrolsbicop_doc.get_preselect_families.doc)
+      // Vinecop-specific knobs.
       .def_prop_rw("select_trunc_lvl",
                    &FitControlsVinecop::get_select_trunc_lvl,
                    &FitControlsVinecop::set_select_trunc_lvl,
-                   "Whether to select the truncation level.")
+                   fitcontrolsvinecop_doc.get_select_trunc_lvl.doc)
       .def_prop_rw("select_threshold",
                    &FitControlsVinecop::get_select_threshold,
                    &FitControlsVinecop::set_select_threshold,
-                   "Whether to select the threshold.")
+                   fitcontrolsvinecop_doc.get_select_threshold.doc)
       .def_prop_rw("select_families", &FitControlsVinecop::get_select_families,
                    &FitControlsVinecop::set_select_families,
-                   "Whether to select the families.")
+                   fitcontrolsvinecop_doc.get_select_families.doc)
       .def_prop_rw("show_trace", &FitControlsVinecop::get_show_trace,
                    &FitControlsVinecop::set_show_trace,
-                   "Whether to show the trace.")
+                   fitcontrolsvinecop_doc.get_show_trace.doc)
+      // Inherited.
       .def_prop_rw("num_threads", &FitControlsVinecop::get_num_threads,
                    &FitControlsVinecop::set_num_threads,
-                   "The number of threads.")
+                   fitcontrolsbicop_doc.get_num_threads.doc)
+      // Vinecop-specific.
       .def_prop_rw("tree_algorithm", &FitControlsVinecop::get_tree_algorithm,
                    &FitControlsVinecop::set_tree_algorithm,
-                   "The spanning tree algorithm.")
+                   fitcontrolsvinecop_doc.get_tree_algorithm.doc)
+      // Inherited.
       .def_prop_rw("allow_rotations", &FitControlsVinecop::get_allow_rotations,
                    &FitControlsVinecop::set_allow_rotations,
-                   "Whether to allow rotations for the families.")
+                   fitcontrolsbicop_doc.get_allow_rotations.doc)
+      // Vinecop-specific.
       .def_prop_rw("seeds", &FitControlsVinecop::get_seeds,
                    &FitControlsVinecop::set_seeds,
-                   "The seeds for the random number generator.")
+                   fitcontrolsvinecop_doc.get_seeds.doc)
       .def(
           "__repr__",
           [](const FitControlsVinecop& controls) {

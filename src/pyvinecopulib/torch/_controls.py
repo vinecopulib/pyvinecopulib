@@ -21,62 +21,43 @@ _VINE_IMPLS: tuple[str, ...] = ("legacy", "lazy")
 
 @dataclass
 class FitControlsTorchBicop:
-  """Controls for :meth:`TorchBicop.from_data`.
+  """Controls for `TorchBicop.from_data`.
 
-  Mirrors :class:`pyvinecopulib.FitControlsBicop` on the torch side:
-  ``method`` picks the pair-copula fitter and the remaining fields
-  carry method-specific hyperparameters.
+  Mirrors `pyvinecopulib.FitControlsBicop`: ``method`` picks the
+  pair-copula fitter and the remaining fields carry method-specific
+  hyperparameters.
 
-  Parameters
+  Attributes
   ----------
-  method:
-    Which fitter to use.
-
-    * ``"tll"`` (default) — pure-torch *Transformed Local Likelihood*
-      kernel density estimator on a 2-D grid in the inverse-normal
-      transformed copula space (Geenens 2014; Nagler 2018). Matches
-      the C++ ``pv.Bicop.from_data(u, family_set=[pv.families.tll])``
-      fit to machine precision; this is the same family the C++
-      library exposes as :data:`pyvinecopulib.families.tll` and the
-      pyvinecopulib default for non-parametric copula estimation.
-    * ``"vdc"`` — the pretrained amortized vine-copula estimator of
-      Safaai (2026), *Amortized Vine Copulas for High-Dimensional
-      Density and Information Estimation*, arXiv:2604.20568
-      (<https://arxiv.org/abs/2604.20568>). Reference implementation:
-      `KempnerInstitute/vine-denoising-copula
-      <https://github.com/KempnerInstitute/vine-denoising-copula>`_.
-      Not on PyPI yet; install via the ``[vdc]`` extra under uv
-      (``uv sync --extra vdc``) or with pip directly:
-      ``pip install "vine-denoising-copula @ git+https://github.com/KempnerInstitute/vine-denoising-copula"``.
-  grid_size:
-    *TLL only.* Density grid size per axis (default ``30``; matches C++).
-  mult:
-    *TLL only.* Bandwidth multiplier (default ``1.0``; matches C++).
-  grid_type:
-    *TLL only.* Storage grid type — ``"normal"`` (default, Phi-spaced,
-    byte-for-byte parity with C++) or ``"linear"`` (uniform on ``[0, 1]``
-    with the O(1) cell-finding fast-path in
-    :meth:`InterpolationGrid2D._cell_index`).
-  vdc_bundle:
-    *VDC only.* A pre-loaded ``vdc.LoadedPretrainedModel``. If ``None``,
-    the loader is invoked with ``vdc_model_id`` and the result is cached
-    at module scope (keyed on model_id × device) so repeated fits
-    amortize the HuggingFace download.
-  vdc_model_id:
-    *VDC only.* Pretrained checkpoint identifier (default
-    ``"vdc-denoiser-m64-v1"``; ``m=64`` density grid).
-  vdc_diffusion_steps:
-    *VDC only.* DDIM step count for diffusion checkpoints. ``None``
-    (default) lets vdc pick its own; ignored for the denoiser
-    checkpoint, which is a single forward pass.
-  vdc_cfg_scale:
-    *VDC only.* Classifier-free guidance scale for diffusion checkpoints
-    (default ``1.0``); ignored for the denoiser checkpoint.
-  vdc_projection_iters:
-    *VDC only.* IPFP / Sinkhorn iterations enforcing uniform marginals
-    on the cell-center grid (default ``50``). With this many iterations
-    vdc's output is already at machine-precision uniform marginals, so
-    the resulting :class:`TorchBicop` is built with ``norm_times=0``.
+  method : {"tll", "vdc"}, default="tll"
+      Fitter to use. ``"tll"`` is a pure-torch *Transformed Local
+      Likelihood* kernel density estimator on a 2-D grid in the
+      inverse-normal-transformed copula space (Geenens, 2014;
+      Nagler, 2018), matching the C++ TLL fit to machine
+      precision. ``"vdc"`` is the pretrained amortized estimator
+      of Safaai (2026); requires the ``[vdc]`` extra.
+  grid_size : int, default=30
+      *TLL only.* Density grid size per axis.
+  mult : float, default=1.0
+      *TLL only.* Bandwidth multiplier.
+  grid_type : {"normal", "linear"}, default="normal"
+      *TLL only.* Storage grid type — ``"normal"`` (Phi-spaced,
+      the C++-parity default) or ``"linear"`` (uniform on
+      ``[0, 1]`` with the O(1) cell-finding fast-path).
+  vdc_bundle : LoadedPretrainedModel or None, default=None
+      *VDC only.* A pre-loaded ``vdc.LoadedPretrainedModel``;
+      `None` triggers the loader (cached per model_id x device).
+  vdc_model_id : str, default="vdc-denoiser-m64-v1"
+      *VDC only.* Pretrained checkpoint identifier.
+  vdc_diffusion_steps : int or None, default=None
+      *VDC only.* DDIM step count for diffusion checkpoints;
+      ignored for the denoiser checkpoint.
+  vdc_cfg_scale : float, default=1.0
+      *VDC only.* Classifier-free guidance scale for diffusion
+      checkpoints; ignored for the denoiser checkpoint.
+  vdc_projection_iters : int, default=50
+      *VDC only.* IPFP / Sinkhorn iterations enforcing uniform
+      marginals on the cell-center grid.
   """
 
   method: str = "tll"
@@ -102,46 +83,38 @@ class FitControlsTorchBicop:
 
 @dataclass
 class FitControlsTorchVinecop:
-  """Controls for :meth:`TorchVinecop.from_data` and for the runtime
-  pdf / rosenblatt cascade.
+  """Controls for `TorchVinecop.from_data` and the runtime cascade.
 
-  Mirrors :class:`pyvinecopulib.FitControlsVinecop` in the sense that it
-  bundles all vine-fit knobs into one object: a nested
-  :class:`FitControlsTorchBicop` controls how each pair-copula is fit,
-  while ``cache_integrals`` / ``device`` / ``dtype`` are vine-level
-  placement / precision knobs, and ``impl`` / ``batched`` select the
-  cascade variant used by the post-fit evaluation entry points.
+  Mirrors `pyvinecopulib.FitControlsVinecop`: bundles all vine-fit
+  knobs into one object. A nested `FitControlsTorchBicop` controls
+  how each pair-copula is fit; vine-level fields below carry
+  placement / precision / cascade-variant settings.
 
-  Parameters
+  Attributes
   ----------
-  bicop_controls:
-    Controls applied to every pair-copula fit. Defaults to
-    ``FitControlsTorchBicop()`` (TLL on a 30×30 normal-spaced grid).
-  cache_integrals:
-    If ``True`` (default), precompute the cdf/hfunc/hinv caches on
-    every pair copula's interpolation grid; see :class:`TorchBicop`
-    for the accuracy/speed trade-off. Default flipped to ``True`` in
-    PR-after-#216 after the bicop and vine eval benches showed cached
-    lookups are 1–2 orders of magnitude faster everywhere with a
-    small (~1e-3 IAE) interpolation-gap cost — see
-    ``scripts/bench_torch_bicop_fit.py --mode eval`` and
-    ``scripts/bench_torch_vinecop.py``.
-  device:
-    Target torch device for the fitted pair copulas; ``None`` keeps the
-    input's device.
-  dtype:
-    Target torch dtype; ``None`` defaults to ``torch.float64``
-    (parity with the C++ implementation).
-  impl:
-    Cascade implementation used by :meth:`TorchVinecop.pdf` /
-    :meth:`rosenblatt` / :meth:`inverse_rosenblatt`. ``"legacy"`` is
-    the dense-scratch port of the C++ cascade; ``"lazy"`` is the
-    dict-based variant with ref-counted GC. Both produce numerically
-    identical outputs.
-  batched:
-    If ``True``, the cascade fires a single batched bicop call per
-    tree level. Orthogonal to ``impl``; available for ``pdf`` /
-    ``rosenblatt`` only (``inverse_rosenblatt(batched=True)`` raises).
+  bicop_controls : FitControlsTorchBicop
+      Controls applied to every pair-copula fit.
+  cache_integrals : bool, default=True
+      If ``True``, precompute the cdf / hfunc / hinv caches on
+      every pair copula's interpolation grid. Cached lookups are
+      1–2 orders of magnitude faster than the on-the-fly path
+      with a ~1e-3 IAE cost.
+  device : torch.device or None, default=None
+      Target torch device for the fitted pair copulas. `None`
+      keeps the input's device.
+  dtype : torch.dtype or None, default=None
+      Target torch dtype. `None` defaults to ``torch.float64``
+      (parity with C++).
+  impl : {"legacy", "lazy"}, default="legacy"
+      Cascade implementation used by post-fit methods.
+      ``"legacy"`` is the dense-scratch port of the C++ cascade;
+      ``"lazy"`` is the dict-based variant with ref-counted GC.
+      Both produce numerically identical outputs.
+  batched : bool, default=False
+      If ``True``, fires a single batched bicop call per tree
+      level. Orthogonal to ``impl``; available for ``pdf`` /
+      ``rosenblatt`` only (``inverse_rosenblatt(batched=True)``
+      raises).
   """
 
   bicop_controls: FitControlsTorchBicop = field(

@@ -26,35 +26,27 @@ KDE1D_PLOT_DOC = """
     -------
     Nothing, the function generates a plot and shows it using matplotlib.
 
-    Usage
-    -----
-    .. code-block:: python
-
-        import pyvinecopulib as pv
-        import numpy as np
-        import matplotlib.pyplot as plt
-
-        # Continuous data
-        np.random.seed(123)
-        x = np.random.beta(0.5, 2.0, 100)
-        kde = pv.Kde1d()
-        kde.fit(x)
-
-        plt.figure(figsize=(10, 6))
-        kde.plot()
-
-        # Discrete data
-        x_discrete = np.random.poisson(3, 100)
-        kde_discrete = pv.Kde1d(type="discrete")
-        kde_discrete.fit(x_discrete)
-        kde_discrete.plot()
-
-        # Zero-inflated data
-        x_zi = np.random.exponential(2, 100)
-        x_zi[np.random.choice(100, 30, replace=False)] = 0
-        kde_zi = pv.Kde1d(xmin=0, type="zero-inflated")
-        kde_zi.fit(x_zi)
-        kde_zi.plot()
+    Examples
+    --------
+    >>> import pyvinecopulib as pv
+    >>> import numpy as np
+    >>> # Continuous data
+    >>> np.random.seed(123)
+    >>> x = np.random.beta(0.5, 2.0, 100)
+    >>> kde = pv.Kde1d()
+    >>> kde.fit(x)
+    >>> kde.plot()
+    >>> # Discrete data
+    >>> x_discrete = np.random.poisson(3, 100)
+    >>> kde_discrete = pv.Kde1d(type="discrete")
+    >>> kde_discrete.fit(x_discrete)
+    >>> kde_discrete.plot()
+    >>> # Zero-inflated data
+    >>> x_zi = np.random.exponential(2, 100)
+    >>> x_zi[np.random.choice(100, 30, replace=False)] = 0
+    >>> kde_zi = pv.Kde1d(xmin=0, type="zero-inflated")
+    >>> kde_zi.fit(x_zi)
+    >>> kde_zi.plot()
 """
 
 

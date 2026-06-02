@@ -30,6 +30,13 @@ Most users reach for these via :mod:`pyvinecopulib.sklearn` rather
 than calling them directly. The ``examples/07_kde1d.ipynb`` and
 ``examples/06_weighted_dependence_measures.ipynb`` notebooks demo
 :class:`Kde1d` and :func:`wdm` in isolation.
+
+Notes
+-----
+The :doc:`concepts page </concepts>` introduces
+:ref:`pseudo-observations <concepts-sklar>` (the canonical input
+shape for copula fits) and dependence measures alongside the
+vine-copula factorisation.
 """
 
 from ..pyvinecopulib_ext import (
