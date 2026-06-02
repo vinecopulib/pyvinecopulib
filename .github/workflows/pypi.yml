@@ -225,10 +225,11 @@ jobs:
       matrix:
         python: [310, 311, 312, 313, 314]
         cfg:
+          # macos-15-intel wheels are built + published by the `build` job, but
+          # are NOT unit-tested here: PyTorch has no x86_64-macOS wheel, and the
+          # platform's libm/BLAS produces a numerical edge case in the
+          # VineForestRegressor(val_fraction=0.0) sklearn-compliance checks.
           - { os: ubuntu-latest, cibw_id: manylinux_x86_64 }
-          # PyTorch dropped x86_64-macOS wheels, so the torch extra can't be
-          # installed here; skip it (torch unit tests `importorskip` already).
-          - { os: macos-15-intel, cibw_id: macosx_x86_64, no_torch: "true" }
           - { os: macos-15, cibw_id: macosx_arm64 }
           - { os: windows-latest, cibw_id: win_amd64 }
     name: Install wheel and run unit tests on ${{ matrix.cfg.os }} for cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
@@ -267,9 +268,7 @@ jobs:
         shell: bash
         run: |
           uv venv --python ${{ steps.pyver.outputs.version }}
-          TORCH_EXTRA="--extra torch"
-          if [[ "${{ matrix.cfg.no_torch }}" == "true" ]]; then TORCH_EXTRA=""; fi
-          uv sync --no-install-project --group test --group notebooks --extra examples --extra sklearn $TORCH_EXTRA
+          uv sync --no-install-project --group test --group notebooks --extra examples --extra sklearn --extra torch
       - name: Download built wheel (<=3.11)
         if: ${{ matrix.python <= 311 }}
         uses: actions/download-artifact@v4
@@ -309,14 +308,10 @@ jobs:
           retry_wait_seconds: 60
           shell: bash
           command: |
-            # The torch notebook can't run where torch isn't installable.
-            IGNORE_TORCH=""
-            if [[ "${{ matrix.cfg.no_torch }}" == "true" ]]; then IGNORE_TORCH="--ignore=examples/10_torch_backend.ipynb"; fi
             uv run pytest --nbmake examples/ \
               --no-cov \
               --nbmake-timeout=600 \
               --nbmake-kernel=python3 \
-              $IGNORE_TORCH \
               --reruns 2 --reruns-delay 10
 
   regenerate_notebooks:
