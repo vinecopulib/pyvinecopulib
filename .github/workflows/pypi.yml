@@ -199,12 +199,13 @@ jobs:
         with:
           name: cibw-wheels-ubuntu-latest-311-manylinux_x86_64
           path: dist/
-      - name: Install wheel + doc/examples/sklearn extras
-        # `[sklearn]` is needed for autosummary to introspect pyvinecopulib.sklearn.
+      - name: Install wheel + doc/examples/sklearn/torch extras
+        # `[sklearn]`/`[torch]` are needed for autosummary to introspect
+        # pyvinecopulib.sklearn / pyvinecopulib.torch.
         run: |
           uv venv --python 3.11
           WHEEL=$(ls dist/*.whl)
-          uv pip install "${WHEEL}[doc,examples,sklearn]"
+          uv pip install "${WHEEL}[doc,examples,sklearn,torch]"
       - name: Build HTML docs (warnings as errors)
         env:
           UV_NO_SYNC: "1"
@@ -225,7 +226,9 @@ jobs:
         python: [310, 311, 312, 313, 314]
         cfg:
           - { os: ubuntu-latest, cibw_id: manylinux_x86_64 }
-          - { os: macos-15-intel, cibw_id: macosx_x86_64 }
+          # PyTorch dropped x86_64-macOS wheels, so the torch extra can't be
+          # installed here; skip it (torch unit tests `importorskip` already).
+          - { os: macos-15-intel, cibw_id: macosx_x86_64, no_torch: "true" }
           - { os: macos-15, cibw_id: macosx_arm64 }
           - { os: windows-latest, cibw_id: win_amd64 }
     name: Install wheel and run unit tests on ${{ matrix.cfg.os }} for cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
@@ -264,7 +267,9 @@ jobs:
         shell: bash
         run: |
           uv venv --python ${{ steps.pyver.outputs.version }}
-          uv sync --no-install-project --group test --group notebooks --extra examples --extra sklearn --extra torch
+          TORCH_EXTRA="--extra torch"
+          if [[ "${{ matrix.cfg.no_torch }}" == "true" ]]; then TORCH_EXTRA=""; fi
+          uv sync --no-install-project --group test --group notebooks --extra examples --extra sklearn $TORCH_EXTRA
       - name: Download built wheel (<=3.11)
         if: ${{ matrix.python <= 311 }}
         uses: actions/download-artifact@v4
@@ -304,10 +309,14 @@ jobs:
           retry_wait_seconds: 60
           shell: bash
           command: |
+            # The torch notebook can't run where torch isn't installable.
+            IGNORE_TORCH=""
+            if [[ "${{ matrix.cfg.no_torch }}" == "true" ]]; then IGNORE_TORCH="--ignore=examples/10_torch_backend.ipynb"; fi
             uv run pytest --nbmake examples/ \
               --no-cov \
               --nbmake-timeout=600 \
               --nbmake-kernel=python3 \
+              $IGNORE_TORCH \
               --reruns 2 --reruns-delay 10
 
   regenerate_notebooks:
