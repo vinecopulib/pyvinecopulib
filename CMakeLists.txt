@@ -114,16 +114,54 @@ file(
 
 set(DOCSTR_OUTPUT "${CMAKE_SOURCE_DIR}/src/include/docstr.hpp")
 
+# libclang (from the PyPI `libclang` wheel) ships no builtin headers and does
+# not reliably auto-discover the host C++ standard library + compiler intrinsics
+# on every platform: it works on manylinux / Windows but misses Alpine's
+# libstdc++ layout (musllinux) and the macOS SDK's libc++. Without them the
+# headers fail to parse, the AST is partial, and docstr.hpp is generated with
+# whole symbols missing / overloads mis-named — surfacing only as cryptic
+# "no member named ..." compile errors. We feed libclang the compiler's own
+# implicit system include dirs (which carry the C++ stdlib AND the builtin /
+# intrinsic headers like stddef.h, xmmintrin.h, arm_neon.h). This whole block
+# is gated to non-MSVC: Windows builds green today and must not be fed MSVC's
+# include dirs.
+set(DOCSTR_SYS_INCLUDES "")
+set(DOCSTR_CLANG_ARGS "")
+if(NOT MSVC)
+  # Pass every implicit dir (normalized; some toolchains write the stdlib dirs
+  # relative to the gcc dir). These supply both the C++ stdlib and the builtin/
+  # intrinsic headers, and MUST precede Eigen/Boost below: system Boost resolves
+  # to `/usr/include`, and a bare `/usr/include` placed before the libstdc++ dir
+  # breaks `<cmath>`'s `#include_next <math.h>` ("'math.h' file not found").
+  # We do NOT drop the gcc/clang builtin dirs: libclang emits ~100 harmless
+  # vendor-intrinsic errors when it parses them (version-specific builtins), but
+  # those are error-severity, not fatal — they don't truncate the AST or affect
+  # the declarations docstrings are read from (see generate_docstring.py).
+  foreach(_dir IN LISTS CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES)
+    get_filename_component(_rp "${_dir}" REALPATH)
+    list(APPEND DOCSTR_SYS_INCLUDES -isystem "${_rp}")
+  endforeach()
+
+  # Don't let clang's default 20-error limit (tripped by the intrinsic-header
+  # noise above) emit a "too many errors" *fatal* that truncates the AST.
+  list(APPEND DOCSTR_CLANG_ARGS "--clang-arg=-ferror-limit=0")
+
+  if(APPLE AND CMAKE_OSX_SYSROOT)
+    list(APPEND DOCSTR_CLANG_ARGS "--clang-arg=-isysroot"
+         "--clang-arg=${CMAKE_OSX_SYSROOT}")
+  endif()
+endif()
+
 add_custom_command(
   OUTPUT "${DOCSTR_OUTPUT}"
   COMMAND
     "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/generate_docstring.py"
-    -std "c++${CMAKE_CXX_STANDARD}" -I
+    -std "c++${CMAKE_CXX_STANDARD}" ${DOCSTR_CLANG_ARGS} -I
     "${CMAKE_SOURCE_DIR}/lib/vinecopulib/include" -I
     "${CMAKE_SOURCE_DIR}/lib/wdm/include" -I
-    "${CMAKE_SOURCE_DIR}/lib/kde1d/include" -isystem "${EIGEN3_INCLUDE_DIR}"
-    -isystem "${Boost_INCLUDE_DIRS}" -output "${DOCSTR_OUTPUT}" -library_file
-    "${LIBCLANG_PATH}" ${DOCSTR_INPUT_HEADERS}
+    "${CMAKE_SOURCE_DIR}/lib/kde1d/include" ${DOCSTR_SYS_INCLUDES} -isystem
+    "${EIGEN3_INCLUDE_DIR}" -isystem "${Boost_INCLUDE_DIRS}" -output
+    "${DOCSTR_OUTPUT}" -library_file "${LIBCLANG_PATH}" ${DOCSTR_INPUT_HEADERS}
   DEPENDS ${DOCSTR_INPUT_HEADERS}
           "${CMAKE_SOURCE_DIR}/scripts/generate_docstring.py"
           "${CMAKE_SOURCE_DIR}/scripts/find_libclang.py"

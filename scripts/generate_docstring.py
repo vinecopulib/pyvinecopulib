@@ -1670,6 +1670,15 @@ def parse_args():
     "not provided, in which case Eigen/Boost are looked up under "
     "~/miniforge3/envs/<env>/include[/eigen3].",
   )
+  parser.add_argument(
+    "--clang-arg",
+    dest="clang_args",
+    action="append",
+    default=[],
+    help="Extra argument passed verbatim to libclang (can be specified "
+    "multiple times). Use --clang-arg=-isysroot --clang-arg=<sdk> to pass "
+    "flag/value pairs without them being parsed as this tool's own options.",
+  )
   return parser.parse_args()
 
 
@@ -1696,6 +1705,9 @@ def main():
     f"-std={args.std}",
   ]
   parameters.extend([f"-I{inc}" for inc in args.include_dirs])
+  # Verbatim libclang args (e.g. -isysroot <sdk> on macOS). Appended early so
+  # an SDK sysroot is in effect before the -isystem dirs below are resolved.
+  parameters.extend(args.clang_args)
   if args.isystem_dirs:
     parameters.extend([f"-isystem{inc}" for inc in args.isystem_dirs])
   else:
@@ -1791,6 +1803,36 @@ def main():
       parameters,
       options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD,
     )
+    # Fail loudly on *fatal* parse errors only. A fatal diagnostic (e.g. a
+    # missing C++ standard-library / Eigen / Boost header, or clang's
+    # "too many errors" stop) truncates the AST, so docstr.hpp would silently
+    # lose whole symbols and mis-disambiguate overloads — which only surfaces
+    # later as cryptic "no member named ..." compile errors. Surface that here.
+    #
+    # We deliberately do NOT abort on plain `error:`-severity diagnostics.
+    # libclang is not a full compiler, and parsing Eigen/Boost pulls in
+    # vendor intrinsic headers (xmmintrin.h, arm_neon.h, ...) whose builtins
+    # are version-specific; libclang emits ~100 harmless errors there. Those
+    # do not stop parsing or affect the *declarations* docstrings are read
+    # from. CMake passes `-ferror-limit=0` so this error noise never trips
+    # clang's default 20-error limit (which would itself become a fatal).
+    fatal = [
+      d
+      for d in translation_unit.diagnostics
+      if d.severity >= cindex.Diagnostic.Fatal
+    ]
+    if fatal:
+      eprint(
+        "libclang reported {} fatal diagnostic(s) while parsing the C++ "
+        "headers. The generated docstr.hpp would be incomplete (missing "
+        "symbols / mis-named overloads). This usually means the C++ standard "
+        "library or Eigen/Boost headers were not on the include path — pass "
+        "the host toolchain's system include dirs via -isystem (CMake does "
+        "this from CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES).".format(len(fatal))
+      )
+      for d in fatal:
+        eprint("  {}: {}".format(d.location, d.spelling))
+      sys.exit(1)
   shutil.rmtree(tmpdir)
   # Extract symbols.
   if not quiet:

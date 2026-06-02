@@ -10,7 +10,7 @@ on:
 env:
   BOOST_VERSION: 1.84.0
   EIGEN_VERSION: 3.4.0
-  EXPECTED_WHEEL_COUNT: 12  # 4 platforms × cp310/cp311/cp312-ABI3
+  EXPECTED_WHEEL_COUNT: 15  # 5 platforms × cp310/cp311/cp312-ABI3
 
 jobs:
 
@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macos-13 is an intel runner, macos-14 is apple silicon
+        # macos-15-intel is the Intel runner, macos-15 is Apple silicon.
         python: [310, 311, 312]
         cfg:
           - {
@@ -37,14 +37,23 @@ jobs:
               platform: x64,
               root_install_dir: "/home/runner/work",
             }
-          # - { os: macos-13, cibw_id: macosx_x86_64, cc: clang, cxx: clang++, platform: x64, root_install_dir: '/Users/runner/work'} # intel runner
           - {
-              os: macos-14,
+              os: macos-15-intel,
+              cibw_id: macosx_x86_64,
+              cc: clang,
+              cxx: clang++,
+              platform: x64,
+              root_install_dir: "/Users/runner/work",
+              macos_target: "10.13",
+            }
+          - {
+              os: macos-15,
               cibw_id: macosx_arm64,
               cc: clang,
               cxx: clang++,
               platform: arm64,
               root_install_dir: "/Users/runner/work",
+              macos_target: "11.0",
             }
           - {
               os: windows-latest,
@@ -97,7 +106,9 @@ jobs:
           CIBW_REBUILD: 1
           CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
           CIBW_ENVIRONMENT_WINDOWS: Boost_INCLUDE_DIR='${{steps.install-dependencies.outputs.BOOST_ROOT}}\include' EIGEN3_INCLUDE_DIR='C:\ProgramData\chocolatey\lib\eigen\include'
-          CIBW_ENVIRONMENT_MACOS: "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=${{matrix.cfg.root_install_dir}}/include/eigen3"
+          # MACOSX_DEPLOYMENT_TARGET >= 10.13 is required by nanobind's aligned
+          # operator new/delete (the x86_64 default is 10.9). arm64 uses 11.0.
+          CIBW_ENVIRONMENT_MACOS: "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=${{matrix.cfg.root_install_dir}}/include/eigen3 MACOSX_DEPLOYMENT_TARGET=${{matrix.cfg.macos_target}}"
           CIBW_ENVIRONMENT_LINUX: "Boost_INCLUDE_DIR=/host${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=/host${{matrix.cfg.root_install_dir}}/include/eigen3"
           CIBW_ENVIRONMENT_PASS_LINUX: "Boost_INCLUDE_DIR EIGEN3_INCLUDE_DIR"
       - name: Inspect built wheel contents
@@ -188,12 +199,13 @@ jobs:
         with:
           name: cibw-wheels-ubuntu-latest-311-manylinux_x86_64
           path: dist/
-      - name: Install wheel + doc/examples/sklearn extras
-        # `[sklearn]` is needed for autosummary to introspect pyvinecopulib.sklearn.
+      - name: Install wheel + doc/examples/sklearn/torch extras
+        # `[sklearn]`/`[torch]` are needed for autosummary to introspect
+        # pyvinecopulib.sklearn / pyvinecopulib.torch.
         run: |
           uv venv --python 3.11
           WHEEL=$(ls dist/*.whl)
-          uv pip install "${WHEEL}[doc,examples,sklearn]"
+          uv pip install "${WHEEL}[doc,examples,sklearn,torch]"
       - name: Build HTML docs (warnings as errors)
         env:
           UV_NO_SYNC: "1"
@@ -213,8 +225,12 @@ jobs:
       matrix:
         python: [310, 311, 312, 313, 314]
         cfg:
+          # macos-15-intel wheels are built + published by the `build` job, but
+          # are NOT unit-tested here: PyTorch has no x86_64-macOS wheel, and the
+          # platform's libm/BLAS produces a numerical edge case in the
+          # VineForestRegressor(val_fraction=0.0) sklearn-compliance checks.
           - { os: ubuntu-latest, cibw_id: manylinux_x86_64 }
-          - { os: macos-14, cibw_id: macosx_arm64 }
+          - { os: macos-15, cibw_id: macosx_arm64 }
           - { os: windows-latest, cibw_id: win_amd64 }
     name: Install wheel and run unit tests on ${{ matrix.cfg.os }} for cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
     steps:
@@ -242,7 +258,7 @@ jobs:
           if [[ "${{ matrix.cfg.os }}" == "ubuntu-latest" ]]; then
             sudo apt-get update
             sudo apt-get install -y graphviz
-          elif [[ "${{ matrix.cfg.os }}" == "macos-14" ]]; then
+          elif [[ "${{ matrix.cfg.os }}" == macos-* ]]; then
             brew install graphviz
           elif [[ "${{ matrix.cfg.os }}" == "windows-latest" ]]; then
             choco install graphviz -y
