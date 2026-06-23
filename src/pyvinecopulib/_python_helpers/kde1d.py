@@ -130,13 +130,18 @@ def kde1d_plot(
       if isinstance(xmax_val, np.ndarray):
         xmax_val = float(xmax_val) if xmax_val.size > 0 else np.nan
 
+      # Narrow with isinstance against real numeric types (not
+      # np.isscalar, which doesn't narrow for ty and leaves complex /
+      # str in the union, so float() below is rejected). This also
+      # excludes non-finite values via the np.isfinite guard.
+      real_scalar = (int, float, np.floating, np.integer)
       if (
-        np.isscalar(xmin_val)
-        and np.isscalar(xmax_val)
+        isinstance(xmin_val, real_scalar)
+        and isinstance(xmax_val, real_scalar)
         and np.isfinite(xmin_val)
         and np.isfinite(xmax_val)
       ):
-        plt.xlim(xmin_val, xmax_val)
+        plt.xlim(float(xmin_val), float(xmax_val))
       else:
         x_range = ev.max() - ev.min()
         plt.xlim(ev.min() - 0.05 * x_range, ev.max() + 0.05 * x_range)

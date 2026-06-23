@@ -1704,6 +1704,17 @@ def main():
     # MSVC STL itself as the official escape hatch and is harmless on other
     # platforms (it just isn't referenced by libstdc++/libc++).
     "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH",
+    # Neutralise __builtin_verbose_trap. The VS 2026 / MSVC 14.51 STL emits
+    # this Clang-18 builtin from core allocator / string / call_once paths
+    # (xmemory, xstring, xcall_once), but PyPI's libclang 18.x does not
+    # resolve it ("use of undeclared identifier"). Because those headers are
+    # pulled into nearly every translation unit, the resulting broken AST
+    # crashes symbol extraction (exit -1) rather than just emitting harmless
+    # diagnostics. Rewrite calls to the universally-supported __builtin_trap()
+    # so parsing succeeds; the variadic macro only expands at call sites
+    # (`name(`), so `__has_builtin(__builtin_verbose_trap)` is unaffected, and
+    # the rewrite is inert on platforms whose STL never references it.
+    "-D__builtin_verbose_trap(...)=__builtin_trap()",
     f"-std={args.std}",
   ]
   parameters.extend([f"-I{inc}" for inc in args.include_dirs])

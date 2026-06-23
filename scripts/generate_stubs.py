@@ -170,6 +170,12 @@ def render_class_stub(
         lines.append(
           f"{inner_indent}def {attr_name}(self, value: Any) -> None: ..."
         )
+    elif isinstance(attr, cls):
+      # Enum member exposed as a class attribute (e.g. ``BicopFamily.clayton``).
+      # Declare it inside the class body so ``Cls.member`` type-checks; the
+      # module-level constants from ``.export_values()`` are emitted separately
+      # by ``generate_stub``.
+      lines.append(f"{inner_indent}{attr_name}: {name} = ...")
 
   lines.append("")  # Final newline
   return lines

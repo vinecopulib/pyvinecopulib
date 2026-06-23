@@ -37,11 +37,13 @@
 - Treat `pyvinecopulib`-originated `DeprecationWarning`s as errors under pytest so internal call sites stay on the canonical import paths (#207).
 - Install `--extra torch` in the notebook-test and regenerate-notebooks CI jobs so `examples/10_torch_backend.ipynb` executes under `nbmake` (#216).
 - Fix osx / musllinux wheel builds: feed libclang the compiler's implicit system include dirs (plus `-ferror-limit=0` and the macOS SDK sysroot) so the C++ stdlib / intrinsic headers resolve, and abort `docstr.hpp` generation only on *fatal* libclang diagnostics (intrinsic-header `error`s are benign and no longer silently drop symbols).
+- Fix Windows wheel builds against the VS 2026 / MSVC 14.51 STL: rewrite `__builtin_verbose_trap` to `__builtin_trap()` during `docstr.hpp` generation. The newer STL emits this Clang-18 builtin from core allocator / string / `call_once` headers, which the pinned PyPI libclang (≤18) can't resolve; because those headers reach nearly every translation unit, the broken parse crashed symbol extraction. Also narrow a numpy-scalar union in the `Kde1d` plot helper so `make check` (`ty`) passes (#224).
 - Migrate macOS CI to `macos-15` and re-add `macos-15-intel` (`MACOSX_DEPLOYMENT_TARGET=10.13` for nanobind's aligned `new`/`delete`); wheel matrix is now 5 platforms × 3 ABI (15 wheels).
 
 ### Bug fixes in `pyvinecopulib`
 
 - Port the `integrate_2d` marginal-renormalisation fix to the torch backend (`InterpolationGrid2D.integrate_2d` and `integrate_2d_batched`) so `TorchBicop.cdf` enforces ``C(1, u_2) = u_2`` exactly, matching the post-vinecopulib#667 C++ CDF to machine precision on the on-the-fly path ([vinecopulib#667](https://github.com/vinecopulib/vinecopulib/pull/667)).
+- Declare `BicopFamily` enum members as class attributes in the generated type stubs so the documented `pv.BicopFamily.clayton` access pattern passes static type checking (`ty` / pyright / mypy), not only the module-level constants (#223).
 
 ### Dependency changes
 
