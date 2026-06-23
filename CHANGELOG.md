@@ -42,6 +42,7 @@
 ### Bug fixes in `pyvinecopulib`
 
 - Port the `integrate_2d` marginal-renormalisation fix to the torch backend (`InterpolationGrid2D.integrate_2d` and `integrate_2d_batched`) so `TorchBicop.cdf` enforces ``C(1, u_2) = u_2`` exactly, matching the post-vinecopulib#667 C++ CDF to machine precision on the on-the-fly path ([vinecopulib#667](https://github.com/vinecopulib/vinecopulib/pull/667)).
+- Declare `BicopFamily` enum members as class attributes in the generated type stubs so the documented `pv.BicopFamily.clayton` access pattern passes static type checking (`ty` / pyright / mypy), not only the module-level constants (#223).
 
 ### Dependency changes
 
