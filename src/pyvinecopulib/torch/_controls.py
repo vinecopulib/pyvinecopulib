@@ -15,8 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-METHODS: tuple[str, ...] = ("tll", "vdc")
-_VINE_IMPLS: tuple[str, ...] = ("legacy", "lazy")
+METHODS: tuple[str, ...] = ("tll",)
 
 
 @dataclass
@@ -29,13 +28,13 @@ class FitControlsTorchBicop:
 
   Attributes
   ----------
-  method : {"tll", "vdc"}, default="tll"
+  method : {"tll"}, default="tll"
       Fitter to use. ``"tll"`` is a pure-torch *Transformed Local
       Likelihood* kernel density estimator on a 2-D grid in the
       inverse-normal-transformed copula space (Geenens, 2014;
-      Nagler, 2018), matching the C++ TLL fit to machine
-      precision. ``"vdc"`` is the pretrained amortized estimator
-      of Safaai (2026); requires the ``[vdc]`` extra.
+      Nagler, 2018), matching the C++ TLL fit to machine precision.
+      It is the only fitter currently shipped; ``method`` is kept as
+      the extension seam for future torch fitters.
   grid_size : int, default=30
       *TLL only.* Density grid size per axis.
   mult : float, default=1.0
@@ -44,20 +43,6 @@ class FitControlsTorchBicop:
       *TLL only.* Storage grid type — ``"normal"`` (Phi-spaced,
       the C++-parity default) or ``"linear"`` (uniform on
       ``[0, 1]`` with the O(1) cell-finding fast-path).
-  vdc_bundle : LoadedPretrainedModel or None, default=None
-      *VDC only.* A pre-loaded ``vdc.LoadedPretrainedModel``;
-      `None` triggers the loader (cached per model_id x device).
-  vdc_model_id : str, default="vdc-denoiser-m64-v1"
-      *VDC only.* Pretrained checkpoint identifier.
-  vdc_diffusion_steps : int or None, default=None
-      *VDC only.* DDIM step count for diffusion checkpoints;
-      ignored for the denoiser checkpoint.
-  vdc_cfg_scale : float, default=1.0
-      *VDC only.* Classifier-free guidance scale for diffusion
-      checkpoints; ignored for the denoiser checkpoint.
-  vdc_projection_iters : int, default=50
-      *VDC only.* IPFP / Sinkhorn iterations enforcing uniform
-      marginals on the cell-center grid.
   """
 
   method: str = "tll"
@@ -66,13 +51,6 @@ class FitControlsTorchBicop:
   grid_size: int = 30
   mult: float = 1.0
   grid_type: str = "normal"
-
-  # VDC-only
-  vdc_bundle: Optional[Any] = None
-  vdc_model_id: str = "vdc-denoiser-m64-v1"
-  vdc_diffusion_steps: Optional[int] = None
-  vdc_cfg_scale: float = 1.0
-  vdc_projection_iters: int = 50
 
   def __post_init__(self) -> None:
     if self.method not in METHODS:
@@ -105,16 +83,10 @@ class FitControlsTorchVinecop:
   dtype : torch.dtype or None, default=None
       Target torch dtype. `None` defaults to ``torch.float64``
       (parity with C++).
-  impl : {"legacy", "lazy"}, default="legacy"
-      Cascade implementation used by post-fit methods.
-      ``"legacy"`` is the dense-scratch port of the C++ cascade;
-      ``"lazy"`` is the dict-based variant with ref-counted GC.
-      Both produce numerically identical outputs.
   batched : bool, default=False
       If ``True``, fires a single batched bicop call per tree
-      level. Orthogonal to ``impl``; available for ``pdf`` /
-      ``rosenblatt`` only (``inverse_rosenblatt(batched=True)``
-      raises).
+      level. Available for ``pdf`` / ``rosenblatt`` only
+      (``inverse_rosenblatt(batched=True)`` raises).
   """
 
   bicop_controls: FitControlsTorchBicop = field(
@@ -123,11 +95,4 @@ class FitControlsTorchVinecop:
   cache_integrals: bool = True
   device: Optional[Any] = None
   dtype: Optional[Any] = None
-  impl: str = "legacy"
   batched: bool = False
-
-  def __post_init__(self) -> None:
-    if self.impl not in _VINE_IMPLS:
-      raise ValueError(
-        f"unknown impl={self.impl!r}; expected one of {_VINE_IMPLS}"
-      )

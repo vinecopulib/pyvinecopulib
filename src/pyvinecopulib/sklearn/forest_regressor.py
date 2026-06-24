@@ -170,8 +170,7 @@ class VineForestRegressor(VineForestBase, RegressorMixin):
         end = min(start + batch_size, n_test)
 
         def get_one_weight(estimator, start=start, end=end):
-          weights, _, _ = next(estimator._iter_weights(X[start:end]))
-          return weights
+          return estimator._weights_for_batch(X[start:end])
 
         weights = parallel(
           delayed(get_one_weight)(est) for est in self._estimators

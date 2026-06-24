@@ -6,9 +6,7 @@ Two modes selected via ``--mode``:
 * ``fit`` (default) — time the from_data fit:
     - simulate n pseudo-obs via a Gaussian copula,
     - time ``pv.Bicop.from_data`` with TLL family per thread count,
-    - time ``TorchBicop.from_data`` per device and grid_type (TLL),
-    - (optional) time ``TorchBicop.from_data(method="vdc")`` per device
-      when the ``vine-denoising-copula`` package is installed.
+    - time ``TorchBicop.from_data`` per device and grid_type (TLL).
   Output columns:
     mode, n, backend, threads, device, grid_type, grid_size, time_ms
 
@@ -17,14 +15,12 @@ Two modes selected via ``--mode``:
     - C++ baseline: fit at each requested grid_size; no grid_type axis
       (TLL only has the Phi-spaced grid in C++).
     - Torch sweep: device x grid_type x grid_size x cache_integrals.
-    - VDC sweep: device x cache_integrals (grid_type fixed to
-      ``"cell-centers"``; grid_size fixed at 64 by the pretrained model).
   Output columns:
     mode, op, n_fit, n_eval, backend, threads, device,
     cache_integrals, grid_type, grid_size, time_ms
 
 For ``cpp`` rows, ``device`` / ``cache_integrals`` / ``grid_type`` are
-empty. For ``torch`` / ``vdc`` rows, ``threads`` is empty.
+empty. For ``torch`` rows, ``threads`` is empty.
 """
 
 from __future__ import annotations
@@ -40,13 +36,6 @@ import torch
 
 import pyvinecopulib as pv
 from pyvinecopulib.torch import FitControlsTorchBicop, TorchBicop
-
-try:
-  import vdc as _vdc  # noqa: F401
-
-  _HAS_VDC = True
-except ImportError:
-  _HAS_VDC = False
 
 
 def _parse_int_list(s: str) -> list[int]:
@@ -98,9 +87,6 @@ def _time_repeats(fn, repeats: int, sync=None) -> float:
 # --------------------------------------------------------------------------- #
 # Mode = fit                                                                    #
 # --------------------------------------------------------------------------- #
-
-
-_VDC_PRETRAINED_GRID_SIZE = 64  # vdc-denoiser-m64-v1
 
 
 def _bench_fit(
@@ -164,44 +150,6 @@ def _bench_fit(
               "time_ms": ms,
             }
           )
-
-  if "vdc" in backends and _HAS_VDC:
-    # Pre-warm the bundle cache so HuggingFace download / first model
-    # load is excluded from the timed window. Catch upstream-broken vdc
-    # builds (missing vdc.inference / vdc.vine submodules) and skip
-    # gracefully — same gate as tests/test_torch_bicop_vdc.py.
-    from pyvinecopulib.torch._fit_vdc import _load_bundle
-
-    ctl_vdc = FitControlsTorchBicop(method="vdc")
-    for device in devices:
-      sync = torch.cuda.synchronize if device.startswith("cuda") else None
-      try:
-        _load_bundle(ctl_vdc.vdc_model_id, device)
-      except ModuleNotFoundError as e:
-        print(
-          f"# WARNING: vdc backend unavailable on device={device} due to "
-          f"upstream packaging issue ({e}); skipping.",
-          file=sys.stderr,
-        )
-        continue
-      u_t = torch.from_numpy(u_np).to(device)
-      ms = _time_repeats(
-        lambda u=u_t, c=ctl_vdc, d=device: TorchBicop.from_data(u, c, device=d),
-        repeats,
-        sync=sync,
-      )
-      rows.append(
-        {
-          "mode": "fit",
-          "n": n,
-          "backend": "vdc",
-          "threads": "",
-          "device": device,
-          "grid_type": "cell-centers",
-          "grid_size": _VDC_PRETRAINED_GRID_SIZE,
-          "time_ms": ms,
-        }
-      )
   return rows
 
 
@@ -296,51 +244,6 @@ def _bench_eval(
             del bc
             if sync is not None:
               torch.cuda.empty_cache()
-
-  if "vdc" in backends and _HAS_VDC:
-    from pyvinecopulib.torch._fit_vdc import _load_bundle
-
-    ctl_vdc = FitControlsTorchBicop(method="vdc")
-    for device in devices:
-      sync = torch.cuda.synchronize if device.startswith("cuda") else None
-      try:
-        _load_bundle(ctl_vdc.vdc_model_id, device)
-      except ModuleNotFoundError as e:
-        print(
-          f"# WARNING: vdc backend unavailable on device={device} due to "
-          f"upstream packaging issue ({e}); skipping.",
-          file=sys.stderr,
-        )
-        continue
-      u_fit_t = torch.from_numpy(u_fit_np).to(device)
-      u_eval_t = torch.from_numpy(u_eval_np).to(device)
-      for cache in caches:
-        bc = TorchBicop.from_data(
-          u_fit_t, ctl_vdc, cache_integrals=cache, device=device
-        )
-        for op in _EVAL_OPS:
-          torch_fn = getattr(bc, op)
-          ms = _time_repeats(
-            lambda fn=torch_fn, u=u_eval_t: fn(u), repeats, sync=sync
-          )
-          rows.append(
-            {
-              "mode": "eval",
-              "op": op,
-              "n_fit": n_fit,
-              "n_eval": n_eval,
-              "backend": "vdc",
-              "threads": "",
-              "device": device,
-              "cache_integrals": str(cache).lower(),
-              "grid_type": "cell-centers",
-              "grid_size": _VDC_PRETRAINED_GRID_SIZE,
-              "time_ms": ms,
-            }
-          )
-        del bc
-        if sync is not None:
-          torch.cuda.empty_cache()
   return rows
 
 
@@ -388,10 +291,7 @@ def main() -> None:
     "--grid-sizes",
     default="30,64",
     type=_parse_int_list,
-    help=(
-      "Density-grid sizes to sweep for cpp/torch (default: 30,64). "
-      "vdc is fixed at 64 by the pretrained model."
-    ),
+    help="Density-grid sizes to sweep for cpp/torch (default: 30,64).",
   )
   ap.add_argument(
     "--cache",
@@ -401,9 +301,9 @@ def main() -> None:
   )
   ap.add_argument(
     "--backends",
-    default="cpp,torch,vdc",
+    default="cpp,torch",
     type=_parse_str_list,
-    help="Backends to bench (default: cpp,torch,vdc).",
+    help="Backends to bench (default: cpp,torch).",
   )
   ap.add_argument("--repeats", default=3, type=int)
   ap.add_argument("--seed", default=42, type=int)
@@ -421,13 +321,6 @@ def main() -> None:
     devices = [d for d in devices if not d.startswith("cuda")]
 
   backends = list(args.backends)
-  if "vdc" in backends and not _HAS_VDC:
-    print(
-      "# WARNING: vdc not installed; skipping vdc backend "
-      "(install with `pip install pyvinecopulib[vdc]`).",
-      file=sys.stderr,
-    )
-    backends = [b for b in backends if b != "vdc"]
 
   if args.mode == "fit":
     fieldnames = [

@@ -218,10 +218,9 @@ trade compute for accuracy.
 
 The same factorisation backs the PyTorch port
 :class:`pyvinecopulib.torch.TorchVinecop` (every pair copula is a
-:class:`pyvinecopulib.torch.TorchBicop`), with two equivalent
-cascade implementations: ``impl="legacy"`` matches the C++ cascade
-byte-for-byte, while ``impl="lazy"`` uses the dict-based
-reformulation of Cheng, Vatter, Nagler & Chen (2025).
+:class:`pyvinecopulib.torch.TorchBicop`); its cascade matches the C++
+evaluator byte-for-byte and additionally offers a ``batched=True``
+fast path (one stacked bicop call per tree level).
 
 
 .. _concepts-simplifying:
@@ -717,12 +716,5 @@ References
   pair-copula constructions revisited.* (In press.)
 * **Kim, Ramdas & Tibshirani (2025).** *Locally simultaneous
   inference for the model confidence set.* arXiv:2410.16092.
-* **Cheng, Vatter, Nagler & Chen (2025).** *Vine Copulas as
-  Differentiable Computational Graphs.* arXiv:2506.13318 — the
-  basis for the lazy / batched torch cascades.
 * **Vatter & Nagler (2026).** *Throwing Vines at the Wall:
   Structure Learning via Random Search.* (Preprint.)
-* **Safaai (2026).** *Amortized Vine Copulas for High-Dimensional
-  Density and Information Estimation.* arXiv:2604.20568 — the
-  pretrained estimator behind ``method="vdc"`` on
-  :class:`~pyvinecopulib.torch.TorchBicop`.

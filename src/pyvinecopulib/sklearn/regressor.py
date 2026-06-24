@@ -190,12 +190,11 @@ class VineRegressor(VineBase, RegressorMixin):
 
     return np.log(np.clip(out, eps, None)) if log else out
 
-  # Generator form (`yield (w, start, end)` per batch) is preserved so a
-  # future forest PR can interleave batches across trees in `_predict_from_iter`.
-  def _iter_weights(self, X):
-    """Yields batched conditional weights for the weighted-sample predictor.
+  def _weights_for_batch(self, X_batch):
+    """Conditional copula weights for one batch of test rows.
 
-    For each batch of test rows, computes
+    Single source of truth for the weight math — both `_iter_weights`
+    and `VineForestRegressor` call this. For each row computes
 
     .. math::
 
@@ -205,10 +204,40 @@ class VineRegressor(VineBase, RegressorMixin):
             \\text{if } \\texttt{use\\_grid = False}, \\\\
          c_{Y, X}\\bigl(\\hat F_Y(y_g), \\hat F_X(x)\\bigr)\\,
          \\hat f_Y(y_g) &
-            \\text{if } \\texttt{use\\_grid = True}.
+            \\text{if } \\texttt{use\\_grid = True},
        \\end{cases}
 
-    Weights are normalised row-wise when ``normalize_weights=True``.
+    row-normalised when ``normalize_weights=True``.
+
+    Parameters
+    ----------
+    X_batch : ndarray, shape (batch, n_features), dtype float
+        Test covariates on the original (un-transformed) scale.
+
+    Returns
+    -------
+    w : ndarray, shape (batch, n_train_or_grid), dtype float
+        Per-row weights for the batch.
+    """
+    ux_batch_rows = self._to_u_scale(np.asarray(X_batch))
+    m = ux_batch_rows.shape[0]
+    n_train = self._y_train.shape[0]
+    ux_batch = np.repeat(ux_batch_rows, n_train, axis=0)
+    uy_rep = np.tile(self._uy_train, (m, 1)).reshape(-1, 1)
+    u_test = np.column_stack([uy_rep, ux_batch])
+
+    w = np.asarray(self.backend_.pdf(self._vine, u_test)).reshape(m, n_train)
+    if self.use_grid:
+      w *= self._y_density
+    if self.normalize_weights:
+      w /= np.sum(w, axis=1, keepdims=True)
+    return w
+
+  def _iter_weights(self, X):
+    """Yields ``(weights, start, end)`` per batch for `_predict_from_iter`.
+
+    Thin batching wrapper over `_weights_for_batch` (which defines the
+    weights). The generator form is what `_predict_from_iter` consumes.
 
     Parameters
     ----------
@@ -226,23 +255,9 @@ class VineRegressor(VineBase, RegressorMixin):
     """
     X = np.asarray(X)
     n_test = X.shape[0]
-    n_train = self._y_train.shape[0]
-    ux_test = self._to_u_scale(X)
-
     for start in range(0, n_test, self.batch_size):
       end = min(start + self.batch_size, n_test)
-      ux_batch = np.repeat(ux_test[start:end], n_train, axis=0)
-      uy_rep = np.tile(self._uy_train, (end - start, 1)).reshape(-1, 1)
-      u_test = np.column_stack([uy_rep, ux_batch])
-
-      w = self.backend_.pdf(self._vine, u_test)
-      w = np.asarray(w).reshape(end - start, n_train)
-      if self.use_grid:
-        w *= self._y_density
-      if self.normalize_weights:
-        w /= np.sum(w, axis=1, keepdims=True)
-
-      yield w, start, end
+      yield self._weights_for_batch(X[start:end]), start, end
 
   def _predict_from_iter(self, X, iter_weights):
     """Combines batched weights with training responses to form predictions.

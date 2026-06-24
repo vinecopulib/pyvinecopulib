@@ -262,88 +262,33 @@ def test_pdf_shape_validation() -> None:
 
 
 # --------------------------------------------------------------------- #
-# `impl="lazy"` equivalence: dict-based bookkeeping must give identical
-# results to the legacy impl (same math, different bookkeeping).
-# --------------------------------------------------------------------- #
-
-
-def test_pdf_lazy_matches_legacy() -> None:
-  u_fit = _simulate(d=5, n=2000, seed=101)
-  cop_tll = _fit_tll_vine(u_fit)
-  bc = TorchVinecop.from_vinecop(cop_tll)
-  u_eval = _eval_grid(500, d=5, seed=111)
-  u_t = torch.from_numpy(u_eval)
-  out_legacy = bc.pdf(u_t, impl="legacy").numpy()
-  out_lazy = bc.pdf(u_t, impl="lazy").numpy()
-  np.testing.assert_allclose(out_lazy, out_legacy, atol=1e-12, rtol=1e-12)
-
-
-def test_rosenblatt_lazy_matches_legacy() -> None:
-  u_fit = _simulate(d=5, n=2000, seed=102)
-  cop_tll = _fit_tll_vine(u_fit)
-  bc = TorchVinecop.from_vinecop(cop_tll)
-  u_eval = _eval_grid(500, d=5, seed=112)
-  u_t = torch.from_numpy(u_eval)
-  out_legacy = bc.rosenblatt(u_t, impl="legacy").numpy()
-  out_lazy = bc.rosenblatt(u_t, impl="lazy").numpy()
-  np.testing.assert_allclose(out_lazy, out_legacy, atol=1e-12, rtol=1e-12)
-
-
-def test_inverse_rosenblatt_lazy_matches_legacy() -> None:
-  u_fit = _simulate(d=5, n=2000, seed=103)
-  cop_tll = _fit_tll_vine(u_fit)
-  bc = TorchVinecop.from_vinecop(cop_tll)
-  rng = np.random.default_rng(113)
-  w = rng.uniform(0.05, 0.95, size=(400, 5))
-  w_t = torch.from_numpy(w)
-  out_legacy = bc.inverse_rosenblatt(w_t, impl="legacy").numpy()
-  out_lazy = bc.inverse_rosenblatt(w_t, impl="lazy").numpy()
-  # Both paths invoke the same bisection root-finder, just in different
-  # iteration orders; agree to machine precision modulo a few ULPs.
-  np.testing.assert_allclose(out_lazy, out_legacy, atol=1e-12, rtol=1e-12)
-
-
-def test_invalid_impl_raises() -> None:
-  u_fit = _simulate(d=3, n=500, seed=104)
-  cop_tll = _fit_tll_vine(u_fit)
-  bc = TorchVinecop.from_vinecop(cop_tll)
-  u_t = torch.from_numpy(_eval_grid(20, d=3, seed=114))
-  for fn in (bc.pdf, bc.rosenblatt, bc.inverse_rosenblatt):
-    with pytest.raises(ValueError, match="impl must be"):
-      fn(u_t, impl="bogus")
-
-
-# --------------------------------------------------------------------- #
 # Batched cascade                                                        #
 # --------------------------------------------------------------------- #
 
 
-@pytest.mark.parametrize("impl", ["legacy", "lazy"])
 @pytest.mark.parametrize("cache", [False, True])
-def test_pdf_batched_matches_legacy(impl: str, cache: bool) -> None:
+def test_pdf_batched_matches_unbatched(cache: bool) -> None:
   u_fit = _simulate(d=10, n=800, seed=300)
   cop_tll = _fit_tll_vine(u_fit)
   bc = TorchVinecop.from_vinecop(cop_tll, cache_integrals=cache)
   u_t = torch.from_numpy(_eval_grid(500, d=10, seed=310))
-  ref = bc.pdf(u_t, impl=impl, batched=False).numpy()
-  got = bc.pdf(u_t, impl=impl, batched=True).numpy()
+  ref = bc.pdf(u_t, batched=False).numpy()
+  got = bc.pdf(u_t, batched=True).numpy()
   np.testing.assert_allclose(got, ref, atol=1e-12, rtol=1e-12)
 
 
-@pytest.mark.parametrize("impl", ["legacy", "lazy"])
 @pytest.mark.parametrize("cache", [False, True])
-def test_rosenblatt_batched_matches_legacy(impl: str, cache: bool) -> None:
+def test_rosenblatt_batched_matches_unbatched(cache: bool) -> None:
   u_fit = _simulate(d=10, n=800, seed=301)
   cop_tll = _fit_tll_vine(u_fit)
   bc = TorchVinecop.from_vinecop(cop_tll, cache_integrals=cache)
   u_t = torch.from_numpy(_eval_grid(500, d=10, seed=311))
-  ref = bc.rosenblatt(u_t, impl=impl, batched=False).numpy()
-  got = bc.rosenblatt(u_t, impl=impl, batched=True).numpy()
+  ref = bc.rosenblatt(u_t, batched=False).numpy()
+  got = bc.rosenblatt(u_t, batched=True).numpy()
   np.testing.assert_allclose(got, ref, atol=1e-13, rtol=1e-13)
 
 
-@pytest.mark.parametrize("impl", ["legacy", "lazy"])
-def test_inverse_rosenblatt_batched_raises(impl: str) -> None:
+def test_inverse_rosenblatt_batched_raises() -> None:
   """``batched=True`` on inverse_rosenblatt raises NotImplementedError.
 
   The inverse cascade's dependency graph is genuinely 2-D (some
@@ -357,7 +302,7 @@ def test_inverse_rosenblatt_batched_raises(impl: str) -> None:
   bc = TorchVinecop.from_vinecop(cop_tll)
   w_t = torch.from_numpy(_eval_grid(300, d=6, seed=312))
   with pytest.raises(NotImplementedError, match="batched=True"):
-    bc.inverse_rosenblatt(w_t, impl=impl, batched=True)
+    bc.inverse_rosenblatt(w_t, batched=True)
 
 
 def test_batched_matches_cpp_pdf() -> None:

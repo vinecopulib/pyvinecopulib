@@ -21,7 +21,6 @@
 - Add `VineForestDensity` and `VineForestRegressor`: ensembles of vine estimators sampled either uniformly (Joe's algorithm) or via Wilson's Kendall's-τ-weighted random walk, pruned by a model-confidence-set survivor test on a held-out split (#213).
 - Add the `pyvinecopulib.torch` subpackage: pure-PyTorch `TorchBicop` / `TorchVinecop` evaluators (`nn.Module` subclasses) for GPU placement, autograd, and `nn.Module` pipeline composition. The torch cascade matches the C++ TLL fit to machine precision (#216).
 - Add a sklearn-side backend layer (`pyvinecopulib.sklearn.backends`): `VinecopBackend` (default, C++) and `TorchVinecopBackend` (opt-in PyTorch) implement a shared `VinecopLike` protocol so the same estimator class routes through either backend (#218).
-- Add the optional amortized `method="vdc"` pair-copula fit (Safaai 2026, [arXiv:2604.20568](https://arxiv.org/abs/2604.20568)) behind the `[vdc]` extra; reference implementation [KempnerInstitute/vine-denoising-copula](https://github.com/KempnerInstitute/vine-denoising-copula) (#217).
 - Add `TorchVinecop.from_structure`, `TorchVinecop.simulate`, and `TorchVinecop.cdf` (quasi-MC) so the torch evaluators mirror their `pv.Vinecop` counterparts (#216).
 - Flip torch defaults based on a bicop + vine benchmark sweep: `cache_integrals=True` everywhere (80–300× faster `cdf` / `hfunc` / `hinv` on cpu, 2–80× on cuda), `batched` resolves device-aware via `_default_batched()` (`True` on cuda, `False` on cpu) (#219).
 - Add a tutorial-style `docs/concepts.rst` introducing Sklar's theorem, pair-copula construction, R-vines, and the TLL family in a ~5-minute read (#218).
@@ -33,7 +32,7 @@
 - Replace `mypy` with `ty` (Astral's type checker, alpha) and enable strict checks against a Python 3.10 baseline; only `pyvinecopulib.pyvinecopulib_ext` is allowed as an unresolved import (#210).
 - Add `bandit` security linting to `make check` and pre-commit (scanning `src/pyvinecopulib` + `scripts`). The previously-unused `[tool.bandit]` config silently excluded everything (`"lib"` matched `pyvinecopulib`); the config is fixed and the surfaced findings resolved.
 - Refactor the build / docs / examples pipeline into a thin Makefile over `uv run` and rework `scripts/regenerate_notebooks.py` (#205).
-- Add a `pyvinecopulib[sklearn]` extra (`scikit-learn>=1.4`, `pandas>=2.0`, `joblib>=1.3`, `scipy>=1.10`), a `pyvinecopulib[torch]` extra (`torch>=2.0`), and a `pyvinecopulib[vdc]` extra resolving `vine-denoising-copula` from GitHub via `[tool.uv.sources]` (#211, #216, #217).
+- Add a `pyvinecopulib[sklearn]` extra (`scikit-learn>=1.4`, `pandas>=2.0`, `joblib>=1.3`, `scipy>=1.10`) and a `pyvinecopulib[torch]` extra (`torch>=2.0`) (#211, #216).
 - Treat `pyvinecopulib`-originated `DeprecationWarning`s as errors under pytest so internal call sites stay on the canonical import paths (#207).
 - Install `--extra torch` in the notebook-test and regenerate-notebooks CI jobs so `examples/10_torch_backend.ipynb` executes under `nbmake` (#216).
 - Fix osx / musllinux wheel builds: feed libclang the compiler's implicit system include dirs (plus `-ferror-limit=0` and the macOS SDK sysroot) so the C++ stdlib / intrinsic headers resolve, and abort `docstr.hpp` generation only on *fatal* libclang diagnostics (intrinsic-header `error`s are benign and no longer silently drop symbols).

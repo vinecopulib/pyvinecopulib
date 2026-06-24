@@ -12,9 +12,21 @@ import math
 import torch
 from torch import Tensor
 
+# The trapezoidal-integration / bilinear-interpolation kernels live in
+# ``_batched`` (they are shape-polymorphic over leading batch dims). The
+# scalar methods below are thin ``N=1`` wrappers so there is a single
+# source of truth for the numerics shared with the batched vine cascade.
+from ._batched import (
+  _batched_cell_index,
+  int_on_grid_batched,
+  integrate_1d_batched,
+  integrate_2d_batched,
+  interp_at_batched,
+  interpolate_batched,
+)
+
 _TRIM_LO: float = 1e-10
 _TRIM_HI: float = 1.0 - 1e-10
-_STRIP_FLOOR: float = 1e-4
 
 _SQRT_2 = math.sqrt(2.0)
 # u_lo = Phi(-3.25); the lower end of the "effective" support that the C++
@@ -168,7 +180,7 @@ class InterpolationGrid2D(torch.nn.Module):
         integrals from 1 drops below ``tol``. Default ``None`` preserves
         the C++ "fixed-budget" semantics — useful for parity-sensitive
         callers. Setting e.g. ``tol=1e-9`` together with a generous
-        ``times=50`` reproduces vdc-style IPFP-to-convergence.
+        ``times=50`` reproduces IPFP-to-convergence.
     """
     if times <= 0:
       return
@@ -201,60 +213,16 @@ class InterpolationGrid2D(torch.nn.Module):
 
   def _cell_index(self, u: Tensor) -> Tensor:
     """Cell index for each value of ``u`` (shape preserved), clamped to ``[0, m-2]``."""
-    m = self.grid_points.shape[0]
-    if self._is_linear:
-      # Uniform grid on [0, 1] — O(1) cell-finding via floor.
-      return (u * (m - 1)).long().clamp(0, m - 2)
-    return (
-      torch.searchsorted(self.grid_points, u.contiguous(), right=False) - 1
-    ).clamp(0, m - 2)
+    return _batched_cell_index(self.grid_points, u, self._is_linear)
 
-  def _int_on_grid(
-    self,
-    upr: Tensor,
-    vals: Tensor,
-  ) -> Tensor:
+  def _int_on_grid(self, upr: Tensor, vals: Tensor) -> Tensor:
     """Vectorized trapezoidal integral of `(grid_points, vals)` from 0 to ``upr``.
 
-    Args:
-      upr: shape ``(*B,)`` of upper limits, each broadcast-compatible with
-        ``vals[..., 0]``.
-      vals: shape ``(*B, m)`` of piecewise-linear values.
-
-    Returns:
-      Tensor of shape ``(*B,)`` with the trapezoidal integrals.
+    Thin wrapper over :func:`._batched.int_on_grid_batched` (the single
+    source of truth). ``upr`` has shape ``(*B,)`` and ``vals`` shape
+    ``(*B, m)``; returns shape ``(*B,)``.
     """
-    grid = self.grid_points
-    m = grid.shape[0]
-    dgrid = grid[1:] - grid[:-1]  # (m-1,)
-
-    trap = 0.5 * (vals[..., :-1] + vals[..., 1:]) * dgrid  # (..., m-1)
-    zero = torch.zeros_like(trap[..., :1])
-    cumulative = torch.cat([zero, trap.cumsum(dim=-1)], dim=-1)  # (..., m)
-
-    upr_clamped = upr.clamp(0.0, 1.0)
-    if self._is_linear:
-      cell = (upr_clamped * (m - 1)).long().clamp(0, m - 2)  # (...,)
-    else:
-      cell = (
-        torch.searchsorted(grid, upr_clamped.contiguous(), right=False) - 1
-      ).clamp(0, m - 2)  # (...,)
-
-    cell_exp = cell.unsqueeze(-1)
-    v_k = torch.gather(vals, dim=-1, index=cell_exp).squeeze(-1)
-    v_k1 = torch.gather(vals, dim=-1, index=cell_exp + 1).squeeze(-1)
-    w_k = torch.gather(cumulative, dim=-1, index=cell_exp).squeeze(-1)
-
-    g_k = grid[cell]
-    g_k1 = grid[cell + 1]
-    dx_cell = g_k1 - g_k
-    dx = upr_clamped - g_k
-    frac = dx / dx_cell
-    partial = (2.0 * v_k + (v_k1 - v_k) * frac) * dx * 0.5
-
-    # Where upr <= grid[0] the integral is exactly 0 (dx == 0 already, so
-    # ``partial`` is 0 and ``w_k`` is 0 — the formula is self-correcting).
-    return w_k + partial
+    return int_on_grid_batched(self.grid_points, upr, vals, self._is_linear)
 
   # --------------------------------------------------------------------- #
   # Public eval API                                                        #
@@ -271,109 +239,45 @@ class InterpolationGrid2D(torch.nn.Module):
     """
     if u.ndim != 2 or u.shape[1] != 2:
       raise ValueError(f"u must have shape (n, 2); got {tuple(u.shape)}")
-    u = u.clamp(0.0, 1.0)
-    grid = self.grid_points
-    i = self._cell_index(u[:, 0])  # (n,)
-    j = self._cell_index(u[:, 1])  # (n,)
-
-    z11 = self.values[i, j]
-    z12 = self.values[i, j + 1]
-    z21 = self.values[i + 1, j]
-    z22 = self.values[i + 1, j + 1]
-
-    x1 = grid[i]
-    x2 = grid[i + 1]
-    y1 = grid[j]
-    y2 = grid[j + 1]
-    x = u[:, 0]
-    y = u[:, 1]
-
-    x2x = x2 - x
-    y2y = y2 - y
-    xx1 = x - x1
-    yy1 = y - y1
-    denom = (x2 - x1) * (y2 - y1)
-    return (
-      z11 * x2x * y2y + z21 * xx1 * y2y + z12 * x2x * yy1 + z22 * xx1 * yy1
-    ) / denom
+    return interpolate_batched(
+      self.grid_points,
+      self.values.unsqueeze(0),
+      u.unsqueeze(0),
+      self._is_linear,
+    ).squeeze(0)
 
   def integrate_1d(self, u: Tensor, cond_var: int) -> Tensor:
     """Conditional integral along one axis.
 
     ``cond_var=1`` returns ``H1(u1, u2) = int_0^{u2} c(u1, s) ds / int_0^1 c(u1, s) ds``;
     ``cond_var=2`` returns the symmetric quantity. Output is clamped to
-    ``[1e-10, 1-1e-10]``.
+    ``[1e-10, 1-1e-10]``. Thin ``N=1`` wrapper over
+    :func:`._batched.integrate_1d_batched`.
     """
-    if cond_var not in (1, 2):
-      raise ValueError(f"cond_var must be 1 or 2; got {cond_var}")
-    u = u.clamp(0.0, 1.0)
-    grid = self.grid_points
-
-    if cond_var == 1:
-      u_fixed = u[:, 0]
-      u_free = u[:, 1]
-    else:
-      u_fixed = u[:, 1]
-      u_free = u[:, 0]
-
-    cell = self._cell_index(u_fixed)
-    g_lo = grid[cell]
-    g_hi = grid[cell + 1]
-    t = ((u_fixed - g_lo) / (g_hi - g_lo)).unsqueeze(-1)  # (n, 1)
-
-    if cond_var == 1:
-      v_lo = self.values[cell, :]
-      v_hi = self.values[cell + 1, :]
-    else:
-      v_lo = self.values.index_select(1, cell).t()
-      v_hi = self.values.index_select(1, cell + 1).t()
-
-    strip = ((1.0 - t) * v_lo + t * v_hi).clamp_min(_STRIP_FLOOR)  # (n, m)
-
-    numer = self._int_on_grid(u_free, strip)
-    denom = self._int_on_grid(torch.ones_like(u_free), strip)
-    return (numer / denom).clamp(_TRIM_LO, _TRIM_HI)
+    return integrate_1d_batched(
+      self.grid_points,
+      self.values.unsqueeze(0),
+      u.unsqueeze(0),
+      cond_var,
+      self._is_linear,
+    ).squeeze(0)
 
   def integrate_2d(self, u: Tensor) -> Tensor:
     """Bivariate CDF: ``int_0^{u1} int_0^{u2} c(s, t) dt ds``.
 
-    Implementation: trapezoidally integrate each row ``values[k, :]`` up to
-    ``u2`` to get an ``(n, m)`` strip, then trapezoidally integrate that
-    strip along ``grid_points`` up to ``u1``. The result is renormalised
-    by the full-strip outer integral so C(1, u2) = u2 holds exactly —
-    matches the post-vinecopulib#667 C++ behaviour. Clamped to
-    ``[1e-10, 1-1e-10]``.
+    Trapezoidally integrate each grid row up to ``u2`` to get an
+    ``(n, m)`` strip, then integrate that strip up to ``u1``,
+    renormalising by the full-strip outer integral so C(1, u2) = u2
+    holds exactly (post-vinecopulib#667 C++ behaviour). Clamped to
+    ``[1e-10, 1-1e-10]``. Thin ``N=1`` wrapper over
+    :func:`._batched.integrate_2d_batched`.
     """
-    u = u.clamp(0.0, 1.0)
-    n = u.shape[0]
-    m = self.grid_points.shape[0]
-
-    u1 = u[:, 0]
-    u2 = u[:, 1]
-
-    # Inner pass: for each query i and grid row k, integrate values[k, :]
-    # up to u2[i]. Broadcasting: upr is (n, m), vals is (1, m, m) expanded
-    # to (n, m, m). Output (n, m).
-    upr_inner = u2.unsqueeze(-1).expand(n, m)
-    vals_inner = self.values.unsqueeze(0).expand(n, m, m)
-    strip = self._int_on_grid(upr_inner, vals_inner)  # (n, m)
-
-    # Outer pass: integrate strip[i, :] up to u1[i], then renormalise by
-    # the integral over the full first axis so the marginal-uniform
-    # property C(1, u2) = u2 holds exactly. Guard the degenerate
-    # `tmpint1 = 0` case (true CDF is then 0): in C++ this never
-    # arises because Bicop.cdf trims inputs to (1e-10, 1-1e-10) before
-    # reaching integrate_2d; the torch port also caches at raw grid
-    # endpoints via `build_caches`, where u2 = 0 yields strip = 0 and
-    # tmpint1 = 0.
-    tmpint = self._int_on_grid(u1, strip)
-    tmpint1 = self._int_on_grid(torch.ones_like(u1), strip)
-    out = torch.where(
-      tmpint1 > 0,
-      tmpint * u2 / tmpint1.clamp_min(_TRIM_LO),
-      torch.zeros_like(tmpint),
-    )
-    return out.clamp(_TRIM_LO, _TRIM_HI)
+    return integrate_2d_batched(
+      self.grid_points,
+      self.values.unsqueeze(0),
+      u.unsqueeze(0),
+      self._is_linear,
+    ).squeeze(0)
 
   # --------------------------------------------------------------------- #
   # Cached evaluation grids (optional, see TorchBicop(cache_integrals=…)). #
@@ -451,26 +355,6 @@ class InterpolationGrid2D(torch.nn.Module):
       raise ValueError("cache must have the same shape as values")
     if u.ndim != 2 or u.shape[1] != 2:
       raise ValueError(f"u must have shape (n, 2); got {tuple(u.shape)}")
-    u = u.clamp(0.0, 1.0)
-    grid = self.grid_points
-    i = self._cell_index(u[:, 0])
-    j = self._cell_index(u[:, 1])
-
-    z11 = cache[i, j]
-    z12 = cache[i, j + 1]
-    z21 = cache[i + 1, j]
-    z22 = cache[i + 1, j + 1]
-    x1 = grid[i]
-    x2 = grid[i + 1]
-    y1 = grid[j]
-    y2 = grid[j + 1]
-    x = u[:, 0]
-    y = u[:, 1]
-    x2x = x2 - x
-    y2y = y2 - y
-    xx1 = x - x1
-    yy1 = y - y1
-    denom = (x2 - x1) * (y2 - y1)
-    return (
-      z11 * x2x * y2y + z21 * xx1 * y2y + z12 * x2x * yy1 + z22 * xx1 * yy1
-    ) / denom
+    return interp_at_batched(
+      self.grid_points, cache.unsqueeze(0), u.unsqueeze(0), self._is_linear
+    ).squeeze(0)

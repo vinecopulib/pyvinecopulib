@@ -101,6 +101,9 @@ def _ace(
   *,
   outer_iter_max: int = 100,
   inner_iter_max: int = 10,
+  # Iteration tolerances are hardcoded to match ``tools_stats::ace`` in
+  # vinecopulib; if upstream changes them, the C++↔torch parity guard
+  # (tests/test_torch_bicop.py::test_from_data_matches_cpp) fails loudly.
   outer_abs_tol: float = 2e-15,
   inner_abs_tol: float = 1e-4,
 ) -> Tensor:
