@@ -1,10 +1,24 @@
 import os
 
 import numpy as np
+import pytest
 
 import pyvinecopulib as pv
 
 from .helpers import compare_vinecop, random_data
+
+
+def _wdm_tau(data: np.ndarray, weights: np.ndarray) -> float:
+  # Reproduce the built-in "tau" edge weight (signed Kendall's tau). The
+  # selector applies abs() and the sqrt(freq) factor on top, so a custom
+  # function returning signed tau yields the same structure as "tau".
+  if weights.size:
+    return float(pv.utils.wdm(data[:, 0], data[:, 1], "tau", weights=weights))
+  return float(pv.utils.wdm(data[:, 0], data[:, 1], "tau"))
+
+
+def _raising_criterion(data: np.ndarray, weights: np.ndarray) -> float:
+  raise ValueError("custom criterion failure")
 
 
 def test_vinecop(unique_json_path: str) -> None:
@@ -100,3 +114,87 @@ def test_vinecop(unique_json_path: str) -> None:
   cop.to_file(filename)
   new_cop = pv.Vinecop.from_file(filename)
   compare_vinecop(cop, new_cop)
+
+
+def test_custom_criterion_matches_builtin_tau() -> None:
+  # A custom function returning signed Kendall's tau must reproduce the
+  # structure selected by the built-in "tau" criterion exactly.
+  d, n = 5, 1000
+  u = pv.to_pseudo_obs(random_data(d, n))
+
+  cop_tau = pv.Vinecop.from_data(
+    u, controls=pv.FitControlsVinecop(tree_criterion="tau")
+  )
+
+  controls = pv.FitControlsVinecop(tree_criterion="custom")
+  controls.tree_criterion_function = _wdm_tau
+  cop_custom = pv.Vinecop.from_data(u, controls=controls)
+
+  assert np.array_equal(cop_tau.matrix, cop_custom.matrix)
+  assert cop_tau.order == cop_custom.order
+
+
+def test_tree_criterion_custom_accepted() -> None:
+  # Regression that the submodule bump exposes the "custom" criterion.
+  controls = pv.FitControlsVinecop()
+  controls.tree_criterion = "custom"
+  assert controls.tree_criterion == "custom"
+
+
+def test_tree_criterion_function_roundtrip_property() -> None:
+  controls = pv.FitControlsVinecop()
+  assert controls.tree_criterion_function is None
+  controls.tree_criterion_function = _wdm_tau
+  # The getter hands back the original Python callable.
+  assert controls.tree_criterion_function is _wdm_tau
+  controls.tree_criterion_function = None
+  assert controls.tree_criterion_function is None
+
+
+def test_custom_criterion_unset_raises() -> None:
+  d, n = 5, 300
+  u = pv.to_pseudo_obs(random_data(d, n))
+  controls = pv.FitControlsVinecop(tree_criterion="custom")
+  with pytest.raises(RuntimeError):
+    pv.Vinecop.from_data(u, controls=controls)
+
+
+def test_custom_criterion_ignored_when_not_custom() -> None:
+  # A function set while tree_criterion != "custom" is never called.
+  d, n = 5, 1000
+  u = pv.to_pseudo_obs(random_data(d, n))
+
+  controls = pv.FitControlsVinecop(tree_criterion="tau")
+  controls.tree_criterion_function = _raising_criterion  # must be ignored
+  cop_custom = pv.Vinecop.from_data(u, controls=controls)
+
+  cop_tau = pv.Vinecop.from_data(
+    u, controls=pv.FitControlsVinecop(tree_criterion="tau")
+  )
+  assert np.array_equal(cop_tau.matrix, cop_custom.matrix)
+
+
+def test_custom_criterion_exception_propagates() -> None:
+  # A Python exception raised inside the criterion surfaces from from_data.
+  d, n = 5, 1000
+  u = pv.to_pseudo_obs(random_data(d, n))
+  controls = pv.FitControlsVinecop(tree_criterion="custom", num_threads=1)
+  controls.tree_criterion_function = _raising_criterion
+  with pytest.raises(ValueError):
+    pv.Vinecop.from_data(u, controls=controls)
+
+
+def test_custom_criterion_multithread_smoke() -> None:
+  # Calls acquire the GIL, so num_threads > 1 must still give the same result.
+  d, n = 5, 1000
+  u = pv.to_pseudo_obs(random_data(d, n))
+
+  c1 = pv.FitControlsVinecop(tree_criterion="custom", num_threads=1)
+  c1.tree_criterion_function = _wdm_tau
+  cop1 = pv.Vinecop.from_data(u, controls=c1)
+
+  c2 = pv.FitControlsVinecop(tree_criterion="custom", num_threads=2)
+  c2.tree_criterion_function = _wdm_tau
+  cop2 = pv.Vinecop.from_data(u, controls=c2)
+
+  assert np.array_equal(cop1.matrix, cop2.matrix)

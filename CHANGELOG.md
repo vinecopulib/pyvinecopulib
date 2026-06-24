@@ -25,6 +25,7 @@
 - Flip torch defaults based on a bicop + vine benchmark sweep: `cache_integrals=True` everywhere (80–300× faster `cdf` / `hfunc` / `hinv` on cpu, 2–80× on cuda), `batched` resolves device-aware via `_default_batched()` (`True` on cuda, `False` on cpu) (#219).
 - Add a tutorial-style `docs/concepts.rst` introducing Sklar's theorem, pair-copula construction, R-vines, and the TLL family in a ~5-minute read (#218).
 - Use Sphinx autosummary on the four subpackage landing pages so module docstrings, classes, and free functions get their own indexed pages (#214).
+- Add a custom `tree_criterion` for vine structure selection: set `FitControlsVinecop(tree_criterion="custom")` and supply `tree_criterion_function`, a callable `f(data, weights) -> float` mapping a two-column array of pair pseudo-observations (and observation weights) to a scalar edge weight (its absolute value is used). The callable round-trips through pickle when it is picklable (e.g. a module-level function); calls acquire the GIL, so they serialise under `num_threads > 1` ([vinecopulib#674](https://github.com/vinecopulib/vinecopulib/pull/674)).
 
 ### Build / packaging
 
@@ -56,6 +57,7 @@
 - Early exit in vine selection when the structure is already a tree, avoiding redundant work in `select` ([vinecopulib#661](https://github.com/vinecopulib/vinecopulib/pull/661)).
 - Per-family parameter / rotation / tail-dependence documentation on the `BicopFamily` enum members, surfaced through the Python `families` subpackage (#214, [vinecopulib#668](https://github.com/vinecopulib/vinecopulib/pull/668)).
 - Numpydoc-compliant `//!` comments on every property getter / setter in the Python-binding surface, surfaced through the pyvinecopulib autosummary pages (#214, [vinecopulib#670](https://github.com/vinecopulib/vinecopulib/pull/670)).
+- Allow a custom `tree_criterion` function for vine structure selection ([vinecopulib#674](https://github.com/vinecopulib/vinecopulib/pull/674)).
 
 #### BUG FIXES
 
