@@ -98,7 +98,6 @@ repos:
             sklearn/_forest_base\.py |
             torch/_batched\.py |
             torch/_fit_tll\.py |
-            torch/_fit_vdc\.py |
             torch/_util\.py |
             torch/_interp\.py
           )$

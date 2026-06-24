@@ -44,8 +44,7 @@ Switch to :class:`TorchVinecopBackend` when you need any of:
   ``torch.nn.Module`` that drops into any other model.
 
 The torch backend currently supports the TLL family only (which is
-both the default and what the GPU path is built around) and the
-optional ``"vdc"`` amortized estimator of Safaai (2026); other
+both the default and what the GPU path is built around); other
 parametric families require :class:`VinecopBackend`.
 
 Examples
@@ -324,7 +323,7 @@ class TorchVinecopBackend:
     ctrls = self._effective_controls()
     ref = vine._ref_tensor()
     u_t = torch.as_tensor(U, dtype=ref.dtype, device=ref.device)
-    out = vine.pdf(u_t, impl=ctrls.impl, batched=ctrls.batched)
+    out = vine.pdf(u_t, batched=ctrls.batched)
     return out.detach().cpu().numpy()
 
   def cdf(
@@ -332,17 +331,15 @@ class TorchVinecopBackend:
   ) -> np.ndarray:
     import torch
 
-    ctrls = self._effective_controls()
     ref = vine._ref_tensor()
     u_t = torch.as_tensor(U, dtype=ref.dtype, device=ref.device)
-    out = vine.cdf(u_t, N=N, qrng=True, seeds=seeds, impl=ctrls.impl)
+    out = vine.cdf(u_t, N=N, qrng=True, seeds=seeds)
     return out.detach().cpu().numpy()
 
   def simulate(
     self, vine: Any, n_samples: int, *, seeds: list[int]
   ) -> np.ndarray:
-    ctrls = self._effective_controls()
-    out = vine.simulate(n_samples, qrng=False, seeds=seeds, impl=ctrls.impl)
+    out = vine.simulate(n_samples, qrng=False, seeds=seeds)
     return out.detach().cpu().numpy()
 
   def structure_of(self, vine: Any) -> pv.RVineStructure:

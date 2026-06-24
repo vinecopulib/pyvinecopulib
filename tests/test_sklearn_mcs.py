@@ -16,6 +16,8 @@ from pyvinecopulib.sklearn._mcs import (  # noqa: E402
   argmin_except_self,
   da_mcs_marg,
   da_mcs_unif,
+  pairwise_sd_for_pairs,
+  pairwise_sd_for_pairs_einsum,
 )
 
 
@@ -84,3 +86,20 @@ def test_da_mcs_unif_deterministic_split():
   r2 = da_mcs_unif(losses, alpha=0.05, randomize=False)
   np.testing.assert_array_equal(r1["decision"], r2["decision"])
   np.testing.assert_allclose(r1["stats"], r2["stats"])
+
+
+@pytest.mark.parametrize("n,p", [(50, 4), (400, 6), (5, 3)])
+def test_pairwise_sd_helpers_agree(n, p):
+  """The plain and einsum SD helpers must compute the same thing.
+
+  `da_mcs_unif` defaults to the einsum variant for speed; the plain
+  variant is the readable reference. Nothing else asserts they match,
+  so this guards the intentional duplication in `_mcs.py`.
+  """
+  rng = np.random.default_rng(7 * n + p)
+  X = rng.standard_normal((n, p))
+  mu = X.mean(axis=0)
+  k = argmin_except_self(mu)
+  sd_plain = pairwise_sd_for_pairs(X, mu, k)
+  sd_einsum = pairwise_sd_for_pairs_einsum(X, mu, k)
+  np.testing.assert_allclose(sd_einsum, sd_plain, rtol=1e-10, atol=1e-12)

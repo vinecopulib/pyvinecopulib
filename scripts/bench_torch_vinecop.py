@@ -6,7 +6,7 @@ For each (n, d) cell in the grid:
   - fit a pv.Vinecop with the TLL family (single thread),
   - time pv.Vinecop.<method>(u, num_threads=t) for every t in --threads,
   - time TorchVinecop.<method>(u, ...) for every combination of
-    --devices x --cache x --impls x --batched,
+    --devices x --cache x --batched,
   - report the median wall-clock per call (in milliseconds).
 
 The TorchVinecop CPU runs are pinned to a single torch thread so they
@@ -15,10 +15,10 @@ across --threads explicitly.
 
 Outputs a long-format CSV (one row per timed configuration) to --output
 (default: stdout) with columns:
-    method, n, d, backend, threads, device, cache_integrals, impl,
+    method, n, d, backend, threads, device, cache_integrals,
     batched, grid_type, time_ms
 
-For C++ rows, device / cache_integrals / impl / batched / grid_type are
+For C++ rows, device / cache_integrals / batched / grid_type are
 empty (C++ TLL only supports the Phi-spaced grid). For torch rows,
 threads is empty. The torch vines are now built via
 ``TorchVinecop.from_data(u_fit, structure=...)`` so both grid types
@@ -105,7 +105,6 @@ def _bench_cell(
   threads: list[int],
   devices: list[str],
   caches: list[bool],
-  impls: list[str],
   batched_modes: list[bool],
   grid_types: list[str],
   repeats: int,
@@ -134,7 +133,6 @@ def _bench_cell(
           "threads": t,
           "device": "",
           "cache_integrals": "",
-          "impl": "",
           "batched": "",
           "grid_type": "",
           "time_ms": ms,
@@ -163,35 +161,31 @@ def _bench_cell(
           sync()
         for method in METHODS:
           torch_fn = getattr(bc, method)
-          for impl in impls:
-            for batched in batched_modes:
-              # batched=True is not implemented for inverse_rosenblatt
-              # (the inverse cascade's deps aren't tree-level batchable).
-              # Skip rather than crash so the rest of the sweep proceeds.
-              if method == "inverse_rosenblatt" and batched:
-                continue
-              ms = _time_repeats(
-                lambda fn=torch_fn, u=u_t, i=impl, b=batched: fn(
-                  u, impl=i, batched=b
-                ),
-                repeats,
-                sync=sync,
-              )
-              rows.append(
-                {
-                  "method": method,
-                  "n": n,
-                  "d": d,
-                  "backend": "torch",
-                  "threads": "",
-                  "device": device,
-                  "cache_integrals": str(cache).lower(),
-                  "impl": impl,
-                  "batched": str(batched).lower(),
-                  "grid_type": grid_type,
-                  "time_ms": ms,
-                }
-              )
+          for batched in batched_modes:
+            # batched=True is not implemented for inverse_rosenblatt
+            # (the inverse cascade's deps aren't tree-level batchable).
+            # Skip rather than crash so the rest of the sweep proceeds.
+            if method == "inverse_rosenblatt" and batched:
+              continue
+            ms = _time_repeats(
+              lambda fn=torch_fn, u=u_t, b=batched: fn(u, batched=b),
+              repeats,
+              sync=sync,
+            )
+            rows.append(
+              {
+                "method": method,
+                "n": n,
+                "d": d,
+                "backend": "torch",
+                "threads": "",
+                "device": device,
+                "cache_integrals": str(cache).lower(),
+                "batched": str(batched).lower(),
+                "grid_type": grid_type,
+                "time_ms": ms,
+              }
+            )
         # Free GPU memory before building the next variant
         del bc, u_t
         if sync is not None:
@@ -223,12 +217,6 @@ def main() -> None:
     default="false,true",
     type=_parse_bool_list,
     help="cache_integrals values to sweep (default: false,true).",
-  )
-  ap.add_argument(
-    "--impls",
-    default="legacy,lazy",
-    type=_parse_str_list,
-    help="TorchVinecop impl variants to sweep (default: legacy,lazy).",
   )
   ap.add_argument(
     "--batched",
@@ -270,7 +258,6 @@ def main() -> None:
     "threads",
     "device",
     "cache_integrals",
-    "impl",
     "batched",
     "grid_type",
     "time_ms",
@@ -287,7 +274,6 @@ def main() -> None:
         threads=args.threads,
         devices=devices,
         caches=args.cache,
-        impls=args.impls,
         batched_modes=args.batched,
         grid_types=args.grid_types,
         repeats=args.repeats,

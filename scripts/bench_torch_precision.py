@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 """Precision-vs-truth benchmark for the torch backend.
 
-Section 1 — Bicop precision. For each (family, params, n, method):
+Section 1 — Bicop precision. For each (family, params, n):
   - sample u_true ~ cop_true.simulate(n) from the parametric family,
   - fit two TorchBicops on u_true (cache_integrals=False vs True) using
-    the requested fitter (``method="tll"`` or ``"vdc"``),
+    the TLL fitter,
   - on M=10k iid eval points in [0.02, 0.98]^2 compute the integrated
     absolute error (IAE = mean |fit - true|) for pdf, cdf, hfunc1,
     hfunc2, hinv1, hinv2, where "true" comes from the parametric
@@ -34,13 +34,6 @@ import torch
 
 import pyvinecopulib as pv
 from pyvinecopulib.torch import FitControlsTorchBicop, TorchBicop, TorchVinecop
-
-try:
-  import vdc as _vdc  # noqa: F401
-
-  _HAS_VDC = True
-except ImportError:
-  _HAS_VDC = False
 
 
 # --- shared helpers ------------------------------------------------------ #
@@ -87,14 +80,10 @@ def _bicop_fit(bc: TorchBicop, u_t: torch.Tensor) -> dict[str, np.ndarray]:
   }
 
 
-_VDC_PRETRAINED_GRID_SIZE = 64  # vdc-denoiser-m64-v1
-
-
 def _run_bicop_section(
   n_list: list[int],
   grid_types: list[str],
   grid_sizes: list[int],
-  methods: list[str],
   m_eval: int,
   seed: int,
 ) -> list[dict]:
@@ -113,21 +102,11 @@ def _run_bicop_section(
       u_eval_t = torch.from_numpy(u_eval)
 
       truths = _bicop_truth(cop_true, u_eval)
-      for method in methods:
-        if method == "vdc":
-          # vdc ignores grid_type and grid_size — the pretrained model
-          # enforces a 64×64 cell-centered grid.
-          method_configs = [("cell-centers", _VDC_PRETRAINED_GRID_SIZE)]
-        else:
-          method_configs = [(gt, g) for gt in grid_types for g in grid_sizes]
-        for grid_type, grid_size in method_configs:
+      for grid_type in grid_types:
+        for grid_size in grid_sizes:
           for cache in (False, True):
-            ctl = (
-              FitControlsTorchBicop(method="vdc")
-              if method == "vdc"
-              else FitControlsTorchBicop(
-                method="tll", grid_type=grid_type, grid_size=grid_size
-              )
+            ctl = FitControlsTorchBicop(
+              method="tll", grid_type=grid_type, grid_size=grid_size
             )
             bc_fit = TorchBicop.from_data(
               torch.from_numpy(u_true),
@@ -145,7 +124,7 @@ def _run_bicop_section(
                   "n": n,
                   "quantity": q,
                   "cache": int(cache),
-                  "method": method,
+                  "method": "tll",
                   "grid_type": grid_type,
                   "grid_size": grid_size,
                   "IAE": _iae(fits[q], truths[q]),
@@ -293,14 +272,8 @@ def main() -> None:
     "--grid-sizes",
     default="30,64",
     help=(
-      "TLL density-grid sizes to sweep in the bicop section "
-      "(default: 30,64). vdc is fixed at 64."
+      "TLL density-grid sizes to sweep in the bicop section (default: 30,64)."
     ),
-  )
-  ap.add_argument(
-    "--methods",
-    default="tll,vdc",
-    help="Bicop fitters to sweep in the bicop section (default: tll,vdc).",
   )
   ap.add_argument("--output", default="-")
   args = ap.parse_args()
@@ -309,34 +282,11 @@ def main() -> None:
   sections = {s.strip() for s in args.sections.split(",") if s.strip()}
   grid_types = [g.strip() for g in args.grid_types.split(",") if g.strip()]
   grid_sizes = [int(g.strip()) for g in args.grid_sizes.split(",") if g.strip()]
-  methods = [m.strip() for m in args.methods.split(",") if m.strip()]
-  if "vdc" in methods:
-    if not _HAS_VDC:
-      print(
-        "# WARNING: vdc not installed; skipping vdc method "
-        "(install with `uv sync --extra vdc`).",
-        file=sys.stderr,
-      )
-      methods = [m for m in methods if m != "vdc"]
-    else:
-      # Probe upstream-broken vdc wheels (missing vdc.inference /
-      # vdc.vine) — try a smoke load and drop vdc if it fails.
-      try:
-        from pyvinecopulib.torch._fit_vdc import _load_bundle
-
-        _load_bundle("vdc-denoiser-m64-v1", "cpu")
-      except ModuleNotFoundError as e:
-        print(
-          f"# WARNING: vdc available but unusable ({e}); skipping vdc "
-          f"method. Wait for upstream to restore vdc.inference / vdc.vine.",
-          file=sys.stderr,
-        )
-        methods = [m for m in methods if m != "vdc"]
 
   rows: list[dict] = []
   if "bicop" in sections:
     rows += _run_bicop_section(
-      args.n_bicop, grid_types, grid_sizes, methods, args.m_eval, args.seed
+      args.n_bicop, grid_types, grid_sizes, args.m_eval, args.seed
     )
   if "vine" in sections:
     rows += _run_vine_section(

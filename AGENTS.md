@@ -63,7 +63,7 @@ when proposing API changes:
 |---|---|---|
 | `pyvinecopulib.core`, `pyvinecopulib.families`, `pyvinecopulib.utils`, top-level `pyvinecopulib` (core class re-exports) | **Stable-ish** | Solid user base. Prefer deprecation aliases over breaks; document migrations in `CHANGELOG.md`. PR #207 is the model: the reorg kept old import paths working via `_deprecations.py` + `DeprecationWarning`. Breaks are allowed (e.g. the pybind11→nanobind migration; the #207 cleanup) but must be intentional, documented, and worth the churn. |
 | `pyvinecopulib.sklearn` | **Active development** | API may change in breaking ways between minor releases. The latest break is the `#218` public backend system (estimators now take a single `backend=` instead of loose `controls=`/`structure=`/`seed=` kwargs); forest estimators (`#213`) are also new. |
-| `pyvinecopulib.torch` | **Active development** | Same status. Defaults are still being tuned (cf. `990f997` device-aware `batched`, `cache_integrals=True`); the legacy↔lazy cascade parity is a hard guarantee, but the `FitControlsTorchVinecop` surface and `TorchVinecop` method signatures may still shift. |
+| `pyvinecopulib.torch` | **Active development** | Same status. Defaults are still being tuned (cf. `990f997` device-aware `batched`, `cache_integrals=True`); the torch↔C++ cascade parity is a hard guarantee, but the `FitControlsTorchVinecop` surface and `TorchVinecop` method signatures may still shift. |
 | `pyvinecopulib._python_helpers`, `pyvinecopulib._deprecations` | **Internal** | Underscore-prefixed. Not part of any contract; rename / restructure freely. `_deprecations.py` itself is slated for removal on the next major release. |
 
 The "Solid user base" claim refers to the released `main` branch (see
@@ -95,12 +95,8 @@ ahead of it) is allowed to break sklearn/torch APIs as needed.
   `VineRegressor`, `VineForestDensity`, `VineForestRegressor` with a
   pluggable backend (`VinecopBackend` / `TorchVinecopBackend`).
 - **PyTorch evaluator** — `TorchBicop`, `TorchVinecop` (pure-torch
-  cascade with GPU placement, autograd, batched evaluation, and two
-  cascade implementations: byte-for-byte C++ port `impl="legacy"`
-  and dict-based reformulation `impl="lazy"` from Cheng et al. 2025).
-- **Amortized estimator (VDC)** — optional `method="vdc"` path on
-  `FitControlsTorchBicop` (Safaai 2026), gated by the
-  `[vine-denoising-copula]` extra.
+  cascade with GPU placement, autograd, and an optional `batched`
+  evaluation fast path; byte-for-byte parity with the C++ cascade).
 
 ### Excluded (explicit)
 
@@ -168,7 +164,6 @@ pyvinecopulib/
         _controls.py             # FitControlsTorchBicop / FitControlsTorchVinecop dataclasses
         _interp.py               # InterpolationGrid2D (bilinear; Sinkhorn margin renormalisation)
         _fit_tll.py              # pure-torch TLL kernel
-        _fit_vdc.py              # optional amortized estimator (VDC; lib not on PyPI)
         _batched.py              # batched evaluation variants
         _util.py                 # internal helpers (ITP root-finder, etc.)
 
@@ -509,29 +504,21 @@ Key surface:
     `rosenblatt` / `inverse_rosenblatt` / `simulate` signatures.
 - `FitControlsTorchBicop` / `FitControlsTorchVinecop` — fit-time
   dataclasses. Notable knobs:
-  - `method` — `"tll"` (default, pure-torch TLL) or `"vdc"`
-    (amortized; requires the `vdc` extra).
+  - `method` — `"tll"` (the only fitter; kept as the dispatch seam
+    for future torch fitters).
   - `cache_integrals` — default `True` (set in `990f997`); precomputes
     integral grids for ~80–300× evaluation speed-up with mean IAE
     `< 1e-3`.
-  - `impl` — `"legacy"` (byte-for-byte parity with the C++ cascade)
-    vs `"lazy"` (dict-based, ref-counted; from Cheng et al. 2025).
-    Either implementation must produce numerically equivalent
-    output; this parity is a guarantee and is exercised by
-    `tests/test_torch_vinecop.py`.
   - `batched` — fires a single batched bicop call per tree level
     (available on `pdf` / `rosenblatt`, not on `inverse_rosenblatt`).
+    The non-batched cascade is a byte-for-byte port of the C++
+    evaluator; the batched path agrees with it to floating-point
+    tolerance (`tests/test_torch_vinecop.py`).
   - `device`, `dtype` — propagate to every tensor on construction;
     fitted modules respect `.to(device)` afterwards.
 - `InterpolationGrid2D` — the 2-d bilinear grid backing `TorchBicop`;
   re-exported for advanced users. Margin normalisation uses
   Sinkhorn iterations to drive marginals to uniform.
-- VDC (`_fit_vdc.py`) is optional and lives behind
-  `method="vdc"`. The dependency
-  ([vine-denoising-copula](https://github.com/KempnerInstitute/vine-denoising-copula))
-  is not on PyPI; `[tool.uv.sources]` maps it to GitHub for `uv
-  sync --extra vdc`; plain pip users install with
-  `pip install "vine-denoising-copula @ git+https://..."`.
 
 ### Top-level `pyvinecopulib`
 
@@ -631,8 +618,7 @@ Conventions:
 - **Test extras are required to run their tests.** `make sync`
   installs `[sklearn]` and `[torch]` so the suite runs in full;
   CI installs the same. `test_sklearn_*` requires `scikit-learn`;
-  `test_torch_*` requires `torch`; `test_torch_bicop_vdc.py`
-  additionally requires the `[vdc]` extra.
+  `test_torch_*` requires `torch`.
 - **DeprecationWarnings from this package are errors.** The
   `filterwarnings` entry in `[tool.pytest.ini_options]` enforces
   this — internal code paths must already be on the post-`#207`
@@ -650,8 +636,8 @@ Round-trip / parity properties to preserve when touching numerics:
 - C++ ↔ torch parity: `TorchVinecop.from_vinecop(cpp_vine)` yields a
   module whose `pdf` / `cdf` / `rosenblatt` outputs match the C++
   vine to within floating-point tolerance, on the operational grid.
-- `impl="legacy"` ↔ `impl="lazy"`: numerically equivalent cascade
-  outputs on the same fitted vine.
+- `batched=True` ↔ `batched=False`: numerically equivalent `pdf` /
+  `rosenblatt` outputs on the same fitted vine.
 - `sklearn.base.clone()` round-trip: every estimator clones cleanly
   with all `__init__` parameters preserved verbatim.
 
@@ -669,10 +655,9 @@ Round-trip / parity properties to preserve when touching numerics:
   underlying vine satisfies the `VinecopLike` Protocol so downstream
   code can stay type-stable.
 - **New torch fit methods.** Add the implementation under
-  `pyvinecopulib/torch/_fit_<name>.py`, expose it via a
-  `FitControlsTorchBicop.method = "<name>"` branch in
-  `_controls.py`, and dispatch in `TorchBicop.from_data`. VDC
-  (`#217`) is the canonical example.
+  `pyvinecopulib/torch/_fit_<name>.py`, add `"<name>"` to `METHODS`
+  in `_controls.py`, and add the dispatch branch in
+  `TorchBicop.from_data` (the lone `"tll"` path is the template).
 - **New sklearn-style ensembles.** Subclass `VineForestBase` (or
   `VineBase` for single-vine variants) and override the loss /
   prediction methods. Stay inside the

@@ -309,17 +309,9 @@ class VineForestBase(BaseEstimator, ABC):
 
     X_train, X_val, y_train, y_val = self._split_data(X, y)
 
-    # Default estimator (Dissmann-structure baseline). Propagate the
-    # inferred schema so fitting on the already-expanded numpy doesn't
-    # default everything back to continuous.
-    default = self._create_base_estimator()
-    if getattr(self._base_estimator, "schema_", None) is not None:
-      default.schema_ = dict(self._base_estimator.schema_)
-    if y_train is not None:
-      default.fit(X_train, y_train)
-    else:
-      default.fit(X_train)
-    default_loglik = self._loglik_estimator(default, X_val, y_val)
+    default, default_loglik = self._fit_default_estimator(
+      X_train, y_train, X_val, y_val
+    )
     default_loglik_val = default_loglik.mean()
 
     seeds = self.random_state_.randint(0, 2**31 - 1, size=self.n_vines)
@@ -332,17 +324,9 @@ class VineForestBase(BaseEstimator, ABC):
     if self.add_dissmann:
       results.append((default, default_loglik))
 
-    # Survivor selection.
-    random_logliks_val = np.array([loglik.mean() for _, loglik in results])
-    if self.method is None:
-      survivors = random_logliks_val > default_loglik_val
-    else:
-      # Negative logliks → losses; selector minimises losses.
-      nll = -np.array([loglik for _, loglik in results]).T
-      mcs_rng = np.random.default_rng(self._split_rng_seed)
-      mcs_fn = da_mcs_unif if self.method == "da_mcs_unif" else da_mcs_marg
-      mcs = mcs_fn(nll, alpha=self.alpha, randomize=True, rng=mcs_rng)
-      survivors = mcs["decision"]
+    survivors, random_logliks_val = self._select_survivors(
+      results, default_loglik_val
+    )
 
     if sum(survivors) == 0:
       self._estimators = [default]
@@ -378,14 +362,53 @@ class VineForestBase(BaseEstimator, ABC):
         1, -1
       )
 
-    # Refit survivors on the full training data.
+    self._refit_survivors(X, y)
+    self._seeds = seeds
+    return self
+
+  def _fit_default_estimator(self, X_train, y_train, X_val, y_val):
+    """Fit the Dissmann-structure baseline and score it on the val set.
+
+    Returns ``(estimator, per_sample_loglik)``. The inferred schema is
+    propagated so fitting on the already-expanded numpy array doesn't
+    default discrete columns back to continuous.
+    """
+    default = self._create_base_estimator()
+    if getattr(self._base_estimator, "schema_", None) is not None:
+      default.schema_ = dict(self._base_estimator.schema_)
+    if y_train is not None:
+      default.fit(X_train, y_train)
+    else:
+      default.fit(X_train)
+    return default, self._loglik_estimator(default, X_val, y_val)
+
+  def _select_survivors(self, results, default_loglik_val):
+    """Pick the surviving candidates from the fitted pool.
+
+    Three modes: ``method=None`` keeps every candidate beating the
+    default's mean validation loglik; otherwise a model-confidence-set
+    test (``da_mcs_marg`` / ``da_mcs_unif``) on the per-sample losses.
+    Returns ``(survivors_mask, mean_val_logliks)``.
+    """
+    random_logliks_val = np.array([loglik.mean() for _, loglik in results])
+    if self.method is None:
+      survivors = random_logliks_val > default_loglik_val
+    else:
+      # Negative logliks → losses; selector minimises losses.
+      nll = -np.array([loglik for _, loglik in results]).T
+      mcs_rng = np.random.default_rng(self._split_rng_seed)
+      mcs_fn = da_mcs_unif if self.method == "da_mcs_unif" else da_mcs_marg
+      mcs = mcs_fn(nll, alpha=self.alpha, randomize=True, rng=mcs_rng)
+      survivors = mcs["decision"]
+    return survivors, random_logliks_val
+
+  def _refit_survivors(self, X, y):
+    """Refit the selected survivors on the full training data, in parallel."""
     outer_n_jobs = self._adjust_estimators_num_threads(self._estimators)
     self._estimators = Parallel(n_jobs=outer_n_jobs)(
       delayed(lambda est: self._fit_estimator(est, X, y))(est)
       for est in self._estimators
     )
-    self._seeds = seeds
-    return self
 
   def _adjust_estimators_num_threads(self, estimators: list) -> int:
     """Allocate ``n_jobs`` across the outer (estimator) and inner (thread)

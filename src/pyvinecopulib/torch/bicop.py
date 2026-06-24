@@ -14,9 +14,7 @@ Three constructors are provided:
   2014; Nagler 2018), the non-parametric family the C++ library
   exposes as :data:`pyvinecopulib.families.tll`; this path matches
   the C++ ``pv.Bicop.from_data(u, family_set=[pv.families.tll])``
-  fit to machine precision. ``"vdc"`` plugs in the pretrained
-  amortized estimator of Safaai (2026) — see
-  :class:`FitControlsTorchBicop` for the citation and install notes.
+  fit to machine precision.
 * :meth:`TorchBicop.from_bicop` — lift a fitted C++
   :class:`pyvinecopulib.Bicop` (TLL family) into the torch backend.
   Useful when you already fit on the C++ side and want GPU /
@@ -68,7 +66,10 @@ class TorchBicop(torch.nn.Module):
       ``hinv1`` / ``hinv2`` at every grid node so subsequent calls
       are a single bilinear lookup (~80–300x faster with a ~1e-3
       mean IAE cost relative to the on-the-fly trapezoidal +
-      bisection path).
+      bisection path). The caches are built once at construction
+      from ``values`` and are not refreshed afterwards; mutating
+      ``interp_grid.values`` in place on a cached instance is
+      unsupported (rebuild a new ``TorchBicop`` instead).
   norm_times : int, default=3
       Number of margin-normalization rounds. Matches the C++
       default. Pass ``0`` to skip when the grid already integrates
@@ -228,10 +229,9 @@ class TorchBicop(torch.nn.Module):
   ) -> "TorchBicop":
     """Fits a bicop on pseudo-observations and wraps in a `TorchBicop`.
 
-    Dispatches on ``controls.method`` (``"tll"`` for pure-torch
+    Dispatches on ``controls.method`` (``"tll"``: pure-torch
     Transformed Local Likelihood, matching the C++ TLL fit to
-    machine precision; ``"vdc"`` for the pretrained amortized
-    estimator of Safaai, 2026).
+    machine precision).
 
     Parameters
     ----------
@@ -259,35 +259,22 @@ class TorchBicop(torch.nn.Module):
     if u_t.ndim != 2 or u_t.shape[1] != 2:
       raise ValueError(f"u must have shape (n, 2); got {tuple(u_t.shape)}")
 
-    if controls.method == "tll":
-      from ._fit_tll import fit_tll_constant
+    # ``method`` is validated to be "tll" by FitControlsTorchBicop; it is
+    # kept as the dispatch seam for future torch fitters.
+    from ._fit_tll import fit_tll_constant
 
-      grid_points, values = fit_tll_constant(
-        u_t,
-        grid_size=controls.grid_size,
-        mult=controls.mult,
-        grid_type=controls.grid_type,
-      )
-      return cls(
-        grid_points=grid_points,
-        values=values,
-        cache_integrals=cache_integrals,
-        norm_times=3,
-        is_linear=(controls.grid_type == "linear"),
-        device=device,
-        dtype=dtype,
-      )
-
-    # method == "vdc" — already validated by FitControlsTorchBicop.__post_init__.
-    from ._fit_vdc import fit_vdc
-
-    grid_points, values = fit_vdc(u_t, controls, device=device, dtype=dtype)
+    grid_points, values = fit_tll_constant(
+      u_t,
+      grid_size=controls.grid_size,
+      mult=controls.mult,
+      grid_type=controls.grid_type,
+    )
     return cls(
       grid_points=grid_points,
       values=values,
       cache_integrals=cache_integrals,
-      norm_times=0,  # vdc's IPFP has already enforced uniform marginals
-      is_linear=False,  # padded grid has 2 half-cells at the boundaries
+      norm_times=3,
+      is_linear=(controls.grid_type == "linear"),
       device=device,
       dtype=dtype,
     )
@@ -435,6 +422,35 @@ class TorchBicop(torch.nn.Module):
   # --------------------------------------------------------------------- #
 
   @torch.no_grad()
+  def _hinv_raw(self, u: Tensor, cond_var: int) -> Tensor:
+    """Shared inverse-h-function body for `hinv1` / `hinv2`.
+
+    ``cond_var=1`` solves ``H1(u1, x) = p`` for ``x`` (free column 1,
+    ``u = [u1, p]``); ``cond_var=2`` solves ``H2(x, u2) = p`` (free
+    column 0, ``u = [p, u2]``). With a precomputed cache this is one
+    bilinear interpolation; otherwise a fixed-iter vectorised ITP
+    root-finder over the on-the-fly h-function.
+    """
+    cache = self._hinv1_cache if cond_var == 1 else self._hinv2_cache
+    if cache is not None:
+      return self.interp_grid.interp_at(cache, u).clamp(0.0, 1.0)
+    if cond_var == 1:
+      fixed, p = u[:, 0:1], u[:, 1:2]
+    else:
+      fixed, p = u[:, 1:2], u[:, 0:1]
+
+    def fun(x: Tensor) -> Tensor:
+      u_eval = (
+        torch.cat([fixed, x], dim=-1)
+        if cond_var == 1
+        else torch.cat([x, fixed], dim=-1)
+      )
+      return self._hfunc_raw(u_eval, cond_var).unsqueeze(-1) - p
+
+    x = solve_itp(fun, x_a=torch.zeros_like(p), x_b=torch.ones_like(p))
+    return x.squeeze(-1).clamp(0.0, 1.0)
+
+  @torch.no_grad()
   def hinv1(self, u: Tensor) -> Tensor:
     """Inverts `hfunc1` w.r.t. the second argument.
 
@@ -458,17 +474,7 @@ class TorchBicop(torch.nn.Module):
     u = self._prep(u)
     if self.is_indep:
       return u[:, 1].clamp(_TRIM_LO, _TRIM_HI)
-    if self._hinv1_cache is not None:
-      return self.interp_grid.interp_at(self._hinv1_cache, u).clamp(0.0, 1.0)
-    a = u[:, 0:1]
-    p = u[:, 1:2]
-
-    def fun(x: Tensor) -> Tensor:
-      u_eval = torch.cat([a, x], dim=-1)
-      return self._hfunc_raw(u_eval, 1).unsqueeze(-1) - p
-
-    x = solve_itp(fun, x_a=torch.zeros_like(p), x_b=torch.ones_like(p))
-    return x.squeeze(-1).clamp(0.0, 1.0)
+    return self._hinv_raw(u, 1)
 
   @torch.no_grad()
   def hinv2(self, u: Tensor) -> Tensor:
@@ -492,17 +498,7 @@ class TorchBicop(torch.nn.Module):
     u = self._prep(u)
     if self.is_indep:
       return u[:, 0].clamp(_TRIM_LO, _TRIM_HI)
-    if self._hinv2_cache is not None:
-      return self.interp_grid.interp_at(self._hinv2_cache, u).clamp(0.0, 1.0)
-    p = u[:, 0:1]
-    b = u[:, 1:2]
-
-    def fun(x: Tensor) -> Tensor:
-      u_eval = torch.cat([x, b], dim=-1)
-      return self._hfunc_raw(u_eval, 2).unsqueeze(-1) - p
-
-    x = solve_itp(fun, x_a=torch.zeros_like(p), x_b=torch.ones_like(p))
-    return x.squeeze(-1).clamp(0.0, 1.0)
+    return self._hinv_raw(u, 2)
 
   # --------------------------------------------------------------------- #
   # Sampling                                                               #
