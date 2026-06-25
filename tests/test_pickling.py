@@ -1,6 +1,7 @@
 import pickle
 
 import numpy as np
+import pytest
 
 import pyvinecopulib as pv
 
@@ -12,6 +13,11 @@ from .helpers import (
   compare_vinecop,
   random_data,
 )
+
+
+def _custom_criterion(data: np.ndarray, weights: np.ndarray) -> float:
+  # Module-level (hence picklable) custom tree criterion.
+  return float(pv.utils.wdm(data[:, 0], data[:, 1], "tau"))
 
 
 def test_fitcontrolsbicop() -> None:
@@ -63,6 +69,7 @@ def test_fitcontrolsvinecop() -> None:
     "nonparametric_grid_size",
     "trunc_lvl",
     "tree_criterion",
+    "tree_criterion_function",
     "threshold",
     "selection_criterion",
     "psi0",
@@ -77,6 +84,22 @@ def test_fitcontrolsvinecop() -> None:
     "seeds",
   ]
   compare_properties(original_controls, deserialized_controls, attrs)
+
+
+def test_fitcontrolsvinecop_custom_criterion() -> None:
+  # A module-level custom criterion round-trips by reference; the getter
+  # returns the same object after unpickling.
+  original_controls = pv.FitControlsVinecop(tree_criterion="custom")
+  original_controls.tree_criterion_function = _custom_criterion
+
+  deserialized_controls = pickle.loads(pickle.dumps(original_controls))
+  assert deserialized_controls.tree_criterion == "custom"
+  assert deserialized_controls.tree_criterion_function is _custom_criterion
+
+  # A non-picklable callable (lambda) raises the standard pickling error.
+  original_controls.tree_criterion_function = lambda data, weights: 0.0
+  with pytest.raises((pickle.PicklingError, AttributeError)):
+    pickle.dumps(original_controls)
 
 
 def test_bicop() -> None:

@@ -2,6 +2,8 @@
 
 #include <nanobind/eigen/dense.h>
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/function.h>
+#include <nanobind/stl/optional.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/tuple.h>
 #include <nanobind/stl/vector.h>
@@ -70,6 +72,23 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
       .def_prop_rw("tree_criterion", &FitControlsVinecop::get_tree_criterion,
                    &FitControlsVinecop::set_tree_criterion,
                    fitcontrolsvinecop_doc.get_tree_criterion.doc)
+      .def_prop_rw(
+          "tree_criterion_function",
+          [](const FitControlsVinecop& controls)
+              -> std::optional<TreeCriterionFunction> {
+            auto f = controls.get_tree_criterion_function();
+            if (!f) {
+              return std::nullopt;
+            }
+            return f;
+          },
+          [](FitControlsVinecop& controls,
+             std::optional<TreeCriterionFunction> tree_criterion_function) {
+            controls.set_tree_criterion_function(tree_criterion_function
+                                                     ? *tree_criterion_function
+                                                     : TreeCriterionFunction{});
+          },
+          fitcontrolsvinecop_doc.get_tree_criterion_function.doc)
       .def_prop_rw("threshold", &FitControlsVinecop::get_threshold,
                    &FitControlsVinecop::set_threshold,
                    fitcontrolsvinecop_doc.get_threshold.doc)
@@ -143,6 +162,10 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
                  controls.get_nonparametric_grid_size();
              state["trunc_lvl"] = controls.get_trunc_lvl();
              state["tree_criterion"] = controls.get_tree_criterion();
+             // Empty std::function casts to None; a wrapped Python callable
+             // casts back to the original object (picklable if module-level).
+             state["tree_criterion_function"] =
+                 controls.get_tree_criterion_function();
              state["threshold"] = controls.get_threshold();
              state["selection_criterion"] = controls.get_selection_criterion();
              state["weights"] = controls.get_weights();
@@ -173,6 +196,12 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
             nb::cast<std::size_t>(state["nonparametric_grid_size"]);
         config.trunc_lvl = nb::cast<std::size_t>(state["trunc_lvl"]);
         config.tree_criterion = nb::cast<std::string>(state["tree_criterion"]);
+        // Guard the key so pre-feature pickles (without it) still load.
+        if (state.contains("tree_criterion_function") &&
+            !state["tree_criterion_function"].is_none()) {
+          config.tree_criterion_function =
+              nb::cast<TreeCriterionFunction>(state["tree_criterion_function"]);
+        }
         config.threshold = nb::cast<double>(state["threshold"]);
         config.selection_criterion =
             nb::cast<std::string>(state["selection_criterion"]);
