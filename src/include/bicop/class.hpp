@@ -2,6 +2,7 @@
 
 #include <nanobind/eigen/dense.h>
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/optional.h>
 #include <nanobind/stl/tuple.h>
 
 #include <vinecopulib.hpp>
@@ -67,6 +68,58 @@ Alternatives to instantiate bivariate copulas are:
 - ``Bicop.from_json()``: Instantiate from a JSON string.
 )""";
 
+  // `pdf` / `cdf` / `hfunc*` / `hinv*` / `loglik` each expose an optional
+  // `parameters` argument (vinecopulib#675): when omitted the copula's stored
+  // parameters are used (the original behaviour); when given an (n, p) matrix
+  // they are evaluated with a different parameter set per row of `u`. They are
+  // bound as a single Python method (rather than two overloads) so the
+  // generated `.pyi` stub carries the full signature. The base docstring is the
+  // libclang-extracted one for the stored-parameter form, extended with a note
+  // describing the per-row form.
+  const std::string per_row_note =
+      R"""(
+
+Notes
+-----
+If ``parameters`` is given, the copula is evaluated with a different parameter
+set per row of ``u`` instead of the stored parameters. ``parameters`` is then an
+``(n, p)`` array with one row per row of ``u`` and ``p == len(self.parameters)``
+columns, in the family's natural (unrotated) parameterization, and the
+evaluation may be parallelized over ``num_threads``. This is supported for
+parametric families only; a nonparametric family, a wrong shape, or non-finite
+or out-of-bounds values raise ``RuntimeError``.
+)""";
+  const std::string pdf_doc =
+      std::string(bicop_doc.pdf.doc_1args) + per_row_note;
+  const std::string cdf_doc =
+      std::string(bicop_doc.cdf.doc_1args) + per_row_note;
+  const std::string hfunc1_doc =
+      std::string(bicop_doc.hfunc1.doc_1args) + per_row_note;
+  const std::string hfunc2_doc =
+      std::string(bicop_doc.hfunc2.doc_1args) + per_row_note;
+  const std::string hinv1_doc =
+      std::string(bicop_doc.hinv1.doc_1args) + per_row_note;
+  const std::string hinv2_doc =
+      std::string(bicop_doc.hinv2.doc_1args) + per_row_note;
+  const std::string loglik_doc =
+      std::string(bicop_doc.loglik.doc_1args) + per_row_note;
+
+  // Dispatch helpers: pick the stored-parameter or per-row overload depending
+  // on whether `parameters` was supplied. Argument conversion (incl. the
+  // ndarray -> Eigen copy) happens before the GIL is released, so the lambda
+  // bodies only touch C++ types.
+  auto eval_with_optional_params =
+      [](Eigen::VectorXd (Bicop::*one)(const Eigen::MatrixXd&) const,
+         Eigen::VectorXd (Bicop::*many)(const Eigen::MatrixXd&,
+                                        const Eigen::MatrixXd&, size_t) const) {
+        return [one, many](const Bicop& self, const Eigen::MatrixXd& u,
+                           const std::optional<Eigen::MatrixXd>& parameters,
+                           size_t num_threads) -> Eigen::VectorXd {
+          if (parameters) return (self.*many)(u, *parameters, num_threads);
+          return (self.*one)(u);
+        };
+      };
+
   nb::class_<Bicop>(module, "Bicop", bicop_doc.doc)
       // Default constructor
       .def(nb::init<const BicopFamily, const int,
@@ -113,9 +166,17 @@ Alternatives to instantiate bivariate copulas are:
       .def_prop_ro("family", &Bicop::get_family, bicop_doc.get_family.doc)
       .def_prop_ro("tau", &Bicop::get_tau, bicop_doc.get_tau.doc)
       .def_prop_ro("npars", &Bicop::get_npars, bicop_doc.get_npars.doc)
-      .def("loglik", &Bicop::loglik,
-           "u"_a = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
-           bicop_doc.loglik.doc, nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "loglik",
+          [](const Bicop& self, const Eigen::MatrixXd& u,
+             const std::optional<Eigen::MatrixXd>& parameters,
+             size_t num_threads) -> double {
+            if (parameters) return self.loglik(u, *parameters, num_threads);
+            return self.loglik(u);
+          },
+          "u"_a = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
+          "parameters"_a = nb::none(), "num_threads"_a = static_cast<size_t>(1),
+          loglik_doc.c_str(), nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("nobs", &Bicop::get_nobs, bicop_doc.get_nobs.doc)
       .def("aic", &Bicop::aic,
            "u"_a = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
@@ -152,17 +213,29 @@ Alternatives to instantiate bivariate copulas are:
                    &Bicop::get_parameters_upper_bounds,
                    bicop_doc.get_parameters_upper_bounds.doc,
                    nb::call_guard<nb::gil_scoped_release>())
-      .def("pdf", &Bicop::pdf, "u"_a, bicop_doc.pdf.doc,
+      .def("pdf", eval_with_optional_params(&Bicop::pdf, &Bicop::pdf), "u"_a,
+           "parameters"_a = nb::none(),
+           "num_threads"_a = static_cast<size_t>(1), pdf_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
-      .def("cdf", &Bicop::cdf, "u"_a, bicop_doc.cdf.doc,
+      .def("cdf", eval_with_optional_params(&Bicop::cdf, &Bicop::cdf), "u"_a,
+           "parameters"_a = nb::none(),
+           "num_threads"_a = static_cast<size_t>(1), cdf_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
-      .def("hfunc1", &Bicop::hfunc1, "u"_a, bicop_doc.hfunc1.doc,
+      .def("hfunc1", eval_with_optional_params(&Bicop::hfunc1, &Bicop::hfunc1),
+           "u"_a, "parameters"_a = nb::none(),
+           "num_threads"_a = static_cast<size_t>(1), hfunc1_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
-      .def("hfunc2", &Bicop::hfunc2, "u"_a, bicop_doc.hfunc2.doc,
+      .def("hfunc2", eval_with_optional_params(&Bicop::hfunc2, &Bicop::hfunc2),
+           "u"_a, "parameters"_a = nb::none(),
+           "num_threads"_a = static_cast<size_t>(1), hfunc2_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
-      .def("hinv1", &Bicop::hinv1, "u"_a, bicop_doc.hinv1.doc,
+      .def("hinv1", eval_with_optional_params(&Bicop::hinv1, &Bicop::hinv1),
+           "u"_a, "parameters"_a = nb::none(),
+           "num_threads"_a = static_cast<size_t>(1), hinv1_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
-      .def("hinv2", &Bicop::hinv2, "u"_a, bicop_doc.hinv2.doc,
+      .def("hinv2", eval_with_optional_params(&Bicop::hinv2, &Bicop::hinv2),
+           "u"_a, "parameters"_a = nb::none(),
+           "num_threads"_a = static_cast<size_t>(1), hinv2_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("simulate", &Bicop::simulate, "n"_a, "qrng"_a = false,
            "seeds"_a = std::vector<int>(), bicop_doc.simulate.doc,
