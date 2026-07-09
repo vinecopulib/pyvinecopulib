@@ -26,6 +26,7 @@
 - Add a tutorial-style `docs/concepts.rst` introducing Sklar's theorem, pair-copula construction, R-vines, and the TLL family in a ~5-minute read (#218).
 - Use Sphinx autosummary on the four subpackage landing pages so module docstrings, classes, and free functions get their own indexed pages (#214).
 - Add a custom `tree_criterion` for vine structure selection: set `FitControlsVinecop(tree_criterion="custom")` and supply `tree_criterion_function`, a callable `f(data, weights) -> float` mapping a two-column array of pair pseudo-observations (and observation weights) to a scalar edge weight (its absolute value is used). The callable round-trips through pickle when it is picklable (e.g. a module-level function); calls acquire the GIL, so they serialise under `num_threads > 1` ([vinecopulib#674](https://github.com/vinecopulib/vinecopulib/pull/674)).
+- Add per-row-parameter overloads of `Bicop.pdf` / `cdf` / `hfunc1` / `hfunc2` / `hinv1` / `hinv2` / `loglik`: pass an `(n, p)` array of `parameters` (one row per observation, `p` family parameters each) plus an optional `num_threads` to evaluate the copula with a different parameter set per row in a single (optionally threaded) call, instead of reusing the object's stored parameters. Parametric families only ([vinecopulib#675](https://github.com/vinecopulib/vinecopulib/pull/675)).
 
 ### Build / packaging
 
@@ -58,9 +59,11 @@
 - Per-family parameter / rotation / tail-dependence documentation on the `BicopFamily` enum members, surfaced through the Python `families` subpackage (#214, [vinecopulib#668](https://github.com/vinecopulib/vinecopulib/pull/668)).
 - Numpydoc-compliant `//!` comments on every property getter / setter in the Python-binding surface, surfaced through the pyvinecopulib autosummary pages (#214, [vinecopulib#670](https://github.com/vinecopulib/vinecopulib/pull/670)).
 - Allow a custom `tree_criterion` function for vine structure selection ([vinecopulib#674](https://github.com/vinecopulib/vinecopulib/pull/674)).
+- Per-row parameter evaluation for parametric bivariate copulas: `Bicop::pdf` / `cdf` / `hfunc1` / `hfunc2` / `hinv1` / `hinv2` / `loglik` gain an overload taking an `n×p` parameter matrix (one set per observation) plus an optional thread count, backed by an eval-core refactor to a single parameter-aware leaf per family ([vinecopulib#675](https://github.com/vinecopulib/vinecopulib/pull/675)).
 
 #### BUG FIXES
 
+- Fix an out-of-bounds read in the mixed discrete/continuous h-inverse (`hinv2` for `{d, c}` copulas with a numeric inverse: Frank, BB1/6/7/8, Tawn) ([vinecopulib#675](https://github.com/vinecopulib/vinecopulib/pull/675)).
 - Fix `integrade_2d` numerical handling on the bivariate-copula CDF path ([vinecopulib#667](https://github.com/vinecopulib/vinecopulib/pull/667)).
 - Fix a typo in `pdf_d_d` and tighten the threshold under which the analytical derivative is preferred over the finite-difference fallback ([vinecopulib#664](https://github.com/vinecopulib/vinecopulib/pull/664)).
 - Drop an unused fit-controls option ([vinecopulib#662](https://github.com/vinecopulib/vinecopulib/pull/662)).

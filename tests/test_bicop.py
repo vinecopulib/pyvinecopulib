@@ -129,3 +129,106 @@ def test_bicop(unique_json_path: str) -> None:
   # Test select method
   controls = pv.FitControlsBicop()
   bicop.select(u, controls)
+
+
+_PER_ROW_METHODS = ["pdf", "cdf", "hfunc1", "hfunc2", "hinv1", "hinv2"]
+
+
+def _per_row_params(
+  cop: pv.Bicop, n: int, rng: np.random.RandomState
+) -> np.ndarray:
+  """Build an (n, p) matrix of valid per-row parameters around ``cop``'s."""
+  base = cop.parameters.ravel()
+  p = base.shape[0]
+  return base[None, :] * (1.0 + 0.1 * rng.uniform(-1.0, 1.0, size=(n, p)))
+
+
+@pytest.mark.parametrize(
+  ("family", "parameters", "rotation"),
+  [
+    (pv.families.clayton, np.array([[2.0]]), 0),
+    (pv.families.clayton, np.array([[2.5]]), 90),
+    (pv.families.bb1, np.array([[1.0], [1.5]]), 0),
+  ],
+)
+def test_bicop_per_row_parameters(
+  family: pv.BicopFamily, parameters: np.ndarray, rotation: int
+) -> None:
+  rng = np.random.RandomState(42)
+  n = 50
+  u = rng.uniform(0.05, 0.95, size=(n, 2))
+  cop = pv.Bicop(family=family, rotation=rotation, parameters=parameters)
+  p = cop.parameters.shape[0]
+  pars = _per_row_params(cop, n, rng)
+  pars_const = np.tile(cop.parameters.ravel(), (n, 1))
+
+  for method in _PER_ROW_METHODS:
+    fn = getattr(cop, method)
+    # Shape: (n, 2) data + (n, p) parameters -> (n,) output.
+    values = fn(u, pars)
+    assert isinstance(values, np.ndarray)
+    assert values.shape == (n,)
+
+    # Identity parity: constant per-row parameters equal to the object's own
+    # parameters reproduce the state-based (single-argument) result.
+    np.testing.assert_allclose(fn(u, pars_const), fn(u), rtol=1e-9, atol=1e-12)
+
+    # Threading must not change the result.
+    np.testing.assert_allclose(
+      fn(u, pars, num_threads=2), values, rtol=1e-12, atol=1e-14
+    )
+
+    # Strong per-row parity: row i with parameters pars[i] equals a fresh
+    # copula built with those parameters evaluated at row i.
+    for i in (0, n // 2, n - 1):
+      single = pv.Bicop(
+        family=family, rotation=rotation, parameters=pars[i].reshape(p, 1)
+      )
+      np.testing.assert_allclose(
+        values[i], getattr(single, method)(u[i : i + 1])[0], rtol=1e-9
+      )
+
+  # loglik with per-row parameters: scalar, NaN-ignoring sum of log-densities,
+  # and matches the state-based loglik under constant parameters.
+  ll = cop.loglik(u, pars)
+  assert isinstance(ll, float)
+  np.testing.assert_allclose(ll, np.nansum(np.log(cop.pdf(u, pars))), rtol=1e-9)
+  np.testing.assert_allclose(
+    cop.loglik(u, pars_const), cop.loglik(u), rtol=1e-9, atol=1e-12
+  )
+
+
+def test_bicop_per_row_parameters_errors() -> None:
+  rng = np.random.RandomState(0)
+  n = 20
+  u = rng.uniform(0.05, 0.95, size=(n, 2))
+  cop = pv.Bicop(family=pv.families.clayton, parameters=np.array([[2.0]]))
+  pars = _per_row_params(cop, n, rng)
+
+  # Nonparametric families are not supported.
+  data = rng.uniform(size=(200, 2))
+  tll = pv.Bicop.from_data(
+    data, pv.FitControlsBicop(family_set=[pv.families.tll])
+  )
+  with pytest.raises(RuntimeError):
+    tll.pdf(u, np.ones((n, 1)))
+
+  # Wrong number of parameter rows (must equal u.rows()).
+  with pytest.raises(RuntimeError):
+    cop.pdf(u, pars[:-1])
+
+  # Wrong number of parameter columns (must equal the family's parameter count).
+  with pytest.raises(RuntimeError):
+    cop.pdf(u, np.ones((n, 2)))
+
+  # Non-finite parameters are rejected.
+  pars_nan = pars.copy()
+  pars_nan[0, 0] = np.nan
+  with pytest.raises(RuntimeError):
+    cop.pdf(u, pars_nan)
+
+  # Out-of-bounds parameters are rejected.
+  pars_oob = pars.copy()
+  pars_oob[0, 0] = -5.0
+  with pytest.raises(RuntimeError):
+    cop.pdf(u, pars_oob)
