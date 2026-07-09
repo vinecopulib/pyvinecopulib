@@ -6,6 +6,7 @@
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
 
+#include <algorithm>  // For std::min
 #include <stdexcept>  // For std::invalid_argument
 #include <vinecopulib.hpp>
 
@@ -15,6 +16,28 @@
 namespace nb = nanobind;
 using namespace nb::literals;
 using namespace vinecopulib;
+
+// Convert a vinecopulib ``TriangularArray<T>`` to a nested Python list indexed
+// ``[tree][edge]``. Mirrors ``tools_serialization::triangular_array_to_json``:
+// there are ``min(d - 1, trunc_lvl)`` trees and tree ``i`` has ``d - 1 - i``
+// edges. Each element is cast to Python (an ``Eigen::VectorXd`` becomes a 1-d
+// ndarray; a ``std::vector<Eigen::MatrixXd>`` becomes a list of 2-d ndarrays).
+// Requires the GIL to be held (it builds Python objects).
+template <typename T>
+inline nb::list triangular_to_list(const TriangularArray<T>& array) {
+  const size_t d = array.get_dim();
+  const size_t trunc_lvl = array.get_trunc_lvl();
+  nb::list trees;
+  const size_t n_trees = (d >= 1) ? std::min(d - 1, trunc_lvl) : 0;
+  for (size_t i = 0; i < n_trees; ++i) {
+    nb::list edges;
+    for (size_t j = 0; j + 1 + i < d; ++j) {  // j < d - 1 - i, underflow-safe
+      edges.append(nb::cast(array(i, j)));
+    }
+    trees.append(edges);
+  }
+  return trees;
+}
 
 inline void vinecop_plot_wrapper(const Vinecop& cop, nb::object tree,
                                  bool add_edge_labels,
@@ -125,6 +148,34 @@ are:
       Fit controls for the vinecop. Defaults to the default constructor.
   )""";
 
+  // Supplied inline rather than via the generated docstring: the C++ facade
+  // returns a ``PdfWithHfuncsResult`` struct (whose inline definition trips up
+  // the libclang docstring extractor), whereas the Python method returns a
+  // dict. This documents the actual Python return.
+  const char* pdf_full_doc =
+      R"""(Evaluates the vine copula density and, optionally, the per-edge densities and h-functions.
+
+Parameters
+----------
+u : ndarray, shape (n, d) or (n, 2 * d), dtype float
+    Evaluation points in (0, 1); additional columns are required for discrete
+    variables (see ``Vinecop.select``).
+num_threads : int, default 1
+    Number of threads to parallelize the row-wise evaluation over.
+keep_all : bool, default True
+    If True, also return the per-edge densities and h-functions.
+
+Returns
+-------
+dict
+    A dict with key ``"pdf"`` (an ndarray of length n, the copula density). If
+    ``keep_all`` is True, it also contains ``"pdf_edges"``, ``"hfunc1"``,
+    ``"hfunc2"``, ``"hfunc1_sub"`` and ``"hfunc2_sub"``, each a nested list
+    indexed ``[tree][edge]`` of length-n arrays. The ``_sub`` fields hold the
+    left-limit h-functions and are only populated when at least one variable is
+    discrete.
+)""";
+
   const char* from_structure_doc = R"""(
   Factory function to create a Vinecop using either a structure or a matrix.
 
@@ -234,6 +285,29 @@ are:
            nb::call_guard<nb::gil_scoped_release>())
       .def("pdf", &Vinecop::pdf, "u"_a, "num_threads"_a = 1,
            vinecop_doc.pdf.doc, nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "pdf_full",
+          [](const Vinecop& cop, Eigen::MatrixXd u, size_t num_threads,
+             bool keep_all) -> nb::dict {
+            Vinecop::PdfWithHfuncsResult res;
+            {
+              // Release the GIL only around the C++ computation; the dict /
+              // list construction below must hold it.
+              nb::gil_scoped_release release;
+              res = cop.pdf_full(std::move(u), num_threads, keep_all);
+            }
+            nb::dict out;
+            out["pdf"] = nb::cast(res.pdf);
+            if (keep_all) {
+              out["pdf_edges"] = triangular_to_list(res.pdf_edges);
+              out["hfunc1"] = triangular_to_list(res.hfunc1);
+              out["hfunc2"] = triangular_to_list(res.hfunc2);
+              out["hfunc1_sub"] = triangular_to_list(res.hfunc1_sub);
+              out["hfunc2_sub"] = triangular_to_list(res.hfunc2_sub);
+            }
+            return out;
+          },
+          "u"_a, "num_threads"_a = 1, "keep_all"_a = true, pdf_full_doc)
       .def("cdf", &Vinecop::cdf, "u"_a, "N"_a = 10000, "num_threads"_a = 1,
            "seeds"_a = std::vector<int>(), vinecop_doc.cdf.doc,
            nb::call_guard<nb::gil_scoped_release>())
@@ -256,6 +330,30 @@ are:
       .def("mbicv", &Vinecop::mbicv, "u"_a = Eigen::MatrixXd(), "psi0"_a = 0.9,
            "num_threads"_a = 1, vinecop_doc.mbicv.doc,
            nb::call_guard<nb::gil_scoped_release>())
+      .def("scores", &Vinecop::scores, "u"_a, "step_wise"_a = true,
+           "num_threads"_a = 1, vinecop_doc.scores.doc,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("hessian_avg", &Vinecop::hessian_avg, "u"_a, "step_wise"_a = true,
+           "num_threads"_a = 1, vinecop_doc.hessian_avg.doc,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("scores_cov", &Vinecop::scores_cov, "u"_a, "step_wise"_a = true,
+           "num_threads"_a = 1, vinecop_doc.scores_cov.doc,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "hessian",
+          [](Vinecop& cop, Eigen::MatrixXd u, bool step_wise,
+             size_t num_threads) -> nb::list {
+            TriangularArray<std::vector<Eigen::MatrixXd>> hess;
+            {
+              // Release the GIL only around the C++ computation; the nested
+              // list construction below must hold it.
+              nb::gil_scoped_release release;
+              hess = cop.hessian(std::move(u), step_wise, num_threads);
+            }
+            return triangular_to_list(hess);
+          },
+          "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
+          vinecop_doc.hessian.doc)
       .def(
           "__repr__",
           [](const Vinecop& cop) {
