@@ -18,25 +18,13 @@ using namespace nb::literals;
 using namespace vinecopulib;
 
 // Convert a vinecopulib ``TriangularArray<T>`` to a nested Python list indexed
-// ``[tree][edge]``. Mirrors ``tools_serialization::triangular_array_to_json``:
-// there are ``min(d - 1, trunc_lvl)`` trees and tree ``i`` has ``d - 1 - i``
-// edges. Each element is cast to Python (an ``Eigen::VectorXd`` becomes a 1-d
-// ndarray; a ``std::vector<Eigen::MatrixXd>`` becomes a list of 2-d ndarrays).
-// Requires the GIL to be held (it builds Python objects).
+// ``[tree][edge]`` via ``TriangularArray::to_list()``. An ``Eigen::VectorXd``
+// element becomes a 1-d ndarray; a ``std::vector<Eigen::MatrixXd>`` element
+// becomes a list of 2-d ndarrays. Requires the GIL to be held (it builds
+// Python objects).
 template <typename T>
 inline nb::list triangular_to_list(const TriangularArray<T>& array) {
-  const size_t d = array.get_dim();
-  const size_t trunc_lvl = array.get_trunc_lvl();
-  nb::list trees;
-  const size_t n_trees = (d >= 1) ? std::min(d - 1, trunc_lvl) : 0;
-  for (size_t i = 0; i < n_trees; ++i) {
-    nb::list edges;
-    for (size_t j = 0; j + 1 + i < d; ++j) {  // j < d - 1 - i, underflow-safe
-      edges.append(nb::cast(array(i, j)));
-    }
-    trees.append(edges);
-  }
-  return trees;
+  return nb::steal<nb::list>(nb::cast(array.to_list()).release());
 }
 
 inline void vinecop_plot_wrapper(const Vinecop& cop, nb::object tree,
@@ -273,6 +261,13 @@ dict
       .def_prop_ro("npars", &Vinecop::get_npars, vinecop_doc.get_npars.doc)
       .def_prop_ro("matrix", &Vinecop::get_matrix, vinecop_doc.get_matrix.doc,
                    nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "get_struct_array",
+          [](const Vinecop& cop, bool natural_order) -> nb::list {
+            return triangular_to_list(cop.get_struct_array(natural_order));
+          },
+          "natural_order"_a = false,
+          struct_array_list_doc(vinecop_doc.get_struct_array.doc).c_str())
       .def_prop_ro("nobs", &Vinecop::get_nobs, vinecop_doc.get_nobs.doc)
       .def_prop_ro("threshold", &Vinecop::get_threshold,
                    vinecop_doc.get_threshold.doc)

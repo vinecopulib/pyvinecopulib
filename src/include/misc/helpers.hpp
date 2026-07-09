@@ -18,6 +18,20 @@ inline std::string python_doc_helper(const std::string& module,
   }
 }
 
+// Appends a note to the generated docstring of a method that takes or returns
+// a vinecopulib ``TriangularArray``: the Python binding represents it as a
+// nested list.
+inline std::string struct_array_list_doc(const char* base_doc) {
+  return std::string(base_doc) +
+         R"""(
+
+Notes
+-----
+The triangular array is represented in Python as a nested list indexed
+``[tree][edge]``, where tree ``i`` holds ``d - 1 - i`` entries.
+)""";
+}
+
 // template<typename T>
 // inline std::string
 // python_str_helper(const T& obj, const std::string& label)

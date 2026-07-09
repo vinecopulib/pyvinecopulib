@@ -291,3 +291,38 @@ def test_vinecop_scores_and_hessian() -> None:
       assert isinstance(mat, np.ndarray) and mat.ndim == 2
 
   _check_triangular(cop.hessian(u), d, _is_matrix_list)
+
+
+def test_struct_array_accessors_and_factory() -> None:
+  d, n = 5, 200
+  u = pv.to_pseudo_obs(random_data(d, n))
+  cop = pv.Vinecop.from_data(
+    u, controls=pv.FitControlsVinecop(family_set=[pv.families.gaussian])
+  )
+  structure = cop.structure
+
+  for natural_order in (False, True):
+    # get_struct_array returns a [tree][edge] nested list matching the
+    # per-entry accessor.
+    arr = structure.get_struct_array(natural_order=natural_order)
+    assert isinstance(arr, list) and len(arr) == d - 1
+    for t, tree in enumerate(arr):
+      assert isinstance(tree, list)
+      assert len(tree) == d - 1 - t
+      for e, entry in enumerate(tree):
+        assert entry == structure.struct_array(
+          t, e, natural_order=natural_order
+        )
+
+    # The vine's convenience accessor matches its structure's.
+    assert cop.get_struct_array(natural_order=natural_order) == arr
+
+    # from_struct_array(order, struct_array) rebuilds the same structure.
+    rebuilt = pv.RVineStructure.from_struct_array(
+      structure.order, arr, natural_order=natural_order
+    )
+    assert np.array_equal(rebuilt.matrix, structure.matrix)
+
+  # Rows that do not form a triangular array are rejected.
+  with pytest.raises(RuntimeError):
+    pv.RVineStructure.from_struct_array(structure.order, [[1, 2], [3, 4]])

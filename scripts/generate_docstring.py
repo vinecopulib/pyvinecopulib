@@ -1284,9 +1284,15 @@ def extract(include_file_map, cursor, symbol_tree, deprecations=None):
       # `choose_doc_var_names` cannot disambiguate and falls back to
       # `doc_was_unable_to_choose_unambiguous_names`. The type-signature
       # check guards against accidentally collapsing legitimate
-      # overloads whose USR happens to collide.
+      # overloads whose USR happens to collide; it compares *canonical*
+      # spellings because a class-nested return type is spelled
+      # differently at the in-class declaration (`Result (...)`) and the
+      # out-of-class definition (`Foo::Result (...)`) — e.g.
+      # `Vinecop::PdfWithHfuncsResult Vinecop::pdf_full(...)`.
       usr = cursor.get_usr() if hasattr(cursor, "get_usr") else None
-      cursor_type = cursor.type.spelling if cursor.type is not None else ""
+      cursor_type = (
+        cursor.type.get_canonical().spelling if cursor.type is not None else ""
+      )
       if usr:
         for j, existing in enumerate(node.doc_symbols):
           existing_usr = (
@@ -1295,7 +1301,7 @@ def extract(include_file_map, cursor, symbol_tree, deprecations=None):
             else None
           )
           existing_type = (
-            existing.cursor.type.spelling
+            existing.cursor.type.get_canonical().spelling
             if existing.cursor.type is not None
             else ""
           )
