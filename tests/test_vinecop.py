@@ -198,3 +198,131 @@ def test_custom_criterion_multithread_smoke() -> None:
   cop2 = pv.Vinecop.from_data(u, controls=c2)
 
   assert np.array_equal(cop1.matrix, cop2.matrix)
+
+
+def _check_triangular(arr: object, d: int, leaf_check) -> None:
+  """Validate a ``[tree][edge]`` nested list: tree ``i`` has ``d - 1 - i``
+  entries, each passing ``leaf_check``. isinstance narrowing at every level
+  keeps the (untyped) dict/list contents type-checkable."""
+  assert isinstance(arr, list)
+  for i, tree in enumerate(arr):
+    assert isinstance(tree, list)
+    assert len(tree) == d - 1 - i
+    for leaf in tree:
+      leaf_check(leaf)
+
+
+def test_vinecop_pdf_full() -> None:
+  d, n = 4, 200
+  u = pv.to_pseudo_obs(random_data(d, n))
+  cop = pv.Vinecop.from_data(
+    u, controls=pv.FitControlsVinecop(family_set=[pv.families.gaussian])
+  )
+
+  # keep_all=True (default): dict with the density + per-edge triangular arrays.
+  full = cop.pdf_full(u)
+  assert isinstance(full, dict)
+  assert set(full) == {
+    "pdf",
+    "pdf_edges",
+    "hfunc1",
+    "hfunc2",
+    "hfunc1_sub",
+    "hfunc2_sub",
+  }
+  assert isinstance(full["pdf"], np.ndarray) and full["pdf"].shape == (n,)
+  np.testing.assert_allclose(full["pdf"], cop.pdf(u), rtol=1e-10, atol=1e-12)
+
+  # Triangular arrays are nested lists [tree][edge], with d - 1 edges in tree 0
+  # and one fewer per subsequent tree. Per-edge densities are always length n;
+  # h-functions are only filled where the cascade needs them (unneeded edges are
+  # returned empty).
+  def _is_len_n_vector(vec: object) -> None:
+    assert isinstance(vec, np.ndarray) and vec.shape == (n,)
+
+  def _is_edge_vector(vec: object) -> None:
+    assert isinstance(vec, np.ndarray) and vec.shape in ((n,), (0,))
+
+  _check_triangular(full["pdf_edges"], d, _is_len_n_vector)
+  for key in ("hfunc1", "hfunc2", "hfunc1_sub", "hfunc2_sub"):
+    _check_triangular(full[key], d, _is_edge_vector)
+
+  # keep_all=False: only the density.
+  simple = cop.pdf_full(u, keep_all=False)
+  assert set(simple) == {"pdf"}
+  np.testing.assert_allclose(simple["pdf"], cop.pdf(u), rtol=1e-10, atol=1e-12)
+
+  # num_threads must not change the result.
+  np.testing.assert_allclose(
+    cop.pdf_full(u, num_threads=2)["pdf"], full["pdf"], rtol=1e-12, atol=1e-14
+  )
+
+
+def test_vinecop_scores_and_hessian() -> None:
+  d, n = 4, 200
+  u = pv.to_pseudo_obs(random_data(d, n))
+  cop = pv.Vinecop.from_data(
+    u, controls=pv.FitControlsVinecop(family_set=[pv.families.gaussian])
+  )
+
+  # scores: one row per observation, one column per parameter.
+  scores = cop.scores(u)
+  assert isinstance(scores, np.ndarray) and scores.ndim == 2
+  assert scores.shape[0] == n
+  p = scores.shape[1]
+  assert p == round(cop.npars)
+
+  # scores_cov / hessian_avg: (p, p) matrices; scores_cov is symmetric.
+  cov = cop.scores_cov(u)
+  assert cov.shape == (p, p)
+  np.testing.assert_allclose(cov, cov.T, rtol=1e-10, atol=1e-12)
+  assert cop.hessian_avg(u).shape == (p, p)
+
+  # step_wise=False and threading run and are consistent.
+  assert cop.scores(u, step_wise=False).shape == (n, p)
+  np.testing.assert_allclose(
+    cop.scores(u, num_threads=2), scores, rtol=1e-10, atol=1e-12
+  )
+
+  # Per-observation hessian: nested lists [tree][edge], each a list of matrices.
+  def _is_matrix_list(leaf: object) -> None:
+    assert isinstance(leaf, list)
+    for mat in leaf:
+      assert isinstance(mat, np.ndarray) and mat.ndim == 2
+
+  _check_triangular(cop.hessian(u), d, _is_matrix_list)
+
+
+def test_struct_array_accessors_and_factory() -> None:
+  d, n = 5, 200
+  u = pv.to_pseudo_obs(random_data(d, n))
+  cop = pv.Vinecop.from_data(
+    u, controls=pv.FitControlsVinecop(family_set=[pv.families.gaussian])
+  )
+  structure = cop.structure
+
+  for natural_order in (False, True):
+    # get_struct_array returns a [tree][edge] nested list matching the
+    # per-entry accessor.
+    arr = structure.get_struct_array(natural_order=natural_order)
+    assert isinstance(arr, list) and len(arr) == d - 1
+    for t, tree in enumerate(arr):
+      assert isinstance(tree, list)
+      assert len(tree) == d - 1 - t
+      for e, entry in enumerate(tree):
+        assert entry == structure.struct_array(
+          t, e, natural_order=natural_order
+        )
+
+    # The vine's convenience accessor matches its structure's.
+    assert cop.get_struct_array(natural_order=natural_order) == arr
+
+    # from_struct_array(order, struct_array) rebuilds the same structure.
+    rebuilt = pv.RVineStructure.from_struct_array(
+      structure.order, arr, natural_order=natural_order
+    )
+    assert np.array_equal(rebuilt.matrix, structure.matrix)
+
+  # Rows that do not form a triangular array are rejected.
+  with pytest.raises(RuntimeError):
+    pv.RVineStructure.from_struct_array(structure.order, [[1, 2], [3, 4]])

@@ -9,6 +9,7 @@
 #include <vinecopulib.hpp>
 
 #include "docstr.hpp"
+#include "misc/helpers.hpp"
 
 namespace nb = nanobind;
 using namespace nb::literals;
@@ -33,6 +34,16 @@ inline RVineStructure rv_from_order(
     const std::vector<size_t>& order,
     size_t trunc_lvl = std::numeric_limits<size_t>::max(), bool check = true) {
   return RVineStructure(order, trunc_lvl, check);
+}
+
+// Factory function to create RVineStructure from an order vector and a
+// structure array given as nested rows (tree i holds d - 1 - i entries)
+inline RVineStructure rv_from_struct_array(
+    const std::vector<size_t>& order,
+    const std::vector<std::vector<size_t>>& struct_array,
+    bool natural_order = false, bool check = true) {
+  return RVineStructure(order, TriangularArray<size_t>(struct_array),
+                        natural_order, check);
 }
 
 // Factory function to create RVineStructure from a file
@@ -62,6 +73,7 @@ Alternatives to instantiate structures are:
 
 - ``RVineStructure.from_order()``: Instantiate from an order vector.
 - ``RVineStructure.from_matrix()``: Instantiate from a matrix.
+- ``RVineStructure.from_struct_array()``: Instantiate from an order vector and a structure array.
 - ``RVineStructure.from_file()``: Instantiate from a file.
 - ``RVineStructure.from_json()``: Instantiate from a JSON string.
 )""";
@@ -83,6 +95,13 @@ Alternatives to instantiate structures are:
                   "trunc_lvl"_a = std::numeric_limits<size_t>::max(),
                   "check"_a = true,
                   rvinestructure_doc.ctor.doc_3args_order_trunc_lvl_check,
+                  nb::call_guard<nb::gil_scoped_release>())
+      .def_static("from_struct_array", &rv_from_struct_array, "order"_a,
+                  "struct_array"_a, "natural_order"_a = false, "check"_a = true,
+                  struct_array_list_doc(
+                      rvinestructure_doc.ctor
+                          .doc_4args_order_struct_array_natural_order_check)
+                      .c_str(),
                   nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_file", &rv_from_file, "filename"_a, "check"_a = true,
                   rvinestructure_doc.ctor.doc_2args_filename_check,
@@ -113,6 +132,14 @@ Alternatives to instantiate structures are:
       .def("struct_array", &RVineStructure::struct_array, "tree"_a, "edge"_a,
            "natural_order"_a = false, rvinestructure_doc.struct_array.doc,
            nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "get_struct_array",
+          [](const RVineStructure& rvs, bool natural_order) -> nb::list {
+            return triangular_to_list(rvs.get_struct_array(natural_order));
+          },
+          "natural_order"_a = false,
+          struct_array_list_doc(rvinestructure_doc.get_struct_array.doc)
+              .c_str())
       .def("min_array", &RVineStructure::min_array, "tree"_a, "edge"_a,
            rvinestructure_doc.min_array.doc,
            nb::call_guard<nb::gil_scoped_release>())
