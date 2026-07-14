@@ -1128,6 +1128,30 @@ def process_comment(comment, cursor=None):
           wrapper.initial_indent = wrapper.subsequent_indent = ""
           continue
 
+        # Convert Markdown pipe tables (used in upstream Doxygen comments,
+        # e.g. Bicop::parameters_to_taildep) to RST list-tables. Reflowing
+        # a pipe table would otherwise emit lines starting with "|", which
+        # RST parses as a (broken) line block. Cells must not themselves
+        # contain "|" (true for the upstream tables).
+        stripped_lines = [ln.strip() for ln in lines if ln.strip()]
+        if len(stripped_lines) >= 2 and all(
+          ln.startswith("|") and ln.count("|") >= 3 for ln in stripped_lines
+        ):
+          rows = []
+          for ln in stripped_lines:
+            cells = [
+              c.strip().rstrip("\\").strip() for c in ln.strip("|").split("|")
+            ]
+            if all(re.fullmatch(r":?-{3,}:?", c) for c in cells):
+              continue  # the header/body separator row
+            rows.append(cells)
+          table = ".. list-table::\n   :header-rows: 1\n\n"
+          for row in rows:
+            table += "   * - " + "\n     - ".join(row) + "\n"
+          result += table + "\n"
+          wrapper.initial_indent = wrapper.subsequent_indent = ""
+          continue
+
         # Do not reflow lists or section headings.
 
         if re.match(r"^\s*(?:[*+\-]|[0-9]+[.)]) ", lines[0]) or (
