@@ -64,7 +64,7 @@ Alternatives to instantiate bivariate copulas are:
 
 - ``Bicop.from_family()``: Instantiate from a family, rotation, parameters, and variable types.
 - ``Bicop.from_data()``: Instantiate from data, as well as optional controls and variable types.
-- ``Bicop.from_file()``: Instantiate from a file.
+- ``Bicop.from_file()``: Instantiate from a JSON file, or a CBOR file when the filename ends in ``.cbor``.
 - ``Bicop.from_json()``: Instantiate from a JSON string.
 )""";
 
