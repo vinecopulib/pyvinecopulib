@@ -70,4 +70,5 @@ inline void init_bicop_family(nb::module_& module) {
   module.attr("lt") = bicop_families::lt;
   module.attr("ut") = bicop_families::ut;
   module.attr("itau") = bicop_families::itau;
+  module.attr("analytic_derivs") = bicop_families::analytic_derivs;
 }
