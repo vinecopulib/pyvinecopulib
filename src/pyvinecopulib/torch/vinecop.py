@@ -784,18 +784,12 @@ class TorchVinecop(torch.nn.Module):
     for t in range(trunc_lvl):
       lvl = bv.level(t)
       u_e = lvl.gather_inputs(hfunc1, hfunc2)  # (N_t, n, 2)
-      log_pdf = log_pdf + lvl.log_pdf(
-        bv.grid_points, u_e, bv.cell_lookup, bv.max_advance
-      ).sum(dim=0)
+      log_pdf = log_pdf + lvl.log_pdf(bv.grid_points, u_e).sum(dim=0)
       # Update next-tree inputs: compute h1/h2 for every pair, then
       # selectively overwrite columns whose needs_h{1,2} flag is set.
       N_t = lvl.n_pairs
-      h1_new = lvl.hfunc1(
-        bv.grid_points, u_e, bv.cell_lookup, bv.max_advance
-      ).t()  # (n, N_t)
-      h2_new = lvl.hfunc2(
-        bv.grid_points, u_e, bv.cell_lookup, bv.max_advance
-      ).t()
+      h1_new = lvl.hfunc1(bv.grid_points, u_e).t()  # (n, N_t)
+      h2_new = lvl.hfunc2(bv.grid_points, u_e).t()
       hfunc1[:, :N_t] = torch.where(
         lvl.needs_h1[None, :], h1_new, hfunc1[:, :N_t]
       )
@@ -824,12 +818,8 @@ class TorchVinecop(torch.nn.Module):
       lvl = bv.level(t)
       u_e = lvl.gather_inputs(hfunc1, hfunc2)
       N_t = lvl.n_pairs
-      h1_new = lvl.hfunc1(
-        bv.grid_points, u_e, bv.cell_lookup, bv.max_advance
-      ).t()
-      h2_new = lvl.hfunc2(
-        bv.grid_points, u_e, bv.cell_lookup, bv.max_advance
-      ).t()
+      h1_new = lvl.hfunc1(bv.grid_points, u_e).t()
+      h2_new = lvl.hfunc2(bv.grid_points, u_e).t()
       # hfunc2 is unconditionally overwritten at every edge in the
       # cascade (`hfunc2[:, edge] = cop.hfunc2(u_e)`); hfunc1 is
       # gated by needs_h1.

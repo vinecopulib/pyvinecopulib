@@ -18,14 +18,11 @@ torch = pytest.importorskip("torch")
 
 from pyvinecopulib.torch import TorchBicop  # noqa: E402
 from pyvinecopulib.torch._batched import (  # noqa: E402
-  _batched_cell_index,
-  _build_cell_lookup,
   int_on_grid_batched,
   integrate_1d_batched,
   integrate_2d_batched,
   interpolate_batched,
 )
-from pyvinecopulib.torch._interp import InterpolationGrid2D  # noqa: E402
 
 
 def _fit_tll_bicop(seed: int) -> pv.Bicop:
@@ -115,60 +112,3 @@ def test_integrate_2d_batched_matches_unbatched() -> None:
   out = integrate_2d_batched(grid_points, values, u_batch).numpy()
   ref = np.stack([bc.interp_grid.integrate_2d(u_t).numpy() for bc in bcs])
   np.testing.assert_allclose(out, ref, atol=1e-13, rtol=1e-13)
-
-
-@pytest.mark.parametrize("m", [30, 64])
-def test_bucket_cell_index_matches_searchsorted(m: int) -> None:
-  """The vinecopulib#691 bucket path returns exactly the same cell index as
-  the ``searchsorted`` fallback, on the Phi-spaced normal grid and on an
-  arbitrary ascending grid (incl. exact-knot queries)."""
-  normal = InterpolationGrid2D.make_grid_points("normal", m)
-  # An arbitrary ascending grid on [0, 1] (endpoints pinned like the ctor).
-  rng = np.random.default_rng(m)
-  interior = np.sort(rng.uniform(0.01, 0.99, size=m - 2))
-  arbitrary = torch.tensor([0.0, *interior.tolist(), 1.0], dtype=torch.float64)
-
-  for grid_points in (normal, arbitrary):
-    cell_lookup, max_advance = _build_cell_lookup(grid_points)
-    # Random queries plus every exact knot (the boundary case where the
-    # right=False convention and the guarded advance interact).
-    u_rand = torch.from_numpy(rng.uniform(0.0, 1.0, size=(4, 500)))
-    u = torch.cat([u_rand, grid_points.expand(4, m)], dim=1)
-
-    ref = _batched_cell_index(grid_points, u)  # searchsorted path
-    got = _batched_cell_index(
-      grid_points, u, cell_lookup=cell_lookup, max_advance=max_advance
-    )
-    assert torch.equal(got, ref)
-
-
-def test_cell_lookup_wired_grid_matches_searchsorted() -> None:
-  """A grid with the bucket table attached (the ``CELL_LOOKUP_ENABLED``
-  production path) produces byte-identical eval outputs to the default
-  searchsorted grid — guards the opt-in wiring even though it is off by
-  default."""
-  cop = _fit_tll_bicop(seed=7)
-  bc = TorchBicop.from_bicop(cop, cache_integrals=False)
-  grid = bc.interp_grid  # searchsorted (cell_lookup is None by default)
-  assert grid.cell_lookup is None
-
-  # Same grid with the table attached (what CELL_LOOKUP_ENABLED builds).
-  wired = TorchBicop.from_bicop(cop, cache_integrals=False).interp_grid
-  wired.cell_lookup, wired.max_advance = _build_cell_lookup(wired.grid_points)
-
-  u = torch.from_numpy(_eval_grid(400, seed=8))
-  np.testing.assert_array_equal(
-    grid.interpolate(u).numpy(), wired.interpolate(u).numpy()
-  )
-  for cond_var in (1, 2):
-    np.testing.assert_array_equal(
-      grid.integrate_1d(u, cond_var).numpy(),
-      wired.integrate_1d(u, cond_var).numpy(),
-    )
-    np.testing.assert_array_equal(
-      grid.inverse_integrate_1d(u, cond_var).numpy(),
-      wired.inverse_integrate_1d(u, cond_var).numpy(),
-    )
-  np.testing.assert_array_equal(
-    grid.integrate_2d(u).numpy(), wired.integrate_2d(u).numpy()
-  )

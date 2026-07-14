@@ -17,9 +17,7 @@ from torch import Tensor
 # scalar methods below are thin ``N=1`` wrappers so there is a single
 # source of truth for the numerics shared with the batched vine cascade.
 from ._batched import (
-  CELL_LOOKUP_ENABLED,
   _batched_cell_index,
-  _build_cell_lookup,
   int_on_grid_batched,
   integrate_1d_batched,
   integrate_2d_batched,
@@ -52,7 +50,6 @@ class InterpolationGrid2D(torch.nn.Module):
 
   values: Tensor
   grid_points: Tensor
-  cell_lookup: Tensor | None
 
   def __init__(
     self,
@@ -81,18 +78,6 @@ class InterpolationGrid2D(torch.nn.Module):
     # (with the endpoint clamp above leaving it unchanged), so cell-finding is
     # O(1) — ``floor(u * (m - 1))`` — instead of an O(log m) ``searchsorted``.
     self._is_linear = bool(is_linear)
-    # Bucket acceleration table for the non-linear grid (vinecopulib#691):
-    # O(1) cell search replacing ``searchsorted``. Opt-in via
-    # CELL_LOOKUP_ENABLED; skipped for the linear grid (floor path) and
-    # degenerate grids. A registered buffer so it moves with ``.to()``;
-    # ``max_advance`` is the fixed guarded-advance length.
-    if is_linear or grid_points.shape[0] < 2 or not CELL_LOOKUP_ENABLED:
-      self.register_buffer("cell_lookup", None)
-      self.max_advance = 0
-    else:
-      cell_lookup, max_advance = _build_cell_lookup(self.grid_points)
-      self.register_buffer("cell_lookup", cell_lookup)
-      self.max_advance = max_advance
     self.normalize_margins(norm_times, tol=norm_tol)
 
   # --------------------------------------------------------------------- #
@@ -228,9 +213,7 @@ class InterpolationGrid2D(torch.nn.Module):
 
   def _cell_index(self, u: Tensor) -> Tensor:
     """Cell index for each value of ``u`` (shape preserved), clamped to ``[0, m-2]``."""
-    return _batched_cell_index(
-      self.grid_points, u, self._is_linear, self.cell_lookup, self.max_advance
-    )
+    return _batched_cell_index(self.grid_points, u, self._is_linear)
 
   def _int_on_grid(self, upr: Tensor, vals: Tensor) -> Tensor:
     """Vectorized trapezoidal integral of `(grid_points, vals)` from 0 to ``upr``.
@@ -239,14 +222,7 @@ class InterpolationGrid2D(torch.nn.Module):
     source of truth). ``upr`` has shape ``(*B,)`` and ``vals`` shape
     ``(*B, m)``; returns shape ``(*B,)``.
     """
-    return int_on_grid_batched(
-      self.grid_points,
-      upr,
-      vals,
-      self._is_linear,
-      self.cell_lookup,
-      self.max_advance,
-    )
+    return int_on_grid_batched(self.grid_points, upr, vals, self._is_linear)
 
   # --------------------------------------------------------------------- #
   # Public eval API                                                        #
@@ -268,8 +244,6 @@ class InterpolationGrid2D(torch.nn.Module):
       self.values.unsqueeze(0),
       u.unsqueeze(0),
       self._is_linear,
-      self.cell_lookup,
-      self.max_advance,
     ).squeeze(0)
 
   def integrate_1d(self, u: Tensor, cond_var: int) -> Tensor:
@@ -286,8 +260,6 @@ class InterpolationGrid2D(torch.nn.Module):
       u.unsqueeze(0),
       cond_var,
       self._is_linear,
-      self.cell_lookup,
-      self.max_advance,
     ).squeeze(0)
 
   def integrate_2d(self, u: Tensor) -> Tensor:
@@ -305,8 +277,6 @@ class InterpolationGrid2D(torch.nn.Module):
       self.values.unsqueeze(0),
       u.unsqueeze(0),
       self._is_linear,
-      self.cell_lookup,
-      self.max_advance,
     ).squeeze(0)
 
   def inverse_integrate_1d(self, u: Tensor, cond_var: int) -> Tensor:
@@ -437,10 +407,5 @@ class InterpolationGrid2D(torch.nn.Module):
     if u.ndim != 2 or u.shape[1] != 2:
       raise ValueError(f"u must have shape (n, 2); got {tuple(u.shape)}")
     return interp_at_batched(
-      self.grid_points,
-      cache.unsqueeze(0),
-      u.unsqueeze(0),
-      self._is_linear,
-      self.cell_lookup,
-      self.max_advance,
+      self.grid_points, cache.unsqueeze(0), u.unsqueeze(0), self._is_linear
     ).squeeze(0)

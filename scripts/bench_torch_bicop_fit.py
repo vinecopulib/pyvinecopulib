@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Bench TorchBicop / pv.Bicop bicop fitters on a shared Gaussian sample.
 
-Four modes selected via ``--mode``:
+Three modes selected via ``--mode``:
 
 * ``fit`` (default) — time the from_data fit:
     - simulate n pseudo-obs via a Gaussian copula,
@@ -29,13 +29,6 @@ Four modes selected via ``--mode``:
     mode, op, n_fit, n_eval, method, device, grid_size, time_ms,
     max_abs_diff_vs_cpp
 
-* ``cellidx`` — micro-bench the cell-index primitive
-  ``_batched_cell_index`` on the fixed grid axis: ``searchsorted`` vs the
-  vinecopulib#691 bucket table, over device x grid_type x grid_size x
-  batch size. Asserts the two paths return identical indices.
-  Output columns:
-    mode, device, grid_type, grid_size, n, method, time_ms
-
 For ``cpp`` rows, ``device`` / ``cache_integrals`` / ``grid_type`` are
 empty. For ``torch`` rows, ``threads`` is empty.
 """
@@ -54,8 +47,6 @@ import torch
 
 import pyvinecopulib as pv
 from pyvinecopulib.torch import FitControlsTorchBicop, TorchBicop
-from pyvinecopulib.torch._batched import _batched_cell_index, _build_cell_lookup
-from pyvinecopulib.torch._interp import InterpolationGrid2D
 
 
 def _parse_int_list(s: str) -> list[int]:
@@ -386,64 +377,6 @@ def _bench_hinv(
 
 
 # --------------------------------------------------------------------------- #
-# Mode = cellidx                                                               #
-# --------------------------------------------------------------------------- #
-
-
-def _bench_cellidx(
-  n: int,
-  devices: list[str],
-  grid_types: list[str],
-  grid_sizes: list[int],
-  repeats: int,
-  seed: int,
-) -> list[dict]:
-  """Micro-bench the fixed-grid cell search: ``searchsorted`` vs the
-  vinecopulib#691 bucket table, on each grid geometry. Both paths run with
-  ``is_linear=False`` so this isolates searchsorted vs bucket (the linear
-  grid's O(1) floor path is a separate, unchanged branch). Asserts index
-  equality before timing."""
-  rng = np.random.default_rng(seed)
-  u_np = rng.uniform(0.0, 1.0, size=(n,))
-  rows: list[dict] = []
-
-  for device in devices:
-    sync = torch.cuda.synchronize if device.startswith("cuda") else None
-    u_t = torch.as_tensor(u_np, dtype=torch.float64, device=device)
-    for grid_type in grid_types:
-      for g in grid_sizes:
-        grid = InterpolationGrid2D.make_grid_points(grid_type, g).to(device)
-        cell_lookup, max_advance = _build_cell_lookup(grid)
-        # Correctness: bucket path must equal searchsorted exactly.
-        ref = _batched_cell_index(grid, u_t)
-        got = _batched_cell_index(grid, u_t, False, cell_lookup, max_advance)
-        if not torch.equal(got, ref):
-          raise AssertionError(
-            f"bucket != searchsorted for {grid_type} grid, m={g}"
-          )
-        methods = {
-          "searchsorted": lambda: _batched_cell_index(grid, u_t),
-          "bucket": lambda gp=grid, cl=cell_lookup, ma=max_advance: (
-            _batched_cell_index(gp, u_t, False, cl, ma)
-          ),
-        }
-        for name, fn in methods.items():
-          ms = _time_repeats(fn, repeats, sync=sync)
-          rows.append(
-            {
-              "mode": "cellidx",
-              "device": device,
-              "grid_type": grid_type,
-              "grid_size": g,
-              "n": n,
-              "method": name,
-              "time_ms": ms,
-            }
-          )
-  return rows
-
-
-# --------------------------------------------------------------------------- #
 # Driver                                                                        #
 # --------------------------------------------------------------------------- #
 
@@ -455,7 +388,7 @@ def main() -> None:
   ap.add_argument(
     "--mode",
     default="fit",
-    choices=("fit", "eval", "hinv", "cellidx"),
+    choices=("fit", "eval", "hinv"),
     help="Which thing to time (default: fit).",
   )
   ap.add_argument("--n", default="500,2000,10000", type=_parse_int_list)
@@ -553,15 +486,6 @@ def main() -> None:
       "time_ms",
       "max_abs_diff_vs_cpp",
     ],
-    "cellidx": [
-      "mode",
-      "device",
-      "grid_type",
-      "grid_size",
-      "n",
-      "method",
-      "time_ms",
-    ],
   }
   fieldnames = fieldnames_by_mode[args.mode]
 
@@ -595,20 +519,11 @@ def main() -> None:
         repeats=args.repeats,
         seed=args.seed,
       )
-    elif args.mode == "hinv":
+    else:  # hinv
       rows = _bench_hinv(
         n_fit=n,
         n_eval=args.n_eval,
         devices=devices,
-        grid_sizes=args.grid_sizes,
-        repeats=args.repeats,
-        seed=args.seed,
-      )
-    else:  # cellidx: ``n`` is the query batch size.
-      rows = _bench_cellidx(
-        n=n,
-        devices=devices,
-        grid_types=args.grid_types,
         grid_sizes=args.grid_sizes,
         repeats=args.repeats,
         seed=args.seed,

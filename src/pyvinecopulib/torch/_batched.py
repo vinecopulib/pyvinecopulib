@@ -18,7 +18,6 @@ to this file.
 
 from __future__ import annotations
 
-import os
 from typing import cast
 
 import torch
@@ -30,61 +29,6 @@ _TRIM_LO: float = 1e-10
 _TRIM_HI: float = 1.0 - 1e-10
 _STRIP_FLOOR: float = 1e-4
 
-# Number of uniform buckets in the cell-lookup acceleration table (mirrors the
-# C++ ``InterpolationGrid`` in vinecopulib#691). The table is a lower bound on
-# the cell index at each bucket's left edge; a short guarded advance recovers
-# the exact index. Correctness is independent of this value; it only trades
-# table size for the worst-case advance length.
-_N_BUCKETS: int = 1024
-
-# Whether ``InterpolationGrid2D`` / ``BatchedVine`` use the bucket cell-lookup
-# (vinecopulib#691) in place of ``torch.searchsorted``. OFF by default: on CPU
-# the bucket is 2-4x faster on the isolated cell search but mixed end-to-end
-# (it speeds up ``pdf`` yet regresses the integration-heavy ``hfunc`` path).
-# Set ``PYVINECOPULIB_TORCH_CELL_LOOKUP=1`` to enable and GPU-test the full
-# pipeline; see ``scripts/bench_torch_bicop_fit.py`` (--mode cellidx / eval /
-# hinv). The path is always index-identical to searchsorted, so toggling it
-# never changes results — only speed.
-CELL_LOOKUP_ENABLED: bool = (
-  os.environ.get("PYVINECOPULIB_TORCH_CELL_LOOKUP", "0") == "1"
-)
-
-
-def _build_cell_lookup(
-  grid_points: Tensor, n_buckets: int = _N_BUCKETS
-) -> tuple[Tensor, int]:
-  """Precompute the bucket acceleration table for :func:`_batched_cell_index`.
-
-  Port of ``InterpolationGrid::update_cell_lookup`` (vinecopulib#691), adapted
-  to reproduce this module's ``searchsorted(..., right=False) - 1`` cell
-  convention (a knot ``grid_points[k]`` belongs to cell ``k - 1``), so the
-  bucket path is bit-identical to the ``searchsorted`` path it replaces.
-
-  Returns ``(cell_lookup, max_advance)`` where ``cell_lookup`` is a
-  ``(n_buckets,)`` long tensor with ``cell_lookup[b]`` a lower bound on the
-  cell index of any ``u`` in ``[b / n_buckets, (b + 1) / n_buckets)``, and
-  ``max_advance`` is the exact worst-case number of guarded-advance steps
-  (the max interior knots landing in any single bucket).
-  """
-  m = int(grid_points.shape[0])
-  edges = torch.arange(
-    n_buckets, dtype=grid_points.dtype, device=grid_points.device
-  ) / float(n_buckets)
-  cell_lookup = (torch.searchsorted(grid_points, edges, right=False) - 1).clamp(
-    0, m - 2
-  )
-  # Worst-case advance = the most interior knots (grid_points[1 : m-1], the
-  # crossable cell boundaries) falling in a single bucket.
-  if m > 2:
-    interior = grid_points[1 : m - 1]
-    knot_bucket = (interior * n_buckets).long().clamp(0, n_buckets - 1)
-    max_advance = int(
-      torch.bincount(knot_bucket, minlength=n_buckets).max().item()
-    )
-  else:
-    max_advance = 0
-  return cell_lookup, max_advance
-
 
 # --------------------------------------------------------------------------- #
 # Batched bilinear interpolation                                               #
@@ -92,47 +36,24 @@ def _build_cell_lookup(
 
 
 def _batched_cell_index(
-  grid_points: Tensor,
-  u: Tensor,
-  is_linear: bool = False,
-  cell_lookup: Tensor | None = None,
-  max_advance: int = 0,
+  grid_points: Tensor, u: Tensor, is_linear: bool = False
 ) -> Tensor:
   """Per-element cell index, clamped to ``[0, m-2]``. Preserves ``u``'s shape.
 
-  Three paths, all returning ``searchsorted(grid_points, u, right=False) - 1``
-  clamped to ``[0, m-2]``:
-
-  - ``is_linear`` True: the grid is ``linspace(0, 1, m)`` and the index is
-    ``floor(u * (m - 1))`` — O(1).
-  - ``cell_lookup`` given (non-linear grid): O(1) bucket lookup plus a fixed
-    ``max_advance`` guarded-advance steps (port of vinecopulib#691).
-  - otherwise: the O(log m) ``searchsorted`` fallback.
+  When ``is_linear`` is True the grid is assumed to be ``linspace(0, 1, m)``
+  and the index is computed as ``floor(u * (m - 1))`` — O(1) vs the O(log m)
+  ``searchsorted`` of the default path.
   """
   m = grid_points.shape[0]
   if is_linear:
     return (u * (m - 1)).long().clamp(0, m - 2)
-  if cell_lookup is not None:
-    n_buckets = cell_lookup.shape[0]
-    b = (u * n_buckets).long().clamp(0, n_buckets - 1)
-    i = cell_lookup[b]
-    # Advance while the next knot is still strictly below u (right=False), a
-    # fixed number of steps so the kernel count is data-independent.
-    for _ in range(max_advance):
-      i = i + ((i < m - 2) & (grid_points[i + 1] < u)).long()
-    return i.clamp(0, m - 2)
   return (
     torch.searchsorted(grid_points, u.contiguous(), right=False) - 1
   ).clamp(0, m - 2)
 
 
 def interpolate_batched(
-  grid_points: Tensor,
-  values: Tensor,
-  u: Tensor,
-  is_linear: bool = False,
-  cell_lookup: Tensor | None = None,
-  max_advance: int = 0,
+  grid_points: Tensor, values: Tensor, u: Tensor, is_linear: bool = False
 ) -> Tensor:
   """Batched bilinear interpolation.
 
@@ -141,8 +62,6 @@ def interpolate_batched(
     values: shape ``(N, m, m)``, one grid per pair.
     u: shape ``(N, n, 2)``, queries per pair (in the unrotated frame —
       the rotation must already be baked into ``values``).
-    is_linear, cell_lookup, max_advance: forwarded to
-      :func:`_batched_cell_index` to select the cell-search path.
 
   Returns:
     Tensor of shape ``(N, n)``.
@@ -158,12 +77,8 @@ def interpolate_batched(
   u = u.clamp(0.0, 1.0)
   N, n, _ = u.shape
 
-  i = _batched_cell_index(
-    grid_points, u[..., 0], is_linear, cell_lookup, max_advance
-  )  # (N, n)
-  j = _batched_cell_index(
-    grid_points, u[..., 1], is_linear, cell_lookup, max_advance
-  )  # (N, n)
+  i = _batched_cell_index(grid_points, u[..., 0], is_linear)  # (N, n)
+  j = _batched_cell_index(grid_points, u[..., 1], is_linear)  # (N, n)
 
   N_idx = (
     torch.arange(N, device=values.device).unsqueeze(-1).expand(N, n)
@@ -191,12 +106,7 @@ def interpolate_batched(
 
 
 def interp_at_batched(
-  grid_points: Tensor,
-  cache: Tensor,
-  u: Tensor,
-  is_linear: bool = False,
-  cell_lookup: Tensor | None = None,
-  max_advance: int = 0,
+  grid_points: Tensor, cache: Tensor, u: Tensor, is_linear: bool = False
 ) -> Tensor:
   """Bilinearly interpolate a stacked precomputed cache.
 
@@ -204,9 +114,7 @@ def interp_at_batched(
   semantic — ``cache`` is a precomputed integral grid (e.g. h-func or cdf),
   whereas ``values`` in :func:`interpolate_batched` is the pdf grid.
   """
-  return interpolate_batched(
-    grid_points, cache, u, is_linear, cell_lookup, max_advance
-  )
+  return interpolate_batched(grid_points, cache, u, is_linear)
 
 
 # --------------------------------------------------------------------------- #
@@ -215,12 +123,7 @@ def interp_at_batched(
 
 
 def int_on_grid_batched(
-  grid_points: Tensor,
-  upr: Tensor,
-  vals: Tensor,
-  is_linear: bool = False,
-  cell_lookup: Tensor | None = None,
-  max_advance: int = 0,
+  grid_points: Tensor, upr: Tensor, vals: Tensor, is_linear: bool = False
 ) -> Tensor:
   """Vectorized trapezoidal integral of ``(grid_points, vals)`` from 0 to ``upr``.
 
@@ -229,6 +132,7 @@ def int_on_grid_batched(
   and ``vals`` of shape ``(*B, m)`` produce an output of shape ``(*B,)``.
   ``*B`` can carry leading batch dimensions (``(N, n)`` typically).
   """
+  m = grid_points.shape[0]
   dgrid = grid_points[1:] - grid_points[:-1]  # (m-1,)
 
   trap = 0.5 * (vals[..., :-1] + vals[..., 1:]) * dgrid
@@ -236,9 +140,12 @@ def int_on_grid_batched(
   cumulative = torch.cat([zero, trap.cumsum(dim=-1)], dim=-1)
 
   upr_clamped = upr.clamp(0.0, 1.0)
-  cell = _batched_cell_index(
-    grid_points, upr_clamped, is_linear, cell_lookup, max_advance
-  )
+  if is_linear:
+    cell = (upr_clamped * (m - 1)).long().clamp(0, m - 2)
+  else:
+    cell = (
+      torch.searchsorted(grid_points, upr_clamped.contiguous(), right=False) - 1
+    ).clamp(0, m - 2)
 
   cell_exp = cell.unsqueeze(-1)
   v_k = torch.gather(vals, dim=-1, index=cell_exp).squeeze(-1)
@@ -260,8 +167,6 @@ def integrate_1d_batched(
   u: Tensor,
   cond_var: int,
   is_linear: bool = False,
-  cell_lookup: Tensor | None = None,
-  max_advance: int = 0,
 ) -> Tensor:
   """Batched conditional 1-D integral.
 
@@ -274,7 +179,6 @@ def integrate_1d_batched(
       batch because the bake puts every pair in the same "natural" frame.
       ``cond_var=1`` returns the h-function conditioning on ``u[..., 0]``;
       ``cond_var=2`` conditions on ``u[..., 1]``.
-    is_linear, cell_lookup, max_advance: forwarded to the cell-search path.
 
   Returns:
     Tensor of shape ``(N, n)`` with values in ``[1e-10, 1-1e-10]``.
@@ -294,9 +198,7 @@ def integrate_1d_batched(
     u_free = u[..., 0]
     fixed_axis = 2  # columns
 
-  cell = _batched_cell_index(
-    grid_points, u_fixed, is_linear, cell_lookup, max_advance
-  )  # (N, n)
+  cell = _batched_cell_index(grid_points, u_fixed, is_linear)  # (N, n)
   g_lo = grid_points[cell]
   g_hi = grid_points[cell + 1]
   t = ((u_fixed - g_lo) / (g_hi - g_lo)).unsqueeze(-1)  # (N, n, 1)
@@ -319,27 +221,15 @@ def integrate_1d_batched(
 
   strip = ((1.0 - t) * v_lo + t * v_hi).clamp_min(_STRIP_FLOOR)  # (N, n, m)
 
-  numer = int_on_grid_batched(
-    grid_points, u_free, strip, is_linear, cell_lookup, max_advance
-  )  # (N, n)
+  numer = int_on_grid_batched(grid_points, u_free, strip, is_linear)  # (N, n)
   denom = int_on_grid_batched(
-    grid_points,
-    torch.ones_like(u_free),
-    strip,
-    is_linear,
-    cell_lookup,
-    max_advance,
+    grid_points, torch.ones_like(u_free), strip, is_linear
   )  # (N, n)
   return (numer / denom).clamp(_TRIM_LO, _TRIM_HI)
 
 
 def integrate_2d_batched(
-  grid_points: Tensor,
-  values: Tensor,
-  u: Tensor,
-  is_linear: bool = False,
-  cell_lookup: Tensor | None = None,
-  max_advance: int = 0,
+  grid_points: Tensor, values: Tensor, u: Tensor, is_linear: bool = False
 ) -> Tensor:
   """Batched bivariate CDF (trapezoidal-trapezoidal).
 
@@ -364,23 +254,16 @@ def integrate_2d_batched(
   upr_inner = u2.unsqueeze(-1).expand(N, n, m)
   vals_inner = values.unsqueeze(1).expand(N, n, m, m)
   strip = int_on_grid_batched(
-    grid_points, upr_inner, vals_inner, is_linear, cell_lookup, max_advance
+    grid_points, upr_inner, vals_inner, is_linear
   )  # (N, n, m)
 
   # Outer pass: integrate strip[k, l, :] up to u1[k, l] and renormalise
   # by the full-first-axis integral so C(1, u2) = u2 holds exactly.
   # Guard the degenerate `tmpint1 = 0` case (e.g. cache-building at
   # raw grid endpoints) — true CDF is then 0.
-  tmpint = int_on_grid_batched(
-    grid_points, u1, strip, is_linear, cell_lookup, max_advance
-  )
+  tmpint = int_on_grid_batched(grid_points, u1, strip, is_linear)
   tmpint1 = int_on_grid_batched(
-    grid_points,
-    torch.ones_like(u1),
-    strip,
-    is_linear,
-    cell_lookup,
-    max_advance,
+    grid_points, torch.ones_like(u1), strip, is_linear
   )
   out = torch.where(
     tmpint1 > 0,
@@ -500,101 +383,45 @@ class BatchedTreeLevel(torch.nn.Module):
     u_e = torch.stack([col0.t(), col1.t()], dim=-1)
     return u_e
 
-  def pdf(
-    self,
-    grid_points: Tensor,
-    u: Tensor,
-    cell_lookup: Tensor | None = None,
-    max_advance: int = 0,
-  ) -> Tensor:
+  def pdf(self, grid_points: Tensor, u: Tensor) -> Tensor:
     """Per-pair pdf at the stacked queries. Indep slots return 1."""
     raw = interpolate_batched(
-      grid_points, self.values, u, self._is_linear, cell_lookup, max_advance
+      grid_points, self.values, u, self._is_linear
     ).clamp_min(1e-20)
     return torch.where(self.is_indep[:, None], torch.ones_like(raw), raw)
 
-  def log_pdf(
-    self,
-    grid_points: Tensor,
-    u: Tensor,
-    cell_lookup: Tensor | None = None,
-    max_advance: int = 0,
-  ) -> Tensor:
-    return self.pdf(grid_points, u, cell_lookup, max_advance).log()
+  def log_pdf(self, grid_points: Tensor, u: Tensor) -> Tensor:
+    return self.pdf(grid_points, u).log()
 
-  def hfunc1(
-    self,
-    grid_points: Tensor,
-    u: Tensor,
-    cell_lookup: Tensor | None = None,
-    max_advance: int = 0,
-  ) -> Tensor:
+  def hfunc1(self, grid_points: Tensor, u: Tensor) -> Tensor:
     """Per-pair hfunc1. ``cache=True`` does one bilinear interp on the
     precomputed cache; ``cache=False`` runs :func:`integrate_1d_batched`
     on ``values`` at every call.
     """
     if self.h1_cache is not None:
-      raw = interp_at_batched(
-        grid_points,
-        self.h1_cache,
-        u,
-        self._is_linear,
-        cell_lookup,
-        max_advance,
-      )
+      raw = interp_at_batched(grid_points, self.h1_cache, u, self._is_linear)
     else:
       raw = integrate_1d_batched(
-        grid_points,
-        self.values,
-        u,
-        cond_var=1,
-        is_linear=self._is_linear,
-        cell_lookup=cell_lookup,
-        max_advance=max_advance,
+        grid_points, self.values, u, cond_var=1, is_linear=self._is_linear
       )
     h = raw.clamp(0.0, 1.0)
     return torch.where(
       self.is_indep[:, None], u[..., 1].clamp(_TRIM_LO, _TRIM_HI), h
     )
 
-  def hfunc2(
-    self,
-    grid_points: Tensor,
-    u: Tensor,
-    cell_lookup: Tensor | None = None,
-    max_advance: int = 0,
-  ) -> Tensor:
+  def hfunc2(self, grid_points: Tensor, u: Tensor) -> Tensor:
     if self.h2_cache is not None:
-      raw = interp_at_batched(
-        grid_points,
-        self.h2_cache,
-        u,
-        self._is_linear,
-        cell_lookup,
-        max_advance,
-      )
+      raw = interp_at_batched(grid_points, self.h2_cache, u, self._is_linear)
     else:
       raw = integrate_1d_batched(
-        grid_points,
-        self.values,
-        u,
-        cond_var=2,
-        is_linear=self._is_linear,
-        cell_lookup=cell_lookup,
-        max_advance=max_advance,
+        grid_points, self.values, u, cond_var=2, is_linear=self._is_linear
       )
     h = raw.clamp(0.0, 1.0)
     return torch.where(
       self.is_indep[:, None], u[..., 0].clamp(_TRIM_LO, _TRIM_HI), h
     )
 
-  def hinv1(
-    self,
-    grid_points: Tensor,
-    u: Tensor,
-    cell_lookup: Tensor | None = None,
-    max_advance: int = 0,
-  ) -> Tensor:
+  def hinv1(self, grid_points: Tensor, u: Tensor) -> Tensor:
     """Per-pair hinv1. Requires ``cache_integrals=True`` — the precomputed
     ``hinv1_cache`` collapses the C++ bisection cascade to one bilinear
     interp per call. Without the cache the batched cascade can still
@@ -607,24 +434,13 @@ class BatchedTreeLevel(torch.nn.Module):
         "the hinv1 cache."
       )
     raw = interp_at_batched(
-      grid_points,
-      self.hinv1_cache,
-      u,
-      self._is_linear,
-      cell_lookup,
-      max_advance,
+      grid_points, self.hinv1_cache, u, self._is_linear
     ).clamp(0.0, 1.0)
     return torch.where(
       self.is_indep[:, None], u[..., 1].clamp(_TRIM_LO, _TRIM_HI), raw
     )
 
-  def hinv2(
-    self,
-    grid_points: Tensor,
-    u: Tensor,
-    cell_lookup: Tensor | None = None,
-    max_advance: int = 0,
-  ) -> Tensor:
+  def hinv2(self, grid_points: Tensor, u: Tensor) -> Tensor:
     """Per-pair hinv2. See :meth:`hinv1` for the cache requirement."""
     if self.hinv2_cache is None:
       raise RuntimeError(
@@ -633,12 +449,7 @@ class BatchedTreeLevel(torch.nn.Module):
         "the hinv2 cache."
       )
     raw = interp_at_batched(
-      grid_points,
-      self.hinv2_cache,
-      u,
-      self._is_linear,
-      cell_lookup,
-      max_advance,
+      grid_points, self.hinv2_cache, u, self._is_linear
     ).clamp(0.0, 1.0)
     return torch.where(
       self.is_indep[:, None], u[..., 0].clamp(_TRIM_LO, _TRIM_HI), raw
@@ -647,7 +458,6 @@ class BatchedTreeLevel(torch.nn.Module):
 
 class BatchedVine(torch.nn.Module):
   grid_points: Tensor
-  cell_lookup: Tensor | None
 
   """All tree levels of a :class:`TorchVinecop`, stacked and pre-baked.
 
@@ -674,21 +484,9 @@ class BatchedVine(torch.nn.Module):
     inverse_order: list[int],
     d: int,
     trunc_lvl: int,
-    is_linear: bool = False,
   ) -> None:
     super().__init__()
     self.register_buffer("grid_points", grid_points)
-    # Bucket acceleration table for the shared grid axis (opt-in via
-    # CELL_LOOKUP_ENABLED; skipped for the linear grid, which uses the O(1)
-    # floor path, and empty vines). Moves with .to() as a registered buffer;
-    # ``max_advance`` is a plain int.
-    if is_linear or grid_points.shape[0] < 2 or not CELL_LOOKUP_ENABLED:
-      self.register_buffer("cell_lookup", None)
-      self.max_advance = 0
-    else:
-      cell_lookup, max_advance = _build_cell_lookup(grid_points)
-      self.register_buffer("cell_lookup", cell_lookup)
-      self.max_advance = max_advance
     self.levels = torch.nn.ModuleList(levels)
     # Plain Python attrs — these don't move with .to() but they're scalars
     # / int lists.
@@ -807,5 +605,4 @@ class BatchedVine(torch.nn.Module):
       inverse_order=list(tvc.inverse_order),
       d=d,
       trunc_lvl=trunc_lvl,
-      is_linear=is_linear,
     )
