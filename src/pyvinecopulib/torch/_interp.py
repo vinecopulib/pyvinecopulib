@@ -279,6 +279,82 @@ class InterpolationGrid2D(torch.nn.Module):
       self._is_linear,
     ).squeeze(0)
 
+  def inverse_integrate_1d(self, u: Tensor, cond_var: int) -> Tensor:
+    """Closed-form inverse of :meth:`integrate_1d` in its free argument.
+
+    Port of the C++ ``InterpolationGrid::inverse_integrate_1d``
+    (vinecopulib#691). The conditional density along the free axis is the
+    knot vector linearly interpolated at the conditioning value (floored
+    at ``1e-4``, exactly like the forward pass), so the conditional cdf is
+    piecewise quadratic and inverts cell by cell: cumulative trapezoidal
+    masses, ``searchsorted`` for the bracketing cell, then a numerically
+    stable quadratic root clamped to the cell.
+
+    ``cond_var=1`` solves ``H1(u1, x) = p`` for ``x`` given
+    ``u = [u1, p]``; ``cond_var=2`` solves ``H2(x, u2) = p`` given
+    ``u = [p, u2]``. Rows with NaN inputs return NaN, mirroring the C++
+    ``binaryExpr_or_nan`` wrapper.
+
+    Args:
+      u: shape ``(n, 2)``; see above for the column convention.
+      cond_var: 1 or 2, the conditioning variable.
+
+    Returns:
+      Tensor of shape ``(n,)`` with the conditional quantiles in
+      ``[0, 1]``.
+    """
+    if u.ndim != 2 or u.shape[1] != 2:
+      raise ValueError(f"u must have shape (n, 2); got {tuple(u.shape)}")
+    if cond_var == 1:
+      cond, p = u[:, 0], u[:, 1]
+    else:
+      p, cond = u[:, 0], u[:, 1]
+    nan_mask = torch.isnan(cond) | torch.isnan(p)
+    cond = cond.nan_to_num(0.5).clamp(0.0, 1.0)
+    p = p.nan_to_num(0.5).clamp(_TRIM_LO, _TRIM_HI)
+
+    g = self.grid_points
+    m = g.shape[0]
+
+    # Knot vector: the density along the free axis, linearly interpolated
+    # at the conditioning value (rows of ``values`` for cond_var=1, columns
+    # for cond_var=2), floored like the forward integrate_1d strip.
+    i = self._cell_index(cond)  # (n,)
+    x1, x2 = g[i], g[i + 1]
+    w = ((cond - x1) / (x2 - x1)).unsqueeze(-1)  # (n, 1)
+    vals = self.values if cond_var == 1 else self.values.t()
+    knots = ((1.0 - w) * vals[i, :] + w * vals[i + 1, :]).clamp_min(1e-4)
+
+    # Cumulative trapezoidal masses of the (unnormalized) conditional cdf.
+    dg = (g[1:] - g[:-1]).unsqueeze(0)  # (1, m - 1)
+    masses = 0.5 * (knots[:, :-1] + knots[:, 1:]) * dg  # (n, m - 1)
+    incl = masses.cumsum(dim=-1)
+    target = (p * incl[:, -1]).unsqueeze(-1)  # (n, 1)
+
+    # Bracketing cell: first k with cumulative mass >= target (the trimmed
+    # target is strictly below the total, so k <= m - 2 always holds).
+    k = torch.searchsorted(incl.contiguous(), target).clamp(0, m - 2)  # (n, 1)
+
+    # Solve target = cum + v_k s + (v_k1 - v_k) / (2 dg_k) s^2 for
+    # s in [0, dg_k]; b = v_k >= 1e-4 keeps the stable root well-defined.
+    v_k = knots.gather(-1, k).squeeze(-1)
+    v_k1 = knots.gather(-1, k + 1).squeeze(-1)
+    cum = torch.where(
+      (k > 0).squeeze(-1),
+      incl.gather(-1, (k - 1).clamp_min(0)).squeeze(-1),
+      torch.zeros_like(v_k),
+    )
+    k = k.squeeze(-1)
+    dg_k = g[k + 1] - g[k]
+    a = (v_k1 - v_k) / (2.0 * dg_k)
+    b = v_k
+    c = cum - target.squeeze(-1)
+    disc = (b * b - 4.0 * a * c).clamp_min(0.0)
+    s = torch.where(a.abs() < 1e-300, -c / b, 2.0 * (-c) / (b + disc.sqrt()))
+    s = torch.minimum(s.clamp_min(0.0), dg_k)
+    out = g[k] + s
+    return torch.where(nan_mask, torch.full_like(out, torch.nan), out)
+
   # --------------------------------------------------------------------- #
   # Cached evaluation grids (optional, see TorchBicop(cache_integrals=…)). #
   # --------------------------------------------------------------------- #
@@ -290,13 +366,10 @@ class InterpolationGrid2D(torch.nn.Module):
 
     Returns five ``(m, m)`` tensors; ``TorchBicop`` stores them as buffers
     and bilinearly interpolates them when ``cache_integrals=True``. The
-    inverse-h-function caches are built by inverting the just-computed
-    h-function caches via a single batched bisection over the full
-    ``m^2`` grid (each call is then one lookup instead of 35 iterations
-    of bisection at eval time).
+    inverse-h-function caches evaluate the exact closed-form
+    :meth:`inverse_integrate_1d` at the grid nodes (each call is then one
+    lookup instead of a root-finding pass at eval time).
     """
-    from ._util import solve_itp
-
     m = self.grid_points.shape[0]
     gi, gj = torch.meshgrid(self.grid_points, self.grid_points, indexing="ij")
     grid_pairs = torch.stack(
@@ -307,37 +380,15 @@ class InterpolationGrid2D(torch.nn.Module):
     h2_vals = self.integrate_1d(grid_pairs, cond_var=2).reshape(m, m)
 
     # hinv1: for each grid point (g_i, g_j), solve hfunc1((g_i, u2)) = g_j
-    # for u2. Use the just-built h1_vals cache so the bisection's inner
-    # function is a fast bilinear interp.
-    a = grid_pairs[:, 0:1]
-    p = grid_pairs[:, 1:2]
-
-    def _fun_hinv1(u2: Tensor) -> Tensor:
-      u_e = torch.cat([a, u2], dim=-1)
-      return (
-        self.interp_at(h1_vals, u_e).clamp(_TRIM_LO, _TRIM_HI).unsqueeze(-1) - p
-      )
-
+    # for u2; hinv2 is the symmetric problem. Both are exact closed-form
+    # conditional quantiles of the interpolated density.
     hinv1_vals = (
-      solve_itp(_fun_hinv1, torch.zeros_like(p), torch.ones_like(p))
-      .squeeze(-1)
+      self.inverse_integrate_1d(grid_pairs, cond_var=1)
       .clamp(0.0, 1.0)
       .reshape(m, m)
     )
-
-    # hinv2: symmetric — solve hfunc2((u1, g_j)) = g_i for u1.
-    b = grid_pairs[:, 1:2]
-    p = grid_pairs[:, 0:1]
-
-    def _fun_hinv2(u1: Tensor) -> Tensor:
-      u_e = torch.cat([u1, b], dim=-1)
-      return (
-        self.interp_at(h2_vals, u_e).clamp(_TRIM_LO, _TRIM_HI).unsqueeze(-1) - p
-      )
-
     hinv2_vals = (
-      solve_itp(_fun_hinv2, torch.zeros_like(p), torch.ones_like(p))
-      .squeeze(-1)
+      self.inverse_integrate_1d(grid_pairs, cond_var=2)
       .clamp(0.0, 1.0)
       .reshape(m, m)
     )

@@ -82,19 +82,76 @@ def test_hinv_roundtrip() -> None:
   u_fit = cop.simulate(2000, seeds=[4, 5, 6])
   cop_tll = _fit_tll(u_fit)
 
-  # Pin cache=False so the round-trip is exact (atol=1e-9). The cached
-  # path round-trips only to ~1e-3 — covered by test_cached_hinv_speedup.
+  # Pin cache=False: the closed-form inversion is the exact inverse of the
+  # on-the-fly h-function, so the round-trip holds to machine precision.
+  # The cached path round-trips only to ~1e-3 — covered by
+  # test_cached_hinv_speedup.
   bc = TorchBicop.from_bicop(cop_tll, cache_integrals=False)
   u_eval = _eval_grid(400, seed=21)
   u_t = torch.from_numpy(u_eval)
 
   u2 = bc.hinv1(u_t).unsqueeze(-1)
   back = bc.hfunc1(torch.cat([u_t[:, 0:1], u2], dim=-1)).numpy()
-  np.testing.assert_allclose(back, u_eval[:, 1], atol=1e-9, rtol=1e-9)
+  np.testing.assert_allclose(back, u_eval[:, 1], atol=1e-12, rtol=1e-12)
 
   u1 = bc.hinv2(u_t).unsqueeze(-1)
   back = bc.hfunc2(torch.cat([u1, u_t[:, 1:2]], dim=-1)).numpy()
-  np.testing.assert_allclose(back, u_eval[:, 0], atol=1e-9, rtol=1e-9)
+  np.testing.assert_allclose(back, u_eval[:, 0], atol=1e-12, rtol=1e-12)
+
+
+def test_hinv_closed_form_matches_cpp() -> None:
+  """The no-cache torch h-inverse ports the C++ closed-form conditional
+  quantile (vinecopulib#691), so torch and C++ agree to machine precision
+  on the same fitted grid."""
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.7]]))
+  u_fit = cop.simulate(2000, seeds=[4, 5, 6])
+  cop_tll = _fit_tll(u_fit)
+
+  bc = TorchBicop.from_bicop(cop_tll, cache_integrals=False)
+  u_eval = _eval_grid(400, seed=22)
+  u_t = torch.from_numpy(u_eval)
+
+  np.testing.assert_allclose(
+    bc.hinv1(u_t).numpy(), cop_tll.hinv1(u_eval), atol=1e-12, rtol=1e-12
+  )
+  np.testing.assert_allclose(
+    bc.hinv2(u_t).numpy(), cop_tll.hinv2(u_eval), atol=1e-12, rtol=1e-12
+  )
+
+
+def test_inverse_integrate_1d() -> None:
+  """Unit test of the closed-form conditional quantile on the grid itself:
+  exact inverse of ``integrate_1d``, NaN propagation, shape validation."""
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
+  u_fit = cop.simulate(1500, seeds=[7, 8, 9])
+  grid = TorchBicop.from_bicop(
+    _fit_tll(u_fit), cache_integrals=False
+  ).interp_grid
+
+  u_eval = _eval_grid(300, seed=23)
+  u_t = torch.from_numpy(u_eval)
+  for cond_var in (1, 2):
+    x = grid.inverse_integrate_1d(u_t, cond_var)
+    assert ((x >= 0) & (x <= 1)).all()
+    if cond_var == 1:
+      u_back = torch.stack([u_t[:, 0], x], dim=-1)
+      p = u_eval[:, 1]
+    else:
+      u_back = torch.stack([x, u_t[:, 1]], dim=-1)
+      p = u_eval[:, 0]
+    np.testing.assert_allclose(
+      grid.integrate_1d(u_back, cond_var).numpy(), p, atol=1e-12, rtol=1e-12
+    )
+
+  # NaN rows return NaN (mirroring the C++ binaryExpr_or_nan wrapper).
+  u_nan = u_t.clone()
+  u_nan[0, 0] = torch.nan
+  u_nan[1, 1] = torch.nan
+  out = grid.inverse_integrate_1d(u_nan, 1)
+  assert out[:2].isnan().all() and out[2:].isfinite().all()
+
+  with pytest.raises(ValueError, match="shape"):
+    grid.inverse_integrate_1d(u_t[:, 0], 1)
 
 
 def test_from_bicop_rejects_rotated() -> None:
@@ -142,8 +199,8 @@ def test_from_data_evaluates_consistently() -> None:
   in-range, hinv round-trips. Doesn't pin to a reference; the
   matches-vs-cpp test covers the fit accuracy.
 
-  Pin cache_integrals=False so the hinv round-trip below holds to
-  ITP-precision (~1e-9); the cached path round-trips only to ~1e-3."""
+  Pin cache_integrals=False so the hinv round-trip below is the exact
+  closed-form inverse; the cached path round-trips only to ~1e-3."""
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   u_np = cop.simulate(1000, seeds=[11, 22, 33])
   bc = TorchBicop.from_data(u_np, cache_integrals=False)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Bench TorchBicop / pv.Bicop bicop fitters on a shared Gaussian sample.
 
-Two modes selected via ``--mode``:
+Three modes selected via ``--mode``:
 
 * ``fit`` (default) — time the from_data fit:
     - simulate n pseudo-obs via a Gaussian copula,
@@ -19,6 +19,16 @@ Two modes selected via ``--mode``:
     mode, op, n_fit, n_eval, backend, threads, device,
     cache_integrals, grid_type, grid_size, time_ms
 
+* ``hinv`` — fit a TLL bicop once, then compare the three torch inverse
+  h-function methods against the C++ reference on ``n_eval`` queries:
+    - ``closed_form`` (no-cache, exact conditional-quantile inversion),
+    - ``cached`` (``cache_integrals=True``, one bilinear interp),
+    - ``itp`` (the pre-vinecopulib#691 vectorized ITP root-finder,
+      kept here as a self-contained reference).
+  Output columns:
+    mode, op, n_fit, n_eval, method, device, grid_size, time_ms,
+    max_abs_diff_vs_cpp
+
 For ``cpp`` rows, ``device`` / ``cache_integrals`` / ``grid_type`` are
 empty. For ``torch`` rows, ``threads`` is empty.
 """
@@ -30,6 +40,7 @@ import csv
 import sys
 import time
 from statistics import median
+from typing import Callable
 
 import numpy as np
 import torch
@@ -248,6 +259,124 @@ def _bench_eval(
 
 
 # --------------------------------------------------------------------------- #
+# Mode = hinv                                                                  #
+# --------------------------------------------------------------------------- #
+
+
+@torch.no_grad()
+def _solve_itp(
+  fun: Callable[[torch.Tensor], torch.Tensor],
+  x_a: torch.Tensor,
+  x_b: torch.Tensor,
+  n_iter: int = 30,
+  k1: float = 0.2,
+  k2: float = 2.0,
+  eps: float = 1e-12,
+) -> torch.Tensor:
+  """The pre-vinecopulib#691 vectorized ITP root-finder (Oliveira &
+  Takahashi, 2020), kept here as the reference the closed form replaced."""
+  x_a = x_a.clone()
+  x_b = x_b.clone()
+  fa = fun(x_a)
+  fb = fun(x_b)
+  swap = fa > 0
+  x_a, x_b = torch.where(swap, x_b, x_a), torch.where(swap, x_a, x_b)
+  fa, fb = torch.where(swap, fb, fa), torch.where(swap, fa, fb)
+  for _ in range(n_iter):
+    width = x_b - x_a
+    mid = 0.5 * (x_a + x_b)
+    denom = (fb - fa).clamp_min(1e-300)
+    x_f = (fb * x_a - fa * x_b) / denom
+    diff = mid - x_f
+    sigma = torch.sign(diff)
+    delta = k1 * width.abs().pow(k2)
+    x_t = torch.where(delta <= diff.abs(), x_f + sigma * delta, mid)
+    r = (0.5 * width.abs() - eps).clamp_min(0.0)
+    x_itp = torch.where((x_t - mid).abs() <= r, x_t, mid - sigma * r)
+    fx = fun(x_itp)
+    below = fx < 0.0
+    x_a = torch.where(below, x_itp, x_a)
+    x_b = torch.where(below, x_b, x_itp)
+    fa = torch.where(below, fx, fa)
+    fb = torch.where(below, fb, fx)
+  return 0.5 * (x_a + x_b)
+
+
+def _hinv_itp(bc: TorchBicop, u: torch.Tensor, cond_var: int) -> torch.Tensor:
+  """ITP inversion over the on-the-fly h-function (reference for ``hinv``)."""
+  if cond_var == 1:
+    fixed, p = u[:, 0:1], u[:, 1:2]
+  else:
+    fixed, p = u[:, 1:2], u[:, 0:1]
+
+  def fun(x: torch.Tensor) -> torch.Tensor:
+    u_e = (
+      torch.cat([fixed, x], dim=-1)
+      if cond_var == 1
+      else torch.cat([x, fixed], dim=-1)
+    )
+    return bc.interp_grid.integrate_1d(u_e, cond_var=cond_var).unsqueeze(-1) - p
+
+  return _solve_itp(fun, torch.zeros_like(p), torch.ones_like(p)).squeeze(-1)
+
+
+def _bench_hinv(
+  n_fit: int,
+  n_eval: int,
+  devices: list[str],
+  grid_sizes: list[int],
+  repeats: int,
+  seed: int,
+) -> list[dict]:
+  u_fit_np = _simulate(n=n_fit, seed=seed)
+  rng = np.random.default_rng(seed + 100)
+  u_eval_np = rng.uniform(0.02, 0.98, size=(n_eval, 2))
+  rows: list[dict] = []
+
+  for g in grid_sizes:
+    cpp = pv.Bicop.from_data(
+      u_fit_np,
+      controls=pv.FitControlsBicop(
+        family_set=[pv.families.tll], nonparametric_grid_size=g
+      ),
+      var_types=["c", "c"],
+    )
+    ref = {"hinv1": cpp.hinv1(u_eval_np), "hinv2": cpp.hinv2(u_eval_np)}
+    for device in devices:
+      sync = torch.cuda.synchronize if device.startswith("cuda") else None
+      u_t = torch.as_tensor(u_eval_np, dtype=torch.float64, device=device)
+      bc_plain = TorchBicop.from_bicop(cpp, cache_integrals=False).to(device)
+      bc_cached = TorchBicop.from_bicop(cpp, cache_integrals=True).to(device)
+      for op in ("hinv1", "hinv2"):
+        cv = 1 if op == "hinv1" else 2
+        methods = {
+          "closed_form": lambda o=op, bp=bc_plain: getattr(bp, o)(u_t),
+          "cached": lambda o=op, bc=bc_cached: getattr(bc, o)(u_t),
+          "itp": lambda c=cv, bp=bc_plain: _hinv_itp(bp, u_t, c),
+        }
+        for name, fn in methods.items():
+          ms = _time_repeats(fn, repeats, sync=sync)
+          diff = float(np.max(np.abs(fn().cpu().numpy() - ref[op])))
+          rows.append(
+            {
+              "mode": "hinv",
+              "op": op,
+              "n_fit": n_fit,
+              "n_eval": n_eval,
+              "method": name,
+              "device": device,
+              "grid_size": g,
+              "time_ms": ms,
+              "max_abs_diff_vs_cpp": f"{diff:.3e}",
+            }
+          )
+      del bc_plain, bc_cached
+      if sync is not None:
+        torch.cuda.empty_cache()
+  return rows
+
+
+# --------------------------------------------------------------------------- #
 # Driver                                                                        #
 # --------------------------------------------------------------------------- #
 
@@ -259,7 +388,7 @@ def main() -> None:
   ap.add_argument(
     "--mode",
     default="fit",
-    choices=("fit", "eval"),
+    choices=("fit", "eval", "hinv"),
     help="Which thing to time (default: fit).",
   )
   ap.add_argument("--n", default="500,2000,10000", type=_parse_int_list)
@@ -322,8 +451,8 @@ def main() -> None:
 
   backends = list(args.backends)
 
-  if args.mode == "fit":
-    fieldnames = [
+  fieldnames_by_mode = {
+    "fit": [
       "mode",
       "n",
       "backend",
@@ -332,9 +461,8 @@ def main() -> None:
       "grid_type",
       "grid_size",
       "time_ms",
-    ]
-  else:
-    fieldnames = [
+    ],
+    "eval": [
       "mode",
       "op",
       "n_fit",
@@ -346,7 +474,20 @@ def main() -> None:
       "grid_type",
       "grid_size",
       "time_ms",
-    ]
+    ],
+    "hinv": [
+      "mode",
+      "op",
+      "n_fit",
+      "n_eval",
+      "method",
+      "device",
+      "grid_size",
+      "time_ms",
+      "max_abs_diff_vs_cpp",
+    ],
+  }
+  fieldnames = fieldnames_by_mode[args.mode]
 
   out = sys.stdout if args.output == "-" else open(args.output, "w", newline="")
   writer = csv.DictWriter(out, fieldnames=fieldnames)
@@ -365,7 +506,7 @@ def main() -> None:
         repeats=args.repeats,
         seed=args.seed,
       )
-    else:
+    elif args.mode == "eval":
       rows = _bench_eval(
         n_fit=n,
         n_eval=args.n_eval,
@@ -375,6 +516,15 @@ def main() -> None:
         grid_sizes=args.grid_sizes,
         caches=args.cache,
         backends=backends,
+        repeats=args.repeats,
+        seed=args.seed,
+      )
+    else:  # hinv
+      rows = _bench_hinv(
+        n_fit=n,
+        n_eval=args.n_eval,
+        devices=devices,
+        grid_sizes=args.grid_sizes,
         repeats=args.repeats,
         seed=args.seed,
       )
