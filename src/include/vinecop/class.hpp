@@ -111,7 +111,7 @@ are:
 
 - ``Vinecop.from_data()``: Instantiate from data, as well as an optional ``FitControlsVinecop``, an ``RVineStructure`` or matrix, and variable types.
 - ``Vinecop.from_structure()``: Instantiate from an ``RVineStructure`` or matrix, as well as optional pair-copulas and variable types.
-- ``Vinecop.from_file()``: Instantiate from a file.
+- ``Vinecop.from_file()``: Instantiate from a JSON file, or a CBOR file when the filename ends in ``.cbor``.
 - ``Vinecop.from_json()``: Instantiate from a JSON string.
 )""";
 

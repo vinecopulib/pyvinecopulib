@@ -74,7 +74,7 @@ Alternatives to instantiate structures are:
 - ``RVineStructure.from_order()``: Instantiate from an order vector.
 - ``RVineStructure.from_matrix()``: Instantiate from a matrix.
 - ``RVineStructure.from_struct_array()``: Instantiate from an order vector and a structure array.
-- ``RVineStructure.from_file()``: Instantiate from a file.
+- ``RVineStructure.from_file()``: Instantiate from a JSON file, or a CBOR file when the filename ends in ``.cbor``.
 - ``RVineStructure.from_json()``: Instantiate from a JSON string.
 )""";
 

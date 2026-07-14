@@ -1,3 +1,4 @@
+import json
 import os
 
 import numpy as np
@@ -39,6 +40,21 @@ def test_bicop(unique_json_path: str) -> None:
   assert bicop.rotation == new_bicop.rotation
   assert bicop.parameters.shape == new_bicop.parameters.shape
   assert bicop.var_types == new_bicop.var_types
+
+  # A non-.cbor filename keeps writing JSON text (backwards compatibility) ...
+  with open(filename, encoding="utf-8") as f:
+    json.load(f)
+
+  # ... while a ``.cbor`` filename selects binary CBOR (vinecopulib#684).
+  cbor_filename = filename.removesuffix(".json") + ".cbor"
+  bicop.to_file(cbor_filename)
+  new_bicop = pv.Bicop.from_file(cbor_filename)
+  assert bicop.family == new_bicop.family
+  assert bicop.rotation == new_bicop.rotation
+  assert bicop.parameters.shape == new_bicop.parameters.shape
+  assert bicop.var_types == new_bicop.var_types
+  with open(cbor_filename, "rb") as f:
+    assert f.read(1) != b"{"
 
   # Test properties
   bicop = pv.Bicop(family=pv.families.gumbel, rotation=90)

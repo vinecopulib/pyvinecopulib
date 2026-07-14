@@ -115,6 +115,14 @@ def test_vinecop(unique_json_path: str) -> None:
   new_cop = pv.Vinecop.from_file(filename)
   compare_vinecop(cop, new_cop)
 
+  # CBOR round-trip: a ``.cbor`` filename selects the binary format
+  # (vinecopulib#684).
+  cbor_filename = filename.removesuffix(".json") + ".cbor"
+  cop.to_file(cbor_filename)
+  compare_vinecop(cop, pv.Vinecop.from_file(cbor_filename))
+  with open(cbor_filename, "rb") as f:
+    assert f.read(1) != b"{"
+
 
 def test_custom_criterion_matches_builtin_tau() -> None:
   # A custom function returning signed Kendall's tau must reproduce the

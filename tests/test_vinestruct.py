@@ -32,3 +32,11 @@ def test_rvinestructure(unique_json_path: str) -> None:
   rvine.to_file(filename)
   new_rvine = pv.RVineStructure.from_file(filename)
   compare_rvinestructure(rvine, new_rvine)
+
+  # CBOR round-trip: a ``.cbor`` filename selects the binary format
+  # (vinecopulib#684).
+  cbor_filename = filename.removesuffix(".json") + ".cbor"
+  rvine.to_file(cbor_filename)
+  compare_rvinestructure(rvine, pv.RVineStructure.from_file(cbor_filename))
+  with open(cbor_filename, "rb") as f:
+    assert f.read(1) != b"{"
