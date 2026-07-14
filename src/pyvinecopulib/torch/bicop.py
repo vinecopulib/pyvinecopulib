@@ -38,7 +38,6 @@ from torch import Tensor
 from ..pyvinecopulib_ext import Bicop, tll as _TLL_FAMILY
 from ._controls import FitControlsTorchBicop
 from ._interp import InterpolationGrid2D, _TRIM_LO, _TRIM_HI
-from ._util import solve_itp
 
 _LOG_FLOOR: float = -13.815510557964274  # log(1e-6); same as torchvinecopulib
 
@@ -418,7 +417,7 @@ class TorchBicop(torch.nn.Module):
     return self._hfunc_raw(u, 2).clamp(0.0, 1.0)
 
   # --------------------------------------------------------------------- #
-  # Inverse h-functions (numerical via bisection).                         #
+  # Inverse h-functions (closed-form conditional quantiles).               #
   # --------------------------------------------------------------------- #
 
   @torch.no_grad()
@@ -428,27 +427,15 @@ class TorchBicop(torch.nn.Module):
     ``cond_var=1`` solves ``H1(u1, x) = p`` for ``x`` (free column 1,
     ``u = [u1, p]``); ``cond_var=2`` solves ``H2(x, u2) = p`` (free
     column 0, ``u = [p, u2]``). With a precomputed cache this is one
-    bilinear interpolation; otherwise a fixed-iter vectorised ITP
-    root-finder over the on-the-fly h-function.
+    bilinear interpolation; otherwise the exact closed-form inversion of
+    the piecewise-quadratic conditional cdf
+    (:meth:`InterpolationGrid2D.inverse_integrate_1d`, mirroring
+    vinecopulib#691).
     """
     cache = self._hinv1_cache if cond_var == 1 else self._hinv2_cache
     if cache is not None:
       return self.interp_grid.interp_at(cache, u).clamp(0.0, 1.0)
-    if cond_var == 1:
-      fixed, p = u[:, 0:1], u[:, 1:2]
-    else:
-      fixed, p = u[:, 1:2], u[:, 0:1]
-
-    def fun(x: Tensor) -> Tensor:
-      u_eval = (
-        torch.cat([fixed, x], dim=-1)
-        if cond_var == 1
-        else torch.cat([x, fixed], dim=-1)
-      )
-      return self._hfunc_raw(u_eval, cond_var).unsqueeze(-1) - p
-
-    x = solve_itp(fun, x_a=torch.zeros_like(p), x_b=torch.ones_like(p))
-    return x.squeeze(-1).clamp(0.0, 1.0)
+    return self.interp_grid.inverse_integrate_1d(u, cond_var).clamp(0.0, 1.0)
 
   @torch.no_grad()
   def hinv1(self, u: Tensor) -> Tensor:
@@ -457,8 +444,8 @@ class TorchBicop(torch.nn.Module):
     Given ``u = [u1, p]``, returns ``u2`` such that
     ``H1(u1, u2) = p``. With ``cache_integrals=True`` this is a
     single bilinear interpolation on the precomputed cache;
-    otherwise each call runs a fixed-iter vectorised ITP
-    root-finder over the on-the-fly h-function.
+    otherwise each call inverts the piecewise-quadratic conditional
+    cdf in closed form (exact inverse of the on-the-fly h-function).
 
     Parameters
     ----------
@@ -481,7 +468,7 @@ class TorchBicop(torch.nn.Module):
     """Inverts `hfunc2` w.r.t. the first argument.
 
     Given ``u = [p, u2]``, returns ``u1`` such that
-    ``H2(u1, u2) = p``. See `hinv1` for the cache vs. ITP-bisection
+    ``H2(u1, u2) = p``. See `hinv1` for the cache vs. closed-form
     semantics.
 
     Parameters

@@ -165,7 +165,6 @@ pyvinecopulib/
         _interp.py               # InterpolationGrid2D (bilinear; Sinkhorn margin renormalisation)
         _fit_tll.py              # pure-torch TLL kernel
         _batched.py              # batched evaluation variants
-        _util.py                 # internal helpers (ITP root-finder, etc.)
 
       _python_helpers/           # internal; pure-Python wrappers used by the binding
         bicop.py, vinecop.py, kde1d.py, stats.py
