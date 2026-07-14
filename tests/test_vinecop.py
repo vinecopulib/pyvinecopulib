@@ -244,8 +244,14 @@ def test_vinecop_pdf_full() -> None:
     assert isinstance(vec, np.ndarray) and vec.shape in ((n,), (0,))
 
   _check_triangular(full["pdf_edges"], d, _is_len_n_vector)
-  for key in ("hfunc1", "hfunc2", "hfunc1_sub", "hfunc2_sub"):
+  for key in ("hfunc1", "hfunc2"):
     _check_triangular(full[key], d, _is_edge_vector)
+
+  # The left-limit h-functions are only computed for models with discrete
+  # variables; for an all-continuous model they come back empty
+  # (vinecopulib#692).
+  assert full["hfunc1_sub"] == []
+  assert full["hfunc2_sub"] == []
 
   # keep_all=False: only the density.
   simple = cop.pdf_full(u, keep_all=False)
@@ -272,11 +278,11 @@ def test_vinecop_scores_and_hessian() -> None:
   p = scores.shape[1]
   assert p == round(cop.npars)
 
-  # scores_cov / hessian_avg: (p, p) matrices; scores_cov is symmetric.
+  # scores_cov / hessian: (p, p) matrices; scores_cov is symmetric.
   cov = cop.scores_cov(u)
   assert cov.shape == (p, p)
   np.testing.assert_allclose(cov, cov.T, rtol=1e-10, atol=1e-12)
-  assert cop.hessian_avg(u).shape == (p, p)
+  assert cop.hessian(u).shape == (p, p)
 
   # step_wise=False and threading run and are consistent.
   assert cop.scores(u, step_wise=False).shape == (n, p)
@@ -290,7 +296,7 @@ def test_vinecop_scores_and_hessian() -> None:
     for mat in leaf:
       assert isinstance(mat, np.ndarray) and mat.ndim == 2
 
-  _check_triangular(cop.hessian(u), d, _is_matrix_list)
+  _check_triangular(cop.hessian_full(u), d, _is_matrix_list)
 
 
 def test_struct_array_accessors_and_factory() -> None:
