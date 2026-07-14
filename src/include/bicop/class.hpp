@@ -165,6 +165,10 @@ or out-of-bounds values raise ``RuntimeError``.
                    bicop_doc.get_var_types.doc)
       .def_prop_ro("family", &Bicop::get_family, bicop_doc.get_family.doc)
       .def_prop_ro("tau", &Bicop::get_tau, bicop_doc.get_tau.doc)
+      .def_prop_ro("taildep", &Bicop::get_taildep, bicop_doc.get_taildep.doc,
+                   nb::call_guard<nb::gil_scoped_release>())
+      .def_prop_ro("beta", &Bicop::get_beta, bicop_doc.get_beta.doc,
+                   nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("npars", &Bicop::get_npars, bicop_doc.get_npars.doc)
       .def(
           "loglik",
@@ -204,6 +208,12 @@ or out-of-bounds values raise ``RuntimeError``.
            nb::call_guard<nb::gil_scoped_release>())
       .def("tau_to_parameters", &Bicop::tau_to_parameters, "tau"_a,
            bicop_doc.tau_to_parameters.doc,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("parameters_to_taildep", &Bicop::parameters_to_taildep,
+           "parameters"_a, bicop_doc.parameters_to_taildep.doc,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("parameters_to_beta", &Bicop::parameters_to_beta, "parameters"_a,
+           bicop_doc.parameters_to_beta.doc,
            nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("parameters_lower_bounds",
                    &Bicop::get_parameters_lower_bounds,

@@ -232,3 +232,88 @@ def test_bicop_per_row_parameters_errors() -> None:
   pars_oob[0, 0] = -5.0
   with pytest.raises(RuntimeError):
     cop.pdf(u, pars_oob)
+
+
+def test_bicop_taildep_and_beta() -> None:
+  # Clayton theta=2: lower tail dependence 2^(-1/theta), no upper.
+  clayton = pv.Bicop(family=pv.families.clayton, parameters=np.array([[2.0]]))
+  td = clayton.taildep
+  assert isinstance(td, np.ndarray) and td.shape == (2, 2)
+  np.testing.assert_allclose(td[0, 0], 2 ** (-1 / 2), rtol=1e-12)
+  assert td[1, 1] == 0.0 and td[0, 1] == 0.0 and td[1, 0] == 0.0
+
+  # Gumbel theta=2: upper tail dependence 2 - 2^(1/theta), no lower.
+  gumbel = pv.Bicop(family=pv.families.gumbel, parameters=np.array([[2.0]]))
+  np.testing.assert_allclose(gumbel.taildep[1, 1], 2 - 2**0.5, rtol=1e-12)
+  assert gumbel.taildep[0, 0] == 0.0
+
+  # Gaussian: no tail dependence in any corner.
+  gaussian = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
+  np.testing.assert_allclose(gaussian.taildep, np.zeros((2, 2)), atol=1e-12)
+
+  # Student t: all four corners positive; the concordant (diagonal) corners
+  # are equal, and so are the discordant ones (rho replaced by -rho).
+  student = pv.Bicop(
+    family=pv.families.student, parameters=np.array([[0.5], [4.0]])
+  )
+  td = student.taildep
+  assert (td > 0).all()
+  np.testing.assert_allclose(td[0, 0], td[1, 1], rtol=1e-12)
+  np.testing.assert_allclose(td[0, 1], td[1, 0], rtol=1e-12)
+  assert td[0, 0] > td[0, 1]
+
+  # Rotations: 180 degrees swaps lower/upper; 90 degrees moves the dependence
+  # to the off-diagonal corners and flips beta's sign.
+  clayton180 = pv.Bicop(
+    family=pv.families.clayton, rotation=180, parameters=np.array([[2.0]])
+  )
+  np.testing.assert_allclose(
+    clayton180.taildep[1, 1], clayton.taildep[0, 0], rtol=1e-12
+  )
+  assert clayton180.taildep[0, 0] == 0.0
+  clayton90 = pv.Bicop(
+    family=pv.families.clayton, rotation=90, parameters=np.array([[2.0]])
+  )
+  td90 = clayton90.taildep
+  assert td90[0, 0] == 0.0 and td90[1, 1] == 0.0
+  assert td90[0, 1] + td90[1, 0] > 0
+  assert clayton90.beta < 0 < clayton.beta
+
+  # Blomqvist's beta identity: beta = 4 * C(0.5, 0.5) - 1.
+  for cop in (clayton, gumbel, gaussian, student, clayton90, clayton180):
+    np.testing.assert_allclose(
+      cop.beta,
+      4 * cop.cdf(np.array([[0.5, 0.5]]))[0] - 1,
+      rtol=1e-10,
+      atol=1e-10,
+    )
+    assert isinstance(cop.beta, float)
+
+  # parameters_to_* at the stored parameters match the properties, and match
+  # a fresh copula at other parameters.
+  np.testing.assert_allclose(
+    clayton.parameters_to_taildep(clayton.parameters),
+    clayton.taildep,
+    rtol=1e-12,
+  )
+  np.testing.assert_allclose(
+    clayton.parameters_to_beta(clayton.parameters), clayton.beta, rtol=1e-12
+  )
+  other = np.array([[4.0]])
+  fresh = pv.Bicop(family=pv.families.clayton, parameters=other)
+  np.testing.assert_allclose(
+    clayton.parameters_to_taildep(other), fresh.taildep, rtol=1e-12
+  )
+  np.testing.assert_allclose(
+    clayton.parameters_to_beta(other), fresh.beta, rtol=1e-12
+  )
+
+  # TLL: the tail dependence coefficients are undefined (all-NaN), but
+  # Blomqvist's beta is still computed from the interpolated cdf.
+  rng = np.random.RandomState(5)
+  u = pv.to_pseudo_obs(rng.normal(size=(200, 2)))
+  tll = pv.Bicop.from_data(
+    u, controls=pv.FitControlsBicop(family_set=[pv.families.tll])
+  )
+  assert np.isnan(tll.taildep).all()
+  assert np.isfinite(tll.beta)
