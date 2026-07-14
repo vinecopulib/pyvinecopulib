@@ -104,6 +104,27 @@ or out-of-bounds values raise ``RuntimeError``.
   const std::string loglik_doc =
       std::string(bicop_doc.loglik.doc_1args) + per_row_note;
 
+  // The eight derivative methods (vinecopulib#683/#687/#694) follow the same
+  // one-Python-method-per-name design: the 2-argument (stored-parameter) and
+  // 4-argument (per-row-parameter) C++ overloads are dispatched on whether
+  // `parameters` was supplied.
+  const std::string pdf_deriv_doc =
+      std::string(bicop_doc.pdf_deriv.doc_2args) + per_row_note;
+  const std::string pdf_deriv2_doc =
+      std::string(bicop_doc.pdf_deriv2.doc_2args) + per_row_note;
+  const std::string hfunc1_deriv_doc =
+      std::string(bicop_doc.hfunc1_deriv.doc_2args) + per_row_note;
+  const std::string hfunc1_deriv2_doc =
+      std::string(bicop_doc.hfunc1_deriv2.doc_2args) + per_row_note;
+  const std::string hfunc2_deriv_doc =
+      std::string(bicop_doc.hfunc2_deriv.doc_2args) + per_row_note;
+  const std::string hfunc2_deriv2_doc =
+      std::string(bicop_doc.hfunc2_deriv2.doc_2args) + per_row_note;
+  const std::string logpdf_deriv_doc =
+      std::string(bicop_doc.logpdf_deriv.doc_2args) + per_row_note;
+  const std::string logpdf_deriv2_doc =
+      std::string(bicop_doc.logpdf_deriv2.doc_2args) + per_row_note;
+
   // Dispatch helpers: pick the stored-parameter or per-row overload depending
   // on whether `parameters` was supplied. Argument conversion (incl. the
   // ndarray -> Eigen copy) happens before the GIL is released, so the lambda
@@ -117,6 +138,24 @@ or out-of-bounds values raise ``RuntimeError``.
                            size_t num_threads) -> Eigen::VectorXd {
           if (parameters) return (self.*many)(u, *parameters, num_threads);
           return (self.*one)(u);
+        };
+      };
+
+  // Same dispatch for the derivative methods, which additionally thread the
+  // `deriv` selector string through both overloads.
+  auto deriv_with_optional_params =
+      [](Eigen::VectorXd (Bicop::*one)(const Eigen::MatrixXd&,
+                                       const std::string&) const,
+         Eigen::VectorXd (Bicop::*many)(const Eigen::MatrixXd&,
+                                        const std::string&,
+                                        const Eigen::MatrixXd&, size_t) const) {
+        return [one, many](const Bicop& self, const Eigen::MatrixXd& u,
+                           const std::string& deriv,
+                           const std::optional<Eigen::MatrixXd>& parameters,
+                           size_t num_threads) -> Eigen::VectorXd {
+          if (parameters)
+            return (self.*many)(u, deriv, *parameters, num_threads);
+          return (self.*one)(u, deriv);
         };
       };
 
@@ -246,6 +285,52 @@ or out-of-bounds values raise ``RuntimeError``.
       .def("hinv2", eval_with_optional_params(&Bicop::hinv2, &Bicop::hinv2),
            "u"_a, "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), hinv2_doc.c_str(),
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("pdf_deriv",
+           deriv_with_optional_params(&Bicop::pdf_deriv, &Bicop::pdf_deriv),
+           "u"_a, "deriv"_a, "parameters"_a = nb::none(),
+           "num_threads"_a = static_cast<size_t>(1), pdf_deriv_doc.c_str(),
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("pdf_deriv2",
+           deriv_with_optional_params(&Bicop::pdf_deriv2, &Bicop::pdf_deriv2),
+           "u"_a, "deriv"_a, "parameters"_a = nb::none(),
+           "num_threads"_a = static_cast<size_t>(1), pdf_deriv2_doc.c_str(),
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("hfunc1_deriv",
+           deriv_with_optional_params(&Bicop::hfunc1_deriv,
+                                      &Bicop::hfunc1_deriv),
+           "u"_a, "deriv"_a, "parameters"_a = nb::none(),
+           "num_threads"_a = static_cast<size_t>(1), hfunc1_deriv_doc.c_str(),
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("hfunc1_deriv2",
+           deriv_with_optional_params(&Bicop::hfunc1_deriv2,
+                                      &Bicop::hfunc1_deriv2),
+           "u"_a, "deriv"_a, "parameters"_a = nb::none(),
+           "num_threads"_a = static_cast<size_t>(1), hfunc1_deriv2_doc.c_str(),
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("hfunc2_deriv",
+           deriv_with_optional_params(&Bicop::hfunc2_deriv,
+                                      &Bicop::hfunc2_deriv),
+           "u"_a, "deriv"_a, "parameters"_a = nb::none(),
+           "num_threads"_a = static_cast<size_t>(1), hfunc2_deriv_doc.c_str(),
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("hfunc2_deriv2",
+           deriv_with_optional_params(&Bicop::hfunc2_deriv2,
+                                      &Bicop::hfunc2_deriv2),
+           "u"_a, "deriv"_a, "parameters"_a = nb::none(),
+           "num_threads"_a = static_cast<size_t>(1), hfunc2_deriv2_doc.c_str(),
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("logpdf_deriv",
+           deriv_with_optional_params(&Bicop::logpdf_deriv,
+                                      &Bicop::logpdf_deriv),
+           "u"_a, "deriv"_a, "parameters"_a = nb::none(),
+           "num_threads"_a = static_cast<size_t>(1), logpdf_deriv_doc.c_str(),
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("logpdf_deriv2",
+           deriv_with_optional_params(&Bicop::logpdf_deriv2,
+                                      &Bicop::logpdf_deriv2),
+           "u"_a, "deriv"_a, "parameters"_a = nb::none(),
+           "num_threads"_a = static_cast<size_t>(1), logpdf_deriv2_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("simulate", &Bicop::simulate, "n"_a, "qrng"_a = false,
            "seeds"_a = std::vector<int>(), bicop_doc.simulate.doc,

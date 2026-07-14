@@ -145,7 +145,7 @@ pyvinecopulib/
       py.typed                   # PEP 561 marker (built by scripts/generate_stubs.py)
 
       core/__init__.py           # Bicop, Vinecop, *VineStructure, FitControls* (re-exports from ext)
-      families/__init__.py       # BicopFamily enum + 13 family constants + 14 group constants
+      families/__init__.py       # BicopFamily enum + 13 family constants + 15 group constants
       utils/__init__.py          # Kde1d, to_pseudo_obs, wdm, sobol, ghalton, simulate_uniform, benchmark
         _pair_plots.py           # pairs_copula_data plotting helper (pure Python)
 
@@ -372,9 +372,9 @@ automatically.
 ### `pyvinecopulib.families`
 
 - Re-exports the `BicopFamily` enum, 13 family-tag constants, and
-  14 family-group lists from `pyvinecopulib_ext`. See the module
+  15 family-group lists from `pyvinecopulib_ext`. See the module
   docstring for the full group definitions (`itau`, `lt`, `ut`,
-  `rotationless`, …).
+  `rotationless`, `analytic_derivs`, …).
 - The family lists are the canonical way to constrain the fit
   search space: pass them to `FitControlsBicop(family_set=...)` or
   `FitControlsVinecop(family_set=...)`. Pre-PR-#207 top-level
@@ -571,7 +571,7 @@ below are a quick orientation.
   `frank`, `joe`, `bb1`, `bb6`, `bb7`, `bb8`, `tawn`, `tll`); group
   lists (`all`, `parametric`, `nonparametric`, `one_par`, `two_par`,
   `three_par`, `elliptical`, `archimedean`, `extreme_value`, `bb`,
-  `rotationless`, `lt`, `ut`, `itau`).
+  `rotationless`, `lt`, `ut`, `itau`, `analytic_derivs`).
 - **`pyvinecopulib.utils`** — `Kde1d`, `to_pseudo_obs`, `wdm`,
   `sobol`, `ghalton`, `simulate_uniform`, `benchmark`,
   `pairs_copula_data`.

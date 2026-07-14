@@ -54,6 +54,10 @@ See :class:`BicopFamily` for the per-member identifier.
 - ``itau`` — families that support estimation by Kendall's-:math:`\\tau`
   inversion (``indep``, ``gaussian``, ``student``, ``clayton``,
   ``gumbel``, ``frank``, ``joe``).
+- ``analytic_derivs`` — families with closed-form derivatives of the
+  density and h-functions (currently every parametric family).
+  ``Bicop.pdf_deriv`` and friends use these closed forms; parametric
+  families outside the group fall back to central finite differences.
 - ``lt`` — lower-tail dependent families (``clayton``, ``bb1``,
   ``bb7``, ``tawn``).
 - ``ut`` — upper-tail dependent families (``gumbel``, ``joe``,
@@ -70,6 +74,7 @@ dependence, and closed-form Kendall's :math:`\\tau`.
 from ..pyvinecopulib_ext import (
   BicopFamily,
   all,
+  analytic_derivs,
   archimedean,
   bb,
   bb1,
@@ -129,4 +134,5 @@ __all__ = [
   "lt",
   "ut",
   "itau",
+  "analytic_derivs",
 ]

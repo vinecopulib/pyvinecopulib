@@ -234,6 +234,232 @@ def test_bicop_per_row_parameters_errors() -> None:
     cop.pdf(u, pars_oob)
 
 
+_FIRST_ORDER_DERIVS = [
+  "pdf_deriv",
+  "hfunc1_deriv",
+  "hfunc2_deriv",
+  "logpdf_deriv",
+]
+_SECOND_ORDER_DERIVS = [
+  "pdf_deriv2",
+  "hfunc1_deriv2",
+  "hfunc2_deriv2",
+  "logpdf_deriv2",
+]
+
+
+@pytest.mark.parametrize(
+  ("family", "parameters", "rotation"),
+  [
+    (pv.families.clayton, np.array([[2.0]]), 0),
+    (pv.families.clayton, np.array([[2.5]]), 90),
+    (pv.families.gumbel, np.array([[2.0]]), 0),
+    (pv.families.gaussian, np.array([[0.5]]), 0),
+    (pv.families.student, np.array([[0.5], [4.0]]), 0),
+    (pv.families.bb1, np.array([[1.0], [1.5]]), 0),
+  ],
+)
+def test_bicop_deriv_matches_finite_differences(
+  family: pv.BicopFamily, parameters: np.ndarray, rotation: int
+) -> None:
+  rng = np.random.RandomState(42)
+  n = 50
+  u = rng.uniform(0.1, 0.9, size=(n, 2))
+  cop = pv.Bicop(family=family, rotation=rotation, parameters=parameters)
+  p = cop.parameters.shape[0]
+
+  # First derivative w.r.t. each parameter vs central finite differences of
+  # fresh copulas at theta +/- h (derivatives are w.r.t. the natural, positive
+  # parameters of the rotated copula, so the same rotation is kept).
+  for k in range(p):
+    h = 1e-5 * max(1.0, abs(cop.parameters[k, 0]))
+    pars_up, pars_lo = cop.parameters.copy(), cop.parameters.copy()
+    pars_up[k, 0] += h
+    pars_lo[k, 0] -= h
+    up = pv.Bicop(family=family, rotation=rotation, parameters=pars_up)
+    lo = pv.Bicop(family=family, rotation=rotation, parameters=pars_lo)
+    fd = (up.pdf(u) - lo.pdf(u)) / (2 * h)
+    np.testing.assert_allclose(
+      cop.pdf_deriv(u, f"par{k + 1}"), fd, rtol=1e-4, atol=1e-6
+    )
+
+  # First derivative w.r.t. the arguments vs central finite differences in u.
+  for j, sel in enumerate(("u1", "u2")):
+    h = 1e-6
+    u_up, u_lo = u.copy(), u.copy()
+    u_up[:, j] += h
+    u_lo[:, j] -= h
+    fd = (cop.pdf(u_up) - cop.pdf(u_lo)) / (2 * h)
+    np.testing.assert_allclose(cop.pdf_deriv(u, sel), fd, rtol=1e-4, atol=1e-5)
+
+  # Quotient identity: d log c = (d c) / c.
+  np.testing.assert_allclose(
+    cop.logpdf_deriv(u, "par1"),
+    cop.pdf_deriv(u, "par1") / cop.pdf(u),
+    rtol=1e-8,
+    atol=1e-10,
+  )
+
+  # h-function shortcuts: differentiating an h-function w.r.t. its
+  # non-conditioning argument yields the copula density.
+  np.testing.assert_allclose(
+    cop.hfunc1_deriv(u, "u2"), cop.pdf(u), rtol=1e-10, atol=1e-12
+  )
+  np.testing.assert_allclose(
+    cop.hfunc2_deriv(u, "u1"), cop.pdf(u), rtol=1e-10, atol=1e-12
+  )
+
+  # Second derivative selectors are order-invariant, and a mixed selector
+  # matches finite differences of the analytic first derivative.
+  np.testing.assert_allclose(
+    cop.pdf_deriv2(u, "par1u1"),
+    cop.pdf_deriv2(u, "u1par1"),
+    rtol=1e-12,
+    atol=1e-14,
+  )
+  h = 1e-6
+  u_up, u_lo = u.copy(), u.copy()
+  u_up[:, 0] += h
+  u_lo[:, 0] -= h
+  fd = (cop.pdf_deriv(u_up, "par1") - cop.pdf_deriv(u_lo, "par1")) / (2 * h)
+  np.testing.assert_allclose(
+    cop.pdf_deriv2(u, "par1u1"), fd, rtol=1e-3, atol=1e-4
+  )
+
+  # Shorthands: "par" means "par1"; a single component in a second-order
+  # selector means differentiating twice.
+  np.testing.assert_allclose(
+    cop.pdf_deriv(u, "par"), cop.pdf_deriv(u, "par1"), rtol=1e-12
+  )
+  np.testing.assert_allclose(
+    cop.pdf_deriv2(u, "par"), cop.pdf_deriv2(u, "par1par1"), rtol=1e-12
+  )
+  np.testing.assert_allclose(
+    cop.pdf_deriv2(u, "u1"), cop.pdf_deriv2(u, "u1u1"), rtol=1e-12
+  )
+
+
+def test_bicop_deriv_per_row_parameters() -> None:
+  rng = np.random.RandomState(42)
+  n = 50
+  u = rng.uniform(0.1, 0.9, size=(n, 2))
+  cop = pv.Bicop(family=pv.families.clayton, parameters=np.array([[2.0]]))
+  pars = _per_row_params(cop, n, rng)
+  pars_const = np.tile(cop.parameters.ravel(), (n, 1))
+  selectors = dict.fromkeys(_FIRST_ORDER_DERIVS, "par1") | dict.fromkeys(
+    _SECOND_ORDER_DERIVS, "par1u1"
+  )
+
+  for method, sel in selectors.items():
+    fn = getattr(cop, method)
+    values = fn(u, sel, pars)
+    assert isinstance(values, np.ndarray) and values.shape == (n,)
+
+    # Constant per-row parameters reproduce the state-based call.
+    np.testing.assert_allclose(
+      fn(u, sel, pars_const), fn(u, sel), rtol=1e-9, atol=1e-12
+    )
+
+    # Threading must not change the result.
+    np.testing.assert_allclose(
+      fn(u, sel, pars, num_threads=2), values, rtol=1e-12, atol=1e-14
+    )
+
+    # Strong per-row parity vs fresh copulas built with the row's parameters.
+    for i in (0, n // 2, n - 1):
+      single = pv.Bicop(
+        family=pv.families.clayton, parameters=pars[i].reshape(1, 1)
+      )
+      np.testing.assert_allclose(
+        values[i], getattr(single, method)(u[i : i + 1], sel)[0], rtol=1e-9
+      )
+
+
+def test_bicop_deriv_errors() -> None:
+  rng = np.random.RandomState(0)
+  u = rng.uniform(0.1, 0.9, size=(20, 2))
+  cop = pv.Bicop(family=pv.families.clayton, parameters=np.array([[2.0]]))
+
+  # Empty, malformed, and out-of-range selectors.
+  for bad in ("", "foo", "par2", "u3"):
+    with pytest.raises(RuntimeError):
+      cop.pdf_deriv(u, bad)
+
+  # A first-order method rejects a two-component selector.
+  with pytest.raises(RuntimeError):
+    cop.pdf_deriv(u, "par1u1")
+
+  # A second-order method rejects a three-component selector.
+  with pytest.raises(RuntimeError):
+    cop.pdf_deriv2(u, "par1u1u2")
+
+  # Derivatives require continuous variable types.
+  discrete = pv.Bicop(
+    family=pv.families.clayton,
+    parameters=np.array([[2.0]]),
+    var_types=["d", "d"],
+  )
+  with pytest.raises(RuntimeError):
+    discrete.pdf_deriv(u, "par1")
+
+
+def test_bicop_deriv_tll() -> None:
+  rng = np.random.RandomState(42)
+  data = pv.to_pseudo_obs(rng.normal(size=(500, 2)))
+  tll = pv.Bicop.from_data(
+    data, controls=pv.FitControlsBicop(family_set=[pv.families.tll])
+  )
+  u = rng.uniform(0.2, 0.8, size=(50, 2))
+
+  # Argument gradients work: exact slope of the bilinear interpolation grid,
+  # cross-checked against central finite differences (the surface is piecewise
+  # linear in each argument, so away from grid knots FD is near-exact).
+  for j, sel in enumerate(("u1", "u2")):
+    grad = tll.pdf_deriv(u, sel)
+    assert np.isfinite(grad).all()
+    h = 1e-7
+    u_up, u_lo = u.copy(), u.copy()
+    u_up[:, j] += h
+    u_lo[:, j] -= h
+    fd = (tll.pdf(u_up) - tll.pdf(u_lo)) / (2 * h)
+    np.testing.assert_allclose(grad, fd, rtol=1e-3, atol=1e-3)
+
+  # Quotient identity for the log-density gradient.
+  np.testing.assert_allclose(
+    tll.logpdf_deriv(u, "u1"),
+    tll.pdf_deriv(u, "u1") / tll.pdf(u),
+    rtol=1e-8,
+    atol=1e-10,
+  )
+
+  # The non-conditioning-argument shortcut still works (equals the density).
+  np.testing.assert_allclose(
+    tll.hfunc1_deriv(u, "u2"), tll.pdf(u), rtol=1e-10, atol=1e-12
+  )
+
+  # Parameter selectors, second-order derivatives, and genuine h-function
+  # derivatives are undefined for tll.
+  with pytest.raises(RuntimeError):
+    tll.pdf_deriv(u, "par1")
+  with pytest.raises(RuntimeError):
+    tll.pdf_deriv2(u, "u1")
+  with pytest.raises(RuntimeError):
+    tll.hfunc1_deriv(u, "u1")
+
+
+def test_families_analytic_derivs() -> None:
+  group = pv.families.analytic_derivs
+  assert isinstance(group, list)
+  assert all(isinstance(f, pv.BicopFamily) for f in group)
+  # Currently every parametric family has closed forms (vinecopulib#683/#687);
+  # assert bb1/tawn membership explicitly so an upstream change is caught
+  # deliberately.
+  assert set(group) == set(pv.families.parametric)
+  assert pv.families.bb1 in group
+  assert pv.families.tawn in group
+  assert pv.families.tll not in group
+
+
 def test_bicop_taildep_and_beta() -> None:
   # Clayton theta=2: lower tail dependence 2^(-1/theta), no upper.
   clayton = pv.Bicop(family=pv.families.clayton, parameters=np.array([[2.0]]))
