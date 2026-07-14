@@ -164,6 +164,49 @@ dict
     discrete; for models without discrete variables they are empty lists.
 )""";
 
+  // Hand-written for the same reason as `pdf_full_doc`: the C++ facade
+  // returns a ``ScoresResult`` struct (whose inline definition trips up the
+  // libclang docstring extractor), whereas the Python method returns a dict.
+  const char* scores_full_doc =
+      R"""(Evaluates the score function together with the per-edge derivative caches.
+
+Parameters
+----------
+u : ndarray, shape (n, d) or (n, 2 * d), dtype float
+    Evaluation points in (0, 1); additional columns are required for discrete
+    variables (see ``Vinecop.select``).
+step_wise : bool, default True
+    If True, returns the score of the step-wise MLE (each pair copula's
+    log-density differentiated with pseudo-observations treated as fixed);
+    if False, the full gradient of the log-likelihood, propagated through
+    the vine by the chain rule.
+num_threads : int, default 1
+    Number of threads to parallelize the row-wise evaluation over.
+keep_all : bool, default True
+    If True, also return the per-edge derivative caches.
+
+Returns
+-------
+dict
+    A dict with key ``"scores"`` (an ndarray of shape ``(n, npars)``,
+    identical to ``Vinecop.scores``). If ``keep_all`` is True, it also
+    contains ``"pdf_edges"``, ``"logpdf_deriv_pars"``, ``"hfunc1_deriv_pars"``,
+    ``"hfunc2_deriv_pars"``, ``"logpdf_deriv_u1"``, ``"logpdf_deriv_u2"``,
+    ``"hfunc1_deriv_u1"`` and ``"hfunc2_deriv_u2"``, each a nested list
+    indexed ``[tree][edge]`` (the ``_pars`` entries hold one length-n array
+    per parameter). With ``step_wise=True`` only ``"logpdf_deriv_pars"`` is
+    filled (the step-wise scores themselves; discrete edges hold their
+    finite-difference values); the full gradient additionally fills the
+    caches consumed by the chain rule through the vine, unless the model has
+    discrete variables, in which case it falls back to finite differences of
+    the whole-vine log-density and returns empty caches.
+
+Raises
+------
+RuntimeError
+    If the model contains nonparametric pair copulas.
+)""";
+
   const char* from_structure_doc = R"""(
   Factory function to create a Vinecop using either a structure or a matrix.
 
@@ -328,6 +371,40 @@ dict
       .def("scores", &Vinecop::scores, "u"_a, "step_wise"_a = true,
            "num_threads"_a = 1, vinecop_doc.scores.doc,
            nb::call_guard<nb::gil_scoped_release>())
+      .def("gradient", &Vinecop::gradient, "u"_a, "step_wise"_a = true,
+           "num_threads"_a = 1, vinecop_doc.gradient.doc,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "scores_full",
+          [](Vinecop& cop, Eigen::MatrixXd u, bool step_wise,
+             size_t num_threads, bool keep_all) -> nb::dict {
+            Vinecop::ScoresResult res;
+            {
+              // Release the GIL only around the C++ computation; the dict /
+              // list construction below must hold it.
+              nb::gil_scoped_release release;
+              res = cop.scores_full(std::move(u), step_wise, num_threads,
+                                    keep_all);
+            }
+            nb::dict out;
+            out["scores"] = nb::cast(res.scores);
+            if (keep_all) {
+              out["pdf_edges"] = triangular_to_list(res.pdf_edges);
+              out["logpdf_deriv_pars"] =
+                  triangular_to_list(res.logpdf_deriv_pars);
+              out["hfunc1_deriv_pars"] =
+                  triangular_to_list(res.hfunc1_deriv_pars);
+              out["hfunc2_deriv_pars"] =
+                  triangular_to_list(res.hfunc2_deriv_pars);
+              out["logpdf_deriv_u1"] = triangular_to_list(res.logpdf_deriv_u1);
+              out["logpdf_deriv_u2"] = triangular_to_list(res.logpdf_deriv_u2);
+              out["hfunc1_deriv_u1"] = triangular_to_list(res.hfunc1_deriv_u1);
+              out["hfunc2_deriv_u2"] = triangular_to_list(res.hfunc2_deriv_u2);
+            }
+            return out;
+          },
+          "u"_a, "step_wise"_a = true, "num_threads"_a = 1, "keep_all"_a = true,
+          scores_full_doc)
       .def("hessian", &Vinecop::hessian, "u"_a, "step_wise"_a = true,
            "num_threads"_a = 1, vinecop_doc.hessian.doc,
            nb::call_guard<nb::gil_scoped_release>())

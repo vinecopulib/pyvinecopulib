@@ -299,6 +299,154 @@ def test_vinecop_scores_and_hessian() -> None:
   _check_triangular(cop.hessian_full(u), d, _is_matrix_list)
 
 
+def test_vinecop_gradient() -> None:
+  d, n = 4, 200
+  u = pv.to_pseudo_obs(random_data(d, n))
+  cop = pv.Vinecop.from_data(
+    u, controls=pv.FitControlsVinecop(family_set=[pv.families.gaussian])
+  )
+  p = round(cop.npars)
+
+  # The gradient is the observation-average of the scores, for both step_wise
+  # modes, and threading must not change the result.
+  for step_wise in (True, False):
+    grad = cop.gradient(u, step_wise=step_wise)
+    assert isinstance(grad, np.ndarray) and grad.shape == (p,)
+    np.testing.assert_allclose(
+      grad,
+      cop.scores(u, step_wise=step_wise).mean(axis=0),
+      rtol=1e-10,
+      atol=1e-12,
+    )
+  np.testing.assert_allclose(
+    cop.gradient(u, num_threads=2), cop.gradient(u), rtol=1e-10, atol=1e-12
+  )
+
+
+_SCORES_FULL_CACHE_KEYS = (
+  "pdf_edges",
+  "logpdf_deriv_pars",
+  "hfunc1_deriv_pars",
+  "hfunc2_deriv_pars",
+  "logpdf_deriv_u1",
+  "logpdf_deriv_u2",
+  "hfunc1_deriv_u1",
+  "hfunc2_deriv_u2",
+)
+
+
+def test_vinecop_scores_full() -> None:
+  d, n = 4, 200
+  u = pv.to_pseudo_obs(random_data(d, n))
+  cop = pv.Vinecop.from_data(
+    u, controls=pv.FitControlsVinecop(family_set=[pv.families.gaussian])
+  )
+  p = round(cop.npars)
+
+  # keep_all=True (default): dict with the scores + per-edge caches.
+  for step_wise in (True, False):
+    res = cop.scores_full(u, step_wise=step_wise)
+    assert isinstance(res, dict)
+    assert set(res) == {"scores", *_SCORES_FULL_CACHE_KEYS}
+    assert res["scores"].shape == (n, p)
+    np.testing.assert_allclose(
+      res["scores"],
+      cop.scores(u, step_wise=step_wise),
+      rtol=1e-10,
+      atol=1e-12,
+    )
+
+  # The step-wise path only fills the per-parameter log-density derivatives
+  # (the step-wise scores themselves); the full gradient additionally fills
+  # the caches consumed by the chain rule through the vine.
+  def _is_vector_list(leaf: object) -> None:
+    assert isinstance(leaf, list)
+    for vec in leaf:
+      assert isinstance(vec, np.ndarray) and vec.shape == (n,)
+
+  res_sw = cop.scores_full(u, step_wise=True)
+  _check_triangular(res_sw["logpdf_deriv_pars"], d, _is_vector_list)
+  assert res_sw["pdf_edges"] == []
+
+  res_full = cop.scores_full(u, step_wise=False)
+  _check_triangular(res_full["logpdf_deriv_pars"], d, _is_vector_list)
+  assert res_full["pdf_edges"] != []
+
+  # keep_all=False: only the scores.
+  simple = cop.scores_full(u, keep_all=False)
+  assert set(simple) == {"scores"}
+
+  # Threading must not change the result.
+  np.testing.assert_allclose(
+    cop.scores_full(u, num_threads=2)["scores"],
+    res_sw["scores"],
+    rtol=1e-12,
+    atol=1e-14,
+  )
+
+
+def test_vinecop_scores_discrete_finite_differences() -> None:
+  # Models with discrete variables fall back to finite differences: scores /
+  # gradient / hessian still work, and the scores_full caches stay empty.
+  rng = np.random.RandomState(7)
+  n = 200
+  x = rng.binomial(4, 0.5, size=n)
+  pmf = np.array([1.0, 4.0, 6.0, 4.0, 1.0]) / 16.0
+  cdf = np.cumsum(pmf)
+  u1 = cdf[x]
+  u1_sub = np.where(x > 0, cdf[x - 1], 0.0)
+  u2 = rng.uniform(size=n)
+  u = np.column_stack([u1, u2, u1_sub, u2])
+
+  bicop = pv.Bicop(
+    family=pv.families.gaussian,
+    parameters=np.array([[0.5]]),
+    var_types=["d", "c"],
+  )
+  cop = pv.Vinecop.from_structure(
+    matrix=np.array([[1, 1], [2, 0]]),
+    pair_copulas=[[bicop]],
+    var_types=["d", "c"],
+  )
+
+  scores = cop.scores(u)
+  assert scores.shape == (n, 1)
+  assert np.isfinite(scores).all()
+  assert cop.hessian(u).shape == (1, 1)
+
+  # Step-wise: the per-edge scores cache is filled (with the discrete edge's
+  # finite-difference values); the full-gradient-only caches stay empty.
+  res = cop.scores_full(u)
+  np.testing.assert_allclose(res["scores"], scores, rtol=1e-12)
+  assert res["logpdf_deriv_pars"] != []
+  for key in _SCORES_FULL_CACHE_KEYS:
+    if key != "logpdf_deriv_pars":
+      assert res[key] == []
+
+  # Full gradient: whole-vine finite differences, all caches empty.
+  res_full = cop.scores_full(u, step_wise=False)
+  assert np.isfinite(res_full["scores"]).all()
+  for key in _SCORES_FULL_CACHE_KEYS:
+    assert res_full[key] == []
+
+
+def test_vinecop_scores_rejects_nonparametric() -> None:
+  rng = np.random.RandomState(11)
+  u = pv.to_pseudo_obs(rng.normal(size=(300, 2)))
+  cop = pv.Vinecop.from_data(
+    u, controls=pv.FitControlsVinecop(family_set=[pv.families.tll])
+  )
+  for call in (
+    cop.scores,
+    cop.gradient,
+    cop.scores_full,
+    cop.hessian,
+    cop.hessian_full,
+  ):
+    with pytest.raises(RuntimeError, match="parametric"):
+      call(u)
+
+
 def test_struct_array_accessors_and_factory() -> None:
   d, n = 5, 200
   u = pv.to_pseudo_obs(random_data(d, n))
