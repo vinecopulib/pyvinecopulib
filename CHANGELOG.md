@@ -1,13 +1,13 @@
 # Changelog
 
-## 1.0.0
+## 0.8.0
 
 ### Breaking API changes in `pyvinecopulib`
 
 - Reorganize the public API into the `core` / `families` / `utils` / `sklearn` subpackages (#207).
     - Top-level classes (`Bicop`, `Vinecop`, `RVineStructure`, `CVineStructure`, `DVineStructure`, `FitControlsBicop`, `FitControlsVinecop`, `BicopFamily`) and `to_pseudo_obs` are kept at the top level indefinitely.
-    - Family constants / groups (`indep`, `gaussian`, …, `parametric`, …, `itau`), `Kde1d`, `wdm`, `sobol`, `ghalton`, `simulate_uniform`, `benchmark`, `pairs_copula_data` still resolve at the top level but emit a `DeprecationWarning` on access pointing at the canonical subpackage path. Aliases are scheduled for removal in 2.0.
-    - `repr` and pickle now use canonical module paths (`Bicop.__module__ == "pyvinecopulib.core"`, `Kde1d.__module__ == "pyvinecopulib.utils"`, etc.); pre-1.0 pickles still load via the deprecated aliases.
+    - Family constants / groups (`indep`, `gaussian`, …, `parametric`, …, `itau`), `Kde1d`, `wdm`, `sobol`, `ghalton`, `simulate_uniform`, `benchmark`, `pairs_copula_data` still resolve at the top level but emit a `DeprecationWarning` on access pointing at the canonical subpackage path. Aliases are scheduled for removal in the next major release.
+    - `repr` and pickle now use canonical module paths (`Bicop.__module__ == "pyvinecopulib.core"`, `Kde1d.__module__ == "pyvinecopulib.utils"`, etc.); pickles from releases up to 0.7.x still load via the deprecated aliases.
 - `pyvinecopulib.sklearn` estimators take a single `backend=` keyword (#218).
     - `VineDensity(controls=..., structure=..., seed=...)` → `VineDensity(backend=VinecopBackend(controls=..., structure=...), random_state=...)`. Same shape change for `VineRegressor` / `VineForestDensity` / `VineForestRegressor`. No string shortcuts; pass a `VinecopBackend` or `TorchVinecopBackend` instance.
     - `seed`-style kwargs renamed to `random_state` across the forests and on `VineDensity.sample` / `VineDensity.cdf` / `VineForestDensity.cdf`. Legacy `seed` / `seeds` kwargs removed without a deprecation alias.
@@ -27,7 +27,7 @@
 - Use Sphinx autosummary on the four subpackage landing pages so module docstrings, classes, and free functions get their own indexed pages (#214).
 - Add a custom `tree_criterion` for vine structure selection: set `FitControlsVinecop(tree_criterion="custom")` and supply `tree_criterion_function`, a callable `f(data, weights) -> float` mapping a two-column array of pair pseudo-observations (and observation weights) to a scalar edge weight (its absolute value is used). The callable round-trips through pickle when it is picklable (e.g. a module-level function); calls acquire the GIL, so they serialise under `num_threads > 1` ([vinecopulib#674](https://github.com/vinecopulib/vinecopulib/pull/674)).
 - Add per-row-parameter overloads of `Bicop.pdf` / `cdf` / `hfunc1` / `hfunc2` / `hinv1` / `hinv2` / `loglik`: pass an `(n, p)` array of `parameters` (one row per observation, `p` family parameters each) plus an optional `num_threads` to evaluate the copula with a different parameter set per row in a single (optionally threaded) call, instead of reusing the object's stored parameters. Parametric families only ([vinecopulib#675](https://github.com/vinecopulib/vinecopulib/pull/675)).
-- Expose the vine gradient/diagnostics surface on `Vinecop`: `pdf_full` (density plus, with `keep_all=True`, the per-edge densities and h-functions, returned as a dict of `[tree][edge]` nested arrays), `scores` (observation-wise score matrix), `hessian` (per-observation Hessians), `hessian_avg` (average Hessian), and `scores_cov` (score covariance). Mirrors the R additions in [rvinecopulib#320](https://github.com/vinecopulib/rvinecopulib/pull/320).
+- Expose the vine gradient/diagnostics surface on `Vinecop`: `pdf_full` (density plus, with `keep_all=True`, the per-edge densities and h-functions, returned as a dict of `[tree][edge]` nested arrays; the left-limit `hfunc*_sub` entries are only populated for models with discrete variables), `scores` (observation-wise score matrix), `hessian` (average Hessian), `hessian_full` (per-observation Hessians), and `scores_cov` (score covariance). Scores and Hessians are computed analytically (models with discrete variables fall back to finite differences); models with nonparametric pair copulas raise `RuntimeError`. Mirrors the R additions in [rvinecopulib#320](https://github.com/vinecopulib/rvinecopulib/pull/320) ([vinecopulib#679](https://github.com/vinecopulib/vinecopulib/pull/679), [vinecopulib#683](https://github.com/vinecopulib/vinecopulib/pull/683)).
 - Add `RVineStructure.from_struct_array(order, struct_array, natural_order=False, check=True)` (build a structure from an order vector and a `[tree][edge]` nested-list structure array) and `RVineStructure.get_struct_array(natural_order=False)` / `Vinecop.get_struct_array(natural_order=False)` (the full structure array as a nested list, complementing the per-entry `struct_array(tree, edge)`), on top of the `TriangularArray` conversions added in [vinecopulib#680](https://github.com/vinecopulib/vinecopulib/pull/680).
 
 ### Build / packaging
@@ -64,6 +64,17 @@
 - Per-row parameter evaluation for parametric bivariate copulas: `Bicop::pdf` / `cdf` / `hfunc1` / `hfunc2` / `hinv1` / `hinv2` / `loglik` gain an overload taking an `n×p` parameter matrix (one set per observation) plus an optional thread count, backed by an eval-core refactor to a single parameter-aware leaf per family ([vinecopulib#675](https://github.com/vinecopulib/vinecopulib/pull/675)).
 - Improve start parameters when fitting pair copulas on discrete data ([vinecopulib#677](https://github.com/vinecopulib/vinecopulib/pull/677)).
 - `TriangularArray<T>` owns its conversions: `to_json()`, a JSON constructor, and `to_list()` (nested rows), used by the pyvinecopulib bindings for the structure-array and per-edge outputs ([vinecopulib#680](https://github.com/vinecopulib/vinecopulib/pull/680)).
+- Analytic derivatives of the bivariate copula density and h-functions with respect to parameters and arguments for all parametric families, making `Vinecop` scores and Hessians analytic (exact and faster); models with nonparametric pair copulas are now rejected by `scores` / `hessian` ([vinecopulib#683](https://github.com/vinecopulib/vinecopulib/pull/683), [vinecopulib#687](https://github.com/vinecopulib/vinecopulib/pull/687)). The TLL family additionally gains the exact argument gradient of its density ([vinecopulib#694](https://github.com/vinecopulib/vinecopulib/pull/694)).
+- Rename the `Vinecop` Hessian API: `hessian_avg` → `hessian` (average) and `hessian` → `hessian_full` (per-observation), mirrored by the Python bindings ([vinecopulib#679](https://github.com/vinecopulib/vinecopulib/pull/679)).
+
+#### PERFORMANCE
+
+- Speed up the bicop evaluation engine: vectorized closed-form pdf / h-function / CDF leaves and derivative-cascade allocation hygiene. Evaluations may shift by ≤ 1e-12 and fitted parameters by ≤ 1e-8 ([vinecopulib#681](https://github.com/vinecopulib/vinecopulib/pull/681)).
+- Speed up `Vinecop` evaluation and structure selection: no per-edge copula copies in `inverse_rosenblatt`, in-place data collapsing, parallel allocation-free Monte-Carlo `cdf`, and selection fast paths. `pdf_full` no longer duplicates continuous h-functions into the `hfunc*_sub` buffers (they are now empty for models without discrete variables) ([vinecopulib#692](https://github.com/vinecopulib/vinecopulib/pull/692)).
+- Speed up TLL fitting and evaluation: fused conditional-cdf interpolation and closed-form inversion of the conditional cdf. TLL `hinv1` / `hinv2` (hence `simulate` / `inverse_rosenblatt` on TLL vines) may shift by ≤ 1e-9 ([vinecopulib#691](https://github.com/vinecopulib/vinecopulib/pull/691)).
+- Speed up `tools_stats`: SIMD `qnorm`, leaner bivariate normal / t kernels, faster pseudo-observations and quasi-random fills. Gaussian / Student evaluations may shift at the ≤ 1e-12 level ([vinecopulib#690](https://github.com/vinecopulib/vinecopulib/pull/690)).
+- Faster shared Eigen / thread / integration primitives; the relaxed integration tolerance (1e-12 → 1e-9) may shift Kendall's τ of the integrated families (BB6 / BB7 / BB8, Tawn) by up to ~1e-7 ([vinecopulib#689](https://github.com/vinecopulib/vinecopulib/pull/689)).
+- Compute the Student t score's df-only terms once per call, speeding up `Vinecop` scores / Hessians and Student t maximum-likelihood fits ([vinecopulib#693](https://github.com/vinecopulib/vinecopulib/pull/693)).
 
 #### BUG FIXES
 

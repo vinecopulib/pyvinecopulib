@@ -161,7 +161,7 @@ dict
     ``"hfunc2"``, ``"hfunc1_sub"`` and ``"hfunc2_sub"``, each a nested list
     indexed ``[tree][edge]`` of length-n arrays. The ``_sub`` fields hold the
     left-limit h-functions and are only populated when at least one variable is
-    discrete.
+    discrete; for models without discrete variables they are empty lists.
 )""";
 
   const char* from_structure_doc = R"""(
@@ -328,14 +328,14 @@ dict
       .def("scores", &Vinecop::scores, "u"_a, "step_wise"_a = true,
            "num_threads"_a = 1, vinecop_doc.scores.doc,
            nb::call_guard<nb::gil_scoped_release>())
-      .def("hessian_avg", &Vinecop::hessian_avg, "u"_a, "step_wise"_a = true,
-           "num_threads"_a = 1, vinecop_doc.hessian_avg.doc,
+      .def("hessian", &Vinecop::hessian, "u"_a, "step_wise"_a = true,
+           "num_threads"_a = 1, vinecop_doc.hessian.doc,
            nb::call_guard<nb::gil_scoped_release>())
       .def("scores_cov", &Vinecop::scores_cov, "u"_a, "step_wise"_a = true,
            "num_threads"_a = 1, vinecop_doc.scores_cov.doc,
            nb::call_guard<nb::gil_scoped_release>())
       .def(
-          "hessian",
+          "hessian_full",
           [](Vinecop& cop, Eigen::MatrixXd u, bool step_wise,
              size_t num_threads) -> nb::list {
             TriangularArray<std::vector<Eigen::MatrixXd>> hess;
@@ -343,12 +343,12 @@ dict
               // Release the GIL only around the C++ computation; the nested
               // list construction below must hold it.
               nb::gil_scoped_release release;
-              hess = cop.hessian(std::move(u), step_wise, num_threads);
+              hess = cop.hessian_full(std::move(u), step_wise, num_threads);
             }
             return triangular_to_list(hess);
           },
           "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
-          vinecop_doc.hessian.doc)
+          vinecop_doc.hessian_full.doc)
       .def(
           "__repr__",
           [](const Vinecop& cop) {
