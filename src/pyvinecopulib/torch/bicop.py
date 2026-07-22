@@ -339,7 +339,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     # Trim to (1e-10, 1 - 1e-10), mirroring Bicop::prep_for_abstract.
     return u.clamp(_TRIM_LO, _TRIM_HI)
 
-  def pdf(self, u: Tensor, cond: Optional[Tensor] = None) -> Tensor:
+  def pdf(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
     """Evaluates the bivariate copula density ``c(u1, u2)``.
 
     Parameters
@@ -348,7 +348,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
         Pseudo-observations in ``[0, 1]^2``. Inputs outside the
         unit square are clamped to ``[1e-10, 1 - 1e-10]``; ``NaN``
         propagates through the interpolation.
-    cond : Tensor or None, optional
+    x : Tensor or None, optional
         Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
         (an unconditional pair copula); accepted so the class satisfies the
         :class:`~pyvinecopulib.core.BicopLike` contract.
@@ -364,21 +364,24 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       return torch.ones(u.shape[0], dtype=u.dtype, device=u.device)
     return self.interp_grid.interpolate(u).clamp_min(1e-20)
 
-  def log_pdf(self, u: Tensor, cond: Optional[Tensor] = None) -> Tensor:
+  def log_pdf(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
     """Evaluates ``log c(u1, u2)`` with safe handling of ``-inf`` / ``NaN``.
 
     Equivalent to ``pdf(u).log()`` but replaces ``-inf`` (from the
     density floor) with a fixed lower bound and ``+inf`` / ``NaN``
-    with finite sentinels.
+    with finite sentinels. Convenience method — not part of the
+    :class:`~pyvinecopulib.core.BicopLike` contract (which exposes only
+    ``pdf``); retained for standalone use and callers that want a
+    numerically-floored log density.
 
     Parameters
     ----------
     u : Tensor, shape (n, 2), dtype float
         Pseudo-observations in ``[0, 1]^2``.
-    cond : Tensor or None, optional
+    x : Tensor or None, optional
         Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
-        (an unconditional pair copula); accepted so the class satisfies the
-        :class:`~pyvinecopulib.core.BicopLike` contract.
+        (an unconditional pair copula); accepted for signature uniformity
+        with the other evaluation methods.
 
     Returns
     -------
@@ -387,7 +390,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     """
     return self.pdf(u).log().nan_to_num(neginf=_LOG_FLOOR, posinf=0.0)
 
-  def cdf(self, u: Tensor, cond: Optional[Tensor] = None) -> Tensor:
+  def cdf(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
     """Evaluates the bivariate copula CDF.
 
     .. math::
@@ -403,7 +406,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     ----------
     u : Tensor, shape (n, 2), dtype float
         Pseudo-observations in ``[0, 1]^2``.
-    cond : Tensor or None, optional
+    x : Tensor or None, optional
         Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
         (an unconditional pair copula); accepted so the class satisfies the
         :class:`~pyvinecopulib.core.BicopLike` contract.
@@ -430,7 +433,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       return self.interp_grid.interp_at(cache, u).clamp(_TRIM_LO, _TRIM_HI)
     return self.interp_grid.integrate_1d(u, cond_var=cond_var)
 
-  def hfunc1(self, u: Tensor, cond: Optional[Tensor] = None) -> Tensor:
+  def hfunc1(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
     """Evaluates the first h-function.
 
     .. math::
@@ -441,7 +444,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     ----------
     u : Tensor, shape (n, 2), dtype float
         Pseudo-observations in ``[0, 1]^2``.
-    cond : Tensor or None, optional
+    x : Tensor or None, optional
         Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
         (an unconditional pair copula); accepted so the class satisfies the
         :class:`~pyvinecopulib.core.BicopLike` contract.
@@ -456,7 +459,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       return u[:, 1].clamp(_TRIM_LO, _TRIM_HI)
     return self._hfunc_raw(u, 1).clamp(0.0, 1.0)
 
-  def hfunc2(self, u: Tensor, cond: Optional[Tensor] = None) -> Tensor:
+  def hfunc2(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
     """Evaluates the second h-function.
 
     .. math::
@@ -467,7 +470,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     ----------
     u : Tensor, shape (n, 2), dtype float
         Pseudo-observations in ``[0, 1]^2``.
-    cond : Tensor or None, optional
+    x : Tensor or None, optional
         Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
         (an unconditional pair copula); accepted so the class satisfies the
         :class:`~pyvinecopulib.core.BicopLike` contract.
@@ -504,7 +507,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     return self.interp_grid.inverse_integrate_1d(u, cond_var).clamp(0.0, 1.0)
 
   @torch.no_grad()
-  def hinv1(self, u: Tensor, cond: Optional[Tensor] = None) -> Tensor:
+  def hinv1(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
     """Inverts `hfunc1` w.r.t. the second argument.
 
     Given ``u = [u1, p]``, returns ``u2`` such that
@@ -518,7 +521,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     u : Tensor, shape (n, 2), dtype float
         Column 0 is ``u1``; column 1 is the target probability
         ``p``.
-    cond : Tensor or None, optional
+    x : Tensor or None, optional
         Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
         (an unconditional pair copula); accepted so the class satisfies the
         :class:`~pyvinecopulib.core.BicopLike` contract.
@@ -534,7 +537,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     return self._hinv_raw(u, 1)
 
   @torch.no_grad()
-  def hinv2(self, u: Tensor, cond: Optional[Tensor] = None) -> Tensor:
+  def hinv2(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
     """Inverts `hfunc2` w.r.t. the first argument.
 
     Given ``u = [p, u2]``, returns ``u1`` such that
@@ -546,7 +549,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     u : Tensor, shape (n, 2), dtype float
         Column 0 is the target probability ``p``; column 1 is
         ``u2``.
-    cond : Tensor or None, optional
+    x : Tensor or None, optional
         Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
         (an unconditional pair copula); accepted so the class satisfies the
         :class:`~pyvinecopulib.core.BicopLike` contract.

@@ -2,12 +2,11 @@
 
 :class:`BicopBase` is the canonical (array-backend-agnostic) implementation of
 :class:`~pyvinecopulib.core._protocols.BicopLike`: a copula that supplies only
-``log_pdf`` / ``hfunc1`` / ``hfunc2`` (plus the ``dtype`` / ``device`` seam)
-inherits ``pdf`` (``exp ∘ log_pdf``) and ``hinv1`` / ``hinv2`` (numerical
-inversion of the h-functions) for free; each is overridable when a native exact
-form exists. (Standalone per-pair ``simulate`` is intentionally not provided —
-it is not part of the :class:`BicopLike` contract and the vine samples via
-``inverse_rosenblatt``, not per-pair sampling.)
+``pdf`` / ``hfunc1`` / ``hfunc2`` (plus the ``dtype`` / ``device`` seam) inherits
+``hinv1`` / ``hinv2`` (numerical inversion of the h-functions) for free; each is
+overridable when a native exact form exists. (Standalone per-pair ``simulate``
+is intentionally not provided — it is not part of the :class:`BicopLike`
+contract and the vine samples via ``inverse_rosenblatt``, not per-pair sampling.)
 
 Written against the Array API (:func:`array_api_compat.array_namespace`) so the
 same code runs on numpy and torch. It is *not* portable to immutable backends
@@ -33,44 +32,37 @@ __all__ = ["BicopBase"]
 class BicopBase(BicopLike[ArrayT], ABC):
   """Canonical partial implementation of :class:`BicopLike` (numpy / torch).
 
-  Subclasses must implement ``dtype`` / ``device`` and ``log_pdf`` / ``hfunc1``
-  / ``hfunc2``; ``pdf`` / ``hinv1`` / ``hinv2`` have working defaults here
-  (``cdf`` raises unless overridden). Set the class attribute
-  ``supports_batched = True`` only if the concrete pair exposes the grid/cache
-  internals the torch batched path needs.
+  Subclasses must implement ``dtype`` / ``device`` and ``pdf`` / ``hfunc1`` /
+  ``hfunc2``; ``hinv1`` / ``hinv2`` have working defaults here (numerical
+  inversion of the h-functions), and ``cdf`` raises unless overridden. Set the
+  class attribute ``supports_batched = True`` only if the concrete pair exposes
+  the grid/cache internals the torch batched path needs.
   """
 
   #: Whether this pair can enter the torch grid-batched fast path.
   supports_batched: bool = False
 
-  def pdf(self, u: ArrayT, cond: Optional[ArrayT] = None) -> ArrayT:
-    logp = self.log_pdf(u, cond)
-    xp = array_namespace(logp)
-    return cast(ArrayT, xp.exp(logp))
-
-  def hinv1(self, u: ArrayT, cond: Optional[ArrayT] = None) -> ArrayT:
+  def hinv1(self, u: ArrayT, x: Optional[ArrayT] = None) -> ArrayT:
+    # Solve hfunc1([u1, .], x) = p for the second argument (increasing in it).
     ua: Any = u
     xp = array_namespace(ua)
     u1, p = ua[:, 0], ua[:, 1]
     return cast(
       ArrayT,
-      solve_increasing(
-        lambda x: self.hfunc1(xp.stack([u1, x], axis=-1), cond), p
-      ),
+      solve_increasing(lambda v: self.hfunc1(xp.stack([u1, v], axis=-1), x), p),
     )
 
-  def hinv2(self, u: ArrayT, cond: Optional[ArrayT] = None) -> ArrayT:
+  def hinv2(self, u: ArrayT, x: Optional[ArrayT] = None) -> ArrayT:
+    # Solve hfunc2([., u2], x) = p for the first argument (increasing in it).
     ua: Any = u
     xp = array_namespace(ua)
     p, u2 = ua[:, 0], ua[:, 1]
     return cast(
       ArrayT,
-      solve_increasing(
-        lambda x: self.hfunc2(xp.stack([x, u2], axis=-1), cond), p
-      ),
+      solve_increasing(lambda v: self.hfunc2(xp.stack([v, u2], axis=-1), x), p),
     )
 
-  def cdf(self, u: ArrayT, cond: Optional[ArrayT] = None) -> ArrayT:
+  def cdf(self, u: ArrayT, x: Optional[ArrayT] = None) -> ArrayT:
     raise NotImplementedError(
       f"{type(self).__name__}.cdf is not defined; the vine cdf uses "
       "Monte-Carlo simulation and does not require a per-pair cdf."

@@ -21,11 +21,11 @@ from pyvinecopulib.core import BicopBase
 
 
 class _IndepPair(BicopBase[np.ndarray]):
-  """Independence pair copula (``c == 1``); inherits every BicopBase default.
+  """Independence pair copula (``c == 1``); inherits the BicopBase defaults.
 
-  Implements only the abstract surface (``log_pdf`` / ``hfunc1`` / ``hfunc2`` +
-  ``dtype`` / ``device``), so ``pdf`` / ``hinv1`` / ``hinv2`` / ``cdf`` come
-  from :class:`BicopBase` and are what these tests exercise.
+  Implements only the abstract surface (``pdf`` / ``hfunc1`` / ``hfunc2`` +
+  ``dtype`` / ``device``), so ``hinv1`` / ``hinv2`` / ``cdf`` come from
+  :class:`BicopBase` and are what these tests exercise.
   """
 
   def __init__(self, ref: np.ndarray) -> None:
@@ -39,19 +39,13 @@ class _IndepPair(BicopBase[np.ndarray]):
   def device(self) -> object:
     return self._ref.device
 
-  def log_pdf(
-    self, u: np.ndarray, cond: Optional[np.ndarray] = None
-  ) -> np.ndarray:
-    return np.zeros(u.shape[0], dtype=u.dtype)
+  def pdf(self, u: np.ndarray, x: Optional[np.ndarray] = None) -> np.ndarray:
+    return np.ones(u.shape[0], dtype=u.dtype)
 
-  def hfunc1(
-    self, u: np.ndarray, cond: Optional[np.ndarray] = None
-  ) -> np.ndarray:
+  def hfunc1(self, u: np.ndarray, x: Optional[np.ndarray] = None) -> np.ndarray:
     return u[:, 1]
 
-  def hfunc2(
-    self, u: np.ndarray, cond: Optional[np.ndarray] = None
-  ) -> np.ndarray:
+  def hfunc2(self, u: np.ndarray, x: Optional[np.ndarray] = None) -> np.ndarray:
     return u[:, 0]
 
 
@@ -73,27 +67,14 @@ class _SqrtPair(BicopBase[np.ndarray]):
   def device(self) -> object:
     return self._ref.device
 
-  def log_pdf(
-    self, u: np.ndarray, cond: Optional[np.ndarray] = None
-  ) -> np.ndarray:
-    return np.zeros(u.shape[0], dtype=u.dtype)
+  def pdf(self, u: np.ndarray, x: Optional[np.ndarray] = None) -> np.ndarray:
+    return np.ones(u.shape[0], dtype=u.dtype)
 
-  def hfunc1(
-    self, u: np.ndarray, cond: Optional[np.ndarray] = None
-  ) -> np.ndarray:
+  def hfunc1(self, u: np.ndarray, x: Optional[np.ndarray] = None) -> np.ndarray:
     return u[:, 1] ** 2
 
-  def hfunc2(
-    self, u: np.ndarray, cond: Optional[np.ndarray] = None
-  ) -> np.ndarray:
+  def hfunc2(self, u: np.ndarray, x: Optional[np.ndarray] = None) -> np.ndarray:
     return u[:, 0] ** 2
-
-
-def test_bicopbase_pdf_default() -> None:
-  """``pdf`` defaults to ``exp(log_pdf)`` (== 1 for the independence pair)."""
-  cop = _IndepPair(np.empty(0, dtype=np.float64))
-  u = np.array([[0.3, 0.7], [0.5, 0.5], [0.9, 0.1]])
-  np.testing.assert_allclose(cop.pdf(u), np.ones(3))
 
 
 def test_bicopbase_numerical_hinv_identity() -> None:
