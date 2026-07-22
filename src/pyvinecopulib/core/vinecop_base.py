@@ -561,8 +561,9 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   # instead of a Python loop. Only the grid state built by ``_build_batched``
   # is backend-specific; the loops below are array-agnostic (``xp``). The
   # batched-vine surface used here: ``bv.level(t)`` / ``bv.grid_points`` and,
-  # per level, ``gather_inputs`` / ``pdf`` / ``hfunc1`` / ``hfunc2`` (each
-  # ``(N_t, n)`` over the ``N_t = n_pairs`` edges) plus the ``needs_h1`` /
+  # per level, ``gather_inputs`` / ``pdf_h1_h2`` / ``h1_h2`` (each returning
+  # ``(N_t, n)`` slices over the ``N_t = n_pairs`` edges, fusing the shared
+  # bilinear cell search across pdf + both h-functions) plus the ``needs_h1`` /
   # ``needs_h2`` masks. These receive already-prepped ``u`` (the public methods
   # prep before dispatch).
   def _pdf_batched(self, u: Any) -> Any:
@@ -596,14 +597,16 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     for t in range(trunc_lvl):
       lvl = bv.level(t)
       u_e = lvl.gather_inputs(hfunc1, hfunc2)  # (N_t, n, 2)
+      # One fused lookup yields pdf + both h-functions (shared cell search).
+      pdf_e, h1_e, h2_e = lvl.pdf_h1_h2(bv.grid_points, u_e)
       # Product over the level's edges (axis 0), then into the running product
       # (the batched analogue of _pdf's per-edge cwiseProduct).
-      pdf = pdf * xp.prod(lvl.pdf(bv.grid_points, u_e), axis=0)
-      # Compute h1/h2 for every edge, then overwrite the columns flagged by
-      # needs_h{1,2} (mirrors _pdf's gated per-edge writes).
+      pdf = pdf * xp.prod(pdf_e, axis=0)
+      # Overwrite the next-tree columns flagged by needs_h{1,2} (mirrors _pdf's
+      # gated per-edge writes).
       n_pairs = lvl.n_pairs
-      h1_new = xp.matrix_transpose(lvl.hfunc1(bv.grid_points, u_e))  # (n, N_t)
-      h2_new = xp.matrix_transpose(lvl.hfunc2(bv.grid_points, u_e))
+      h1_new = xp.matrix_transpose(h1_e)  # (n, N_t)
+      h2_new = xp.matrix_transpose(h2_e)
       hfunc1[:, :n_pairs] = xp.where(
         lvl.needs_h1[None, :], h1_new, hfunc1[:, :n_pairs]
       )
@@ -640,8 +643,10 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       lvl = bv.level(t)
       u_e = lvl.gather_inputs(hfunc1, hfunc2)
       n_pairs = lvl.n_pairs
-      h1_new = xp.matrix_transpose(lvl.hfunc1(bv.grid_points, u_e))
-      h2_new = xp.matrix_transpose(lvl.hfunc2(bv.grid_points, u_e))
+      # One fused lookup yields both h-functions (shared cell search).
+      h1_e, h2_e = lvl.h1_h2(bv.grid_points, u_e)
+      h1_new = xp.matrix_transpose(h1_e)
+      h2_new = xp.matrix_transpose(h2_e)
       # hfunc2 is overwritten unconditionally at every edge; hfunc1 is gated.
       hfunc2[:, :n_pairs] = h2_new
       hfunc1[:, :n_pairs] = xp.where(
