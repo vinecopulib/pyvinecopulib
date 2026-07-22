@@ -40,8 +40,6 @@ from ..pyvinecopulib_ext import Bicop, tll as _TLL_FAMILY
 from ._controls import FitControlsTorchBicop
 from ._interp import InterpolationGrid2D, _TRIM_LO, _TRIM_HI
 
-_LOG_FLOOR: float = -13.815510557964274  # log(1e-6); same as torchvinecopulib
-
 
 class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
   """PyTorch evaluator for a bivariate copula stored as a density grid.
@@ -323,32 +321,6 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     if self.is_indep:
       return torch.ones(u.shape[0], dtype=u.dtype, device=u.device)
     return self.interp_grid.interpolate(u).clamp_min(1e-20)
-
-  def log_pdf(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
-    """Evaluates ``log c(u1, u2)`` with safe handling of ``-inf`` / ``NaN``.
-
-    Equivalent to ``pdf(u).log()`` but replaces ``-inf`` (from the
-    density floor) with a fixed lower bound and ``+inf`` / ``NaN``
-    with finite sentinels. Convenience method — not part of the
-    :class:`~pyvinecopulib.core.BicopLike` contract (which exposes only
-    ``pdf``); retained for standalone use and callers that want a
-    numerically-floored log density.
-
-    Parameters
-    ----------
-    u : Tensor, shape (n, 2), dtype float
-        Pseudo-observations in ``[0, 1]^2``.
-    x : Tensor or None, optional
-        Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
-        (an unconditional pair copula); accepted for signature uniformity
-        with the other evaluation methods.
-
-    Returns
-    -------
-    Tensor, shape (n,), dtype float
-        Log-density values, finite everywhere.
-    """
-    return self.pdf(u).log().nan_to_num(neginf=_LOG_FLOOR, posinf=0.0)
 
   def cdf(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
     """Evaluates the bivariate copula CDF.

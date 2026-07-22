@@ -1,17 +1,22 @@
 """Conditioning-context policy for the vine cascades.
 
-A :class:`ContextPolicy` decides, for a single pair-copula edge, the ``cond``
-matrix the pair copula receives — assembled from the edge's conditioning-set
-values ``u_D`` (gathered by the vine cascade) and an optional external covariate
-matrix ``x`` (passed per call). It is the pluggable seam that turns the
-otherwise simplified / unconditional cascades into non-simplified / conditional
-ones.
+A :class:`ContextPolicy` decides, for a single pair-copula edge, the ``x`` matrix
+(``x_e`` in the cascades) the pair copula receives — assembled from the edge's
+conditioning-set values ``u_D`` (gathered by the vine cascade) and the optional
+external covariate matrix ``x`` (passed per call). It is the pluggable seam that
+turns the otherwise simplified cascades into non-simplified ones:
 
-**Column-order contract.** :meth:`ContextPolicy.edge_context` returns
+* :class:`SimplifiedContext` (default) forwards only the external covariates
+  ``x`` — the pair-copula parameters may depend on ``x`` but **not** on the
+  conditioning set ``u_D`` (the classic simplified vine when ``x`` is ``None``).
+* :class:`NonSimplifiedContext` forwards ``concat([u_D, x])`` — the pair copula
+  ``c_{a,b;D}`` depends on its conditioning-set values (and optionally ``x``).
+
+**Column-order contract (C1).** :meth:`ContextPolicy.edge_context` returns
 ``concat([u_D, x], axis=-1)`` with the ``u_D`` columns in the fixed order the
 vine gathers them (ascending conditioning-tree index) and ``x`` appended last.
-Conditional pair copulas consume ``cond`` positionally, so this order is a hard
-contract that must be identical wherever ``cond`` is assembled (evaluation and
+Conditional pair copulas consume this matrix positionally, so the order is a
+hard contract that must be identical wherever it is assembled (evaluation and
 fitting alike).
 """
 
@@ -43,7 +48,7 @@ class ContextPolicy(Protocol[ArrayT]):
   def edge_context(
     self, *, u_D: Optional[ArrayT], x: Optional[ArrayT]
   ) -> Optional[ArrayT]:
-    """Assemble the ``cond`` matrix for one edge.
+    """Assemble the per-edge conditioning matrix ``x_e``.
 
     Parameters
     ----------
@@ -56,45 +61,73 @@ class ContextPolicy(Protocol[ArrayT]):
     Returns
     -------
     array, shape (n, k), or None
-        The concatenated conditioning matrix, or ``None`` for the
-        unconditional (simplified) case.
+        The assembled conditioning matrix, or ``None`` when the pair copula is
+        unconditional for this edge.
     """
     ...
 
 
 class SimplifiedContext:
-  """Simplified vine: no conditioning, ``cond`` is always ``None``.
+  """Simplified vine: forward only the external covariates ``x``.
 
-  The default policy; reproduces the classic simplified cascade at zero extra
-  cost (the ``u_D`` gather is skipped).
+  The default policy. The pair-copula parameters may depend on external
+  covariates ``x`` but not on the conditioning set ``u_D``, so the ``u_D``
+  gather is skipped (zero extra cost). With ``x=None`` this reproduces the
+  classic simplified / unconditional cascade (each pair sees ``x_e = None``).
   """
 
   assembles_conditioning: bool = False
 
   def edge_context(
     self, *, u_D: Optional[ArrayT] = None, x: Optional[ArrayT] = None
-  ) -> None:
-    return None
+  ) -> Optional[ArrayT]:
+    """Return the external covariates ``x`` unchanged (``u_D`` is ignored).
+
+    Parameters
+    ----------
+    u_D : array or None, optional
+        Ignored (never gathered under a simplified context).
+    x : array, shape (n, p), or None, optional
+        External covariates for this call.
+
+    Returns
+    -------
+    array, shape (n, p), or None
+        ``x`` unchanged.
+    """
+    del u_D
+    return x
 
 
 class NonSimplifiedContext:
-  """Non-simplified vine: ``cond = concat([u_D, x])`` per edge.
+  """Non-simplified vine: ``x_e = concat([u_D, x])`` per edge.
 
-  Parameters
-  ----------
-  use_conditioning : bool, default=True
-      Whether to gather and include the edge's conditioning-set values ``u_D``.
-      Set ``False`` for the covariate-only case (the pair copula depends on the
-      external covariates ``x`` but not on ``u_D``), which lets the cascade skip
-      the ``u_D`` gather.
+  Gathers the edge's conditioning-set values ``u_D`` (in the C1 column order)
+  and appends the external covariates ``x`` when present, so the pair copula
+  ``c_{a,b;D}`` conditions on both.
   """
 
-  def __init__(self, *, use_conditioning: bool = True) -> None:
-    self.assembles_conditioning = use_conditioning
+  assembles_conditioning: bool = True
 
   def edge_context(
     self, *, u_D: Optional[ArrayT] = None, x: Optional[ArrayT] = None
   ) -> Optional[ArrayT]:
+    """Concatenate ``[u_D, x]`` (C1 order); drop whichever is ``None``.
+
+    Parameters
+    ----------
+    u_D : array, shape (n, |D|), or None, optional
+        The edge's conditioning-set values, in ascending conditioning-tree
+        order.
+    x : array, shape (n, p), or None, optional
+        External covariates for this call, appended last.
+
+    Returns
+    -------
+    array, shape (n, |D| + p), or None
+        ``concat([u_D, x])``, a single one of them when the other is ``None``,
+        or ``None`` when both are ``None``.
+    """
     parts = [t for t in (u_D, x) if t is not None]
     if not parts:
       return None
