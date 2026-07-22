@@ -33,6 +33,16 @@ if(NOT SKBUILD)
   after editing C++ files.")
 endif()
 
+# Fail early with an actionable message when the lib/ git submodules have not
+# been checked out (the includes below would otherwise error cryptically).
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/lib/vinecopulib/cmake/options.cmake")
+  message(
+    FATAL_ERROR
+      "The lib/ git submodules are not checked out (missing "
+      "lib/vinecopulib/cmake/options.cmake). Run\n"
+      "    git submodule update --init --recursive\n" "and re-run the build.")
+endif()
+
 include(lib/vinecopulib/cmake/options.cmake REQUIRED)
 
 include(lib/vinecopulib/cmake/compilerDefOpt.cmake REQUIRED)
