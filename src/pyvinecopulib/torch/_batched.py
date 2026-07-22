@@ -390,9 +390,6 @@ class BatchedTreeLevel(torch.nn.Module):
     ).clamp_min(1e-20)
     return torch.where(self.is_indep[:, None], torch.ones_like(raw), raw)
 
-  def log_pdf(self, grid_points: Tensor, u: Tensor) -> Tensor:
-    return self.pdf(grid_points, u).log()
-
   def hfunc1(self, grid_points: Tensor, u: Tensor) -> Tensor:
     """Per-pair hfunc1. ``cache=True`` does one bilinear interp on the
     precomputed cache; ``cache=False`` runs :func:`integrate_1d_batched`

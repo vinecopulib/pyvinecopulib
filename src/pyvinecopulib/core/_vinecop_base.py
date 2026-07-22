@@ -10,20 +10,26 @@ h-function cascade, so a concrete backend (e.g.
 inherits the whole evaluation surface.
 
 Conditioning is threaded through a pluggable
-:class:`~pyvinecopulib.core.ContextPolicy`: each pair-copula call receives a
-``cond`` matrix assembled per edge from the edge's conditioning-set values
-``u_D`` and an optional external covariate matrix ``x``. The default
-:class:`~pyvinecopulib.core.SimplifiedContext` passes ``cond=None`` everywhere
-and skips the ``u_D`` gather, reproducing the classic simplified cascade at zero
-extra cost.
+:class:`~pyvinecopulib.core.ContextPolicy`: each pair-copula call receives an
+``x`` matrix (``x_e`` in the cascades) assembled per edge from the edge's
+conditioning-set values ``u_D`` and the optional external covariate matrix
+``x``. The default :class:`~pyvinecopulib.core.SimplifiedContext` forwards only
+``x`` (``None`` in the unconditional case) and skips the ``u_D`` gather,
+reproducing the classic simplified cascade at zero extra cost.
+
+The ``pdf`` cascade accumulates a **product** of per-edge copula densities, a
+faithful port of the C++ ``Vinecop::pdf`` (``cwiseProduct``); there is no
+per-observation ``log_pdf`` (mirroring the C++ surface).
 
 Hooks a concrete backend must provide (see the abstract members): ``_pair``,
-``_prep``, ``_draw_base_u``; and, to enable the batched fast path,
-``_pdf_batched`` / ``_rosenblatt_batched`` / ``_default_batched``. The
-concrete backend calls :meth:`_bind_vine` once to install the structure and
-context. Array values are handled as ``Any`` inside the cascades per the
-``pyvinecopulib.core`` typing policy (the Array API namespace is untyped); the
-generic ``ArrayT`` lives on the public signatures.
+``_prep``, ``_draw_base_u``; and, to enable the grid-batched fast path,
+``_build_batched`` (plus ``_default_batched``). The batched *cascade loops* are
+array-agnostic and live here; only the grid/cache builder returned by
+``_build_batched`` is backend-specific. The concrete backend calls
+:meth:`_bind_vine` once to install the structure and context. Array values are
+handled as ``Any`` inside the cascades per the ``pyvinecopulib.core`` typing
+policy (the Array API namespace is untyped); the generic ``ArrayT`` lives on the
+public signatures.
 """
 
 from __future__ import annotations
@@ -71,6 +77,9 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   inverse_order: tuple[int, ...]
   _context: ContextPolicy
   _cond_pos_cache: dict[tuple[int, int], tuple[int, ...]]
+  #: Lazily-built grid-batched state (see :meth:`_build_batched`); ``None`` until
+  #: the first batched call. Backends invalidate it on device moves.
+  _batched: Any
 
   def _bind_vine(self, structure: Any, context: ContextPolicy) -> None:
     """Install the vine structure + context and derive the order arrays."""
@@ -85,6 +94,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       inv[k - 1] = j
     self.inverse_order = tuple(inv)
     self._cond_pos_cache = {}
+    self._batched = None
 
   # --- hooks a concrete backend provides -------------------------------- #
   @abstractmethod
@@ -103,15 +113,24 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     """Whether ``batched`` defaults to ``True`` (backend/device dependent)."""
     return False
 
-  def _pdf_batched(self, u: Any) -> Any:
-    raise NotImplementedError(
-      f"{type(self).__name__} does not provide a batched pdf path."
+  def _build_batched(self) -> Any:
+    """Build the grid-batched state for the fast path (backend-specific).
+
+    The default raises :class:`_NotBatchable`, so the dispatch layer falls back
+    to the non-batched cascade. A grid backend overrides this to return an
+    object exposing the batched-vine surface the cascades call
+    (``level`` / ``grid_points`` / per-level ``gather_inputs`` / ``pdf`` /
+    ``hfunc1`` / ``hfunc2`` / ``n_pairs`` / ``needs_h1`` / ``needs_h2``).
+    """
+    raise _NotBatchable(
+      f"{type(self).__name__} does not provide a batched fast path."
     )
 
-  def _rosenblatt_batched(self, u: Any) -> Any:
-    raise NotImplementedError(
-      f"{type(self).__name__} does not provide a batched rosenblatt path."
-    )
+  def _ensure_batched(self) -> Any:
+    """Return the cached batched state, building it once on first use."""
+    if self._batched is None:
+      self._batched = self._build_batched()
+    return self._batched
 
   def _eval_context(self):
     """Context manager disabling grad for inverse / simulate / cdf.
@@ -123,6 +142,16 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
 
   # --- conditioning-context assembly ------------------------------------ #
   def _cond_positions(self, tree: int, edge: int) -> tuple[int, ...]:
+    """Natural-order column indices of this edge's conditioning set ``D``.
+
+    These are ``struct_array(i, edge, natural_order=True) - 1`` for the
+    conditioning trees ``i = 0 .. tree - 1``, i.e. the columns of the
+    natural-order observation matrix holding the variables the pair copula
+    ``c_{a,b;D}`` conditions on. They are returned in **ascending conditioning
+    -tree order** ``i`` — the C1 column order the context assembles ``u_D`` in
+    and a conditional pair consumes positionally. All are ``> edge`` (the
+    inverse-cascade invariant), so they are finalized before this edge is read.
+    """
     key = (tree, edge)
     cache = self._cond_pos_cache
     if key not in cache:
@@ -133,7 +162,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       )
     return cache[key]
 
-  def _edge_cond(
+  def _edge_context(
     self,
     tree: int,
     edge: int,
@@ -141,63 +170,83 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     u_nat: Optional[Any],
     hinv2_final: Optional[Any],
   ) -> Optional[Any]:
-    """Assemble ``cond`` for one edge (forward: ``u_nat``; inverse: ``hinv2_final``)."""
+    """Assemble the per-edge conditioning context ``x_e`` = context(``u_D``, ``x``).
+
+    ``u_D`` is gathered in the C1 column order (see :meth:`_cond_positions`),
+    then the context appends the external covariates ``x`` last. The source of
+    ``u_D`` differs by direction: the forward cascades pass ``u_nat`` (the
+    natural-order observations, columns), the inverse cascade passes
+    ``hinv2_final`` (the finalized ``hinv2[0]`` rows, transposed).
+    """
     ctx = self._context
+    # Simplified + unconditional: skip the gather entirely (zero cost).
     if not ctx.assembles_conditioning and x is None:
       return None
     u_D: Optional[Any] = None
     if ctx.assembles_conditioning:
-      dpos = self._cond_positions(tree, edge)
-      if dpos:
-        cols = list(dpos)
-        if u_nat is not None:
+      cols = list(self._cond_positions(tree, edge))
+      if cols:
+        if u_nat is not None:  # forward: read observation columns
           u_D = u_nat[:, cols]
-        else:
-          hf: Any = hinv2_final
-          xp = array_namespace(hf)
-          u_D = xp.matrix_transpose(hf[cols, :])
+        else:  # inverse: read finalized hinv2[0] rows, transpose to (n, |D|)
+          finalized: Any = hinv2_final
+          xp = array_namespace(finalized)
+          u_D = xp.matrix_transpose(finalized[cols, :])
     return ctx.edge_context(u_D=u_D, x=x)
 
   # --- non-batched cascades (single source of truth) -------------------- #
   def _pdf(self, u: Any, x: Optional[Any]) -> Any:
+    """Vine density as a product of per-edge copula densities (``Vinecop::pdf``)."""
     xp = array_namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
     if trunc_lvl == 0:
       return xp.ones(n, dtype=u.dtype, device=u.device)
+    # Dense (n, d) h-function scratch; seed hfunc2 with the observations in
+    # natural order (class.ipp:399).
     hfunc1 = xp.zeros((n, d), dtype=u.dtype, device=u.device)
     hfunc2 = xp.empty((n, d), dtype=u.dtype, device=u.device)
     order = self.order
     for j in range(d):
       hfunc2[:, j] = u[:, order[j] - 1]
+    # Keep an immutable copy of the seeded observations for conditioning-set
+    # (u_D) gathers; skipped entirely under a simplified/unconditional vine.
     u_nat = (
       xp.asarray(hfunc2, copy=True)
       if self._context.assembles_conditioning
       else None
     )
-    log_pdf = xp.zeros(n, dtype=u.dtype, device=u.device)
+    pdf = xp.ones(n, dtype=u.dtype, device=u.device)
     s = self.structure
     for tree in range(trunc_lvl):
       for edge in range(d - tree - 1):
-        cop = self._pair(tree, edge)
+        edge_copula = self._pair(tree, edge)
+        # m: min-array — natural-order index of the column finalized in a
+        # previous tree; the second pair input comes from hfunc2 when m sits on
+        # the natural-order diagonal, else from hfunc1 (class.ipp:1026-1034).
         m = int(s.min_array(tree, edge))
-        sarr = int(s.struct_array(tree, edge, natural_order=True))
-        col0 = hfunc2[:, edge]
-        col1 = hfunc2[:, m - 1] if m == sarr else hfunc1[:, m - 1]
-        u_e = xp.stack([col0, col1], axis=-1)
-        cond = self._edge_cond(tree, edge, x, u_nat, None)
-        log_pdf = log_pdf + cop.log_pdf(u_e, cond)
+        on_diagonal = m == int(s.struct_array(tree, edge, natural_order=True))
+        u_e_col0 = hfunc2[:, edge]
+        u_e_col1 = hfunc2[:, m - 1] if on_diagonal else hfunc1[:, m - 1]
+        u_e = xp.stack([u_e_col0, u_e_col1], axis=-1)
+        x_e = self._edge_context(tree, edge, x, u_nat, None)
+        # Accumulate the density as a product over edges (cwiseProduct,
+        # class.ipp:1047).
+        pdf = pdf * edge_copula.pdf(u_e, x_e)
+        # h-functions only evaluated if a later tree needs them (class.ipp:1050).
         if s.needed_hfunc1(tree, edge):
-          hfunc1[:, edge] = cop.hfunc1(u_e, cond)
+          hfunc1[:, edge] = edge_copula.hfunc1(u_e, x_e)
         if s.needed_hfunc2(tree, edge):
-          hfunc2[:, edge] = cop.hfunc2(u_e, cond)
-    return xp.exp(log_pdf)
+          hfunc2[:, edge] = edge_copula.hfunc2(u_e, x_e)
+    return pdf
 
   def _rosenblatt(self, u: Any, x: Optional[Any]) -> Any:
+    """Rosenblatt transform (``Vinecop::rosenblatt``)."""
     xp = array_namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
     order, inv = self.order, self.inverse_order
+    # Seed both h-function scratch matrices with the natural-order observations.
     hfunc2 = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       hfunc2[:, j] = u[:, order[j] - 1]
@@ -210,22 +259,32 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     s = self.structure
     for tree in range(trunc_lvl):
       for edge in range(d - tree - 1):
-        cop = self._pair(tree, edge)
+        edge_copula = self._pair(tree, edge)
+        # See _pdf for the m / on-diagonal second-input rule (class.ipp:1026).
         m = int(s.min_array(tree, edge))
-        sarr = int(s.struct_array(tree, edge, natural_order=True))
-        col0 = hfunc2[:, edge]
-        col1 = hfunc2[:, m - 1] if m == sarr else hfunc1[:, m - 1]
-        u_e = xp.stack([col0, col1], axis=-1)
-        cond = self._edge_cond(tree, edge, x, u_nat, None)
+        on_diagonal = m == int(s.struct_array(tree, edge, natural_order=True))
+        u_e_col0 = hfunc2[:, edge]
+        u_e_col1 = hfunc2[:, m - 1] if on_diagonal else hfunc1[:, m - 1]
+        u_e = xp.stack([u_e_col0, u_e_col1], axis=-1)
+        x_e = self._edge_context(tree, edge, x, u_nat, None)
+        # hfunc1 only if needed downstream; hfunc2 is the running transform.
         if s.needed_hfunc1(tree, edge):
-          hfunc1[:, edge] = cop.hfunc1(u_e, cond)
-        hfunc2[:, edge] = cop.hfunc2(u_e, cond)
+          hfunc1[:, edge] = edge_copula.hfunc1(u_e, x_e)
+        hfunc2[:, edge] = edge_copula.hfunc2(u_e, x_e)
+    # Scatter the transformed columns back to variable order.
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       out[:, j] = hfunc2[:, inv[j]]
     return xp.clip(out, _TRIM_LO, _TRIM_HI)
 
   def _inverse_rosenblatt(self, u: Any, x: Optional[Any]) -> Any:
+    """Inverse Rosenblatt transform (``Vinecop::inverse_rosenblatt``).
+
+    Walks variables from ``d - 2`` down to ``0``; at each ``var`` it fills the
+    ``hinv2`` column from the outermost tree inward. The ``(trunc_lvl + 1, d, n)``
+    scratch is transposed relative to the forward cascades (variable axis first)
+    so a finalized ``hinv2[0, var, :]`` row can seed later inversions.
+    """
     xp = array_namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
@@ -244,20 +303,98 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     for var in range(d - 2, -1, -1):
       tree_start = min(trunc_lvl - 1, d - var - 2)
       for tree in range(tree_start, -1, -1):
-        cop = self._pair(tree, var)
+        edge_copula = self._pair(tree, var)
+        # Same m / on-diagonal rule as the forward cascades (class.ipp:1026),
+        # but the inputs are rows of the transposed hinv2 / hfunc1 scratch.
         m = int(s.min_array(tree, var))
-        sarr = int(s.struct_array(tree, var, natural_order=True))
-        col0 = hinv2[tree + 1, var, :]
-        col1 = hinv2[tree, m - 1, :] if m == sarr else hfunc1[tree, m - 1, :]
-        u_e = xp.stack([col0, col1], axis=-1)
-        cond = self._edge_cond(tree, var, x, None, hinv2[0])
-        hinv2[tree, var, :] = cop.hinv2(u_e, cond)
+        on_diagonal = m == int(s.struct_array(tree, var, natural_order=True))
+        u_e_col0 = hinv2[tree + 1, var, :]
+        u_e_col1 = (
+          hinv2[tree, m - 1, :] if on_diagonal else hfunc1[tree, m - 1, :]
+        )
+        u_e = xp.stack([u_e_col0, u_e_col1], axis=-1)
+        # Conditioning u_D is read from the finalized hinv2[0] rows (the
+        # conditioning variables are finalized before this var by the invariant).
+        x_e = self._edge_context(tree, var, x, None, hinv2[0])
+        hinv2[tree, var, :] = edge_copula.hinv2(u_e, x_e)
+        # Propagate hfunc1 for the next-inner inversion when needed.
         if var < d - 1 and s.needed_hfunc1(tree, var):
-          u_e_after = xp.stack([hinv2[tree, var, :], col1], axis=-1)
-          hfunc1[tree + 1, var, :] = cop.hfunc1(u_e_after, cond)
+          u_e_after = xp.stack([hinv2[tree, var, :], u_e_col1], axis=-1)
+          hfunc1[tree + 1, var, :] = edge_copula.hfunc1(u_e_after, x_e)
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       out[:, j] = hinv2[0, inv[j], :]
+    return xp.clip(out, _TRIM_LO, _TRIM_HI)
+
+  # --- batched cascades (grid fast path; array-agnostic loops) ---------- #
+  #
+  # Numerically equivalent to the non-batched cascades on a simplified vine,
+  # but each tree level fires one stacked pair-copula call over its edges
+  # instead of a Python loop. Only the grid state built by ``_build_batched``
+  # is backend-specific; the loops below are array-agnostic (``xp``). The
+  # batched-vine surface used here: ``bv.level(t)`` / ``bv.grid_points`` and,
+  # per level, ``gather_inputs`` / ``pdf`` / ``hfunc1`` / ``hfunc2`` (each
+  # ``(N_t, n)`` over the ``N_t = n_pairs`` edges) plus the ``needs_h1`` /
+  # ``needs_h2`` masks. These receive already-prepped ``u`` (the public methods
+  # prep before dispatch).
+  def _pdf_batched(self, u: Any) -> Any:
+    """Batched vine pdf: product over per-tree-level stacked densities."""
+    xp = array_namespace(u)
+    d, trunc_lvl = self.d, self.trunc_lvl
+    n = u.shape[0]
+    if trunc_lvl == 0:
+      return xp.ones(n, dtype=u.dtype, device=u.device)
+    bv = self._ensure_batched()
+    hfunc1 = xp.zeros((n, d), dtype=u.dtype, device=u.device)
+    hfunc2 = xp.empty((n, d), dtype=u.dtype, device=u.device)
+    order = self.order
+    for j in range(d):
+      hfunc2[:, j] = u[:, order[j] - 1]
+    pdf = xp.ones(n, dtype=u.dtype, device=u.device)
+    for t in range(trunc_lvl):
+      lvl = bv.level(t)
+      u_e = lvl.gather_inputs(hfunc1, hfunc2)  # (N_t, n, 2)
+      # Product over the level's edges (axis 0), then into the running product
+      # (the batched analogue of _pdf's per-edge cwiseProduct).
+      pdf = pdf * xp.prod(lvl.pdf(bv.grid_points, u_e), axis=0)
+      # Compute h1/h2 for every edge, then overwrite the columns flagged by
+      # needs_h{1,2} (mirrors _pdf's gated per-edge writes).
+      n_pairs = lvl.n_pairs
+      h1_new = xp.matrix_transpose(lvl.hfunc1(bv.grid_points, u_e))  # (n, N_t)
+      h2_new = xp.matrix_transpose(lvl.hfunc2(bv.grid_points, u_e))
+      hfunc1[:, :n_pairs] = xp.where(
+        lvl.needs_h1[None, :], h1_new, hfunc1[:, :n_pairs]
+      )
+      hfunc2[:, :n_pairs] = xp.where(
+        lvl.needs_h2[None, :], h2_new, hfunc2[:, :n_pairs]
+      )
+    return pdf
+
+  def _rosenblatt_batched(self, u: Any) -> Any:
+    """Batched Rosenblatt transform (per-tree-level stacked h-functions)."""
+    xp = array_namespace(u)
+    d, trunc_lvl = self.d, self.trunc_lvl
+    n = u.shape[0]
+    order, inv = self.order, self.inverse_order
+    bv = self._ensure_batched()
+    hfunc2 = xp.empty((n, d), dtype=u.dtype, device=u.device)
+    for j in range(d):
+      hfunc2[:, j] = u[:, order[j] - 1]
+    hfunc1 = xp.asarray(hfunc2, copy=True)
+    for t in range(trunc_lvl):
+      lvl = bv.level(t)
+      u_e = lvl.gather_inputs(hfunc1, hfunc2)
+      n_pairs = lvl.n_pairs
+      h1_new = xp.matrix_transpose(lvl.hfunc1(bv.grid_points, u_e))
+      h2_new = xp.matrix_transpose(lvl.hfunc2(bv.grid_points, u_e))
+      # hfunc2 is overwritten unconditionally at every edge; hfunc1 is gated.
+      hfunc2[:, :n_pairs] = h2_new
+      hfunc1[:, :n_pairs] = xp.where(
+        lvl.needs_h1[None, :], h1_new, hfunc1[:, :n_pairs]
+      )
+    out = xp.empty((n, d), dtype=u.dtype, device=u.device)
+    for j in range(d):
+      out[:, j] = hfunc2[:, inv[j]]
     return xp.clip(out, _TRIM_LO, _TRIM_HI)
 
   # --- batched dispatch ------------------------------------------------- #
@@ -294,7 +431,9 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         vines). ``None`` for the unconditional / simplified case.
     batched : bool or None, optional
         Fire one batched pair-copula call per tree level. ``None`` resolves
-        via the backend default; forced ``False`` when conditioning is active.
+        via the backend default; forced ``False`` when conditioning is active,
+        and falls back to the non-batched cascade if the backend has no batched
+        fast path (or a pair does not support it).
 
     Returns
     -------
@@ -304,7 +443,10 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     del num_threads
     u_p = self._prep(u, "pdf")
     if self._resolve_batched(batched, x):
-      return cast(ArrayT, self._pdf_batched(u_p))
+      try:
+        return cast(ArrayT, self._pdf_batched(u_p))
+      except _NotBatchable:
+        pass  # no grid fast path available -> non-batched cascade
     return cast(ArrayT, self._pdf(u_p, x))
 
   def rosenblatt(
@@ -336,7 +478,10 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     del num_threads
     u_p = self._prep(u, "rosenblatt")
     if self._resolve_batched(batched, x):
-      return cast(ArrayT, self._rosenblatt_batched(u_p))
+      try:
+        return cast(ArrayT, self._rosenblatt_batched(u_p))
+      except _NotBatchable:
+        pass  # no grid fast path available -> non-batched cascade
     return cast(ArrayT, self._rosenblatt(u_p, x))
 
   def inverse_rosenblatt(
@@ -500,12 +645,13 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   ) -> list[list[BicopLike]]:
     """Fit pair copulas tree-by-tree along the vine, returning the nested list.
 
-    Mirrors the forward pdf traversal with the density evaluation replaced by
-    ``fit_edge(tree, edge, u_e, cond)`` — the Python analogue of the C++
-    ``Vinecop::fit`` ``fit_edge`` lambda. The returned pair's ``hfunc1`` /
-    ``hfunc2`` must be valid immediately for tree propagation. External
-    packages drive conditional fitting through this seam (a ``fit_edge`` that
-    fits a conditional pair copula on ``(u_e, cond)``).
+    Mirrors the forward pdf traversal (:meth:`_pdf`) with the density
+    evaluation replaced by ``fit_edge(tree, edge, u_e, x_e)`` — the Python
+    analogue of the C++ ``Vinecop::fit`` ``fit_edge`` lambda. The returned
+    pair's ``hfunc1`` / ``hfunc2`` must be valid immediately for tree
+    propagation. External packages drive conditional fitting through this seam
+    (a ``fit_edge`` that fits a conditional pair copula on ``(u_e, x_e)``);
+    ``x_e`` is assembled in the same C1 order the cascades use.
 
     Parameters
     ----------
@@ -514,7 +660,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     u : array, shape (n, d), dtype float
         Pseudo-observations.
     fit_edge : callable
-        ``(tree, edge, u_e, cond) -> BicopLike`` fitting one edge's pair copula.
+        ``(tree, edge, u_e, x_e) -> BicopLike`` fitting one edge's pair copula.
     context : ContextPolicy, optional
         Conditioning-context policy (default: simplified / unconditional).
     x : array, shape (n, p), or None, optional
@@ -542,39 +688,41 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     )
     cache: dict[tuple[int, int], tuple[int, ...]] = {}
 
-    def cond_for(tree: int, edge: int) -> Optional[Any]:
-      ctx = context
-      if not ctx.assembles_conditioning and x is None:
+    def edge_context_for(tree: int, edge: int) -> Optional[Any]:
+      # Assemble x_e = context(u_D, x); u_D columns in ascending conditioning
+      # -tree order (C1), matching VinecopBase._cond_positions / _edge_context.
+      if not context.assembles_conditioning and x is None:
         return None
       u_D: Optional[Any] = None
-      if ctx.assembles_conditioning:
+      if context.assembles_conditioning:
         key = (tree, edge)
         if key not in cache:
           cache[key] = tuple(
             int(structure.struct_array(i, edge, natural_order=True)) - 1
             for i in range(tree)
           )
-        dpos = cache[key]
-        if dpos and u_nat is not None:
-          u_D = u_nat[:, list(dpos)]
-      return ctx.edge_context(u_D=u_D, x=x)
+        cols = cache[key]
+        if cols and u_nat is not None:
+          u_D = u_nat[:, list(cols)]
+      return context.edge_context(u_D=u_D, x=x)
 
     s = structure
     pairs: list[list[BicopLike]] = []
     for tree in range(trunc_lvl):
       row: list[BicopLike] = []
       for edge in range(d - tree - 1):
+        # Same m / on-diagonal second-input rule as _pdf (class.ipp:1026).
         m = int(s.min_array(tree, edge))
-        sarr = int(s.struct_array(tree, edge, natural_order=True))
-        col0 = hfunc2[:, edge]
-        col1 = hfunc2[:, m - 1] if m == sarr else hfunc1[:, m - 1]
-        u_e = xp.stack([col0, col1], axis=-1)
-        cond = cond_for(tree, edge)
-        cop = fit_edge(tree, edge, u_e, cond)
-        row.append(cop)
+        on_diagonal = m == int(s.struct_array(tree, edge, natural_order=True))
+        u_e_col0 = hfunc2[:, edge]
+        u_e_col1 = hfunc2[:, m - 1] if on_diagonal else hfunc1[:, m - 1]
+        u_e = xp.stack([u_e_col0, u_e_col1], axis=-1)
+        x_e = edge_context_for(tree, edge)
+        edge_copula = fit_edge(tree, edge, u_e, x_e)
+        row.append(edge_copula)
         if s.needed_hfunc1(tree, edge):
-          hfunc1[:, edge] = cop.hfunc1(u_e, cond)
+          hfunc1[:, edge] = edge_copula.hfunc1(u_e, x_e)
         if s.needed_hfunc2(tree, edge):
-          hfunc2[:, edge] = cop.hfunc2(u_e, cond)
+          hfunc2[:, edge] = edge_copula.hfunc2(u_e, x_e)
       pairs.append(row)
     return pairs

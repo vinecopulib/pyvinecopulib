@@ -124,11 +124,8 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     self.pair_copulas = torch.nn.ModuleList(
       [torch.nn.ModuleList(list(row)) for row in pair_copulas]
     )
-
-    # Lazy-built stacked-per-tree-level state (see `batched=` on the public
-    # methods). Constructed on first batched call; cleared in `_apply` so
-    # device moves invalidate it.
-    self._batched: Optional["BatchedVine"] = None
+    # `self._batched` (lazy grid-batched state) is initialised to None by
+    # `_bind_vine`; `_apply` clears it so device moves re-bake it.
 
   # --------------------------------------------------------------------- #
   # Constructor                                                            #
@@ -307,10 +304,10 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     bc_controls = controls.bicop_controls
 
     def fit_edge(
-      tree: int, edge: int, u_e: Tensor, cond: Optional[Tensor]
+      tree: int, edge: int, u_e: Tensor, x_e: Optional[Tensor]
     ) -> TorchBicop:
-      # Simplified (unconditional) TLL fit — cond is None here.
-      del tree, edge, cond
+      # Simplified (unconditional) TLL fit — x_e is None here.
+      del tree, edge, x_e
       return TorchBicop.from_data(
         u_e,
         bc_controls,
@@ -428,90 +425,19 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     return torch.no_grad()
 
   # ====================================================================== #
-  # Batched cascades (`batched=True`)                                        #
+  # Batched fast path (`batched=True`)                                       #
   # ====================================================================== #
   #
-  # Lazy-built BatchedVine (stacked / pre-baked per-tree-level state). Same
-  # cascade math as the unbatched paths, but each tree level fires a single
-  # batched bicop call instead of a Python loop over edges.
+  # The batched *cascade loops* live on VinecopBase (array-agnostic). This hook
+  # supplies the TLL/grid-specific state they run on: a lazily-built BatchedVine
+  # (stacked / pre-baked per-tree-level grids + caches).
 
-  def _ensure_batched(self) -> "BatchedVine":
-    if self._batched is None:
-      self._batched = BatchedVine.from_torch_vinecop(self)
-    return self._batched
+  def _build_batched(self) -> "BatchedVine":
+    """Bake the grid-batched state from this vine's `TorchBicop` pairs.
 
-  # ---- pdf ------------------------------------------------------------- #
-
-  def _pdf_batched(self, u: Tensor) -> Tensor:
-    """Batched pdf with dense ``(n, d)`` scratch.
-
-    Mirrors :meth:`_pdf` exactly except the inner per-edge loop is
-    collapsed into one :meth:`BatchedTreeLevel.pdf` call per tree level.
+    Returns
+    -------
+    BatchedVine
+        Stacked per-tree-level grids / caches for the batched cascades.
     """
-    u = self._prep(u, "pdf")
-    n = u.shape[0]
-    ref = self._ref_tensor()
-    dtype, device = ref.dtype, ref.device
-    d, trunc_lvl = self.d, self.trunc_lvl
-
-    if trunc_lvl == 0:
-      return torch.ones(n, dtype=dtype, device=device)
-
-    bv = self._ensure_batched()
-    hfunc1 = torch.zeros(n, d, dtype=dtype, device=device)
-    hfunc2 = torch.empty(n, d, dtype=dtype, device=device)
-    for j in range(d):
-      hfunc2[:, j] = u[:, self.order[j] - 1]
-
-    log_pdf = torch.zeros(n, dtype=dtype, device=device)
-    for t in range(trunc_lvl):
-      lvl = bv.level(t)
-      u_e = lvl.gather_inputs(hfunc1, hfunc2)  # (N_t, n, 2)
-      log_pdf = log_pdf + lvl.log_pdf(bv.grid_points, u_e).sum(dim=0)
-      # Update next-tree inputs: compute h1/h2 for every pair, then
-      # selectively overwrite columns whose needs_h{1,2} flag is set.
-      N_t = lvl.n_pairs
-      h1_new = lvl.hfunc1(bv.grid_points, u_e).t()  # (n, N_t)
-      h2_new = lvl.hfunc2(bv.grid_points, u_e).t()
-      hfunc1[:, :N_t] = torch.where(
-        lvl.needs_h1[None, :], h1_new, hfunc1[:, :N_t]
-      )
-      hfunc2[:, :N_t] = torch.where(
-        lvl.needs_h2[None, :], h2_new, hfunc2[:, :N_t]
-      )
-    return log_pdf.exp()
-
-  # ---- rosenblatt ------------------------------------------------------ #
-
-  def _rosenblatt_batched(self, u: Tensor) -> Tensor:
-    """Batched rosenblatt with dense ``(n, d)`` scratch."""
-    u = self._prep(u, "rosenblatt")
-    n = u.shape[0]
-    ref = self._ref_tensor()
-    dtype, device = ref.dtype, ref.device
-    d, trunc_lvl = self.d, self.trunc_lvl
-
-    bv = self._ensure_batched()
-    hfunc2 = torch.empty(n, d, dtype=dtype, device=device)
-    for j in range(d):
-      hfunc2[:, j] = u[:, self.order[j] - 1]
-    hfunc1 = hfunc2.clone()
-
-    for t in range(trunc_lvl):
-      lvl = bv.level(t)
-      u_e = lvl.gather_inputs(hfunc1, hfunc2)
-      N_t = lvl.n_pairs
-      h1_new = lvl.hfunc1(bv.grid_points, u_e).t()
-      h2_new = lvl.hfunc2(bv.grid_points, u_e).t()
-      # hfunc2 is unconditionally overwritten at every edge in the
-      # cascade (`hfunc2[:, edge] = cop.hfunc2(u_e)`); hfunc1 is
-      # gated by needs_h1.
-      hfunc2[:, :N_t] = h2_new
-      hfunc1[:, :N_t] = torch.where(
-        lvl.needs_h1[None, :], h1_new, hfunc1[:, :N_t]
-      )
-
-    out = torch.empty(n, d, dtype=dtype, device=device)
-    for j in range(d):
-      out[:, j] = hfunc2[:, self.inverse_order[j]]
-    return out.clamp(_TRIM_LO, _TRIM_HI)
+    return BatchedVine.from_torch_vinecop(self)
