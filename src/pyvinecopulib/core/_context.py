@@ -1,6 +1,6 @@
 """Conditioning-context policy for the vine cascades.
 
-A :class:`ContextPolicy` decides, for a single pair-copula edge, the ``x`` matrix
+A :class:`ConditioningContext` decides, for a single pair-copula edge, the ``x`` matrix
 (``x_e`` in the cascades) the pair copula receives — assembled from the edge's
 conditioning-set values ``u_D`` (gathered by the vine cascade) and the optional
 external covariate matrix ``x`` (passed per call). It is the pluggable seam that
@@ -12,12 +12,23 @@ turns the otherwise simplified cascades into non-simplified ones:
 * :class:`NonSimplifiedContext` forwards ``concat([u_D, x])`` — the pair copula
   ``c_{a,b;D}`` depends on its conditioning-set values (and optionally ``x``).
 
-**Column-order contract (C1).** :meth:`ContextPolicy.edge_context` returns
+**Column-order contract (C1).** :meth:`ConditioningContext.edge_context` returns
 ``concat([u_D, x], axis=-1)`` with the ``u_D`` columns in the fixed order the
 vine gathers them (ascending conditioning-tree index) and ``x`` appended last.
 Conditional pair copulas consume this matrix positionally, so the order is a
 hard contract that must be identical wherever it is assembled (evaluation and
 fitting alike).
+
+Examples
+--------
+Pass a policy to a vine (or to :meth:`VinecopBase.sequential_fit`) to control how
+each pair's conditioning matrix ``x_e`` is built::
+
+    from pyvinecopulib.core import NonSimplifiedContext, SimplifiedContext
+
+    SimplifiedContext().edge_context(u_D=None, x=None)   # -> None (unconditional)
+    ctx = NonSimplifiedContext()
+    ctx.assembles_conditioning                           # -> True (u_D gathered)
 """
 
 from __future__ import annotations
@@ -28,11 +39,11 @@ from array_api_compat import array_namespace
 
 from ._protocols import ArrayT
 
-__all__ = ["ContextPolicy", "NonSimplifiedContext", "SimplifiedContext"]
+__all__ = ["ConditioningContext", "NonSimplifiedContext", "SimplifiedContext"]
 
 
 @runtime_checkable
-class ContextPolicy(Protocol[ArrayT]):
+class ConditioningContext(Protocol[ArrayT]):
   """Per-edge conditioning-context assembler.
 
   Attributes
@@ -67,7 +78,7 @@ class ContextPolicy(Protocol[ArrayT]):
     ...
 
 
-class SimplifiedContext:
+class SimplifiedContext(ConditioningContext[ArrayT]):
   """Simplified vine: forward only the external covariates ``x``.
 
   The default policy. The pair-copula parameters may depend on external
@@ -95,11 +106,10 @@ class SimplifiedContext:
     array, shape (n, p), or None
         ``x`` unchanged.
     """
-    del u_D
     return x
 
 
-class NonSimplifiedContext:
+class NonSimplifiedContext(ConditioningContext[ArrayT]):
   """Non-simplified vine: ``x_e = concat([u_D, x])`` per edge.
 
   Gathers the edge's conditioning-set values ``u_D`` (in the C1 column order)

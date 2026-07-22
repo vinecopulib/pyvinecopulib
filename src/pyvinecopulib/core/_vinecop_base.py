@@ -3,23 +3,23 @@
 :class:`VinecopBase` is the array-backend-agnostic (NumPy / PyTorch, via
 :func:`array_api_compat.array_namespace`) implementation of the vine cascades —
 ``pdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` / ``simulate`` / ``cdf`` — plus
-the shared sequential-fit engine. It is a direct port of the C++
-``Vinecop::pdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` tree-by-tree
-h-function cascade, so a concrete backend (e.g.
+``loglik`` / ``plot`` and the shared sequential-fit engine. It walks the vine
+tree by tree, evaluating one pair copula per edge, so a concrete backend (e.g.
+:class:`pyvinecopulib.core.Vinecop`'s torch counterpart
 :class:`pyvinecopulib.torch.TorchVinecop`) only supplies a small set of hooks and
 inherits the whole evaluation surface.
 
 Conditioning is threaded through a pluggable
-:class:`~pyvinecopulib.core.ContextPolicy`: each pair-copula call receives an
+:class:`~pyvinecopulib.core.ConditioningContext`: each pair-copula call receives an
 ``x`` matrix (``x_e`` in the cascades) assembled per edge from the edge's
 conditioning-set values ``u_D`` and the optional external covariate matrix
 ``x``. The default :class:`~pyvinecopulib.core.SimplifiedContext` forwards only
 ``x`` (``None`` in the unconditional case) and skips the ``u_D`` gather,
 reproducing the classic simplified cascade at zero extra cost.
 
-The ``pdf`` cascade accumulates a **product** of per-edge copula densities, a
-faithful port of the C++ ``Vinecop::pdf`` (``cwiseProduct``); there is no
-per-observation ``log_pdf`` (mirroring the C++ surface).
+The ``pdf`` cascade accumulates the vine density as a **product** of per-edge
+copula densities (there is no per-observation ``log_pdf``; ``loglik`` sums the
+log-density).
 
 Hooks a concrete backend must provide (see the abstract members): ``_pair``,
 ``_prep``, ``_draw_base_u``; and, to enable the grid-batched fast path,
@@ -40,7 +40,7 @@ from typing import Any, Callable, Optional, cast
 
 from array_api_compat import array_namespace
 
-from ._context import ContextPolicy, SimplifiedContext
+from ._context import ConditioningContext, SimplifiedContext
 from ._protocols import ArrayT, BicopLike, VinecopLike
 
 __all__ = ["VinecopBase"]
@@ -65,8 +65,43 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
 
   Concrete subclasses implement ``_pair`` / ``_prep`` / ``_draw_base_u`` (and,
   optionally, the batched-path hooks) and call :meth:`_bind_vine` once; they
-  then inherit ``pdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` / ``simulate``
-  / ``cdf`` and the :meth:`sequential_fit` engine. Not an ``nn.Module``.
+  then inherit the whole evaluator surface — ``pdf`` / ``cdf`` / ``rosenblatt`` /
+  ``inverse_rosenblatt`` / ``simulate``, ``loglik`` / ``plot`` / ``__repr__``,
+  the ``dim`` / ``trunc_lvl`` / ``order`` accessors, and the
+  :meth:`sequential_fit` engine. Not an ``nn.Module``, so it composes with any
+  pair-copula backend (including non-torch ones).
+
+  See Also
+  --------
+  pyvinecopulib.core.VinecopLike : The contract this implements.
+  pyvinecopulib.core.Vinecop : The compiled reference vine.
+  pyvinecopulib.core.ConditioningContext : Per-edge conditioning policy.
+
+  Examples
+  --------
+  A minimal backend over a nested list of :class:`BicopLike` pairs (the pattern a
+  downstream package uses to host custom / conditional pairs)::
+
+      from typing import Any
+      from array_api_compat import array_namespace
+      from pyvinecopulib.core import VinecopBase, NonSimplifiedContext
+
+      class ListVinecop(VinecopBase[Any]):
+        def __init__(self, pairs, structure, context):
+          self._pairs = pairs
+          self._bind_vine(structure, context)
+
+        def _pair(self, tree, edge):
+          return self._pairs[tree][edge]
+
+        def _prep(self, u, name):
+          return array_namespace(u).clip(u, 1e-10, 1 - 1e-10)
+
+        def _draw_base_u(self, n, qrng, seeds):
+          raise NotImplementedError  # only needed for simulate()
+
+      # vine = ListVinecop(pairs, structure, NonSimplifiedContext())
+      # vine.pdf(u, x=x); vine.loglik(u, x=x)
   """
 
   # --- layout installed by _bind_vine (hooks / state) ------------------- #
@@ -75,13 +110,13 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   trunc_lvl: int
   order: tuple[int, ...]
   inverse_order: tuple[int, ...]
-  _context: ContextPolicy
+  _context: ConditioningContext
   _cond_pos_cache: dict[tuple[int, int], tuple[int, ...]]
   #: Lazily-built grid-batched state (see :meth:`_build_batched`); ``None`` until
   #: the first batched call. Backends invalidate it on device moves.
   _batched: Any
 
-  def _bind_vine(self, structure: Any, context: ContextPolicy) -> None:
+  def _bind_vine(self, structure: Any, context: ConditioningContext) -> None:
     """Install the vine structure + context and derive the order arrays."""
     self.structure = structure
     self._context = context
@@ -633,6 +668,104 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         out[start:end] = xp.mean(xp.astype(dominated, u_t.dtype), axis=1)
       return cast(ArrayT, out)
 
+  # --- convenience surface (loglik / plot / accessors) ------------------ #
+  def loglik(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+    """Total log-likelihood ``sum(log c(u))`` of the vine at ``u``.
+
+    Parameters
+    ----------
+    u : array, shape (n, d), dtype float
+        Pseudo-observations in ``[0, 1]^d``.
+    x : array, shape (n, p), or None, optional
+        External covariates for a non-simplified vine, else ``None``.
+
+    Returns
+    -------
+    array, shape (), dtype float
+        The summed log-density (a differentiable scalar on autograd backends);
+        the per-observation vine density is floored at ``1e-20`` before the log.
+    """
+    dens: Any = self.pdf(u, x=x)
+    xp = array_namespace(dens)
+    return cast(ArrayT, xp.sum(xp.log(xp.clip(dens, 1e-20))))
+
+  @property
+  def dim(self) -> int:
+    """Number of variables in the vine.
+
+    Returns
+    -------
+    int
+        The vine dimension ``d``.
+    """
+    return self.d
+
+  @property
+  def matrix(self) -> Any:
+    """R-vine structure matrix (from :attr:`structure`).
+
+    Returns
+    -------
+    ndarray, shape (d, d), dtype int
+        The structure matrix; used by :meth:`plot`.
+    """
+    return self.structure.matrix
+
+  def get_pair_copula(self, tree: int, edge: int) -> BicopLike[ArrayT]:
+    """Return the pair copula at ``(tree, edge)``.
+
+    Parameters
+    ----------
+    tree : int
+        Tree index (``0``-based).
+    edge : int
+        Edge index within the tree (``0``-based).
+
+    Returns
+    -------
+    BicopLike
+        The pair copula hosted at that position.
+    """
+    return self._pair(tree, edge)
+
+  def plot(
+    self,
+    tree: Optional[list[int]] = None,
+    add_edge_labels: bool = True,
+    layout: str = "graphviz",
+    vars_names: Optional[list[str]] = None,
+  ) -> None:
+    """Plot the vine tree structure with networkx.
+
+    Draws one panel per requested tree from :attr:`structure`, mirroring
+    :meth:`pyvinecopulib.core.Vinecop.plot`.
+
+    Parameters
+    ----------
+    tree : list of int, or None, optional
+        Tree indices to plot; all trees when ``None``.
+    add_edge_labels : bool, default=True
+        Annotate edges with their conditioned / conditioning sets.
+    layout : str, default="graphviz"
+        ``"graphviz"`` (needs pydot + graphviz) or ``"spring_layout"``.
+    vars_names : list of str, or None, optional
+        Variable names; the integer indices are used when ``None``.
+
+    Returns
+    -------
+    None
+        The figure is drawn with matplotlib.
+    """
+    from .._python_helpers.vinecop import vinecop_plot
+
+    vinecop_plot(self, tree, add_edge_labels, layout, vars_names)
+
+  def __repr__(self) -> str:
+    return (
+      f"{type(self).__name__}(dim={self.d}, trunc_lvl={self.trunc_lvl}, "
+      f"order={list(self.order)})"
+    )
+
   # --- shared sequential-fit engine ------------------------------------- #
   @staticmethod
   def sequential_fit(
@@ -640,7 +773,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     u: Any,
     fit_edge: FitEdge,
     *,
-    context: Optional[ContextPolicy] = None,
+    context: Optional[ConditioningContext] = None,
     x: Optional[Any] = None,
   ) -> list[list[BicopLike]]:
     """Fit pair copulas tree-by-tree along the vine, returning the nested list.
@@ -661,7 +794,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         Pseudo-observations.
     fit_edge : callable
         ``(tree, edge, u_e, x_e) -> BicopLike`` fitting one edge's pair copula.
-    context : ContextPolicy, optional
+    context : ConditioningContext, optional
         Conditioning-context policy (default: simplified / unconditional).
     x : array, shape (n, p), or None, optional
         External covariates for conditional fitting, else ``None``.

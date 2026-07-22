@@ -38,7 +38,7 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from ..core import ContextPolicy, SimplifiedContext, VinecopBase
+from ..core import ConditioningContext, SimplifiedContext, VinecopBase
 from ..core._vinecop_base import _NotBatchable
 from ..pyvinecopulib_ext import (
   RVineStructure,
@@ -83,7 +83,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       Vine structure whose accessors (``min_array``,
       ``struct_array``, ``needed_hfunc1`` / ``needed_hfunc2``)
       describe how to walk the trees.
-  context : ContextPolicy or None, default=None
+  context : ConditioningContext or None, default=None
       Conditioning-context policy that assembles each pair copula's
       ``cond`` per edge. ``None`` uses
       :class:`~pyvinecopulib.core.SimplifiedContext` (an unconditional /
@@ -99,7 +99,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     pair_copulas: list[list[TorchBicop]],
     structure,
     *,
-    context: Optional[ContextPolicy] = None,
+    context: Optional[ConditioningContext] = None,
   ) -> None:
     # Initialise nn.Module explicitly: TorchVinecop also subclasses VinecopBase
     # (a Protocol-derived ABC), whose __init__ chain would otherwise shadow

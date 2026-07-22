@@ -56,7 +56,11 @@ from ..pyvinecopulib_ext import (
   Vinecop,
 )
 from .bicop_base import BicopBase
-from ._context import ContextPolicy, NonSimplifiedContext, SimplifiedContext
+from ._context import (
+  ConditioningContext,
+  NonSimplifiedContext,
+  SimplifiedContext,
+)
 from .protocols import BicopLike, VinecopLike
 from ._vinecop_base import VinecopBase
 
@@ -65,7 +69,7 @@ __all__ = [
   "BicopBase",
   "BicopFamily",
   "BicopLike",
-  "ContextPolicy",
+  "ConditioningContext",
   "CVineStructure",
   "DVineStructure",
   "FitControlsBicop",

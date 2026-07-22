@@ -1,7 +1,7 @@
 """Tests for the conditional / non-simplified vine path (on ``VinecopBase``).
 
 The conditional / non-simplified capability lives on the backend-neutral
-``VinecopBase`` (``ContextPolicy`` + ``x``-threaded cascades + the
+``VinecopBase`` (``ConditioningContext`` + ``x``-threaded cascades + the
 ``sequential_fit`` engine), not on ``TorchVinecop`` (which stays an
 ``nn.Module`` vine of ``TorchBicop`` pairs). These tests host a toy conditional
 ``GaussianBicop`` (correlation depends on ``x`` via a position-weighted link, so
@@ -231,3 +231,30 @@ def test_batched_falls_back_for_non_grid_pair() -> None:
   out_batched = vine.pdf(u, batched=True)
   out_plain = vine.pdf(u, batched=False)
   torch.testing.assert_close(out_batched, out_plain, atol=1e-12, rtol=0)
+
+
+def test_vinecopbase_loglik_matches_sum_log_pdf() -> None:
+  """``VinecopBase.loglik`` equals ``sum(log(pdf))``."""
+  d, n, p = 4, 120, 2
+  vine = _vine(d, NonSimplifiedContext())
+  rng = np.random.default_rng(6)
+  u = torch.as_tensor(rng.uniform(0.05, 0.95, (n, d)), dtype=torch.float64)
+  x = torch.as_tensor(rng.standard_normal((n, p)), dtype=torch.float64)
+  ref = vine.pdf(u, x=x).clamp_min(1e-20).log().sum()
+  torch.testing.assert_close(vine.loglik(u, x=x), ref, atol=1e-12, rtol=1e-12)
+
+
+def test_vinecopbase_dim_and_repr() -> None:
+  """The ``dim`` accessor and structural ``__repr__`` reflect the structure."""
+  vine = _vine(4, SimplifiedContext())
+  assert vine.dim == 4
+  r = repr(vine)
+  assert "dim=4" in r and "trunc_lvl=" in r and "order=" in r
+
+
+def test_vinecopbase_plot_runs() -> None:
+  """The inherited ``plot`` renders the tree structure without error (Agg)."""
+  import matplotlib.pyplot as plt
+
+  _vine(4, SimplifiedContext()).plot(layout="spring_layout")
+  plt.close("all")
