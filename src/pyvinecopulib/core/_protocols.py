@@ -1,29 +1,27 @@
-"""Backend-neutral pair-copula / vine Protocols (the extension contracts).
+"""Backend-neutral pair-copula / vine contracts.
 
-These generic, :func:`~typing.runtime_checkable` Protocols mirror the
-nanobind-exposed :class:`~pyvinecopulib.Bicop` / :class:`~pyvinecopulib.Vinecop`
-evaluation surfaces exactly, so the C++ ``Bicop`` / ``Vinecop`` satisfy them
-structurally (``isinstance`` is ``True``), and they are the extension point for
-custom pair-copula and vine backends (torch is one; numpy another). Their
-members are ``@abstractmethod`` so the Protocols double as subclassable bases
-for the canonical implementations in :mod:`pyvinecopulib.core._base`.
+:class:`BicopLike` and :class:`VinecopLike` define what a pair copula / vine
+evaluator must provide, independent of the array backend (NumPy or PyTorch).
+They are the extension point for custom backends: implement the protocol — or,
+far more easily, subclass the canonical :class:`~pyvinecopulib.core.BicopBase` /
+:class:`~pyvinecopulib.core.VinecopBase`, which fill in most of it — and the
+object plugs into the rest of the library (e.g. it can be hosted in a vine, or
+consumed by the sklearn backend layer). The reference implementations are
+:class:`pyvinecopulib.core.Bicop` / :class:`pyvinecopulib.core.Vinecop` (the
+compiled default) and :class:`pyvinecopulib.torch.TorchBicop` /
+:class:`pyvinecopulib.torch.TorchVinecop`.
 
-The only extension over the C++ surface is an OPTIONAL trailing ``x`` giving the
-conditioning variables (conditioning-set values and/or external covariates) a
-copula depends on. It appears symmetrically on both Protocols: on each
-:class:`BicopLike` method (per pair copula, assembled by the vine's context
-policy) and on each :class:`VinecopLike` method (the per-call covariate matrix,
-row-aligned with ``u``). Unconditional users ignore it; a simplified vine passes
-``x=None`` down and each pair sees ``x=None``.
+**Conditioning.** Every method carries an optional trailing ``x`` — the
+conditioning variables the copula / vine depends on (conditioning-set values
+and/or external covariates), row-aligned with ``u``. Unconditional models leave
+it ``None``; a conditional pair copula reads it. In a vine, each pair's ``x`` is
+assembled per edge by a :class:`~pyvinecopulib.core.ConditioningContext`.
 
-Typing policy for ``pyvinecopulib.core``: :data:`ArrayT` is an unbounded
-``TypeVar`` used only on these public signatures (so a concrete backend such as
-``TorchBicop`` inherits precise ``torch.Tensor`` returns). The neutral numeric
-implementations in :mod:`~pyvinecopulib.core._base` /
-:mod:`~pyvinecopulib.core._rootfind` operate on arrays as ``Any`` — the Array
-API namespace (``array_api_compat``) is itself untyped, so array creation and
-elementwise ops are ``Any``; parameters that must be indexed / have attributes
-read are aliased to ``Any`` at point of use.
+**Typing.** :data:`ArrayT` is an unbounded ``TypeVar`` carried only on these
+public signatures, so a concrete backend (e.g. ``TorchBicop``) inherits precise
+``torch.Tensor`` return types. The numeric implementations in
+:mod:`~pyvinecopulib.core._base` operate on arrays as ``Any`` (the Array API
+namespace ``array_api_compat`` is itself untyped).
 """
 
 from __future__ import annotations
@@ -39,20 +37,50 @@ __all__ = ["ArrayT", "BicopLike", "VinecopLike"]
 
 @runtime_checkable
 class BicopLike(Protocol[ArrayT]):
-  """Bivariate (optionally conditional) pair copula.
+  """Contract for a bivariate (optionally conditional) pair copula.
 
-  This mirrors the C++ :class:`~pyvinecopulib.Bicop` evaluation surface exactly
-  (``pdf`` is the density primitive — there is no ``log_pdf``), so the C++
-  ``Bicop`` satisfies it structurally. Every method takes ``u`` of shape
-  ``(n, 2)`` in the clamped domain ``[1e-10, 1 - 1e-10]`` and an OPTIONAL ``x``
-  of shape ``(n, k)`` giving the conditioning variables the copula depends on
-  (conditioning-set values and/or external covariates). Unconditional copulas
-  ignore ``x``. When the pair copula is hosted in a vine, ``x`` is assembled for
-  it by the vine's context policy (a simplified vine passes ``x=None``, or
-  forwards only external covariates). There is deliberately **no** ``dtype`` /
-  ``device`` on the contract: an ``nn.Module``-backed pair has no *intrinsic*
-  precision/placement (its buffers may differ), so a concrete backend resolves
-  those from whatever canonical array it holds.
+  A pair copula maps pseudo-observations ``u`` of shape ``(n, 2)`` (in the unit
+  square, clamped to ``[1e-10, 1 - 1e-10]``) to a density (``pdf``), a
+  distribution (``cdf``), the two conditional distributions
+  ``hfunc1(u) = P(U2 <= u2 | U1 = u1)`` / ``hfunc2(u) = P(U1 <= u1 | U2 = u2)``
+  and their inverses (``hinv1`` / ``hinv2``, inverting in the second / first
+  argument), plus a sampler (``simulate``). The optional ``x`` of shape
+  ``(n, k)`` carries conditioning variables: a conditional copula reads them, an
+  unconditional one ignores them.
+
+  The easy way to satisfy this contract is to subclass
+  :class:`~pyvinecopulib.core.BicopBase`, which supplies ``hinv1`` / ``hinv2``
+  (numerical inversion) and ``simulate`` on top of ``pdf`` / ``hfunc1`` /
+  ``hfunc2``. :class:`pyvinecopulib.core.Bicop` and
+  :class:`pyvinecopulib.torch.TorchBicop` are the reference implementations.
+
+  See Also
+  --------
+  pyvinecopulib.core.BicopBase : Canonical partial implementation to subclass.
+  pyvinecopulib.core.Bicop : The compiled reference pair copula.
+  VinecopLike : The vine-level evaluator contract.
+
+  Examples
+  --------
+  A minimal independence pair on NumPy — implement only the three primitives and
+  inherit ``hinv1`` / ``hinv2`` / ``simulate`` / ``loglik`` / ``plot`` from
+  :class:`~pyvinecopulib.core.BicopBase`::
+
+      import numpy as np
+      from pyvinecopulib.core import BicopBase
+
+      class Independence(BicopBase[np.ndarray]):
+        def pdf(self, u, x=None):
+          return np.ones(u.shape[0])
+
+        def hfunc1(self, u, x=None):
+          return u[:, 1]
+
+        def hfunc2(self, u, x=None):
+          return u[:, 0]
+
+      cop = Independence()
+      cop.hinv1(np.array([[0.3, 0.7]]))   # -> array([0.7]) (numerical inverse)
   """
 
   @abstractmethod
@@ -73,15 +101,36 @@ class BicopLike(Protocol[ArrayT]):
   @abstractmethod
   def hinv2(self, u: ArrayT, x: Optional[ArrayT] = None) -> ArrayT: ...
 
+  @abstractmethod
+  def simulate(
+    self,
+    n: int,
+    *,
+    x: Optional[ArrayT] = None,
+    qrng: bool = False,
+    seeds: Optional[list[int]] = None,
+  ) -> ArrayT: ...
+
 
 @runtime_checkable
 class VinecopLike(Protocol[ArrayT]):
-  """Post-fit vine evaluator; mirrors the nanobind ``Vinecop``.
+  """Contract for a post-fit vine-copula evaluator.
 
-  The optional keyword-only ``x`` covariate matrix (row-aligned with ``u``) is
-  the conditional extension, kept symmetric with :class:`BicopLike`. It defaults
-  to ``None``, so the unconditional ``Vinecop`` and any torch/numpy vine satisfy
-  the Protocol whether or not they act on ``x``.
+  A vine evaluator exposes the joint ``pdf`` / ``cdf``, the ``rosenblatt`` and
+  ``inverse_rosenblatt`` transforms, and a ``simulate`` sampler, plus a
+  ``structure`` attribute (the :class:`~pyvinecopulib.core.RVineStructure` it was
+  built on). The optional keyword-only ``x`` covariate matrix (row-aligned with
+  ``u``) is the conditional extension — left ``None`` for the usual
+  (unconditional) case. Subclass :class:`~pyvinecopulib.core.VinecopBase` to get
+  every method from a small set of hooks;
+  :class:`pyvinecopulib.core.Vinecop` and
+  :class:`pyvinecopulib.torch.TorchVinecop` are the reference implementations.
+
+  See Also
+  --------
+  pyvinecopulib.core.VinecopBase : Canonical partial implementation to subclass.
+  pyvinecopulib.core.Vinecop : The compiled reference vine.
+  BicopLike : The pair-copula contract.
   """
 
   structure: object

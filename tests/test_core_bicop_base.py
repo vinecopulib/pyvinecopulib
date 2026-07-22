@@ -39,6 +39,10 @@ class _IndepPair(BicopBase[np.ndarray]):
   def hfunc2(self, u: np.ndarray, x: Optional[np.ndarray] = None) -> np.ndarray:
     return u[:, 0]
 
+  def _draw_base_u(self, n: int, qrng: bool, seeds: list[int]) -> np.ndarray:
+    rng = np.random.default_rng(seeds[0] if seeds else 0)
+    return rng.uniform(size=(n, 2))
+
 
 class _SqrtPair(BicopBase[np.ndarray]):
   """Toy pair with monotone ``hfunc == (free arg)**2``.
@@ -83,6 +87,39 @@ def test_bicopbase_cdf_raises() -> None:
   cop = _IndepPair()
   with pytest.raises(NotImplementedError):
     cop.cdf(np.array([[0.5, 0.5]]))
+
+
+def test_bicopbase_loglik() -> None:
+  """``loglik`` sums the log-density; the independence pair gives 0."""
+  cop = _IndepPair()
+  u = np.array([[0.3, 0.7], [0.5, 0.5], [0.9, 0.1]])
+  assert float(cop.loglik(u)) == pytest.approx(0.0, abs=1e-12)
+
+
+def test_bicopbase_simulate_default() -> None:
+  """Default ``simulate`` (inverse Rosenblatt) returns (n, 2) samples in (0, 1)."""
+  cop = _IndepPair()
+  s = cop.simulate(50, seeds=[7])
+  assert s.shape == (50, 2)
+  assert bool((s > 0).all()) and bool((s < 1).all())
+  # independence hfunc1 is the identity -> the sample is the base uniforms.
+  base = _IndepPair()._draw_base_u(50, False, [7])
+  np.testing.assert_allclose(s, base, atol=1e-9)
+
+
+def test_bicopbase_simulate_requires_draw_hook() -> None:
+  """``simulate`` raises when the backend has not provided ``_draw_base_u``."""
+  cop = _SqrtPair()
+  with pytest.raises(NotImplementedError):
+    cop.simulate(5)
+
+
+def test_bicopbase_plot_runs() -> None:
+  """The inherited ``plot`` delegates to the shared helper without error (Agg)."""
+  import matplotlib.pyplot as plt
+
+  _IndepPair().plot(plot_type="contour")
+  plt.close("all")
 
 
 def test_cpp_classes_satisfy_neutral_protocols() -> None:

@@ -532,8 +532,10 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
   def simulate(
     self,
     n: int = 100,
+    *,
+    x: Optional[Tensor] = None,
     qrng: bool = False,
-    seeds: list[int] = [],
+    seeds: Optional[list[int]] = None,
   ) -> Tensor:
     """Draws ``n`` joint samples from the fitted copula.
 
@@ -545,21 +547,26 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     ----------
     n : int, default=100
         Number of samples to draw (must be ``> 0``).
+    x : Tensor or None, optional
+        Conditioning variables. Ignored by ``TorchBicop`` (an unconditional
+        pair copula); accepted for signature parity with the ``BicopLike``
+        contract.
     qrng : bool, default=False
         If ``True``, draw the base uniforms from a scrambled Sobol
         sequence instead of pseudo-random uniforms.
-    seeds : list of int, default=[]
+    seeds : list of int or None, optional
         When ``qrng=True`` the first entry seeds the
         ``torch.quasirandom.SobolEngine`` scramble; when
         ``qrng=False`` it seeds the global torch RNG before the
-        ``torch.rand`` call. Empty list keeps the existing global
-        state.
+        ``torch.rand`` call. ``None`` keeps the existing global state.
 
     Returns
     -------
     Tensor, shape (n, 2), dtype float
         Samples in ``(0, 1)^2``.
     """
+    del x
+    seeds = list(seeds) if seeds else []
     if n <= 0:
       raise ValueError(f"n must be > 0; got {n}")
     device = self.interp_grid.values.device
