@@ -390,9 +390,6 @@ class BatchedTreeLevel(torch.nn.Module):
     ).clamp_min(1e-20)
     return torch.where(self.is_indep[:, None], torch.ones_like(raw), raw)
 
-  def log_pdf(self, grid_points: Tensor, u: Tensor) -> Tensor:
-    return self.pdf(grid_points, u).log()
-
   def hfunc1(self, grid_points: Tensor, u: Tensor) -> Tensor:
     """Per-pair hfunc1. ``cache=True`` does one bilinear interp on the
     precomputed cache; ``cache=False`` runs :func:`integrate_1d_batched`
@@ -515,10 +512,10 @@ class BatchedVine(torch.nn.Module):
 
     # The grid is shared by all pairs (built once via
     # `InterpolationGrid2D.make_grid_points`).
-    grid_points = tvc._pair(0, 0).interp_grid.grid_points
+    grid_points = tvc._get_pair_copula(0, 0).interp_grid.grid_points
     # The grid type is also shared: all pair-copulas in a TorchVinecop come
     # from the same fit pipeline, so they all use the same storage grid.
-    is_linear = bool(tvc._pair(0, 0).interp_grid._is_linear)
+    is_linear = bool(tvc._get_pair_copula(0, 0).interp_grid._is_linear)
 
     levels: list[BatchedTreeLevel] = []
     for t in range(trunc_lvl):
@@ -538,7 +535,7 @@ class BatchedVine(torch.nn.Module):
       all_have_cache = True
 
       for e in range(N_t):
-        bc = tvc._pair(t, e)
+        bc = tvc._get_pair_copula(t, e)
         m = int(s.min_array(t, e))
         sarr = int(s.struct_array(t, e, natural_order=True))
         vals.append(bc.interp_grid.values)
