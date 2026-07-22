@@ -39,6 +39,7 @@ import torch
 from torch import Tensor
 
 from ..core import ContextPolicy, SimplifiedContext, VinecopBase
+from ..core._vinecop_base import _NotBatchable
 from ..pyvinecopulib_ext import (
   RVineStructure,
   Vinecop,
@@ -439,5 +440,22 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     -------
     BatchedVine
         Stacked per-tree-level grids / caches for the batched cascades.
+
+    Raises
+    ------
+    _NotBatchable
+        If any pair lacks the grid/cache internals the batched path needs
+        (``supports_batched`` is ``False`` — e.g. a non-`TorchBicop` nn.Module
+        pair). The dispatch layer catches it and falls back to the non-batched
+        cascade.
     """
+    if not all(
+      getattr(self._pair(t, e), "supports_batched", False)
+      for t in range(self.trunc_lvl)
+      for e in range(self.d - t - 1)
+    ):
+      raise _NotBatchable(
+        "batched path requires every pair to expose grid/cache internals "
+        "(supports_batched=True); this vine has a non-grid pair copula."
+      )
     return BatchedVine.from_torch_vinecop(self)
