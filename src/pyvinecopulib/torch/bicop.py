@@ -148,46 +148,6 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       self._hinv2_cache = None
 
   # --------------------------------------------------------------------- #
-  # dtype / device seam (BicopLike)                                        #
-  # --------------------------------------------------------------------- #
-
-  @property
-  def dtype(self) -> torch.dtype:
-    """Precision of the underlying density grid.
-
-    Returns
-    -------
-    torch.dtype
-        The dtype of the density-grid tensors.
-    """
-    return self.interp_grid.values.dtype
-
-  @property
-  def device(self) -> torch.device:
-    """Placement of the underlying density grid.
-
-    Returns
-    -------
-    torch.device
-        The device of the density-grid tensors.
-    """
-    return self.interp_grid.values.device
-
-  def ref_array(self) -> Tensor:
-    """A tiny reference tensor carrying this pair's dtype / device.
-
-    Lets a hosting vine resolve its working array namespace and
-    dtype / device from ``pair(0, 0)`` without reaching into grid
-    internals.
-
-    Returns
-    -------
-    Tensor, shape (0,), dtype float
-        An empty tensor with this pair's dtype and device.
-    """
-    return torch.empty(0, dtype=self.dtype, device=self.device)
-
-  # --------------------------------------------------------------------- #
   # Constructors                                                           #
   # --------------------------------------------------------------------- #
 

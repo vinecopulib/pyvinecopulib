@@ -2,10 +2,11 @@
 
 These generic, :func:`~typing.runtime_checkable` Protocols mirror the
 nanobind-exposed :class:`~pyvinecopulib.Bicop` / :class:`~pyvinecopulib.Vinecop`
-surfaces and are the extension point for custom pair-copula and vine backends
-(torch is one; numpy another). Their members are ``@abstractmethod`` so the
-Protocols double as subclassable bases for the canonical implementations in
-:mod:`pyvinecopulib.core._base`.
+evaluation surfaces exactly, so the C++ ``Bicop`` / ``Vinecop`` satisfy them
+structurally (``isinstance`` is ``True``), and they are the extension point for
+custom pair-copula and vine backends (torch is one; numpy another). Their
+members are ``@abstractmethod`` so the Protocols double as subclassable bases
+for the canonical implementations in :mod:`pyvinecopulib.core._base`.
 
 The only extension over the C++ surface is an OPTIONAL trailing ``x`` giving the
 conditioning variables (conditioning-set values and/or external covariates) a
@@ -40,24 +41,19 @@ __all__ = ["ArrayT", "BicopLike", "VinecopLike"]
 class BicopLike(Protocol[ArrayT]):
   """Bivariate (optionally conditional) pair copula.
 
-  Every method takes ``u`` of shape ``(n, 2)`` in the clamped domain
-  ``[1e-10, 1 - 1e-10]`` and an OPTIONAL ``x`` of shape ``(n, k)`` giving the
-  conditioning variables the copula depends on (conditioning-set values and/or
-  external covariates). Unconditional copulas ignore ``x``. When the pair copula
-  is hosted in a vine, ``x`` is assembled for it by the vine's context policy
-  (a simplified vine passes ``x=None``, or forwards only external covariates).
-  ``pdf`` is the density primitive (there is no ``log_pdf`` — mirroring the C++
-  ``Bicop`` surface); ``dtype`` / ``device`` report the array precision and
-  placement (replacing any interpolation-grid coupling).
+  This mirrors the C++ :class:`~pyvinecopulib.Bicop` evaluation surface exactly
+  (``pdf`` is the density primitive — there is no ``log_pdf``), so the C++
+  ``Bicop`` satisfies it structurally. Every method takes ``u`` of shape
+  ``(n, 2)`` in the clamped domain ``[1e-10, 1 - 1e-10]`` and an OPTIONAL ``x``
+  of shape ``(n, k)`` giving the conditioning variables the copula depends on
+  (conditioning-set values and/or external covariates). Unconditional copulas
+  ignore ``x``. When the pair copula is hosted in a vine, ``x`` is assembled for
+  it by the vine's context policy (a simplified vine passes ``x=None``, or
+  forwards only external covariates). There is deliberately **no** ``dtype`` /
+  ``device`` on the contract: an ``nn.Module``-backed pair has no *intrinsic*
+  precision/placement (its buffers may differ), so a concrete backend resolves
+  those from whatever canonical array it holds.
   """
-
-  @property
-  @abstractmethod
-  def dtype(self) -> object: ...
-
-  @property
-  @abstractmethod
-  def device(self) -> object: ...
 
   @abstractmethod
   def pdf(self, u: ArrayT, x: Optional[ArrayT] = None) -> ArrayT: ...

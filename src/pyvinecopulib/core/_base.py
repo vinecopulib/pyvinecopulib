@@ -2,9 +2,9 @@
 
 :class:`BicopBase` is the canonical (array-backend-agnostic) implementation of
 :class:`~pyvinecopulib.core._protocols.BicopLike`: a copula that supplies only
-``pdf`` / ``hfunc1`` / ``hfunc2`` (plus the ``dtype`` / ``device`` seam) inherits
-``hinv1`` / ``hinv2`` (numerical inversion of the h-functions) for free; each is
-overridable when a native exact form exists. (Standalone per-pair ``simulate``
+``pdf`` / ``hfunc1`` / ``hfunc2`` inherits ``hinv1`` / ``hinv2`` (numerical
+inversion of the h-functions) for free; each is overridable when a native exact
+form exists. (Standalone per-pair ``simulate``
 is intentionally not provided — it is not part of the :class:`BicopLike`
 contract and the vine samples via ``inverse_rosenblatt``, not per-pair sampling.)
 
@@ -32,11 +32,11 @@ __all__ = ["BicopBase"]
 class BicopBase(BicopLike[ArrayT], ABC):
   """Canonical partial implementation of :class:`BicopLike` (numpy / torch).
 
-  Subclasses must implement ``dtype`` / ``device`` and ``pdf`` / ``hfunc1`` /
-  ``hfunc2``; ``hinv1`` / ``hinv2`` have working defaults here (numerical
-  inversion of the h-functions), and ``cdf`` raises unless overridden. Set the
-  class attribute ``supports_batched = True`` only if the concrete pair exposes
-  the grid/cache internals the torch batched path needs.
+  Subclasses must implement ``pdf`` / ``hfunc1`` / ``hfunc2``; ``hinv1`` /
+  ``hinv2`` have working defaults here (numerical inversion of the h-functions),
+  and ``cdf`` raises unless overridden. Set the class attribute
+  ``supports_batched = True`` only if the concrete pair exposes the grid/cache
+  internals the torch batched path needs.
   """
 
   #: Whether this pair can enter the torch grid-batched fast path.
