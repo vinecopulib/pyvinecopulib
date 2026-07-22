@@ -117,6 +117,71 @@ def interp_at_batched(
   return interpolate_batched(grid_points, cache, u, is_linear)
 
 
+def interpolate_batched_many(
+  grid_points: Tensor, caches: Tensor, u: Tensor, is_linear: bool = False
+) -> Tensor:
+  """Bilinearly interpolate ``K`` stacked grids at one shared query per pair.
+
+  The cell index and barycentric weights depend only on ``u`` and the grid, so
+  they are computed **once** and reused across the ``K`` grids (which differ only
+  in their node values). This is bit-for-bit identical to ``K`` separate
+  :func:`interpolate_batched` calls (same clamp, same cell search, same
+  weighted-sum arithmetic; the per-grid corner values come from pure gathers),
+  but does one cell search + one weight computation instead of ``K``.
+
+  Args:
+    grid_points: shape ``(m,)``, shared across all pairs.
+    caches: shape ``(N, K, m, m)``, ``K`` grids per pair (e.g. pdf / h1 / h2).
+    u: shape ``(N, n, 2)``, queries per pair.
+
+  Returns:
+    Tensor of shape ``(N, K, n)`` — ``[:, k, :]`` equals
+    ``interpolate_batched(grid_points, caches[:, k], u, is_linear)``.
+  """
+  if caches.ndim != 4:
+    raise ValueError(
+      f"caches must be 4D (N, K, m, m); got {tuple(caches.shape)}"
+    )
+  if u.ndim != 3 or u.shape[-1] != 2:
+    raise ValueError(f"u must be (N, n, 2); got {tuple(u.shape)}")
+  if u.shape[0] != caches.shape[0]:
+    raise ValueError(
+      f"u.shape[0]={u.shape[0]} != caches.shape[0]={caches.shape[0]}"
+    )
+  u = u.clamp(0.0, 1.0)
+  n_pairs, k_grids, m, _ = caches.shape
+  n = u.shape[1]
+
+  # Shared cell index + weights (identical to interpolate_batched).
+  i = _batched_cell_index(grid_points, u[..., 0], is_linear)  # (N, n)
+  j = _batched_cell_index(grid_points, u[..., 1], is_linear)  # (N, n)
+
+  # Flatten each grid to (N, K, m*m) and gather the four corners; f = i*m + j
+  # is the row-major flat index, so caches_flat[..., f] == caches[..., i, j].
+  caches_flat = caches.reshape(n_pairs, k_grids, m * m)
+  f11 = (i * m + j).unsqueeze(1).expand(n_pairs, k_grids, n)  # (N, K, n)
+  z11 = caches_flat.gather(-1, f11)
+  z12 = caches_flat.gather(-1, f11 + 1)
+  z21 = caches_flat.gather(-1, f11 + m)
+  z22 = caches_flat.gather(-1, f11 + m + 1)
+
+  x1 = grid_points[i]
+  x2 = grid_points[i + 1]
+  y1 = grid_points[j]
+  y2 = grid_points[j + 1]
+  x = u[..., 0]
+  y = u[..., 1]
+  # Weights are (N, n); broadcast over the K axis (N, 1, n).
+  x2x = (x2 - x).unsqueeze(1)
+  y2y = (y2 - y).unsqueeze(1)
+  xx1 = (x - x1).unsqueeze(1)
+  yy1 = (y - y1).unsqueeze(1)
+  denom = ((x2 - x1) * (y2 - y1)).unsqueeze(1)
+  return (
+    z11 * x2x * y2y + z21 * xx1 * y2y + z12 * x2x * yy1 + z22 * xx1 * yy1
+  ) / denom
+
+
 # --------------------------------------------------------------------------- #
 # Batched trapezoidal integration (``cache_integrals=False`` path)             #
 # --------------------------------------------------------------------------- #
@@ -344,6 +409,13 @@ class BatchedTreeLevel(torch.nn.Module):
       self.register_buffer("cdf_cache", cdf_cache)
       self.register_buffer("hinv1_cache", hinv1_cache)
       self.register_buffer("hinv2_cache", hinv2_cache)
+      # Stacked [pdf, h1, h2] grids (N, 3, m, m) for the fused lookup: pdf +
+      # both h-functions share one cell search / weight computation. (The five
+      # caches are supplied all-or-nothing; the assert narrows for the checker.)
+      assert h2_cache is not None
+      self.register_buffer(
+        "_ph_stack", torch.stack([values, h1_cache, h2_cache], dim=1)
+      )
       self._has_cache = True
     else:
       self.h1_cache = None
@@ -351,6 +423,7 @@ class BatchedTreeLevel(torch.nn.Module):
       self.cdf_cache = None
       self.hinv1_cache = None
       self.hinv2_cache = None
+      self._ph_stack = None
       self._has_cache = False
     self.register_buffer("is_indep", is_indep)
     self.register_buffer("col0_src", col0_src)
@@ -417,6 +490,54 @@ class BatchedTreeLevel(torch.nn.Module):
     return torch.where(
       self.is_indep[:, None], u[..., 0].clamp(_TRIM_LO, _TRIM_HI), h
     )
+
+  def pdf_h1_h2(
+    self, grid_points: Tensor, u: Tensor
+  ) -> tuple[Tensor, Tensor, Tensor]:
+    """Fused ``(pdf, hfunc1, hfunc2)`` sharing one cell search (cache path).
+
+    Bit-for-bit identical to calling :meth:`pdf` / :meth:`hfunc1` /
+    :meth:`hfunc2` separately (same clamps / indep overrides), but does one
+    :func:`interpolate_batched_many` on the stacked ``[pdf, h1, h2]`` grids
+    instead of three lookups. Falls back to the separate methods on the
+    no-cache path (where pdf and the h-functions are different algorithms).
+    """
+    if self._ph_stack is None:
+      return (
+        self.pdf(grid_points, u),
+        self.hfunc1(grid_points, u),
+        self.hfunc2(grid_points, u),
+      )
+    raw = interpolate_batched_many(
+      grid_points, self._ph_stack, u, self._is_linear
+    )  # (N, 3, n) -> [pdf, h1, h2]
+    idx = self.is_indep[:, None]
+    pdf = torch.where(
+      idx, torch.ones_like(raw[:, 0, :]), raw[:, 0, :].clamp_min(1e-20)
+    )
+    h1 = torch.where(
+      idx, u[..., 1].clamp(_TRIM_LO, _TRIM_HI), raw[:, 1, :].clamp(0.0, 1.0)
+    )
+    h2 = torch.where(
+      idx, u[..., 0].clamp(_TRIM_LO, _TRIM_HI), raw[:, 2, :].clamp(0.0, 1.0)
+    )
+    return pdf, h1, h2
+
+  def h1_h2(self, grid_points: Tensor, u: Tensor) -> tuple[Tensor, Tensor]:
+    """Fused ``(hfunc1, hfunc2)`` sharing one cell search; see :meth:`pdf_h1_h2`."""
+    if self._ph_stack is None:
+      return self.hfunc1(grid_points, u), self.hfunc2(grid_points, u)
+    raw = interpolate_batched_many(
+      grid_points, self._ph_stack[:, 1:, :, :], u, self._is_linear
+    )  # (N, 2, n) -> [h1, h2]
+    idx = self.is_indep[:, None]
+    h1 = torch.where(
+      idx, u[..., 1].clamp(_TRIM_LO, _TRIM_HI), raw[:, 0, :].clamp(0.0, 1.0)
+    )
+    h2 = torch.where(
+      idx, u[..., 0].clamp(_TRIM_LO, _TRIM_HI), raw[:, 1, :].clamp(0.0, 1.0)
+    )
+    return h1, h2
 
   def hinv1(self, grid_points: Tensor, u: Tensor) -> Tensor:
     """Per-pair hinv1. Requires ``cache_integrals=True`` — the precomputed
