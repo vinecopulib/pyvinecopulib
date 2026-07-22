@@ -38,15 +38,15 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from ..core import ConditioningContext, SimplifiedContext, VinecopBase
-from ..core._vinecop_base import _NotBatchable
+from ..core import ConditioningContext, VinecopBase
+from ..core.vinecop_base import _NotBatchable
 from ..pyvinecopulib_ext import (
   RVineStructure,
   Vinecop,
   indep as _INDEP_FAMILY,
   tll as _TLL_FAMILY,
 )
-from ..utils import simulate_uniform as _simulate_uniform
+from ..utils import simulate_uniform
 from ._batched import BatchedVine
 from ._controls import FitControlsTorchVinecop
 from ._interp import _TRIM_HI, _TRIM_LO
@@ -85,7 +85,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       describe how to walk the trees.
   context : ConditioningContext or None, default=None
       Conditioning-context policy that assembles each pair copula's
-      ``cond`` per edge. ``None`` uses
+      ``x`` per edge. ``None`` uses
       :class:`~pyvinecopulib.core.SimplifiedContext` (an unconditional /
       simplified vine).
   """
@@ -97,7 +97,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   def __init__(
     self,
     pair_copulas: list[list[TorchBicop]],
-    structure,
+    structure: RVineStructure,
     *,
     context: Optional[ConditioningContext] = None,
   ) -> None:
@@ -105,9 +105,8 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     # (a Protocol-derived ABC), whose __init__ chain would otherwise shadow
     # nn.Module's under super().
     torch.nn.Module.__init__(self)
-    if context is None:
-      context = SimplifiedContext()
-    # Install structure + context + derived order arrays (VinecopBase hook).
+    # Install structure + context + derived order arrays (VinecopBase hook;
+    # context=None resolves to SimplifiedContext).
     self._bind_vine(structure, context)
 
     expected_lens = [self.d - 1 - t for t in range(self.trunc_lvl)]
@@ -317,7 +316,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         dtype=eff_dtype,
       )
 
-    # Shared tree-by-tree fit engine (SimplifiedContext -> cond=None). The
+    # Shared tree-by-tree fit engine (SimplifiedContext -> x_e=None). The
     # fit_edge closure returns TorchBicop, so the nested list is concrete.
     pairs = cls.sequential_fit(structure, u_t, fit_edge)
     return cls(
@@ -328,7 +327,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   # Helpers                                                                #
   # --------------------------------------------------------------------- #
 
-  def _pair(self, tree: int, edge: int) -> TorchBicop:
+  def _get_pair_copula(self, tree: int, edge: int) -> TorchBicop:
     """Indexed access to a pair copula.
 
     The two-level :class:`torch.nn.ModuleList` is typed as ``Module`` after
@@ -342,7 +341,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   def _ref_tensor(self) -> Tensor:
     """A registered buffer we can crib dtype/device from."""
     # Every TorchBicop registers its interpolation grid; reuse the first.
-    return self._pair(0, 0).interp_grid.values
+    return self._get_pair_copula(0, 0).interp_grid.values
 
   def _default_batched(self) -> bool:
     """Pick a sensible ``batched`` default based on the fitted device.
@@ -384,7 +383,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   # VinecopBase hooks: RNG for simulate + grad control                     #
   # --------------------------------------------------------------------- #
 
-  def _draw_base_u(self, n: int, qrng: bool, seeds: list[int]) -> Tensor:
+  def _simulate_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Tensor:
     """Draw ``(n, d)`` base uniforms on the fitted grid's dtype/device.
 
     Pseudo-random via ``torch.rand`` (the first seed seeds a fresh
@@ -408,7 +407,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     ref = self._ref_tensor()
     dtype, device = ref.dtype, ref.device
     if qrng:
-      u_np = _simulate_uniform(n, self.d, qrng=True, seeds=list(seeds))
+      u_np = simulate_uniform(n, self.d, qrng=True, seeds=list(seeds))
       return torch.as_tensor(u_np, dtype=dtype, device=device)
     gen: Optional[torch.Generator] = None
     if seeds:
@@ -450,7 +449,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         cascade.
     """
     if not all(
-      getattr(self._pair(t, e), "supports_batched", False)
+      getattr(self._get_pair_copula(t, e), "supports_batched", False)
       for t in range(self.trunc_lvl)
       for e in range(self.d - t - 1)
     ):

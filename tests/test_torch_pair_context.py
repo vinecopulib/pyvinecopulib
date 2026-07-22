@@ -48,21 +48,19 @@ class _ListVinecop(VinecopBase[Any]):
 
   Hosts arbitrary ``BicopLike`` pairs (here the non-``nn.Module``
   ``GaussianBicop``) and runs the shared cascades on either numpy or torch —
-  the layer at which conditional / non-simplified hosting belongs.
+  the layer at which conditional / non-simplified hosting belongs. Only the
+  required ``_get_pair_copula`` hook is implemented; ``_prep`` falls back to the
+  ``VinecopBase`` concrete default (shape check + unit-box clamp).
   """
 
-  def __init__(self, pairs: list[list[Any]], structure, context) -> None:
+  def __init__(self, pairs: list[list[Any]], structure, context=None) -> None:
     self._pairs = pairs
     self._bind_vine(structure, context)
 
-  def _pair(self, tree: int, edge: int):
+  def _get_pair_copula(self, tree: int, edge: int):
     return self._pairs[tree][edge]
 
-  def _prep(self, u: Any, name: str) -> Any:
-    xp = array_namespace(u)
-    return xp.clip(u, 1e-10, 1.0 - 1e-10)
-
-  def _draw_base_u(self, n: int, qrng: bool, seeds: list[int]) -> Any:
+  def _simulate_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Any:
     raise NotImplementedError("simulate is not exercised by these tests")
 
 

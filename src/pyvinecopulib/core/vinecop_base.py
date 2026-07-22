@@ -21,9 +21,11 @@ The ``pdf`` cascade accumulates the vine density as a **product** of per-edge
 copula densities (there is no per-observation ``log_pdf``; ``loglik`` sums the
 log-density).
 
-Hooks a concrete backend must provide (see the abstract members): ``_pair``,
-``_prep``, ``_draw_base_u``; and, to enable the grid-batched fast path,
-``_build_batched`` (plus ``_default_batched``). The batched *cascade loops* are
+The only hook a concrete backend must provide is ``_get_pair_copula``; ``_prep``
+(input coercion + unit-box clamp) ships a concrete default, and
+``_simulate_uniform`` (RNG) is needed only to enable ``simulate``. To enable the
+grid-batched fast path, override ``_build_batched`` (plus ``_default_batched``).
+The batched *cascade loops* are
 array-agnostic and live here; only the grid/cache builder returned by
 ``_build_batched`` is backend-specific. The concrete backend calls
 :meth:`_bind_vine` once to install the structure and context. Array values are
@@ -36,19 +38,22 @@ from __future__ import annotations
 
 import contextlib
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Optional, cast
+from typing import TYPE_CHECKING, Any, Callable, Optional, cast
 
 from array_api_compat import array_namespace
 
-from ._context import ConditioningContext, SimplifiedContext
-from ._protocols import ArrayT, BicopLike, VinecopLike
+from .context import ConditioningContext, SimplifiedContext
+from .protocols import ArrayT, BicopLike, VinecopLike
+
+if TYPE_CHECKING:
+  from ..pyvinecopulib_ext import RVineStructure
 
 __all__ = ["VinecopBase"]
 
 _TRIM_LO: float = 1e-10
 _TRIM_HI: float = 1.0 - 1e-10
 
-#: (tree, edge, u_e, cond) -> fitted pair copula. The seam external packages
+#: (tree, edge, u_e, x_e) -> fitted pair copula. The seam external packages
 #: drive conditional fitting through (see :meth:`VinecopBase.sequential_fit`).
 FitEdge = Callable[[int, int, Any, Optional[Any]], BicopLike]
 
@@ -63,8 +68,9 @@ class _NotBatchable(Exception):
 class VinecopBase(VinecopLike[ArrayT], ABC):
   """Canonical array-agnostic vine cascades (numpy / torch).
 
-  Concrete subclasses implement ``_pair`` / ``_prep`` / ``_draw_base_u`` (and,
-  optionally, the batched-path hooks) and call :meth:`_bind_vine` once; they
+  Concrete subclasses implement ``_get_pair_copula`` (and optionally override
+  ``_prep`` / ``_simulate_uniform`` / the batched-path hooks) and call
+  :meth:`_bind_vine` once; they
   then inherit the whole evaluator surface — ``pdf`` / ``cdf`` / ``rosenblatt`` /
   ``inverse_rosenblatt`` / ``simulate``, ``loglik`` / ``plot`` / ``__repr__``,
   the ``dim`` / ``trunc_lvl`` / ``order`` accessors, and the
@@ -80,32 +86,29 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   Examples
   --------
   A minimal backend over a nested list of :class:`BicopLike` pairs (the pattern a
-  downstream package uses to host custom / conditional pairs)::
+  downstream package uses to host custom / conditional pairs); the only required
+  hook is ``_get_pair_copula``::
 
       from typing import Any
-      from array_api_compat import array_namespace
       from pyvinecopulib.core import VinecopBase, NonSimplifiedContext
 
       class ListVinecop(VinecopBase[Any]):
-        def __init__(self, pairs, structure, context):
+        def __init__(self, pairs, structure, context=None):
           self._pairs = pairs
-          self._bind_vine(structure, context)
+          self._bind_vine(structure, context)  # SimplifiedContext by default
 
-        def _pair(self, tree, edge):
+        def _get_pair_copula(self, tree, edge):
           return self._pairs[tree][edge]
 
-        def _prep(self, u, name):
-          return array_namespace(u).clip(u, 1e-10, 1 - 1e-10)
-
-        def _draw_base_u(self, n, qrng, seeds):
-          raise NotImplementedError  # only needed for simulate()
+        def _simulate_uniform(self, n, qrng, seeds):
+          raise NotImplementedError  # override only to enable simulate()
 
       # vine = ListVinecop(pairs, structure, NonSimplifiedContext())
       # vine.pdf(u, x=x); vine.loglik(u, x=x)
   """
 
   # --- layout installed by _bind_vine (hooks / state) ------------------- #
-  structure: Any
+  structure: RVineStructure
   d: int
   trunc_lvl: int
   order: tuple[int, ...]
@@ -116,8 +119,22 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   #: the first batched call. Backends invalidate it on device moves.
   _batched: Any
 
-  def _bind_vine(self, structure: Any, context: ConditioningContext) -> None:
-    """Install the vine structure + context and derive the order arrays."""
+  def _bind_vine(
+    self,
+    structure: RVineStructure,
+    context: Optional[ConditioningContext] = None,
+  ) -> None:
+    """Install the vine structure + context and derive the order arrays.
+
+    The initialization seam a concrete backend calls once from its ``__init__``
+    (after storing its pair copulas). ``context`` defaults to
+    :class:`~pyvinecopulib.core.SimplifiedContext` — the unconditional /
+    simplified vine that covers the common case — so most backends pass only a
+    ``structure``. Advanced backends may override this method to install extra
+    state, calling ``super()._bind_vine(...)``.
+    """
+    if context is None:
+      context = SimplifiedContext()
     self.structure = structure
     self._context = context
     self.d = int(structure.dim)
@@ -133,16 +150,34 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
 
   # --- hooks a concrete backend provides -------------------------------- #
   @abstractmethod
-  def _pair(self, tree: int, edge: int) -> BicopLike[ArrayT]:
-    """Return the pair copula at ``(tree, edge)``."""
+  def _get_pair_copula(self, tree: int, edge: int) -> BicopLike[ArrayT]:
+    """Return the pair copula at ``(tree, edge)`` (the one required hook)."""
 
-  @abstractmethod
   def _prep(self, u: ArrayT, name: str) -> ArrayT:
-    """Coerce ``u`` to the working dtype/device and clamp to the unit box."""
+    """Coerce ``u`` to the working array and clamp to the unit box.
 
-  @abstractmethod
-  def _draw_base_u(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:
-    """Draw ``(n, d)`` base uniforms for :meth:`simulate` (RNG is backend-specific)."""
+    Concrete default: shape-check, then clamp to ``[1e-10, 1 - 1e-10]`` on
+    ``u``'s own array namespace. A backend that needs dtype / device coercion
+    (e.g. accepting NumPy input on a torch vine) overrides this.
+    """
+    ua: Any = u
+    xp = array_namespace(ua)
+    if ua.ndim != 2 or ua.shape[1] != self.d:
+      raise ValueError(
+        f"{name}: u must have shape (n, {self.d}); got {tuple(ua.shape)}"
+      )
+    return cast(ArrayT, xp.clip(ua, _TRIM_LO, _TRIM_HI))
+
+  def _simulate_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:
+    """Draw ``(n, d)`` base uniforms for :meth:`simulate` (RNG is backend-specific).
+
+    Raising default; override it (numpy / torch differ on RNG) to enable
+    :meth:`simulate`. Named after :func:`pyvinecopulib.utils.simulate_uniform`.
+    """
+    raise NotImplementedError(
+      f"{type(self).__name__} does not implement _simulate_uniform; override it "
+      "to enable simulate()."
+    )
 
   def _default_batched(self) -> bool:
     """Whether ``batched`` defaults to ``True`` (backend/device dependent)."""
@@ -255,7 +290,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     s = self.structure
     for tree in range(trunc_lvl):
       for edge in range(d - tree - 1):
-        edge_copula = self._pair(tree, edge)
+        edge_copula = self._get_pair_copula(tree, edge)
         # m: min-array — natural-order index of the column finalized in a
         # previous tree; the second pair input comes from hfunc2 when m sits on
         # the natural-order diagonal, else from hfunc1 (class.ipp:1026-1034).
@@ -294,7 +329,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     s = self.structure
     for tree in range(trunc_lvl):
       for edge in range(d - tree - 1):
-        edge_copula = self._pair(tree, edge)
+        edge_copula = self._get_pair_copula(tree, edge)
         # See _pdf for the m / on-diagonal second-input rule (class.ipp:1026).
         m = int(s.min_array(tree, edge))
         on_diagonal = m == int(s.struct_array(tree, edge, natural_order=True))
@@ -338,7 +373,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     for var in range(d - 2, -1, -1):
       tree_start = min(trunc_lvl - 1, d - var - 2)
       for tree in range(tree_start, -1, -1):
-        edge_copula = self._pair(tree, var)
+        edge_copula = self._get_pair_copula(tree, var)
         # Same m / on-diagonal rule as the forward cascades (class.ipp:1026),
         # but the inputs are rows of the transposed hinv2 / hfunc1 scratch.
         m = int(s.min_array(tree, var))
@@ -602,7 +637,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
           f"got x with {xa.shape[0]} rows."
         )
     with self._eval_context():
-      base_u = self._draw_base_u(n, qrng, seeds)
+      base_u = self._simulate_uniform(n, qrng, seeds)
       return self.inverse_rosenblatt(base_u, x=x)
 
   def cdf(
@@ -726,7 +761,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     BicopLike
         The pair copula hosted at that position.
     """
-    return self._pair(tree, edge)
+    return self._get_pair_copula(tree, edge)
 
   def plot(
     self,

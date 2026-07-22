@@ -56,13 +56,13 @@ from ..pyvinecopulib_ext import (
   Vinecop,
 )
 from .bicop_base import BicopBase
-from ._context import (
+from .context import (
   ConditioningContext,
   NonSimplifiedContext,
   SimplifiedContext,
 )
 from .protocols import BicopLike, VinecopLike
-from ._vinecop_base import VinecopBase
+from .vinecop_base import VinecopBase
 
 __all__ = [
   "Bicop",

@@ -33,11 +33,12 @@ each pair's conditioning matrix ``x_e`` is built::
 
 from __future__ import annotations
 
+from abc import abstractmethod
 from typing import Optional, Protocol, runtime_checkable
 
 from array_api_compat import array_namespace
 
-from ._protocols import ArrayT
+from .protocols import ArrayT
 
 __all__ = ["ConditioningContext", "NonSimplifiedContext", "SimplifiedContext"]
 
@@ -56,6 +57,7 @@ class ConditioningContext(Protocol[ArrayT]):
 
   assembles_conditioning: bool
 
+  @abstractmethod
   def edge_context(
     self, *, u_D: Optional[ArrayT], x: Optional[ArrayT]
   ) -> Optional[ArrayT]:

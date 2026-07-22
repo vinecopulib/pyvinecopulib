@@ -85,10 +85,11 @@ _VINECOP_EXAMPLE = """
           return self._pairs[tree][edge]
 
       struct = pv.RVineStructure.from_order([1, 2, 3])
+      g = pv.families.gaussian
       pairs = [
-        [pv.Bicop(family=pv.families.gaussian, parameters=[[0.5]]),
-         pv.Bicop(family=pv.families.gaussian, parameters=[[0.4]])],
-        [pv.Bicop(family=pv.families.gaussian, parameters=[[0.2]])],
+        [pv.Bicop(family=g, parameters=np.array([[0.5]])),
+         pv.Bicop(family=g, parameters=np.array([[0.4]]))],
+        [pv.Bicop(family=g, parameters=np.array([[0.2]]))],
       ]
       vine = ListVinecop(pairs, struct)
       ref = pv.Vinecop.from_structure(structure=struct, pair_copulas=pairs)

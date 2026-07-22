@@ -557,7 +557,7 @@ def test_pdf_autograd_through_grid_param() -> None:
   u_fit = _simulate(d=4, n=800, seed=700)
   cop = _fit_tll_vine(u_fit)
   bc = TorchVinecop.from_vinecop(cop, cache_integrals=False)
-  pair = bc._pair(0, 0)
+  pair = bc._get_pair_copula(0, 0)
   pair.interp_grid.values.requires_grad_(True)
   u = torch.from_numpy(_eval_grid(64, d=4, seed=701))
   out = bc.pdf(u, batched=False)
