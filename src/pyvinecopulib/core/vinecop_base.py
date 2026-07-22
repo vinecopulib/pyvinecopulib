@@ -132,6 +132,19 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     simplified vine that covers the common case — so most backends pass only a
     ``structure``. Advanced backends may override this method to install extra
     state, calling ``super()._bind_vine(...)``.
+
+    Parameters
+    ----------
+    structure : RVineStructure
+        The (fixed) vine structure to evaluate along.
+    context : ConditioningContext, optional
+        Per-edge conditioning-context policy; ``None`` uses
+        :class:`~pyvinecopulib.core.SimplifiedContext`.
+
+    Returns
+    -------
+    None
+        The structure, context, and derived order arrays are stored on ``self``.
     """
     if context is None:
       context = SimplifiedContext()
@@ -151,7 +164,20 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   # --- hooks a concrete backend provides -------------------------------- #
   @abstractmethod
   def _get_pair_copula(self, tree: int, edge: int) -> BicopLike[ArrayT]:
-    """Return the pair copula at ``(tree, edge)`` (the one required hook)."""
+    """Return the pair copula at ``(tree, edge)`` (the one required hook).
+
+    Parameters
+    ----------
+    tree : int
+        Tree index (``0``-based).
+    edge : int
+        Edge index within the tree (``0``-based).
+
+    Returns
+    -------
+    BicopLike
+        The pair copula hosted at that position.
+    """
 
   def _prep(self, u: ArrayT, name: str) -> ArrayT:
     """Coerce ``u`` to the working array and clamp to the unit box.
@@ -159,6 +185,18 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     Concrete default: shape-check, then clamp to ``[1e-10, 1 - 1e-10]`` on
     ``u``'s own array namespace. A backend that needs dtype / device coercion
     (e.g. accepting NumPy input on a torch vine) overrides this.
+
+    Parameters
+    ----------
+    u : array, shape (n, d), dtype float
+        Pseudo-observations to prepare.
+    name : str
+        Calling-method name, used only in the shape-error message.
+
+    Returns
+    -------
+    array, shape (n, d), dtype float
+        ``u`` coerced to the working array and clamped to ``[1e-10, 1 - 1e-10]``.
     """
     ua: Any = u
     xp = array_namespace(ua)
@@ -173,6 +211,25 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
 
     Raising default; override it (numpy / torch differ on RNG) to enable
     :meth:`simulate`. Named after :func:`pyvinecopulib.utils.simulate_uniform`.
+
+    Parameters
+    ----------
+    n : int
+        Number of samples to draw.
+    qrng : bool
+        Whether to draw a quasi-random (low-discrepancy) sequence.
+    seeds : list of int
+        RNG seeds.
+
+    Returns
+    -------
+    array, shape (n, d), dtype float
+        Base uniforms in ``[0, 1)``.
+
+    Raises
+    ------
+    NotImplementedError
+        Unless a backend overrides this hook.
     """
     raise NotImplementedError(
       f"{type(self).__name__} does not implement _simulate_uniform; override it "
@@ -180,7 +237,14 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     )
 
   def _default_batched(self) -> bool:
-    """Whether ``batched`` defaults to ``True`` (backend/device dependent)."""
+    """Whether ``batched`` defaults to ``True`` (backend/device dependent).
+
+    Returns
+    -------
+    bool
+        The value used when a caller passes ``batched=None`` (``False`` here; a
+        grid backend may key it on the device).
+    """
     return False
 
   def _build_batched(self) -> Any:
@@ -191,13 +255,29 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     object exposing the batched-vine surface the cascades call
     (``level`` / ``grid_points`` / per-level ``gather_inputs`` / ``pdf`` /
     ``hfunc1`` / ``hfunc2`` / ``n_pairs`` / ``needs_h1`` / ``needs_h2``).
+
+    Returns
+    -------
+    object
+        The backend-specific batched-vine state the batched cascades run on.
+
+    Raises
+    ------
+    _NotBatchable
+        In the default implementation (no grid fast path available).
     """
     raise _NotBatchable(
       f"{type(self).__name__} does not provide a batched fast path."
     )
 
   def _ensure_batched(self) -> Any:
-    """Return the cached batched state, building it once on first use."""
+    """Return the cached batched state, building it once on first use.
+
+    Returns
+    -------
+    object
+        The memoized :meth:`_build_batched` result.
+    """
     if self._batched is None:
       self._batched = self._build_batched()
     return self._batched
@@ -207,6 +287,12 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
 
     Defaults to a no-op; the torch backend overrides it with
     ``torch.no_grad()``.
+
+    Returns
+    -------
+    contextlib.AbstractContextManager
+        A context manager wrapping the grad-sensitive sections (a
+        ``nullcontext`` by default).
     """
     return contextlib.nullcontext()
 
@@ -221,6 +307,19 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     -tree order** ``i`` — the C1 column order the context assembles ``u_D`` in
     and a conditional pair consumes positionally. All are ``> edge`` (the
     inverse-cascade invariant), so they are finalized before this edge is read.
+
+    Parameters
+    ----------
+    tree : int
+        Tree index (``0``-based).
+    edge : int
+        Edge index within the tree (``0``-based).
+
+    Returns
+    -------
+    tuple of int
+        Natural-order column indices of the conditioning variables, in ascending
+        conditioning-tree order (the C1 order).
     """
     key = (tree, edge)
     cache = self._cond_pos_cache
@@ -247,6 +346,27 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     ``u_D`` differs by direction: the forward cascades pass ``u_nat`` (the
     natural-order observations, columns), the inverse cascade passes
     ``hinv2_final`` (the finalized ``hinv2[0]`` rows, transposed).
+
+    Parameters
+    ----------
+    tree : int
+        Tree index (``0``-based).
+    edge : int
+        Edge index within the tree (``0``-based).
+    x : array, shape (n, p), or None
+        External covariates for this call, or ``None``.
+    u_nat : array, shape (n, d), or None
+        Natural-order observations (forward cascades); ``None`` in the inverse
+        direction.
+    hinv2_final : array, shape (d, n), or None
+        The finalized ``hinv2[0]`` scratch rows (inverse cascade); ``None`` in
+        the forward direction.
+
+    Returns
+    -------
+    array, shape (n, k), or None
+        The per-edge conditioning matrix ``x_e``, or ``None`` when the pair is
+        unconditional for this edge.
     """
     ctx = self._context
     # Simplified + unconditional: skip the gather entirely (zero cost).
@@ -266,7 +386,20 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
 
   # --- non-batched cascades (single source of truth) -------------------- #
   def _pdf(self, u: Any, x: Optional[Any]) -> Any:
-    """Vine density as a product of per-edge copula densities (``Vinecop::pdf``)."""
+    """Vine density as a product of per-edge copula densities (``Vinecop::pdf``).
+
+    Parameters
+    ----------
+    u : array, shape (n, d), dtype float
+        Prepared pseudo-observations (natural-order seeding happens inside).
+    x : array, shape (n, p), or None
+        External covariates threaded to each pair copula, or ``None``.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Joint density values.
+    """
     xp = array_namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
@@ -311,7 +444,20 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     return pdf
 
   def _rosenblatt(self, u: Any, x: Optional[Any]) -> Any:
-    """Rosenblatt transform (``Vinecop::rosenblatt``)."""
+    """Rosenblatt transform (``Vinecop::rosenblatt``).
+
+    Parameters
+    ----------
+    u : array, shape (n, d), dtype float
+        Prepared pseudo-observations.
+    x : array, shape (n, p), or None
+        External covariates threaded to each pair copula, or ``None``.
+
+    Returns
+    -------
+    array, shape (n, d), dtype float
+        Independent uniforms in ``[1e-10, 1 - 1e-10]``.
+    """
     xp = array_namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
@@ -354,6 +500,18 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     ``hinv2`` column from the outermost tree inward. The ``(trunc_lvl + 1, d, n)``
     scratch is transposed relative to the forward cascades (variable axis first)
     so a finalized ``hinv2[0, var, :]`` row can seed later inversions.
+
+    Parameters
+    ----------
+    u : array, shape (n, d), dtype float
+        Prepared independent uniforms.
+    x : array, shape (n, p), or None
+        External covariates threaded to each pair copula, or ``None``.
+
+    Returns
+    -------
+    array, shape (n, d), dtype float
+        Dependent uniforms in ``[1e-10, 1 - 1e-10]``.
     """
     xp = array_namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
@@ -408,7 +566,21 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   # ``needs_h2`` masks. These receive already-prepped ``u`` (the public methods
   # prep before dispatch).
   def _pdf_batched(self, u: Any) -> Any:
-    """Batched vine pdf: product over per-tree-level stacked densities."""
+    """Batched vine pdf: product over per-tree-level stacked densities.
+
+    Numerically equivalent to :meth:`_pdf` on a simplified vine, but each tree
+    level fires one stacked (fused) pair-copula call over its edges.
+
+    Parameters
+    ----------
+    u : array, shape (n, d), dtype float
+        Prepared pseudo-observations.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Joint density values.
+    """
     xp = array_namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
@@ -441,7 +613,20 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     return pdf
 
   def _rosenblatt_batched(self, u: Any) -> Any:
-    """Batched Rosenblatt transform (per-tree-level stacked h-functions)."""
+    """Batched Rosenblatt transform (per-tree-level stacked h-functions).
+
+    Numerically equivalent to :meth:`_rosenblatt` on a simplified vine.
+
+    Parameters
+    ----------
+    u : array, shape (n, d), dtype float
+        Prepared pseudo-observations.
+
+    Returns
+    -------
+    array, shape (n, d), dtype float
+        Independent uniforms in ``[1e-10, 1 - 1e-10]``.
+    """
     xp = array_namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
@@ -471,7 +656,22 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   def _resolve_batched(
     self, requested: Optional[bool], x: Optional[Any]
   ) -> bool:
-    """Resolve the ``batched`` flag; force ``False`` for conditional calls."""
+    """Resolve the ``batched`` flag; force ``False`` for conditional calls.
+
+    Parameters
+    ----------
+    requested : bool or None
+        The caller's ``batched`` argument; ``None`` defers to
+        :meth:`_default_batched`.
+    x : array or None
+        External covariates for the call; any non-``None`` value forces the
+        non-batched cascade.
+
+    Returns
+    -------
+    bool
+        Whether to attempt the batched fast path.
+    """
     if self._context.assembles_conditioning or x is not None:
       return False
     if requested is None:
