@@ -14,6 +14,7 @@
     - `VineRegressor` gains a real `normalize_weights=True` `__init__` parameter; the previous post-init `_normalize_weights` attribute is gone.
 - `TorchBicop.from_data` now dispatches on `controls=FitControlsTorchBicop(...)` (#217). Callers who passed `grid_size`, `mult`, or `grid_type` as keyword arguments must move them onto the dataclass. `cache_integrals`, `device`, and `dtype` remain direct kwargs on `from_data`.
 - `TorchBicop.sample(num_sample, seed, is_sobol)` renamed to `TorchBicop.simulate(n, qrng=False, seeds=[])` for parity with `pv.Bicop.simulate` (#216).
+- Remove `TorchBicop.log_pdf`. The vine `pdf` cascade now accumulates a product of per-edge `pdf` (rather than a log-sum-exp), so the pair-level log-density convenience method is no longer needed; it was never part of the `BicopLike` contract. Use `TorchBicop.pdf(u).log()` if you need a log density.
 
 ### New features in `pyvinecopulib`
 
