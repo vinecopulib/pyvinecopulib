@@ -29,7 +29,11 @@ nanobind extension (`pyvinecopulib_ext.cpp`) and adds Python-only
 extensions on top:
 
 1. `pyvinecopulib.core`, `pyvinecopulib.families`, `pyvinecopulib.utils`
-   — re-exports of the bound C++ surface, organised by topic.
+   — re-exports of the bound C++ surface, organised by topic; `core`
+   additionally ships a backend-neutral pair-copula / vine abstraction
+   layer (`BicopLike` / `VinecopLike` protocols, `BicopBase` /
+   `VinecopBase` canonical bases, `ConditioningContext` policies) that
+   custom NumPy / PyTorch backends subclass.
 2. `pyvinecopulib.sklearn` — scikit-learn-compatible estimators
    (`VineDensity`, `VineRegressor`, `VineForestDensity`,
    `VineForestRegressor`) on top of the core, with a pluggable
@@ -97,6 +101,11 @@ ahead of it) is allowed to break sklearn/torch APIs as needed.
 - **PyTorch evaluator** — `TorchBicop`, `TorchVinecop` (pure-torch
   cascade with GPU placement, autograd, and an optional `batched`
   evaluation fast path; byte-for-byte parity with the C++ cascade).
+- **Backend-neutral extension layer** — the `BicopLike` / `VinecopLike`
+  contracts and canonical `BicopBase` / `VinecopBase` bases (NumPy or
+  PyTorch) for hosting custom pair copulas in a vine, including
+  **non-simplified / conditional** vines via a `ConditioningContext`
+  (walk-through: `examples/11_extending_pyvinecopulib.ipynb`).
 
 ### Excluded (explicit)
 
@@ -145,6 +154,11 @@ pyvinecopulib/
       py.typed                   # PEP 561 marker (built by scripts/generate_stubs.py)
 
       core/__init__.py           # Bicop, Vinecop, *VineStructure, FitControls* (re-exports from ext)
+        protocols.py             # BicopLike / VinecopLike backend-neutral contracts
+        bicop_base.py            # BicopBase (canonical BicopLike partial impl)
+        vinecop_base.py          # VinecopBase (array-agnostic cascades + sequential_fit)
+        context.py               # ConditioningContext / Simplified / NonSimplified
+        _rootfind.py             # solve_increasing (monotone bisection; internal)
       families/__init__.py       # BicopFamily enum + 13 family constants + 15 group constants
       utils/__init__.py          # Kde1d, to_pseudo_obs, wdm, sobol, ghalton, simulate_uniform, benchmark
         _pair_plots.py           # pairs_copula_data plotting helper (pure Python)
@@ -367,6 +381,28 @@ automatically.
 - `tree_algorithm` on `FitControlsVinecop`: `"mst_prim"` (default,
   Dissmann) and `"random_weighted"` (Wilson-weighted random tree;
   used by the sklearn forests).
+- **Backend-neutral abstraction layer** (pure Python; `core` imports
+  without PyTorch). The extension point for custom (e.g. neural,
+  conditional) pair copulas and vines:
+  - `BicopLike[ArrayT]` / `VinecopLike[ArrayT]` (`protocols.py`) —
+    generic, `runtime_checkable` protocols mirroring the `Bicop` /
+    `Vinecop` evaluation surface on any array backend (NumPy or
+    PyTorch); `Bicop` / `Vinecop` satisfy them structurally.
+  - `BicopBase` (`bicop_base.py`) / `VinecopBase` (`vinecop_base.py`) —
+    canonical partial implementations to subclass. A `BicopBase`
+    subclass defines `pdf` / `hfunc1` / `hfunc2` and inherits `hinv1` /
+    `hinv2` (bisection), `simulate`, `loglik`, `plot`; a `VinecopBase`
+    subclass defines the one hook `_get_pair_copula` and inherits the
+    whole tree-by-tree cascade plus the public `sequential_fit` engine.
+    `TorchBicop` / `TorchVinecop` are the torch subclasses.
+  - `ConditioningContext` / `SimplifiedContext` (default) /
+    `NonSimplifiedContext` (`context.py`) — the per-edge policy that
+    turns the simplified cascade into a **non-simplified / conditional**
+    vine (each pair also sees its conditioning-set values `u_D` and any
+    external covariates `x`). Walk-through:
+    `examples/11_extending_pyvinecopulib.ipynb`.
+  - `solve_increasing` (`_rootfind.py`) — vectorized monotone bisection
+    behind the default `hinv1` / `hinv2` (internal; not re-exported).
 
 ### `pyvinecopulib.families`
 
@@ -564,7 +600,9 @@ below are a quick orientation.
 
 - **`pyvinecopulib.core`** — `Bicop`, `Vinecop`, `RVineStructure`,
   `CVineStructure`, `DVineStructure`, `FitControlsBicop`,
-  `FitControlsVinecop`.
+  `FitControlsVinecop`; plus the backend-neutral abstraction layer
+  `BicopLike`, `VinecopLike`, `BicopBase`, `VinecopBase`,
+  `ConditioningContext`, `SimplifiedContext`, `NonSimplifiedContext`.
 - **`pyvinecopulib.families`** — `BicopFamily` enum; per-family
   constants (`indep`, `gaussian`, `student`, `clayton`, `gumbel`,
   `frank`, `joe`, `bb1`, `bb6`, `bb7`, `bb8`, `tawn`, `tll`); group
@@ -583,8 +621,9 @@ below are a quick orientation.
   `InterpolationGrid2D`.
 
 Top-level `pyvinecopulib` re-exports the eight core classes and
-`to_pseudo_obs`; everything else is reachable only through the
-subpackages.
+`to_pseudo_obs`; everything else — including the `core` abstraction
+layer (`BicopBase` / `VinecopBase`, the protocols, the contexts) — is
+reachable only through the subpackages.
 
 ## Tests
 
@@ -646,6 +685,16 @@ Round-trip / parity properties to preserve when touching numerics:
   `lib/vinecopulib`, bump the submodule, then extend
   `src/include/bicop/family.hpp` + `src/pyvinecopulib/families/__init__.py`
   to bind the new tag and group it appropriately.
+- **Custom pair copulas / vines (`pyvinecopulib.core`).** Subclass
+  `BicopBase` (define `pdf` / `hfunc1` / `hfunc2`) for a custom pair
+  copula, and host it by subclassing `VinecopBase` (define the one hook
+  `_get_pair_copula`); both run on NumPy or PyTorch and inherit the full
+  evaluation surface. Implement `BicopLike` / `VinecopLike` directly for
+  an immutable / functional backend. For a **non-simplified /
+  conditional** vine, pass a `NonSimplifiedContext` and drive
+  `VinecopBase.sequential_fit` with a `fit_edge` callback; see
+  `examples/11_extending_pyvinecopulib.ipynb`. `TorchBicop` /
+  `TorchVinecop` are the reference torch subclasses.
 - **New `pyvinecopulib.sklearn` backends.** Implement the
   `VinecopBackend`-shaped surface (`fit_vine`, `pdf`, `cdf`,
   `simulate`, `structure_of`, plus `with_random_structure` /

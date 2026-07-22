@@ -65,7 +65,7 @@ class ConditioningContext(Protocol[ArrayT]):
 
     Parameters
     ----------
-    u_D : array, shape (n, |D|), or None
+    u_D : array, shape (n, len(D)), or None
         The edge's conditioning-set values (gathered by the cascade when
         :attr:`assembles_conditioning` is ``True``), else ``None``.
     x : array, shape (n, p), or None
@@ -128,7 +128,7 @@ class NonSimplifiedContext(ConditioningContext[ArrayT]):
 
     Parameters
     ----------
-    u_D : array, shape (n, |D|), or None, optional
+    u_D : array, shape (n, len(D)), or None, optional
         The edge's conditioning-set values, in ascending conditioning-tree
         order.
     x : array, shape (n, p), or None, optional
@@ -136,7 +136,7 @@ class NonSimplifiedContext(ConditioningContext[ArrayT]):
 
     Returns
     -------
-    array, shape (n, |D| + p), or None
+    array, shape (n, len(D) + p), or None
         ``concat([u_D, x])``, a single one of them when the other is ``None``,
         or ``None`` when both are ``None``.
     """

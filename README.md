@@ -68,6 +68,17 @@ Two opt-in subpackages extend the core library:
 
   Install with `pip install pyvinecopulib[torch]`.
 
+### Custom and conditional pair copulas
+
+The core evaluators (`Bicop` / `Vinecop`, and their torch counterparts)
+implement two backend-neutral contracts, `BicopLike` and `VinecopLike`.
+Subclass the canonical, pure-Python `BicopBase` / `VinecopBase` (NumPy or
+PyTorch) to plug your **own** pair copula into a vine — including
+**non-simplified** vines where each pair copula conditions on its
+conditioning set. See the
+[concepts page](https://pyvinecopulib.readthedocs.io/en/latest/concepts.html)
+and the `examples/11_extending_pyvinecopulib.ipynb` notebook.
+
 ### License
 
 pyvinecopulib is provided under an MIT license that can be found in the LICENSE
