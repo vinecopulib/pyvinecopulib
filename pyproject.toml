@@ -7,6 +7,9 @@ requires = [
   "numpy>=2.0",
   "matplotlib>=3.0",
   "networkx>=3.0",
+  # Imported at build time: generate_stubs.py imports pyvinecopulib.core,
+  # which imports array_api_compat (see [project].dependencies).
+  "array_api_compat>=1.7",
 ]
 build-backend = "scikit_build_core.build"
 
@@ -21,7 +24,13 @@ description = "A python interface to vinecopulib"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
-dependencies = ['numpy>=2.0', 'matplotlib>=3.0', 'networkx>=3.0', 'pydot>=3.0']
+dependencies = [
+  'numpy>=2.0',
+  'matplotlib>=3.0',
+  'networkx>=3.0',
+  'pydot>=3.0',
+  'array_api_compat>=1.7',
+]
 keywords = ['copula', 'vines copulas', 'pair-copulas constructions']
 classifiers = [
   'Development Status :: 3 - Alpha',
@@ -71,6 +80,7 @@ build = [
   "numpy>=1.14",
   "matplotlib>=3.0",
   "networkx>=3.0",
+  "array_api_compat>=1.7",
   "ninja",
   "cmake>=3.5",
 ]

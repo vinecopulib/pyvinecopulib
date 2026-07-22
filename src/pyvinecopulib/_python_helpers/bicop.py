@@ -113,11 +113,16 @@ def bicop_plot(
   else:
     raise ValueError("Unknown margin type")
 
-  ## evaluate on grid
-  vt = cop.var_types
-  cop.var_types = ["c", "c"]
-  vals = cop.pdf(np.stack(g, axis=-1).reshape(-1, 2))
-  cop.var_types = vt
+  ## evaluate on grid. Force continuous margins on backends that expose
+  ## ``var_types`` (the C++ Bicop); backends without it (e.g. BicopBase /
+  ## TorchBicop) are continuous already, so skip the dance. Coerce the density
+  ## to a NumPy array so a torch-tensor return reshapes cleanly.
+  vt = getattr(cop, "var_types", None)
+  if vt is not None:
+    cop.var_types = ["c", "c"]
+  vals = np.asarray(cop.pdf(np.stack(g, axis=-1).reshape(-1, 2)))
+  if vt is not None:
+    cop.var_types = vt
   cop = np.reshape(vals, (grid_size, grid_size))
 
   ## adjust for margins

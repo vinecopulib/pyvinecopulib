@@ -35,6 +35,7 @@ from typing import Optional
 import torch
 from torch import Tensor
 
+from ..core import BicopBase
 from ..pyvinecopulib_ext import Bicop, tll as _TLL_FAMILY
 from ._controls import FitControlsTorchBicop
 from ._interp import InterpolationGrid2D, _TRIM_LO, _TRIM_HI
@@ -42,7 +43,7 @@ from ._interp import InterpolationGrid2D, _TRIM_LO, _TRIM_HI
 _LOG_FLOOR: float = -13.815510557964274  # log(1e-6); same as torchvinecopulib
 
 
-class TorchBicop(torch.nn.Module):
+class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
   """PyTorch evaluator for a bivariate copula stored as a density grid.
 
   Torch counterpart of the non-parametric pair-copula path in
@@ -87,6 +88,8 @@ class TorchBicop(torch.nn.Module):
   """
 
   is_indep: bool
+  #: TorchBicop exposes the grid/cache internals the batched vine path needs.
+  supports_batched: bool = True
 
   def __init__(
     self,
@@ -98,7 +101,10 @@ class TorchBicop(torch.nn.Module):
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> None:
-    super().__init__()
+    # Initialise nn.Module explicitly: TorchBicop also subclasses BicopBase
+    # (a Protocol-derived ABC), whose __init__ chain would otherwise shadow
+    # nn.Module's under super().
+    torch.nn.Module.__init__(self)
     if grid_points is None and values is None:
       # Independent-copula short-circuit: pdf=1 everywhere, cdf=u1*u2, etc.
       self.is_indep = True
@@ -293,7 +299,7 @@ class TorchBicop(torch.nn.Module):
     # Trim to (1e-10, 1 - 1e-10), mirroring Bicop::prep_for_abstract.
     return u.clamp(_TRIM_LO, _TRIM_HI)
 
-  def pdf(self, u: Tensor) -> Tensor:
+  def pdf(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
     """Evaluates the bivariate copula density ``c(u1, u2)``.
 
     Parameters
@@ -302,6 +308,10 @@ class TorchBicop(torch.nn.Module):
         Pseudo-observations in ``[0, 1]^2``. Inputs outside the
         unit square are clamped to ``[1e-10, 1 - 1e-10]``; ``NaN``
         propagates through the interpolation.
+    x : Tensor or None, optional
+        Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
+        (an unconditional pair copula); accepted so the class satisfies the
+        :class:`~pyvinecopulib.core.BicopLike` contract.
 
     Returns
     -------
@@ -314,17 +324,24 @@ class TorchBicop(torch.nn.Module):
       return torch.ones(u.shape[0], dtype=u.dtype, device=u.device)
     return self.interp_grid.interpolate(u).clamp_min(1e-20)
 
-  def log_pdf(self, u: Tensor) -> Tensor:
+  def log_pdf(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
     """Evaluates ``log c(u1, u2)`` with safe handling of ``-inf`` / ``NaN``.
 
     Equivalent to ``pdf(u).log()`` but replaces ``-inf`` (from the
     density floor) with a fixed lower bound and ``+inf`` / ``NaN``
-    with finite sentinels.
+    with finite sentinels. Convenience method — not part of the
+    :class:`~pyvinecopulib.core.BicopLike` contract (which exposes only
+    ``pdf``); retained for standalone use and callers that want a
+    numerically-floored log density.
 
     Parameters
     ----------
     u : Tensor, shape (n, 2), dtype float
         Pseudo-observations in ``[0, 1]^2``.
+    x : Tensor or None, optional
+        Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
+        (an unconditional pair copula); accepted for signature uniformity
+        with the other evaluation methods.
 
     Returns
     -------
@@ -333,7 +350,7 @@ class TorchBicop(torch.nn.Module):
     """
     return self.pdf(u).log().nan_to_num(neginf=_LOG_FLOOR, posinf=0.0)
 
-  def cdf(self, u: Tensor) -> Tensor:
+  def cdf(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
     """Evaluates the bivariate copula CDF.
 
     .. math::
@@ -349,6 +366,10 @@ class TorchBicop(torch.nn.Module):
     ----------
     u : Tensor, shape (n, 2), dtype float
         Pseudo-observations in ``[0, 1]^2``.
+    x : Tensor or None, optional
+        Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
+        (an unconditional pair copula); accepted so the class satisfies the
+        :class:`~pyvinecopulib.core.BicopLike` contract.
 
     Returns
     -------
@@ -372,7 +393,7 @@ class TorchBicop(torch.nn.Module):
       return self.interp_grid.interp_at(cache, u).clamp(_TRIM_LO, _TRIM_HI)
     return self.interp_grid.integrate_1d(u, cond_var=cond_var)
 
-  def hfunc1(self, u: Tensor) -> Tensor:
+  def hfunc1(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
     """Evaluates the first h-function.
 
     .. math::
@@ -383,6 +404,10 @@ class TorchBicop(torch.nn.Module):
     ----------
     u : Tensor, shape (n, 2), dtype float
         Pseudo-observations in ``[0, 1]^2``.
+    x : Tensor or None, optional
+        Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
+        (an unconditional pair copula); accepted so the class satisfies the
+        :class:`~pyvinecopulib.core.BicopLike` contract.
 
     Returns
     -------
@@ -394,7 +419,7 @@ class TorchBicop(torch.nn.Module):
       return u[:, 1].clamp(_TRIM_LO, _TRIM_HI)
     return self._hfunc_raw(u, 1).clamp(0.0, 1.0)
 
-  def hfunc2(self, u: Tensor) -> Tensor:
+  def hfunc2(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
     """Evaluates the second h-function.
 
     .. math::
@@ -405,6 +430,10 @@ class TorchBicop(torch.nn.Module):
     ----------
     u : Tensor, shape (n, 2), dtype float
         Pseudo-observations in ``[0, 1]^2``.
+    x : Tensor or None, optional
+        Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
+        (an unconditional pair copula); accepted so the class satisfies the
+        :class:`~pyvinecopulib.core.BicopLike` contract.
 
     Returns
     -------
@@ -438,7 +467,7 @@ class TorchBicop(torch.nn.Module):
     return self.interp_grid.inverse_integrate_1d(u, cond_var).clamp(0.0, 1.0)
 
   @torch.no_grad()
-  def hinv1(self, u: Tensor) -> Tensor:
+  def hinv1(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
     """Inverts `hfunc1` w.r.t. the second argument.
 
     Given ``u = [u1, p]``, returns ``u2`` such that
@@ -452,6 +481,10 @@ class TorchBicop(torch.nn.Module):
     u : Tensor, shape (n, 2), dtype float
         Column 0 is ``u1``; column 1 is the target probability
         ``p``.
+    x : Tensor or None, optional
+        Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
+        (an unconditional pair copula); accepted so the class satisfies the
+        :class:`~pyvinecopulib.core.BicopLike` contract.
 
     Returns
     -------
@@ -464,7 +497,7 @@ class TorchBicop(torch.nn.Module):
     return self._hinv_raw(u, 1)
 
   @torch.no_grad()
-  def hinv2(self, u: Tensor) -> Tensor:
+  def hinv2(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
     """Inverts `hfunc2` w.r.t. the first argument.
 
     Given ``u = [p, u2]``, returns ``u1`` such that
@@ -476,6 +509,10 @@ class TorchBicop(torch.nn.Module):
     u : Tensor, shape (n, 2), dtype float
         Column 0 is the target probability ``p``; column 1 is
         ``u2``.
+    x : Tensor or None, optional
+        Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
+        (an unconditional pair copula); accepted so the class satisfies the
+        :class:`~pyvinecopulib.core.BicopLike` contract.
 
     Returns
     -------
@@ -495,8 +532,10 @@ class TorchBicop(torch.nn.Module):
   def simulate(
     self,
     n: int = 100,
+    *,
+    x: Optional[Tensor] = None,
     qrng: bool = False,
-    seeds: list[int] = [],
+    seeds: Optional[list[int]] = None,
   ) -> Tensor:
     """Draws ``n`` joint samples from the fitted copula.
 
@@ -508,21 +547,26 @@ class TorchBicop(torch.nn.Module):
     ----------
     n : int, default=100
         Number of samples to draw (must be ``> 0``).
+    x : Tensor or None, optional
+        Conditioning variables. Ignored by ``TorchBicop`` (an unconditional
+        pair copula); accepted for signature parity with the ``BicopLike``
+        contract.
     qrng : bool, default=False
         If ``True``, draw the base uniforms from a scrambled Sobol
         sequence instead of pseudo-random uniforms.
-    seeds : list of int, default=[]
+    seeds : list of int or None, optional
         When ``qrng=True`` the first entry seeds the
         ``torch.quasirandom.SobolEngine`` scramble; when
         ``qrng=False`` it seeds the global torch RNG before the
-        ``torch.rand`` call. Empty list keeps the existing global
-        state.
+        ``torch.rand`` call. ``None`` keeps the existing global state.
 
     Returns
     -------
     Tensor, shape (n, 2), dtype float
         Samples in ``(0, 1)^2``.
     """
+    del x
+    seeds = list(seeds) if seeds else []
     if n <= 0:
       raise ValueError(f"n must be > 0; got {n}")
     device = self.interp_grid.values.device

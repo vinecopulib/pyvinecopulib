@@ -55,14 +55,19 @@ from ..pyvinecopulib_ext import (
   RVineStructure,
   Vinecop,
 )
+from .bicop_base import BicopBase
+from .protocols import BicopLike, VinecopLike
 
 __all__ = [
   "Bicop",
+  "BicopBase",
   "BicopFamily",
+  "BicopLike",
   "CVineStructure",
   "DVineStructure",
   "FitControlsBicop",
   "FitControlsVinecop",
   "RVineStructure",
   "Vinecop",
+  "VinecopLike",
 ]
