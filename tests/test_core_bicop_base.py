@@ -39,7 +39,9 @@ class _IndepPair(BicopBase[np.ndarray]):
   def hfunc2(self, u: np.ndarray, x: Optional[np.ndarray] = None) -> np.ndarray:
     return u[:, 0]
 
-  def _draw_base_u(self, n: int, qrng: bool, seeds: list[int]) -> np.ndarray:
+  def _simulate_uniform(
+    self, n: int, qrng: bool, seeds: list[int]
+  ) -> np.ndarray:
     rng = np.random.default_rng(seeds[0] if seeds else 0)
     return rng.uniform(size=(n, 2))
 
@@ -103,12 +105,12 @@ def test_bicopbase_simulate_default() -> None:
   assert s.shape == (50, 2)
   assert bool((s > 0).all()) and bool((s < 1).all())
   # independence hfunc1 is the identity -> the sample is the base uniforms.
-  base = _IndepPair()._draw_base_u(50, False, [7])
+  base = _IndepPair()._simulate_uniform(50, False, [7])
   np.testing.assert_allclose(s, base, atol=1e-9)
 
 
 def test_bicopbase_simulate_requires_draw_hook() -> None:
-  """``simulate`` raises when the backend has not provided ``_draw_base_u``."""
+  """``simulate`` raises when the backend has not provided ``_simulate_uniform``."""
   cop = _SqrtPair()
   with pytest.raises(NotImplementedError):
     cop.simulate(5)
