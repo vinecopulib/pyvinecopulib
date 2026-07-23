@@ -13,6 +13,7 @@
 
    .. autosummary::
       :nosignatures:
+      :toctree: .
    {% for item in attributes %}
       ~{{ objname }}.{{ item }}
    {%- endfor %}

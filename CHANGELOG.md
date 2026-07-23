@@ -14,7 +14,7 @@
     - `VineRegressor` gains a real `normalize_weights=True` `__init__` parameter; the previous post-init `_normalize_weights` attribute is gone.
 - `TorchBicop.from_data` now dispatches on `controls=FitControlsTorchBicop(...)` (#217). Callers who passed `grid_size`, `mult`, or `grid_type` as keyword arguments must move them onto the dataclass. `cache_integrals`, `device`, and `dtype` remain direct kwargs on `from_data`.
 - `TorchBicop.sample(num_sample, seed, is_sobol)` renamed to `TorchBicop.simulate(n, qrng=False, seeds=[])` for parity with `pv.Bicop.simulate` (#216).
-- Remove `TorchBicop.log_pdf`. The vine `pdf` cascade now accumulates a product of per-edge `pdf` (rather than a log-sum-exp), so the pair-level log-density convenience method is no longer needed; it was never part of the `BicopLike` contract. Use `TorchBicop.pdf(u).log()` if you need a log density.
+- Remove `TorchBicop`'s `log_pdf` method. The vine `pdf` cascade now accumulates a product of per-edge `pdf` (rather than a log-sum-exp), so the pair-level log-density convenience method is no longer needed; it was never part of the `BicopLike` contract. Use `TorchBicop.pdf(u).log()` if you need a log density.
 
 ### New features in `pyvinecopulib`
 
@@ -54,6 +54,7 @@
 - Fix Windows wheel builds against the VS 2026 / MSVC 14.51 STL: rewrite `__builtin_verbose_trap` to `__builtin_trap()` during `docstr.hpp` generation. The newer STL emits this Clang-18 builtin from core allocator / string / `call_once` headers, which the pinned PyPI libclang (≤18) can't resolve; because those headers reach nearly every translation unit, the broken parse crashed symbol extraction. Also narrow a numpy-scalar union in the `Kde1d` plot helper so `make check` (`ty`) passes (#224).
 - Migrate macOS CI to `macos-15` and re-add `macos-15-intel` (`MACOSX_DEPLOYMENT_TARGET=10.13` for nanobind's aligned `new`/`delete`); wheel matrix is now 5 platforms × 3 ABI (15 wheels).
 - Fix the source build against Eigen 5.x (e.g. conda-forge `eigen>=5`): its CMake package exposes the include path only through the `Eigen3::Eigen` target and no longer sets the legacy `EIGEN3_INCLUDE_DIR`, leaving `docstr.hpp` generation (and the compile) unable to find `<Eigen/Dense>`. Derive `EIGEN3_INCLUDE_DIR` from the target's `INTERFACE_INCLUDE_DIRECTORIES` when unset.
+- Make the Sphinx docs cross-reference-clean and enforce it going forward: enable `nitpicky` so `make docs` (`-W`, run by the `verify_docs_build` CI job) fails on any unresolved reference. The bulk of previously-dead links are fixed by giving the autosummary class template's *Attributes* block a `:toctree:` (so each property gets a page for numpydoc's member-summary links to resolve); backticked class names are rewritten to fully-qualified targets in `process_cross_references` so they link from any page; `intersphinx` mappings (numpy / torch / python) resolve external types; nanobind's `numpy.ndarray[dtype=…]` signature annotations are collapsed to `numpy.ndarray`; and private-method references are reworded to plain literals. A short `nitpick_ignore_regex` covers the few irreducible refs (upstream-C++ getter-name mismatches, `BicopFamily` value aliases, scikit-learn-generated methods).
 
 ### Bug fixes in `pyvinecopulib`
 

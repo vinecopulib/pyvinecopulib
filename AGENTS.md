@@ -328,6 +328,25 @@ For any behaviour change:
   annotations. `numpydoc.validation` is enabled as a pre-commit check;
   rule set + path exclusions live in `[tool.numpydoc_validation]` in
   `pyproject.toml`.
+- **Docs cross-references must resolve (nitpicky).** The Sphinx build runs
+  with `nitpicky = True` (`docs/conf.py`), so `make docs` — which passes `-W`
+  and is enforced by the `verify_docs_build` CI job — fails on *any* unresolved
+  cross-reference. To keep it green: reference documented classes with **bare
+  double backticks** (`` ``Vinecop`` ``), which `process_cross_references`
+  (`docs/conf.py`) rewrites to a fully-qualified
+  `:class:`~pyvinecopulib.core.Vinecop`` that resolves from any page — *not*
+  `` :class:`pyvinecopulib.Vinecop` `` (wrong path; the documented target is
+  `pyvinecopulib.core.Vinecop`) and *not* single backticks (which render
+  italic, not a link). Refs to private methods / internal helpers must be
+  plain ``literals`` (no `:meth:` / `:func:` role — they have no doc page).
+  External types (`numpy.*`, `torch.*`, builtins) resolve via
+  `intersphinx_mapping`; the autosummary class template
+  (`docs/_templates/autosummary/class.rst`) gives *Attributes* a `:toctree:`
+  so property refs get pages; nanobind's `numpy.ndarray[dtype=…]` signatures
+  are collapsed to `numpy.ndarray` by an `autodoc-process-signature` hook. The
+  only sanctioned suppression is the short `nitpick_ignore_regex` list
+  (upstream-C++ getter-name mismatches, `BicopFamily` value aliases,
+  scikit-learn-generated methods); prefer fixing a reference over extending it.
 
 ### Maintaining this file
 
