@@ -252,6 +252,14 @@ torch wrappers) uses the simplified model;
 families to consider, *which* structures to search, and *how* to
 truncate the model in higher dimensions.
 
+The backend-neutral :class:`~pyvinecopulib.core.VinecopBase` can go
+further: a :class:`~pyvinecopulib.core.ConditioningContext` lets each
+pair copula also depend on its conditioning value
+:math:`\mathbf u_{D_e}` (and on external covariates), giving a
+genuinely **non-simplified**, conditional vine. This is an advanced
+extension point (see :ref:`concepts-extending`) — the built-in fit
+stays simplified.
+
 
 .. _concepts-families:
 
@@ -662,6 +670,56 @@ Nagler & Czado, 2025), which replaces the marginal CDF derivatives in
 user — pass ``var_types=["d", ...]`` to
 :meth:`pyvinecopulib.core.Vinecop.from_data` or set
 ``type="d"`` on :class:`pyvinecopulib.utils.Kde1d`).
+
+
+.. _concepts-extending:
+
+Extending: custom and conditional pair copulas
+-----------------------------------------------
+
+The evaluators :class:`pyvinecopulib.core.Bicop` /
+:class:`~pyvinecopulib.core.Vinecop` and their PyTorch counterparts
+:class:`pyvinecopulib.torch.TorchBicop` /
+:class:`~pyvinecopulib.torch.TorchVinecop` are concrete implementations
+of two backend-neutral contracts, evaluated on either NumPy or PyTorch
+arrays:
+
+* :class:`~pyvinecopulib.core.BicopLike` — a pair copula, exposing
+  ``pdf`` / ``cdf`` / ``hfunc1`` / ``hfunc2`` / ``hinv1`` / ``hinv2`` /
+  ``simulate``;
+* :class:`~pyvinecopulib.core.VinecopLike` — a fitted vine, exposing
+  ``pdf`` / ``cdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` /
+  ``simulate`` on an :class:`~pyvinecopulib.core.RVineStructure`.
+
+You can plug your **own** pair copula into a vine by implementing the
+contract — most easily by subclassing the canonical partial
+implementations :class:`~pyvinecopulib.core.BicopBase` /
+:class:`~pyvinecopulib.core.VinecopBase`, which fill in almost
+everything from a few primitives. A ``BicopBase`` subclass need only
+define ``pdf`` / ``hfunc1`` / ``hfunc2`` and inherits numerical
+``hinv1`` / ``hinv2``, ``simulate``, ``loglik``, and ``plot``; a
+``VinecopBase`` subclass need only return its pairs from
+``_get_pair_copula`` and inherits the whole tree-by-tree cascade. The
+bases are pure Python (no PyTorch), so custom pairs also work in a
+torch-less environment.
+
+Every method carries an optional trailing conditioning matrix ``x``.
+For the common **simplified, unconditional** vine it is ``None``
+everywhere (the default
+:class:`~pyvinecopulib.core.SimplifiedContext`). To lift the
+:ref:`simplifying assumption <concepts-simplifying>`, host the pairs
+under a :class:`~pyvinecopulib.core.NonSimplifiedContext`: the cascade
+then assembles each edge's conditioning-set values
+:math:`\mathbf u_{D_e}` (and any external covariates) into ``x`` and
+threads them to the pair copula, giving a **non-simplified /
+conditional** vine. :meth:`pyvinecopulib.core.VinecopBase.sequential_fit`
+is the seam for *fitting* such a vine edge by edge.
+
+The ``examples/11_extending_pyvinecopulib.ipynb`` notebook is a
+worked, end-to-end walk-through: a custom Gaussian pair copula hosted
+first in a simplified vine (matching
+:meth:`pyvinecopulib.core.Vinecop.from_structure`) and then made
+non-simplified and conditional.
 
 
 References
