@@ -32,7 +32,7 @@ class VineForestRegressor(VineForestBase, RegressorMixin):
   ) -> None:
     """Ensemble of vine-copula regressors with random structures.
 
-    Builds ``n_vines`` `VineRegressor` base learners on randomly
+    Builds ``n_vines`` ``VineRegressor`` base learners on randomly
     sampled vine structures, prunes them via the model confidence
     set (MCS), and averages the conditional weights across
     survivors before computing predictions.
@@ -40,7 +40,7 @@ class VineForestRegressor(VineForestBase, RegressorMixin):
     Parameters
     ----------
     base_params : dict or None, default=None
-        Keyword arguments forwarded to each `VineRegressor`
+        Keyword arguments forwarded to each ``VineRegressor``
         ``__init__``. Example:
         ``{"quantiles": [0.1, 0.5, 0.9], "batch_size": 200}``.
     n_vines : int, default=100
@@ -141,7 +141,7 @@ class VineForestRegressor(VineForestBase, RegressorMixin):
     """Yields batched ensemble-averaged conditional weights.
 
     Iterates over batches of ``X`` and, for each batch, averages
-    the raw weights produced by every surviving `VineRegressor`
+    the raw weights produced by every surviving ``VineRegressor``
     (the forest sets ``_normalize_weights = False`` on each base
     learner so the unnormalised copula densities can be averaged
     sensibly). Weights are row-normalised once at the ensemble
@@ -184,7 +184,7 @@ class VineForestRegressor(VineForestBase, RegressorMixin):
     """Predicts conditional mean and/or quantiles from the ensemble.
 
     Computes ensemble-averaged weights via `_iter_weights` and
-    applies the same weighted statistics as `VineRegressor.predict`:
+    applies the same weighted statistics as ``VineRegressor.predict()``:
     weighted average of training responses for the mean, weighted
     quantile (inverted CDF) for each requested level.
 
@@ -207,7 +207,7 @@ class VineForestRegressor(VineForestBase, RegressorMixin):
 
 VineForestRegressor.__doc__ = f"""Forest of vine-copula regressors.
 
-An ensemble of `VineRegressor` base learners fitted on randomly
+An ensemble of ``VineRegressor`` base learners fitted on randomly
 sampled vine structures. Survivors are selected via a model
 confidence set (MCS) on a held-out validation split, and the
 conditional weights :math:`w_i(x)` from the single-vine estimating

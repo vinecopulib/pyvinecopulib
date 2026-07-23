@@ -26,8 +26,8 @@ Requires scikit-learn, pandas, joblib, and scipy. Install with
 
 Notes
 -----
-**Backends.** By default the estimators run on the C++/nanobind
-backend (:class:`pyvinecopulib.Vinecop`), so the sklearn module
+**Backends.** By default the estimators run on ``Vinecop`` (the
+default backend), so the sklearn module
 **does not require PyTorch**. Pass a configured
 :class:`~pyvinecopulib.sklearn.backends.TorchVinecopBackend` via the
 ``backend=`` kwarg to route through the torch backend instead — see
@@ -60,7 +60,6 @@ from . import backends
 from .backends import (
   TorchVinecopBackend,
   VinecopBackend,
-  VinecopLike,
   resolve_backend,
 )
 from .density import VineDensity
@@ -75,7 +74,6 @@ __all__ = [
   "VineForestRegressor",
   "VineRegressor",
   "VinecopBackend",
-  "VinecopLike",
   "backends",
   "resolve_backend",
 ]

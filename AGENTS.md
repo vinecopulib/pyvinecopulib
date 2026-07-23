@@ -164,7 +164,7 @@ pyvinecopulib/
         _pair_plots.py           # pairs_copula_data plotting helper (pure Python)
 
       sklearn/__init__.py        # VineDensity, VineRegressor, VineForest{Density,Regressor}, backends
-        backends.py              # VinecopLike Protocol + VinecopBackend / TorchVinecopBackend + resolve_backend
+        backends.py              # VinecopBackend / TorchVinecopBackend + resolve_backend
         _base.py                 # VineBase (parameter-constraints, schema, 3-step pipeline)
         _mcs.py                  # Model Confidence Set survivor selection (da_mcs_marg / da_mcs_unif)
         density.py               # VineDensity
@@ -173,10 +173,10 @@ pyvinecopulib/
         forest_density.py        # VineForestDensity
         forest_regressor.py      # VineForestRegressor
 
-      torch/__init__.py          # TorchBicop, TorchVinecop, FitControlsTorch*, InterpolationGrid2D
+      torch/__init__.py          # TorchBicop, TorchVinecop, FitControlsTorch*
         bicop.py, vinecop.py     # nn.Module evaluators
-        _controls.py             # FitControlsTorchBicop / FitControlsTorchVinecop dataclasses
-        _interp.py               # InterpolationGrid2D (bilinear; Sinkhorn margin renormalisation)
+        controls.py              # FitControlsTorchBicop / FitControlsTorchVinecop dataclasses
+        _interp.py               # InterpolationGrid2D (bilinear; Sinkhorn margin renormalisation) — internal
         _fit_tll.py              # pure-torch TLL kernel
         _batched.py              # batched evaluation variants
 
@@ -449,14 +449,20 @@ sklearn.base.BaseEstimator
 
 Public extension point introduced in `#218`. Estimators do not call
 `pyvinecopulib.Vinecop.from_data(...)` directly — they go through a
-backend object. Two concrete backends ship:
+backend object. Two concrete backends ship, both subclassing the
+private `_VinecopBackendBase` (which owns `structure_of` and the
+copy-on-write forest plumbing; concrete backends override only the
+divergent members + hooks):
 
 - `VinecopBackend(controls=None, structure=None)` — default. Wraps
   `pyvinecopulib.Vinecop`; no PyTorch dependency.
 - `TorchVinecopBackend(controls=None, structure=None)` — wraps
   `pyvinecopulib.torch.TorchVinecop`. Constructing this class imports
   `torch` — it is the explicit opt-in signal that PyTorch is
-  required. The sklearn subpackage itself does not import torch.
+  required. The sklearn subpackage itself does not import torch. Since
+  `TorchVinecop.from_data` now auto-selects a structure (mirroring
+  `pv.Vinecop.from_data`), this backend delegates structure selection
+  to the vine rather than branching itself.
 
 Both backends expose:
 
@@ -471,18 +477,19 @@ backend.with_local_random(seeds)         -> Backend  # ditto
 backend.with_num_threads(n)              -> Backend  # ditto (torch: no-op)
 ```
 
-`VinecopLike` is a `runtime_checkable` Protocol describing the
-shared post-fit surface (`pdf`, `cdf`, `simulate`, plus a `structure`
-attribute). Both `pv.Vinecop` and `pv.torch.TorchVinecop` satisfy it
-structurally (no inheritance). Downstream code that only needs
-evaluation can type against `VinecopLike` instead of either concrete
-class.
+`pyvinecopulib.core.VinecopLike` is the canonical `runtime_checkable`
+Protocol describing the post-fit vine surface (`pdf` / `cdf` /
+`rosenblatt` / `inverse_rosenblatt` / `simulate`, plus a `structure`
+attribute); both `pv.Vinecop` and `pv.torch.TorchVinecop` satisfy it
+structurally (no inheritance). `fit_vine` returns conforming vines, so
+downstream code that only needs evaluation can type against
+`pyvinecopulib.core.VinecopLike` instead of either concrete class. The
+backend layer no longer defines its own copy.
 
 `resolve_backend(backend)` is the dispatch helper: `None` →
-default-constructed `VinecopBackend`; a backend-like instance is
-returned as-is; anything else raises `TypeError`. Estimators call
-this once at `fit()` time and pin the resolved backend as
-`self.backend_`.
+default-constructed `VinecopBackend`; any other value is returned
+as-is. Estimators call this once at `fit()` time and pin the resolved
+backend as `self.backend_`.
 
 #### Estimator conventions (scikit-learn developer guide)
 
@@ -551,9 +558,14 @@ Key surface:
     tolerance (`tests/test_torch_vinecop.py`).
   - `device`, `dtype` — propagate to every tensor on construction;
     fitted modules respect `.to(device)` afterwards.
-- `InterpolationGrid2D` — the 2-d bilinear grid backing `TorchBicop`;
-  re-exported for advanced users. Margin normalisation uses
-  Sinkhorn iterations to drive marginals to uniform.
+  - `structure_controls` — `FitControlsTorchVinecop` only; the
+    structure-selection controls used when `TorchVinecop.from_data`
+    is called with `structure=None` (the R-vine is selected on the
+    compiled `pv.Vinecop`, then lifted). `None` defaults to TLL with
+    `trunc_lvl=20`.
+- `InterpolationGrid2D` (`torch/_interp.py`) — the 2-d bilinear grid
+  backing `TorchBicop`; **internal** (not re-exported). Margin
+  normalisation uses Sinkhorn iterations to drive marginals to uniform.
 
 ### Top-level `pyvinecopulib`
 
@@ -615,10 +627,9 @@ below are a quick orientation.
 - **`pyvinecopulib.sklearn`** — `VineDensity`, `VineRegressor`,
   `VineForestDensity`, `VineForestRegressor`; plus the `backends`
   submodule (`VinecopBackend`, `TorchVinecopBackend`,
-  `VinecopLike`, `resolve_backend`).
+  `resolve_backend`).
 - **`pyvinecopulib.torch`** — `TorchBicop`, `TorchVinecop`,
-  `FitControlsTorchBicop`, `FitControlsTorchVinecop`,
-  `InterpolationGrid2D`.
+  `FitControlsTorchBicop`, `FitControlsTorchVinecop`.
 
 Top-level `pyvinecopulib` re-exports the eight core classes and
 `to_pseudo_obs`; everything else — including the `core` abstraction
@@ -695,16 +706,19 @@ Round-trip / parity properties to preserve when touching numerics:
   `VinecopBase.sequential_fit` with a `fit_edge` callback; see
   `examples/11_extending_pyvinecopulib.ipynb`. `TorchBicop` /
   `TorchVinecop` are the reference torch subclasses.
-- **New `pyvinecopulib.sklearn` backends.** Implement the
-  `VinecopBackend`-shaped surface (`fit_vine`, `pdf`, `cdf`,
-  `simulate`, `structure_of`, plus `with_random_structure` /
-  `with_local_random` / `with_num_threads` for forest plumbing). Any
-  object that passes `resolve_backend` works; consider whether the
-  underlying vine satisfies the `VinecopLike` Protocol so downstream
-  code can stay type-stable.
+- **New `pyvinecopulib.sklearn` backends.** Subclass the private
+  `_VinecopBackendBase`, which already provides `structure_of` and the
+  copy-on-write forest plumbing (`with_random_structure` /
+  `with_local_random` / `with_num_threads`); override the divergent
+  members (`fit_vine`, `pdf`, `cdf`, `simulate`, `_default_controls`,
+  and the `_tree_selection_controls` / `_install_tree_selection_controls`
+  hooks the local-random forest walks through). `resolve_backend`
+  accepts any such object (it only defaults `None`). Consider whether
+  the underlying vine satisfies the `pyvinecopulib.core.VinecopLike`
+  Protocol so downstream code can stay type-stable.
 - **New torch fit methods.** Add the implementation under
   `pyvinecopulib/torch/_fit_<name>.py`, add `"<name>"` to `METHODS`
-  in `_controls.py`, and add the dispatch branch in
+  in `controls.py`, and add the dispatch branch in
   `TorchBicop.from_data` (the lone `"tll"` path is the template).
 - **New sklearn-style ensembles.** Subclass `VineForestBase` (or
   `VineBase` for single-vine variants) and override the loss /

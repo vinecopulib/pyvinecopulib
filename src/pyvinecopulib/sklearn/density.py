@@ -28,9 +28,9 @@ class VineDensity(VineBase, DensityMixin):
     backend : VinecopBackend or compatible, default=None
         Backend instance bundling fit-time controls and an optional
         pre-specified structure. `None` resolves to a default
-        `VinecopBackend` at fit time, which calls `Vinecop.from_data`
-        with the nonparametric `tll` pair family. Pass
-        `TorchVinecopBackend` for the PyTorch backend.
+        ``VinecopBackend`` at fit time, which calls ``Vinecop.from_data()``
+        with the nonparametric ``tll`` pair family. Pass
+        ``TorchVinecopBackend`` for the PyTorch backend.
     batch_size : int, default=100
         Number of test points processed per batch when evaluating
         the density. Higher values trade memory for throughput.
@@ -126,7 +126,7 @@ class VineDensity(VineBase, DensityMixin):
   def sample(self, n_samples: int = 1, random_state=None) -> np.ndarray:
     """Draws samples from the fitted joint density.
 
-    Samples :math:`U \\sim C` via `Vinecop.simulate` and pushes each
+    Samples :math:`U \\sim C` via ``Vinecop.simulate()`` and pushes each
     component back through the inverse marginal CDF :math:`F_j^{-1}`
     to obtain a sample in the original feature space.
 
@@ -218,10 +218,6 @@ class VineDensity(VineBase, DensityMixin):
         application.
     """
     check_is_fitted(self, attributes=["_vine"])
-    if not self.backend_.supports_cdf:
-      raise NotImplementedError(
-        f"backend '{self.backend_.name}' does not support cdf()."
-      )
     X = self._validate_input(X, reset=False)
     U = self._to_u_scale(X)
     if random_state is None:

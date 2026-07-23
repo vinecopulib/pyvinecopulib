@@ -12,24 +12,24 @@ import pytest
 pytest.importorskip("sklearn")
 
 import pyvinecopulib as pv  # noqa: E402
+from pyvinecopulib.core import VinecopLike  # noqa: E402
 from pyvinecopulib.sklearn import VineDensity, VineRegressor  # noqa: E402
 from pyvinecopulib.sklearn.backends import (  # noqa: E402
   TorchVinecopBackend,
   VinecopBackend,
-  VinecopLike,
   resolve_backend,
 )
 
 
 # ---------------------------------------------------------------------------
-# Protocol conformance + capability declarations
+# Protocol conformance
 # ---------------------------------------------------------------------------
 
 
 class TestVinecopLikeProtocol:
-  """Both ``pv.Vinecop`` and ``pv.torch.TorchVinecop`` satisfy
-  :class:`VinecopLike` structurally — that's the whole point of the
-  PR1 alignment work."""
+  """Both ``pv.Vinecop`` and ``pv.torch.TorchVinecop`` satisfy the canonical
+  :class:`pyvinecopulib.core.VinecopLike` protocol structurally, so either
+  backend's fitted vine is usable through the neutral contract."""
 
   def test_cpp_vinecop_satisfies_protocol(self):
     rng = np.random.default_rng(0)
@@ -60,26 +60,6 @@ class TestVinecopLikeProtocol:
 
 
 # ---------------------------------------------------------------------------
-# Backend capabilities
-# ---------------------------------------------------------------------------
-
-
-class TestBackendCapabilities:
-  def test_vinecop_backend_caps(self):
-    assert VinecopBackend.name == "vinecop"
-    assert VinecopBackend.supports_discrete is True
-    assert VinecopBackend.supports_cdf is True
-    assert VinecopBackend.supports_simulate is True
-
-  def test_torch_backend_caps(self):
-    pytest.importorskip("torch")
-    assert TorchVinecopBackend.name == "torch_vinecop"
-    assert TorchVinecopBackend.supports_discrete is False
-    assert TorchVinecopBackend.supports_cdf is True
-    assert TorchVinecopBackend.supports_simulate is True
-
-
-# ---------------------------------------------------------------------------
 # resolve_backend
 # ---------------------------------------------------------------------------
 
@@ -92,10 +72,6 @@ class TestResolveBackend:
   def test_instance_passthrough(self):
     b = VinecopBackend()
     assert resolve_backend(b) is b
-
-  def test_unrelated_object_raises(self):
-    with pytest.raises(TypeError, match="missing method"):
-      resolve_backend(object())
 
 
 # ---------------------------------------------------------------------------
@@ -152,15 +128,20 @@ class TestTorchBackendWith:
     assert b2.structure is not None
     assert b.structure is None
 
-  def test_with_local_random_threads_seeds_into_cpp_controls(self):
+  def test_with_local_random_threads_seeds_into_structure_controls(self):
     pytest.importorskip("torch")
     b = TorchVinecopBackend()
     b2 = b.with_local_random([7, 8, 9])
     assert b2.structure is None
-    cpp_ctrl = b2._cpp_structure_controls
-    assert cpp_ctrl is not None
-    assert cpp_ctrl.tree_algorithm == "random_weighted"
-    assert list(cpp_ctrl.seeds) == [7, 8, 9]
+    # Seeds / tree algorithm land on the nested structure-selection
+    # controls that `TorchVinecop.from_data(structure=None)` consumes.
+    assert b2.controls is not None
+    sc = b2.controls.structure_controls
+    assert sc is not None
+    assert sc.tree_algorithm == "random_weighted"
+    assert list(sc.seeds) == [7, 8, 9]
+    # Parent backend's controls remain untouched (copy-on-write).
+    assert b.controls is None
 
 
 # ---------------------------------------------------------------------------

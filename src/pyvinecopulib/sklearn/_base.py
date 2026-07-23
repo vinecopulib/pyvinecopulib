@@ -16,7 +16,7 @@ from .backends import resolve_backend
 
 _DOC_PIPELINE = r"""The estimator follows the standard pyvinecopulib
 two-step pipeline: a univariate kernel density estimator
-(`Kde1d`) is fit to each column, the marginal CDFs transform the data
+(``Kde1d``) is fit to each column, the marginal CDFs transform the data
 to pseudo-observations
 :math:`U_j = \hat F_j(X_j) \in [0, 1]`, and a vine copula is fit on
 the pseudo-observations. For discrete columns the left limit
@@ -25,8 +25,8 @@ proxy. Unordered categoricals are first expanded to ordered
 ``{0, 1}`` dummies via `expand_factors`.
 
 Fit-time configuration is bundled in a backend object passed via
-``backend=``. The default `VinecopBackend` wraps `Vinecop` and has
-no extra dependencies; `TorchVinecopBackend` routes the same
+``backend=``. The default ``VinecopBackend`` wraps ``Vinecop`` and has
+no extra dependencies; ``TorchVinecopBackend`` routes the same
 pipeline through the PyTorch evaluator (GPU / autograd). See the
 :doc:`concepts page </concepts>` for the underlying vine-copula
 construction.
@@ -48,7 +48,7 @@ vine structure (Bedford & Cooke, 2002; Aas et al., 2009). Passing
 """
 
 _DOC_DISCRETE = r"""Discrete (or expanded unordered-categorical)
-columns are handled via `Kde1d`'s ``type="discrete"`` mode:
+columns are handled via ``Kde1d``'s ``type="discrete"`` mode:
 pseudo-observations stack :math:`\hat F_j(X_j)` and
 :math:`\hat F_j(X_j^-)` so the vine evaluation sees the appropriate
 continuous proxy. Handled transparently by `fit` and `pdf`.
@@ -155,10 +155,10 @@ class VineBase(BaseEstimator):
     ----------
     backend : VinecopBackend or compatible, default=None
         Backend strategy that holds fit-time controls (a
-        `FitControlsVinecop` for the default C++ backend or a
-        `FitControlsTorchVinecop` for the torch backend) and an
+        ``FitControlsVinecop`` for the default backend or a
+        ``FitControlsTorchVinecop`` for the torch backend) and an
         optional structure. `None` resolves to a default
-        `VinecopBackend` at fit time.
+        ``VinecopBackend`` at fit time.
     batch_size : int, default=100
         Number of test points to process per batch when making
         predictions. ``1`` minimises memory at the cost of speed;
@@ -386,11 +386,6 @@ class VineBase(BaseEstimator):
       var_types = [x[0] for x in self.schema_["kde1d_types"]]
 
     backend = self.backend_
-    if not backend.supports_discrete and any(t == "d" for t in var_types):
-      raise NotImplementedError(
-        f"backend '{backend.name}' is continuous-only; got var_types="
-        f"{var_types!r}. Use VinecopBackend for discrete margins."
-      )
     self._vine = backend.fit_vine(U, var_types=var_types)
     self.structure_ = backend.structure_of(self._vine)
     return self

@@ -376,6 +376,47 @@ def test_from_data_matches_from_vinecop(d: int) -> None:
   )
 
 
+def test_from_data_auto_selects_structure() -> None:
+  """``from_data(structure=None)`` selects the R-vine on the compiled
+  ``pv.Vinecop`` (TLL, ``trunc_lvl=20``) and lifts it — so it must agree with
+  an explicit select-then-lift using those same documented defaults. This
+  pins ``_default_structure_controls`` against drift."""
+  u_fit = _simulate(d=5, n=1500, seed=777)
+  # Reference: explicit structure selection with the documented defaults.
+  cop_cpp = pv.Vinecop.from_data(
+    u_fit,
+    structure=None,
+    var_types=[],
+    controls=pv.FitControlsVinecop(
+      family_set=[pv.families.tll], trunc_lvl=20, num_threads=1
+    ),
+  )
+  expected = TorchVinecop.from_vinecop(cop_cpp, cache_integrals=False)
+  got = TorchVinecop.from_data(
+    torch.from_numpy(u_fit),
+    controls=FitControlsTorchVinecop(cache_integrals=False),
+  )
+  # Same deterministic selection + same lift => identical structure + grids.
+  np.testing.assert_array_equal(
+    np.asarray(got.structure.matrix), np.asarray(expected.structure.matrix)
+  )
+  u_eval = torch.from_numpy(_eval_grid(400, d=5, seed=778))
+  np.testing.assert_allclose(
+    got.pdf(u_eval).numpy(),
+    expected.pdf(u_eval).numpy(),
+    atol=1e-9,
+    rtol=1e-9,
+  )
+
+
+def test_from_data_rejects_discrete_var_types() -> None:
+  """``TorchVinecop.from_data`` is continuous-only; discrete ``var_types``
+  raise before any structure selection or fit happens."""
+  u = torch.from_numpy(_simulate(d=3, n=300, seed=99))
+  with pytest.raises(NotImplementedError, match="continuous-only"):
+    TorchVinecop.from_data(u, var_types=["c", "d", "c"])
+
+
 def test_batched_to_device_invalidates() -> None:
   """``.to()`` should drop the lazily-built BatchedVine so the next
   batched call rebuilds it on the new device."""

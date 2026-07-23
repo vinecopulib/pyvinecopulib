@@ -1,7 +1,7 @@
 """PyTorch evaluator for a fitted R-vine copula.
 
-Wraps a fitted :class:`pyvinecopulib.Vinecop` (with *Transformed Local
-Likelihood* pair copulas — :data:`pyvinecopulib.families.tll`) and
+Wraps a fitted ``Vinecop`` (with *Transformed Local
+Likelihood* pair copulas — ``tll``) and
 exposes ``pdf`` / ``cdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` /
 ``simulate`` on top of :class:`TorchBicop` for every pair copula. The
 whole evaluation chain stays in PyTorch, so the vine can move to GPU
@@ -9,24 +9,24 @@ with ``.to("cuda")`` and be composed with autograd-aware downstream
 code.
 
 The two routes to a fitted vine are :meth:`TorchVinecop.from_vinecop`
-(lift a C++-fitted :class:`pyvinecopulib.Vinecop`) and
+(lift a fitted ``Vinecop``) and
 :meth:`TorchVinecop.from_data` (fit directly from pseudo-observations
-in pure PyTorch given a fixed structure). Fit-time controls live on
-:class:`FitControlsTorchVinecop`, which mirrors
-:class:`pyvinecopulib.FitControlsVinecop`.
+in pure PyTorch, selecting or reusing a structure). Fit-time controls
+live on :class:`FitControlsTorchVinecop`, which mirrors
+``FitControlsVinecop``.
 
-The cascade is a direct port of the C++
-:class:`pyvinecopulib.Vinecop` tree-by-tree h-function chain in
-``Vinecop::pdf`` / ``Vinecop::rosenblatt`` /
-``Vinecop::inverse_rosenblatt``: dense ``(n, d)`` scratch matrices,
-fixed natural-order traversal, byte-for-byte agreement with the C++
-evaluator on the same fit. ``pdf`` / ``rosenblatt`` additionally
-accept ``batched=True`` to fire one stacked bicop call per tree
-level.
+The cascade is a direct port of the
+``Vinecop`` tree-by-tree h-function chain in
+``Vinecop.pdf()`` / ``Vinecop.rosenblatt()`` /
+``Vinecop.inverse_rosenblatt()``: dense ``(n, d)`` scratch matrices,
+fixed natural-order traversal, byte-for-byte agreement with
+``Vinecop`` on the same fit. ``pdf`` /
+``rosenblatt`` additionally accept ``batched=True`` to fire one
+stacked bicop call per tree level.
 
 See Also
 --------
-pyvinecopulib.Vinecop : The C++ counterpart.
+pyvinecopulib.core.Vinecop : Reference vine copula.
 FitControlsTorchVinecop : Fit-time controls.
 """
 
@@ -41,6 +41,7 @@ from torch import Tensor
 from ..core import ConditioningContext, VinecopBase
 from ..core.vinecop_base import _NotBatchable
 from ..pyvinecopulib_ext import (
+  FitControlsVinecop,
   RVineStructure,
   Vinecop,
   indep as _INDEP_FAMILY,
@@ -48,24 +49,31 @@ from ..pyvinecopulib_ext import (
 )
 from ..utils import simulate_uniform
 from ._batched import BatchedVine
-from ._controls import FitControlsTorchVinecop
+from .controls import FitControlsTorchVinecop
 from ._interp import _TRIM_HI, _TRIM_LO
 from .bicop import TorchBicop
 
 
-class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
-  """PyTorch R-vine copula evaluator built on `TorchBicop`.
+def _default_structure_controls() -> FitControlsVinecop:
+  """Structure-selection controls for ``from_data(structure=None)`` (TLL, trunc 20)."""
+  return FitControlsVinecop(
+    family_set=[_TLL_FAMILY], trunc_lvl=20, num_threads=1
+  )
 
-  Mirrors the public surface of `pyvinecopulib.Vinecop` — ``pdf`` /
+
+class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
+  """PyTorch R-vine copula evaluator built on ``TorchBicop``.
+
+  Mirrors the public surface of ``Vinecop`` — ``pdf`` /
   ``rosenblatt`` / ``inverse_rosenblatt`` / ``simulate`` — but keeps
   the entire evaluation chain in PyTorch so the vine can move to
   GPU with ``.to(device)`` and compose with autograd-aware
   downstream code. Continuous variables only, single batch, no
-  threading. Build a `TorchVinecop` via `from_data` (pure-torch TLL
-  fit) or `from_vinecop` (lifts a C++-fitted `Vinecop`).
+  threading. Build a ``TorchVinecop`` via ``from_data()`` (pure-torch TLL
+  fit) or ``from_vinecop()`` (lifts a fitted ``Vinecop``).
 
-  The cascade is a dense ``(n, d)``-scratch port of the C++
-  evaluator, byte-for-byte parity with `Vinecop`. ``pdf`` /
+  The cascade is a dense ``(n, d)``-scratch port of the ``Vinecop``
+  evaluator, byte-for-byte parity with ``Vinecop``. ``pdf`` /
   ``rosenblatt`` accept ``batched=True`` to fire a single batched
   bicop call per tree level. ``inverse_rosenblatt(batched=True)``
   raises (cross-tree deps in the inverse cascade). The default
@@ -76,7 +84,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   ----------
   pair_copulas : list of list of TorchBicop
       Indexed ``[tree][edge]`` and shaped like
-      ``Vinecop::pair_copulas_``: tree 0 has ``d - 1`` edges, tree 1
+      ``Vinecop``'s pair-copula layout: tree 0 has ``d - 1`` edges, tree 1
       has ``d - 2``, etc., up to ``trunc_lvl``. May also be passed
       as a `torch.nn.ModuleList` of `torch.nn.ModuleList`.
   structure : RVineStructure
@@ -139,20 +147,20 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchVinecop":
-    """Lifts a fitted `Vinecop` into the torch backend.
+    """Lifts a fitted ``Vinecop`` into a ``TorchVinecop``.
 
-    Each pair copula is lifted via `TorchBicop.from_bicop`, so the
-    resulting cascade matches the C++ evaluator to within
+    Each pair copula is lifted via ``TorchBicop.from_bicop()``, so the
+    resulting cascade matches the ``Vinecop`` evaluator to within
     bilinear-interpolation precision on the shared grid.
 
     Parameters
     ----------
     cop : Vinecop
-        A fitted `pyvinecopulib.Vinecop` whose pair copulas are all
+        A fitted ``Vinecop`` whose pair copulas are all
         TLL or independence families. Discrete variables are not
         supported.
     cache_integrals : bool, default=True
-        Forwarded to `TorchBicop.from_bicop` for every pair copula.
+        Forwarded to ``TorchBicop.from_bicop()`` for every pair copula.
     device : torch.device or None, default=None
         Placement of the underlying tensors.
     dtype : torch.dtype, default=torch.float64
@@ -161,7 +169,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     Returns
     -------
     TorchVinecop
-        A `TorchVinecop` mirroring ``cop``.
+        A ``TorchVinecop`` mirroring ``cop``.
     """
     var_types = list(cop.var_types)
     if any(v != "c" for v in var_types):
@@ -204,7 +212,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchVinecop":
-    """Builds a `TorchVinecop` from a structure (or matrix) and pair-copulas.
+    """Builds a ``TorchVinecop`` from a structure (or matrix) and pair-copulas.
 
     Parameters
     ----------
@@ -228,7 +236,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     Returns
     -------
     TorchVinecop
-        A `TorchVinecop`.
+        A ``TorchVinecop``.
     """
     if (structure is None) == (matrix is None):
       raise ValueError("Provide exactly one of `structure` or `matrix`.")
@@ -257,38 +265,82 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   def from_data(
     cls,
     u,
-    structure,
+    structure: Optional[RVineStructure] = None,
     controls: Optional[FitControlsTorchVinecop] = None,
+    var_types: list[str] = [],
   ) -> "TorchVinecop":
-    """Fits a pure-PyTorch TLL vine on ``u`` given a fixed structure.
+    """Fit a pure-PyTorch TLL vine on ``u``.
 
-    Tree-by-tree cascade mirroring ``Vinecop::select_families`` with
-    a user-provided structure: at each ``(tree, edge)`` collects the
-    pair of pseudo-obs columns by the same rule as the legacy
-    pdf/rosenblatt cascade, fits a `TorchBicop` on them via
-    `TorchBicop.from_data`, then propagates ``hfunc1`` / ``hfunc2``
-    forward. The structure is *fixed* (not selected); the cascade
-    matches the C++ TLL fit to machine precision when
+    When ``structure`` is ``None`` the R-vine structure is selected first on
+    a ``Vinecop`` (Dissmann / MST, using
+    ``controls.structure_controls``) and lifted into a ``TorchVinecop`` via
+    :meth:`from_vinecop`, mirroring ``Vinecop.from_data()``.
+    When a ``structure`` is given it is fixed and only the TLL pair copulas are
+    fit tree by tree: at each ``(tree, edge)`` the pair of pseudo-obs columns is
+    collected by the same rule as the pdf / rosenblatt cascade, a
+    :class:`TorchBicop` is fit on them via :meth:`TorchBicop.from_data`, and
+    ``hfunc1`` / ``hfunc2`` propagate forward. The fixed-structure fit matches
+    ``Vinecop``'s TLL fit to machine precision when
     ``cache_integrals=False``.
 
     Parameters
     ----------
     u : ndarray or Tensor, shape (n, d), dtype float
         Pseudo-observations.
-    structure : RVineStructure
-        Vine skeleton.
+    structure : RVineStructure or None, default=None
+        Vine skeleton. ``None`` selects one on a ``Vinecop`` and lifts
+        it (continuous variables only).
     controls : FitControlsTorchVinecop or None, default=None
-        Pair-copula fit controls bundled with vine-level placement /
-        cascade knobs. `None` defaults to TLL on a 30x30
-        normal-spaced grid, float64.
+        Pair-copula fit controls bundled with vine-level placement / cascade
+        knobs (and, when ``structure`` is ``None``, the structure-selection
+        controls). `None` defaults to TLL on a 30x30 normal-spaced grid,
+        float64.
+    var_types : list of str, default=[]
+        Per-variable types; only ``"c"`` (continuous) is supported. Empty means
+        all-continuous.
 
     Returns
     -------
     TorchVinecop
-        A fitted `TorchVinecop`.
+        A fitted ``TorchVinecop``.
+
+    Raises
+    ------
+    NotImplementedError
+        If any ``var_types`` entry is not ``"c"`` (continuous only).
     """
     if controls is None:
       controls = FitControlsTorchVinecop()
+    if any(v != "c" for v in var_types):
+      raise NotImplementedError(
+        "TorchVinecop is continuous-only; got var_types="
+        f"{var_types!r}. Discrete variables are not yet supported."
+      )
+
+    if structure is None:
+      # Structure selection runs on ``Vinecop``, which needs a CPU NumPy
+      # array — coerce tensors (incl. CUDA) before handing off.
+      u_np = (
+        u.detach().cpu().numpy()
+        if isinstance(u, torch.Tensor)
+        else np.asarray(u)
+      )
+      cpp_vine = Vinecop.from_data(
+        data=u_np,
+        structure=None,
+        var_types=var_types,
+        controls=(
+          controls.structure_controls
+          if controls.structure_controls is not None
+          else _default_structure_controls()
+        ),
+      )
+      return cls.from_vinecop(
+        cpp_vine,
+        cache_integrals=controls.cache_integrals,
+        device=controls.device,
+        dtype=controls.dtype if controls.dtype is not None else torch.float64,
+      )
 
     eff_dtype = controls.dtype if controls.dtype is not None else torch.float64
     eff_device = controls.device
@@ -433,7 +485,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   # (stacked / pre-baked per-tree-level grids + caches).
 
   def _build_batched(self) -> "BatchedVine":
-    """Bake the grid-batched state from this vine's `TorchBicop` pairs.
+    """Bake the grid-batched state from this vine's ``TorchBicop`` pairs.
 
     Returns
     -------
@@ -444,7 +496,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     ------
     _NotBatchable
         If any pair lacks the grid/cache internals the batched path needs
-        (``supports_batched`` is ``False`` — e.g. a non-`TorchBicop` nn.Module
+        (``supports_batched`` is ``False`` — e.g. a non-``TorchBicop`` nn.Module
         pair). The dispatch layer catches it and falls back to the non-batched
         cascade.
     """

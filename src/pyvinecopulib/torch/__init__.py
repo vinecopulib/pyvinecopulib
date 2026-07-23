@@ -15,8 +15,8 @@ This subpackage is a pure-PyTorch port of the evaluation chain in
 The default fits use the **TLL** family — *Transformed Local
 Likelihood* (Geenens 2014 [1]_; Nagler 2018 [2]_) — a non-parametric
 pair-copula estimator that fits a kernel density on a grid in the
-inverse-normal-transformed copula space. This is the same family the
-C++ library exposes as :data:`pyvinecopulib.families.tll` and is the
+inverse-normal-transformed copula space. This is the same family
+exposed as ``tll`` and is the
 default everywhere in pyvinecopulib because it captures arbitrary
 non-Gaussian-like dependence without picking a parametric form.
 
@@ -28,7 +28,7 @@ Requires PyTorch. Install with ``pip install pyvinecopulib[torch]``.
 
 See Also
 --------
-pyvinecopulib.core : C++/nanobind backend (default everywhere).
+pyvinecopulib.core : Reference vine-copula evaluators (default everywhere).
 pyvinecopulib.sklearn : sklearn-compatible vine-copula estimators that route through either backend.
 
 Notes
@@ -37,7 +37,7 @@ Notes
 
 - :class:`TorchBicop` — evaluator for a single bivariate pair copula
   on a density grid. Build from a fitted
-  :class:`pyvinecopulib.Bicop` via :meth:`TorchBicop.from_bicop`, or
+  ``Bicop`` via :meth:`TorchBicop.from_bicop`, or
   fit directly from data via :meth:`TorchBicop.from_data` (which
   dispatches on :class:`FitControlsTorchBicop`: pure-torch TLL).
   Exposes the standard surface:
@@ -47,18 +47,15 @@ Notes
 - :class:`TorchVinecop` — evaluator for a full R-vine built on top of
   :class:`TorchBicop` pair copulas. Provides ``pdf`` / ``cdf`` /
   ``rosenblatt`` / ``inverse_rosenblatt`` / ``simulate`` with the same
-  signatures as :class:`pyvinecopulib.Vinecop`. The cascade mirrors
-  the C++ evaluator byte-for-byte; ``pdf`` / ``rosenblatt`` also
-  accept ``batched=True`` (one stacked bicop call per tree level).
+  signatures as ``Vinecop``. The cascade mirrors
+  ``Vinecop`` byte-for-byte; ``pdf`` / ``rosenblatt``
+  also accept ``batched=True`` (one stacked bicop call per tree level).
 
 - :class:`FitControlsTorchBicop`, :class:`FitControlsTorchVinecop` —
   fit-time control dataclasses mirroring
-  :class:`pyvinecopulib.FitControlsBicop` /
-  :class:`pyvinecopulib.FitControlsVinecop`. Bundle method selection
+  ``FitControlsBicop`` /
+  ``FitControlsVinecop``. Bundle method selection
   and method-specific knobs.
-
-- :class:`InterpolationGrid2D` — the bilinear-interpolation grid that
-  backs :class:`TorchBicop` (re-exported for advanced users).
 
 References
 ----------
@@ -80,13 +77,11 @@ except ImportError as e:
 
 from .bicop import TorchBicop
 from .vinecop import TorchVinecop
-from ._interp import InterpolationGrid2D
-from ._controls import FitControlsTorchBicop, FitControlsTorchVinecop
+from .controls import FitControlsTorchBicop, FitControlsTorchVinecop
 
 __all__ = [
   "TorchBicop",
   "TorchVinecop",
-  "InterpolationGrid2D",
   "FitControlsTorchBicop",
   "FitControlsTorchVinecop",
 ]

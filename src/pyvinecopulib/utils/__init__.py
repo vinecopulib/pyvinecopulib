@@ -21,7 +21,7 @@ classes themselves:
   quasi-random uniform points used by Monte-Carlo evaluation of
   copula CDFs and by random vine-structure generation.
 - **Plotting helper** — :func:`pairs_copula_data` produces a
-  pair-plot of a copula sample or a fitted :class:`Vinecop`.
+  pair-plot of a copula sample or a fitted ``Vinecop``.
 - **Benchmarking** — :func:`benchmark` runs a quick comparison of
   available pair-copula families on synthetic data; convenient for
   smoke-testing a fresh install.

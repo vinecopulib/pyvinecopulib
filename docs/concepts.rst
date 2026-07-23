@@ -117,7 +117,7 @@ pseudo-observations consumed by the next, and their inverses drive
 :meth:`pyvinecopulib.core.Vinecop.simulate` and
 :meth:`pyvinecopulib.core.Vinecop.inverse_rosenblatt`.
 
-Every :class:`Bicop` belongs to one of the families catalogued in
+Every :class:`~pyvinecopulib.core.Bicop` belongs to one of the families catalogued in
 :ref:`concepts-families` below; switch families via
 :class:`pyvinecopulib.core.FitControlsBicop`.
 
@@ -163,7 +163,7 @@ specialisations
   star; convenient when one variable drives the others.
 
 Both can be passed anywhere an R-vine is accepted, and
-:meth:`RVineStructure.simulate` draws structures uniformly at
+:meth:`~pyvinecopulib.core.RVineStructure.simulate` draws structures uniformly at
 random (Joe, 2011) — the basis of the
 :ref:`concepts-structure-selection` section below.
 
@@ -433,10 +433,9 @@ pre-built lists you can pass directly to
   ``gumbel``, ``frank``, ``joe``).
 
 The notebook ``examples/01_bivariate_copulas.ipynb`` walks through
-a fit on synthetic data for several of these families;
-``examples/05_benchmark.ipynb`` runs
-:func:`pyvinecopulib.utils.benchmark` to compare them on standard
-test problems.
+a fit on synthetic data for several of these families.
+:func:`pyvinecopulib.utils.benchmark` compares several families on
+standard test problems.
 
 
 .. _concepts-estimation:
@@ -471,7 +470,7 @@ family. Three regimes are available via
 * **Kendall's :math:`\tau` inversion**
   (``parametric_method="itau"``) — restricted to families in the
   ``itau`` group; uses
-  :meth:`Bicop.tau_to_parameters` to back out the parameters from
+  :meth:`~pyvinecopulib.core.Bicop.tau_to_parameters` to back out the parameters from
   the empirical :math:`\hat\tau`. Cheaper than MLE and the
   conventional choice for very high-dimensional vines.
 * **Nonparametric TLL** (family ``tll`` —
@@ -641,8 +640,8 @@ Where to next
   variants :class:`~pyvinecopulib.sklearn.VineForestDensity` and
   :class:`~pyvinecopulib.sklearn.VineForestRegressor`. The
   notebooks ``examples/08_sklearn_estimators.ipynb`` and
-  ``examples/09_sklearn_forest.ipynb`` demonstrate them. Both
-  forests accept a backend (default C++, optional PyTorch) via
+  ``examples/09_sklearn_forest.ipynb`` demonstrate them. All four
+  estimators accept a backend (default C++, optional PyTorch) via
   :mod:`pyvinecopulib.sklearn.backends`.
 * :mod:`pyvinecopulib.torch` — PyTorch evaluators
   :class:`~pyvinecopulib.torch.TorchBicop` and

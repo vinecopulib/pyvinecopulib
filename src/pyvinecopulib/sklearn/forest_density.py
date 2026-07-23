@@ -33,7 +33,7 @@ class VineForestDensity(VineForestBase, DensityMixin):
   ) -> None:
     """Ensemble of vine-copula density estimators with random structures.
 
-    Builds ``n_vines`` `VineDensity` base learners on randomly
+    Builds ``n_vines`` ``VineDensity`` base learners on randomly
     sampled vine structures, prunes them via the model confidence
     set (MCS), and averages the per-sample density values at
     predict time.
@@ -41,7 +41,7 @@ class VineForestDensity(VineForestBase, DensityMixin):
     Parameters
     ----------
     base_params : dict or None, default=None
-        Keyword arguments forwarded to each `VineDensity`
+        Keyword arguments forwarded to each ``VineDensity``
         ``__init__``. Example: ``{"batch_size": 200}``.
     n_vines : int, default=100
         Number of random base estimators before MCS pruning.
@@ -149,7 +149,7 @@ class VineForestDensity(VineForestBase, DensityMixin):
   def pdf(self, X):
     """Ensemble-averaged joint density.
 
-    Evaluates `VineDensity.pdf` for each surviving base estimator
+    Evaluates ``VineDensity.pdf()`` for each surviving base estimator
     in parallel and averages the resulting per-sample density
     values.
 
@@ -175,7 +175,7 @@ class VineForestDensity(VineForestBase, DensityMixin):
   def cdf(self, X, N: int = 10000, random_state=None):
     """Ensemble-averaged joint CDF.
 
-    Evaluates `VineDensity.cdf` for each surviving base estimator
+    Evaluates ``VineDensity.cdf()`` for each surviving base estimator
     in parallel (each call runs its own quasi-MC integration) and
     averages the resulting per-sample CDF values.
 
@@ -211,7 +211,7 @@ class VineForestDensity(VineForestBase, DensityMixin):
     Allocates :math:`n_\\text{samples}` draws across the :math:`M`
     survivors via a single multinomial draw (uniform mixture
     weights :math:`1/M`), calls each estimator's
-    `VineDensity.sample` once with its assigned count, concatenates,
+    ``VineDensity.sample()`` once with its assigned count, concatenates,
     and shuffles the rows so the output is row-exchangeable.
 
     Parameters
@@ -247,7 +247,7 @@ class VineForestDensity(VineForestBase, DensityMixin):
 
 VineForestDensity.__doc__ = f"""Forest of vine-copula density estimators.
 
-An ensemble of `VineDensity` base learners fitted on randomly
+An ensemble of ``VineDensity`` base learners fitted on randomly
 sampled vine structures. Survivors are selected via a model
 confidence set (MCS) on a held-out validation split, and
 predictions are averaged across survivors. Implements the
