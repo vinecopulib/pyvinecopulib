@@ -13,7 +13,7 @@ Written against the Array API (:func:`array_api_compat.array_namespace`) so the
 same code runs on numpy and torch (via ``pdf`` / ``hfunc`` outputs); the numeric
 bodies handle arrays as ``Any`` (the generic ``ArrayT`` lives on the public
 signatures). RNG for ``simulate`` is backend-specific, so it is delegated to a
-:meth:`~BicopBase._simulate_uniform` hook.
+``_simulate_uniform`` hook.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
   Subclasses implement ``pdf`` / ``hfunc1`` / ``hfunc2`` and inherit ``hinv1`` /
   ``hinv2`` (bisection of the h-functions), ``simulate``, ``loglik``, ``plot``
   and ``__repr__``. ``cdf`` raises unless overridden. To enable ``simulate``,
-  override :meth:`_simulate_uniform` with a backend RNG.
+  override ``_simulate_uniform`` with a backend RNG.
 
   See Also
   --------
@@ -67,7 +67,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
     """Numerically invert :meth:`hfunc1` in its second argument.
 
     Solves ``hfunc1([u1, .], x) = u2`` for the second argument by bisection
-    (:func:`~pyvinecopulib.core._rootfind.solve_increasing`), since ``hfunc1``
+    (``solve_increasing``), since ``hfunc1``
     is increasing in it.
 
     Parameters
@@ -95,7 +95,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
     """Numerically invert :meth:`hfunc2` in its first argument.
 
     Solves ``hfunc2([., u2], x) = u1`` for the first argument by bisection
-    (:func:`~pyvinecopulib.core._rootfind.solve_increasing`), since ``hfunc2``
+    (``solve_increasing``), since ``hfunc2``
     is increasing in it.
 
     Parameters
@@ -154,7 +154,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
   ) -> ArrayT:
     """Draw ``n`` samples via the pair's inverse Rosenblatt transform.
 
-    Draws two independent uniforms ``(w1, w2)`` from :meth:`_simulate_uniform`
+    Draws two independent uniforms ``(w1, w2)`` from ``_simulate_uniform``
     and returns ``(w1, hinv1([w1, w2], x))``, so the pair carries its fitted
     dependence.
 
@@ -167,7 +167,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
     qrng : bool, default=False
         Draw quasi-random base uniforms instead of pseudo-random ones.
     seeds : list of int or None, optional
-        RNG seeds forwarded to :meth:`_simulate_uniform`.
+        RNG seeds forwarded to ``_simulate_uniform``.
 
     Returns
     -------

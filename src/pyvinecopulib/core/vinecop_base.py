@@ -28,7 +28,7 @@ grid-batched fast path, override ``_build_batched`` (plus ``_default_batched``).
 The batched *cascade loops* are
 array-agnostic and live here; only the grid/cache builder returned by
 ``_build_batched`` is backend-specific. The concrete backend calls
-:meth:`_bind_vine` once to install the structure and context. Array values are
+``_bind_vine`` once to install the structure and context. Array values are
 handled as ``Any`` inside the cascades per the ``pyvinecopulib.core`` typing
 policy (the Array API namespace is untyped); the generic ``ArrayT`` lives on the
 public signatures.
@@ -70,7 +70,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
 
   Concrete subclasses implement ``_get_pair_copula`` (and optionally override
   ``_prep`` / ``_simulate_uniform`` / the batched-path hooks) and call
-  :meth:`_bind_vine` once; they
+  ``_bind_vine`` once; they
   then inherit the whole evaluator surface — ``pdf`` / ``cdf`` / ``rosenblatt`` /
   ``inverse_rosenblatt`` / ``simulate``, ``loglik`` / ``plot`` / ``__repr__``,
   the ``dim`` / ``trunc_lvl`` / ``order`` accessors, and the
@@ -569,7 +569,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   def _pdf_batched(self, u: Any) -> Any:
     """Batched vine pdf: product over per-tree-level stacked densities.
 
-    Numerically equivalent to :meth:`_pdf` on a simplified vine, but each tree
+    Numerically equivalent to ``_pdf`` on a simplified vine, but each tree
     level fires one stacked (fused) pair-copula call over its edges.
 
     Parameters
@@ -618,7 +618,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   def _rosenblatt_batched(self, u: Any) -> Any:
     """Batched Rosenblatt transform (per-tree-level stacked h-functions).
 
-    Numerically equivalent to :meth:`_rosenblatt` on a simplified vine.
+    Numerically equivalent to ``_rosenblatt`` on a simplified vine.
 
     Parameters
     ----------
@@ -1018,7 +1018,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   ) -> list[list[BicopLike]]:
     """Fit pair copulas tree-by-tree along the vine, returning the nested list.
 
-    Mirrors the forward pdf traversal (:meth:`_pdf`) with the density
+    Mirrors the forward pdf traversal (``_pdf``) with the density
     evaluation replaced by ``fit_edge(tree, edge, u_e, x_e)`` — the Python
     analogue of the per-edge fit callback ``Vinecop`` drives internally. The returned
     pair's ``hfunc1`` / ``hfunc2`` must be valid immediately for tree

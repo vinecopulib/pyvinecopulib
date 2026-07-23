@@ -73,7 +73,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       to uniform margins.
   is_linear : bool, default=False
       Internal flag selecting the linear-grid fast-path in the
-      underlying :class:`InterpolationGrid2D`. Set by
+      underlying ``InterpolationGrid2D``. Set by
       :meth:`from_data` when ``grid_type="linear"``; users
       normally do not pass it directly.
   device : torch.device or None, default=None
