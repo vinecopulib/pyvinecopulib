@@ -149,28 +149,46 @@ pygments_style = "sphinx"
 html_logo = "_static/pyvinecopulib.png"
 
 
+# Each documented class maps to the subpackage it is documented under, so a
+# backtick reference can be rewritten to a *fully-qualified* cross-reference
+# target (``:class:`~pyvinecopulib.core.Vinecop```). Qualifying is what makes
+# the link resolve from *any* page: an unqualified ``:class:`Vinecop``` only
+# resolves on pages whose ``currentmodule`` already contains ``Vinecop`` (e.g.
+# core pages), so a ``Vinecop`` reference inside a torch/sklearn docstring
+# would otherwise render as dead monospace. The leading ``~`` keeps the
+# rendered link text short (just the class name).
+_CLASS_MODULE = {
+  "BicopFamily": "pyvinecopulib.families",
+  "BicopLike": "pyvinecopulib.core",
+  "BicopBase": "pyvinecopulib.core",
+  "Bicop": "pyvinecopulib.core",
+  "VinecopLike": "pyvinecopulib.core",
+  "VinecopBase": "pyvinecopulib.core",
+  "Vinecop": "pyvinecopulib.core",
+  "CVineStructure": "pyvinecopulib.core",
+  "DVineStructure": "pyvinecopulib.core",
+  "RVineStructure": "pyvinecopulib.core",
+  "ConditioningContext": "pyvinecopulib.core",
+  "SimplifiedContext": "pyvinecopulib.core",
+  "NonSimplifiedContext": "pyvinecopulib.core",
+  "FitControlsBicop": "pyvinecopulib.core",
+  "FitControlsVinecop": "pyvinecopulib.core",
+  "Kde1d": "pyvinecopulib.utils",
+  "VineDensity": "pyvinecopulib.sklearn",
+  "VineRegressor": "pyvinecopulib.sklearn",
+  "VineForestDensity": "pyvinecopulib.sklearn",
+  "VineForestRegressor": "pyvinecopulib.sklearn",
+  "VinecopBackend": "pyvinecopulib.sklearn.backends",
+  "TorchVinecopBackend": "pyvinecopulib.sklearn.backends",
+  "TorchBicop": "pyvinecopulib.torch",
+  "TorchVinecop": "pyvinecopulib.torch",
+  "FitControlsTorchBicop": "pyvinecopulib.torch",
+  "FitControlsTorchVinecop": "pyvinecopulib.torch",
+}
+
+
 def process_cross_references(content: str, is_docstring: bool = True) -> str:
-  classes = [
-    "BicopFamily",
-    "Bicop",
-    "Vinecop",
-    "CVineStructure",
-    "DVineStructure",
-    "RVineStructure",
-    "FitControlsBicop",
-    "FitControlsVinecop",
-    "Kde1d",
-    "VineDensity",
-    "VineRegressor",
-    "VineForestDensity",
-    "VineForestRegressor",
-    "TorchBicop",
-    "TorchVinecop",
-    "FitControlsTorchBicop",
-    "FitControlsTorchVinecop",
-    "VinecopBackend",
-    "TorchVinecopBackend",
-  ]
+  classes = list(_CLASS_MODULE)
   modules = [
     "pyvinecopulib.core",
     "pyvinecopulib.families",
@@ -186,19 +204,32 @@ def process_cross_references(content: str, is_docstring: bool = True) -> str:
 
   # Docstrings (RST) use double backticks; markdown sources use single.
   bt = "``" if is_docstring else "`"
-  # Anchor outside the literal so we don't match the middle of a chain
-  # like `pyvinecopulib.torch.TorchBicop` — `(?<!\w)` / `(?!\w)` give a
-  # word boundary that ignores dots, while the backticks themselves
-  # pin the start and end.
-  class_alt = "|".join(re.escape(c) for c in classes)
-  content = re.sub(
-    rf"{bt}({class_alt})\.(\w+)\(\){bt}", rf"{meth_ref}\1.\2`", content
+
+  def _fqn(cls: str) -> str:
+    return f"{_CLASS_MODULE[cls]}.{cls}"
+
+  # Longest class name first so e.g. ``FitControlsTorchVinecop`` wins over
+  # ``FitControlsVinecop`` and ``BicopBase`` over ``Bicop`` in the alternation.
+  class_alt = "|".join(
+    re.escape(c) for c in sorted(classes, key=len, reverse=True)
   )
+  # ``Class.method()`` -> :meth:`~pkg.mod.Class.method`
   content = re.sub(
-    rf"{bt}({class_alt})\.(\w+){bt}", rf"{cls_ref}\1.\2`", content
+    rf"{bt}({class_alt})\.(\w+)\(\){bt}",
+    lambda m: f"{meth_ref}~{_fqn(m.group(1))}.{m.group(2)}`",
+    content,
   )
+  # ``Class.attr`` -> :class:`~pkg.mod.Class.attr`
+  content = re.sub(
+    rf"{bt}({class_alt})\.(\w+){bt}",
+    lambda m: f"{cls_ref}~{_fqn(m.group(1))}.{m.group(2)}`",
+    content,
+  )
+  # bare ``Class`` -> :class:`~pkg.mod.Class`
   for cls in classes:
-    content = re.sub(rf"{bt}{cls}{bt}", rf"{cls_ref}{cls}`", content)
+    content = re.sub(
+      rf"{bt}{re.escape(cls)}{bt}", f"{cls_ref}~{_fqn(cls)}`", content
+    )
   # Module references — longest-prefix first so `pyvinecopulib.sklearn.backends`
   # wins over `pyvinecopulib.sklearn`.
   for mod in sorted(modules, key=len, reverse=True):
@@ -274,7 +305,6 @@ DOCSTRING_SUBPACKAGES = {
     "classes": [
       "VinecopBackend",
       "TorchVinecopBackend",
-      "VinecopLike",
     ],
     "functions": ["resolve_backend"],
   },
@@ -284,7 +314,6 @@ DOCSTRING_SUBPACKAGES = {
       "TorchVinecop",
       "FitControlsTorchBicop",
       "FitControlsTorchVinecop",
-      "InterpolationGrid2D",
     ],
     "functions": [],
   },

@@ -413,7 +413,7 @@ class VineForestBase(BaseEstimator, ABC):
   def _adjust_estimators_num_threads(self, estimators: list) -> int:
     """Allocate ``n_jobs`` across the outer (estimator) and inner (thread)
     loops. Routes through each estimator's backend via
-    ``with_num_threads``: the C++ backend rebinds
+    ``with_num_threads``: the default backend rebinds
     ``controls.num_threads``; the torch backend treats it as a no-op."""
     n_estimators = len(estimators)
     outer_n_jobs = min(self.n_jobs, n_estimators)

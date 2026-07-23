@@ -80,7 +80,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   See Also
   --------
   pyvinecopulib.core.VinecopLike : The contract this implements.
-  pyvinecopulib.core.Vinecop : The compiled reference vine.
+  pyvinecopulib.core.Vinecop : The reference vine.
   pyvinecopulib.core.ConditioningContext : Per-edge conditioning policy.
 
   Examples
@@ -700,7 +700,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         Pseudo-observations in ``[0, 1]^d`` (clamped to
         ``[1e-10, 1 - 1e-10]``).
     num_threads : int, default=1
-        Accepted for parity with ``pv.Vinecop.pdf``; ignored.
+        Accepted for parity with ``Vinecop.pdf()``; ignored.
     x : array, shape (n, p), or None, optional
         External covariates threaded to each pair copula (non-simplified
         vines). ``None`` for the unconditional / simplified case.
@@ -865,7 +865,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     N : int, default=10000
         Number of Monte-Carlo samples.
     qrng : bool, default=True
-        Draw quasi-random samples (matches ``pv.Vinecop.cdf``).
+        Draw quasi-random samples (matches ``Vinecop.cdf()``).
     num_threads : int, default=1
         Accepted for parity; ignored.
     seeds : list of int or None, optional
@@ -1020,7 +1020,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
 
     Mirrors the forward pdf traversal (:meth:`_pdf`) with the density
     evaluation replaced by ``fit_edge(tree, edge, u_e, x_e)`` — the Python
-    analogue of the C++ ``Vinecop::fit`` ``fit_edge`` lambda. The returned
+    analogue of the per-edge fit callback ``Vinecop`` drives internally. The returned
     pair's ``hfunc1`` / ``hfunc2`` must be valid immediately for tree
     propagation. External packages drive conditional fitting through this seam
     (a ``fit_edge`` that fits a conditional pair copula on ``(u_e, x_e)``);

@@ -11,20 +11,19 @@ Three constructors are provided:
   in PyTorch. Dispatches on the ``method`` field of a
   :class:`FitControlsTorchBicop`. ``"tll"`` (default) is the
   *Transformed Local Likelihood* kernel density estimator (Geenens
-  2014; Nagler 2018), the non-parametric family the C++ library
-  exposes as :data:`pyvinecopulib.families.tll`; this path matches
-  the C++ ``pv.Bicop.from_data(u, family_set=[pv.families.tll])``
-  fit to machine precision.
-* :meth:`TorchBicop.from_bicop` — lift a fitted C++
-  :class:`pyvinecopulib.Bicop` (TLL family) into the torch backend.
-  Useful when you already fit on the C++ side and want GPU /
-  autograd evaluation downstream.
+  2014; Nagler 2018), the non-parametric family exposed as
+  ``tll``; this path matches the
+  ``Bicop.from_data()`` TLL fit to machine precision.
+* :meth:`TorchBicop.from_bicop` — lift a fitted
+  ``Bicop`` (TLL family) into a ``TorchBicop``.
+  Useful when you already fit with ``Bicop`` and
+  want GPU / autograd evaluation downstream.
 * ``TorchBicop(grid_points=..., values=...)`` — construct from an
   externally-prepared ``(m, m)`` density grid.
 
 See Also
 --------
-pyvinecopulib.Bicop : The C++ counterpart.
+pyvinecopulib.core.Bicop : Reference pair copula.
 FitControlsTorchBicop : Fit-time controls.
 """
 
@@ -37,16 +36,16 @@ from torch import Tensor
 
 from ..core import BicopBase
 from ..pyvinecopulib_ext import Bicop, tll as _TLL_FAMILY
-from ._controls import FitControlsTorchBicop
 from ._interp import InterpolationGrid2D, _TRIM_LO, _TRIM_HI
+from .controls import FitControlsTorchBicop
 
 
 class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
   """PyTorch evaluator for a bivariate copula stored as a density grid.
 
   Torch counterpart of the non-parametric pair-copula path in
-  `Bicop` (the *Transformed Local Likelihood* /
-  `pyvinecopulib.families.tll` family). The fitted density lives on
+  ``Bicop`` (the *Transformed Local Likelihood* /
+  ``tll`` family). The fitted density lives on
   an ``m x m`` grid in ``[0, 1]^2`` and is evaluated by bilinear
   interpolation. Non-zero copula rotations are not supported — TLL
   pair-copulas always have ``rotation=0``.
@@ -69,8 +68,8 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       ``interp_grid.values`` in place on a cached instance is
       unsupported (rebuild a new ``TorchBicop`` instead).
   norm_times : int, default=3
-      Number of margin-normalization rounds. Matches the C++
-      default. Pass ``0`` to skip when the grid already integrates
+      Number of margin-normalization rounds. Matches the ``Bicop``
+      TLL default. Pass ``0`` to skip when the grid already integrates
       to uniform margins.
   is_linear : bool, default=False
       Internal flag selecting the linear-grid fast-path in the
@@ -82,7 +81,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       the input's device.
   dtype : torch.dtype, default=torch.float64
       Precision of the underlying tensors. ``torch.float64`` mirrors
-      the C++ evaluation.
+      the ``Bicop`` evaluation.
   """
 
   is_indep: bool
@@ -157,9 +156,9 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchBicop":
-    """Lifts a fitted `Bicop` into the torch backend.
+    """Lifts a fitted ``Bicop`` into a ``TorchBicop``.
 
-    The resulting `TorchBicop` is a ``torch.nn.Module`` (so
+    The resulting ``TorchBicop`` is a ``torch.nn.Module`` (so
     ``.to("cuda")`` moves the density grid in one line) built from a
     differentiable bilinear interpolator, with autograd flowing
     through every ``pdf`` / ``cdf`` / ``hfunc`` / ``hinv`` call.
@@ -167,25 +166,25 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     Parameters
     ----------
     cop : Bicop
-        A fitted `pyvinecopulib.Bicop` of the TLL family at
-        ``rotation=0`` (the only shape `TorchBicop` represents
+        A fitted ``Bicop`` of the TLL family at
+        ``rotation=0`` (the only shape ``TorchBicop`` represents
         directly). The density values are taken straight from
         ``cop.parameters``; the grid coordinates come from
-        `InterpolationGrid2D.make_grid_points` with the canonical
-        Phi-spaced normal grid the C++ library uses. The grid is
+        ``InterpolationGrid2D.make_grid_points`` with the canonical
+        Phi-spaced normal grid ``Bicop`` uses. The grid is
         already normalised, so renormalisation is skipped (parity
         is typically ``< 1e-12`` per cell on fresh fits).
     cache_integrals : bool, default=True
-        See `TorchBicop.__init__`.
+        See ``TorchBicop.__init__``.
     device : torch.device or None, default=None
-        See `TorchBicop.__init__`.
+        See ``TorchBicop.__init__``.
     dtype : torch.dtype, default=torch.float64
-        See `TorchBicop.__init__`.
+        See ``TorchBicop.__init__``.
 
     Returns
     -------
     TorchBicop
-        A `TorchBicop` mirroring ``cop`` on the torch backend.
+        A ``TorchBicop`` mirroring ``cop``.
     """
     if cop.family != _TLL_FAMILY:
       raise ValueError(
@@ -210,7 +209,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     ).to(device=device)
     values = torch.as_tensor(values_np, dtype=dtype, device=device)
     # The grid stored on cop is already normalized; skip renormalization
-    # to avoid drifting away from the C++ values.
+    # to avoid drifting away from the reference ``Bicop`` values.
     return cls(
       grid_points=grid_points,
       values=values,
@@ -230,11 +229,11 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchBicop":
-    """Fits a bicop on pseudo-observations and wraps in a `TorchBicop`.
+    """Fits a bicop on pseudo-observations and wraps in a ``TorchBicop``.
 
     Dispatches on ``controls.method`` (``"tll"``: pure-torch
-    Transformed Local Likelihood, matching the C++ TLL fit to
-    machine precision).
+    Transformed Local Likelihood, matching the ``Bicop``
+    TLL fit to machine precision).
 
     Parameters
     ----------
@@ -244,16 +243,16 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
         Fit-time controls. `None` defaults to TLL with
         ``grid_size=30`` on the normal-spaced grid.
     cache_integrals : bool, default=True
-        See `TorchBicop.__init__`.
+        See ``TorchBicop.__init__``.
     device : torch.device or None, default=None
-        See `TorchBicop.__init__`.
+        See ``TorchBicop.__init__``.
     dtype : torch.dtype, default=torch.float64
-        See `TorchBicop.__init__`.
+        See ``TorchBicop.__init__``.
 
     Returns
     -------
     TorchBicop
-        A fitted `TorchBicop`.
+        A fitted ``TorchBicop``.
     """
     if controls is None:
       controls = FitControlsTorchBicop()

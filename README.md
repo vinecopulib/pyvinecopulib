@@ -63,7 +63,9 @@ Two opt-in subpackages extend the core library:
   ```python
   from pyvinecopulib.sklearn import VineDensity
   from pyvinecopulib.sklearn.backends import TorchVinecopBackend
-  density_gpu = VineDensity(backend=TorchVinecopBackend()).fit(X)
+  from pyvinecopulib.torch import FitControlsTorchVinecop
+  controls = FitControlsTorchVinecop(device="cuda")
+  density_gpu = VineDensity(backend=TorchVinecopBackend(controls=controls)).fit(X)
   ```
 
   Install with `pip install pyvinecopulib[torch]`.
@@ -117,7 +119,7 @@ mamba install conda-forge::pyvinecopulib
 
 ### From source
 
-Start by cloning this repository, noting the `--recursive` option which is needed for the `vinecopulib` and `wdm` submodules:
+Start by cloning this repository, noting the `--recursive` option which is needed for the `vinecopulib`, `wdm`, and `kde1d` submodules:
 
 ```bash
 git clone --recursive https://github.com/vinecopulib/pyvinecopulib.git

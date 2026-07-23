@@ -469,7 +469,7 @@ def test_normalize_margins_tol_converges() -> None:
   """``tol`` early-stops once margins are uniform to the requested
   precision. The default ``tol=None`` path keeps fixed-budget semantics
   for C++ TLL parity."""
-  from pyvinecopulib.torch import InterpolationGrid2D
+  from pyvinecopulib.torch._interp import InterpolationGrid2D
 
   # Deliberately skewed initial density on a 16x16 linear grid.
   m = 16
@@ -495,7 +495,7 @@ def test_normalize_margins_default_tol_is_fixed_budget() -> None:
   checking that the standard ``from_data`` path still matches C++ to
   machine precision (covered by ``test_from_data_matches_cpp``); here we
   just spot-check that the constructor accepts the default."""
-  from pyvinecopulib.torch import InterpolationGrid2D
+  from pyvinecopulib.torch._interp import InterpolationGrid2D
 
   grid = torch.linspace(0.0, 1.0, 8, dtype=torch.float64)
   values = torch.ones(8, 8, dtype=torch.float64)

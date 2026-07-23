@@ -51,7 +51,7 @@ class VineRegressor(VineBase, RegressorMixin):
         Backend instance bundling fit-time controls and an optional
         pre-specified structure on ``(Y, X_1, ..., X_d)`` (`Y`
         always in the first dimension). `None` resolves to a default
-        `VinecopBackend` with the `tll` pair family at fit time.
+        ``VinecopBackend`` with the ``tll`` pair family at fit time.
     batch_size : int, default=100
         Number of test points processed per batch in `predict`.
     use_grid : bool, default=True
@@ -194,7 +194,7 @@ class VineRegressor(VineBase, RegressorMixin):
     """Conditional copula weights for one batch of test rows.
 
     Single source of truth for the weight math — both `_iter_weights`
-    and `VineForestRegressor` call this. For each row computes
+    and ``VineForestRegressor`` call this. For each row computes
 
     .. math::
 

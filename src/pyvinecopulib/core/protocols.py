@@ -8,7 +8,7 @@ far more easily, subclass the canonical :class:`~pyvinecopulib.core.BicopBase` /
 object plugs into the rest of the library (e.g. it can be hosted in a vine, or
 consumed by the sklearn backend layer). The reference implementations are
 :class:`pyvinecopulib.core.Bicop` / :class:`pyvinecopulib.core.Vinecop` (the
-compiled default) and :class:`pyvinecopulib.torch.TorchBicop` /
+default) and :class:`pyvinecopulib.torch.TorchBicop` /
 :class:`pyvinecopulib.torch.TorchVinecop`.
 
 **Conditioning.** Every method carries an optional trailing ``x`` — the
@@ -120,7 +120,7 @@ class BicopLike(Protocol[ArrayT]):
   See Also
   --------
   pyvinecopulib.core.BicopBase : Canonical partial implementation to subclass.
-  pyvinecopulib.core.Bicop : The compiled reference pair copula.
+  pyvinecopulib.core.Bicop : The reference pair copula.
   VinecopLike : The vine-level evaluator contract.
   """
 
@@ -281,7 +281,7 @@ class VinecopLike(Protocol[ArrayT]):
   See Also
   --------
   pyvinecopulib.core.VinecopBase : Canonical partial implementation to subclass.
-  pyvinecopulib.core.Vinecop : The compiled reference vine.
+  pyvinecopulib.core.Vinecop : The reference vine.
   BicopLike : The pair-copula contract.
   """
 
@@ -316,6 +316,7 @@ class VinecopLike(Protocol[ArrayT]):
     *,
     x: Optional[ArrayT] = None,
     N: int = 10000,
+    num_threads: int = 1,
     seeds: Optional[list[int]] = None,
   ) -> ArrayT:
     """Joint vine-copula distribution ``C(u)`` via Monte-Carlo.
@@ -328,6 +329,8 @@ class VinecopLike(Protocol[ArrayT]):
         External covariates (non-simplified vines), else ``None``.
     N : int, default=10000
         Number of Monte-Carlo samples.
+    num_threads : int, default=1
+        Accepted for parity with :meth:`pyvinecopulib.core.Vinecop.cdf`.
     seeds : list of int, or None, optional
         RNG seeds.
 
@@ -387,6 +390,7 @@ class VinecopLike(Protocol[ArrayT]):
     *,
     x: Optional[ArrayT] = None,
     qrng: bool = False,
+    num_threads: int = 1,
     seeds: Optional[list[int]] = None,
   ) -> ArrayT:
     """Draw ``n`` samples from the fitted vine copula.
@@ -400,6 +404,8 @@ class VinecopLike(Protocol[ArrayT]):
         ``None``.
     qrng : bool, default=False
         Draw quasi-random base uniforms instead of pseudo-random ones.
+    num_threads : int, default=1
+        Accepted for parity with :meth:`pyvinecopulib.core.Vinecop.simulate`.
     seeds : list of int, or None, optional
         RNG seeds.
 
