@@ -87,10 +87,12 @@ class _VinecopBackendBase:
   Holds the vine-fit configuration and the fitted vine's evaluation surface,
   factoring the parts identical across ``VinecopBackend`` and
   ``TorchVinecopBackend`` (``structure_of`` and the copy-on-write forest
-  plumbing) here.
-  Concrete backends override the genuinely divergent members: which vine class
-  ``fit_vine`` builds, the per-op evaluation kwargs / output conversion, the
-  default controls, and which controls object carries the tree-selection knobs.
+  plumbing) here. Both controls types expose the same tree-selection fields
+  (``tree_algorithm`` / ``seeds`` / ``trunc_lvl``), so the forest helpers act on
+  ``_effective_controls()`` uniformly.
+  Concrete backends override only the genuinely divergent members: which vine
+  class ``fit_vine`` builds, the per-op evaluation kwargs / output conversion,
+  and the default controls.
 
   Parameters
   ----------
@@ -121,16 +123,6 @@ class _VinecopBackendBase:
       self.controls if self.controls is not None else self._default_controls()
     )
 
-  def _tree_selection_controls(self) -> pv.FitControlsVinecop:
-    """The ``FitControlsVinecop`` whose tree-algorithm / seeds a local-random forest tweaks."""
-    raise NotImplementedError
-
-  def _install_tree_selection_controls(
-    self, new: "_VinecopBackendBase", ctrls: pv.FitControlsVinecop
-  ) -> None:
-    """Install the tweaked tree-selection ``ctrls`` onto the copy ``new``."""
-    raise NotImplementedError
-
   def fit_vine(self, U: np.ndarray, *, var_types: list[str]) -> Any:
     raise NotImplementedError
 
@@ -159,11 +151,14 @@ class _VinecopBackendBase:
     return new
 
   def with_local_random(self, seeds: list[int]) -> "_VinecopBackendBase":
-    new_ctrls = _copy.copy(self._tree_selection_controls())
+    # Both controls types carry ``tree_algorithm`` / ``seeds``; set them on a
+    # copy of the effective controls (copy-on-write) and clear the structure so
+    # ``fit_vine`` selects a fresh Kendall-tau-weighted random tree.
+    new_ctrls = _copy.copy(self._effective_controls())
     new_ctrls.tree_algorithm = "random_weighted"
     new_ctrls.seeds = seeds
     new = _copy.copy(self)
-    self._install_tree_selection_controls(new, new_ctrls)
+    new.controls = new_ctrls
     new.structure = None
     return new
 
@@ -202,14 +197,6 @@ class VinecopBackend(_VinecopBackendBase):
 
   def _default_controls(self) -> pv.FitControlsVinecop:
     return _default_cpp_controls()
-
-  def _tree_selection_controls(self) -> pv.FitControlsVinecop:
-    return self._effective_controls()
-
-  def _install_tree_selection_controls(
-    self, new: "_VinecopBackendBase", ctrls: pv.FitControlsVinecop
-  ) -> None:
-    new.controls = ctrls
 
   def fit_vine(self, U: np.ndarray, *, var_types: list[str]) -> Any:
     return pv.Vinecop.from_data(
@@ -262,9 +249,10 @@ class TorchVinecopBackend(_VinecopBackendBase):
   Parameters
   ----------
   controls : FitControlsTorchVinecop, or None, optional
-      Cascade / placement / precision knobs (and, when no structure is given,
-      the structure-selection controls via ``structure_controls``). `None`
-      resolves to defaults at fit time.
+      Cascade / placement / precision knobs plus the native (pure-torch)
+      structure-selection knobs (``tree_algorithm`` / ``seeds`` / ``trunc_lvl``
+      / ``tree_criterion`` / ``threshold``). `None` resolves to defaults at fit
+      time.
   structure : RVineStructure, or None, optional
       A pre-specified vine structure; when provided, `fit_vine` skips structure
       selection.
@@ -290,19 +278,6 @@ class TorchVinecopBackend(_VinecopBackendBase):
     from pyvinecopulib.torch import FitControlsTorchVinecop
 
     return FitControlsTorchVinecop()
-
-  def _tree_selection_controls(self) -> pv.FitControlsVinecop:
-    sc = self._effective_controls().structure_controls
-    return sc if sc is not None else _default_cpp_controls()
-
-  def _install_tree_selection_controls(
-    self, new: "_VinecopBackendBase", ctrls: pv.FitControlsVinecop
-  ) -> None:
-    # Rebind the nested structure-selection controls on a fresh copy of the
-    # torch controls, leaving the parent's controls untouched (copy-on-write).
-    torch_ctrls = _copy.copy(self._effective_controls())
-    torch_ctrls.structure_controls = ctrls
-    new.controls = torch_ctrls
 
   def fit_vine(self, U: np.ndarray, *, var_types: list[str]) -> Any:
     from pyvinecopulib.torch import TorchVinecop

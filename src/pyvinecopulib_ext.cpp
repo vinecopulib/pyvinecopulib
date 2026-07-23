@@ -49,6 +49,7 @@ NB_MODULE(pyvinecopulib_ext, pv) {
     init_vinecop_rvine_structure(pv);
     init_vinecop_fit_controls(pv);
     init_vinecop_class(pv);
+    init_spanning_tree(pv);
   }
 
   {

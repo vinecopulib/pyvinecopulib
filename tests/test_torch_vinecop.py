@@ -377,12 +377,12 @@ def test_from_data_matches_from_vinecop(d: int) -> None:
 
 
 def test_from_data_auto_selects_structure() -> None:
-  """``from_data(structure=None)`` selects the R-vine on the compiled
-  ``pv.Vinecop`` (TLL, ``trunc_lvl=20``) and lifts it — so it must agree with
-  an explicit select-then-lift using those same documented defaults. This
-  pins ``_default_structure_controls`` against drift."""
+  """``from_data(structure=None)`` selects the R-vine natively in torch
+  (``VinecopBase.select``, TLL, ``trunc_lvl=20``) and reuses the
+  selection-time pairs — an exact port of ``pv.Vinecop.from_data``, so the
+  selected structure (identical matrix encoding), the reoriented pairs, and
+  the resulting density must all match."""
   u_fit = _simulate(d=5, n=1500, seed=777)
-  # Reference: explicit structure selection with the documented defaults.
   cop_cpp = pv.Vinecop.from_data(
     u_fit,
     structure=None,
@@ -391,19 +391,21 @@ def test_from_data_auto_selects_structure() -> None:
       family_set=[pv.families.tll], trunc_lvl=20, num_threads=1
     ),
   )
-  expected = TorchVinecop.from_vinecop(cop_cpp, cache_integrals=False)
   got = TorchVinecop.from_data(
     torch.from_numpy(u_fit),
     controls=FitControlsTorchVinecop(cache_integrals=False),
   )
-  # Same deterministic selection + same lift => identical structure + grids.
+  # Identical structure, down to the matrix encoding.
   np.testing.assert_array_equal(
-    np.asarray(got.structure.matrix), np.asarray(expected.structure.matrix)
+    np.asarray(got.structure.matrix), np.asarray(cop_cpp.structure.matrix)
   )
+  # Identical density: same selection, same reused pairs (torch TLL matches
+  # the ``Bicop`` TLL fit to machine precision), same flips.
+  reference = TorchVinecop.from_vinecop(cop_cpp, cache_integrals=False)
   u_eval = torch.from_numpy(_eval_grid(400, d=5, seed=778))
   np.testing.assert_allclose(
     got.pdf(u_eval).numpy(),
-    expected.pdf(u_eval).numpy(),
+    reference.pdf(u_eval).numpy(),
     atol=1e-9,
     rtol=1e-9,
   )

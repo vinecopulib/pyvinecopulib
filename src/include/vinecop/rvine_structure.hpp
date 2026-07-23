@@ -4,9 +4,12 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/string.h>
+#include <nanobind/stl/tuple.h>
 #include <nanobind/stl/vector.h>
 
+#include <tuple>
 #include <vinecopulib.hpp>
+#include <vinecopulib/vinecop/rvine_trees.hpp>
 
 #include "docstr.hpp"
 #include "misc/helpers.hpp"
@@ -46,6 +49,41 @@ inline RVineStructure rv_from_struct_array(
                         natural_order, check);
 }
 
+// Factory function to assemble an RVineStructure from a list-of-trees
+// decomposition (the Dissmann finalization, reusing the upstream RVineTrees
+// primitive). ``trees`` is a nested list ``[tree][edge]`` of ``(a, b,
+// conditioning)`` triples with 1-based variable labels: ``a`` / ``b`` are the
+// conditioned pair and ``conditioning`` the (possibly empty) conditioning set;
+// tree ``t`` must hold exactly ``d - 1 - t`` edges. The upstream peel with the
+// selection diagonal policy (``leaf_edges[0].back()``) chooses the diagonals,
+// so the resulting matrix matches what ``Vinecop.select`` produces for the same
+// trees. Pair-copulas are irrelevant here (independence placeholders); callers
+// re-fit on the returned structure.
+inline RVineStructure rv_from_trees(
+    size_t d,
+    const std::vector<
+        std::vector<std::tuple<size_t, size_t, std::vector<size_t>>>>& trees) {
+  if (trees.empty()) {
+    return RVineStructure(d, static_cast<size_t>(0));
+  }
+  std::vector<RVineTrees::Tree> tree_list;
+  tree_list.reserve(trees.size());
+  for (const auto& tree : trees) {
+    RVineTrees::Tree edges;
+    edges.reserve(tree.size());
+    for (const auto& e : tree) {
+      edges.emplace_back(std::get<0>(e), std::get<1>(e), std::get<2>(e));
+    }
+    tree_list.push_back(std::move(edges));
+  }
+  auto dec = RVineTrees(d, std::move(tree_list))
+                 .to_struct_array(
+                     [](size_t, const std::vector<std::vector<size_t>>& leaf) {
+                       return leaf[0].back();
+                     });
+  return RVineStructure(dec.order, dec.struct_array);
+}
+
 // Factory function to create RVineStructure from a file
 inline RVineStructure rv_from_file(const std::string& filename,
                                    bool check = true) {
@@ -78,6 +116,32 @@ Alternatives to instantiate structures are:
 - ``RVineStructure.from_json()``: Instantiate from a JSON string.
 )""";
 
+  const char* from_trees_doc =
+      R"""(Assemble an ``RVineStructure`` from a list-of-trees decomposition.
+
+This is the finalization step of Dissmann-style structure selection: given the
+edges chosen for each tree, it produces the corresponding R-vine matrix
+(variable order + structure array), reusing the same diagonal policy as
+``Vinecop.select`` so the result matches the compiled selector.
+
+Parameters
+----------
+d : int
+    Dimension of the vine.
+trees : list of list of tuple
+    Per-tree edge lists, indexed ``[tree][edge]``. Each edge is a triple
+    ``(a, b, conditioning)`` of 1-based variable labels, where ``a`` and ``b``
+    are the conditioned pair and ``conditioning`` is the (possibly empty)
+    conditioning set. Tree ``t`` must contain exactly ``d - 1 - t`` edges. An
+    empty list yields a fully truncated (independence) structure.
+
+Returns
+-------
+RVineStructure
+    The assembled structure. Pair-copulas are not part of the input; callers
+    fit them on the returned structure.
+)""";
+
   nb::class_<RVineStructure>(module, "RVineStructure", rvinestructure_doc.doc)
       .def(nb::init<const size_t&, const size_t&>(),
            "d"_a = static_cast<size_t>(1),
@@ -103,6 +167,8 @@ Alternatives to instantiate structures are:
                           .doc_4args_order_struct_array_natural_order_check)
                       .c_str(),
                   nb::call_guard<nb::gil_scoped_release>())
+      .def_static("from_trees", &rv_from_trees, "d"_a, "trees"_a,
+                  from_trees_doc, nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_file", &rv_from_file, "filename"_a, "check"_a = true,
                   rvinestructure_doc.ctor.doc_2args_filename_check,
                   nb::call_guard<nb::gil_scoped_release>())

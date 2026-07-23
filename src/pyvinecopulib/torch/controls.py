@@ -13,12 +13,18 @@ relevant dataclass and the dispatch in the corresponding ``from_data``
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Optional
-
-if TYPE_CHECKING:
-  from ..pyvinecopulib_ext import FitControlsVinecop
+from typing import Any, Optional
 
 METHODS: tuple[str, ...] = ("tll",)
+
+#: Structure-selection algorithms accepted by ``FitControlsTorchVinecop``,
+#: mirroring ``FitControlsVinecop.tree_algorithm``.
+TREE_ALGORITHMS: tuple[str, ...] = (
+  "mst_prim",
+  "mst_kruskal",
+  "random_weighted",
+  "random_unweighted",
+)
 
 
 @dataclass
@@ -64,45 +70,75 @@ class FitControlsTorchBicop:
 
 @dataclass
 class FitControlsTorchVinecop:
-  """Controls for ``TorchVinecop.from_data()`` and the runtime cascade.
+  """Controls for :meth:`~pyvinecopulib.torch.TorchVinecop.from_data` and the cascade.
 
-  Mirrors ``FitControlsVinecop``: bundles all vine-fit
+  Mirrors :class:`~pyvinecopulib.core.FitControlsVinecop`: bundles all vine-fit
   knobs into one object. A nested ``FitControlsTorchBicop`` controls
-  how each pair-copula is fit; vine-level fields below carry
-  placement / precision / cascade-variant settings.
+  how each pair-copula is fit; the vine-level fields below carry the
+  structure-selection knobs plus placement / precision /
+  cascade-variant settings.
 
   Attributes
   ----------
   bicop_controls : FitControlsTorchBicop
       Controls applied to every pair-copula fit.
+  trunc_lvl : int, default=20
+      Maximum number of trees to select when
+      :meth:`~pyvinecopulib.torch.TorchVinecop.from_data` is called with
+      ``structure=None``.
+  tree_criterion : {"tau", "rho", "hoeffd"}, default="tau"
+      Dependence measure used to weight candidate edges during structure
+      selection (passed to ``wdm``).
+  threshold : float, default=0.0
+      Dependence threshold: candidate edges below it are deprioritized during
+      spanning-tree selection.
+  tree_algorithm : {"mst_prim", "mst_kruskal", "random_weighted", \
+"random_unweighted"}, default="mst_prim"
+      Spanning-tree algorithm for structure selection: Dissmann's maximum
+      spanning tree (``mst_*``) or Wilson's (weighted / uniform) random
+      spanning tree (``random_*``).
+  seeds : list of int, default=[]
+      RNG seeds for the random tree algorithms (ignored by the MST ones).
   cache_integrals : bool, default=True
       If ``True``, precompute the cdf / hfunc / hinv caches on
       every pair copula's interpolation grid. Cached lookups are
       1–2 orders of magnitude faster than the on-the-fly path
       with a ~1e-3 IAE cost.
   device : torch.device or None, default=None
-      Target torch device for the fitted pair copulas. `None`
+      Target torch device for the fitted pair copulas. ``None``
       keeps the input's device.
   dtype : torch.dtype or None, default=None
-      Target torch dtype. `None` defaults to ``torch.float64``
-      (parity with ``Vinecop``).
+      Target torch dtype. ``None`` defaults to ``torch.float64``
+      (parity with :class:`~pyvinecopulib.core.Vinecop`).
   batched : bool, default=False
       If ``True``, fires a single batched bicop call per tree
       level. Available for ``pdf`` / ``rosenblatt`` only
       (``inverse_rosenblatt(batched=True)`` raises).
-  structure_controls : FitControlsVinecop or None, default=None
-      Structure-selection controls used only when
-      :meth:`TorchVinecop.from_data` is called with ``structure=None``
-      (the R-vine structure is selected on a
-      ``Vinecop``, then lifted). ``None`` defaults to
-      TLL with ``trunc_lvl=20``.
+
+  Notes
+  -----
+  Structure selection runs natively on the torch interpolation grids. It is
+  continuous-only and TLL-only, and the criteria for automatic truncation /
+  thresholding (``aic`` / ``bic`` / ``mbicv``) are not available here:
+  ``trunc_lvl`` is a fixed cap.
   """
 
   bicop_controls: FitControlsTorchBicop = field(
     default_factory=FitControlsTorchBicop
   )
+  trunc_lvl: int = 20
+  tree_criterion: str = "tau"
+  threshold: float = 0.0
+  tree_algorithm: str = "mst_prim"
+  seeds: list[int] = field(default_factory=list)
   cache_integrals: bool = True
   device: Optional[Any] = None
   dtype: Optional[Any] = None
   batched: bool = False
-  structure_controls: Optional["FitControlsVinecop"] = None
+
+  def __post_init__(self) -> None:
+    if self.tree_algorithm not in TREE_ALGORITHMS:
+      raise ValueError(
+        f"unknown tree_algorithm={self.tree_algorithm!r}; expected one of "
+        f"{TREE_ALGORITHMS}"
+      )

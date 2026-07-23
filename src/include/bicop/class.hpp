@@ -125,6 +125,21 @@ or out-of-bounds values raise ``RuntimeError``.
   const std::string logpdf_deriv2_doc =
       std::string(bicop_doc.logpdf_deriv2.doc_2args) + per_row_note;
 
+  // `flip` binds the libclang-extracted doc, extended with the return
+  // description (the Python method returns a flipped copy; the underlying C++
+  // method mutates in place, which users need not know about).
+  const std::string flip_doc = std::string(bicop_doc.flip.doc) +
+                               R"""(
+
+The flipped copula satisfies ``c'(u1, u2) = c(u2, u1)``, with the two
+h-functions (and their inverses) exchanged.
+
+Returns
+-------
+Bicop
+    The argument-swapped copula; the object itself is left unchanged.
+)""";
+
   // Dispatch helpers: pick the stored-parameter or per-row overload depending
   // on whether `parameters` was supplied. Argument conversion (incl. the
   // ndarray -> Eigen copy) happens before the GIL is released, so the lambda
@@ -335,6 +350,14 @@ or out-of-bounds values raise ``RuntimeError``.
       .def("simulate", &Bicop::simulate, "n"_a, "qrng"_a = false,
            "seeds"_a = std::vector<int>(), bicop_doc.simulate.doc,
            nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "flip",
+          [](const Bicop& cop) {
+            Bicop flipped = cop;  // deep copy (Bicop's copy ctor clones)
+            flipped.flip();
+            return flipped;
+          },
+          flip_doc.c_str(), nb::call_guard<nb::gil_scoped_release>())
       .def("fit", &Bicop::fit, "data"_a,
            "controls"_a.sig("FitControlsBicop()") = FitControlsBicop(),
            bicop_doc.fit.doc, nb::call_guard<nb::gil_scoped_release>())

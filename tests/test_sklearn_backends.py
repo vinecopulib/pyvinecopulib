@@ -128,18 +128,16 @@ class TestTorchBackendWith:
     assert b2.structure is not None
     assert b.structure is None
 
-  def test_with_local_random_threads_seeds_into_structure_controls(self):
+  def test_with_local_random_threads_seeds_into_controls(self):
     pytest.importorskip("torch")
     b = TorchVinecopBackend()
     b2 = b.with_local_random([7, 8, 9])
     assert b2.structure is None
-    # Seeds / tree algorithm land on the nested structure-selection
-    # controls that `TorchVinecop.from_data(structure=None)` consumes.
+    # Seeds / tree algorithm land on the torch controls' native selection
+    # fields that `TorchVinecop.from_data(structure=None)` consumes directly.
     assert b2.controls is not None
-    sc = b2.controls.structure_controls
-    assert sc is not None
-    assert sc.tree_algorithm == "random_weighted"
-    assert list(sc.seeds) == [7, 8, 9]
+    assert b2.controls.tree_algorithm == "random_weighted"
+    assert list(b2.controls.seeds) == [7, 8, 9]
     # Parent backend's controls remain untouched (copy-on-write).
     assert b.controls is None
 
@@ -260,13 +258,22 @@ class TestEstimatorWiring:
 class TestCrossBackend:
   def test_density_pdf_parity(self, small_data):
     pytest.importorskip("torch")
+    from pyvinecopulib.torch import FitControlsTorchVinecop
+
     est_cpp = VineDensity().fit(small_data)
-    est_torch = VineDensity(backend=TorchVinecopBackend()).fit(small_data)
+    # Both backends select their structure independently, but the torch
+    # selection is an exact port of Vinecop's (same structure, same reused
+    # pairs), so the densities agree to TLL-fit precision. Pin
+    # cache_integrals=False: the default cached evaluation trades ~1e-3 IAE
+    # for speed.
+    est_torch = VineDensity(
+      backend=TorchVinecopBackend(
+        controls=FitControlsTorchVinecop(cache_integrals=False)
+      )
+    ).fit(small_data)
     p_cpp = est_cpp.pdf(small_data[:10])
     p_torch = est_torch.pdf(small_data[:10])
-    # Same TLL grid (lifted from cpp), same cascade math; small
-    # floating-point differences acceptable.
-    np.testing.assert_allclose(p_cpp, p_torch, rtol=2e-3)
+    np.testing.assert_allclose(p_cpp, p_torch, rtol=1e-6)
 
   def test_cdf_works_on_both_backends(self, small_data):
     pytest.importorskip("torch")
