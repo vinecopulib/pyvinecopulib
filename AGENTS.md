@@ -82,14 +82,21 @@ ahead of it) is allowed to break sklearn/torch APIs as needed.
 - **Bivariate copula modelling** — every family bound from
   `lib/vinecopulib`: `indep`, `gaussian`, `student`, `clayton`,
   `gumbel`, `frank`, `joe`, `bb1/6/7/8`, `tawn`, `tll`; with their
-  rotations, mixed-discrete handling, and family-set constraints via
-  `FitControlsBicop`.
+  rotations, mixed-discrete handling, analytic parameter/argument
+  derivatives, tail-dependence / Blomqvist-β summaries, log-likelihood
+  scores / gradient / Hessian / score-covariance, and family-set
+  constraints via `FitControlsBicop`.
 - **Vine copula modelling** — `Vinecop` with Dissmann selection
   (`mst_prim`), Wilson-weighted random structures
   (`random_weighted`), and user-supplied `RVineStructure` /
   `CVineStructure` / `DVineStructure`. Truncation, threading,
   bootstrap, pre-fit selection criteria, and family sets are exposed
-  through `FitControlsVinecop`.
+  through `FitControlsVinecop`. Also: conditional sampling
+  (`simulate_conditional`), conditioning-aware selection
+  (`FitControlsVinecop.conditioning_set`) and `reorient`, the
+  list-of-trees round-trip (`get_trees` / `RVineStructure.from_trees`),
+  the gradient/diagnostics surface (`scores` / `gradient` / `hessian` /
+  `scores_cov`, with per-observation-parameter overloads).
 - **Univariate marginals** — `Kde1d` (`lib/kde1d`) with continuous,
   ordered-discrete, and unordered-categorical support.
 - **Dependence measures** — `wdm` (`lib/wdm`).
@@ -187,7 +194,7 @@ pyvinecopulib/
 
   tests/                         # flat layout; one file per topic; shared fixtures in conftest.py
   docs/                          # Sphinx; conf.py drives features.rst via autosummary
-  examples/                      # Jupyter notebooks (10), executed in CI and embedded via nbsphinx
+  examples/                      # Jupyter notebooks (11), executed in CI and embedded via nbsphinx
   scripts/                       # build helpers + benchmarks
 ```
 
@@ -411,6 +418,17 @@ automatically.
 - `tree_algorithm` on `FitControlsVinecop`: `"mst_prim"` (default,
   Dissmann) and `"random_weighted"` (Wilson-weighted random tree;
   used by the sklearn forests).
+- `FitControlsVinecop.conditioning_set` (property + pickled, not a
+  positional ctor arg) drives conditioning-aware selection — the fitted
+  order ends with the given 1-based variables so
+  `Vinecop.simulate_conditional` / `reorient` can condition on them.
+- `RVineStructure.from_trees(d, trees)` is the **faithful** inverse of
+  `RVineStructure.get_trees()` (identity diagonal policy — each edge's
+  `a` on the diagonal — so `from_trees(s.dim, s.get_trees()) == s`).
+  The separate `Vinecop.select` matrix convention (`conditioned[1]` on
+  the diagonal) lives in the internal `RVineStructure._from_selected_trees`,
+  which `VinecopBase.select` uses to stay byte-for-byte with the C++
+  selector; do not conflate the two.
 - **Backend-neutral abstraction layer** (pure Python; `core` imports
   without PyTorch). The extension point for custom (e.g. neural,
   conditional) pair copulas and vines:

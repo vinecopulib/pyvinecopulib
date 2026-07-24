@@ -3,6 +3,7 @@
 #include <nanobind/eigen/dense.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
+#include <nanobind/operators.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/tuple.h>
 #include <nanobind/stl/vector.h>
@@ -49,23 +50,14 @@ inline RVineStructure rv_from_struct_array(
                         natural_order, check);
 }
 
-// Factory function to assemble an RVineStructure from a list-of-trees
-// decomposition (the Dissmann finalization, reusing the upstream RVineTrees
-// primitive). ``trees`` is a nested list ``[tree][edge]`` of ``(a, b,
-// conditioning)`` triples with 1-based variable labels: ``a`` / ``b`` are the
-// conditioned pair and ``conditioning`` the (possibly empty) conditioning set;
-// tree ``t`` must hold exactly ``d - 1 - t`` edges. The upstream peel with the
-// selection diagonal policy (``leaf_edges[0].back()``) chooses the diagonals,
-// so the resulting matrix matches what ``Vinecop.select`` produces for the same
-// trees. Pair-copulas are irrelevant here (independence placeholders); callers
-// re-fit on the returned structure.
-inline RVineStructure rv_from_trees(
-    size_t d,
-    const std::vector<
-        std::vector<std::tuple<size_t, size_t, std::vector<size_t>>>>& trees) {
-  if (trees.empty()) {
-    return RVineStructure(d, static_cast<size_t>(0));
-  }
+// Nested-list ``[tree][edge]`` of ``(a, b, conditioning)`` triples (1-based
+// variable labels): ``a`` / ``b`` are the conditioned pair, ``conditioning``
+// the (possibly empty) conditioning set.
+using TreeTuples =
+    std::vector<std::vector<std::tuple<size_t, size_t, std::vector<size_t>>>>;
+
+// Rebuild the upstream RVineTrees primitive from the nested-list form.
+inline RVineTrees rvt_from_tuples(size_t d, const TreeTuples& trees) {
   std::vector<RVineTrees::Tree> tree_list;
   tree_list.reserve(trees.size());
   for (const auto& tree : trees) {
@@ -76,11 +68,38 @@ inline RVineStructure rv_from_trees(
     }
     tree_list.push_back(std::move(edges));
   }
-  auto dec = RVineTrees(d, std::move(tree_list))
-                 .to_struct_array(
-                     [](size_t, const std::vector<std::vector<size_t>>& leaf) {
-                       return leaf[0].back();
-                     });
+  return RVineTrees(d, std::move(tree_list));
+}
+
+// Faithful inverse of ``RVineStructure.get_trees()``: the RVineStructure ctor
+// from RVineTrees uses the identity diagonal policy (each edge's first
+// conditioned variable ``a`` on the diagonal), so
+// ``from_trees(s.dim, s.get_trees())`` reproduces ``s`` exactly. The diagonal
+// choice controls the variable order (which variables sit at the tail —
+// relevant for conditional sampling). Tree ``t`` must hold exactly ``d - 1 -
+// t`` edges.
+inline RVineStructure rv_from_trees(size_t d, const TreeTuples& trees) {
+  if (trees.empty()) {
+    return RVineStructure(d, static_cast<size_t>(0));
+  }
+  return RVineStructure(rvt_from_tuples(d, trees));
+}
+
+// Internal: the Dissmann selection finalization. Applies the selection diagonal
+// policy (``leaf_edges[0].back()``), so the resulting matrix matches what
+// ``Vinecop.select`` produces for the same trees. Used by
+// ``VinecopBase.select`` to keep the array-agnostic selector byte-for-byte with
+// the C++ selector; not a faithful inverse of ``get_trees()``. Pair-copulas are
+// placeholders here.
+inline RVineStructure rv_from_selected_trees(size_t d,
+                                             const TreeTuples& trees) {
+  if (trees.empty()) {
+    return RVineStructure(d, static_cast<size_t>(0));
+  }
+  auto dec = rvt_from_tuples(d, trees).to_struct_array(
+      [](size_t, const std::vector<std::vector<size_t>>& leaf) {
+        return leaf[0].back();
+      });
   return RVineStructure(dec.order, dec.struct_array);
 }
 
@@ -119,10 +138,11 @@ Alternatives to instantiate structures are:
   const char* from_trees_doc =
       R"""(Assemble an ``RVineStructure`` from a list-of-trees decomposition.
 
-This is the finalization step of Dissmann-style structure selection: given the
-edges chosen for each tree, it produces the corresponding R-vine matrix
-(variable order + structure array), reusing the same diagonal policy as
-``Vinecop.select`` so the result matches the compiled selector.
+Faithful inverse of ``RVineStructure.get_trees()``: the R-vine matrix is
+assembled placing each edge's first conditioned variable ``a`` on the diagonal,
+so ``RVineStructure.from_trees(s.dim, s.get_trees())`` reproduces ``s`` exactly.
+The diagonal choice fixes the variable order — and hence which variables sit at
+its tail, which is what ``Vinecop.simulate_conditional`` conditions on.
 
 Parameters
 ----------
@@ -131,15 +151,29 @@ d : int
 trees : list of list of tuple
     Per-tree edge lists, indexed ``[tree][edge]``. Each edge is a triple
     ``(a, b, conditioning)`` of 1-based variable labels, where ``a`` and ``b``
-    are the conditioned pair and ``conditioning`` is the (possibly empty)
-    conditioning set. Tree ``t`` must contain exactly ``d - 1 - t`` edges. An
-    empty list yields a fully truncated (independence) structure.
+    are the conditioned pair (``a`` is placed on the matrix diagonal) and
+    ``conditioning`` is the (possibly empty) conditioning set. Tree ``t`` must
+    contain exactly ``d - 1 - t`` edges. An empty list yields a fully truncated
+    (independence) structure.
 
 Returns
 -------
 RVineStructure
     The assembled structure. Pair-copulas are not part of the input; callers
     fit them on the returned structure.
+
+See Also
+--------
+RVineStructure.get_trees : The decomposition this method inverts.
+)""";
+
+  const char* from_selected_trees_doc =
+      R"""(Internal: assemble the canonical selected structure from chosen trees.
+
+Like ``from_trees`` but applies the Dissmann selection diagonal policy, so the
+result matches what ``Vinecop.select`` produces for the same trees. Used by
+``VinecopBase.select`` to keep the array-agnostic selector byte-for-byte with the
+compiled selector; it is not a faithful inverse of ``get_trees()``.
 )""";
 
   nb::class_<RVineStructure>(module, "RVineStructure", rvinestructure_doc.doc)
@@ -169,6 +203,9 @@ RVineStructure
                   nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_trees", &rv_from_trees, "d"_a, "trees"_a,
                   from_trees_doc, nb::call_guard<nb::gil_scoped_release>())
+      .def_static("_from_selected_trees", &rv_from_selected_trees, "d"_a,
+                  "trees"_a, from_selected_trees_doc,
+                  nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_file", &rv_from_file, "filename"_a, "check"_a = true,
                   rvinestructure_doc.ctor.doc_2args_filename_check,
                   nb::call_guard<nb::gil_scoped_release>())
@@ -206,6 +243,36 @@ RVineStructure
           "natural_order"_a = false,
           struct_array_list_doc(rvinestructure_doc.get_struct_array.doc)
               .c_str())
+      .def(
+          "get_trees",
+          [](const RVineStructure& self) -> nb::list {
+            // Structure-only list-of-trees view: each edge is a tuple
+            // (a, b, conditioning), mirroring the ``from_trees()`` input.
+            // Round-tripping through ``from_trees`` yields a tree-equivalent
+            // structure (identical R-vine decomposition); the matrix / order
+            // may differ, as ``from_trees`` applies the canonical selection
+            // diagonal.
+            RVineTrees rvt;
+            {
+              nb::gil_scoped_release release;
+              rvt = self.get_trees();
+            }
+            nb::list out;
+            for (const auto& tree : rvt.get_trees()) {
+              nb::list edges;
+              for (const auto& e : tree)
+                edges.append(nb::make_tuple(e.a, e.b, nb::cast(e.C)));
+              out.append(edges);
+            }
+            return out;
+          },
+          rvinestructure_doc.get_trees.doc)
+      .def(
+          "__eq__",
+          [](const RVineStructure& self, const RVineStructure& other) {
+            return self == other;
+          },
+          nb::is_operator())
       .def("min_array", &RVineStructure::min_array, "tree"_a, "edge"_a,
            rvinestructure_doc.min_array.doc,
            nb::call_guard<nb::gil_scoped_release>())

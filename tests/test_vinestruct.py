@@ -150,3 +150,22 @@ def test_rvinestructure(unique_json_path: str) -> None:
   compare_rvinestructure(rvine, pv.RVineStructure.from_file(cbor_filename))
   with open(cbor_filename, "rb") as f:
     assert f.read(1) != b"{"
+
+
+def test_rvinestructure_get_trees_faithful_roundtrip() -> None:
+  # get_trees() is the faithful inverse of from_trees(): re-assembling the
+  # decomposition reproduces the exact R-vine matrix, not just an equivalent
+  # vine (vinecopulib#698).
+  for seed in range(5):
+    rng = np.random.default_rng(seed)
+    d = 6
+    u = pv.to_pseudo_obs(
+      rng.standard_normal((500, d)) @ rng.standard_normal((d, d))
+    )
+    s = pv.Vinecop.from_data(u).structure
+    st = s.get_trees()
+    assert _edge_sets(st) == _edge_sets(_trees_from_structure(s))
+    s2 = pv.RVineStructure.from_trees(s.dim, st)
+    assert s2 == s
+    assert np.array_equal(np.asarray(s2.matrix), np.asarray(s.matrix))
+    assert list(s2.order) == list(s.order)

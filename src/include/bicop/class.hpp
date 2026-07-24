@@ -174,6 +174,20 @@ Bicop
         };
       };
 
+  // Same dispatch as `eval_with_optional_params`, for the score / Hessian
+  // methods that return a matrix rather than a vector.
+  auto mat_eval_with_optional_params =
+      [](Eigen::MatrixXd (Bicop::*one)(const Eigen::MatrixXd&) const,
+         Eigen::MatrixXd (Bicop::*many)(const Eigen::MatrixXd&,
+                                        const Eigen::MatrixXd&, size_t) const) {
+        return [one, many](const Bicop& self, const Eigen::MatrixXd& u,
+                           const std::optional<Eigen::MatrixXd>& parameters,
+                           size_t num_threads) -> Eigen::MatrixXd {
+          if (parameters) return (self.*many)(u, *parameters, num_threads);
+          return (self.*one)(u);
+        };
+      };
+
   nb::class_<Bicop>(module, "Bicop", bicop_doc.doc)
       // Default constructor
       .def(nb::init<const BicopFamily, const int,
@@ -347,6 +361,70 @@ Bicop
            "u"_a, "deriv"_a, "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), logpdf_deriv2_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
+      .def("scores",
+           mat_eval_with_optional_params(&Bicop::scores, &Bicop::scores), "u"_a,
+           "parameters"_a = nb::none(),
+           "num_threads"_a = static_cast<size_t>(1), bicop_doc.scores.doc_1args,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("gradient",
+           eval_with_optional_params(&Bicop::gradient, &Bicop::gradient), "u"_a,
+           "parameters"_a = nb::none(),
+           "num_threads"_a = static_cast<size_t>(1),
+           bicop_doc.gradient.doc_1args,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("hessian",
+           mat_eval_with_optional_params(&Bicop::hessian, &Bicop::hessian),
+           "u"_a, "parameters"_a = nb::none(),
+           "num_threads"_a = static_cast<size_t>(1),
+           bicop_doc.hessian.doc_1args,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "scores_cov",
+          mat_eval_with_optional_params(&Bicop::scores_cov, &Bicop::scores_cov),
+          "u"_a, "parameters"_a = nb::none(),
+          "num_threads"_a = static_cast<size_t>(1),
+          bicop_doc.scores_cov.doc_1args,
+          nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "hessian_full",
+          [](const Bicop& self, const Eigen::MatrixXd& u,
+             const std::optional<Eigen::MatrixXd>& parameters,
+             size_t num_threads) -> nb::list {
+            std::vector<Eigen::MatrixXd> hess;
+            {
+              // Release the GIL only around the C++ computation; the list
+              // construction below must hold it.
+              nb::gil_scoped_release release;
+              hess = parameters ? self.hessian_full(u, *parameters, num_threads)
+                                : self.hessian_full(u);
+            }
+            nb::list out;
+            for (const auto& h : hess) out.append(nb::cast(h));
+            return out;
+          },
+          "u"_a, "parameters"_a = nb::none(),
+          "num_threads"_a = static_cast<size_t>(1),
+          bicop_doc.hessian_full.doc_1args)
+      .def(
+          "scores_full",
+          [](const Bicop& self, const Eigen::MatrixXd& u,
+             const std::optional<Eigen::MatrixXd>& parameters,
+             size_t num_threads) -> nb::dict {
+            Bicop::ScoresResult res;
+            {
+              // Release the GIL only around the C++ computation; the dict
+              // construction below must hold it.
+              nb::gil_scoped_release release;
+              res = parameters ? self.scores_full(u, *parameters, num_threads)
+                               : self.scores_full(u);
+            }
+            nb::dict out;
+            out["scores"] = nb::cast(res.scores);
+            return out;
+          },
+          "u"_a, "parameters"_a = nb::none(),
+          "num_threads"_a = static_cast<size_t>(1),
+          bicop_doc.scores_full.doc_1args)
       .def("simulate", &Bicop::simulate, "n"_a, "qrng"_a = false,
            "seeds"_a = std::vector<int>(), bicop_doc.simulate.doc,
            nb::call_guard<nb::gil_scoped_release>())

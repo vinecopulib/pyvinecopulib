@@ -1289,7 +1289,10 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       if len(nodes) <= 1:
         break
 
-    structure = RVineStructure.from_trees(d, trees)
+    # Selection finalization: the canonical diagonal policy that matches the
+    # compiled ``Vinecop.select`` (byte-for-byte). ``from_trees`` is the faithful
+    # get_trees() inverse and uses a different diagonal, so it is not used here.
+    structure = RVineStructure._from_selected_trees(d, trees)
     # Place each selection-time pair onto its finalized slot, mirroring the
     # peel: the slot at column ``e`` of tree ``t`` hosts the (unique) edge
     # whose conditioned pair is {order[e], struct_array(t, e)} and whose
