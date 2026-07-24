@@ -424,11 +424,11 @@ automatically.
   `Vinecop.simulate_conditional` / `reorient` can condition on them.
 - `RVineStructure.from_trees(d, trees)` is the **faithful** inverse of
   `RVineStructure.get_trees()` (identity diagonal policy — each edge's
-  `a` on the diagonal — so `from_trees(s.dim, s.get_trees()) == s`).
-  The separate `Vinecop.select` matrix convention (`conditioned[1]` on
-  the diagonal) lives in the internal `RVineStructure._from_selected_trees`,
-  which `VinecopBase.select` uses to stay byte-for-byte with the C++
-  selector; do not conflate the two.
+  `conditioned[0]` on the diagonal — so `from_trees(s.dim, s.get_trees()) == s`).
+  Upstream `Vinecop.select` finalizes with the *same* (flip-free)
+  convention, so `VinecopBase.select` assembles its selected trees through this
+  same `from_trees` and matches the compiled selector's matrix byte-for-byte —
+  one diagonal convention throughout.
 - **Backend-neutral abstraction layer** (pure Python; `core` imports
   without PyTorch). The extension point for custom (e.g. neural,
   conditional) pair copulas and vines:

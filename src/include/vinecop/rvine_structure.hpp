@@ -74,33 +74,17 @@ inline RVineTrees rvt_from_tuples(size_t d, const TreeTuples& trees) {
 // Faithful inverse of ``RVineStructure.get_trees()``: the RVineStructure ctor
 // from RVineTrees uses the identity diagonal policy (each edge's first
 // conditioned variable ``a`` on the diagonal), so
-// ``from_trees(s.dim, s.get_trees())`` reproduces ``s`` exactly. The diagonal
-// choice controls the variable order (which variables sit at the tail —
-// relevant for conditional sampling). Tree ``t`` must hold exactly ``d - 1 -
-// t`` edges.
+// ``from_trees(s.dim, s.get_trees())`` reproduces ``s`` exactly. This is also
+// the diagonal policy ``Vinecop.select`` uses to finalize a selected structure
+// (upstream), so ``VinecopBase.select`` can assemble the selected trees through
+// this same factory. The diagonal choice controls the variable order (which
+// variables sit at the tail — relevant for conditional sampling). Tree ``t``
+// must hold exactly ``d - 1 - t`` edges.
 inline RVineStructure rv_from_trees(size_t d, const TreeTuples& trees) {
   if (trees.empty()) {
     return RVineStructure(d, static_cast<size_t>(0));
   }
   return RVineStructure(rvt_from_tuples(d, trees));
-}
-
-// Internal: the Dissmann selection finalization. Applies the selection diagonal
-// policy (``leaf_edges[0].back()``), so the resulting matrix matches what
-// ``Vinecop.select`` produces for the same trees. Used by
-// ``VinecopBase.select`` to keep the array-agnostic selector byte-for-byte with
-// the C++ selector; not a faithful inverse of ``get_trees()``. Pair-copulas are
-// placeholders here.
-inline RVineStructure rv_from_selected_trees(size_t d,
-                                             const TreeTuples& trees) {
-  if (trees.empty()) {
-    return RVineStructure(d, static_cast<size_t>(0));
-  }
-  auto dec = rvt_from_tuples(d, trees).to_struct_array(
-      [](size_t, const std::vector<std::vector<size_t>>& leaf) {
-        return leaf[0].back();
-      });
-  return RVineStructure(dec.order, dec.struct_array);
 }
 
 // Factory function to create RVineStructure from a file
@@ -167,15 +151,6 @@ See Also
 RVineStructure.get_trees : The decomposition this method inverts.
 )""";
 
-  const char* from_selected_trees_doc =
-      R"""(Internal: assemble the canonical selected structure from chosen trees.
-
-Like ``from_trees`` but applies the Dissmann selection diagonal policy, so the
-result matches what ``Vinecop.select`` produces for the same trees. Used by
-``VinecopBase.select`` to keep the array-agnostic selector byte-for-byte with the
-compiled selector; it is not a faithful inverse of ``get_trees()``.
-)""";
-
   nb::class_<RVineStructure>(module, "RVineStructure", rvinestructure_doc.doc)
       .def(nb::init<const size_t&, const size_t&>(),
            "d"_a = static_cast<size_t>(1),
@@ -203,9 +178,6 @@ compiled selector; it is not a faithful inverse of ``get_trees()``.
                   nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_trees", &rv_from_trees, "d"_a, "trees"_a,
                   from_trees_doc, nb::call_guard<nb::gil_scoped_release>())
-      .def_static("_from_selected_trees", &rv_from_selected_trees, "d"_a,
-                  "trees"_a, from_selected_trees_doc,
-                  nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_file", &rv_from_file, "filename"_a, "check"_a = true,
                   rvinestructure_doc.ctor.doc_2args_filename_check,
                   nb::call_guard<nb::gil_scoped_release>())
