@@ -1,8 +1,16 @@
 # Read the Docs config: https://docs.readthedocs.com/platform/stable/config-file/v2.html
-# Installs the published PyPI wheel rather than building from source
-# (the C++ build is heavier than RTD's runners). PR previews fall back
-# to the latest PyPI release; pypi.yml's verify_docs_build covers PR-side
-# validation against the wheel built from the PR.
+# Builds pyvinecopulib from source (the checked-out branch's C++ + Python), so
+# the rendered API matches that branch rather than the last PyPI release. This
+# is required on `dev`, which is far ahead of PyPI (0.8.0 adds the whole `core`
+# abstraction layer plus the `sklearn` / `torch` subpackages, none of which
+# exist in the released wheel `conf.py` would otherwise introspect).
+#
+# The nanobind extension compiles against header-only Boost / Eigen (Ubuntu's
+# apt packages clear vinecopulib's >=1.56 / 3.4 floors) plus the vendored lib/
+# submodules; scikit-build-core pulls cmake / ninja / nanobind / libclang
+# through PEP 517 build isolation from [build-system].requires. `-W` strictness
+# lives in pypi.yml's verify_docs_build, which builds the same docs against the
+# PR's wheel.
 
 version: 2
 
@@ -12,10 +20,27 @@ build:
     python: "3.11"
   apt_packages:
     - graphviz
-  jobs:
-    post_install:
-      # `[sklearn]` is needed for autosummary to introspect pyvinecopulib.sklearn.
-      - pip install "pyvinecopulib[doc,examples,sklearn]"
+    - libboost-dev
+    - libeigen3-dev
+
+# The C++ build needs the vendored header-only libraries (vinecopulib / wdm /
+# kde1d); clone them like `git clone --recursive` does locally / in CI.
+submodules:
+  include: all
+  recursive: true
+
+python:
+  install:
+    - method: pip
+      path: .
+      # `[doc]` carries numpydoc / nbsphinx / myst-parser; `[examples]` supplies
+      # the notebook deps nbsphinx stages; `[sklearn]` / `[torch]` are needed
+      # for autosummary to introspect pyvinecopulib.sklearn / pyvinecopulib.torch.
+      extra_requirements:
+        - doc
+        - examples
+        - sklearn
+        - torch
 
 sphinx:
   configuration: docs/conf.py
