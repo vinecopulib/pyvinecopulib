@@ -321,8 +321,11 @@ RuntimeError
            "controls"_a.sig("FitControlsBicop()") = FitControlsBicop(),
            "num_threads"_a = 1, vinecop_doc.fit.doc,
            nb::call_guard<nb::gil_scoped_release>())
-      .def("pdf", &Vinecop::pdf, "u"_a, "num_threads"_a = 1,
-           vinecop_doc.pdf.doc, nb::call_guard<nb::gil_scoped_release>())
+      .def("pdf",
+           nb::overload_cast<Eigen::MatrixXd, const size_t>(&Vinecop::pdf,
+                                                            nb::const_),
+           "u"_a, "num_threads"_a = 1, vinecop_doc.pdf.doc_2args,
+           nb::call_guard<nb::gil_scoped_release>())
       .def(
           "pdf_full",
           [](const Vinecop& cop, Eigen::MatrixXd u, size_t num_threads,
@@ -358,8 +361,11 @@ RuntimeError
       .def("inverse_rosenblatt", &Vinecop::inverse_rosenblatt, "u"_a,
            "num_threads"_a = 1, vinecop_doc.inverse_rosenblatt.doc,
            nb::call_guard<nb::gil_scoped_release>())
-      .def("loglik", &Vinecop::loglik, "u"_a = Eigen::MatrixXd(),
-           "num_threads"_a = 1, vinecop_doc.loglik.doc,
+      .def("loglik",
+           nb::overload_cast<const Eigen::MatrixXd&, const size_t>(
+               &Vinecop::loglik, nb::const_),
+           "u"_a = Eigen::MatrixXd(), "num_threads"_a = 1,
+           vinecop_doc.loglik.doc_2args,
            nb::call_guard<nb::gil_scoped_release>())
       .def("aic", &Vinecop::aic, "u"_a = Eigen::MatrixXd(), "num_threads"_a = 1,
            vinecop_doc.aic.doc, nb::call_guard<nb::gil_scoped_release>())
@@ -368,11 +374,17 @@ RuntimeError
       .def("mbicv", &Vinecop::mbicv, "u"_a = Eigen::MatrixXd(), "psi0"_a = 0.9,
            "num_threads"_a = 1, vinecop_doc.mbicv.doc,
            nb::call_guard<nb::gil_scoped_release>())
-      .def("scores", &Vinecop::scores, "u"_a, "step_wise"_a = true,
-           "num_threads"_a = 1, vinecop_doc.scores.doc,
+      .def("scores",
+           nb::overload_cast<Eigen::MatrixXd, bool, const size_t>(
+               &Vinecop::scores),
+           "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
+           vinecop_doc.scores.doc_3args,
            nb::call_guard<nb::gil_scoped_release>())
-      .def("gradient", &Vinecop::gradient, "u"_a, "step_wise"_a = true,
-           "num_threads"_a = 1, vinecop_doc.gradient.doc,
+      .def("gradient",
+           nb::overload_cast<Eigen::MatrixXd, bool, const size_t>(
+               &Vinecop::gradient),
+           "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
+           vinecop_doc.gradient.doc_3args,
            nb::call_guard<nb::gil_scoped_release>())
       .def(
           "scores_full",
@@ -405,11 +417,17 @@ RuntimeError
           },
           "u"_a, "step_wise"_a = true, "num_threads"_a = 1, "keep_all"_a = true,
           scores_full_doc)
-      .def("hessian", &Vinecop::hessian, "u"_a, "step_wise"_a = true,
-           "num_threads"_a = 1, vinecop_doc.hessian.doc,
+      .def("hessian",
+           nb::overload_cast<Eigen::MatrixXd, bool, const size_t>(
+               &Vinecop::hessian),
+           "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
+           vinecop_doc.hessian.doc_3args,
            nb::call_guard<nb::gil_scoped_release>())
-      .def("scores_cov", &Vinecop::scores_cov, "u"_a, "step_wise"_a = true,
-           "num_threads"_a = 1, vinecop_doc.scores_cov.doc,
+      .def("scores_cov",
+           nb::overload_cast<Eigen::MatrixXd, bool, const size_t>(
+               &Vinecop::scores_cov),
+           "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
+           vinecop_doc.scores_cov.doc_3args,
            nb::call_guard<nb::gil_scoped_release>())
       .def(
           "hessian_full",
@@ -425,7 +443,7 @@ RuntimeError
             return triangular_to_list(hess);
           },
           "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
-          vinecop_doc.hessian_full.doc)
+          vinecop_doc.hessian_full.doc_3args)
       .def(
           "__repr__",
           [](const Vinecop& cop) {

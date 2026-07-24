@@ -281,6 +281,37 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       dtype=dtype,
     )
 
+  def flip(self) -> "TorchBicop":
+    """Return the copula with its two arguments swapped (``c'(u,v)=c(v,u)``).
+
+    Transposes the (already margin-normalized) interpolation grid — the same
+    reorientation :class:`~pyvinecopulib.core.Bicop` applies to a ``tll`` pair
+    — so the result is a fresh :class:`~pyvinecopulib.torch.TorchBicop`, an
+    ``nn.Module`` that keeps the batched fast path. Used by
+    :meth:`~pyvinecopulib.core.VinecopBase.select` to reorient a selection-time
+    pair onto its slot in the finalized structure.
+
+    Returns
+    -------
+    TorchBicop
+        The argument-swapped copula; the object itself is left unchanged.
+    """
+    device = self.interp_grid.values.device
+    dtype = self.interp_grid.values.dtype
+    if self.is_indep:
+      return TorchBicop(
+        cache_integrals=self._cache_integrals, device=device, dtype=dtype
+      )
+    return TorchBicop(
+      grid_points=self.interp_grid.grid_points,
+      values=self.interp_grid.values.transpose(0, 1).contiguous(),
+      cache_integrals=self._cache_integrals,
+      norm_times=0,
+      is_linear=self.interp_grid._is_linear,
+      device=device,
+      dtype=dtype,
+    )
+
   # --------------------------------------------------------------------- #
   # Densities                                                              #
   # --------------------------------------------------------------------- #

@@ -501,3 +501,43 @@ def test_normalize_margins_default_tol_is_fixed_budget() -> None:
   values = torch.ones(8, 8, dtype=torch.float64)
   # Should not raise; tol is optional.
   InterpolationGrid2D(grid, values, norm_times=3)
+
+
+def test_flip_swaps_arguments() -> None:
+  # Rotated Clayton data give an asymmetric TLL fit, so the flip is a genuine
+  # change (not a no-op). flip() must give c'(u1, u2) = c(u2, u1) with the
+  # h-functions swapped, exactly (it transposes the interpolation grid), and
+  # leave the original unchanged.
+  cop = pv.Bicop.from_family(
+    family=pv.families.clayton, rotation=90, parameters=np.array([[3.0]])
+  )
+  u_fit = cop.simulate(4000, seeds=[1, 2, 3])
+  tb = TorchBicop.from_data(
+    u_fit, FitControlsTorchBicop(), cache_integrals=False
+  )
+  before = tb.pdf(torch.tensor([[0.3, 0.7]], dtype=torch.float64)).clone()
+  flipped = tb.flip()
+  u = torch.as_tensor(_eval_grid(300, seed=7), dtype=torch.float64)
+  swapped = u[:, [1, 0]]
+  np.testing.assert_allclose(
+    flipped.pdf(u).numpy(), tb.pdf(swapped).numpy(), atol=1e-12, rtol=1e-12
+  )
+  np.testing.assert_allclose(
+    flipped.hfunc1(u).numpy(),
+    tb.hfunc2(swapped).numpy(),
+    atol=1e-12,
+    rtol=1e-12,
+  )
+  np.testing.assert_allclose(
+    flipped.hfunc2(u).numpy(),
+    tb.hfunc1(swapped).numpy(),
+    atol=1e-12,
+    rtol=1e-12,
+  )
+  # Genuinely different from the unflipped copula on an asymmetric fit, and
+  # the original is left unchanged.
+  assert not np.allclose(flipped.pdf(u).numpy(), tb.pdf(u).numpy())
+  np.testing.assert_array_equal(
+    tb.pdf(torch.tensor([[0.3, 0.7]], dtype=torch.float64)).numpy(),
+    before.numpy(),
+  )

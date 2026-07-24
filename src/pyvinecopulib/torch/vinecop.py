@@ -41,7 +41,6 @@ from torch import Tensor
 from ..core import ConditioningContext, VinecopBase
 from ..core.vinecop_base import _NotBatchable
 from ..pyvinecopulib_ext import (
-  FitControlsVinecop,
   RVineStructure,
   Vinecop,
   indep as _INDEP_FAMILY,
@@ -52,13 +51,6 @@ from ._batched import BatchedVine
 from .controls import FitControlsTorchVinecop
 from ._interp import _TRIM_HI, _TRIM_LO
 from .bicop import TorchBicop
-
-
-def _default_structure_controls() -> FitControlsVinecop:
-  """Structure-selection controls for ``from_data(structure=None)`` (TLL, trunc 20)."""
-  return FitControlsVinecop(
-    family_set=[_TLL_FAMILY], trunc_lvl=20, num_threads=1
-  )
 
 
 class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
@@ -271,30 +263,36 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   ) -> "TorchVinecop":
     """Fit a pure-PyTorch TLL vine on ``u``.
 
-    When ``structure`` is ``None`` the R-vine structure is selected first on
-    a ``Vinecop`` (Dissmann / MST, using
-    ``controls.structure_controls``) and lifted into a ``TorchVinecop`` via
-    :meth:`from_vinecop`, mirroring ``Vinecop.from_data()``.
-    When a ``structure`` is given it is fixed and only the TLL pair copulas are
-    fit tree by tree: at each ``(tree, edge)`` the pair of pseudo-obs columns is
-    collected by the same rule as the pdf / rosenblatt cascade, a
-    :class:`TorchBicop` is fit on them via :meth:`TorchBicop.from_data`, and
-    ``hfunc1`` / ``hfunc2`` propagate forward. The fixed-structure fit matches
-    ``Vinecop``'s TLL fit to machine precision when
-    ``cache_integrals=False``.
+    When ``structure`` is ``None`` the R-vine structure and its pair copulas
+    are selected and fit natively in torch by
+    :meth:`~pyvinecopulib.core.VinecopBase.select` — the array-agnostic
+    analogue of :class:`~pyvinecopulib.core.Vinecop`'s Dissmann / Wilson
+    selection (edge weights use Kendall's tau via ``wdm``).
+
+    When a ``structure`` is given it is fixed and the pair copulas are fit on
+    it tree by tree (:meth:`~pyvinecopulib.core.VinecopBase.fit`):
+    at each ``(tree, edge)`` the pair of pseudo-obs columns is collected by
+    the same rule as the pdf / rosenblatt cascade, a
+    :class:`~pyvinecopulib.torch.TorchBicop` is fit via
+    :meth:`~pyvinecopulib.torch.TorchBicop.from_data`, and ``hfunc1`` /
+    ``hfunc2`` propagate forward.
+
+    Either way the result matches Vinecop's TLL fit to machine precision
+    when ``cache_integrals=False``. Structure selection honors
+    ``controls.trunc_lvl`` / ``tree_criterion`` / ``threshold`` /
+    ``tree_algorithm`` / ``seeds``.
 
     Parameters
     ----------
     u : ndarray or Tensor, shape (n, d), dtype float
         Pseudo-observations.
     structure : RVineStructure or None, default=None
-        Vine skeleton. ``None`` selects one on a ``Vinecop`` and lifts
-        it (continuous variables only).
+        Vine skeleton. ``None`` selects one natively in torch (continuous
+        variables only).
     controls : FitControlsTorchVinecop or None, default=None
-        Pair-copula fit controls bundled with vine-level placement / cascade
-        knobs (and, when ``structure`` is ``None``, the structure-selection
-        controls). `None` defaults to TLL on a 30x30 normal-spaced grid,
-        float64.
+        Pair-copula fit controls bundled with the vine-level structure-selection
+        and placement / cascade knobs. ``None`` defaults to TLL on a 30x30
+        normal-spaced grid, float64, ``mst_prim`` with ``trunc_lvl=20``.
     var_types : list of str, default=[]
         Per-variable types; only ``"c"`` (continuous) is supported. Empty means
         all-continuous.
@@ -308,6 +306,12 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     ------
     NotImplementedError
         If any ``var_types`` entry is not ``"c"`` (continuous only).
+
+    Notes
+    -----
+    With ``structure=None`` the selected vine — its variable order, R-vine
+    matrix encoding, and reused pair copulas — reproduces
+    :class:`~pyvinecopulib.core.Vinecop`'s selection on the same data.
     """
     if controls is None:
       controls = FitControlsTorchVinecop()
@@ -317,41 +321,12 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         f"{var_types!r}. Discrete variables are not yet supported."
       )
 
-    if structure is None:
-      # Structure selection runs on ``Vinecop``, which needs a CPU NumPy
-      # array — coerce tensors (incl. CUDA) before handing off.
-      u_np = (
-        u.detach().cpu().numpy()
-        if isinstance(u, torch.Tensor)
-        else np.asarray(u)
-      )
-      cpp_vine = Vinecop.from_data(
-        data=u_np,
-        structure=None,
-        var_types=var_types,
-        controls=(
-          controls.structure_controls
-          if controls.structure_controls is not None
-          else _default_structure_controls()
-        ),
-      )
-      return cls.from_vinecop(
-        cpp_vine,
-        cache_integrals=controls.cache_integrals,
-        device=controls.device,
-        dtype=controls.dtype if controls.dtype is not None else torch.float64,
-      )
-
     eff_dtype = controls.dtype if controls.dtype is not None else torch.float64
     eff_device = controls.device
     u_t = torch.as_tensor(u, dtype=eff_dtype, device=eff_device)
     if u_t.ndim != 2:
       raise ValueError(f"u must be 2-D; got shape {tuple(u_t.shape)}")
     n, d = u_t.shape
-    if int(structure.dim) != d:
-      raise ValueError(
-        f"structure.dim={structure.dim} does not match u.shape[1]={d}"
-      )
 
     bc_controls = controls.bicop_controls
 
@@ -368,9 +343,31 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         dtype=eff_dtype,
       )
 
-    # Shared tree-by-tree fit engine (SimplifiedContext -> x_e=None). The
-    # fit_edge closure returns TorchBicop, so the nested list is concrete.
-    pairs = cls.sequential_fit(structure, u_t, fit_edge)
+    if structure is None:
+      # Select the structure natively in torch, reusing the pairs fit during
+      # selection (reoriented onto their slots via TorchBicop.flip) — exactly
+      # what Vinecop's selector does, so no re-fit is needed. Kendall's tau
+      # via wdm needs a host copy; detach so grad-tracking tensors are
+      # accepted.
+      structure, pairs = cls.select(
+        u_t,
+        fit_edge,
+        trunc_lvl=controls.trunc_lvl,
+        tree_criterion=controls.tree_criterion,
+        threshold=controls.threshold,
+        tree_algorithm=controls.tree_algorithm,
+        seeds=list(controls.seeds),
+        to_numpy=lambda t: t.detach().cpu().numpy(),
+      )
+    else:
+      if int(structure.dim) != d:
+        raise ValueError(
+          f"structure.dim={structure.dim} does not match u.shape[1]={d}"
+        )
+      # Fixed structure: fit the pairs tree by tree along it
+      # (SimplifiedContext -> x_e=None). The fit_edge closure returns
+      # TorchBicop, so the nested list is concrete.
+      pairs = cls.fit(structure, u_t, fit_edge)
     return cls(
       pair_copulas=cast("list[list[TorchBicop]]", pairs), structure=structure
     )

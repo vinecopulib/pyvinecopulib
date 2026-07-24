@@ -419,6 +419,17 @@ def test_bicop_deriv_errors() -> None:
     discrete.pdf_deriv(u, "par1")
 
 
+@pytest.mark.xfail(
+  reason=(
+    "The pinned lib/vinecopulib branch (feature/rvine-trees-perf) drops the "
+    "KernelBicop analytic argument-derivative override (vinecopulib#694) and "
+    "rejects derivatives for nonparametric copulas, so Bicop.pdf_deriv raises "
+    "for tll. Pending an upstream decision on whether tll argument gradients "
+    "are restored; un-xfail if they are."
+  ),
+  strict=False,
+  raises=RuntimeError,
+)
 def test_bicop_deriv_tll() -> None:
   rng = np.random.RandomState(42)
   data = pv.to_pseudo_obs(rng.normal(size=(500, 2)))
@@ -559,3 +570,21 @@ def test_bicop_taildep_and_beta() -> None:
   )
   assert np.isnan(tll.taildep).all()
   assert np.isfinite(tll.beta)
+
+
+def test_bicop_flip_returns_swapped_copy() -> None:
+  # flip() returns the argument-swapped copula and leaves the original
+  # unchanged. A 90-degree Clayton is asymmetric, so the flip is a genuine
+  # change (rotation 90 <-> 270).
+  cop = pv.Bicop.from_family(
+    family=pv.families.clayton, rotation=90, parameters=np.array([[3.0]])
+  )
+  flipped = cop.flip()
+  assert cop.rotation == 90
+  assert flipped.rotation == 270
+  rng = np.random.RandomState(7)
+  u = rng.uniform(0.05, 0.95, size=(200, 2))
+  swapped = u[:, [1, 0]]
+  np.testing.assert_allclose(flipped.pdf(u), cop.pdf(swapped), rtol=1e-14)
+  np.testing.assert_allclose(flipped.hfunc1(u), cop.hfunc2(swapped), rtol=1e-14)
+  np.testing.assert_allclose(flipped.hfunc2(u), cop.hfunc1(swapped), rtol=1e-14)

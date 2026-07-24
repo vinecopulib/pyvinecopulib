@@ -9,6 +9,7 @@
 #include "bicop/fit_controls.hpp"
 #include "kde1d/kde1d.hpp"
 #include "misc/benchmark.hpp"
+#include "misc/spanning_tree.hpp"
 #include "misc/stats.hpp"
 #include "vinecop/class.hpp"
 #include "vinecop/fit_controls.hpp"

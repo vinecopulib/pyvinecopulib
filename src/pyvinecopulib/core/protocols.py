@@ -1,15 +1,16 @@
-"""Backend-neutral pair-copula / vine contracts.
+"""Array-agnostic pair-copula / vine contracts.
 
 :class:`BicopLike` and :class:`VinecopLike` define what a pair copula / vine
-evaluator must provide, independent of the array backend (NumPy or PyTorch).
-They are the extension point for custom backends: implement the protocol — or,
-far more easily, subclass the canonical :class:`~pyvinecopulib.core.BicopBase` /
-:class:`~pyvinecopulib.core.VinecopBase`, which fill in most of it — and the
-object plugs into the rest of the library (e.g. it can be hosted in a vine, or
-consumed by the sklearn backend layer). The reference implementations are
-:class:`pyvinecopulib.core.Bicop` / :class:`pyvinecopulib.core.Vinecop` (the
-default) and :class:`pyvinecopulib.torch.TorchBicop` /
-:class:`pyvinecopulib.torch.TorchVinecop`.
+evaluator must provide, independent of the array namespace (NumPy or PyTorch).
+They are the extension point for custom implementations: implement the protocol
+— or, far more easily, subclass the canonical
+:class:`~pyvinecopulib.core.BicopBase` / :class:`~pyvinecopulib.core.VinecopBase`,
+which fill in most of it — and the object plugs into the rest of the library
+(e.g. it can be hosted in a vine, or consumed by the sklearn backend layer). The
+reference implementations are :class:`~pyvinecopulib.core.Bicop` /
+:class:`~pyvinecopulib.core.Vinecop` (the default) and
+:class:`~pyvinecopulib.torch.TorchBicop` /
+:class:`~pyvinecopulib.torch.TorchVinecop`.
 
 **Conditioning.** Every method carries an optional trailing ``x`` — the
 conditioning variables the copula / vine depends on (conditioning-set values
@@ -18,8 +19,9 @@ it ``None``; a conditional pair copula reads it. In a vine, each pair's ``x`` is
 assembled per edge by a :class:`~pyvinecopulib.core.ConditioningContext`.
 
 **Typing.** :data:`ArrayT` is an unbounded ``TypeVar`` carried only on these
-public signatures, so a concrete backend (e.g. ``TorchBicop``) inherits precise
-``torch.Tensor`` return types. The numeric implementations in
+public signatures, so a concrete implementation (e.g.
+:class:`~pyvinecopulib.torch.TorchBicop`) inherits precise ``torch.Tensor``
+return types. The numeric implementations in
 :mod:`~pyvinecopulib.core.bicop_base` operate on arrays as ``Any`` (the Array API
 namespace ``array_api_compat`` is itself untyped).
 """
@@ -29,7 +31,7 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import Optional, Protocol, TypeVar, runtime_checkable
 
-#: Array type a backend commits to (``numpy.ndarray`` | ``torch.Tensor`` | ...).
+#: Array type an implementation commits to (``numpy.ndarray`` | ``torch.Tensor``).
 ArrayT = TypeVar("ArrayT")
 
 __all__ = ["ArrayT", "BicopLike", "VinecopLike"]
@@ -258,6 +260,23 @@ class BicopLike(Protocol[ArrayT]):
     -------
     array, shape (n, 2), dtype float
         Samples in the unit square.
+    """
+
+  @abstractmethod
+  def flip(self) -> "BicopLike[ArrayT]":
+    """Return the pair copula with its two arguments swapped.
+
+    The flipped copula satisfies ``c'(u1, u2) = c(u2, u1)``, with the two
+    h-functions (and their inverses) exchanged accordingly. Structure
+    selection (:meth:`~pyvinecopulib.core.VinecopBase.select`) uses it to
+    reorient a fitted pair onto its slot in the finalized vine, mirroring
+    :class:`~pyvinecopulib.core.Vinecop`.
+
+    Returns
+    -------
+    BicopLike
+        The argument-swapped pair copula; the object itself is left
+        unchanged.
     """
 
 

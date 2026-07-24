@@ -156,7 +156,7 @@ pyvinecopulib/
       core/__init__.py           # Bicop, Vinecop, *VineStructure, FitControls* (re-exports from ext)
         protocols.py             # BicopLike / VinecopLike backend-neutral contracts
         bicop_base.py            # BicopBase (canonical BicopLike partial impl)
-        vinecop_base.py          # VinecopBase (array-agnostic cascades + sequential_fit)
+        vinecop_base.py          # VinecopBase (array-agnostic cascades + fit/select)
         context.py               # ConditioningContext / Simplified / NonSimplified
         _rootfind.py             # solve_increasing (monotone bisection; internal)
       families/__init__.py       # BicopFamily enum + 13 family constants + 15 group constants
@@ -328,6 +328,17 @@ For any behaviour change:
   annotations. `numpydoc.validation` is enabled as a pre-commit check;
   rule set + path exclusions live in `[tool.numpydoc_validation]` in
   `pyproject.toml`.
+- **American English in prose.** Docstrings, comments, and docs use
+  American spelling (`behavior`, `finalize`, `serialize`, `normalize`,
+  `color` — not `behaviour` / `finalise` / `serialise` / …). Some legacy
+  text still uses British spelling; new and edited prose should be
+  American.
+- **Reserve "backend" for the sklearn layer.** In `core` (and other
+  user-facing) prose the word "backend" means the sklearn
+  `VinecopBackend` / `TorchVinecopBackend` context, which most core users
+  never touch — so don't use it for the NumPy-vs-PyTorch array
+  distinction there. Say "array namespace", "array library", or just
+  "NumPy or PyTorch" / "array-agnostic" instead.
 - **Docs cross-references must resolve (nitpicky).** The Sphinx build runs
   with `nitpicky = True` (`docs/conf.py`), so `make docs` — which passes `-W`
   and is enforced by the `verify_docs_build` CI job — fails on *any* unresolved
@@ -410,10 +421,15 @@ automatically.
   - `BicopBase` (`bicop_base.py`) / `VinecopBase` (`vinecop_base.py`) —
     canonical partial implementations to subclass. A `BicopBase`
     subclass defines `pdf` / `hfunc1` / `hfunc2` and inherits `hinv1` /
-    `hinv2` (bisection), `simulate`, `loglik`, `plot`; a `VinecopBase`
-    subclass defines the one hook `_get_pair_copula` and inherits the
-    whole tree-by-tree cascade plus the public `sequential_fit` engine.
-    `TorchBicop` / `TorchVinecop` are the torch subclasses.
+    `hinv2` (bisection), `simulate`, `loglik`, `plot` (`flip` — needed
+    only to host the pair in structure *selection* — defaults to
+    raising); a `VinecopBase` subclass defines the one hook
+    `_get_pair_copula` and inherits the whole tree-by-tree cascade plus
+    the public `fit` and `select` engines. `select` is an
+    exact port of `Vinecop`'s Dissmann / Wilson structure selection
+    (same matrix encoding, selection-time pairs reused via `flip`, no
+    re-fit; parity is a hard guarantee). `TorchBicop` / `TorchVinecop`
+    are the torch subclasses.
   - `ConditioningContext` / `SimplifiedContext` (default) /
     `NonSimplifiedContext` (`context.py`) — the per-edge policy that
     turns the simplified cascade into a **non-simplified / conditional**
@@ -722,7 +738,7 @@ Round-trip / parity properties to preserve when touching numerics:
   evaluation surface. Implement `BicopLike` / `VinecopLike` directly for
   an immutable / functional backend. For a **non-simplified /
   conditional** vine, pass a `NonSimplifiedContext` and drive
-  `VinecopBase.sequential_fit` with a `fit_edge` callback; see
+  `VinecopBase.fit` with a `fit_edge` callback; see
   `examples/11_extending_pyvinecopulib.ipynb`. `TorchBicop` /
   `TorchVinecop` are the reference torch subclasses.
 - **New `pyvinecopulib.sklearn` backends.** Subclass the private
