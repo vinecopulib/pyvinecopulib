@@ -21,7 +21,7 @@ fitting alike).
 
 Examples
 --------
-Pass a policy to a vine (or to :meth:`VinecopBase.sequential_fit`) to control how
+Pass a policy to a vine (or to :meth:`VinecopBase.fit`) to control how
 each pair's conditioning matrix ``x_e`` is built::
 
     from pyvinecopulib.core import NonSimplifiedContext, SimplifiedContext

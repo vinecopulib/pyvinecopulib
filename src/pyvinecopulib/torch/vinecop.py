@@ -263,18 +263,14 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   ) -> "TorchVinecop":
     """Fit a pure-PyTorch TLL vine on ``u``.
 
-    When ``structure`` is ``None`` the R-vine structure is selected in pure
-    torch by :meth:`~pyvinecopulib.core.VinecopBase.select` — the
-    array-agnostic port of :class:`~pyvinecopulib.core.Vinecop`'s Dissmann /
-    Wilson selection (edge weights are Kendall's tau via ``wdm``; the spanning
-    tree, matrix finalization, and pair reuse follow Vinecop exactly, so
-    the selected structure and its matrix encoding are identical). The pair
-    copulas fitted during selection are reused directly, each reoriented onto
-    its slot via :meth:`~pyvinecopulib.torch.TorchBicop.flip` — like Vinecop,
-    no re-fit happens.
+    When ``structure`` is ``None`` the R-vine structure and its pair copulas
+    are selected and fit natively in torch by
+    :meth:`~pyvinecopulib.core.VinecopBase.select` — the array-agnostic
+    analogue of :class:`~pyvinecopulib.core.Vinecop`'s Dissmann / Wilson
+    selection (edge weights use Kendall's tau via ``wdm``).
 
     When a ``structure`` is given it is fixed and the pair copulas are fit on
-    it tree by tree (:meth:`~pyvinecopulib.core.VinecopBase.sequential_fit`):
+    it tree by tree (:meth:`~pyvinecopulib.core.VinecopBase.fit`):
     at each ``(tree, edge)`` the pair of pseudo-obs columns is collected by
     the same rule as the pdf / rosenblatt cascade, a
     :class:`~pyvinecopulib.torch.TorchBicop` is fit via
@@ -371,7 +367,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       # Fixed structure: fit the pairs tree by tree along it
       # (SimplifiedContext -> x_e=None). The fit_edge closure returns
       # TorchBicop, so the nested list is concrete.
-      pairs = cls.sequential_fit(structure, u_t, fit_edge)
+      pairs = cls.fit(structure, u_t, fit_edge)
     return cls(
       pair_copulas=cast("list[list[TorchBicop]]", pairs), structure=structure
     )

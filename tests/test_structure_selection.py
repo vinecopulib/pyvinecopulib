@@ -23,7 +23,7 @@ from pyvinecopulib.pyvinecopulib_ext import _select_spanning_tree
 class _CppBicopLike:
   """Adapt a ``Bicop`` to the ``(u, x)`` :class:`BicopLike` signature.
 
-  ``VinecopBase.select`` / ``sequential_fit`` call ``hfunc1(u, x_e)``; the
+  ``VinecopBase.select`` / ``fit`` call ``hfunc1(u, x_e)``; the
   ``Bicop`` methods take ``(u, num_threads)`` instead, so wrap it (delegating
   the full ``BicopLike`` surface, including ``flip``). Used only to drive the
   array-agnostic selector from a NumPy backend in these tests.

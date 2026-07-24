@@ -54,7 +54,7 @@ _TRIM_LO: float = 1e-10
 _TRIM_HI: float = 1.0 - 1e-10
 
 #: (tree, edge, u_e, x_e) -> fitted pair copula. The seam external packages
-#: drive conditional fitting through (see :meth:`VinecopBase.sequential_fit`).
+#: drive conditional fitting through (see :meth:`VinecopBase.fit`).
 FitEdge = Callable[[int, int, Any, Optional[Any]], BicopLike]
 
 
@@ -73,8 +73,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   ``_bind_vine`` once; they
   then inherit the whole evaluator surface — ``pdf`` / ``cdf`` / ``rosenblatt`` /
   ``inverse_rosenblatt`` / ``simulate``, ``loglik`` / ``plot`` / ``__repr__``,
-  the ``dim`` / ``trunc_lvl`` / ``order`` accessors, and the
-  :meth:`sequential_fit` engine. Not an ``nn.Module``, so it composes with any
+  the ``dim`` / ``trunc_lvl`` / ``order`` accessors, and the :meth:`fit` /
+  :meth:`select` engines. Not an ``nn.Module``, so it composes with any
   pair-copula implementation (including non-torch ones).
 
   See Also
@@ -986,7 +986,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
 
   # --- shared sequential-fit engine ------------------------------------- #
   @staticmethod
-  def sequential_fit(
+  def fit(
     structure: Any,
     u: Any,
     fit_edge: FitEdge,
@@ -994,15 +994,20 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     context: Optional[ConditioningContext] = None,
     x: Optional[Any] = None,
   ) -> list[list[BicopLike]]:
-    """Fit pair copulas tree-by-tree along the vine, returning the nested list.
+    """Fit pair copulas tree-by-tree along a fixed structure (returns them).
 
-    Mirrors the forward pdf traversal (``_pdf``) with the density
-    evaluation replaced by ``fit_edge(tree, edge, u_e, x_e)`` — the Python
-    analogue of the per-edge fit callback ``Vinecop`` drives internally. The returned
+    The array-agnostic (NumPy or PyTorch) analogue of
+    :meth:`~pyvinecopulib.core.Vinecop.fit`, with the pair-copula fit supplied
+    by the ``fit_edge`` callback. It differs in one way: rather than mutating a
+    vine in place (as :meth:`~pyvinecopulib.core.Vinecop.fit` does), it
+    **returns** the fitted pairs as a nested ``[tree][edge]`` list — since
+    ``VinecopBase`` leaves pair storage to the subclass, there is no single
+    object to mutate. It mirrors the forward pdf traversal with the density
+    evaluation replaced by ``fit_edge(tree, edge, u_e, x_e)``; the returned
     pair's ``hfunc1`` / ``hfunc2`` must be valid immediately for tree
-    propagation. External packages drive conditional fitting through this seam
-    (a ``fit_edge`` that fits a conditional pair copula on ``(u_e, x_e)``);
-    ``x_e`` is assembled in the same C1 order the cascades use.
+    propagation. Conditional fitting is driven through this seam (a
+    ``fit_edge`` that fits a conditional pair copula on ``(u_e, x_e)``), with
+    ``x_e`` assembled in the same C1 order the cascades use.
 
     Parameters
     ----------
@@ -1021,6 +1026,11 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     -------
     list of list of BicopLike
         Fitted pair copulas indexed ``[tree][edge]``.
+
+    See Also
+    --------
+    pyvinecopulib.core.VinecopBase.select : Select a structure and fit it.
+    pyvinecopulib.core.Vinecop.fit : The reference (in-place) fit.
     """
     if context is None:
       context = SimplifiedContext()
@@ -1092,25 +1102,26 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   ) -> tuple[RVineStructure, list[list[BicopLike[ArrayT]]]]:
     """Select an R-vine structure from data (array-agnostic Dissmann).
 
-    Ports the tree-by-tree Dissmann selection of
-    :class:`~pyvinecopulib.core.Vinecop` exactly: build a candidate graph
-    honoring the proximity condition (in the same enumeration order), weight
-    each edge by ``1 - |tau|`` (Kendall's tau via ``wdm``), keep a spanning
-    tree (maximum-dependence for the MST algorithms, Wilson-weighted for the
-    random ones), fit its pair copulas, propagate their h-functions to the
-    next tree, and finalize the chosen edges into an ``RVineStructure``
-    (via :meth:`~pyvinecopulib.core.RVineStructure.from_trees`, the same peel
-    and diagonal policy Vinecop uses). The resulting matrix encoding is
-    identical to Vinecop's.
+    The array-agnostic (NumPy or PyTorch) analogue of
+    :meth:`~pyvinecopulib.core.Vinecop.select`, with the pair-copula fit
+    supplied by the ``fit_edge`` callback. It differs in one way: rather than
+    mutating a vine in place (as :meth:`~pyvinecopulib.core.Vinecop.select`
+    does), it **returns** the selected structure and pairs — ``VinecopBase``
+    leaves pair storage to the subclass, so there is no single object to
+    mutate. It runs the tree-by-tree Dissmann greedy search
+    [1]_: for each tree it builds a candidate graph honoring the proximity
+    condition, weights every candidate edge by ``1 - |tau|`` (``tau`` is the
+    dependence measure named by ``tree_criterion``, Kendall's tau by default,
+    via ``wdm``), and keeps a spanning tree (``tree_algorithm``) —
+    maximum-dependence for the MST variants, Wilson-weighted random for the
+    random ones. Each surviving edge's pair copula is fit by the ``fit_edge``
+    callback, whose h-functions feed the next tree.
 
-    Like Vinecop, the pair copulas fitted during selection are **reused**,
-    not re-fit: each is matched to its slot in the finalized structure and,
-    when the slot's diagonal variable is the pair's *second* conditioned
-    variable, reoriented via its
-    :meth:`~pyvinecopulib.core.BicopLike.flip` (the peel's rule).
-    This is a simplified-vine selector: edge weights use the unconditional
-    pseudo-observations, so ``fit_edge`` is called with ``x_e`` set to
-    ``None``.
+    The fitted pairs are returned reused, never re-fit: each is placed on its
+    slot in the finalized structure and reoriented with its
+    :meth:`~pyvinecopulib.core.BicopLike.flip` where the slot's orientation
+    requires it. Selection is for a simplified vine — edge weights use the
+    unconditional pseudo-observations, so ``fit_edge`` receives ``x_e = None``.
 
     Parameters
     ----------
@@ -1143,16 +1154,24 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     Returns
     -------
     structure : RVineStructure
-        The selected vine structure (same matrix encoding as Vinecop's).
+        The selected vine structure.
     pair_copulas : list of list of BicopLike
         The fitted pair copulas, indexed ``[tree][edge]`` in the structure's
-        own column order (flipped where the slot orientation required it) —
-        ready to pass to the vine constructor without re-fitting.
+        column order and reoriented onto their slots — ready to host in a vine
+        without re-fitting.
 
     See Also
     --------
-    pyvinecopulib.core.VinecopBase.sequential_fit : Fit pair copulas along a
-        fixed structure.
+    pyvinecopulib.core.VinecopBase.fit : Fit pair copulas along a fixed
+        structure.
+    pyvinecopulib.core.Vinecop.select : The reference (in-place) selector.
+
+    References
+    ----------
+    .. [1] Dissmann, J. F., E. C. Brechmann, C. Czado, and D. Kurowicka (2013).
+       *Selecting and estimating regular vine copulae and application to
+       financial returns.* Computational Statistics & Data Analysis, 59 (1),
+       52-69.
     """
     import numpy as np
 

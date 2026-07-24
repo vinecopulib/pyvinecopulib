@@ -711,7 +711,7 @@ under a :class:`~pyvinecopulib.core.NonSimplifiedContext`: the cascade
 then assembles each edge's conditioning-set values
 :math:`\mathbf u_{D_e}` (and any external covariates) into ``x`` and
 threads them to the pair copula, giving a **non-simplified /
-conditional** vine. :meth:`pyvinecopulib.core.VinecopBase.sequential_fit`
+conditional** vine. :meth:`pyvinecopulib.core.VinecopBase.fit`
 is the seam for *fitting* such a vine edge by edge.
 
 The ``examples/11_extending_pyvinecopulib.ipynb`` notebook is a

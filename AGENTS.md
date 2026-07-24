@@ -156,7 +156,7 @@ pyvinecopulib/
       core/__init__.py           # Bicop, Vinecop, *VineStructure, FitControls* (re-exports from ext)
         protocols.py             # BicopLike / VinecopLike backend-neutral contracts
         bicop_base.py            # BicopBase (canonical BicopLike partial impl)
-        vinecop_base.py          # VinecopBase (array-agnostic cascades + sequential_fit)
+        vinecop_base.py          # VinecopBase (array-agnostic cascades + fit/select)
         context.py               # ConditioningContext / Simplified / NonSimplified
         _rootfind.py             # solve_increasing (monotone bisection; internal)
       families/__init__.py       # BicopFamily enum + 13 family constants + 15 group constants
@@ -425,7 +425,7 @@ automatically.
     only to host the pair in structure *selection* — defaults to
     raising); a `VinecopBase` subclass defines the one hook
     `_get_pair_copula` and inherits the whole tree-by-tree cascade plus
-    the public `sequential_fit` and `select` engines. `select` is an
+    the public `fit` and `select` engines. `select` is an
     exact port of `Vinecop`'s Dissmann / Wilson structure selection
     (same matrix encoding, selection-time pairs reused via `flip`, no
     re-fit; parity is a hard guarantee). `TorchBicop` / `TorchVinecop`
@@ -738,7 +738,7 @@ Round-trip / parity properties to preserve when touching numerics:
   evaluation surface. Implement `BicopLike` / `VinecopLike` directly for
   an immutable / functional backend. For a **non-simplified /
   conditional** vine, pass a `NonSimplifiedContext` and drive
-  `VinecopBase.sequential_fit` with a `fit_edge` callback; see
+  `VinecopBase.fit` with a `fit_edge` callback; see
   `examples/11_extending_pyvinecopulib.ipynb`. `TorchBicop` /
   `TorchVinecop` are the reference torch subclasses.
 - **New `pyvinecopulib.sklearn` backends.** Subclass the private
