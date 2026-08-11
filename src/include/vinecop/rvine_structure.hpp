@@ -56,8 +56,20 @@ inline RVineStructure rv_from_struct_array(
 using TreeTuples =
     std::vector<std::vector<std::tuple<size_t, size_t, std::vector<size_t>>>>;
 
-// Rebuild the upstream RVineTrees primitive from the nested-list form.
-inline RVineTrees rvt_from_tuples(size_t d, const TreeTuples& trees) {
+// Faithful inverse of ``RVineStructure.get_trees()``: the RVineStructure ctor
+// from RVineTrees uses the identity diagonal policy (each edge's first
+// conditioned variable ``a`` on the diagonal), so
+// ``from_trees(s.dim, s.get_trees())`` reproduces ``s`` exactly. This is also
+// the diagonal policy ``Vinecop.select`` uses to finalize a selected structure
+// (upstream), so ``VinecopBase.select`` can assemble the selected trees through
+// this same factory. The diagonal choice controls the variable order (which
+// variables sit at the tail — relevant for conditional sampling). Tree ``t``
+// must hold exactly ``d - 1 - t`` edges.
+inline RVineStructure rv_from_trees(size_t d, const TreeTuples& trees,
+                                    bool check = true) {
+  if (trees.empty()) {
+    return RVineStructure(d, static_cast<size_t>(0));
+  }
   std::vector<RVineTrees::Tree> tree_list;
   tree_list.reserve(trees.size());
   for (const auto& tree : trees) {
@@ -68,23 +80,7 @@ inline RVineTrees rvt_from_tuples(size_t d, const TreeTuples& trees) {
     }
     tree_list.push_back(std::move(edges));
   }
-  return RVineTrees(d, std::move(tree_list));
-}
-
-// Faithful inverse of ``RVineStructure.get_trees()``: the RVineStructure ctor
-// from RVineTrees uses the identity diagonal policy (each edge's first
-// conditioned variable ``a`` on the diagonal), so
-// ``from_trees(s.dim, s.get_trees())`` reproduces ``s`` exactly. This is also
-// the diagonal policy ``Vinecop.select`` uses to finalize a selected structure
-// (upstream), so ``VinecopBase.select`` can assemble the selected trees through
-// this same factory. The diagonal choice controls the variable order (which
-// variables sit at the tail — relevant for conditional sampling). Tree ``t``
-// must hold exactly ``d - 1 - t`` edges.
-inline RVineStructure rv_from_trees(size_t d, const TreeTuples& trees) {
-  if (trees.empty()) {
-    return RVineStructure(d, static_cast<size_t>(0));
-  }
-  return RVineStructure(rvt_from_tuples(d, trees));
+  return RVineStructure(RVineTrees(d, std::move(tree_list)), check);
 }
 
 // Factory function to create RVineStructure from a file
@@ -139,6 +135,8 @@ trees : list of list of tuple
     ``conditioning`` is the (possibly empty) conditioning set. Tree ``t`` must
     contain exactly ``d - 1 - t`` edges. An empty list yields a fully truncated
     (independence) structure.
+check : bool, default True
+    Whether to validate the assembled structure (e.g. the proximity condition).
 
 Returns
 -------
@@ -177,7 +175,8 @@ RVineStructure.get_trees : The decomposition this method inverts.
                       .c_str(),
                   nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_trees", &rv_from_trees, "d"_a, "trees"_a,
-                  from_trees_doc, nb::call_guard<nb::gil_scoped_release>())
+                  "check"_a = true, from_trees_doc,
+                  nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_file", &rv_from_file, "filename"_a, "check"_a = true,
                   rvinestructure_doc.ctor.doc_2args_filename_check,
                   nb::call_guard<nb::gil_scoped_release>())
@@ -220,10 +219,8 @@ RVineStructure.get_trees : The decomposition this method inverts.
           [](const RVineStructure& self) -> nb::list {
             // Structure-only list-of-trees view: each edge is a tuple
             // (a, b, conditioning), mirroring the ``from_trees()`` input.
-            // Round-tripping through ``from_trees`` yields a tree-equivalent
-            // structure (identical R-vine decomposition); the matrix / order
-            // may differ, as ``from_trees`` applies the canonical selection
-            // diagonal.
+            // ``RVineStructure.from_trees(s.dim, s.get_trees())`` reproduces
+            // ``s`` exactly (a faithful, matrix-exact inverse).
             RVineTrees rvt;
             {
               nb::gil_scoped_release release;

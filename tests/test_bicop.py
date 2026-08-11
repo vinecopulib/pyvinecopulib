@@ -676,5 +676,7 @@ def test_bicop_scores_family_rejects_nonparametric_and_discrete() -> None:
     parameters=np.array([[2.0]]),
     var_types=["d", "d"],
   )
-  with pytest.raises(RuntimeError):
-    discrete.scores(np.column_stack([u, u]))
+  u_disc = np.column_stack([u, u])
+  for method in ("scores", "gradient", "hessian", "scores_cov"):
+    with pytest.raises(RuntimeError):
+      getattr(discrete, method)(u_disc)

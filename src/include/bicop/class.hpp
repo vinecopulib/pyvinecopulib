@@ -51,6 +51,23 @@ inline Bicop bc_from_json(const std::string& json) {
   return Bicop(json_obj);
 }
 
+// Dispatch helper shared by the evaluation and score methods: pick the
+// stored-parameter or per-row overload depending on whether `parameters` was
+// supplied. Templated on the return type (VectorXd for pdf / hfunc / gradient,
+// MatrixXd for scores / hessian / scores_cov). Argument conversion happens
+// before the GIL is released, so the returned lambda touches only C++ types.
+template <class R>
+auto make_opt_dispatch(R (Bicop::*one)(const Eigen::MatrixXd&) const,
+                       R (Bicop::*many)(const Eigen::MatrixXd&,
+                                        const Eigen::MatrixXd&, size_t) const) {
+  return [one, many](const Bicop& self, const Eigen::MatrixXd& u,
+                     const std::optional<Eigen::MatrixXd>& parameters,
+                     size_t num_threads) -> R {
+    if (parameters) return (self.*many)(u, *parameters, num_threads);
+    return (self.*one)(u);
+  };
+}
+
 inline void init_bicop_class(nb::module_& module) {
   constexpr auto& bicop_doc = pyvinecopulib_doc.vinecopulib.Bicop;
 
@@ -125,6 +142,35 @@ or out-of-bounds values raise ``RuntimeError``.
   const std::string logpdf_deriv2_doc =
       std::string(bicop_doc.logpdf_deriv2.doc_2args) + per_row_note;
 
+  // The log-likelihood score family (vinecopulib#699) also takes the optional
+  // per-row `parameters`, so it shares `per_row_note`. `scores_full` returns a
+  // dict on the Python side, so its docstring is hand-written (the generated
+  // one describes the C++ `ScoresResult`).
+  const std::string scores_doc =
+      std::string(bicop_doc.scores.doc_1args) + per_row_note;
+  const std::string gradient_doc =
+      std::string(bicop_doc.gradient.doc_1args) + per_row_note;
+  const std::string hessian_doc =
+      std::string(bicop_doc.hessian.doc_1args) + per_row_note;
+  const std::string hessian_full_doc =
+      std::string(bicop_doc.hessian_full.doc_1args) + per_row_note;
+  const std::string scores_cov_doc =
+      std::string(bicop_doc.scores_cov.doc_1args) + per_row_note;
+  const std::string scores_full_doc =
+      std::string(
+          R"""(Evaluates the log-likelihood scores, bundled in a dict.
+
+Provided for parity with ``Vinecop.scores_full``; a single pair copula has no
+cascade caches, so the returned dict carries only the score matrix.
+
+Returns
+-------
+dict
+    A dict with a single key ``"scores"`` -- the per-observation score matrix
+    (shape ``(n, p)``), identical to ``Bicop.scores``.
+)""") +
+      per_row_note;
+
   // `flip` binds the libclang-extracted doc, extended with the return
   // description (the Python method returns a flipped copy; the underlying C++
   // method mutates in place, which users need not know about).
@@ -140,24 +186,9 @@ Bicop
     The argument-swapped copula; the object itself is left unchanged.
 )""";
 
-  // Dispatch helpers: pick the stored-parameter or per-row overload depending
-  // on whether `parameters` was supplied. Argument conversion (incl. the
-  // ndarray -> Eigen copy) happens before the GIL is released, so the lambda
-  // bodies only touch C++ types.
-  auto eval_with_optional_params =
-      [](Eigen::VectorXd (Bicop::*one)(const Eigen::MatrixXd&) const,
-         Eigen::VectorXd (Bicop::*many)(const Eigen::MatrixXd&,
-                                        const Eigen::MatrixXd&, size_t) const) {
-        return [one, many](const Bicop& self, const Eigen::MatrixXd& u,
-                           const std::optional<Eigen::MatrixXd>& parameters,
-                           size_t num_threads) -> Eigen::VectorXd {
-          if (parameters) return (self.*many)(u, *parameters, num_threads);
-          return (self.*one)(u);
-        };
-      };
-
-  // Same dispatch for the derivative methods, which additionally thread the
-  // `deriv` selector string through both overloads.
+  // Dispatch for the derivative methods, which additionally thread the `deriv`
+  // selector string through both overloads (the plain evaluation / score
+  // dispatch lives in the namespace-scope `make_opt_dispatch` above).
   auto deriv_with_optional_params =
       [](Eigen::VectorXd (Bicop::*one)(const Eigen::MatrixXd&,
                                        const std::string&) const,
@@ -171,20 +202,6 @@ Bicop
           if (parameters)
             return (self.*many)(u, deriv, *parameters, num_threads);
           return (self.*one)(u, deriv);
-        };
-      };
-
-  // Same dispatch as `eval_with_optional_params`, for the score / Hessian
-  // methods that return a matrix rather than a vector.
-  auto mat_eval_with_optional_params =
-      [](Eigen::MatrixXd (Bicop::*one)(const Eigen::MatrixXd&) const,
-         Eigen::MatrixXd (Bicop::*many)(const Eigen::MatrixXd&,
-                                        const Eigen::MatrixXd&, size_t) const) {
-        return [one, many](const Bicop& self, const Eigen::MatrixXd& u,
-                           const std::optional<Eigen::MatrixXd>& parameters,
-                           size_t num_threads) -> Eigen::MatrixXd {
-          if (parameters) return (self.*many)(u, *parameters, num_threads);
-          return (self.*one)(u);
         };
       };
 
@@ -291,28 +308,28 @@ Bicop
                    &Bicop::get_parameters_upper_bounds,
                    bicop_doc.get_parameters_upper_bounds.doc,
                    nb::call_guard<nb::gil_scoped_release>())
-      .def("pdf", eval_with_optional_params(&Bicop::pdf, &Bicop::pdf), "u"_a,
+      .def("pdf", make_opt_dispatch(&Bicop::pdf, &Bicop::pdf), "u"_a,
            "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), pdf_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
-      .def("cdf", eval_with_optional_params(&Bicop::cdf, &Bicop::cdf), "u"_a,
+      .def("cdf", make_opt_dispatch(&Bicop::cdf, &Bicop::cdf), "u"_a,
            "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), cdf_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
-      .def("hfunc1", eval_with_optional_params(&Bicop::hfunc1, &Bicop::hfunc1),
-           "u"_a, "parameters"_a = nb::none(),
+      .def("hfunc1", make_opt_dispatch(&Bicop::hfunc1, &Bicop::hfunc1), "u"_a,
+           "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), hfunc1_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
-      .def("hfunc2", eval_with_optional_params(&Bicop::hfunc2, &Bicop::hfunc2),
-           "u"_a, "parameters"_a = nb::none(),
+      .def("hfunc2", make_opt_dispatch(&Bicop::hfunc2, &Bicop::hfunc2), "u"_a,
+           "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), hfunc2_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
-      .def("hinv1", eval_with_optional_params(&Bicop::hinv1, &Bicop::hinv1),
-           "u"_a, "parameters"_a = nb::none(),
+      .def("hinv1", make_opt_dispatch(&Bicop::hinv1, &Bicop::hinv1), "u"_a,
+           "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), hinv1_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
-      .def("hinv2", eval_with_optional_params(&Bicop::hinv2, &Bicop::hinv2),
-           "u"_a, "parameters"_a = nb::none(),
+      .def("hinv2", make_opt_dispatch(&Bicop::hinv2, &Bicop::hinv2), "u"_a,
+           "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), hinv2_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
       .def("pdf_deriv",
@@ -361,30 +378,23 @@ Bicop
            "u"_a, "deriv"_a, "parameters"_a = nb::none(),
            "num_threads"_a = static_cast<size_t>(1), logpdf_deriv2_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
-      .def("scores",
-           mat_eval_with_optional_params(&Bicop::scores, &Bicop::scores), "u"_a,
+      .def("scores", make_opt_dispatch(&Bicop::scores, &Bicop::scores), "u"_a,
            "parameters"_a = nb::none(),
-           "num_threads"_a = static_cast<size_t>(1), bicop_doc.scores.doc_1args,
+           "num_threads"_a = static_cast<size_t>(1), scores_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
-      .def("gradient",
-           eval_with_optional_params(&Bicop::gradient, &Bicop::gradient), "u"_a,
-           "parameters"_a = nb::none(),
-           "num_threads"_a = static_cast<size_t>(1),
-           bicop_doc.gradient.doc_1args,
-           nb::call_guard<nb::gil_scoped_release>())
-      .def("hessian",
-           mat_eval_with_optional_params(&Bicop::hessian, &Bicop::hessian),
+      .def("gradient", make_opt_dispatch(&Bicop::gradient, &Bicop::gradient),
            "u"_a, "parameters"_a = nb::none(),
-           "num_threads"_a = static_cast<size_t>(1),
-           bicop_doc.hessian.doc_1args,
+           "num_threads"_a = static_cast<size_t>(1), gradient_doc.c_str(),
            nb::call_guard<nb::gil_scoped_release>())
-      .def(
-          "scores_cov",
-          mat_eval_with_optional_params(&Bicop::scores_cov, &Bicop::scores_cov),
-          "u"_a, "parameters"_a = nb::none(),
-          "num_threads"_a = static_cast<size_t>(1),
-          bicop_doc.scores_cov.doc_1args,
-          nb::call_guard<nb::gil_scoped_release>())
+      .def("hessian", make_opt_dispatch(&Bicop::hessian, &Bicop::hessian),
+           "u"_a, "parameters"_a = nb::none(),
+           "num_threads"_a = static_cast<size_t>(1), hessian_doc.c_str(),
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("scores_cov",
+           make_opt_dispatch(&Bicop::scores_cov, &Bicop::scores_cov), "u"_a,
+           "parameters"_a = nb::none(),
+           "num_threads"_a = static_cast<size_t>(1), scores_cov_doc.c_str(),
+           nb::call_guard<nb::gil_scoped_release>())
       .def(
           "hessian_full",
           [](const Bicop& self, const Eigen::MatrixXd& u,
@@ -403,8 +413,7 @@ Bicop
             return out;
           },
           "u"_a, "parameters"_a = nb::none(),
-          "num_threads"_a = static_cast<size_t>(1),
-          bicop_doc.hessian_full.doc_1args)
+          "num_threads"_a = static_cast<size_t>(1), hessian_full_doc.c_str())
       .def(
           "scores_full",
           [](const Bicop& self, const Eigen::MatrixXd& u,
@@ -423,8 +432,7 @@ Bicop
             return out;
           },
           "u"_a, "parameters"_a = nb::none(),
-          "num_threads"_a = static_cast<size_t>(1),
-          bicop_doc.scores_full.doc_1args)
+          "num_threads"_a = static_cast<size_t>(1), scores_full_doc.c_str())
       .def("simulate", &Bicop::simulate, "n"_a, "qrng"_a = false,
            "seeds"_a = std::vector<int>(), bicop_doc.simulate.doc,
            nb::call_guard<nb::gil_scoped_release>())

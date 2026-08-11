@@ -1,4 +1,7 @@
+import copy
+import itertools
 import os
+import pickle
 
 import numpy as np
 import pytest
@@ -515,27 +518,70 @@ def test_vinecop_simulate_conditional() -> None:
     assert np.all((sim >= 0.0) & (sim <= 1.0))
 
 
+def test_vinecop_simulate_conditional_discrete() -> None:
+  # Discrete conditioning variables are supported: u_cond carries an extra
+  # left-limit F(x^-) column per discrete conditioner, and the conditioning
+  # column of the output lands within the atom [F(x^-), F(x)] (vinecopulib#696).
+  rng = np.random.RandomState(11)
+  n = 800
+  x = rng.binomial(4, 0.5, size=n)
+  pmf = np.array([1.0, 4.0, 6.0, 4.0, 1.0]) / 16.0
+  cdf = np.cumsum(pmf)
+  u1, u1_sub = cdf[x], np.where(x > 0, cdf[x - 1], 0.0)
+  cont = pv.to_pseudo_obs(rng.normal(size=(n, 2)))
+  # var_types = [d, c, c]; data is the main columns then the discrete left-limit.
+  data = np.column_stack([u1, cont, u1_sub])
+
+  # Force the discrete variable (1) to the order tail so we can condition on it.
+  fc = pv.FitControlsVinecop(family_set=[pv.families.gaussian])
+  fc.conditioning_set = [1]
+  cop = pv.Vinecop.from_data(data, var_types=["d", "c", "c"], controls=fc)
+  assert [int(v) for v in cop.structure.order][-1] == 1
+
+  # Condition var 1 on the atom x = 2: u_cond = [F(2), F(1)] (value, left-limit).
+  m = 20
+  u_cond = np.tile([[cdf[2], cdf[1]]], (m, 1))
+  sim = cop.simulate_conditional(u_cond, seeds=[1, 2, 3])
+  assert sim.shape == (m, 3)
+  # var 1 is natural column 0; the draw lands within the conditioned atom.
+  col1 = sim[:, 0]
+  assert np.all((col1 >= cdf[1] - 1e-9) & (col1 <= cdf[2] + 1e-9))
+
+
 def test_vinecop_reorient() -> None:
   # reorient relabels to an equivalent vine whose order tail equals the given
-  # set (value-preserving: pdf / loglik invariant) (vinecopulib#697).
-  import copy
-
+  # set, without refitting (value-preserving: pdf / loglik invariant) (#697).
   d, n = 5, 700
   u = pv.to_pseudo_obs(random_data(d, n))
   cop = pv.Vinecop.from_data(u)
   ll0, pdf0 = cop.loglik(u), cop.pdf(u)
   order = [int(v) for v in cop.structure.order]
 
-  # A suffix of the current order is always an admissible tail.
+  # Exercise a GENUINE reorientation: search for an admissible tail that is not
+  # already the current suffix (a suffix hits the no-op early return and would
+  # test nothing). Inadmissible sets raise, exercising the rejection path.
+  did_reorient = did_reject = False
   for k in (1, 2):
-    vc = copy.deepcopy(cop)
-    tail = order[-k:]
-    vc.reorient(tail)
-    assert [int(v) for v in vc.structure.order][-k:] == tail
-    np.testing.assert_allclose(vc.loglik(u), ll0, rtol=1e-9, atol=1e-10)
-    np.testing.assert_allclose(vc.pdf(u), pdf0, rtol=1e-8, atol=1e-10)
+    for cand in itertools.combinations(range(1, d + 1), k):
+      if set(cand) == set(order[-k:]):  # same tail set -> (near) no-op, skip
+        continue
+      vc = copy.deepcopy(cop)
+      try:
+        vc.reorient(list(cand))
+      except RuntimeError:
+        did_reject = True  # set is not an admissible sampling-order tail
+        continue
+      new_order = [int(v) for v in vc.structure.order]
+      assert set(new_order[-k:]) == set(cand)  # requested set placed at tail
+      assert new_order != order  # order genuinely changed (not a no-op)
+      # Value-preserving: the reoriented vine has the same density / loglik.
+      np.testing.assert_allclose(vc.loglik(u), ll0, rtol=1e-9, atol=1e-10)
+      np.testing.assert_allclose(vc.pdf(u), pdf0, rtol=1e-8, atol=1e-10)
+      did_reorient = True
+  assert did_reorient, "expected at least one admissible non-suffix tail"
+  assert did_reject, "expected at least one inadmissible set to be rejected"
 
-  # An out-of-range conditioning variable is rejected.
+  # Out-of-range variables are rejected by input validation.
   with pytest.raises((RuntimeError, ValueError)):
     copy.deepcopy(cop).reorient([d + 1])
 
@@ -564,14 +610,24 @@ def test_vinecop_get_trees_and_roundtrip() -> None:
       assert isinstance(edge["conditioning"], list)
       assert isinstance(edge["pair_copula"], pv.Bicop)
 
-  # Faithful structure round-trip: matrix-exact.
+  # get_trees() carries the FITTED pair copulas (not independence placeholders):
+  # the family and Kendall's-tau multisets match the vine's own accessors.
+  ft_fams = sorted(str(e["pair_copula"].family) for tr in trees for e in tr)
+  vine_fams = sorted(str(f) for tr in cop.families for f in tr)
+  assert ft_fams == vine_fams
+  ft_taus = sorted(round(e["pair_copula"].tau, 10) for tr in trees for e in tr)
+  vine_taus = sorted(round(t, 10) for tr in cop.taus for t in tr)
+  assert ft_taus == vine_taus
+
+  # Structure round-trip via from_trees (matrix-exactness is covered thoroughly
+  # in test_rvinestructure_get_trees_faithful_roundtrip).
   s = cop.structure
-  s2 = pv.RVineStructure.from_trees(s.dim, s.get_trees())
-  assert s2 == s
-  assert np.array_equal(np.asarray(s2.matrix), np.asarray(s.matrix))
-  # __eq__ is a genuine equality: a truncated copy differs.
-  assert s == s
-  assert not (s == s.truncate(1))
+  assert pv.RVineStructure.from_trees(s.dim, s.get_trees()) == s
+  # __eq__ / __ne__ are genuine equality: a truncated copy compares unequal.
+  st = copy.deepcopy(s)
+  st.truncate(1)
+  assert st.trunc_lvl == 1
+  assert s == s and s != st
 
 
 def test_vinecop_per_observation_parameters() -> None:
@@ -612,6 +668,9 @@ def test_vinecop_per_observation_parameters() -> None:
     rtol=1e-8,
     atol=1e-10,
   )
+  # hessian_full (per-observation Hessians) also honors the parameters overload.
+  hf_p, hf_0 = cop.hessian_full(u, parameters=pars), cop.hessian_full(u)
+  np.testing.assert_allclose(hf_p[0][0], hf_0[0][0], rtol=1e-8, atol=1e-10)
 
   # Existing positional signatures still work (parameters appended last).
   np.testing.assert_allclose(cop.pdf(u, 2), cop.pdf(u), rtol=1e-12)
@@ -623,8 +682,6 @@ def test_vinecop_per_observation_parameters() -> None:
 def test_fit_controls_vinecop_conditioning_set() -> None:
   # conditioning_set property + pickle round-trip, and conditioning-aware
   # selection places the set at the tail of the vine order (vinecopulib#697).
-  import pickle
-
   fc = pv.FitControlsVinecop()
   assert fc.conditioning_set == []
   fc.conditioning_set = [2, 3]

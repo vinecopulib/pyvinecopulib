@@ -99,6 +99,24 @@ inline Vinecop vc_from_json(const std::string& json, bool check = true) {
   return Vinecop(json_obj, check);
 }
 
+// Dispatch helper for the step-wise score methods (`scores` / `gradient` /
+// `hessian` / `scores_cov`): pick the fitted-parameter or per-observation
+// overload depending on whether `parameters` was supplied. Templated on the
+// return type (VectorXd for `gradient`, MatrixXd for the rest).
+template <class R>
+auto make_step_dispatch(R (Vinecop::*one)(Eigen::MatrixXd, bool, size_t),
+                        R (Vinecop::*many)(Eigen::MatrixXd,
+                                           const Eigen::MatrixXd&, bool,
+                                           size_t)) {
+  return [one, many](Vinecop& cop, Eigen::MatrixXd u, bool step_wise,
+                     size_t num_threads,
+                     const std::optional<Eigen::MatrixXd>& parameters) -> R {
+    if (parameters)
+      return (cop.*many)(std::move(u), *parameters, step_wise, num_threads);
+    return (cop.*one)(std::move(u), step_wise, num_threads);
+  };
+}
+
 inline void init_vinecop_class(nb::module_& module) {
   constexpr auto& vinecop_doc = pyvinecopulib_doc.vinecopulib.Vinecop;
 
@@ -152,6 +170,11 @@ num_threads : int, default 1
     Number of threads to parallelize the row-wise evaluation over.
 keep_all : bool, default True
     If True, also return the per-edge densities and h-functions.
+parameters : ndarray, shape (n, npars), optional
+    Per-observation full-vine parameter vectors, with columns in the
+    ``(tree, edge, parameter)`` order of ``Vinecop.scores``. If given, each row
+    of ``u`` is evaluated with the matching row's parameters instead of the
+    fitted ones. Continuous, all-parametric vines only.
 
 Returns
 -------
@@ -184,6 +207,11 @@ num_threads : int, default 1
     Number of threads to parallelize the row-wise evaluation over.
 keep_all : bool, default True
     If True, also return the per-edge derivative caches.
+parameters : ndarray, shape (n, npars), optional
+    Per-observation full-vine parameter vectors, with columns in the
+    ``(tree, edge, parameter)`` order of ``Vinecop.scores``. If given, each row
+    of ``u`` is evaluated with the matching row's parameters instead of the
+    fitted ones. Continuous, all-parametric vines only.
 
 Returns
 -------
@@ -205,6 +233,52 @@ Raises
 ------
 RuntimeError
     If the model contains nonparametric pair copulas.
+)""";
+
+  // Shared note documenting the optional per-observation-parameter overload
+  // (vinecopulib#699), appended to every method that gained a `parameters` arg.
+  const std::string per_obs_note =
+      R"""(
+
+Notes
+-----
+The optional ``parameters`` argument is an ``(n, npars)`` array of
+per-observation full-vine parameter vectors -- one row per row of ``u``, with
+columns in the ``(tree, edge, parameter)`` order of ``Vinecop.scores``. When
+given, the vine is evaluated at each row's parameters instead of the fitted
+ones. Continuous, all-parametric vines only.
+)""";
+  const std::string pdf_perobs_doc =
+      std::string(vinecop_doc.pdf.doc_2args) + per_obs_note;
+  const std::string loglik_perobs_doc =
+      std::string(vinecop_doc.loglik.doc_2args) + per_obs_note;
+  const std::string scores_perobs_doc =
+      std::string(vinecop_doc.scores.doc_3args) + per_obs_note;
+  const std::string gradient_perobs_doc =
+      std::string(vinecop_doc.gradient.doc_3args) + per_obs_note;
+  const std::string hessian_perobs_doc =
+      std::string(vinecop_doc.hessian.doc_3args) + per_obs_note;
+  const std::string scores_cov_perobs_doc =
+      std::string(vinecop_doc.scores_cov.doc_3args) + per_obs_note;
+
+  // Hand-written: the C++ facade returns an ``RVineTrees`` (no Python
+  // equivalent); the Python method returns nested ``[tree][edge]`` dicts.
+  const char* get_trees_doc =
+      R"""(Return the fitted vine as a nested list of trees.
+
+Decomposes the vine tree by tree, each edge carrying its fitted pair-copula.
+
+Returns
+-------
+list of list of dict
+    Indexed ``[tree][edge]``. Each edge is a dict with keys ``"conditioned"``
+    (a tuple ``(a, b)`` of 1-based variable labels -- the conditioned pair),
+    ``"conditioning"`` (a list of 1-based labels -- the conditioning set), and
+    ``"pair_copula"`` (the fitted ``Bicop``).
+
+See Also
+--------
+RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
 )""";
 
   const char* from_structure_doc = R"""(
@@ -337,7 +411,7 @@ RuntimeError
             }
             return out;
           },
-          vinecop_doc.get_trees.doc)
+          get_trees_doc)
       .def_prop_ro("nobs", &Vinecop::get_nobs, vinecop_doc.get_nobs.doc)
       .def_prop_ro("threshold", &Vinecop::get_threshold,
                    vinecop_doc.get_threshold.doc)
@@ -363,7 +437,7 @@ RuntimeError
             return cop.pdf(std::move(u), num_threads);
           },
           "u"_a, "num_threads"_a = 1, "parameters"_a = nb::none(),
-          vinecop_doc.pdf.doc_2args, nb::call_guard<nb::gil_scoped_release>())
+          pdf_perobs_doc.c_str(), nb::call_guard<nb::gil_scoped_release>())
       .def(
           "pdf_full",
           [](const Vinecop& cop, Eigen::MatrixXd u, size_t num_threads,
@@ -418,7 +492,7 @@ RuntimeError
             return cop.loglik(u, num_threads);
           },
           "u"_a = Eigen::MatrixXd(), "num_threads"_a = 1,
-          "parameters"_a = nb::none(), vinecop_doc.loglik.doc_2args,
+          "parameters"_a = nb::none(), loglik_perobs_doc.c_str(),
           nb::call_guard<nb::gil_scoped_release>())
       .def("aic", &Vinecop::aic, "u"_a = Eigen::MatrixXd(), "num_threads"_a = 1,
            vinecop_doc.aic.doc, nb::call_guard<nb::gil_scoped_release>())
@@ -427,34 +501,15 @@ RuntimeError
       .def("mbicv", &Vinecop::mbicv, "u"_a = Eigen::MatrixXd(), "psi0"_a = 0.9,
            "num_threads"_a = 1, vinecop_doc.mbicv.doc,
            nb::call_guard<nb::gil_scoped_release>())
-      .def(
-          "scores",
-          [](Vinecop& cop, Eigen::MatrixXd u, bool step_wise,
-             size_t num_threads,
-             const std::optional<Eigen::MatrixXd>& parameters)
-              -> Eigen::MatrixXd {
-            if (parameters)
-              return cop.scores(std::move(u), *parameters, step_wise,
-                                num_threads);
-            return cop.scores(std::move(u), step_wise, num_threads);
-          },
-          "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
-          "parameters"_a = nb::none(), vinecop_doc.scores.doc_3args,
-          nb::call_guard<nb::gil_scoped_release>())
-      .def(
-          "gradient",
-          [](Vinecop& cop, Eigen::MatrixXd u, bool step_wise,
-             size_t num_threads,
-             const std::optional<Eigen::MatrixXd>& parameters)
-              -> Eigen::VectorXd {
-            if (parameters)
-              return cop.gradient(std::move(u), *parameters, step_wise,
-                                  num_threads);
-            return cop.gradient(std::move(u), step_wise, num_threads);
-          },
-          "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
-          "parameters"_a = nb::none(), vinecop_doc.gradient.doc_3args,
-          nb::call_guard<nb::gil_scoped_release>())
+      .def("scores", make_step_dispatch(&Vinecop::scores, &Vinecop::scores),
+           "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
+           "parameters"_a = nb::none(), scores_perobs_doc.c_str(),
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("gradient",
+           make_step_dispatch(&Vinecop::gradient, &Vinecop::gradient), "u"_a,
+           "step_wise"_a = true, "num_threads"_a = 1,
+           "parameters"_a = nb::none(), gradient_perobs_doc.c_str(),
+           nb::call_guard<nb::gil_scoped_release>())
       .def(
           "scores_full",
           [](Vinecop& cop, Eigen::MatrixXd u, bool step_wise,
@@ -490,34 +545,15 @@ RuntimeError
           },
           "u"_a, "step_wise"_a = true, "num_threads"_a = 1, "keep_all"_a = true,
           "parameters"_a = nb::none(), scores_full_doc)
-      .def(
-          "hessian",
-          [](Vinecop& cop, Eigen::MatrixXd u, bool step_wise,
-             size_t num_threads,
-             const std::optional<Eigen::MatrixXd>& parameters)
-              -> Eigen::MatrixXd {
-            if (parameters)
-              return cop.hessian(std::move(u), *parameters, step_wise,
-                                 num_threads);
-            return cop.hessian(std::move(u), step_wise, num_threads);
-          },
-          "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
-          "parameters"_a = nb::none(), vinecop_doc.hessian.doc_3args,
-          nb::call_guard<nb::gil_scoped_release>())
-      .def(
-          "scores_cov",
-          [](Vinecop& cop, Eigen::MatrixXd u, bool step_wise,
-             size_t num_threads,
-             const std::optional<Eigen::MatrixXd>& parameters)
-              -> Eigen::MatrixXd {
-            if (parameters)
-              return cop.scores_cov(std::move(u), *parameters, step_wise,
-                                    num_threads);
-            return cop.scores_cov(std::move(u), step_wise, num_threads);
-          },
-          "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
-          "parameters"_a = nb::none(), vinecop_doc.scores_cov.doc_3args,
-          nb::call_guard<nb::gil_scoped_release>())
+      .def("hessian", make_step_dispatch(&Vinecop::hessian, &Vinecop::hessian),
+           "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
+           "parameters"_a = nb::none(), hessian_perobs_doc.c_str(),
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("scores_cov",
+           make_step_dispatch(&Vinecop::scores_cov, &Vinecop::scores_cov),
+           "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
+           "parameters"_a = nb::none(), scores_cov_perobs_doc.c_str(),
+           nb::call_guard<nb::gil_scoped_release>())
       .def(
           "hessian_full",
           [](Vinecop& cop, Eigen::MatrixXd u, bool step_wise,
