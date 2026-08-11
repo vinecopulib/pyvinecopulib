@@ -10,7 +10,7 @@ hyperparameters for both fits (:class:`FitControlsBicop` and
 
 For higher-level scikit-learn-compatible wrappers around these
 primitives (with ``fit`` / ``predict``-style interfaces, DataFrame
-handling, and ensemble methods), see
+handling, and batched evaluation), see
 :mod:`pyvinecopulib.sklearn`. The
 ``examples/02_vine_copulas.ipynb`` and
 ``examples/03_vine_copulas_fit_sample.ipynb`` notebooks walk through

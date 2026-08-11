@@ -66,9 +66,6 @@ _DOC_REFERENCES = r"""References
        *Solving Estimating Equations With Copulas.*
        Journal of the American Statistical Association, 119(546),
        1168--1180.
-.. [4] Vatter, T. and Nagler, T. (2026).
-       *Throwing Vines at the Wall: Structure Learning via Random
-       Search.* arXiv preprint arXiv:2510.20035.
 """
 
 
@@ -237,8 +234,10 @@ class VineBase(BaseEstimator):
         X_arr = expand_factors(X)[self._expanded_columns].to_numpy()
     else:
       if reset:
-        # If a caller (forest) pre-set schema_ to override kde1d_types,
-        # honour it; otherwise default to all-continuous.
+        # ndarray input carries no dtype information: respect a
+        # ``schema_`` set by the caller (or by a subclass) before
+        # ``fit`` to declare per-column kde1d types, and otherwise
+        # treat every column as continuous.
         existing = getattr(self, "schema_", None)
         if existing is not None and "kde1d_types" in existing:
           kde1d_types = existing["kde1d_types"]
@@ -390,8 +389,8 @@ class VineBase(BaseEstimator):
     self.structure_ = backend.structure_of(self._vine)
     return self
 
-  # `copula_only` is unused by the standalone estimators; it's kept so a
-  # future forest PR can combine pure copula densities across trees.
+  # `copula_only=True` skips the marginal-density product and returns
+  # the copula factor c(u) alone; `VineDensity.pdf` exposes it directly.
   def _pdf_samples(
     self,
     X: np.ndarray | pd.DataFrame,

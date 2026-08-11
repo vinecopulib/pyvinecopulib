@@ -75,7 +75,7 @@ class TestResolveBackend:
 
 
 # ---------------------------------------------------------------------------
-# with_* immutability — forest copy-on-write semantics
+# with_* immutability — copy-on-write backend derivations
 # ---------------------------------------------------------------------------
 
 
@@ -296,45 +296,6 @@ class TestCrossBackend:
     )
     with pytest.raises(NotImplementedError, match="continuous-only"):
       VineDensity(backend=TorchVinecopBackend()).fit(df)
-
-
-# ---------------------------------------------------------------------------
-# Forest plumbing — backends propagate via base_params
-# ---------------------------------------------------------------------------
-
-
-class TestForestPlumbing:
-  def test_forest_local_does_not_mutate_parent_backend(self, small_data):
-    from pyvinecopulib.sklearn import VineForestDensity
-
-    parent_controls = pv.FitControlsVinecop(
-      family_set=[pv.families.tll], num_threads=1
-    )
-    parent_algo = parent_controls.tree_algorithm
-    parent_backend = VinecopBackend(controls=parent_controls)
-    VineForestDensity(
-      base_params={"backend": parent_backend},
-      n_vines=3,
-      vines_sampling="local",
-      n_jobs=1,
-      val_fraction=0.2,
-      random_state=42,
-    ).fit(small_data)
-    # The forest must not mutate the parent backend's controls in place.
-    assert parent_controls.tree_algorithm == parent_algo
-
-  def test_forest_with_torch_backend(self, small_data):
-    pytest.importorskip("torch")
-    from pyvinecopulib.sklearn import VineForestDensity
-
-    f = VineForestDensity(
-      base_params={"backend": TorchVinecopBackend()},
-      n_vines=3,
-      n_jobs=1,
-      val_fraction=0.2,
-      random_state=42,
-    ).fit(small_data)
-    assert f.pdf(small_data[:5]).shape == (5,)
 
 
 # ---------------------------------------------------------------------------

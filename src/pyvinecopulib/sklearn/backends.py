@@ -86,10 +86,10 @@ class _VinecopBackendBase:
 
   Holds the vine-fit configuration and the fitted vine's evaluation surface,
   factoring the parts identical across ``VinecopBackend`` and
-  ``TorchVinecopBackend`` (``structure_of`` and the copy-on-write forest
-  plumbing) here. Both controls types expose the same tree-selection fields
-  (``tree_algorithm`` / ``seeds`` / ``trunc_lvl``), so the forest helpers act on
-  ``_effective_controls()`` uniformly.
+  ``TorchVinecopBackend`` (``structure_of`` and the copy-on-write
+  ``with_*`` derivations) here. Both controls types expose the same
+  tree-selection fields (``tree_algorithm`` / ``seeds`` / ``trunc_lvl``),
+  so the ``with_*`` helpers act on ``_effective_controls()`` uniformly.
   Concrete backends override only the genuinely divergent members: which vine
   class ``fit_vine`` builds, the per-op evaluation kwargs / output conversion,
   and the default controls.
@@ -260,8 +260,9 @@ class TorchVinecopBackend(_VinecopBackendBase):
   Notes
   -----
   `with_num_threads` is a no-op on this backend; for CPU intraop parallelism
-  call ``torch.set_num_threads(N)`` globally before evaluating. The sklearn
-  forest's outer parallelism (via joblib) still applies independently.
+  call ``torch.set_num_threads(N)`` globally before evaluating. Any outer
+  parallelism a caller wraps around the estimator still applies
+  independently.
   """
 
   def __init__(

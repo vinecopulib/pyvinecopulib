@@ -35,8 +35,8 @@ extensions on top:
    `VinecopBase` canonical bases, `ConditioningContext` policies) that
    custom NumPy / PyTorch backends subclass.
 2. `pyvinecopulib.sklearn` — scikit-learn-compatible estimators
-   (`VineDensity`, `VineRegressor`, `VineForestDensity`,
-   `VineForestRegressor`) on top of the core, with a pluggable
+   (`VineDensity`, `VineRegressor`) on top of the core, with a
+   pluggable
    backend layer.
 3. `pyvinecopulib.torch` — pure-PyTorch port of the evaluation
    cascade for GPU and autograd workflows.
@@ -66,7 +66,7 @@ when proposing API changes:
 | Surface | Tier | Policy |
 |---|---|---|
 | `pyvinecopulib.core`, `pyvinecopulib.families`, `pyvinecopulib.utils`, top-level `pyvinecopulib` (core class re-exports) | **Stable-ish** | Solid user base. Prefer deprecation aliases over breaks; document migrations in `CHANGELOG.md`. PR #207 is the model: the reorg kept old import paths working via `_deprecations.py` + `DeprecationWarning`. Breaks are allowed (e.g. the pybind11→nanobind migration; the #207 cleanup) but must be intentional, documented, and worth the churn. |
-| `pyvinecopulib.sklearn` | **Active development** | API may change in breaking ways between minor releases. The latest break is the `#218` public backend system (estimators now take a single `backend=` instead of loose `controls=`/`structure=`/`seed=` kwargs); forest estimators (`#213`) are also new. |
+| `pyvinecopulib.sklearn` | **Active development** | API may change in breaking ways between minor releases. The latest break is the `#218` public backend system (estimators now take a single `backend=` instead of loose `controls=`/`structure=`/`seed=` kwargs). |
 | `pyvinecopulib.torch` | **Active development** | Same status. Defaults are still being tuned (cf. `990f997` device-aware `batched`, `cache_integrals=True`); the torch↔C++ cascade parity is a hard guarantee, but the `FitControlsTorchVinecop` surface and `TorchVinecop` method signatures may still shift. |
 | `pyvinecopulib._python_helpers`, `pyvinecopulib._deprecations` | **Internal** | Underscore-prefixed. Not part of any contract; rename / restructure freely. `_deprecations.py` itself is slated for removal on the next major release. |
 
@@ -102,9 +102,18 @@ ahead of it) is allowed to break sklearn/torch APIs as needed.
 - **Dependence measures** — `wdm` (`lib/wdm`).
 - **Quasi-random sampling** — `sobol`, `ghalton`, `simulate_uniform`.
 - **Pseudo-observations** — `to_pseudo_obs`.
+- **Estimator ensembling / model averaging.** Combining several
+  fitted vines — bagging, averaging over candidate structures,
+  post-hoc selection among them — is left to downstream packages.
+  The library ships single-vine estimators plus the seams such a
+  package needs: the copy-on-write `with_*` backend derivations, a
+  pre-settable `schema_`, `VineRegressor.normalize_weights`, and the
+  `_weights_for_batch` / `_predict_from_iter` split. Do not remove
+  those as "unused" — they are deliberate, tested extension points.
+
 - **Scikit-learn-compatible estimators** — `VineDensity`,
-  `VineRegressor`, `VineForestDensity`, `VineForestRegressor` with a
-  pluggable backend (`VinecopBackend` / `TorchVinecopBackend`).
+  `VineRegressor` with a pluggable backend (`VinecopBackend` /
+  `TorchVinecopBackend`).
 - **PyTorch evaluator** — `TorchBicop`, `TorchVinecop` (pure-torch
   cascade with GPU placement, autograd, and an optional `batched`
   evaluation fast path; byte-for-byte parity with the C++ cascade).
@@ -170,15 +179,11 @@ pyvinecopulib/
       utils/__init__.py          # Kde1d, to_pseudo_obs, wdm, sobol, ghalton, simulate_uniform, benchmark
         _pair_plots.py           # pairs_copula_data plotting helper (pure Python)
 
-      sklearn/__init__.py        # VineDensity, VineRegressor, VineForest{Density,Regressor}, backends
+      sklearn/__init__.py        # VineDensity, VineRegressor, backends
         backends.py              # VinecopBackend / TorchVinecopBackend + resolve_backend
         _base.py                 # VineBase (parameter-constraints, schema, 3-step pipeline)
-        _mcs.py                  # Model Confidence Set survivor selection (da_mcs_marg / da_mcs_unif)
         density.py               # VineDensity
         regressor.py             # VineRegressor
-        _forest_base.py          # VineForestBase ensemble machinery
-        forest_density.py        # VineForestDensity
-        forest_regressor.py      # VineForestRegressor
 
       torch/__init__.py          # TorchBicop, TorchVinecop, FitControlsTorch*
         bicop.py, vinecop.py     # nn.Module evaluators
@@ -417,7 +422,8 @@ automatically.
   signatures are kept for nanobind-level access only.
 - `tree_algorithm` on `FitControlsVinecop`: `"mst_prim"` (default,
   Dissmann) and `"random_weighted"` (Wilson-weighted random tree;
-  used by the sklearn forests).
+  reachable from the sklearn layer via
+  `VinecopBackend.with_local_random`).
 - `FitControlsVinecop.conditioning_set` (property + pickled, not a
   positional ctor arg) drives conditioning-aware selection — the fitted
   order ends with the given 1-based variables so
@@ -493,9 +499,6 @@ sklearn.base.BaseEstimator
 ├── VineBase (_base.py)            # shared pipeline + DataFrame schema
 │   ├── VineDensity   (+ DensityMixin)
 │   └── VineRegressor (+ RegressorMixin)
-└── VineForestBase (_forest_base.py)  # ensemble + MCS survivor selection
-    ├── VineForestDensity   (+ DensityMixin)
-    └── VineForestRegressor (+ RegressorMixin)
 ```
 
 #### `pyvinecopulib.sklearn.backends`
@@ -504,7 +507,7 @@ Public extension point introduced in `#218`. Estimators do not call
 `pyvinecopulib.Vinecop.from_data(...)` directly — they go through a
 backend object. Two concrete backends ship, both subclassing the
 private `_VinecopBackendBase` (which owns `structure_of` and the
-copy-on-write forest plumbing; concrete backends override only the
+copy-on-write `with_*` derivations; concrete backends override only the
 divergent members + hooks):
 
 - `VinecopBackend(controls=None, structure=None)` — default. Wraps
@@ -560,25 +563,9 @@ The rules that bind:
   `backend_` (resolved backend pinned at fit time).
 - Every post-fit method calls
   `sklearn.utils.validation.check_is_fitted` before doing anything.
-- `base_params` on the forests is defensively-copied at fit time so
-  callers can't mutate the forest's view of it; this also makes
-  `sklearn.base.clone()` round-trip cleanly.
 - `random_state` is the canonical RNG kwarg name throughout (no
   legacy `seed=` / `seeds=` on `VineDensity.sample`,
-  `VineDensity.cdf`, `VineForestDensity.cdf`, or the forest
-  constructors).
-
-#### Forest survivor selection (`_mcs.py`)
-
-Forests sample `n_vines` candidate vine structures (Joe's uniform
-algorithm by default; `"local"` adds Kendall-τ weighting via
-Wilson's walk), fit them, then prune by **Model Confidence Set**
-on a held-out fraction (`val_fraction=0.25`):
-
-- `da_mcs_marg(losses, alpha)` — dual-argmin survivor test with
-  per-model coverage. Cheaper; default.
-- `da_mcs_unif(losses, alpha)` — uniform / familywise coverage via
-  adaptive pre-screening. Use when the candidate count is large.
+  `VineDensity.cdf`, or the estimator constructors).
 
 ### `pyvinecopulib.torch`
 
@@ -678,7 +665,7 @@ below are a quick orientation.
   `sobol`, `ghalton`, `simulate_uniform`, `benchmark`,
   `pairs_copula_data`.
 - **`pyvinecopulib.sklearn`** — `VineDensity`, `VineRegressor`,
-  `VineForestDensity`, `VineForestRegressor`; plus the `backends`
+ plus the `backends`
   submodule (`VinecopBackend`, `TorchVinecopBackend`,
   `resolve_backend`).
 - **`pyvinecopulib.torch`** — `TorchBicop`, `TorchVinecop`,
@@ -761,11 +748,11 @@ Round-trip / parity properties to preserve when touching numerics:
   `TorchVinecop` are the reference torch subclasses.
 - **New `pyvinecopulib.sklearn` backends.** Subclass the private
   `_VinecopBackendBase`, which already provides `structure_of` and the
-  copy-on-write forest plumbing (`with_random_structure` /
+  copy-on-write `with_*` derivations (`with_random_structure` /
   `with_local_random` / `with_num_threads`); override the divergent
   members (`fit_vine`, `pdf`, `cdf`, `simulate`, `_default_controls`,
-  and the `_tree_selection_controls` / `_install_tree_selection_controls`
-  hooks the local-random forest walks through). `resolve_backend`
+  and `_default_controls`, which `_effective_controls` resolves
+  lazily). `resolve_backend`
   accepts any such object (it only defaults `None`). Consider whether
   the underlying vine satisfies the `pyvinecopulib.core.VinecopLike`
   Protocol so downstream code can stay type-stable.
@@ -773,9 +760,10 @@ Round-trip / parity properties to preserve when touching numerics:
   `pyvinecopulib/torch/_fit_<name>.py`, add `"<name>"` to `METHODS`
   in `controls.py`, and add the dispatch branch in
   `TorchBicop.from_data` (the lone `"tll"` path is the template).
-- **New sklearn-style ensembles.** Subclass `VineForestBase` (or
-  `VineBase` for single-vine variants) and override the loss /
-  prediction methods. Stay inside the
+- **New sklearn-style estimators.** Subclass `VineBase` and add the
+  mixin that matches the task (`DensityMixin` / `RegressorMixin`),
+  reusing the 3-step pipeline (`_validate_input` / `_fit_marginals` /
+  `_to_u_scale` / `_fit_vine`). Stay inside the
   `_parameter_constraints` / `_validate_params()` pattern and pin
   fitted attributes with trailing underscores.
 - **Wider quasi-random integration.** `simulate_uniform` is the

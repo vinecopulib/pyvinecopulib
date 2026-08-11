@@ -93,9 +93,7 @@ repos:
           (?x)^src/pyvinecopulib/(
             _python_helpers/.*\.py |
             _deprecations\.py |
-            sklearn/_mcs\.py |
             sklearn/_base\.py |
-            sklearn/_forest_base\.py |
             torch/_batched\.py |
             torch/_fit_tll\.py |
             torch/_util\.py |

@@ -46,7 +46,7 @@ copula models. Advantages over VineCopula are
 Two opt-in subpackages extend the core library:
 
 * `pyvinecopulib.sklearn` — scikit-learn-compatible estimators
-  (`VineDensity`, `VineRegressor`, plus forest variants). Drop a vine
+  (`VineDensity`, `VineRegressor`). Drop a vine
   into any sklearn pipeline:
 
   ```python

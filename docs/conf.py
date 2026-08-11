@@ -235,8 +235,6 @@ _CLASS_MODULE = {
   "Kde1d": "pyvinecopulib.utils",
   "VineDensity": "pyvinecopulib.sklearn",
   "VineRegressor": "pyvinecopulib.sklearn",
-  "VineForestDensity": "pyvinecopulib.sklearn",
-  "VineForestRegressor": "pyvinecopulib.sklearn",
   "VinecopBackend": "pyvinecopulib.sklearn.backends",
   "TorchVinecopBackend": "pyvinecopulib.sklearn.backends",
   "TorchBicop": "pyvinecopulib.torch",
@@ -370,8 +368,6 @@ DOCSTRING_SUBPACKAGES = {
   "sklearn": {
     "classes": [
       "VineDensity",
-      "VineForestDensity",
-      "VineForestRegressor",
       "VineRegressor",
     ],
     "functions": [],

@@ -533,8 +533,10 @@ handful of variables. Two algorithms are exposed via
   2022).
 * ``"random_weighted"`` — Wilson-weighted random spanning trees;
   draws a random structure with edge probabilities proportional to
-  the absolute dependence on each candidate edge. Used to seed the
-  random search ensembles below.
+  the absolute dependence on each candidate edge. Use it when you
+  want a randomized alternative to the greedy structure — for
+  example to draw several candidates and compare their held-out
+  likelihoods.
 
 Selection is further tunable through
 :class:`~pyvinecopulib.core.FitControlsVinecop`: supply a custom edge weight via
@@ -544,12 +546,6 @@ make random searches reproducible with
 :attr:`~pyvinecopulib.core.FitControlsVinecop.seeds`, and toggle whether rotated
 families are considered with
 :attr:`~pyvinecopulib.core.FitControlsVinecop.allow_rotations`.
-
-When better accuracy matters more than runtime, the sklearn
-forest estimators do a *Bayesian-style hold-out random search*
-over a set of candidate structures and combine the survivors via a
-*model confidence set* (MCS) — see :ref:`concepts-forests`. The
-underlying algorithm is described in Vatter & Nagler (2026).
 
 Vine truncation
 ~~~~~~~~~~~~~~~
@@ -595,49 +591,10 @@ through :meth:`pyvinecopulib.core.RVineStructure.get_trees` /
 :meth:`pyvinecopulib.core.RVineStructure.from_trees`.
 
 
-.. _concepts-forests:
-
-Vine forests and regression
----------------------------
-
-When a single greedy fit is not enough, pyvinecopulib offers
-ensemble estimators in :mod:`pyvinecopulib.sklearn`. The recipe is:
-
-1. Generate :math:`M` candidate structures
-   :math:`\Theta = \{\mathcal V_1, \ldots, \mathcal V_M\}` —
-   either uniformly at random (Joe's algorithm) or by
-   Wilson-weighted local random walks around the Dissmann
-   structure.
-2. Fit a vine on each candidate.
-3. Score each candidate on a held-out validation split with a
-   loss :math:`L` (negative log-likelihood for density
-   estimation; conditional log-likelihood for regression).
-4. Run a model-confidence-set selector (Hansen, Lunde & Nason,
-   2011) on the loss matrix to retain only candidates statistically
-   indistinguishable from the best one. The implementation uses
-   the dual-argmin (DA) test of Kim, Ramdas & Tibshirani (2025); see
-   :mod:`pyvinecopulib.sklearn` for ``method="da_mcs_marg"``
-   (per-model coverage; default) vs ``method="da_mcs_unif"``
-   (familywise coverage).
-5. Combine the survivors :math:`\hat\Theta` into the **MCS
-   mixture**
-
-   .. math::
-
-      \hat f_{\hat\Theta}(\mathbf z)
-      \;=\;
-      \frac{1}{|\hat\Theta|}
-      \sum_{\mathcal V \in \hat\Theta}
-      \hat f_{\mathcal V, \mathcal D}(\mathbf z).
-
-This is what
-:class:`pyvinecopulib.sklearn.VineForestDensity` does for
-joint-density estimation. The single-vine variant
-:class:`pyvinecopulib.sklearn.VineDensity` skips steps 1–4 and
-fits one structure (Dissmann by default).
+.. _concepts-regression:
 
 Vine regression
-~~~~~~~~~~~~~~~
+---------------
 
 For conditional inference, fix one variable as the response
 :math:`Y` and stack it with the predictors to model the joint
@@ -648,7 +605,7 @@ of interest is then solved out of the estimating equation
 .. math::
 
    \int \psi_\beta(y) \,
-   \hat f_{\hat\Theta}(y \mid \mathbf x)
+   \hat f(y \mid \mathbf x)
    \, dy \;=\; 0,
 
 with :math:`\psi_\beta(y) = y - \beta` recovering the
@@ -661,22 +618,17 @@ integral is replaced by a weighted sum over a grid
 .. math::
 
    \sum_{g = 1}^G \psi_\beta(y_g) \,
-   \hat f_Y(y_g)
-   \sum_{\mathcal V \in \hat\Theta}
+   \hat f_Y(y_g) \,
    \hat c_{\mathcal V, \mathcal D}\!\bigl(
    \hat F_Y(\mathbf x), \, \hat F_Y(y_g)
    \bigr)
    \;\approx\; 0,
 
-which :class:`pyvinecopulib.sklearn.VineRegressor` (single vine)
-and :class:`pyvinecopulib.sklearn.VineForestRegressor` (MCS
-ensemble) solve numerically. Pass the quantile levels you want
-via the ``quantiles=`` constructor argument; the predicted
-conditional mean is always returned when ``mean=True``.
-
-The forest classes share the same MCS plumbing as the density
-forest, and parallelise over candidates via joblib
-(``n_jobs=``).
+which :class:`pyvinecopulib.sklearn.VineRegressor` solves
+numerically. Pass the quantile levels you want via the
+``quantiles=`` constructor argument; the predicted conditional
+mean is always returned when ``mean=True``. Batching over test
+rows is controlled by ``batch_size=``.
 
 
 Where to next
@@ -690,12 +642,9 @@ Where to next
   ``examples/03_vine_copulas_fit_sample.ipynb`` walk through
   end-to-end use.
 * :mod:`pyvinecopulib.sklearn` — scikit-learn-compatible
-  estimators :class:`~pyvinecopulib.sklearn.VineDensity`,
-  :class:`~pyvinecopulib.sklearn.VineRegressor`, plus the forest
-  variants :class:`~pyvinecopulib.sklearn.VineForestDensity` and
-  :class:`~pyvinecopulib.sklearn.VineForestRegressor`. The
-  notebooks ``examples/08_sklearn_estimators.ipynb`` and
-  ``examples/09_sklearn_forest.ipynb`` demonstrate them. All four
+  estimators :class:`~pyvinecopulib.sklearn.VineDensity` and
+  :class:`~pyvinecopulib.sklearn.VineRegressor`. The notebook
+  ``examples/08_sklearn_estimators.ipynb`` demonstrates them. Both
   estimators accept a backend (default C++, optional PyTorch) via
   :mod:`pyvinecopulib.sklearn.backends`.
 * :mod:`pyvinecopulib.torch` — PyTorch evaluators
@@ -806,8 +755,6 @@ References
   Handbook*, 139–164.
 * **Geenens (2014).** *Probit Transformation for Kernel Density
   Estimation on the Unit Interval.* JASA 109(505), 346–358.
-* **Hansen, Lunde & Nason (2011).** *The Model Confidence Set.*
-  Econometrica 79(2), 453–497.
 * **Nagler (2018).** *A Generic Approach to Nonparametric Function
   Estimation with Mixed Data.* Statistics & Probability Letters
   137, 326–330.
@@ -826,7 +773,3 @@ References
   for Multivariate Discrete Data.* JASA 107(499), 1063–1072.
 * **Funk, Nagler & Czado (2025).** *Discrete and mixed
   pair-copula constructions revisited.* (In press.)
-* **Kim, Ramdas & Tibshirani (2025).** *Locally simultaneous
-  inference for the model confidence set.* arXiv:2410.16092.
-* **Vatter & Nagler (2026).** *Throwing Vines at the Wall:
-  Structure Learning via Random Search.* (Preprint.)
