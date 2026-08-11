@@ -47,6 +47,7 @@ def fitted_forest_regressor(regression_setup):
     ({"alpha": 0.0}, ValueError),
     ({"alpha": 1.0}, ValueError),
     ({"method": "mcs"}, ValueError),
+    ({"compute_train_scores": 1}, TypeError),
     ({"random_state": "42"}, TypeError),
     ({"verbose": 1}, TypeError),
   ],
@@ -63,8 +64,41 @@ def test_fit_properties(fitted_forest_regressor):
   forest, _, _, _, _, _ = fitted_forest_regressor
   assert hasattr(forest, "_estimators")
   assert hasattr(forest, "_estimators_logliks")
+  assert hasattr(forest, "mcs_size_")
   assert len(forest._estimators) > 0
   assert len(forest._estimators) <= 4
+
+
+def test_train_diagnostics_flag(regression_setup):
+  """compute_train_scores threads through the regressor and exercises
+  the y-requiring _loglik_estimator on the train side."""
+  X_train, _, y_train, _, _, _ = regression_setup
+
+  forest = VineForestRegressor(
+    base_params={"mean": True},
+    n_vines=2,
+    val_fraction=0.2,
+    random_state=42,
+    n_jobs=1,
+    compute_train_scores=True,
+  )
+  forest.fit(X_train, y_train)
+  assert 0.0 <= forest.default_rank_train_ <= 1.0
+  assert forest.random_logliks_train_.shape == (2,)
+  assert np.all(np.isfinite(forest.random_logliks_train_))
+  assert forest.random_logliks_val_.shape == (2,)
+  assert isinstance(forest.mcs_size_, int)
+
+  forest_default = VineForestRegressor(
+    base_params={"mean": True},
+    n_vines=2,
+    val_fraction=0.2,
+    random_state=42,
+    n_jobs=1,
+  )
+  forest_default.fit(X_train, y_train)
+  assert not hasattr(forest_default, "default_rank_train_")
+  assert not hasattr(forest_default, "random_logliks_train_")
 
 
 def test_schema_inference_array(regression_setup):

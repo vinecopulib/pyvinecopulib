@@ -73,6 +73,28 @@ _DOC_FOREST_REFERENCES = r""".. [5] Joe, H., Cooke, R. M. and Kurowicka, D. (201
        dimension-agnostic discrete argmin inference.* arXiv:2503.21639.
 """
 
+_DOC_FOREST_ATTRIBUTES = r"""Attributes
+----------
+mcs_size_ : int
+    Number of survivors kept by the selection step (including the
+    Dissmann default when ``add_dissmann=True`` and it survives).
+default_rank_val_ : float
+    Fraction of the ``n_vines`` random candidates whose mean
+    validation log-likelihood strictly exceeds the Dissmann
+    default's (0 = default near-best, 1 = default in the lower
+    tail).
+random_logliks_val_ : ndarray of shape (n_vines,)
+    Mean validation log-likelihood of each random candidate (the
+    Dissmann default is excluded).
+default_rank_train_ : float
+    Train-side counterpart of ``default_rank_val_``, scored on the
+    full training portion. Only set when
+    ``compute_train_scores=True``.
+random_logliks_train_ : ndarray of shape (n_vines,)
+    Train-side counterpart of ``random_logliks_val_``. Only set
+    when ``compute_train_scores=True``.
+"""
+
 
 class VineForestBase(BaseEstimator, ABC):
   """Base class for vine-copula ensemble estimators.
@@ -101,6 +123,7 @@ class VineForestBase(BaseEstimator, ABC):
     "method": [StrOptions({"da_mcs_marg", "da_mcs_unif"}), None],
     "alpha": [Interval(Real, 0.0, 1.0, closed="neither")],
     "add_dissmann": ["boolean"],
+    "compute_train_scores": ["boolean"],
     "random_state": ["random_state"],
     "n_jobs": [Integral, None],
     "verbose": ["boolean"],
@@ -118,6 +141,7 @@ class VineForestBase(BaseEstimator, ABC):
     method: str | None = "da_mcs_marg",
     alpha: float = 0.05,
     add_dissmann: bool = True,
+    compute_train_scores: bool = False,
     random_state=None,
     n_jobs: int = 1,
     verbose: bool = False,
@@ -168,6 +192,13 @@ class VineForestBase(BaseEstimator, ABC):
         Significance level for the MCS selectors.
     add_dissmann : bool, default=True
         Add the Dissmann-structure baseline as an extra candidate.
+    compute_train_scores : bool, default=False
+        If ``True``, additionally score every random candidate and
+        the Dissmann default on the *full* training portion (not the
+        bootstrap resample, so all candidates are scored on the same
+        points) and store the diagnostics ``random_logliks_train_``
+        and ``default_rank_train_``. Adds one extra log-likelihood
+        evaluation per candidate, so it is off by default.
     random_state : int, RandomState, Generator or None
         Seeds reproducibility across random structure generation,
         bootstrap resampling, and MCS randomisation. Stored as-is;
@@ -191,6 +222,7 @@ class VineForestBase(BaseEstimator, ABC):
     self.method = method
     self.alpha = alpha
     self.add_dissmann = add_dissmann
+    self.compute_train_scores = compute_train_scores
 
   def _resolved_base_params(self) -> dict[str, Any]:
     """Return a defensive copy of ``base_params`` for forwarding to the
@@ -247,7 +279,12 @@ class VineForestBase(BaseEstimator, ABC):
     X_val: np.ndarray,
     y_val: np.ndarray | None,
   ):
-    """Fit a single random estimator and score it on the validation set."""
+    """Fit a single random estimator and score it on val (and train).
+
+    Returns ``(estimator, loglik_val, loglik_train)`` where
+    ``loglik_train`` is ``None`` unless ``compute_train_scores`` is
+    enabled.
+    """
     # ``_create_base_estimator()`` returns a fresh, fully-cloneable
     # instance built from ``base_params``; since
     # ``normalize_weights`` is now a real init parameter, no
@@ -287,7 +324,15 @@ class VineForestBase(BaseEstimator, ABC):
       self._fit_estimator(estimator, X_train, y_train)
 
     loglik = self._loglik_estimator(estimator, X_val, y_val)
-    return estimator, loglik
+    # Score on the FULL X_train (not the bootstrap resample) so every
+    # candidate is scored on the same points and is directly comparable
+    # to the Dissmann default.
+    loglik_train = (
+      self._loglik_estimator(estimator, X_train, y_train)
+      if self.compute_train_scores
+      else None
+    )
+    return estimator, loglik, loglik_train
 
   def _fit_ensemble(
     self, X: np.ndarray, y: np.ndarray | None = None
@@ -309,7 +354,7 @@ class VineForestBase(BaseEstimator, ABC):
 
     X_train, X_val, y_train, y_val = self._split_data(X, y)
 
-    default, default_loglik = self._fit_default_estimator(
+    default, default_loglik, default_loglik_train = self._fit_default_estimator(
       X_train, y_train, X_val, y_val
     )
     default_loglik_val = default_loglik.mean()
@@ -322,11 +367,29 @@ class VineForestBase(BaseEstimator, ABC):
     results = Parallel(n_jobs=self.n_jobs)(delayed(_fit_one)(s) for s in seeds)
 
     if self.add_dissmann:
-      results.append((default, default_loglik))
+      results.append((default, default_loglik, default_loglik_train))
 
     survivors, random_logliks_val = self._select_survivors(
       results, default_loglik_val
     )
+
+    # Selection diagnostics. `results` holds the n_vines random
+    # candidates first; when add_dissmann, results[-1] is the default,
+    # so the ranks compare the default against the random vines only.
+    rand_val = random_logliks_val[: self.n_vines]
+    self.default_rank_val_ = float(np.mean(rand_val > default_loglik_val))
+    self.random_logliks_val_ = rand_val.copy()
+    self.mcs_size_ = int(np.sum(survivors))
+    # Set unconditionally: the degenerate branch below previously
+    # omitted these.
+    self._default_loglik = default_loglik_val
+    self._default_estimator = default
+    if self.compute_train_scores:
+      rand_train = np.array([lt.mean() for _, _, lt in results[: self.n_vines]])
+      self.default_rank_train_ = float(
+        np.mean(rand_train > default_loglik_train.mean())
+      )
+      self.random_logliks_train_ = rand_train
 
     if sum(survivors) == 0:
       self._estimators = [default]
@@ -344,7 +407,7 @@ class VineForestBase(BaseEstimator, ABC):
     else:
       self._estimators = [
         estimator
-        for (estimator, _), selected in zip(results, survivors)
+        for (estimator, _, _), selected in zip(results, survivors)
         if selected
       ]
       self._estimators_logliks = random_logliks_val[survivors].reshape(-1, 1)
@@ -352,8 +415,6 @@ class VineForestBase(BaseEstimator, ABC):
       self._default_selected = (
         bool(survivors[-1]) if self.add_dissmann else False
       )
-      self._default_loglik = default_loglik_val
-      self._default_estimator = default
 
     if self.best_only and (len(self._estimators) > 1):
       best_idx = int(np.argmax(self._estimators_logliks))
@@ -369,9 +430,11 @@ class VineForestBase(BaseEstimator, ABC):
   def _fit_default_estimator(self, X_train, y_train, X_val, y_val):
     """Fit the Dissmann-structure baseline and score it on the val set.
 
-    Returns ``(estimator, per_sample_loglik)``. The inferred schema is
-    propagated so fitting on the already-expanded numpy array doesn't
-    default discrete columns back to continuous.
+    Returns ``(estimator, loglik_val, loglik_train)``, where
+    ``loglik_train`` is ``None`` unless ``compute_train_scores`` is
+    enabled. The inferred schema is propagated so fitting on the
+    already-expanded numpy array doesn't default discrete columns back
+    to continuous.
     """
     default = self._create_base_estimator()
     if getattr(self._base_estimator, "schema_", None) is not None:
@@ -380,7 +443,13 @@ class VineForestBase(BaseEstimator, ABC):
       default.fit(X_train, y_train)
     else:
       default.fit(X_train)
-    return default, self._loglik_estimator(default, X_val, y_val)
+    loglik_val = self._loglik_estimator(default, X_val, y_val)
+    loglik_train = (
+      self._loglik_estimator(default, X_train, y_train)
+      if self.compute_train_scores
+      else None
+    )
+    return default, loglik_val, loglik_train
 
   def _select_survivors(self, results, default_loglik_val):
     """Pick the surviving candidates from the fitted pool.
@@ -388,14 +457,16 @@ class VineForestBase(BaseEstimator, ABC):
     Three modes: ``method=None`` keeps every candidate beating the
     default's mean validation loglik; otherwise a model-confidence-set
     test (``da_mcs_marg`` / ``da_mcs_unif``) on the per-sample losses.
+    ``results`` items are ``(estimator, loglik_val, loglik_train)``
+    3-tuples; the train slot is ignored here.
     Returns ``(survivors_mask, mean_val_logliks)``.
     """
-    random_logliks_val = np.array([loglik.mean() for _, loglik in results])
+    random_logliks_val = np.array([loglik.mean() for _, loglik, _ in results])
     if self.method is None:
       survivors = random_logliks_val > default_loglik_val
     else:
       # Negative logliks → losses; selector minimises losses.
-      nll = -np.array([loglik for _, loglik in results]).T
+      nll = -np.array([loglik for _, loglik, _ in results]).T
       mcs_rng = np.random.default_rng(self._split_rng_seed)
       mcs_fn = da_mcs_unif if self.method == "da_mcs_unif" else da_mcs_marg
       mcs = mcs_fn(nll, alpha=self.alpha, randomize=True, rng=mcs_rng)

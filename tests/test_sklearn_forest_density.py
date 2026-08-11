@@ -43,6 +43,8 @@ def fitted_forest_density(sample_array_data):
     ({"alpha": 1.0}, ValueError),
     ({"alpha": "0.05"}, TypeError),
     ({"add_dissmann": 0}, TypeError),
+    ({"compute_train_scores": 1}, TypeError),
+    ({"compute_train_scores": "yes"}, TypeError),
     ({"random_state": "42"}, TypeError),
     ({"verbose": 1}, TypeError),
   ],
@@ -59,9 +61,109 @@ def test_fit_properties(fitted_forest_density):
   forest, _ = fitted_forest_density
   assert hasattr(forest, "_estimators")
   assert hasattr(forest, "_estimators_logliks")
+  assert hasattr(forest, "mcs_size_")
   assert len(forest._estimators) > 0
   # n_vines + (1 if add_dissmann).
   assert len(forest._estimators) <= 4
+
+
+def test_val_diagnostics_always_present(fitted_forest_density):
+  """Validation-side diagnostics are stored on every fit (they are
+  free by-products of the survivor-selection step)."""
+  forest, _ = fitted_forest_density
+  n_candidates = forest.n_vines + int(forest.add_dissmann)
+
+  assert isinstance(forest.mcs_size_, int)
+  assert 0 <= forest.mcs_size_ <= n_candidates
+  assert forest.mcs_size_ == round(forest._selection_rate * n_candidates)
+  if forest.mcs_size_ > 0:  # best_only=False in the fixture
+    assert len(forest._estimators) == forest.mcs_size_
+
+  assert 0.0 <= forest.default_rank_val_ <= 1.0
+  assert forest.random_logliks_val_.shape == (forest.n_vines,)
+  assert np.all(np.isfinite(forest.random_logliks_val_))
+  # The rank ties the vector and the default's val loglik together.
+  assert forest.default_rank_val_ == pytest.approx(
+    np.mean(forest.random_logliks_val_ > forest._default_loglik)
+  )
+
+
+def test_train_diagnostics_absent_by_default(fitted_forest_density):
+  """Without compute_train_scores, the train attrs must not exist (so
+  hasattr-style consumers see absence, not None)."""
+  forest, _ = fitted_forest_density
+  assert not hasattr(forest, "default_rank_train_")
+  assert not hasattr(forest, "random_logliks_train_")
+
+
+def test_train_diagnostics_present_when_enabled(sample_array_data):
+  X, _, _ = sample_array_data
+  forest = VineForestDensity(
+    n_vines=3,
+    val_fraction=0.2,
+    random_state=42,
+    n_jobs=1,
+    compute_train_scores=True,
+  )
+  forest.fit(X)
+  assert 0.0 <= forest.default_rank_train_ <= 1.0
+  assert forest.random_logliks_train_.shape == (3,)
+  assert np.all(np.isfinite(forest.random_logliks_train_))
+
+
+def test_compute_train_scores_does_not_change_fit(sample_array_data):
+  """The extra train-side evaluations must not consume RNG state or
+  alter selection."""
+  X, _, _ = sample_array_data
+  X_test = X[:20]
+
+  def create_and_fit(flag):
+    forest = VineForestDensity(
+      n_vines=3,
+      val_fraction=0.2,
+      random_state=42,
+      n_jobs=1,
+      compute_train_scores=flag,
+    )
+    forest.fit(X)
+    return forest
+
+  forest_off = create_and_fit(False)
+  forest_on = create_and_fit(True)
+  np.testing.assert_allclose(
+    forest_off.random_logliks_val_, forest_on.random_logliks_val_
+  )
+  np.testing.assert_allclose(
+    forest_off.score_samples(X_test), forest_on.score_samples(X_test)
+  )
+
+
+def test_degenerate_selection_sets_default_attrs(
+  sample_array_data, monkeypatch
+):
+  """When no candidate survives, the forest falls back to the default
+  and still exposes the default's diagnostics (regression test: these
+  were previously unset on this path)."""
+  X, _, _ = sample_array_data
+  forest = VineForestDensity(
+    n_vines=2, val_fraction=0.2, random_state=0, n_jobs=1
+  )
+  orig = forest._select_survivors
+
+  def all_dead(results, default_loglik_val):
+    survivors, logliks = orig(results, default_loglik_val)
+    return np.zeros(len(logliks), dtype=bool), logliks
+
+  monkeypatch.setattr(forest, "_select_survivors", all_dead)
+  forest.fit(X)
+
+  assert forest._default_selected is True
+  assert forest.mcs_size_ == 0
+  assert forest._selection_rate == 0.0
+  assert hasattr(forest, "_default_loglik")
+  assert hasattr(forest, "_default_estimator")
+  assert len(forest._estimators) == 1
+  assert 0.0 <= forest.default_rank_val_ <= 1.0
 
 
 def test_schema_inference_array(sample_array_data):

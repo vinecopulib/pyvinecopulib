@@ -10,7 +10,12 @@ from ._base import (
   _DOC_PIPELINE,
   _DOC_REFERENCES,
 )
-from ._forest_base import _DOC_FOREST, _DOC_FOREST_REFERENCES, VineForestBase
+from ._forest_base import (
+  _DOC_FOREST,
+  _DOC_FOREST_ATTRIBUTES,
+  _DOC_FOREST_REFERENCES,
+  VineForestBase,
+)
 from .regressor import VineRegressor
 
 
@@ -26,6 +31,7 @@ class VineForestRegressor(VineForestBase, RegressorMixin):
     method: str | None = "da_mcs_marg",
     alpha: float = 0.05,
     add_dissmann: bool = True,
+    compute_train_scores: bool = False,
     random_state=None,
     n_jobs: int = 1,
     verbose: bool = False,
@@ -63,6 +69,11 @@ class VineForestRegressor(VineForestBase, RegressorMixin):
         Significance level for the MCS selector.
     add_dissmann : bool, default=True
         Include the Dissmann-structure baseline among candidates.
+    compute_train_scores : bool, default=False
+        Additionally score every candidate (and the Dissmann default)
+        on the full training portion and store the diagnostics
+        ``random_logliks_train_`` / ``default_rank_train_``. Adds one
+        extra log-likelihood evaluation per candidate.
     random_state : int, RandomState instance or None, default=None
         Seed for reproducibility.
     n_jobs : int, default=1
@@ -81,6 +92,7 @@ class VineForestRegressor(VineForestBase, RegressorMixin):
       method=method,
       alpha=alpha,
       add_dissmann=add_dissmann,
+      compute_train_scores=compute_train_scores,
       random_state=random_state,
       n_jobs=n_jobs,
       verbose=verbose,
@@ -232,4 +244,5 @@ Examples
 ... ).fit(X[:200], y[:200])
 >>> forest.predict(X[200:205])
 
+{_DOC_FOREST_ATTRIBUTES}
 {_DOC_REFERENCES}{_DOC_FOREST_REFERENCES}"""
