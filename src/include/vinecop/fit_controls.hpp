@@ -138,6 +138,13 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
       .def_prop_rw("seeds", &FitControlsVinecop::get_seeds,
                    &FitControlsVinecop::set_seeds,
                    fitcontrolsvinecop_doc.get_seeds.doc)
+      // Conditioning-aware structure selection: 1-based variable indices placed
+      // at the tail of the vine order during ``Vinecop.select``. Not part of
+      // the positional constructor; set it as a property.
+      .def_prop_rw("conditioning_set",
+                   &FitControlsVinecop::get_conditioning_set,
+                   &FitControlsVinecop::set_conditioning_set,
+                   fitcontrolsvinecop_doc.get_conditioning_set.doc)
       .def(
           "__repr__",
           [](const FitControlsVinecop& controls) {
@@ -179,6 +186,7 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
              state["tree_algorithm"] = controls.get_tree_algorithm();
              state["allow_rotations"] = controls.get_allow_rotations();
              state["seeds"] = controls.get_seeds();
+             state["conditioning_set"] = controls.get_conditioning_set();
              return state;
            })
 
@@ -216,6 +224,11 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
         config.tree_algorithm = nb::cast<std::string>(state["tree_algorithm"]);
         config.allow_rotations = nb::cast<bool>(state["allow_rotations"]);
         config.seeds = nb::cast<std::vector<int>>(state["seeds"]);
+        // Guard the key so pre-feature pickles (without it) still load.
+        if (state.contains("conditioning_set")) {
+          config.conditioning_set =
+              nb::cast<std::vector<size_t>>(state["conditioning_set"]);
+        }
 
         new (&controls) FitControlsVinecop(std::move(config));
       });

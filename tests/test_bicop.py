@@ -588,3 +588,95 @@ def test_bicop_flip_returns_swapped_copy() -> None:
   np.testing.assert_allclose(flipped.pdf(u), cop.pdf(swapped), rtol=1e-14)
   np.testing.assert_allclose(flipped.hfunc1(u), cop.hfunc2(swapped), rtol=1e-14)
   np.testing.assert_allclose(flipped.hfunc2(u), cop.hfunc1(swapped), rtol=1e-14)
+
+
+_BICOP_SCORE_MATRIX_METHODS = ["scores", "hessian", "scores_cov"]
+
+
+@pytest.mark.parametrize(
+  ("family", "parameters"),
+  [
+    (pv.families.gaussian, np.array([[0.5]])),
+    (pv.families.clayton, np.array([[2.0]])),
+    (pv.families.student, np.array([[0.5], [4.0]])),
+    (pv.families.bb1, np.array([[1.0], [1.5]])),
+  ],
+)
+def test_bicop_scores_family(
+  family: pv.BicopFamily, parameters: np.ndarray
+) -> None:
+  # Log-likelihood scores / gradient / Hessian on Bicop (vinecopulib#699),
+  # mirroring the Vinecop surface for a single pair copula.
+  n = 400
+  cop = pv.Bicop(family=family, parameters=parameters)
+  u = cop.simulate(n, seeds=[1, 2, 3])
+  p = cop.parameters.shape[0]
+
+  # Shapes: scores (n, p); gradient (p,); hessian / scores_cov (p, p).
+  scores = cop.scores(u)
+  assert isinstance(scores, np.ndarray) and scores.shape == (n, p)
+  grad = cop.gradient(u)
+  assert grad.shape == (p,)
+  # gradient is the observation-average of the scores.
+  np.testing.assert_allclose(grad, scores.mean(axis=0), rtol=1e-10, atol=1e-12)
+  assert cop.hessian(u).shape == (p, p)
+  cov = cop.scores_cov(u)
+  assert cov.shape == (p, p)
+  np.testing.assert_allclose(cov, cov.T, rtol=1e-10, atol=1e-12)
+
+  # hessian_full: one (p, p) matrix per observation.
+  hess_full = cop.hessian_full(u)
+  assert isinstance(hess_full, list) and len(hess_full) == n
+  for h in hess_full:
+    assert isinstance(h, np.ndarray) and h.shape == (p, p)
+
+  # scores_full: dict carrying only the score matrix (parity with Vinecop).
+  full = cop.scores_full(u)
+  assert isinstance(full, dict) and set(full) == {"scores"}
+  np.testing.assert_allclose(full["scores"], scores, rtol=1e-12, atol=1e-14)
+
+  # gradient matches a central finite difference of the average log-likelihood.
+  fd = np.empty(p)
+  for k in range(p):
+    step = 1e-6 * max(1.0, abs(cop.parameters[k, 0]))
+    up, dn = cop.parameters.copy(), cop.parameters.copy()
+    up[k, 0] += step
+    dn[k, 0] -= step
+    cop_up = pv.Bicop(family=family, parameters=up)
+    cop_dn = pv.Bicop(family=family, parameters=dn)
+    fd[k] = (cop_up.loglik(u) - cop_dn.loglik(u)) / (2 * step) / n
+  np.testing.assert_allclose(grad, fd, rtol=1e-4, atol=1e-5)
+
+  # Per-row parity: constant per-row parameters equal to the object's own
+  # reproduce the state-based result, and threading is consistent.
+  pars_const = np.tile(cop.parameters.ravel(), (n, 1))
+  for method in _BICOP_SCORE_MATRIX_METHODS + ["gradient"]:
+    fn = getattr(cop, method)
+    np.testing.assert_allclose(fn(u, pars_const), fn(u), rtol=1e-9, atol=1e-12)
+    np.testing.assert_allclose(
+      fn(u, parameters=pars_const, num_threads=2), fn(u), rtol=1e-9, atol=1e-12
+    )
+
+
+def test_bicop_scores_family_rejects_nonparametric_and_discrete() -> None:
+  # The score family is defined for parametric, continuous pair copulas only.
+  rng = np.random.RandomState(0)
+  u = rng.uniform(0.05, 0.95, size=(200, 2))
+
+  tll = pv.Bicop.from_data(
+    rng.uniform(size=(300, 2)),
+    controls=pv.FitControlsBicop(family_set=[pv.families.tll]),
+  )
+  for method in ("scores", "gradient", "hessian", "scores_cov"):
+    with pytest.raises(RuntimeError):
+      getattr(tll, method)(u)
+
+  discrete = pv.Bicop(
+    family=pv.families.clayton,
+    parameters=np.array([[2.0]]),
+    var_types=["d", "d"],
+  )
+  u_disc = np.column_stack([u, u])
+  for method in ("scores", "gradient", "hessian", "scores_cov"):
+    with pytest.raises(RuntimeError):
+      getattr(discrete, method)(u_disc)
