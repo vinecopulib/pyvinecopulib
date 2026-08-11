@@ -37,7 +37,7 @@ class TestPairCopulaData:
 
     # Test None data
     with pytest.raises(ValueError, match="`data` cannot be None"):
-      pairs_copula_data(None)
+      pairs_copula_data(None)  # ty: ignore[invalid-argument-type]
 
     # Test non-numeric data
     with pytest.raises(
@@ -762,10 +762,9 @@ class TestKde1dHelpers:
     from pyvinecopulib._python_helpers.kde1d import make_plotting_grid
 
     # Create a mock Kde1d object
-    grid_points = np.linspace(0, 5, 50)
     mock_kde = MagicMock()
     mock_kde.type = "continuous"
-    mock_kde.grid_points = grid_points
+    mock_kde.grid_points = np.linspace(0, 5, 50)
     mock_kde.xmin = np.nan
     mock_kde.xmax = np.nan
 
@@ -774,8 +773,8 @@ class TestKde1dHelpers:
     # Check properties
     assert isinstance(grid, np.ndarray)
     assert len(grid) == 100
-    assert grid[0] >= float(np.min(grid_points))
-    assert grid[-1] <= float(np.max(grid_points))
+    assert grid[0] >= mock_kde.grid_points.min()
+    assert grid[-1] <= mock_kde.grid_points.max()
 
   def test_make_plotting_grid_discrete(self) -> None:
     """Test make_plotting_grid function for discrete data"""
