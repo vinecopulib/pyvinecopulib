@@ -384,6 +384,29 @@ def c_type_to_numpy_type(c_spelling: str) -> str:
   return _C_TO_NUMPY_TYPES.get(s, s)
 
 
+# Eigen's dynamic-sized types carry no compile-time shape, so
+# `c_type_to_numpy_type` emits a generic `shape (n, m)` / `(n,)` placeholder.
+# When a `@return` description already states the shape (a `p x p` matrix, a
+# length-`p` vector, ...), that guess can contradict it -- parameter-space
+# returns such as `gradient` (length `p`), `hessian` / `scores_cov` (`p x p`).
+# Detect a shape/dimension mention in the prose (the LaTeX `\times`, a `x`
+# between dims, the words matrix / vector / length / shape / scalar).
+_SHAPE_IN_PROSE = re.compile(
+  r"shape|length|\\times|×|\b(?:matrix|matrices|vector|scalar)\b", re.I
+)
+
+
+def drop_placeholder_shape_if_described(
+  numpy_type: str, description: str
+) -> str:
+  """Strip the generic `, shape (...)` placeholder from a numpy type when the
+  return description already conveys the shape, so the (authoritative) prose is
+  not contradicted. Leaves the dtype (and non-ndarray types) untouched."""
+  if _SHAPE_IN_PROSE.search(description):
+    return re.sub(r", shape \([^)]*\)", "", numpy_type)
+  return numpy_type
+
+
 def _return_type_from_tokens(cursor):
   """Recover a function's return type by scanning its source tokens.
 
@@ -620,6 +643,9 @@ def transform_docstring(docstring, cursor=None):
     )
     return_type = c_type_to_numpy_type(return_c_type) if return_c_type else ""
     if return_type:
+      return_type = drop_placeholder_shape_if_described(
+        return_type, return_description
+      )
       return_section = (
         f"Returns\n-------\n{return_type}\n    {formatted_return}"
       )
