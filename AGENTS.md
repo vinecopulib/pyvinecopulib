@@ -121,7 +121,7 @@ ahead of it) is allowed to break sklearn/torch APIs as needed.
   contracts and canonical `BicopBase` / `VinecopBase` bases (NumPy or
   PyTorch) for hosting custom pair copulas in a vine, including
   **non-simplified / conditional** vines via a `ConditioningContext`
-  (walk-through: `examples/11_extending_pyvinecopulib.ipynb`).
+  (walk-through: `examples/10_extending_pyvinecopulib.ipynb`).
 
 ### Excluded (explicit)
 
@@ -459,7 +459,7 @@ automatically.
     turns the simplified cascade into a **non-simplified / conditional**
     vine (each pair also sees its conditioning-set values `u_D` and any
     external covariates `x`). Walk-through:
-    `examples/11_extending_pyvinecopulib.ipynb`.
+    `examples/10_extending_pyvinecopulib.ipynb`.
   - `solve_increasing` (`_rootfind.py`) — vectorized monotone bisection
     behind the default `hinv1` / `hinv2` (internal; not re-exported).
 
@@ -744,7 +744,7 @@ Round-trip / parity properties to preserve when touching numerics:
   an immutable / functional backend. For a **non-simplified /
   conditional** vine, pass a `NonSimplifiedContext` and drive
   `VinecopBase.fit` with a `fit_edge` callback; see
-  `examples/11_extending_pyvinecopulib.ipynb`. `TorchBicop` /
+  `examples/10_extending_pyvinecopulib.ipynb`. `TorchBicop` /
   `TorchVinecop` are the reference torch subclasses.
 - **New `pyvinecopulib.sklearn` backends.** Subclass the private
   `_VinecopBackendBase`, which already provides `structure_of` and the

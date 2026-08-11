@@ -583,7 +583,7 @@ conditioning set already sits there. Two tools arrange that:
 
 These operate on the *simplified* vine's exact conditional. For fully
 non-simplified / conditional pair copulas on a custom (e.g. neural) backend, see
-the extending guide (example notebook 11) instead. A fitted vine's tree-by-tree
+the extending guide (example notebook 10) instead. A fitted vine's tree-by-tree
 decomposition — the conditioned pairs, conditioning sets, and pair-copulas — is
 available as nested lists through
 :meth:`pyvinecopulib.core.Vinecop.get_trees`, and a bare structure round-trips
@@ -650,7 +650,7 @@ Where to next
 * :mod:`pyvinecopulib.torch` — PyTorch evaluators
   :class:`~pyvinecopulib.torch.TorchBicop` and
   :class:`~pyvinecopulib.torch.TorchVinecop` for GPU placement and
-  autograd. Notebook ``examples/10_torch_backend.ipynb``.
+  autograd. Notebook ``examples/09_torch_backend.ipynb``.
 * :mod:`pyvinecopulib.utils` —
   :class:`~pyvinecopulib.utils.Kde1d` for the marginals (notebook
   ``examples/07_kde1d.ipynb``);
@@ -718,7 +718,7 @@ threads them to the pair copula, giving a **non-simplified /
 conditional** vine. :meth:`pyvinecopulib.core.VinecopBase.fit`
 is the seam for *fitting* such a vine edge by edge.
 
-The ``examples/11_extending_pyvinecopulib.ipynb`` notebook is a
+The ``examples/10_extending_pyvinecopulib.ipynb`` notebook is a
 worked, end-to-end walk-through: a custom Gaussian pair copula hosted
 first in a simplified vine (matching
 :meth:`pyvinecopulib.core.Vinecop.from_structure`) and then made
