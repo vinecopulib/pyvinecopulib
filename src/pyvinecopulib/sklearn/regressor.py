@@ -63,10 +63,10 @@ class VineRegressor(VineBase, RegressorMixin):
         points and an extra :math:`\\hat f_Y(y_g)` factor.
     normalize_weights : bool, default=True
         If ``True`` (default), per-row weights produced by
-        `_iter_weights` are normalised to sum to one. Forest
-        wrappers set this to ``False`` so they can average raw
-        weights across trees and normalise once at the ensemble
-        level.
+        `_iter_weights` are rescaled to sum to one. Set to
+        ``False`` to get the raw copula weights instead -- useful
+        when a caller combines the weights of several fitted
+        estimators and wants to rescale once, after combining.
     random_state : int, RandomState instance or None, default=None
         Seeds the RNG used by stochastic operations. Resolved via
         `sklearn.utils.check_random_state` inside `fit`.
@@ -138,8 +138,9 @@ class VineRegressor(VineBase, RegressorMixin):
   ) -> np.ndarray:
     """Computes :math:`c_X(u_X) = \\int_0^1 c_{Y, X}(u_Y, u_X)\\, du_Y`.
 
-    Numerical approximation via Simpson's rule. Used internally by
-    forest-style ensembles for the conditional log-likelihood
+    Numerical approximation via Simpson's rule. This is the term
+    that turns the joint copula density into the conditional
+    log-likelihood
     :math:`\\log f_{Y \\mid X}(y \\mid x) = \\log c_{Y,X}(u_Y, u_X)
     - \\log c_X(u_X) + \\log f_Y(y)`.
 
@@ -193,8 +194,10 @@ class VineRegressor(VineBase, RegressorMixin):
   def _weights_for_batch(self, X_batch):
     """Conditional copula weights for one batch of test rows.
 
-    Single source of truth for the weight math — both `_iter_weights`
-    and ``VineForestRegressor`` call this. For each row computes
+    Single source of truth for the weight math: `_iter_weights` is
+    the batched generator over it and `_predict_from_iter` the
+    consumer. Kept as a separate, directly callable seam so external
+    code can reuse the exact weight definition. For each row computes
 
     .. math::
 
@@ -267,9 +270,10 @@ class VineRegressor(VineBase, RegressorMixin):
     X : ndarray, shape (n_samples, n_features), dtype float
         Test covariates (already validated / expanded).
     iter_weights : Callable
-        Generator yielding ``(weights, start, end)`` triples.
-        Usually `_iter_weights`, but a forest ensemble can pass an
-        averaged-across-trees variant.
+        Generator factory yielding ``(weights, start, end)``
+        triples. Usually `_iter_weights`; taking it as an argument
+        keeps the prediction step reusable with any other weight
+        source that follows the same batching contract.
 
     Returns
     -------

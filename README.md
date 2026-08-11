@@ -46,7 +46,7 @@ copula models. Advantages over VineCopula are
 Two opt-in subpackages extend the core library:
 
 * `pyvinecopulib.sklearn` — scikit-learn-compatible estimators
-  (`VineDensity`, `VineRegressor`, plus forest variants). Drop a vine
+  (`VineDensity`, `VineRegressor`). Drop a vine
   into any sklearn pipeline:
 
   ```python
@@ -79,7 +79,7 @@ PyTorch) to plug your **own** pair copula into a vine — including
 **non-simplified** vines where each pair copula conditions on its
 conditioning set. See the
 [concepts page](https://pyvinecopulib.readthedocs.io/en/latest/concepts.html)
-and the `examples/11_extending_pyvinecopulib.ipynb` notebook.
+and the `examples/10_extending_pyvinecopulib.ipynb` notebook.
 
 ### Conditional sampling and likelihood diagnostics
 

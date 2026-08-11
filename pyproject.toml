@@ -56,8 +56,6 @@ examples = ["jupyterlab", "scipy", "xlrd>=2.0"]
 sklearn = [
   "scikit-learn>=1.4",
   "pandas>=2.0",
-  "joblib>=1.3",
-  "scipy>=1.10",
 ]
 torch = [
   "torch>=2.0",
@@ -192,9 +190,7 @@ exclude = [
 exclude_files = [
   'src/pyvinecopulib/_python_helpers/.*\.py$',
   'src/pyvinecopulib/_deprecations\.py$',
-  'src/pyvinecopulib/sklearn/_mcs\.py$',
   'src/pyvinecopulib/sklearn/_base\.py$',
-  'src/pyvinecopulib/sklearn/_forest_base\.py$',
   'src/pyvinecopulib/torch/_batched\.py$',
   'src/pyvinecopulib/torch/_fit_tll\.py$',
   'src/pyvinecopulib/torch/_util\.py$',

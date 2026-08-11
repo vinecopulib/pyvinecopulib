@@ -2,7 +2,7 @@
 
 This subpackage wraps the core pyvinecopulib machinery behind the
 standard sklearn ``BaseEstimator`` / ``fit`` / ``predict`` interface.
-Four estimators ship:
+Two estimators ship:
 
 - :class:`VineDensity` — non-parametric joint-density estimator. Fits
   univariate marginals with :class:`pyvinecopulib.utils.Kde1d`, then a
@@ -11,17 +11,13 @@ Four estimators ship:
 - :class:`VineRegressor` — non-parametric conditional mean / quantile
   regressor built from a vine copula over ``(Y, X)``. Predictions are
   weighted statistics of the training responses.
-- :class:`VineForestDensity` and :class:`VineForestRegressor` —
-  ensembles of the above, fit on randomly sampled vine structures and
-  pruned via a model-confidence-set selector. Predictions average
-  across surviving members.
 
 If you have not used vine copulas before, the
 :doc:`concepts page </concepts>` introduces pair copulas, R-vines,
 and the default *Transformed Local Likelihood* (TLL) pair-copula
 family in ~5 minutes.
 
-Requires scikit-learn, pandas, joblib, and scipy. Install with
+Requires scikit-learn and pandas. Install with
 ``pip install pyvinecopulib[sklearn]``.
 
 Notes
@@ -63,15 +59,11 @@ from .backends import (
   resolve_backend,
 )
 from .density import VineDensity
-from .forest_density import VineForestDensity
-from .forest_regressor import VineForestRegressor
 from .regressor import VineRegressor
 
 __all__ = [
   "TorchVinecopBackend",
   "VineDensity",
-  "VineForestDensity",
-  "VineForestRegressor",
   "VineRegressor",
   "VinecopBackend",
   "backends",

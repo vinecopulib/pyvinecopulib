@@ -184,3 +184,29 @@ def test_normalize_weights_parameter(regression_setup):
   # picks up the absolute scale of the copula density, so outputs
   # generally differ.
   assert not np.allclose(pred_default, pred_raw)
+
+
+def test_copula_marginal_density_single_covariate(regression_setup):
+  """``_copula_marginal_density`` recovers :math:`c_X \\equiv 1` in 2-d.
+
+  Integrating a bivariate copula density over one of its arguments is
+  exactly one, so a fit with a single covariate pins the Simpson
+  quadrature, the batching loop, the even-``n_grid`` fix-up, and the
+  ``log=True`` branch in one shot. This method has no in-tree caller,
+  so without this test it would be uncovered.
+  """
+  X_train, X_test, y_train, _, _, _ = regression_setup
+  reg = VineRegressor(mean=True, batch_size=7).fit(X_train[:, :1], y_train)
+
+  c_x = reg._copula_marginal_density(X_test[:20, :1], n_grid=200)
+  assert c_x.shape == (20,)
+  assert np.all(c_x > 0)
+  assert np.all(np.isfinite(c_x))
+  # The identity is exact; the deviation is quadrature plus TLL
+  # boundary error, which is a few 1e-3 in the bulk and up to ~0.15 for
+  # a point near the edge of the support.
+  assert abs(np.median(c_x) - 1.0) < 1e-2
+  assert np.allclose(c_x, 1.0, atol=0.25)
+
+  log_c = reg._copula_marginal_density(X_test[:20, :1], n_grid=200, log=True)
+  assert np.allclose(log_c, np.log(c_x))

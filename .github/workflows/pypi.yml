@@ -226,9 +226,8 @@ jobs:
         python: [310, 311, 312, 313, 314]
         cfg:
           # macos-15-intel wheels are built + published by the `build` job, but
-          # are NOT unit-tested here: PyTorch has no x86_64-macOS wheel, and the
-          # platform's libm/BLAS produces a numerical edge case in the
-          # VineForestRegressor(val_fraction=0.0) sklearn-compliance checks.
+          # are NOT unit-tested here: PyTorch has no x86_64-macOS wheel, so the
+          # `test_torch_*` half of the suite cannot run on that platform.
           - { os: ubuntu-latest, cibw_id: manylinux_x86_64 }
           - { os: macos-15, cibw_id: macosx_arm64 }
           - { os: windows-latest, cibw_id: win_amd64 }

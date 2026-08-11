@@ -1,7 +1,7 @@
 """sklearn ``check_estimator`` compliance tests.
 
 Runs :func:`sklearn.utils.estimator_checks.parametrize_with_checks` on
-the four sklearn estimators and documents which standard checks are
+both sklearn estimators and documents which standard checks are
 opted out of. The skip list captures two categories:
 
 - **Genuine opt-outs**: checks that don't apply to a joint-density /
@@ -34,12 +34,7 @@ _PWC_KWARGS: dict = {}
 if "xfail_strict" in inspect.signature(parametrize_with_checks).parameters:
   _PWC_KWARGS["xfail_strict"] = False
 
-from pyvinecopulib.sklearn import (  # noqa: E402
-  VineDensity,
-  VineForestDensity,
-  VineForestRegressor,
-  VineRegressor,
-)
+from pyvinecopulib.sklearn import VineDensity, VineRegressor  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -77,52 +72,6 @@ _GENUINE_OPT_OUTS = {
 }
 
 
-_FOREST_EXTRA_OPT_OUTS = {
-  "check_fit_score_takes_y": "TODO: forest score(X, y=None) for density variant",
-  "check_estimators_overwrite_params": (
-    "TODO: VineForestBase.__init__ stores base_class — clone() re-builds"
-  ),
-  "check_dont_overwrite_parameters": (
-    "TODO: VineForestBase.__init__ stores base_class — clone() re-builds"
-  ),
-  "check_estimators_fit_returns_self": (
-    "TODO: fit returns self via the parent _fit_ensemble pathway"
-  ),
-  "check_readonly_memmap_input": "TODO: memmap input handling",
-  "check_estimators_pickle": "TODO: pickling round-trip for forest survivors",
-  "check_estimators_pickle(readonly_memmap=True)": (
-    "TODO: pickling round-trip on memmap input"
-  ),
-  "check_f_contiguous_array_estimator": "TODO: F-contiguous array path",
-  "check_methods_sample_order_invariance": (
-    "TODO: predict / score_samples must be row-permutation invariant"
-  ),
-  "check_methods_subset_invariance": (
-    "TODO: predict / score_samples must be subset invariant"
-  ),
-  "check_dict_unchanged": (
-    "TODO: predict must not mutate the estimator's __dict__"
-  ),
-  "check_fit_idempotent": "TODO: refitting must produce the same result",
-  "check_fit_check_is_fitted": (
-    "TODO: forest.cdf / forest.sample currently rely on private "
-    "_check_fitted variants on the survivors"
-  ),
-  "check_n_features_in": (
-    "TODO: forest.n_features_in_ check path on shape-mismatched input"
-  ),
-  "check_positive_only_tag_during_fit": "TODO: positive_only tag handling",
-}
-
-
-_FOREST_REGRESSOR_EXTRA = {
-  "check_fit2d_predict1d": "TODO: 1-row predict on a quantile-stacked output",
-  "check_pipeline_consistency": (
-    "regressor uses quantile-stacked output that doesn't fit Pipeline.score"
-  ),
-}
-
-
 # Checks that actually pass on each estimator despite living in the
 # baseline skip list. Listed here so they get popped before
 # ``parametrize_with_checks`` sees the dict — otherwise pytest emits
@@ -140,25 +89,6 @@ _KNOWN_PASSING_PER_ESTIMATOR: dict[str, tuple[str, ...]] = {
   "VineRegressor": (
     "check_estimators_dtypes",
     "check_fit2d_1feature",
-  ),
-  "VineForestDensity": (),
-  "VineForestRegressor": (
-    "check_dict_unchanged",
-    "check_dont_overwrite_parameters",
-    "check_estimators_dtypes",
-    "check_estimators_fit_returns_self",
-    "check_estimators_overwrite_params",
-    "check_estimators_pickle",
-    "check_estimators_pickle(readonly_memmap=True)",
-    "check_f_contiguous_array_estimator",
-    "check_fit2d_1feature",
-    "check_fit_check_is_fitted",
-    "check_fit_idempotent",
-    "check_methods_sample_order_invariance",
-    "check_methods_subset_invariance",
-    "check_n_features_in",
-    "check_positive_only_tag_during_fit",
-    "check_readonly_memmap_input",
   ),
 }
 
@@ -192,19 +122,6 @@ def _regressor_opt_outs() -> dict[str, str]:
   return _prune(d, "VineRegressor")
 
 
-def _forest_density_opt_outs() -> dict[str, str]:
-  d = dict(_GENUINE_OPT_OUTS)
-  d.update(_FOREST_EXTRA_OPT_OUTS)
-  return _prune(d, "VineForestDensity")
-
-
-def _forest_regressor_opt_outs() -> dict[str, str]:
-  d = _regressor_opt_outs()
-  d.update(_FOREST_EXTRA_OPT_OUTS)
-  d.update(_FOREST_REGRESSOR_EXTRA)
-  return _prune(d, "VineForestRegressor")
-
-
 # ---------------------------------------------------------------------------
 # Parametrized run
 # ---------------------------------------------------------------------------
@@ -213,16 +130,6 @@ def _forest_regressor_opt_outs() -> dict[str, str]:
 _ESTIMATORS = [
   (VineDensity(), _density_opt_outs()),
   (VineRegressor(quantiles=[0.5]), _regressor_opt_outs()),
-  (
-    VineForestDensity(n_vines=2, val_fraction=0.0),
-    _forest_density_opt_outs(),
-  ),
-  (
-    VineForestRegressor(
-      n_vines=2, val_fraction=0.0, base_params={"quantiles": [0.5]}
-    ),
-    _forest_regressor_opt_outs(),
-  ),
 ]
 
 
