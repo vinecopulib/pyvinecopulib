@@ -111,6 +111,25 @@ def test_train_diagnostics_present_when_enabled(sample_array_data):
   assert np.all(np.isfinite(forest.random_logliks_train_))
 
 
+def test_train_diagnostics_cleared_on_refit(sample_array_data):
+  """Refitting with the flag toggled off must not leave stale train
+  diagnostics from the previous fit."""
+  X, _, _ = sample_array_data
+  forest = VineForestDensity(
+    n_vines=2,
+    val_fraction=0.2,
+    random_state=0,
+    n_jobs=1,
+    compute_train_scores=True,
+  )
+  forest.fit(X)
+  assert hasattr(forest, "default_rank_train_")
+  forest.set_params(compute_train_scores=False)
+  forest.fit(X)
+  assert not hasattr(forest, "default_rank_train_")
+  assert not hasattr(forest, "random_logliks_train_")
+
+
 def test_compute_train_scores_does_not_change_fit(sample_array_data):
   """The extra train-side evaluations must not consume RNG state or
   alter selection."""

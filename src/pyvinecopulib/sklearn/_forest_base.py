@@ -384,6 +384,11 @@ class VineForestBase(BaseEstimator, ABC):
     # omitted these.
     self._default_loglik = default_loglik_val
     self._default_estimator = default
+    # Drop train-side diagnostics from any previous fit so a refit with
+    # the flag off does not leave stale attributes behind.
+    for attr in ("default_rank_train_", "random_logliks_train_"):
+      if hasattr(self, attr):
+        delattr(self, attr)
     if self.compute_train_scores:
       rand_train = np.array([lt.mean() for _, _, lt in results[: self.n_vines]])
       self.default_rank_train_ = float(
