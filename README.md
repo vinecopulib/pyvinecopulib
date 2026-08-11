@@ -81,6 +81,17 @@ conditioning set. See the
 [concepts page](https://pyvinecopulib.readthedocs.io/en/latest/concepts.html)
 and the `examples/11_extending_pyvinecopulib.ipynb` notebook.
 
+### Conditional sampling and likelihood diagnostics
+
+A fitted `Vinecop` can draw from the conditional distribution of a subset of
+variables given the rest (`simulate_conditional`), select or `reorient` a
+structure so a chosen conditioning set sits at the order tail, and expose its
+tree-by-tree decomposition with the fitted pair copulas (`get_trees`).
+Parametric fits additionally provide analytic log-likelihood scores, gradient,
+Hessian, and score covariance (`scores` / `gradient` / `hessian` /
+`scores_cov`, on both `Bicop` and `Vinecop`) for gradient-based inference. See
+the `examples/05_conditional_sampling_and_vines.ipynb` notebook.
+
 ### License
 
 pyvinecopulib is provided under an MIT license that can be found in the LICENSE

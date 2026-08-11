@@ -143,6 +143,12 @@ nitpick_ignore_regex = [
     r"py:.*",
     r"pyvinecopulib\.core\.Bicop\.(get_parameters_(lower|upper)_bounds|flip)",
   ),
+  # Upstream docstrings reference the C++ getter/setter names, but the binding
+  # exposes them as the ``conditioning_set`` property.
+  (
+    r"py:.*",
+    r"pyvinecopulib\.core\.FitControlsVinecop\.(get|set)_conditioning_set",
+  ),
   (r"py:.*", r"pyvinecopulib\.sklearn\..*\.set_score_request"),
 ]
 

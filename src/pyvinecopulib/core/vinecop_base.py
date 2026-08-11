@@ -1289,6 +1289,10 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       if len(nodes) <= 1:
         break
 
+    # Selection finalization via the shared list-of-trees primitive.
+    # ``Vinecop.select`` and ``RVineStructure.from_trees`` share one diagonal
+    # convention (conditioned[0], flip-free), so this reproduces the compiled
+    # selector's matrix exactly.
     structure = RVineStructure.from_trees(d, trees)
     # Place each selection-time pair onto its finalized slot, mirroring the
     # peel: the slot at column ``e`` of tree ``t`` hosts the (unique) edge

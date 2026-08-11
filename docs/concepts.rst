@@ -408,6 +408,14 @@ for Gumbel / Joe, …), 180° is the *survival* copula (covers the
 opposite tail), and 90° / 270° provide negative dependence variants.
 :meth:`pyvinecopulib.core.Bicop.flip` flips between rotations
 0° :math:`\leftrightarrow` 180° and 90° :math:`\leftrightarrow` 270°.
+Each fitted pair copula also reports its tail-dependence coefficients in the
+four corners of the unit square as the read-only
+:attr:`~pyvinecopulib.core.Bicop.taildep` matrix (NaN for ``tll``) and
+Blomqvist's :math:`\beta = 4\,C(0.5, 0.5) - 1` as
+:attr:`~pyvinecopulib.core.Bicop.beta`; the maps
+:meth:`~pyvinecopulib.core.Bicop.parameters_to_taildep` and
+:meth:`~pyvinecopulib.core.Bicop.parameters_to_beta` evaluate them at arbitrary
+parameters.
 
 Family-group constants (also in :mod:`pyvinecopulib.families`) are
 pre-built lists you can pass directly to
@@ -497,6 +505,12 @@ mBIC inside :meth:`pyvinecopulib.core.Bicop.select`; choose the
 selection criterion via
 :attr:`pyvinecopulib.core.FitControlsBicop.selection_criterion`.
 
+For asymptotics on a *parametric* fit, both ``Bicop`` and ``Vinecop`` expose the
+log-likelihood score (``scores``), its observation-average (``gradient``), the
+Hessian (``hessian``), and the score covariance (``scores_cov``) at the fitted
+parameters; on ``Vinecop`` these accept an optional per-observation
+``parameters`` matrix for evaluation off the fitted point.
+
 
 .. _concepts-structure-selection:
 
@@ -522,6 +536,15 @@ handful of variables. Two algorithms are exposed via
   the absolute dependence on each candidate edge. Used to seed the
   random search ensembles below.
 
+Selection is further tunable through
+:class:`~pyvinecopulib.core.FitControlsVinecop`: supply a custom edge weight via
+:attr:`~pyvinecopulib.core.FitControlsVinecop.tree_criterion_function` (any
+callable ``(data, weights) -> float`` returning a scalar dependence measure),
+make random searches reproducible with
+:attr:`~pyvinecopulib.core.FitControlsVinecop.seeds`, and toggle whether rotated
+families are considered with
+:attr:`~pyvinecopulib.core.FitControlsVinecop.allow_rotations`.
+
 When better accuracy matters more than runtime, the sklearn
 forest estimators do a *Bayesian-style hold-out random search*
 over a set of candidate structures and combine the survivors via a
@@ -538,6 +561,38 @@ integer :math:`T < d - 1`: pair copulas in trees
 both fit time and statistical degrees of freedom. The same effect
 can be triggered automatically via the mBIC criterion (Nagler,
 2019).
+
+Conditional sampling and conditioning-aware vines
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A fitted vine can sample from the *conditional* distribution of a subset of
+variables given fixed values of the rest, via
+:meth:`pyvinecopulib.core.Vinecop.simulate_conditional`. The conditioning
+variables are the last ``k`` of the vine order
+(:attr:`~pyvinecopulib.core.Vinecop.order`): each row of ``u_cond`` is one
+conditioning point and the corresponding output row is drawn from the remaining
+variables' distribution conditional on that point (implemented as a Rosenblatt
+transform of the conditioning variables followed by an inverse Rosenblatt
+transform, so discrete conditioning variables are supported too).
+
+Because conditioning acts on the order *tail*, it is most efficient when the
+conditioning set already sits there. Two tools arrange that:
+
+* :attr:`pyvinecopulib.core.FitControlsVinecop.conditioning_set` — select a vine
+  whose order ends with a chosen set of variables (their own optimal sub-vine is
+  fit first, then placed at the tail). Requires an MST ``tree_algorithm``.
+* :meth:`pyvinecopulib.core.Vinecop.reorient` — relabel an already-fitted vine
+  to an equivalent one whose order tail equals a given set, without refitting.
+  This is value-preserving: ``pdf`` and ``loglik`` are invariant.
+
+These operate on the *simplified* vine's exact conditional. For fully
+non-simplified / conditional pair copulas on a custom (e.g. neural) backend, see
+the extending guide (example notebook 11) instead. A fitted vine's tree-by-tree
+decomposition — the conditioned pairs, conditioning sets, and pair-copulas — is
+available as nested lists through
+:meth:`pyvinecopulib.core.Vinecop.get_trees`, and a bare structure round-trips
+through :meth:`pyvinecopulib.core.RVineStructure.get_trees` /
+:meth:`pyvinecopulib.core.RVineStructure.from_trees`.
 
 
 .. _concepts-forests:
