@@ -41,3 +41,94 @@ def test_bicopfamily_members_rendered_as_class_attributes():
   assert members  # sanity: the enum exposes members
   for m in members:
     assert f"  {m}: BicopFamily = ..." in body
+
+
+def _rendered(cls, name: str) -> str:
+  gen = _load_generator()
+  return "\n".join(gen.render_class_stub(cls, name))
+
+
+def test_keyword_only_arguments_survive_into_the_stub():
+  """The new conditioning / per-row arguments are keyword-only.
+
+  A nanobind overload set renders as ``"Overloaded function."`` and loses its
+  signature entirely, so each of these is bound as one method with an internal
+  dispatch. Pin the rendered signature: a dropped ``*`` or a renamed
+  ``nb::arg`` would otherwise reach users' type checkers unnoticed.
+  """
+  from pyvinecopulib.core import Bicop, Vinecop
+
+  bicop = _rendered(Bicop, "Bicop")
+  vinecop = _rendered(Vinecop, "Vinecop")
+
+  for haystack, needle in [
+    (bicop, "def simulate(self, n: int | None = None"),
+    (bicop, "*, parameters:"),
+    (vinecop, "def rosenblatt(self"),
+    (vinecop, "def inverse_rosenblatt(self"),
+    (vinecop, "def simulate_conditional(self"),
+  ]:
+    assert needle in haystack, f"missing {needle!r}"
+
+  # `conditioning_set` must appear after a bare `*` on all three methods, so
+  # position 2 keeps meaning `num_threads` / `qrng`.
+  for method in ("rosenblatt", "inverse_rosenblatt", "simulate_conditional"):
+    line = next(
+      line for line in vinecop.splitlines() if f"def {method}(self" in line
+    )
+    assert "*, conditioning_set:" in line, line
+
+
+def test_from_data_accepts_a_dynamically_sized_matrix():
+  """`Bicop.from_data` must not re-acquire a static two-column shape.
+
+  A statically two-column Eigen type makes the discrete layouts unpassable.
+  """
+  from pyvinecopulib.core import Bicop
+
+  line = next(
+    line
+    for line in _rendered(Bicop, "Bicop").splitlines()
+    if "def from_data(" in line
+  )
+  assert "shape=(*, 2)" not in line, line
+
+
+def test_no_binding_is_an_overload_set():
+  """Alternative constructors are named factories, not C++-style overloads.
+
+  An overload set costs twice: nanobind concatenates the docstrings, so two
+  numpydoc ``Parameters`` sections collide and fail the docs build, and the
+  generator above renders only the first signature, so a type checker rejects
+  every call matching the others. See the convention in AGENTS.md.
+  """
+  import inspect
+  import re
+
+  from pyvinecopulib import core, families, utils
+
+  overloaded = []
+  for module in (core, families, utils):
+    for name in getattr(module, "__all__", []):
+      obj = getattr(module, name)
+      if not inspect.isclass(obj):
+        continue
+      for attr_name in dir(obj):
+        try:
+          attr = getattr(obj, attr_name)
+        except Exception:
+          continue
+        doc = inspect.getdoc(attr) or ""
+        pattern = re.compile(rf"^{re.escape(attr_name)}\(.*\)\s*->")
+        signatures = 0
+        for line in doc.splitlines():
+          if not pattern.match(line.strip()):
+            break
+          signatures += 1
+        if signatures > 1:
+          overloaded.append(f"{module.__name__}.{name}.{attr_name}")
+
+  assert not overloaded, (
+    "bound as overload sets; bind a named factory instead: "
+    + ", ".join(sorted(set(overloaded)))
+  )
