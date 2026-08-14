@@ -270,6 +270,7 @@ ones. Continuous, all-parametric vines only.
   // C++ order positionally would silently rebind `rosenblatt(u, 4)`.
   const std::string conditioning_set_note =
       R"""(
+
 Notes
 -----
 ``conditioning_set`` is a list of 1-based variable indices, holding those
