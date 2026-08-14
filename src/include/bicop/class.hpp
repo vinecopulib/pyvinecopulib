@@ -93,6 +93,7 @@ Alternatives to instantiate bivariate copulas are:
   // handed `[rho, df]` would silently return one observation instead of two.
   const std::string simulate_doc = std::string(bicop_doc.simulate.doc_3args) +
                                    R"""(
+
 Notes
 -----
 Pass ``parameters`` instead of ``n`` to draw each observation from a different
