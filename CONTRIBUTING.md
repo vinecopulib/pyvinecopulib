@@ -72,7 +72,7 @@ uv run ty check src tests
 
 ## Dependency layout
 
-User-facing extras (`doc`, `examples`, `sklearn`) live under
+User-facing extras (`doc`, `examples`, `sklearn`, `torch`) live under
 `[project.optional-dependencies]` — installable via
 `pip install pyvinecopulib[<extra>]`.
 
@@ -83,7 +83,7 @@ Developer-only deps live under PEP 735 `[dependency-groups]`:
 | `build` | `[build-system].requires` + `ninja` + `cmake`. |
 | `test` | pytest stack. |
 | `notebooks` | jupyter, nbmake, nbconvert, nbformat. |
-| `dev` | ruff, ty, pre-commit, twine (`include-group = "build"`). |
+| `dev` | ruff, ty, bandit, pre-commit, twine (`include-group = "build"`). |
 
 Combine groups and extras as needed: `uv sync --group test --extra examples`.
 
@@ -94,7 +94,8 @@ Combine groups and extras as needed: `uv sync --group test --extra examples`.
 | Command | Purpose |
 |---|---|
 | `make sync` | Install all deps + editable build + pre-commit hooks. |
-| `make check` | Read-only lint + format-check + ty. |
+| `make lint` | Lint + format-check + security-lint; needs no compiled extension. |
+| `make check` | `make lint` plus `ty`, which reads the generated `.pyi` stubs. |
 | `make format` | Apply ruff autofixes + format. |
 | `make test` / `make test-examples` | Pytest suite / notebook tests. |
 | `make docs` | Sphinx build (-W). |
@@ -111,24 +112,48 @@ general whitespace/TOML/JSON checks. `make sync` installs them.
 
 `.github/workflows/pypi.yml` is the single workflow. Jobs:
 
-- **`build`** — cibuildwheel matrix (12 wheels: Linux glibc/musl, macOS arm64,
-  Windows × cp310/cp311/cp312-ABI3).
+- **`lint`** — ruff, ruff format and bandit; gates the wheel matrix so a
+  formatting error does not cost 15 cibuildwheel legs.
+- **`build`** — cibuildwheel matrix (15 wheels: Linux glibc/musl, macOS x86_64,
+  macOS arm64, Windows × cp310/cp311/cp312-ABI3).
 - **`check_wheels`** — counts and twine-checks artifacts.
 - **`verify_docs_build`** — RTD-mirror doc build with `-W`.
 - **`install_and_unit_test`** — installs each wheel and runs pytest + notebook
   tests.
-- **`regenerate_notebooks`** — fires on PRs to `main` (or any PR labelled
-  `regenerate-notebooks`); auto-commits refreshed outputs.
+- **`regenerate_notebooks`** — refreshes stored notebook outputs and
+  auto-commits them. Fires only on the `regenerate-notebooks` label: it pushes
+  to the pull request's head branch, which would rewrite the base of anything
+  stacked above it. Push a commit after labelling — the trigger does not
+  include `labeled`.
 - **`build_sdist`** — runs `make check && make sdist` and tests the installed
   sdist.
 - **`upload_to_pypi`** — publishes on tag push.
 
+## Pull requests
+
+Pull requests go to `main`. There is no long-lived development branch.
+
+- Subjects are `type(scope): subject`, with `!` marking a breaking change.
+  Scopes are the subpackages and areas: `core`, `families`, `utils`, `sklearn`,
+  `torch`, `bicop`, `vinecop`, `build`, `ci`, `docs`, `deps`, `examples`.
+- Merges are squashed: one pull request, one commit on `main`. The squashed
+  message is what explains the change, since that is what `git log` — and hence
+  `CHANGELOG.md` — is read from.
+- For work that builds on work still in review, **stack** the pull requests:
+  each branches off the previous one and targets it, managed with `gh stack`
+  (`init` / `add` / `submit` / `sync` / `rebase`). Nothing may push to a branch
+  in a stack outside `gh stack`.
+
+The policy behind these — including when *not* to merge — is in
+[AGENTS.md](AGENTS.md#branching-and-releases).
+
 ## Release process
 
-1. Feature branches → PR → `dev`.
-2. PR `dev → main` — `regenerate_notebooks` refreshes outputs automatically.
-3. Merge and tag on `main` — `upload_to_pypi` ships to PyPI and Read the Docs
-   picks up the tag.
+Releases are tags on `main`. See [docs/releasing.md](docs/releasing.md) for the
+checklist; the short version is: date the `(unreleased)` heading in
+`CHANGELOG.md`, bump the version, merge, then tag. Pushing a `v*` tag publishes
+to PyPI, and **PyPI never re-accepts a version number** — a mistagged release
+is permanent.
 
 ## Code style
 

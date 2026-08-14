@@ -193,7 +193,6 @@ To build the documentation locally:
 
 ```bash
 make docs           # one-shot HTML build → docs/_build/html/
-make docs-serve     # live-reload dev server (sphinx-autobuild)
 ```
 
 ## Contributing

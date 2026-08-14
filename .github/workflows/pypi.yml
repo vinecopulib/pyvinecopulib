@@ -47,6 +47,8 @@ jobs:
         env:
           UV_NO_SYNC: "1"
         run: make lint
+      - name: Check the version metadata agrees
+        run: python3 scripts/check_version.py
 
   build:
     needs: [lint]
