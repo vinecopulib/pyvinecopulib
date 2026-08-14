@@ -1,5 +1,5 @@
 # Thin wrappers around `uv`. See CONTRIBUTING.md.
-.PHONY: help sync clean check format test test-examples docs sdist build notebooks
+.PHONY: help sync clean lint check format test test-examples docs sdist build notebooks
 .DEFAULT_GOAL := help
 
 UV := uv
@@ -16,11 +16,13 @@ clean: ## Wipe build artifacts and Python caches
 	rm -rf build/ dist/ *.egg-info/
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
-check: ## Read-only lint + format-check + type-check + security-lint (CI-safe)
+lint: ## Lint + format-check + security-lint; needs no compiled extension
 	$(UV) run ruff check src tests
 	$(UV) run ruff format --check src tests
-	$(UV) run ty check
 	$(UV) run bandit -c pyproject.toml -q -r src/pyvinecopulib scripts
+
+check: lint ## `lint` plus the type check, which reads the generated .pyi stubs
+	$(UV) run ty check
 
 format: ## Apply ruff autofixes + format
 	$(UV) run ruff check --fix src tests
