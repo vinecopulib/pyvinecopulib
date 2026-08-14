@@ -95,6 +95,7 @@
 
 #### NEW FEATURES
 
+- `Bicop.from_data` accepts discrete data. It took a statically two-column matrix, so the `n x (2 + k)` and `n x 4` layouts a discrete pair needs could not be passed at all ([vinecopulib#729](https://github.com/vinecopulib/vinecopulib/pull/729)).
 - `Vinecop.simulate_conditional` accepts an explicit `conditioning_set` and both discrete `u_cond` layouts — expanded `(n, 2k)` and compact `(n, k + k_d)` ([vinecopulib#729](https://github.com/vinecopulib/vinecopulib/pull/729)). Note that the two forms map `u_cond`'s columns differently: implicitly by the vine's order tail, explicitly by the given set.
 - `Vinecop.rosenblatt` and `Vinecop.inverse_rosenblatt` accept an explicit `conditioning_set`, holding the named variables fixed instead of the ones at the tail of the vine order, and evaluating through a reoriented non-owning view rather than copying pair copulas ([vinecopulib#715](https://github.com/vinecopulib/vinecopulib/pull/715)). The argument is keyword-only, so `rosenblatt(u, 4)` still means `num_threads=4`.
 - `Bicop.simulate` draws one observation per parameter set: pass `parameters` (an `(n, p)` array) instead of `n`, whose row count then fixes the sample size ([vinecopulib#719](https://github.com/vinecopulib/vinecopulib/pull/719)). `parameters` is keyword-only, so the positional `simulate(n, qrng, seeds)` keeps its meaning, and rejects a 1-d array, which would otherwise be read as a single row. `num_threads` applies only to this form.
