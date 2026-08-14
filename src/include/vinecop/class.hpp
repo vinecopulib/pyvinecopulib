@@ -286,6 +286,7 @@ the model.
   const std::string simulate_conditional_doc =
       std::string(vinecop_doc.simulate_conditional.doc_4args) +
       R"""(
+
 Notes
 -----
 ``conditioning_set`` names the variables to condition on, as 1-based indices,
