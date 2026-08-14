@@ -99,19 +99,6 @@ if(DEFINED ENV{EIGEN3_INCLUDE_DIR})
   set(EIGEN3_INCLUDE_DIR $ENV{EIGEN3_INCLUDE_DIR})
 endif()
 
-# Eigen's modern CMake package (notably Eigen 5.x on conda-forge) exposes the
-# include path only via the Eigen3::Eigen target and no longer sets the legacy
-# EIGEN3_INCLUDE_DIR variable that findDependencies.cmake (external_includes)
-# and the docstr.hpp generator below rely on. Derive it from the target so both
-# the compile and the libclang docstring pass find <Eigen/Dense>.
-if(NOT DEFINED EIGEN3_INCLUDE_DIR)
-  find_package(Eigen3 QUIET CONFIG)
-  if(TARGET Eigen3::Eigen)
-    get_target_property(EIGEN3_INCLUDE_DIR Eigen3::Eigen
-                        INTERFACE_INCLUDE_DIRECTORIES)
-  endif()
-endif()
-
 if(DEFINED ENV{Boost_INCLUDE_DIR})
   set(Boost_INCLUDE_DIRS $ENV{Boost_INCLUDE_DIR})
 endif()

@@ -472,15 +472,28 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
       .def("simulate", &Vinecop::simulate, "n"_a, "qrng"_a = false,
            "num_threads"_a = 1, "seeds"_a = std::vector<int>(),
            vinecop_doc.simulate.doc, nb::call_guard<nb::gil_scoped_release>())
-      .def("simulate_conditional", &Vinecop::simulate_conditional, "u_cond"_a,
-           "qrng"_a = false, "num_threads"_a = 1,
-           "seeds"_a = std::vector<int>(), vinecop_doc.simulate_conditional.doc,
+      .def("simulate_conditional",
+           static_cast<Eigen::MatrixXd (Vinecop::*)(
+               const Eigen::MatrixXd&, const bool, const size_t,
+               const std::vector<int>&) const>(&Vinecop::simulate_conditional),
+           "u_cond"_a, "qrng"_a = false, "num_threads"_a = 1,
+           "seeds"_a = std::vector<int>(),
+           vinecop_doc.simulate_conditional.doc_4args,
            nb::call_guard<nb::gil_scoped_release>())
-      .def("rosenblatt", &Vinecop::rosenblatt, "u"_a, "num_threads"_a = 1,
-           "randomize_discrete"_a = true, "seeds"_a = std::vector<int>(),
-           vinecop_doc.rosenblatt.doc, nb::call_guard<nb::gil_scoped_release>())
-      .def("inverse_rosenblatt", &Vinecop::inverse_rosenblatt, "u"_a,
-           "num_threads"_a = 1, vinecop_doc.inverse_rosenblatt.doc,
+      // `u` is taken by value and moved: the implementation uses it as a
+      // working buffer, and a const reference would force an n x d copy.
+      .def("rosenblatt",
+           static_cast<Eigen::MatrixXd (Vinecop::*)(
+               Eigen::MatrixXd, const size_t, bool, std::vector<int>) const>(
+               &Vinecop::rosenblatt),
+           "u"_a, "num_threads"_a = 1, "randomize_discrete"_a = true,
+           "seeds"_a = std::vector<int>(), vinecop_doc.rosenblatt.doc_4args,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("inverse_rosenblatt",
+           static_cast<Eigen::MatrixXd (Vinecop::*)(const Eigen::MatrixXd&,
+                                                    const size_t) const>(
+               &Vinecop::inverse_rosenblatt),
+           "u"_a, "num_threads"_a = 1, vinecop_doc.inverse_rosenblatt.doc_2args,
            nb::call_guard<nb::gil_scoped_release>())
       .def("reorient", &Vinecop::reorient, "conditioning_set"_a,
            vinecop_doc.reorient.doc, nb::call_guard<nb::gil_scoped_release>())

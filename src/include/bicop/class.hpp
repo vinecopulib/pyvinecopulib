@@ -85,6 +85,31 @@ Alternatives to instantiate bivariate copulas are:
 - ``Bicop.from_json()``: Instantiate from a JSON string.
 )""";
 
+  // Supplied inline rather than via the generated docstring: the `@cond
+  // INTERNAL` guard around `friend class BicopView` in the upstream header is
+  // attached to the family constructor that follows it, so that constructor
+  // reaches the extractor with an empty comment and is dropped. Delete this and
+  // restore `bicop_doc.ctor.doc_4args_family_rotation_parameters_var_types`
+  // once the pin includes vinecopulib#733.
+  const char* from_family_doc =
+      R"""(Instantiates a specific bivariate copula model.
+
+Parameters
+----------
+family : BicopFamily
+    The copula family.
+
+rotation : int
+    The rotation of the copula; one of 0, 90, 180, or 270 (for Independence,
+    Gaussian, Student, Frank, and nonparametric families, only 0 is allowed).
+
+parameters : ndarray, shape (p, 1), dtype float
+    The copula parameters.
+
+var_types : list of str
+    Two strings specifying the types of the variables, e.g., ``("c", "d")``
+    means first variable continuous, second discrete.)""";
+
   // `pdf` / `cdf` / `hfunc*` / `hinv*` / `loglik` each expose an optional
   // `parameters` argument (vinecopulib#675): when omitted the copula's stored
   // parameters are used (the original behaviour); when given an (n, p) matrix
@@ -218,8 +243,7 @@ Bicop
                   "family"_a = BicopFamily::indep, "rotation"_a = 0,
                   "parameters"_a = Eigen::MatrixXd(),
                   "var_types"_a = std::vector<std::string>(2, "c"),
-                  bicop_doc.ctor.doc_4args_family_rotation_parameters_var_types,
-                  nb::call_guard<nb::gil_scoped_release>())
+                  from_family_doc, nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_data", &bc_from_data, "data"_a,
                   "controls"_a.sig("FitControlsBicop()") = FitControlsBicop(),
                   "var_types"_a = std::vector<std::string>(2, "c"),
@@ -433,8 +457,12 @@ Bicop
           },
           "u"_a, "parameters"_a = nb::none(),
           "num_threads"_a = static_cast<size_t>(1), scores_full_doc.c_str())
-      .def("simulate", &Bicop::simulate, "n"_a, "qrng"_a = false,
-           "seeds"_a = std::vector<int>(), bicop_doc.simulate.doc,
+      .def("simulate",
+           static_cast<Eigen::MatrixXd (Bicop::*)(
+               const size_t&, const bool, const std::vector<int>&) const>(
+               &Bicop::simulate),
+           "n"_a, "qrng"_a = false, "seeds"_a = std::vector<int>(),
+           bicop_doc.simulate.doc_3args,
            nb::call_guard<nb::gil_scoped_release>())
       .def(
           "flip",

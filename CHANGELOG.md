@@ -74,6 +74,19 @@
 
 ### Changes in `vinecopulib`
 
+#### BREAKING API CHANGES
+
+- Require C++17, CMake 3.14 and Boost 1.75, and put `-march=native` behind `VINECOPULIB_NATIVE_ARCH` so the default release build is redistributable ([vinecopulib#711](https://github.com/vinecopulib/vinecopulib/pull/711)). pyvinecopulib wheels now set `-march=x86-64-v3` explicitly; editable builds take the plain baseline (#250).
+- Remove `Vinecop::select_all`, `Vinecop::select_families` and the `*_truncation_level` accessors, deprecated since 0.3.1 ([vinecopulib#718](https://github.com/vinecopulib/vinecopulib/pull/718)). None were reachable from Python.
+- The umbrella header no longer disables Boost's concept assertions ([vinecopulib#714](https://github.com/vinecopulib/vinecopulib/pull/714)).
+
+#### BEHAVIOR CHANGES
+
+- Kendall's τ of `bb6`, `bb7`, `bb8` and `tawn` changes: four numerical defects in `parameters_to_tau` are fixed, the worst of which returned about `1e-11` where the true value was `0.33` ([vinecopulib#713](https://github.com/vinecopulib/vinecopulib/pull/713)). `Bicop.tau`, `parameters_to_tau`, `str()` and family selection move for those four families.
+- Setting `FitControlsVinecop.tree_criterion_function` while `tree_criterion != "custom"` now raises instead of being silently ignored ([vinecopulib#722](https://github.com/vinecopulib/vinecopulib/pull/722)).
+- `Bicop.loglik` and `Bicop.fit` validate the column count and raise on a wrong one, where they previously read past the data ([vinecopulib#729](https://github.com/vinecopulib/vinecopulib/pull/729)).
+- A `Vinecop` built from a full structure with no pair copulas treats the omitted ones as independence instead of indexing an empty store ([vinecopulib#729](https://github.com/vinecopulib/vinecopulib/pull/729)).
+
 #### NEW FEATURES
 
 - Early exit in vine selection when the structure is already a tree, avoiding redundant work in `select` ([vinecopulib#661](https://github.com/vinecopulib/vinecopulib/pull/661)).

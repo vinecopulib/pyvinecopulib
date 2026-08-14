@@ -170,19 +170,16 @@ def test_custom_criterion_unset_raises() -> None:
     pv.Vinecop.from_data(u, controls=controls)
 
 
-def test_custom_criterion_ignored_when_not_custom() -> None:
-  # A function set while tree_criterion != "custom" is never called.
+def test_custom_criterion_rejected_when_not_custom() -> None:
+  # A function set while tree_criterion != "custom" would be silently unused,
+  # so it is rejected up front rather than ignored.
   d, n = 5, 1000
   u = pv.to_pseudo_obs(random_data(d, n))
 
   controls = pv.FitControlsVinecop(tree_criterion="tau")
-  controls.tree_criterion_function = _raising_criterion  # must be ignored
-  cop_custom = pv.Vinecop.from_data(u, controls=controls)
-
-  cop_tau = pv.Vinecop.from_data(
-    u, controls=pv.FitControlsVinecop(tree_criterion="tau")
-  )
-  assert np.array_equal(cop_tau.matrix, cop_custom.matrix)
+  controls.tree_criterion_function = _raising_criterion
+  with pytest.raises(RuntimeError, match="tree_criterion"):
+    pv.Vinecop.from_data(u, controls=controls)
 
 
 def test_custom_criterion_exception_propagates() -> None:
@@ -196,7 +193,8 @@ def test_custom_criterion_exception_propagates() -> None:
 
 
 def test_custom_criterion_multithread_smoke() -> None:
-  # Calls acquire the GIL, so num_threads > 1 must still give the same result.
+  # A custom criterion is evaluated on the thread that entered select(), so
+  # num_threads > 1 must still give the same result.
   d, n = 5, 1000
   u = pv.to_pseudo_obs(random_data(d, n))
 
@@ -694,3 +692,32 @@ def test_fit_controls_vinecop_conditioning_set() -> None:
   cop = pv.Vinecop.from_data(u, controls=fc)
   order = [int(v) for v in cop.structure.order]
   assert set(order[-2:]) == {2, 3}
+
+
+def test_inverse_rosenblatt_is_thread_safe() -> None:
+  # vinecopulib#712 removed the var_types round-trip that mutated the model
+  # during evaluation, so concurrent calls on one object are now safe.
+  import concurrent.futures
+
+  d, n = 4, 200
+  u = pv.to_pseudo_obs(random_data(d, n))
+  cop = pv.Vinecop.from_data(u)
+  expected = cop.inverse_rosenblatt(u)
+
+  with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+    futures = [pool.submit(cop.inverse_rosenblatt, u) for _ in range(8)]
+    results = [f.result() for f in futures]
+
+  for got in results:
+    np.testing.assert_array_equal(got, expected)
+
+
+def test_from_data_without_structure_or_matrix() -> None:
+  # vinecopulib made the data constructor's `matrix` argument required, since
+  # `Vinecop(data)` was ambiguous. `from_data` passes one explicitly, so
+  # omitting both structure and matrix must still select a structure.
+  d, n = 4, 300
+  u = pv.to_pseudo_obs(random_data(d, n))
+  cop = pv.Vinecop.from_data(u)
+  assert cop.dim == d
+  assert set(int(v) for v in cop.structure.order) == set(range(1, d + 1))
