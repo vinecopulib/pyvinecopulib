@@ -145,11 +145,11 @@ Pull requests go to `main`. There is no long-lived development branch.
   in a stack outside `gh stack`.
 
 The policy behind these — including when *not* to merge — is in
-[AGENTS.md](AGENTS.md#branching-and-releases).
+[AGENTS.md](https://github.com/vinecopulib/pyvinecopulib/blob/main/AGENTS.md#branching-and-releases).
 
 ## Release process
 
-Releases are tags on `main`. See [docs/releasing.md](docs/releasing.md) for the
+Releases are tags on `main`. See [docs/releasing.md](https://github.com/vinecopulib/pyvinecopulib/blob/main/docs/releasing.md) for the
 checklist; the short version is: date the `(unreleased)` heading in
 `CHANGELOG.md`, bump the version, merge, then tag. Pushing a `v*` tag publishes
 to PyPI, and **PyPI never re-accepts a version number** — a mistagged release

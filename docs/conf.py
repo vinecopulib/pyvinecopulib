@@ -179,7 +179,9 @@ master_doc = "index"
 
 # Don't exclude `_generate` — autosummary writes stubs there and sphinx
 # reads them back as source documents.
-exclude_patterns = ["_build", "**/.ipynb_checkpoints"]
+# `releasing.md` is a maintainer checklist that lives next to the docs for
+# discoverability, not a page of the user site.
+exclude_patterns = ["_build", "**/.ipynb_checkpoints", "releasing.md"]
 
 project = "pyvinecopulib"
 copyright = "2024, Thomas Nagler and Thibault Vatter"
