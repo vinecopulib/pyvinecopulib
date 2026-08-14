@@ -5,8 +5,9 @@
 # abstraction layer plus the `sklearn` / `torch` subpackages, none of which
 # exist in the released wheel `conf.py` would otherwise introspect).
 #
-# The nanobind extension compiles against header-only Boost / Eigen (Ubuntu's
-# apt packages clear vinecopulib's >=1.56 / 3.4 floors) plus the vendored lib/
+# The nanobind extension compiles against header-only Boost / Eigen (24.04's
+# apt packages clear vinecopulib's Boost >=1.75 and Eigen >=3.4 floors, and
+# Eigen must ship its CMake config, which libeigen3-dev does) plus the vendored lib/
 # submodules; scikit-build-core pulls cmake / ninja / nanobind / libclang
 # through PEP 517 build isolation from [build-system].requires. `-W` strictness
 # lives in pypi.yml's verify_docs_build, which builds the same docs against the
@@ -15,7 +16,8 @@
 version: 2
 
 build:
-  os: ubuntu-22.04
+  # 24.04 for Boost >= 1.75, which vinecopulib requires; 22.04 ships 1.74.
+  os: ubuntu-24.04
   tools:
     python: "3.11"
   apt_packages:

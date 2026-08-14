@@ -1,6 +1,9 @@
-cmake_minimum_required(VERSION 3.5)
+# 3.14 for FetchContent_MakeAvailable in lib/vinecopulib/cmake; do not lower.
+cmake_minimum_required(VERSION 3.14)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(
@@ -43,16 +46,44 @@ if(NOT EXISTS "${CMAKE_SOURCE_DIR}/lib/vinecopulib/cmake/options.cmake")
       "    git submodule update --init --recursive\n" "and re-run the build.")
 endif()
 
+# Tuning for the build machine's CPU. Off by default: the result runs only on
+# CPUs at least as new as the builder's, and a developer build whose instruction
+# set differs from the wheel's hides numerical drift from the torch/C++ parity
+# gates. scripts/bench_march_drive.sh is the only consumer.
+option(PYVINECOPULIB_NATIVE_ARCH
+       "Tune for this machine's CPU (not redistributable)" OFF)
+# A normal variable takes precedence over upstream's option() (CMP0077).
+set(VINECOPULIB_NATIVE_ARCH ${PYVINECOPULIB_NATIVE_ARCH})
+
 include(lib/vinecopulib/cmake/options.cmake REQUIRED)
 
 include(lib/vinecopulib/cmake/compilerDefOpt.cmake REQUIRED)
 
-# Replace upstream's `-march=native` with v3 for distributed wheels so they run
-# on every CPU since ~2013. Editable builds keep `-march=native`.
-if(DEFINED ENV{CIBUILDWHEEL})
-  string(REGEX REPLACE "(^| )-march=native( |$)" " -march=x86-64-v3 "
+if(NOT PYVINECOPULIB_NATIVE_ARCH)
+  # vinecopulib up to 0.7.x put these in the Release flags unconditionally.
+  string(REGEX REPLACE "-march=native|-mcpu=apple-m1|-arch +arm64" ""
                        CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
+  string(REGEX REPLACE " +" " " CMAKE_CXX_FLAGS_RELEASE
+                       "${CMAKE_CXX_FLAGS_RELEASE}")
 endif()
+
+# Distributed wheels target x86-64-v3 (AVX2 + FMA, i.e. CPUs since ~2013). macOS
+# arm64 and MSVC get nothing: the arm64 baseline is already ARMv8.4, and an
+# /arch: flag would move contraction behavior on one leg of five.
+if(DEFINED ENV{CIBUILDWHEEL}
+   AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang"
+   AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
+  string(APPEND CMAKE_CXX_FLAGS_RELEASE " -march=x86-64-v3")
+endif()
+
+message(STATUS "pyvinecopulib: release flags = ${CMAKE_CXX_FLAGS_RELEASE}")
+
+# Appending to CMAKE_CXX_FLAGS_RELEASE creates a normal variable that shadows
+# the cache entry, so CMakeCache.txt still shows the unmodified value. Record
+# what the compiler is actually given, for the CI check that the redistributable
+# baseline is present.
+file(WRITE "${CMAKE_BINARY_DIR}/pyvinecopulib-release-flags.txt"
+     "${CMAKE_CXX_FLAGS_RELEASE}")
 
 set(vinecopulib_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/lib/vinecopulib/include)
 set(wdm_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/lib/wdm/include)
