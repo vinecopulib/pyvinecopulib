@@ -277,7 +277,17 @@ jobs:
           elif [[ "${{ matrix.cfg.os }}" == macos-* ]]; then
             brew install graphviz
           elif [[ "${{ matrix.cfg.os }}" == "windows-latest" ]]; then
-            choco install graphviz -y
+            choco install graphviz -y --no-progress
+            # Chocolatey does not refresh PATH for later steps, so `dot` is
+            # installed but not callable and the notebooks fail on
+            # `Vinecop.plot`. Locate it and add its directory explicitly.
+            dot=$(find "/c/Program Files" "/c/Program Files (x86)" \
+                    -maxdepth 3 -name dot.exe 2>/dev/null | head -1)
+            if [[ -z "$dot" ]]; then
+              echo "::error ::graphviz installed but dot.exe was not found"
+              exit 1
+            fi
+            cygpath -w "$(dirname "$dot")" >> "$GITHUB_PATH"
           fi
       - name: Create uv venv and install test/notebooks deps
         # --no-install-project: we test the cibw wheel, not a source build.
