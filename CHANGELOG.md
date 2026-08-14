@@ -95,6 +95,7 @@
 
 #### NEW FEATURES
 
+- `Bicop.simulate` draws one observation per parameter set: pass `parameters` (an `(n, p)` array) instead of `n`, whose row count then fixes the sample size ([vinecopulib#719](https://github.com/vinecopulib/vinecopulib/pull/719)). `parameters` is keyword-only and rejects a 1-d array, which would otherwise be read as a single row.
 - Early exit in vine selection when the structure is already a tree, avoiding redundant work in `select` ([vinecopulib#661](https://github.com/vinecopulib/vinecopulib/pull/661)).
 - Per-family parameter / rotation / tail-dependence documentation on the `BicopFamily` enum members, surfaced through the Python `families` subpackage (#214, [vinecopulib#668](https://github.com/vinecopulib/vinecopulib/pull/668)).
 - Numpydoc-compliant `//!` comments on every property getter / setter in the Python-binding surface, surfaced through the pyvinecopulib autosummary pages (#214, [vinecopulib#670](https://github.com/vinecopulib/vinecopulib/pull/670)).

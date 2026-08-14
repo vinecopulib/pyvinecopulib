@@ -5,6 +5,7 @@
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/tuple.h>
 
+#include <stdexcept>  // For std::invalid_argument
 #include <vinecopulib.hpp>
 
 #include "docstr.hpp"
@@ -83,6 +84,25 @@ Alternatives to instantiate bivariate copulas are:
 - ``Bicop.from_data()``: Instantiate from data, as well as optional controls and variable types.
 - ``Bicop.from_file()``: Instantiate from a JSON file, or a CBOR file when the filename ends in ``.cbor``.
 - ``Bicop.from_json()``: Instantiate from a JSON string.
+)""";
+
+  // `simulate` takes either a sample size or one parameter set per drawn
+  // observation (vinecopulib#719), which fixes the sample size by its row
+  // count. `parameters` is keyword-only and `.noconvert()`: a 1-d array would
+  // otherwise conform to `Eigen::MatrixXd` as a single row, so a Student t
+  // handed `[rho, df]` would silently return one observation instead of two.
+  const std::string simulate_doc = std::string(bicop_doc.simulate.doc_3args) +
+                                   R"""(
+Notes
+-----
+Pass ``parameters`` instead of ``n`` to draw each observation from a different
+parameter set: an ``(n, p)`` array with ``p == len(self.parameters)`` columns in
+the family's natural (unrotated) parameterization, drawing one observation per
+row and parallelized over ``num_threads``. Exactly one of ``n`` and
+``parameters`` may be given. ``parameters`` must be two-dimensional. This is
+supported for parametric families only; a nonparametric family, a wrong shape,
+or non-finite or out-of-bounds values raise ``RuntimeError``. The draws are
+continuous even when ``var_types`` marks a variable discrete.
 )""";
 
   // `pdf` / `cdf` / `hfunc*` / `hinv*` / `loglik` each expose an optional
@@ -435,13 +455,27 @@ Bicop
           },
           "u"_a, "parameters"_a = nb::none(),
           "num_threads"_a = static_cast<size_t>(1), scores_full_doc.c_str())
-      .def("simulate",
-           static_cast<Eigen::MatrixXd (Bicop::*)(
-               const size_t&, const bool, const std::vector<int>&) const>(
-               &Bicop::simulate),
-           "n"_a, "qrng"_a = false, "seeds"_a = std::vector<int>(),
-           bicop_doc.simulate.doc_3args,
-           nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "simulate",
+          [](const Bicop& self, std::optional<size_t> n, bool qrng,
+             const std::vector<int>& seeds,
+             const std::optional<Eigen::MatrixXd>& parameters,
+             size_t num_threads) -> Eigen::MatrixXd {
+            if (n.has_value() == parameters.has_value()) {
+              throw std::invalid_argument(
+                  "give exactly one of `n` and `parameters`; `parameters` "
+                  "already fixes the number of observations by its row "
+                  "count");
+            }
+            nb::gil_scoped_release release;
+            if (parameters) {
+              return self.simulate(*parameters, qrng, seeds, num_threads);
+            }
+            return self.simulate(*n, qrng, seeds);
+          },
+          "n"_a = nb::none(), "qrng"_a = false, "seeds"_a = std::vector<int>(),
+          nb::kw_only(), "parameters"_a.noconvert() = nb::none(),
+          "num_threads"_a = static_cast<size_t>(1), simulate_doc.c_str())
       .def(
           "flip",
           [](const Bicop& cop) {
