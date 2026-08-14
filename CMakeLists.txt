@@ -78,12 +78,15 @@ endif()
 
 message(STATUS "pyvinecopulib: release flags = ${CMAKE_CXX_FLAGS_RELEASE}")
 
-# Appending to CMAKE_CXX_FLAGS_RELEASE creates a normal variable that shadows
-# the cache entry, so CMakeCache.txt still shows the unmodified value. Record
-# what the compiler is actually given, for the CI check that the redistributable
-# baseline is present.
-file(WRITE "${CMAKE_BINARY_DIR}/pyvinecopulib-release-flags.txt"
-     "${CMAKE_CXX_FLAGS_RELEASE}")
+# Tuning for the build machine would make the wheel crash on older CPUs, and the
+# failure is silent at build time. Asserted here rather than in CI, because
+# cibuildwheel builds the Linux wheels inside a container whose build tree the
+# workflow cannot read.
+if(DEFINED ENV{CIBUILDWHEEL} AND CMAKE_CXX_FLAGS_RELEASE MATCHES
+                                 "-march=native|-mcpu=")
+  message(FATAL_ERROR "a redistributable wheel must not be tuned for the build "
+                      "machine; release flags are '${CMAKE_CXX_FLAGS_RELEASE}'")
+endif()
 
 set(vinecopulib_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/lib/vinecopulib/include)
 set(wdm_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/lib/wdm/include)

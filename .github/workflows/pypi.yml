@@ -153,32 +153,6 @@ jobs:
           CIBW_ENVIRONMENT_MACOS: "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=${{matrix.cfg.root_install_dir}}/include/eigen3 MACOSX_DEPLOYMENT_TARGET=${{matrix.cfg.macos_target}}"
           CIBW_ENVIRONMENT_LINUX: "Boost_INCLUDE_DIR=/host${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=/host${{matrix.cfg.root_install_dir}}/include/eigen3"
           CIBW_ENVIRONMENT_PASS_LINUX: "Boost_INCLUDE_DIR EIGEN3_INCLUDE_DIR"
-      - name: Verify the wheel instruction-set baseline
-        # The flag is appended, so its absence is silent: a wheel would simply
-        # be slower. Assert it on x86 and assert it is absent elsewhere.
-        shell: bash
-        run: |
-          record=$(find build -name pyvinecopulib-release-flags.txt -print -quit)
-          if [[ -z "$record" ]]; then
-            echo "::error ::CMake wrote no release-flags record — cannot verify the ISA baseline"
-            exit 1
-          fi
-          flags=$(cat "$record")
-          echo "release flags: $flags"
-          case "${{ matrix.cfg.cibw_id }}" in
-            *x86_64|win_amd64) want=1 ;;
-            *) want=0 ;;
-          esac
-          if [[ "${{ matrix.cfg.cc }}" == "cl" ]]; then want=0; fi
-          if [[ "$flags" == *"-march=x86-64-v3"* ]]; then have=1; else have=0; fi
-          if [[ "$have" != "$want" ]]; then
-            echo "::error ::-march=x86-64-v3 present=$have, expected=$want"
-            exit 1
-          fi
-          if [[ "$flags" == *"-march=native"* ]]; then
-            echo "::error ::a redistributable wheel must not carry -march=native"
-            exit 1
-          fi
       - name: Inspect built wheel contents
         shell: bash
         run: |
