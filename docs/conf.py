@@ -91,22 +91,6 @@ typehints_use_rtype = False
 typehints_document_rtype = False
 
 
-def typehints_formatter(annotation, config=None):
-  """Collapse nanobind's parametrized array annotations to a resolvable type.
-
-  Sphinx reads the *live* nanobind annotations (not the simplified ``.pyi``
-  stubs), which spell array parameters as
-  ``numpy.ndarray[dtype=float64, shape=(*), order='C']`` — a form intersphinx
-  cannot resolve. Collapse it to plain ``numpy.ndarray`` (the precise shape /
-  dtype is already documented in the numpydoc Parameters/Returns type
-  strings). Returning ``None`` defers to the default renderer.
-  """
-  s = str(annotation)
-  if s.startswith(("numpy.ndarray[", "np.ndarray[")):
-    return ":py:class:`numpy.ndarray`"
-  return None
-
-
 # Don't write a separate class-members toctree — render `__init__`
 # content inside the class docstring instead (the closest equivalent of
 # the old `napoleon_include_init_with_doc = True`).

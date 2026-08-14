@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+title: pyvinecopulib
+message: If you use this software, please cite it as below.
+type: software
+authors:
+  - family-names: Vatter
+    given-names: Thibault
+    orcid: https://orcid.org/0000-0001-9212-0218
+  - family-names: Nagler
+    given-names: Thomas
+    orcid: https://orcid.org/0000-0003-1855-0046
+abstract: >-
+  The Python interface to vinecopulib, a header-only C++ library for vine
+  copula models built on Eigen. It provides inference algorithms for both vine
+  copula and bivariate copula models, with nonparametric and multi-parameter
+  families, and adds scikit-learn-compatible estimators and a PyTorch
+  evaluation cascade.
+keywords:
+  - copula
+  - vine copula
+  - pair copula construction
+  - dependence modeling
+  - simulation
+  - Python
+license: MIT
+version: 0.8.0
+repository-code: https://github.com/vinecopulib/pyvinecopulib
+url: https://pyvinecopulib.readthedocs.io
