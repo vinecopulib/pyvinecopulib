@@ -23,11 +23,11 @@ pyvinecopulib
    :maxdepth: 2
 
    README
-   features
    concepts
    examples
+   features
+   migrating-to-1.0
    CHANGELOG
-   CONTRIBUTING
 
 .. include:: _README_inlined.md
       :parser: myst_parser.sphinx_
