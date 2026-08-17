@@ -15,7 +15,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "pyvinecopulib"
-version = "0.8.0"
+version = "1.0.0"
 authors = [
   { name = "Thibault Vatter", email = "info@vinecopulib.com" },
   { name = "Thomas Nagler", email = "info@vinecopulib.com" },
@@ -33,7 +33,7 @@ dependencies = [
 ]
 keywords = ['copula', 'vines copulas', 'pair-copulas constructions']
 classifiers = [
-  'Development Status :: 3 - Alpha',
+  'Development Status :: 5 - Production/Stable',
   'Intended Audience :: Financial and Insurance Industry',
   'Intended Audience :: Healthcare Industry',
   'Intended Audience :: Information Technology',
