@@ -629,3 +629,29 @@ def test_simulate_conditional_requires_row_per_sample() -> None:
   x = torch.zeros(4, 1, dtype=torch.float64)
   with pytest.raises(ValueError, match="one covariate row per sample"):
     bc.simulate(10, x=x)
+
+
+def test_batched_cache_stays_out_of_the_state_dict() -> None:
+  # The batched state is a memo derived from the pair copulas, not part of
+  # the model. Registering it as a child module would put derived buffers in
+  # every checkpoint taken after a batched call, and `load_state_dict` on a
+  # fresh model would then reject them as unexpected keys.
+  rng = np.random.default_rng(0)
+  d = 4
+  u = pv.to_pseudo_obs(
+    rng.standard_normal((400, d)) @ rng.standard_normal((d, d))
+  )
+  cpp = pv.Vinecop.from_data(
+    u, controls=pv.FitControlsVinecop(family_set=[pv.families.tll])
+  )
+  vine = TorchVinecop.from_vinecop(cpp)
+  data = torch.as_tensor(u)
+
+  keys_before = set(vine.state_dict())
+  vine.pdf(data, batched=True)
+  vine.rosenblatt(data, batched=True)
+  assert set(vine.state_dict()) == keys_before
+
+  fresh = TorchVinecop.from_vinecop(cpp)
+  fresh.load_state_dict(vine.state_dict(), strict=True)
+  torch.testing.assert_close(fresh.pdf(data), vine.pdf(data))
