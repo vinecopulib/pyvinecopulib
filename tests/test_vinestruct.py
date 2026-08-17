@@ -169,3 +169,19 @@ def test_rvinestructure_get_trees_faithful_roundtrip() -> None:
     assert s2 == s
     assert np.array_equal(np.asarray(s2.matrix), np.asarray(s.matrix))
     assert list(s2.order) == list(s.order)
+
+
+def test_rvinestructure_bulk_triangular_getters_match_scalar_accessors() -> (
+  None
+):
+  s = pv.RVineStructure.simulate(d=6, seeds=[1, 2, 3])
+  min_array = s.get_min_array()
+  hfunc1, hfunc2 = s.get_needed_hfunc1(), s.get_needed_hfunc2()
+
+  assert len(min_array) == len(hfunc1) == len(hfunc2) == int(s.trunc_lvl)
+  for tree, row in enumerate(min_array):
+    assert len(row) == int(s.dim) - 1 - tree
+    for edge, value in enumerate(row):
+      assert value == s.min_array(tree, edge)
+      assert hfunc1[tree][edge] == s.needed_hfunc1(tree, edge)
+      assert hfunc2[tree][edge] == s.needed_hfunc2(tree, edge)

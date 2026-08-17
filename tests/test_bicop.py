@@ -680,3 +680,25 @@ def test_bicop_scores_family_rejects_nonparametric_and_discrete() -> None:
   for method in ("scores", "gradient", "hessian", "scores_cov"):
     with pytest.raises(RuntimeError):
       getattr(discrete, method)(u_disc)
+
+
+def test_bicop_family_name_and_as_continuous() -> None:
+  cop = pv.Bicop.from_family(
+    pv.families.gumbel, rotation=90, parameters=np.array([[2.0]])
+  )
+  assert cop.family_name == "Gumbel"
+
+  discrete = pv.Bicop.from_family(
+    pv.families.gaussian, parameters=np.array([[0.5]]), var_types=["d", "d"]
+  )
+  continuous = discrete.as_continuous()
+  assert continuous.var_types == ["c", "c"]
+  assert discrete.var_types == ["d", "d"]
+  assert continuous.family == discrete.family
+  np.testing.assert_allclose(continuous.parameters, discrete.parameters)
+
+
+def test_fit_controls_bicop_selection_criterion_matches_upstream() -> None:
+  # Same knob, same default, in C++, R and Python (vinecopulib#729).
+  assert pv.FitControlsBicop().selection_criterion == "aic"
+  assert pv.FitControlsVinecop().selection_criterion == "aic"

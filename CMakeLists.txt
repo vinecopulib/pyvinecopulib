@@ -59,14 +59,6 @@ include(lib/vinecopulib/cmake/options.cmake REQUIRED)
 
 include(lib/vinecopulib/cmake/compilerDefOpt.cmake REQUIRED)
 
-if(NOT PYVINECOPULIB_NATIVE_ARCH)
-  # vinecopulib up to 0.7.x put these in the Release flags unconditionally.
-  string(REGEX REPLACE "-march=native|-mcpu=apple-m1|-arch +arm64" ""
-                       CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
-  string(REGEX REPLACE " +" " " CMAKE_CXX_FLAGS_RELEASE
-                       "${CMAKE_CXX_FLAGS_RELEASE}")
-endif()
-
 # Distributed wheels target x86-64-v3 (AVX2 + FMA, i.e. CPUs since ~2013). macOS
 # arm64 and MSVC get nothing: the arm64 baseline is already ARMv8.4, and an
 # /arch: flag would move contraction behavior on one leg of five.
@@ -97,19 +89,6 @@ set(BUILD_TESTING OFF)
 
 if(DEFINED ENV{EIGEN3_INCLUDE_DIR})
   set(EIGEN3_INCLUDE_DIR $ENV{EIGEN3_INCLUDE_DIR})
-endif()
-
-# Eigen's modern CMake package (notably Eigen 5.x on conda-forge) exposes the
-# include path only via the Eigen3::Eigen target and no longer sets the legacy
-# EIGEN3_INCLUDE_DIR variable that findDependencies.cmake (external_includes)
-# and the docstr.hpp generator below rely on. Derive it from the target so both
-# the compile and the libclang docstring pass find <Eigen/Dense>.
-if(NOT DEFINED EIGEN3_INCLUDE_DIR)
-  find_package(Eigen3 QUIET CONFIG)
-  if(TARGET Eigen3::Eigen)
-    get_target_property(EIGEN3_INCLUDE_DIR Eigen3::Eigen
-                        INTERFACE_INCLUDE_DIRECTORIES)
-  endif()
 endif()
 
 if(DEFINED ENV{Boost_INCLUDE_DIR})

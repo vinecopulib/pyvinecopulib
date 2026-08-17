@@ -15,6 +15,7 @@
 - `TorchBicop.from_data` now dispatches on `controls=FitControlsTorchBicop(...)` (#217). Callers who passed `grid_size`, `mult`, or `grid_type` as keyword arguments must move them onto the dataclass. `cache_integrals`, `device`, and `dtype` remain direct kwargs on `from_data`.
 - `TorchBicop.sample(num_sample, seed, is_sobol)` renamed to `TorchBicop.simulate(n, qrng=False, seeds=[])` for parity with `pv.Bicop.simulate` (#216).
 - Remove `TorchBicop`'s `log_pdf` method. The vine `pdf` cascade now accumulates a product of per-edge `pdf` (rather than a log-sum-exp), so the pair-level log-density convenience method is no longer needed; it was never part of the `BicopLike` contract. Use `TorchBicop.pdf(u).log()` if you need a log density.
+- `FitControlsBicop` and `FitControlsVinecop` default `selection_criterion` to `"aic"` instead of `"bic"`, matching the C++ and R defaults; the same knob now selects the same model from all three languages. Pass `selection_criterion="bic"` explicitly to keep the previous selection (#251).
 
 ### New features in `pyvinecopulib`
 
@@ -45,6 +46,11 @@
 - Add `Vinecop.simulate_conditional(u_cond, qrng=False, num_threads=1, seeds=[])`: sample from the conditional distribution of a subset of variables given fixed values of the rest. The conditioning variables are the last `k = u_cond.shape[1]` of the vine order (their columns in the output reproduce `u_cond`); discrete conditioning variables take an extra left-limit column. Built on the Rosenblatt / inverse-Rosenblatt cascade ([vinecopulib#696](https://github.com/vinecopulib/vinecopulib/pull/696)).
 - Add conditioning-aware vine structure selection: `FitControlsVinecop.conditioning_set` (a list of 1-based variable labels; a settable property, also pickled) makes `Vinecop.select` place the conditioning set's own optimal sub-vine at the tail of the order, so `simulate_conditional` can condition on it. `Vinecop.reorient(conditioning_set)` relabels an already-fitted vine to an equivalent one whose order tail equals a given set without refitting — value-preserving, so `pdf` / `loglik` are invariant ([vinecopulib#697](https://github.com/vinecopulib/vinecopulib/pull/697)).
 - Add the list-of-trees round-trip for structures (upstream's shared `RVineTrees` primitive): `Vinecop.get_trees()` returns the fitted vine as nested `[tree][edge]` lists of `{"conditioned": (a, b), "conditioning": [...], "pair_copula": Bicop}` dicts (carrying the fitted pair copulas), `RVineStructure.get_trees()` returns the bare `(a, b, conditioning)` decomposition, and `RVineStructure.from_trees(d, trees)` is its **faithful** inverse (identity `conditioned[0]` diagonal policy, so `RVineStructure.from_trees(s.dim, s.get_trees()) == s`); `RVineStructure` also gains `__eq__`. Upstream `Vinecop.select` finalizes with the same (flip-free) diagonal convention, so `VinecopBase.select` assembles its selected trees through this same `from_trees` and matches the compiled selector's matrix byte-for-byte — one diagonal convention throughout ([vinecopulib#698](https://github.com/vinecopulib/vinecopulib/pull/698), [vinecopulib#702](https://github.com/vinecopulib/vinecopulib/pull/702)).
+- `RVineStructure.from_trees` also accepts the `{"conditioned": …, "conditioning": …}` edge mappings that `Vinecop.get_trees()` returns (ignoring their `"pair_copula"`), so a fitted vine's decomposition round-trips back to a structure without being rewritten as triples first (#251).
+- Add `FitControlsVinecop.from_bicop_controls(controls, ...)`, which takes a `FitControlsBicop` in place of the eleven inherited pair-copula arguments, and the `bicop_controls` property that reads and replaces them as a group (#251).
+- Add `Bicop.family_name` (the family's display name) and `Bicop.as_continuous()` (a copy with `var_types` reset to continuous) (#251).
+- Add `RVineStructure.get_min_array()`, `get_needed_hfunc1()` and `get_needed_hfunc2()`, returning the whole `[tree][edge]` triangular array that the existing per-entry accessors index into (#251).
+- `Vinecop.pair_copulas` is now settable, so pair copulas can be replaced as a group on a fitted vine; the assignment validates the nested shape against the structure (#251).
 
 ### Build / packaging
 
@@ -73,6 +79,19 @@
 - `[sklearn]` extra adds `pandas>=2.0` (used by `VineBase.expand_factors` for DataFrame inputs) (#211).
 
 ### Changes in `vinecopulib`
+
+#### BREAKING API CHANGES
+
+- Require C++17, CMake 3.14 and Boost 1.75, and put `-march=native` behind `VINECOPULIB_NATIVE_ARCH` so the default release build is redistributable ([vinecopulib#711](https://github.com/vinecopulib/vinecopulib/pull/711)). pyvinecopulib wheels now set `-march=x86-64-v3` explicitly; editable builds take the plain baseline (#250).
+- Remove `Vinecop::select_all`, `Vinecop::select_families` and the `*_truncation_level` accessors, deprecated since 0.3.1 ([vinecopulib#718](https://github.com/vinecopulib/vinecopulib/pull/718)). None were reachable from Python.
+- The umbrella header no longer disables Boost's concept assertions ([vinecopulib#714](https://github.com/vinecopulib/vinecopulib/pull/714)).
+
+#### BEHAVIOR CHANGES
+
+- Kendall's τ of `bb6`, `bb7`, `bb8` and `tawn` changes: four numerical defects in `parameters_to_tau` are fixed, the worst of which returned about `1e-11` where the true value was `0.33` ([vinecopulib#713](https://github.com/vinecopulib/vinecopulib/pull/713)). `Bicop.tau`, `parameters_to_tau`, `str()` and family selection move for those four families.
+- Setting `FitControlsVinecop.tree_criterion_function` while `tree_criterion != "custom"` now raises instead of being silently ignored ([vinecopulib#722](https://github.com/vinecopulib/vinecopulib/pull/722)).
+- `Bicop.loglik` and `Bicop.fit` validate the column count and raise on a wrong one, where they previously read past the data ([vinecopulib#729](https://github.com/vinecopulib/vinecopulib/pull/729)).
+- A `Vinecop` built from a full structure with no pair copulas treats the omitted ones as independence instead of indexing an empty store ([vinecopulib#729](https://github.com/vinecopulib/vinecopulib/pull/729)).
 
 #### NEW FEATURES
 

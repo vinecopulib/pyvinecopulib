@@ -249,6 +249,8 @@ Bicop
       .def_prop_rw("var_types", &Bicop::get_var_types, &Bicop::set_var_types,
                    bicop_doc.get_var_types.doc)
       .def_prop_ro("family", &Bicop::get_family, bicop_doc.get_family.doc)
+      .def_prop_ro("family_name", &Bicop::get_family_name,
+                   bicop_doc.get_family_name.doc)
       .def_prop_ro("tau", &Bicop::get_tau, bicop_doc.get_tau.doc)
       .def_prop_ro("taildep", &Bicop::get_taildep, bicop_doc.get_taildep.doc,
                    nb::call_guard<nb::gil_scoped_release>())
@@ -433,8 +435,12 @@ Bicop
           },
           "u"_a, "parameters"_a = nb::none(),
           "num_threads"_a = static_cast<size_t>(1), scores_full_doc.c_str())
-      .def("simulate", &Bicop::simulate, "n"_a, "qrng"_a = false,
-           "seeds"_a = std::vector<int>(), bicop_doc.simulate.doc,
+      .def("simulate",
+           static_cast<Eigen::MatrixXd (Bicop::*)(
+               const size_t&, const bool, const std::vector<int>&) const>(
+               &Bicop::simulate),
+           "n"_a, "qrng"_a = false, "seeds"_a = std::vector<int>(),
+           bicop_doc.simulate.doc_3args,
            nb::call_guard<nb::gil_scoped_release>())
       .def(
           "flip",
@@ -444,6 +450,8 @@ Bicop
             return flipped;
           },
           flip_doc.c_str(), nb::call_guard<nb::gil_scoped_release>())
+      .def("as_continuous", &Bicop::as_continuous, bicop_doc.as_continuous.doc,
+           nb::call_guard<nb::gil_scoped_release>())
       .def("fit", &Bicop::fit, "data"_a,
            "controls"_a.sig("FitControlsBicop()") = FitControlsBicop(),
            bicop_doc.fit.doc, nb::call_guard<nb::gil_scoped_release>())
