@@ -1,10 +1,16 @@
+import warnings
 from numbers import Integral
 
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
+from sklearn.exceptions import DataConversionWarning
 from sklearn.utils._param_validation import Interval
-from sklearn.utils.validation import check_is_fitted, check_random_state
+from sklearn.utils.validation import (
+  assert_all_finite,
+  check_is_fitted,
+  check_random_state,
+)
 
 import pyvinecopulib as pv
 
@@ -199,6 +205,17 @@ class VineBase(BaseEstimator):
       raise ValueError("X must be a numpy array or pandas DataFrame")
     if y is not None:
       y = np.asarray(y)
+      # A column vector is the shape callers reach for after slicing a
+      # DataFrame; sklearn's convention is to ravel it and say so.
+      if y.ndim == 2 and y.shape[1] == 1:
+        warnings.warn(
+          "A column-vector y was passed when a 1d array was expected. "
+          "Please change the shape of y to (n_samples,), for example using "
+          "ravel().",
+          DataConversionWarning,
+          stacklevel=2,
+        )
+        y = y.ravel()
       if X.shape[0] != y.shape[0]:
         raise ValueError("X and y must have the same number of samples.")
 
@@ -256,7 +273,11 @@ class VineBase(BaseEstimator):
           raise ValueError("X has wrong number of features.")
       X_arr = X
 
+    # The marginal estimator is C++ and reads NaN / inf as a segmentation
+    # fault rather than an error, so nothing downstream can report this.
+    assert_all_finite(X_arr, input_name="X")
     if y is not None:
+      assert_all_finite(y, input_name="y")
       return X_arr, y
     return X_arr
 

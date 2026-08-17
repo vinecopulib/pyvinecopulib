@@ -50,7 +50,6 @@ _GENUINE_OPT_OUTS = {
   "check_fit2d_1sample": "Kde1d requires >= 2 samples to estimate a bandwidth",
   "check_fit1d": "vines require 2-D U-scale data",
   "check_fit2d_predict1d": "predict requires 2-D inputs",
-  "check_estimators_nan_inf": "NaN inputs not supported (documented)",
   "check_complex_data": "complex inputs not supported",
   "check_estimators_dtypes": "internal float64 promotion is intentional",
   "check_dtype_object": "internal float64 promotion is intentional",
@@ -60,10 +59,6 @@ _GENUINE_OPT_OUTS = {
   "check_n_features_in_after_fitting": (
     "TODO: n_features_in_ is set, but the sklearn check inspects "
     "the post-fit error path on wrong-shape input"
-  ),
-  "check_mixin_order": (
-    "TODO: swap to (DensityMixin, VineBase) / (RegressorMixin, VineBase) — "
-    "sklearn 1.8 enforces Mixin-before-BaseEstimator order"
   ),
   "check_pipeline_consistency": (
     "density score is mean log-likelihood (negative); standard "

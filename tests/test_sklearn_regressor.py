@@ -210,3 +210,37 @@ def test_copula_marginal_density_single_covariate(regression_setup):
 
   log_c = reg._copula_marginal_density(X_test[:20, :1], n_grid=200, log=True)
   assert np.allclose(log_c, np.log(c_x))
+
+
+def test_vine_regressor_is_a_regressor_to_sklearn() -> None:
+  # `RegressorMixin` has to precede `VineBase` in the MRO, or
+  # `BaseEstimator.__sklearn_tags__` -- which does not call `super()` -- wins
+  # and the estimator type is never set. Meta-estimators check this tag before
+  # they will accept an estimator at all.
+  from sklearn.base import is_regressor
+  from sklearn.ensemble import StackingRegressor
+
+  assert is_regressor(VineRegressor())
+
+  rng = np.random.default_rng(0)
+  X = rng.normal(size=(80, 3))
+  y = X @ np.array([1.0, 2.0, -1.0]) + 0.1 * rng.normal(size=80)
+  stacked = StackingRegressor(estimators=[("v", VineRegressor())], cv=2)
+  assert stacked.fit(X, y).predict(X[:5]).shape == (5,)
+
+
+def test_vine_regressor_predict_keeps_the_sample_axis() -> None:
+  # Only the output axis collapses for a single output. A one-row X used to
+  # come back as a 0-d scalar, so any caller predicting row by row got a
+  # different rank than the same call on two rows.
+  rng = np.random.default_rng(1)
+  X = rng.normal(size=(80, 3))
+  y = X @ np.array([1.0, 2.0, -1.0]) + 0.1 * rng.normal(size=80)
+
+  mean_only = VineRegressor().fit(X, y)
+  assert mean_only.predict(X[:1]).shape == (1,)
+  assert mean_only.predict(X[:4]).shape == (4,)
+
+  multi = VineRegressor(quantiles=[0.25, 0.75]).fit(X, y)
+  assert multi.predict(X[:1]).shape == (1, 3)
+  assert multi.predict(X[:4]).shape == (4, 3)
