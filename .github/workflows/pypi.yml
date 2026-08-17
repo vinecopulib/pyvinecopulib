@@ -9,6 +9,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
+    inputs:
+      test_pypi:
+        description: Publish the built artifacts to Test PyPI (release rehearsal)
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -594,6 +599,21 @@ jobs:
             echo "::error ::Metadata check failed — would fail on PyPI upload."
             exit 1
           }
+      # Rehearsal for the real upload: the same artifacts, action and
+      # credentialing path, against a registry where a mistake is survivable.
+      # Manual because it is one-shot -- Test PyPI refuses a re-upload of a
+      # version it already has, just as PyPI does -- so it is spent
+      # deliberately, on the commit about to be tagged.
+      - name: Publish distribution to Test PyPI
+        if: |
+          job.status == 'success'
+            && github.event_name == 'workflow_dispatch'
+            && inputs.test_pypi
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.test_pypi_password }}
+          repository-url: https://test.pypi.org/legacy/
       - name: Publish distribution to PyPI
         if: |
           job.status == 'success'
