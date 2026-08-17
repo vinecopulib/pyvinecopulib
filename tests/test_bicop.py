@@ -1,5 +1,6 @@
 import json
 import os
+from collections.abc import Callable
 
 import numpy as np
 import pytest
@@ -754,11 +755,40 @@ def test_simulate_per_row_parameters_rejects_nonparametric() -> None:
 
 
 def test_simulate_per_row_parameters_must_be_two_dimensional() -> None:
-  # A 1-d array conforms to Eigen::MatrixXd as a single row, which would
-  # silently return one observation instead of len(array).
+  # One row per drawn observation, so a 1-d array is ambiguous: `[rho, df]` is
+  # either one Student t or two malformed parameter sets.
   cop = pv.Bicop.from_family(pv.families.gaussian, parameters=np.array([[0.5]]))
   with pytest.raises(TypeError):
     cop.simulate(parameters=np.array([0.1, 0.2, 0.3]))
+
+
+@pytest.mark.parametrize(
+  ("reorder", "fortran"),
+  [(np.ascontiguousarray, False), (np.asfortranarray, True)],
+)
+def test_simulate_per_row_parameters_accepts_either_memory_order(
+  reorder: Callable[[np.ndarray], np.ndarray], fortran: bool
+) -> None:
+  # `np.column_stack` and `np.stack(axis=1)` -- the obvious ways to build a
+  # two-parameter array -- return C order, which must work as well as F. A
+  # single-column array hides this: it is contiguous in both orders.
+  n, seeds = 32, [1, 2, 3]
+  parameters = reorder(
+    np.column_stack([np.linspace(0.1, 0.8, n), np.linspace(3.0, 10.0, n)])
+  )
+  # Mutually exclusive for a multi-column array, so this pins the layout.
+  assert parameters.flags.f_contiguous == fortran
+
+  cop = pv.Bicop.from_family(
+    pv.families.student, parameters=np.array([[0.5], [4.0]])
+  )
+  drawn = cop.simulate(parameters=parameters, seeds=seeds)
+  assert drawn.shape == (n, 2)
+
+  reference = cop.simulate(
+    parameters=np.asfortranarray(parameters), seeds=seeds
+  )
+  np.testing.assert_array_equal(drawn, reference)
 
 
 def test_simulate_positional_signature_is_unchanged() -> None:

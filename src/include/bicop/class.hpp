@@ -88,9 +88,8 @@ Alternatives to instantiate bivariate copulas are:
 
   // `simulate` takes either a sample size or one parameter set per drawn
   // observation (vinecopulib#719), which fixes the sample size by its row
-  // count. `parameters` is keyword-only and `.noconvert()`: a 1-d array would
-  // otherwise conform to `Eigen::MatrixXd` as a single row, so a Student t
-  // handed `[rho, df]` would silently return one observation instead of two.
+  // count. `parameters` is keyword-only so that the long-standing positional
+  // `simulate(n, qrng, seeds)` keeps its meaning.
   const std::string simulate_doc = std::string(bicop_doc.simulate.doc_3args) +
                                    R"""(
 
@@ -100,10 +99,12 @@ Pass ``parameters`` instead of ``n`` to draw each observation from a different
 parameter set: an ``(n, p)`` array with ``p == len(self.parameters)`` columns in
 the family's natural (unrotated) parameterization, drawing one observation per
 row and parallelized over ``num_threads``. Exactly one of ``n`` and
-``parameters`` may be given. ``parameters`` must be two-dimensional. This is
-supported for parametric families only; a nonparametric family, a wrong shape,
-or non-finite or out-of-bounds values raise ``RuntimeError``. The draws are
-continuous even when ``var_types`` marks a variable discrete.
+``parameters`` may be given. ``parameters`` must be two-dimensional, in either
+memory order. This is supported for parametric families only; a nonparametric
+family, a wrong shape, or non-finite or out-of-bounds values raise
+``RuntimeError``. The draws are continuous even when ``var_types`` marks a
+variable discrete. ``num_threads`` applies only to this form; drawing ``n``
+observations from the stored parameters is single-threaded.
 )""";
 
   // `pdf` / `cdf` / `hfunc*` / `hinv*` / `loglik` each expose an optional
@@ -475,7 +476,7 @@ Bicop
             return self.simulate(*n, qrng, seeds);
           },
           "n"_a = nb::none(), "qrng"_a = false, "seeds"_a = std::vector<int>(),
-          nb::kw_only(), "parameters"_a.noconvert() = nb::none(),
+          nb::kw_only(), "parameters"_a = nb::none(),
           "num_threads"_a = static_cast<size_t>(1), simulate_doc.c_str())
       .def(
           "flip",
