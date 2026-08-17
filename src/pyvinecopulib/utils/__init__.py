@@ -1,7 +1,7 @@
 """Utility primitives used alongside the core copula classes.
 
 This subpackage groups the supporting functionality that copula
-modelling typically needs but that doesn't fit inside the
+modeling typically needs but that doesn't fit inside the
 :class:`pyvinecopulib.core.Bicop` / :class:`pyvinecopulib.core.Vinecop`
 classes themselves:
 
@@ -36,7 +36,7 @@ Notes
 The :doc:`concepts page </concepts>` introduces
 :ref:`pseudo-observations <concepts-sklar>` (the canonical input
 shape for copula fits) and dependence measures alongside the
-vine-copula factorisation.
+vine-copula factorization.
 """
 
 from ..pyvinecopulib_ext import (

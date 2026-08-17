@@ -123,7 +123,7 @@ general whitespace/TOML/JSON checks. `make sync` installs them.
 - **`regenerate_notebooks`** — refreshes stored notebook outputs and
   auto-commits them. Fires only on the `regenerate-notebooks` label: it pushes
   to the pull request's head branch, which would rewrite the base of anything
-  stacked above it. Push a commit after labelling — the trigger does not
+  stacked above it. Push a commit after labeling — the trigger does not
   include `labeled`.
 - **`build_sdist`** — runs `make check && make sdist` and tests the installed
   sdist.

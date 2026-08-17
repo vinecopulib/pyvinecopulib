@@ -286,11 +286,11 @@ def integrate_1d_batched(
 
   strip = ((1.0 - t) * v_lo + t * v_hi).clamp_min(_STRIP_FLOOR)  # (N, n, m)
 
-  numer = int_on_grid_batched(grid_points, u_free, strip, is_linear)  # (N, n)
+  number = int_on_grid_batched(grid_points, u_free, strip, is_linear)  # (N, n)
   denom = int_on_grid_batched(
     grid_points, torch.ones_like(u_free), strip, is_linear
   )  # (N, n)
-  return (numer / denom).clamp(_TRIM_LO, _TRIM_HI)
+  return (number / denom).clamp(_TRIM_LO, _TRIM_HI)
 
 
 def integrate_2d_batched(
@@ -300,9 +300,9 @@ def integrate_2d_batched(
 
   Same shape contract as :func:`integrate_1d_batched`: ``values: (N, m, m)``,
   ``u: (N, n, 2)``, returns ``(N, n)`` clamped to ``[1e-10, 1-1e-10]``.
-  The result is renormalised by the full-strip outer integral so
+  The result is renormalized by the full-strip outer integral so
   C(1, u2) = u2 holds exactly — matches the post-vinecopulib#667 C++
-  behaviour and stays in parity with the unbatched
+  behavior and stays in parity with the unbatched
   :meth:`InterpolationGrid2D.integrate_2d`.
   """
   u = u.clamp(0.0, 1.0)
@@ -322,7 +322,7 @@ def integrate_2d_batched(
     grid_points, upr_inner, vals_inner, is_linear
   )  # (N, n, m)
 
-  # Outer pass: integrate strip[k, l, :] up to u1[k, l] and renormalise
+  # Outer pass: integrate strip[k, l, :] up to u1[k, l] and renormalize
   # by the full-first-axis integral so C(1, u2) = u2 holds exactly.
   # Guard the degenerate `tmpint1 = 0` case (e.g. cache-building at
   # raw grid endpoints) — true CDF is then 0.

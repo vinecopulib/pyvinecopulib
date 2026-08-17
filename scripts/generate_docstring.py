@@ -329,7 +329,7 @@ def c_type_to_numpy_type(c_spelling: str) -> str:
   `_C_TO_NUMPY_TYPES`. Recursively unwraps `std::optional<T>` (→
   `"<T>, optional"`), `std::vector<T>` (→ `"list of <T>"`), and the
   Eigen `Matrix<...>` family (→ `"ndarray"` with int / bool subtype
-  when detectable from the scalar template arg). Unrecognised
+  when detectable from the scalar template arg). Unrecognized
   spellings fall through verbatim so the emitted docstring is still
   informative.
   """
@@ -1777,7 +1777,7 @@ def main():
     # MSVC STL itself as the official escape hatch and is harmless on other
     # platforms (it just isn't referenced by libstdc++/libc++).
     "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH",
-    # Neutralise __builtin_verbose_trap. The VS 2026 / MSVC 14.51 STL emits
+    # Neutralize __builtin_verbose_trap. The VS 2026 / MSVC 14.51 STL emits
     # this Clang-18 builtin from core allocator / string / call_once paths
     # (xmemory, xstring, xcall_once), but PyPI's libclang 18.x does not
     # resolve it ("use of undeclared identifier"). Because those headers are

@@ -33,7 +33,7 @@ construction.
 """
 
 _DOC_FACTORIZATION = r"""By Sklar's theorem the joint density
-factorises as
+factorizes as
 
 .. math::
 
@@ -158,7 +158,7 @@ class VineBase(BaseEstimator):
         ``VinecopBackend`` at fit time.
     batch_size : int, default=100
         Number of test points to process per batch when making
-        predictions. ``1`` minimises memory at the cost of speed;
+        predictions. ``1`` minimizes memory at the cost of speed;
         ``n_test`` is the opposite extreme; intermediate values
         trade off memory and throughput.
     random_state : int, RandomState instance or None, default=None

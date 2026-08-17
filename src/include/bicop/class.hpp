@@ -112,7 +112,7 @@ observations from the stored parameters is single-threaded.
 
   // `pdf` / `cdf` / `hfunc*` / `hinv*` / `loglik` each expose an optional
   // `parameters` argument (vinecopulib#675): when omitted the copula's stored
-  // parameters are used (the original behaviour); when given an (n, p) matrix
+  // parameters are used (the original behavior); when given an (n, p) matrix
   // they are evaluated with a different parameter set per row of `u`. They are
   // bound as a single Python method (rather than two overloads) so the
   // generated `.pyi` stub carries the full signature. The base docstring is the

@@ -9,7 +9,7 @@ encoding and reused pairs). We report:
 - ``cpp``    : ``pv.Vinecop.from_data(u, gaussian)`` (select + fit).
 - ``select`` : ``VinecopBase.select(u, fit_edge)`` — the full selection path
                (select edges, fit each pair once, reorient the fitted pairs
-               onto the finalized structure), the analogue of a torch
+               onto the finalized structure), the analog of a torch
                ``from_data(structure=None)``.
 
 Run on a quiet machine: wall-clock ratios are noisy under load.

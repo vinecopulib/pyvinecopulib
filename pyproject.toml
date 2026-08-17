@@ -98,6 +98,7 @@ test = [
 notebooks = ["nbmake", "jupyter", "nbconvert", "nbformat"]
 dev = [
   "ty",
+  "codespell[toml]",
   "ruff==0.11.6",
   "bandit[toml]==1.9.4",
   "pre-commit",
@@ -177,7 +178,7 @@ skips = ["B101"]
 # example (`"""Short summary."""`), and major projects (scikit-learn) sit
 # on the other side. We allow both same-line and newline-first
 # summaries; SS01/SS02 still enforce that the summary exists and starts
-# capitalised.
+# capitalized.
 checks = [
   "GL02", "GL03", "GL05", "GL07",
   "PR01", "PR02", "PR03", "PR05", "PR07",
@@ -242,3 +243,20 @@ markers = [
 filterwarnings = [
   "error:`pyvinecopulib\\.:DeprecationWarning",
 ]
+
+[tool.codespell]
+# `en-GB_to_en-US` is what enforces the American-English rule from AGENTS.md;
+# the rest catches ordinary typos in the same pass.
+builtin = "clear,rare,en-GB_to_en-US"
+# Generated or vendored: `docstr.hpp` and the `.pyi` stubs are build artifacts
+# whose text comes from upstream C++ (fix it there), and `lib/` is upstream.
+# `make lint` additionally passes the paths we own explicitly, because CI
+# unpacks Eigen and Boost into the workspace and a skip list cannot anticipate
+# every directory a build step drops there.
+skip = "*/_build/*,*/_generate/*,*/_static/*,*/htmlcov/*,*/lib/*,*/uv.lock,*.pyi,*/docstr.hpp,*/docs/CHANGELOG.md,*/docs/README.md,*/docs/_README_inlined.md,*/docs/examples"
+# `aas` is Kjersti Aas, author of the paper the vine literature is built on.
+# The rest are domain vocabulary or identifiers read as misspellings.
+# `fonctions` is Sklar (1959)'s French title, quoted verbatim in the references.
+ignore-words-list = "aas,fonctions,nd,iff,ans,strat,te"
+# Base64 payloads in notebook outputs are not prose.
+ignore-regex = "[A-Za-z0-9+/]{32,}={0,2}"

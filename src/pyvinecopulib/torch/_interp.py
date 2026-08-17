@@ -267,8 +267,8 @@ class InterpolationGrid2D(torch.nn.Module):
 
     Trapezoidally integrate each grid row up to ``u2`` to get an
     ``(n, m)`` strip, then integrate that strip up to ``u1``,
-    renormalising by the full-strip outer integral so C(1, u2) = u2
-    holds exactly (post-vinecopulib#667 C++ behaviour). Clamped to
+    renormalizing by the full-strip outer integral so C(1, u2) = u2
+    holds exactly (post-vinecopulib#667 C++ behavior). Clamped to
     ``[1e-10, 1-1e-10]``. Thin ``N=1`` wrapper over
     :func:`._batched.integrate_2d_batched`.
     """

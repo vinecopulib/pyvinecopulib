@@ -104,7 +104,7 @@ class TestVinecopBackendWith:
     parent_algo = parent_controls.tree_algorithm
     b = VinecopBackend(controls=parent_controls)
     b2 = b.with_local_random([7, 8, 9])
-    # `with_local_random` always materialises the controls; narrow
+    # `with_local_random` always materializes the controls; narrow
     # the type for the assertions below.
     new_controls = b2.controls
     assert new_controls is not None
@@ -191,7 +191,7 @@ class TestEstimatorWiring:
     # construction with an invalid (but correctly-typed) value
     # succeeds; the matching fit-time rejection is exercised in
     # ``tests/test_sklearn_density.py::test_constructor_validation``
-    # and the regressor's analogue.
+    # and the regressor's analog.
     est = VineDensity(batch_size=0)
     assert est.batch_size == 0
     reg = VineRegressor(quantiles=[1.5])  # 1.5 not in (0, 1)

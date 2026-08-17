@@ -6,12 +6,12 @@ labels: enhancement
 
 ## What you are trying to do
 
-<!-- The modelling problem, not only the API you have in mind. -->
+<!-- The modeling problem, not only the API you have in mind. -->
 
 ## What you would like
 
 ## Alternatives you considered
 
-<!-- Note that new copula families and changes to inference behaviour belong
+<!-- Note that new copula families and changes to inference behavior belong
      upstream in https://github.com/vinecopulib/vinecopulib; this repository
      pins it and adds the Python surface. AGENTS.md has the scope boundaries. -->

@@ -110,3 +110,20 @@ repos:
         files: ^src/.*\.(c|cc|cpp|cxx|h|hpp|hxx)$
         exclude: ^src/include/docstr\.hpp$
         args: [--style=Google]
+
+  # American English (AGENTS.md) plus ordinary typos, over prose and code
+  # alike. `--builtin en-GB_to_en-US` is what enforces the spelling rule; the
+  # ignore list holds domain vocabulary codespell reads as misspellings.
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.1
+    hooks:
+      - id: codespell
+        additional_dependencies: [tomli]
+        exclude: |
+          (?x)^(
+            lib/.* |
+            uv\.lock |
+            docs/_static/.* |
+            src/pyvinecopulib/.*\.pyi |
+            src/include/docstr\.hpp
+          )$

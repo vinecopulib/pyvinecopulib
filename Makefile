@@ -20,6 +20,7 @@ lint: ## Lint + format-check + security-lint; needs no compiled extension
 	$(UV) run ruff check src tests
 	$(UV) run ruff format --check src tests
 	$(UV) run bandit -c pyproject.toml -q -r src/pyvinecopulib scripts
+	$(UV) run codespell src tests scripts docs examples .github *.md *.cff
 
 check: lint ## `lint` plus the type check, which reads the generated .pyi stubs
 	$(UV) run ty check

@@ -210,7 +210,7 @@ class VineRegressor(VineBase, RegressorMixin):
             \\text{if } \\texttt{use\\_grid = True},
        \\end{cases}
 
-    row-normalised when ``normalize_weights=True``.
+    row-normalized when ``normalize_weights=True``.
 
     Parameters
     ----------
@@ -348,7 +348,7 @@ by fitting a vine copula to the joint distribution of :math:`(Y, X)`
 and reducing prediction to a weighted statistic of the training
 responses.
 
-For a target functional :math:`\\beta(x)` characterised by
+For a target functional :math:`\\beta(x)` characterized by
 :math:`\\mathbb{{E}}[\\psi_\\beta(Y) \\mid X = x] = 0` (Nagler &
 Vatter, 2024), the fitted conditional density
 :math:`\\hat f_{{Y \\mid X}}(\\cdot \\mid x)` solves

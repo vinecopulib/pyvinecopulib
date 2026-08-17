@@ -11,7 +11,7 @@ from sphinx.ext.autodoc import AttributeDocumenter, ModuleDocumenter
 
 import pyvinecopulib as pv
 
-# Monkey-patch sphinx's autodoc to recognise nanobind's nb_func as a routine.
+# Monkey-patch sphinx's autodoc to recognize nanobind's nb_func as a routine.
 
 
 def isnbfunc(obj: Any) -> bool:
@@ -95,7 +95,7 @@ typehints_document_rtype = False
 # content inside the class docstring instead (the closest equivalent of
 # the old `napoleon_include_init_with_doc = True`).
 numpydoc_class_members_toctree = False
-# Don't synthesise a Notes / References / See Also section header when
+# Don't synthesize a Notes / References / See Also section header when
 # the docstring doesn't have one; we control that explicitly.
 numpydoc_show_class_members = True
 numpydoc_show_inherited_class_members = False
@@ -405,7 +405,7 @@ def _stage_repo_files(docs_dir, repo_root):
   # index.rst inlines README.md via `.. include:: README.md`, which
   # bypasses the `source-read` event — so the standalone README page
   # picks up cross-references via preprocess_markdown, but the inlined
-  # landing-page copy does not. Materialise a rewritten copy here at
+  # landing-page copy does not. Materialize a rewritten copy here at
   # configure time so both rendered pages stay in sync.
   readme_src = os.path.join(docs_dir, "README.md")
   readme_inlined = os.path.join(docs_dir, "_README_inlined.md")
