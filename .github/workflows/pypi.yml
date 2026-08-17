@@ -2,10 +2,20 @@ name: Build Status
 
 on:
   push:
+    branches: [main]
     tags: ['v*']
+  # No branch filter: a stacked pull request targets the branch below it and
+  # needs the matrix as much as one targeting main.
   pull_request:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 env:
   BOOST_VERSION: 1.84.0
@@ -87,7 +97,9 @@ jobs:
           enable-cache: true
       - name: Install C++ dependencies
         id: install-dependencies
-        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@dev
+        # Pinned to a SHA, not a branch: upstream deleted `dev` out from under
+        # this reference, and a moving ref lets upstream CI churn break wheels.
+        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@f43820efd16474ec930b5022df54e15cfe02466d
         with:
           os: ${{ matrix.cfg.os }}
           platform: ${{ matrix.cfg.platform }}
@@ -95,7 +107,9 @@ jobs:
           eigen_install_dir: ${{ matrix.cfg.root_install_dir }}
           boost_version: ${{ env.BOOST_VERSION }}
           eigen_version: ${{ env.EIGEN_VERSION }}
+          # wdm and kde1d ship as lib/ submodules; lcov is only for C++ coverage.
           wdm: "false"
+          lcov: "false"
       - name: Clean build artefacts
         shell: bash
         run: |
@@ -105,7 +119,10 @@ jobs:
         env:
           CIBW_REBUILD: 1
           CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
-          CIBW_ENVIRONMENT_WINDOWS: Boost_INCLUDE_DIR='${{steps.install-dependencies.outputs.BOOST_ROOT}}\include' EIGEN3_INCLUDE_DIR='C:\ProgramData\chocolatey\lib\eigen\include'
+          # Eigen is built from source into root_install_dir on every OS, so its
+          # headers are at <root_install_dir>include\eigen3. Windows'
+          # root_install_dir already ends in a backslash — do not add one.
+          CIBW_ENVIRONMENT_WINDOWS: Boost_INCLUDE_DIR='${{steps.install-dependencies.outputs.BOOST_ROOT}}\include' EIGEN3_INCLUDE_DIR='${{matrix.cfg.root_install_dir}}include\eigen3'
           # MACOSX_DEPLOYMENT_TARGET >= 10.13 is required by nanobind's aligned
           # operator new/delete (the x86_64 default is 10.9). arm64 uses 11.0.
           CIBW_ENVIRONMENT_MACOS: "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include EIGEN3_INCLUDE_DIR=${{matrix.cfg.root_install_dir}}/include/eigen3 MACOSX_DEPLOYMENT_TARGET=${{matrix.cfg.macos_target}}"
@@ -252,15 +269,43 @@ jobs:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
       - name: Install Graphviz
+        # The notebooks draw vine structures through `dot`. Chocolatey's
+        # community feed answers 499 under load, and `choco install` reports
+        # success anyway, so the install is retried with escalating backoff and
+        # judged by whether the binary appeared. Same idiom vinecopulib uses in
+        # .github/actions/install-dependencies for the sources it cannot drop.
         shell: bash
         run: |
+          retry() {
+            for attempt in 1 2 3 4 5; do
+              "$@" && return 0
+              echo "attempt $attempt failed; retrying in $((attempt * 20))s"
+              sleep $((attempt * 20))
+            done
+            return 1
+          }
+          install_dot_windows() {
+            choco install graphviz -y --no-progress || true
+            find "/c/Program Files" "/c/Program Files (x86)" \
+              -maxdepth 3 -name dot.exe 2>/dev/null | grep -q .
+          }
           if [[ "${{ matrix.cfg.os }}" == "ubuntu-latest" ]]; then
             sudo apt-get update
-            sudo apt-get install -y graphviz
+            retry sudo apt-get install -y graphviz
           elif [[ "${{ matrix.cfg.os }}" == macos-* ]]; then
-            brew install graphviz
+            brew list graphviz >/dev/null 2>&1 || retry brew install graphviz
           elif [[ "${{ matrix.cfg.os }}" == "windows-latest" ]]; then
-            choco install graphviz -y
+            command -v dot >/dev/null 2>&1 || retry install_dot_windows
+            # Chocolatey does not refresh PATH for later steps, so `dot` is
+            # installed but not callable and the notebooks fail on
+            # `Vinecop.plot`. Fail loudly rather than defer to that.
+            dot=$(find "/c/Program Files" "/c/Program Files (x86)" \
+                    -maxdepth 3 -name dot.exe 2>/dev/null | head -1)
+            if [[ -z "$dot" ]]; then
+              echo "::error ::graphviz install did not produce dot.exe"
+              exit 1
+            fi
+            cygpath -w "$(dirname "$dot")" >> "$GITHUB_PATH"
           fi
       - name: Create uv venv and install test/notebooks deps
         # --no-install-project: we test the cibw wheel, not a source build.
@@ -314,16 +359,15 @@ jobs:
               --reruns 2 --reruns-delay 10
 
   regenerate_notebooks:
-    # PRs to `main` or PRs labelled `regenerate-notebooks` (push a commit
-    # after labelling — the trigger doesn't include `labeled`).
+    # Label-only. The job pushes a commit onto the pull request's head branch,
+    # which rewrites the base of every pull request stacked on it, so it must
+    # never fire on a branch the author did not opt in. Push a commit after
+    # labelling — the trigger doesn't include `labeled`.
     name: Regenerate notebook outputs
     needs: build
     if: |
       github.event_name == 'pull_request'
-      && (
-        github.base_ref == 'main'
-        || contains(github.event.pull_request.labels.*.name, 'regenerate-notebooks')
-      )
+      && contains(github.event.pull_request.labels.*.name, 'regenerate-notebooks')
     runs-on: ubuntu-latest
     permissions:
       contents: write  # required to push the auto-commit back to the PR branch
@@ -388,13 +432,18 @@ jobs:
           git fetch --depth=1 origin +refs/tags/*:refs/tags/*
       - name: Install C++ dependencies
         id: install-dependencies
-        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@dev
+        # Pinned to a SHA, not a branch: upstream deleted `dev` out from under
+        # this reference, and a moving ref lets upstream CI churn break wheels.
+        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@f43820efd16474ec930b5022df54e15cfe02466d
         with:
           os: "ubuntu-latest"
           boost_install_dir: "/home/runner/work"
           eigen_install_dir: "/home/runner/work"
           boost_version: ${{ env.BOOST_VERSION }}
           eigen_version: ${{ env.EIGEN_VERSION }}
+          # wdm and kde1d ship as lib/ submodules; lcov is only for C++ coverage.
+          wdm: "false"
+          lcov: "false"
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
@@ -473,16 +522,6 @@ jobs:
             echo "::error ::Metadata check failed — would fail on PyPI upload."
             exit 1
           }
-      - name: Publish distribution Test PyPI
-        if: |
-          job.status == 'success'
-            && github.base_ref == 'main'
-            && github.head_ref == 'dev'
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          user: __token__
-          password: ${{ secrets.test_pypi_password }}
-          repository-url: https://test.pypi.org/legacy/
       - name: Publish distribution to PyPI
         if: |
           job.status == 'success'
