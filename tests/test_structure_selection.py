@@ -6,7 +6,7 @@ same selected structure (identical R-vine matrix encoding) and same reused
 pair copulas (identical density, no re-fit).
 """
 
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import numpy as np
 import pytest
@@ -245,3 +245,36 @@ def test_bicop_base_flip_default_raises() -> None:
 
   with pytest.raises(NotImplementedError, match="flip"):
     GaussianBicop(base_rho=0.5).flip()
+
+
+def test_compiled_bicop_hosted_unwrapped_matches_vinecop() -> None:
+  # A simplified vine may host the compiled ``Bicop`` directly: it satisfies
+  # ``BicopLike`` nominally and takes no conditioning argument, so the cascade
+  # must not hand it one. Every other pair here goes through ``_CppBicopLike``,
+  # which accepts (and drops) ``x``; this pins the unwrapped case.
+  d = 4
+  pairs = [
+    [
+      pv.Bicop(family=pv.families.gaussian, parameters=np.array([[r]]))
+      for r in row
+    ]
+    for row in ([0.5, 0.4, 0.3], [0.25, 0.2], [0.15])
+  ]
+  structure = pv.RVineStructure.from_order(list(range(1, d + 1)))
+  ref = pv.Vinecop.from_structure(structure=structure, pair_copulas=pairs)
+  # Cast: the conformance is nominal -- ``Bicop.pdf`` takes per-row
+  # ``parameters`` where ``BicopLike.pdf`` takes keyword-only ``x``.
+  mine = _ListVinecop(cast("list[list[BicopLike[Any]]]", pairs), structure)
+
+  rng = np.random.default_rng(0)
+  u = rng.uniform(0.02, 0.98, size=(256, d))
+  np.testing.assert_allclose(mine.pdf(u), ref.pdf(u), rtol=1e-10, atol=1e-10)
+  np.testing.assert_allclose(
+    mine.rosenblatt(u), ref.rosenblatt(u), rtol=1e-10, atol=1e-10
+  )
+  np.testing.assert_allclose(
+    mine.inverse_rosenblatt(u),
+    ref.inverse_rosenblatt(u),
+    rtol=1e-10,
+    atol=1e-10,
+  )

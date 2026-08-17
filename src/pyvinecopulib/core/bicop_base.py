@@ -43,7 +43,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
   pyvinecopulib.torch.TorchBicop : A concrete (grid / TLL) subclass.
   """
 
-  def loglik(self, u: ArrayT, x: Optional[ArrayT] = None) -> ArrayT:
+  def loglik(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Total log-likelihood ``sum(log c(u))`` of the pair at ``u``.
 
     Parameters
@@ -60,11 +60,11 @@ class BicopBase(BicopLike[ArrayT], ABC):
         PyTorch). The per-observation density is floored at ``1e-20`` before the
         log.
     """
-    dens: Any = self.pdf(u, x)
+    dens: Any = self.pdf(u, x=x)
     xp = array_namespace(dens)
     return cast(ArrayT, xp.sum(xp.log(xp.clip(dens, 1e-20))))
 
-  def hinv1(self, u: ArrayT, x: Optional[ArrayT] = None) -> ArrayT:
+  def hinv1(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Numerically invert :meth:`hfunc1` in its second argument.
 
     Solves ``hfunc1([u1, .], x) = u2`` for the second argument by bisection
@@ -89,10 +89,12 @@ class BicopBase(BicopLike[ArrayT], ABC):
     u1, p = ua[:, 0], ua[:, 1]
     return cast(
       ArrayT,
-      solve_increasing(lambda v: self.hfunc1(xp.stack([u1, v], axis=-1), x), p),
+      solve_increasing(
+        lambda v: self.hfunc1(xp.stack([u1, v], axis=-1), x=x), p
+      ),
     )
 
-  def hinv2(self, u: ArrayT, x: Optional[ArrayT] = None) -> ArrayT:
+  def hinv2(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Numerically invert :meth:`hfunc2` in its first argument.
 
     Solves ``hfunc2([., u2], x) = u1`` for the first argument by bisection
@@ -117,10 +119,12 @@ class BicopBase(BicopLike[ArrayT], ABC):
     p, u2 = ua[:, 0], ua[:, 1]
     return cast(
       ArrayT,
-      solve_increasing(lambda v: self.hfunc2(xp.stack([v, u2], axis=-1), x), p),
+      solve_increasing(
+        lambda v: self.hfunc2(xp.stack([v, u2], axis=-1), x=x), p
+      ),
     )
 
-  def cdf(self, u: ArrayT, x: Optional[ArrayT] = None) -> ArrayT:
+  def cdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Raise; the vine CDF is Monte-Carlo, so a per-pair ``cdf`` is optional.
 
     Parameters
@@ -203,7 +207,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
     """
     base_u: Any = self._simulate_uniform(n, qrng, list(seeds) if seeds else [])
     xp = array_namespace(base_u)
-    u2: Any = self.hinv1(base_u, x)
+    u2: Any = self.hinv1(base_u, x=x)
     return cast(ArrayT, xp.stack([base_u[:, 0], u2], axis=-1))
 
   def _simulate_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:

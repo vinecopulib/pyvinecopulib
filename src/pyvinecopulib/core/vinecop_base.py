@@ -58,6 +58,18 @@ _TRIM_HI: float = 1.0 - 1e-10
 FitEdge = Callable[[int, int, Any, Optional[Any]], BicopLike]
 
 
+def _pair_eval(method: Callable[..., Any], u: Any, x: Optional[Any]) -> Any:
+  """Evaluate a pair-copula method, forwarding ``x`` only when there is one.
+
+  A pair copula that takes no conditioning argument -- ``Bicop`` above all --
+  is a valid host for a simplified vine, so an absent context must not reach
+  it as a keyword. When there *is* a conditioning matrix, it is passed by
+  keyword, which is what makes a pair copula that cannot accept one fail
+  loudly instead of binding it to some unrelated positional parameter.
+  """
+  return method(u) if x is None else method(u, x=x)
+
+
 class _NotBatchable(Exception):
   """Raised by :meth:`VinecopBase._build_batched` when batching is unavailable.
 
@@ -417,12 +429,12 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         x_e = self._edge_context(tree, edge, x, u_nat, None)
         # Accumulate the density as a product over edges (cwiseProduct,
         # class.ipp:1047).
-        pdf = pdf * edge_copula.pdf(u_e, x_e)
+        pdf = pdf * _pair_eval(edge_copula.pdf, u_e, x_e)
         # h-functions only evaluated if a later tree needs them (class.ipp:1050).
         if s.needed_hfunc1(tree, edge):
-          hfunc1[:, edge] = edge_copula.hfunc1(u_e, x_e)
+          hfunc1[:, edge] = _pair_eval(edge_copula.hfunc1, u_e, x_e)
         if s.needed_hfunc2(tree, edge):
-          hfunc2[:, edge] = edge_copula.hfunc2(u_e, x_e)
+          hfunc2[:, edge] = _pair_eval(edge_copula.hfunc2, u_e, x_e)
     return pdf
 
   def _rosenblatt(self, u: Any, x: Optional[Any]) -> Any:
@@ -467,8 +479,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         x_e = self._edge_context(tree, edge, x, u_nat, None)
         # hfunc1 only if needed downstream; hfunc2 is the running transform.
         if s.needed_hfunc1(tree, edge):
-          hfunc1[:, edge] = edge_copula.hfunc1(u_e, x_e)
-        hfunc2[:, edge] = edge_copula.hfunc2(u_e, x_e)
+          hfunc1[:, edge] = _pair_eval(edge_copula.hfunc1, u_e, x_e)
+        hfunc2[:, edge] = _pair_eval(edge_copula.hfunc2, u_e, x_e)
     # Scatter the transformed columns back to variable order.
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
@@ -526,11 +538,13 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         # Conditioning u_D is read from the finalized hinv2[0] rows (the
         # conditioning variables are finalized before this var by the invariant).
         x_e = self._edge_context(tree, var, x, None, hinv2[0])
-        hinv2[tree, var, :] = edge_copula.hinv2(u_e, x_e)
+        hinv2[tree, var, :] = _pair_eval(edge_copula.hinv2, u_e, x_e)
         # Propagate hfunc1 for the next-inner inversion when needed.
         if var < d - 1 and s.needed_hfunc1(tree, var):
           u_e_after = xp.stack([hinv2[tree, var, :], u_e_col1], axis=-1)
-          hfunc1[tree + 1, var, :] = edge_copula.hfunc1(u_e_after, x_e)
+          hfunc1[tree + 1, var, :] = _pair_eval(
+            edge_copula.hfunc1, u_e_after, x_e
+          )
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       out[:, j] = hinv2[0, inv[j], :]
@@ -1087,9 +1101,9 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         edge_copula = fit_edge(tree, edge, u_e, x_e)
         row.append(edge_copula)
         if s.needed_hfunc1(tree, edge):
-          hfunc1[:, edge] = edge_copula.hfunc1(u_e, x_e)
+          hfunc1[:, edge] = _pair_eval(edge_copula.hfunc1, u_e, x_e)
         if s.needed_hfunc2(tree, edge):
-          hfunc2[:, edge] = edge_copula.hfunc2(u_e, x_e)
+          hfunc2[:, edge] = _pair_eval(edge_copula.hfunc2, u_e, x_e)
       pairs.append(row)
     return pairs
 
@@ -1283,8 +1297,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         new_nodes.append(
           {
             "all_indices": tuple(sorted((a_var, b_var, *conditioning))),
-            "h1": pair.hfunc1(u_e, None),
-            "h2": pair.hfunc2(u_e, None),
+            "h1": pair.hfunc1(u_e),
+            "h2": pair.hfunc2(u_e),
             "prev": (v0, v1),
           }
         )
