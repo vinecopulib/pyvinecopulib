@@ -24,7 +24,32 @@ env:
 
 jobs:
 
+  lint:
+    # Gates the wheel matrix: 15 cibuildwheel legs should not start behind a
+    # formatting error. `ty` is not here — it reads the .pyi stubs a build
+    # generates, so it stays in `build_sdist` where the editable install exists.
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+      - name: Install lint tooling
+        run: uv sync --no-install-project --group dev
+      - name: Lint, format-check, and security-lint
+        env:
+          UV_NO_SYNC: "1"
+        run: make lint
+
   build:
+    needs: [lint]
     strategy:
       fail-fast: false
       matrix:
@@ -420,7 +445,7 @@ jobs:
 
   build_sdist:
     runs-on: ubuntu-latest
-    # needs: build
+    needs: [lint]
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
