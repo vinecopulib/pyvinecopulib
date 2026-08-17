@@ -6,6 +6,7 @@
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
 
+#include <algorithm>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/kruskal_min_spanning_tree.hpp>
 #include <boost/graph/prim_minimum_spanning_tree.hpp>
@@ -13,13 +14,11 @@
 #include <boost/random/mersenne_twister.hpp>
 #include <boost/random/seed_seq.hpp>
 #include <boost/random/uniform_int_distribution.hpp>
-#include <algorithm>
 #include <map>
 #include <random>
 #include <string>
 #include <utility>
 #include <vector>
-
 #include <vinecopulib/vinecop/tools_select.hpp>
 
 namespace nb = nanobind;
@@ -27,8 +26,8 @@ using namespace nb::literals;
 
 inline double calculate_tree_criterion(const Eigen::MatrixXd& data,
                                        const std::string& tree_criterion) {
-  return vinecopulib::tools_select::calculate_criterion(
-      data, tree_criterion, Eigen::VectorXd());
+  return vinecopulib::tools_select::calculate_criterion(data, tree_criterion,
+                                                        Eigen::VectorXd());
 }
 
 // Select a spanning tree over a candidate graph, mirroring

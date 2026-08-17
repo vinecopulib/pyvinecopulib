@@ -26,7 +26,7 @@ a comprehensive list of publications lives on
 
 ### What is pyvinecopulib?
 
-[pyvinecopulib](https://vinecopulib.github.io/pyvinecopulib/) is the
+[pyvinecopulib](https://pyvinecopulib.readthedocs.io) is the
 Python interface to vinecopulib, a header-only C++ library for vine
 copula models based on
 [Eigen](http://eigen.tuxfamily.org/index.php?title=Main_Page). It
@@ -41,8 +41,6 @@ copula models. Advantages over VineCopula are
   dimensions,
 * nonparametric and multi-parameter families.
 
-### Optional backends
-
 ### First core fit
 
 The core package is enough to fit, inspect, evaluate, and sample a model:
@@ -51,18 +49,37 @@ The core package is enough to fit, inspect, evaluate, and sample a model:
 import numpy as np
 import pyvinecopulib as pv
 
-x = np.random.default_rng(0).normal(size=(500, 3))
-u = pv.to_pseudo_obs(x)
-vine = pv.Vinecop.from_data(u)
-loglik = vine.loglik(u)
-draws = vine.sample(100, seeds=[1])
+rng = np.random.default_rng(0)
+cov = [[1.0, 0.7, 0.3], [0.7, 1.0, 0.5], [0.3, 0.5, 1.0]]
+x = rng.multivariate_normal([0, 0, 0], cov, size=500)
+
+u = pv.to_pseudo_obs(x)              # ranks, on the copula scale
+vine = pv.Vinecop.from_data(u)       # selects structure and families
+print(vine)                          # the fitted trees, pair by pair
+vine.loglik(u), vine.bic()           # fit diagnostics
+draws = vine.sample(100, seeds=[1])  # new copula-scale observations
 ```
 
 For a distribution on the original data scale, pair the fitted copula with
 one margin per variable through `pv.Vinedist`. Notebooks 03, 07, and 11 build
 out these core workflows.
 
-Two opt-in subpackages extend the core library:
+### Optional subpackages
+
+Three opt-in subpackages extend the core library:
+
+* `pyvinecopulib.margins` — parametric margins and family selection
+  (`ParametricMargin`, `MarginSelector`) to pair with `Vinedist` when a
+  kernel-density margin is not what you want:
+
+  ```python
+  from pyvinecopulib.core import Vinedist
+  from pyvinecopulib.margins import MarginSelector
+  dist = Vinedist.from_data(x, margins=MarginSelector())
+  print(dist.margins[0].selected_)
+  ```
+
+  Install with `pip install pyvinecopulib[scipy]` (or `[openturns]`).
 
 * `pyvinecopulib.sklearn` — scikit-learn-compatible estimators
   (`VineDensity`, `VineRegressor`). Drop a vine
@@ -81,14 +98,33 @@ Two opt-in subpackages extend the core library:
   `TorchVinedist`) for GPU placement and autograd:
 
   ```python
-  from pyvinecopulib.sklearn import VineDensity
-  from pyvinecopulib.sklearn.backends import TorchVinecopBackend
-  from pyvinecopulib.torch import FitControlsTorchVinecop
-  controls = FitControlsTorchVinecop(device="cuda")
-  density_gpu = VineDensity(backend=TorchVinecopBackend(controls=controls)).fit(X)
+  import torch
+  from pyvinecopulib.torch import TorchVinedist, FitControlsTorchVinecop
+  dist = TorchVinedist.from_data(
+    torch.as_tensor(x), controls=FitControlsTorchVinecop(device="cuda")
+  )
+  y = torch.as_tensor(x[:5], device="cuda").requires_grad_(True)
+  dist.log_prob(y).sum().backward()   # autograd through the whole vine
+  print(y.grad)                       # d log f / dy, on the GPU
   ```
 
+  The same evaluator backs the sklearn estimators through
+  `pyvinecopulib.sklearn.backends.TorchVinecopBackend`.
+
   Install with `pip install pyvinecopulib[torch]`.
+
+### API stability
+
+`pyvinecopulib.core`, `pyvinecopulib.families` and `pyvinecopulib.utils` are
+stable: changes there follow semantic versioning, with a deprecation cycle
+before anything is removed.
+
+`pyvinecopulib.margins`, `pyvinecopulib.sklearn` and `pyvinecopulib.torch` are
+**provisional in 1.x**. Their contracts are new in this release and may still
+change in a minor version as they meet real data -- the margin contract
+(`MarginLike` / `MarginBase`) and the torch/C++ evaluation parity are the parts
+already treated as load-bearing. Pin an exact version if you depend on their
+surface.
 
 ### Custom and conditional pair copulas
 
@@ -129,7 +165,7 @@ terms and conditions of this license.
 ### Contact
 
 If you have any questions regarding the library, feel free to
-[open an issue](https://github.com/pyvinecopulib/pyvinecopulib/issues/new) or
+[open an issue](https://github.com/vinecopulib/pyvinecopulib/issues/new) or
 send a mail to <info@vinecopulib.org>.
 
 ## Installation
@@ -189,7 +225,7 @@ mamba activate pyvinecopulib
 make sync
 ```
 
-See the [contributing guide](https://pyvinecopulib.readthedocs.io/en/latest/CONTRIBUTING.html)
+See the [contributing guide](https://github.com/vinecopulib/pyvinecopulib/blob/main/CONTRIBUTING.md)
 for the full developer workflow.
 
 Alternatively, you can specify manually the location of `Eigen` and `Boost` using the environment variables `EIGEN3_INCLUDE_DIR` and `Boost_INCLUDE_DIR` respectively.
@@ -231,4 +267,4 @@ make docs           # one-shot HTML build → docs/_build/html/
 
 Development setup, the build pipeline, the Makefile + pre-commit conventions,
 the CI workflow, and the release flow are all documented in the
-[contributing guide](https://pyvinecopulib.readthedocs.io/en/latest/CONTRIBUTING.html).
+[contributing guide](https://github.com/vinecopulib/pyvinecopulib/blob/main/CONTRIBUTING.md).

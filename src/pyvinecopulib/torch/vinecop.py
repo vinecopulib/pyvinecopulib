@@ -146,6 +146,17 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     self.pair_copulas = torch.nn.ModuleList(
       [torch.nn.ModuleList(list(row)) for row in pair_copulas]
     )
+    # A vine truncated at zero has no pair copulas, so there is no grid to read
+    # dtype/device from. This buffer always exists and `.to()` moves it, which
+    # is what makes an independence vine evaluable at all.
+    ref = (
+      pair_copulas[0][0].interp_grid.values
+      if self.trunc_lvl > 0
+      else torch.empty(0)
+    )
+    self.register_buffer(
+      "_device_ref", torch.empty(0, dtype=ref.dtype, device=ref.device)
+    )
     # `self._batched` (lazy grid-batched state) is initialized to None by
     # `_bind_vine`; `_apply` clears it so device moves re-bake it.
     self._compile_cascades = False
@@ -555,10 +566,62 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       return pair
     return DiscretePair(pair, types)
 
+  def get_extra_state(self) -> dict[str, Any]:
+    """Return the non-tensor model identity for ``state_dict`` round-trips.
+
+    Returns
+    -------
+    dict
+        The structure and variable types, which no tensor carries.
+    """
+    return {
+      "version": 1,
+      "structure": self.structure.to_json(),
+      "var_types": list(self.var_types),
+    }
+
+  def set_extra_state(self, state: Any) -> None:
+    """Check the non-tensor model identity saved by :meth:`get_extra_state`.
+
+    The pair-copula grids are the only tensors in ``state_dict``, so nothing
+    in it identifies the vine they hang on. A checkpoint from a differently
+    structured vine used to load with ``strict=True`` reporting no missing or
+    unexpected keys, and the result was neither model.
+
+    Parameters
+    ----------
+    state : dict
+        State returned by :meth:`get_extra_state`.
+
+    Raises
+    ------
+    RuntimeError
+        If the checkpoint's structure or variable types differ from this
+        module's, or its version is not recognized.
+    """
+    if not isinstance(state, dict) or state.get("version") != 1:
+      raise RuntimeError("unsupported TorchVinecop state-dict version")
+    if state["structure"] != self.structure.to_json():
+      raise RuntimeError(
+        "state_dict was saved from a vine with a different structure; "
+        "rebuild the module from that structure before loading it"
+      )
+    if list(state["var_types"]) != list(self.var_types):
+      raise RuntimeError(
+        "state_dict was saved from a vine with different var_types "
+        f"({list(state['var_types'])} vs {list(self.var_types)})"
+      )
+
   def _ref_tensor(self) -> Tensor:
     """A registered buffer we can crib dtype/device from."""
-    # Every TorchBicop registers its interpolation grid; reuse the first.
-    return self._pair_module(0, 0).interp_grid.values
+    # Every TorchBicop registers its interpolation grid, so prefer the first --
+    # but a vine truncated at zero has none, and falls back to the buffer the
+    # constructor registers for exactly that case.
+    if self.trunc_lvl > 0:
+      return self._pair_module(0, 0).interp_grid.values
+    ref = self._buffers["_device_ref"]
+    assert ref is not None
+    return ref
 
   def _default_batched(self) -> bool:
     """Pick a sensible ``batched`` default based on the fitted device.

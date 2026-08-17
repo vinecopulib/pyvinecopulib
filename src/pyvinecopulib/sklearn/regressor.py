@@ -215,13 +215,18 @@ class VineRegressor(RegressorMixin, VineBase):
     p : ndarray, shape (n_nodes,), dtype float
         Increasing probability levels, all strictly inside ``(0, 1)``.
     dp : ndarray, shape (1, n_nodes), dtype float
-        Node weights :math:`dp/dz`, up to the constant factor the
-        row normalization absorbs.
+        Node weights :math:`\\varphi(z)\\, \\Delta z`.
     """
     z = np.linspace(-_PROBIT_HALF_WIDTH, _PROBIT_HALF_WIDTH, int(self.n_nodes))
     root_two = math.sqrt(2.0)
     p = np.array([0.5 * (1.0 + math.erf(zi / root_two)) for zi in z])
-    return p, np.exp(-0.5 * z**2)[np.newaxis, :]
+    # The full weight, not just its z-dependent part: the constant
+    # `dz / sqrt(2 pi)` cancels under row normalization but is what makes the
+    # rule integrate to one, and `normalize_weights=False` has nothing else to
+    # supply it.
+    dz = 2.0 * _PROBIT_HALF_WIDTH / (int(self.n_nodes) - 1)
+    weights = np.exp(-0.5 * z**2) * (dz / math.sqrt(2.0 * math.pi))
+    return p, weights[np.newaxis, :]
 
   def _copula_marginal_density(
     self, X: np.ndarray, log: bool = False, n_grid: int = 101
@@ -299,7 +304,9 @@ class VineRegressor(RegressorMixin, VineBase):
     where :math:`u_k` is :math:`\\hat F_Y(y_k)` over training rows
     and :math:`p_k` on the probability grid, and :math:`\\Delta_k` is
     the node spacing there (constant, hence absent, over training
-    rows). Row-normalized when ``normalize_weights=True``.
+    rows). Row-normalized when ``normalize_weights=True``, which divides out
+    the copula density's own departure from integrating to one; without it the
+    weights are the plain quadrature rule.
 
     Parameters
     ----------
@@ -382,7 +389,18 @@ class VineRegressor(RegressorMixin, VineBase):
     for w, start, end in iter_weights(X):
       col = 0
       if self.mean:
-        y_pred[start:end, col] = w @ self._y_nodes
+        # A ratio, not a plain dot product: the conditional mean is
+        # `sum(w y) / sum(w)` whatever the weights' scale, so it does not
+        # depend on `normalize_weights` -- which exists so a caller combining
+        # several vines can normalize once, across all of them. `np.quantile`
+        # below normalizes internally for the same reason.
+        totals = w.sum(axis=1)
+        if not np.all(totals > 0.0):
+          raise ValueError(
+            "the copula density vanished on every quadrature node for at "
+            "least one row of X, so no conditional mean is defined there"
+          )
+        y_pred[start:end, col] = (w @ self._y_nodes) / totals
         col += 1
       if quantiles is not None:
         batch_preds = [

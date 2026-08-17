@@ -628,8 +628,7 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
             return u ? cop.mbicv(*u, psi0, num_threads) : cop.get_mbicv(psi0);
           },
           "u"_a = nb::none(), "psi0"_a = 0.9, "num_threads"_a = 1,
-          vinecop_doc.mbicv.doc,
-           nb::call_guard<nb::gil_scoped_release>())
+          vinecop_doc.mbicv.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("scores", make_step_dispatch(&Vinecop::scores, &Vinecop::scores),
            "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
            "parameters"_a = nb::none(), scores_perobs_doc.c_str(),
@@ -740,8 +739,8 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
 
       .def("__setstate__", [](Vinecop& cop, nb::dict state) {
         if (state.contains("json")) {
-          const auto json = nlohmann::json::parse(
-              nb::cast<std::string>(state["json"]));
+          const auto json =
+              nlohmann::json::parse(nb::cast<std::string>(state["json"]));
           new (&cop) Vinecop(json);
           return;
         }

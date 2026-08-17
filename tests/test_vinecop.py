@@ -962,3 +962,19 @@ def test_sample_conditional_discrete_set_takes_a_left_limit_column() -> None:
   # Dropping the left-limit column leaves the model under-specified.
   with pytest.raises(RuntimeError):
     cop.sample_conditional(u_cond[:, :1], seeds=[1, 2, 3])
+
+
+@pytest.mark.parametrize("types", [["c"], ["c", "c"], ["c"] * 9])
+def test_var_types_needs_one_entry_per_variable(types) -> None:
+  """A short ``var_types`` used to terminate the interpreter.
+
+  The setter rejected a vector longer than the dimension but stored a shorter
+  one, which the pair-type derivation then indexed per variable -- an
+  out-of-bounds read on every subsequent evaluation.
+  """
+  u = np.random.default_rng(0).uniform(size=(60, 4))
+  vinecop = pv.Vinecop.from_data(u)
+  with pytest.raises(RuntimeError, match="one entry per variable"):
+    vinecop.var_types = types
+  vinecop.var_types = ["c", "d", "c", "d"]
+  assert vinecop.var_types == ["c", "d", "c", "d"]

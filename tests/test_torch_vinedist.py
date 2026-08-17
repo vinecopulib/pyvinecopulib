@@ -29,6 +29,7 @@ torch = pytest.importorskip("torch")
 stats = pytest.importorskip("scipy.stats")
 
 from pyvinecopulib.torch import (  # noqa: E402
+  FitControlsTorchVinecop,
   TorchKde1d,
   TorchMargin,
   TorchVinecop,
@@ -434,3 +435,40 @@ def test_rejects_a_margin_with_atoms_and_no_left_limit(
   torch_copula = TorchVinecop.from_vinecop(copula)
   with pytest.raises(NotImplementedError, match="no `cdf_left`"):
     TorchVinedist(torch_copula, [discrete for _ in range(3)])
+
+
+@pytest.mark.parametrize(
+  ("device", "dtype"),
+  [(None, None), (None, torch.float32), ("cpu", torch.float64)],
+)
+def test_from_data_puts_everything_on_one_device_and_dtype(
+  device, dtype
+) -> None:
+  """`from_data` documents one device and one dtype for the whole object.
+
+  The margins took theirs from `y` while the copula took `controls.device`, so
+  `from_data(..., controls=FitControlsTorchVinecop(device="cuda"))` left every
+  margin on the CPU: `state_dict` spanned two devices and `logpdf` raised.
+  """
+  rng = np.random.default_rng(0)
+  y = torch.as_tensor(rng.normal(size=(200, 3)))
+  controls = FitControlsTorchVinecop(device=device, dtype=dtype)
+  dist = TorchVinedist.from_data(y, controls=controls)
+  tensors = [v for v in dist.state_dict().values() if hasattr(v, "device")]
+  assert len({t.device for t in tensors}) == 1
+  assert len({t.dtype for t in tensors}) == 1
+  if dtype is not None:
+    assert tensors[0].dtype == dtype
+  # And the object it produced can evaluate its own data.
+  assert torch.isfinite(dist.log_prob(dist.sample(4))).all()
+
+
+def test_from_data_does_not_take_its_dtype_from_integer_data() -> None:
+  """An integer `y` must not give the margins an integer grid."""
+  rng = np.random.default_rng(1)
+  y = torch.as_tensor(rng.poisson(5.0, size=(200, 2)))
+  assert not y.dtype.is_floating_point
+  dist = TorchVinedist.from_data(y)
+  tensors = [v for v in dist.state_dict().values() if hasattr(v, "dtype")]
+  assert len({t.dtype for t in tensors}) == 1
+  assert tensors[0].dtype.is_floating_point

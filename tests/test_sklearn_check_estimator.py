@@ -89,7 +89,6 @@ def _regressor_opt_outs() -> dict[str, str]:
       # __sklearn_tags__.target_tags.multi_output = True which is
       # context-sensitive here.
       "check_regressors_train": "quantile-stacked output is not strict multi-output",
-      "check_regressor_data_not_an_array": "quantile-stacked output shape",
     }
   )
   return _prune(d, "VineRegressor")

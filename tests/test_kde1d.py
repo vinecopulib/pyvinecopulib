@@ -1,3 +1,5 @@
+import pickle
+
 import numpy as np
 import pytest
 
@@ -80,11 +82,11 @@ def test_kde1d_factory_methods() -> None:
   assert np.array_equal(kde_from_grid.values, values)
 
 
-@pytest.mark.parametrize("size", [0, 1])
-def test_kde1d_from_grid_requires_two_points(size: int) -> None:
+@pytest.mark.parametrize("size", [0, 1, 2, 3])
+def test_kde1d_from_grid_requires_four_points(size: int) -> None:
   """Invalid interpolation grids are rejected before entering C++."""
   grid = np.arange(size, dtype=float)
-  with pytest.raises(ValueError, match="at least two points"):
+  with pytest.raises(ValueError, match="at least four points"):
     pv.core.Kde1d.from_grid(grid, grid)
 
 
@@ -475,3 +477,18 @@ def test_actual_grid_size_is_reported_separately() -> None:
   kde.fit(np.random.default_rng(14).normal(size=200))
   assert kde.grid_size == 64
   assert kde.actual_grid_size == 65
+
+
+def test_from_grid_minimum_matches_what_can_round_trip() -> None:
+  """Anything `from_grid` accepts must survive its own serialization.
+
+  The binding used to accept two points while `Kde1d`'s own constructors
+  reject a `grid_size` below four, so a two- or three-point object could be
+  built and then not be unpickled.
+  """
+  for m in (4, 8):
+    kde = pv.core.Kde1d.from_grid(np.linspace(0.0, 1.0, m), np.ones(m))
+    restored = pickle.loads(pickle.dumps(kde))
+    np.testing.assert_allclose(
+      restored.pdf(np.array([0.5])), kde.pdf(np.array([0.5]))
+    )

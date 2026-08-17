@@ -527,6 +527,30 @@ jobs:
           name: cibw-sdist
           path: dist/*.tar.gz
 
+      # The sdist is built from the working tree, not from `git ls-files`, so
+      # any untracked-but-unignored file in the checkout ships. CI is clean, but
+      # a maintainer building one locally is not, and the artifact is
+      # irreversible once uploaded.
+      - name: Assert the sdist carries no build or cache artifacts
+        run: |
+          forbidden=$(tar -tzf dist/*.tar.gz | grep -E \
+            '__pycache__|\.pyc$|\.so$|RELEASE_AUDIT|build-|\.venv|htmlcov|coverage\.xml|\.pytest_cache|\.ruff_cache|docs/_build' \
+            || true)
+          if [ -n "$forbidden" ]; then
+            echo "::error ::sdist contains files that must not be published:"
+            echo "$forbidden"
+            exit 1
+          fi
+          # And that it still carries what a source build needs.
+          for required in \
+              pyproject.toml CMakeLists.txt src/pyvinecopulib_ext.cpp \
+              lib/vinecopulib/include lib/wdm/include lib/kde1d/include \
+              scripts/generate_docstring.py scripts/generate_stubs.py; do
+            tar -tzf dist/*.tar.gz | grep -q "/$required" || {
+              echo "::error ::sdist is missing $required"; exit 1; }
+          done
+          echo "sdist contents verified"
+
   upload_to_pypi:
     needs: [build_sdist, check_wheels, install_and_unit_test, verify_docs_build]
     runs-on: ubuntu-latest
@@ -548,9 +572,17 @@ jobs:
       - name: Check the version metadata matches the tag
         if: ${{ startsWith(github.event.ref, 'refs/tags') }}
         run: python3 scripts/check_version.py --released --tag "$GITHUB_REF_NAME"
+      # `origin/main` alone is an ambiguous refname, and gitrevisions(7) resolves
+      # refs/tags/ before refs/remotes/ -- so a tag literally named
+      # `origin/main` shadows the branch, and whoever can push the `v*` tag that
+      # triggers this job can push that one too. The fully-qualified refname
+      # cannot be shadowed; `rev-parse --verify` makes a missing ref fail closed
+      # rather than resolve to something else.
       - name: Require the release tag to be reachable from main
         if: ${{ startsWith(github.event.ref, 'refs/tags') }}
-        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+        run: |
+          git rev-parse --verify refs/remotes/origin/main >/dev/null
+          git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:

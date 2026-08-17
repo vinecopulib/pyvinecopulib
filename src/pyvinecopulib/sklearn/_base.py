@@ -323,6 +323,26 @@ class VineBase(BaseEstimator):
     self.random_state = random_state
     self.n_jobs = n_jobs
 
+  def _reset_fitted_schema(self) -> None:
+    """Drop the state a previous ``fit`` derived, before deriving it again.
+
+    A caller may pre-set ``schema_`` to declare per-column types for array
+    input, so only a schema this estimator derived itself is discarded --
+    otherwise a second ``fit`` would validate the new data against the
+    previous fit's schema, which sklearn's contract forbids.
+    """
+    if getattr(self, "_schema_from_fit", False):
+      self.__dict__.pop("schema_", None)
+    for name in (
+      "_schema_from_fit",
+      "feature_names_in_",
+      "_dtypes",
+      "_categories",
+      "_expanded_columns",
+      "n_model_features_",
+    ):
+      self.__dict__.pop(name, None)
+
   def _validate_input(
     self,
     X,
@@ -348,9 +368,19 @@ class VineBase(BaseEstimator):
         against the previously-set ones.
     """
     if not isinstance(X, (np.ndarray, pd.DataFrame)):
-      if hasattr(X, "format"):
+      # `.format` plus `.nnz` identifies a scipy sparse matrix; `.format`
+      # alone also matches `str` and anything else carrying that attribute.
+      if hasattr(X, "format") and hasattr(X, "nnz"):
         raise TypeError("Sparse input is not supported; pass a dense array.")
-      raise ValueError("X must be a numpy array or pandas DataFrame")
+      # sklearn's convention is that any array-like is acceptable input, so a
+      # list of rows must not be refused.
+      try:
+        X = np.asarray(X, dtype=float)
+      except (TypeError, ValueError) as error:
+        raise ValueError(
+          "X must be an array-like of floats, a numpy array or a pandas "
+          f"DataFrame; got {type(X).__name__}"
+        ) from error
     if isinstance(X, np.ndarray):
       if X.ndim != 2:
         raise ValueError(f"Expected 2D array, got {X.ndim}D array instead.")
@@ -378,6 +408,28 @@ class VineBase(BaseEstimator):
         y = y.ravel()
       if X.shape[0] != y.shape[0]:
         raise ValueError("X and y must have the same number of samples.")
+
+    if reset:
+      self._reset_fitted_schema()
+    elif (
+      isinstance(X, pd.DataFrame)
+      and hasattr(self, "n_features_in_")
+      and not hasattr(self, "feature_names_in_")
+    ):
+      # Fitted on an array, so there are no names to match against. sklearn's
+      # convention is to accept a frame positionally rather than refuse it --
+      # but a categorical column was never modeled as one, and silently
+      # reading its codes as a numeric column would be a wrong answer.
+      categorical = [
+        c for c in X.columns if isinstance(X[c].dtype, pd.CategoricalDtype)
+      ]
+      if categorical:
+        raise ValueError(
+          f"{type(self).__name__} was fitted without feature names, so the "
+          f"categorical column(s) {categorical} cannot be expanded the way "
+          "they would have been at fit time; refit on a DataFrame."
+        )
+      X = X.to_numpy()
 
     if isinstance(X, pd.DataFrame):
       if reset:
@@ -410,11 +462,12 @@ class VineBase(BaseEstimator):
           else:
             bounds.append(_categorical_bounds(dtype))
         self.schema_ = {"kde1d_types": kde1d_types, "bounds": bounds}
+        self._schema_from_fit = True
         self.n_features_in_ = X.shape[1]
         self.n_model_features_ = X_exp.shape[1]
         X_arr = X_exp.to_numpy()
       else:
-        check_is_fitted(self, attributes=["feature_names_in_"])
+        check_is_fitted(self, attributes=["n_features_in_"])
         if list(X.columns) != list(self.feature_names_in_):
           raise ValueError("Column names/order do not match training data.")
         X_for_expansion = X.copy(deep=True)
@@ -423,9 +476,23 @@ class VineBase(BaseEstimator):
           if isinstance(dtype_expected, pd.CategoricalDtype):
             if not isinstance(X_for_expansion[col].dtype, pd.CategoricalDtype):
               raise ValueError(f"Column {col} must be categorical.")
-            X_for_expansion[col] = X_for_expansion[col].cat.set_categories(
+            recoded = X_for_expansion[col].cat.set_categories(
               dtype_expected.categories, ordered=dtype_expected.ordered
             )
+            # `set_categories` maps a level the fit never saw to NaN, and the
+            # dummy expansion then reads an all-zero row -- indistinguishable
+            # from the reference level, so an unseen level used to return the
+            # reference level's density with no warning.
+            unseen = recoded.isna() & X_for_expansion[col].notna()
+            if bool(unseen.any()):
+              levels = sorted(
+                {str(v) for v in X_for_expansion.loc[unseen, col].unique()}
+              )
+              raise ValueError(
+                f"Column {col} contains categories not seen during fit: "
+                f"{levels}"
+              )
+            X_for_expansion[col] = recoded
         X_arr = expand_factors(X_for_expansion)[
           self._expanded_columns
         ].to_numpy()
@@ -451,14 +518,20 @@ class VineBase(BaseEstimator):
             "schema_['bounds'] length does not match number of features in X."
           )
         self.schema_ = {"kde1d_types": kde1d_types, "bounds": bounds}
+        self._schema_from_fit = True
         self.n_features_in_ = X.shape[1]
         self.n_model_features_ = X.shape[1]
       else:
         check_is_fitted(self, attributes=["n_features_in_"])
-        if X.shape[1] != self.n_features_in_:
+        # `sample` emits the modeled layout, which is wider than the public
+        # one whenever a categorical was expanded, so the estimator's own
+        # output has to be a legal input to its own density.
+        accepted = {self.n_features_in_, self.n_model_features_}
+        if X.shape[1] not in accepted:
+          expected = " or ".join(str(n) for n in sorted(accepted))
           raise ValueError(
             f"X has {X.shape[1]} features, but {type(self).__name__} is "
-            f"expecting {self.n_features_in_} features as input"
+            f"expecting {expected} features as input"
           )
       X_arr = X
 

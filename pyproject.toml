@@ -140,9 +140,15 @@ editable.rebuild = true
 editable.verbose = false
 # scikit-build-core's default sdist exclude drops `build/`-named dirs,
 # which also catches scripts/build.
-sdist.include = ["scripts/**"]
+# Extension-scoped rather than `scripts/**`: a force-include outranks
+# `sdist.exclude`, so the directory glob shipped `scripts/__pycache__/*.pyc`.
+sdist.include = [
+  "scripts/*.py",
+  "scripts/*.sh",
+  "scripts/*.ipynb",
+  "scripts/*.json",
+]
 sdist.exclude = [
-  "RELEASE_AUDIT_*.md",
   "build*/**",
   "**/__pycache__/**",
   "**/*.pyc",

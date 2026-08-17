@@ -63,30 +63,33 @@ boundary_repair :
 
 // Factory function to create a Kde1d from xmin, xmax, type string, multiplier,
 // bandwidth, degree
-inline Kde1d kde1d_from_params(
-    std::optional<double> xmin = std::nullopt,
-    std::optional<double> xmax = std::nullopt,
-    const std::string& type = "continuous", double multiplier = 1.0,
-    std::optional<double> bandwidth = std::nullopt, size_t degree = 2,
-    size_t grid_size = 400, bool boundary_repair = true) {
+inline Kde1d kde1d_from_params(std::optional<double> xmin = std::nullopt,
+                               std::optional<double> xmax = std::nullopt,
+                               const std::string& type = "continuous",
+                               double multiplier = 1.0,
+                               std::optional<double> bandwidth = std::nullopt,
+                               size_t degree = 2, size_t grid_size = 400,
+                               bool boundary_repair = true) {
   return Kde1d(xmin.value_or(NAN), xmax.value_or(NAN), type, multiplier,
-                      bandwidth.value_or(NAN), degree, grid_size,
-                      boundary_repair);
+               bandwidth.value_or(NAN), degree, grid_size, boundary_repair);
 }
 
 // Factory function to create a Kde1d from grid, xmin, xmax, type string, prob0
-inline Kde1d kde1d_from_grid(
-    const Eigen::VectorXd& grid_points, const Eigen::VectorXd& values,
-    std::optional<double> xmin = std::nullopt,
-    std::optional<double> xmax = std::nullopt,
-    const std::string& type = "continuous", double prob0 = 0.0) {
-  if (grid_points.size() < 2 || values.size() < 2) {
+inline Kde1d kde1d_from_grid(const Eigen::VectorXd& grid_points,
+                             const Eigen::VectorXd& values,
+                             std::optional<double> xmin = std::nullopt,
+                             std::optional<double> xmax = std::nullopt,
+                             const std::string& type = "continuous",
+                             double prob0 = 0.0) {
+  // Four, not two: `Kde1d`'s own constructors reject a `grid_size` below four,
+  // so a two- or three-point object could be built here and then not be
+  // restored from its own serialized state.
+  if (grid_points.size() < 4 || values.size() < 4) {
     throw std::invalid_argument(
-        "grid_points and values must contain at least two points");
+        "grid_points and values must contain at least four points");
   }
   interp::InterpolationGrid grid(grid_points, values, 0);
-  return Kde1d(grid, xmin.value_or(NAN), xmax.value_or(NAN), type,
-                      prob0);
+  return Kde1d(grid, xmin.value_or(NAN), xmax.value_or(NAN), type, prob0);
 }
 
 // Whether `fit` has populated the estimator. The upstream C++ class has no
@@ -197,23 +200,21 @@ inline void init_kde1d(nb::module_& module) {
                  std::optional<double> xmax, const std::string& type,
                  double multiplier, std::optional<double> bandwidth,
                  size_t degree, size_t grid_size, bool boundary_repair) {
-                new (self) Kde1d(
-                    xmin.value_or(NAN), xmax.value_or(NAN), type, multiplier,
-                    bandwidth.value_or(NAN), degree, grid_size,
-                    boundary_repair);
+                new (self) Kde1d(xmin.value_or(NAN), xmax.value_or(NAN), type,
+                                 multiplier, bandwidth.value_or(NAN), degree,
+                                 grid_size, boundary_repair);
               },
               "xmin"_a = std::nullopt, "xmax"_a = std::nullopt,
               "type"_a = "continuous", "multiplier"_a = 1.0,
               "bandwidth"_a = std::nullopt, "degree"_a = 2, "grid_size"_a = 400,
               "boundary_repair"_a = true, kde1d_constructor_doc,
               nb::call_guard<nb::gil_scoped_release>())
-          .def_static("from_params", &kde1d_from_params,
-                      "xmin"_a = std::nullopt, "xmax"_a = std::nullopt,
-                      "type"_a = "continuous", "multiplier"_a = 1.0,
-                      "bandwidth"_a = std::nullopt, "degree"_a = 2,
-                      "grid_size"_a = 400, "boundary_repair"_a = true,
-                      kde1d_constructor_doc,
-                      nb::call_guard<nb::gil_scoped_release>())
+          .def_static(
+              "from_params", &kde1d_from_params, "xmin"_a = std::nullopt,
+              "xmax"_a = std::nullopt, "type"_a = "continuous",
+              "multiplier"_a = 1.0, "bandwidth"_a = std::nullopt,
+              "degree"_a = 2, "grid_size"_a = 400, "boundary_repair"_a = true,
+              kde1d_constructor_doc, nb::call_guard<nb::gil_scoped_release>())
           .def_static("from_grid", &kde1d_from_grid, "grid_points"_a,
                       "values"_a, "xmin"_a = std::nullopt,
                       "xmax"_a = std::nullopt, "type"_a = "continuous",
@@ -224,48 +225,56 @@ inline void init_kde1d(nb::module_& module) {
 
           // Properties (getters) — auto-extracted from `lib/kde1d` upstream
           // `//!` comments.
-          .def_prop_ro("xmin",
-                       [](const Kde1d& kde) { return kde.get_xmin(); },
-                       kde1d_doc.get_xmin.doc)
-          .def_prop_ro("xmax",
-                       [](const Kde1d& kde) { return kde.get_xmax(); },
-                       kde1d_doc.get_xmax.doc)
           .def_prop_ro(
-              "type",
-              [](const Kde1d& kde) { return kde.get_type_str(); },
+              "xmin", [](const Kde1d& kde) { return kde.get_xmin(); },
+              kde1d_doc.get_xmin.doc)
+          .def_prop_ro(
+              "xmax", [](const Kde1d& kde) { return kde.get_xmax(); },
+              kde1d_doc.get_xmax.doc)
+          .def_prop_ro(
+              "type", [](const Kde1d& kde) { return kde.get_type_str(); },
               kde1d_doc.get_type_str.doc)
-          .def_prop_ro("prob0",
-                       [](const Kde1d& kde) { return kde.get_prob0(); },
-                       kde1d_doc.get_prob0.doc)
+          .def_prop_ro(
+              "prob0", [](const Kde1d& kde) { return kde.get_prob0(); },
+              kde1d_doc.get_prob0.doc)
           .def_prop_ro("multiplier", &Kde1d::get_multiplier,
                        kde1d_doc.get_multiplier.doc)
           .def_prop_ro("bandwidth", &Kde1d::get_bandwidth,
                        kde1d_doc.get_bandwidth.doc)
-          .def_prop_ro("degree", &Kde1d::get_degree,
-                       kde1d_doc.get_degree.doc)
+          // `bandwidth` is what the fit selected; this is what it was asked
+          // for. `None` means "select one", so a caller re-fitting a lifted
+          // object can tell a pinned bandwidth from a selected one.
+          .def_prop_ro(
+              "bandwidth_spec",
+              [](const Kde1d& kde) -> std::optional<double> {
+                const double spec = kde.get_bandwidth_spec();
+                if (std::isnan(spec)) {
+                  return std::nullopt;
+                }
+                return spec;
+              },
+              "Bandwidth the estimator was constructed with, or ``None`` when "
+              "it selects one.\n\nReturns\n-------\nfloat or None\n    The "
+              "requested bandwidth, or ``None`` if unset.")
+          .def_prop_ro("degree", &Kde1d::get_degree, kde1d_doc.get_degree.doc)
           .def_prop_ro("grid_size", &Kde1d::get_grid_size,
                        kde1d_doc.get_grid_size.doc)
           .def_prop_ro(
               "actual_grid_size",
-              [](const Kde1d& kde) {
-                return kde.get_actual_grid_size();
-              },
+              [](const Kde1d& kde) { return kde.get_actual_grid_size(); },
               kde1d_doc.get_actual_grid_size.doc)
-          .def_prop_ro("boundary_repair",
-                       &Kde1d::get_boundary_repair,
+          .def_prop_ro("boundary_repair", &Kde1d::get_boundary_repair,
                        kde1d_doc.get_boundary_repair.doc)
-          .def_prop_ro("edf", &Kde1d::get_edf,
-                       kde1d_doc.get_edf.doc)
-          .def_prop_ro("grid_points",
-                       [](const Kde1d& kde) {
-                         return kde.get_grid_points();
-                       },
-                       kde1d_doc.get_grid_points.doc,
-                       nb::call_guard<nb::gil_scoped_release>())
-          .def_prop_ro("values",
-                       [](const Kde1d& kde) { return kde.get_values(); },
-                       kde1d_doc.get_values.doc,
-                       nb::call_guard<nb::gil_scoped_release>())
+          .def_prop_ro("edf", &Kde1d::get_edf, kde1d_doc.get_edf.doc)
+          .def_prop_ro(
+              "grid_points",
+              [](const Kde1d& kde) { return kde.get_grid_points(); },
+              kde1d_doc.get_grid_points.doc,
+              nb::call_guard<nb::gil_scoped_release>())
+          .def_prop_ro(
+              "values", [](const Kde1d& kde) { return kde.get_values(); },
+              kde1d_doc.get_values.doc,
+              nb::call_guard<nb::gil_scoped_release>())
           .def_prop_ro("is_fitted", &kde1d_is_fitted,
                        "Whether the estimator has been fitted to data.")
           .def_prop_ro(
@@ -276,8 +285,7 @@ inline void init_kde1d(nb::module_& module) {
                        "Lower and upper bounds of the support, as a pair. An "
                        "absent bound is an infinity rather than `NaN`.")
           .def_prop_ro(
-              "family_name",
-              [](const Kde1d&) { return std::string("kde1d"); },
+              "family_name", [](const Kde1d&) { return std::string("kde1d"); },
               "Family name, as a selection report spells it.")
           .def_prop_ro("n_parameters", &Kde1d::get_edf,
                        "Effective degrees of freedom, under the margin layer's "
@@ -358,13 +366,12 @@ inline void init_kde1d(nb::module_& module) {
                kde1d_doc.quantile.doc, nb::call_guard<nb::gil_scoped_release>())
           .def(
               "sample",
-              [](const Kde1d& kde, size_t n,
-                 const std::vector<int>& seeds, bool check_fitted) {
+              [](const Kde1d& kde, size_t n, const std::vector<int>& seeds,
+                 bool check_fitted) {
                 return kde.simulate(n, seeds, check_fitted);
               },
-              "n"_a, "seeds"_a = std::vector<int>(),
-              "check_fitted"_a = true, kde1d_doc.simulate.doc,
-              nb::call_guard<nb::gil_scoped_release>())
+              "n"_a, "seeds"_a = std::vector<int>(), "check_fitted"_a = true,
+              kde1d_doc.simulate.doc, nb::call_guard<nb::gil_scoped_release>())
           .def("set_xmin_xmax", &kde1d_set_xmin_xmax, "xmin"_a = std::nullopt,
                "xmax"_a = std::nullopt, kde1d_doc.set_xmin_xmax.doc)
           .def("plot", &kde1d_plot_wrapper, "xlim"_a = nb::none(),
@@ -419,12 +426,12 @@ inline void init_kde1d(nb::module_& module) {
             const double xmin = nb::cast<double>(s["xmin"]);
             const double xmax = nb::cast<double>(s["xmax"]);
             const std::string type = nb::cast<std::string>(s["type"]);
-            const double multiplier =
-                s.contains("multiplier") ? nb::cast<double>(s["multiplier"])
-                                         : 1.0;
-            const double bandwidth =
-                s.contains("bandwidth") ? nb::cast<double>(s["bandwidth"])
-                                        : NAN;
+            const double multiplier = s.contains("multiplier")
+                                          ? nb::cast<double>(s["multiplier"])
+                                          : 1.0;
+            const double bandwidth = s.contains("bandwidth")
+                                         ? nb::cast<double>(s["bandwidth"])
+                                         : NAN;
             const double bandwidth_spec =
                 s.contains("bandwidth_spec")
                     ? nb::cast<double>(s["bandwidth_spec"])
@@ -442,9 +449,10 @@ inline void init_kde1d(nb::module_& module) {
                   nb::cast<Eigen::VectorXd>(s["grid_points"]);
               const Eigen::VectorXd values =
                   nb::cast<Eigen::VectorXd>(s["values"]);
-              if (grid_points.size() < 2 || values.size() < 2) {
+              if (grid_points.size() < 4 || values.size() < 4) {
                 throw std::invalid_argument(
-                    "grid_points and values must contain at least two points");
+                    "grid_points and values must contain at least four "
+                    "points");
               }
               const std::size_t grid_size =
                   s.contains("grid_size")
@@ -454,17 +462,16 @@ inline void init_kde1d(nb::module_& module) {
                   s.contains("edf") ? nb::cast<double>(s["edf"]) : NAN;
               const double loglik =
                   s.contains("loglik") ? nb::cast<double>(s["loglik"]) : NAN;
-              const Kde1dState state{multiplier, bandwidth_spec, bandwidth,
-                                     degree, grid_size, boundary_repair, edf,
-                                     loglik};
+              const Kde1dState state{
+                  multiplier, bandwidth_spec,  bandwidth, degree,
+                  grid_size,  boundary_repair, edf,       loglik};
               interp::InterpolationGrid grid(grid_points, values, 0);
               new (&kde) Kde1d(grid, xmin, xmax, type, prob0, state);
             } else {
               const std::size_t grid_size =
                   nb::cast<std::size_t>(s["grid_size"]);
-              new (&kde) Kde1d(xmin, xmax, type, multiplier,
-                                      bandwidth_spec, degree, grid_size,
-                                      boundary_repair);
+              new (&kde) Kde1d(xmin, xmax, type, multiplier, bandwidth_spec,
+                               degree, grid_size, boundary_repair);
             }
           });
 

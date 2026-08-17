@@ -524,8 +524,8 @@ Bicop
 
       .def("__setstate__", [](Bicop& cop, nb::dict state) {
         if (state.contains("json")) {
-          const auto json = nlohmann::json::parse(
-              nb::cast<std::string>(state["json"]));
+          const auto json =
+              nlohmann::json::parse(nb::cast<std::string>(state["json"]));
           new (&cop) Bicop(json);
           return;
         }

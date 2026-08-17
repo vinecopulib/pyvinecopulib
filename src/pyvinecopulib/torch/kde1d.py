@@ -248,7 +248,10 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       xmax=self.xmax,
       type=self._type,
       multiplier=self.multiplier,
-      bandwidth=self.bandwidth,
+      # The construction spec, not `self.bandwidth`: a previous fit overwrote
+      # that with the bandwidth it selected, and passing a value back in pins
+      # it, so a refit on different data reused the first fit's bandwidth.
+      bandwidth=self._bandwidth_spec,
       degree=self.degree,
       grid_size=self.grid_size,
       boundary_repair=self.boundary_repair,
@@ -316,7 +319,10 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       xmax=kde.xmax,
       type=kde.type,
       multiplier=kde.multiplier,
-      bandwidth=kde.bandwidth,
+      # `bandwidth_spec` is what the compiled object was *asked* for; its
+      # `bandwidth` is what it selected. Adopting the latter as the spec would
+      # stop a lifted margin from ever re-selecting on a refit.
+      bandwidth=kde.bandwidth_spec,
       degree=kde.degree,
       grid_size=kde.grid_size,
       boundary_repair=kde.boundary_repair,

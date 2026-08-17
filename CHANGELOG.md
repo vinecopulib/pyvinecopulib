@@ -5,6 +5,29 @@
 - Harden the sklearn schema, scoring, random-state, and `n_jobs` contracts;
   preserve complete `TorchKde1d` fitted state; and add release preflights for
   CPU support, source distributions, release ancestry, documentation, and Graphviz (#320).
+- Reject the malformed inputs that used to terminate the interpreter or return
+  a wrong number: a parameter matrix of the wrong shape on
+  `Bicop.parameters_to_tau` / `parameters_to_taildep` / `parameters_to_beta`, an
+  empty `RVineStructure.from_matrix`, a `Vinecop.var_types` shorter than the
+  dimension, a `TorchBicop` grid that is not strictly increasing, and a
+  `Kde1d.from_grid` too small to survive its own round trip (#320,
+  [vinecopulib#761](https://github.com/vinecopulib/vinecopulib/pull/761)).
+- `VineDensity.fit` resets the schema a previous fit derived, `sample`'s output
+  is accepted by `pdf` / `score_samples` after a categorical expansion, an
+  unseen category is refused rather than read as the reference level, and
+  array-like input is accepted per the scikit-learn convention (#320).
+- `VineRegressor`'s conditional mean is `sum(w y) / sum(w)`, so it no longer
+  depends on `normalize_weights` -- which used to scale the mean by the weight
+  total while leaving the quantile columns correct (#320).
+- `TorchKde1d.fit` re-selects the bandwidth on a refit instead of pinning the
+  previous fit's, and `Kde1d` exposes `bandwidth_spec` to tell a requested
+  bandwidth from a selected one (#320).
+- `TorchVinedist.from_data` puts the margins and the copula on one device in one
+  dtype, as documented; `controls` decides and the data follows (#320).
+- A `TorchVinecop` checkpoint carries the structure and `var_types`, so a
+  checkpoint from a differently structured vine is refused instead of loading
+  under `strict=True` into a silently wrong model; and a `trunc_lvl=0` vine
+  evaluates as the independence copula rather than raising (#320).
 
 ### Breaking API changes in `pyvinecopulib`
 
