@@ -16,6 +16,17 @@ namespace nb = nanobind;
 using namespace nb::literals;
 using namespace vinecopulib;
 
+// Factory function to create FitControlsVinecop from pair-copula controls
+inline FitControlsVinecop fcv_from_bicop_controls(
+    const FitControlsBicop& controls, size_t trunc_lvl,
+    const std::string& tree_criterion, double threshold, bool select_trunc_lvl,
+    bool select_threshold, bool select_families, bool show_trace,
+    const std::string& tree_algorithm, const std::vector<int>& seeds) {
+  return FitControlsVinecop(controls, trunc_lvl, tree_criterion, threshold,
+                            select_trunc_lvl, select_threshold, select_families,
+                            show_trace, tree_algorithm, seeds);
+}
+
 inline void init_vinecop_fit_controls(nb::module_& module) {
   constexpr auto& doc = pyvinecopulib_doc;
   constexpr auto& fitcontrolsvinecop_doc = doc.vinecopulib.FitControlsVinecop;
@@ -36,7 +47,7 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
            "nonparametric_grid_size"_a = 30,
            "trunc_lvl"_a = std::numeric_limits<size_t>::max(),
            "tree_criterion"_a = "tau", "threshold"_a = 0.0,
-           "selection_criterion"_a = "bic", "weights"_a = Eigen::VectorXd(),
+           "selection_criterion"_a = "aic", "weights"_a = Eigen::VectorXd(),
            "psi0"_a = 0.9, "preselect_families"_a = true,
            "select_trunc_lvl"_a = false, "select_threshold"_a = false,
            "select_families"_a = true, "show_trace"_a = false,
@@ -44,6 +55,20 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
            "allow_rotations"_a = true, "seeds"_a = std::vector<int>(),
            fitcontrolsvinecop_doc.ctor.doc_20args,
            nb::call_guard<nb::gil_scoped_release>())
+      .def_static("from_bicop_controls", &fcv_from_bicop_controls, "controls"_a,
+                  "trunc_lvl"_a = std::numeric_limits<size_t>::max(),
+                  "tree_criterion"_a = "tau", "threshold"_a = 0.0,
+                  "select_trunc_lvl"_a = false, "select_threshold"_a = false,
+                  "select_families"_a = true, "show_trace"_a = false,
+                  "tree_algorithm"_a = "mst_prim",
+                  "seeds"_a = std::vector<int>(),
+                  fitcontrolsvinecop_doc.ctor.doc_10args,
+                  nb::call_guard<nb::gil_scoped_release>())
+      .def_prop_rw("bicop_controls",
+                   &FitControlsVinecop::get_fit_controls_bicop,
+                   &FitControlsVinecop::set_fit_controls_bicop,
+                   fitcontrolsvinecop_doc.get_fit_controls_bicop.doc,
+                   nb::call_guard<nb::gil_scoped_release>())
       // Inherited from FitControlsBicop — reference its docs.
       .def_prop_rw("family_set", &FitControlsVinecop::get_family_set,
                    &FitControlsVinecop::set_family_set,

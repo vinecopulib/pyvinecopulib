@@ -356,7 +356,8 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
       .def("get_tau", &Vinecop::get_tau,
            "Gets Kendall's tau of the pair copula at the given (tree, edge).",
            "tree"_a, "edge"_a)
-      .def_prop_ro("pair_copulas", &Vinecop::get_all_pair_copulas,
+      .def_prop_rw("pair_copulas", &Vinecop::get_all_pair_copulas,
+                   &Vinecop::set_all_pair_copulas,
                    vinecop_doc.get_all_pair_copulas.doc,
                    nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("families", &Vinecop::get_all_families,

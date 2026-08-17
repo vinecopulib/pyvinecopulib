@@ -28,7 +28,7 @@ inline void init_bicop_fit_controls(nb::module_& module) {
               .doc_11args_family_set_parametric_method_nonparametric_method_nonparametric_mult_nonparametric_grid_size_selection_criterion_weights_psi0_preselect_families_allow_rotations_num_threads,
           "family_set"_a = bicop_families::all, "parametric_method"_a = "mle",
           "nonparametric_method"_a = "constant", "nonparametric_mult"_a = 1.0,
-          "nonparametric_grid_size"_a = 30, "selection_criterion"_a = "bic",
+          "nonparametric_grid_size"_a = 30, "selection_criterion"_a = "aic",
           "weights"_a = Eigen::VectorXd(), "psi0"_a = 0.9,
           "preselect_families"_a = true, "allow_rotations"_a = true,
           "num_threads"_a = 1, nb::call_guard<nb::gil_scoped_release>())

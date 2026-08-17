@@ -56,6 +56,33 @@ inline RVineStructure rv_from_struct_array(
 using TreeTuples =
     std::vector<std::vector<std::tuple<size_t, size_t, std::vector<size_t>>>>;
 
+// Normalizes both list-of-trees spellings this package returns: the
+// ``(a, b, conditioning)`` triples of ``RVineStructure.get_trees()`` and the
+// ``{"conditioned": (a, b), "conditioning": [...], "pair_copula": ...}``
+// mappings of ``Vinecop.get_trees()``, whose pair copulas a structure has no
+// place for. Requires the GIL.
+inline TreeTuples to_tree_tuples(const nb::object& trees) {
+  TreeTuples out;
+  for (nb::handle tree : nb::cast<nb::sequence>(trees)) {
+    std::vector<std::tuple<size_t, size_t, std::vector<size_t>>> edges;
+    for (nb::handle edge : nb::cast<nb::sequence>(tree)) {
+      if (nb::isinstance<nb::dict>(edge)) {
+        const auto mapping = nb::cast<nb::dict>(edge);
+        const auto conditioned =
+            nb::cast<std::tuple<size_t, size_t>>(mapping["conditioned"]);
+        edges.emplace_back(
+            std::get<0>(conditioned), std::get<1>(conditioned),
+            nb::cast<std::vector<size_t>>(mapping["conditioning"]));
+      } else {
+        edges.push_back(
+            nb::cast<std::tuple<size_t, size_t, std::vector<size_t>>>(edge));
+      }
+    }
+    out.push_back(std::move(edges));
+  }
+  return out;
+}
+
 // Faithful inverse of ``RVineStructure.get_trees()``: the RVineStructure ctor
 // from RVineTrees uses the identity diagonal policy (each edge's first
 // conditioned variable ``a`` on the diagonal), so
@@ -128,13 +155,16 @@ Parameters
 ----------
 d : int
     Dimension of the vine.
-trees : list of list of tuple
-    Per-tree edge lists, indexed ``[tree][edge]``. Each edge is a triple
-    ``(a, b, conditioning)`` of 1-based variable labels, where ``a`` and ``b``
-    are the conditioned pair (``a`` is placed on the matrix diagonal) and
-    ``conditioning`` is the (possibly empty) conditioning set. Tree ``t`` must
-    contain exactly ``d - 1 - t`` edges. An empty list yields a fully truncated
-    (independence) structure.
+trees : list of list of tuple or list of list of dict
+    Per-tree edge lists, indexed ``[tree][edge]``. Each edge is either a triple
+    ``(a, b, conditioning)`` of 1-based variable labels, as
+    ``RVineStructure.get_trees()`` returns, or a mapping with ``"conditioned"``
+    and ``"conditioning"`` keys, as ``Vinecop.get_trees()`` returns; its
+    ``"pair_copula"`` entry is ignored. ``a`` and ``b`` are the conditioned pair
+    (``a`` is placed on the matrix diagonal) and ``conditioning`` is the
+    (possibly empty) conditioning set. Tree ``t`` must contain exactly
+    ``d - 1 - t`` edges. An empty list yields a fully truncated (independence)
+    structure.
 check : bool, default True
     Whether to validate the assembled structure (e.g. the proximity condition).
 
@@ -147,6 +177,7 @@ RVineStructure
 See Also
 --------
 RVineStructure.get_trees : The decomposition this method inverts.
+Vinecop.get_trees : The same decomposition carrying the fitted pair copulas.
 )""";
 
   nb::class_<RVineStructure>(module, "RVineStructure", rvinestructure_doc.doc)
@@ -174,9 +205,14 @@ RVineStructure.get_trees : The decomposition this method inverts.
                           .doc_4args_order_struct_array_natural_order_check)
                       .c_str(),
                   nb::call_guard<nb::gil_scoped_release>())
-      .def_static("from_trees", &rv_from_trees, "d"_a, "trees"_a,
-                  "check"_a = true, from_trees_doc,
-                  nb::call_guard<nb::gil_scoped_release>())
+      .def_static(
+          "from_trees",
+          [](size_t d, const nb::object& trees, bool check) {
+            const TreeTuples tuples = to_tree_tuples(trees);
+            nb::gil_scoped_release release;
+            return rv_from_trees(d, tuples, check);
+          },
+          "d"_a, "trees"_a, "check"_a = true, from_trees_doc)
       .def_static("from_file", &rv_from_file, "filename"_a, "check"_a = true,
                   rvinestructure_doc.ctor.doc_2args_filename_check,
                   nb::call_guard<nb::gil_scoped_release>())
@@ -251,6 +287,24 @@ RVineStructure.get_trees : The decomposition this method inverts.
       .def("needed_hfunc2", &RVineStructure::needed_hfunc2, "tree"_a, "edge"_a,
            rvinestructure_doc.needed_hfunc2.doc,
            nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "get_min_array",
+          [](const RVineStructure& self) -> nb::list {
+            return triangular_to_list(self.get_min_array());
+          },
+          rvinestructure_doc.get_min_array.doc)
+      .def(
+          "get_needed_hfunc1",
+          [](const RVineStructure& self) -> nb::list {
+            return triangular_to_list(self.get_needed_hfunc1());
+          },
+          rvinestructure_doc.get_needed_hfunc1.doc)
+      .def(
+          "get_needed_hfunc2",
+          [](const RVineStructure& self) -> nb::list {
+            return triangular_to_list(self.get_needed_hfunc2());
+          },
+          rvinestructure_doc.get_needed_hfunc2.doc)
       .def("truncate", &RVineStructure::truncate, "trunc_lvl"_a,
            rvinestructure_doc.truncate.doc,
            nb::call_guard<nb::gil_scoped_release>())

@@ -59,14 +59,6 @@ include(lib/vinecopulib/cmake/options.cmake REQUIRED)
 
 include(lib/vinecopulib/cmake/compilerDefOpt.cmake REQUIRED)
 
-if(NOT PYVINECOPULIB_NATIVE_ARCH)
-  # vinecopulib up to 0.7.x put these in the Release flags unconditionally.
-  string(REGEX REPLACE "-march=native|-mcpu=apple-m1|-arch +arm64" ""
-                       CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
-  string(REGEX REPLACE " +" " " CMAKE_CXX_FLAGS_RELEASE
-                       "${CMAKE_CXX_FLAGS_RELEASE}")
-endif()
-
 # Distributed wheels target x86-64-v3 (AVX2 + FMA, i.e. CPUs since ~2013). macOS
 # arm64 and MSVC get nothing: the arm64 baseline is already ARMv8.4, and an
 # /arch: flag would move contraction behavior on one leg of five.

@@ -721,3 +721,61 @@ def test_from_data_without_structure_or_matrix() -> None:
   cop = pv.Vinecop.from_data(u)
   assert cop.dim == d
   assert set(int(v) for v in cop.structure.order) == set(range(1, d + 1))
+
+
+def test_vinecop_get_trees_feeds_rvinestructure_from_trees() -> None:
+  # ``Vinecop.get_trees()`` labels each edge with a mapping rather than the
+  # triple ``RVineStructure.get_trees()`` uses; both spell the same
+  # decomposition, so both must reassemble the same structure.
+  rng = np.random.default_rng(3)
+  d = 5
+  u = pv.to_pseudo_obs(
+    rng.standard_normal((400, d)) @ rng.standard_normal((d, d))
+  )
+  vine = pv.Vinecop.from_data(u)
+
+  assert (
+    pv.RVineStructure.from_trees(vine.dim, vine.get_trees()) == vine.structure
+  )
+
+
+def test_vinecop_pair_copulas_is_settable() -> None:
+  rng = np.random.default_rng(4)
+  d = 4
+  u = pv.to_pseudo_obs(
+    rng.standard_normal((400, d)) @ rng.standard_normal((d, d))
+  )
+  vine = pv.Vinecop.from_data(u)
+  fitted = vine.pair_copulas
+
+  vine.pair_copulas = [
+    [pv.Bicop.from_family(pv.families.indep) for _ in tree] for tree in fitted
+  ]
+  np.testing.assert_allclose(vine.pdf(u), 1.0)
+
+  vine.pair_copulas = fitted
+  assert not np.allclose(vine.pdf(u), 1.0)
+
+  with pytest.raises(RuntimeError):
+    vine.pair_copulas = [[pv.Bicop.from_family(pv.families.indep)] * 9]
+
+
+def test_fit_controls_vinecop_from_bicop_controls() -> None:
+  bicop_controls = pv.FitControlsBicop(
+    family_set=[pv.families.gaussian], num_threads=2, psi0=0.5
+  )
+  controls = pv.FitControlsVinecop.from_bicop_controls(
+    bicop_controls, trunc_lvl=2, threshold=0.1
+  )
+
+  assert controls.family_set == [pv.families.gaussian]
+  assert controls.num_threads == 2
+  assert controls.psi0 == 0.5
+  assert controls.trunc_lvl == 2
+  assert controls.threshold == 0.1
+  assert controls.bicop_controls.family_set == [pv.families.gaussian]
+
+  controls.bicop_controls = pv.FitControlsBicop(
+    family_set=[pv.families.clayton]
+  )
+  assert controls.family_set == [pv.families.clayton]
