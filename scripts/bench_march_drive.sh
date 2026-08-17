@@ -15,7 +15,6 @@ mkdir -p "$RESULTS"
 
 build_and_bench() {
   local label=$1
-  local force_v3=${2:-}
 
   echo
   echo "================================================================"
@@ -26,12 +25,13 @@ build_and_bench() {
 
   echo
   echo "[$label] editable install"
-  if [ -n "$force_v3" ]; then
-    # Same env var the CI fix keys on — triggers the
-    # -march=native -> -march=x86-64-v3 rewrite in CMakeLists.txt.
+  if [ "$label" = "v3" ]; then
+    # The env var CI sets; adds -march=x86-64-v3 to the release flags.
     CIBUILDWHEEL=1 $UV pip install -e . --no-build-isolation 2>&1 | tail -3
   else
-    $UV pip install -e . --no-build-isolation 2>&1 | tail -3
+    # -march=native is opt-in; a plain build gets the redistributable baseline.
+    $UV pip install -e . --no-build-isolation \
+      -C cmake.define.PYVINECOPULIB_NATIVE_ARCH=ON 2>&1 | tail -3
   fi
 
   echo
@@ -60,7 +60,7 @@ build_and_bench() {
 }
 
 build_and_bench native
-build_and_bench v3 force
+build_and_bench v3
 
 echo
 echo "================================================================"

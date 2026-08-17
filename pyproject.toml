@@ -80,7 +80,7 @@ build = [
   "networkx>=3.0",
   "array_api_compat>=1.7",
   "ninja",
-  "cmake>=3.5",
+  "cmake>=3.14",
 ]
 test = [
   "pytest>=8.0",
