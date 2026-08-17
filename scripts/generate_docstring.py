@@ -687,6 +687,14 @@ def transform_docstring(docstring, cursor=None):
   return final_docstring
 
 
+#: Doxygen page name -> the Sphinx role that renders it on the Python site.
+#: Only pages actually referenced from a bound docstring need an entry; see
+#: the `@ref` handling in `process_comment`.
+_REF_TARGETS = {
+  "discrete": ":ref:`discrete data <concepts-discrete>`",
+}
+
+
 # TODO(jamiesnape): Refactor into multiple functions and unit test.
 def process_comment(comment, cursor=None):
   """
@@ -831,7 +839,16 @@ def process_comment(comment, cursor=None):
 
   s = re.sub(r"[@\\]details\s*", r"\n\n", s)
   s = re.sub(r"[@\\](?:brief|short)\s*", r"", s)
-  s = re.sub(r"[@\\]ref\s+", r"", s)
+
+  # Doxygen page references. Upstream's pages have no Python counterpart, so
+  # each one that reaches a bound docstring is mapped to the section of the
+  # Sphinx docs covering the same ground; anything unmapped degrades to its
+  # bare target rather than rendering as a broken link.
+  def _ref(match: re.Match) -> str:
+    target = match.group(1)
+    return _REF_TARGETS.get(target, target)
+
+  s = re.sub(r"[@\\]ref\s+(\w+)", _ref, s)
 
   for start_, end_ in (("code", "endcode"), ("verbatim", "endverbatim")):
     s = re.sub(
