@@ -261,8 +261,6 @@ ones. Continuous, all-parametric vines only.
   const std::string scores_cov_perobs_doc =
       std::string(vinecop_doc.scores_cov.doc_3args) + per_obs_note;
 
-  // Hand-written: the C++ facade returns an ``RVineTrees`` (no Python
-  // equivalent); the Python method returns nested ``[tree][edge]`` dicts.
   // The Rosenblatt transforms accept an explicit conditioning set
   // (vinecopulib#715), which evaluates the vine through a reoriented,
   // non-owning view rather than copying pair copulas. It is keyword-only:
@@ -291,6 +289,8 @@ the model.
       std::string(vinecop_doc.inverse_rosenblatt.doc_2args) +
       conditioning_set_note;
 
+  // Hand-written: the C++ facade returns an ``RVineTrees`` (no Python
+  // equivalent); the Python method returns nested ``[tree][edge]`` dicts.
   const char* get_trees_doc =
       R"""(Return the fitted vine as a nested list of trees.
 
