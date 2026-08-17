@@ -522,6 +522,15 @@ jobs:
       actions: read
       contents: read
     steps:
+      # Before the artifacts land: checkout cleans the workspace.
+      - uses: actions/checkout@v4
+      # PyPI never re-accepts a version number, so a tag that disagrees with
+      # the metadata is unrecoverable. The `lint` job runs the same check on
+      # every pull request, but without a tag to compare against and while the
+      # changelog heading is still legitimately `(unreleased)`.
+      - name: Check the version metadata matches the tag
+        if: ${{ startsWith(github.event.ref, 'refs/tags') }}
+        run: python3 scripts/check_version.py --released --tag "$GITHUB_REF_NAME"
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
         with:

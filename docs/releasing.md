@@ -53,8 +53,8 @@ indistinguishable from an unreleased one.
 |---|---|
 | `scripts/check_version.py` | every pull request, via the `lint` job |
 | wheels, sdist, tests, docs | every pull request |
+| `scripts/check_version.py --released --tag` | on a `v*` tag push, before publishing |
 | publish to PyPI + GitHub release | on a `v*` tag push |
-| release drift (a dated changelog heading with no tag) | weekly |
 
 ## Version numbers
 
