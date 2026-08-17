@@ -918,3 +918,36 @@ def test_simulate_conditional_rejects_inadmissible_set() -> None:
   cop, u = _cop_and_data()
   with pytest.raises(RuntimeError):
     cop.simulate_conditional(u[:10, :2], conditioning_set=[])
+
+
+def test_simulate_conditional_discrete_set_takes_a_left_limit_column() -> None:
+  # A discrete conditioning variable is described by two columns, its cdf and
+  # its left limit, so ``u_cond`` is wider than the conditioning set.
+  rng = np.random.default_rng(11)
+  d, n, m = 4, 600, 32
+
+  continuous = rng.standard_normal((n, d)) @ rng.standard_normal((d, d))
+  counts = np.floor(4.0 * pv.to_pseudo_obs(continuous[:, [d - 1]]))
+  data = np.column_stack([continuous[:, : d - 1], counts])
+
+  # Expanded layout: d columns, then a left-limit column per discrete variable.
+  ecdf = pv.to_pseudo_obs(data)
+  left = pv.to_pseudo_obs(np.column_stack([counts - 1.0]))
+  u = np.column_stack([ecdf, left])
+
+  var_types = ["c"] * (d - 1) + ["d"]
+  controls = pv.FitControlsVinecop()
+  controls.conditioning_set = [d]
+  cop = pv.Vinecop.from_data(u, var_types=var_types, controls=controls)
+  assert int(cop.structure.order[-1]) == d
+
+  u_cond = np.column_stack([u[:m, d - 1], u[:m, d]])
+  drawn = cop.simulate_conditional(u_cond, seeds=[1, 2, 3])
+
+  assert drawn.shape == (m, d)
+  # The conditioning column is reproduced, not resampled.
+  np.testing.assert_allclose(drawn[:, -1], u_cond[:, 0], rtol=1e-12)
+
+  # Dropping the left-limit column leaves the model under-specified.
+  with pytest.raises(RuntimeError):
+    cop.simulate_conditional(u_cond[:, :1], seeds=[1, 2, 3])
