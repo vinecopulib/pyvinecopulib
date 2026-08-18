@@ -180,7 +180,7 @@ jobs:
             exit 1
           }
       - name: Upload binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cibw-wheels-${{ matrix.cfg.os }}-${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
           path: ./wheelhouse/*.whl
@@ -274,7 +274,7 @@ jobs:
           UV_NO_SYNC: "1"
         run: make docs
       - name: Upload built HTML for PR review
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: docs-html
           path: docs/_build/html/
@@ -543,7 +543,7 @@ jobs:
           VIRTUAL_ENV="$PWD/.venv-sdist" uv run --active \
             pytest tests/ -r a --no-cov --reruns 2 --reruns-delay 10
       - name: Upload binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cibw-sdist
           path: dist/*.tar.gz
