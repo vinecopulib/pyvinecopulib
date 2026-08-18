@@ -20,6 +20,8 @@
 - `BicopLike` / `BicopBase` take the conditioning matrix `x` as a keyword-only argument, matching `VinecopLike`. It shared a positional slot with the compiled `Bicop`'s per-row `parameters`, so hosting a `pv.Bicop` in a non-simplified `VinecopBase` silently evaluated the conditioning values as parameters; it now raises `TypeError` (#265).
 - `Kde1d`'s `quantile` method is renamed to `Kde1d.icdf`, matching what both SciPy's modern distribution classes and `torch.distributions` call the inverse CDF, and freeing the name `quantile` of its usual Python meaning of *sample* quantiles. No alias: replace `kde.quantile(p)` with `kde.icdf(p)`.
 - `FitControlsBicop` and `FitControlsVinecop` default `selection_criterion` to `"aic"` instead of `"bic"`, matching the C++ and R defaults; the same knob now selects the same model from all three languages. Pass `selection_criterion="bic"` explicitly to keep the previous selection (#251).
+- `VineDensity` and `VineRegressor` take a `margins=` keyword and delegate the whole marginal half to `Vinedist`, so the Sklar assembly has one implementation instead of two. `margins=None` still fits a `Kde1d` per column and reproduces the previous numbers; the internal `_x_kde1d` / `_y_kde1d` attributes are gone (the fitted margins are `distribution_.margins`), and `margins` sits between `backend` and `batch_size`, so a positional call past `backend` shifts.
+- `VineRegressor` requires a continuous response margin, and `use_grid=True` additionally requires it to be a `Kde1dMargin`, since that is where the quadrature nodes come from; pass `use_grid=False` to use any other response margin.
 
 ### New features in `pyvinecopulib`
 
@@ -66,6 +68,10 @@
 - Add `RVineStructure.get_min_array()`, `get_needed_hfunc1()` and `get_needed_hfunc2()`, returning the whole `[tree][edge]` triangular array that the existing per-entry accessors index into (#251).
 - `Vinecop.pair_copulas` is now settable, so pair copulas can be replaced as a group on a fitted vine; the assignment validates the nested shape against the structure (#251).
 
+- The sklearn estimators publish the fitted model as `distribution_`, a `Vinedist` that evaluates through the fitted backend, and the family-selection table of any selecting margin as `selection_report_`.
+- Add `Vinedist.copula_data` and `Vinedist.copula_var_types`: from a set of margins, the copula-scale layout for some data and the `var_types` a copula must be fitted with. That is what "fit your own copula, then wrap it" needs, and what the sklearn estimators use.
+- `resolve_margins` takes `default=`, one specification per variable, so a caller that knows something per variable keeps it for the variables a mapping does not address.
+
 ### Build / packaging
 
 - Migrate to `uv` + `scikit-build-core` for the editable / wheel build pipeline, with `[build-system].requires` mirroring the dev `[dependency-groups]` so `--no-build-isolation` works out of the box (#209).
@@ -88,6 +94,9 @@
 - Reject non-finite `X` / `y` in the `pyvinecopulib.sklearn` estimators instead of passing them to `Kde1d`, which reads NaN as a segmentation fault (#263).
 - Port the `integrate_2d` marginal-renormalization fix to the torch backend (`InterpolationGrid2D.integrate_2d` and `integrate_2d_batched`) so `TorchBicop.cdf` enforces ``C(1, u_2) = u_2`` exactly, matching the post-vinecopulib#667 C++ CDF to machine precision on the on-the-fly path ([vinecopulib#667](https://github.com/vinecopulib/vinecopulib/pull/667)).
 - Declare `BicopFamily` enum members as class attributes in the generated type stubs so the documented `pv.BicopFamily.clayton` access pattern passes static type checking (`ty` / pyright / mypy), not only the module-level constants (#223).
+- Fit the `{0, 1}` dummies of an expanded unordered categorical on `[0, 1]` in the sklearn estimators. Their bounds are known exactly, but were never passed, so the kernel-density grid was padded past the data and put mass on values that cannot occur.
+- `Vinedist.cdf` hands the copula the full `(n, d + k)` layout. A distribution function needs only the marginal `F` values and the copula reads only those, but it validates the whole layout, so a margin with atoms made `cdf` raise.
+- Reject complex `X` / `y` in the sklearn estimators rather than casting each column to float and dropping the imaginary part in silence.
 
 ### Dependency changes
 

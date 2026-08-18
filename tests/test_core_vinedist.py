@@ -132,6 +132,32 @@ def test_simulate_respects_a_discrete_margin(data: np.ndarray) -> None:
   np.testing.assert_array_equal(drawn[:, 2], np.round(drawn[:, 2]))
 
 
+def test_cdf_accepts_a_margin_with_atoms(data: np.ndarray) -> None:
+  """A copula with atoms validates the whole layout, so the layout is what it
+  gets -- even though a distribution function reads only the first block."""
+  dist = pv.Vinedist.from_data(data, margins=["kde", "kde", stats.poisson(3.0)])
+  values = np.asarray(dist.cdf(data[:20], N=2000, seeds=[1, 2, 3]))
+  assert values.shape == (20,)
+  assert np.all((values >= 0.0) & (values <= 1.0))
+
+
+def test_copula_data_needs_no_copula(data: np.ndarray) -> None:
+  """The layout and the var_types are available before a copula exists."""
+  margins: list[Any] = [
+    Kde1dMargin().fit(data[:, 0]),
+    Kde1dMargin().fit(data[:, 1]),
+    stats.poisson(3.0),
+  ]
+  assert pv.Vinedist.copula_var_types(margins) == ["c", "c", "d"]
+  layout = pv.Vinedist.copula_data(margins, data)
+  assert layout.shape == (data.shape[0], 4)
+
+  # Which is exactly the workflow of fitting your own copula and wrapping it.
+  copula = pv.Vinecop.from_data(layout, var_types=["c", "c", "d"])
+  dist = pv.Vinedist(copula, margins)
+  np.testing.assert_array_equal(layout, dist._u_layout(data))
+
+
 def test_left_limit_above_the_cdf_is_refused() -> None:
   """A margin that reports `F(x^-) > F(x)` is caught at the boundary."""
   from pyvinecopulib.core import MarginBase
@@ -315,6 +341,8 @@ def test_wrong_column_count_is_refused(continuous: np.ndarray) -> None:
   dist = pv.Vinedist.from_data(continuous)
   with pytest.raises(ValueError, match=r"shape \(n, 2\)"):
     dist.logpdf(np.ones((10, 3)))
+  with pytest.raises(ValueError, match=r"shape \(n, 2\)"):
+    pv.Vinedist.copula_data(dist.margins, np.ones((10, 3)))
 
 
 def test_repr_names_the_margin_families(continuous: np.ndarray) -> None:

@@ -23,6 +23,7 @@ from pyvinecopulib.margins import (
   Kde1dMargin,
   as_margin,
   register_margin_adapter,
+  resolve_margins,
 )
 
 scipy_stats = pytest.importorskip("scipy.stats")
@@ -200,6 +201,24 @@ def test_kde1d_margin_from_kde1d_requires_a_fitted_estimator(
   kde.fit(sample)
   adopted = Kde1dMargin.from_kde1d(kde)
   assert adopted.is_fitted and adopted.support == (0.0, float("inf"))
+
+
+# --- resolve_margins -------------------------------------------------------- #
+
+
+def test_resolve_margins_falls_back_to_the_given_default() -> None:
+  """An unaddressed variable takes the caller's default, not the library's."""
+  default = [Kde1dMargin(type="discrete"), Kde1dMargin(type="zero-inflated")]
+  resolved = resolve_margins({0: EmpiricalMargin()}, 2, default=default)
+  assert isinstance(resolved[0], EmpiricalMargin)
+  assert resolved[1].type == "zero-inflated"
+  assert resolve_margins(None, 2, default=default)[0].type == "discrete"
+
+
+def test_resolve_margins_checks_the_default_length() -> None:
+  """A default is per variable, so its length is checked like a sequence's."""
+  with pytest.raises(ValueError, match="default has length 1"):
+    resolve_margins(None, 2, default=[Kde1dMargin()])
 
 
 # --- as_margin -------------------------------------------------------------- #

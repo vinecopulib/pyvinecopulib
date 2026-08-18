@@ -2,6 +2,7 @@ import numpy as np
 from sklearn.base import RegressorMixin
 from sklearn.utils.validation import check_is_fitted
 
+from ..core import Vinedist
 from ._base import (
   _DOC_DISCRETE,
   _DOC_FACTORIZATION,
@@ -26,6 +27,7 @@ class VineRegressor(RegressorMixin, VineBase):
     mean: bool = True,
     quantiles=None,
     backend=None,
+    margins=None,
     batch_size: int = 100,
     use_grid: bool = True,
     normalize_weights: bool = True,
@@ -52,6 +54,15 @@ class VineRegressor(RegressorMixin, VineBase):
         pre-specified structure on ``(Y, X_1, ..., X_d)`` (`Y`
         always in the first dimension). `None` resolves to a default
         ``VinecopBackend`` with the ``tll`` pair family at fit time.
+    margins : object, default=None
+        The marginal half of the model, in any form
+        :func:`pyvinecopulib.margins.resolve_margins` accepts. `None`
+        fits a ``Kde1dMargin`` per column. The specification addresses
+        the covariates; one that broadcasts (an alias, a single margin,
+        a callable) applies to the response as well. With
+        ``use_grid=True`` the response margin must be a
+        ``Kde1dMargin``, since the quadrature nodes are read off its
+        interpolation grid.
     batch_size : int, default=100
         Number of test points processed per batch in `predict`.
     use_grid : bool, default=True
@@ -59,8 +70,9 @@ class VineRegressor(RegressorMixin, VineBase):
         weighted-sample predictor. ``False`` uses importance
         weighting over training rows with
         :math:`w_i(x) \\propto c_{Y,X}(\\hat F_Y(y_i),
-        \\hat F_X(x))`. ``True`` (default) uses the Kde1d grid
-        points and an extra :math:`\\hat f_Y(y_g)` factor.
+        \\hat F_X(x))`. ``True`` (default) uses the response
+        margin's kernel-density grid points and an extra
+        :math:`\\hat f_Y(y_g)` factor.
     normalize_weights : bool, default=True
         If ``True`` (default), per-row weights produced by
         `_iter_weights` are rescaled to sum to one. Set to
@@ -72,7 +84,10 @@ class VineRegressor(RegressorMixin, VineBase):
         `sklearn.utils.check_random_state` inside `fit`.
     """
     super().__init__(
-      backend=backend, batch_size=batch_size, random_state=random_state
+      backend=backend,
+      margins=margins,
+      batch_size=batch_size,
+      random_state=random_state,
     )
     self.mean = mean
     self.quantiles = quantiles
@@ -121,18 +136,30 @@ class VineRegressor(RegressorMixin, VineBase):
     uy_train = self._to_u_scale(y, is_y=True)
     ux = self._to_u_scale(X)
 
-    assert self.schema_ is not None
-    var_types = ["c"] + [x[0] for x in self.schema_["kde1d_types"]]
+    # The response leads the joint model, and being continuous it adds no
+    # left-limit column, so its `u` column simply prepends to the covariates'
+    # own layout.
+    margins = (self._y_margin, *self._x_margins)
+    var_types = Vinedist.copula_var_types(margins)
     self._fit_vine(np.column_stack([uy_train, ux]), var_types=var_types)
+    self._bind_distribution(margins)
 
     if not self.use_grid:
       self._y_train = y
       self._uy_train = uy_train
     else:
-      self._y_train = self._y_kde1d.grid_points
-      uy_cdf = self._y_kde1d.cdf(self._y_train)
-      self._uy_train = np.asarray(uy_cdf).reshape(-1, 1)
-      self._y_density = self._y_kde1d.values[np.newaxis, :]
+      kde = getattr(self._y_margin, "kde1d", None)
+      if kde is None:
+        raise ValueError(
+          "use_grid=True reads the quadrature nodes off the response "
+          "margin's kernel-density grid, which "
+          f"{type(self._y_margin).__name__} does not have. Pass "
+          "use_grid=False, or leave the response margin on the default "
+          "Kde1dMargin."
+        )
+      self._y_train = np.asarray(kde.grid_points)
+      self._uy_train = self._to_u_scale(self._y_train, is_y=True)
+      self._y_density = np.asarray(kde.values)[np.newaxis, :]
     return self
 
   def _copula_marginal_density(

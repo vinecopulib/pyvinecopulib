@@ -214,7 +214,10 @@ class TestEstimatorWiring:
 
   def test_fit_sets_schema_underscore(self, small_data):
     est = VineDensity().fit(small_data)
-    assert est.schema_ == {"kde1d_types": ["continuous"] * 3}
+    assert est.schema_ == {
+      "kde1d_types": ["continuous"] * 3,
+      "bounds": [None] * 3,
+    }
 
   def test_fit_sets_structure_underscore(self, small_data):
     est = VineDensity().fit(small_data)

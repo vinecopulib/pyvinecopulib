@@ -75,15 +75,15 @@ def resolve_margins(
   d: int,
   *,
   names: Optional[Sequence[str]] = None,
+  default: Optional[Sequence[Any]] = None,
 ) -> list[Any]:
   """Expand ``spec`` into one specification per variable.
 
   Accepted forms, in the order they are recognized: ``None`` (the default
-  kernel-density margin), a string alias (``"kde"``, ``"empirical"``,
-  ``"parametric"``), a mapping keyed by variable name or position over a
-  default, a sequence of length ``d`` mixing any of the above, a single margin
-  broadcast to every variable, or a callable receiving a column and returning a
-  margin.
+  margin), a string alias (``"kde"``, ``"empirical"``, ``"parametric"``), a
+  mapping keyed by variable name or position over the default, a sequence of
+  length ``d`` mixing any of the above, a single margin broadcast to every
+  variable, or a callable receiving a column and returning a margin.
 
   A broadcast margin is **copied** per variable rather than shared: margins are
   mutable, and one estimator fitted repeatedly would carry state between
@@ -97,6 +97,13 @@ def resolve_margins(
       Number of variables.
   names : sequence of str, or None, optional
       Variable names, needed only to resolve a mapping keyed by name.
+  default : sequence, or None, optional
+      What an unaddressed variable gets, one entry per variable. ``None`` means
+      a kernel-density margin throughout. Worth setting whenever the caller
+      knows something per variable that the library cannot: the sklearn
+      estimators pass the variable types and bounds they inferred from the
+      data, so a mapping that addresses one column does not silently retype the
+      others.
 
   Returns
   -------
@@ -109,11 +116,20 @@ def resolve_margins(
       If a sequence has the wrong length, or a mapping names an unknown
       variable.
   """
+  if default is None:
+    base = [_prototype("kde") for _ in range(d)]
+  elif len(default) != d:
+    raise ValueError(
+      f"default has length {len(default)}, but there are {d} variables"
+    )
+  else:
+    base = [_resolve_one(entry) for entry in default]
+
   if spec is None:
-    spec = "kde"
+    return base
 
   if isinstance(spec, dict):
-    resolved: list[Any] = [_prototype("kde") for _ in range(d)]
+    resolved: list[Any] = list(base)
     lookup = {name: j for j, name in enumerate(names or [])}
     for key, value in spec.items():
       if isinstance(key, str):

@@ -128,10 +128,7 @@ class Vinedist(Generic[ArrayT]):
 
     self._copula = copula
     self._margins = tuple(resolved)
-    self._var_types = [
-      "d" if getattr(m, "var_type", "c") in ("d", "zi") else "c"
-      for m in self._margins
-    ]
+    self._var_types = self.copula_var_types(self._margins)
 
     declared = getattr(copula, "var_types", None)
     if declared is not None and list(declared) != self._var_types:
@@ -250,16 +247,45 @@ class Vinedist(Generic[ArrayT]):
     cols = [m.icdf(ua[:, j]) for j, m in enumerate(self._margins)]
     return cast(ArrayT, xp.stack(cols, axis=-1))
 
-  def _u_layout(self, x: ArrayT) -> Any:
-    """Assemble the copula-scale data in the layout the copula expects.
+  @staticmethod
+  def copula_var_types(margins: Sequence[Any]) -> list[str]:
+    """Variable types a copula must be fitted with to host these margins.
+
+    Parameters
+    ----------
+    margins : sequence of MarginLike
+        One margin per variable, in variable order. Foreign distribution
+        objects are coerced with :func:`pyvinecopulib.margins.as_margin`, since
+        a bare one carries no variable type of its own.
+
+    Returns
+    -------
+    list of str
+        ``"c"`` or ``"d"`` per variable; a zero-inflated margin is ``"d"``,
+        since what the copula needs from it is the left limit.
+    """
+    from ..margins import as_margin
+
+    return [
+      "d" if getattr(as_margin(m), "var_type", "c") in ("d", "zi") else "c"
+      for m in margins
+    ]
+
+  @staticmethod
+  def copula_data(margins: Sequence[Any], x: Any) -> Any:
+    """Assemble the copula-scale data in the layout a copula expects.
 
     Continuous variables contribute one column each. A variable with atoms
     contributes a second, its left limit ``F(x^-)``, appended after the first
     block in variable order — the compact ``(n, d + k)`` layout. Users never
-    build this by hand, which is the point.
+    build this by hand, which is the point, and neither does code that fits its
+    own copula before handing it to ``Vinedist``.
 
     Parameters
     ----------
+    margins : sequence of MarginLike
+        One margin per variable, in variable order. Foreign distribution
+        objects are coerced with :func:`pyvinecopulib.margins.as_margin`.
     x : array, shape (n, d), dtype float
         Observations on the original scale.
 
@@ -271,13 +297,23 @@ class Vinedist(Generic[ArrayT]):
     Raises
     ------
     ValueError
-        If a margin reports a left limit above its own distribution function.
+        If ``x`` does not carry one column per margin, or if a margin reports a
+        left limit above its own distribution function.
     """
-    xp, xa, _ = self._columns(x)
-    upper = [m.cdf(xa[:, j]) for j, m in enumerate(self._margins)]
+    from ..margins import as_margin
+
+    resolved = [as_margin(m) for m in margins]
+    var_types = Vinedist.copula_var_types(resolved)
+    xa: Any = x
+    xp = array_namespace(xa)
+    if xa.ndim != 2 or xa.shape[1] != len(resolved):
+      raise ValueError(
+        f"x must have shape (n, {len(resolved)}); got {tuple(xa.shape)}"
+      )
+    upper = [m.cdf(xa[:, j]) for j, m in enumerate(resolved)]
     lower = []
-    for j, m in enumerate(self._margins):
-      if self._var_types[j] != "d":
+    for j, m in enumerate(resolved):
+      if var_types[j] != "d":
         continue
       left = getattr(m, "cdf_left", None)
       sub = upper[j] if left is None else left(xa[:, j])
@@ -289,6 +325,21 @@ class Vinedist(Generic[ArrayT]):
       lower.append(sub)
     block = xp.stack([*upper, *lower], axis=-1)
     return xp.clip(block, _TRIM_LO, _TRIM_HI)
+
+  def _u_layout(self, x: ArrayT) -> Any:
+    """This distribution's copula-scale data for ``x``.
+
+    Parameters
+    ----------
+    x : array, shape (n, d), dtype float
+        Observations on the original scale.
+
+    Returns
+    -------
+    array, shape (n, d + k), dtype float
+        The copula-scale data.
+    """
+    return self.copula_data(self._margins, x)
 
   # --- evaluation ---------------------------------------------------------- #
 
@@ -359,7 +410,10 @@ class Vinedist(Generic[ArrayT]):
     array, shape (n,), dtype float
         Joint distribution values in ``[0, 1]``.
     """
-    return self._copula.cdf(self.marginal_cdf(x), **kwargs)
+    # A distribution function needs only the marginal `F` values, and the
+    # copula reads only those; but a copula with atoms validates the whole
+    # layout, so give it the layout rather than the first block alone.
+    return self._copula.cdf(cast(ArrayT, self._u_layout(x)), **kwargs)
 
   def loglik(self, x: ArrayT) -> ArrayT:
     """Log-likelihood of the observations.
@@ -493,16 +547,11 @@ class Vinedist(Generic[ArrayT]):
       fit_margin(specs[j], data[:, j], weights=weights) for j in range(d)
     ]
 
-    # A copula needs its var_types up front, so the layout is built from the
-    # fitted margins before the copula exists; `_bind_dist` then re-derives and
+    # A copula needs its var_types up front, so both come from the fitted
+    # margins before the copula exists; `_bind_dist` then re-derives and
     # cross-checks them.
-    stub = object.__new__(cls)
-    stub._copula = cast(Any, None)
-    stub._margins = tuple(fitted)
-    stub._var_types = [
-      "d" if getattr(m, "var_type", "c") in ("d", "zi") else "c" for m in fitted
-    ]
-    u = stub._u_layout(cast(Any, data))
+    var_types = cls.copula_var_types(fitted)
+    u = cls.copula_data(fitted, data)
 
     if controls is None:
       controls = FitControlsVinecop()
@@ -511,7 +560,7 @@ class Vinedist(Generic[ArrayT]):
     copula = Vinecop.from_data(
       data=u,
       structure=structure,
-      var_types=stub._var_types,
+      var_types=var_types,
       controls=controls,
     )
     return cls(copula, list(fitted))

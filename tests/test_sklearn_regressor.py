@@ -36,10 +36,10 @@ def test_fit_properties(fitted_regressor):
   """Test properties after fitting."""
   regressor, _, _, _, _, _ = fitted_regressor
   assert hasattr(regressor, "_vine")
-  assert hasattr(regressor, "_x_kde1d")
-  assert hasattr(regressor, "_y_kde1d")
   assert hasattr(regressor, "_y_train")
   assert regressor.n_features_in_ == 2
+  # The joint distribution is over (Y, X), the response first.
+  assert regressor.distribution_.dim == 3
 
 
 def test_predict_mean_only(regression_setup):
