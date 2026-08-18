@@ -61,7 +61,8 @@ from .context import (
   NonSimplifiedContext,
   SimplifiedContext,
 )
-from .protocols import BicopLike, VinecopLike
+from .margin_base import MarginBase
+from .protocols import BicopLike, MarginLike, VinecopLike
 from .vinecop_base import VinecopBase
 
 __all__ = [
@@ -74,6 +75,8 @@ __all__ = [
   "DVineStructure",
   "FitControlsBicop",
   "FitControlsVinecop",
+  "MarginBase",
+  "MarginLike",
   "NonSimplifiedContext",
   "RVineStructure",
   "SimplifiedContext",
