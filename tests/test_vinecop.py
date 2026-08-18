@@ -864,3 +864,90 @@ def test_rosenblatt_conditioning_set_rejects_truncated_vine() -> None:
     cop.rosenblatt(u, conditioning_set=[1, 2])
   with pytest.raises(RuntimeError):
     cop.inverse_rosenblatt(u, conditioning_set=[1, 2])
+
+
+def _cop_conditioned_on(cs: list[int], d: int = 5, n: int = 400):
+  """A vine whose order tail is ``cs``, so ``cs`` is an admissible set."""
+  controls = pv.FitControlsVinecop()
+  controls.conditioning_set = cs
+  u = pv.to_pseudo_obs(random_data(d, n))
+  return pv.Vinecop.from_data(u, controls=controls), u
+
+
+def test_simulate_conditional_explicit_set_matches_implicit() -> None:
+  # Given in the tail's own order, the explicit form reproduces the implicit
+  # one exactly (vinecopulib#729).
+  cs = [2, 3]
+  cop, u = _cop_conditioned_on(cs)
+  tail = [int(v) for v in cop.structure.order][-2:]
+  u_cond = u[:20, [t - 1 for t in tail]]
+
+  implicit = cop.simulate_conditional(u_cond, seeds=[1, 2])
+  explicit = cop.simulate_conditional(
+    u_cond, seeds=[1, 2], conditioning_set=tail
+  )
+  np.testing.assert_array_equal(implicit, explicit)
+
+
+def test_simulate_conditional_explicit_set_column_mapping() -> None:
+  # The two forms map u_cond's columns differently: implicitly by the order
+  # tail, explicitly by the given set. Reversing the set must permute the
+  # columns it consumes, not be ignored.
+  cs = [2, 3]
+  cop, u = _cop_conditioned_on(cs)
+  tail = [int(v) for v in cop.structure.order][-2:]
+  u_cond = u[:20, [t - 1 for t in tail]]
+
+  forward = cop.simulate_conditional(u_cond, seeds=[3], conditioning_set=tail)
+  reversed_ = cop.simulate_conditional(
+    u_cond[:, ::-1], seeds=[3], conditioning_set=tail[::-1]
+  )
+  np.testing.assert_allclose(forward, reversed_, rtol=1e-10, atol=1e-10)
+
+
+def test_simulate_conditional_does_not_mutate_the_model() -> None:
+  cs = [2, 3]
+  cop, u = _cop_conditioned_on(cs)
+  tail = [int(v) for v in cop.structure.order][-2:]
+  order_before = [int(v) for v in cop.structure.order]
+  cop.simulate_conditional(u[:10, [t - 1 for t in tail]], conditioning_set=tail)
+  assert [int(v) for v in cop.structure.order] == order_before
+
+
+def test_simulate_conditional_rejects_inadmissible_set() -> None:
+  cop, u = _cop_and_data()
+  with pytest.raises(RuntimeError):
+    cop.simulate_conditional(u[:10, :2], conditioning_set=[])
+
+
+def test_simulate_conditional_discrete_set_takes_a_left_limit_column() -> None:
+  # A discrete conditioning variable is described by two columns, its cdf and
+  # its left limit, so ``u_cond`` is wider than the conditioning set.
+  rng = np.random.default_rng(11)
+  d, n, m = 4, 600, 32
+
+  continuous = rng.standard_normal((n, d)) @ rng.standard_normal((d, d))
+  counts = np.floor(4.0 * pv.to_pseudo_obs(continuous[:, [d - 1]]))
+  data = np.column_stack([continuous[:, : d - 1], counts])
+
+  # Expanded layout: d columns, then a left-limit column per discrete variable.
+  ecdf = pv.to_pseudo_obs(data)
+  left = pv.to_pseudo_obs(np.column_stack([counts - 1.0]))
+  u = np.column_stack([ecdf, left])
+
+  var_types = ["c"] * (d - 1) + ["d"]
+  controls = pv.FitControlsVinecop()
+  controls.conditioning_set = [d]
+  cop = pv.Vinecop.from_data(u, var_types=var_types, controls=controls)
+  assert int(cop.structure.order[-1]) == d
+
+  u_cond = np.column_stack([u[:m, d - 1], u[:m, d]])
+  drawn = cop.simulate_conditional(u_cond, seeds=[1, 2, 3])
+
+  assert drawn.shape == (m, d)
+  # The conditioning column is reproduced, not resampled.
+  np.testing.assert_allclose(drawn[:, -1], u_cond[:, 0], rtol=1e-12)
+
+  # Dropping the left-limit column leaves the model under-specified.
+  with pytest.raises(RuntimeError):
+    cop.simulate_conditional(u_cond[:, :1], seeds=[1, 2, 3])

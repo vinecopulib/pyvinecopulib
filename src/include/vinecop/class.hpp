@@ -283,6 +283,29 @@ must not be truncated; otherwise ``RuntimeError`` is raised, naming
 it. This is the same relabeling ``Vinecop.reorient`` applies, without mutating
 the model.
 )""";
+  const std::string simulate_conditional_doc =
+      std::string(vinecop_doc.simulate_conditional.doc_4args) +
+      R"""(
+
+Notes
+-----
+``conditioning_set`` names the variables to condition on, as 1-based indices,
+instead of taking them from the tail of the vine order. **The two forms map
+``u_cond``'s columns differently**: without the argument, column ``i``
+corresponds to the ``i``-th variable of the order tail; with it, column ``i``
+corresponds to ``conditioning_set[i]``. Adding the argument to an existing call
+can therefore permute the columns unless the set is given in the tail's order.
+
+``u_cond`` may be given in either layout: expanded, ``(n, 2 * k)``, with the
+left limits ``F(x-)`` of all ``k`` conditioning variables in the same order as
+the second block; or compact, ``(n, k + k_d)``, carrying left limits only for
+the ``k_d`` discrete ones. For continuous conditioning variables the two
+coincide at ``(n, k)``.
+
+The set must be admissible as a sampling-order tail of this vine, and the vine
+must not be truncated; otherwise ``RuntimeError`` is raised. The model is not
+mutated.
+)""";
   const std::string rosenblatt_doc =
       std::string(vinecop_doc.rosenblatt.doc_4args) + conditioning_set_note;
   const std::string inverse_rosenblatt_doc =
@@ -501,14 +524,22 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
       .def("simulate", &Vinecop::simulate, "n"_a, "qrng"_a = false,
            "num_threads"_a = 1, "seeds"_a = std::vector<int>(),
            vinecop_doc.simulate.doc, nb::call_guard<nb::gil_scoped_release>())
-      .def("simulate_conditional",
-           static_cast<Eigen::MatrixXd (Vinecop::*)(
-               const Eigen::MatrixXd&, const bool, const size_t,
-               const std::vector<int>&) const>(&Vinecop::simulate_conditional),
-           "u_cond"_a, "qrng"_a = false, "num_threads"_a = 1,
-           "seeds"_a = std::vector<int>(),
-           vinecop_doc.simulate_conditional.doc_4args,
-           nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "simulate_conditional",
+          [](const Vinecop& self, const Eigen::MatrixXd& u_cond, bool qrng,
+             size_t num_threads, const std::vector<int>& seeds,
+             const std::optional<std::vector<size_t>>& conditioning_set)
+              -> Eigen::MatrixXd {
+            nb::gil_scoped_release release;
+            if (conditioning_set) {
+              return self.simulate_conditional(u_cond, *conditioning_set, qrng,
+                                               num_threads, seeds);
+            }
+            return self.simulate_conditional(u_cond, qrng, num_threads, seeds);
+          },
+          "u_cond"_a, "qrng"_a = false, "num_threads"_a = 1,
+          "seeds"_a = std::vector<int>(), nb::kw_only(),
+          "conditioning_set"_a = nb::none(), simulate_conditional_doc.c_str())
       // `u` is taken by value and moved: the implementation uses it as a
       // working buffer, and a const reference would force an n x d copy.
       // `u` is taken by value and moved: the implementation uses it as a
