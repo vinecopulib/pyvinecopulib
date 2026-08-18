@@ -43,7 +43,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
@@ -126,7 +126,7 @@ jobs:
         with:
           python-version: 3.11
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Install C++ dependencies
@@ -155,7 +155,7 @@ jobs:
         run: |
           rm -rf build wheelhouse
       - name: Build and test wheels
-        uses: pypa/cibuildwheel@v3.2.0
+        uses: pypa/cibuildwheel@v4.2.0
         env:
           CIBW_REBUILD: 1
           CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
@@ -185,7 +185,7 @@ jobs:
             exit 1
           }
       - name: Upload binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cibw-wheels-${{ matrix.cfg.os }}-${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
           path: ./wheelhouse/*.whl
@@ -204,11 +204,11 @@ jobs:
 
     steps:
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Download cibw artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           pattern: cibw-*
           path: dist
@@ -246,7 +246,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Install Graphviz + Pandoc
@@ -263,7 +263,7 @@ jobs:
           apt_retry update
           apt_retry install -y graphviz pandoc
       - name: Download built wheel (cp311 manylinux ubuntu)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: cibw-wheels-ubuntu-latest-311-manylinux_x86_64
           path: dist/
@@ -279,7 +279,7 @@ jobs:
           UV_NO_SYNC: "1"
         run: make docs
       - name: Upload built HTML for PR review
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: docs-html
           path: docs/_build/html/
@@ -316,7 +316,7 @@ jobs:
         with:
           python-version: ${{ steps.pyver.outputs.version }}
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
@@ -367,13 +367,13 @@ jobs:
           uv sync --no-install-project --group test --group notebooks --extra examples --extra sklearn --extra torch
       - name: Download built wheel (<=3.11)
         if: ${{ matrix.python <= 311 }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: cibw-wheels-${{ matrix.cfg.os }}-${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
           path: dist/
       - name: Download built wheel (>=3.12, reuses 3.12 ABI3 artifact)
         if: ${{ matrix.python >= 312 }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: cibw-wheels-${{ matrix.cfg.os }}-312-${{ matrix.cfg.cibw_id }}
           path: dist/
@@ -384,7 +384,7 @@ jobs:
       - name: Run tests
         # UV_NO_SYNC: test the pre-installed wheel, not an editable rebuild.
         # Serial — see pyproject.toml's pytest config.
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@v4
         env:
           UV_NO_SYNC: "1"
         with:
@@ -395,7 +395,7 @@ jobs:
           command: |
             uv run pytest tests/ -r a --no-cov --reruns 2 --reruns-delay 10
       - name: Run notebooks as unit tests
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@v4
         env:
           UV_NO_SYNC: "1"
         with:
@@ -436,7 +436,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
@@ -452,7 +452,7 @@ jobs:
           apt_retry update
           apt_retry install -y graphviz
       - name: Download built wheel (cp311 ABI3, ubuntu)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: cibw-wheels-ubuntu-latest-311-manylinux_x86_64
           path: dist/
@@ -516,7 +516,7 @@ jobs:
         with:
           python-version: 3.11
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
@@ -548,7 +548,7 @@ jobs:
           VIRTUAL_ENV="$PWD/.venv-sdist" uv run --active \
             pytest tests/ -r a --no-cov --reruns 2 --reruns-delay 10
       - name: Upload binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cibw-sdist
           path: dist/*.tar.gz
@@ -573,11 +573,11 @@ jobs:
         if: ${{ startsWith(github.event.ref, 'refs/tags') }}
         run: python3 scripts/check_version.py --released --tag "$GITHUB_REF_NAME"
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Download cibw artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           pattern: cibw-*
           path: dist
