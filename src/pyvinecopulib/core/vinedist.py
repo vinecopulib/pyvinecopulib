@@ -2,11 +2,41 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any, Generic, Optional, Sequence, cast
 
 from array_api_compat import array_namespace
 
 from .protocols import ArrayT, MarginLike
+
+
+def _named(spec: Any, name: Optional[str]) -> Any:
+  """Label a selecting margin with the variable it is fitted to.
+
+  A selector records the variable on each row of its report; without this the
+  rows of a multi-variable report are indistinguishable.
+
+  Parameters
+  ----------
+  spec : object
+      A margin specification.
+  name : str, or None
+      The variable's name, or ``None`` when the data carry none.
+
+  Returns
+  -------
+  object
+      The specification, labeled. Only a nameless selector is copied and
+      relabeled, so a specification the caller still holds is left untouched.
+  """
+  if name is None or not hasattr(spec, "report_"):
+    return spec
+  if getattr(spec, "name", "") is not None:
+    return spec
+  spec = copy.deepcopy(spec)
+  spec.name = name
+  return spec
+
 
 __all__ = ["Vinedist"]
 
@@ -161,6 +191,25 @@ class Vinedist(Generic[ArrayT]):
         One margin per variable.
     """
     return self._margins
+
+  def selection_report(self) -> list[dict[str, Any]]:
+    """Per-candidate family-selection rows, across every margin that selected.
+
+    Margins that were given rather than selected contribute nothing, so an
+    all-fixed or all-KDE distribution reports an empty list.
+
+    Returns
+    -------
+    list of dict
+        One row per candidate considered, in variable order. Each carries the
+        variable, the family, its parameter count, the criteria, whether it was
+        selected, and — for a candidate that was not fitted — why.
+    """
+    return [
+      dict(row)
+      for margin in self._margins
+      for row in getattr(margin, "report_", ())
+    ]
 
   @property
   def dim(self) -> int:
@@ -542,9 +591,21 @@ class Vinedist(Generic[ArrayT]):
       raise ValueError(f"x must be two-dimensional; got {data.ndim} dimensions")
     d = data.shape[1]
 
+    if names is None:
+      # A DataFrame carries its own names, and `margins` is often keyed by them.
+      # Duck-typed: pandas is an extra, not a dependency of `core`.
+      columns = getattr(x, "columns", None)
+      if columns is not None:
+        names = [str(c) for c in columns]
+
     specs = resolve_margins(margins, d, names=names)
     fitted = [
-      fit_margin(specs[j], data[:, j], weights=weights) for j in range(d)
+      fit_margin(
+        _named(specs[j], names[j] if names is not None else None),
+        data[:, j],
+        weights=weights,
+      )
+      for j in range(d)
     ]
 
     # A copula needs its var_types up front, so both come from the fitted

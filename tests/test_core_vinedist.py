@@ -17,7 +17,11 @@ import numpy as np
 import pytest
 
 import pyvinecopulib as pv
-from pyvinecopulib.margins import EmpiricalMargin, Kde1dMargin
+from pyvinecopulib.margins import (
+  EmpiricalMargin,
+  Kde1dMargin,
+  MarginSelector,
+)
 
 stats = pytest.importorskip("scipy.stats")
 
@@ -349,3 +353,42 @@ def test_repr_names_the_margin_families(continuous: np.ndarray) -> None:
   """`repr` shows the dimension and what each margin is."""
   dist = pv.Vinedist.from_data(continuous, margins="kde")
   assert repr(dist) == "Vinedist(dim=2, margins=[kde1d, kde1d])"
+
+
+# --- selection reporting ---------------------------------------------------- #
+
+
+def test_from_data_reads_dataframe_column_names(data: np.ndarray) -> None:
+  """A mapping keyed by column name works on a DataFrame without `names=`."""
+  pd = pytest.importorskip("pandas")
+  df = pd.DataFrame(data, columns=["real", "positive", "count"])
+  dist = pv.Vinedist.from_data(df, margins={"real": Kde1dMargin()})
+  assert dist.dim == 3
+
+
+def test_selection_report_names_each_variable(data: np.ndarray) -> None:
+  """Report rows identify their variable, so a multi-column table is readable."""
+  dist = pv.Vinedist.from_data(
+    data[:, :2], margins="parametric", names=["real", "positive"]
+  )
+  report = dist.selection_report()
+  assert report
+  assert {row["column"] for row in report} == {"real", "positive"}
+  selected = {row["column"] for row in report if row["selected"]}
+  assert selected == {"real", "positive"}
+
+
+def test_selection_report_is_empty_without_a_selector(data: np.ndarray) -> None:
+  """Margins that were given rather than selected contribute no rows."""
+  assert pv.Vinedist.from_data(data).selection_report() == []
+
+
+def test_from_data_leaves_the_caller_s_specification_alone(
+  data: np.ndarray,
+) -> None:
+  """Naming a selector must not mutate an object the caller still holds."""
+  selector = MarginSelector(candidates=["norm", "logistic"])
+  dist = pv.Vinedist.from_data(data[:, :1], margins=[selector], names=["real"])
+  assert selector.name is None
+  assert list(selector.report_) == []
+  assert dist.selection_report()[0]["column"] == "real"

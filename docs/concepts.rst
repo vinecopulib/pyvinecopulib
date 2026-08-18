@@ -629,7 +629,9 @@ alone. So ``st.norm(0, 1)`` above stays exactly :math:`N(0, 1)` while
 ``MarginSelector`` estimates its family from the ``income`` column.
 
 :class:`pyvinecopulib.margins.MarginSelector` fits every admissible
-candidate and keeps the best by AIC, BIC or AICc, reporting the rest.
+candidate and keeps the best by AIC, BIC or AICc, reporting the rest;
+:meth:`pyvinecopulib.core.Vinedist.selection_report` collects those rows across
+every variable, labeled by the variable each was fitted to.
 Two choices in it are deliberate. The candidate set is **curated and
 partitioned by support**, not "every family in SciPy": an unconstrained
 sweep is actively misleading, because a family whose reported support is

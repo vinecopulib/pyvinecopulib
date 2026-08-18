@@ -75,6 +75,7 @@
 - Add `Vinedist.copula_data` and `Vinedist.copula_var_types`: from a set of margins, the copula-scale layout for some data and the `var_types` a copula must be fitted with. That is what "fit your own copula, then wrap it" needs, and what the sklearn estimators use.
 - `resolve_margins` takes `default=`, one specification per variable, so a caller that knows something per variable keeps it for the variables a mapping does not address.
 - Document vine distributions: a `concepts.rst` section on the `{pdf, cdf, icdf}` margin contract, why `pdf` is the density with respect to the margin's own reference measure (so the Sklar factorization needs no branch on variable type), and what the two-step estimator costs; plus `examples/11_vine_distributions.ipynb`, worked on data with known margins so each estimate is checked against a truth (#286).
+- Add `Vinedist.selection_report`, the per-candidate family-selection rows across every margin that selected, labeled by variable. `Vinedist.from_data` reads a DataFrame's column names when none are given, so `margins=` may be a mapping keyed by name, and labels each selector with its variable so the report rows are distinguishable (#288).
 
 ### Build / packaging
 
