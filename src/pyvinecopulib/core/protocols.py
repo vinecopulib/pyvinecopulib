@@ -12,11 +12,20 @@ reference implementations are :class:`~pyvinecopulib.core.Bicop` /
 :class:`~pyvinecopulib.torch.TorchBicop` /
 :class:`~pyvinecopulib.torch.TorchVinecop`.
 
-**Conditioning.** Every method carries an optional trailing ``x`` — the
+**Conditioning.** Every method carries an optional **keyword-only** ``x`` — the
 conditioning variables the copula / vine depends on (conditioning-set values
 and/or external covariates), row-aligned with ``u``. Unconditional models leave
 it ``None``; a conditional pair copula reads it. In a vine, each pair's ``x`` is
 assembled per edge by a :class:`~pyvinecopulib.core.ConditioningContext`.
+
+**Scope.** These describe the *evaluation* surface — enough to host a pair
+copula in a vine and to consume a fitted vine — not the whole compiled API.
+:class:`~pyvinecopulib.core.Bicop` and :class:`~pyvinecopulib.core.Vinecop`
+carry considerably more (score and derivative families, per-row parameters,
+serialization, discrete data layouts) that a custom implementation is not
+expected to provide. Both protocols are ``runtime_checkable``, which compares
+method *names* only: ``isinstance(cop, BicopLike)`` reports that the names are
+present, not that the signatures agree.
 
 **Typing.** :data:`ArrayT` is an unbounded ``TypeVar`` carried only on these
 public signatures, so a concrete implementation (e.g.
@@ -51,13 +60,13 @@ _BICOP_EXAMPLE = """
       from pyvinecopulib.core import BicopBase
 
       class Independence(BicopBase[np.ndarray]):
-        def pdf(self, u, x=None):
+        def pdf(self, u, *, x=None):
           return np.ones(u.shape[0])
 
-        def hfunc1(self, u, x=None):
+        def hfunc1(self, u, *, x=None):
           return u[:, 1]
 
-        def hfunc2(self, u, x=None):
+        def hfunc2(self, u, *, x=None):
           return u[:, 0]
 
       cop = Independence()
@@ -127,7 +136,7 @@ class BicopLike(Protocol[ArrayT]):
   """
 
   @abstractmethod
-  def pdf(self, u: ArrayT, x: Optional[ArrayT] = None) -> ArrayT:
+  def pdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Pair-copula density ``c(u)`` at each observation.
 
     Parameters
@@ -144,7 +153,7 @@ class BicopLike(Protocol[ArrayT]):
     """
 
   @abstractmethod
-  def cdf(self, u: ArrayT, x: Optional[ArrayT] = None) -> ArrayT:
+  def cdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Pair-copula distribution ``C(u)`` at each observation.
 
     Parameters
@@ -161,7 +170,7 @@ class BicopLike(Protocol[ArrayT]):
     """
 
   @abstractmethod
-  def hfunc1(self, u: ArrayT, x: Optional[ArrayT] = None) -> ArrayT:
+  def hfunc1(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """First h-function ``P(U2 <= u2 | U1 = u1)``.
 
     Parameters
@@ -178,7 +187,7 @@ class BicopLike(Protocol[ArrayT]):
     """
 
   @abstractmethod
-  def hfunc2(self, u: ArrayT, x: Optional[ArrayT] = None) -> ArrayT:
+  def hfunc2(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Second h-function ``P(U1 <= u1 | U2 = u2)``.
 
     Parameters
@@ -195,7 +204,7 @@ class BicopLike(Protocol[ArrayT]):
     """
 
   @abstractmethod
-  def hinv1(self, u: ArrayT, x: Optional[ArrayT] = None) -> ArrayT:
+  def hinv1(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Inverse of :meth:`hfunc1` in its second argument.
 
     Solves ``hfunc1([u1, .], x) = u2`` for the second argument.
@@ -215,7 +224,7 @@ class BicopLike(Protocol[ArrayT]):
     """
 
   @abstractmethod
-  def hinv2(self, u: ArrayT, x: Optional[ArrayT] = None) -> ArrayT:
+  def hinv2(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Inverse of :meth:`hfunc2` in its first argument.
 
     Solves ``hfunc2([., u2], x) = u1`` for the first argument.

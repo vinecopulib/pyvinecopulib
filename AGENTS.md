@@ -567,7 +567,11 @@ automatically.
   - `BicopLike[ArrayT]` / `VinecopLike[ArrayT]` (`protocols.py`) —
     generic, `runtime_checkable` protocols mirroring the `Bicop` /
     `Vinecop` evaluation surface on any array backend (NumPy or
-    PyTorch); `Bicop` / `Vinecop` satisfy them structurally.
+    PyTorch). `Bicop` / `Vinecop` satisfy them *nominally* — `isinstance` is
+    `True`, because a `runtime_checkable` Protocol compares method names and
+    nothing else. It is not a statement that the signatures agree: the
+    compiled classes take per-row `parameters` where the protocols take a
+    conditioning matrix `x`, which is why `x` is keyword-only on both.
   - `BicopBase` (`bicop_base.py`) / `VinecopBase` (`vinecop_base.py`) —
     canonical partial implementations to subclass. A `BicopBase`
     subclass defines `pdf` / `hfunc1` / `hfunc2` and inherits `hinv1` /

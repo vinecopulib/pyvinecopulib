@@ -150,3 +150,32 @@ def test_core_import_is_torch_free() -> None:
     [sys.executable, "-c", code], capture_output=True, text=True
   )
   assert result.returncode == 0, result.stderr
+
+
+def test_conditioning_matrix_is_keyword_only() -> None:
+  """``x`` must not be passable where ``Bicop`` expects ``parameters``.
+
+  ``BicopLike`` is ``runtime_checkable``, so ``pv.Bicop`` satisfies it on
+  method names alone -- while its second positional argument is per-row
+  ``parameters``, not a conditioning matrix. If the cascade passed ``x``
+  positionally, hosting a ``pv.Bicop`` in a non-simplified vine would feed the
+  conditioning values in as parameters and return a wrong density instead of
+  raising.
+  """
+  import inspect
+
+  from pyvinecopulib.core import BicopBase, BicopLike
+
+  for owner in (BicopLike, BicopBase):
+    for name in ("pdf", "cdf", "hfunc1", "hfunc2", "hinv1", "hinv2"):
+      kind = inspect.signature(getattr(owner, name)).parameters["x"].kind
+      assert kind is inspect.Parameter.KEYWORD_ONLY, f"{owner.__name__}.{name}"
+
+  u = np.full((4, 2), 0.5)
+  x = np.ones((4, 1))
+  compiled = pv.Bicop(family=pv.families.clayton, parameters=np.array([[2.0]]))
+  assert isinstance(compiled, BicopLike)
+  # Dispatched through getattr so `ty` does not reject the call it is meant to
+  # reject -- a static error here is the same guarantee, one step earlier.
+  with pytest.raises(TypeError):
+    getattr(compiled, "pdf")(u, x=x)

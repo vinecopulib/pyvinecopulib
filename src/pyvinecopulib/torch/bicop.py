@@ -327,7 +327,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     # Trim to (1e-10, 1 - 1e-10), mirroring Bicop::prep_for_abstract.
     return u.clamp(_TRIM_LO, _TRIM_HI)
 
-  def pdf(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
+  def pdf(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Evaluates the bivariate copula density ``c(u1, u2)``.
 
     Parameters
@@ -352,7 +352,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       return torch.ones(u.shape[0], dtype=u.dtype, device=u.device)
     return self.interp_grid.interpolate(u).clamp_min(1e-20)
 
-  def cdf(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
+  def cdf(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Evaluates the bivariate copula CDF.
 
     .. math::
@@ -395,7 +395,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       return self.interp_grid.interp_at(cache, u).clamp(_TRIM_LO, _TRIM_HI)
     return self.interp_grid.integrate_1d(u, cond_var=cond_var)
 
-  def hfunc1(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
+  def hfunc1(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Evaluates the first h-function.
 
     .. math::
@@ -421,7 +421,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       return u[:, 1].clamp(_TRIM_LO, _TRIM_HI)
     return self._hfunc_raw(u, 1).clamp(0.0, 1.0)
 
-  def hfunc2(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
+  def hfunc2(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Evaluates the second h-function.
 
     .. math::
@@ -469,7 +469,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     return self.interp_grid.inverse_integrate_1d(u, cond_var).clamp(0.0, 1.0)
 
   @torch.no_grad()
-  def hinv1(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
+  def hinv1(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Inverts `hfunc1` w.r.t. the second argument.
 
     Given ``u = [u1, p]``, returns ``u2`` such that
@@ -499,7 +499,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     return self._hinv_raw(u, 1)
 
   @torch.no_grad()
-  def hinv2(self, u: Tensor, x: Optional[Tensor] = None) -> Tensor:
+  def hinv2(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Inverts `hfunc2` w.r.t. the first argument.
 
     Given ``u = [p, u2]``, returns ``u1`` such that

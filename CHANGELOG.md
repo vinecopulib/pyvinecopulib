@@ -17,6 +17,7 @@
 - Remove `TorchBicop`'s `log_pdf` method. The vine `pdf` cascade now accumulates a product of per-edge `pdf` (rather than a log-sum-exp), so the pair-level log-density convenience method is no longer needed; it was never part of the `BicopLike` contract. Use `TorchBicop.pdf(u).log()` if you need a log density.
 - `VineDensity` and `VineRegressor` put their scikit-learn mixin before `VineBase`, so `is_regressor` / `is_density_estimator` are now `True` and meta-estimators such as `StackingRegressor` accept them; previously they were rejected as "not a regressor" (#263).
 - `VineRegressor.predict` keeps the sample axis for a one-row `X`: it returns shape `(1,)` (or `(1, k)` with quantiles) instead of collapsing to a 0-d scalar (#263).
+- `BicopLike` / `BicopBase` take the conditioning matrix `x` as a keyword-only argument, matching `VinecopLike`. It shared a positional slot with the compiled `Bicop`'s per-row `parameters`, so hosting a `pv.Bicop` in a non-simplified `VinecopBase` silently evaluated the conditioning values as parameters; it now raises `TypeError` (#265).
 - `FitControlsBicop` and `FitControlsVinecop` default `selection_criterion` to `"aic"` instead of `"bic"`, matching the C++ and R defaults; the same knob now selects the same model from all three languages. Pass `selection_criterion="bic"` explicitly to keep the previous selection (#251).
 
 ### New features in `pyvinecopulib`
