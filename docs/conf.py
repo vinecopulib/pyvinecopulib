@@ -210,6 +210,8 @@ _CLASS_MODULE = {
   "MarginBase": "pyvinecopulib.core",
   "Kde1dMargin": "pyvinecopulib.margins",
   "EmpiricalMargin": "pyvinecopulib.margins",
+  "ParametricMargin": "pyvinecopulib.margins",
+  "MarginSelector": "pyvinecopulib.margins",
   "Bicop": "pyvinecopulib.core",
   "VinecopLike": "pyvinecopulib.core",
   "VinecopBase": "pyvinecopulib.core",
@@ -364,6 +366,8 @@ DOCSTRING_SUBPACKAGES = {
     "classes": [
       "Kde1dMargin",
       "EmpiricalMargin",
+      "ParametricMargin",
+      "MarginSelector",
     ],
     "functions": [
       "as_margin",

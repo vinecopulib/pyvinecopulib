@@ -9,13 +9,17 @@ from ..core import MarginLike
 from ._adapters import as_margin
 from .empirical import EmpiricalMargin
 from .kde import Kde1dMargin
+from .selection import MarginSelector
 
 __all__ = ["resolve_margins", "fit_margin"]
 
-#: String aliases for the built-in margin families.
+#: String aliases for the built-in margin families. ``"parametric"`` is the
+#: selector rather than one family: a parametric margin is only meaningful once
+#: a family has been chosen, and choosing it from the data is the whole job.
 _ALIASES = {
   "kde": Kde1dMargin,
   "empirical": EmpiricalMargin,
+  "parametric": MarginSelector,
 }
 
 
@@ -75,10 +79,11 @@ def resolve_margins(
   """Expand ``spec`` into one specification per variable.
 
   Accepted forms, in the order they are recognized: ``None`` (the default
-  kernel-density margin), a string alias (``"kde"``, ``"empirical"``), a mapping
-  keyed by variable name or position over a default, a sequence of length ``d``
-  mixing any of the above, a single margin broadcast to every variable, or a
-  callable receiving a column and returning a margin.
+  kernel-density margin), a string alias (``"kde"``, ``"empirical"``,
+  ``"parametric"``), a mapping keyed by variable name or position over a
+  default, a sequence of length ``d`` mixing any of the above, a single margin
+  broadcast to every variable, or a callable receiving a column and returning a
+  margin.
 
   A broadcast margin is **copied** per variable rather than shared: margins are
   mutable, and one estimator fitted repeatedly would carry state between

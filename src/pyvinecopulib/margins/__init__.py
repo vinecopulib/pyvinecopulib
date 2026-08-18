@@ -9,6 +9,10 @@ whose parameters are given at construction is already fitted.
   and handles continuous, discrete and zero-inflated data) and
   :class:`EmpiricalMargin` (the rank transform behind
   :func:`pyvinecopulib.utils.to_pseudo_obs`, as a distribution).
+- **Parametric** — :class:`ParametricMargin` wraps one SciPy family, and
+  :class:`MarginSelector` chooses among a curated candidate set by AIC / BIC /
+  AICc, keeps the winner on ``selected_`` and forwards evaluation to it. Both
+  need the ``scipy`` extra.
 - **Interoperability** — :func:`as_margin` presents a distribution object from
   another ecosystem as a margin, and :func:`register_margin_adapter` teaches it
   about one it does not know. SciPy's modern and legacy distributions and
@@ -32,10 +36,14 @@ from ._adapters import as_margin, register_margin_adapter
 from ._resolve import resolve_margins
 from .empirical import EmpiricalMargin
 from .kde import Kde1dMargin
+from .parametric import ParametricMargin
+from .selection import MarginSelector
 
 __all__ = [
   "EmpiricalMargin",
   "Kde1dMargin",
+  "MarginSelector",
+  "ParametricMargin",
   "as_margin",
   "resolve_margins",
   "register_margin_adapter",
