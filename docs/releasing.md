@@ -23,7 +23,18 @@ indistinguishable from an unreleased one.
 3. **Check the metadata agrees**: `uv run python scripts/check_version.py`.
    CI runs the same check on every pull request.
 
-4. **Merge**, then tag the merge commit:
+4. **Rehearse the upload** (optional, but the only way to exercise the publish
+   path before the irreversible one). Run the *Build Status* workflow manually
+   from the Actions tab against the commit you are about to tag, with
+   **Publish the built artifacts to Test PyPI** ticked. It builds the same
+   wheels and sdist the tag would and uploads them to
+   [Test PyPI](https://test.pypi.org/project/pyvinecopulib/).
+
+   Test PyPI refuses a re-upload of a version it already has, exactly as PyPI
+   does, so this is one shot per version — spend it on the commit you mean to
+   tag, not on a work in progress. Needs the `test_pypi_password` secret.
+
+5. **Merge**, then tag the merge commit:
 
    ```bash
    git checkout main && git pull
@@ -35,15 +46,15 @@ indistinguishable from an unreleased one.
    > number.** A mistagged release cannot be undone — only superseded by a new
    > version. Confirm the tag points at the commit you mean before pushing.
 
-5. **Confirm the release landed**: wheels and the sdist on PyPI, the GitHub
+6. **Confirm the release landed**: wheels and the sdist on PyPI, the GitHub
    release created from the changelog section, Read the Docs built the tag with
    `stable` repointed at it, and the Zenodo deposition.
 
-6. **Open the next cycle immediately.** Add a fresh
+7. **Open the next cycle immediately.** Add a fresh
    `## X.Y+1.0 (unreleased)` heading to `CHANGELOG.md` in a follow-up pull
    request, so the next change has somewhere to go.
 
-7. **If the release surfaced a problem in the C++ library**, file it upstream
+8. **If the release surfaced a problem in the C++ library**, file it upstream
    rather than working around it here — the docstrings, signatures and CMake
    seams all belong to `vinecopulib`.
 
@@ -55,6 +66,7 @@ indistinguishable from an unreleased one.
 | wheels, sdist, tests, docs | every pull request |
 | `scripts/check_version.py --released --tag` | on a `v*` tag push, before publishing |
 | publish to PyPI + GitHub release | on a `v*` tag push |
+| publish to Test PyPI | manually, from the Actions tab (see step 4) |
 
 ## Version numbers
 
