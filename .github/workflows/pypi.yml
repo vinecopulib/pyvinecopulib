@@ -236,8 +236,17 @@ jobs:
           enable-cache: true
       - name: Install Graphviz + Pandoc
         run: |
-          sudo apt-get update
-          sudo apt-get install -y graphviz pandoc
+          # Each attempt is bounded: a slow apt mirror otherwise holds the
+          # runner until the job timeout rather than failing.
+          apt_retry() {
+            for attempt in 1 2 3; do
+              sudo timeout 300 apt-get "$@" && return 0
+              sleep $((attempt * 15))
+            done
+            return 1
+          }
+          apt_retry update
+          apt_retry install -y graphviz pandoc
       - name: Download built wheel (cp311 manylinux ubuntu)
         uses: actions/download-artifact@v4
         with:
@@ -317,8 +326,8 @@ jobs:
               -maxdepth 3 -name dot.exe 2>/dev/null | grep -q .
           }
           if [[ "${{ matrix.cfg.os }}" == "ubuntu-latest" ]]; then
-            sudo apt-get update
-            retry sudo apt-get install -y graphviz
+            retry sudo timeout 300 apt-get update
+            retry sudo timeout 300 apt-get install -y graphviz
           elif [[ "${{ matrix.cfg.os }}" == macos-* ]]; then
             brew list graphviz >/dev/null 2>&1 || retry brew install graphviz
           elif [[ "${{ matrix.cfg.os }}" == "windows-latest" ]]; then
@@ -416,8 +425,15 @@ jobs:
           cache-dependency-glob: pyproject.toml
       - name: Install Graphviz
         run: |
-          sudo apt-get update
-          sudo apt-get install -y graphviz
+          apt_retry() {
+            for attempt in 1 2 3; do
+              sudo timeout 300 apt-get "$@" && return 0
+              sleep $((attempt * 15))
+            done
+            return 1
+          }
+          apt_retry update
+          apt_retry install -y graphviz
       - name: Download built wheel (cp311 ABI3, ubuntu)
         uses: actions/download-artifact@v4
         with:
