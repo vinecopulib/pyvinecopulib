@@ -10,7 +10,9 @@ pytest.importorskip("pandas")
 
 import pandas as pd  # noqa: E402
 
-from pyvinecopulib.sklearn import VineDensity  # noqa: E402
+from sklearn.exceptions import DataConversionWarning  # noqa: E402
+
+from pyvinecopulib.sklearn import VineDensity, VineRegressor  # noqa: E402
 from pyvinecopulib.sklearn._base import expand_factors  # noqa: E402
 
 
@@ -244,3 +246,31 @@ def test_vinebase_pdf_samples_unified_method(
 
   assert isinstance(copula_joint, np.ndarray)
   assert copula_joint.shape == (20,)
+
+
+def test_non_finite_input_raises_rather_than_crashing() -> None:
+  # The marginal estimator is C++ and reads NaN as a segmentation fault, so
+  # the guard has to be on this side of the boundary.
+  rng = np.random.default_rng(0)
+  X = rng.normal(size=(60, 3))
+  y = X @ np.array([1.0, 2.0, -1.0])
+
+  bad_X = X.copy()
+  bad_X[0, 0] = np.nan
+  with pytest.raises(ValueError, match="NaN"):
+    VineDensity().fit(bad_X)
+
+  bad_y = y.copy()
+  bad_y[3] = np.inf
+  with pytest.raises(ValueError, match="infinity|inf"):
+    VineRegressor().fit(X, bad_y)
+
+
+def test_column_vector_y_is_raveled_with_a_warning() -> None:
+  rng = np.random.default_rng(1)
+  X = rng.normal(size=(60, 3))
+  y = (X @ np.array([1.0, 2.0, -1.0])).reshape(-1, 1)
+
+  with pytest.warns(DataConversionWarning):
+    model = VineRegressor().fit(X, y)
+  assert model.predict(X[:4]).shape == (4,)

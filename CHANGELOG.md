@@ -15,6 +15,8 @@
 - `TorchBicop.from_data` now dispatches on `controls=FitControlsTorchBicop(...)` (#217). Callers who passed `grid_size`, `mult`, or `grid_type` as keyword arguments must move them onto the dataclass. `cache_integrals`, `device`, and `dtype` remain direct kwargs on `from_data`.
 - `TorchBicop.sample(num_sample, seed, is_sobol)` renamed to `TorchBicop.simulate(n, qrng=False, seeds=[])` for parity with `pv.Bicop.simulate` (#216).
 - Remove `TorchBicop`'s `log_pdf` method. The vine `pdf` cascade now accumulates a product of per-edge `pdf` (rather than a log-sum-exp), so the pair-level log-density convenience method is no longer needed; it was never part of the `BicopLike` contract. Use `TorchBicop.pdf(u).log()` if you need a log density.
+- `VineDensity` and `VineRegressor` put their scikit-learn mixin before `VineBase`, so `is_regressor` / `is_density_estimator` are now `True` and meta-estimators such as `StackingRegressor` accept them; previously they were rejected as "not a regressor" (#263).
+- `VineRegressor.predict` keeps the sample axis for a one-row `X`: it returns shape `(1,)` (or `(1, k)` with quantiles) instead of collapsing to a 0-d scalar (#263).
 - `FitControlsBicop` and `FitControlsVinecop` default `selection_criterion` to `"aic"` instead of `"bic"`, matching the C++ and R defaults; the same knob now selects the same model from all three languages. Pass `selection_criterion="bic"` explicitly to keep the previous selection (#251).
 
 ### New features in `pyvinecopulib`
@@ -70,6 +72,7 @@
 
 ### Bug fixes in `pyvinecopulib`
 
+- Reject non-finite `X` / `y` in the `pyvinecopulib.sklearn` estimators instead of passing them to `Kde1d`, which reads NaN as a segmentation fault (#263).
 - Port the `integrate_2d` marginal-renormalization fix to the torch backend (`InterpolationGrid2D.integrate_2d` and `integrate_2d_batched`) so `TorchBicop.cdf` enforces ``C(1, u_2) = u_2`` exactly, matching the post-vinecopulib#667 C++ CDF to machine precision on the on-the-fly path ([vinecopulib#667](https://github.com/vinecopulib/vinecopulib/pull/667)).
 - Declare `BicopFamily` enum members as class attributes in the generated type stubs so the documented `pv.BicopFamily.clayton` access pattern passes static type checking (`ty` / pyright / mypy), not only the module-level constants (#223).
 

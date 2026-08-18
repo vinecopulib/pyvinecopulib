@@ -11,7 +11,7 @@ from ._base import (
 )
 
 
-class VineRegressor(VineBase, RegressorMixin):
+class VineRegressor(RegressorMixin, VineBase):
   # Inherits VineBase._parameter_constraints; extend with regressor knobs.
   _parameter_constraints: dict = {
     **VineBase._parameter_constraints,
@@ -96,7 +96,9 @@ class VineRegressor(VineBase, RegressorMixin):
     """
     self._validate_params()
     if y is None:
-      raise ValueError("VineRegressor.fit requires y.")
+      raise ValueError(
+        "VineRegressor requires y to be passed, but the target y is None"
+      )
     X, y = self._validate_input(X, y, reset=True)
     self._resolve_runtime_state()
     if self.quantiles is None and not self.mean:
@@ -307,7 +309,9 @@ class VineRegressor(VineBase, RegressorMixin):
         ]
         y_pred[start:end, col : col + len(quantiles)] = np.vstack(batch_preds)
 
-    return y_pred.squeeze()
+    # Drop the output axis for a single output, never the sample axis: a bare
+    # `squeeze()` turns a one-row prediction into a scalar.
+    return y_pred[:, 0] if y_pred.shape[1] == 1 else y_pred
 
   def predict(self, X):
     """Predicts the conditional mean and/or quantiles of ``Y`` given ``X``.

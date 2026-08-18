@@ -14,7 +14,7 @@ from ._base import (
 )
 
 
-class VineDensity(VineBase, DensityMixin):
+class VineDensity(DensityMixin, VineBase):
   def __init__(
     self,
     backend=None,
