@@ -139,6 +139,12 @@ jobs:
           # wdm and kde1d ship as lib/ submodules; lcov is only for C++ coverage.
           wdm: "false"
           lcov: "false"
+          # The action's default apt-installs g++/clang on the host. cibuildwheel
+          # compiles inside the manylinux/musllinux container with its own
+          # toolchain, and the other ubuntu jobs only install prebuilt wheels, so
+          # the host compilers are never used -- and that apt call has hung the
+          # job repeatedly.
+          update_compilers_ubuntu: "false"
       - name: Clean build artefacts
         shell: bash
         run: |
@@ -494,6 +500,12 @@ jobs:
           # wdm and kde1d ship as lib/ submodules; lcov is only for C++ coverage.
           wdm: "false"
           lcov: "false"
+          # The action's default apt-installs g++/clang on the host. cibuildwheel
+          # compiles inside the manylinux/musllinux container with its own
+          # toolchain, and the other ubuntu jobs only install prebuilt wheels, so
+          # the host compilers are never used -- and that apt call has hung the
+          # job repeatedly.
+          update_compilers_ubuntu: "false"
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
