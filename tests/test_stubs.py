@@ -8,6 +8,7 @@ gitignored stub artifacts on disk.
 import importlib.util
 from pathlib import Path
 
+import pyvinecopulib as pv
 from pyvinecopulib.families import BicopFamily
 
 _SCRIPTS = (
@@ -132,3 +133,28 @@ def test_no_binding_is_an_overload_set():
     "bound as overload sets; bind a named factory instead: "
     + ", ".join(sorted(set(overloaded)))
   )
+
+
+def test_subclass_declares_its_base():
+  """``DVineStructure`` / ``CVineStructure`` derive from ``RVineStructure``.
+
+  The binding declares the inheritance and the runtime MRO carries it, so the
+  stub has to as well: passing a D-vine wherever an ``RVineStructure`` is
+  expected is the documented way to use one, and a stub that omits the base
+  makes that a type error.
+  """
+  gen = _load_generator()
+  for cls in (pv.DVineStructure, pv.CVineStructure):
+    body = "\n".join(gen.render_class_stub(cls, cls.__name__))
+    assert body.startswith(f"class {cls.__name__}(RVineStructure):")
+
+
+def test_base_without_a_definition_here_is_not_declared():
+  """Only bases the stub itself defines are named.
+
+  ``BicopFamily`` derives from ``enum.Enum``, which the stub never declares, so
+  naming it would leave a dangling reference.
+  """
+  gen = _load_generator()
+  body = "\n".join(gen.render_class_stub(BicopFamily, "BicopFamily"))
+  assert body.startswith("class BicopFamily:")
