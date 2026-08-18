@@ -14,6 +14,10 @@ whose parameters are given at construction is already fitted.
   about one it does not know. SciPy's modern and legacy distributions and
   ``torch.distributions`` are recognized out of the box.
 
+- **Resolution** — :func:`resolve_margins` expands a ``margins=`` argument
+  (an alias, one margin, a sequence, a mapping, or a callable) into one
+  specification per variable.
+
 Custom margins subclass :class:`pyvinecopulib.core.MarginBase`, which needs only
 ``pdf`` and ``cdf``.
 
@@ -25,6 +29,7 @@ all satisfy.
 """
 
 from ._adapters import as_margin, register_margin_adapter
+from ._resolve import resolve_margins
 from .empirical import EmpiricalMargin
 from .kde import Kde1dMargin
 
@@ -32,5 +37,6 @@ __all__ = [
   "EmpiricalMargin",
   "Kde1dMargin",
   "as_margin",
+  "resolve_margins",
   "register_margin_adapter",
 ]

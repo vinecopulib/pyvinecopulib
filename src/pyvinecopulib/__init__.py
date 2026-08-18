@@ -19,6 +19,7 @@ from .core import (
   FitControlsVinecop,
   RVineStructure,
   Vinecop,
+  Vinedist,
 )
 from .utils import to_pseudo_obs
 
@@ -33,6 +34,7 @@ __all__ = [
   "FitControlsVinecop",
   "RVineStructure",
   "Vinecop",
+  "Vinedist",
   "to_pseudo_obs",
   "core",
   "families",

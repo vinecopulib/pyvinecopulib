@@ -12,7 +12,7 @@ __all__ = ["EmpiricalMargin"]
 
 
 class EmpiricalMargin(MarginBase[np.ndarray]):
-  """Rescaled empirical distribution function of the observed sample.
+  r"""Rescaled empirical distribution function of the observed sample.
 
   Fitting a vine copula to :func:`pyvinecopulib.utils.to_pseudo_obs` output is
   the same model as fitting a vine *distribution* with these margins: that
@@ -45,6 +45,12 @@ class EmpiricalMargin(MarginBase[np.ndarray]):
   :func:`~pyvinecopulib.utils.to_pseudo_obs` with ``ties_method="max"``. On a
   sample without ties — the case for continuous data — it agrees with that
   helper's ``"average"`` default exactly.
+
+  Because ``pdf`` is a mass rather than a density, a
+  :class:`~pyvinecopulib.core.Vinedist` built on these margins reports a
+  log-density that differs from its copula's by the constant
+  :math:`-d \log(n + 1)`. Use it to compare models on the same data, not as a
+  density on the original scale.
   """
 
   supports_weights: bool = True
@@ -61,7 +67,20 @@ class EmpiricalMargin(MarginBase[np.ndarray]):
 
   @property
   def var_type(self) -> str:
-    return "d"
+    """Variable type, reported as continuous.
+
+    The empirical distribution is atomic, but the ``n / (n + 1)`` scaling is
+    precisely the device for treating its output as continuous, and that is what
+    fitting a vine copula to pseudo-observations means. Declaring ``"d"`` would
+    instead fit a discrete copula against a left-limit column, which is a
+    different model.
+
+    Returns
+    -------
+    str
+        Always ``"c"``.
+    """
+    return "c"
 
   @property
   def support(self) -> tuple[float, float]:

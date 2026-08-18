@@ -214,6 +214,7 @@ _CLASS_MODULE = {
   "VinecopLike": "pyvinecopulib.core",
   "VinecopBase": "pyvinecopulib.core",
   "Vinecop": "pyvinecopulib.core",
+  "Vinedist": "pyvinecopulib.core",
   "CVineStructure": "pyvinecopulib.core",
   "DVineStructure": "pyvinecopulib.core",
   "RVineStructure": "pyvinecopulib.core",
@@ -339,6 +340,7 @@ DOCSTRING_SUBPACKAGES = {
       "NonSimplifiedContext",
       "MarginLike",
       "MarginBase",
+      "Vinedist",
     ],
     "functions": [],
   },
@@ -366,6 +368,7 @@ DOCSTRING_SUBPACKAGES = {
     "functions": [
       "as_margin",
       "register_margin_adapter",
+      "resolve_margins",
     ],
   },
   "sklearn": {

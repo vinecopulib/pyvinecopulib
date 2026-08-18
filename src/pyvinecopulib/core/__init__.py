@@ -63,6 +63,7 @@ from .context import (
 )
 from .margin_base import MarginBase
 from .protocols import BicopLike, MarginLike, VinecopLike
+from .vinedist import Vinedist
 from .vinecop_base import VinecopBase
 
 __all__ = [
@@ -83,4 +84,5 @@ __all__ = [
   "Vinecop",
   "VinecopBase",
   "VinecopLike",
+  "Vinedist",
 ]
