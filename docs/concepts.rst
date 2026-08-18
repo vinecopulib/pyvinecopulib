@@ -276,12 +276,21 @@ fit-time search space.
 
 Parameter ranges below are the conventional textbook ones; the
 exact bounds the C++ library enforces are visible via
-:meth:`pyvinecopulib.core.Bicop.get_parameters_lower_bounds` and
-:meth:`pyvinecopulib.core.Bicop.get_parameters_upper_bounds`. The
-"Kendall's :math:`\tau`" column lists the closed-form mapping where
-one exists; otherwise :meth:`pyvinecopulib.core.Bicop.parameters_to_tau`
-(and its inverse :meth:`~pyvinecopulib.core.Bicop.tau_to_parameters`)
-implement the numerical conversion.
+:attr:`pyvinecopulib.core.Bicop.parameters_lower_bounds` and
+:attr:`pyvinecopulib.core.Bicop.parameters_upper_bounds`. The
+"Kendall's :math:`\tau`" column says how
+:meth:`pyvinecopulib.core.Bicop.parameters_to_tau` obtains the value:
+in closed form, or by quadrature.
+
+:meth:`~pyvinecopulib.core.Bicop.parameters_to_tau` is available for every
+family. Its inverse :meth:`~pyvinecopulib.core.Bicop.tau_to_parameters` is
+not: it needs :math:`\tau` to determine the parameters completely, which
+holds only for the one-parameter families ``indep``, ``gaussian``,
+``clayton``, ``gumbel``, ``frank`` and ``joe``. In particular it raises for
+``student``, even though ``student`` belongs to
+:data:`pyvinecopulib.families.itau` — that group means "fittable by
+inverting :math:`\tau`", not "invertible here", because :math:`\tau` pins
+the correlation and leaves the degrees of freedom free.
 
 .. list-table::
    :header-rows: 1
@@ -366,7 +375,7 @@ implement the numerical conversion.
      - :math:`\theta \ge 1`, :math:`\delta \ge 1`
      - 0° / 90° / 180° / 270°
      - upper
-     - closed form
+     - by quadrature
    * - BB7
      - :data:`pyvinecopulib.families.bb7`
      - Arch. (2-par)
@@ -374,7 +383,7 @@ implement the numerical conversion.
      - :math:`\theta \ge 1`, :math:`\delta > 0`
      - 0° / 90° / 180° / 270°
      - lower + upper
-     - closed form
+     - by quadrature
    * - BB8
      - :data:`pyvinecopulib.families.bb8`
      - Arch. (2-par)
@@ -382,7 +391,7 @@ implement the numerical conversion.
      - :math:`\theta \ge 1`, :math:`\delta \in (0, 1]`
      - 0° / 90° / 180° / 270°
      - upper
-     - closed form
+     - by quadrature
    * - Tawn
      - :data:`pyvinecopulib.families.tawn`
      - extreme-value
@@ -390,7 +399,7 @@ implement the numerical conversion.
      - bounded; see C++ bounds
      - 0° / 90° / 180° / 270°
      - upper (asymmetric)
-     - via Pickands :math:`A`
+     - by quadrature
    * - TLL
      - :data:`pyvinecopulib.families.tll`
      - nonparametric
@@ -549,6 +558,55 @@ discrete conditioning variable likewise contributes two columns.
 The ``examples/04_discrete_variables.ipynb`` notebook works an example
 end to end, from raw counts to a fitted vine.
 
+Two arguments elsewhere in the API are consequences of the same
+non-uniqueness, and both change what you get rather than only how fast
+you get it:
+
+* ``randomize_discrete`` (on
+  :meth:`pyvinecopulib.core.Vinecop.rosenblatt`, default ``True``)
+  decides what the transform returns at an atom. The conditional
+  distribution there is an interval, not a point, so the transform draws
+  uniformly within :math:`[F(x^-), F(x)]`. That is what makes the output
+  genuinely uniform — the randomized transform is the one whose
+  distributional statement holds — but it also makes the call
+  non-deterministic. Pass ``seeds`` to reproduce it, or
+  ``randomize_discrete=False`` to take the upper endpoint instead and
+  accept output that is not uniform.
+* ``step_wise`` (on the ``Vinecop`` score family: ``scores``,
+  ``gradient``, ``hessian``, ``scores_cov``) selects which likelihood is
+  differentiated. ``True`` differentiates the step-wise (sequential,
+  tree-by-tree) estimator that was actually fitted; ``False``
+  differentiates the joint likelihood. They answer different questions:
+  the step-wise gradient vanishes at the fitted model by construction,
+  the joint one does not. Sandwich standard errors for a sequentially
+  fitted vine want the step-wise form.
+
+
+.. _concepts-serialization:
+
+Saving and loading models
+-------------------------
+
+``Bicop``, ``Vinecop`` and ``RVineStructure`` all serialize the same
+way. ``to_file`` / ``from_file`` write and read a file; ``to_json`` /
+``from_json`` do the same through a string:
+
+.. code-block:: python
+
+   vine.to_file("model.json")             # JSON text
+   vine.to_file("model.cbor")             # binary CBOR
+   reloaded = pv.Vinecop.from_file("model.cbor")
+
+The format follows the filename: a name ending in ``.cbor`` selects
+binary `CBOR <https://cbor.io>`_, anything else JSON. CBOR is smaller
+and faster to parse and is the better choice for large vines; JSON stays
+the default because it is readable and diffable.
+
+All three classes also pickle, which serializes through the JSON form,
+so a fitted model round-trips through anything that speaks pickle
+(``copy.deepcopy``, ``joblib``, a multiprocessing queue). The
+:mod:`pyvinecopulib.sklearn` estimators pickle as ordinary estimators.
+
 
 .. _concepts-structure-selection:
 
@@ -609,8 +667,19 @@ variables' distribution conditional on that point (implemented as a Rosenblatt
 transform of the conditioning variables followed by an inverse Rosenblatt
 transform, so discrete conditioning variables are supported too).
 
-Because conditioning acts on the order *tail*, it is most efficient when the
-conditioning set already sits there. Two tools arrange that:
+The conditioning variables can also be named explicitly, with
+``simulate_conditional(u_cond, conditioning_set=[...])`` — 1-based indices.
+Note that the two forms map ``u_cond``'s columns differently: without the
+argument, column ``i`` is the ``i``-th variable of the order tail; with it,
+column ``i`` is ``conditioning_set[i]``. The same argument is available on
+:meth:`pyvinecopulib.core.Vinecop.rosenblatt` and
+:meth:`~pyvinecopulib.core.Vinecop.inverse_rosenblatt`, which then hold those
+variables fixed rather than the order tail. In every case the vine is
+evaluated through a reoriented view and the model is left unchanged.
+
+Not every set is admissible as a sampling-order tail; when it is not, a
+``RuntimeError`` says so. Conditioning is cheapest when the set already sits at
+the tail, and two tools arrange that:
 
 * :attr:`pyvinecopulib.core.FitControlsVinecop.conditioning_set` — select a vine
   whose order ends with a chosen set of variables (their own optimal sub-vine is
@@ -711,6 +780,18 @@ Nagler & Czado, 2025), which replaces the marginal CDF derivatives in
 user — pass ``var_types=["d", ...]`` to
 :meth:`pyvinecopulib.core.Vinecop.from_data` or set
 ``type="d"`` on :class:`pyvinecopulib.utils.Kde1d`).
+
+A discrete variable needs its left limit :math:`F(x^-)` alongside
+:math:`F(x)`, and there are two ways to supply them. The **expanded** layout is
+``(n, 2d)``: the first :math:`d` columns are :math:`F(x)`, the next :math:`d`
+are :math:`F(x^-)` for the same variables in the same order, with continuous
+columns simply repeated. Its shape does not depend on ``var_types``, which is
+what makes it the easier convention to write against. The **compact** layout is
+``(n, d + k)``: the same first :math:`d` columns, then left limits for the
+:math:`k` discrete variables only, in the order they appear. Both are accepted
+wherever discrete data is; for an all-continuous model they coincide at
+``(n, d)``. The same applies per pair to
+:meth:`pyvinecopulib.core.Bicop.from_data`, with :math:`d = 2`.
 
 
 .. _concepts-extending:
