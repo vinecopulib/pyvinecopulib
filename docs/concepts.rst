@@ -512,6 +512,44 @@ parameters; on ``Vinecop`` these accept an optional per-observation
 ``parameters`` matrix for evaluation off the fitted point.
 
 
+.. _concepts-discrete:
+
+Discrete data
+-------------
+
+Sklar's theorem does not identify a unique copula when a margin has
+atoms, so a discrete variable cannot be summarized by
+:math:`\hat F_j(x)` alone: the estimator also needs the left limit
+:math:`\hat F_j(x^-)`, the value the cdf takes just below the jump.
+Mark which variables are discrete with ``var_types`` — ``"c"`` for
+continuous, ``"d"`` for discrete, one entry per variable — and supply
+the extra column each discrete variable needs.
+
+There are two ways to lay those columns out, and every method taking
+``u`` accepts either:
+
+* **Expanded**, :math:`n \times 2d`: the :math:`d` cdf values, then
+  :math:`d` left-limit values. The left-limit column of a continuous
+  variable is simply equal to its cdf column.
+* **Compact**, :math:`n \times (d + k)`: the :math:`d` cdf values, then
+  one left-limit column per discrete variable, in variable order. With
+  :math:`k` discrete variables out of :math:`d`, this is the expanded
+  layout with the redundant continuous columns dropped.
+
+The two agree exactly — the compact form only omits columns that carry
+no information. For an all-continuous model :math:`k = 0` and both
+collapse to the familiar :math:`n \times d` matrix.
+
+The same rule applies pairwise to :class:`pyvinecopulib.core.Bicop`
+(:math:`n \times 4` expanded, :math:`n \times (2 + k)` compact) and to
+the conditioning values passed to
+:meth:`pyvinecopulib.core.Vinecop.simulate_conditional`, where a
+discrete conditioning variable likewise contributes two columns.
+
+The ``examples/04_discrete_variables.ipynb`` notebook works an example
+end to end, from raw counts to a fitted vine.
+
+
 .. _concepts-structure-selection:
 
 Structure selection

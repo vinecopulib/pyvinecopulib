@@ -34,7 +34,10 @@ inline Bicop bc_from_family(const BicopFamily& family, int rotation,
 }
 
 // Factory function to create a Bicop from data, controls, and variable types
-inline Bicop bc_from_data(const Eigen::Matrix<double, Eigen::Dynamic, 2>& data,
+// `data` is dynamically sized, not statically two-column: a discrete variable
+// needs a left-limit column, so the accepted shapes are `n x 2`, `n x (2 + k)`
+// and `n x 4` (vinecopulib#729).
+inline Bicop bc_from_data(const Eigen::MatrixXd& data,
                           const FitControlsBicop& controls = FitControlsBicop(),
                           const std::vector<std::string>& var_types = {"c",
                                                                        "c"}) {
@@ -287,18 +290,15 @@ Bicop
             if (parameters) return self.loglik(u, *parameters, num_threads);
             return self.loglik(u);
           },
-          "u"_a = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
-          "parameters"_a = nb::none(), "num_threads"_a = static_cast<size_t>(1),
-          loglik_doc.c_str(), nb::call_guard<nb::gil_scoped_release>())
+          "u"_a = Eigen::MatrixXd(), "parameters"_a = nb::none(),
+          "num_threads"_a = static_cast<size_t>(1), loglik_doc.c_str(),
+          nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("nobs", &Bicop::get_nobs, bicop_doc.get_nobs.doc)
-      .def("aic", &Bicop::aic,
-           "u"_a = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
-           bicop_doc.aic.doc, nb::call_guard<nb::gil_scoped_release>())
-      .def("bic", &Bicop::bic,
-           "u"_a = Eigen::Matrix<double, Eigen::Dynamic, 2>(),
-           bicop_doc.bic.doc, nb::call_guard<nb::gil_scoped_release>())
-      .def("mbic", &Bicop::mbic,
-           "u"_a = Eigen::Matrix<double, Eigen::Dynamic, 2>(), "psi0"_a = 0.9,
+      .def("aic", &Bicop::aic, "u"_a = Eigen::MatrixXd(), bicop_doc.aic.doc,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("bic", &Bicop::bic, "u"_a = Eigen::MatrixXd(), bicop_doc.bic.doc,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("mbic", &Bicop::mbic, "u"_a = Eigen::MatrixXd(), "psi0"_a = 0.9,
            bicop_doc.mbic.doc, nb::call_guard<nb::gil_scoped_release>())
       .def(
           "__repr__",

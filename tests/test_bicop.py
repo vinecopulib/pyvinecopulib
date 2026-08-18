@@ -796,3 +796,57 @@ def test_simulate_positional_signature_is_unchanged() -> None:
   # meaning what it meant.
   cop = pv.Bicop.from_family(pv.families.gaussian, parameters=np.array([[0.5]]))
   assert cop.simulate(12, False, [1, 2]).shape == (12, 2)
+
+
+def _discrete_pair(n: int = 500, seed: int = 3):
+  """A (continuous, discrete) pair as F(x) and the discrete left limit."""
+  rng = np.random.default_rng(seed)
+  z = rng.normal(size=(n, 2))
+  u1 = pv.to_pseudo_obs(z[:, [0]])[:, 0]
+  counts = np.floor(np.abs(z[:, 1]) * 3).astype(int)
+  hi = (counts + 1) / (counts.max() + 2)
+  lo = counts / (counts.max() + 2)
+  return u1, hi, lo
+
+
+def test_from_data_accepts_the_compact_discrete_layout() -> None:
+  # `from_data` took a statically two-column matrix, so a discrete pair — which
+  # needs a left-limit column — could not be passed at all (vinecopulib#729).
+  u1, hi, lo = _discrete_pair()
+  compact = np.column_stack([u1, hi, lo])
+  cop = pv.Bicop.from_data(compact, var_types=["c", "d"])
+  assert cop.var_types == ["c", "d"]
+
+
+def test_from_data_discrete_layouts_agree() -> None:
+  # Expanded (n, 4) and compact (n, 2 + k) describe the same data.
+  u1, hi, lo = _discrete_pair()
+  compact = np.column_stack([u1, hi, lo])
+  expanded = np.column_stack([u1, hi, u1, lo])
+
+  controls = pv.FitControlsBicop(family_set=[pv.families.gaussian])
+  a = pv.Bicop.from_data(compact, controls=controls, var_types=["c", "d"])
+  b = pv.Bicop.from_data(expanded, controls=controls, var_types=["c", "d"])
+  np.testing.assert_allclose(a.parameters, b.parameters, rtol=1e-12)
+
+
+def test_from_data_still_accepts_plain_continuous_input() -> None:
+  # Widening the accepted type must not change how ordinary input converts.
+  # nanobind's ndarray caster takes arrays, not sequences, on every
+  # Eigen-typed argument in this package; `from_data` is no exception.
+  rng = np.random.default_rng(0)
+  u = pv.to_pseudo_obs(rng.normal(size=(200, 2)))
+  assert isinstance(pv.Bicop.from_data(u), pv.Bicop)
+  assert isinstance(pv.Bicop.from_data(np.asarray(u, order="C")), pv.Bicop)
+  with pytest.raises(TypeError):
+    pv.Bicop.from_data(u.tolist())
+
+
+def test_loglik_rejects_a_wrong_column_count() -> None:
+  # vinecopulib#729 made `loglik` validate the column count instead of
+  # reading past the data.
+  rng = np.random.default_rng(1)
+  u = pv.to_pseudo_obs(rng.normal(size=(100, 2)))
+  cop = pv.Bicop.from_data(u)
+  with pytest.raises(RuntimeError):
+    cop.loglik(np.column_stack([u, u[:, [0]], u[:, [1]], u[:, [0]]]))
