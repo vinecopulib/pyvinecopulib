@@ -101,6 +101,8 @@
 - Fit the `{0, 1}` dummies of an expanded unordered categorical on `[0, 1]` in the sklearn estimators. Their bounds are known exactly, but were never passed, so the kernel-density grid was padded past the data and put mass on values that cannot occur.
 - `Vinedist.cdf` hands the copula the full `(n, d + k)` layout. A distribution function needs only the marginal `F` values and the copula reads only those, but it validates the whole layout, so a margin with atoms made `cdf` raise.
 - Reject complex `X` / `y` in the sklearn estimators rather than casting each column to float and dropping the imaginary part in silence.
+- Pin the RNG of the discrete `ParametricMargin` fitter. `scipy.stats.fit` optimizes with an unseeded `differential_evolution`, so the same counts gave a different parameter vector -- and a different `MarginSelector.report_` -- on every call (#287).
+- `EmpiricalMargin.simulate` works instead of raising `NotImplementedError`, resampling observed values as its documentation already described. Only the standalone call was affected; `Vinedist.simulate` goes through `marginal_icdf` (#287).
 
 ### Dependency changes
 

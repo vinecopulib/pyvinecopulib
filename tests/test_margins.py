@@ -54,6 +54,18 @@ def test_empirical_margin_reproduces_to_pseudo_obs(sample: np.ndarray) -> None:
   np.testing.assert_array_equal(got, want)
 
 
+def test_empirical_margin_simulates_by_resampling(
+  sample: np.ndarray,
+) -> None:
+  """`icdf` is a step function, so draws are observed values and nothing else."""
+  m = EmpiricalMargin().fit(sample)
+  draws = m.simulate(64, seeds=[7])
+  assert draws.shape == (64,)
+  assert np.isin(draws, np.unique(sample)).all()
+  np.testing.assert_array_equal(draws, m.simulate(64, seeds=[7]))
+  assert not np.array_equal(draws, m.simulate(64, seeds=[8]))
+
+
 def test_empirical_margin_saturates_off_the_boundary(
   sample: np.ndarray,
 ) -> None:

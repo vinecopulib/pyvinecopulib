@@ -115,6 +115,38 @@ def _stats() -> Any:
   return stats
 
 
+#: Seed pinned into the discrete fitter. ``scipy.stats.fit`` optimizes with
+#: ``differential_evolution``, which is stochastic, so an unseeded call returns a
+#: different parameter vector -- and a different ``report_`` row -- every time it
+#: runs on the same data.
+_DISCRETE_FIT_SEED = 5489
+
+
+def _seeded_optimizer(objective: Any, **kwargs: Any) -> Any:
+  """Optimize as ``scipy.stats.fit`` does, with the RNG pinned.
+
+  Parameters
+  ----------
+  objective : callable
+      The negative log-likelihood, as ``scipy.stats.fit`` builds it.
+  **kwargs
+      The remaining arguments ``scipy.stats.fit`` supplies, ``bounds`` and
+      ``integrality``.
+
+  Returns
+  -------
+  scipy.optimize.OptimizeResult
+      The optimizer result, carrying ``x`` and ``fun``.
+  """
+  import importlib
+  import inspect
+
+  de = importlib.import_module("scipy.optimize").differential_evolution
+  # `seed` was renamed to `rng` across the supported SciPy range.
+  key = "rng" if "rng" in inspect.signature(de).parameters else "seed"
+  return de(objective, **{key: _DISCRETE_FIT_SEED}, **kwargs)
+
+
 def _curated_margin(
   family: str,
   partition: str,
@@ -522,7 +554,9 @@ class ParametricMargin(MarginBase[np.ndarray]):
         search[name] = (value, value)
       else:
         search[name] = self._bounds[name]
-    result = _stats().fit(self._dist, data, bounds=search)
+    result = _stats().fit(
+      self._dist, data, bounds=search, optimizer=_seeded_optimizer
+    )
     return tuple(float(v) for v in result.params)
 
   # --- evaluation ---------------------------------------------------------- #

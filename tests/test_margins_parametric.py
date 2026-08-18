@@ -90,6 +90,20 @@ def test_parametric_margin_logpdf_beats_log_of_pdf() -> None:
     assert not np.isfinite(np.log(m.pdf(far))).all()
 
 
+def test_discrete_fit_is_reproducible(count_sample: np.ndarray) -> None:
+  """`scipy.stats.fit` optimizes stochastically; the seed makes it repeatable.
+
+  Without a pinned RNG the same counts give a different parameter vector on
+  every call, which makes a `MarginSelector` count-group `report_` differ run
+  to run.
+  """
+  fits = [
+    ParametricMargin("nbinom").fit(count_sample).parameters for _ in range(3)
+  ]
+  for other in fits[1:]:
+    np.testing.assert_array_equal(fits[0], other)
+
+
 def test_parametric_margin_pins_the_discrete_lattice_offset(
   count_sample: np.ndarray,
 ) -> None:

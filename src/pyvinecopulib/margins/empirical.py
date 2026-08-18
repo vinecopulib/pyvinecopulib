@@ -203,6 +203,24 @@ class EmpiricalMargin(MarginBase[np.ndarray]):
     idx = np.searchsorted(self._cum, targets, side="left")
     return values[np.clip(idx, 0, values.size - 1)]
 
+  def _simulate_uniform(self, n: int, seeds: list[int]) -> np.ndarray:
+    """Draw ``n`` uniforms for the inherited ``simulate``.
+
+    Parameters
+    ----------
+    n : int
+        Number of draws.
+    seeds : list of int
+        RNG seeds.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Uniforms in ``(0, 1)``.
+    """
+    rng = np.random.default_rng(seeds if seeds else None)
+    return rng.uniform(size=n)
+
   def __repr__(self) -> str:
     state = f"n={int(self._total)}" if self.is_fitted else "unfitted"
     return f"EmpiricalMargin({state})"
