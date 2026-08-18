@@ -48,7 +48,7 @@ class GaussianBicop(BicopBase[Any]):
   pin the C1 order). With ``x=None`` the correlation is ``base_rho``. Capping at
   ``rho_max < 1`` keeps ``rho`` away from ``±1`` (where the Gaussian copula
   degenerates and the cascade's ``[1e-10, 1-1e-10]`` clamp would break the
-  round-trip); normalising by the column count keeps it bounded across the
+  round-trip); normalizing by the column count keeps it bounded across the
   varying ``x_e`` widths of a vine. Array-backend-agnostic (numpy / torch); has
   closed-form ``hfunc`` / ``hinv`` so the vine round-trip is exact.
   """
@@ -75,7 +75,7 @@ class GaussianBicop(BicopBase[Any]):
     xa: Any = x
     k = xa.shape[1]
     # Distinct per-column weights -> the link is sensitive to the x column
-    # order (pins the C1 contract), unlike a plain sum. Normalise by k and cap
+    # order (pins the C1 contract), unlike a plain sum. Normalize by k and cap
     # at rho_max so rho stays well away from +-1 across varying x_e widths.
     weights = xp.arange(1, k + 1, dtype=u.dtype, device=u.device)
     z = self._scale * xp.sum(xa * weights, axis=-1) / k

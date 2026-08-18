@@ -145,7 +145,7 @@ jobs:
           # the host compilers are never used -- and that apt call has hung the
           # job repeatedly.
           update_compilers_ubuntu: "false"
-      - name: Clean build artefacts
+      - name: Clean build artifacts
         shell: bash
         run: |
           rm -rf build wheelhouse
@@ -409,7 +409,7 @@ jobs:
     # Label-only. The job pushes a commit onto the pull request's head branch,
     # which rewrites the base of every pull request stacked on it, so it must
     # never fire on a branch the author did not opt in. Push a commit after
-    # labelling — the trigger doesn't include `labeled`.
+    # labeling — the trigger doesn't include `labeled`.
     name: Regenerate notebook outputs
     needs: build
     if: |

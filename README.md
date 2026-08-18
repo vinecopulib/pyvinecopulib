@@ -9,7 +9,7 @@
 
 ### What are vine copulas?
 
-Sklar's theorem factorises every joint distribution into one-dimensional
+Sklar's theorem factorizes every joint distribution into one-dimensional
 **marginals** and a **copula** that carries the dependence between
 variables. A vine copula decomposes that copula into bivariate building
 blocks — **pair copulas** — arranged on a sequence of trees called an

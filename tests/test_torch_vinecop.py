@@ -581,7 +581,7 @@ def test_rosenblatt_inverse_rosenblatt_accept_num_threads():
   U = rng.uniform(0.001, 0.999, (200, 3))
   tv = TorchVinecop.from_vinecop(_fit_tll_vine(U))
   u_t = torch.from_numpy(U[:5])
-  # Just confirm the kwarg is accepted; behaviour is identical.
+  # Just confirm the kwarg is accepted; behavior is identical.
   r1 = tv.rosenblatt(u_t, num_threads=1)
   r4 = tv.rosenblatt(u_t, num_threads=4)
   assert torch.allclose(r1, r4)

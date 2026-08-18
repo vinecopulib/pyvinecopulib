@@ -101,7 +101,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     *,
     context: Optional[ConditioningContext] = None,
   ) -> None:
-    # Initialise nn.Module explicitly: TorchVinecop also subclasses VinecopBase
+    # Initialize nn.Module explicitly: TorchVinecop also subclasses VinecopBase
     # (a Protocol-derived ABC), whose __init__ chain would otherwise shadow
     # nn.Module's under super().
     torch.nn.Module.__init__(self)
@@ -124,7 +124,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     self.pair_copulas = torch.nn.ModuleList(
       [torch.nn.ModuleList(list(row)) for row in pair_copulas]
     )
-    # `self._batched` (lazy grid-batched state) is initialised to None by
+    # `self._batched` (lazy grid-batched state) is initialized to None by
     # `_bind_vine`; `_apply` clears it so device moves re-bake it.
 
   # --------------------------------------------------------------------- #
@@ -266,7 +266,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     When ``structure`` is ``None`` the R-vine structure and its pair copulas
     are selected and fit natively in torch by
     :meth:`~pyvinecopulib.core.VinecopBase.select` — the array-agnostic
-    analogue of :class:`~pyvinecopulib.core.Vinecop`'s Dissmann / Wilson
+    analog of :class:`~pyvinecopulib.core.Vinecop`'s Dissmann / Wilson
     selection (edge weights use Kendall's tau via ``wdm``).
 
     When a ``structure`` is given it is fixed and the pair copulas are fit on

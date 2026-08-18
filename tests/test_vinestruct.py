@@ -15,7 +15,7 @@ def _trees_from_structure(
 
   Mirrors the upstream ``RVineTrees(order, struct_array)`` reader: edge
   ``(t, e)`` is ``(order[e], struct_array(t, e), {struct_array(0..t-1, e)})``,
-  with labels read in labelled (non-natural) order.
+  with labels read in labeled (non-natural) order.
   """
   d = int(s.dim)
   trunc_lvl = int(s.trunc_lvl)

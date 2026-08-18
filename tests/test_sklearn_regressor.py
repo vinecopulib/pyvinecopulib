@@ -168,7 +168,7 @@ def test_parameter_variations(regression_setup, use_grid):
 
 
 def test_normalize_weights_parameter(regression_setup):
-  """``normalize_weights`` parameter toggles row-wise weight normalisation."""
+  """``normalize_weights`` parameter toggles row-wise weight normalization."""
   X_train, X_test, y_train, _, _, _ = regression_setup
 
   reg_default = VineRegressor(mean=True).fit(X_train, y_train)
@@ -179,8 +179,8 @@ def test_normalize_weights_parameter(regression_setup):
   )
   pred_raw = reg_raw.predict(X_test)
 
-  # With normalised weights, rows sum to 1 and the prediction is a
-  # convex combination of training responses; without normalisation it
+  # With normalized weights, rows sum to 1 and the prediction is a
+  # convex combination of training responses; without normalization it
   # picks up the absolute scale of the copula density, so outputs
   # generally differ.
   assert not np.allclose(pred_default, pred_raw)

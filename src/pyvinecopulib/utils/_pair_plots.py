@@ -38,7 +38,7 @@ def pairs_copula_data(
       Figure title.
   cols : list of str or None, default=None
       Per-column labels (length ``d``). When `None`, columns are
-      labelled ``"u1"`` … ``"ud"``.
+      labeled ``"u1"`` … ``"ud"``.
   grid_size : int, default=50
       Resolution of the contour grid per dimension (lower panels).
       Must be positive.

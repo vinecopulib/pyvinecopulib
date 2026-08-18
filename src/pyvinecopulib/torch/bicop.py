@@ -98,7 +98,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> None:
-    # Initialise nn.Module explicitly: TorchBicop also subclasses BicopBase
+    # Initialize nn.Module explicitly: TorchBicop also subclasses BicopBase
     # (a Protocol-derived ABC), whose __init__ chain would otherwise shadow
     # nn.Module's under super().
     torch.nn.Module.__init__(self)
@@ -172,7 +172,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
         ``cop.parameters``; the grid coordinates come from
         ``InterpolationGrid2D.make_grid_points`` with the canonical
         Phi-spaced normal grid ``Bicop`` uses. The grid is
-        already normalised, so renormalisation is skipped (parity
+        already normalized, so renormalization is skipped (parity
         is typically ``< 1e-12`` per cell on fresh fits).
     cache_integrals : bool, default=True
         See ``TorchBicop.__init__``.

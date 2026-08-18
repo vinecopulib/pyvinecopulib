@@ -233,7 +233,7 @@ class VineDensity(VineBase, DensityMixin):
 VineDensity.__doc__ = f"""Vine-copula based density estimator.
 
 A scikit-learn-compatible non-parametric joint density estimator.
-The joint density is factorised into one-dimensional marginals
+The joint density is factorized into one-dimensional marginals
 (estimated with kernel density) and a vine copula capturing the
 dependence structure. After fitting, `pdf` / `score_samples`
 evaluate the density at new points and `sample` draws from the

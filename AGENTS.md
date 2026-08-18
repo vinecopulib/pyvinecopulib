@@ -411,13 +411,15 @@ For any behavior change:
 - **American English** in code, comments, documentation, commit messages,
   and changelog entries: *behavior*, *normalize*, *serialize*, *finalize*,
   *center*, *modeling*, *honored*, *color*. There is no legacy exemption.
-  To check a file:
+  `codespell` enforces it in `make lint` and in pre-commit, using its
+  `en-GB_to_en-US` dictionary, so the rule covers every British spelling
+  rather than a list this repository happened to drift on. It catches
+  ordinary typos in the same pass. Configuration -- the skip list for
+  generated and vendored files, and the domain vocabulary it would otherwise
+  flag -- lives in `[tool.codespell]` in `pyproject.toml`; add a word there
+  only when it is genuinely a term of art, never to silence a real
+  misspelling.
 
-  ```bash
-  grep -niE 'modelling|behaviour|parameteris|organis|normalis|serialis|honour|artefact|optimis|finalis' <path>
-  ```
-
-  Do not add a spell linter: it would flag `lib/` and the vendored headers.
 - **Write for the caller, not the implementer.** A docstring says what a
   method does, what its arguments mean, and what it returns — never how it
   is computed. The algorithm it delegates to, which helper it calls, why a

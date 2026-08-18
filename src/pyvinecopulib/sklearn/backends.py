@@ -174,7 +174,7 @@ class VinecopBackend(_VinecopBackendBase):
   """Default backend. Wraps ``Vinecop``.
 
   Stores constructor arguments verbatim per the scikit-learn developer guide;
-  the default ``FitControlsVinecop`` is materialised lazily in `fit_vine` when
+  the default ``FitControlsVinecop`` is materialized lazily in `fit_vine` when
   ``controls is None``.
 
   Parameters
@@ -243,7 +243,7 @@ class TorchVinecopBackend(_VinecopBackendBase):
   :class:`VinecopBackend` is generally faster on CPU for the same problem.
 
   Constructing this class imports torch — the explicit opt-in signal that
-  PyTorch is required. The default ``FitControlsTorchVinecop`` is materialised
+  PyTorch is required. The default ``FitControlsTorchVinecop`` is materialized
   lazily at fit time.
 
   Parameters

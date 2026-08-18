@@ -158,8 +158,8 @@ def vinecop_plot(
   else:
     pass
 
-  col = 0  # initialisation
-  row = 0  # initialisation
+  col = 0  # initialization
+  row = 0  # initialization
   for t in tree:
     ax[row, col].set_title("Tree {}".format(t))
     ax[row, col].margins(0.2)

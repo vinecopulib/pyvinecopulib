@@ -577,7 +577,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       # One fused lookup yields pdf + both h-functions (shared cell search).
       pdf_e, h1_e, h2_e = lvl.pdf_h1_h2(bv.grid_points, u_e)
       # Product over the level's edges (axis 0), then into the running product
-      # (the batched analogue of _pdf's per-edge cwiseProduct).
+      # (the batched analog of _pdf's per-edge cwiseProduct).
       pdf = pdf * xp.prod(pdf_e, axis=0)
       # Overwrite the next-tree columns flagged by needs_h{1,2} (mirrors _pdf's
       # gated per-edge writes).
@@ -996,7 +996,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   ) -> list[list[BicopLike]]:
     """Fit pair copulas tree-by-tree along a fixed structure (returns them).
 
-    The array-agnostic (NumPy or PyTorch) analogue of
+    The array-agnostic (NumPy or PyTorch) analog of
     :meth:`~pyvinecopulib.core.Vinecop.fit`, with the pair-copula fit supplied
     by the ``fit_edge`` callback. It differs in one way: rather than mutating a
     vine in place (as :meth:`~pyvinecopulib.core.Vinecop.fit` does), it
@@ -1102,7 +1102,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   ) -> tuple[RVineStructure, list[list[BicopLike[ArrayT]]]]:
     """Select an R-vine structure from data (array-agnostic Dissmann).
 
-    The array-agnostic (NumPy or PyTorch) analogue of
+    The array-agnostic (NumPy or PyTorch) analog of
     :meth:`~pyvinecopulib.core.Vinecop.select`, with the pair-copula fit
     supplied by the ``fit_edge`` callback. It differs in one way: rather than
     mutating a vine in place (as :meth:`~pyvinecopulib.core.Vinecop.select`

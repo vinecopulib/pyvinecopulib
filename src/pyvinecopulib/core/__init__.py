@@ -1,7 +1,7 @@
 """Core copula classes.
 
 The core API exposes the bivariate copula model (:class:`Bicop`), the
-vine copula model (:class:`Vinecop`), the three flavours of regular
+vine copula model (:class:`Vinecop`), the three flavors of regular
 vine structure used to describe how pair-copulas compose
 (:class:`RVineStructure`, :class:`CVineStructure`,
 :class:`DVineStructure`), and the fit-control objects that carry the
@@ -35,11 +35,11 @@ Notes
   entirely.
 - *C-vine / D-vine special cases* — :class:`CVineStructure` and
   :class:`DVineStructure` are the path-shaped and star-shaped
-  specialisations of :class:`RVineStructure` and can be passed
+  specializations of :class:`RVineStructure` and can be passed
   anywhere an R-vine is accepted.
 
 The :doc:`concepts page </concepts>` is a primer with formulas, the
-:ref:`pair-copula construction <concepts-pcc>` factorisation,
+:ref:`pair-copula construction <concepts-pcc>` factorization,
 :ref:`available families <concepts-families>`, the
 :ref:`two-step estimator <concepts-estimation>`, and
 :ref:`structure selection <concepts-structure-selection>`.

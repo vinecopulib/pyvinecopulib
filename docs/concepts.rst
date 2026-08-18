@@ -19,7 +19,7 @@ Sklar's theorem and pseudo-observations
 
 A *copula* is a multivariate distribution with uniform-:math:`[0, 1]`
 marginals. By **Sklar's theorem** (Sklar, 1959), every joint
-distribution :math:`F` on :math:`\mathbb{R}^d` factorises as
+distribution :math:`F` on :math:`\mathbb{R}^d` factorizes as
 
 .. math::
 
@@ -28,7 +28,7 @@ distribution :math:`F` on :math:`\mathbb{R}^d` factorises as
 where :math:`F_1, \ldots, F_d` are the **marginal CDFs** and
 :math:`C : [0, 1]^d \to [0, 1]` is the copula. When the marginals
 are continuous :math:`C` is unique. Differentiating both sides gives
-the corresponding density factorisation
+the corresponding density factorization
 
 .. math::
 
@@ -155,7 +155,7 @@ the conditional dependence between :math:`U_{j_e}` and
 
 In pyvinecopulib the structure object is
 :class:`pyvinecopulib.core.RVineStructure`, with the two well-known
-specialisations
+specializations
 
 * :class:`pyvinecopulib.core.DVineStructure` — every tree is a
   path; convenient for ordered-conditioning regression.
@@ -173,7 +173,7 @@ random (Joe, 2011) — the basis of the
 Pair-copula construction
 ------------------------
 
-With the structure fixed, the vine-copula density factorises as
+With the structure fixed, the vine-copula density factorizes as
 
 .. math::
 
@@ -216,7 +216,7 @@ with the quasi-random uniforms produced by
 :func:`~pyvinecopulib.utils.ghalton` sequences). Increase ``N`` to
 trade compute for accuracy.
 
-The same factorisation backs the PyTorch port
+The same factorization backs the PyTorch port
 :class:`pyvinecopulib.torch.TorchVinecop` (every pair copula is a
 :class:`pyvinecopulib.torch.TorchBicop`); its cascade matches the C++
 evaluator byte-for-byte and additionally offers a ``batched=True``
@@ -410,7 +410,7 @@ the correlation and leaves the degrees of freedom free.
      - rank-based
 
 The non-elliptical, non-radially-symmetric parametric families are
-labelled with a *rotation* in
+labeled with a *rotation* in
 :math:`\{0°, 90°, 180°, 270°\}`; rotation 0° is the base form
 (positive dependence, lower-tail-heavy for Clayton, upper-tail-heavy
 for Gumbel / Joe, …), 180° is the *survival* copula (covers the
@@ -481,7 +481,7 @@ family. Three regimes are available via
 :class:`pyvinecopulib.core.FitControlsBicop`:
 
 * **Maximum likelihood** (``parametric_method="mle"``) — the
-  default for parametric families; numerically optimises the
+  default for parametric families; numerically optimizes the
   per-edge log-likelihood under the family's parameter
   constraints.
 * **Kendall's :math:`\tau` inversion**

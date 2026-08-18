@@ -33,7 +33,7 @@ inline void init_bicop_fit_controls(nb::module_& module) {
           "preselect_families"_a = true, "allow_rotations"_a = true,
           "num_threads"_a = 1, nb::call_guard<nb::gil_scoped_release>())
       /*      .def(nb::init<std::string>(), */
-      //      "creates default controls except for the parameteric method.",
+      //      "creates default controls except for the parametric method.",
       //      "parametric_method"_a)
       // .def(nb::init<std::string, double>(),
       //      "creates default controls except for the nonparametric method.",
