@@ -38,7 +38,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
@@ -121,7 +121,7 @@ jobs:
         with:
           python-version: 3.11
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Install C++ dependencies
@@ -199,7 +199,7 @@ jobs:
 
     steps:
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Download cibw artifacts
@@ -241,7 +241,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Install Graphviz + Pandoc
@@ -311,7 +311,7 @@ jobs:
         with:
           python-version: ${{ steps.pyver.outputs.version }}
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
@@ -431,7 +431,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
@@ -511,7 +511,7 @@ jobs:
         with:
           python-version: 3.11
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
@@ -568,7 +568,7 @@ jobs:
         if: ${{ startsWith(github.event.ref, 'refs/tags') }}
         run: python3 scripts/check_version.py --released --tag "$GITHUB_REF_NAME"
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Download cibw artifacts
