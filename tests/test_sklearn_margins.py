@@ -286,7 +286,7 @@ def test_the_response_margin_follows_a_broadcast_specification(
 ) -> None:
   """An alias covers the response too; a per-column sequence does not."""
   X, y, _, _ = regression_data
-  broadcast = VineRegressor(margins="empirical", use_grid=False).fit(X, y)
+  broadcast = VineRegressor(margins="empirical").fit(X, y)
   assert isinstance(broadcast.distribution_.margins[0], EmpiricalMargin)
 
   per_column = VineRegressor(
@@ -294,15 +294,6 @@ def test_the_response_margin_follows_a_broadcast_specification(
   ).fit(X, y)
   assert isinstance(per_column.distribution_.margins[0], Kde1dMargin)
   assert isinstance(per_column.distribution_.margins[1], EmpiricalMargin)
-
-
-def test_use_grid_needs_a_kernel_density_response(
-  regression_data: tuple[np.ndarray, np.ndarray, np.ndarray, float],
-) -> None:
-  """The quadrature nodes come off the response margin's grid, so say so."""
-  X, y, _, _ = regression_data
-  with pytest.raises(ValueError, match="use_grid=True"):
-    VineRegressor(margins="empirical").fit(X, y)
 
 
 def test_a_discrete_response_margin_is_refused(

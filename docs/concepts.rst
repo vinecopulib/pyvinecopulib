@@ -719,22 +719,31 @@ with :math:`\psi_\beta(y) = y - \beta` recovering the
 conditional mean :math:`\beta(\mathbf x) = \mathbb E[Y \mid \mathbf X = \mathbf x]`
 and :math:`\psi_\beta(y) = \mathbb 1\{y < \beta(\mathbf x)\} - \tau`
 recovering the conditional :math:`\tau`-quantile. In practice the
-integral is replaced by a weighted sum over a grid
-:math:`\{y_1, \ldots, y_G\}`:
+integral is taken on the probability scale, substituting
+:math:`p = \hat F_Y(y)`, and replaced by a weighted sum over a
+fixed grid of levels :math:`\{p_1, \ldots, p_G\} \subset (0, 1)`:
 
 .. math::
 
-   \sum_{g = 1}^G \psi_\beta(y_g) \,
-   \hat f_Y(y_g) \,
+   \sum_{g = 1}^G
+   \psi_\beta\!\bigl(\hat F_Y^{-1}(p_g)\bigr) \,
    \hat c_{\mathcal V, \mathcal D}\!\bigl(
-   \hat F_Y(\mathbf x), \, \hat F_Y(y_g)
-   \bigr)
+   p_g, \, \hat F_{\mathbf X}(\mathbf x)
+   \bigr) \, \Delta_g
    \;\approx\; 0,
 
-which :class:`pyvinecopulib.sklearn.VineRegressor` solves
+with :math:`\Delta_g` the spacing of the nodes. The substitution
+cancels the marginal density :math:`\hat f_Y` that the
+response-scale form of the same sum carries, so the rule asks the
+response margin for nothing but its inverse CDF and places every
+node inside its support by construction.
+
+:class:`pyvinecopulib.sklearn.VineRegressor` solves this
 numerically. Pass the quantile levels you want via the
 ``quantiles=`` constructor argument; the predicted conditional
-mean is always returned when ``mean=True``. Batching over test
+mean is always returned when ``mean=True``. The node count is
+``n_nodes=``, and ``use_grid=False`` swaps the quadrature for the
+exact weighted sum over the training responses. Batching over test
 rows is controlled by ``batch_size=``.
 
 
