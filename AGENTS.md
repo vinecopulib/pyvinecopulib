@@ -4,11 +4,14 @@ Normative engineering spec for contributors and coding agents working on
 this repository: scope, stability tiers, module boundaries, conventions,
 and where to look for what.
 
-For the **dev-side workflow** (environment setup, Makefile, pre-commit,
-CI, release flow) see [CONTRIBUTING.md](CONTRIBUTING.md); for the
-**user-facing pitch** and install instructions see [README.md](README.md).
-This file does not duplicate those — it concentrates on engineering
-invariants that survive across PRs.
+For the **mechanics** of the dev workflow (environment setup, Makefile
+targets, pre-commit, the CI job graph) see
+[CONTRIBUTING.md](CONTRIBUTING.md); for the **user-facing pitch** and
+install instructions see [README.md](README.md); for the
+release-by-release history see [CHANGELOG.md](CHANGELOG.md). This file does
+not duplicate those — it holds the engineering invariants that survive
+across pull requests, including the policy half of the branching and
+release model.
 
 ## Project overview
 
@@ -29,7 +32,7 @@ nanobind extension (`pyvinecopulib_ext.cpp`) and adds Python-only
 extensions on top:
 
 1. `pyvinecopulib.core`, `pyvinecopulib.families`, `pyvinecopulib.utils`
-   — re-exports of the bound C++ surface, organised by topic; `core`
+   — re-exports of the bound C++ surface, organized by topic; `core`
    additionally ships a backend-neutral pair-copula / vine abstraction
    layer (`BicopLike` / `VinecopLike` protocols, `BicopBase` /
    `VinecopBase` canonical bases, `ConditioningContext` policies) that
@@ -44,23 +47,23 @@ extensions on top:
 Three design principles inform the rest of this file:
 
 - **The C++ libraries are upstream.** `lib/vinecopulib`, `lib/wdm`, and
-  `lib/kde1d` are git submodules. Behaviour changes belong upstream;
+  `lib/kde1d` are git submodules. Behavior changes belong upstream;
   this repo bumps the submodule pin and adjusts the bindings.
-- **Generated files are build artefacts.** `src/include/docstr.hpp`
+- **Generated files are build artifacts.** `src/include/docstr.hpp`
   (libclang-extracted C++ docstrings) and every `.pyi` stub under
   `src/pyvinecopulib/**/__init__.pyi` are gitignored. The build is the
   single source of truth — do not hand-edit, do not commit.
 - **Code is quantitatively sensitive.** Pseudo-observation transforms,
-  h-functions, Rosenblatt cascades, family parameterisations,
+  h-functions, Rosenblatt cascades, family parameterizations,
   pickling round-trips, and TLL grids all encode mathematically
-  precise behaviour. Small "obvious-looking" changes can silently
+  precise behavior. Small "obvious-looking" changes can silently
   break copula identities. Treat numerical paths as
   correctness-critical and prefer round-trip / parity tests over
   structural ones.
 
 ### Stability tiers
 
-Different subpackages have different change policies. Honour the tier
+Different subpackages have different change policies. Honor the tier
 when proposing API changes:
 
 | Surface | Tier | Policy |
@@ -68,27 +71,78 @@ when proposing API changes:
 | `pyvinecopulib.core`, `pyvinecopulib.families`, `pyvinecopulib.utils`, top-level `pyvinecopulib` (core class re-exports) | **Stable-ish** | Solid user base. Prefer deprecation aliases over breaks; document migrations in `CHANGELOG.md`. PR #207 is the model: the reorg kept old import paths working via `_deprecations.py` + `DeprecationWarning`. Breaks are allowed (e.g. the pybind11→nanobind migration; the #207 cleanup) but must be intentional, documented, and worth the churn. |
 | `pyvinecopulib.sklearn` | **Active development** | API may change in breaking ways between minor releases. The latest break is the `#218` public backend system (estimators now take a single `backend=` instead of loose `controls=`/`structure=`/`seed=` kwargs). |
 | `pyvinecopulib.torch` | **Active development** | Same status. Defaults are still being tuned (cf. `990f997` device-aware `batched`, `cache_integrals=True`); the torch↔C++ cascade parity is a hard guarantee, but the `FitControlsTorchVinecop` surface and `TorchVinecop` method signatures may still shift. |
-| `pyvinecopulib._python_helpers`, `pyvinecopulib._deprecations` | **Internal** | Underscore-prefixed. Not part of any contract; rename / restructure freely. `_deprecations.py` itself is slated for removal on the next major release. |
+| `pyvinecopulib._python_helpers`, `pyvinecopulib._deprecations` | **Internal** | Underscore-prefixed. Not part of any contract; rename / restructure freely. `_deprecations.py` itself is slated for removal in 2.0. |
 
-The "Solid user base" claim refers to the released `main` branch (see
-the [GitHub project](https://github.com/vinecopulib/pyvinecopulib) for
-the latest tag). Pre-release work on `dev` (and feature branches
-ahead of it) is allowed to break sklearn/torch APIs as needed.
+The "Solid user base" claim refers to the newest tag (see the
+[GitHub project](https://github.com/vinecopulib/pyvinecopulib)).
+Unreleased work on `main` is allowed to break sklearn/torch APIs as needed.
+
+### Branching and releases
+
+Pull requests go to `main`. Releases are tags on `main`; there is no
+long-lived development branch. Read the Docs' `latest` follows `main` and
+`stable` follows the newest tag.
+
+- **Squash on merge: one pull request, one commit on `main`.** The
+  iterations taken to reach a working state are review history, not project
+  history, so the squashed message — not the intermediate commits — has to
+  explain the change: what changed, why, and anything a future reader needs.
+  The `(#NNN)` suffix keeps the pull request discoverable from `git log`,
+  which is where `CHANGELOG.md` entries are sourced.
+- **Commit subjects are `type(scope): subject`**, with `!` marking a
+  breaking change. Scopes are the subpackages and areas: `core`, `families`,
+  `utils`, `sklearn`, `torch`, `bicop`, `vinecop`, `build`, `ci`, `docs`,
+  `deps`, `examples`.
+- **Stack dependent work** rather than merging to unblock yourself: each
+  pull request branches off the previous one and targets it. `gh stack`
+  (`init` / `add` / `submit` / `sync` / `rebase`) manages the chain. Two
+  consequences: CI's `pull_request` trigger must stay unfiltered, because a
+  stacked child targets the branch below it; and nothing may push to a
+  branch in a stack outside `gh stack` — including bots, which is why
+  `regenerate_notebooks` is label-gated.
+- **Never merge to `main` without express consent.** Open the pull request,
+  get it green, and stop. A green matrix and an approved plan are not
+  authorization. This applies equally to pushing tags and to changing
+  repository or Read the Docs settings — and it matters more here than
+  upstream, because **a `v*` tag push publishes to PyPI, and PyPI never
+  re-accepts a version number**. A mistagged release is permanent.
+
+Note for anyone reasoning about branch topology: a shallow clone makes
+`git merge-base` report a divergence that does not exist. Run
+`git fetch --unshallow` first.
+
+### Changelog
+
+`CHANGELOG.md` is newest-first. The top heading carries `(unreleased)`
+while a cycle is open, is dated when the release ships, and a fresh
+`(unreleased)` heading is opened immediately after tagging — so a released
+version is never indistinguishable from an unreleased one.
+
+Each change is **one bullet, one to three lines, four at the very most**:
+imperative present, identifiers in backticks, no bold, and a trailing
+`(#NNN)` naming the pull request (upstream work is cited as
+`([vinecopulib#NNN](…))`). Anything that needs more room than that belongs
+in the migration guide, not in a bullet.
+
+Entries are sourced from `git log` — which is why the squashed commit
+message has to stand on its own. Source them **by commit**, not by pull
+request number: upstream's numbering has gaps where a pull request was
+closed unmerged, and some commits carry no number at all.
 
 ## Scope
 
 ### Included
 
-- **Bivariate copula modelling** — every family bound from
+- **Bivariate copula modeling** — every family bound from
   `lib/vinecopulib`: `indep`, `gaussian`, `student`, `clayton`,
   `gumbel`, `frank`, `joe`, `bb1/6/7/8`, `tawn`, `tll`; with their
   rotations, mixed-discrete handling, analytic parameter/argument
   derivatives, tail-dependence / Blomqvist-β summaries, log-likelihood
   scores / gradient / Hessian / score-covariance, and family-set
   constraints via `FitControlsBicop`.
-- **Vine copula modelling** — `Vinecop` with Dissmann selection
-  (`mst_prim`), Wilson-weighted random structures
-  (`random_weighted`), and user-supplied `RVineStructure` /
+- **Vine copula modeling** — `Vinecop` with Dissmann selection
+  (`mst_prim`, `mst_kruskal`), random spanning trees
+  (`random_weighted`, `random_unweighted`), and user-supplied `RVineStructure` /
   `CVineStructure` / `DVineStructure`. Truncation, threading,
   bootstrap, pre-fit selection criteria, and family sets are exposed
   through `FitControlsVinecop`. Also: conditional sampling
@@ -135,11 +189,12 @@ ahead of it) is allowed to break sklearn/torch APIs as needed.
   `var_types[i] != "c"`). Use `VinecopBackend` for discrete /
   mixed-type problems.
 - **Density estimators outside the vine framework.** General-purpose
-  multivariate density models (normalising flows, Gaussian mixtures,
+  multivariate density models (normalizing flows, Gaussian mixtures,
   …) are not in scope; `pyvinecopulib` is a vine-copula library.
 - **Pinned legacy alias for every old import path forever.**
   Deprecation aliases live in `_deprecations.py` and warn on access;
-  they are removed on the next major release.
+  they are removed in 2.0. They survive 1.0.0 deliberately — that release
+  already breaks enough — but the reprieve is one cycle, not indefinite.
 
 ## Package structure
 
@@ -188,18 +243,18 @@ pyvinecopulib/
       torch/__init__.py          # TorchBicop, TorchVinecop, FitControlsTorch*
         bicop.py, vinecop.py     # nn.Module evaluators
         controls.py              # FitControlsTorchBicop / FitControlsTorchVinecop dataclasses
-        _interp.py               # InterpolationGrid2D (bilinear; Sinkhorn margin renormalisation) — internal
+        _interp.py               # InterpolationGrid2D (bilinear; Sinkhorn margin renormalization) — internal
         _fit_tll.py              # pure-torch TLL kernel
         _batched.py              # batched evaluation variants
 
       _python_helpers/           # internal; pure-Python wrappers used by the binding
         bicop.py, vinecop.py, kde1d.py, stats.py
-      pyvinecopulib_ext.*.so     # compiled extension (gitignored build artefact)
+      pyvinecopulib_ext.*.so     # compiled extension (gitignored build artifact)
       **/__init__.pyi            # type stubs AUTO-GENERATED via scripts/generate_stubs.py (gitignored)
 
   tests/                         # flat layout; one file per topic; shared fixtures in conftest.py
   docs/                          # Sphinx; conf.py drives features.rst via autosummary
-  examples/                      # Jupyter notebooks (11), executed in CI and embedded via nbsphinx
+  examples/                      # Jupyter notebooks (10), executed in CI and embedded via nbsphinx
   scripts/                       # build helpers + benchmarks
 ```
 
@@ -237,7 +292,7 @@ Conventions baked in by the toolchain:
   warnings to errors, so internal code that still calls a deprecated
   path will fail CI.
 
-For performance work: profile first, optimise demonstrated hotspots
+For performance work: profile first, optimize demonstrated hotspots
 only, and preserve every quantitative invariant (round-trip identities,
 parity with the C++ cascade, pickling stability).
 
@@ -285,26 +340,39 @@ Before changing code, read in this order:
 3. `src/pyvinecopulib/<subpackage>/__init__.py` — the module docstring
    is the canonical short description.
 4. The implementation file you're about to touch, then the matching
-   `tests/test_<topic>.py` for expected behaviour.
+   `tests/test_<topic>.py` for expected behavior.
 
 Match existing local patterns rather than introducing new ones.
 
 ### Definition of done
 
-For any behaviour change:
+For any behavior change:
 
 - Diffs are scoped to the task; no opportunistic refactors that span
   unrelated files.
-- Honour the [stability tier](#stability-tiers): for `core` /
+- Honor the [stability tier](#stability-tiers): for `core` /
   `families` / `utils`, prefer a deprecation alias over a hard break;
   for `sklearn` / `torch`, breaks are allowed but must be flagged in
-  `CHANGELOG.md` (the `## Unreleased` section).
-- Tests added or extended. Prefer extending an existing parametrised
+  `CHANGELOG.md` (the top `(unreleased)` section).
+- Tests added or extended. Prefer extending an existing parametrized
   test over duplicating logic; share fixtures via `conftest.py`.
 - Public-API changes update the module docstring (re-rendered in
   `docs/features.rst` via autosummary) and the matching example
   notebook when one exists.
-- Run the [validation sequence](#tooling).
+- Run the [validation sequence](#tooling), and for anything touching the
+  packaging path, an sdist build and install — `build_sdist` is the only
+  CI leg that runs `make check`.
+- **A submodule bump additionally runs the numerics gate**:
+  `tests/test_torch_bicop.py`, `tests/test_torch_vinecop.py` and
+  `tests/test_structure_selection.py`, which hold the torch↔C++ and
+  NumPy↔C++ parity tolerances. When a number moves, **regenerate the
+  expected value rather than widening the tolerance**, and check the
+  direction of the change against what upstream says it fixed.
+- **Fix what you find.** A defect uncovered along the way is fixed, not
+  annotated, worked around, or left behind an explanatory comment. When the
+  real fix belongs elsewhere — upstream, or a separate change — say so in
+  the pull request description and open the issue; a comment is not a
+  substitute.
 
 ### Coding conventions
 
@@ -340,11 +408,67 @@ For any behaviour change:
   annotations. `numpydoc.validation` is enabled as a pre-commit check;
   rule set + path exclusions live in `[tool.numpydoc_validation]` in
   `pyproject.toml`.
-- **American English in prose.** Docstrings, comments, and docs use
-  American spelling (`behavior`, `finalize`, `serialize`, `normalize`,
-  `color` — not `behaviour` / `finalise` / `serialise` / …). Some legacy
-  text still uses British spelling; new and edited prose should be
-  American.
+- **American English** in code, comments, documentation, commit messages,
+  and changelog entries: *behavior*, *normalize*, *serialize*, *finalize*,
+  *center*, *modeling*, *honored*, *color*. There is no legacy exemption.
+  To check a file:
+
+  ```bash
+  grep -niE 'modelling|behaviour|parameteris|organis|normalis|serialis|honour|artefact|optimis|finalis' <path>
+  ```
+
+  Do not add a spell linter: it would flag `lib/` and the vendored headers.
+- **Write for the caller, not the implementer.** A docstring says what a
+  method does, what its arguments mean, and what it returns — never how it
+  is computed. The algorithm it delegates to, which helper it calls, why a
+  branch exists, and what it allocates are implementation details; they
+  belong in the code, the commit message, or nowhere.
+
+  This binds harder here than upstream:
+  [scripts/generate_docstring.py](scripts/generate_docstring.py) lifts the
+  C++ `//!` text **verbatim** into the Python docstring, so an
+  implementation detail written upstream becomes user-facing Python API
+  text on the rendered site. **When an upstream docstring reads as
+  implementation detail, fix it upstream and bump the pin** — do not patch
+  it in `src/include/**` and do not hand-write a replacement, except at
+  the sites where libclang genuinely cannot disambiguate (they are
+  enumerated in `src/include/vinecop/class.hpp`).
+- **Doxygen upstream, numpydoc downstream.** The generator translates one
+  into the other. Never "fix" an upstream `//!` comment into numpydoc.
+- **Bind alternative constructors as named factories, not overloads.** C++
+  overloads a constructor; Python names it. Every alternative way to build an
+  object is a `def_static` — `Bicop.from_family` / `from_data` / `from_file` /
+  `from_json`, `Vinecop.from_structure`, `RVineStructure.from_trees`,
+  `FitControlsVinecop.from_bicop_controls` — and the binding surface carries no
+  overloaded `__init__` at all. This is the Pythonic shape (each entry point is
+  discoverable by name, with its own signature and docstring), and it is also
+  the only shape the toolchain renders: nanobind concatenates the docstrings of
+  overloaded bindings, so two `Parameters` sections collide and numpydoc fails
+  the docs build, while the `.pyi` generator emits only the first signature.
+  Where two forms genuinely are one operation, prefer a single method that
+  dispatches on an optional argument — as `Bicop.pdf` does for per-row
+  `parameters` — over two bound overloads.
+- **Do not restate what a sibling documents.** A method that differs from a
+  near-twin in one argument gets a short summary and only the text specific to
+  it. Copying the twin's details, references, or edge cases is duplication that
+  will drift.
+- **Comments are documentation, not history.** Keep them aimed at whoever
+  reads the code next: the constraint, the invariant, or the reason a
+  non-obvious choice is required. Previous bugs, benchmark numbers, and
+  review discussion belong in the commit message. The test: *would this
+  comment still make sense in a file that had never had the bug?* If it
+  only reads as a contrast with what the code used to do, it is history.
+  This applies equally to CMake, CI workflows, and `pyproject.toml`.
+- **Do not suppress diagnostics.** `# noqa`, `# type: ignore`,
+  `nitpick_ignore_regex`, pytest `filterwarnings`, and bandit skips are
+  narrow and justified in a comment, or the underlying code gets fixed.
+  Every `nitpick_ignore_regex` entry names the upstream cause that will
+  retire it.
+- **Every code example is executed.** An example in prose is either a cell
+  in an `examples/*.ipynb` notebook (run by `pytest --nbmake` in CI) or a
+  doctest — never a paste into `docs/*.rst` or a docstring. doctest is not
+  currently wired up, so prose pages link a notebook cell rather than
+  inlining code.
 - **Reserve "backend" for the sklearn layer.** In `core` (and other
   user-facing) prose the word "backend" means the sklearn
   `VinecopBackend` / `TorchVinecopBackend` context, which most core users
@@ -385,7 +509,7 @@ release-by-release context; this file is for invariants.
 
 `lib/vinecopulib`, `lib/wdm`, and `lib/kde1d` are header-only C++
 libraries pinned as **shallow git submodules** (`.gitmodules`).
-Behaviour and API changes belong upstream. The Python repo only:
+Behavior and API changes belong upstream. The Python repo only:
 
 1. Bumps the submodule SHA (clearly motivated in the PR).
 2. Adjusts `src/include/**` and `src/pyvinecopulib_ext.cpp` to track
@@ -421,9 +545,9 @@ automatically.
   factories are the documented entry points; the raw constructor
   signatures are kept for nanobind-level access only.
 - `tree_algorithm` on `FitControlsVinecop`: `"mst_prim"` (default,
-  Dissmann) and `"random_weighted"` (Wilson-weighted random tree;
-  reachable from the sklearn layer via
-  `VinecopBackend.with_local_random`).
+  Dissmann), `"mst_kruskal"`, `"random_weighted"` (Wilson-weighted random
+  tree; reachable from the sklearn layer via
+  `VinecopBackend.with_local_random`) and `"random_unweighted"`.
 - `FitControlsVinecop.conditioning_set` (property + pickled, not a
   positional ctor arg) drives conditioning-aware selection — the fitted
   order ends with the given 1-based variables so
@@ -483,11 +607,11 @@ automatically.
 - `Kde1d` is used internally by the sklearn estimators as the
   marginal estimator; it also stands alone for any 1-d KDE problem.
 - `to_pseudo_obs(data)` is the canonical input transform for
-  copula fitting (rank-normalise to the unit hypercube).
+  copula fitting (rank-normalize to the unit hypercube).
 
 ### `pyvinecopulib.sklearn`
 
-User-facing estimators on top of the core, organised so that the
+User-facing estimators on top of the core, organized so that the
 3-step pipeline — fit 1-d KDE marginals → transform to
 pseudo-observations → fit a vine on the copula data — happens once,
 in `VineBase` (`_base.py`).
@@ -598,14 +722,14 @@ Key surface:
     tolerance (`tests/test_torch_vinecop.py`).
   - `device`, `dtype` — propagate to every tensor on construction;
     fitted modules respect `.to(device)` afterwards.
-  - `structure_controls` — `FitControlsTorchVinecop` only; the
-    structure-selection controls used when `TorchVinecop.from_data`
-    is called with `structure=None` (the R-vine is selected on the
-    compiled `pv.Vinecop`, then lifted). `None` defaults to TLL with
-    `trunc_lvl=20`.
+  - `trunc_lvl`, `tree_criterion`, `threshold`, `tree_algorithm`, `seeds`
+    — `FitControlsTorchVinecop` only; the structure-selection knobs used
+    when `TorchVinecop.from_data` is called with `structure=None`.
+    Selection runs through `VinecopBase.select`, so it stays on the array
+    namespace rather than round-tripping a compiled `pv.Vinecop`.
 - `InterpolationGrid2D` (`torch/_interp.py`) — the 2-d bilinear grid
   backing `TorchBicop`; **internal** (not re-exported). Margin
-  normalisation uses Sinkhorn iterations to drive marginals to uniform.
+  normalization uses Sinkhorn iterations to drive marginals to uniform.
 
 ### Top-level `pyvinecopulib`
 
@@ -638,9 +762,9 @@ pyvinecopulib.torch` is the only entry. Same for `sklearn.backends`.
   any public contract. Move new internal helpers here rather than
   exposing them.
 - `_deprecations.py` — `_DEPRECATED_TOP_LEVEL` dict + `_resolve_deprecated`
-  helper for the top-level `__getattr__` shim. Slated for removal on
-  the next major release; new deprecation aliases can be added here
-  in the meantime, but each entry is a debt to be paid down.
+  helper for the top-level `__getattr__` shim. Slated for removal in 2.0;
+  new deprecation aliases can be added here in the meantime, but each entry
+  is a debt to be paid down.
 
 ## Public APIs
 
@@ -687,7 +811,7 @@ subdirectories). Shared fixtures in `tests/conftest.py`:
   unordered-categorical pandas DataFrame.
 - `regression_data` — linear-regression fixture
   `(X, y, true_coef, noise_std)` for `VineRegressor` tests.
-- `unique_json_path` — per-test path in `tmp_path` for serialisation
+- `unique_json_path` — per-test path in `tmp_path` for serialization
   round-trips.
 
 Conventions:
@@ -713,9 +837,11 @@ Conventions:
   this — internal code paths must already be on the post-`#207`
   imports.
 - **Example notebooks are test targets.** `make test-examples`
-  re-executes `examples/*.ipynb` via `pytest --nbmake`. CI runs
-  this on every PR; notebook outputs are auto-regenerated on
-  PRs targeting `main` (the `regenerate_notebooks` workflow job).
+  re-executes `examples/*.ipynb` via `pytest --nbmake`. CI runs this on
+  every pull request. The `regenerate_notebooks` job refreshes the stored
+  outputs, and fires only on the `regenerate-notebooks` label: it pushes a
+  commit onto the head branch, which would rewrite the base of every pull
+  request stacked above it.
 
 Round-trip / parity properties to preserve when touching numerics:
 
