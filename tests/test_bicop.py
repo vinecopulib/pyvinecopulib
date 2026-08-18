@@ -1,5 +1,6 @@
 import json
 import os
+from collections.abc import Callable
 
 import numpy as np
 import pytest
@@ -702,3 +703,96 @@ def test_fit_controls_bicop_selection_criterion_matches_upstream() -> None:
   # Same knob, same default, in C++, R and Python (vinecopulib#729).
   assert pv.FitControlsBicop().selection_criterion == "aic"
   assert pv.FitControlsVinecop().selection_criterion == "aic"
+
+
+def test_simulate_per_row_parameters_matches_loop() -> None:
+  # One parameter set per drawn observation (vinecopulib#719): row i must be
+  # what a copula carrying row i's parameters would have drawn.
+  n, seeds = 64, [1, 2, 3]
+  cop = pv.Bicop.from_family(pv.families.clayton, parameters=np.array([[2.0]]))
+  parameters = np.linspace(0.5, 6.0, n).reshape(n, 1)
+
+  drawn = cop.simulate(parameters=parameters, seeds=seeds)
+  assert drawn.shape == (n, 2)
+
+  # simulate() draws an (n, 2) uniform sample and replaces the second column
+  # with hinv1 of the pair; the same seeds reproduce that sample exactly.
+  base = pv.utils.simulate_uniform(n, 2, False, seeds)
+  np.testing.assert_array_equal(drawn[:, 0], base[:, 0])
+
+  # Row i must be what a copula carrying only row i's parameters would draw.
+  for i in (0, n // 2, n - 1):
+    single = pv.Bicop.from_family(
+      pv.families.clayton, parameters=parameters[i : i + 1]
+    )
+    expected = single.hinv1(base[i : i + 1, :])
+    np.testing.assert_allclose(drawn[i, 1], expected[0], rtol=1e-12)
+
+
+def test_simulate_per_row_parameters_independence() -> None:
+  # `indep` has no parameters, so the per-row form takes an (n, 0) matrix and
+  # the row count alone fixes the sample size.
+  cop = pv.Bicop.from_family(pv.families.indep)
+  drawn = cop.simulate(parameters=np.empty((5, 0)), seeds=[7])
+  assert drawn.shape == (5, 2)
+
+
+def test_simulate_requires_exactly_one_of_n_and_parameters() -> None:
+  cop = pv.Bicop.from_family(pv.families.gaussian, parameters=np.array([[0.5]]))
+  with pytest.raises(ValueError, match="exactly one"):
+    cop.simulate()
+  with pytest.raises(ValueError, match="exactly one"):
+    cop.simulate(10, parameters=np.full((10, 1), 0.5))
+
+
+def test_simulate_per_row_parameters_rejects_nonparametric() -> None:
+  u = pv.to_pseudo_obs(np.random.default_rng(0).normal(size=(200, 2)))
+  cop = pv.Bicop.from_data(
+    u, controls=pv.FitControlsBicop(family_set=[pv.families.tll])
+  )
+  with pytest.raises(RuntimeError):
+    cop.simulate(parameters=np.full((4, 1), 0.5))
+
+
+def test_simulate_per_row_parameters_must_be_two_dimensional() -> None:
+  # One row per drawn observation, so a 1-d array is ambiguous: `[rho, df]` is
+  # either one Student t or two malformed parameter sets.
+  cop = pv.Bicop.from_family(pv.families.gaussian, parameters=np.array([[0.5]]))
+  with pytest.raises(TypeError):
+    cop.simulate(parameters=np.array([0.1, 0.2, 0.3]))
+
+
+@pytest.mark.parametrize(
+  ("reorder", "fortran"),
+  [(np.ascontiguousarray, False), (np.asfortranarray, True)],
+)
+def test_simulate_per_row_parameters_accepts_either_memory_order(
+  reorder: Callable[[np.ndarray], np.ndarray], fortran: bool
+) -> None:
+  # `np.column_stack` and `np.stack(axis=1)` -- the obvious ways to build a
+  # two-parameter array -- return C order, which must work as well as F. A
+  # single-column array hides this: it is contiguous in both orders.
+  n, seeds = 32, [1, 2, 3]
+  parameters = reorder(
+    np.column_stack([np.linspace(0.1, 0.8, n), np.linspace(3.0, 10.0, n)])
+  )
+  # Mutually exclusive for a multi-column array, so this pins the layout.
+  assert parameters.flags.f_contiguous == fortran
+
+  cop = pv.Bicop.from_family(
+    pv.families.student, parameters=np.array([[0.5], [4.0]])
+  )
+  drawn = cop.simulate(parameters=parameters, seeds=seeds)
+  assert drawn.shape == (n, 2)
+
+  reference = cop.simulate(
+    parameters=np.asfortranarray(parameters), seeds=seeds
+  )
+  np.testing.assert_array_equal(drawn, reference)
+
+
+def test_simulate_positional_signature_is_unchanged() -> None:
+  # `simulate(n, qrng, seeds)` predates the per-row overload and must keep
+  # meaning what it meant.
+  cop = pv.Bicop.from_family(pv.families.gaussian, parameters=np.array([[0.5]]))
+  assert cop.simulate(12, False, [1, 2]).shape == (12, 2)
