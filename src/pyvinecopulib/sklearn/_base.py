@@ -90,6 +90,31 @@ _DOC_REFERENCES = r"""References
 """
 
 
+def _categorical_bounds(dtype: Any) -> Optional[tuple[float, float]]:
+  """Exact support of an ordered categorical column, when it states one.
+
+  Parameters
+  ----------
+  dtype : numpy.dtype or pandas.api.extensions.ExtensionDtype
+      A column's dtype.
+
+  Returns
+  -------
+  tuple of float, or None
+      ``(min, max)`` over the declared categories, or ``None`` when the dtype is
+      not categorical or its categories are not numeric.
+  """
+  if not isinstance(dtype, pd.CategoricalDtype):
+    return None
+  try:
+    levels = np.asarray(dtype.categories, dtype=float)
+  except (TypeError, ValueError):
+    return None
+  if levels.size == 0:
+    return None
+  return (float(levels.min()), float(levels.max()))
+
+
 def expand_factors(df: pd.DataFrame) -> pd.DataFrame:
   """Expand unordered categoricals to ordered ``{0, 1}`` dummies.
 
@@ -270,16 +295,22 @@ class VineBase(BaseEstimator):
           "discrete" if isinstance(dtype, pd.CategoricalDtype) else "continuous"
           for dtype in X_exp.dtypes
         ]
-        # `expand_factors` only ever adds columns, so an expanded name absent
-        # from the input is a {0, 1} dummy: its support is known exactly, and
-        # saying so keeps the marginal fit off values that cannot occur. The
-        # bounds of any other discrete column are a modeling assumption the
-        # caller has to make, so they stay unset.
+        # Bounds are passed wherever the input states them, and left unset
+        # wherever they would be a guess. A categorical declares its levels, so
+        # its support is known rather than assumed: an expanded name absent from
+        # the input is a {0, 1} dummy, and any other categorical is bounded by
+        # its own categories. Without this the kernel-density grid is padded
+        # past the data and puts mass on values that cannot occur -- a count
+        # column picks up density below zero. A continuous column, or a discrete
+        # one declared through a pre-set `schema_`, has no stated support and
+        # keeps `None`.
         original = set(X.columns)
-        bounds: list[Optional[tuple[float, float]]] = [
-          None if name in original else (0.0, 1.0)
-          for name in self._expanded_columns
-        ]
+        bounds: list[Optional[tuple[float, float]]] = []
+        for name, dtype in zip(self._expanded_columns, X_exp.dtypes):
+          if name not in original:
+            bounds.append((0.0, 1.0))
+          else:
+            bounds.append(_categorical_bounds(dtype))
         self.schema_ = {"kde1d_types": kde1d_types, "bounds": bounds}
         self.n_features_in_ = X_exp.shape[1]
         X_arr = X_exp.to_numpy()

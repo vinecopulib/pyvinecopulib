@@ -134,9 +134,30 @@ def test_expanded_dummies_are_fitted_on_their_own_support(
     assert margin.support == (0.0, 1.0)
     assert margin.pdf(np.array([2.0])).item() == 0.0
     assert margin.cdf(np.array([-1.0])).item() == 0.0
-  # The bounds of any other column are the caller's to declare, not ours.
+  # A continuous column states no support, so it stays unbounded.
   unbounded: Any = est.distribution_.margins[0]
   assert unbounded.support == (-np.inf, np.inf)
+
+
+def test_ordered_categorical_is_fitted_on_its_declared_levels() -> None:
+  """A categorical declares its levels, so counts get no density below zero."""
+  rng = np.random.default_rng(0)
+  counts = rng.poisson(3.0, 400)
+  X_df = pd.DataFrame(
+    {
+      "cnt": pd.Categorical(counts, ordered=True),
+      "z": rng.normal(size=400),
+    }
+  )
+  est = VineDensity(random_state=0).fit(X_df)
+  assert est.schema_["bounds"][0] == (float(counts.min()), float(counts.max()))
+  margin: Any = est.distribution_.margins[0]
+  assert margin.var_type == "d"
+  assert margin.support == (float(counts.min()), float(counts.max()))
+  # Padding the grid below the smallest level is what put mass on impossible
+  # counts; the declared support removes it exactly rather than approximately.
+  assert margin.cdf(np.array([-1.0])).item() == 0.0
+  assert margin.pdf(np.array([-1.0])).item() == 0.0
 
 
 def test_cdf_works_with_columns_that_have_atoms(
