@@ -203,7 +203,7 @@ jobs:
         with:
           enable-cache: true
       - name: Download cibw artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           pattern: cibw-*
           path: dist
@@ -258,7 +258,7 @@ jobs:
           apt_retry update
           apt_retry install -y graphviz pandoc
       - name: Download built wheel (cp311 manylinux ubuntu)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: cibw-wheels-ubuntu-latest-311-manylinux_x86_64
           path: dist/
@@ -362,13 +362,13 @@ jobs:
           uv sync --no-install-project --group test --group notebooks --extra examples --extra sklearn --extra torch
       - name: Download built wheel (<=3.11)
         if: ${{ matrix.python <= 311 }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: cibw-wheels-${{ matrix.cfg.os }}-${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
           path: dist/
       - name: Download built wheel (>=3.12, reuses 3.12 ABI3 artifact)
         if: ${{ matrix.python >= 312 }}
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: cibw-wheels-${{ matrix.cfg.os }}-312-${{ matrix.cfg.cibw_id }}
           path: dist/
@@ -447,7 +447,7 @@ jobs:
           apt_retry update
           apt_retry install -y graphviz
       - name: Download built wheel (cp311 ABI3, ubuntu)
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: cibw-wheels-ubuntu-latest-311-manylinux_x86_64
           path: dist/
@@ -572,7 +572,7 @@ jobs:
         with:
           enable-cache: true
       - name: Download cibw artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           pattern: cibw-*
           path: dist
