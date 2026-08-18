@@ -339,11 +339,17 @@ safeguard that makes a whole-suite run acceptable.** The rules:
 
 1. **An agent does not run the suite.** No `make test`, no
    `pytest tests/` — not CPU-pinned, and not "just for the test count".
-   Push the branch and let CI run it: `.github/workflows/pypi.yml`
-   covers 15 build-and-test legs with `--extra sklearn --extra torch`
-   plus the wheel-install legs, which is broader coverage than any
-   local run, and `gh pr checks` / `gh run view --job <id> --log-failed`
-   reads the result.
+   Push the branch and let CI run it, and know which leg runs what:
+   the 15 `build` legs run `pytest tests/` under cibuildwheel with only
+   `pytest-cov` and `pytest-rerunfailures` installed, so every test
+   guarded by `importorskip` **skips** there; the 15
+   `install_and_unit_test` legs sync `--extra examples --extra sklearn
+   --extra torch`, install the wheel, and run both `pytest tests/` and
+   the notebooks. That second matrix is the one that covers the optional
+   extras, and between them the coverage is broader than any local run.
+   `gh pr checks` / `gh run view --job <id> --log-failed` reads the
+   result — though a run triggered by `gh workflow run` attaches its
+   checks to the commit without `gh pr checks` listing them.
 2. **Targeted single files are fine**, CPU-pinned:
    `CUDA_VISIBLE_DEVICES="" uv run --no-sync pytest
    tests/test_<topic>.py --no-cov`. To check that a test survives
@@ -651,8 +657,9 @@ automatically.
   a left-limit block by hand. `logpdf` sums logs rather than
   accumulating a product, because the marginal term carries the scale
   and a `d = 50` product underflows. `simulate` is
-  `marginal_icdf(copula.inverse_rosenblatt(w))` and never calls a
-  margin's own sampler, which is why `simulate` stays off the protocol.
+  `marginal_icdf(copula.simulate(n, ...))`, so it inherits the copula's
+  quasi-random and seeding options and never calls a margin's own
+  sampler — which is why `simulate` stays off the protocol.
 
 ### `pyvinecopulib.margins`
 
@@ -660,7 +667,10 @@ The univariate half of `Vinedist`, kept out of `core` so that `core`
 imports without SciPy. Three groups:
 
 - **Built-in margins** — `Kde1dMargin` (the default; wraps `Kde1d`, and
-  passes `xmin` for count data so no mass lands on negative counts),
+  takes `xmin` / `xmax` so a bounded variable is not fitted past its
+  support — the sklearn estimators fill those in from a categorical's
+  declared levels, since otherwise the density grid is padded past the
+  data),
   `EmpiricalMargin` (the `to_pseudo_obs` rank transform as a margin, so
   *"`Vinecop` on `to_pseudo_obs(x)`"* is literally *"`Vinedist` with
   empirical margins"*), `ParametricMargin` (one SciPy family) and
