@@ -379,7 +379,7 @@ jobs:
       - name: Run tests
         # UV_NO_SYNC: test the pre-installed wheel, not an editable rebuild.
         # Serial — see pyproject.toml's pytest config.
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@v4
         env:
           UV_NO_SYNC: "1"
         with:
@@ -390,7 +390,7 @@ jobs:
           command: |
             uv run pytest tests/ -r a --no-cov --reruns 2 --reruns-delay 10
       - name: Run notebooks as unit tests
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@v4
         env:
           UV_NO_SYNC: "1"
         with:
