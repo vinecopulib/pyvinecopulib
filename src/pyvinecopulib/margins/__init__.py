@@ -1,0 +1,36 @@
+"""Univariate margins for vine distributions.
+
+A margin is both a specification and a fitted object: hyperparameters go to the
+constructor, and ``fit`` estimates the rest in place and returns ``self``, as
+:class:`pyvinecopulib.utils.Kde1d` and the scikit-learn estimators do. A margin
+whose parameters are given at construction is already fitted.
+
+- **Nonparametric** — :class:`Kde1dMargin` (the default; boundary-corrected,
+  and handles continuous, discrete and zero-inflated data) and
+  :class:`EmpiricalMargin` (the rank transform behind
+  :func:`pyvinecopulib.utils.to_pseudo_obs`, as a distribution).
+- **Interoperability** — :func:`as_margin` presents a distribution object from
+  another ecosystem as a margin, and :func:`register_margin_adapter` teaches it
+  about one it does not know. SciPy's modern and legacy distributions and
+  ``torch.distributions`` are recognized out of the box.
+
+Custom margins subclass :class:`pyvinecopulib.core.MarginBase`, which needs only
+``pdf`` and ``cdf``.
+
+Notes
+-----
+The :doc:`concepts page </concepts>` introduces the marginal side of Sklar's
+theorem, and :class:`pyvinecopulib.core.MarginLike` states the contract these
+all satisfy.
+"""
+
+from ._adapters import as_margin, register_margin_adapter
+from .empirical import EmpiricalMargin
+from .kde import Kde1dMargin
+
+__all__ = [
+  "EmpiricalMargin",
+  "Kde1dMargin",
+  "as_margin",
+  "register_margin_adapter",
+]

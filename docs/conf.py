@@ -208,6 +208,8 @@ _CLASS_MODULE = {
   "BicopBase": "pyvinecopulib.core",
   "MarginLike": "pyvinecopulib.core",
   "MarginBase": "pyvinecopulib.core",
+  "Kde1dMargin": "pyvinecopulib.margins",
+  "EmpiricalMargin": "pyvinecopulib.margins",
   "Bicop": "pyvinecopulib.core",
   "VinecopLike": "pyvinecopulib.core",
   "VinecopBase": "pyvinecopulib.core",
@@ -238,6 +240,7 @@ def process_cross_references(content: str, is_docstring: bool = True) -> str:
     "pyvinecopulib.core",
     "pyvinecopulib.families",
     "pyvinecopulib.utils",
+    "pyvinecopulib.margins",
     "pyvinecopulib.sklearn",
     "pyvinecopulib.sklearn.backends",
     "pyvinecopulib.torch",
@@ -353,6 +356,16 @@ DOCSTRING_SUBPACKAGES = {
       "sobol",
       "pairs_copula_data",
       "benchmark",
+    ],
+  },
+  "margins": {
+    "classes": [
+      "Kde1dMargin",
+      "EmpiricalMargin",
+    ],
+    "functions": [
+      "as_margin",
+      "register_margin_adapter",
     ],
   },
   "sklearn": {
