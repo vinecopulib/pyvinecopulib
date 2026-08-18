@@ -74,6 +74,13 @@ inline Kde1d kde1d_from_grid(const Eigen::VectorXd& grid_points,
   return Kde1d(grid, xmin.value_or(NAN), xmax.value_or(NAN), type, prob0);
 }
 
+// Whether `fit` has populated the estimator. The upstream C++ class has no
+// such accessor, so it is derived from the interpolation grid here; a
+// `Kde1d::is_fitted()` upstream would retire this.
+inline bool kde1d_is_fitted(const Kde1d& kde) {
+  return kde.get_grid_points().size() > 0;
+}
+
 // Wrapper function for set_xmin_xmax with optional parameters
 inline void kde1d_set_xmin_xmax(Kde1d& self,
                                 std::optional<double> xmin = std::nullopt,
@@ -139,6 +146,8 @@ inline void init_kde1d(nb::module_& module) {
                    nb::call_guard<nb::gil_scoped_release>())
       .def_prop_ro("values", &Kde1d::get_values, kde1d_doc.get_values.doc,
                    nb::call_guard<nb::gil_scoped_release>())
+      .def_prop_ro("is_fitted", &kde1d_is_fitted,
+                   "Whether the estimator has been fitted to data.")
 
       // Methods — auto-extracted from `lib/kde1d` upstream `//!` comments.
       .def("fit", &Kde1d::fit, "x"_a, "weights"_a = Eigen::VectorXd(),
@@ -147,7 +156,7 @@ inline void init_kde1d(nb::module_& module) {
            kde1d_doc.pdf.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("cdf", &Kde1d::cdf, "x"_a, "check_fitted"_a = true,
            kde1d_doc.cdf.doc, nb::call_guard<nb::gil_scoped_release>())
-      .def("quantile", &Kde1d::quantile, "x"_a, "check_fitted"_a = true,
+      .def("icdf", &Kde1d::quantile, "x"_a, "check_fitted"_a = true,
            kde1d_doc.quantile.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("simulate", &Kde1d::simulate, "n"_a, "seeds"_a = std::vector<int>(),
            "check_fitted"_a = true, kde1d_doc.simulate.doc,
@@ -180,7 +189,7 @@ inline void init_kde1d(nb::module_& module) {
       .def("__getstate__",
            [](const Kde1d& kde) {
              nb::dict s;
-             const bool fitted = kde.get_grid_points().size() > 0;
+             const bool fitted = kde1d_is_fitted(kde);
              s["fitted"] = fitted;
              s["xmin"] = kde.get_xmin();
              s["xmax"] = kde.get_xmax();

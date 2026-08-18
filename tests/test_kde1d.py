@@ -153,9 +153,9 @@ def test_kde1d_fit_and_methods() -> None:
   )  # CDF should be in [0,1]
   assert np.all(np.diff(cdf_vals) >= 0)  # CDF should be monotonic
 
-  # Test quantile
+  # Test icdf
   probs = np.array([0.1, 0.5, 0.9])
-  quantiles = kde.quantile(probs)
+  quantiles = kde.icdf(probs)
   assert isinstance(quantiles, np.ndarray)
   assert quantiles.shape == (3,)
   assert np.all(np.diff(quantiles) >= 0)  # Quantiles should be monotonic
@@ -241,6 +241,21 @@ def test_kde1d_set_boundaries() -> None:
   # in the object state after fitting (implementation dependent)
 
 
+def test_kde1d_is_fitted() -> None:
+  """`is_fitted` flips exactly when `fit` populates the estimator."""
+  kde = pv.utils.Kde1d()
+  assert kde.is_fitted is False
+
+  kde.fit(np.random.default_rng(0).normal(size=200))
+  assert kde.is_fitted is True
+
+  # `from_grid` skips the kernel fit but still yields a usable estimator.
+  grid = pv.utils.Kde1d.from_grid(
+    grid_points=np.linspace(-3.0, 3.0, 10), values=np.full(10, 1.0 / 6.0)
+  )
+  assert grid.is_fitted is True
+
+
 def test_kde1d_check_fitted_parameter() -> None:
   """Test the check_fitted parameter in evaluation methods."""
 
@@ -258,7 +273,7 @@ def test_kde1d_check_fitted_parameter() -> None:
     kde.cdf(eval_points)
 
   with pytest.raises(RuntimeError):
-    kde.quantile(np.array([0.5]))
+    kde.icdf(np.array([0.5]))
 
   with pytest.raises(RuntimeError):
     kde.simulate(10)

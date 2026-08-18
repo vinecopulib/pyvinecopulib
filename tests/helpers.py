@@ -53,9 +53,8 @@ def compare_vinecop(cop1: Any, cop2: Any) -> None:
 
 
 def compare_kde1d(kde1: Any, kde2: Any, from_grid: bool = False) -> None:
-  # Check if models are fitted by testing grid_points
-  is_fitted1 = len(kde1.grid_points) > 0
-  is_fitted2 = len(kde2.grid_points) > 0
+  is_fitted1 = kde1.is_fitted
+  is_fitted2 = kde2.is_fitted
 
   # Both should have same fitted status
   assert is_fitted1 == is_fitted2, (
