@@ -410,7 +410,10 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     """
     return self._ref_tensor().device.type == "cuda"
 
-  def _prep(self, u: Tensor, name: str) -> Tensor:
+  def _prep(self, u: Tensor, name: str, *, values_only: bool = False) -> Tensor:
+    # `values_only` distinguishes the discrete data layouts, and this vine is
+    # continuous-only, so every accepted layout is already `(n, d)`.
+    del values_only
     ref = self._ref_tensor()
     u = torch.as_tensor(u, dtype=ref.dtype, device=ref.device)
     if u.ndim != 2 or u.shape[1] != self.d:

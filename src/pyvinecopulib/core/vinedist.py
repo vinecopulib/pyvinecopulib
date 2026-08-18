@@ -410,9 +410,9 @@ class Vinedist(Generic[ArrayT]):
     array, shape (n,), dtype float
         Joint distribution values in ``[0, 1]``.
     """
-    # A distribution function needs only the marginal `F` values, and the
-    # copula reads only those; but a copula with atoms validates the whole
-    # layout, so give it the layout rather than the first block alone.
+    # ``C(F_1(x_1), ..., F_d(x_d))`` needs no left limits, but a copula with
+    # discrete variables accepts only the layouts that carry them, so hand it
+    # the full layout and let it drop what it does not read.
     return self._copula.cdf(cast(ArrayT, self._u_layout(x)), **kwargs)
 
   def loglik(self, x: ArrayT) -> ArrayT:
