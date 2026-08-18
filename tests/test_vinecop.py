@@ -779,3 +779,88 @@ def test_fit_controls_vinecop_from_bicop_controls() -> None:
     family_set=[pv.families.clayton]
   )
   assert controls.family_set == [pv.families.clayton]
+
+
+def _cop_and_data(d: int = 5, n: int = 400):
+  u = pv.to_pseudo_obs(random_data(d, n))
+  return pv.Vinecop.from_data(u), u
+
+
+def test_rosenblatt_conditioning_set_order_tail_is_identity() -> None:
+  # Conditioning on the set the vine order already ends with is the identity:
+  # upstream evaluates it on the original representation.
+  cop, u = _cop_and_data()
+  tail = [int(v) for v in cop.structure.order][-2:]
+
+  np.testing.assert_array_equal(
+    cop.rosenblatt(u, conditioning_set=tail), cop.rosenblatt(u)
+  )
+  w = cop.rosenblatt(u)
+  np.testing.assert_array_equal(
+    cop.inverse_rosenblatt(w, conditioning_set=tail),
+    cop.inverse_rosenblatt(w),
+  )
+
+
+def test_rosenblatt_conditioning_set_round_trip() -> None:
+  # The inverse transform undoes the forward one under the same set.
+  cop, u = _cop_and_data()
+  tail = [int(v) for v in cop.structure.order][-2:]
+  w = cop.rosenblatt(u, conditioning_set=tail)
+  back = cop.inverse_rosenblatt(w, conditioning_set=tail)
+  np.testing.assert_allclose(back, u, rtol=1e-8, atol=1e-8)
+
+
+def test_rosenblatt_conditioning_set_matches_reorient() -> None:
+  # The argument applies the same relabeling as `reorient`, without mutating
+  # the model. Not every set is an admissible sampling-order tail, so fit a
+  # vine that admits this one.
+  cs = [2, 3]
+  controls = pv.FitControlsVinecop()
+  controls.conditioning_set = cs
+  u = pv.to_pseudo_obs(random_data(5, 400))
+  cop = pv.Vinecop.from_data(u, controls=controls)
+
+  order_before = [int(v) for v in cop.structure.order]
+  with_arg = cop.rosenblatt(u, conditioning_set=cs)
+
+  # The keyword form evaluates through a view and leaves the model alone;
+  # `reorient` performs the same relabeling in place.
+  assert [int(v) for v in cop.structure.order] == order_before
+  cop.reorient(cs)
+  np.testing.assert_allclose(
+    with_arg, cop.rosenblatt(u), rtol=1e-10, atol=1e-10
+  )
+
+
+def test_rosenblatt_second_positional_is_still_num_threads() -> None:
+  # C++ puts `conditioning_set` in position 2; Python keeps `num_threads`
+  # there, so `rosenblatt(u, 4)` must not silently become a conditioning set.
+  cop, u = _cop_and_data(d=4, n=200)
+  np.testing.assert_allclose(
+    cop.rosenblatt(u, 4), cop.rosenblatt(u), rtol=1e-12
+  )
+  np.testing.assert_allclose(
+    cop.inverse_rosenblatt(u, 2), cop.inverse_rosenblatt(u), rtol=1e-12
+  )
+
+
+@pytest.mark.parametrize(
+  "bad", [[], [1, 1], [0], [99], [1, 2, 3, 4, 5]], ids=str
+)
+def test_rosenblatt_rejects_inadmissible_conditioning_set(bad) -> None:
+  cop, u = _cop_and_data()
+  with pytest.raises(RuntimeError):
+    cop.rosenblatt(u, conditioning_set=bad)
+
+
+def test_rosenblatt_conditioning_set_rejects_truncated_vine() -> None:
+  # The reorientation needs every tree, so a truncated vine cannot serve an
+  # arbitrary conditioning set even when the set itself is admissible.
+  u = pv.to_pseudo_obs(random_data(5, 400))
+  cop = pv.Vinecop.from_data(u, controls=pv.FitControlsVinecop(trunc_lvl=2))
+
+  with pytest.raises(RuntimeError):
+    cop.rosenblatt(u, conditioning_set=[1, 2])
+  with pytest.raises(RuntimeError):
+    cop.inverse_rosenblatt(u, conditioning_set=[1, 2])

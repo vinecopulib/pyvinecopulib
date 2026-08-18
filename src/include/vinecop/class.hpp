@@ -261,6 +261,34 @@ ones. Continuous, all-parametric vines only.
   const std::string scores_cov_perobs_doc =
       std::string(vinecop_doc.scores_cov.doc_3args) + per_obs_note;
 
+  // The Rosenblatt transforms accept an explicit conditioning set
+  // (vinecopulib#715), which evaluates the vine through a reoriented,
+  // non-owning view rather than copying pair copulas. It is keyword-only:
+  // C++ puts it in position 2, which here is `num_threads`, so mirroring the
+  // C++ order positionally would silently rebind `rosenblatt(u, 4)`.
+  const std::string conditioning_set_note =
+      R"""(
+
+Notes
+-----
+``conditioning_set`` is a list of 1-based variable indices, holding those
+variables fixed instead of the ones at the tail of the vine order. It does not
+subset ``u``, which stays the full matrix; what changes is which conditional
+distributions the output columns represent. Passing the order tail itself is
+the identity and is evaluated on the original representation.
+
+The set must be admissible as a sampling-order tail of this vine, and the vine
+must not be truncated; otherwise ``RuntimeError`` is raised, naming
+``FitControlsVinecop.conditioning_set`` as the way to fit a vine that admits
+it. This is the same relabeling ``Vinecop.reorient`` applies, without mutating
+the model.
+)""";
+  const std::string rosenblatt_doc =
+      std::string(vinecop_doc.rosenblatt.doc_4args) + conditioning_set_note;
+  const std::string inverse_rosenblatt_doc =
+      std::string(vinecop_doc.inverse_rosenblatt.doc_2args) +
+      conditioning_set_note;
+
   // Hand-written: the C++ facade returns an ``RVineTrees`` (no Python
   // equivalent); the Python method returns nested ``[tree][edge]`` dicts.
   const char* get_trees_doc =
@@ -483,19 +511,38 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
            nb::call_guard<nb::gil_scoped_release>())
       // `u` is taken by value and moved: the implementation uses it as a
       // working buffer, and a const reference would force an n x d copy.
-      .def("rosenblatt",
-           static_cast<Eigen::MatrixXd (Vinecop::*)(
-               Eigen::MatrixXd, const size_t, bool, std::vector<int>) const>(
-               &Vinecop::rosenblatt),
-           "u"_a, "num_threads"_a = 1, "randomize_discrete"_a = true,
-           "seeds"_a = std::vector<int>(), vinecop_doc.rosenblatt.doc_4args,
-           nb::call_guard<nb::gil_scoped_release>())
-      .def("inverse_rosenblatt",
-           static_cast<Eigen::MatrixXd (Vinecop::*)(const Eigen::MatrixXd&,
-                                                    const size_t) const>(
-               &Vinecop::inverse_rosenblatt),
-           "u"_a, "num_threads"_a = 1, vinecop_doc.inverse_rosenblatt.doc_2args,
-           nb::call_guard<nb::gil_scoped_release>())
+      // `u` is taken by value and moved: the implementation uses it as a
+      // working buffer, and a const reference would force an n x d copy.
+      .def(
+          "rosenblatt",
+          [](const Vinecop& self, Eigen::MatrixXd u, size_t num_threads,
+             bool randomize_discrete, const std::vector<int>& seeds,
+             const std::optional<std::vector<size_t>>& conditioning_set)
+              -> Eigen::MatrixXd {
+            nb::gil_scoped_release release;
+            if (conditioning_set) {
+              return self.rosenblatt(std::move(u), *conditioning_set,
+                                     num_threads, randomize_discrete, seeds);
+            }
+            return self.rosenblatt(std::move(u), num_threads,
+                                   randomize_discrete, seeds);
+          },
+          "u"_a, "num_threads"_a = 1, "randomize_discrete"_a = true,
+          "seeds"_a = std::vector<int>(), nb::kw_only(),
+          "conditioning_set"_a = nb::none(), rosenblatt_doc.c_str())
+      .def(
+          "inverse_rosenblatt",
+          [](const Vinecop& self, const Eigen::MatrixXd& u, size_t num_threads,
+             const std::optional<std::vector<size_t>>& conditioning_set)
+              -> Eigen::MatrixXd {
+            nb::gil_scoped_release release;
+            if (conditioning_set) {
+              return self.inverse_rosenblatt(u, *conditioning_set, num_threads);
+            }
+            return self.inverse_rosenblatt(u, num_threads);
+          },
+          "u"_a, "num_threads"_a = 1, nb::kw_only(),
+          "conditioning_set"_a = nb::none(), inverse_rosenblatt_doc.c_str())
       .def("reorient", &Vinecop::reorient, "conditioning_set"_a,
            vinecop_doc.reorient.doc, nb::call_guard<nb::gil_scoped_release>())
       .def(
