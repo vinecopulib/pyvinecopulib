@@ -30,6 +30,7 @@ jobs:
     # generates, so it stays in `build_sdist` where the editable install exists.
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python 3.11
@@ -47,6 +48,8 @@ jobs:
         env:
           UV_NO_SYNC: "1"
         run: make lint
+      - name: Check the version metadata agrees
+        run: python3 scripts/check_version.py
 
   build:
     needs: [lint]
@@ -101,6 +104,7 @@ jobs:
 
     name: Build and test on ${{ matrix.cfg.os }} for cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
     runs-on: ${{ matrix.cfg.os }}
+    timeout-minutes: 45
 
     steps:
       - name: Checkout project
@@ -135,6 +139,12 @@ jobs:
           # wdm and kde1d ship as lib/ submodules; lcov is only for C++ coverage.
           wdm: "false"
           lcov: "false"
+          # The action's default apt-installs g++/clang on the host. cibuildwheel
+          # compiles inside the manylinux/musllinux container with its own
+          # toolchain, and the other ubuntu jobs only install prebuilt wheels, so
+          # the host compilers are never used -- and that apt call has hung the
+          # job repeatedly.
+          update_compilers_ubuntu: "false"
       - name: Clean build artefacts
         shell: bash
         run: |
@@ -178,6 +188,7 @@ jobs:
   check_wheels:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: pypi
     permissions:
       id-token: write
@@ -221,6 +232,7 @@ jobs:
     name: Verify docs build (RTD mirror)
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
@@ -234,8 +246,17 @@ jobs:
           enable-cache: true
       - name: Install Graphviz + Pandoc
         run: |
-          sudo apt-get update
-          sudo apt-get install -y graphviz pandoc
+          # Each attempt is bounded: a slow apt mirror otherwise holds the
+          # runner until the job timeout rather than failing.
+          apt_retry() {
+            for attempt in 1 2 3; do
+              sudo timeout 300 apt-get "$@" && return 0
+              sleep $((attempt * 15))
+            done
+            return 1
+          }
+          apt_retry update
+          apt_retry install -y graphviz pandoc
       - name: Download built wheel (cp311 manylinux ubuntu)
         uses: actions/download-artifact@v4
         with:
@@ -262,6 +283,7 @@ jobs:
   install_and_unit_test:
     needs: build
     runs-on: ${{ matrix.cfg.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -315,8 +337,8 @@ jobs:
               -maxdepth 3 -name dot.exe 2>/dev/null | grep -q .
           }
           if [[ "${{ matrix.cfg.os }}" == "ubuntu-latest" ]]; then
-            sudo apt-get update
-            retry sudo apt-get install -y graphviz
+            retry sudo timeout 300 apt-get update
+            retry sudo timeout 300 apt-get install -y graphviz
           elif [[ "${{ matrix.cfg.os }}" == macos-* ]]; then
             brew list graphviz >/dev/null 2>&1 || retry brew install graphviz
           elif [[ "${{ matrix.cfg.os }}" == "windows-latest" ]]; then
@@ -394,6 +416,7 @@ jobs:
       github.event_name == 'pull_request'
       && contains(github.event.pull_request.labels.*.name, 'regenerate-notebooks')
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write  # required to push the auto-commit back to the PR branch
     steps:
@@ -414,8 +437,15 @@ jobs:
           cache-dependency-glob: pyproject.toml
       - name: Install Graphviz
         run: |
-          sudo apt-get update
-          sudo apt-get install -y graphviz
+          apt_retry() {
+            for attempt in 1 2 3; do
+              sudo timeout 300 apt-get "$@" && return 0
+              sleep $((attempt * 15))
+            done
+            return 1
+          }
+          apt_retry update
+          apt_retry install -y graphviz
       - name: Download built wheel (cp311 ABI3, ubuntu)
         uses: actions/download-artifact@v4
         with:
@@ -445,6 +475,7 @@ jobs:
 
   build_sdist:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: [lint]
     steps:
       - name: Checkout project
@@ -469,6 +500,12 @@ jobs:
           # wdm and kde1d ship as lib/ submodules; lcov is only for C++ coverage.
           wdm: "false"
           lcov: "false"
+          # The action's default apt-installs g++/clang on the host. cibuildwheel
+          # compiles inside the manylinux/musllinux container with its own
+          # toolchain, and the other ubuntu jobs only install prebuilt wheels, so
+          # the host compilers are never used -- and that apt call has hung the
+          # job repeatedly.
+          update_compilers_ubuntu: "false"
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
@@ -514,12 +551,22 @@ jobs:
   upload_to_pypi:
     needs: [build_sdist, check_wheels, install_and_unit_test]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: pypi
     permissions:
       id-token: write
       actions: read
       contents: read
     steps:
+      # Before the artifacts land: checkout cleans the workspace.
+      - uses: actions/checkout@v4
+      # PyPI never re-accepts a version number, so a tag that disagrees with
+      # the metadata is unrecoverable. The `lint` job runs the same check on
+      # every pull request, but without a tag to compare against and while the
+      # changelog heading is still legitimately `(unreleased)`.
+      - name: Check the version metadata matches the tag
+        if: ${{ startsWith(github.event.ref, 'refs/tags') }}
+        run: python3 scripts/check_version.py --released --tag "$GITHUB_REF_NAME"
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
         with:
