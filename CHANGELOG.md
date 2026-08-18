@@ -72,6 +72,7 @@
 
 ### Bug fixes in `pyvinecopulib`
 
+- Keep `TorchVinecop`'s batched cache out of `state_dict()`, so a checkpoint taken after a `batched=True` call no longer carries derived buffers that `load_state_dict` then rejects on a fresh model (#264).
 - Reject non-finite `X` / `y` in the `pyvinecopulib.sklearn` estimators instead of passing them to `Kde1d`, which reads NaN as a segmentation fault (#263).
 - Port the `integrate_2d` marginal-renormalization fix to the torch backend (`InterpolationGrid2D.integrate_2d` and `integrate_2d_batched`) so `TorchBicop.cdf` enforces ``C(1, u_2) = u_2`` exactly, matching the post-vinecopulib#667 C++ CDF to machine precision on the on-the-fly path ([vinecopulib#667](https://github.com/vinecopulib/vinecopulib/pull/667)).
 - Declare `BicopFamily` enum members as class attributes in the generated type stubs so the documented `pv.BicopFamily.clayton` access pattern passes static type checking (`ty` / pyright / mypy), not only the module-level constants (#223).

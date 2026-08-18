@@ -256,7 +256,12 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         The memoized :meth:`_build_batched` result.
     """
     if self._batched is None:
-      self._batched = self._build_batched()
+      # Bypass any framework `__setattr__`: on the torch subclass this value
+      # is an `nn.Module`, and a normal assignment would register it as a
+      # child, so a derived cache would leak into `state_dict()` and a
+      # checkpoint taken after a batched call would not load into a fresh
+      # model. It is a memo of the pair copulas, not part of the model.
+      object.__setattr__(self, "_batched", self._build_batched())
     return self._batched
 
   def _eval_context(self):
