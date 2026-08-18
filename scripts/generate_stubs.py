@@ -125,7 +125,14 @@ def infer_method_decorator(name: str, docstring: str) -> Optional[str]:
 def render_class_stub(
   cls, name: str, known_types: Optional[set[str]] = None, indent: int = 2
 ) -> list[str]:
-  lines = [f"class {name}:"]
+  # A base is declared only when it is a bound class from the same module, so
+  # the stub that names it also defines it; ``object`` and foreign bases such as
+  # ``enum.Enum`` have no definition here. Emission order is alphabetical, which
+  # can put a base after its subclass -- legal, as a stub is never executed.
+  bases = ", ".join(
+    b.__name__ for b in cls.__bases__ if b.__module__ == cls.__module__
+  )
+  lines = [f"class {name}({bases}):" if bases else f"class {name}:"]
   doc = inspect.getdoc(cls)
   inner_indent = " " * indent
   if doc:
