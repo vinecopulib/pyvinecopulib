@@ -60,8 +60,8 @@ class _ListVinecop(VinecopBase[Any]):
   def _get_pair_copula(self, tree: int, edge: int):
     return self._pairs[tree][edge]
 
-  def _simulate_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Any:
-    raise NotImplementedError("simulate is not exercised by these tests")
+  def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Any:
+    raise NotImplementedError("sample is not exercised by these tests")
 
 
 def _pairs(d: int) -> list[list[GaussianBicop]]:

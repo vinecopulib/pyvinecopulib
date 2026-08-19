@@ -4,7 +4,7 @@
 Three modes selected via ``--mode``:
 
 * ``fit`` (default) — time the from_data fit:
-    - simulate n pseudo-obs via a Gaussian copula,
+    - sample n pseudo-obs via a Gaussian copula,
     - time ``pv.Bicop.from_data`` with TLL family per thread count,
     - time ``TorchBicop.from_data`` per device and grid_type (TLL).
   Output columns:
@@ -74,7 +74,7 @@ def _parse_bool_list(s: str) -> list[bool]:
 
 def _simulate(n: int, seed: int) -> np.ndarray:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
-  return cop.simulate(n, seeds=[seed, seed + 1, seed + 2])
+  return cop.sample(n, seeds=[seed, seed + 1, seed + 2])
 
 
 def _time_repeats(fn, repeats: int, sync=None) -> float:

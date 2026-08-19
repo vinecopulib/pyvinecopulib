@@ -42,11 +42,11 @@ Notes
   dispatches on :class:`FitControlsTorchBicop`: pure-torch TLL).
   Exposes the standard surface:
   ``pdf`` / ``cdf`` / ``hfunc1`` / ``hfunc2`` / ``hinv1`` / ``hinv2``
-  / ``simulate``.
+  / ``sample``.
 
 - :class:`TorchVinecop` — evaluator for a full R-vine built on top of
   :class:`TorchBicop` pair copulas. Provides ``pdf`` / ``cdf`` /
-  ``rosenblatt`` / ``inverse_rosenblatt`` / ``simulate`` with the same
+  ``rosenblatt`` / ``inverse_rosenblatt`` / ``sample`` with the same
   signatures as ``Vinecop``. The cascade mirrors
   ``Vinecop`` byte-for-byte; ``pdf`` / ``rosenblatt``
   also accept ``batched=True`` (one stacked bicop call per tree level).

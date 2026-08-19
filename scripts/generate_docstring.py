@@ -18,6 +18,20 @@ from pathlib import Path
 from clang import cindex
 from clang.cindex import AccessSpecifier, CursorKind, TypeKind
 
+# Upstream C++ spells the sampler `simulate`; the Python API spells it `sample`.
+# The C++ symbols keep their own names, so only the extracted prose is rewritten,
+# and only where it is a code-formatted identifier -- the English verb, as in "the
+# number of observations to simulate", must survive untouched.
+SAMPLE_RENAMES = {
+  "simulate_conditional": "sample_conditional",
+  "simulate_uniform": "sample_uniform",
+  "simulate": "sample",
+}
+SAMPLE_RENAME_RE = re.compile(
+  r"``((?:\w+\.)*)(%s)(\(\))?``"
+  % "|".join(sorted(SAMPLE_RENAMES, key=len, reverse=True))
+)
+
 CLASS_KINDS = [
   CursorKind.CLASS_DECL,
   CursorKind.STRUCT_DECL,
@@ -1218,6 +1232,15 @@ def process_comment(comment, cursor=None):
   # Transform ALL C++ method calls to Python method calls.
   # Be careful not to mistake code blocks for method calls.
   result = re.sub(r"``(.*?)::(.*?)``", r"``\1.\2``", result)
+
+  # Method names the binding renames. Runs after the `::` normalization so the
+  # `Class.method` form is already in place, and per comment rather than over the
+  # finished `docstr.hpp`, which would rewrite the emitted struct names that
+  # `vinecop_doc.simulate.doc` and friends are looked up by.
+  result = SAMPLE_RENAME_RE.sub(
+    lambda m: f"``{m.group(1)}{SAMPLE_RENAMES[m.group(2)]}{m.group(3) or ''}``",
+    result,
+  )
 
   # JSON strings are used in the Python API
   result = re.sub(r"``nlohmann\.json``", r"JSON-like `str`", result)

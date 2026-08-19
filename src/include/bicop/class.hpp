@@ -92,9 +92,9 @@ Alternatives to instantiate bivariate copulas are:
   // `simulate` takes either a sample size or one parameter set per drawn
   // observation (vinecopulib#719), which fixes the sample size by its row
   // count. `parameters` is keyword-only so that the long-standing positional
-  // `simulate(n, qrng, seeds)` keeps its meaning.
-  const std::string simulate_doc = std::string(bicop_doc.simulate.doc_3args) +
-                                   R"""(
+  // `sample(n, qrng, seeds)` keeps its meaning.
+  const std::string sample_doc = std::string(bicop_doc.simulate.doc_3args) +
+                                 R"""(
 
 Notes
 -----
@@ -458,7 +458,7 @@ Bicop
           "u"_a, "parameters"_a = nb::none(),
           "num_threads"_a = static_cast<size_t>(1), scores_full_doc.c_str())
       .def(
-          "simulate",
+          "sample",
           [](const Bicop& self, std::optional<size_t> n, bool qrng,
              const std::vector<int>& seeds,
              const std::optional<Eigen::MatrixXd>& parameters,
@@ -477,7 +477,7 @@ Bicop
           },
           "n"_a = nb::none(), "qrng"_a = false, "seeds"_a = std::vector<int>(),
           nb::kw_only(), "parameters"_a = nb::none(),
-          "num_threads"_a = static_cast<size_t>(1), simulate_doc.c_str())
+          "num_threads"_a = static_cast<size_t>(1), sample_doc.c_str())
       .def(
           "flip",
           [](const Bicop& cop) {

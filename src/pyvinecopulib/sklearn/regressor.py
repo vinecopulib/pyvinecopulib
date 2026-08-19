@@ -30,6 +30,7 @@ class VineRegressor(RegressorMixin, VineBase):
     use_grid: bool = True,
     normalize_weights: bool = True,
     random_state=None,
+    n_jobs=None,
   ) -> None:
     """Sklearn-compatible vine-copula regressor.
 
@@ -70,9 +71,23 @@ class VineRegressor(RegressorMixin, VineBase):
     random_state : int, RandomState instance or None, default=None
         Seeds the RNG used by stochastic operations. Resolved via
         `sklearn.utils.check_random_state` inside `fit`.
+    n_jobs : int or None, default=None
+        Threads the vine may use, for fitting and for every evaluation
+        (`pdf`, `cdf`, `sample`, and the prediction paths built on them).
+        `None` means one thread and `-1` every processor, following the
+        scikit-learn convention. Results never depend on it: the fitted
+        structure, the fitted pair copulas and every evaluated value are
+        bit-identical at any thread count.
+
+        `None` is deliberate: a caller that parallelizes *over* vines owns
+        the parallelism, and nesting it would oversubscribe the machine. Set
+        it when a single vine is the whole job.
     """
     super().__init__(
-      backend=backend, batch_size=batch_size, random_state=random_state
+      backend=backend,
+      batch_size=batch_size,
+      random_state=random_state,
+      n_jobs=n_jobs,
     )
     self.mean = mean
     self.quantiles = quantiles

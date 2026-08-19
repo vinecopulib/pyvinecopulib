@@ -149,7 +149,7 @@ Faithful inverse of ``RVineStructure.get_trees()``: the R-vine matrix is
 assembled placing each edge's first conditioned variable ``a`` on the diagonal,
 so ``RVineStructure.from_trees(s.dim, s.get_trees())`` reproduces ``s`` exactly.
 The diagonal choice fixes the variable order — and hence which variables sit at
-its tail, which is what ``Vinecop.simulate_conditional`` conditions on.
+its tail, which is what ``Vinecop.sample_conditional`` conditions on.
 
 Parameters
 ----------
@@ -308,7 +308,7 @@ Vinecop.get_trees : The same decomposition carrying the fitted pair copulas.
       .def("truncate", &RVineStructure::truncate, "trunc_lvl"_a,
            rvinestructure_doc.truncate.doc,
            nb::call_guard<nb::gil_scoped_release>())
-      .def_static("simulate", &RVineStructure::simulate, "d"_a,
+      .def_static("sample", &RVineStructure::simulate, "d"_a,
                   "natural_order"_a = false, "seeds"_a = std::vector<size_t>(),
                   rvinestructure_doc.simulate.doc,
                   nb::call_guard<nb::gil_scoped_release>())

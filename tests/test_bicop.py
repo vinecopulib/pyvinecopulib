@@ -132,11 +132,11 @@ def test_bicop(unique_json_path: str) -> None:
     assert isinstance(values, np.ndarray)
     assert values.shape == (2,)
 
-  # Test simulate method
+  # Test sample method
   n = 100
   qrng = False
   seeds: list[int] = []
-  samples = bicop.simulate(n, qrng, seeds)
+  samples = bicop.sample(n, qrng, seeds)
   assert samples.shape == (n, 2)
 
   # Test fit method
@@ -610,7 +610,7 @@ def test_bicop_scores_family(
   # mirroring the Vinecop surface for a single pair copula.
   n = 400
   cop = pv.Bicop(family=family, parameters=parameters)
-  u = cop.simulate(n, seeds=[1, 2, 3])
+  u = cop.sample(n, seeds=[1, 2, 3])
   p = cop.parameters.shape[0]
 
   # Shapes: scores (n, p); gradient (p,); hessian / scores_cov (p, p).
@@ -712,12 +712,12 @@ def test_simulate_per_row_parameters_matches_loop() -> None:
   cop = pv.Bicop.from_family(pv.families.clayton, parameters=np.array([[2.0]]))
   parameters = np.linspace(0.5, 6.0, n).reshape(n, 1)
 
-  drawn = cop.simulate(parameters=parameters, seeds=seeds)
+  drawn = cop.sample(parameters=parameters, seeds=seeds)
   assert drawn.shape == (n, 2)
 
-  # simulate() draws an (n, 2) uniform sample and replaces the second column
+  # sample() draws an (n, 2) uniform sample and replaces the second column
   # with hinv1 of the pair; the same seeds reproduce that sample exactly.
-  base = pv.utils.simulate_uniform(n, 2, False, seeds)
+  base = pv.utils.sample_uniform(n, 2, False, seeds)
   np.testing.assert_array_equal(drawn[:, 0], base[:, 0])
 
   # Row i must be what a copula carrying only row i's parameters would draw.
@@ -733,16 +733,16 @@ def test_simulate_per_row_parameters_independence() -> None:
   # `indep` has no parameters, so the per-row form takes an (n, 0) matrix and
   # the row count alone fixes the sample size.
   cop = pv.Bicop.from_family(pv.families.indep)
-  drawn = cop.simulate(parameters=np.empty((5, 0)), seeds=[7])
+  drawn = cop.sample(parameters=np.empty((5, 0)), seeds=[7])
   assert drawn.shape == (5, 2)
 
 
 def test_simulate_requires_exactly_one_of_n_and_parameters() -> None:
   cop = pv.Bicop.from_family(pv.families.gaussian, parameters=np.array([[0.5]]))
   with pytest.raises(ValueError, match="exactly one"):
-    cop.simulate()
+    cop.sample()
   with pytest.raises(ValueError, match="exactly one"):
-    cop.simulate(10, parameters=np.full((10, 1), 0.5))
+    cop.sample(10, parameters=np.full((10, 1), 0.5))
 
 
 def test_simulate_per_row_parameters_rejects_nonparametric() -> None:
@@ -751,7 +751,7 @@ def test_simulate_per_row_parameters_rejects_nonparametric() -> None:
     u, controls=pv.FitControlsBicop(family_set=[pv.families.tll])
   )
   with pytest.raises(RuntimeError):
-    cop.simulate(parameters=np.full((4, 1), 0.5))
+    cop.sample(parameters=np.full((4, 1), 0.5))
 
 
 def test_simulate_per_row_parameters_must_be_two_dimensional() -> None:
@@ -759,7 +759,7 @@ def test_simulate_per_row_parameters_must_be_two_dimensional() -> None:
   # either one Student t or two malformed parameter sets.
   cop = pv.Bicop.from_family(pv.families.gaussian, parameters=np.array([[0.5]]))
   with pytest.raises(TypeError):
-    cop.simulate(parameters=np.array([0.1, 0.2, 0.3]))
+    cop.sample(parameters=np.array([0.1, 0.2, 0.3]))
 
 
 @pytest.mark.parametrize(
@@ -782,20 +782,18 @@ def test_simulate_per_row_parameters_accepts_either_memory_order(
   cop = pv.Bicop.from_family(
     pv.families.student, parameters=np.array([[0.5], [4.0]])
   )
-  drawn = cop.simulate(parameters=parameters, seeds=seeds)
+  drawn = cop.sample(parameters=parameters, seeds=seeds)
   assert drawn.shape == (n, 2)
 
-  reference = cop.simulate(
-    parameters=np.asfortranarray(parameters), seeds=seeds
-  )
+  reference = cop.sample(parameters=np.asfortranarray(parameters), seeds=seeds)
   np.testing.assert_array_equal(drawn, reference)
 
 
 def test_simulate_positional_signature_is_unchanged() -> None:
-  # `simulate(n, qrng, seeds)` predates the per-row overload and must keep
+  # `sample(n, qrng, seeds)` predates the per-row overload and must keep
   # meaning what it meant.
   cop = pv.Bicop.from_family(pv.families.gaussian, parameters=np.array([[0.5]]))
-  assert cop.simulate(12, False, [1, 2]).shape == (12, 2)
+  assert cop.sample(12, False, [1, 2]).shape == (12, 2)
 
 
 def _discrete_pair(n: int = 500, seed: int = 3):

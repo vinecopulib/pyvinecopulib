@@ -84,7 +84,7 @@ and the `examples/10_extending_pyvinecopulib.ipynb` notebook.
 ### Conditional sampling and likelihood diagnostics
 
 A fitted `Vinecop` can draw from the conditional distribution of a subset of
-variables given the rest (`simulate_conditional`), select or `reorient` a
+variables given the rest (`sample_conditional`), select or `reorient` a
 structure so a chosen conditioning set sits at the order tail, and expose its
 tree-by-tree decomposition with the fitted pair copulas (`get_trees`).
 Parametric fits additionally provide analytic log-likelihood scores, gradient,
