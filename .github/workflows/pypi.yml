@@ -321,7 +321,7 @@ jobs:
         shell: bash
         run: |
           uv venv --python ${{ steps.pyver.outputs.version }}
-          uv sync --no-install-project --group test --group notebooks --extra examples --extra sklearn --extra torch
+          uv sync --no-install-project --group test --group notebooks --extra examples --extra sklearn --extra torch --extra openturns
       - name: Download built wheel (<=3.11)
         if: ${{ matrix.python <= 311 }}
         uses: actions/download-artifact@v8

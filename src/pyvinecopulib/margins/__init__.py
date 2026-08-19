@@ -5,7 +5,7 @@ constructor, and ``fit`` estimates the rest in place and returns ``self``, as
 :class:`pyvinecopulib.core.Kde1d` and the scikit-learn estimators do. A margin
 whose parameters are given at construction is already fitted.
 
-- **Nonparametric** — :class:`Kde1d` (the default; boundary-corrected,
+- **Nonparametric** — ``Kde1d`` (the default; boundary-corrected,
   and handles continuous, discrete and zero-inflated data) and
   :class:`EmpiricalMargin` (the rank transform behind
   :func:`pyvinecopulib.utils.to_pseudo_obs`, as a distribution).

@@ -194,7 +194,7 @@ class MarginSelector(MarginBase[np.ndarray]):
   **Nothing is skipped silently.** A candidate that fails to fit, or that fits
   to something inadmissible, still gets a row in :attr:`report_` with the
   reason. When every candidate fails, the selector falls back to
-  :class:`Kde1d` and warns once, naming the variable and the reasons —
+  ``Kde1d`` and warns once, naming the variable and the reasons —
   never to ``norm``, which would misspecify silently. Marginal
   misspecification is the more damaging of the two errors here: it distorts the
   probability transform and biases the copula, where a conservative margin does
@@ -255,7 +255,7 @@ class MarginSelector(MarginBase[np.ndarray]):
     -------
     MarginLike
         The candidate with the smallest ``criterion``, or the
-        :class:`Kde1d` fallback when every candidate was rejected.
+        ``Kde1d`` fallback when every candidate was rejected.
 
     Raises
     ------
