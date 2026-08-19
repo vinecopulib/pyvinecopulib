@@ -78,15 +78,22 @@ def test_empirical_margin_saturates_off_the_boundary(
   assert np.all((m.cdf(sample) > 0.0) & (m.cdf(sample) < 1.0))
 
 
-def test_empirical_margin_mass_is_the_jump(sample: np.ndarray) -> None:
-  """`pdf` is the jump `F(x) - F(x^-)`, i.e. `1 / (n + 1)` per observation."""
+def test_empirical_margin_jump_is_one_over_n_plus_one(
+  sample: np.ndarray,
+) -> None:
+  """The jump `F(x) - F(x^-)` at an observation is `1 / (n + 1)`."""
   m = EmpiricalMargin().fit(sample)
   np.testing.assert_allclose(
-    m.pdf(sample), 1.0 / (sample.size + 1.0), atol=1e-12
+    m.cdf(sample) - m.cdf_left(sample), 1.0 / (sample.size + 1.0), atol=1e-12
   )
-  np.testing.assert_allclose(
-    m.cdf(sample) - m.cdf_left(sample), m.pdf(sample), atol=1e-12
-  )
+
+
+def test_empirical_margin_has_no_density(sample: np.ndarray) -> None:
+  """`pdf` / `logpdf` raise, and point at the KDE margin instead."""
+  m = EmpiricalMargin().fit(sample)
+  for call in (m.pdf, m.logpdf):
+    with pytest.raises(NotImplementedError, match="Kde1d"):
+      call(sample)
 
 
 def test_empirical_margin_handles_ties_and_weights() -> None:
@@ -94,7 +101,10 @@ def test_empirical_margin_handles_ties_and_weights() -> None:
   tied = np.array([1.0, 2.0, 2.0, 3.0])
   m = EmpiricalMargin().fit(tied)
   # Two observations at 2.0, so the jump there is 2 / (n + 1).
-  np.testing.assert_allclose(m.pdf(np.array([2.0])), 2.0 / 5.0, atol=1e-12)
+  at_two = np.array([2.0])
+  np.testing.assert_allclose(
+    m.cdf(at_two) - m.cdf_left(at_two), 2.0 / 5.0, atol=1e-12
+  )
 
   weighted = EmpiricalMargin().fit(
     np.array([1.0, 2.0, 3.0]), weights=np.array([1.0, 2.0, 1.0])
@@ -120,7 +130,10 @@ def test_empirical_margin_drops_nans() -> None:
   """NaNs are excluded, as `to_pseudo_obs` excludes them."""
   m = EmpiricalMargin().fit(np.array([1.0, np.nan, 2.0, 3.0]))
   assert m.support == (1.0, 3.0)
-  np.testing.assert_allclose(m.pdf(np.array([2.0])), 1.0 / 4.0, atol=1e-12)
+  at_two = np.array([2.0])
+  np.testing.assert_allclose(
+    m.cdf(at_two) - m.cdf_left(at_two), 1.0 / 4.0, atol=1e-12
+  )
 
 
 def test_empirical_margin_raises_before_fit() -> None:

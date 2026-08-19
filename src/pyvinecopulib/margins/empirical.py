@@ -10,6 +10,18 @@ from ..core import MarginBase
 
 __all__ = ["EmpiricalMargin"]
 
+# Raised by `pdf` / `logpdf`, and so by everything downstream of them. Spelled
+# out because the mistake it catches is silent otherwise: the natural use of
+# this margin is on continuous data, where a mass is not a density, and a wrong
+# number would survive all the way into a log-likelihood.
+_NO_DENSITY = (
+  "EmpiricalMargin has no density: the empirical distribution is atomic, so "
+  "there is no density with respect to Lebesgue measure and no meaningful "
+  "log-likelihood on the original scale. Use Kde1d for a density — it is the "
+  'default, and `margins="kde"` selects it explicitly. EmpiricalMargin remains '
+  "valid for cdf, icdf and sample, and as the rank transform feeding a copula."
+)
+
 
 class EmpiricalMargin(MarginBase[np.ndarray]):
   r"""Rescaled empirical distribution function of the observed sample.
@@ -32,25 +44,26 @@ class EmpiricalMargin(MarginBase[np.ndarray]):
 
   Notes
   -----
-  Honest limitations. The density is not defined — the distribution is
-  atomic — so :meth:`pdf` returns the mass ``1 / (n + 1)`` at observed values
-  and ``0`` elsewhere, and a joint density built on these margins is a density
-  with respect to a counting measure, not a Lebesgue one. :meth:`icdf` is a step
-  function, so sampling through this margin resamples observed values and
-  never produces a new one. The whole sample is retained, so memory is
-  ``O(n)``. Out of sample, ``cdf`` saturates at ``1 / (n + 1)`` and
-  ``n / (n + 1)`` rather than at 0 and 1 — which is the point.
+  Honest limitations. **There is no density**: the empirical distribution is
+  atomic, so :meth:`pdf` and :meth:`logpdf` raise, and so does anything built
+  on them — a :class:`~pyvinecopulib.core.Vinedist` on these margins has a
+  ``cdf`` but no ``pdf``, ``logpdf`` or ``loglik``. Use ``Kde1d`` — the default
+  — when a density is wanted. :meth:`icdf` is a step function, so sampling
+  through this margin resamples observed values and never produces a new one.
+  The whole sample is retained, so memory is ``O(n)``. Out of sample, ``cdf``
+  saturates at ``1 / (n + 1)`` and ``n / (n + 1)`` rather than at 0 and 1 —
+  which is the point.
 
   Ties are broken upward: ``cdf`` counts observations ``<= x``, matching
   :func:`~pyvinecopulib.utils.to_pseudo_obs` with ``ties_method="max"``. On a
   sample without ties — the case for continuous data — it agrees with that
   helper's ``"average"`` default exactly.
 
-  Because ``pdf`` is a mass rather than a density, a
-  :class:`~pyvinecopulib.core.Vinedist` built on these margins reports a
-  log-density that differs from its copula's by the constant
-  :math:`-d \log(n + 1)`. Use it to compare models on the same data, not as a
-  density on the original scale.
+  What this margin is *for* is the copula: ``cdf`` on the observed sample is
+  exactly :func:`~pyvinecopulib.utils.to_pseudo_obs`, so a
+  :class:`~pyvinecopulib.core.Vinedist` on these margins fits and evaluates the
+  same copula as the long-standing copula-only workflow, and
+  :meth:`~pyvinecopulib.core.Vinedist.copula_data` reproduces its input.
   """
 
   supports_weights: bool = True
@@ -193,7 +206,46 @@ class EmpiricalMargin(MarginBase[np.ndarray]):
     return below[idx] / (self._total + 1.0)
 
   def pdf(self, x: Any) -> np.ndarray:
-    return self.cdf(x) - self.cdf_left(x)
+    """Raise: the empirical distribution has no density.
+
+    Parameters
+    ----------
+    x : array, shape (n,), dtype float
+        Unused.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Never returns.
+
+    Raises
+    ------
+    NotImplementedError
+        Always.
+    """
+    del x
+    raise NotImplementedError(_NO_DENSITY)
+
+  def logpdf(self, x: Any) -> np.ndarray:
+    """Raise: the empirical distribution has no density.
+
+    Parameters
+    ----------
+    x : array, shape (n,), dtype float
+        Unused.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Never returns.
+
+    Raises
+    ------
+    NotImplementedError
+        Always.
+    """
+    del x
+    raise NotImplementedError(_NO_DENSITY)
 
   def icdf(self, p: Any) -> np.ndarray:
     values = self._values()
