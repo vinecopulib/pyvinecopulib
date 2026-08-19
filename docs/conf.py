@@ -232,7 +232,9 @@ _CLASS_MODULE = {
   "VinecopBackend": "pyvinecopulib.sklearn.backends",
   "TorchVinecopBackend": "pyvinecopulib.sklearn.backends",
   "TorchBicop": "pyvinecopulib.torch",
+  "TorchMargin": "pyvinecopulib.torch",
   "TorchVinecop": "pyvinecopulib.torch",
+  "TorchVinedist": "pyvinecopulib.torch",
   "FitControlsTorchBicop": "pyvinecopulib.torch",
   "FitControlsTorchVinecop": "pyvinecopulib.torch",
 }
@@ -395,7 +397,9 @@ DOCSTRING_SUBPACKAGES = {
   "torch": {
     "classes": [
       "TorchBicop",
+      "TorchMargin",
       "TorchVinecop",
+      "TorchVinedist",
       "FitControlsTorchBicop",
       "FitControlsTorchVinecop",
     ],
