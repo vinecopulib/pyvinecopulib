@@ -96,8 +96,8 @@ def test_empirical_margin_has_no_density(sample: np.ndarray) -> None:
       call(sample)
 
 
-def test_empirical_margin_handles_ties_and_weights() -> None:
-  """Ties collapse, and weighting matches duplication."""
+def test_empirical_margin_handles_ties() -> None:
+  """Ties collapse into one jump carrying their combined mass."""
   tied = np.array([1.0, 2.0, 2.0, 3.0])
   m = EmpiricalMargin().fit(tied)
   # Two observations at 2.0, so the jump there is 2 / (n + 1).
@@ -106,12 +106,28 @@ def test_empirical_margin_handles_ties_and_weights() -> None:
     m.cdf(at_two) - m.cdf_left(at_two), 2.0 / 5.0, atol=1e-12
   )
 
-  weighted = EmpiricalMargin().fit(
-    np.array([1.0, 2.0, 3.0]), weights=np.array([1.0, 2.0, 1.0])
-  )
+
+def test_empirical_margin_weights_match_to_pseudo_obs() -> None:
+  """Weighted `cdf` is `to_pseudo_obs(weights=...)`, and only ratios matter.
+
+  The reference transform is scale-invariant in the weights, so this margin has
+  to be too: weights that happen to sum to 1 must not shrink every value toward
+  `1 / (n + 1)`. Note weighting is *not* the same model as duplicating a row —
+  `to_pseudo_obs` does not equate them either, since duplication adds an
+  observation and averages the resulting tie.
+  """
+  y = np.array([1.0, 2.0, 3.0])
+  w = np.array([1.0, 2.0, 1.0])
+  reference = np.asarray(pv.to_pseudo_obs(y.reshape(-1, 1), weights=w)).ravel()
+
+  for scale in (1.0, 0.1, 1000.0):
+    fitted = EmpiricalMargin().fit(y, weights=w * scale)
+    np.testing.assert_allclose(fitted.cdf(y), reference, atol=1e-12)
+
+  # Uniform weights of any scale reproduce the unweighted fit.
   np.testing.assert_allclose(
-    weighted.cdf(np.array([1.0, 2.0, 3.0])),
-    m.cdf(np.array([1.0, 2.0, 3.0])),
+    EmpiricalMargin().fit(y, weights=np.full(3, 0.25)).cdf(y),
+    EmpiricalMargin().fit(y).cdf(y),
     atol=1e-12,
   )
 

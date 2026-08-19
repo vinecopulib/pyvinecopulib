@@ -170,7 +170,7 @@ def test_estimator_recovers_the_generating_parameters(
   np.testing.assert_allclose(margin.parameters, (1.0, 2.0), atol=0.2)
   assert margin.n_parameters == 2.0
   np.testing.assert_allclose(
-    margin.fitted_loglik, np.sum(margin.logpdf(normal_sample)), atol=0
+    margin.loglik(), np.sum(margin.logpdf(normal_sample)), atol=0
   )
 
 

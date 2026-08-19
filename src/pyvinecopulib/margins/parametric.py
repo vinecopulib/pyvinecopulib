@@ -12,6 +12,7 @@ from typing import Any, Mapping, Optional, Sequence
 import numpy as np
 
 from ..core import MarginBase
+from ..core.margin_base import _reject_covariates
 
 __all__ = ["ParametricMargin"]
 
@@ -372,7 +373,7 @@ class ParametricMargin(MarginBase[np.ndarray]):
     """
     if self._params is None:
       raise RuntimeError(
-        f"ParametricMargin({self._family!r}) is not fitted; call fit(x) or "
+        f"ParametricMargin({self._family!r}) is not fitted; call fit(y) or "
         "pass params="
       )
     return self._params
@@ -405,13 +406,8 @@ class ParametricMargin(MarginBase[np.ndarray]):
     return float(self._n_free)
 
   @property
-  def fitted_loglik(self) -> float:
+  def _fitted_loglik(self) -> float:
     """Log-likelihood attained at the fit.
-
-    Named apart from :meth:`~pyvinecopulib.core.MarginBase.loglik`, which is a
-    *method* evaluating the log-likelihood of a given sample: one name cannot be
-    both, and a property shadowing the method made ``margin.loglik(x)`` raise
-    ``TypeError``.
 
     Returns
     -------
@@ -421,13 +417,12 @@ class ParametricMargin(MarginBase[np.ndarray]):
     Raises
     ------
     RuntimeError
-        If the margin was never fitted. Use ``logpdf(x).sum()`` for the
-        log-likelihood on an arbitrary sample.
+        If the margin was never fitted.
     """
     if self._loglik is None:
       raise RuntimeError(
-        f"ParametricMargin({self._family!r}).fitted_loglik is only defined "
-        "after fit(x); use logpdf(x).sum() for another sample"
+        f"ParametricMargin({self._family!r}).loglik() is only defined after "
+        "fit(y); pass a sample to evaluate one instead"
       )
     return self._loglik
 
@@ -470,13 +465,18 @@ class ParametricMargin(MarginBase[np.ndarray]):
     """
     return getattr(_stats(), self._family)
 
-  def fit(self, x: Any, *, weights: Optional[Any] = None) -> "ParametricMargin":
+  def fit(
+    self, y: Any, *, x: Optional[Any] = None, weights: Optional[Any] = None
+  ) -> "ParametricMargin":
     """Estimate the free parameters by maximum likelihood.
 
     Parameters
     ----------
-    x : array, shape (n,), dtype float
+    y : array, shape (n,), dtype float
         Observations; NaNs are dropped.
+    x : array, shape (n, k), or None, optional
+        Not supported; passing covariates raises rather than silently
+        fitting an unconditional margin.
     weights : array, shape (n,), or None, optional
         Not supported; see the Notes on the class.
 
@@ -493,13 +493,14 @@ class ParametricMargin(MarginBase[np.ndarray]):
         If no observation survives, or a free discrete parameter has no search
         bound.
     """
+    _reject_covariates(self, x)
     if weights is not None:
       raise TypeError(
         f"ParametricMargin({self._family!r}) cannot use observation weights: "
         "SciPy's estimators do not accept them. Pass margins='kde' or "
         "margins='empirical' for a weighted fit, or drop weights="
       )
-    data = np.asarray(x, dtype=float).ravel()
+    data = np.asarray(y, dtype=float).ravel()
     data = data[~np.isnan(data)]
     if data.size == 0:
       raise ValueError(
@@ -561,24 +562,26 @@ class ParametricMargin(MarginBase[np.ndarray]):
 
   # --- evaluation ---------------------------------------------------------- #
 
-  def pdf(self, x: Any) -> np.ndarray:
+  def pdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
     params = self.parameters
     dist = self._dist
-    values = np.asarray(x, dtype=float)
+    values = np.asarray(y, dtype=float)
     if self._discrete:
       return np.asarray(dist.pmf(values, *params), dtype=float)
     return np.asarray(dist.pdf(values, *params), dtype=float)
 
-  def logpdf(self, x: Any) -> np.ndarray:
+  def logpdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
     """Log of :meth:`pdf`, from SciPy's own log-density.
 
-    Overrides the inherited ``log(pdf(x))``, which loses the tails to underflow
+    Overrides the inherited ``log(pdf(y))``, which loses the tails to underflow
     exactly where a log-likelihood is most sensitive to them.
 
     Parameters
     ----------
-    x : array, shape (n,), dtype float
+    y : array, shape (n,), dtype float
         Observations on the original scale.
+    x : array, shape (n, k), or None, optional
+        Ignored; this margin is unconditional.
 
     Returns
     -------
@@ -587,30 +590,34 @@ class ParametricMargin(MarginBase[np.ndarray]):
     """
     params = self.parameters
     dist = self._dist
-    values = np.asarray(x, dtype=float)
+    values = np.asarray(y, dtype=float)
     if self._discrete:
       return np.asarray(dist.logpmf(values, *params), dtype=float)
     return np.asarray(dist.logpdf(values, *params), dtype=float)
 
-  def cdf(self, x: Any) -> np.ndarray:
+  def cdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
     return np.asarray(
-      self._dist.cdf(np.asarray(x, dtype=float), *self.parameters),
+      self._dist.cdf(np.asarray(y, dtype=float), *self.parameters),
       dtype=float,
     )
 
-  def icdf(self, p: Any) -> np.ndarray:
+  def icdf(self, p: Any, *, x: Optional[Any] = None) -> np.ndarray:
     return np.asarray(
       self._dist.ppf(np.asarray(p, dtype=float), *self.parameters),
       dtype=float,
     )
 
-  def sample(self, n: int, *, seeds: Optional[list[int]] = None) -> np.ndarray:
+  def sample(
+    self, n: int, *, x: Optional[Any] = None, seeds: Optional[list[int]] = None
+  ) -> np.ndarray:
     """Draw ``n`` samples from the family.
 
     Parameters
     ----------
     n : int
         Number of samples.
+    x : array, shape (n, k), or None, optional
+        Ignored; this margin is unconditional.
     seeds : list of int, or None, optional
         RNG seeds.
 

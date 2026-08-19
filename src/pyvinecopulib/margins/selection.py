@@ -16,6 +16,7 @@ from typing import Any, Optional, Sequence
 import numpy as np
 
 from ..core import MarginBase
+from ..core.margin_base import _reject_covariates
 from ..core import Kde1d
 from .parametric import (
   _EXCLUDED,
@@ -59,7 +60,7 @@ def _criteria(loglik: float, k: float, n: int) -> dict[str, float]:
   return {"aic": aic, "bic": bic, "aicc": aicc}
 
 
-def _reject(candidate: Any, x: np.ndarray) -> Optional[str]:
+def _reject(candidate: Any, y: np.ndarray) -> Optional[str]:
   """Return why a fitted candidate is inadmissible, or ``None`` if it is fine.
 
   Four things have to hold, and none of them implies the others. Every
@@ -75,7 +76,7 @@ def _reject(candidate: Any, x: np.ndarray) -> Optional[str]:
   ----------
   candidate : MarginLike
       A fitted candidate.
-  x : array, shape (n,), dtype float
+  y : array, shape (n,), dtype float
       The observations it was fitted to.
 
   Returns
@@ -99,20 +100,35 @@ def _reject(candidate: Any, x: np.ndarray) -> Optional[str]:
       if not lo < value < hi:
         return f"degenerate parameter {name}={value:.6g}, outside ({lo}, {hi})"
 
+  # A continuous family whose scale collapses onto an atom is the other boundary
+  # escape, and the one an information criterion rewards hardest: a density
+  # concentrating on a repeated value diverges, and so does its likelihood. On
+  # data that is half exact zeros, a `t` fitted with scale ~1e-9 beats every
+  # honest candidate by thousands of AIC units.
+  if len(names) == len(values):
+    spread = float(np.max(y) - np.min(y))
+    floor = 1e-6 * spread if spread > 0.0 else 0.0
+    for name, value in zip(names, values):
+      if name == "scale" and floor > 0.0 and value < floor:
+        return (
+          f"degenerate parameter scale={value:.6g}, below {floor:.6g} "
+          "(collapsing onto an atom rather than fitting the spread)"
+        )
+
   lo, hi = getattr(margin, "support", (float("-inf"), float("inf")))
   # A bound the caller pinned is allowed to coincide with the data range: a
   # uniform on a known [a, b] is not an escape. An estimated one is not, since
   # touching it is the escape.
   pinned = getattr(margin, "fixed_parameters", {})
-  lo_ok = lo <= x.min() if "loc" in pinned else lo < x.min()
-  hi_ok = x.max() <= hi if "scale" in pinned else x.max() < hi
+  lo_ok = lo <= y.min() if "loc" in pinned else lo < y.min()
+  hi_ok = y.max() <= hi if "scale" in pinned else y.max() < hi
   if not (lo_ok and hi_ok):
     return (
       f"support ({lo:.6g}, {hi:.6g}) does not contain the data range "
-      f"[{x.min():.6g}, {x.max():.6g}]"
+      f"[{y.min():.6g}, {y.max():.6g}]"
     )
 
-  loglik = float(np.sum(margin.logpdf(x)))
+  loglik = float(np.sum(margin.logpdf(y)))
   if not np.isfinite(loglik):
     return f"non-finite log-likelihood ({loglik})"
   return None
@@ -210,8 +226,8 @@ class MarginSelector(MarginBase[np.ndarray]):
       import numpy as np
       from pyvinecopulib.margins import MarginSelector
 
-      x = np.random.default_rng(0).gamma(2.5, 1.5, size=500)
-      sel = MarginSelector(criterion="bic").fit(x)
+      y = np.random.default_rng(0).gamma(2.5, 1.5, size=500)
+      sel = MarginSelector(criterion="bic").fit(y)
       sel.selected_.family_name              # -> 'gamma'
       [(r["family"], r["status"]) for r in sel.report_]
   """
@@ -263,7 +279,7 @@ class MarginSelector(MarginBase[np.ndarray]):
         If the selector has not been fitted.
     """
     if self._selected is None:
-      raise RuntimeError("MarginSelector is not fitted; call fit(x)")
+      raise RuntimeError("MarginSelector is not fitted; call fit(y)")
     return self._selected
 
   @property
@@ -291,13 +307,18 @@ class MarginSelector(MarginBase[np.ndarray]):
 
   # --- estimation ---------------------------------------------------------- #
 
-  def fit(self, x: Any, *, weights: Optional[Any] = None) -> "MarginSelector":
+  def fit(
+    self, y: Any, *, x: Optional[Any] = None, weights: Optional[Any] = None
+  ) -> "MarginSelector":
     """Fit every candidate and keep the best.
 
     Parameters
     ----------
-    x : array, shape (n,), dtype float
+    y : array, shape (n,), dtype float
         Observations; NaNs are dropped.
+    x : array, shape (n, k), or None, optional
+        Not supported; passing covariates raises rather than silently
+        fitting an unconditional margin.
     weights : array, shape (n,), or None, optional
         Not supported; the parametric candidates cannot use them.
 
@@ -319,6 +340,7 @@ class MarginSelector(MarginBase[np.ndarray]):
         Once, when every candidate is rejected and the kernel-density fallback
         is used instead.
     """
+    _reject_covariates(self, x)
     if weights is not None:
       raise TypeError(
         "MarginSelector cannot use observation weights: its parametric "
@@ -326,7 +348,7 @@ class MarginSelector(MarginBase[np.ndarray]):
         "margins='kde' or margins='empirical' for a weighted fit, or drop "
         "weights="
       )
-    data = np.asarray(x, dtype=float).ravel()
+    data = np.asarray(y, dtype=float).ravel()
     data = data[~np.isnan(data)]
     if data.size == 0:
       raise ValueError("MarginSelector.fit got no usable observation")
@@ -403,8 +425,34 @@ class MarginSelector(MarginBase[np.ndarray]):
         "sequence of family names and margins"
       )
     out: list[Any] = []
+    dropped: list[str] = []
+    want = "d" if counts else "c"
     for entry in self.candidates:
-      out.append(ParametricMargin(entry) if isinstance(entry, str) else entry)
+      margin = ParametricMargin(entry) if isinstance(entry, str) else entry
+      # The partition the "auto" path applies, applied here too: a count family
+      # reports a probability mass and a continuous one a Lebesgue density, so
+      # ranking both on one criterion compares numbers that are not
+      # commensurable -- and the density usually wins.
+      if getattr(margin, "var_type", "c") == want:
+        out.append(margin)
+      else:
+        dropped.append(str(getattr(margin, "family_name", margin)))
+    reads = "counts" if counts else "continuous"
+    if dropped and not out:
+      raise ValueError(
+        f"the data read as {reads}, and every candidate is of the other kind: "
+        f"{', '.join(dropped)}. Pass var_type to say how the data should be "
+        "read, or candidates that match it."
+      )
+    if dropped:
+      warnings.warn(
+        f"the data read as {reads}, so {len(dropped)} candidate(s) of the "
+        f"other kind were dropped: {', '.join(dropped)}. A probability mass "
+        "and a Lebesgue density are not comparable on one information "
+        "criterion.",
+        UserWarning,
+        stacklevel=3,
+      )
     return out
 
   def _groups(self, data: np.ndarray, *, counts: bool) -> list[str]:
@@ -563,7 +611,7 @@ class MarginSelector(MarginBase[np.ndarray]):
     return float(getattr(self.selected_, "n_parameters", float("nan")))
 
   @property
-  def fitted_loglik(self) -> float:
+  def _fitted_loglik(self) -> float:
     """Log-likelihood attained by the selected margin.
 
     Returns
@@ -571,7 +619,7 @@ class MarginSelector(MarginBase[np.ndarray]):
     float
         The winner's fitted log-likelihood.
     """
-    return float(self.selected_.fitted_loglik)
+    return float(self.selected_.loglik())
 
   @property
   def var_type(self) -> str:
@@ -582,28 +630,32 @@ class MarginSelector(MarginBase[np.ndarray]):
     lo, hi = getattr(self.selected_, "support", (float("-inf"), float("inf")))
     return (float(lo), float(hi))
 
-  def pdf(self, x: Any) -> np.ndarray:
-    return np.asarray(self.selected_.pdf(x), dtype=float)
+  def pdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
+    return np.asarray(self.selected_.pdf(y), dtype=float)
 
-  def cdf(self, x: Any) -> np.ndarray:
-    return np.asarray(self.selected_.cdf(x), dtype=float)
+  def cdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
+    return np.asarray(self.selected_.cdf(y), dtype=float)
 
-  def icdf(self, p: Any) -> np.ndarray:
+  def icdf(self, p: Any, *, x: Optional[Any] = None) -> np.ndarray:
     return np.asarray(self.selected_.icdf(p), dtype=float)
 
-  def logpdf(self, x: Any) -> np.ndarray:
-    return np.asarray(self.selected_.logpdf(x), dtype=float)
+  def logpdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
+    return np.asarray(self.selected_.logpdf(y), dtype=float)
 
-  def cdf_left(self, x: Any) -> np.ndarray:
-    return np.asarray(self.selected_.cdf_left(x), dtype=float)
+  def cdf_left(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
+    return np.asarray(self.selected_.cdf_left(y), dtype=float)
 
-  def sample(self, n: int, *, seeds: Optional[list[int]] = None) -> np.ndarray:
+  def sample(
+    self, n: int, *, x: Optional[Any] = None, seeds: Optional[list[int]] = None
+  ) -> np.ndarray:
     """Draw ``n`` samples from the selected margin.
 
     Parameters
     ----------
     n : int
         Number of samples.
+    x : array, shape (n, k), or None, optional
+        Ignored; this margin is unconditional.
     seeds : list of int, or None, optional
         RNG seeds.
 

@@ -7,6 +7,7 @@ from typing import Any, Generic, Optional, Sequence, cast
 
 from array_api_compat import array_namespace
 
+from .margin_base import _margin_eval, derive_cdf_left
 from .protocols import ArrayT, MarginLike
 
 
@@ -44,6 +45,23 @@ _TRIM_LO: float = 1e-10
 _TRIM_HI: float = 1.0 - 1e-10
 
 
+def _copula_eval(
+  copula: Any, name: str, u: Any, x: Optional[Any], **kwargs: Any
+) -> Any:
+  """Call a copula method, forwarding ``x`` only when the copula reads it.
+
+  The commonest half of a vine distribution is the compiled ``Vinecop``, whose
+  second positional slot is per-row ``parameters`` rather than a conditioning
+  matrix, so covariates must not reach it -- and a vine of unconditional pairs
+  would refuse them one level further down. A copula declares that its pairs are
+  conditional through ``supports_covariates``, exactly as a margin does.
+  """
+  method = getattr(copula, name)
+  if x is None or not getattr(copula, "supports_covariates", False):
+    return method(u, **kwargs)
+  return method(u, x=x, **kwargs)
+
+
 class Vinedist(Generic[ArrayT]):
   r"""A multivariate distribution built from a vine copula and its margins.
 
@@ -52,14 +70,21 @@ class Vinedist(Generic[ArrayT]):
 
   .. math::
 
-     F(\mathbf x) = C\bigl(F_1(x_1), \ldots, F_d(x_d)\bigr), \qquad
-     \log f(\mathbf x) = \log c\bigl(F_1(x_1), \ldots, F_d(x_d)\bigr)
-       + \sum_{j=1}^d \log f_j(x_j).
+     F(\mathbf y) = C\bigl(F_1(y_1), \ldots, F_d(y_d)\bigr), \qquad
+     \log f(\mathbf y) = \log c\bigl(F_1(y_1), \ldots, F_d(y_d)\bigr)
+       + \sum_{j=1}^d \log f_j(y_j).
 
   The second identity holds for continuous, discrete and mixed margins alike,
   because each margin's ``pdf`` is a density with respect to its own reference
   measure and the copula factor is normalized by the marginal masses. Nothing
   in the evaluation path branches on the variable type.
+
+    Every method takes the observations as ``y`` and optional exogenous
+    covariates as a keyword-only ``x``, which are forwarded to both halves: to
+    each margin that declares ``supports_covariates``, and to the copula when it
+    declares ``supports_covariates`` too. Conditional margins under a copula that
+    ignores covariates are the usual conditional vine, with the dependence
+    structure held fixed across covariate values.
 
   Any :class:`VinecopLike` will do — the compiled
   :class:`~pyvinecopulib.core.Vinecop`, a :class:`VinecopBase` subclass, or the
@@ -72,8 +97,10 @@ class Vinedist(Generic[ArrayT]):
   copula : VinecopLike
       A fitted vine copula on ``[0, 1]^d``.
   margins : sequence of MarginLike, or MarginLike
-      One fitted margin per variable. A single margin is accepted when it
-      carries array-valued parameters and so already represents all ``d``.
+      One fitted margin per variable. A single margin stands for every
+      variable, which is the identical-margins case; the cascade evaluates it
+      once per column, so a margin carrying one parameter *per variable* has to
+      be passed as a sequence instead.
 
   Raises
   ------
@@ -93,12 +120,12 @@ class Vinedist(Generic[ArrayT]):
 
       import numpy as np, scipy.stats as st, pyvinecopulib as pv
 
-      u = pv.utils.to_pseudo_obs(x)
+      u = pv.utils.to_pseudo_obs(y)
       dist = pv.Vinedist(
         pv.Vinecop.from_data(u),
         margins=[st.Normal(mu=0.0, sigma=1.0), st.gamma(2.0), st.norm(0, 1)],
       )
-      dist.logpdf(x)
+      dist.logpdf(y)
       dist.sample(100, seeds=[1])
   """
 
@@ -149,7 +176,9 @@ class Vinedist(Generic[ArrayT]):
     if isinstance(margins, (list, tuple)):
       resolved = [as_margin(m) for m in margins]
     else:
-      # One object standing for every variable (array-valued parameters).
+      # One object standing for every variable. Shared rather than copied:
+      # evaluation never mutates a fitted margin, and a copy per variable would
+      # duplicate a kernel-density grid `d` times.
       resolved = [as_margin(margins)] * d
     if len(resolved) != d:
       raise ValueError(
@@ -236,12 +265,12 @@ class Vinedist(Generic[ArrayT]):
 
   # --- marginal transforms ------------------------------------------------- #
 
-  def _columns(self, x: ArrayT) -> tuple[Any, Any, int]:
-    """Split ``x`` into columns and resolve its array namespace.
+  def _columns(self, y: ArrayT) -> tuple[Any, Any, int]:
+    """Split ``y`` into columns and resolve its array namespace.
 
     Parameters
     ----------
-    x : array, shape (n, d), dtype float
+    y : array, shape (n, d), dtype float
         Observations on the original scale.
 
     Returns
@@ -252,48 +281,62 @@ class Vinedist(Generic[ArrayT]):
     Raises
     ------
     ValueError
-        If ``x`` does not have ``d`` columns.
+        If ``y`` does not have ``d`` columns.
     """
-    xa: Any = x
-    xp = array_namespace(xa)
-    if xa.ndim != 2 or xa.shape[1] != self.dim:
+    ya: Any = y
+    xp = array_namespace(ya)
+    if ya.ndim != 2 or ya.shape[1] != self.dim:
       raise ValueError(
-        f"x must have shape (n, {self.dim}); got {tuple(xa.shape)}"
+        f"y must have shape (n, {self.dim}); got {tuple(ya.shape)}"
       )
-    return xp, xa, int(xa.shape[0])
+    return xp, ya, int(ya.shape[0])
 
-  def marginal_cdf(self, x: ArrayT) -> ArrayT:
+  def marginal_cdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Apply each margin's ``cdf`` to its column.
 
     Parameters
     ----------
-    x : array, shape (n, d), dtype float
+    y : array, shape (n, d), dtype float
         Observations on the original scale.
+    x : array, shape (n, k), or None, optional
+        Exogenous covariates, forwarded to every margin that reads them.
 
     Returns
     -------
     array, shape (n, d), dtype float
         Marginal distribution values, the copula-scale data.
     """
-    xp, xa, _ = self._columns(x)
-    cols = [m.cdf(xa[:, j]) for j, m in enumerate(self._margins)]
+    self._check_covariates(x)
+    _, ya, _ = self._columns(y)
+    cols = [
+      _margin_eval(m, "cdf", ya[:, j], x) for j, m in enumerate(self._margins)
+    ]
+    # The margins' namespace, not the input's: a torch copula hosting NumPy
+    # margins is legal, and `torch.stack` cannot consume NumPy columns.
+    xp = array_namespace(cols[0])
     return cast(ArrayT, xp.clip(xp.stack(cols, axis=-1), _TRIM_LO, _TRIM_HI))
 
-  def marginal_icdf(self, u: ArrayT) -> ArrayT:
+  def marginal_icdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Apply each margin's ``icdf`` to its column.
 
     Parameters
     ----------
     u : array, shape (n, d), dtype float
         Copula-scale values in ``[0, 1]^d``.
+    x : array, shape (n, k), or None, optional
+        Exogenous covariates, forwarded to every margin that reads them.
 
     Returns
     -------
     array, shape (n, d), dtype float
         Observations on the original scale.
     """
-    xp, ua, _ = self._columns(u)
-    cols = [m.icdf(ua[:, j]) for j, m in enumerate(self._margins)]
+    self._check_covariates(x)
+    _, ua, _ = self._columns(u)
+    cols = [
+      _margin_eval(m, "icdf", ua[:, j], x) for j, m in enumerate(self._margins)
+    ]
+    xp = array_namespace(cols[0])
     return cast(ArrayT, xp.stack(cols, axis=-1))
 
   @staticmethod
@@ -321,7 +364,9 @@ class Vinedist(Generic[ArrayT]):
     ]
 
   @staticmethod
-  def copula_data(margins: Sequence[Any], x: Any) -> Any:
+  def copula_data(
+    margins: Sequence[Any], y: Any, *, x: Optional[Any] = None
+  ) -> Any:
     """Assemble the copula-scale data in the layout a copula expects.
 
     Continuous variables contribute one column each. A variable with atoms
@@ -335,8 +380,10 @@ class Vinedist(Generic[ArrayT]):
     margins : sequence of MarginLike
         One margin per variable, in variable order. Foreign distribution
         objects are coerced with :func:`pyvinecopulib.margins.as_margin`.
-    x : array, shape (n, d), dtype float
+    y : array, shape (n, d), dtype float
         Observations on the original scale.
+    x : array, shape (n, k), or None, optional
+        Exogenous covariates, forwarded to every margin that reads them.
 
     Returns
     -------
@@ -346,26 +393,36 @@ class Vinedist(Generic[ArrayT]):
     Raises
     ------
     ValueError
-        If ``x`` does not carry one column per margin, or if a margin reports a
+        If ``y`` does not carry one column per margin, or if a margin reports a
         left limit above its own distribution function.
     """
     from ..margins import as_margin
 
     resolved = [as_margin(m) for m in margins]
     var_types = Vinedist.copula_var_types(resolved)
-    xa: Any = x
-    xp = array_namespace(xa)
-    if xa.ndim != 2 or xa.shape[1] != len(resolved):
+    ya: Any = y
+    xp = array_namespace(ya)
+    if ya.ndim != 2 or ya.shape[1] != len(resolved):
       raise ValueError(
-        f"x must have shape (n, {len(resolved)}); got {tuple(xa.shape)}"
+        f"y must have shape (n, {len(resolved)}); got {tuple(ya.shape)}"
       )
-    upper = [m.cdf(xa[:, j]) for j, m in enumerate(resolved)]
+    upper = [
+      _margin_eval(m, "cdf", ya[:, j], x) for j, m in enumerate(resolved)
+    ]
     lower = []
     for j, m in enumerate(resolved):
       if var_types[j] != "d":
         continue
+      # A margin that declares atoms and carries no left limit of its own gets
+      # the derived one: copying its `cdf` column would leave the pair copula a
+      # zero-width rectangle, the marginal mass would stop canceling, and the
+      # joint "density" would not integrate to one.
       left = getattr(m, "cdf_left", None)
-      sub = upper[j] if left is None else left(xa[:, j])
+      sub = (
+        _margin_eval(m, "cdf_left", ya[:, j], x)
+        if left is not None
+        else derive_cdf_left(m, ya[:, j], x, var_types[j])
+      )
       if bool(xp.any(sub > upper[j] + 1e-12)):
         raise ValueError(
           f"margin {j} reports cdf_left > cdf, which cannot happen for a "
@@ -375,24 +432,58 @@ class Vinedist(Generic[ArrayT]):
     block = xp.stack([*upper, *lower], axis=-1)
     return xp.clip(block, _TRIM_LO, _TRIM_HI)
 
-  def _u_layout(self, x: ArrayT) -> Any:
-    """This distribution's copula-scale data for ``x``.
+  def _check_covariates(self, x: Optional[Any]) -> None:
+    """Refuse covariates that neither half of this distribution reads.
+
+    Evaluation ignores ``x`` per margin, which is what lets conditional and
+    unconditional margins sit in one distribution. When *nothing* reads them the
+    silence is indistinguishable from a conditional answer, so it is an error.
 
     Parameters
     ----------
-    x : array, shape (n, d), dtype float
+    x : array, shape (n, k), or None
+        The covariates the caller supplied.
+
+    Raises
+    ------
+    ValueError
+        If ``x`` is given and no margin and not the copula declares
+        ``supports_covariates``.
+    """
+    if x is None:
+      return
+    readers = [
+      getattr(m, "supports_covariates", False) for m in self._margins
+    ] + [getattr(self._copula, "supports_covariates", False)]
+    if not any(readers):
+      raise ValueError(
+        "covariates were given, but neither the margins nor the copula read "
+        "them, so the result would be the unconditional one. Build the "
+        "distribution from margins (or a copula) that declare "
+        "supports_covariates, or drop x."
+      )
+
+  def _u_layout(self, y: ArrayT, x: Optional[ArrayT] = None) -> Any:
+    """This distribution's copula-scale data for ``y``.
+
+    Parameters
+    ----------
+    y : array, shape (n, d), dtype float
         Observations on the original scale.
+    x : array, shape (n, k), or None, optional
+        Exogenous covariates, forwarded to every margin that reads them.
 
     Returns
     -------
     array, shape (n, d + k), dtype float
         The copula-scale data.
     """
-    return self.copula_data(self._margins, x)
+    self._check_covariates(x)
+    return self.copula_data(self._margins, y, x=x)
 
   # --- evaluation ---------------------------------------------------------- #
 
-  def logpdf(self, x: ArrayT) -> ArrayT:
+  def logpdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Log-density of the joint distribution.
 
     Summed in log space rather than multiplied: for even a moderate ``d`` the
@@ -401,23 +492,27 @@ class Vinedist(Generic[ArrayT]):
 
     Parameters
     ----------
-    x : array, shape (n, d), dtype float
+    y : array, shape (n, d), dtype float
         Observations on the original scale.
+    x : array, shape (n, k), or None, optional
+        Exogenous covariates, forwarded to every margin that reads them and to
+        the copula.
 
     Returns
     -------
     array, shape (n,), dtype float
         Joint log-density values.
     """
-    xp, xa, _ = self._columns(x)
-    copula_term: Any = self._copula.pdf(cast(ArrayT, self._u_layout(x)))
+    xp, ya, _ = self._columns(y)
+    copula_term: Any = _copula_eval(
+      self._copula, "pdf", cast(ArrayT, self._u_layout(y, x)), x
+    )
     total = xp.log(xp.clip(copula_term, 1e-300, None))
     for j, m in enumerate(self._margins):
-      logpdf = getattr(m, "logpdf", None)
-      if logpdf is not None:
-        total = total + logpdf(xa[:, j])
+      if getattr(m, "logpdf", None) is not None:
+        total = total + _margin_eval(m, "logpdf", ya[:, j], x)
       else:
-        dens = m.pdf(xa[:, j])
+        dens = _margin_eval(m, "pdf", ya[:, j], x)
         positive = dens > 0
         safe = xp.where(positive, dens, xp.ones_like(dens))
         total = total + xp.where(
@@ -425,13 +520,16 @@ class Vinedist(Generic[ArrayT]):
         )
     return cast(ArrayT, total)
 
-  def pdf(self, x: ArrayT) -> ArrayT:
+  def pdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Density of the joint distribution.
 
     Parameters
     ----------
-    x : array, shape (n, d), dtype float
+    y : array, shape (n, d), dtype float
         Observations on the original scale.
+    x : array, shape (n, k), or None, optional
+        Exogenous covariates, forwarded to every margin that reads them and to
+        the copula.
 
     Returns
     -------
@@ -439,17 +537,22 @@ class Vinedist(Generic[ArrayT]):
         Joint density values, with respect to the product of the margins' own
         reference measures.
     """
-    out: Any = self.logpdf(x)
+    out: Any = self.logpdf(y, x=x)
     xp = array_namespace(out)
     return cast(ArrayT, xp.exp(out))
 
-  def cdf(self, x: ArrayT, **kwargs: Any) -> ArrayT:
+  def cdf(
+    self, y: ArrayT, *, x: Optional[ArrayT] = None, **kwargs: Any
+  ) -> ArrayT:
     """Distribution function of the joint distribution.
 
     Parameters
     ----------
-    x : array, shape (n, d), dtype float
+    y : array, shape (n, d), dtype float
         Observations on the original scale.
+    x : array, shape (n, k), or None, optional
+        Exogenous covariates, forwarded to every margin that reads them and to
+        the copula.
     **kwargs
         Forwarded to the copula's ``cdf`` (e.g. ``N``, ``seeds``), whose value
         is estimated by Monte-Carlo.
@@ -459,35 +562,45 @@ class Vinedist(Generic[ArrayT]):
     array, shape (n,), dtype float
         Joint distribution values in ``[0, 1]``.
     """
-    # ``C(F_1(x_1), ..., F_d(x_d))`` needs no left limits, but a copula with
+    # ``C(F_1(y_1), ..., F_d(y_d))`` needs no left limits, but a copula with
     # discrete variables accepts only the layouts that carry them, so hand it
     # the full layout and let it drop what it does not read.
-    return self._copula.cdf(cast(ArrayT, self._u_layout(x)), **kwargs)
+    return _copula_eval(
+      self._copula, "cdf", cast(ArrayT, self._u_layout(y, x)), x, **kwargs
+    )
 
-  def loglik(self, x: ArrayT) -> ArrayT:
+  def loglik(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Log-likelihood of the observations.
 
     Parameters
     ----------
-    x : array, shape (n, d), dtype float
+    y : array, shape (n, d), dtype float
         Observations on the original scale.
+    x : array, shape (n, k), or None, optional
+        Exogenous covariates, forwarded to every margin that reads them and to
+        the copula.
 
     Returns
     -------
     array, shape (), dtype float
         A 0-d array, so it stays differentiable on autograd backends.
     """
-    terms: Any = self.logpdf(x)
+    terms: Any = self.logpdf(y, x=x)
     xp = array_namespace(terms)
     return cast(ArrayT, xp.sum(terms))
 
-  def rosenblatt(self, x: ArrayT, **kwargs: Any) -> ArrayT:
+  def rosenblatt(
+    self, y: ArrayT, *, x: Optional[ArrayT] = None, **kwargs: Any
+  ) -> ArrayT:
     """Rosenblatt transform of observations to independent uniforms.
 
     Parameters
     ----------
-    x : array, shape (n, d), dtype float
+    y : array, shape (n, d), dtype float
         Observations on the original scale.
+    x : array, shape (n, k), or None, optional
+        Exogenous covariates, forwarded to every margin that reads them and to
+        the copula.
     **kwargs
         Forwarded to the copula's ``rosenblatt``.
 
@@ -496,15 +609,26 @@ class Vinedist(Generic[ArrayT]):
     array, shape (n, d), dtype float
         Independent uniforms.
     """
-    return self._copula.rosenblatt(cast(ArrayT, self._u_layout(x)), **kwargs)
+    return _copula_eval(
+      self._copula,
+      "rosenblatt",
+      cast(ArrayT, self._u_layout(y, x)),
+      x,
+      **kwargs,
+    )
 
-  def inverse_rosenblatt(self, w: ArrayT, **kwargs: Any) -> ArrayT:
+  def inverse_rosenblatt(
+    self, w: ArrayT, *, x: Optional[ArrayT] = None, **kwargs: Any
+  ) -> ArrayT:
     """Inverse Rosenblatt transform, from independent uniforms to the data scale.
 
     Parameters
     ----------
     w : array, shape (n, d), dtype float
         Independent uniforms.
+    x : array, shape (n, k), or None, optional
+        Exogenous covariates, forwarded to every margin that reads them and to
+        the copula.
     **kwargs
         Forwarded to the copula's ``inverse_rosenblatt``.
 
@@ -513,15 +637,22 @@ class Vinedist(Generic[ArrayT]):
     array, shape (n, d), dtype float
         Observations on the original scale.
     """
-    return self.marginal_icdf(self._copula.inverse_rosenblatt(w, **kwargs))
+    u = _copula_eval(self._copula, "inverse_rosenblatt", w, x, **kwargs)
+    return self.marginal_icdf(u, x=x)
 
-  def sample(self, n: int, **kwargs: Any) -> ArrayT:
+  def sample(
+    self, n: int, *, x: Optional[ArrayT] = None, **kwargs: Any
+  ) -> ArrayT:
     """Draw ``n`` samples from the joint distribution.
 
     Parameters
     ----------
     n : int
-        Number of samples to draw.
+        Number of samples to draw. With covariates, ``x`` supplies one row per
+        draw, so it must have ``n`` of them.
+    x : array, shape (n, k), or None, optional
+        Exogenous covariates, forwarded to every margin that reads them and to
+        the copula.
     **kwargs
         Forwarded to the copula's ``sample`` (e.g. ``qrng``, ``seeds``).
 
@@ -530,15 +661,17 @@ class Vinedist(Generic[ArrayT]):
     array, shape (n, d), dtype float
         Samples on the original scale.
     """
-    return self.marginal_icdf(self._copula.sample(n, **kwargs))
+    u = _copula_eval(self._copula, "sample", n, x, **kwargs)
+    return self.marginal_icdf(u, x=x)
 
   # --- construction from data ---------------------------------------------- #
 
   @classmethod
   def from_data(
     cls,
-    x: Any,
+    y: Any,
     *,
+    x: Optional[Any] = None,
     margins: Any = None,
     controls: Optional[Any] = None,
     structure: Optional[Any] = None,
@@ -554,8 +687,13 @@ class Vinedist(Generic[ArrayT]):
 
     Parameters
     ----------
-    x : array, shape (n, d), dtype float
+    y : array, shape (n, d), dtype float
         Observations on the original scale.
+    x : array, shape (n, k), or None, optional
+        Exogenous covariates. Each margin that declares
+        ``supports_covariates`` is fitted conditionally on them, and the copula
+        is then fitted on the resulting conditional probability-integral
+        transforms — the two-step estimator, with conditional margins.
     margins : object, optional
         What to use for each variable; see
         :func:`pyvinecopulib.margins.resolve_margins` for the accepted forms.
@@ -586,23 +724,33 @@ class Vinedist(Generic[ArrayT]):
     from ..margins._resolve import fit_margin
     from ..pyvinecopulib_ext import FitControlsVinecop, Vinecop
 
-    data = np.asarray(x, dtype=float)
+    data = np.asarray(y, dtype=float)
     if data.ndim != 2:
-      raise ValueError(f"x must be two-dimensional; got {data.ndim} dimensions")
+      raise ValueError(f"y must be two-dimensional; got {data.ndim} dimensions")
     d = data.shape[1]
 
     if names is None:
       # A DataFrame carries its own names, and `margins` is often keyed by them.
       # Duck-typed: pandas is an extra, not a dependency of `core`.
-      columns = getattr(x, "columns", None)
+      columns = getattr(y, "columns", None)
       if columns is not None:
         names = [str(c) for c in columns]
 
     specs = resolve_margins(margins, d, names=names)
+    if x is not None and not any(
+      getattr(spec, "supports_covariates", False) for spec in specs
+    ):
+      raise ValueError(
+        "covariates were given, but no margin reads them: every specification "
+        "in `margins` is unconditional, so the fit would ignore `x` and return "
+        "a model of f(y) labeled as one of f(y | x). Pass margins that declare "
+        "supports_covariates, or drop x."
+      )
     fitted = [
       fit_margin(
         _named(specs[j], names[j] if names is not None else None),
         data[:, j],
+        x=x,
         weights=weights,
       )
       for j in range(d)
@@ -612,11 +760,14 @@ class Vinedist(Generic[ArrayT]):
     # margins before the copula exists; `_bind_dist` then re-derives and
     # cross-checks them.
     var_types = cls.copula_var_types(fitted)
-    u = cls.copula_data(fitted, data)
+    u = cls.copula_data(fitted, data, x=x)
 
     if controls is None:
       controls = FitControlsVinecop()
     if weights is not None and not len(controls.weights):
+      # Copied first: the caller's controls object is theirs, and a `weights`
+      # written into it would silently weight every later fit that reuses it.
+      controls = copy.deepcopy(controls)
       controls.weights = np.asarray(weights, dtype=float).ravel()
     copula = Vinecop.from_data(
       data=u,
