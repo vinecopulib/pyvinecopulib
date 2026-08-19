@@ -123,7 +123,7 @@ def test_parametric_margin_fits_when_nothing_is_free() -> None:
   m = ParametricMargin("uniform", floc=1.0, fscale=2.0).fit(x)
   assert m.parameters == (1.0, 2.0)
   assert m.n_parameters == 0.0
-  assert m.fitted_loglik == pytest.approx(100 * np.log(0.5))
+  assert m.loglik() == pytest.approx(100 * np.log(0.5))
 
 
 def test_parametric_margin_rejects_weights(gamma_sample: np.ndarray) -> None:
@@ -174,7 +174,7 @@ def test_parametric_margin_raises_before_fit() -> None:
   with pytest.raises(RuntimeError, match="is not fitted"):
     m.parameters
   with pytest.raises(RuntimeError, match="only defined after"):
-    m.fitted_loglik
+    m.loglik()
 
 
 def test_parametric_margin_round_trips_through_pickle(
@@ -224,15 +224,17 @@ def test_selector_forwards_evaluation_to_the_winner(
   )
   assert sel.support == sel.selected_.support
   assert sel.var_type == sel.selected_.var_type
-  assert sel.fitted_loglik == sel.selected_.fitted_loglik
+  assert sel.loglik() == sel.selected_.loglik()
 
 
-def test_loglik_stays_a_method_not_a_property(gamma_sample: np.ndarray) -> None:
-  """`loglik(x)` must remain callable on every margin.
+def test_loglik_evaluates_or_reports_the_fitted_value(
+  gamma_sample: np.ndarray,
+) -> None:
+  """One method, two jobs, as on `Bicop`: data evaluates, no data reports.
 
-  A fitted-statistic *property* named `loglik` would shadow
-  `MarginBase.loglik(x)` and make the polymorphic call raise `TypeError`; the
-  statistic is `fitted_loglik` for exactly that reason.
+  A property would shadow the method and make the polymorphic
+  `margin.loglik(sample)` call raise `TypeError`, which is why the fitted value
+  is reached through the same name rather than a second one.
   """
   for margin in (
     ParametricMargin("norm").fit(gamma_sample),
@@ -241,7 +243,7 @@ def test_loglik_stays_a_method_not_a_property(gamma_sample: np.ndarray) -> None:
     total = margin.loglik(gamma_sample)
     assert np.ndim(total) == 0
     np.testing.assert_allclose(total, np.sum(margin.logpdf(gamma_sample)))
-    assert isinstance(margin.fitted_loglik, float)
+    assert isinstance(margin.loglik(), float)
 
 
 def test_selector_never_returns_vonmises(gamma_sample: np.ndarray) -> None:
@@ -581,3 +583,38 @@ def test_parametric_margin_names_the_extra_without_scipy() -> None:
     [sys.executable, "-c", code], capture_output=True, text=True
   )
   assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_collapsed_scale_is_rejected() -> None:
+  """A continuous family shrinking onto an atom must not win the criterion.
+
+  Half exact zeros and half N(0, 1): a `t` fitted there comes back with
+  `scale` around 1e-20 and a log-likelihood in the thousands, because a density
+  concentrating on a repeated value diverges. It beat every honest candidate by
+  more than 12,000 AIC units.
+  """
+  y = np.concatenate([np.zeros(250), np.random.default_rng(0).normal(size=250)])
+  sel = MarginSelector().fit(y)
+  rows = {row["family"]: row for row in sel.report_}
+  assert "below" in rows["t"]["status"]
+  assert sel.selected_.family_name != "t"
+  # And the winner is scored on a finite, honest likelihood.
+  assert np.isfinite(sel.loglik()) and sel.loglik() < rows["t"]["loglik"]
+
+
+def test_counts_and_densities_are_never_ranked_together() -> None:
+  """An explicit candidate list is partitioned by kind, like `"auto"` is.
+
+  A probability mass and a Lebesgue density are not comparable on one
+  information criterion, and the density wins nearly every time.
+  """
+  y = np.random.default_rng(1).poisson(0.7, 500).astype(float)
+  with pytest.warns(UserWarning, match="not comparable"):
+    sel = MarginSelector(candidates=["poisson", "norm", "t"], var_type="d").fit(
+      y
+    )
+  assert sel.selected_.family_name == "poisson"
+  assert [row["family"] for row in sel.report_] == ["poisson"]
+
+  with pytest.raises(ValueError, match="every candidate is of the other kind"):
+    MarginSelector(candidates=["norm"], var_type="d").fit(y)

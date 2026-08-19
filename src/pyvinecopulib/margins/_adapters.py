@@ -135,19 +135,19 @@ class _WrappedMargin(MarginBase[Any]):
   def support(self) -> tuple[float, float]:
     return self._support
 
-  def pdf(self, x: Any) -> Any:
-    return self._pdf(x)
+  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    return self._pdf(y)
 
-  def cdf(self, x: Any) -> Any:
-    return self._cdf(x)
+  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    return self._cdf(y)
 
-  def icdf(self, p: Any) -> Any:
+  def icdf(self, p: Any, *, x: Optional[Any] = None) -> Any:
     return self._icdf(p)
 
-  def cdf_left(self, x: Any) -> Any:
+  def cdf_left(self, y: Any, *, x: Optional[Any] = None) -> Any:
     if self._cdf_left is None:
-      return super().cdf_left(x)
-    return self._cdf_left(x)
+      return super().cdf_left(y)
+    return self._cdf_left(y)
 
   def __repr__(self) -> str:
     return f"as_margin({self.family_name}, var_type={self._var_type!r})"

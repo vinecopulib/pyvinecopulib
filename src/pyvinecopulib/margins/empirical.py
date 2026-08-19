@@ -7,6 +7,7 @@ from typing import Any, Optional
 import numpy as np
 
 from ..core import MarginBase
+from ..core.margin_base import _reject_covariates
 
 __all__ = ["EmpiricalMargin"]
 
@@ -139,26 +140,33 @@ class EmpiricalMargin(MarginBase[np.ndarray]):
         If the margin has not been fitted.
     """
     if self._sorted is None:
-      raise RuntimeError("EmpiricalMargin is not fitted; call fit(x)")
+      raise RuntimeError("EmpiricalMargin is not fitted; call fit(y)")
     return self._sorted
 
-  def fit(self, x: Any, *, weights: Optional[Any] = None) -> "EmpiricalMargin":
+  def fit(
+    self, y: Any, *, x: Optional[Any] = None, weights: Optional[Any] = None
+  ) -> "EmpiricalMargin":
     """Record the sample.
 
     Parameters
     ----------
-    x : array, shape (n,), dtype float
+    y : array, shape (n,), dtype float
         Observations; NaNs are dropped, as
         :func:`~pyvinecopulib.utils.to_pseudo_obs` drops them.
+    x : array, shape (n, k), or None, optional
+        Not supported; passing covariates raises rather than silently
+        fitting an unconditional margin.
     weights : array, shape (n,), or None, optional
-        Observation weights.
+        Observation weights; only their ratios matter, as they are normalized
+        to mean 1.
 
     Returns
     -------
     EmpiricalMargin
         ``self``.
     """
-    x_arr = np.asarray(x, dtype=float).ravel()
+    _reject_covariates(self, x)
+    x_arr = np.asarray(y, dtype=float).ravel()
     w = (
       np.ones_like(x_arr)
       if weights is None
@@ -166,6 +174,11 @@ class EmpiricalMargin(MarginBase[np.ndarray]):
     )
     keep = ~np.isnan(x_arr)
     x_arr, w = x_arr[keep], w[keep]
+    if x_arr.size and w.sum() > 0.0:
+      # Normalized to mean 1, so only the weights' ratios matter: the `n + 1`
+      # denominator counts observations, and weights that happened to sum to 1
+      # would otherwise shrink every cdf value toward `1 / (n + 1)`.
+      w = w * (x_arr.size / w.sum())
 
     order = np.argsort(x_arr, kind="stable")
     x_sorted, w_sorted = x_arr[order], w[order]
@@ -175,24 +188,26 @@ class EmpiricalMargin(MarginBase[np.ndarray]):
     self._total = float(w.sum())
     return self
 
-  def cdf(self, x: Any) -> np.ndarray:
+  def cdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
     values = self._values()
     assert self._cum is not None  # guaranteed once fitted
-    idx = np.searchsorted(values, np.asarray(x, dtype=float), side="right")
+    idx = np.searchsorted(values, np.asarray(y, dtype=float), side="right")
     below = np.concatenate(([0.0], self._cum))
     return below[idx] / (self._total + 1.0)
 
-  def cdf_left(self, x: Any) -> np.ndarray:
+  def cdf_left(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
     """Left limit of the empirical cdf.
 
-    Counts strictly below ``x``, so the jump at an observed value is exactly
+    Counts strictly below ``y``, so the jump at an observed value is exactly
     its mass. Overrides the base class rather than stepping back a lattice
     point, since the observed values need not lie on one.
 
     Parameters
     ----------
-    x : array, shape (n,), dtype float
+    y : array, shape (n,), dtype float
         Observations.
+    x : array, shape (n, k), or None, optional
+        Ignored; this margin is unconditional.
 
     Returns
     -------
@@ -201,17 +216,19 @@ class EmpiricalMargin(MarginBase[np.ndarray]):
     """
     values = self._values()
     assert self._cum is not None
-    idx = np.searchsorted(values, np.asarray(x, dtype=float), side="left")
+    idx = np.searchsorted(values, np.asarray(y, dtype=float), side="left")
     below = np.concatenate(([0.0], self._cum))
     return below[idx] / (self._total + 1.0)
 
-  def pdf(self, x: Any) -> np.ndarray:
+  def pdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
     """Raise: the empirical distribution has no density.
 
     Parameters
     ----------
-    x : array, shape (n,), dtype float
+    y : array, shape (n,), dtype float
         Unused.
+    x : array, shape (n, k), or None, optional
+        Ignored; this margin is unconditional.
 
     Returns
     -------
@@ -223,16 +240,18 @@ class EmpiricalMargin(MarginBase[np.ndarray]):
     NotImplementedError
         Always.
     """
-    del x
+    del y
     raise NotImplementedError(_NO_DENSITY)
 
-  def logpdf(self, x: Any) -> np.ndarray:
+  def logpdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
     """Raise: the empirical distribution has no density.
 
     Parameters
     ----------
-    x : array, shape (n,), dtype float
+    y : array, shape (n,), dtype float
         Unused.
+    x : array, shape (n, k), or None, optional
+        Ignored; this margin is unconditional.
 
     Returns
     -------
@@ -244,10 +263,10 @@ class EmpiricalMargin(MarginBase[np.ndarray]):
     NotImplementedError
         Always.
     """
-    del x
+    del y
     raise NotImplementedError(_NO_DENSITY)
 
-  def icdf(self, p: Any) -> np.ndarray:
+  def icdf(self, p: Any, *, x: Optional[Any] = None) -> np.ndarray:
     values = self._values()
     assert self._cum is not None
     probs = np.asarray(p, dtype=float)

@@ -127,6 +127,14 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   order: tuple[int, ...]
   inverse_order: tuple[int, ...]
 
+  #: Whether this vine's pairs read the external covariates ``x``. Declared, not
+  #: inferred: a vine assembles each edge's conditioning matrix through its
+  #: ``ConditioningContext`` and cannot know whether the pairs it hosts accept
+  #: one, so a consumer such as ``Vinedist`` reads this flag rather than
+  #: forwarding covariates a compiled ``Bicop`` pair would refuse. Set it in a
+  #: subclass whose pairs are conditional.
+  supports_covariates: bool = False
+
   def __init_subclass__(cls, **kwargs: Any) -> None:
     """Reject an override of the pre-1.0 hook name.
 

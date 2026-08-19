@@ -10,13 +10,15 @@ contract was named after its surface so that it needs no wrapper.
 
 from __future__ import annotations
 
-from typing import Any
+import math
+from typing import Any, Optional
 
 import numpy as np
 import pytest
 
 import pyvinecopulib as pv
 from pyvinecopulib.core import MarginBase, MarginLike
+from pyvinecopulib.core.margin_base import _reject_covariates
 
 
 class _ShiftedExp(MarginBase[np.ndarray]):
@@ -35,15 +37,15 @@ class _ShiftedExp(MarginBase[np.ndarray]):
   def support(self) -> tuple[float, float]:
     return (self.shift, float("inf"))
 
-  def pdf(self, x: Any) -> Any:
-    inside = x >= self.shift
+  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    inside = y >= self.shift
     return np.where(
-      inside, self.rate * np.exp(-self.rate * (x - self.shift)), 0.0
+      inside, self.rate * np.exp(-self.rate * (y - self.shift)), 0.0
     )
 
-  def cdf(self, x: Any) -> Any:
-    inside = x >= self.shift
-    return np.where(inside, 1.0 - np.exp(-self.rate * (x - self.shift)), 0.0)
+  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    inside = y >= self.shift
+    return np.where(inside, 1.0 - np.exp(-self.rate * (y - self.shift)), 0.0)
 
   def exact_icdf(self, p: Any) -> Any:
     """The closed form, for comparison against the inherited bisection."""
@@ -57,11 +59,11 @@ class _Uniform01(MarginBase[np.ndarray]):
   def support(self) -> tuple[float, float]:
     return (0.0, 1.0)
 
-  def pdf(self, x: Any) -> Any:
-    return np.where((x >= 0.0) & (x <= 1.0), 1.0, 0.0)
+  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    return np.where((y >= 0.0) & (y <= 1.0), 1.0, 0.0)
 
-  def cdf(self, x: Any) -> Any:
-    return np.clip(x, 0.0, 1.0)
+  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    return np.clip(y, 0.0, 1.0)
 
 
 class _Geometricish(MarginBase[np.ndarray]):
@@ -75,11 +77,11 @@ class _Geometricish(MarginBase[np.ndarray]):
   def support(self) -> tuple[float, float]:
     return (0.0, float("inf"))
 
-  def pdf(self, x: Any) -> Any:
-    return np.where(x >= 0.0, 0.5 ** (x + 1.0), 0.0)
+  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    return np.where(y >= 0.0, 0.5 ** (y + 1.0), 0.0)
 
-  def cdf(self, x: Any) -> Any:
-    return np.where(x >= 0.0, 1.0 - 0.5 ** (x + 1.0), 0.0)
+  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    return np.where(y >= 0.0, 1.0 - 0.5 ** (y + 1.0), 0.0)
 
 
 class _ZeroInflated(MarginBase[np.ndarray]):
@@ -96,13 +98,13 @@ class _ZeroInflated(MarginBase[np.ndarray]):
   def support(self) -> tuple[float, float]:
     return (0.0, float("inf"))
 
-  def pdf(self, x: Any) -> Any:
-    body = (1.0 - self.prob0) * np.exp(-x)
-    return np.where(x == 0.0, self.prob0, np.where(x > 0.0, body, 0.0))
+  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    body = (1.0 - self.prob0) * np.exp(-y)
+    return np.where(y == 0.0, self.prob0, np.where(y > 0.0, body, 0.0))
 
-  def cdf(self, x: Any) -> Any:
-    body = (1.0 - self.prob0) * (1.0 - np.exp(-x))
-    return np.where(x >= 0.0, self.prob0 + body, 0.0)
+  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    body = (1.0 - self.prob0) * (1.0 - np.exp(-y))
+    return np.where(y >= 0.0, self.prob0 + body, 0.0)
 
 
 def test_kde1d_satisfies_the_margin_contract() -> None:
@@ -245,3 +247,146 @@ def test_repr_is_structural() -> None:
   """`repr` names the class and its variable type."""
   assert repr(_ShiftedExp()) == "_ShiftedExp(var_type='c')"
   assert repr(_Geometricish()) == "_Geometricish(var_type='d')"
+
+
+# --- exogenous covariates ---------------------------------------------------- #
+
+
+class _Recording(MarginBase[np.ndarray]):
+  """Records whether covariates reached each primitive.
+
+  A location-shift model, so `pdf` / `cdf` genuinely change with `x` and a
+  forwarding bug shows up in the numbers as well as in the log.
+  """
+
+  supports_covariates = True
+
+  def __init__(self) -> None:
+    self.seen: list[str] = []
+
+  def _shift(self, x: Optional[Any]) -> Any:
+    return 0.0 if x is None else np.asarray(x, dtype=float)[:, 0]
+
+  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    self.seen.append("pdf" if x is not None else "pdf-bare")
+    z = np.asarray(y, dtype=float) - self._shift(x)
+    return np.exp(-0.5 * z**2) / np.sqrt(2.0 * np.pi)
+
+  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    self.seen.append("cdf" if x is not None else "cdf-bare")
+    z = np.asarray(y, dtype=float) - self._shift(x)
+    return 0.5 * (1.0 + np.vectorize(math.erf)(z / np.sqrt(2.0)))
+
+
+def test_covariates_reach_every_derived_member() -> None:
+  """A margin that declares them sees them through the inherited members."""
+  y = np.array([0.0, 1.0, 2.0])
+  cov = np.array([[0.5], [0.5], [0.5]])
+  m = _Recording()
+
+  np.testing.assert_allclose(m.logpdf(y, x=cov), np.log(m.pdf(y, x=cov)))
+  np.testing.assert_allclose(m.cdf_left(y, x=cov), m.cdf(y, x=cov))
+  np.testing.assert_allclose(m.loglik(y, x=cov), np.sum(m.logpdf(y, x=cov)))
+  # `icdf` inverts the shifted cdf, so the covariate has to reach the closure.
+  np.testing.assert_allclose(
+    m.icdf(np.array([0.5, 0.5, 0.5]), x=cov), cov[:, 0], atol=1e-6
+  )
+  assert "pdf-bare" not in m.seen
+  assert "cdf-bare" not in m.seen
+
+
+def test_covariates_are_not_forwarded_to_an_unconditional_margin() -> None:
+  """The gate omits `x` entirely, which is what keeps `pdf(self, y)` valid."""
+
+  class _Unconditional(_Recording):
+    supports_covariates = False
+
+  m = _Unconditional()
+  cov = np.array([[0.5], [0.5]])
+  y = np.array([0.0, 1.0])
+  # Same answer as without covariates, and the primitives were called bare.
+  np.testing.assert_array_equal(m.logpdf(y, x=cov), m.logpdf(y))
+  assert set(m.seen) == {"pdf-bare"}
+
+
+def test_fit_refuses_covariates_it_cannot_read() -> None:
+  """Silently fitting `f(y)` when `f(y | x)` was asked for is the bad outcome."""
+
+  class _Fittable(MarginBase[np.ndarray]):
+    def fit(
+      self, y: Any, *, x: Optional[Any] = None, weights: Any = None
+    ) -> Any:
+      _reject_covariates(self, x)
+      return self
+
+    def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+      return np.ones_like(np.asarray(y, dtype=float))
+
+    def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+      return np.clip(np.asarray(y, dtype=float), 0.0, 1.0)
+
+  m = _Fittable()
+  assert m.fit(np.array([0.5])) is m
+  with pytest.raises(ValueError, match="supports_covariates"):
+    m.fit(np.array([0.5]), x=np.array([[1.0]]))
+
+
+def test_loglik_without_data_needs_a_fitted_value() -> None:
+  """The no-argument form reports what `fit` attained, or says it has none."""
+  m = _ShiftedExp()
+  with pytest.raises(NotImplementedError, match="no fitted log-likelihood"):
+    m.loglik()
+  with pytest.raises(ValueError, match="only meaningful with data"):
+    m.loglik(weights=np.array([1.0]))
+
+  class _Stored(_ShiftedExp):
+    @property
+    def _fitted_loglik(self) -> float:
+      return -12.5
+
+  assert _Stored().loglik() == -12.5
+
+
+def test_a_discrete_icdf_lands_on_its_own_lattice() -> None:
+  """`icdf` must return values its own `cdf_left` accepts.
+
+  Bisection converges *to* a jump rather than onto it, so an answer a few ulp
+  below an integer used to come back — and `cdf_left`, which steps back one
+  lattice point, then rejected it as non-integral.
+  """
+  m = _Geometricish()
+  drawn = m.icdf(np.array([0.05, 0.3, 0.5, 0.9, 0.999]))
+  np.testing.assert_array_equal(drawn, np.round(drawn))
+  assert np.all(np.isfinite(m.cdf_left(drawn)))
+
+
+def test_icdf_resolves_a_quantile_far_below_the_bracket() -> None:
+  """Bisection halves an absolute interval, so the step count has to allow for
+  an answer many orders of magnitude below the support's scale.
+
+  With the h-inverses' 50 steps, distinct probabilities here all returned the
+  same 4.44e-16 — a relative error that grows without bound as the target
+  shrinks. The floor stays absolute, so this widens the resolvable range rather
+  than guaranteeing exactness; `icdf` is documented as overridable for that.
+  """
+
+  class _Tiny(MarginBase[np.ndarray]):
+    """`cdf(y) = y ** 0.05` on the unit interval: a very steep left tail."""
+
+    @property
+    def support(self) -> tuple[float, float]:
+      return (0.0, 1.0)
+
+    def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+      return 0.05 * np.asarray(y, dtype=float) ** -0.95
+
+    def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+      return np.asarray(y, dtype=float) ** 0.05
+
+  p = np.array([0.2, 0.1, 0.05])
+  got = _Tiny().icdf(p)
+  exact = p**20.0  # 1.0e-14 down to 9.5e-27, above the resolvable floor
+  np.testing.assert_allclose(got, exact, rtol=1e-6)
+  # The defect was a collapse, not mere imprecision: distinct probabilities
+  # all came back as the same value.
+  assert np.all(np.diff(got) < 0.0)

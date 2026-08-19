@@ -163,7 +163,7 @@ def resolve_margins(
 
 
 def fit_margin(
-  entry: Any, x: Any, *, weights: Optional[Any] = None
+  entry: Any, y: Any, *, x: Optional[Any] = None, weights: Optional[Any] = None
 ) -> MarginLike[Any]:
   """Obtain a fitted margin for one column.
 
@@ -171,8 +171,13 @@ def fit_margin(
   ----------
   entry : object
       A specification produced by :func:`resolve_margins`.
-  x : array, shape (n,), dtype float
+  y : array, shape (n,), dtype float
       The column.
+  x : array, shape (n, k), or None, optional
+      Exogenous covariates, forwarded only to a margin that declares
+      ``supports_covariates``; a callable specification is handed them by
+      keyword, so one that models no covariates fails loudly rather than
+      fitting the wrong model.
   weights : array, shape (n,), or None, optional
       Observation weights.
 
@@ -188,7 +193,7 @@ def fit_margin(
       ignoring them would silently fit a different model than was asked for.
   """
   if callable(entry) and not hasattr(entry, "cdf"):
-    return as_margin(entry(x))
+    return as_margin(entry(y) if x is None else entry(y, x=x))
 
   # Capability-based dispatch: `fit` / `is_fitted` / `supports_weights` are
   # optional members, so this is deliberately not narrowed to `MarginLike`.
@@ -202,8 +207,10 @@ def fit_margin(
       "margins='kde' or margins='empirical' for a weighted fit, or drop "
       "weights="
     )
-  if weights is None:
-    margin.fit(x)
-  else:
-    margin.fit(x, weights=weights)
+  kwargs: dict[str, Any] = {}
+  if weights is not None:
+    kwargs["weights"] = weights
+  if x is not None and getattr(margin, "supports_covariates", False):
+    kwargs["x"] = x
+  margin.fit(y, **kwargs)
   return margin

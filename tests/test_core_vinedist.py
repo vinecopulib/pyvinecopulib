@@ -11,13 +11,14 @@ needs is assembled for the user, since assembling it by hand is what
 
 from __future__ import annotations
 
-from typing import Any
+import math
+from typing import Any, Optional
 
 import numpy as np
 import pytest
 
 import pyvinecopulib as pv
-from pyvinecopulib.core import Kde1d
+from pyvinecopulib.core import Kde1d, MarginBase
 from pyvinecopulib.margins import (
   EmpiricalMargin,
   MarginSelector,
@@ -177,14 +178,14 @@ def test_left_limit_above_the_cdf_is_refused() -> None:
     def var_type(self) -> str:
       return "d"
 
-    def pdf(self, x: Any) -> Any:
-      return np.full_like(np.asarray(x, dtype=float), 0.5)
+    def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+      return np.full_like(np.asarray(y, dtype=float), 0.5)
 
-    def cdf(self, x: Any) -> Any:
-      return np.full_like(np.asarray(x, dtype=float), 0.3)
+    def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+      return np.full_like(np.asarray(y, dtype=float), 0.3)
 
-    def cdf_left(self, x: Any) -> Any:
-      return np.full_like(np.asarray(x, dtype=float), 0.9)
+    def cdf_left(self, y: Any, *, x: Optional[Any] = None) -> Any:
+      return np.full_like(np.asarray(y, dtype=float), 0.9)
 
   # A discrete copula, so the var_types cross-check passes and the layout
   # builder is what rejects the margin.
@@ -290,14 +291,16 @@ def _needs_fitting() -> Any:
     def is_fitted(self) -> bool:
       return False
 
-    def fit(self, x: Any, *, weights: Any = None) -> Any:
+    def fit(
+      self, y: Any, *, x: Optional[Any] = None, weights: Any = None
+    ) -> Any:
       return self
 
-    def pdf(self, x: Any) -> Any:
-      return np.ones_like(np.asarray(x, dtype=float))
+    def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+      return np.ones_like(np.asarray(y, dtype=float))
 
-    def cdf(self, x: Any) -> Any:
-      return np.clip(np.asarray(x, dtype=float), 0.0, 1.0)
+    def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+      return np.clip(np.asarray(y, dtype=float), 0.0, 1.0)
 
   return _Unweighted()
 
@@ -398,3 +401,122 @@ def test_from_data_leaves_the_caller_s_specification_alone(
   assert selector.name is None
   assert list(selector.report_) == []
   assert dist.selection_report()[0]["column"] == "real"
+
+
+# --- exogenous covariates ---------------------------------------------------- #
+
+
+class _ShiftedNormal(MarginBase[np.ndarray]):
+  """A conditional margin: a standard normal shifted by the first covariate."""
+
+  supports_covariates = True
+
+  def _shift(self, x: Optional[Any]) -> Any:
+    return 0.0 if x is None else np.asarray(x, dtype=float)[:, 0]
+
+  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    z = np.asarray(y, dtype=float) - self._shift(x)
+    return np.exp(-0.5 * z**2) / np.sqrt(2.0 * np.pi)
+
+  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    z = np.asarray(y, dtype=float) - self._shift(x)
+    return 0.5 * (1.0 + np.vectorize(math.erf)(z / np.sqrt(2.0)))
+
+
+def test_covariates_reach_the_margins(continuous: np.ndarray) -> None:
+  """Conditioning the margins moves the joint density, through every entry point."""
+  copula = pv.Vinecop.from_data(np.asarray(pv.to_pseudo_obs(continuous)))
+  dist = pv.Vinedist(copula, [_ShiftedNormal(), _ShiftedNormal()])
+  y = continuous[:10]
+  cov = np.full((10, 1), 0.5)
+
+  # The Sklar sum, with every term conditioned on the covariates.
+  manual = np.log(np.asarray(copula.pdf(dist.marginal_cdf(y, x=cov))))
+  for j, m in enumerate(dist.margins):
+    # `logpdf` is an optional capability, so it is read off `Any`.
+    margin: Any = m
+    manual = manual + margin.logpdf(y[:, j], x=cov)
+  np.testing.assert_allclose(dist.logpdf(y, x=cov), manual, atol=1e-12)
+  assert not np.allclose(dist.logpdf(y, x=cov), dist.logpdf(y))
+  np.testing.assert_allclose(dist.pdf(y, x=cov), np.exp(dist.logpdf(y, x=cov)))
+  np.testing.assert_allclose(
+    dist.loglik(y, x=cov), np.sum(dist.logpdf(y, x=cov))
+  )
+  # Shifting the margins right can only lower F, up to the layout's clamp.
+  shifted, plain = dist.marginal_cdf(y, x=cov), dist.marginal_cdf(y)
+  assert np.all(shifted <= plain) and np.any(shifted < plain)
+  assert np.all(dist.cdf(y, x=cov, N=2000, seeds=[1]) <= 1.0)
+  # Both directions of the transform read the covariates.
+  w = dist.rosenblatt(y, x=cov)
+  assert not np.allclose(w, dist.rosenblatt(y))
+  u_grid = np.column_stack([[0.2, 0.5, 0.8], [0.4, 0.5, 0.6]])
+  np.testing.assert_allclose(
+    dist.inverse_rosenblatt(w, x=cov),
+    dist.marginal_icdf(np.asarray(copula.inverse_rosenblatt(w)), x=cov),
+    atol=0,
+  )
+  # A pure location shift, so conditioning moves every quantile by 0.5.
+  np.testing.assert_allclose(
+    dist.marginal_icdf(u_grid, x=cov[:3]),
+    dist.marginal_icdf(u_grid) + 0.5,
+    atol=1e-6,
+  )
+
+
+def test_an_unconditional_copula_is_never_handed_covariates(
+  continuous: np.ndarray,
+) -> None:
+  """`Vinecop` takes no conditioning matrix, so the gate must omit it."""
+  copula = pv.Vinecop.from_data(np.asarray(pv.to_pseudo_obs(continuous)))
+  dist = pv.Vinedist(copula, [_ShiftedNormal(), _ShiftedNormal()])
+  # A `TypeError` here would mean `x=` reached the compiled copula.
+  assert dist.logpdf(continuous[:5], x=np.zeros((5, 1))).shape == (5,)
+
+
+def test_from_data_fits_conditional_margins_on_the_covariates() -> None:
+  """`from_data` forwards covariates to the margins that read them, only."""
+  rng = np.random.default_rng(0)
+  cov = rng.normal(size=(200, 1))
+  y = np.column_stack([cov[:, 0] + rng.normal(size=200), rng.normal(size=200)])
+
+  seen: list[Optional[Any]] = []
+
+  class _Recording(_ShiftedNormal):
+    @property
+    def is_fitted(self) -> bool:
+      return False
+
+    def fit(
+      self, data: Any, *, x: Optional[Any] = None, weights: Any = None
+    ) -> Any:
+      seen.append(x)
+      return self
+
+  dist = pv.Vinedist.from_data(y, x=cov, margins=[_Recording(), "kde"])
+  assert len(seen) == 1 and seen[0] is not None
+  # The kde margin never declared covariates, so it was fitted plainly.
+  kde: Any = dist.margins[1]
+  assert kde.var_type == "c"
+
+
+def test_covariates_nothing_reads_are_refused(continuous: np.ndarray) -> None:
+  """Silently returning the unconditional answer is the failure to avoid."""
+  dist = pv.Vinedist.from_data(continuous)  # Kde1d margins: unconditional
+  cov = np.zeros((continuous.shape[0], 1))
+  for call in (dist.logpdf, dist.pdf, dist.marginal_cdf):
+    with pytest.raises(ValueError, match="supports_covariates"):
+      call(continuous, x=cov)
+  with pytest.raises(ValueError, match="supports_covariates"):
+    dist.marginal_icdf(np.full_like(continuous, 0.5), x=cov)
+  with pytest.raises(ValueError, match="no margin reads them"):
+    pv.Vinedist.from_data(continuous, x=cov)
+
+
+def test_from_data_leaves_the_caller_s_controls_alone(
+  continuous: np.ndarray,
+) -> None:
+  """Weights must not be written into the controls object the caller owns."""
+  controls = pv.FitControlsVinecop()
+  weights = np.linspace(0.5, 1.5, continuous.shape[0])
+  pv.Vinedist.from_data(continuous, weights=weights, controls=controls)
+  assert len(controls.weights) == 0

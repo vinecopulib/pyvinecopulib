@@ -23,6 +23,7 @@ from typing import Any, Optional
 import numpy as np
 
 from ..core import Kde1d, MarginBase, MarginLike
+from ..core.margin_base import _reject_covariates
 from ._adapters import register_margin_adapter
 from .selection import _CRITERIA, _criteria
 
@@ -383,7 +384,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     """
     if self._distribution is None:
       raise RuntimeError(
-        f"OpenTURNSMargin({self.family_name!r}) is not fitted; call fit(x) or "
+        f"OpenTURNSMargin({self.family_name!r}) is not fitted; call fit(y) or "
         "pass distribution="
       )
     return self._distribution
@@ -439,7 +440,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     return float(self._n_free)
 
   @property
-  def fitted_loglik(self) -> float:
+  def _fitted_loglik(self) -> float:
     """Log-likelihood attained at the fit.
 
     Returns
@@ -450,13 +451,12 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     Raises
     ------
     RuntimeError
-        If the margin was never fitted. Use ``logpdf(x).sum()`` for the
-        log-likelihood on an arbitrary sample.
+        If the margin was never fitted.
     """
     if self._loglik is None:
       raise RuntimeError(
-        f"OpenTURNSMargin({self.family_name!r}).fitted_loglik is only defined "
-        "after fit(x); use logpdf(x).sum() for another sample"
+        f"OpenTURNSMargin({self.family_name!r}).loglik() is only defined after "
+        "fit(y); pass a sample to evaluate one instead"
       )
     return self._loglik
 
@@ -484,13 +484,18 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
 
   # --- estimation ---------------------------------------------------------- #
 
-  def fit(self, x: Any, *, weights: Optional[Any] = None) -> "OpenTURNSMargin":
+  def fit(
+    self, y: Any, *, x: Optional[Any] = None, weights: Optional[Any] = None
+  ) -> "OpenTURNSMargin":
     """Estimate the family's parameters with its OpenTURNS factory.
 
     Parameters
     ----------
-    x : array, shape (n,), dtype float
+    y : array, shape (n,), dtype float
         Observations; NaNs are dropped.
+    x : array, shape (n, k), or None, optional
+        Not supported; passing covariates raises rather than silently
+        fitting an unconditional margin.
     weights : array, shape (n,), or None, optional
         Not supported; see the Notes on the class.
 
@@ -507,6 +512,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     ValueError
         If no observation survives.
     """
+    _reject_covariates(self, x)
     if weights is not None:
       raise TypeError(
         f"OpenTURNSMargin({self.family_name!r}) cannot use observation "
@@ -520,7 +526,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
         "estimate one from data"
       )
     openturns = _openturns()
-    data = np.asarray(x, dtype=float).ravel()
+    data = np.asarray(y, dtype=float).ravel()
     data = data[~np.isnan(data)]
     if data.size == 0:
       raise ValueError(
@@ -535,37 +541,39 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
 
   # --- evaluation ---------------------------------------------------------- #
 
-  def pdf(self, x: Any) -> np.ndarray:
-    return _at_points(self.distribution.computePDF, x)
+  def pdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
+    return _at_points(self.distribution.computePDF, y)
 
-  def logpdf(self, x: Any) -> np.ndarray:
+  def logpdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
     """Log of :meth:`pdf`, from OpenTURNS' own log-density.
 
-    Overrides the inherited ``log(pdf(x))``, which loses the tails to underflow
+    Overrides the inherited ``log(pdf(y))``, which loses the tails to underflow
     exactly where a log-likelihood is most sensitive to them.
 
     Parameters
     ----------
-    x : array, shape (n,), dtype float
+    y : array, shape (n,), dtype float
         Observations on the original scale.
+    x : array, shape (n, k), or None, optional
+        Ignored; this margin is unconditional.
 
     Returns
     -------
     array, shape (n,), dtype float
         Log-density, ``-inf`` outside the support.
     """
-    return _at_points(self.distribution.computeLogPDF, x)
+    return _at_points(self.distribution.computeLogPDF, y)
 
-  def cdf(self, x: Any) -> np.ndarray:
-    return _at_points(self.distribution.computeCDF, x)
+  def cdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
+    return _at_points(self.distribution.computeCDF, y)
 
-  def icdf(self, p: Any) -> np.ndarray:
+  def icdf(self, p: Any, *, x: Optional[Any] = None) -> np.ndarray:
     return _at_probabilities(self.distribution, p)
 
-  def cdf_left(self, x: Any) -> np.ndarray:
+  def cdf_left(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
     if self._var_type == "c":
-      return self.cdf(x)
-    return _left_limit(self.distribution, x)
+      return self.cdf(y)
+    return _left_limit(self.distribution, y)
 
   def _sample_uniform(self, n: int, seeds: list[int]) -> np.ndarray:
     return np.random.default_rng(seeds or None).random(n)
@@ -737,7 +745,7 @@ class OpenTURNSSelector(MarginBase[np.ndarray]):
         If the selector has not been fitted.
     """
     if self._selected is None:
-      raise RuntimeError("OpenTURNSSelector is not fitted; call fit(x)")
+      raise RuntimeError("OpenTURNSSelector is not fitted; call fit(y)")
     return self._selected
 
   @property
@@ -761,14 +769,20 @@ class OpenTURNSSelector(MarginBase[np.ndarray]):
   # --- estimation ---------------------------------------------------------- #
 
   def fit(
-    self, x: Any, *, weights: Optional[Any] = None
+    self,
+    y: Any,
+    *,
+    x: Optional[Any] = None,
+    weights: Optional[Any] = None,
   ) -> "OpenTURNSSelector":
     """Fit every candidate and keep the best.
 
     Parameters
     ----------
-    x : array, shape (n,), dtype float
+    y : array, shape (n,), dtype float
         Observations; NaNs are dropped.
+    x : array, shape (n, k), or None, optional
+        Not supported; selection is unconditional.
     weights : array, shape (n,), or None, optional
         Not supported; the candidates cannot use them.
 
@@ -790,13 +804,14 @@ class OpenTURNSSelector(MarginBase[np.ndarray]):
         Once, when every candidate is rejected and the kernel-density fallback
         is used instead.
     """
+    _reject_covariates(self, x)
     if weights is not None:
       raise TypeError(
         "OpenTURNSSelector cannot use observation weights: an OpenTURNS "
         "Sample carries none. Pass margins='kde' or margins='empirical' for a "
         "weighted fit, or drop weights="
       )
-    data = np.asarray(x, dtype=float).ravel()
+    data = np.asarray(y, dtype=float).ravel()
     data = data[~np.isnan(data)]
     if data.size == 0:
       raise ValueError("OpenTURNSSelector.fit got no usable observation")
@@ -914,7 +929,7 @@ class OpenTURNSSelector(MarginBase[np.ndarray]):
     criteria = dict.fromkeys(_CRITERIA, float("inf"))
     if candidate is not None:
       family = candidate.family_name
-      loglik = candidate.fitted_loglik
+      loglik = candidate.loglik()
       k = candidate.n_parameters
       support = candidate.support
       criteria = _openturns_criteria(
@@ -1018,7 +1033,7 @@ class OpenTURNSSelector(MarginBase[np.ndarray]):
     return float(getattr(self.selected_, "n_parameters", float("nan")))
 
   @property
-  def fitted_loglik(self) -> float:
+  def _fitted_loglik(self) -> float:
     """Log-likelihood attained by the selected margin.
 
     Returns
@@ -1026,7 +1041,7 @@ class OpenTURNSSelector(MarginBase[np.ndarray]):
     float
         The winner's fitted log-likelihood.
     """
-    return float(self.selected_.fitted_loglik)
+    return float(self.selected_.loglik())
 
   @property
   def var_type(self) -> str:
@@ -1037,28 +1052,32 @@ class OpenTURNSSelector(MarginBase[np.ndarray]):
     lo, hi = getattr(self.selected_, "support", (float("-inf"), float("inf")))
     return (float(lo), float(hi))
 
-  def pdf(self, x: Any) -> np.ndarray:
-    return np.asarray(self.selected_.pdf(x), dtype=float)
+  def pdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
+    return np.asarray(self.selected_.pdf(y), dtype=float)
 
-  def cdf(self, x: Any) -> np.ndarray:
-    return np.asarray(self.selected_.cdf(x), dtype=float)
+  def cdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
+    return np.asarray(self.selected_.cdf(y), dtype=float)
 
-  def icdf(self, p: Any) -> np.ndarray:
+  def icdf(self, p: Any, *, x: Optional[Any] = None) -> np.ndarray:
     return np.asarray(self.selected_.icdf(p), dtype=float)
 
-  def logpdf(self, x: Any) -> np.ndarray:
-    return np.asarray(self.selected_.logpdf(x), dtype=float)
+  def logpdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
+    return np.asarray(self.selected_.logpdf(y), dtype=float)
 
-  def cdf_left(self, x: Any) -> np.ndarray:
-    return np.asarray(self.selected_.cdf_left(x), dtype=float)
+  def cdf_left(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
+    return np.asarray(self.selected_.cdf_left(y), dtype=float)
 
-  def sample(self, n: int, *, seeds: Optional[list[int]] = None) -> np.ndarray:
+  def sample(
+    self, n: int, *, x: Optional[Any] = None, seeds: Optional[list[int]] = None
+  ) -> np.ndarray:
     """Draw ``n`` samples from the selected margin.
 
     Parameters
     ----------
     n : int
         Number of samples.
+    x : array, shape (n, k), or None, optional
+        Ignored; this margin is unconditional.
     seeds : list of int, or None, optional
         RNG seeds.
 
