@@ -51,6 +51,17 @@ Notes
   ``Vinecop`` byte-for-byte; ``pdf`` / ``rosenblatt``
   also accept ``batched=True`` (one stacked bicop call per tree level).
 
+- :class:`TorchMargin` — a univariate margin on a ``torch.distributions``
+  family. Registers the family's parameters and rebuilds the distribution on
+  each call, so ``.to(device)``, ``state_dict()`` and autograd all reach them.
+  Continuous families only, and only those implementing ``cdf``.
+
+- :class:`TorchVinedist` — a full multivariate distribution: a
+  :class:`TorchVinecop` plus one margin per variable, with ``logpdf`` / ``pdf``
+  / ``cdf`` / ``sample`` / ``rosenblatt`` on the original data scale. Every
+  part is a registered child module, so the joint log-density is differentiable
+  with respect to the marginal parameters.
+
 - :class:`FitControlsTorchBicop`, :class:`FitControlsTorchVinecop` —
   fit-time control dataclasses mirroring
   ``FitControlsBicop`` /
@@ -76,12 +87,16 @@ except ImportError as e:
   ) from e
 
 from .bicop import TorchBicop
+from .margin import TorchMargin
 from .vinecop import TorchVinecop
+from .vinedist import TorchVinedist
 from .controls import FitControlsTorchBicop, FitControlsTorchVinecop
 
 __all__ = [
   "TorchBicop",
+  "TorchMargin",
   "TorchVinecop",
+  "TorchVinedist",
   "FitControlsTorchBicop",
   "FitControlsTorchVinecop",
 ]
