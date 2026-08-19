@@ -1,0 +1,151 @@
+name: 'Install Graphviz'
+description: >
+  Install Graphviz -- and optionally Pandoc -- on a Linux, macOS, or Windows
+  runner, then verify the binaries are callable from later steps.
+inputs:
+  pandoc:
+    description: 'Whether to install Pandoc alongside Graphviz'
+    required: false
+    default: 'false'
+  max_attempts:
+    description: >
+      Install attempts before the step fails, for the package managers that
+      fail slowly (apt, brew). Chocolatey fails fast, so its own count is
+      higher -- see `choco_max_attempts`.
+    required: false
+    default: '2'
+  attempt_timeout_minutes:
+    description: 'Wall-clock budget for a single install attempt, in minutes'
+    required: false
+    default: '6'
+  choco_max_attempts:
+    description: >
+      Install attempts on Windows. Higher than `max_attempts` because the
+      Chocolatey community feed answers 499 and 503 under load and does so
+      within seconds, making a retry cheap and a fresh attempt the only thing
+      that helps.
+    required: false
+    default: '5'
+  choco_attempt_timeout_minutes:
+    description: 'Wall-clock budget for a single Chocolatey attempt, in minutes'
+    required: false
+    default: '2'
+  retry_wait_seconds:
+    description: 'Pause between install attempts, in seconds'
+    required: false
+    default: '15'
+runs:
+  using: 'composite'
+  steps:
+    # The retry budget must stay a fraction of the caller's job budget, and the
+    # right shape differs per package manager. Every consumer job caps at
+    # `timeout-minutes: 30`. apt and brew fail *slowly* -- an unreachable mirror
+    # burns the whole attempt -- so they get few attempts and a long budget:
+    # 2 x 6 min + 15 s = 12 min 15 s. Chocolatey fails *fast* (499/503 within
+    # seconds), so attempts are cheap and are the only thing that helps:
+    # 5 x 2 min + 4 x 15 s = 11 min. Either way a feed that is down fails this
+    # step while the job still has time to report it, rather than the job cap
+    # expiring inside a backoff sleep.
+    #
+    # Each apt attempt is bounded from the inside, by `timeout` rather than by
+    # the action's own timer: `nick-fields/retry` kills a timed-out command as
+    # the runner user, which cannot signal a root-owned `apt-get` and aborts the
+    # whole step with `kill EPERM` instead of retrying. Run as root by `sudo`,
+    # `timeout` can, so a hung mirror exits 124 and the retry happens.
+
+    - name: Install Graphviz via apt
+      if: runner.os == 'Linux'
+      uses: nick-fields/retry@v4
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      with:
+        timeout_minutes: ${{ inputs.attempt_timeout_minutes }}
+        max_attempts: ${{ inputs.max_attempts }}
+        retry_wait_seconds: ${{ inputs.retry_wait_seconds }}
+        shell: bash
+        command: |
+          packages=graphviz
+          if [ "${{ inputs.pandoc }}" = "true" ]; then
+            packages="$packages pandoc"
+          fi
+          # The runner images point apt at an Azure mirror that is regularly
+          # unreachable from the build network; apt then spends minutes on
+          # `Ign:` retries before falling back to the canonical archive.
+          # Pointing it straight there skips that.
+          sudo sed -i 's|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g' \
+            /etc/apt/apt-mirrors.txt 2>/dev/null || true
+          # Acquire::Retries absorbs a single flaky mirror response inside the
+          # attempt, so one 503 does not cost the whole attempt's budget;
+          # Acquire::Languages=none drops translation indices nothing reads.
+          # --no-install-recommends drops graphviz's recommended font package:
+          # `dot` is only asked for graph layout coordinates here, and
+          # matplotlib draws the labels.
+          sudo timeout 150 apt-get -o Acquire::Retries=3 \
+            -o Acquire::Languages=none update
+          sudo timeout 180 apt-get -o Acquire::Retries=3 install -y \
+            --no-install-recommends $packages
+
+    - name: Install Graphviz via brew
+      if: runner.os == 'macOS'
+      uses: nick-fields/retry@v4
+      with:
+        timeout_minutes: ${{ inputs.attempt_timeout_minutes }}
+        max_attempts: ${{ inputs.max_attempts }}
+        retry_wait_seconds: ${{ inputs.retry_wait_seconds }}
+        shell: bash
+        command: |
+          packages=graphviz
+          if [ "${{ inputs.pandoc }}" = "true" ]; then
+            packages="$packages pandoc"
+          fi
+          # Per-package, so a retry skips whatever the previous attempt already
+          # landed rather than reinstalling it inside the same budget.
+          for pkg in $packages; do
+            brew list "$pkg" >/dev/null 2>&1 || brew install "$pkg"
+          done
+
+    - name: Install Graphviz via choco
+      if: runner.os == 'Windows'
+      uses: nick-fields/retry@v4
+      with:
+        timeout_minutes: ${{ inputs.choco_attempt_timeout_minutes }}
+        max_attempts: ${{ inputs.choco_max_attempts }}
+        retry_wait_seconds: ${{ inputs.retry_wait_seconds }}
+        shell: bash
+        command: |
+          packages=graphviz
+          if [ "${{ inputs.pandoc }}" = "true" ]; then
+            packages="$packages pandoc"
+          fi
+          # Chocolatey's community feed answers 499 under load and `choco
+          # install` reports success anyway, so the attempt is judged by
+          # whether `dot.exe` appeared, not by the exit status. Same idiom
+          # vinecopulib uses in .github/actions/install-dependencies for the
+          # sources it cannot drop.
+          choco install $packages -y --no-progress || true
+          find "/c/Program Files" "/c/Program Files (x86)" \
+            -maxdepth 3 -name dot.exe 2>/dev/null | grep -q .
+
+    - name: Verify the installed binaries
+      shell: bash
+      run: |
+        dot=$(command -v dot || true)
+        if [ "$RUNNER_OS" = "Windows" ] && [ -z "$dot" ]; then
+          dot=$(find "/c/Program Files" "/c/Program Files (x86)" \
+                  -maxdepth 3 -name dot.exe 2>/dev/null | head -1)
+          # Chocolatey does not refresh PATH for later steps, so `dot` is
+          # installed but not callable and the notebooks fail on
+          # `Vinecop.plot`. Put its directory on PATH for the rest of the job.
+          if [ -n "$dot" ]; then
+            cygpath -w "$(dirname "$dot")" >> "$GITHUB_PATH"
+          fi
+        fi
+        if [ -z "$dot" ] || ! "$dot" -V; then
+          echo "::error ::graphviz install did not yield a working \`dot\`"
+          exit 1
+        fi
+        if [ "${{ inputs.pandoc }}" = "true" ] \
+           && ! pandoc --version >/dev/null; then
+          echo "::error ::pandoc install did not yield a working \`pandoc\`"
+          exit 1
+        fi

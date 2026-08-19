@@ -146,7 +146,7 @@ closed unmerged, and some commits carry no number at all.
   `CVineStructure` / `DVineStructure`. Truncation, threading,
   bootstrap, pre-fit selection criteria, and family sets are exposed
   through `FitControlsVinecop`. Also: conditional sampling
-  (`simulate_conditional`), conditioning-aware selection
+  (`sample_conditional`), conditioning-aware selection
   (`FitControlsVinecop.conditioning_set`) and `reorient`, the
   list-of-trees round-trip (`get_trees` / `RVineStructure.from_trees`),
   the gradient/diagnostics surface (`scores` / `gradient` / `hessian` /
@@ -154,7 +154,7 @@ closed unmerged, and some commits carry no number at all.
 - **Univariate marginals** — `Kde1d` (`lib/kde1d`) with continuous,
   ordered-discrete, and unordered-categorical support.
 - **Dependence measures** — `wdm` (`lib/wdm`).
-- **Quasi-random sampling** — `sobol`, `ghalton`, `simulate_uniform`.
+- **Quasi-random sampling** — `sobol`, `ghalton`, `sample_uniform`.
 - **Pseudo-observations** — `to_pseudo_obs`.
 - **Estimator ensembling / model averaging.** Combining several
   fitted vines — bagging, averaging over candidate structures,
@@ -231,7 +231,7 @@ pyvinecopulib/
         context.py               # ConditioningContext / Simplified / NonSimplified
         _rootfind.py             # solve_increasing (monotone bisection; internal)
       families/__init__.py       # BicopFamily enum + 13 family constants + 15 group constants
-      utils/__init__.py          # Kde1d, to_pseudo_obs, wdm, sobol, ghalton, simulate_uniform, benchmark
+      utils/__init__.py          # Kde1d, to_pseudo_obs, wdm, sobol, ghalton, sample_uniform, benchmark
         _pair_plots.py           # pairs_copula_data plotting helper (pure Python)
 
       sklearn/__init__.py        # VineDensity, VineRegressor, backends
@@ -543,7 +543,7 @@ automatically.
   `CVineStructure`, `DVineStructure`, `FitControlsBicop`,
   `FitControlsVinecop` from `pyvinecopulib_ext`.
 - Use `Bicop.from_family(...)` / `Bicop.from_data(...)` and
-  `Vinecop.from_data(...)` (or `RVineStructure.simulate(...)`) — these
+  `Vinecop.from_data(...)` (or `RVineStructure.sample(...)`) — these
   factories are the documented entry points; the raw constructor
   signatures are kept for nanobind-level access only.
 - `tree_algorithm` on `FitControlsVinecop`: `"mst_prim"` (default,
@@ -553,7 +553,7 @@ automatically.
 - `FitControlsVinecop.conditioning_set` (property + pickled, not a
   positional ctor arg) drives conditioning-aware selection — the fitted
   order ends with the given 1-based variables so
-  `Vinecop.simulate_conditional` / `reorient` can condition on them.
+  `Vinecop.sample_conditional` / `reorient` can condition on them.
 - `RVineStructure.from_trees(d, trees)` is the **faithful** inverse of
   `RVineStructure.get_trees()` (identity diagonal policy — each edge's
   `conditioned[0]` on the diagonal — so `from_trees(s.dim, s.get_trees()) == s`).
@@ -575,7 +575,7 @@ automatically.
   - `BicopBase` (`bicop_base.py`) / `VinecopBase` (`vinecop_base.py`) —
     canonical partial implementations to subclass. A `BicopBase`
     subclass defines `pdf` / `hfunc1` / `hfunc2` and inherits `hinv1` /
-    `hinv2` (bisection), `simulate`, `loglik`, `plot` (`flip` — needed
+    `hinv2` (bisection), `sample`, `loglik`, `plot` (`flip` — needed
     only to host the pair in structure *selection* — defaults to
     raising); a `VinecopBase` subclass defines the one hook
     `_get_pair_copula` and inherits the whole tree-by-tree cascade plus
@@ -608,7 +608,7 @@ automatically.
 ### `pyvinecopulib.utils`
 
 - Re-exports `Kde1d`, `to_pseudo_obs`, `wdm`, `sobol`, `ghalton`,
-  `simulate_uniform`, `benchmark` (all C++) plus the pure-Python
+  `sample_uniform`, `benchmark` (all C++) plus the pure-Python
   `pairs_copula_data` helper from `_pair_plots.py`.
 - `Kde1d` is used internally by the sklearn estimators as the
   marginal estimator; it also stands alone for any 1-d KDE problem.
@@ -656,7 +656,7 @@ Both backends expose:
 backend.fit_vine(U, var_types=...) -> VinecopLike
 backend.pdf(vine, U)        -> np.ndarray
 backend.cdf(vine, U, N=..., seeds=...) -> np.ndarray
-backend.simulate(vine, n, seeds=...)   -> np.ndarray
+backend.sample(vine, n, seeds=...) -> np.ndarray
 backend.structure_of(vine)  -> RVineStructure
 backend.with_random_structure(d, seeds)  -> Backend  # copy-on-write
 backend.with_local_random(seeds)         -> Backend  # ditto
@@ -665,7 +665,7 @@ backend.with_num_threads(n)              -> Backend  # ditto (torch: no-op)
 
 `pyvinecopulib.core.VinecopLike` is the canonical `runtime_checkable`
 Protocol describing the post-fit vine surface (`pdf` / `cdf` /
-`rosenblatt` / `inverse_rosenblatt` / `simulate`, plus a `structure`
+`rosenblatt` / `inverse_rosenblatt` / `sample`, plus a `structure`
 attribute); both `pv.Vinecop` and `pv.torch.TorchVinecop` satisfy it
 structurally (no inheritance). `fit_vine` returns conforming vines, so
 downstream code that only needs evaluation can type against
@@ -713,7 +713,7 @@ Key surface:
     `TorchBicop.from_data(u, controls=None, ...)` (fit; dispatches on
     `controls.method`).
   - `TorchVinecop` mirrors `pv.Vinecop`'s `pdf` / `cdf` /
-    `rosenblatt` / `inverse_rosenblatt` / `simulate` signatures.
+    `rosenblatt` / `inverse_rosenblatt` / `sample` signatures.
 - `FitControlsTorchBicop` / `FitControlsTorchVinecop` — fit-time
   dataclasses. Notable knobs:
   - `method` — `"tll"` (the only fitter; kept as the dispatch seam
@@ -792,7 +792,7 @@ below are a quick orientation.
   `three_par`, `elliptical`, `archimedean`, `extreme_value`, `bb`,
   `rotationless`, `lt`, `ut`, `itau`, `analytic_derivs`).
 - **`pyvinecopulib.utils`** — `Kde1d`, `to_pseudo_obs`, `wdm`,
-  `sobol`, `ghalton`, `simulate_uniform`, `benchmark`,
+  `sobol`, `ghalton`, `sample_uniform`, `benchmark`,
   `pairs_copula_data`.
 - **`pyvinecopulib.sklearn`** — `VineDensity`, `VineRegressor`,
  plus the `backends`
@@ -882,7 +882,7 @@ Round-trip / parity properties to preserve when touching numerics:
   `_VinecopBackendBase`, which already provides `structure_of` and the
   copy-on-write `with_*` derivations (`with_random_structure` /
   `with_local_random` / `with_num_threads`); override the divergent
-  members (`fit_vine`, `pdf`, `cdf`, `simulate`, `_default_controls`,
+  members (`fit_vine`, `pdf`, `cdf`, `sample`, `_default_controls`,
   and `_default_controls`, which `_effective_controls` resolves
   lazily). `resolve_backend`
   accepts any such object (it only defaults `None`). Consider whether
@@ -898,7 +898,7 @@ Round-trip / parity properties to preserve when touching numerics:
   `_to_u_scale` / `_fit_vine`). Stay inside the
   `_parameter_constraints` / `_validate_params()` pattern and pin
   fitted attributes with trailing underscores.
-- **Wider quasi-random integration.** `simulate_uniform` is the
+- **Wider quasi-random integration.** `sample_uniform` is the
   high-level driver behind `Vinecop.cdf` Monte-Carlo evaluation and
   random structure sampling; new low-discrepancy methods slot in
   alongside `sobol` / `ghalton` in `lib/vinecopulib`'s `misc/stats.hpp`.

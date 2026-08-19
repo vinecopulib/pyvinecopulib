@@ -17,7 +17,7 @@ import pyvinecopulib as pv
 
 def gen_bicop(n: int, seed: int) -> np.ndarray:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
-  return cop.simulate(n, seeds=[seed])
+  return cop.sample(n, seeds=[seed])
 
 
 def gen_vine(n: int, d: int, seed: int) -> np.ndarray:

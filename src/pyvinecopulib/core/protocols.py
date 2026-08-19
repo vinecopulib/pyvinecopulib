@@ -53,7 +53,7 @@ _BICOP_EXAMPLE = """
   Examples
   --------
   A minimal independence pair on NumPy — implement only the three primitives and
-  inherit ``hinv1`` / ``hinv2`` / ``simulate`` / ``loglik`` / ``plot`` /
+  inherit ``hinv1`` / ``hinv2`` / ``sample`` / ``loglik`` / ``plot`` /
   ``__repr__`` from :class:`~pyvinecopulib.core.BicopBase`::
 
       import numpy as np
@@ -118,13 +118,13 @@ class BicopLike(Protocol[ArrayT]):
   distribution (``cdf``), the two conditional distributions
   ``hfunc1(u) = P(U2 <= u2 | U1 = u1)`` / ``hfunc2(u) = P(U1 <= u1 | U2 = u2)``
   and their inverses (``hinv1`` / ``hinv2``, inverting in the second / first
-  argument), plus a sampler (``simulate``). The optional ``x`` of shape
+  argument), plus a sampler (``sample``). The optional ``x`` of shape
   ``(n, k)`` carries conditioning variables: a conditional copula reads them, an
   unconditional one ignores them.
 
   The easy way to satisfy this contract is to subclass
   :class:`~pyvinecopulib.core.BicopBase`, which supplies ``hinv1`` / ``hinv2``
-  (numerical inversion) and ``simulate`` on top of ``pdf`` / ``hfunc1`` /
+  (numerical inversion) and ``sample`` on top of ``pdf`` / ``hfunc1`` /
   ``hfunc2``. :class:`pyvinecopulib.core.Bicop` and
   :class:`pyvinecopulib.torch.TorchBicop` are the reference implementations.
 
@@ -244,7 +244,7 @@ class BicopLike(Protocol[ArrayT]):
     """
 
   @abstractmethod
-  def simulate(
+  def sample(
     self,
     n: int,
     *,
@@ -297,7 +297,7 @@ class VinecopLike(Protocol[ArrayT]):
   """Contract for a post-fit vine-copula evaluator.
 
   A vine evaluator exposes the joint ``pdf`` / ``cdf``, the ``rosenblatt`` and
-  ``inverse_rosenblatt`` transforms, and a ``simulate`` sampler, plus a
+  ``inverse_rosenblatt`` transforms, and a ``sample`` sampler, plus a
   ``structure`` attribute (the :class:`~pyvinecopulib.core.RVineStructure` it was
   built on). The optional keyword-only ``x`` covariate matrix (row-aligned with
   ``u``) is the conditional extension — left ``None`` for the usual
@@ -412,7 +412,7 @@ class VinecopLike(Protocol[ArrayT]):
     """
 
   @abstractmethod
-  def simulate(
+  def sample(
     self,
     n: int,
     *,
@@ -433,7 +433,7 @@ class VinecopLike(Protocol[ArrayT]):
     qrng : bool, default=False
         Draw quasi-random base uniforms instead of pseudo-random ones.
     num_threads : int, default=1
-        Accepted for parity with :meth:`pyvinecopulib.core.Vinecop.simulate`.
+        Accepted for parity with :meth:`pyvinecopulib.core.Vinecop.sample`.
     seeds : list of int, or None, optional
         RNG seeds.
 

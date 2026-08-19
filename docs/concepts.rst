@@ -90,7 +90,7 @@ expected from a :math:`d = 2` distribution on
 * :math:`C(u_1, u_2)` — copula CDF —
   :meth:`pyvinecopulib.core.Bicop.cdf`;
 * random sampling on :math:`[0, 1]^2` —
-  :meth:`pyvinecopulib.core.Bicop.simulate`.
+  :meth:`pyvinecopulib.core.Bicop.sample`.
 
 Pair copulas inside a vine also need **h-functions**, the partial
 conditional CDFs
@@ -114,7 +114,7 @@ and their inverses :math:`h_1^{-1}`, :math:`h_2^{-1}`. These map to
 H-functions are the workhorse of vine evaluation: they turn the
 :math:`[0, 1]^2` outputs of one tree into the conditional
 pseudo-observations consumed by the next, and their inverses drive
-:meth:`pyvinecopulib.core.Vinecop.simulate` and
+:meth:`pyvinecopulib.core.Vinecop.sample` and
 :meth:`pyvinecopulib.core.Vinecop.inverse_rosenblatt`.
 
 Every :class:`~pyvinecopulib.core.Bicop` belongs to one of the families catalogued in
@@ -163,7 +163,7 @@ specializations
   star; convenient when one variable drives the others.
 
 Both can be passed anywhere an R-vine is accepted, and
-:meth:`~pyvinecopulib.core.RVineStructure.simulate` draws structures uniformly at
+:meth:`~pyvinecopulib.core.RVineStructure.sample` draws structures uniformly at
 random (Joe, 2011) — the basis of the
 :ref:`concepts-structure-selection` section below.
 
@@ -205,13 +205,13 @@ structure is what
 (data :math:`\to` independent uniforms) and what
 :meth:`pyvinecopulib.core.Vinecop.inverse_rosenblatt` evaluates
 backward (uniforms :math:`\to` data — used by
-:meth:`pyvinecopulib.core.Vinecop.simulate`).
+:meth:`pyvinecopulib.core.Vinecop.sample`).
 
 CDF evaluation is harder: there is no closed form for
 :math:`C(\mathbf u)` in general, so
 :meth:`pyvinecopulib.core.Vinecop.cdf` uses Monte-Carlo integration
 with the quasi-random uniforms produced by
-:func:`pyvinecopulib.utils.simulate_uniform`
+:func:`pyvinecopulib.utils.sample_uniform`
 (:func:`~pyvinecopulib.utils.sobol` or
 :func:`~pyvinecopulib.utils.ghalton` sequences). Increase ``N`` to
 trade compute for accuracy.
@@ -552,7 +552,7 @@ collapse to the familiar :math:`n \times d` matrix.
 The same rule applies pairwise to :class:`pyvinecopulib.core.Bicop`
 (:math:`n \times 4` expanded, :math:`n \times (2 + k)` compact) and to
 the conditioning values passed to
-:meth:`pyvinecopulib.core.Vinecop.simulate_conditional`, where a
+:meth:`pyvinecopulib.core.Vinecop.sample_conditional`, where a
 discrete conditioning variable likewise contributes two columns.
 
 The ``examples/04_discrete_variables.ipynb`` notebook works an example
@@ -659,7 +659,7 @@ Conditional sampling and conditioning-aware vines
 
 A fitted vine can sample from the *conditional* distribution of a subset of
 variables given fixed values of the rest, via
-:meth:`pyvinecopulib.core.Vinecop.simulate_conditional`. The conditioning
+:meth:`pyvinecopulib.core.Vinecop.sample_conditional`. The conditioning
 variables are the last ``k`` of the vine order
 (:attr:`~pyvinecopulib.core.Vinecop.order`): each row of ``u_cond`` is one
 conditioning point and the corresponding output row is drawn from the remaining
@@ -668,7 +668,7 @@ transform of the conditioning variables followed by an inverse Rosenblatt
 transform, so discrete conditioning variables are supported too).
 
 The conditioning variables can also be named explicitly, with
-``simulate_conditional(u_cond, conditioning_set=[...])`` — 1-based indices.
+``sample_conditional(u_cond, conditioning_set=[...])`` — 1-based indices.
 Note that the two forms map ``u_cond``'s columns differently: without the
 argument, column ``i`` is the ``i``-th variable of the order tail; with it,
 column ``i`` is ``conditioning_set[i]``. The same argument is available on
@@ -765,7 +765,7 @@ Where to next
   measures (notebook ``examples/06_weighted_dependence_measures.ipynb``);
   :func:`~pyvinecopulib.utils.sobol`,
   :func:`~pyvinecopulib.utils.ghalton`,
-  :func:`~pyvinecopulib.utils.simulate_uniform` for the
+  :func:`~pyvinecopulib.utils.sample_uniform` for the
   low-discrepancy sequences that back Monte-Carlo CDF evaluation;
   :func:`~pyvinecopulib.utils.to_pseudo_obs` and
   :func:`~pyvinecopulib.utils.pairs_copula_data` for input
@@ -808,10 +808,10 @@ arrays:
 
 * :class:`~pyvinecopulib.core.BicopLike` — a pair copula, exposing
   ``pdf`` / ``cdf`` / ``hfunc1`` / ``hfunc2`` / ``hinv1`` / ``hinv2`` /
-  ``simulate``;
+  ``sample``;
 * :class:`~pyvinecopulib.core.VinecopLike` — a fitted vine, exposing
   ``pdf`` / ``cdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` /
-  ``simulate`` on an :class:`~pyvinecopulib.core.RVineStructure`.
+  ``sample`` on an :class:`~pyvinecopulib.core.RVineStructure`.
 
 You can plug your **own** pair copula into a vine by implementing the
 contract — most easily by subclassing the canonical partial
@@ -819,7 +819,7 @@ implementations :class:`~pyvinecopulib.core.BicopBase` /
 :class:`~pyvinecopulib.core.VinecopBase`, which fill in almost
 everything from a few primitives. A ``BicopBase`` subclass need only
 define ``pdf`` / ``hfunc1`` / ``hfunc2`` and inherits numerical
-``hinv1`` / ``hinv2``, ``simulate``, ``loglik``, and ``plot``; a
+``hinv1`` / ``hinv2``, ``sample``, ``loglik``, and ``plot``; a
 ``VinecopBase`` subclass need only return its pairs from
 ``_get_pair_copula`` and inherits the whole tree-by-tree cascade. The
 bases are pure Python (no PyTorch), so custom pairs also work in a

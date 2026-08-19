@@ -56,7 +56,7 @@ def test_interpolate_batched_many_matches_separate(is_linear: bool) -> None:
 
 def _fit_tll_bicop(seed: int) -> pv.Bicop:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
-  u_fit = cop.simulate(2000, seeds=[seed, seed + 1, seed + 2])
+  u_fit = cop.sample(2000, seeds=[seed, seed + 1, seed + 2])
   return pv.Bicop.from_data(
     u_fit,
     controls=pv.FitControlsBicop(family_set=[pv.families.tll], num_threads=1),

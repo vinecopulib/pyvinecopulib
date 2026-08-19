@@ -9,7 +9,7 @@ is mostly **not** about Python. Its central warning — a constructor argument
 inserted in the middle, which compiles silently against old positional calls —
 does not reach here, because every alternative constructor in this package is a
 named factory (`Bicop.from_family`, `Vinecop.from_data`, …) rather than an
-overload. The two items below are the parts that do carry over.
+overload. The next two sections are the parts that do carry over.
 
 ## Model selection now defaults to AIC
 
@@ -31,14 +31,52 @@ a serialized model.
 
 ## Some arguments are keyword-only
 
-`parameters` on `Bicop.simulate`, and `conditioning_set` on
-`Vinecop.rosenblatt` / `inverse_rosenblatt` / `simulate_conditional`, are
+`parameters` on `Bicop.sample`, and `conditioning_set` on
+`Vinecop.rosenblatt` / `inverse_rosenblatt` / `sample_conditional`, are
 keyword-only. This is what keeps the long-standing positional forms meaning
 what they always meant: `rosenblatt(u, 4)` is still `num_threads=4`, and
-`simulate(1000, True)` is still `n=1000, qrng=True`.
+`sample(1000, True)` is still `n=1000, qrng=True`.
 
 You only need to change code that was already passing these by keyword, which
 is to say: none.
+
+## Sampling methods are now called `sample`
+
+`sample` is what scikit-learn, `torch.distributions` and SciPy's modern
+distribution classes all call this operation, so `pyvinecopulib` calls it that
+too. The five names that shipped in 0.7.6 still work and emit a
+`DeprecationWarning` naming their replacement:
+
+| 0.7.6 | 1.0.0 |
+| --- | --- |
+| `Bicop.simulate` | `Bicop.sample` |
+| `Vinecop.simulate` | `Vinecop.sample` |
+| `RVineStructure.simulate` | `RVineStructure.sample` |
+| `Kde1d.simulate` | `Kde1d.sample` |
+| `pyvinecopulib.utils.simulate_uniform` | `pyvinecopulib.utils.sample_uniform` |
+
+Arguments and return values are unchanged; only the spelling is. Like the
+top-level aliases below, these are scheduled for removal in 2.0.
+
+`Vinecop.simulate_conditional` is the exception: it is now
+`Vinecop.sample_conditional` with **no** alias, because it never appeared in a
+release. Only code written against a 0.8.0 development build can be affected.
+
+The RNG hook that `BicopBase` and `VinecopBase` draw their
+uniforms through is renamed with them: `_simulate_uniform` becomes
+`_sample_uniform`. A renamed hook is the one rename that cannot fail visibly on
+its own — the base class simply stops calling the old name, so an override
+under the old name would be ignored and the inherited default would raise as
+though nothing had been overridden. A subclass that defines `_simulate_uniform`
+and not `_sample_uniform` therefore raises `TypeError` at class-definition
+time, naming both spellings.
+
+Two `sample` conventions now coexist, deliberately. The `core` classes keep the
+quasi-random arguments they always had — `sample(n, qrng=False, seeds=[])`,
+where `seeds` is a list of `int`. The `pyvinecopulib.sklearn` estimators keep
+`sample(n_samples, random_state)`, because that is the signature scikit-learn's
+`check_estimator` requires. The method name is the same; the argument names
+follow whichever ecosystem you are calling from.
 
 ## Top-level aliases still work, and still warn
 

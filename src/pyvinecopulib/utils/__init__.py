@@ -17,7 +17,7 @@ classes themselves:
 - **Dependence measures** — :func:`wdm` computes weighted versions of
   Kendall's :math:`\\tau`, Spearman's :math:`\\rho`, Pearson, etc.
 - **Low-discrepancy sequences** — :func:`sobol`, :func:`ghalton`, and
-  :func:`simulate_uniform` (the high-level driver) produce
+  :func:`sample_uniform` (the high-level driver) produce
   quasi-random uniform points used by Monte-Carlo evaluation of
   copula CDFs and by random vine-structure generation.
 - **Plotting helper** — :func:`pairs_copula_data` produces a
@@ -39,15 +39,19 @@ shape for copula fits) and dependence measures alongside the
 vine-copula factorization.
 """
 
+import warnings
+from typing import Any
+
 from ..pyvinecopulib_ext import (
   Kde1d,
   benchmark,
   ghalton,
-  simulate_uniform,
+  sample_uniform,
   sobol,
   to_pseudo_obs,
   wdm,
 )
+from .._deprecations import _method_alias
 from ._pair_plots import pairs_copula_data
 
 __all__ = [
@@ -55,8 +59,58 @@ __all__ = [
   "benchmark",
   "ghalton",
   "pairs_copula_data",
-  "simulate_uniform",
+  "sample_uniform",
   "sobol",
   "to_pseudo_obs",
   "wdm",
 ]
+
+
+# `Kde1d.simulate` shipped in 0.7.6; the canonical name is now `sample`.
+Kde1d.simulate = _method_alias(Kde1d.sample, "simulate", "utils.Kde1d")
+
+# `simulate_uniform` shipped in 0.7.6 under that name. Served from `__getattr__`
+# rather than assigned, so it stays out of `__all__`, the generated stubs and the
+# docs while still resolving for existing callers.
+_DEPRECATED_FUNCTIONS = {"simulate_uniform": "sample_uniform"}
+
+
+def __getattr__(name: str) -> Any:
+  """Resolve a deprecated function name.
+
+  Parameters
+  ----------
+  name : str
+      Attribute being looked up.
+
+  Returns
+  -------
+  object
+      The current binding.
+
+  Raises
+  ------
+  AttributeError
+      If the name is neither current nor deprecated.
+  """
+  if name in _DEPRECATED_FUNCTIONS:
+    new = _DEPRECATED_FUNCTIONS[name]
+    warnings.warn(
+      f"`pyvinecopulib.utils.{name}` is deprecated; use "
+      f"`pyvinecopulib.utils.{new}` instead.",
+      DeprecationWarning,
+      stacklevel=2,
+    )
+    return globals()[new]
+  raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+  """List the module's public and deprecated names.
+
+  Returns
+  -------
+  list of str
+      Sorted names.
+  """
+  return sorted(set(__all__) | set(_DEPRECATED_FUNCTIONS))

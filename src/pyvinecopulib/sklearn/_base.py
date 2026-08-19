@@ -1,3 +1,4 @@
+import os
 import warnings
 from numbers import Integral
 
@@ -144,6 +145,7 @@ class VineBase(BaseEstimator):
     "backend": [object, None],
     "batch_size": [Interval(Integral, 1, None, closed="left")],
     "random_state": ["random_state"],
+    "n_jobs": [Integral, None],
   }
 
   def __init__(
@@ -151,6 +153,7 @@ class VineBase(BaseEstimator):
     backend=None,
     batch_size: int = 100,
     random_state=None,
+    n_jobs=None,
   ) -> None:
     """Base vine copula estimator.
 
@@ -169,13 +172,25 @@ class VineBase(BaseEstimator):
         trade off memory and throughput.
     random_state : int, RandomState instance or None, default=None
         Seeds the RNG used by stochastic operations (e.g.
-        `simulate`, `cdf` quasi-MC, structure simulation). Stored
+        `sample`, `cdf` quasi-MC, structure simulation). Stored
         as-is; resolved via `sklearn.utils.check_random_state`
         inside `fit`.
+    n_jobs : int or None, default=None
+        Threads the vine may use, for fitting and for every evaluation
+        (`pdf`, `cdf`, `sample`, and the prediction paths built on them).
+        `None` means one thread and `-1` means every processor, following
+        the scikit-learn convention. Results never depend on it: the fitted
+        structure, the fitted pair copulas and every evaluated value are
+        bit-identical at any thread count.
+
+        `None` is deliberate: a caller that parallelizes *over* vines owns
+        the parallelism, and nesting would oversubscribe the machine. Set it
+        when one vine is the whole job.
     """
     self.backend = backend
     self.batch_size = batch_size
     self.random_state = random_state
+    self.n_jobs = n_jobs
 
   def _validate_input(
     self,
@@ -323,7 +338,11 @@ class VineBase(BaseEstimator):
     them throughout ``fit`` and post-fit methods.
     """
     self.random_state_ = check_random_state(self.random_state)
-    self.backend_ = resolve_backend(self.backend)
+    backend = resolve_backend(self.backend)
+    if self.n_jobs is not None:
+      threads = os.cpu_count() or 1 if self.n_jobs == -1 else int(self.n_jobs)
+      backend = backend.with_num_threads(threads)
+    self.backend_ = backend
 
   def _draw_seeds(self, size: int = 5) -> list[int]:
     """Derive a list of ints suitable for C++ ``seeds=[...]`` kwargs

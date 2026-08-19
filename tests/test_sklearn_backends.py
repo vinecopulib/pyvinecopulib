@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import os
 import subprocess
 import sys
 
@@ -12,6 +13,10 @@ import pytest
 pytest.importorskip("sklearn")
 
 import pyvinecopulib as pv  # noqa: E402
+from sklearn.utils._param_validation import (  # noqa: E402
+  InvalidParameterError,
+)
+
 from pyvinecopulib.core import VinecopLike  # noqa: E402
 from pyvinecopulib.sklearn import VineDensity, VineRegressor  # noqa: E402
 from pyvinecopulib.sklearn.backends import (  # noqa: E402
@@ -312,3 +317,56 @@ def test_fitcontrols_copy_independent():
   assert c.num_threads != c2.num_threads
   assert c.tree_algorithm != c2.tree_algorithm
   assert list(c.seeds) != [1, 2, 3]
+
+
+class TestNJobs:
+  """`n_jobs` follows the scikit-learn convention and changes nothing but speed."""
+
+  @pytest.fixture
+  def data(self):
+    rng = np.random.default_rng(0)
+    cov = np.array([[1.0, 0.6, 0.3], [0.6, 1.0, 0.4], [0.3, 0.4, 1.0]])
+    X = rng.multivariate_normal(np.zeros(3), cov, size=400)
+    return X, X[:, 0] + rng.normal(scale=0.3, size=400)
+
+  def test_default_is_serial(self, data):
+    """One thread unless asked, so a caller parallelizing over vines is safe."""
+    X, _ = data
+    est = VineDensity().fit(X)
+    assert est.n_jobs is None
+    assert est.backend_._effective_controls().num_threads in (0, 1)
+
+  @pytest.mark.parametrize("n_jobs", [2, -1])
+  def test_results_are_identical(self, data, n_jobs):
+    """Threading is an implementation detail: every number must be unchanged."""
+    X, y = data
+    serial = VineDensity(random_state=0).fit(X)
+    threaded = VineDensity(random_state=0, n_jobs=n_jobs).fit(X)
+    np.testing.assert_array_equal(
+      threaded.backend_.structure_of(threaded._vine).matrix,
+      serial.backend_.structure_of(serial._vine).matrix,
+    )
+    np.testing.assert_array_equal(
+      threaded.score_samples(X[:50]), serial.score_samples(X[:50])
+    )
+    np.testing.assert_array_equal(
+      VineRegressor(random_state=0, n_jobs=n_jobs)
+      .fit(X[:, 1:], y)
+      .predict(X[:60, 1:]),
+      VineRegressor(random_state=0).fit(X[:, 1:], y).predict(X[:60, 1:]),
+    )
+
+  def test_minus_one_resolves_to_the_machine(self, data):
+    """`-1` means every processor, as everywhere else in scikit-learn."""
+    X, _ = data
+    est = VineDensity(n_jobs=-1).fit(X)
+    assert est.backend_._effective_controls().num_threads == (
+      os.cpu_count() or 1
+    )
+
+  def test_it_is_a_validated_constructor_parameter(self, data):
+    """Stored verbatim, validated in `fit`, and round-tripped by `clone`."""
+    X, _ = data
+    assert copy.deepcopy(VineDensity(n_jobs=3)).n_jobs == 3
+    with pytest.raises(InvalidParameterError):
+      VineDensity(n_jobs="all").fit(X)

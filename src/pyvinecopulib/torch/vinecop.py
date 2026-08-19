@@ -3,7 +3,7 @@
 Wraps a fitted ``Vinecop`` (with *Transformed Local
 Likelihood* pair copulas — ``tll``) and
 exposes ``pdf`` / ``cdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` /
-``simulate`` on top of :class:`TorchBicop` for every pair copula. The
+``sample`` on top of :class:`TorchBicop` for every pair copula. The
 whole evaluation chain stays in PyTorch, so the vine can move to GPU
 with ``.to("cuda")`` and be composed with autograd-aware downstream
 code.
@@ -46,7 +46,7 @@ from ..pyvinecopulib_ext import (
   indep as _INDEP_FAMILY,
   tll as _TLL_FAMILY,
 )
-from ..utils import simulate_uniform
+from ..utils import sample_uniform
 from ._batched import BatchedVine
 from .controls import FitControlsTorchVinecop
 from ._interp import _TRIM_HI, _TRIM_LO
@@ -57,7 +57,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   """PyTorch R-vine copula evaluator built on ``TorchBicop``.
 
   Mirrors the public surface of ``Vinecop`` — ``pdf`` /
-  ``rosenblatt`` / ``inverse_rosenblatt`` / ``simulate`` — but keeps
+  ``rosenblatt`` / ``inverse_rosenblatt`` / ``sample`` — but keeps
   the entire evaluation chain in PyTorch so the vine can move to
   GPU with ``.to(device)`` and compose with autograd-aware
   downstream code. Continuous variables only, single batch, no
@@ -429,15 +429,15 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     return super()._apply(fn, *args, **kwargs)
 
   # --------------------------------------------------------------------- #
-  # VinecopBase hooks: RNG for simulate + grad control                     #
+  # VinecopBase hooks: RNG for sample + grad control                     #
   # --------------------------------------------------------------------- #
 
-  def _simulate_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Tensor:
+  def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Tensor:
     """Draw ``(n, d)`` base uniforms on the fitted grid's dtype/device.
 
     Pseudo-random via ``torch.rand`` (the first seed seeds a fresh
     ``torch.Generator``), or quasi-random via
-    ``pyvinecopulib.utils.simulate_uniform`` when ``qrng=True``.
+    ``pyvinecopulib.utils.sample_uniform`` when ``qrng=True``.
 
     Parameters
     ----------
@@ -456,7 +456,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     ref = self._ref_tensor()
     dtype, device = ref.dtype, ref.device
     if qrng:
-      u_np = simulate_uniform(n, self.d, qrng=True, seeds=list(seeds))
+      u_np = sample_uniform(n, self.d, qrng=True, seeds=list(seeds))
       return torch.as_tensor(u_np, dtype=dtype, device=device)
     gen: Optional[torch.Generator] = None
     if seeds:
@@ -464,7 +464,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     return torch.rand(n, self.d, generator=gen, dtype=dtype, device=device)
 
   def _eval_context(self):
-    """Disable autograd for ``inverse_rosenblatt`` / ``simulate`` / ``cdf``.
+    """Disable autograd for ``inverse_rosenblatt`` / ``sample`` / ``cdf``.
 
     Returns
     -------

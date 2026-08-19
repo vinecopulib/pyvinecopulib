@@ -149,7 +149,7 @@ inline void init_kde1d(nb::module_& module) {
            kde1d_doc.cdf.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("quantile", &Kde1d::quantile, "x"_a, "check_fitted"_a = true,
            kde1d_doc.quantile.doc, nb::call_guard<nb::gil_scoped_release>())
-      .def("simulate", &Kde1d::simulate, "n"_a, "seeds"_a = std::vector<int>(),
+      .def("sample", &Kde1d::simulate, "n"_a, "seeds"_a = std::vector<int>(),
            "check_fitted"_a = true, kde1d_doc.simulate.doc,
            nb::call_guard<nb::gil_scoped_release>())
       .def("set_xmin_xmax", &kde1d_set_xmin_xmax, "xmin"_a = std::nullopt,

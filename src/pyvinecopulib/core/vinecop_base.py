@@ -2,7 +2,7 @@
 
 :class:`VinecopBase` is the array-agnostic (NumPy / PyTorch, via
 :func:`array_api_compat.array_namespace`) implementation of the vine cascades —
-``pdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` / ``simulate`` / ``cdf`` — plus
+``pdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` / ``sample`` / ``cdf`` — plus
 ``loglik`` / ``plot`` and the shared sequential-fit engine. It walks the vine
 tree by tree, evaluating one pair copula per edge, so a concrete subclass (e.g.
 :class:`~pyvinecopulib.core.Vinecop`'s torch counterpart
@@ -23,7 +23,7 @@ log-density).
 
 The only hook a concrete subclass must provide is ``_get_pair_copula``; ``_prep``
 (input coercion + unit-box clamp) ships a concrete default, and
-``_simulate_uniform`` (RNG) is needed only to enable ``simulate``. To enable the
+``_sample_uniform`` (RNG) is needed only to enable ``sample``. To enable the
 grid-batched fast path, override ``_build_batched`` (plus ``_default_batched``).
 The batched *cascade loops* are
 array-agnostic and live here; only the grid/cache builder returned by
@@ -43,6 +43,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, cast
 from array_api_compat import array_namespace
 
 from .context import ConditioningContext, SimplifiedContext
+from .._deprecations import _reject_renamed_hook
 from .protocols import ArrayT, BicopLike, VinecopLike, _VINECOP_EXAMPLE
 
 if TYPE_CHECKING:
@@ -81,10 +82,10 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   """Canonical array-agnostic vine cascades (numpy / torch).
 
   Concrete subclasses implement ``_get_pair_copula`` (and optionally override
-  ``_prep`` / ``_simulate_uniform`` / the batched-path hooks) and call
+  ``_prep`` / ``_sample_uniform`` / the batched-path hooks) and call
   ``_bind_vine`` once; they
   then inherit the whole evaluator surface — ``pdf`` / ``cdf`` / ``rosenblatt`` /
-  ``inverse_rosenblatt`` / ``simulate``, ``loglik`` / ``plot`` / ``__repr__``,
+  ``inverse_rosenblatt`` / ``sample``, ``loglik`` / ``plot`` / ``__repr__``,
   the ``dim`` / ``trunc_lvl`` / ``order`` accessors, and the :meth:`fit` /
   :meth:`select` engines. Not an ``nn.Module``, so it composes with any
   pair-copula implementation (including non-torch ones).
@@ -102,6 +103,18 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   trunc_lvl: int
   order: tuple[int, ...]
   inverse_order: tuple[int, ...]
+
+  def __init_subclass__(cls, **kwargs: Any) -> None:
+    """Reject an override of the pre-1.0 hook name.
+
+    Parameters
+    ----------
+    **kwargs
+        Forwarded to ``super().__init_subclass__``.
+    """
+    super().__init_subclass__(**kwargs)
+    _reject_renamed_hook(cls, "_simulate_uniform", "_sample_uniform")
+
   _context: ConditioningContext
   _cond_pos_cache: dict[tuple[int, int], tuple[int, ...]]
   #: Lazily-built grid-batched state (see :meth:`_build_batched`); ``None`` until
@@ -195,11 +208,11 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       )
     return cast(ArrayT, xp.clip(ua, _TRIM_LO, _TRIM_HI))
 
-  def _simulate_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:
-    """Draw ``(n, d)`` base uniforms for :meth:`simulate` (namespace-dependent RNG).
+  def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:
+    """Draw ``(n, d)`` base uniforms for :meth:`sample` (namespace-dependent RNG).
 
     Raising default; override it (numpy / torch differ on RNG) to enable
-    :meth:`simulate`. Named after :func:`pyvinecopulib.utils.simulate_uniform`.
+    :meth:`sample`. Named after :func:`pyvinecopulib.utils.sample_uniform`.
 
     Parameters
     ----------
@@ -221,8 +234,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         Unless a subclass overrides this hook.
     """
     raise NotImplementedError(
-      f"{type(self).__name__} does not implement _simulate_uniform; override it "
-      "to enable simulate()."
+      f"{type(self).__name__} does not implement _sample_uniform; override it "
+      "to enable sample()."
     )
 
   def _default_batched(self) -> bool:
@@ -277,7 +290,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     return self._batched
 
   def _eval_context(self):
-    """Context manager disabling grad for inverse / simulate / cdf.
+    """Context manager disabling grad for inverse / sample / cdf.
 
     Defaults to a no-op; the torch subclass overrides it with
     ``torch.no_grad()``.
@@ -799,7 +812,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     with self._eval_context():
       return cast(ArrayT, self._inverse_rosenblatt(u_p, x))
 
-  def simulate(
+  def sample(
     self,
     n: int,
     *,
@@ -834,11 +847,11 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       xa: Any = x
       if xa.shape[0] != n:
         raise ValueError(
-          f"simulate(n={n}, x=...) requires one covariate row per sample; "
+          f"sample(n={n}, x=...) requires one covariate row per sample; "
           f"got x with {xa.shape[0]} rows."
         )
     with self._eval_context():
-      base_u = self._simulate_uniform(n, qrng, seeds)
+      base_u = self._sample_uniform(n, qrng, seeds)
       return self.inverse_rosenblatt(base_u, x=x)
 
   def cdf(
@@ -865,7 +878,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     num_threads : int, default=1
         Accepted for parity; ignored.
     seeds : list of int or None, optional
-        RNG seeds forwarded to :meth:`simulate`.
+        RNG seeds forwarded to :meth:`sample`.
     x : array or None, optional
         Must be ``None`` — a per-row conditional CDF is not supported (the
         Monte-Carlo dominance estimate cannot condition each query row on a
@@ -892,7 +905,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     seeds = list(seeds) if seeds else []
     with self._eval_context():
       u_t: Any = self._prep(u, "cdf")
-      samples: Any = self.simulate(N, qrng=qrng, seeds=seeds)
+      samples: Any = self.sample(N, qrng=qrng, seeds=seeds)
       xp = array_namespace(u_t)
       m = u_t.shape[0]
       out = xp.empty(m, dtype=u_t.dtype, device=u_t.device)

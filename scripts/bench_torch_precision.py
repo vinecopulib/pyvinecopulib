@@ -2,7 +2,7 @@
 """Precision-vs-truth benchmark for the torch backend.
 
 Section 1 — Bicop precision. For each (family, params, n):
-  - sample u_true ~ cop_true.simulate(n) from the parametric family,
+  - sample u_true ~ cop_true.sample(n) from the parametric family,
   - fit two TorchBicops on u_true (cache_integrals=False vs True) using
     the TLL fitter,
   - on M=10k iid eval points in [0.02, 0.98]^2 compute the integrated
@@ -11,9 +11,9 @@ Section 1 — Bicop precision. For each (family, params, n):
     cop_true.
 
 Section 2 — Vine precision. For each d:
-  - simulate a random R-vine structure,
+  - sample a random R-vine structure,
   - build a parametric Gaussian vine with ρ_t = 0.6 · 0.7^t per tree,
-  - sample u_true ~ cop_true.simulate(n) and fit
+  - sample u_true ~ cop_true.sample(n) and fit
     TorchVinecop.from_data(u_true, structure=cop_true.structure) twice
     (cache=False, cache=True),
   - compute IAE = mean |fit.pdf - true.pdf| on M=10k iid points.
@@ -96,7 +96,7 @@ def _run_bicop_section(
         int(x)
         for x in rng_master.integers(1, 2**31 - 1, size=3, endpoint=False)
       )
-      u_true = cop_true.simulate(n, seeds=sim_seeds)
+      u_true = cop_true.sample(n, seeds=sim_seeds)
       eval_seed = int(rng_master.integers(1, 2**31 - 1))
       u_eval = _u_eval(np.random.default_rng(eval_seed), m_eval, d=2)
       u_eval_t = torch.from_numpy(u_eval)
@@ -140,7 +140,7 @@ def _run_bicop_section(
 
 
 def _build_gaussian_vine(d: int, structure_seed: int) -> pv.Vinecop:
-  structure = pv.RVineStructure.simulate(d, seeds=[structure_seed])
+  structure = pv.RVineStructure.sample(d, seeds=[structure_seed])
   pair_copulas = []
   for t in range(d - 1):
     rho_t = 0.6 * (0.7**t)
@@ -166,7 +166,7 @@ def _run_vine_section(
     sim_seeds = list(
       int(x) for x in rng_master.integers(1, 2**31 - 1, size=3, endpoint=False)
     )
-    u_true = cop_true.simulate(n, seeds=sim_seeds)
+    u_true = cop_true.sample(n, seeds=sim_seeds)
     # Single eval sample: iid uniforms on [0.02, 0.98]^d. This keeps the
     # IAEs comparable across pdf / rosenblatt / inverse_rosenblatt (the
     # last expects independent uniforms anyway). Sampling from the true

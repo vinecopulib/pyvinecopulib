@@ -47,7 +47,7 @@ inline void init_stats(nb::module_& m) {
   constexpr auto& doc = pyvinecopulib_doc;
   constexpr auto& tools_stat_doc = doc.vinecopulib.tools_stats;
 
-  m.def("simulate_uniform", &tools_stats::simulate_uniform,
+  m.def("sample_uniform", &tools_stats::simulate_uniform,
         tools_stat_doc.simulate_uniform.doc, "n"_a, "d"_a, "qrng"_a = false,
         "seeds"_a = std::vector<int>(),
         nb::call_guard<nb::gil_scoped_release>());

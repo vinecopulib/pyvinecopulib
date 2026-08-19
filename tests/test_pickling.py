@@ -118,7 +118,7 @@ def test_bicop() -> None:
 
 def test_rvinestructure() -> None:
   # Create an instance of RVineStructure with some configuration
-  original_structure = pv.RVineStructure.simulate(5)
+  original_structure = pv.RVineStructure.sample(5)
 
   # Serialize the object
   serialized = pickle.dumps(original_structure)

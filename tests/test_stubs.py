@@ -63,21 +63,45 @@ def test_keyword_only_arguments_survive_into_the_stub():
   vinecop = _rendered(Vinecop, "Vinecop")
 
   for haystack, needle in [
-    (bicop, "def simulate(self, n: int | None = None"),
+    (bicop, "def sample(self, n: int | None = None"),
     (bicop, "*, parameters:"),
     (vinecop, "def rosenblatt(self"),
     (vinecop, "def inverse_rosenblatt(self"),
-    (vinecop, "def simulate_conditional(self"),
+    (vinecop, "def sample_conditional(self"),
   ]:
     assert needle in haystack, f"missing {needle!r}"
 
   # `conditioning_set` must appear after a bare `*` on all three methods, so
   # position 2 keeps meaning `num_threads` / `qrng`.
-  for method in ("rosenblatt", "inverse_rosenblatt", "simulate_conditional"):
+  for method in ("rosenblatt", "inverse_rosenblatt", "sample_conditional"):
     line = next(
       line for line in vinecop.splitlines() if f"def {method}(self" in line
     )
     assert "*, conditioning_set:" in line, line
+
+
+def test_a_deprecated_alias_renders_with_a_real_signature():
+  """A shim must not degrade to ``*args, **kwargs`` in the stubs.
+
+  `generate_stubs.py` recovers a signature -- and ``@staticmethod`` -- by parsing
+  the first line of the docstring, so the alias copies that line from the method
+  it forwards to. If that ever stops working, a type checker sees an untyped
+  callable and `RVineStructure.simulate` loses its staticmethod, which is exactly
+  what this asserts against.
+  """
+  from pyvinecopulib.core import Bicop, RVineStructure
+
+  bicop = _rendered(Bicop, "Bicop")
+  structure = _rendered(RVineStructure, "RVineStructure")
+
+  assert "def simulate(self, n: int | None = None" in bicop
+  assert "*args" not in bicop.split("def simulate")[1].split("\n")[0]
+
+  # The static alias keeps its decorator and its `self`-less signature.
+  line = next(
+    line for line in structure.splitlines() if "def simulate(" in line
+  )
+  assert line.lstrip().startswith("def simulate(d: int"), line
 
 
 def test_from_data_accepts_a_dynamically_sized_matrix():

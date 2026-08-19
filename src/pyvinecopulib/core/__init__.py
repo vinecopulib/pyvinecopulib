@@ -31,7 +31,7 @@ Notes
   passing ``"random_weighted"`` switches to Wilson-weighted random
   trees instead, and supplying a hand-crafted
   :class:`RVineStructure` (or one drawn from
-  :meth:`RVineStructure.simulate`) skips structure selection
+  :meth:`RVineStructure.sample`) skips structure selection
   entirely.
 - *C-vine / D-vine special cases* — :class:`CVineStructure` and
   :class:`DVineStructure` are the path-shaped and star-shaped
@@ -55,6 +55,7 @@ from ..pyvinecopulib_ext import (
   RVineStructure,
   Vinecop,
 )
+from .._deprecations import _method_alias
 from .bicop_base import BicopBase
 from .context import (
   ConditioningContext,
@@ -63,6 +64,16 @@ from .context import (
 )
 from .protocols import BicopLike, VinecopLike
 from .vinecop_base import VinecopBase
+
+# Deprecated aliases for the pre-1.0 `simulate` spelling. The canonical name is
+# `sample`, matching scikit-learn, `torch.distributions` and SciPy's modern
+# distributions; these three shipped in 0.7.6, so they warn rather than vanish.
+# `Vinecop.sample_conditional` has never been released and carries no alias.
+Bicop.simulate = _method_alias(Bicop.sample, "simulate", "core.Bicop")
+Vinecop.simulate = _method_alias(Vinecop.sample, "simulate", "core.Vinecop")
+RVineStructure.simulate = staticmethod(
+  _method_alias(RVineStructure.sample, "simulate", "core.RVineStructure")
+)
 
 __all__ = [
   "Bicop",

@@ -1,7 +1,7 @@
 """PyTorch evaluator for a bivariate pair copula on a density grid.
 
 The evaluation chain (``pdf`` / ``cdf`` / ``hfunc`` / ``hinv`` /
-``simulate``) lives entirely in PyTorch, so the pair copula can be
+``sample``) lives entirely in PyTorch, so the pair copula can be
 moved to GPU with ``.to("cuda")`` and composed with autograd-aware
 downstream code.
 
@@ -531,7 +531,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
   # --------------------------------------------------------------------- #
 
   @torch.no_grad()
-  def simulate(
+  def sample(
     self,
     n: int = 100,
     *,
