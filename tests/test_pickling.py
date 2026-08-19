@@ -132,7 +132,7 @@ def test_rvinestructure() -> None:
 
 def test_kde1d() -> None:
   # Test with unfitted Kde1d object first
-  original_kde = pv.utils.Kde1d(
+  original_kde = pv.core.Kde1d(
     xmin=-5.0,
     xmax=5.0,
     type="continuous",

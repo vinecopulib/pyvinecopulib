@@ -58,7 +58,7 @@ estimator (Joe & Xu, 1996): first fit the
    \qquad i = 1, \ldots, n, \; j = 1, \ldots, d.
 
 The univariate side is well-trodden — pyvinecopulib uses
-:class:`pyvinecopulib.utils.Kde1d` (a boundary-corrected 1-d KDE that
+:class:`pyvinecopulib.core.Kde1d` (a boundary-corrected 1-d KDE that
 also handles ordered-discrete data) for the marginals. Two
 convenience helpers convert raw data to pseudo-observations and
 measure dependence on them:
@@ -464,7 +464,7 @@ Vine fitting is a two-step procedure inherited from
 :ref:`concepts-sklar`:
 
 1. **Marginals.** Each :math:`F_j` is estimated independently —
-   :class:`pyvinecopulib.utils.Kde1d` (a boundary-corrected 1-d
+   :class:`pyvinecopulib.core.Kde1d` (a boundary-corrected 1-d
    KDE) is the default both for the sklearn estimators and the
    notebook examples. ``Kde1d`` supports continuous,
    ordered-discrete, and unordered-categorical input via its
@@ -759,7 +759,7 @@ Where to next
   :class:`~pyvinecopulib.torch.TorchVinecop` for GPU placement and
   autograd. Notebook ``examples/09_torch_backend.ipynb``.
 * :mod:`pyvinecopulib.utils` —
-  :class:`~pyvinecopulib.utils.Kde1d` for the marginals (notebook
+  :class:`~pyvinecopulib.core.Kde1d` for the marginals (notebook
   ``examples/07_kde1d.ipynb``);
   :func:`~pyvinecopulib.utils.wdm` for weighted dependence
   measures (notebook ``examples/06_weighted_dependence_measures.ipynb``);
@@ -779,7 +779,7 @@ Nagler & Czado, 2025), which replaces the marginal CDF derivatives in
 :ref:`concepts-sklar` by finite differences (transparent to the
 user — pass ``var_types=["d", ...]`` to
 :meth:`pyvinecopulib.core.Vinecop.from_data` or set
-``type="d"`` on :class:`pyvinecopulib.utils.Kde1d`).
+``type="d"`` on :class:`pyvinecopulib.core.Kde1d`).
 
 A discrete variable needs its left limit :math:`F(x^-)` alongside
 :math:`F(x)`, and there are two ways to supply them. The **expanded** layout is

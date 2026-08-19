@@ -5,7 +5,7 @@ standard sklearn ``BaseEstimator`` / ``fit`` / ``predict`` interface.
 Two estimators ship:
 
 - :class:`VineDensity` — non-parametric joint-density estimator. Fits
-  univariate marginals with :class:`pyvinecopulib.utils.Kde1d`, then a
+  univariate marginals with :class:`pyvinecopulib.core.Kde1d`, then a
   vine copula on the resulting pseudo-observations. Exposes
   ``score_samples`` / ``pdf`` / ``cdf`` / ``sample``.
 - :class:`VineRegressor` — non-parametric conditional mean / quantile
