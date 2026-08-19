@@ -66,6 +66,12 @@ scipy = [
   # legacy `rv_continuous.fit` surface, which is much older.
   "scipy>=1.15",
 ]
+openturns = [
+  # An extra rather than a dependency on two counts: OpenTURNS is LGPL where
+  # this package is MIT, and its wheel is ~60 MB. 1.16 is the floor for
+  # `FittingTest.AICC`, one of the three criteria `OpenTURNSSelector` offers.
+  "openturns>=1.16",
+]
 doc = [
   # Ranges, not exact pins: `sphinx==7.0` held `sphinx-autodoc-typehints` back
   # to its 2023 releases while the other four floated, so whichever of them

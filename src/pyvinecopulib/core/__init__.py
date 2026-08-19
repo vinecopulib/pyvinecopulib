@@ -8,6 +8,13 @@ vine structure used to describe how pair-copulas compose
 hyperparameters for both fits (:class:`FitControlsBicop` and
 :class:`FitControlsVinecop`).
 
+On top of that copula layer it exposes the pieces that turn a copula
+into a distribution on the original scale: the univariate-margin
+contract (:class:`MarginLike`, :class:`MarginBase`), the
+boundary-corrected 1d kernel density estimator that serves as the
+default margin (:class:`Kde1d`), and the joint object composing the two
+halves of Sklar's theorem (:class:`Vinedist`).
+
 For higher-level scikit-learn-compatible wrappers around these
 primitives (with ``fit`` / ``predict``-style interfaces, DataFrame
 handling, and batched evaluation), see
@@ -33,6 +40,15 @@ Notes
   :class:`RVineStructure` (or one drawn from
   :meth:`RVineStructure.sample`) skips structure selection
   entirely.
+- *A distribution, not just a copula* — :class:`Vinedist`. It pairs any
+  :class:`VinecopLike` with one margin per variable and evaluates
+  ``pdf`` / ``cdf`` / ``sample`` on the original scale;
+  :meth:`Vinedist.from_data` fits both halves in one call.
+- *Margins* — :class:`Kde1d` is the default and needs no configuration
+  beyond its variable type. Any object with ``pdf`` / ``cdf`` / ``icdf``
+  works (:class:`MarginLike`); subclass :class:`MarginBase` to write
+  one, or reach for the parametric families and family selection in
+  :mod:`pyvinecopulib.margins`.
 - *C-vine / D-vine special cases* — :class:`CVineStructure` and
   :class:`DVineStructure` are the path-shaped and star-shaped
   specializations of :class:`RVineStructure` and can be passed
