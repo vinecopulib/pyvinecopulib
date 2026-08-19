@@ -344,6 +344,7 @@ DOCSTRING_SUBPACKAGES = {
       "ConditioningContext",
       "SimplifiedContext",
       "NonSimplifiedContext",
+      "DiscretePair",
       "MarginLike",
       "MarginBase",
       "Vinedist",

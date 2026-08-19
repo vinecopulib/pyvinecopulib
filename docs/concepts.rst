@@ -1005,7 +1005,9 @@ implementations :class:`~pyvinecopulib.core.BicopBase` /
 :class:`~pyvinecopulib.core.VinecopBase`, which fill in almost
 everything from a few primitives. A ``BicopBase`` subclass need only
 define ``pdf`` / ``hfunc1`` / ``hfunc2`` and inherits numerical
-``hinv1`` / ``hinv2``, ``sample``, ``loglik``, and ``plot``; a
+``hinv1`` / ``hinv2``, ``sample``, ``loglik``, and ``plot`` (``flip``
+and ``cdf`` are the two optional additions, needed to reuse the pair in
+structure selection and to host it on a discrete edge respectively); a
 ``VinecopBase`` subclass need only return its pairs from
 ``_get_pair_copula`` and inherits the whole tree-by-tree cascade. The
 bases are pure Python (no PyTorch), so custom pairs also work in a
@@ -1023,11 +1025,22 @@ threads them to the pair copula, giving a **non-simplified /
 conditional** vine. :meth:`pyvinecopulib.core.VinecopBase.fit`
 is the seam for *fitting* such a vine edge by edge.
 
+A custom pair copula reaches a :ref:`discrete <concepts-discrete>` edge
+too. The vine owns the discreteness: declare ``var_types`` when binding
+it, and :meth:`pyvinecopulib.core.VinecopBase.pair_var_types` says which
+of the pairs sees an argument with atoms. Wrapping such a pair in
+:class:`~pyvinecopulib.core.DiscretePair` builds the mixed-discrete
+density and h-functions out of its continuous ``pdf`` / ``cdf`` /
+``hfunc1`` / ``hfunc2``, so the only thing to add is a ``cdf``.
+:meth:`~pyvinecopulib.core.VinecopBase.fit` and
+:meth:`~pyvinecopulib.core.VinecopBase.select` take ``var_types`` as
+well, and hand each edge's types to the ``fit_edge`` callback.
+
 The ``examples/10_extending_pyvinecopulib.ipynb`` notebook is a
 worked, end-to-end walk-through: a custom Gaussian pair copula hosted
 first in a simplified vine (matching
-:meth:`pyvinecopulib.core.Vinecop.from_structure`) and then made
-non-simplified and conditional.
+:meth:`pyvinecopulib.core.Vinecop.from_structure`), then a Gumbel one on
+a discrete edge, and finally a non-simplified and conditional vine.
 
 
 References
