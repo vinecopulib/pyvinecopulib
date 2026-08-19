@@ -51,9 +51,9 @@ def test_fit_properties(fitted_density):
   """Test properties after fitting."""
   density, _ = fitted_density
   assert hasattr(density, "_vine")
-  assert hasattr(density, "_x_kde1d")
   assert density.n_features_in_ == 2
-  assert len(density._x_kde1d) == 2
+  assert density.distribution_.dim == 2
+  assert len(density.distribution_.margins) == 2
 
 
 def test_score_samples_shapes_and_types(fitted_density):

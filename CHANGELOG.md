@@ -25,6 +25,15 @@
 - `FitControlsBicop` and `FitControlsVinecop` default `selection_criterion` to `"aic"` instead of `"bic"`, matching the C++ and R defaults; the same knob now selects the same model from all three languages. Pass `selection_criterion="bic"` explicitly to keep the previous selection (#251).
 - Rename the sampling entry points to `sample`: `simulate` on `Bicop` / `Vinecop` / `RVineStructure` / `Kde1d` and `utils.simulate_uniform` stay as `DeprecationWarning` aliases, while the unreleased `simulate_conditional` → `sample_conditional` and `_simulate_uniform` → `_sample_uniform` hook get none (#297).
 - Add `n_jobs` to `VineDensity` and `VineRegressor`, following the scikit-learn convention (`None` is one thread, `-1` every processor). It governs fitting and every evaluation, where the fit-time `num_threads` used to pin both: `VineRegressor.predict` on 2000 rows goes from 1.13 s to 0.26 s, and a 20-dimensional fit from 9.4 s to 1.8 s. The default stays serial, since a caller parallelizing over vines owns the parallelism. Results are bit-identical at any thread count (#297).
+- Rename the sampling entry points to `sample`: `simulate` on `Bicop` / `Vinecop` / `RVineStructure` / `Kde1d` and `utils.simulate_uniform` stay as `DeprecationWarning` aliases, while the unreleased `simulate_conditional` → `sample_conditional` and `_sample_uniform` → `_sample_uniform` hook get none (#297).
+- `VineDensity` and `VineRegressor` take a `margins=` keyword and delegate the whole marginal half to `Vinedist`, so the Sklar assembly has one implementation instead of two. `margins=None` still fits a `Kde1d` per column and reproduces the previous numbers (#293).
+- The sklearn estimators' internal `_x_kde1d` / `_y_kde1d` attributes are gone -- the fitted margins are `distribution_.margins` -- and `margins` sits between `backend` and `batch_size`, so a positional call past `backend` shifts (#293).
+- `VineDensity` refuses a margin with no density at fit time rather than at the first `score_samples`. `VineRegressor` accepts one: its quadrature reads the copula density and the response margin's `icdf` only (#293).
+- `VineRegressor` requires a continuous response margin (#293).
+- `VineRegressor` takes its `use_grid=True` quadrature on the probability scale: substituting `p = F_Y(y)` in the conditional expectation cancels the marginal density, so the nodes are `icdf` of a fixed grid of `n_nodes` probability levels and the weights are the copula density alone (#293).
+- Any continuous margin can now be `VineRegressor`'s response, where before the nodes and an extra density factor were read off the response margin's `Kde1d` interpolation grid; `n_nodes=401` replaces the implicit dependence on that grid's size (#293).
+- `VineRegressor` predictions shift by around 1e-5 response standard deviations for an unbounded response margin, and by far more for a bounded one, whose grid is not uniform in `y` -- the spacing the old weights omitted (#293).
+- `VineRegressor` refuses a conditional response margin: the quadrature inverts one shared probability grid, which a margin whose quantiles move with the covariates turns into one grid per test row (#293).
 
 ### New features in `pyvinecopulib`
 
@@ -90,6 +99,8 @@
 - Add `RVineStructure.get_min_array()`, `get_needed_hfunc1()` and `get_needed_hfunc2()`, returning the whole `[tree][edge]` triangular array that the existing per-entry accessors index into (#251).
 - `Vinecop.pair_copulas` is now settable, so pair copulas can be replaced as a group on a fitted vine; the assignment validates the nested shape against the structure (#251).
 
+- The sklearn estimators publish the fitted model as `distribution_`, a `Vinedist` that evaluates through the fitted backend, and the family-selection table of any selecting margin as `selection_report_` (#293).
+- `distribution_.sample` goes through the backend that fitted the vine, as its other methods do; the wrapper had kept the pre-rename name, so the call fell through to the raw vine and skipped the backend's conversion of the result (#293).
 - Add `Vinedist.copula_data` and `Vinedist.copula_var_types`: from a set of margins, the copula-scale layout for some data and the `var_types` a copula must be fitted with. That is what "fit your own copula, then wrap it" needs, and what the sklearn estimators use (#292).
 - `resolve_margins` takes `default=`, one specification per variable, so a caller that knows something per variable keeps it for the variables a mapping does not address (#292).
 - Add `Vinedist.selection_report`, the per-candidate family-selection rows across every margin that selected, labeled by variable. `from_data` reads a DataFrame's column names, so `margins=` may be a mapping keyed by name (#292).
@@ -116,7 +127,10 @@
 - Reject non-finite `X` / `y` in the `pyvinecopulib.sklearn` estimators instead of passing them to `Kde1d`, which reads NaN as a segmentation fault (#263).
 - Port the `integrate_2d` marginal-renormalization fix to the torch backend (`InterpolationGrid2D.integrate_2d` and `integrate_2d_batched`) so `TorchBicop.cdf` enforces ``C(1, u_2) = u_2`` exactly, matching the post-vinecopulib#667 C++ CDF to machine precision on the on-the-fly path ([vinecopulib#667](https://github.com/vinecopulib/vinecopulib/pull/667)).
 - Declare `BicopFamily` enum members as class attributes in the generated type stubs so the documented `pv.BicopFamily.clayton` access pattern passes static type checking (`ty` / pyright / mypy), not only the module-level constants (#223).
+- Fit the `{0, 1}` dummies of an expanded unordered categorical on `[0, 1]` in the sklearn estimators. Their bounds are known exactly, but were never passed, so the kernel-density grid was padded past the data and put mass on values that cannot occur (#293).
+- Pass the declared support of an ordered categorical to its marginal fit in the sklearn estimators. Only the expanded `{0, 1}` dummies were bounded, so a count column's kernel-density grid was still padded below its smallest level (#293).
 - `Vinedist.cdf` hands the copula the full `(n, d + k)` layout. A distribution function needs only the marginal `F` values and the copula reads only those, but it validates the whole layout, so a margin with atoms made `cdf` raise (#292).
+- Reject complex `X` / `y` in the sklearn estimators rather than casting each column to float and dropping the imaginary part in silence (#293).
 - Pin the RNG of the discrete `ParametricMargin` fitter. `scipy.stats.fit` optimizes with an unseeded `differential_evolution`, so the same counts gave a different parameter vector -- and a different `MarginSelector.report_` -- on every call (#292).
 
 ### Dependency changes
