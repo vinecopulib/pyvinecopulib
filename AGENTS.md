@@ -755,7 +755,7 @@ working. Specifically:
   new canonical path.
 - For new code, **always import from the canonical subpackage**
   (`from pyvinecopulib.families import gaussian`,
-  `from pyvinecopulib.utils import Kde1d`), not the top-level alias.
+  `from pyvinecopulib.core import Kde1d`), not the top-level alias.
 
 `torch` is **not** re-exported at the top level — `import
 pyvinecopulib.torch` is the only entry. Same for `sklearn.backends`.

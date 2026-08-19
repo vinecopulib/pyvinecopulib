@@ -52,6 +52,7 @@ from ..pyvinecopulib_ext import (
   DVineStructure,
   FitControlsBicop,
   FitControlsVinecop,
+  Kde1d,
   RVineStructure,
   Vinecop,
 )
@@ -62,7 +63,9 @@ from .context import (
   NonSimplifiedContext,
   SimplifiedContext,
 )
-from .protocols import BicopLike, VinecopLike
+from .margin_base import MarginBase
+from .protocols import BicopLike, MarginLike, VinecopLike
+from .vinedist import Vinedist
 from .vinecop_base import VinecopBase
 
 # Deprecated aliases for the pre-1.0 `simulate` spelling. The canonical name is
@@ -70,6 +73,7 @@ from .vinecop_base import VinecopBase
 # distributions; these three shipped in 0.7.6, so they warn rather than vanish.
 # `Vinecop.sample_conditional` has never been released and carries no alias.
 Bicop.simulate = _method_alias(Bicop.sample, "simulate", "core.Bicop")
+Kde1d.simulate = _method_alias(Kde1d.sample, "simulate", "core.Kde1d")
 Vinecop.simulate = _method_alias(Vinecop.sample, "simulate", "core.Vinecop")
 RVineStructure.simulate = staticmethod(
   _method_alias(RVineStructure.sample, "simulate", "core.RVineStructure")
@@ -85,10 +89,14 @@ __all__ = [
   "DVineStructure",
   "FitControlsBicop",
   "FitControlsVinecop",
+  "Kde1d",
+  "MarginBase",
+  "MarginLike",
   "NonSimplifiedContext",
   "RVineStructure",
   "SimplifiedContext",
   "Vinecop",
   "VinecopBase",
   "VinecopLike",
+  "Vinedist",
 ]

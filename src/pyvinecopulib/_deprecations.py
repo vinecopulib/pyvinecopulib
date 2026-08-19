@@ -36,7 +36,7 @@ _DEPRECATED_TOP_LEVEL: dict[str, tuple[str, str]] = {
   "lt": ("families", "lt"),
   "ut": ("families", "ut"),
   "itau": ("families", "itau"),
-  "Kde1d": ("utils", "Kde1d"),
+  "Kde1d": ("core", "Kde1d"),
   "wdm": ("utils", "wdm"),
   "sobol": ("utils", "sobol"),
   "ghalton": ("utils", "ghalton"),

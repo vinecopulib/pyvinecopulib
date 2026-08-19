@@ -13,8 +13,8 @@ from sklearn.utils.validation import (
   check_random_state,
 )
 
-import pyvinecopulib as pv
 
+from ..core import Kde1d
 from .backends import resolve_backend
 
 # Shared docstring fragments interpolated into VineDensity / VineRegressor
@@ -321,12 +321,12 @@ class VineBase(BaseEstimator):
       self.schema_ is not None
     )  # Guaranteed after _validate_input(reset=True)
     for j in range(self.n_features_in_):
-      kde = pv.utils.Kde1d(type=self.schema_["kde1d_types"][j])
+      kde = Kde1d(type=self.schema_["kde1d_types"][j])
       kde.fit(X[:, j])
       self._x_kde1d.append(kde)
 
     if y is not None:
-      self._y_kde1d = pv.utils.Kde1d()
+      self._y_kde1d = Kde1d()
       self._y_kde1d.fit(y)
       return X, y
     else:

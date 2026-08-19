@@ -60,6 +60,12 @@ sklearn = [
 torch = [
   "torch>=2.0",
 ]
+scipy = [
+  # 1.15 is the floor for the modern `scipy.stats` distribution classes that
+  # `pyvinecopulib.margins.as_margin` adapts; the parametric margins use the
+  # legacy `rv_continuous.fit` surface, which is much older.
+  "scipy>=1.15",
+]
 doc = [
   # Ranges, not exact pins: `sphinx==7.0` held `sphinx-autodoc-typehints` back
   # to its 2023 releases while the other four floated, so whichever of them

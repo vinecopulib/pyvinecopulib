@@ -43,7 +43,6 @@ import warnings
 from typing import Any
 
 from ..pyvinecopulib_ext import (
-  Kde1d,
   benchmark,
   ghalton,
   sample_uniform,
@@ -51,11 +50,9 @@ from ..pyvinecopulib_ext import (
   to_pseudo_obs,
   wdm,
 )
-from .._deprecations import _method_alias
 from ._pair_plots import pairs_copula_data
 
 __all__ = [
-  "Kde1d",
   "benchmark",
   "ghalton",
   "pairs_copula_data",
@@ -65,9 +62,6 @@ __all__ = [
   "wdm",
 ]
 
-
-# `Kde1d.simulate` shipped in 0.7.6; the canonical name is now `sample`.
-Kde1d.simulate = _method_alias(Kde1d.sample, "simulate", "utils.Kde1d")
 
 # `simulate_uniform` shipped in 0.7.6 under that name. Served from `__getattr__`
 # rather than assigned, so it stays out of `__all__`, the generated stubs and the

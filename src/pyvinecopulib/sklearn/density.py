@@ -171,7 +171,7 @@ class VineDensity(DensityMixin, VineBase):
     )
     X_sampled = np.empty((n_samples, self.n_features_in_))
     for j in range(self.n_features_in_):
-      X_sampled[:, j] = self._x_kde1d[j].quantile(U_sampled[:, j])
+      X_sampled[:, j] = self._x_kde1d[j].icdf(U_sampled[:, j])
     return X_sampled
 
   def pdf(self, X: np.ndarray, copula_only: bool = False) -> np.ndarray:
