@@ -219,7 +219,10 @@ class TestEstimatorWiring:
 
   def test_fit_sets_schema_underscore(self, small_data):
     est = VineDensity().fit(small_data)
-    assert est.schema_ == {"kde1d_types": ["continuous"] * 3}
+    assert est.schema_ == {
+      "kde1d_types": ["continuous"] * 3,
+      "bounds": [None] * 3,
+    }
 
   def test_fit_sets_structure_underscore(self, small_data):
     est = VineDensity().fit(small_data)
@@ -370,3 +373,28 @@ class TestNJobs:
     assert copy.deepcopy(VineDensity(n_jobs=3)).n_jobs == 3
     with pytest.raises(InvalidParameterError):
       VineDensity(n_jobs="all").fit(X)
+
+
+def test_the_fitted_distribution_samples_through_the_backend():
+  """Every evaluation route must go through the backend that fitted the vine.
+
+  The wrapper forwards unknown attributes to the raw vine, so a method it does
+  not define is answered by the vine directly — skipping the backend's own
+  conversion of its result. `sample` is the one that would then return whatever
+  the vine's array namespace produces.
+  """
+  rng = np.random.default_rng(0)
+  X = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=200)
+  est = VineDensity().fit(X)
+
+  seen = []
+  original = est.backend_.sample
+
+  def spy(vine, n_samples, *, seeds):
+    seen.append(n_samples)
+    return original(vine, n_samples, seeds=seeds)
+
+  est.backend_.sample = spy
+  drawn = est.sample(5, random_state=1)
+  assert seen == [5]
+  assert isinstance(drawn, np.ndarray) and drawn.shape == (5, 2)
