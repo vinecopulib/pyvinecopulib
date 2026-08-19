@@ -259,6 +259,7 @@ pyvinecopulib/
         context.py               # ConditioningContext / Simplified / NonSimplified
         margin_base.py           # MarginBase (canonical MarginLike partial impl)
         vinedist.py              # Vinedist (copula + margins = a distribution)
+        _discrete.py             # DiscretePair + the discrete layouts / per-edge types
         _rootfind.py             # solve_increasing (monotone bisection; internal)
       families/__init__.py       # BicopFamily enum + 13 family constants + 15 group constants
       utils/__init__.py          # to_pseudo_obs, wdm, sobol, ghalton, sample_uniform, benchmark
@@ -607,6 +608,17 @@ automatically.
     (same matrix encoding, selection-time pairs reused via `flip`, no
     re-fit; parity is a hard guarantee). `TorchBicop` / `TorchVinecop`
     are the torch subclasses.
+  - `DiscretePair` (`_discrete.py`) — a *continuous* pair copula evaluated on a
+    discrete or mixed edge. **The vine owns the discrete layouts, the pair
+    copulas stay continuous**: `_bind_vine(..., var_types=)` declares which
+    variables have atoms, `pair_var_types(tree, edge)` derives the types each
+    slot sees from the structure alone, and the cascades hand a four-column
+    `[u1, u2, u1^-, u2^-]` argument to any pair whose types include `"d"`.
+    `BicopLike` is therefore unchanged — it stays a two-column continuous
+    contract — and a custom pair copula opts in by implementing `cdf` and
+    wrapping itself in `DiscretePair`. `fit` / `select` take `var_types` too and
+    forward each edge's types to `fit_edge` as a keyword, only on the edges that
+    have one (the rule `_pair_eval` applies to `x`).
   - `ConditioningContext` / `SimplifiedContext` (default) /
     `NonSimplifiedContext` (`context.py`) — the per-edge policy that
     turns the simplified cascade into a **non-simplified / conditional**
@@ -872,7 +884,7 @@ below are a quick orientation.
 - **`pyvinecopulib.core`** — `Bicop`, `Vinecop`, `RVineStructure`,
   `CVineStructure`, `DVineStructure`, `FitControlsBicop`,
   `FitControlsVinecop`; plus the backend-neutral abstraction layer
-  `BicopLike`, `VinecopLike`, `BicopBase`, `VinecopBase`,
+  `BicopLike`, `VinecopLike`, `BicopBase`, `VinecopBase`, `DiscretePair`,
   `ConditioningContext`, `SimplifiedContext`, `NonSimplifiedContext`;
   plus the marginal layer `MarginLike`, `MarginBase` and the joint
   object `Vinedist`.
@@ -967,8 +979,11 @@ Round-trip / parity properties to preserve when touching numerics:
   copula, and host it by subclassing `VinecopBase` (define the one hook
   `_get_pair_copula`); both run on NumPy or PyTorch and inherit the full
   evaluation surface. Implement `BicopLike` / `VinecopLike` directly for
-  an immutable / functional backend. For a **non-simplified /
-  conditional** vine, pass a `NonSimplifiedContext` and drive
+  an immutable / functional backend. To put that pair on a **discrete**
+  edge, add a `cdf` and return `DiscretePair(pair, self.pair_var_types(t, e))`
+  from `_get_pair_copula` (and from `fit_edge`, which receives the edge's
+  `var_types`); the vine supplies the left-limit columns. For a
+  **non-simplified / conditional** vine, pass a `NonSimplifiedContext` and drive
   `VinecopBase.fit` with a `fit_edge` callback; see
   `examples/10_extending_pyvinecopulib.ipynb`. `TorchBicop` /
   `TorchVinecop` are the reference torch subclasses.
