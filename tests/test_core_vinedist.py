@@ -80,9 +80,9 @@ def test_empirical_margins_reproduce_a_copula_on_pseudo_obs(
 ) -> None:
   """`Vinedist` with empirical margins is `Vinecop` on `to_pseudo_obs`.
 
-  Same structure and the same pair copulas, so the copula densities agree
-  exactly. The joint `logpdf` then differs from the copula's log-density by the
-  constant `-d log(n + 1)`, because an empirical `pdf` is a mass.
+  Same copula data, so the same structure and the same pair copulas. The joint
+  density is not defined — an empirical margin has none — so `logpdf` raises
+  rather than reporting a number on the original scale.
   """
   dist = pv.Vinedist.from_data(continuous, margins="empirical")
   u = np.asarray(pv.to_pseudo_obs(continuous))
@@ -97,9 +97,15 @@ def test_empirical_margins_reproduce_a_copula_on_pseudo_obs(
     np.asarray(dist.copula.pdf(u)), np.asarray(reference.pdf(u))
   )
 
-  n, d = continuous.shape
-  offset = dist.logpdf(continuous) - np.log(np.asarray(reference.pdf(u)))
-  np.testing.assert_allclose(offset, -d * np.log(n + 1.0), rtol=1e-10)
+  # The identity at its source: the margins hand the copula exactly the
+  # pseudo-observations. Ties would separate the two (`to_pseudo_obs` averages
+  # ranks where the margin counts upward); continuous data has none.
+  np.testing.assert_allclose(
+    pv.Vinedist.copula_data(dist.margins, continuous), u, atol=1e-12
+  )
+
+  with pytest.raises(NotImplementedError, match="Kde1d"):
+    dist.logpdf(continuous)
 
 
 # --- discrete margins ------------------------------------------------------- #
