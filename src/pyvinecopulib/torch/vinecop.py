@@ -32,7 +32,7 @@ FitControlsTorchVinecop : Fit-time controls.
 
 from __future__ import annotations
 
-from typing import Optional, cast
+from typing import Any, Optional, cast
 
 import numpy as np
 import torch
@@ -431,6 +431,58 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     # wire-up tensors aligned with the destination dtype/device.
     self._batched = None
     return super()._apply(fn, *args, **kwargs)
+
+  def _grad_signature(self) -> tuple[bool, ...]:
+    """Which of the pairs' grids currently track gradients.
+
+    The grids only: they are the tensors a caller is told to flip
+    (``values.requires_grad_(True)`` is how a fitted density becomes a learned
+    one), and walking every buffer instead costs more for no reachable gain --
+    the derived integral caches are built under ``no_grad`` and are documented
+    as constants with respect to the grid.
+
+    Returns
+    -------
+    tuple of bool
+        Two entries per pair copula, in tree-then-edge order.
+    """
+    out: list[bool] = []
+    # The same pairs `_build_batched` bakes, in the same order.
+    for tree in range(self.trunc_lvl):
+      for edge in range(self.d - tree - 1):
+        grid = getattr(self._get_pair_copula(tree, edge), "interp_grid", None)
+        if grid is None:
+          continue
+        out.append(bool(grid.values.requires_grad))
+        out.append(bool(grid.grid_points.requires_grad))
+    return tuple(out)
+
+  def _ensure_batched(self) -> Any:
+    """The batched state, re-baked when grad tracking has changed under it.
+
+    The bake copies each pair's grid into a stacked tensor, and
+    ``requires_grad_`` mutates a flag in place, so flipping it afterwards leaves
+    the copy behind. It does not raise where it is read: the batched cascade
+    returns a value detached from the grid, and the error surfaces as torch's
+    generic "does not require grad" from ``backward()`` — or, with something else
+    in the graph, as a silently missing term. Device moves already invalidate
+    through ``_apply``; this is the same invalidation for the other thing a
+    caller changes after fitting.
+
+    Returns
+    -------
+    object
+        The memoized batched state.
+    """
+    signature = self._grad_signature()
+    if (
+      self._batched is not None
+      and getattr(self, "_grad_signature_at_bake", None) != signature
+    ):
+      object.__setattr__(self, "_batched", None)
+    out = super()._ensure_batched()
+    object.__setattr__(self, "_grad_signature_at_bake", signature)
+    return out
 
   # --------------------------------------------------------------------- #
   # VinecopBase hooks: RNG for sample + grad control                     #

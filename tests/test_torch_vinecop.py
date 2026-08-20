@@ -726,3 +726,42 @@ def test_cached_and_uncached_gradients_agree_in_direction() -> None:
 
   cosine = torch.nn.functional.cosine_similarity(grads[0], grads[1], dim=0)
   assert cosine.item() > 0.99, cosine.item()
+
+
+def test_the_batched_cache_re_bakes_when_grad_tracking_changes() -> None:
+  """`requires_grad_` after a batched call must not leave a stale cache.
+
+  The bake copies each pair's grid into a stacked tensor and `requires_grad_`
+  mutates a flag in place, so flipping it afterwards used to leave the copy
+  behind. It did not raise where it was read: the batched cascade returned a
+  value detached from the grid, and it surfaced as torch's generic "does not
+  require grad" out of `backward()`. Both orderings must now give the same
+  gradient, and it must equal the non-batched one.
+  """
+  fitted = _fit_tll_vine(_simulate(d=3, n=600, seed=900))
+  u = torch.from_numpy(_eval_grid(48, d=3, seed=901))
+
+  def lift():
+    return TorchVinecop.from_vinecop(fitted, cache_integrals=False)
+
+  cop = lift()
+  # Bake first -- the ordering a caller hits by evaluating before deciding to
+  # optimize -- then start tracking the grid.
+  baked = cop.pdf(u, batched=True)
+  assert not baked.requires_grad
+  values = cop._get_pair_copula(0, 0).interp_grid.values
+  values.requires_grad_(True)
+
+  (g_batched,) = torch.autograd.grad(cop.pdf(u, batched=True).sum(), values)
+  (g_plain,) = torch.autograd.grad(cop.pdf(u, batched=False).sum(), values)
+  assert float(g_batched.abs().sum()) > 0.0
+  torch.testing.assert_close(g_batched, g_plain, rtol=1e-10, atol=1e-12)
+
+  # The other ordering agrees, so neither is the special case.
+  other = lift()
+  other_values = other._get_pair_copula(0, 0).interp_grid.values
+  other_values.requires_grad_(True)
+  (g_first,) = torch.autograd.grad(
+    other.pdf(u, batched=True).sum(), other_values
+  )
+  torch.testing.assert_close(g_batched, g_first, rtol=1e-10, atol=1e-12)
