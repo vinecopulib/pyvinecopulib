@@ -140,6 +140,36 @@ class _VinecopBackendBase:
     raise NotImplementedError
 
   # -- shared surface (single source of truth) ---------------------------- #
+  def default_margin(
+    self, var_type: str, bounds: Optional[tuple[float, float]]
+  ) -> Any:
+    """The margin an estimator should fit when the caller named none.
+
+    A seam rather than an `isinstance` check, so a backend whose vine lives on
+    another array namespace can supply a matching margin.
+
+    Note that ``TorchVinecopBackend`` deliberately does **not** override this.
+    The sklearn layer wraps its vine in ``_BackendVinecop``, which converts to
+    NumPy at the backend boundary because the estimators' public methods return
+    arrays; a torch margin here would put the two halves of one ``Vinedist`` on
+    different namespaces. End-to-end torch is reached through
+    ``pyvinecopulib.torch.TorchVinedist.from_data`` instead.
+
+    Parameters
+    ----------
+    var_type : str
+        ``Kde1d``'s spelling of the variable type.
+    bounds : tuple of float, or None
+        Declared support, or ``None`` where the input states none.
+
+    Returns
+    -------
+    MarginLike
+        An unfitted kernel-density margin.
+    """
+    lo, hi = (None, None) if bounds is None else (bounds[0], bounds[1])
+    return pv.core.Kde1d(type=var_type, xmin=lo, xmax=hi)
+
   def structure_of(self, vine: Any) -> pv.RVineStructure:
     return vine.structure
 

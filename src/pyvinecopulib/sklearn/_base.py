@@ -413,26 +413,31 @@ class VineBase(BaseEstimator):
       return str(names[j])
     return f"x{j}"
 
-  def _default_margin_specs(self) -> list[Kde1d]:
+  def _default_margin_specs(self) -> list[Any]:
     """One unfitted kernel-density margin per column, from the schema.
 
     This is what ``margins=None`` means, and what a column a ``margins=``
-    mapping does not address falls back to.
+    mapping does not address falls back to. The *class* comes from the backend,
+    so a torch copula gets torch margins: fitting NumPy ones onto it would put
+    the whole distribution on two array namespaces and stop every gradient at
+    the marginal transform.
 
     Returns
     -------
-    list of Kde1d
+    list of MarginLike
         One margin per feature, carrying the variable type and whatever bounds
         the input told us about.
     """
     types = self.schema_["kde1d_types"]
     bounds = self.schema_.get("bounds") or [None] * len(types)
+    # Resolved rather than read off `backend_`: this is an internal that a
+    # caller may reach before `fit` has pinned it, and the resolution is cheap
+    # and idempotent.
+    backend = getattr(self, "backend_", None) or resolve_backend(self.backend)
     specs = []
     for type_, bound in zip(types, bounds):
-      lo, hi = (
-        (None, None) if bound is None else (float(bound[0]), float(bound[1]))
-      )
-      specs.append(Kde1d(type=type_, xmin=lo, xmax=hi))
+      pair = None if bound is None else (float(bound[0]), float(bound[1]))
+      specs.append(backend.default_margin(type_, pair))
     return specs
 
   def _declared_for(

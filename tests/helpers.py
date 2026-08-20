@@ -54,7 +54,7 @@ def compare_vinecop(cop1: Any, cop2: Any) -> None:
       compare_bicop(bicop1, bicop2)
 
 
-def compare_kde1d(kde1: Any, kde2: Any, from_grid: bool = False) -> None:
+def compare_kde1d(kde1: Any, kde2: Any) -> None:
   is_fitted1 = kde1.is_fitted
   is_fitted2 = kde2.is_fitted
 

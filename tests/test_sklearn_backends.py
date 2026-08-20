@@ -119,6 +119,41 @@ class TestVinecopBackendWith:
     assert parent_controls.tree_algorithm == parent_algo
 
 
+class TestDefaultMargin:
+  """The backend chooses the *class* of the default margin.
+
+  A seam rather than an `isinstance` check: fitting NumPy margins onto a torch
+  copula would put the two halves of one distribution on different array
+  namespaces, and every gradient would stop at the marginal transform.
+  """
+
+  def test_cpp_backend_gives_a_numpy_kde(self):
+    margin = VinecopBackend().default_margin("discrete", (0.0, 4.0))
+    assert isinstance(margin, pv.core.Kde1d)
+    assert margin.support == (0.0, 4.0)
+    assert margin.var_type == "d"
+
+  def test_torch_backend_keeps_numpy_margins(self):
+    """Deliberately *not* overridden, and the reason is namespace consistency.
+
+    `_BackendVinecop` converts the vine's output to NumPy at the backend
+    boundary, because the estimators' public methods return arrays. A
+    `TorchKde1d` here would put the two halves of one `Vinedist` on different
+    array namespaces, and `logpdf` would try to add a Tensor to an ndarray.
+    End-to-end torch is `TorchVinedist.from_data`, not this path.
+    """
+    pytest.importorskip("torch")
+    margin = TorchVinecopBackend().default_margin("continuous", None)
+    assert isinstance(margin, pv.core.Kde1d)
+
+  def test_the_estimators_fit_what_the_backend_named(self):
+    X = np.random.default_rng(0).multivariate_normal(
+      [0.0, 0.0], [[1.0, 0.5], [0.5, 1.0]], size=200
+    )
+    est = VineDensity(random_state=0).fit(X)
+    assert all(isinstance(m, pv.core.Kde1d) for m in est.distribution_.margins)
+
+
 class TestTorchBackendWith:
   def test_with_num_threads_is_noop(self):
     pytest.importorskip("torch")

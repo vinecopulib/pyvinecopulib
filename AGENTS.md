@@ -279,8 +279,11 @@ pyvinecopulib/
         density.py               # VineDensity
         regressor.py             # VineRegressor
 
-      torch/__init__.py          # TorchBicop, TorchVinecop, FitControlsTorch*
+      torch/__init__.py          # TorchBicop, TorchVinecop, TorchKde1d, TorchMargin, TorchVinedist, FitControlsTorch*
         bicop.py, vinecop.py     # nn.Module evaluators
+        margin.py, vinedist.py   # TorchMargin / TorchVinedist (nn.Module margins + distribution)
+        kde1d.py                 # TorchKde1d (the torch marginal estimator)
+        _kde1d_interp.py         # kde1d's InterpolationGrid, ported — internal
         controls.py              # FitControlsTorchBicop / FitControlsTorchVinecop dataclasses
         _interp.py               # InterpolationGrid2D (bilinear; Sinkhorn margin renormalization) — internal
         _fit_tll.py              # pure-torch TLL kernel
@@ -842,6 +845,49 @@ Key surface:
     `controls.method`).
   - `TorchVinecop` mirrors `pv.Vinecop`'s `pdf` / `cdf` /
     `rosenblatt` / `inverse_rosenblatt` / `sample` signatures.
+- `TorchMargin` / `TorchVinedist` — the marginal and joint halves.
+  - `TorchMargin` is a `MarginBase[Tensor]` that is *also* an
+    `nn.Module`: `torch.distributions.Distribution` has no
+    `.to(device)` and contributes nothing to `state_dict` as a plain
+    attribute, so the parameters are registered and the distribution is
+    **rebuilt per call** — the same shape `TorchBicop` uses for its
+    grid. `TorchMargin.from_distribution(factory, parameters=...)` is
+    the general entry point; `icdf` bisects `cdf` over `support` for the
+    families that implement one but not the other (`Gamma`, `Chi2`).
+  - `TorchVinedist` is `Vinedist[Tensor]` plus `nn.Module`, with margins
+    in a `ModuleList` and `log_prob` as an alias for `logpdf`. Every
+    margin **must** be an `nn.Module`: SciPy raises on gradient-carrying
+    tensors and returns a plain `ndarray` without them, so accepting a
+    SciPy margin here would detach the graph silently. `from_data` fits
+    end to end in torch — a `TorchKde1d` per column, then
+    `TorchVinecop.from_data` on the copula data they produce — so the whole
+    joint distribution lands on one device in one dtype. It takes no
+    covariates: no torch margin reads them, and an unconditional fit
+    behind a conditional-looking call is worse than a refusal.
+  - `TorchKde1d` is the torch marginal estimator, and the only one that
+    handles **discrete** and **zero-inflated** variables. Fitting delegates
+    to the compiled `Kde1d`; every evaluation is pure torch, because
+    `grid_points` / `values` / `type` / `prob0` are the only state the
+    compiled `pdf` / `cdf` / `icdf` read. The grid is a **buffer**, not a
+    parameter — the density is fitted, not learned — so optimizing it is the
+    opt-in `values.requires_grad_(True)`, the `TorchBicop` precedent.
+    `icdf` reproduces the C++ 35-step bisection exactly and then reattaches
+    an exact gradient by one Newton step, so the value is bit-identical
+    while `dq/d values` is right. Two of `Kde1d`'s attribute names could not
+    be reused: `type` is `nn.Module`'s dtype cast (read `kde_type`) and
+    `loglik` is the contract's method.
+  - `torch/_kde1d_interp.py` ports `kde1d`'s `InterpolationGrid`, and its
+    contract is *fidelity*, not improvement. Three C++ behaviors look like
+    bugs and must be reproduced: the interpolant drops by `exp(-0.5)`
+    exactly at `grid_points[-1]` (the cell search lands on the last cell,
+    so `t == 1` and the Gaussian-tail branch fires), `integrate` adds no
+    tail contribution so the unnormalized integral saturates at the grid's
+    mass, and `pdf_discrete` divides by the **raw** interpolation rather
+    than the clamped density. Nothing is cached: coefficients and cell
+    integrals are recomputed in the graph, which is the opposite call from
+    `TorchBicop.cache_integrals` and for a stated reason — here the cached
+    quantity would be an `O(m)` vector shared by the batch, not an `O(m^2)`
+    integral per query.
 - `FitControlsTorchBicop` / `FitControlsTorchVinecop` — fit-time
   dataclasses. Notable knobs:
   - `method` — `"tll"` (the only fitter; kept as the dispatch seam
@@ -931,8 +977,9 @@ below are a quick orientation.
  plus the `backends`
   submodule (`VinecopBackend`, `TorchVinecopBackend`,
   `resolve_backend`).
-- **`pyvinecopulib.torch`** — `TorchBicop`, `TorchVinecop`,
-  `FitControlsTorchBicop`, `FitControlsTorchVinecop`.
+- **`pyvinecopulib.torch`** — `TorchBicop`, `TorchVinecop`, `TorchKde1d`,
+  `TorchMargin`, `TorchVinedist`, `FitControlsTorchBicop`,
+  `FitControlsTorchVinecop`.
 
 Top-level `pyvinecopulib` re-exports the eight core classes and
 `to_pseudo_obs`; everything else — including the `core` abstraction
