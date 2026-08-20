@@ -23,7 +23,7 @@ from pyvinecopulib.core import (
 )
 from pyvinecopulib.core._discrete import continuous_view
 
-from .conftest import GaussianBicop
+from .conftest import GaussianBicop, HostedVinecop
 
 #: Cross-language parity tolerance. The cascade and the compiled `Vinecop`
 #: multiply the same per-edge densities in the same order, so on one toolchain
@@ -79,13 +79,12 @@ _MIXED = _VAR_TYPES[1:]
 _LAYOUTS = ["expanded", "compact"]
 
 
-class _ListVinecop(VinecopBase[Any]):
-  """Minimal ``VinecopBase`` hosting a nested list of pair copulas (NumPy).
+class _ListVinecop(HostedVinecop):
+  """A hosted vine that stamps its pairs with the types derived for their slot.
 
-  Declares ``var_types`` and then stamps each hosted pair with the types the
-  base class derives for its slot, which is what a subclass owning its pairs is
-  expected to do. ``_sample_uniform`` matches the C++ draw so the randomized
-  Rosenblatt path is comparable.
+  The one thing it adds over :class:`HostedVinecop`: a subclass that *owns* its
+  pair copulas is expected to declare each pair's types, and the compiled
+  ``Bicop`` needs them set for its discrete evaluation to be exercised at all.
   """
 
   def __init__(
@@ -94,19 +93,10 @@ class _ListVinecop(VinecopBase[Any]):
     structure: pv.RVineStructure,
     var_types: Optional[list[str]] = None,
   ) -> None:
-    self._pairs = pairs
-    self._bind_vine(structure, var_types=var_types)
+    super().__init__(pairs, structure, var_types)
     for tree, row in enumerate(pairs):
       for edge, pair in enumerate(row):
         pair.var_types = list(self.pair_var_types(tree, edge))
-
-  def _get_pair_copula(self, tree: int, edge: int) -> BicopLike[Any]:
-    # Cast: the conformance is nominal -- `Bicop.pdf` takes per-row
-    # `parameters` where `BicopLike.pdf` takes keyword-only `x`.
-    return cast("BicopLike[Any]", self._pairs[tree][edge])
-
-  def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> np.ndarray:
-    return pv.utils.sample_uniform(n, self.d, qrng, seeds)
 
 
 class _NeverBatchedVinecop(_ListVinecop):

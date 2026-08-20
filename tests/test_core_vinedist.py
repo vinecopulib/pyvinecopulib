@@ -68,6 +68,83 @@ def test_loglik_sums_logpdf(continuous: np.ndarray) -> None:
   np.testing.assert_allclose(total, dist.logpdf(continuous).sum(), rtol=1e-12)
 
 
+# --- conditional sampling --------------------------------------------------- #
+
+
+def test_sample_conditional_matches_the_copula_scale(
+  continuous: np.ndarray,
+) -> None:
+  """The data scale is the copula scale plus the marginal transforms, exactly.
+
+  Same seeds, so the base uniforms are the same draw and the two agree to the
+  bit rather than in distribution.
+  """
+  dist = pv.Vinedist.from_data(continuous, margins="kde")
+  tail = int(dist.copula.structure.order[-1])
+  y_cond = np.full((7, 1), float(np.median(continuous[:, tail - 1])))
+
+  got = dist.sample_conditional(y_cond, seeds=[1, 2, 3])
+
+  margin: Any = dist.margins[tail - 1]
+  u_cond = np.asarray(margin.cdf(y_cond[:, 0])).reshape(-1, 1)
+  reference = dist.marginal_icdf(
+    np.asarray(dist.copula.sample_conditional(u_cond, seeds=[1, 2, 3]))
+  )
+  np.testing.assert_array_equal(got, reference)
+
+
+def test_sample_conditional_returns_the_conditioners_it_was_given(
+  data: np.ndarray,
+) -> None:
+  """A conditioner comes back as itself, up to its own `cdf`/`icdf` round trip.
+
+  Two of three variables are held, which is the widest set the copula accepts --
+  conditioning on all of them would leave nothing to draw.
+  """
+  dist = pv.Vinedist.from_data(data, margins=["kde", "kde", stats.poisson(3.0)])
+  y_cond = np.column_stack(
+    [np.linspace(-1.0, 1.0, 6), np.linspace(0.5, 2.0, 6)]
+  )
+  out = dist.sample_conditional(y_cond, conditioning_set=[1, 2])
+  assert out.shape == (6, 3)
+  np.testing.assert_allclose(out[:, :2], y_cond, atol=1e-6)
+
+
+def test_sample_conditional_derives_a_discrete_left_limit(
+  data: np.ndarray,
+) -> None:
+  """A discrete conditioner needs no left-limit column from the caller.
+
+  On the copula scale that column is mandatory; here it comes from the
+  variable's own margin, so `y_cond` stays one column per conditioner.
+  """
+  dist = pv.Vinedist.from_data(data, margins=["kde", "kde", stats.poisson(3.0)])
+  assert dist.var_types[2] == "d"
+  out = dist.sample_conditional(
+    np.full((8, 1), 3.0), conditioning_set=[3], seeds=[4, 5, 6]
+  )
+  # Reproduced up to its atom, since the margin's `icdf` lands on the lattice.
+  np.testing.assert_array_equal(out[:, 2], np.full(8, 3.0))
+
+  # The width the copula scale would demand is rejected here: two columns name
+  # two conditioning variables, not one variable and its left limit.
+  with pytest.raises(ValueError, match="names 1 variables but y_cond has 2"):
+    dist.sample_conditional(np.full((8, 2), 3.0), conditioning_set=[3])
+
+
+def test_sample_conditional_validates_its_arguments(
+  continuous: np.ndarray,
+) -> None:
+  """A bad conditioning specification is refused, not guessed at."""
+  dist = pv.Vinedist.from_data(continuous, margins="kde")
+  with pytest.raises(ValueError, match="must be two-dimensional"):
+    dist.sample_conditional(np.zeros(5))
+  with pytest.raises(ValueError, match="must be in 1, ..., 2"):
+    dist.sample_conditional(np.zeros((5, 1)), conditioning_set=[3])
+  with pytest.raises(ValueError, match="invalid number of columns"):
+    dist.sample_conditional(np.zeros((5, 2)))
+
+
 # --- reporting -------------------------------------------------------------- #
 
 

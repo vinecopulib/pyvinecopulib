@@ -706,6 +706,135 @@ class Vinedist(Generic[ArrayT]):
     u = _copula_eval(self._copula, "sample", n, x, **kwargs)
     return self.marginal_icdf(u, x=x)
 
+  def sample_conditional(
+    self,
+    y_cond: ArrayT,
+    *,
+    conditioning_set: Optional[list[int]] = None,
+    x: Optional[ArrayT] = None,
+    **kwargs: Any,
+  ) -> ArrayT:
+    """Sample the remaining variables given fixed values of some of them.
+
+    The data-scale counterpart of the copula's ``sample_conditional``: each row
+    of ``y_cond`` is one conditioning point on the **original** scale, and the
+    matching output row draws every variable from its distribution conditional on
+    it. To draw many samples at one point, pass that point repeated over ``n``
+    rows.
+
+    Parameters
+    ----------
+    y_cond : array, shape (n, k), dtype float
+        Conditioning values on the original scale, one point per row. Column
+        ``i`` is the value of conditioning variable ``i``. Unlike the copula
+        scale, a discrete conditioner needs no left-limit column: it is derived
+        from that variable's margin.
+    conditioning_set : list of int or None, optional
+        The 1-based variables to condition on, so column ``i`` of ``y_cond`` is
+        variable ``conditioning_set[i]``. ``None`` takes the last ``k`` variables
+        of the copula's sampling order, ``k`` being ``y_cond``'s width -- the
+        same convention the copula scale uses.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, forwarded to every margin that reads them and to
+        the copula.
+    **kwargs
+        Forwarded to the copula's ``sample_conditional`` (e.g. ``qrng``,
+        ``seeds``, ``num_threads``).
+
+    Returns
+    -------
+    array, shape (n, d), dtype float
+        Samples on the original scale. The conditioning columns come back
+        holding the values they were given, up to the margin's own round trip.
+
+    Raises
+    ------
+    ValueError
+        If ``y_cond`` is not two-dimensional, names more variables than there
+        are, or its width matches no order tail when ``conditioning_set`` is
+        ``None``; or if a named variable is out of range.
+    """
+    from .vinecop_base import infer_conditioning_set
+
+    self._check_covariates(x)
+    ya: Any = y_cond
+    if ya.ndim != 2:
+      raise ValueError(
+        f"y_cond must be two-dimensional; got shape {tuple(ya.shape)}"
+      )
+    k = ya.shape[1]
+    if conditioning_set is None:
+      # One rule for both scales. On the data scale a discrete conditioner
+      # contributes no extra column, so the width *is* k.
+      cond = infer_conditioning_set(
+        [int(v) for v in self._copula.structure.order],
+        ["c"] * self.dim,
+        k,
+      )
+    else:
+      cond = [int(v) for v in conditioning_set]
+      if len(cond) != k:
+        raise ValueError(
+          f"conditioning_set names {len(cond)} variables but y_cond has {k} "
+          "columns"
+        )
+      if any(v < 1 or v > self.dim for v in cond):
+        raise ValueError(
+          f"conditioning_set entries must be in 1, ..., {self.dim}; got {cond}"
+        )
+    u_cond = self._conditioning_data(ya, cond, x)
+    u = _copula_eval(
+      self._copula,
+      "sample_conditional",
+      u_cond,
+      x,
+      conditioning_set=cond,
+      **kwargs,
+    )
+    return self.marginal_icdf(u, x=x)
+
+  def _conditioning_data(
+    self, y_cond: Any, cond: list[int], x: Optional[Any]
+  ) -> Any:
+    """Put the conditioners on the copula scale, in the compact layout.
+
+    The same assembly as :meth:`copula_data`, over the conditioning variables
+    only: one column each, then the left limit of every discrete one appended
+    after the first block, in the order they appear.
+
+    Parameters
+    ----------
+    y_cond : array, shape (n, k), dtype float
+        Conditioning values on the original scale.
+    cond : list of int
+        The 1-based conditioning variables, one per column of ``y_cond``.
+    x : array, shape (n, p), or None
+        Exogenous covariates.
+
+    Returns
+    -------
+    array, shape (n, k + k_d), dtype float
+        The compact conditioning layout, clamped away from the boundary.
+    """
+    xp = array_namespace(y_cond)
+    margins = [self._margins[v - 1] for v in cond]
+    types = [self._var_types[v - 1] for v in cond]
+    upper = [
+      _margin_eval(m, "cdf", y_cond[:, i], x) for i, m in enumerate(margins)
+    ]
+    lower = []
+    for i, m in enumerate(margins):
+      if types[i] != "d":
+        continue
+      left = getattr(m, "cdf_left", None)
+      lower.append(
+        _margin_eval(m, "cdf_left", y_cond[:, i], x)
+        if left is not None
+        else derive_cdf_left(m, y_cond[:, i], x, types[i])
+      )
+    block = xp.stack([*upper, *lower], axis=-1)
+    return xp.clip(block, _TRIM_LO, _TRIM_HI)
+
   # --- construction from data ---------------------------------------------- #
 
   @classmethod

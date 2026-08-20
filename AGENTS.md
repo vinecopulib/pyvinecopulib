@@ -178,9 +178,9 @@ closed unmerged, and some commits carry no number at all.
   distribution object as a margin.
 - **Vine distributions** — `Vinedist`: any `VinecopLike` combined with
   one margin per variable, giving `pdf` / `logpdf` / `cdf` / `loglik` /
-  `sample` / `rosenblatt` / `inverse_rosenblatt` on the **data**
-  scale rather than the copula scale, for continuous, discrete and
-  mixed margins alike.
+  `sample` / `sample_conditional` / `rosenblatt` /
+  `inverse_rosenblatt` on the **data** scale rather than the copula
+  scale, for continuous, discrete and mixed margins alike.
 - **Dependence measures** — `wdm` (`lib/wdm`).
 - **Quasi-random sampling** — `sobol`, `ghalton`, `sample_uniform`.
 - **Pseudo-observations** — `to_pseudo_obs`.
@@ -668,7 +668,12 @@ automatically.
   and a `d = 50` product underflows. `sample` is
   `marginal_icdf(copula.sample(n, ...))`, so it inherits the copula's
   quasi-random and seeding options and never calls a margin's own
-  sampler. Every method also takes optional exogenous covariates `x`,
+  sampler. `sample_conditional` is the same sandwich around the
+  copula's, with one difference the caller feels: a discrete
+  conditioner needs no left-limit column, since it is derived from that
+  variable's own margin. Both scales resolve an omitted
+  `conditioning_set` through one `infer_conditioning_set`, so the
+  column-to-variable rule cannot drift between them. Every method also takes optional exogenous covariates `x`,
   forwarded to each margin that declares `supports_covariates` and to a
   copula that declares it too.
 

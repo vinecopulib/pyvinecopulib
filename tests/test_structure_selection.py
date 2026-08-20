@@ -19,6 +19,8 @@ from pyvinecopulib.core import BicopLike, VinecopBase
 # wrapper; it is an implementation detail of ``VinecopBase.select``.
 from pyvinecopulib.pyvinecopulib_ext import _select_spanning_tree
 
+from .conftest import HostedVinecop
+
 
 class _CppBicopLike:
   """Adapt a ``Bicop`` to the ``(u, x)`` :class:`BicopLike` signature.
@@ -62,23 +64,6 @@ class _CppBicopLike:
 
   def flip(self) -> "_CppBicopLike":
     return _CppBicopLike(self._b.flip())
-
-
-class _ListVinecop(VinecopBase[Any]):
-  """Minimal concrete ``VinecopBase`` hosting a nested list of pairs (NumPy).
-
-  Lets these tests evaluate the pairs ``VinecopBase.select`` returns without a
-  torch dependency.
-  """
-
-  def __init__(
-    self, pairs: list[list[BicopLike[Any]]], structure: pv.RVineStructure
-  ) -> None:
-    self._pairs = pairs
-    self._bind_vine(structure)
-
-  def _get_pair_copula(self, tree: int, edge: int) -> BicopLike[Any]:
-    return self._pairs[tree][edge]
 
 
 _GAUSSIAN = pv.FitControlsBicop(family_set=[pv.families.gaussian])
@@ -190,7 +175,7 @@ def test_select_reused_pairs_match_vinecop_exactly() -> None:
     rng = np.random.default_rng(seed)
     grid = rng.uniform(0.02, 0.98, size=(300, d))
     np.testing.assert_allclose(
-      _ListVinecop(pairs, structure).pdf(grid),
+      HostedVinecop(pairs, structure).pdf(grid),
       auto.pdf(grid),
       rtol=1e-12,
       atol=1e-12,
@@ -264,7 +249,7 @@ def test_compiled_bicop_hosted_unwrapped_matches_vinecop() -> None:
   ref = pv.Vinecop.from_structure(structure=structure, pair_copulas=pairs)
   # Cast: the conformance is nominal -- ``Bicop.pdf`` takes per-row
   # ``parameters`` where ``BicopLike.pdf`` takes keyword-only ``x``.
-  mine = _ListVinecop(cast("list[list[BicopLike[Any]]]", pairs), structure)
+  mine = HostedVinecop(cast("list[list[BicopLike[Any]]]", pairs), structure)
 
   rng = np.random.default_rng(0)
   u = rng.uniform(0.02, 0.98, size=(256, d))

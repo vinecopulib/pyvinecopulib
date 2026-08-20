@@ -119,6 +119,48 @@ class _NotBatchable(Exception):
   """
 
 
+def infer_conditioning_set(
+  order: list[int], var_types: list[str], n_cols: int
+) -> list[int]:
+  """Which variables a ``u_cond`` of this width conditions on.
+
+  The convention, when the caller names no set: the last ``k`` variables of the
+  sampling order, with ``k`` recovered from the column count -- a discrete
+  conditioner contributes a left-limit column as well. Shared by the copula
+  scale and by ``Vinedist``, so a caller sees one rule on both.
+
+  Parameters
+  ----------
+  order : list of int
+      The sampling order, 1-based.
+  var_types : list of str
+      Per-variable types in variable order.
+  n_cols : int
+      Width of the conditioning block.
+
+  Returns
+  -------
+  list of int
+      The 1-based conditioning variables, in column order.
+
+  Raises
+  ------
+  ValueError
+      If no order tail has a layout that wide.
+  """
+  d = len(order)
+  for k in range(1, d):
+    tail = list(order[d - k :])
+    n_disc = sum(1 for v in tail if var_types[v - 1] == "d")
+    if n_cols == k + n_disc:
+      return tail
+  raise ValueError(
+    "u_cond has an invalid number of columns; expected k columns for "
+    "all-continuous conditioning, or k + k_d columns when k_d conditioning "
+    f"variables are discrete, for some k in 1, ..., {d - 1}; got {n_cols}."
+  )
+
+
 class VinecopBase(VinecopLike[ArrayT], ABC):
   """Canonical array-agnostic vine cascades (numpy / torch).
 
@@ -1371,16 +1413,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
 
   def _infer_conditioning_set(self, n_cols: int) -> list[int]:
     """The order tail whose layout is ``n_cols`` columns wide."""
-    d = self.d
-    for k in range(1, d):
-      tail = list(self.order[d - k :])
-      n_disc = sum(1 for v in tail if self._var_types[v - 1] == "d")
-      if n_cols == k + n_disc:
-        return tail
-    raise ValueError(
-      "u_cond has an invalid number of columns; expected k columns for "
-      "all-continuous conditioning, or k + k_d columns when k_d conditioning "
-      f"variables are discrete, for some k in 1, ..., {d - 1}; got {n_cols}."
+    return infer_conditioning_set(
+      list(self.order), list(self._var_types), n_cols
     )
 
   def cdf(
@@ -2054,6 +2088,10 @@ class _ReorientedVine(VinecopBase[ArrayT]):
     self._base = base
     self._locations = relabeling.locations
     self._flipped: dict[tuple[int, int], BicopLike[ArrayT]] = {}
+    # A declared capability is not inherited by a view of a vine that has it:
+    # `supports_covariates` is a class attribute, so without this the view
+    # reports `False` and `Vinedist` would drop every covariate it forwards.
+    self.supports_covariates = base.supports_covariates
     self._bind_vine(
       relabeling.structure, base._context, var_types=base.var_types
     )
