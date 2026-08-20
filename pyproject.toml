@@ -212,7 +212,6 @@ exclude_files = [
   'src/pyvinecopulib/sklearn/_base\.py$',
   'src/pyvinecopulib/torch/_batched\.py$',
   'src/pyvinecopulib/torch/_fit_tll\.py$',
-  'src/pyvinecopulib/torch/_util\.py$',
   'src/pyvinecopulib/torch/_interp\.py$',
 ]
 

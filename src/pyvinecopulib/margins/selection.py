@@ -345,8 +345,7 @@ class MarginSelector(MarginBase[np.ndarray]):
       raise TypeError(
         "MarginSelector cannot use observation weights: its parametric "
         "candidates are fitted by SciPy, which does not accept them. Pass "
-        "margins='kde' or margins='empirical' for a weighted fit, or drop "
-        "weights="
+        "margins='kde' for a weighted fit, or drop weights="
       )
     data = np.asarray(y, dtype=float).ravel()
     data = data[~np.isnan(data)]

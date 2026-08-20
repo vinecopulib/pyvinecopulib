@@ -38,7 +38,7 @@ The two halves are configured separately and symmetrically. Margins
 come from ``margins=``, which defaults to a boundary-corrected kernel
 density (``Kde1d``) per column and accepts anything
 :func:`pyvinecopulib.margins.resolve_margins` understands --- an alias
-such as ``"empirical"`` or ``"parametric"``, one margin broadcast to
+such as ``"parametric"``, one margin broadcast to
 every column, a per-column sequence, or a mapping keyed by feature
 name. The copula comes from ``backend=``: the default
 ``VinecopBackend`` wraps ``Vinecop`` and has no extra dependencies,
@@ -223,7 +223,7 @@ class VineBase(BaseEstimator):
     margins : object, default=None
         What to fit to each column, in any form
         :func:`pyvinecopulib.margins.resolve_margins` accepts: an alias
-        (``"kde"``, ``"empirical"``, ``"parametric"``), one margin
+        (``"kde"``, ``"parametric"``), one margin
         broadcast to every column, a sequence of length
         ``n_features_in_``, a mapping keyed by feature name or
         position, or a callable taking a column and returning a
@@ -464,9 +464,9 @@ class VineBase(BaseEstimator):
   ) -> None:
     """Refuse a margin with no density, at fit time rather than at first score.
 
-    A margin whose ``pdf`` is undefined -- an empirical distribution above all,
-    whose mass is not a density -- cannot serve an estimator that reports one.
-    Probed rather than declared, so a margin from anywhere is caught.
+    A margin whose ``pdf`` is undefined -- an atomic distribution, whose mass
+    is not a density -- cannot serve an estimator that reports one. Probed
+    rather than declared, so a margin from anywhere is caught.
 
     Parameters
     ----------
@@ -489,7 +489,9 @@ class VineBase(BaseEstimator):
     except NotImplementedError as exc:
       raise ValueError(
         f"{type(self).__name__} needs a density on the original scale, but the "
-        f"margin for {name!r} ({type(margin).__name__}) has none: {exc}"
+        f"margin for {name!r} ({type(margin).__name__}) has none: {exc}. Pass "
+        'margins="kde" (the default), or any margin that reports a density, '
+        "for that column."
       ) from exc
 
   def _response_margin_spec(self) -> Any:

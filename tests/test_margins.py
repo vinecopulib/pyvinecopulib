@@ -1,9 +1,9 @@
 """Tests for `pyvinecopulib.margins`.
 
-Three things are pinned here. That `EmpiricalMargin` reproduces
-`to_pseudo_obs` exactly, which is what makes the long-standing copula-only
-workflow a special case of a vine distribution. That `Kde1d` re-selects
-its bandwidth on every fit, which a bare `Kde1d` does not. And that `as_margin`
+Three things are pinned here. That `to_pseudo_obs` is scale-invariant in its
+weights, which is what keeps a weighted fit on the same scale as an
+unweighted one. That `Kde1d` re-selects its bandwidth on every fit, which a
+bare `Kde1d` does not. And that `as_margin`
 coerces each supported ecosystem to the *right numbers* -- especially for
 discrete distributions, where satisfying the contract's member names is not the
 same as satisfying its semantics.
@@ -20,7 +20,7 @@ import pyvinecopulib as pv
 from pyvinecopulib.core import MarginLike
 from pyvinecopulib.core import Kde1d
 from pyvinecopulib.margins import (
-  EmpiricalMargin,
+  ParametricMargin,
   as_margin,
   register_margin_adapter,
   resolve_margins,
@@ -44,120 +44,31 @@ def sample() -> np.ndarray:
   return np.random.default_rng(0).gamma(2.0, 1.5, size=400)
 
 
-# --- EmpiricalMargin -------------------------------------------------------- #
+# --- to_pseudo_obs ---------------------------------------------------------- #
 
 
-def test_empirical_margin_reproduces_to_pseudo_obs(sample: np.ndarray) -> None:
-  """The status-quo rank transform is exactly this margin's cdf."""
-  got = EmpiricalMargin().fit(sample).cdf(sample)
-  want = np.asarray(pv.to_pseudo_obs(sample.reshape(-1, 1))).ravel()
-  np.testing.assert_array_equal(got, want)
+def test_to_pseudo_obs_is_scale_invariant_in_the_weights() -> None:
+  """Only weight *ratios* matter, so rescaling them changes nothing.
 
-
-def test_empirical_margin_simulates_by_resampling(
-  sample: np.ndarray,
-) -> None:
-  """`icdf` is a step function, so draws are observed values and nothing else."""
-  m = EmpiricalMargin().fit(sample)
-  draws = m.sample(64, seeds=[7])
-  assert draws.shape == (64,)
-  assert np.isin(draws, np.unique(sample)).all()
-  np.testing.assert_array_equal(draws, m.sample(64, seeds=[7]))
-  assert not np.array_equal(draws, m.sample(64, seeds=[8]))
-
-
-def test_empirical_margin_saturates_off_the_boundary(
-  sample: np.ndarray,
-) -> None:
-  """`n / (n + 1)` scaling keeps the pseudo-observations off 0 and 1."""
-  m = EmpiricalMargin().fit(sample)
-  n = sample.size
-  extreme = m.cdf(np.array([-1e9, 1e9]))
-  assert extreme[0] == pytest.approx(0.0)
-  assert extreme[1] == pytest.approx(n / (n + 1.0))
-  assert np.all((m.cdf(sample) > 0.0) & (m.cdf(sample) < 1.0))
-
-
-def test_empirical_margin_jump_is_one_over_n_plus_one(
-  sample: np.ndarray,
-) -> None:
-  """The jump `F(x) - F(x^-)` at an observation is `1 / (n + 1)`."""
-  m = EmpiricalMargin().fit(sample)
-  np.testing.assert_allclose(
-    m.cdf(sample) - m.cdf_left(sample), 1.0 / (sample.size + 1.0), atol=1e-12
-  )
-
-
-def test_empirical_margin_has_no_density(sample: np.ndarray) -> None:
-  """`pdf` / `logpdf` raise, and point at the KDE margin instead."""
-  m = EmpiricalMargin().fit(sample)
-  for call in (m.pdf, m.logpdf):
-    with pytest.raises(NotImplementedError, match="Kde1d"):
-      call(sample)
-
-
-def test_empirical_margin_handles_ties() -> None:
-  """Ties collapse into one jump carrying their combined mass."""
-  tied = np.array([1.0, 2.0, 2.0, 3.0])
-  m = EmpiricalMargin().fit(tied)
-  # Two observations at 2.0, so the jump there is 2 / (n + 1).
-  at_two = np.array([2.0])
-  np.testing.assert_allclose(
-    m.cdf(at_two) - m.cdf_left(at_two), 2.0 / 5.0, atol=1e-12
-  )
-
-
-def test_empirical_margin_weights_match_to_pseudo_obs() -> None:
-  """Weighted `cdf` is `to_pseudo_obs(weights=...)`, and only ratios matter.
-
-  The reference transform is scale-invariant in the weights, so this margin has
-  to be too: weights that happen to sum to 1 must not shrink every value toward
-  `1 / (n + 1)`. Note weighting is *not* the same model as duplicating a row —
-  `to_pseudo_obs` does not equate them either, since duplication adds an
-  observation and averages the resulting tie.
+  Weights summing to 1 must not shrink every value toward `1 / (n + 1)`. The
+  transform feeds the copula data of every weighted fit, so this property is
+  what keeps a weighted fit on the same scale as an unweighted one.
   """
-  y = np.array([1.0, 2.0, 3.0])
+  y = np.array([1.0, 2.0, 3.0]).reshape(-1, 1)
   w = np.array([1.0, 2.0, 1.0])
-  reference = np.asarray(pv.to_pseudo_obs(y.reshape(-1, 1), weights=w)).ravel()
+  reference = np.asarray(pv.to_pseudo_obs(y, weights=w))
 
-  for scale in (1.0, 0.1, 1000.0):
-    fitted = EmpiricalMargin().fit(y, weights=w * scale)
-    np.testing.assert_allclose(fitted.cdf(y), reference, atol=1e-12)
+  for scale in (0.1, 1.0, 1000.0):
+    np.testing.assert_allclose(
+      np.asarray(pv.to_pseudo_obs(y, weights=w * scale)), reference, atol=1e-12
+    )
 
-  # Uniform weights of any scale reproduce the unweighted fit.
+  # Uniform weights of any scale reproduce the unweighted transform.
   np.testing.assert_allclose(
-    EmpiricalMargin().fit(y, weights=np.full(3, 0.25)).cdf(y),
-    EmpiricalMargin().fit(y).cdf(y),
+    np.asarray(pv.to_pseudo_obs(y, weights=np.full(3, 0.25))),
+    np.asarray(pv.to_pseudo_obs(y)),
     atol=1e-12,
   )
-
-
-def test_empirical_margin_icdf_resamples_observed_values(
-  sample: np.ndarray,
-) -> None:
-  """The inverse is a step function onto the observed values."""
-  m = EmpiricalMargin().fit(sample)
-  drawn = m.icdf(np.array([0.01, 0.25, 0.5, 0.75, 0.99]))
-  assert np.all(np.isin(drawn, sample))
-  assert np.all(np.diff(drawn) >= 0)
-
-
-def test_empirical_margin_drops_nans() -> None:
-  """NaNs are excluded, as `to_pseudo_obs` excludes them."""
-  m = EmpiricalMargin().fit(np.array([1.0, np.nan, 2.0, 3.0]))
-  assert m.support == (1.0, 3.0)
-  at_two = np.array([2.0])
-  np.testing.assert_allclose(
-    m.cdf(at_two) - m.cdf_left(at_two), 1.0 / 4.0, atol=1e-12
-  )
-
-
-def test_empirical_margin_raises_before_fit() -> None:
-  """Evaluating an unfitted empirical margin is an error, not a guess."""
-  m = EmpiricalMargin()
-  assert m.is_fitted is False
-  with pytest.raises(RuntimeError, match="not fitted"):
-    m.cdf(np.array([0.0]))
 
 
 # --- Kde1d ------------------------------------------------------------ #
@@ -244,8 +155,8 @@ def test_kde1d_is_passed_through_by_as_margin(sample: np.ndarray) -> None:
 def test_resolve_margins_falls_back_to_the_given_default() -> None:
   """An unaddressed variable takes the caller's default, not the library's."""
   default = [Kde1d(type="discrete"), Kde1d(type="zero-inflated")]
-  resolved = resolve_margins({0: EmpiricalMargin()}, 2, default=default)
-  assert isinstance(resolved[0], EmpiricalMargin)
+  resolved = resolve_margins({0: Kde1d()}, 2, default=default)
+  assert resolved[0].type == "continuous"
   assert resolved[1].type == "zero-inflated"
   assert resolve_margins(None, 2, default=default)[0].type == "discrete"
 
@@ -261,7 +172,7 @@ def test_resolve_margins_checks_the_default_length() -> None:
 
 def test_as_margin_is_idempotent(sample: np.ndarray) -> None:
   """Anything this library made is returned unchanged."""
-  m = EmpiricalMargin().fit(sample)
+  m = Kde1d().fit(sample)
   assert as_margin(m) is m
 
 
@@ -354,7 +265,7 @@ def test_register_margin_adapter_takes_precedence() -> None:
     pass
 
   sentinel = _Sentinel()
-  target = EmpiricalMargin().fit(np.array([1.0, 2.0]))
+  target = ParametricMargin("norm", (0.0, 1.0))
   register_margin_adapter(lambda o: isinstance(o, _Sentinel), lambda o: target)
   assert as_margin(sentinel) is target
 

@@ -24,10 +24,9 @@ pytest.importorskip("sklearn")
 
 import pyvinecopulib as pv  # noqa: E402
 from pyvinecopulib.core import Kde1d  # noqa: E402
-from pyvinecopulib.margins import (  # noqa: E402
-  EmpiricalMargin,
-)
 from pyvinecopulib.sklearn import VineRegressor  # noqa: E402
+
+from .helpers import AtomicMargin  # noqa: E402
 
 BETA = np.array([1.0, -0.7])
 
@@ -186,7 +185,7 @@ def test_the_nodes_stay_inside_the_response_support() -> None:
   assert pred.max() <= y.max()
 
 
-@pytest.mark.parametrize("spec", ["kde", "empirical", "parametric"])
+@pytest.mark.parametrize("spec", ["kde", "parametric"])
 def test_any_continuous_response_margin_works_on_the_grid(spec: str) -> None:
   """The rule needs an inverse CDF and nothing else, so every margin serves."""
   if spec == "parametric":
@@ -204,10 +203,10 @@ def test_any_continuous_response_margin_works_on_the_grid(spec: str) -> None:
 
 
 def test_a_step_response_margin_degenerates_to_its_atoms() -> None:
-  """An empirical margin's inverse CDF returns order statistics, so the
-  quadrature becomes a weighted sum over the observed responses."""
+  """A step inverse CDF returns order statistics, so the quadrature becomes a
+  weighted sum over the observed responses."""
   X, y = _data(300)
-  est = VineRegressor(margins=EmpiricalMargin(), n_nodes=201).fit(X, y)
+  est = VineRegressor(margins=AtomicMargin(), n_nodes=201).fit(X, y)
   nodes = np.asarray(est.distribution_.margins[0].icdf(np.linspace(0.01, 0.99)))
   assert np.all(np.isin(np.round(nodes, 12), np.round(y, 12)))
   assert np.all(np.isfinite(est.predict(X[:10])))

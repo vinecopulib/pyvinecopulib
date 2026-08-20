@@ -516,8 +516,8 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     if weights is not None:
       raise TypeError(
         f"OpenTURNSMargin({self.family_name!r}) cannot use observation "
-        "weights: an OpenTURNS Sample carries none. Pass margins='kde' or "
-        "margins='empirical' for a weighted fit, or drop weights="
+        "weights: an OpenTURNS Sample carries none. Pass margins='kde' for a "
+        "weighted fit, or drop weights="
       )
     if self._factory is None:
       raise TypeError(
@@ -808,8 +808,8 @@ class OpenTURNSSelector(MarginBase[np.ndarray]):
     if weights is not None:
       raise TypeError(
         "OpenTURNSSelector cannot use observation weights: an OpenTURNS "
-        "Sample carries none. Pass margins='kde' or margins='empirical' for a "
-        "weighted fit, or drop weights="
+        "Sample carries none. Pass margins='kde' for a weighted fit, or drop "
+        "weights="
       )
     data = np.asarray(y, dtype=float).ravel()
     data = data[~np.isnan(data)]

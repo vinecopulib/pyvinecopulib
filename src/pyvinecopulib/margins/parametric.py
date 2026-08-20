@@ -497,8 +497,8 @@ class ParametricMargin(MarginBase[np.ndarray]):
     if weights is not None:
       raise TypeError(
         f"ParametricMargin({self._family!r}) cannot use observation weights: "
-        "SciPy's estimators do not accept them. Pass margins='kde' or "
-        "margins='empirical' for a weighted fit, or drop weights="
+        "SciPy's estimators do not accept them. Pass margins='kde' for a "
+        "weighted fit, or drop weights="
       )
     data = np.asarray(y, dtype=float).ravel()
     data = data[~np.isnan(data)]

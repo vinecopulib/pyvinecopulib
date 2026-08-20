@@ -23,7 +23,7 @@ Notes
 -----
 **Margins.** The marginal half of the model is configured with
 ``margins=``, in any form :func:`pyvinecopulib.margins.resolve_margins`
-accepts: an alias (``"kde"``, the default, ``"empirical"``,
+accepts: an alias (``"kde"``, the default,
 ``"parametric"``), one margin broadcast to every column, a per-column
 sequence, a mapping keyed by feature name, or a callable. Fitting
 assembles both halves into a :class:`pyvinecopulib.core.Vinedist`,

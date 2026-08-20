@@ -28,11 +28,13 @@ from sklearn.base import clone  # noqa: E402
 import pyvinecopulib as pv  # noqa: E402
 from pyvinecopulib.core import Kde1d  # noqa: E402
 from pyvinecopulib.margins import (  # noqa: E402
-  EmpiricalMargin,
   MarginSelector,
   ParametricMargin,
 )
 from pyvinecopulib.sklearn import VineDensity, VineRegressor  # noqa: E402
+
+from .helpers import AtomicMargin  # noqa: E402
+
 
 # --- the default is the old pipeline ---------------------------------------- #
 
@@ -219,19 +221,22 @@ def test_clone_round_trips_the_margins_parameter(
 def test_a_density_less_margin_is_refused_at_fit_time(
   sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
 ) -> None:
-  """Empirical margins have no density, so scoring on them cannot work.
+  """A margin that reports no density cannot serve an estimator that does.
 
   Caught at `fit`, not at the first `score_samples`, so the estimator never
-  reaches a state where its own contract cannot be met.
+  reaches a state where its own contract cannot be met. Every shipped margin
+  has a density, so the guard is exercised through a double -- a third-party
+  margin may well be atomic, and this is what turns that into an error here
+  instead of a wrong number later.
   """
   X, _, _ = sample_array_data
   with pytest.raises(ValueError, match="needs a density"):
-    VineDensity(margins="empirical").fit(X)
-  with pytest.raises(ValueError, match="Kde1d"):
-    VineDensity(margins=EmpiricalMargin()).fit(X)
+    VineDensity(margins=AtomicMargin()).fit(X)
+  with pytest.raises(ValueError, match='margins="kde"'):
+    VineDensity(margins=AtomicMargin()).fit(X)
   # `VineRegressor` reads the copula density and the response `icdf` only, so
   # the same margin is fine there.
-  VineRegressor(margins=EmpiricalMargin(), use_grid=False).fit(X, X[:, 0])
+  VineRegressor(margins=AtomicMargin(), use_grid=False).fit(X, X[:, 0])
 
 
 def test_a_wrong_length_sequence_is_refused(
@@ -326,14 +331,14 @@ def test_the_response_margin_follows_a_broadcast_specification(
 ) -> None:
   """An alias covers the response too; a per-column sequence does not."""
   X, y, _, _ = regression_data
-  broadcast = VineRegressor(margins="empirical").fit(X, y)
-  assert isinstance(broadcast.distribution_.margins[0], EmpiricalMargin)
+  broadcast = VineRegressor(margins="parametric").fit(X, y)
+  assert isinstance(broadcast.distribution_.margins[0], MarginSelector)
 
-  per_column = VineRegressor(
-    margins=[EmpiricalMargin(), EmpiricalMargin()]
-  ).fit(X, y)
+  per_column = VineRegressor(margins=[MarginSelector(), MarginSelector()]).fit(
+    X, y
+  )
   assert isinstance(per_column.distribution_.margins[0], Kde1d)
-  assert isinstance(per_column.distribution_.margins[1], EmpiricalMargin)
+  assert isinstance(per_column.distribution_.margins[1], MarginSelector)
 
 
 def test_a_discrete_response_margin_is_refused(

@@ -6,9 +6,8 @@ constructor, and ``fit`` estimates the rest in place and returns ``self``, as
 whose parameters are given at construction is already fitted.
 
 - **Nonparametric** — ``Kde1d`` (the default; boundary-corrected,
-  and handles continuous, discrete and zero-inflated data) and
-  :class:`EmpiricalMargin` (the rank transform behind
-  :func:`pyvinecopulib.utils.to_pseudo_obs`, as a distribution).
+  and handles continuous, discrete and zero-inflated data). It is also the
+  only margin that takes observation weights.
 - **Parametric** — :class:`ParametricMargin` wraps one SciPy family, and
   :class:`MarginSelector` chooses among a curated candidate set by AIC / BIC /
   AICc, keeps the winner on ``selected_`` and forwards evaluation to it. Both
@@ -42,12 +41,10 @@ from ._adapters import as_margin, register_margin_adapter
 # adapter with `as_margin`, and it imports OpenTURNS itself only when used.
 from ._openturns import OpenTURNSMargin, OpenTURNSSelector
 from ._resolve import resolve_margins
-from .empirical import EmpiricalMargin
 from .parametric import ParametricMargin
 from .selection import MarginSelector
 
 __all__ = [
-  "EmpiricalMargin",
   "MarginSelector",
   "OpenTURNSMargin",
   "OpenTURNSSelector",

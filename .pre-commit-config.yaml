@@ -96,7 +96,6 @@ repos:
             sklearn/_base\.py |
             torch/_batched\.py |
             torch/_fit_tll\.py |
-            torch/_util\.py |
             torch/_interp\.py
           )$
 

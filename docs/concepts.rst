@@ -616,7 +616,7 @@ columns, a sequence of length :math:`d`, or a dict keyed by column:
 .. code-block:: python
 
    pv.Vinedist.from_data(x)                       # "kde" (the default)
-   pv.Vinedist.from_data(x, margins=EmpiricalMargin())
+   pv.Vinedist.from_data(x, margins=MarginSelector(criterion="aic"))
    pv.Vinedist.from_data(df, margins={"income": MarginSelector(),
                                       "score": st.norm(0, 1)})
 
@@ -645,19 +645,19 @@ the pseudo-observations and biases the copula.
 The status quo as a special case
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-:func:`pyvinecopulib.utils.to_pseudo_obs` is the scaled empirical cdf,
-so fitting a ``Vinecop`` on ``to_pseudo_obs(x)`` *is* fitting a
-``Vinedist`` with :class:`pyvinecopulib.margins.EmpiricalMargin`
-margins. The familiar workflow did not become a different thing; it
-became the configuration in which the margins are the rank transform.
+:func:`pyvinecopulib.utils.to_pseudo_obs` is the scaled empirical cdf
+:math:`\tfrac{n}{n + 1} \hat F^{\text{ECDF}}_j`, so fitting a ``Vinecop``
+on ``to_pseudo_obs(x)`` *is* fitting a vine distribution whose margins are
+that rank transform. The familiar workflow did not become a different
+thing; it became the configuration in which the margins carry no
+parameters of their own.
 
-The *copula* is the same model; the joint density is not defined. An
-empirical margin is atomic, so it has no density with respect to Lebesgue
-measure, and ``pdf`` / ``logpdf`` / ``loglik`` raise on such a
-``Vinedist`` rather than returning the mass — which would look like a
-density and is not one. ``cdf``, ``sample``, ``rosenblatt`` and the whole
-fitting path are unaffected. Reach for the default ``Kde1d`` margins when
-a density on the original scale is what you need.
+What that configuration cannot give you is a joint density. The empirical
+distribution is atomic — it has no density with respect to Lebesgue
+measure — so there is nothing to multiply the copula density by, and no
+log-likelihood on the original scale. ``Kde1d`` is the smoothed version of
+the same idea and does have one, which is why it is the default margin
+rather than the ranks.
 
 What two-step estimation costs
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

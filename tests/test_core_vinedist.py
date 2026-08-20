@@ -2,9 +2,7 @@
 
 The claims worth pinning are the identities. That `logpdf` really is
 `log c(F(x)) + sum_j log pdf_j(x_j)`, checked against a hand computation rather
-than a tolerance. That a `Vinedist` with empirical margins is the same model as
-a `Vinecop` fitted to `to_pseudo_obs`, which is what makes the long-standing
-workflow a special case. And that the `(n, d + k)` layout a discrete margin
+than a tolerance. And that the `(n, d + k)` layout a discrete margin
 needs is assembled for the user, since assembling it by hand is what
 `examples/04_discrete_variables.ipynb` currently has to do.
 """
@@ -19,10 +17,7 @@ import pytest
 
 import pyvinecopulib as pv
 from pyvinecopulib.core import Kde1d, MarginBase
-from pyvinecopulib.margins import (
-  EmpiricalMargin,
-  MarginSelector,
-)
+from pyvinecopulib.margins import MarginSelector
 
 stats = pytest.importorskip("scipy.stats")
 
@@ -71,42 +66,6 @@ def test_loglik_sums_logpdf(continuous: np.ndarray) -> None:
   total = dist.loglik(continuous)
   assert np.ndim(total) == 0
   np.testing.assert_allclose(total, dist.logpdf(continuous).sum(), rtol=1e-12)
-
-
-# --- the empirical-margin identity ------------------------------------------ #
-
-
-def test_empirical_margins_reproduce_a_copula_on_pseudo_obs(
-  continuous: np.ndarray,
-) -> None:
-  """`Vinedist` with empirical margins is `Vinecop` on `to_pseudo_obs`.
-
-  Same copula data, so the same structure and the same pair copulas. The joint
-  density is not defined — an empirical margin has none — so `logpdf` raises
-  rather than reporting a number on the original scale.
-  """
-  dist = pv.Vinedist.from_data(continuous, margins="empirical")
-  u = np.asarray(pv.to_pseudo_obs(continuous))
-  reference: Any = pv.Vinecop.from_data(u)
-
-  assert dist.var_types == ["c", "c"]
-  np.testing.assert_array_equal(
-    np.asarray(dist.copula.structure.matrix),
-    np.asarray(reference.structure.matrix),
-  )
-  np.testing.assert_array_equal(
-    np.asarray(dist.copula.pdf(u)), np.asarray(reference.pdf(u))
-  )
-
-  # The identity at its source: the margins hand the copula exactly the
-  # pseudo-observations. Ties would separate the two (`to_pseudo_obs` averages
-  # ranks where the margin counts upward); continuous data has none.
-  np.testing.assert_allclose(
-    pv.Vinedist.copula_data(dist.margins, continuous), u, atol=1e-12
-  )
-
-  with pytest.raises(NotImplementedError, match="Kde1d"):
-    dist.logpdf(continuous)
 
 
 # --- discrete margins ------------------------------------------------------- #
@@ -216,10 +175,10 @@ def test_margins_may_mix_fitted_and_unfitted(continuous: np.ndarray) -> None:
 def test_margins_mapping_is_keyed_by_name(continuous: np.ndarray) -> None:
   """A mapping addresses variables by name over a default."""
   dist = pv.Vinedist.from_data(
-    continuous, margins={"b": "empirical"}, names=["a", "b"]
+    continuous, margins={"b": MarginSelector()}, names=["a", "b"]
   )
   assert isinstance(dist.margins[0], Kde1d)
-  assert isinstance(dist.margins[1], EmpiricalMargin)
+  assert isinstance(dist.margins[1], MarginSelector)
 
 
 def test_margins_mapping_rejects_an_unknown_name(

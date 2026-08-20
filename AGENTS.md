@@ -170,9 +170,9 @@ closed unmerged, and some commits carry no number at all.
   `scores_cov`, with per-observation-parameter overloads).
 - **Univariate marginals** — `Kde1d` (`lib/kde1d`) with continuous,
   ordered-discrete, and unordered-categorical support; plus the
-  `pyvinecopulib.margins` layer on top of it: nonparametric
-  (`Kde1dMargin`, `EmpiricalMargin`) and parametric (`ParametricMargin`)
-  margins, AIC / BIC / AICc family selection over a curated candidate
+  `pyvinecopulib.margins` layer on top of it: `Kde1d` *is* the
+  nonparametric margin, `ParametricMargin` the parametric one,
+  with AIC / BIC / AICc family selection over a curated candidate
   set (`MarginSelector`), and an adapter registry (`as_margin` /
   `register_margin_adapter`) that accepts a SciPy or PyTorch
   distribution object as a margin.
@@ -180,8 +180,7 @@ closed unmerged, and some commits carry no number at all.
   one margin per variable, giving `pdf` / `logpdf` / `cdf` / `loglik` /
   `sample` / `rosenblatt` / `inverse_rosenblatt` on the **data**
   scale rather than the copula scale, for continuous, discrete and
-  mixed margins alike. `TorchVinedist` is the autograd / GPU
-  counterpart.
+  mixed margins alike.
 - **Dependence measures** — `wdm` (`lib/wdm`).
 - **Quasi-random sampling** — `sobol`, `ghalton`, `sample_uniform`.
 - **Pseudo-observations** — `to_pseudo_obs`.
@@ -253,7 +252,7 @@ pyvinecopulib/
       _deprecations.py           # warn-on-access aliases for pre-#207 top-level names
       py.typed                   # PEP 561 marker (built by scripts/generate_stubs.py)
 
-      core/__init__.py           # Bicop, Vinecop, *VineStructure, FitControls* (re-exports from ext)
+      core/__init__.py           # Bicop, Vinecop, *VineStructure, FitControls*, Kde1d (re-exports from ext)
         protocols.py             # BicopLike / VinecopLike backend-neutral contracts
         bicop_base.py            # BicopBase (canonical BicopLike partial impl)
         vinecop_base.py          # VinecopBase (array-agnostic cascades + fit/select)
@@ -262,14 +261,13 @@ pyvinecopulib/
         vinedist.py              # Vinedist (copula + margins = a distribution)
         _rootfind.py             # solve_increasing (monotone bisection; internal)
       families/__init__.py       # BicopFamily enum + 13 family constants + 15 group constants
-      utils/__init__.py          # Kde1d, to_pseudo_obs, wdm, sobol, ghalton, sample_uniform, benchmark
+      utils/__init__.py          # to_pseudo_obs, wdm, sobol, ghalton, sample_uniform, benchmark
         _pair_plots.py           # pairs_copula_data plotting helper (pure Python)
 
       margins/__init__.py        # as_margin, register_margin_adapter, resolve_margins, the margins
-        kde.py                   # Kde1dMargin (the default margin)
-        empirical.py             # EmpiricalMargin (the rank transform, as a margin)
         parametric.py            # ParametricMargin (one SciPy family) — needs the [scipy] extra
         selection.py             # MarginSelector (fit every admissible candidate, keep the best)
+        _openturns.py            # OpenTURNSMargin / OpenTURNSSelector — needs the [openturns] extra
         _adapters.py             # the coercion registry + per-ecosystem adapters — internal
         _resolve.py              # resolve_margins / fit_margin — internal
 
@@ -281,7 +279,6 @@ pyvinecopulib/
 
       torch/__init__.py          # TorchBicop, TorchVinecop, FitControlsTorch*
         bicop.py, vinecop.py     # nn.Module evaluators
-        margin.py, vinedist.py   # TorchMargin / TorchVinedist (nn.Module margins + distribution)
         controls.py              # FitControlsTorchBicop / FitControlsTorchVinecop dataclasses
         _interp.py               # InterpolationGrid2D (bilinear; Sinkhorn margin renormalization) — internal
         _fit_tll.py              # pure-torch TLL kernel
@@ -654,14 +651,11 @@ automatically.
 The univariate half of `Vinedist`, kept out of `core` so that `core`
 imports without SciPy. Three groups:
 
-- **Built-in margins** — `Kde1dMargin` (the default; wraps `Kde1d`, and
-  takes `xmin` / `xmax` so a bounded variable is not fitted past its
-  support — the sklearn estimators fill those in from a categorical's
-  declared levels, since otherwise the density grid is padded past the
-  data),
-  `EmpiricalMargin` (the `to_pseudo_obs` rank transform as a margin, so
-  *"`Vinecop` on `to_pseudo_obs(x)`"* is literally *"`Vinedist` with
-  empirical margins"*), `ParametricMargin` (one SciPy family) and
+- **Built-in margins** — `Kde1d` *is* the default margin, needing no
+  wrapper; it takes `xmin` / `xmax` so a bounded variable is not fitted
+  past its support — the sklearn estimators fill those in from a
+  categorical's declared levels, since otherwise the density grid is
+  padded past the data. Then `ParametricMargin` (one SciPy family) and
   `MarginSelector` (fit every admissible candidate, keep the best on
   `selected_`, report the rest on `report_` — the `GridSearchCV` shape).
 - **Coercion** — `as_margin(obj)` is idempotent and routes **every**
@@ -682,7 +676,7 @@ then the copula on the resulting pseudo-observations — never fit all of
 SciPy (a blind sweep ranks `vonmises` above the true `gamma` because its
 reported support lies), and never silently skip a failed candidate: every
 rejection gets a row in `report_` with a reason, and a column where
-everything fails falls back to `Kde1dMargin` with one warning.
+everything fails falls back to `Kde1d` with one warning.
 
 ### `pyvinecopulib.families`
 
@@ -805,22 +799,6 @@ Key surface:
     `controls.method`).
   - `TorchVinecop` mirrors `pv.Vinecop`'s `pdf` / `cdf` /
     `rosenblatt` / `inverse_rosenblatt` / `sample` signatures.
-- `TorchMargin` / `TorchVinedist` — the marginal and joint halves.
-  - `TorchMargin` is a `MarginBase[Tensor]` that is *also* an
-    `nn.Module`: `torch.distributions.Distribution` has no
-    `.to(device)` and contributes nothing to `state_dict` as a plain
-    attribute, so the parameters are registered and the distribution is
-    **rebuilt per call** — the same shape `TorchBicop` uses for its
-    grid. `TorchMargin.from_distribution(factory, parameters=...)` is
-    the general entry point; `icdf` bisects `cdf` over `support` for the
-    families that implement one but not the other (`Gamma`, `Chi2`).
-  - `TorchVinedist` is `Vinedist[Tensor]` plus `nn.Module`, with margins
-    in a `ModuleList` and `log_prob` as an alias for `logpdf`. Every
-    margin **must** be an `nn.Module`: SciPy raises on gradient-carrying
-    tensors and returns a plain `ndarray` without them, so accepting a
-    SciPy margin here would detach the graph silently. `from_data`
-    refuses — there is no torch marginal estimator, so fit on the NumPy
-    lane or assemble the parts directly.
 - `FitControlsTorchBicop` / `FitControlsTorchVinecop` — fit-time
   dataclasses. Notable knobs:
   - `method` — `"tll"` (the only fitter; kept as the dispatch seam
@@ -900,19 +878,18 @@ below are a quick orientation.
   lists (`all`, `parametric`, `nonparametric`, `one_par`, `two_par`,
   `three_par`, `elliptical`, `archimedean`, `extreme_value`, `bb`,
   `rotationless`, `lt`, `ut`, `itau`, `analytic_derivs`).
-- **`pyvinecopulib.utils`** — `Kde1d`, `to_pseudo_obs`, `wdm`,
+- **`pyvinecopulib.utils`** — `to_pseudo_obs`, `wdm`,
   `sobol`, `ghalton`, `sample_uniform`, `benchmark`,
   `pairs_copula_data`.
-- **`pyvinecopulib.margins`** — `Kde1dMargin`, `EmpiricalMargin`,
-  `ParametricMargin`, `MarginSelector`, `as_margin`,
+- **`pyvinecopulib.margins`** — `ParametricMargin`, `MarginSelector`,
+  `OpenTURNSMargin`, `OpenTURNSSelector`, `as_margin`,
   `register_margin_adapter`, `resolve_margins`.
 - **`pyvinecopulib.sklearn`** — `VineDensity`, `VineRegressor`,
  plus the `backends`
   submodule (`VinecopBackend`, `TorchVinecopBackend`,
   `resolve_backend`).
 - **`pyvinecopulib.torch`** — `TorchBicop`, `TorchVinecop`,
-  `TorchMargin`, `TorchVinedist`, `FitControlsTorchBicop`,
-  `FitControlsTorchVinecop`.
+  `FitControlsTorchBicop`, `FitControlsTorchVinecop`.
 
 Top-level `pyvinecopulib` re-exports the eight core classes and
 `to_pseudo_obs`; everything else — including the `core` abstraction
@@ -999,8 +976,7 @@ Round-trip / parity properties to preserve when touching numerics:
   `cdf_left` whenever the family has an exact left limit (Poisson's
   `gammaincc(k, μ)`, a categorical's `cumsum(probs)[k-1]`): the derived
   `cdf(x) - pdf(x)` cancels in the right tail and `cdf(x - 1)` is
-  meaningless off an integer lattice. `TorchMargin` is the reference
-  torch subclass.
+  meaningless off an integer lattice.
 - **Another ecosystem's distributions (`pyvinecopulib.margins`).** Call
   `register_margin_adapter(predicate, adapter)` — from a package or a
   notebook cell — rather than editing `_adapters.py`. That is what keeps

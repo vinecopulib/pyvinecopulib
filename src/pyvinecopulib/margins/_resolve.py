@@ -7,7 +7,6 @@ from typing import Any, Optional, Sequence
 
 from ..core import MarginLike
 from ._adapters import as_margin
-from .empirical import EmpiricalMargin
 from ..core import Kde1d
 from .selection import MarginSelector
 
@@ -18,7 +17,6 @@ __all__ = ["resolve_margins", "fit_margin"]
 #: a family has been chosen, and choosing it from the data is the whole job.
 _ALIASES = {
   "kde": Kde1d,
-  "empirical": EmpiricalMargin,
   "parametric": MarginSelector,
 }
 
@@ -80,7 +78,7 @@ def resolve_margins(
   """Expand ``spec`` into one specification per variable.
 
   Accepted forms, in the order they are recognized: ``None`` (the default
-  margin), a string alias (``"kde"``, ``"empirical"``, ``"parametric"``), a
+  margin), a string alias (``"kde"``, ``"parametric"``), a
   mapping keyed by variable name or position over the default, a sequence of
   length ``d`` mixing any of the above, a single margin broadcast to every
   variable, or a callable receiving a column and returning a margin.
@@ -204,8 +202,7 @@ def fit_margin(
   if weights is not None and not getattr(margin, "supports_weights", False):
     raise TypeError(
       f"{type(margin).__name__} cannot use observation weights; pass "
-      "margins='kde' or margins='empirical' for a weighted fit, or drop "
-      "weights="
+      "margins='kde' for a weighted fit, or drop weights="
     )
   kwargs: dict[str, Any] = {}
   if weights is not None:
