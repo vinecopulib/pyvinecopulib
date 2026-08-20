@@ -140,6 +140,30 @@ class _VinecopBackendBase:
     raise NotImplementedError
 
   # -- shared surface (single source of truth) ---------------------------- #
+  def default_margin(
+    self, var_type: str, bounds: Optional[tuple[float, float]]
+  ) -> Any:
+    """The margin an estimator should fit when the caller named none.
+
+    A seam rather than an `isinstance` check: the marginal half has to match the
+    copula's array namespace, or a torch copula ends up with NumPy margins and
+    the gradients stop at the transform.
+
+    Parameters
+    ----------
+    var_type : str
+        ``Kde1d``'s spelling of the variable type.
+    bounds : tuple of float, or None
+        Declared support, or ``None`` where the input states none.
+
+    Returns
+    -------
+    MarginLike
+        An unfitted kernel-density margin.
+    """
+    lo, hi = (None, None) if bounds is None else (bounds[0], bounds[1])
+    return pv.core.Kde1d(type=var_type, xmin=lo, xmax=hi)
+
   def structure_of(self, vine: Any) -> pv.RVineStructure:
     return vine.structure
 
@@ -305,6 +329,28 @@ class TorchVinecopBackend(_VinecopBackendBase):
   ) -> np.ndarray:
     out = vine.sample(n_samples, qrng=False, seeds=seeds)
     return out.detach().cpu().numpy()
+
+  def default_margin(
+    self, var_type: str, bounds: Optional[tuple[float, float]]
+  ) -> Any:
+    """A ``TorchKde1d``, so the whole distribution stays on tensors.
+
+    Parameters
+    ----------
+    var_type : str
+        ``Kde1d``'s spelling of the variable type.
+    bounds : tuple of float, or None
+        Declared support, or ``None`` where the input states none.
+
+    Returns
+    -------
+    TorchKde1d
+        An unfitted kernel-density margin on tensors.
+    """
+    from ..torch import TorchKde1d
+
+    lo, hi = (None, None) if bounds is None else (bounds[0], bounds[1])
+    return TorchKde1d(type=var_type, xmin=lo, xmax=hi)
 
   def with_num_threads(self, num_threads: int) -> "TorchVinecopBackend":
     # No-op: torch threading is global / device-bound.

@@ -20,12 +20,15 @@ TorchVinecop : The copula this holds.
 
 from __future__ import annotations
 
-from typing import Any, Optional, NoReturn, Sequence, cast
+from typing import Any, Optional, Sequence, cast
 
 import torch
 from torch import Tensor
 
 from ..core import MarginLike, Vinedist
+from .controls import FitControlsTorchVinecop
+from .kde1d import TorchKde1d
+from .vinecop import TorchVinecop
 
 __all__ = ["TorchVinedist"]
 
@@ -49,24 +52,29 @@ def _check_margin(margin: Any, name: str) -> None:
   TypeError
       If the margin is not a :class:`torch.nn.Module`.
   NotImplementedError
-      If the margin declares atoms.
+      If the margin declares atoms but supplies no left limit.
   """
   if not isinstance(margin, torch.nn.Module):
     raise TypeError(
       f"TorchVinedist requires every margin to be a torch.nn.Module, so that "
       f"`.to(device)`, `state_dict()` and autograd reach its parameters; "
       f"{name} is a {type(margin).__name__}. Wrap a torch.distributions "
-      "family with TorchMargin.from_distribution(...). A NumPy margin such as "
-      "Kde1d belongs in pyvinecopulib.core.Vinedist instead — which is "
-      "also what Vinedist.from_data builds, since there is no torch marginal "
-      "estimator yet."
+      "family with TorchMargin.from_distribution(...), or use TorchKde1d, "
+      "which fits any of the three variable types. A NumPy margin such as "
+      "Kde1d belongs in pyvinecopulib.core.Vinedist instead."
     )
-  if getattr(margin, "var_type", "c") != "c":
+  # Atoms are welcome now that the copula half handles them; what the cascade
+  # cannot do without is the left limit F(y^-), which is the second column an
+  # atom contributes. `MarginBase` derives one, so a margin declaring atoms and
+  # offering neither is the only case left to refuse.
+  if getattr(margin, "var_type", "c") != "c" and not hasattr(
+    margin, "cdf_left"
+  ):
     raise NotImplementedError(
-      f"TorchVinedist is continuous-only; {name} declares "
-      f"var_type={getattr(margin, 'var_type')!r}. The discrete cascade lives "
-      "on pyvinecopulib.core.Vinedist; use it with a VinecopBackend-style "
-      "NumPy copula for discrete or mixed data."
+      f"{name} declares var_type={getattr(margin, 'var_type')!r} but has no "
+      "cdf_left, so the copula has no left limit to difference against. "
+      "Subclass pyvinecopulib.core.MarginBase, which derives one, or supply "
+      "cdf_left directly."
     )
 
 
@@ -204,33 +212,81 @@ class TorchVinedist(Vinedist[Tensor], torch.nn.Module):
     self._margins = cast(Any, torch.nn.ModuleList(registered))
 
   @classmethod
-  def from_data(cls, *args: Any, **kwargs: Any) -> NoReturn:
-    """Refuse the two-step fit: there is no torch marginal estimator.
+  def from_data(
+    cls,
+    y: Any,
+    *,
+    x: Optional[Tensor] = None,
+    margins: Any = None,
+    controls: Optional[FitControlsTorchVinecop] = None,
+    structure: Optional[Any] = None,
+    weights: Optional[Tensor] = None,
+    names: Optional[Any] = None,
+  ) -> "TorchVinedist":
+    """Fit margins and a torch vine copula to data, in that order.
 
-    The inherited route fits ``Kde1d`` margins and a compiled ``Vinecop``,
-    neither of which this class can hold. Fit on the NumPy lane with
-    :meth:`pyvinecopulib.core.Vinedist.from_data`, or assemble the torch parts
-    yourself from :meth:`TorchVinecop.from_data` and :class:`TorchMargin`.
+    End to end in torch: :class:`TorchKde1d` per column, then
+    :meth:`TorchVinecop.from_data` on the copula data the margins produce. The
+    result is on one device, in one dtype, and differentiable throughout --
+    which the inherited NumPy route could not give, since it fits ``Kde1d``
+    margins and a compiled ``Vinecop``.
 
     Parameters
     ----------
-    *args, **kwargs
-        Accepted only so that a caller sees this explanation rather than a
-        signature mismatch.
+    y : Tensor, shape (n, d)
+        Observations on the original scale.
+    x : Tensor or None, optional
+        Not supported; no torch margin reads covariates, and a silently
+        unconditional fit is worse than a refusal.
+    margins : object, optional
+        Specification per :func:`pyvinecopulib.margins.resolve_margins`.
+        ``None`` means one :class:`TorchKde1d` per column. Every resolved
+        margin must be an ``nn.Module``.
+    controls : FitControlsTorchVinecop or None, optional
+        Copula fit controls.
+    structure : RVineStructure or None, optional
+        A fixed structure, or ``None`` to select one.
+    weights : Tensor, shape (n,), or None, optional
+        Observation weights, forwarded to every margin that accepts them.
+    names : sequence of str or None, optional
+        Variable names, used only to resolve a mapping specification.
+
+    Returns
+    -------
+    TorchVinedist
+        The fitted distribution.
 
     Raises
     ------
     NotImplementedError
-        Always.
+        If ``x`` is given.
     """
-    del args, kwargs
-    raise NotImplementedError(
-      "TorchVinedist is assembled, not fitted: there is no torch marginal "
-      "estimator, so the two-step fit would produce Kde1d margins and a "
-      "compiled Vinecop. Use pyvinecopulib.core.Vinedist.from_data for the "
-      "NumPy fit, or build TorchVinedist(TorchVinecop.from_data(u), "
-      "[TorchMargin(...), ...]) yourself."
+    from ..margins import resolve_margins
+    from ..margins._resolve import fit_margin
+
+    if x is not None:
+      raise NotImplementedError(
+        "TorchVinedist.from_data takes no covariates: no torch margin reads "
+        "them, so the margins would be fitted unconditionally while the call "
+        "suggested otherwise. Fit the parts yourself if the copula alone is "
+        "conditional."
+      )
+    ya = torch.as_tensor(y)
+    if ya.ndim != 2:
+      raise ValueError(f"y must be two-dimensional; got {tuple(ya.shape)}")
+    d = int(ya.shape[1])
+    default = [TorchKde1d(device=ya.device, dtype=ya.dtype) for _ in range(d)]
+    specs = resolve_margins(margins, d, names=names, default=default)
+    fitted = [fit_margin(specs[j], ya[:, j], weights=weights) for j in range(d)]
+    u = cls.copula_data(fitted, ya)
+    var_types = cls.copula_var_types(fitted)
+    copula = TorchVinecop.from_data(
+      u,
+      structure=structure,
+      controls=controls,
+      var_types=var_types,
     )
+    return cls(copula, fitted)
 
   @property
   def margins(self) -> tuple[MarginLike, ...]:

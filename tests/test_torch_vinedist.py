@@ -26,8 +26,8 @@ import pyvinecopulib as pv
 torch = pytest.importorskip("torch")
 stats = pytest.importorskip("scipy.stats")
 
-from pyvinecopulib.core import MarginBase  # noqa: E402
 from pyvinecopulib.torch import (  # noqa: E402
+  TorchKde1d,
   TorchMargin,
   TorchVinecop,
   TorchVinedist,
@@ -308,26 +308,70 @@ def test_rejects_a_compiled_vinecop(copula: pv.Vinecop) -> None:
     TorchVinedist(copula, _margins())
 
 
-def test_from_data_stays_on_the_numpy_lane(
-  data: np.ndarray,
-) -> None:
-  """There is no torch marginal estimator, so `from_data` cannot land here.
+def test_from_data_fits_end_to_end_in_torch(data: np.ndarray) -> None:
+  """Margins and copula both fitted on tensors, on one device, in one dtype.
 
-  It would fit `Kde1d` margins and a compiled copula, neither of which
-  this class can hold, so the refusal names the two routes that do work.
+  This is what `TorchKde1d` unlocked: before it there was no torch marginal
+  estimator, so the two-step fit could only produce `Kde1d` margins and a
+  compiled copula -- neither of which this class can hold.
   """
-  with pytest.raises(NotImplementedError, match="assembled, not fitted"):
-    TorchVinedist.from_data(data)
+  y = torch.as_tensor(data, dtype=torch.float64)
+  dist = TorchVinedist.from_data(y)
+
+  assert isinstance(dist.copula, TorchVinecop)
+  assert all(isinstance(m, TorchKde1d) for m in dist.margins)
+  assert dist.var_types == ["c"] * y.shape[1]
+
+  logpdf = dist.logpdf(y[:32])
+  assert logpdf.shape == (32,)
+  assert bool(torch.isfinite(logpdf).all())
+  # The Sklar identity, on the object's own terms.
+  manual = torch.log(dist.copula.pdf(dist.marginal_cdf(y[:32])))
+  for j, margin in enumerate(dist.margins):
+    # `logpdf` is an optional capability, not a protocol member.
+    lifted: Any = margin
+    manual = manual + lifted.logpdf(y[:32, j])
+  torch.testing.assert_close(logpdf, manual, rtol=1e-10, atol=1e-10)
 
 
-def test_rejects_a_discrete_margin(copula: pv.Vinecop) -> None:
-  """Atoms need a left-limit cdf the torch cascade does not carry yet."""
+def test_from_data_fits_a_discrete_column(data: np.ndarray) -> None:
+  """A margin with atoms is welcome now that the copula half handles them."""
+  counts = np.random.default_rng(5).poisson(3.0, data.shape[0]).astype(float)
+  y = torch.as_tensor(
+    np.column_stack([data[:, 0], data[:, 1], counts]), dtype=torch.float64
+  )
+  margins = [
+    TorchKde1d(),
+    TorchKde1d(),
+    TorchKde1d(type="discrete", xmin=0.0),
+  ]
+  dist = TorchVinedist.from_data(y, margins=margins)
+  assert dist.var_types == ["c", "c", "d"]
+  # The compact layout the copula needs carries the extra left-limit column.
+  assert dist.copula_data(dist.margins, y).shape == (y.shape[0], 4)
+  assert bool(torch.isfinite(dist.logpdf(y[:32])).all())
 
-  class _CountMargin(MarginBase[Any], torch.nn.Module):
-    """A margin that is a module, but declares atoms."""
+
+def test_from_data_refuses_covariates(data: np.ndarray) -> None:
+  """No torch margin reads them, so an unconditional fit would be a lie."""
+  y = torch.as_tensor(data, dtype=torch.float64)
+  with pytest.raises(NotImplementedError, match="takes no covariates"):
+    TorchVinedist.from_data(y, x=torch.zeros(y.shape[0], 2))
+
+
+def test_rejects_atoms_without_a_left_limit(copula: pv.Vinecop) -> None:
+  """Atoms are fine; atoms with no `F(y^-)` to difference against are not.
+
+  `MarginBase` derives a left limit, so this needs a margin written directly
+  against the contract -- which is also the realistic case, since that is what
+  a third-party module would be.
+  """
+
+  class _CountModule(torch.nn.Module):
+    """A module margin declaring atoms and offering no left limit."""
 
     def __init__(self) -> None:
-      torch.nn.Module.__init__(self)
+      super().__init__()
 
     @property
     def var_type(self) -> str:
@@ -339,6 +383,9 @@ def test_rejects_a_discrete_margin(copula: pv.Vinecop) -> None:
     def cdf(self, y: Any, *, x: Any = None) -> Any:
       return torch.clamp(y, 0.0, 1.0)
 
+    def icdf(self, p: Any, *, x: Any = None) -> Any:
+      return torch.round(p)
+
   torch_copula = TorchVinecop.from_vinecop(copula)
-  with pytest.raises(NotImplementedError, match="continuous-only"):
-    TorchVinedist(torch_copula, [_CountMargin() for _ in range(3)])
+  with pytest.raises(NotImplementedError, match="no cdf_left"):
+    TorchVinedist(torch_copula, [_CountModule() for _ in range(3)])

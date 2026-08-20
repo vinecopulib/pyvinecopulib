@@ -213,6 +213,7 @@ exclude_files = [
   'src/pyvinecopulib/torch/_batched\.py$',
   'src/pyvinecopulib/torch/_fit_tll\.py$',
   'src/pyvinecopulib/torch/_interp\.py$',
+  'src/pyvinecopulib/torch/_kde1d_interp\.py$',
 ]
 
 [tool.coverage.run]

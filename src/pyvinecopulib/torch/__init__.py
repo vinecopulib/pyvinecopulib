@@ -87,6 +87,7 @@ except ImportError as e:
   ) from e
 
 from .bicop import TorchBicop
+from .kde1d import TorchKde1d
 from .margin import TorchMargin
 from .vinecop import TorchVinecop
 from .vinedist import TorchVinedist
@@ -94,6 +95,7 @@ from .controls import FitControlsTorchBicop, FitControlsTorchVinecop
 
 __all__ = [
   "TorchBicop",
+  "TorchKde1d",
   "TorchMargin",
   "TorchVinecop",
   "TorchVinedist",
