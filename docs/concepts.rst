@@ -832,6 +832,8 @@ both fit time and statistical degrees of freedom. The same effect
 can be triggered automatically via the mBIC criterion (Nagler,
 2019).
 
+.. _concepts-conditional:
+
 Conditional sampling and conditioning-aware vines
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -865,6 +867,18 @@ the tail, and two tools arrange that:
 * :meth:`pyvinecopulib.core.Vinecop.reorient` — relabel an already-fitted vine
   to an equivalent one whose order tail equals a given set, without refitting.
   This is value-preserving: ``pdf`` and ``loglik`` are invariant.
+
+The same three tools exist backend-neutrally, so a custom or PyTorch vine
+conditions the same way: :meth:`pyvinecopulib.core.VinecopBase.sample_conditional`,
+``conditioning_set`` on its Rosenblatt transforms, and
+:meth:`pyvinecopulib.core.VinecopBase.select`'s own ``conditioning_set``.
+:meth:`pyvinecopulib.core.VinecopBase.reorient` is the one that differs in
+shape: it *returns* the relabeled structure and pair copulas rather than
+mutating, because the base class leaves pair storage to the subclass. A
+relabeling is refused on a non-simplified vine — it can permute the columns of
+the conditioning matrix each pair copula receives, which makes the result a
+different model rather than the same one in a different order. Conditioning on
+the variables already at the tail needs no relabeling and is always allowed.
 
 These operate on the *simplified* vine's exact conditional. For fully
 non-simplified / conditional pair copulas on a custom (e.g. neural) backend, see
@@ -1036,6 +1050,10 @@ density and h-functions out of its continuous ``pdf`` / ``cdf`` /
 :meth:`~pyvinecopulib.core.VinecopBase.fit` and
 :meth:`~pyvinecopulib.core.VinecopBase.select` take ``var_types`` as
 well, and hand each edge's types to the ``fit_edge`` callback.
+
+Custom vines also condition: see :ref:`conditional sampling
+<concepts-conditional>` for ``sample_conditional`` / ``reorient`` and the
+``conditioning_set`` arguments, which need ``flip`` on the pair copulas.
 
 The ``examples/10_extending_pyvinecopulib.ipynb`` notebook is a
 worked, end-to-end walk-through: a custom Gaussian pair copula hosted

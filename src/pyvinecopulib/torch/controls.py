@@ -99,6 +99,11 @@ class FitControlsTorchVinecop:
       spanning tree (``random_*``).
   seeds : list of int, default=[]
       RNG seeds for the random tree algorithms (ignored by the MST ones).
+  conditioning_set : list of int, default=[]
+      1-based variables to place at the tail of the selected order, so they can
+      be conditioned on with
+      :meth:`~pyvinecopulib.core.VinecopBase.sample_conditional`. Requires an MST
+      ``tree_algorithm`` and no truncation; empty means unconditional selection.
   cache_integrals : bool, default=True
       If ``True``, precompute the cdf / hfunc / hinv caches on
       every pair copula's interpolation grid. Cached lookups are
@@ -131,6 +136,7 @@ class FitControlsTorchVinecop:
   threshold: float = 0.0
   tree_algorithm: str = "mst_prim"
   seeds: list[int] = field(default_factory=list)
+  conditioning_set: list[int] = field(default_factory=list)
   cache_integrals: bool = True
   device: Optional[Any] = None
   dtype: Optional[Any] = None

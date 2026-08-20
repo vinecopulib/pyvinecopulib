@@ -358,6 +358,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         tree_algorithm=controls.tree_algorithm,
         seeds=list(controls.seeds),
         to_numpy=lambda t: t.detach().cpu().numpy(),
+        conditioning_set=list(controls.conditioning_set) or None,
       )
     else:
       if int(structure.dim) != d:

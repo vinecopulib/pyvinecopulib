@@ -68,6 +68,7 @@ from ._discrete import (
   stack_edge,
   with_left_limit,
 )
+from ._reorient import Reorientation, reorientation
 from .bicop_base import _pair_eval
 from .context import ConditioningContext, SimplifiedContext
 from .._deprecations import _reject_renamed_hook
@@ -938,6 +939,92 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       requested = self._default_batched()
     return bool(requested)
 
+  # --- relabeling onto a chosen sampling-order tail --------------------- #
+  _REORIENT_NON_SIMPLIFIED = (
+    "conditioning_set is not supported on a non-simplified vine: relabeling "
+    "can permute the columns of the conditioning matrix x_e each pair copula "
+    "receives, so the reoriented vine is not the same model. Condition on the "
+    "variables already at the tail of the order."
+  )
+
+  def _reoriented(
+    self, conditioning_set: Optional[list[int]]
+  ) -> "VinecopBase[ArrayT]":
+    """The vine to evaluate for ``conditioning_set`` (``self`` if none needed)."""
+    if conditioning_set is None:
+      return self
+    r = reorientation(self.structure, [int(v) for v in conditioning_set])
+    if r.identity:
+      return self
+    # A relabeling can permute the columns of an edge's conditioning matrix
+    # x_e -- their order follows the chain of edges through the diagonal
+    # variable, which is what the relabeling changes -- and a conditional pair
+    # copula consumes x_e positionally. The relabeled vine would be a different
+    # model, not the same one in a different order.
+    if self._context.assembles_conditioning:
+      raise NotImplementedError(self._REORIENT_NON_SIMPLIFIED)
+    return _ReorientedVine(self, r)
+
+  def reorient(
+    self, conditioning_set: list[int]
+  ) -> tuple["RVineStructure", list[list[BicopLike[ArrayT]]]]:
+    """Relabel to an equivalent vine whose order tail is ``conditioning_set``.
+
+    Value-preserving: the relabeled vine has the same density and
+    log-likelihood, only a different sampling-order representation, so the given
+    variables are drawn first and can be conditioned on with
+    :meth:`sample_conditional`. Like :meth:`fit` and :meth:`select` -- and
+    unlike :meth:`~pyvinecopulib.core.Vinecop.reorient`, which mutates -- it
+    **returns** the relabeled model, since ``VinecopBase`` leaves pair storage
+    to the subclass.
+
+    Parameters
+    ----------
+    conditioning_set : list of int
+        1-based variable labels to place at the tail of the order.
+
+    Returns
+    -------
+    structure : RVineStructure
+        The relabeled structure; its order ends with ``conditioning_set``.
+    pair_copulas : list of list of BicopLike
+        The same pair copulas on their new slots, argument-swapped with
+        :meth:`~pyvinecopulib.core.BicopLike.flip` where the slot requires it --
+        ready to host in a vine without re-fitting.
+
+    Raises
+    ------
+    NotImplementedError
+        If the vine is non-simplified and a relabeling is actually required, or
+        if a pair copula does not implement ``flip``.
+    RuntimeError
+        If the vine is truncated, or if ``conditioning_set`` is empty, holds
+        duplicates or out-of-range entries, leaves no variable free, or is not
+        admissible as a sampling-order tail. Same messages as
+        :meth:`~pyvinecopulib.core.Vinecop.reorient`.
+
+    See Also
+    --------
+    pyvinecopulib.core.Vinecop.reorient : The reference (in-place) relabeling.
+    """
+    r = reorientation(self.structure, [int(v) for v in conditioning_set])
+    if r.identity:
+      return self.structure, [
+        [self._get_pair_copula(t, e) for e in range(self.d - 1 - t)]
+        for t in range(self.trunc_lvl)
+      ]
+    if self._context.assembles_conditioning:
+      raise NotImplementedError(self._REORIENT_NON_SIMPLIFIED)
+    pairs: list[list[BicopLike[ArrayT]]] = []
+    for tree in range(self.d - 1):
+      row: list[BicopLike[ArrayT]] = []
+      for edge in range(self.d - 1 - tree):
+        old_edge, flipped = r.locations[(tree, edge)]
+        pair = self._get_pair_copula(tree, old_edge)
+        row.append(pair.flip() if flipped else pair)
+      pairs.append(row)
+    return r.structure, pairs
+
   # --- public evaluator surface (VinecopLike) --------------------------- #
   def pdf(
     self,
@@ -990,6 +1077,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     seeds: Optional[list[int]] = None,
     x: Optional[ArrayT] = None,
     batched: Optional[bool] = None,
+    conditioning_set: Optional[list[int]] = None,
   ) -> ArrayT:
     """Rosenblatt transform: dependent uniforms to independent uniforms.
 
@@ -1010,13 +1098,36 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         External covariates (non-simplified vines), else ``None``.
     batched : bool or None, optional
         See :meth:`pdf`.
+    conditioning_set : list of int or None, optional
+        Condition on these 1-based variables instead of the ones at the tail of
+        the vine order. It does not subset ``u``, which stays the full matrix;
+        what changes is which conditional distributions the output columns
+        represent. Passing the order tail itself is the identity.
 
     Returns
     -------
     array, shape (n, d), dtype float
         Independent uniforms in ``[1e-10, 1 - 1e-10]``.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``conditioning_set`` needs a relabeling on a non-simplified vine, or
+        if a pair copula does not implement ``flip``.
+    RuntimeError
+        If ``conditioning_set`` is inadmissible as a sampling-order tail, or the
+        vine is truncated; see :meth:`reorient`.
     """
     del num_threads
+    view = self._reoriented(conditioning_set)
+    if view is not self:
+      return view.rosenblatt(
+        u,
+        randomize_discrete=randomize_discrete,
+        seeds=seeds,
+        x=x,
+        batched=batched,
+      )
     u_p = self._prep(u, "rosenblatt")
     if self._resolve_batched(batched, x):
       try:
@@ -1032,6 +1143,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     num_threads: int = 1,
     x: Optional[ArrayT] = None,
     batched: Optional[bool] = None,
+    conditioning_set: Optional[list[int]] = None,
   ) -> ArrayT:
     """Inverse Rosenblatt transform: independent uniforms to dependent uniforms.
 
@@ -1048,6 +1160,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         Must be ``False`` / ``None``. The inverse cascade has cross-tree
         dependencies that the per-tree-level wavefront cannot satisfy, so
         ``batched=True`` raises :exc:`NotImplementedError`.
+    conditioning_set : list of int or None, optional
+        See :meth:`rosenblatt`.
 
     Returns
     -------
@@ -1057,9 +1171,17 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     Raises
     ------
     NotImplementedError
-        If ``batched`` is ``True``.
+        If ``batched`` is ``True``, if ``conditioning_set`` needs a relabeling
+        on a non-simplified vine, or if a pair copula does not implement
+        ``flip``.
+    RuntimeError
+        If ``conditioning_set`` is inadmissible as a sampling-order tail, or the
+        vine is truncated; see :meth:`reorient`.
     """
     del num_threads
+    view = self._reoriented(conditioning_set)
+    if view is not self:
+      return view.inverse_rosenblatt(u, x=x, batched=batched)
     if batched:
       raise NotImplementedError(
         "batched=True is not implemented for inverse_rosenblatt. The inverse "
@@ -1111,6 +1233,155 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     with self._eval_context():
       base_u = self._sample_uniform(n, qrng, seeds)
       return self.inverse_rosenblatt(base_u, x=x)
+
+  def sample_conditional(
+    self,
+    u_cond: ArrayT,
+    *,
+    qrng: bool = False,
+    num_threads: int = 1,
+    seeds: Optional[list[int]] = None,
+    conditioning_set: Optional[list[int]] = None,
+    x: Optional[ArrayT] = None,
+  ) -> ArrayT:
+    """Sample from the conditional copula given fixed values of some variables.
+
+    Each row of ``u_cond`` is one conditioning point, and the matching output row
+    draws the remaining variables from their distribution conditional on it. To
+    draw many samples at one point, pass that point repeated over ``n`` rows.
+
+    Parameters
+    ----------
+    u_cond : array, shape (n, k) or wider, dtype float
+        Conditioning values in ``(0, 1)``, one point per row. Column ``i``
+        corresponds to the ``i``-th conditioning variable. A discrete
+        conditioning variable needs its left limit ``F(x^-)`` too: pass the
+        expanded ``(n, 2k)`` layout, or the compact ``(n, k + k_d)`` one that
+        omits the left limits of the continuous conditioners.
+    qrng : bool, default=False
+        Draw quasi-random base uniforms for the conditioned variables.
+    num_threads : int, default=1
+        Accepted for parity; ignored.
+    seeds : list of int or None, optional
+        RNG seeds forwarded to the subclass's base-uniform draw.
+    conditioning_set : list of int or None, optional
+        The 1-based variables to condition on. ``None`` takes the last
+        ``k`` of :attr:`order`, with ``k`` inferred from ``u_cond``'s width.
+        **The two forms map the columns differently**: without it, column ``i``
+        is the ``i``-th variable of the order tail; with it, column ``i`` is
+        ``conditioning_set[i]``.
+    x : array, shape (n, p), or None, optional
+        External covariates (non-simplified vines), one row per sample.
+
+    Returns
+    -------
+    array, shape (n, d), dtype float
+        Conditional draws. The conditioning variables' columns reproduce
+        ``u_cond``; a discrete one is reproduced up to its atom, landing in
+        ``[F(x^-), F(x)]``.
+
+    Raises
+    ------
+    ValueError
+        If ``u_cond`` is not 2-d, if its column count matches no admissible
+        layout, if a discrete conditioner's left limit exceeds its value, or if
+        ``x`` does not have one row per sample.
+    NotImplementedError
+        If ``conditioning_set`` needs a relabeling on a non-simplified vine.
+    RuntimeError
+        If ``conditioning_set`` is inadmissible as a sampling-order tail, or the
+        vine is truncated; see :meth:`reorient`.
+
+    Notes
+    -----
+    The free variables are completed with an arbitrary ``0.5`` before the
+    forward transform, which cannot affect the result: in natural order, column
+    ``j``'s Rosenblatt coordinate reads only columns ``j, ..., d - 1``, so the
+    order tail is a self-contained sub-vine. That is also why the conditioning
+    set has to *be* the tail -- and why the placeholders are harmless on a
+    non-simplified vine too, a tail edge's conditioning columns all lying in the
+    tail.
+
+    See Also
+    --------
+    pyvinecopulib.core.Vinecop.sample_conditional : The reference sampler.
+    """
+    del num_threads
+    seeds = list(seeds) if seeds else []
+    ua: Any = u_cond
+    if ua.ndim != 2:
+      raise ValueError(
+        "sample_conditional: u_cond must have shape (n, k); got "
+        f"{tuple(ua.shape)}"
+      )
+    d = self.d
+    n, n_cols = int(ua.shape[0]), int(ua.shape[1])
+    if x is not None and cast("Any", x).shape[0] != n:
+      raise ValueError(
+        "sample_conditional: x requires one covariate row per sample; got x "
+        f"with {cast('Any', x).shape[0]} rows and u_cond with {n}."
+      )
+    view = self._reoriented(conditioning_set)
+    if conditioning_set is None:
+      cond_vars = self._infer_conditioning_set(n_cols)
+    else:
+      cond_vars = [int(v) for v in conditioning_set]
+    k = len(cond_vars)
+    n_disc_cond = sum(1 for v in cond_vars if self._var_types[v - 1] == "d")
+    # When every conditioner is discrete the two layouts coincide; the expanded
+    # one then wins, as it does upstream.
+    expanded = n_cols == 2 * k
+    if not expanded and n_cols != k + n_disc_cond:
+      raise ValueError(
+        f"u_cond has wrong number of columns; expected: {2 * k} (n x 2k "
+        f"expanded layout) or {k + n_disc_cond} (n x (k + k_d) compact "
+        f"layout), actual: {n_cols}."
+      )
+
+    with self._eval_context():
+      xp = array_namespace(ua)
+      u_completed = xp.full(
+        (n, d + self._n_discrete), 0.5, dtype=ua.dtype, device=ua.device
+      )
+      seen = 0
+      for i, var in enumerate(cond_vars):
+        col = var - 1
+        u_completed[:, col] = ua[:, i]
+        if self._var_types[col] == "d":
+          left = ua[:, k + i if expanded else k + seen]
+          if bool(xp.any(left > ua[:, i])):
+            raise ValueError(
+              "for discrete conditioning variables, the left-limit columns of "
+              "u_cond (F(x^-)) must not exceed the value columns (F(x))."
+            )
+          u_completed[:, d + self._disc_cols[col]] = left
+          seen += 1
+      # The conditioning variables' own Rosenblatt coordinates; randomized so a
+      # discrete conditioner's jump becomes a uniform the inverse can invert.
+      w: Any = view.rosenblatt(
+        cast(ArrayT, u_completed),
+        randomize_discrete=True,
+        seeds=seeds,
+        x=x,
+      )
+      base_u: Any = self._sample_uniform(n, qrng, seeds)
+      for var in cond_vars:
+        base_u[:, var - 1] = w[:, var - 1]
+      return view.inverse_rosenblatt(cast(ArrayT, base_u), x=x)
+
+  def _infer_conditioning_set(self, n_cols: int) -> list[int]:
+    """The order tail whose layout is ``n_cols`` columns wide."""
+    d = self.d
+    for k in range(1, d):
+      tail = list(self.order[d - k :])
+      n_disc = sum(1 for v in tail if self._var_types[v - 1] == "d")
+      if n_cols == k + n_disc:
+        return tail
+    raise ValueError(
+      "u_cond has an invalid number of columns; expected k columns for "
+      "all-continuous conditioning, or k + k_d columns when k_d conditioning "
+      f"variables are discrete, for some k in 1, ..., {d - 1}; got {n_cols}."
+    )
 
   def cdf(
     self,
@@ -1429,6 +1700,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     seeds: Optional[list[int]] = None,
     to_numpy: Optional[Callable[[Any], Any]] = None,
     var_types: Optional[list[str]] = None,
+    conditioning_set: Optional[list[int]] = None,
   ) -> tuple[RVineStructure, list[list[BicopLike[ArrayT]]]]:
     """Select an R-vine structure from data (array-agnostic Dissmann).
 
@@ -1490,6 +1762,14 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete), in
         variable order; ``None`` means all continuous. Given, it also fixes the
         dimension, so ``u`` may carry the extra left-limit columns.
+    conditioning_set : list of int or None, optional
+        1-based variables to place at the tail of the selected order, so they can
+        be conditioned on with :meth:`sample_conditional`. Every candidate edge
+        touching a non-conditioning variable is penalized, which makes the
+        conditioning set a self-contained block, and the finalized structure is
+        then relabeled onto that tail. Requires an MST ``tree_algorithm`` and no
+        truncation, and the pairs must implement
+        :meth:`~pyvinecopulib.core.BicopLike.flip`.
 
     Returns
     -------
@@ -1534,6 +1814,30 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     max_trees = (
       d - 1 if trunc_lvl is None else max(0, min(int(trunc_lvl), d - 1))
     )
+    cond = [int(v) for v in (conditioning_set or [])]
+    in_cond = [False] * d
+    if cond:
+      # Mirrors `Vinecop::check_conditioning_set`: an MST is what makes the
+      # penalty below lay the conditioning block down first, and the relabeling
+      # that follows needs every tree.
+      if len(cond) >= d:
+        raise ValueError(
+          "conditioning_set must contain at most d - 1 variables."
+        )
+      if any(v < 1 or v > d for v in cond):
+        raise ValueError("conditioning_set entries must be in 1, ..., d.")
+      if tree_algorithm not in ("mst_prim", "mst_kruskal"):
+        raise ValueError(
+          "conditioning-aware selection requires an MST tree_algorithm "
+          "('mst_prim' or 'mst_kruskal')."
+        )
+      if max_trees < d - 1:
+        raise ValueError(
+          "conditioning-aware selection does not support truncation "
+          "(trunc_lvl / select_trunc_lvl) in this version."
+        )
+      for v in cond:
+        in_cond[v - 1] = True
     # Sentinel "root" shared by every base-tree node, so the first tree's
     # candidate graph is complete (the C++ base tree is a star).
     root = d
@@ -1615,11 +1919,24 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
           # The edge weight reads the value columns only, so the spanning tree
           # a discrete vine selects is the one it would select continuous.
           tau = criterion(col0, col1)
+          weight = 1.0 - (tau >= threshold) * tau
+          if cond:
+            # Base weights lie in [0, 1], so adding `d` keeps them non-negative
+            # (Prim requires it) while making every all-conditioning edge
+            # strictly cheaper: the minimum spanning tree lays down the
+            # conditioning set's own optimal sub-vine first at every tree, which
+            # is what makes it a block the relabeling can move to the tail
+            # (tools_select.ipp add_allowed_edges_proximity).
+            all_cond = all(
+              in_cond[i] for i in nodes[v0]["all_indices"]
+            ) and all(in_cond[i] for i in nodes[v1]["all_indices"])
+            if not all_cond:
+              weight += float(d)
           cand.append((v0, v1))
           cand_cols.append((col0, col1))
           cand_subs.append(subs)
           cand_types.append(edge_types)
-          weights.append(1.0 - (tau >= threshold) * tau)
+          weights.append(weight)
 
       # Ascending candidate index = boost's edge-list (insertion) order, which
       # is the order the C++ selector iterates surviving edges in.
@@ -1683,6 +2000,12 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     # convention (conditioned[0], flip-free), so this reproduces the compiled
     # selector's matrix exactly.
     structure = RVineStructure.from_trees(d, trees)
+    if cond:
+      # Place the conditioning set at the tail, as `Vinecop.select` does after
+      # finalizing. The placement below keys off each slot's label sets rather
+      # than the diagonal policy, so it lands -- and flips -- the selection-time
+      # pairs on the relabeled slots with no further bookkeeping.
+      structure = reorientation(structure, cond).structure
     # Place each selection-time pair onto its finalized slot, mirroring the
     # peel: the slot at column ``e`` of tree ``t`` hosts the (unique) edge
     # whose conditioned pair is {order[e], struct_array(t, e)} and whose
@@ -1706,6 +2029,62 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         row.append(pair if a_label == diag else pair.flip())
       pairs.append(row)
     return structure, pairs
+
+
+class _ReorientedVine(VinecopBase[ArrayT]):
+  """A vine evaluated in a relabeled sampling order, without copying it.
+
+  The counterpart of the compiled ``VinecopView``: it binds the relabeled
+  structure and resolves every pair copula back to the viewed vine's slot,
+  swapping the pair's arguments where the relabeling requires it. Every cascade
+  comes from :class:`VinecopBase`; only the pair lookup is redirected.
+
+  Parameters
+  ----------
+  base : VinecopBase
+      The vine being viewed; its pair copulas, RNG, dtype / device coercion and
+      grad control are all reused.
+  relabeling : Reorientation
+      The relabeled structure and the slot map onto ``base``'s slots.
+  """
+
+  def __init__(
+    self, base: VinecopBase[ArrayT], relabeling: Reorientation
+  ) -> None:
+    self._base = base
+    self._locations = relabeling.locations
+    self._flipped: dict[tuple[int, int], BicopLike[ArrayT]] = {}
+    self._bind_vine(
+      relabeling.structure, base._context, var_types=base.var_types
+    )
+
+  def _get_pair_copula(self, tree: int, edge: int) -> BicopLike[ArrayT]:
+    old_edge, flipped = self._locations[(tree, edge)]
+    if not flipped:
+      return self._base._get_pair_copula(tree, old_edge)
+    key = (tree, old_edge)
+    pair = self._flipped.get(key)
+    if pair is None:
+      # `flip` can be costly -- a grid pair rebuilds itself and re-bakes its
+      # integral caches -- and each slot is read once per cascade pass, of which
+      # conditional sampling makes two. Callers relabeling repeatedly should use
+      # `reorient()` once and host the pairs it returns.
+      pair = self._base._get_pair_copula(tree, old_edge).flip()
+      self._flipped[key] = pair
+    return pair
+
+  # dtype / device coercion, RNG placement and grad control belong to the vine
+  # being viewed. `_default_batched` / `_build_batched` are deliberately *not*
+  # delegated: the base's batched state is baked against the base's structure and
+  # edge order, so the view stays on the non-batched cascade.
+  def _prep(self, u: ArrayT, name: str, *, values_only: bool = False) -> ArrayT:
+    return self._base._prep(u, name, values_only=values_only)
+
+  def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:
+    return self._base._sample_uniform(n, qrng, seeds)
+
+  def _eval_context(self):
+    return self._base._eval_context()
 
 
 # Shares the worked example with :class:`~pyvinecopulib.core.VinecopLike` (see

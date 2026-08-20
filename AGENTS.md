@@ -260,6 +260,7 @@ pyvinecopulib/
         margin_base.py           # MarginBase (canonical MarginLike partial impl)
         vinedist.py              # Vinedist (copula + margins = a distribution)
         _discrete.py             # DiscretePair + the discrete layouts / per-edge types
+        _reorient.py             # relabel a structure onto a chosen order tail (internal)
         _rootfind.py             # solve_increasing (monotone bisection; internal)
       families/__init__.py       # BicopFamily enum + 13 family constants + 15 group constants
       utils/__init__.py          # to_pseudo_obs, wdm, sobol, ghalton, sample_uniform, benchmark
@@ -619,6 +620,19 @@ automatically.
     wrapping itself in `DiscretePair`. `fit` / `select` take `var_types` too and
     forward each edge's types to `fit_edge` as a keyword, only on the edges that
     have one (the rule `_pair_eval` applies to `x`).
+  - `sample_conditional` / `reorient` (`_reorient.py`) — conditional sampling and
+    the value-preserving relabeling it rests on. `reorient` **returns** the
+    relabeled `(structure, pair_copulas)` rather than mutating, since the base
+    class leaves pair storage to the subclass; `conditioning_set` on
+    `rosenblatt` / `inverse_rosenblatt` / `sample_conditional` evaluates through
+    an internal reoriented view instead. The peel that steers a chosen set to
+    the order tail is borrowed from the compiled `Vinecop.reorient` (run on a
+    throwaway independence vine) and the slot map is then matched up in Python,
+    so admissibility and the error messages are exactly `Vinecop`'s — the same
+    trade `select` makes with `_select_spanning_tree`. A relabeling is refused
+    on a non-simplified vine: it can permute the columns of each edge's `x_e`,
+    which makes the result a different model. `select` takes `conditioning_set`
+    too (the `+d` MST penalty, then the relabeling).
   - `ConditioningContext` / `SimplifiedContext` (default) /
     `NonSimplifiedContext` (`context.py`) — the per-edge policy that
     turns the simplified cascade into a **non-simplified / conditional**
@@ -984,7 +998,9 @@ Round-trip / parity properties to preserve when touching numerics:
   from `_get_pair_copula` (and from `fit_edge`, which receives the edge's
   `var_types`); the vine supplies the left-limit columns. For a
   **non-simplified / conditional** vine, pass a `NonSimplifiedContext` and drive
-  `VinecopBase.fit` with a `fit_edge` callback; see
+  `VinecopBase.fit` with a `fit_edge` callback. To condition on a subset of
+  variables, implement `flip` as well and use `sample_conditional` /
+  `select(conditioning_set=)`; see
   `examples/10_extending_pyvinecopulib.ipynb`. `TorchBicop` /
   `TorchVinecop` are the reference torch subclasses.
 - **Custom margins (`pyvinecopulib.core`).** Subclass `MarginBase` and
