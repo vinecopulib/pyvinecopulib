@@ -395,7 +395,6 @@ class InterpolationGrid2D(torch.nn.Module):
 
     return cdf_vals, h1_vals, h2_vals, hinv1_vals, hinv2_vals
 
-  @torch.no_grad()
   def interp_at(self, cache: Tensor, u: Tensor) -> Tensor:
     """Bilinearly interpolate a precomputed ``(m, m)`` cache at points ``u``.
 

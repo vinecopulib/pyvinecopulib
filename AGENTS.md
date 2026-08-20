@@ -873,7 +873,9 @@ Key surface:
     opt-in `values.requires_grad_(True)`, the `TorchBicop` precedent.
     `icdf` reproduces the C++ 35-step bisection exactly and then reattaches
     an exact gradient by one Newton step, so the value is bit-identical
-    while `dq/d values` is right. Two of `Kde1d`'s attribute names could not
+    while `dq/dp` and `dq/d values` are right. The correction is gated on
+    grad being enabled, not on the grid being learned — a fitted fixed grid
+    still has to differentiate the quantile in `p`. Two of `Kde1d`'s attribute names could not
     be reused: `type` is `nn.Module`'s dtype cast (read `kde_type`) and
     `loglik` is the contract's method.
   - `torch/_kde1d_interp.py` ports `kde1d`'s `InterpolationGrid`, and its
@@ -894,7 +896,10 @@ Key surface:
     for future torch fitters).
   - `cache_integrals` — default `True` (set in `990f997`); precomputes
     integral grids for ~80–300× evaluation speed-up with mean IAE
-    `< 1e-3`.
+    `< 1e-3`. The cached `cdf` / `hfunc*` / `hinv*` are differentiable in
+    `u`, but carry **no** gradient with respect to `values` — with the cache
+    on, the bilinear surrogate *is* the model for those four members. `pdf`
+    reads the grid directly and always carries both.
   - `batched` — fires a single batched bicop call per tree level
     (available on `pdf` / `rosenblatt`, not on `inverse_rosenblatt`).
     The non-batched cascade is a byte-for-byte port of the C++

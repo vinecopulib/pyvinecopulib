@@ -345,6 +345,37 @@ def test_the_quantile_carries_an_exact_gradient() -> None:
   assert float(grad.abs().sum()) > 0.0
 
 
+def test_the_quantile_is_differentiable_in_the_probability() -> None:
+  """`d icdf / d p = 1 / f(q)`, and it must not depend on the grid being learned.
+
+  The Newton correction that supplies the gradient was gated on
+  `values.requires_grad`, so `d icdf/d p` was dead for a fitted, fixed grid --
+  the common case, since the density is fitted rather than learned. The
+  correction is exact, so this is an equality rather than a tolerance.
+  """
+  kde, lifted, _ = _fitted("continuous")
+  assert lifted.values.requires_grad is False
+
+  p = _t(_PROBS).requires_grad_(True)
+  q = lifted.icdf(p)
+  assert q.requires_grad
+  # The value is still the bisection's, bit for bit.
+  np.testing.assert_array_equal(
+    q.detach().numpy(), np.asarray(kde.icdf(_PROBS))
+  )
+
+  (grad,) = torch.autograd.grad(q.sum(), p)
+  np.testing.assert_allclose(
+    grad.numpy(), 1.0 / lifted.pdf(q.detach()).numpy(), rtol=1e-12, atol=0.0
+  )
+
+  # Under `no_grad` the value is unchanged, so the correction cannot move it.
+  with torch.no_grad():
+    np.testing.assert_array_equal(
+      lifted.icdf(_t(_PROBS)).numpy(), np.asarray(kde.icdf(_PROBS))
+    )
+
+
 def test_state_dict_round_trip() -> None:
   kde, lifted, _ = _fitted("discrete", type="discrete", xmin=0.0)
   restored = TorchKde1d(type="discrete", xmin=0.0)

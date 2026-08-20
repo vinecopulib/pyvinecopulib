@@ -655,3 +655,74 @@ def test_batched_cache_stays_out_of_the_state_dict() -> None:
   fresh = TorchVinecop.from_vinecop(cpp)
   fresh.load_state_dict(vine.state_dict(), strict=True)
   torch.testing.assert_close(fresh.pdf(data), vine.pdf(data))
+
+
+# --- gradients ---------------------------------------------------------------- #
+
+
+def _central_fd(fn, q, eps: float = 1e-6):
+  """Central finite differences of a scalar-per-row function in every column."""
+  fd = torch.zeros_like(q)
+  with torch.no_grad():
+    for j in range(q.shape[1]):
+      hi, lo = q.clone(), q.clone()
+      hi[:, j] += eps
+      lo[:, j] -= eps
+      fd[:, j] = (fn(hi) - fn(lo)) / (2 * eps)
+  return fd
+
+
+@pytest.mark.parametrize("cache_integrals", [True, False])
+@pytest.mark.parametrize("batched", [False, True])
+def test_pdf_gradient_matches_finite_differences(
+  cache_integrals: bool, batched: bool
+) -> None:
+  """`d pdf / d u` must be right on all four (cache, batched) paths.
+
+  It was not: with `cache_integrals=True` the cached `hfunc1` / `hfunc2` were
+  evaluated under `torch.no_grad()`, so the cascade's conditioning arguments were
+  detached and only the final density factors contributed. The error was 111% of
+  the largest finite-difference entry — and only on the non-batched path, because
+  the batched level calls `interp_at_batched` directly and was never wrapped. So
+  the two paths silently disagreed on gradients while agreeing on values.
+
+  Query points are drawn away from the grid nodes: the interpolant is piecewise
+  bilinear, so a finite difference straddling a knot compares two different
+  polynomials.
+  """
+  cop = _fit_tll_vine(_simulate(d=5, n=400, seed=4))
+  bc = TorchVinecop.from_vinecop(cop, cache_integrals=cache_integrals)
+  q = torch.from_numpy(
+    np.random.default_rng(23).uniform(0.15, 0.85, size=(8, 5))
+  )
+
+  x = q.clone().requires_grad_(True)
+  (grad,) = torch.autograd.grad(bc.pdf(x, batched=batched).sum(), x)
+  fd = _central_fd(lambda uu: bc.pdf(uu, batched=batched), q)
+
+  assert grad is not None
+  rel = (grad - fd).abs().max().item() / fd.abs().max().item()
+  assert rel < 1e-6, f"cache={cache_integrals} batched={batched}: {rel:.3e}"
+
+
+def test_cached_and_uncached_gradients_agree_in_direction() -> None:
+  """Bounded, not equal: with a cache the surrogate *is* the model.
+
+  The cached members interpolate a table of the integrals bilinearly, so their
+  derivative is the surrogate's, not the exact integral's. That difference is
+  the same order as the documented value gap, so pin the agreement as a
+  direction rather than a value.
+  """
+  cop = _fit_tll_vine(_simulate(d=4, n=400, seed=5))
+  q = torch.from_numpy(
+    np.random.default_rng(24).uniform(0.15, 0.85, size=(16, 4))
+  )
+  grads = []
+  for cache in (True, False):
+    bc = TorchVinecop.from_vinecop(cop, cache_integrals=cache)
+    x = q.clone().requires_grad_(True)
+    (g,) = torch.autograd.grad(bc.pdf(x, batched=False).sum(), x)
+    grads.append(g.flatten())
+
+  cosine = torch.nn.functional.cosine_similarity(grads[0], grads[1], dim=0)
+  assert cosine.item() > 0.99, cosine.item()

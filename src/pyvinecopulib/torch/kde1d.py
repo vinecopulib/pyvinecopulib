@@ -600,12 +600,19 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     """Bisect as the C++ does, then reattach an exact gradient.
 
     The forward value is the bisection's, bit for bit. The gradient comes from
-    the implicit function theorem -- ``dq/dtheta = -(dF/dtheta) / f(q)`` -- which
-    a first Newton step expresses exactly, so differentiating the correction
-    while returning the bisection gives both.
+    the implicit function theorem -- ``dq/dtheta = -(dF/dtheta) / f(q)``, and
+    ``dq/dp = 1 / f(q)`` -- which a first Newton step expresses exactly, so
+    differentiating the correction while returning the bisection gives both.
+
+    The correction is skipped only when no gradient is wanted at all. Gating it
+    on ``values.requires_grad`` alone would kill ``dq/dp`` for a fitted, fixed
+    grid, which is the common case: the density is fitted, not learned, and the
+    quantile is still a differentiable function of its probability.
     """
     q = interp.invert_integral(self.grid_points, self.values, p)
-    if not self.values.requires_grad:
+    if not torch.is_grad_enabled() or not (
+      self.values.requires_grad or p.requires_grad
+    ):
       return q
     residual = interp.integrate(self.grid_points, self.values, q) - p
     density = interp.interpolate(self.grid_points, self.values, q)

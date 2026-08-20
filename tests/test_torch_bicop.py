@@ -541,3 +541,66 @@ def test_flip_swaps_arguments() -> None:
     tb.pdf(torch.tensor([[0.3, 0.7]], dtype=torch.float64)).numpy(),
     before.numpy(),
   )
+
+
+# --- gradients ---------------------------------------------------------------- #
+
+
+def test_hinv_is_differentiable() -> None:
+  """Both hinv paths carry a gradient, and it is the right one.
+
+  Neither is a root-finder: cached is one bilinear lookup, uncached is the
+  closed-form quadratic root of the interpolated conditional cdf. Both were
+  nonetheless wrapped in `torch.no_grad()`, which detached them for no reason.
+  """
+  gauss = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  cop = _fit_tll(gauss.sample(2000, seeds=[6, 7, 8]))
+  q = torch.from_numpy(
+    np.random.default_rng(25).uniform(0.15, 0.85, size=(6, 2))
+  )
+
+  for cache in (True, False):
+    bc = TorchBicop.from_bicop(cop, cache_integrals=cache)
+    for name in ("hinv1", "hinv2"):
+      method = getattr(bc, name)
+      x = q.clone().requires_grad_(True)
+      out = method(x)
+      assert out.requires_grad, f"{name}, cache={cache}"
+      (grad,) = torch.autograd.grad(out.sum(), x)
+
+      fd = torch.zeros_like(q)
+      with torch.no_grad():
+        for j in range(2):
+          hi, lo = q.clone(), q.clone()
+          hi[:, j] += 1e-6
+          lo[:, j] -= 1e-6
+          fd[:, j] = (method(hi) - method(lo)) / 2e-6
+      rel = (grad - fd).abs().max().item() / fd.abs().max().item()
+      assert rel < 1e-6, f"{name}, cache={cache}: {rel:.3e}"
+
+
+def test_cached_integrals_do_not_carry_a_grid_gradient() -> None:
+  """The cached tables are constants, and that is the documented semantics.
+
+  Pinning it makes building the caches inside the graph a conscious future
+  decision rather than a surprise. `pdf` never reads a cache, so it keeps its
+  gradient in the grid either way.
+  """
+  gauss = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  cop = _fit_tll(gauss.sample(2000, seeds=[7, 8, 9]))
+  q = torch.from_numpy(
+    np.random.default_rng(26).uniform(0.15, 0.85, size=(8, 2))
+  )
+
+  cached = TorchBicop.from_bicop(cop, cache_integrals=True)
+  cached.interp_grid.values.requires_grad_(True)
+  assert cached.pdf(q).requires_grad
+  assert not cached.cdf(q).requires_grad
+
+  exact = TorchBicop.from_bicop(cop, cache_integrals=False)
+  exact.interp_grid.values.requires_grad_(True)
+  out = exact.cdf(q)
+  assert out.requires_grad
+  (grad,) = torch.autograd.grad(out.sum(), exact.interp_grid.values)
+  assert torch.isfinite(grad).all()
+  assert grad.abs().sum().item() > 0.0
