@@ -1,7 +1,7 @@
 """Backends for the sklearn vine-copula estimators.
 
 Each backend is a configured adapter that knows how to fit a vine on
-pseudo-observations and how to evaluate ``pdf`` / ``cdf`` / ``simulate``
+pseudo-observations and how to evaluate ``pdf`` / ``cdf`` / ``sample``
 on that vine. Two concrete backends ship:
 
 - :class:`VinecopBackend` (default) — wraps ``Vinecop``.
@@ -29,7 +29,7 @@ Switch to :class:`TorchVinecopBackend` when you need any of:
 
 - *GPU placement* — drop a fitted vine on the GPU with
   ``.to("cuda")`` and evaluate batched ``pdf`` / ``cdf`` /
-  ``simulate`` calls there.
+  ``sample`` calls there.
 - *Autograd* — the entire cascade is built from differentiable
   PyTorch ops, so gradients flow back through ``pdf`` / Rosenblatt
   outputs to any upstream parameters (e.g. learned marginals or
@@ -134,7 +134,7 @@ class _VinecopBackendBase:
   ) -> np.ndarray:
     raise NotImplementedError
 
-  def simulate(
+  def sample(
     self, vine: Any, n_samples: int, *, seeds: list[int]
   ) -> np.ndarray:
     raise NotImplementedError
@@ -147,7 +147,7 @@ class _VinecopBackendBase:
     self, d: int, seeds: list[int]
   ) -> "_VinecopBackendBase":
     new = _copy.copy(self)
-    new.structure = pv.RVineStructure.simulate(d, seeds=seeds)
+    new.structure = pv.RVineStructure.sample(d, seeds=seeds)
     return new
 
   def with_local_random(self, seeds: list[int]) -> "_VinecopBackendBase":
@@ -223,11 +223,11 @@ class VinecopBackend(_VinecopBackendBase):
       )
     )
 
-  def simulate(
+  def sample(
     self, vine: Any, n_samples: int, *, seeds: list[int]
   ) -> np.ndarray:
     return np.asarray(
-      vine.simulate(
+      vine.sample(
         n_samples,
         num_threads=self._effective_controls().num_threads,
         seeds=seeds,
@@ -300,10 +300,10 @@ class TorchVinecopBackend(_VinecopBackendBase):
     out = vine.cdf(U, N=N, qrng=True, seeds=seeds)
     return out.detach().cpu().numpy()
 
-  def simulate(
+  def sample(
     self, vine: Any, n_samples: int, *, seeds: list[int]
   ) -> np.ndarray:
-    out = vine.simulate(n_samples, qrng=False, seeds=seeds)
+    out = vine.sample(n_samples, qrng=False, seeds=seeds)
     return out.detach().cpu().numpy()
 
   def with_num_threads(self, num_threads: int) -> "TorchVinecopBackend":

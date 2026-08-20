@@ -441,7 +441,7 @@ def test_batched_to_device_invalidates() -> None:
 
 def test_from_data_rejects_non_2d_u() -> None:
   """``TorchVinecop.from_data`` rejects 1-D / 3-D inputs."""
-  structure = pv.RVineStructure.simulate(5, seeds=[1])
+  structure = pv.RVineStructure.sample(5, seeds=[1])
   with pytest.raises(ValueError, match="must be 2-D"):
     TorchVinecop.from_data(torch.zeros(100, dtype=torch.float64), structure)
   with pytest.raises(ValueError, match="must be 2-D"):
@@ -452,7 +452,7 @@ def test_from_data_rejects_non_2d_u() -> None:
 
 def test_from_data_rejects_structure_dim_mismatch() -> None:
   """``TorchVinecop.from_data`` rejects ``structure.dim != u.shape[1]``."""
-  structure = pv.RVineStructure.simulate(5, seeds=[1])  # d=5
+  structure = pv.RVineStructure.sample(5, seeds=[1])  # d=5
   with pytest.raises(ValueError, match="does not match"):
     TorchVinecop.from_data(torch.zeros(100, 7, dtype=torch.float64), structure)
 
@@ -471,7 +471,7 @@ def test_eval_rejects_wrong_input_shape(op: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# API alignment with pv.Vinecop (from_structure, simulate, cdf, num_threads)
+# API alignment with pv.Vinecop (from_structure, sample, cdf, num_threads)
 # ---------------------------------------------------------------------------
 
 
@@ -496,7 +496,7 @@ def test_from_structure_pair_copulas_matches_init():
 def test_from_structure_empty_is_independence_vine():
   """No pair_copulas -> every edge is an independence TorchBicop;
   pdf is identically 1."""
-  s = pv.RVineStructure.simulate(4, seeds=[1, 2, 3, 4, 5])
+  s = pv.RVineStructure.sample(4, seeds=[1, 2, 3, 4, 5])
   tv = TorchVinecop.from_structure(structure=s)
   u = torch.rand(50, 4, dtype=torch.float64)
   assert torch.allclose(
@@ -506,7 +506,7 @@ def test_from_structure_empty_is_independence_vine():
 
 def test_from_structure_matrix_path():
   """Matrix kwarg routes through RVineStructure.from_matrix."""
-  s = pv.RVineStructure.simulate(3, seeds=[1, 2, 3, 4, 5])
+  s = pv.RVineStructure.sample(3, seeds=[1, 2, 3, 4, 5])
   mat = np.asarray(s.matrix, dtype=np.uint64)
   tv = TorchVinecop.from_structure(matrix=mat)
   assert tv.d == 3
@@ -514,7 +514,7 @@ def test_from_structure_matrix_path():
 
 
 def test_from_structure_rejects_both_or_neither():
-  s = pv.RVineStructure.simulate(3, seeds=[1, 2, 3, 4, 5])
+  s = pv.RVineStructure.sample(3, seeds=[1, 2, 3, 4, 5])
   with pytest.raises(ValueError, match="exactly one"):
     TorchVinecop.from_structure()
   with pytest.raises(ValueError, match="exactly one"):
@@ -524,7 +524,7 @@ def test_from_structure_rejects_both_or_neither():
 
 
 def test_from_structure_rejects_discrete_var_types():
-  s = pv.RVineStructure.simulate(3, seeds=[1, 2, 3, 4, 5])
+  s = pv.RVineStructure.sample(3, seeds=[1, 2, 3, 4, 5])
   with pytest.raises(NotImplementedError, match="continuous-only"):
     TorchVinecop.from_structure(structure=s, var_types=["c", "d", "c"])
 
@@ -534,21 +534,21 @@ def test_simulate_seeded_reproducible():
   U = rng.uniform(0.001, 0.999, (300, 3))
   tv = TorchVinecop.from_vinecop(_fit_tll_vine(U))
 
-  a = tv.simulate(n=200, seeds=[42])
-  b = tv.simulate(n=200, seeds=[42])
+  a = tv.sample(n=200, seeds=[42])
+  b = tv.sample(n=200, seeds=[42])
   assert torch.allclose(a, b)
-  c = tv.simulate(n=200, seeds=[43])
+  c = tv.sample(n=200, seeds=[43])
   assert not torch.allclose(a, c)
 
 
 def test_simulate_qrng_runs_and_returns_uniforms():
-  """qrng=True draws Halton/Sobol via pv.utils.simulate_uniform, then
+  """qrng=True draws Halton/Sobol via pv.utils.sample_uniform, then
   pushes through inverse_rosenblatt. We check basic shape + range."""
   rng = np.random.default_rng(0)
   U = rng.uniform(0.001, 0.999, (300, 3))
   tv = TorchVinecop.from_vinecop(_fit_tll_vine(U))
 
-  s = tv.simulate(n=500, qrng=True, seeds=[1, 2, 3])
+  s = tv.sample(n=500, qrng=True, seeds=[1, 2, 3])
   assert s.shape == (500, 3)
   assert (s > 0).all() and (s < 1).all()
 
@@ -594,7 +594,7 @@ def test_pdf_autograd_through_grid_param() -> None:
   """Grad flows through ``TorchVinecop.pdf`` to a ``TorchBicop`` grid value.
 
   Guards the Stage-2a cascade extraction onto ``VinecopBase``: ``pdf`` /
-  ``rosenblatt`` must stay autograd-capable (only inverse / simulate / cdf are
+  ``rosenblatt`` must stay autograd-capable (only inverse / sample / cdf are
   wrapped in ``no_grad``), and the cascade must not detach pair outputs.
   """
   u_fit = _simulate(d=4, n=800, seed=700)
@@ -622,13 +622,13 @@ def test_conditional_cdf_raises() -> None:
     bc.cdf(u, x=x)
 
 
-def test_simulate_conditional_requires_row_per_sample() -> None:
-  """``simulate(n, x=...)`` requires exactly one covariate row per sample."""
+def test_sample_conditional_requires_row_per_sample() -> None:
+  """``sample(n, x=...)`` requires exactly one covariate row per sample."""
   u_fit = _simulate(d=3, n=400, seed=712)
   bc = TorchVinecop.from_vinecop(_fit_tll_vine(u_fit))
   x = torch.zeros(4, 1, dtype=torch.float64)
   with pytest.raises(ValueError, match="one covariate row per sample"):
-    bc.simulate(10, x=x)
+    bc.sample(10, x=x)
 
 
 def test_batched_cache_stays_out_of_the_state_dict() -> None:

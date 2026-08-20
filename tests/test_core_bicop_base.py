@@ -39,9 +39,7 @@ class _IndepPair(BicopBase[np.ndarray]):
   def hfunc2(self, u: np.ndarray, x: Optional[np.ndarray] = None) -> np.ndarray:
     return u[:, 0]
 
-  def _simulate_uniform(
-    self, n: int, qrng: bool, seeds: list[int]
-  ) -> np.ndarray:
+  def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> np.ndarray:
     rng = np.random.default_rng(seeds[0] if seeds else 0)
     return rng.uniform(size=(n, 2))
 
@@ -99,21 +97,21 @@ def test_bicopbase_loglik() -> None:
 
 
 def test_bicopbase_simulate_default() -> None:
-  """Default ``simulate`` (inverse Rosenblatt) returns (n, 2) samples in (0, 1)."""
+  """Default ``sample`` (inverse Rosenblatt) returns (n, 2) samples in (0, 1)."""
   cop = _IndepPair()
-  s = cop.simulate(50, seeds=[7])
+  s = cop.sample(50, seeds=[7])
   assert s.shape == (50, 2)
   assert bool((s > 0).all()) and bool((s < 1).all())
   # independence hfunc1 is the identity -> the sample is the base uniforms.
-  base = _IndepPair()._simulate_uniform(50, False, [7])
+  base = _IndepPair()._sample_uniform(50, False, [7])
   np.testing.assert_allclose(s, base, atol=1e-9)
 
 
 def test_bicopbase_simulate_requires_draw_hook() -> None:
-  """``simulate`` raises when the backend has not provided ``_simulate_uniform``."""
+  """``sample`` raises when the backend has not provided ``_sample_uniform``."""
   cop = _SqrtPair()
   with pytest.raises(NotImplementedError):
-    cop.simulate(5)
+    cop.sample(5)
 
 
 def test_bicopbase_plot_runs() -> None:

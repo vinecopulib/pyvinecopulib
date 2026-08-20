@@ -50,7 +50,7 @@ class _CppBicopLike:
   def hinv2(self, u: Any, x: Any = None) -> Any:
     return self._b.hinv2(np.asarray(u))
 
-  def simulate(
+  def sample(
     self,
     n: int,
     *,
@@ -58,7 +58,7 @@ class _CppBicopLike:
     qrng: bool = False,
     seeds: Optional[list[int]] = None,
   ) -> Any:
-    return self._b.simulate(n, qrng=qrng, seeds=seeds or [])
+    return self._b.sample(n, qrng=qrng, seeds=seeds or [])
 
   def flip(self) -> "_CppBicopLike":
     return _CppBicopLike(self._b.flip())

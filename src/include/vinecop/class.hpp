@@ -283,7 +283,7 @@ must not be truncated; otherwise ``RuntimeError`` is raised, naming
 it. This is the same relabeling ``Vinecop.reorient`` applies, without mutating
 the model.
 )""";
-  const std::string simulate_conditional_doc =
+  const std::string sample_conditional_doc =
       std::string(vinecop_doc.simulate_conditional.doc_4args) +
       R"""(
 
@@ -521,11 +521,11 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
       .def("cdf", &Vinecop::cdf, "u"_a, "N"_a = 10000, "num_threads"_a = 1,
            "seeds"_a = std::vector<int>(), vinecop_doc.cdf.doc,
            nb::call_guard<nb::gil_scoped_release>())
-      .def("simulate", &Vinecop::simulate, "n"_a, "qrng"_a = false,
+      .def("sample", &Vinecop::simulate, "n"_a, "qrng"_a = false,
            "num_threads"_a = 1, "seeds"_a = std::vector<int>(),
            vinecop_doc.simulate.doc, nb::call_guard<nb::gil_scoped_release>())
       .def(
-          "simulate_conditional",
+          "sample_conditional",
           [](const Vinecop& self, const Eigen::MatrixXd& u_cond, bool qrng,
              size_t num_threads, const std::vector<int>& seeds,
              const std::optional<std::vector<size_t>>& conditioning_set)
@@ -539,7 +539,7 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
           },
           "u_cond"_a, "qrng"_a = false, "num_threads"_a = 1,
           "seeds"_a = std::vector<int>(), nb::kw_only(),
-          "conditioning_set"_a = nb::none(), simulate_conditional_doc.c_str())
+          "conditioning_set"_a = nb::none(), sample_conditional_doc.c_str())
       // `u` is taken by value and moved: the implementation uses it as a
       // working buffer, and a const reference would force an n x d copy.
       // `u` is taken by value and moved: the implementation uses it as a

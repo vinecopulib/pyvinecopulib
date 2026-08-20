@@ -76,8 +76,8 @@ def test_vinecop(unique_json_path: str) -> None:
     assert isinstance(values, np.ndarray)
     assert values.shape == (1,)
 
-  # Test simulate method
-  simulated_data = cop.simulate(n)
+  # Test sample method
+  simulated_data = cop.sample(n)
   assert simulated_data.shape == (n, d)
 
   # Test loglik method
@@ -491,7 +491,7 @@ def test_struct_array_accessors_and_factory() -> None:
     pv.RVineStructure.from_struct_array(structure.order, [[1, 2], [3, 4]])
 
 
-def test_vinecop_simulate_conditional() -> None:
+def test_vinecop_sample_conditional() -> None:
   # Conditional sampling given fixed values of a subset of variables
   # (vinecopulib#696). The conditioning variables are the last k of the vine
   # order; their natural columns in the output reproduce u_cond exactly.
@@ -504,19 +504,19 @@ def test_vinecop_simulate_conditional() -> None:
 
   for k in (1, 2):
     u_cond = np.random.RandomState(k).uniform(0.05, 0.95, size=(50, k))
-    sim = cop.simulate_conditional(u_cond, seeds=[1, 2, 3])
+    sim = cop.sample_conditional(u_cond, seeds=[1, 2, 3])
     assert sim.shape == (50, d)
     cond_cols = [v - 1 for v in order[-k:]]
     np.testing.assert_allclose(
       sim[:, cond_cols], u_cond, rtol=1e-12, atol=1e-12
     )
     # Deterministic given seeds; all columns are valid uniforms.
-    sim2 = cop.simulate_conditional(u_cond, seeds=[1, 2, 3])
+    sim2 = cop.sample_conditional(u_cond, seeds=[1, 2, 3])
     np.testing.assert_allclose(sim, sim2, rtol=1e-12, atol=1e-14)
     assert np.all((sim >= 0.0) & (sim <= 1.0))
 
 
-def test_vinecop_simulate_conditional_discrete() -> None:
+def test_vinecop_sample_conditional_discrete() -> None:
   # Discrete conditioning variables are supported: u_cond carries an extra
   # left-limit F(x^-) column per discrete conditioner, and the conditioning
   # column of the output lands within the atom [F(x^-), F(x)] (vinecopulib#696).
@@ -539,7 +539,7 @@ def test_vinecop_simulate_conditional_discrete() -> None:
   # Condition var 1 on the atom x = 2: u_cond = [F(2), F(1)] (value, left-limit).
   m = 20
   u_cond = np.tile([[cdf[2], cdf[1]]], (m, 1))
-  sim = cop.simulate_conditional(u_cond, seeds=[1, 2, 3])
+  sim = cop.sample_conditional(u_cond, seeds=[1, 2, 3])
   assert sim.shape == (m, 3)
   # var 1 is natural column 0; the draw lands within the conditioned atom.
   col1 = sim[:, 0]
@@ -874,7 +874,7 @@ def _cop_conditioned_on(cs: list[int], d: int = 5, n: int = 400):
   return pv.Vinecop.from_data(u, controls=controls), u
 
 
-def test_simulate_conditional_explicit_set_matches_implicit() -> None:
+def test_sample_conditional_explicit_set_matches_implicit() -> None:
   # Given in the tail's own order, the explicit form reproduces the implicit
   # one exactly (vinecopulib#729).
   cs = [2, 3]
@@ -882,14 +882,12 @@ def test_simulate_conditional_explicit_set_matches_implicit() -> None:
   tail = [int(v) for v in cop.structure.order][-2:]
   u_cond = u[:20, [t - 1 for t in tail]]
 
-  implicit = cop.simulate_conditional(u_cond, seeds=[1, 2])
-  explicit = cop.simulate_conditional(
-    u_cond, seeds=[1, 2], conditioning_set=tail
-  )
+  implicit = cop.sample_conditional(u_cond, seeds=[1, 2])
+  explicit = cop.sample_conditional(u_cond, seeds=[1, 2], conditioning_set=tail)
   np.testing.assert_array_equal(implicit, explicit)
 
 
-def test_simulate_conditional_explicit_set_column_mapping() -> None:
+def test_sample_conditional_explicit_set_column_mapping() -> None:
   # The two forms map u_cond's columns differently: implicitly by the order
   # tail, explicitly by the given set. Reversing the set must permute the
   # columns it consumes, not be ignored.
@@ -898,29 +896,29 @@ def test_simulate_conditional_explicit_set_column_mapping() -> None:
   tail = [int(v) for v in cop.structure.order][-2:]
   u_cond = u[:20, [t - 1 for t in tail]]
 
-  forward = cop.simulate_conditional(u_cond, seeds=[3], conditioning_set=tail)
-  reversed_ = cop.simulate_conditional(
+  forward = cop.sample_conditional(u_cond, seeds=[3], conditioning_set=tail)
+  reversed_ = cop.sample_conditional(
     u_cond[:, ::-1], seeds=[3], conditioning_set=tail[::-1]
   )
   np.testing.assert_allclose(forward, reversed_, rtol=1e-10, atol=1e-10)
 
 
-def test_simulate_conditional_does_not_mutate_the_model() -> None:
+def test_sample_conditional_does_not_mutate_the_model() -> None:
   cs = [2, 3]
   cop, u = _cop_conditioned_on(cs)
   tail = [int(v) for v in cop.structure.order][-2:]
   order_before = [int(v) for v in cop.structure.order]
-  cop.simulate_conditional(u[:10, [t - 1 for t in tail]], conditioning_set=tail)
+  cop.sample_conditional(u[:10, [t - 1 for t in tail]], conditioning_set=tail)
   assert [int(v) for v in cop.structure.order] == order_before
 
 
-def test_simulate_conditional_rejects_inadmissible_set() -> None:
+def test_sample_conditional_rejects_inadmissible_set() -> None:
   cop, u = _cop_and_data()
   with pytest.raises(RuntimeError):
-    cop.simulate_conditional(u[:10, :2], conditioning_set=[])
+    cop.sample_conditional(u[:10, :2], conditioning_set=[])
 
 
-def test_simulate_conditional_discrete_set_takes_a_left_limit_column() -> None:
+def test_sample_conditional_discrete_set_takes_a_left_limit_column() -> None:
   # A discrete conditioning variable is described by two columns, its cdf and
   # its left limit, so ``u_cond`` is wider than the conditioning set.
   rng = np.random.default_rng(11)
@@ -942,7 +940,7 @@ def test_simulate_conditional_discrete_set_takes_a_left_limit_column() -> None:
   assert int(cop.structure.order[-1]) == d
 
   u_cond = np.column_stack([u[:m, d - 1], u[:m, d]])
-  drawn = cop.simulate_conditional(u_cond, seeds=[1, 2, 3])
+  drawn = cop.sample_conditional(u_cond, seeds=[1, 2, 3])
 
   assert drawn.shape == (m, d)
   # The conditioning column is reproduced, not resampled.
@@ -950,4 +948,4 @@ def test_simulate_conditional_discrete_set_takes_a_left_limit_column() -> None:
 
   # Dropping the left-limit column leaves the model under-specified.
   with pytest.raises(RuntimeError):
-    cop.simulate_conditional(u_cond[:, :1], seeds=[1, 2, 3])
+    cop.sample_conditional(u_cond[:, :1], seeds=[1, 2, 3])

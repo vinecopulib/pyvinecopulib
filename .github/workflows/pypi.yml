@@ -250,18 +250,11 @@ jobs:
         with:
           enable-cache: true
       - name: Install Graphviz + Pandoc
-        run: |
-          # Each attempt is bounded: a slow apt mirror otherwise holds the
-          # runner until the job timeout rather than failing.
-          apt_retry() {
-            for attempt in 1 2 3; do
-              sudo timeout 300 apt-get "$@" && return 0
-              sleep $((attempt * 15))
-            done
-            return 1
-          }
-          apt_retry update
-          apt_retry install -y graphviz pandoc
+        # `dot` renders the vine-structure graphs in the examples; nbsphinx
+        # shells out to pandoc to convert the notebooks it embeds.
+        uses: ./.github/actions/install-graphviz
+        with:
+          pandoc: "true"
       - name: Download built wheel (cp311 manylinux ubuntu)
         uses: actions/download-artifact@v8
         with:
@@ -321,44 +314,8 @@ jobs:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
       - name: Install Graphviz
-        # The notebooks draw vine structures through `dot`. Chocolatey's
-        # community feed answers 499 under load, and `choco install` reports
-        # success anyway, so the install is retried with escalating backoff and
-        # judged by whether the binary appeared. Same idiom vinecopulib uses in
-        # .github/actions/install-dependencies for the sources it cannot drop.
-        shell: bash
-        run: |
-          retry() {
-            for attempt in 1 2 3 4 5; do
-              "$@" && return 0
-              echo "attempt $attempt failed; retrying in $((attempt * 20))s"
-              sleep $((attempt * 20))
-            done
-            return 1
-          }
-          install_dot_windows() {
-            choco install graphviz -y --no-progress || true
-            find "/c/Program Files" "/c/Program Files (x86)" \
-              -maxdepth 3 -name dot.exe 2>/dev/null | grep -q .
-          }
-          if [[ "${{ matrix.cfg.os }}" == "ubuntu-latest" ]]; then
-            retry sudo timeout 300 apt-get update
-            retry sudo timeout 300 apt-get install -y graphviz
-          elif [[ "${{ matrix.cfg.os }}" == macos-* ]]; then
-            brew list graphviz >/dev/null 2>&1 || retry brew install graphviz
-          elif [[ "${{ matrix.cfg.os }}" == "windows-latest" ]]; then
-            command -v dot >/dev/null 2>&1 || retry install_dot_windows
-            # Chocolatey does not refresh PATH for later steps, so `dot` is
-            # installed but not callable and the notebooks fail on
-            # `Vinecop.plot`. Fail loudly rather than defer to that.
-            dot=$(find "/c/Program Files" "/c/Program Files (x86)" \
-                    -maxdepth 3 -name dot.exe 2>/dev/null | head -1)
-            if [[ -z "$dot" ]]; then
-              echo "::error ::graphviz install did not produce dot.exe"
-              exit 1
-            fi
-            cygpath -w "$(dirname "$dot")" >> "$GITHUB_PATH"
-          fi
+        # The notebooks draw vine structures through `dot`.
+        uses: ./.github/actions/install-graphviz
       - name: Create uv venv and install test/notebooks deps
         # --no-install-project: we test the cibw wheel, not a source build.
         shell: bash
@@ -398,6 +355,14 @@ jobs:
         uses: nick-fields/retry@v4
         env:
           UV_NO_SYNC: "1"
+          # `pyproject.toml`'s `filterwarnings` governs the pytest
+          # process; nbmake runs each notebook in its own kernel, which
+          # starts from the default filters and so ignores
+          # DeprecationWarning. Without this a notebook could keep
+          # calling a deprecated name indefinitely. The `__main__` scope
+          # is required: a bare `error::DeprecationWarning` also promotes
+          # nbclient's "no current event loop" warning and fails here.
+          PYTHONWARNINGS: "error::DeprecationWarning:__main__"
         with:
           timeout_minutes: 30
           max_attempts: 5
@@ -441,16 +406,8 @@ jobs:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
       - name: Install Graphviz
-        run: |
-          apt_retry() {
-            for attempt in 1 2 3; do
-              sudo timeout 300 apt-get "$@" && return 0
-              sleep $((attempt * 15))
-            done
-            return 1
-          }
-          apt_retry update
-          apt_retry install -y graphviz
+        # The notebooks draw vine structures through `dot`.
+        uses: ./.github/actions/install-graphviz
       - name: Download built wheel (cp311 ABI3, ubuntu)
         uses: actions/download-artifact@v8
         with:

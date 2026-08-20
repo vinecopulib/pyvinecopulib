@@ -33,7 +33,8 @@ test: ## Run pytest suite
 	$(UV) run pytest tests/
 
 test-examples: ## Execute example notebooks as tests
-	$(UV) run pytest --nbmake --nbmake-timeout=600 examples/
+	PYTHONWARNINGS="error::DeprecationWarning:__main__" \
+	  $(UV) run pytest --nbmake --nbmake-timeout=600 examples/
 
 docs: ## Build HTML documentation
 	$(UV) run sphinx-build -W -b html docs docs/_build/html

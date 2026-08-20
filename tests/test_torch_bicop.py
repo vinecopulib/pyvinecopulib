@@ -30,7 +30,7 @@ def _eval_grid(n: int, seed: int = 0) -> np.ndarray:
 
 def test_pdf_matches_pvbicop() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
-  u_fit = cop.simulate(2000, seeds=[1, 2, 3])
+  u_fit = cop.sample(2000, seeds=[1, 2, 3])
   cop_tll = _fit_tll(u_fit)
 
   # Pin cache=False: this test verifies parity with the C++ on-the-fly
@@ -47,7 +47,7 @@ def test_pdf_matches_pvbicop() -> None:
 
 def test_cdf_matches_pvbicop() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
-  u_fit = cop.simulate(2000, seeds=[1, 2, 3])
+  u_fit = cop.sample(2000, seeds=[1, 2, 3])
   cop_tll = _fit_tll(u_fit)
 
   # Pin cache=False — C++ parity at 1e-10; see test_pdf_matches_pvbicop.
@@ -61,7 +61,7 @@ def test_cdf_matches_pvbicop() -> None:
 
 def test_hfunc_matches_pvbicop() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
-  u_fit = cop.simulate(2000, seeds=[1, 2, 3])
+  u_fit = cop.sample(2000, seeds=[1, 2, 3])
   cop_tll = _fit_tll(u_fit)
 
   # Pin cache=False — C++ parity at 1e-10; see test_pdf_matches_pvbicop.
@@ -79,7 +79,7 @@ def test_hfunc_matches_pvbicop() -> None:
 
 def test_hinv_roundtrip() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.7]]))
-  u_fit = cop.simulate(2000, seeds=[4, 5, 6])
+  u_fit = cop.sample(2000, seeds=[4, 5, 6])
   cop_tll = _fit_tll(u_fit)
 
   # Pin cache=False: the closed-form inversion is the exact inverse of the
@@ -104,7 +104,7 @@ def test_hinv_closed_form_matches_cpp() -> None:
   quantile (vinecopulib#691), so torch and C++ agree to machine precision
   on the same fitted grid."""
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.7]]))
-  u_fit = cop.simulate(2000, seeds=[4, 5, 6])
+  u_fit = cop.sample(2000, seeds=[4, 5, 6])
   cop_tll = _fit_tll(u_fit)
 
   bc = TorchBicop.from_bicop(cop_tll, cache_integrals=False)
@@ -123,7 +123,7 @@ def test_inverse_integrate_1d() -> None:
   """Unit test of the closed-form conditional quantile on the grid itself:
   exact inverse of ``integrate_1d``, NaN propagation, shape validation."""
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
-  u_fit = cop.simulate(1500, seeds=[7, 8, 9])
+  u_fit = cop.sample(1500, seeds=[7, 8, 9])
   grid = TorchBicop.from_bicop(
     _fit_tll(u_fit), cache_integrals=False
   ).interp_grid
@@ -180,7 +180,7 @@ def test_from_data_matches_cpp(n: int, rho: float) -> None:
   ``normalize_margins(3)`` round in :class:`InterpolationGrid2D`.
   """
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[rho]]))
-  u_np = cop.simulate(n, seeds=[1, 2, 3])
+  u_np = cop.sample(n, seeds=[1, 2, 3])
   cop_cpp = pv.Bicop.from_data(
     u_np,
     controls=pv.FitControlsBicop(family_set=[pv.families.tll], num_threads=1),
@@ -202,7 +202,7 @@ def test_from_data_evaluates_consistently() -> None:
   Pin cache_integrals=False so the hinv round-trip below is the exact
   closed-form inverse; the cached path round-trips only to ~1e-3."""
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
-  u_np = cop.simulate(1000, seeds=[11, 22, 33])
+  u_np = cop.sample(1000, seeds=[11, 22, 33])
   bc = TorchBicop.from_data(u_np, cache_integrals=False)
 
   u_eval = _eval_grid(300, seed=99)
@@ -229,7 +229,7 @@ def test_cached_integrals_smoke() -> None:
   at grid nodes and the off-node gap depends on the local curvature.
   """
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
-  u_fit = cop.simulate(2000, seeds=[10, 11, 12])
+  u_fit = cop.sample(2000, seeds=[10, 11, 12])
   cop_tll = _fit_tll(u_fit)
 
   bc_cache = TorchBicop.from_bicop(cop_tll, cache_integrals=True)
@@ -261,7 +261,7 @@ def test_cached_hinv_speedup() -> None:
   trapezoidal recomputation at off-node points).
   """
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
-  u_fit = cop.simulate(2000, seeds=[1, 2, 3])
+  u_fit = cop.sample(2000, seeds=[1, 2, 3])
   cop_tll = _fit_tll(u_fit)
 
   bc_bisect = TorchBicop.from_bicop(cop_tll, cache_integrals=False)
@@ -290,16 +290,16 @@ def test_independent_bicop() -> None:
 
 def test_simulate_smoke() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
-  u_fit = cop.simulate(2000, seeds=[20, 21, 22])
+  u_fit = cop.sample(2000, seeds=[20, 21, 22])
   cop_tll = _fit_tll(u_fit)
   bc = TorchBicop.from_bicop(cop_tll)
 
-  samples = bc.simulate(n=1000, qrng=False, seeds=[0])
+  samples = bc.sample(n=1000, qrng=False, seeds=[0])
   assert samples.shape == (1000, 2)
   assert torch.isfinite(samples).all()
   assert ((samples > 0.0) & (samples < 1.0)).all()
 
-  samples_sobol = bc.simulate(n=500, qrng=True, seeds=[0])
+  samples_sobol = bc.sample(n=500, qrng=True, seeds=[0])
   assert samples_sobol.shape == (500, 2)
   assert torch.isfinite(samples_sobol).all()
   assert ((samples_sobol > 0.0) & (samples_sobol < 1.0)).all()
@@ -323,7 +323,7 @@ def test_linear_grid_roundtrip_and_range() -> None:
   storage grid differs.
   """
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
-  u_fit = cop.simulate(2000, seeds=[10, 11, 12])
+  u_fit = cop.sample(2000, seeds=[10, 11, 12])
   # cache=False so the hinv round-trip below holds at 1e-9 (the cached
   # path round-trips only to ~1e-3 — that's covered by
   # test_cached_hinv_speedup).
@@ -362,7 +362,7 @@ def test_linear_grid_cell_index_matches_searchsorted() -> None:
   the generic searchsorted-based cell index — same indices at every input.
   """
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.4]]))
-  u_fit = cop.simulate(500, seeds=[1, 2, 3])
+  u_fit = cop.sample(500, seeds=[1, 2, 3])
   bc_lin = TorchBicop.from_data(
     u_fit, FitControlsTorchBicop(grid_type="linear")
   )
@@ -382,7 +382,7 @@ def test_linear_grid_cached_integrals_consistent() -> None:
   """``cache_integrals=True`` must build all five caches and produce in-
   range outputs on the linear grid as well as on the normal grid."""
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
-  u_fit = cop.simulate(1500, seeds=[7, 8, 9])
+  u_fit = cop.sample(1500, seeds=[7, 8, 9])
   bc = TorchBicop.from_data(
     u_fit, FitControlsTorchBicop(grid_type="linear"), cache_integrals=True
   )
@@ -401,7 +401,7 @@ def test_linear_grid_cached_integrals_consistent() -> None:
 
 def test_linear_rejects_invalid_grid_type() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.4]]))
-  u_fit = cop.simulate(200, seeds=[1, 2, 3])
+  u_fit = cop.sample(200, seeds=[1, 2, 3])
   with pytest.raises(ValueError, match="grid_type"):
     TorchBicop.from_data(u_fit, FitControlsTorchBicop(grid_type="quadratic"))
 
@@ -417,7 +417,7 @@ def test_linear_rejects_invalid_grid_type() -> None:
 def test_eval_rejects_wrong_input_shape(op: str) -> None:
   """Every eval entry point requires (n, 2) and raises ValueError otherwise."""
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
-  u_fit = cop.simulate(500, seeds=[1, 2, 3])
+  u_fit = cop.sample(500, seeds=[1, 2, 3])
   bc = TorchBicop.from_data(u_fit)
   fn = getattr(bc, op)
   with pytest.raises(ValueError, match=r"shape \(n, 2\)"):
@@ -437,7 +437,7 @@ def test_from_data_rejects_wrong_input_shape() -> None:
 def test_from_data_rejects_bad_args() -> None:
   """`from_data` rejects grid_size < 2 and mult <= 0."""
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
-  u_fit = cop.simulate(200, seeds=[1, 2, 3])
+  u_fit = cop.sample(200, seeds=[1, 2, 3])
   with pytest.raises(ValueError, match="grid_size"):
     TorchBicop.from_data(u_fit, FitControlsTorchBicop(grid_size=1))
   with pytest.raises(ValueError, match="mult"):
@@ -452,12 +452,12 @@ def test_from_data_rejects_unknown_method() -> None:
 
 def test_simulate_rejects_nonpositive_n() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
-  u_fit = cop.simulate(200, seeds=[1, 2, 3])
+  u_fit = cop.sample(200, seeds=[1, 2, 3])
   bc = TorchBicop.from_data(u_fit)
   with pytest.raises(ValueError, match="must be > 0"):
-    bc.simulate(n=0)
+    bc.sample(n=0)
   with pytest.raises(ValueError, match="must be > 0"):
-    bc.simulate(n=-5)
+    bc.sample(n=-5)
 
 
 # ---------------------------------------------------------------------------
@@ -511,7 +511,7 @@ def test_flip_swaps_arguments() -> None:
   cop = pv.Bicop.from_family(
     family=pv.families.clayton, rotation=90, parameters=np.array([[3.0]])
   )
-  u_fit = cop.simulate(4000, seeds=[1, 2, 3])
+  u_fit = cop.sample(4000, seeds=[1, 2, 3])
   tb = TorchBicop.from_data(
     u_fit, FitControlsTorchBicop(), cache_integrals=False
   )

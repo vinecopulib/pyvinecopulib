@@ -343,7 +343,7 @@ DOCSTRING_SUBPACKAGES = {
     "classes": ["Kde1d"],
     "functions": [
       "to_pseudo_obs",
-      "simulate_uniform",
+      "sample_uniform",
       "wdm",
       "ghalton",
       "sobol",

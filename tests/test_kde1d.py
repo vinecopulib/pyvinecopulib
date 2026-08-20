@@ -160,14 +160,14 @@ def test_kde1d_fit_and_methods() -> None:
   assert quantiles.shape == (3,)
   assert np.all(np.diff(quantiles) >= 0)  # Quantiles should be monotonic
 
-  # Test simulate
-  samples = kde.simulate(50)
+  # Test sample
+  samples = kde.sample(50)
   assert isinstance(samples, np.ndarray)
   assert samples.shape == (50,)
 
-  # Test simulate with seeds
-  samples1 = kde.simulate(10, seeds=[123])
-  samples2 = kde.simulate(10, seeds=[123])
+  # Test sample with seeds
+  samples1 = kde.sample(10, seeds=[123])
+  samples2 = kde.sample(10, seeds=[123])
   assert np.array_equal(samples1, samples2)  # Should be reproducible
 
 
@@ -261,7 +261,7 @@ def test_kde1d_check_fitted_parameter() -> None:
     kde.quantile(np.array([0.5]))
 
   with pytest.raises(RuntimeError):
-    kde.simulate(10)
+    kde.sample(10)
 
   # Should work with check_fitted=False (might give invalid results)
   # Note: This depends on the C++ implementation behavior

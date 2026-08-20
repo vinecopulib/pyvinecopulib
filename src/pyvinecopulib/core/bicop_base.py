@@ -3,17 +3,17 @@
 :class:`BicopBase` is the array-agnostic (NumPy / PyTorch) base class for
 :class:`~pyvinecopulib.core.BicopLike`. A subclass supplies only the three
 primitives ``pdf`` / ``hfunc1`` / ``hfunc2`` and inherits ``hinv1`` / ``hinv2``
-(numerical inversion of the h-functions), ``simulate`` (inverse Rosenblatt of
+(numerical inversion of the h-functions), ``sample`` (inverse Rosenblatt of
 the pair), ``loglik``, ``plot`` and ``__repr__`` for free; each is overridable
 when a native exact form exists (as :class:`~pyvinecopulib.torch.TorchBicop`
-does for ``cdf`` / ``hinv`` / ``simulate``). ``cdf`` raises unless overridden —
+does for ``cdf`` / ``hinv`` / ``sample``). ``cdf`` raises unless overridden —
 the vine CDF is Monte-Carlo, so a per-pair ``cdf`` is rarely needed.
 
 Written against the Array API (:func:`array_api_compat.array_namespace`) so the
 same code runs on numpy and torch (via ``pdf`` / ``hfunc`` outputs); the numeric
 bodies handle arrays as ``Any`` (the generic ``ArrayT`` lives on the public
-signatures). RNG for ``simulate`` depends on the array namespace, so it is
-delegated to a ``_simulate_uniform`` hook.
+signatures). RNG for ``sample`` depends on the array namespace, so it is
+delegated to a ``_sample_uniform`` hook.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from typing import Any, Optional, cast
 
 from array_api_compat import array_namespace
 
+from .._deprecations import _reject_renamed_hook
 from ._rootfind import solve_increasing
 from .protocols import ArrayT, BicopLike, _BICOP_EXAMPLE
 
@@ -33,15 +34,26 @@ class BicopBase(BicopLike[ArrayT], ABC):
   """Canonical partial implementation of :class:`~pyvinecopulib.core.BicopLike`.
 
   Subclasses implement ``pdf`` / ``hfunc1`` / ``hfunc2`` and inherit ``hinv1`` /
-  ``hinv2`` (bisection of the h-functions), ``simulate``, ``loglik``, ``plot``
-  and ``__repr__``. ``cdf`` raises unless overridden. To enable ``simulate``,
-  override ``_simulate_uniform`` with the array namespace's RNG.
+  ``hinv2`` (bisection of the h-functions), ``sample``, ``loglik``, ``plot``
+  and ``__repr__``. ``cdf`` raises unless overridden. To enable ``sample``,
+  override ``_sample_uniform`` with the array namespace's RNG.
 
   See Also
   --------
   pyvinecopulib.core.BicopLike : The contract this implements.
   pyvinecopulib.torch.TorchBicop : A concrete (grid / TLL) subclass.
   """
+
+  def __init_subclass__(cls, **kwargs: Any) -> None:
+    """Reject an override of the pre-1.0 hook name.
+
+    Parameters
+    ----------
+    **kwargs
+        Forwarded to ``super().__init_subclass__``.
+    """
+    super().__init_subclass__(**kwargs)
+    _reject_renamed_hook(cls, "_simulate_uniform", "_sample_uniform")
 
   def loglik(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Total log-likelihood ``sum(log c(u))`` of the pair at ``u``.
@@ -175,7 +187,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
       "argument-swapped copula) to host this pair in structure selection."
     )
 
-  def simulate(
+  def sample(
     self,
     n: int,
     *,
@@ -185,7 +197,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
   ) -> ArrayT:
     """Draw ``n`` samples via the pair's inverse Rosenblatt transform.
 
-    Draws two independent uniforms ``(w1, w2)`` from ``_simulate_uniform``
+    Draws two independent uniforms ``(w1, w2)`` from ``_sample_uniform``
     and returns ``(w1, hinv1([w1, w2], x))``, so the pair carries its fitted
     dependence.
 
@@ -198,28 +210,28 @@ class BicopBase(BicopLike[ArrayT], ABC):
     qrng : bool, default=False
         Draw quasi-random base uniforms instead of pseudo-random ones.
     seeds : list of int or None, optional
-        RNG seeds forwarded to ``_simulate_uniform``.
+        RNG seeds forwarded to ``_sample_uniform``.
 
     Returns
     -------
     array, shape (n, 2), dtype float
         Samples in the unit square.
     """
-    base_u: Any = self._simulate_uniform(n, qrng, list(seeds) if seeds else [])
+    base_u: Any = self._sample_uniform(n, qrng, list(seeds) if seeds else [])
     xp = array_namespace(base_u)
     u2: Any = self.hinv1(base_u, x=x)
     return cast(ArrayT, xp.stack([base_u[:, 0], u2], axis=-1))
 
-  def _simulate_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:
-    """Draw ``(n, 2)`` base uniforms for :meth:`simulate` (namespace-dependent RNG).
+  def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:
+    """Draw ``(n, 2)`` base uniforms for :meth:`sample` (namespace-dependent RNG).
 
     Raises unless a subclass overrides it (numpy / torch differ on RNG);
-    overriding it is all that is needed to enable :meth:`simulate`. Named after
-    the exposed :func:`pyvinecopulib.utils.simulate_uniform` free function.
+    overriding it is all that is needed to enable :meth:`sample`. Named after
+    the exposed :func:`pyvinecopulib.utils.sample_uniform` free function.
     """
     raise NotImplementedError(
-      f"{type(self).__name__} does not implement _simulate_uniform; override it "
-      "to enable simulate()."
+      f"{type(self).__name__} does not implement _sample_uniform; override it "
+      "to enable sample()."
     )
 
   def plot(
