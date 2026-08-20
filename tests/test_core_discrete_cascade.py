@@ -477,6 +477,102 @@ def test_discrete_pair_matches_bicop_rotated(
     )
 
 
+#: Every family ``Bicop`` can fit. The pair-level parity tests ran over
+#: ``{gaussian, clayton}`` only, which is why a family whose discrete surface
+#: disagreed with all the others went unnoticed
+#: (`vinecopulib#739 <https://github.com/vinecopulib/vinecopulib/pull/739>`_).
+_FAMILIES = [
+  pv.families.tll,
+  pv.families.gaussian,
+  pv.families.student,
+  pv.families.clayton,
+  pv.families.gumbel,
+  pv.families.frank,
+  pv.families.joe,
+  pv.families.bb1,
+  pv.families.bb6,
+  pv.families.bb7,
+  pv.families.bb8,
+  pv.families.tawn,
+]
+
+
+def _fitted_pair(
+  family: pv.BicopFamily, var_types: list[str], seed: int = 3
+) -> pv.Bicop:
+  """One family fitted on a discrete or mixed edge, atoms a twelfth wide."""
+  rng = np.random.default_rng(seed)
+  z = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.7], [0.7, 1.0]], size=2000)
+  u = pv.utils.to_pseudo_obs(z)
+  sub = np.clip(u - 1.0 / 12, 1e-10, None)
+  data = np.column_stack(
+    [u] + [sub[:, j] for j, ty in enumerate(var_types) if ty == "d"]
+  )
+  return pv.Bicop.from_data(
+    data,
+    controls=pv.FitControlsBicop(family_set=[family]),
+    var_types=var_types,
+  )
+
+
+@pytest.mark.parametrize("family", _FAMILIES)
+@pytest.mark.parametrize("var_types", [["d", "c"], ["c", "d"], ["d", "d"]])
+def test_discrete_pair_matches_every_fitted_family(
+  family: pv.BicopFamily, var_types: list[str]
+) -> None:
+  """The same fitted pair, differenced here and by ``Bicop``, on every family.
+
+  ``tll`` is the one that matters: it is the default family, so this is the
+  default discrete path, and it is the family whose compiled surface was wrong
+  until the pin bump. ``as_continuous`` strips the atom declaration without
+  touching the parameters, so the two objects are the same copula.
+  """
+  ref = _fitted_pair(family, var_types)
+  pair = DiscretePair(ref.as_continuous(), (var_types[0], var_types[1]))
+  u = _pair_edge_data(seed=13)
+  for method in ("pdf", "cdf", "hfunc1", "hfunc2"):
+    np.testing.assert_allclose(
+      np.asarray(getattr(pair, method)(u)),
+      np.asarray(getattr(ref, method)(u)),
+      rtol=1e-11,
+      atol=1e-11,
+      err_msg=f"{family!r} {var_types} {method}",
+    )
+
+
+@pytest.mark.parametrize("levels", [2, 8, 32])
+@pytest.mark.parametrize("family", [pv.families.tll, pv.families.gaussian])
+def test_the_atom_masses_of_a_discrete_edge_sum_to_one(
+  family: pv.BicopFamily, levels: int
+) -> None:
+  """``sum_atoms c(u1, u2) * (u1 - u1^-) == 1`` for every ``u2``.
+
+  This needs no reference implementation and no tolerance argument: the
+  difference quotients telescope to ``h2(1, u2) - h2(0, u2)``, which is one
+  exactly. It is the assertion that decides which of two candidate discrete
+  surfaces is right, and it is what the midpoint rule the compiled ``tll``
+  pair used to apply violated -- by 2% at two atoms, and not converging away.
+  """
+  ref = _fitted_pair(family, ["d", "c"])
+  pair = DiscretePair(ref.as_continuous(), ("d", "c"))
+  edges = np.arange(levels + 1) / levels
+  hi, lo = edges[1:], edges[:-1]
+  for u2 in (0.1, 0.5, 0.9):
+    col = np.full(levels, u2)
+    u = np.column_stack([hi, col, lo, col])
+    for name, dens in (
+      ("DiscretePair", np.asarray(pair.pdf(u))),
+      ("Bicop", np.asarray(ref.pdf(u))),
+    ):
+      np.testing.assert_allclose(
+        float(np.sum(dens * (hi - lo))),
+        1.0,
+        rtol=1e-9,
+        atol=0.0,
+        err_msg=f"{name} {family!r} {levels} atoms at u2={u2}",
+      )
+
+
 def test_discrete_pair_narrow_atoms_fall_back_to_the_derivative() -> None:
   # Below the 5e-5 threshold the quotient is replaced by the derivative, which
   # is the continuous quantity: an atom that narrow is a continuous variable in

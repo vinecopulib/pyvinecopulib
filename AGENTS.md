@@ -619,7 +619,15 @@ automatically.
     contract — and a custom pair copula opts in by implementing `cdf` and
     wrapping itself in `DiscretePair`. `fit` / `select` take `var_types` too and
     forward each edge's types to `fit_edge` as a keyword, only on the edges that
-    have one (the rule `_pair_eval` applies to `x`).
+    have one (the rule `_pair_eval` applies to `x`). The parity test that binds
+    is the **normalization identity** `Σ_atoms c(u₁,u₂)·(u₁ − u₁⁻) = 1`: the
+    quotients telescope, so it holds exactly and needs no reference
+    implementation and no tolerance argument. It is what established that
+    `DiscretePair` was right and the compiled `tll` pair was wrong
+    (fixed upstream in vinecopulib#739 and pinned since). Parametrize
+    pair-level parity over **every** family, not a representative couple —
+    covering only `gaussian` and `clayton` is why that class of defect stayed
+    invisible on both sides for as long as it did.
   - `sample_conditional` / `reorient` (`_reorient.py`) — conditional sampling and
     the value-preserving relabeling it rests on. `reorient` **returns** the
     relabeled `(structure, pair_copulas)` rather than mutating, since the base

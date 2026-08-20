@@ -454,13 +454,11 @@ class DiscretePair(BicopBase[ArrayT]):
   ``examples/10_extending_pyvinecopulib.ipynb`` hosts a custom pair copula on a
   discrete edge and checks it against ``Vinecop``.
 
-  The output matches ``Bicop``'s own discrete surface bit-for-bit when the
-  wrapped pair is **parametric**. It does not for a nonparametric (``tll``)
-  pair: ``Bicop`` returns the continuous density at the atom midpoint there
-  instead of the difference quotient, which violates
-  ``sum_atoms c * (u1 - u1^-) == 1`` by up to 10%. The quotient computed here
-  satisfies that identity exactly, so the divergence is upstream's --
-  `vinecopulib#739 <https://github.com/vinecopulib/vinecopulib/pull/739>`_.
+  The output matches ``Bicop``'s own discrete surface bit-for-bit, for every
+  family including the nonparametric ``tll``, and satisfies
+  ``sum_atoms c * (u1 - u1^-) == 1`` exactly. That identity is what pins the
+  quotients: they telescope over the atoms, so no tolerance argument is needed
+  to say which of two candidate surfaces is right.
   """
 
   #: The batched grid surface has no distribution-function lookup, which the
