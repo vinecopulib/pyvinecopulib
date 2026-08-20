@@ -212,10 +212,11 @@ closed unmerged, and some commits carry no number at all.
 - **Custom C++ forks.** The repo always tracks the upstream
   `lib/vinecopulib` submodule pin; local C++ patches under
   `lib/` are not accepted.
-- **Discrete margins on the torch backend.** `TorchVinecopBackend`
-  is continuous-only (raises `NotImplementedError` when any
-  `var_types[i] != "c"`). Use `VinecopBackend` for discrete /
-  mixed-type problems.
+- **Discrete margins on the torch *marginal* layer.** `TorchVinecop` and
+  `TorchVinecopBackend` handle discrete variables (the copula half), but
+  `TorchMargin` rejects a discrete family: a margin with atoms needs a
+  left-limit `cdf`, which `torch.distributions` does not expose. Use
+  `Vinedist` with `pyvinecopulib.margins` for the marginal half.
 - **Density estimators outside the vine framework.** General-purpose
   multivariate density models (normalizing flows, Gaussian mixtures,
   …) are not in scope; `pyvinecopulib` is a vine-copula library.
@@ -916,6 +917,17 @@ Key surface:
     `TorchBicop.cache_integrals` and for a stated reason — here the cached
     quantity would be an `O(m)` vector shared by the batch, not an `O(m^2)`
     integral per query.
+- Discrete variables are declared with `var_types` on `TorchVinecop`'s three
+  constructors. The stored pair copulas stay continuous interpolation grids and
+  `_get_pair_copula` wraps a discrete edge in `DiscretePair`, so `state_dict` /
+  `.to()` / pickling see only real `nn.Module` parameters. `TorchBicop.from_data`
+  takes the four-column layout and reuses the compiled `find_latent_sample`,
+  which is what `TllBicop::fit` now consumes for a discrete edge; the jittered
+  ranks only seed the bandwidth. Two things a discrete torch vine refuses: the
+  **integral cache** (`cache_integrals=None` resolves to `False`, an explicit
+  `True` raises), because differencing a bilinearly interpolated `cdf` gives 38%
+  error on a `("d","d")` density; and the **batched fast path**, whose stacked
+  per-level grids carry no distribution function at all.
 - `FitControlsTorchBicop` / `FitControlsTorchVinecop` — fit-time
   dataclasses. Notable knobs:
   - `method` — `"tll"` (the only fitter; kept as the dispatch seam

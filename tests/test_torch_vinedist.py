@@ -16,7 +16,7 @@ the boundaries:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -341,14 +341,86 @@ def test_from_data_refuses_covariates(data: np.ndarray) -> None:
     TorchVinedist.from_data(y, x=torch.zeros(y.shape[0], 2))
 
 
-def test_rejects_a_margin_with_atoms(copula: pv.Vinecop) -> None:
-  """`TorchKde1d` can model atoms; the torch copula cannot difference them yet.
+def test_holds_margins_with_atoms() -> None:
+  """A `TorchKde1d` with atoms is accepted, and matches the NumPy distribution.
 
-  Its `cdf` is a trapezoidal approximation -- fine for evaluation, and not
-  accurate enough for the difference quotients a discrete edge is built from.
-  So the refusal stands, and says which half is the obstacle.
+  What a margin with atoms must supply is the left limit the copula's discrete
+  cascade differences; `TorchKde1d` inherits `cdf_left` from `MarginBase`. The
+  reference spells Sklar's factorization out by hand over the *same* margins, so
+  what is checked is the assembly and the copula half, not the marginal fit.
   """
-  discrete = TorchKde1d(type="discrete", xmin=0.0)
+  rng = np.random.default_rng(11)
+  n = 600
+  base = rng.standard_normal((n, 1))
+  y = np.column_stack(
+    [
+      rng.poisson(np.exp(0.4 * base.ravel() + 1.0)).astype(float),
+      0.7 * base.ravel() + 0.7 * rng.standard_normal(n),
+      0.7 * base.ravel() + 0.7 * rng.standard_normal(n),
+    ]
+  )
+  # `from_data` does not guess a variable's type any more than the NumPy
+  # `Vinedist.from_data` does -- the caller declares it on the margin.
+  dist = TorchVinedist.from_data(
+    torch.as_tensor(y, dtype=_F64),
+    margins=[
+      TorchKde1d(type="discrete", xmin=0.0),
+      TorchKde1d(),
+      TorchKde1d(),
+    ],
+  )
+  assert dist.var_types == ["d", "c", "c"]
+
+  y_t = torch.as_tensor(y, dtype=_F64)
+  # The copula-scale layout the discrete cascade consumes: three value columns
+  # plus one left limit for the count variable.
+  u = dist.copula_data(dist.margins, y_t)
+  assert u.shape == (n, 4)
+  u_np = u.detach().numpy()
+
+  # Sklar's factorization, spelled out: the compiled vine supplies the copula
+  # term and the same torch margins supply theirs, so a wrong assembly -- a
+  # missing left limit, a mis-ordered column -- shows up as a wrong number.
+  # `structure=None`, as the torch fit used: both selectors reuse the pairs they
+  # fitted while selecting, and for a discrete TLL edge a reused (flipped)
+  # selection-time fit is not bit-identical to a fresh canonical-order one --
+  # random tie-breaking and the latent sample both see the columns swapped.
+  # Measured 4.8e-3 across that seam, so compare select to select.
+  cop = pv.Vinecop.from_data(
+    u_np,
+    var_types=["d", "c", "c"],
+    controls=pv.FitControlsVinecop(family_set=[pv.families.tll], num_threads=1),
+  )
+  assert np.array_equal(
+    np.asarray(cop.structure.matrix),
+    np.asarray(dist.copula.structure.matrix),
+  )
+  expected = np.log(np.asarray(cop.pdf(u_np)))
+  for j, margin in enumerate(dist.margins):
+    # `logpdf` is an optional capability on `MarginLike`, declared on the base.
+    kde = cast(TorchKde1d, margin)
+    expected = expected + kde.logpdf(y_t[:, j]).detach().numpy()
+
+  np.testing.assert_allclose(
+    dist.logpdf(y_t).detach().numpy(), expected, rtol=1e-11, atol=1e-11
+  )
+
+
+def test_rejects_a_margin_with_atoms_and_no_left_limit(
+  copula: pv.Vinecop,
+) -> None:
+  """A margin declaring atoms must supply the left limit the cascade needs.
+
+  `TorchMargin` cannot: `torch.distributions`' discrete families implement
+  neither `cdf` nor `icdf`, so there is nothing to take a left limit of.
+  """
+
+  class _Atomic(TorchKde1d):
+    """Declares atoms and hides the inherited left limit."""
+
+    cdf_left = None  # type: ignore[assignment]
+
+  discrete = _Atomic(type="discrete", xmin=0.0)
   discrete.fit(
     torch.as_tensor(
       np.random.default_rng(6).poisson(3.0, 400).astype(float), dtype=_F64
@@ -357,5 +429,5 @@ def test_rejects_a_margin_with_atoms(copula: pv.Vinecop) -> None:
   assert discrete.var_type == "d"
 
   torch_copula = TorchVinecop.from_vinecop(copula)
-  with pytest.raises(NotImplementedError, match="continuous-only"):
+  with pytest.raises(NotImplementedError, match="no `cdf_left`"):
     TorchVinedist(torch_copula, [discrete for _ in range(3)])

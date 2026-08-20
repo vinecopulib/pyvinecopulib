@@ -53,7 +53,7 @@ def _check_margin(margin: Any, name: str) -> None:
   TypeError
       If the margin is not a :class:`torch.nn.Module`.
   NotImplementedError
-      If the margin declares atoms.
+      If the margin declares atoms but supplies no left limit.
   """
   if not isinstance(margin, torch.nn.Module):
     raise TypeError(
@@ -64,16 +64,18 @@ def _check_margin(margin: Any, name: str) -> None:
       "which fits any of the three variable types. A NumPy margin such as "
       "Kde1d belongs in pyvinecopulib.core.Vinedist instead."
     )
-  # `TorchKde1d` models atoms, but `TorchVinecop` refuses a non-continuous
-  # `var_types`, so the pair would never see the left-limit columns this margin
-  # supplies. Refuse here, where the message can name the whole distribution,
-  # rather than one tree level down.
-  if getattr(margin, "var_type", "c") != "c":
+  # Atoms are fine now that the copula half has a discrete cascade -- what a
+  # margin with atoms must supply is the left limit the cascade differences.
+  # `TorchKde1d` inherits `cdf_left` from `MarginBase`; `TorchMargin` cannot
+  # have one, because `torch.distributions`' discrete families implement
+  # neither `cdf` nor `icdf`.
+  if getattr(margin, "var_type", "c") != "c" and (
+    getattr(margin, "cdf_left", None) is None
+  ):
     raise NotImplementedError(
-      f"TorchVinedist is continuous-only; {name} declares "
-      f"var_type={getattr(margin, 'var_type')!r}. TorchKde1d models atoms, but "
-      "TorchVinecop has no discrete cascade yet; use "
-      "pyvinecopulib.core.Vinedist for discrete or mixed data."
+      f"{name} declares var_type={getattr(margin, 'var_type')!r} but has no "
+      "`cdf_left`, so the copula cannot difference its atoms. Use TorchKde1d, "
+      "which supplies one, or subclass MarginBase, which derives it."
     )
 
 
@@ -113,14 +115,15 @@ class TorchVinedist(Vinedist[Tensor], torch.nn.Module):
   entirely in PyTorch, and additionally a :class:`torch.nn.Module`, so the
   copula and the margins are registered children.
 
-  Assembled rather than fitted: pair a copula from
-  :meth:`TorchVinecop.from_data` or :meth:`TorchVinecop.from_vinecop` with one
-  :class:`TorchMargin` per variable. There is no torch marginal estimator yet,
-  so :meth:`from_data` refuses and points at
-  :meth:`pyvinecopulib.core.Vinedist.from_data` for the NumPy two-step fit.
+  Assembled or fitted: pair a copula from :meth:`TorchVinecop.from_data` or
+  :meth:`TorchVinecop.from_vinecop` with one margin per variable, or call
+  :meth:`from_data` to fit both halves end to end in torch.
 
-  Continuous variables only. A margin declaring atoms is refused at
-  construction; the discrete cascade is on the NumPy side.
+  Discrete and mixed data are supported, through :class:`TorchKde1d` margins:
+  a margin that declares atoms must supply the left limit ``cdf_left`` the
+  copula's discrete cascade differences, which :class:`TorchMargin` cannot
+  (``torch.distributions``' discrete families implement neither ``cdf`` nor
+  ``icdf``).
 
   Parameters
   ----------
@@ -258,8 +261,8 @@ class TorchVinedist(Vinedist[Tensor], torch.nn.Module):
     Raises
     ------
     NotImplementedError
-        If ``x`` is given, or if any resolved margin declares atoms -- the
-        torch copula cannot difference them accurately yet.
+        If ``x`` is given, or if a resolved margin declares atoms without
+        supplying a left limit.
     """
     from ..margins import resolve_margins
     from ..margins._resolve import fit_margin

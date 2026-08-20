@@ -24,6 +24,11 @@ fixed natural-order traversal, byte-for-byte agreement with
 ``rosenblatt`` additionally accept ``batched=True`` to fire one
 stacked bicop call per tree level.
 
+Variables with atoms are supported throughout — declare them with
+``var_types`` and pass the left-limit columns, as ``Vinecop`` takes them. The
+pair copulas remain continuous interpolation grids; the mixed-discrete surface
+comes from :class:`~pyvinecopulib.core.DiscretePair`.
+
 See Also
 --------
 pyvinecopulib.core.Vinecop : Reference vine copula.
@@ -38,7 +43,13 @@ import numpy as np
 import torch
 from torch import Tensor
 
-from ..core import ConditioningContext, VinecopBase
+from ..core import (
+  BicopLike,
+  ConditioningContext,
+  DiscretePair,
+  VinecopBase,
+)
+from ..core._discrete import continuous_view
 from ..core.vinecop_base import _NotBatchable
 from ..pyvinecopulib_ext import (
   RVineStructure,
@@ -49,7 +60,6 @@ from ..pyvinecopulib_ext import (
 from ..utils import sample_uniform
 from ._batched import BatchedVine
 from .controls import FitControlsTorchVinecop
-from ._interp import _TRIM_HI, _TRIM_LO
 from .bicop import TorchBicop
 
 
@@ -60,9 +70,15 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   ``rosenblatt`` / ``inverse_rosenblatt`` / ``sample`` — but keeps
   the entire evaluation chain in PyTorch so the vine can move to
   GPU with ``.to(device)`` and compose with autograd-aware
-  downstream code. Continuous variables only, single batch, no
-  threading. Build a ``TorchVinecop`` via ``from_data()`` (pure-torch TLL
-  fit) or ``from_vinecop()`` (lifts a fitted ``Vinecop``).
+  downstream code. Single batch, no threading. Build a ``TorchVinecop`` via
+  ``from_data()`` (pure-torch TLL fit) or ``from_vinecop()`` (lifts a fitted
+  ``Vinecop``).
+
+  Discrete variables are declared with ``var_types``: the stored pair copulas
+  stay continuous grids, and an edge that sees an atom is evaluated through
+  :class:`~pyvinecopulib.core.DiscretePair`, which builds the mixed-discrete
+  density and h-functions from the grid's own ``pdf`` / ``cdf`` / ``hfunc1`` /
+  ``hfunc2``. The batched fast path declines on such a vine.
 
   The cascade is a dense ``(n, d)``-scratch port of the ``Vinecop``
   evaluator, byte-for-byte parity with ``Vinecop``. ``pdf`` /
@@ -88,6 +104,9 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       ``x`` per edge. ``None`` uses
       :class:`~pyvinecopulib.core.SimplifiedContext` (an unconditional /
       simplified vine).
+  var_types : list of str or None, default=None
+      Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete), in
+      variable order; ``None`` means all continuous.
   """
 
   d: int
@@ -100,14 +119,15 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     structure: RVineStructure,
     *,
     context: Optional[ConditioningContext] = None,
+    var_types: Optional[list[str]] = None,
   ) -> None:
     # Initialize nn.Module explicitly: TorchVinecop also subclasses VinecopBase
     # (a Protocol-derived ABC), whose __init__ chain would otherwise shadow
     # nn.Module's under super().
     torch.nn.Module.__init__(self)
-    # Install structure + context + derived order arrays (VinecopBase hook;
-    # context=None resolves to SimplifiedContext).
-    self._bind_vine(structure, context)
+    # Install structure + context + variable types + derived order arrays
+    # (VinecopBase hook; context=None resolves to SimplifiedContext).
+    self._bind_vine(structure, context, var_types=var_types)
 
     expected_lens = [self.d - 1 - t for t in range(self.trunc_lvl)]
     if len(pair_copulas) != self.trunc_lvl:
@@ -131,11 +151,54 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   # Constructor                                                            #
   # --------------------------------------------------------------------- #
 
+  @staticmethod
+  def _resolve_cache_integrals(
+    cache_integrals: Optional[bool], var_types: list[str]
+  ) -> bool:
+    """Whether to precompute integral grids, refusing them on a discrete vine.
+
+    A discrete edge is built from *differences* of the pair copula's
+    distribution function over an atom's width, and the cached ``cdf`` is a
+    bilinear interpolation of a table -- accurate enough to evaluate, not to
+    difference. Measured on a ``("d","d")`` density: 38% maximum and 3.7% mean
+    relative error, and 14% on a mixed ``hfunc1``. So the cache is off by
+    default there, and asking for it explicitly is an error rather than a
+    silently wrong answer.
+
+    Parameters
+    ----------
+    cache_integrals : bool or None
+        What the caller asked for; ``None`` means "whatever suits this vine".
+    var_types : list of str
+        The variables' types.
+
+    Returns
+    -------
+    bool
+        The effective setting.
+
+    Raises
+    ------
+    ValueError
+        If ``True`` was asked for on a vine with atoms.
+    """
+    if "d" not in var_types:
+      return True if cache_integrals is None else cache_integrals
+    if cache_integrals:
+      raise ValueError(
+        "cache_integrals=True is refused on a vine with discrete variables: a "
+        "discrete edge differences the pair copula's cdf over an atom's width, "
+        "and the cached cdf is a bilinear interpolation of a table -- 38% "
+        "maximum relative error on a discrete density. Pass "
+        "cache_integrals=False, or None to have it resolved for you."
+      )
+    return False
+
   @classmethod
   def from_vinecop(
     cls,
     cop: Vinecop,
-    cache_integrals: bool = True,
+    cache_integrals: Optional[bool] = None,
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchVinecop":
@@ -151,8 +214,10 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         A fitted ``Vinecop`` whose pair copulas are all
         TLL or independence families. Discrete variables are not
         supported.
-    cache_integrals : bool, default=True
-        Forwarded to ``TorchBicop.from_bicop()`` for every pair copula.
+    cache_integrals : bool or None, default=None
+        Forwarded to ``TorchBicop.from_bicop()`` for every pair copula. ``None``
+        resolves to ``True``, or to ``False`` when ``cop`` has a discrete
+        variable, where an explicit ``True`` raises instead.
     device : torch.device or None, default=None
         Placement of the underlying tensors.
     dtype : torch.dtype, default=torch.float64
@@ -164,12 +229,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         A ``TorchVinecop`` mirroring ``cop``.
     """
     var_types = list(cop.var_types)
-    if any(v != "c" for v in var_types):
-      raise ValueError(
-        "TorchVinecop is continuous-only; got var_types="
-        f"{var_types!r}. Discrete variables are not yet supported."
-      )
-
+    cache_integrals = cls._resolve_cache_integrals(cache_integrals, var_types)
     pair_copulas_torch: list[list[TorchBicop]] = []
     for tree_idx, row in enumerate(cop.pair_copulas):
       tree_list: list[TorchBicop] = []
@@ -191,7 +251,11 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         tree_list.append(bc)
       pair_copulas_torch.append(tree_list)
 
-    return cls(pair_copulas=pair_copulas_torch, structure=cop.structure)
+    return cls(
+      pair_copulas=pair_copulas_torch,
+      structure=cop.structure,
+      var_types=var_types,
+    )
 
   @classmethod
   def from_structure(
@@ -218,7 +282,10 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         ``d - 1 - t`` edges. An empty list fills every edge with
         the independence copula.
     var_types : list of str, default=[]
-        Per-variable types. Only ``"c"`` (continuous) is supported.
+        Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete); empty
+        means all continuous. A discrete variable makes the cascades read its
+        left limit too, and wraps the pair copulas that see it in
+        :class:`~pyvinecopulib.core.DiscretePair`.
     device : torch.device or None, default=None
         Placement of the independence pair copulas that fill
         missing edges.
@@ -238,11 +305,6 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     d = int(structure.dim)
     if var_types and len(var_types) != d:
       raise ValueError(f"var_types has {len(var_types)} entries, expected {d}")
-    if any(v != "c" for v in var_types):
-      raise NotImplementedError(
-        "TorchVinecop is continuous-only; got var_types="
-        f"{var_types!r}. Discrete variables are not yet supported."
-      )
 
     trunc_lvl = int(structure.trunc_lvl)
     if not pair_copulas:
@@ -251,7 +313,11 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         [TorchBicop(device=device, dtype=dtype) for _ in range(d - 1 - t)]
         for t in range(trunc_lvl)
       ]
-    return cls(pair_copulas=pair_copulas, structure=structure)
+    return cls(
+      pair_copulas=pair_copulas,
+      structure=structure,
+      var_types=list(var_types) or None,
+    )
 
   @classmethod
   def from_data(
@@ -294,8 +360,9 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         and placement / cascade knobs. ``None`` defaults to TLL on a 30x30
         normal-spaced grid, float64, ``mst_prim`` with ``trunc_lvl=20``.
     var_types : list of str, default=[]
-        Per-variable types; only ``"c"`` (continuous) is supported. Empty means
-        all-continuous.
+        Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete); empty
+        means all continuous. Given, they also fix the dimension, so ``u`` may
+        carry the extra left-limit columns.
 
     Returns
     -------
@@ -304,8 +371,9 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
 
     Raises
     ------
-    NotImplementedError
-        If any ``var_types`` entry is not ``"c"`` (continuous only).
+    ValueError
+        If ``u`` is not 2-D, or if ``structure``'s dimension disagrees with the
+        one ``var_types`` or ``u`` implies.
 
     Notes
     -----
@@ -315,33 +383,45 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     """
     if controls is None:
       controls = FitControlsTorchVinecop()
-    if any(v != "c" for v in var_types):
-      raise NotImplementedError(
-        "TorchVinecop is continuous-only; got var_types="
-        f"{var_types!r}. Discrete variables are not yet supported."
-      )
 
     eff_dtype = controls.dtype if controls.dtype is not None else torch.float64
     eff_device = controls.device
     u_t = torch.as_tensor(u, dtype=eff_dtype, device=eff_device)
     if u_t.ndim != 2:
       raise ValueError(f"u must be 2-D; got shape {tuple(u_t.shape)}")
-    n, d = u_t.shape
+    # With left-limit columns present `u` is wider than the vine, so it is
+    # `var_types` that fixes the dimension.
+    d = len(var_types) if var_types else int(u_t.shape[1])
 
     bc_controls = controls.bicop_controls
+    cache_integrals = cls._resolve_cache_integrals(
+      controls.cache_integrals, list(var_types)
+    )
 
     def fit_edge(
-      tree: int, edge: int, u_e: Tensor, x_e: Optional[Tensor]
-    ) -> TorchBicop:
+      tree: int,
+      edge: int,
+      u_e: Tensor,
+      x_e: Optional[Tensor],
+      var_types: Any = ("c", "c"),
+    ) -> BicopLike[Tensor]:
+      # `var_types` here is *this edge's* two types, which the fit engines pass
+      # by that keyword; the vine's own list is the enclosing argument.
       # Simplified (unconditional) TLL fit — x_e is None here.
       del tree, edge, x_e
-      return TorchBicop.from_data(
+      bc = TorchBicop.from_data(
         u_e,
         bc_controls,
-        cache_integrals=controls.cache_integrals,
+        cache_integrals=cache_integrals,
         device=u_t.device,
         dtype=eff_dtype,
+        var_types=list(var_types),
       )
+      # A discrete edge propagates through the mixed-discrete surface, which is
+      # also what the next tree's four-column input is built from.
+      if "d" not in var_types:
+        return bc
+      return DiscretePair(bc, (var_types[0], var_types[1]))
 
     if structure is None:
       # Select the structure natively in torch, reusing the pairs fit during
@@ -358,27 +438,34 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         tree_algorithm=controls.tree_algorithm,
         seeds=list(controls.seeds),
         to_numpy=lambda t: t.detach().cpu().numpy(),
+        var_types=list(var_types) or None,
         conditioning_set=list(controls.conditioning_set) or None,
       )
     else:
       if int(structure.dim) != d:
         raise ValueError(
-          f"structure.dim={structure.dim} does not match u.shape[1]={d}"
+          f"structure.dim={structure.dim} does not match the vine dimension {d}"
         )
       # Fixed structure: fit the pairs tree by tree along it
-      # (SimplifiedContext -> x_e=None). The fit_edge closure returns
-      # TorchBicop, so the nested list is concrete.
-      pairs = cls.fit(structure, u_t, fit_edge)
+      # (SimplifiedContext -> x_e=None).
+      pairs = cls.fit(
+        structure, u_t, fit_edge, var_types=list(var_types) or None
+      )
+    # Store the continuous grids; `_get_pair_copula` re-wraps a discrete edge,
+    # so the ModuleList holds only real nn.Modules.
+    modules = [[continuous_view(p) for p in row] for row in pairs]
     return cls(
-      pair_copulas=cast("list[list[TorchBicop]]", pairs), structure=structure
+      pair_copulas=cast("list[list[TorchBicop]]", modules),
+      structure=structure,
+      var_types=list(var_types) or None,
     )
 
   # --------------------------------------------------------------------- #
   # Helpers                                                                #
   # --------------------------------------------------------------------- #
 
-  def _get_pair_copula(self, tree: int, edge: int) -> TorchBicop:
-    """Indexed access to a pair copula.
+  def _pair_module(self, tree: int, edge: int) -> TorchBicop:
+    """The stored (always continuous) pair copula at ``(tree, edge)``.
 
     The two-level :class:`torch.nn.ModuleList` is typed as ``Module`` after
     indexing, so :func:`cast` is used to recover the concrete element type
@@ -388,10 +475,25 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       TorchBicop, cast(torch.nn.ModuleList, self.pair_copulas[tree])[edge]
     )
 
+  def _get_pair_copula(self, tree: int, edge: int) -> BicopLike[Tensor]:
+    """The pair copula the cascades evaluate at ``(tree, edge)``.
+
+    The stored modules are continuous grids, so an edge with a discrete
+    variable is wrapped in :class:`~pyvinecopulib.core.DiscretePair`, which
+    supplies the mixed-discrete surface from the grid's ``pdf`` / ``cdf`` /
+    ``hfunc1`` / ``hfunc2``. Keeping the wrapper out of the ``ModuleList``
+    keeps ``state_dict`` / ``.to()`` / pickling over the real parameters only.
+    """
+    pair = self._pair_module(tree, edge)
+    types = self.pair_var_types(tree, edge)
+    if "d" not in types:
+      return pair
+    return DiscretePair(pair, types)
+
   def _ref_tensor(self) -> Tensor:
     """A registered buffer we can crib dtype/device from."""
     # Every TorchBicop registers its interpolation grid; reuse the first.
-    return self._get_pair_copula(0, 0).interp_grid.values
+    return self._pair_module(0, 0).interp_grid.values
 
   def _default_batched(self) -> bool:
     """Pick a sensible ``batched`` default based on the fitted device.
@@ -412,16 +514,12 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     return self._ref_tensor().device.type == "cuda"
 
   def _prep(self, u: Tensor, name: str, *, values_only: bool = False) -> Tensor:
-    # `values_only` distinguishes the discrete data layouts, and this vine is
-    # continuous-only, so every accepted layout is already `(n, d)`.
-    del values_only
+    # Coerce foreign input onto this vine's dtype/device, then let the base
+    # class own the layout: which widths are admissible depends on `var_types`,
+    # not on the array namespace.
     ref = self._ref_tensor()
     u = torch.as_tensor(u, dtype=ref.dtype, device=ref.device)
-    if u.ndim != 2 or u.shape[1] != self.d:
-      raise ValueError(
-        f"{name}: u must have shape (n, {self.d}); got {tuple(u.shape)}"
-      )
-    return u.clamp(_TRIM_LO, _TRIM_HI)
+    return super()._prep(u, name, values_only=values_only)
 
   def _apply(self, fn, *args, **kwargs):
     # `.to()`, `.cuda()`, `.cpu()` all route through `_apply`. The
@@ -550,11 +648,18 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     _NotBatchable
         If any pair lacks the grid/cache internals the batched path needs
         (``supports_batched`` is ``False`` — e.g. a non-``TorchBicop`` nn.Module
-        pair). The dispatch layer catches it and falls back to the non-batched
-        cascade.
+        pair), or if any variable is discrete: the batched level has no
+        distribution-function lookup, which the mixed-discrete h-functions need.
+        The dispatch layer catches it and falls back to the non-batched cascade.
     """
+    if self._n_discrete:
+      raise _NotBatchable(
+        "batched path is continuous-only: the stacked per-level grids carry no "
+        "distribution function, which a discrete edge's h-functions are "
+        "difference quotients of"
+      )
     if not all(
-      getattr(self._get_pair_copula(t, e), "supports_batched", False)
+      getattr(self._pair_module(t, e), "supports_batched", False)
       for t in range(self.trunc_lvl)
       for e in range(self.d - t - 1)
     ):

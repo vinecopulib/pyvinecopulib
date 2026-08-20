@@ -64,6 +64,15 @@ inline void init_stats(nb::module_& m) {
         tools_stat_doc.to_pseudo_obs.doc, "x"_a, "ties_method"_a = "average",
         "weights"_a = Eigen::VectorXd(), "seeds"_a = std::vector<int>(),
         nb::call_guard<nb::gil_scoped_release>());
+  // Internal. `TllBicop::fit` recovers a continuous latent sample before
+  // fitting a discrete edge, and the torch fitter reuses that draw rather than
+  // reimplementing a stochastic iterative algorithm. Private because upstream
+  // declares it with a plain `//` comment, so `docstr.hpp` carries no text for
+  // it; promoting it to the public `utils` surface waits on the upstream `//!`
+  // block tracked in vinecopulib#740.
+  m.def("_find_latent_sample", &tools_stats::find_latent_sample, "u"_a, "b"_a,
+        "niter"_a = 3, nb::call_guard<nb::gil_scoped_release>());
+
   m.def("wdm",
         static_cast<double (*)(const Eigen::VectorXd&, const Eigen::VectorXd&,
                                std::string, Eigen::VectorXd, bool)>(&wdm::wdm),
