@@ -27,6 +27,7 @@ Only the ``constant`` method is supported here; the ``linear`` and
 from __future__ import annotations
 
 import math
+from typing import Optional
 
 import torch
 import torch.nn.functional as F
@@ -223,6 +224,7 @@ def fit_tll_constant(
   grid_size: int = 30,
   mult: float = 1.0,
   grid_type: str = "normal",
+  pseudo_obs: Optional[Tensor] = None,
 ) -> tuple[Tensor, Tensor]:
   """Fit a TLL pair-copula via local-constant kernel density estimation.
 
@@ -233,6 +235,10 @@ def fit_tll_constant(
     grid_size: number of grid points per axis (default 30; matches C++).
     mult: bandwidth multiplier passed through to ``select_bandwidth``;
       the C++ default is 1.
+    pseudo_obs: ranks to fit on, overriding the ones derived from ``u``. C++
+      ranks with ``ties_method="random"``, which differs from the argsort ranks
+      only when the data has ties — i.e. when a margin has atoms, where the
+      caller supplies them.
     grid_type: either ``"normal"`` (default, matches C++ — grid_points are
       ``pnorm(linspace(-3.25, 3.25, m))``) or ``"linear"`` (grid_points
       are uniformly spaced on ``[Phi(-3.25), 1-Phi(-3.25)]``, with the
@@ -257,7 +263,7 @@ def fit_tll_constant(
   dtype, device = u.dtype, u.device
 
   # Pseudo-observations + qnorm to z-space.
-  psobs = _to_pseudo_obs_continuous(u)
+  psobs = _to_pseudo_obs_continuous(u) if pseudo_obs is None else pseudo_obs
   z_data = _qnorm(psobs)
 
   # Bandwidth selection.

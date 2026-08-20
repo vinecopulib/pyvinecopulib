@@ -118,9 +118,8 @@ class FitControlsTorchVinecop:
   Notes
   -----
   Structure selection runs natively on the torch interpolation grids. It is
-  continuous-only and TLL-only, and the criteria for automatic truncation /
-  thresholding (``aic`` / ``bic`` / ``mbicv``) are not available here:
-  ``trunc_lvl`` is a fixed cap.
+  TLL-only, and the criteria for automatic truncation / thresholding (``aic`` /
+  ``bic`` / ``mbicv``) are not available here: ``trunc_lvl`` is a fixed cap.
   """
 
   bicop_controls: FitControlsTorchBicop = field(
