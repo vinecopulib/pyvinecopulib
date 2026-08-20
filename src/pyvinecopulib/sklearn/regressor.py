@@ -13,6 +13,7 @@ from ._base import (
   _DOC_PIPELINE,
   _DOC_REFERENCES,
   VineBase,
+  _as_ndarray,
 )
 
 # Half-width, in standard deviations, of the probit substitution behind the
@@ -195,9 +196,7 @@ class VineRegressor(RegressorMixin, VineBase):
     else:
       p_nodes, node_weights = self._probability_grid()
       self._u_nodes = p_nodes.reshape(-1, 1)
-      self._y_nodes = np.asarray(
-        self._y_margin.icdf(p_nodes), dtype=float
-      ).ravel()
+      self._y_nodes = _as_ndarray(self._y_margin.icdf(p_nodes)).ravel()
       self._node_weights = node_weights
     return self
 

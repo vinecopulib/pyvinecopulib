@@ -16,10 +16,9 @@ from sklearn.utils.validation import (
 )
 
 from ..core import Vinedist
-from ..core import Kde1d
 from ..margins import resolve_margins
 from ..margins._resolve import fit_margin
-from .backends import _BackendVinecop, resolve_backend
+from .backends import resolve_backend
 
 # Shared docstring fragments interpolated into VineDensity / VineRegressor
 # class docstrings via f-strings. Defined once here, used by both subclasses
@@ -48,7 +47,9 @@ PyTorch evaluator (GPU / autograd).
 Fitting assembles a ``Vinedist`` --- the copula and its margins as one
 object --- and every post-fit method evaluates through it. It is
 published as ``distribution_``, so the fitted joint distribution is
-usable outside the estimator; ``margin_summary_`` describes the margin
+usable outside the estimator; on the torch backend that object is a
+``TorchVinedist``, which stays on its device and differentiable even
+though the estimator's own methods return arrays; ``margin_summary_`` describes the margin
 each variable ended up with, and ``selection_report_`` carries the
 per-candidate table of any margin that selected its own family. See
 the :doc:`concepts page </concepts>` for the underlying vine-copula
@@ -96,6 +97,29 @@ _DOC_REFERENCES = r"""References
 #: `schema_["kde1d_types"]` carries `Kde1d`'s spellings; a margin declares the
 #: contract's. One map, so the two never drift apart.
 _VAR_TYPE_OF = {"continuous": "c", "discrete": "d", "zero-inflated": "zi"}
+
+
+def _as_ndarray(a: Any) -> np.ndarray:
+  """Bring one array back to NumPy at the estimator's public boundary.
+
+  The estimators return NumPy whatever namespace their parts live on, and on the
+  torch backend the distribution answers in tensors. A bare ``np.asarray``
+  cannot do it: it raises on a tensor that requires grad and on one held on an
+  accelerator.
+
+  Parameters
+  ----------
+  a : array
+      A NumPy array, or a tensor-like object carrying ``detach``.
+
+  Returns
+  -------
+  ndarray
+      The same values, as a NumPy array of floats.
+  """
+  if hasattr(a, "detach"):
+    a = a.detach().cpu()
+  return np.asarray(a, dtype=float)
 
 
 def _categorical_bounds(dtype: Any) -> Optional[tuple[float, float]]:
@@ -233,11 +257,12 @@ class VineBase(BaseEstimator):
         broadcast to every column, a sequence of length
         ``n_features_in_``, a mapping keyed by feature name or
         position, or a callable taking a column and returning a
-        margin. `None` fits a ``Kde1d`` per column, carrying the
-        variable type inferred from the input and, for the ``{0, 1}``
-        dummies of an expanded unordered categorical, the bounds of its
-        support. Stored as-is and never mutated: every specification is
-        fitted on a copy.
+        margin. `None` fits the backend's own kernel-density margin
+        per column --- ``Kde1d``, or ``TorchKde1d`` on the torch
+        backend --- carrying the variable type inferred from the input
+        and, for the ``{0, 1}`` dummies of an expanded unordered
+        categorical, the bounds of its support. Stored as-is and never
+        mutated: every specification is fitted on a copy.
     batch_size : int, default=100
         Number of test points to process per batch when making
         predictions. ``1`` minimizes memory at the cost of speed;
@@ -565,7 +590,12 @@ class VineBase(BaseEstimator):
         One specification, not yet fitted.
     """
     if isinstance(self.margins, (list, tuple, dict)):
-      return Kde1d()
+      # Same seam as `_default_margin_specs`: without it the torch backend would
+      # give the covariates torch margins and the response a NumPy one. Resolved
+      # rather than read off `backend_`, since an internal may be reached before
+      # `fit` pins it. On the default backend this *is* `Kde1d()`.
+      backend = getattr(self, "backend_", None) or resolve_backend(self.backend)
+      return backend.default_margin("continuous", None)
     return resolve_margins(self.margins, 1)[0]
 
   def _fit_marginals(
@@ -622,12 +652,14 @@ class VineBase(BaseEstimator):
     return X
 
   def _bind_distribution(self, margins: Any) -> None:
-    """Publish the fitted vine and its margins as one ``Vinedist``.
+    """Publish the fitted vine and its margins as one distribution.
 
-    The copula is wrapped so that it evaluates through the backend, which is
-    what keeps ``distribution_`` numerically identical to the estimator's own
-    methods -- including on the torch backend, where the raw vine returns
-    tensors on its own device.
+    Which distribution is the backend's call, so the object is on the same array
+    namespace as the vine that was fitted: the default backend wraps its copula
+    so the distribution evaluates exactly as the estimator does, and the torch
+    backend publishes a ``TorchVinedist`` that stays differentiable and movable.
+    A backend that lifts a margin hands back the lifted one, so the margins are
+    re-read from the result rather than kept in two places.
 
     Parameters
     ----------
@@ -638,9 +670,15 @@ class VineBase(BaseEstimator):
     -------
     None
     """
-    self.distribution_ = Vinedist(
-      _BackendVinecop(self.backend_, self._vine), list(margins)
+    self.distribution_ = self.backend_.bind_distribution(
+      self._vine, list(margins)
     )
+    bound = self.distribution_.margins
+    if hasattr(self, "_y_margin"):
+      self._y_margin = bound[0]
+      self._x_margins = tuple(bound[1:])
+    else:
+      self._x_margins = tuple(bound)
     self.margin_summary_ = self.distribution_.margin_summary()
 
   def _resolve_runtime_state(self) -> None:
@@ -690,10 +728,10 @@ class VineBase(BaseEstimator):
 
     Z = np.asarray(Z, dtype=float)
     if is_y:
-      return np.asarray(
+      return _as_ndarray(
         Vinedist.copula_data([self._y_margin], Z.reshape(-1, 1))
       )
-    return np.asarray(Vinedist.copula_data(self._x_margins, Z))
+    return _as_ndarray(Vinedist.copula_data(self._x_margins, Z))
 
   def _fit_vine(
     self, U: np.ndarray, var_types: list[str] | None = None
@@ -764,9 +802,9 @@ class VineBase(BaseEstimator):
 
     dist = self.distribution_
     if copula_only:
-      u = Vinedist.copula_data(dist.margins, Z)
-      out = np.log(np.asarray(dist.copula.pdf(u)))
+      u = dist._u_layout(Z)
+      out = np.log(_as_ndarray(dist.copula.pdf(u)))
     else:
-      out = np.asarray(dist.logpdf(Z))
+      out = _as_ndarray(dist.logpdf(Z))
 
     return np.asarray(out if log else np.exp(out))

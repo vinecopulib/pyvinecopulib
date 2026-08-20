@@ -307,6 +307,25 @@ class Vinedist(Generic[ArrayT]):
 
   # --- marginal transforms ------------------------------------------------- #
 
+  def _prep(self, a: Any) -> Any:
+    """Bring one input array onto this distribution's array namespace.
+
+    The identity here, since a NumPy distribution reads NumPy input. A subclass
+    living on another namespace overrides it, which is what lets a caller pass
+    the array type they have rather than the one the parts happen to hold.
+
+    Parameters
+    ----------
+    a : array
+        An input array on any namespace.
+
+    Returns
+    -------
+    array
+        The same values, on this distribution's namespace.
+    """
+    return a
+
   def _columns(self, y: ArrayT) -> tuple[Any, Any, int]:
     """Split ``y`` into columns and resolve its array namespace.
 
@@ -325,7 +344,7 @@ class Vinedist(Generic[ArrayT]):
     ValueError
         If ``y`` does not have ``d`` columns.
     """
-    ya: Any = y
+    ya: Any = self._prep(y)
     xp = array_namespace(ya)
     if ya.ndim != 2 or ya.shape[1] != self.dim:
       raise ValueError(
@@ -443,7 +462,6 @@ class Vinedist(Generic[ArrayT]):
     resolved = [as_margin(m) for m in margins]
     var_types = Vinedist.copula_var_types(resolved)
     ya: Any = y
-    xp = array_namespace(ya)
     if ya.ndim != 2 or ya.shape[1] != len(resolved):
       raise ValueError(
         f"y must have shape (n, {len(resolved)}); got {tuple(ya.shape)}"
@@ -451,6 +469,11 @@ class Vinedist(Generic[ArrayT]):
     upper = [
       _margin_eval(m, "cdf", ya[:, j], x) for j, m in enumerate(resolved)
     ]
+    # The margins' namespace, not the input's, as `marginal_cdf` does: a margin
+    # may legitimately return another array type than it was handed, and
+    # stacking that through the input's namespace either raises or silently
+    # detaches.
+    xp = array_namespace(upper[0])
     lower = []
     for j, m in enumerate(resolved):
       if var_types[j] != "d":
@@ -521,7 +544,7 @@ class Vinedist(Generic[ArrayT]):
         The copula-scale data.
     """
     self._check_covariates(x)
-    return self.copula_data(self._margins, y, x=x)
+    return self.copula_data(self._margins, self._prep(y), x=x)
 
   # --- evaluation ---------------------------------------------------------- #
 
@@ -757,7 +780,7 @@ class Vinedist(Generic[ArrayT]):
     from .vinecop_base import infer_conditioning_set
 
     self._check_covariates(x)
-    ya: Any = y_cond
+    ya: Any = self._prep(y_cond)
     if ya.ndim != 2:
       raise ValueError(
         f"y_cond must be two-dimensional; got shape {tuple(ya.shape)}"
@@ -816,12 +839,12 @@ class Vinedist(Generic[ArrayT]):
     array, shape (n, k + k_d), dtype float
         The compact conditioning layout, clamped away from the boundary.
     """
-    xp = array_namespace(y_cond)
     margins = [self._margins[v - 1] for v in cond]
     types = [self._var_types[v - 1] for v in cond]
     upper = [
       _margin_eval(m, "cdf", y_cond[:, i], x) for i, m in enumerate(margins)
     ]
+    xp = array_namespace(upper[0])
     lower = []
     for i, m in enumerate(margins):
       if types[i] != "d":

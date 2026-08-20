@@ -11,6 +11,7 @@ from ._base import (
   _DOC_PIPELINE,
   _DOC_REFERENCES,
   VineBase,
+  _as_ndarray,
 )
 
 
@@ -181,7 +182,7 @@ class VineDensity(DensityMixin, VineBase):
 
       rng = check_random_state(random_state)
     seeds = [int(x) for x in rng.randint(0, 2**31 - 1, size=5)]
-    return np.asarray(self.distribution_.sample(n_samples, seeds=seeds))
+    return _as_ndarray(self.distribution_.sample(n_samples, seeds=seeds))
 
   def pdf(self, X: np.ndarray, copula_only: bool = False) -> np.ndarray:
     """Evaluates the joint density at the given samples.
@@ -250,7 +251,7 @@ class VineDensity(DensityMixin, VineBase):
 
       rng = check_random_state(random_state)
     seeds = [int(x) for x in rng.randint(0, 2**31 - 1, size=5)]
-    return np.asarray(
+    return _as_ndarray(
       self.distribution_.cdf(np.asarray(X, dtype=float), N=N, seeds=seeds)
     )
 

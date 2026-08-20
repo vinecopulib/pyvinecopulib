@@ -133,18 +133,21 @@ class TestDefaultMargin:
     assert margin.support == (0.0, 4.0)
     assert margin.var_type == "d"
 
-  def test_torch_backend_keeps_numpy_margins(self):
-    """Deliberately *not* overridden, and the reason is namespace consistency.
+  def test_torch_backend_gives_a_torch_kde(self):
+    torch = pytest.importorskip("torch")
+    from pyvinecopulib.torch import FitControlsTorchVinecop, TorchKde1d
 
-    `_BackendVinecop` converts the vine's output to NumPy at the backend
-    boundary, because the estimators' public methods return arrays. A
-    `TorchKde1d` here would put the two halves of one `Vinedist` on different
-    array namespaces, and `logpdf` would try to add a Tensor to an ndarray.
-    End-to-end torch is `TorchVinedist.from_data`, not this path.
-    """
-    pytest.importorskip("torch")
-    margin = TorchVinecopBackend().default_margin("continuous", None)
-    assert isinstance(margin, pv.core.Kde1d)
+    margin = TorchVinecopBackend().default_margin("discrete", (0.0, 4.0))
+    assert isinstance(margin, TorchKde1d)
+    assert margin.support == (0.0, 4.0)
+    assert margin.var_type == "d"
+
+    # Precision follows the copula's, or a float32 vine would carry float64
+    # margins.
+    single = TorchVinecopBackend(
+      controls=FitControlsTorchVinecop(dtype=torch.float32)
+    ).default_margin("continuous", None)
+    assert single.grid_points.dtype is torch.float32
 
   def test_the_estimators_fit_what_the_backend_named(self):
     X = np.random.default_rng(0).multivariate_normal(
@@ -152,6 +155,147 @@ class TestDefaultMargin:
     )
     est = VineDensity(random_state=0).fit(X)
     assert all(isinstance(m, pv.core.Kde1d) for m in est.distribution_.margins)
+
+  def test_the_response_margin_comes_from_the_backend_too(self):
+    pytest.importorskip("torch")
+    from pyvinecopulib.torch import TorchKde1d
+
+    # A per-column `margins=` says nothing about the response, so it takes the
+    # backend's default -- which must be the backend's, not a hardcoded `Kde1d`,
+    # or the regressor would mix namespaces.
+    est = VineRegressor(
+      backend=TorchVinecopBackend(),
+      margins=[TorchKde1d(), TorchKde1d()],
+      random_state=0,
+    )
+    assert isinstance(est._response_margin_spec(), TorchKde1d)
+
+
+class TestTorchDistribution:
+  """On the torch backend ``distribution_`` is a ``TorchVinedist``.
+
+  The point of publishing it is that it is torch throughout: one `.to(device)`
+  moves it, and a loss through `logpdf` reaches the margins' buffers.
+  """
+
+  @staticmethod
+  def _data(n=300, d=3, seed=0):
+    rng = np.random.default_rng(seed)
+    cov = np.full((d, d), 0.5) + 0.5 * np.eye(d)
+    return rng.multivariate_normal(np.zeros(d), cov, size=n)
+
+  def test_the_torch_backend_publishes_a_torch_distribution(self):
+    pytest.importorskip("torch")
+    from pyvinecopulib.torch import TorchKde1d, TorchVinecop, TorchVinedist
+
+    X = self._data()
+    est = VineDensity(backend=TorchVinecopBackend(), random_state=0).fit(X)
+    assert isinstance(est.distribution_, TorchVinedist)
+    assert isinstance(est.distribution_.copula, TorchVinecop)
+    assert all(isinstance(m, TorchKde1d) for m in est.distribution_.margins)
+    # Still NumPy at the estimator's own boundary.
+    out = est.pdf(X[:20])
+    assert isinstance(out, np.ndarray)
+    assert np.all(np.isfinite(out)) and np.all(out > 0)
+
+  def test_the_torch_distribution_is_differentiable_end_to_end(self):
+    """The gradient reaches a margin's grid, and it is the right gradient.
+
+    Both halves have to hold for this to mean anything. The loss goes through
+    the margin's `logpdf` *and* through the copula's `pdf` of the copula data the
+    margin's `cdf` produced, so a detached cascade shows up here as a wrong
+    number rather than a missing one -- which is how the cached integral grids
+    were gradient-dead while every gradient still looked finite.
+    """
+    torch = pytest.importorskip("torch")
+
+    X = self._data()
+    est = VineDensity(backend=TorchVinecopBackend(), random_state=0).fit(X)
+    dist = est.distribution_
+    y = torch.as_tensor(X[:50])
+    values = dist.margins[0].values
+    values.requires_grad_(True)
+
+    (grad,) = torch.autograd.grad(-dist.logpdf(y).mean(), values)
+    assert torch.isfinite(grad).all()
+    assert float(grad.abs().sum()) > 0.0
+
+    # Central differences on the two largest-gradient entries.
+    probe = torch.topk(grad.abs(), 2).indices.tolist()
+    h = 1e-6
+    with torch.no_grad():
+      for k in probe:
+        original = values[k].clone()
+        values[k] = original + h
+        up = float(-dist.logpdf(y).mean())
+        values[k] = original - h
+        down = float(-dist.logpdf(y).mean())
+        values[k] = original
+        np.testing.assert_allclose(
+          float(grad[k]), (up - down) / (2 * h), rtol=2e-4, atol=1e-8
+        )
+
+  def test_margins_from_the_kde_alias_are_lifted(self):
+    pytest.importorskip("torch")
+    from pyvinecopulib.torch import TorchKde1d, TorchVinedist
+
+    X = self._data()
+    # `margins="kde"` resolves to the compiled `Kde1d`, so the backend has to
+    # lift it -- otherwise a spec that names the default explicitly would raise
+    # where `margins=None` works.
+    est = VineDensity(
+      backend=TorchVinecopBackend(), margins="kde", random_state=0
+    ).fit(X)
+    assert isinstance(est.distribution_, TorchVinedist)
+    assert all(isinstance(m, TorchKde1d) for m in est.distribution_.margins)
+    # The lift is exact, so the estimator sees the same density either way.
+    ref = VineDensity(
+      backend=TorchVinecopBackend(), random_state=0, margins=None
+    ).fit(X)
+    np.testing.assert_allclose(est.pdf(X[:20]), ref.pdf(X[:20]), rtol=1e-12)
+
+  def test_the_estimator_re_reads_the_lifted_margins(self):
+    pytest.importorskip("torch")
+    from pyvinecopulib.torch import TorchKde1d
+
+    X = self._data()
+    est = VineDensity(
+      backend=TorchVinecopBackend(), margins="kde", random_state=0
+    ).fit(X)
+    # `_to_u_scale` reads the estimator's own margins; if the lift left two
+    # copies behind they would be the unlifted ones.
+    assert all(isinstance(m, TorchKde1d) for m in est._x_margins)
+    u = est._to_u_scale(X[:10])
+    assert isinstance(u, np.ndarray) and u.shape == (10, 3)
+
+  def test_the_torch_regressor_fits_and_predicts(self):
+    pytest.importorskip("torch")
+    from pyvinecopulib.torch import TorchKde1d, TorchVinedist
+
+    Z = self._data(n=400, d=3, seed=1)
+    X, y = Z[:, 1:], Z[:, 0]
+    est = VineRegressor(backend=TorchVinecopBackend(), random_state=0).fit(X, y)
+    assert isinstance(est.distribution_, TorchVinedist)
+    assert isinstance(est._y_margin, TorchKde1d)
+    pred = est.predict(X[:25])
+    assert isinstance(pred, np.ndarray) and pred.shape == (25,)
+    assert np.all(np.isfinite(pred))
+
+  def test_the_torch_backend_still_refuses_atoms(self):
+    pytest.importorskip("torch")
+    import pandas as pd
+
+    rng = np.random.default_rng(0)
+    df = pd.DataFrame(
+      {
+        "a": rng.normal(size=200),
+        "b": pd.Categorical(
+          rng.integers(0, 3, size=200), categories=[0, 1, 2], ordered=True
+        ),
+      }
+    )
+    with pytest.raises(NotImplementedError, match="continuous"):
+      VineDensity(backend=TorchVinecopBackend(), random_state=0).fit(df)
 
 
 class TestTorchBackendWith:

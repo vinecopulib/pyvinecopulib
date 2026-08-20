@@ -146,14 +146,8 @@ class _VinecopBackendBase:
     """The margin an estimator should fit when the caller named none.
 
     A seam rather than an `isinstance` check, so a backend whose vine lives on
-    another array namespace can supply a matching margin.
-
-    Note that ``TorchVinecopBackend`` deliberately does **not** override this.
-    The sklearn layer wraps its vine in ``_BackendVinecop``, which converts to
-    NumPy at the backend boundary because the estimators' public methods return
-    arrays; a torch margin here would put the two halves of one ``Vinedist`` on
-    different namespaces. End-to-end torch is reached through
-    ``pyvinecopulib.torch.TorchVinedist.from_data`` instead.
+    another array namespace supplies a margin on that namespace and the two
+    halves of one ``Vinedist`` stay together.
 
     Parameters
     ----------
@@ -169,6 +163,27 @@ class _VinecopBackendBase:
     """
     lo, hi = (None, None) if bounds is None else (bounds[0], bounds[1])
     return pv.core.Kde1d(type=var_type, xmin=lo, xmax=hi)
+
+  def bind_distribution(self, vine: Any, margins: Any) -> Any:
+    """Assemble the fitted vine and its margins into one distribution.
+
+    The copula is wrapped in ``_BackendVinecop`` so the distribution evaluates
+    with the backend's own threading and batching arguments, which is what keeps
+    an estimator's ``distribution_`` numerically identical to its own methods.
+
+    Parameters
+    ----------
+    vine : object
+        The fitted vine.
+    margins : sequence of MarginLike
+        The fitted margins, in the vine's variable order.
+
+    Returns
+    -------
+    Vinedist
+        The joint distribution.
+    """
+    return pv.core.Vinedist(_BackendVinecop(self, vine), list(margins))
 
   def structure_of(self, vine: Any) -> pv.RVineStructure:
     return vine.structure
@@ -335,6 +350,82 @@ class TorchVinecopBackend(_VinecopBackendBase):
   ) -> np.ndarray:
     out = vine.sample(n_samples, qrng=False, seeds=seeds)
     return out.detach().cpu().numpy()
+
+  def default_margin(
+    self, var_type: str, bounds: Optional[tuple[float, float]]
+  ) -> Any:
+    """A ``TorchKde1d`` placed and typed like the copula this backend fits.
+
+    ``device`` and ``dtype`` come from the effective controls, so
+    ``FitControlsTorchVinecop(dtype=torch.float32)`` does not leave float64
+    margins on a float32 copula.
+
+    Parameters
+    ----------
+    var_type : str
+        ``Kde1d``'s spelling of the variable type.
+    bounds : tuple of float, or None
+        Declared support, or ``None`` where the input states none.
+
+    Returns
+    -------
+    TorchKde1d
+        An unfitted torch kernel-density margin.
+    """
+    import torch
+
+    from pyvinecopulib.torch import TorchKde1d
+
+    controls = self._effective_controls()
+    lo, hi = (None, None) if bounds is None else (bounds[0], bounds[1])
+    return TorchKde1d(
+      type=var_type,
+      xmin=lo,
+      xmax=hi,
+      device=controls.device,
+      dtype=controls.dtype if controls.dtype is not None else torch.float64,
+    )
+
+  def bind_distribution(self, vine: Any, margins: Any) -> Any:
+    """Assemble a ``TorchVinedist`` from the fitted torch vine and its margins.
+
+    The raw vine goes in rather than a ``_BackendVinecop`` wrapper: the point of
+    publishing this object is that it is torch throughout, so ``.to(device)``
+    moves it and a loss through ``logpdf`` reaches the margins' buffers -- which
+    a wrapper converting to NumPy at every call would undo. A compiled ``Kde1d``
+    margin (from ``margins="kde"``, or one the caller passed already fitted) is
+    lifted with ``TorchKde1d.from_kde1d``, an exact transfer of the same
+    grid.
+
+    One consequence a caller feels: the distribution's ``pdf`` resolves
+    ``batched`` per device rather than reading ``controls.batched``. The two
+    agree to floating point.
+
+    Parameters
+    ----------
+    vine : object
+        The fitted ``TorchVinecop``.
+    margins : sequence of MarginLike
+        The fitted margins, in the vine's variable order.
+
+    Returns
+    -------
+    TorchVinedist
+        The joint distribution, entirely in torch.
+    """
+    import torch
+
+    from pyvinecopulib.torch import TorchKde1d, TorchVinedist
+
+    controls = self._effective_controls()
+    dtype = controls.dtype if controls.dtype is not None else torch.float64
+    lifted = [
+      TorchKde1d.from_kde1d(m, device=controls.device, dtype=dtype)
+      if isinstance(m, pv.core.Kde1d)
+      else m
+      for m in margins
+    ]
+    return TorchVinedist(vine, lifted)
 
   def with_num_threads(self, num_threads: int) -> "TorchVinecopBackend":
     # No-op: torch threading is global / device-bound.

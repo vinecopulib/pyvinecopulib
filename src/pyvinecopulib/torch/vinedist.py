@@ -20,6 +20,7 @@ TorchVinecop : The copula this holds.
 
 from __future__ import annotations
 
+from itertools import chain
 from typing import Any, Optional, Sequence, cast
 
 import torch
@@ -63,15 +64,15 @@ def _check_margin(margin: Any, name: str) -> None:
       "which fits any of the three variable types. A NumPy margin such as "
       "Kde1d belongs in pyvinecopulib.core.Vinedist instead."
     )
-  # A margin with atoms needs the copula half to difference a left limit, and
-  # the torch copula's `cdf` is a trapezoidal approximation -- accurate enough
-  # for evaluation, not for the difference quotients a discrete edge is built
-  # from. So atoms stay refused here even though `TorchKde1d` can model them.
+  # `TorchKde1d` models atoms, but `TorchVinecop` refuses a non-continuous
+  # `var_types`, so the pair would never see the left-limit columns this margin
+  # supplies. Refuse here, where the message can name the whole distribution,
+  # rather than one tree level down.
   if getattr(margin, "var_type", "c") != "c":
     raise NotImplementedError(
       f"TorchVinedist is continuous-only; {name} declares "
       f"var_type={getattr(margin, 'var_type')!r}. TorchKde1d models atoms, but "
-      "the torch copula cannot yet difference them accurately; use "
+      "TorchVinecop has no discrete cascade yet; use "
       "pyvinecopulib.core.Vinedist for discrete or mixed data."
     )
 
@@ -297,6 +298,40 @@ class TorchVinedist(Vinedist[Tensor], torch.nn.Module):
         One margin per variable, read off the registered ``ModuleList``.
     """
     return cast("tuple[MarginLike, ...]", tuple(self._margins))
+
+  def _ref_tensor(self) -> Tensor:
+    """A registered tensor to crib dtype and device from.
+
+    Returns
+    -------
+    Tensor
+        The first registered parameter or buffer, or an empty CPU tensor when
+        the parts register neither.
+    """
+    for tensor in chain(self.parameters(), self.buffers()):
+      return tensor
+    return torch.empty(0, dtype=torch.float64)
+
+  def _prep(self, a: Any) -> Tensor:
+    """Bring one input array onto this distribution's dtype and device.
+
+    ``as_tensor`` rather than ``tensor`` or ``detach``, so a tensor that already
+    matches is returned untouched and a gradient-carrying one stays in the
+    graph. It is what lets an estimator hand this object plain NumPy while the
+    cascade and every margin stay on device.
+
+    Parameters
+    ----------
+    a : array
+        An input array, tensor or NumPy.
+
+    Returns
+    -------
+    Tensor
+        The same values, as a tensor placed like the registered ones.
+    """
+    ref = self._ref_tensor()
+    return torch.as_tensor(a, dtype=ref.dtype, device=ref.device)
 
   def log_prob(self, y: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Alias of ``logpdf``, the ``torch.distributions`` spelling.

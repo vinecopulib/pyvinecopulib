@@ -686,7 +686,14 @@ automatically.
   `conditioning_set` through one `infer_conditioning_set`, so the
   column-to-variable rule cannot drift between them. Every method also takes optional exogenous covariates `x`,
   forwarded to each margin that declares `supports_covariates` and to a
-  copula that declares it too.
+  copula that declares it too. Two seams keep the array namespace
+  coherent: `_prep` (identity here, `torch.as_tensor` on
+  `TorchVinedist`) coerces one input array onto the parts' namespace, so a
+  caller may hand the type they have; and `copula_data` /
+  `_conditioning_data` / `marginal_cdf` / `marginal_icdf` take `xp` from
+  the *columns the margins returned*, never from the input — a margin may
+  legitimately answer in another array type, and stacking that through the
+  input's namespace either raises or silently detaches.
 
 ### `pyvinecopulib.margins`
 
@@ -789,10 +796,29 @@ backend.pdf(vine, U)        -> np.ndarray
 backend.cdf(vine, U, N=..., seeds=...) -> np.ndarray
 backend.sample(vine, n, seeds=...) -> np.ndarray
 backend.structure_of(vine)  -> RVineStructure
+backend.default_margin(var_type, bounds) -> MarginLike
+backend.bind_distribution(vine, margins) -> Vinedist
 backend.with_random_structure(d, seeds)  -> Backend  # copy-on-write
 backend.with_local_random(seeds)         -> Backend  # ditto
 backend.with_num_threads(n)              -> Backend  # ditto (torch: no-op)
 ```
+
+`default_margin` and `bind_distribution` are what keep the *whole*
+distribution on one array namespace: the backend names the margin class an
+estimator fits when the caller named none, and it assembles the fitted parts.
+The default backend wraps its copula in `_BackendVinecop` so `distribution_`
+evaluates with the same threading and batching arguments the estimator uses;
+`TorchVinecopBackend` fits `TorchKde1d` margins (carrying `device` / `dtype`
+from its controls) and publishes a **`TorchVinedist` holding the raw
+`TorchVinecop`**, so `.to(device)`, `state_dict` and autograd reach the whole
+object. A compiled `Kde1d` the caller supplied is lifted with
+`TorchKde1d.from_kde1d` rather than refused, which is what makes
+`margins="kde"` behave like `margins=None` there. Two consequences: on the
+torch backend `distribution_.pdf` resolves `batched` per device rather than
+reading `controls.batched` (the two agree to 1.8e-15), and every public
+estimator method converts back to NumPy through `_base._as_ndarray` —
+`np.asarray` alone raises on a tensor that requires grad or lives on an
+accelerator.
 
 `pyvinecopulib.core.VinecopLike` is the canonical `runtime_checkable`
 Protocol describing the post-fit vine surface (`pdf` / `cdf` /
@@ -1084,7 +1110,8 @@ Round-trip / parity properties to preserve when touching numerics:
   what lets `as_margin` stay the single funnel every margin passes
   through.
 - **New `pyvinecopulib.sklearn` backends.** Subclass the private
-  `_VinecopBackendBase`, which already provides `structure_of` and the
+  `_VinecopBackendBase`, which already provides `structure_of`,
+  `default_margin`, `bind_distribution` and the
   copy-on-write `with_*` derivations (`with_random_structure` /
   `with_local_random` / `with_num_threads`); override the divergent
   members (`fit_vine`, `pdf`, `cdf`, `sample`, `_default_controls`,
