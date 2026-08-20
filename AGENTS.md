@@ -212,10 +212,11 @@ closed unmerged, and some commits carry no number at all.
 - **Custom C++ forks.** The repo always tracks the upstream
   `lib/vinecopulib` submodule pin; local C++ patches under
   `lib/` are not accepted.
-- **Discrete margins on the torch backend.** `TorchVinecopBackend`
-  is continuous-only (raises `NotImplementedError` when any
-  `var_types[i] != "c"`). Use `VinecopBackend` for discrete /
-  mixed-type problems.
+- **Discrete margins on the torch *marginal* layer.** `TorchVinecop` and
+  `TorchVinecopBackend` handle discrete variables (the copula half), but
+  `TorchMargin` rejects a discrete family: a margin with atoms needs a
+  left-limit `cdf`, which `torch.distributions` does not expose. Use
+  `Vinedist` with `pyvinecopulib.margins` for the marginal half.
 - **Density estimators outside the vine framework.** General-purpose
   multivariate density models (normalizing flows, Gaussian mixtures,
   …) are not in scope; `pyvinecopulib` is a vine-copula library.
@@ -834,6 +835,30 @@ Key surface:
     `controls.method`).
   - `TorchVinecop` mirrors `pv.Vinecop`'s `pdf` / `cdf` /
     `rosenblatt` / `inverse_rosenblatt` / `sample` signatures.
+- `TorchMargin` / `TorchVinedist` — the marginal and joint halves.
+  - `TorchMargin` is a `MarginBase[Tensor]` that is *also* an
+    `nn.Module`: `torch.distributions.Distribution` has no
+    `.to(device)` and contributes nothing to `state_dict` as a plain
+    attribute, so the parameters are registered and the distribution is
+    **rebuilt per call** — the same shape `TorchBicop` uses for its
+    grid. `TorchMargin.from_distribution(factory, parameters=...)` is
+    the general entry point; `icdf` bisects `cdf` over `support` for the
+    families that implement one but not the other (`Gamma`, `Chi2`).
+  - `TorchVinedist` is `Vinedist[Tensor]` plus `nn.Module`, with margins
+    in a `ModuleList` and `log_prob` as an alias for `logpdf`. Every
+    margin **must** be an `nn.Module`: SciPy raises on gradient-carrying
+    tensors and returns a plain `ndarray` without them, so accepting a
+    SciPy margin here would detach the graph silently. `from_data`
+    refuses — there is no torch marginal estimator, so fit on the NumPy
+    lane or assemble the parts directly.
+- Discrete variables are declared with `var_types` on `TorchVinecop`'s three
+  constructors. The stored pair copulas stay continuous interpolation grids and
+  `_get_pair_copula` wraps a discrete edge in `DiscretePair`, so `state_dict` /
+  `.to()` / pickling see only real `nn.Module` parameters. `TorchBicop.from_data`
+  takes the four-column layout and reuses the compiled
+  `to_pseudo_obs(ties_method="random", seeds=[5])` for the ranks, which is the
+  only thing an atom changes about a TLL fit. The batched fast path declines on
+  a discrete vine — the stacked per-level grids carry no distribution function.
 - `FitControlsTorchBicop` / `FitControlsTorchVinecop` — fit-time
   dataclasses. Notable knobs:
   - `method` — `"tll"` (the only fitter; kept as the dispatch seam

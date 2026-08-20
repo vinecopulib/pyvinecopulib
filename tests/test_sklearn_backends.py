@@ -292,18 +292,24 @@ class TestCrossBackend:
     # Both are MC estimates with N=5000; agreement to ~5%.
     np.testing.assert_allclose(c_cpp, c_torch, atol=5e-2)
 
-  def test_torch_discrete_raises(self):
+  def test_torch_fits_a_discrete_column(self):
+    # The torch backend used to reject any discrete variable. It now carries the
+    # same left-limit cascade the NumPy one does, so the estimator's own
+    # ordered-categorical handling reaches it unchanged.
     pytest.importorskip("torch")
     pd = pytest.importorskip("pandas")
     rng = np.random.default_rng(0)
     df = pd.DataFrame(
       {
-        "a": pd.Categorical([0, 1] * 50, ordered=True),
-        "b": rng.standard_normal(100),
+        "a": pd.Categorical(rng.integers(0, 4, 200), ordered=True),
+        "b": rng.standard_normal(200),
       }
     )
-    with pytest.raises(NotImplementedError, match="continuous-only"):
-      VineDensity(backend=TorchVinecopBackend()).fit(df)
+    est = VineDensity(backend=TorchVinecopBackend()).fit(df)
+    assert est.schema_ is not None
+    scores = est.score_samples(df)
+    assert scores.shape == (200,)
+    assert np.all(np.isfinite(scores))
 
 
 # ---------------------------------------------------------------------------
