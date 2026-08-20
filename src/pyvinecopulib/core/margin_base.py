@@ -215,6 +215,41 @@ class MarginBase(MarginLike[ArrayT], ABC):
     """
     return True
 
+  def declare(
+    self,
+    *,
+    var_type: Optional[str] = None,
+    support: Optional[tuple[float, float]] = None,
+  ) -> "MarginBase[ArrayT]":
+    """Accept what the caller knows about the variable, before fitting it.
+
+    A caller often knows the variable type and the declared support when the
+    margin cannot infer them: an ordered categorical's levels, a column
+    documented as a count, a rate bounded below by zero. Without this, a margin
+    handed such a column re-infers both from the sample, which is strictly less
+    information -- a count column whose smallest observation is 3 looks
+    unbounded from below.
+
+    The base implementation ignores both, so a margin whose type and support are
+    fixed by construction needs nothing. An override must treat an explicit
+    constructor argument as authoritative and only fill in what was left open,
+    since the caller's schema is a default and not an instruction.
+
+    Parameters
+    ----------
+    var_type : str or None, optional
+        ``"c"``, ``"d"`` or ``"zi"``, or ``None`` when the caller does not know.
+    support : tuple of float, or None, optional
+        Declared bounds as ``(lo, hi)``, or ``None``. Infinite bounds are
+        ``-inf`` / ``inf``.
+
+    Returns
+    -------
+    MarginBase
+        ``self``, so the call chains into :meth:`fit`.
+    """
+    return self
+
   def fit(
     self,
     y: ArrayT,

@@ -163,6 +163,31 @@ def test_ordered_categorical_is_fitted_on_its_declared_levels() -> None:
   assert margin.pdf(np.array([-1.0])).item() == 0.0
 
 
+def test_the_schema_reaches_a_column_the_specification_addresses() -> None:
+  """A `margins=` argument does not cost the margin what the input declared.
+
+  The per-variable default only covers the columns a specification leaves
+  unaddressed, so a broadcast alias used to hand every selector
+  `var_type=None, bounds=None` and have it re-infer both from the sample --
+  strictly less than `schema_` already knew.
+  """
+  rng = np.random.default_rng(0)
+  counts = rng.integers(0, 5, size=400)
+  X_df = pd.DataFrame(
+    {
+      "grade": pd.Categorical(counts, categories=range(5), ordered=True),
+      "z": rng.normal(size=400),
+    }
+  )
+  est = VineDensity(margins="parametric", random_state=0).fit(X_df)
+  selector: Any = est.distribution_.margins[0]
+  assert selector.bounds == (0.0, 4.0)
+  assert selector.var_type == "d"
+  # The unbounded continuous column is left alone.
+  other: Any = est.distribution_.margins[1]
+  assert other.bounds is None
+
+
 def test_cdf_works_with_columns_that_have_atoms(
   sample_dataframe_data: tuple[pd.DataFrame, list[str]],
 ) -> None:

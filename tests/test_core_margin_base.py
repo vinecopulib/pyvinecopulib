@@ -390,3 +390,16 @@ def test_icdf_resolves_a_quantile_far_below_the_bracket() -> None:
   # The defect was a collapse, not mere imprecision: distinct probabilities
   # all came back as the same value.
   assert np.all(np.diff(got) < 0.0)
+
+
+def test_declare_is_a_no_op_that_chains() -> None:
+  """A margin fixed by construction ignores the caller's schema.
+
+  `declare` exists so a caller with schema knowledge can hand it over before
+  fitting; a margin whose type and support are settled needs nothing from it, so
+  the base implementation must accept the call and change nothing.
+  """
+  m = _ShiftedExp(rate=2.0, shift=1.0)
+  assert m.declare(var_type="d", support=(0.0, 10.0)) is m
+  assert m.var_type == "c"
+  assert m.support == (1.0, math.inf)

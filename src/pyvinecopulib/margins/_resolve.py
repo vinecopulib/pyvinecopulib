@@ -161,7 +161,13 @@ def resolve_margins(
 
 
 def fit_margin(
-  entry: Any, y: Any, *, x: Optional[Any] = None, weights: Optional[Any] = None
+  entry: Any,
+  y: Any,
+  *,
+  x: Optional[Any] = None,
+  weights: Optional[Any] = None,
+  var_type: Optional[str] = None,
+  support: Optional[tuple[float, float]] = None,
 ) -> MarginLike[Any]:
   """Obtain a fitted margin for one column.
 
@@ -178,6 +184,12 @@ def fit_margin(
       fitting the wrong model.
   weights : array, shape (n,), or None, optional
       Observation weights.
+  var_type : str or None, optional
+      The variable type the caller resolved, handed to a margin that
+      implements ``declare``. Without it such a margin re-infers the type
+      from the sample, which knows less than the caller does.
+  support : tuple of float, or None, optional
+      The declared bounds, handed over the same way.
 
   Returns
   -------
@@ -209,5 +221,8 @@ def fit_margin(
     kwargs["weights"] = weights
   if x is not None and getattr(margin, "supports_covariates", False):
     kwargs["x"] = x
+  declare = getattr(margin, "declare", None)
+  if declare is not None and (var_type is not None or support is not None):
+    declare(var_type=var_type, support=support)
   margin.fit(y, **kwargs)
   return margin

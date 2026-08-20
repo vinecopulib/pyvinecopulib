@@ -92,6 +92,11 @@ _DOC_REFERENCES = r"""References
 """
 
 
+#: `schema_["kde1d_types"]` carries `Kde1d`'s spellings; a margin declares the
+#: contract's. One map, so the two never drift apart.
+_VAR_TYPE_OF = {"continuous": "c", "discrete": "d", "zero-inflated": "zi"}
+
+
 def _categorical_bounds(dtype: Any) -> Optional[tuple[float, float]]:
   """Exact support of an ordered categorical column, when it states one.
 
@@ -429,7 +434,42 @@ class VineBase(BaseEstimator):
       specs.append(Kde1d(type=type_, xmin=lo, xmax=hi))
     return specs
 
-  def _fit_one_margin(self, spec: Any, column: np.ndarray, name: str) -> Any:
+  def _declared_for(
+    self, index: Optional[int]
+  ) -> tuple[Optional[str], Optional[tuple[float, float]]]:
+    """What :attr:`schema_` knows about one feature.
+
+    ``_default_margin_specs`` only reaches the columns a ``margins=`` argument
+    leaves unaddressed, so without this a `margins="parametric"` on a frame with
+    an ordered categorical would have the margin re-infer both the type and the
+    bounds from the sample -- less than the input already stated.
+
+    Parameters
+    ----------
+    index : int or None
+        The feature's position, or ``None`` for the response.
+
+    Returns
+    -------
+    tuple
+        ``(var_type, support)``, either entry ``None`` when unknown.
+    """
+    if index is None:
+      return None, None
+    types = self.schema_["kde1d_types"]
+    var_type = _VAR_TYPE_OF.get(types[index])
+    bounds = (self.schema_.get("bounds") or [None] * len(types))[index]
+    support = None if bounds is None else (float(bounds[0]), float(bounds[1]))
+    return var_type, support
+
+  def _fit_one_margin(
+    self,
+    spec: Any,
+    column: np.ndarray,
+    name: str,
+    *,
+    index: Optional[int] = None,
+  ) -> Any:
     """Fit one column's margin.
 
     Parameters
@@ -440,6 +480,10 @@ class VineBase(BaseEstimator):
         The column to fit.
     name : str
         The variable's name, for a selector's report.
+    index : int or None, optional
+        Which feature this is, used to hand the margin the variable type and
+        bounds from :attr:`schema_`. ``None`` for the response, whose type the
+        estimator already constrains to continuous.
 
     Returns
     -------
@@ -454,7 +498,13 @@ class VineBase(BaseEstimator):
     # the name when the caller has not.
     if hasattr(spec, "report_") and getattr(spec, "name", "") is None:
       spec.name = name
-    margin = fit_margin(spec, np.asarray(column, dtype=float))
+    var_type, support = self._declared_for(index)
+    margin = fit_margin(
+      spec,
+      np.asarray(column, dtype=float),
+      var_type=var_type,
+      support=support,
+    )
     if self._needs_marginal_density:
       self._require_density(margin, name, column)
     return margin
@@ -539,7 +589,7 @@ class VineBase(BaseEstimator):
       default=self._default_margin_specs(),
     )
     self._x_margins = tuple(
-      self._fit_one_margin(specs[j], X[:, j], self._column_name(j))
+      self._fit_one_margin(specs[j], X[:, j], self._column_name(j), index=j)
       for j in range(self.n_features_in_)
     )
     fitted = list(self._x_margins)

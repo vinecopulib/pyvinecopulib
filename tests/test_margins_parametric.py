@@ -401,6 +401,45 @@ def test_selector_bounded_support_anchors_the_candidates() -> None:
   assert sel.selected_.family_name == "uniform"
 
 
+def test_declare_supplies_what_the_sample_cannot_show() -> None:
+  """A caller's resolved type and support beat the selector's own inference.
+
+  An ordered categorical with negative levels is the sharp case: the data-driven
+  test needs non-negative integers, so the sample alone reads the column as
+  continuous even though the input declared its levels.
+  """
+  x = np.asarray(
+    np.random.default_rng(4).integers(-2, 3, size=400), dtype=float
+  )
+  assert MarginSelector().fit(x).var_type == "c"
+
+  declared = MarginSelector().declare(var_type="d", support=(-2.0, 2.0))
+  assert declared.bounds == (-2.0, 2.0)
+  with pytest.warns(UserWarning, match="no parametric family"):
+    assert declared.fit(x).var_type == "d"
+
+
+def test_declare_leaves_a_pinned_argument_alone() -> None:
+  """A constructor argument is the caller's instruction; a schema is a default."""
+  sel = MarginSelector(var_type="c", bounds=(-5.0, 5.0)).declare(
+    var_type="d", support=(-2.0, 2.0)
+  )
+  assert sel.bounds == (-5.0, 5.0)
+  assert sel.fit(np.arange(-3.0, 4.0)).var_type == "c"
+
+
+def test_declare_ignores_a_half_bounded_support() -> None:
+  """`bounds` selects the bounded families, which need a finite interval.
+
+  A `(0, inf)` support would otherwise send a positive variable to `uniform` and
+  a rescaled `beta`, neither of which can be pinned to an infinite endpoint.
+  """
+  sel = MarginSelector().declare(support=(0.0, float("inf")))
+  assert sel.bounds is None
+  x = np.random.default_rng(5).gamma(2.0, 1.5, size=400)
+  assert {row["family"] for row in sel.fit(x).report_} != {"uniform", "beta"}
+
+
 @pytest.mark.parametrize("criterion", ["aic", "bic", "aicc"])
 def test_selector_criteria_are_all_reported(
   criterion: str, gamma_sample: np.ndarray

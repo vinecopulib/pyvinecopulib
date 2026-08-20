@@ -257,9 +257,50 @@ class MarginSelector(MarginBase[np.ndarray]):
       None if bounds is None else (float(bounds[0]), float(bounds[1]))
     )
     self._var_type = var_type
+    # A constructor argument is authoritative; `declare` fills in only what the
+    # caller left open.
+    self._pinned = (var_type is not None, bounds is not None)
     self.name = name
     self._selected: Optional[Any] = None
     self._report: list[dict[str, Any]] = []
+
+  def declare(
+    self,
+    *,
+    var_type: Optional[str] = None,
+    support: Optional[tuple[float, float]] = None,
+  ) -> "MarginSelector":
+    """Adopt the caller's variable type and support where none was pinned.
+
+    This is the selector's only route to information it cannot recover from the
+    sample. Without it, a column the caller knows to be a bounded count is
+    retyped by :meth:`_is_discrete`'s heuristic and scored against candidates
+    with no bounds at all.
+
+    Parameters
+    ----------
+    var_type : str or None, optional
+        ``"c"``, ``"d"`` or ``"zi"``. ``"zi"`` is reduced to ``"d"``, which is
+        what the candidate partition distinguishes.
+    support : tuple of float, or None, optional
+        Declared bounds. Only a pair finite at both ends is adopted, since
+        ``bounds`` selects the bounded candidate group, whose families need a
+        finite interval to be rescaled onto. A half-bounded support is still
+        read off the data.
+
+    Returns
+    -------
+    MarginSelector
+        ``self``, so the call chains into :meth:`fit`.
+    """
+    pinned_type, pinned_bounds = self._pinned
+    if var_type is not None and not pinned_type:
+      self._var_type = "d" if var_type == "zi" else var_type
+    if support is not None and not pinned_bounds:
+      lo, hi = float(support[0]), float(support[1])
+      if np.isfinite(lo) and np.isfinite(hi):
+        self.bounds = (lo, hi)
+    return self
 
   # --- fitted state -------------------------------------------------------- #
 
