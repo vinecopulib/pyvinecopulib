@@ -435,6 +435,20 @@ class ParametricMargin(MarginBase[np.ndarray]):
     return "d" if self._discrete else "c"
 
   @property
+  def supported_var_types(self) -> tuple[str, ...]:
+    """The one type this family serves.
+
+    A SciPy family is either continuous or discrete, never both, so the set is a
+    singleton and a declared type cannot widen it.
+
+    Returns
+    -------
+    tuple of str
+        ``("d",)`` for a discrete family, ``("c",)`` otherwise.
+    """
+    return ("d",) if self._discrete else ("c",)
+
+  @property
   def support(self) -> tuple[float, float]:
     """Closed bounds of the fitted support.
 

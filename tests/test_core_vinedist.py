@@ -68,6 +68,29 @@ def test_loglik_sums_logpdf(continuous: np.ndarray) -> None:
   np.testing.assert_allclose(total, dist.logpdf(continuous).sum(), rtol=1e-12)
 
 
+# --- reporting -------------------------------------------------------------- #
+
+
+def test_margin_summary_has_a_row_per_variable(data: np.ndarray) -> None:
+  """Every variable is described, whether its margin selected a family or not.
+
+  `selection_report` covers only margins that *chose*, so an all-fixed
+  distribution reports nothing there and everything here.
+  """
+  dist = pv.Vinedist.from_data(
+    data, margins=["kde", stats.norm(0.0, 1.0), stats.poisson(3.0)]
+  )
+  rows = dist.margin_summary()
+  assert [row["variable"] for row in rows] == [0, 1, 2]
+  assert [row["var_type"] for row in rows] == dist.var_types
+  assert [row["family"] for row in rows] == ["kde1d", "norm", "poisson"]
+  # A fitted margin reports the log-likelihood it attained; a fixed one has no
+  # fit to report, and says so with None rather than a number.
+  assert isinstance(rows[0]["loglik"], float)
+  assert rows[1]["loglik"] is None
+  assert dist.selection_report() == []
+
+
 # --- discrete margins ------------------------------------------------------- #
 
 

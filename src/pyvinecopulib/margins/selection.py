@@ -11,7 +11,7 @@ import re
 import textwrap
 import time
 import warnings
-from typing import Any, Optional, Sequence
+from typing import Any, Iterable, Optional, Sequence
 
 import numpy as np
 
@@ -31,6 +31,11 @@ __all__ = ["MarginSelector"]
 #: Information criteria, as functions of the log-likelihood, the number of
 #: freely estimated parameters and the sample size. All three are minimized.
 _CRITERIA: tuple[str, ...] = ("aic", "bic", "aicc")
+
+#: What :meth:`MarginSelector.fit` does when no candidate is admissible.
+#: ``"raise"`` reports every family and its cause; ``"fallback"`` substitutes
+#: a kernel-density margin and warns once.
+_ON_FAILURE = ("raise", "fallback")
 
 
 def _criteria(loglik: float, k: float, n: int) -> dict[str, float]:
@@ -134,6 +139,41 @@ def _reject(candidate: Any, y: np.ndarray) -> Optional[str]:
   return None
 
 
+def _dedupe(candidates: Iterable[Any]) -> list[Any]:
+  """Drop candidates that would tie with one already present.
+
+  Two candidates of the same family with the same pinned parameters fit to the
+  same numbers, so they tie exactly on every criterion: the winner becomes an
+  artifact of iteration order, and the report carries the row twice. Anything
+  whose identity cannot be read this way is kept, since dropping it would be a
+  guess.
+
+  Parameters
+  ----------
+  candidates : iterable
+      Unfitted candidate margins, in preference order.
+
+  Returns
+  -------
+  list
+      The first candidate of each distinct family-and-pins, order preserved.
+  """
+  seen: set[tuple[str, tuple[tuple[str, float], ...]]] = set()
+  out: list[Any] = []
+  for margin in candidates:
+    family = getattr(margin, "family_name", None)
+    if family is None:
+      out.append(margin)
+      continue
+    fixed = getattr(margin, "fixed_parameters", None) or {}
+    key = (str(family), tuple(sorted(fixed.items())))
+    if key in seen:
+      continue
+    seen.add(key)
+    out.append(margin)
+  return out
+
+
 class MarginSelector(MarginBase[np.ndarray]):
   """Pick a univariate family by an information criterion.
 
@@ -160,6 +200,13 @@ class MarginSelector(MarginBase[np.ndarray]):
   var_type : {"c", "d"} or None, optional
       Force the data to be read as continuous or as counts. Inferred when
       ``None``: non-negative integer-valued data are counts.
+  on_failure : {"raise", "fallback"}, optional
+      What to do when every candidate is rejected. ``"raise"`` (the default)
+      reports each family and why it was rejected. ``"fallback"`` substitutes a
+      kernel-density margin and warns once -- available, but not the default,
+      because answering a parametric request with a nonparametric fit is a
+      silent downgrade, and a warning is easy to lose in a loop over fifty
+      columns.
   name : str or None, optional
       Name of the variable being fitted, reported in :attr:`report_` and in the
       fallback warning.
@@ -167,8 +214,8 @@ class MarginSelector(MarginBase[np.ndarray]):
   Raises
   ------
   ValueError
-      If ``criterion`` is not one of the three, or ``var_type`` is not ``"c"``
-      or ``"d"``.
+      If ``criterion`` is not one of the three, ``var_type`` is not ``"c"`` or
+      ``"d"``, or ``on_failure`` is neither.
 
   See Also
   --------
@@ -241,11 +288,17 @@ class MarginSelector(MarginBase[np.ndarray]):
     criterion: str = "aic",
     bounds: Optional[tuple[float, float]] = None,
     var_type: Optional[str] = None,
+    on_failure: str = "raise",
     name: Optional[str] = None,
   ) -> None:
     if criterion not in _CRITERIA:
       raise ValueError(
         f"unknown criterion={criterion!r}; expected one of {list(_CRITERIA)}"
+      )
+    if on_failure not in _ON_FAILURE:
+      raise ValueError(
+        f"unknown on_failure={on_failure!r}; expected one of "
+        f"{list(_ON_FAILURE)}"
       )
     if var_type not in (None, "c", "d"):
       raise ValueError(
@@ -257,12 +310,16 @@ class MarginSelector(MarginBase[np.ndarray]):
       None if bounds is None else (float(bounds[0]), float(bounds[1]))
     )
     self._var_type = var_type
+    self.on_failure = on_failure
     # A constructor argument is authoritative; `declare` fills in only what the
     # caller left open.
     self._pinned = (var_type is not None, bounds is not None)
     self.name = name
     self._selected: Optional[Any] = None
     self._report: list[dict[str, Any]] = []
+
+  #: The selector partitions its candidates by kind, so it serves either.
+  supported_var_types: tuple[str, ...] = ("c", "d")
 
   def declare(
     self,
@@ -274,7 +331,7 @@ class MarginSelector(MarginBase[np.ndarray]):
 
     This is the selector's only route to information it cannot recover from the
     sample. Without it, a column the caller knows to be a bounded count is
-    retyped by :meth:`_is_discrete`'s heuristic and scored against candidates
+    retyped by ``_is_discrete``'s heuristic and scored against candidates
     with no bounds at all.
 
     Parameters
@@ -373,13 +430,14 @@ class MarginSelector(MarginBase[np.ndarray]):
     TypeError
         If ``weights`` is given.
     ValueError
-        If no observation survives.
+        If no observation survives, or -- with ``on_failure="raise"`` -- if every
+        candidate was rejected.
 
     Warns
     -----
     UserWarning
-        Once, when every candidate is rejected and the kernel-density fallback
-        is used instead.
+        Once, when every candidate is rejected and ``on_failure="fallback"``
+        substitutes a kernel-density margin.
     """
     _reject_covariates(self, x)
     if weights is not None:
@@ -454,11 +512,15 @@ class MarginSelector(MarginBase[np.ndarray]):
         If ``candidates`` is neither ``"auto"`` nor a sequence.
     """
     if self.candidates == "auto":
-      return [
+      # `unit` and `bounded` both offer `beta`, differing only in its pins, and
+      # a future partition may overlap outright. Deduplicating here keeps that
+      # from producing two candidates that tie exactly on every criterion,
+      # which would make the winner an artifact of iteration order.
+      return _dedupe(
         _curated_margin(family, group, self.bounds)
         for group in self._groups(data, counts=counts)
         for family in _PARTITIONS[group]
-      ]
+      )
     if isinstance(self.candidates, str):
       raise ValueError(
         f"unknown candidates={self.candidates!r}; expected 'auto' or a "
@@ -473,10 +535,24 @@ class MarginSelector(MarginBase[np.ndarray]):
       # reports a probability mass and a continuous one a Lebesgue density, so
       # ranking both on one criterion compares numbers that are not
       # commensurable -- and the density usually wins.
+      #
+      # A family that serves both says so through `supported_var_types`, which
+      # is a property of the family; `var_type` only reports what one instance
+      # currently is. Such a candidate is given the wanted type and then
+      # re-checked, so a family that declares the set but ignores `declare` is
+      # dropped rather than fitted as the wrong kind.
+      served = getattr(
+        margin, "supported_var_types", (getattr(margin, "var_type", "c"),)
+      )
+      if want in served:
+        configure = getattr(margin, "declare", None)
+        if configure is not None:
+          configure(var_type=want)
       if getattr(margin, "var_type", "c") == want:
         out.append(margin)
       else:
         dropped.append(str(getattr(margin, "family_name", margin)))
+    out = _dedupe(out)
     reads = "counts" if counts else "continuous"
     if dropped and not out:
       raise ValueError(
@@ -595,9 +671,22 @@ class MarginSelector(MarginBase[np.ndarray]):
     -------
     Kde1d
         The fitted fallback.
+
+    Raises
+    ------
+    ValueError
+        If ``on_failure`` is ``"raise"``, naming every rejected family and its
+        cause.
     """
     reasons = "; ".join(f"{row['family']}: {row['status']}" for row in rows)
     where = f"variable {self.name!r}" if self.name else "this variable"
+    if self.on_failure == "raise":
+      raise ValueError(
+        f"no parametric family was admissible for {where}. Rejected: "
+        f"{reasons or 'no candidates'}. Pass candidates= to widen the search, "
+        "var_type= or bounds= to say how the data should be read, or "
+        'on_failure="fallback" to accept a kernel-density margin instead.'
+      )
     warnings.warn(
       f"no parametric family was admissible for {where}; falling back to a "
       f"kernel-density margin. Rejected: {reasons or 'no candidates'}",

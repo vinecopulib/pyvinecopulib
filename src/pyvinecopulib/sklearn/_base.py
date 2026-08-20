@@ -48,7 +48,8 @@ PyTorch evaluator (GPU / autograd).
 Fitting assembles a ``Vinedist`` --- the copula and its margins as one
 object --- and every post-fit method evaluates through it. It is
 published as ``distribution_``, so the fitted joint distribution is
-usable outside the estimator; ``selection_report_`` carries the
+usable outside the estimator; ``margin_summary_`` describes the margin
+each variable ended up with, and ``selection_report_`` carries the
 per-candidate table of any margin that selected its own family. See
 the :doc:`concepts page </concepts>` for the underlying vine-copula
 construction.
@@ -635,6 +636,7 @@ class VineBase(BaseEstimator):
     self.distribution_ = Vinedist(
       _BackendVinecop(self.backend_, self._vine), list(margins)
     )
+    self.margin_summary_ = self.distribution_.margin_summary()
 
   def _resolve_runtime_state(self) -> None:
     """Resolve the random-state and backend at fit time. Sets

@@ -188,6 +188,18 @@ def test_the_schema_reaches_a_column_the_specification_addresses() -> None:
   assert other.bounds is None
 
 
+def test_margin_summary_is_published(
+  sample_dataframe_data: tuple[pd.DataFrame, list[str]],
+) -> None:
+  """One row per fitted variable, in the joint model's order."""
+  X_df, _ = sample_dataframe_data
+  est = VineDensity(random_state=0).fit(X_df)
+  rows = est.margin_summary_
+  assert len(rows) == est.n_features_in_
+  assert [row["var_type"] for row in rows] == est.distribution_.var_types
+  assert all(row["family"] == "kde1d" for row in rows)
+
+
 def test_cdf_works_with_columns_that_have_atoms(
   sample_dataframe_data: tuple[pd.DataFrame, list[str]],
 ) -> None:

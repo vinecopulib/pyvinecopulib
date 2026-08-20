@@ -240,6 +240,48 @@ class Vinedist(Generic[ArrayT]):
       for row in getattr(margin, "report_", ())
     ]
 
+  def margin_summary(self) -> list[dict[str, Any]]:
+    """One row per variable describing the margin that models it.
+
+    Where :meth:`selection_report` details the candidates a selector *considered*
+    and reports nothing for a margin that was given, this describes what every
+    variable actually ended up with -- so an all-fixed distribution has a full
+    table too.
+
+    Every field is read as an optional capability, so a margin from another
+    ecosystem contributes whatever it declares and ``None`` for the rest.
+
+    Returns
+    -------
+    list of dict
+        One row per variable in variable order, carrying its position, the
+        margin's own ``name`` if it has one, the class, the family, the variable
+        type as the copula sees it, the support, the number of parameters and
+        the log-likelihood attained at the fit.
+    """
+    rows: list[dict[str, Any]] = []
+    for j, margin in enumerate(self._margins):
+      loglik = getattr(margin, "loglik", None)
+      try:
+        value = float(loglik()) if callable(loglik) else None
+      except (RuntimeError, TypeError, ValueError, NotImplementedError):
+        # `loglik()` with no data is only defined for a margin that was fitted
+        # here; a fixed or foreign one has no fit to report.
+        value = None
+      rows.append(
+        {
+          "variable": j,
+          "name": getattr(margin, "name", None),
+          "margin": type(margin).__name__,
+          "family": getattr(margin, "family_name", None),
+          "var_type": self._var_types[j],
+          "support": getattr(margin, "support", None),
+          "n_parameters": getattr(margin, "n_parameters", None),
+          "loglik": value,
+        }
+      )
+    return rows
+
   @property
   def dim(self) -> int:
     """Number of variables.

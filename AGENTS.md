@@ -676,7 +676,11 @@ then the copula on the resulting pseudo-observations — never fit all of
 SciPy (a blind sweep ranks `vonmises` above the true `gamma` because its
 reported support lies), and never silently skip a failed candidate: every
 rejection gets a row in `report_` with a reason, and a column where
-everything fails falls back to `Kde1d` with one warning.
+everything fails **raises**, naming each family and its cause.
+`on_failure="fallback"` substitutes `Kde1d` with one warning instead --
+available, but not the default, because answering a parametric request
+nonparametrically is the same class of silent downgrade the weights
+contract already refuses.
 
 ### `pyvinecopulib.families`
 

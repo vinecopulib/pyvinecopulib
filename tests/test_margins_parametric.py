@@ -279,7 +279,9 @@ def test_selector_rejects_a_support_that_excludes_the_data() -> None:
   """
   x = np.random.default_rng(0).gamma(2.5, 1.5, size=200)
   with pytest.warns(UserWarning, match="no parametric family was admissible"):
-    sel = MarginSelector(candidates=["weibull_min"]).fit(x)
+    sel = MarginSelector(candidates=["weibull_min"], on_failure="fallback").fit(
+      x
+    )
   row = sel.report_[0]
   assert row["family"] == "weibull_min"
   assert "does not contain the data range" in row["status"]
@@ -292,7 +294,9 @@ def test_selector_falls_back_to_a_kernel_density_never_to_norm() -> None:
   """When nothing is admissible the fallback is nonparametric, and warns once."""
   x = np.random.default_rng(0).gamma(2.5, 1.5, size=200)
   with pytest.warns(UserWarning) as caught:
-    sel = MarginSelector(candidates=["weibull_min"]).fit(x)
+    sel = MarginSelector(candidates=["weibull_min"], on_failure="fallback").fit(
+      x
+    )
   assert len(caught) == 1
   assert isinstance(sel.selected_, Kde1d)
   assert sel.report_[-1]["status"] == "fallback"
@@ -337,7 +341,7 @@ def test_selector_rejects_a_non_finite_log_likelihood() -> None:
   x[0] = 0.0
   candidate = ParametricMargin("beta", fa=2.0, fb=5.0, floc=0.0, fscale=1.0)
   with pytest.warns(UserWarning, match="no parametric family was admissible"):
-    sel = MarginSelector(candidates=[candidate]).fit(x)
+    sel = MarginSelector(candidates=[candidate], on_failure="fallback").fit(x)
   assert sel.report_[0]["status"] == "non-finite log-likelihood (-inf)"
 
 
@@ -346,7 +350,7 @@ def test_selector_rejects_a_non_finite_parameter() -> None:
   candidate = ParametricMargin("norm", floc=float("nan"), fscale=1.0)
   x = np.random.default_rng(0).normal(size=50)
   with pytest.warns(UserWarning, match="no parametric family was admissible"):
-    sel = MarginSelector(candidates=[candidate]).fit(x)
+    sel = MarginSelector(candidates=[candidate], on_failure="fallback").fit(x)
   assert sel.report_[0]["status"] == "non-finite parameter loc=nan"
 
 
@@ -413,7 +417,9 @@ def test_declare_supplies_what_the_sample_cannot_show() -> None:
   )
   assert MarginSelector().fit(x).var_type == "c"
 
-  declared = MarginSelector().declare(var_type="d", support=(-2.0, 2.0))
+  declared = MarginSelector(on_failure="fallback").declare(
+    var_type="d", support=(-2.0, 2.0)
+  )
   assert declared.bounds == (-2.0, 2.0)
   with pytest.warns(UserWarning, match="no parametric family"):
     assert declared.fit(x).var_type == "d"
@@ -511,9 +517,54 @@ def test_selector_records_a_failed_fit_rather_than_raising() -> None:
 
   x = np.random.default_rng(4).normal(size=50)
   with pytest.warns(UserWarning, match="no parametric family was admissible"):
-    sel = MarginSelector(candidates=[Broken()]).fit(x)
+    sel = MarginSelector(candidates=[Broken()], on_failure="fallback").fit(x)
   assert sel.report_[0]["status"] == "RuntimeError: nope"
   assert np.isnan(sel.report_[0]["loglik"])
+
+
+def test_selector_raises_by_default_when_nothing_is_admissible() -> None:
+  """A parametric request answered nonparametrically is a silent downgrade.
+
+  The fallback is still available, but it is opt-in: a warning is easy to lose in
+  a loop over fifty columns, and the message has to say which families were
+  tried and why each failed.
+  """
+  x = np.random.default_rng(0).gamma(2.5, 1.5, size=200)
+  with pytest.raises(ValueError, match="no parametric family was admissible"):
+    MarginSelector(candidates=["weibull_min"]).fit(x)
+  with pytest.raises(ValueError, match="does not contain the data range"):
+    MarginSelector(candidates=["weibull_min"]).fit(x)
+  with pytest.raises(ValueError, match='on_failure="fallback"'):
+    MarginSelector(candidates=["weibull_min"]).fit(x)
+
+
+def test_candidates_are_deduplicated() -> None:
+  """The same family with the same pins twice would tie exactly.
+
+  Two such candidates fit identical numbers, so the winner becomes an artifact
+  of iteration order and the report carries the row twice. The pins are part of
+  the identity: the same family anchored differently is a different candidate,
+  which is what `unit` and `bounded` do with `beta`.
+  """
+  normal = np.random.default_rng(7).normal(size=400)
+  collapsed = MarginSelector(candidates=["norm", "norm", "logistic"]).fit(
+    normal
+  )
+  assert [row["family"] for row in collapsed.report_] == ["norm", "logistic"]
+
+  # Same family, different pins: both are kept.
+  kept = MarginSelector(
+    candidates=[
+      ParametricMargin("norm"),
+      ParametricMargin("norm", floc=0.0),
+    ]
+  ).fit(normal)
+  assert [row["family"] for row in kept.report_] == ["norm", "norm"]
+
+  # And `"auto"` never proposes one family twice.
+  auto = MarginSelector().fit(np.random.default_rng(7).beta(2.0, 5.0, size=400))
+  families = [row["family"] for row in auto.report_]
+  assert len(families) == len(set(families)), families
 
 
 def test_selector_rejects_weights(gamma_sample: np.ndarray) -> None:

@@ -638,8 +638,9 @@ sweep is actively misleading, because a family whose reported support is
 wider than its density integrates over can win on likelihood without
 being a candidate any statistician would accept. And a candidate that
 fails is **reported with a reason** rather than silently skipped — a
-column where everything fails falls back to a KDE margin with a
-warning, never to a normal, since marginal misspecification distorts
+column where every candidate fails raises, naming each family and why.
+``on_failure="fallback"`` asks for a KDE margin instead, with one
+warning; it is never a normal, since marginal misspecification distorts
 the pseudo-observations and biases the copula.
 
 The status quo as a special case

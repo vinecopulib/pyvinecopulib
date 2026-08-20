@@ -160,6 +160,12 @@ class MarginBase(MarginLike[ArrayT], ABC):
   #: rather than a silently unweighted fit.
   supports_weights: bool = False
 
+  #: Which variable types this family can serve, as a superset of what any one
+  #: instance currently declares through :attr:`var_type`. A selector uses it to
+  #: judge admissibility before configuring a candidate, where ``var_type`` can
+  #: only report what the candidate already is.
+  supported_var_types: tuple[str, ...] = ("c",)
+
   #: Whether this margin reads the exogenous covariates ``x``, i.e. whether it
   #: models ``f(y | x)`` rather than ``f(y)``. Declared so consumers can omit
   #: ``x`` entirely for an unconditional margin, which is what lets a margin
