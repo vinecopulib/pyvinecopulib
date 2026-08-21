@@ -6,8 +6,13 @@ import math
 
 import numpy as np
 import pytest
-from numpy.testing import assert_allclose, assert_array_almost_equal
+from numpy.testing import (
+  assert_allclose,
+  assert_array_almost_equal,
+  assert_array_equal,
+)
 
+import pyvinecopulib as pv
 from pyvinecopulib._python_helpers.stats import (
   expon_cdf,
   expon_pdf,
@@ -293,3 +298,43 @@ class TestEdgeCases:
     assert_allclose(expon_pdf(x_scalar), expon_pdf(x_array)[0])
     assert_allclose(expon_cdf(x_scalar), expon_cdf(x_array)[0])
     assert_allclose(expon_ppf(p_scalar), expon_ppf(p_array)[0])
+
+
+class TestFindLatentSample:
+  """`pv.utils.find_latent_sample` recovers a continuous sample from
+  interval-censored copula data."""
+
+  @staticmethod
+  def _censored(n: int = 500, levels: int = 6) -> np.ndarray:
+    cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+    u = cop.sample(n, seeds=[1, 2, 3])
+    upper = np.ceil(u * levels) / levels
+    lower = (np.ceil(u * levels) - 1) / levels
+    return np.column_stack([upper, lower])
+
+  def test_output_is_on_the_copula_scale(self) -> None:
+    z = pv.utils.find_latent_sample(self._censored(), 0.2)
+    assert z.shape == (500, 2)
+    assert ((z > 0.0) & (z < 1.0)).all()
+
+  def test_the_draw_is_deterministic(self) -> None:
+    """Every random component comes from a fixed-seed generator, so repeated
+    calls agree bit for bit -- which is what makes a fit reproducible."""
+    arg = self._censored()
+    assert_array_equal(
+      pv.utils.find_latent_sample(arg, 0.2),
+      pv.utils.find_latent_sample(arg, 0.2),
+    )
+
+  def test_it_is_invariant_to_argument_order(self) -> None:
+    """Swapping the two variables swaps the two output columns and nothing
+    else, so a pair copula reused with its arguments flipped recovers the
+    same latent sample (vinecopulib#751)."""
+    arg = self._censored()
+    z = pv.utils.find_latent_sample(arg, 0.2)
+    flipped = pv.utils.find_latent_sample(arg[:, [1, 0, 3, 2]], 0.2)
+    assert_array_equal(z, flipped[:, [1, 0]])
+
+  def test_it_requires_the_four_column_layout(self) -> None:
+    with pytest.raises(RuntimeError):
+      pv.utils.find_latent_sample(self._censored()[:, :2], 0.2)

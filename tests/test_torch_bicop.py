@@ -7,6 +7,8 @@ on the same fitted interpolation grid and verifies ``hinv`` round-trips.
 
 from __future__ import annotations
 
+from fractions import Fraction
+
 import numpy as np
 import pytest
 
@@ -83,9 +85,9 @@ def test_hinv_roundtrip() -> None:
   cop_tll = _fit_tll(u_fit)
 
   # Pin cache=False: the closed-form inversion is the exact inverse of the
-  # on-the-fly h-function, so the round-trip holds to machine precision.
-  # The cached path round-trips only to ~1e-3 — covered by
-  # test_cached_hinv_speedup.
+  # on-the-fly h-function, so the round-trip holds to machine precision. The
+  # cached path inverts the same quadratic but reads `hfunc1` off the prefix
+  # tables, so it round-trips to summation-order noise rather than exactly.
   bc = TorchBicop.from_bicop(cop_tll, cache_integrals=False)
   u_eval = _eval_grid(400, seed=21)
   u_t = torch.from_numpy(u_eval)
@@ -177,7 +179,7 @@ def test_from_bicop_rejects_rotated() -> None:
 def test_from_data_matches_cpp(n: int, rho: float) -> None:
   """The pure-torch TLL constant fit produces the same density grid as
   ``pv.Bicop.from_data`` to machine precision after the standard
-  ``normalize_margins(3)`` round in :class:`InterpolationGrid2D`.
+  margin normalization in :class:`InterpolationGrid2D`.
   """
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[rho]]))
   u_np = cop.sample(n, seeds=[1, 2, 3])
@@ -233,12 +235,10 @@ def test_cached_integrals_smoke() -> None:
   cop_tll = _fit_tll(u_fit)
 
   bc_cache = TorchBicop.from_bicop(cop_tll, cache_integrals=True)
-  # All five caches must be populated for a non-indep pair.
-  assert bc_cache._cdf_cache is not None
-  assert bc_cache._hfunc1_cache is not None
-  assert bc_cache._hfunc2_cache is not None
-  assert bc_cache._hinv1_cache is not None
-  assert bc_cache._hinv2_cache is not None
+  # All three prefix tables must be populated for a non-indep pair.
+  assert bc_cache._sy is not None
+  assert bc_cache._sx is not None
+  assert bc_cache._prefix is not None
 
   u_t = torch.from_numpy(_eval_grid(200, seed=42))
   for fn in (
@@ -253,12 +253,13 @@ def test_cached_integrals_smoke() -> None:
     assert (out >= 0.0).all() and (out <= 1.0).all()
 
 
-def test_cached_hinv_speedup() -> None:
-  """``cache_integrals=True`` should make ``hinv1`` / ``hinv2`` a single
-  bilinear interp instead of 35 iters of bisection. Verify the cached
-  path matches the bisection path to within bilinear-interp precision
-  (~1e-2 max, the usual gap between the cached integral and the
-  trapezoidal recomputation at off-node points).
+def test_cached_and_uncached_hinv_agree_exactly() -> None:
+  """``hinv1`` / ``hinv2`` do not read the prefix tables, in either mode.
+
+  Locating the bracketing cell of the inverse needs the conditional cumulative
+  along the whole free axis, which is O(m) to assemble — so there is no O(1)
+  exact lookup to cache, and both modes run the same closed-form inversion of
+  the same quadratic. The two are therefore bit-identical, not merely close.
   """
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
   u_fit = cop.sample(2000, seeds=[1, 2, 3])
@@ -269,14 +270,9 @@ def test_cached_hinv_speedup() -> None:
 
   u_t = torch.from_numpy(_eval_grid(500, seed=77))
   for which in ("hinv1", "hinv2"):
-    out_bisect = getattr(bc_bisect, which)(u_t).numpy()
-    out_cached = getattr(bc_cached, which)(u_t).numpy()
-    diff = np.abs(out_bisect - out_cached)
-    # Bilinear-interp gap between the cached hinv and the bisection-on-
-    # cached-h path (the latter converges to ~1e-9 of h's cache; the
-    # former lives off-grid).
-    assert diff.max() < 2e-2, f"{which}: max diff {diff.max():.3e}"
-    assert diff.mean() < 3e-3, f"{which}: mean diff {diff.mean():.3e}"
+    out_bisect = getattr(bc_bisect, which)(u_t)
+    out_cached = getattr(bc_cached, which)(u_t)
+    torch.testing.assert_close(out_cached, out_bisect, atol=0.0, rtol=0.0)
 
 
 def test_independent_bicop() -> None:
@@ -324,9 +320,8 @@ def test_linear_grid_roundtrip_and_range() -> None:
   """
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   u_fit = cop.sample(2000, seeds=[10, 11, 12])
-  # cache=False so the hinv round-trip below holds at 1e-9 (the cached
-  # path round-trips only to ~1e-3 — that's covered by
-  # test_cached_hinv_speedup).
+  # cache=False so the hinv round-trip below is the exact inverse of the
+  # h-function it is composed with, holding at 1e-9.
   bc_lin = TorchBicop.from_data(
     u_fit, FitControlsTorchBicop(grid_type="linear"), cache_integrals=False
   )
@@ -379,18 +374,16 @@ def test_linear_grid_cell_index_matches_searchsorted() -> None:
 
 
 def test_linear_grid_cached_integrals_consistent() -> None:
-  """``cache_integrals=True`` must build all five caches and produce in-
-  range outputs on the linear grid as well as on the normal grid."""
+  """``cache_integrals=True`` must build all three prefix tables and produce
+  in-range outputs on the linear grid as well as on the normal grid."""
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
   u_fit = cop.sample(1500, seeds=[7, 8, 9])
   bc = TorchBicop.from_data(
     u_fit, FitControlsTorchBicop(grid_type="linear"), cache_integrals=True
   )
-  assert bc._cdf_cache is not None
-  assert bc._hfunc1_cache is not None
-  assert bc._hfunc2_cache is not None
-  assert bc._hinv1_cache is not None
-  assert bc._hinv2_cache is not None
+  assert bc._sy is not None
+  assert bc._sx is not None
+  assert bc._prefix is not None
 
   u_t = torch.from_numpy(_eval_grid(300, seed=21))
   for fn in (bc.cdf, bc.hfunc1, bc.hfunc2, bc.hinv1, bc.hinv2):
@@ -461,7 +454,7 @@ def test_simulate_rejects_nonpositive_n() -> None:
 
 
 # ---------------------------------------------------------------------------
-# InterpolationGrid2D.normalize_margins(tol=...) early-stop
+# InterpolationGrid2D.normalize_margins
 # ---------------------------------------------------------------------------
 
 
@@ -596,12 +589,16 @@ def test_hinv_is_differentiable() -> None:
       assert rel < 1e-6, f"{name}, cache={cache}: {rel:.3e}"
 
 
-def test_cached_integrals_do_not_carry_a_grid_gradient() -> None:
-  """The cached tables are constants, and that is the documented semantics.
+def test_cached_integrals_carry_a_grid_gradient() -> None:
+  """The cached ``cdf`` is differentiable in the grid, and agrees with the
+  on-the-fly one.
 
-  Pinning it makes building the caches inside the graph a conscious future
-  decision rather than a surprise. `pdf` never reads a cache, so it keeps its
-  gradient in the grid either way.
+  The prefix tables are cumulative trapezoids of ``values``, so the closed-form
+  ``cdf`` read off them is an exact function of the grid -- not the bilinear
+  surrogate the previous cache interposed, which carried no such gradient at
+  all. Both directions matter: turning ``requires_grad`` on **after**
+  construction has to reach the tables (they are buffers, so a stale detached
+  copy would silently zero the gradient), and the two modes must agree.
   """
   gauss = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
   cop = _fit_tll(gauss.sample(2000, seeds=[7, 8, 9]))
@@ -609,15 +606,184 @@ def test_cached_integrals_do_not_carry_a_grid_gradient() -> None:
     np.random.default_rng(26).uniform(0.15, 0.85, size=(8, 2))
   )
 
-  cached = TorchBicop.from_bicop(cop, cache_integrals=True)
-  cached.interp_grid.values.requires_grad_(True)
-  assert cached.pdf(q).requires_grad
-  assert not cached.cdf(q).requires_grad
+  grads = {}
+  for cache in (True, False):
+    bc = TorchBicop.from_bicop(cop, cache_integrals=cache)
+    bc.interp_grid.values.requires_grad_(True)
+    assert bc.pdf(q).requires_grad
+    out = bc.cdf(q)
+    assert out.requires_grad, f"cache={cache}: cdf lost its grid gradient"
+    (grad,) = torch.autograd.grad(out.sum(), bc.interp_grid.values)
+    assert torch.isfinite(grad).all()
+    assert grad.abs().sum().item() > 0.0
+    grads[cache] = grad
 
-  exact = TorchBicop.from_bicop(cop, cache_integrals=False)
-  exact.interp_grid.values.requires_grad_(True)
-  out = exact.cdf(q)
-  assert out.requires_grad
-  (grad,) = torch.autograd.grad(out.sum(), exact.interp_grid.values)
-  assert torch.isfinite(grad).all()
-  assert grad.abs().sum().item() > 0.0
+  # Both are exact integrals of the same bilinear interpolant -- `integrate_2d`
+  # is piecewise-exact in each direction, the tables are cumulative trapezoids
+  # of the same pieces -- so they differ only in the order the terms are summed.
+  torch.testing.assert_close(grads[True], grads[False], atol=1e-10, rtol=1e-7)
+
+
+def _exact_rect_prob(
+  grid: list[Fraction], values: list[list[Fraction]], rect: tuple[Fraction, ...]
+) -> Fraction:
+  """The four-corner difference of the renormalized distribution function.
+
+  Exact rational arithmetic throughout, so it is the reference the float routes
+  are measured against. ``C(u1, u2) = M(u1, u2) * u2 / M(1, u2)``, the object
+  ``integrate_2d`` computes.
+  """
+  m = len(grid)
+
+  def weights(lo: Fraction, hi: Fraction) -> list[Fraction]:
+    w = [Fraction(0)] * m
+
+    def add(k: int, s0: Fraction, s1: Fraction) -> None:
+      h = grid[k + 1] - grid[k]
+      q = (s1 * s1 - s0 * s0) / 2
+      w[k] += h * (s1 - s0 - q)
+      w[k + 1] += h * q
+
+    def cell(x: Fraction) -> int:
+      k = 0
+      while k < m - 2 and grid[k + 1] <= x:
+        k += 1
+      return k
+
+    ka, kb = cell(lo), cell(hi)
+    if ka == kb:
+      h = grid[ka + 1] - grid[ka]
+      add(ka, (lo - grid[ka]) / h, (hi - grid[ka]) / h)
+      return w
+    add(ka, (lo - grid[ka]) / (grid[ka + 1] - grid[ka]), Fraction(1))
+    for k in range(ka + 1, kb):
+      h = (grid[k + 1] - grid[k]) / 2
+      w[k] += h
+      w[k + 1] += h
+    add(kb, Fraction(0), (hi - grid[kb]) / (grid[kb + 1] - grid[kb]))
+    return w
+
+  def mass(a1: Fraction, b1: Fraction, a2: Fraction, b2: Fraction) -> Fraction:
+    wx, wy = weights(a1, b1), weights(a2, b2)
+    return sum(
+      (
+        wx[i] * wy[j] * values[i][j]
+        for i in range(m)
+        if wx[i]
+        for j in range(m)
+        if wy[j]
+      ),
+      Fraction(0),
+    )
+
+  def cdf(u1: Fraction, u2: Fraction) -> Fraction:
+    total = mass(Fraction(0), Fraction(1), Fraction(0), u2)
+    return (
+      Fraction(0)
+      if total == 0
+      else mass(Fraction(0), u1, Fraction(0), u2) * u2 / total
+    )
+
+  a1, b1, a2, b2 = rect
+  return cdf(b1, b2) - cdf(a1, b2) - cdf(b1, a2) + cdf(a1, a2)
+
+
+# Both bounds move with the width, which is the point: differencing four
+# distribution values amplifies any absolute error by ~4 / (w1 w2), where
+# `rect_mass` amplifies by 1 / w2 alone -- one power instead of two, because
+# only its `lam` difference cancels and that multiplies a term of order w1.
+# Measuring both in one run is what shows the gap is the construction rather
+# than the test data: the two agree at 3/8 and are 3000x apart at 1/8192.
+# Dyadic endpoints keep `float(x) == x`, so the comparison is against the
+# algorithm and not against how the query points round.
+@pytest.mark.parametrize(
+  "width,tol_rect,tol_diff",
+  [
+    # One decade of tolerance per decade of width for `rect_mass`, two for the
+    # difference -- which is the finding, stated as the shape of the table.
+    (Fraction(3, 8), 3e-15, 3e-15),
+    (Fraction(1, 16), 3e-14, 1e-13),
+    (Fraction(1, 64), 1e-13, 3e-12),
+    (Fraction(1, 1024), 2e-12, 1e-9),
+    (Fraction(1, 8192), 1e-11, 3e-8),
+  ],
+)
+def test_rect_mass_is_exact_at_every_atom_width(
+  width: Fraction, tol_rect: float, tol_diff: float
+) -> None:
+  """``rect_mass`` against exact rational truth, with the differencing route
+  measured beside it.
+  """
+  from pyvinecopulib.torch._interp import InterpolationGrid2D
+
+  m = 30
+  grid_f = [Fraction(i, m - 1) for i in range(m)]
+  raw = np.random.default_rng(4).integers(1, 4000, size=(m, m))
+  values_f = [[Fraction(int(raw[i, j])) for j in range(m)] for i in range(m)]
+
+  gp = torch.tensor([float(x) for x in grid_f], dtype=torch.float64)
+  vals = torch.tensor(raw, dtype=torch.float64)
+  grid = InterpolationGrid2D(gp, vals, norm_maxiter=0, is_linear=True)
+
+  rng = np.random.default_rng(5)
+  lim = int((1 - width) * 512)
+  rects = []
+  for _ in range(40):
+    a1 = Fraction(int(rng.integers(1, lim)), 512)
+    a2 = Fraction(int(rng.integers(1, lim)), 512)
+    rects.append((a1, a1 + width, a2, a2 + width))
+  truth = np.array(
+    [float(_exact_rect_prob(grid_f, values_f, r)) for r in rects]
+  )
+
+  a1t, b1t, a2t, b2t = (
+    torch.tensor([float(r[k]) for r in rects], dtype=torch.float64)
+    for k in range(4)
+  )
+  got = grid.rect_mass(a1t, b1t, a2t, b2t).numpy()
+
+  def cdf(x1: torch.Tensor, x2: torch.Tensor) -> np.ndarray:
+    return grid.integrate_2d(torch.stack([x1, x2], dim=-1)).numpy()
+
+  diff4 = cdf(b1t, b2t) - cdf(a1t, b2t) - cdf(b1t, a2t) + cdf(a1t, a2t)
+  e_rect = np.max(np.abs(got - truth) / truth)
+  e_diff = np.max(np.abs(diff4 - truth) / truth)
+  assert e_rect < tol_rect, f"rect_mass: {e_rect:.3e}"
+  # The differencing route must stay inside its own, looser bound; if the two
+  # columns ever coincided, the parametrization would be measuring nothing.
+  assert e_diff < tol_diff, f"difference: {e_diff:.3e}"
+
+
+def test_rect_mass_reproduces_the_cdf_on_a_corner_rectangle() -> None:
+  """``rect_mass`` is the ``cdf``, not a different integral of the same grid.
+
+  On a rectangle anchored at the origin the four-corner difference collapses to
+  one ``cdf`` value, so the two must agree with no width-dependent slack.
+  Pinning it keeps them from drifting into two definitions.
+  """
+  gauss = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  cop = _fit_tll(gauss.sample(2000, seeds=[31, 32, 33]))
+  bc = TorchBicop.from_bicop(cop)
+  u = torch.from_numpy(_eval_grid(200, seed=34))
+  zero = torch.zeros_like(u[:, 0])
+  torch.testing.assert_close(
+    bc.rect_mass(zero, u[:, 0], zero, u[:, 1]),
+    bc.cdf(u),
+    rtol=1e-12,
+    atol=1e-12,
+  )
+
+
+def test_values_must_be_nonnegative() -> None:
+  """A density grid with a negative node is refused, not silently integrated.
+
+  The exact tables and ``rect_mass`` both rely on nonnegativity for their
+  no-cancellation bound, so it is a precondition rather than a nicety.
+  """
+  from pyvinecopulib.torch._interp import InterpolationGrid2D
+
+  gp = torch.linspace(0.0, 1.0, 8, dtype=torch.float64)
+  vals = torch.ones(8, 8, dtype=torch.float64)
+  vals[3, 4] = -1e-12
+  with pytest.raises(ValueError, match="nonnegative"):
+    InterpolationGrid2D(gp, vals, norm_maxiter=0, is_linear=True)

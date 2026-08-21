@@ -32,6 +32,10 @@ method :
     - ``"kendall"``, ``"ktau"``, ``"tau"`` : Kendall’s :math:`\tau`
     - ``"blomqvist"``, ``"bbeta"``, ``"beta"`` : Blomqvist’s :math:`\beta`
     - ``"hoeffding"``, ``"hoeffd"``, ``"d"`` : Hoeffding’s :math:`D`
+    - ``"chatterjee"``, ``"cxi"``, ``"xi"`` : Chatterjee’s :math:`\xi`
+
+    Every measure above is symmetric in ``x`` and ``y`` except Chatterjee’s
+    :math:`\xi`, which measures how far ``y`` is a function of ``x``.
 weights :
     Optional vector of observation weights.
 remove_missing :
@@ -64,6 +68,10 @@ inline void init_stats(nb::module_& m) {
         tools_stat_doc.to_pseudo_obs.doc, "x"_a, "ties_method"_a = "average",
         "weights"_a = Eigen::VectorXd(), "seeds"_a = std::vector<int>(),
         nb::call_guard<nb::gil_scoped_release>());
+  m.def("find_latent_sample", &tools_stats::find_latent_sample,
+        tools_stat_doc.find_latent_sample.doc, "u"_a, "b"_a, "niter"_a = 3,
+        nb::call_guard<nb::gil_scoped_release>());
+
   m.def("wdm",
         static_cast<double (*)(const Eigen::VectorXd&, const Eigen::VectorXd&,
                                std::string, Eigen::VectorXd, bool)>(&wdm::wdm),

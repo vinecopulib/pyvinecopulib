@@ -607,9 +607,19 @@ automatically.
 
 ### `pyvinecopulib.utils`
 
-- Re-exports `Kde1d`, `to_pseudo_obs`, `wdm`, `sobol`, `ghalton`,
-  `sample_uniform`, `benchmark` (all C++) plus the pure-Python
-  `pairs_copula_data` helper from `_pair_plots.py`.
+- Re-exports `Kde1d`, `to_pseudo_obs`, `wdm`, `find_latent_sample`,
+  `sobol`, `ghalton`, `sample_uniform`, `benchmark` (all C++) plus the
+  pure-Python `pairs_copula_data` helper from `_pair_plots.py`.
+- `wdm`'s `method` includes Chatterjee's ξ (`"chatterjee"` / `"cxi"` /
+  `"xi"`), the one **asymmetric** measure in the list — it measures how far
+  `y` is a function of `x`. `FitControlsVinecop.tree_criterion` accepts it
+  too, so any Python-side selector that computes the criterion itself must
+  accept it or silently diverge from `Vinecop.select`.
+- `find_latent_sample(u, b, niter=3)` recovers a continuous sample from
+  interval-censored copula data — the transform a nonparametric fit on
+  discrete margins runs on. The draw is deterministic and invariant to
+  argument order, so a pair reused with its arguments flipped recovers the
+  same latent sample.
 - `Kde1d` is used internally by the sklearn estimators as the
   marginal estimator; it also stands alone for any 1-d KDE problem.
 - `to_pseudo_obs(data)` is the canonical input transform for
@@ -718,12 +728,30 @@ Key surface:
   dataclasses. Notable knobs:
   - `method` — `"tll"` (the only fitter; kept as the dispatch seam
     for future torch fitters).
-  - `cache_integrals` — default `True` (set in `990f997`); precomputes
-    integral grids for ~80–300× evaluation speed-up with mean IAE
-    `< 1e-3`. The cached `cdf` / `hfunc*` / `hinv*` are differentiable in
-    `u`, but carry **no** gradient with respect to `values` — with the cache
-    on, the bilinear surrogate *is* the model for those four members. `pdf`
-    reads the grid directly and always carries both.
+  - `cache_integrals` — default `True`; precomputes three `(m, m)`
+    cumulative-trapezoid **prefix** tables (`sy`, `sx`, `p`), from which
+    `cdf` / `hfunc*` read their value in closed form. The reconstruction is
+    **exact**, not an approximation: `chat` is bilinear, so along a grid line
+    it is piecewise linear and its integral is piecewise linear across cells.
+    So the cache costs nothing in accuracy — it agrees with the on-the-fly
+    path to summation-order noise — and it carries an exact gradient in
+    `values` as well as in `u`. `hinv*` do **not** read the tables in either
+    mode: locating the bracketing cell needs the conditional cumulative along
+    the whole free axis, which is `O(m)` to assemble, so there is no `O(1)`
+    exact lookup to cache and both modes run the same closed-form inversion.
+    The tables are buffers, so `_tables` rebuilds them in-graph when `values`
+    starts tracking grad after construction.
+  - `rect_mass(a1, b1, a2, b2)` is available in **both** cache modes: the exact
+    probability of a rectangle — the value a four-corner `cdf` difference
+    defines, arranged so that almost none of it cancels. That difference turns
+    an absolute error `ε` into `≈4ε/(w₁w₂)` in the atom widths; `rect_mass`
+    amplifies by `1/w₂` alone, since only its `λ(b₂) − λ(a₂)` term cancels and
+    that multiplies a term of order `w₁`. Measured on a `1.2e-4`-wide
+    rectangle: `2.9e-12` against `8.7e-9`. `values >= 0` is a constructor
+    precondition precisely because the nonnegative-weight bound depends on it.
+    Note it is the **probability**, not the density's mass: `cdf` renormalizes
+    each grid line by its own total, so the two differ, and a discrete edge is
+    defined against the distribution function.
   - `batched` — fires a single batched bicop call per tree level
     (available on `pdf` / `rosenblatt`, not on `inverse_rosenblatt`).
     The non-batched cascade is a byte-for-byte port of the C++
@@ -795,8 +823,8 @@ below are a quick orientation.
   `three_par`, `elliptical`, `archimedean`, `extreme_value`, `bb`,
   `rotationless`, `lt`, `ut`, `itau`, `analytic_derivs`).
 - **`pyvinecopulib.utils`** — `Kde1d`, `to_pseudo_obs`, `wdm`,
-  `sobol`, `ghalton`, `sample_uniform`, `benchmark`,
-  `pairs_copula_data`.
+  `find_latent_sample`, `sobol`, `ghalton`, `sample_uniform`,
+  `benchmark`, `pairs_copula_data`.
 - **`pyvinecopulib.sklearn`** — `VineDensity`, `VineRegressor`,
  plus the `backends`
   submodule (`VinecopBackend`, `TorchVinecopBackend`,

@@ -36,7 +36,14 @@ class TestWdm:
 
   def test_wdm_basic_functionality(self) -> None:
     """Test basic functionality with different methods"""
-    methods = ["pearson", "spearman", "kendall", "blomqvist", "hoeffding"]
+    methods = [
+      "pearson",
+      "spearman",
+      "kendall",
+      "blomqvist",
+      "hoeffding",
+      "chatterjee",
+    ]
 
     for method in methods:
       # Should not raise an error and return a float
@@ -78,6 +85,13 @@ class TestWdm:
       assert_allclose(result, blomqvist_results[0], rtol=1e-15)
 
     # Hoeffding aliases
+    chatterjee_methods = ["chatterjee", "cxi", "xi"]
+    chatterjee_results = [
+      pv.utils.wdm(x, y, method) for method in chatterjee_methods
+    ]
+    assert_allclose(chatterjee_results[0], chatterjee_results[1], rtol=1e-12)
+    assert_allclose(chatterjee_results[0], chatterjee_results[2], rtol=1e-12)
+
     hoeffding_methods = ["hoeffding", "hoeffd", "d"]
     hoeffding_results = [
       pv.utils.wdm(x, y, method) for method in hoeffding_methods
@@ -393,3 +407,21 @@ class TestWdm:
     weights_large = np.full(n, 1e6)
     result_large = pv.utils.wdm(x, y, "pearson", weights_large)
     assert_allclose(result_large, result_unweighted, rtol=1e-12)
+
+  def test_chatterjee_is_the_one_asymmetric_measure(self) -> None:
+    """Chatterjee's xi measures how far y is a function of x, so it is
+    directional -- unlike every other measure `wdm` offers."""
+    x, y = self.x_positive, self.y_positive
+    for method in ("pearson", "spearman", "kendall", "blomqvist", "hoeffding"):
+      assert_allclose(
+        pv.utils.wdm(x, y, method), pv.utils.wdm(y, x, method), rtol=1e-12
+      )
+    assert pv.utils.wdm(x, y, "xi") != pv.utils.wdm(y, x, "xi")
+
+  def test_chatterjee_separates_dependence_from_independence(self) -> None:
+    """It is ~0 under independence and near 1 for a deterministic map."""
+    xi_indep = pv.utils.wdm(self.x_independent, self.y_independent, "xi")
+    assert abs(xi_indep) < 0.15
+    rng = np.random.default_rng(7)
+    x = rng.uniform(-2.0, 2.0, 2000)
+    assert pv.utils.wdm(x, x**2, "xi") > 0.9

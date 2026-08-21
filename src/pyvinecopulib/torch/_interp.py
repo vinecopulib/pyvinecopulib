@@ -21,8 +21,8 @@ from ._batched import (
   int_on_grid_batched,
   integrate_1d_batched,
   integrate_2d_batched,
-  interp_at_batched,
   interpolate_batched,
+  _MIN_MASS,
 )
 
 _TRIM_LO: float = 1e-10
@@ -78,6 +78,7 @@ class InterpolationGrid2D(torch.nn.Module):
   values: Tensor
   grid_points: Tensor
   trap_weights: Tensor
+  _dgrid: Tensor
 
   def __init__(
     self,
@@ -93,6 +94,11 @@ class InterpolationGrid2D(torch.nn.Module):
       raise ValueError(
         "grid_points must be 1D and match the side length of values"
       )
+    # A density is nonnegative, and the exact prefix tables rely on it: every
+    # integral they serve is a sum of nonnegative terms, so no cancellation can
+    # amplify a rounding error. A negative node would break that silently.
+    if bool((values < 0.0).any()):
+      raise ValueError("values must be nonnegative; it is a density grid")
 
     grid_points = grid_points.clone()
     # Force boundary points to exactly 0 / 1 so we never extrapolate.
@@ -106,6 +112,7 @@ class InterpolationGrid2D(torch.nn.Module):
     # is immutable after construction, so this is built once; the normalization
     # and the h-function denominator both read it instead of walking the cells.
     self.register_buffer("trap_weights", _trap_weights(grid_points))
+    self.register_buffer("_dgrid", grid_points[1:] - grid_points[:-1])
     # When ``is_linear`` is True the grid is assumed to be ``linspace(0, 1, m)``
     # (with the endpoint clamp above leaving it unchanged), so cell-finding is
     # O(1) — ``floor(u * (m - 1))`` — instead of an O(log m) ``searchsorted``.
@@ -409,52 +416,261 @@ class InterpolationGrid2D(torch.nn.Module):
   # Cached evaluation grids (optional, see TorchBicop(cache_integrals=…)). #
   # --------------------------------------------------------------------- #
 
-  @torch.no_grad()
-  def build_caches(self) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
-    """Precompute ``cdf`` / ``hfunc1`` / ``hfunc2`` / ``hinv1`` / ``hinv2``
-    at every grid node.
+  def build_caches(self) -> tuple[Tensor, Tensor, Tensor]:
+    """Precompute the three prefix-integral tables the exact cache runs on.
 
-    Returns five ``(m, m)`` tensors; ``TorchBicop`` stores them as buffers
-    and bilinearly interpolates them when ``cache_integrals=True``. The
-    inverse-h-function caches evaluate the exact closed-form
-    :meth:`inverse_integrate_1d` at the grid nodes (each call is then one
-    lookup instead of a root-finding pass at eval time).
+    Returns ``(sy, sx, p)``, each ``(m, m)``:
+
+    * ``sy[i, j] = int_0^{g_j} chat(g_i, t) dt`` -- cumulative along the second
+      argument, one row per grid line of the first;
+    * ``sx[i, j] = int_0^{g_i} chat(s, g_j) ds`` -- the transpose situation;
+    * ``p[i, j]`` -- the double integral over ``[0, g_i] x [0, g_j]``.
+
+    Every one is a cumulative trapezoid, which is **exact** here: ``chat`` is
+    bilinear, so along a fixed grid line it is piecewise linear, and its
+    integral against ``s`` is again piecewise linear across cells. That is what
+    lets :meth:`cdf_cached` and :meth:`hfunc_cached` reconstruct the integral at
+    an arbitrary point in O(1) *without approximating it*.
+
+    Three cumulative sums over ``(m, m)``. Built inside the graph, so an exact
+    gradient with respect to ``values`` survives; they are registered as
+    buffers, so
+    ``TorchBicop._tables`` rebuilds them when ``values`` starts tracking grad
+    afterwards.
+
+    Returns
+    -------
+    tuple of Tensor
+        The three ``(m, m)`` tables.
     """
-    m = self.grid_points.shape[0]
-    gi, gj = torch.meshgrid(self.grid_points, self.grid_points, indexing="ij")
-    grid_pairs = torch.stack(
-      [gi.reshape(-1), gj.reshape(-1)], dim=-1
-    )  # (m^2, 2)
-    cdf_vals = self.integrate_2d(grid_pairs).reshape(m, m)
-    h1_vals = self.integrate_1d(grid_pairs, cond_var=1).reshape(m, m)
-    h2_vals = self.integrate_1d(grid_pairs, cond_var=2).reshape(m, m)
-
-    # hinv1: for each grid point (g_i, g_j), solve hfunc1((g_i, u2)) = g_j
-    # for u2; hinv2 is the symmetric problem. Both are exact closed-form
-    # conditional quantiles of the interpolated density.
-    hinv1_vals = (
-      self.inverse_integrate_1d(grid_pairs, cond_var=1)
-      .clamp(0.0, 1.0)
-      .reshape(m, m)
+    inc = 0.5 * (self.values[:, :-1] + self.values[:, 1:]) * self._dgrid
+    sy = torch.cat([torch.zeros_like(inc[:, :1]), inc.cumsum(dim=1)], dim=1)
+    incx = (
+      0.5
+      * (self.values[:-1, :] + self.values[1:, :])
+      * self._dgrid.unsqueeze(-1)
     )
-    hinv2_vals = (
-      self.inverse_integrate_1d(grid_pairs, cond_var=2)
-      .clamp(0.0, 1.0)
-      .reshape(m, m)
-    )
+    sx = torch.cat([torch.zeros_like(incx[:1, :]), incx.cumsum(dim=0)], dim=0)
+    incp = 0.5 * (sy[:-1, :] + sy[1:, :]) * self._dgrid.unsqueeze(-1)
+    p = torch.cat([torch.zeros_like(incp[:1, :]), incp.cumsum(dim=0)], dim=0)
+    return sy, sx, p
 
-    return cdf_vals, h1_vals, h2_vals, hinv1_vals, hinv2_vals
+  def _partial_t(self, rows: Tensor, jc: Tensor, u2: Tensor) -> Tensor:
+    """``int_{g_jc}^{u2} chat(g_rows, t) dt``, the exact partial cell."""
+    g = self.grid_points
+    dx = u2 - g[jc]
+    frac = dx / (g[jc + 1] - g[jc])
+    v0 = self.values[rows, jc]
+    v1 = self.values[rows, jc + 1]
+    return (2.0 * v0 + (v1 - v0) * frac) * dx / 2.0
 
-  def interp_at(self, cache: Tensor, u: Tensor) -> Tensor:
-    """Bilinearly interpolate a precomputed ``(m, m)`` cache at points ``u``.
+  def cdf_cached(self, u: Tensor, sy: Tensor, sx: Tensor, p: Tensor) -> Tensor:
+    """The exact distribution function at ``u``, in O(1) per point.
 
-    Convenience for the cached-integrals path; uses the same bilinear formula
-    as :meth:`interpolate` but on an arbitrary user-provided grid.
+    The integral over ``[0, u1] x [0, u2]`` splits into the whole cells below
+    and left of the query, the strip partial in the first argument, the strip
+    partial in the second, and the corner cell partial in both. Each of the four
+    is a closed form in the tables, because the ``u2``-partial of a grid line is
+    a fixed linear combination of two columns of ``values`` -- so integrating it
+    over the first argument reads ``sx`` rather than needing its own table.
+
+    The result carries the same ``* u2 / total`` renormalization and
+    ``[1e-10, 1-1e-10]`` clamp as :meth:`integrate_2d`, so it is that function's
+    value and not a different definition of it.
+
+    Parameters
+    ----------
+    u : Tensor, shape (n, 2), dtype float
+        Query points.
+    sy, sx, p : Tensor, shape (m, m), dtype float
+        The tables from :meth:`build_caches`.
+
+    Returns
+    -------
+    Tensor, shape (n,), dtype float
+        Distribution values.
     """
-    if cache.shape != self.values.shape:
-      raise ValueError("cache must have the same shape as values")
-    if u.ndim != 2 or u.shape[1] != 2:
-      raise ValueError(f"u must have shape (n, 2); got {tuple(u.shape)}")
-    return interp_at_batched(
-      self.grid_points, cache.unsqueeze(0), u.unsqueeze(0), self._is_linear
-    ).squeeze(0)
+    g = self.grid_points
+    m = g.shape[0]
+    uu = u.clamp(0.0, 1.0)
+    u1, u2 = uu[:, 0], uu[:, 1]
+    ic = self._cell_index(u1)
+    jc = self._cell_index(u2)
+    dx1 = u1 - g[ic]
+    f1 = dx1 / (g[ic + 1] - g[ic])
+    dx2 = u2 - g[jc]
+    f2 = dx2 / (g[jc + 1] - g[jc])
+    # the u2-partial of a grid line, as alpha * column jc + beta * column jc+1
+    al = dx2 / 2.0 * (2.0 - f2)
+    be = dx2 / 2.0 * f2
+
+    def s_partial(v0: Tensor, v1: Tensor) -> Tensor:
+      """Partial cell of a piecewise-linear function of the first argument."""
+      return (2.0 * v0 + (v1 - v0) * f1) * dx1 / 2.0
+
+    out = p[ic, jc]
+    out = out + s_partial(sy[ic, jc], sy[ic + 1, jc])
+    out = out + al * sx[ic, jc] + be * sx[ic, jc + 1]
+    out = out + al * s_partial(self.values[ic, jc], self.values[ic + 1, jc])
+    out = out + be * s_partial(
+      self.values[ic, jc + 1], self.values[ic + 1, jc + 1]
+    )
+    # the same expression at u1 = 1, where both first-argument partials vanish
+    last = torch.full_like(jc, m - 1)
+    total = p[last, jc] + al * sx[last, jc] + be * sx[last, jc + 1]
+    return (out * u2 / total.clamp_min(_MIN_MASS)).clamp(_TRIM_LO, _TRIM_HI)
+
+  def _interval_weights(self, lo: Tensor, hi: Tensor) -> Tensor:
+    """Nonnegative quadrature weights for ``int_lo^hi`` on the grid.
+
+    Returns ``w`` with ``w @ v == int_lo^hi f(t) dt`` for the piecewise-linear
+    ``f`` through ``(grid_points, v)``, exactly. Every entry is nonnegative,
+    because the hat functions are, which is the property :meth:`rect_mass`
+    needs: a difference of two cumulative integrals would be exact too, but
+    would carry the larger one's rounding error into a result of order
+    ``hi - lo``.
+
+    Parameters
+    ----------
+    lo, hi : Tensor, shape (n,), dtype float
+        Interval endpoints, clamped to ``[0, 1]``; ``hi < lo`` gives zero.
+
+    Returns
+    -------
+    Tensor, shape (n, m), dtype float
+        The weights.
+    """
+    g = self.grid_points
+    m = g.shape[0]
+    a = lo.clamp(0.0, 1.0)
+    b = hi.clamp(0.0, 1.0).clamp_min(a)
+    ka, kb = self._cell_index(a), self._cell_index(b)
+
+    def cell_pair(k: Tensor, s0: Tensor, d: Tensor) -> tuple[Tensor, Tensor]:
+      """Weights on nodes ``k`` / ``k + 1`` for the sub-cell ``[s0, s0 + d]``.
+
+      Parameterized by the *width* rather than by the upper end, so a narrow
+      interval never forms it as a difference of two numbers of order one --
+      which would put the ``1 / w`` amplification back into the weights.
+      """
+      h = g[k + 1] - g[k]
+      q = 0.5 * d * (2.0 * s0 + d)
+      return h * (d - q), h * q
+
+    # Whole cells strictly between the two partial ones: the trapezoid rule is
+    # exact for a piecewise-linear integrand, so each contributes h / 2 to both
+    # of its nodes.
+    idx = torch.arange(m - 1, device=g.device)
+    inner = (idx[None, :] > ka[:, None]) & (idx[None, :] < kb[:, None])
+    half = torch.where(
+      inner, 0.5 * self._dgrid.expand(a.shape[0], m - 1), torch.zeros(())
+    )
+    zc = torch.zeros_like(half[:, :1])
+    w = torch.cat([zc, half], dim=1) + torch.cat([half, zc], dim=1)
+
+    zero = torch.zeros_like(a)
+    same = ka == kb
+    ha, hb = g[ka + 1] - g[ka], g[kb + 1] - g[kb]
+    s0a = (a - g[ka]) / ha
+    a0, a1 = cell_pair(ka, s0a, torch.where(same, (b - a) / ha, 1.0 - s0a))
+    b0, b1 = cell_pair(kb, zero, (b - g[kb]) / hb)
+    b0 = torch.where(same, zero, b0)
+    b1 = torch.where(same, zero, b1)
+    for col, val in ((ka, a0), (ka + 1, a1), (kb, b0), (kb + 1, b1)):
+      w = w.scatter_add(1, col.unsqueeze(1), val.unsqueeze(1))
+    return w
+
+  def _raw_mass(self, a1: Tensor, b1: Tensor, a2: Tensor, b2: Tensor) -> Tensor:
+    """The mass of the interpolant over ``[a1, b1] x [a2, b2]``, exactly.
+
+    Nonnegative weights against a nonnegative grid, so every term of the sum is
+    nonnegative and the result carries no cancellation whatever the rectangle's
+    width. This is the density's own mass; :meth:`rect_mass` wraps it in the
+    renormalization the distribution function applies.
+    """
+    wx = self._interval_weights(a1, b1)
+    wy = self._interval_weights(a2, b2)
+    return (wx * (wy @ self.values.t())).sum(dim=1)
+
+  def rect_mass(self, a1: Tensor, b1: Tensor, a2: Tensor, b2: Tensor) -> Tensor:
+    """The exact probability of ``(a1, b1] x (a2, b2]``, without the cancellation.
+
+    The value the four-corner difference of :meth:`cdf_cached` defines, arranged
+    so that almost none of it cancels. Differencing those four values turns an
+    absolute error ``eps`` into ``~4 eps / (w1 w2)`` in the rectangle's widths;
+    this route amplifies by ``1 / w2`` alone, one power instead of two. On a
+    ``1.2e-4``-wide rectangle that is ``2.9e-12`` against the difference's
+    ``8.7e-9``.
+
+    ``cdf`` renormalizes each line of the grid by its own total, so the
+    probability is not simply the mass. Writing ``lam(y) = y / M(1, y)`` for that
+    factor, ``M`` for the mass and ``R`` for the rectangle's own mass, the
+    four-corner difference is ``lam(b2) * R + (lam(b2) - lam(a2)) * S``, where
+    ``S`` is the mass of ``(a1, b1] x (0, a2]``. ``R`` and ``S`` are sums of
+    nonnegative terms and do not cancel at all; only the ``lam`` difference does,
+    and it multiplies a term of order ``w1`` rather than one of order one, which
+    is where the second power goes.
+
+    Parameters
+    ----------
+    a1, b1, a2, b2 : Tensor, shape (n,), dtype float
+        Rectangle bounds per query. An empty or inverted interval gives zero.
+
+    Returns
+    -------
+    Tensor, shape (n,), dtype float
+        Rectangle probabilities.
+    """
+    zero = torch.zeros_like(a1)
+    one = torch.ones_like(a1)
+    lam_b = b2 / self._raw_mass(zero, one, zero, b2).clamp_min(_MIN_MASS)
+    lam_a = a2 / self._raw_mass(zero, one, zero, a2).clamp_min(_MIN_MASS)
+    return lam_b * self._raw_mass(a1, b1, a2, b2) + (
+      lam_b - lam_a
+    ) * self._raw_mass(a1, b1, zero, a2)
+
+  def hfunc_cached(self, u: Tensor, cond_var: int, sy: Tensor) -> Tensor:
+    """The exact conditional distribution function at ``u``, in O(1) per point.
+
+    ``chat`` at a fixed first argument is the linear interpolation of the two
+    bracketing grid lines, so both the partial and the total integral along the
+    free argument are that same interpolation of the corresponding entries of
+    ``sy`` -- no quadrature at evaluation time.
+
+    Parameters
+    ----------
+    u : Tensor, shape (n, 2), dtype float
+        Query points, ``[u_cond, u_free]`` for ``cond_var=1`` and the other way
+        round for ``cond_var=2``, matching :meth:`integrate_1d`.
+    cond_var : int
+        1 or 2, the argument held fixed.
+    sy : Tensor, shape (m, m), dtype float
+        The first table from :meth:`build_caches` for ``cond_var=1``; its
+        transpose-situation twin is built from the transposed values, so
+        ``TorchBicop`` passes the one that matches.
+
+    Returns
+    -------
+    Tensor, shape (n,), dtype float
+        Conditional distribution values.
+    """
+    g = self.grid_points
+    m = g.shape[0]
+    uu = u.clamp(0.0, 1.0)
+    cond = uu[:, 0] if cond_var == 1 else uu[:, 1]
+    free = uu[:, 1] if cond_var == 1 else uu[:, 0]
+    ic = self._cell_index(cond)
+    jc = self._cell_index(free)
+    w = ((cond - g[ic]) / (g[ic + 1] - g[ic])).clamp(0.0, 1.0)
+    vals = self.values if cond_var == 1 else self.values.t()
+    dx = free - g[jc]
+    frac = dx / (g[jc + 1] - g[jc])
+
+    def line(rows: Tensor) -> Tensor:
+      v0, v1 = vals[rows, jc], vals[rows, jc + 1]
+      return sy[rows, jc] + (2.0 * v0 + (v1 - v0) * frac) * dx / 2.0
+
+    num = (1.0 - w) * line(ic) + w * line(ic + 1)
+    last = torch.full_like(ic, m - 1)
+    den = (1.0 - w) * sy[ic, last] + w * sy[ic + 1, last]
+    return (num / den.clamp_min(_MIN_MASS)).clamp(_TRIM_LO, _TRIM_HI)

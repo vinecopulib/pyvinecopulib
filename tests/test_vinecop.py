@@ -854,16 +854,29 @@ def test_rosenblatt_rejects_inadmissible_conditioning_set(bad) -> None:
     cop.rosenblatt(u, conditioning_set=bad)
 
 
-def test_rosenblatt_conditioning_set_rejects_truncated_vine() -> None:
-  # The reorientation needs every tree, so a truncated vine cannot serve an
-  # arbitrary conditioning set even when the set itself is admissible.
+@pytest.mark.parametrize("trunc_lvl", [0, 1, 2])
+def test_rosenblatt_conditioning_set_handles_a_truncated_vine(
+  trunc_lvl: int,
+) -> None:
+  # A truncated model relabels like any other: the trees above the truncation
+  # are independence, so the peel has nothing to move there. Both scales must
+  # agree with evaluating the materialized `reorient` directly.
   u = pv.to_pseudo_obs(random_data(5, 400))
-  cop = pv.Vinecop.from_data(u, controls=pv.FitControlsVinecop(trunc_lvl=2))
+  cop = pv.Vinecop.from_data(
+    u, controls=pv.FitControlsVinecop(trunc_lvl=trunc_lvl)
+  )
+  cs = [1, 2]
 
-  with pytest.raises(RuntimeError):
-    cop.rosenblatt(u, conditioning_set=[1, 2])
-  with pytest.raises(RuntimeError):
-    cop.inverse_rosenblatt(u, conditioning_set=[1, 2])
+  ref = pv.Vinecop.from_json(cop.to_json())
+  ref.reorient(cs)
+  np.testing.assert_allclose(
+    cop.rosenblatt(u, conditioning_set=cs), ref.rosenblatt(u), rtol=1e-12
+  )
+  np.testing.assert_allclose(
+    cop.inverse_rosenblatt(u, conditioning_set=cs),
+    ref.inverse_rosenblatt(u),
+    rtol=1e-12,
+  )
 
 
 def _cop_conditioned_on(cs: list[int], d: int = 5, n: int = 400):

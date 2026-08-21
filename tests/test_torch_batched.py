@@ -22,36 +22,7 @@ from pyvinecopulib.torch._batched import (  # noqa: E402
   integrate_1d_batched,
   integrate_2d_batched,
   interpolate_batched,
-  interpolate_batched_many,
 )
-
-
-@pytest.mark.parametrize("is_linear", [False, True])
-def test_interpolate_batched_many_matches_separate(is_linear: bool) -> None:
-  """The fused K-grid lookup is bit-identical to K separate calls.
-
-  ``interpolate_batched_many`` shares the cell search / weights across the K
-  stacked grids; ``[:, k, :]`` must equal ``interpolate_batched(caches[:, k])``
-  exactly (pure gathers + the same weighted-sum arithmetic), which is what lets
-  the fused TLL cascade keep the 1e-15 batched-parity gate.
-  """
-  n_pairs, k_grids, m, n = 3, 3, 12, 40
-  gen = torch.Generator().manual_seed(0)
-  grid = (
-    torch.linspace(0.0, 1.0, m, dtype=torch.float64)
-    if is_linear
-    else torch.sort(torch.rand(m, generator=gen, dtype=torch.float64)).values
-  )
-  grid[0], grid[-1] = 0.0, 1.0
-  caches = torch.rand(
-    n_pairs, k_grids, m, m, generator=gen, dtype=torch.float64
-  )
-  u = torch.rand(n_pairs, n, 2, generator=gen, dtype=torch.float64)
-
-  many = interpolate_batched_many(grid, caches, u, is_linear)
-  for k in range(k_grids):
-    sep = interpolate_batched(grid, caches[:, k], u, is_linear)
-    torch.testing.assert_close(many[:, k, :], sep, atol=0.0, rtol=0.0)
 
 
 def _fit_tll_bicop(seed: int) -> pv.Bicop:

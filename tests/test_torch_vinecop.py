@@ -85,15 +85,13 @@ def test_rosenblatt_matches_pvvinecop() -> None:
     ("pdf", False, 1e-11, 1e-13),
     ("rosenblatt", False, 1e-10, 1e-13),
     ("inverse_rosenblatt", False, 1e-8, 1e-9),
-    # cache=True replaces every integration / inversion with a bilinear
-    # interp on a 30x30 grid — the per-pair ~1e-3 mean error compounds
-    # through the d-1 cascade levels. pdf is unbounded so the *max* error
-    # in absolute terms can be O(1); rosenblatt / inverse_rosenblatt are
-    # u-space and bounded so their max stays around the bicop-level cap.
-    # These bounds are loose — they pin the floor, not optimize against it.
-    ("pdf", True, 1e1, 1e-1),
-    ("rosenblatt", True, 1.0, 5e-2),
-    ("inverse_rosenblatt", True, 5e-2, 5e-3),
+    # cache=True reconstructs the same integrals in closed form from the
+    # prefix tables, so it differs from cache=False only in summation
+    # order: the same bounds hold. `inverse_rosenblatt` shares one code
+    # path across both modes, so its two rows are bit-identical.
+    ("pdf", True, 1e-11, 1e-13),
+    ("rosenblatt", True, 1e-10, 1e-13),
+    ("inverse_rosenblatt", True, 1e-8, 1e-9),
   ],
 )
 def test_cache_integrals_precision_floor(
@@ -101,12 +99,11 @@ def test_cache_integrals_precision_floor(
 ) -> None:
   """Pin the precision floor for each cache mode at a moderately-deep vine.
 
-  ``cache_integrals=False`` is the right choice for likelihood / sampling
-  applications: every per-pair integration and inversion is exact (modulo
-  bisection convergence), so the cascade preserves precision. Setting
-  ``cache=True`` is the right choice when ~1e-3 u-space error is
-  acceptable and per-call speed matters — typically pdf-only workloads
-  where the bilinear-interp gap is small compared to downstream noise.
+  Both modes preserve precision through the cascade: ``cache_integrals=False``
+  integrates and inverts per call, ``True`` reads the closed-form value off the
+  prefix tables, and the two differ only in the order the same terms are
+  summed. So the pins are the same in each column, and a regression in the
+  cached path shows up as a bound violation rather than as a widened tolerance.
   """
   d = 10
   u_fit = _simulate(d=d, n=2000, seed=1)
@@ -686,7 +683,8 @@ def test_pdf_gradient_matches_finite_differences(
   evaluated under `torch.no_grad()`, so the cascade's conditioning arguments were
   detached and only the final density factors contributed. The error was 111% of
   the largest finite-difference entry — and only on the non-batched path, because
-  the batched level calls `interp_at_batched` directly and was never wrapped. So
+  the batched level calls the interpolation primitives directly and was never
+  wrapped. So
   the two paths silently disagreed on gradients while agreeing on values.
 
   Query points are drawn away from the grid nodes: the interpolant is piecewise

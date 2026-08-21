@@ -91,6 +91,12 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
   """
 
   is_indep: bool
+  # Class-level hints so the prefix tables registered in __init__ are
+  # statically typed as Tensors instead of nn.Module. They are set together:
+  # all three are present or all three are None.
+  _sy: Tensor | None
+  _sx: Tensor | None
+  _prefix: Tensor | None
   #: TorchBicop exposes the grid/cache internals the batched vine path needs.
   supports_batched: bool = True
 
@@ -135,20 +141,17 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
     self._cache_integrals = bool(cache_integrals)
     if self._cache_integrals and not self.is_indep:
-      cdf_vals, h1_vals, h2_vals, hinv1_vals, hinv2_vals = (
-        self.interp_grid.build_caches()
-      )
-      self.register_buffer("_cdf_cache", cdf_vals)
-      self.register_buffer("_hfunc1_cache", h1_vals)
-      self.register_buffer("_hfunc2_cache", h2_vals)
-      self.register_buffer("_hinv1_cache", hinv1_vals)
-      self.register_buffer("_hinv2_cache", hinv2_vals)
+      # Detached, because a buffer is a cache and holding a graph in one would
+      # keep it alive for the module's lifetime. `_tables` rebuilds them inside
+      # the graph whenever a gradient is actually being taken.
+      sy, sx, pref = (t.detach() for t in self.interp_grid.build_caches())
+      self.register_buffer("_sy", sy)
+      self.register_buffer("_sx", sx)
+      self.register_buffer("_prefix", pref)
     else:
-      self._cdf_cache = None
-      self._hfunc1_cache = None
-      self._hfunc2_cache = None
-      self._hinv1_cache = None
-      self._hinv2_cache = None
+      self._sy = None
+      self._sx = None
+      self._prefix = None
 
   # --------------------------------------------------------------------- #
   # Constructors                                                           #
@@ -390,18 +393,71 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     u = self._prep(u)
     if self.is_indep:
       return (u[:, 0] * u[:, 1]).clamp(_TRIM_LO, _TRIM_HI)
-    if self._cdf_cache is not None:
-      return self.interp_grid.interp_at(self._cdf_cache, u)
+    if self._sy is not None:
+      sy, sx, pref = self._tables()
+      return self.interp_grid.cdf_cached(u, sy, sx, pref)
     return self.interp_grid.integrate_2d(u)
+
+  def rect_mass(self, a1: Tensor, b1: Tensor, a2: Tensor, b2: Tensor) -> Tensor:
+    """The probability of ``(a1, b1] x (a2, b2]``, without the cancellation.
+
+    An optional capability a discrete edge discovers with ``getattr``: it lets
+    the mixed-discrete density read the atom's probability directly instead of
+    differencing four :meth:`cdf` values, which amplifies any absolute error by
+    ``~4 / (w1 w2)`` in the atom widths where this route amplifies by
+    ``1 / w2`` alone. Available in both cache modes -- it reads the grid, not
+    the prefix tables.
+
+    Parameters
+    ----------
+    a1, b1, a2, b2 : Tensor, shape (n,), dtype float
+        Rectangle bounds per query. An empty or inverted interval gives zero.
+
+    Returns
+    -------
+    Tensor, shape (n,), dtype float
+        Rectangle probabilities. Independence returns
+        ``(b1 - a1) * (b2 - a2)``.
+    """
+    ref = self.interp_grid.values
+    a1, b1, a2, b2 = (
+      torch.as_tensor(t, dtype=ref.dtype, device=ref.device).clamp(
+        _TRIM_LO, _TRIM_HI
+      )
+      for t in (a1, b1, a2, b2)
+    )
+    if self.is_indep:
+      return (b1 - a1).clamp_min(0.0) * (b2 - a2).clamp_min(0.0)
+    return self.interp_grid.rect_mass(a1, b1, a2, b2)
+
+  def _tables(self) -> tuple[Tensor, Tensor, Tensor]:
+    """The prefix tables, rebuilt in-graph when a gradient is being taken.
+
+    They are cumulative sums of ``values``, so the closed forms that read them
+    are exact functions of the grid -- but the stored copies are detached
+    buffers, and differentiating through those would silently drop most of the
+    gradient rather than all of it. They are therefore recomputed whenever grad
+    is live: three cumulative sums over ``(m, m)``, and never on the
+    no-gradient path.
+    """
+    assert self._sy is not None
+    assert self._sx is not None and self._prefix is not None
+    if torch.is_grad_enabled() and self.interp_grid.values.requires_grad:
+      return self.interp_grid.build_caches()
+    return self._sy, self._sx, self._prefix
 
   # --------------------------------------------------------------------- #
   # h-functions                                                            #
   # --------------------------------------------------------------------- #
 
   def _hfunc_raw(self, u: Tensor, cond_var: int) -> Tensor:
-    cache = self._hfunc1_cache if cond_var == 1 else self._hfunc2_cache
-    if cache is not None:
-      return self.interp_grid.interp_at(cache, u).clamp(_TRIM_LO, _TRIM_HI)
+    if self._sy is not None:
+      sy, sx, _ = self._tables()
+      # Conditioning on the second argument reads the cumulative along the
+      # first, which is `sx` laid out the way `hfunc_cached` indexes it.
+      return self.interp_grid.hfunc_cached(
+        u, cond_var, sy if cond_var == 1 else sx.t()
+      )
     return self.interp_grid.integrate_1d(u, cond_var=cond_var)
 
   def hfunc1(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
@@ -471,9 +527,13 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     (:meth:`InterpolationGrid2D.inverse_integrate_1d`, mirroring
     vinecopulib#691).
     """
-    cache = self._hinv1_cache if cond_var == 1 else self._hinv2_cache
-    if cache is not None:
-      return self.interp_grid.interp_at(cache, u).clamp(0.0, 1.0)
+    # Always the closed-form inversion. Tabulating the inverse at the grid
+    # nodes and interpolating between them was the one cached member whose
+    # error was not merely a tolerance -- up to 1e-2 -- and unlike `cdf` and
+    # the h-functions it has no O(1) exact reconstruction: locating the
+    # bracketing cell needs the conditional cumulative along the whole free
+    # axis, which is O(m) to assemble whatever is cached. So the cache buys
+    # O(1) where it can, and consistency where it cannot.
     return self.interp_grid.inverse_integrate_1d(u, cond_var).clamp(0.0, 1.0)
 
   def hinv1(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
