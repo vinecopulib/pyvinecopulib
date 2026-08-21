@@ -878,18 +878,24 @@ def test_the_integral_cache_is_allowed_on_a_discrete_vine(
       atol=1e-13,
     )
 
-    # Tier two: the vine. The bound is looser than the pair's because the
-    # discrete cascade amplifies -- tree 1's atom widths are themselves
-    # differences of tree 0's h-functions -- but only to 1.5e-13 relative,
-    # measured, since both modes difference the same exact distribution
-    # function and only the summation order separates them.
-    for method in ("pdf", "rosenblatt"):
-      torch.testing.assert_close(
-        getattr(cached, method)(u_t),
-        getattr(plain, method)(u_t),
-        rtol=1e-11,
-        atol=1e-10,
-      )
+    # Tier two: the vine. Looser than the pair's because the discrete cascade
+    # amplifies -- tree 1's atom widths are themselves differences of tree 0's
+    # h-functions -- but only to 1.6e-13 relative, measured, since both modes
+    # difference the same exact distribution function and only the summation
+    # order separates them.
+    #
+    # `rosenblatt` needs its randomization pinned. It jitters the discrete
+    # columns by default, so two calls on the *same* vine disagree by O(10) --
+    # comparing two vines without pinning it measures the draw, not the cache.
+    torch.testing.assert_close(
+      cached.pdf(u_t), plain.pdf(u_t), rtol=1e-11, atol=1e-10
+    )
+    torch.testing.assert_close(
+      cached.rosenblatt(u_t, randomize_discrete=False),
+      plain.rosenblatt(u_t, randomize_discrete=False),
+      rtol=1e-11,
+      atol=1e-10,
+    )
 
 
 def test_from_structure_keeps_discrete_var_types() -> None:
