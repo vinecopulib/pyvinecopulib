@@ -184,10 +184,11 @@ closed unmerged, and some commits carry no number at all.
 - **Custom C++ forks.** The repo always tracks the upstream
   `lib/vinecopulib` submodule pin; local C++ patches under
   `lib/` are not accepted.
-- **Discrete margins on the torch backend.** `TorchVinecopBackend`
-  is continuous-only (raises `NotImplementedError` when any
-  `var_types[i] != "c"`). Use `VinecopBackend` for discrete /
-  mixed-type problems.
+- **Discrete variables on the torch *marginal* layer.** `TorchVinecop` and
+  `TorchVinecopBackend` handle them on the copula half, through
+  `DiscretePair`. The marginal half is not ported: the torch estimators
+  still fit a compiled `Kde1d` per column, so use `VinecopBackend` when the
+  marginal fit itself has to be discrete.
 - **Density estimators outside the vine framework.** General-purpose
   multivariate density models (normalizing flows, Gaussian mixtures,
   …) are not in scope; `pyvinecopulib` is a vine-copula library.
@@ -229,6 +230,8 @@ pyvinecopulib/
         bicop_base.py            # BicopBase (canonical BicopLike partial impl)
         vinecop_base.py          # VinecopBase (array-agnostic cascades + fit/select)
         context.py               # ConditioningContext / Simplified / NonSimplified
+        _discrete.py             # DiscretePair + the discrete layouts / per-edge types
+        _reorient.py             # relabel a structure onto a chosen order tail (internal)
         _rootfind.py             # solve_increasing (monotone bisection; internal)
       families/__init__.py       # BicopFamily enum + 13 family constants + 15 group constants
       utils/__init__.py          # Kde1d, to_pseudo_obs, wdm, sobol, ghalton, sample_uniform, benchmark
@@ -584,6 +587,38 @@ automatically.
     (same matrix encoding, selection-time pairs reused via `flip`, no
     re-fit; parity is a hard guarantee). `TorchBicop` / `TorchVinecop`
     are the torch subclasses.
+  - `DiscretePair` (`_discrete.py`) — a *continuous* pair copula evaluated on a
+    discrete or mixed edge. **The vine owns the discrete layouts, the pair
+    copulas stay continuous**: `_bind_vine(..., var_types=)` declares which
+    variables have atoms, `pair_var_types(tree, edge)` derives the types each
+    slot sees from the structure alone, and the cascades hand a four-column
+    `[u1, u2, u1^-, u2^-]` argument to any pair whose types include `"d"`.
+    `BicopLike` is therefore unchanged — it stays a two-column continuous
+    contract — and a custom pair copula opts in by implementing `cdf` and
+    wrapping itself in `DiscretePair`. `fit` / `select` take `var_types` too and
+    forward each edge's types to `fit_edge` as a keyword, only on the edges that
+    have one (the rule `_pair_eval` applies to `x`). The parity test that binds
+    is the **normalization identity** `Σ_atoms c(u₁,u₂)·(u₁ − u₁⁻) = 1`: the
+    quotients telescope, so it holds exactly and needs no reference
+    implementation and no tolerance argument. It is what established that
+    `DiscretePair` was right and the compiled `tll` pair was wrong
+    (fixed upstream in vinecopulib#739 and pinned since). Parametrize
+    pair-level parity over **every** family, not a representative couple —
+    covering only `gaussian` and `clayton` is why that class of defect stayed
+    invisible on both sides for as long as it did.
+  - `sample_conditional` / `reorient` (`_reorient.py`) — conditional sampling and
+    the value-preserving relabeling it rests on. `reorient` **returns** the
+    relabeled `(structure, pair_copulas)` rather than mutating, since the base
+    class leaves pair storage to the subclass; `conditioning_set` on
+    `rosenblatt` / `inverse_rosenblatt` / `sample_conditional` evaluates through
+    an internal reoriented view instead. The peel that steers a chosen set to
+    the order tail is borrowed from the compiled `Vinecop.reorient` (run on a
+    throwaway independence vine) and the slot map is then matched up in Python,
+    so admissibility and the error messages are exactly `Vinecop`'s — the same
+    trade `select` makes with `_select_spanning_tree`. A relabeling is refused
+    on a non-simplified vine: it can permute the columns of each edge's `x_e`,
+    which makes the result a different model. `select` takes `conditioning_set`
+    too (the `+d` MST penalty, then the relabeling).
   - `ConditioningContext` / `SimplifiedContext` (default) /
     `NonSimplifiedContext` (`context.py`) — the per-edge policy that
     turns the simplified cascade into a **non-simplified / conditional**
@@ -786,7 +821,7 @@ below are a quick orientation.
 - **`pyvinecopulib.core`** — `Bicop`, `Vinecop`, `RVineStructure`,
   `CVineStructure`, `DVineStructure`, `FitControlsBicop`,
   `FitControlsVinecop`; plus the backend-neutral abstraction layer
-  `BicopLike`, `VinecopLike`, `BicopBase`, `VinecopBase`,
+  `BicopLike`, `VinecopLike`, `BicopBase`, `VinecopBase`, `DiscretePair`,
   `ConditioningContext`, `SimplifiedContext`, `NonSimplifiedContext`.
 - **`pyvinecopulib.families`** — `BicopFamily` enum; per-family
   constants (`indep`, `gaussian`, `student`, `clayton`, `gumbel`,
@@ -876,9 +911,14 @@ Round-trip / parity properties to preserve when touching numerics:
   copula, and host it by subclassing `VinecopBase` (define the one hook
   `_get_pair_copula`); both run on NumPy or PyTorch and inherit the full
   evaluation surface. Implement `BicopLike` / `VinecopLike` directly for
-  an immutable / functional backend. For a **non-simplified /
-  conditional** vine, pass a `NonSimplifiedContext` and drive
-  `VinecopBase.fit` with a `fit_edge` callback; see
+  an immutable / functional backend. To put that pair on a **discrete**
+  edge, add a `cdf` and return `DiscretePair(pair, self.pair_var_types(t, e))`
+  from `_get_pair_copula` (and from `fit_edge`, which receives the edge's
+  `var_types`); the vine supplies the left-limit columns. For a
+  **non-simplified / conditional** vine, pass a `NonSimplifiedContext` and drive
+  `VinecopBase.fit` with a `fit_edge` callback. To condition on a subset of
+  variables, implement `flip` as well and use `sample_conditional` /
+  `select(conditioning_set=)`; see
   `examples/10_extending_pyvinecopulib.ipynb`. `TorchBicop` /
   `TorchVinecop` are the reference torch subclasses.
 - **New `pyvinecopulib.sklearn` backends.** Subclass the private

@@ -27,6 +27,7 @@ Only the ``constant`` method is supported here; the ``linear`` and
 from __future__ import annotations
 
 import math
+from typing import Optional
 
 import torch
 import torch.nn.functional as F
@@ -223,6 +224,8 @@ def fit_tll_constant(
   grid_size: int = 30,
   mult: float = 1.0,
   grid_type: str = "normal",
+  pseudo_obs: Optional[Tensor] = None,
+  discrete_data: Optional[Tensor] = None,
 ) -> tuple[Tensor, Tensor]:
   """Fit a TLL pair-copula via local-constant kernel density estimation.
 
@@ -233,6 +236,17 @@ def fit_tll_constant(
     grid_size: number of grid points per axis (default 30; matches C++).
     mult: bandwidth multiplier passed through to ``select_bandwidth``;
       the C++ default is 1.
+    pseudo_obs: ranks to fit on, overriding the ones derived from ``u``. C++
+      ranks with ``ties_method="random"``, which differs from the argsort ranks
+      only when the data has ties — i.e. when a margin has atoms, where the
+      caller supplies them. On a discrete edge these ranks only seed the
+      bandwidth; see ``discrete_data``.
+    discrete_data: the ``(n, 4)`` layout ``[u1, u2, u1^-, u2^-]`` of a discrete
+      or mixed edge. When given, the fit runs on the *latent* sample recovered
+      from it rather than on the ranks, which is what ``TllBicop::fit`` does:
+      the bandwidth is selected from the jittered ranks and only then is the
+      latent sample drawn, with ``(B00 * B11) ** 0.25`` as its own bandwidth and
+      ``B`` left as selected.
     grid_type: either ``"normal"`` (default, matches C++ — grid_points are
       ``pnorm(linspace(-3.25, 3.25, m))``) or ``"linear"`` (grid_points
       are uniformly spaced on ``[Phi(-3.25), 1-Phi(-3.25)]``, with the
@@ -257,11 +271,26 @@ def fit_tll_constant(
   dtype, device = u.dtype, u.device
 
   # Pseudo-observations + qnorm to z-space.
-  psobs = _to_pseudo_obs_continuous(u)
+  psobs = _to_pseudo_obs_continuous(u) if pseudo_obs is None else pseudo_obs
   z_data = _qnorm(psobs)
 
   # Bandwidth selection.
   B = _select_bandwidth_constant(z_data) * mult
+
+  if discrete_data is not None:
+    # Reuse the compiled draw, as structure selection reuses `wdm`: it is a
+    # stochastic iterative reconstruction over a spatial index, and reproducing
+    # it in torch would put the torch<->C++ grid parity at the mercy of a
+    # reimplementation rather than of the same code. The binding is private
+    # because upstream declares the function with a plain `//` comment, so there
+    # is no docstring to lift; vinecopulib#740 tracks that.
+    from ..pyvinecopulib_ext import _find_latent_sample
+
+    latent = _find_latent_sample(
+      discrete_data.detach().cpu().numpy(),
+      float((B[0, 0] * B[1, 1]).item() ** 0.25),
+    )
+    z_data = _qnorm(torch.as_tensor(latent, dtype=dtype, device=device))
 
   # Storage and KDE-eval grids come from the centralized factory on
   # InterpolationGrid2D so any future grid type lives in one place.

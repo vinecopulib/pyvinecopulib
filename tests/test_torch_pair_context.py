@@ -37,31 +37,10 @@ from pyvinecopulib.core import (  # noqa: E402
   VinecopBase,
 )
 
-from tests.conftest import GaussianBicop  # noqa: E402
+from tests.conftest import GaussianBicop, HostedVinecop  # noqa: E402
 
 _SCALE = 0.6
 _BASE_RHO = 0.3
-
-
-class _ListVinecop(VinecopBase[Any]):
-  """Minimal array-agnostic ``VinecopBase`` backend over a plain nested list.
-
-  Hosts arbitrary ``BicopLike`` pairs (here the non-``nn.Module``
-  ``GaussianBicop``) and runs the shared cascades on either numpy or torch —
-  the layer at which conditional / non-simplified hosting belongs. Only the
-  required ``_get_pair_copula`` hook is implemented; ``_prep`` falls back to the
-  ``VinecopBase`` concrete default (shape check + unit-box clamp).
-  """
-
-  def __init__(self, pairs: list[list[Any]], structure, context=None) -> None:
-    self._pairs = pairs
-    self._bind_vine(structure, context)
-
-  def _get_pair_copula(self, tree: int, edge: int):
-    return self._pairs[tree][edge]
-
-  def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Any:
-    raise NotImplementedError("sample is not exercised by these tests")
 
 
 def _pairs(d: int) -> list[list[GaussianBicop]]:
@@ -72,9 +51,9 @@ def _pairs(d: int) -> list[list[GaussianBicop]]:
   ]
 
 
-def _vine(d: int, context) -> _ListVinecop:
+def _vine(d: int, context) -> HostedVinecop:
   structure = pv.RVineStructure.from_order(list(range(1, d + 1)))
-  return _ListVinecop(_pairs(d), structure, context)
+  return HostedVinecop(_pairs(d), structure, context=context)
 
 
 def test_nonsimplified_bijection() -> None:
@@ -165,7 +144,7 @@ def test_fit_conditional_seam() -> None:
   assert widths[(1, 0)] == 1 + p
 
   # The fitted pairs assemble into a working conditional vine.
-  vine = _ListVinecop(pairs, structure, NonSimplifiedContext())
+  vine = HostedVinecop(pairs, structure, context=NonSimplifiedContext())
   u_back = vine.inverse_rosenblatt(vine.rosenblatt(u, x=x), x=x)
   err = (u_back - u).abs().flatten()
   assert torch.quantile(err, 0.99).item() < 1e-8
@@ -179,8 +158,10 @@ def test_numpy_and_torch_backends_match() -> None:
   u = rng.uniform(0.05, 0.95, (n, d))
   x = rng.standard_normal((n, p))
 
-  np_vine = _ListVinecop(_pairs(d), structure, NonSimplifiedContext())
-  torch_vine = _ListVinecop(_pairs(d), structure, NonSimplifiedContext())
+  np_vine = HostedVinecop(_pairs(d), structure, context=NonSimplifiedContext())
+  torch_vine = HostedVinecop(
+    _pairs(d), structure, context=NonSimplifiedContext()
+  )
   u_t = torch.as_tensor(u, dtype=torch.float64)
   x_t = torch.as_tensor(x, dtype=torch.float64)
 
@@ -215,7 +196,7 @@ def test_row_permutation_alignment() -> None:
 def test_batched_falls_back_for_non_grid_pair() -> None:
   """batched=True on a non-grid (GaussianBicop) vine falls back cleanly.
 
-  ``_ListVinecop`` has no ``_build_batched`` override, so the base raises
+  ``HostedVinecop`` has no ``_build_batched`` override, so the base raises
   ``_NotBatchable`` and the dispatch layer transparently uses the non-batched
   cascade.
   """

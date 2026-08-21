@@ -9,9 +9,74 @@ import numpy as np
 import pytest
 from array_api_compat import array_namespace
 
-from pyvinecopulib.core import BicopBase
+import pyvinecopulib as pv
+from pyvinecopulib.core import BicopBase, BicopLike, VinecopBase
 
 matplotlib.use("Agg")
+
+
+class HostedVinecop(VinecopBase[Any]):
+  """A ``VinecopBase`` over a nested list of already-fitted pair copulas.
+
+  The minimal concrete vine the extension-layer tests evaluate through. Its
+  ``_sample_uniform`` is the *compiled* draw, so a vine hosting a ``Vinecop``'s
+  own pair copulas reproduces that vine's sampling bit for bit and the two can
+  be compared directly.
+
+  Parameters
+  ----------
+  pairs : list of list of BicopLike
+      Pair copulas indexed ``[tree][edge]``.
+  structure : RVineStructure
+      The structure to evaluate along.
+  var_types : list of str, optional
+      Per-variable types; ``None`` means all continuous.
+  context : ConditioningContext, optional
+      Per-edge conditioning policy; ``None`` is the simplified default.
+  """
+
+  def __init__(
+    self,
+    pairs: Any,
+    structure: Any,
+    var_types: Optional[list[str]] = None,
+    context: Optional[Any] = None,
+  ) -> None:
+    self._pairs = pairs
+    self._bind_vine(structure, context, var_types=var_types)
+
+  def _get_pair_copula(self, tree: int, edge: int) -> BicopLike[Any]:
+    return self._pairs[tree][edge]
+
+  def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Any:
+    return pv.utils.sample_uniform(n, self.d, qrng, list(seeds))
+
+
+def host_vinecop(
+  cop: Any, var_types: Optional[list[str]] = None
+) -> HostedVinecop:
+  """Host a compiled ``Vinecop``'s pair copulas in a :class:`HostedVinecop`.
+
+  Parameters
+  ----------
+  cop : Vinecop
+      The fitted vine whose pair copulas and structure to reuse.
+  var_types : list of str, optional
+      Per-variable types; ``None`` reads them off ``cop``.
+
+  Returns
+  -------
+  HostedVinecop
+      The same model, evaluated by the array-agnostic cascades.
+  """
+  pairs = [
+    [cop.get_pair_copula(t, e) for e in range(cop.dim - 1 - t)]
+    for t in range(cop.dim - 1)
+  ]
+  types = list(cop.var_types) if var_types is None else var_types
+  if all(v == "c" for v in types):
+    types = None
+  return HostedVinecop(pairs, cop.structure, types)
 
 
 # --- Toy conditional pair copula for the non-simplified / conditional tests ---

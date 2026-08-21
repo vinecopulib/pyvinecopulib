@@ -6,8 +6,11 @@ primitives ``pdf`` / ``hfunc1`` / ``hfunc2`` and inherits ``hinv1`` / ``hinv2``
 (numerical inversion of the h-functions), ``sample`` (inverse Rosenblatt of
 the pair), ``loglik``, ``plot`` and ``__repr__`` for free; each is overridable
 when a native exact form exists (as :class:`~pyvinecopulib.torch.TorchBicop`
-does for ``cdf`` / ``hinv`` / ``sample``). ``cdf`` raises unless overridden —
-the vine CDF is Monte-Carlo, so a per-pair ``cdf`` is rarely needed.
+does for ``cdf`` / ``hinv`` / ``sample``). ``cdf`` raises unless overridden:
+the vine CDF is Monte-Carlo, so an unconditional vine needs no per-pair ``cdf``
+— but a pair hosted on a *discrete* edge does, its h-functions being difference
+quotients of the distribution function (see
+:class:`~pyvinecopulib.core.DiscretePair`).
 
 Written against the Array API (:func:`array_api_compat.array_namespace`) so the
 same code runs on numpy and torch (via ``pdf`` / ``hfunc`` outputs); the numeric
@@ -19,7 +22,7 @@ delegated to a ``_sample_uniform`` hook.
 from __future__ import annotations
 
 from abc import ABC
-from typing import Any, Optional, cast
+from typing import Any, Callable, Optional, cast
 
 from array_api_compat import array_namespace
 
@@ -30,13 +33,26 @@ from .protocols import ArrayT, BicopLike, _BICOP_EXAMPLE
 __all__ = ["BicopBase"]
 
 
+def _pair_eval(method: Callable[..., Any], u: Any, x: Optional[Any]) -> Any:
+  """Evaluate a pair-copula method, forwarding ``x`` only when there is one.
+
+  A pair copula that takes no conditioning argument -- ``Bicop`` above all --
+  is a valid host for a simplified vine, so an absent context must not reach
+  it as a keyword. When there *is* a conditioning matrix, it is passed by
+  keyword, which is what makes a pair copula that cannot accept one fail
+  loudly instead of binding it to some unrelated positional parameter.
+  """
+  return method(u) if x is None else method(u, x=x)
+
+
 class BicopBase(BicopLike[ArrayT], ABC):
   """Canonical partial implementation of :class:`~pyvinecopulib.core.BicopLike`.
 
   Subclasses implement ``pdf`` / ``hfunc1`` / ``hfunc2`` and inherit ``hinv1`` /
   ``hinv2`` (bisection of the h-functions), ``sample``, ``loglik``, ``plot``
-  and ``__repr__``. ``cdf`` raises unless overridden. To enable ``sample``,
-  override ``_sample_uniform`` with the array namespace's RNG.
+  and ``__repr__``. ``cdf`` raises unless overridden, and is needed only to host
+  the pair on a discrete edge. To enable ``sample``, override
+  ``_sample_uniform`` with the array namespace's RNG.
 
   See Also
   --------
@@ -137,7 +153,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
     )
 
   def cdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
-    """Raise; the vine CDF is Monte-Carlo, so a per-pair ``cdf`` is optional.
+    """Raise; needed only to host the pair copula on a discrete edge.
 
     Parameters
     ----------
@@ -158,7 +174,9 @@ class BicopBase(BicopLike[ArrayT], ABC):
     """
     raise NotImplementedError(
       f"{type(self).__name__}.cdf is not defined; the vine cdf uses "
-      "Monte-Carlo simulation and does not require a per-pair cdf."
+      "Monte-Carlo simulation and does not require a per-pair cdf. Implement it "
+      "to host this pair copula on a discrete edge, whose h-functions are "
+      "difference quotients of the distribution function."
     )
 
   def flip(self) -> "BicopBase[ArrayT]":
