@@ -12,8 +12,15 @@ sync: ## Install all deps + editable build + pre-commit hooks
 	$(UV) pip install -e . --no-build-isolation --python .venv
 	$(UV) run pre-commit install
 
-clean: ## Wipe build artifacts and Python caches
+# The staged docs sources are wiped too. `conf.py` stages repo files into the
+# docs tree and writes two toctrees beside them, and it skips anything already
+# there -- so a copy left by another branch is never refreshed, and the
+# nitpicky build fails on a file this branch does not have.
+clean: ## Wipe build artifacts, staged docs sources, and Python caches
 	rm -rf build/ dist/ *.egg-info/
+	rm -rf docs/_build docs/_generate docs/examples docs/examples.rst \
+	       docs/features.rst docs/README.md docs/_README_inlined.md \
+	       docs/CHANGELOG.md
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
 lint: ## Lint + format-check + security-lint; needs no compiled extension
