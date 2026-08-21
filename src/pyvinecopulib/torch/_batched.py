@@ -27,7 +27,8 @@ from torch import Tensor
 # numerically identical outputs to the per-pair path.
 _TRIM_LO: float = 1e-10
 _TRIM_HI: float = 1.0 - 1e-10
-_STRIP_FLOOR: float = 1e-4
+#: Guard on a conditional total mass, so a zero-mass grid line cannot 0/0.
+_MIN_MASS: float = 1e-20
 
 
 # --------------------------------------------------------------------------- #
@@ -284,13 +285,20 @@ def integrate_1d_batched(
     v_lo = values.gather(dim=2, index=idx_lo).transpose(1, 2)  # (N, n, m)
     v_hi = values.gather(dim=2, index=idx_hi).transpose(1, 2)
 
-  strip = ((1.0 - t) * v_lo + t * v_hi).clamp_min(_STRIP_FLOOR)  # (N, n, m)
+  # A bilinear interpolation of a nonnegative grid is nonnegative, so this
+  # guard only absorbs rounding. It used to floor at 1e-4, which made the
+  # h-functions not the conditional cdf of the density the same object
+  # reported -- by up to 7.5e-5 on a strongly dependent fit, where two
+  # thirds of the grid can sit below that floor.
+  strip = ((1.0 - t) * v_lo + t * v_hi).clamp_min(0.0)  # (N, n, m)
 
   number = int_on_grid_batched(grid_points, u_free, strip, is_linear)  # (N, n)
   denom = int_on_grid_batched(
     grid_points, torch.ones_like(u_free), strip, is_linear
   )  # (N, n)
-  return (number / denom).clamp(_TRIM_LO, _TRIM_HI)
+  # Without the floor a grid line can carry no mass at all, so the
+  # division needs its own guard.
+  return (number / denom.clamp_min(_MIN_MASS)).clamp(_TRIM_LO, _TRIM_HI)
 
 
 def integrate_2d_batched(

@@ -72,10 +72,11 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       tables are constants. ``pdf`` never uses a cache and always does.
       Pass ``cache_integrals=False`` to differentiate the integrals with
       respect to the density grid.
-  norm_times : int, default=3
-      Number of margin-normalization rounds. Matches the ``Bicop``
-      TLL default. Pass ``0`` to skip when the grid already integrates
-      to uniform margins.
+  norm_maxiter : int, default=25
+      Maximum number of margin-rescaling passes; rescaling also stops
+      as soon as both margins integrate to 1 within ``1e-10``. Matches
+      the ``Bicop`` TLL default. Pass ``0`` to skip when the grid
+      already integrates to uniform margins.
   is_linear : bool, default=False
       Internal flag selecting the linear-grid fast-path in the
       underlying ``InterpolationGrid2D``. Set by
@@ -98,7 +99,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     grid_points: Optional[Tensor] = None,
     values: Optional[Tensor] = None,
     cache_integrals: bool = True,
-    norm_times: int = 3,
+    norm_maxiter: int = 25,
     is_linear: bool = False,
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
@@ -113,7 +114,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       m = 2
       grid_points = torch.tensor([0.0, 1.0], dtype=dtype, device=device)
       values = torch.ones(m, m, dtype=dtype, device=device)
-      norm_times_eff = 0
+      norm_maxiter_eff = 0
     else:
       if grid_points is None or values is None:
         raise ValueError(
@@ -123,12 +124,12 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       self.is_indep = False
       grid_points = torch.as_tensor(grid_points, dtype=dtype, device=device)
       values = torch.as_tensor(values, dtype=dtype, device=device)
-      norm_times_eff = norm_times
+      norm_maxiter_eff = norm_maxiter
 
     self.interp_grid = InterpolationGrid2D(
       grid_points=grid_points,
       values=values,
-      norm_times=norm_times_eff,
+      norm_maxiter=norm_maxiter_eff,
       is_linear=is_linear,
     )
 
@@ -222,7 +223,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       grid_points=grid_points,
       values=values,
       cache_integrals=cache_integrals,
-      norm_times=0,
+      norm_maxiter=0,
       device=device,
       dtype=dtype,
     )
@@ -283,7 +284,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       grid_points=grid_points,
       values=values,
       cache_integrals=cache_integrals,
-      norm_times=3,
+      norm_maxiter=25,
       is_linear=(controls.grid_type == "linear"),
       device=device,
       dtype=dtype,
@@ -314,7 +315,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       grid_points=self.interp_grid.grid_points,
       values=self.interp_grid.values.transpose(0, 1).contiguous(),
       cache_integrals=self._cache_integrals,
-      norm_times=0,
+      norm_maxiter=0,
       is_linear=self.interp_grid._is_linear,
       device=device,
       dtype=dtype,

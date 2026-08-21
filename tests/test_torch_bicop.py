@@ -465,42 +465,59 @@ def test_simulate_rejects_nonpositive_n() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_normalize_margins_tol_converges() -> None:
-  """``tol`` early-stops once margins are uniform to the requested
-  precision. The default ``tol=None`` path keeps fixed-budget semantics
-  for C++ TLL parity."""
-  from pyvinecopulib.torch._interp import InterpolationGrid2D
+def test_normalize_margins_balances_both_margins() -> None:
+  """Both margins end up uniform, and equally so.
 
-  # Deliberately skewed initial density on a 16x16 linear grid.
+  The old scheme was three fixed row-then-column sweeps, which left the second
+  margin exact and dumped the whole residual on the first -- up to 3.3e-2 at
+  strong dependence, so a fitted grid was not a copula density in one direction.
+  Averaging the two sweep orders splits the residual, which is what makes the
+  balance assertion meaningful rather than tautological.
+  """
+  from pyvinecopulib.torch._interp import InterpolationGrid2D, _trap_weights
+
   m = 16
   grid = torch.linspace(0.0, 1.0, m, dtype=torch.float64)
   rng = np.random.default_rng(0)
   values = torch.from_numpy(rng.uniform(0.5, 1.5, size=(m, m)))
 
-  # times=50 with tol=1e-12 should converge to marginals within tol.
-  ig = InterpolationGrid2D(grid, values, norm_times=50, norm_tol=1e-12)
-  dgrid = ig.grid_points[1:] - ig.grid_points[:-1]
-  row_int = 0.5 * ((ig.values[:, :-1] + ig.values[:, 1:]) * dgrid).sum(-1)
-  col_int = 0.5 * (
-    (ig.values[:-1, :] + ig.values[1:, :]) * dgrid.unsqueeze(-1)
-  ).sum(0)
-  assert (row_int - 1.0).abs().max().item() < 1e-10
-  assert (col_int - 1.0).abs().max().item() < 1e-10
+  ig = InterpolationGrid2D(grid, values)
+  w = _trap_weights(ig.grid_points)
+  r = (ig.values @ w - 1.0).abs().max().item()
+  c = (ig.values.t().contiguous() @ w - 1.0).abs().max().item()
+  assert max(r, c) < 1e-10
+  # Neither margin is allowed to carry the whole residual.
+  assert max(r, c) < 10 * max(min(r, c), 1e-18)
 
 
-def test_normalize_margins_default_tol_is_fixed_budget() -> None:
-  """``tol=None`` (default) preserves the fixed-budget loop — same number
-  of divides every time, matching the C++ TLL pipeline's
-  ``normalize_margins(3)`` byte-for-byte. We verify this indirectly by
-  checking that the standard ``from_data`` path still matches C++ to
-  machine precision (covered by ``test_from_data_matches_cpp``); here we
-  just spot-check that the constructor accepts the default."""
+def test_normalize_margins_commutes_with_transposition() -> None:
+  """`normalize(V).T == normalize(V.T)`, exactly.
+
+  This is what makes `flip` correct: it transposes an already-normalized grid
+  without renormalizing, so if the normalization were not equivariant then
+  `fit(a, b).flip()` and `fit(b, a)` would be different models. Under the old
+  three-sweep scheme they differed by 2.7e-4.
+  """
+  from pyvinecopulib.torch._interp import InterpolationGrid2D
+
+  m = 16
+  grid = torch.linspace(0.0, 1.0, m, dtype=torch.float64)
+  rng = np.random.default_rng(1)
+  values = torch.from_numpy(rng.uniform(0.2, 2.0, size=(m, m)))
+
+  direct = InterpolationGrid2D(grid, values).values
+  swapped = InterpolationGrid2D(grid, values.t().contiguous()).values
+  torch.testing.assert_close(direct, swapped.t(), rtol=1e-13, atol=1e-15)
+
+
+def test_normalize_margins_leaves_a_normalized_grid_alone() -> None:
+  """An already-uniform grid costs one margin check and no scaling."""
   from pyvinecopulib.torch._interp import InterpolationGrid2D
 
   grid = torch.linspace(0.0, 1.0, 8, dtype=torch.float64)
   values = torch.ones(8, 8, dtype=torch.float64)
-  # Should not raise; tol is optional.
-  InterpolationGrid2D(grid, values, norm_times=3)
+  ig = InterpolationGrid2D(grid, values)
+  torch.testing.assert_close(ig.values, values, rtol=0.0, atol=0.0)
 
 
 def test_flip_swaps_arguments() -> None:

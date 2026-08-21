@@ -3,7 +3,7 @@
 Mirrors the algorithm in ``lib/vinecopulib/.../bicop/implementation/tll.ipp``
 end-to-end so :meth:`TorchBicop.from_data` produces an ``(m, m)`` density
 grid that matches the C++ ``pv.Bicop.from_data`` output to machine
-precision after :meth:`InterpolationGrid2D.normalize_margins(3)`.
+precision after :meth:`InterpolationGrid2D.normalize_margins(25)`.
 
 Three pieces:
 
@@ -244,7 +244,7 @@ def fit_tll_constant(
   Returns:
     A ``(grid_points, values)`` pair. ``values`` is the unnormalized
     ``(m, m)`` density; callers should pass it through
-    ``InterpolationGrid2D(grid_points, values, norm_times=3,
+    ``InterpolationGrid2D(grid_points, values, norm_maxiter=25,
     is_linear=(grid_type == "linear"))`` to match the C++
     ``Bicop.parameters`` output to machine precision for ``"normal"``.
   """
@@ -296,7 +296,7 @@ def fit_tll_constant(
   values = c.reshape(grid_size, grid_size)
 
   # The canonical TorchBicop builds an InterpolationGrid2D from
-  # (grid_points, values) with norm_times=3 — that's what matches C++
+  # (grid_points, values) with norm_maxiter=25 — that's what matches C++
   # to machine precision. The grid_points returned here are the
   # un-forced ones used for the fit positions; InterpolationGrid2D's
   # constructor will clamp the endpoints to 0/1 internally.

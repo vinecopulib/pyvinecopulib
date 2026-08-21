@@ -38,6 +38,33 @@ _NORMAL_GRID_Z_LIMIT: float = 3.25
 GRID_TYPES = ("normal", "linear")
 
 
+def _trap_weights(grid_points: Tensor) -> Tensor:
+  """Trapezoid weights of ``grid_points``, summing to 1 on ``[0, 1]``.
+
+  ``_trap_weights(g) @ v`` is the exact integral of the piecewise-linear
+  function through ``(g, v)``, because the telescoping sum collapses to
+  ``g[-1] - g[0]``.
+
+  Parameters
+  ----------
+  grid_points : Tensor, shape (m,), dtype float
+      A strictly increasing grid whose endpoints are 0 and 1.
+
+  Returns
+  -------
+  Tensor, shape (m,), dtype float
+      The weights.
+  """
+  m = grid_points.shape[0]
+  if m < 2:
+    return torch.zeros(0, dtype=grid_points.dtype, device=grid_points.device)
+  w = torch.empty_like(grid_points)
+  w[0] = (grid_points[1] - grid_points[0]) / 2.0
+  w[1:-1] = (grid_points[2:] - grid_points[:-2]) / 2.0
+  w[-1] = (grid_points[-1] - grid_points[-2]) / 2.0
+  return w
+
+
 class InterpolationGrid2D(torch.nn.Module):
   """Bilinear interpolation grid for a bivariate density on `[0, 1]^2`.
 
@@ -50,14 +77,14 @@ class InterpolationGrid2D(torch.nn.Module):
 
   values: Tensor
   grid_points: Tensor
+  trap_weights: Tensor
 
   def __init__(
     self,
     grid_points: Tensor,
     values: Tensor,
-    norm_times: int = 3,
+    norm_maxiter: int = 25,
     is_linear: bool = False,
-    norm_tol: float | None = None,
   ) -> None:
     super().__init__()
     if values.ndim != 2 or values.shape[0] != values.shape[1]:
@@ -74,11 +101,16 @@ class InterpolationGrid2D(torch.nn.Module):
 
     self.register_buffer("grid_points", grid_points.contiguous())
     self.register_buffer("values", values.clone().contiguous())
+    # Trapezoid weights of `grid_points`, so `trap_weights @ v` integrates the
+    # piecewise-linear function through `(grid_points, v)` over [0, 1]. The grid
+    # is immutable after construction, so this is built once; the normalization
+    # and the h-function denominator both read it instead of walking the cells.
+    self.register_buffer("trap_weights", _trap_weights(grid_points))
     # When ``is_linear`` is True the grid is assumed to be ``linspace(0, 1, m)``
     # (with the endpoint clamp above leaving it unchanged), so cell-finding is
     # O(1) — ``floor(u * (m - 1))`` — instead of an O(log m) ``searchsorted``.
     self._is_linear = bool(is_linear)
-    self.normalize_margins(norm_times, tol=norm_tol)
+    self.normalize_margins(norm_maxiter)
 
   # --------------------------------------------------------------------- #
   # Grid construction (factories shared by all callers)                    #
@@ -166,41 +198,48 @@ class InterpolationGrid2D(torch.nn.Module):
   # --------------------------------------------------------------------- #
 
   @torch.no_grad()
-  def normalize_margins(self, times: int, tol: float | None = None) -> None:
+  def normalize_margins(self, max_iter: int) -> None:
     """Renormalize ``values`` so both margins integrate to 1.
 
-    Same algorithm as the C++ ``normalize_margins``: alternating row /
-    column trapezoidal-integral divides, repeated up to ``times`` rounds.
+    Port of the C++ ``normalize_margins``. Each pass is the **elementwise
+    geometric mean of the two ways of rescaling the grid** — rows then columns,
+    and columns then rows. Both are rank-one rescalings of the same values, so
+    the mean factorizes into a single rank-one scaling and is applied as one
+    fused multiply. Averaging them is what leaves the two margins equally close
+    to uniform and makes the pass commute with transposition exactly, so a grid
+    and its flipped counterpart normalize to flipped counterparts whether or not
+    the iteration has converged.
+
+    Three details are load-bearing rather than incidental, and match the
+    reference: the residual is measured on the margins *before* the scaling, so
+    an already-normalized grid costs one margin computation and no scaling; the
+    scaling is one fused multiply rather than two successive rescalings, which
+    would round the two orders differently and lose the equivariance; and the
+    transpose is materialized rather than left as a view, so both margins are
+    the same reduction and transposing the grid swaps them bit for bit.
 
     Args:
-      times: maximum number of normalization rounds. ``times=3`` matches
-        the C++ TLL pipeline byte-for-byte.
-      tol: optional convergence tolerance. When provided, iteration stops
-        as soon as the largest absolute deviation of the row+col
-        integrals from 1 drops below ``tol``. Default ``None`` preserves
-        the C++ "fixed-budget" semantics — useful for parity-sensitive
-        callers. Setting e.g. ``tol=1e-9`` together with a generous
-        ``times=50`` reproduces IPFP-to-convergence.
+      max_iter: maximum number of rescaling passes; ``0`` leaves the values
+        untouched. Rescaling also stops as soon as both margins integrate to 1
+        within ``1e-10``.
     """
-    if times <= 0:
+    m = self.grid_points.shape[0]
+    if max_iter < 1 or m < 2:
       return
-    dgrid = self.grid_points[1:] - self.grid_points[:-1]  # (m-1,)
-    for _ in range(times):
-      row_int = 0.5 * ((self.values[:, :-1] + self.values[:, 1:]) * dgrid).sum(
-        dim=-1
-      )
-      self.values.div_(row_int.clamp_min(1e-20).unsqueeze(-1))
-      col_int = 0.5 * (
-        (self.values[:-1, :] + self.values[1:, :]) * dgrid.unsqueeze(-1)
-      ).sum(dim=0)
-      self.values.div_(col_int.clamp_min(1e-20))
-      if tol is not None:
-        err = max(
-          (row_int - 1.0).abs().max().item(),
-          (col_int - 1.0).abs().max().item(),
-        )
-        if err < tol:
-          break
+    tol, min_mass = 1e-10, 1e-20
+    w = self.trap_weights
+    for _ in range(max_iter):
+      vt = self.values.t().contiguous()
+      r = (self.values @ w).clamp_min(min_mass)
+      c = (vt @ w).clamp_min(min_mass)
+      err = torch.maximum((r - 1.0).abs().max(), (c - 1.0).abs().max())
+      if bool(err < tol):
+        break
+      r2 = (self.values @ (w / c)).clamp_min(min_mass)
+      c2 = (vt @ (w / r)).clamp_min(min_mass)
+      sr = (r * r2).sqrt().reciprocal()
+      sc = (c * c2).sqrt().reciprocal()
+      self.values.mul_(sr.unsqueeze(-1)).mul_(sc)
 
   @torch.no_grad()
   def flip(self) -> None:
@@ -318,12 +357,13 @@ class InterpolationGrid2D(torch.nn.Module):
 
     # Knot vector: the density along the free axis, linearly interpolated
     # at the conditioning value (rows of ``values`` for cond_var=1, columns
-    # for cond_var=2), floored like the forward integrate_1d strip.
+    # for cond_var=2), guarded only against rounding, as the forward
+    # strip is.
     i = self._cell_index(cond)  # (n,)
     x1, x2 = g[i], g[i + 1]
     w = ((cond - x1) / (x2 - x1)).unsqueeze(-1)  # (n, 1)
     vals = self.values if cond_var == 1 else self.values.t()
-    knots = ((1.0 - w) * vals[i, :] + w * vals[i + 1, :]).clamp_min(1e-4)
+    knots = ((1.0 - w) * vals[i, :] + w * vals[i + 1, :]).clamp_min(0.0)
 
     # Cumulative trapezoidal masses of the (unnormalized) conditional cdf.
     dg = (g[1:] - g[:-1]).unsqueeze(0)  # (1, m - 1)
@@ -336,7 +376,10 @@ class InterpolationGrid2D(torch.nn.Module):
     k = torch.searchsorted(incl.contiguous(), target).clamp(0, m - 2)  # (n, 1)
 
     # Solve target = cum + v_k s + (v_k1 - v_k) / (2 dg_k) s^2 for
-    # s in [0, dg_k]; b = v_k >= 1e-4 keeps the stable root well-defined.
+    # s in [0, dg_k]. Without the old 1e-4 knot floor `b = v_k` can be
+    # exactly zero, so the stable root needs its own branch: a cell
+    # carrying no mass is one the cdf is flat across, where every point
+    # is a quantile and the left endpoint is the smallest.
     v_k = knots.gather(-1, k).squeeze(-1)
     v_k1 = knots.gather(-1, k + 1).squeeze(-1)
     cum = torch.where(
@@ -350,7 +393,14 @@ class InterpolationGrid2D(torch.nn.Module):
     b = v_k
     c = cum - target.squeeze(-1)
     disc = (b * b - 4.0 * a * c).clamp_min(0.0)
-    s = torch.where(a.abs() < 1e-300, -c / b, 2.0 * (-c) / (b + disc.sqrt()))
+    denom = b + disc.sqrt()
+    safe_b = torch.where(b == 0.0, torch.ones_like(b), b)
+    safe_d = torch.where(denom == 0.0, torch.ones_like(denom), denom)
+    s = torch.where(
+      denom <= 0.0,
+      torch.zeros_like(denom),
+      torch.where(a.abs() < 1e-300, -c / safe_b, 2.0 * (-c) / safe_d),
+    )
     s = torch.minimum(s.clamp_min(0.0), dg_k)
     out = g[k] + s
     return torch.where(nan_mask, torch.full_like(out, torch.nan), out)
