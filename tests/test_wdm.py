@@ -186,13 +186,14 @@ class TestWdm:
       assert_allclose(result1, result3, rtol=1e-12)
 
   def test_wdm_weights_zeros(self) -> None:
-    """Test with all zero weights"""
-    x, y = self.x_positive, self.y_positive
-    weights = np.zeros(len(x))
+    """All-zero weights are refused rather than answered with a NaN.
 
-    # Zero weights should return NaN
-    result = pv.utils.wdm(x, y, "pearson", weights)
-    assert np.isnan(result)
+    There is no weighted measure to compute when the weights carry no mass, and
+    a silent NaN propagates into whatever consumed it.
+    """
+    x, y = self.x_positive, self.y_positive
+    with pytest.raises(RuntimeError, match="finite, positive sum"):
+      pv.utils.wdm(x, y, "pearson", np.zeros(len(x)))
 
   def test_wdm_input_validation(self) -> None:
     """Test input validation"""
@@ -425,3 +426,34 @@ class TestWdm:
     rng = np.random.default_rng(7)
     x = rng.uniform(-2.0, 2.0, 2000)
     assert pv.utils.wdm(x, x**2, "xi") > 0.9
+
+  def test_chatterjee_is_reproducible_on_tied_predictors(self) -> None:
+    """A dependence measure has to be a function of its arguments.
+
+    Ordering tied predictors by the response would manufacture dependence, so
+    the ties are broken at random -- but from a fixed default seed rather than
+    from ``std::random_device``, which returned a different number on every
+    call. Untied predictors never construct the generator.
+    """
+    rng = np.random.default_rng(0)
+    x = np.repeat(np.arange(12.0), 5)
+    y = rng.normal(size=x.size)
+    assert len({pv.utils.wdm(x, y, "xi") for _ in range(8)}) == 1
+
+  def test_chatterjee_seeds_choose_the_tie_ordering(self) -> None:
+    """``seeds`` is the knob for varying that ordering, or averaging over it."""
+    rng = np.random.default_rng(1)
+    x = np.repeat(np.arange(10.0), 6)
+    y = rng.normal(size=x.size)
+    assert pv.utils.wdm(x, y, "xi", seeds=[7]) == pv.utils.wdm(
+      x, y, "xi", seeds=[7]
+    )
+    assert pv.utils.wdm(x, y, "xi", seeds=[7]) != pv.utils.wdm(
+      x, y, "xi", seeds=[99]
+    )
+    # Untied predictors ignore the seeds entirely.
+    xc = rng.normal(size=300)
+    yc = xc + 0.5 * rng.normal(size=300)
+    assert pv.utils.wdm(xc, yc, "xi", seeds=[7]) == pv.utils.wdm(
+      xc, yc, "xi", seeds=[99]
+    )

@@ -613,8 +613,18 @@ automatically.
 - `wdm`'s `method` includes Chatterjee's ξ (`"chatterjee"` / `"cxi"` /
   `"xi"`), the one **asymmetric** measure in the list — it measures how far
   `y` is a function of `x`. `FitControlsVinecop.tree_criterion` accepts it
-  too, so any Python-side selector that computes the criterion itself must
-  accept it or silently diverge from `Vinecop.select`.
+  too, spelled **`"cxi"` only** (the full accepted set is `tau`, `rho`,
+  `hoeffd`, `mcor`, `cxi`, `joe`, `custom`), so any Python-side selector that
+  computes the criterion itself must accept it *and* symmetrize it the way
+  `pairwise_cxi` does — `max(ξ₁₂, ξ₂₁)` — or silently diverge from
+  `Vinecop.select`.
+- ξ breaks **predictor ties** at random, since ordering them by the response
+  would manufacture dependence. The seeds default to a constant, so ξ is a
+  function of its arguments; `wdm(..., seeds=)` varies that ordering for a
+  caller who wants to average over it. Untied predictors never construct the
+  generator, so continuous data is unaffected.
+- `wdm` **raises** on weights whose sum is not finite and positive, rather
+  than returning `NaN`.
 - `find_latent_sample(u, b, niter=3)` recovers a continuous sample from
   interval-censored copula data — the transform a nonparametric fit on
   discrete margins runs on. The draw is deterministic and invariant to
