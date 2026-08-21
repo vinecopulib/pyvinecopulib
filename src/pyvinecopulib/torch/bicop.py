@@ -419,11 +419,14 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
         Rectangle probabilities. Independence returns
         ``(b1 - a1) * (b2 - a2)``.
     """
+    # Coerced but *not* trimmed: `[1e-10, 1-1e-10]` is the guard `cdf` applies
+    # to a query point, and a rectangle's lower bound is legitimately zero --
+    # trimming it drops a sliver of width `1e-10` per axis, which is exactly
+    # what a corner rectangle would then disagree with `cdf` by. The weights
+    # clamp to `[0, 1]` themselves.
     ref = self.interp_grid.values
     a1, b1, a2, b2 = (
-      torch.as_tensor(t, dtype=ref.dtype, device=ref.device).clamp(
-        _TRIM_LO, _TRIM_HI
-      )
+      torch.as_tensor(t, dtype=ref.dtype, device=ref.device)
       for t in (a1, b1, a2, b2)
     )
     if self.is_indep:
