@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 import pyvinecopulib as pv
+from pyvinecopulib.core import DiscretePair
 
 torch = pytest.importorskip("torch")
 
@@ -799,39 +800,96 @@ def test_from_vinecop_matches_discrete_vinecop(var_types: list[str]) -> None:
   )
 
 
-@pytest.mark.parametrize("explicit", [True, False])
-def test_the_integral_cache_is_refused_on_a_discrete_vine(
-  explicit: bool,
-) -> None:
-  """A discrete edge cannot difference an interpolated cdf.
+def _first_discrete_edge(
+  vine: TorchVinecop,
+) -> tuple[int, int, tuple[str, str]]:
+  """The first edge whose variable types include an atom.
 
-  It is built from *differences* of the pair copula's distribution function over
-  an atom's width, and the cached cdf is a bilinear interpolation of a table --
-  38% maximum and 3.7% mean relative error on a ``("d","d")`` density, 14% on a
-  mixed ``hfunc1``. So the default resolves to off, and asking for it explicitly
-  is an error rather than a silently wrong answer.
+  Which edge that is depends on the selected structure, so it has to be looked
+  up rather than assumed: a `["d", "c", "c"]` vine may well pair its two
+  continuous variables at ``(0, 0)``.
   """
-  var_types = ["d", "c", "c"]
+  for tree in range(vine.trunc_lvl):
+    for edge in range(vine.d - 1 - tree):
+      types = vine.pair_var_types(tree, edge)
+      if "d" in types:
+        return tree, edge, types
+  raise AssertionError("no discrete edge in a vine with discrete variables")
+
+
+def _pair_edge(types: tuple[str, str], seed: int) -> torch.Tensor:
+  """A pair-copula input for an edge with the given variable types.
+
+  The pair contract is the expanded four-column layout `[u1, u2, u1^-, u2^-]`
+  whenever either argument has atoms, and a continuous argument's left limit is
+  its own value. Atoms are `0.125` wide, what eight equiprobable levels give,
+  so the quotients are the ones a fitted count vine evaluates.
+  """
+  rng = np.random.default_rng(seed)
+  width = 0.125
+  vals = rng.uniform(0.2 + width, 0.95, size=(300, 2))
+  limits = [
+    vals[:, j] - width if ty == "d" else vals[:, j]
+    for j, ty in enumerate(types)
+  ]
+  return torch.from_numpy(np.column_stack([vals[:, 0], vals[:, 1], *limits]))
+
+
+@pytest.mark.parametrize(
+  "var_types", [["d", "c", "c"], ["c", "d", "d"], ["d", "d", "d"]], ids=str
+)
+def test_the_integral_cache_is_allowed_on_a_discrete_vine(
+  var_types: list[str],
+) -> None:
+  """A discrete vine takes the cache like any other, and agrees without it.
+
+  It used to be refused: the cache was a bilinear interpolation of tabulated
+  integrals, and a discrete edge reads its density from *differences* over an
+  atom's width -- 38% maximum relative error on a ``("d","d")`` density. Two
+  things changed. The tables are exact, and a discrete edge reads its rectangle
+  probability through ``rect_mass`` instead of differencing at all. So the two
+  modes now agree, and the pin is that agreement rather than a refusal.
+  """
   u = _discrete_data(var_types, n=400, seed=6)
   cop = _discrete_vinecop(var_types, u)
-  if explicit:
-    with pytest.raises(ValueError, match="cache_integrals=True is refused"):
-      TorchVinecop.from_vinecop(cop, cache_integrals=True)
-    with pytest.raises(ValueError, match="cache_integrals=True is refused"):
-      TorchVinecop.from_data(
-        torch.from_numpy(u),
-        var_types=var_types,
-        controls=FitControlsTorchVinecop(cache_integrals=True),
-      )
-  else:
-    assert (
-      not TorchVinecop.from_vinecop(cop)._pair_module(0, 0)._cache_integrals
+  u_t = torch.from_numpy(u)
+
+  cached = TorchVinecop.from_vinecop(cop, cache_integrals=True)
+  plain = TorchVinecop.from_vinecop(cop, cache_integrals=False)
+  assert cached._pair_module(0, 0)._cache_integrals
+  assert not plain._pair_module(0, 0)._cache_integrals
+  # `None` no longer resolves differently for a discrete vine.
+  assert TorchVinecop.from_vinecop(cop)._pair_module(0, 0)._cache_integrals
+
+  # Tier one, and the tight one: at the pair level the two modes are the same
+  # formula summed differently, so this is where a cache regression shows -- the
+  # bilinear cache this replaced read 38% here.
+  tree, edge_ix, types = _first_discrete_edge(cached)
+  edge = _pair_edge(types, seed=61)
+  for method in ("pdf", "hfunc1", "hfunc2"):
+    torch.testing.assert_close(
+      getattr(DiscretePair(cached._pair_module(tree, edge_ix), types), method)(
+        edge
+      ),
+      getattr(DiscretePair(plain._pair_module(tree, edge_ix), types), method)(
+        edge
+      ),
+      rtol=1e-12,
+      atol=1e-13,
     )
-    # A continuous vine still gets it, so this is a discrete-only refusal.
-    cont = TorchVinecop.from_vinecop(
-      _fit_tll_vine(_simulate(d=3, n=400, seed=6))
+
+  # Tier two, and the loose bound is the cascade's condition number rather than
+  # slack in either mode: tree 1's atom widths are themselves differences of
+  # tree 0's h-functions, so a per-pair 1e-14 reaches the vine as ~1e-8. The
+  # same amplification is in the compiled evaluator; what this pins is that the
+  # two modes do not diverge beyond it.
+  for method in ("pdf", "rosenblatt"):
+    torch.testing.assert_close(
+      getattr(cached, method)(u_t),
+      getattr(plain, method)(u_t),
+      rtol=1e-6,
+      atol=1e-6,
     )
-    assert cont._pair_module(0, 0)._cache_integrals
 
 
 def test_from_structure_keeps_discrete_var_types() -> None:

@@ -68,7 +68,9 @@ def reorientation(structure: Any, conditioning_set: list[int]) -> Reorientation:
   Parameters
   ----------
   structure : RVineStructure
-      The structure to relabel; must not be truncated.
+      The structure to relabel. A truncated one relabels like any other: the
+      trees above the truncation are independence, so the peel has nothing to
+      move there and the slot map covers only the trees that exist.
   conditioning_set : list of int
       1-based variable labels to place at the tail of the order.
 
@@ -82,12 +84,12 @@ def reorientation(structure: Any, conditioning_set: list[int]) -> Reorientation:
   ------
   RuntimeError
       If ``conditioning_set`` is empty, holds duplicates or entries outside
-      ``1, ..., d``, does not leave a variable free, if ``structure`` is
-      truncated, or if the set is not admissible as a sampling-order tail. The
-      messages are the compiled relabeling's, so a caller can catch and match
-      the same thing whichever class it went through.
+      ``1, ..., d``, does not leave a variable free, or is not admissible as a
+      sampling-order tail. The messages are the compiled relabeling's, so a
+      caller can catch and match the same thing whichever class it went
+      through.
   """
-  from ..pyvinecopulib_ext import Bicop, Vinecop
+  from ..pyvinecopulib_ext import Vinecop
 
   d = int(structure.dim)
   cond = [int(v) for v in conditioning_set]
@@ -104,32 +106,24 @@ def reorientation(structure: Any, conditioning_set: list[int]) -> Reorientation:
     raise RuntimeError("conditioning_set must not contain duplicates.")
   if any(v < 1 or v > d for v in cond):
     raise RuntimeError("conditioning_set entries must be in 1, ..., d.")
-  # A truncated structure has no struct_array entries above its truncation
-  # level, so the slot map below cannot be built -- and the placeholder vine
-  # would reject the full pair store first, masking the cause.
-  if int(structure.trunc_lvl) != d - 1:
-    raise RuntimeError(
-      "reorient() requires a non-truncated vine (trunc_lvl == d - 1)."
-    )
-
   # Preserve the exact representation when the requested variables already form
   # the tail: evaluating through it is then bit-identical to evaluating the vine
   # directly, and no pair copula has to be flipped.
   if set(cond) == set(order[d - len(cond) :]):
     return Reorientation(structure, {}, True)
 
-  # The store is given in full because `reorient` indexes into it
-  # unconditionally (vinecopulib#737).
-  indep = Bicop()
-  placeholder = Vinecop.from_structure(
-    structure=structure,
-    pair_copulas=[[indep] * (d - 1 - t) for t in range(d - 1)],
-  )
+  # An empty store means independence everywhere, which is all the peel needs:
+  # it reads the structure and never the pairs.
+  placeholder = Vinecop.from_structure(structure=structure)
   placeholder.reorient(cond)
   relabeled = placeholder.structure
 
+  # A truncated structure holds no entries above its truncation level, so the
+  # map covers the trees it stores; the trees above are independence, and a
+  # relabeling of independence is independence.
+  trunc = int(structure.trunc_lvl)
   index: list[dict[Any, tuple[int, int]]] = []
-  for tree in range(d - 1):
+  for tree in range(trunc):
     by_key: dict[Any, tuple[int, int]] = {}
     for edge in range(d - 1 - tree):
       diag, key = _slot_key(structure, tree, edge)
@@ -137,7 +131,7 @@ def reorientation(structure: Any, conditioning_set: list[int]) -> Reorientation:
     index.append(by_key)
 
   locations: dict[tuple[int, int], tuple[int, bool]] = {}
-  for tree in range(d - 1):
+  for tree in range(trunc):
     for edge in range(d - 1 - tree):
       diag, key = _slot_key(relabeled, tree, edge)
       old_edge, old_diag = index[tree][key]

@@ -155,44 +155,30 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   def _resolve_cache_integrals(
     cache_integrals: Optional[bool], var_types: list[str]
   ) -> bool:
-    """Whether to precompute integral grids, refusing them on a discrete vine.
+    """Whether to precompute the prefix tables. ``None`` resolves to ``True``.
 
-    A discrete edge is built from *differences* of the pair copula's
-    distribution function over an atom's width, and the cached ``cdf`` is a
-    bilinear interpolation of a table -- accurate enough to evaluate, not to
-    difference. Measured on a ``("d","d")`` density: 38% maximum and 3.7% mean
-    relative error, and 14% on a mixed ``hfunc1``. So the cache is off by
-    default there, and asking for it explicitly is an error rather than a
-    silently wrong answer.
+    ``var_types`` no longer enters the decision. It used to: a discrete edge
+    reads its density from *differences* over an atom's width, and the cache
+    was a bilinear interpolation of a table -- accurate enough to evaluate, not
+    to difference, at 38% maximum relative error on a ``("d","d")`` density. The
+    tables are exact now, and a discrete edge reads its rectangle probability
+    through ``rect_mass`` rather than by differencing at all, so there is
+    nothing left to refuse.
 
     Parameters
     ----------
     cache_integrals : bool or None
         What the caller asked for; ``None`` means "whatever suits this vine".
     var_types : list of str
-        The variables' types.
+        The variables' types. Retained so callers need not branch on it.
 
     Returns
     -------
     bool
         The effective setting.
-
-    Raises
-    ------
-    ValueError
-        If ``True`` was asked for on a vine with atoms.
     """
-    if "d" not in var_types:
-      return True if cache_integrals is None else cache_integrals
-    if cache_integrals:
-      raise ValueError(
-        "cache_integrals=True is refused on a vine with discrete variables: a "
-        "discrete edge differences the pair copula's cdf over an atom's width, "
-        "and the cached cdf is a bilinear interpolation of a table -- 38% "
-        "maximum relative error on a discrete density. Pass "
-        "cache_integrals=False, or None to have it resolved for you."
-      )
-    return False
+    del var_types
+    return True if cache_integrals is None else bool(cache_integrals)
 
   @classmethod
   def from_vinecop(
@@ -230,6 +216,16 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     """
     var_types = list(cop.var_types)
     cache_integrals = cls._resolve_cache_integrals(cache_integrals, var_types)
+    if not cop.pair_copulas:
+      # An empty compiled store means independence everywhere, whatever the
+      # structure's depth, so route it to the fill rather than to the
+      # constructor's shape check.
+      return cls.from_structure(
+        structure=cop.structure,
+        var_types=var_types,
+        device=device,
+        dtype=dtype,
+      )
     pair_copulas_torch: list[list[TorchBicop]] = []
     for tree_idx, row in enumerate(cop.pair_copulas):
       tree_list: list[TorchBicop] = []

@@ -529,10 +529,36 @@ def test_the_atom_masses_of_a_discrete_edge_sum_to_one(
       )
 
 
-def test_discrete_pair_narrow_atoms_fall_back_to_the_derivative() -> None:
-  # Below the 5e-5 threshold the quotient is replaced by the derivative, which
-  # is the continuous quantity: an atom that narrow is a continuous variable in
-  # all but name.
+@pytest.mark.parametrize("widths", [(4e-5, 4e-5), (4e-5, 0.08), (0.08, 4e-5)])
+def test_discrete_pair_narrow_atoms_match_the_collapsed_bicop(
+  widths: tuple[float, float],
+) -> None:
+  """The three degenerate branches, against the compiled pair.
+
+  A collapsed argument is held at the atom's midpoint in *both* terms of the
+  surviving quotient, so the quotient is a difference along the other argument
+  alone. The width is what makes this observable: at ``4e-5`` an evaluation
+  point offset by a quarter of the atom moves by ``1e-5``, where a ``1e-9``
+  atom hides the same offset inside any reasonable tolerance.
+  """
+  par = np.array([[0.5]])
+  wrapped = pv.Bicop.from_family(pv.families.gaussian, parameters=par)
+  ref = pv.Bicop.from_family(
+    pv.families.gaussian, parameters=par, var_types=["d", "d"]
+  )
+  pair = DiscretePair(wrapped, ("d", "d"))
+  values = np.array([[0.4, 0.7], [0.25, 0.55], [0.62, 0.31]])
+  u = np.column_stack([values, values - np.asarray(widths)])
+  for method in ("pdf", "hfunc1", "hfunc2"):
+    _assert_parity(
+      np.asarray(getattr(pair, method)(u)),
+      np.asarray(getattr(ref, method)(u)),
+    )
+
+
+def test_a_vanishing_atom_is_the_continuous_quantity() -> None:
+  # An atom narrow enough to be a continuous variable in all but name: both
+  # arguments collapse and the density is the continuous one at the midpoint.
   par = np.array([[0.5]])
   cop = pv.Bicop.from_family(pv.families.gaussian, parameters=par)
   pair = DiscretePair(cop, ("d", "d"))

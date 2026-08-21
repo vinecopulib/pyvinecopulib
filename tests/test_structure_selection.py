@@ -194,8 +194,12 @@ def test_select_refit_pdf_parity_with_vinecop() -> None:
     auto = pv.Vinecop.from_data(u, controls=controls)
     refit = pv.Vinecop.from_data(u, structure=mine, controls=controls)
     grid = rng.uniform(0.02, 0.98, size=(200, d))
+    # 1.4e-10 measured. It was 1e-8 while the margin renormalization was a
+    # fixed three-sweep budget, which left `fit(a, b)` and `fit(b, a)`
+    # different models; it converges now, so this can be pinned two decades
+    # tighter.
     np.testing.assert_allclose(
-      refit.pdf(grid), auto.pdf(grid), rtol=1e-8, atol=1e-8
+      refit.pdf(grid), auto.pdf(grid), rtol=1e-9, atol=1e-9
     )
 
 
@@ -262,4 +266,32 @@ def test_compiled_bicop_hosted_unwrapped_matches_vinecop() -> None:
     ref.inverse_rosenblatt(u),
     rtol=1e-10,
     atol=1e-10,
+  )
+
+
+@pytest.mark.parametrize("tree_criterion", ["tau", "rho", "hoeffd", "cxi"])
+def test_select_matches_vinecop_for_every_tree_criterion(
+  tree_criterion: str,
+) -> None:
+  """The port computes the edge weight itself, so it has to accept the same
+  measures the compiled selector does -- including Chatterjee's xi, which is
+  the only asymmetric one and therefore the one a symmetric shortcut would
+  silently get wrong.
+
+  Note the spelling: ``wdm`` takes ``"chatterjee"`` / ``"cxi"`` / ``"xi"``,
+  where ``FitControlsVinecop.tree_criterion`` takes only ``"cxi"``.
+  """
+  d = 5
+  u = _correlated_pseudo_obs(1, d)
+  mine, _ = VinecopBase.select(
+    u, _gaussian_fit_edge, tree_criterion=tree_criterion
+  )
+  controls = pv.FitControlsVinecop(
+    family_set=[pv.families.gaussian],
+    tree_criterion=tree_criterion,
+    num_threads=1,
+  )
+  theirs = pv.Vinecop.from_data(u, controls=controls)
+  np.testing.assert_array_equal(
+    np.asarray(mine.matrix), np.asarray(theirs.structure.matrix)
   )

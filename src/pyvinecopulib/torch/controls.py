@@ -86,7 +86,8 @@ class FitControlsTorchVinecop:
       Maximum number of trees to select when
       :meth:`~pyvinecopulib.torch.TorchVinecop.from_data` is called with
       ``structure=None``.
-  tree_criterion : {"tau", "rho", "hoeffd"}, default="tau"
+  tree_criterion : {"tau", "rho", "hoeffd", "mcor", "cxi", "joe"}, \
+default="tau"
       Dependence measure used to weight candidate edges during structure
       selection (passed to ``wdm``).
   threshold : float, default=0.0

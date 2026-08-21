@@ -1051,9 +1051,9 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         If the vine is non-simplified and a relabeling is actually required, or
         if a pair copula does not implement ``flip``.
     RuntimeError
-        If the vine is truncated, or if ``conditioning_set`` is empty, holds
-        duplicates or out-of-range entries, leaves no variable free, or is not
-        admissible as a sampling-order tail. Same messages as
+        If ``conditioning_set`` is empty, holds duplicates or out-of-range
+        entries, leaves no variable free, or is not admissible as a
+        sampling-order tail. Same messages as
         :meth:`~pyvinecopulib.core.Vinecop.reorient`.
 
     See Also
@@ -1069,7 +1069,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     if self._context.assembles_conditioning:
       raise NotImplementedError(self._REORIENT_NON_SIMPLIFIED)
     pairs: list[list[BicopLike[ArrayT]]] = []
-    for tree in range(self.d - 1):
+    for tree in range(self.trunc_lvl):
       row: list[BicopLike[ArrayT]] = []
       for edge in range(self.d - 1 - tree):
         old_edge, flipped = r.locations[(tree, edge)]
@@ -1168,8 +1168,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         If ``conditioning_set`` needs a relabeling on a non-simplified vine, or
         if a pair copula does not implement ``flip``.
     RuntimeError
-        If ``conditioning_set`` is inadmissible as a sampling-order tail, or the
-        vine is truncated; see :meth:`reorient`.
+        If ``conditioning_set`` is inadmissible as a sampling-order tail; see
+        :meth:`reorient`.
     """
     del num_threads
     view = self._reoriented(conditioning_set)
@@ -1228,8 +1228,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         on a non-simplified vine, or if a pair copula does not implement
         ``flip``.
     RuntimeError
-        If ``conditioning_set`` is inadmissible as a sampling-order tail, or the
-        vine is truncated; see :meth:`reorient`.
+        If ``conditioning_set`` is inadmissible as a sampling-order tail; see
+        :meth:`reorient`.
     """
     del num_threads
     view = self._reoriented(conditioning_set)
@@ -1342,8 +1342,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     NotImplementedError
         If ``conditioning_set`` needs a relabeling on a non-simplified vine.
     RuntimeError
-        If ``conditioning_set`` is inadmissible as a sampling-order tail, or the
-        vine is truncated; see :meth:`reorient`.
+        If ``conditioning_set`` is inadmissible as a sampling-order tail; see
+        :meth:`reorient`.
 
     Notes
     -----
@@ -1789,8 +1789,10 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     trunc_lvl : int, optional
         Maximum number of trees to select (default: ``d - 1``, i.e. untruncated).
     tree_criterion : str, default "tau"
-        Dependence measure passed to ``wdm`` for edge weighting (e.g. ``"tau"``,
-        ``"rho"``, ``"hoeffd"``).
+        Dependence measure passed to ``wdm`` for edge weighting: ``"tau"``,
+        ``"rho"``, ``"hoeffd"``, ``"mcor"``, ``"cxi"`` or ``"joe"``, matching
+        ``FitControlsVinecop``. ``"cxi"`` is Chatterjee's xi, which is
+        asymmetric, so the weight is the larger of the two directions.
     threshold : float, default 0.0
         Dependence threshold: edges with criterion below it are deprioritized
         (weight ``1.0``) during spanning-tree selection.
@@ -1812,8 +1814,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         be conditioned on with :meth:`sample_conditional`. Every candidate edge
         touching a non-conditioning variable is penalized, which makes the
         conditioning set a self-contained block, and the finalized structure is
-        then relabeled onto that tail. Requires an MST ``tree_algorithm`` and no
-        truncation, and the pairs must implement
+        then relabeled onto that tail. Requires an MST ``tree_algorithm``, and
+        the pairs must implement
         :meth:`~pyvinecopulib.core.BicopLike.flip`.
 
     Returns
@@ -1866,8 +1868,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     in_cond = [False] * d
     if cond:
       # Mirrors `Vinecop::check_conditioning_set`: an MST is what makes the
-      # penalty below lay the conditioning block down first, and the relabeling
-      # that follows needs every tree.
+      # penalty below lay the conditioning block down first.
       if len(cond) >= d:
         raise ValueError(
           "conditioning_set must contain at most d - 1 variables."
@@ -1878,11 +1879,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         raise ValueError(
           "conditioning-aware selection requires an MST tree_algorithm "
           "('mst_prim' or 'mst_kruskal')."
-        )
-      if max_trees < d - 1:
-        raise ValueError(
-          "conditioning-aware selection does not support truncation "
-          "(trunc_lvl / select_trunc_lvl) in this version."
         )
       for v in cond:
         in_cond[v - 1] = True
@@ -1897,7 +1893,17 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       # path being unweighted.
       if n <= 10:
         return 0.0
-      value = float(abs(wdm(convert(col0), convert(col1), tree_criterion)))
+      a, b = convert(col0), convert(col1)
+      if tree_criterion == "cxi":
+        # Chatterjee's xi measures how far one argument is a function of the
+        # other, so it is not symmetric -- and a spanning-tree edge weight has
+        # to be. `pairwise_cxi` takes the larger of the two directions; taking
+        # one of them would pick a different tree.
+        value = max(
+          float(wdm(a, b, tree_criterion)), float(wdm(b, a, tree_criterion))
+        )
+      else:
+        value = float(abs(wdm(a, b, tree_criterion)))
       return 0.0 if not np.isfinite(value) else value
 
     # A node is one edge of the previous tree (a single variable for the base

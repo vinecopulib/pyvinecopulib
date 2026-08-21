@@ -573,9 +573,20 @@ automatically.
     (fixed upstream in vinecopulib#739 and pinned since). Parametrize
     pair-level parity over **every** family, not a representative couple —
     covering only `gaussian` and `clayton` is why that class of defect stayed
-    invisible on both sides for as long as it did.
+    invisible on both sides for as long as it did. Note the identity **cannot**
+    catch a cache regression: it telescopes to the four corners, so it reads
+    `1 − 2e-10` for a correct density and for a 38%-wrong one alike.
+    A rectangle's probability is read through the pair's optional `rect_mass`
+    when it advertises one and no covariates are in play, and by differencing
+    four `cdf` values otherwise — which keeps a wrapped compiled `Bicop`
+    bit-identical to its own quotients while a `TorchBicop` edge avoids the
+    `1/(w₁w₂)` amplification.
   - `sample_conditional` / `reorient` (`_reorient.py`) — conditional sampling and
-    the value-preserving relabeling it rests on. `reorient` **returns** the
+    the value-preserving relabeling it rests on. A **truncated** model relabels
+    like any other: the trees above the truncation are independence, so the peel
+    has nothing to move there and the slot map covers only `trunc_lvl` trees. At
+    `trunc_lvl == 0` every set is admissible and the relabeled order is a stable
+    partition. `reorient` **returns** the
     relabeled `(structure, pair_copulas)` rather than mutating, since the base
     class leaves pair storage to the subclass; `conditioning_set` on
     `rosenblatt` / `inverse_rosenblatt` / `sample_conditional` evaluates through
@@ -628,6 +639,11 @@ automatically.
   generator, so continuous data is unaffected.
 - `wdm` **raises** on weights whose sum is not finite and positive, rather
   than returning `NaN`.
+- The per-entry structure accessors (`struct_array`, `min_array`,
+  `needed_hfunc1` / `needed_hfunc2`) are wrapped in a bounds check: upstream
+  indexes the triangular array without one, so reading a tree above
+  `trunc_lvl` **segfaulted**. The real fix belongs upstream; the guard is here
+  because a crash takes the interpreter down.
 - `find_latent_sample(u, b, niter=3)` recovers a continuous sample from
   interval-censored copula data — the transform a nonparametric fit on
   discrete margins runs on. The draw is deterministic and invariant to

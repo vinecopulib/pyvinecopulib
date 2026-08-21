@@ -289,7 +289,14 @@ class TestCrossBackend:
     # Both are MC estimates with N=5000; agreement to ~5%.
     np.testing.assert_allclose(c_cpp, c_torch, atol=5e-2)
 
-  def test_torch_discrete_raises(self):
+  def test_torch_discrete_matches_the_default_backend(self):
+    """The torch backend fits a discrete vine, and agrees with the compiled one.
+
+    It used to refuse: ``TorchVinecop`` was continuous-only, so an ordered
+    categorical column had nowhere to go. Both backends now route the column
+    through the same discrete cascade, so what this pins is that they land on
+    the same density rather than that one of them declines.
+    """
     pytest.importorskip("torch")
     pd = pytest.importorskip("pandas")
     rng = np.random.default_rng(0)
@@ -299,8 +306,11 @@ class TestCrossBackend:
         "b": rng.standard_normal(100),
       }
     )
-    with pytest.raises(NotImplementedError, match="continuous-only"):
-      VineDensity(backend=TorchVinecopBackend()).fit(df)
+    cpp = VineDensity(backend=VinecopBackend()).fit(df)
+    tch = VineDensity(backend=TorchVinecopBackend()).fit(df)
+    got, ref = tch.score_samples(df), cpp.score_samples(df)
+    assert np.isfinite(got).all()
+    np.testing.assert_allclose(got, ref, rtol=1e-6, atol=1e-6)
 
 
 # ---------------------------------------------------------------------------

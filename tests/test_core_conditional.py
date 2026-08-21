@@ -320,16 +320,35 @@ def test_conditioning_set_column_mapping_follows_the_set() -> None:
   )
 
 
-def test_reorient_rejects_a_truncated_vine() -> None:
+@pytest.mark.parametrize("trunc_lvl", [0, 1, 2])
+def test_reorient_handles_a_truncated_vine(trunc_lvl: int) -> None:
+  """A truncated vine relabels like any other.
+
+  The trees above the truncation are independence, so the peel has nothing to
+  move there and the slot map covers only the trees the structure stores. The
+  reference is the compiled in-place `reorient`, evaluated directly.
+  """
   controls = pv.FitControlsVinecop(
-    family_set=[pv.families.gaussian], trunc_lvl=2, num_threads=1
+    family_set=[pv.families.gaussian], trunc_lvl=trunc_lvl, num_threads=1
   )
-  cop = pv.Vinecop.from_data(_data(6), controls=controls)
-  # `RuntimeError` with the compiled message, not this file's usual `ValueError`:
-  # every conditioning-set rejection mirrors `Vinecop.reorient` exactly, so a
-  # caller can catch and match the same thing whichever class it went through.
-  with pytest.raises(RuntimeError, match="non-truncated"):
-    host_vinecop(cop).reorient([1, 2])
+  u = _data(6)
+  cop = pv.Vinecop.from_data(u, controls=controls)
+  # The tail of the fitted order is admissible by construction, whatever the
+  # truncation, so the case does not depend on which structure was selected.
+  cond = [int(v) for v in cop.structure.order[-2:]][::-1]
+
+  structure, pairs = host_vinecop(cop).reorient(cond)
+  assert len(pairs) == int(structure.trunc_lvl) == trunc_lvl
+
+  ref = pv.Vinecop.from_json(cop.to_json())
+  ref.reorient(cond)
+  assert list(structure.order) == list(ref.structure.order)
+  np.testing.assert_allclose(
+    host_vinecop(cop).rosenblatt(u, conditioning_set=cond),
+    ref.rosenblatt(u),
+    rtol=1e-10,
+    atol=1e-10,
+  )
 
 
 @pytest.mark.parametrize(
@@ -403,12 +422,34 @@ def test_select_conditioning_set_matches_vinecop(cs: list[int]) -> None:
       {"conditioning_set": [1], "tree_algorithm": "random_weighted"},
       "requires an MST",
     ),
-    ({"conditioning_set": [1], "trunc_lvl": 2}, "does not support truncation"),
   ],
-  ids=["too-many", "zero", "out-of-range", "non-mst", "truncated"],
+  ids=["too-many", "zero", "out-of-range", "non-mst"],
 )
 def test_select_validates_the_conditioning_set(
   kwargs: dict[str, Any], match: str
 ) -> None:
   with pytest.raises(ValueError, match=match):
     VinecopBase.select(_data(13), _gaussian_fit_edge, **kwargs)
+
+
+@pytest.mark.parametrize("trunc_lvl", [1, 2])
+def test_select_combines_a_conditioning_set_with_truncation(
+  trunc_lvl: int,
+) -> None:
+  """Conditioning-aware selection accepts a truncated model.
+
+  The penalty lays the conditioning block down first in whatever trees are
+  selected; the relabeling then only has to reach those, so truncation is not
+  an obstacle. The selected order must end with the requested set, and the
+  pair store must hold exactly the selected trees.
+  """
+  cond = [2, 5]
+  structure, pairs = VinecopBase.select(
+    _data(13),
+    _gaussian_fit_edge,
+    conditioning_set=cond,
+    trunc_lvl=trunc_lvl,
+  )
+  assert int(structure.trunc_lvl) == trunc_lvl
+  assert len(pairs) == trunc_lvl
+  assert set(int(v) for v in structure.order[-2:]) == set(cond)
