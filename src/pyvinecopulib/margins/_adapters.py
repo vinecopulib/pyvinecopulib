@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Any, Callable, Optional, cast
 
 from ..core import MarginBase, MarginLike
+from ..core.margin_base import support_of
 
 __all__ = ["as_margin", "register_margin_adapter"]
 
@@ -46,41 +47,6 @@ def register_margin_adapter(
   None
   """
   _ADAPTERS.insert(0, (predicate, adapter))
-
-
-def _support_of(obj: Any) -> tuple[float, float]:
-  """Read a support from an object that may spell it three different ways.
-
-  SciPy exposes ``support()`` as a method, PyTorch a ``support`` property
-  holding a ``Constraint``, and most other objects nothing at all.
-
-  Parameters
-  ----------
-  obj : object
-      The foreign distribution.
-
-  Returns
-  -------
-  tuple of float
-      ``(lo, hi)``, unbounded where it cannot be determined.
-  """
-  unbounded = (float("-inf"), float("inf"))
-  support = getattr(obj, "support", None)
-  if support is None:
-    return unbounded
-  if callable(support):
-    try:
-      lo, hi = support()
-    except Exception:  # noqa: BLE001 - a foreign object may refuse; fall back
-      return unbounded
-    return (float(lo), float(hi))
-  # A torch `Constraint`; only the interval-like ones carry usable bounds.
-  lo = getattr(support, "lower_bound", None)
-  hi = getattr(support, "upper_bound", None)
-  return (
-    float(lo) if lo is not None else float("-inf"),
-    float(hi) if hi is not None else float("inf"),
-  )
 
 
 class _WrappedMargin(MarginBase[Any]):
@@ -124,7 +90,7 @@ class _WrappedMargin(MarginBase[Any]):
     self._icdf = icdf
     self._var_type = var_type
     self._cdf_left = cdf_left
-    self._support = support if support is not None else _support_of(obj)
+    self._support = support if support is not None else support_of(obj)
     self.family_name = family_name or type(obj).__name__
 
   @property
@@ -221,9 +187,6 @@ def _adapt_scipy_legacy(obj: Any) -> MarginLike[Any]:
     cdf=obj.cdf,
     icdf=obj.ppf,
     var_type="d",
-    # Legacy `cdf` is a genuine step function, so `F(x - 1)` is exact on the
-    # integer lattice and avoids canceling `F` against the mass in the tail.
-    cdf_left=lambda x: obj.cdf(x - 1),
     family_name=name,
   )
 
@@ -245,7 +208,7 @@ def _adapt_torch(obj: Any) -> MarginLike[Any]:
   them — so conformance cannot be inferred from member names here. A missing
   ``icdf`` falls back to inverting ``cdf`` numerically.
   """
-  lo, hi = _support_of(obj)
+  lo, hi = support_of(obj)
 
   def _icdf(p: Any) -> Any:
     try:

@@ -27,6 +27,7 @@ from pyvinecopulib.margins import (
   ParametricMargin,
   resolve_margins,
 )
+from .helpers import run_without
 
 pytest.importorskip("scipy.stats")
 
@@ -35,12 +36,6 @@ pytest.importorskip("scipy.stats")
 def gamma_sample() -> np.ndarray:
   """500 draws from a gamma(2.5, 1.5), the running example of the design."""
   return np.random.default_rng(0).gamma(2.5, 1.5, size=500)
-
-
-@pytest.fixture
-def count_sample() -> np.ndarray:
-  """400 Poisson(4) counts, including zeros."""
-  return np.random.default_rng(1).poisson(4.0, size=400).astype(float)
 
 
 # --- ParametricMargin ------------------------------------------------------- #
@@ -654,25 +649,15 @@ def test_margins_imports_without_scipy() -> None:
 
 def test_parametric_margin_names_the_extra_without_scipy() -> None:
   """Without SciPy, constructing one says which extra provides it."""
-  code = (
-    "import sys, builtins\n"
-    "real = builtins.__import__\n"
-    "def blocked(name, *a, **k):\n"
-    "  if name.split('.')[0] == 'scipy':\n"
-    "    raise ImportError('no scipy')\n"
-    "  return real(name, *a, **k)\n"
-    "builtins.__import__ = blocked\n"
+  run_without(
+    "scipy",
     "from pyvinecopulib.margins import ParametricMargin\n"
     "try:\n"
     "  ParametricMargin('norm')\n"
     "except ImportError as e:\n"
     "  sys.exit(0 if 'pyvinecopulib[scipy]' in str(e) else 2)\n"
-    "sys.exit(3)\n"
+    "sys.exit(3)\n",
   )
-  result = subprocess.run(  # noqa: S603
-    [sys.executable, "-c", code], capture_output=True, text=True
-  )
-  assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_a_collapsed_scale_is_rejected() -> None:

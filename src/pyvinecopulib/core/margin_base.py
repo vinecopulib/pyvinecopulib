@@ -14,7 +14,6 @@ from typing import Any, Optional, cast
 
 from array_api_compat import array_namespace
 
-from .._deprecations import _reject_renamed_hook
 from ._rootfind import solve_increasing
 from .protocols import _MARGIN_EXAMPLE, ArrayT, MarginLike
 
@@ -35,7 +34,47 @@ _ICDF_ITER: int = 110
 
 #: Variable types a margin may declare. ``"zi"`` (zero-inflated) is a margin-level
 #: distinction; a vine sees it as ``"d"``, since what it needs is the left limit.
-VAR_TYPES: tuple[str, ...] = ("c", "d", "zi")
+
+
+def support_of(obj: Any) -> tuple[float, float]:
+  """Read ``(lo, hi)`` off an object that may spell its support three ways.
+
+  SciPy exposes ``support()`` as a method, PyTorch a ``support`` property holding
+  a ``Constraint``, and most objects nothing at all. A parameter-derived endpoint
+  arrives as a tensor that may carry a gradient, so it is detached before being
+  read as a scalar -- duck-typed, since ``core`` does not import torch.
+
+  Parameters
+  ----------
+  obj : object
+      The distribution to inspect.
+
+  Returns
+  -------
+  tuple of float
+      ``(lo, hi)``, unbounded on either side that cannot be determined.
+  """
+  unbounded = (float("-inf"), float("inf"))
+
+  def scalar(bound: Any, fallback: float) -> float:
+    if bound is None:
+      return fallback
+    return float(bound.detach() if hasattr(bound, "detach") else bound)
+
+  support = getattr(obj, "support", None)
+  if support is None:
+    return unbounded
+  if callable(support):
+    try:
+      lo, hi = support()
+    except Exception:  # noqa: BLE001 - a foreign object may refuse; fall back
+      return unbounded
+    return (scalar(lo, unbounded[0]), scalar(hi, unbounded[1]))
+  # A torch `Constraint`; only the interval-like ones carry usable bounds.
+  return (
+    scalar(getattr(support, "lower_bound", None), unbounded[0]),
+    scalar(getattr(support, "upper_bound", None), unbounded[1]),
+  )
 
 
 def _reject_covariates(margin: Any, x: Optional[Any]) -> None:
@@ -181,7 +220,6 @@ class MarginBase(MarginLike[ArrayT], ABC):
         Forwarded to ``super().__init_subclass__``.
     """
     super().__init_subclass__(**kwargs)
-    _reject_renamed_hook(cls, "_simulate_uniform", "_sample_uniform")
 
   # --- optional capabilities, with continuous-correct defaults ------------- #
 

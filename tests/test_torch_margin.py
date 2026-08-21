@@ -30,6 +30,7 @@ torch = pytest.importorskip("torch")
 stats = pytest.importorskip("scipy.stats")
 
 from pyvinecopulib.torch import TorchMargin  # noqa: E402
+from .helpers import widen  # noqa: E402
 
 _D = torch.distributions
 _F64 = torch.float64
@@ -86,16 +87,6 @@ _DISCRETE = {
   "Binomial": _D.Binomial(10, 0.3),
   "Categorical": _D.Categorical(torch.tensor([0.2, 0.3, 0.5])),
 }
-
-
-def _wide(value: object) -> Any:
-  """Widen a value to ``Any``.
-
-  ``nn.Module.__getattr__`` hands back a ``Tensor | Parameter | Module`` union
-  that no static checker can narrow, and ``Vinedist.margins`` is typed by the
-  margin protocol rather than by the concrete class. Both are read through this.
-  """
-  return value
 
 
 def _normal(loc: float = 0.0, scale: float = 1.0, **kwargs: Any) -> TorchMargin:
@@ -190,9 +181,9 @@ def test_python_floats_keep_full_precision() -> None:
   log-density by 1e-7, which is far above every parity tolerance in this suite.
   """
   margin = _normal(-0.2, 0.8)
-  assert _wide(margin.loc).dtype == _F64
-  assert _wide(margin.loc).item() == -0.2
-  assert _wide(margin.scale).item() == 0.8
+  assert widen(margin.loc).dtype == _F64
+  assert widen(margin.loc).item() == -0.2
+  assert widen(margin.scale).item() == 0.8
 
 
 def test_the_distribution_is_rebuilt_from_the_current_parameters() -> None:
@@ -203,7 +194,7 @@ def test_the_distribution_is_rebuilt_from_the_current_parameters() -> None:
   x = torch.tensor([0.5], dtype=_F64)
   before = margin.cdf(x).item()
   with torch.no_grad():
-    _wide(margin.loc).fill_(0.5)
+    widen(margin.loc).fill_(0.5)
   after = margin.cdf(x).item()
   assert before == pytest.approx(stats.norm(0.0, 1.0).cdf(0.5))
   assert after == pytest.approx(0.5)
@@ -223,8 +214,8 @@ def test_to_device_round_trip() -> None:
   margin = _normal(0.3, 1.4)
   moved = margin.to("cpu")
   assert moved is margin
-  assert _wide(margin.loc).device.type == "cpu"
-  assert _wide(margin.distribution).loc.device.type == "cpu"
+  assert widen(margin.loc).device.type == "cpu"
+  assert widen(margin.distribution).loc.device.type == "cpu"
   x = torch.tensor([0.0], dtype=_F64)
   assert torch.isfinite(margin.cdf(x)).all()
 
@@ -242,7 +233,7 @@ def test_support_follows_the_parameters() -> None:
   margin = TorchMargin(_D.Uniform, {"low": -1.0, "high": 2.0})
   assert margin.support == (-1.0, 2.0)
   with torch.no_grad():
-    _wide(margin.high).fill_(5.0)
+    widen(margin.high).fill_(5.0)
   assert margin.support == (-1.0, 5.0)
 
 
@@ -273,8 +264,8 @@ def test_gamma_marginal_likelihood_is_differentiable() -> None:
   """A Gamma margin can be fitted by its own likelihood: `log_prob` has grads."""
   margin = TorchMargin(_D.Gamma, {"concentration": 2.0, "rate": 1.0})
   margin.logpdf(torch.tensor([0.5, 1.5], dtype=_F64)).sum().backward()
-  assert _wide(margin.concentration).grad is not None
-  assert torch.isfinite(_wide(margin.concentration).grad).all()
+  assert widen(margin.concentration).grad is not None
+  assert torch.isfinite(widen(margin.concentration).grad).all()
 
 
 @pytest.mark.xfail(
@@ -360,8 +351,8 @@ def test_from_distribution_copies_the_parameters() -> None:
   margin = TorchMargin.from_distribution(source)
   assert margin.parameter_names == ("loc", "scale")
   with torch.no_grad():
-    _wide(source.loc).fill_(99.0)
-  assert _wide(margin.loc).item() == pytest.approx(0.3)
+    widen(source.loc).fill_(99.0)
+  assert widen(margin.loc).item() == pytest.approx(0.3)
 
 
 def test_from_distribution_rejects_unreadable_parameters() -> None:

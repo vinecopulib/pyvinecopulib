@@ -23,55 +23,12 @@ from torch import Tensor
 from torch.distributions import Distribution
 
 from ..core import MarginBase
+from ..core.margin_base import support_of
 
 __all__ = ["TorchMargin"]
 
 #: Accepted spellings of the ``parameters`` argument: anything ``dict`` takes.
 ParameterSpec = Union[Mapping[str, Any], Iterable[tuple[str, Any]]]
-
-
-def _bound_to_float(bound: Any, unbounded: float) -> float:
-  """Read one support endpoint as a plain float.
-
-  A parameter-derived endpoint (``Uniform``'s, say) arrives as a tensor that may
-  carry a gradient, and converting one to a Python scalar without detaching it
-  first is a warning waiting to happen.
-
-  Parameters
-  ----------
-  bound : object
-      The endpoint as the constraint spells it: a float, a tensor, or ``None``.
-  unbounded : float
-      What to return when the constraint does not pin this side.
-
-  Returns
-  -------
-  float
-      The endpoint.
-  """
-  if bound is None:
-    return unbounded
-  return float(bound.detach() if isinstance(bound, Tensor) else bound)
-
-
-def _support_bounds(distribution: Distribution) -> tuple[float, float]:
-  """Read ``(lo, hi)`` off a distribution's support constraint.
-
-  Parameters
-  ----------
-  distribution : torch.distributions.Distribution
-      The distribution to inspect.
-
-  Returns
-  -------
-  tuple of float
-      The bounds, unbounded on either side the constraint does not pin.
-  """
-  constraint = distribution.support
-  return (
-    _bound_to_float(getattr(constraint, "lower_bound", None), float("-inf")),
-    _bound_to_float(getattr(constraint, "upper_bound", None), float("inf")),
-  )
 
 
 def _implements(distribution: Distribution, name: str) -> bool:
@@ -361,7 +318,7 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
     tuple of float
         ``(lo, hi)``, infinite where unbounded.
     """
-    return _support_bounds(self.distribution)
+    return support_of(self.distribution)
 
   # --------------------------------------------------------------------- #
   # Evaluation                                                             #

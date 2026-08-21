@@ -23,6 +23,8 @@ import pytest
 
 import pyvinecopulib as pv
 
+from .helpers import widen
+
 torch = pytest.importorskip("torch")
 stats = pytest.importorskip("scipy.stats")
 
@@ -55,16 +57,6 @@ def copula(data: np.ndarray) -> pv.Vinecop:
     pv.to_pseudo_obs(data),
     controls=pv.FitControlsVinecop(family_set=[pv.families.tll], num_threads=1),
   )
-
-
-def _wide(value: object) -> Any:
-  """Widen a value to ``Any``.
-
-  ``nn.Module.__getattr__`` hands back a ``Tensor | Parameter | Module`` union
-  that no static checker can narrow, and ``Vinedist.margins`` is typed by the
-  margin protocol rather than by the concrete class. Both are read through this.
-  """
-  return value
 
 
 def _margins() -> list[TorchMargin]:
@@ -177,7 +169,7 @@ def test_to_device_round_trip(data: np.ndarray, dist: TorchVinedist) -> None:
   x = torch.as_tensor(data, dtype=_F64)
   moved = dist.to("cpu")
   assert moved is dist
-  assert all(_wide(m).loc.device.type == "cpu" for m in dist.margins)
+  assert all(widen(m).loc.device.type == "cpu" for m in dist.margins)
   assert torch.isfinite(dist.logpdf(x)).all()
 
 
@@ -192,7 +184,7 @@ def test_backward_reaches_the_margin_parameters(
   loss = -dist.logpdf(torch.as_tensor(data, dtype=_F64)).mean()
   loss.backward()
   for margin in dist.margins:
-    for parameter in _wide(margin).parameters():
+    for parameter in widen(margin).parameters():
       assert parameter.grad is not None
       assert torch.isfinite(parameter.grad).all()
       assert not torch.allclose(parameter.grad, torch.zeros_like(parameter))

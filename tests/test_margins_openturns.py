@@ -13,8 +13,6 @@ working, without OpenTURNS installed at all.
 
 from __future__ import annotations
 
-import subprocess
-import sys
 
 from typing import Any
 
@@ -27,6 +25,7 @@ from pyvinecopulib.margins import (
   OpenTURNSSelector,
   as_margin,
 )
+from .helpers import run_without
 
 openturns = pytest.importorskip("openturns")
 
@@ -41,12 +40,6 @@ FiniteDiscrete = (
 def normal_sample() -> np.ndarray:
   """600 draws from a Normal(1, 2)."""
   return np.random.default_rng(0).normal(1.0, 2.0, size=600)
-
-
-@pytest.fixture
-def count_sample() -> np.ndarray:
-  """400 Poisson(4) counts, including zeros."""
-  return np.random.default_rng(1).poisson(4.0, size=400).astype(float)
 
 
 # --- marshaling ------------------------------------------------------------ #
@@ -325,14 +318,8 @@ def test_selector_rejects_bad_arguments(normal_sample: np.ndarray) -> None:
 
 def test_margins_import_and_coerce_without_openturns() -> None:
   """Without OpenTURNS, the package imports and `as_margin` still works."""
-  code = (
-    "import sys, builtins\n"
-    "real = builtins.__import__\n"
-    "def blocked(name, *a, **k):\n"
-    "  if name.split('.')[0] == 'openturns':\n"
-    "    raise ImportError('no openturns')\n"
-    "  return real(name, *a, **k)\n"
-    "builtins.__import__ = blocked\n"
+  run_without(
+    "openturns",
     "import numpy as np\n"
     "from pyvinecopulib.core import Kde1d\n"
     "from pyvinecopulib.margins import as_margin\n"
@@ -342,32 +329,18 @@ def test_margins_import_and_coerce_without_openturns() -> None:
     "  as_margin(object())\n"
     "except TypeError:\n"
     "  sys.exit(0)\n"
-    "sys.exit(3)\n"
+    "sys.exit(3)\n",
   )
-  result = subprocess.run(  # noqa: S603
-    [sys.executable, "-c", code], capture_output=True, text=True
-  )
-  assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_openturns_margin_names_the_extra_without_openturns() -> None:
   """Without OpenTURNS, constructing one says which extra provides it."""
-  code = (
-    "import sys, builtins\n"
-    "real = builtins.__import__\n"
-    "def blocked(name, *a, **k):\n"
-    "  if name.split('.')[0] == 'openturns':\n"
-    "    raise ImportError('no openturns')\n"
-    "  return real(name, *a, **k)\n"
-    "builtins.__import__ = blocked\n"
+  run_without(
+    "openturns",
     "from pyvinecopulib.margins import OpenTURNSMargin\n"
     "try:\n"
     "  OpenTURNSMargin('Normal')\n"
     "except ImportError as e:\n"
     "  sys.exit(0 if 'pyvinecopulib[openturns]' in str(e) else 2)\n"
-    "sys.exit(3)\n"
+    "sys.exit(3)\n",
   )
-  result = subprocess.run(  # noqa: S603
-    [sys.executable, "-c", code], capture_output=True, text=True
-  )
-  assert result.returncode == 0, result.stdout + result.stderr

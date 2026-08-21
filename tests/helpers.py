@@ -255,3 +255,51 @@ class AtomicMargin(MarginBase[NDArray[np.float64]]):
       np.ceil(np.asarray(p, dtype=float) * (n + 1.0)) - 1.0, 0, n - 1
     )
     return self._sorted[idx.astype(int)]
+
+
+def widen(value: object) -> Any:
+  """Widen a value to ``Any``.
+
+  ``nn.Module.__getattr__`` hands back a ``Tensor | Parameter | Module`` union
+  that no static checker can narrow, and ``Vinedist.margins`` is typed by the
+  margin protocol rather than by the concrete class. Both are read through this.
+  """
+  return value
+
+
+def run_without(package: str, body: str) -> None:
+  """Assert ``body`` succeeds in a fresh interpreter that cannot import
+  ``package``.
+
+  Whether a module avoids importing an optional dependency can only be checked
+  by making the import fail and seeing whether anything notices, and that needs
+  a separate interpreter. ``body`` signals its own verdict with ``sys.exit``: 0
+  for the behavior under test, anything else for a miss.
+
+  Parameters
+  ----------
+  package : str
+      Top-level package name to block.
+  body : str
+      Script to run once the block is installed. ``sys`` is already imported.
+
+  Returns
+  -------
+  None
+  """
+  import subprocess
+  import sys as _sys
+
+  preamble = (
+    "import sys, builtins\n"
+    "real = builtins.__import__\n"
+    "def blocked(name, *a, **k):\n"
+    f"  if name.split('.')[0] == {package!r}:\n"
+    f"    raise ImportError('no {package}')\n"
+    "  return real(name, *a, **k)\n"
+    "builtins.__import__ = blocked\n"
+  )
+  result = subprocess.run(  # noqa: S603
+    [_sys.executable, "-c", preamble + body], capture_output=True, text=True
+  )
+  assert result.returncode == 0, result.stdout + result.stderr

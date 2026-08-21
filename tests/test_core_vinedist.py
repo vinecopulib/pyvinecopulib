@@ -63,11 +63,9 @@ def _sklar_logpdf(dist: Any, y: np.ndarray) -> np.ndarray:
 def test_logpdf_is_the_sklar_factorization(continuous: np.ndarray) -> None:
   """`logpdf` equals the copula term plus the marginal log-densities."""
   dist = pv.Vinedist.from_data(continuous, margins="kde")
-  u = dist.marginal_cdf(continuous)
-  manual = np.log(np.asarray(dist.copula.pdf(u)))
-  for j, m in enumerate(dist.margins):
-    manual = manual + np.log(np.asarray(m.pdf(continuous[:, j])))
-  np.testing.assert_allclose(dist.logpdf(continuous), manual, atol=0.0)
+  np.testing.assert_allclose(
+    dist.logpdf(continuous), _sklar_logpdf(dist, continuous), atol=0.0
+  )
 
 
 def test_pdf_is_the_exponential_of_logpdf(continuous: np.ndarray) -> None:
