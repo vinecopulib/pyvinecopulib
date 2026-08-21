@@ -25,7 +25,7 @@ import numpy as np
 from ..core import Kde1d, MarginBase, MarginLike
 from ..core.margin_base import _reject_covariates
 from ._adapters import register_margin_adapter
-from .selection import _CRITERIA, _criteria
+from .selection import _CRITERIA, _SelectorBase, _criteria
 
 __all__ = ["OpenTURNSMargin", "OpenTURNSSelector"]
 
@@ -625,7 +625,7 @@ def _openturns_criteria(
   }
 
 
-class OpenTURNSSelector(MarginBase[np.ndarray]):
+class OpenTURNSSelector(_SelectorBase):
   """Pick an OpenTURNS family by an information criterion.
 
   A selector is itself a margin: :meth:`fit` estimates every admissible
@@ -727,44 +727,6 @@ class OpenTURNSSelector(MarginBase[np.ndarray]):
     self._report: list[dict[str, Any]] = []
 
   # --- fitted state -------------------------------------------------------- #
-
-  @property
-  def selected_(self) -> Any:
-    """The winning margin.
-
-    Returns
-    -------
-    MarginLike
-        The candidate with the smallest ``criterion``, or the
-        :class:`~pyvinecopulib.core.Kde1d` fallback when every candidate was
-        rejected.
-
-    Raises
-    ------
-    RuntimeError
-        If the selector has not been fitted.
-    """
-    if self._selected is None:
-      raise RuntimeError("OpenTURNSSelector is not fitted; call fit(y)")
-    return self._selected
-
-  @property
-  def report_(self) -> list[dict[str, Any]]:
-    """One row per candidate, in the order they were tried.
-
-    Rows carry the same keys as :attr:`MarginSelector.report_`'s, so tables
-    from the two selectors concatenate.
-
-    Returns
-    -------
-    list of dict
-        The table; empty before :meth:`fit`.
-    """
-    return list(self._report)
-
-  @property
-  def is_fitted(self) -> bool:
-    return self._selected is not None
 
   # --- estimation ---------------------------------------------------------- #
 
@@ -1005,96 +967,6 @@ class OpenTURNSSelector(MarginBase[np.ndarray]):
     return margin
 
   # --- forwarding ---------------------------------------------------------- #
-
-  @property
-  def family_name(self) -> str:
-    """Name of the selected family.
-
-    Returns
-    -------
-    str
-        The winner's own ``family_name``.
-    """
-    return str(getattr(self.selected_, "family_name", "unknown"))
-
-  @property
-  def n_parameters(self) -> float:
-    """Number of freely estimated parameters of the selected margin.
-
-    The selection itself is not counted, so an information criterion computed
-    from this understates the model's complexity -- the usual post-selection
-    caveat, not a property of this implementation.
-
-    Returns
-    -------
-    float
-        The winner's count.
-    """
-    return float(getattr(self.selected_, "n_parameters", float("nan")))
-
-  @property
-  def _fitted_loglik(self) -> float:
-    """Log-likelihood attained by the selected margin.
-
-    Returns
-    -------
-    float
-        The winner's fitted log-likelihood.
-    """
-    return float(self.selected_.loglik())
-
-  @property
-  def var_type(self) -> str:
-    return str(getattr(self.selected_, "var_type", "c"))
-
-  @property
-  def support(self) -> tuple[float, float]:
-    lo, hi = getattr(self.selected_, "support", (float("-inf"), float("inf")))
-    return (float(lo), float(hi))
-
-  def pdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
-    return np.asarray(self.selected_.pdf(y), dtype=float)
-
-  def cdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
-    return np.asarray(self.selected_.cdf(y), dtype=float)
-
-  def icdf(self, p: Any, *, x: Optional[Any] = None) -> np.ndarray:
-    return np.asarray(self.selected_.icdf(p), dtype=float)
-
-  def logpdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
-    return np.asarray(self.selected_.logpdf(y), dtype=float)
-
-  def cdf_left(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
-    return np.asarray(self.selected_.cdf_left(y), dtype=float)
-
-  def sample(
-    self, n: int, *, x: Optional[Any] = None, seeds: Optional[list[int]] = None
-  ) -> np.ndarray:
-    """Draw ``n`` samples from the selected margin.
-
-    Parameters
-    ----------
-    n : int
-        Number of samples.
-    x : array, shape (n, k), or None, optional
-        Ignored; this margin is unconditional.
-    seeds : list of int, or None, optional
-        RNG seeds.
-
-    Returns
-    -------
-    array, shape (n,), dtype float
-        Samples on the original scale.
-    """
-    return np.asarray(self.selected_.sample(n, seeds=seeds), dtype=float)
-
-  def __repr__(self) -> str:
-    if self._selected is None:
-      return f"OpenTURNSSelector(criterion={self.criterion!r}, unfitted)"
-    return (
-      f"OpenTURNSSelector(criterion={self.criterion!r}, "
-      f"selected={self.family_name!r})"
-    )
 
 
 # --- coercion -------------------------------------------------------------- #

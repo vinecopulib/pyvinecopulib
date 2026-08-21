@@ -174,7 +174,166 @@ def _dedupe(candidates: Iterable[Any]) -> list[Any]:
   return out
 
 
-class MarginSelector(MarginBase[np.ndarray]):
+class _SelectorBase(MarginBase[np.ndarray]):
+  """State and forwarding shared by the family selectors.
+
+  A selector is a margin that fits several candidates, keeps the winner on
+  ``selected_`` and forwards evaluation to it. Everything in that sentence
+  except *which* candidates and *how* one is fitted is the same whichever
+  ecosystem supplies the families, so it lives here: the fitted state, the
+  report, and the eleven members that forward to the winner. Subclasses own
+  ``__init__``, ``fit`` and the candidate machinery.
+
+  Names in messages come from ``type(self).__name__``, so a subclass needs no
+  override to identify itself.
+  """
+
+  supports_weights = False
+
+  #: Set by every subclass's ``__init__``; declared here because the shared
+  #: members below read them.
+  criterion: str
+  _selected: Optional[Any]
+  _report: list[dict[str, Any]]
+
+  # --- fitted state -------------------------------------------------------- #
+
+  @property
+  def selected_(self) -> Any:
+    """The winning margin.
+
+    Returns
+    -------
+    MarginLike
+        The candidate with the smallest ``criterion``, or the fallback margin
+        when every candidate was rejected.
+
+    Raises
+    ------
+    RuntimeError
+        If the selector has not been fitted.
+    """
+    if self._selected is None:
+      raise RuntimeError(f"{type(self).__name__} is not fitted; call fit(y)")
+    return self._selected
+
+  @property
+  def report_(self) -> list[dict[str, Any]]:
+    """One row per candidate, in the order they were tried.
+
+    Each row carries ``column``, ``family``, ``n_parameters``, ``loglik``,
+    ``aic``, ``bic``, ``aicc``, ``criterion``, ``support``, ``seconds``,
+    ``warnings`` and ``status`` / ``selected``. ``status`` is ``"ok"`` for an
+    admissible candidate, ``"selected"`` for the winner, ``"fallback"`` for the
+    margin used when nothing else survived, and otherwise the reason it was
+    rejected. Rows from several variables concatenate into one tidy table, e.g.
+    ``pandas.DataFrame(rows)``.
+
+    Returns
+    -------
+    list of dict
+        The table; empty before :meth:`fit`.
+    """
+    return list(self._report)
+
+  @property
+  def is_fitted(self) -> bool:
+    return self._selected is not None
+
+  # --- forwarding ---------------------------------------------------------- #
+
+  @property
+  def family_name(self) -> str:
+    """Name of the selected family.
+
+    Returns
+    -------
+    str
+        The winner's own ``family_name``.
+    """
+    return str(getattr(self.selected_, "family_name", "unknown"))
+
+  @property
+  def n_parameters(self) -> float:
+    """Number of freely estimated parameters of the selected margin.
+
+    The selection itself is not counted, so an information criterion computed
+    from this understates the model's complexity -- the usual post-selection
+    caveat, not a property of this implementation.
+
+    Returns
+    -------
+    float
+        The winner's count.
+    """
+    return float(getattr(self.selected_, "n_parameters", float("nan")))
+
+  @property
+  def _fitted_loglik(self) -> float:
+    """Log-likelihood attained by the selected margin.
+
+    Returns
+    -------
+    float
+        The winner's fitted log-likelihood.
+    """
+    return float(self.selected_.loglik())
+
+  @property
+  def var_type(self) -> str:
+    return str(getattr(self.selected_, "var_type", "c"))
+
+  @property
+  def support(self) -> tuple[float, float]:
+    lo, hi = getattr(self.selected_, "support", (float("-inf"), float("inf")))
+    return (float(lo), float(hi))
+
+  def pdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
+    return np.asarray(self.selected_.pdf(y), dtype=float)
+
+  def cdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
+    return np.asarray(self.selected_.cdf(y), dtype=float)
+
+  def icdf(self, p: Any, *, x: Optional[Any] = None) -> np.ndarray:
+    return np.asarray(self.selected_.icdf(p), dtype=float)
+
+  def logpdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
+    return np.asarray(self.selected_.logpdf(y), dtype=float)
+
+  def cdf_left(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
+    return np.asarray(self.selected_.cdf_left(y), dtype=float)
+
+  def sample(
+    self, n: int, *, x: Optional[Any] = None, seeds: Optional[list[int]] = None
+  ) -> np.ndarray:
+    """Draw ``n`` samples from the selected margin.
+
+    Parameters
+    ----------
+    n : int
+        Number of samples.
+    x : array, shape (n, k), or None, optional
+        Ignored; this margin is unconditional.
+    seeds : list of int, or None, optional
+        RNG seeds.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Samples on the original scale.
+    """
+    return np.asarray(self.selected_.sample(n, seeds=seeds), dtype=float)
+
+  def __repr__(self) -> str:
+    name = type(self).__name__
+    if self._selected is None:
+      return f"{name}(criterion={self.criterion!r}, unfitted)"
+    return (
+      f"{name}(criterion={self.criterion!r}, selected={self.family_name!r})"
+    )
+
+
+class MarginSelector(_SelectorBase):
   """Pick a univariate family by an information criterion.
 
   A selector is itself a margin: :meth:`fit` estimates every admissible
@@ -360,48 +519,6 @@ class MarginSelector(MarginBase[np.ndarray]):
     return self
 
   # --- fitted state -------------------------------------------------------- #
-
-  @property
-  def selected_(self) -> Any:
-    """The winning margin.
-
-    Returns
-    -------
-    MarginLike
-        The candidate with the smallest ``criterion``, or the
-        ``Kde1d`` fallback when every candidate was rejected.
-
-    Raises
-    ------
-    RuntimeError
-        If the selector has not been fitted.
-    """
-    if self._selected is None:
-      raise RuntimeError("MarginSelector is not fitted; call fit(y)")
-    return self._selected
-
-  @property
-  def report_(self) -> list[dict[str, Any]]:
-    """One row per candidate, in the order they were tried.
-
-    Each row carries ``column``, ``family``, ``n_parameters``, ``loglik``,
-    ``aic``, ``bic``, ``aicc``, ``criterion``, ``support``, ``seconds``,
-    ``warnings`` and ``status`` / ``selected``. ``status`` is ``"ok"`` for an
-    admissible candidate, ``"selected"`` for the winner, ``"fallback"`` for the
-    kernel-density margin used when nothing else survived, and otherwise the
-    reason it was rejected. Rows from several variables concatenate into one
-    tidy table, e.g. ``pandas.DataFrame(rows)``.
-
-    Returns
-    -------
-    list of dict
-        The table; empty before :meth:`fit`.
-    """
-    return list(self._report)
-
-  @property
-  def is_fitted(self) -> bool:
-    return self._selected is not None
 
   # --- estimation ---------------------------------------------------------- #
 
@@ -712,96 +829,6 @@ class MarginSelector(MarginBase[np.ndarray]):
     return margin
 
   # --- forwarding ---------------------------------------------------------- #
-
-  @property
-  def family_name(self) -> str:
-    """Name of the selected family.
-
-    Returns
-    -------
-    str
-        The winner's own ``family_name``.
-    """
-    return str(getattr(self.selected_, "family_name", "unknown"))
-
-  @property
-  def n_parameters(self) -> float:
-    """Number of freely estimated parameters of the selected margin.
-
-    The selection itself is not counted, so an information criterion computed
-    from this understates the model's complexity -- the usual post-selection
-    caveat, not a property of this implementation.
-
-    Returns
-    -------
-    float
-        The winner's count.
-    """
-    return float(getattr(self.selected_, "n_parameters", float("nan")))
-
-  @property
-  def _fitted_loglik(self) -> float:
-    """Log-likelihood attained by the selected margin.
-
-    Returns
-    -------
-    float
-        The winner's fitted log-likelihood.
-    """
-    return float(self.selected_.loglik())
-
-  @property
-  def var_type(self) -> str:
-    return str(getattr(self.selected_, "var_type", "c"))
-
-  @property
-  def support(self) -> tuple[float, float]:
-    lo, hi = getattr(self.selected_, "support", (float("-inf"), float("inf")))
-    return (float(lo), float(hi))
-
-  def pdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
-    return np.asarray(self.selected_.pdf(y), dtype=float)
-
-  def cdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
-    return np.asarray(self.selected_.cdf(y), dtype=float)
-
-  def icdf(self, p: Any, *, x: Optional[Any] = None) -> np.ndarray:
-    return np.asarray(self.selected_.icdf(p), dtype=float)
-
-  def logpdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
-    return np.asarray(self.selected_.logpdf(y), dtype=float)
-
-  def cdf_left(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
-    return np.asarray(self.selected_.cdf_left(y), dtype=float)
-
-  def sample(
-    self, n: int, *, x: Optional[Any] = None, seeds: Optional[list[int]] = None
-  ) -> np.ndarray:
-    """Draw ``n`` samples from the selected margin.
-
-    Parameters
-    ----------
-    n : int
-        Number of samples.
-    x : array, shape (n, k), or None, optional
-        Ignored; this margin is unconditional.
-    seeds : list of int, or None, optional
-        RNG seeds.
-
-    Returns
-    -------
-    array, shape (n,), dtype float
-        Samples on the original scale.
-    """
-    return np.asarray(self.selected_.sample(n, seeds=seeds), dtype=float)
-
-  def __repr__(self) -> str:
-    if self._selected is None:
-      return f"MarginSelector(criterion={self.criterion!r}, unfitted)"
-    return (
-      f"MarginSelector(criterion={self.criterion!r}, "
-      f"selected={self.family_name!r})"
-    )
 
 
 def _excluded_block(indent: str) -> str:
