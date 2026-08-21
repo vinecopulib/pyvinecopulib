@@ -845,10 +845,10 @@ def test_the_integral_cache_is_allowed_on_a_discrete_vine(
 
   It used to be refused: the cache was a bilinear interpolation of tabulated
   integrals, and a discrete edge reads its density from *differences* over an
-  atom's width -- 38% maximum relative error on a ``("d","d")`` density. Two
-  things changed. The tables are exact, and a discrete edge reads its rectangle
-  probability through ``rect_mass`` instead of differencing at all. So the two
-  modes now agree, and the pin is that agreement rather than a refusal.
+  atom's width -- 38% maximum relative error on a ``("d","d")`` density. The
+  tables are exact now, so both modes difference the same quantity and
+  differ only in the order its terms are summed. The pin is that agreement
+  rather than a refusal.
   """
   u = _discrete_data(var_types, n=400, seed=6)
   cop = _discrete_vinecop(var_types, u)
@@ -878,18 +878,18 @@ def test_the_integral_cache_is_allowed_on_a_discrete_vine(
       atol=1e-13,
     )
 
-  # Tier two, and the loose bound is the cascade's condition number rather than
-  # slack in either mode: tree 1's atom widths are themselves differences of
-  # tree 0's h-functions, so a per-pair 1e-14 reaches the vine as ~1e-8. The
-  # same amplification is in the compiled evaluator; what this pins is that the
-  # two modes do not diverge beyond it.
-  for method in ("pdf", "rosenblatt"):
-    torch.testing.assert_close(
-      getattr(cached, method)(u_t),
-      getattr(plain, method)(u_t),
-      rtol=1e-6,
-      atol=1e-6,
-    )
+    # Tier two: the vine. The bound is looser than the pair's because the
+    # discrete cascade amplifies -- tree 1's atom widths are themselves
+    # differences of tree 0's h-functions -- but only to 1.5e-13 relative,
+    # measured, since both modes difference the same exact distribution
+    # function and only the summation order separates them.
+    for method in ("pdf", "rosenblatt"):
+      torch.testing.assert_close(
+        getattr(cached, method)(u_t),
+        getattr(plain, method)(u_t),
+        rtol=1e-11,
+        atol=1e-10,
+      )
 
 
 def test_from_structure_keeps_discrete_var_types() -> None:

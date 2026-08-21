@@ -576,11 +576,15 @@ automatically.
     invisible on both sides for as long as it did. Note the identity **cannot**
     catch a cache regression: it telescopes to the four corners, so it reads
     `1 − 2e-10` for a correct density and for a 38%-wrong one alike.
-    A rectangle's probability is read through the pair's optional `rect_mass`
-    when it advertises one and no covariates are in play, and by differencing
-    four `cdf` values otherwise — which keeps a wrapped compiled `Bicop`
-    bit-identical to its own quotients while a `TorchBicop` edge avoids the
-    `1/(w₁w₂)` amplification.
+    A rectangle's probability is read by differencing four `cdf` values, which
+    is what the compiled pair does, so a `DiscretePair` is bit-identical to it.
+    `TorchBicop.rect_mass` would be more accurate — 1.2e-15 against 9.2e-15 at
+    a `1/8`-wide atom, measured against exact rational truth, and far more at
+    narrower ones — but it is **deliberately not used**: the density divides by
+    the atom's area, and the discrete cascade then turns a 1e-15 pair-level
+    difference into `8.5e-8` at the vine, a visible divergence from
+    `Vinecop`. The torch↔C++ cascade parity is a documented guarantee, and it
+    outranks the accuracy here; revisit only together.
   - `sample_conditional` / `reorient` (`_reorient.py`) — conditional sampling and
     the value-preserving relabeling it rests on. A **truncated** model relabels
     like any other: the trees above the truncation are independence, so the peel

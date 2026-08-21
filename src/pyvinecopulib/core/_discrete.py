@@ -557,32 +557,20 @@ class DiscretePair(BicopBase[ArrayT]):
   def _h2(self, xp: Any, a: Any, b: Any, x: Optional[Any]) -> Any:
     return _pair_eval(self._pair.hfunc2, xp.stack([a, b], axis=-1), x)
 
-  def _exact_rect(self, x: Optional[Any]) -> Any:
-    """The pair's exact rectangle probability, when it advertises one.
-
-    Differencing ``cdf`` values is the definition of a rectangle's probability,
-    but the density divides the result by the atom's area afterwards, so any
-    absolute error in a ``cdf`` -- pure rounding included -- reaches it
-    amplified by ``~4 / (w1 w2)``. A pair that can compute the rectangle
-    without that cancellation advertises ``rect_mass``; one that cannot keeps
-    the differences verbatim, which is what leaves a wrapped compiled ``Bicop``
-    bit-identical to its own quotients.
-
-    ``rect_mass`` takes no conditioning matrix, so a call that carries one
-    falls back too: a conditional pair's rectangle is not the unconditional
-    one, and silently dropping ``x`` would be the worse failure.
-    """
-    if x is not None:
-      return None
-    return getattr(self._pair, "rect_mass", None)
-
   def _rect(
     self, xp: Any, a1: Any, b1: Any, a2: Any, b2: Any, x: Optional[Any]
   ) -> Any:
-    """``P((a1, b1] x (a2, b2])``, the four-corner difference or better."""
-    exact = self._exact_rect(x)
-    if exact is not None:
-      return exact(a1, b1, a2, b2)
+    """``P((a1, b1] x (a2, b2])`` as the four-corner difference.
+
+    A pair that can compute the rectangle without the cancellation this carries
+    -- ``TorchBicop.rect_mass`` does -- would be more accurate here, by 7.6x at
+    a `1/8`-wide atom and far more at the widths the inner trees reach. It is
+    deliberately not used: the density divides by the atom's area, and the
+    discrete cascade then amplifies a 1e-15 pair-level difference to 8.5e-8 at
+    the vine, which is a visible divergence from the compiled ``Vinecop``. The
+    torch-to-C++ cascade parity is a documented guarantee, so this route stays
+    the reference's, exactly.
+    """
     # Summed in two pairs, as the compiled pair copula sums them: the grouping
     # is what makes the two agree to the last bit rather than to rounding.
     return (self._cdf(xp, b1, b2, x) + self._cdf(xp, a1, a2, x)) - (
@@ -595,15 +583,10 @@ class DiscretePair(BicopBase[ArrayT]):
     """``P((a1, b1] x (0, b2])`` for ``axis=1``, transposed for ``axis=2``.
 
     The rectangle anchored at the origin, which an h-function's numerator is.
-    Its second pair of corners vanishes, so the fallback keeps the two-term
-    difference it has always been rather than evaluating ``cdf`` at zero.
+    Its second pair of corners vanishes, so this is a two-term difference rather
+    than evaluating ``cdf`` at zero. See :meth:`_rect` on why the exact route is
+    not taken.
     """
-    exact = self._exact_rect(x)
-    if exact is not None:
-      zero = xp.zeros_like(b2)
-      if axis == 1:
-        return exact(a1, b1, zero, b2)
-      return exact(zero, b2, a1, b1)
     if axis == 1:
       return self._cdf(xp, b1, b2, x) - self._cdf(xp, a1, b2, x)
     return self._cdf(xp, b2, b1, x) - self._cdf(xp, b2, a1, x)
