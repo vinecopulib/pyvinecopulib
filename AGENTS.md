@@ -720,7 +720,10 @@ Key surface:
     for future torch fitters).
   - `cache_integrals` — default `True` (set in `990f997`); precomputes
     integral grids for ~80–300× evaluation speed-up with mean IAE
-    `< 1e-3`.
+    `< 1e-3`. The cached `cdf` / `hfunc*` / `hinv*` are differentiable in
+    `u`, but carry **no** gradient with respect to `values` — with the cache
+    on, the bilinear surrogate *is* the model for those four members. `pdf`
+    reads the grid directly and always carries both.
   - `batched` — fires a single batched bicop call per tree level
     (available on `pdf` / `rosenblatt`, not on `inverse_rosenblatt`).
     The non-batched cascade is a byte-for-byte port of the C++

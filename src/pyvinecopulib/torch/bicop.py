@@ -66,7 +66,12 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       bisection path). The caches are built once at construction
       from ``values`` and are not refreshed afterwards; mutating
       ``interp_grid.values`` in place on a cached instance is
-      unsupported (rebuild a new ``TorchBicop`` instead).
+      unsupported (rebuild a new ``TorchBicop`` instead). For the same
+      reason the cached members are exact, differentiable functions of
+      ``u`` but carry **no** gradient with respect to ``values`` -- the
+      tables are constants. ``pdf`` never uses a cache and always does.
+      Pass ``cache_integrals=False`` to differentiate the integrals with
+      respect to the density grid.
   norm_times : int, default=3
       Number of margin-normalization rounds. Matches the ``Bicop``
       TLL default. Pass ``0`` to skip when the grid already integrates
@@ -160,8 +165,11 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
     The resulting ``TorchBicop`` is a ``torch.nn.Module`` (so
     ``.to("cuda")`` moves the density grid in one line) built from a
-    differentiable bilinear interpolator, with autograd flowing
-    through every ``pdf`` / ``cdf`` / ``hfunc`` / ``hinv`` call.
+    differentiable bilinear interpolator: autograd flows through every
+    ``pdf`` / ``cdf`` / ``hfunc`` / ``hinv`` call in ``u``, and through
+    ``pdf`` in the density grid. With ``cache_integrals=True`` the other
+    four read a frozen table, so they carry no gradient in the grid; see
+    that parameter on ``TorchBicop.__init__``.
 
     Parameters
     ----------
@@ -451,7 +459,6 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
   # Inverse h-functions (closed-form conditional quantiles).               #
   # --------------------------------------------------------------------- #
 
-  @torch.no_grad()
   def _hinv_raw(self, u: Tensor, cond_var: int) -> Tensor:
     """Shared inverse-h-function body for `hinv1` / `hinv2`.
 
@@ -468,7 +475,6 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       return self.interp_grid.interp_at(cache, u).clamp(0.0, 1.0)
     return self.interp_grid.inverse_integrate_1d(u, cond_var).clamp(0.0, 1.0)
 
-  @torch.no_grad()
   def hinv1(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Inverts `hfunc1` w.r.t. the second argument.
 
@@ -498,7 +504,6 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       return u[:, 1].clamp(_TRIM_LO, _TRIM_HI)
     return self._hinv_raw(u, 1)
 
-  @torch.no_grad()
   def hinv2(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Inverts `hfunc2` w.r.t. the first argument.
 

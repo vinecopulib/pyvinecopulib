@@ -1,3 +1,5 @@
+import math
+import statistics
 import uuid
 from pathlib import Path
 from typing import Any, Optional
@@ -14,6 +16,13 @@ matplotlib.use("Agg")
 
 # --- Toy conditional pair copula for the non-simplified / conditional tests ---
 
+# The standard-normal CDF and quantile on the NumPy path come from the standard
+# library rather than `scipy.special`: `scipy` is an optional extra, and the
+# built wheels are tested in an environment that installs neither it nor torch,
+# so a pair copula hosted by a `core` test has to work without both.
+_erfc = np.vectorize(math.erfc, otypes=[float])
+_norm_inv_cdf = np.vectorize(statistics.NormalDist().inv_cdf, otypes=[float])
+
 
 def _std_normal_cdf(z: Any) -> Any:
   """Standard normal CDF, dispatched by array backend (torch / numpy)."""
@@ -21,9 +30,7 @@ def _std_normal_cdf(z: Any) -> Any:
     import torch
 
     return torch.special.ndtr(z)
-  from scipy.special import ndtr
-
-  return ndtr(z)
+  return 0.5 * _erfc(-np.asarray(z) / math.sqrt(2.0))
 
 
 def _std_normal_ppf(p: Any) -> Any:
@@ -32,9 +39,7 @@ def _std_normal_ppf(p: Any) -> Any:
     import torch
 
     return torch.special.ndtri(p)
-  from scipy.special import ndtri
-
-  return ndtri(p)
+  return _norm_inv_cdf(np.asarray(p))
 
 
 class GaussianBicop(BicopBase[Any]):
