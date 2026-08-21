@@ -240,6 +240,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     cache_integrals: bool = True,
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
+    var_types: Optional[list[str]] = None,
   ) -> "TorchBicop":
     """Fits a bicop on pseudo-observations and wraps in a ``TorchBicop``.
 
@@ -249,8 +250,10 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
     Parameters
     ----------
-    u : ndarray or Tensor, shape (n, 2), dtype float
-        Pseudo-observations.
+    u : ndarray or Tensor, shape (n, 2) or (n, 4), dtype float
+        Pseudo-observations, ``[u1, u2]`` — or ``[u1, u2, u1^-, u2^-]`` when
+        ``var_types`` marks an argument discrete, of which only the values are
+        fitted on.
     controls : FitControlsTorchBicop or None, default=None
         Fit-time controls. `None` defaults to TLL with
         ``grid_size=30`` on the normal-spaced grid.
@@ -260,28 +263,69 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
         See ``TorchBicop.__init__``.
     dtype : torch.dtype, default=torch.float64
         See ``TorchBicop.__init__``.
+    var_types : list of str or None, default=None
+        The two arguments' types, ``"c"`` or ``"d"``; ``None`` means both
+        continuous. A discrete argument changes only how ties are broken when
+        ranking, and the fitted grid is continuous either way — the mixed-
+        discrete surface is supplied by
+        :class:`~pyvinecopulib.core.DiscretePair`.
 
     Returns
     -------
     TorchBicop
         A fitted ``TorchBicop``.
+
+    Raises
+    ------
+    ValueError
+        If ``u``'s column count does not match ``var_types``.
     """
     if controls is None:
       controls = FitControlsTorchBicop()
+    types = ("c", "c") if var_types is None else tuple(var_types)
+    discrete = "d" in types
+    expected = 4 if discrete else 2
 
     u_t = torch.as_tensor(u, dtype=dtype, device=device)
-    if u_t.ndim != 2 or u_t.shape[1] != 2:
-      raise ValueError(f"u must have shape (n, 2); got {tuple(u_t.shape)}")
+    if u_t.ndim != 2 or u_t.shape[1] != expected:
+      raise ValueError(
+        f"u must have shape (n, {expected}) for var_types={list(types)}; "
+        f"got {tuple(u_t.shape)}"
+      )
+    # ``Bicop.select`` trims before ``TllBicop::fit``, so two values above
+    # ``1 - 1e-10`` are one tie group there and would be two here.
+    u_t = u_t.clamp(_TRIM_LO, _TRIM_HI)
+    values_only = u_t[:, :2]
+    # An atom repeats its distribution-function value, so the ranks have ties.
+    # ``TllBicop::fit`` breaks them at random from a fixed seed; reuse that draw
+    # rather than reimplementing it, as structure selection reuses ``wdm``. On a
+    # discrete edge those ranks only select the bandwidth: the fit itself runs on
+    # the latent sample drawn with it, which ``fit_tll_constant`` handles.
+    pseudo_obs = None
+    if discrete:
+      from ..utils import to_pseudo_obs
+
+      pseudo_obs = torch.as_tensor(
+        to_pseudo_obs(
+          values_only.detach().cpu().numpy(),
+          ties_method="random",
+          seeds=[5],
+        ),
+        dtype=u_t.dtype,
+        device=u_t.device,
+      )
 
     # ``method`` is validated to be "tll" by FitControlsTorchBicop; it is
     # kept as the dispatch seam for future torch fitters.
     from ._fit_tll import fit_tll_constant
 
     grid_points, values = fit_tll_constant(
-      u_t,
+      values_only,
       grid_size=controls.grid_size,
       mult=controls.mult,
       grid_type=controls.grid_type,
+      pseudo_obs=pseudo_obs,
+      discrete_data=u_t if discrete else None,
     )
     return cls(
       grid_points=grid_points,

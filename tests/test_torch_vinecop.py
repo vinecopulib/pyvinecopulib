@@ -4,10 +4,12 @@ Skipped when PyTorch isn't installed. Compares the torch ``TorchVinecop``
 against the C++ ``pv.Vinecop`` (with TLL pair copulas) for ``pdf`` /
 ``rosenblatt`` / ``inverse_rosenblatt``; verifies the round-trip
 ``inverse_rosenblatt(rosenblatt(u)) ≈ u``; spot-checks an
-independent vine; and confirms truncation and discrete-rejection paths.
+independent vine; and confirms the truncation and discrete paths.
 """
 
 from __future__ import annotations
+
+import pickle
 
 import numpy as np
 import pytest
@@ -16,8 +18,13 @@ import pyvinecopulib as pv
 
 torch = pytest.importorskip("torch")
 
-from pyvinecopulib.torch import FitControlsTorchVinecop, TorchVinecop  # noqa: E402
+from pyvinecopulib.torch import (  # noqa: E402
+  FitControlsTorchVinecop,
+  TorchBicop,
+  TorchVinecop,
+)
 
+_TLL_BICOP = pv.FitControlsBicop(family_set=[pv.families.tll])
 _TLL_CONTROLS = pv.FitControlsVinecop(
   family_set=[pv.families.tll], num_threads=1
 )
@@ -216,22 +223,6 @@ def test_truncated_vine_pdf(batched: bool) -> None:
   )
 
 
-def test_from_vinecop_rejects_discrete_var_types() -> None:
-  d = 3
-  structure = pv.RVineStructure.from_order([1, 2, 3])
-  pair_copulas = [
-    [pv.Bicop(family=pv.families.indep) for _ in range(d - 1 - t)]
-    for t in range(d - 1)
-  ]
-  cop = pv.Vinecop.from_structure(
-    structure=structure,
-    pair_copulas=pair_copulas,
-    var_types=["c", "d", "c"],
-  )
-  with pytest.raises(ValueError, match="continuous-only"):
-    TorchVinecop.from_vinecop(cop)
-
-
 def test_from_vinecop_rejects_unsupported_family() -> None:
   d = 3
   structure = pv.RVineStructure.from_order([1, 2, 3])
@@ -408,14 +399,6 @@ def test_from_data_auto_selects_structure() -> None:
   )
 
 
-def test_from_data_rejects_discrete_var_types() -> None:
-  """``TorchVinecop.from_data`` is continuous-only; discrete ``var_types``
-  raise before any structure selection or fit happens."""
-  u = torch.from_numpy(_simulate(d=3, n=300, seed=99))
-  with pytest.raises(NotImplementedError, match="continuous-only"):
-    TorchVinecop.from_data(u, var_types=["c", "d", "c"])
-
-
 def test_batched_to_device_invalidates() -> None:
   """``.to()`` should drop the lazily-built BatchedVine so the next
   batched call rebuilds it on the new device."""
@@ -478,8 +461,6 @@ def test_from_structure_pair_copulas_matches_init():
   rng = np.random.default_rng(0)
   U = rng.uniform(0.001, 0.999, (300, 3))
   cop = _fit_tll_vine(U)
-  from pyvinecopulib.torch import TorchBicop
-
   pcs = [[TorchBicop.from_bicop(b) for b in row] for row in cop.pair_copulas]
   via_init = TorchVinecop(pair_copulas=pcs, structure=cop.structure)
   via_factory = TorchVinecop.from_structure(
@@ -518,12 +499,6 @@ def test_from_structure_rejects_both_or_neither():
     TorchVinecop.from_structure(
       structure=s, matrix=np.asarray(s.matrix, dtype=np.uint64)
     )
-
-
-def test_from_structure_rejects_discrete_var_types():
-  s = pv.RVineStructure.sample(3, seeds=[1, 2, 3, 4, 5])
-  with pytest.raises(NotImplementedError, match="continuous-only"):
-    TorchVinecop.from_structure(structure=s, var_types=["c", "d", "c"])
 
 
 def test_simulate_seeded_reproducible():
@@ -766,3 +741,196 @@ def test_the_batched_cache_re_bakes_when_grad_tracking_changes() -> None:
     other.pdf(u, batched=True).sum(), other_values
   )
   torch.testing.assert_close(g_batched, g_first, rtol=1e-10, atol=1e-12)
+
+
+#: Cumulative atom masses of a Binomial(4, 0.5) count variable: its top atom
+#: reaches ``F(x) = 1`` and its bottom ``F(x^-) = 0``, both places where the
+#: cascade's clamp and a pair copula's own trimming have to agree.
+_COUNT_CDF = np.cumsum([1.0, 4.0, 6.0, 4.0, 1.0]) / 16.0
+
+
+def _discrete_data(
+  var_types: list[str], n: int = 1500, seed: int = 3
+) -> np.ndarray:
+  """An ``(n, d + k)`` sample: counts at ``"d"``, continuous ranks at ``"c"``."""
+  rng = np.random.default_rng(seed)
+  d = len(var_types)
+  base = rng.standard_normal((n, 1))
+  z = 0.7 * base + 0.7 * rng.standard_normal((n, d))
+  values, limits = [], []
+  for j, t in enumerate(var_types):
+    p = pv.to_pseudo_obs(z[:, [j]]).ravel()
+    if t == "d":
+      level = np.searchsorted(_COUNT_CDF[:-1], p)
+      values.append(_COUNT_CDF[level])
+      limits.append(np.where(level > 0, _COUNT_CDF[level - 1], 0.0))
+    else:
+      values.append(p)
+  return np.column_stack(values + limits)
+
+
+def _discrete_vinecop(var_types: list[str], u: np.ndarray) -> pv.Vinecop:
+  return pv.Vinecop.from_data(u, var_types=var_types, controls=_TLL_CONTROLS)
+
+
+@pytest.mark.parametrize(
+  "var_types", [["d", "c", "c"], ["c", "d", "d"], ["d", "d", "d"]]
+)
+def test_from_vinecop_matches_discrete_vinecop(var_types: list[str]) -> None:
+  # A discrete C++ vine lifted into torch. The stored grids are continuous and
+  # `DiscretePair` supplies the mixed-discrete surface, so what is compared is
+  # two difference quotients over the same grid: measured 1.0e-14 / 2.4e-14 /
+  # 5.6e-14 across the three type patterns. `cache_integrals=None` resolves to
+  # `False` here, which is what makes that floor reachable -- differencing the
+  # bilinearly interpolated cached cdf gives 38% instead.
+  u = _discrete_data(var_types)
+  cop = _discrete_vinecop(var_types, u)
+  bc = TorchVinecop.from_vinecop(cop)
+  assert bc.var_types == var_types
+  u_t = torch.from_numpy(u)
+  np.testing.assert_allclose(
+    bc.pdf(u_t).numpy(), cop.pdf(u), atol=1e-12, rtol=1e-12
+  )
+  np.testing.assert_allclose(
+    bc.rosenblatt(u_t, randomize_discrete=False).numpy(),
+    cop.rosenblatt(u, randomize_discrete=False),
+    atol=1e-12,
+    rtol=1e-12,
+  )
+
+
+@pytest.mark.parametrize("explicit", [True, False])
+def test_the_integral_cache_is_refused_on_a_discrete_vine(
+  explicit: bool,
+) -> None:
+  """A discrete edge cannot difference an interpolated cdf.
+
+  It is built from *differences* of the pair copula's distribution function over
+  an atom's width, and the cached cdf is a bilinear interpolation of a table --
+  38% maximum and 3.7% mean relative error on a ``("d","d")`` density, 14% on a
+  mixed ``hfunc1``. So the default resolves to off, and asking for it explicitly
+  is an error rather than a silently wrong answer.
+  """
+  var_types = ["d", "c", "c"]
+  u = _discrete_data(var_types, n=400, seed=6)
+  cop = _discrete_vinecop(var_types, u)
+  if explicit:
+    with pytest.raises(ValueError, match="cache_integrals=True is refused"):
+      TorchVinecop.from_vinecop(cop, cache_integrals=True)
+    with pytest.raises(ValueError, match="cache_integrals=True is refused"):
+      TorchVinecop.from_data(
+        torch.from_numpy(u),
+        var_types=var_types,
+        controls=FitControlsTorchVinecop(cache_integrals=True),
+      )
+  else:
+    assert (
+      not TorchVinecop.from_vinecop(cop)._pair_module(0, 0)._cache_integrals
+    )
+    # A continuous vine still gets it, so this is a discrete-only refusal.
+    cont = TorchVinecop.from_vinecop(
+      _fit_tll_vine(_simulate(d=3, n=400, seed=6))
+    )
+    assert cont._pair_module(0, 0)._cache_integrals
+
+
+def test_from_structure_keeps_discrete_var_types() -> None:
+  s = pv.RVineStructure.sample(3, seeds=[1, 2, 3, 4, 5])
+  vine = TorchVinecop.from_structure(structure=s, var_types=["c", "d", "c"])
+  assert vine.var_types == ["c", "d", "c"]
+  # An independence vine has density 1 whatever the variable types are, and the
+  # discrete edges still consume the four-column input.
+  u = _discrete_data(["c", "d", "c"], n=64, seed=5)
+  np.testing.assert_allclose(
+    vine.pdf(torch.from_numpy(u)).numpy(), np.ones(64), atol=1e-12
+  )
+
+
+@pytest.mark.parametrize("var_types", [["d", "c"], ["c", "d"], ["d", "d"]])
+def test_the_discrete_pair_fit_reproduces_the_compiled_grid(
+  var_types: list[str],
+) -> None:
+  """The fitted grid itself, not the vine that hosts it.
+
+  ``TllBicop::fit`` selects the bandwidth from randomly-jittered ranks and then
+  fits on the *latent sample* drawn with it, so a discrete fit needs both steps.
+  ``TorchBicop.from_data`` reuses the compiled ``find_latent_sample`` for the
+  second, since it is a stochastic iterative reconstruction over a spatial index
+  and a reimplementation would put this parity at its mercy rather than at the
+  same code's. Measured 1.5e-13 / 1.4e-13 / 5.5e-14.
+  """
+  u = _discrete_data(var_types, n=2000, seed=5)
+  # The pair contract is the expanded four-column layout: a continuous column
+  # is its own left limit.
+  k, limits = 0, []
+  for j, ty in enumerate(var_types):
+    if ty == "d":
+      limits.append(u[:, 2 + k])
+      k += 1
+    else:
+      limits.append(u[:, j])
+  u4 = np.column_stack([u[:, 0], u[:, 1], *limits])
+
+  ref = pv.Bicop.from_data(u, controls=_TLL_BICOP, var_types=var_types)
+  bc = TorchBicop.from_data(
+    torch.from_numpy(u4), cache_integrals=False, var_types=var_types
+  )
+  np.testing.assert_allclose(
+    bc.interp_grid.values.numpy(),
+    np.asarray(ref.parameters),
+    rtol=1e-12,
+    atol=1e-12,
+  )
+
+
+@pytest.mark.parametrize("var_types", [["d", "c", "c"], ["d", "d", "d"]])
+def test_from_data_matches_discrete_vinecop(var_types: list[str]) -> None:
+  # End to end: the torch TLL fit on data with atoms, against the compiled vine
+  # fitted on the same data with the same structure. Measured 2.0e-14 / 5.6e-14.
+  u = _discrete_data(var_types)
+  cop = _discrete_vinecop(var_types, u)
+  bc = TorchVinecop.from_data(
+    torch.from_numpy(u),
+    var_types=var_types,
+    controls=FitControlsTorchVinecop(),
+  )
+  assert np.array_equal(
+    np.asarray(bc.structure.matrix), np.asarray(cop.structure.matrix)
+  )
+  u_t = torch.from_numpy(u)
+  np.testing.assert_allclose(
+    bc.pdf(u_t).numpy(), cop.pdf(u), atol=1e-12, rtol=1e-12
+  )
+  np.testing.assert_allclose(
+    bc.rosenblatt(u_t, randomize_discrete=False).numpy(),
+    cop.rosenblatt(u, randomize_discrete=False),
+    atol=1e-12,
+    rtol=1e-12,
+  )
+
+
+def test_discrete_vine_declines_the_batched_path() -> None:
+  # The batched level carries no distribution-function grid, which a discrete
+  # edge's h-functions are difference quotients of, so an explicit
+  # `batched=True` must fall back rather than evaluate something else.
+  var_types = ["d", "c", "c"]
+  u = _discrete_data(var_types, n=400, seed=8)
+  bc = TorchVinecop.from_vinecop(_discrete_vinecop(var_types, u))
+  u_t = torch.from_numpy(u)
+  np.testing.assert_array_equal(
+    bc.pdf(u_t, batched=True).numpy(), bc.pdf(u_t, batched=False).numpy()
+  )
+
+
+def test_discrete_vine_round_trips_through_pickle() -> None:
+  # `var_types` is plain Python state on the vine, and the per-edge type table
+  # is derived from it at bind time — so both have to survive a round trip, or a
+  # reloaded vine would evaluate a continuous density on the same data.
+  var_types = ["d", "c", "c"]
+  u = _discrete_data(var_types, n=400, seed=9)
+  bc = TorchVinecop.from_vinecop(_discrete_vinecop(var_types, u))
+  clone = pickle.loads(pickle.dumps(bc))
+  assert clone.var_types == var_types
+  assert clone.pair_var_types(0, 0) == bc.pair_var_types(0, 0)
+  u_t = torch.from_numpy(u)
+  np.testing.assert_array_equal(clone.pdf(u_t).numpy(), bc.pdf(u_t).numpy())

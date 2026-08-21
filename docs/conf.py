@@ -332,6 +332,7 @@ DOCSTRING_SUBPACKAGES = {
       "ConditioningContext",
       "SimplifiedContext",
       "NonSimplifiedContext",
+      "DiscretePair",
     ],
     "functions": [],
   },
