@@ -187,6 +187,7 @@
 - Reject complex `X` / `y` in the sklearn estimators rather than casting each column to float and dropping the imaginary part in silence (#292).
 - Pin the RNG of the discrete `ParametricMargin` fitter. `scipy.stats.fit` optimizes with an unseeded `differential_evolution`, so the same counts gave a different parameter vector -- and a different `MarginSelector.report_` -- on every call (#292).
 - `TorchKde1d.icdf` gates its Newton correction on grad being enabled rather than on `values.requires_grad`, so `d icdf / d p` is no longer dead for a fitted fixed grid -- the common case, since the density is fitted rather than learned. The returned value is unchanged (#302).
+- `Vinedist.logpdf` on a model with atoms is pinned to the Sklar sum computed by hand rather than to being finite. A wrong difference quotient stays finite, so the previous assertion would have passed through one (#292).
 
 ### Dependency changes
 
@@ -340,7 +341,9 @@ These changes originate from the [`release 0.7.2 of vinecopulib`](https://github
 ### New features in `pyvinecopulib`
 
 - Add pickle support for all classes (#168)
-- Add `allow_rotation` option to `FitControlsBicop` and `FitControlsVinecop` (#168)
+- Bind the new `allow_rotation` option on `FitControlsBicop` and
+  `FitControlsVinecop` (#168,
+  [vinecopulib#628](https://github.com/vinecopulib/vinecopulib/pull/628))
 
 ### Bug fixes in `pyvinecopulib`
 

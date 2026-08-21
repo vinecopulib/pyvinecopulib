@@ -46,6 +46,20 @@ def continuous(data: np.ndarray) -> np.ndarray:
 # --- the Sklar identity ----------------------------------------------------- #
 
 
+def _sklar_logpdf(dist: Any, y: np.ndarray) -> np.ndarray:
+  """`log c(layout) + sum_j log pdf_j(y_j)`, by hand.
+
+  The identity holds verbatim for atoms too, because `pdf` is the density with
+  respect to each margin's *own* reference measure -- a mass where there is an
+  atom. Pinning it rather than only finiteness is what makes a change to the
+  discrete branch visible: `logpdf` stays finite through a wrong quotient.
+  """
+  manual = np.log(np.asarray(dist.copula.pdf(dist._u_layout(y))))
+  for j, m in enumerate(dist.margins):
+    manual = manual + np.log(np.asarray(m.pdf(y[:, j])))
+  return manual
+
+
 def test_logpdf_is_the_sklar_factorization(continuous: np.ndarray) -> None:
   """`logpdf` equals the copula term plus the marginal log-densities."""
   dist = pv.Vinedist.from_data(continuous, margins="kde")
@@ -184,7 +198,9 @@ def test_discrete_margin_builds_the_compact_layout(data: np.ndarray) -> None:
   # The first block is the cdf values; the trailing column is the left limit.
   np.testing.assert_allclose(layout[:, :3], dist.marginal_cdf(data), atol=1e-12)
   assert np.all(layout[:, 3] <= layout[:, 2] + 1e-12)
-  assert np.all(np.isfinite(dist.logpdf(data)))
+  np.testing.assert_allclose(
+    dist.logpdf(data), _sklar_logpdf(dist, data), atol=0.0
+  )
 
 
 def test_all_discrete_margins(data: np.ndarray) -> None:
@@ -195,7 +211,9 @@ def test_all_discrete_margins(data: np.ndarray) -> None:
   )
   assert dist.var_types == ["d", "d", "d"]
   assert dist._u_layout(counts).shape == (counts.shape[0], 6)
-  assert np.all(np.isfinite(dist.logpdf(counts)))
+  np.testing.assert_allclose(
+    dist.logpdf(counts), _sklar_logpdf(dist, counts), atol=0.0
+  )
 
 
 def test_simulate_respects_a_discrete_margin(data: np.ndarray) -> None:
