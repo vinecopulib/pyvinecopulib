@@ -4,10 +4,9 @@ This subpackage wraps the core pyvinecopulib machinery behind the
 standard sklearn ``BaseEstimator`` / ``fit`` / ``predict`` interface.
 Two estimators ship:
 
-- :class:`VineDensity` — non-parametric joint-density estimator. Fits
-  univariate marginals with :class:`pyvinecopulib.utils.Kde1d`, then a
-  vine copula on the resulting pseudo-observations. Exposes
-  ``score_samples`` / ``pdf`` / ``cdf`` / ``sample``.
+- :class:`VineDensity` — joint-density estimator. Fits univariate
+  margins, then a vine copula on the resulting pseudo-observations.
+  Exposes ``score_samples`` / ``pdf`` / ``cdf`` / ``sample``.
 - :class:`VineRegressor` — non-parametric conditional mean / quantile
   regressor built from a vine copula over ``(Y, X)``. Predictions are
   weighted statistics of the training responses.
@@ -22,6 +21,16 @@ Requires scikit-learn and pandas. Install with
 
 Notes
 -----
+**Margins.** The marginal half of the model is configured with
+``margins=``, in any form :func:`pyvinecopulib.margins.resolve_margins`
+accepts: an alias (``"kde"``, the default,
+``"parametric"``), one margin broadcast to every column, a per-column
+sequence, a mapping keyed by feature name, or a callable. Fitting
+assembles both halves into a :class:`pyvinecopulib.core.Vinedist`,
+published as ``distribution_``; ``margin_summary_`` describes the
+margin each variable ended up with, and ``selection_report_`` carries
+the per-candidate table of any margin that chose its own family.
+
 **Backends.** By default the estimators run on ``Vinecop`` (the
 default backend), so the sklearn module
 **does not require PyTorch**. Pass a configured

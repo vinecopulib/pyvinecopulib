@@ -36,10 +36,9 @@ def test_fit_properties(fitted_regressor):
   """Test properties after fitting."""
   regressor, _, _, _, _, _ = fitted_regressor
   assert hasattr(regressor, "_vine")
-  assert hasattr(regressor, "_x_kde1d")
-  assert hasattr(regressor, "_y_kde1d")
-  assert hasattr(regressor, "_y_train")
   assert regressor.n_features_in_ == 2
+  # The joint distribution is over (Y, X), the response first.
+  assert regressor.distribution_.dim == 3
 
 
 def test_predict_mean_only(regression_setup):
@@ -137,6 +136,8 @@ def test_invalid_configuration(regression_setup):
   [
     ({"mean": "yes"}, TypeError),
     ({"use_grid": 1}, TypeError),
+    ({"n_nodes": 1}, ValueError),
+    ({"n_nodes": 12.5}, TypeError),
     ({"batch_size": 0}, ValueError),
     ({"batch_size": -3}, ValueError),
     ({"batch_size": 1.5}, TypeError),
@@ -180,7 +181,7 @@ def test_normalize_weights_parameter(regression_setup):
   pred_raw = reg_raw.predict(X_test)
 
   # With normalized weights, rows sum to 1 and the prediction is a
-  # convex combination of training responses; without normalization it
+  # convex combination of the response nodes; without normalization it
   # picks up the absolute scale of the copula density, so outputs
   # generally differ.
   assert not np.allclose(pred_default, pred_raw)

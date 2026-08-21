@@ -318,10 +318,22 @@ jobs:
         uses: ./.github/actions/install-graphviz
       - name: Create uv venv and install test/notebooks deps
         # --no-install-project: we test the cibw wheel, not a source build.
+        #
+        # `openturns` is skipped on macOS: its single `cp39-abi3` wheel brings its
+        # own OpenMP runtime, and co-resident with torch's the process dies with
+        # SIGSEGV inside `int_on_grid_batched` on every arm64 Python (cp311,
+        # cp313 and cp314 measured; the same legs pass without the extra, and
+        # ubuntu and windows pass with it). The adapter is exercised on those ten
+        # legs; keeping torch on macOS matters more, since torch-vs-C++ parity is
+        # a hard guarantee and macOS arm64 is a first-class torch platform.
         shell: bash
         run: |
           uv venv --python ${{ steps.pyver.outputs.version }}
-          uv sync --no-install-project --group test --group notebooks --extra examples --extra sklearn --extra torch
+          extras="--extra examples --extra sklearn --extra torch"
+          if [ "$RUNNER_OS" != "macOS" ]; then
+            extras="$extras --extra openturns"
+          fi
+          uv sync --no-install-project --group test --group notebooks $extras
       - name: Download built wheel (<=3.11)
         if: ${{ matrix.python <= 311 }}
         uses: actions/download-artifact@v8

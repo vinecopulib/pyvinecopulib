@@ -6,7 +6,7 @@ opted out of. The skip list captures two categories:
 
 - **Genuine opt-outs**: checks that don't apply to a joint-density /
   vine-regressor archetype (sparse inputs, 1-D / 1-feature degenerate
-  cases, complex-valued data, etc.).
+  cases, etc.).
 - **Known WIP**: checks that surface real sklearn-compliance gaps the
   initial backend-refactor PR did not fix. Listed with ``TODO``
   comments so future PRs can address them and shrink this list.
@@ -50,9 +50,7 @@ _GENUINE_OPT_OUTS = {
   "check_fit2d_1sample": "Kde1d requires >= 2 samples to estimate a bandwidth",
   "check_fit1d": "vines require 2-D U-scale data",
   "check_fit2d_predict1d": "predict requires 2-D inputs",
-  "check_complex_data": "complex inputs not supported",
   "check_estimators_dtypes": "internal float64 promotion is intentional",
-  "check_dtype_object": "internal float64 promotion is intentional",
   "check_estimators_empty_data_messages": (
     "empty data error messages — TODO: surface a sklearn-shaped error early"
   ),

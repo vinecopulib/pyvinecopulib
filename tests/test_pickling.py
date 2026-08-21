@@ -1,4 +1,5 @@
 import pickle
+from typing import Any
 
 import numpy as np
 import pytest
@@ -132,7 +133,7 @@ def test_rvinestructure() -> None:
 
 def test_kde1d() -> None:
   # Test with unfitted Kde1d object first
-  original_kde = pv.utils.Kde1d(
+  original_kde = pv.core.Kde1d(
     xmin=-5.0,
     xmax=5.0,
     type="continuous",
@@ -183,3 +184,38 @@ def test_vinecop() -> None:
 
   # Ensure the deserialized object has the same attributes as the original
   compare_vinecop(original_cop, deserialized_cop)
+
+
+def _fitted_estimator(backend: object) -> tuple[Any, np.ndarray]:
+  from pyvinecopulib.sklearn import VineDensity
+
+  rng = np.random.default_rng(0)
+  cov = np.full((3, 3), 0.5) + 0.5 * np.eye(3)
+  x = rng.multivariate_normal(np.zeros(3), cov, size=300)
+  return VineDensity(backend=backend, random_state=0).fit(x), x
+
+
+@pytest.mark.parametrize("torch_backend", [False, True])
+def test_vinedensity(torch_backend: bool) -> None:
+  """A fitted estimator round-trips, including its ``distribution_``.
+
+  On the torch backend that attribute is a ``TorchVinedist`` -- an
+  ``nn.Module`` holding the copula and every margin as registered children --
+  so this is the check that publishing it did not cost the pickling guarantee.
+  """
+  pytest.importorskip("sklearn")
+  backend = None
+  if torch_backend:
+    pytest.importorskip("torch")
+    from pyvinecopulib.sklearn.backends import TorchVinecopBackend
+
+    backend = TorchVinecopBackend()
+
+  original, x = _fitted_estimator(backend)
+  restored = pickle.loads(pickle.dumps(original))
+
+  np.testing.assert_allclose(restored.pdf(x[:50]), original.pdf(x[:50]))
+  assert type(restored.distribution_) is type(original.distribution_)
+  assert [type(m) for m in restored.distribution_.margins] == [
+    type(m) for m in original.distribution_.margins
+  ]

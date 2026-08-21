@@ -36,12 +36,18 @@ extensions on top:
    additionally ships a backend-neutral pair-copula / vine abstraction
    layer (`BicopLike` / `VinecopLike` protocols, `BicopBase` /
    `VinecopBase` canonical bases, `ConditioningContext` policies) that
-   custom NumPy / PyTorch backends subclass.
-2. `pyvinecopulib.sklearn` — scikit-learn-compatible estimators
+   custom NumPy / PyTorch backends subclass, and `Vinedist` — a vine
+   copula combined with univariate margins, i.e. a full multivariate
+   distribution on the data scale.
+2. `pyvinecopulib.margins` — the univariate marginal layer `Vinedist`
+   composes: the built-in margins, family selection, and an adapter
+   registry that presents a SciPy / PyTorch / other-ecosystem
+   distribution object as a margin.
+3. `pyvinecopulib.sklearn` — scikit-learn-compatible estimators
    (`VineDensity`, `VineRegressor`) on top of the core, with a
    pluggable
    backend layer.
-3. `pyvinecopulib.torch` — pure-PyTorch port of the evaluation
+4. `pyvinecopulib.torch` — pure-PyTorch port of the evaluation
    cascade for GPU and autograd workflows.
 
 Three design principles inform the rest of this file:
@@ -69,6 +75,7 @@ when proposing API changes:
 | Surface | Tier | Policy |
 |---|---|---|
 | `pyvinecopulib.core`, `pyvinecopulib.families`, `pyvinecopulib.utils`, top-level `pyvinecopulib` (core class re-exports) | **Stable-ish** | Solid user base. Prefer deprecation aliases over breaks; document migrations in `CHANGELOG.md`. PR #207 is the model: the reorg kept old import paths working via `_deprecations.py` + `DeprecationWarning`. Breaks are allowed (e.g. the pybind11→nanobind migration; the #207 cleanup) but must be intentional, documented, and worth the churn. |
+| `pyvinecopulib.margins` | **Active development** | New in the vine-distribution work. The margin contract (`MarginLike` / `MarginBase` in `core`) is the part to treat as load-bearing; the curated parametric family registry, the selection criteria, and the report schema are all expected to move as they meet real data. |
 | `pyvinecopulib.sklearn` | **Active development** | API may change in breaking ways between minor releases. The latest break is the `#218` public backend system (estimators now take a single `backend=` instead of loose `controls=`/`structure=`/`seed=` kwargs). |
 | `pyvinecopulib.torch` | **Active development** | Same status. Defaults are still being tuned (cf. `990f997` device-aware `batched`, `cache_integrals=True`); the torch↔C++ cascade parity is a hard guarantee, but the `FitControlsTorchVinecop` surface and `TorchVinecop` method signatures may still shift. |
 | `pyvinecopulib._python_helpers`, `pyvinecopulib._deprecations` | **Internal** | Underscore-prefixed. Not part of any contract; rename / restructure freely. `_deprecations.py` itself is slated for removal in 2.0. |
@@ -89,6 +96,16 @@ long-lived development branch. Read the Docs' `latest` follows `main` and
   explain the change: what changed, why, and anything a future reader needs.
   The `(#NNN)` suffix keeps the pull request discoverable from `git log`,
   which is where `CHANGELOG.md` entries are sourced.
+- **A pull request is a feature, not a commit.** Because squashing collapses
+  the branch to a single commit, the unit of a pull request is the unit a future
+  reader wants to find in `git log`: a change that stands on its own and earns
+  roughly one changelog bullet. Several commits on the branch are expected and
+  cost nothing. The failure mode to avoid is the opposite one — opening a pull
+  request per commit, which turns one feature into a dozen entries on `main` and
+  asks a reviewer to hold the whole chain in their head to judge any part of it.
+  In particular, **the implementation sequence in a design document is not the
+  pull-request list**: it is an order for writing the code, and several of its
+  steps usually belong in the same pull request.
 - **Commit subjects are `type(scope): subject`**, with `!` marking a
   breaking change. Scopes are the subpackages and areas: `core`, `families`,
   `utils`, `sklearn`, `torch`, `bicop`, `vinecop`, `build`, `ci`, `docs`,
@@ -152,7 +169,18 @@ closed unmerged, and some commits carry no number at all.
   the gradient/diagnostics surface (`scores` / `gradient` / `hessian` /
   `scores_cov`, with per-observation-parameter overloads).
 - **Univariate marginals** — `Kde1d` (`lib/kde1d`) with continuous,
-  ordered-discrete, and unordered-categorical support.
+  ordered-discrete, and unordered-categorical support; plus the
+  `pyvinecopulib.margins` layer on top of it: `Kde1d` *is* the
+  nonparametric margin, `ParametricMargin` the parametric one,
+  with AIC / BIC / AICc family selection over a curated candidate
+  set (`MarginSelector`), and an adapter registry (`as_margin` /
+  `register_margin_adapter`) that accepts a SciPy or PyTorch
+  distribution object as a margin.
+- **Vine distributions** — `Vinedist`: any `VinecopLike` combined with
+  one margin per variable, giving `pdf` / `logpdf` / `cdf` / `loglik` /
+  `sample` / `sample_conditional` / `rosenblatt` /
+  `inverse_rosenblatt` on the **data** scale rather than the copula
+  scale, for continuous, discrete and mixed margins alike.
 - **Dependence measures** — `wdm` (`lib/wdm`).
 - **Quasi-random sampling** — `sobol`, `ghalton`, `sample_uniform`.
 - **Pseudo-observations** — `to_pseudo_obs`.
@@ -184,11 +212,11 @@ closed unmerged, and some commits carry no number at all.
 - **Custom C++ forks.** The repo always tracks the upstream
   `lib/vinecopulib` submodule pin; local C++ patches under
   `lib/` are not accepted.
-- **Discrete variables on the torch *marginal* layer.** `TorchVinecop` and
-  `TorchVinecopBackend` handle them on the copula half, through
-  `DiscretePair`. The marginal half is not ported: the torch estimators
-  still fit a compiled `Kde1d` per column, so use `VinecopBackend` when the
-  marginal fit itself has to be discrete.
+- **Discrete margins on the torch *marginal* layer.** `TorchVinecop` and
+  `TorchVinecopBackend` handle discrete variables (the copula half), but
+  `TorchMargin` rejects a discrete family: a margin with atoms needs a
+  left-limit `cdf`, which `torch.distributions` does not expose. Use
+  `Vinedist` with `pyvinecopulib.margins` for the marginal half.
 - **Density estimators outside the vine framework.** General-purpose
   multivariate density models (normalizing flows, Gaussian mixtures,
   …) are not in scope; `pyvinecopulib` is a vine-copula library.
@@ -225,17 +253,26 @@ pyvinecopulib/
       _deprecations.py           # warn-on-access aliases for pre-#207 top-level names
       py.typed                   # PEP 561 marker (built by scripts/generate_stubs.py)
 
-      core/__init__.py           # Bicop, Vinecop, *VineStructure, FitControls* (re-exports from ext)
+      core/__init__.py           # Bicop, Vinecop, *VineStructure, FitControls*, Kde1d (re-exports from ext)
         protocols.py             # BicopLike / VinecopLike backend-neutral contracts
         bicop_base.py            # BicopBase (canonical BicopLike partial impl)
         vinecop_base.py          # VinecopBase (array-agnostic cascades + fit/select)
         context.py               # ConditioningContext / Simplified / NonSimplified
+        margin_base.py           # MarginBase (canonical MarginLike partial impl)
+        vinedist.py              # Vinedist (copula + margins = a distribution)
         _discrete.py             # DiscretePair + the discrete layouts / per-edge types
         _reorient.py             # relabel a structure onto a chosen order tail (internal)
         _rootfind.py             # solve_increasing (monotone bisection; internal)
       families/__init__.py       # BicopFamily enum + 13 family constants + 15 group constants
-      utils/__init__.py          # Kde1d, to_pseudo_obs, wdm, sobol, ghalton, sample_uniform, benchmark
+      utils/__init__.py          # to_pseudo_obs, wdm, sobol, ghalton, sample_uniform, benchmark
         _pair_plots.py           # pairs_copula_data plotting helper (pure Python)
+
+      margins/__init__.py        # as_margin, register_margin_adapter, resolve_margins, the margins
+        parametric.py            # ParametricMargin (one SciPy family) — needs the [scipy] extra
+        selection.py             # MarginSelector (fit every admissible candidate, keep the best)
+        _openturns.py            # OpenTURNSMargin / OpenTURNSSelector — needs the [openturns] extra
+        _adapters.py             # the coercion registry + per-ecosystem adapters — internal
+        _resolve.py              # resolve_margins / fit_margin — internal
 
       sklearn/__init__.py        # VineDensity, VineRegressor, backends
         backends.py              # VinecopBackend / TorchVinecopBackend + resolve_backend
@@ -243,8 +280,11 @@ pyvinecopulib/
         density.py               # VineDensity
         regressor.py             # VineRegressor
 
-      torch/__init__.py          # TorchBicop, TorchVinecop, FitControlsTorch*
+      torch/__init__.py          # TorchBicop, TorchVinecop, TorchKde1d, TorchMargin, TorchVinedist, FitControlsTorch*
         bicop.py, vinecop.py     # nn.Module evaluators
+        margin.py, vinedist.py   # TorchMargin / TorchVinedist (nn.Module margins + distribution)
+        kde1d.py                 # TorchKde1d (the torch marginal estimator)
+        _kde1d_interp.py         # kde1d's InterpolationGrid, ported — internal
         controls.py              # FitControlsTorchBicop / FitControlsTorchVinecop dataclasses
         _interp.py               # InterpolationGrid2D (bilinear; Sinkhorn margin renormalization) — internal
         _fit_tll.py              # pure-torch TLL kernel
@@ -299,6 +339,27 @@ For performance work: profile first, optimize demonstrated hotspots
 only, and preserve every quantitative invariant (round-trip identities,
 parity with the C++ cascade, pickling stability).
 
+<<<<<<< HEAD
+=======
+### Which CI leg covers what
+
+Local runs cannot substitute for the matrix, so know what each leg does
+before deciding a change is verified. The 15 `build` legs run
+`pytest tests/` under cibuildwheel with only `pytest-cov` and
+`pytest-rerunfailures` installed, so every test guarded by
+`importorskip` **skips** there. The 15 `install_and_unit_test` legs sync
+`--extra examples --extra sklearn --extra torch`, install the wheel, and
+run both `pytest tests/` and the notebooks — that is the matrix covering
+the optional extras. `gh pr checks` and
+`gh run view --job <id> --log-failed` read the result, though a run
+triggered by `gh workflow run` attaches its checks to the commit without
+`gh pr checks` listing them.
+
+To check that a test survives without an optional extra, block the import
+in-process (`sys.modules["scipy"] = None`) rather than reaching for a
+matrix run.
+
+>>>>>>> 50d1c43 (feat!: vine distributions with pluggable margins)
 ## Working on this repo
 
 ### Inspection order
@@ -610,6 +671,84 @@ automatically.
     `examples/10_extending_pyvinecopulib.ipynb`.
   - `solve_increasing` (`_rootfind.py`) — vectorized monotone bisection
     behind the default `hinv1` / `hinv2` (internal; not re-exported).
+    Brackets may be array-valued and unbounded, since it also backs
+    `MarginBase.icdf` on an infinite support.
+- **The marginal layer.** `MarginLike[ArrayT]` (`protocols.py`) is
+  `{pdf, cdf, icdf}` and declares no attributes, the same discipline as
+  `BicopLike`. `pdf` means *the density with respect to the margin's own
+  reference measure* — a Lebesgue density for a continuous margin, a
+  probability mass at an atom — which is what makes
+  `log f(x) = log c(u) + Σ_j log pdf_j(x_j)` hold verbatim for
+  continuous, discrete and mixed margins with no branch in the
+  likelihood path. `MarginBase` (`margin_base.py`) needs only `pdf` /
+  `cdf` and supplies `icdf` (bisection), `logpdf`, `cdf_left`, `loglik`,
+  `sample`, `var_type`, `support`, `is_fitted` and a raising `fit`.
+  Everything beyond `{pdf, cdf, icdf}` is an **optional capability**
+  read with `getattr` (`var_type` ∈ `{"c","d","zi"}`, `cdf_left`,
+  `logpdf`, `sample`, `support`, `supports_covariates`), per the house
+  precedent — each
+  member added to the protocol is one a foreign object must happen to
+  have.
+- **`Vinedist`** (`vinedist.py`) composes a `VinecopLike` with one
+  margin per variable. It owns the copula-scale layout: `copula_data`
+  builds the compact `(n, d + k)` matrix from `cdf` and `cdf_left`,
+  clamps once, and checks `cdf_left <= cdf`, so callers never `hstack`
+  a left-limit block by hand. `logpdf` sums logs rather than
+  accumulating a product, because the marginal term carries the scale
+  and a `d = 50` product underflows. `sample` is
+  `marginal_icdf(copula.sample(n, ...))`, so it inherits the copula's
+  quasi-random and seeding options and never calls a margin's own
+  sampler. `sample_conditional` is the same sandwich around the
+  copula's, with one difference the caller feels: a discrete
+  conditioner needs no left-limit column, since it is derived from that
+  variable's own margin. Both scales resolve an omitted
+  `conditioning_set` through one `infer_conditioning_set`, so the
+  column-to-variable rule cannot drift between them. Every method also takes optional exogenous covariates `x`,
+  forwarded to each margin that declares `supports_covariates` and to a
+  copula that declares it too. Two seams keep the array namespace
+  coherent: `_prep` (identity here, `torch.as_tensor` on
+  `TorchVinedist`) coerces one input array onto the parts' namespace, so a
+  caller may hand the type they have; and `copula_data` /
+  `_conditioning_data` / `marginal_cdf` / `marginal_icdf` take `xp` from
+  the *columns the margins returned*, never from the input — a margin may
+  legitimately answer in another array type, and stacking that through the
+  input's namespace either raises or silently detaches.
+
+### `pyvinecopulib.margins`
+
+The univariate half of `Vinedist`, kept out of `core` so that `core`
+imports without SciPy. Three groups:
+
+- **Built-in margins** — `Kde1d` *is* the default margin, needing no
+  wrapper; it takes `xmin` / `xmax` so a bounded variable is not fitted
+  past its support — the sklearn estimators fill those in from a
+  categorical's declared levels, since otherwise the density grid is
+  padded past the data. Then `ParametricMargin` (one SciPy family) and
+  `MarginSelector` (fit every admissible candidate, keep the best on
+  `selected_`, report the rest on `report_` — the `GridSearchCV` shape).
+- **Coercion** — `as_margin(obj)` is idempotent and routes **every**
+  margin `Vinedist` receives, so a discrete SciPy object cannot slip
+  past on a bare `pdf` (in SciPy's new API `pdf` is `+∞` at an atom;
+  the mass is `pmf`). `register_margin_adapter(predicate, adapter)` is
+  how another ecosystem is added without touching this package.
+- **Resolution** — `resolve_margins(spec, ...)` mirrors
+  `resolve_backend`: a string alias, one instance broadcast per column,
+  a length-`d` sequence, or a dict keyed by column. Margins follow the
+  library's own **construct-then-`fit`** pattern (`fit` returns `self`),
+  so one class is both the specification and the fitted object, and a
+  spec may freely mix already-fitted margins with unfitted ones —
+  `from_data` fits only the latter.
+
+Conventions that bind: the fit is **two-step (IFM)** — margins first,
+then the copula on the resulting pseudo-observations — never fit all of
+SciPy (a blind sweep ranks `vonmises` above the true `gamma` because its
+reported support lies), and never silently skip a failed candidate: every
+rejection gets a row in `report_` with a reason, and a column where
+everything fails **raises**, naming each family and its cause.
+`on_failure="fallback"` substitutes `Kde1d` with one warning instead --
+available, but not the default, because answering a parametric request
+nonparametrically is the same class of silent downgrade the weights
+contract already refuses.
 
 ### `pyvinecopulib.families`
 
@@ -701,10 +840,29 @@ backend.pdf(vine, U)        -> np.ndarray
 backend.cdf(vine, U, N=..., seeds=...) -> np.ndarray
 backend.sample(vine, n, seeds=...) -> np.ndarray
 backend.structure_of(vine)  -> RVineStructure
+backend.default_margin(var_type, bounds) -> MarginLike
+backend.bind_distribution(vine, margins) -> Vinedist
 backend.with_random_structure(d, seeds)  -> Backend  # copy-on-write
 backend.with_local_random(seeds)         -> Backend  # ditto
 backend.with_num_threads(n)              -> Backend  # ditto (torch: no-op)
 ```
+
+`default_margin` and `bind_distribution` are what keep the *whole*
+distribution on one array namespace: the backend names the margin class an
+estimator fits when the caller named none, and it assembles the fitted parts.
+The default backend wraps its copula in `_BackendVinecop` so `distribution_`
+evaluates with the same threading and batching arguments the estimator uses;
+`TorchVinecopBackend` fits `TorchKde1d` margins (carrying `device` / `dtype`
+from its controls) and publishes a **`TorchVinedist` holding the raw
+`TorchVinecop`**, so `.to(device)`, `state_dict` and autograd reach the whole
+object. A compiled `Kde1d` the caller supplied is lifted with
+`TorchKde1d.from_kde1d` rather than refused, which is what makes
+`margins="kde"` behave like `margins=None` there. Two consequences: on the
+torch backend `distribution_.pdf` resolves `batched` per device rather than
+reading `controls.batched` (the two agree to 1.8e-15), and every public
+estimator method converts back to NumPy through `_base._as_ndarray` —
+`np.asarray` alone raises on a tensor that requires grad or lives on an
+accelerator.
 
 `pyvinecopulib.core.VinecopLike` is the canonical `runtime_checkable`
 Protocol describing the post-fit vine surface (`pdf` / `cdf` /
@@ -757,6 +915,62 @@ Key surface:
     `controls.method`).
   - `TorchVinecop` mirrors `pv.Vinecop`'s `pdf` / `cdf` /
     `rosenblatt` / `inverse_rosenblatt` / `sample` signatures.
+- `TorchMargin` / `TorchVinedist` — the marginal and joint halves.
+  - `TorchMargin` is a `MarginBase[Tensor]` that is *also* an
+    `nn.Module`: `torch.distributions.Distribution` has no
+    `.to(device)` and contributes nothing to `state_dict` as a plain
+    attribute, so the parameters are registered and the distribution is
+    **rebuilt per call** — the same shape `TorchBicop` uses for its
+    grid. `TorchMargin.from_distribution(factory, parameters=...)` is
+    the general entry point; `icdf` bisects `cdf` over `support` for the
+    families that implement one but not the other (`Gamma`, `Chi2`).
+  - `TorchVinedist` is `Vinedist[Tensor]` plus `nn.Module`, with margins
+    in a `ModuleList` and `log_prob` as an alias for `logpdf`. Every
+    margin **must** be an `nn.Module`: SciPy raises on gradient-carrying
+    tensors and returns a plain `ndarray` without them, so accepting a
+    SciPy margin here would detach the graph silently. `from_data` fits
+    end to end in torch — a `TorchKde1d` per column, then
+    `TorchVinecop.from_data` on the copula data they produce — so the whole
+    joint distribution lands on one device in one dtype. It takes no
+    covariates: no torch margin reads them, and an unconditional fit
+    behind a conditional-looking call is worse than a refusal.
+  - `TorchKde1d` is the torch marginal estimator, and the only one that
+    handles **discrete** and **zero-inflated** variables. Fitting delegates
+    to the compiled `Kde1d`; every evaluation is pure torch, because
+    `grid_points` / `values` / `type` / `prob0` are the only state the
+    compiled `pdf` / `cdf` / `icdf` read. The grid is a **buffer**, not a
+    parameter — the density is fitted, not learned — so optimizing it is the
+    opt-in `values.requires_grad_(True)`, the `TorchBicop` precedent.
+    `icdf` reproduces the C++ 35-step bisection exactly and then reattaches
+    an exact gradient by one Newton step, so the value is bit-identical
+    while `dq/dp` and `dq/d values` are right. The correction is gated on
+    grad being enabled, not on the grid being learned — a fitted fixed grid
+    still has to differentiate the quantile in `p`. Two of `Kde1d`'s attribute names could not
+    be reused: `type` is `nn.Module`'s dtype cast (read `kde_type`) and
+    `loglik` is the contract's method.
+  - `torch/_kde1d_interp.py` ports `kde1d`'s `InterpolationGrid`, and its
+    contract is *fidelity*, not improvement. Three C++ behaviors look like
+    bugs and must be reproduced: the interpolant drops by `exp(-0.5)`
+    exactly at `grid_points[-1]` (the cell search lands on the last cell,
+    so `t == 1` and the Gaussian-tail branch fires), `integrate` adds no
+    tail contribution so the unnormalized integral saturates at the grid's
+    mass, and `pdf_discrete` divides by the **raw** interpolation rather
+    than the clamped density. Nothing is cached: coefficients and cell
+    integrals are recomputed in the graph, which is the opposite call from
+    `TorchBicop.cache_integrals` and for a stated reason — here the cached
+    quantity would be an `O(m)` vector shared by the batch, not an `O(m^2)`
+    integral per query.
+- Discrete variables are declared with `var_types` on `TorchVinecop`'s three
+  constructors. The stored pair copulas stay continuous interpolation grids and
+  `_get_pair_copula` wraps a discrete edge in `DiscretePair`, so `state_dict` /
+  `.to()` / pickling see only real `nn.Module` parameters. `TorchBicop.from_data`
+  takes the four-column layout and reuses the compiled `find_latent_sample`,
+  which is what `TllBicop::fit` now consumes for a discrete edge; the jittered
+  ranks only seed the bandwidth. Two things a discrete torch vine refuses: the
+  **integral cache** (`cache_integrals=None` resolves to `False`, an explicit
+  `True` raises), because differencing a bilinearly interpolated `cdf` gives 38%
+  error on a `("d","d")` density; and the **batched fast path**, whose stacked
+  per-level grids carry no distribution function at all.
 - `FitControlsTorchBicop` / `FitControlsTorchVinecop` — fit-time
   dataclasses. Notable knobs:
   - `method` — `"tll"` (the only fitter; kept as the dispatch seam
@@ -819,7 +1033,7 @@ working. Specifically:
   new canonical path.
 - For new code, **always import from the canonical subpackage**
   (`from pyvinecopulib.families import gaussian`,
-  `from pyvinecopulib.utils import Kde1d`), not the top-level alias.
+  `from pyvinecopulib.core import Kde1d`), not the top-level alias.
 
 `torch` is **not** re-exported at the top level — `import
 pyvinecopulib.torch` is the only entry. Same for `sklearn.backends`.
@@ -848,22 +1062,28 @@ below are a quick orientation.
   `CVineStructure`, `DVineStructure`, `FitControlsBicop`,
   `FitControlsVinecop`; plus the backend-neutral abstraction layer
   `BicopLike`, `VinecopLike`, `BicopBase`, `VinecopBase`, `DiscretePair`,
-  `ConditioningContext`, `SimplifiedContext`, `NonSimplifiedContext`.
+  `ConditioningContext`, `SimplifiedContext`, `NonSimplifiedContext`;
+  plus the marginal layer `MarginLike`, `MarginBase` and the joint
+  object `Vinedist`.
 - **`pyvinecopulib.families`** — `BicopFamily` enum; per-family
   constants (`indep`, `gaussian`, `student`, `clayton`, `gumbel`,
   `frank`, `joe`, `bb1`, `bb6`, `bb7`, `bb8`, `tawn`, `tll`); group
   lists (`all`, `parametric`, `nonparametric`, `one_par`, `two_par`,
   `three_par`, `elliptical`, `archimedean`, `extreme_value`, `bb`,
   `rotationless`, `lt`, `ut`, `itau`, `analytic_derivs`).
-- **`pyvinecopulib.utils`** — `Kde1d`, `to_pseudo_obs`, `wdm`,
+- **`pyvinecopulib.utils`** — `to_pseudo_obs`, `wdm`,
   `find_latent_sample`, `sobol`, `ghalton`, `sample_uniform`,
   `benchmark`, `pairs_copula_data`.
+- **`pyvinecopulib.margins`** — `ParametricMargin`, `MarginSelector`,
+  `OpenTURNSMargin`, `OpenTURNSSelector`, `as_margin`,
+  `register_margin_adapter`, `resolve_margins`.
 - **`pyvinecopulib.sklearn`** — `VineDensity`, `VineRegressor`,
  plus the `backends`
   submodule (`VinecopBackend`, `TorchVinecopBackend`,
   `resolve_backend`).
-- **`pyvinecopulib.torch`** — `TorchBicop`, `TorchVinecop`,
-  `FitControlsTorchBicop`, `FitControlsTorchVinecop`.
+- **`pyvinecopulib.torch`** — `TorchBicop`, `TorchVinecop`, `TorchKde1d`,
+  `TorchMargin`, `TorchVinedist`, `FitControlsTorchBicop`,
+  `FitControlsTorchVinecop`.
 
 Top-level `pyvinecopulib` re-exports the eight core classes and
 `to_pseudo_obs`; everything else — including the `core` abstraction
@@ -947,8 +1167,24 @@ Round-trip / parity properties to preserve when touching numerics:
   `select(conditioning_set=)`; see
   `examples/10_extending_pyvinecopulib.ipynb`. `TorchBicop` /
   `TorchVinecop` are the reference torch subclasses.
+- **Custom margins (`pyvinecopulib.core`).** Subclass `MarginBase` and
+  define `pdf` / `cdf`; `icdf`, `logpdf`, `cdf_left`, `loglik`,
+  `sample` and `support` come with it. Add `fit(y, weights=None) ->
+  Self` to make it an estimator, or leave it out for a fixed margin —
+  `is_fitted` is what `resolve_margins` dispatches on. Override
+  `cdf_left` whenever the family has an exact left limit (Poisson's
+  `gammaincc(k, μ)`, a categorical's `cumsum(probs)[k-1]`): the derived
+  `cdf(x) - pdf(x)` cancels in the right tail and `cdf(x - 1)` is
+  meaningless off an integer lattice.
+- **Another ecosystem's distributions (`pyvinecopulib.margins`).** Call
+  `register_margin_adapter(predicate, adapter)` — from a package or a
+  notebook cell — rather than editing `_adapters.py`. That is what keeps
+  OpenTURNS, TFP and NumPyro out of `core` while remaining usable, and
+  what lets `as_margin` stay the single funnel every margin passes
+  through.
 - **New `pyvinecopulib.sklearn` backends.** Subclass the private
-  `_VinecopBackendBase`, which already provides `structure_of` and the
+  `_VinecopBackendBase`, which already provides `structure_of`,
+  `default_margin`, `bind_distribution` and the
   copy-on-write `with_*` derivations (`with_random_structure` /
   `with_local_random` / `with_num_threads`); override the divergent
   members (`fit_vine`, `pdf`, `cdf`, `sample`, `_default_controls`,

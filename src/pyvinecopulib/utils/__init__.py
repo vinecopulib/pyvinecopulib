@@ -5,12 +5,6 @@ modeling typically needs but that doesn't fit inside the
 :class:`pyvinecopulib.core.Bicop` / :class:`pyvinecopulib.core.Vinecop`
 classes themselves:
 
-- **Univariate kernel density estimation** — :class:`Kde1d` is a
-  boundary-corrected 1d KDE with built-in support for continuous and
-  discrete margins. It is the marginal estimator used internally by
-  :class:`pyvinecopulib.sklearn.VineDensity` /
-  :class:`pyvinecopulib.sklearn.VineRegressor` and is reusable
-  standalone for any 1d density problem.
 - **Pseudo-observations** — :func:`to_pseudo_obs` rank-transforms a
   data matrix into the unit hypercube, the canonical input shape for
   fitting copulas.
@@ -31,9 +25,8 @@ classes themselves:
   smoke-testing a fresh install.
 
 Most users reach for these via :mod:`pyvinecopulib.sklearn` rather
-than calling them directly. The ``examples/07_kde1d.ipynb`` and
-``examples/06_weighted_dependence_measures.ipynb`` notebooks demo
-:class:`Kde1d` and :func:`wdm` in isolation.
+than calling them directly. The ``examples/06_weighted_dependence_measures.ipynb`` notebook demos
+:func:`wdm` in isolation.
 
 Notes
 -----
@@ -47,7 +40,6 @@ import warnings
 from typing import Any
 
 from ..pyvinecopulib_ext import (
-  Kde1d,
   benchmark,
   find_latent_sample,
   ghalton,
@@ -56,11 +48,9 @@ from ..pyvinecopulib_ext import (
   to_pseudo_obs,
   wdm,
 )
-from .._deprecations import _method_alias
 from ._pair_plots import pairs_copula_data
 
 __all__ = [
-  "Kde1d",
   "benchmark",
   "find_latent_sample",
   "ghalton",
@@ -71,9 +61,6 @@ __all__ = [
   "wdm",
 ]
 
-
-# `Kde1d.simulate` shipped in 0.7.6; the canonical name is now `sample`.
-Kde1d.simulate = _method_alias(Kde1d.sample, "simulate", "utils.Kde1d")
 
 # `simulate_uniform` shipped in 0.7.6 under that name. Served from `__getattr__`
 # rather than assigned, so it stays out of `__all__`, the generated stubs and the

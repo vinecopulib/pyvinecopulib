@@ -8,6 +8,13 @@ vine structure used to describe how pair-copulas compose
 hyperparameters for both fits (:class:`FitControlsBicop` and
 :class:`FitControlsVinecop`).
 
+On top of that copula layer it exposes the pieces that turn a copula
+into a distribution on the original scale: the univariate-margin
+contract (:class:`MarginLike`, :class:`MarginBase`), the
+boundary-corrected 1d kernel density estimator that serves as the
+default margin (:class:`Kde1d`), and the joint object composing the two
+halves of Sklar's theorem (:class:`Vinedist`).
+
 For higher-level scikit-learn-compatible wrappers around these
 primitives (with ``fit`` / ``predict``-style interfaces, DataFrame
 handling, and batched evaluation), see
@@ -33,6 +40,15 @@ Notes
   :class:`RVineStructure` (or one drawn from
   :meth:`RVineStructure.sample`) skips structure selection
   entirely.
+- *A distribution, not just a copula* — :class:`Vinedist`. It pairs any
+  :class:`VinecopLike` with one margin per variable and evaluates
+  ``pdf`` / ``cdf`` / ``sample`` on the original scale;
+  :meth:`Vinedist.from_data` fits both halves in one call.
+- *Margins* — :class:`Kde1d` is the default and needs no configuration
+  beyond its variable type. Any object with ``pdf`` / ``cdf`` / ``icdf``
+  works (:class:`MarginLike`); subclass :class:`MarginBase` to write
+  one, or reach for the parametric families and family selection in
+  :mod:`pyvinecopulib.margins`.
 - *A custom pair copula on a discrete edge* — :class:`DiscretePair`.
   Wrap a continuous pair copula (anything with a ``cdf``) in the variable
   types :meth:`VinecopBase.pair_var_types` derives for its slot, and it
@@ -56,6 +72,7 @@ from ..pyvinecopulib_ext import (
   DVineStructure,
   FitControlsBicop,
   FitControlsVinecop,
+  Kde1d,
   RVineStructure,
   Vinecop,
 )
@@ -67,7 +84,9 @@ from .context import (
   NonSimplifiedContext,
   SimplifiedContext,
 )
-from .protocols import BicopLike, VinecopLike
+from .margin_base import MarginBase
+from .protocols import BicopLike, MarginLike, VinecopLike
+from .vinedist import Vinedist
 from .vinecop_base import VinecopBase
 
 # Deprecated aliases for the pre-1.0 `simulate` spelling. The canonical name is
@@ -75,6 +94,7 @@ from .vinecop_base import VinecopBase
 # distributions; these three shipped in 0.7.6, so they warn rather than vanish.
 # `Vinecop.sample_conditional` has never been released and carries no alias.
 Bicop.simulate = _method_alias(Bicop.sample, "simulate", "core.Bicop")
+Kde1d.simulate = _method_alias(Kde1d.sample, "simulate", "core.Kde1d")
 Vinecop.simulate = _method_alias(Vinecop.sample, "simulate", "core.Vinecop")
 RVineStructure.simulate = staticmethod(
   _method_alias(RVineStructure.sample, "simulate", "core.RVineStructure")
@@ -91,10 +111,14 @@ __all__ = [
   "DVineStructure",
   "FitControlsBicop",
   "FitControlsVinecop",
+  "Kde1d",
+  "MarginBase",
+  "MarginLike",
   "NonSimplifiedContext",
   "RVineStructure",
   "SimplifiedContext",
   "Vinecop",
   "VinecopBase",
   "VinecopLike",
+  "Vinedist",
 ]
