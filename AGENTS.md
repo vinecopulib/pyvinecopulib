@@ -855,8 +855,9 @@ from its controls) and publishes a **`TorchVinedist` holding the raw
 object. A compiled `Kde1d` the caller supplied is lifted with
 `TorchKde1d.from_kde1d` rather than refused, which is what makes
 `margins="kde"` behave like `margins=None` there. Two consequences: on the
-torch backend `distribution_.pdf` resolves `batched` per device rather than
-reading `controls.batched` (the two agree to 1.8e-15), and every public
+torch backend nothing passes `batched` at all -- every call lets the vine
+resolve it per device, which is what makes the sklearn path take the stacked
+cascade on CUDA like every other caller -- and every public
 estimator method converts back to NumPy through `_base._as_ndarray` —
 `np.asarray` alone raises on a tensor that requires grad or lives on an
 accelerator.
@@ -979,10 +980,14 @@ Key surface:
     it is piecewise linear and its integral is piecewise linear across cells.
     So the cache costs nothing in accuracy — it agrees with the on-the-fly
     path to summation-order noise — and it carries an exact gradient in
-    `values` as well as in `u`. `hinv*` do **not** read the tables in either
-    mode: locating the bracketing cell needs the conditional cumulative along
-    the whole free axis, which is `O(m)` to assemble, so there is no `O(1)`
-    exact lookup to cache and both modes run the same closed-form inversion.
+    `values` as well as in `u`. `hinv*` get less from them than `hfunc*` do but
+    not nothing: there is no `O(1)` lookup, because locating the bracketing
+    cell needs the conditional cumulative along the whole free axis, but that
+    cumulative is exactly what a prefix table holds. Integration is linear, so
+    blending two of its lines is the same quantity as integrating the blended
+    knots -- a gather instead of a trapezoid and a scan, agreeing to 2e-16. So
+    the two cache modes run the same closed-form inversion on a cumulative
+    they reach differently, and agree to rounding rather than exactly.
     The tables are buffers, so `_tables` rebuilds them in-graph when `values`
     starts tracking grad after construction.
   - `rect_mass(a1, b1, a2, b2)` is available in **both** cache modes: the exact
@@ -996,11 +1001,14 @@ Key surface:
     Note it is the **probability**, not the density's mass: `cdf` renormalizes
     each grid line by its own total, so the two differ, and a discrete edge is
     defined against the distribution function.
-  - `batched` — fires a single batched bicop call per tree level
-    (available on `pdf` / `rosenblatt`, not on `inverse_rosenblatt`).
-    The non-batched cascade is a byte-for-byte port of the C++
-    evaluator; the batched path agrees with it to floating-point
-    tolerance (`tests/test_torch_vinecop.py`).
+  - `compile` — runs the batched cascades through `torch.compile`, on CUDA
+    replayed as a CUDA graph. Off by default: the first call at each input
+    shape pays tens of seconds of Inductor, so it is worth it for a cascade
+    called repeatedly and not for a single evaluation. Torch caps how many
+    variants of one code object it will hold (`cache_size_limit`, 8), and a
+    vine is a variant — so a process compiling more vines than that falls
+    back to eager. The `batched` flag is **not** a control: it is resolved
+    per device on each call, and overridable per call.
   - `device`, `dtype` — propagate to every tensor on construction;
     fitted modules respect `.to(device)` afterwards.
   - `trunc_lvl`, `tree_criterion`, `threshold`, `tree_algorithm`, `seeds`
@@ -1139,7 +1147,9 @@ Round-trip / parity properties to preserve when touching numerics:
   module whose `pdf` / `cdf` / `rosenblatt` outputs match the C++
   vine to within floating-point tolerance, on the operational grid.
 - `batched=True` ↔ `batched=False`: numerically equivalent `pdf` /
-  `rosenblatt` outputs on the same fitted vine.
+  `rosenblatt` on the same fitted vine, and **bit-identical**
+  `inverse_rosenblatt` -- its waves reorder the cells without changing what
+  any one of them computes, so that one is pinned at `atol=rtol=0`.
 - `sklearn.base.clone()` round-trip: every estimator clones cleanly
   with all `__init__` parameters preserved verbatim.
 

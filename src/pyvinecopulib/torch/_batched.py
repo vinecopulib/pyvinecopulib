@@ -891,12 +891,12 @@ class BatchedVine(torch.nn.Module):
   ``struct_array``, ``needed_hfunc1`` / ``needed_hfunc2``), so the hot
   loop reads tensors only.
 
-  Used by ``pdf`` and ``rosenblatt`` with ``batched=True`` (edges at a
-  fixed tree level are independent in the forward cascades, so each level
-  fires one batched bicop call). ``inverse_rosenblatt + batched=True``
-  falls back to the per-pair legacy cascade in v1 — the inverse DAG
-  spans the full ``(var, tree)`` lattice and can't be flattened to
-  tree-level waves without a global topological sort.
+  Holds two groupings, because the cascades have two. ``pdf`` and
+  ``rosenblatt`` run tree by tree -- edges at one tree level are independent
+  going forward -- so those read :attr:`levels`. The inverse's dependencies
+  run across tree levels, so it reads :attr:`waves` instead: the longest-path
+  levels of the ``(var, tree)`` graph, computed once by :func:`inverse_waves`,
+  each holding one cell from almost every tree.
   """
 
   grid_points: Tensor

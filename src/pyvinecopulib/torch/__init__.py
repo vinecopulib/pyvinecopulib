@@ -48,8 +48,10 @@ Notes
   :class:`TorchBicop` pair copulas. Provides ``pdf`` / ``cdf`` /
   ``rosenblatt`` / ``inverse_rosenblatt`` / ``sample`` with the same
   signatures as ``Vinecop``. The cascade mirrors
-  ``Vinecop`` byte-for-byte; ``pdf`` / ``rosenblatt``
-  also accept ``batched=True`` (one stacked bicop call per tree level).
+  ``Vinecop`` byte-for-byte; every cascade also accepts ``batched=True``, one
+  stacked bicop call per group of pair copulas -- a tree level going forward,
+  a level of the dependency graph for the inverse -- and
+  ``compile_cascades`` runs those through :func:`torch.compile`.
 
 - :class:`TorchMargin` — a univariate margin on a ``torch.distributions``
   family. Registers the family's parameters and rebuilds the distribution on

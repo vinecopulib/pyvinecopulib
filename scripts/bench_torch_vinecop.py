@@ -299,6 +299,14 @@ def main() -> None:
 
   torch.set_num_threads(1)
 
+  if any(args.compile):
+    # Each cell compiles a fresh vine, and torch keeps only
+    # `cache_size_limit` compiled variants of one code object (8 by default),
+    # so a sweep of more than that many cells would silently start measuring
+    # the eager path again. A script may raise the cap; the library may not.
+    torch._dynamo.config.cache_size_limit = 256
+    torch._dynamo.config.accumulated_recompile_limit = 4096
+
   devices = list(args.devices)
   if "cuda" in devices and not torch.cuda.is_available():
     print(

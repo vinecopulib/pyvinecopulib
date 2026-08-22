@@ -535,10 +535,17 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
 
     Worth it on CUDA, where the eager cascade is bound by kernel-launch count
     rather than by arithmetic: Inductor fuses each tree level's elementwise
-    chain into a handful of kernels. Not worth it for a single evaluation --
-    the first call at each shape pays tens of seconds of compilation -- and
-    the compiled result agrees with the eager one to floating point rather
-    than exactly.
+    chain into a handful of kernels and replays the whole thing as one CUDA
+    graph. Not worth it for a single evaluation -- the first call at each
+    shape pays tens of seconds of compilation -- and the compiled result
+    agrees with the eager one to floating point rather than exactly.
+
+    One limit to know about: torch caps how many compiled variants of a single
+    code object it keeps (``torch._dynamo.config.cache_size_limit``, 8 by
+    default), and each vine is a variant, as is each input shape. A process
+    that compiles more than that silently falls back to eager, which shows up
+    as the flag doing nothing. Raise the cap if you genuinely need many
+    compiled vines at once.
 
     Returns
     -------
