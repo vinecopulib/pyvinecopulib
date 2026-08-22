@@ -6,10 +6,11 @@ Stacks the per-pair ``InterpolationGrid2D`` state at one tree level into
 
 Exposes :func:`interpolate_batched`, :func:`int_on_grid_batched`,
 :func:`integrate_1d_batched`, :func:`integrate_2d_batched` and
-:func:`hfunc_from_cumulative` — the ``(N, m, m)`` analogs of the unbatched
-operations in :mod:`._interp` — plus :class:`BatchedTreeLevel` and
-:class:`BatchedVine`, which stage one tree level (resp. an entire vine)
-of stacked grids and wire-up tensors.
+:func:`inverse_integrate_1d_batched` — the ``(N, m, m)`` analogs of the
+unbatched operations in :mod:`._interp` — plus :class:`BatchedTreeLevel`,
+:class:`BatchedWave` and :class:`BatchedVine`, which stage one tree level
+(resp. one wave of the inverse cascade, resp. an entire vine) of stacked
+grids and wire-up tensors.
 
 Intentionally side-by-side with :mod:`._interp` rather than rewriting it:
 the legacy / lazy backends stay untouched so any regression is bisectable
@@ -326,7 +327,7 @@ def inverse_integrate_1d_batched(
 
   v_k = knots.gather(-1, k).squeeze(-1)
   v_k1 = knots.gather(-1, k + 1).squeeze(-1)
-  cum = torch.where(
+  below = torch.where(
     (k > 0).squeeze(-1),
     incl.gather(-1, (k - 1).clamp_min(0)).squeeze(-1),
     torch.zeros_like(v_k),
@@ -334,13 +335,13 @@ def inverse_integrate_1d_batched(
   k = k.squeeze(-1)
   dg_k = grid_points[k + 1] - grid_points[k]
 
-  # Solve target = cum + v_k s + (v_k1 - v_k) / (2 dg_k) s^2 for s in
+  # Solve target = below + v_k s + (v_k1 - v_k) / (2 dg_k) s^2 for s in
   # [0, dg_k]. `b = v_k` can be exactly zero, so the stable root needs its own
   # branch: a cell carrying no mass is one the cdf is flat across, where every
   # point is a quantile and the left endpoint is the smallest.
   a = (v_k1 - v_k) / (2.0 * dg_k)
   b = v_k
-  c = cum - target.squeeze(-1)
+  c = below - target.squeeze(-1)
   denom = b + (b * b - 4.0 * a * c).clamp_min(0.0).sqrt()
   safe_b = torch.where(b == 0.0, torch.ones_like(b), b)
   safe_d = torch.where(denom == 0.0, torch.ones_like(denom), denom)
@@ -465,23 +466,6 @@ def _hfunc_from_cells(
   return _trim(num / den.clamp_min(_MIN_MASS))
 
 
-def hfunc_from_cumulative(
-  grid_points: Tensor,
-  values: Tensor,
-  sy: Tensor,
-  u: Tensor,
-  cond_var: int,
-  is_linear: bool = False,
-) -> Tensor:
-  """:func:`_hfunc_from_cells` for a caller that has not located ``u`` yet."""
-  uu = u.clamp(0.0, 1.0)
-  cond = uu[..., 0] if cond_var == 1 else uu[..., 1]
-  free = uu[..., 1] if cond_var == 1 else uu[..., 0]
-  ic, w, _ = _locate(grid_points, cond, is_linear)
-  jc, frac, dx = _locate(grid_points, free, is_linear)
-  return _hfunc_from_cells(values, sy, ic, w, jc, frac, dx)
-
-
 class BatchedTreeLevel(torch.nn.Module):
   """Stacked state for every pair-copula at one tree level of a vine.
 
@@ -491,11 +475,12 @@ class BatchedTreeLevel(torch.nn.Module):
   Grids (per pair):
   - ``values: (N, m, m)`` — pdf grid (rotation-less; TLL pair-copulas in
     pyvinecopulib always have rotation 0).
-  - ``sy, sy_t: (N, m, m) | None`` — cumulative-trapezoid prefix integrals
-    along argument 2 and (transposed) along argument 1, present only when
-    every source pair was constructed with ``cache_integrals=True``.
-  - ``values_t: (N, m, m) | None`` — the transposed pdf grid, materialized
-    beside ``sy_t`` so both arguments read the same reduction.
+  - ``grids2, tables2: (2N, m, m) | None`` — the pdf grid and its
+    cumulative-trapezoid prefix integrals along argument 2, each stacked over
+    the grid and its transpose, present only when every source pair was
+    constructed with ``cache_integrals=True``. The two h-functions are the
+    same reduction with the arguments swapped, so stacking lets a level
+    evaluate both in one call on ``2N`` pairs.
 
   Wiring (per pair, same across pdf / rosenblatt / inverse cascades):
   - ``col0_src: (N,) long`` — column to read for ``col0`` (= edge index).
@@ -514,9 +499,8 @@ class BatchedTreeLevel(torch.nn.Module):
   # statically typed as Tensors instead of nn.Module (cf. ``_sy`` in
   # TorchBicop, same pattern).
   values: Tensor
-  sy: Tensor | None
-  sy_t: Tensor | None
-  values_t: Tensor | None
+  grids2: Tensor | None
+  tables2: Tensor | None
   is_indep: Tensor
   col0_src: Tensor
   col1_src: Tensor
@@ -542,17 +526,16 @@ class BatchedTreeLevel(torch.nn.Module):
     self.register_buffer("values", values)
     if sy is not None:
       assert sy_t is not None
-      self.register_buffer("sy", sy)
-      self.register_buffer("sy_t", sy_t)
-      # `hfunc2` reads lines of the transposed grid, so keep it materialized
-      # rather than transposing per call.
-      self.register_buffer("values_t", values.transpose(1, 2).contiguous())
-      self._has_cache = True
+      # `hfunc2` reads lines of the transposed grid where `hfunc1` reads lines
+      # of this one, so keep both materialized and stacked: one call on 2N
+      # pairs answers a whole tree level.
+      self.register_buffer(
+        "grids2", torch.cat([values, values.transpose(1, 2)], 0).contiguous()
+      )
+      self.register_buffer("tables2", torch.cat([sy, sy_t], 0))
     else:
-      self.sy = None
-      self.sy_t = None
-      self.values_t = None
-      self._has_cache = False
+      self.grids2 = None
+      self.tables2 = None
     self.register_buffer("is_indep", is_indep)
     self.register_buffer("col0_src", col0_src)
     self.register_buffer("col1_src", col1_src)
@@ -560,10 +543,6 @@ class BatchedTreeLevel(torch.nn.Module):
     self.register_buffer("needs_h1", needs_h1)
     self.register_buffer("needs_h2", needs_h2)
     self._is_linear = bool(is_linear)
-
-  @property
-  def has_cache(self) -> bool:
-    return self._has_cache
 
   @property
   def n_pairs(self) -> int:
@@ -600,26 +579,50 @@ class BatchedTreeLevel(torch.nn.Module):
     raw = _bilinear(self.values, i, j, wx, wy).clamp_min(1e-20)
     return torch.where(self.is_indep[:, None], torch.ones_like(raw), raw)
 
-  def _h1_at(self, gp: Tensor, u: Tensor, loc: tuple) -> Tensor:
-    i, wx, _, j, wy, dy = loc
-    if self.sy is not None:
-      raw = _hfunc_from_cells(self.values, self.sy, i, wx, j, wy, dy)
+  def _h1_h2_at(
+    self, gp: Tensor, u: Tensor, loc: tuple
+  ) -> tuple[Tensor, Tensor]:
+    """Both h-functions at one located query.
+
+    ``hfunc1`` conditions on argument 1 and integrates argument 2; ``hfunc2``
+    does the reverse against the transposed grid. That is the same kernel with
+    the two triples swapped, so with the grids stacked it is one call on
+    ``2N`` pairs instead of two on ``N`` -- worth doing in a cascade whose cost
+    is the number of calls.
+    """
+    i, wx, dx, j, wy, dy = loc
+    if self.grids2 is None or self.tables2 is None:
+      raw = torch.cat(
+        [
+          integrate_1d_batched(gp, self.values, u, 1, self._is_linear),
+          integrate_1d_batched(gp, self.values, u, 2, self._is_linear),
+        ],
+        0,
+      )
     else:
-      raw = integrate_1d_batched(gp, self.values, u, 1, self._is_linear)
-    return torch.where(
-      self.is_indep[:, None], _trim(u[..., 1]), raw.clamp(0.0, 1.0)
+      raw = _hfunc_from_cells(
+        self.grids2,
+        self.tables2,
+        torch.cat([i, j], 0),
+        torch.cat([wx, wy], 0),
+        torch.cat([j, i], 0),
+        torch.cat([wy, wx], 0),
+        torch.cat([dy, dx], 0),
+      )
+    # An independent pair returns its own free argument -- argument 2 for
+    # `hfunc1`, argument 1 for `hfunc2` -- which is the same swap again.
+    both = torch.where(
+      self.is_indep.repeat(2)[:, None],
+      _trim(torch.cat([u[..., 1], u[..., 0]], 0)),
+      raw.clamp(0.0, 1.0),
     )
+    return both[: self.n_pairs], both[self.n_pairs :]
+
+  def _h1_at(self, gp: Tensor, u: Tensor, loc: tuple) -> Tensor:
+    return self._h1_h2_at(gp, u, loc)[0]
 
   def _h2_at(self, gp: Tensor, u: Tensor, loc: tuple) -> Tensor:
-    i, wx, dx, j, wy, _ = loc
-    if self.sy_t is not None:
-      assert self.values_t is not None
-      raw = _hfunc_from_cells(self.values_t, self.sy_t, j, wy, i, wx, dx)
-    else:
-      raw = integrate_1d_batched(gp, self.values, u, 2, self._is_linear)
-    return torch.where(
-      self.is_indep[:, None], _trim(u[..., 0]), raw.clamp(0.0, 1.0)
-    )
+    return self._h1_h2_at(gp, u, loc)[1]
 
   def pdf(self, grid_points: Tensor, u: Tensor) -> Tensor:
     """Per-pair pdf at the stacked queries. Indep slots return 1."""
@@ -652,16 +655,12 @@ class BatchedTreeLevel(torch.nn.Module):
     """
     loc = self._locate_both(grid_points, u)
     i, wx, _, j, wy, _ = loc
-    return (
-      self._pdf_at(i, j, wx, wy),
-      self._h1_at(grid_points, u, loc),
-      self._h2_at(grid_points, u, loc),
-    )
+    h1, h2 = self._h1_h2_at(grid_points, u, loc)
+    return self._pdf_at(i, j, wx, wy), h1, h2
 
   def h1_h2(self, grid_points: Tensor, u: Tensor) -> tuple[Tensor, Tensor]:
     """``(hfunc1, hfunc2)`` for one tree level; see :meth:`pdf_h1_h2`."""
-    loc = self._locate_both(grid_points, u)
-    return self._h1_at(grid_points, u, loc), self._h2_at(grid_points, u, loc)
+    return self._h1_h2_at(grid_points, u, self._locate_both(grid_points, u))
 
 
 def inverse_waves(s, d: int, trunc_lvl: int) -> list[list[tuple[int, int]]]:
@@ -679,6 +678,15 @@ def inverse_waves(s, d: int, trunc_lvl: int) -> list[list[tuple[int, int]]]:
   ``m - 1 == var + 1`` off the diagonal, which is the generic D-vine cell,
   ``(var + 1, tree - 1)`` lands on the same anti-diagonal as ``(var, tree)``.
   Levelling the actual graph is both correct and tighter than any fixed key.
+
+  Parameters
+  ----------
+  s : RVineStructure
+      The vine structure, read for ``min_array`` / ``struct_array``.
+  d : int
+      Vine dimension.
+  trunc_lvl : int
+      Truncation level.
 
   Returns
   -------
