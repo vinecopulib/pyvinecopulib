@@ -107,6 +107,7 @@ def _bench_cell(
   caches: list[bool],
   batched_modes: list[bool],
   grid_types: list[str],
+  dtypes: list[str],
   repeats: int,
   seed: int,
 ) -> list[dict]:
@@ -135,6 +136,7 @@ def _bench_cell(
           "cache_integrals": "",
           "batched": "",
           "grid_type": "",
+          "dtype": "f64",
           "time_ms": ms,
         }
       )
@@ -143,53 +145,59 @@ def _bench_cell(
   for device in devices:
     sync = torch.cuda.synchronize if device.startswith("cuda") else None
     for grid_type in grid_types:
-      for cache in caches:
-        # Fit a torch vine on the C++-selected structure so each variant
-        # of the storage grid sits on the same skeleton and pair-copula
-        # fits, isolating the eval-time effect.
-        bc = TorchVinecop.from_data(
-          torch.from_numpy(u_fit).to(device),
-          cop.structure,
-          controls=FitControlsTorchVinecop(
-            bicop_controls=FitControlsTorchBicop(grid_type=grid_type),
-            cache_integrals=cache,
-            device=torch.device(device),
-          ),
+      for dtype_name in dtypes:
+        torch_dtype = getattr(
+          torch, "float64" if dtype_name == "f64" else "float32"
         )
-        u_t = torch.from_numpy(u_eval).to(device)
-        if sync is not None:
-          sync()
-        for method in METHODS:
-          torch_fn = getattr(bc, method)
-          for batched in batched_modes:
-            # batched=True is not implemented for inverse_rosenblatt
-            # (the inverse cascade's deps aren't tree-level batchable).
-            # Skip rather than crash so the rest of the sweep proceeds.
-            if method == "inverse_rosenblatt" and batched:
-              continue
-            ms = _time_repeats(
-              lambda fn=torch_fn, u=u_t, b=batched: fn(u, batched=b),
-              repeats,
-              sync=sync,
-            )
-            rows.append(
-              {
-                "method": method,
-                "n": n,
-                "d": d,
-                "backend": "torch",
-                "threads": "",
-                "device": device,
-                "cache_integrals": str(cache).lower(),
-                "batched": str(batched).lower(),
-                "grid_type": grid_type,
-                "time_ms": ms,
-              }
-            )
-        # Free GPU memory before building the next variant
-        del bc, u_t
-        if sync is not None:
-          torch.cuda.empty_cache()
+        for cache in caches:
+          # Fit a torch vine on the C++-selected structure so each variant
+          # of the storage grid sits on the same skeleton and pair-copula
+          # fits, isolating the eval-time effect.
+          bc = TorchVinecop.from_data(
+            torch.from_numpy(u_fit).to(device),
+            cop.structure,
+            controls=FitControlsTorchVinecop(
+              bicop_controls=FitControlsTorchBicop(grid_type=grid_type),
+              cache_integrals=cache,
+              device=torch.device(device),
+              dtype=torch_dtype,
+            ),
+          )
+          u_t = torch.from_numpy(u_eval).to(device=device, dtype=torch_dtype)
+          if sync is not None:
+            sync()
+          for method in METHODS:
+            torch_fn = getattr(bc, method)
+            for batched in batched_modes:
+              # batched=True is not implemented for inverse_rosenblatt
+              # (the inverse cascade's deps aren't tree-level batchable).
+              # Skip rather than crash so the rest of the sweep proceeds.
+              if method == "inverse_rosenblatt" and batched:
+                continue
+              ms = _time_repeats(
+                lambda fn=torch_fn, u=u_t, b=batched: fn(u, batched=b),
+                repeats,
+                sync=sync,
+              )
+              rows.append(
+                {
+                  "method": method,
+                  "n": n,
+                  "d": d,
+                  "backend": "torch",
+                  "threads": "",
+                  "device": device,
+                  "cache_integrals": str(cache).lower(),
+                  "batched": str(batched).lower(),
+                  "grid_type": grid_type,
+                  "dtype": dtype_name,
+                  "time_ms": ms,
+                }
+              )
+          # Free GPU memory before building the next variant
+          del bc, u_t
+          if sync is not None:
+            torch.cuda.empty_cache()
 
   return rows
 
@@ -230,6 +238,13 @@ def main() -> None:
     type=_parse_str_list,
     help="TorchBicop grid types to sweep (default: normal,linear).",
   )
+  ap.add_argument(
+    "--dtypes",
+    default="f64",
+    type=_parse_str_list,
+    help="torch dtypes to sweep: f64, f32 (default: f64). The C++ side is "
+    "always double, so its rows are reported as f64.",
+  )
   ap.add_argument("--repeats", default=3, type=int)
   ap.add_argument("--seed", default=42, type=int)
   ap.add_argument(
@@ -260,6 +275,7 @@ def main() -> None:
     "cache_integrals",
     "batched",
     "grid_type",
+    "dtype",
     "time_ms",
   ]
   writer = csv.DictWriter(out, fieldnames=fieldnames)
@@ -276,6 +292,7 @@ def main() -> None:
         caches=args.cache,
         batched_modes=args.batched,
         grid_types=args.grid_types,
+        dtypes=args.dtypes,
         repeats=args.repeats,
         seed=args.seed,
       )
