@@ -202,3 +202,40 @@ def regression_data(
 @pytest.fixture
 def unique_json_path(tmp_path: Path, request: pytest.FixtureRequest) -> Path:
   return tmp_path / f"{request.node.name}-{uuid.uuid4().hex}.json"
+
+
+def _cuda_available() -> bool:
+  """Whether a CUDA device is usable, without requiring torch to be installed."""
+  try:
+    import torch
+  except Exception:  # torch is an optional extra
+    return False
+  try:
+    return bool(torch.cuda.is_available())
+  except Exception:  # a half-installed driver must not break collection
+    return False
+
+
+_HAS_CUDA = _cuda_available()
+
+
+# Parameterized over both devices. The marks sit on the *param*, not on the
+# fixture body, so `-m cuda` selects and `-m "not cuda"` deselects: a mark
+# added from inside the fixture would land after collection and do neither.
+# A test that must pin one device overrides with
+# `@pytest.mark.parametrize("device", ["cpu"])`.
+@pytest.fixture(
+  params=[
+    "cpu",
+    pytest.param(
+      "cuda",
+      marks=[
+        pytest.mark.cuda,
+        pytest.mark.skipif(not _HAS_CUDA, reason="no CUDA device available"),
+      ],
+    ),
+  ]
+)
+def device(request: pytest.FixtureRequest) -> str:
+  """Torch device a test runs on."""
+  return request.param

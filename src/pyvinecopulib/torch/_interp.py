@@ -23,10 +23,9 @@ from ._batched import (
   integrate_2d_batched,
   interpolate_batched,
   _MIN_MASS,
+  _trim,
 )
 
-_TRIM_LO: float = 1e-10
-_TRIM_HI: float = 1.0 - 1e-10
 
 _SQRT_2 = math.sqrt(2.0)
 # u_lo = Phi(-3.25); the lower end of the "effective" support that the C++
@@ -357,7 +356,7 @@ class InterpolationGrid2D(torch.nn.Module):
       p, cond = u[:, 0], u[:, 1]
     nan_mask = torch.isnan(cond) | torch.isnan(p)
     cond = cond.nan_to_num(0.5).clamp(0.0, 1.0)
-    p = p.nan_to_num(0.5).clamp(_TRIM_LO, _TRIM_HI)
+    p = _trim(p.nan_to_num(0.5))
 
     g = self.grid_points
     m = g.shape[0]
@@ -455,15 +454,6 @@ class InterpolationGrid2D(torch.nn.Module):
     p = torch.cat([torch.zeros_like(incp[:1, :]), incp.cumsum(dim=0)], dim=0)
     return sy, sx, p
 
-  def _partial_t(self, rows: Tensor, jc: Tensor, u2: Tensor) -> Tensor:
-    """``int_{g_jc}^{u2} chat(g_rows, t) dt``, the exact partial cell."""
-    g = self.grid_points
-    dx = u2 - g[jc]
-    frac = dx / (g[jc + 1] - g[jc])
-    v0 = self.values[rows, jc]
-    v1 = self.values[rows, jc + 1]
-    return (2.0 * v0 + (v1 - v0) * frac) * dx / 2.0
-
   def cdf_cached(self, u: Tensor, sy: Tensor, sx: Tensor, p: Tensor) -> Tensor:
     """The exact distribution function at ``u``, in O(1) per point.
 
@@ -518,7 +508,7 @@ class InterpolationGrid2D(torch.nn.Module):
     # the same expression at u1 = 1, where both first-argument partials vanish
     last = torch.full_like(jc, m - 1)
     total = p[last, jc] + al * sx[last, jc] + be * sx[last, jc + 1]
-    return (out * u2 / total.clamp_min(_MIN_MASS)).clamp(_TRIM_LO, _TRIM_HI)
+    return _trim(out * u2 / total.clamp_min(_MIN_MASS))
 
   def _interval_weights(self, lo: Tensor, hi: Tensor) -> Tensor:
     """Nonnegative quadrature weights for ``int_lo^hi`` on the grid.
@@ -562,9 +552,7 @@ class InterpolationGrid2D(torch.nn.Module):
     # of its nodes.
     idx = torch.arange(m - 1, device=g.device)
     inner = (idx[None, :] > ka[:, None]) & (idx[None, :] < kb[:, None])
-    half = torch.where(
-      inner, 0.5 * self._dgrid.expand(a.shape[0], m - 1), torch.zeros(())
-    )
+    half = torch.where(inner, 0.5 * self._dgrid.expand(a.shape[0], m - 1), 0.0)
     zc = torch.zeros_like(half[:, :1])
     w = torch.cat([zc, half], dim=1) + torch.cat([half, zc], dim=1)
 
@@ -673,4 +661,4 @@ class InterpolationGrid2D(torch.nn.Module):
     num = (1.0 - w) * line(ic) + w * line(ic + 1)
     last = torch.full_like(ic, m - 1)
     den = (1.0 - w) * sy[ic, last] + w * sy[ic + 1, last]
-    return (num / den.clamp_min(_MIN_MASS)).clamp(_TRIM_LO, _TRIM_HI)
+    return _trim(num / den.clamp_min(_MIN_MASS))

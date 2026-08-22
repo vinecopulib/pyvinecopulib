@@ -37,7 +37,7 @@ class TestPairCopulaData:
 
     # Test None data
     with pytest.raises(ValueError, match="`data` cannot be None"):
-      pairs_copula_data(None)  # ty: ignore[invalid-argument-type]
+      pairs_copula_data(None)
 
     # Test non-numeric data
     with pytest.raises(
@@ -773,8 +773,8 @@ class TestKde1dHelpers:
     # Check properties
     assert isinstance(grid, np.ndarray)
     assert len(grid) == 100
-    assert grid[0] >= mock_kde.grid_points.min()
-    assert grid[-1] <= mock_kde.grid_points.max()
+    assert grid[0] >= np.min(mock_kde.grid_points)
+    assert grid[-1] <= np.max(mock_kde.grid_points)
 
   def test_make_plotting_grid_discrete(self) -> None:
     """Test make_plotting_grid function for discrete data"""

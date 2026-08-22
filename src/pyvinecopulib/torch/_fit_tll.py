@@ -27,6 +27,7 @@ Only the ``constant`` method is supported here; the ``linear`` and
 from __future__ import annotations
 
 import math
+from typing import Optional
 
 import torch
 import torch.nn.functional as F
@@ -96,15 +97,22 @@ def _cef(x: Tensor, ind: Tensor, ranks: Tensor, wl: int) -> Tensor:
   return _win_smoother(x[ind], wl)[ranks]
 
 
+#: ``tools_stats::ace``'s outer tolerance, at float64. Scaled by the eps
+#: ratio for narrower dtypes; see ``_ace``.
+_ACE_OUTER_ABS_TOL: float = 2e-15
+
+
 def _ace(
   data: Tensor,
   *,
   outer_iter_max: int = 100,
   inner_iter_max: int = 10,
-  # Iteration tolerances are hardcoded to match ``tools_stats::ace`` in
-  # vinecopulib; if upstream changes them, the C++↔torch parity guard
-  # (tests/test_torch_bicop.py::test_from_data_matches_cpp) fails loudly.
-  outer_abs_tol: float = 2e-15,
+  # ``None`` resolves to upstream's tolerance scaled to the working
+  # precision. The float64 value is ``tools_stats::ace``'s verbatim, so the
+  # C++<->torch parity guard (tests/test_torch_bicop.py) is unmoved; a lower
+  # precision cannot resolve it, and would iterate to `outer_iter_max`
+  # against its own rounding noise instead of converging.
+  outer_abs_tol: Optional[float] = None,
   inner_abs_tol: float = 1e-4,
 ) -> Tensor:
   """Alternating conditional expectations.
@@ -120,6 +128,10 @@ def _ace(
   """
   n = data.shape[0]
   dtype, device = data.dtype, data.device
+  if outer_abs_tol is None:
+    outer_abs_tol = _ACE_OUTER_ABS_TOL * float(
+      torch.finfo(dtype).eps / torch.finfo(torch.float64).eps
+    )
   wl = int(math.ceil(n / 5.0))
 
   ind = torch.empty(n, 2, dtype=torch.long, device=device)

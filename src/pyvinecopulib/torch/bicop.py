@@ -36,7 +36,7 @@ from torch import Tensor
 
 from ..core import BicopBase
 from ..pyvinecopulib_ext import Bicop, tll as _TLL_FAMILY
-from ._interp import InterpolationGrid2D, _TRIM_LO, _TRIM_HI
+from ._interp import InterpolationGrid2D, _trim
 from .controls import FitControlsTorchBicop
 
 
@@ -337,7 +337,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     if u.ndim != 2 or u.shape[1] != 2:
       raise ValueError(f"u must have shape (n, 2); got {tuple(u.shape)}")
     # Trim to (1e-10, 1 - 1e-10), mirroring Bicop::prep_for_abstract.
-    return u.clamp(_TRIM_LO, _TRIM_HI)
+    return _trim(u)
 
   def pdf(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Evaluates the bivariate copula density ``c(u1, u2)``.
@@ -392,7 +392,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     """
     u = self._prep(u)
     if self.is_indep:
-      return (u[:, 0] * u[:, 1]).clamp(_TRIM_LO, _TRIM_HI)
+      return _trim(u[:, 0] * u[:, 1])
     if self._sy is not None:
       sy, sx, pref = self._tables()
       return self.interp_grid.cdf_cached(u, sy, sx, pref)
@@ -486,7 +486,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     """
     u = self._prep(u)
     if self.is_indep:
-      return u[:, 1].clamp(_TRIM_LO, _TRIM_HI)
+      return _trim(u[:, 1])
     return self._hfunc_raw(u, 1).clamp(0.0, 1.0)
 
   def hfunc2(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
@@ -512,7 +512,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     """
     u = self._prep(u)
     if self.is_indep:
-      return u[:, 0].clamp(_TRIM_LO, _TRIM_HI)
+      return _trim(u[:, 0])
     return self._hfunc_raw(u, 2).clamp(0.0, 1.0)
 
   # --------------------------------------------------------------------- #
@@ -565,7 +565,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     """
     u = self._prep(u)
     if self.is_indep:
-      return u[:, 1].clamp(_TRIM_LO, _TRIM_HI)
+      return _trim(u[:, 1])
     return self._hinv_raw(u, 1)
 
   def hinv2(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
@@ -592,7 +592,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     """
     u = self._prep(u)
     if self.is_indep:
-      return u[:, 0].clamp(_TRIM_LO, _TRIM_HI)
+      return _trim(u[:, 0])
     return self._hinv_raw(u, 2)
 
   # --------------------------------------------------------------------- #
@@ -653,9 +653,15 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
         .to(device=device)
       )
     else:
-      if seed is not None:
-        torch.manual_seed(seed)
-      u = torch.rand(n, 2, dtype=dtype, device=device)
+      # A device-local generator: ``torch.manual_seed`` reseeds the global
+      # CPU generator and every CUDA one, so seeding a single pair copula
+      # would perturb every other RNG consumer in the process.
+      gen = (
+        torch.Generator(device=device).manual_seed(seed)
+        if seed is not None
+        else None
+      )
+      u = torch.rand(n, 2, generator=gen, dtype=dtype, device=device)
     if self.is_indep:
       return u
     u2 = self.hinv1(u).unsqueeze(-1)

@@ -237,6 +237,7 @@ addopts = [
 ]
 markers = [
   "flaky: mark a test as flaky and allow reruns",
+  "cuda: needs a CUDA device; skipped when torch.cuda.is_available() is False",
 ]
 # Treat our own DeprecationWarnings as errors so internal code stays on the
 # post-1.0 import paths. Matches `pyvinecopulib.NAME` and `pyvinecopulib.SUB.NAME`.

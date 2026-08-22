@@ -49,7 +49,7 @@ from ..pyvinecopulib_ext import (
 from ..utils import sample_uniform
 from ._batched import BatchedVine
 from .controls import FitControlsTorchVinecop
-from ._interp import _TRIM_HI, _TRIM_LO
+from ._interp import _trim
 from .bicop import TorchBicop
 
 
@@ -425,7 +425,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       raise ValueError(
         f"{name}: u must have shape (n, {self.d}); got {tuple(u.shape)}"
       )
-    return u.clamp(_TRIM_LO, _TRIM_HI)
+    return _trim(u)
 
   def _apply(self, fn, *args, **kwargs):
     # `.to()`, `.cuda()`, `.cpu()` all route through `_apply`. The

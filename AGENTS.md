@@ -296,38 +296,6 @@ For performance work: profile first, optimize demonstrated hotspots
 only, and preserve every quantitative invariant (round-trip identities,
 parity with the C++ cascade, pickling stability).
 
-### Running heavy commands when the agent shell shares the host GPU
-
-When the agent shell is on the same host whose GPU also runs the
-maintainer's X session (or any interactive desktop session), a CUDA
-lock-up in a pyvinecopulib subprocess can take the desktop driver
-down with it — observed twice in prior sessions, both times the box
-disappeared from ssh and required a hard reboot. The full pytest
-suite is allowed and reliable on its own; what is **not** allowed is
-queueing GPU-touching work alongside still-alive background tasks
-from earlier turns. Specifically:
-
-1. **After every `Bash(run_in_background=true)` call** (including
-   monitoring shells like a backgrounded `nvidia-smi -l` or a
-   `bench_torch_*` sweep), wait for the completion notification and
-   then `TaskStop` the task explicitly if it did not exit. Never let
-   a background task survive across turns.
-2. **Before any GPU-touching command** (the full `pytest tests/`,
-   any `scripts/bench_torch_*.py`, any test that drives
-   `pyvinecopulib.torch`), run a clean-state check:
-   `pgrep -af "uv run|pytest|bench_torch" | grep -v vscode` and
-   `nvidia-smi`. Proceed only if no leftover Python/uv processes are
-   running and VRAM is back at the X-session baseline.
-3. **Never queue two GPU subprocesses concurrently.** No parallel
-   `--devices cuda` benches via overlapping background bashes; one
-   in flight at a time, strictly serial.
-4. **Defer to the maintainer's own terminal for long bench sweeps.**
-   When uncertain about cumulative resource use, ask the maintainer
-   to run the sweep themselves where the process lifecycle is theirs
-   to manage.
-
-`make docs` (Sphinx) is unaffected — no torch involved.
-
 ## Working on this repo
 
 ### Inspection order

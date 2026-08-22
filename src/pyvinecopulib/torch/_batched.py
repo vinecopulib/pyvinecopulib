@@ -23,12 +23,16 @@ from typing import cast
 import torch
 from torch import Tensor
 
-# Mirror the trim constants from ``_interp`` so the batched path produces
-# numerically identical outputs to the per-pair path.
-_TRIM_LO: float = 1e-10
-_TRIM_HI: float = 1.0 - 1e-10
+from ..core._trim import _TRIM_LO, trim_bounds
+
 #: Guard on a conditional total mass, so a zero-mass grid line cannot 0/0.
 _MIN_MASS: float = 1e-20
+
+
+def _trim(t: Tensor) -> Tensor:
+  """Clamp ``t`` into the open unit interval at its own precision."""
+  lo, hi = trim_bounds(torch, t.dtype)
+  return t.clamp(lo, hi)
 
 
 # --------------------------------------------------------------------------- #
@@ -216,7 +220,7 @@ def integrate_1d_batched(
   )  # (N, n)
   # Without the floor a grid line can carry no mass at all, so the
   # division needs its own guard.
-  return (number / denom.clamp_min(_MIN_MASS)).clamp(_TRIM_LO, _TRIM_HI)
+  return _trim(number / denom.clamp_min(_MIN_MASS))
 
 
 def integrate_2d_batched(
@@ -261,7 +265,7 @@ def integrate_2d_batched(
     tmpint * u2 / tmpint1.clamp_min(_TRIM_LO),
     torch.zeros_like(tmpint),
   )
-  return out.clamp(_TRIM_LO, _TRIM_HI)
+  return _trim(out)
 
 
 # --------------------------------------------------------------------------- #
@@ -335,7 +339,7 @@ def hfunc_from_cumulative(
   den = (1.0 - w) * flat_s.gather(1, ic * m + last) + w * flat_s.gather(
     1, (ic + 1) * m + last
   )
-  return (num / den.clamp_min(_MIN_MASS)).clamp(_TRIM_LO, _TRIM_HI)
+  return _trim(num / den.clamp_min(_MIN_MASS))
 
 
 class BatchedTreeLevel(torch.nn.Module):
@@ -464,9 +468,7 @@ class BatchedTreeLevel(torch.nn.Module):
         grid_points, self.values, u, cond_var=1, is_linear=self._is_linear
       )
     h = raw.clamp(0.0, 1.0)
-    return torch.where(
-      self.is_indep[:, None], u[..., 1].clamp(_TRIM_LO, _TRIM_HI), h
-    )
+    return torch.where(self.is_indep[:, None], _trim(u[..., 1]), h)
 
   def hfunc2(self, grid_points: Tensor, u: Tensor) -> Tensor:
     """Per-pair hfunc2; see :meth:`hfunc1`."""
@@ -480,9 +482,7 @@ class BatchedTreeLevel(torch.nn.Module):
         grid_points, self.values, u, cond_var=2, is_linear=self._is_linear
       )
     h = raw.clamp(0.0, 1.0)
-    return torch.where(
-      self.is_indep[:, None], u[..., 0].clamp(_TRIM_LO, _TRIM_HI), h
-    )
+    return torch.where(self.is_indep[:, None], _trim(u[..., 0]), h)
 
   def pdf_h1_h2(
     self, grid_points: Tensor, u: Tensor
