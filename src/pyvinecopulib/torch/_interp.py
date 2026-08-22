@@ -25,6 +25,7 @@ from ._batched import (
   interpolate_batched,
   _MIN_MASS,
   _hfunc_from_cells,
+  inverse_integrate_1d_batched,
   _locate,
   _trim,
 )
@@ -357,16 +358,15 @@ class InterpolationGrid2D(torch.nn.Module):
       self._is_linear,
     ).squeeze(0)
 
-  def inverse_integrate_1d(self, u: Tensor, cond_var: int) -> Tensor:
+  def inverse_integrate_1d(
+    self, u: Tensor, cond_var: int, cum: Optional[Tensor] = None
+  ) -> Tensor:
     """Closed-form inverse of :meth:`integrate_1d` in its free argument.
 
     Port of the C++ ``InterpolationGrid::inverse_integrate_1d``
     (vinecopulib#691). The conditional density along the free axis is the
-    knot vector linearly interpolated at the conditioning value (floored
-    at ``1e-4``, exactly like the forward pass), so the conditional cdf is
-    piecewise quadratic and inverts cell by cell: cumulative trapezoidal
-    masses, ``searchsorted`` for the bracketing cell, then a numerically
-    stable quadratic root clamped to the cell.
+    knot vector linearly interpolated at the conditioning value, so the
+    conditional cdf is piecewise quadratic and inverts cell by cell.
 
     ``cond_var=1`` solves ``H1(u1, x) = p`` for ``x`` given
     ``u = [u1, p]``; ``cond_var=2`` solves ``H2(x, u2) = p`` given
@@ -376,6 +376,9 @@ class InterpolationGrid2D(torch.nn.Module):
     Args:
       u: shape ``(n, 2)``; see above for the column convention.
       cond_var: 1 or 2, the conditioning variable.
+      cum: the prefix-integral table matching ``cond_var``, shape
+        ``(m, m)``, or ``None`` to quadrature the conditional cumulative
+        from the knots instead.
 
     Returns:
       Tensor of shape ``(n,)`` with the conditional quantiles in
@@ -383,66 +386,16 @@ class InterpolationGrid2D(torch.nn.Module):
     """
     if u.ndim != 2 or u.shape[1] != 2:
       raise ValueError(f"u must have shape (n, 2); got {tuple(u.shape)}")
-    if cond_var == 1:
-      cond, p = u[:, 0], u[:, 1]
-    else:
-      p, cond = u[:, 0], u[:, 1]
-    nan_mask = torch.isnan(cond) | torch.isnan(p)
-    cond = cond.nan_to_num(0.5).clamp(0.0, 1.0)
-    p = _trim(p.nan_to_num(0.5))
-
-    g = self.grid_points
-    m = g.shape[0]
-
-    # Knot vector: the density along the free axis, linearly interpolated
-    # at the conditioning value (rows of ``values`` for cond_var=1, columns
-    # for cond_var=2), guarded only against rounding, as the forward
-    # strip is.
-    i = self._cell_index(cond)  # (n,)
-    x1, x2 = g[i], g[i + 1]
-    w = ((cond - x1) / (x2 - x1)).unsqueeze(-1)  # (n, 1)
-    vals = self.values if cond_var == 1 else self.values.t()
-    knots = ((1.0 - w) * vals[i, :] + w * vals[i + 1, :]).clamp_min(0.0)
-
-    # Cumulative trapezoidal masses of the (unnormalized) conditional cdf.
-    dg = (g[1:] - g[:-1]).unsqueeze(0)  # (1, m - 1)
-    masses = 0.5 * (knots[:, :-1] + knots[:, 1:]) * dg  # (n, m - 1)
-    incl = masses.cumsum(dim=-1)
-    target = (p * incl[:, -1]).unsqueeze(-1)  # (n, 1)
-
-    # Bracketing cell: first k with cumulative mass >= target (the trimmed
-    # target is strictly below the total, so k <= m - 2 always holds).
-    k = torch.searchsorted(incl.contiguous(), target).clamp(0, m - 2)  # (n, 1)
-
-    # Solve target = cum + v_k s + (v_k1 - v_k) / (2 dg_k) s^2 for
-    # s in [0, dg_k]. Without the old 1e-4 knot floor `b = v_k` can be
-    # exactly zero, so the stable root needs its own branch: a cell
-    # carrying no mass is one the cdf is flat across, where every point
-    # is a quantile and the left endpoint is the smallest.
-    v_k = knots.gather(-1, k).squeeze(-1)
-    v_k1 = knots.gather(-1, k + 1).squeeze(-1)
-    cum = torch.where(
-      (k > 0).squeeze(-1),
-      incl.gather(-1, (k - 1).clamp_min(0)).squeeze(-1),
-      torch.zeros_like(v_k),
-    )
-    k = k.squeeze(-1)
-    dg_k = g[k + 1] - g[k]
-    a = (v_k1 - v_k) / (2.0 * dg_k)
-    b = v_k
-    c = cum - target.squeeze(-1)
-    disc = (b * b - 4.0 * a * c).clamp_min(0.0)
-    denom = b + disc.sqrt()
-    safe_b = torch.where(b == 0.0, torch.ones_like(b), b)
-    safe_d = torch.where(denom == 0.0, torch.ones_like(denom), denom)
-    s = torch.where(
-      denom <= 0.0,
-      torch.zeros_like(denom),
-      torch.where(a.abs() < 1e-300, -c / safe_b, 2.0 * (-c) / safe_d),
-    )
-    s = torch.minimum(s.clamp_min(0.0), dg_k)
-    out = g[k] + s
-    return torch.where(nan_mask, torch.full_like(out, torch.nan), out)
+    # A batch of one, through the kernel the stacked path uses -- the same
+    # reason `interpolate` and `hfunc_cached` delegate.
+    return inverse_integrate_1d_batched(
+      self.grid_points,
+      self.values.unsqueeze(0),
+      u.unsqueeze(0),
+      cond_var,
+      self._is_linear,
+      None if cum is None else cum.unsqueeze(0),
+    ).squeeze(0)
 
   # --------------------------------------------------------------------- #
   # Cached evaluation grids (optional, see TorchBicop(cache_integrals=…)). #

@@ -90,18 +90,37 @@ def test_eval_matches_cpu(
   )
 
 
-@pytest.mark.parametrize("op", ("pdf", "rosenblatt"))
+@pytest.mark.parametrize(
+  ("op", "tol"),
+  [("pdf", 1e-12), ("rosenblatt", 1e-12), ("inverse_rosenblatt", 0.0)],
+)
 def test_batched_matches_unbatched_on_device(
-  device: str, op: str, cpp_vine: pv.Vinecop, u_eval: np.ndarray
+  device: str, op: str, tol: float, cpp_vine: pv.Vinecop, u_eval: np.ndarray
 ) -> None:
-  """The batched fast path agrees with the per-edge cascade on the device."""
+  """The batched fast path agrees with the per-edge cascade on the device.
+
+  ``inverse_rosenblatt`` is held to equality rather than a tolerance: its
+  batched path groups cells of the dependency graph without changing what any
+  one of them computes, so it is a reordering and not a second implementation.
+  """
   vine = TorchVinecop.from_vinecop(cpp_vine, device=torch.device(device))
   ut = torch.as_tensor(u_eval, device=device)
   np.testing.assert_allclose(
     _np(getattr(vine, op)(ut, batched=True)),
     _np(getattr(vine, op)(ut, batched=False)),
-    rtol=1e-12,
-    atol=1e-13,
+    rtol=tol,
+    atol=tol / 10.0,
+  )
+
+
+def test_batched_sample_matches_unbatched_on_device(
+  device: str, cpp_vine: pv.Vinecop
+) -> None:
+  """Seeded draws are identical either way, since the inverse is a reordering."""
+  vine = TorchVinecop.from_vinecop(cpp_vine, device=torch.device(device))
+  np.testing.assert_array_equal(
+    _np(vine.sample(300, seeds=[5, 6, 7], batched=True)),
+    _np(vine.sample(300, seeds=[5, 6, 7], batched=False)),
   )
 
 

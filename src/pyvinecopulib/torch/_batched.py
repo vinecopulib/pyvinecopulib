@@ -18,7 +18,7 @@ to this file.
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Optional, cast
 
 import torch
 from torch import Tensor
@@ -210,23 +210,7 @@ def integrate_1d_batched(
   #   values[k, :, cell[k, l]]      (cond_var=2)
   # gather along ``fixed_axis`` after expanding the cell index along the
   # other (free) axis to size m.
-  if fixed_axis == 1:
-    idx_lo = cell.unsqueeze(-1).expand(N, n, m)
-    idx_hi = (cell + 1).unsqueeze(-1).expand(N, n, m)
-    v_lo = values.gather(dim=1, index=idx_lo)  # (N, n, m)
-    v_hi = values.gather(dim=1, index=idx_hi)
-  else:
-    idx_lo = cell.unsqueeze(1).expand(N, m, n)
-    idx_hi = (cell + 1).unsqueeze(1).expand(N, m, n)
-    v_lo = values.gather(dim=2, index=idx_lo).transpose(1, 2)  # (N, n, m)
-    v_hi = values.gather(dim=2, index=idx_hi).transpose(1, 2)
-
-  # A bilinear interpolation of a nonnegative grid is nonnegative, so this
-  # guard only absorbs rounding. It used to floor at 1e-4, which made the
-  # h-functions not the conditional cdf of the density the same object
-  # reported -- by up to 7.5e-5 on a strongly dependent fit, where two
-  # thirds of the grid can sit below that floor.
-  strip = ((1.0 - t) * v_lo + t * v_hi).clamp_min(0.0)  # (N, n, m)
+  strip = _cond_strip(values, cell, t, fixed_axis, m)
 
   number = int_on_grid_batched(grid_points, u_free, strip, is_linear)  # (N, n)
   denom = int_on_grid_batched(
@@ -235,6 +219,138 @@ def integrate_1d_batched(
   # Without the floor a grid line can carry no mass at all, so the
   # division needs its own guard.
   return _trim(number / denom.clamp_min(_MIN_MASS))
+
+
+def _cond_strip(
+  values: Tensor,
+  cell: Tensor,
+  t: Tensor,
+  fixed_axis: int,
+  m: int,
+  floor: bool = True,
+) -> Tensor:
+  """The conditional density along the free axis, as ``(N, n, m)``.
+
+  The grid line at the conditioning value, i.e. the blend of the two
+  bracketing lines of ``values``. A bilinear interpolation of a nonnegative
+  grid is nonnegative, so the guard only absorbs rounding: it used to floor at
+  ``1e-4``, which made the h-functions not the conditional cdf of the density
+  the same object reported -- by up to 7.5e-5 on a strongly dependent fit,
+  where two thirds of the grid can sit below that floor.
+  """
+  n_batch, n = cell.shape
+  if fixed_axis == 1:
+    idx_lo = cell.unsqueeze(-1).expand(n_batch, n, m)
+    idx_hi = (cell + 1).unsqueeze(-1).expand(n_batch, n, m)
+    v_lo = values.gather(dim=1, index=idx_lo)
+    v_hi = values.gather(dim=1, index=idx_hi)
+  else:
+    idx_lo = cell.unsqueeze(1).expand(n_batch, m, n)
+    idx_hi = (cell + 1).unsqueeze(1).expand(n_batch, m, n)
+    v_lo = values.gather(dim=2, index=idx_lo).transpose(1, 2)
+    v_hi = values.gather(dim=2, index=idx_hi).transpose(1, 2)
+  strip = torch.lerp(v_lo, v_hi, t)
+  return strip.clamp_min(0.0) if floor else strip
+
+
+def inverse_integrate_1d_batched(
+  grid_points: Tensor,
+  values: Tensor,
+  u: Tensor,
+  cond_var: int,
+  is_linear: bool = False,
+  cum: Optional[Tensor] = None,
+) -> Tensor:
+  """Batched closed-form inverse of :func:`integrate_1d_batched`.
+
+  The stacked twin of :meth:`InterpolationGrid2D.inverse_integrate_1d`. The
+  conditional density along the free axis is the knot vector interpolated at
+  the conditioning value, so the conditional cdf is piecewise quadratic and
+  inverts cell by cell: cumulative trapezoidal masses, ``searchsorted`` for
+  the bracketing cell, then a numerically stable quadratic root clamped to it.
+
+  Unlike the forward direction there is no O(1) lookup to be had -- locating
+  the bracketing cell needs the conditional cumulative along the whole free
+  axis -- so the ``(N, n, m)`` strip is unavoidable and is what bounds this
+  function's memory. The *cumulative* need not be quadratured, though: given
+  the prefix table, blending its two bracketing lines is the same quantity as
+  integrating the blended knots, and agrees to 2e-16 while costing a gather
+  instead of a trapezoid and a scan.
+
+  Parameters
+  ----------
+  grid_points : Tensor, shape (m,), dtype float
+      The shared grid.
+  values : Tensor, shape (N, m, m), dtype float
+      Density grids, one per pair.
+  u : Tensor, shape (N, n, 2), dtype float
+      ``[u_cond, p]`` for ``cond_var=1``, ``[p, u_cond]`` for 2.
+  cond_var : int
+      1 or 2, the conditioning argument.
+  is_linear : bool, optional
+      Whether the grid is uniform, enabling O(1) cell lookup.
+  cum : Tensor, shape (N, m, m), or None, optional
+      The prefix-integral table matching ``cond_var`` (``sy`` for 1, ``sx``
+      for 2). Supplied, the conditional cumulative is read off it; otherwise
+      it is quadratured from the knots.
+
+  Returns
+  -------
+  Tensor, shape (N, n), dtype float
+      Conditional quantiles in ``[0, 1]``; NaN wherever an input was NaN.
+  """
+  if values.ndim != 3:
+    raise ValueError(f"values must be 3D (N, m, m); got {tuple(values.shape)}")
+  if u.ndim != 3 or u.shape[-1] != 2:
+    raise ValueError(f"u must be (N, n, 2); got {tuple(u.shape)}")
+  m = grid_points.shape[0]
+  cond, p = (u[..., 0], u[..., 1]) if cond_var == 1 else (u[..., 1], u[..., 0])
+  nan_mask = torch.isnan(cond) | torch.isnan(p)
+  cond = cond.nan_to_num(0.5).clamp(0.0, 1.0)
+  p = _trim(p.nan_to_num(0.5))
+
+  fixed_axis = 1 if cond_var == 1 else 2
+  cell = _batched_cell_index(grid_points, cond, is_linear)
+  g_lo = grid_points[cell]
+  t = ((cond - g_lo) / (grid_points[cell + 1] - g_lo)).unsqueeze(-1)
+  knots = _cond_strip(values, cell, t, fixed_axis, m)
+
+  if cum is not None:
+    incl = _cond_strip(cum, cell, t, fixed_axis, m, floor=False)[..., 1:]
+  else:
+    dg = grid_points[1:] - grid_points[:-1]
+    incl = (0.5 * (knots[..., :-1] + knots[..., 1:]) * dg).cumsum(dim=-1)
+  target = (p * incl[..., -1]).unsqueeze(-1)
+  # The trimmed target is strictly below the total, so k <= m - 2 holds.
+  k = torch.searchsorted(incl.contiguous(), target).clamp(0, m - 2)
+
+  v_k = knots.gather(-1, k).squeeze(-1)
+  v_k1 = knots.gather(-1, k + 1).squeeze(-1)
+  cum = torch.where(
+    (k > 0).squeeze(-1),
+    incl.gather(-1, (k - 1).clamp_min(0)).squeeze(-1),
+    torch.zeros_like(v_k),
+  )
+  k = k.squeeze(-1)
+  dg_k = grid_points[k + 1] - grid_points[k]
+
+  # Solve target = cum + v_k s + (v_k1 - v_k) / (2 dg_k) s^2 for s in
+  # [0, dg_k]. `b = v_k` can be exactly zero, so the stable root needs its own
+  # branch: a cell carrying no mass is one the cdf is flat across, where every
+  # point is a quantile and the left endpoint is the smallest.
+  a = (v_k1 - v_k) / (2.0 * dg_k)
+  b = v_k
+  c = cum - target.squeeze(-1)
+  denom = b + (b * b - 4.0 * a * c).clamp_min(0.0).sqrt()
+  safe_b = torch.where(b == 0.0, torch.ones_like(b), b)
+  safe_d = torch.where(denom == 0.0, torch.ones_like(denom), denom)
+  s = torch.where(
+    denom <= 0.0,
+    torch.zeros_like(denom),
+    torch.where(a.abs() < 1e-300, -c / safe_b, 2.0 * (-c) / safe_d),
+  )
+  out = grid_points[k] + torch.minimum(s.clamp_min(0.0), dg_k)
+  return torch.where(nan_mask, torch.full_like(out, torch.nan), out)
 
 
 def integrate_2d_batched(
@@ -548,6 +664,154 @@ class BatchedTreeLevel(torch.nn.Module):
     return self._h1_at(grid_points, u, loc), self._h2_at(grid_points, u, loc)
 
 
+def inverse_waves(s, d: int, trunc_lvl: int) -> list[list[tuple[int, int]]]:
+  """Group the inverse cascade's ``(var, tree)`` cells into parallel waves.
+
+  ``_inverse_rosenblatt`` walks variables outward and, within each, trees
+  inward. Cell ``(var, tree)`` reads ``hinv2[tree + 1, var]`` -- the same
+  variable one tree further out -- and, at the same tree, either
+  ``hinv2[tree, m - 1]`` or ``hfunc1[tree, m - 1]``, the latter written by
+  cell ``(m - 1, tree - 1)``. Both predecessors are fixed by the structure,
+  so the dependency graph is static and can be levelled once, here.
+
+  The grouping is *not* the tree level -- each wave holds one cell from
+  almost every tree -- and it is not the anti-diagonal either: with
+  ``m - 1 == var + 1`` off the diagonal, which is the generic D-vine cell,
+  ``(var + 1, tree - 1)`` lands on the same anti-diagonal as ``(var, tree)``.
+  Levelling the actual graph is both correct and tighter than any fixed key.
+
+  Returns
+  -------
+  list of list of tuple
+      Cells per wave, in execution order. Every cell in a wave is
+      independent of the others, so a wave is one stacked call.
+  """
+  deps: dict[tuple[int, int], set[tuple[int, int]]] = {}
+  for var in range(d - 2, -1, -1):
+    for tree in range(min(trunc_lvl - 1, d - var - 2), -1, -1):
+      pred: set[tuple[int, int]] = set()
+      if tree + 1 <= min(trunc_lvl - 1, d - var - 2):
+        pred.add((var, tree + 1))
+      m = int(s.min_array(tree, var))
+      if m == int(s.struct_array(tree, var, natural_order=True)):
+        pred.add((m - 1, tree))
+      elif tree - 1 >= 0:
+        pred.add((m - 1, tree - 1))
+      deps[(var, tree)] = pred
+  for cell in deps:
+    deps[cell] &= deps.keys()
+
+  # Longest-path level of each cell; the descending sweep is already a
+  # topological order, so one pass settles it.
+  depth: dict[tuple[int, int], int] = {}
+  for cell in sorted(deps, key=lambda c: (-c[0], -c[1])):
+    depth[cell] = 0 if not deps[cell] else 1 + max(depth[p] for p in deps[cell])
+  n_waves = max(depth.values()) + 1 if depth else 0
+  return [sorted(c for c in deps if depth[c] == k) for k in range(n_waves)]
+
+
+class BatchedWave(torch.nn.Module):
+  """One parallel wave of the inverse cascade: K pairs and their wiring.
+
+  Structurally the same object as :class:`BatchedTreeLevel` -- a stack of
+  per-pair grids plus index tensors -- but keyed on a wave rather than a tree,
+  and wired to the transposed ``(trunc_lvl + 1, d, n)`` scratch the inverse
+  walks instead of the ``(n, d)`` columns the forward cascades use.
+  """
+
+  values: Tensor
+  sy: Optional[Tensor]
+  sx: Optional[Tensor]
+  is_indep: Tensor
+  col0_src: Tensor
+  col1_src: Tensor
+  col1_use_h1: Tensor
+  out_hinv2: Tensor
+  h1_rows: Tensor
+  out_hfunc1: Tensor
+
+  def __init__(
+    self,
+    values: Tensor,
+    sy: Optional[Tensor],
+    sx: Optional[Tensor],
+    is_indep: Tensor,
+    col0_src: Tensor,
+    col1_src: Tensor,
+    col1_use_h1: Tensor,
+    out_hinv2: Tensor,
+    h1_rows: Tensor,
+    out_hfunc1: Tensor,
+    is_linear: bool,
+  ) -> None:
+    super().__init__()
+    self.register_buffer("values", values)
+    if sy is not None:
+      assert sx is not None
+      self.register_buffer("sy", sy)
+      self.register_buffer("sx", sx)
+    else:
+      self.sy = None
+      self.sx = None
+    for name, t in (
+      ("is_indep", is_indep),
+      ("col0_src", col0_src),
+      ("col1_src", col1_src),
+      ("col1_use_h1", col1_use_h1),
+      ("out_hinv2", out_hinv2),
+      ("h1_rows", h1_rows),
+      ("out_hfunc1", out_hfunc1),
+    ):
+      self.register_buffer(name, t)
+    self._is_linear = bool(is_linear)
+
+  def apply_to(
+    self, grid_points: Tensor, hinv2: Tensor, hfunc1: Tensor
+  ) -> None:
+    """Invert this wave's pairs in place on the flattened scratch.
+
+    ``hinv2`` / ``hfunc1`` are ``((trunc_lvl + 1) * d, n)`` views, so a cell's
+    slot is one row and the whole wave is one ``index_select`` per input and
+    one ``index_copy_`` per output.
+    """
+    col0 = hinv2.index_select(0, self.col0_src)
+    col1 = torch.where(
+      self.col1_use_h1[:, None],
+      hfunc1.index_select(0, self.col1_src),
+      hinv2.index_select(0, self.col1_src),
+    )
+    u_e = torch.stack([col0, col1], dim=-1)
+
+    raw = inverse_integrate_1d_batched(
+      grid_points, self.values, u_e, 2, self._is_linear, self.sx
+    ).clamp(0.0, 1.0)
+    inv = torch.where(self.is_indep[:, None], _trim(col0), raw)
+    hinv2.index_copy_(0, self.out_hinv2, inv)
+
+    if self.h1_rows.numel() == 0:
+      return
+    rows = self.h1_rows
+    u_after = torch.stack(
+      [inv.index_select(0, rows), col1.index_select(0, rows)], dim=-1
+    )
+    vals = self.values.index_select(0, rows)
+    uu = u_after.clamp(0.0, 1.0)
+    i, wx, _ = _locate(grid_points, uu[..., 0], self._is_linear)
+    j, wy, dy = _locate(grid_points, uu[..., 1], self._is_linear)
+    if self.sy is not None:
+      h = _hfunc_from_cells(
+        vals, self.sy.index_select(0, rows), i, wx, j, wy, dy
+      )
+    else:
+      h = integrate_1d_batched(grid_points, vals, u_after, 1, self._is_linear)
+    h = torch.where(
+      self.is_indep.index_select(0, rows)[:, None],
+      _trim(u_after[..., 1]),
+      h.clamp(0.0, 1.0),
+    )
+    hfunc1.index_copy_(0, self.out_hfunc1, h)
+
+
 class BatchedVine(torch.nn.Module):
   """All tree levels of a :class:`TorchVinecop`, stacked and pre-baked.
 
@@ -576,16 +840,27 @@ class BatchedVine(torch.nn.Module):
     inverse_order: list[int],
     d: int,
     trunc_lvl: int,
+    waves: "list[BatchedWave]" = [],
   ) -> None:
     super().__init__()
     self.register_buffer("grid_points", grid_points)
     self.levels = torch.nn.ModuleList(levels)
+    self.waves = torch.nn.ModuleList(waves)
     # Plain Python attrs — these don't move with .to() but they're scalars
     # / int lists.
     self.order = order
     self.inverse_order = inverse_order
     self.d = d
     self.trunc_lvl = trunc_lvl
+
+  def wave(self, k: int) -> BatchedWave:
+    """Typed accessor for inverse-cascade wave ``k``."""
+    return cast(BatchedWave, self.waves[k])
+
+  @property
+  def n_waves(self) -> int:
+    """Number of parallel waves the inverse cascade decomposes into."""
+    return len(self.waves)
 
   def level(self, t: int) -> BatchedTreeLevel:
     """Typed accessor for tree level ``t`` (``self.levels[t]`` returns
@@ -674,9 +949,63 @@ class BatchedVine(torch.nn.Module):
       )
       levels.append(level)
 
+    # Inverse-cascade waves: the same per-pair slabs, regrouped by the
+    # dependency levelling and wired to the transposed scratch.
+    waves: list[BatchedWave] = []
+    for cells in inverse_waves(s, d, trunc_lvl):
+      w_vals, w_sy, w_sx, w_indep = [], [], [], []
+      c0, c1, use_h1, out_inv = [], [], [], []
+      h1_rows, out_h1 = [], []
+      w_has_cache = True
+      for slot, (var, tree) in enumerate(cells):
+        bc = tvc._pair_module(tree, var)
+        mv = int(s.min_array(tree, var))
+        sarr = int(s.struct_array(tree, var, natural_order=True))
+        w_vals.append(bc.interp_grid.values)
+        if bc._sy is None:
+          w_has_cache = False
+          w_sy.append(None)
+          w_sx.append(None)
+        else:
+          tbl = bc._tables()
+          w_sy.append(tbl[0])
+          w_sx.append(tbl[1])
+        w_indep.append(bool(bc.is_indep))
+        c0.append((tree + 1) * d + var)
+        c1.append(tree * d + (mv - 1))
+        use_h1.append(mv != sarr)
+        out_inv.append(tree * d + var)
+        if var < d - 1 and bool(s.needed_hfunc1(tree, var)):
+          h1_rows.append(slot)
+          out_h1.append((tree + 1) * d + var)
+      waves.append(
+        BatchedWave(
+          values=torch.stack(w_vals, dim=0).to(device=device),
+          sy=(
+            torch.stack(cast(list[Tensor], w_sy), dim=0).to(device=device)
+            if w_has_cache
+            else None
+          ),
+          sx=(
+            torch.stack(cast(list[Tensor], w_sx), dim=0).to(device=device)
+            if w_has_cache
+            else None
+          ),
+          is_indep=torch.tensor(w_indep, dtype=torch.bool, device=device),
+          col0_src=torch.tensor(c0, dtype=torch.long, device=device),
+          col1_src=torch.tensor(c1, dtype=torch.long, device=device),
+          col1_use_h1=torch.tensor(use_h1, dtype=torch.bool, device=device),
+          out_hinv2=torch.tensor(out_inv, dtype=torch.long, device=device),
+          h1_rows=torch.tensor(h1_rows, dtype=torch.long, device=device),
+          out_hfunc1=torch.tensor(out_h1, dtype=torch.long, device=device),
+          is_linear=is_linear,
+        )
+      )
+
     return cls(
       grid_points=grid_points.to(device=device),
       levels=levels,
+      waves=waves,
       order=list(tvc.order),
       inverse_order=list(tvc.inverse_order),
       d=d,

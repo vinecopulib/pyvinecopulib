@@ -277,21 +277,23 @@ def test_rosenblatt_batched_matches_unbatched(cache: bool) -> None:
   np.testing.assert_allclose(got, ref, atol=1e-13, rtol=1e-13)
 
 
-def test_inverse_rosenblatt_batched_raises() -> None:
-  """``batched=True`` on inverse_rosenblatt raises NotImplementedError.
+def test_inverse_rosenblatt_batched_matches_sequential() -> None:
+  """The wave-scheduled inverse is a reordering, so it agrees bit-for-bit.
 
-  The inverse cascade's dependency graph is genuinely 2-D (some
-  iterations depend on values at a *different* tree level), so the
-  per-tree-level wavefront that works for pdf / rosenblatt doesn't
-  apply. Raising surfaces the limitation explicitly instead of silently
-  routing to the slower non-batched path.
+  The inverse cascade's dependency graph is genuinely 2-D -- a cell depends on
+  one at a *different* tree level -- so the per-tree-level wavefront that works
+  for pdf / rosenblatt does not apply, and the batched path groups cells by
+  longest-path level of that graph instead. Every cell still consumes exactly
+  the values it consumed sequentially, only sooner, so equality is exact rather
+  than approximate.
   """
   u_fit = _simulate(d=6, n=600, seed=302)
   cop_tll = _fit_tll_vine(u_fit)
   bc = TorchVinecop.from_vinecop(cop_tll)
   w_t = torch.from_numpy(_eval_grid(300, d=6, seed=312))
-  with pytest.raises(NotImplementedError, match="batched=True"):
-    bc.inverse_rosenblatt(w_t, batched=True)
+  out_seq = bc.inverse_rosenblatt(w_t, batched=False)
+  out_bat = bc.inverse_rosenblatt(w_t, batched=True)
+  torch.testing.assert_close(out_bat, out_seq, atol=0.0, rtol=0.0)
 
 
 def test_batched_matches_cpp_pdf() -> None:
