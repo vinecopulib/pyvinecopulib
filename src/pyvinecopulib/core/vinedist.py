@@ -8,6 +8,7 @@ from typing import Any, Generic, Optional, Sequence, cast
 from array_api_compat import array_namespace
 
 from .margin_base import _margin_eval, derive_cdf_left
+from ._trim import trim
 from .protocols import ArrayT, MarginLike
 
 
@@ -40,9 +41,6 @@ def _named(spec: Any, name: Optional[str]) -> Any:
 
 
 __all__ = ["Vinedist"]
-
-_TRIM_LO: float = 1e-10
-_TRIM_HI: float = 1.0 - 1e-10
 
 
 def _copula_eval(
@@ -375,7 +373,7 @@ class Vinedist(Generic[ArrayT]):
     # The margins' namespace, not the input's: a torch copula hosting NumPy
     # margins is legal, and `torch.stack` cannot consume NumPy columns.
     xp = array_namespace(cols[0])
-    return cast(ArrayT, xp.clip(xp.stack(cols, axis=-1), _TRIM_LO, _TRIM_HI))
+    return cast(ArrayT, trim(xp, xp.stack(cols, axis=-1)))
 
   def marginal_icdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Apply each margin's ``icdf`` to its column.
@@ -495,7 +493,7 @@ class Vinedist(Generic[ArrayT]):
         )
       lower.append(sub)
     block = xp.stack([*upper, *lower], axis=-1)
-    return xp.clip(block, _TRIM_LO, _TRIM_HI)
+    return trim(xp, block)
 
   def _check_covariates(self, x: Optional[Any]) -> None:
     """Refuse covariates that neither half of this distribution reads.
@@ -856,7 +854,7 @@ class Vinedist(Generic[ArrayT]):
         else derive_cdf_left(m, y_cond[:, i], x, types[i])
       )
     block = xp.stack([*upper, *lower], axis=-1)
-    return xp.clip(block, _TRIM_LO, _TRIM_HI)
+    return trim(xp, block)
 
   # --- construction from data ---------------------------------------------- #
 

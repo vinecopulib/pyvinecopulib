@@ -153,10 +153,13 @@ def test_ordered_categorical_is_fitted_on_its_declared_levels() -> None:
     }
   )
   est = VineDensity(random_state=0).fit(X_df)
-  assert est.schema_["bounds"][0] == (float(counts.min()), float(counts.max()))
+  assert est.schema_["bounds"][0] == (
+    float(np.min(counts)),
+    float(np.max(counts)),
+  )
   margin: Any = est.distribution_.margins[0]
   assert margin.var_type == "d"
-  assert margin.support == (float(counts.min()), float(counts.max()))
+  assert margin.support == (float(np.min(counts)), float(np.max(counts)))
   # Padding the grid below the smallest level is what put mass on impossible
   # counts; the declared support removes it exactly rather than approximately.
   assert margin.cdf(np.array([-1.0])).item() == 0.0

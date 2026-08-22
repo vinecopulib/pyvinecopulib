@@ -164,13 +164,22 @@ def test_state_dict_round_trip_and_no_derived_cache_leak(
   torch.testing.assert_close(fresh.logpdf(x), dist.logpdf(x))
 
 
-def test_to_device_round_trip(data: np.ndarray, dist: TorchVinedist) -> None:
-  """`.to()` walks the registered children and the evaluation still runs."""
+def test_to_device_round_trip(
+  device: str, data: np.ndarray, dist: TorchVinedist
+) -> None:
+  """`.to()` walks the registered children and the evaluation still runs.
+
+  ``x`` deliberately stays on the host: coercing it is ``_prep``'s job, and
+  this is the test that would notice if it stopped doing it.
+  """
+  want = torch.device(device).type
   x = torch.as_tensor(data, dtype=_F64)
-  moved = dist.to("cpu")
+  moved = dist.to(device)
   assert moved is dist
-  assert all(widen(m).loc.device.type == "cpu" for m in dist.margins)
-  assert torch.isfinite(dist.logpdf(x)).all()
+  assert all(widen(m).loc.device.type == want for m in dist.margins)
+  out = dist.logpdf(x)
+  assert torch.isfinite(out).all()
+  assert out.device.type == want
 
 
 def test_backward_reaches_the_margin_parameters(

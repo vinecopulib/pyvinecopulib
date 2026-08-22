@@ -33,7 +33,12 @@ import numpy as np
 import torch
 
 import pyvinecopulib as pv
-from pyvinecopulib.torch import FitControlsTorchBicop, TorchBicop, TorchVinecop
+from pyvinecopulib.torch import (
+  FitControlsTorchBicop,
+  FitControlsTorchVinecop,
+  TorchBicop,
+  TorchVinecop,
+)
 
 
 # --- shared helpers ------------------------------------------------------ #
@@ -184,8 +189,10 @@ def _run_vine_section(
         vc_fit = TorchVinecop.from_data(
           torch.from_numpy(u_true),
           cop_true.structure,
-          cache_integrals=cache,
-          grid_type=grid_type,
+          controls=FitControlsTorchVinecop(
+            bicop_controls=FitControlsTorchBicop(grid_type=grid_type),
+            cache_integrals=cache,
+          ),
         )
         fit_pdf = vc_fit.pdf(u_eval_t).numpy()
         fit_rosen = vc_fit.rosenblatt(u_eval_t).numpy()

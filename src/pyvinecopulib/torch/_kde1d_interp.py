@@ -162,25 +162,6 @@ def _cumulative_cell_integrals(grid_points: Tensor, coefs: Tensor) -> Tensor:
   return torch.cat([zero, torch.cumsum(full, dim=0)])
 
 
-def total_mass(grid_points: Tensor, values: Tensor) -> Tensor:
-  """Integral over the whole grid.
-
-  Parameters
-  ----------
-  grid_points : Tensor, shape (m,)
-      Ascending grid.
-  values : Tensor, shape (m,)
-      Density values on the grid.
-
-  Returns
-  -------
-  Tensor, shape ()
-      The total mass the unnormalized integral saturates at.
-  """
-  coefs = cell_coefs(grid_points, values)
-  return _cumulative_cell_integrals(grid_points, coefs)[-1]
-
-
 def integrate(
   grid_points: Tensor,
   values: Tensor,

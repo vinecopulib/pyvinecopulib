@@ -425,6 +425,22 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
     with torch.no_grad():
       return super().icdf(p)
 
+  def _apply(self, fn: Any, *args: Any, **kwargs: Any) -> "TorchMargin":
+    """Track ``.to()`` in the fallback placement.
+
+    A factory that closes over its own parameters registers none, so the
+    fallback is the only record of where this margin lives -- and it was
+    frozen at construction, leaving such a margin drawing on the cpu after
+    a move.
+    """
+    out = super()._apply(fn, *args, **kwargs)
+    probe = fn(
+      torch.empty(0, dtype=self._fallback_dtype, device=self._fallback_device)
+    )
+    self._fallback_dtype = probe.dtype
+    self._fallback_device = probe.device
+    return out
+
   def _ref_tensor(self) -> Tensor:
     """A registered tensor to crib dtype/device from."""
     for tensor in chain(self.parameters(), self.buffers()):

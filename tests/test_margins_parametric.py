@@ -282,7 +282,7 @@ def test_selector_rejects_a_support_that_excludes_the_data() -> None:
   assert "does not contain the data range" in row["status"]
   assert row["loglik"] == float("-inf")
   # `loc` really did overshoot, which is what the gate saw.
-  assert row["support"][0] > x.min()
+  assert row["support"][0] > np.min(x)
 
 
 def test_selector_falls_back_to_a_kernel_density_never_to_norm() -> None:

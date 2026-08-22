@@ -209,14 +209,20 @@ def test_state_dict_round_trip() -> None:
   torch.testing.assert_close(fresh.cdf(x), fitted.cdf(x))
 
 
-def test_to_device_round_trip() -> None:
-  """`.to()` moves the registered tensors, and the rebuilt object follows."""
+def test_to_device_round_trip(device: str) -> None:
+  """`.to()` moves the registered tensors, and the rebuilt object follows.
+
+  ``y`` is built on ``device`` because ``TorchMargin`` hands it straight to
+  ``torch.distributions``, unlike ``TorchVinecop`` / ``TorchVinedist``, which
+  coerce their inputs in ``_prep``.
+  """
+  want = torch.device(device).type
   margin = _normal(0.3, 1.4)
-  moved = margin.to("cpu")
+  moved = margin.to(device)
   assert moved is margin
-  assert widen(margin.loc).device.type == "cpu"
-  assert widen(margin.distribution).loc.device.type == "cpu"
-  x = torch.tensor([0.0], dtype=_F64)
+  assert widen(margin.loc).device.type == want
+  assert widen(margin.distribution).loc.device.type == want
+  x = torch.tensor([0.0], dtype=_F64, device=device)
   assert torch.isfinite(margin.cdf(x)).all()
 
 
