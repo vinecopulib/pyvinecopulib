@@ -1011,6 +1011,12 @@ def test_compile_flag_defaults_off_and_survives_a_round_trip() -> None:
   ).compile_cascades
 
   bc.compile_cascades = True
+  # The state is everything but the cache -- `__getstate__` cannot lean on an
+  # inherited one, which `nn.Module` only grew in torch 2.1 and `object` in
+  # Python 3.11, below both of this project's floors.
+  state = bc.__getstate__()
+  assert state["_compiled"] == {}
+  assert {"_parameters", "_buffers", "_modules"} <= set(state)
   # Nothing is compiled until a cascade runs, so this round-trips either way.
   again = pickle.loads(pickle.dumps(bc))
   assert again.compile_cascades is True

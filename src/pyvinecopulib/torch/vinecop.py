@@ -601,9 +601,20 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     return cast(Tensor, self._cascade("_inverse_rosenblatt_batched")(u))
 
   def __getstate__(self) -> dict:
-    # Compiled callables do not pickle, and they are a pure cache: drop them
-    # and let the unpickled vine recompile on demand.
-    state = dict(super().__getstate__())
+    """The picklable state: everything except the compiled-cascade cache.
+
+    Compiled callables do not pickle, and they are a pure cache -- the
+    unpickled vine recompiles on demand. ``nn.Module`` grew a ``__getstate__``
+    in torch 2.1 and ``object`` one in Python 3.11; this project floors at
+    torch 2.0 and Python 3.10, so neither can be assumed to exist.
+
+    Returns
+    -------
+    dict
+        The instance state, with an empty compiled-cascade cache.
+    """
+    inherited = getattr(super(), "__getstate__", None)
+    state = dict(self.__dict__ if inherited is None else inherited())
     state["_compiled"] = {}
     return state
 
@@ -667,6 +678,8 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       and getattr(self, "_grad_signature_at_bake", None) != signature
     ):
       object.__setattr__(self, "_batched", None)
+      # A compiled cascade was traced against the grids the stale bake holds.
+      object.__setattr__(self, "_compiled", {})
     out = super()._ensure_batched()
     object.__setattr__(self, "_grad_signature_at_bake", signature)
     return out
