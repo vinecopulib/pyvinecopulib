@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -37,7 +37,10 @@ class TestPairCopulaData:
 
     # Test None data
     with pytest.raises(ValueError, match="`data` cannot be None"):
-      pairs_copula_data(None)
+      # `cast` rather than a `ty: ignore`: the ignore reads as unused in
+      # some environments and is required in others, so either spelling
+      # fails the type check somewhere.
+      pairs_copula_data(cast(Any, None))
 
     # Test non-numeric data
     with pytest.raises(
