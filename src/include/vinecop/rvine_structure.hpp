@@ -44,23 +44,6 @@ inline RVineStructure rv_from_order(
 
 // Factory function to create RVineStructure from an order vector and a
 // structure array given as nested rows (tree i holds d - 1 - i entries)
-// A truncated structure stores only `trunc_lvl` rows, and upstream's per-entry
-// accessors index the triangular array without a bounds check -- so reading a
-// tree above the truncation crashes the interpreter. Guard the four Python
-// entry points; the whole-array getters are safe because they iterate the rows
-// that exist.
-inline void rv_check_slot(const RVineStructure& rvs, size_t tree, size_t edge,
-                          const char* name) {
-  const size_t d = rvs.get_dim();
-  const size_t trunc = rvs.get_trunc_lvl();
-  if (tree >= trunc || edge + tree + 1 >= d) {
-    throw std::runtime_error(
-        std::string(name) + "(): tree " + std::to_string(tree) + ", edge " +
-        std::to_string(edge) + " is outside a structure with dim " +
-        std::to_string(d) + " and trunc_lvl " + std::to_string(trunc) + ".");
-  }
-}
-
 inline RVineStructure rv_from_struct_array(
     const std::vector<size_t>& order,
     const std::vector<std::vector<size_t>>& struct_array,
@@ -258,16 +241,9 @@ Vinecop.get_trees : The same decomposition carrying the fitted pair copulas.
       .def_prop_ro("matrix", &RVineStructure::get_matrix,
                    rvinestructure_doc.get_matrix.doc,
                    nb::call_guard<nb::gil_scoped_release>())
-      .def(
-          "struct_array",
-          [](const RVineStructure& self, size_t tree, size_t edge,
-             bool natural_order) {
-            rv_check_slot(self, tree, edge, "struct_array");
-            return self.struct_array(tree, edge, natural_order);
-          },
-          "tree"_a, "edge"_a, "natural_order"_a = false,
-          rvinestructure_doc.struct_array.doc,
-          nb::call_guard<nb::gil_scoped_release>())
+      .def("struct_array", &RVineStructure::struct_array, "tree"_a, "edge"_a,
+           "natural_order"_a = false, rvinestructure_doc.struct_array.doc,
+           nb::call_guard<nb::gil_scoped_release>())
       .def(
           "get_struct_array",
           [](const RVineStructure& rvs, bool natural_order) -> nb::list {
@@ -304,30 +280,15 @@ Vinecop.get_trees : The same decomposition carrying the fitted pair copulas.
             return self == other;
           },
           nb::is_operator())
-      .def(
-          "min_array",
-          [](const RVineStructure& self, size_t tree, size_t edge) {
-            rv_check_slot(self, tree, edge, "min_array");
-            return self.min_array(tree, edge);
-          },
-          "tree"_a, "edge"_a, rvinestructure_doc.min_array.doc,
-          nb::call_guard<nb::gil_scoped_release>())
-      .def(
-          "needed_hfunc1",
-          [](const RVineStructure& self, size_t tree, size_t edge) {
-            rv_check_slot(self, tree, edge, "needed_hfunc1");
-            return self.needed_hfunc1(tree, edge);
-          },
-          "tree"_a, "edge"_a, rvinestructure_doc.needed_hfunc1.doc,
-          nb::call_guard<nb::gil_scoped_release>())
-      .def(
-          "needed_hfunc2",
-          [](const RVineStructure& self, size_t tree, size_t edge) {
-            rv_check_slot(self, tree, edge, "needed_hfunc2");
-            return self.needed_hfunc2(tree, edge);
-          },
-          "tree"_a, "edge"_a, rvinestructure_doc.needed_hfunc2.doc,
-          nb::call_guard<nb::gil_scoped_release>())
+      .def("min_array", &RVineStructure::min_array, "tree"_a, "edge"_a,
+           rvinestructure_doc.min_array.doc,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("needed_hfunc1", &RVineStructure::needed_hfunc1, "tree"_a, "edge"_a,
+           rvinestructure_doc.needed_hfunc1.doc,
+           nb::call_guard<nb::gil_scoped_release>())
+      .def("needed_hfunc2", &RVineStructure::needed_hfunc2, "tree"_a, "edge"_a,
+           rvinestructure_doc.needed_hfunc2.doc,
+           nb::call_guard<nb::gil_scoped_release>())
       .def(
           "get_min_array",
           [](const RVineStructure& self) -> nb::list {
