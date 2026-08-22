@@ -339,8 +339,6 @@ For performance work: profile first, optimize demonstrated hotspots
 only, and preserve every quantitative invariant (round-trip identities,
 parity with the C++ cascade, pickling stability).
 
-<<<<<<< HEAD
-=======
 ### Which CI leg covers what
 
 Local runs cannot substitute for the matrix, so know what each leg does
@@ -359,7 +357,6 @@ To check that a test survives without an optional extra, block the import
 in-process (`sys.modules["scipy"] = None`) rather than reaching for a
 matrix run.
 
->>>>>>> 50d1c43 (feat!: vine distributions with pluggable margins)
 ## Working on this repo
 
 ### Inspection order
