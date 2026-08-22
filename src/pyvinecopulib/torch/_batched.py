@@ -57,6 +57,43 @@ def _batched_cell_index(
   ).clamp(0, m - 2)
 
 
+def _locate(
+  grid_points: Tensor, x: Tensor, is_linear: bool
+) -> tuple[Tensor, Tensor, Tensor]:
+  """Locate ``x`` on the grid: ``(cell, weight, offset)``.
+
+  ``weight`` is the position within the cell and ``offset`` the distance from
+  its lower edge. Both the density lookup and the two h-functions need exactly
+  this triple for each argument, so it is computed once per argument and
+  shared rather than three times over.
+
+  ``x`` is already clamped to the grid and ``cell`` to ``[0, m-2]``, so the
+  ratio needs no clamp of its own.
+  """
+  cell = _batched_cell_index(grid_points, x, is_linear)
+  lo = grid_points[cell]
+  off = x - lo
+  return cell, off / (grid_points[cell + 1] - lo), off
+
+
+def _bilinear(
+  values: Tensor, i: Tensor, j: Tensor, wx: Tensor, wy: Tensor
+) -> Tensor:
+  """Bilinear value of ``values`` at cell ``(i, j)``, offsets ``(wx, wy)``.
+
+  Three ``lerp`` calls rather than the four-term weighted sum: identical
+  arithmetic to within rounding, a third of the kernel launches, and this
+  cascade is bound by launch count rather than by flops.
+  """
+  n_batch = values.shape[0]
+  n_pts = i.shape[-1]
+  rows = torch.arange(n_batch, device=values.device).unsqueeze(-1)
+  rows = rows.expand(n_batch, n_pts)
+  lo = torch.lerp(values[rows, i, j], values[rows, i + 1, j], wx)
+  hi = torch.lerp(values[rows, i, j + 1], values[rows, i + 1, j + 1], wx)
+  return torch.lerp(lo, hi, wy)
+
+
 def interpolate_batched(
   grid_points: Tensor, values: Tensor, u: Tensor, is_linear: bool = False
 ) -> Tensor:
@@ -82,32 +119,9 @@ def interpolate_batched(
   u = u.clamp(0.0, 1.0)
   N, n, _ = u.shape
 
-  i = _batched_cell_index(grid_points, u[..., 0], is_linear)  # (N, n)
-  j = _batched_cell_index(grid_points, u[..., 1], is_linear)  # (N, n)
-
-  N_idx = (
-    torch.arange(N, device=values.device).unsqueeze(-1).expand(N, n)
-  )  # (N, n)
-
-  z11 = values[N_idx, i, j]
-  z12 = values[N_idx, i, j + 1]
-  z21 = values[N_idx, i + 1, j]
-  z22 = values[N_idx, i + 1, j + 1]
-
-  x1 = grid_points[i]
-  x2 = grid_points[i + 1]
-  y1 = grid_points[j]
-  y2 = grid_points[j + 1]
-  x = u[..., 0]
-  y = u[..., 1]
-  x2x = x2 - x
-  y2y = y2 - y
-  xx1 = x - x1
-  yy1 = y - y1
-  denom = (x2 - x1) * (y2 - y1)
-  return (
-    z11 * x2x * y2y + z21 * xx1 * y2y + z12 * x2x * yy1 + z22 * xx1 * yy1
-  ) / denom
+  i, wx, _ = _locate(grid_points, u[..., 0], is_linear)
+  j, wy, _ = _locate(grid_points, u[..., 1], is_linear)
+  return _bilinear(values, i, j, wx, wy)
 
 
 def int_on_grid_batched(
@@ -273,6 +287,68 @@ def integrate_2d_batched(
 # --------------------------------------------------------------------------- #
 
 
+def _hfunc_from_cells(
+  values: Tensor,
+  sy: Tensor,
+  ic: Tensor,
+  w: Tensor,
+  jc: Tensor,
+  frac: Tensor,
+  dx: Tensor,
+) -> Tensor:
+  """Exact conditional distribution function from a cumulative table.
+
+  The batched twin of :meth:`InterpolationGrid2D.hfunc_cached`, taking the
+  grid locations already resolved by :func:`_locate`. At a fixed conditioning
+  argument the interpolant is the linear blend of the two bracketing grid
+  lines, so both the partial and the total integral along the free argument
+  are that same blend of the corresponding entries of ``sy`` -- exact, and one
+  gather per corner rather than a quadrature.
+
+  Parameters
+  ----------
+  values : Tensor, shape (N, m, m), dtype float
+      Density grids, oriented so that ``values[k, i, :]`` is the line at a
+      fixed conditioning argument -- transposed by the caller for ``hfunc2``.
+  sy : Tensor, shape (N, m, m), dtype float
+      ``sy[k, i, j]`` is that line's integral up to ``grid_points[j]``.
+  ic, w : Tensor, shape (N, n)
+      Cell and within-cell weight of the conditioning argument.
+  jc, frac, dx : Tensor, shape (N, n)
+      Cell, within-cell weight and offset of the free argument.
+
+  Returns
+  -------
+  Tensor, shape (N, n), dtype float
+      Conditional distribution values, clamped to ``[1e-10, 1-1e-10]``.
+  """
+  n_batch, m, _ = values.shape
+  flat_v = values.reshape(n_batch, m * m)
+  flat_s = sy.reshape(n_batch, m * m)
+
+  # Both bracketing grid lines, addressed off one base so the row stride is
+  # added once rather than recomputed.
+  base_lo = ic * m
+  base_hi = base_lo + m
+  at_lo, at_hi = base_lo + jc, base_hi + jc
+  last = m - 1
+
+  def line(at: Tensor, base: Tensor) -> Tensor:
+    """Integral of one grid line from 0 to the free argument."""
+    v0 = flat_v.gather(1, at)
+    v1 = flat_v.gather(1, at + 1)
+    # cum + (2 v0 + (v1 - v0) frac) dx / 2, with the inner blend as one lerp.
+    return torch.addcmul(
+      flat_s.gather(1, at), v0 + torch.lerp(v0, v1, frac), dx, value=0.5
+    )
+
+  num = torch.lerp(line(at_lo, base_lo), line(at_hi, base_hi), w)
+  den = torch.lerp(
+    flat_s.gather(1, base_lo + last), flat_s.gather(1, base_hi + last), w
+  )
+  return _trim(num / den.clamp_min(_MIN_MASS))
+
+
 def hfunc_from_cumulative(
   grid_points: Tensor,
   values: Tensor,
@@ -281,65 +357,13 @@ def hfunc_from_cumulative(
   cond_var: int,
   is_linear: bool = False,
 ) -> Tensor:
-  """Exact conditional distribution function from a cumulative table.
-
-  The batched twin of :meth:`InterpolationGrid2D.hfunc_cached`. At a fixed
-  conditioning argument the interpolant is the linear blend of the two
-  bracketing grid lines, so both the partial and the total integral along the
-  free argument are that same blend of the corresponding entries of ``sy`` --
-  exact, and one gather per corner rather than a quadrature.
-
-  Parameters
-  ----------
-  grid_points : Tensor, shape (m,), dtype float
-      The shared grid.
-  values : Tensor, shape (N, m, m), dtype float
-      Density grids, oriented so that ``values[k, i, :]`` is the line at a
-      fixed conditioning argument -- transposed by the caller for
-      ``cond_var=2``.
-  sy : Tensor, shape (N, m, m), dtype float
-      ``sy[k, i, j]`` is that line's integral up to ``grid_points[j]``.
-  u : Tensor, shape (N, n, 2), dtype float
-      Query points, ``[u_cond, u_free]`` for ``cond_var=1`` and reversed for 2.
-  cond_var : int
-      1 or 2, the argument held fixed.
-  is_linear : bool, optional
-      Whether the grid is uniform, enabling O(1) cell lookup.
-
-  Returns
-  -------
-  Tensor, shape (N, n), dtype float
-      Conditional distribution values, clamped to ``[1e-10, 1-1e-10]``.
-  """
-  m = grid_points.shape[0]
-  n_batch = values.shape[0]
+  """:func:`_hfunc_from_cells` for a caller that has not located ``u`` yet."""
   uu = u.clamp(0.0, 1.0)
   cond = uu[..., 0] if cond_var == 1 else uu[..., 1]
   free = uu[..., 1] if cond_var == 1 else uu[..., 0]
-  ic = _batched_cell_index(grid_points, cond, is_linear)
-  jc = _batched_cell_index(grid_points, free, is_linear)
-  g_ic, g_ic1 = grid_points[ic], grid_points[ic + 1]
-  w = ((cond - g_ic) / (g_ic1 - g_ic)).clamp(0.0, 1.0)
-  dx = free - grid_points[jc]
-  frac = dx / (grid_points[jc + 1] - grid_points[jc])
-
-  flat_v = values.reshape(n_batch, m * m)
-  flat_s = sy.reshape(n_batch, m * m)
-
-  def line(rows: Tensor) -> Tensor:
-    """Integral of grid line `rows` from 0 to `free`, per (batch, query)."""
-    base = rows * m
-    v0 = flat_v.gather(1, base + jc)
-    v1 = flat_v.gather(1, base + jc + 1)
-    cum = flat_s.gather(1, base + jc)
-    return cum + (2.0 * v0 + (v1 - v0) * frac) * dx / 2.0
-
-  num = (1.0 - w) * line(ic) + w * line(ic + 1)
-  last = torch.full_like(ic, m - 1)
-  den = (1.0 - w) * flat_s.gather(1, ic * m + last) + w * flat_s.gather(
-    1, (ic + 1) * m + last
-  )
-  return _trim(num / den.clamp_min(_MIN_MASS))
+  ic, w, _ = _locate(grid_points, cond, is_linear)
+  jc, frac, dx = _locate(grid_points, free, is_linear)
+  return _hfunc_from_cells(values, sy, ic, w, jc, frac, dx)
 
 
 class BatchedTreeLevel(torch.nn.Module):
@@ -444,12 +468,47 @@ class BatchedTreeLevel(torch.nn.Module):
     u_e = torch.stack([col0.t(), col1.t()], dim=-1)
     return u_e
 
+  def _locate_both(self, grid_points: Tensor, u: Tensor) -> tuple[Tensor, ...]:
+    """Grid location of both arguments: ``(i, wx, dx, j, wy, dy)``.
+
+    The density and the two h-functions all need exactly these two triples --
+    the h-functions with the roles swapped -- so resolving them once is what
+    makes :meth:`pdf_h1_h2` cheaper than its three parts.
+    """
+    uu = u.clamp(0.0, 1.0)
+    i, wx, dx = _locate(grid_points, uu[..., 0], self._is_linear)
+    j, wy, dy = _locate(grid_points, uu[..., 1], self._is_linear)
+    return i, wx, dx, j, wy, dy
+
+  def _pdf_at(self, i: Tensor, j: Tensor, wx: Tensor, wy: Tensor) -> Tensor:
+    raw = _bilinear(self.values, i, j, wx, wy).clamp_min(1e-20)
+    return torch.where(self.is_indep[:, None], torch.ones_like(raw), raw)
+
+  def _h1_at(self, gp: Tensor, u: Tensor, loc: tuple) -> Tensor:
+    i, wx, _, j, wy, dy = loc
+    if self.sy is not None:
+      raw = _hfunc_from_cells(self.values, self.sy, i, wx, j, wy, dy)
+    else:
+      raw = integrate_1d_batched(gp, self.values, u, 1, self._is_linear)
+    return torch.where(
+      self.is_indep[:, None], _trim(u[..., 1]), raw.clamp(0.0, 1.0)
+    )
+
+  def _h2_at(self, gp: Tensor, u: Tensor, loc: tuple) -> Tensor:
+    i, wx, dx, j, wy, _ = loc
+    if self.sy_t is not None:
+      assert self.values_t is not None
+      raw = _hfunc_from_cells(self.values_t, self.sy_t, j, wy, i, wx, dx)
+    else:
+      raw = integrate_1d_batched(gp, self.values, u, 2, self._is_linear)
+    return torch.where(
+      self.is_indep[:, None], _trim(u[..., 0]), raw.clamp(0.0, 1.0)
+    )
+
   def pdf(self, grid_points: Tensor, u: Tensor) -> Tensor:
     """Per-pair pdf at the stacked queries. Indep slots return 1."""
-    raw = interpolate_batched(
-      grid_points, self.values, u, self._is_linear
-    ).clamp_min(1e-20)
-    return torch.where(self.is_indep[:, None], torch.ones_like(raw), raw)
+    i, wx, _, j, wy, _ = self._locate_both(grid_points, u)
+    return self._pdf_at(i, j, wx, wy)
 
   def hfunc1(self, grid_points: Tensor, u: Tensor) -> Tensor:
     """Per-pair hfunc1.
@@ -459,49 +518,34 @@ class BatchedTreeLevel(torch.nn.Module):
     :func:`integrate_1d_batched` on ``values`` at every call. The two agree to
     floating point: they are the same integral, summed in a different order.
     """
-    if self.sy is not None:
-      raw = hfunc_from_cumulative(
-        grid_points, self.values, self.sy, u, 1, self._is_linear
-      )
-    else:
-      raw = integrate_1d_batched(
-        grid_points, self.values, u, cond_var=1, is_linear=self._is_linear
-      )
-    h = raw.clamp(0.0, 1.0)
-    return torch.where(self.is_indep[:, None], _trim(u[..., 1]), h)
+    return self._h1_at(grid_points, u, self._locate_both(grid_points, u))
 
   def hfunc2(self, grid_points: Tensor, u: Tensor) -> Tensor:
     """Per-pair hfunc2; see :meth:`hfunc1`."""
-    if self.sy_t is not None:
-      assert self.values_t is not None
-      raw = hfunc_from_cumulative(
-        grid_points, self.values_t, self.sy_t, u, 2, self._is_linear
-      )
-    else:
-      raw = integrate_1d_batched(
-        grid_points, self.values, u, cond_var=2, is_linear=self._is_linear
-      )
-    h = raw.clamp(0.0, 1.0)
-    return torch.where(self.is_indep[:, None], _trim(u[..., 0]), h)
+    return self._h2_at(grid_points, u, self._locate_both(grid_points, u))
 
   def pdf_h1_h2(
     self, grid_points: Tensor, u: Tensor
   ) -> tuple[Tensor, Tensor, Tensor]:
-    """``(pdf, hfunc1, hfunc2)`` for one tree level.
+    """``(pdf, hfunc1, hfunc2)`` for one tree level, from one grid search.
 
-    The density is a bilinear lookup and the h-functions are reconstructions
-    from the cumulative table, so the three do not share an interpolation; the
-    grouping is the shape the cascade asks for, not a fused kernel.
+    All three read the same two cells of the same grid -- the h-functions with
+    the conditioning and free arguments swapped -- so the search, the cell
+    weights and the offsets are resolved once and shared. This cascade is
+    bound by kernel-launch count, so that sharing is most of the cost.
     """
+    loc = self._locate_both(grid_points, u)
+    i, wx, _, j, wy, _ = loc
     return (
-      self.pdf(grid_points, u),
-      self.hfunc1(grid_points, u),
-      self.hfunc2(grid_points, u),
+      self._pdf_at(i, j, wx, wy),
+      self._h1_at(grid_points, u, loc),
+      self._h2_at(grid_points, u, loc),
     )
 
   def h1_h2(self, grid_points: Tensor, u: Tensor) -> tuple[Tensor, Tensor]:
     """``(hfunc1, hfunc2)`` for one tree level; see :meth:`pdf_h1_h2`."""
-    return self.hfunc1(grid_points, u), self.hfunc2(grid_points, u)
+    loc = self._locate_both(grid_points, u)
+    return self._h1_at(grid_points, u, loc), self._h2_at(grid_points, u, loc)
 
 
 class BatchedVine(torch.nn.Module):

@@ -24,6 +24,8 @@ from ._batched import (
   integrate_2d_batched,
   interpolate_batched,
   _MIN_MASS,
+  _hfunc_from_cells,
+  _locate,
   _trim,
 )
 
@@ -673,23 +675,21 @@ class InterpolationGrid2D(torch.nn.Module):
     Tensor, shape (n,), dtype float
         Conditional distribution values.
     """
-    g = self.grid_points
-    m = g.shape[0]
     uu = u.clamp(0.0, 1.0)
     cond = uu[:, 0] if cond_var == 1 else uu[:, 1]
     free = uu[:, 1] if cond_var == 1 else uu[:, 0]
-    ic = self._cell_index(cond)
-    jc = self._cell_index(free)
-    w = ((cond - g[ic]) / (g[ic + 1] - g[ic])).clamp(0.0, 1.0)
+    ic, w, _ = _locate(self.grid_points, cond, self._is_linear)
+    jc, frac, dx = _locate(self.grid_points, free, self._is_linear)
     vals = self.values if cond_var == 1 else self.values.t()
-    dx = free - g[jc]
-    frac = dx / (g[jc + 1] - g[jc])
-
-    def line(rows: Tensor) -> Tensor:
-      v0, v1 = vals[rows, jc], vals[rows, jc + 1]
-      return sy[rows, jc] + (2.0 * v0 + (v1 - v0) * frac) * dx / 2.0
-
-    num = (1.0 - w) * line(ic) + w * line(ic + 1)
-    last = torch.full_like(ic, m - 1)
-    den = (1.0 - w) * sy[ic, last] + w * sy[ic + 1, last]
-    return _trim(num / den.clamp_min(_MIN_MASS))
+    # A batch of one, through the kernel the stacked path uses. The two are
+    # pinned to agree to the last bit, and the surest way to keep them there
+    # is for there to be only one of them.
+    return _hfunc_from_cells(
+      vals.unsqueeze(0).contiguous(),
+      sy.unsqueeze(0).contiguous(),
+      ic.unsqueeze(0),
+      w.unsqueeze(0),
+      jc.unsqueeze(0),
+      frac.unsqueeze(0),
+      dx.unsqueeze(0),
+    ).squeeze(0)
