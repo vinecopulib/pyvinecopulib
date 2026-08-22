@@ -294,7 +294,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       )
     # ``Bicop.select`` trims before ``TllBicop::fit``, so two values above
     # ``1 - 1e-10`` are one tie group there and would be two here.
-    u_t = u_t.clamp(_TRIM_LO, _TRIM_HI)
+    u_t = _trim(u_t)
     values_only = u_t[:, :2]
     # An atom repeats its distribution-function value, so the ranks have ties.
     # ``TllBicop::fit`` breaks them at random from a fixed seed; reuse that draw

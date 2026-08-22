@@ -26,6 +26,7 @@ from typing import Any, Optional, Protocol, cast
 from array_api_compat import array_namespace
 
 from ._rootfind import solve_increasing
+from ._trim import trim
 from .bicop_base import BicopBase, _pair_eval
 from .protocols import ArrayT, BicopLike
 
@@ -57,8 +58,6 @@ class _ContinuousPair(Protocol):
 #: derivative is used instead (``AbstractBicop``'s threshold).
 DELTA_MIN: float = 5e-5
 #: The unit box the reference pair copula trims its arguments to.
-_TRIM_LO: float = 1e-10
-_TRIM_HI: float = 1.0 - 1e-10
 
 
 def check_var_types(var_types: Optional[list[str]], d: int) -> tuple[str, ...]:
@@ -524,7 +523,7 @@ class DiscretePair(BicopBase[ArrayT]):
     # Trimmed before anything is subtracted, as ``Bicop::prep_for_abstract``
     # does: an h-function feeding the next tree may land exactly on 0 or 1, and
     # the atom width in the denominator has to be the width of the trimmed atom.
-    ut = xp.clip(u, _TRIM_LO, _TRIM_HI)
+    ut = trim(xp, u)
     u1, u2 = ut[:, 0], ut[:, 1]
     # A continuous argument's left limit is its own value
     # (``Bicop::format_data``), so the cascade's column for it is never read.
@@ -569,7 +568,8 @@ class DiscretePair(BicopBase[ArrayT]):
     discrete cascade then amplifies a 1e-15 pair-level difference to 8.5e-8 at
     the vine, which is a visible divergence from the compiled ``Vinecop``. The
     torch-to-C++ cascade parity is a documented guarantee, so this route stays
-    the reference's, exactly.
+    the reference's, exactly. Taking the rectangle upstream is what would let
+    both sides use it (vinecopulib#757).
     """
     # Summed in two pairs, as the compiled pair copula sums them: the grouping
     # is what makes the two agree to the last bit rather than to rounding.

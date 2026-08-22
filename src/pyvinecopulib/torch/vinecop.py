@@ -161,9 +161,11 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     reads its density from *differences* over an atom's width, and the cache
     was a bilinear interpolation of a table -- accurate enough to evaluate, not
     to difference, at 38% maximum relative error on a ``("d","d")`` density. The
-    tables are exact now, and a discrete edge reads its rectangle probability
-    through ``rect_mass`` rather than by differencing at all, so there is
-    nothing left to refuse.
+    tables are exact now, so differencing them is no longer the lossy step it
+    was and there is nothing left to refuse. A discrete edge still differences
+    the distribution function rather than calling ``rect_mass``, which is more
+    accurate but would break the torch-to-C++ cascade parity that ``Bicop``'s
+    own quotients define.
 
     Parameters
     ----------
