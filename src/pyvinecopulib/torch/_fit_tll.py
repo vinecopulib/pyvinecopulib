@@ -134,37 +134,43 @@ def _ace(
     )
   wl = int(math.ceil(n / 5.0))
 
-  ind = torch.empty(n, 2, dtype=torch.long, device=device)
-  ranks = torch.empty(n, 2, dtype=torch.long, device=device)
-  for i in range(2):
-    order = data[:, i].argsort(stable=True)
-    ind[:, i] = order
-    ranks[order, i] = torch.arange(n, device=device)
+  # Two contiguous vectors rather than the columns of one `(n, 2)` matrix:
+  # every operation below then runs on a contiguous buffer instead of a
+  # stride-2 view, which is the same arithmetic in the same order but fewer
+  # and cheaper kernels. The pair is stacked back into `(n, 2)` on return.
+  ind0 = data[:, 0].argsort(stable=True)
+  ind1 = data[:, 1].argsort(stable=True)
+  positions = torch.arange(n, device=device)
+  ranks0 = torch.empty(n, dtype=torch.long, device=device)
+  ranks1 = torch.empty(n, dtype=torch.long, device=device)
+  ranks0[ind0] = positions
+  ranks1[ind1] = positions
 
-  phi = ranks.to(dtype).clone()
-  phi -= (n - 1) / 2.0 - 1.0
-  phi /= math.sqrt(n * (n - 1) / 12.0)
+  shift = (n - 1) / 2.0 - 1.0
+  scale = math.sqrt(n * (n - 1) / 12.0)
+  phi0 = (ranks0.to(dtype) - shift) / scale
+  phi1 = (ranks1.to(dtype) - shift) / scale
 
   outer_iter, outer_eps, outer_abs_err = 1, 1.0, 1.0
   while outer_iter <= outer_iter_max and outer_abs_err > outer_abs_tol:
     inner_iter, inner_eps, inner_abs_err = 1, 1.0, 1.0
     while inner_iter <= inner_iter_max and inner_abs_err > inner_abs_tol:
-      phi[:, 1] = _cef(phi[:, 0], ind[:, 1], ranks[:, 1], wl)
-      phi[:, 1] = phi[:, 1] - phi[:, 1].sum() / n
-      phi[:, 1] = phi[:, 1] / ((phi[:, 1] ** 2).sum() / (n - 1)).sqrt()
+      v = _cef(phi0, ind1, ranks1, wl)
+      v = v - v.sum() / n
+      phi1 = v / ((v**2).sum() / (n - 1)).sqrt()
       prev = inner_eps
-      inner_eps = ((phi[:, 1] - phi[:, 0]) ** 2).sum().item() / n
+      inner_eps = ((phi1 - phi0) ** 2).sum().item() / n
       inner_abs_err = abs(prev - inner_eps)
       inner_iter += 1
-    phi[:, 0] = _cef(phi[:, 1], ind[:, 0], ranks[:, 0], wl)
-    phi[:, 0] = phi[:, 0] - phi[:, 0].sum() / n
-    phi[:, 0] = phi[:, 0] / ((phi[:, 0] ** 2).sum() / (n - 1)).sqrt()
+    v = _cef(phi1, ind0, ranks0, wl)
+    v = v - v.sum() / n
+    phi0 = v / ((v**2).sum() / (n - 1)).sqrt()
     prev = outer_eps
-    outer_eps = ((phi[:, 1] - phi[:, 0]) ** 2).sum().item() / n
+    outer_eps = ((phi1 - phi0) ** 2).sum().item() / n
     outer_abs_err = abs(prev - outer_eps)
     outer_iter += 1
 
-  return phi
+  return torch.stack([phi0, phi1], dim=1)
 
 
 def _pearson_cor(x: Tensor) -> Tensor:
@@ -181,12 +187,17 @@ def _pairwise_mcor(x: Tensor) -> float:
 
 
 def _chol22(B: Tensor) -> Tensor:
-  """Cholesky factor of a 2x2 SPD matrix; lower-triangular."""
-  rB = torch.zeros_like(B)
-  rB[0, 0] = B[0, 0].sqrt()
-  rB[1, 0] = B[1, 0] / rB[0, 0]
-  rB[1, 1] = (B[1, 1] - rB[1, 0] ** 2).sqrt()
-  return rB
+  """Cholesky factor of a 2x2 SPD matrix; lower-triangular.
+
+  Assembled with one ``stack`` rather than four writes into a zero matrix:
+  each of those was a kernel launch for a single element, and on a device
+  the launches cost more than the arithmetic.
+  """
+  a = B[0, 0].sqrt()
+  b = B[1, 0] / a
+  c = (B[1, 1] - b**2).sqrt()
+  zero = torch.zeros((), dtype=B.dtype, device=B.device)
+  return torch.stack([torch.stack([a, zero]), torch.stack([b, c])])
 
 
 def _select_bandwidth_constant(z: Tensor) -> Tensor:
@@ -212,8 +223,17 @@ def _fit_local_likelihood_constant(
   vectorized over all grid points at once (the per-grid-point ``for`` loop
   in C++ becomes a single broadcast).
   """
-  irB = torch.linalg.inv(_chol22(B))
-  det_irB = torch.linalg.det(irB)
+  # Closed forms rather than `torch.linalg.inv` / `det`: the factor is 2x2
+  # lower-triangular, and `inv` dispatches to cuSOLVER and reads its `info`
+  # back to the host -- a device synchronization for a four-element matrix.
+  rB = _chol22(B)
+  ra, rb, rc = rB[0, 0], rB[1, 0], rB[1, 1]
+  ia = ra.reciprocal()
+  ic = rc.reciprocal()
+  ib = -rb * ia * ic
+  zero = torch.zeros((), dtype=B.dtype, device=B.device)
+  irB = torch.stack([torch.stack([ia, zero]), torch.stack([ib, ic])])
+  det_irB = ia * ic
   z_dec = (irB @ z.T).T  # (m², 2)
   z_data_dec = (irB @ z_data.T).T  # (n, 2)
   zz = z_data_dec.unsqueeze(0) - z_dec.unsqueeze(1)  # (m², n, 2)
@@ -282,11 +302,11 @@ def fit_tll_constant(
   # storage grid is the unclipped linspace(0, 1, m) — the resulting
   # densities at u=0/1 are stored at z=±3.25 (same trick as C++).
   grid_points = InterpolationGrid2D.make_grid_points(
-    grid_type, grid_size, dtype=dtype
-  ).to(device=device)
+    grid_type, grid_size, dtype=dtype, device=device
+  )
   kde_points = InterpolationGrid2D.make_kde_eval_points(
-    grid_type, grid_size, dtype=dtype
-  ).to(device=device)
+    grid_type, grid_size, dtype=dtype, device=device
+  )
 
   # Expand grid (row-major matches the C++ Eigen::Map<...>().transpose()
   # reshape in TllBicop::fit at the values-assembly step).

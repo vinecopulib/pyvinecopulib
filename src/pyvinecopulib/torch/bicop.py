@@ -217,8 +217,8 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       )
     m = values_np.shape[0]
     grid_points = InterpolationGrid2D.make_grid_points(
-      "normal", m, dtype=dtype
-    ).to(device=device)
+      "normal", m, dtype=dtype, device=device
+    )
     values = torch.as_tensor(values_np, dtype=dtype, device=device)
     # The grid stored on cop is already normalized; skip renormalization
     # to avoid drifting away from the reference ``Bicop`` values.

@@ -8,6 +8,7 @@ same partial-cell handling as the C++ implementation.
 from __future__ import annotations
 
 import math
+from typing import Optional
 
 import torch
 from torch import Tensor
@@ -26,6 +27,10 @@ from ._batched import (
   _trim,
 )
 
+
+#: Above this grid side the passes below stay on the device: the launch
+#: overhead they save no longer outweighs moving the grid to the host.
+_HOST_NORMALIZE_MAX_M: int = 256
 
 _SQRT_2 = math.sqrt(2.0)
 # u_lo = Phi(-3.25); the lower end of the "effective" support that the C++
@@ -124,7 +129,10 @@ class InterpolationGrid2D(torch.nn.Module):
 
   @staticmethod
   def make_grid_points(
-    grid_type: str, m: int, dtype: torch.dtype = torch.float64
+    grid_type: str,
+    m: int,
+    dtype: torch.dtype = torch.float64,
+    device: Optional[torch.device] = None,
   ) -> Tensor:
     r"""Builds the storage grid for a kernel-style bicop on ``[0, 1]^2``.
 
@@ -160,9 +168,13 @@ class InterpolationGrid2D(torch.nn.Module):
         f"grid_type must be one of {GRID_TYPES}; got {grid_type!r}"
       )
     if grid_type == "linear":
-      return torch.linspace(0.0, 1.0, m, dtype=dtype)
+      return torch.linspace(0.0, 1.0, m, dtype=dtype, device=device)
     z = torch.linspace(
-      -_NORMAL_GRID_Z_LIMIT, _NORMAL_GRID_Z_LIMIT, m, dtype=dtype
+      -_NORMAL_GRID_Z_LIMIT,
+      _NORMAL_GRID_Z_LIMIT,
+      m,
+      dtype=dtype,
+      device=device,
     )
     grid = 0.5 * (1.0 + torch.erf(z / _SQRT_2))
     grid[0] = 0.0
@@ -171,7 +183,10 @@ class InterpolationGrid2D(torch.nn.Module):
 
   @staticmethod
   def make_kde_eval_points(
-    grid_type: str, m: int, dtype: torch.dtype = torch.float64
+    grid_type: str,
+    m: int,
+    dtype: torch.dtype = torch.float64,
+    device: Optional[torch.device] = None,
   ) -> Tensor:
     """U-space points used by the TLL KDE evaluator.
 
@@ -192,10 +207,14 @@ class InterpolationGrid2D(torch.nn.Module):
       )
     if grid_type == "normal":
       z = torch.linspace(
-        -_NORMAL_GRID_Z_LIMIT, _NORMAL_GRID_Z_LIMIT, m, dtype=dtype
+        -_NORMAL_GRID_Z_LIMIT,
+        _NORMAL_GRID_Z_LIMIT,
+        m,
+        dtype=dtype,
+        device=device,
       )
       return 0.5 * (1.0 + torch.erf(z / _SQRT_2))
-    return torch.linspace(0.0, 1.0, m, dtype=dtype).clamp(
+    return torch.linspace(0.0, 1.0, m, dtype=dtype, device=device).clamp(
       _NORMAL_GRID_U_LO, 1.0 - _NORMAL_GRID_U_LO
     )
 
@@ -232,20 +251,32 @@ class InterpolationGrid2D(torch.nn.Module):
     m = self.grid_points.shape[0]
     if max_iter < 1 or m < 2:
       return
+    # A storage grid is `m x m` with `m` in the tens, and this runs up to
+    # `max_iter` passes of a dozen reductions over it. On an accelerator that
+    # is a few hundred kernel launches to move a few thousand numbers, which
+    # costs far more than the arithmetic; below `_HOST_NORMALIZE_MAX_M` the
+    # round trip to the host is cheaper than the launches it saves.
+    values, w = self.values, self.trap_weights
+    on_host = values.device.type != "cpu" and m <= _HOST_NORMALIZE_MAX_M
+    if on_host:
+      values, w = values.cpu(), w.cpu()
+
     tol, min_mass = 1e-10, 1e-20
-    w = self.trap_weights
     for _ in range(max_iter):
-      vt = self.values.t().contiguous()
-      r = (self.values @ w).clamp_min(min_mass)
+      vt = values.t().contiguous()
+      r = (values @ w).clamp_min(min_mass)
       c = (vt @ w).clamp_min(min_mass)
       err = torch.maximum((r - 1.0).abs().max(), (c - 1.0).abs().max())
       if bool(err < tol):
         break
-      r2 = (self.values @ (w / c)).clamp_min(min_mass)
+      r2 = (values @ (w / c)).clamp_min(min_mass)
       c2 = (vt @ (w / r)).clamp_min(min_mass)
       sr = (r * r2).sqrt().reciprocal()
       sc = (c * c2).sqrt().reciprocal()
-      self.values.mul_(sr.unsqueeze(-1)).mul_(sc)
+      values.mul_(sr.unsqueeze(-1)).mul_(sc)
+
+    if on_host:
+      self.values.copy_(values.to(self.values.device))
 
   @torch.no_grad()
   def flip(self) -> None:
