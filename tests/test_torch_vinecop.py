@@ -195,14 +195,12 @@ def test_independent_vine_short_circuits(batched: bool) -> None:
   np.testing.assert_allclose(
     bc.rosenblatt(u_t, batched=batched).numpy(), u, atol=1e-10, rtol=1e-10
   )
-  # inverse_rosenblatt with batched=True now raises; only check batched=False.
-  if not batched:
-    np.testing.assert_allclose(
-      bc.inverse_rosenblatt(u_t, batched=batched).numpy(),
-      u,
-      atol=1e-10,
-      rtol=1e-10,
-    )
+  np.testing.assert_allclose(
+    bc.inverse_rosenblatt(u_t, batched=batched).numpy(),
+    u,
+    atol=1e-10,
+    rtol=1e-10,
+  )
 
 
 @pytest.mark.parametrize("batched", [False, True])
@@ -1000,3 +998,39 @@ def test_discrete_vine_round_trips_through_pickle() -> None:
   assert clone.pair_var_types(0, 0) == bc.pair_var_types(0, 0)
   u_t = torch.from_numpy(u)
   np.testing.assert_array_equal(clone.pdf(u_t).numpy(), bc.pdf(u_t).numpy())
+
+
+def test_compile_flag_defaults_off_and_survives_a_round_trip() -> None:
+  """`compile_cascades` is off unless asked for, and is a cache, not state."""
+  u_fit = _simulate(d=4, n=400, seed=71)
+  cop_tll = _fit_tll_vine(u_fit)
+  bc = TorchVinecop.from_vinecop(cop_tll)
+  assert bc.compile_cascades is False
+  assert TorchVinecop.from_data(
+    torch.from_numpy(u_fit), controls=FitControlsTorchVinecop(compile=True)
+  ).compile_cascades
+
+  bc.compile_cascades = True
+  # Nothing is compiled until a cascade runs, so this round-trips either way.
+  again = pickle.loads(pickle.dumps(bc))
+  assert again.compile_cascades is True
+  torch.testing.assert_close(
+    again.pdf(torch.from_numpy(_eval_grid(64, d=4, seed=72)), batched=False),
+    bc.pdf(torch.from_numpy(_eval_grid(64, d=4, seed=72)), batched=False),
+    atol=0.0,
+    rtol=0.0,
+  )
+
+
+@pytest.mark.compile
+@pytest.mark.parametrize("op", ("pdf", "rosenblatt", "inverse_rosenblatt"))
+def test_compiled_cascades_match_eager(op: str) -> None:
+  """Inductor fuses the cascade; it does not change what the cascade computes."""
+  u_fit = _simulate(d=4, n=400, seed=73)
+  bc = TorchVinecop.from_vinecop(_fit_tll_vine(u_fit))
+  u_t = torch.from_numpy(_eval_grid(128, d=4, seed=74))
+  eager = getattr(bc, op)(u_t, batched=True)
+  bc.compile_cascades = True
+  torch.testing.assert_close(
+    getattr(bc, op)(u_t, batched=True), eager, atol=1e-12, rtol=1e-12
+  )

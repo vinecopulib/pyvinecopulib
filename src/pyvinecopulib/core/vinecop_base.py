@@ -224,6 +224,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   #: Lazily-built grid-batched state (see :meth:`_build_batched`); ``None`` until
   #: the first batched call. Subclasses invalidate it on device moves.
   _batched: Any
+  #: Array namespace of this vine's working arrays; ``None`` until resolved.
+  _xp: Any
   _var_types: tuple[str, ...]
   _n_discrete: int
   #: Variable index -> its offset within the compact layout's left-limit block;
@@ -289,6 +291,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     self.inverse_order = tuple(inv)
     self._cond_pos_cache = {}
     self._batched = None
+    self._xp = None
     self._bind_var_types(var_types)
 
   def _bind_var_types(self, var_types: Optional[list[str]]) -> None:
@@ -390,7 +393,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         If ``u`` is not 2-d or its column count matches no accepted layout.
     """
     ua: Any = u
-    xp = array_namespace(ua)
+    xp = self._namespace(ua)
     return cast(ArrayT, trim(xp, self._layout(ua, name, values_only)))
 
   def _layout(self, ua: Any, name: str, values_only: bool) -> Any:
@@ -882,7 +885,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     array, shape (n,), dtype float
         Joint density values.
     """
-    xp = array_namespace(u)
+    xp = self._namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
     if trunc_lvl == 0:
@@ -937,7 +940,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     array, shape (n, d), dtype float
         Dependent uniforms in ``[1e-10, 1 - 1e-10]``.
     """
-    xp = array_namespace(u)
+    xp = self._namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
     order, inv = self.order, self.inverse_order
@@ -975,7 +978,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     array, shape (n, d), dtype float
         Independent uniforms in ``[1e-10, 1 - 1e-10]``.
     """
-    xp = array_namespace(u)
+    xp = self._namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
     order, inv = self.order, self.inverse_order
@@ -1003,6 +1006,33 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     return trim(xp, out)
 
   # --- batched dispatch ------------------------------------------------- #
+  def _namespace(self, a: Any) -> Any:
+    """The array namespace of this vine's working arrays, resolved once.
+
+    :meth:`_prep` coerces every input to the vine's own array type, so the
+    namespace is a property of the vine rather than of the call. Resolving it
+    per call would put a type-dispatch table walk inside each cascade, which a
+    tracing compiler then has to trace through -- ``array_namespace`` is
+    memoized on the type, but the memo is itself Python that ends up in the
+    graph. Every entry point resolves it through :meth:`_prep`, which runs
+    before the cascade, so by the time a cascade asks it is already answered.
+
+    Parameters
+    ----------
+    a : array
+        Any array already coerced to the working type.
+
+    Returns
+    -------
+    module
+        The array-API namespace for ``a``.
+    """
+    xp = self._xp
+    if xp is None:
+      xp = array_namespace(a)
+      object.__setattr__(self, "_xp", xp)
+    return xp
+
   def _resolve_batched(
     self, requested: Optional[bool], x: Optional[Any]
   ) -> bool:
