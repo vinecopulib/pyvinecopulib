@@ -279,3 +279,24 @@ def test_vinedist_matches_cpu(device: str) -> None:
   assert np.isfinite(b).all()
   np.testing.assert_allclose(b, a, rtol=1e-11, atol=1e-11)
   assert_on_device(got, device)
+
+
+@pytest.mark.compile
+def test_compiled_output_survives_the_next_call(
+  device: str, cpp_vine: pv.Vinecop, u_eval: np.ndarray
+) -> None:
+  """A returned density is the caller's, not a buffer the next call reuses.
+
+  On CUDA the compiled cascade replays as one graph, whose result lands in a
+  buffer the next replay overwrites -- so holding two results, as dividing one
+  density by another does, has to keep working.
+  """
+  vine = TorchVinecop.from_vinecop(cpp_vine, device=torch.device(device))
+  a = torch.as_tensor(u_eval, device=device)
+  b = torch.as_tensor(_u(5, 400, 9), device=device)
+  eager_a, eager_b = vine.pdf(a).clone(), vine.pdf(b).clone()
+  vine.compile_cascades = True
+  held = vine.pdf(a)
+  later = vine.pdf(b)
+  np.testing.assert_allclose(_np(held), _np(eager_a), rtol=1e-12, atol=1e-13)
+  np.testing.assert_allclose(_np(later), _np(eager_b), rtol=1e-12, atol=1e-13)

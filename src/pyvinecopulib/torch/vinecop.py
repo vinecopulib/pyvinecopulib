@@ -558,9 +558,38 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       return base
     fn = self._compiled.get(name)
     if fn is None:
-      fn = torch.compile(base, dynamic=False)
+      fn = self._compile_cascade(base)
       self._compiled[name] = fn
     return fn
+
+  def _compile_cascade(self, base: Any) -> Any:
+    """Compile one cascade, on CUDA through CUDA graphs.
+
+    ``reduce-overhead`` replays the whole cascade as one graph, which is worth
+    up to another 2.5x on top of plain compilation where the launch count is
+    what binds -- but it writes its result into a buffer the next replay
+    reuses, so what comes back is copied out before the caller sees it. That
+    copy is one row-length tensor against a cascade of hundreds of kernels.
+
+    Parameters
+    ----------
+    base : callable
+        The uncompiled cascade.
+
+    Returns
+    -------
+    callable
+        The compiled cascade, with the same signature.
+    """
+    if self._ref_tensor().device.type != "cuda":
+      return torch.compile(base, dynamic=False)
+    inner = torch.compile(base, dynamic=False, mode="reduce-overhead")
+
+    def graphed(u: Tensor) -> Tensor:
+      torch.compiler.cudagraph_mark_step_begin()
+      return cast(Tensor, inner(u)).clone()
+
+    return graphed
 
   def _pdf_batched(self, u: Tensor) -> Tensor:
     return cast(Tensor, self._cascade("_pdf_batched")(u))
