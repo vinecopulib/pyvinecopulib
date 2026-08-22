@@ -25,6 +25,7 @@ import torch
 from torch import Tensor
 
 from ..core._trim import _TRIM_LO, trim_bounds
+from ..core.vinecop_base import _NotBatchable
 
 #: Guard on a conditional total mass, so a zero-mass grid line cannot 0/0.
 _MIN_MASS: float = 1e-20
@@ -820,6 +821,67 @@ class BatchedWave(torch.nn.Module):
     hfunc1.index_copy_(0, self.out_hfunc1, h)
 
 
+def _shared_grid(tvc, trunc_lvl: int, d: int):
+  """The grid every pair stacks on, plus an independence pair built on it.
+
+  ``TorchBicop`` gives an independence pair a 2x2 sentinel grid and no prefix
+  tables, because none of its own evaluations read either -- every method
+  short-circuits on ``is_indep``. A stacked level does read them: ``torch.stack``
+  needs one shape across the level, and one pair without tables drops the whole
+  level to the on-the-fly path. So the bake substitutes an independence density
+  built on the shared grid, which is a real ``InterpolationGrid2D`` rather than
+  a hand-derived table, so it cannot drift from what the pairs beside it do.
+
+  Parameters
+  ----------
+  tvc : TorchVinecop
+      The vine being baked.
+  trunc_lvl, d : int
+      Its truncation level and dimension.
+
+  Returns
+  -------
+  tuple
+      ``(grid_points, is_linear, values, sy, sx)`` -- the shared grid and the
+      independence substitute for it.
+
+  Raises
+  ------
+  _NotBatchable
+      If two pairs that are not independence copulas disagree on the grid.
+  """
+  # Deferred: `_interp` imports the kernels in this module, so the dependency
+  # only goes the other way at call time.
+  from ._interp import InterpolationGrid2D
+
+  ref = None
+  for t in range(trunc_lvl):
+    for e in range(d - t - 1):
+      bc = tvc._pair_module(t, e)
+      if bc.is_indep:
+        continue
+      if ref is None:
+        ref = bc
+      elif bc.interp_grid.values.shape != ref.interp_grid.values.shape:
+        raise _NotBatchable(
+          "batched path requires one shared grid: pair copulas differ in grid "
+          f"size ({tuple(ref.interp_grid.values.shape)} vs "
+          f"{tuple(bc.interp_grid.values.shape)})."
+        )
+  if ref is None:
+    ref = tvc._pair_module(0, 0)
+  gp = ref.interp_grid.grid_points
+  m = int(gp.shape[0])
+  flat = InterpolationGrid2D(
+    grid_points=gp,
+    values=torch.ones((m, m), dtype=gp.dtype, device=gp.device),
+    norm_maxiter=0,
+    is_linear=ref.interp_grid._is_linear,
+  )
+  sy, sx, _ = flat.build_caches()
+  return gp, bool(ref.interp_grid._is_linear), flat.values, sy, sx
+
+
 class BatchedVine(torch.nn.Module):
   """All tree levels of a :class:`TorchVinecop`, stacked and pre-baked.
 
@@ -888,12 +950,11 @@ class BatchedVine(torch.nn.Module):
     # Pull a reference tensor to get device.
     device = tvc._ref_tensor().device
 
-    # The grid is shared by all pairs (built once via
-    # `InterpolationGrid2D.make_grid_points`).
-    grid_points = tvc._pair_module(0, 0).interp_grid.grid_points
-    # The grid type is also shared: all pair-copulas in a TorchVinecop come
-    # from the same fit pipeline, so they all use the same storage grid.
-    is_linear = bool(tvc._pair_module(0, 0).interp_grid._is_linear)
+    # Every pair that models something shares one grid, since they come from
+    # the same fit; an independence pair does not, and is substituted.
+    grid_points, is_linear, flat_v, flat_sy, flat_sx = _shared_grid(
+      tvc, trunc_lvl, d
+    )
 
     levels: list[BatchedTreeLevel] = []
     for t in range(trunc_lvl):
@@ -913,9 +974,13 @@ class BatchedVine(torch.nn.Module):
         bc = tvc._pair_module(t, e)
         m = int(s.min_array(t, e))
         sarr = int(s.struct_array(t, e, natural_order=True))
-        vals.append(bc.interp_grid.values)
-        if bc._sy is None:
+        if bc.is_indep:
+          vals.append(flat_v)
+          sy_list.append(flat_sy)
+          sy_t_list.append(flat_sx.t())
+        elif bc._sy is None:
           all_have_cache = False
+          vals.append(bc.interp_grid.values)
           sy_list.append(None)
           sy_t_list.append(None)
         else:
@@ -923,6 +988,7 @@ class BatchedVine(torch.nn.Module):
           # grad bakes its tables in-graph -- `_ensure_batched` re-bakes on a
           # grad-signature change, which is what makes that reachable.
           sy, sx, _ = bc._tables()
+          vals.append(bc.interp_grid.values)
           sy_list.append(sy)
           sy_t_list.append(sx.t())
         is_indep.append(bool(bc.is_indep))
@@ -969,13 +1035,18 @@ class BatchedVine(torch.nn.Module):
         bc = tvc._pair_module(tree, var)
         mv = int(s.min_array(tree, var))
         sarr = int(s.struct_array(tree, var, natural_order=True))
-        w_vals.append(bc.interp_grid.values)
-        if bc._sy is None:
+        if bc.is_indep:
+          w_vals.append(flat_v)
+          w_sy.append(flat_sy)
+          w_sx.append(flat_sx)
+        elif bc._sy is None:
           w_has_cache = False
+          w_vals.append(bc.interp_grid.values)
           w_sy.append(None)
           w_sx.append(None)
         else:
           tbl = bc._tables()
+          w_vals.append(bc.interp_grid.values)
           w_sy.append(tbl[0])
           w_sx.append(tbl[1])
         w_indep.append(bool(bc.is_indep))

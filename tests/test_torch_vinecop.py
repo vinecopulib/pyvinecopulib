@@ -1040,3 +1040,106 @@ def test_compiled_cascades_match_eager(op: str) -> None:
   torch.testing.assert_close(
     getattr(bc, op)(u_t, batched=True), eager, atol=1e-12, rtol=1e-12
   )
+
+
+def test_pickles_after_an_evaluation() -> None:
+  """Evaluating first must not make a vine unpicklable.
+
+  The cascades memoize their array namespace -- a module, which no pickle can
+  carry -- so the state has to drop it. Pickling before the first call cannot
+  see this, which is what every other pickle test here does.
+  """
+  cop_tll = _fit_tll_vine(_simulate(d=4, n=400, seed=81))
+  bc = TorchVinecop.from_vinecop(cop_tll)
+  u_t = torch.from_numpy(_eval_grid(64, d=4, seed=82))
+  bc.pdf(u_t)
+  again = pickle.loads(pickle.dumps(bc))
+  torch.testing.assert_close(again.pdf(u_t), bc.pdf(u_t), atol=0.0, rtol=0.0)
+
+
+@pytest.mark.parametrize("op", ("pdf", "rosenblatt", "inverse_rosenblatt"))
+def test_batched_handles_a_vine_mixing_indep_and_tll(op: str) -> None:
+  """An independence pair has its own 2x2 grid; the level still stacks.
+
+  `TorchBicop` gives an independence copula a two-point sentinel grid and no
+  prefix tables, because none of its own methods read either. Stacking a tree
+  level reads both, so the bake substitutes an independence density built on
+  the shared grid -- otherwise a vine whose fit chose `indep` anywhere raises
+  from `torch.stack`, which is most vines.
+  """
+  rng = np.random.RandomState(83)
+  base = rng.normal(size=800)
+  x = np.column_stack(
+    [
+      0.95 * base + 0.05 * rng.normal(size=800),
+      0.95 * base + 0.05 * rng.normal(size=800),
+      rng.normal(size=800),
+      rng.normal(size=800),
+    ]
+  )
+  u = pv.to_pseudo_obs(x)
+  cop = pv.Vinecop.from_data(
+    u,
+    controls=pv.FitControlsVinecop(
+      family_set=[pv.BicopFamily.tll, pv.BicopFamily.indep]
+    ),
+  )
+  fams = {
+    cop.get_pair_copula(t, e).family
+    for t in range(cop.trunc_lvl)
+    for e in range(cop.dim - 1 - t)
+  }
+  assert {pv.BicopFamily.tll, pv.BicopFamily.indep} <= fams
+
+  bc = TorchVinecop.from_vinecop(cop)
+  u_t = torch.from_numpy(u[:32])
+  torch.testing.assert_close(
+    getattr(bc, op)(u_t, batched=True),
+    getattr(bc, op)(u_t, batched=False),
+    atol=0.0,
+    rtol=0.0,
+  )
+
+
+@pytest.mark.parametrize("first", ["sample", "cdf", "inverse_rosenblatt"])
+def test_a_no_grad_cascade_does_not_detach_the_bake(first: str) -> None:
+  """`sample` / `cdf` / the inverse evaluate under `no_grad`; `pdf` still fits.
+
+  Those three bake the stacked grids inside `torch.no_grad()`, which copies
+  them detached while the grids themselves still track grad -- so the flags
+  the re-bake watches do not change and the detached copy would be kept.
+  """
+  cop_tll = _fit_tll_vine(_simulate(d=4, n=400, seed=84))
+  bc = TorchVinecop.from_vinecop(cop_tll)
+  values = bc._pair_module(0, 0).interp_grid.values
+  values.requires_grad_(True)
+  u_t = torch.from_numpy(_eval_grid(32, d=4, seed=85))
+  if first == "sample":
+    bc.sample(8, batched=True)
+  elif first == "cdf":
+    bc.cdf(u_t, N=64, batched=True)
+  else:
+    bc.inverse_rosenblatt(u_t, batched=True)
+  grad = torch.autograd.grad(bc.pdf(u_t, batched=True).sum(), values)[0]
+  assert torch.isfinite(grad).all()
+  assert grad.abs().sum() > 0
+
+
+@pytest.mark.parametrize("value", [0.0, 1.0])
+def test_batched_inverse_matches_at_the_unit_square_boundary(
+  value: float,
+) -> None:
+  """The waves agree with the per-edge cascade at the trimmed boundary too.
+
+  Random interior points exercise neither clamp, and the two paths trim in
+  different places -- the vine trims its input, each pair trims again.
+  """
+  cop_tll = _fit_tll_vine(_simulate(d=5, n=600, seed=86))
+  bc = TorchVinecop.from_vinecop(cop_tll)
+  u_t = torch.full((16, 5), value, dtype=torch.float64)
+  torch.testing.assert_close(
+    bc.inverse_rosenblatt(u_t, batched=True),
+    bc.inverse_rosenblatt(u_t, batched=False),
+    atol=0.0,
+    rtol=0.0,
+  )

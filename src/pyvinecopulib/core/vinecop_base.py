@@ -1033,6 +1033,25 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       object.__setattr__(self, "_xp", xp)
     return xp
 
+  def __getstate__(self) -> dict:
+    """The picklable state: everything but the resolved array namespace.
+
+    :meth:`_namespace` memoizes a *module*, which no pickle can carry, so it
+    is dropped and re-resolved on first use. Nothing else about the vine
+    depends on it having been resolved.
+
+    Returns
+    -------
+    dict
+        The instance state, with the namespace memo cleared.
+    """
+    # `object.__getstate__` answers `None` for an empty instance; every
+    # concrete vine has state, so this only keeps the type honest.
+    raw = cast("dict[str, Any]", super().__getstate__() or {})
+    state = dict(raw)
+    state["_xp"] = None
+    return state
+
   def _resolve_batched(
     self, requested: Optional[bool], x: Optional[Any]
   ) -> bool:
