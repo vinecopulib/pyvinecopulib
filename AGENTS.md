@@ -342,10 +342,10 @@ parity with the C++ cascade, pickling stability).
 ### Which CI leg covers what
 
 Local runs cannot substitute for the matrix, so know what each leg does
-before deciding a change is verified. The 15 `build` legs run
+before deciding a change is verified. The 10 `build` legs run
 `pytest tests/` under cibuildwheel with only `pytest-cov` and
 `pytest-rerunfailures` installed, so every test guarded by
-`importorskip` **skips** there. The 15 `install_and_unit_test` legs sync
+`importorskip` **skips** there. The 12 `install_and_unit_test` legs sync
 `--extra examples --extra sklearn --extra torch`, install the wheel, and
 run both `pytest tests/` and the notebooks — that is the matrix covering
 the optional extras. `gh pr checks` and

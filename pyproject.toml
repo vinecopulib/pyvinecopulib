@@ -23,7 +23,7 @@ authors = [
 description = "A python interface to vinecopulib"
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
   'numpy>=2.0',
   'matplotlib>=3.0',
@@ -43,7 +43,6 @@ classifiers = [
   'Topic :: Scientific/Engineering',
   'Topic :: Scientific/Engineering :: Mathematics',
   'Programming Language :: C++',
-  'Programming Language :: Python :: 3.10',
   'Programming Language :: Python :: 3.11',
   'Programming Language :: Python :: 3.12',
   'Programming Language :: Python :: 3.13',
@@ -61,10 +60,12 @@ torch = [
   "torch>=2.0",
 ]
 scipy = [
-  # 1.15 is the floor for the modern `scipy.stats` distribution classes that
-  # `pyvinecopulib.margins.as_margin` adapts; the parametric margins use the
-  # legacy `rv_continuous.fit` surface, which is much older.
-  "scipy>=1.15",
+  # 1.16 is the first release to require Python 3.11, so it is the floor this
+  # package's own floor admits; it carries the modern `scipy.stats`
+  # distribution classes that `pyvinecopulib.margins.as_margin` adapts. The
+  # parametric margins still go through the legacy `rv_continuous.fit`
+  # surface, which is much older.
+  "scipy>=1.16",
 ]
 openturns = [
   # An extra rather than a dependency on two counts: OpenTURNS is LGPL where
@@ -160,7 +161,7 @@ exclude = ["lib", "src/pyvinecopulib/**/__init__.pyi", "src/pyvinecopulib/__init
 include = ["src", "tests"]
 
 [tool.ty.environment]
-python-version = "3.10"
+python-version = "3.11"
 
 [tool.ty.rules]
 unresolved-import = "error"

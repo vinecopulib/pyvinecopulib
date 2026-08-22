@@ -28,10 +28,10 @@ from pyvinecopulib.margins import (
 
 scipy_stats = pytest.importorskip("scipy.stats")
 
-# `scipy.stats.Binomial` is the new-API *discrete* class, added in SciPy 1.17.
-# SciPy 1.17 requires Python >= 3.11, so a 3.10 environment resolves 1.15 or
-# 1.16, which ship `Normal` but no discrete counterpart. Skips are applied per
-# parameter, so the legacy half of each parametrized test stays live.
+# `scipy.stats.Binomial` is the new-API *discrete* class, added in SciPy 1.17,
+# one release above the `[scipy]` extra's floor -- 1.16 ships `Normal` but no
+# discrete counterpart. Skips are applied per parameter, so the legacy half of
+# each parametrized test stays live.
 needs_scipy_discrete = pytest.mark.skipif(
   not hasattr(scipy_stats, "Binomial"),
   reason="scipy.stats.Binomial requires SciPy >= 1.17",

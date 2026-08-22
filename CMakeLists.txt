@@ -98,7 +98,7 @@ endif()
 include(lib/vinecopulib/cmake/findDependencies.cmake REQUIRED)
 
 find_package(
-  Python 3.8 REQUIRED
+  Python 3.11 REQUIRED
   COMPONENTS Interpreter Development.Module
   OPTIONAL_COMPONENTS Development.SABIModule)
 message(STATUS "Python_EXECUTABLE= ${Python_EXECUTABLE}")

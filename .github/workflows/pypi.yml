@@ -25,12 +25,12 @@ permissions:
 env:
   BOOST_VERSION: 1.84.0
   EIGEN_VERSION: 3.4.0
-  EXPECTED_WHEEL_COUNT: 15  # 5 platforms × cp310/cp311/cp312-ABI3
+  EXPECTED_WHEEL_COUNT: 10  # 5 platforms × cp311/cp312-ABI3
 
 jobs:
 
   lint:
-    # Gates the wheel matrix: 15 cibuildwheel legs should not start behind a
+    # Gates the wheel matrix: 10 cibuildwheel legs should not start behind a
     # formatting error. `ty` is not here — it reads the .pyi stubs a build
     # generates, so it stays in `build_sdist` where the editable install exists.
     name: Lint
@@ -62,7 +62,7 @@ jobs:
       fail-fast: false
       matrix:
         # macos-15-intel is the Intel runner, macos-15 is Apple silicon.
-        python: [310, 311, 312]
+        python: [311, 312]
         cfg:
           - {
               os: ubuntu-latest,
@@ -285,7 +285,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: [310, 311, 312, 313, 314]
+        python: [311, 312, 313, 314]
         cfg:
           # macos-15-intel wheels are built + published by the `build` job, but
           # are NOT unit-tested here: PyTorch has no x86_64-macOS wheel, so the
@@ -323,7 +323,7 @@ jobs:
         # own OpenMP runtime, and co-resident with torch's the process dies with
         # SIGSEGV inside `int_on_grid_batched` on every arm64 Python (cp311,
         # cp313 and cp314 measured; the same legs pass without the extra, and
-        # ubuntu and windows pass with it). The adapter is exercised on those ten
+        # ubuntu and windows pass with it). The adapter is exercised on those eight
         # legs; keeping torch on macOS matters more, since torch-vs-C++ parity is
         # a hard guarantee and macOS arm64 is a first-class torch platform.
         shell: bash
