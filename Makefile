@@ -3,12 +3,20 @@
 .DEFAULT_GOAL := help
 
 UV := uv
+# Every `uv run` otherwise re-syncs, which reinstalls the project *with*
+# build isolation and so re-poisons `build/` (see `sync`). The workflow is
+# `make sync` first; CI already sets this for the targets it runs.
+export UV_NO_SYNC := 1
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 sync: ## Install all deps + editable build + pre-commit hooks
-	$(UV) sync --all-extras --group dev --group test --group notebooks
+# `--no-install-project`: `build-dir` is a persistent tree, so a first,
+# build-isolated install of the project bakes that throwaway environment's
+# `ninja` path into `CMakeCache.txt`. The editable rebuild then invokes a
+# binary that no longer exists, and every later import dies in cmake.
+	$(UV) sync --no-install-project --all-extras --group dev --group test --group notebooks
 	$(UV) pip install -e . --no-build-isolation --python .venv
 	$(UV) run pre-commit install
 
