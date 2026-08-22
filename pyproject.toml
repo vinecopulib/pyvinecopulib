@@ -57,7 +57,10 @@ sklearn = [
   "pandas>=2.0",
 ]
 torch = [
-  "torch>=2.0",
+  # 2.2 is the floor for `torch.compiler.cudagraph_mark_step_begin`, which the
+  # compiled cascade calls before each graph replay; `nn.Module.__getstate__`,
+  # which `TorchVinecop` delegates to, needs 2.1.
+  "torch>=2.2",
 ]
 scipy = [
   # 1.16 is the first release to require Python 3.11, so it is the floor this
