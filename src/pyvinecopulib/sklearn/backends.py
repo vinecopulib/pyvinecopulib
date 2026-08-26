@@ -336,7 +336,9 @@ class TorchVinecopBackend(_VinecopBackendBase):
     )
 
   def pdf(self, vine: Any, U: np.ndarray) -> np.ndarray:
-    out = vine.pdf(U, batched=self._effective_controls().batched)
+    # No `batched=`: the vine resolves it per device, which is what every
+    # other call on it does -- `cdf` and `sample` here, and `TorchVinedist`.
+    out = vine.pdf(U)
     return out.detach().cpu().numpy()
 
   def cdf(
@@ -396,10 +398,6 @@ class TorchVinecopBackend(_VinecopBackendBase):
     margin (from ``margins="kde"``, or one the caller passed already fitted) is
     lifted with ``TorchKde1d.from_kde1d``, an exact transfer of the same
     grid.
-
-    One consequence a caller feels: the distribution's ``pdf`` resolves
-    ``batched`` per device rather than reading ``controls.batched``. The two
-    agree to floating point.
 
     Parameters
     ----------

@@ -1,13 +1,18 @@
 #!/usr/bin/env python
-"""Bench TorchVinecop vs pv.Vinecop on pdf / rosenblatt / inverse_rosenblatt.
+"""Bench TorchVinecop against pv.Vinecop on the whole evaluation surface.
 
 For each (n, d) cell in the grid:
   - generate n correlated pseudo-obs of dim d (Gaussian latent),
   - fit a pv.Vinecop with the TLL family (single thread),
   - time pv.Vinecop.<method>(u, num_threads=t) for every t in --threads,
   - time TorchVinecop.<method>(u, ...) for every combination of
-    --devices x --cache x --batched,
+    --devices x --cache x --batched x --compile,
   - report the median wall-clock per call (in milliseconds).
+
+The methods are pdf / rosenblatt / inverse_rosenblatt plus sample and cdf,
+which are the inverse cascade wrapped in a base draw and in a Monte-Carlo
+dominance count respectively -- so they are where a slow inverse shows up in
+practice.
 
 The TorchVinecop CPU runs are pinned to a single torch thread so they
 stay apples-to-apples with the laptop numbers; the C++ side gets swept
@@ -16,11 +21,14 @@ across --threads explicitly.
 Outputs a long-format CSV (one row per timed configuration) to --output
 (default: stdout) with columns:
     method, n, d, backend, threads, device, cache_integrals,
-    batched, grid_type, time_ms
+    batched, compile, grid_type, dtype, time_ms
 
-For C++ rows, device / cache_integrals / batched / grid_type are
-empty (C++ TLL only supports the Phi-spaced grid). For torch rows,
-threads is empty. The torch vines are now built via
+For C++ rows, device / cache_integrals / batched / compile / grid_type
+are empty (C++ TLL only supports the Phi-spaced grid). For torch rows,
+threads is empty. `--compile true` costs tens of seconds of Inductor per
+cell and only applies where `batched` is true, so it is off by default.
+
+The torch vines are built via
 ``TorchVinecop.from_data(u_fit, structure=...)`` so both grid types
 share the same fit path; the structure is the one selected by the C++
 ``pv.Vinecop.from_data(u_fit)`` call so the comparison stays apples-to-
@@ -96,7 +104,25 @@ def _time_repeats(fn, repeats: int, sync=None) -> float:
   return 1000.0 * median(times)
 
 
-METHODS = ("pdf", "rosenblatt", "inverse_rosenblatt")
+#: Timed operations. `sample` takes a draw count instead of data and `cdf` a
+#: Monte-Carlo budget, so each backend builds its own call.
+METHODS = ("pdf", "rosenblatt", "inverse_rosenblatt", "sample", "cdf")
+
+
+def _cpp_call(cop, method: str, u, n: int, threads: int, mc: int):
+  if method == "sample":
+    return lambda: cop.sample(n, num_threads=threads)
+  if method == "cdf":
+    return lambda: cop.cdf(u, N=mc, num_threads=threads)
+  return lambda: getattr(cop, method)(u, num_threads=threads)
+
+
+def _torch_call(vine, method: str, u, n: int, batched: bool, mc: int):
+  if method == "sample":
+    return lambda: vine.sample(n, batched=batched)
+  if method == "cdf":
+    return lambda: vine.cdf(u, N=mc, batched=batched)
+  return lambda: getattr(vine, method)(u, batched=batched)
 
 
 def _bench_cell(
@@ -106,10 +132,12 @@ def _bench_cell(
   devices: list[str],
   caches: list[bool],
   batched_modes: list[bool],
+  compile_modes: list[bool],
   grid_types: list[str],
   dtypes: list[str],
   repeats: int,
   seed: int,
+  mc: int,
 ) -> list[dict]:
   u_fit = _simulate(n=n, d=d, seed=seed)
   ctl = pv.FitControlsVinecop(family_set=[pv.families.tll], num_threads=1)
@@ -122,9 +150,8 @@ def _bench_cell(
 
   # ---- C++ side --------------------------------------------------------
   for method in METHODS:
-    cpp_fn = getattr(cop, method)
     for t in threads:
-      ms = _time_repeats(lambda: cpp_fn(u_eval, num_threads=t), repeats)
+      ms = _time_repeats(_cpp_call(cop, method, u_eval, n, t, mc), repeats)
       rows.append(
         {
           "method": method,
@@ -135,6 +162,7 @@ def _bench_cell(
           "device": "",
           "cache_integrals": "",
           "batched": "",
+          "compile": "",
           "grid_type": "",
           "dtype": "f64",
           "time_ms": ms,
@@ -167,33 +195,35 @@ def _bench_cell(
           if sync is not None:
             sync()
           for method in METHODS:
-            torch_fn = getattr(bc, method)
             for batched in batched_modes:
-              # batched=True is not implemented for inverse_rosenblatt
-              # (the inverse cascade's deps aren't tree-level batchable).
-              # Skip rather than crash so the rest of the sweep proceeds.
-              if method == "inverse_rosenblatt" and batched:
-                continue
-              ms = _time_repeats(
-                lambda fn=torch_fn, u=u_t, b=batched: fn(u, batched=b),
-                repeats,
-                sync=sync,
-              )
-              rows.append(
-                {
-                  "method": method,
-                  "n": n,
-                  "d": d,
-                  "backend": "torch",
-                  "threads": "",
-                  "device": device,
-                  "cache_integrals": str(cache).lower(),
-                  "batched": str(batched).lower(),
-                  "grid_type": grid_type,
-                  "dtype": dtype_name,
-                  "time_ms": ms,
-                }
-              )
+              for compiled in compile_modes:
+                # `compile` wraps the batched cascades, so it is a no-op
+                # without `batched` -- timing it would only duplicate a row.
+                if compiled and not batched:
+                  continue
+                bc.compile_cascades = compiled
+                ms = _time_repeats(
+                  _torch_call(bc, method, u_t, n, batched, mc),
+                  repeats,
+                  sync=sync,
+                )
+                rows.append(
+                  {
+                    "method": method,
+                    "n": n,
+                    "d": d,
+                    "backend": "torch",
+                    "threads": "",
+                    "device": device,
+                    "cache_integrals": str(cache).lower(),
+                    "batched": str(batched).lower(),
+                    "compile": str(compiled).lower(),
+                    "grid_type": grid_type,
+                    "dtype": dtype_name,
+                    "time_ms": ms,
+                  }
+                )
+              bc.compile_cascades = False
           # Free GPU memory before building the next variant
           del bc, u_t
           if sync is not None:
@@ -233,6 +263,13 @@ def main() -> None:
     help="batched=True/False values to sweep (default: false,true).",
   )
   ap.add_argument(
+    "--compile",
+    default="false",
+    type=_parse_bool_list,
+    help="compile_cascades values to sweep (default: false). Each compiled "
+    "cell pays tens of seconds of Inductor; only applies where batched.",
+  )
+  ap.add_argument(
     "--grid-types",
     default="normal,linear",
     type=_parse_str_list,
@@ -245,6 +282,12 @@ def main() -> None:
     help="torch dtypes to sweep: f64, f32 (default: f64). The C++ side is "
     "always double, so its rows are reported as f64.",
   )
+  ap.add_argument(
+    "--mc-samples",
+    default=10000,
+    type=int,
+    help="Monte-Carlo budget for cdf (default: 10000, the library default).",
+  )
   ap.add_argument("--repeats", default=3, type=int)
   ap.add_argument("--seed", default=42, type=int)
   ap.add_argument(
@@ -255,6 +298,14 @@ def main() -> None:
   args = ap.parse_args()
 
   torch.set_num_threads(1)
+
+  if any(args.compile):
+    # Each cell compiles a fresh vine, and torch keeps only
+    # `cache_size_limit` compiled variants of one code object (8 by default),
+    # so a sweep of more than that many cells would silently start measuring
+    # the eager path again. A script may raise the cap; the library may not.
+    torch._dynamo.config.cache_size_limit = 256
+    torch._dynamo.config.accumulated_recompile_limit = 4096
 
   devices = list(args.devices)
   if "cuda" in devices and not torch.cuda.is_available():
@@ -274,6 +325,7 @@ def main() -> None:
     "device",
     "cache_integrals",
     "batched",
+    "compile",
     "grid_type",
     "dtype",
     "time_ms",
@@ -291,10 +343,12 @@ def main() -> None:
         devices=devices,
         caches=args.cache,
         batched_modes=args.batched,
+        compile_modes=args.compile,
         grid_types=args.grid_types,
         dtypes=args.dtypes,
         repeats=args.repeats,
         seed=args.seed,
+        mc=args.mc_samples,
       )
       for row in rows:
         row["time_ms"] = f"{row['time_ms']:.3f}"

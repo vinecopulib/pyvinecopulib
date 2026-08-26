@@ -253,13 +253,14 @@ def test_cached_integrals_smoke() -> None:
     assert (out >= 0.0).all() and (out <= 1.0).all()
 
 
-def test_cached_and_uncached_hinv_agree_exactly() -> None:
-  """``hinv1`` / ``hinv2`` do not read the prefix tables, in either mode.
+def test_cached_and_uncached_hinv_agree() -> None:
+  """``hinv1`` / ``hinv2`` invert the same quadratic in either mode.
 
   Locating the bracketing cell of the inverse needs the conditional cumulative
-  along the whole free axis, which is O(m) to assemble — so there is no O(1)
-  exact lookup to cache, and both modes run the same closed-form inversion of
-  the same quadratic. The two are therefore bit-identical, not merely close.
+  along the whole free axis, so unlike ``hfunc1`` / ``hfunc2`` there is no O(1)
+  exact lookup to cache. What the prefix tables do buy is that cumulative:
+  integration is linear, so blending two of their lines is the same quantity as
+  quadraturing the blended knots, and the two modes differ only in rounding.
   """
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
   u_fit = cop.sample(2000, seeds=[1, 2, 3])
@@ -272,7 +273,7 @@ def test_cached_and_uncached_hinv_agree_exactly() -> None:
   for which in ("hinv1", "hinv2"):
     out_bisect = getattr(bc_bisect, which)(u_t)
     out_cached = getattr(bc_cached, which)(u_t)
-    torch.testing.assert_close(out_cached, out_bisect, atol=0.0, rtol=0.0)
+    torch.testing.assert_close(out_cached, out_bisect, atol=1e-12, rtol=0.0)
 
 
 def test_independent_bicop() -> None:

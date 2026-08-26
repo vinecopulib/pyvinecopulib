@@ -231,7 +231,9 @@ The same factorization backs the PyTorch port
 :class:`pyvinecopulib.torch.TorchVinecop` (every pair copula is a
 :class:`pyvinecopulib.torch.TorchBicop`); its cascade matches the C++
 evaluator byte-for-byte and additionally offers a ``batched=True``
-fast path (one stacked bicop call per tree level).
+fast path, which fires one stacked pair-copula call per group of edges that
+do not depend on each other -- a tree level for ``pdf`` and ``rosenblatt``,
+a level of the dependency graph for ``inverse_rosenblatt``.
 
 
 .. _concepts-simplifying:

@@ -224,6 +224,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   #: Lazily-built grid-batched state (see :meth:`_build_batched`); ``None`` until
   #: the first batched call. Subclasses invalidate it on device moves.
   _batched: Any
+  #: Array namespace of this vine's working arrays; ``None`` until resolved.
+  _xp: Any
   _var_types: tuple[str, ...]
   _n_discrete: int
   #: Variable index -> its offset within the compact layout's left-limit block;
@@ -289,6 +291,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     self.inverse_order = tuple(inv)
     self._cond_pos_cache = {}
     self._batched = None
+    self._xp = None
     self._bind_var_types(var_types)
 
   def _bind_var_types(self, var_types: Optional[list[str]]) -> None:
@@ -390,7 +393,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         If ``u`` is not 2-d or its column count matches no accepted layout.
     """
     ua: Any = u
-    xp = array_namespace(ua)
+    xp = self._namespace(ua)
     return cast(ArrayT, trim(xp, self._layout(ua, name, values_only)))
 
   def _layout(self, ua: Any, name: str, values_only: bool) -> Any:
@@ -882,7 +885,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     array, shape (n,), dtype float
         Joint density values.
     """
-    xp = array_namespace(u)
+    xp = self._namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
     if trunc_lvl == 0:
@@ -915,6 +918,51 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       )
     return pdf
 
+  def _inverse_rosenblatt_batched(self, u: Any) -> Any:
+    """Batched inverse Rosenblatt: one stacked call per dependency wave.
+
+    Bit-identical to :meth:`_inverse_rosenblatt` on a simplified vine: the
+    waves reorder the cells without changing what any one of them computes.
+    The inverse's dependencies do not reduce to tree levels -- a wave holds
+    one cell from almost every tree -- so the grouping is by longest-path
+    level of the static ``(var, tree)`` graph, which the subclass's batched
+    state levels once at bake time. The scratch is flattened to
+    ``((trunc_lvl + 1) * d, n)`` so a cell's slot is one row, and a whole wave
+    is one gather per input and one scatter per output.
+
+    Parameters
+    ----------
+    u : array, shape (n, d), dtype float
+        Prepared independent uniforms.
+
+    Returns
+    -------
+    array, shape (n, d), dtype float
+        Dependent uniforms in ``[1e-10, 1 - 1e-10]``.
+    """
+    xp = self._namespace(u)
+    d, trunc_lvl = self.d, self.trunc_lvl
+    n = u.shape[0]
+    order, inv = self.order, self.inverse_order
+    if trunc_lvl == 0:
+      out = xp.empty((n, d), dtype=u.dtype, device=u.device)
+      for j in range(d):
+        out[:, j] = u[:, order[inv[j]] - 1]
+      return out
+    bv = self._ensure_batched()
+    rows = (trunc_lvl + 1) * d
+    hinv2 = xp.empty((rows, n), dtype=u.dtype, device=u.device)
+    hfunc1 = xp.empty_like(hinv2)
+    for j in range(d):
+      hinv2[min(trunc_lvl, d - j - 1) * d + j, :] = u[:, order[j] - 1]
+    hfunc1[d - 1, :] = hinv2[d - 1, :]
+    for k in range(bv.n_waves):
+      bv.wave(k).apply_to(bv.grid_points, hinv2, hfunc1)
+    out = xp.empty((n, d), dtype=u.dtype, device=u.device)
+    for j in range(d):
+      out[:, j] = hinv2[inv[j], :]
+    return trim(xp, out)
+
   def _rosenblatt_batched(self, u: Any) -> Any:
     """Batched Rosenblatt transform (per-tree-level stacked h-functions).
 
@@ -930,7 +978,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     array, shape (n, d), dtype float
         Independent uniforms in ``[1e-10, 1 - 1e-10]``.
     """
-    xp = array_namespace(u)
+    xp = self._namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
     order, inv = self.order, self.inverse_order
@@ -958,6 +1006,52 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     return trim(xp, out)
 
   # --- batched dispatch ------------------------------------------------- #
+  def _namespace(self, a: Any) -> Any:
+    """The array namespace of this vine's working arrays, resolved once.
+
+    :meth:`_prep` coerces every input to the vine's own array type, so the
+    namespace is a property of the vine rather than of the call. Resolving it
+    per call would put a type-dispatch table walk inside each cascade, which a
+    tracing compiler then has to trace through -- ``array_namespace`` is
+    memoized on the type, but the memo is itself Python that ends up in the
+    graph. Every entry point resolves it through :meth:`_prep`, which runs
+    before the cascade, so by the time a cascade asks it is already answered.
+
+    Parameters
+    ----------
+    a : array
+        Any array already coerced to the working type.
+
+    Returns
+    -------
+    module
+        The array-API namespace for ``a``.
+    """
+    xp = self._xp
+    if xp is None:
+      xp = array_namespace(a)
+      object.__setattr__(self, "_xp", xp)
+    return xp
+
+  def __getstate__(self) -> dict:
+    """The picklable state: everything but the resolved array namespace.
+
+    :meth:`_namespace` memoizes a *module*, which no pickle can carry, so it
+    is dropped and re-resolved on first use. Nothing else about the vine
+    depends on it having been resolved.
+
+    Returns
+    -------
+    dict
+        The instance state, with the namespace memo cleared.
+    """
+    # `object.__getstate__` answers `None` for an empty instance; every
+    # concrete vine has state, so this only keeps the type honest.
+    raw = cast("dict[str, Any]", super().__getstate__() or {})
+    state = dict(raw)
+    state["_xp"] = None
+    return state
+
   def _resolve_batched(
     self, requested: Optional[bool], x: Optional[Any]
   ) -> bool:
@@ -1210,9 +1304,11 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     x : array, shape (n, p), or None, optional
         External covariates (non-simplified vines), else ``None``.
     batched : bool or None, optional
-        Must be ``False`` / ``None``. The inverse cascade has cross-tree
-        dependencies that the per-tree-level wavefront cannot satisfy, so
-        ``batched=True`` raises :exc:`NotImplementedError`.
+        Whether to evaluate whole groups of pair copulas per call rather than
+        one at a time; ``None`` takes the subclass default. The inverse
+        cascade's dependencies run across tree levels, so the groups here are
+        the levels of the dependency graph rather than the trees themselves.
+        Ignored when no batched path is available.
     conditioning_set : list of int or None, optional
         See :meth:`rosenblatt`.
 
@@ -1224,9 +1320,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     Raises
     ------
     NotImplementedError
-        If ``batched`` is ``True``, if ``conditioning_set`` needs a relabeling
-        on a non-simplified vine, or if a pair copula does not implement
-        ``flip``.
+        If ``conditioning_set`` needs a relabeling on a non-simplified vine,
+        or if a pair copula does not implement ``flip``.
     RuntimeError
         If ``conditioning_set`` is inadmissible as a sampling-order tail; see
         :meth:`reorient`.
@@ -1235,14 +1330,13 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     view = self._reoriented(conditioning_set)
     if view is not self:
       return view.inverse_rosenblatt(u, x=x, batched=batched)
-    if batched:
-      raise NotImplementedError(
-        "batched=True is not implemented for inverse_rosenblatt. The inverse "
-        "cascade has a 2-D dependency graph that does not reduce to "
-        "per-tree-level waves. Pass batched=False instead."
-      )
     u_p = self._prep(u, "inverse_rosenblatt", values_only=True)
     with self._eval_context():
+      if self._resolve_batched(batched, x):
+        try:
+          return cast(ArrayT, self._inverse_rosenblatt_batched(u_p))
+        except _NotBatchable:
+          pass
       return cast(ArrayT, self._inverse_rosenblatt(u_p, x))
 
   def sample(
@@ -1253,6 +1347,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     num_threads: int = 1,
     seeds: Optional[list[int]] = None,
     x: Optional[ArrayT] = None,
+    batched: Optional[bool] = None,
   ) -> ArrayT:
     """Simulate ``n`` samples from the fitted copula.
 
@@ -1268,6 +1363,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         RNG seeds forwarded to the subclass's base-uniform draw.
     x : array, shape (n, p), or None, optional
         External covariates for a conditional draw (one row per sample).
+    batched : bool or None, optional
+        Forwarded to :meth:`inverse_rosenblatt`.
 
     Returns
     -------
@@ -1285,7 +1382,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         )
     with self._eval_context():
       base_u = self._sample_uniform(n, qrng, seeds)
-      return self.inverse_rosenblatt(base_u, x=x)
+      return self.inverse_rosenblatt(base_u, x=x, batched=batched)
 
   def sample_conditional(
     self,
@@ -1438,6 +1535,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     seeds: Optional[list[int]] = None,
     x: Optional[ArrayT] = None,
     block_size: int = 4096,
+    batched: Optional[bool] = None,
   ) -> ArrayT:
     """Evaluate the joint CDF at each query row via quasi-Monte-Carlo.
 
@@ -1462,6 +1560,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         different covariate without per-``x`` resampling).
     block_size : int, default=4096
         Query rows processed per iteration (peak-memory control).
+    batched : bool or None, optional
+        Forwarded to :meth:`sample`, which draws the Monte-Carlo sample.
 
     Returns
     -------
@@ -1484,7 +1584,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       prepped: Any = self._prep(u, "cdf")
       # Only the value block enters the dominance count: C(u) is a right limit.
       u_t: Any = prepped[:, : self.d]
-      samples: Any = self.sample(N, qrng=qrng, seeds=seeds)
+      samples: Any = self.sample(N, qrng=qrng, seeds=seeds, batched=batched)
       xp = array_namespace(u_t)
       m = u_t.shape[0]
       out = xp.empty(m, dtype=u_t.dtype, device=u_t.device)

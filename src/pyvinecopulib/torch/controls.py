@@ -119,10 +119,16 @@ default="tau"
   dtype : torch.dtype or None, default=None
       Target torch dtype. ``None`` defaults to ``torch.float64``
       (parity with :class:`~pyvinecopulib.core.Vinecop`).
-  batched : bool, default=False
-      If ``True``, fires a single batched bicop call per tree
-      level. Available for ``pdf`` / ``rosenblatt`` only
-      (``inverse_rosenblatt(batched=True)`` raises).
+  compile : bool, default=False
+      If ``True``, wrap the batched cascades in
+      :func:`torch.compile` with ``dynamic=False``. Inductor fuses the
+      cascade's elementwise chains into a handful of kernels, which is worth
+      a great deal on CUDA -- where the eager cascade is bound by
+      kernel-launch count rather than arithmetic -- and costs a
+      one-off compilation of tens of seconds on the first call at each
+      input shape. Off by default for that reason: a single evaluation is
+      slower compiled than not. Results agree with the eager path to
+      floating point, not exactly.
 
   Notes
   -----
@@ -143,7 +149,7 @@ default="tau"
   cache_integrals: Optional[bool] = None
   device: Optional[Any] = None
   dtype: Optional[Any] = None
-  batched: bool = False
+  compile: bool = False
 
   def __post_init__(self) -> None:
     if self.tree_algorithm not in TREE_ALGORITHMS:

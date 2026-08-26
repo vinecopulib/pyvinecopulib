@@ -20,9 +20,10 @@ The cascade is a direct port of the
 ``Vinecop.pdf()`` / ``Vinecop.rosenblatt()`` /
 ``Vinecop.inverse_rosenblatt()``: dense ``(n, d)`` scratch matrices,
 fixed natural-order traversal, byte-for-byte agreement with
-``Vinecop`` on the same fit. ``pdf`` /
-``rosenblatt`` additionally accept ``batched=True`` to fire one
-stacked bicop call per tree level.
+``Vinecop`` on the same fit. Every cascade additionally accepts
+``batched=True`` to fire one stacked bicop call per group of pair
+copulas -- a tree level for ``pdf`` / ``rosenblatt``, a level of the
+dependency graph for ``inverse_rosenblatt``.
 
 Variables with atoms are supported throughout — declare them with
 ``var_types`` and pass the left-limit columns, as ``Vinecop`` takes them. The
@@ -81,12 +82,12 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   ``hfunc2``. The batched fast path declines on such a vine.
 
   The cascade is a dense ``(n, d)``-scratch port of the ``Vinecop``
-  evaluator, byte-for-byte parity with ``Vinecop``. ``pdf`` /
-  ``rosenblatt`` accept ``batched=True`` to fire a single batched
-  bicop call per tree level. ``inverse_rosenblatt(batched=True)``
-  raises (cross-tree deps in the inverse cascade). The default
-  ``batched=None`` resolves to ``True`` on CUDA (3–7x faster) and
-  ``False`` on CPU.
+  evaluator, byte-for-byte parity with ``Vinecop``. Every cascade accepts
+  ``batched=True`` to fire a single stacked bicop call per group of pair
+  copulas: a tree level for ``pdf`` / ``rosenblatt``, and -- since the
+  inverse's dependencies run across trees -- a level of the dependency
+  graph for ``inverse_rosenblatt``. The default ``batched=None`` resolves
+  to ``True`` on CUDA (3–7x faster) and ``False`` on CPU.
 
   Parameters
   ----------
@@ -146,6 +147,8 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     )
     # `self._batched` (lazy grid-batched state) is initialized to None by
     # `_bind_vine`; `_apply` clears it so device moves re-bake it.
+    self._compile_cascades = False
+    self._compiled: dict[str, Any] = {}
 
   # --------------------------------------------------------------------- #
   # Constructor                                                            #
@@ -452,11 +455,13 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     # Store the continuous grids; `_get_pair_copula` re-wraps a discrete edge,
     # so the ModuleList holds only real nn.Modules.
     modules = [[continuous_view(p) for p in row] for row in pairs]
-    return cls(
+    out = cls(
       pair_copulas=cast("list[list[TorchBicop]]", modules),
       structure=structure,
       var_types=list(var_types) or None,
     )
+    out.compile_cascades = controls.compile
+    return out
 
   # --------------------------------------------------------------------- #
   # Helpers                                                                #
@@ -519,6 +524,104 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     u = torch.as_tensor(u, dtype=ref.dtype, device=ref.device)
     return super()._prep(u, name, values_only=values_only)
 
+  @property
+  def compile_cascades(self) -> bool:
+    """Whether the batched cascades run through :func:`torch.compile`.
+
+    Off by default. Set it at any point -- the compilation is lazy, happens
+    once per cascade and input shape, and only affects how the same cascade is
+    executed, so a vine can be flipped either way between calls.
+    :meth:`from_data` sets it from ``controls.compile``.
+
+    Worth it on CUDA, where the eager cascade is bound by kernel-launch count
+    rather than by arithmetic: Inductor fuses each tree level's elementwise
+    chain into a handful of kernels and replays the whole thing as one CUDA
+    graph. Not worth it for a single evaluation -- the first call at each
+    shape pays tens of seconds of compilation -- and the compiled result
+    agrees with the eager one to floating point rather than exactly.
+
+    One limit to know about: torch caps how many compiled variants of a single
+    code object it keeps (``torch._dynamo.config.cache_size_limit``, 8 by
+    default), and each vine is a variant, as is each input shape. A process
+    that compiles more than that silently falls back to eager, which shows up
+    as the flag doing nothing. Raise the cap if you genuinely need many
+    compiled vines at once.
+
+    Returns
+    -------
+    bool
+        Whether compilation is enabled.
+    """
+    return self._compile_cascades
+
+  @compile_cascades.setter
+  def compile_cascades(self, value: bool) -> None:
+    self._compile_cascades = bool(value)
+
+  def _cascade(self, name: str) -> Any:
+    """The named batched cascade, compiled if :attr:`compile_cascades` is set."""
+    base = getattr(super(), name)
+    if not self._compile_cascades:
+      return base
+    fn = self._compiled.get(name)
+    if fn is None:
+      fn = self._compile_cascade(base)
+      self._compiled[name] = fn
+    return fn
+
+  def _compile_cascade(self, base: Any) -> Any:
+    """Compile one cascade, on CUDA through CUDA graphs.
+
+    ``reduce-overhead`` replays the whole cascade as one graph, which is worth
+    up to another 2.5x on top of plain compilation where the launch count is
+    what binds -- but it writes its result into a buffer the next replay
+    reuses, so what comes back is copied out before the caller sees it. That
+    copy is one row-length tensor against a cascade of hundreds of kernels.
+
+    Parameters
+    ----------
+    base : callable
+        The uncompiled cascade.
+
+    Returns
+    -------
+    callable
+        The compiled cascade, with the same signature.
+    """
+    if self._ref_tensor().device.type != "cuda":
+      return torch.compile(base, dynamic=False)
+    inner = torch.compile(base, dynamic=False, mode="reduce-overhead")
+
+    def graphed(u: Tensor) -> Tensor:
+      torch.compiler.cudagraph_mark_step_begin()
+      return cast(Tensor, inner(u)).clone()
+
+    return graphed
+
+  def _pdf_batched(self, u: Tensor) -> Tensor:
+    return cast(Tensor, self._cascade("_pdf_batched")(u))
+
+  def _rosenblatt_batched(self, u: Tensor) -> Tensor:
+    return cast(Tensor, self._cascade("_rosenblatt_batched")(u))
+
+  def _inverse_rosenblatt_batched(self, u: Tensor) -> Tensor:
+    return cast(Tensor, self._cascade("_inverse_rosenblatt_batched")(u))
+
+  def __getstate__(self) -> dict:
+    """The picklable state: everything except the compiled-cascade cache.
+
+    Compiled callables do not pickle, and they are a pure cache -- the
+    unpickled vine recompiles on demand.
+
+    Returns
+    -------
+    dict
+        The instance state, with an empty compiled-cascade cache.
+    """
+    state = dict(super().__getstate__())
+    state["_compiled"] = {}
+    return state
+
   def _apply(self, fn, *args, **kwargs):
     # `.to()`, `.cuda()`, `.cpu()` all route through `_apply`. The
     # BatchedVine container holds buffers — `super()._apply` would move
@@ -526,6 +629,9 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     # (already-moved) source pair_copulas on next use; that keeps the
     # wire-up tensors aligned with the destination dtype/device.
     self._batched = None
+    # Compiled code is specialized on the tensors it was traced with; the
+    # guards would recompile anyway, so drop the stale entries.
+    self._compiled = {}
     return super()._apply(fn, *args, **kwargs)
 
   def _grad_signature(self) -> tuple[bool, ...]:
@@ -565,19 +671,33 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     through ``_apply``; this is the same invalidation for the other thing a
     caller changes after fitting.
 
+    Two things can make a bake stale, and the second is not a property of the
+    grids at all. ``sample`` / ``cdf`` / ``inverse_rosenblatt`` evaluate under
+    ``no_grad``, so a bake they trigger copies the grids *detached* even though
+    the grids themselves track grad — and the flags have not changed, so
+    nothing about them says so. The bake therefore also records whether it was
+    made under grad, and is redone when one that was not has to serve a call
+    that needs the graph. That upgrade happens at most once: a bake carrying a
+    graph serves a ``no_grad`` call perfectly well.
+
     Returns
     -------
     object
         The memoized batched state.
     """
     signature = self._grad_signature()
-    if (
-      self._batched is not None
-      and getattr(self, "_grad_signature_at_bake", None) != signature
+    wants_graph = torch.is_grad_enabled() and any(signature)
+    baked = getattr(self, "_bake_signature", None)
+    if self._batched is not None and (
+      baked is None or baked[0] != signature or (wants_graph and not baked[1])
     ):
       object.__setattr__(self, "_batched", None)
+      # A compiled cascade was traced against the grids the stale bake holds.
+      object.__setattr__(self, "_compiled", {})
+    fresh = self._batched is None
     out = super()._ensure_batched()
-    object.__setattr__(self, "_grad_signature_at_bake", signature)
+    if fresh:
+      object.__setattr__(self, "_bake_signature", (signature, wants_graph))
     return out
 
   # --------------------------------------------------------------------- #

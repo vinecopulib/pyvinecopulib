@@ -57,7 +57,10 @@ sklearn = [
   "pandas>=2.0",
 ]
 torch = [
-  "torch>=2.0",
+  # 2.2 is the floor for `torch.compiler.cudagraph_mark_step_begin`, which the
+  # compiled cascade calls before each graph replay; `nn.Module.__getstate__`,
+  # which `TorchVinecop` delegates to, needs 2.1.
+  "torch>=2.2",
 ]
 scipy = [
   # 1.16 is the first release to require Python 3.11, so it is the floor this
@@ -243,6 +246,10 @@ python_functions = ["test_*"]
 addopts = [
   "--strict-markers",
   "--strict-config",
+  # `compile` tests each pay a cold Inductor compilation of tens of seconds,
+  # which is longer than the rest of the suite; run them with `-m compile`.
+  "-m",
+  "not compile",
   "--cov=src/pyvinecopulib",
   "--cov-report=term-missing",
   "--cov-report=html:htmlcov",
@@ -251,6 +258,7 @@ addopts = [
 markers = [
   "flaky: mark a test as flaky and allow reruns",
   "cuda: needs a CUDA device; skipped when torch.cuda.is_available() is False",
+  "compile: runs torch.compile; deselected by default (tens of seconds each)",
 ]
 # Treat our own DeprecationWarnings as errors so internal code stays on the
 # post-1.0 import paths. Matches `pyvinecopulib.NAME` and `pyvinecopulib.SUB.NAME`.

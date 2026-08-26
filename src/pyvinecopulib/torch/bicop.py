@@ -581,7 +581,13 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     # bracketing cell needs the conditional cumulative along the whole free
     # axis, which is O(m) to assemble whatever is cached. So the cache buys
     # O(1) where it can, and consistency where it cannot.
-    return self.interp_grid.inverse_integrate_1d(u, cond_var).clamp(0.0, 1.0)
+    # The prefix table is the conditional cumulative the inversion needs to
+    # locate its bracketing cell, so pass it when there is one: the same
+    # quantity, a gather instead of a trapezoid and a scan.
+    cum = None if self._sy is None else self._tables()[cond_var - 1]
+    return self.interp_grid.inverse_integrate_1d(u, cond_var, cum).clamp(
+      0.0, 1.0
+    )
 
   def hinv1(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Inverts `hfunc1` w.r.t. the second argument.
