@@ -416,3 +416,53 @@ def test_a_discrete_sample_lands_on_the_lattice() -> None:
   _, lifted, _ = _fitted("discrete", type="discrete", xmin=0.0)
   draws = lifted.sample(256, seeds=[2])
   np.testing.assert_array_equal(draws.numpy(), np.round(draws.numpy()))
+
+
+def test_boundary_repair_survives_the_lift_and_a_refit() -> None:
+  """It is a fit-time setting, so a lifted margin must not silently flip it on.
+
+  It defaults to true, so a margin that dropped it would quietly re-fit with
+  boundary repair enabled after being lifted from an estimator that had it off.
+  """
+  y = np.random.default_rng(41).uniform(0.0, 1.0, 400)
+  kde = Kde1d(xmin=0.0, xmax=1.0, boundary_repair=False)
+  kde.fit(y)
+  lifted = TorchKde1d.from_kde1d(kde)
+  assert lifted.boundary_repair is False
+  np.testing.assert_allclose(
+    lifted.fit(_t(y)).values.numpy(),
+    np.asarray(kde.values),
+    rtol=1e-13,
+    atol=1e-13,
+  )
+  assert pickle.loads(pickle.dumps(lifted)).boundary_repair is False
+
+
+@pytest.mark.parametrize(
+  ("xmin", "xmax"), [(None, None), (0.0, None), (0.0, 4.0)]
+)
+def test_the_discrete_support_matches_the_compiled_estimator(
+  xmin: float | None, xmax: float | None
+) -> None:
+  """Torch derives the integer support itself; it has to land where C++ does.
+
+  The grid overhangs a declared bound by half a cell, so reading the support
+  off the grid -- which is what this used to do -- is no longer the same
+  question as reading it off the bounds.
+  """
+  y = np.random.default_rng(42).integers(0, 5, 500).astype(float)
+  kde = Kde1d(type="discrete", xmin=xmin, xmax=xmax)
+  kde.fit(y)
+  lifted = TorchKde1d.from_kde1d(kde)
+  lattice = np.arange(-4.0, 12.0)
+  np.testing.assert_allclose(
+    lifted.pdf(_t(lattice)).numpy(),
+    np.asarray(kde.pdf(lattice)),
+    rtol=1e-12,
+    atol=1e-12,
+  )
+  # Both agree on where the support ends, not merely on the masses inside it.
+  carried = lattice[np.asarray(kde.pdf(lattice)) > 0.0]
+  np.testing.assert_array_equal(
+    lattice[lifted.pdf(_t(lattice)).numpy() > 0.0], carried
+  )

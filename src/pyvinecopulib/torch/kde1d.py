@@ -120,6 +120,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     bandwidth: Optional[float] = None,
     degree: int = 2,
     grid_size: int = 400,
+    boundary_repair: bool = True,
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> None:
@@ -138,6 +139,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self.bandwidth = bandwidth
     self.degree = degree
     self.grid_size = grid_size
+    self.boundary_repair = boundary_repair
     self._loglik: Optional[float] = None
     self.edf: Optional[float] = None
     self._dtype = dtype
@@ -240,6 +242,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       bandwidth=self.bandwidth,
       degree=self.degree,
       grid_size=self.grid_size,
+      boundary_repair=self.boundary_repair,
     )
     data = torch.as_tensor(y).detach().reshape(-1).cpu().numpy()
     if weights is None:
@@ -289,6 +292,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       bandwidth=kde.bandwidth,
       degree=kde.degree,
       grid_size=kde.grid_size,
+      boundary_repair=kde.boundary_repair,
       device=device,
       dtype=dtype,
     )
@@ -391,6 +395,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self.bandwidth = kde.bandwidth
     self.degree = kde.degree
     self.multiplier = kde.multiplier
+    self.boundary_repair = kde.boundary_repair
     self._loglik = float(kde.loglik())
     self.edf = float(kde.edf)
     return self
