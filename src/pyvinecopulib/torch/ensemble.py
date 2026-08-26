@@ -542,7 +542,11 @@ class BatchedVineEnsemble(torch.nn.Module):
     Parameters
     ----------
     u : Tensor, shape (n, d)
-        Copula-scale observations, shared by every vine in the set.
+        Copula-scale observations, shared by every vine in the set. The
+        compact layout only: a single vine also accepts the expanded
+        ``(n, 2d)`` form and drops its left-limit block, which an ensemble
+        -- being continuous by construction -- asks the caller to slice
+        instead.
 
     Returns
     -------

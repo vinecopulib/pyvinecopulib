@@ -173,6 +173,25 @@ def test_chunking_does_not_change_the_result(chunk: int) -> None:
     )
 
 
+@pytest.mark.parametrize("d", (2, 3))
+def test_the_smallest_vines(d: int) -> None:
+  """d = 2 is one pair and one tree level -- every loop runs once.
+
+  The degenerate end of the cascade: a level whose stacked pair count is
+  the vine count itself, a density product over a single edge, and for
+  d = 2 an ``out_idx`` that is a permutation of two rows. Nothing here is
+  special-cased, so this is guarding that nothing needs to be.
+  """
+  vines = _fit_vines(3, d=d, seed=30 + d)
+  ens = BatchedVineEnsemble(vines)
+  assert ens.trunc_lvl == d - 1
+  u = torch.from_numpy(_eval_grid(17, d, seed=87))
+  for method in ("pdf", "rosenblatt"):
+    torch.testing.assert_close(
+      getattr(ens, method)(u), _loop(vines, method, u), **_LAST_BIT
+    )
+
+
 def test_a_uniformly_truncated_set() -> None:
   """Truncation shortens the cascade; it does not change its shape."""
   vines = _fit_vines(4, d=7, seed=14, trunc_lvl=2)
