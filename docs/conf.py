@@ -397,6 +397,7 @@ DOCSTRING_SUBPACKAGES = {
   },
   "torch": {
     "classes": [
+      "BatchedVineEnsemble",
       "TorchBicop",
       "TorchKde1d",
       "TorchMargin",

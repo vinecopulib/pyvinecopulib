@@ -199,6 +199,10 @@ closed unmerged, and some commits carry no number at all.
 - **PyTorch evaluator** — `TorchBicop`, `TorchVinecop` (pure-torch
   cascade with GPU placement, autograd, and an optional `batched`
   evaluation fast path; byte-for-byte parity with the C++ cascade).
+  `BatchedVineEnsemble` takes that one axis further: M vines sharing a
+  dimension and a grid evaluate in one cascade, bit-identical to the
+  per-vine loop, so the launch count and the compiled-variant count stop
+  scaling with M.
 - **Backend-neutral extension layer** — the `BicopLike` / `VinecopLike`
   contracts and canonical `BicopBase` / `VinecopBase` bases (NumPy or
   PyTorch) for hosting custom pair copulas in a vine, including
@@ -281,6 +285,7 @@ pyvinecopulib/
         regressor.py             # VineRegressor
 
       torch/__init__.py          # TorchBicop, TorchVinecop, TorchKde1d, TorchMargin, TorchVinedist, FitControlsTorch*
+        ensemble.py              # BatchedVineEnsemble (M vines, one stacked cascade)
         bicop.py, vinecop.py     # nn.Module evaluators
         margin.py, vinedist.py   # TorchMargin / TorchVinedist (nn.Module margins + distribution)
         kde1d.py                 # TorchKde1d (the torch marginal estimator)
@@ -913,6 +918,23 @@ Key surface:
     `controls.method`).
   - `TorchVinecop` mirrors `pv.Vinecop`'s `pdf` / `cdf` /
     `rosenblatt` / `inverse_rosenblatt` / `sample` signatures.
+- `BatchedVineEnsemble` — M fitted `TorchVinecop`s sharing `d`, `trunc_lvl`
+  and a grid, evaluated in **one** stacked cascade: `pdf(u) -> (M, n)` and
+  `rosenblatt(u) -> (M, n, d)`, bit-identical to looping
+  `pdf(u, batched=True)` per vine. Slots are laid out **vine-major**, and that
+  is load-bearing rather than cosmetic: the per-level density product then
+  reduces over the same axis in the same order it would for one vine, which is
+  what makes the equality exact. Edge-major ordering was measured to differ, at
+  `n = 1` and nowhere else. A set is refused, never silently degraded, when it
+  disagrees on the grid (compare `grid_points` **values** and `_is_linear`, not
+  just the shape `_shared_grid` compares within one vine), on `trunc_lvl`, on
+  `cache_integrals` (the cached and quadrature integrals agree only to
+  rounding, so one uncached vine would break the others' parity), or when a
+  vine is discrete, conditional, or tracks grad on a grid. `chunk_size` splits
+  the set into equal-shaped cascades: a larger chunk saves launches, a smaller
+  one keeps the per-level working set in cache, so throughput peaks in between.
+  `inverse_rosenblatt` / `sample` / `cdf` are out of scope — per-vine
+  randomness, and the inverse graph does not level by tree.
 - `TorchMargin` / `TorchVinedist` — the marginal and joint halves.
   - `TorchMargin` is a `MarginBase[Tensor]` that is *also* an
     `nn.Module`: `torch.distributions.Distribution` has no
@@ -1087,8 +1109,8 @@ below are a quick orientation.
   submodule (`VinecopBackend`, `TorchVinecopBackend`,
   `resolve_backend`).
 - **`pyvinecopulib.torch`** — `TorchBicop`, `TorchVinecop`, `TorchKde1d`,
-  `TorchMargin`, `TorchVinedist`, `FitControlsTorchBicop`,
-  `FitControlsTorchVinecop`.
+  `TorchMargin`, `TorchVinedist`, `BatchedVineEnsemble`,
+  `FitControlsTorchBicop`, `FitControlsTorchVinecop`.
 
 Top-level `pyvinecopulib` re-exports the eight core classes and
 `to_pseudo_obs`; everything else — including the `core` abstraction

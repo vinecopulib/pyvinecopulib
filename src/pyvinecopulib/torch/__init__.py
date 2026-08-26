@@ -53,6 +53,16 @@ Notes
   a level of the dependency graph for the inverse -- and
   ``compile_cascades`` runs those through :func:`torch.compile`.
 
+- :class:`BatchedVineEnsemble` — many fitted :class:`TorchVinecop`
+  vines sharing a dimension and a grid, evaluated in **one** stacked
+  cascade rather than one per vine: ``pdf(u)`` returns ``(M, n)`` and
+  ``rosenblatt(u)`` returns ``(M, n, d)``. The launch count per
+  evaluation stops scaling with the number of vines, and the whole set is
+  a single :func:`torch.compile` code object -- where a loop over the
+  vines is one per vine, of which torch keeps only
+  ``torch._dynamo.config.cache_size_limit`` before falling back to eager.
+  Results are bit-identical to that loop.
+
 - :class:`TorchMargin` — a univariate margin on a ``torch.distributions``
   family. Registers the family's parameters and rebuilds the distribution on
   each call, so ``.to(device)``, ``state_dict()`` and autograd all reach them.
@@ -89,6 +99,7 @@ except ImportError as e:
   ) from e
 
 from .bicop import TorchBicop
+from .ensemble import BatchedVineEnsemble
 from .kde1d import TorchKde1d
 from .margin import TorchMargin
 from .vinecop import TorchVinecop
@@ -96,6 +107,7 @@ from .vinedist import TorchVinedist
 from .controls import FitControlsTorchBicop, FitControlsTorchVinecop
 
 __all__ = [
+  "BatchedVineEnsemble",
   "TorchBicop",
   "TorchKde1d",
   "TorchMargin",

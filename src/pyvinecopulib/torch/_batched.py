@@ -564,6 +564,27 @@ class BatchedTreeLevel(torch.nn.Module):
     u_e = torch.stack([col0.t(), col1.t()], dim=-1)
     return u_e
 
+  def gather_rows(self, hfunc1_prev: Tensor, hfunc2_prev: Tensor) -> Tensor:
+    """:meth:`gather_inputs` against a row-major ``(rows, n)`` state.
+
+    Same selection and the same values; what differs is which axis of the
+    h-function state the columns live on. One vine's forward cascades keep
+    an ``(n, d)`` state, so :meth:`gather_inputs` gathers along dim 1 and
+    transposes. A caller stacking several vines keeps the state row-major
+    -- as the inverse cascade's waves already do -- and then the gather
+    lands on ``(N, n)`` directly and the transpose disappears, which at
+    ``N`` in the thousands saves a copy of the whole state twice per tree
+    level. ``col0_src`` / ``col1_src`` are absolute row indices in that
+    case, which is what lets one level span more than one vine.
+    """
+    col0 = hfunc2_prev.index_select(0, self.col0_src)
+    col1 = torch.where(
+      self.col1_use_h1[:, None],
+      hfunc1_prev.index_select(0, self.col1_src),
+      hfunc2_prev.index_select(0, self.col1_src),
+    )
+    return torch.stack([col0, col1], dim=-1)
+
   def _locate_both(self, grid_points: Tensor, u: Tensor) -> tuple[Tensor, ...]:
     """Grid location of both arguments: ``(i, wx, dx, j, wy, dy)``.
 
