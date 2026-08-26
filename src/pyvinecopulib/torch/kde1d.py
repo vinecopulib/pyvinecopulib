@@ -100,11 +100,13 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   Notes
   -----
   Evaluation reproduces the compiled implementation rather than improving on
-  it, including where the C++ is quirky: the interpolant drops by
-  ``exp(-0.5)`` exactly at the grid's right end, the unnormalized integral
-  carries no Gaussian-tail mass, and the discrete normalization divides by the
-  *raw* interpolation rather than the clamped density. Each is pinned by a
-  parity test; a divergence there is a defect in this class, not a fix.
+  it, including where the C++ is quirky: the unnormalized integral carries no
+  Gaussian-tail mass even though the density beyond the grid does. It is pinned
+  by a parity test; a divergence there is a defect in this class, not a fix.
+
+  Parity is an equality everywhere except the continuous ``icdf``, which is an
+  iteration whose last bits follow the instruction set the C++ was built for --
+  see ``_QUANTILE_RTOL`` in ``tests/test_torch_kde1d.py``.
   """
 
   supports_weights: bool = True

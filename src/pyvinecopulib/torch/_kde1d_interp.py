@@ -139,7 +139,7 @@ def interpolate(grid_points: Tensor, values: Tensor, x: Tensor) -> Tensor:
   k = find_cell(grid_points, x)
   t = (x - grid_points[k]) / (grid_points[k + 1] - grid_points[k])
   a = coefs[k]
-  cubic = a[:, 0] + a[:, 1] * t + a[:, 2] * t**2 + a[:, 3] * t**3
+  cubic = _cubic_poly(t, a)
   # Each tail decays from the end it leaves, so both meet the spline
   # continuously: `t` at the left end of the first cell, `t - 1` at the right
   # end of the last.
@@ -221,18 +221,24 @@ def integrate(
   return res
 
 
+# The powers are built by repeated multiplication rather than `pow`, and the
+# terms summed left to right, because that is what the C++ does: `pow(t, 3)`
+# and `t * t * t` need not agree in the last bit, and the inversion below
+# iterates on the difference of two of these.
 def _cubic_poly(t: Tensor, a: Tensor) -> Tensor:
   """A cell's cubic at position ``t``, one row of coefficients per query."""
-  return a[:, 0] + a[:, 1] * t + a[:, 2] * t**2 + a[:, 3] * t**3
+  t2 = t * t
+  t3 = t2 * t
+  return a[:, 0] + a[:, 1] * t + a[:, 2] * t2 + a[:, 3] * t3
 
 
 def _cubic_indef_integral(t: Tensor, a: Tensor) -> Tensor:
   """Indefinite integral of :func:`_cubic_poly`, zero at ``t = 0``."""
+  t2 = t * t
+  t3 = t2 * t
+  t4 = t3 * t
   return (
-    a[:, 0] * t
-    + a[:, 1] / 2.0 * t**2
-    + a[:, 2] / 3.0 * t**3
-    + a[:, 3] / 4.0 * t**4
+    a[:, 0] * t + a[:, 1] / 2.0 * t2 + a[:, 2] / 3.0 * t3 + a[:, 3] / 4.0 * t4
   )
 
 
@@ -273,7 +279,11 @@ def invert_integral(
   bracket, bisecting wherever the density is flat. The C++ stops a query as
   soon as its residual is within ``8 eps`` of the total mass; here a query that
   reaches the tolerance is frozen instead, which is the same arithmetic on the
-  same iterations and so returns the same value bit for bit.
+  same iterations. The powers below are built the way the C++ builds them for
+  the same reason. What that buys is agreement to a few ULPs rather than an
+  equality: the compiled result is not itself portable -- rebuilding kde1d with
+  ``-march=native`` and nothing else moves it 19 ULPs -- so no port can be
+  bit-identical to every build of it.
 
   Parameters
   ----------

@@ -950,10 +950,14 @@ Key surface:
     `icdf` reproduces the C++ inversion exactly — a bracketed Newton within
     the cell holding the requested mass, bisecting where the density is flat,
     with the C++ early exit reproduced as a frozen-once-converged mask — and
-    then reattaches an exact gradient by one Newton step, so the value is
-    bit-identical while `dq/dp` and `dq/d values` are right. The residual is
-    written in units of mass, so the total mass carries its share of
-    `dq/d values`. The correction is gated on
+    then reattaches an exact gradient by one Newton step, so the correction
+    does not move the value while `dq/dp` and `dq/d values` are right. The
+    residual is written in units of mass, so the total mass carries its share
+    of `dq/d values`. This is the one parity claim in the port that is a
+    tolerance rather than an equality, and deliberately so: the compiled
+    quantile is not portable to a few ULPs -- rebuilding kde1d with
+    `-march=native` alone moves it 19 -- so no port can equal every build of
+    it. The correction is gated on
     grad being enabled, not on the grid being learned — a fitted fixed grid
     still has to differentiate the quantile in `p`. Two of `Kde1d`'s attribute names could not
     be reused: `type` is `nn.Module`'s dtype cast (read `kde_type`) and

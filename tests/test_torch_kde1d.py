@@ -2,13 +2,11 @@
 
 The load-bearing claim is **parity**: a lifted grid evaluates to the same
 numbers as the compiled `Kde1d` it came from, across all three variable types,
-bounded and unbounded, at every local-polynomial degree. Three of those numbers
-come from C++ behavior that looks like a bug and is not, so they are pinned
-separately: the interpolant drops by `exp(-0.5)` exactly at the grid's right
-end, the unnormalized integral carries no Gaussian-tail mass, and the discrete
-masses are normalized by the *raw* interpolation rather than the clamped
-density. `icdf` is compared with `assert_array_equal` rather than a tolerance,
-because reproducing the 35-step bisection makes it exact.
+bounded and unbounded, at every local-polynomial degree. One of those numbers
+comes from C++ behavior that looks like a bug and is not, so it is pinned
+separately: the unnormalized integral carries no Gaussian-tail mass even though
+the density beyond the grid does. `icdf` is the one place parity is a tolerance
+rather than an equality, for a reason `_QUANTILE_RTOL` sets out.
 
 Beyond parity: the grid is differentiable when a caller asks for it, and the
 module round-trips through `state_dict`, `pickle` and `.to()`.
@@ -92,6 +90,27 @@ def test_pdf_and_cdf_match_the_compiled_estimator(
   )
 
 
+#: How closely a torch quantile has to match the compiled one. Not zero for the
+#: continuous branch: since kde1d#33 that quantile is a Newton iteration, whose
+#: last bits follow the instruction set the C++ was built for -- recompiling
+#: kde1d with `-march=native` and nothing else moves it by 19 ULPs (2.0e-14
+#: relative). Torch dispatches its own kernels on the running CPU besides. A
+#: tolerance two orders tighter than that variation still fails loudly on an
+#: algorithmic divergence: keeping the bisection this replaced would have shown
+#: up at 6e-10. The discrete branch stays exact, because it is a table lookup
+#: rather than an iteration.
+_QUANTILE_RTOL = {"discrete": 0.0, "continuous": 1e-12, "zi": 1e-12}
+
+
+def _assert_quantiles_agree(got, want, kind: str = "continuous") -> None:
+  """Compare a torch quantile against the compiled one; see `_QUANTILE_RTOL`."""
+  rtol = _QUANTILE_RTOL[kind]
+  if rtol == 0.0:
+    np.testing.assert_array_equal(got, want)
+  else:
+    np.testing.assert_allclose(got, want, rtol=rtol, atol=rtol)
+
+
 @pytest.mark.parametrize(
   ("kind", "kwargs"),
   [
@@ -100,13 +119,11 @@ def test_pdf_and_cdf_match_the_compiled_estimator(
     ("zi", {"type": "zero-inflated", "xmin": 0.0}),
   ],
 )
-def test_icdf_matches_the_compiled_estimator_exactly(
-  kind: str, kwargs: dict
-) -> None:
-  """Not a tolerance: the 35-step bisection is reproduced step for step."""
+def test_icdf_matches_the_compiled_estimator(kind: str, kwargs: dict) -> None:
+  """The inversion is reproduced step for step; see `_QUANTILE_RTOL`."""
   kde, lifted, _ = _fitted(kind, **kwargs)
-  np.testing.assert_array_equal(
-    lifted.icdf(_t(_PROBS)).numpy(), np.asarray(kde.icdf(_PROBS))
+  _assert_quantiles_agree(
+    lifted.icdf(_t(_PROBS)).numpy(), np.asarray(kde.icdf(_PROBS)), kind
   )
 
 
@@ -327,7 +344,7 @@ def test_gradients_reach_the_grid_values() -> None:
 
 
 def test_the_quantile_carries_an_exact_gradient() -> None:
-  """The forward value stays the bisection's; the gradient comes from Newton.
+  """The forward value stays the iteration's; the gradient comes from Newton.
 
   `dq/dtheta = -(dF/dtheta) / f(q)` by the implicit function theorem, which one
   Newton step expresses exactly -- so differentiating the correction while
@@ -338,7 +355,7 @@ def test_the_quantile_carries_an_exact_gradient() -> None:
   lifted.values.requires_grad_(True)
 
   q = lifted.icdf(_t(_PROBS))
-  np.testing.assert_array_equal(q.detach().numpy(), reference)
+  _assert_quantiles_agree(q.detach().numpy(), reference)
 
   q.sum().backward()
   grad = lifted.values.grad
@@ -353,7 +370,7 @@ def test_the_quantile_is_differentiable_in_the_probability() -> None:
   The Newton correction that supplies the gradient was gated on
   `values.requires_grad`, so `d icdf/d p` was dead for a fitted, fixed grid --
   the common case, since the density is fitted rather than learned. The
-  correction is exact, so this is an equality rather than a tolerance.
+  correction does not move the value, which is what the comparisons below pin.
   """
   kde, lifted, _ = _fitted("continuous")
   assert lifted.values.requires_grad is False
@@ -361,10 +378,8 @@ def test_the_quantile_is_differentiable_in_the_probability() -> None:
   p = _t(_PROBS).requires_grad_(True)
   q = lifted.icdf(p)
   assert q.requires_grad
-  # The value is still the bisection's, bit for bit.
-  np.testing.assert_array_equal(
-    q.detach().numpy(), np.asarray(kde.icdf(_PROBS))
-  )
+  # The value is still the iteration's, not the correction's.
+  _assert_quantiles_agree(q.detach().numpy(), np.asarray(kde.icdf(_PROBS)))
 
   (grad,) = torch.autograd.grad(q.sum(), p)
   np.testing.assert_allclose(
@@ -373,7 +388,7 @@ def test_the_quantile_is_differentiable_in_the_probability() -> None:
 
   # Under `no_grad` the value is unchanged, so the correction cannot move it.
   with torch.no_grad():
-    np.testing.assert_array_equal(
+    _assert_quantiles_agree(
       lifted.icdf(_t(_PROBS)).numpy(), np.asarray(kde.icdf(_PROBS))
     )
 
