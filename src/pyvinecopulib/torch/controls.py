@@ -86,7 +86,8 @@ class FitControlsTorchVinecop:
       Maximum number of trees to select when
       :meth:`~pyvinecopulib.torch.TorchVinecop.from_data` is called with
       ``structure=None``.
-  tree_criterion : {"tau", "rho", "hoeffd"}, default="tau"
+  tree_criterion : {"tau", "rho", "hoeffd", "mcor", "cxi", "joe"}, \
+default="tau"
       Dependence measure used to weight candidate edges during structure
       selection (passed to ``wdm``).
   threshold : float, default=0.0
@@ -99,11 +100,19 @@ class FitControlsTorchVinecop:
       spanning tree (``random_*``).
   seeds : list of int, default=[]
       RNG seeds for the random tree algorithms (ignored by the MST ones).
-  cache_integrals : bool, default=True
+  conditioning_set : list of int, default=[]
+      1-based variables to place at the tail of the selected order, so they can
+      be conditioned on with
+      :meth:`~pyvinecopulib.core.VinecopBase.sample_conditional`. Requires an MST
+      ``tree_algorithm`` and no truncation; empty means unconditional selection.
+  cache_integrals : bool or None, default=None
       If ``True``, precompute the cdf / hfunc / hinv caches on
       every pair copula's interpolation grid. Cached lookups are
       1–2 orders of magnitude faster than the on-the-fly path
-      with a ~1e-3 IAE cost.
+      with a ~1e-3 IAE cost. ``None`` resolves to ``True``, or to
+      ``False`` on a vine with discrete variables, where a discrete
+      edge differences the cached cdf and an explicit ``True``
+      raises.
   device : torch.device or None, default=None
       Target torch device for the fitted pair copulas. ``None``
       keeps the input's device.
@@ -118,9 +127,8 @@ class FitControlsTorchVinecop:
   Notes
   -----
   Structure selection runs natively on the torch interpolation grids. It is
-  continuous-only and TLL-only, and the criteria for automatic truncation /
-  thresholding (``aic`` / ``bic`` / ``mbicv``) are not available here:
-  ``trunc_lvl`` is a fixed cap.
+  TLL-only, and the criteria for automatic truncation / thresholding (``aic`` /
+  ``bic`` / ``mbicv``) are not available here: ``trunc_lvl`` is a fixed cap.
   """
 
   bicop_controls: FitControlsTorchBicop = field(
@@ -131,7 +139,8 @@ class FitControlsTorchVinecop:
   threshold: float = 0.0
   tree_algorithm: str = "mst_prim"
   seeds: list[int] = field(default_factory=list)
-  cache_integrals: bool = True
+  conditioning_set: list[int] = field(default_factory=list)
+  cache_integrals: Optional[bool] = None
   device: Optional[Any] = None
   dtype: Optional[Any] = None
   batched: bool = False

@@ -19,6 +19,8 @@ from pyvinecopulib.core import BicopLike, VinecopBase
 # wrapper; it is an implementation detail of ``VinecopBase.select``.
 from pyvinecopulib.pyvinecopulib_ext import _select_spanning_tree
 
+from .conftest import HostedVinecop
+
 
 class _CppBicopLike:
   """Adapt a ``Bicop`` to the ``(u, x)`` :class:`BicopLike` signature.
@@ -62,23 +64,6 @@ class _CppBicopLike:
 
   def flip(self) -> "_CppBicopLike":
     return _CppBicopLike(self._b.flip())
-
-
-class _ListVinecop(VinecopBase[Any]):
-  """Minimal concrete ``VinecopBase`` hosting a nested list of pairs (NumPy).
-
-  Lets these tests evaluate the pairs ``VinecopBase.select`` returns without a
-  torch dependency.
-  """
-
-  def __init__(
-    self, pairs: list[list[BicopLike[Any]]], structure: pv.RVineStructure
-  ) -> None:
-    self._pairs = pairs
-    self._bind_vine(structure)
-
-  def _get_pair_copula(self, tree: int, edge: int) -> BicopLike[Any]:
-    return self._pairs[tree][edge]
 
 
 _GAUSSIAN = pv.FitControlsBicop(family_set=[pv.families.gaussian])
@@ -190,7 +175,7 @@ def test_select_reused_pairs_match_vinecop_exactly() -> None:
     rng = np.random.default_rng(seed)
     grid = rng.uniform(0.02, 0.98, size=(300, d))
     np.testing.assert_allclose(
-      _ListVinecop(pairs, structure).pdf(grid),
+      HostedVinecop(pairs, structure).pdf(grid),
       auto.pdf(grid),
       rtol=1e-12,
       atol=1e-12,
@@ -209,8 +194,12 @@ def test_select_refit_pdf_parity_with_vinecop() -> None:
     auto = pv.Vinecop.from_data(u, controls=controls)
     refit = pv.Vinecop.from_data(u, structure=mine, controls=controls)
     grid = rng.uniform(0.02, 0.98, size=(200, d))
+    # 1.4e-10 measured. It was 1e-8 while the margin renormalization was a
+    # fixed three-sweep budget, which left `fit(a, b)` and `fit(b, a)`
+    # different models; it converges now, so this can be pinned two decades
+    # tighter.
     np.testing.assert_allclose(
-      refit.pdf(grid), auto.pdf(grid), rtol=1e-8, atol=1e-8
+      refit.pdf(grid), auto.pdf(grid), rtol=1e-9, atol=1e-9
     )
 
 
@@ -264,7 +253,7 @@ def test_compiled_bicop_hosted_unwrapped_matches_vinecop() -> None:
   ref = pv.Vinecop.from_structure(structure=structure, pair_copulas=pairs)
   # Cast: the conformance is nominal -- ``Bicop.pdf`` takes per-row
   # ``parameters`` where ``BicopLike.pdf`` takes keyword-only ``x``.
-  mine = _ListVinecop(cast("list[list[BicopLike[Any]]]", pairs), structure)
+  mine = HostedVinecop(cast("list[list[BicopLike[Any]]]", pairs), structure)
 
   rng = np.random.default_rng(0)
   u = rng.uniform(0.02, 0.98, size=(256, d))
@@ -277,4 +266,32 @@ def test_compiled_bicop_hosted_unwrapped_matches_vinecop() -> None:
     ref.inverse_rosenblatt(u),
     rtol=1e-10,
     atol=1e-10,
+  )
+
+
+@pytest.mark.parametrize("tree_criterion", ["tau", "rho", "hoeffd", "cxi"])
+def test_select_matches_vinecop_for_every_tree_criterion(
+  tree_criterion: str,
+) -> None:
+  """The port computes the edge weight itself, so it has to accept the same
+  measures the compiled selector does -- including Chatterjee's xi, which is
+  the only asymmetric one and therefore the one a symmetric shortcut would
+  silently get wrong.
+
+  Note the spelling: ``wdm`` takes ``"chatterjee"`` / ``"cxi"`` / ``"xi"``,
+  where ``FitControlsVinecop.tree_criterion`` takes only ``"cxi"``.
+  """
+  d = 5
+  u = _correlated_pseudo_obs(1, d)
+  mine, _ = VinecopBase.select(
+    u, _gaussian_fit_edge, tree_criterion=tree_criterion
+  )
+  controls = pv.FitControlsVinecop(
+    family_set=[pv.families.gaussian],
+    tree_criterion=tree_criterion,
+    num_threads=1,
+  )
+  theirs = pv.Vinecop.from_data(u, controls=controls)
+  np.testing.assert_array_equal(
+    np.asarray(mine.matrix), np.asarray(theirs.structure.matrix)
   )

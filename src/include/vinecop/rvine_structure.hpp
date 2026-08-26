@@ -8,6 +8,8 @@
 #include <nanobind/stl/tuple.h>
 #include <nanobind/stl/vector.h>
 
+#include <stdexcept>
+#include <string>
 #include <tuple>
 #include <vinecopulib.hpp>
 #include <vinecopulib/vinecop/rvine_trees.hpp>
