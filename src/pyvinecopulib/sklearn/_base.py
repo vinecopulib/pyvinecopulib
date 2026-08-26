@@ -122,6 +122,34 @@ def _as_ndarray(a: Any) -> np.ndarray:
   return np.asarray(a, dtype=float)
 
 
+def _named_for(name: str, exc: BaseException) -> BaseException:
+  """``exc`` with the column it came from named, keeping its type where it can.
+
+  A margin sees one array and cannot say which column it was, so the estimator
+  says it. The type is preserved by rebuilding the exception from the new
+  message, which most exceptions accept; the ones that do not -- anything whose
+  constructor takes more than a message -- become a ``ValueError`` rather than
+  a confusing ``TypeError`` raised from inside the handler.
+
+  Parameters
+  ----------
+  name : str
+      The column's name.
+  exc : BaseException
+      What the margin raised.
+
+  Returns
+  -------
+  BaseException
+      The exception to raise, to be chained from ``exc``.
+  """
+  message = f"margin for {name!r}: {exc}"
+  try:
+    return type(exc)(message)
+  except Exception:
+    return ValueError(message)
+
+
 def _categorical_bounds(dtype: Any) -> Optional[tuple[float, float]]:
   """Exact support of an ordered categorical column, when it states one.
 
@@ -469,7 +497,7 @@ class VineBase(BaseEstimator):
         # them is a statement about that column -- most often an ordered
         # categorical whose levels are not integers, which cannot be a discrete
         # `Kde1d`. The margin cannot name the column; we can.
-        raise type(exc)(f"margin for {self._column_name(j)!r}: {exc}") from exc
+        raise _named_for(self._column_name(j), exc) from exc
     return specs
 
   def _declared_for(
@@ -549,7 +577,7 @@ class VineBase(BaseEstimator):
       # margin only ever sees one array and cannot name it. `Kde1d` refusing a
       # non-integer discrete bound or observation is the common case, and it is
       # reachable from an ordered categorical whose levels are not integers.
-      raise type(exc)(f"margin for {name!r}: {exc}") from exc
+      raise _named_for(name, exc) from exc
     if self._needs_marginal_density:
       self._require_density(margin, name, column)
     return margin
@@ -671,7 +699,10 @@ class VineBase(BaseEstimator):
       self.margins,
       self.n_features_in_,
       names=getattr(self, "_expanded_columns", None),
-      default=self._default_margin_specs(),
+      # Lazily: building it constructs one margin per column, which can refuse
+      # a column outright, and a specification naming every column never uses
+      # it.
+      default=self._default_margin_specs,
     )
     y_spec = None if y is None else self._response_margin_spec()
     if y_spec is not None:

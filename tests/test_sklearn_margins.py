@@ -445,3 +445,28 @@ def test_an_integer_categorical_is_fitted_on_its_declared_support() -> None:
   # The masses still live on the levels, and nowhere else.
   assert margin.pdf(np.arange(4.0)).sum() == pytest.approx(1.0)
   assert margin.pdf(np.array([-1.0, 4.0])).tolist() == [0.0, 0.0]
+
+
+def test_a_named_margin_survives_a_default_that_would_refuse_the_column() -> (
+  None
+):
+  """The default is only built where it is needed.
+
+  A column can be one the default margin refuses -- an ordered categorical with
+  non-integer levels cannot be a discrete `Kde1d`. A caller who names a margin
+  for every column has answered that already, and should not be stopped by a
+  default their specification never uses.
+  """
+  rs = np.random.RandomState(2)
+  df = pd.DataFrame(
+    {
+      "a": rs.normal(size=200),
+      "grade": pd.Categorical(
+        rs.choice([1.5, 2.5, 3.5], 200),
+        categories=[1.5, 2.5, 3.5],
+        ordered=True,
+      ),
+    }
+  )
+  est = VineDensity(margins=Kde1d()).fit(df)
+  assert len(est.distribution_.margins) == 2

@@ -943,8 +943,9 @@ Key surface:
   - `TorchKde1d` is the torch marginal estimator, and the only one that
     handles **discrete** and **zero-inflated** variables. Fitting delegates
     to the compiled `Kde1d`; every evaluation is pure torch, because
-    `grid_points` / `values` / `type` / `prob0` are the only state the
-    compiled `pdf` / `cdf` / `icdf` read. The grid is a **buffer**, not a
+    `grid_points` / `values` / `type` / `prob0` and the declared bounds are the
+    whole of what the compiled `pdf` / `cdf` / `icdf` read -- the bounds joined
+    that list when kde1d#37 made them the discrete support. The grid is a **buffer**, not a
     parameter — the density is fitted, not learned — so optimizing it is the
     opt-in `values.requires_grad_(True)`, the `TorchBicop` precedent.
     `icdf` reproduces the C++ inversion exactly — a bracketed Newton within

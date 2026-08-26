@@ -2,9 +2,10 @@
 
 Fitting delegates to the compiled :class:`pyvinecopulib.core.Kde1d`; every
 evaluation runs on tensors, on device, under autograd. The split is not a
-compromise -- ``grid_points``, ``values``, ``type`` and ``prob0`` are the *only*
-state the compiled ``pdf`` / ``cdf`` / ``icdf`` read, so a lifted grid is a
-complete model rather than an approximation of one. What a torch fitter would
+compromise -- ``grid_points``, ``values``, ``type``, ``prob0`` and the
+declared bounds are the whole of what the compiled ``pdf`` / ``cdf`` / ``icdf``
+read, so a lifted grid is a complete model rather than an approximation of
+one. What a torch fitter would
 add is bandwidth selection and the local-likelihood fit -- a separate piece of
 work, which would attach as a ``method`` on a fit-controls dataclass beside the
 existing ones.
@@ -86,6 +87,10 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       Local-polynomial degree: ``0``, ``1`` or ``2``.
   grid_size : int, optional
       Number of interpolation grid points.
+  boundary_repair : bool, optional
+      Whether a declared bound may be fitted with a dedicated boundary
+      estimator; see :class:`pyvinecopulib.core.Kde1d`. Carried through to the
+      fit, and preserved when an estimator is lifted.
   device : torch.device or None, optional
       Where the buffers live.
   dtype : torch.dtype, optional
@@ -686,13 +691,21 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       raise ValueError("probabilities must lie in [0, 1]")
     if self._type == "discrete":
       lvs, f_cum = self._level_cdf()
+      # The lowest level whose cdf has reached `p`, not the lowest that has
+      # passed it -- `lower_bound`, as the compiled quantile does. The two
+      # differ exactly where `p` lands on a level's cumulative probability,
+      # which is every point of an `icdf(cdf(k))` round trip.
       idx = torch.clamp(
-        torch.searchsorted(f_cum.contiguous(), pa.contiguous(), right=True),
+        torch.searchsorted(f_cum.contiguous(), pa.contiguous()),
         max=lvs.numel() - 1,
       )
       return torch.where(torch.isnan(pa), pa, lvs[idx])
     if self._type == "zero-inflated":
       zero = torch.zeros(1, dtype=pa.dtype, device=pa.device)
+      if float(self.prob0) >= 1.0:
+        # An all-zero column: the mass is the whole distribution and there is
+        # no continuous part to invert. `cdf` already answers this way.
+        return torch.where(torch.isnan(pa), pa, torch.zeros_like(pa))
       p0 = self.cdf(zero)[0]
       below = pa <= p0 - self.prob0
       rescaled = torch.where(

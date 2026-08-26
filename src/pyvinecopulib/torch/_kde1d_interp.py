@@ -132,8 +132,8 @@ def interpolate(grid_points: Tensor, values: Tensor, x: Tensor) -> Tensor:
   Returns
   -------
   Tensor, shape (n,)
-      Interpolated values. Not clamped: the caller decides, because the
-      discrete normalization divides by the raw sum.
+      Interpolated values. Not clamped, since the spline can dip below zero
+      near a sharp feature and each caller decides what to do about it.
   """
   coefs = cell_coefs(grid_points, values)
   k = find_cell(grid_points, x)

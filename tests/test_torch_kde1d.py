@@ -92,13 +92,17 @@ def test_pdf_and_cdf_match_the_compiled_estimator(
 
 #: How closely a torch quantile has to match the compiled one. Not zero for the
 #: continuous branch: since kde1d#33 that quantile is a Newton iteration, whose
-#: last bits follow the instruction set the C++ was built for -- recompiling
-#: kde1d with `-march=native` and nothing else moves it by 19 ULPs (2.0e-14
-#: relative). Torch dispatches its own kernels on the running CPU besides. A
-#: tolerance two orders tighter than that variation still fails loudly on an
-#: algorithmic divergence: keeping the bisection this replaced would have shown
-#: up at 6e-10. The discrete branch stays exact, because it is a table lookup
-#: rather than an iteration.
+#: last bits follow the instruction set the C++ was built for. Rebuilding kde1d
+#: with `-march=native` and nothing else moves it on 7 of 9 probabilities, by up
+#: to 2.0e-14 relative; torch dispatches its own kernels on the running CPU
+#: besides. The tolerance sits above that variation and two orders below an
+#: algorithmic divergence, which is what it has to catch: keeping the bisection
+#: this replaced would have shown up at 6e-10. The discrete branch stays exact,
+#: because it is a table lookup rather than an iteration -- away from a tie,
+#: which `_PROBS` avoids and
+#: `test_the_discrete_quantile_inverts_its_own_distribution_function` covers
+#: instead: a probability lands exactly on a level's cumulative only within one
+#: implementation, since the two cumulatives differ by about 1e-16.
 _QUANTILE_RTOL = {"discrete": 0.0, "continuous": 1e-12, "zi": 1e-12}
 
 
@@ -348,7 +352,7 @@ def test_the_quantile_carries_an_exact_gradient() -> None:
 
   `dq/dtheta = -(dF/dtheta) / f(q)` by the implicit function theorem, which one
   Newton step expresses exactly -- so differentiating the correction while
-  returning the bisection gives a usable gradient without moving the value.
+  returning the iterate gives a usable gradient without moving the value.
   """
   kde, lifted, _ = _fitted("continuous")
   reference = np.asarray(kde.icdf(_PROBS))
@@ -481,3 +485,30 @@ def test_the_discrete_support_matches_the_compiled_estimator(
   np.testing.assert_array_equal(
     lattice[lifted.pdf(_t(lattice)).numpy() > 0.0], carried
   )
+
+
+def test_the_discrete_quantile_inverts_its_own_distribution_function() -> None:
+  """`icdf(cdf(k)) == k` on every level, for the port and the compiled class.
+
+  This is the generalized inverse's defining property, and the one place the
+  two conventions differ: upstream takes the lowest level whose cdf has
+  *reached* `p`, and taking the lowest that has *passed* it lands one level
+  high at every tie. Nothing else in this file sees it, because `_PROBS` never
+  lands on a cumulative.
+
+  Each implementation is checked against itself rather than against the other.
+  Feeding one's cdf to the other's quantile is not a tie at all: their
+  cumulatives differ by about 1e-16, so the probability falls just below the
+  level it came from and the answer is legitimately the next one up.
+  """
+  y = np.random.default_rng(51).poisson(3.0, 600).astype(float)
+  kde = Kde1d(type="discrete", xmin=0.0)
+  kde.fit(y)
+  lifted = TorchKde1d.from_kde1d(kde)
+  levels = np.arange(0.0, 9.0)
+
+  np.testing.assert_array_equal(
+    np.asarray(kde.icdf(np.asarray(kde.cdf(levels)))), levels
+  )
+  own = lifted.cdf(_t(levels))
+  np.testing.assert_array_equal(lifted.icdf(own).numpy(), levels)
