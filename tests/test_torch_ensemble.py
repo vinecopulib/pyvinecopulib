@@ -399,6 +399,24 @@ def test_it_pickles_after_an_evaluation() -> None:
   torch.testing.assert_close(again.pdf(u), want, atol=0.0, rtol=0.0)
 
 
+def test_it_pickles_after_nn_module_compile() -> None:
+  """`nn.Module.compile()` installs a callable that has to be dropped.
+
+  Distinct from :func:`test_it_pickles_after_an_evaluation`: that one
+  covers the ensemble's own ``_compiled`` cache, while this covers
+  ``_compiled_call_impl``, which torch installs on the module itself.
+  Copying ``__dict__`` instead of delegating to ``nn.Module.__getstate__``
+  keeps it, and pickling then raises ``PicklingError``.
+  """
+  vines = _fit_vines(2, d=5, seed=27)
+  ens = BatchedVineEnsemble(vines)
+  u = torch.from_numpy(_eval_grid(20, 5, seed=88))
+  want = ens.pdf(u)
+  ens.compile()
+  again = pickle.loads(pickle.dumps(ens))
+  torch.testing.assert_close(again.pdf(u), want, atol=0.0, rtol=0.0)
+
+
 def test_every_buffer_follows_to_device(device: str) -> None:
   """No `extra=`: unlike a vine's bake, the stacked state is registered."""
   ens = BatchedVineEnsemble(_fit_vines(3, d=5, seed=22)).to(device)

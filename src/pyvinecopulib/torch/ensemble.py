@@ -577,8 +577,20 @@ class BatchedVineEnsemble(torch.nn.Module):
     self._compiled = {}
     return super()._apply(fn, *args, **kwargs)
 
-  def __getstate__(self):
-    state = dict(self.__dict__)
+  def __getstate__(self) -> dict:
+    """The picklable state: everything except the compiled-cascade cache.
+
+    Compiled callables do not pickle, and they are a pure cache -- the
+    unpickled ensemble recompiles on demand. Delegates to
+    ``nn.Module.__getstate__`` rather than copying ``__dict__``, which is
+    what drops ``_compiled_call_impl`` as well.
+
+    Returns
+    -------
+    dict
+        The instance state, with an empty compiled-cascade cache.
+    """
+    state = dict(super().__getstate__())
     state["_compiled"] = {}
     return state
 
