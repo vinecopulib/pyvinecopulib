@@ -460,9 +460,16 @@ class VineBase(BaseEstimator):
     # and idempotent.
     backend = getattr(self, "backend_", None) or resolve_backend(self.backend)
     specs = []
-    for type_, bound in zip(types, bounds):
+    for j, (type_, bound) in enumerate(zip(types, bounds)):
       pair = None if bound is None else (float(bound[0]), float(bound[1]))
-      specs.append(backend.default_margin(type_, pair))
+      try:
+        specs.append(backend.default_margin(type_, pair))
+      except (ValueError, RuntimeError) as exc:
+        # The bounds come from the column's own dtype, so a margin that refuses
+        # them is a statement about that column -- most often an ordered
+        # categorical whose levels are not integers, which cannot be a discrete
+        # `Kde1d`. The margin cannot name the column; we can.
+        raise type(exc)(f"margin for {self._column_name(j)!r}: {exc}") from exc
     return specs
 
   def _declared_for(
@@ -530,12 +537,19 @@ class VineBase(BaseEstimator):
     if hasattr(spec, "report_") and getattr(spec, "name", "") is None:
       spec.name = name
     var_type, support = self._declared_for(index)
-    margin = fit_margin(
-      spec,
-      np.asarray(column, dtype=float),
-      var_type=var_type,
-      support=support,
-    )
+    try:
+      margin = fit_margin(
+        spec,
+        np.asarray(column, dtype=float),
+        var_type=var_type,
+        support=support,
+      )
+    except (ValueError, RuntimeError) as exc:
+      # Whatever went wrong, the caller needs to know which column it was: the
+      # margin only ever sees one array and cannot name it. `Kde1d` refusing a
+      # non-integer discrete bound or observation is the common case, and it is
+      # reachable from an ordered categorical whose levels are not integers.
+      raise type(exc)(f"margin for {name!r}: {exc}") from exc
     if self._needs_marginal_density:
       self._require_density(margin, name, column)
     return margin
