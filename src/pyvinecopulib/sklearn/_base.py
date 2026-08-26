@@ -598,6 +598,41 @@ class VineBase(BaseEstimator):
       return backend.default_margin("continuous", None)
     return resolve_margins(self.margins, 1)[0]
 
+  @staticmethod
+  def _check_response_is_continuous(margin: Any) -> None:
+    """Refuse a response margin with atoms.
+
+    The joint model orders the response first and gives it no left-limit
+    column, which the prediction paths rely on. Called twice: once on the
+    specification, so a margin that declares its type up front is refused
+    before anything is fitted, and once on the fitted margin, for the
+    specifications that can only declare one afterwards.
+
+    Parameters
+    ----------
+    margin : object
+        A margin specification or a fitted margin.
+
+    Raises
+    ------
+    ValueError
+        If the margin declares a discrete or zero-inflated variable type.
+    """
+    try:
+      kind = Vinedist.copula_var_types([margin])[0]
+    except (RuntimeError, TypeError):
+      # Not every specification can answer yet: a selector has no variable type
+      # until it has chosen one, and a callable is not a margin until it has
+      # been called. Nothing to check here; the call on the fitted margin binds.
+      return
+    if kind == "c":
+      return
+    raise ValueError(
+      "The response margin must be continuous, but "
+      f"{type(margin).__name__} declares "
+      f"var_type={getattr(margin, 'var_type', 'c')!r}."
+    )
+
   def _fit_marginals(
     self, X: np.ndarray, y: np.ndarray | None = None
   ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
@@ -624,24 +659,21 @@ class VineBase(BaseEstimator):
       names=getattr(self, "_expanded_columns", None),
       default=self._default_margin_specs(),
     )
+    y_spec = None if y is None else self._response_margin_spec()
+    if y_spec is not None:
+      self._check_response_is_continuous(y_spec)
+
     self._x_margins = tuple(
       self._fit_one_margin(specs[j], X[:, j], self._column_name(j), index=j)
       for j in range(self.n_features_in_)
     )
     fitted = list(self._x_margins)
 
-    if y is not None:
+    if y_spec is not None:
       self._y_margin = self._fit_one_margin(
-        self._response_margin_spec(), np.asarray(y, dtype=float), "y"
+        y_spec, np.asarray(y, dtype=float), "y"
       )
-      # The joint model orders the response first and gives it no left-limit
-      # column, which the prediction paths rely on.
-      if Vinedist.copula_var_types([self._y_margin])[0] != "c":
-        raise ValueError(
-          "The response margin must be continuous, but "
-          f"{type(self._y_margin).__name__} declares "
-          f"var_type={getattr(self._y_margin, 'var_type', 'c')!r}."
-        )
+      self._check_response_is_continuous(self._y_margin)
       fitted.append(self._y_margin)
 
     self.selection_report_ = [
