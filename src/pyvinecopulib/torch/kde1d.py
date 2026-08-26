@@ -12,6 +12,7 @@ existing ones.
 
 from __future__ import annotations
 
+import math
 from typing import Any, Optional
 
 import torch
@@ -496,28 +497,51 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     ).reshape(-1)
 
   def _levels(self) -> Tensor:
-    """The integer lattice the discrete branches live on.
+    """The integer support the discrete branches live on.
 
-    Derived from the grid rather than stored, as the C++ does, so a grid that
-    moves takes its levels with it.
+    A declared bound *is* the support endpoint; the grid runs half a unit
+    wider, since the jittered observations fill the boundary cells. Where no
+    bound was declared the grid is all there is to go on, so the support is
+    read off it. Derived rather than stored, as the C++ does, so a grid that
+    moves takes its support with it -- and pinned against ``Kde1d``'s own
+    ``discrete_support`` by a parity test, since the two are separate copies of
+    one rule.
     """
     g = self.grid_points
-    lo = torch.floor(g[0])
-    hi = torch.ceil(g[-1])
+    lo_b, hi_b = self.support
+    lo = (
+      torch.floor(g[0])
+      if lo_b == -math.inf
+      else torch.as_tensor(lo_b, dtype=g.dtype, device=g.device)
+    )
+    hi = (
+      torch.maximum(lo, torch.ceil(g[-1]))
+      if hi_b == math.inf
+      else torch.as_tensor(hi_b, dtype=g.dtype, device=g.device)
+    )
     n = int(round(float(hi - lo))) + 1
     return lo + torch.arange(n, dtype=g.dtype, device=g.device)
 
   def _pdf_continuous(self, y: Tensor) -> Tensor:
     raw = interp.interpolate(self.grid_points, self.values, y)
-    return torch.clamp(raw, min=0.0)
+    out = torch.clamp(raw, min=0.0)
+    # A declared bound is a hard edge of the support, not merely where the grid
+    # happens to stop -- on a discrete margin the grid overhangs it by half a
+    # cell, so the two are no longer the same question.
+    lo, hi = self.support
+    if lo != -math.inf:
+      out = torch.where(y < lo, torch.zeros_like(out), out)
+    if hi != math.inf:
+      out = torch.where(y > hi, torch.zeros_like(out), out)
+    return out
 
   def _pdf_discrete(self, y: Tensor) -> Tensor:
     lvs = self._levels()
     keep = (y >= lvs[0]) & (y <= lvs[-1]) & (y == torch.round(y))
-    # The denominator is the *raw* interpolation over the levels, tails and the
-    # endpoint drop included -- not the clamped density. Using the clamped one
-    # here would change every discrete mass in the fourth digit.
-    norm = interp.interpolate(self.grid_points, self.values, lvs).sum()
+    # The jitter density between the levels, and outside the support, is not
+    # probability mass of the discrete model: only the ordinates at integer
+    # centers are, so the normalizer is the density at the levels.
+    norm = self._pdf_continuous(lvs).sum()
     return self._pdf_continuous(y) * keep / norm
 
   def _level_cdf(self) -> tuple[Tensor, Tensor]:
@@ -534,7 +558,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     out = torch.where(
       y < lo,
       torch.zeros_like(y),
-      torch.where(y >= hi, torch.ones_like(y), f_cum[idx]),
+      torch.where(y >= hi, torch.ones_like(y), f_cum[idx].clamp(0.0, 1.0)),
     )
     return torch.where(torch.isnan(y), y, out)
 
@@ -597,12 +621,16 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     return self._cdf_continuous(ya)
 
   def _icdf_continuous(self, p: Tensor) -> Tensor:
-    """Bisect as the C++ does, then reattach an exact gradient.
+    """Invert as the C++ does, then reattach an exact gradient.
 
-    The forward value is the bisection's, bit for bit. The gradient comes from
+    The forward value is the iteration's, bit for bit. The gradient comes from
     the implicit function theorem -- ``dq/dtheta = -(dF/dtheta) / f(q)``, and
     ``dq/dp = 1 / f(q)`` -- which a first Newton step expresses exactly, so
-    differentiating the correction while returning the bisection gives both.
+    differentiating the correction while returning the iterate gives both.
+
+    The residual is written in units of mass rather than probability so that
+    the total mass, which is itself a function of ``values``, carries its share
+    of ``dq/dtheta``.
 
     The correction is skipped only when no gradient is wanted at all. Gating it
     on ``values.requires_grad`` alone would kill ``dq/dp`` for a fitted, fixed
@@ -614,7 +642,8 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       self.values.requires_grad or p.requires_grad
     ):
       return q
-    residual = interp.integrate(self.grid_points, self.values, q) - p
+    total = interp.total_mass(self.grid_points, self.values)
+    residual = interp.integrate(self.grid_points, self.values, q) - p * total
     density = interp.interpolate(self.grid_points, self.values, q)
     tiny = torch.finfo(self.values.dtype).tiny
     corrected = q - residual / torch.clamp(density, min=tiny)

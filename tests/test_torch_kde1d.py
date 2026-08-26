@@ -110,13 +110,13 @@ def test_icdf_matches_the_compiled_estimator_exactly(
   )
 
 
-def test_the_grid_endpoint_drops_by_exp_minus_half() -> None:
-  """At the grid's right end the value is `v[-1] * exp(-0.5)`, not `v[-1]`.
+def test_both_tails_leave_the_grid_continuously() -> None:
+  """Each tail decays from the end it leaves, so neither jumps there.
 
-  The cell search returns the last cell there, so the normalized coordinate is
-  exactly `1` and the Gaussian-tail branch fires. It looks like an off-by-one
-  and it is what the compiled estimator does; a port that "fixed" it would
-  disagree with every `Kde1d` in the wild.
+  The Gaussian tail is written in the end cell's normalized coordinate, and
+  upstream measures it from the grid's own end -- `t` on the left, `t - 1` on
+  the right. Get the right one wrong and `pdf(grid[-1])` drops by a factor
+  `exp(-0.5)` while the left end looks fine, because `exp(0)` is 1.
 
   The fit has to be **bounded** for this to bite: on an unbounded one the grid
   runs out to where the density has vanished, so `values[-1]` is exactly zero
@@ -130,17 +130,19 @@ def test_the_grid_endpoint_drops_by_exp_minus_half() -> None:
   values = np.asarray(kde.values, dtype=float)
   assert values[-1] > 1e-3, "the case would be vacuous with a vanished tail"
 
-  at_end = float(lifted.pdf(_t(grid[-1:])).numpy()[0])
+  for end, expected in ((grid[-1:], values[-1]), (grid[:1], values[0])):
+    got = float(lifted.pdf(_t(end)).numpy()[0])
+    np.testing.assert_allclose(got, expected, rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(
+      got, float(np.asarray(kde.pdf(end))[0]), rtol=1e-12, atol=1e-12
+    )
+
+  # And the decay away from each end matches the compiled estimator too, which
+  # is what distinguishes a re-centred tail from a merely continuous one.
+  outside = np.array([grid[0] - 0.3, grid[-1] + 0.3])
   np.testing.assert_allclose(
-    at_end, values[-1] * np.exp(-0.5), rtol=1e-12, atol=1e-12
-  )
-  np.testing.assert_allclose(
-    at_end, float(np.asarray(kde.pdf(grid[-1:]))[0]), rtol=1e-12, atol=1e-12
-  )
-  # The same branch at the left end is invisible, because exp(0) is 1.
-  np.testing.assert_allclose(
-    float(lifted.pdf(_t(grid[:1])).numpy()[0]),
-    values[0],
+    lifted.pdf(_t(outside)).numpy(),
+    np.asarray(kde.pdf(outside)),
     rtol=1e-12,
     atol=1e-12,
   )
