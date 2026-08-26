@@ -1,17 +1,33 @@
 """Many vines, one cascade: the stacked ensemble is a reordering.
 
 `BatchedVineEnsemble` stacks M vines' pair copulas so a tree level is one
-call over all of them rather than M. Every pair still sees exactly the
-values it would have seen alone, so the gate here is equality, not a
-tolerance: the per-vine *batched* cascade is the reference, at
-`atol = rtol = 0`.
+call over all of them rather than M. Every pair sees exactly the values it
+would have seen alone, and no term is regrouped, so the reference is the
+per-vine *batched* cascade and the gate is a last bit rather than a
+tolerance in any meaningful sense: `_LAST_BIT` is 1e-14 relative, about
+forty-five times the double-precision epsilon and two orders tighter than
+the batched-vs-unbatched gates below.
 
-The comparison against the *unbatched* cascade is a tolerance, and for two
-reasons that predate this class: `_pdf` accumulates one product across all
-edges of all trees where the batched path takes one product per level, and
-`TorchBicop._prep` trims each pair's inputs where the batched path clamps
-them. Those are the published 1e-12 / 1e-13, and they are checked here too
-so a regression cannot hide behind the exact gate.
+It is not exactly zero, and the reason is worth recording. On x86-64 it
+*is* zero -- measured on cpu and cuda over 120 shape configurations, and
+that is what pinned the vine-major slot ordering, since edge-major
+ordering differs in 4 of those on cpu and 10 on cuda. On arm64 macOS and
+on Windows a handful of elements differ by one unit in the last place.
+That is not the density product's reduction order: `rosenblatt` carries no
+reduction at all on the cached path -- gathers, `lerp`, `addcmul`, a
+division -- and it moves too. What differs is the *leading extent* of the
+tensors those elementwise kernels run on, `M * (d - t - 1)` rows against
+`d - t - 1`, and a kernel is free to pick a different vectorized path,
+with different fused-multiply-add contraction, for a different size.
+Batching more rows into one call is the whole point of the class, so this
+is a property of the approach and not of a mistake in it.
+
+The comparison against the *unbatched* cascade is a genuine tolerance, for
+two reasons that predate this class: `_pdf` accumulates one product across
+all edges of all trees where the batched path takes one product per level,
+and `TorchBicop._prep` trims each pair's inputs where the batched path
+clamps them. Those are the published 1e-12 / 1e-13, checked here too so a
+regression cannot hide behind the tighter gate.
 """
 
 import pickle
@@ -38,6 +54,11 @@ from pyvinecopulib.torch._batched import BatchedTreeLevel  # noqa: E402
 from .helpers import assert_on_device  # noqa: E402
 
 _FAMILIES = [pv.families.tll, pv.families.indep]
+
+#: Cross-path gate: the stacked cascade regroups nothing, so anything
+#: above a last bit is a wiring bug rather than arithmetic. See the module
+#: docstring for why this is not exactly zero off x86-64.
+_LAST_BIT = {"rtol": 1e-14, "atol": 1e-16}
 
 
 def _simulate(d: int, n: int, seed: int = 0) -> np.ndarray:
@@ -108,21 +129,23 @@ def _loop(vines, method: str, u):
 @pytest.mark.parametrize("m", (1, 2, 7))
 @pytest.mark.parametrize("n", (1, 2, 37, 300))
 def test_matches_the_per_vine_loop(method: str, m: int, n: int) -> None:
-  """Bit-identical, including at n = 1.
+  """Agrees with the loop to a last bit, at every shape including n = 1.
 
-  `n = 1` is not padding: the density's per-level product is the one
+  `n = 1` is not padding. The density's per-level product is the one
   operation whose shape changes, from `(N_t, n)` reduced over dim 0 to
   `(M, N_t, n)` reduced over dim 1, and a trailing axis of length one is
-  where the two could pick different reduction geometries. They do not --
-  but only because the slots are laid out vine-major. Edge-major ordering
-  was measured to differ, at n = 1 and nowhere else.
+  where the two could pick different reduction geometries. Vine-major
+  slots keep them the same; edge-major ordering was measured to differ at
+  n = 1 and nowhere else, which is what pinned the layout. Windows then
+  found a 1-ULP discrepancy at n = 1 anyway, from a different cause -- see
+  the module docstring -- so the shape stays in the sweep.
   """
   vines = _fit_vines(m, d=6, seed=11)
   ens = BatchedVineEnsemble(vines)
   u = torch.from_numpy(_eval_grid(n, 6, seed=99))
   got = getattr(ens, method)(u)
   assert got.shape == ((m, n) if method == "pdf" else (m, n, 6))
-  torch.testing.assert_close(got, _loop(vines, method, u), atol=0.0, rtol=0.0)
+  torch.testing.assert_close(got, _loop(vines, method, u), **_LAST_BIT)
 
 
 @pytest.mark.parametrize(
@@ -146,7 +169,7 @@ def test_chunking_does_not_change_the_result(chunk: int) -> None:
   assert len(ens.chunks) == -(-11 // min(chunk, 11))
   for method in ("pdf", "rosenblatt"):
     torch.testing.assert_close(
-      getattr(ens, method)(u), _loop(vines, method, u), atol=0.0, rtol=0.0
+      getattr(ens, method)(u), _loop(vines, method, u), **_LAST_BIT
     )
 
 
@@ -159,7 +182,7 @@ def test_a_uniformly_truncated_set() -> None:
   u = torch.from_numpy(_eval_grid(50, 7, seed=96))
   for method in ("pdf", "rosenblatt"):
     torch.testing.assert_close(
-      getattr(ens, method)(u), _loop(vines, method, u), atol=0.0, rtol=0.0
+      getattr(ens, method)(u), _loop(vines, method, u), **_LAST_BIT
     )
 
 
@@ -200,7 +223,7 @@ def test_a_set_mixing_indep_and_tll_pairs() -> None:
   u_t = torch.from_numpy(u[:64])
   for method in ("pdf", "rosenblatt"):
     torch.testing.assert_close(
-      getattr(ens, method)(u_t), _loop(vines, method, u_t), atol=0.0, rtol=0.0
+      getattr(ens, method)(u_t), _loop(vines, method, u_t), **_LAST_BIT
     )
 
 

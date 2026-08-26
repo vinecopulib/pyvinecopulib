@@ -10,8 +10,11 @@ multiplies a launch-bound cascade's cost by ``M`` while the arithmetic per
 launch stays tiny.
 
 The stacking is a *reordering*: every pair copula is evaluated on exactly
-the values it would have seen alone, so the result is bit-identical to
-looping over the vines' own batched cascades.
+the values it would have seen alone and no term is regrouped, so the
+result agrees with looping over the vines' own batched cascades to the
+last bit -- exactly, on x86-64; within one unit in the last place on
+arm64 and Windows, where an elementwise kernel may take a different
+vectorized path for a stacked tensor than for a single vine's.
 """
 
 from __future__ import annotations
@@ -353,9 +356,14 @@ class BatchedVineEnsemble(torch.nn.Module):
   ``torch._dynamo.config.cache_size_limit`` (eight by default) before
   silently falling back to eager.
 
-  The stacking is a reordering, not a reformulation: results are
-  bit-identical to looping over ``pdf(u, batched=True)`` /
-  ``rosenblatt(u, batched=True)`` per vine.
+  The stacking is a reordering, not a reformulation: nothing is regrouped,
+  so results agree with looping ``pdf(u, batched=True)`` /
+  ``rosenblatt(u, batched=True)`` per vine to the last bit. On x86-64 that
+  is exact equality. On arm64 and Windows a few elements can differ by one
+  unit in the last place, because the stacked call hands an elementwise
+  kernel ``M`` times as many rows and the kernel may vectorize a different
+  way at a different size; the difference is bounded by rounding, not by
+  the number of vines.
 
   A snapshot, not a view. The grids are copied into stacked buffers at
   construction, so a vine changed afterwards needs a new ensemble; a vine

@@ -61,7 +61,7 @@ Notes
   a single :func:`torch.compile` code object -- where a loop over the
   vines is one per vine, of which torch keeps only
   ``torch._dynamo.config.cache_size_limit`` before falling back to eager.
-  Results are bit-identical to that loop.
+  Results agree with that loop to the last bit.
 
 - :class:`TorchMargin` — a univariate margin on a ``torch.distributions``
   family. Registers the family's parameters and rebuilds the distribution on

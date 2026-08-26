@@ -920,12 +920,17 @@ Key surface:
     `rosenblatt` / `inverse_rosenblatt` / `sample` signatures.
 - `BatchedVineEnsemble` — M fitted `TorchVinecop`s sharing `d`, `trunc_lvl`
   and a grid, evaluated in **one** stacked cascade: `pdf(u) -> (M, n)` and
-  `rosenblatt(u) -> (M, n, d)`, bit-identical to looping
-  `pdf(u, batched=True)` per vine. Slots are laid out **vine-major**, and that
-  is load-bearing rather than cosmetic: the per-level density product then
-  reduces over the same axis in the same order it would for one vine, which is
-  what makes the equality exact. Edge-major ordering was measured to differ, at
-  `n = 1` and nowhere else. A set is refused, never silently degraded, when it
+  `rosenblatt(u) -> (M, n, d)`, agreeing with a loop over
+  `pdf(u, batched=True)` to the **last bit**. Slots are laid out
+  **vine-major**, and that is load-bearing rather than cosmetic: the per-level
+  density product then reduces over the same axis in the same order it would
+  for one vine. Edge-major ordering was measured to differ, at `n = 1` and
+  nowhere else. The gate is a last bit rather than exact equality because
+  x86-64 gives exact equality and arm64 / Windows do not: `rosenblatt` carries
+  no reduction at all on the cached path and still moves by 1 ULP there, so the
+  cause is elementwise kernels vectorizing differently for a stacked leading
+  extent (`M * (d - t - 1)` rows against `d - t - 1`), which is inherent to
+  batching rather than a defect. Do not tighten it back to `atol = rtol = 0`. A set is refused, never silently degraded, when it
   disagrees on the grid (compare `grid_points` **values** and `_is_linear`, not
   just the shape `_shared_grid` compares within one vine), on `trunc_lvl`, on
   `cache_integrals` (the cached and quadrature integrals agree only to
