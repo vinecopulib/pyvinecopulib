@@ -296,38 +296,6 @@ For performance work: profile first, optimize demonstrated hotspots
 only, and preserve every quantitative invariant (round-trip identities,
 parity with the C++ cascade, pickling stability).
 
-### Running heavy commands when the agent shell shares the host GPU
-
-When the agent shell is on the same host whose GPU also runs the
-maintainer's X session (or any interactive desktop session), a CUDA
-lock-up in a pyvinecopulib subprocess can take the desktop driver
-down with it — observed twice in prior sessions, both times the box
-disappeared from ssh and required a hard reboot. The full pytest
-suite is allowed and reliable on its own; what is **not** allowed is
-queueing GPU-touching work alongside still-alive background tasks
-from earlier turns. Specifically:
-
-1. **After every `Bash(run_in_background=true)` call** (including
-   monitoring shells like a backgrounded `nvidia-smi -l` or a
-   `bench_torch_*` sweep), wait for the completion notification and
-   then `TaskStop` the task explicitly if it did not exit. Never let
-   a background task survive across turns.
-2. **Before any GPU-touching command** (the full `pytest tests/`,
-   any `scripts/bench_torch_*.py`, any test that drives
-   `pyvinecopulib.torch`), run a clean-state check:
-   `pgrep -af "uv run|pytest|bench_torch" | grep -v vscode` and
-   `nvidia-smi`. Proceed only if no leftover Python/uv processes are
-   running and VRAM is back at the X-session baseline.
-3. **Never queue two GPU subprocesses concurrently.** No parallel
-   `--devices cuda` benches via overlapping background bashes; one
-   in flight at a time, strictly serial.
-4. **Defer to the maintainer's own terminal for long bench sweeps.**
-   When uncertain about cumulative resource use, ask the maintainer
-   to run the sweep themselves where the process lifecycle is theirs
-   to manage.
-
-`make docs` (Sphinx) is unaffected — no torch involved.
-
 ## Working on this repo
 
 ### Inspection order
@@ -607,9 +575,29 @@ automatically.
 
 ### `pyvinecopulib.utils`
 
-- Re-exports `Kde1d`, `to_pseudo_obs`, `wdm`, `sobol`, `ghalton`,
-  `sample_uniform`, `benchmark` (all C++) plus the pure-Python
-  `pairs_copula_data` helper from `_pair_plots.py`.
+- Re-exports `Kde1d`, `to_pseudo_obs`, `wdm`, `find_latent_sample`,
+  `sobol`, `ghalton`, `sample_uniform`, `benchmark` (all C++) plus the
+  pure-Python `pairs_copula_data` helper from `_pair_plots.py`.
+- `wdm`'s `method` includes Chatterjee's ξ (`"chatterjee"` / `"cxi"` /
+  `"xi"`), the one **asymmetric** measure in the list — it measures how far
+  `y` is a function of `x`. `FitControlsVinecop.tree_criterion` accepts it
+  too, spelled **`"cxi"` only** (the full accepted set is `tau`, `rho`,
+  `hoeffd`, `mcor`, `cxi`, `joe`, `custom`), so any Python-side selector that
+  computes the criterion itself must accept it *and* symmetrize it the way
+  `pairwise_cxi` does — `max(ξ₁₂, ξ₂₁)` — or silently diverge from
+  `Vinecop.select`.
+- ξ breaks **predictor ties** at random, since ordering them by the response
+  would manufacture dependence. The seeds default to a constant, so ξ is a
+  function of its arguments; `wdm(..., seeds=)` varies that ordering for a
+  caller who wants to average over it. Untied predictors never construct the
+  generator, so continuous data is unaffected.
+- `wdm` **raises** on weights whose sum is not finite and positive, rather
+  than returning `NaN`.
+- `find_latent_sample(u, b, niter=3)` recovers a continuous sample from
+  interval-censored copula data — the transform a nonparametric fit on
+  discrete margins runs on. The draw is deterministic and invariant to
+  argument order, so a pair reused with its arguments flipped recovers the
+  same latent sample.
 - `Kde1d` is used internally by the sklearn estimators as the
   marginal estimator; it also stands alone for any 1-d KDE problem.
 - `to_pseudo_obs(data)` is the canonical input transform for
@@ -718,9 +706,30 @@ Key surface:
   dataclasses. Notable knobs:
   - `method` — `"tll"` (the only fitter; kept as the dispatch seam
     for future torch fitters).
-  - `cache_integrals` — default `True` (set in `990f997`); precomputes
-    integral grids for ~80–300× evaluation speed-up with mean IAE
-    `< 1e-3`.
+  - `cache_integrals` — default `True`; precomputes three `(m, m)`
+    cumulative-trapezoid **prefix** tables (`sy`, `sx`, `p`), from which
+    `cdf` / `hfunc*` read their value in closed form. The reconstruction is
+    **exact**, not an approximation: `chat` is bilinear, so along a grid line
+    it is piecewise linear and its integral is piecewise linear across cells.
+    So the cache costs nothing in accuracy — it agrees with the on-the-fly
+    path to summation-order noise — and it carries an exact gradient in
+    `values` as well as in `u`. `hinv*` do **not** read the tables in either
+    mode: locating the bracketing cell needs the conditional cumulative along
+    the whole free axis, which is `O(m)` to assemble, so there is no `O(1)`
+    exact lookup to cache and both modes run the same closed-form inversion.
+    The tables are buffers, so `_tables` rebuilds them in-graph when `values`
+    starts tracking grad after construction.
+  - `rect_mass(a1, b1, a2, b2)` is available in **both** cache modes: the exact
+    probability of a rectangle — the value a four-corner `cdf` difference
+    defines, arranged so that almost none of it cancels. That difference turns
+    an absolute error `ε` into `≈4ε/(w₁w₂)` in the atom widths; `rect_mass`
+    amplifies by `1/w₂` alone, since only its `λ(b₂) − λ(a₂)` term cancels and
+    that multiplies a term of order `w₁`. Measured on a `1.2e-4`-wide
+    rectangle: `2.9e-12` against `8.7e-9`. `values >= 0` is a constructor
+    precondition precisely because the nonnegative-weight bound depends on it.
+    Note it is the **probability**, not the density's mass: `cdf` renormalizes
+    each grid line by its own total, so the two differ, and a discrete edge is
+    defined against the distribution function.
   - `batched` — fires a single batched bicop call per tree level
     (available on `pdf` / `rosenblatt`, not on `inverse_rosenblatt`).
     The non-batched cascade is a byte-for-byte port of the C++
@@ -792,8 +801,8 @@ below are a quick orientation.
   `three_par`, `elliptical`, `archimedean`, `extreme_value`, `bb`,
   `rotationless`, `lt`, `ut`, `itau`, `analytic_derivs`).
 - **`pyvinecopulib.utils`** — `Kde1d`, `to_pseudo_obs`, `wdm`,
-  `sobol`, `ghalton`, `sample_uniform`, `benchmark`,
-  `pairs_copula_data`.
+  `find_latent_sample`, `sobol`, `ghalton`, `sample_uniform`,
+  `benchmark`, `pairs_copula_data`.
 - **`pyvinecopulib.sklearn`** — `VineDensity`, `VineRegressor`,
  plus the `backends`
   submodule (`VinecopBackend`, `TorchVinecopBackend`,

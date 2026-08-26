@@ -116,11 +116,19 @@ def bicop_plot(
   ## evaluate on grid. Force continuous margins on backends that expose
   ## ``var_types`` (the C++ Bicop); backends without it (e.g. BicopBase /
   ## TorchBicop) are continuous already, so skip the dance. Coerce the density
-  ## to a NumPy array so a torch-tensor return reshapes cleanly.
+  ## to a NumPy array so a torch-tensor return reshapes cleanly -- via the
+  ## host, since ``np.asarray`` raises on a tensor that lives on a device.
   vt = getattr(cop, "var_types", None)
   if vt is not None:
     cop.var_types = ["c", "c"]
-  vals = np.asarray(cop.pdf(np.stack(g, axis=-1).reshape(-1, 2)))
+  vals = cop.pdf(np.stack(g, axis=-1).reshape(-1, 2))
+  detach = getattr(vals, "detach", None)
+  if detach is not None:
+    vals = detach()
+  to_cpu = getattr(vals, "cpu", None)
+  if to_cpu is not None:
+    vals = to_cpu()
+  vals = np.asarray(vals)
   if vt is not None:
     cop.var_types = vt
   cop = np.reshape(vals, (grid_size, grid_size))

@@ -4,8 +4,10 @@
 #include <nanobind/stl/string.h>
 
 #include <string>
+#include <vinecopulib.hpp>
 
 namespace nb = nanobind;
+using namespace vinecopulib;
 
 inline std::string python_doc_helper(const std::string& module,
                                      const std::string& attr,
@@ -42,3 +44,18 @@ The triangular array is represented in Python as a nested list indexed
 //   1)
 //                                   : "<" + label + ">";
 // }
+
+// Defaults for the `controls` arguments. A *constructed* default argument is
+// materialized by nanobind as a Python object owned by the function record,
+// which then outlives module teardown and is reported as a leaked instance;
+// a nullable pointer costs neither that nor the copy an `std::optional` by
+// value would force on every call that does pass controls.
+inline const FitControlsBicop& default_bicop_controls() {
+  static const FitControlsBicop kDefaults{};
+  return kDefaults;
+}
+
+inline const FitControlsVinecop& default_vinecop_controls() {
+  static const FitControlsVinecop kDefaults{};
+  return kDefaults;
+}

@@ -4,9 +4,9 @@ Stacks the per-pair ``InterpolationGrid2D`` state at one tree level into
 ``(N, m, m)`` tensors so the whole level fires one batched bilinear interp
 (or one batched trapezoidal integration) instead of N separate calls.
 
-Exposes :func:`interpolate_batched`, :func:`interp_at_batched`,
-:func:`int_on_grid_batched`, :func:`integrate_1d_batched`,
-:func:`integrate_2d_batched` — the ``(N, m, m)`` analogs of the unbatched
+Exposes :func:`interpolate_batched`, :func:`int_on_grid_batched`,
+:func:`integrate_1d_batched`, :func:`integrate_2d_batched` and
+:func:`hfunc_from_cumulative` — the ``(N, m, m)`` analogs of the unbatched
 operations in :mod:`._interp` — plus :class:`BatchedTreeLevel` and
 :class:`BatchedVine`, which stage one tree level (resp. an entire vine)
 of stacked grids and wire-up tensors.
@@ -23,11 +23,16 @@ from typing import cast
 import torch
 from torch import Tensor
 
-# Mirror the trim constants from ``_interp`` so the batched path produces
-# numerically identical outputs to the per-pair path.
-_TRIM_LO: float = 1e-10
-_TRIM_HI: float = 1.0 - 1e-10
-_STRIP_FLOOR: float = 1e-4
+from ..core._trim import _TRIM_LO, trim_bounds
+
+#: Guard on a conditional total mass, so a zero-mass grid line cannot 0/0.
+_MIN_MASS: float = 1e-20
+
+
+def _trim(t: Tensor) -> Tensor:
+  """Clamp ``t`` into the open unit interval at its own precision."""
+  lo, hi = trim_bounds(torch, t.dtype)
+  return t.clamp(lo, hi)
 
 
 # --------------------------------------------------------------------------- #
@@ -103,88 +108,6 @@ def interpolate_batched(
   return (
     z11 * x2x * y2y + z21 * xx1 * y2y + z12 * x2x * yy1 + z22 * xx1 * yy1
   ) / denom
-
-
-def interp_at_batched(
-  grid_points: Tensor, cache: Tensor, u: Tensor, is_linear: bool = False
-) -> Tensor:
-  """Bilinearly interpolate a stacked precomputed cache.
-
-  Same shape contract as :func:`interpolate_batched`; the distinction is
-  semantic — ``cache`` is a precomputed integral grid (e.g. h-func or cdf),
-  whereas ``values`` in :func:`interpolate_batched` is the pdf grid.
-  """
-  return interpolate_batched(grid_points, cache, u, is_linear)
-
-
-def interpolate_batched_many(
-  grid_points: Tensor, caches: Tensor, u: Tensor, is_linear: bool = False
-) -> Tensor:
-  """Bilinearly interpolate ``K`` stacked grids at one shared query per pair.
-
-  The cell index and barycentric weights depend only on ``u`` and the grid, so
-  they are computed **once** and reused across the ``K`` grids (which differ only
-  in their node values). This is bit-for-bit identical to ``K`` separate
-  :func:`interpolate_batched` calls (same clamp, same cell search, same
-  weighted-sum arithmetic; the per-grid corner values come from pure gathers),
-  but does one cell search + one weight computation instead of ``K``.
-
-  Args:
-    grid_points: shape ``(m,)``, shared across all pairs.
-    caches: shape ``(N, K, m, m)``, ``K`` grids per pair (e.g. pdf / h1 / h2).
-    u: shape ``(N, n, 2)``, queries per pair.
-
-  Returns:
-    Tensor of shape ``(N, K, n)`` — ``[:, k, :]`` equals
-    ``interpolate_batched(grid_points, caches[:, k], u, is_linear)``.
-  """
-  if caches.ndim != 4:
-    raise ValueError(
-      f"caches must be 4D (N, K, m, m); got {tuple(caches.shape)}"
-    )
-  if u.ndim != 3 or u.shape[-1] != 2:
-    raise ValueError(f"u must be (N, n, 2); got {tuple(u.shape)}")
-  if u.shape[0] != caches.shape[0]:
-    raise ValueError(
-      f"u.shape[0]={u.shape[0]} != caches.shape[0]={caches.shape[0]}"
-    )
-  u = u.clamp(0.0, 1.0)
-  n_pairs, k_grids, m, _ = caches.shape
-  n = u.shape[1]
-
-  # Shared cell index + weights (identical to interpolate_batched).
-  i = _batched_cell_index(grid_points, u[..., 0], is_linear)  # (N, n)
-  j = _batched_cell_index(grid_points, u[..., 1], is_linear)  # (N, n)
-
-  # Flatten each grid to (N, K, m*m) and gather the four corners; f = i*m + j
-  # is the row-major flat index, so caches_flat[..., f] == caches[..., i, j].
-  caches_flat = caches.reshape(n_pairs, k_grids, m * m)
-  f11 = (i * m + j).unsqueeze(1).expand(n_pairs, k_grids, n)  # (N, K, n)
-  z11 = caches_flat.gather(-1, f11)
-  z12 = caches_flat.gather(-1, f11 + 1)
-  z21 = caches_flat.gather(-1, f11 + m)
-  z22 = caches_flat.gather(-1, f11 + m + 1)
-
-  x1 = grid_points[i]
-  x2 = grid_points[i + 1]
-  y1 = grid_points[j]
-  y2 = grid_points[j + 1]
-  x = u[..., 0]
-  y = u[..., 1]
-  # Weights are (N, n); broadcast over the K axis (N, 1, n).
-  x2x = (x2 - x).unsqueeze(1)
-  y2y = (y2 - y).unsqueeze(1)
-  xx1 = (x - x1).unsqueeze(1)
-  yy1 = (y - y1).unsqueeze(1)
-  denom = ((x2 - x1) * (y2 - y1)).unsqueeze(1)
-  return (
-    z11 * x2x * y2y + z21 * xx1 * y2y + z12 * x2x * yy1 + z22 * xx1 * yy1
-  ) / denom
-
-
-# --------------------------------------------------------------------------- #
-# Batched trapezoidal integration (``cache_integrals=False`` path)             #
-# --------------------------------------------------------------------------- #
 
 
 def int_on_grid_batched(
@@ -284,13 +207,20 @@ def integrate_1d_batched(
     v_lo = values.gather(dim=2, index=idx_lo).transpose(1, 2)  # (N, n, m)
     v_hi = values.gather(dim=2, index=idx_hi).transpose(1, 2)
 
-  strip = ((1.0 - t) * v_lo + t * v_hi).clamp_min(_STRIP_FLOOR)  # (N, n, m)
+  # A bilinear interpolation of a nonnegative grid is nonnegative, so this
+  # guard only absorbs rounding. It used to floor at 1e-4, which made the
+  # h-functions not the conditional cdf of the density the same object
+  # reported -- by up to 7.5e-5 on a strongly dependent fit, where two
+  # thirds of the grid can sit below that floor.
+  strip = ((1.0 - t) * v_lo + t * v_hi).clamp_min(0.0)  # (N, n, m)
 
   number = int_on_grid_batched(grid_points, u_free, strip, is_linear)  # (N, n)
   denom = int_on_grid_batched(
     grid_points, torch.ones_like(u_free), strip, is_linear
   )  # (N, n)
-  return (number / denom).clamp(_TRIM_LO, _TRIM_HI)
+  # Without the floor a grid line can carry no mass at all, so the
+  # division needs its own guard.
+  return _trim(number / denom.clamp_min(_MIN_MASS))
 
 
 def integrate_2d_batched(
@@ -335,12 +265,81 @@ def integrate_2d_batched(
     tmpint * u2 / tmpint1.clamp_min(_TRIM_LO),
     torch.zeros_like(tmpint),
   )
-  return out.clamp(_TRIM_LO, _TRIM_HI)
+  return _trim(out)
 
 
 # --------------------------------------------------------------------------- #
 # Per-tree-level stacked state + per-vine container                            #
 # --------------------------------------------------------------------------- #
+
+
+def hfunc_from_cumulative(
+  grid_points: Tensor,
+  values: Tensor,
+  sy: Tensor,
+  u: Tensor,
+  cond_var: int,
+  is_linear: bool = False,
+) -> Tensor:
+  """Exact conditional distribution function from a cumulative table.
+
+  The batched twin of :meth:`InterpolationGrid2D.hfunc_cached`. At a fixed
+  conditioning argument the interpolant is the linear blend of the two
+  bracketing grid lines, so both the partial and the total integral along the
+  free argument are that same blend of the corresponding entries of ``sy`` --
+  exact, and one gather per corner rather than a quadrature.
+
+  Parameters
+  ----------
+  grid_points : Tensor, shape (m,), dtype float
+      The shared grid.
+  values : Tensor, shape (N, m, m), dtype float
+      Density grids, oriented so that ``values[k, i, :]`` is the line at a
+      fixed conditioning argument -- transposed by the caller for
+      ``cond_var=2``.
+  sy : Tensor, shape (N, m, m), dtype float
+      ``sy[k, i, j]`` is that line's integral up to ``grid_points[j]``.
+  u : Tensor, shape (N, n, 2), dtype float
+      Query points, ``[u_cond, u_free]`` for ``cond_var=1`` and reversed for 2.
+  cond_var : int
+      1 or 2, the argument held fixed.
+  is_linear : bool, optional
+      Whether the grid is uniform, enabling O(1) cell lookup.
+
+  Returns
+  -------
+  Tensor, shape (N, n), dtype float
+      Conditional distribution values, clamped to ``[1e-10, 1-1e-10]``.
+  """
+  m = grid_points.shape[0]
+  n_batch = values.shape[0]
+  uu = u.clamp(0.0, 1.0)
+  cond = uu[..., 0] if cond_var == 1 else uu[..., 1]
+  free = uu[..., 1] if cond_var == 1 else uu[..., 0]
+  ic = _batched_cell_index(grid_points, cond, is_linear)
+  jc = _batched_cell_index(grid_points, free, is_linear)
+  g_ic, g_ic1 = grid_points[ic], grid_points[ic + 1]
+  w = ((cond - g_ic) / (g_ic1 - g_ic)).clamp(0.0, 1.0)
+  dx = free - grid_points[jc]
+  frac = dx / (grid_points[jc + 1] - grid_points[jc])
+
+  flat_v = values.reshape(n_batch, m * m)
+  flat_s = sy.reshape(n_batch, m * m)
+
+  def line(rows: Tensor) -> Tensor:
+    """Integral of grid line `rows` from 0 to `free`, per (batch, query)."""
+    base = rows * m
+    v0 = flat_v.gather(1, base + jc)
+    v1 = flat_v.gather(1, base + jc + 1)
+    cum = flat_s.gather(1, base + jc)
+    return cum + (2.0 * v0 + (v1 - v0) * frac) * dx / 2.0
+
+  num = (1.0 - w) * line(ic) + w * line(ic + 1)
+  last = torch.full_like(ic, m - 1)
+  den = (1.0 - w) * flat_s.gather(1, ic * m + last) + w * flat_s.gather(
+    1, (ic + 1) * m + last
+  )
+  return _trim(num / den.clamp_min(_MIN_MASS))
 
 
 class BatchedTreeLevel(torch.nn.Module):
@@ -352,8 +351,11 @@ class BatchedTreeLevel(torch.nn.Module):
   Grids (per pair):
   - ``values: (N, m, m)`` — pdf grid (rotation-less; TLL pair-copulas in
     pyvinecopulib always have rotation 0).
-  - ``h1_cache, h2_cache, cdf_cache: (N, m, m) | None`` — present only
-    when every source pair was constructed with ``cache_integrals=True``.
+  - ``sy, sy_t: (N, m, m) | None`` — cumulative-trapezoid prefix integrals
+    along argument 2 and (transposed) along argument 1, present only when
+    every source pair was constructed with ``cache_integrals=True``.
+  - ``values_t: (N, m, m) | None`` — the transposed pdf grid, materialized
+    beside ``sy_t`` so both arguments read the same reduction.
 
   Wiring (per pair, same across pdf / rosenblatt / inverse cascades):
   - ``col0_src: (N,) long`` — column to read for ``col0`` (= edge index).
@@ -369,14 +371,12 @@ class BatchedTreeLevel(torch.nn.Module):
   """
 
   # Class-level type hints so the buffers registered in __init__ are
-  # statically typed as Tensors instead of nn.Module (cf. ``_cdf_cache``
-  # in TorchBicop, same pattern).
+  # statically typed as Tensors instead of nn.Module (cf. ``_sy`` in
+  # TorchBicop, same pattern).
   values: Tensor
-  h1_cache: Tensor | None
-  h2_cache: Tensor | None
-  cdf_cache: Tensor | None
-  hinv1_cache: Tensor | None
-  hinv2_cache: Tensor | None
+  sy: Tensor | None
+  sy_t: Tensor | None
+  values_t: Tensor | None
   is_indep: Tensor
   col0_src: Tensor
   col1_src: Tensor
@@ -388,11 +388,8 @@ class BatchedTreeLevel(torch.nn.Module):
     self,
     *,
     values: Tensor,
-    h1_cache: Tensor | None,
-    h2_cache: Tensor | None,
-    cdf_cache: Tensor | None,
-    hinv1_cache: Tensor | None,
-    hinv2_cache: Tensor | None,
+    sy: Tensor | None,
+    sy_t: Tensor | None,
     is_indep: Tensor,
     col0_src: Tensor,
     col1_src: Tensor,
@@ -403,27 +400,18 @@ class BatchedTreeLevel(torch.nn.Module):
   ) -> None:
     super().__init__()
     self.register_buffer("values", values)
-    if h1_cache is not None:
-      self.register_buffer("h1_cache", h1_cache)
-      self.register_buffer("h2_cache", h2_cache)
-      self.register_buffer("cdf_cache", cdf_cache)
-      self.register_buffer("hinv1_cache", hinv1_cache)
-      self.register_buffer("hinv2_cache", hinv2_cache)
-      # Stacked [pdf, h1, h2] grids (N, 3, m, m) for the fused lookup: pdf +
-      # both h-functions share one cell search / weight computation. (The five
-      # caches are supplied all-or-nothing; the assert narrows for the checker.)
-      assert h2_cache is not None
-      self.register_buffer(
-        "_ph_stack", torch.stack([values, h1_cache, h2_cache], dim=1)
-      )
+    if sy is not None:
+      assert sy_t is not None
+      self.register_buffer("sy", sy)
+      self.register_buffer("sy_t", sy_t)
+      # `hfunc2` reads lines of the transposed grid, so keep it materialized
+      # rather than transposing per call.
+      self.register_buffer("values_t", values.transpose(1, 2).contiguous())
       self._has_cache = True
     else:
-      self.h1_cache = None
-      self.h2_cache = None
-      self.cdf_cache = None
-      self.hinv1_cache = None
-      self.hinv2_cache = None
-      self._ph_stack = None
+      self.sy = None
+      self.sy_t = None
+      self.values_t = None
       self._has_cache = False
     self.register_buffer("is_indep", is_indep)
     self.register_buffer("col0_src", col0_src)
@@ -464,119 +452,59 @@ class BatchedTreeLevel(torch.nn.Module):
     return torch.where(self.is_indep[:, None], torch.ones_like(raw), raw)
 
   def hfunc1(self, grid_points: Tensor, u: Tensor) -> Tensor:
-    """Per-pair hfunc1. ``cache=True`` does one bilinear interp on the
-    precomputed cache; ``cache=False`` runs :func:`integrate_1d_batched`
-    on ``values`` at every call.
+    """Per-pair hfunc1.
+
+    ``cache=True`` reconstructs the conditional distribution function exactly
+    from the cumulative table in O(1); ``cache=False`` runs
+    :func:`integrate_1d_batched` on ``values`` at every call. The two agree to
+    floating point: they are the same integral, summed in a different order.
     """
-    if self.h1_cache is not None:
-      raw = interp_at_batched(grid_points, self.h1_cache, u, self._is_linear)
+    if self.sy is not None:
+      raw = hfunc_from_cumulative(
+        grid_points, self.values, self.sy, u, 1, self._is_linear
+      )
     else:
       raw = integrate_1d_batched(
         grid_points, self.values, u, cond_var=1, is_linear=self._is_linear
       )
     h = raw.clamp(0.0, 1.0)
-    return torch.where(
-      self.is_indep[:, None], u[..., 1].clamp(_TRIM_LO, _TRIM_HI), h
-    )
+    return torch.where(self.is_indep[:, None], _trim(u[..., 1]), h)
 
   def hfunc2(self, grid_points: Tensor, u: Tensor) -> Tensor:
-    if self.h2_cache is not None:
-      raw = interp_at_batched(grid_points, self.h2_cache, u, self._is_linear)
+    """Per-pair hfunc2; see :meth:`hfunc1`."""
+    if self.sy_t is not None:
+      assert self.values_t is not None
+      raw = hfunc_from_cumulative(
+        grid_points, self.values_t, self.sy_t, u, 2, self._is_linear
+      )
     else:
       raw = integrate_1d_batched(
         grid_points, self.values, u, cond_var=2, is_linear=self._is_linear
       )
     h = raw.clamp(0.0, 1.0)
-    return torch.where(
-      self.is_indep[:, None], u[..., 0].clamp(_TRIM_LO, _TRIM_HI), h
-    )
+    return torch.where(self.is_indep[:, None], _trim(u[..., 0]), h)
 
   def pdf_h1_h2(
     self, grid_points: Tensor, u: Tensor
   ) -> tuple[Tensor, Tensor, Tensor]:
-    """Fused ``(pdf, hfunc1, hfunc2)`` sharing one cell search (cache path).
+    """``(pdf, hfunc1, hfunc2)`` for one tree level.
 
-    Bit-for-bit identical to calling :meth:`pdf` / :meth:`hfunc1` /
-    :meth:`hfunc2` separately (same clamps / indep overrides), but does one
-    :func:`interpolate_batched_many` on the stacked ``[pdf, h1, h2]`` grids
-    instead of three lookups. Falls back to the separate methods on the
-    no-cache path (where pdf and the h-functions are different algorithms).
+    The density is a bilinear lookup and the h-functions are reconstructions
+    from the cumulative table, so the three do not share an interpolation; the
+    grouping is the shape the cascade asks for, not a fused kernel.
     """
-    if self._ph_stack is None:
-      return (
-        self.pdf(grid_points, u),
-        self.hfunc1(grid_points, u),
-        self.hfunc2(grid_points, u),
-      )
-    raw = interpolate_batched_many(
-      grid_points, self._ph_stack, u, self._is_linear
-    )  # (N, 3, n) -> [pdf, h1, h2]
-    idx = self.is_indep[:, None]
-    pdf = torch.where(
-      idx, torch.ones_like(raw[:, 0, :]), raw[:, 0, :].clamp_min(1e-20)
+    return (
+      self.pdf(grid_points, u),
+      self.hfunc1(grid_points, u),
+      self.hfunc2(grid_points, u),
     )
-    h1 = torch.where(
-      idx, u[..., 1].clamp(_TRIM_LO, _TRIM_HI), raw[:, 1, :].clamp(0.0, 1.0)
-    )
-    h2 = torch.where(
-      idx, u[..., 0].clamp(_TRIM_LO, _TRIM_HI), raw[:, 2, :].clamp(0.0, 1.0)
-    )
-    return pdf, h1, h2
 
   def h1_h2(self, grid_points: Tensor, u: Tensor) -> tuple[Tensor, Tensor]:
-    """Fused ``(hfunc1, hfunc2)`` sharing one cell search; see :meth:`pdf_h1_h2`."""
-    if self._ph_stack is None:
-      return self.hfunc1(grid_points, u), self.hfunc2(grid_points, u)
-    raw = interpolate_batched_many(
-      grid_points, self._ph_stack[:, 1:, :, :], u, self._is_linear
-    )  # (N, 2, n) -> [h1, h2]
-    idx = self.is_indep[:, None]
-    h1 = torch.where(
-      idx, u[..., 1].clamp(_TRIM_LO, _TRIM_HI), raw[:, 0, :].clamp(0.0, 1.0)
-    )
-    h2 = torch.where(
-      idx, u[..., 0].clamp(_TRIM_LO, _TRIM_HI), raw[:, 1, :].clamp(0.0, 1.0)
-    )
-    return h1, h2
-
-  def hinv1(self, grid_points: Tensor, u: Tensor) -> Tensor:
-    """Per-pair hinv1. Requires ``cache_integrals=True`` — the precomputed
-    ``hinv1_cache`` collapses the C++ bisection cascade to one bilinear
-    interp per call. Without the cache the batched cascade can still
-    invert via bisection in the caller; this method raises so the caller
-    fails fast rather than silently routing through a slow path."""
-    if self.hinv1_cache is None:
-      raise RuntimeError(
-        "BatchedTreeLevel.hinv1 requires cache_integrals=True; build the "
-        "TorchBicop / TorchVinecop with cache_integrals=True to populate "
-        "the hinv1 cache."
-      )
-    raw = interp_at_batched(
-      grid_points, self.hinv1_cache, u, self._is_linear
-    ).clamp(0.0, 1.0)
-    return torch.where(
-      self.is_indep[:, None], u[..., 1].clamp(_TRIM_LO, _TRIM_HI), raw
-    )
-
-  def hinv2(self, grid_points: Tensor, u: Tensor) -> Tensor:
-    """Per-pair hinv2. See :meth:`hinv1` for the cache requirement."""
-    if self.hinv2_cache is None:
-      raise RuntimeError(
-        "BatchedTreeLevel.hinv2 requires cache_integrals=True; build the "
-        "TorchBicop / TorchVinecop with cache_integrals=True to populate "
-        "the hinv2 cache."
-      )
-    raw = interp_at_batched(
-      grid_points, self.hinv2_cache, u, self._is_linear
-    ).clamp(0.0, 1.0)
-    return torch.where(
-      self.is_indep[:, None], u[..., 0].clamp(_TRIM_LO, _TRIM_HI), raw
-    )
+    """``(hfunc1, hfunc2)`` for one tree level; see :meth:`pdf_h1_h2`."""
+    return self.hfunc1(grid_points, u), self.hfunc2(grid_points, u)
 
 
 class BatchedVine(torch.nn.Module):
-  grid_points: Tensor
-
   """All tree levels of a :class:`TorchVinecop`, stacked and pre-baked.
 
   Built lazily by :meth:`TorchVinecop._ensure_batched` on first call to any
@@ -592,6 +520,8 @@ class BatchedVine(torch.nn.Module):
   spans the full ``(var, tree)`` lattice and can't be flattened to
   tree-level waves without a global topological sort.
   """
+
+  grid_points: Tensor
 
   def __init__(
     self,
@@ -633,20 +563,17 @@ class BatchedVine(torch.nn.Module):
 
     # The grid is shared by all pairs (built once via
     # `InterpolationGrid2D.make_grid_points`).
-    grid_points = tvc._get_pair_copula(0, 0).interp_grid.grid_points
+    grid_points = tvc._pair_module(0, 0).interp_grid.grid_points
     # The grid type is also shared: all pair-copulas in a TorchVinecop come
     # from the same fit pipeline, so they all use the same storage grid.
-    is_linear = bool(tvc._get_pair_copula(0, 0).interp_grid._is_linear)
+    is_linear = bool(tvc._pair_module(0, 0).interp_grid._is_linear)
 
     levels: list[BatchedTreeLevel] = []
     for t in range(trunc_lvl):
       N_t = d - t - 1
       vals: list[Tensor] = []
-      h1_list: list[Tensor | None] = []
-      h2_list: list[Tensor | None] = []
-      cdf_list: list[Tensor | None] = []
-      hinv1_list: list[Tensor | None] = []
-      hinv2_list: list[Tensor | None] = []
+      sy_list: list[Tensor | None] = []
+      sy_t_list: list[Tensor | None] = []
       is_indep: list[bool] = []
       col0_src: list[int] = []
       col1_src: list[int] = []
@@ -656,17 +583,21 @@ class BatchedVine(torch.nn.Module):
       all_have_cache = True
 
       for e in range(N_t):
-        bc = tvc._get_pair_copula(t, e)
+        bc = tvc._pair_module(t, e)
         m = int(s.min_array(t, e))
         sarr = int(s.struct_array(t, e, natural_order=True))
         vals.append(bc.interp_grid.values)
-        if bc._hfunc1_cache is None:
+        if bc._sy is None:
           all_have_cache = False
-        h1_list.append(bc._hfunc1_cache)
-        h2_list.append(bc._hfunc2_cache)
-        cdf_list.append(bc._cdf_cache)
-        hinv1_list.append(bc._hinv1_cache)
-        hinv2_list.append(bc._hinv2_cache)
+          sy_list.append(None)
+          sy_t_list.append(None)
+        else:
+          # `_tables` rather than the buffers, so a grid that started tracking
+          # grad bakes its tables in-graph -- `_ensure_batched` re-bakes on a
+          # grad-signature change, which is what makes that reachable.
+          sy, sx, _ = bc._tables()
+          sy_list.append(sy)
+          sy_t_list.append(sx.t())
         is_indep.append(bool(bc.is_indep))
         col0_src.append(e)
         col1_src.append(m - 1)
@@ -675,37 +606,20 @@ class BatchedVine(torch.nn.Module):
         needs_h2_list.append(bool(s.needed_hfunc2(t, e)))
 
       values = torch.stack(vals, dim=0).to(device=device)
-      h1_cache: Tensor | None
-      h2_cache: Tensor | None
-      cdf_cache: Tensor | None
-      hinv1_cache: Tensor | None
-      hinv2_cache: Tensor | None
+      sy: Tensor | None
+      sy_t: Tensor | None
       if all_have_cache:
-        h1_cache = torch.stack(cast(list[Tensor], h1_list), dim=0).to(
-          device=device
-        )
-        h2_cache = torch.stack(cast(list[Tensor], h2_list), dim=0).to(
-          device=device
-        )
-        cdf_cache = torch.stack(cast(list[Tensor], cdf_list), dim=0).to(
-          device=device
-        )
-        hinv1_cache = torch.stack(cast(list[Tensor], hinv1_list), dim=0).to(
-          device=device
-        )
-        hinv2_cache = torch.stack(cast(list[Tensor], hinv2_list), dim=0).to(
+        sy = torch.stack(cast(list[Tensor], sy_list), dim=0).to(device=device)
+        sy_t = torch.stack(cast(list[Tensor], sy_t_list), dim=0).to(
           device=device
         )
       else:
-        h1_cache = h2_cache = cdf_cache = hinv1_cache = hinv2_cache = None
+        sy = sy_t = None
 
       level = BatchedTreeLevel(
         values=values,
-        h1_cache=h1_cache,
-        h2_cache=h2_cache,
-        cdf_cache=cdf_cache,
-        hinv1_cache=hinv1_cache,
-        hinv2_cache=hinv2_cache,
+        sy=sy,
+        sy_t=sy_t,
         is_indep=torch.tensor(is_indep, dtype=torch.bool, device=device),
         col0_src=torch.tensor(col0_src, dtype=torch.long, device=device),
         col1_src=torch.tensor(col1_src, dtype=torch.long, device=device),

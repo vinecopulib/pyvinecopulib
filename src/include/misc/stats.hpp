@@ -32,11 +32,21 @@ method :
     - ``"kendall"``, ``"ktau"``, ``"tau"`` : Kendall’s :math:`\tau`
     - ``"blomqvist"``, ``"bbeta"``, ``"beta"`` : Blomqvist’s :math:`\beta`
     - ``"hoeffding"``, ``"hoeffd"``, ``"d"`` : Hoeffding’s :math:`D`
+    - ``"chatterjee"``, ``"cxi"``, ``"xi"`` : Chatterjee’s :math:`\xi`
+
+    Every measure above is symmetric in ``x`` and ``y`` except Chatterjee’s
+    :math:`\xi`, which measures how far ``y`` is a function of ``x``.
 weights :
     Optional vector of observation weights.
 remove_missing :
     If ``True``, all observations containing a ``NaN`` are removed. Otherwise, an error is raised
     if missing values are present.
+seeds :
+    Seeds for the random tie-breaking Chatterjee’s :math:`\xi` applies to ``x``; ignored by every
+    other measure, and unused when ``x`` has no ties. Ordering tied predictors by ``y`` would
+    manufacture dependence, so the ties are broken at random -- but from a fixed default, so
+    :math:`\xi` is a function of its arguments. Pass seeds to vary that ordering or to average
+    over it.
 
 Returns
 -------
@@ -64,9 +74,14 @@ inline void init_stats(nb::module_& m) {
         tools_stat_doc.to_pseudo_obs.doc, "x"_a, "ties_method"_a = "average",
         "weights"_a = Eigen::VectorXd(), "seeds"_a = std::vector<int>(),
         nb::call_guard<nb::gil_scoped_release>());
+  m.def("find_latent_sample", &tools_stats::find_latent_sample,
+        tools_stat_doc.find_latent_sample.doc, "u"_a, "b"_a, "niter"_a = 3,
+        nb::call_guard<nb::gil_scoped_release>());
+
   m.def("wdm",
         static_cast<double (*)(const Eigen::VectorXd&, const Eigen::VectorXd&,
-                               std::string, Eigen::VectorXd, bool)>(&wdm::wdm),
+                               std::string, Eigen::VectorXd, bool,
+                               std::vector<int>)>(&wdm::wdm),
         doc_wdm, "x"_a, "y"_a, "method"_a, "weights"_a = Eigen::VectorXd(),
-        "remove_missing"_a = true);
+        "remove_missing"_a = true, "seeds"_a = std::vector<int>());
 }

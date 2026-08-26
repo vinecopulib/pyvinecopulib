@@ -36,7 +36,14 @@ class TestWdm:
 
   def test_wdm_basic_functionality(self) -> None:
     """Test basic functionality with different methods"""
-    methods = ["pearson", "spearman", "kendall", "blomqvist", "hoeffding"]
+    methods = [
+      "pearson",
+      "spearman",
+      "kendall",
+      "blomqvist",
+      "hoeffding",
+      "chatterjee",
+    ]
 
     for method in methods:
       # Should not raise an error and return a float
@@ -78,6 +85,13 @@ class TestWdm:
       assert_allclose(result, blomqvist_results[0], rtol=1e-15)
 
     # Hoeffding aliases
+    chatterjee_methods = ["chatterjee", "cxi", "xi"]
+    chatterjee_results = [
+      pv.utils.wdm(x, y, method) for method in chatterjee_methods
+    ]
+    assert_allclose(chatterjee_results[0], chatterjee_results[1], rtol=1e-12)
+    assert_allclose(chatterjee_results[0], chatterjee_results[2], rtol=1e-12)
+
     hoeffding_methods = ["hoeffding", "hoeffd", "d"]
     hoeffding_results = [
       pv.utils.wdm(x, y, method) for method in hoeffding_methods
@@ -172,13 +186,14 @@ class TestWdm:
       assert_allclose(result1, result3, rtol=1e-12)
 
   def test_wdm_weights_zeros(self) -> None:
-    """Test with all zero weights"""
-    x, y = self.x_positive, self.y_positive
-    weights = np.zeros(len(x))
+    """All-zero weights are refused rather than answered with a NaN.
 
-    # Zero weights should return NaN
-    result = pv.utils.wdm(x, y, "pearson", weights)
-    assert np.isnan(result)
+    There is no weighted measure to compute when the weights carry no mass, and
+    a silent NaN propagates into whatever consumed it.
+    """
+    x, y = self.x_positive, self.y_positive
+    with pytest.raises(RuntimeError, match="finite, positive sum"):
+      pv.utils.wdm(x, y, "pearson", np.zeros(len(x)))
 
   def test_wdm_input_validation(self) -> None:
     """Test input validation"""
@@ -393,3 +408,52 @@ class TestWdm:
     weights_large = np.full(n, 1e6)
     result_large = pv.utils.wdm(x, y, "pearson", weights_large)
     assert_allclose(result_large, result_unweighted, rtol=1e-12)
+
+  def test_chatterjee_is_the_one_asymmetric_measure(self) -> None:
+    """Chatterjee's xi measures how far y is a function of x, so it is
+    directional -- unlike every other measure `wdm` offers."""
+    x, y = self.x_positive, self.y_positive
+    for method in ("pearson", "spearman", "kendall", "blomqvist", "hoeffding"):
+      assert_allclose(
+        pv.utils.wdm(x, y, method), pv.utils.wdm(y, x, method), rtol=1e-12
+      )
+    assert pv.utils.wdm(x, y, "xi") != pv.utils.wdm(y, x, "xi")
+
+  def test_chatterjee_separates_dependence_from_independence(self) -> None:
+    """It is ~0 under independence and near 1 for a deterministic map."""
+    xi_indep = pv.utils.wdm(self.x_independent, self.y_independent, "xi")
+    assert abs(xi_indep) < 0.15
+    rng = np.random.default_rng(7)
+    x = rng.uniform(-2.0, 2.0, 2000)
+    assert pv.utils.wdm(x, x**2, "xi") > 0.9
+
+  def test_chatterjee_is_reproducible_on_tied_predictors(self) -> None:
+    """A dependence measure has to be a function of its arguments.
+
+    Ordering tied predictors by the response would manufacture dependence, so
+    the ties are broken at random -- but from a fixed default seed rather than
+    from ``std::random_device``, which returned a different number on every
+    call. Untied predictors never construct the generator.
+    """
+    rng = np.random.default_rng(0)
+    x = np.repeat(np.arange(12.0), 5)
+    y = rng.normal(size=x.size)
+    assert len({pv.utils.wdm(x, y, "xi") for _ in range(8)}) == 1
+
+  def test_chatterjee_seeds_choose_the_tie_ordering(self) -> None:
+    """``seeds`` is the knob for varying that ordering, or averaging over it."""
+    rng = np.random.default_rng(1)
+    x = np.repeat(np.arange(10.0), 6)
+    y = rng.normal(size=x.size)
+    assert pv.utils.wdm(x, y, "xi", seeds=[7]) == pv.utils.wdm(
+      x, y, "xi", seeds=[7]
+    )
+    assert pv.utils.wdm(x, y, "xi", seeds=[7]) != pv.utils.wdm(
+      x, y, "xi", seeds=[99]
+    )
+    # Untied predictors ignore the seeds entirely.
+    xc = rng.normal(size=300)
+    yc = xc + 0.5 * rng.normal(size=300)
+    assert pv.utils.wdm(xc, yc, "xi", seeds=[7]) == pv.utils.wdm(
+      xc, yc, "xi", seeds=[99]
+    )

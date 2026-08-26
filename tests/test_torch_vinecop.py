@@ -85,15 +85,13 @@ def test_rosenblatt_matches_pvvinecop() -> None:
     ("pdf", False, 1e-11, 1e-13),
     ("rosenblatt", False, 1e-10, 1e-13),
     ("inverse_rosenblatt", False, 1e-8, 1e-9),
-    # cache=True replaces every integration / inversion with a bilinear
-    # interp on a 30x30 grid — the per-pair ~1e-3 mean error compounds
-    # through the d-1 cascade levels. pdf is unbounded so the *max* error
-    # in absolute terms can be O(1); rosenblatt / inverse_rosenblatt are
-    # u-space and bounded so their max stays around the bicop-level cap.
-    # These bounds are loose — they pin the floor, not optimize against it.
-    ("pdf", True, 1e1, 1e-1),
-    ("rosenblatt", True, 1.0, 5e-2),
-    ("inverse_rosenblatt", True, 5e-2, 5e-3),
+    # cache=True reconstructs the same integrals in closed form from the
+    # prefix tables, so it differs from cache=False only in summation
+    # order: the same bounds hold. `inverse_rosenblatt` shares one code
+    # path across both modes, so its two rows are bit-identical.
+    ("pdf", True, 1e-11, 1e-13),
+    ("rosenblatt", True, 1e-10, 1e-13),
+    ("inverse_rosenblatt", True, 1e-8, 1e-9),
   ],
 )
 def test_cache_integrals_precision_floor(
@@ -101,12 +99,11 @@ def test_cache_integrals_precision_floor(
 ) -> None:
   """Pin the precision floor for each cache mode at a moderately-deep vine.
 
-  ``cache_integrals=False`` is the right choice for likelihood / sampling
-  applications: every per-pair integration and inversion is exact (modulo
-  bisection convergence), so the cascade preserves precision. Setting
-  ``cache=True`` is the right choice when ~1e-3 u-space error is
-  acceptable and per-call speed matters — typically pdf-only workloads
-  where the bilinear-interp gap is small compared to downstream noise.
+  Both modes preserve precision through the cascade: ``cache_integrals=False``
+  integrates and inverts per call, ``True`` reads the closed-form value off the
+  prefix tables, and the two differ only in the order the same terms are
+  summed. So the pins are the same in each column, and a regression in the
+  cached path shows up as a bound violation rather than as a widened tolerance.
   """
   d = 10
   u_fit = _simulate(d=d, n=2000, seed=1)
@@ -600,7 +597,10 @@ def test_pdf_autograd_through_grid_param() -> None:
   u_fit = _simulate(d=4, n=800, seed=700)
   cop = _fit_tll_vine(u_fit)
   bc = TorchVinecop.from_vinecop(cop, cache_integrals=False)
-  pair = bc._get_pair_copula(0, 0)
+  # The stored module, not what `_get_pair_copula` hands the cascade: that is
+  # the grid the parameters live on, and it is the same object here (this vine
+  # is continuous, so nothing is wrapped).
+  pair = bc._pair_module(0, 0)
   pair.interp_grid.values.requires_grad_(True)
   u = torch.from_numpy(_eval_grid(64, d=4, seed=701))
   out = bc.pdf(u, batched=False)
@@ -655,3 +655,114 @@ def test_batched_cache_stays_out_of_the_state_dict() -> None:
   fresh = TorchVinecop.from_vinecop(cpp)
   fresh.load_state_dict(vine.state_dict(), strict=True)
   torch.testing.assert_close(fresh.pdf(data), vine.pdf(data))
+
+
+# --- gradients ---------------------------------------------------------------- #
+
+
+def _central_fd(fn, q, eps: float = 1e-6):
+  """Central finite differences of a scalar-per-row function in every column."""
+  fd = torch.zeros_like(q)
+  with torch.no_grad():
+    for j in range(q.shape[1]):
+      hi, lo = q.clone(), q.clone()
+      hi[:, j] += eps
+      lo[:, j] -= eps
+      fd[:, j] = (fn(hi) - fn(lo)) / (2 * eps)
+  return fd
+
+
+@pytest.mark.parametrize("cache_integrals", [True, False])
+@pytest.mark.parametrize("batched", [False, True])
+def test_pdf_gradient_matches_finite_differences(
+  cache_integrals: bool, batched: bool
+) -> None:
+  """`d pdf / d u` must be right on all four (cache, batched) paths.
+
+  It was not: with `cache_integrals=True` the cached `hfunc1` / `hfunc2` were
+  evaluated under `torch.no_grad()`, so the cascade's conditioning arguments were
+  detached and only the final density factors contributed. The error was 111% of
+  the largest finite-difference entry — and only on the non-batched path, because
+  the batched level calls the interpolation primitives directly and was never
+  wrapped. So
+  the two paths silently disagreed on gradients while agreeing on values.
+
+  Query points are drawn away from the grid nodes: the interpolant is piecewise
+  bilinear, so a finite difference straddling a knot compares two different
+  polynomials.
+  """
+  cop = _fit_tll_vine(_simulate(d=5, n=400, seed=4))
+  bc = TorchVinecop.from_vinecop(cop, cache_integrals=cache_integrals)
+  q = torch.from_numpy(
+    np.random.default_rng(23).uniform(0.15, 0.85, size=(8, 5))
+  )
+
+  x = q.clone().requires_grad_(True)
+  (grad,) = torch.autograd.grad(bc.pdf(x, batched=batched).sum(), x)
+  fd = _central_fd(lambda uu: bc.pdf(uu, batched=batched), q)
+
+  assert grad is not None
+  rel = (grad - fd).abs().max().item() / fd.abs().max().item()
+  assert rel < 1e-6, f"cache={cache_integrals} batched={batched}: {rel:.3e}"
+
+
+def test_cached_and_uncached_gradients_agree_in_direction() -> None:
+  """Bounded, not equal: with a cache the surrogate *is* the model.
+
+  The cached members interpolate a table of the integrals bilinearly, so their
+  derivative is the surrogate's, not the exact integral's. That difference is
+  the same order as the documented value gap, so pin the agreement as a
+  direction rather than a value.
+  """
+  cop = _fit_tll_vine(_simulate(d=4, n=400, seed=5))
+  q = torch.from_numpy(
+    np.random.default_rng(24).uniform(0.15, 0.85, size=(16, 4))
+  )
+  grads = []
+  for cache in (True, False):
+    bc = TorchVinecop.from_vinecop(cop, cache_integrals=cache)
+    x = q.clone().requires_grad_(True)
+    (g,) = torch.autograd.grad(bc.pdf(x, batched=False).sum(), x)
+    grads.append(g.flatten())
+
+  cosine = torch.nn.functional.cosine_similarity(grads[0], grads[1], dim=0)
+  assert cosine.item() > 0.99, cosine.item()
+
+
+def test_the_batched_cache_re_bakes_when_grad_tracking_changes() -> None:
+  """`requires_grad_` after a batched call must not leave a stale cache.
+
+  The bake copies each pair's grid into a stacked tensor and `requires_grad_`
+  mutates a flag in place, so flipping it afterwards used to leave the copy
+  behind. It did not raise where it was read: the batched cascade returned a
+  value detached from the grid, and it surfaced as torch's generic "does not
+  require grad" out of `backward()`. Both orderings must now give the same
+  gradient, and it must equal the non-batched one.
+  """
+  fitted = _fit_tll_vine(_simulate(d=3, n=600, seed=900))
+  u = torch.from_numpy(_eval_grid(48, d=3, seed=901))
+
+  def lift():
+    return TorchVinecop.from_vinecop(fitted, cache_integrals=False)
+
+  cop = lift()
+  # Bake first -- the ordering a caller hits by evaluating before deciding to
+  # optimize -- then start tracking the grid.
+  baked = cop.pdf(u, batched=True)
+  assert not baked.requires_grad
+  values = cop._get_pair_copula(0, 0).interp_grid.values
+  values.requires_grad_(True)
+
+  (g_batched,) = torch.autograd.grad(cop.pdf(u, batched=True).sum(), values)
+  (g_plain,) = torch.autograd.grad(cop.pdf(u, batched=False).sum(), values)
+  assert float(g_batched.abs().sum()) > 0.0
+  torch.testing.assert_close(g_batched, g_plain, rtol=1e-10, atol=1e-12)
+
+  # The other ordering agrees, so neither is the special case.
+  other = lift()
+  other_values = other._get_pair_copula(0, 0).interp_grid.values
+  other_values.requires_grad_(True)
+  (g_first,) = torch.autograd.grad(
+    other.pdf(u, batched=True).sum(), other_values
+  )
+  torch.testing.assert_close(g_batched, g_first, rtol=1e-10, atol=1e-12)

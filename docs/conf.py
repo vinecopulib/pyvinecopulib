@@ -345,6 +345,7 @@ DOCSTRING_SUBPACKAGES = {
       "to_pseudo_obs",
       "sample_uniform",
       "wdm",
+      "find_latent_sample",
       "ghalton",
       "sobol",
       "pairs_copula_data",

@@ -36,7 +36,7 @@ from torch import Tensor
 
 from ..core import BicopBase
 from ..pyvinecopulib_ext import Bicop, tll as _TLL_FAMILY
-from ._interp import InterpolationGrid2D, _TRIM_LO, _TRIM_HI
+from ._interp import InterpolationGrid2D, _trim
 from .controls import FitControlsTorchBicop
 
 
@@ -66,11 +66,17 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       bisection path). The caches are built once at construction
       from ``values`` and are not refreshed afterwards; mutating
       ``interp_grid.values`` in place on a cached instance is
-      unsupported (rebuild a new ``TorchBicop`` instead).
-  norm_times : int, default=3
-      Number of margin-normalization rounds. Matches the ``Bicop``
-      TLL default. Pass ``0`` to skip when the grid already integrates
-      to uniform margins.
+      unsupported (rebuild a new ``TorchBicop`` instead). For the same
+      reason the cached members are exact, differentiable functions of
+      ``u`` but carry **no** gradient with respect to ``values`` -- the
+      tables are constants. ``pdf`` never uses a cache and always does.
+      Pass ``cache_integrals=False`` to differentiate the integrals with
+      respect to the density grid.
+  norm_maxiter : int, default=25
+      Maximum number of margin-rescaling passes; rescaling also stops
+      as soon as both margins integrate to 1 within ``1e-10``. Matches
+      the ``Bicop`` TLL default. Pass ``0`` to skip when the grid
+      already integrates to uniform margins.
   is_linear : bool, default=False
       Internal flag selecting the linear-grid fast-path in the
       underlying ``InterpolationGrid2D``. Set by
@@ -85,6 +91,12 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
   """
 
   is_indep: bool
+  # Class-level hints so the prefix tables registered in __init__ are
+  # statically typed as Tensors instead of nn.Module. They are set together:
+  # all three are present or all three are None.
+  _sy: Tensor | None
+  _sx: Tensor | None
+  _prefix: Tensor | None
   #: TorchBicop exposes the grid/cache internals the batched vine path needs.
   supports_batched: bool = True
 
@@ -93,7 +105,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     grid_points: Optional[Tensor] = None,
     values: Optional[Tensor] = None,
     cache_integrals: bool = True,
-    norm_times: int = 3,
+    norm_maxiter: int = 25,
     is_linear: bool = False,
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
@@ -108,7 +120,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       m = 2
       grid_points = torch.tensor([0.0, 1.0], dtype=dtype, device=device)
       values = torch.ones(m, m, dtype=dtype, device=device)
-      norm_times_eff = 0
+      norm_maxiter_eff = 0
     else:
       if grid_points is None or values is None:
         raise ValueError(
@@ -118,31 +130,28 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       self.is_indep = False
       grid_points = torch.as_tensor(grid_points, dtype=dtype, device=device)
       values = torch.as_tensor(values, dtype=dtype, device=device)
-      norm_times_eff = norm_times
+      norm_maxiter_eff = norm_maxiter
 
     self.interp_grid = InterpolationGrid2D(
       grid_points=grid_points,
       values=values,
-      norm_times=norm_times_eff,
+      norm_maxiter=norm_maxiter_eff,
       is_linear=is_linear,
     )
 
     self._cache_integrals = bool(cache_integrals)
     if self._cache_integrals and not self.is_indep:
-      cdf_vals, h1_vals, h2_vals, hinv1_vals, hinv2_vals = (
-        self.interp_grid.build_caches()
-      )
-      self.register_buffer("_cdf_cache", cdf_vals)
-      self.register_buffer("_hfunc1_cache", h1_vals)
-      self.register_buffer("_hfunc2_cache", h2_vals)
-      self.register_buffer("_hinv1_cache", hinv1_vals)
-      self.register_buffer("_hinv2_cache", hinv2_vals)
+      # Detached, because a buffer is a cache and holding a graph in one would
+      # keep it alive for the module's lifetime. `_tables` rebuilds them inside
+      # the graph whenever a gradient is actually being taken.
+      sy, sx, pref = (t.detach() for t in self.interp_grid.build_caches())
+      self.register_buffer("_sy", sy)
+      self.register_buffer("_sx", sx)
+      self.register_buffer("_prefix", pref)
     else:
-      self._cdf_cache = None
-      self._hfunc1_cache = None
-      self._hfunc2_cache = None
-      self._hinv1_cache = None
-      self._hinv2_cache = None
+      self._sy = None
+      self._sx = None
+      self._prefix = None
 
   # --------------------------------------------------------------------- #
   # Constructors                                                           #
@@ -160,8 +169,11 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
     The resulting ``TorchBicop`` is a ``torch.nn.Module`` (so
     ``.to("cuda")`` moves the density grid in one line) built from a
-    differentiable bilinear interpolator, with autograd flowing
-    through every ``pdf`` / ``cdf`` / ``hfunc`` / ``hinv`` call.
+    differentiable bilinear interpolator: autograd flows through every
+    ``pdf`` / ``cdf`` / ``hfunc`` / ``hinv`` call in ``u``, and through
+    ``pdf`` in the density grid. With ``cache_integrals=True`` the other
+    four read a frozen table, so they carry no gradient in the grid; see
+    that parameter on ``TorchBicop.__init__``.
 
     Parameters
     ----------
@@ -205,8 +217,8 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       )
     m = values_np.shape[0]
     grid_points = InterpolationGrid2D.make_grid_points(
-      "normal", m, dtype=dtype
-    ).to(device=device)
+      "normal", m, dtype=dtype, device=device
+    )
     values = torch.as_tensor(values_np, dtype=dtype, device=device)
     # The grid stored on cop is already normalized; skip renormalization
     # to avoid drifting away from the reference ``Bicop`` values.
@@ -214,7 +226,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       grid_points=grid_points,
       values=values,
       cache_integrals=cache_integrals,
-      norm_times=0,
+      norm_maxiter=0,
       device=device,
       dtype=dtype,
     )
@@ -275,7 +287,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       grid_points=grid_points,
       values=values,
       cache_integrals=cache_integrals,
-      norm_times=3,
+      norm_maxiter=25,
       is_linear=(controls.grid_type == "linear"),
       device=device,
       dtype=dtype,
@@ -306,7 +318,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       grid_points=self.interp_grid.grid_points,
       values=self.interp_grid.values.transpose(0, 1).contiguous(),
       cache_integrals=self._cache_integrals,
-      norm_times=0,
+      norm_maxiter=0,
       is_linear=self.interp_grid._is_linear,
       device=device,
       dtype=dtype,
@@ -325,7 +337,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     if u.ndim != 2 or u.shape[1] != 2:
       raise ValueError(f"u must have shape (n, 2); got {tuple(u.shape)}")
     # Trim to (1e-10, 1 - 1e-10), mirroring Bicop::prep_for_abstract.
-    return u.clamp(_TRIM_LO, _TRIM_HI)
+    return _trim(u)
 
   def pdf(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Evaluates the bivariate copula density ``c(u1, u2)``.
@@ -380,19 +392,75 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     """
     u = self._prep(u)
     if self.is_indep:
-      return (u[:, 0] * u[:, 1]).clamp(_TRIM_LO, _TRIM_HI)
-    if self._cdf_cache is not None:
-      return self.interp_grid.interp_at(self._cdf_cache, u)
+      return _trim(u[:, 0] * u[:, 1])
+    if self._sy is not None:
+      sy, sx, pref = self._tables()
+      return self.interp_grid.cdf_cached(u, sy, sx, pref)
     return self.interp_grid.integrate_2d(u)
+
+  def rect_mass(self, a1: Tensor, b1: Tensor, a2: Tensor, b2: Tensor) -> Tensor:
+    """The probability of ``(a1, b1] x (a2, b2]``, without the cancellation.
+
+    An optional capability a discrete edge discovers with ``getattr``: it lets
+    the mixed-discrete density read the atom's probability directly instead of
+    differencing four :meth:`cdf` values, which amplifies any absolute error by
+    ``~4 / (w1 w2)`` in the atom widths where this route amplifies by
+    ``1 / w2`` alone. Available in both cache modes -- it reads the grid, not
+    the prefix tables.
+
+    Parameters
+    ----------
+    a1, b1, a2, b2 : Tensor, shape (n,), dtype float
+        Rectangle bounds per query. An empty or inverted interval gives zero.
+
+    Returns
+    -------
+    Tensor, shape (n,), dtype float
+        Rectangle probabilities. Independence returns
+        ``(b1 - a1) * (b2 - a2)``.
+    """
+    # Coerced but *not* trimmed: `[1e-10, 1-1e-10]` is the guard `cdf` applies
+    # to a query point, and a rectangle's lower bound is legitimately zero --
+    # trimming it drops a sliver of width `1e-10` per axis, which is exactly
+    # what a corner rectangle would then disagree with `cdf` by. The weights
+    # clamp to `[0, 1]` themselves.
+    ref = self.interp_grid.values
+    a1, b1, a2, b2 = (
+      torch.as_tensor(t, dtype=ref.dtype, device=ref.device)
+      for t in (a1, b1, a2, b2)
+    )
+    if self.is_indep:
+      return (b1 - a1).clamp_min(0.0) * (b2 - a2).clamp_min(0.0)
+    return self.interp_grid.rect_mass(a1, b1, a2, b2)
+
+  def _tables(self) -> tuple[Tensor, Tensor, Tensor]:
+    """The prefix tables, rebuilt in-graph when a gradient is being taken.
+
+    They are cumulative sums of ``values``, so the closed forms that read them
+    are exact functions of the grid -- but the stored copies are detached
+    buffers, and differentiating through those would silently drop most of the
+    gradient rather than all of it. They are therefore recomputed whenever grad
+    is live: three cumulative sums over ``(m, m)``, and never on the
+    no-gradient path.
+    """
+    assert self._sy is not None
+    assert self._sx is not None and self._prefix is not None
+    if torch.is_grad_enabled() and self.interp_grid.values.requires_grad:
+      return self.interp_grid.build_caches()
+    return self._sy, self._sx, self._prefix
 
   # --------------------------------------------------------------------- #
   # h-functions                                                            #
   # --------------------------------------------------------------------- #
 
   def _hfunc_raw(self, u: Tensor, cond_var: int) -> Tensor:
-    cache = self._hfunc1_cache if cond_var == 1 else self._hfunc2_cache
-    if cache is not None:
-      return self.interp_grid.interp_at(cache, u).clamp(_TRIM_LO, _TRIM_HI)
+    if self._sy is not None:
+      sy, sx, _ = self._tables()
+      # Conditioning on the second argument reads the cumulative along the
+      # first, which is `sx` laid out the way `hfunc_cached` indexes it.
+      return self.interp_grid.hfunc_cached(
+        u, cond_var, sy if cond_var == 1 else sx.t()
+      )
     return self.interp_grid.integrate_1d(u, cond_var=cond_var)
 
   def hfunc1(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
@@ -418,7 +486,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     """
     u = self._prep(u)
     if self.is_indep:
-      return u[:, 1].clamp(_TRIM_LO, _TRIM_HI)
+      return _trim(u[:, 1])
     return self._hfunc_raw(u, 1).clamp(0.0, 1.0)
 
   def hfunc2(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
@@ -444,14 +512,13 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     """
     u = self._prep(u)
     if self.is_indep:
-      return u[:, 0].clamp(_TRIM_LO, _TRIM_HI)
+      return _trim(u[:, 0])
     return self._hfunc_raw(u, 2).clamp(0.0, 1.0)
 
   # --------------------------------------------------------------------- #
   # Inverse h-functions (closed-form conditional quantiles).               #
   # --------------------------------------------------------------------- #
 
-  @torch.no_grad()
   def _hinv_raw(self, u: Tensor, cond_var: int) -> Tensor:
     """Shared inverse-h-function body for `hinv1` / `hinv2`.
 
@@ -463,12 +530,15 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     (:meth:`InterpolationGrid2D.inverse_integrate_1d`, mirroring
     vinecopulib#691).
     """
-    cache = self._hinv1_cache if cond_var == 1 else self._hinv2_cache
-    if cache is not None:
-      return self.interp_grid.interp_at(cache, u).clamp(0.0, 1.0)
+    # Always the closed-form inversion. Tabulating the inverse at the grid
+    # nodes and interpolating between them was the one cached member whose
+    # error was not merely a tolerance -- up to 1e-2 -- and unlike `cdf` and
+    # the h-functions it has no O(1) exact reconstruction: locating the
+    # bracketing cell needs the conditional cumulative along the whole free
+    # axis, which is O(m) to assemble whatever is cached. So the cache buys
+    # O(1) where it can, and consistency where it cannot.
     return self.interp_grid.inverse_integrate_1d(u, cond_var).clamp(0.0, 1.0)
 
-  @torch.no_grad()
   def hinv1(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Inverts `hfunc1` w.r.t. the second argument.
 
@@ -495,10 +565,9 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     """
     u = self._prep(u)
     if self.is_indep:
-      return u[:, 1].clamp(_TRIM_LO, _TRIM_HI)
+      return _trim(u[:, 1])
     return self._hinv_raw(u, 1)
 
-  @torch.no_grad()
   def hinv2(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Inverts `hfunc2` w.r.t. the first argument.
 
@@ -523,7 +592,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     """
     u = self._prep(u)
     if self.is_indep:
-      return u[:, 0].clamp(_TRIM_LO, _TRIM_HI)
+      return _trim(u[:, 0])
     return self._hinv_raw(u, 2)
 
   # --------------------------------------------------------------------- #
@@ -584,9 +653,15 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
         .to(device=device)
       )
     else:
-      if seed is not None:
-        torch.manual_seed(seed)
-      u = torch.rand(n, 2, dtype=dtype, device=device)
+      # A device-local generator: ``torch.manual_seed`` reseeds the global
+      # CPU generator and every CUDA one, so seeding a single pair copula
+      # would perturb every other RNG consumer in the process.
+      gen = (
+        torch.Generator(device=device).manual_seed(seed)
+        if seed is not None
+        else None
+      )
+      u = torch.rand(n, 2, generator=gen, dtype=dtype, device=device)
     if self.is_indep:
       return u
     u2 = self.hinv1(u).unsqueeze(-1)

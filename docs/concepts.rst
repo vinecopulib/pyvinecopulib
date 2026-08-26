@@ -634,6 +634,13 @@ handful of variables. Two algorithms are exposed via
   example to draw several candidates and compare their held-out
   likelihoods.
 
+One of the available criteria, Chatterjee's :math:`\xi` (``"cxi"``), is
+**asymmetric** — it measures how far one variable is a function of the other.
+A spanning-tree edge weight has to be symmetric, so the larger of the two
+directions is used; and because :math:`\xi` breaks ties in the predictor at
+random, it is a function of its arguments only up to that tie ordering, which
+:attr:`~pyvinecopulib.utils.wdm`'s ``seeds`` argument controls.
+
 Selection is further tunable through
 :class:`~pyvinecopulib.core.FitControlsVinecop`: supply a custom edge weight via
 :attr:`~pyvinecopulib.core.FitControlsVinecop.tree_criterion_function` (any

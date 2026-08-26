@@ -5,6 +5,7 @@
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/tuple.h>
 
+#include <optional>
 #include <stdexcept>  // For std::invalid_argument
 #include <vinecopulib.hpp>
 
@@ -38,10 +39,11 @@ inline Bicop bc_from_family(const BicopFamily& family, int rotation,
 // needs a left-limit column, so the accepted shapes are `n x 2`, `n x (2 + k)`
 // and `n x 4` (vinecopulib#729).
 inline Bicop bc_from_data(const Eigen::MatrixXd& data,
-                          const FitControlsBicop& controls = FitControlsBicop(),
+                          const FitControlsBicop* controls,
                           const std::vector<std::string>& var_types = {"c",
                                                                        "c"}) {
-  return Bicop(data, controls, var_types);
+  return Bicop(data, controls ? *controls : default_bicop_controls(),
+               var_types);
 }
 
 // Factory function to create a Bicop from a filename
@@ -246,7 +248,7 @@ Bicop
                   bicop_doc.ctor.doc_4args_family_rotation_parameters_var_types,
                   nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_data", &bc_from_data, "data"_a,
-                  "controls"_a.sig("FitControlsBicop()") = FitControlsBicop(),
+                  "controls"_a.sig("FitControlsBicop()") = nb::none(),
                   "var_types"_a = std::vector<std::string>(2, "c"),
                   bicop_doc.ctor.doc_3args_data_controls_var_types,
                   nb::call_guard<nb::gil_scoped_release>())
@@ -488,12 +490,22 @@ Bicop
           flip_doc.c_str(), nb::call_guard<nb::gil_scoped_release>())
       .def("as_continuous", &Bicop::as_continuous, bicop_doc.as_continuous.doc,
            nb::call_guard<nb::gil_scoped_release>())
-      .def("fit", &Bicop::fit, "data"_a,
-           "controls"_a.sig("FitControlsBicop()") = FitControlsBicop(),
-           bicop_doc.fit.doc, nb::call_guard<nb::gil_scoped_release>())
-      .def("select", &Bicop::select, "data"_a,
-           "controls"_a.sig("FitControlsBicop()") = FitControlsBicop(),
-           bicop_doc.select.doc, nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "fit",
+          [](Bicop& self, const Eigen::MatrixXd& data,
+             const FitControlsBicop* controls) {
+            self.fit(data, controls ? *controls : default_bicop_controls());
+          },
+          "data"_a, "controls"_a.sig("FitControlsBicop()") = nb::none(),
+          bicop_doc.fit.doc, nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "select",
+          [](Bicop& self, const Eigen::MatrixXd& data,
+             const FitControlsBicop* controls) {
+            self.select(data, controls ? *controls : default_bicop_controls());
+          },
+          "data"_a, "controls"_a.sig("FitControlsBicop()") = nb::none(),
+          bicop_doc.select.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("plot", &bicop_plot_wrapper, "type"_a = "surface",
            "margin_type"_a = "unif", "xylim"_a = nb::none(),
            "grid_size"_a = nb::none(),

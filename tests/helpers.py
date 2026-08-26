@@ -1,3 +1,4 @@
+import contextlib
 from typing import Any
 
 import numpy as np
@@ -80,3 +81,118 @@ def compare_rvinestructure(
 ) -> None:
   attrs = ["dim", "order", "trunc_lvl", "matrix"]
   compare_properties(struct1, struct2, attrs, subclass)
+
+
+def assert_on_device(
+  module: Any,
+  device: str,
+  *outputs: Any,
+  extra: Any = (),
+) -> None:
+  """Assert every registered tensor and every output sits on ``device``.
+
+  Walks ``named_parameters()`` and ``named_buffers()`` recursively, then
+  every tensor reachable in ``outputs``. ``extra`` covers state that is
+  deliberately unregistered -- notably ``TorchVinecop._batched``, installed
+  via ``object.__setattr__`` so it stays out of ``state_dict()`` and is
+  therefore invisible to ``named_buffers()``.
+
+  Compares ``device.type``, so ``"cuda"`` matches ``"cuda:0"``.
+  """
+  import torch
+
+  want = torch.device(device).type
+  for name, t in list(module.named_parameters()) + list(module.named_buffers()):
+    assert t.device.type == want, (
+      f"{type(module).__name__}.{name} on {t.device}, expected {want}"
+    )
+
+  def walk(obj: Any, path: str) -> None:
+    if isinstance(obj, torch.Tensor):
+      assert obj.device.type == want, f"{path} on {obj.device}, expected {want}"
+    elif isinstance(obj, (list, tuple)):
+      for i, v in enumerate(obj):
+        walk(v, f"{path}[{i}]")
+    elif isinstance(obj, dict):
+      for k, v in obj.items():
+        walk(v, f"{path}[{k!r}]")
+    elif isinstance(obj, torch.nn.Module):
+      assert_on_device(obj, device)
+
+  for i, out in enumerate(outputs):
+    walk(out, f"output[{i}]")
+  for i, ex in enumerate(
+    extra if isinstance(extra, (list, tuple)) else [extra]
+  ):
+    if ex is not None:
+      walk(ex, f"extra[{i}]")
+
+
+class TransferCounts:
+  """Device<->host movements tallied by :func:`count_transfers`."""
+
+  def __init__(self) -> None:
+    self.d2h = 0
+    self.h2d = 0
+    self.scalars = 0
+    self.ops: list[str] = []
+
+  def assert_no_d2h(self, what: str) -> None:
+    assert self.d2h == 0 and self.scalars == 0, (
+      f"{what} moved data off the device: {self.d2h} copies, "
+      f"{self.scalars} scalar reads via {sorted(set(self.ops))}"
+    )
+
+  def __repr__(self) -> str:
+    return (
+      f"TransferCounts(d2h={self.d2h}, h2d={self.h2d}, scalars={self.scalars})"
+    )
+
+
+@contextlib.contextmanager
+def count_transfers(device: str) -> Any:
+  """Count device<->host movement inside the block.
+
+  Tallies ``aten::_local_scalar_dense`` -- what ``.item()``, ``float(t)``,
+  ``int(t)`` and ``bool(t)`` all lower to, so unlike patching ``Tensor.item``
+  this sees the last three -- and cross-device ``copy_`` / ``_to_copy``.
+
+  A no-op on CPU, where there is no device to leave.
+  """
+  import torch
+  from torch.utils._python_dispatch import TorchDispatchMode
+
+  counts = TransferCounts()
+  if torch.device(device).type != "cuda":
+    yield counts
+    return
+
+  class _Counter(TorchDispatchMode):
+    def __torch_dispatch__(
+      self,
+      func: Any,
+      types: Any,
+      args: "tuple[Any, ...]" = (),
+      kwargs: "dict[str, Any] | None" = None,
+    ) -> Any:
+      kwargs = kwargs or {}
+      name = str(func)
+      if "_local_scalar_dense" in name:
+        counts.scalars += 1
+        counts.ops.append(name)
+      out = func(*args, **kwargs)
+      if "copy" in name:
+        src = args[1] if len(args) > 1 else None
+        dst = args[0] if args else None
+        st = getattr(src, "device", None)
+        dt = getattr(dst, "device", None)
+        if st is not None and dt is not None and st.type != dt.type:
+          if st.type == "cuda":
+            counts.d2h += 1
+          else:
+            counts.h2d += 1
+          counts.ops.append(name)
+      return out
+
+  with _Counter():
+    yield counts

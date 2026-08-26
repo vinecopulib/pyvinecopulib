@@ -72,7 +72,9 @@ inline Vinecop vc_from_data(
     std::optional<Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>>
         matrix = std::nullopt,
     const std::vector<std::string>& var_types = {},
-    const FitControlsVinecop& controls = FitControlsVinecop()) {
+    const FitControlsVinecop* controls_ptr = nullptr) {
+  const FitControlsVinecop& controls =
+      controls_ptr ? *controls_ptr : default_vinecop_controls();
   if (structure && matrix) {
     throw std::invalid_argument(
         "Only one of 'structure' or 'matrix' can be provided, not both.");
@@ -361,11 +363,11 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
                   "pair_copulas"_a = std::vector<std::vector<Bicop>>(),
                   "var_types"_a = std::vector<std::string>(),
                   from_structure_doc, nb::call_guard<nb::gil_scoped_release>())
-      .def_static(
-          "from_data", &vc_from_data, "data"_a, "structure"_a = std::nullopt,
-          "matrix"_a = std::nullopt, "var_types"_a = std::vector<std::string>(),
-          "controls"_a.sig("FitControlsVinecop()") = FitControlsVinecop(),
-          from_data_doc, nb::call_guard<nb::gil_scoped_release>())
+      .def_static("from_data", &vc_from_data, "data"_a,
+                  "structure"_a = std::nullopt, "matrix"_a = std::nullopt,
+                  "var_types"_a = std::vector<std::string>(),
+                  "controls"_a.sig("FitControlsVinecop()") = nb::none(),
+                  from_data_doc, nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_file", &vc_from_file, "filename"_a, "check"_a = true,
                   vinecop_doc.ctor.doc_2args_filename_check,
                   nb::call_guard<nb::gil_scoped_release>())
@@ -467,13 +469,25 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
       .def_prop_ro("nobs", &Vinecop::get_nobs, vinecop_doc.get_nobs.doc)
       .def_prop_ro("threshold", &Vinecop::get_threshold,
                    vinecop_doc.get_threshold.doc)
-      .def("select", &Vinecop::select, "data"_a,
-           "controls"_a.sig("FitControlsVinecop()") = FitControlsVinecop(),
-           vinecop_doc.select.doc, nb::call_guard<nb::gil_scoped_release>())
-      .def("fit", &Vinecop::fit, "data"_a,
-           "controls"_a.sig("FitControlsBicop()") = FitControlsBicop(),
-           "num_threads"_a = 1, vinecop_doc.fit.doc,
-           nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "select",
+          [](Vinecop& self, const Eigen::MatrixXd& data,
+             const FitControlsVinecop* controls) {
+            self.select(data,
+                        controls ? *controls : default_vinecop_controls());
+          },
+          "data"_a, "controls"_a.sig("FitControlsVinecop()") = nb::none(),
+          vinecop_doc.select.doc, nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "fit",
+          [](Vinecop& self, const Eigen::MatrixXd& data,
+             const FitControlsBicop* controls, size_t num_threads) {
+            self.fit(data, controls ? *controls : default_bicop_controls(),
+                     num_threads);
+          },
+          "data"_a, "controls"_a.sig("FitControlsBicop()") = nb::none(),
+          "num_threads"_a = 1, vinecop_doc.fit.doc,
+          nb::call_guard<nb::gil_scoped_release>())
       // `parameters` (optional) selects the per-observation-parameter overload:
       // an n x npars matrix, one full-vine parameter vector per row, columns in
       // the (tree, edge, parameter) order of `scores()`. Continuous,

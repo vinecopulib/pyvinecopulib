@@ -484,7 +484,7 @@ jobs:
       - name: Sync dev/test deps + editable install
         # Editable install seeds the .pyi stubs that ship with the sdist.
         run: |
-          uv sync --all-extras --group dev --group test
+          uv sync --no-install-project --all-extras --group dev --group test
           uv pip install -e . --no-build-isolation
       - name: Lint and type-check
         run: make check

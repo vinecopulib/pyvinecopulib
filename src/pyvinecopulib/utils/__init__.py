@@ -15,7 +15,11 @@ classes themselves:
   data matrix into the unit hypercube, the canonical input shape for
   fitting copulas.
 - **Dependence measures** — :func:`wdm` computes weighted versions of
-  Kendall's :math:`\\tau`, Spearman's :math:`\\rho`, Pearson, etc.
+  Kendall's :math:`\\tau`, Spearman's :math:`\\rho`, Pearson,
+  Chatterjee's :math:`\\xi`, etc.
+- **Latent samples for discrete data** — :func:`find_latent_sample`
+  recovers a continuous sample from interval-censored copula data,
+  the transform a nonparametric fit on discrete margins runs on.
 - **Low-discrepancy sequences** — :func:`sobol`, :func:`ghalton`, and
   :func:`sample_uniform` (the high-level driver) produce
   quasi-random uniform points used by Monte-Carlo evaluation of
@@ -45,6 +49,7 @@ from typing import Any
 from ..pyvinecopulib_ext import (
   Kde1d,
   benchmark,
+  find_latent_sample,
   ghalton,
   sample_uniform,
   sobol,
@@ -57,6 +62,7 @@ from ._pair_plots import pairs_copula_data
 __all__ = [
   "Kde1d",
   "benchmark",
+  "find_latent_sample",
   "ghalton",
   "pairs_copula_data",
   "sample_uniform",

@@ -45,14 +45,27 @@ from array_api_compat import array_namespace
 from .context import ConditioningContext, SimplifiedContext
 from .._deprecations import _reject_renamed_hook
 from .protocols import ArrayT, BicopLike, VinecopLike, _VINECOP_EXAMPLE
+from ._trim import trim
+
+
+def _to_numpy_default(a: Any) -> Any:
+  """Host NumPy view of ``a``, for backends that leave it off the host."""
+  import numpy as _np
+
+  detach = getattr(a, "detach", None)
+  if detach is not None:
+    a = detach()
+  cpu = getattr(a, "cpu", None)
+  if cpu is not None:
+    a = cpu()
+  return _np.asarray(a)
+
 
 if TYPE_CHECKING:
   from ..pyvinecopulib_ext import RVineStructure
 
 __all__ = ["VinecopBase"]
 
-_TRIM_LO: float = 1e-10
-_TRIM_HI: float = 1.0 - 1e-10
 
 #: (tree, edge, u_e, x_e) -> fitted pair copula. The seam external packages
 #: drive conditional fitting through (see :meth:`VinecopBase.fit`).
@@ -206,7 +219,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       raise ValueError(
         f"{name}: u must have shape (n, {self.d}); got {tuple(ua.shape)}"
       )
-    return cast(ArrayT, xp.clip(ua, _TRIM_LO, _TRIM_HI))
+    return cast(ArrayT, trim(xp, ua))
 
   def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:
     """Draw ``(n, d)`` base uniforms for :meth:`sample` (namespace-dependent RNG).
@@ -498,7 +511,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       out[:, j] = hfunc2[:, inv[j]]
-    return xp.clip(out, _TRIM_LO, _TRIM_HI)
+    return trim(xp, out)
 
   def _inverse_rosenblatt(self, u: Any, x: Optional[Any]) -> Any:
     """Inverse Rosenblatt transform (``Vinecop::inverse_rosenblatt``).
@@ -561,7 +574,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       out[:, j] = hinv2[0, inv[j], :]
-    return xp.clip(out, _TRIM_LO, _TRIM_HI)
+    return trim(xp, out)
 
   # --- batched cascades (grid fast path; array-agnostic loops) ---------- #
   #
@@ -664,7 +677,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       out[:, j] = hfunc2[:, inv[j]]
-    return xp.clip(out, _TRIM_LO, _TRIM_HI)
+    return trim(xp, out)
 
   # --- batched dispatch ------------------------------------------------- #
   def _resolve_batched(
@@ -1217,7 +1230,10 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     n = int(u.shape[0])
     d = int(u.shape[1])
     seed_list = [int(s) for s in (seeds or [])]
-    convert = np.asarray if to_numpy is None else to_numpy
+    # ``np.asarray`` raises on a GPU tensor, so the default routes any
+    # non-NumPy array through the array API's own host transfer. A caller
+    # that knows its backend can still pass a cheaper ``to_numpy``.
+    convert = _to_numpy_default if to_numpy is None else to_numpy
     max_trees = (
       d - 1 if trunc_lvl is None else max(0, min(int(trunc_lvl), d - 1))
     )
