@@ -57,10 +57,18 @@ estimator (Joe & Xu, 1996): first fit the
    \hat u_{ij} \;=\; \hat F_j(x_{ij}),
    \qquad i = 1, \ldots, n, \; j = 1, \ldots, d.
 
-The univariate side is well-trodden — pyvinecopulib uses
-:class:`pyvinecopulib.utils.Kde1d` (a boundary-corrected 1-d KDE that
-also handles ordered-discrete data) for the marginals. Two
-convenience helpers convert raw data to pseudo-observations and
+Both halves of that factorization are first-class here. The marginal
+half is the :mod:`pyvinecopulib.margins` subpackage — nonparametric by
+default (:class:`pyvinecopulib.core.Kde1d`, a boundary-corrected 1-d
+KDE that also handles ordered-discrete data), parametric with family
+selection when you want it, or any distribution object you already
+have. The copula half is :class:`pyvinecopulib.core.Bicop` and
+:class:`pyvinecopulib.core.Vinecop`. The object that holds both, and so
+gives you :math:`f` and :math:`F` on the scale of the data rather than
+on the copula scale, is :class:`pyvinecopulib.core.Vinedist` — see
+:ref:`concepts-distributions`.
+
+Two convenience helpers convert raw data to pseudo-observations and
 measure dependence on them:
 
 * :func:`pyvinecopulib.utils.to_pseudo_obs` ranks each column to
@@ -71,8 +79,11 @@ measure dependence on them:
   margin-free dependence measures that drive both diagnostics and
   Dissmann's structure-selection heuristic.
 
-The interesting part is :math:`c`, and the rest of this page is
-about how pyvinecopulib represents and fits it.
+Most of this page is about :math:`c` — how a vine represents and fits
+it, which is where the modeling choices live. Keep in mind while
+reading that the marginal factor never goes away: it is what makes the
+model a distribution rather than a dependence structure, and it is the
+factor that :ref:`concepts-distributions` puts back.
 
 
 .. _concepts-bivariate:
@@ -464,7 +475,7 @@ Vine fitting is a two-step procedure inherited from
 :ref:`concepts-sklar`:
 
 1. **Marginals.** Each :math:`F_j` is estimated independently —
-   :class:`pyvinecopulib.utils.Kde1d` (a boundary-corrected 1-d
+   :class:`pyvinecopulib.core.Kde1d` (a boundary-corrected 1-d
    KDE) is the default both for the sklearn estimators and the
    notebook examples. ``Kde1d`` supports continuous,
    ordered-discrete, and unordered-categorical input via its
@@ -521,6 +532,161 @@ parameters; on ``Vinecop`` these accept an optional per-observation
 ``parameters`` matrix for evaluation off the fitted point.
 
 
+.. _concepts-distributions:
+
+Vine distributions
+------------------
+
+A vine copula is a model for dependence: everything on the preceding
+sections lives on the copula scale, :math:`u \in [0, 1]^d`. A **vine
+distribution** is Sklar's theorem as an object —
+:class:`pyvinecopulib.core.Vinedist` pairs any vine with one univariate
+margin per variable, and evaluates on the scale of the data:
+
+.. code-block:: python
+
+   dist = pv.Vinedist.from_data(x)      # Kde1d margins by default
+   dist.logpdf(x)                       # log f(x), not log c(u)
+   dist.sample(1000, seeds=[1])         # draws on the x scale
+   dist.cdf(x)
+
+Without it, using a fitted vine as a distribution means recomputing
+:math:`\hat F_j(x_j)` by hand, assembling the copula-scale matrix,
+evaluating :math:`\log c`, and adding :math:`\sum_j \log \hat f_j(x_j)`
+back — a chain that is easy to get subtly wrong, and one whose discrete
+case needs a second column per variable with atoms.
+
+The marginal contract
+~~~~~~~~~~~~~~~~~~~~~
+
+A margin is anything with ``pdf``, ``cdf`` and ``icdf`` (the inverse
+cdf). That is the whole required surface — the
+:class:`pyvinecopulib.core.MarginLike` protocol — and it is deliberately
+small, because every member added is one a foreign distribution object
+must happen to have. ``scipy.stats`` frozen distributions,
+``torch.distributions`` objects and ``Kde1d`` are all accepted;
+:func:`pyvinecopulib.margins.as_margin` adapts what needs adapting and
+is idempotent, and
+:func:`pyvinecopulib.margins.register_margin_adapter` teaches it about
+an ecosystem it does not know.
+
+One definition does most of the work. ``pdf`` means *the density with
+respect to the margin's own reference measure*: a Lebesgue density for a
+continuous margin, a probability mass at an atom, and whichever applies
+pointwise for a mixed one. Write :math:`w_j` for that quantity,
+
+.. math::
+
+   w_j \;=\;
+   \begin{cases}
+     f_j(x_j) & \text{$x_j$ in the continuous part,} \\[2pt]
+     F_j(x_j) - F_j(x_j^-) & \text{$x_j$ an atom,}
+   \end{cases}
+
+and the log-density identity of :ref:`concepts-sklar` holds verbatim in
+every case:
+
+.. math::
+
+   \log f(\mathbf x)
+   \;=\;
+   \log c(\mathbf u) \;+\; \sum_{j=1}^{d} \log w_j .
+
+There is no discreteness branch in the likelihood path — the discrete
+pair-copula density already divides by the marginal mass
+(:ref:`concepts-discrete`), so :math:`w_j` cancels exactly where it
+should. This is why ``pdf`` and not ``pmf`` is the name on the protocol,
+and it is worth knowing when adapting a foreign object: in SciPy's newer
+distribution API ``pdf`` at an atom is :math:`+\infty`, and the mass is
+``pmf``, so a discrete SciPy object must be routed through
+``as_margin`` rather than passed straight through.
+
+Everything past ``pdf`` / ``cdf`` / ``icdf`` is optional and discovered
+at run time: ``var_type`` (``"c"``, ``"d"``, ``"zi"``), ``cdf_left``
+for :math:`F(y^-)`, ``logpdf``, ``sample``, ``support``, and
+``supports_covariates``. Each has a correct default, so a margin that
+declares none of them behaves as an unconditional continuous margin.
+
+Choosing margins
+~~~~~~~~~~~~~~~~
+
+``margins=`` accepts a string alias, one margin broadcast across
+columns, a sequence of length :math:`d`, or a dict keyed by column:
+
+.. code-block:: python
+
+   pv.Vinedist.from_data(x)                       # "kde" (the default)
+   pv.Vinedist.from_data(x, margins=MarginSelector(criterion="aic"))
+   pv.Vinedist.from_data(df, margins={"income": MarginSelector(),
+                                      "score": st.norm(0, 1)})
+
+Margins follow the same construct-then-``fit`` pattern as ``Bicop``,
+``Vinecop`` and ``Kde1d``, with ``fit`` returning ``self``. One class is
+therefore both the specification and the fitted object, which is what
+lets a single ``margins=`` argument mix the two: ``from_data`` fits the
+margins that are not yet fitted and leaves the already-fitted ones
+alone. So ``st.norm(0, 1)`` above stays exactly :math:`N(0, 1)` while
+``MarginSelector`` estimates its family from the ``income`` column.
+
+:class:`pyvinecopulib.margins.MarginSelector` fits every admissible
+candidate and keeps the best by AIC, BIC or AICc, reporting the rest;
+:meth:`pyvinecopulib.core.Vinedist.selection_report` collects those rows across
+every variable, labeled by the variable each was fitted to.
+Two choices in it are deliberate. The candidate set is **curated and
+partitioned by support**, not "every family in SciPy": an unconstrained
+sweep is actively misleading, because a family whose reported support is
+wider than its density integrates over can win on likelihood without
+being a candidate any statistician would accept. And a candidate that
+fails is **reported with a reason** rather than silently skipped — a
+column where every candidate fails raises, naming each family and why.
+``on_failure="fallback"`` asks for a KDE margin instead, with one
+warning; it is never a normal, since marginal misspecification distorts
+the pseudo-observations and biases the copula.
+
+The status quo as a special case
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+:func:`pyvinecopulib.utils.to_pseudo_obs` is the scaled empirical cdf
+:math:`\tfrac{n}{n + 1} \hat F^{\text{ECDF}}_j`, so fitting a ``Vinecop``
+on ``to_pseudo_obs(x)`` *is* fitting a vine distribution whose margins are
+that rank transform. The familiar workflow did not become a different
+thing; it became the configuration in which the margins carry no
+parameters of their own.
+
+What that configuration cannot give you is a joint density. The empirical
+distribution is atomic — it has no density with respect to Lebesgue
+measure — so there is nothing to multiply the copula density by, and no
+log-likelihood on the original scale. ``Kde1d`` is the smoothed version of
+the same idea and does have one, which is why it is the default margin
+rather than the ranks.
+
+What two-step estimation costs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``from_data`` estimates the margins first and then the copula on the
+resulting pseudo-observations — the inference-functions-for-margins
+estimator (Joe & Xu, 1996). It is consistent and it is what makes
+high-dimensional vines tractable, but it is not full maximum
+likelihood, and three consequences are worth stating:
+
+* **Standard errors from the copula step alone are too small**, because
+  they condition on :math:`\hat F_j` as if it were :math:`F_j`. Honest
+  inference needs the sandwich form that accounts for the marginal
+  estimation (Godambe, 1991).
+* **Marginal error propagates into the copula, not the reverse.** A
+  misspecified margin distorts every pseudo-observation and therefore
+  the fitted dependence; a misspecified copula leaves the marginal fits
+  untouched. Spend the modeling effort accordingly.
+* **Family selection is itself an estimation step.** A likelihood or an
+  interval computed at the selected margin ignores the selection, so
+  ``report_`` is there to be read — a winner that beat the runner-up by
+  a fraction of an AIC unit is not an established family.
+
+``examples/11_vine_distributions.ipynb`` works through the whole
+surface, including a mixed continuous / count example and a custom
+margin written against :class:`pyvinecopulib.core.MarginBase`.
+
+
 .. _concepts-discrete:
 
 Discrete data
@@ -549,6 +715,16 @@ The two agree exactly — the compact form only omits columns that carry
 no information. For an all-continuous model :math:`k = 0` and both
 collapse to the familiar :math:`n \times d` matrix.
 
+You only assemble those columns when you are working with a copula
+directly. :class:`pyvinecopulib.core.Vinedist` builds the compact layout
+itself from each margin's ``cdf`` and ``cdf_left``, so a model with
+atom-carrying margins takes the plain :math:`n \times d` data matrix and
+the left limits never surface in user code (:ref:`concepts-distributions`).
+The reason the same likelihood formula covers continuous, discrete and
+mixed variables without a branch is that the pair-copula density below
+divides by the marginal mass, which is exactly the factor the marginal
+term contributes.
+
 The same rule applies pairwise to :class:`pyvinecopulib.core.Bicop`
 (:math:`n \times 4` expanded, :math:`n \times (2 + k)` compact) and to
 the conditioning values passed to
@@ -556,7 +732,9 @@ the conditioning values passed to
 discrete conditioning variable likewise contributes two columns.
 
 The ``examples/04_discrete_variables.ipynb`` notebook works an example
-end to end, from raw counts to a fitted vine.
+end to end, from raw counts to a fitted vine;
+``examples/11_vine_distributions.ipynb`` shows the same model as a
+distribution, with the layout handled for you.
 
 Two arguments elsewhere in the API are consequences of the same
 non-uniqueness, and both change what you get rather than only how fast
@@ -740,22 +918,31 @@ with :math:`\psi_\beta(y) = y - \beta` recovering the
 conditional mean :math:`\beta(\mathbf x) = \mathbb E[Y \mid \mathbf X = \mathbf x]`
 and :math:`\psi_\beta(y) = \mathbb 1\{y < \beta(\mathbf x)\} - \tau`
 recovering the conditional :math:`\tau`-quantile. In practice the
-integral is replaced by a weighted sum over a grid
-:math:`\{y_1, \ldots, y_G\}`:
+integral is taken on the probability scale, substituting
+:math:`p = \hat F_Y(y)`, and replaced by a weighted sum over a
+fixed grid of levels :math:`\{p_1, \ldots, p_G\} \subset (0, 1)`:
 
 .. math::
 
-   \sum_{g = 1}^G \psi_\beta(y_g) \,
-   \hat f_Y(y_g) \,
+   \sum_{g = 1}^G
+   \psi_\beta\!\bigl(\hat F_Y^{-1}(p_g)\bigr) \,
    \hat c_{\mathcal V, \mathcal D}\!\bigl(
-   \hat F_Y(\mathbf x), \, \hat F_Y(y_g)
-   \bigr)
+   p_g, \, \hat F_{\mathbf X}(\mathbf x)
+   \bigr) \, \Delta_g
    \;\approx\; 0,
 
-which :class:`pyvinecopulib.sklearn.VineRegressor` solves
+with :math:`\Delta_g` the spacing of the nodes. The substitution
+cancels the marginal density :math:`\hat f_Y` that the
+response-scale form of the same sum carries, so the rule asks the
+response margin for nothing but its inverse CDF and places every
+node inside its support by construction.
+
+:class:`pyvinecopulib.sklearn.VineRegressor` solves this
 numerically. Pass the quantile levels you want via the
 ``quantiles=`` constructor argument; the predicted conditional
-mean is always returned when ``mean=True``. Batching over test
+mean is always returned when ``mean=True``. The node count is
+``n_nodes=``, and ``use_grid=False`` swaps the quadrature for the
+exact weighted sum over the training responses. Batching over test
 rows is controlled by ``batch_size=``.
 
 
@@ -780,7 +967,7 @@ Where to next
   :class:`~pyvinecopulib.torch.TorchVinecop` for GPU placement and
   autograd. Notebook ``examples/09_torch_backend.ipynb``.
 * :mod:`pyvinecopulib.utils` —
-  :class:`~pyvinecopulib.utils.Kde1d` for the marginals (notebook
+  :class:`~pyvinecopulib.core.Kde1d` for the marginals (notebook
   ``examples/07_kde1d.ipynb``);
   :func:`~pyvinecopulib.utils.wdm` for weighted dependence
   measures (notebook ``examples/06_weighted_dependence_measures.ipynb``);
@@ -800,7 +987,7 @@ Nagler & Czado, 2025), which replaces the marginal CDF derivatives in
 :ref:`concepts-sklar` by finite differences (transparent to the
 user — pass ``var_types=["d", ...]`` to
 :meth:`pyvinecopulib.core.Vinecop.from_data` or set
-``type="d"`` on :class:`pyvinecopulib.utils.Kde1d`).
+``type="d"`` on :class:`pyvinecopulib.core.Kde1d`).
 
 A discrete variable needs its left limit :math:`F(x^-)` alongside
 :math:`F(x)`, and there are two ways to supply them. The **expanded** layout is
@@ -901,6 +1088,8 @@ References
   functions for margins for multivariate models.* Technical
   Report 166, Department of Statistics, University of British
   Columbia.
+* **Godambe (1991).** *Estimating Functions.* Oxford Statistical
+  Science Series 7, Oxford University Press.
 * **Aas, Czado, Frigessi & Bakken (2009).** *Pair-copula
   constructions of multiple dependence.* Insurance: Mathematics
   and Economics 44(2), 182–198.

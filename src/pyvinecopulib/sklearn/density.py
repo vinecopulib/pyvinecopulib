@@ -11,13 +11,19 @@ from ._base import (
   _DOC_PIPELINE,
   _DOC_REFERENCES,
   VineBase,
+  _as_ndarray,
 )
 
 
 class VineDensity(DensityMixin, VineBase):
+  # `score_samples` reports a log-density on the original scale, so a margin
+  # without one is refused at fit time rather than at the first score.
+  _needs_marginal_density: bool = True
+
   def __init__(
     self,
     backend=None,
+    margins=None,
     batch_size: int = 100,
     random_state=None,
     n_jobs=None,
@@ -32,6 +38,11 @@ class VineDensity(DensityMixin, VineBase):
         ``VinecopBackend`` at fit time, which calls ``Vinecop.from_data()``
         with the nonparametric ``tll`` pair family. Pass
         ``TorchVinecopBackend`` for the PyTorch backend.
+    margins : object, default=None
+        The marginal half of the model, in any form
+        :func:`pyvinecopulib.margins.resolve_margins` accepts. `None`
+        fits a ``Kde1d`` per column with the variable type
+        inferred from the input.
     batch_size : int, default=100
         Number of test points processed per batch when evaluating
         the density. Higher values trade memory for throughput.
@@ -53,6 +64,7 @@ class VineDensity(DensityMixin, VineBase):
     """
     super().__init__(
       backend=backend,
+      margins=margins,
       batch_size=batch_size,
       random_state=random_state,
       n_jobs=n_jobs,
@@ -80,9 +92,8 @@ class VineDensity(DensityMixin, VineBase):
     X = self._validate_input(X, reset=True)
     self._resolve_runtime_state()
     self._fit_marginals(X)
-    U = self._to_u_scale(X)
-    var_types = [x[0] for x in self.schema_["kde1d_types"]]
-    self._fit_vine(U, var_types=var_types)
+    self._fit_vine(self._to_u_scale(X))
+    self._bind_distribution(self._x_margins)
     return self
 
   def score_samples(self, X: np.ndarray | pd.DataFrame) -> np.ndarray:
@@ -141,7 +152,7 @@ class VineDensity(DensityMixin, VineBase):
   def sample(self, n_samples: int = 1, random_state=None) -> np.ndarray:
     """Draws samples from the fitted joint density.
 
-    Samples :math:`U \\sim C` via ``Vinecop.sample()`` and pushes each
+    Samples :math:`U \\sim C` from the fitted copula and pushes each
     component back through the inverse marginal CDF :math:`F_j^{-1}`
     to obtain a sample in the original feature space.
 
@@ -156,9 +167,14 @@ class VineDensity(DensityMixin, VineBase):
     Returns
     -------
     ndarray, shape (n_samples, n_features), dtype float
-        Generated samples in the original feature scale.
+        Generated samples, in the *expanded* feature space -- the one
+        `fit` modeled, with ``n_features_in_`` columns. Dummies of an
+        expanded unordered categorical come back as separate columns
+        rather than as the original level, since a vine draw can put a
+        ``1`` in two of them at once and choosing between those is a
+        modeling decision, not an inverse.
     """
-    check_is_fitted(self, attributes=["_vine"])
+    check_is_fitted(self, attributes=["distribution_"])
     if random_state is None:
       rng = self.random_state_
     else:
@@ -166,13 +182,7 @@ class VineDensity(DensityMixin, VineBase):
 
       rng = check_random_state(random_state)
     seeds = [int(x) for x in rng.randint(0, 2**31 - 1, size=5)]
-    U_sampled = np.asarray(
-      self.backend_.sample(self._vine, n_samples, seeds=seeds)
-    )
-    X_sampled = np.empty((n_samples, self.n_features_in_))
-    for j in range(self.n_features_in_):
-      X_sampled[:, j] = self._x_kde1d[j].quantile(U_sampled[:, j])
-    return X_sampled
+    return _as_ndarray(self.distribution_.sample(n_samples, seeds=seeds))
 
   def pdf(self, X: np.ndarray, copula_only: bool = False) -> np.ndarray:
     """Evaluates the joint density at the given samples.
@@ -232,9 +242,8 @@ class VineDensity(DensityMixin, VineBase):
         `N` if the MC noise floor is significant for your
         application.
     """
-    check_is_fitted(self, attributes=["_vine"])
+    check_is_fitted(self, attributes=["distribution_"])
     X = self._validate_input(X, reset=False)
-    U = self._to_u_scale(X)
     if random_state is None:
       rng = self.random_state_
     else:
@@ -242,7 +251,9 @@ class VineDensity(DensityMixin, VineBase):
 
       rng = check_random_state(random_state)
     seeds = [int(x) for x in rng.randint(0, 2**31 - 1, size=5)]
-    return np.asarray(self.backend_.cdf(self._vine, U, N=N, seeds=seeds))
+    return _as_ndarray(
+      self.distribution_.cdf(np.asarray(X, dtype=float), N=N, seeds=seeds)
+    )
 
 
 VineDensity.__doc__ = f"""Vine-copula based density estimator.

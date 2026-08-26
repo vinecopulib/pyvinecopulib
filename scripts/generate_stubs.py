@@ -183,6 +183,12 @@ def render_class_stub(
       # module-level constants from ``.export_values()`` are emitted separately
       # by ``generate_stub``.
       lines.append(f"{inner_indent}{attr_name}: {name} = ...")
+    elif isinstance(attr, (bool, int, float, str)):
+      # A plain value bound as a class attribute -- a capability flag such as
+      # `supports_weights`. Declared so reading it off the class type-checks the
+      # same way reading it off an instance does. Checked after the enum branch,
+      # since an enum member can also be an `int`.
+      lines.append(f"{inner_indent}{attr_name}: {type(attr).__name__} = ...")
 
   lines.append("")  # Final newline
   return lines

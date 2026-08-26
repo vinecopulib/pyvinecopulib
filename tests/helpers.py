@@ -1,8 +1,10 @@
 import contextlib
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 from numpy.typing import NDArray
+
+from pyvinecopulib.core import MarginBase
 
 
 def random_data(d: int = 5, n: int = 1000) -> NDArray[np.float64]:
@@ -53,10 +55,9 @@ def compare_vinecop(cop1: Any, cop2: Any) -> None:
       compare_bicop(bicop1, bicop2)
 
 
-def compare_kde1d(kde1: Any, kde2: Any, from_grid: bool = False) -> None:
-  # Check if models are fitted by testing grid_points
-  is_fitted1 = len(kde1.grid_points) > 0
-  is_fitted2 = len(kde2.grid_points) > 0
+def compare_kde1d(kde1: Any, kde2: Any) -> None:
+  is_fitted1 = kde1.is_fitted
+  is_fitted2 = kde2.is_fitted
 
   # Both should have same fitted status
   assert is_fitted1 == is_fitted2, (
@@ -196,3 +197,109 @@ def count_transfers(device: str) -> Any:
 
   with _Counter():
     yield counts
+
+
+class AtomicMargin(MarginBase[NDArray[np.float64]]):
+  """A margin whose mass is not a density, with an atomic inverse CDF.
+
+  Every shipped margin has a density, and every one that declares atoms
+  declares `var_type="d"` as well, so two guards have no shipped exercise: the
+  refusal of a density-less margin, and the quadrature's degeneration to a
+  weighted sum over atoms. This double supplies both -- `cdf` / `icdf` are the
+  empirical ones and `pdf` declines.
+  """
+
+  def __init__(self) -> None:
+    self._sorted: Optional[NDArray[np.float64]] = None
+
+  @property
+  def is_fitted(self) -> bool:
+    return self._sorted is not None
+
+  @property
+  def support(self) -> tuple[float, float]:
+    assert self._sorted is not None
+    return (float(self._sorted[0]), float(self._sorted[-1]))
+
+  def fit(
+    self,
+    y: NDArray[np.float64],
+    /,
+    *,
+    x: Optional[NDArray[np.float64]] = None,
+    weights: Optional[NDArray[np.float64]] = None,
+  ) -> "AtomicMargin":
+    self._sorted = np.sort(np.asarray(y, dtype=float).ravel())
+    return self
+
+  def pdf(
+    self, y: NDArray[np.float64], /, *, x: Optional[NDArray[np.float64]] = None
+  ) -> NDArray[np.float64]:
+    raise NotImplementedError(
+      "an atomic distribution has no density with respect to Lebesgue measure"
+    )
+
+  def cdf(
+    self, y: NDArray[np.float64], /, *, x: Optional[NDArray[np.float64]] = None
+  ) -> NDArray[np.float64]:
+    assert self._sorted is not None
+    ranks = np.searchsorted(self._sorted, np.asarray(y, dtype=float), "right")
+    return np.asarray(ranks / (self._sorted.size + 1.0), dtype=float)
+
+  def icdf(
+    self, p: NDArray[np.float64], /, *, x: Optional[NDArray[np.float64]] = None
+  ) -> NDArray[np.float64]:
+    assert self._sorted is not None
+    n = self._sorted.size
+    idx = np.clip(
+      np.ceil(np.asarray(p, dtype=float) * (n + 1.0)) - 1.0, 0, n - 1
+    )
+    return self._sorted[idx.astype(int)]
+
+
+def widen(value: object) -> Any:
+  """Widen a value to ``Any``.
+
+  ``nn.Module.__getattr__`` hands back a ``Tensor | Parameter | Module`` union
+  that no static checker can narrow, and ``Vinedist.margins`` is typed by the
+  margin protocol rather than by the concrete class. Both are read through this.
+  """
+  return value
+
+
+def run_without(package: str, body: str) -> None:
+  """Assert ``body`` succeeds in a fresh interpreter that cannot import
+  ``package``.
+
+  Whether a module avoids importing an optional dependency can only be checked
+  by making the import fail and seeing whether anything notices, and that needs
+  a separate interpreter. ``body`` signals its own verdict with ``sys.exit``: 0
+  for the behavior under test, anything else for a miss.
+
+  Parameters
+  ----------
+  package : str
+      Top-level package name to block.
+  body : str
+      Script to run once the block is installed. ``sys`` is already imported.
+
+  Returns
+  -------
+  None
+  """
+  import subprocess
+  import sys as _sys
+
+  preamble = (
+    "import sys, builtins\n"
+    "real = builtins.__import__\n"
+    "def blocked(name, *a, **k):\n"
+    f"  if name.split('.')[0] == {package!r}:\n"
+    f"    raise ImportError('no {package}')\n"
+    "  return real(name, *a, **k)\n"
+    "builtins.__import__ = blocked\n"
+  )
+  result = subprocess.run(  # noqa: S603
+    [_sys.executable, "-c", preamble + body], capture_output=True, text=True
+  )
+  assert result.returncode == 0, result.stdout + result.stderr

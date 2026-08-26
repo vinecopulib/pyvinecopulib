@@ -62,7 +62,7 @@ top-level aliases below, these are scheduled for removal in 2.0.
 `Vinecop.sample_conditional` with **no** alias, because it never appeared in a
 release. Only code written against a 0.8.0 development build can be affected.
 
-The RNG hook that `BicopBase` and `VinecopBase` draw their
+The RNG hook that `MarginBase`, `BicopBase` and `VinecopBase` draw their
 uniforms through is renamed with them: `_simulate_uniform` becomes
 `_sample_uniform`. A renamed hook is the one rename that cannot fail visibly on
 its own — the base class simply stops calling the old name, so an override
@@ -88,7 +88,7 @@ scheduled for removal in 2.0. Move to the subpackage imports now:
 
 ```python
 from pyvinecopulib.families import gaussian
-from pyvinecopulib.utils import Kde1d, wdm
+from pyvinecopulib.core import Kde1d, wdm
 ```
 
 The eight core classes (`Bicop`, `Vinecop`, the three structures, the two

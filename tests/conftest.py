@@ -304,3 +304,9 @@ _HAS_CUDA = _cuda_available()
 def device(request: pytest.FixtureRequest) -> str:
   """Torch device a test runs on."""
   return request.param
+
+
+@pytest.fixture
+def count_sample() -> np.ndarray:
+  """400 Poisson(4) counts, including zeros."""
+  return np.random.default_rng(1).poisson(4.0, size=400).astype(float)

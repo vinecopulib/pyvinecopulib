@@ -140,6 +140,51 @@ class _VinecopBackendBase:
     raise NotImplementedError
 
   # -- shared surface (single source of truth) ---------------------------- #
+  def default_margin(
+    self, var_type: str, bounds: Optional[tuple[float, float]]
+  ) -> Any:
+    """The margin an estimator should fit when the caller named none.
+
+    A seam rather than an `isinstance` check, so a backend whose vine lives on
+    another array namespace supplies a margin on that namespace and the two
+    halves of one ``Vinedist`` stay together.
+
+    Parameters
+    ----------
+    var_type : str
+        ``Kde1d``'s spelling of the variable type.
+    bounds : tuple of float, or None
+        Declared support, or ``None`` where the input states none.
+
+    Returns
+    -------
+    MarginLike
+        An unfitted kernel-density margin.
+    """
+    lo, hi = (None, None) if bounds is None else (bounds[0], bounds[1])
+    return pv.core.Kde1d(type=var_type, xmin=lo, xmax=hi)
+
+  def bind_distribution(self, vine: Any, margins: Any) -> Any:
+    """Assemble the fitted vine and its margins into one distribution.
+
+    The copula is wrapped in ``_BackendVinecop`` so the distribution evaluates
+    with the backend's own threading and batching arguments, which is what keeps
+    an estimator's ``distribution_`` numerically identical to its own methods.
+
+    Parameters
+    ----------
+    vine : object
+        The fitted vine.
+    margins : sequence of MarginLike
+        The fitted margins, in the vine's variable order.
+
+    Returns
+    -------
+    Vinedist
+        The joint distribution.
+    """
+    return pv.core.Vinedist(_BackendVinecop(self, vine), list(margins))
+
   def structure_of(self, vine: Any) -> pv.RVineStructure:
     return vine.structure
 
@@ -306,9 +351,186 @@ class TorchVinecopBackend(_VinecopBackendBase):
     out = vine.sample(n_samples, qrng=False, seeds=seeds)
     return out.detach().cpu().numpy()
 
+  def default_margin(
+    self, var_type: str, bounds: Optional[tuple[float, float]]
+  ) -> Any:
+    """A ``TorchKde1d`` placed and typed like the copula this backend fits.
+
+    ``device`` and ``dtype`` come from the effective controls, so
+    ``FitControlsTorchVinecop(dtype=torch.float32)`` does not leave float64
+    margins on a float32 copula.
+
+    Parameters
+    ----------
+    var_type : str
+        ``Kde1d``'s spelling of the variable type.
+    bounds : tuple of float, or None
+        Declared support, or ``None`` where the input states none.
+
+    Returns
+    -------
+    TorchKde1d
+        An unfitted torch kernel-density margin.
+    """
+    import torch
+
+    from pyvinecopulib.torch import TorchKde1d
+
+    controls = self._effective_controls()
+    lo, hi = (None, None) if bounds is None else (bounds[0], bounds[1])
+    return TorchKde1d(
+      type=var_type,
+      xmin=lo,
+      xmax=hi,
+      device=controls.device,
+      dtype=controls.dtype if controls.dtype is not None else torch.float64,
+    )
+
+  def bind_distribution(self, vine: Any, margins: Any) -> Any:
+    """Assemble a ``TorchVinedist`` from the fitted torch vine and its margins.
+
+    The raw vine goes in rather than a ``_BackendVinecop`` wrapper: the point of
+    publishing this object is that it is torch throughout, so ``.to(device)``
+    moves it and a loss through ``logpdf`` reaches the margins' buffers -- which
+    a wrapper converting to NumPy at every call would undo. A compiled ``Kde1d``
+    margin (from ``margins="kde"``, or one the caller passed already fitted) is
+    lifted with ``TorchKde1d.from_kde1d``, an exact transfer of the same
+    grid.
+
+    One consequence a caller feels: the distribution's ``pdf`` resolves
+    ``batched`` per device rather than reading ``controls.batched``. The two
+    agree to floating point.
+
+    Parameters
+    ----------
+    vine : object
+        The fitted ``TorchVinecop``.
+    margins : sequence of MarginLike
+        The fitted margins, in the vine's variable order.
+
+    Returns
+    -------
+    TorchVinedist
+        The joint distribution, entirely in torch.
+    """
+    import torch
+
+    from pyvinecopulib.torch import TorchKde1d, TorchVinedist
+
+    controls = self._effective_controls()
+    dtype = controls.dtype if controls.dtype is not None else torch.float64
+    lifted = [
+      TorchKde1d.from_kde1d(m, device=controls.device, dtype=dtype)
+      if isinstance(m, pv.core.Kde1d)
+      else m
+      for m in margins
+    ]
+    return TorchVinedist(vine, lifted)
+
   def with_num_threads(self, num_threads: int) -> "TorchVinecopBackend":
     # No-op: torch threading is global / device-bound.
     return self
+
+
+class _BackendVinecop:
+  """A fitted vine that evaluates through the backend that fitted it.
+
+  The estimators hand this to :class:`~pyvinecopulib.core.Vinedist` in place of
+  the raw vine, so the distribution object evaluates exactly as the estimator
+  does — with the backend's threading / batching arguments, and with results
+  brought back to NumPy from wherever the vine computed them. Anything the
+  backend does not adapt is read off the vine itself, so this still answers
+  ``dim`` / ``var_types`` / ``structure`` and the Rosenblatt pair.
+
+  Parameters
+  ----------
+  backend : object
+      A resolved backend.
+  vine : object
+      The vine that backend fitted.
+  """
+
+  def __init__(self, backend: Any, vine: Any) -> None:
+    self.backend = backend
+    self.vine = vine
+
+  def __getattr__(self, name: str) -> Any:
+    # Underscored names are never forwarded: unpickling looks up `__setstate__`
+    # before `vine` exists, and forwarding it would recurse.
+    vine = self.__dict__.get("vine")
+    if vine is None or name.startswith("_"):
+      raise AttributeError(name)
+    return getattr(vine, name)
+
+  def pdf(self, u: np.ndarray) -> np.ndarray:
+    """Copula density at ``u``.
+
+    Parameters
+    ----------
+    u : ndarray, shape (n, d) or (n, d + k), dtype float
+        Copula-scale data.
+
+    Returns
+    -------
+    ndarray, shape (n,), dtype float
+        Density values.
+    """
+    return self.backend.pdf(self.vine, u)
+
+  def cdf(
+    self,
+    u: np.ndarray,
+    *,
+    N: int = 10000,
+    seeds: Optional[list[int]] = None,
+  ) -> np.ndarray:
+    """Copula distribution function at ``u``.
+
+    Parameters
+    ----------
+    u : ndarray, shape (n, d) or (n, d + k), dtype float
+        Copula-scale data.
+    N : int, optional
+        Number of quasi-random points for the Monte-Carlo integration.
+    seeds : list of int, or None, optional
+        RNG seeds.
+
+    Returns
+    -------
+    ndarray, shape (n,), dtype float
+        Distribution values.
+    """
+    return self.backend.cdf(self.vine, u, N=N, seeds=list(seeds or []))
+
+  def sample(self, n: int, *, seeds: Optional[list[int]] = None) -> np.ndarray:
+    """Draw ``n`` samples on the copula scale.
+
+    Parameters
+    ----------
+    n : int
+        Number of samples.
+    seeds : list of int, or None, optional
+        RNG seeds.
+
+    Returns
+    -------
+    ndarray, shape (n, d), dtype float
+        Samples in ``[0, 1]^d``.
+    """
+    return self.backend.sample(self.vine, n, seeds=list(seeds or []))
+
+  def __repr__(self) -> str:
+    """Name the backend and the vine it wraps.
+
+    Returns
+    -------
+    str
+        The representation.
+    """
+    return (
+      f"_BackendVinecop({type(self.backend).__name__}, "
+      f"{type(self.vine).__name__})"
+    )
 
 
 def resolve_backend(backend: Any) -> Any:

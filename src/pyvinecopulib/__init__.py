@@ -1,13 +1,14 @@
 """Python interface to vinecopulib.
 
-Public API is organized into four subpackages: :mod:`~pyvinecopulib.core`,
-:mod:`~pyvinecopulib.families`, :mod:`~pyvinecopulib.utils`, and
+Public API is organized into five subpackages: :mod:`~pyvinecopulib.core`,
+:mod:`~pyvinecopulib.families`, :mod:`~pyvinecopulib.utils`,
+:mod:`~pyvinecopulib.margins`, and
 :mod:`~pyvinecopulib.sklearn` (optional extra). Core types are re-exported
 at the top level; noisier aliases (family constants, utilities) still
 resolve there but emit a ``DeprecationWarning`` on access.
 """
 
-from . import core, families, pyvinecopulib_ext, utils
+from . import core, families, margins, pyvinecopulib_ext, utils
 from ._deprecations import _DEPRECATED_TOP_LEVEL, _resolve_deprecated
 from .core import (
   Bicop,
@@ -18,6 +19,7 @@ from .core import (
   FitControlsVinecop,
   RVineStructure,
   Vinecop,
+  Vinedist,
 )
 from .utils import to_pseudo_obs
 
@@ -32,9 +34,11 @@ __all__ = [
   "FitControlsVinecop",
   "RVineStructure",
   "Vinecop",
+  "Vinedist",
   "to_pseudo_obs",
   "core",
   "families",
+  "margins",
   "utils",
   "sklearn",
   "__version__",

@@ -113,9 +113,9 @@ general whitespace/TOML/JSON checks. `make sync` installs them.
 `.github/workflows/pypi.yml` is the single workflow. Jobs:
 
 - **`lint`** — ruff, ruff format and bandit; gates the wheel matrix so a
-  formatting error does not cost 15 cibuildwheel legs.
-- **`build`** — cibuildwheel matrix (15 wheels: Linux glibc/musl, macOS x86_64,
-  macOS arm64, Windows × cp310/cp311/cp312-ABI3).
+  formatting error does not cost 10 cibuildwheel legs.
+- **`build`** — cibuildwheel matrix (10 wheels: Linux glibc/musl, macOS x86_64,
+  macOS arm64, Windows × cp311/cp312-ABI3).
 - **`check_wheels`** — counts and twine-checks artifacts.
 - **`verify_docs_build`** — RTD-mirror doc build with `-W`.
 - **`install_and_unit_test`** — installs each wheel and runs pytest + notebook

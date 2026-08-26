@@ -19,7 +19,9 @@ import pyvinecopulib as pv  # noqa: E402
 from pyvinecopulib.torch import (  # noqa: E402
   FitControlsTorchVinecop,
   TorchBicop,
+  TorchKde1d,
   TorchVinecop,
+  TorchVinedist,
 )
 from tests.helpers import assert_on_device, count_transfers  # noqa: E402
 
@@ -231,3 +233,30 @@ def test_discrete_vine_matches_cpu(device: str, var_types: list[str]) -> None:
   b = _np(got.pdf(torch.as_tensor(u, device=device)))
   assert b.shape == a.shape
   np.testing.assert_allclose(b, a, rtol=1e-12, atol=1e-12)
+
+
+def test_vinedist_matches_cpu(device: str) -> None:
+  """The data-scale distribution agrees across devices, margins included."""
+  rng = np.random.default_rng(23)
+  d = 3
+  y = rng.multivariate_normal(np.zeros(d), np.eye(d) * 0.4 + 0.6, size=600)
+  cpp = pv.Vinecop.from_data(
+    pv.to_pseudo_obs(y),
+    controls=pv.FitControlsVinecop(family_set=[pv.BicopFamily.tll]),
+  )
+
+  def build(dev: str) -> TorchVinedist:
+    cop = TorchVinecop.from_vinecop(cpp, device=torch.device(dev))
+    margins = [
+      TorchKde1d.from_kde1d(pv.core.Kde1d().fit(y[:, j])).to(dev)
+      for j in range(d)
+    ]
+    return TorchVinedist(cop, margins)
+
+  ref, got = build("cpu"), build(device)
+  yt = torch.as_tensor(y)
+  a = _np(ref.logpdf(yt))
+  b = _np(got.logpdf(torch.as_tensor(y, device=device)))
+  assert np.isfinite(b).all()
+  np.testing.assert_allclose(b, a, rtol=1e-11, atol=1e-11)
+  assert_on_device(got, device)

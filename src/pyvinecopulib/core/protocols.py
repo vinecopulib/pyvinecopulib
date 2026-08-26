@@ -1,4 +1,4 @@
-"""Array-agnostic pair-copula / vine contracts.
+"""Array-agnostic pair-copula / vine / margin contracts.
 
 :class:`BicopLike` and :class:`VinecopLike` define what a pair copula / vine
 evaluator must provide, independent of the array namespace (NumPy or PyTorch).
@@ -43,7 +43,7 @@ from typing import Optional, Protocol, TypeVar, runtime_checkable
 #: Array type an implementation commits to (``numpy.ndarray`` | ``torch.Tensor``).
 ArrayT = TypeVar("ArrayT")
 
-__all__ = ["ArrayT", "BicopLike", "VinecopLike"]
+__all__ = ["ArrayT", "BicopLike", "MarginLike", "VinecopLike"]
 
 
 # The worked examples are shared verbatim between each contract (``*Like``) and
@@ -106,6 +106,41 @@ _VINECOP_EXAMPLE = """
       ref = pv.Vinecop.from_structure(structure=struct, pair_copulas=pairs)
       u = np.random.default_rng(0).uniform(size=(4, 3))
       np.allclose(vine.pdf(u), ref.pdf(u))    # -> True
+"""
+
+
+_MARGIN_EXAMPLE = """
+  Examples
+  --------
+  A shifted exponential margin on NumPy — implement only the two primitives and
+  inherit ``icdf`` / ``logpdf`` / ``cdf_left`` / ``loglik`` / ``__repr__`` from
+  :class:`~pyvinecopulib.core.MarginBase`::
+
+      import numpy as np
+      from pyvinecopulib.core import MarginBase
+
+      class ShiftedExp(MarginBase[np.ndarray]):
+        def __init__(self, rate=1.0, shift=0.0):
+          self.rate, self.shift = rate, shift
+
+        @property
+        def support(self):
+          return (self.shift, float("inf"))
+
+        def pdf(self, y):
+          return self.rate * np.exp(-self.rate * (y - self.shift))
+
+        def cdf(self, y):
+          return 1.0 - np.exp(-self.rate * (y - self.shift))
+
+      m = ShiftedExp(rate=2.0, shift=1.0)
+      m.icdf(np.array([0.5]))   # -> array([1.34657359]) (numerical inverse)
+
+  Neither primitive declares ``x``, which is what marks this margin
+  unconditional: covariates are never forwarded to it. A conditional margin
+  takes ``(self, y, *, x=None)`` instead and sets
+  ``supports_covariates = True``, and then every inherited member forwards the
+  covariates it was called with.
 """
 
 
@@ -445,3 +480,122 @@ class VinecopLike(Protocol[ArrayT]):
 
 
 VinecopLike.__doc__ = (VinecopLike.__doc__ or "") + _VINECOP_EXAMPLE
+
+
+@runtime_checkable
+class MarginLike(Protocol[ArrayT]):
+  """Contract for a fitted univariate margin.
+
+  A margin maps observations ``y`` on the original scale to a density
+  (``pdf``), a distribution (``cdf``), and the inverse distribution
+  (``icdf``) — enough to turn a vine copula into a full multivariate
+  distribution and back.
+
+  Every member also accepts optional exogenous covariates ``x``, so a margin
+  may be *conditional*: ``f(y | x)`` rather than ``f(y)``. As on
+  :class:`BicopLike`, ``x`` is keyword-only and the observations are
+  positional-only — a margin from another library names its first parameter
+  whatever it likes (:class:`pyvinecopulib.core.Kde1d` calls it ``x``, which is
+  exactly the collision this shape avoids), and a covariate matrix must never
+  bind to some unrelated positional slot. A margin that does not model
+  covariates ignores ``x``, as one vine distribution may mix conditional and
+  unconditional margins.
+
+  ``pdf`` is the density with respect to **the margin's own reference
+  measure**: a Lebesgue density for a continuous margin, a probability mass at
+  an atom, and whichever applies pointwise for a mixed (e.g. zero-inflated)
+  one. That is what makes the Sklar factorization hold unchanged in all three
+  cases, with no branch on the variable type::
+
+      log f(x) = log c(F_1(x_1), ..., F_d(x_d)) + sum_j log pdf_j(x_j)
+
+  :class:`pyvinecopulib.core.Kde1d` satisfies this contract directly, in all
+  three of its modes. Beware that a discrete distribution from another library
+  may spell the mass ``pmf`` and use ``pdf`` for the (infinite) Lebesgue
+  density; coerce foreign objects rather than relying on member names.
+
+  The easy way to satisfy this contract is to subclass
+  :class:`~pyvinecopulib.core.MarginBase`, which supplies ``icdf`` (numerical
+  inversion of ``cdf`` over ``support``) on top of ``pdf`` / ``cdf``, plus the
+  optional capabilities below.
+
+  Notes
+  -----
+  Discreteness, the left-limit cdf, log-densities, sampling and support are
+  **optional capabilities** rather than members of this contract, so that
+  objects from other ecosystems can satisfy it. Consumers discover them with
+  ``getattr(margin, name, None)``:
+
+  - ``var_type`` — ``"c"``, ``"d"`` or ``"zi"``; absent means ``"c"``.
+  - ``cdf_left`` — ``F(y^-)``, the left limit a margin with atoms needs;
+    absent means it coincides with ``cdf``.
+  - ``logpdf`` — absent means ``log(pdf)``.
+  - ``sample`` — absent means ``icdf`` of uniforms.
+  - ``support`` — a ``(lo, hi)`` pair; absent means unbounded. It describes the
+    margin as a whole, not one conditional slice: a margin whose support moves
+    with ``x`` overrides ``icdf`` instead.
+  - ``supports_covariates`` — whether ``x`` is read rather than ignored; absent
+    means it is ignored, and a consumer then omits it entirely.
+
+  See Also
+  --------
+  pyvinecopulib.core.MarginBase : Canonical partial implementation to subclass.
+  pyvinecopulib.core.Kde1d : The default nonparametric margin.
+  BicopLike : The pair-copula contract.
+  """
+
+  @abstractmethod
+  def pdf(self, y: ArrayT, /, *, x: Optional[ArrayT] = None) -> ArrayT:
+    """Density of the margin with respect to its own reference measure.
+
+    Parameters
+    ----------
+    y : array, shape (n,), dtype float
+        Observations on the original scale.
+    x : array, shape (n, k), or None, optional
+        Exogenous covariates, one row per observation. Ignored by a margin that
+        does not model them.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        A density, a probability mass, or a mixture of the two, depending on
+        the margin.
+    """
+
+  @abstractmethod
+  def cdf(self, y: ArrayT, /, *, x: Optional[ArrayT] = None) -> ArrayT:
+    """Distribution function ``F(y)``, right-continuous.
+
+    Parameters
+    ----------
+    y : array, shape (n,), dtype float
+        Observations on the original scale.
+    x : array, shape (n, k), or None, optional
+        Exogenous covariates, one row per observation.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Distribution values in ``[0, 1]``.
+    """
+
+  @abstractmethod
+  def icdf(self, p: ArrayT, /, *, x: Optional[ArrayT] = None) -> ArrayT:
+    """Inverse distribution function ``inf{y : F(y) >= p}``.
+
+    Parameters
+    ----------
+    p : array, shape (n,), dtype float
+        Probabilities in ``[0, 1]``.
+    x : array, shape (n, k), or None, optional
+        Exogenous covariates, one row per observation.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Quantiles on the original scale.
+    """
+
+
+MarginLike.__doc__ = (MarginLike.__doc__ or "") + _MARGIN_EXAMPLE

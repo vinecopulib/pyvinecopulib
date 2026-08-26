@@ -50,13 +50,13 @@ NB_MODULE(pyvinecopulib_ext, pv) {
     init_vinecop_fit_controls(pv);
     init_vinecop_class(pv);
     init_spanning_tree(pv);
+    init_kde1d(pv);
   }
 
   {
     ScopedModuleNameOverride n(pv, "pyvinecopulib.utils");
     init_stats(pv);
     init_benchmark(pv);
-    init_kde1d(pv);
   }
 
 #ifdef VERSION_INFO

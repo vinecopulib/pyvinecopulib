@@ -158,6 +158,12 @@ def test_vinebase_schema_attribute(
   with pytest.raises(ValueError):
     density_wrong._validate_input(X, reset=True)
 
+  # So does a pre-set bounds list of the wrong length.
+  density_bounds = VineDensity()
+  density_bounds.schema_ = {"bounds": [(0.0, 1.0)]}  # Too short
+  with pytest.raises(ValueError, match="bounds"):
+    density_bounds._validate_input(X, reset=True)
+
 
 def test_vinebase_marginal_fitting(
   sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
@@ -170,9 +176,8 @@ def test_vinebase_marginal_fitting(
   density._fit_marginals(X_processed)
 
   # Check that marginals are fitted
-  assert len(density._x_kde1d) == 2
-
-  assert all(hasattr(kde, "fit") for kde in density._x_kde1d)
+  assert len(density._x_margins) == 2
+  assert all(margin.is_fitted for margin in density._x_margins)
 
 
 def test_vinebase_pseudoobservations(

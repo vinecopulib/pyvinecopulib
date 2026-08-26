@@ -20,7 +20,7 @@ import pytest
 
 import pyvinecopulib as pv
 from pyvinecopulib.core import BicopBase, RVineStructure, Vinecop, VinecopBase
-from pyvinecopulib.utils import Kde1d
+from pyvinecopulib.core import Kde1d
 
 
 @pytest.fixture

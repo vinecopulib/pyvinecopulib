@@ -1,14 +1,27 @@
+import math
+from numbers import Integral
+
 import numpy as np
 from sklearn.base import RegressorMixin
+from sklearn.utils._param_validation import Interval
 from sklearn.utils.validation import check_is_fitted
 
+from ..core import Vinedist
 from ._base import (
   _DOC_DISCRETE,
   _DOC_FACTORIZATION,
   _DOC_PIPELINE,
   _DOC_REFERENCES,
   VineBase,
+  _as_ndarray,
 )
+
+# Half-width, in standard deviations, of the probit substitution behind the
+# quadrature nodes: the outermost node sits at Phi(-a), so this is how far into
+# the response's tails the rule reaches. Five leaves 3e-7 of the probability
+# mass outside the grid, worth about 1e-5 response standard deviations on the
+# conditional mean; three leaves enough out to cost 3e-2 of one.
+_PROBIT_HALF_WIDTH = 5.0
 
 
 class VineRegressor(RegressorMixin, VineBase):
@@ -18,6 +31,7 @@ class VineRegressor(RegressorMixin, VineBase):
     "mean": ["boolean"],
     "quantiles": ["array-like", None],
     "use_grid": ["boolean"],
+    "n_nodes": [Interval(Integral, 2, None, closed="left")],
     "normalize_weights": ["boolean"],
   }
 
@@ -26,8 +40,10 @@ class VineRegressor(RegressorMixin, VineBase):
     mean: bool = True,
     quantiles=None,
     backend=None,
+    margins=None,
     batch_size: int = 100,
     use_grid: bool = True,
+    n_nodes: int = 401,
     normalize_weights: bool = True,
     random_state=None,
     n_jobs=None,
@@ -53,15 +69,35 @@ class VineRegressor(RegressorMixin, VineBase):
         pre-specified structure on ``(Y, X_1, ..., X_d)`` (`Y`
         always in the first dimension). `None` resolves to a default
         ``VinecopBackend`` with the ``tll`` pair family at fit time.
+    margins : object, default=None
+        The marginal half of the model, in any form
+        :func:`pyvinecopulib.margins.resolve_margins` accepts. `None`
+        fits a ``Kde1d`` per column. The specification addresses
+        the covariates; one that broadcasts (an alias, a single margin,
+        a callable) applies to the response as well. The response
+        margin must be continuous, and any such margin works with
+        either `use_grid` setting.
     batch_size : int, default=100
         Number of test points processed per batch in `predict`.
     use_grid : bool, default=True
-        Controls how training responses are represented for the
-        weighted-sample predictor. ``False`` uses importance
-        weighting over training rows with
-        :math:`w_i(x) \\propto c_{Y,X}(\\hat F_Y(y_i),
-        \\hat F_X(x))`. ``True`` (default) uses the Kde1d grid
-        points and an extra :math:`\\hat f_Y(y_g)` factor.
+        Where the response values entering the weighted statistic
+        come from. ``True`` (default) evaluates
+        :math:`\\mathbb{E}[Y \\mid X = x] = \\int_0^1 \\hat
+        F_Y^{-1}(p)\\, c_{Y,X}(p, \\hat F_X(x))\\, dp` on a fixed
+        grid of `n_nodes` probability levels, which costs the same
+        whatever the sample size. ``False`` sums over the training
+        rows instead, with
+        :math:`w_i(x) \\propto c_{Y,X}(\\hat F_Y(y_i), \\hat
+        F_X(x))` -- the same integral approximated by Monte Carlo,
+        which in exchange cannot reach past the largest observed
+        response.
+    n_nodes : int, default=401
+        Number of quadrature nodes when ``use_grid=True``, ignored
+        otherwise. The default keeps the quadrature error on the
+        conditional mean near 1e-5 response standard deviations, well
+        under the model's own error; predicted quantiles are resolved
+        to about one node spacing, so raise it when they are the
+        output of interest.
     normalize_weights : bool, default=True
         If ``True`` (default), per-row weights produced by
         `_iter_weights` are rescaled to sum to one. Set to
@@ -85,6 +121,7 @@ class VineRegressor(RegressorMixin, VineBase):
     """
     super().__init__(
       backend=backend,
+      margins=margins,
       batch_size=batch_size,
       random_state=random_state,
       n_jobs=n_jobs,
@@ -92,6 +129,7 @@ class VineRegressor(RegressorMixin, VineBase):
     self.mean = mean
     self.quantiles = quantiles
     self.use_grid = use_grid
+    self.n_nodes = n_nodes
     self.normalize_weights = normalize_weights
 
   def fit(self, X: np.ndarray, y: np.ndarray) -> "VineRegressor":
@@ -132,23 +170,57 @@ class VineRegressor(RegressorMixin, VineBase):
     else:
       self.quantiles_ = None
     self._fit_marginals(X, y)
+    if getattr(self._y_margin, "supports_covariates", False):
+      raise ValueError(
+        "VineRegressor cannot use a conditional response margin "
+        f"({type(self._y_margin).__name__} declares supports_covariates): the "
+        "quadrature inverts one shared probability grid, which a margin whose "
+        "quantiles move with the covariates turns into one grid per test row."
+      )
 
     uy_train = self._to_u_scale(y, is_y=True)
     ux = self._to_u_scale(X)
 
-    assert self.schema_ is not None
-    var_types = ["c"] + [x[0] for x in self.schema_["kde1d_types"]]
+    # The response leads the joint model, and being continuous it adds no
+    # left-limit column, so its `u` column simply prepends to the covariates'
+    # own layout.
+    margins = (self._y_margin, *self._x_margins)
+    var_types = Vinedist.copula_var_types(margins)
     self._fit_vine(np.column_stack([uy_train, ux]), var_types=var_types)
+    self._bind_distribution(margins)
 
     if not self.use_grid:
-      self._y_train = y
-      self._uy_train = uy_train
+      self._u_nodes = uy_train
+      self._y_nodes = y
+      self._node_weights = None
     else:
-      self._y_train = self._y_kde1d.grid_points
-      uy_cdf = self._y_kde1d.cdf(self._y_train)
-      self._uy_train = np.asarray(uy_cdf).reshape(-1, 1)
-      self._y_density = self._y_kde1d.values[np.newaxis, :]
+      p_nodes, node_weights = self._probability_grid()
+      self._u_nodes = p_nodes.reshape(-1, 1)
+      self._y_nodes = _as_ndarray(self._y_margin.icdf(p_nodes)).ravel()
+      self._node_weights = node_weights
     return self
+
+  def _probability_grid(self) -> tuple[np.ndarray, np.ndarray]:
+    """Quadrature nodes on ``(0, 1)``, and their weights.
+
+    The rule integrates
+    :math:`\\int_0^1 F_Y^{-1}(p)\\, c(p, u_x)\\, dp` under the
+    substitution :math:`p = \\Phi(z)` on a uniform ``z`` grid, which
+    spends nodes on the tails of the response rather than on the bulk
+    of its probability scale.
+
+    Returns
+    -------
+    p : ndarray, shape (n_nodes,), dtype float
+        Increasing probability levels, all strictly inside ``(0, 1)``.
+    dp : ndarray, shape (1, n_nodes), dtype float
+        Node weights :math:`dp/dz`, up to the constant factor the
+        row normalization absorbs.
+    """
+    z = np.linspace(-_PROBIT_HALF_WIDTH, _PROBIT_HALF_WIDTH, int(self.n_nodes))
+    root_two = math.sqrt(2.0)
+    p = np.array([0.5 * (1.0 + math.erf(zi / root_two)) for zi in z])
+    return p, np.exp(-0.5 * z**2)[np.newaxis, :]
 
   def _copula_marginal_density(
     self, X: np.ndarray, log: bool = False, n_grid: int = 101
@@ -214,20 +286,19 @@ class VineRegressor(RegressorMixin, VineBase):
     Single source of truth for the weight math: `_iter_weights` is
     the batched generator over it and `_predict_from_iter` the
     consumer. Kept as a separate, directly callable seam so external
-    code can reuse the exact weight definition. For each row computes
+    code can reuse the exact weight definition. Each weight pairs one
+    node :math:`y_k` -- a training response when ``use_grid=False``,
+    else :math:`\\hat F_Y^{-1}(p_k)` -- with
 
     .. math::
 
-       w_i(x) \\propto
-       \\begin{cases}
-         c_{Y, X}\\bigl(\\hat F_Y(y_i), \\hat F_X(x)\\bigr) &
-            \\text{if } \\texttt{use\\_grid = False}, \\\\
-         c_{Y, X}\\bigl(\\hat F_Y(y_g), \\hat F_X(x)\\bigr)\\,
-         \\hat f_Y(y_g) &
-            \\text{if } \\texttt{use\\_grid = True},
-       \\end{cases}
+       w_k(x) \\propto
+       c_{Y, X}\\bigl(u_k, \\hat F_X(x)\\bigr) \\cdot \\Delta_k,
 
-    row-normalized when ``normalize_weights=True``.
+    where :math:`u_k` is :math:`\\hat F_Y(y_k)` over training rows
+    and :math:`p_k` on the probability grid, and :math:`\\Delta_k` is
+    the node spacing there (constant, hence absent, over training
+    rows). Row-normalized when ``normalize_weights=True``.
 
     Parameters
     ----------
@@ -236,19 +307,19 @@ class VineRegressor(RegressorMixin, VineBase):
 
     Returns
     -------
-    w : ndarray, shape (batch, n_train_or_grid), dtype float
+    w : ndarray, shape (batch, n_nodes), dtype float
         Per-row weights for the batch.
     """
     ux_batch_rows = self._to_u_scale(np.asarray(X_batch))
     m = ux_batch_rows.shape[0]
-    n_train = self._y_train.shape[0]
-    ux_batch = np.repeat(ux_batch_rows, n_train, axis=0)
-    uy_rep = np.tile(self._uy_train, (m, 1)).reshape(-1, 1)
+    n_nodes = self._y_nodes.shape[0]
+    ux_batch = np.repeat(ux_batch_rows, n_nodes, axis=0)
+    uy_rep = np.tile(self._u_nodes, (m, 1)).reshape(-1, 1)
     u_test = np.column_stack([uy_rep, ux_batch])
 
-    w = np.asarray(self.backend_.pdf(self._vine, u_test)).reshape(m, n_train)
-    if self.use_grid:
-      w *= self._y_density
+    w = np.asarray(self.backend_.pdf(self._vine, u_test)).reshape(m, n_nodes)
+    if self._node_weights is not None:
+      w = w * self._node_weights
     if self.normalize_weights:
       w /= np.sum(w, axis=1, keepdims=True)
     return w
@@ -266,7 +337,7 @@ class VineRegressor(RegressorMixin, VineBase):
 
     Yields
     ------
-    w : ndarray, shape (batch, n_train_or_grid), dtype float
+    w : ndarray, shape (batch, n_nodes), dtype float
         Per-row weights for the current batch.
     start : int
         Index of the first row in the batch.
@@ -280,7 +351,7 @@ class VineRegressor(RegressorMixin, VineBase):
       yield self._weights_for_batch(X[start:end]), start, end
 
   def _predict_from_iter(self, X, iter_weights):
-    """Combines batched weights with training responses to form predictions.
+    """Combines batched weights with the response nodes into predictions.
 
     Parameters
     ----------
@@ -310,12 +381,12 @@ class VineRegressor(RegressorMixin, VineBase):
     for w, start, end in iter_weights(X):
       col = 0
       if self.mean:
-        y_pred[start:end, col] = w @ self._y_train
+        y_pred[start:end, col] = w @ self._y_nodes
         col += 1
       if quantiles is not None:
         batch_preds = [
           np.quantile(
-            a=self._y_train,
+            a=self._y_nodes,
             q=quantiles,
             weights=row_w,
             method="inverted_cdf",
@@ -331,9 +402,10 @@ class VineRegressor(RegressorMixin, VineBase):
   def predict(self, X):
     """Predicts the conditional mean and/or quantiles of ``Y`` given ``X``.
 
-    Computes weights :math:`w_i(x)` from the fitted copula
-    (`_iter_weights`) and returns the weighted statistics:
-    :math:`\\hat{\\mathbb{E}}[Y \\mid X = x] = \\sum_i w_i(x)\\, y_i`
+    Computes weights :math:`w_k(x)` from the fitted copula
+    (`_iter_weights`) and returns the weighted statistics over the
+    response nodes :math:`y_k`:
+    :math:`\\hat{\\mathbb{E}}[Y \\mid X = x] = \\sum_k w_k(x)\\, y_k`
     for the mean (closed-form solution of the estimating equation
     :math:`\\int (y - \\beta) \\hat f(y \\mid x)\\, dy = 0`) and the
     weighted quantile via :func:`numpy.quantile` with
