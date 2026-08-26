@@ -661,8 +661,8 @@ transforms onto them — a probit transform when both ends are finite, a
 fourth-root one when a single end is. Two consequences: the transform is
 where an explicitly supplied ``bandwidth`` is interpreted, so
 ``kde.bandwidth`` is not on the data's scale for a bounded fit; and a
-one-sided fit is scale equivariant, so fitting in metres and in
-millimetres give the same answer after rescaling.
+one-sided fit is scale equivariant, so fitting in meters and in
+millimeters give the same answer after rescaling.
 
 .. _concepts-kde-discrete:
 

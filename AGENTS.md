@@ -391,12 +391,15 @@ For any behavior change:
 - Run the [validation sequence](#tooling), and for anything touching the
   packaging path, an sdist build and install — `build_sdist` is the only
   CI leg that runs `make check`.
-- **A submodule bump additionally runs the numerics gate**:
-  `tests/test_torch_bicop.py`, `tests/test_torch_vinecop.py` and
-  `tests/test_structure_selection.py`, which hold the torch↔C++ and
-  NumPy↔C++ parity tolerances. When a number moves, **regenerate the
-  expected value rather than widening the tolerance**, and check the
-  direction of the change against what upstream says it fixed.
+- **A submodule bump additionally runs the numerics gate**, which differs by
+  submodule. For `lib/vinecopulib` and `lib/wdm`: `tests/test_torch_bicop.py`,
+  `tests/test_torch_vinecop.py` and `tests/test_structure_selection.py`. For
+  `lib/kde1d`: `tests/test_kde1d.py`, `tests/test_torch_kde1d.py`,
+  `tests/test_margins.py`, `tests/test_sklearn_margins.py` and
+  `tests/test_plots.py`. They hold the torch↔C++ and NumPy↔C++ parity
+  tolerances. When a number moves, **regenerate the expected value rather than
+  widening the tolerance**, and check the direction of the change against what
+  upstream says it fixed.
 - **Fix what you find.** A defect uncovered along the way is fixed, not
   annotated, worked around, or left behind an explanatory comment. When the
   real fix belongs elsewhere — upstream, or a separate change — say so in
@@ -720,7 +723,12 @@ imports without SciPy. Three groups:
   wrapper; it takes `xmin` / `xmax` so a bounded variable is not fitted
   past its support — the sklearn estimators fill those in from a
   categorical's declared levels, since otherwise the density grid is
-  padded past the data. Then `ParametricMargin` (one SciPy family) and
+  padded past the data. What a bound *means* differs by variable type, and
+  `docs/concepts.rst` (`concepts-kde-margins`) is where that is written down:
+  for a discrete variable it is the **integer support**, so the bound and the
+  data must both be integers and the fitted grid runs half a unit wider at each
+  end. A categorical whose levels are not integers is therefore refused, by
+  name, at fit time rather than by a bare `invalid_argument` from C++. Then `ParametricMargin` (one SciPy family) and
   `MarginSelector` (fit every admissible candidate, keep the best on
   `selected_`, report the rest on `report_` — the `GridSearchCV` shape).
 - **Coercion** — `as_margin(obj)` is idempotent and routes **every**
@@ -939,21 +947,27 @@ Key surface:
     compiled `pdf` / `cdf` / `icdf` read. The grid is a **buffer**, not a
     parameter — the density is fitted, not learned — so optimizing it is the
     opt-in `values.requires_grad_(True)`, the `TorchBicop` precedent.
-    `icdf` reproduces the C++ 35-step bisection exactly and then reattaches
-    an exact gradient by one Newton step, so the value is bit-identical
-    while `dq/dp` and `dq/d values` are right. The correction is gated on
+    `icdf` reproduces the C++ inversion exactly — a bracketed Newton within
+    the cell holding the requested mass, bisecting where the density is flat,
+    with the C++ early exit reproduced as a frozen-once-converged mask — and
+    then reattaches an exact gradient by one Newton step, so the value is
+    bit-identical while `dq/dp` and `dq/d values` are right. The residual is
+    written in units of mass, so the total mass carries its share of
+    `dq/d values`. The correction is gated on
     grad being enabled, not on the grid being learned — a fitted fixed grid
     still has to differentiate the quantile in `p`. Two of `Kde1d`'s attribute names could not
     be reused: `type` is `nn.Module`'s dtype cast (read `kde_type`) and
     `loglik` is the contract's method.
   - `torch/_kde1d_interp.py` ports `kde1d`'s `InterpolationGrid`, and its
-    contract is *fidelity*, not improvement. Three C++ behaviors look like
-    bugs and must be reproduced: the interpolant drops by `exp(-0.5)`
-    exactly at `grid_points[-1]` (the cell search lands on the last cell,
-    so `t == 1` and the Gaussian-tail branch fires), `integrate` adds no
-    tail contribution so the unnormalized integral saturates at the grid's
-    mass, and `pdf_discrete` divides by the **raw** interpolation rather
-    than the clamped density. Nothing is cached: coefficients and cell
+    contract is *fidelity*, not improvement. One C++ behavior looks like a bug
+    and must be reproduced: `integrate` adds no tail contribution, so the
+    unnormalized integral saturates at the grid's mass even though the density
+    beyond it is nonzero. Two others used to be on this list — the interpolant
+    dropping by `exp(-0.5)` at `grid_points[-1]`, and `pdf_discrete` dividing
+    by the raw interpolation — and kde1d fixed both, at which point
+    reproducing them *was* the defect. That is the failure mode this contract
+    invites: check the list against upstream on every bump, because a quirk
+    that has been fixed reads exactly like a quirk that has not. Nothing is cached: coefficients and cell
     integrals are recomputed in the graph, which is the opposite call from
     `TorchBicop.cache_integrals` and for a stated reason — here the cached
     quantity would be an `O(m)` vector shared by the batch, not an `O(m^2)`
