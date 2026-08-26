@@ -925,12 +925,20 @@ Key surface:
   **vine-major**, and that is load-bearing rather than cosmetic: the per-level
   density product then reduces over the same axis in the same order it would
   for one vine. Edge-major ordering was measured to differ, at `n = 1` and
-  nowhere else. The gate is a last bit rather than exact equality because
-  x86-64 gives exact equality and arm64 / Windows do not: `rosenblatt` carries
-  no reduction at all on the cached path and still moves by 1 ULP there, so the
-  cause is elementwise kernels vectorizing differently for a stacked leading
-  extent (`M * (d - t - 1)` rows against `d - t - 1`), which is inherent to
-  batching rather than a defect. Do not tighten it back to `atol = rtol = 0`. A set is refused, never silently degraded, when it
+  nowhere else. The gate is a tolerance (`1e-14`) rather than exact equality and
+  **must not be tightened back**: x86-64 gives exact equality and arm64 /
+  Windows do not. `rosenblatt` carries no reduction at all on the cached path
+  and still moves by 1 ULP there, so the cause is elementwise kernels
+  vectorizing differently for a stacked leading extent (`M * (d - t - 1)` rows
+  against `d - t - 1`) -- inherent to batching, not a defect. **If it ever
+  fails on a new platform, a newer torch, or a deeper vine, widen it to `1e-12`
+  rather than hunting for a wiring bug**: a legitimate divergence can reach
+  ~`2e-13`, because the cascade amplifies a last bit by up to ~`10**3`
+  (measured -- a one-ULP nudge to every input moves the output by 300-2200 ULP,
+  the interpolated density's local slope being steep in places). It is kept
+  tight only because it passes. Nothing it guards against is near either
+  figure: O(1) in whole rows for a wiring error, ~1e-9 for a
+  cache-versus-quadrature swap. A set is refused, never silently degraded, when it
   disagrees on the grid (compare `grid_points` **values** and `_is_linear`, not
   just the shape `_shared_grid` compares within one vine), on `trunc_lvl`, on
   `cache_integrals` (the cached and quadrature integrals agree only to

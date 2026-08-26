@@ -3,13 +3,17 @@
 `BatchedVineEnsemble` stacks M vines' pair copulas so a tree level is one
 call over all of them rather than M. Every pair sees exactly the values it
 would have seen alone, and no term is regrouped, so the reference is the
-per-vine *batched* cascade and the gate is a last bit rather than a
-tolerance in any meaningful sense: `_LAST_BIT` is 1e-14 relative, about
-forty-five times the double-precision epsilon and two orders tighter than
-the batched-vs-unbatched gates below.
+per-vine *batched* cascade.
 
-It is not exactly zero, and the reason is worth recording. On x86-64 it
-*is* zero -- measured on cpu and cuda over 120 shape configurations, and
+The gate is `_CROSS_PATH`, and its comment carries the one thing worth
+knowing before touching it: what a *legitimate* divergence can grow to is
+~2e-13, well above the gate, because the cascade amplifies a last bit by
+up to ~10**3. It is set tight anyway, at 1e-14, because it passes on every
+architecture tested and there is no reason to give up sensitivity in
+advance -- but a failure there is a signal to widen, not to hunt.
+
+That a legitimate divergence exists at all is worth recording. On x86-64
+there is none -- the agreement is exact -- measured on cpu and cuda over 120 shape configurations, and
 that is what pinned the vine-major slot ordering, since edge-major
 ordering differs in 4 of those on cpu and 10 on cuda. On arm64 macOS and
 on Windows a handful of elements differ by one unit in the last place.
@@ -55,10 +59,22 @@ from .helpers import assert_on_device  # noqa: E402
 
 _FAMILIES = [pv.families.tll, pv.families.indep]
 
-#: Cross-path gate: the stacked cascade regroups nothing, so anything
-#: above a last bit is a wiring bug rather than arithmetic. See the module
-#: docstring for why this is not exactly zero off x86-64.
-_LAST_BIT = {"rtol": 1e-14, "atol": 1e-16}
+#: Cross-path gate: ensemble against the per-vine loop. Exact equality
+#: would hold on x86-64 and does not on arm64 or Windows, by a unit in the
+#: last place; 1e-14 is forty-five times epsilon and clears the largest
+#: divergence seen on either (3.6e-16).
+#:
+#: **If this ever fails on a new platform, a newer torch, or a deeper vine,
+#: widen it to 1e-12 -- do not go looking for a wiring bug.** The ceiling
+#: on a legitimate divergence is ~2e-13, not a last bit: the cascade
+#: amplifies one by up to ~10**3 (measured -- a one-ULP nudge to every
+#: input moves the output by 300-2200 ULP, the interpolated density's local
+#: slope being steep in places), so a 1-ULP kernel divergence arising early
+#: rather than late leaves the cascade far larger than it entered. Nothing
+#: this guards against is anywhere near that: a wiring error is wrong by
+#: O(1) in whole rows, and swapping the cached integrals for quadrature is
+#: ~1e-9. The gate stays tight while it passes, because it costs nothing to.
+_CROSS_PATH = {"rtol": 1e-14, "atol": 1e-16}
 
 
 def _simulate(d: int, n: int, seed: int = 0) -> np.ndarray:
@@ -129,7 +145,7 @@ def _loop(vines, method: str, u):
 @pytest.mark.parametrize("m", (1, 2, 7))
 @pytest.mark.parametrize("n", (1, 2, 37, 300))
 def test_matches_the_per_vine_loop(method: str, m: int, n: int) -> None:
-  """Agrees with the loop to a last bit, at every shape including n = 1.
+  """Agrees with the loop at every shape, including n = 1.
 
   `n = 1` is not padding. The density's per-level product is the one
   operation whose shape changes, from `(N_t, n)` reduced over dim 0 to
@@ -145,7 +161,7 @@ def test_matches_the_per_vine_loop(method: str, m: int, n: int) -> None:
   u = torch.from_numpy(_eval_grid(n, 6, seed=99))
   got = getattr(ens, method)(u)
   assert got.shape == ((m, n) if method == "pdf" else (m, n, 6))
-  torch.testing.assert_close(got, _loop(vines, method, u), **_LAST_BIT)
+  torch.testing.assert_close(got, _loop(vines, method, u), **_CROSS_PATH)
 
 
 @pytest.mark.parametrize(
@@ -169,7 +185,7 @@ def test_chunking_does_not_change_the_result(chunk: int) -> None:
   assert len(ens.chunks) == -(-11 // min(chunk, 11))
   for method in ("pdf", "rosenblatt"):
     torch.testing.assert_close(
-      getattr(ens, method)(u), _loop(vines, method, u), **_LAST_BIT
+      getattr(ens, method)(u), _loop(vines, method, u), **_CROSS_PATH
     )
 
 
@@ -188,7 +204,7 @@ def test_the_smallest_vines(d: int) -> None:
   u = torch.from_numpy(_eval_grid(17, d, seed=87))
   for method in ("pdf", "rosenblatt"):
     torch.testing.assert_close(
-      getattr(ens, method)(u), _loop(vines, method, u), **_LAST_BIT
+      getattr(ens, method)(u), _loop(vines, method, u), **_CROSS_PATH
     )
 
 
@@ -201,7 +217,7 @@ def test_a_uniformly_truncated_set() -> None:
   u = torch.from_numpy(_eval_grid(50, 7, seed=96))
   for method in ("pdf", "rosenblatt"):
     torch.testing.assert_close(
-      getattr(ens, method)(u), _loop(vines, method, u), **_LAST_BIT
+      getattr(ens, method)(u), _loop(vines, method, u), **_CROSS_PATH
     )
 
 
@@ -242,7 +258,7 @@ def test_a_set_mixing_indep_and_tll_pairs() -> None:
   u_t = torch.from_numpy(u[:64])
   for method in ("pdf", "rosenblatt"):
     torch.testing.assert_close(
-      getattr(ens, method)(u_t), _loop(vines, method, u_t), **_LAST_BIT
+      getattr(ens, method)(u_t), _loop(vines, method, u_t), **_CROSS_PATH
     )
 
 
