@@ -1887,6 +1887,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     u: Any,
     fit_edge: FitEdge,
     *,
+    fit_level: Optional[FitLevel] = None,
     trunc_lvl: Optional[int] = None,
     tree_criterion: str = "tau",
     threshold: float = 0.0,
@@ -1935,6 +1936,12 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         ``var_types=[t1, t2]``; the pair it returns must read that layout, so
         wrap a continuous one in
         :class:`~pyvinecopulib.core.DiscretePair`.
+    fit_level : callable, optional
+        ``(tree, u_level, types) -> list[BicopLike]``, fitting a whole tree
+        level at once; see ``FitLevel``. Preferred over ``fit_edge`` for a
+        level whose surviving edges are all continuous. Whatever it returns
+        must still be per-slot ``flip``-able, since finalization reorients
+        reused pairs.
     trunc_lvl : int, optional
         Maximum number of trees to select (default: ``d - 1``, i.e. untruncated).
     tree_criterion : str, default "tau"
@@ -2150,13 +2157,30 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       tree_edges: list[tuple[int, int, list[int]]] = []
       new_nodes: list[dict[str, Any]] = []
       tree_records: dict[Any, tuple[int, Any]] = {}
+      # The surviving edges' inputs were all materialized above, off the
+      # previous tree's nodes, and each fitted pair is written to a fresh
+      # `new_nodes` -- so unlike `fit`, this level needs no reordering to be
+      # fitted in one call.
+      survivors = [
+        stack_edge(xp, cand_cols[e][0], cand_cols[e][1], cand_subs[e])
+        for e in selected
+      ]
+      level_types = [cand_types[e] for e in selected]
+      fitted_level: Optional[Sequence[BicopLike]] = None
+      if fit_level is not None and all("d" not in t for t in level_types):
+        fitted_level = fit_level(
+          len(trees), xp.stack(survivors, axis=0), level_types
+        )
       for edge_idx, e in enumerate(selected):
         v0, v1 = cand[e]
-        col0, col1 = cand_cols[e]
         subs, edge_types = cand_subs[e], cand_types[e]
-        u_e = stack_edge(xp, col0, col1, subs)
-        pair = _fit_edge_call(
-          fit_edge, len(trees), edge_idx, u_e, None, edge_types
+        u_e = survivors[edge_idx]
+        pair = (
+          fitted_level[edge_idx]
+          if fitted_level is not None
+          else _fit_edge_call(
+            fit_edge, len(trees), edge_idx, u_e, None, edge_types
+          )
         )
         indices0 = set(nodes[v0]["all_indices"])
         indices1 = set(nodes[v1]["all_indices"])

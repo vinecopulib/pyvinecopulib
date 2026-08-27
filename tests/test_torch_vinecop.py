@@ -1215,3 +1215,41 @@ def test_batched_fit_falls_back_for_a_discrete_level() -> None:
   torch.testing.assert_close(
     fits[True].pdf(u_eval), fits[False].pdf(u_eval), atol=0.0, rtol=0.0
   )
+
+
+@pytest.mark.parametrize("d", [5, 9])
+def test_batched_fit_selects_the_same_structure(d: int) -> None:
+  """Selection is unmoved by how its pairs were scheduled.
+
+  `structure=None` is the default path, so this is the common case rather
+  than a corner. It is also the strictest gate available: the R-vine matrix
+  is compared exactly, and a spanning-tree tie broken the other way would
+  show up here with no tolerance to absorb it.
+
+  On cpu the batched fit is bit-identical to the per-edge one, so the taus
+  of the next tree are too and the matrix *must* match. On cuda the fit
+  agrees only to floating point, so a pair's bandwidth can move by a last
+  bit, and with it the next tree's edge weights -- matching there is
+  expected but not guaranteed, which is why this test pins the device.
+  """
+  u_fit = _simulate(d=d, n=1200, seed=700 + d)
+  u_t = torch.from_numpy(u_fit)
+  fits = {
+    flag: TorchVinecop.from_data(
+      u_t, controls=FitControlsTorchVinecop(batched_fit=flag)
+    )
+    for flag in (False, True)
+  }
+  np.testing.assert_array_equal(
+    np.asarray(fits[True].structure.matrix),
+    np.asarray(fits[False].structure.matrix),
+  )
+  # And still the structure the compiled selector picks.
+  np.testing.assert_array_equal(
+    np.asarray(fits[True].structure.matrix),
+    np.asarray(_fit_tll_vine(u_fit, trunc_lvl=20).structure.matrix),
+  )
+  u_eval = torch.from_numpy(_eval_grid(200, d=d, seed=710 + d))
+  torch.testing.assert_close(
+    fits[True].pdf(u_eval), fits[False].pdf(u_eval), atol=0.0, rtol=0.0
+  )

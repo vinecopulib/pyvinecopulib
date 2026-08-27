@@ -470,6 +470,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       structure, pairs = cls.select(
         u_t,
         fit_edge,
+        fit_level=level_hook,
         trunc_lvl=controls.trunc_lvl,
         tree_criterion=controls.tree_criterion,
         threshold=controls.threshold,
