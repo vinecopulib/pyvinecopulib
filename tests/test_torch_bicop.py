@@ -924,3 +924,22 @@ def test_a_discrete_edge_is_refused_a_pair_axis() -> None:
   stack = torch.from_numpy(np.stack([wide, wide]))
   with pytest.raises(ValueError, match="leading pair axis"):
     fit_tll_constant(stack[..., :2], discrete_data=stack)
+
+
+def test_from_data_batched_at_one_pair() -> None:
+  """A batch of one is the single-pair fit, exactly.
+
+  The degenerate end of the pair axis: every reduction runs over a leading
+  extent of one, and the masked freeze has a single lane to freeze. Worth
+  pinning because a vine's last tree level always has exactly one edge.
+  """
+  u = pv.Bicop(
+    family=pv.families.gaussian, parameters=np.array([[0.5]])
+  ).sample(500, seeds=[1, 2, 3])
+  (batched,) = TorchBicop.from_data_batched(torch.from_numpy(u[None, ...]))
+  torch.testing.assert_close(
+    batched.interp_grid.values,
+    TorchBicop.from_data(u).interp_grid.values,
+    atol=0.0,
+    rtol=0.0,
+  )

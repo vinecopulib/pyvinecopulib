@@ -1253,3 +1253,41 @@ def test_batched_fit_selects_the_same_structure(d: int) -> None:
   torch.testing.assert_close(
     fits[True].pdf(u_eval), fits[False].pdf(u_eval), atol=0.0, rtol=0.0
   )
+
+
+@pytest.mark.parametrize(
+  ("kwargs", "why"),
+  [
+    ({"threshold": 0.95}, "thresholding reweights edges"),
+    ({"trunc_lvl": 2}, "truncation shortens the cascade"),
+  ],
+)
+def test_batched_selection_survives_a_shortened_cascade(
+  kwargs: dict, why: str
+) -> None:
+  """The batched selector holds where a level could come out ragged.
+
+  Both knobs change how many trees get built, and thresholding changes the
+  edge weights that decide which edges survive -- so both are places a
+  level could arrive with a different number of edges than the unbatched
+  path saw, or with none. Bit-exact on cpu, so any divergence is a bug
+  rather than arithmetic.
+  """
+  del why
+  u_fit = _simulate(d=6, n=800, seed=81)
+  u_t = torch.from_numpy(u_fit)
+  fits = {
+    flag: TorchVinecop.from_data(
+      u_t, controls=FitControlsTorchVinecop(batched_fit=flag, **kwargs)
+    )
+    for flag in (False, True)
+  }
+  assert fits[True].trunc_lvl == fits[False].trunc_lvl
+  np.testing.assert_array_equal(
+    np.asarray(fits[True].structure.matrix),
+    np.asarray(fits[False].structure.matrix),
+  )
+  u_eval = torch.from_numpy(_eval_grid(120, d=6, seed=82))
+  torch.testing.assert_close(
+    fits[True].pdf(u_eval), fits[False].pdf(u_eval), atol=0.0, rtol=0.0
+  )
