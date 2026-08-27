@@ -1143,3 +1143,75 @@ def test_batched_inverse_matches_at_the_unit_square_boundary(
     atol=0.0,
     rtol=0.0,
   )
+
+
+@pytest.mark.parametrize("d", [5, 9])
+def test_batched_fit_matches_the_per_edge_fit(d: int) -> None:
+  """A level fitted in one call gives the vine a per-edge fit would.
+
+  `batched_fit` is a scheduling choice, so it must not move the model. On
+  cpu the two agree bit for bit -- the per-lane reductions are 1-D either
+  way -- which is a stronger statement than the tolerance the CUDA case
+  gets in `test_torch_device`.
+  """
+  u_fit = _simulate(d=d, n=1200, seed=500 + d)
+  structure = _fit_tll_vine(u_fit).structure
+  u_t = torch.from_numpy(u_fit)
+  fits = {
+    flag: TorchVinecop.from_data(
+      u_t,
+      structure,
+      controls=FitControlsTorchVinecop(batched_fit=flag),
+    )
+    for flag in (False, True)
+  }
+  u_eval = torch.from_numpy(_eval_grid(200, d=d, seed=510 + d))
+  for op in ("pdf", "rosenblatt"):
+    torch.testing.assert_close(
+      getattr(fits[True], op)(u_eval),
+      getattr(fits[False], op)(u_eval),
+      atol=0.0,
+      rtol=0.0,
+    )
+
+
+def test_batched_fit_defaults_to_off_on_cpu() -> None:
+  """The default follows the device, as the evaluation cascade's does.
+
+  Batching amortizes kernel launches, and cpu has none worth amortizing --
+  measured slower there at one thread. Pinned because a default that
+  silently flipped would change every cpu user's fit timing.
+  """
+  assert FitControlsTorchVinecop().batched_fit is None
+  u_fit = _simulate(d=4, n=400, seed=61)
+  vine = TorchVinecop.from_data(
+    torch.from_numpy(u_fit), _fit_tll_vine(u_fit).structure
+  )
+  # Resolution happens inside `from_data`; what is observable is that the
+  # fit succeeded and the control was left unset for the device to decide.
+  assert vine.d == 4
+
+
+def test_batched_fit_falls_back_for_a_discrete_level() -> None:
+  """A discrete edge cannot stack, so its level stays per-edge.
+
+  Asking for `batched_fit=True` on a discrete vine must fit it, not raise:
+  the hook is an optimization, and a level it cannot serve is simply not
+  handed to it.
+  """
+  var_types = ["d", "c", "c"]
+  wide = _discrete_data(var_types, n=600, seed=17)
+  structure = pv.RVineStructure.sample(3, seeds=[2])
+  fits = {
+    flag: TorchVinecop.from_data(
+      torch.from_numpy(wide),
+      structure,
+      controls=FitControlsTorchVinecop(batched_fit=flag),
+      var_types=var_types,
+    )
+    for flag in (False, True)
+  }
+  u_eval = torch.from_numpy(wide[:64])
+  torch.testing.assert_close(
+    fits[True].pdf(u_eval), fits[False].pdf(u_eval), atol=0.0, rtol=0.0
+  )

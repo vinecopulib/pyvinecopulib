@@ -52,7 +52,14 @@ from __future__ import annotations
 
 import contextlib
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Optional, cast
+from typing import (
+  TYPE_CHECKING,
+  Any,
+  Callable,
+  Optional,
+  Sequence,
+  cast,
+)
 
 from array_api_compat import array_namespace
 
@@ -101,6 +108,16 @@ __all__ = ["VinecopBase"]
 #: receives ``var_types=[t1, t2]`` and a four-column ``u_e``, so the alias cannot
 #: pin the arity -- a ``Callable`` has no way to express a keyword argument.
 FitEdge = Callable[..., BicopLike]
+
+#: ``(tree, u_level, types) -> list[BicopLike]``, fitting a whole tree level
+#: at once: the optional companion to ``FitEdge``, for a backend whose
+#: fitter carries a leading pair axis. ``u_level`` stacks the level's edges in
+#: ascending edge order and ``types`` gives each edge's pair of variable types,
+#: so the callback needs no structural knowledge. A subclass that supplies one
+#: gets it preferred over ``fit_edge``; everything else keeps working, since a
+#: level is only ever fitted this way when every one of its edges is
+#: continuous -- a mixed level cannot stack, its edges having different widths.
+FitLevel = Callable[[int, Any, "list[tuple[str, str]]"], "Sequence[BicopLike]"]
 
 
 def _fit_edge_call(
@@ -1705,6 +1722,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     context: Optional[ConditioningContext] = None,
     x: Optional[Any] = None,
     var_types: Optional[list[str]] = None,
+    fit_level: Optional[FitLevel] = None,
   ) -> list[list[BicopLike]]:
     """Fit pair copulas tree-by-tree along a fixed structure (returns them).
 
@@ -1741,6 +1759,14 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     var_types : list of str, optional
         Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete), in
         variable order; ``None`` means all continuous.
+    fit_level : callable, optional
+        ``(tree, u_level, types) -> list[BicopLike]``, fitting a whole tree
+        level at once; see ``FitLevel``. Preferred over ``fit_edge``
+        for a level whose edges are all continuous and unconditional,
+        which is the only shape that stacks -- a discrete edge is four
+        columns wide where a continuous one is two. ``None`` fits every
+        edge separately, which is what every caller did before the hook
+        existed.
 
     Returns
     -------
@@ -1810,13 +1836,36 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     pairs: list[list[BicopLike]] = []
     for tree in range(trunc_lvl):
       row: list[BicopLike] = []
-      for edge in range(d - tree - 1):
-        col0, col1, subs, edge_types = edge_columns(
+      # Every edge of one tree reads only columns finalized by earlier trees
+      # -- `min_array(tree, edge) - 1 > edge`, so the column an edge reads
+      # second is written later in this same tree -- which is why upstream
+      # runs a level on a thread pool. Gathering the level's inputs before
+      # fitting any of it is the same reordering, and it is what lets a
+      # level be fitted in one call.
+      level = [
+        edge_columns(
           s, pair_types, tree, edge, hfunc1, hfunc2, hfunc1_sub, hfunc2_sub
         )
-        u_e = stack_edge(xp, col0, col1, subs)
-        x_e = edge_context_for(tree, edge)
-        edge_copula = _fit_edge_call(fit_edge, tree, edge, u_e, x_e, edge_types)
+        for edge in range(d - tree - 1)
+      ]
+      inputs = [stack_edge(xp, c0, c1, subs) for c0, c1, subs, _ in level]
+      contexts = [edge_context_for(tree, e) for e in range(len(level))]
+      types = [t for _, _, _, t in level]
+      fitted: Optional[Sequence[BicopLike]] = None
+      if (
+        fit_level is not None
+        and all(c is None for c in contexts)
+        and all("d" not in t for t in types)
+      ):
+        fitted = fit_level(tree, xp.stack(inputs, axis=0), types)
+      for edge in range(d - tree - 1):
+        _, _, subs, edge_types = level[edge]
+        u_e, x_e = inputs[edge], contexts[edge]
+        edge_copula = (
+          fitted[edge]
+          if fitted is not None
+          else _fit_edge_call(fit_edge, tree, edge, u_e, x_e, edge_types)
+        )
         row.append(edge_copula)
         if s.needed_hfunc1(tree, edge):
           hfunc1[:, edge] = _pair_eval(edge_copula.hfunc1, u_e, x_e)

@@ -129,6 +129,28 @@ default="tau"
       input shape. Off by default for that reason: a single evaluation is
       slower compiled than not. Results agree with the eager path to
       floating point, not exactly.
+  batched_fit : bool or None, default=None
+      Fit a whole tree level in one call rather than one edge at a time.
+      ``None`` resolves per device -- on for CUDA, off otherwise -- the same
+      shape as the evaluation cascade's ``batched``. The per-level fitter
+      advances every edge's bandwidth search together and freezes each lane
+      as it converges, which trades a larger working set for far fewer
+      kernel launches.
+
+      That trade pays where launches cost something. On CUDA a whole vine
+      fit is 1.1-3.5x faster, most at large ``d`` (many pairs per level) and
+      least at large ``n`` (where the fit is arithmetic-bound and there was
+      little overhead to remove). On cpu it is 0.44-1.05x at one torch
+      thread -- i.e. mostly slower, there being no launch overhead to
+      amortize -- and faster again at many threads, where the larger kernels
+      parallelize better than many small ones. The torch fit is far from
+      competitive with the compiled backend on cpu either way, so the
+      default simply follows the device.
+
+      A level carrying a discrete edge or a conditioning context is always
+      fitted edge at a time: those cannot stack. On cpu the batched result
+      is bit-identical to the per-edge one; on CUDA it agrees to floating
+      point, the per-lane reductions reassociating.
 
   Notes
   -----
@@ -150,6 +172,7 @@ default="tau"
   device: Optional[Any] = None
   dtype: Optional[Any] = None
   compile: bool = False
+  batched_fit: Optional[bool] = None
 
   def __post_init__(self) -> None:
     if self.tree_algorithm not in TREE_ALGORITHMS:

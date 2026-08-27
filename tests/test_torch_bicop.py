@@ -847,3 +847,80 @@ def test_win_smoother_batches_over_leading_dims() -> None:
     torch.testing.assert_close(
       stacked[i], _win_smoother(x[i], wl), rtol=0.0, atol=0.0
     )
+
+
+@pytest.mark.parametrize("n", [500, 2000])
+def test_from_data_batched_matches_the_per_pair_loop(n: int) -> None:
+  """Stacking pairs into one fit does not change what any of them gets.
+
+  The batched fitter advances every lane's bandwidth search together and
+  freezes each as it converges, so a lane's answer must not depend on which
+  other lanes it travelled with. On cpu that is exact; the CUDA case is
+  covered in `test_torch_device`, where the reductions reassociate.
+  """
+  rhos = [-0.9, -0.4, 0.0, 0.3, 0.7, 0.95]
+  us = [
+    pv.Bicop(family=pv.families.gaussian, parameters=np.array([[r]])).sample(
+      n, seeds=[3, 4, 5]
+    )
+    for r in rhos
+  ]
+  stack = torch.from_numpy(np.stack(us))
+  batched = TorchBicop.from_data_batched(stack)
+  assert len(batched) == len(rhos)
+  for i, u in enumerate(us):
+    torch.testing.assert_close(
+      batched[i].interp_grid.values,
+      TorchBicop.from_data(u).interp_grid.values,
+      atol=0.0,
+      rtol=0.0,
+    )
+
+
+def test_from_data_batched_matches_cpp() -> None:
+  """The batched fit clears the same C++ gate the single-pair fit does.
+
+  Not implied by agreeing with the per-pair loop: that would also hold if
+  both had drifted together.
+  """
+  controls = pv.FitControlsBicop(family_set=[pv.families.tll], num_threads=1)
+  rhos = [0.3, 0.6, 0.9]
+  us = [
+    pv.Bicop(family=pv.families.gaussian, parameters=np.array([[r]])).sample(
+      2000, seeds=[1, 2, 3]
+    )
+    for r in rhos
+  ]
+  batched = TorchBicop.from_data_batched(torch.from_numpy(np.stack(us)))
+  for got, u in zip(batched, us):
+    np.testing.assert_allclose(
+      got.interp_grid.values.numpy(),
+      pv.Bicop.from_data(u, controls=controls).parameters,
+      atol=1e-11,
+      rtol=1e-11,
+    )
+
+
+def test_from_data_batched_rejects_a_non_stacked_input() -> None:
+  u = torch.from_numpy(
+    np.random.default_rng(0).uniform(0.05, 0.95, size=(64, 2))
+  )
+  with pytest.raises(ValueError, match=r"\(P, n, 2\)"):
+    TorchBicop.from_data_batched(u)
+
+
+def test_a_discrete_edge_is_refused_a_pair_axis() -> None:
+  """`find_latent_sample` is a compiled per-pair draw with no batch axis.
+
+  Refusing beats silently fitting the wrong thing: the discrete fit runs on
+  a latent sample reconstructed from a fixed-seed generator, so there is no
+  batched equivalent to fall back to.
+  """
+  from pyvinecopulib.torch._fit_tll import fit_tll_constant
+
+  rng = np.random.default_rng(5)
+  u = np.ceil(rng.uniform(0.0, 1.0, size=(200, 2)) * 4) / 4
+  wide = np.column_stack([u, np.maximum(u - 0.25, 0.0)])
+  stack = torch.from_numpy(np.stack([wide, wide]))
+  with pytest.raises(ValueError, match="leading pair axis"):
+    fit_tll_constant(stack[..., :2], discrete_data=stack)

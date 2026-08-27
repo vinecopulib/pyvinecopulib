@@ -232,6 +232,91 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     )
 
   @classmethod
+  def from_data_batched(
+    cls,
+    u: Tensor,
+    controls: Optional[FitControlsTorchBicop] = None,
+    *,
+    cache_integrals: bool = True,
+    device: Optional[torch.device] = None,
+    dtype: torch.dtype = torch.float64,
+  ) -> "list[TorchBicop]":
+    """Fit ``P`` pair copulas from one stacked sample, in one call.
+
+    The pairs share the sample size, the interpolation grid and the
+    evaluation points, so everything that does not depend on the data is
+    computed once and the two convergence loops of the bandwidth search
+    advance all ``P`` lanes together, each freezing as it converges. What
+    comes back is ``P`` ordinary :class:`TorchBicop` objects; the batching
+    is confined to the fit.
+
+    Nothing here knows what the pairs are *for*: the leading axis is just
+    ``P`` independent pairs on shared rows. One vine's tree level is the
+    obvious caller, but several vines' levels concatenate into the same
+    axis just as well.
+
+    Parameters
+    ----------
+    u : Tensor, shape (P, n, 2), dtype float
+        Copula-scale observations, one ``(n, 2)`` block per pair. Continuous
+        only -- a discrete edge's fit reuses a compiled per-pair draw that
+        has no batch axis.
+    controls : FitControlsTorchBicop, optional
+        Fit controls, shared by every pair. Defaults to
+        ``FitControlsTorchBicop()``.
+    cache_integrals : bool, default=True
+        Precompute each returned pair's integral tables.
+    device : torch.device, optional
+        Placement; defaults to ``u``'s.
+    dtype : torch.dtype, default=torch.float64
+        Working precision.
+
+    Returns
+    -------
+    list of TorchBicop
+        One fitted pair copula per leading index, in order.
+
+    Raises
+    ------
+    ValueError
+        If ``u`` is not 3-d with two value columns.
+
+    See Also
+    --------
+    TorchBicop.from_data : The single-pair entry point.
+    """
+    if controls is None:
+      controls = FitControlsTorchBicop()
+    u_t = torch.as_tensor(u, dtype=dtype, device=device)
+    if u_t.ndim != 3 or u_t.shape[-1] != 2:
+      raise ValueError(f"u must have shape (P, n, 2); got {tuple(u_t.shape)}")
+    u_t = _trim(u_t)
+
+    from ._fit_tll import fit_tll_constant
+
+    grid_points, values = fit_tll_constant(
+      u_t,
+      grid_size=controls.grid_size,
+      mult=controls.mult,
+      grid_type=controls.grid_type,
+    )
+    # `values` is `(P, m, m)`; each pair takes its own slice. The slice is
+    # contiguous, so the grid each pair holds is its own buffer rather than
+    # a view into a tensor the others share.
+    return [
+      cls(
+        grid_points=grid_points,
+        values=values[i].contiguous(),
+        cache_integrals=cache_integrals,
+        norm_maxiter=25,
+        is_linear=(controls.grid_type == "linear"),
+        device=device,
+        dtype=dtype,
+      )
+      for i in range(values.shape[0])
+    ]
+
+  @classmethod
   def from_data(
     cls,
     u,

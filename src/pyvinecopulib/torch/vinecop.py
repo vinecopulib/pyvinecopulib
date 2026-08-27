@@ -38,7 +38,7 @@ FitControlsTorchVinecop : Fit-time controls.
 
 from __future__ import annotations
 
-from typing import Any, Optional, cast
+from typing import Any, Optional, Sequence, cast
 
 import numpy as np
 import torch
@@ -424,6 +424,43 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         return bc
       return DiscretePair(bc, (var_types[0], var_types[1]))
 
+    # `None` resolves per device, as the evaluation cascade's `batched` does:
+    # the per-level fitter buys launch amortization, which cpu has none of.
+    batched_fit = controls.batched_fit
+    if batched_fit is None:
+      batched_fit = u_t.device.type == "cuda"
+
+    def fit_level(
+      tree: int, u_level: Tensor, types: list[tuple[str, str]]
+    ) -> Sequence[BicopLike[Tensor]]:
+      """Fit a whole continuous tree level in one call.
+
+      Parameters
+      ----------
+      tree : int
+          Tree index; unused, the fit needing no structural context.
+      u_level : Tensor, shape (N_t, n, 2)
+          The level's edges, stacked in ascending edge order.
+      types : list of tuple of str
+          Each edge's variable types; unused, a level reaching here being
+          continuous throughout.
+
+      Returns
+      -------
+      sequence of BicopLike
+          One fitted pair copula per edge, in the same order.
+      """
+      del tree, types  # a level reaching here is continuous and simplified
+      return TorchBicop.from_data_batched(
+        u_level,
+        bc_controls,
+        cache_integrals=cache_integrals,
+        device=u_t.device,
+        dtype=eff_dtype,
+      )
+
+    level_hook = fit_level if batched_fit else None
+
     if structure is None:
       # Select the structure natively in torch, reusing the pairs fit during
       # selection (reoriented onto their slots via TorchBicop.flip) — exactly
@@ -450,7 +487,11 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       # Fixed structure: fit the pairs tree by tree along it
       # (SimplifiedContext -> x_e=None).
       pairs = cls.fit(
-        structure, u_t, fit_edge, var_types=list(var_types) or None
+        structure,
+        u_t,
+        fit_edge,
+        var_types=list(var_types) or None,
+        fit_level=level_hook,
       )
     # Store the continuous grids; `_get_pair_copula` re-wraps a discrete edge,
     # so the ModuleList holds only real nn.Modules.
