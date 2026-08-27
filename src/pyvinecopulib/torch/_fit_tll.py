@@ -73,9 +73,9 @@ def _win_smoother(x: Tensor, wl: int) -> Tensor:
   ``tools_stats::win`` reaches the same quantity through an FFT, and this
   port previously convolved directly against a ``2*wl + 1``-tap kernel --
   but ``wl`` is ``ceil(n / 5)``, so that kernel grows with the data and the
-  convolution costs ``O(n**2)``. Measured on one GPU at ``n = 12384``
-  (4955 taps): 14.2 ms for the direct convolution, 0.19 ms for the FFT,
-  0.17 ms here.
+  convolution costs ``O(n**2)``. Measured on one GPU at ``n = 12000``
+  (4801 taps), medians of seven: 14.4 ms for the direct convolution,
+  0.22 ms for the FFT, 0.18 ms here.
 
   The trade this makes is precision, not correctness: differencing two
   prefix sums loses relative accuracy where a convolution does not, since
@@ -317,7 +317,7 @@ def _fit_local_likelihood_constant(
   nothing couples one grid point to another. Blocking is what keeps peak
   memory independent of the grid size: unblocked, the intermediate is
   ``(..., G, n)`` several times over, which at ``G = 900`` and
-  ``n = 12384`` is gigabytes per lane.
+  ``n = 12000`` is gigabytes per lane.
   """
   # Closed forms rather than `torch.linalg.inv` / `det`: the factor is 2x2
   # lower-triangular, and `inv` dispatches to cuSOLVER and reads its `info`
