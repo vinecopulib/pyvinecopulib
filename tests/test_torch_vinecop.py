@@ -10,7 +10,7 @@ independent vine; and confirms the truncation and discrete paths.
 from __future__ import annotations
 
 import pickle
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import pytest
@@ -1259,6 +1259,74 @@ def test_batched_fit_selects_the_same_structure(d: int) -> None:
   u_eval = torch.from_numpy(_eval_grid(200, d=d, seed=710 + d))
   torch.testing.assert_close(
     fits[True].pdf(u_eval), fits[False].pdf(u_eval), atol=1e-11, rtol=1e-9
+  )
+
+
+@pytest.mark.parametrize(
+  ("make_structure", "label"),
+  [
+    (lambda d: pv.CVineStructure(list(range(1, d + 1))), "c-vine"),
+    (lambda d: pv.CVineStructure(list(range(d, 0, -1))), "c-vine reversed"),
+    (lambda d: pv.DVineStructure(list(range(1, d + 1))), "d-vine"),
+    (lambda d: pv.RVineStructure.sample(d, seeds=[11]), "r-vine sampled"),
+    (lambda d: pv.RVineStructure.sample(d, seeds=[29]), "r-vine sampled 2"),
+  ],
+)
+def test_fit_matches_cpp_on_a_given_structure(
+  make_structure: Callable[[int], Any], label: str
+) -> None:
+  """The gathered level indexes correctly on structures selection never picks.
+
+  `VinecopBase.fit` gathers a whole tree level's inputs before fitting any of
+  it, which is licensed by every edge of a tree reading only columns
+  finalized by earlier trees. That holds -- checked over every C-vine and
+  D-vine order permutation up to d = 5 and 660 sampled R-vines up to d = 12,
+  19888 slots, no violation -- so what is at risk is not the claim but this
+  port's indexing of it, on a structure shape the suite does not otherwise
+  produce.
+
+  Comparing `batched_fit=True` against `False` cannot catch that: both read
+  the same gathered `inputs`, so a mis-gathered level is mis-gathered
+  identically for both and every such test still passes. The independent
+  check is C++, which traverses per node rather than per column, so the two
+  implementations of the same indexing disagree where one is wrong.
+
+  Every other fixed-structure parity test uses a Dissmann-selected structure
+  from one generator. These five are chosen rather than generated, and the
+  C-vine and D-vine are *complementary* rather than redundant -- measured by
+  injecting three mis-indexings into the gather and seeing which cases the
+  1e-9 gate then catches:
+
+  =================  ==========  ==========  ==========
+  case               shifted     wrong h     swapped
+  =================  ==========  ==========  ==========
+  c-vine (both)      caught      **missed**  caught
+  d-vine             **missed**  caught      caught
+  r-vine (2 seeds)   caught      caught      caught
+  =================  ==========  ==========  ==========
+
+  So a C-vine, whose tree 0 is a hub, cannot see a wrong h-function, and a
+  D-vine, whose tree 0 is a path, cannot see a column shifted by one. Drop
+  either as duplicative and the suite acquires a blind spot; the sampled
+  R-vines catch all three but are not a substitute, being one shape each.
+  """
+  del label
+  d = 6
+  u_fit = _simulate(d=d, n=700, seed=920)
+  structure = make_structure(d)
+  cpp = pv.Vinecop.from_data(u_fit, controls=_TLL_CONTROLS, structure=structure)
+  fitted = TorchVinecop.from_data(
+    torch.from_numpy(u_fit),
+    structure,
+    controls=FitControlsTorchVinecop(cache_integrals=False),
+  )
+  lifted = TorchVinecop.from_vinecop(cpp, cache_integrals=False)
+  u_eval = torch.from_numpy(_eval_grid(200, d=d, seed=921))
+  np.testing.assert_allclose(
+    fitted.pdf(u_eval).numpy(),
+    lifted.pdf(u_eval).numpy(),
+    atol=1e-9,
+    rtol=1e-9,
   )
 
 
