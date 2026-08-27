@@ -1414,6 +1414,47 @@ def test_load_state_dict_drops_the_stacked_bake() -> None:
   )
 
 
+@pytest.mark.parametrize("threshold", [0.0, 0.3, 0.5, 0.95])
+def test_threshold_matches_pvvinecop(threshold: float) -> None:
+  """A thresholded edge holds independence, as the compiled selector's does.
+
+  `threshold` decides two things upstream: which edges the spanning tree
+  prefers, and which of the survivors are fitted at all -- an edge whose
+  criterion falls below it keeps a default-constructed pair, which is the
+  independence copula. Only the first was ported, so a threshold that bites
+  used to give a different model rather than a differently-weighted one.
+
+  The four values are chosen against this fixture's candidate taus, which
+  run from 0.47 to 0.52: 0.0 thresholds nothing and is the path every other
+  test takes, 0.3 and 0.5 straddle the candidates, and 0.95 is above all of
+  them so every pair is independence and both vines are exactly `pdf = 1`.
+  """
+  u = _simulate(d=6, n=800, seed=81)
+  cpp = pv.Vinecop.from_data(
+    u,
+    controls=pv.FitControlsVinecop(
+      family_set=[pv.families.tll],
+      num_threads=1,
+      trunc_lvl=20,
+      threshold=threshold,
+    ),
+  )
+  fitted = TorchVinecop.from_data(
+    torch.from_numpy(u),
+    controls=FitControlsTorchVinecop(trunc_lvl=20, threshold=threshold),
+  )
+  np.testing.assert_array_equal(
+    np.asarray(fitted.structure.matrix), np.asarray(cpp.structure.matrix)
+  )
+  u_eval = torch.from_numpy(_eval_grid(120, d=6, seed=82))
+  np.testing.assert_allclose(
+    fitted.pdf(u_eval).numpy(),
+    cpp.pdf(u_eval.numpy()),
+    rtol=1e-9,
+    atol=1e-11,
+  )
+
+
 def test_batched_fit_runs_one_call_per_tree(
   monkeypatch: pytest.MonkeyPatch,
 ) -> None:

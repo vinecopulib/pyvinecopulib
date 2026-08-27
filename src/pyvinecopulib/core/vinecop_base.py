@@ -75,6 +75,7 @@ from ._discrete import (
   stack_edge,
   with_left_limit,
 )
+from ._independence import IndependencePair
 from ._reorient import Reorientation, reorientation
 from .bicop_base import _pair_eval
 from .context import ConditioningContext, SimplifiedContext
@@ -1960,8 +1961,12 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         ``FitControlsVinecop``. ``"cxi"`` is Chatterjee's xi, which is
         asymmetric, so the weight is the larger of the two directions.
     threshold : float, default 0.0
-        Dependence threshold: edges with criterion below it are deprioritized
-        (weight ``1.0``) during spanning-tree selection.
+        Dependence threshold. It acts twice, as it does in
+        ``Vinecop.select``: an edge whose criterion falls below it is
+        deprioritized during spanning-tree selection (weight ``1.0``), and if
+        it survives anyway it is left holding
+        :class:`~pyvinecopulib.core.IndependencePair` rather than being
+        fitted. At the default no non-negative criterion is below it.
     tree_algorithm : str, default "mst_prim"
         ``"mst_prim"`` / ``"mst_kruskal"`` (Dissmann) or ``"random_weighted"`` /
         ``"random_unweighted"`` (Wilson).
@@ -2102,6 +2107,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       cand_cols: list[tuple[Any, Any]] = []
       cand_subs: list[Optional[tuple[Any, Any]]] = []
       cand_types: list[tuple[str, str]] = []
+      cand_crits: list[float] = []
       weights: list[float] = []
       # Candidate enumeration mirrors the C++ selector exactly
       # (tools_select.ipp add_allowed_edges_proximity): the outer loop runs
@@ -2156,6 +2162,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
           cand_cols.append((col0, col1))
           cand_subs.append(subs)
           cand_types.append(edge_types)
+          cand_crits.append(float(tau))
           weights.append(weight)
 
       # Ascending candidate index = boost's edge-list (insertion) order, which
@@ -2176,22 +2183,40 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         for e in selected
       ]
       level_types = [cand_types[e] for e in selected]
-      fitted_level: Optional[Sequence[BicopLike]] = None
-      if fit_level is not None and all("d" not in t for t in level_types):
-        fitted_level = fit_level(
-          len(trees), xp.stack(survivors, axis=0), level_types
+      # The weight above only decides which edges survive. Whether a surviving
+      # edge is *fitted* is a second question with the same answer upstream
+      # gives: an edge whose criterion falls below the threshold keeps a
+      # default-constructed pair -- independence -- and `select` is never
+      # called on it (tools_select.ipp fit_or_reuse_pair_copula). At the
+      # default `threshold=0.0` no non-negative criterion is below it, so
+      # nothing here is thresholded.
+      thresholded = [cand_crits[e] < threshold for e in selected]
+      to_fit = [i for i, skip in enumerate(thresholded) if not skip]
+      fitted_level: Optional[dict[int, BicopLike]] = None
+      if (
+        fit_level is not None
+        and to_fit
+        and all("d" not in level_types[i] for i in to_fit)
+      ):
+        got = fit_level(
+          len(trees),
+          xp.stack([survivors[i] for i in to_fit], axis=0),
+          [level_types[i] for i in to_fit],
         )
+        fitted_level = dict(zip(to_fit, got))
       for edge_idx, e in enumerate(selected):
         v0, v1 = cand[e]
         subs, edge_types = cand_subs[e], cand_types[e]
         u_e = survivors[edge_idx]
-        pair = (
-          fitted_level[edge_idx]
-          if fitted_level is not None
-          else _fit_edge_call(
+        pair: BicopLike[ArrayT]
+        if thresholded[edge_idx]:
+          pair = IndependencePair()
+        elif fitted_level is not None:
+          pair = fitted_level[edge_idx]
+        else:
+          pair = _fit_edge_call(
             fit_edge, len(trees), edge_idx, u_e, None, edge_types
           )
-        )
         indices0 = set(nodes[v0]["all_indices"])
         indices1 = set(nodes[v1]["all_indices"])
         # Conditioned pair in the C++ set_sym_diff order: v0's unique variable
