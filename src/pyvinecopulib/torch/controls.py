@@ -138,15 +138,20 @@ default="tau"
       kernel launches.
 
       That trade pays where launches cost something, and it does not pay
-      everywhere. On CUDA a whole vine fit is 1.2-3.1x faster across
-      ``d`` in 5..20 and ``n`` in 2000..12384 -- most at moderate size,
+      everywhere. On CUDA a whole vine fit is roughly 1.2-2.7x faster over
+      ``d`` in 5..20 and ``n`` in 2000..12000, most at moderate size and
       least at large ``n``, where the fit is arithmetic-bound and there was
-      little overhead to remove. **The gain is not monotone: at ``d = 20``,
-      ``n = 12384`` it reverses to 0.94x**, the level's working set having
-      grown past what batching buys. Since the default is on for CUDA, that
-      corner is 6% slower unless it is switched off; the trade is worth it
-      against 2-3x at moderate size, but it is a real corner and not a
-      rounding error.
+      little overhead to remove. **The gain is not monotone: at ``d = 20``
+      and large ``n`` it reverses to about 0.95x**, the level's working set
+      having grown past what batching buys, so that corner is a few percent
+      slower unless the flag is switched off. Worth it against 2-3x at
+      moderate size, but a real corner rather than a rounding error.
+
+      Sizing that corner needs care, and the numbers here come from
+      interleaving the two arms over five repetitions rather than from a
+      single run: on a thermally throttling laptop a lone measurement of
+      these cells moves by half again, enough to invent a reversal where
+      there is none or hide one that is there.
 
       On cpu it is 0.44-1.05x at one torch thread -- mostly slower, there
       being no launch overhead to amortize -- and faster again at many
