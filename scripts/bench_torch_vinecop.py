@@ -125,16 +125,12 @@ _MODE_DEFAULTS: dict[str, dict[str, Any]] = {
   "eval": {
     "n": [500, 2000],
     "d": [5, 10, 20, 40],
-    "repeats": 3,
     "cache": [False, True],
     "grid_types": ["normal", "linear"],
   },
   "fit": {
     "n": [1000, 5000],
     "d": [5, 10],
-    # One timed fit after the untimed warm-up: `_time_repeats` pays
-    # `repeats + 1`, and a multi-second fit has little relative jitter.
-    "repeats": 1,
     # `cache_integrals=None` resolves to True, so this is the library
     # default; `--cache false,true` prices the per-pair table build.
     "cache": [True],
@@ -721,7 +717,17 @@ def _build_parser() -> argparse.ArgumentParser:
     help="Add one probed fit per arm, reporting the number and cost of the "
     "host syncs inside the tll bandwidth search. fit mode only.",
   )
-  ap.add_argument("--repeats", default=None, type=int)
+  ap.add_argument(
+    "--repeats",
+    default=3,
+    type=int,
+    help="Timed runs per configuration, reported as their median (default: "
+    "3). Fit mode used to default to 1, on the grounds that a "
+    "multi-second fit has little relative jitter -- which is false on a "
+    "throttling laptop, where repeated timings of a d = 20, n = 12000 cell "
+    "move by half again. That is enough to invent a 5%% effect or hide one, "
+    "so a fit cell pays `repeats + 1` whole fits and is worth it.",
+  )
   ap.add_argument("--seed", default=42, type=int)
   ap.add_argument(
     "--output",
