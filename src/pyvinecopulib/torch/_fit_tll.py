@@ -12,8 +12,9 @@ Three pieces:
   jitter-free input).
 * :func:`_ace` — alternating conditional expectations for the maximal-
   correlation coefficient. Outer/inner convergence loop matches the C++
-  tolerances (``2e-15`` / ``1e-4``) and uses an FFT-free moving-average
-  window smoother (``F.conv1d``) for portability.
+  tolerances (``2e-15`` / ``1e-4``); the moving-average window smoother is
+  a prefix-sum box mean rather than the C++ FFT, which is the same quantity
+  in ``O(n)`` instead of ``O(n log n)``.
 * :func:`fit_tll_constant` — the user-facing entry point. Wraps the
   bandwidth selection (``select_bandwidth_constant``) and the local-
   constant kernel density evaluation (``fit_local_likelihood_constant``)
@@ -30,12 +31,10 @@ import math
 from typing import Optional
 
 import torch
-import torch.nn.functional as F
 from torch import Tensor
 
 from ._interp import InterpolationGrid2D
 
-_SQRT_2 = math.sqrt(2.0)
 _SQRT_2PI_INV = 1.0 / math.sqrt(2.0 * math.pi)
 
 
@@ -47,11 +46,6 @@ _SQRT_2PI_INV = 1.0 / math.sqrt(2.0 * math.pi)
 def _qnorm(p: Tensor) -> Tensor:
   """Inverse standard normal CDF; matches C++ ``tools_stats::qnorm``."""
   return torch.special.ndtri(p)
-
-
-def _dnorm(z: Tensor) -> Tensor:
-  """Standard normal PDF."""
-  return torch.exp(-0.5 * z * z) * _SQRT_2PI_INV
 
 
 def _to_pseudo_obs_continuous(x: Tensor) -> Tensor:
@@ -69,22 +63,43 @@ def _to_pseudo_obs_continuous(x: Tensor) -> Tensor:
 def _win_smoother(x: Tensor, wl: int) -> Tensor:
   """Centered moving average of half-window ``wl``, with edge clamps.
 
-  Mirrors ``tools_stats::win`` semantically: pad ``x`` with ``wl`` zeros
-  on each side, convolve with a uniform kernel of length ``2*wl + 1``,
-  then clamp the leading / trailing ``wl`` entries to ``out[wl]`` and
-  ``out[n - wl - 1]`` so the edges are flat. C++ uses FFT for the
-  convolution; we use ``F.conv1d`` here for portability — same
-  mathematical answer, possibly different rounding order at ~ulp level.
+  Mirrors ``tools_stats::win``: the window is a box of length ``2*wl + 1``,
+  the data are zero-padded outside their range, and the leading / trailing
+  ``wl`` entries are then clamped to ``out[wl]`` and ``out[n - wl - 1]`` so
+  the edges are flat. Batched over any leading dimensions; the window runs
+  along the last one.
+
+  A box mean is a difference of prefix sums, which is what this computes.
+  ``tools_stats::win`` reaches the same quantity through an FFT, and this
+  port previously convolved directly against a ``2*wl + 1``-tap kernel --
+  but ``wl`` is ``ceil(n / 5)``, so that kernel grows with the data and the
+  convolution costs ``O(n**2)``. Measured on one GPU at ``n = 12384``
+  (4955 taps): 14.2 ms for the direct convolution, 0.19 ms for the FFT,
+  0.17 ms here.
+
+  The trade this makes is precision, not correctness: differencing two
+  prefix sums loses relative accuracy where a convolution does not, since
+  both operands carry the magnitude of the whole partial sum rather than of
+  the window. ACE smooths standardized scores, so the partial sums stay
+  ``O(sqrt(n))`` and the loss is immaterial -- measured at most 4.8e-15 on
+  this function's output, and 8e-13 through a whole fit against a C++
+  parity gate of 1e-11. On mean-shifted data the ratio would grow, but no
+  caller here has any.
   """
-  n = x.shape[0]
-  weight = torch.full(
-    (1, 1, 2 * wl + 1), 1.0 / (2 * wl + 1), dtype=x.dtype, device=x.device
-  )
-  x_padded = F.pad(x.view(1, 1, n), (wl, wl))
-  out = F.conv1d(x_padded, weight).view(n).clone()
+  n = x.shape[-1]
+  zero = torch.zeros(x.shape[:-1] + (1,), dtype=x.dtype, device=x.device)
+  prefix = torch.cat([zero, x.cumsum(-1)], dim=-1)
+  idx = torch.arange(n, device=x.device)
+  hi = (idx + wl + 1).clamp(max=n)
+  lo = (idx - wl).clamp(min=0)
+  # Dividing by the full window width, not by the number of terms in it, is
+  # what makes the zero-padding of `tools_stats::win` show up: the tails are
+  # averaged over fewer data points than the divisor counts. The clamps
+  # below then overwrite exactly the region where that matters.
+  out = (prefix[..., hi] - prefix[..., lo]) / (2 * wl + 1)
   if wl > 0:
-    out[:wl] = out[wl]
-    out[-wl:] = out[n - wl - 1]
+    out[..., :wl] = out[..., wl : wl + 1]
+    out[..., -wl:] = out[..., n - wl - 1 : n - wl]
   return out
 
 
