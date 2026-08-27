@@ -147,8 +147,15 @@ def _ace(
 
   Batched over any leading dimensions. Both convergence loops advance every
   lane together and *freeze* each as it converges -- its state, including
-  its two trip counters, stops moving while the others carry on -- so a
-  lane's answer does not depend on which lanes it travelled with.
+  its two trip counters, stops moving while the others carry on -- so
+  *which* lanes a pair travelled with does not change its answer at all,
+  and its iteration count is the one its own data earns.
+
+  *How many* it travelled with is a separate matter and does move the last
+  bits, here as everywhere in the batched fit: torch selects elementwise
+  kernels by element count. The exact half of that promise is pinned by
+  ``test_ace_freezes_each_lane_independently``, which varies the companions
+  at a fixed shape.
 
   The batch therefore costs the slowest lane rather than the sum, and how
   much that saves depends on how alike the lanes are. Iteration counts

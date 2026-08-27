@@ -160,9 +160,18 @@ default="tau"
       on cpu either way, so the default simply follows the device.
 
       A level carrying a discrete edge or a conditioning context is always
-      fitted edge at a time: those cannot stack. On cpu the batched result
-      is bit-identical to the per-edge one; on CUDA it agrees to floating
-      point, the per-lane reductions reassociating.
+      fitted edge at a time: those cannot stack.
+
+      The batched result agrees with the per-edge one to floating point on
+      every device -- not bit for bit, on cpu included. A lane's iterations
+      are independent of its batch-mates, each freezing as it converges,
+      but the arithmetic passes through kernels torch selects by element
+      count: the bandwidth search's `pow` takes a vectorized path past
+      ``2 * Vectorized<double>::size()`` lanes, which is 8 on AVX2 and 4 on
+      NEON. So the last bits depend on how many pairs travelled together,
+      and a machine that vectorizes sooner diverges where another does not.
+      Selected structures still match, the tree criterion being a function
+      of ranks rather than of those bits.
 
   Notes
   -----

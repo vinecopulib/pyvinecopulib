@@ -849,14 +849,58 @@ def test_win_smoother_batches_over_leading_dims() -> None:
     )
 
 
+def test_ace_freezes_each_lane_independently() -> None:
+  """A lane's ACE answer does not depend on which lanes it travelled with.
+
+  The batched bandwidth search advances every lane together and freezes
+  each as it converges. Were a freeze to leak -- a converged lane's state
+  still moving while its neighbors iterate -- a pair's answer would depend
+  on its companions, which is the one thing a scheduling choice must never
+  do.
+
+  Pinned at zero, and legitimately: both calls pass the same shape, dtype
+  and strides, so torch dispatches the same kernels and the batch-extent
+  effect that forces a tolerance elsewhere cannot arise. Only the
+  companions differ.
+
+  This assertion carries what the vine-level pdf comparisons no longer can.
+  A batched fit with no per-lane freeze at all reaches the vine's pdf at
+  about 7e-15, smaller than the arithmetic noise those comparisons must
+  tolerate, so it is undetectable there and plainly visible here.
+
+  The companions have to converge later than the probe or nothing is
+  frozen and the test is vacuous. Independent uniforms give ACE no signal,
+  so it grinds against its own rounding noise: 63 and 147 smoothing passes
+  against the probe's 30.
+  """
+  from pyvinecopulib.torch._fit_tll import _ace
+
+  rng = np.random.default_rng(4)
+  probe = pv.Bicop(
+    family=pv.families.gaussian, parameters=np.array([[0.3]])
+  ).sample(600, seeds=[7, 8, 9])
+  slow = [rng.uniform(size=(600, 2)) for _ in range(2)]
+  alone = torch.special.ndtri(torch.from_numpy(np.stack([probe, probe, probe])))
+  mixed = torch.special.ndtri(torch.from_numpy(np.stack([probe, *slow])))
+  torch.testing.assert_close(_ace(mixed)[0], _ace(alone)[0], atol=0.0, rtol=0.0)
+
+
 @pytest.mark.parametrize("n", [500, 2000])
 def test_from_data_batched_matches_the_per_pair_loop(n: int) -> None:
   """Stacking pairs into one fit does not change what any of them gets.
 
   The batched fitter advances every lane's bandwidth search together and
-  freezes each as it converges, so a lane's answer must not depend on which
-  other lanes it travelled with. On cpu that is exact; the CUDA case is
-  covered in `test_torch_device`, where the reductions reassociate.
+  freezes each as it converges, so *which* lanes a pair travelled with does
+  not change its answer at all -- pinned exactly, on a fixed shape, by
+  `test_ace_freezes_each_lane_independently`. *How many* it travelled with
+  moves the last bits on every device: torch selects an elementwise kernel
+  by element count, and the bandwidth search's `pow` takes a vectorized
+  path past `2 * Vectorized<double>::size()` lanes -- 8 on AVX2, 4 on NEON.
+
+  The tolerance is far tighter than the vine-level ones because these are
+  raw grid values rather than a product over trees, and it has to stay
+  tight: a batched fit with no per-lane freeze at all shows up here at
+  ~1e-12.
   """
   rhos = [-0.9, -0.4, 0.0, 0.3, 0.7, 0.95]
   us = [
@@ -872,8 +916,8 @@ def test_from_data_batched_matches_the_per_pair_loop(n: int) -> None:
     torch.testing.assert_close(
       batched[i].interp_grid.values,
       TorchBicop.from_data(u).interp_grid.values,
-      atol=0.0,
-      rtol=0.0,
+      atol=1e-14,
+      rtol=1e-13,
     )
 
 
@@ -932,6 +976,11 @@ def test_from_data_batched_at_one_pair() -> None:
   The degenerate end of the pair axis: every reduction runs over a leading
   extent of one, and the masked freeze has a single lane to freeze. Worth
   pinning because a vine's last tree level always has exactly one edge.
+
+  This one is exact rather than toleranced, and only because P is 1: the
+  bandwidth search's `pow` then has numel 1 in both modes, so no
+  architecture can dispatch it two different ways. Stacking more pairs
+  forfeits that -- see `test_from_data_batched_matches_the_per_pair_loop`.
   """
   u = pv.Bicop(
     family=pv.families.gaussian, parameters=np.array([[0.5]])

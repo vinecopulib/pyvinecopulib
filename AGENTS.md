@@ -1028,6 +1028,14 @@ Key surface:
     vine is a variant — so a process compiling more vines than that falls
     back to eager. The `batched` flag is **not** a control: it is resolved
     per device on each call, and overridable per call.
+  - `batched_fit` — fits a whole tree level in one call instead of edge at a
+    time, through the optional `fit_level` hook on `VinecopBase.fit` /
+    `.select` (`TorchBicop.from_data_batched` is the pair-level entry point,
+    taking `(P, n, 2)`). Resolved per device like the cascade's `batched`.
+    The hook is deliberately ignorant of what the pairs are for — `P`
+    independent pairs on shared rows — so several vines' levels concatenate
+    into the same axis as readily as one vine's. A level carrying a discrete
+    edge or a conditioning context cannot stack and stays per-edge.
   - `device`, `dtype` — propagate to every tensor on construction;
     fitted modules respect `.to(device)` afterwards.
   - `trunc_lvl`, `tree_criterion`, `threshold`, `tree_algorithm`, `seeds`
@@ -1169,6 +1177,17 @@ Round-trip / parity properties to preserve when touching numerics:
   `rosenblatt` on the same fitted vine, and **bit-identical**
   `inverse_rosenblatt` -- its waves reorder the cells without changing what
   any one of them computes, so that one is pinned at `atol=rtol=0`.
+- `batched_fit=True` ↔ `batched_fit=False`: numerically equivalent, and
+  **not** bit-identical on any device — unlike its cascade sibling above,
+  which is. Batching changes how many elements the bandwidth search's `pow`
+  is handed, and torch selects elementwise kernels by element count
+  (vectorized past `2 * Vectorized<double>::size()`: 8 on AVX2, 4 on NEON),
+  so a machine that vectorizes sooner diverges where another does not. Do
+  not pin a fit comparison at `atol=rtol=0` on the strength of one machine
+  agreeing; the exact claims available are that a lane's answer is
+  independent of *which* lanes it travelled with (at a fixed shape) and that
+  the selected structure matches, the tree criterion reading ranks rather
+  than last bits.
 - `sklearn.base.clone()` round-trip: every estimator clones cleanly
   with all `__init__` parameters preserved verbatim.
 

@@ -10,6 +10,7 @@ independent vine; and confirms the truncation and discrete paths.
 from __future__ import annotations
 
 import pickle
+from typing import Any
 
 import numpy as np
 import pytest
@@ -1149,10 +1150,12 @@ def test_batched_inverse_matches_at_the_unit_square_boundary(
 def test_batched_fit_matches_the_per_edge_fit(d: int) -> None:
   """A level fitted in one call gives the vine a per-edge fit would.
 
-  `batched_fit` is a scheduling choice, so it must not move the model. On
-  cpu the two agree bit for bit -- the per-lane reductions are 1-D either
-  way -- which is a stronger statement than the tolerance the CUDA case
-  gets in `test_torch_device`.
+  `batched_fit` is a scheduling choice, so it must not move the model --
+  but it does move the last bits, on every device rather than only on CUDA.
+  Stacking a level changes how many elements the bandwidth search's `pow`
+  sees, and torch picks an elementwise kernel by element count. What a
+  schedule must not touch is a lane's iteration count or which lanes it
+  travelled with, and both are pinned exactly in `test_torch_bicop`.
   """
   u_fit = _simulate(d=d, n=1200, seed=500 + d)
   structure = _fit_tll_vine(u_fit).structure
@@ -1170,8 +1173,8 @@ def test_batched_fit_matches_the_per_edge_fit(d: int) -> None:
     torch.testing.assert_close(
       getattr(fits[True], op)(u_eval),
       getattr(fits[False], op)(u_eval),
-      atol=0.0,
-      rtol=0.0,
+      atol=1e-11,
+      rtol=1e-9,
     )
 
 
@@ -1198,6 +1201,9 @@ def test_batched_fit_falls_back_for_a_discrete_level() -> None:
   Asking for `batched_fit=True` on a discrete vine must fit it, not raise:
   the hook is an optimization, and a level it cannot serve is simply not
   handed to it.
+
+  Exact rather than toleranced because every level here has one edge, so
+  the batched path is never taken and the two runs are the same arithmetic.
   """
   var_types = ["d", "c", "c"]
   wide = _discrete_data(var_types, n=600, seed=17)
@@ -1222,15 +1228,16 @@ def test_batched_fit_selects_the_same_structure(d: int) -> None:
   """Selection is unmoved by how its pairs were scheduled.
 
   `structure=None` is the default path, so this is the common case rather
-  than a corner. It is also the strictest gate available: the R-vine matrix
-  is compared exactly, and a spanning-tree tie broken the other way would
-  show up here with no tolerance to absorb it.
+  than a corner.
 
-  On cpu the batched fit is bit-identical to the per-edge one, so the taus
-  of the next tree are too and the matrix *must* match. On cuda the fit
-  agrees only to floating point, so a pair's bandwidth can move by a last
-  bit, and with it the next tree's edge weights -- matching there is
-  expected but not guaranteed, which is why this test pins the device.
+  The matrix is compared exactly on every device even though the fit itself
+  is not bit-identical anywhere, and what licenses that is rank
+  quantization rather than the fit: the tree criterion is a function of
+  ranks alone, so perturbing an h-value by ~1e-15 can only change a tau by
+  swapping two neighbors, and their spacing at this `n` is ~1e-3. The same
+  file already asserts exact matrix equality across a ~1e-11 pair-fit
+  difference, four orders more perturbation than scheduling applies. Only
+  the pdf comparison carries a tolerance.
   """
   u_fit = _simulate(d=d, n=1200, seed=700 + d)
   u_t = torch.from_numpy(u_fit)
@@ -1251,14 +1258,51 @@ def test_batched_fit_selects_the_same_structure(d: int) -> None:
   )
   u_eval = torch.from_numpy(_eval_grid(200, d=d, seed=710 + d))
   torch.testing.assert_close(
-    fits[True].pdf(u_eval), fits[False].pdf(u_eval), atol=0.0, rtol=0.0
+    fits[True].pdf(u_eval), fits[False].pdf(u_eval), atol=1e-11, rtol=1e-9
   )
+
+
+def test_batched_fit_runs_one_call_per_tree(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """The batched path is taken, once per tree level, with every edge in it.
+
+  Every other batched-fit test compares the batched result against the
+  per-edge one, which a batched path that silently fell back would pass
+  too: substituting a plain per-lane loop for `from_data_batched` leaves
+  all of them green at exactly zero difference. So nothing else here
+  separates a working batched fit from a dead one.
+
+  This does, and it compares no floating-point value -- so it is immune to
+  the batch-extent arithmetic that put a tolerance on the others. The lane
+  counts also say the levels arrive whole, which is what
+  `test_batched_selection_survives_a_shortened_cascade` claims and cannot
+  see.
+  """
+  d = 6
+  u_fit = _simulate(d=d, n=400, seed=91)
+  structure = _fit_tll_vine(u_fit).structure
+  seen: list[int] = []
+  real = TorchBicop.from_data_batched
+
+  def spy(u: torch.Tensor, *args: Any, **kwargs: Any) -> Any:
+    seen.append(int(u.shape[0]))
+    return real(u, *args, **kwargs)
+
+  monkeypatch.setattr(TorchBicop, "from_data_batched", spy)
+  TorchVinecop.from_data(
+    torch.from_numpy(u_fit),
+    structure,
+    controls=FitControlsTorchVinecop(batched_fit=True),
+  )
+  assert seen == list(range(d - 1, 0, -1))
 
 
 @pytest.mark.parametrize(
   ("kwargs", "why"),
   [
-    ({"threshold": 0.95}, "thresholding reweights edges"),
+    ({"threshold": 0.5}, "a threshold the candidates straddle"),
+    ({"threshold": 0.95}, "a threshold above every candidate"),
     ({"trunc_lvl": 2}, "truncation shortens the cascade"),
   ],
 )
@@ -1270,8 +1314,16 @@ def test_batched_selection_survives_a_shortened_cascade(
   Both knobs change how many trees get built, and thresholding changes the
   edge weights that decide which edges survive -- so both are places a
   level could arrive with a different number of edges than the unbatched
-  path saw, or with none. Bit-exact on cpu, so any divergence is a bug
-  rather than arithmetic.
+  path saw, or with none. That the levels line up is what
+  `test_batched_fit_runs_one_call_per_tree` pins; this checks the model they
+  produce.
+
+  Both thresholds are here because they exercise different things. At 0.95
+  no candidate tau reaches the threshold for this fixture, so every MST
+  weight is exactly 1.0 and the structure is dependence-blind -- which
+  makes its matrix comparison hold for reasons unrelated to scheduling. At
+  0.5 the candidates straddle it, so the weights carry dependence and the
+  comparison has something to say.
   """
   del why
   u_fit = _simulate(d=6, n=800, seed=81)
@@ -1289,5 +1341,5 @@ def test_batched_selection_survives_a_shortened_cascade(
   )
   u_eval = torch.from_numpy(_eval_grid(120, d=6, seed=82))
   torch.testing.assert_close(
-    fits[True].pdf(u_eval), fits[False].pdf(u_eval), atol=0.0, rtol=0.0
+    fits[True].pdf(u_eval), fits[False].pdf(u_eval), atol=1e-11, rtol=1e-9
   )

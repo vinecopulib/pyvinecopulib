@@ -281,6 +281,20 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     ValueError
         If ``u`` is not 3-d with two value columns.
 
+    Notes
+    -----
+    A pair's fit is unaffected by *which* other pairs share its call: each
+    lane's bandwidth search freezes as it converges, so the iterations a
+    pair takes are the ones its own data earns.
+
+    It is affected by *how many*, in the last bits. Torch selects
+    elementwise kernels by element count, and the bandwidth search's
+    ``pow`` takes a vectorized path past
+    ``2 * Vectorized<double>::size()`` lanes -- 8 on AVX2, 4 on NEON -- so
+    stacking ``P`` pairs agrees with fitting them one by one to floating
+    point rather than bit for bit, on every device. The gap is around
+    ``1e-15`` on a grid value. Where that matters, fit the pair alone.
+
     See Also
     --------
     TorchBicop.from_data : The single-pair entry point.

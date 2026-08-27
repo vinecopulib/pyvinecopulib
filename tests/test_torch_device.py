@@ -308,12 +308,12 @@ def test_batched_fit_matches_the_per_edge_fit_on_device(
 ) -> None:
   """`batched_fit` is a schedule, not a model, on either device.
 
-  Bit-exact on cpu and a tolerance on CUDA, and the asymmetry is the point:
-  the batched fitter reduces over a `(P, n)` axis where the per-edge one
-  reduces over `(n,)`, and CUDA reassociates that. The bandwidth search's
-  outer tolerance sits at the float64 noise floor, so a last-bit difference
-  there can cost a lane one iteration -- which is why this is checked
-  against the fitted model rather than against a fixed number.
+  One tolerance for both devices, because the mechanism is not a device
+  asymmetry: stacking a level changes how many elements the bandwidth
+  search's `pow` sees, and torch selects an elementwise kernel by element
+  count. A cpu that vectorizes at a lower lane count than another therefore
+  diverges where the other does not, which is why this cannot be pinned at
+  zero on the strength of one machine agreeing.
   """
   u_fit = _u(d, 1200, 600 + d)
   structure = pv.Vinecop.from_data(
@@ -334,10 +334,9 @@ def test_batched_fit_matches_the_per_edge_fit_on_device(
     for flag in (False, True)
   }
   u_eval = torch.as_tensor(_u(d, 300, 610 + d), device=device)
-  tol = 0.0 if device == "cpu" else 1e-9
   np.testing.assert_allclose(
     _np(fits[True].pdf(u_eval)),
     _np(fits[False].pdf(u_eval)),
-    rtol=tol,
-    atol=tol,
+    rtol=1e-9,
+    atol=1e-11,
   )
