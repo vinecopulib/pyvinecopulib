@@ -137,15 +137,22 @@ default="tau"
       as it converges, which trades a larger working set for far fewer
       kernel launches.
 
-      That trade pays where launches cost something. On CUDA a whole vine
-      fit is 1.1-3.5x faster, most at large ``d`` (many pairs per level) and
-      least at large ``n`` (where the fit is arithmetic-bound and there was
-      little overhead to remove). On cpu it is 0.44-1.05x at one torch
-      thread -- i.e. mostly slower, there being no launch overhead to
-      amortize -- and faster again at many threads, where the larger kernels
-      parallelize better than many small ones. The torch fit is far from
-      competitive with the compiled backend on cpu either way, so the
-      default simply follows the device.
+      That trade pays where launches cost something, and it does not pay
+      everywhere. On CUDA a whole vine fit is 1.2-3.1x faster across
+      ``d`` in 5..20 and ``n`` in 2000..12384 -- most at moderate size,
+      least at large ``n``, where the fit is arithmetic-bound and there was
+      little overhead to remove. **The gain is not monotone: at ``d = 20``,
+      ``n = 12384`` it reverses to 0.94x**, the level's working set having
+      grown past what batching buys. Since the default is on for CUDA, that
+      corner is 6% slower unless it is switched off; the trade is worth it
+      against 2-3x at moderate size, but it is a real corner and not a
+      rounding error.
+
+      On cpu it is 0.44-1.05x at one torch thread -- mostly slower, there
+      being no launch overhead to amortize -- and faster again at many
+      threads, where the larger kernels parallelize better than many small
+      ones. The torch fit is far from competitive with the compiled backend
+      on cpu either way, so the default simply follows the device.
 
       A level carrying a discrete edge or a conditioning context is always
       fitted edge at a time: those cannot stack. On cpu the batched result

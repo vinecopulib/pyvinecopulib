@@ -69,7 +69,7 @@ import os
 import sys
 import time
 from statistics import median
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import torch
@@ -302,6 +302,7 @@ def _torch_controls(
   trunc_lvl: int,
   device: str,
   dtype: torch.dtype,
+  batched_fit: Optional[bool] = None,
 ) -> FitControlsTorchVinecop:
   return FitControlsTorchVinecop(
     bicop_controls=FitControlsTorchBicop(
@@ -311,6 +312,7 @@ def _torch_controls(
     trunc_lvl=trunc_lvl,
     device=torch.device(device),
     dtype=dtype,
+    batched_fit=batched_fit,
   )
 
 
@@ -510,6 +512,7 @@ def _bench_fit_cell(
   dtypes: list[str],
   structures: list[str],
   backends: list[str],
+  batched_fits: list[Optional[bool]],
   repeats: int,
   seed: int,
   profile: bool,
@@ -542,6 +545,7 @@ def _bench_fit_cell(
             "grid_size": g,
             "dtype": "f64",
             "structure": arm,
+            "batched_fit": "",
             "time_ms": _timed_or_nan(
               call, repeats, label=f"cpp {arm} t={t} g={g}"
             ),
@@ -563,41 +567,43 @@ def _bench_fit_cell(
         for grid_type in grid_types:
           for g in grid_sizes:
             for cache in caches:
-              ctl = _torch_controls(
-                grid_type, g, cache, trunc_lvl, device, torch_dtype
-              )
-              for arm in structures:
-                label = (
-                  f"torch {arm} {device} {dtype_name} {grid_type} "
-                  f"g={g} cache={cache}"
+              for bf in batched_fits:
+                ctl = _torch_controls(
+                  grid_type, g, cache, trunc_lvl, device, torch_dtype, bf
                 )
-                call = _torch_fit_call(
-                  u_t, ref.structure if arm == "fit" else None, ctl
-                )
-                ms = _timed_or_nan(call, repeats, sync=sync, label=label)
-                row = {
-                  "mode": "fit",
-                  "n": n,
-                  "d": d,
-                  "backend": "torch",
-                  "threads": "",
-                  "device": device,
-                  "cache_integrals": str(cache).lower(),
-                  "grid_type": grid_type,
-                  "grid_size": g,
-                  "dtype": dtype_name,
-                  "structure": arm,
-                  "time_ms": ms,
-                }
-                if profile:
-                  row.update(
-                    _PROFILE_BLANK
-                    if math.isnan(ms)
-                    else _profile_once(call, sync=sync)
+                for arm in structures:
+                  label = (
+                    f"torch {arm} {device} {dtype_name} {grid_type} "
+                    f"g={g} cache={cache} batched_fit={bf}"
                   )
-                rows.append(row)
-                if sync is not None:
-                  torch.cuda.empty_cache()
+                  call = _torch_fit_call(
+                    u_t, ref.structure if arm == "fit" else None, ctl
+                  )
+                  ms = _timed_or_nan(call, repeats, sync=sync, label=label)
+                  row = {
+                    "mode": "fit",
+                    "n": n,
+                    "d": d,
+                    "backend": "torch",
+                    "threads": "",
+                    "device": device,
+                    "cache_integrals": str(cache).lower(),
+                    "grid_type": grid_type,
+                    "grid_size": g,
+                    "dtype": dtype_name,
+                    "structure": arm,
+                    "batched_fit": "" if bf is None else str(bf).lower(),
+                    "time_ms": ms,
+                  }
+                  if profile:
+                    row.update(
+                      _PROFILE_BLANK
+                      if math.isnan(ms)
+                      else _profile_once(call, sync=sync)
+                    )
+                  rows.append(row)
+                  if sync is not None:
+                    torch.cuda.empty_cache()
         del u_t
         if sync is not None:
           torch.cuda.empty_cache()
@@ -645,6 +651,14 @@ def _build_parser() -> argparse.ArgumentParser:
     type=_parse_str_list,
     help="Backends to bench (default: cpp,torch). The C++ selection runs "
     "either way -- it is where the fixed skeleton comes from.",
+  )
+  ap.add_argument(
+    "--batched-fit",
+    default=None,
+    type=_parse_bool_list,
+    help="batched_fit values to sweep: whether a tree level is fitted in "
+    "one call or an edge at a time (default: the library's own per-device "
+    "resolution, reported as an empty column). fit mode only.",
   )
   ap.add_argument(
     "--structures",
@@ -748,6 +762,7 @@ _FIELDNAMES: dict[str, list[str]] = {
     "grid_size",
     "dtype",
     "structure",
+    "batched_fit",
     "time_ms",
   ],
 }
@@ -829,6 +844,9 @@ def main() -> None:
           dtypes=args.dtypes,
           structures=args.structures,
           backends=args.backends,
+          batched_fits=(
+            [None] if args.batched_fit is None else list(args.batched_fit)
+          ),
           repeats=args.repeats,
           seed=args.seed,
           profile=args.profile_ace,
