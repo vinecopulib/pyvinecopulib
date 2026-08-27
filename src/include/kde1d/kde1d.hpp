@@ -52,6 +52,12 @@ degree :
 grid_size :
     Number of grid points for the interpolation grid (must be
     >= 4).
+boundary_repair :
+    Whether a finite bound may be fitted with a dedicated boundary
+    estimator instead of the transformed bulk fit. Eligibility, not a
+    guarantee: it needs a finite bound and at least 16 observations,
+    and an endpoint whose local behavior is unclear keeps the bulk
+    estimate. Has no effect when neither bound is set.
 )""";
 
 // Factory function to create a Kde1d from xmin, xmax, type string, multiplier,
@@ -61,9 +67,10 @@ inline Kde1d kde1d_from_params(std::optional<double> xmin = std::nullopt,
                                const std::string& type = "continuous",
                                double multiplier = 1.0,
                                std::optional<double> bandwidth = std::nullopt,
-                               size_t degree = 2, size_t grid_size = 400) {
+                               size_t degree = 2, size_t grid_size = 400,
+                               bool boundary_repair = true) {
   return Kde1d(xmin.value_or(NAN), xmax.value_or(NAN), type, multiplier,
-               bandwidth.value_or(NAN), degree, grid_size);
+               bandwidth.value_or(NAN), degree, grid_size, boundary_repair);
 }
 
 // Factory function to create a Kde1d from grid, xmin, xmax, type string, prob0
@@ -167,20 +174,22 @@ inline void init_kde1d(nb::module_& module) {
               [](Kde1d* self, std::optional<double> xmin,
                  std::optional<double> xmax, const std::string& type,
                  double multiplier, std::optional<double> bandwidth,
-                 size_t degree, size_t grid_size) {
+                 size_t degree, size_t grid_size, bool boundary_repair) {
                 new (self) Kde1d(xmin.value_or(NAN), xmax.value_or(NAN), type,
                                  multiplier, bandwidth.value_or(NAN), degree,
-                                 grid_size);
+                                 grid_size, boundary_repair);
               },
               "xmin"_a = std::nullopt, "xmax"_a = std::nullopt,
               "type"_a = "continuous", "multiplier"_a = 1.0,
               "bandwidth"_a = std::nullopt, "degree"_a = 2, "grid_size"_a = 400,
-              kde1d_constructor_doc, nb::call_guard<nb::gil_scoped_release>())
+              "boundary_repair"_a = true, kde1d_constructor_doc,
+              nb::call_guard<nb::gil_scoped_release>())
           .def_static("from_params", &kde1d_from_params,
                       "xmin"_a = std::nullopt, "xmax"_a = std::nullopt,
                       "type"_a = "continuous", "multiplier"_a = 1.0,
                       "bandwidth"_a = std::nullopt, "degree"_a = 2,
-                      "grid_size"_a = 400, kde1d_constructor_doc,
+                      "grid_size"_a = 400, "boundary_repair"_a = true,
+                      kde1d_constructor_doc,
                       nb::call_guard<nb::gil_scoped_release>())
           .def_static("from_grid", &kde1d_from_grid, "grid_points"_a,
                       "values"_a, "xmin"_a = std::nullopt,
@@ -203,6 +212,10 @@ inline void init_kde1d(nb::module_& module) {
           .def_prop_ro("degree", &Kde1d::get_degree, kde1d_doc.get_degree.doc)
           .def_prop_ro("grid_size", &Kde1d::get_grid_size,
                        kde1d_doc.get_grid_size.doc)
+          .def_prop_ro("actual_grid_size", &Kde1d::get_actual_grid_size,
+                       kde1d_doc.get_actual_grid_size.doc)
+          .def_prop_ro("boundary_repair", &Kde1d::get_boundary_repair,
+                       kde1d_doc.get_boundary_repair.doc)
           .def_prop_ro("edf", &Kde1d::get_edf, kde1d_doc.get_edf.doc)
           .def_prop_ro("grid_points", &Kde1d::get_grid_points,
                        kde1d_doc.get_grid_points.doc,
@@ -337,6 +350,7 @@ inline void init_kde1d(nb::module_& module) {
                    s["degree"] = static_cast<std::size_t>(kde.get_degree());
                    s["grid_size"] =
                        static_cast<std::size_t>(kde.get_grid_size());
+                   s["boundary_repair"] = kde.get_boundary_repair();
                  }
                  return s;
                })
@@ -363,8 +377,10 @@ inline void init_kde1d(nb::module_& module) {
               const std::size_t degree = nb::cast<std::size_t>(s["degree"]);
               const std::size_t grid_size =
                   nb::cast<std::size_t>(s["grid_size"]);
+              const bool boundary_repair =
+                  nb::cast<bool>(s["boundary_repair"]);
               new (&kde) Kde1d(xmin, xmax, type, multiplier, bandwidth, degree,
-                               grid_size);
+                               grid_size, boundary_repair);
             }
           });
 

@@ -394,3 +394,63 @@ def test_kde1d_large_data() -> None:
   pdf_vals = kde.pdf(eval_points)
   assert len(pdf_vals) == 100
   assert np.all(pdf_vals >= 0)
+
+
+def test_boundary_repair_is_on_by_default_and_can_be_turned_off() -> None:
+  """The flag reaches the fit, and shows up where a fitted object describes itself."""
+  assert pv.core.Kde1d().boundary_repair is True
+  assert pv.core.Kde1d(boundary_repair=False).boundary_repair is False
+
+  y = np.random.default_rng(11).uniform(0.0, 1.0, 400)
+  repaired = pv.core.Kde1d(xmin=0.0, xmax=1.0).fit(y)
+  bulk = pv.core.Kde1d(xmin=0.0, xmax=1.0, boundary_repair=False).fit(y)
+  assert not np.allclose(repaired.values, bulk.values), (
+    "the flag should change a bounded fit"
+  )
+  assert "boundary_repair=true" in str(repaired)
+  assert "boundary_repair=false" in str(bulk)
+
+
+def test_boundary_repair_needs_a_bound_to_do_anything() -> None:
+  """It is eligibility at a finite endpoint, so an unbounded fit is untouched."""
+  y = np.random.default_rng(12).normal(size=400)
+  on = pv.core.Kde1d().fit(y)
+  off = pv.core.Kde1d(boundary_repair=False).fit(y)
+  np.testing.assert_array_equal(on.values, off.values)
+
+
+def test_the_grid_covers_a_discrete_variable_s_boundary_cells() -> None:
+  """A declared discrete bound is a level; the jitter cell around it is half a unit wider.
+
+  Getting this wrong truncates the outermost half-cells, which is what the
+  estimator did before kde1d#37 -- and the sklearn layer declares these bounds
+  for every ordered categorical, so it was the common case rather than a corner.
+  """
+  y = np.random.default_rng(13).integers(0, 4, 500).astype(float)
+  kde = pv.core.Kde1d(xmin=0.0, xmax=3.0, type="discrete").fit(y)
+  grid = np.asarray(kde.grid_points)
+  assert grid[0] == pytest.approx(-0.5)
+  assert grid[-1] == pytest.approx(3.5)
+  # The masses live on the declared support and sum to one over it.
+  assert kde.pdf(np.arange(4.0)).sum() == pytest.approx(1.0)
+  assert kde.pdf(np.array([-1.0, 4.0])).tolist() == [0.0, 0.0]
+  assert kde.cdf(np.array([3.0]))[0] == pytest.approx(1.0)
+
+
+def test_discrete_bounds_and_data_must_be_integers() -> None:
+  """A discrete variable lives on the integer lattice; a fractional bound is a mistake."""
+  with pytest.raises(ValueError, match="discrete bounds must be integers"):
+    pv.core.Kde1d(xmin=0.5, type="discrete")
+  with pytest.raises(ValueError, match="discrete bounds must be integers"):
+    pv.core.Kde1d(type="discrete").set_xmin_xmax(xmin=0.5)
+  with pytest.raises(ValueError, match="discrete data must be integers"):
+    pv.core.Kde1d(type="discrete").fit(np.array([0.0, 1.5, 2.0]))
+
+
+def test_actual_grid_size_is_reported_separately() -> None:
+  """`grid_size` is what was asked for; `actual_grid_size` is what the fit built."""
+  kde = pv.core.Kde1d(grid_size=64)
+  assert (kde.grid_size, kde.actual_grid_size) == (64, 0)
+  kde.fit(np.random.default_rng(14).normal(size=200))
+  assert kde.grid_size == 64
+  assert kde.actual_grid_size == 65

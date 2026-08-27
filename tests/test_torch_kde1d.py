@@ -2,13 +2,11 @@
 
 The load-bearing claim is **parity**: a lifted grid evaluates to the same
 numbers as the compiled `Kde1d` it came from, across all three variable types,
-bounded and unbounded, at every local-polynomial degree. Three of those numbers
-come from C++ behavior that looks like a bug and is not, so they are pinned
-separately: the interpolant drops by `exp(-0.5)` exactly at the grid's right
-end, the unnormalized integral carries no Gaussian-tail mass, and the discrete
-masses are normalized by the *raw* interpolation rather than the clamped
-density. `icdf` is compared with `assert_array_equal` rather than a tolerance,
-because reproducing the 35-step bisection makes it exact.
+bounded and unbounded, at every local-polynomial degree. One of those numbers
+comes from C++ behavior that looks like a bug and is not, so it is pinned
+separately: the unnormalized integral carries no Gaussian-tail mass even though
+the density beyond the grid does. `icdf` is the one place parity is a tolerance
+rather than an equality, for a reason `_QUANTILE_RTOL` sets out.
 
 Beyond parity: the grid is differentiable when a caller asks for it, and the
 module round-trips through `state_dict`, `pickle` and `.to()`.
@@ -92,6 +90,31 @@ def test_pdf_and_cdf_match_the_compiled_estimator(
   )
 
 
+#: How closely a torch quantile has to match the compiled one. Not zero for the
+#: continuous branch: since kde1d#33 that quantile is a Newton iteration, whose
+#: last bits follow the instruction set the C++ was built for. Rebuilding kde1d
+#: with `-march=native` and nothing else moves it on 7 of 9 probabilities, by up
+#: to 2.0e-14 relative; torch dispatches its own kernels on the running CPU
+#: besides. The tolerance sits above that variation and two orders below an
+#: algorithmic divergence, which is what it has to catch: keeping the bisection
+#: this replaced would have shown up at 6e-10. The discrete branch stays exact,
+#: because it is a table lookup rather than an iteration -- away from a tie,
+#: which `_PROBS` avoids and
+#: `test_the_discrete_quantile_inverts_its_own_distribution_function` covers
+#: instead: a probability lands exactly on a level's cumulative only within one
+#: implementation, since the two cumulatives differ by about 1e-16.
+_QUANTILE_RTOL = {"discrete": 0.0, "continuous": 1e-12, "zi": 1e-12}
+
+
+def _assert_quantiles_agree(got, want, kind: str = "continuous") -> None:
+  """Compare a torch quantile against the compiled one; see `_QUANTILE_RTOL`."""
+  rtol = _QUANTILE_RTOL[kind]
+  if rtol == 0.0:
+    np.testing.assert_array_equal(got, want)
+  else:
+    np.testing.assert_allclose(got, want, rtol=rtol, atol=rtol)
+
+
 @pytest.mark.parametrize(
   ("kind", "kwargs"),
   [
@@ -100,23 +123,21 @@ def test_pdf_and_cdf_match_the_compiled_estimator(
     ("zi", {"type": "zero-inflated", "xmin": 0.0}),
   ],
 )
-def test_icdf_matches_the_compiled_estimator_exactly(
-  kind: str, kwargs: dict
-) -> None:
-  """Not a tolerance: the 35-step bisection is reproduced step for step."""
+def test_icdf_matches_the_compiled_estimator(kind: str, kwargs: dict) -> None:
+  """The inversion is reproduced step for step; see `_QUANTILE_RTOL`."""
   kde, lifted, _ = _fitted(kind, **kwargs)
-  np.testing.assert_array_equal(
-    lifted.icdf(_t(_PROBS)).numpy(), np.asarray(kde.icdf(_PROBS))
+  _assert_quantiles_agree(
+    lifted.icdf(_t(_PROBS)).numpy(), np.asarray(kde.icdf(_PROBS)), kind
   )
 
 
-def test_the_grid_endpoint_drops_by_exp_minus_half() -> None:
-  """At the grid's right end the value is `v[-1] * exp(-0.5)`, not `v[-1]`.
+def test_both_tails_leave_the_grid_continuously() -> None:
+  """Each tail decays from the end it leaves, so neither jumps there.
 
-  The cell search returns the last cell there, so the normalized coordinate is
-  exactly `1` and the Gaussian-tail branch fires. It looks like an off-by-one
-  and it is what the compiled estimator does; a port that "fixed" it would
-  disagree with every `Kde1d` in the wild.
+  The Gaussian tail is written in the end cell's normalized coordinate, and
+  upstream measures it from the grid's own end -- `t` on the left, `t - 1` on
+  the right. Get the right one wrong and `pdf(grid[-1])` drops by a factor
+  `exp(-0.5)` while the left end looks fine, because `exp(0)` is 1.
 
   The fit has to be **bounded** for this to bite: on an unbounded one the grid
   runs out to where the density has vanished, so `values[-1]` is exactly zero
@@ -130,17 +151,19 @@ def test_the_grid_endpoint_drops_by_exp_minus_half() -> None:
   values = np.asarray(kde.values, dtype=float)
   assert values[-1] > 1e-3, "the case would be vacuous with a vanished tail"
 
-  at_end = float(lifted.pdf(_t(grid[-1:])).numpy()[0])
+  for end, expected in ((grid[-1:], values[-1]), (grid[:1], values[0])):
+    got = float(lifted.pdf(_t(end)).numpy()[0])
+    np.testing.assert_allclose(got, expected, rtol=1e-12, atol=1e-12)
+    np.testing.assert_allclose(
+      got, float(np.asarray(kde.pdf(end))[0]), rtol=1e-12, atol=1e-12
+    )
+
+  # And the decay away from each end matches the compiled estimator too, which
+  # is what distinguishes a re-centred tail from a merely continuous one.
+  outside = np.array([grid[0] - 0.3, grid[-1] + 0.3])
   np.testing.assert_allclose(
-    at_end, values[-1] * np.exp(-0.5), rtol=1e-12, atol=1e-12
-  )
-  np.testing.assert_allclose(
-    at_end, float(np.asarray(kde.pdf(grid[-1:]))[0]), rtol=1e-12, atol=1e-12
-  )
-  # The same branch at the left end is invisible, because exp(0) is 1.
-  np.testing.assert_allclose(
-    float(lifted.pdf(_t(grid[:1])).numpy()[0]),
-    values[0],
+    lifted.pdf(_t(outside)).numpy(),
+    np.asarray(kde.pdf(outside)),
     rtol=1e-12,
     atol=1e-12,
   )
@@ -325,18 +348,18 @@ def test_gradients_reach_the_grid_values() -> None:
 
 
 def test_the_quantile_carries_an_exact_gradient() -> None:
-  """The forward value stays the bisection's; the gradient comes from Newton.
+  """The forward value stays the iteration's; the gradient comes from Newton.
 
   `dq/dtheta = -(dF/dtheta) / f(q)` by the implicit function theorem, which one
   Newton step expresses exactly -- so differentiating the correction while
-  returning the bisection gives a usable gradient without moving the value.
+  returning the iterate gives a usable gradient without moving the value.
   """
   kde, lifted, _ = _fitted("continuous")
   reference = np.asarray(kde.icdf(_PROBS))
   lifted.values.requires_grad_(True)
 
   q = lifted.icdf(_t(_PROBS))
-  np.testing.assert_array_equal(q.detach().numpy(), reference)
+  _assert_quantiles_agree(q.detach().numpy(), reference)
 
   q.sum().backward()
   grad = lifted.values.grad
@@ -351,7 +374,7 @@ def test_the_quantile_is_differentiable_in_the_probability() -> None:
   The Newton correction that supplies the gradient was gated on
   `values.requires_grad`, so `d icdf/d p` was dead for a fitted, fixed grid --
   the common case, since the density is fitted rather than learned. The
-  correction is exact, so this is an equality rather than a tolerance.
+  correction does not move the value, which is what the comparisons below pin.
   """
   kde, lifted, _ = _fitted("continuous")
   assert lifted.values.requires_grad is False
@@ -359,10 +382,8 @@ def test_the_quantile_is_differentiable_in_the_probability() -> None:
   p = _t(_PROBS).requires_grad_(True)
   q = lifted.icdf(p)
   assert q.requires_grad
-  # The value is still the bisection's, bit for bit.
-  np.testing.assert_array_equal(
-    q.detach().numpy(), np.asarray(kde.icdf(_PROBS))
-  )
+  # The value is still the iteration's, not the correction's.
+  _assert_quantiles_agree(q.detach().numpy(), np.asarray(kde.icdf(_PROBS)))
 
   (grad,) = torch.autograd.grad(q.sum(), p)
   np.testing.assert_allclose(
@@ -371,7 +392,7 @@ def test_the_quantile_is_differentiable_in_the_probability() -> None:
 
   # Under `no_grad` the value is unchanged, so the correction cannot move it.
   with torch.no_grad():
-    np.testing.assert_array_equal(
+    _assert_quantiles_agree(
       lifted.icdf(_t(_PROBS)).numpy(), np.asarray(kde.icdf(_PROBS))
     )
 
@@ -414,3 +435,80 @@ def test_a_discrete_sample_lands_on_the_lattice() -> None:
   _, lifted, _ = _fitted("discrete", type="discrete", xmin=0.0)
   draws = lifted.sample(256, seeds=[2])
   np.testing.assert_array_equal(draws.numpy(), np.round(draws.numpy()))
+
+
+def test_boundary_repair_survives_the_lift_and_a_refit() -> None:
+  """It is a fit-time setting, so a lifted margin must not silently flip it on.
+
+  It defaults to true, so a margin that dropped it would quietly re-fit with
+  boundary repair enabled after being lifted from an estimator that had it off.
+  """
+  y = np.random.default_rng(41).uniform(0.0, 1.0, 400)
+  kde = Kde1d(xmin=0.0, xmax=1.0, boundary_repair=False)
+  kde.fit(y)
+  lifted = TorchKde1d.from_kde1d(kde)
+  assert lifted.boundary_repair is False
+  np.testing.assert_allclose(
+    lifted.fit(_t(y)).values.numpy(),
+    np.asarray(kde.values),
+    rtol=1e-13,
+    atol=1e-13,
+  )
+  assert pickle.loads(pickle.dumps(lifted)).boundary_repair is False
+
+
+@pytest.mark.parametrize(
+  ("xmin", "xmax"), [(None, None), (0.0, None), (0.0, 4.0)]
+)
+def test_the_discrete_support_matches_the_compiled_estimator(
+  xmin: float | None, xmax: float | None
+) -> None:
+  """Torch derives the integer support itself; it has to land where C++ does.
+
+  The grid overhangs a declared bound by half a cell, so reading the support
+  off the grid -- which is what this used to do -- is no longer the same
+  question as reading it off the bounds.
+  """
+  y = np.random.default_rng(42).integers(0, 5, 500).astype(float)
+  kde = Kde1d(type="discrete", xmin=xmin, xmax=xmax)
+  kde.fit(y)
+  lifted = TorchKde1d.from_kde1d(kde)
+  lattice = np.arange(-4.0, 12.0)
+  np.testing.assert_allclose(
+    lifted.pdf(_t(lattice)).numpy(),
+    np.asarray(kde.pdf(lattice)),
+    rtol=1e-12,
+    atol=1e-12,
+  )
+  # Both agree on where the support ends, not merely on the masses inside it.
+  carried = lattice[np.asarray(kde.pdf(lattice)) > 0.0]
+  np.testing.assert_array_equal(
+    lattice[lifted.pdf(_t(lattice)).numpy() > 0.0], carried
+  )
+
+
+def test_the_discrete_quantile_inverts_its_own_distribution_function() -> None:
+  """`icdf(cdf(k)) == k` on every level, for the port and the compiled class.
+
+  This is the generalized inverse's defining property, and the one place the
+  two conventions differ: upstream takes the lowest level whose cdf has
+  *reached* `p`, and taking the lowest that has *passed* it lands one level
+  high at every tie. Nothing else in this file sees it, because `_PROBS` never
+  lands on a cumulative.
+
+  Each implementation is checked against itself rather than against the other.
+  Feeding one's cdf to the other's quantile is not a tie at all: their
+  cumulatives differ by about 1e-16, so the probability falls just below the
+  level it came from and the answer is legitimately the next one up.
+  """
+  y = np.random.default_rng(51).poisson(3.0, 600).astype(float)
+  kde = Kde1d(type="discrete", xmin=0.0)
+  kde.fit(y)
+  lifted = TorchKde1d.from_kde1d(kde)
+  levels = np.arange(0.0, 9.0)
+
+  np.testing.assert_array_equal(
+    np.asarray(kde.icdf(np.asarray(kde.cdf(levels)))), levels
+  )
+  own = lifted.cdf(_t(levels))
+  np.testing.assert_array_equal(lifted.icdf(own).numpy(), levels)

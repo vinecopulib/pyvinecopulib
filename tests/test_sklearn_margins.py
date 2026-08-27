@@ -390,3 +390,83 @@ def test_a_discrete_response_margin_is_refused(
     VineRegressor(margins=Kde1d(type="discrete"), use_grid=False).fit(
       X, np.round(y)
     )
+
+
+def test_a_failing_margin_names_its_column() -> None:
+  """A margin sees one array and cannot say which; the estimator can.
+
+  `Kde1d` models a discrete variable on the integer lattice, so an ordered
+  categorical whose levels are not integers cannot be one. Both the bound and
+  the data are checked, and they fail at different points -- one while the
+  specification is built, one while it is fitted -- so both have to name the
+  column.
+  """
+  rs = np.random.RandomState(0)
+  df = pd.DataFrame(
+    {
+      "a": rs.normal(size=200),
+      "grade": pd.Categorical(
+        rs.choice([1.5, 2.5, 3.5], 200),
+        categories=[1.5, 2.5, 3.5],
+        ordered=True,
+      ),
+    }
+  )
+  with pytest.raises(ValueError, match=r"margin for 'grade': discrete bounds"):
+    VineDensity().fit(df)
+
+  plain = pd.DataFrame({"a": rs.normal(size=200), "b": rs.normal(size=200)})
+  with pytest.raises(ValueError, match=r"margin for 'a': discrete data"):
+    VineDensity(margins=Kde1d(type="discrete")).fit(plain)
+
+
+def test_an_integer_categorical_is_fitted_on_its_declared_support() -> None:
+  """The levels are the support, and the grid runs half a unit past each end.
+
+  A jittered observation fills the cell around its level, so the grid has to
+  cover `[min - 0.5, max + 0.5]`; snapping it to the levels themselves -- which
+  is what happened before kde1d#37 -- truncates the outermost half-cells.
+  """
+  rs = np.random.RandomState(1)
+  df = pd.DataFrame(
+    {
+      "a": rs.normal(size=300),
+      "k": pd.Categorical(
+        rs.choice([0, 1, 2, 3], 300), categories=[0, 1, 2, 3], ordered=True
+      ),
+    }
+  )
+  est = VineDensity().fit(df)
+  margin = est.distribution_.margins[1]
+  assert est.schema_["bounds"][1] == (0.0, 3.0)
+  grid = np.asarray(margin.grid_points)
+  assert grid[0] == pytest.approx(-0.5)
+  assert grid[-1] == pytest.approx(3.5)
+  # The masses still live on the levels, and nowhere else.
+  assert margin.pdf(np.arange(4.0)).sum() == pytest.approx(1.0)
+  assert margin.pdf(np.array([-1.0, 4.0])).tolist() == [0.0, 0.0]
+
+
+def test_a_named_margin_survives_a_default_that_would_refuse_the_column() -> (
+  None
+):
+  """The default is only built where it is needed.
+
+  A column can be one the default margin refuses -- an ordered categorical with
+  non-integer levels cannot be a discrete `Kde1d`. A caller who names a margin
+  for every column has answered that already, and should not be stopped by a
+  default their specification never uses.
+  """
+  rs = np.random.RandomState(2)
+  df = pd.DataFrame(
+    {
+      "a": rs.normal(size=200),
+      "grade": pd.Categorical(
+        rs.choice([1.5, 2.5, 3.5], 200),
+        categories=[1.5, 2.5, 3.5],
+        ordered=True,
+      ),
+    }
+  )
+  est = VineDensity(margins=Kde1d()).fit(df)
+  assert len(est.distribution_.margins) == 2

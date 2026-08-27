@@ -71,8 +71,16 @@ def compare_kde1d(kde1: Any, kde2: Any) -> None:
     # For fitted models: compare grid data and prob0
     attrs += ["prob0", "grid_points", "values"]
   else:
-    # For unfitted models: compare fitting parameters
-    attrs += ["multiplier", "bandwidth", "degree"]
+    # For unfitted models: compare fitting parameters. Every one of them has
+    # to be here -- a key the state carries but this list skips is a key that
+    # can stop round-tripping without a test noticing.
+    attrs += [
+      "multiplier",
+      "bandwidth",
+      "degree",
+      "grid_size",
+      "boundary_repair",
+    ]
 
   compare_properties(kde1, kde2, attrs)
 

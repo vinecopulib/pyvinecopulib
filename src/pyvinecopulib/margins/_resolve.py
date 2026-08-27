@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import copy
-from typing import Any, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence, Union
 
 from ..core import MarginLike
 from ._adapters import as_margin
@@ -68,12 +68,17 @@ def _resolve_one(entry: Any) -> Any:
   return entry
 
 
+#: What an unaddressed variable gets: one entry per variable, or a callable
+#: producing them, invoked only if some variable is in fact unaddressed.
+_Default = Union[Sequence[Any], Callable[[], Sequence[Any]]]
+
+
 def resolve_margins(
   spec: Any,
   d: int,
   *,
   names: Optional[Sequence[str]] = None,
-  default: Optional[Sequence[Any]] = None,
+  default: Optional[_Default] = None,
 ) -> list[Any]:
   """Expand ``spec`` into one specification per variable.
 
@@ -95,13 +100,16 @@ def resolve_margins(
       Number of variables.
   names : sequence of str, or None, optional
       Variable names, needed only to resolve a mapping keyed by name.
-  default : sequence, or None, optional
+  default : sequence, callable, or None, optional
       What an unaddressed variable gets, one entry per variable. ``None`` means
       a kernel-density margin throughout. Worth setting whenever the caller
       knows something per variable that the library cannot: the sklearn
       estimators pass the variable types and bounds they inferred from the
       data, so a mapping that addresses one column does not silently retype the
-      others.
+      others. A callable is invoked only if some variable is actually
+      unaddressed, which matters when building the default is expensive or can
+      fail -- a specification that names every variable should not be held
+      hostage to a default it never uses.
 
   Returns
   -------
@@ -114,20 +122,24 @@ def resolve_margins(
       If a sequence has the wrong length, or a mapping names an unknown
       variable.
   """
-  if default is None:
-    base = [_prototype("kde") for _ in range(d)]
-  elif len(default) != d:
-    raise ValueError(
-      f"default has length {len(default)}, but there are {d} variables"
+
+  def base_specs() -> list[Any]:
+    if default is None:
+      return [_prototype("kde") for _ in range(d)]
+    entries: Sequence[Any] = (
+      default() if isinstance(default, Callable) else default
     )
-  else:
-    base = [_resolve_one(entry) for entry in default]
+    if len(entries) != d:
+      raise ValueError(
+        f"default has length {len(entries)}, but there are {d} variables"
+      )
+    return [_resolve_one(entry) for entry in entries]
 
   if spec is None:
-    return base
+    return base_specs()
 
   if isinstance(spec, dict):
-    resolved: list[Any] = list(base)
+    resolved: list[Any] = list(base_specs())
     lookup = {name: j for j, name in enumerate(names or [])}
     for key, value in spec.items():
       if isinstance(key, str):

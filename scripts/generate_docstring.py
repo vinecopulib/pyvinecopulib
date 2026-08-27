@@ -706,6 +706,8 @@ def transform_docstring(docstring, cursor=None):
 #: the `@ref` handling in `process_comment`.
 _REF_TARGETS = {
   "discrete": ":ref:`discrete data <concepts-discrete>`",
+  "overview-continuous": ":ref:`what a bound means <concepts-kde-margins>`",
+  "overview-discrete": ":ref:`the discrete case <concepts-kde-discrete>`",
 }
 
 
@@ -857,12 +859,14 @@ def process_comment(comment, cursor=None):
   # Doxygen page references. Upstream's pages have no Python counterpart, so
   # each one that reaches a bound docstring is mapped to the section of the
   # Sphinx docs covering the same ground; anything unmapped degrades to its
-  # bare target rather than rendering as a broken link.
+  # bare target rather than rendering as a broken link. Page names are
+  # hyphenated, so the target class has to admit a hyphen -- `\w+` matches the
+  # first word and leaves the rest sitting in the prose as bare text.
   def _ref(match: re.Match) -> str:
     target = match.group(1)
     return _REF_TARGETS.get(target, target)
 
-  s = re.sub(r"[@\\]ref\s+(\w+)", _ref, s)
+  s = re.sub(r"[@\\]ref\s+([\w-]+)", _ref, s)
 
   for start_, end_ in (("code", "endcode"), ("verbatim", "endverbatim")):
     s = re.sub(

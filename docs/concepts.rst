@@ -645,6 +645,48 @@ column where every candidate fails raises, naming each family and why.
 warning; it is never a normal, since marginal misspecification distorts
 the pseudo-observations and biases the copula.
 
+.. _concepts-kde-margins:
+
+What a bound means to the KDE margin
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``Kde1d`` takes ``xmin`` and ``xmax``, and stating them is worth doing
+whenever the support is genuinely known: without them the fitted grid is
+padded past the data, so a variable that cannot be negative picks up
+density below zero. What a bound *means* depends on the variable type,
+and the three cases differ in ways worth knowing.
+
+For a **continuous** variable the bounds are the support, and the fit
+transforms onto them — a probit transform when both ends are finite, a
+fourth-root one when a single end is. Two consequences: the transform is
+where an explicitly supplied ``bandwidth`` is interpreted, so
+``kde.bandwidth`` is not on the data's scale for a bounded fit; and a
+one-sided fit is scale equivariant, so fitting in meters and in
+millimeters give the same answer after rescaling.
+
+.. _concepts-kde-discrete:
+
+For a **discrete** variable the bounds are the *integer support* — the
+lowest and highest level that can occur — and both they and the data must
+be integers. Fitting jitters tied observations within their unit cells,
+so the fitted grid runs from ``xmin - 0.5`` to ``xmax + 0.5``: half a unit
+wider at each end, because that is where the boundary cells stop. The
+grid you read back therefore overhangs the bounds you gave, which is
+correct rather than surprising — the probability mass is formed from the
+density at the integer levels alone and normalized over the declared
+support, so ``pdf`` is exactly zero outside it. Negative levels are fine.
+
+For a **zero-inflated** variable the bounds constrain only the continuous
+part. The exact zeros are a separate point mass and need not lie inside
+``[xmin, xmax]``, while every nonzero observation must; and no half-unit
+adjustment applies, since there are no jitter cells.
+
+``boundary_repair`` (on by default) lets a finite endpoint be fitted with
+a dedicated boundary estimator rather than the transformed bulk fit. It is
+eligibility rather than a guarantee: it needs a finite bound and at least
+sixteen observations, and an endpoint whose local behavior is ambiguous
+keeps the bulk estimate. With neither bound set it does nothing.
+
 The status quo as a special case
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

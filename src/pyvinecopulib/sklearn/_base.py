@@ -122,6 +122,34 @@ def _as_ndarray(a: Any) -> np.ndarray:
   return np.asarray(a, dtype=float)
 
 
+def _named_for(name: str, exc: BaseException) -> BaseException:
+  """``exc`` with the column it came from named, keeping its type where it can.
+
+  A margin sees one array and cannot say which column it was, so the estimator
+  says it. The type is preserved by rebuilding the exception from the new
+  message, which most exceptions accept; the ones that do not -- anything whose
+  constructor takes more than a message -- become a ``ValueError`` rather than
+  a confusing ``TypeError`` raised from inside the handler.
+
+  Parameters
+  ----------
+  name : str
+      The column's name.
+  exc : BaseException
+      What the margin raised.
+
+  Returns
+  -------
+  BaseException
+      The exception to raise, to be chained from ``exc``.
+  """
+  message = f"margin for {name!r}: {exc}"
+  try:
+    return type(exc)(message)
+  except Exception:
+    return ValueError(message)
+
+
 def _categorical_bounds(dtype: Any) -> Optional[tuple[float, float]]:
   """Exact support of an ordered categorical column, when it states one.
 
@@ -460,9 +488,16 @@ class VineBase(BaseEstimator):
     # and idempotent.
     backend = getattr(self, "backend_", None) or resolve_backend(self.backend)
     specs = []
-    for type_, bound in zip(types, bounds):
+    for j, (type_, bound) in enumerate(zip(types, bounds)):
       pair = None if bound is None else (float(bound[0]), float(bound[1]))
-      specs.append(backend.default_margin(type_, pair))
+      try:
+        specs.append(backend.default_margin(type_, pair))
+      except (ValueError, RuntimeError) as exc:
+        # The bounds come from the column's own dtype, so a margin that refuses
+        # them is a statement about that column -- most often an ordered
+        # categorical whose levels are not integers, which cannot be a discrete
+        # `Kde1d`. The margin cannot name the column; we can.
+        raise _named_for(self._column_name(j), exc) from exc
     return specs
 
   def _declared_for(
@@ -530,12 +565,19 @@ class VineBase(BaseEstimator):
     if hasattr(spec, "report_") and getattr(spec, "name", "") is None:
       spec.name = name
     var_type, support = self._declared_for(index)
-    margin = fit_margin(
-      spec,
-      np.asarray(column, dtype=float),
-      var_type=var_type,
-      support=support,
-    )
+    try:
+      margin = fit_margin(
+        spec,
+        np.asarray(column, dtype=float),
+        var_type=var_type,
+        support=support,
+      )
+    except (ValueError, RuntimeError) as exc:
+      # Whatever went wrong, the caller needs to know which column it was: the
+      # margin only ever sees one array and cannot name it. `Kde1d` refusing a
+      # non-integer discrete bound or observation is the common case, and it is
+      # reachable from an ordered categorical whose levels are not integers.
+      raise _named_for(name, exc) from exc
     if self._needs_marginal_density:
       self._require_density(margin, name, column)
     return margin
@@ -598,6 +640,41 @@ class VineBase(BaseEstimator):
       return backend.default_margin("continuous", None)
     return resolve_margins(self.margins, 1)[0]
 
+  @staticmethod
+  def _check_response_is_continuous(margin: Any) -> None:
+    """Refuse a response margin with atoms.
+
+    The joint model orders the response first and gives it no left-limit
+    column, which the prediction paths rely on. Called twice: once on the
+    specification, so a margin that declares its type up front is refused
+    before anything is fitted, and once on the fitted margin, for the
+    specifications that can only declare one afterwards.
+
+    Parameters
+    ----------
+    margin : object
+        A margin specification or a fitted margin.
+
+    Raises
+    ------
+    ValueError
+        If the margin declares a discrete or zero-inflated variable type.
+    """
+    try:
+      kind = Vinedist.copula_var_types([margin])[0]
+    except (RuntimeError, TypeError):
+      # Not every specification can answer yet: a selector has no variable type
+      # until it has chosen one, and a callable is not a margin until it has
+      # been called. Nothing to check here; the call on the fitted margin binds.
+      return
+    if kind == "c":
+      return
+    raise ValueError(
+      "The response margin must be continuous, but "
+      f"{type(margin).__name__} declares "
+      f"var_type={getattr(margin, 'var_type', 'c')!r}."
+    )
+
   def _fit_marginals(
     self, X: np.ndarray, y: np.ndarray | None = None
   ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
@@ -622,26 +699,26 @@ class VineBase(BaseEstimator):
       self.margins,
       self.n_features_in_,
       names=getattr(self, "_expanded_columns", None),
-      default=self._default_margin_specs(),
+      # Lazily: building it constructs one margin per column, which can refuse
+      # a column outright, and a specification naming every column never uses
+      # it.
+      default=self._default_margin_specs,
     )
+    y_spec = None if y is None else self._response_margin_spec()
+    if y_spec is not None:
+      self._check_response_is_continuous(y_spec)
+
     self._x_margins = tuple(
       self._fit_one_margin(specs[j], X[:, j], self._column_name(j), index=j)
       for j in range(self.n_features_in_)
     )
     fitted = list(self._x_margins)
 
-    if y is not None:
+    if y_spec is not None:
       self._y_margin = self._fit_one_margin(
-        self._response_margin_spec(), np.asarray(y, dtype=float), "y"
+        y_spec, np.asarray(y, dtype=float), "y"
       )
-      # The joint model orders the response first and gives it no left-limit
-      # column, which the prediction paths rely on.
-      if Vinedist.copula_var_types([self._y_margin])[0] != "c":
-        raise ValueError(
-          "The response margin must be continuous, but "
-          f"{type(self._y_margin).__name__} declares "
-          f"var_type={getattr(self._y_margin, 'var_type', 'c')!r}."
-        )
+      self._check_response_is_continuous(self._y_margin)
       fitted.append(self._y_margin)
 
     self.selection_report_ = [

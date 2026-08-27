@@ -54,13 +54,19 @@ def make_plotting_grid(kde: Any, grid_size: int = 200) -> np.ndarray:
   """Create appropriate plotting grid based on kde type and data."""
 
   if kde.type == "discrete":
-    # For discrete data, use integer grid points
+    # The integer support, which is what carries mass. A declared bound *is*
+    # a level; only an undeclared one has to be read off the grid, and the
+    # grid runs half a unit wider than the support because that is where the
+    # jitter cells end -- so rounding it outwards would plot two levels that
+    # cannot occur.
     grid_points = kde.grid_points
-    return np.arange(
-      int(np.floor(grid_points.min())),
-      int(np.ceil(grid_points.max())) + 1,
-      dtype=float,
+    lo = kde.xmin if not np.isnan(kde.xmin) else np.floor(grid_points.min())
+    hi = (
+      kde.xmax
+      if not np.isnan(kde.xmax)
+      else max(lo, np.ceil(grid_points.max()))
     )
+    return np.arange(int(lo), int(hi) + 1, dtype=float)
   else:
     # For continuous data, create smooth grid
     grid_points = kde.grid_points

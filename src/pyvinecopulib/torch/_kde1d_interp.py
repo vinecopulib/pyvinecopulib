@@ -2,17 +2,14 @@
 
 Reproduces ``kde1d::interp::InterpolationGrid`` (``lib/kde1d/include/kde1d/
 interpolation.hpp``) on tensors, so a fitted density can be evaluated on device
-and under autograd. Fidelity to the C++ is the contract, including three
+and under autograd. Fidelity to the C++ is the contract, including two
 deliberate oddities that a "fix" would silently turn into a parity failure:
 
-* **The endpoint drops.** Extrapolation is a Gaussian tail in the *normalized*
-  cell coordinate ``t``, so at ``x == grid_points[-1]`` the cell search returns
-  the last cell, ``t == 1`` exactly, and the value is ``v[-1] * exp(-0.5)``
-  rather than ``v[-1]``. The same happens at ``t == 0`` for the first cell,
-  where ``exp(0) == 1`` makes it invisible.
 * **`integrate` has no tail contribution.** It accumulates cell integrals only,
   so the unnormalized integral saturates at the grid's total mass rather than
-  approaching one; ``normalize=True`` divides by that mass.
+  approaching one; ``normalize=True`` divides by that mass. The density does
+  carry tail mass, so outside the grid the two are not each other's derivative;
+  that is upstream's shape, not a slip here.
 * **Boundary tangents are zero**, because ``dt0`` / ``dt2`` collapse there,
   which is what makes the extrapolation smooth.
 
@@ -135,19 +132,25 @@ def interpolate(grid_points: Tensor, values: Tensor, x: Tensor) -> Tensor:
   Returns
   -------
   Tensor, shape (n,)
-      Interpolated values. Not clamped: the caller decides, because the
-      discrete normalization divides by the raw sum.
+      Interpolated values. Not clamped, since the spline can dip below zero
+      near a sharp feature and each caller decides what to do about it.
   """
   coefs = cell_coefs(grid_points, values)
   k = find_cell(grid_points, x)
   t = (x - grid_points[k]) / (grid_points[k + 1] - grid_points[k])
   a = coefs[k]
-  cubic = a[:, 0] + a[:, 1] * t + a[:, 2] * t**2 + a[:, 3] * t**3
-  tail = torch.exp(-0.5 * t * t)
+  cubic = _cubic_poly(t, a)
+  # Each tail decays from the end it leaves, so both meet the spline
+  # continuously: `t` at the left end of the first cell, `t - 1` at the right
+  # end of the last.
   out = torch.where(
     t <= 0.0,
-    values[k] * tail,
-    torch.where(t >= 1.0, values[k + 1] * tail, cubic),
+    values[k] * torch.exp(-0.5 * t * t),
+    torch.where(
+      t >= 1.0,
+      values[k + 1] * torch.exp(-0.5 * (t - 1.0) * (t - 1.0)),
+      cubic,
+    ),
   )
   return torch.where(torch.isnan(x), torch.full_like(out, float("nan")), out)
 
@@ -218,6 +221,49 @@ def integrate(
   return res
 
 
+# The powers are built by repeated multiplication rather than `pow`, and the
+# terms summed left to right, because that is what the C++ does: `pow(t, 3)`
+# and `t * t * t` need not agree in the last bit, and the inversion below
+# iterates on the difference of two of these.
+def _cubic_poly(t: Tensor, a: Tensor) -> Tensor:
+  """A cell's cubic at position ``t``, one row of coefficients per query."""
+  t2 = t * t
+  t3 = t2 * t
+  return a[:, 0] + a[:, 1] * t + a[:, 2] * t2 + a[:, 3] * t3
+
+
+def _cubic_indef_integral(t: Tensor, a: Tensor) -> Tensor:
+  """Indefinite integral of :func:`_cubic_poly`, zero at ``t = 0``."""
+  t2 = t * t
+  t3 = t2 * t
+  t4 = t3 * t
+  return (
+    a[:, 0] * t + a[:, 1] / 2.0 * t2 + a[:, 2] / 3.0 * t3 + a[:, 3] / 4.0 * t4
+  )
+
+
+def total_mass(grid_points: Tensor, values: Tensor) -> Tensor:
+  """Integral of the spline across the whole grid.
+
+  What :func:`integrate` saturates at, and what ``normalize=True`` divides by.
+
+  Parameters
+  ----------
+  grid_points : Tensor, shape (m,)
+      Ascending grid.
+  values : Tensor, shape (m,)
+      Density values on the grid.
+
+  Returns
+  -------
+  Tensor, shape ()
+      The total mass.
+  """
+  return _cumulative_cell_integrals(
+    grid_points, cell_coefs(grid_points, values)
+  )[-1]
+
+
 def invert_integral(
   grid_points: Tensor,
   values: Tensor,
@@ -225,12 +271,19 @@ def invert_integral(
   *,
   n_iter: int = 35,
 ) -> Tensor:
-  """Invert the *unnormalized* integral by bisection over the grid.
+  """Invert the *normalized* integral, cell by cell.
 
-  Reproduces ``kde1d::tools::invert_f``: a fixed number of bisections between
-  the grid's ends, returning the final midpoint rather than either bracket. The
-  step count is part of the contract, not a tolerance -- matching it is what
-  makes the result bit-identical to the compiled quantile.
+  Reproduces ``kde1d::interp::InterpolationGrid::invert_integral``: locate the
+  cell holding the requested cumulative mass, seed a position by interpolating
+  that cell's mass linearly, then refine with Newton steps kept inside a
+  bracket, bisecting wherever the density is flat. The C++ stops a query as
+  soon as its residual is within ``8 eps`` of the total mass; here a query that
+  reaches the tolerance is frozen instead, which is the same arithmetic on the
+  same iterations. The powers below are built the way the C++ builds them for
+  the same reason. What that buys is agreement to a few ULPs rather than an
+  equality: the compiled result is not itself portable -- rebuilding kde1d with
+  ``-march=native`` and nothing else moves it 19 ULPs -- so no port can be
+  bit-identical to every build of it.
 
   Parameters
   ----------
@@ -239,23 +292,60 @@ def invert_integral(
   values : Tensor, shape (m,)
       Density values on the grid.
   p : Tensor, shape (n,)
-      Targets on the unnormalized integral's own scale.
+      Probabilities. ``p <= 0`` and ``p >= 1`` return the grid's ends exactly.
   n_iter : int, default=35
-      Bisection steps.
+      Maximum refinement steps per query.
 
   Returns
   -------
   Tensor, shape (n,)
-      The inverse, detached: bisection carries no usable gradient, and the
+      The inverse, detached: the iteration carries no usable gradient, and the
       caller reattaches one through the implicit function theorem.
   """
   with torch.no_grad():
-    lo = torch.full_like(p, float(grid_points[0]))
-    hi = torch.full_like(p, float(grid_points[-1]))
-    mid = p
+    coefs = cell_coefs(grid_points, values)
+    cum = _cumulative_cell_integrals(grid_points, coefs)
+    total = cum[-1]
+    m = grid_points.numel()
+
+    target = p * total
+    # `lower_bound` over the interior prefix sums: the first cell whose upper
+    # edge already holds the requested mass.
+    cell = torch.searchsorted(cum[1:].contiguous(), target.contiguous()).clamp(
+      max=m - 2
+    )
+    lo_g = grid_points[cell]
+    width = grid_points[cell + 1] - lo_g
+    base = cum[cell]
+    cell_mass = cum[cell + 1] - base
+    a = coefs[cell]
+
+    wanted = target - base
+    empty = ~(cell_mass > 0.0)
+    safe_mass = torch.where(empty, torch.ones_like(cell_mass), cell_mass)
+    pos = (wanted / safe_mass).clamp(0.0, 1.0)
+
+    lower = torch.zeros_like(pos)
+    upper = torch.ones_like(pos)
+    tol = 8.0 * torch.finfo(values.dtype).eps * total
+    active = ~empty
     for _ in range(n_iter):
-      mid = 0.5 * (lo + hi)
-      below = integrate(grid_points, values, mid) - p < 0.0
-      lo = torch.where(below, mid, lo)
-      hi = torch.where(below, hi, mid)
-    return torch.where(torch.isnan(p), p, mid)
+      residual = _cubic_indef_integral(pos, a) * width - wanted
+      active = active & (residual.abs() > tol)
+      if not bool(active.any()):
+        break
+      lower = torch.where(active & (residual < 0.0), pos, lower)
+      upper = torch.where(active & (residual >= 0.0), pos, upper)
+      deriv = _cubic_poly(pos, a) * width
+      flat = ~(deriv > 0.0)
+      step = pos - residual / torch.where(flat, torch.ones_like(deriv), deriv)
+      newton = torch.where(flat, lower, step)
+      take = ~flat & (newton > lower) & (newton < upper)
+      pos = torch.where(
+        active, torch.where(take, newton, 0.5 * (lower + upper)), pos
+      )
+
+    out = torch.where(empty, grid_points[cell + 1], lo_g + pos * width)
+    out = torch.where(p <= 0.0, grid_points[0], out)
+    out = torch.where(p >= 1.0, grid_points[-1], out)
+    return torch.where(torch.isnan(p), p, out)
