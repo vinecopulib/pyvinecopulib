@@ -54,9 +54,16 @@ def _to_pseudo_obs_continuous(x: Tensor) -> Tensor:
   Mirrors ``tools_stats::to_pseudo_obs`` with no ties (continuous input,
   no jittering needed). C++ uses ``wdm`` ranks; for unique data those are
   the same as :func:`torch.argsort` ranks.
+
+  Both sorts are stable, so tied inputs get a defined order rather than
+  whichever one the sort happens to produce for the shape it was handed --
+  a leading pair axis otherwise makes the tie-break shape-dependent. Ties
+  reach here even on continuous data: callers trim to
+  ``(1e-10, 1 - 1e-10)`` first, which collapses everything beyond the clamp
+  into one group.
   """
   n = x.shape[-2]
-  ranks = x.argsort(dim=-2).argsort(dim=-2)
+  ranks = x.argsort(dim=-2, stable=True).argsort(dim=-2, stable=True)
   return (ranks + 1).to(x.dtype) / (n + 1)
 
 
