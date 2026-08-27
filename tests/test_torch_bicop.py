@@ -788,3 +788,62 @@ def test_values_must_be_nonnegative() -> None:
   vals[3, 4] = -1e-12
   with pytest.raises(ValueError, match="nonnegative"):
     InterpolationGrid2D(gp, vals, norm_maxiter=0, is_linear=True)
+
+
+def _win_reference(x: torch.Tensor, wl: int) -> torch.Tensor:
+  """``tools_stats::win`` spelled out: zero-pad, convolve, clamp the edges.
+
+  Deliberately the slow O(n * wl) form. It is the definition the fast
+  implementation has to reproduce, so it is written here from the C++ rather
+  than shared with it.
+  """
+  import torch.nn.functional as F
+
+  n = x.shape[-1]
+  weight = torch.full(
+    (1, 1, 2 * wl + 1), 1.0 / (2 * wl + 1), dtype=x.dtype, device=x.device
+  )
+  out = F.conv1d(F.pad(x.reshape(-1, 1, n), (wl, wl)), weight)
+  out = out.reshape(x.shape).clone()
+  if wl > 0:
+    out[..., :wl] = out[..., wl : wl + 1]
+    out[..., -wl:] = out[..., n - wl - 1 : n - wl]
+  return out
+
+
+@pytest.mark.parametrize("n", [2, 3, 7, 64, 601, 2000])
+def test_win_smoother_is_a_box_mean(n: int) -> None:
+  """The prefix-sum smoother computes the convolution it replaced.
+
+  `_win_smoother` moved from an O(n * wl) convolution to an O(n) difference
+  of prefix sums. Both are box means, so this pins the contract -- window
+  width, zero-padding outside the data, and the two flat edges -- against a
+  transcription of the C++ rather than against the end-to-end fit, which
+  would not say which of the three went wrong.
+  """
+  from pyvinecopulib.torch._fit_tll import _win_smoother
+
+  wl = int(np.ceil(n / 5.0))
+  x = torch.from_numpy(np.random.default_rng(n).standard_normal(n))
+  got, want = _win_smoother(x, wl), _win_reference(x, wl)
+  # Prefix sums and a convolution round differently; the gap is bounded by
+  # the partial sums' magnitude, which is O(sqrt(n)) for standardized input.
+  torch.testing.assert_close(got, want, rtol=1e-13, atol=1e-14)
+
+
+def test_win_smoother_batches_over_leading_dims() -> None:
+  """One call over a stack equals a loop over its rows.
+
+  The fit is per-pair today, so nothing exercises this yet; it is what a
+  batched fitter would stack on, and it is cheap to keep honest now rather
+  than to discover later.
+  """
+  from pyvinecopulib.torch._fit_tll import _win_smoother
+
+  n, wl = 501, 101
+  x = torch.from_numpy(np.random.default_rng(7).standard_normal((4, n)))
+  stacked = _win_smoother(x, wl)
+  for i in range(x.shape[0]):
+    torch.testing.assert_close(
+      stacked[i], _win_smoother(x[i], wl), rtol=0.0, atol=0.0
+    )
