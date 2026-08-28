@@ -493,6 +493,9 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         fit_edge,
         var_types=list(var_types) or None,
         fit_level=level_hook,
+        tree_criterion=controls.tree_criterion,
+        threshold=controls.threshold,
+        to_numpy=lambda t: t.detach().cpu().numpy(),
       )
     # Store the continuous grids; `_get_pair_copula` re-wraps a discrete edge,
     # so the ModuleList holds only real nn.Modules. A thresholded edge arrives
@@ -504,6 +507,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       [
         cls._independence_grid(
           grid_size=bc_controls.grid_size,
+          grid_type=bc_controls.grid_type,
           cache_integrals=cache_integrals,
           # `u_t.device`, as `fit_edge` uses -- `eff_device` is
           # `controls.device`, which is `None` whenever the caller let the data
@@ -534,6 +538,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     cls,
     *,
     grid_size: int,
+    grid_type: str,
     cache_integrals: bool,
     device: Optional[torch.device],
     dtype: torch.dtype,
@@ -553,6 +558,9 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     ----------
     grid_size : int
         Grid resolution, matching the fitted pairs beside it.
+    grid_type : {"normal", "linear"}
+        Grid spacing, matching the fitted pairs beside it -- a cascade cannot
+        mix the two.
     cache_integrals : bool
         Whether to precompute the integral tables, as the fitted pairs do.
     device : torch.device or None
@@ -567,11 +575,12 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     """
     return TorchBicop(
       grid_points=InterpolationGrid2D.make_grid_points(
-        "normal", grid_size, dtype=dtype, device=device
+        grid_type, grid_size, dtype=dtype, device=device
       ),
       values=torch.ones((grid_size, grid_size), dtype=dtype, device=device),
       cache_integrals=cache_integrals,
       norm_maxiter=0,
+      is_linear=(grid_type == "linear"),
       device=device,
       dtype=dtype,
     )

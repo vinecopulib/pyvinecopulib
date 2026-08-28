@@ -1474,6 +1474,77 @@ def test_cxi_criterion_thresholds_nothing_at_zero() -> None:
   )
 
 
+@pytest.mark.parametrize("threshold", [0.0, 0.3, 0.5])
+def test_threshold_on_a_fixed_structure_matches_pvvinecop(
+  threshold: float,
+) -> None:
+  """A given structure thresholds too, as the compiled fit does.
+
+  `threshold` is not a selection-only knob: `Vinecop::select` builds the same
+  selector on a supplied matrix, so an edge below the threshold is left
+  holding independence whether the structure was chosen or given. Fitting
+  along a structure therefore has to apply it as selection does.
+  """
+  d = 6
+  u_fit = _simulate(d=d, n=400, seed=7)
+  structure = _fit_tll_vine(u_fit).structure
+  cpp = pv.Vinecop.from_data(
+    u_fit,
+    controls=pv.FitControlsVinecop(
+      family_set=[pv.families.tll],
+      num_threads=1,
+      trunc_lvl=20,
+      threshold=threshold,
+    ),
+    structure=structure,
+  )
+  fitted = TorchVinecop.from_data(
+    torch.from_numpy(u_fit),
+    structure,
+    controls=FitControlsTorchVinecop(
+      trunc_lvl=20, threshold=threshold, cache_integrals=False
+    ),
+  )
+  u_eval = torch.from_numpy(_eval_grid(120, d=d, seed=8))
+  np.testing.assert_allclose(
+    fitted.pdf(u_eval).numpy(),
+    cpp.pdf(u_eval.numpy()),
+    rtol=1e-9,
+    atol=1e-11,
+  )
+
+
+@pytest.mark.parametrize("grid_type", ["normal", "linear"])
+def test_thresholded_pair_shares_the_grid_of_its_siblings(
+  grid_type: str,
+) -> None:
+  """A thresholded pair is built, not fitted, so its grid must be declared.
+
+  The cascade interpolates every pair on the same spacing; a pair carrying
+  the other one is not a smaller error but a different function. Since a
+  thresholded pair takes its grid from the controls rather than from a fit,
+  nothing else would notice the mismatch.
+  """
+  d = 6
+  u_fit = _simulate(d=d, n=400, seed=7)
+  fitted = TorchVinecop.from_data(
+    torch.from_numpy(u_fit),
+    controls=FitControlsTorchVinecop(
+      bicop_controls=FitControlsTorchBicop(grid_type=grid_type),
+      trunc_lvl=20,
+      threshold=0.3,
+    ),
+  )
+  rows: Any = fitted.pair_copulas
+  want = grid_type == "linear"
+  for t in range(fitted.trunc_lvl):
+    for e in range(d - t - 1):
+      grid = rows[t][e].interp_grid
+      assert bool(grid._is_linear) is want, f"pair ({t}, {e})"
+      assert int(grid.grid_points.numel()) == FitControlsTorchBicop().grid_size
+  assert bool(torch.isfinite(fitted.pdf(torch.from_numpy(u_fit))).all())
+
+
 @pytest.mark.parametrize("threshold", [0.0, 0.3, 0.5, 0.95])
 def test_threshold_matches_pvvinecop(threshold: float) -> None:
   """A thresholded edge holds independence, as the compiled selector's does.
