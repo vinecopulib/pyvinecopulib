@@ -61,7 +61,6 @@ from ..pyvinecopulib_ext import (
 )
 from ..utils import sample_uniform
 from ._batched import BatchedVine
-from ._interp import InterpolationGrid2D
 from .controls import FitControlsTorchVinecop
 from .bicop import TorchBicop
 
@@ -505,16 +504,15 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     # any other pair.
     modules = [
       [
-        cls._independence_grid(
-          grid_size=bc_controls.grid_size,
-          grid_type=bc_controls.grid_type,
-          cache_integrals=cache_integrals,
-          # `u_t.device`, as `fit_edge` uses -- `eff_device` is
-          # `controls.device`, which is `None` whenever the caller let the data
-          # choose, and would put this pair on the cpu beside cuda siblings.
-          device=u_t.device,
-          dtype=eff_dtype,
-        )
+        # A thresholded edge arrives from the engines as a
+        # `core.IndependencePair`, which is not an `nn.Module`. The
+        # no-argument `TorchBicop` *is* the independence copula -- a 2x2
+        # sentinel that short-circuits every method on `is_indep`, exactly
+        # rather than to rounding -- so it needs no grid of its own and
+        # cannot disagree with its siblings about one. `u_t.device`, as
+        # `fit_edge` uses: `controls.device` is `None` whenever the caller
+        # let the data carry the placement.
+        TorchBicop(device=u_t.device, dtype=eff_dtype)
         if isinstance(p, IndependencePair)
         else continuous_view(p)
         for p in row
@@ -532,58 +530,6 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   # --------------------------------------------------------------------- #
   # Helpers                                                                #
   # --------------------------------------------------------------------- #
-
-  @classmethod
-  def _independence_grid(
-    cls,
-    *,
-    grid_size: int,
-    grid_type: str,
-    cache_integrals: bool,
-    device: Optional[torch.device],
-    dtype: torch.dtype,
-  ) -> TorchBicop:
-    """The interpolation grid that is the independence copula.
-
-    A thresholded edge is not fitted, so it needs a pair the ``ModuleList``
-    can hold. A grid of ones is that pair exactly rather than approximately:
-    a bilinear interpolant of a constant is the constant, so ``pdf`` is
-    exactly 1 and the h-functions are exactly the identity. Measured against
-    the compiled ``indep`` ``Bicop``, ``pdf``, ``hfunc1`` / ``hfunc2`` and
-    ``hinv1`` / ``hinv2`` agree at exactly 0.0; ``cdf`` differs by 2.2e-16,
-    one rounding on the product. ``norm_maxiter=0`` because uniform margins
-    need no renormalizing.
-
-    Parameters
-    ----------
-    grid_size : int
-        Grid resolution, matching the fitted pairs beside it.
-    grid_type : {"normal", "linear"}
-        Grid spacing, matching the fitted pairs beside it -- a cascade cannot
-        mix the two.
-    cache_integrals : bool
-        Whether to precompute the integral tables, as the fitted pairs do.
-    device : torch.device or None
-        Placement.
-    dtype : torch.dtype
-        Working precision.
-
-    Returns
-    -------
-    TorchBicop
-        A pair copula equal to the independence copula.
-    """
-    return TorchBicop(
-      grid_points=InterpolationGrid2D.make_grid_points(
-        grid_type, grid_size, dtype=dtype, device=device
-      ),
-      values=torch.ones((grid_size, grid_size), dtype=dtype, device=device),
-      cache_integrals=cache_integrals,
-      norm_maxiter=0,
-      is_linear=(grid_type == "linear"),
-      device=device,
-      dtype=dtype,
-    )
 
   def _pair_module(self, tree: int, edge: int) -> TorchBicop:
     """The stored (always continuous) pair copula at ``(tree, edge)``.

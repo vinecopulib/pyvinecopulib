@@ -91,8 +91,11 @@ default="tau"
       Dependence measure used to weight candidate edges during structure
       selection (passed to ``wdm``).
   threshold : float, default=0.0
-      Dependence threshold: candidate edges below it are deprioritized during
-      spanning-tree selection.
+      Dependence threshold, acting twice as it does in ``Vinecop``: a
+      candidate edge below it is deprioritized during spanning-tree
+      selection, and a surviving edge below it is left independent rather
+      than fitted. It applies along a supplied structure too, where only the
+      second half has anything to do. At the default nothing is below it.
   tree_algorithm : {"mst_prim", "mst_kruskal", "random_weighted", \
 "random_unweighted"}, default="mst_prim"
       Spanning-tree algorithm for structure selection: Dissmann's maximum
