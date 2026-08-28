@@ -160,12 +160,10 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   ) -> bool:
     """Whether to precompute the prefix tables. ``None`` resolves to ``True``.
 
-    ``var_types`` no longer enters the decision. It used to: a discrete edge
-    reads its density from *differences* over an atom's width, and the cache
-    was a bilinear interpolation of a table -- accurate enough to evaluate, not
-    to difference, at 38% maximum relative error on a ``("d","d")`` density. The
-    tables are exact now, so differencing them is no longer the lossy step it
-    was and there is nothing left to refuse. A discrete edge still differences
+    ``var_types`` does not enter the decision: the prefix tables reconstruct
+    the integral exactly rather than approximately, so a discrete edge, which
+    reads its density from *differences* over an atom's width, can difference
+    them safely. A discrete edge still differences
     the distribution function rather than calling ``rect_mass``, which is more
     accurate but would break the torch-to-C++ cascade parity that ``Bicop``'s
     own quotients define.
@@ -663,6 +661,27 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     state = dict(super().__getstate__())
     state["_compiled"] = {}
     return state
+
+  def load_state_dict(self, *args: Any, **kwargs: Any) -> Any:
+    """Load parameters and buffers, dropping anything derived from them.
+
+    Parameters
+    ----------
+    *args, **kwargs
+        Forwarded to :meth:`torch.nn.Module.load_state_dict`.
+
+    Returns
+    -------
+    torch.nn.modules.module._IncompatibleKeys
+        Whatever the base implementation returns.
+    """
+    # The stacked bake and the compiled cascades are copies of the grids, not
+    # views of them, so a load that replaces the grids leaves both answering
+    # from the old density. `_apply` drops them for the same reason.
+    out = super().load_state_dict(*args, **kwargs)
+    self._batched = None
+    self._compiled = {}
+    return out
 
   def _apply(self, fn, *args, **kwargs):
     # `.to()`, `.cuda()`, `.cpu()` all route through `_apply`. The

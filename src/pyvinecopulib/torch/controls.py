@@ -109,10 +109,9 @@ default="tau"
       If ``True``, precompute the cdf / hfunc / hinv caches on
       every pair copula's interpolation grid. Cached lookups are
       1–2 orders of magnitude faster than the on-the-fly path
-      with a ~1e-3 IAE cost. ``None`` resolves to ``True``, or to
-      ``False`` on a vine with discrete variables, where a discrete
-      edge differences the cached cdf and an explicit ``True``
-      raises.
+      with a ~1e-3 IAE cost. ``None`` resolves to ``True``, on a
+      discrete vine too: the tables reconstruct the integral exactly,
+      so a discrete edge can difference them.
   device : torch.device or None, default=None
       Target torch device for the fitted pair copulas. ``None``
       keeps the input's device.
@@ -154,10 +153,12 @@ default="tau"
       there is none or hide one that is there.
 
       On cpu it is 0.44-1.05x at one torch thread -- mostly slower, there
-      being no launch overhead to amortize -- and faster again at many
-      threads, where the larger kernels parallelize better than many small
-      ones. The torch fit is far from competitive with the compiled backend
-      on cpu either way, so the default simply follows the device.
+      being no launch overhead to amortize. Many threads favor it again,
+      the larger kernels parallelizing better than many small ones, and
+      torch uses every core by default, so the cpu default is the
+      conservative reading of a measurement that moves with thread count
+      rather than a claim that batching cannot pay there. Either way the
+      torch fit is far from competitive with the compiled backend on cpu.
 
       A level carrying a discrete edge or a conditioning context is always
       fitted edge at a time: those cannot stack.

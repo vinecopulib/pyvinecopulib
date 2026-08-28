@@ -143,7 +143,7 @@ _MODE_DEFAULTS: dict[str, dict[str, Any]] = {
 
 #: Extra columns `--profile-ace` appends, and their value on a row that has
 #: nothing to profile (every C++ row, and any arm whose timing raised).
-_PROFILE_FIELDS = ["profiled_ms", "ace_calls", "item_calls", "item_ms"]
+_PROFILE_FIELDS = ["profiled_ms", "ace_calls", "sync_calls", "sync_ms"]
 _PROFILE_BLANK: dict[str, Any] = dict.fromkeys(_PROFILE_FIELDS, "")
 
 
@@ -197,56 +197,61 @@ def _timed_or_nan(fn, repeats: int, sync=None, label: str = "") -> float:
 class _AceProbe:
   """Counts the host syncs a `tll` fit pays inside `_ace`, and times them.
 
-  `_fit_tll` reads a scalar back to the host in three places on the
-  bandwidth-selection path: once in `_select_bandwidth_constant`, once in
-  `_pairwise_mcor`, and once per iteration of each of `_ace`'s two
-  convergence loops. `_ace` is entered once per pair-copula fit, so
-  `ace_calls` is the pair count and `item_calls - 2 * ace_calls` is the
-  total number of ACE iterations -- which is what separates "a few
-  expensive syncs" from "thousands of cheap ones", the two readings of
-  the profile note recorded under #305.
+  `_ace` drains the device once per iteration of each of its two convergence
+  loops, to ask whether any lane is still live. It reaches the host through
+  `bool(...)` rather than `.item()`, so both are interposed: counting only
+  `.item()` reports zero, and `float()` / `int()` do not appear on this path.
+  `ace_calls` is the number of entries into `_ace`, which is the pair count
+  when fitting edge at a time and the level count when fitting a level at
+  once -- so `sync_calls / ace_calls` is iterations per call either way.
 
-  On cuda `.item()` blocks until every kernel enqueued so far has run, so
-  `item_ms` is the host stall: an *upper* bound on what removing the
-  syncs could save, since part of it is device work that had to happen
-  anyway. On cpu there is nothing to drain, which is what makes the two
-  devices' `item_ms` worth reading side by side.
+  On cuda a sync blocks until every kernel enqueued so far has run, so
+  `sync_ms` is the host stall: an *upper* bound on what removing the syncs
+  could save, since part of it is device work that had to happen anyway. On
+  cpu there is nothing to drain, which is what makes the two devices'
+  `sync_ms` worth reading side by side.
 
   It does not see the other host round trips a pair fit makes -- the
   `values < 0` precondition on the interpolation grid, and the margin
   renormalization, which runs on the host for grids this small -- so
-  `item_ms` is the ACE loops' share specifically, not the total.
+  `sync_ms` is the ACE loops' share specifically, not the total.
 
-  Both patched attributes are restored on exit.
+  Every patched attribute is restored on exit.
   """
 
   def __init__(self) -> None:
-    self.item_calls = 0
-    self.item_ms = 0.0
+    self.sync_calls = 0
+    self.sync_ms = 0.0
     self.ace_calls = 0
 
   def __enter__(self) -> "_AceProbe":
     probe = self
     self._orig_item = torch.Tensor.item
+    self._orig_bool = torch.Tensor.__bool__
     self._orig_ace = _fit_tll._ace
 
-    def timed_item(tensor):
-      t0 = time.perf_counter()
-      out = probe._orig_item(tensor)
-      probe.item_ms += 1000.0 * (time.perf_counter() - t0)
-      probe.item_calls += 1
-      return out
+    def timed(orig):
+      def wrapper(tensor):
+        t0 = time.perf_counter()
+        out = orig(tensor)
+        probe.sync_ms += 1000.0 * (time.perf_counter() - t0)
+        probe.sync_calls += 1
+        return out
+
+      return wrapper
 
     def counted_ace(*args, **kwargs):
       probe.ace_calls += 1
       return probe._orig_ace(*args, **kwargs)
 
-    torch.Tensor.item = timed_item
+    torch.Tensor.item = timed(self._orig_item)
+    torch.Tensor.__bool__ = timed(self._orig_bool)
     _fit_tll._ace = counted_ace
     return self
 
   def __exit__(self, *exc) -> None:
     torch.Tensor.item = self._orig_item
+    torch.Tensor.__bool__ = self._orig_bool
     _fit_tll._ace = self._orig_ace
 
 
@@ -263,8 +268,8 @@ def _profile_once(fn, sync=None) -> dict:
   return {
     "profiled_ms": f"{total:.3f}",
     "ace_calls": probe.ace_calls,
-    "item_calls": probe.item_calls,
-    "item_ms": f"{probe.item_ms:.3f}",
+    "sync_calls": probe.sync_calls,
+    "sync_ms": f"{probe.sync_ms:.3f}",
   }
 
 
@@ -797,10 +802,13 @@ def _validate(ap: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     ap.error("--compile has no effect on --mode fit; drop it")
 
   if args.profile_ace:
+    # Both entry points, since `_ace` uses the second one and an earlier
+    # revision of this probe silently reported zero by watching only the first.
     with _AceProbe() as probe:
       torch.zeros(1).sum().item()
-    if probe.item_calls != 1:
-      ap.error("--profile-ace: Tensor.item is not interposable here")
+      bool(torch.zeros(1).any())
+    if probe.sync_calls != 2:
+      ap.error("--profile-ace: host syncs are not interposable here")
 
 
 def main() -> None:

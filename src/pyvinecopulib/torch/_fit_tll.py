@@ -76,22 +76,16 @@ def _win_smoother(x: Tensor, wl: int) -> Tensor:
   the edges are flat. Batched over any leading dimensions; the window runs
   along the last one.
 
-  A box mean is a difference of prefix sums, which is what this computes.
-  ``tools_stats::win`` reaches the same quantity through an FFT, and this
-  port previously convolved directly against a ``2*wl + 1``-tap kernel --
-  but ``wl`` is ``ceil(n / 5)``, so that kernel grows with the data and the
-  convolution costs ``O(n**2)``. Measured on one GPU at ``n = 12000``
-  (4801 taps), medians of seven: 14.4 ms for the direct convolution,
-  0.22 ms for the FFT, 0.18 ms here.
+  A box mean is a difference of prefix sums, which is what this computes in
+  ``O(n)``; ``tools_stats::win`` reaches the same quantity by FFT. Since
+  ``wl`` is ``ceil(n / 5)`` the window grows with the data, so a direct
+  convolution against the ``2*wl + 1``-tap kernel would be ``O(n**2)``.
 
-  The trade this makes is precision, not correctness: differencing two
-  prefix sums loses relative accuracy where a convolution does not, since
-  both operands carry the magnitude of the whole partial sum rather than of
-  the window. ACE smooths standardized scores, so the partial sums stay
-  ``O(sqrt(n))`` and the loss is immaterial -- measured at most 4.8e-15 on
-  this function's output, and 8e-13 through a whole fit against a C++
-  parity gate of 1e-11. On mean-shifted data the ratio would grow, but no
-  caller here has any.
+  Differencing two prefix sums costs relative accuracy, because both
+  operands carry the magnitude of the whole partial sum rather than of the
+  window. That is immaterial for ACE, which smooths standardized scores so
+  the partial sums stay ``O(sqrt(n))``, and it is the constraint a future
+  caller has to check: on mean-shifted input the ratio grows.
   """
   n = x.shape[-1]
   zero = torch.zeros(x.shape[:-1] + (1,), dtype=x.dtype, device=x.device)
@@ -157,22 +151,20 @@ def _ace(
   ``test_ace_freezes_each_lane_independently``, which varies the companions
   at a fixed shape.
 
-  The batch therefore costs the slowest lane rather than the sum, and how
-  much that saves depends on how alike the lanes are. Iteration counts
-  swing with dependence: measured at ``n = 1000``, 27 smoother calls at
-  Gaussian ``rho = 0.5`` against 102 at ``rho = 0`` and 117 on independent
-  uniforms, since with no signal to find the outer criterion grinds against
-  its own rounding noise. So a level of similar pairs batches at near-ideal
-  efficiency (measured 7.7x fewer sequential steps over 8 pairs, against an
-  ideal 8x), while one straggler drags the rest (2.7x over 4 pairs when one
-  needs 117 iterations and another 27). Deeper trees, whose pairs sit
-  nearer independence, are the slow end.
+  A batch runs until its slowest lane converges, so it trades the sum of the
+  lanes' iterations for their maximum while doing the full batch's arithmetic
+  at every step. How much that wins depends on how alike the lanes are, and
+  iteration counts rise as dependence falls -- with no signal to find, the
+  outer criterion grinds against its own rounding noise until it hits
+  ``outer_iter_max``. One near-independent lane therefore paces a whole
+  level, and the deeper trees, whose pairs sit nearer independence, are
+  where that bites.
 
   Args:
     data: shape ``(..., n, 2)``.
 
   Returns:
-    ``(n, 2)`` tensor of the ACE-transformed scores ``phi``.
+    ``(..., n, 2)`` tensor of the ACE-transformed scores ``phi``.
   """
   n = data.shape[-2]
   batch = data.shape[:-2]
@@ -204,7 +196,14 @@ def _ace(
   # trip counters are frozen too, because the caps are per-lane.
   ones = torch.ones(batch, dtype=dtype, device=device)
   longs = torch.ones(batch, dtype=torch.long, device=device)
-  outer_eps, outer_abs_err, outer_iter = ones, ones.clone(), longs
+  # Clones, not aliases: `ones` / `longs` are the templates every outer
+  # iteration re-clones the inner state from, so an in-place write to either
+  # of these would corrupt them.
+  outer_eps, outer_abs_err, outer_iter = (
+    ones.clone(),
+    ones.clone(),
+    longs.clone(),
+  )
   outer_live = (outer_iter <= outer_iter_max) & (outer_abs_err > outer_abs_tol)
 
   while bool(outer_live.any()):
@@ -286,15 +285,13 @@ def _select_bandwidth_constant(z: Tensor) -> Tensor:
   """Bandwidth matrix for the constant-method local-likelihood KDE.
 
   Mirrors ``TllBicop::select_bandwidth`` for ``method == "constant"``.
-  Batched over any leading dimensions of ``z``, and entirely on device --
-  the correlation used to be read back to the host so that ``cov`` could be
-  built from Python floats.
+  Batched over any leading dimensions of ``z``, and entirely on device.
 
-  Staying on device also matches C++ at ``mcor == 0``, where
-  ``std::pow(std::fabs(cor / mcor), 0.5 * mcor)`` is ``pow(inf, 0.0)``,
-  which IEEE defines as ``1.0``. Host-float division raised
-  ``ZeroDivisionError`` there instead. Do not guard the division: a
-  ``clamp_min`` would diverge from upstream rather than agree with it.
+  Staying on device is what matches C++ at ``mcor == 0``, where
+  ``std::pow(std::fabs(cor / mcor), 0.5 * mcor)`` is ``pow(inf, 0.0)`` --
+  ``1.0`` by IEEE, where a host-float division raises instead. The division
+  must stay unguarded: a ``clamp_min`` would diverge from upstream rather
+  than agree with it.
   """
   n = z.shape[-2]
   cor = _pearson_cor(z).clamp(-0.95, 0.95)
@@ -306,12 +303,13 @@ def _select_bandwidth_constant(z: Tensor) -> Tensor:
   return mult * cov * scale[..., None, None]
 
 
-#: Grid points per block in :func:`_fit_local_likelihood_constant`. The
-#: block holds five ``(block, n)`` float64 temporaries, so this bounds peak
-#: memory at ``40 * block * n`` bytes per lane independently of the grid
-#: size -- 4.6 MiB at ``n = 12000``. Blocking is exact (grid points do not
-#: interact) and measured within 1.3x of the unblocked time, so there is no
-#: reason to make it a user-facing knob.
+#: Grid points per block in :func:`_fit_local_likelihood_constant`, which
+#: bounds peak memory independently of the grid size: the block's live
+#: ``(P, block, n)`` float64 temporaries dominate, so the peak grows with
+#: ``block * n * P`` and not with ``G``. Measured 145 MiB per lane at
+#: ``n = 12000``, so a ``P = 19`` level there holds about 2.7 GiB. Blocking
+#: is exact, grid points not interacting, so this is a memory/latency knob
+#: only.
 _KDE_GRID_BLOCK: int = 256
 
 
@@ -379,7 +377,9 @@ def fit_tll_constant(
   Pure-PyTorch port of ``TllBicop::fit`` for ``method == "constant"``.
 
   Args:
-    u: ``(n, 2)`` tensor of pseudo-observations in ``(0, 1)``.
+    u: ``(n, 2)`` pseudo-observations in ``(0, 1)``, or ``(P, n, 2)`` to fit
+      ``P`` pairs together -- they share the grid, the window length and the
+      eval points. A discrete edge is refused a pair axis.
     grid_size: number of grid points per axis (default 30; matches C++).
     mult: bandwidth multiplier passed through to ``select_bandwidth``;
       the C++ default is 1.

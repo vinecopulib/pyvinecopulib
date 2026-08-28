@@ -243,6 +243,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   _batched: Any
   #: Array namespace of this vine's working arrays; ``None`` until resolved.
   _xp: Any
+  #: Array type ``_xp`` was resolved from; the memo is only good for that type.
+  _xp_type: Any
   _var_types: tuple[str, ...]
   _n_discrete: int
   #: Variable index -> its offset within the compact layout's left-limit block;
@@ -309,6 +311,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     self._cond_pos_cache = {}
     self._batched = None
     self._xp = None
+    self._xp_type = None
     self._bind_var_types(var_types)
 
   def _bind_var_types(self, var_types: Optional[list[str]]) -> None:
@@ -1026,29 +1029,34 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   def _namespace(self, a: Any) -> Any:
     """The array namespace of this vine's working arrays, resolved once.
 
-    :meth:`_prep` coerces every input to the vine's own array type, so the
-    namespace is a property of the vine rather than of the call. Resolving it
-    per call would put a type-dispatch table walk inside each cascade, which a
-    tracing compiler then has to trace through -- ``array_namespace`` is
-    memoized on the type, but the memo is itself Python that ends up in the
-    graph. Every entry point resolves it through :meth:`_prep`, which runs
-    before the cascade, so by the time a cascade asks it is already answered.
+    Resolving it per call would put a type-dispatch table walk inside each
+    cascade, which a tracing compiler then has to trace through --
+    ``array_namespace`` is memoized on the type, but the memo is itself Python
+    that ends up in the graph. Every entry point resolves it through
+    :meth:`_prep`, which runs before the cascade, so by the time a cascade asks
+    it is already answered.
+
+    The memo is keyed on the array type rather than held for the vine's
+    lifetime. Only a subclass that coerces in :meth:`_prep` -- as
+    :class:`~pyvinecopulib.torch.TorchVinecop` does -- guarantees one type per
+    vine; the default :meth:`_prep` works on whatever namespace it is handed,
+    so a vine may legitimately see two. An identity check is still far cheaper
+    than the dispatch walk it avoids.
 
     Parameters
     ----------
     a : array
-        Any array already coerced to the working type.
+        An array of the vine's working type.
 
     Returns
     -------
     module
         The array-API namespace for ``a``.
     """
-    xp = self._xp
-    if xp is None:
-      xp = array_namespace(a)
-      object.__setattr__(self, "_xp", xp)
-    return xp
+    if self._xp is None or self._xp_type is not type(a):
+      object.__setattr__(self, "_xp", array_namespace(a))
+      object.__setattr__(self, "_xp_type", type(a))
+    return self._xp
 
   def __getstate__(self) -> dict:
     """The picklable state: everything but the resolved array namespace.
@@ -1067,6 +1075,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     raw = cast("dict[str, Any]", super().__getstate__() or {})
     state = dict(raw)
     state["_xp"] = None
+    state["_xp_type"] = None
     return state
 
   def _resolve_batched(
@@ -1850,14 +1859,15 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       ]
       inputs = [stack_edge(xp, c0, c1, subs) for c0, c1, subs, _ in level]
       contexts = [edge_context_for(tree, e) for e in range(len(level))]
-      types = [t for _, _, _, t in level]
+      # Per-edge type *pairs*, distinct from the per-variable `types` above.
+      level_types = [t for _, _, _, t in level]
       fitted: Optional[Sequence[BicopLike]] = None
       if (
         fit_level is not None
         and all(c is None for c in contexts)
-        and all("d" not in t for t in types)
+        and all("d" not in t for t in level_types)
       ):
-        fitted = fit_level(tree, xp.stack(inputs, axis=0), types)
+        fitted = fit_level(tree, xp.stack(inputs, axis=0), level_types)
       for edge in range(d - tree - 1):
         _, _, subs, edge_types = level[edge]
         u_e, x_e = inputs[edge], contexts[edge]

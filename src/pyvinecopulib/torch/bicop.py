@@ -320,6 +320,9 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     return [
       cls(
         grid_points=grid_points,
+        # A slice of the stack is a view; `contiguous` gives each pair a
+        # buffer of its own so the stack can be freed and `state_dict` does
+        # not carry P-1 unrelated grids per pair.
         values=values[i].contiguous(),
         cache_integrals=cache_integrals,
         norm_maxiter=25,

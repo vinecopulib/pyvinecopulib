@@ -834,9 +834,9 @@ def test_win_smoother_is_a_box_mean(n: int) -> None:
 def test_win_smoother_batches_over_leading_dims() -> None:
   """One call over a stack equals a loop over its rows.
 
-  The fit is per-pair today, so nothing exercises this yet; it is what a
-  batched fitter would stack on, and it is cheap to keep honest now rather
-  than to discover later.
+  The smoother is the innermost thing the batched fit stacks on, so pinning
+  it here says whether a divergence upstack came from the smoother or from
+  what surrounds it.
   """
   from pyvinecopulib.torch._fit_tll import _win_smoother
 
@@ -864,9 +864,9 @@ def test_ace_freezes_each_lane_independently() -> None:
   companions differ.
 
   This assertion carries what the vine-level pdf comparisons no longer can.
-  A batched fit with no per-lane freeze at all reaches the vine's pdf at
-  about 7e-15, smaller than the arithmetic noise those comparisons must
-  tolerate, so it is undetectable there and plainly visible here.
+  Removing the freeze moves this comparison off zero by 5.6e-16 -- far under
+  the arithmetic noise the vine-level tolerances have to admit, so it is
+  undetectable there and unmistakable here.
 
   The companions have to converge later than the probe or nothing is
   frozen and the test is vacuous. Independent uniforms give ACE no signal,
@@ -902,7 +902,9 @@ def test_from_data_batched_matches_the_per_pair_loop(n: int) -> None:
   tight: a batched fit with no per-lane freeze at all shows up here at
   ~1e-12.
   """
-  rhos = [-0.9, -0.4, 0.0, 0.3, 0.7, 0.95]
+  # Ten lanes, so the stack crosses the 8-element boundary named above
+  # rather than sitting under it and agreeing by construction.
+  rhos = [-0.9, -0.7, -0.4, -0.1, 0.0, 0.2, 0.3, 0.55, 0.7, 0.95]
   us = [
     pv.Bicop(family=pv.families.gaussian, parameters=np.array([[r]])).sample(
       n, seeds=[3, 4, 5]

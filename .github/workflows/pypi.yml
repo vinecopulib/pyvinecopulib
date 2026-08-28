@@ -500,6 +500,11 @@ jobs:
           uv pip install -e . --no-build-isolation
       - name: Lint and type-check
         run: make check
+      - name: Run torch.compile tests
+        # `addopts` deselects these by default, each paying a cold Inductor
+        # compilation, so no other leg reaches `compile_cascades`. This leg
+        # already carries the checks that run once rather than per-wheel.
+        run: uv run pytest tests/ -m compile -r a --no-cov
       - name: Build source distribution
         run: make sdist
       - name: Install source distribution into fresh venv
