@@ -620,8 +620,14 @@ automatically.
     the public `fit` and `select` engines. `select` is an
     exact port of `Vinecop`'s Dissmann / Wilson structure selection
     (same matrix encoding, selection-time pairs reused via `flip`, no
-    re-fit; parity is a hard guarantee). `TorchBicop` / `TorchVinecop`
-    are the torch subclasses.
+    re-fit; parity is a hard guarantee). `threshold` acts twice there, and
+    both halves are ported: it deprioritizes an edge in the spanning tree,
+    *and* a surviving edge below it holds `IndependencePair` instead of a
+    fit (`tools_select.ipp` `fit_or_reuse_pair_copula`). Porting only the
+    weight is a silent divergence, and the default `threshold=0.0` hides
+    it: nothing is below zero there, so every test that does not set it
+    sees the two agree. `TorchBicop` / `TorchVinecop` are the torch
+    subclasses.
   - `DiscretePair` (`_discrete.py`) — a *continuous* pair copula evaluated on a
     discrete or mixed edge. **The vine owns the discrete layouts, the pair
     copulas stay continuous**: `_bind_vine(..., var_types=)` declares which

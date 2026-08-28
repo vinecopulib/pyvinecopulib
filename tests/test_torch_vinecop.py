@@ -1414,6 +1414,231 @@ def test_load_state_dict_drops_the_stacked_bake() -> None:
   )
 
 
+def test_a_discrete_edge_below_the_threshold_is_independent() -> None:
+  """Thresholding reaches a discrete edge, which never sees the level fitter.
+
+  A discrete level cannot stack, so it always fits edge at a time -- which
+  is a different path through the same rule, and the one place where
+  "not fitted" and "not batched" could be confused for each other.
+  """
+  var_types = ["d", "c", "c"]
+  wide = _discrete_data(var_types, n=600, seed=17)
+  structure = pv.RVineStructure.sample(3, seeds=[2])
+  for threshold, want_indep in ((0.0, 0), (0.6, 3)):
+    cpp = pv.Vinecop.from_data(
+      wide,
+      controls=pv.FitControlsVinecop(
+        family_set=[pv.families.tll], num_threads=1, threshold=threshold
+      ),
+      structure=structure,
+      var_types=var_types,
+    )
+    got_indep = sum(
+      cpp.get_pair_copula(t, e).family == pv.families.indep
+      for t in range(cpp.trunc_lvl)
+      for e in range(3 - t - 1)
+    )
+    assert got_indep == want_indep, f"fixture drifted at {threshold}"
+    fitted = TorchVinecop.from_data(
+      torch.from_numpy(wide),
+      structure,
+      controls=FitControlsTorchVinecop(
+        threshold=threshold, cache_integrals=False
+      ),
+      var_types=var_types,
+    )
+    u_eval = wide[:64]
+    np.testing.assert_allclose(
+      fitted.pdf(torch.from_numpy(u_eval)).numpy(),
+      cpp.pdf(u_eval),
+      rtol=1e-9,
+      atol=1e-11,
+    )
+
+
+def test_cxi_criterion_thresholds_nothing_at_zero() -> None:
+  """A negative criterion must not fall below a threshold of zero.
+
+  `calculate_criterion` returns `std::fabs(w)` for *every* branch, `cxi`
+  included. This port applied the absolute value inside the branches and the
+  `cxi` one -- `max(xi12, xi21)`, mirroring `pairwise_cxi` -- did not, so a
+  criterion could be negative. Chatterjee's xi routinely is on weak
+  dependence: symmetrized, it came out negative in 102 of 400 independent
+  samples.
+
+  That was harmless while the criterion only set a spanning-tree weight, and
+  stopped being harmless once a criterion below the threshold also decides
+  whether an edge is fitted at all. With the default `threshold=0.0`, a
+  negative criterion is below it, so edges silently became independence: on
+  independent uniforms this thresholded something in 16 of 18 fixtures, up to
+  7 pairs in one d = 6 vine.
+
+  This fixture is the worst of those. Independent data is the point -- it is
+  where xi has no signal and sits astride zero.
+  """
+  rng = np.random.default_rng(1000 + 17 * 2 + 6)
+  u = rng.uniform(size=(400, 6))
+  controls = FitControlsTorchVinecop(
+    trunc_lvl=20, tree_criterion="cxi", threshold=0.0
+  )
+  fitted = TorchVinecop.from_data(torch.as_tensor(u), controls=controls)
+  # A thresholded edge becomes the grid that is exactly one everywhere; a
+  # fitted one never is, however weak the dependence.
+  # `nn.Module.__getattr__` returns a union no checker can narrow.
+  rows: Any = fitted.pair_copulas
+  thresholded = [
+    (t, e)
+    for t in range(fitted.trunc_lvl)
+    for e in range(6 - t - 1)
+    if bool((rows[t][e].interp_grid.values == 1.0).all())
+  ]
+  assert thresholded == [], f"thresholded at threshold=0.0: {thresholded}"
+
+  cpp = pv.Vinecop.from_data(
+    u,
+    controls=pv.FitControlsVinecop(
+      family_set=[pv.families.tll],
+      num_threads=1,
+      trunc_lvl=20,
+      tree_criterion="cxi",
+      threshold=0.0,
+    ),
+  )
+  np.testing.assert_array_equal(
+    np.asarray(fitted.structure.matrix), np.asarray(cpp.structure.matrix)
+  )
+  u_eval = rng.uniform(0.05, 0.95, size=(120, 6))
+  np.testing.assert_allclose(
+    fitted.pdf(torch.as_tensor(u_eval)).numpy(),
+    cpp.pdf(u_eval),
+    rtol=1e-9,
+    atol=1e-11,
+  )
+
+
+@pytest.mark.parametrize("threshold", [0.0, 0.3, 0.5])
+def test_threshold_on_a_fixed_structure_matches_pvvinecop(
+  threshold: float,
+) -> None:
+  """A given structure thresholds too, as the compiled fit does.
+
+  `threshold` is not a selection-only knob: `Vinecop::select` builds the same
+  selector on a supplied matrix, so an edge below the threshold is left
+  holding independence whether the structure was chosen or given. Fitting
+  along a structure therefore has to apply it as selection does.
+  """
+  d = 6
+  u_fit = _simulate(d=d, n=400, seed=7)
+  structure = _fit_tll_vine(u_fit).structure
+  cpp = pv.Vinecop.from_data(
+    u_fit,
+    controls=pv.FitControlsVinecop(
+      family_set=[pv.families.tll],
+      num_threads=1,
+      trunc_lvl=20,
+      threshold=threshold,
+    ),
+    structure=structure,
+  )
+  fitted = TorchVinecop.from_data(
+    torch.from_numpy(u_fit),
+    structure,
+    controls=FitControlsTorchVinecop(
+      trunc_lvl=20, threshold=threshold, cache_integrals=False
+    ),
+  )
+  u_eval = torch.from_numpy(_eval_grid(120, d=d, seed=8))
+  np.testing.assert_allclose(
+    fitted.pdf(u_eval).numpy(),
+    cpp.pdf(u_eval.numpy()),
+    rtol=1e-9,
+    atol=1e-11,
+  )
+
+
+@pytest.mark.parametrize("grid_type", ["normal", "linear"])
+def test_a_thresholded_pair_carries_no_grid_to_disagree_about(
+  grid_type: str,
+) -> None:
+  """A thresholded edge holds the independence sentinel, not a fitted grid.
+
+  Every pair of a level is interpolated on one spacing, so a substituted
+  pair carrying another would be a different function rather than a nearby
+  one. The sentinel sidesteps the question: it is exactly independent by
+  short-circuit, with a 2x2 grid nothing reads, so it cannot disagree with
+  its siblings whatever they were fitted on.
+  """
+  d = 6
+  u_fit = _simulate(d=d, n=400, seed=7)
+  fitted = TorchVinecop.from_data(
+    torch.from_numpy(u_fit),
+    controls=FitControlsTorchVinecop(
+      bicop_controls=FitControlsTorchBicop(grid_type=grid_type),
+      trunc_lvl=20,
+      threshold=0.3,
+    ),
+  )
+  rows: Any = fitted.pair_copulas
+  sentinels = 0
+  for t in range(fitted.trunc_lvl):
+    for e in range(d - t - 1):
+      pair = rows[t][e]
+      if pair.is_indep:
+        sentinels += 1
+      else:
+        assert bool(pair.interp_grid._is_linear) is (grid_type == "linear")
+  assert sentinels > 0, "the threshold did not bite; the test proves nothing"
+  # Both cascades agree, so the sentinels stack as readily as they evaluate.
+  u_eval = torch.from_numpy(_eval_grid(64, d=d, seed=8))
+  torch.testing.assert_close(
+    fitted.pdf(u_eval, batched=True),
+    fitted.pdf(u_eval, batched=False),
+    atol=1e-12,
+    rtol=1e-10,
+  )
+
+
+@pytest.mark.parametrize("threshold", [0.0, 0.3, 0.5, 0.95])
+def test_threshold_matches_pvvinecop(threshold: float) -> None:
+  """A thresholded edge holds independence, as the compiled selector's does.
+
+  `threshold` decides two things upstream: which edges the spanning tree
+  prefers, and which of the survivors are fitted at all -- an edge whose
+  criterion falls below it keeps a default-constructed pair, which is the
+  independence copula. Only the first was ported, so a threshold that bites
+  used to give a different model rather than a differently-weighted one.
+
+  The four values are chosen against this fixture's candidate taus, which
+  run from 0.47 to 0.52: 0.0 thresholds nothing and is the path every other
+  test takes, 0.3 and 0.5 straddle the candidates, and 0.95 is above all of
+  them so every pair is independence and both vines are exactly `pdf = 1`.
+  """
+  u = _simulate(d=6, n=800, seed=81)
+  cpp = pv.Vinecop.from_data(
+    u,
+    controls=pv.FitControlsVinecop(
+      family_set=[pv.families.tll],
+      num_threads=1,
+      trunc_lvl=20,
+      threshold=threshold,
+    ),
+  )
+  fitted = TorchVinecop.from_data(
+    torch.from_numpy(u),
+    controls=FitControlsTorchVinecop(trunc_lvl=20, threshold=threshold),
+  )
+  np.testing.assert_array_equal(
+    np.asarray(fitted.structure.matrix), np.asarray(cpp.structure.matrix)
+  )
+  u_eval = torch.from_numpy(_eval_grid(120, d=6, seed=82))
+  np.testing.assert_allclose(
+    fitted.pdf(u_eval).numpy(),
+    cpp.pdf(u_eval.numpy()),
+    rtol=1e-9,
+    atol=1e-11,
+  )
+
+
 def test_batched_fit_runs_one_call_per_tree(
   monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1479,12 +1704,14 @@ def test_batched_selection_survives_a_shortened_cascade(
   `test_batched_fit_runs_one_call_per_tree` pins; this checks the model they
   produce.
 
-  Both thresholds are here because they exercise different things. At 0.95
-  no candidate tau reaches the threshold for this fixture, so every MST
-  weight is exactly 1.0 and the structure is dependence-blind -- which
-  makes its matrix comparison hold for reasons unrelated to scheduling. At
-  0.5 the candidates straddle it, so the weights carry dependence and the
-  comparison has something to say.
+  The three cases exercise different things, and only some of them exercise
+  batching. At 0.95 no candidate tau reaches the threshold for this fixture:
+  every MST weight is exactly 1.0, every surviving edge is left independent,
+  and the level fitter is handed nothing at all -- so that case says the
+  cascade survives a vine of pure independence, not that batching is sound.
+  At 0.5 the candidates straddle the threshold, so some edges are fitted and
+  the level fitter runs on the rest. `trunc_lvl` shortens without
+  thresholding anything.
   """
   del why
   u_fit = _simulate(d=6, n=800, seed=81)

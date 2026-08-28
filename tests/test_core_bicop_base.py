@@ -19,7 +19,12 @@ import numpy as np
 import pytest
 
 import pyvinecopulib as pv
-from pyvinecopulib.core import BicopBase, BicopLike, VinecopLike
+from pyvinecopulib.core import (
+  BicopBase,
+  BicopLike,
+  IndependencePair,
+  VinecopLike,
+)
 
 
 class _IndepPair(BicopBase[np.ndarray]):
@@ -177,3 +182,38 @@ def test_conditioning_matrix_is_keyword_only() -> None:
   # reject -- a static error here is the same guarantee, one step earlier.
   with pytest.raises(TypeError):
     getattr(compiled, "pdf")(u, x=x)
+
+
+def test_independence_pair_is_the_independence_copula() -> None:
+  """Every member of `IndependencePair`, against the compiled `indep` `Bicop`.
+
+  The class is public and `VinecopBase.select` hands it out, but the torch
+  vine substitutes its own grid for storage, so nothing else here calls its
+  `pdf`, `cdf` or inverses. This does, on NumPy, where it is used as written.
+  """
+  rng = np.random.default_rng(11)
+  u = rng.uniform(0.01, 0.99, size=(500, 2))
+  pair: BicopLike[np.ndarray] = IndependencePair()
+  ref = pv.Bicop(family=pv.families.indep)
+
+  np.testing.assert_array_equal(pair.pdf(u), np.ones(len(u)))
+  np.testing.assert_array_equal(pair.hfunc1(u), u[:, 1])
+  np.testing.assert_array_equal(pair.hfunc2(u), u[:, 0])
+  np.testing.assert_array_equal(pair.hinv1(u), u[:, 1])
+  np.testing.assert_array_equal(pair.hinv2(u), u[:, 0])
+  # `cdf` is the one product, so it rounds where the others cannot.
+  np.testing.assert_allclose(pair.cdf(u), ref.cdf(u), rtol=0.0, atol=2.3e-16)
+  for name in ("pdf", "hfunc1", "hfunc2", "hinv1", "hinv2"):
+    np.testing.assert_array_equal(
+      getattr(pair, name)(u), getattr(ref, name)(u), err_msg=name
+    )
+
+  # Symmetric, so flipping is a no-op rather than a new object's behavior.
+  assert pair.flip() is pair
+  assert repr(pair) == "IndependencePair()"
+
+  # A wider layout is accepted: the extra left-limit columns are ignored,
+  # which is what a discrete edge below the threshold would hand it.
+  wide = np.hstack([u, u - 1e-3])
+  np.testing.assert_array_equal(pair.pdf(wide), np.ones(len(u)))
+  np.testing.assert_array_equal(pair.hfunc1(wide), u[:, 1])

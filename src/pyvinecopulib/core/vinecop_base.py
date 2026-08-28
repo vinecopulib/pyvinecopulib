@@ -75,12 +75,58 @@ from ._discrete import (
   stack_edge,
   with_left_limit,
 )
+from ._independence import IndependencePair
 from ._reorient import Reorientation, reorientation
 from .bicop_base import _pair_eval
 from .context import ConditioningContext, SimplifiedContext
 from .._deprecations import _reject_renamed_hook
 from .protocols import ArrayT, BicopLike, VinecopLike, _VINECOP_EXAMPLE
 from ._trim import trim
+
+
+def _make_criterion(
+  tree_criterion: str, convert: Callable[[Any], Any], n: int
+) -> Callable[[Any, Any], float]:
+  """Build the edge criterion ``calculate_criterion`` computes.
+
+  Parameters
+  ----------
+  tree_criterion : str
+      Dependence measure, as on ``FitControlsVinecop``.
+  convert : callable
+      Host transfer for one column.
+  n : int
+      Number of observations; at or below ten the criterion is zero, as
+      upstream's guard has it.
+
+  Returns
+  -------
+  callable
+      Maps an edge's two value columns to a non-negative criterion.
+  """
+  import numpy as np
+
+  from ..pyvinecopulib_ext import wdm
+
+  def criterion(col0: Any, col1: Any) -> float:
+    if n <= 10:
+      return 0.0
+    a, b = convert(col0), convert(col1)
+    if tree_criterion == "cxi":
+      # Chatterjee's xi is asymmetric and a spanning-tree weight cannot be,
+      # so this is `pairwise_cxi`'s larger of the two directions.
+      value = max(
+        float(wdm(a, b, tree_criterion)), float(wdm(b, a, tree_criterion))
+      )
+    else:
+      value = float(wdm(a, b, tree_criterion))
+    # `calculate_criterion` takes the absolute value of every branch on the
+    # way out, `cxi` included, and xi is routinely negative on weak
+    # dependence -- so a criterion left signed can sit below a threshold of
+    # zero.
+    return 0.0 if not np.isfinite(value) else abs(value)
+
+  return criterion
 
 
 def _to_numpy_default(a: Any) -> Any:
@@ -1732,6 +1778,9 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     x: Optional[Any] = None,
     var_types: Optional[list[str]] = None,
     fit_level: Optional[FitLevel] = None,
+    tree_criterion: str = "tau",
+    threshold: float = 0.0,
+    to_numpy: Optional[Callable[[Any], Any]] = None,
   ) -> list[list[BicopLike]]:
     """Fit pair copulas tree-by-tree along a fixed structure (returns them).
 
@@ -1776,6 +1825,16 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         columns wide where a continuous one is two. ``None`` fits every
         edge separately, which is what every caller did before the hook
         existed.
+    tree_criterion : str, default "tau"
+        Dependence measure ``threshold`` compares against, as on
+        ``FitControlsVinecop``. Read only when ``threshold`` is positive.
+    threshold : float, default 0.0
+        Dependence threshold. An edge whose criterion falls below it holds
+        :class:`~pyvinecopulib.core.IndependencePair` and is not fitted, as
+        it does under selection. At the default nothing is below it.
+    to_numpy : callable, optional
+        Host transfer for one column, used to evaluate the criterion.
+        Defaults to the array API's own, which any backend supports.
 
     Returns
     -------
@@ -1804,6 +1863,11 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     pair_types = pair_var_types(structure, types) if n_discrete(types) else None
     ua = collapse_data(ua, d, types, "fit")
     n = ua.shape[0]
+    criterion = _make_criterion(
+      tree_criterion,
+      _to_numpy_default if to_numpy is None else to_numpy,
+      int(n),
+    )
     hfunc1 = xp.zeros((n, d), dtype=ua.dtype, device=ua.device)
     hfunc2 = xp.empty((n, d), dtype=ua.dtype, device=ua.device)
     for j in range(d):
@@ -1861,21 +1925,39 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       contexts = [edge_context_for(tree, e) for e in range(len(level))]
       # Per-edge type *pairs*, distinct from the per-variable `types` above.
       level_types = [t for _, _, _, t in level]
-      fitted: Optional[Sequence[BicopLike]] = None
+      # A fixed structure thresholds exactly as selection does: upstream builds
+      # the same selector on the given matrix, so `fit_or_reuse_pair_copula`
+      # leaves an edge below the threshold holding independence here too.
+      skip = [
+        threshold > 0.0 and criterion(c0, c1) < threshold
+        for c0, c1, _, _ in level
+      ]
+      to_fit = [e for e, s_e in enumerate(skip) if not s_e]
+      fitted: Optional[dict[int, BicopLike]] = None
       if (
         fit_level is not None
-        and all(c is None for c in contexts)
-        and all("d" not in t for t in level_types)
+        and to_fit
+        and all(contexts[e] is None for e in to_fit)
+        and all("d" not in level_types[e] for e in to_fit)
       ):
-        fitted = fit_level(tree, xp.stack(inputs, axis=0), level_types)
+        got = fit_level(
+          tree,
+          xp.stack([inputs[e] for e in to_fit], axis=0),
+          [level_types[e] for e in to_fit],
+        )
+        fitted = dict(zip(to_fit, got))
       for edge in range(d - tree - 1):
         _, _, subs, edge_types = level[edge]
         u_e, x_e = inputs[edge], contexts[edge]
-        edge_copula = (
-          fitted[edge]
-          if fitted is not None
-          else _fit_edge_call(fit_edge, tree, edge, u_e, x_e, edge_types)
-        )
+        edge_copula: BicopLike
+        if skip[edge]:
+          edge_copula = IndependencePair()
+        elif fitted is not None:
+          edge_copula = fitted[edge]
+        else:
+          edge_copula = _fit_edge_call(
+            fit_edge, tree, edge, u_e, x_e, edge_types
+          )
         row.append(edge_copula)
         if s.needed_hfunc1(tree, edge):
           hfunc1[:, edge] = _pair_eval(edge_copula.hfunc1, u_e, x_e)
@@ -1960,8 +2042,12 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         ``FitControlsVinecop``. ``"cxi"`` is Chatterjee's xi, which is
         asymmetric, so the weight is the larger of the two directions.
     threshold : float, default 0.0
-        Dependence threshold: edges with criterion below it are deprioritized
-        (weight ``1.0``) during spanning-tree selection.
+        Dependence threshold. It acts twice, as it does in
+        ``Vinecop.select``: an edge whose criterion falls below it is
+        deprioritized during spanning-tree selection (weight ``1.0``), and if
+        it survives anyway it is left holding
+        :class:`~pyvinecopulib.core.IndependencePair` rather than being
+        fitted. At the default no non-negative criterion is below it.
     tree_algorithm : str, default "mst_prim"
         ``"mst_prim"`` / ``"mst_kruskal"`` (Dissmann) or ``"random_weighted"`` /
         ``"random_unweighted"`` (Wilson).
@@ -2006,12 +2092,9 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
        financial returns.* Computational Statistics & Data Analysis, 59 (1),
        52-69.
     """
-    import numpy as np
-
     from ..pyvinecopulib_ext import (
       RVineStructure,
       _select_spanning_tree,
-      wdm,
     )
 
     xp = array_namespace(u)
@@ -2052,25 +2135,10 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     # candidate graph is complete (the C++ base tree is a star).
     root = d
 
-    def criterion(col0: Any, col1: Any) -> float:
-      # |wdm| with the selector's n > 10 guard and NaN -> 0. Only the value
-      # columns enter, so a discrete vine selects the tree it would select
-      # continuous; the weighted / NaN-compaction corrections are skipped, this
-      # path being unweighted.
-      if n <= 10:
-        return 0.0
-      a, b = convert(col0), convert(col1)
-      if tree_criterion == "cxi":
-        # Chatterjee's xi measures how far one argument is a function of the
-        # other, so it is not symmetric -- and a spanning-tree edge weight has
-        # to be. `pairwise_cxi` takes the larger of the two directions; taking
-        # one of them would pick a different tree.
-        value = max(
-          float(wdm(a, b, tree_criterion)), float(wdm(b, a, tree_criterion))
-        )
-      else:
-        value = float(abs(wdm(a, b, tree_criterion)))
-      return 0.0 if not np.isfinite(value) else value
+    # Only the value columns enter, so a discrete vine selects the tree it
+    # would select continuous; the weighted / NaN-compaction corrections are
+    # skipped, this path being unweighted.
+    criterion = _make_criterion(tree_criterion, convert, n)
 
     # A node is one edge of the previous tree (a single variable for the base
     # tree). ``prev`` holds the two previous-tree vertex ids that this edge
@@ -2102,6 +2170,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       cand_cols: list[tuple[Any, Any]] = []
       cand_subs: list[Optional[tuple[Any, Any]]] = []
       cand_types: list[tuple[str, str]] = []
+      cand_crits: list[float] = []
       weights: list[float] = []
       # Candidate enumeration mirrors the C++ selector exactly
       # (tools_select.ipp add_allowed_edges_proximity): the outer loop runs
@@ -2156,6 +2225,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
           cand_cols.append((col0, col1))
           cand_subs.append(subs)
           cand_types.append(edge_types)
+          cand_crits.append(float(tau))
           weights.append(weight)
 
       # Ascending candidate index = boost's edge-list (insertion) order, which
@@ -2176,22 +2246,40 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         for e in selected
       ]
       level_types = [cand_types[e] for e in selected]
-      fitted_level: Optional[Sequence[BicopLike]] = None
-      if fit_level is not None and all("d" not in t for t in level_types):
-        fitted_level = fit_level(
-          len(trees), xp.stack(survivors, axis=0), level_types
+      # The weight above only decides which edges survive. Whether a surviving
+      # edge is *fitted* is a second question with the same answer upstream
+      # gives: an edge whose criterion falls below the threshold keeps a
+      # default-constructed pair -- independence -- and `select` is never
+      # called on it (tools_select.ipp fit_or_reuse_pair_copula). At the
+      # default `threshold=0.0` no non-negative criterion is below it, so
+      # nothing here is thresholded.
+      thresholded = [cand_crits[e] < threshold for e in selected]
+      to_fit = [i for i, skip in enumerate(thresholded) if not skip]
+      fitted_level: Optional[dict[int, BicopLike]] = None
+      if (
+        fit_level is not None
+        and to_fit
+        and all("d" not in level_types[i] for i in to_fit)
+      ):
+        got = fit_level(
+          len(trees),
+          xp.stack([survivors[i] for i in to_fit], axis=0),
+          [level_types[i] for i in to_fit],
         )
+        fitted_level = dict(zip(to_fit, got))
       for edge_idx, e in enumerate(selected):
         v0, v1 = cand[e]
         subs, edge_types = cand_subs[e], cand_types[e]
         u_e = survivors[edge_idx]
-        pair = (
-          fitted_level[edge_idx]
-          if fitted_level is not None
-          else _fit_edge_call(
+        pair: BicopLike[ArrayT]
+        if thresholded[edge_idx]:
+          pair = IndependencePair()
+        elif fitted_level is not None:
+          pair = fitted_level[edge_idx]
+        else:
+          pair = _fit_edge_call(
             fit_edge, len(trees), edge_idx, u_e, None, edge_types
           )
-        )
         indices0 = set(nodes[v0]["all_indices"])
         indices1 = set(nodes[v1]["all_indices"])
         # Conditioned pair in the C++ set_sym_diff order: v0's unique variable

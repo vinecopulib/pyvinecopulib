@@ -51,6 +51,7 @@ from ..core import (
   VinecopBase,
 )
 from ..core._discrete import continuous_view
+from ..core._independence import IndependencePair
 from ..core.vinecop_base import _NotBatchable
 from ..pyvinecopulib_ext import (
   RVineStructure,
@@ -491,10 +492,33 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         fit_edge,
         var_types=list(var_types) or None,
         fit_level=level_hook,
+        tree_criterion=controls.tree_criterion,
+        threshold=controls.threshold,
+        to_numpy=lambda t: t.detach().cpu().numpy(),
       )
     # Store the continuous grids; `_get_pair_copula` re-wraps a discrete edge,
-    # so the ModuleList holds only real nn.Modules.
-    modules = [[continuous_view(p) for p in row] for row in pairs]
+    # so the ModuleList holds only real nn.Modules. A thresholded edge arrives
+    # from `select` as a `core.IndependencePair`, which is not one -- it becomes
+    # the grid that *is* independence, whose `pdf` is exactly 1 and whose
+    # h-functions are exactly the identity, so it stores, moves and pickles like
+    # any other pair.
+    modules = [
+      [
+        # A thresholded edge arrives from the engines as a
+        # `core.IndependencePair`, which is not an `nn.Module`. The
+        # no-argument `TorchBicop` *is* the independence copula -- a 2x2
+        # sentinel that short-circuits every method on `is_indep`, exactly
+        # rather than to rounding -- so it needs no grid of its own and
+        # cannot disagree with its siblings about one. `u_t.device`, as
+        # `fit_edge` uses: `controls.device` is `None` whenever the caller
+        # let the data carry the placement.
+        TorchBicop(device=u_t.device, dtype=eff_dtype)
+        if isinstance(p, IndependencePair)
+        else continuous_view(p)
+        for p in row
+      ]
+      for row in pairs
+    ]
     out = cls(
       pair_copulas=cast("list[list[TorchBicop]]", modules),
       structure=structure,
