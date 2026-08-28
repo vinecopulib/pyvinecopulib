@@ -136,21 +136,21 @@ default="tau"
       as it converges, which trades a larger working set for far fewer
       kernel launches.
 
-      That trade pays where launches cost something, and it does not pay
-      everywhere. On CUDA a whole vine fit is roughly 1.2-2.7x faster over
-      ``d`` in 5..20 and ``n`` in 2000..12000, most at moderate size and
-      least at large ``n``, where the fit is arithmetic-bound and there was
-      little overhead to remove. **The gain is not monotone: at ``d = 20``
-      and large ``n`` it reverses to about 0.95x**, the level's working set
-      having grown past what batching buys, so that corner is a few percent
-      slower unless the flag is switched off. Worth it against 2-3x at
-      moderate size, but a real corner rather than a rounding error.
+      That trade pays where launches cost something. On CUDA a whole vine
+      fit is 1.3-4.0x faster over ``d`` in 5..20 and ``n`` in 2000..12000,
+      on both the fixed-structure and the selecting path, and never slower
+      than fitting edge at a time. It wins least at large ``n``, where the
+      fit is arithmetic-bound and there was little overhead to remove.
 
-      Sizing that corner needs care, and the numbers here come from
-      interleaving the two arms over five repetitions rather than from a
-      single run: on a thermally throttling laptop a lone measurement of
-      these cells moves by half again, enough to invent a reversal where
-      there is none or hide one that is there.
+      The working set does not grow with the level, so there is no size at
+      which the trade inverts: the kernel evaluation blocks its grid axis
+      against a memory budget, and the block shrinks as ``n`` and the level
+      width rise. Peak stays near 280 MiB whether the vine is ``d = 9`` at
+      ``n = 12000`` or ``d = 25`` at ``n = 20000``.
+
+      Figures come from interleaving the two arms and taking medians: on a
+      thermally throttling laptop a lone measurement of these cells moves by
+      half again, which is enough to invent a reversal or hide one.
 
       On cpu it is 0.44-1.05x at one torch thread -- mostly slower, there
       being no launch overhead to amortize. Many threads favor it again,

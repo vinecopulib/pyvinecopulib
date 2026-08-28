@@ -207,6 +207,41 @@ def test_evaluation_does_not_round_trip_through_the_host(
   c.assert_no_d2h(f"TorchVinecop.{op}")
 
 
+def test_batched_fit_peak_memory_stays_bounded(device: str) -> None:
+  """A wide level on a long sample does not scale the footprint with either.
+
+  The batched fit's peak lives in the kernel evaluation's temporaries, which
+  a fixed grid block grows with both `n` and the level width: this vine held
+  about 1.8 GiB that way, on a card most users have 8 of. Sizing the block
+  from the two instead holds the peak near the budget, which is what makes a
+  `d = 20` fit on real-sized data something a laptop can run at all.
+  """
+  if torch.device(device).type != "cuda":
+    pytest.skip("peak allocation is only observable on cuda")
+  from pyvinecopulib.torch._fit_tll import _KDE_MEM_BUDGET_BYTES
+
+  d, n = 20, 8000
+  u_np = _u(d, n, 7)
+  structure = pv.Vinecop.from_data(
+    u_np,
+    controls=pv.FitControlsVinecop(
+      family_set=[pv.families.tll], num_threads=1, trunc_lvl=20
+    ),
+  ).structure
+  u = torch.as_tensor(u_np, device=device)
+  controls = FitControlsTorchVinecop(
+    device=torch.device(device), batched_fit=True
+  )
+  TorchVinecop.from_data(u, structure, controls=controls)  # warm
+  torch.cuda.empty_cache()
+  torch.cuda.reset_peak_memory_stats()
+  TorchVinecop.from_data(u, structure, controls=controls)
+  peak = torch.cuda.max_memory_allocated()
+  # Generous against the budget, the data and the fitted pairs sitting
+  # outside it, and far under the ~1.8 GiB a fixed block took.
+  assert peak < 3 * _KDE_MEM_BUDGET_BYTES, f"peak {peak / 2**20:.0f} MiB"
+
+
 def test_fit_and_select_run_on_device(device: str) -> None:
   """Fitting and structure selection work with device-resident data."""
   u = _u(4, 600, 11)

@@ -849,6 +849,61 @@ def test_win_smoother_batches_over_leading_dims() -> None:
     )
 
 
+def test_kde_grid_block_bounds_the_working_set() -> None:
+  """The grid block shrinks as the level grows, so the peak does not.
+
+  The kernel evaluation holds six ``(lanes, block, n)`` temporaries, so a
+  fixed block makes peak memory grow with both the sample and the level
+  width. Sizing the block from those two instead keeps the product -- and
+  so the footprint -- inside one budget however wide the level is.
+  """
+  from pyvinecopulib.torch._fit_tll import (
+    _KDE_MEM_BUDGET_BYTES,
+    _kde_grid_block,
+  )
+
+  grid = 900
+  for n, lanes in ((1000, 1), (12000, 1), (12000, 19), (20000, 24)):
+    block = _kde_grid_block(n, lanes, 8, grid)
+    assert 1 <= block <= grid
+    # The bound the sizing exists to hold, except where it has already
+    # bottomed out at a single grid point.
+    if block > 1:
+      assert 6 * 8 * block * n * lanes <= _KDE_MEM_BUDGET_BYTES
+
+  # Wider levels and longer samples both shrink it, never the reverse.
+  assert _kde_grid_block(12000, 19, 8, grid) < _kde_grid_block(
+    12000, 1, 8, grid
+  )
+  assert _kde_grid_block(20000, 1, 8, grid) <= _kde_grid_block(1000, 1, 8, grid)
+  # A small problem is not blocked at all.
+  assert _kde_grid_block(200, 1, 8, grid) == grid
+
+
+@pytest.mark.parametrize("budget", [1 << 20, 8 << 20, 1 << 30])
+def test_kde_grid_block_does_not_change_the_fit(
+  budget: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """Blocking the grid axis is exact, so the budget cannot move a value.
+
+  Grid points do not interact -- each one's density is a mean over the data
+  -- so the block is a scheduling choice and nothing else. Pinned at zero
+  because anything looser would let a real coupling hide.
+  """
+  from pyvinecopulib.torch import _fit_tll
+
+  u = torch.from_numpy(
+    pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]])).sample(
+      1500, seeds=[1, 2, 3]
+    )
+  )
+  monkeypatch.setattr(_fit_tll, "_KDE_MEM_BUDGET_BYTES", 1 << 30)
+  _, reference = _fit_tll.fit_tll_constant(u)
+  monkeypatch.setattr(_fit_tll, "_KDE_MEM_BUDGET_BYTES", budget)
+  _, got = _fit_tll.fit_tll_constant(u)
+  torch.testing.assert_close(got, reference, atol=0.0, rtol=0.0)
+
+
 def test_ace_freezes_each_lane_independently() -> None:
   """A lane's ACE answer does not depend on which lanes it travelled with.
 

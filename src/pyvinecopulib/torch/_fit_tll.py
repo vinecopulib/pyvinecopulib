@@ -303,14 +303,38 @@ def _select_bandwidth_constant(z: Tensor) -> Tensor:
   return mult * cov * scale[..., None, None]
 
 
-#: Grid points per block in :func:`_fit_local_likelihood_constant`, which
-#: bounds peak memory independently of the grid size: the block's live
-#: ``(P, block, n)`` float64 temporaries dominate, so the peak grows with
-#: ``block * n * P`` and not with ``G``. Measured 145 MiB per lane at
-#: ``n = 12000``, so a ``P = 19`` level there holds about 2.7 GiB. Blocking
-#: is exact, grid points not interacting, so this is a memory/latency knob
-#: only.
-_KDE_GRID_BLOCK: int = 256
+#: Peak the grid blocking in :func:`_fit_local_likelihood_constant` aims to
+#: stay under. The block's live ``(P, block, n)`` temporaries dominate the
+#: fit's footprint, and six of them are in flight at once, so the peak is
+#: ``6 * itemsize * block * n * P`` -- measured 48.5 bytes per element at
+#: float64, against 48 predicted. Blocking is exact, grid points not
+#: interacting, so trading block size for memory changes only the launch
+#: count: a level 38 blocks deep instead of 4 costs launches that the
+#: arithmetic hides, where a fixed block costs gigabytes that it does not.
+_KDE_MEM_BUDGET_BYTES: int = 256 * 1024 * 1024
+
+
+def _kde_grid_block(n: int, lanes: int, itemsize: int, grid: int) -> int:
+  """Grid points per block that keep the live temporaries inside the budget.
+
+  Parameters
+  ----------
+  n : int
+      Observations per lane.
+  lanes : int
+      Pairs fitted together.
+  itemsize : int
+      Bytes per element of the working dtype.
+  grid : int
+      Total grid points; the block never exceeds it.
+
+  Returns
+  -------
+  int
+      Block size, at least one.
+  """
+  per_point = 6 * itemsize * n * max(lanes, 1)
+  return max(1, min(grid, _KDE_MEM_BUDGET_BYTES // max(per_point, 1)))
 
 
 def _fit_local_likelihood_constant(
@@ -326,10 +350,11 @@ def _fit_local_likelihood_constant(
   Evaluated in blocks of grid points rather than all at once. C++ loops one
   grid point at a time (``tll.ipp``); the two extremes bracket the same
   computation, because a grid point's density is a mean over the data and
-  nothing couples one grid point to another. Blocking is what keeps peak
-  memory independent of the grid size: unblocked, the intermediate is
-  ``(..., G, n)`` several times over, which at ``G = 900`` and
-  ``n = 12000`` is gigabytes per lane.
+  nothing couples one grid point to another. Blocking is therefore exact,
+  and the block is sized from ``n`` and the lane count so the peak stays
+  near :data:`_KDE_MEM_BUDGET_BYTES` however wide the level is -- a fixed
+  block makes the footprint grow with both, which is what a level of a
+  large vine on a large sample runs out of memory doing.
   """
   # Closed forms rather than `torch.linalg.inv` / `det`: the factor is 2x2
   # lower-triangular, and `inv` dispatches to cuSOLVER and reads its `info`
@@ -347,9 +372,15 @@ def _fit_local_likelihood_constant(
   zd0 = ia[..., None] * z_data[..., 0]
   zd1 = ib[..., None] * z_data[..., 0] + ic[..., None] * z_data[..., 1]
   const = (_SQRT_2PI_INV * _SQRT_2PI_INV) * det_irB
+  lanes = 1
+  for extent in z_data.shape[:-2]:
+    lanes *= int(extent)
+  block = _kde_grid_block(
+    int(z_data.shape[-2]), lanes, z_data.element_size(), int(z.shape[0])
+  )
   out = []
-  for lo in range(0, z.shape[0], _KDE_GRID_BLOCK):
-    zb = z[lo : lo + _KDE_GRID_BLOCK]
+  for lo in range(0, z.shape[0], block):
+    zb = z[lo : lo + block]
     zg0 = ia[..., None] * zb[:, 0]
     zg1 = ib[..., None] * zb[:, 0] + ic[..., None] * zb[:, 1]
     d0 = zd0[..., None, :] - zg0[..., :, None]
