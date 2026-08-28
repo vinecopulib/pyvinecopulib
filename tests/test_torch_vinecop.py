@@ -1414,6 +1414,66 @@ def test_load_state_dict_drops_the_stacked_bake() -> None:
   )
 
 
+def test_cxi_criterion_thresholds_nothing_at_zero() -> None:
+  """A negative criterion must not fall below a threshold of zero.
+
+  `calculate_criterion` returns `std::fabs(w)` for *every* branch, `cxi`
+  included. This port applied the absolute value inside the branches and the
+  `cxi` one -- `max(xi12, xi21)`, mirroring `pairwise_cxi` -- did not, so a
+  criterion could be negative. Chatterjee's xi routinely is on weak
+  dependence: symmetrized, it came out negative in 102 of 400 independent
+  samples.
+
+  That was harmless while the criterion only set a spanning-tree weight, and
+  stopped being harmless once a criterion below the threshold also decides
+  whether an edge is fitted at all. With the default `threshold=0.0`, a
+  negative criterion is below it, so edges silently became independence: on
+  independent uniforms this thresholded something in 16 of 18 fixtures, up to
+  7 pairs in one d = 6 vine.
+
+  This fixture is the worst of those. Independent data is the point -- it is
+  where xi has no signal and sits astride zero.
+  """
+  rng = np.random.default_rng(1000 + 17 * 2 + 6)
+  u = rng.uniform(size=(400, 6))
+  controls = FitControlsTorchVinecop(
+    trunc_lvl=20, tree_criterion="cxi", threshold=0.0
+  )
+  fitted = TorchVinecop.from_data(torch.as_tensor(u), controls=controls)
+  # A thresholded edge becomes the grid that is exactly one everywhere; a
+  # fitted one never is, however weak the dependence.
+  # `nn.Module.__getattr__` returns a union no checker can narrow.
+  rows: Any = fitted.pair_copulas
+  thresholded = [
+    (t, e)
+    for t in range(fitted.trunc_lvl)
+    for e in range(6 - t - 1)
+    if bool((rows[t][e].interp_grid.values == 1.0).all())
+  ]
+  assert thresholded == [], f"thresholded at threshold=0.0: {thresholded}"
+
+  cpp = pv.Vinecop.from_data(
+    u,
+    controls=pv.FitControlsVinecop(
+      family_set=[pv.families.tll],
+      num_threads=1,
+      trunc_lvl=20,
+      tree_criterion="cxi",
+      threshold=0.0,
+    ),
+  )
+  np.testing.assert_array_equal(
+    np.asarray(fitted.structure.matrix), np.asarray(cpp.structure.matrix)
+  )
+  u_eval = rng.uniform(0.05, 0.95, size=(120, 6))
+  np.testing.assert_allclose(
+    fitted.pdf(torch.as_tensor(u_eval)).numpy(),
+    cpp.pdf(u_eval),
+    rtol=1e-9,
+    atol=1e-11,
+  )
+
+
 @pytest.mark.parametrize("threshold", [0.0, 0.3, 0.5, 0.95])
 def test_threshold_matches_pvvinecop(threshold: float) -> None:
   """A thresholded edge holds independence, as the compiled selector's does.

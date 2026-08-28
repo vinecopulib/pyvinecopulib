@@ -26,8 +26,10 @@ from .protocols import ArrayT
 class IndependencePair(BicopBase[ArrayT]):
   """The independence copula ``C(u1, u2) = u1 * u2``.
 
-  Every member is the closed form rather than an inherited numerical one, so
-  nothing here bisects and nothing depends on a grid.
+  The evaluation surface is the closed form rather than an inherited
+  numerical one, so nothing here bisects and nothing depends on a grid.
+  ``sample`` and ``loglik`` come from :class:`BicopBase` unchanged, the
+  closed form buying them nothing.
 
   See Also
   --------

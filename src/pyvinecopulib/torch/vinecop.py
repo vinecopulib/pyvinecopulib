@@ -505,7 +505,10 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         cls._independence_grid(
           grid_size=bc_controls.grid_size,
           cache_integrals=cache_integrals,
-          device=eff_device,
+          # `u_t.device`, as `fit_edge` uses -- `eff_device` is
+          # `controls.device`, which is `None` whenever the caller let the data
+          # choose, and would put this pair on the cpu beside cuda siblings.
+          device=u_t.device,
           dtype=eff_dtype,
         )
         if isinstance(p, IndependencePair)
@@ -540,9 +543,11 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     A thresholded edge is not fitted, so it needs a pair the ``ModuleList``
     can hold. A grid of ones is that pair exactly rather than approximately:
     a bilinear interpolant of a constant is the constant, so ``pdf`` is
-    exactly 1, ``hfunc1`` / ``hfunc2`` are exactly the identity, and every
-    one of them agrees with the compiled ``indep`` ``Bicop`` bit for bit.
-    ``norm_maxiter=0`` because uniform margins need no renormalizing.
+    exactly 1 and the h-functions are exactly the identity. Measured against
+    the compiled ``indep`` ``Bicop``, ``pdf``, ``hfunc1`` / ``hfunc2`` and
+    ``hinv1`` / ``hinv2`` agree at exactly 0.0; ``cdf`` differs by 2.2e-16,
+    one rounding on the product. ``norm_maxiter=0`` because uniform margins
+    need no renormalizing.
 
     Parameters
     ----------

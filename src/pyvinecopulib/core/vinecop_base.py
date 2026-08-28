@@ -2074,8 +2074,12 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
           float(wdm(a, b, tree_criterion)), float(wdm(b, a, tree_criterion))
         )
       else:
-        value = float(abs(wdm(a, b, tree_criterion)))
-      return 0.0 if not np.isfinite(value) else value
+        value = float(wdm(a, b, tree_criterion))
+      # `calculate_criterion` takes the absolute value of *every* branch on the
+      # way out, `cxi` included -- and xi is routinely negative on weak
+      # dependence, so leaving that to the branches made a criterion that can
+      # sit below a `threshold` of zero.
+      return 0.0 if not np.isfinite(value) else abs(value)
 
     # A node is one edge of the previous tree (a single variable for the base
     # tree). ``prev`` holds the two previous-tree vertex ids that this edge

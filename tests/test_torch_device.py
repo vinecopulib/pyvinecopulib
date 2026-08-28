@@ -10,6 +10,8 @@ compiled library: it is a lower precision, so the float64 tolerances do not
 apply to it and loosening them would weaken the gate that does.
 """
 
+from typing import Any
+
 import numpy as np
 import pytest
 
@@ -254,6 +256,40 @@ def test_fit_and_select_run_on_device(device: str) -> None:
   assert vine.pdf(ut).device.type == torch.device(device).type
   selected = TorchVinecop.from_data(ut, controls=ctl)
   assert selected.pdf(ut).device.type == torch.device(device).type
+
+
+@pytest.mark.parametrize("threshold", [0.3, 0.5])
+def test_thresholded_pairs_land_where_the_data_is(
+  device: str, threshold: float
+) -> None:
+  """A thresholded edge follows the data, not `controls.device`.
+
+  A thresholded edge is not fitted, so its pair is constructed rather than
+  derived from `u`, and it has to be placed deliberately. Taking the
+  placement from `controls.device` gets it wrong whenever the caller left
+  that `None` and let the data choose -- which is the documented way to pass
+  an already-resident tensor.
+
+  Both thresholds are here because the failure has two faces. At 0.3 the
+  level is mixed, so fitted pairs sit on the data's device and thresholded
+  ones on the cpu, and evaluation raises. At 0.5 every pair on this fixture
+  is thresholded, nothing raises, and the whole vine quietly lands on the
+  cpu with its data on the accelerator.
+  """
+  d, n = 6, 400
+  u = _u(d, n, 7)
+  ut = torch.as_tensor(u, device=device)
+  # `controls.device` deliberately left None: the data carries the placement.
+  vine = TorchVinecop.from_data(
+    ut, controls=FitControlsTorchVinecop(trunc_lvl=20, threshold=threshold)
+  )
+  want = torch.device(device).type
+  rows: Any = vine.pair_copulas
+  for t in range(vine.trunc_lvl):
+    for e in range(d - t - 1):
+      got = rows[t][e].interp_grid.values.device.type
+      assert got == want, f"pair ({t}, {e}) on {got}, expected {want}"
+  assert vine.pdf(ut).device.type == want
 
 
 @pytest.mark.parametrize("var_types", [["d", "c", "c"], ["c", "d", "d"]])
