@@ -52,7 +52,14 @@ from __future__ import annotations
 
 import contextlib
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Optional, cast
+from typing import (
+  TYPE_CHECKING,
+  Any,
+  Callable,
+  Optional,
+  Sequence,
+  cast,
+)
 
 from array_api_compat import array_namespace
 
@@ -101,6 +108,16 @@ __all__ = ["VinecopBase"]
 #: receives ``var_types=[t1, t2]`` and a four-column ``u_e``, so the alias cannot
 #: pin the arity -- a ``Callable`` has no way to express a keyword argument.
 FitEdge = Callable[..., BicopLike]
+
+#: ``(tree, u_level, types) -> list[BicopLike]``, fitting a whole tree level
+#: at once: the optional companion to ``FitEdge``, for a backend whose
+#: fitter carries a leading pair axis. ``u_level`` stacks the level's edges in
+#: ascending edge order and ``types`` gives each edge's pair of variable types,
+#: so the callback needs no structural knowledge. A subclass that supplies one
+#: gets it preferred over ``fit_edge``; everything else keeps working, since a
+#: level is only ever fitted this way when every one of its edges is
+#: continuous -- a mixed level cannot stack, its edges having different widths.
+FitLevel = Callable[[int, Any, "list[tuple[str, str]]"], "Sequence[BicopLike]"]
 
 
 def _fit_edge_call(
@@ -226,6 +243,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   _batched: Any
   #: Array namespace of this vine's working arrays; ``None`` until resolved.
   _xp: Any
+  #: Array type ``_xp`` was resolved from; the memo is only good for that type.
+  _xp_type: Any
   _var_types: tuple[str, ...]
   _n_discrete: int
   #: Variable index -> its offset within the compact layout's left-limit block;
@@ -292,6 +311,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     self._cond_pos_cache = {}
     self._batched = None
     self._xp = None
+    self._xp_type = None
     self._bind_var_types(var_types)
 
   def _bind_var_types(self, var_types: Optional[list[str]]) -> None:
@@ -1009,29 +1029,34 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   def _namespace(self, a: Any) -> Any:
     """The array namespace of this vine's working arrays, resolved once.
 
-    :meth:`_prep` coerces every input to the vine's own array type, so the
-    namespace is a property of the vine rather than of the call. Resolving it
-    per call would put a type-dispatch table walk inside each cascade, which a
-    tracing compiler then has to trace through -- ``array_namespace`` is
-    memoized on the type, but the memo is itself Python that ends up in the
-    graph. Every entry point resolves it through :meth:`_prep`, which runs
-    before the cascade, so by the time a cascade asks it is already answered.
+    Resolving it per call would put a type-dispatch table walk inside each
+    cascade, which a tracing compiler then has to trace through --
+    ``array_namespace`` is memoized on the type, but the memo is itself Python
+    that ends up in the graph. Every entry point resolves it through
+    :meth:`_prep`, which runs before the cascade, so by the time a cascade asks
+    it is already answered.
+
+    The memo is keyed on the array type rather than held for the vine's
+    lifetime. Only a subclass that coerces in :meth:`_prep` -- as
+    :class:`~pyvinecopulib.torch.TorchVinecop` does -- guarantees one type per
+    vine; the default :meth:`_prep` works on whatever namespace it is handed,
+    so a vine may legitimately see two. An identity check is still far cheaper
+    than the dispatch walk it avoids.
 
     Parameters
     ----------
     a : array
-        Any array already coerced to the working type.
+        An array of the vine's working type.
 
     Returns
     -------
     module
         The array-API namespace for ``a``.
     """
-    xp = self._xp
-    if xp is None:
-      xp = array_namespace(a)
-      object.__setattr__(self, "_xp", xp)
-    return xp
+    if self._xp is None or self._xp_type is not type(a):
+      object.__setattr__(self, "_xp", array_namespace(a))
+      object.__setattr__(self, "_xp_type", type(a))
+    return self._xp
 
   def __getstate__(self) -> dict:
     """The picklable state: everything but the resolved array namespace.
@@ -1050,6 +1075,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     raw = cast("dict[str, Any]", super().__getstate__() or {})
     state = dict(raw)
     state["_xp"] = None
+    state["_xp_type"] = None
     return state
 
   def _resolve_batched(
@@ -1705,6 +1731,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     context: Optional[ConditioningContext] = None,
     x: Optional[Any] = None,
     var_types: Optional[list[str]] = None,
+    fit_level: Optional[FitLevel] = None,
   ) -> list[list[BicopLike]]:
     """Fit pair copulas tree-by-tree along a fixed structure (returns them).
 
@@ -1741,6 +1768,14 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     var_types : list of str, optional
         Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete), in
         variable order; ``None`` means all continuous.
+    fit_level : callable, optional
+        ``(tree, u_level, types) -> list[BicopLike]``, fitting a whole tree
+        level at once; see ``FitLevel``. Preferred over ``fit_edge``
+        for a level whose edges are all continuous and unconditional,
+        which is the only shape that stacks -- a discrete edge is four
+        columns wide where a continuous one is two. ``None`` fits every
+        edge separately, which is what every caller did before the hook
+        existed.
 
     Returns
     -------
@@ -1810,13 +1845,37 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     pairs: list[list[BicopLike]] = []
     for tree in range(trunc_lvl):
       row: list[BicopLike] = []
-      for edge in range(d - tree - 1):
-        col0, col1, subs, edge_types = edge_columns(
+      # Every edge of one tree reads only columns finalized by earlier trees
+      # -- `min_array(tree, edge) - 1 > edge`, so the column an edge reads
+      # second is written later in this same tree -- which is why upstream
+      # runs a level on a thread pool. Gathering the level's inputs before
+      # fitting any of it is the same reordering, and it is what lets a
+      # level be fitted in one call.
+      level = [
+        edge_columns(
           s, pair_types, tree, edge, hfunc1, hfunc2, hfunc1_sub, hfunc2_sub
         )
-        u_e = stack_edge(xp, col0, col1, subs)
-        x_e = edge_context_for(tree, edge)
-        edge_copula = _fit_edge_call(fit_edge, tree, edge, u_e, x_e, edge_types)
+        for edge in range(d - tree - 1)
+      ]
+      inputs = [stack_edge(xp, c0, c1, subs) for c0, c1, subs, _ in level]
+      contexts = [edge_context_for(tree, e) for e in range(len(level))]
+      # Per-edge type *pairs*, distinct from the per-variable `types` above.
+      level_types = [t for _, _, _, t in level]
+      fitted: Optional[Sequence[BicopLike]] = None
+      if (
+        fit_level is not None
+        and all(c is None for c in contexts)
+        and all("d" not in t for t in level_types)
+      ):
+        fitted = fit_level(tree, xp.stack(inputs, axis=0), level_types)
+      for edge in range(d - tree - 1):
+        _, _, subs, edge_types = level[edge]
+        u_e, x_e = inputs[edge], contexts[edge]
+        edge_copula = (
+          fitted[edge]
+          if fitted is not None
+          else _fit_edge_call(fit_edge, tree, edge, u_e, x_e, edge_types)
+        )
         row.append(edge_copula)
         if s.needed_hfunc1(tree, edge):
           hfunc1[:, edge] = _pair_eval(edge_copula.hfunc1, u_e, x_e)
@@ -1838,6 +1897,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     u: Any,
     fit_edge: FitEdge,
     *,
+    fit_level: Optional[FitLevel] = None,
     trunc_lvl: Optional[int] = None,
     tree_criterion: str = "tau",
     threshold: float = 0.0,
@@ -1886,6 +1946,12 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         ``var_types=[t1, t2]``; the pair it returns must read that layout, so
         wrap a continuous one in
         :class:`~pyvinecopulib.core.DiscretePair`.
+    fit_level : callable, optional
+        ``(tree, u_level, types) -> list[BicopLike]``, fitting a whole tree
+        level at once; see ``FitLevel``. Preferred over ``fit_edge`` for a
+        level whose surviving edges are all continuous. Whatever it returns
+        must still be per-slot ``flip``-able, since finalization reorients
+        reused pairs.
     trunc_lvl : int, optional
         Maximum number of trees to select (default: ``d - 1``, i.e. untruncated).
     tree_criterion : str, default "tau"
@@ -2101,13 +2167,30 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       tree_edges: list[tuple[int, int, list[int]]] = []
       new_nodes: list[dict[str, Any]] = []
       tree_records: dict[Any, tuple[int, Any]] = {}
+      # The surviving edges' inputs were all materialized above, off the
+      # previous tree's nodes, and each fitted pair is written to a fresh
+      # `new_nodes` -- so unlike `fit`, this level needs no reordering to be
+      # fitted in one call.
+      survivors = [
+        stack_edge(xp, cand_cols[e][0], cand_cols[e][1], cand_subs[e])
+        for e in selected
+      ]
+      level_types = [cand_types[e] for e in selected]
+      fitted_level: Optional[Sequence[BicopLike]] = None
+      if fit_level is not None and all("d" not in t for t in level_types):
+        fitted_level = fit_level(
+          len(trees), xp.stack(survivors, axis=0), level_types
+        )
       for edge_idx, e in enumerate(selected):
         v0, v1 = cand[e]
-        col0, col1 = cand_cols[e]
         subs, edge_types = cand_subs[e], cand_types[e]
-        u_e = stack_edge(xp, col0, col1, subs)
-        pair = _fit_edge_call(
-          fit_edge, len(trees), edge_idx, u_e, None, edge_types
+        u_e = survivors[edge_idx]
+        pair = (
+          fitted_level[edge_idx]
+          if fitted_level is not None
+          else _fit_edge_call(
+            fit_edge, len(trees), edge_idx, u_e, None, edge_types
+          )
         )
         indices0 = set(nodes[v0]["all_indices"])
         indices1 = set(nodes[v1]["all_indices"])

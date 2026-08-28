@@ -109,10 +109,9 @@ default="tau"
       If ``True``, precompute the cdf / hfunc / hinv caches on
       every pair copula's interpolation grid. Cached lookups are
       1–2 orders of magnitude faster than the on-the-fly path
-      with a ~1e-3 IAE cost. ``None`` resolves to ``True``, or to
-      ``False`` on a vine with discrete variables, where a discrete
-      edge differences the cached cdf and an explicit ``True``
-      raises.
+      with a ~1e-3 IAE cost. ``None`` resolves to ``True``, on a
+      discrete vine too: the tables reconstruct the integral exactly,
+      so a discrete edge can difference them.
   device : torch.device or None, default=None
       Target torch device for the fitted pair copulas. ``None``
       keeps the input's device.
@@ -129,6 +128,51 @@ default="tau"
       input shape. Off by default for that reason: a single evaluation is
       slower compiled than not. Results agree with the eager path to
       floating point, not exactly.
+  batched_fit : bool or None, default=None
+      Fit a whole tree level in one call rather than one edge at a time.
+      ``None`` resolves per device -- on for CUDA, off otherwise -- the same
+      shape as the evaluation cascade's ``batched``. The per-level fitter
+      advances every edge's bandwidth search together and freezes each lane
+      as it converges, which trades a larger working set for far fewer
+      kernel launches.
+
+      That trade pays where launches cost something. On CUDA a whole vine
+      fit is 1.3-4.0x faster over ``d`` in 5..20 and ``n`` in 2000..12000,
+      on both the fixed-structure and the selecting path, and never slower
+      than fitting edge at a time. It wins least at large ``n``, where the
+      fit is arithmetic-bound and there was little overhead to remove.
+
+      The working set does not grow with the level, so there is no size at
+      which the trade inverts: the kernel evaluation blocks its grid axis
+      against a memory budget, and the block shrinks as ``n`` and the level
+      width rise. Peak stays near 280 MiB whether the vine is ``d = 9`` at
+      ``n = 12000`` or ``d = 25`` at ``n = 20000``.
+
+      Figures come from interleaving the two arms and taking medians: on a
+      thermally throttling laptop a lone measurement of these cells moves by
+      half again, which is enough to invent a reversal or hide one.
+
+      On cpu it is 0.44-1.05x at one torch thread -- mostly slower, there
+      being no launch overhead to amortize. Many threads favor it again,
+      the larger kernels parallelizing better than many small ones, and
+      torch uses every core by default, so the cpu default is the
+      conservative reading of a measurement that moves with thread count
+      rather than a claim that batching cannot pay there. Either way the
+      torch fit is far from competitive with the compiled backend on cpu.
+
+      A level carrying a discrete edge or a conditioning context is always
+      fitted edge at a time: those cannot stack.
+
+      The batched result agrees with the per-edge one to floating point on
+      every device -- not bit for bit, on cpu included. A lane's iterations
+      are independent of its batch-mates, each freezing as it converges,
+      but the arithmetic passes through kernels torch selects by element
+      count: the bandwidth search's `pow` takes a vectorized path past
+      ``2 * Vectorized<double>::size()`` lanes, which is 8 on AVX2 and 4 on
+      NEON. So the last bits depend on how many pairs travelled together,
+      and a machine that vectorizes sooner diverges where another does not.
+      Selected structures still match, the tree criterion being a function
+      of ranks rather than of those bits.
 
   Notes
   -----
@@ -150,6 +194,7 @@ default="tau"
   device: Optional[Any] = None
   dtype: Optional[Any] = None
   compile: bool = False
+  batched_fit: Optional[bool] = None
 
   def __post_init__(self) -> None:
     if self.tree_algorithm not in TREE_ALGORITHMS:

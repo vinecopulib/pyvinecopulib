@@ -54,9 +54,16 @@ def _to_pseudo_obs_continuous(x: Tensor) -> Tensor:
   Mirrors ``tools_stats::to_pseudo_obs`` with no ties (continuous input,
   no jittering needed). C++ uses ``wdm`` ranks; for unique data those are
   the same as :func:`torch.argsort` ranks.
+
+  Both sorts are stable, so tied inputs get a defined order rather than
+  whichever one the sort happens to produce for the shape it was handed --
+  a leading pair axis otherwise makes the tie-break shape-dependent. Ties
+  reach here even on continuous data: callers trim to
+  ``(1e-10, 1 - 1e-10)`` first, which collapses everything beyond the clamp
+  into one group.
   """
-  n = x.shape[0]
-  ranks = x.argsort(dim=0).argsort(dim=0)
+  n = x.shape[-2]
+  ranks = x.argsort(dim=-2, stable=True).argsort(dim=-2, stable=True)
   return (ranks + 1).to(x.dtype) / (n + 1)
 
 
@@ -69,22 +76,16 @@ def _win_smoother(x: Tensor, wl: int) -> Tensor:
   the edges are flat. Batched over any leading dimensions; the window runs
   along the last one.
 
-  A box mean is a difference of prefix sums, which is what this computes.
-  ``tools_stats::win`` reaches the same quantity through an FFT, and this
-  port previously convolved directly against a ``2*wl + 1``-tap kernel --
-  but ``wl`` is ``ceil(n / 5)``, so that kernel grows with the data and the
-  convolution costs ``O(n**2)``. Measured on one GPU at ``n = 12384``
-  (4955 taps): 14.2 ms for the direct convolution, 0.19 ms for the FFT,
-  0.17 ms here.
+  A box mean is a difference of prefix sums, which is what this computes in
+  ``O(n)``; ``tools_stats::win`` reaches the same quantity by FFT. Since
+  ``wl`` is ``ceil(n / 5)`` the window grows with the data, so a direct
+  convolution against the ``2*wl + 1``-tap kernel would be ``O(n**2)``.
 
-  The trade this makes is precision, not correctness: differencing two
-  prefix sums loses relative accuracy where a convolution does not, since
-  both operands carry the magnitude of the whole partial sum rather than of
-  the window. ACE smooths standardized scores, so the partial sums stay
-  ``O(sqrt(n))`` and the loss is immaterial -- measured at most 4.8e-15 on
-  this function's output, and 8e-13 through a whole fit against a C++
-  parity gate of 1e-11. On mean-shifted data the ratio would grow, but no
-  caller here has any.
+  Differencing two prefix sums costs relative accuracy, because both
+  operands carry the magnitude of the whole partial sum rather than of the
+  window. That is immaterial for ACE, which smooths standardized scores so
+  the partial sums stay ``O(sqrt(n))``, and it is the constraint a future
+  caller has to check: on mean-shifted input the ratio grows.
   """
   n = x.shape[-1]
   zero = torch.zeros(x.shape[:-1] + (1,), dtype=x.dtype, device=x.device)
@@ -107,9 +108,12 @@ def _cef(x: Tensor, ind: Tensor, ranks: Tensor, wl: int) -> Tensor:
   """``cef`` helper: ``win(x[ind], wl)[ranks]``.
 
   Smooths ``x`` in sorted order, then maps back to the original order.
-  Mirrors ``tools_stats::cef``.
+  Mirrors ``tools_stats::cef``. Batched over any leading dimensions: the
+  two permutations are per-lane, so they are applied with ``gather``
+  rather than by fancy indexing.
   """
-  return _win_smoother(x[ind], wl)[ranks]
+  sorted_x = torch.gather(x, -1, ind)
+  return torch.gather(_win_smoother(sorted_x, wl), -1, ranks)
 
 
 #: ``tools_stats::ace``'s outer tolerance, at float64. Scaled by the eps
@@ -135,13 +139,35 @@ def _ace(
   Mirrors ``tools_stats::ace`` for the unweighted bivariate case (the
   only one that the TLL ``constant`` bandwidth path needs).
 
+  Batched over any leading dimensions. Both convergence loops advance every
+  lane together and *freeze* each as it converges -- its state, including
+  its two trip counters, stops moving while the others carry on -- so
+  *which* lanes a pair travelled with does not change its answer at all,
+  and its iteration count is the one its own data earns.
+
+  *How many* it travelled with is a separate matter and does move the last
+  bits, here as everywhere in the batched fit: torch selects elementwise
+  kernels by element count. The exact half of that promise is pinned by
+  ``test_ace_freezes_each_lane_independently``, which varies the companions
+  at a fixed shape.
+
+  A batch runs until its slowest lane converges, so it trades the sum of the
+  lanes' iterations for their maximum while doing the full batch's arithmetic
+  at every step. How much that wins depends on how alike the lanes are, and
+  iteration counts rise as dependence falls -- with no signal to find, the
+  outer criterion grinds against its own rounding noise until it hits
+  ``outer_iter_max``. One near-independent lane therefore paces a whole
+  level, and the deeper trees, whose pairs sit nearer independence, are
+  where that bites.
+
   Args:
-    data: shape ``(n, 2)``.
+    data: shape ``(..., n, 2)``.
 
   Returns:
-    ``(n, 2)`` tensor of the ACE-transformed scores ``phi``.
+    ``(..., n, 2)`` tensor of the ACE-transformed scores ``phi``.
   """
-  n = data.shape[0]
+  n = data.shape[-2]
+  batch = data.shape[:-2]
   dtype, device = data.dtype, data.device
   if outer_abs_tol is None:
     outer_abs_tol = _ACE_OUTER_ABS_TOL * float(
@@ -149,56 +175,94 @@ def _ace(
     )
   wl = int(math.ceil(n / 5.0))
 
-  # Two contiguous vectors rather than the columns of one `(n, 2)` matrix:
-  # every operation below then runs on a contiguous buffer instead of a
-  # stride-2 view, which is the same arithmetic in the same order but fewer
-  # and cheaper kernels. The pair is stacked back into `(n, 2)` on return.
-  ind0 = data[:, 0].argsort(stable=True)
-  ind1 = data[:, 1].argsort(stable=True)
-  positions = torch.arange(n, device=device)
-  ranks0 = torch.empty(n, dtype=torch.long, device=device)
-  ranks1 = torch.empty(n, dtype=torch.long, device=device)
-  ranks0[ind0] = positions
-  ranks1[ind1] = positions
+  # Two contiguous buffers rather than the columns of one `(..., n, 2)`
+  # matrix: every operation below then runs on a contiguous buffer instead
+  # of a stride-2 view, which is the same arithmetic in the same order but
+  # fewer and cheaper kernels. The pair is stacked back on return.
+  ind0 = data[..., 0].argsort(dim=-1, stable=True)
+  ind1 = data[..., 1].argsort(dim=-1, stable=True)
+  positions = torch.arange(n, device=device).expand(batch + (n,))
+  ranks0 = torch.empty_like(ind0).scatter_(-1, ind0, positions)
+  ranks1 = torch.empty_like(ind1).scatter_(-1, ind1, positions)
 
   shift = (n - 1) / 2.0 - 1.0
   scale = math.sqrt(n * (n - 1) / 12.0)
   phi0 = (ranks0.to(dtype) - shift) / scale
   phi1 = (ranks1.to(dtype) - shift) / scale
 
-  outer_iter, outer_eps, outer_abs_err = 1, 1.0, 1.0
-  while outer_iter <= outer_iter_max and outer_abs_err > outer_abs_tol:
-    inner_iter, inner_eps, inner_abs_err = 1, 1.0, 1.0
-    while inner_iter <= inner_iter_max and inner_abs_err > inner_abs_tol:
-      v = _cef(phi0, ind1, ranks1, wl)
-      v = v - v.sum() / n
-      phi1 = v / ((v**2).sum() / (n - 1)).sqrt()
-      prev = inner_eps
-      inner_eps = ((phi1 - phi0) ** 2).sum().item() / n
-      inner_abs_err = abs(prev - inner_eps)
-      inner_iter += 1
-    v = _cef(phi1, ind0, ranks0, wl)
-    v = v - v.sum() / n
-    phi0 = v / ((v**2).sum() / (n - 1)).sqrt()
-    prev = outer_eps
-    outer_eps = ((phi1 - phi0) ** 2).sum().item() / n
-    outer_abs_err = abs(prev - outer_eps)
-    outer_iter += 1
+  # Per-lane loop state. A lane that has converged is *frozen*: its state
+  # stops moving while the others keep iterating, which is what reproduces
+  # the per-lane sequential answer exactly rather than approximately. The
+  # trip counters are frozen too, because the caps are per-lane.
+  ones = torch.ones(batch, dtype=dtype, device=device)
+  longs = torch.ones(batch, dtype=torch.long, device=device)
+  # Clones, not aliases: `ones` / `longs` are the templates every outer
+  # iteration re-clones the inner state from, so an in-place write to either
+  # of these would corrupt them.
+  outer_eps, outer_abs_err, outer_iter = (
+    ones.clone(),
+    ones.clone(),
+    longs.clone(),
+  )
+  outer_live = (outer_iter <= outer_iter_max) & (outer_abs_err > outer_abs_tol)
 
-  return torch.stack([phi0, phi1], dim=1)
+  while bool(outer_live.any()):
+    inner_eps, inner_abs_err = ones.clone(), ones.clone()
+    inner_iter = longs.clone()
+    inner_live = (
+      outer_live
+      & (inner_iter <= inner_iter_max)
+      & (inner_abs_err > inner_abs_tol)
+    )
+    while bool(inner_live.any()):
+      v = _cef(phi0, ind1, ranks1, wl)
+      v = v - v.sum(-1, keepdim=True) / n
+      cand = v / ((v**2).sum(-1, keepdim=True) / (n - 1)).sqrt()
+      eps = ((cand - phi0) ** 2).sum(-1) / n
+      # `phi1` is written by the inner loop, so it is gated on `inner_live`
+      # -- which carries `outer_live`. A lane whose *outer* loop converged
+      # must not have its `phi1` moved by other lanes' inner iterations.
+      phi1 = torch.where(inner_live.unsqueeze(-1), cand, phi1)
+      inner_abs_err = torch.where(
+        inner_live, (inner_eps - eps).abs(), inner_abs_err
+      )
+      inner_eps = torch.where(inner_live, eps, inner_eps)
+      inner_iter = torch.where(inner_live, inner_iter + 1, inner_iter)
+      inner_live = (
+        outer_live
+        & (inner_iter <= inner_iter_max)
+        & (inner_abs_err > inner_abs_tol)
+      )
+    v = _cef(phi1, ind0, ranks0, wl)
+    v = v - v.sum(-1, keepdim=True) / n
+    cand = v / ((v**2).sum(-1, keepdim=True) / (n - 1)).sqrt()
+    eps = ((phi1 - cand) ** 2).sum(-1) / n
+    phi0 = torch.where(outer_live.unsqueeze(-1), cand, phi0)
+    outer_abs_err = torch.where(
+      outer_live, (outer_eps - eps).abs(), outer_abs_err
+    )
+    outer_eps = torch.where(outer_live, eps, outer_eps)
+    outer_iter = torch.where(outer_live, outer_iter + 1, outer_iter)
+    outer_live = (outer_iter <= outer_iter_max) & (
+      outer_abs_err > outer_abs_tol
+    )
+
+  return torch.stack([phi0, phi1], dim=-1)
 
 
 def _pearson_cor(x: Tensor) -> Tensor:
-  """Pearson correlation of two columns of ``x: (n, 2)``. Returns a 0-D tensor."""
-  x0 = x[:, 0] - x[:, 0].mean()
-  x1 = x[:, 1] - x[:, 1].mean()
-  return (x0 * x1).sum() / ((x0**2).sum().sqrt() * (x1**2).sum().sqrt())
+  """Pearson correlation of the two columns of ``x: (..., n, 2)``.
+
+  Returns one value per leading lane, so a 0-D tensor for a single pair.
+  """
+  x0 = x[..., 0] - x[..., 0].mean(-1, keepdim=True)
+  x1 = x[..., 1] - x[..., 1].mean(-1, keepdim=True)
+  return (x0 * x1).sum(-1) / ((x0**2).sum(-1).sqrt() * (x1**2).sum(-1).sqrt())
 
 
-def _pairwise_mcor(x: Tensor) -> float:
-  """Maximal correlation via ACE + Pearson. Returns a Python float."""
-  phi = _ace(x)
-  return _pearson_cor(phi).item()
+def _pairwise_mcor(x: Tensor) -> Tensor:
+  """Maximal correlation via ACE + Pearson, one value per leading lane."""
+  return _pearson_cor(_ace(x))
 
 
 def _chol22(B: Tensor) -> Tensor:
@@ -208,25 +272,69 @@ def _chol22(B: Tensor) -> Tensor:
   each of those was a kernel launch for a single element, and on a device
   the launches cost more than the arithmetic.
   """
-  a = B[0, 0].sqrt()
-  b = B[1, 0] / a
-  c = (B[1, 1] - b**2).sqrt()
-  zero = torch.zeros((), dtype=B.dtype, device=B.device)
-  return torch.stack([torch.stack([a, zero]), torch.stack([b, c])])
+  a = B[..., 0, 0].sqrt()
+  b = B[..., 1, 0] / a
+  c = (B[..., 1, 1] - b**2).sqrt()
+  zero = torch.zeros_like(a)
+  return torch.stack(
+    [torch.stack([a, zero], dim=-1), torch.stack([b, c], dim=-1)], dim=-2
+  )
 
 
 def _select_bandwidth_constant(z: Tensor) -> Tensor:
   """Bandwidth matrix for the constant-method local-likelihood KDE.
 
   Mirrors ``TllBicop::select_bandwidth`` for ``method == "constant"``.
+  Batched over any leading dimensions of ``z``, and entirely on device.
+
+  Staying on device is what matches C++ at ``mcor == 0``, where
+  ``std::pow(std::fabs(cor / mcor), 0.5 * mcor)`` is ``pow(inf, 0.0)`` --
+  ``1.0`` by IEEE, where a host-float division raises instead. The division
+  must stay unguarded: a ``clamp_min`` would diverge from upstream rather
+  than agree with it.
   """
-  n = z.shape[0]
-  cor = _pearson_cor(z).clamp(-0.95, 0.95).item()
-  cov = torch.tensor([[1.0, cor], [cor, 1.0]], dtype=z.dtype, device=z.device)
+  n = z.shape[-2]
+  cor = _pearson_cor(z).clamp(-0.95, 0.95)
+  eye = torch.eye(2, dtype=z.dtype, device=z.device)
+  cov = eye + cor[..., None, None] * (1.0 - eye)
   mult = n ** (-1.0 / 3.0)
   mcor = _pairwise_mcor(z)
-  scale = abs(cor / mcor) ** (0.5 * mcor)
-  return mult * cov * scale
+  scale = (cor / mcor).abs() ** (0.5 * mcor)
+  return mult * cov * scale[..., None, None]
+
+
+#: Peak the grid blocking in :func:`_fit_local_likelihood_constant` aims to
+#: stay under. The block's live ``(P, block, n)`` temporaries dominate the
+#: fit's footprint, and six of them are in flight at once, so the peak is
+#: ``6 * itemsize * block * n * P`` -- measured 48.5 bytes per element at
+#: float64, against 48 predicted. Blocking is exact, grid points not
+#: interacting, so trading block size for memory changes only the launch
+#: count: a level 38 blocks deep instead of 4 costs launches that the
+#: arithmetic hides, where a fixed block costs gigabytes that it does not.
+_KDE_MEM_BUDGET_BYTES: int = 256 * 1024 * 1024
+
+
+def _kde_grid_block(n: int, lanes: int, itemsize: int, grid: int) -> int:
+  """Grid points per block that keep the live temporaries inside the budget.
+
+  Parameters
+  ----------
+  n : int
+      Observations per lane.
+  lanes : int
+      Pairs fitted together.
+  itemsize : int
+      Bytes per element of the working dtype.
+  grid : int
+      Total grid points; the block never exceeds it.
+
+  Returns
+  -------
+  int
+      Block size, at least one.
+  """
+  per_point = 6 * itemsize * n * max(lanes, 1)
+  return max(1, min(grid, _KDE_MEM_BUDGET_BYTES // max(per_point, 1)))
 
 
 def _fit_local_likelihood_constant(
@@ -234,30 +342,52 @@ def _fit_local_likelihood_constant(
 ) -> Tensor:
   """Local-constant kernel density estimate at ``z`` from ``z_data``.
 
-  Mirrors ``TllBicop::fit_local_likelihood`` for ``method == "constant"``,
-  vectorized over all grid points at once (the per-grid-point ``for`` loop
-  in C++ becomes a single broadcast).
+  Mirrors ``TllBicop::fit_local_likelihood`` for ``method == "constant"``.
+  ``z`` is ``(G, 2)`` grid points shared by every lane; ``z_data`` is
+  ``(..., n, 2)`` and ``B`` is ``(..., 2, 2)``, so the result is
+  ``(..., G)``.
+
+  Evaluated in blocks of grid points rather than all at once. C++ loops one
+  grid point at a time (``tll.ipp``); the two extremes bracket the same
+  computation, because a grid point's density is a mean over the data and
+  nothing couples one grid point to another. Blocking is therefore exact,
+  and the block is sized from ``n`` and the lane count so the peak stays
+  near :data:`_KDE_MEM_BUDGET_BYTES` however wide the level is -- a fixed
+  block makes the footprint grow with both, which is what a level of a
+  large vine on a large sample runs out of memory doing.
   """
   # Closed forms rather than `torch.linalg.inv` / `det`: the factor is 2x2
   # lower-triangular, and `inv` dispatches to cuSOLVER and reads its `info`
   # back to the host -- a device synchronization for a four-element matrix.
   rB = _chol22(B)
-  ra, rb, rc = rB[0, 0], rB[1, 0], rB[1, 1]
+  ra, rb, rc = rB[..., 0, 0], rB[..., 1, 0], rB[..., 1, 1]
   ia = ra.reciprocal()
   ic = rc.reciprocal()
   ib = -rb * ia * ic
-  zero = torch.zeros((), dtype=B.dtype, device=B.device)
-  irB = torch.stack([torch.stack([ia, zero]), torch.stack([ib, ic])])
   det_irB = ia * ic
-  z_dec = (irB @ z.T).T  # (m², 2)
-  z_data_dec = (irB @ z_data.T).T  # (n, 2)
-  zz = z_data_dec.unsqueeze(0) - z_dec.unsqueeze(1)  # (m², n, 2)
-  kernels = (
-    torch.exp(-0.5 * (zz[..., 0] ** 2 + zz[..., 1] ** 2))
-    * (_SQRT_2PI_INV * _SQRT_2PI_INV)
-    * det_irB
+  # Applying the lower-triangular factor in closed form rather than as a
+  # matmul: row 0 is `ia * z0 + 0 * z1` and row 1 sums `ib * z0 + ic * z1`
+  # in that order, which is what the matmul did, without assembling the
+  # matrix or materializing a trailing axis of 2.
+  zd0 = ia[..., None] * z_data[..., 0]
+  zd1 = ib[..., None] * z_data[..., 0] + ic[..., None] * z_data[..., 1]
+  const = (_SQRT_2PI_INV * _SQRT_2PI_INV) * det_irB
+  lanes = 1
+  for extent in z_data.shape[:-2]:
+    lanes *= int(extent)
+  block = _kde_grid_block(
+    int(z_data.shape[-2]), lanes, z_data.element_size(), int(z.shape[0])
   )
-  return kernels.mean(dim=1)  # (m²,)
+  out = []
+  for lo in range(0, z.shape[0], block):
+    zb = z[lo : lo + block]
+    zg0 = ia[..., None] * zb[:, 0]
+    zg1 = ib[..., None] * zb[:, 0] + ic[..., None] * zb[:, 1]
+    d0 = zd0[..., None, :] - zg0[..., :, None]
+    d1 = zd1[..., None, :] - zg1[..., :, None]
+    kernels = torch.exp(-0.5 * (d0**2 + d1**2)) * const[..., None, None]
+    out.append(kernels.mean(dim=-1))
+  return torch.cat(out, dim=-1) if len(out) > 1 else out[0]
 
 
 # --------------------------------------------------------------------------- #
@@ -278,7 +408,9 @@ def fit_tll_constant(
   Pure-PyTorch port of ``TllBicop::fit`` for ``method == "constant"``.
 
   Args:
-    u: ``(n, 2)`` tensor of pseudo-observations in ``(0, 1)``.
+    u: ``(n, 2)`` pseudo-observations in ``(0, 1)``, or ``(P, n, 2)`` to fit
+      ``P`` pairs together -- they share the grid, the window length and the
+      eval points. A discrete edge is refused a pair axis.
     grid_size: number of grid points per axis (default 30; matches C++).
     mult: bandwidth multiplier passed through to ``select_bandwidth``;
       the C++ default is 1.
@@ -307,9 +439,18 @@ def fit_tll_constant(
     ``InterpolationGrid2D(grid_points, values, norm_maxiter=25,
     is_linear=(grid_type == "linear"))`` to match the C++
     ``Bicop.parameters`` output to machine precision for ``"normal"``.
+
+    ``u`` may carry a leading pair axis, ``(P, n, 2)``, in which case
+    ``values`` is ``(P, m, m)`` and the P pairs are fitted together: they
+    share the grid, the window length and the eval points, and the two
+    convergence loops in :func:`_ace` advance every lane at once, freezing
+    each as it converges. ``grid_points`` is shared, so it is returned
+    once. A discrete edge is refused with a pair axis -- see below.
   """
-  if u.ndim != 2 or u.shape[1] != 2:
-    raise ValueError(f"u must have shape (n, 2); got {tuple(u.shape)}")
+  if u.ndim not in (2, 3) or u.shape[-1] != 2:
+    raise ValueError(
+      f"u must have shape (n, 2) or (P, n, 2); got {tuple(u.shape)}"
+    )
   if grid_size < 2:
     raise ValueError(f"grid_size must be >= 2; got {grid_size}")
   if mult <= 0:
@@ -330,6 +471,13 @@ def fit_tll_constant(
     # reimplementation rather than of the same code.
     from ..pyvinecopulib_ext import find_latent_sample
 
+    if u.ndim != 2:
+      raise ValueError(
+        "a discrete edge cannot be fitted with a leading pair axis: "
+        "`find_latent_sample` is a compiled per-pair draw over a spatial "
+        "index with a fixed-seed generator, so it has no batch axis to "
+        "give. Fit discrete edges one at a time."
+      )
     latent = find_latent_sample(
       discrete_data.detach().cpu().numpy(),
       float((B[0, 0] * B[1, 1]).item() ** 0.25),
@@ -366,7 +514,7 @@ def fit_tll_constant(
     * _SQRT_2PI_INV
   )
   c = f0 / phi_z
-  values = c.reshape(grid_size, grid_size)
+  values = c.reshape(c.shape[:-1] + (grid_size, grid_size))
 
   # The canonical TorchBicop builds an InterpolationGrid2D from
   # (grid_points, values) with norm_maxiter=25 — that's what matches C++

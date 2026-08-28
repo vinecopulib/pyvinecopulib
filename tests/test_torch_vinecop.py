@@ -10,6 +10,7 @@ independent vine; and confirms the truncation and discrete paths.
 from __future__ import annotations
 
 import pickle
+from typing import Any, Callable
 
 import numpy as np
 import pytest
@@ -20,6 +21,7 @@ from pyvinecopulib.core import DiscretePair
 torch = pytest.importorskip("torch")
 
 from pyvinecopulib.torch import (  # noqa: E402
+  FitControlsTorchBicop,
   FitControlsTorchVinecop,
   TorchBicop,
   TorchVinecop,
@@ -1142,4 +1144,363 @@ def test_batched_inverse_matches_at_the_unit_square_boundary(
     bc.inverse_rosenblatt(u_t, batched=False),
     atol=0.0,
     rtol=0.0,
+  )
+
+
+@pytest.mark.parametrize("d", [5, 9])
+def test_batched_fit_matches_the_per_edge_fit(d: int) -> None:
+  """A level fitted in one call gives the vine a per-edge fit would.
+
+  `batched_fit` is a scheduling choice, so it must not move the model --
+  but it does move the last bits, on every device rather than only on CUDA.
+  Stacking a level changes how many elements the bandwidth search's `pow`
+  sees, and torch picks an elementwise kernel by element count. What a
+  schedule must not touch is whether a lane's companions change its answer,
+  and that is pinned exactly in `test_torch_bicop`.
+  """
+  u_fit = _simulate(d=d, n=1200, seed=500 + d)
+  structure = _fit_tll_vine(u_fit).structure
+  u_t = torch.from_numpy(u_fit)
+  fits = {
+    flag: TorchVinecop.from_data(
+      u_t,
+      structure,
+      controls=FitControlsTorchVinecop(batched_fit=flag),
+    )
+    for flag in (False, True)
+  }
+  u_eval = torch.from_numpy(_eval_grid(200, d=d, seed=510 + d))
+  for op in ("pdf", "rosenblatt"):
+    torch.testing.assert_close(
+      getattr(fits[True], op)(u_eval),
+      getattr(fits[False], op)(u_eval),
+      atol=1e-11,
+      rtol=1e-9,
+    )
+
+
+def test_batched_fit_defaults_to_off_on_cpu() -> None:
+  """The default follows the device, as the evaluation cascade's does.
+
+  Batching amortizes kernel launches, and cpu has none worth amortizing --
+  measured slower there at one thread. Pinned because a default that
+  silently flipped would change every cpu user's fit timing.
+  """
+  assert FitControlsTorchVinecop().batched_fit is None
+  u_fit = _simulate(d=4, n=400, seed=61)
+  structure = _fit_tll_vine(u_fit).structure
+  seen: list[int] = []
+  real = TorchBicop.from_data_batched
+
+  def spy(u: torch.Tensor, *args: Any, **kwargs: Any) -> Any:
+    seen.append(int(u.shape[0]))
+    return real(u, *args, **kwargs)
+
+  # The resolution is only observable through whether the level fitter runs,
+  # so watch that rather than the field that was left unset.
+  with pytest.MonkeyPatch.context() as mp:
+    mp.setattr(TorchBicop, "from_data_batched", spy)
+    TorchVinecop.from_data(torch.from_numpy(u_fit), structure)
+    assert seen == [], "cpu resolved batched_fit on"
+    TorchVinecop.from_data(
+      torch.from_numpy(u_fit),
+      structure,
+      controls=FitControlsTorchVinecop(batched_fit=True),
+    )
+    assert seen == [3, 2, 1], f"explicit batched_fit=True not honored: {seen}"
+
+
+def test_batched_fit_falls_back_for_a_discrete_level() -> None:
+  """A discrete edge cannot stack, so its level stays per-edge.
+
+  Asking for `batched_fit=True` on a discrete vine must fit it, not raise:
+  the hook is an optimization, and a level it cannot serve is simply not
+  handed to it.
+
+  Exact rather than toleranced because a discrete level cannot stack at all,
+  so `batched_fit=True` never reaches the batched fitter here and the two
+  runs are the same arithmetic.
+  """
+  var_types = ["d", "c", "c"]
+  wide = _discrete_data(var_types, n=600, seed=17)
+  structure = pv.RVineStructure.sample(3, seeds=[2])
+  fits = {
+    flag: TorchVinecop.from_data(
+      torch.from_numpy(wide),
+      structure,
+      controls=FitControlsTorchVinecop(batched_fit=flag),
+      var_types=var_types,
+    )
+    for flag in (False, True)
+  }
+  u_eval = torch.from_numpy(wide[:64])
+  torch.testing.assert_close(
+    fits[True].pdf(u_eval), fits[False].pdf(u_eval), atol=0.0, rtol=0.0
+  )
+
+
+@pytest.mark.parametrize("d", [5, 9])
+def test_batched_fit_selects_the_same_structure(d: int) -> None:
+  """Selection is unmoved by how its pairs were scheduled.
+
+  `structure=None` is the default path, so this is the common case rather
+  than a corner.
+
+  The matrix is compared exactly on every device even though the fit itself
+  is not bit-identical anywhere, and what licenses that is rank
+  quantization rather than the fit: the tree criterion is a function of
+  ranks alone, so perturbing an h-value by ~1e-15 can only change a tau by
+  swapping two neighbors, and their spacing at this `n` is ~1e-3. The same
+  file already asserts exact matrix equality across a ~1e-11 pair-fit
+  difference, four orders more perturbation than scheduling applies. Only
+  the pdf comparison carries a tolerance.
+  """
+  u_fit = _simulate(d=d, n=1200, seed=700 + d)
+  u_t = torch.from_numpy(u_fit)
+  fits = {
+    flag: TorchVinecop.from_data(
+      u_t, controls=FitControlsTorchVinecop(batched_fit=flag)
+    )
+    for flag in (False, True)
+  }
+  np.testing.assert_array_equal(
+    np.asarray(fits[True].structure.matrix),
+    np.asarray(fits[False].structure.matrix),
+  )
+  # And still the structure the compiled selector picks.
+  np.testing.assert_array_equal(
+    np.asarray(fits[True].structure.matrix),
+    np.asarray(_fit_tll_vine(u_fit, trunc_lvl=20).structure.matrix),
+  )
+  u_eval = torch.from_numpy(_eval_grid(200, d=d, seed=710 + d))
+  torch.testing.assert_close(
+    fits[True].pdf(u_eval), fits[False].pdf(u_eval), atol=1e-11, rtol=1e-9
+  )
+
+
+@pytest.mark.parametrize(
+  ("make_structure", "label"),
+  [
+    (lambda d: pv.CVineStructure(list(range(1, d + 1))), "c-vine"),
+    (lambda d: pv.CVineStructure(list(range(d, 0, -1))), "c-vine reversed"),
+    (lambda d: pv.DVineStructure(list(range(1, d + 1))), "d-vine"),
+    (lambda d: pv.RVineStructure.sample(d, seeds=[11]), "r-vine sampled"),
+    (lambda d: pv.RVineStructure.sample(d, seeds=[29]), "r-vine sampled 2"),
+  ],
+)
+def test_fit_matches_cpp_on_a_given_structure(
+  make_structure: Callable[[int], Any], label: str
+) -> None:
+  """The gathered level indexes correctly on structures selection never picks.
+
+  `VinecopBase.fit` gathers a whole tree level's inputs before fitting any of
+  it, which is licensed by every edge of a tree reading only columns
+  finalized by earlier trees. That holds -- checked over every C-vine and
+  D-vine order permutation up to d = 5 and 660 sampled R-vines up to d = 12,
+  19888 slots, no violation -- so what is at risk is not the claim but this
+  port's indexing of it, on a structure shape the suite does not otherwise
+  produce.
+
+  Comparing `batched_fit=True` against `False` cannot catch that: both read
+  the same gathered `inputs`, so a mis-gathered level is mis-gathered
+  identically for both and every such test still passes. The independent
+  check is C++, which traverses per node rather than per column, so the two
+  implementations of the same indexing disagree where one is wrong.
+
+  Every other fixed-structure parity test uses a Dissmann-selected structure
+  from one generator. These five are chosen rather than generated, and the
+  C-vine and D-vine are *complementary* rather than redundant -- measured by
+  injecting three mis-indexings into the gather and seeing which cases the
+  1e-9 gate then catches:
+
+  =================  ==========  ==========  ==========
+  case               shifted     wrong h     swapped
+  =================  ==========  ==========  ==========
+  c-vine (both)      caught      **missed**  caught
+  d-vine             **missed**  caught      caught
+  r-vine (2 seeds)   caught      caught      caught
+  =================  ==========  ==========  ==========
+
+  So a C-vine, whose tree 0 is a hub, cannot see a wrong h-function, and a
+  D-vine, whose tree 0 is a path, cannot see a column shifted by one. Drop
+  either as duplicative and the suite acquires a blind spot; the sampled
+  R-vines catch all three but are not a substitute, being one shape each.
+  """
+  del label
+  d = 6
+  u_fit = _simulate(d=d, n=700, seed=920)
+  structure = make_structure(d)
+  cpp = pv.Vinecop.from_data(u_fit, controls=_TLL_CONTROLS, structure=structure)
+  fitted = TorchVinecop.from_data(
+    torch.from_numpy(u_fit),
+    structure,
+    controls=FitControlsTorchVinecop(cache_integrals=False),
+  )
+  lifted = TorchVinecop.from_vinecop(cpp, cache_integrals=False)
+  u_eval = torch.from_numpy(_eval_grid(200, d=d, seed=921))
+  np.testing.assert_allclose(
+    fitted.pdf(u_eval).numpy(),
+    lifted.pdf(u_eval).numpy(),
+    atol=1e-9,
+    rtol=1e-9,
+  )
+
+
+def test_mixed_grids_refuse_the_batched_path() -> None:
+  """Pairs that disagree on their grid fall back rather than stack.
+
+  Every stacked pair is read against one level's knots, so pairs must agree
+  on the grid itself and not merely on its size: two grids of one size and
+  different spacing interpolate to different functions. Agreeing on the
+  shape alone let a level be evaluated on the wrong one, silently -- the two
+  cascades disagreed by 2.0 in absolute density on the vine below.
+  """
+  rng = np.random.default_rng(3)
+  d, n = 3, 400
+  u = pv.to_pseudo_obs(
+    0.6 * rng.standard_normal((n, 1)) + 0.5 * rng.standard_normal((n, d))
+  )
+
+  def pair(a: int, b: int, grid_type: str) -> TorchBicop:
+    return TorchBicop.from_data(
+      np.column_stack([u[:, a], u[:, b]]),
+      FitControlsTorchBicop(grid_type=grid_type, grid_size=30),
+    )
+
+  # Same grid_size, so the shapes match and only the spacing differs.
+  vine = TorchVinecop(
+    pair_copulas=[
+      [pair(0, 1, "normal"), pair(1, 2, "linear")],
+      [pair(0, 2, "normal")],
+    ],
+    structure=pv.DVineStructure([1, 2, 3]),
+  )
+  u_eval = torch.from_numpy(_eval_grid(64, d=d, seed=4))
+  torch.testing.assert_close(
+    vine.pdf(u_eval, batched=True),
+    vine.pdf(u_eval, batched=False),
+    atol=0.0,
+    rtol=0.0,
+  )
+
+
+def test_load_state_dict_drops_the_stacked_bake() -> None:
+  """Loading new grids must not leave the batched path on the old ones.
+
+  The bake and the compiled cascades copy the grids rather than viewing
+  them, so a load that replaces the grids leaves both answering from the
+  density they were built with. Evaluating first is the point: it is what
+  builds the bake that the load then has to invalidate.
+  """
+  d, n = 4, 400
+  strong = _simulate(d=d, n=n, seed=5)
+  weak = pv.to_pseudo_obs(np.random.default_rng(6).standard_normal((n, d)))
+  structure = _fit_tll_vine(strong).structure
+  controls = FitControlsTorchVinecop(cache_integrals=False)
+  vine = TorchVinecop.from_data(
+    torch.from_numpy(strong), structure, controls=controls
+  )
+  other = TorchVinecop.from_data(
+    torch.from_numpy(weak), structure, controls=controls
+  )
+  u_eval = torch.from_numpy(_eval_grid(64, d=d, seed=7))
+  vine.pdf(u_eval, batched=True)
+  vine.load_state_dict(other.state_dict())
+  torch.testing.assert_close(
+    vine.pdf(u_eval, batched=True),
+    other.pdf(u_eval, batched=True),
+    atol=0.0,
+    rtol=0.0,
+  )
+
+
+def test_batched_fit_runs_one_call_per_tree(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """The batched path is taken, once per tree level, with every edge in it.
+
+  Every other batched-fit test compares the batched result against the
+  per-edge one, which a batched path that silently fell back would pass
+  too: substituting a plain per-lane loop for `from_data_batched` leaves
+  all of them green at exactly zero difference. So nothing else here
+  separates a working batched fit from a dead one.
+
+  This does, and it compares no floating-point value -- so it is immune to
+  the batch-extent arithmetic that put a tolerance on the others. The lane
+  counts also say the levels arrive whole, which is what
+  `test_batched_selection_survives_a_shortened_cascade` claims and cannot
+  see.
+  """
+  d = 6
+  u_fit = _simulate(d=d, n=400, seed=91)
+  structure = _fit_tll_vine(u_fit).structure
+  seen: list[int] = []
+  real = TorchBicop.from_data_batched
+
+  def spy(u: torch.Tensor, *args: Any, **kwargs: Any) -> Any:
+    seen.append(int(u.shape[0]))
+    return real(u, *args, **kwargs)
+
+  monkeypatch.setattr(TorchBicop, "from_data_batched", spy)
+  TorchVinecop.from_data(
+    torch.from_numpy(u_fit),
+    structure,
+    controls=FitControlsTorchVinecop(batched_fit=True),
+  )
+  assert seen == list(range(d - 1, 0, -1))
+
+  # `structure=None` routes through `select`, which installs the hook
+  # separately -- dropping it there left every select-path test green.
+  seen.clear()
+  TorchVinecop.from_data(
+    torch.from_numpy(u_fit),
+    controls=FitControlsTorchVinecop(batched_fit=True),
+  )
+  assert seen == list(range(d - 1, 0, -1)), f"select did not batch: {seen}"
+
+
+@pytest.mark.parametrize(
+  ("kwargs", "why"),
+  [
+    ({"threshold": 0.5}, "a threshold the candidates straddle"),
+    ({"threshold": 0.95}, "a threshold above every candidate"),
+    ({"trunc_lvl": 2}, "truncation shortens the cascade"),
+  ],
+)
+def test_batched_selection_survives_a_shortened_cascade(
+  kwargs: dict, why: str
+) -> None:
+  """The batched selector holds where a level could come out ragged.
+
+  Both knobs change how many trees get built, and thresholding changes the
+  edge weights that decide which edges survive -- so both are places a
+  level could arrive with a different number of edges than the unbatched
+  path saw, or with none. That the levels line up is what
+  `test_batched_fit_runs_one_call_per_tree` pins; this checks the model they
+  produce.
+
+  Both thresholds are here because they exercise different things. At 0.95
+  no candidate tau reaches the threshold for this fixture, so every MST
+  weight is exactly 1.0 and the structure is dependence-blind -- which
+  makes its matrix comparison hold for reasons unrelated to scheduling. At
+  0.5 the candidates straddle it, so the weights carry dependence and the
+  comparison has something to say.
+  """
+  del why
+  u_fit = _simulate(d=6, n=800, seed=81)
+  u_t = torch.from_numpy(u_fit)
+  fits = {
+    flag: TorchVinecop.from_data(
+      u_t, controls=FitControlsTorchVinecop(batched_fit=flag, **kwargs)
+    )
+    for flag in (False, True)
+  }
+  assert fits[True].trunc_lvl == fits[False].trunc_lvl
+  np.testing.assert_array_equal(
+    np.asarray(fits[True].structure.matrix),
+    np.asarray(fits[False].structure.matrix),
+  )
+  u_eval = torch.from_numpy(_eval_grid(120, d=6, seed=82))
+  torch.testing.assert_close(
+    fits[True].pdf(u_eval), fits[False].pdf(u_eval), atol=1e-11, rtol=1e-9
   )

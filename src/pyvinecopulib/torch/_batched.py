@@ -862,11 +862,30 @@ def _shared_grid(tvc, trunc_lvl: int, d: int):
         continue
       if ref is None:
         ref = bc
-      elif bc.interp_grid.values.shape != ref.interp_grid.values.shape:
+        continue
+      # Every stacked pair is read against `ref`'s knots, so agreeing on the
+      # shape is not enough: two grids of one size and different spacing
+      # interpolate to different functions, and the level would be evaluated
+      # on the wrong one without anything raising.
+      if bc.interp_grid.values.shape != ref.interp_grid.values.shape:
         raise _NotBatchable(
           "batched path requires one shared grid: pair copulas differ in grid "
           f"size ({tuple(ref.interp_grid.values.shape)} vs "
           f"{tuple(bc.interp_grid.values.shape)})."
+        )
+      if bool(bc.interp_grid._is_linear) != bool(ref.interp_grid._is_linear):
+        raise _NotBatchable(
+          "batched path requires one shared grid: pair copulas differ in "
+          "grid spacing (is_linear "
+          f"{bool(ref.interp_grid._is_linear)} vs "
+          f"{bool(bc.interp_grid._is_linear)})."
+        )
+      if not torch.equal(
+        bc.interp_grid.grid_points, ref.interp_grid.grid_points
+      ):
+        raise _NotBatchable(
+          "batched path requires one shared grid: pair copulas of equal size "
+          "differ in their grid points."
         )
   if ref is None:
     ref = tvc._pair_module(0, 0)

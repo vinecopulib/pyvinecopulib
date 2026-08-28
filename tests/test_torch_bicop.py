@@ -834,9 +834,9 @@ def test_win_smoother_is_a_box_mean(n: int) -> None:
 def test_win_smoother_batches_over_leading_dims() -> None:
   """One call over a stack equals a loop over its rows.
 
-  The fit is per-pair today, so nothing exercises this yet; it is what a
-  batched fitter would stack on, and it is cheap to keep honest now rather
-  than to discover later.
+  The smoother is the innermost thing the batched fit stacks on, so pinning
+  it here says whether a divergence upstack came from the smoother or from
+  what surrounds it.
   """
   from pyvinecopulib.torch._fit_tll import _win_smoother
 
@@ -847,3 +847,205 @@ def test_win_smoother_batches_over_leading_dims() -> None:
     torch.testing.assert_close(
       stacked[i], _win_smoother(x[i], wl), rtol=0.0, atol=0.0
     )
+
+
+def test_kde_grid_block_bounds_the_working_set() -> None:
+  """The grid block shrinks as the level grows, so the peak does not.
+
+  The kernel evaluation holds six ``(lanes, block, n)`` temporaries, so a
+  fixed block makes peak memory grow with both the sample and the level
+  width. Sizing the block from those two instead keeps the product -- and
+  so the footprint -- inside one budget however wide the level is.
+  """
+  from pyvinecopulib.torch._fit_tll import (
+    _KDE_MEM_BUDGET_BYTES,
+    _kde_grid_block,
+  )
+
+  grid = 900
+  for n, lanes in ((1000, 1), (12000, 1), (12000, 19), (20000, 24)):
+    block = _kde_grid_block(n, lanes, 8, grid)
+    assert 1 <= block <= grid
+    # The bound the sizing exists to hold, except where it has already
+    # bottomed out at a single grid point.
+    if block > 1:
+      assert 6 * 8 * block * n * lanes <= _KDE_MEM_BUDGET_BYTES
+
+  # Wider levels and longer samples both shrink it, never the reverse.
+  assert _kde_grid_block(12000, 19, 8, grid) < _kde_grid_block(
+    12000, 1, 8, grid
+  )
+  assert _kde_grid_block(20000, 1, 8, grid) <= _kde_grid_block(1000, 1, 8, grid)
+  # A small problem is not blocked at all.
+  assert _kde_grid_block(200, 1, 8, grid) == grid
+
+
+@pytest.mark.parametrize("budget", [1 << 20, 8 << 20, 1 << 30])
+def test_kde_grid_block_does_not_change_the_fit(
+  budget: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """Blocking the grid axis is exact, so the budget cannot move a value.
+
+  Grid points do not interact -- each one's density is a mean over the data
+  -- so the block is a scheduling choice and nothing else. Pinned at zero
+  because anything looser would let a real coupling hide.
+  """
+  from pyvinecopulib.torch import _fit_tll
+
+  u = torch.from_numpy(
+    pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]])).sample(
+      1500, seeds=[1, 2, 3]
+    )
+  )
+  monkeypatch.setattr(_fit_tll, "_KDE_MEM_BUDGET_BYTES", 1 << 30)
+  _, reference = _fit_tll.fit_tll_constant(u)
+  monkeypatch.setattr(_fit_tll, "_KDE_MEM_BUDGET_BYTES", budget)
+  _, got = _fit_tll.fit_tll_constant(u)
+  torch.testing.assert_close(got, reference, atol=0.0, rtol=0.0)
+
+
+def test_ace_freezes_each_lane_independently() -> None:
+  """A lane's ACE answer does not depend on which lanes it travelled with.
+
+  The batched bandwidth search advances every lane together and freezes
+  each as it converges. Were a freeze to leak -- a converged lane's state
+  still moving while its neighbors iterate -- a pair's answer would depend
+  on its companions, which is the one thing a scheduling choice must never
+  do.
+
+  Pinned at zero, and legitimately: both calls pass the same shape, dtype
+  and strides, so torch dispatches the same kernels and the batch-extent
+  effect that forces a tolerance elsewhere cannot arise. Only the
+  companions differ.
+
+  This assertion carries what the vine-level pdf comparisons no longer can.
+  Removing the freeze moves this comparison off zero by 5.6e-16 -- far under
+  the arithmetic noise the vine-level tolerances have to admit, so it is
+  undetectable there and unmistakable here.
+
+  The companions have to converge later than the probe or nothing is
+  frozen and the test is vacuous. Independent uniforms give ACE no signal,
+  so it grinds against its own rounding noise: 63 and 147 smoothing passes
+  against the probe's 30.
+  """
+  from pyvinecopulib.torch._fit_tll import _ace
+
+  rng = np.random.default_rng(4)
+  probe = pv.Bicop(
+    family=pv.families.gaussian, parameters=np.array([[0.3]])
+  ).sample(600, seeds=[7, 8, 9])
+  slow = [rng.uniform(size=(600, 2)) for _ in range(2)]
+  alone = torch.special.ndtri(torch.from_numpy(np.stack([probe, probe, probe])))
+  mixed = torch.special.ndtri(torch.from_numpy(np.stack([probe, *slow])))
+  torch.testing.assert_close(_ace(mixed)[0], _ace(alone)[0], atol=0.0, rtol=0.0)
+
+
+@pytest.mark.parametrize("n", [500, 2000])
+def test_from_data_batched_matches_the_per_pair_loop(n: int) -> None:
+  """Stacking pairs into one fit does not change what any of them gets.
+
+  The batched fitter advances every lane's bandwidth search together and
+  freezes each as it converges, so *which* lanes a pair travelled with does
+  not change its answer at all -- pinned exactly, on a fixed shape, by
+  `test_ace_freezes_each_lane_independently`. *How many* it travelled with
+  moves the last bits on every device: torch selects an elementwise kernel
+  by element count, and the bandwidth search's `pow` takes a vectorized
+  path past `2 * Vectorized<double>::size()` lanes -- 8 on AVX2, 4 on NEON.
+
+  The tolerance is far tighter than the vine-level ones because these are
+  raw grid values rather than a product over trees, and it has to stay
+  tight: a batched fit with no per-lane freeze at all shows up here at
+  ~1e-12.
+  """
+  # Ten lanes, so the stack crosses the 8-element boundary named above
+  # rather than sitting under it and agreeing by construction.
+  rhos = [-0.9, -0.7, -0.4, -0.1, 0.0, 0.2, 0.3, 0.55, 0.7, 0.95]
+  us = [
+    pv.Bicop(family=pv.families.gaussian, parameters=np.array([[r]])).sample(
+      n, seeds=[3, 4, 5]
+    )
+    for r in rhos
+  ]
+  stack = torch.from_numpy(np.stack(us))
+  batched = TorchBicop.from_data_batched(stack)
+  assert len(batched) == len(rhos)
+  for i, u in enumerate(us):
+    torch.testing.assert_close(
+      batched[i].interp_grid.values,
+      TorchBicop.from_data(u).interp_grid.values,
+      atol=1e-14,
+      rtol=1e-13,
+    )
+
+
+def test_from_data_batched_matches_cpp() -> None:
+  """The batched fit clears the same C++ gate the single-pair fit does.
+
+  Not implied by agreeing with the per-pair loop: that would also hold if
+  both had drifted together.
+  """
+  controls = pv.FitControlsBicop(family_set=[pv.families.tll], num_threads=1)
+  rhos = [0.3, 0.6, 0.9]
+  us = [
+    pv.Bicop(family=pv.families.gaussian, parameters=np.array([[r]])).sample(
+      2000, seeds=[1, 2, 3]
+    )
+    for r in rhos
+  ]
+  batched = TorchBicop.from_data_batched(torch.from_numpy(np.stack(us)))
+  for got, u in zip(batched, us):
+    np.testing.assert_allclose(
+      got.interp_grid.values.numpy(),
+      pv.Bicop.from_data(u, controls=controls).parameters,
+      atol=1e-11,
+      rtol=1e-11,
+    )
+
+
+def test_from_data_batched_rejects_a_non_stacked_input() -> None:
+  u = torch.from_numpy(
+    np.random.default_rng(0).uniform(0.05, 0.95, size=(64, 2))
+  )
+  with pytest.raises(ValueError, match=r"\(P, n, 2\)"):
+    TorchBicop.from_data_batched(u)
+
+
+def test_a_discrete_edge_is_refused_a_pair_axis() -> None:
+  """`find_latent_sample` is a compiled per-pair draw with no batch axis.
+
+  Refusing beats silently fitting the wrong thing: the discrete fit runs on
+  a latent sample reconstructed from a fixed-seed generator, so there is no
+  batched equivalent to fall back to.
+  """
+  from pyvinecopulib.torch._fit_tll import fit_tll_constant
+
+  rng = np.random.default_rng(5)
+  u = np.ceil(rng.uniform(0.0, 1.0, size=(200, 2)) * 4) / 4
+  wide = np.column_stack([u, np.maximum(u - 0.25, 0.0)])
+  stack = torch.from_numpy(np.stack([wide, wide]))
+  with pytest.raises(ValueError, match="leading pair axis"):
+    fit_tll_constant(stack[..., :2], discrete_data=stack)
+
+
+def test_from_data_batched_at_one_pair() -> None:
+  """A batch of one is the single-pair fit, exactly.
+
+  The degenerate end of the pair axis: every reduction runs over a leading
+  extent of one, and the masked freeze has a single lane to freeze. Worth
+  pinning because a vine's last tree level always has exactly one edge.
+
+  This one is exact rather than toleranced, and only because P is 1: the
+  bandwidth search's `pow` then has numel 1 in both modes, so no
+  architecture can dispatch it two different ways. Stacking more pairs
+  forfeits that -- see `test_from_data_batched_matches_the_per_pair_loop`.
+  """
+  u = pv.Bicop(
+    family=pv.families.gaussian, parameters=np.array([[0.5]])
+  ).sample(500, seeds=[1, 2, 3])
+  (batched,) = TorchBicop.from_data_batched(torch.from_numpy(u[None, ...]))
+  torch.testing.assert_close(
+    batched.interp_grid.values,
+    TorchBicop.from_data(u).interp_grid.values,
+    atol=0.0,
+    rtol=0.0,
+  )

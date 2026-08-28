@@ -207,6 +207,41 @@ def test_evaluation_does_not_round_trip_through_the_host(
   c.assert_no_d2h(f"TorchVinecop.{op}")
 
 
+def test_batched_fit_peak_memory_stays_bounded(device: str) -> None:
+  """A wide level on a long sample does not scale the footprint with either.
+
+  The batched fit's peak lives in the kernel evaluation's temporaries, which
+  a fixed grid block grows with both `n` and the level width: this vine held
+  about 1.8 GiB that way, on a card most users have 8 of. Sizing the block
+  from the two instead holds the peak near the budget, which is what makes a
+  `d = 20` fit on real-sized data something a laptop can run at all.
+  """
+  if torch.device(device).type != "cuda":
+    pytest.skip("peak allocation is only observable on cuda")
+  from pyvinecopulib.torch._fit_tll import _KDE_MEM_BUDGET_BYTES
+
+  d, n = 20, 8000
+  u_np = _u(d, n, 7)
+  structure = pv.Vinecop.from_data(
+    u_np,
+    controls=pv.FitControlsVinecop(
+      family_set=[pv.families.tll], num_threads=1, trunc_lvl=20
+    ),
+  ).structure
+  u = torch.as_tensor(u_np, device=device)
+  controls = FitControlsTorchVinecop(
+    device=torch.device(device), batched_fit=True
+  )
+  TorchVinecop.from_data(u, structure, controls=controls)  # warm
+  torch.cuda.empty_cache()
+  torch.cuda.reset_peak_memory_stats()
+  TorchVinecop.from_data(u, structure, controls=controls)
+  peak = torch.cuda.max_memory_allocated()
+  # Generous against the budget, the data and the fitted pairs sitting
+  # outside it, and far under the ~1.8 GiB a fixed block took.
+  assert peak < 3 * _KDE_MEM_BUDGET_BYTES, f"peak {peak / 2**20:.0f} MiB"
+
+
 def test_fit_and_select_run_on_device(device: str) -> None:
   """Fitting and structure selection work with device-resident data."""
   u = _u(4, 600, 11)
@@ -300,3 +335,43 @@ def test_compiled_output_survives_the_next_call(
   later = vine.pdf(b)
   np.testing.assert_allclose(_np(held), _np(eager_a), rtol=1e-12, atol=1e-13)
   np.testing.assert_allclose(_np(later), _np(eager_b), rtol=1e-12, atol=1e-13)
+
+
+@pytest.mark.parametrize("d", [5, 9])
+def test_batched_fit_matches_the_per_edge_fit_on_device(
+  device: str, d: int
+) -> None:
+  """`batched_fit` is a schedule, not a model, on either device.
+
+  One tolerance for both devices, because the mechanism is not a device
+  asymmetry: stacking a level changes how many elements the bandwidth
+  search's `pow` sees, and torch selects an elementwise kernel by element
+  count. A cpu that vectorizes at a lower lane count than another therefore
+  diverges where the other does not, which is why this cannot be pinned at
+  zero on the strength of one machine agreeing.
+  """
+  u_fit = _u(d, 1200, 600 + d)
+  structure = pv.Vinecop.from_data(
+    u_fit,
+    controls=pv.FitControlsVinecop(
+      family_set=[pv.families.tll], num_threads=1, trunc_lvl=20
+    ),
+  ).structure
+  u_t = torch.as_tensor(u_fit, device=device)
+  fits = {
+    flag: TorchVinecop.from_data(
+      u_t,
+      structure,
+      controls=FitControlsTorchVinecop(
+        device=torch.device(device), batched_fit=flag
+      ),
+    )
+    for flag in (False, True)
+  }
+  u_eval = torch.as_tensor(_u(d, 300, 610 + d), device=device)
+  np.testing.assert_allclose(
+    _np(fits[True].pdf(u_eval)),
+    _np(fits[False].pdf(u_eval)),
+    rtol=1e-9,
+    atol=1e-11,
+  )

@@ -69,7 +69,7 @@ import os
 import sys
 import time
 from statistics import median
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import torch
@@ -125,16 +125,12 @@ _MODE_DEFAULTS: dict[str, dict[str, Any]] = {
   "eval": {
     "n": [500, 2000],
     "d": [5, 10, 20, 40],
-    "repeats": 3,
     "cache": [False, True],
     "grid_types": ["normal", "linear"],
   },
   "fit": {
     "n": [1000, 5000],
     "d": [5, 10],
-    # One timed fit after the untimed warm-up: `_time_repeats` pays
-    # `repeats + 1`, and a multi-second fit has little relative jitter.
-    "repeats": 1,
     # `cache_integrals=None` resolves to True, so this is the library
     # default; `--cache false,true` prices the per-pair table build.
     "cache": [True],
@@ -147,7 +143,7 @@ _MODE_DEFAULTS: dict[str, dict[str, Any]] = {
 
 #: Extra columns `--profile-ace` appends, and their value on a row that has
 #: nothing to profile (every C++ row, and any arm whose timing raised).
-_PROFILE_FIELDS = ["profiled_ms", "ace_calls", "item_calls", "item_ms"]
+_PROFILE_FIELDS = ["profiled_ms", "ace_calls", "sync_calls", "sync_ms"]
 _PROFILE_BLANK: dict[str, Any] = dict.fromkeys(_PROFILE_FIELDS, "")
 
 
@@ -201,56 +197,61 @@ def _timed_or_nan(fn, repeats: int, sync=None, label: str = "") -> float:
 class _AceProbe:
   """Counts the host syncs a `tll` fit pays inside `_ace`, and times them.
 
-  `_fit_tll` reads a scalar back to the host in three places on the
-  bandwidth-selection path: once in `_select_bandwidth_constant`, once in
-  `_pairwise_mcor`, and once per iteration of each of `_ace`'s two
-  convergence loops. `_ace` is entered once per pair-copula fit, so
-  `ace_calls` is the pair count and `item_calls - 2 * ace_calls` is the
-  total number of ACE iterations -- which is what separates "a few
-  expensive syncs" from "thousands of cheap ones", the two readings of
-  the profile note recorded under #305.
+  `_ace` drains the device once per iteration of each of its two convergence
+  loops, to ask whether any lane is still live. It reaches the host through
+  `bool(...)` rather than `.item()`, so both are interposed: counting only
+  `.item()` reports zero, and `float()` / `int()` do not appear on this path.
+  `ace_calls` is the number of entries into `_ace`, which is the pair count
+  when fitting edge at a time and the level count when fitting a level at
+  once -- so `sync_calls / ace_calls` is iterations per call either way.
 
-  On cuda `.item()` blocks until every kernel enqueued so far has run, so
-  `item_ms` is the host stall: an *upper* bound on what removing the
-  syncs could save, since part of it is device work that had to happen
-  anyway. On cpu there is nothing to drain, which is what makes the two
-  devices' `item_ms` worth reading side by side.
+  On cuda a sync blocks until every kernel enqueued so far has run, so
+  `sync_ms` is the host stall: an *upper* bound on what removing the syncs
+  could save, since part of it is device work that had to happen anyway. On
+  cpu there is nothing to drain, which is what makes the two devices'
+  `sync_ms` worth reading side by side.
 
   It does not see the other host round trips a pair fit makes -- the
   `values < 0` precondition on the interpolation grid, and the margin
   renormalization, which runs on the host for grids this small -- so
-  `item_ms` is the ACE loops' share specifically, not the total.
+  `sync_ms` is the ACE loops' share specifically, not the total.
 
-  Both patched attributes are restored on exit.
+  Every patched attribute is restored on exit.
   """
 
   def __init__(self) -> None:
-    self.item_calls = 0
-    self.item_ms = 0.0
+    self.sync_calls = 0
+    self.sync_ms = 0.0
     self.ace_calls = 0
 
   def __enter__(self) -> "_AceProbe":
     probe = self
     self._orig_item = torch.Tensor.item
+    self._orig_bool = torch.Tensor.__bool__
     self._orig_ace = _fit_tll._ace
 
-    def timed_item(tensor):
-      t0 = time.perf_counter()
-      out = probe._orig_item(tensor)
-      probe.item_ms += 1000.0 * (time.perf_counter() - t0)
-      probe.item_calls += 1
-      return out
+    def timed(orig):
+      def wrapper(tensor):
+        t0 = time.perf_counter()
+        out = orig(tensor)
+        probe.sync_ms += 1000.0 * (time.perf_counter() - t0)
+        probe.sync_calls += 1
+        return out
+
+      return wrapper
 
     def counted_ace(*args, **kwargs):
       probe.ace_calls += 1
       return probe._orig_ace(*args, **kwargs)
 
-    torch.Tensor.item = timed_item
+    torch.Tensor.item = timed(self._orig_item)
+    torch.Tensor.__bool__ = timed(self._orig_bool)
     _fit_tll._ace = counted_ace
     return self
 
   def __exit__(self, *exc) -> None:
     torch.Tensor.item = self._orig_item
+    torch.Tensor.__bool__ = self._orig_bool
     _fit_tll._ace = self._orig_ace
 
 
@@ -267,8 +268,8 @@ def _profile_once(fn, sync=None) -> dict:
   return {
     "profiled_ms": f"{total:.3f}",
     "ace_calls": probe.ace_calls,
-    "item_calls": probe.item_calls,
-    "item_ms": f"{probe.item_ms:.3f}",
+    "sync_calls": probe.sync_calls,
+    "sync_ms": f"{probe.sync_ms:.3f}",
   }
 
 
@@ -302,6 +303,7 @@ def _torch_controls(
   trunc_lvl: int,
   device: str,
   dtype: torch.dtype,
+  batched_fit: Optional[bool] = None,
 ) -> FitControlsTorchVinecop:
   return FitControlsTorchVinecop(
     bicop_controls=FitControlsTorchBicop(
@@ -311,6 +313,7 @@ def _torch_controls(
     trunc_lvl=trunc_lvl,
     device=torch.device(device),
     dtype=dtype,
+    batched_fit=batched_fit,
   )
 
 
@@ -510,6 +513,7 @@ def _bench_fit_cell(
   dtypes: list[str],
   structures: list[str],
   backends: list[str],
+  batched_fits: list[Optional[bool]],
   repeats: int,
   seed: int,
   profile: bool,
@@ -542,6 +546,7 @@ def _bench_fit_cell(
             "grid_size": g,
             "dtype": "f64",
             "structure": arm,
+            "batched_fit": "",
             "time_ms": _timed_or_nan(
               call, repeats, label=f"cpp {arm} t={t} g={g}"
             ),
@@ -563,41 +568,43 @@ def _bench_fit_cell(
         for grid_type in grid_types:
           for g in grid_sizes:
             for cache in caches:
-              ctl = _torch_controls(
-                grid_type, g, cache, trunc_lvl, device, torch_dtype
-              )
-              for arm in structures:
-                label = (
-                  f"torch {arm} {device} {dtype_name} {grid_type} "
-                  f"g={g} cache={cache}"
+              for bf in batched_fits:
+                ctl = _torch_controls(
+                  grid_type, g, cache, trunc_lvl, device, torch_dtype, bf
                 )
-                call = _torch_fit_call(
-                  u_t, ref.structure if arm == "fit" else None, ctl
-                )
-                ms = _timed_or_nan(call, repeats, sync=sync, label=label)
-                row = {
-                  "mode": "fit",
-                  "n": n,
-                  "d": d,
-                  "backend": "torch",
-                  "threads": "",
-                  "device": device,
-                  "cache_integrals": str(cache).lower(),
-                  "grid_type": grid_type,
-                  "grid_size": g,
-                  "dtype": dtype_name,
-                  "structure": arm,
-                  "time_ms": ms,
-                }
-                if profile:
-                  row.update(
-                    _PROFILE_BLANK
-                    if math.isnan(ms)
-                    else _profile_once(call, sync=sync)
+                for arm in structures:
+                  label = (
+                    f"torch {arm} {device} {dtype_name} {grid_type} "
+                    f"g={g} cache={cache} batched_fit={bf}"
                   )
-                rows.append(row)
-                if sync is not None:
-                  torch.cuda.empty_cache()
+                  call = _torch_fit_call(
+                    u_t, ref.structure if arm == "fit" else None, ctl
+                  )
+                  ms = _timed_or_nan(call, repeats, sync=sync, label=label)
+                  row = {
+                    "mode": "fit",
+                    "n": n,
+                    "d": d,
+                    "backend": "torch",
+                    "threads": "",
+                    "device": device,
+                    "cache_integrals": str(cache).lower(),
+                    "grid_type": grid_type,
+                    "grid_size": g,
+                    "dtype": dtype_name,
+                    "structure": arm,
+                    "batched_fit": "" if bf is None else str(bf).lower(),
+                    "time_ms": ms,
+                  }
+                  if profile:
+                    row.update(
+                      _PROFILE_BLANK
+                      if math.isnan(ms)
+                      else _profile_once(call, sync=sync)
+                    )
+                  rows.append(row)
+                  if sync is not None:
+                    torch.cuda.empty_cache()
         del u_t
         if sync is not None:
           torch.cuda.empty_cache()
@@ -645,6 +652,14 @@ def _build_parser() -> argparse.ArgumentParser:
     type=_parse_str_list,
     help="Backends to bench (default: cpp,torch). The C++ selection runs "
     "either way -- it is where the fixed skeleton comes from.",
+  )
+  ap.add_argument(
+    "--batched-fit",
+    default=None,
+    type=_parse_bool_list,
+    help="batched_fit values to sweep: whether a tree level is fitted in "
+    "one call or an edge at a time (default: the library's own per-device "
+    "resolution, reported as an empty column). fit mode only.",
   )
   ap.add_argument(
     "--structures",
@@ -707,7 +722,17 @@ def _build_parser() -> argparse.ArgumentParser:
     help="Add one probed fit per arm, reporting the number and cost of the "
     "host syncs inside the tll bandwidth search. fit mode only.",
   )
-  ap.add_argument("--repeats", default=None, type=int)
+  ap.add_argument(
+    "--repeats",
+    default=3,
+    type=int,
+    help="Timed runs per configuration, reported as their median (default: "
+    "3). Fit mode used to default to 1, on the grounds that a "
+    "multi-second fit has little relative jitter -- which is false on a "
+    "throttling laptop, where repeated timings of a d = 20, n = 12000 cell "
+    "move by half again. That is enough to invent a 5%% effect or hide one, "
+    "so a fit cell pays `repeats + 1` whole fits and is worth it.",
+  )
   ap.add_argument("--seed", default=42, type=int)
   ap.add_argument(
     "--output",
@@ -748,6 +773,7 @@ _FIELDNAMES: dict[str, list[str]] = {
     "grid_size",
     "dtype",
     "structure",
+    "batched_fit",
     "time_ms",
   ],
 }
@@ -776,10 +802,13 @@ def _validate(ap: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     ap.error("--compile has no effect on --mode fit; drop it")
 
   if args.profile_ace:
+    # Both entry points, since `_ace` uses the second one and an earlier
+    # revision of this probe silently reported zero by watching only the first.
     with _AceProbe() as probe:
       torch.zeros(1).sum().item()
-    if probe.item_calls != 1:
-      ap.error("--profile-ace: Tensor.item is not interposable here")
+      bool(torch.zeros(1).any())
+    if probe.sync_calls != 2:
+      ap.error("--profile-ace: host syncs are not interposable here")
 
 
 def main() -> None:
@@ -829,6 +858,9 @@ def main() -> None:
           dtypes=args.dtypes,
           structures=args.structures,
           backends=args.backends,
+          batched_fits=(
+            [None] if args.batched_fit is None else list(args.batched_fit)
+          ),
           repeats=args.repeats,
           seed=args.seed,
           profile=args.profile_ace,

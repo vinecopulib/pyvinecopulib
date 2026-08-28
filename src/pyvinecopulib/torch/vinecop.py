@@ -38,7 +38,7 @@ FitControlsTorchVinecop : Fit-time controls.
 
 from __future__ import annotations
 
-from typing import Any, Optional, cast
+from typing import Any, Optional, Sequence, cast
 
 import numpy as np
 import torch
@@ -160,12 +160,10 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   ) -> bool:
     """Whether to precompute the prefix tables. ``None`` resolves to ``True``.
 
-    ``var_types`` no longer enters the decision. It used to: a discrete edge
-    reads its density from *differences* over an atom's width, and the cache
-    was a bilinear interpolation of a table -- accurate enough to evaluate, not
-    to difference, at 38% maximum relative error on a ``("d","d")`` density. The
-    tables are exact now, so differencing them is no longer the lossy step it
-    was and there is nothing left to refuse. A discrete edge still differences
+    ``var_types`` does not enter the decision: the prefix tables reconstruct
+    the integral exactly rather than approximately, so a discrete edge, which
+    reads its density from *differences* over an atom's width, can difference
+    them safely. A discrete edge still differences
     the distribution function rather than calling ``rect_mass``, which is more
     accurate but would break the torch-to-C++ cascade parity that ``Bicop``'s
     own quotients define.
@@ -424,6 +422,43 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         return bc
       return DiscretePair(bc, (var_types[0], var_types[1]))
 
+    # `None` resolves per device, as the evaluation cascade's `batched` does:
+    # the per-level fitter buys launch amortization, which cpu has none of.
+    batched_fit = controls.batched_fit
+    if batched_fit is None:
+      batched_fit = u_t.device.type == "cuda"
+
+    def fit_level(
+      tree: int, u_level: Tensor, types: list[tuple[str, str]]
+    ) -> Sequence[BicopLike[Tensor]]:
+      """Fit a whole continuous tree level in one call.
+
+      Parameters
+      ----------
+      tree : int
+          Tree index; unused, the fit needing no structural context.
+      u_level : Tensor, shape (N_t, n, 2)
+          The level's edges, stacked in ascending edge order.
+      types : list of tuple of str
+          Each edge's variable types; unused, a level reaching here being
+          continuous throughout.
+
+      Returns
+      -------
+      sequence of BicopLike
+          One fitted pair copula per edge, in the same order.
+      """
+      del tree, types  # a level reaching here is continuous and simplified
+      return TorchBicop.from_data_batched(
+        u_level,
+        bc_controls,
+        cache_integrals=cache_integrals,
+        device=u_t.device,
+        dtype=eff_dtype,
+      )
+
+    level_hook = fit_level if batched_fit else None
+
     if structure is None:
       # Select the structure natively in torch, reusing the pairs fit during
       # selection (reoriented onto their slots via TorchBicop.flip) — exactly
@@ -433,6 +468,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       structure, pairs = cls.select(
         u_t,
         fit_edge,
+        fit_level=level_hook,
         trunc_lvl=controls.trunc_lvl,
         tree_criterion=controls.tree_criterion,
         threshold=controls.threshold,
@@ -450,7 +486,11 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       # Fixed structure: fit the pairs tree by tree along it
       # (SimplifiedContext -> x_e=None).
       pairs = cls.fit(
-        structure, u_t, fit_edge, var_types=list(var_types) or None
+        structure,
+        u_t,
+        fit_edge,
+        var_types=list(var_types) or None,
+        fit_level=level_hook,
       )
     # Store the continuous grids; `_get_pair_copula` re-wraps a discrete edge,
     # so the ModuleList holds only real nn.Modules.
@@ -621,6 +661,27 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     state = dict(super().__getstate__())
     state["_compiled"] = {}
     return state
+
+  def load_state_dict(self, *args: Any, **kwargs: Any) -> Any:
+    """Load parameters and buffers, dropping anything derived from them.
+
+    Parameters
+    ----------
+    *args, **kwargs
+        Forwarded to :meth:`torch.nn.Module.load_state_dict`.
+
+    Returns
+    -------
+    torch.nn.modules.module._IncompatibleKeys
+        Whatever the base implementation returns.
+    """
+    # The stacked bake and the compiled cascades are copies of the grids, not
+    # views of them, so a load that replaces the grids leaves both answering
+    # from the old density. `_apply` drops them for the same reason.
+    out = super().load_state_dict(*args, **kwargs)
+    self._batched = None
+    self._compiled = {}
+    return out
 
   def _apply(self, fn, *args, **kwargs):
     # `.to()`, `.cuda()`, `.cpu()` all route through `_apply`. The

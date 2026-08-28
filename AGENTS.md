@@ -418,7 +418,13 @@ For any behavior change:
 - **Tests import from public namespaces** (`from
   pyvinecopulib.sklearn import VineDensity`), not deep internals.
   `_python_helpers` and other underscore-prefixed modules are off
-  limits to tests.
+  limits to tests, with one carve-out: the innermost numeric kernels in
+  `torch/_fit_tll.py` (`_win_smoother`, `_ace`) are reached directly,
+  because what they guarantee is not observable through the public surface
+  at the precision that matters — a leaking per-lane freeze moves a vine's
+  pdf by less than the arithmetic noise a batched fit has to tolerate, and
+  is unmistakable one call in. Import inside the test function, as those do,
+  so the module stays out of collection for a torch-free run.
 - **Generated files stay generated.** `docstr.hpp` and every
   `__init__.pyi` are produced by `scripts/generate_docstring.py` and
   `scripts/generate_stubs.py` respectively. Do not hand-edit; do not
@@ -983,11 +989,11 @@ Key surface:
   `.to()` / pickling see only real `nn.Module` parameters. `TorchBicop.from_data`
   takes the four-column layout and reuses the compiled `find_latent_sample`,
   which is what `TllBicop::fit` now consumes for a discrete edge; the jittered
-  ranks only seed the bandwidth. Two things a discrete torch vine refuses: the
-  **integral cache** (`cache_integrals=None` resolves to `False`, an explicit
-  `True` raises), because differencing a bilinearly interpolated `cdf` gives 38%
-  error on a `("d","d")` density; and the **batched fast path**, whose stacked
-  per-level grids carry no distribution function at all.
+  ranks only seed the bandwidth. A discrete torch vine refuses the **batched
+  fast path**, whose stacked per-level grids carry no distribution function at
+  all. It does *not* refuse the **integral cache**: the prefix tables
+  reconstruct the integral exactly, so a discrete edge can difference them and
+  `cache_integrals` resolves the same way it does for a continuous vine.
 - `FitControlsTorchBicop` / `FitControlsTorchVinecop` — fit-time
   dataclasses. Notable knobs:
   - `method` — `"tll"` (the only fitter; kept as the dispatch seam
@@ -1028,6 +1034,14 @@ Key surface:
     vine is a variant — so a process compiling more vines than that falls
     back to eager. The `batched` flag is **not** a control: it is resolved
     per device on each call, and overridable per call.
+  - `batched_fit` — fits a whole tree level in one call instead of edge at a
+    time, through the optional `fit_level` hook on `VinecopBase.fit` /
+    `.select` (`TorchBicop.from_data_batched` is the pair-level entry point,
+    taking `(P, n, 2)`). Resolved per device like the cascade's `batched`.
+    The hook is deliberately ignorant of what the pairs are for — `P`
+    independent pairs on shared rows — so several vines' levels concatenate
+    into the same axis as readily as one vine's. A level carrying a discrete
+    edge or a conditioning context cannot stack and stays per-edge.
   - `device`, `dtype` — propagate to every tensor on construction;
     fitted modules respect `.to(device)` afterwards.
   - `trunc_lvl`, `tree_criterion`, `threshold`, `tree_algorithm`, `seeds`
@@ -1169,6 +1183,17 @@ Round-trip / parity properties to preserve when touching numerics:
   `rosenblatt` on the same fitted vine, and **bit-identical**
   `inverse_rosenblatt` -- its waves reorder the cells without changing what
   any one of them computes, so that one is pinned at `atol=rtol=0`.
+- `batched_fit=True` ↔ `batched_fit=False`: numerically equivalent, and
+  **not** bit-identical on any device — unlike `inverse_rosenblatt` above,
+  which is. Batching changes how many elements the bandwidth search's `pow`
+  is handed, and torch selects elementwise kernels by element count
+  (vectorized past `2 * Vectorized<double>::size()`: 8 on AVX2, 4 on NEON),
+  so a machine that vectorizes sooner diverges where another does not. Do
+  not pin a fit comparison at `atol=rtol=0` on the strength of one machine
+  agreeing; the exact claims available are that a lane's answer is
+  independent of *which* lanes it travelled with (at a fixed shape) and that
+  the selected structure matches, the tree criterion reading ranks rather
+  than last bits.
 - `sklearn.base.clone()` round-trip: every estimator clones cleanly
   with all `__init__` parameters preserved verbatim.
 
