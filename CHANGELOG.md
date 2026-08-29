@@ -213,6 +213,7 @@
 
 ### Changes in `vinecopulib`
 
+- Floor the random-tree weights so Wilson's walk terminates. `select_edges_random` gave `boost::random_spanning_tree` the edge criterion as its weight, and the walk cannot leave a vertex whose incident weights are all zero -- which `calculate_criterion` produces for every edge at `n <= 10`, and for individual edges that are NaN or below the threshold. So `tree_algorithm="random_weighted"` hung outright on small samples, and on larger ones wherever a degenerate pair left a node with nothing but zeros ([vinecopulib#759](https://github.com/vinecopulib/vinecopulib/pull/759)).
 #### BREAKING API CHANGES
 
 - Require C++17, CMake 3.14 and Boost 1.75, and put `-march=native` behind `VINECOPULIB_NATIVE_ARCH` so the default release build is redistributable ([vinecopulib#711](https://github.com/vinecopulib/vinecopulib/pull/711)). pyvinecopulib wheels now set `-march=x86-64-v3` explicitly; editable builds take the plain baseline (#250).
