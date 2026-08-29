@@ -213,6 +213,7 @@
 
 ### Changes in `vinecopulib`
 
+- Return the limit for Joe's Kendall's tau at its removable singularity. `tau(theta)` is `0/0` at `theta = 2`, an ordinary interior point, so `Bicop(joe, 0, 2).tau` was `NaN` and nearby values lost most of their significant digits -- reachable by a `tau_to_parameters` round trip ([vinecopulib#758](https://github.com/vinecopulib/vinecopulib/pull/758)).
 - Floor the random-tree weights so Wilson's walk terminates. `select_edges_random` gave `boost::random_spanning_tree` the edge criterion as its weight, and the walk cannot leave a vertex whose incident weights are all zero -- which `calculate_criterion` produces for every edge at `n <= 10`, and for individual edges that are NaN or below the threshold. So `tree_algorithm="random_weighted"` hung outright on small samples, and on larger ones wherever a degenerate pair left a node with nothing but zeros ([vinecopulib#759](https://github.com/vinecopulib/vinecopulib/pull/759)).
 #### BREAKING API CHANGES
 
