@@ -313,6 +313,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       grid_size=controls.grid_size,
       mult=controls.mult,
       grid_type=controls.grid_type,
+      compile_fit=controls.compile_fit,
     )
     # `values` is `(P, m, m)`; each pair takes its own slice. The slice is
     # contiguous, so the grid each pair holds is its own buffer rather than
@@ -426,6 +427,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       grid_size=controls.grid_size,
       mult=controls.mult,
       grid_type=controls.grid_type,
+      compile_fit=controls.compile_fit,
       pseudo_obs=pseudo_obs,
       discrete_data=u_t if discrete else None,
     )

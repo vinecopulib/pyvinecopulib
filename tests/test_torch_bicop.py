@@ -978,6 +978,108 @@ def test_from_data_batched_matches_the_per_pair_loop(n: int) -> None:
     )
 
 
+def test_ace_step_carries_its_own_state() -> None:
+  """A dead lane is left exactly where it was, state included.
+
+  The step advances the score *and* the three loop variables that decide
+  liveness, so that the whole pass is one region for the compiler to fuse.
+  That only reproduces the sequential answer if every one of them is masked
+  -- an unmasked trip counter would retire a frozen lane's neighbors early.
+  """
+  from pyvinecopulib.torch._fit_tll import _ace_step
+
+  torch.manual_seed(0)
+  n, p = 200, 3
+  z = torch.randn(p, n, dtype=torch.float64)
+  ind = z.argsort(dim=-1, stable=True)
+  ranks = torch.empty_like(ind).scatter_(-1, ind, torch.arange(n).expand(p, n))
+  state = [
+    z.clone(),
+    torch.ones(p, dtype=torch.float64),
+    torch.ones(p, dtype=torch.float64),
+    torch.ones(p, dtype=torch.long),
+  ]
+  dead = torch.tensor([True, False, True])
+  out = _ace_step(
+    z,
+    state[0],
+    dead,
+    state[1],
+    state[2],
+    state[3],
+    torch.ones(p, dtype=torch.bool),
+    n,
+    ind,
+    ranks,
+    40,
+    10,
+    1e-4,
+  )
+  for got, before in zip(out[:4], state):
+    torch.testing.assert_close(got[1], before[1], atol=0.0, rtol=0.0)
+
+
+@pytest.mark.compile
+def test_compile_fit_matches_the_eager_fit() -> None:
+  """Fusing the bandwidth search does not move the fit off the C++ gate.
+
+  Fusion reorders the arithmetic, so this is not bit-identical and cannot
+  be: the grid moves by ~1e-15 and, since the outer criterion sits at the
+  float64 noise floor, a lane's iteration count can change with it. What has
+  to hold is the gate that binds every other fit -- the compiled grid
+  against ``pv.Bicop.from_data`` at 1e-11 -- and agreement with the eager
+  torch fit well inside it.
+  """
+  u = pv.Bicop(
+    family=pv.families.gaussian, parameters=np.array([[0.6]])
+  ).sample(500, seeds=[1, 2, 3])
+  eager = TorchBicop.from_data(u, FitControlsTorchBicop())
+  fused = TorchBicop.from_data(u, FitControlsTorchBicop(compile_fit=True))
+  ref = _fit_tll(u).parameters
+  np.testing.assert_allclose(
+    fused.interp_grid.values.numpy(), ref, atol=1e-11, rtol=1e-11
+  )
+  np.testing.assert_allclose(
+    fused.interp_grid.values.numpy(),
+    eager.interp_grid.values.numpy(),
+    atol=1e-11,
+    rtol=1e-11,
+  )
+
+
+@pytest.mark.compile
+def test_compile_fit_batches_over_a_pair_axis() -> None:
+  """The fused step takes a lane count it was not compiled for.
+
+  A vine hands the step one width per tree level, so specializing on each
+  would exceed the compiler's variant cache and drop the widest levels back
+  to eager without saying so. The step is compiled with dynamic shapes for
+  that reason, and this is what would notice if it stopped being.
+  """
+  rhos = [-0.5, 0.2, 0.8]
+  us = [
+    pv.Bicop(family=pv.families.gaussian, parameters=np.array([[r]])).sample(
+      400, seeds=[3, 4, 5]
+    )
+    for r in rhos
+  ]
+  controls = FitControlsTorchBicop(compile_fit=True)
+  # Two different widths through one compiled step, then a single pair.
+  wide = TorchBicop.from_data_batched(torch.from_numpy(np.stack(us)), controls)
+  narrow = TorchBicop.from_data_batched(
+    torch.from_numpy(np.stack(us[:2])), controls
+  )
+  for i, u in enumerate(us[:2]):
+    solo = TorchBicop.from_data(u, controls)
+    for got in (wide[i], narrow[i]):
+      torch.testing.assert_close(
+        got.interp_grid.values,
+        solo.interp_grid.values,
+        atol=1e-11,
+        rtol=1e-11,
+      )
+
+
 def test_from_data_batched_matches_cpp() -> None:
   """The batched fit clears the same C++ gate the single-pair fit does.
 
