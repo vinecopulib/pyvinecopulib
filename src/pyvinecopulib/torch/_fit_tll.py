@@ -28,7 +28,7 @@ Only the ``constant`` method is supported here; the ``linear`` and
 from __future__ import annotations
 
 import math
-from typing import Optional
+from typing import Callable, Optional
 
 import torch
 from torch import Tensor
@@ -121,6 +121,108 @@ def _cef(x: Tensor, ind: Tensor, ranks: Tensor, wl: int) -> Tensor:
 _ACE_OUTER_ABS_TOL: float = 2e-15
 
 
+def _ace_step(
+  source: Tensor,
+  target: Tensor,
+  live: Tensor,
+  eps_prev: Tensor,
+  abs_err: Tensor,
+  trip: Tensor,
+  gate: Tensor,
+  n: int,
+  ind: Tensor,
+  ranks: Tensor,
+  wl: int,
+  iter_max: int,
+  abs_tol: float,
+) -> "tuple[Tensor, Tensor, Tensor, Tensor, Tensor]":
+  """One ACE pass, including the per-lane loop state it advances.
+
+  Both of :func:`_ace`'s loops take this same step, differing in which score
+  they smooth, which permutation they smooth it under, and what gates their
+  liveness. The state moves with the step rather than beside it so that the
+  whole pass is one region -- the counter updates are four more kernels on
+  ``(P,)`` tensors, which cost the same as the arithmetic they bookkeep.
+
+  Every write is masked by ``live``, so a pass with a lane dead leaves that
+  lane exactly where it was.
+
+  Parameters
+  ----------
+  source : Tensor, shape (..., n)
+      The score being conditioned on.
+  target : Tensor, shape (..., n)
+      The score being rewritten.
+  live : Tensor, shape (...), dtype bool
+      Lanes still iterating.
+  eps_prev, abs_err, trip : Tensor, shape (...)
+      The previous criterion, the last change in it, and the trip counter.
+  gate : Tensor, shape (...), dtype bool
+      An outer condition every lane must also satisfy to stay live. The
+      inner loop passes the outer loop's liveness; the outer passes all-true.
+  n : int
+      Observations per lane.
+  ind, ranks : Tensor, shape (..., n), dtype int
+      The sort permutation of the conditioning argument, and its inverse.
+  wl : int
+      Smoothing half-window.
+  iter_max : int
+      Per-lane cap on ``trip``.
+  abs_tol : float
+      Convergence tolerance on ``abs_err``.
+
+  Returns
+  -------
+  tuple of Tensor
+      ``target``, ``eps_prev``, ``abs_err``, ``trip`` and the new ``live``.
+  """
+  v = _cef(source, ind, ranks, wl)
+  v = v - v.sum(-1, keepdim=True) / n
+  cand = v / ((v**2).sum(-1, keepdim=True) / (n - 1)).sqrt()
+  eps = ((cand - source) ** 2).sum(-1) / n
+  target = torch.where(live.unsqueeze(-1), cand, target)
+  abs_err = torch.where(live, (eps_prev - eps).abs(), abs_err)
+  eps_prev = torch.where(live, eps, eps_prev)
+  trip = torch.where(live, trip + 1, trip)
+  return (
+    target,
+    eps_prev,
+    abs_err,
+    trip,
+    gate & (trip <= iter_max) & (abs_err > abs_tol),
+  )
+
+
+#: What :func:`_ace_step` and its compiled twin both are.
+_AceStep = Callable[..., "tuple[Tensor, Tensor, Tensor, Tensor, Tensor]"]
+
+#: The compiled :func:`_ace_step`, built on first use. Compiling costs seconds
+#: of Inductor, so it is not paid by a process that never asks for it.
+_COMPILED_ACE_STEP: Optional[_AceStep] = None
+
+
+def _compiled_ace_step() -> _AceStep:
+  """:func:`_ace_step` fused into one kernel, compiled once per process.
+
+  ``dynamic=True`` because a vine hands the step one lane count per tree
+  level -- nineteen of them at ``d = 20``. Specializing on each would exceed
+  ``torch._dynamo.config.cache_size_limit`` (8 by default) and silently drop
+  the widest levels back to eager, and raising that limit from inside a
+  library would reach every other compiled function in the process. Dynamic
+  shapes cover every width with about two graphs, for roughly a fifth of the
+  speedup a specialized one gets.
+
+  Returns
+  -------
+  callable
+      The compiled step, with :func:`_ace_step`'s signature.
+  """
+  global _COMPILED_ACE_STEP
+  if _COMPILED_ACE_STEP is None:
+    _COMPILED_ACE_STEP = torch.compile(_ace_step, dynamic=True)
+  return _COMPILED_ACE_STEP
+
+
 def _ace(
   data: Tensor,
   *,
@@ -133,6 +235,7 @@ def _ace(
   # against its own rounding noise instead of converging.
   outer_abs_tol: Optional[float] = None,
   inner_abs_tol: float = 1e-4,
+  compile_step: bool = False,
 ) -> Tensor:
   """Alternating conditional expectations.
 
@@ -162,6 +265,12 @@ def _ace(
 
   Args:
     data: shape ``(..., n, 2)``.
+    compile_step: fuse the per-pass body with ``torch.compile``. The pass is
+      39 kernel launches over tensors small enough that the arithmetic is
+      invisible, so fusing it is worth several times its cost at the sizes a
+      vine is usually fitted at. It perturbs the last bits, and the outer
+      criterion sits at the float64 noise floor, so a lane's iteration count
+      can move; the C++ grid gate covers the result.
 
   Returns:
     ``(..., n, 2)`` tensor of the ACE-transformed scores ``phi``.
@@ -174,6 +283,9 @@ def _ace(
       torch.finfo(dtype).eps / torch.finfo(torch.float64).eps
     )
   wl = int(math.ceil(n / 5.0))
+  step = _compiled_ace_step() if compile_step else _ace_step
+  # The outer loop has no condition beyond its own; the inner passes it.
+  always = torch.ones(batch, dtype=torch.bool, device=device)
 
   # Two contiguous buffers rather than the columns of one `(..., n, 2)`
   # matrix: every operation below then runs on a contiguous buffer instead
@@ -215,36 +327,38 @@ def _ace(
       & (inner_abs_err > inner_abs_tol)
     )
     while bool(inner_live.any()):
-      v = _cef(phi0, ind1, ranks1, wl)
-      v = v - v.sum(-1, keepdim=True) / n
-      cand = v / ((v**2).sum(-1, keepdim=True) / (n - 1)).sqrt()
-      eps = ((cand - phi0) ** 2).sum(-1) / n
       # `phi1` is written by the inner loop, so it is gated on `inner_live`
       # -- which carries `outer_live`. A lane whose *outer* loop converged
       # must not have its `phi1` moved by other lanes' inner iterations.
-      phi1 = torch.where(inner_live.unsqueeze(-1), cand, phi1)
-      inner_abs_err = torch.where(
-        inner_live, (inner_eps - eps).abs(), inner_abs_err
+      phi1, inner_eps, inner_abs_err, inner_iter, inner_live = step(
+        phi0,
+        phi1,
+        inner_live,
+        inner_eps,
+        inner_abs_err,
+        inner_iter,
+        outer_live,
+        n,
+        ind1,
+        ranks1,
+        wl,
+        inner_iter_max,
+        inner_abs_tol,
       )
-      inner_eps = torch.where(inner_live, eps, inner_eps)
-      inner_iter = torch.where(inner_live, inner_iter + 1, inner_iter)
-      inner_live = (
-        outer_live
-        & (inner_iter <= inner_iter_max)
-        & (inner_abs_err > inner_abs_tol)
-      )
-    v = _cef(phi1, ind0, ranks0, wl)
-    v = v - v.sum(-1, keepdim=True) / n
-    cand = v / ((v**2).sum(-1, keepdim=True) / (n - 1)).sqrt()
-    eps = ((phi1 - cand) ** 2).sum(-1) / n
-    phi0 = torch.where(outer_live.unsqueeze(-1), cand, phi0)
-    outer_abs_err = torch.where(
-      outer_live, (outer_eps - eps).abs(), outer_abs_err
-    )
-    outer_eps = torch.where(outer_live, eps, outer_eps)
-    outer_iter = torch.where(outer_live, outer_iter + 1, outer_iter)
-    outer_live = (outer_iter <= outer_iter_max) & (
-      outer_abs_err > outer_abs_tol
+    phi0, outer_eps, outer_abs_err, outer_iter, outer_live = step(
+      phi1,
+      phi0,
+      outer_live,
+      outer_eps,
+      outer_abs_err,
+      outer_iter,
+      always,
+      n,
+      ind0,
+      ranks0,
+      wl,
+      outer_iter_max,
+      outer_abs_tol,
     )
 
   return torch.stack([phi0, phi1], dim=-1)
@@ -260,9 +374,9 @@ def _pearson_cor(x: Tensor) -> Tensor:
   return (x0 * x1).sum(-1) / ((x0**2).sum(-1).sqrt() * (x1**2).sum(-1).sqrt())
 
 
-def _pairwise_mcor(x: Tensor) -> Tensor:
+def _pairwise_mcor(x: Tensor, *, compile_step: bool = False) -> Tensor:
   """Maximal correlation via ACE + Pearson, one value per leading lane."""
-  return _pearson_cor(_ace(x))
+  return _pearson_cor(_ace(x, compile_step=compile_step))
 
 
 def _chol22(B: Tensor) -> Tensor:
@@ -281,7 +395,9 @@ def _chol22(B: Tensor) -> Tensor:
   )
 
 
-def _select_bandwidth_constant(z: Tensor) -> Tensor:
+def _select_bandwidth_constant(
+  z: Tensor, *, compile_step: bool = False
+) -> Tensor:
   """Bandwidth matrix for the constant-method local-likelihood KDE.
 
   Mirrors ``TllBicop::select_bandwidth`` for ``method == "constant"``.
@@ -298,7 +414,7 @@ def _select_bandwidth_constant(z: Tensor) -> Tensor:
   eye = torch.eye(2, dtype=z.dtype, device=z.device)
   cov = eye + cor[..., None, None] * (1.0 - eye)
   mult = n ** (-1.0 / 3.0)
-  mcor = _pairwise_mcor(z)
+  mcor = _pairwise_mcor(z, compile_step=compile_step)
   scale = (cor / mcor).abs() ** (0.5 * mcor)
   return mult * cov * scale[..., None, None]
 
@@ -402,6 +518,7 @@ def fit_tll_constant(
   grid_type: str = "normal",
   pseudo_obs: Optional[Tensor] = None,
   discrete_data: Optional[Tensor] = None,
+  compile_fit: bool = False,
 ) -> tuple[Tensor, Tensor]:
   """Fit a TLL pair-copula via local-constant kernel density estimation.
 
@@ -425,6 +542,10 @@ def fit_tll_constant(
       the bandwidth is selected from the jittered ranks and only then is the
       latent sample drawn, with ``(B00 * B11) ** 0.25`` as its own bandwidth and
       ``B`` left as selected.
+    compile_fit: fuse the bandwidth search's per-pass body with
+      ``torch.compile``. Off by default: the first call compiles for seconds,
+      which only a caller fitting many pairs in one process earns back. See
+      ``FitControlsTorchBicop.compile_fit``.
     grid_type: either ``"normal"`` (default, matches C++ — grid_points are
       ``pnorm(linspace(-3.25, 3.25, m))``) or ``"linear"`` (grid_points
       are uniformly spaced on ``[Phi(-3.25), 1-Phi(-3.25)]``, with the
@@ -462,7 +583,7 @@ def fit_tll_constant(
   z_data = _qnorm(psobs)
 
   # Bandwidth selection.
-  B = _select_bandwidth_constant(z_data) * mult
+  B = _select_bandwidth_constant(z_data, compile_step=compile_fit) * mult
 
   if discrete_data is not None:
     # Reuse the compiled draw, as structure selection reuses `wdm`: it is a

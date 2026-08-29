@@ -1004,6 +1004,17 @@ Key surface:
   dataclasses. Notable knobs:
   - `method` — `"tll"` (the only fitter; kept as the dispatch seam
     for future torch fitters).
+  - `compile_fit` — off by default; fuses the bandwidth search's per-pass
+    body with `torch.compile`. The pass is 39 launches over tensors whose
+    arithmetic stays invisible even at `n = 30000`, so fusing it is worth
+    2.0x end to end at `n = 500`, tapering to 1.04x at 30000 and never
+    below 1. Off because the first call compiles for ~5 s and a second lane
+    count for ~8 more — about 500 pair fits to break even, so a loss for one
+    vine and a win for a few dozen. Compiled with `dynamic=True`
+    deliberately: a `d = 20` vine presents 19 lane counts, static shapes
+    would exceed `cache_size_limit` (8) and drop the widest levels back to
+    eager in silence, and raising that limit from a library would reach
+    every other compiled function in the process.
   - `cache_integrals` — default `True`; precomputes three `(m, m)`
     cumulative-trapezoid **prefix** tables (`sy`, `sx`, `p`), from which
     `cdf` / `hfunc*` read their value in closed form. The reconstruction is

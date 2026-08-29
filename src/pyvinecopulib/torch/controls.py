@@ -52,6 +52,26 @@ class FitControlsTorchBicop:
       *TLL only.* Storage grid type — ``"normal"`` (Phi-spaced,
       the ``Bicop``-parity default) or ``"linear"``
       (uniform on ``[0, 1]`` with the O(1) cell-finding fast-path).
+  compile_fit : bool, default=False
+      *TLL only.* Fuse the bandwidth search's per-pass body with
+      ``torch.compile``. The pass is 39 kernel launches over tensors small
+      enough that the arithmetic is invisible even at ``n = 30000``, so
+      fusing it roughly halves a pair fit: measured 2.0x end to end at
+      ``n = 500``, 1.6x at 5000, 1.4x at 10000, tapering to 1.04x at 30000
+      and never below 1.
+
+      Off by default because the first call compiles for about 5 seconds and
+      a second lane count costs another 8, which only a caller fitting many
+      pairs in one process earns back -- around 500 pair fits at
+      ``n = 2000``, so roughly 60 vines at ``d = 9``. Fitting one vine, it is
+      a large loss. The same trade as
+      ``FitControlsTorchVinecop.compile``, which fuses the evaluation
+      cascades.
+
+      Fusion reorders the arithmetic, so the fitted grid moves by about
+      1e-15 and a lane's iteration count can change -- the outer criterion
+      sits at the float64 noise floor. The ``Bicop`` parity gate is
+      unaffected.
   """
 
   method: str = "tll"
@@ -60,6 +80,7 @@ class FitControlsTorchBicop:
   grid_size: int = 30
   mult: float = 1.0
   grid_type: str = "normal"
+  compile_fit: bool = False
 
   def __post_init__(self) -> None:
     if self.method not in METHODS:
