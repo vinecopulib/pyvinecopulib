@@ -360,7 +360,8 @@ class VineBase(BaseEstimator):
         )
       if X.shape[1] == 0:
         raise ValueError(
-          "Found array with 0 feature(s) while a minimum of 1 is required."
+          "0 feature(s) (shape=(%d, 0)) while a minimum of 1 is required."
+          % X.shape[0]
         )
     if y is not None:
       y = np.asarray(y)
@@ -455,7 +456,10 @@ class VineBase(BaseEstimator):
       else:
         check_is_fitted(self, attributes=["n_features_in_"])
         if X.shape[1] != self.n_features_in_:
-          raise ValueError("X has wrong number of features.")
+          raise ValueError(
+            f"X has {X.shape[1]} features, but {type(self).__name__} is "
+            f"expecting {self.n_features_in_} features as input"
+          )
       X_arr = X
 
     # Margins are fitted on float columns, so a complex input would otherwise
