@@ -39,7 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Set up uv
@@ -122,7 +122,7 @@ jobs:
           git fetch --depth=1 origin +refs/tags/*:refs/tags/*
       - name: Set up Python 3.11
         # Host Python for `uvx twine check`; cibw uses its own per-wheel Pythons.
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: 3.11
       - name: Set up uv
@@ -242,7 +242,7 @@ jobs:
       - name: Checkout project
         uses: actions/checkout@v4
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Set up uv
@@ -305,7 +305,7 @@ jobs:
           minor="${short:1}"
           echo "version=$major.$minor" >> $GITHUB_OUTPUT
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ steps.pyver.outputs.version }}
       - name: Set up uv
@@ -409,7 +409,7 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 0
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Set up uv
@@ -481,7 +481,7 @@ jobs:
           # job repeatedly.
           update_compilers_ubuntu: "false"
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: 3.11
       - name: Set up uv
