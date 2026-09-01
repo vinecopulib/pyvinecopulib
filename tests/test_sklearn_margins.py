@@ -198,7 +198,7 @@ def test_margin_summary_is_published(
   X_df, _ = sample_dataframe_data
   est = VineDensity(random_state=0).fit(X_df)
   rows = est.margin_summary_
-  assert len(rows) == est.n_features_in_
+  assert len(rows) == est.n_model_features_
   assert [row["var_type"] for row in rows] == est.distribution_.var_types
   assert all(row["family"] == "kde1d" for row in rows)
 
