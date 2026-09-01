@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Python 3.11
         uses: actions/setup-python@v7
         with:
@@ -113,7 +113,7 @@ jobs:
 
     steps:
       - name: Checkout project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
       - name: Get history and tags for SCM versioning to work
@@ -240,7 +240,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up Python 3.11
         uses: actions/setup-python@v7
         with:
@@ -295,7 +295,7 @@ jobs:
           - { os: windows-latest, cibw_id: win_amd64 }
     name: Install wheel and run unit tests on ${{ matrix.cfg.os }} for cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Infer full Python version
         id: pyver
         shell: bash
@@ -403,7 +403,7 @@ jobs:
       contents: write  # required to push the auto-commit back to the PR branch
     steps:
       - name: Checkout PR branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
@@ -453,7 +453,7 @@ jobs:
     needs: [lint]
     steps:
       - name: Checkout project
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: recursive
       - name: Get history and tags for SCM versioning to work
@@ -538,7 +538,7 @@ jobs:
       contents: read
     steps:
       # Before the artifacts land: checkout cleans the workspace.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # PyPI never re-accepts a version number, so a tag that disagrees with
       # the metadata is unrecoverable. The `lint` job runs the same check on
       # every pull request, but without a tag to compare against and while the
