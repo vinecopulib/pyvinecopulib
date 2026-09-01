@@ -43,7 +43,9 @@ Notes
 - *A distribution, not just a copula* — :class:`Vinedist`. It pairs any
   :class:`VinecopLike` with one margin per variable and evaluates
   ``pdf`` / ``cdf`` / ``sample`` on the original scale;
-  :meth:`Vinedist.from_data` fits both halves in one call.
+  :meth:`Vinedist.from_data` fits the margins and an ``x``-independent compiled
+  copula in one call. An externally conditional copula is fitted through the
+  :meth:`VinecopBase.fit` extension seam and then composed with ``Vinedist``.
 - *Margins* — :class:`Kde1d` is the default and needs no configuration
   beyond its variable type. Any object with ``pdf`` / ``cdf`` / ``icdf``
   works (:class:`MarginLike`); subclass :class:`MarginBase` to write

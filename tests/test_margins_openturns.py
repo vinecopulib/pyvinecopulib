@@ -218,6 +218,18 @@ def test_estimator_rejects_weights_and_unknown_families(
     OpenTURNSMargin()
 
 
+@pytest.mark.parametrize(
+  "factory", [lambda: OpenTURNSMargin("Normal"), OpenTURNSSelector]
+)
+@pytest.mark.parametrize("shape", [(4, 1), (2, 2)])
+def test_openturns_fitters_require_a_univariate_shape(
+  factory: Any, shape: tuple[int, int]
+) -> None:
+  """Column matrices must not be flattened into a pooled sample."""
+  with pytest.raises(ValueError, match=r"y must have shape \(n,\)"):
+    factory().fit(np.arange(np.prod(shape), dtype=float).reshape(shape))
+
+
 # --- OpenTURNSSelector ------------------------------------------------------ #
 
 
@@ -273,6 +285,21 @@ def test_selector_criteria_are_on_the_usual_scale(
     rtol=1e-9,
   )
   assert winner["bic"] == min(row["bic"] for row in selector.report_)
+  assert all(row["criterion"] == "bic" for row in selector.report_)
+
+
+def test_selector_honors_a_declared_variable_type(
+  count_sample: np.ndarray,
+) -> None:
+  """Caller schema wins over the integer-valued-data heuristic."""
+  selector = OpenTURNSSelector(["Normal", "Poisson"]).declare(var_type="c")
+  assert selector.supported_var_types == ("c", "d")
+  selector.fit(count_sample)
+
+  assert selector.var_type == "c"
+  status = {row["family"]: row["status"] for row in selector.report_}
+  assert status["Normal"] == "selected"
+  assert "not comparable" in status["Poisson"]
 
 
 def test_selector_records_every_rejection(count_sample: np.ndarray) -> None:

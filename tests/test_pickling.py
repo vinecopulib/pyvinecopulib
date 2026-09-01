@@ -117,6 +117,17 @@ def test_bicop() -> None:
   compare_bicop(original_bicop, deserialized_bicop)
 
 
+def test_fitted_bicop_preserves_diagnostics() -> None:
+  """A fitted pair round-trips its attained public estimator state."""
+  u = pv.to_pseudo_obs(random_data(2, 300))
+  original = pv.Bicop.from_data(u)
+  restored = pickle.loads(pickle.dumps(original))
+  compare_bicop(original, restored)
+  assert restored.nobs == original.nobs
+  for name in ("loglik", "aic", "bic"):
+    assert getattr(restored, name)() == pytest.approx(getattr(original, name)())
+
+
 def test_rvinestructure() -> None:
   # Create an instance of RVineStructure with some configuration
   original_structure = pv.RVineStructure.sample(5)
@@ -166,6 +177,12 @@ def test_kde1d() -> None:
   # Assert that the deserialized fitted object's properties match the original
   compare_kde1d(original_kde, deserialized_fitted)
 
+  # Saved fitting controls govern subsequent fits as well as inspection.
+  refit_data = np.random.default_rng(9).normal(1.0, 0.7, 120)
+  original_kde.fit(refit_data)
+  deserialized_fitted.fit(refit_data)
+  compare_kde1d(original_kde, deserialized_fitted)
+
 
 def test_vinecop() -> None:
   d = 5
@@ -184,6 +201,11 @@ def test_vinecop() -> None:
 
   # Ensure the deserialized object has the same attributes as the original
   compare_vinecop(original_cop, deserialized_cop)
+  assert deserialized_cop.nobs == original_cop.nobs
+  for name in ("loglik", "aic", "bic", "mbicv"):
+    assert getattr(deserialized_cop, name)() == pytest.approx(
+      getattr(original_cop, name)()
+    )
 
 
 def _fitted_estimator(backend: object) -> tuple[Any, np.ndarray]:

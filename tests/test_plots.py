@@ -263,6 +263,21 @@ class TestBicopHelpers:
     with pytest.raises(ValueError, match="Unknown margin type"):
       bicop_plot(mock_cop, margin_type="invalid")
 
+  def test_bicop_plot_restores_discrete_type_after_failure(self) -> None:
+    """A plotting error cannot mutate a caller-owned discrete pair."""
+    from pyvinecopulib._python_helpers.bicop import bicop_plot
+
+    class Pair:
+      var_types = ["d", "c"]
+
+      def pdf(self, u: np.ndarray) -> np.ndarray:
+        raise RuntimeError("density failed")
+
+    pair = Pair()
+    with pytest.raises(RuntimeError, match="density failed"):
+      bicop_plot(pair, grid_size=10)
+    assert pair.var_types == ["d", "c"]
+
   @patch("matplotlib.pyplot.show")
   @patch("matplotlib.pyplot.contour")
   @patch("matplotlib.pyplot.clabel")

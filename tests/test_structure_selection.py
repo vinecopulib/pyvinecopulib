@@ -137,6 +137,15 @@ def test_select_spanning_tree_random_is_reproducible_and_valid() -> None:
     assert len(t1) == n - 1
 
 
+def test_select_spanning_tree_weighted_random_accepts_zero_weights() -> None:
+  n = 5
+  edges = [(i, j) for i in range(n) for j in range(i + 1, n)]
+  selected = _select_spanning_tree(
+    n, edges, [1.0] * len(edges), "random_weighted", [42]
+  )
+  assert len(selected) == n - 1
+
+
 # ---------------------------------------------------------------------------
 # VinecopBase.select — exact parity with Vinecop
 # ---------------------------------------------------------------------------
@@ -227,6 +236,47 @@ def test_select_random_weighted_is_reproducible() -> None:
   assert s1.trunc_lvl == d - 1
 
 
+def test_select_random_weighted_accepts_small_samples() -> None:
+  u = _correlated_pseudo_obs(1, 5, n=10)
+  structure, _ = VinecopBase.select(
+    u,
+    _gaussian_fit_edge,
+    tree_algorithm="random_weighted",
+    seeds=[1, 2, 3],
+  )
+  assert structure.trunc_lvl == 4
+
+
+def test_select_rejects_unknown_tree_algorithm() -> None:
+  u = _correlated_pseudo_obs(1, 4, n=50)
+  with pytest.raises(ValueError, match="tree_algorithm must be one of"):
+    VinecopBase.select(
+      u, _gaussian_fit_edge, tree_algorithm="definitely_not_an_algorithm"
+    )
+
+
+def test_select_skips_hfunctions_after_final_tree() -> None:
+  calls = {"hfunc1": 0, "hfunc2": 0}
+
+  class CountingPair(_CppBicopLike):
+    def hfunc1(self, u: Any, x: Any = None) -> Any:
+      calls["hfunc1"] += 1
+      return super().hfunc1(u, x)
+
+    def hfunc2(self, u: Any, x: Any = None) -> Any:
+      calls["hfunc2"] += 1
+      return super().hfunc2(u, x)
+
+    def flip(self) -> "CountingPair":
+      return self
+
+  def fit_edge(tree: int, edge: int, u_e: object, x_e: object) -> CountingPair:
+    return CountingPair(pv.Bicop())
+
+  VinecopBase.select(_correlated_pseudo_obs(1, 6, n=50), fit_edge, trunc_lvl=1)
+  assert calls == {"hfunc1": 0, "hfunc2": 0}
+
+
 def test_bicop_base_flip_default_raises() -> None:
   # BicopBase provides a raising flip default: implementing it is only needed
   # to host a custom pair in structure selection.
@@ -269,7 +319,9 @@ def test_compiled_bicop_hosted_unwrapped_matches_vinecop() -> None:
   )
 
 
-@pytest.mark.parametrize("tree_criterion", ["tau", "rho", "hoeffd", "cxi"])
+@pytest.mark.parametrize(
+  "tree_criterion", ["tau", "rho", "hoeffd", "mcor", "cxi", "joe"]
+)
 def test_select_matches_vinecop_for_every_tree_criterion(
   tree_criterion: str,
 ) -> None:

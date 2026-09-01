@@ -27,6 +27,7 @@ from array_api_compat import array_namespace
 
 from ._rootfind import solve_increasing
 from ._trim import trim
+from ._validation import validate_covariates
 from .bicop_base import BicopBase, _pair_eval
 from .protocols import ArrayT, BicopLike
 
@@ -507,6 +508,43 @@ class DiscretePair(BicopBase[ArrayT]):
     flipped = cast("BicopLike[ArrayT]", self._pair).flip()
     return DiscretePair(flipped, (self._var_types[1], self._var_types[0]))
 
+  def sample(
+    self,
+    n: int,
+    *,
+    x: Optional[ArrayT] = None,
+    qrng: bool = False,
+    seeds: Optional[list[int]] = None,
+  ) -> ArrayT:
+    """Draw from the wrapped continuous copula.
+
+    Discreteness changes how a copula density is evaluated at atoms, not the
+    continuous latent uniforms the copula samples. The wrapped pair therefore
+    owns the RNG and inverse Rosenblatt transform.
+
+    Parameters
+    ----------
+    n : int
+        Number of samples.
+    x : array, shape (n, k), or None, optional
+        External covariates for a conditional draw.
+    qrng : bool, default=False
+        Draw quasi-random base uniforms instead of pseudo-random ones.
+    seeds : list of int, or None, optional
+        RNG seeds.
+
+    Returns
+    -------
+    array, shape (n, 2), dtype float
+        Samples in the unit square.
+    """
+    validate_covariates(x, n)
+    method = cast("BicopLike[ArrayT]", self._pair).sample
+    draw_seeds = list(seeds) if seeds else []
+    if x is None:
+      return method(n, qrng=qrng, seeds=draw_seeds)
+    return method(n, x=x, qrng=qrng, seeds=draw_seeds)
+
   def __repr__(self) -> str:
     return f"DiscretePair({self._pair!r}, var_types={list(self._var_types)})"
 
@@ -535,15 +573,6 @@ class DiscretePair(BicopBase[ArrayT]):
       ut[:, 3] if self._d2 else u2,
     )
 
-  @staticmethod
-  def _quotient(xp: Any, num: Any, delta: Any, fallback: Any) -> Any:
-    """``|num / delta|`` over a wide-enough atom, else ``|fallback|``."""
-    wide = delta > DELTA_MIN
-    # Both arms of `where` are evaluated, so the denominator is guarded first:
-    # a 0/0 nan would survive the selection.
-    safe = xp.where(wide, delta, xp.ones_like(delta))
-    return xp.abs(xp.where(wide, num / safe, fallback))
-
   def _pdf(self, xp: Any, a: Any, b: Any, x: Optional[Any]) -> Any:
     return _pair_eval(self._pair.pdf, xp.stack([a, b], axis=-1), x)
 
@@ -555,6 +584,54 @@ class DiscretePair(BicopBase[ArrayT]):
 
   def _h2(self, xp: Any, a: Any, b: Any, x: Optional[Any]) -> Any:
     return _pair_eval(self._pair.hfunc2, xp.stack([a, b], axis=-1), x)
+
+  @staticmethod
+  def _take(value: Optional[Any], mask: Any) -> Optional[Any]:
+    """Select rows from an optional conditioning matrix."""
+    return None if value is None else value[mask]
+
+  @staticmethod
+  def _quotient(xp: Any, num: Any, delta: Any, fallback: Any) -> Any:
+    """``|num / delta|`` over a wide-enough atom, else ``|fallback|``."""
+    wide = delta > DELTA_MIN
+    safe = xp.where(wide, delta, xp.ones_like(delta))
+    return xp.abs(xp.where(wide, num / safe, fallback))
+
+  def _pdf_mixed(
+    self,
+    xp: Any,
+    u1: Any,
+    u2: Any,
+    u1m: Any,
+    u2m: Any,
+    x: Optional[Any],
+    *,
+    discrete: int,
+  ) -> Any:
+    """Evaluate only the quotient or derivative each row requires."""
+    delta = xp.abs((u1 - u1m) if discrete == 1 else (u2 - u2m))
+    wide = delta > DELTA_MIN
+    out = xp.empty_like(delta)
+    if bool(xp.any(wide)):
+      x_wide = self._take(x, wide)
+      if discrete == 1:
+        num = self._h2(xp, u1[wide], u2[wide], x_wide) - self._h2(
+          xp, u1m[wide], u2m[wide], x_wide
+        )
+      else:
+        num = self._h1(xp, u1[wide], u2[wide], x_wide) - self._h1(
+          xp, u1m[wide], u2m[wide], x_wide
+        )
+      out[wide] = num / delta[wide]
+    narrow = ~wide
+    if bool(xp.any(narrow)):
+      out[narrow] = self._pdf(
+        xp,
+        0.5 * (u1[narrow] + u1m[narrow]),
+        0.5 * (u2[narrow] + u2m[narrow]),
+        self._take(x, narrow),
+      )
+    return xp.abs(out)
 
   def _rect(
     self, xp: Any, a1: Any, b1: Any, a2: Any, b2: Any, x: Optional[Any]
@@ -617,25 +694,9 @@ class DiscretePair(BicopBase[ArrayT]):
     if self._d1 and self._d2:
       return cast(ArrayT, self._pdf_d_d(xp, u1, u2, u1m, u2m, x))
     if self._d1:
-      return cast(
-        ArrayT,
-        self._quotient(
-          xp,
-          self._h2(xp, u1, u2, x) - self._h2(xp, u1m, u2m, x),
-          xp.abs(u1 - u1m),
-          self._pdf(xp, 0.5 * (u1 + u1m), 0.5 * (u2 + u2m), x),
-        ),
-      )
+      return cast(ArrayT, self._pdf_mixed(xp, u1, u2, u1m, u2m, x, discrete=1))
     if self._d2:
-      return cast(
-        ArrayT,
-        self._quotient(
-          xp,
-          self._h1(xp, u1, u2, x) - self._h1(xp, u1m, u2m, x),
-          xp.abs(u2 - u2m),
-          self._pdf(xp, 0.5 * (u1 + u1m), 0.5 * (u2 + u2m), x),
-        ),
-      )
+      return cast(ArrayT, self._pdf_mixed(xp, u1, u2, u1m, u2m, x, discrete=2))
     return cast(ArrayT, self._pdf(xp, u1, u2, x))
 
   def _pdf_d_d(
@@ -646,20 +707,35 @@ class DiscretePair(BicopBase[ArrayT]):
     m1, m2 = 0.5 * (u1 + u1m), 0.5 * (u2 + u2m)
     narrow1, narrow2 = d1 < DELTA_MIN, d2 < DELTA_MIN
     both = xp.where(d1 > d2, d1, d2) < DELTA_MIN
-    safe1 = xp.where(narrow1, xp.ones_like(d1), d1)
-    safe2 = xp.where(narrow2, xp.ones_like(d2), d2)
-    rect = self._rect(xp, u1m, u1, u2m, u2, x) / (safe1 * safe2)
-    # A collapsed argument is held at the atom's midpoint in *both* terms, so
-    # the quotient is a difference along the surviving argument alone.
-    q1 = (self._h1(xp, m1, u2, x) - self._h1(xp, m1, u2m, x)) / safe2
-    q2 = (self._h2(xp, u1, m2, x) - self._h2(xp, u1m, m2, x)) / safe1
-    return xp.abs(
-      xp.where(
-        both,
-        self._pdf(xp, m1, m2, x),
-        xp.where(narrow1, q1, xp.where(narrow2, q2, rect)),
-      )
-    )
+    only1 = narrow1 & ~both
+    only2 = narrow2 & ~both
+    wide = ~(both | only1 | only2)
+    out = xp.empty_like(d1)
+    if bool(xp.any(wide)):
+      out[wide] = self._rect(
+        xp,
+        u1m[wide],
+        u1[wide],
+        u2m[wide],
+        u2[wide],
+        self._take(x, wide),
+      ) / (d1[wide] * d2[wide])
+    if bool(xp.any(only1)):
+      x_only1 = self._take(x, only1)
+      # A collapsed argument is held at the atom's midpoint in both terms.
+      out[only1] = (
+        self._h1(xp, m1[only1], u2[only1], x_only1)
+        - self._h1(xp, m1[only1], u2m[only1], x_only1)
+      ) / d2[only1]
+    if bool(xp.any(only2)):
+      x_only2 = self._take(x, only2)
+      out[only2] = (
+        self._h2(xp, u1[only2], m2[only2], x_only2)
+        - self._h2(xp, u1m[only2], m2[only2], x_only2)
+      ) / d1[only2]
+    if bool(xp.any(both)):
+      out[both] = self._pdf(xp, m1[both], m2[both], self._take(x, both))
+    return xp.abs(out)
 
   def hfunc1(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """``P(U2 <= u2 | U1)``, conditioning on the atom when ``U1`` is discrete.

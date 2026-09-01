@@ -137,6 +137,22 @@ def test_icdf_on_a_bounded_support() -> None:
   assert np.all(got >= 0.0) and np.all(got <= 1.0)
 
 
+def test_icdf_returns_exact_support_endpoints() -> None:
+  """Endpoint probabilities are limits, not finite bracket approximations."""
+  m = _ShiftedExp(rate=2.0, shift=1.0)
+  got = m.icdf(np.array([0.0, 0.5, 1.0]))
+  assert got[0] == 1.0
+  assert got[2] == np.inf
+  np.testing.assert_allclose(got[1], m.exact_icdf(np.array([0.5]))[0])
+
+
+@pytest.mark.parametrize("bad", [np.nan, -0.1, 1.1])
+def test_icdf_rejects_invalid_probabilities(bad: float) -> None:
+  """The inverse contract accepts finite probabilities in the unit interval."""
+  with pytest.raises(ValueError, match=r"probabilities in \[0, 1\]"):
+    _ShiftedExp().icdf(np.array([bad]))
+
+
 def test_icdf_roundtrips_with_cdf() -> None:
   """`cdf(icdf(p)) == p` on the continuous margin."""
   m = _ShiftedExp(rate=1.5, shift=2.0)
@@ -174,6 +190,29 @@ def test_loglik_is_a_zero_d_array_and_weightable() -> None:
   np.testing.assert_allclose(
     m.loglik(dup), m.loglik(np.array([0.5, 1.0]), weights=np.array([1.0, 2.0]))
   )
+
+
+@pytest.mark.parametrize(
+  "weights,match",
+  [
+    (np.ones((3, 1)), r"shape \(3,\)"),
+    (np.ones(1), r"shape \(3,\)"),
+    (np.array([1.0, np.inf, 1.0]), "finite"),
+    (np.array([1.0, -0.1, 1.0]), "nonnegative"),
+  ],
+)
+def test_loglik_validates_observation_weights(
+  weights: np.ndarray, match: str
+) -> None:
+  """Weights cannot broadcast or describe a different set of observations."""
+  with pytest.raises(ValueError, match=match):
+    _ShiftedExp().loglik(np.array([0.5, 1.0, 2.0]), weights=weights)
+
+
+def test_loglik_rejects_nonreal_weights() -> None:
+  """Complex weights do not define a real weighted likelihood."""
+  with pytest.raises(TypeError, match="real numeric dtype"):
+    _ShiftedExp().loglik(np.array([0.5, 1.0]), weights=np.array([1.0j, 2.0j]))
 
 
 def test_cdf_left_defaults_to_cdf_when_continuous() -> None:
@@ -293,6 +332,28 @@ def test_covariates_reach_every_derived_member() -> None:
   )
   assert "pdf-bare" not in m.seen
   assert "cdf-bare" not in m.seen
+
+
+def test_derived_members_require_row_aligned_covariates() -> None:
+  """Inherited conditional entry points reject broadcasting covariates."""
+
+  class _Seeded(_Recording):
+    def _sample_uniform(self, n: int, seeds: list[int]) -> Any:
+      return np.linspace(0.1, 0.9, n)
+
+  y = np.array([0.0, 1.0, 2.0])
+  bad = [np.zeros(3), np.zeros((1, 1))]
+  calls = [
+    lambda m, x: m.logpdf(y, x=x),
+    lambda m, x: m.cdf_left(y, x=x),
+    lambda m, x: m.icdf(np.full(3, 0.5), x=x),
+    lambda m, x: m.loglik(y, x=x),
+    lambda m, x: m.sample(3, x=x),
+  ]
+  for x in bad:
+    for call in calls:
+      with pytest.raises(ValueError, match="one row per observation|shape"):
+        call(_Seeded(), x)
 
 
 def test_covariates_are_not_forwarded_to_an_unconditional_margin() -> None:

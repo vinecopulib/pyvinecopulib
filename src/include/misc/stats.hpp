@@ -83,5 +83,6 @@ inline void init_stats(nb::module_& m) {
                                std::string, Eigen::VectorXd, bool,
                                std::vector<int>)>(&wdm::wdm),
         doc_wdm, "x"_a, "y"_a, "method"_a, "weights"_a = Eigen::VectorXd(),
-        "remove_missing"_a = true, "seeds"_a = std::vector<int>());
+        "remove_missing"_a = true, "seeds"_a = std::vector<int>(),
+        nb::call_guard<nb::gil_scoped_release>());
 }

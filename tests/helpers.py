@@ -68,8 +68,20 @@ def compare_kde1d(kde1: Any, kde2: Any) -> None:
   attrs = ["xmin", "xmax", "type"]
 
   if is_fitted1:
-    # For fitted models: compare grid data and prob0
-    attrs += ["prob0", "grid_points", "values"]
+    # A fitted estimator is more than its evaluation grid: its controls and
+    # attained diagnostics govern inspection and any later refit.
+    attrs += [
+      "prob0",
+      "grid_points",
+      "values",
+      "multiplier",
+      "bandwidth",
+      "degree",
+      "grid_size",
+      "boundary_repair",
+      "edf",
+      "n_parameters",
+    ]
   else:
     # For unfitted models: compare fitting parameters. Every one of them has
     # to be here -- a key the state carries but this list skips is a key that
@@ -83,6 +95,8 @@ def compare_kde1d(kde1: Any, kde2: Any) -> None:
     ]
 
   compare_properties(kde1, kde2, attrs)
+  if is_fitted1:
+    assert kde1.loglik() == kde2.loglik()
 
 
 def compare_rvinestructure(

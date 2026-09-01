@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 import pytest
@@ -101,6 +101,27 @@ def test_bicopbase_loglik() -> None:
   assert float(cop.loglik(u)) == pytest.approx(0.0, abs=1e-12)
 
 
+def test_bicopbase_loglik_preserves_extreme_tail_density() -> None:
+  """Valid densities below 1e-20 remain part of the likelihood."""
+  ref = pv.Bicop.from_family(
+    family=pv.families.gaussian, parameters=np.array([[0.99]])
+  )
+
+  class _Hosted(BicopBase[np.ndarray]):
+    def pdf(self, u: np.ndarray, *, x: Any = None) -> np.ndarray:
+      return np.asarray(ref.pdf(u))
+
+    def hfunc1(self, u: np.ndarray, *, x: Any = None) -> np.ndarray:
+      return np.asarray(ref.hfunc1(u))
+
+    def hfunc2(self, u: np.ndarray, *, x: Any = None) -> np.ndarray:
+      return np.asarray(ref.hfunc2(u))
+
+  u = np.array([[1e-6, 1 - 1e-6], [1e-5, 1 - 1e-5]])
+  assert np.all(ref.pdf(u) < 1e-20)
+  np.testing.assert_allclose(_Hosted().loglik(u), ref.loglik(u), rtol=1e-14)
+
+
 def test_bicopbase_simulate_default() -> None:
   """Default ``sample`` (inverse Rosenblatt) returns (n, 2) samples in (0, 1)."""
   cop = _IndepPair()
@@ -117,6 +138,21 @@ def test_bicopbase_simulate_requires_draw_hook() -> None:
   cop = _SqrtPair()
   with pytest.raises(NotImplementedError):
     cop.sample(5)
+
+
+def test_bicopbase_requires_row_aligned_covariates() -> None:
+  """Inherited pair operations do not broadcast a one-row conditioning design."""
+  cop = _IndepPair()
+  u = np.full((3, 2), 0.5)
+  for x in (np.zeros(3), np.zeros((1, 1))):
+    for call in (
+      lambda: cop.loglik(u, x=x),
+      lambda: cop.hinv1(u, x=x),
+      lambda: cop.hinv2(u, x=x),
+      lambda: cop.sample(3, x=x),
+    ):
+      with pytest.raises(ValueError, match="one row per observation|shape"):
+        call()
 
 
 def test_bicopbase_plot_runs() -> None:
@@ -211,6 +247,11 @@ def test_independence_pair_is_the_independence_copula() -> None:
   # Symmetric, so flipping is a no-op rather than a new object's behavior.
   assert pair.flip() is pair
   assert repr(pair) == "IndependencePair()"
+
+  # The public concrete pair also fulfills the sampling member of BicopLike.
+  np.testing.assert_array_equal(
+    pair.sample(20, seeds=[7]), ref.sample(20, seeds=[7])
+  )
 
   # A wider layout is accepted: the extra left-limit columns are ignored,
   # which is what a discrete edge below the threshold would hand it.

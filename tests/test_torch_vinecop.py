@@ -605,7 +605,7 @@ def test_sample_conditional_requires_row_per_sample() -> None:
   u_fit = _simulate(d=3, n=400, seed=712)
   bc = TorchVinecop.from_vinecop(_fit_tll_vine(u_fit))
   x = torch.zeros(4, 1, dtype=torch.float64)
-  with pytest.raises(ValueError, match="one covariate row per sample"):
+  with pytest.raises(ValueError, match="one row per observation"):
     bc.sample(10, x=x)
 
 

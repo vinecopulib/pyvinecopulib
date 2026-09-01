@@ -13,6 +13,7 @@ import numpy as np
 
 from ..core import MarginBase
 from ..core.margin_base import _reject_covariates
+from ..core._validation import validate_univariate
 
 __all__ = ["ParametricMargin"]
 
@@ -514,7 +515,7 @@ class ParametricMargin(MarginBase[np.ndarray]):
         "SciPy's estimators do not accept them. Pass margins='kde' for a "
         "weighted fit, or drop weights="
       )
-    data = np.asarray(y, dtype=float).ravel()
+    data = validate_univariate(np.asarray(y, dtype=float))
     data = data[~np.isnan(data)]
     if data.size == 0:
       raise ValueError(

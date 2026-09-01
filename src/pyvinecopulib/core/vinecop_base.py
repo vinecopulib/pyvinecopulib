@@ -77,6 +77,7 @@ from ._discrete import (
 )
 from ._independence import IndependencePair
 from ._reorient import Reorientation, reorientation
+from ._validation import validate_covariates
 from .bicop_base import _pair_eval
 from .context import ConditioningContext, SimplifiedContext
 from .._deprecations import _reject_renamed_hook
@@ -106,25 +107,15 @@ def _make_criterion(
   """
   import numpy as np
 
-  from ..pyvinecopulib_ext import wdm
+  from ..pyvinecopulib_ext import _calculate_tree_criterion
 
   def criterion(col0: Any, col1: Any) -> float:
     if n <= 10:
       return 0.0
     a, b = convert(col0), convert(col1)
-    if tree_criterion == "cxi":
-      # Chatterjee's xi is asymmetric and a spanning-tree weight cannot be,
-      # so this is `pairwise_cxi`'s larger of the two directions.
-      value = max(
-        float(wdm(a, b, tree_criterion)), float(wdm(b, a, tree_criterion))
-      )
-    else:
-      value = float(wdm(a, b, tree_criterion))
-    # `calculate_criterion` takes the absolute value of every branch on the
-    # way out, `cxi` included, and xi is routinely negative on weak
-    # dependence -- so a criterion left signed can sit below a threshold of
-    # zero.
-    return 0.0 if not np.isfinite(value) else abs(value)
+    return float(
+      _calculate_tree_criterion(np.column_stack((a, b)), tree_criterion)
+    )
 
   return criterion
 
@@ -1265,8 +1256,9 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     num_threads : int, default=1
         Accepted for parity with ``Vinecop.pdf()``; ignored.
     x : array, shape (n, p), or None, optional
-        External covariates threaded to each pair copula (non-simplified
-        vines). ``None`` for the unconditional / simplified case.
+        External covariates threaded to each pair copula. A simplified vine may
+        still depend on these; simplification excludes dependence on the edge
+        conditioning-set values, not on external covariates.
     batched : bool or None, optional
         Fire one batched pair-copula call per tree level. ``None`` resolves
         via the subclass default; forced ``False`` when conditioning is active
@@ -1280,6 +1272,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     """
     del num_threads
     u_p = self._prep(u, "pdf")
+    validate_covariates(x, int(cast(Any, u_p).shape[0]))
     if self._resolve_batched(batched, x):
       try:
         return cast(ArrayT, self._pdf_batched(u_p))
@@ -1314,7 +1307,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         RNG seeds for that randomization; forwarded to the subclass's
         base-uniform draw.
     x : array, shape (n, p), or None, optional
-        External covariates (non-simplified vines), else ``None``.
+        External covariates threaded to each pair copula, or ``None``.
     batched : bool or None, optional
         See :meth:`pdf`.
     conditioning_set : list of int or None, optional
@@ -1348,6 +1341,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         batched=batched,
       )
     u_p = self._prep(u, "rosenblatt")
+    validate_covariates(x, int(cast(Any, u_p).shape[0]))
     if self._resolve_batched(batched, x):
       try:
         return cast(ArrayT, self._rosenblatt_batched(u_p))
@@ -1374,7 +1368,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     num_threads : int, default=1
         Accepted for parity; ignored.
     x : array, shape (n, p), or None, optional
-        External covariates (non-simplified vines), else ``None``.
+        External covariates threaded to each pair copula, or ``None``.
     batched : bool or None, optional
         Whether to evaluate whole groups of pair copulas per call rather than
         one at a time; ``None`` takes the subclass default. The inverse
@@ -1403,6 +1397,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     if view is not self:
       return view.inverse_rosenblatt(u, x=x, batched=batched)
     u_p = self._prep(u, "inverse_rosenblatt", values_only=True)
+    validate_covariates(x, int(cast(Any, u_p).shape[0]))
     with self._eval_context():
       if self._resolve_batched(batched, x):
         try:
@@ -1445,13 +1440,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     """
     del num_threads
     seeds = list(seeds) if seeds else []
-    if x is not None:
-      xa: Any = x
-      if xa.shape[0] != n:
-        raise ValueError(
-          f"sample(n={n}, x=...) requires one covariate row per sample; "
-          f"got x with {xa.shape[0]} rows."
-        )
+    validate_covariates(x, n)
     with self._eval_context():
       base_u = self._sample_uniform(n, qrng, seeds)
       return self.inverse_rosenblatt(base_u, x=x, batched=batched)
@@ -1476,10 +1465,12 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     ----------
     u_cond : array, shape (n, k) or wider, dtype float
         Conditioning values in ``(0, 1)``, one point per row. Column ``i``
-        corresponds to the ``i``-th conditioning variable. A discrete
-        conditioning variable needs its left limit ``F(x^-)`` too: pass the
-        expanded ``(n, 2k)`` layout, or the compact ``(n, k + k_d)`` one that
-        omits the left limits of the continuous conditioners.
+        corresponds to the ``i``-th conditioning variable. A discrete variable
+        also needs its left limit ``F(x^-)``. With an explicit
+        ``conditioning_set``, pass either the expanded ``(n, 2k)`` layout or the
+        compact ``(n, k + k_d)`` layout that omits continuous left limits.
+        Without an explicit set, only the compact layout is unambiguous and
+        accepted for inference.
     qrng : bool, default=False
         Draw quasi-random base uniforms for the conditioned variables.
     num_threads : int, default=1
@@ -1493,14 +1484,16 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         is the ``i``-th variable of the order tail; with it, column ``i`` is
         ``conditioning_set[i]``.
     x : array, shape (n, p), or None, optional
-        External covariates (non-simplified vines), one row per sample.
+        External covariates threaded to each pair copula, one row per sample.
 
     Returns
     -------
     array, shape (n, d), dtype float
         Conditional draws. The conditioning variables' columns reproduce
         ``u_cond``; a discrete one is reproduced up to its atom, landing in
-        ``[F(x^-), F(x)]``.
+        ``[F(x^-), F(x)]``. With several discrete conditioners, later-drawn
+        conditioning variables may land slightly outside their atom; the free
+        variables' draws remain correct.
 
     Raises
     ------
@@ -1538,11 +1531,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       )
     d = self.d
     n, n_cols = int(ua.shape[0]), int(ua.shape[1])
-    if x is not None and cast("Any", x).shape[0] != n:
-      raise ValueError(
-        "sample_conditional: x requires one covariate row per sample; got x "
-        f"with {cast('Any', x).shape[0]} rows and u_cond with {n}."
-      )
+    validate_covariates(x, n)
     view = self._reoriented(conditioning_set)
     if conditioning_set is None:
       cond_vars = self._infer_conditioning_set(n_cols)
@@ -1677,18 +1666,17 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     u : array, shape (n, d), dtype float
         Pseudo-observations in ``[0, 1]^d``.
     x : array, shape (n, p), or None, optional
-        External covariates for a non-simplified vine, else ``None``.
+        External covariates threaded to each pair copula, or ``None``.
 
     Returns
     -------
     array, shape (), dtype float
         The summed log-density (a differentiable scalar under autograd, e.g.
-        PyTorch); the per-observation vine density is floored at ``1e-20`` before
-        the log.
+        PyTorch).
     """
     dens: Any = self.pdf(u, x=x)
     xp = array_namespace(dens)
-    return cast(ArrayT, xp.sum(xp.log(xp.clip(dens, 1e-20))))
+    return cast(ArrayT, xp.sum(xp.log(dens)))
 
   @property
   def dim(self) -> int:
@@ -1863,6 +1851,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     pair_types = pair_var_types(structure, types) if n_discrete(types) else None
     ua = collapse_data(ua, d, types, "fit")
     n = ua.shape[0]
+    validate_covariates(x, int(n))
     criterion = _make_criterion(
       tree_criterion,
       _to_numpy_default if to_numpy is None else to_numpy,
@@ -2001,7 +1990,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     [1]_: for each tree it builds a candidate graph honoring the proximity
     condition, weights every candidate edge by ``1 - |tau|`` (``tau`` is the
     dependence measure named by ``tree_criterion``, Kendall's tau by default,
-    via ``wdm``), and keeps a spanning tree (``tree_algorithm``) —
+    through the same criterion routine as the compiled selector), and keeps a
+    spanning tree (``tree_algorithm``) —
     maximum-dependence for the MST variants, Wilson-weighted random for the
     random ones. Each surviving edge's pair copula is fit by the ``fit_edge``
     callback, whose h-functions feed the next tree.
@@ -2037,7 +2027,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     trunc_lvl : int, optional
         Maximum number of trees to select (default: ``d - 1``, i.e. untruncated).
     tree_criterion : str, default "tau"
-        Dependence measure passed to ``wdm`` for edge weighting: ``"tau"``,
+        Dependence measure used for edge weighting: ``"tau"``,
         ``"rho"``, ``"hoeffd"``, ``"mcor"``, ``"cxi"`` or ``"joe"``, matching
         ``FitControlsVinecop``. ``"cxi"`` is Chatterjee's xi, which is
         asymmetric, so the weight is the larger of the two directions.
@@ -2054,7 +2044,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     seeds : list of int, optional
         RNG seeds for the random tree algorithms (ignored by the MST ones).
     to_numpy : callable, optional
-        Maps a 1-d array to a NumPy array for the ``wdm`` call. Defaults to
+        Maps a 1-d array to a NumPy array for criterion evaluation. Defaults to
         :func:`numpy.asarray`; PyTorch callers pass one that detaches and moves
         to host (e.g. ``lambda t: t.detach().cpu().numpy()``).
     var_types : list of str, optional
@@ -2113,6 +2103,17 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     max_trees = (
       d - 1 if trunc_lvl is None else max(0, min(int(trunc_lvl), d - 1))
     )
+    tree_algorithms = (
+      "mst_prim",
+      "mst_kruskal",
+      "random_weighted",
+      "random_unweighted",
+    )
+    if tree_algorithm not in tree_algorithms:
+      raise ValueError(
+        f"tree_algorithm must be one of {tree_algorithms}; "
+        f"got {tree_algorithm!r}."
+      )
     cond = [int(v) for v in (conditioning_set or [])]
     in_cond = [False] * d
     if cond:
@@ -2237,6 +2238,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       tree_edges: list[tuple[int, int, list[int]]] = []
       new_nodes: list[dict[str, Any]] = []
       tree_records: dict[Any, tuple[int, Any]] = {}
+      build_next_level = len(trees) + 1 < max_trees and len(selected) > 1
       # The surviving edges' inputs were all materialized above, off the
       # previous tree's nodes, and each fitted pair is written to a fresh
       # `new_nodes` -- so unlike `fit`, this level needs no reordering to be
@@ -2293,31 +2295,32 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
           frozenset(c + 1 for c in conditioning),
         )
         tree_records[key] = (a_var + 1, pair)
-        new_nodes.append(
-          {
-            "all_indices": tuple(sorted((a_var, b_var, *conditioning))),
-            "h1": pair.hfunc1(u_e),
-            "h2": pair.hfunc2(u_e),
-            # A discrete argument's next tree needs the h-function at the atom's
-            # lower end too, exactly as the cascades compute it.
-            "h1_sub": (
-              pair.hfunc1(with_left_limit(u_e, 1))
-              if edge_types[1] == "d"
-              else None
-            ),
-            "h2_sub": (
-              pair.hfunc2(with_left_limit(u_e, 0))
-              if edge_types[0] == "d"
-              else None
-            ),
-            "types": edge_types,
-            "prev": (v0, v1),
-          }
-        )
+        if build_next_level:
+          new_nodes.append(
+            {
+              "all_indices": tuple(sorted((a_var, b_var, *conditioning))),
+              "h1": pair.hfunc1(u_e),
+              "h2": pair.hfunc2(u_e),
+              # A discrete argument's next tree needs the h-function at the
+              # atom's lower end too, exactly as the cascades compute it.
+              "h1_sub": (
+                pair.hfunc1(with_left_limit(u_e, 1))
+                if edge_types[1] == "d"
+                else None
+              ),
+              "h2_sub": (
+                pair.hfunc2(with_left_limit(u_e, 0))
+                if edge_types[0] == "d"
+                else None
+              ),
+              "types": edge_types,
+              "prev": (v0, v1),
+            }
+          )
       trees.append(tree_edges)
       records.append(tree_records)
       nodes = new_nodes
-      if len(nodes) <= 1:
+      if not build_next_level:
         break
 
     # Selection finalization via the shared list-of-trees primitive.

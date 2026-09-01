@@ -75,11 +75,19 @@ Two opt-in subpackages extend the core library:
 The core evaluators (`Bicop` / `Vinecop`, and their torch counterparts)
 implement two backend-neutral contracts, `BicopLike` and `VinecopLike`.
 Subclass the canonical, pure-Python `BicopBase` / `VinecopBase` (NumPy or
-PyTorch) to plug your **own** pair copula into a vine — including
-**non-simplified** vines where each pair copula conditions on its
-conditioning set. See the
+PyTorch) to plug your **own** pair copula into a vine. A pair may depend on its
+vine conditioning-set values (a **non-simplified** vine), on row-aligned
+external covariates, or on both. `Vinedist` can compose covariate-dependent
+margins and such a copula into a full data-scale distribution `Y | X`.
+
+This joint conditional model is an extension seam, not a built-in fitter:
+`Vinedist.from_data(y, x=...)` can fit custom conditional margin
+specifications, but fits an `x`-independent compiled `Vinecop` for the copula
+half. Fit custom conditional pairs through `VinecopBase.fit` and compose the
+parts explicitly when dependence must also vary with `X`. See the
 [concepts page](https://pyvinecopulib.readthedocs.io/en/latest/concepts.html)
-and the `examples/10_extending_pyvinecopulib.ipynb` notebook.
+and notebooks `examples/10_extending_pyvinecopulib.ipynb` and
+`examples/11_vine_distributions.ipynb`.
 
 ### Conditional sampling and likelihood diagnostics
 

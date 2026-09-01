@@ -167,6 +167,36 @@ def test_resolve_margins_checks_the_default_length() -> None:
     resolve_margins(None, 2, default=[Kde1d()])
 
 
+@pytest.mark.parametrize("key", [0.9, 1.0, np.float64(1.0)])
+def test_resolve_margins_rejects_noninteger_mapping_keys(key: Any) -> None:
+  """A numeric key must be an integer position, never silently truncated."""
+  with pytest.raises(ValueError, match="integer position"):
+    resolve_margins({key: Kde1d()}, 2)
+
+  resolved = resolve_margins({np.int64(1): Kde1d(type="discrete")}, 2)
+  assert resolved[1].type == "discrete"
+
+
+def test_callable_margin_specifications_receive_weights() -> None:
+  """A callable owns its fitting, so observation weights must reach it."""
+  from pyvinecopulib.core import Vinedist
+
+  seen: list[dict[str, Any]] = []
+
+  def make_margin(y: Any, **kwargs: Any) -> Any:
+    seen.append(kwargs)
+    return ParametricMargin("norm", (float(np.mean(y)), 1.0))
+
+  rng = np.random.default_rng(8)
+  data = rng.normal(size=(40, 2))
+  weights = np.linspace(1.0, 2.0, data.shape[0])
+  Vinedist.from_data(data, margins=make_margin, weights=weights)
+
+  assert len(seen) == data.shape[1]
+  for kwargs in seen:
+    np.testing.assert_array_equal(kwargs["weights"], weights)
+
+
 # --- as_margin -------------------------------------------------------------- #
 
 
@@ -181,6 +211,24 @@ def test_as_margin_adopts_a_raw_kde1d(sample: np.ndarray) -> None:
   kde = pv.core.Kde1d()
   kde.fit(sample)
   assert isinstance(as_margin(kde), Kde1d)
+
+
+def test_as_margin_accepts_a_structural_margin() -> None:
+  """The documented `MarginLike` seam does not require a library base class."""
+
+  class StructuralMargin:
+    def pdf(self, y: Any, /, *, x: Any = None) -> Any:
+      return np.exp(-(np.asarray(y) ** 2) / 2) / np.sqrt(2 * np.pi)
+
+    def cdf(self, y: Any, /, *, x: Any = None) -> Any:
+      return scipy_stats.norm.cdf(y)
+
+    def icdf(self, p: Any, /, *, x: Any = None) -> Any:
+      return scipy_stats.norm.ppf(p)
+
+  margin = StructuralMargin()
+  assert isinstance(margin, MarginLike)
+  assert as_margin(margin) is margin
 
 
 @pytest.mark.parametrize(
@@ -252,6 +300,32 @@ def test_as_margin_scipy_icdf_matches_the_source() -> None:
   )
 
 
+def test_as_margin_scipy_discrete_accepts_a_shifted_lattice() -> None:
+  """The legacy adapter derives the left limit without assuming integers."""
+  raw = scipy_stats.poisson(3.0, loc=0.5)
+  margin: Any = as_margin(raw)
+  points = np.array([0.5, 1.0, 1.5, 2.25])
+  expected = raw.cdf(points) - raw.pmf(points)
+  np.testing.assert_allclose(margin.cdf_left(points), expected, atol=0)
+  assert margin.cdf_left(np.array([0.5]))[0] == pytest.approx(0.0, abs=1e-15)
+
+
+@pytest.mark.parametrize(
+  "raw",
+  [
+    pytest.param(scipy_stats.norm(), id="legacy"),
+    pytest.param(scipy_stats.Normal(), id="modern"),
+  ],
+)
+def test_as_margin_scipy_forwards_native_log_density(raw: Any) -> None:
+  """A finite native tail log-density must not underflow through `log(pdf)`."""
+  far = np.array([40.0])
+  margin: Any = as_margin(raw)
+  np.testing.assert_allclose(margin.logpdf(far), raw.logpdf(far), atol=0)
+  assert np.isfinite(margin.logpdf(far)).all()
+  assert margin.pdf(far)[0] == 0.0
+
+
 def test_as_margin_rejects_the_unknown() -> None:
   """An unrecognized object names both escape hatches."""
   with pytest.raises(TypeError, match="MarginBase"):
@@ -311,3 +385,50 @@ def test_as_margin_torch_autograd_survives() -> None:
   m = as_margin(torch.distributions.Normal(mu, 1.0))
   m.pdf(torch.tensor([0.2, 0.7], dtype=torch.float64)).sum().backward()
   assert mu.grad is not None and torch.isfinite(mu.grad)
+
+
+def test_as_margin_torch_forwards_native_log_density() -> None:
+  """Torch's stable `log_prob` remains available in far tails."""
+  torch = pytest.importorskip("torch")
+  raw = torch.distributions.Normal(
+    torch.tensor(0.0, dtype=torch.float64),
+    torch.tensor(1.0, dtype=torch.float64),
+  )
+  far = torch.tensor([40.0], dtype=torch.float64)
+  margin = as_margin(raw)
+  margin_with_logpdf: Any = margin
+  torch.testing.assert_close(margin_with_logpdf.logpdf(far), raw.log_prob(far))
+  assert torch.isfinite(margin_with_logpdf.logpdf(far)).all()
+  assert margin.pdf(far).item() == 0.0
+
+
+@pytest.mark.parametrize("family", ["Poisson", "Bernoulli"])
+def test_as_margin_rejects_discrete_torch_distributions(family: str) -> None:
+  """Torch margins with atoms lack the cdf-left contract vines require."""
+  torch = pytest.importorskip("torch")
+  raw = getattr(torch.distributions, family)(torch.tensor(0.4))
+  with pytest.raises(TypeError, match="discrete torch distribution.*Kde1d"):
+    as_margin(raw)
+
+
+@pytest.mark.parametrize("family", ["Beta", "StudentT"])
+def test_as_margin_rejects_torch_families_without_a_cdf(family: str) -> None:
+  """A recognized ecosystem object is refused until it can meet the contract."""
+  torch = pytest.importorskip("torch")
+  args = (2.0, 3.0) if family == "Beta" else (5.0,)
+  raw = getattr(torch.distributions, family)(*args)
+  with pytest.raises(TypeError, match="cdf is not implemented.*MarginBase"):
+    as_margin(raw)
+
+
+@pytest.mark.parametrize("family", ["Normal", "Gamma", "LogNormal"])
+def test_as_margin_supports_torch_families_with_a_cdf(family: str) -> None:
+  """Documented continuous Torch families round-trip through their cdf."""
+  torch = pytest.importorskip("torch")
+  args = (0.0, 1.0) if family != "Gamma" else (2.0, 1.0)
+  raw = getattr(torch.distributions, family)(
+    *(torch.tensor(v, dtype=torch.float64) for v in args)
+  )
+  margin = as_margin(raw)
+  p = torch.tensor([0.25, 0.5, 0.75], dtype=torch.float64)
+  torch.testing.assert_close(margin.cdf(margin.icdf(p)), p, atol=1e-6, rtol=0)

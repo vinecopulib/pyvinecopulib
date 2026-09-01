@@ -176,6 +176,21 @@
 - The per-entry structure accessors (`RVineStructure.struct_array` / `min_array` / `needed_hfunc1` / `needed_hfunc2`) raise on a tree above `trunc_lvl` instead of **segfaulting** the interpreter. The bounds check is upstream's ([vinecopulib#756](https://github.com/vinecopulib/vinecopulib/pull/756)); the binding-level guard that stood in for it while that was unmerged is gone (#306).
 ### Bug fixes in `pyvinecopulib`
 
+- Validate row-aligned covariates and weights throughout the hosted copula and
+  margin stack, preserve exact tail log-likelihoods and endpoint quantiles, and
+  document the extension-only full ``Y | X`` fitting contract (#320).
+- Preserve fitted diagnostics and controls when pickling ``Bicop``, ``Vinecop``
+  and ``Kde1d``; make no-data vine information criteria finite and guard empty
+  KDE grids, inverse-CDF batches and explicit empty log-likelihoods (#320).
+- Make margin selection preserve caller ownership, candidate bounds and schema
+  declarations; forward callable weights and native adapter log-densities; and
+  reject unsupported Torch distributions and malformed univariate data (#320).
+- Match authoritative C++ structure-selection criteria and random-walk floors,
+  validate algorithms, skip final-tree h-functions, and lazily evaluate
+  mixed-discrete density fallbacks (#320).
+- Keep discrete plotting nonmutating, release the GIL in numerical utilities,
+  correct benchmark coverage, make low-precision trimming interior, and emit
+  syntactically valid, self-checked PEP 561 stubs (#320).
 - Apply `FitControlsVinecop.threshold` to the pair copulas in `VinecopBase.select`, not only to the spanning-tree weights. A surviving edge whose criterion falls below the threshold now holds the new `core.IndependencePair` and is never fitted, matching what the compiled selector leaves there -- on a supplied structure as well as a chosen one, `Vinecop::select` building the same selector either way; on the torch path it becomes the no-argument `TorchBicop`, which is the independence copula exactly and carries no grid to disagree with its siblings about; previously it was fitted, so a threshold that bit produced a different model rather than a differently-weighted one. The default `threshold=0.0` is unaffected (#317).
 - Take the absolute value of every tree criterion in `VinecopBase.select`, as `calculate_criterion` does, rather than of all but `cxi`. Chatterjee's xi is routinely negative on weak dependence -- symmetrized, in 102 of 400 independent samples -- which left a criterion that sits below a `threshold` of zero. That was inert while the criterion only set a spanning-tree weight and became a silent thresholding once it also decides whether an edge is fitted: on independent uniforms it turned edges into independence in 16 of 18 fixtures at the default `threshold=0.0` (#317).
 - Compute the `tll` fit's moving-average window smoother in `O(n)` from prefix sums rather than convolving against a `2 * ceil(n / 5) + 1`-tap kernel, which made it `O(n**2)`: the window grows with the data, so at n = 12000 it is 4801 taps and was 97% of a whole vine fit. A d = 9 fixed-structure fit on cuda at float64 is 26x faster for it (medians of three), which moves it from below one C++ core to around ten -- around, because the C++ baseline itself moves by half again between runs. The fitted grid still matches C++ inside the 1e-11 gate. `tools_stats::win` reaches the same box mean by FFT, which would also have fixed it; prefix sums additionally batch over a leading axis and need no cached plan (#315).

@@ -35,5 +35,21 @@ inline std::vector<double> benchmark(const Eigen::MatrixXd& data) {
 }
 
 inline void init_benchmark(nb::module_& m) {
-  m.def("benchmark", &benchmark, "data"_a);
+  m.def(
+      "benchmark", &benchmark, "data"_a,
+      R"""(Time three standard vine-copula fits on caller-supplied data.
+
+Parameters
+----------
+data : ndarray, shape (n, d), dtype float
+    Pseudo-observations used for every fit.
+
+Returns
+-------
+list of float
+    Elapsed seconds, in order, for parametric maximum-likelihood selection over
+    the ``itau`` family set, inversion-of-Kendall's-tau selection over that
+    family set, and nonparametric TLL selection.
+)""",
+      nb::call_guard<nb::gil_scoped_release>());
 }

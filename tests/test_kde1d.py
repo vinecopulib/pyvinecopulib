@@ -80,6 +80,14 @@ def test_kde1d_factory_methods() -> None:
   assert np.array_equal(kde_from_grid.values, values)
 
 
+@pytest.mark.parametrize("size", [0, 1])
+def test_kde1d_from_grid_requires_two_points(size: int) -> None:
+  """Invalid interpolation grids are rejected before entering C++."""
+  grid = np.arange(size, dtype=float)
+  with pytest.raises(ValueError, match="at least two points"):
+    pv.core.Kde1d.from_grid(grid, grid)
+
+
 def test_kde1d_properties() -> None:
   """Test all properties of Kde1d objects."""
 
@@ -169,6 +177,19 @@ def test_kde1d_fit_and_methods() -> None:
   samples1 = kde.sample(10, seeds=[123])
   samples2 = kde.sample(10, seeds=[123])
   assert np.array_equal(samples1, samples2)  # Should be reproducible
+
+  # Empty batches are legitimate and never reach Eigen reductions.
+  assert kde.icdf(np.array([])).shape == (0,)
+  assert kde.loglik(np.array([])) == 0.0
+
+
+def test_kde1d_discrete_cdf_left_between_atoms() -> None:
+  """The left limit between lattice atoms equals the ordinary CDF there."""
+  x = np.repeat(np.arange(4, dtype=float), [10, 20, 30, 40])
+  kde = pv.core.Kde1d(type="discrete").fit(x)
+  points = np.array([1.0, 1.5, 2.0, 2.5])
+  expected = kde.cdf(np.ceil(points) - 1.0)
+  np.testing.assert_allclose(kde.cdf_left(points), expected, rtol=0.0, atol=0.0)
 
 
 def test_kde1d_weighted_fit() -> None:

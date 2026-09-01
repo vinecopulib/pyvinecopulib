@@ -30,6 +30,7 @@ Run on a quiet machine: wall-clock ratios are noisy under load.
 from __future__ import annotations
 
 import copy
+import itertools
 import time
 from typing import Any, Callable, Optional
 
@@ -148,6 +149,9 @@ class _ListVinecop(VinecopBase[Any]):
   def _get_pair_copula(self, tree: int, edge: int) -> Any:
     return self._pairs[tree][edge]
 
+  def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Any:
+    return pv.utils.sample_uniform(n, self.d, qrng, seeds)
+
 
 def _hosts(
   u: np.ndarray, var_types: list[str]
@@ -255,9 +259,24 @@ def _run_reorient(dims: tuple[int, ...], reps: int) -> None:
     u, var_types = _data(0, d, 2000)
     mine, cpp = _hosts(u, var_types)
     structure = cpp.structure
-    # A set the peel can actually place at the tail: the order's own tail,
-    # reversed, so the identity fast path does not short-circuit it.
-    cond = [int(v) for v in structure.order][-2:][::-1]
+    order = [int(v) for v in structure.order]
+    tail = set(order[-2:])
+    cond = None
+    for candidate in itertools.combinations(order, 2):
+      if set(candidate) == tail:
+        continue
+      try:
+        probe = reorientation(structure, list(candidate))
+      except RuntimeError:
+        continue
+      if not probe.identity:
+        cond = list(candidate)
+        break
+    if cond is None:
+      raise RuntimeError(
+        f"could not find a non-identity admissible conditioning set for d={d}"
+      )
+    assert not reorientation(structure, cond).identity
     indep = pv.Bicop()
     store = [[indep] * (d - 1 - t) for t in range(d - 1)]
 

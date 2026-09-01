@@ -401,6 +401,50 @@ def test_discrete_pair_matches_bicop_unrotated(var_types: list[str]) -> None:
     )
 
 
+def test_discrete_pair_samples_the_wrapped_continuous_copula() -> None:
+  """Atom layouts do not change the latent continuous copula draw."""
+  wrapped = pv.Bicop.from_family(
+    pv.families.gaussian, parameters=np.array([[0.6]])
+  )
+  pair = DiscretePair(wrapped, ("d", "c"))
+  np.testing.assert_array_equal(
+    pair.sample(50, seeds=[3, 4]), wrapped.sample(50, seeds=[3, 4])
+  )
+
+
+def test_discrete_pair_skips_unused_wide_atom_fallbacks() -> None:
+  """Wide atoms evaluate only the authoritative quotient primitives."""
+
+  class CountingIndependence(pv.core.IndependencePair):
+    def __init__(self) -> None:
+      self.calls = {name: 0 for name in ("pdf", "cdf", "hfunc1", "hfunc2")}
+
+    def pdf(self, u: np.ndarray, *, x: Any = None) -> np.ndarray:
+      self.calls["pdf"] += 1
+      return super().pdf(u, x=x)
+
+    def cdf(self, u: np.ndarray, *, x: Any = None) -> np.ndarray:
+      self.calls["cdf"] += 1
+      return super().cdf(u, x=x)
+
+    def hfunc1(self, u: np.ndarray, *, x: Any = None) -> np.ndarray:
+      self.calls["hfunc1"] += 1
+      return super().hfunc1(u, x=x)
+
+    def hfunc2(self, u: np.ndarray, *, x: Any = None) -> np.ndarray:
+      self.calls["hfunc2"] += 1
+      return super().hfunc2(u, x=x)
+
+  u = np.array([[0.6, 0.7, 0.2, 0.3], [0.8, 0.5, 0.4, 0.1]])
+  mixed_base = CountingIndependence()
+  DiscretePair(mixed_base, ("d", "c")).pdf(u)
+  assert mixed_base.calls == {"pdf": 0, "cdf": 0, "hfunc1": 0, "hfunc2": 2}
+
+  discrete_base = CountingIndependence()
+  DiscretePair(discrete_base, ("d", "d")).pdf(u)
+  assert discrete_base.calls == {"pdf": 0, "cdf": 4, "hfunc1": 0, "hfunc2": 0}
+
+
 @pytest.mark.parametrize("rotation", _ROTATIONS)
 @pytest.mark.parametrize("var_types", [["d", "c"], ["c", "d"], ["d", "d"]])
 def test_discrete_pair_matches_bicop_rotated(

@@ -7,6 +7,7 @@ candidate, keeps the winner and forwards evaluation to it, the same shape
 
 from __future__ import annotations
 
+import copy
 import re
 import textwrap
 import time
@@ -17,6 +18,7 @@ import numpy as np
 
 from ..core import MarginBase
 from ..core.margin_base import _reject_covariates
+from ..core._validation import validate_univariate
 from ..core import Kde1d
 from .parametric import (
   _EXCLUDED,
@@ -142,11 +144,12 @@ def _reject(candidate: Any, y: np.ndarray) -> Optional[str]:
 def _dedupe(candidates: Iterable[Any]) -> list[Any]:
   """Drop candidates that would tie with one already present.
 
-  Two candidates of the same family with the same pinned parameters fit to the
-  same numbers, so they tie exactly on every criterion: the winner becomes an
-  artifact of iteration order, and the report carries the row twice. Anything
-  whose identity cannot be read this way is kept, since dropping it would be a
-  guess.
+  Two unfitted candidates of the same family with the same pinned parameters
+  and search bounds fit the same model, so they tie exactly on every criterion:
+  the winner becomes an artifact of iteration order, and the report carries the
+  row twice. Ready-made fitted candidates additionally include their parameter
+  vectors in their identity. Anything whose identity cannot be read this way is
+  kept, since dropping it would be a guess.
 
   Parameters
   ----------
@@ -156,9 +159,10 @@ def _dedupe(candidates: Iterable[Any]) -> list[Any]:
   Returns
   -------
   list
-      The first candidate of each distinct family-and-pins, order preserved.
+      The first candidate of each distinct family, pins, and search bounds,
+      order preserved.
   """
-  seen: set[tuple[str, tuple[tuple[str, float], ...]]] = set()
+  seen: set[tuple[Any, ...]] = set()
   out: list[Any] = []
   for margin in candidates:
     family = getattr(margin, "family_name", None)
@@ -166,7 +170,29 @@ def _dedupe(candidates: Iterable[Any]) -> list[Any]:
       out.append(margin)
       continue
     fixed = getattr(margin, "fixed_parameters", None) or {}
-    key = (str(family), tuple(sorted(fixed.items())))
+    search_bounds = (
+      tuple(sorted(margin._bounds.items()))
+      if isinstance(margin, ParametricMargin)
+      else ()
+    )
+    is_fitted = bool(getattr(margin, "is_fitted", False))
+    if is_fitted:
+      raw_parameters = getattr(margin, "parameters", None)
+      if raw_parameters is None:
+        # Fitted state without a readable identity may represent any model.
+        # Keeping it is the only ownership-safe choice.
+        out.append(margin)
+        continue
+      parameters = tuple(raw_parameters)
+    else:
+      parameters = ()
+    key = (
+      str(family),
+      tuple(sorted(fixed.items())),
+      search_bounds,
+      is_fitted,
+      parameters,
+    )
     if key in seen:
       continue
     seen.add(key)
@@ -348,7 +374,9 @@ class MarginSelector(_SelectorBase):
       ``"auto"`` (the default) uses the curated families whose support the data
       are compatible with. A sequence selects explicitly, and may mix family
       names with ready-made margins, e.g. ``["gamma", "lognorm"]``, which is
-      how a family kept out of the curated set is opted into.
+      how a family kept out of the curated set is opted into. Supplied margins
+      are copied; an unfitted copy is fitted, while a ready-made fitted copy is
+      scored at its existing parameters.
   criterion : {"aic", "bic", "aicc"}, optional
       What to minimize.
   bounds : tuple of float, or None, optional
@@ -563,7 +591,7 @@ class MarginSelector(_SelectorBase):
         "candidates are fitted by SciPy, which does not accept them. Pass "
         "margins='kde' for a weighted fit, or drop weights="
       )
-    data = np.asarray(y, dtype=float).ravel()
+    data = validate_univariate(np.asarray(y, dtype=float))
     data = data[~np.isnan(data)]
     if data.size == 0:
       raise ValueError("MarginSelector.fit got no usable observation")
@@ -647,7 +675,11 @@ class MarginSelector(_SelectorBase):
     dropped: list[str] = []
     want = "d" if counts else "c"
     for entry in self.candidates:
-      margin = ParametricMargin(entry) if isinstance(entry, str) else entry
+      margin = (
+        ParametricMargin(entry)
+        if isinstance(entry, str)
+        else copy.deepcopy(entry)
+      )
       # The partition the "auto" path applies, applied here too: a count family
       # reports a probability mass and a continuous one a Lebesgue density, so
       # ranking both on one criterion compares numbers that are not
@@ -740,7 +772,8 @@ class MarginSelector(_SelectorBase):
     with warnings.catch_warnings(record=True) as caught:
       warnings.simplefilter("always")
       try:
-        candidate.fit(data)
+        if not getattr(candidate, "is_fitted", True):
+          candidate.fit(data)
         status = _reject(candidate, data)
       except Exception as e:  # noqa: BLE001 - any fitter failure is a rejection
         status, fitted = f"{type(e).__name__}: {e}", False
@@ -761,6 +794,7 @@ class MarginSelector(_SelectorBase):
       "family": family,
       "n_parameters": k,
       "loglik": loglik,
+      "criterion": self.criterion,
       "support": support,
       "seconds": elapsed,
       "warnings": [str(w.message) for w in caught],
@@ -818,6 +852,7 @@ class MarginSelector(_SelectorBase):
       "family": margin.family_name,
       "n_parameters": margin.n_parameters,
       "loglik": loglik,
+      "criterion": self.criterion,
       "support": margin.support,
       "seconds": float("nan"),
       "warnings": [],

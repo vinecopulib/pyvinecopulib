@@ -516,14 +516,20 @@ Bicop
       .def("__getstate__",
            [](const Bicop& cop) {
              nb::dict state;
-             state["family"] = cop.get_family();
-             state["rotation"] = cop.get_rotation();
-             state["parameters"] = cop.get_parameters();
-             state["var_types"] = cop.get_var_types();
+             // The upstream JSON representation includes the attained fit
+             // state (`nobs` and `loglik`) as well as the model definition.
+             state["json"] = cop.to_json().dump();
              return state;
            })
 
       .def("__setstate__", [](Bicop& cop, nb::dict state) {
+        if (state.contains("json")) {
+          const auto json = nlohmann::json::parse(
+              nb::cast<std::string>(state["json"]));
+          new (&cop) Bicop(json);
+          return;
+        }
+        // Read pickles written before the full JSON state was adopted.
         new (&cop)
             Bicop(nb::cast<BicopFamily>(state["family"]),
                   nb::cast<int>(state["rotation"]),

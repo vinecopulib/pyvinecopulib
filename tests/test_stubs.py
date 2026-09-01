@@ -5,6 +5,7 @@ is loaded by file path. These tests guard the rendered output rather than the
 gitignored stub artifacts on disk.
 """
 
+import ast
 import importlib.util
 from pathlib import Path
 
@@ -182,3 +183,20 @@ def test_base_without_a_definition_here_is_not_declared():
   gen = _load_generator()
   body = "\n".join(gen.render_class_stub(BicopFamily, "BicopFamily"))
   assert body.startswith("class BicopFamily:")
+
+
+def test_docstrings_are_escaped_as_valid_python():
+  """LaTeX backslashes cannot form truncated escapes in generated stubs."""
+  gen = _load_generator()
+  rendered = "\n".join(gen.render_docstring(r"criterion $\xi$", 0))
+  ast.parse(rendered)
+  assert r"\\xi" in rendered
+
+
+def test_every_generated_stub_parses():
+  """The build's PEP 561 artifacts are syntactically valid Python."""
+  root = Path(pv.__file__).resolve().parent
+  stubs = sorted(root.glob("**/__init__.pyi"))
+  assert stubs
+  for stub in stubs:
+    ast.parse(stub.read_text(encoding="utf-8"), filename=str(stub))
