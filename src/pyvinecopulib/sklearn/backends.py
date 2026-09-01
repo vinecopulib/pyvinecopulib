@@ -207,6 +207,29 @@ class _VinecopBackendBase:
     new.structure = None
     return new
 
+  def with_fit_seeds(self, seeds: list[int]) -> "_VinecopBackendBase":
+    """Return a copy whose stochastic fit draws use ``seeds``.
+
+    Parameters
+    ----------
+    seeds : list of int
+        Seeds passed to the compiled random-tree selector.
+
+    Returns
+    -------
+    _VinecopBackendBase
+        Independent backend configuration for one fit.
+
+    The estimator owns its ``random_state``. Copying the controls keeps a
+    caller-owned backend reusable while making random-tree selection
+    reproducible through the estimator's public parameter.
+    """
+    new = _copy.copy(self)
+    controls = _copy.copy(self._effective_controls())
+    controls.seeds = seeds
+    new.controls = controls
+    return new
+
   def with_num_threads(self, num_threads: int) -> "_VinecopBackendBase":
     new_controls = _copy.copy(self._effective_controls())
     new_controls.num_threads = num_threads

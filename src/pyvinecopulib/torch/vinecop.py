@@ -195,19 +195,17 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     """Lifts a fitted ``Vinecop`` into a ``TorchVinecop``.
 
     Each pair copula is lifted via ``TorchBicop.from_bicop()``, so the
-    resulting cascade matches the ``Vinecop`` evaluator to within
-    bilinear-interpolation precision on the shared grid.
+    resulting cascade matches the ``Vinecop`` evaluator on the shared grid.
 
     Parameters
     ----------
     cop : Vinecop
         A fitted ``Vinecop`` whose pair copulas are all
-        TLL or independence families. Discrete variables are not
-        supported.
+        TLL or independence families, including continuous, discrete, and
+        mixed variable layouts.
     cache_integrals : bool or None, default=None
         Forwarded to ``TorchBicop.from_bicop()`` for every pair copula. ``None``
-        resolves to ``True``, or to ``False`` when ``cop`` has a discrete
-        variable, where an explicit ``True`` raises instead.
+        resolves to ``True`` for every variable layout.
     device : torch.device or None, default=None
         Placement of the underlying tensors.
     dtype : torch.dtype, default=torch.float64

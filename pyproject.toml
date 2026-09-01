@@ -141,6 +141,12 @@ editable.verbose = false
 # scikit-build-core's default sdist exclude drops `build/`-named dirs,
 # which also catches scripts/build.
 sdist.include = ["scripts/**"]
+sdist.exclude = [
+  "RELEASE_AUDIT_*.md",
+  "build*/**",
+  "**/__pycache__/**",
+  "**/*.pyc",
+]
 
 [tool.cibuildwheel]
 build-verbosity = 1

@@ -2,6 +2,10 @@
 
 ## 0.8.0 (unreleased)
 
+- Harden the sklearn schema, scoring, random-state, and `n_jobs` contracts;
+  preserve complete `TorchKde1d` fitted state; and add release preflights for
+  CPU support, source distributions, release ancestry, documentation, and Graphviz (#320).
+
 ### Breaking API changes in `pyvinecopulib`
 
 - Reorganize the public API into the `core` / `families` / `utils` / `sklearn` subpackages (#207).

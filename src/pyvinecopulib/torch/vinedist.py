@@ -141,7 +141,7 @@ class TorchVinedist(Vinedist[Tensor], torch.nn.Module):
       If a margin is not a :class:`torch.nn.Module`, or the copula is the
       compiled ``Vinecop``.
   NotImplementedError
-      If a margin declares atoms.
+      If a margin declares atoms but does not provide ``cdf_left``.
 
   See Also
   --------

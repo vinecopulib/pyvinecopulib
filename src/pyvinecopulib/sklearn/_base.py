@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import DataConversionWarning
-from sklearn.utils._param_validation import Interval
+from sklearn.utils._param_validation import Interval, Options
 from sklearn.utils.validation import (
   assert_all_finite,
   check_is_fitted,
@@ -257,7 +257,11 @@ class VineBase(BaseEstimator):
     "margins": [object, None],
     "batch_size": [Interval(Integral, 1, None, closed="left")],
     "random_state": ["random_state"],
-    "n_jobs": [Integral, None],
+    "n_jobs": [
+      Interval(Integral, 1, None, closed="left"),
+      Options(Integral, {-1}),
+      None,
+    ],
   }
 
   def __init__(
@@ -344,7 +348,20 @@ class VineBase(BaseEstimator):
         against the previously-set ones.
     """
     if not isinstance(X, (np.ndarray, pd.DataFrame)):
+      if hasattr(X, "format"):
+        raise TypeError("Sparse input is not supported; pass a dense array.")
       raise ValueError("X must be a numpy array or pandas DataFrame")
+    if isinstance(X, np.ndarray):
+      if X.ndim != 2:
+        raise ValueError(f"Expected 2D array, got {X.ndim}D array instead.")
+      if X.shape[0] == 0:
+        raise ValueError(
+          "Found array with 0 sample(s) while a minimum of 1 is required."
+        )
+      if X.shape[1] == 0:
+        raise ValueError(
+          "Found array with 0 feature(s) while a minimum of 1 is required."
+        )
     if y is not None:
       y = np.asarray(y)
       # A column vector is the shape callers reach for after slicing a
@@ -392,21 +409,25 @@ class VineBase(BaseEstimator):
           else:
             bounds.append(_categorical_bounds(dtype))
         self.schema_ = {"kde1d_types": kde1d_types, "bounds": bounds}
-        self.n_features_in_ = X_exp.shape[1]
+        self.n_features_in_ = X.shape[1]
+        self.n_model_features_ = X_exp.shape[1]
         X_arr = X_exp.to_numpy()
       else:
         check_is_fitted(self, attributes=["feature_names_in_"])
         if list(X.columns) != list(self.feature_names_in_):
           raise ValueError("Column names/order do not match training data.")
+        X_for_expansion = X.copy(deep=True)
         for col in self.feature_names_in_:
           dtype_expected = self._dtypes[col]
           if isinstance(dtype_expected, pd.CategoricalDtype):
-            if not isinstance(X[col].dtype, pd.CategoricalDtype):
+            if not isinstance(X_for_expansion[col].dtype, pd.CategoricalDtype):
               raise ValueError(f"Column {col} must be categorical.")
-            X[col] = X[col].cat.set_categories(
+            X_for_expansion[col] = X_for_expansion[col].cat.set_categories(
               dtype_expected.categories, ordered=dtype_expected.ordered
             )
-        X_arr = expand_factors(X)[self._expanded_columns].to_numpy()
+        X_arr = expand_factors(X_for_expansion)[
+          self._expanded_columns
+        ].to_numpy()
     else:
       if reset:
         # ndarray input carries no dtype information: respect a
@@ -430,6 +451,7 @@ class VineBase(BaseEstimator):
           )
         self.schema_ = {"kde1d_types": kde1d_types, "bounds": bounds}
         self.n_features_in_ = X.shape[1]
+        self.n_model_features_ = X.shape[1]
       else:
         check_is_fitted(self, attributes=["n_features_in_"])
         if X.shape[1] != self.n_features_in_:
@@ -697,7 +719,7 @@ class VineBase(BaseEstimator):
     """
     specs = resolve_margins(
       self.margins,
-      self.n_features_in_,
+      self.n_model_features_,
       names=getattr(self, "_expanded_columns", None),
       # Lazily: building it constructs one margin per column, which can refuse
       # a column outright, and a specification naming every column never uses
@@ -710,7 +732,7 @@ class VineBase(BaseEstimator):
 
     self._x_margins = tuple(
       self._fit_one_margin(specs[j], X[:, j], self._column_name(j), index=j)
-      for j in range(self.n_features_in_)
+      for j in range(self.n_model_features_)
     )
     fitted = list(self._x_margins)
 
@@ -831,6 +853,11 @@ class VineBase(BaseEstimator):
       var_types = Vinedist.copula_var_types(self._x_margins)
 
     backend = self.backend_
+    controls = backend._effective_controls()
+    if backend.structure is None and getattr(
+      controls, "tree_algorithm", ""
+    ).startswith("random"):
+      backend = backend.with_fit_seeds(self._draw_seeds())
     self._vine = backend.fit_vine(U, var_types=var_types)
     self.structure_ = backend.structure_of(self._vine)
     return self

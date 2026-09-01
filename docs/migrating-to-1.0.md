@@ -88,16 +88,25 @@ scheduled for removal in 2.0. Move to the subpackage imports now:
 
 ```python
 from pyvinecopulib.families import gaussian
-from pyvinecopulib.core import Kde1d, wdm
+from pyvinecopulib.core import Kde1d
+from pyvinecopulib.utils import wdm
 ```
 
 The eight core classes (`Bicop`, `Vinecop`, the three structures, the two
 fit-controls classes, `BicopFamily`) and `to_pseudo_obs` stay at the top level
 indefinitely.
 
+## sklearn and Torch changes
+
+The optional subpackages ship in the same distribution and have important 1.0
+changes. sklearn estimators now take a single `backend=` object instead of
+loose controls/structure/seed arguments; `seed` became `random_state`; and
+`VineRegressor` keeps a sample axis for one-row predictions. Torch fitting now
+uses `FitControlsTorchBicop` / `FitControlsTorchVinecop`, and `TorchBicop.sample`
+uses the core-style `(n, qrng=False, seeds=[])` signature. See the complete
+breaking-change inventory in `CHANGELOG.md` before upgrading either surface.
+
 ## What did not change
 
 - Serialized models. JSON and CBOR files written by 0.8.x load unchanged.
 - Every evaluation signature other than the keyword-only arguments above.
-- `pyvinecopulib.sklearn` and `pyvinecopulib.torch`, which are on their own
-  release cadence; see the changelog for those.

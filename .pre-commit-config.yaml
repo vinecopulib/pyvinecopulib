@@ -109,7 +109,6 @@ repos:
       - id: clang-format
         files: ^src/.*\.(c|cc|cpp|cxx|h|hpp|hxx)$
         exclude: ^src/include/docstr\.hpp$
-        args: [--style=Google]
 
   # American English (AGENTS.md) plus ordinary typos, over prose and code
   # alike. `--builtin en-GB_to_en-US` is what enforces the spelling rule; the

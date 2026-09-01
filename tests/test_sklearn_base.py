@@ -90,6 +90,20 @@ def test_vinebase_array_input_validation(
   assert all(t == "continuous" for t in density.schema_["kde1d_types"])
 
 
+def test_dataframe_prediction_does_not_mutate_caller_categories() -> None:
+  """Schema validation recategorizes a private copy, never the caller's frame."""
+  train = pd.DataFrame(
+    {"x": [0.0, 1.0, 2.0, 3.0], "c": pd.Categorical(["a", "b", "a", "b"])}
+  )
+  est = VineDensity().fit(train)
+  query = pd.DataFrame({"x": [0.5, 1.5], "c": pd.Categorical(["b", "a"])})
+  before = query.copy(deep=True)
+  est.score_samples(query)
+  pd.testing.assert_frame_equal(query, before)
+  assert est.n_features_in_ == 2
+  assert est.n_model_features_ == 2
+
+
 def test_vinebase_dataframe_expansion(
   sample_dataframe_data: tuple[pd.DataFrame, list[str]],
 ) -> None:

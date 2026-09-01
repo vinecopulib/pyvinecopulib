@@ -403,7 +403,25 @@ def test_state_dict_round_trip() -> None:
   restored.load_state_dict(lifted.state_dict())
   q = _t(np.arange(0.0, 10.0))
   np.testing.assert_array_equal(restored.pdf(q).numpy(), lifted.pdf(q).numpy())
-  assert set(lifted.state_dict()) == {"grid_points", "values", "prob0"}
+  assert set(lifted.state_dict()) == {
+    "_extra_state",
+    "grid_points",
+    "values",
+    "prob0",
+  }
+  assert restored.loglik() == lifted.loglik()
+  assert restored.edf == lifted.edf
+
+
+def test_fit_rejects_non_vector_data_and_weights() -> None:
+  """Fitting accepts one observation vector and aligned vector weights."""
+  y = _t(np.arange(5.0))
+  with pytest.raises(ValueError, match="one-dimensional"):
+    TorchKde1d().fit(y[:, None])
+  with pytest.raises(ValueError, match="one-dimensional"):
+    TorchKde1d().fit(y, weights=y[:, None])
+  with pytest.raises(ValueError, match="one entry per observation"):
+    TorchKde1d().fit(y, weights=y[:-1])
 
 
 def test_pickle_round_trip() -> None:

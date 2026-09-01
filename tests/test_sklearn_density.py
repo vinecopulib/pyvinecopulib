@@ -68,6 +68,18 @@ def test_score_samples_shapes_and_types(fitted_density):
   assert np.all(np.isfinite(log_scores))
 
 
+def test_score_uses_fitted_dataframe_schema() -> None:
+  """``score`` follows the same schema path as ``score_samples``."""
+  pandas = pytest.importorskip("pandas")
+  frame = pandas.DataFrame(
+    {"x": np.arange(8.0), "group": pandas.Categorical(["a", "b"] * 4)}
+  )
+  est = VineDensity().fit(frame)
+  assert est.score(frame.iloc[:3]) == pytest.approx(
+    est.score_samples(frame.iloc[:3]).mean()
+  )
+
+
 def test_pdf_shapes_and_types(fitted_density):
   """Test pdf method shapes and types."""
   density, X = fitted_density

@@ -43,6 +43,25 @@ copula models. Advantages over VineCopula are
 
 ### Optional backends
 
+### First core fit
+
+The core package is enough to fit, inspect, evaluate, and sample a model:
+
+```python
+import numpy as np
+import pyvinecopulib as pv
+
+x = np.random.default_rng(0).normal(size=(500, 3))
+u = pv.to_pseudo_obs(x)
+vine = pv.Vinecop.from_data(u)
+loglik = vine.loglik(u)
+draws = vine.sample(100, seeds=[1])
+```
+
+For a distribution on the original data scale, pair the fitted copula with
+one margin per variable through `pv.Vinedist`. Notebooks 03, 07, and 11 build
+out these core workflows.
+
 Two opt-in subpackages extend the core library:
 
 * `pyvinecopulib.sklearn` — scikit-learn-compatible estimators
@@ -57,8 +76,9 @@ Two opt-in subpackages extend the core library:
 
   Install with `pip install pyvinecopulib[sklearn]`.
 
-* `pyvinecopulib.torch` — pure-PyTorch evaluators (`TorchBicop`,
-  `TorchVinecop`) for GPU placement and autograd:
+* `pyvinecopulib.torch` — pure-PyTorch evaluators and data-scale modules
+  (`TorchBicop`, `TorchVinecop`, `TorchKde1d`, `TorchMargin`, and
+  `TorchVinedist`) for GPU placement and autograd:
 
   ```python
   from pyvinecopulib.sklearn import VineDensity
@@ -113,6 +133,10 @@ If you have any questions regarding the library, feel free to
 send a mail to <info@vinecopulib.org>.
 
 ## Installation
+
+On x86-64, the distributed wheels require the x86-64-v3 ISA baseline (AVX2 and
+FMA). The package checks this before loading its native extension and explains
+how to use a source build when a CPU or VM masks those features.
 
 ### With pip
 

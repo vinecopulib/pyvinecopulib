@@ -68,6 +68,14 @@ def test_predict_quantiles_only(regression_setup):
   assert np.all(pred_quant[:, 1] <= pred_quant[:, 2])  # Q50 <= Q90
 
 
+def test_quantile_regressor_score_is_rejected(regression_setup):
+  """R² is defined for the mean prediction, not a quantile matrix."""
+  X_train, X_test, y_train, y_test, _, _ = regression_setup
+  est = VineRegressor(mean=False, quantiles=[0.25, 0.75]).fit(X_train, y_train)
+  with pytest.raises(ValueError, match="mean predictions"):
+    est.score(X_test, y_test)
+
+
 def test_predict_mean_and_quantiles(regression_setup):
   """Test prediction with both mean and quantiles."""
   X_train, X_test, y_train, y_test, _, _ = regression_setup

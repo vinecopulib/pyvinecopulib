@@ -144,11 +144,13 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self._type = type
     self.multiplier = multiplier
     self.bandwidth = bandwidth
+    self._bandwidth_spec = bandwidth
     self.degree = degree
     self.grid_size = grid_size
     self.boundary_repair = boundary_repair
     self._loglik: Optional[float] = None
     self.edf: Optional[float] = None
+    self._selected_bandwidth: Optional[float] = None
     self._dtype = dtype
     self._device = device
     self.register_buffer(
@@ -251,11 +253,29 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       grid_size=self.grid_size,
       boundary_repair=self.boundary_repair,
     )
-    data = torch.as_tensor(y).detach().reshape(-1).cpu().numpy()
+    y_tensor = torch.as_tensor(y)
+    if y_tensor.ndim != 1:
+      raise ValueError(
+        "y must be one-dimensional with shape (n,), "
+        f"got {tuple(y_tensor.shape)}"
+      )
+    data = y_tensor.detach().cpu().numpy()
     if weights is None:
       kde.fit(data)
     else:
-      kde.fit(data, torch.as_tensor(weights).detach().reshape(-1).cpu().numpy())
+      weight_tensor = torch.as_tensor(weights)
+      if weight_tensor.ndim != 1:
+        raise ValueError(
+          "weights must be one-dimensional with shape (n,), "
+          f"got {tuple(weight_tensor.shape)}"
+        )
+      if weight_tensor.shape[0] != y_tensor.shape[0]:
+        raise ValueError(
+          "weights must have one entry per observation: "
+          f"got {weight_tensor.shape[0]} weights for {y_tensor.shape[0]} "
+          "observations"
+        )
+      kde.fit(data, weight_tensor.detach().cpu().numpy())
     return self._adopt(kde)
 
   @classmethod
@@ -399,13 +419,61 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self._type = kde.type
     self.xmin = kde.xmin
     self.xmax = kde.xmax
-    self.bandwidth = kde.bandwidth
+    self.bandwidth = float(kde.bandwidth)
+    self._selected_bandwidth = float(kde.bandwidth)
     self.degree = kde.degree
     self.multiplier = kde.multiplier
     self.boundary_repair = kde.boundary_repair
     self._loglik = float(kde.loglik())
     self.edf = float(kde.edf)
     return self
+
+  def get_extra_state(self) -> dict[str, Any]:
+    """Return non-tensor fitted state for ``state_dict`` round-trips.
+
+    Returns
+    -------
+    dict
+        Fitted configuration and diagnostics not stored as tensors.
+    """
+    return {
+      "version": 1,
+      "xmin": self.xmin,
+      "xmax": self.xmax,
+      "type": self._type,
+      "multiplier": self.multiplier,
+      "bandwidth": self.bandwidth,
+      "bandwidth_spec": self._bandwidth_spec,
+      "selected_bandwidth": self._selected_bandwidth,
+      "degree": self.degree,
+      "grid_size": self.grid_size,
+      "boundary_repair": self.boundary_repair,
+      "loglik": self._loglik,
+      "edf": self.edf,
+    }
+
+  def set_extra_state(self, state: Any) -> None:
+    """Restore non-tensor fitted state saved by :meth:`get_extra_state`.
+
+    Parameters
+    ----------
+    state : dict
+        State returned by :meth:`get_extra_state`.
+    """
+    if not isinstance(state, dict) or state.get("version") != 1:
+      raise RuntimeError("unsupported TorchKde1d state-dict version")
+    self.xmin = state["xmin"]
+    self.xmax = state["xmax"]
+    self._type = state["type"]
+    self.multiplier = state["multiplier"]
+    self.bandwidth = state["bandwidth"]
+    self._bandwidth_spec = state["bandwidth_spec"]
+    self._selected_bandwidth = state["selected_bandwidth"]
+    self.degree = state["degree"]
+    self.grid_size = state["grid_size"]
+    self.boundary_repair = state["boundary_repair"]
+    self._loglik = state["loglik"]
+    self.edf = state["edf"]
 
   # --- declared capabilities ------------------------------------------------ #
 

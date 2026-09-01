@@ -3,6 +3,7 @@ from numbers import Integral
 
 import numpy as np
 from sklearn.base import RegressorMixin
+from sklearn.metrics import r2_score
 from sklearn.utils._param_validation import Interval
 from sklearn.utils.validation import check_is_fitted
 
@@ -428,6 +429,37 @@ class VineRegressor(RegressorMixin, VineBase):
     check_is_fitted(self, attributes=["_vine"])
     X = self._validate_input(X, reset=False)
     return self._predict_from_iter(X, self._iter_weights)
+
+  def score(self, X, y, sample_weight=None) -> float:
+    """Return :math:`R^2` for the fitted conditional mean.
+
+    Quantile columns are supplementary prediction outputs, not independent
+    response targets. When the conditional mean is disabled there is no
+    scalar regressor score, so callers must choose a quantile-specific metric.
+
+    Parameters
+    ----------
+    X : array-like or pandas.DataFrame
+        Covariates to predict.
+    y : array-like
+        Observed response values.
+    sample_weight : array-like, optional
+        Per-observation weights for the coefficient of determination.
+
+    Returns
+    -------
+    float
+        Coefficient of determination for the conditional mean.
+    """
+    if not self.mean:
+      raise ValueError(
+        "VineRegressor.score is defined for mean predictions only; "
+        "use a quantile-specific metric when mean=False."
+      )
+    prediction = np.asarray(self.predict(X))
+    if prediction.ndim == 2:
+      prediction = prediction[:, 0]
+    return float(r2_score(y, prediction, sample_weight=sample_weight))
 
 
 VineRegressor.__doc__ = f"""Vine-copula based regressor (mean and quantile).

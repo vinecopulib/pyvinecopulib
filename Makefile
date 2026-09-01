@@ -48,6 +48,10 @@ test: ## Run pytest suite
 	$(UV) run pytest tests/
 
 test-examples: ## Execute example notebooks as tests
+	@command -v dot >/dev/null || { \
+	  echo "Graphviz 'dot' is required for notebook execution; install Graphviz first."; \
+	  exit 2; \
+	}
 	PYTHONWARNINGS="error::DeprecationWarning:__main__" \
 	  $(UV) run pytest --nbmake --nbmake-timeout=600 examples/
 

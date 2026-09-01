@@ -139,14 +139,6 @@ class VineDensity(DensityMixin, VineBase):
         If ``X`` is a sparse matrix or another unsupported array type.
     """
 
-    if isinstance(X, pd.DataFrame):
-      X = X.to_numpy()
-    elif not isinstance(X, np.ndarray):
-      try:
-        X = np.asarray(X)
-      except Exception as e:
-        raise TypeError(f"Unsupported array type {type(X)} for scoring") from e
-
     return float(self.score_samples(X).mean())
 
   def sample(self, n_samples: int = 1, random_state=None) -> np.ndarray:
