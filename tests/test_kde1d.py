@@ -1,3 +1,4 @@
+import math
 import pickle
 
 import numpy as np
@@ -492,3 +493,74 @@ def test_from_grid_minimum_matches_what_can_round_trip() -> None:
     np.testing.assert_allclose(
       restored.pdf(np.array([0.5])), kde.pdf(np.array([0.5]))
     )
+
+
+def test_json_and_file_round_trips_are_exact() -> None:
+  """`Kde1d` carries the persistence surface its sibling classes have.
+
+  `Bicop`, `Vinecop` and `RVineStructure` have all four of `to_json` /
+  `from_json` / `to_file` / `from_file`; `Kde1d` is a margin in its own right
+  and the one `Vinedist` defaults to, so it needs the same. Pickling shares the
+  representation, so the two cannot drift.
+  """
+  rng = np.random.default_rng(0)
+  cases = [
+    ("continuous", pv.core.Kde1d(), rng.normal(size=400)),
+    (
+      "discrete",
+      pv.core.Kde1d(type="discrete", xmin=0.0),
+      rng.poisson(4, 400) * 1.0,
+    ),
+    (
+      "zi",
+      pv.core.Kde1d(type="zi"),
+      np.where(rng.random(400) < 0.3, 0.0, rng.gamma(2, size=400)),
+    ),
+  ]
+  q = np.linspace(0.5, 5.5, 7)
+  probs = np.array([0.1, 0.5, 0.9])
+  for label, spec, data in cases:
+    kde = spec.fit(data)
+    for restored in (
+      pv.core.Kde1d.from_json(kde.to_json()),
+      pickle.loads(pickle.dumps(kde)),
+    ):
+      np.testing.assert_array_equal(restored.pdf(q), kde.pdf(q), label)
+      np.testing.assert_array_equal(restored.cdf(q), kde.cdf(q), label)
+      np.testing.assert_array_equal(restored.icdf(probs), kde.icdf(probs))
+      # The fitted diagnostics travel too, not only the grid.
+      assert restored.loglik() == kde.loglik()
+      assert restored.edf == kde.edf
+      assert restored.bandwidth == kde.bandwidth
+      assert restored.type == kde.type
+      assert restored.grid_size == kde.grid_size
+
+
+def test_json_round_trip_preserves_unset_bounds() -> None:
+  """An unset bound is NaN, which strict JSON has no literal for."""
+  kde = pv.core.Kde1d().fit(np.random.default_rng(1).normal(size=300))
+  assert math.isnan(kde.xmin) and math.isnan(kde.xmax)
+  restored = pv.core.Kde1d.from_json(kde.to_json())
+  assert math.isnan(restored.xmin) and math.isnan(restored.xmax)
+
+
+def test_json_round_trip_of_an_unfitted_estimator() -> None:
+  """The configuration alone must survive, so a spec can be stored."""
+  kde = pv.core.Kde1d(type="discrete", xmin=0.0, bandwidth=0.7, grid_size=64)
+  restored = pv.core.Kde1d.from_json(kde.to_json())
+  assert not restored.is_fitted
+  assert restored.bandwidth_spec == kde.bandwidth_spec
+  assert restored.xmin == kde.xmin
+  assert restored.grid_size == kde.grid_size
+  assert restored.type == kde.type
+
+
+def test_to_file_selects_cbor_by_extension(tmp_path) -> None:
+  """The same extension rule `Bicop.to_file` follows."""
+  kde = pv.core.Kde1d().fit(np.random.default_rng(2).normal(size=300))
+  q = np.linspace(-2.0, 2.0, 5)
+  for name in ("m.json", "m.cbor"):
+    path = tmp_path / name
+    kde.to_file(str(path))
+    restored = pv.core.Kde1d.from_file(str(path))
+    np.testing.assert_array_equal(restored.pdf(q), kde.pdf(q), name)

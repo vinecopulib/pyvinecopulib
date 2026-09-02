@@ -350,7 +350,11 @@ DOCSTRING_SUBPACKAGES = {
       "MarginBase",
       "Vinedist",
     ],
-    "functions": [],
+    "functions": [
+      "margin_from_json",
+      "margin_to_json",
+      "register_margin_json",
+    ],
   },
   "families": {
     "classes": ["BicopFamily"],

@@ -178,9 +178,8 @@ treated as load-bearing. Pin an exact version if you build on the rest.
 
 ## What did not change
 
-- Serialized `Bicop` / `Vinecop` / `RVineStructure` models. JSON and CBOR
-  files written by 0.7.x load unchanged, and so do pickles (through the
-  deprecated aliases). Note that the classes 1.0 adds -- `Vinedist`, the
-  `margins` types and the `torch` modules -- have no JSON/CBOR surface; use
-  `pickle`, or `state_dict` for the torch modules.
+- Serialized models. JSON and CBOR files written by 0.7.x load unchanged, and so
+  do pickles (through the deprecated aliases). `Kde1d`, `Vinedist` and the
+  `margins` types gain the same `to_json` / `from_json` surface in 1.0; the
+  `torch` modules use `state_dict` instead.
 - Every evaluation signature other than the keyword-only arguments above.

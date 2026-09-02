@@ -800,3 +800,101 @@ def test_vinedist_with_a_discrete_margin_uses_the_cascade() -> None:
   # And the joint cdf reaches the copula in a layout it accepts at all -- it
   # needs no left limits, but a discrete copula rejects the bare `(n, d)` one.
   assert dist_mine.cdf(x[:20], N=500, seeds=[2]).shape == (20,)
+
+
+def test_json_round_trip_is_exact_for_every_shipped_margin(unique_json_path):
+  """`Vinedist` persists to JSON like the copula classes it composes.
+
+  `Bicop` / `Vinecop` / `RVineStructure` have carried `to_json` / `to_file`
+  since well before 1.0 and `docs/concepts.rst` presents that as the way to
+  store a model; the objects this release adds had only `pickle`.
+  """
+  pytest.importorskip("scipy")
+  from pyvinecopulib.margins import MarginSelector, ParametricMargin
+
+  rng = np.random.default_rng(0)
+  cov = [[1.0, 0.7, 0.3], [0.7, 1.0, 0.5], [0.3, 0.5, 1.0]]
+  x = rng.multivariate_normal([0.0, 0.0, 0.0], cov, size=400)
+  q = x[:6]
+  specs = {
+    "default": None,
+    "parametric": [ParametricMargin("norm") for _ in range(3)],
+    "selector": [MarginSelector() for _ in range(3)],
+    "mixed": [pv.core.Kde1d(), ParametricMargin("norm"), MarginSelector()],
+  }
+  for label, margins in specs.items():
+    dist = pv.core.Vinedist.from_data(x, margins=margins)
+    restored = pv.core.Vinedist.from_json(dist.to_json())
+    # Exactly, not approximately: the stored grid and parameters are the model.
+    np.testing.assert_array_equal(restored.logpdf(q), dist.logpdf(q), label)
+    np.testing.assert_array_equal(
+      restored.rosenblatt(q), dist.rosenblatt(q), label
+    )
+    assert [type(m).__name__ for m in restored.margins] == [
+      type(m).__name__ for m in dist.margins
+    ]
+
+
+def test_to_file_selects_cbor_by_extension(unique_json_path):
+  """The extension rule is the one the compiled classes already follow."""
+  rng = np.random.default_rng(1)
+  x = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=300)
+  dist = pv.core.Vinedist.from_data(x)
+  base = str(unique_json_path)
+  for path in (base, base.replace(".json", ".cbor")):
+    dist.to_file(path)
+    np.testing.assert_array_equal(
+      pv.core.Vinedist.from_file(path).logpdf(x[:5]), dist.logpdf(x[:5])
+    )
+
+
+def test_a_margin_without_to_json_is_refused_by_name():
+  """A custom margin has to opt in, and is told how."""
+  rng = np.random.default_rng(2)
+  x = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=300)
+  copula = pv.core.Vinedist.from_data(x).copula
+
+  class Unserializable(pv.core.MarginBase):
+    def pdf(self, y, x=None):
+      return np.full(np.shape(y), 0.5)
+
+    def cdf(self, y, x=None):
+      return np.clip(np.asarray(y) * 0.5 + 0.5, 0.0, 1.0)
+
+  dist = pv.core.Vinedist(
+    copula, [Unserializable(), pv.core.Kde1d().fit(x[:, 1])]
+  )
+  with pytest.raises(TypeError, match="register_margin_json"):
+    dist.to_json()
+
+
+def test_a_registered_custom_margin_round_trips():
+  """`register_margin_json` is the documented seam, so it must work."""
+  rng = np.random.default_rng(3)
+  x = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=300)
+  copula = pv.core.Vinedist.from_data(x).copula
+
+  class Uniform(pv.core.MarginBase):
+    def pdf(self, y, x=None):
+      return np.ones(np.shape(y))
+
+    def cdf(self, y, x=None):
+      return np.clip(np.asarray(y), 0.0, 1.0)
+
+    def to_json(self):
+      return {"kind": "_TestUniform"}
+
+  pv.core.register_margin_json("_TestUniform", lambda payload: Uniform())
+  dist = pv.core.Vinedist(copula, [Uniform(), pv.core.Kde1d().fit(x[:, 1])])
+  restored = pv.core.Vinedist.from_json(dist.to_json())
+  assert isinstance(restored.margins[0], pv.core.MarginBase)
+
+
+def test_an_unknown_margin_kind_and_a_bad_version_both_raise():
+  """A format change must fail loudly rather than build a wrong model."""
+  from pyvinecopulib.core._serialization import margin_from_json
+
+  with pytest.raises(ValueError, match="no reader registered"):
+    margin_from_json({"kind": "NotAMargin", "version": 1})
+  with pytest.raises(ValueError, match="unsupported margin JSON version"):
+    margin_from_json({"kind": "Kde1d", "version": 999})

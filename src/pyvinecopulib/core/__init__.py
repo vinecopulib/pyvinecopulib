@@ -91,6 +91,11 @@ from .context import (
   NonSimplifiedContext,
   SimplifiedContext,
 )
+from ._serialization import (
+  margin_from_json,
+  margin_to_json,
+  register_margin_json,
+)
 from .margin_base import MarginBase
 from .protocols import BicopLike, MarginLike, VinecopLike
 from .vinedist import Vinedist
@@ -121,6 +126,9 @@ __all__ = [
   "IndependencePair",
   "Kde1d",
   "MarginBase",
+  "margin_from_json",
+  "margin_to_json",
+  "register_margin_json",
   "MarginLike",
   "NonSimplifiedContext",
   "RVineStructure",

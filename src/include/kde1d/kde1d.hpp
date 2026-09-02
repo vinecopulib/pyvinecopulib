@@ -9,9 +9,12 @@
 
 #include <cmath>
 #include <kde1d.hpp>
+// `tools_serialization` chooses CBOR or JSON by filename extension, exactly as
+// `Bicop.to_file` / `Vinecop.to_file` do.
 #include <limits>
 #include <optional>
 #include <tuple>
+#include <vinecopulib/misc/tools_serialization.hpp>
 
 #include "docstr.hpp"
 #include "misc/helpers.hpp"
@@ -90,6 +93,108 @@ inline Kde1d kde1d_from_grid(const Eigen::VectorXd& grid_points,
   }
   interp::InterpolationGrid grid(grid_points, values, 0);
   return Kde1d(grid, xmin.value_or(NAN), xmax.value_or(NAN), type, prob0);
+}
+
+// JSON is the model-exchange format the copula classes use, so `Kde1d` --
+// which is a margin in its own right, and the one `Vinedist` defaults to --
+// carries the same surface. One representation serves both `to_json` and
+// pickling, so the two cannot drift.
+//
+// `nlohmann::json` has no NaN, and every optional numeric field here can be
+// one (an unset bound, an unfitted bandwidth), so NaN travels as `null`.
+inline nlohmann::json kde1d_num(double value) {
+  if (std::isnan(value)) {
+    return nullptr;
+  }
+  return value;
+}
+
+inline double kde1d_num(const nlohmann::json& j, const char* key,
+                        double fallback) {
+  if (!j.contains(key) || j[key].is_null()) {
+    return fallback;
+  }
+  return j[key].get<double>();
+}
+
+inline nlohmann::json kde1d_state_to_json(const Kde1d& kde) {
+  nlohmann::json j;
+  // `get_grid_points()` / `get_values()` return by value, so the vectors are
+  // held in named locals: `.data()` on the temporary would dangle.
+  const Eigen::VectorXd grid_points = kde.get_grid_points();
+  const Eigen::VectorXd values = kde.get_values();
+  const bool fitted = grid_points.size() > 0;
+  j["fitted"] = fitted;
+  j["xmin"] = kde1d_num(kde.get_xmin());
+  j["xmax"] = kde1d_num(kde.get_xmax());
+  j["type"] = kde.get_type_str();
+  j["multiplier"] = kde.get_multiplier();
+  j["bandwidth_spec"] = kde1d_num(kde.get_bandwidth_spec());
+  j["bandwidth"] = kde1d_num(kde.get_bandwidth());
+  j["degree"] = kde.get_degree();
+  j["grid_size"] = kde.get_grid_size();
+  j["boundary_repair"] = kde.get_boundary_repair();
+  if (fitted) {
+    j["prob0"] = kde.get_prob0();
+    j["grid_points"] = std::vector<double>(
+        grid_points.data(), grid_points.data() + grid_points.size());
+    j["values"] =
+        std::vector<double>(values.data(), values.data() + values.size());
+    j["edf"] = kde1d_num(kde.get_edf());
+    j["loglik"] = kde1d_num(kde.get_loglik());
+  }
+  return j;
+}
+
+inline Kde1d kde1d_state_from_json(const nlohmann::json& j) {
+  const bool fitted = j.at("fitted").get<bool>();
+  const double xmin = kde1d_num(j, "xmin", NAN);
+  const double xmax = kde1d_num(j, "xmax", NAN);
+  const auto type = j.at("type").get<std::string>();
+  const double multiplier = kde1d_num(j, "multiplier", 1.0);
+  const double bandwidth = kde1d_num(j, "bandwidth", NAN);
+  const double bandwidth_spec =
+      kde1d_num(j, "bandwidth_spec", fitted ? NAN : bandwidth);
+  const auto degree =
+      j.contains("degree") ? j["degree"].get<std::size_t>() : std::size_t{2};
+  const bool boundary_repair =
+      j.contains("boundary_repair") ? j["boundary_repair"].get<bool>() : true;
+  if (!fitted) {
+    return Kde1d(xmin, xmax, type, multiplier, bandwidth_spec, degree,
+                 j.at("grid_size").get<std::size_t>(), boundary_repair);
+  }
+  const auto points = j.at("grid_points").get<std::vector<double>>();
+  const auto vals = j.at("values").get<std::vector<double>>();
+  if (points.size() < 4 || vals.size() < 4) {
+    throw std::invalid_argument(
+        "grid_points and values must contain at least four points");
+  }
+  const Eigen::VectorXd grid_points =
+      Eigen::Map<const Eigen::VectorXd>(points.data(), points.size());
+  const Eigen::VectorXd values =
+      Eigen::Map<const Eigen::VectorXd>(vals.data(), vals.size());
+  const auto grid_size = j.contains("grid_size")
+                             ? j["grid_size"].get<std::size_t>()
+                             : points.size();
+  const Kde1dState state{multiplier,
+                         bandwidth_spec,
+                         bandwidth,
+                         degree,
+                         grid_size,
+                         boundary_repair,
+                         kde1d_num(j, "edf", NAN),
+                         kde1d_num(j, "loglik", NAN)};
+  interp::InterpolationGrid grid(grid_points, values, 0);
+  return Kde1d(grid, xmin, xmax, type, j.at("prob0").get<double>(), state);
+}
+
+inline Kde1d kde1d_from_json(const std::string& json) {
+  return kde1d_state_from_json(nlohmann::json::parse(json));
+}
+
+inline Kde1d kde1d_from_file(const std::string& filename) {
+  return kde1d_state_from_json(
+      vinecopulib::tools_serialization::file_to_json(filename));
 }
 
 // Whether `fit` has populated the estimator. The upstream C++ class has no
@@ -215,6 +320,38 @@ inline void init_kde1d(nb::module_& module) {
               "multiplier"_a = 1.0, "bandwidth"_a = std::nullopt,
               "degree"_a = 2, "grid_size"_a = 400, "boundary_repair"_a = true,
               kde1d_constructor_doc, nb::call_guard<nb::gil_scoped_release>())
+          .def_static(
+              "from_json", &kde1d_from_json, "json"_a,
+              "Instantiate from a JSON string.\n\nParameters\n----------\n"
+              "json : str\n    A JSON string produced by ``to_json()``.\n\n"
+              "Returns\n-------\nKde1d\n    The deserialized estimator.",
+              nb::call_guard<nb::gil_scoped_release>())
+          .def_static(
+              "from_file", &kde1d_from_file, "filename"_a,
+              "Instantiate from a JSON file, or a CBOR file when the filename "
+              "ends in ``.cbor``.\n\nParameters\n----------\nfilename : str\n"
+              "    Path to read.\n\nReturns\n-------\nKde1d\n"
+              "    The deserialized estimator.",
+              nb::call_guard<nb::gil_scoped_release>())
+          .def(
+              "to_json",
+              [](const Kde1d& kde) -> std::string {
+                return kde1d_state_to_json(kde).dump();
+              },
+              "Serialize to a JSON string.\n\nReturns\n-------\nstr\n"
+              "    A JSON string that ``from_json()`` reads back.",
+              nb::call_guard<nb::gil_scoped_release>())
+          .def(
+              "to_file",
+              [](const Kde1d& kde, const std::string& filename) {
+                vinecopulib::tools_serialization::json_to_file(
+                    filename, kde1d_state_to_json(kde));
+              },
+              "filename"_a,
+              "Write to a JSON file, or a CBOR file when the filename ends in "
+              "``.cbor``.\n\nParameters\n----------\nfilename : str\n"
+              "    Path to write.",
+              nb::call_guard<nb::gil_scoped_release>())
           .def_static("from_grid", &kde1d_from_grid, "grid_points"_a,
                       "values"_a, "xmin"_a = std::nullopt,
                       "xmax"_a = std::nullopt, "type"_a = "continuous",
@@ -399,29 +536,20 @@ inline void init_kde1d(nb::module_& module) {
           // Serialization support
           .def("__getstate__",
                [](const Kde1d& kde) {
-                 nb::dict s;
-                 const bool fitted = kde1d_is_fitted(kde);
-                 s["fitted"] = fitted;
-                 s["xmin"] = kde.get_xmin();
-                 s["xmax"] = kde.get_xmax();
-                 s["type"] = kde.get_type_str();
-                 s["multiplier"] = kde.get_multiplier();
-                 s["bandwidth_spec"] = kde.get_bandwidth_spec();
-                 s["bandwidth"] = kde.get_bandwidth();
-                 s["degree"] = kde.get_degree();
-                 s["grid_size"] = kde.get_grid_size();
-                 s["boundary_repair"] = kde.get_boundary_repair();
-                 if (fitted) {
-                   s["prob0"] = kde.get_prob0();
-                   s["grid_points"] = kde.get_grid_points();
-                   s["values"] = kde.get_values();
-                   s["edf"] = kde.get_edf();
-                   s["loglik"] = kde.get_loglik();
-                 }
-                 return s;
+                 nb::dict state;
+                 // The same representation `to_json` serves, so the two
+                 // cannot drift; `Bicop` and `Vinecop` pickle this way too.
+                 state["json"] = kde1d_state_to_json(kde).dump();
+                 return state;
                })
 
           .def("__setstate__", [](Kde1d& kde, nb::dict s) {
+            if (s.contains("json")) {
+              new (&kde)
+                  Kde1d(kde1d_from_json(nb::cast<std::string>(s["json"])));
+              return;
+            }
+            // Read pickles written before the JSON state was adopted.
             const bool fitted = nb::cast<bool>(s["fitted"]);
             const double xmin = nb::cast<double>(s["xmin"]);
             const double xmax = nb::cast<double>(s["xmax"]);

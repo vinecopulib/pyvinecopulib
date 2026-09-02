@@ -304,6 +304,116 @@ class Vinedist(Generic[ArrayT]):
     """
     return list(self._var_types)
 
+  # --- persistence --------------------------------------------------------- #
+
+  def to_json(self) -> str:
+    """Serialize to a JSON string.
+
+    Both halves are stored: the copula through its own ``to_json``, and one
+    payload per margin. A margin type this package does not ship must provide
+    ``to_json`` and register a reader with
+    :func:`~pyvinecopulib.core.register_margin_json`.
+
+    Returns
+    -------
+    str
+        A JSON string that :meth:`from_json` reads back.
+
+    Raises
+    ------
+    TypeError
+        If the copula or a margin cannot be serialized.
+
+    See Also
+    --------
+    to_file : Write to a file, JSON or CBOR.
+    """
+    from ._serialization import MARGIN_JSON_VERSION, dumps, margin_to_json
+
+    copula_to_json = getattr(self._copula, "to_json", None)
+    if copula_to_json is None:
+      raise TypeError(
+        f"{type(self._copula).__name__} cannot be serialized: it has no "
+        "`to_json`. A `TorchVinecop` is an `nn.Module`; use `state_dict` for "
+        "that half, or hold a compiled `Vinecop` instead."
+      )
+    return dumps(
+      {
+        "kind": type(self).__name__,
+        "version": MARGIN_JSON_VERSION,
+        "copula": copula_to_json(),
+        "margins": [margin_to_json(m) for m in self._margins],
+      }
+    )
+
+  @classmethod
+  def from_json(cls, json: str) -> "Vinedist[Any]":
+    """Instantiate from a JSON string.
+
+    Parameters
+    ----------
+    json : str
+        A string produced by :meth:`to_json`.
+
+    Returns
+    -------
+    Vinedist
+        The deserialized distribution, with a compiled ``Vinecop`` copula.
+
+    Raises
+    ------
+    ValueError
+        If the payload's version is unrecognized, or a margin's ``kind`` has no
+        registered reader.
+    """
+    from . import Vinecop
+    from ._serialization import (
+      MARGIN_JSON_VERSION,
+      loads,
+      margin_from_json,
+    )
+
+    payload = loads(json)
+    if payload.get("version") != MARGIN_JSON_VERSION:
+      raise ValueError(
+        f"unsupported Vinedist JSON version {payload.get('version')!r}; this "
+        f"build reads version {MARGIN_JSON_VERSION}"
+      )
+    return cls(
+      Vinecop.from_json(payload["copula"]),
+      [margin_from_json(m) for m in payload["margins"]],
+    )
+
+  def to_file(self, filename: str) -> None:
+    """Write to a JSON file, or a CBOR file when the name ends in ``.cbor``.
+
+    Parameters
+    ----------
+    filename : str
+        Path to write.
+    """
+    from ._serialization import write_file
+
+    write_file(filename, self.to_json())
+
+  @classmethod
+  def from_file(cls, filename: str) -> "Vinedist[Any]":
+    """Instantiate from a JSON file, or a CBOR file by extension.
+
+    Parameters
+    ----------
+    filename : str
+        Path to read.
+
+    Returns
+    -------
+    Vinedist
+        The deserialized distribution.
+    """
+    from ._serialization import read_file
+
+    return cls.from_json(read_file(filename))
+
   # --- marginal transforms ------------------------------------------------- #
 
   def _prep(self, a: Any) -> Any:

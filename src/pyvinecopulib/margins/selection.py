@@ -550,6 +550,49 @@ class MarginSelector(_SelectorBase):
 
   # --- estimation ---------------------------------------------------------- #
 
+  def to_json(self) -> dict[str, Any]:
+    """Return this selector's JSON payload.
+
+    The selected margin is what evaluates, so it is what is stored; the report
+    travels with it as the record of how it was chosen.
+
+    Returns
+    -------
+    dict
+        A JSON-serializable mapping that
+        :func:`~pyvinecopulib.core.margin_from_json` reads back.
+
+    Raises
+    ------
+    RuntimeError
+        If the selector has not been fitted, so there is nothing selected.
+    """
+    from ..core._serialization import margin_to_json
+
+    if self._selected is None:
+      raise RuntimeError(
+        "MarginSelector has not been fitted, so there is no selected margin "
+        "to serialize; call fit(y) first"
+      )
+    return {
+      "kind": "MarginSelector",
+      "criterion": self.criterion,
+      "name": self.name,
+      "selected": margin_to_json(self._selected),
+      "report": self._report,
+    }
+
+  @classmethod
+  def _from_json_payload(cls, payload: dict[str, Any]) -> "MarginSelector":
+    """Rebuild a selector from the payload :meth:`to_json` produced."""
+    from ..core._serialization import margin_from_json
+
+    selector = cls(criterion=payload.get("criterion", "aic"))
+    selector.name = payload.get("name")
+    selector._selected = margin_from_json(payload["selected"])
+    selector._report = list(payload.get("report") or [])
+    return selector
+
   def fit(
     self, y: Any, *, x: Optional[Any] = None, weights: Optional[Any] = None
   ) -> "MarginSelector":

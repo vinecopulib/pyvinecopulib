@@ -480,6 +480,49 @@ class ParametricMargin(MarginBase[np.ndarray]):
     """
     return getattr(_stats(), self._family)
 
+  def to_json(self) -> dict[str, Any]:
+    """Return this margin's JSON payload.
+
+    Returns
+    -------
+    dict
+        A JSON-serializable mapping that
+        :func:`~pyvinecopulib.core.margin_from_json` reads back.
+    """
+    payload: dict[str, Any] = {
+      "kind": "ParametricMargin",
+      "family": self._family,
+      "fixed": dict(self._fixed),
+      "bounds": {k: list(v) for k, v in (self._bounds or {}).items()},
+    }
+    if self._params is not None:
+      payload["params"] = list(self._params)
+    if self._loglik is not None:
+      payload["loglik"] = self._loglik
+    payload["n_free"] = self._n_free
+    return payload
+
+  @classmethod
+  def _from_json_payload(cls, payload: dict[str, Any]) -> "ParametricMargin":
+    """Rebuild a margin from the payload :meth:`to_json` produced."""
+    bounds = {
+      k: (float(v[0]), float(v[1]))
+      for k, v in (payload.get("bounds") or {}).items()
+    } or None
+    fixed: dict[str, float] = {
+      str(k): float(v) for k, v in (payload.get("fixed") or {}).items()
+    }
+    # `params` positionally, so the `**fixed` unpacking cannot reach it.
+    margin = cls(str(payload["family"]), None, bounds=bounds, **fixed)
+    if "params" in payload:
+      margin._params = tuple(float(v) for v in payload["params"])
+    if payload.get("loglik") is not None:
+      margin._loglik = float(payload["loglik"])
+    # `n_free` is what `n_parameters` reports, and it separates a fitted margin
+    # from one constructed with `params=` pinned.
+    margin._n_free = int(payload.get("n_free", 0))
+    return margin
+
   def fit(
     self, y: Any, *, x: Optional[Any] = None, weights: Optional[Any] = None
   ) -> "ParametricMargin":

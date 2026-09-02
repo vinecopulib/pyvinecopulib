@@ -863,9 +863,9 @@ you get it:
 Saving and loading models
 -------------------------
 
-``Bicop``, ``Vinecop`` and ``RVineStructure`` all serialize the same
-way. ``to_file`` / ``from_file`` write and read a file; ``to_json`` /
-``from_json`` do the same through a string:
+``Bicop``, ``Vinecop``, ``RVineStructure``, ``Kde1d`` and ``Vinedist``
+all serialize the same way. ``to_file`` / ``from_file`` write and read a
+file; ``to_json`` / ``from_json`` do the same through a string:
 
 .. code-block:: python
 
@@ -878,10 +878,18 @@ binary `CBOR <https://cbor.io>`_, anything else JSON. CBOR is smaller
 and faster to parse and is the better choice for large vines; JSON stays
 the default because it is readable and diffable.
 
-All three classes also pickle, which serializes through the JSON form,
-so a fitted model round-trips through anything that speaks pickle
+These classes also pickle, which serializes through the JSON form, so a
+fitted model round-trips through anything that speaks pickle
 (``copy.deepcopy``, ``joblib``, a multiprocessing queue). The
 :mod:`pyvinecopulib.sklearn` estimators pickle as ordinary estimators.
+
+A ``Vinedist`` stores both halves: the copula through its own
+``to_json``, and one payload per margin. The margins this package ships
+-- ``Kde1d``, ``ParametricMargin`` and ``MarginSelector`` -- serialize
+themselves; a margin class you wrote needs a ``to_json`` returning a
+mapping, plus one call to ``register_margin_json`` so it can be read
+back. The :mod:`pyvinecopulib.torch` modules are ``nn.Module`` s and use
+PyTorch's own ``state_dict`` instead.
 
 
 .. _concepts-structure-selection:
