@@ -100,6 +100,13 @@ inline Kde1d kde1d_from_grid(const Eigen::VectorXd& grid_points,
 // carries the same surface. One representation serves both `to_json` and
 // pickling, so the two cannot drift.
 //
+// The mapping lives here rather than in `kde1d` deliberately. Owning the format
+// upstream would mean a JSON library in a repository that has no dependencies
+// at all, and `vinecopulib`'s equivalent is a 1.1 MB vendored header; that is
+// not worth it while Python is the only binding that serializes a `Kde1d`.
+// Upstream owns the *state* -- `Kde1dState` plus the constructor taking it --
+// which is the part that has to be complete; this is only its encoding.
+//
 // `nlohmann::json` has no NaN, and every optional numeric field here can be
 // one (an unset bound, an unfitted bandwidth), so NaN travels as `null`.
 inline nlohmann::json kde1d_num(double value) {
