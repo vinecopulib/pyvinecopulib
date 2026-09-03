@@ -19,6 +19,8 @@ import pyvinecopulib as pv
 from pyvinecopulib.core import Kde1d, MarginBase, Vinedist
 from pyvinecopulib.margins import MarginSelector
 
+from .conftest import GaussianBicop, HostedVinecop
+
 # The discrete cascade owns these; the end-to-end test at the bottom reuses them
 # rather than duplicating the type patterns and the parity bound.
 from .test_core_discrete_cascade import _D, _assert_parity, _both
@@ -82,6 +84,20 @@ def test_loglik_sums_logpdf(continuous: np.ndarray) -> None:
   total = dist.loglik(continuous)
   assert np.ndim(total) == 0
   np.testing.assert_allclose(total, dist.logpdf(continuous).sum(), rtol=1e-12)
+
+
+def test_logpdf_preserves_an_extreme_tail_copula_density() -> None:
+  """The copula term is logged without replacing valid tiny densities."""
+  pair = pv.Bicop.from_family(
+    pv.families.gaussian, parameters=np.array([[0.99]])
+  )
+  structure = pv.RVineStructure.from_order([1, 2])
+  copula = HostedVinecop([[pair]], structure)
+  dist = Vinedist(copula, [stats.uniform(), stats.uniform()])
+  y = np.array([[1e-6, 1 - 1e-6], [1e-5, 1 - 1e-5]])
+  copula_density = np.asarray(pair.pdf(y))
+  assert np.all(copula_density < 1e-300)
+  np.testing.assert_allclose(dist.logpdf(y), np.log(copula_density), rtol=1e-14)
 
 
 # --- conditional sampling --------------------------------------------------- #
@@ -502,6 +518,107 @@ class _ShiftedNormal(MarginBase[np.ndarray]):
     return 0.5 * (1.0 + np.vectorize(math.erf)(z / np.sqrt(2.0)))
 
 
+class _ConditionalVine(HostedVinecop):
+  """A hosted vine whose pair copulas read external covariates."""
+
+  supports_covariates = True
+
+
+def _conditional_dist() -> tuple[Vinedist[np.ndarray], GaussianBicop]:
+  """Two conditional-normal margins and one externally conditional pair."""
+  pair = GaussianBicop(scale=0.7, rho_max=0.75)
+  structure = pv.RVineStructure.from_order([1, 2])
+  copula = _ConditionalVine([[pair]], structure)
+  return Vinedist(copula, [_ShiftedNormal(), _ShiftedNormal()]), pair
+
+
+def test_full_y_given_x_matches_an_analytic_bivariate_normal() -> None:
+  """The same row-aligned X reaches both margins and conditional dependence."""
+  dist, _ = _conditional_dist()
+  x = np.array([[-0.8], [-0.2], [0.3], [0.9]])
+  y = np.array([[-1.1, 0.2], [0.4, -0.7], [1.2, 0.0], [1.6, 2.1]])
+  z = y - x
+  rho = 0.75 * np.tanh(0.7 * x[:, 0])
+  one_minus = 1.0 - rho * rho
+  expected = (
+    -math.log(2.0 * math.pi)
+    - 0.5 * np.log(one_minus)
+    - (z[:, 0] ** 2 - 2.0 * rho * z[:, 0] * z[:, 1] + z[:, 1] ** 2)
+    / (2.0 * one_minus)
+  )
+  np.testing.assert_allclose(dist.logpdf(y, x=x), expected, rtol=2e-12)
+
+  # The inverse Rosenblatt transform is the sampling map. Check it against the
+  # analytic conditional-normal representation, independently of the cascade.
+  w = np.array([[0.2, 0.3], [0.4, 0.7], [0.6, 0.25], [0.8, 0.9]])
+  z1, z2 = stats.norm.ppf(w[:, 0]), stats.norm.ppf(w[:, 1])
+  expected_sample = np.column_stack(
+    [x[:, 0] + rho * z2 + np.sqrt(one_minus) * z1, x[:, 0] + z2]
+  )
+  np.testing.assert_allclose(
+    dist.inverse_rosenblatt(w, x=x), expected_sample, rtol=2e-9, atol=2e-9
+  )
+
+
+def test_full_y_given_x_sampler_matches_its_analytic_base_uniform_map() -> None:
+  """`sample` forwards X through both the copula inverse and marginal quantiles."""
+  dist, _ = _conditional_dist()
+  n = 40
+  x = np.linspace(-0.9, 0.9, n)[:, None]
+  base = pv.utils.sample_uniform(n, 2, seeds=[17])
+  z1, z2 = stats.norm.ppf(base[:, 0]), stats.norm.ppf(base[:, 1])
+  rho = 0.75 * np.tanh(0.7 * x[:, 0])
+  expected = np.column_stack(
+    [
+      x[:, 0] + rho * z2 + np.sqrt(1.0 - rho * rho) * z1,
+      x[:, 0] + z2,
+    ]
+  )
+  np.testing.assert_allclose(
+    dist.sample(n, x=x, seeds=[17]), expected, rtol=2e-9, atol=2e-9
+  )
+
+
+def test_conditional_vinedist_cdf_surfaces_the_base_limitation() -> None:
+  """A conditional copula does not imply a generic per-X Monte-Carlo CDF."""
+  dist, _ = _conditional_dist()
+  with pytest.raises(NotImplementedError, match="Conditional cdf"):
+    dist.cdf(np.zeros((3, 2)), x=np.zeros((3, 1)))
+
+
+def test_conditional_entry_points_reject_broadcasting_covariates() -> None:
+  """Every composition path requires one two-dimensional X row per input row."""
+  dist, _ = _conditional_dist()
+  y = np.zeros((4, 2))
+  for x in (np.zeros(4), np.zeros((1, 1))):
+    calls = (
+      lambda: dist.marginal_cdf(y, x=x),
+      lambda: dist.marginal_icdf(np.full_like(y, 0.5), x=x),
+      lambda: dist.logpdf(y, x=x),
+      lambda: dist.cdf(y, x=x),
+      lambda: dist.rosenblatt(y, x=x),
+      lambda: dist.inverse_rosenblatt(np.full_like(y, 0.5), x=x),
+      lambda: dist.sample(4, x=x),
+      lambda: dist.sample_conditional(
+        np.zeros((4, 1)), conditioning_set=[2], x=x
+      ),
+    )
+    for call in calls:
+      with pytest.raises(ValueError, match="one row per observation|shape"):
+        call()
+
+
+def test_from_data_rejects_misaligned_covariates_before_fitting() -> None:
+  """The two-step fitter cannot broadcast one conditional design row."""
+  y = np.zeros((4, 2))
+  with pytest.raises(ValueError, match="one row per observation"):
+    Vinedist.from_data(
+      y,
+      x=np.zeros((1, 1)),
+      margins=[_ShiftedNormal(), _ShiftedNormal()],
+    )
+
+
 def test_covariates_reach_the_margins(continuous: np.ndarray) -> None:
   """Conditioning the margins moves the joint density, through every entry point."""
   copula = pv.Vinecop.from_data(np.asarray(pv.to_pseudo_obs(continuous)))
@@ -601,6 +718,45 @@ def test_from_data_leaves_the_caller_s_controls_alone(
   assert len(controls.weights) == 0
 
 
+def test_explicit_weights_override_controls_weights() -> None:
+  """One explicit weighting design governs both halves of the fit."""
+  rng = np.random.default_rng(23)
+  positive = rng.multivariate_normal(
+    [0.0, 0.0], [[1.0, 0.9], [0.9, 1.0]], size=250
+  )
+  negative = rng.multivariate_normal(
+    [0.0, 0.0], [[1.0, -0.9], [-0.9, 1.0]], size=250
+  )
+  y = stats.norm.cdf(np.vstack([positive, negative]))
+  explicit = np.r_[np.full(250, 10.0), np.ones(250)]
+  embedded = np.r_[np.ones(250), np.full(250, 10.0)]
+
+  reference_controls = pv.FitControlsVinecop(family_set=[pv.families.gaussian])
+  reference = Vinedist.from_data(
+    y,
+    margins=[stats.uniform(), stats.uniform()],
+    weights=explicit,
+    controls=reference_controls,
+  )
+
+  controls = pv.FitControlsVinecop(family_set=[pv.families.gaussian])
+  controls.weights = embedded
+  original_controls_weights = np.array(controls.weights, copy=True)
+  got = Vinedist.from_data(
+    y,
+    margins=[stats.uniform(), stats.uniform()],
+    weights=explicit,
+    controls=controls,
+  )
+  np.testing.assert_allclose(
+    got.copula.get_pair_copula(0, 0).parameters,
+    reference.copula.get_pair_copula(0, 0).parameters,
+    rtol=0.0,
+    atol=0.0,
+  )
+  np.testing.assert_array_equal(controls.weights, original_controls_weights)
+
+
 # ---------------------------------------------------------------------------
 # The discrete cascade, end to end through Vinedist
 # ---------------------------------------------------------------------------
@@ -644,3 +800,101 @@ def test_vinedist_with_a_discrete_margin_uses_the_cascade() -> None:
   # And the joint cdf reaches the copula in a layout it accepts at all -- it
   # needs no left limits, but a discrete copula rejects the bare `(n, d)` one.
   assert dist_mine.cdf(x[:20], N=500, seeds=[2]).shape == (20,)
+
+
+def test_json_round_trip_is_exact_for_every_shipped_margin(unique_json_path):
+  """`Vinedist` persists to JSON like the copula classes it composes.
+
+  `Bicop` / `Vinecop` / `RVineStructure` have carried `to_json` / `to_file`
+  since well before 1.0 and `docs/concepts.rst` presents that as the way to
+  store a model; the objects this release adds had only `pickle`.
+  """
+  pytest.importorskip("scipy")
+  from pyvinecopulib.margins import MarginSelector, ParametricMargin
+
+  rng = np.random.default_rng(0)
+  cov = [[1.0, 0.7, 0.3], [0.7, 1.0, 0.5], [0.3, 0.5, 1.0]]
+  x = rng.multivariate_normal([0.0, 0.0, 0.0], cov, size=400)
+  q = x[:6]
+  specs = {
+    "default": None,
+    "parametric": [ParametricMargin("norm") for _ in range(3)],
+    "selector": [MarginSelector() for _ in range(3)],
+    "mixed": [pv.core.Kde1d(), ParametricMargin("norm"), MarginSelector()],
+  }
+  for label, margins in specs.items():
+    dist = pv.core.Vinedist.from_data(x, margins=margins)
+    restored = pv.core.Vinedist.from_json(dist.to_json())
+    # Exactly, not approximately: the stored grid and parameters are the model.
+    np.testing.assert_array_equal(restored.logpdf(q), dist.logpdf(q), label)
+    np.testing.assert_array_equal(
+      restored.rosenblatt(q), dist.rosenblatt(q), label
+    )
+    assert [type(m).__name__ for m in restored.margins] == [
+      type(m).__name__ for m in dist.margins
+    ]
+
+
+def test_to_file_selects_cbor_by_extension(unique_json_path):
+  """The extension rule is the one the compiled classes already follow."""
+  rng = np.random.default_rng(1)
+  x = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=300)
+  dist = pv.core.Vinedist.from_data(x)
+  base = str(unique_json_path)
+  for path in (base, base.replace(".json", ".cbor")):
+    dist.to_file(path)
+    np.testing.assert_array_equal(
+      pv.core.Vinedist.from_file(path).logpdf(x[:5]), dist.logpdf(x[:5])
+    )
+
+
+def test_a_margin_without_to_json_is_refused_by_name():
+  """A custom margin has to opt in, and is told how."""
+  rng = np.random.default_rng(2)
+  x = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=300)
+  copula = pv.core.Vinedist.from_data(x).copula
+
+  class Unserializable(pv.core.MarginBase):
+    def pdf(self, y, x=None):
+      return np.full(np.shape(y), 0.5)
+
+    def cdf(self, y, x=None):
+      return np.clip(np.asarray(y) * 0.5 + 0.5, 0.0, 1.0)
+
+  dist = pv.core.Vinedist(
+    copula, [Unserializable(), pv.core.Kde1d().fit(x[:, 1])]
+  )
+  with pytest.raises(TypeError, match="register_margin_json"):
+    dist.to_json()
+
+
+def test_a_registered_custom_margin_round_trips():
+  """`register_margin_json` is the documented seam, so it must work."""
+  rng = np.random.default_rng(3)
+  x = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=300)
+  copula = pv.core.Vinedist.from_data(x).copula
+
+  class Uniform(pv.core.MarginBase):
+    def pdf(self, y, x=None):
+      return np.ones(np.shape(y))
+
+    def cdf(self, y, x=None):
+      return np.clip(np.asarray(y), 0.0, 1.0)
+
+    def to_json(self):
+      return {"kind": "_TestUniform"}
+
+  pv.core.register_margin_json("_TestUniform", lambda payload: Uniform())
+  dist = pv.core.Vinedist(copula, [Uniform(), pv.core.Kde1d().fit(x[:, 1])])
+  restored = pv.core.Vinedist.from_json(dist.to_json())
+  assert isinstance(restored.margins[0], pv.core.MarginBase)
+
+
+def test_an_unknown_margin_kind_and_a_bad_version_both_raise():
+  """A format change must fail loudly rather than build a wrong model."""
+  from pyvinecopulib.core._serialization import margin_from_json
+
+  with pytest.raises(ValueError, match="no reader registered"):
+    margin_from_json({"kind": "NotAMargin", "version": 1})
+  with pytest.raises(ValueError, match="unsupported margin JSON version"):
+    margin_from_json({"kind": "Kde1d", "version": 999})

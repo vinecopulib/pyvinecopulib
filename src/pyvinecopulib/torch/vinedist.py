@@ -20,6 +20,7 @@ TorchVinecop : The copula this holds.
 
 from __future__ import annotations
 
+import dataclasses
 from itertools import chain
 from typing import Any, Optional, Sequence, cast
 
@@ -141,7 +142,7 @@ class TorchVinedist(Vinedist[Tensor], torch.nn.Module):
       If a margin is not a :class:`torch.nn.Module`, or the copula is the
       compiled ``Vinecop``.
   NotImplementedError
-      If a margin declares atoms.
+      If a margin declares atoms but does not provide ``cdf_left``.
 
   See Also
   --------
@@ -277,8 +278,25 @@ class TorchVinedist(Vinedist[Tensor], torch.nn.Module):
     ya = torch.as_tensor(y)
     if ya.ndim != 2:
       raise ValueError(f"y must be two-dimensional; got {tuple(ya.shape)}")
+    # One device and one dtype for the whole distribution, as documented: the
+    # controls decide, and the data follows. Reading them off `y` instead left
+    # the margins wherever the caller's data happened to be while the copula
+    # went to `controls.device`, so `state_dict` spanned two devices and
+    # `logpdf` raised. An integer `y` would likewise have given the margins an
+    # integer grid.
+    resolved = controls or FitControlsTorchVinecop()
+    device = resolved.device if resolved.device is not None else ya.device
+    if resolved.dtype is not None:
+      dtype = resolved.dtype
+    elif ya.dtype.is_floating_point:
+      dtype = ya.dtype
+    else:
+      dtype = torch.get_default_dtype()
+    ya = ya.to(device=device, dtype=dtype)
+    if weights is not None:
+      weights = torch.as_tensor(weights).to(device=device, dtype=dtype)
     d = int(ya.shape[1])
-    default = [TorchKde1d(device=ya.device, dtype=ya.dtype) for _ in range(d)]
+    default = [TorchKde1d(device=device, dtype=dtype) for _ in range(d)]
     specs = resolve_margins(margins, d, names=names, default=default)
     fitted = [fit_margin(specs[j], ya[:, j], weights=weights) for j in range(d)]
     u = cls.copula_data(fitted, ya)
@@ -286,7 +304,9 @@ class TorchVinedist(Vinedist[Tensor], torch.nn.Module):
     copula = TorchVinecop.from_data(
       u,
       structure=structure,
-      controls=controls,
+      # The same resolved placement the margins got, so the copula cannot
+      # default to a different dtype than they did.
+      controls=dataclasses.replace(resolved, device=device, dtype=dtype),
       var_types=var_types,
     )
     return cls(copula, fitted)

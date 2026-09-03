@@ -68,6 +68,18 @@ def test_score_samples_shapes_and_types(fitted_density):
   assert np.all(np.isfinite(log_scores))
 
 
+def test_score_uses_fitted_dataframe_schema() -> None:
+  """``score`` follows the same schema path as ``score_samples``."""
+  pandas = pytest.importorskip("pandas")
+  frame = pandas.DataFrame(
+    {"x": np.arange(8.0), "group": pandas.Categorical(["a", "b"] * 4)}
+  )
+  est = VineDensity().fit(frame)
+  assert est.score(frame.iloc[:3]) == pytest.approx(
+    est.score_samples(frame.iloc[:3]).mean()
+  )
+
+
 def test_pdf_shapes_and_types(fitted_density):
   """Test pdf method shapes and types."""
   density, X = fitted_density
@@ -207,3 +219,18 @@ def test_batch_processing(sample_array_data):
   # All results should be very close
   for i in range(1, len(results)):
     np.testing.assert_allclose(results[0], results[i], rtol=1e-12)
+
+
+def test_pdf_accepts_its_own_samples(sample_dataframe_data) -> None:
+  """`sample` emits the modeled layout, so its own density must accept it.
+
+  A categorical fit expands, making `sample` wider than `n_features_in_`; the
+  post-fit width check accepted only the public width, so `pdf(sample(n))`
+  raised on the estimator's own output.
+  """
+  X_df, _ = sample_dataframe_data
+  est = VineDensity().fit(X_df)
+  drawn = est.sample(5)
+  assert drawn.shape == (5, est.n_model_features_)
+  assert est.pdf(drawn).shape == (5,)
+  assert est.score_samples(drawn).shape == (5,)

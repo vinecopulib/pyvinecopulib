@@ -185,3 +185,17 @@ def test_rvinestructure_bulk_triangular_getters_match_scalar_accessors() -> (
       assert value == s.min_array(tree, edge)
       assert hfunc1[tree][edge] == s.needed_hfunc1(tree, edge)
       assert hfunc2[tree][edge] == s.needed_hfunc2(tree, edge)
+
+
+def test_from_matrix_rejects_an_empty_array() -> None:
+  """An empty array used to terminate the interpreter.
+
+  Every validity check is vacuous at ``d = 0``, and the truncation search then
+  wrapped ``d - 1`` around and indexed a row that does not exist. The guard is
+  upstream and unconditional, so ``check=False`` is refused too.
+  """
+  empty = np.zeros((0, 0), dtype=np.uint64)
+  with pytest.raises(RuntimeError, match="greater than 0"):
+    pv.RVineStructure.from_matrix(empty)
+  with pytest.raises(RuntimeError, match="greater than 0"):
+    pv.RVineStructure.from_matrix(empty, check=False)

@@ -113,15 +113,28 @@ def bicop_plot(
   else:
     raise ValueError("Unknown margin type")
 
-  ## evaluate on grid. Force continuous margins on backends that expose
-  ## ``var_types`` (the C++ Bicop); backends without it (e.g. BicopBase /
-  ## TorchBicop) are continuous already, so skip the dance. Coerce the density
-  ## to a NumPy array so a torch-tensor return reshapes cleanly -- via the
-  ## host, since ``np.asarray`` raises on a tensor that lives on a device.
+  ## evaluate on grid. Use a continuous copy when the pair stores discrete
+  ## variable types. A third-party pair without that capability is restored in
+  ## a finally block, so plotting can never leave caller-owned model state
+  ## changed when density evaluation or plotting raises.
   vt = getattr(cop, "var_types", None)
   if vt is not None:
-    cop.var_types = ["c", "c"]
-  vals = cop.pdf(np.stack(g, axis=-1).reshape(-1, 2))
+    # Read the capability from the type: permissive proxy objects such as
+    # mocks synthesize arbitrary instance attributes on demand.
+    as_continuous = getattr(type(cop), "as_continuous", None)
+    if callable(as_continuous):
+      eval_cop = as_continuous(cop)
+      vals = eval_cop.pdf(np.stack(g, axis=-1).reshape(-1, 2))
+    else:
+      cop.var_types = ["c", "c"]
+      try:
+        vals = cop.pdf(np.stack(g, axis=-1).reshape(-1, 2))
+      finally:
+        cop.var_types = vt
+  else:
+    vals = cop.pdf(np.stack(g, axis=-1).reshape(-1, 2))
+  # Coerce the density to a NumPy array so a torch-tensor return reshapes
+  # cleanly -- via the host, since ``np.asarray`` raises on a device tensor.
   detach = getattr(vals, "detach", None)
   if detach is not None:
     vals = detach()
@@ -129,8 +142,6 @@ def bicop_plot(
   if to_cpu is not None:
     vals = to_cpu()
   vals = np.asarray(vals)
-  if vt is not None:
-    cop.var_types = vt
   cop = np.reshape(vals, (grid_size, grid_size))
 
   ## adjust for margins

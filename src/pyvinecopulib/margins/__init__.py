@@ -18,8 +18,10 @@ whose parameters are given at construction is already fitted.
 - **Interoperability** — :func:`as_margin` presents a distribution object from
   another ecosystem as a margin, and :func:`register_margin_adapter` teaches it
   about one it does not know. SciPy's modern and legacy distributions,
-  ``torch.distributions`` and OpenTURNS' distributions are recognized out of
-  the box.
+  OpenTURNS distributions, and continuous ``torch.distributions`` families
+  with an implemented ``cdf`` are recognized out of the box. Torch ``Normal``,
+  ``Gamma`` and ``LogNormal`` are supported; discrete Torch distributions are
+  rejected because they do not expose the left-limit cdf a vine needs.
 
 - **Resolution** — :func:`resolve_margins` expands a ``margins=`` argument
   (an alias, one margin, a sequence, a mapping, or a callable) into one

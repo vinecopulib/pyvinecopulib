@@ -24,6 +24,7 @@ import numpy as np
 
 from ..core import Kde1d, MarginBase, MarginLike
 from ..core.margin_base import _reject_covariates
+from ..core._validation import validate_univariate
 from ._adapters import register_margin_adapter
 from .selection import _CRITERIA, _SelectorBase, _criteria
 
@@ -526,7 +527,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
         "estimate one from data"
       )
     openturns = _openturns()
-    data = np.asarray(y, dtype=float).ravel()
+    data = validate_univariate(np.asarray(y, dtype=float))
     data = data[~np.isnan(data)]
     if data.size == 0:
       raise ValueError(
@@ -722,9 +723,45 @@ class OpenTURNSSelector(_SelectorBase):
     self.candidates = candidates
     self.criterion = criterion
     self._forced_var_type = var_type
+    self._pinned_var_type = var_type is not None
     self.name = name
     self._selected: Optional[Any] = None
     self._report: list[dict[str, Any]] = []
+
+  #: OpenTURNS provides both continuous and discrete candidate registries.
+  supported_var_types: tuple[str, ...] = ("c", "d")
+
+  def declare(
+    self,
+    *,
+    var_type: Optional[str] = None,
+    support: Optional[tuple[float, float]] = None,
+  ) -> "OpenTURNSSelector":
+    """Adopt the caller's variable type when none was pinned.
+
+    Parameters
+    ----------
+    var_type : str or None, optional
+        ``"c"``, ``"d"`` or ``"zi"``. ``"zi"`` is reduced to ``"d"``, the
+        partition OpenTURNS exposes for families with atoms.
+    support : tuple of float, or None, optional
+        Accepted as part of the common selector declaration contract.
+        OpenTURNS candidate registries are partitioned by variable type rather
+        than support, so bounds do not narrow them.
+
+    Returns
+    -------
+    OpenTURNSSelector
+        ``self``, so the call chains into :meth:`fit`.
+    """
+    del support
+    if var_type is not None and not self._pinned_var_type:
+      if var_type not in ("c", "d", "zi"):
+        raise ValueError(
+          f"unknown var_type={var_type!r}; expected 'c', 'd', 'zi' or None"
+        )
+      self._forced_var_type = "d" if var_type == "zi" else var_type
+    return self
 
   # --- fitted state -------------------------------------------------------- #
 
@@ -773,7 +810,7 @@ class OpenTURNSSelector(_SelectorBase):
         "Sample carries none. Pass margins='kde' for a weighted fit, or drop "
         "weights="
       )
-    data = np.asarray(y, dtype=float).ravel()
+    data = validate_univariate(np.asarray(y, dtype=float))
     data = data[~np.isnan(data)]
     if data.size == 0:
       raise ValueError("OpenTURNSSelector.fit got no usable observation")
@@ -912,6 +949,7 @@ class OpenTURNSSelector(_SelectorBase):
       "family": family,
       "n_parameters": k,
       "loglik": loglik,
+      "criterion": self.criterion,
       "support": support,
       "seconds": elapsed,
       "warnings": [str(w.message) for w in caught],
@@ -956,6 +994,7 @@ class OpenTURNSSelector(_SelectorBase):
       "family": margin.family_name,
       "n_parameters": margin.n_parameters,
       "loglik": loglik,
+      "criterion": self.criterion,
       "support": margin.support,
       "seconds": float("nan"),
       "warnings": [],

@@ -90,6 +90,20 @@ def test_vinebase_array_input_validation(
   assert all(t == "continuous" for t in density.schema_["kde1d_types"])
 
 
+def test_dataframe_prediction_does_not_mutate_caller_categories() -> None:
+  """Schema validation recategorizes a private copy, never the caller's frame."""
+  train = pd.DataFrame(
+    {"x": [0.0, 1.0, 2.0, 3.0], "c": pd.Categorical(["a", "b", "a", "b"])}
+  )
+  est = VineDensity().fit(train)
+  query = pd.DataFrame({"x": [0.5, 1.5], "c": pd.Categorical(["b", "a"])})
+  before = query.copy(deep=True)
+  est.score_samples(query)
+  pd.testing.assert_frame_equal(query, before)
+  assert est.n_features_in_ == 2
+  assert est.n_model_features_ == 2
+
+
 def test_vinebase_dataframe_expansion(
   sample_dataframe_data: tuple[pd.DataFrame, list[str]],
 ) -> None:
@@ -279,3 +293,79 @@ def test_column_vector_y_is_raveled_with_a_warning() -> None:
   with pytest.warns(DataConversionWarning):
     model = VineRegressor().fit(X, y)
   assert model.predict(X[:4]).shape == (4,)
+
+
+def test_fit_resets_the_schema_a_previous_fit_derived(
+  sample_dataframe_data,
+) -> None:
+  """A second `fit` must not validate against the first fit's schema.
+
+  `_validate_input(reset=True)` read a leftover `schema_`, so refitting the
+  same estimator on an array raised instead of refitting -- even at the same
+  width -- while a clone of it fitted fine.
+  """
+  X_df, _ = sample_dataframe_data
+  est = VineDensity().fit(X_df)
+  rng = np.random.RandomState(0)
+  est.fit(rng.normal(size=(80, 3)))
+  assert est.n_features_in_ == 3
+  assert est.n_model_features_ == 3
+  assert not hasattr(est, "feature_names_in_")
+
+
+def test_a_caller_preset_schema_survives_fit() -> None:
+  """The pre-settable `schema_` seam still overrides the array default."""
+  est = VineDensity()
+  est.schema_ = {
+    "kde1d_types": ["discrete", "continuous"],
+    "bounds": [None] * 2,
+  }
+  rng = np.random.RandomState(0)
+  est.fit(
+    np.column_stack([rng.poisson(3, 80).astype(float), rng.normal(size=80)])
+  )
+  assert est.schema_["kde1d_types"] == ["discrete", "continuous"]
+
+
+def test_dataframe_after_an_array_fit_is_not_reported_unfitted() -> None:
+  """A fitted estimator must never raise `NotFittedError`."""
+  rng = np.random.RandomState(0)
+  est = VineDensity().fit(rng.normal(size=(80, 2)))
+  frame = pd.DataFrame(rng.normal(size=(4, 2)), columns=["a", "b"])
+  assert est.score_samples(frame).shape == (4,)
+  # A categorical column was never modeled as one, so that is refused by name
+  # rather than read as codes.
+  frame["b"] = pd.Categorical(["x", "y", "x", "y"])
+  with pytest.raises(ValueError, match="fitted without feature names"):
+    est.score_samples(frame)
+
+
+def test_an_unseen_category_is_refused_not_silently_recoded(
+  sample_dataframe_data,
+) -> None:
+  """`set_categories` maps an unseen level to NaN, which expands to all zeros.
+
+  That row is indistinguishable from the reference level, so an unseen
+  category used to return the reference level's density with no warning.
+  """
+  X_df, _ = sample_dataframe_data
+  est = VineDensity().fit(X_df)
+  cat_col = next(
+    c for c in X_df.columns if isinstance(X_df[c].dtype, pd.CategoricalDtype)
+  )
+  bad = X_df.head(3).copy()
+  levels = list(X_df[cat_col].cat.categories) + ["!unseen!"]
+  bad[cat_col] = pd.Categorical(["!unseen!"] * 3, categories=levels)
+  with pytest.raises(ValueError, match="not seen during fit"):
+    est.score_samples(bad)
+
+
+def test_array_like_input_is_accepted() -> None:
+  """sklearn's convention is that any array-like is valid input."""
+  rng = np.random.RandomState(0)
+  rows = rng.normal(size=(60, 2)).tolist()
+  est = VineDensity().fit(rows)
+  assert est.n_features_in_ == 2
+  assert est.score_samples(rows[:3]).shape == (3,)
+  with pytest.raises(ValueError, match="array-like of floats"):
+    VineDensity().fit([["a", "b"], ["c", "d"]])

@@ -59,19 +59,12 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
   values : Tensor, shape (m, m), dtype float
       Density values on the tensor-product grid.
   cache_integrals : bool, default=True
-      If ``True``, precompute ``cdf`` / ``hfunc1`` / ``hfunc2`` /
-      ``hinv1`` / ``hinv2`` at every grid node so subsequent calls
-      are a single bilinear lookup (~80–300x faster with a ~1e-3
-      mean IAE cost relative to the on-the-fly trapezoidal +
-      bisection path). The caches are built once at construction
-      from ``values`` and are not refreshed afterwards; mutating
-      ``interp_grid.values`` in place on a cached instance is
-      unsupported (rebuild a new ``TorchBicop`` instead). For the same
-      reason the cached members are exact, differentiable functions of
-      ``u`` but carry **no** gradient with respect to ``values`` -- the
-      tables are constants. ``pdf`` never uses a cache and always does.
-      Pass ``cache_integrals=False`` to differentiate the integrals with
-      respect to the density grid.
+      If ``True``, precompute prefix tables for ``cdf`` and h-functions.
+      Cached and uncached integrals agree up to summation order. When grid
+      values require gradients, the tables are rebuilt in-graph, so gradients
+      continue to reach ``values``. Inverse h-functions always use the same
+      piecewise-quadratic inverse because locating its cell needs a complete
+      conditional cumulative. ``pdf`` never uses integral tables.
   norm_maxiter : int, default=25
       Maximum number of margin-rescaling passes; rescaling also stops
       as soon as both margins integrate to 1 within ``1e-10``. Matches
@@ -672,9 +665,8 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
     ``cond_var=1`` solves ``H1(u1, x) = p`` for ``x`` (free column 1,
     ``u = [u1, p]``); ``cond_var=2`` solves ``H2(x, u2) = p`` (free
-    column 0, ``u = [p, u2]``). With a precomputed cache this is one
-    bilinear interpolation; otherwise the exact closed-form inversion of
-    the piecewise-quadratic conditional cdf
+    column 0, ``u = [p, u2]``). Both cache modes use the exact closed-form
+    inversion of the piecewise-quadratic conditional cdf
     (:meth:`InterpolationGrid2D.inverse_integrate_1d`, mirroring
     vinecopulib#691).
     """
@@ -781,9 +773,9 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
         sequence instead of pseudo-random uniforms.
     seeds : list of int or None, optional
         When ``qrng=True`` the first entry seeds the
-        ``torch.quasirandom.SobolEngine`` scramble; when
-        ``qrng=False`` it seeds the global torch RNG before the
-        ``torch.rand`` call. ``None`` keeps the existing global state.
+        ``torch.quasirandom.SobolEngine`` scramble; when ``qrng=False`` it
+        seeds a private device-local generator. ``None`` uses PyTorch's normal
+        generator selection without resetting global RNG state.
 
     Returns
     -------

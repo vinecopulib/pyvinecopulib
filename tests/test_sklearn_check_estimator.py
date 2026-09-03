@@ -27,12 +27,12 @@ pytest.importorskip("sklearn")
 
 from sklearn.utils.estimator_checks import parametrize_with_checks  # noqa: E402
 
-# ``xfail_strict`` was added in sklearn 1.7; on older versions we fall
-# back to the default (strict) and rely on the ``expected_failed_checks``
-# list staying accurate for the available checks.
+# ``xfail_strict`` was added in sklearn 1.7; on older versions pytest's
+# default is strict. An unexpected pass must fail the suite and retire the
+# exemption rather than silently leaving stale compliance debt behind.
 _PWC_KWARGS: dict = {}
 if "xfail_strict" in inspect.signature(parametrize_with_checks).parameters:
-  _PWC_KWARGS["xfail_strict"] = False
+  _PWC_KWARGS["xfail_strict"] = True
 
 from pyvinecopulib.sklearn import VineDensity, VineRegressor  # noqa: E402
 
@@ -43,25 +43,10 @@ from pyvinecopulib.sklearn import VineDensity, VineRegressor  # noqa: E402
 
 
 _GENUINE_OPT_OUTS = {
-  "check_estimator_sparse_array": "vines require dense U-scale data",
-  "check_estimator_sparse_matrix": "vines require dense U-scale data",
-  "check_estimator_sparse_tag": "vines require dense U-scale data",
   "check_fit2d_1feature": "1-D vine is degenerate (no pair copulas)",
   "check_fit2d_1sample": "Kde1d requires >= 2 samples to estimate a bandwidth",
-  "check_fit1d": "vines require 2-D U-scale data",
   "check_fit2d_predict1d": "predict requires 2-D inputs",
   "check_estimators_dtypes": "internal float64 promotion is intentional",
-  "check_estimators_empty_data_messages": (
-    "empty data error messages — TODO: surface a sklearn-shaped error early"
-  ),
-  "check_n_features_in_after_fitting": (
-    "TODO: n_features_in_ is set, but the sklearn check inspects "
-    "the post-fit error path on wrong-shape input"
-  ),
-  "check_pipeline_consistency": (
-    "density score is mean log-likelihood (negative); standard "
-    "Pipeline.score consistency check assumes positive scores"
-  ),
 }
 
 
@@ -77,7 +62,6 @@ _KNOWN_PASSING_PER_ESTIMATOR: dict[str, tuple[str, ...]] = {
     "check_estimators_dtypes",
     "check_fit2d_1feature",
     "check_fit2d_predict1d",
-    "check_pipeline_consistency",
   ),
   "VineRegressor": (
     "check_estimators_dtypes",
@@ -105,11 +89,6 @@ def _regressor_opt_outs() -> dict[str, str]:
       # __sklearn_tags__.target_tags.multi_output = True which is
       # context-sensitive here.
       "check_regressors_train": "quantile-stacked output is not strict multi-output",
-      "check_regressor_data_not_an_array": "quantile-stacked output shape",
-      "check_fit_score_takes_y": (
-        "TODO: regressor with quantiles returns multi-output predictions; "
-        "sklearn's R^2 score check expects single output"
-      ),
     }
   )
   return _prune(d, "VineRegressor")

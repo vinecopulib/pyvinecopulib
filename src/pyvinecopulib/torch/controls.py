@@ -130,12 +130,10 @@ default="tau"
       :meth:`~pyvinecopulib.core.VinecopBase.sample_conditional`. Requires an MST
       ``tree_algorithm`` and no truncation; empty means unconditional selection.
   cache_integrals : bool or None, default=None
-      If ``True``, precompute the cdf / hfunc / hinv caches on
-      every pair copula's interpolation grid. Cached lookups are
-      1–2 orders of magnitude faster than the on-the-fly path
-      with a ~1e-3 IAE cost. ``None`` resolves to ``True``, on a
-      discrete vine too: the tables reconstruct the integral exactly,
-      so a discrete edge can difference them.
+      If ``True``, precompute prefix tables for CDF and h-function evaluation.
+      They reconstruct the uncached integrals up to summation order and rebuild
+      in-graph when grid values require gradients. ``None`` resolves to
+      ``True``, including for discrete vines.
   device : torch.device or None, default=None
       Target torch device for the fitted pair copulas. ``None``
       keeps the input's device.

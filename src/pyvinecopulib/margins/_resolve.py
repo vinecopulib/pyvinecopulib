@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import operator
 from typing import Any, Callable, Optional, Sequence, Union
 
 from ..core import MarginLike
@@ -150,7 +151,13 @@ def resolve_margins(
           )
         index = lookup[key]
       else:
-        index = int(key)
+        try:
+          index = operator.index(key)
+        except TypeError as e:
+          raise ValueError(
+            f"margins mapping key {key!r} is neither a variable name nor an "
+            "integer position"
+          ) from e
         if not 0 <= index < d:
           raise ValueError(f"margins mapping has out-of-range index {index}")
       resolved[index] = _resolve_one(value)
@@ -195,7 +202,7 @@ def fit_margin(
       keyword, so one that models no covariates fails loudly rather than
       fitting the wrong model.
   weights : array, shape (n,), or None, optional
-      Observation weights.
+      Observation weights. A callable specification receives them by keyword.
   var_type : str or None, optional
       The variable type the caller resolved, handed to a margin that
       implements ``declare``. Without it such a margin re-infers the type
@@ -215,7 +222,12 @@ def fit_margin(
       ignoring them would silently fit a different model than was asked for.
   """
   if callable(entry) and not hasattr(entry, "cdf"):
-    return as_margin(entry(y) if x is None else entry(y, x=x))
+    kwargs: dict[str, Any] = {}
+    if x is not None:
+      kwargs["x"] = x
+    if weights is not None:
+      kwargs["weights"] = weights
+    return as_margin(entry(y, **kwargs))
 
   # Capability-based dispatch: `fit` / `is_fitted` / `supports_weights` are
   # optional members, so this is deliberately not narrowed to `MarginLike`.

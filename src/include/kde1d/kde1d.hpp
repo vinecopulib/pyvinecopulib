@@ -9,8 +9,12 @@
 
 #include <cmath>
 #include <kde1d.hpp>
+// `tools_serialization` chooses CBOR or JSON by filename extension, exactly as
+// `Bicop.to_file` / `Vinecop.to_file` do.
 #include <limits>
+#include <optional>
 #include <tuple>
+#include <vinecopulib/misc/tools_serialization.hpp>
 
 #include "docstr.hpp"
 #include "misc/helpers.hpp"
@@ -80,8 +84,124 @@ inline Kde1d kde1d_from_grid(const Eigen::VectorXd& grid_points,
                              std::optional<double> xmax = std::nullopt,
                              const std::string& type = "continuous",
                              double prob0 = 0.0) {
+  // Four, not two: `Kde1d`'s own constructors reject a `grid_size` below four,
+  // so a two- or three-point object could be built here and then not be
+  // restored from its own serialized state.
+  if (grid_points.size() < 4 || values.size() < 4) {
+    throw std::invalid_argument(
+        "grid_points and values must contain at least four points");
+  }
   interp::InterpolationGrid grid(grid_points, values, 0);
   return Kde1d(grid, xmin.value_or(NAN), xmax.value_or(NAN), type, prob0);
+}
+
+// JSON is the model-exchange format the copula classes use, so `Kde1d` --
+// which is a margin in its own right, and the one `Vinedist` defaults to --
+// carries the same surface. One representation serves both `to_json` and
+// pickling, so the two cannot drift.
+//
+// The mapping lives here rather than in `kde1d` deliberately. Owning the format
+// upstream would mean a JSON library in a repository that has no dependencies
+// at all, and `vinecopulib`'s equivalent is a 1.1 MB vendored header; that is
+// not worth it while Python is the only binding that serializes a `Kde1d`.
+// Upstream owns the *state* -- `Kde1dState` plus the constructor taking it --
+// which is the part that has to be complete; this is only its encoding.
+//
+// `nlohmann::json` has no NaN, and every optional numeric field here can be
+// one (an unset bound, an unfitted bandwidth), so NaN travels as `null`.
+inline nlohmann::json kde1d_num(double value) {
+  if (std::isnan(value)) {
+    return nullptr;
+  }
+  return value;
+}
+
+inline double kde1d_num(const nlohmann::json& j, const char* key,
+                        double fallback) {
+  if (!j.contains(key) || j[key].is_null()) {
+    return fallback;
+  }
+  return j[key].get<double>();
+}
+
+inline nlohmann::json kde1d_state_to_json(const Kde1d& kde) {
+  nlohmann::json j;
+  // `get_grid_points()` / `get_values()` return by value, so the vectors are
+  // held in named locals: `.data()` on the temporary would dangle.
+  const Eigen::VectorXd grid_points = kde.get_grid_points();
+  const Eigen::VectorXd values = kde.get_values();
+  const bool fitted = grid_points.size() > 0;
+  j["fitted"] = fitted;
+  j["xmin"] = kde1d_num(kde.get_xmin());
+  j["xmax"] = kde1d_num(kde.get_xmax());
+  j["type"] = kde.get_type_str();
+  j["multiplier"] = kde.get_multiplier();
+  j["bandwidth_spec"] = kde1d_num(kde.get_bandwidth_spec());
+  j["bandwidth"] = kde1d_num(kde.get_bandwidth());
+  j["degree"] = kde.get_degree();
+  j["grid_size"] = kde.get_grid_size();
+  j["boundary_repair"] = kde.get_boundary_repair();
+  if (fitted) {
+    j["prob0"] = kde.get_prob0();
+    j["grid_points"] = std::vector<double>(
+        grid_points.data(), grid_points.data() + grid_points.size());
+    j["values"] =
+        std::vector<double>(values.data(), values.data() + values.size());
+    j["edf"] = kde1d_num(kde.get_edf());
+    j["loglik"] = kde1d_num(kde.get_loglik());
+  }
+  return j;
+}
+
+inline Kde1d kde1d_state_from_json(const nlohmann::json& j) {
+  const bool fitted = j.at("fitted").get<bool>();
+  const double xmin = kde1d_num(j, "xmin", NAN);
+  const double xmax = kde1d_num(j, "xmax", NAN);
+  const auto type = j.at("type").get<std::string>();
+  const double multiplier = kde1d_num(j, "multiplier", 1.0);
+  const double bandwidth = kde1d_num(j, "bandwidth", NAN);
+  const double bandwidth_spec =
+      kde1d_num(j, "bandwidth_spec", fitted ? NAN : bandwidth);
+  const auto degree =
+      j.contains("degree") ? j["degree"].get<std::size_t>() : std::size_t{2};
+  const bool boundary_repair =
+      j.contains("boundary_repair") ? j["boundary_repair"].get<bool>() : true;
+  if (!fitted) {
+    return Kde1d(xmin, xmax, type, multiplier, bandwidth_spec, degree,
+                 j.at("grid_size").get<std::size_t>(), boundary_repair);
+  }
+  const auto points = j.at("grid_points").get<std::vector<double>>();
+  const auto vals = j.at("values").get<std::vector<double>>();
+  if (points.size() < 4 || vals.size() < 4) {
+    throw std::invalid_argument(
+        "grid_points and values must contain at least four points");
+  }
+  const Eigen::VectorXd grid_points =
+      Eigen::Map<const Eigen::VectorXd>(points.data(), points.size());
+  const Eigen::VectorXd values =
+      Eigen::Map<const Eigen::VectorXd>(vals.data(), vals.size());
+  const auto grid_size = j.contains("grid_size")
+                             ? j["grid_size"].get<std::size_t>()
+                             : points.size();
+  const Kde1dState state{multiplier,
+                         bandwidth_spec,
+                         bandwidth,
+                         degree,
+                         grid_size,
+                         boundary_repair,
+                         kde1d_num(j, "edf", NAN),
+                         kde1d_num(j, "loglik", NAN)};
+  interp::InterpolationGrid grid(grid_points, values, 0);
+  return Kde1d(grid, xmin, xmax, type, j.at("prob0").get<double>(), state);
+}
+
+inline Kde1d kde1d_from_json(const std::string& json) {
+  return kde1d_state_from_json(nlohmann::json::parse(json));
+}
+
+inline Kde1d kde1d_from_file(const std::string& filename) {
+  return kde1d_state_from_json(
+      vinecopulib::tools_serialization::file_to_json(filename));
 }
 
 // Whether `fit` has populated the estimator. The upstream C++ class has no
@@ -120,7 +240,10 @@ inline Eigen::VectorXd kde1d_cdf_left(const Kde1d& kde,
                                       const Eigen::VectorXd& x) {
   const std::string t = kde.get_type_str();
   if (t == "discrete") {
-    const Eigen::VectorXd below = x.array() - 1.0;
+    // On an integer lattice F(x^-) is F(x - 1) at an atom and F(x) between
+    // atoms. `ceil(x) - 1` expresses both cases without moving an off-lattice
+    // point back by a whole extra level.
+    const Eigen::VectorXd below = x.array().ceil() - 1.0;
     return kde.cdf(below);
   }
   if (t == "zero_inflated" || t == "zero-inflated") {
@@ -144,9 +267,23 @@ inline Eigen::VectorXd kde1d_logpdf(const Kde1d& kde,
 
 // Log-likelihood: the value attained at the fit when called without data, the
 // log-density sum otherwise. Same shape as `Bicop.loglik` and `Vinecop.loglik`.
-inline double kde1d_loglik(const Kde1d& kde, const Eigen::VectorXd& x) {
-  if (x.size() == 0) return kde.get_loglik();
-  return kde.pdf(x).array().log().sum();
+inline double kde1d_loglik(const Kde1d& kde,
+                           const std::optional<Eigen::VectorXd>& x) {
+  if (!x) return kde.get_loglik();
+  if (x->size() == 0) return 0.0;
+  return kde.pdf(*x).array().log().sum();
+}
+
+inline Eigen::VectorXd kde1d_quantile(const Kde1d& kde,
+                                      const Eigen::VectorXd& x,
+                                      bool check_fitted) {
+  if (x.size() == 0) {
+    if (check_fitted && !kde1d_is_fitted(kde)) {
+      throw std::runtime_error("You must first fit the KDE to data.");
+    }
+    return Eigen::VectorXd();
+  }
+  return kde.quantile(x, check_fitted);
 }
 
 // Wrapper function for set_xmin_xmax with optional parameters
@@ -184,13 +321,44 @@ inline void init_kde1d(nb::module_& module) {
               "bandwidth"_a = std::nullopt, "degree"_a = 2, "grid_size"_a = 400,
               "boundary_repair"_a = true, kde1d_constructor_doc,
               nb::call_guard<nb::gil_scoped_release>())
-          .def_static("from_params", &kde1d_from_params,
-                      "xmin"_a = std::nullopt, "xmax"_a = std::nullopt,
-                      "type"_a = "continuous", "multiplier"_a = 1.0,
-                      "bandwidth"_a = std::nullopt, "degree"_a = 2,
-                      "grid_size"_a = 400, "boundary_repair"_a = true,
-                      kde1d_constructor_doc,
-                      nb::call_guard<nb::gil_scoped_release>())
+          .def_static(
+              "from_params", &kde1d_from_params, "xmin"_a = std::nullopt,
+              "xmax"_a = std::nullopt, "type"_a = "continuous",
+              "multiplier"_a = 1.0, "bandwidth"_a = std::nullopt,
+              "degree"_a = 2, "grid_size"_a = 400, "boundary_repair"_a = true,
+              kde1d_constructor_doc, nb::call_guard<nb::gil_scoped_release>())
+          .def_static(
+              "from_json", &kde1d_from_json, "json"_a,
+              "Instantiate from a JSON string.\n\nParameters\n----------\n"
+              "json : str\n    A JSON string produced by ``to_json()``.\n\n"
+              "Returns\n-------\nKde1d\n    The deserialized estimator.",
+              nb::call_guard<nb::gil_scoped_release>())
+          .def_static(
+              "from_file", &kde1d_from_file, "filename"_a,
+              "Instantiate from a JSON file, or a CBOR file when the filename "
+              "ends in ``.cbor``.\n\nParameters\n----------\nfilename : str\n"
+              "    Path to read.\n\nReturns\n-------\nKde1d\n"
+              "    The deserialized estimator.",
+              nb::call_guard<nb::gil_scoped_release>())
+          .def(
+              "to_json",
+              [](const Kde1d& kde) -> std::string {
+                return kde1d_state_to_json(kde).dump();
+              },
+              "Serialize to a JSON string.\n\nReturns\n-------\nstr\n"
+              "    A JSON string that ``from_json()`` reads back.",
+              nb::call_guard<nb::gil_scoped_release>())
+          .def(
+              "to_file",
+              [](const Kde1d& kde, const std::string& filename) {
+                vinecopulib::tools_serialization::json_to_file(
+                    filename, kde1d_state_to_json(kde));
+              },
+              "filename"_a,
+              "Write to a JSON file, or a CBOR file when the filename ends in "
+              "``.cbor``.\n\nParameters\n----------\nfilename : str\n"
+              "    Path to write.",
+              nb::call_guard<nb::gil_scoped_release>())
           .def_static("from_grid", &kde1d_from_grid, "grid_points"_a,
                       "values"_a, "xmin"_a = std::nullopt,
                       "xmax"_a = std::nullopt, "type"_a = "continuous",
@@ -201,27 +369,56 @@ inline void init_kde1d(nb::module_& module) {
 
           // Properties (getters) — auto-extracted from `lib/kde1d` upstream
           // `//!` comments.
-          .def_prop_ro("xmin", &Kde1d::get_xmin, kde1d_doc.get_xmin.doc)
-          .def_prop_ro("xmax", &Kde1d::get_xmax, kde1d_doc.get_xmax.doc)
-          .def_prop_ro("type", &Kde1d::get_type_str, kde1d_doc.get_type_str.doc)
-          .def_prop_ro("prob0", &Kde1d::get_prob0, kde1d_doc.get_prob0.doc)
+          .def_prop_ro(
+              "xmin", [](const Kde1d& kde) { return kde.get_xmin(); },
+              kde1d_doc.get_xmin.doc)
+          .def_prop_ro(
+              "xmax", [](const Kde1d& kde) { return kde.get_xmax(); },
+              kde1d_doc.get_xmax.doc)
+          .def_prop_ro(
+              "type", [](const Kde1d& kde) { return kde.get_type_str(); },
+              kde1d_doc.get_type_str.doc)
+          .def_prop_ro(
+              "prob0", [](const Kde1d& kde) { return kde.get_prob0(); },
+              kde1d_doc.get_prob0.doc)
           .def_prop_ro("multiplier", &Kde1d::get_multiplier,
                        kde1d_doc.get_multiplier.doc)
           .def_prop_ro("bandwidth", &Kde1d::get_bandwidth,
                        kde1d_doc.get_bandwidth.doc)
+          // `bandwidth` is what the fit selected; this is what it was asked
+          // for. `None` means "select one", so a caller re-fitting a lifted
+          // object can tell a pinned bandwidth from a selected one.
+          .def_prop_ro(
+              "bandwidth_spec",
+              [](const Kde1d& kde) -> std::optional<double> {
+                const double spec = kde.get_bandwidth_spec();
+                if (std::isnan(spec)) {
+                  return std::nullopt;
+                }
+                return spec;
+              },
+              "Bandwidth the estimator was constructed with, or ``None`` when "
+              "it selects one.\n\nReturns\n-------\nfloat or None\n    The "
+              "requested bandwidth, or ``None`` if unset.")
           .def_prop_ro("degree", &Kde1d::get_degree, kde1d_doc.get_degree.doc)
           .def_prop_ro("grid_size", &Kde1d::get_grid_size,
                        kde1d_doc.get_grid_size.doc)
-          .def_prop_ro("actual_grid_size", &Kde1d::get_actual_grid_size,
-                       kde1d_doc.get_actual_grid_size.doc)
+          .def_prop_ro(
+              "actual_grid_size",
+              [](const Kde1d& kde) { return kde.get_actual_grid_size(); },
+              kde1d_doc.get_actual_grid_size.doc)
           .def_prop_ro("boundary_repair", &Kde1d::get_boundary_repair,
                        kde1d_doc.get_boundary_repair.doc)
           .def_prop_ro("edf", &Kde1d::get_edf, kde1d_doc.get_edf.doc)
-          .def_prop_ro("grid_points", &Kde1d::get_grid_points,
-                       kde1d_doc.get_grid_points.doc,
-                       nb::call_guard<nb::gil_scoped_release>())
-          .def_prop_ro("values", &Kde1d::get_values, kde1d_doc.get_values.doc,
-                       nb::call_guard<nb::gil_scoped_release>())
+          .def_prop_ro(
+              "grid_points",
+              [](const Kde1d& kde) { return kde.get_grid_points(); },
+              kde1d_doc.get_grid_points.doc,
+              nb::call_guard<nb::gil_scoped_release>())
+          .def_prop_ro(
+              "values", [](const Kde1d& kde) { return kde.get_values(); },
+              kde1d_doc.get_values.doc,
+              nb::call_guard<nb::gil_scoped_release>())
           .def_prop_ro("is_fitted", &kde1d_is_fitted,
                        "Whether the estimator has been fitted to data.")
           .def_prop_ro(
@@ -254,10 +451,18 @@ inline void init_kde1d(nb::module_& module) {
               },
               "x"_a, "weights"_a = Eigen::VectorXd(), kde1d_doc.fit.doc,
               nb::rv_policy::reference_internal)
-          .def("pdf", &Kde1d::pdf, "x"_a, "check_fitted"_a = true,
-               kde1d_doc.pdf.doc, nb::call_guard<nb::gil_scoped_release>())
-          .def("cdf", &Kde1d::cdf, "x"_a, "check_fitted"_a = true,
-               kde1d_doc.cdf.doc, nb::call_guard<nb::gil_scoped_release>())
+          .def(
+              "pdf",
+              [](const Kde1d& kde, const Eigen::VectorXd& x,
+                 bool check_fitted) { return kde.pdf(x, check_fitted); },
+              "x"_a, "check_fitted"_a = true, kde1d_doc.pdf.doc,
+              nb::call_guard<nb::gil_scoped_release>())
+          .def(
+              "cdf",
+              [](const Kde1d& kde, const Eigen::VectorXd& x,
+                 bool check_fitted) { return kde.cdf(x, check_fitted); },
+              "x"_a, "check_fitted"_a = true, kde1d_doc.cdf.doc,
+              nb::call_guard<nb::gil_scoped_release>())
           .def("logpdf", &kde1d_logpdf, "x"_a,
                "Log of the density, or of the probability mass at an atom.\n"
                "\n"
@@ -282,11 +487,12 @@ inline void init_kde1d(nb::module_& module) {
                "Returns\n"
                "-------\n"
                "array, shape (n,), dtype float\n"
-               "    ``F(x)`` for a continuous variable, ``F(x - 1)`` for a "
-               "discrete one, and\n"
+               "    ``F(x)`` for a continuous variable, the value immediately "
+               "before ``x`` for a\n"
+               "    discrete one, and\n"
                "    ``F(x) - f(x)`` at the atom of a zero-inflated one.",
                nb::call_guard<nb::gil_scoped_release>())
-          .def("loglik", &kde1d_loglik, "x"_a = Eigen::VectorXd(),
+          .def("loglik", &kde1d_loglik, "x"_a = nb::none(),
                "Log-likelihood attained at the fit, or of given data.\n"
                "\n"
                "Parameters\n"
@@ -300,11 +506,16 @@ inline void init_kde1d(nb::module_& module) {
                "float\n"
                "    The log-likelihood.",
                nb::call_guard<nb::gil_scoped_release>())
-          .def("icdf", &Kde1d::quantile, "x"_a, "check_fitted"_a = true,
+          .def("icdf", &kde1d_quantile, "x"_a, "check_fitted"_a = true,
                kde1d_doc.quantile.doc, nb::call_guard<nb::gil_scoped_release>())
-          .def("sample", &Kde1d::simulate, "n"_a,
-               "seeds"_a = std::vector<int>(), "check_fitted"_a = true,
-               kde1d_doc.simulate.doc, nb::call_guard<nb::gil_scoped_release>())
+          .def(
+              "sample",
+              [](const Kde1d& kde, size_t n, const std::vector<int>& seeds,
+                 bool check_fitted) {
+                return kde.simulate(n, seeds, check_fitted);
+              },
+              "n"_a, "seeds"_a = std::vector<int>(), "check_fitted"_a = true,
+              kde1d_doc.simulate.doc, nb::call_guard<nb::gil_scoped_release>())
           .def("set_xmin_xmax", &kde1d_set_xmin_xmax, "xmin"_a = std::nullopt,
                "xmax"_a = std::nullopt, kde1d_doc.set_xmin_xmax.doc)
           .def("plot", &kde1d_plot_wrapper, "xlim"_a = nb::none(),
@@ -332,34 +543,40 @@ inline void init_kde1d(nb::module_& module) {
           // Serialization support
           .def("__getstate__",
                [](const Kde1d& kde) {
-                 nb::dict s;
-                 const bool fitted = kde1d_is_fitted(kde);
-                 s["fitted"] = fitted;
-                 s["xmin"] = kde.get_xmin();
-                 s["xmax"] = kde.get_xmax();
-                 s["type"] = kde.get_type_str();
-                 if (fitted) {
-                   // For fitted models: save all data needed to reconstruct
-                   s["prob0"] = kde.get_prob0();
-                   s["grid_points"] = kde.get_grid_points();
-                   s["values"] = kde.get_values();
-                 } else {
-                   // For unfitted models: save parameters only
-                   s["multiplier"] = kde.get_multiplier();
-                   s["bandwidth"] = kde.get_bandwidth();
-                   s["degree"] = static_cast<std::size_t>(kde.get_degree());
-                   s["grid_size"] =
-                       static_cast<std::size_t>(kde.get_grid_size());
-                   s["boundary_repair"] = kde.get_boundary_repair();
-                 }
-                 return s;
+                 nb::dict state;
+                 // The same representation `to_json` serves, so the two
+                 // cannot drift; `Bicop` and `Vinecop` pickle this way too.
+                 state["json"] = kde1d_state_to_json(kde).dump();
+                 return state;
                })
 
           .def("__setstate__", [](Kde1d& kde, nb::dict s) {
+            if (s.contains("json")) {
+              new (&kde)
+                  Kde1d(kde1d_from_json(nb::cast<std::string>(s["json"])));
+              return;
+            }
+            // Read pickles written before the JSON state was adopted.
             const bool fitted = nb::cast<bool>(s["fitted"]);
             const double xmin = nb::cast<double>(s["xmin"]);
             const double xmax = nb::cast<double>(s["xmax"]);
             const std::string type = nb::cast<std::string>(s["type"]);
+            const double multiplier = s.contains("multiplier")
+                                          ? nb::cast<double>(s["multiplier"])
+                                          : 1.0;
+            const double bandwidth = s.contains("bandwidth")
+                                         ? nb::cast<double>(s["bandwidth"])
+                                         : NAN;
+            const double bandwidth_spec =
+                s.contains("bandwidth_spec")
+                    ? nb::cast<double>(s["bandwidth_spec"])
+                    : (fitted ? NAN : bandwidth);
+            const std::size_t degree =
+                s.contains("degree") ? nb::cast<std::size_t>(s["degree"]) : 2;
+            const bool boundary_repair =
+                s.contains("boundary_repair")
+                    ? nb::cast<bool>(s["boundary_repair"])
+                    : true;
 
             if (fitted) {
               const double prob0 = nb::cast<double>(s["prob0"]);
@@ -367,20 +584,29 @@ inline void init_kde1d(nb::module_& module) {
                   nb::cast<Eigen::VectorXd>(s["grid_points"]);
               const Eigen::VectorXd values =
                   nb::cast<Eigen::VectorXd>(s["values"]);
-              // Create interpolation grid and construct object
+              if (grid_points.size() < 4 || values.size() < 4) {
+                throw std::invalid_argument(
+                    "grid_points and values must contain at least four "
+                    "points");
+              }
+              const std::size_t grid_size =
+                  s.contains("grid_size")
+                      ? nb::cast<std::size_t>(s["grid_size"])
+                      : static_cast<std::size_t>(grid_points.size());
+              const double edf =
+                  s.contains("edf") ? nb::cast<double>(s["edf"]) : NAN;
+              const double loglik =
+                  s.contains("loglik") ? nb::cast<double>(s["loglik"]) : NAN;
+              const Kde1dState state{
+                  multiplier, bandwidth_spec,  bandwidth, degree,
+                  grid_size,  boundary_repair, edf,       loglik};
               interp::InterpolationGrid grid(grid_points, values, 0);
-              new (&kde) Kde1d(grid, xmin, xmax, type, prob0);
+              new (&kde) Kde1d(grid, xmin, xmax, type, prob0, state);
             } else {
-              // For unfitted models, construct from parameters
-              const double multiplier = nb::cast<double>(s["multiplier"]);
-              const double bandwidth = nb::cast<double>(s["bandwidth"]);
-              const std::size_t degree = nb::cast<std::size_t>(s["degree"]);
               const std::size_t grid_size =
                   nb::cast<std::size_t>(s["grid_size"]);
-              const bool boundary_repair =
-                  nb::cast<bool>(s["boundary_repair"]);
-              new (&kde) Kde1d(xmin, xmax, type, multiplier, bandwidth, degree,
-                               grid_size, boundary_repair);
+              new (&kde) Kde1d(xmin, xmax, type, multiplier, bandwidth_spec,
+                               degree, grid_size, boundary_repair);
             }
           });
 

@@ -101,6 +101,17 @@ class InterpolationGrid2D(torch.nn.Module):
       raise ValueError(
         "grid_points must be 1D and match the side length of values"
       )
+    # Two points are the minimum a cell needs, and the cell widths divide every
+    # interpolation and every prefix table: a single point leaves no cell and
+    # produced NaN, while a repeated or decreasing point divides by zero or by a
+    # negative width and produced a plausible-looking wrong number.
+    if grid_points.shape[0] < 2:
+      raise ValueError(
+        "grid_points must contain at least two points, "
+        f"got {grid_points.shape[0]}"
+      )
+    if not bool((grid_points[1:] > grid_points[:-1]).all()):
+      raise ValueError("grid_points must be strictly increasing")
     # A density is nonnegative, and the exact prefix tables rely on it: every
     # integral they serve is a sum of nonnegative terms, so no cancellation can
     # amplify a rounding error. A negative node would break that silently.

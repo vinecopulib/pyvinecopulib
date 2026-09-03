@@ -403,7 +403,25 @@ def test_state_dict_round_trip() -> None:
   restored.load_state_dict(lifted.state_dict())
   q = _t(np.arange(0.0, 10.0))
   np.testing.assert_array_equal(restored.pdf(q).numpy(), lifted.pdf(q).numpy())
-  assert set(lifted.state_dict()) == {"grid_points", "values", "prob0"}
+  assert set(lifted.state_dict()) == {
+    "_extra_state",
+    "grid_points",
+    "values",
+    "prob0",
+  }
+  assert restored.loglik() == lifted.loglik()
+  assert restored.edf == lifted.edf
+
+
+def test_fit_rejects_non_vector_data_and_weights() -> None:
+  """Fitting accepts one observation vector and aligned vector weights."""
+  y = _t(np.arange(5.0))
+  with pytest.raises(ValueError, match="one-dimensional"):
+    TorchKde1d().fit(y[:, None])
+  with pytest.raises(ValueError, match="one-dimensional"):
+    TorchKde1d().fit(y, weights=y[:, None])
+  with pytest.raises(ValueError, match="one entry per observation"):
+    TorchKde1d().fit(y, weights=y[:-1])
 
 
 def test_pickle_round_trip() -> None:
@@ -512,3 +530,49 @@ def test_the_discrete_quantile_inverts_its_own_distribution_function() -> None:
   )
   own = lifted.cdf(_t(levels))
   np.testing.assert_array_equal(lifted.icdf(own).numpy(), levels)
+
+
+def test_refit_reselects_the_bandwidth() -> None:
+  """A refit must select for the new data, not reuse the old selection.
+
+  `fit` passed `self.bandwidth`, which a previous fit had overwritten with the
+  value it selected -- and a bandwidth passed in is a *fixed* one. Refitting on
+  data of a very different scale therefore kept a 30x wrong bandwidth.
+  """
+  rng = np.random.default_rng(0)
+  narrow = rng.normal(0.0, 1.0, size=500)
+  wide = rng.normal(0.0, 25.0, size=500)
+
+  reused = TorchKde1d().fit(_t(narrow))
+  first = reused.bandwidth
+  reused.fit(_t(wide))
+  fresh = TorchKde1d().fit(_t(wide))
+  compiled = Kde1d().fit(wide)
+
+  assert reused.bandwidth != first
+  assert reused.bandwidth == pytest.approx(fresh.bandwidth)
+  assert reused.bandwidth == pytest.approx(compiled.bandwidth)
+  grid = _t(np.linspace(-60.0, 60.0, 21))
+  np.testing.assert_array_equal(
+    reused.pdf(grid).numpy(), fresh.pdf(grid).numpy()
+  )
+
+
+def test_a_pinned_bandwidth_survives_a_refit() -> None:
+  """The construction spec is what a refit honors, pinned or not."""
+  rng = np.random.default_rng(1)
+  kde = TorchKde1d(bandwidth=0.5).fit(_t(rng.normal(size=300)))
+  assert kde.bandwidth == pytest.approx(0.5)
+  kde.fit(_t(rng.normal(0.0, 25.0, size=300)))
+  assert kde.bandwidth == pytest.approx(0.5)
+
+
+def test_a_lifted_margin_can_still_reselect() -> None:
+  """`from_kde1d` must adopt the spec, not the selected value."""
+  rng = np.random.default_rng(2)
+  compiled = Kde1d().fit(rng.normal(size=400))
+  assert compiled.bandwidth_spec is None
+  lifted = TorchKde1d.from_kde1d(compiled)
+  wide = rng.normal(0.0, 25.0, size=400)
+  lifted.fit(_t(wide))
+  assert lifted.bandwidth == pytest.approx(Kde1d().fit(wide).bandwidth)

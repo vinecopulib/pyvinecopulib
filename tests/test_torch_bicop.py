@@ -1151,3 +1151,24 @@ def test_from_data_batched_at_one_pair() -> None:
     atol=0.0,
     rtol=0.0,
   )
+
+
+@pytest.mark.parametrize(
+  ("grid", "match"),
+  [
+    ([0.5], "at least two points"),
+    ([0.0, 0.7, 0.3, 1.0], "strictly increasing"),
+    ([0.0, 0.5, 0.5, 1.0], "strictly increasing"),
+  ],
+)
+def test_a_malformed_grid_is_refused_not_silently_wrong(grid, match) -> None:
+  """The cell widths divide every interpolation, so they must be positive.
+
+  A one-point grid leaves no cell and returned NaN; a repeated or decreasing
+  point divided by a zero or negative width and returned a plausible-looking
+  wrong number. Neither raised.
+  """
+  points = torch.as_tensor(grid, dtype=torch.float64)
+  values = torch.ones(len(grid), len(grid), dtype=torch.float64)
+  with pytest.raises(ValueError, match=match):
+    TorchBicop(points, values)

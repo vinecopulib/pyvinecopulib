@@ -15,6 +15,7 @@ from typing import Any, Optional, cast
 from array_api_compat import array_namespace
 
 from ._rootfind import solve_increasing
+from ._validation import validate_covariates, validate_weights
 from .protocols import _MARGIN_EXAMPLE, ArrayT, MarginLike
 
 __all__ = ["MarginBase"]
@@ -347,6 +348,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
     array, shape (n,), dtype float
         Log-density, ``-inf`` where the density vanishes.
     """
+    validate_covariates(x, int(cast(Any, y).shape[0]))
     dens: Any = _margin_eval(self, "pdf", y, x)
     xp = array_namespace(dens)
     positive = dens > 0
@@ -382,6 +384,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
         If :attr:`var_type` is ``"d"`` and ``y`` is not integer-valued, since
         the default steps back by one.
     """
+    validate_covariates(x, int(cast(Any, y).shape[0]))
     return cast(ArrayT, derive_cdf_left(self, y, x, self.var_type))
 
   def icdf(self, p: ArrayT, /, *, x: Optional[ArrayT] = None) -> ArrayT:
@@ -402,21 +405,40 @@ class MarginBase(MarginLike[ArrayT], ABC):
     Returns
     -------
     array, shape (n,), dtype float
-        Quantiles on the original scale.
+        Quantiles on the original scale; probabilities ``0`` and ``1`` map
+        exactly to the corresponding endpoints of :attr:`support`.
+
+    Raises
+    ------
+    ValueError
+        If ``p`` contains a non-finite value or a value outside ``[0, 1]``, or
+        if ``x`` is not two-dimensional and row-aligned.
     """
+    pa: Any = p
+    validate_covariates(x, int(pa.shape[0]))
+    xp = array_namespace(pa)
+    if bool(xp.any((pa < 0) | (pa > 1) | ~xp.isfinite(pa))):
+      raise ValueError("p must contain only probabilities in [0, 1]")
     lo, hi = self.support
+    # Endpoint quantiles are support endpoints by definition. Invert a harmless
+    # interior target in their slots so an infinite support never has to widen
+    # a bracket in search of an endpoint that is attained only as a limit.
+    interior = (pa > 0) & (pa < 1)
+    target = xp.where(interior, pa, xp.full_like(pa, 0.5))
     out: Any = solve_increasing(
       lambda v: _margin_eval(self, "cdf", v, x),
-      p,
+      target,
       lo=lo,
       hi=hi,
       n_iter=_ICDF_ITER,
     )
+    out = xp.where(pa == 0, xp.full_like(pa, lo), out)
+    out = xp.where(pa == 1, xp.full_like(pa, hi), out)
     if self.var_type == "d":
       # Snapped to the lattice the margin declares. Bisection converges to the
       # jump rather than landing on it, and an answer a few ulp below an integer
       # is one its own `cdf_left` would reject as non-integral.
-      out = array_namespace(out).round(out)
+      out = xp.round(out)
     return cast(ArrayT, out)
 
   @property
@@ -470,15 +492,21 @@ class MarginBase(MarginLike[ArrayT], ABC):
     Raises
     ------
     ValueError
-        If ``weights`` is given without data.
+        If ``weights`` is given without data; if it is not finite,
+        nonnegative, one-dimensional and row-aligned; or if ``x`` is not
+        two-dimensional and row-aligned.
+    TypeError
+        If ``weights`` does not have a real numeric dtype.
     """
     if y is None:
       if weights is not None:
         raise ValueError("weights are only meaningful with data; pass y too")
       return self._fitted_loglik
+    validate_covariates(x, int(cast(Any, y).shape[0]))
     terms: Any = _margin_eval(self, "logpdf", y, x)
     xp = array_namespace(terms)
     if weights is not None:
+      weights = validate_weights(weights, terms)
       terms = terms * weights
     return cast(ArrayT, xp.sum(terms))
 
@@ -505,7 +533,13 @@ class MarginBase(MarginLike[ArrayT], ABC):
     -------
     array, shape (n,), dtype float
         Samples on the original scale.
+
+    Raises
+    ------
+    ValueError
+        If ``x`` is not two-dimensional with exactly ``n`` rows.
     """
+    validate_covariates(x, n)
     base = self._sample_uniform(n, list(seeds) if seeds else [])
     return cast(ArrayT, _margin_eval(self, "icdf", base, x))
 

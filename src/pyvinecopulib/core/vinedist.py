@@ -9,6 +9,7 @@ from array_api_compat import array_namespace
 
 from .margin_base import _margin_eval, derive_cdf_left
 from ._trim import trim
+from ._validation import validate_covariates, validate_weights
 from .protocols import ArrayT, MarginLike
 
 
@@ -77,12 +78,12 @@ class Vinedist(Generic[ArrayT]):
   measure and the copula factor is normalized by the marginal masses. Nothing
   in the evaluation path branches on the variable type.
 
-    Every method takes the observations as ``y`` and optional exogenous
-    covariates as a keyword-only ``x``, which are forwarded to both halves: to
-    each margin that declares ``supports_covariates``, and to the copula when it
-    declares ``supports_covariates`` too. Conditional margins under a copula that
-    ignores covariates are the usual conditional vine, with the dependence
-    structure held fixed across covariate values.
+  Every method takes the observations as ``y`` and optional exogenous
+  covariates as a keyword-only ``x``, which are forwarded to both halves: to
+  each margin that declares ``supports_covariates``, and to the copula when it
+  declares ``supports_covariates`` too. Conditional margins under a copula that
+  ignores covariates model ``Y | X`` with dependence held fixed across
+  covariate values.
 
   Any :class:`VinecopLike` will do — the compiled
   :class:`~pyvinecopulib.core.Vinecop`, a :class:`VinecopBase` subclass, or the
@@ -303,6 +304,116 @@ class Vinedist(Generic[ArrayT]):
     """
     return list(self._var_types)
 
+  # --- persistence --------------------------------------------------------- #
+
+  def to_json(self) -> str:
+    """Serialize to a JSON string.
+
+    Both halves are stored: the copula through its own ``to_json``, and one
+    payload per margin. A margin type this package does not ship must provide
+    ``to_json`` and register a reader with
+    :func:`~pyvinecopulib.core.register_margin_json`.
+
+    Returns
+    -------
+    str
+        A JSON string that :meth:`from_json` reads back.
+
+    Raises
+    ------
+    TypeError
+        If the copula or a margin cannot be serialized.
+
+    See Also
+    --------
+    to_file : Write to a file, JSON or CBOR.
+    """
+    from ._serialization import MARGIN_JSON_VERSION, dumps, margin_to_json
+
+    copula_to_json = getattr(self._copula, "to_json", None)
+    if copula_to_json is None:
+      raise TypeError(
+        f"{type(self._copula).__name__} cannot be serialized: it has no "
+        "`to_json`. A `TorchVinecop` is an `nn.Module`; use `state_dict` for "
+        "that half, or hold a compiled `Vinecop` instead."
+      )
+    return dumps(
+      {
+        "kind": type(self).__name__,
+        "version": MARGIN_JSON_VERSION,
+        "copula": copula_to_json(),
+        "margins": [margin_to_json(m) for m in self._margins],
+      }
+    )
+
+  @classmethod
+  def from_json(cls, json: str) -> "Vinedist[Any]":
+    """Instantiate from a JSON string.
+
+    Parameters
+    ----------
+    json : str
+        A string produced by :meth:`to_json`.
+
+    Returns
+    -------
+    Vinedist
+        The deserialized distribution, with a compiled ``Vinecop`` copula.
+
+    Raises
+    ------
+    ValueError
+        If the payload's version is unrecognized, or a margin's ``kind`` has no
+        registered reader.
+    """
+    from . import Vinecop
+    from ._serialization import (
+      MARGIN_JSON_VERSION,
+      loads,
+      margin_from_json,
+    )
+
+    payload = loads(json)
+    if payload.get("version") != MARGIN_JSON_VERSION:
+      raise ValueError(
+        f"unsupported Vinedist JSON version {payload.get('version')!r}; this "
+        f"build reads version {MARGIN_JSON_VERSION}"
+      )
+    return cls(
+      Vinecop.from_json(payload["copula"]),
+      [margin_from_json(m) for m in payload["margins"]],
+    )
+
+  def to_file(self, filename: str) -> None:
+    """Write to a JSON file, or a CBOR file when the name ends in ``.cbor``.
+
+    Parameters
+    ----------
+    filename : str
+        Path to write.
+    """
+    from ._serialization import write_file
+
+    write_file(filename, self.to_json())
+
+  @classmethod
+  def from_file(cls, filename: str) -> "Vinedist[Any]":
+    """Instantiate from a JSON file, or a CBOR file by extension.
+
+    Parameters
+    ----------
+    filename : str
+        Path to read.
+
+    Returns
+    -------
+    Vinedist
+        The deserialized distribution.
+    """
+    from ._serialization import read_file
+
+    return cls.from_json(read_file(filename))
+
   # --- marginal transforms ------------------------------------------------- #
 
   def _prep(self, a: Any) -> Any:
@@ -365,8 +476,8 @@ class Vinedist(Generic[ArrayT]):
     array, shape (n, d), dtype float
         Marginal distribution values, the copula-scale data.
     """
-    self._check_covariates(x)
-    _, ya, _ = self._columns(y)
+    _, ya, n = self._columns(y)
+    self._check_covariates(x, n)
     cols = [
       _margin_eval(m, "cdf", ya[:, j], x) for j, m in enumerate(self._margins)
     ]
@@ -390,8 +501,8 @@ class Vinedist(Generic[ArrayT]):
     array, shape (n, d), dtype float
         Observations on the original scale.
     """
-    self._check_covariates(x)
-    _, ua, _ = self._columns(u)
+    _, ua, n = self._columns(u)
+    self._check_covariates(x, n)
     cols = [
       _margin_eval(m, "icdf", ua[:, j], x) for j, m in enumerate(self._margins)
     ]
@@ -464,6 +575,7 @@ class Vinedist(Generic[ArrayT]):
       raise ValueError(
         f"y must have shape (n, {len(resolved)}); got {tuple(ya.shape)}"
       )
+    validate_covariates(x, int(ya.shape[0]))
     upper = [
       _margin_eval(m, "cdf", ya[:, j], x) for j, m in enumerate(resolved)
     ]
@@ -495,7 +607,7 @@ class Vinedist(Generic[ArrayT]):
     block = xp.stack([*upper, *lower], axis=-1)
     return trim(xp, block)
 
-  def _check_covariates(self, x: Optional[Any]) -> None:
+  def _check_covariates(self, x: Optional[Any], n_rows: int) -> None:
     """Refuse covariates that neither half of this distribution reads.
 
     Evaluation ignores ``x`` per margin, which is what lets conditional and
@@ -506,15 +618,18 @@ class Vinedist(Generic[ArrayT]):
     ----------
     x : array, shape (n, k), or None
         The covariates the caller supplied.
+    n_rows : int
+        Number of observations they must align with.
 
     Raises
     ------
     ValueError
-        If ``x`` is given and no margin and not the copula declares
-        ``supports_covariates``.
+        If ``x`` is not two-dimensional and row-aligned, or if no margin nor
+        the copula declares ``supports_covariates``.
     """
     if x is None:
       return
+    validate_covariates(x, n_rows)
     readers = [
       getattr(m, "supports_covariates", False) for m in self._margins
     ] + [getattr(self._copula, "supports_covariates", False)]
@@ -541,8 +656,9 @@ class Vinedist(Generic[ArrayT]):
     array, shape (n, d + k), dtype float
         The copula-scale data.
     """
-    self._check_covariates(x)
-    return self.copula_data(self._margins, self._prep(y), x=x)
+    _, ya, n = self._columns(y)
+    self._check_covariates(x, n)
+    return self.copula_data(self._margins, ya, x=x)
 
   # --- evaluation ---------------------------------------------------------- #
 
@@ -570,7 +686,7 @@ class Vinedist(Generic[ArrayT]):
     copula_term: Any = _copula_eval(
       self._copula, "pdf", cast(ArrayT, self._u_layout(y, x)), x
     )
-    total = xp.log(xp.clip(copula_term, 1e-300, None))
+    total = xp.log(copula_term)
     for j, m in enumerate(self._margins):
       if getattr(m, "logpdf", None) is not None:
         total = total + _margin_eval(m, "logpdf", ya[:, j], x)
@@ -624,6 +740,13 @@ class Vinedist(Generic[ArrayT]):
     -------
     array, shape (n,), dtype float
         Joint distribution values in ``[0, 1]``.
+
+    Raises
+    ------
+    NotImplementedError
+        If the copula reads ``x`` but does not implement a conditional CDF.
+        In particular, ``VinecopBase``'s generic Monte-Carlo CDF supports only
+        an unconditional copula.
     """
     # ``C(F_1(y_1), ..., F_d(y_d))`` needs no left limits, but a copula with
     # discrete variables accepts only the layouts that carry them, so hand it
@@ -700,7 +823,11 @@ class Vinedist(Generic[ArrayT]):
     array, shape (n, d), dtype float
         Observations on the original scale.
     """
-    u = _copula_eval(self._copula, "inverse_rosenblatt", w, x, **kwargs)
+    _, wa, n = self._columns(w)
+    self._check_covariates(x, n)
+    u = _copula_eval(
+      self._copula, "inverse_rosenblatt", cast(ArrayT, wa), x, **kwargs
+    )
     return self.marginal_icdf(u, x=x)
 
   def sample(
@@ -724,6 +851,7 @@ class Vinedist(Generic[ArrayT]):
     array, shape (n, d), dtype float
         Samples on the original scale.
     """
+    self._check_covariates(x, n)
     u = _copula_eval(self._copula, "sample", n, x, **kwargs)
     return self.marginal_icdf(u, x=x)
 
@@ -767,6 +895,9 @@ class Vinedist(Generic[ArrayT]):
     array, shape (n, d), dtype float
         Samples on the original scale. The conditioning columns come back
         holding the values they were given, up to the margin's own round trip.
+        With several discrete conditioners, later-drawn conditioning variables
+        may land slightly outside their atom; the free-variable draws remain
+        correct.
 
     Raises
     ------
@@ -777,12 +908,12 @@ class Vinedist(Generic[ArrayT]):
     """
     from .vinecop_base import infer_conditioning_set
 
-    self._check_covariates(x)
     ya: Any = self._prep(y_cond)
     if ya.ndim != 2:
       raise ValueError(
         f"y_cond must be two-dimensional; got shape {tuple(ya.shape)}"
       )
+    self._check_covariates(x, int(ya.shape[0]))
     k = ya.shape[1]
     if conditioning_set is None:
       # One rule for both scales. On the data scale a discrete conditioner
@@ -904,6 +1035,15 @@ class Vinedist(Generic[ArrayT]):
     Vinedist
         The fitted distribution.
 
+    Notes
+    -----
+    The built-in fitter supports conditional margins, but its copula half is
+    always the compiled, ``x``-independent ``Vinecop``.
+    Fitting dependence that changes with external covariates is an extension
+    workflow: transform the data with :meth:`copula_data`, fit conditional pair
+    copulas through ``VinecopBase.fit``, then compose
+    them with the fitted margins by constructing ``Vinedist``.
+
     References
     ----------
     .. [1] Joe, H. and Xu, J. J. (1996). *The estimation method of inference
@@ -920,6 +1060,8 @@ class Vinedist(Generic[ArrayT]):
     if data.ndim != 2:
       raise ValueError(f"y must be two-dimensional; got {data.ndim} dimensions")
     d = data.shape[1]
+    validate_covariates(x, int(data.shape[0]))
+    weights = validate_weights(weights, np.empty(data.shape[0], dtype=float))
 
     if names is None:
       # A DataFrame carries its own names, and `margins` is often keyed by them.
@@ -956,11 +1098,11 @@ class Vinedist(Generic[ArrayT]):
 
     if controls is None:
       controls = FitControlsVinecop()
-    if weights is not None and not len(controls.weights):
-      # Copied first: the caller's controls object is theirs, and a `weights`
-      # written into it would silently weight every later fit that reuses it.
+    if weights is not None:
+      # The explicit argument governs both halves. Copy first so overriding a
+      # controls object's weights cannot mutate an object the caller still owns.
       controls = copy.deepcopy(controls)
-      controls.weights = np.asarray(weights, dtype=float).ravel()
+      controls.weights = np.asarray(weights, dtype=float)
     copula = Vinecop.from_data(
       data=u,
       structure=structure,

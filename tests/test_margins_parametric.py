@@ -153,6 +153,18 @@ def test_parametric_margin_rejects_an_empty_sample() -> None:
     ParametricMargin("norm").fit(np.array([np.nan, np.nan]))
 
 
+@pytest.mark.parametrize(
+  "factory", [lambda: ParametricMargin("norm"), MarginSelector]
+)
+@pytest.mark.parametrize("shape", [(4, 1), (2, 2)])
+def test_scipy_margin_fitters_require_a_univariate_shape(
+  factory: Any, shape: tuple[int, int]
+) -> None:
+  """Column matrices must not be flattened into a pooled sample."""
+  with pytest.raises(ValueError, match=r"y must have shape \(n,\)"):
+    factory().fit(np.arange(np.prod(shape), dtype=float).reshape(shape))
+
+
 def test_parametric_margin_needs_bounds_for_an_uncurated_discrete_family() -> (
   None
 ):
@@ -452,6 +464,7 @@ def test_selector_criteria_are_all_reported(
   assert winner[criterion] == min(r[criterion] for r in admissible)
   for row in sel.report_:
     assert {"aic", "bic", "aicc"} <= set(row)
+    assert row["criterion"] == criterion
 
 
 def test_selector_bic_penalizes_more_than_aic() -> None:
@@ -480,6 +493,23 @@ def test_selector_accepts_ready_made_candidates(
   """Candidates may be margins, not only family names."""
   sel = MarginSelector(candidates=[Kde1d(), "gamma"]).fit(gamma_sample)
   assert [row["family"] for row in sel.report_] == ["kde1d", "gamma"]
+
+
+def test_selector_preserves_caller_owned_candidates() -> None:
+  """Selection copies candidates and does not refit a ready-made model."""
+  data = np.random.default_rng(11).normal(size=200)
+  fixed = ParametricMargin("norm", (100.0, 1.0))
+  unfitted = ParametricMargin("logistic")
+
+  fixed_selection = MarginSelector(candidates=[fixed]).fit(data)
+  MarginSelector(candidates=[unfitted]).fit(data)
+
+  assert fixed.parameters == (100.0, 1.0)
+  assert fixed.n_parameters == 0.0
+  assert fixed_selection.selected_ is not fixed
+  assert fixed_selection.selected_.parameters == fixed.parameters
+  assert fixed_selection.selected_.n_parameters == 0.0
+  assert not unfitted.is_fitted
 
 
 def test_selector_records_a_failed_fit_rather_than_raising() -> None:
@@ -560,6 +590,26 @@ def test_candidates_are_deduplicated() -> None:
   auto = MarginSelector().fit(np.random.default_rng(7).beta(2.0, 5.0, size=400))
   families = [row["family"] for row in auto.report_]
   assert len(families) == len(set(families)), families
+
+  # Two already-fitted models with no exposed parameter vector have unreadable
+  # identities. Neither may be discarded merely because the family names tie.
+  fitted_kdes = [Kde1d().fit(normal), Kde1d().fit(normal + 3.0)]
+  kept_fitted = MarginSelector(candidates=fitted_kdes).fit(normal)
+  assert [row["family"] for row in kept_fitted.report_] == ["kde1d", "kde1d"]
+
+
+def test_candidate_search_bounds_are_part_of_the_identity(
+  count_sample: np.ndarray,
+) -> None:
+  """Distinct optimizer domains for one family must both reach the report."""
+  candidates = [
+    ParametricMargin("nbinom", bounds={"n": (1.0, 2.0), "p": (0.01, 0.99)}),
+    ParametricMargin("nbinom", bounds={"n": (10.0, 20.0), "p": (0.01, 0.99)}),
+  ]
+  selector = MarginSelector(candidates=candidates, on_failure="fallback").fit(
+    count_sample
+  )
+  assert [r["family"] for r in selector.report_].count("nbinom") == 2
 
 
 def test_selector_rejects_weights(gamma_sample: np.ndarray) -> None:

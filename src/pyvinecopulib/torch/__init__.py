@@ -17,8 +17,8 @@ Likelihood* (Geenens 2014 [1]_; Nagler 2018 [2]_) — a non-parametric
 pair-copula estimator that fits a kernel density on a grid in the
 inverse-normal-transformed copula space. This is the same family
 exposed as ``tll`` and is the
-default everywhere in pyvinecopulib because it captures arbitrary
-non-Gaussian-like dependence without picking a parametric form.
+the default for the Torch fitting lane. Compiled core fitting instead performs
+family selection unless its controls restrict the candidate family set.
 
 If you have not used vine copulas before, the
 :doc:`concepts page </concepts>` introduces pair copulas and R-vines
@@ -57,6 +57,10 @@ Notes
   family. Registers the family's parameters and rebuilds the distribution on
   each call, so ``.to(device)``, ``state_dict()`` and autograd all reach them.
   Continuous families only, and only those implementing ``cdf``.
+
+- :class:`TorchKde1d` — a fitted grid margin that evaluates in Torch and also
+  supports discrete and zero-inflated variables, including the ``cdf_left``
+  needed by mixed-data vines.
 
 - :class:`TorchVinedist` — a full multivariate distribution: a
   :class:`TorchVinecop` plus one margin per variable, with ``logpdf`` / ``pdf``

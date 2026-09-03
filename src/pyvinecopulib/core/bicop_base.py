@@ -28,6 +28,7 @@ from array_api_compat import array_namespace
 
 from .._deprecations import _reject_renamed_hook
 from ._rootfind import solve_increasing
+from ._validation import validate_covariates
 from .protocols import ArrayT, BicopLike, _BICOP_EXAMPLE
 
 __all__ = ["BicopBase"]
@@ -85,12 +86,12 @@ class BicopBase(BicopLike[ArrayT], ABC):
     -------
     array, shape (), dtype float
         The summed log-density (a differentiable scalar under autograd, e.g.
-        PyTorch). The per-observation density is floored at ``1e-20`` before the
-        log.
+        PyTorch).
     """
+    validate_covariates(x, int(cast(Any, u).shape[0]))
     dens: Any = self.pdf(u, x=x)
     xp = array_namespace(dens)
-    return cast(ArrayT, xp.sum(xp.log(xp.clip(dens, 1e-20))))
+    return cast(ArrayT, xp.sum(xp.log(dens)))
 
   def hinv1(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Numerically invert :meth:`hfunc1` in its second argument.
@@ -113,6 +114,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
         The inverted values in ``[0, 1]``.
     """
     ua: Any = u
+    validate_covariates(x, int(ua.shape[0]))
     xp = array_namespace(ua)
     u1, p = ua[:, 0], ua[:, 1]
     return cast(
@@ -143,6 +145,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
         The inverted values in ``[0, 1]``.
     """
     ua: Any = u
+    validate_covariates(x, int(ua.shape[0]))
     xp = array_namespace(ua)
     p, u2 = ua[:, 0], ua[:, 1]
     return cast(
@@ -172,6 +175,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
     NotImplementedError
         Always, unless a subclass provides a native ``cdf``.
     """
+    validate_covariates(x, int(cast(Any, u).shape[0]))
     raise NotImplementedError(
       f"{type(self).__name__}.cdf is not defined; the vine cdf uses "
       "Monte-Carlo simulation and does not require a per-pair cdf. Implement it "
@@ -235,6 +239,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
     array, shape (n, 2), dtype float
         Samples in the unit square.
     """
+    validate_covariates(x, n)
     base_u: Any = self._sample_uniform(n, qrng, list(seeds) if seeds else [])
     xp = array_namespace(base_u)
     u2: Any = self.hinv1(base_u, x=x)

@@ -3,6 +3,7 @@ from numbers import Integral
 
 import numpy as np
 from sklearn.base import RegressorMixin
+from sklearn.metrics import r2_score
 from sklearn.utils._param_validation import Interval
 from sklearn.utils.validation import check_is_fitted
 
@@ -214,13 +215,18 @@ class VineRegressor(RegressorMixin, VineBase):
     p : ndarray, shape (n_nodes,), dtype float
         Increasing probability levels, all strictly inside ``(0, 1)``.
     dp : ndarray, shape (1, n_nodes), dtype float
-        Node weights :math:`dp/dz`, up to the constant factor the
-        row normalization absorbs.
+        Node weights :math:`\\varphi(z)\\, \\Delta z`.
     """
     z = np.linspace(-_PROBIT_HALF_WIDTH, _PROBIT_HALF_WIDTH, int(self.n_nodes))
     root_two = math.sqrt(2.0)
     p = np.array([0.5 * (1.0 + math.erf(zi / root_two)) for zi in z])
-    return p, np.exp(-0.5 * z**2)[np.newaxis, :]
+    # The full weight, not just its z-dependent part: the constant
+    # `dz / sqrt(2 pi)` cancels under row normalization but is what makes the
+    # rule integrate to one, and `normalize_weights=False` has nothing else to
+    # supply it.
+    dz = 2.0 * _PROBIT_HALF_WIDTH / (int(self.n_nodes) - 1)
+    weights = np.exp(-0.5 * z**2) * (dz / math.sqrt(2.0 * math.pi))
+    return p, weights[np.newaxis, :]
 
   def _copula_marginal_density(
     self, X: np.ndarray, log: bool = False, n_grid: int = 101
@@ -298,7 +304,9 @@ class VineRegressor(RegressorMixin, VineBase):
     where :math:`u_k` is :math:`\\hat F_Y(y_k)` over training rows
     and :math:`p_k` on the probability grid, and :math:`\\Delta_k` is
     the node spacing there (constant, hence absent, over training
-    rows). Row-normalized when ``normalize_weights=True``.
+    rows). Row-normalized when ``normalize_weights=True``, which divides out
+    the copula density's own departure from integrating to one; without it the
+    weights are the plain quadrature rule.
 
     Parameters
     ----------
@@ -381,7 +389,18 @@ class VineRegressor(RegressorMixin, VineBase):
     for w, start, end in iter_weights(X):
       col = 0
       if self.mean:
-        y_pred[start:end, col] = w @ self._y_nodes
+        # A ratio, not a plain dot product: the conditional mean is
+        # `sum(w y) / sum(w)` whatever the weights' scale, so it does not
+        # depend on `normalize_weights` -- which exists so a caller combining
+        # several vines can normalize once, across all of them. `np.quantile`
+        # below normalizes internally for the same reason.
+        totals = w.sum(axis=1)
+        if not np.all(totals > 0.0):
+          raise ValueError(
+            "the copula density vanished on every quadrature node for at "
+            "least one row of X, so no conditional mean is defined there"
+          )
+        y_pred[start:end, col] = (w @ self._y_nodes) / totals
         col += 1
       if quantiles is not None:
         batch_preds = [
@@ -428,6 +447,37 @@ class VineRegressor(RegressorMixin, VineBase):
     check_is_fitted(self, attributes=["_vine"])
     X = self._validate_input(X, reset=False)
     return self._predict_from_iter(X, self._iter_weights)
+
+  def score(self, X, y, sample_weight=None) -> float:
+    """Return :math:`R^2` for the fitted conditional mean.
+
+    Quantile columns are supplementary prediction outputs, not independent
+    response targets. When the conditional mean is disabled there is no
+    scalar regressor score, so callers must choose a quantile-specific metric.
+
+    Parameters
+    ----------
+    X : array-like or pandas.DataFrame
+        Covariates to predict.
+    y : array-like
+        Observed response values.
+    sample_weight : array-like, optional
+        Per-observation weights for the coefficient of determination.
+
+    Returns
+    -------
+    float
+        Coefficient of determination for the conditional mean.
+    """
+    if not self.mean:
+      raise ValueError(
+        "VineRegressor.score is defined for mean predictions only; "
+        "use a quantile-specific metric when mean=False."
+      )
+    prediction = np.asarray(self.predict(X))
+    if prediction.ndim == 2:
+      prediction = prediction[:, 0]
+    return float(r2_score(y, prediction, sample_weight=sample_weight))
 
 
 VineRegressor.__doc__ = f"""Vine-copula based regressor (mean and quantile).

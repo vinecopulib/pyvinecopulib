@@ -219,7 +219,7 @@ def test_vinecopbase_loglik_matches_sum_log_pdf() -> None:
   rng = np.random.default_rng(6)
   u = torch.as_tensor(rng.uniform(0.05, 0.95, (n, d)), dtype=torch.float64)
   x = torch.as_tensor(rng.standard_normal((n, p)), dtype=torch.float64)
-  ref = vine.pdf(u, x=x).clamp_min(1e-20).log().sum()
+  ref = vine.pdf(u, x=x).log().sum()
   torch.testing.assert_close(vine.loglik(u, x=x), ref, atol=1e-12, rtol=1e-12)
 
 

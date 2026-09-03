@@ -11,6 +11,7 @@ reproduces the compiled one exactly, and the relabeling reproduces the compiled
 
 import copy
 import itertools
+import math
 from typing import Any
 
 import numpy as np
@@ -151,6 +152,49 @@ def test_sample_conditional_works_on_a_non_simplified_vine() -> None:
   )
 
 
+def test_vine_entry_points_require_row_aligned_external_covariates() -> None:
+  """The cascade never broadcasts one conditional-design row over a batch."""
+  vine = _toy_vine()
+  u = np.full((5, 4), 0.5)
+  for x in (np.zeros(5), np.zeros((1, 1))):
+    calls = (
+      lambda: vine.pdf(u, x=x),
+      lambda: vine.rosenblatt(u, x=x),
+      lambda: vine.inverse_rosenblatt(u, x=x),
+      lambda: vine.loglik(u, x=x),
+      lambda: vine.sample(5, x=x),
+      lambda: vine.sample_conditional(np.full((5, 1), 0.5), x=x),
+    )
+    for call in calls:
+      with pytest.raises(ValueError, match="one row per observation|shape"):
+        call()
+
+
+def test_fixed_structure_fit_requires_row_aligned_covariates() -> None:
+  """Conditional pair fitting receives the same validated X rows as evaluation."""
+  structure = pv.RVineStructure.from_order([1, 2, 3])
+  u = np.full((5, 3), 0.5)
+  with pytest.raises(ValueError, match="one row per observation"):
+    VinecopBase.fit(
+      structure,
+      u,
+      _gaussian_fit_edge,
+      x=np.zeros((1, 1)),
+    )
+
+
+def test_vinecopbase_loglik_preserves_extreme_tail_density() -> None:
+  """The hosted likelihood matches the compiled oracle below the old floor."""
+  pair = pv.Bicop.from_family(
+    pv.families.gaussian, parameters=np.array([[0.99]])
+  )
+  structure = pv.RVineStructure.from_order([1, 2])
+  ref = pv.Vinecop.from_structure(structure=structure, pair_copulas=[[pair]])
+  mine = HostedVinecop([[pair]], structure)
+  u = np.array([[1e-6, 1 - 1e-6], [1e-5, 1 - 1e-5]])
+  np.testing.assert_allclose(mine.loglik(u), ref.loglik(u), rtol=1e-14)
+
+
 # ---------------------------------------------------------------------------
 # Discrete conditioners
 # ---------------------------------------------------------------------------
@@ -205,6 +249,54 @@ def test_sample_conditional_needs_the_left_limit_column() -> None:
   mine = host_vinecop(cop, ["d", "c", "c"])
   with pytest.raises(ValueError, match="invalid number of columns"):
     mine.sample_conditional(np.full((5, 1), cdf[2]))
+
+
+def test_sample_conditional_with_multiple_discrete_conditioners_matches_cpp() -> (
+  None
+):
+  """The accepted multi-atom behavior follows the authoritative sampler."""
+  rs = np.random.RandomState(31)
+  n = 700
+  counts = [rs.binomial(4, p, size=n) for p in (0.35, 0.65)]
+
+  def binomial_cdf(p: float) -> np.ndarray:
+    masses = np.array(
+      [math.comb(4, k) * p**k * (1.0 - p) ** (4 - k) for k in range(5)]
+    )
+    return np.cumsum(masses)
+
+  cdfs = [binomial_cdf(p) for p in (0.35, 0.65)]
+  values = [cdf[col] for cdf, col in zip(cdfs, counts, strict=True)]
+  left = [
+    np.where(col > 0, cdf[np.maximum(col - 1, 0)], 0.0)
+    for cdf, col in zip(cdfs, counts, strict=True)
+  ]
+  cont = pv.to_pseudo_obs(rs.normal(size=(n, 2)))
+  data = np.column_stack([*values, cont, *left])
+  controls = pv.FitControlsVinecop(
+    family_set=[pv.families.gaussian], num_threads=1
+  )
+  controls.conditioning_set = [1, 2]
+  cop = pv.Vinecop.from_data(
+    data, var_types=["d", "d", "c", "c"], controls=controls
+  )
+  mine = host_vinecop(cop, ["d", "d", "c", "c"])
+  tail = [int(v) for v in cop.structure.order[-2:]]
+  atoms = {1: 2, 2: 3}
+  row_values = [cdfs[v - 1][atoms[v]] for v in tail]
+  row_left = [cdfs[v - 1][atoms[v] - 1] for v in tail]
+  u_cond = np.tile([*row_values, *row_left], (30, 1))
+
+  got = mine.sample_conditional(u_cond, conditioning_set=tail, seeds=[2, 5, 7])
+  expected = cop.sample_conditional(
+    u_cond, conditioning_set=tail, seeds=[2, 5, 7]
+  )
+  np.testing.assert_allclose(
+    got, expected, rtol=_PARITY_RTOL, atol=_PARITY_ATOL
+  )
+  # Do not impose a stronger atom-reproduction invariant than the reference:
+  # with several discrete conditioners later-drawn coordinates may sit just
+  # outside their atom, while the free-variable law remains correct.
 
 
 # ---------------------------------------------------------------------------

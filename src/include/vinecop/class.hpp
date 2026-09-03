@@ -298,11 +298,16 @@ corresponds to the ``i``-th variable of the order tail; with it, column ``i``
 corresponds to ``conditioning_set[i]``. Adding the argument to an existing call
 can therefore permute the columns unless the set is given in the tail's order.
 
-``u_cond`` may be given in either layout: expanded, ``(n, 2 * k)``, with the
-left limits ``F(x-)`` of all ``k`` conditioning variables in the same order as
-the second block; or compact, ``(n, k + k_d)``, carrying left limits only for
-the ``k_d`` discrete ones. For continuous conditioning variables the two
-coincide at ``(n, k)``.
+When ``conditioning_set`` is omitted, ``u_cond`` must use the compact
+``(n, k + k_d)`` layout, carrying left limits only for the ``k_d`` discrete
+conditioning variables; ``k`` is inferred from its width. With an explicit
+``conditioning_set``, ``u_cond`` may instead use the expanded ``(n, 2 * k)``
+layout, with the left limits ``F(x-)`` of all ``k`` conditioning variables in
+the same order as the second block. For continuous conditioning variables the
+two layouts coincide at ``(n, k)``.
+
+With multiple discrete conditioners, later-drawn conditioning variables may
+land slightly outside their atom; draws of the free variables remain correct.
 
 The set must be admissible as a sampling-order tail of this vine, and the vine
 must not be truncated; otherwise ``RuntimeError`` is raised. The model is not
@@ -600,13 +605,30 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
           "u"_a = Eigen::MatrixXd(), "num_threads"_a = 1,
           "parameters"_a = nb::none(), loglik_perobs_doc.c_str(),
           nb::call_guard<nb::gil_scoped_release>())
-      .def("aic", &Vinecop::aic, "u"_a = Eigen::MatrixXd(), "num_threads"_a = 1,
-           vinecop_doc.aic.doc, nb::call_guard<nb::gil_scoped_release>())
-      .def("bic", &Vinecop::bic, "u"_a = Eigen::MatrixXd(), "num_threads"_a = 1,
-           vinecop_doc.bic.doc, nb::call_guard<nb::gil_scoped_release>())
-      .def("mbicv", &Vinecop::mbicv, "u"_a = Eigen::MatrixXd(), "psi0"_a = 0.9,
-           "num_threads"_a = 1, vinecop_doc.mbicv.doc,
-           nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "aic",
+          [](const Vinecop& cop, const std::optional<Eigen::MatrixXd>& u,
+             size_t num_threads) {
+            return u ? cop.aic(*u, num_threads) : cop.get_aic();
+          },
+          "u"_a = nb::none(), "num_threads"_a = 1, vinecop_doc.aic.doc,
+          nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "bic",
+          [](const Vinecop& cop, const std::optional<Eigen::MatrixXd>& u,
+             size_t num_threads) {
+            return u ? cop.bic(*u, num_threads) : cop.get_bic();
+          },
+          "u"_a = nb::none(), "num_threads"_a = 1, vinecop_doc.bic.doc,
+          nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "mbicv",
+          [](const Vinecop& cop, const std::optional<Eigen::MatrixXd>& u,
+             double psi0, size_t num_threads) {
+            return u ? cop.mbicv(*u, psi0, num_threads) : cop.get_mbicv(psi0);
+          },
+          "u"_a = nb::none(), "psi0"_a = 0.9, "num_threads"_a = 1,
+          vinecop_doc.mbicv.doc, nb::call_guard<nb::gil_scoped_release>())
       .def("scores", make_step_dispatch(&Vinecop::scores, &Vinecop::scores),
            "u"_a, "step_wise"_a = true, "num_threads"_a = 1,
            "parameters"_a = nb::none(), scores_perobs_doc.c_str(),
@@ -709,14 +731,20 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
       .def("__getstate__",
            [](const Vinecop& cop) {
              nb::dict state;
-             state["rvine_structure"] =
-                 cop.get_rvine_structure().to_json().dump();
-             state["pair_copulas"] = cop.get_all_pair_copulas();
-             state["var_types"] = cop.get_var_types();
+             // Upstream's JSON includes the full fitted diagnostics in
+             // addition to the structure and pair copulas.
+             state["json"] = cop.to_json().dump();
              return state;
            })
 
       .def("__setstate__", [](Vinecop& cop, nb::dict state) {
+        if (state.contains("json")) {
+          const auto json =
+              nlohmann::json::parse(nb::cast<std::string>(state["json"]));
+          new (&cop) Vinecop(json);
+          return;
+        }
+        // Read pickles written before the full JSON state was adopted.
         nlohmann::json json_obj = nlohmann::json::parse(
             nb::cast<std::string>(state["rvine_structure"]));
         RVineStructure structure(json_obj);

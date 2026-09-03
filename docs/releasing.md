@@ -34,7 +34,16 @@ indistinguishable from an unreleased one.
    does, so this is one shot per version — spend it on the commit you mean to
    tag, not on a work in progress. Needs the `test_pypi_password` secret.
 
-5. **Merge**, then tag the merge commit:
+5. **Run the mandatory CUDA rehearsal** on a GPU host before tagging. Run the
+   CUDA device/compile tests and retain raw paired benchmark repetitions,
+   confidence intervals, process RSS, and peak CUDA allocated/reserved memory
+   with the release PR. The CPU matrix cannot validate these advertised paths.
+   First verify `nvidia-smi`, then run
+   `uv run pytest tests/test_torch_device.py tests/test_torch_bicop.py tests/test_torch_vinecop.py -m cuda --no-cov`
+   and the maintained paired harness, `uv run python scripts/bench_torch_runner.py
+   --repeats 10`; attach its raw JSON and the drivers' paired results to the PR.
+
+6. **Merge**, then tag the merge commit:
 
    ```bash
    git checkout main && git pull
@@ -46,15 +55,17 @@ indistinguishable from an unreleased one.
    > number.** A mistagged release cannot be undone — only superseded by a new
    > version. Confirm the tag points at the commit you mean before pushing.
 
-6. **Confirm the release landed**: wheels and the sdist on PyPI, the GitHub
-   release created from the changelog section, Read the Docs built the tag with
-   `stable` repointed at it, and the Zenodo deposition.
+7. **Confirm the release landed**: wheels and the sdist on PyPI, Read the Docs
+   built the tag with `stable` repointed at it, and the Zenodo deposition. Then
+   create the GitHub release manually from the matching changelog section; that
+   release event is what Zenodo uses for its deposition when the repository is
+   connected to Zenodo.
 
-7. **Open the next cycle immediately.** Add a fresh
+8. **Open the next cycle immediately.** Add a fresh
    `## X.Y+1.0 (unreleased)` heading to `CHANGELOG.md` in a follow-up pull
    request, so the next change has somewhere to go.
 
-8. **If the release surfaced a problem in the C++ library**, file it upstream
+9. **If the release surfaced a problem in the C++ library**, file it upstream
    rather than working around it here — the docstrings, signatures and CMake
    seams all belong to `vinecopulib`.
 
@@ -65,7 +76,8 @@ indistinguishable from an unreleased one.
 | `scripts/check_version.py` | every pull request, via the `lint` job |
 | wheels, sdist, tests, docs | every pull request |
 | `scripts/check_version.py --released --tag` | on a `v*` tag push, before publishing |
-| publish to PyPI + GitHub release | on a `v*` tag push |
+| publish to PyPI | on a `v*` tag push, after wheels, sdist, tests and docs |
+| GitHub release + Zenodo deposition | maintainer action after PyPI publication |
 | publish to Test PyPI | manually, from the Actions tab (see step 4) |
 
 ## Version numbers

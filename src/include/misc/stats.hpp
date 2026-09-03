@@ -6,6 +6,7 @@
 #include <nanobind/stl/vector.h>
 
 #include <vinecopulib.hpp>
+#include <vinecopulib/misc/tools_serialization.hpp>
 #include <wdm/eigen.hpp>
 
 #include "docstr.hpp"
@@ -54,6 +55,29 @@ float
     The computed dependence measure.)""";
 
 inline void init_stats(nb::module_& m) {
+  // The JSON-or-CBOR-by-extension file IO the compiled model classes use, so
+  // the Python-side `Vinedist.to_file` / `from_file` write the same formats
+  // through the same code rather than a second implementation.
+  m.def(
+      "_json_to_file",
+      [](const std::string& filename, const std::string& json) {
+        vinecopulib::tools_serialization::json_to_file(
+            filename, nlohmann::json::parse(json));
+      },
+      "filename"_a, "json"_a,
+      "Write a JSON string to a file, as CBOR when the filename ends in "
+      "``.cbor``.\n\nParameters\n----------\nfilename : str\n"
+      "    Path to write.\njson : str\n    The JSON string to write.");
+  m.def(
+      "_file_to_json",
+      [](const std::string& filename) -> std::string {
+        return vinecopulib::tools_serialization::file_to_json(filename).dump();
+      },
+      "filename"_a,
+      "Read a file written by ``_json_to_file`` back into a JSON string."
+      "\n\nParameters\n----------\nfilename : str\n    Path to read."
+      "\n\nReturns\n-------\nstr\n    The payload as JSON.");
+
   constexpr auto& doc = pyvinecopulib_doc;
   constexpr auto& tools_stat_doc = doc.vinecopulib.tools_stats;
 
@@ -83,5 +107,6 @@ inline void init_stats(nb::module_& m) {
                                std::string, Eigen::VectorXd, bool,
                                std::vector<int>)>(&wdm::wdm),
         doc_wdm, "x"_a, "y"_a, "method"_a, "weights"_a = Eigen::VectorXd(),
-        "remove_missing"_a = true, "seeds"_a = std::vector<int>());
+        "remove_missing"_a = true, "seeds"_a = std::vector<int>(),
+        nb::call_guard<nb::gil_scoped_release>());
 }

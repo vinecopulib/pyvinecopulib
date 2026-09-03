@@ -8,6 +8,7 @@ without scikit-learn) are skipped with a warning.
 """
 
 import argparse
+import ast
 import importlib
 import inspect
 import re
@@ -17,6 +18,17 @@ import tempfile
 from pathlib import Path
 from types import BuiltinFunctionType, FunctionType
 from typing import Optional
+
+
+def render_docstring(doc: str, indent: int) -> list[str]:
+  """Render a docstring as a valid Python string literal."""
+  prefix = " " * indent
+  escaped = doc.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+  return [
+    f'{prefix}"""',
+    *(f"{prefix}{line}" for line in escaped.splitlines()),
+    f'{prefix}"""',
+  ]
 
 
 def wrap_known_types(sig: str, known_types: set[str]) -> str:
@@ -48,10 +60,7 @@ def render_python_function_stub(
 
   doc = inspect.getdoc(fct)
   if doc:
-    lines.append(f'{indent_str}"""')
-    for line in doc.splitlines():
-      lines.append(f"{indent_str}{line}")
-    lines.append(f'{indent_str}"""')
+    lines.extend(render_docstring(doc, indent))
 
   lines.append(f"{indent_str}...\n")
   return lines
@@ -84,10 +93,7 @@ def render_nanobind_function_stub(
 
   indent_str = " " * indent
   if remaining_doc:
-    lines.append(f'{indent_str}"""')
-    for line in remaining_doc:
-      lines.append(f"{indent_str}{line}")
-    lines.append(f'{indent_str}"""')
+    lines.extend(render_docstring("\n".join(remaining_doc), indent))
 
   lines.append(f"{indent_str}...\n")
   return lines
@@ -136,10 +142,7 @@ def render_class_stub(
   doc = inspect.getdoc(cls)
   inner_indent = " " * indent
   if doc:
-    lines.append(f'{inner_indent}"""')
-    for line in doc.splitlines():
-      lines.append(f"{inner_indent}{line}")
-    lines.append(f'{inner_indent}"""')
+    lines.extend(render_docstring(doc, indent))
   else:
     lines.append(f"{inner_indent}...")
     return lines
@@ -274,6 +277,7 @@ def generate_stub(
 
   lines = [
     "import collections",
+    "import typing",
     "from typing import Any, Optional",
     "from numpy.typing import ArrayLike, NDArray",
     "from matplotlib.figure import Figure",
@@ -354,6 +358,12 @@ def generate_stub(
     lines.append("def __getattr__(name: str) -> Any: ...\n")
 
   stub = cleanup_stub("\n".join(lines))
+  try:
+    ast.parse(stub, filename=str(output_path))
+  except SyntaxError as exc:
+    raise RuntimeError(
+      f"generated invalid stub for {module_name}: {exc}"
+    ) from exc
   output_path.parent.mkdir(parents=True, exist_ok=True)
   output_path.write_text(stub, encoding="utf-8")
   print(f"Wrote stub for {len(names)} symbols ({module_name}) to {output_path}")

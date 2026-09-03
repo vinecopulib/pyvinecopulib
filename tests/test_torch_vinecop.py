@@ -605,7 +605,7 @@ def test_sample_conditional_requires_row_per_sample() -> None:
   u_fit = _simulate(d=3, n=400, seed=712)
   bc = TorchVinecop.from_vinecop(_fit_tll_vine(u_fit))
   x = torch.zeros(4, 1, dtype=torch.float64)
-  with pytest.raises(ValueError, match="one covariate row per sample"):
+  with pytest.raises(ValueError, match="one row per observation"):
     bc.sample(10, x=x)
 
 
@@ -1731,3 +1731,70 @@ def test_batched_selection_survives_a_shortened_cascade(
   torch.testing.assert_close(
     fits[True].pdf(u_eval), fits[False].pdf(u_eval), atol=1e-11, rtol=1e-9
   )
+
+
+def test_trunc_lvl_zero_matches_the_compiled_independence_vine() -> None:
+  """A vine truncated at zero is independence, and must evaluate as one.
+
+  `_ref_tensor` cribbed dtype/device from the first pair copula's grid, of
+  which a `trunc_lvl=0` vine has none, so every public method raised
+  `IndexError` where the compiled `Vinecop` returns a density of 1.
+  """
+  rng = np.random.default_rng(0)
+  u = rng.uniform(size=(60, 4))
+  cpp = pv.Vinecop.from_data(u, controls=pv.FitControlsVinecop(trunc_lvl=0))
+  vine = TorchVinecop.from_vinecop(cpp)
+  assert vine.trunc_lvl == 0
+
+  t = torch.as_tensor(u[:5])
+  np.testing.assert_allclose(vine.pdf(t).numpy(), cpp.pdf(u[:5]))
+  np.testing.assert_allclose(
+    vine.rosenblatt(t).numpy(), cpp.rosenblatt(u[:5]), atol=1e-10
+  )
+  # The buffer that makes it evaluable participates in `.to()`, so the module
+  # still has one dtype to answer in once there is no grid to read it from.
+  assert vine.pdf(t).dtype == vine._ref_tensor().dtype
+  moved = vine.double()
+  assert moved._ref_tensor().dtype == torch.float64
+  assert moved.pdf(t).dtype == torch.float64
+
+
+def test_state_dict_carries_the_model_identity() -> None:
+  """A checkpoint must not load into a differently structured vine.
+
+  The pair-copula grids are the only tensors in `state_dict`, so nothing in it
+  said which vine they hang on: a cross-structure load succeeded under
+  `strict=True` with no missing or unexpected keys, and the result was neither
+  model.
+  """
+  rng = np.random.default_rng(0)
+  ctl = pv.FitControlsVinecop(family_set=[pv.BicopFamily.tll])
+  cpp_a = pv.Vinecop.from_data(rng.uniform(size=(400, 4)), controls=ctl)
+  a = TorchVinecop.from_vinecop(cpp_a)
+  b = TorchVinecop.from_vinecop(
+    pv.Vinecop.from_data(rng.uniform(size=(400, 4)), controls=ctl)
+  )
+  t = torch.as_tensor(rng.uniform(size=(5, 4)))
+
+  # Same structure, different data: a full round trip, values included.
+  same = TorchVinecop.from_vinecop(
+    pv.Vinecop.from_data(
+      rng.uniform(size=(400, 4)), structure=a.structure, controls=ctl
+    )
+  )
+  assert not np.allclose(same.pdf(t).numpy(), a.pdf(t).numpy())
+  same.load_state_dict(a.state_dict(), strict=True)
+  np.testing.assert_allclose(same.pdf(t).numpy(), a.pdf(t).numpy())
+
+  if b.structure.to_json() != a.structure.to_json():
+    with pytest.raises(RuntimeError, match="different structure"):
+      b.load_state_dict(a.state_dict(), strict=True)
+
+  # And a var_types mismatch is refused on an identical structure.
+  discrete = TorchVinecop(
+    [[TorchBicop.from_bicop(b) for b in row] for row in cpp_a.pair_copulas],
+    cpp_a.structure,
+    var_types=["d", "c", "c", "c"],
+  )
+  with pytest.raises(RuntimeError, match="different var_types"):
+    discrete.load_state_dict(a.state_dict(), strict=True)

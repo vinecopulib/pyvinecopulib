@@ -174,6 +174,26 @@ def test_float32_keeps_arguments_inside_the_unit_square(device: str) -> None:
     assert torch.isfinite(torch.special.ndtri(out)).all()
 
 
+def test_float16_keeps_arguments_inside_the_unit_square(
+  device: str, cpp_vine: pv.Vinecop
+) -> None:
+  """The lower trim bound remains representable in half precision."""
+  bc = TorchBicop.from_bicop(
+    cpp_vine.get_pair_copula(0, 0),
+    device=torch.device(device),
+    dtype=torch.float16,
+  )
+  edge = torch.tensor(
+    [[0.0, 0.5], [1.0, 0.5], [0.5, 0.0], [0.5, 1.0]],
+    dtype=torch.float16,
+    device=device,
+  )
+  for name in ("hfunc1", "hfunc2", "cdf"):
+    out = getattr(bc, name)(edge)
+    assert (out > 0.0).all(), f"{name} returned 0"
+    assert (out < 1.0).all(), f"{name} returned 1"
+
+
 def test_every_buffer_follows_to_device(
   device: str, cpp_vine: pv.Vinecop, u_eval: np.ndarray
 ) -> None:

@@ -25,6 +25,10 @@ make test           # pytest
 make docs           # sphinx
 ```
 
+Notebook execution and the documentation build require the Graphviz `dot`
+executable because the vine examples render structures. Install Graphviz with
+your system package manager before running `make test-examples` or `make docs`.
+
 Or drop the make wrapper and call `uv` directly:
 
 ```bash

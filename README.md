@@ -26,7 +26,7 @@ a comprehensive list of publications lives on
 
 ### What is pyvinecopulib?
 
-[pyvinecopulib](https://vinecopulib.github.io/pyvinecopulib/) is the
+[pyvinecopulib](https://pyvinecopulib.readthedocs.io) is the
 Python interface to vinecopulib, a header-only C++ library for vine
 copula models based on
 [Eigen](http://eigen.tuxfamily.org/index.php?title=Main_Page). It
@@ -41,9 +41,45 @@ copula models. Advantages over VineCopula are
   dimensions,
 * nonparametric and multi-parameter families.
 
-### Optional backends
+### First core fit
 
-Two opt-in subpackages extend the core library:
+The core package is enough to fit, inspect, evaluate, and sample a model:
+
+```python
+import numpy as np
+import pyvinecopulib as pv
+
+rng = np.random.default_rng(0)
+cov = [[1.0, 0.7, 0.3], [0.7, 1.0, 0.5], [0.3, 0.5, 1.0]]
+x = rng.multivariate_normal([0, 0, 0], cov, size=500)
+
+u = pv.to_pseudo_obs(x)              # ranks, on the copula scale
+vine = pv.Vinecop.from_data(u)       # selects structure and families
+print(vine)                          # the fitted trees, pair by pair
+vine.loglik(u), vine.bic()           # fit diagnostics
+draws = vine.sample(100, seeds=[1])  # new copula-scale observations
+```
+
+For a distribution on the original data scale, pair the fitted copula with
+one margin per variable through `pv.Vinedist`. Notebooks 03, 07, and 11 build
+out these core workflows.
+
+### Optional subpackages
+
+Three opt-in subpackages extend the core library:
+
+* `pyvinecopulib.margins` — parametric margins and family selection
+  (`ParametricMargin`, `MarginSelector`) to pair with `Vinedist` when a
+  kernel-density margin is not what you want:
+
+  ```python
+  from pyvinecopulib.core import Vinedist
+  from pyvinecopulib.margins import MarginSelector
+  dist = Vinedist.from_data(x, margins=MarginSelector())
+  print(dist.margins[0].selected_)
+  ```
+
+  Install with `pip install pyvinecopulib[scipy]` (or `[openturns]`).
 
 * `pyvinecopulib.sklearn` — scikit-learn-compatible estimators
   (`VineDensity`, `VineRegressor`). Drop a vine
@@ -57,29 +93,57 @@ Two opt-in subpackages extend the core library:
 
   Install with `pip install pyvinecopulib[sklearn]`.
 
-* `pyvinecopulib.torch` — pure-PyTorch evaluators (`TorchBicop`,
-  `TorchVinecop`) for GPU placement and autograd:
+* `pyvinecopulib.torch` — pure-PyTorch evaluators and data-scale modules
+  (`TorchBicop`, `TorchVinecop`, `TorchKde1d`, `TorchMargin`, and
+  `TorchVinedist`) for GPU placement and autograd:
 
   ```python
-  from pyvinecopulib.sklearn import VineDensity
-  from pyvinecopulib.sklearn.backends import TorchVinecopBackend
-  from pyvinecopulib.torch import FitControlsTorchVinecop
-  controls = FitControlsTorchVinecop(device="cuda")
-  density_gpu = VineDensity(backend=TorchVinecopBackend(controls=controls)).fit(X)
+  import torch
+  from pyvinecopulib.torch import TorchVinedist, FitControlsTorchVinecop
+  dist = TorchVinedist.from_data(
+    torch.as_tensor(x), controls=FitControlsTorchVinecop(device="cuda")
+  )
+  y = torch.as_tensor(x[:5], device="cuda").requires_grad_(True)
+  dist.log_prob(y).sum().backward()   # autograd through the whole vine
+  print(y.grad)                       # d log f / dy, on the GPU
   ```
 
+  The same evaluator backs the sklearn estimators through
+  `pyvinecopulib.sklearn.backends.TorchVinecopBackend`.
+
   Install with `pip install pyvinecopulib[torch]`.
+
+### API stability
+
+`pyvinecopulib.core`, `pyvinecopulib.families` and `pyvinecopulib.utils` are
+stable: changes there follow semantic versioning, with a deprecation cycle
+before anything is removed.
+
+`pyvinecopulib.margins`, `pyvinecopulib.sklearn` and `pyvinecopulib.torch` are
+**provisional in 1.x**. Their contracts are new in this release and may still
+change in a minor version as they meet real data -- the margin contract
+(`MarginLike` / `MarginBase`) and the torch/C++ evaluation parity are the parts
+already treated as load-bearing. Pin an exact version if you depend on their
+surface.
 
 ### Custom and conditional pair copulas
 
 The core evaluators (`Bicop` / `Vinecop`, and their torch counterparts)
 implement two backend-neutral contracts, `BicopLike` and `VinecopLike`.
 Subclass the canonical, pure-Python `BicopBase` / `VinecopBase` (NumPy or
-PyTorch) to plug your **own** pair copula into a vine — including
-**non-simplified** vines where each pair copula conditions on its
-conditioning set. See the
+PyTorch) to plug your **own** pair copula into a vine. A pair may depend on its
+vine conditioning-set values (a **non-simplified** vine), on row-aligned
+external covariates, or on both. `Vinedist` can compose covariate-dependent
+margins and such a copula into a full data-scale distribution `Y | X`.
+
+This joint conditional model is an extension seam, not a built-in fitter:
+`Vinedist.from_data(y, x=...)` can fit custom conditional margin
+specifications, but fits an `x`-independent compiled `Vinecop` for the copula
+half. Fit custom conditional pairs through `VinecopBase.fit` and compose the
+parts explicitly when dependence must also vary with `X`. See the
 [concepts page](https://pyvinecopulib.readthedocs.io/en/latest/concepts.html)
-and the `examples/10_extending_pyvinecopulib.ipynb` notebook.
+and notebooks `examples/10_extending_pyvinecopulib.ipynb` and
+`examples/11_vine_distributions.ipynb`.
 
 ### Conditional sampling and likelihood diagnostics
 
@@ -101,10 +165,14 @@ terms and conditions of this license.
 ### Contact
 
 If you have any questions regarding the library, feel free to
-[open an issue](https://github.com/pyvinecopulib/pyvinecopulib/issues/new) or
+[open an issue](https://github.com/vinecopulib/pyvinecopulib/issues/new) or
 send a mail to <info@vinecopulib.org>.
 
 ## Installation
+
+On x86-64, the distributed wheels require the x86-64-v3 ISA baseline (AVX2 and
+FMA). The package checks this before loading its native extension and explains
+how to use a source build when a CPU or VM masks those features.
 
 ### With pip
 
@@ -157,7 +225,7 @@ mamba activate pyvinecopulib
 make sync
 ```
 
-See the [contributing guide](https://pyvinecopulib.readthedocs.io/en/latest/CONTRIBUTING.html)
+See the [contributing guide](https://github.com/vinecopulib/pyvinecopulib/blob/main/CONTRIBUTING.md)
 for the full developer workflow.
 
 Alternatively, you can specify manually the location of `Eigen` and `Boost` using the environment variables `EIGEN3_INCLUDE_DIR` and `Boost_INCLUDE_DIR` respectively.
@@ -199,4 +267,4 @@ make docs           # one-shot HTML build → docs/_build/html/
 
 Development setup, the build pipeline, the Makefile + pre-commit conventions,
 the CI workflow, and the release flow are all documented in the
-[contributing guide](https://pyvinecopulib.readthedocs.io/en/latest/CONTRIBUTING.html).
+[contributing guide](https://github.com/vinecopulib/pyvinecopulib/blob/main/CONTRIBUTING.md).

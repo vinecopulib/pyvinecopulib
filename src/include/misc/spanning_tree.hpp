@@ -1,10 +1,12 @@
 #pragma once
 
+#include <nanobind/eigen/dense.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
 
+#include <algorithm>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/kruskal_min_spanning_tree.hpp>
 #include <boost/graph/prim_minimum_spanning_tree.hpp>
@@ -17,9 +19,16 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <vinecopulib/vinecop/tools_select.hpp>
 
 namespace nb = nanobind;
 using namespace nb::literals;
+
+inline double calculate_tree_criterion(const Eigen::MatrixXd& data,
+                                       const std::string& tree_criterion) {
+  return vinecopulib::tools_select::calculate_criterion(data, tree_criterion,
+                                                        Eigen::VectorXd());
+}
 
 // Select a spanning tree over a candidate graph, mirroring
 // vinecopulib::VinecopSelector::select_edges (boost prim / kruskal / Wilson).
@@ -107,8 +116,9 @@ inline std::vector<size_t> select_spanning_tree(
           g, gen, boost::predecessor_map(pred.data()).root_vertex(root));
     } else {
       std::map<Edge, double> inv_weights;
+      constexpr double min_weight = 1e-10;
       for (auto e : boost::make_iterator_range(boost::edges(g))) {
-        inv_weights[e] = 1.0 - w_map[e];
+        inv_weights[e] = std::max(1.0 - w_map[e], min_weight);
       }
       boost::associative_property_map<std::map<Edge, double>> inv_weight_map(
           inv_weights);
@@ -130,6 +140,8 @@ inline std::vector<size_t> select_spanning_tree(
 }
 
 inline void init_spanning_tree(nb::module_& m) {
+  m.def("_calculate_tree_criterion", &calculate_tree_criterion, "data"_a,
+        "tree_criterion"_a, nb::call_guard<nb::gil_scoped_release>());
   m.def("_select_spanning_tree", &select_spanning_tree, "n_vertices"_a,
         "edges"_a, "weights"_a, "tree_algorithm"_a,
         "seeds"_a = std::vector<int>(),

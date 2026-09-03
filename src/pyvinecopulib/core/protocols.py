@@ -69,6 +69,11 @@ _BICOP_EXAMPLE = """
         def hfunc2(self, u, *, x=None):
           return u[:, 0]
 
+        def _sample_uniform(self, n, qrng, seeds):
+          return np.random.default_rng(seeds[0] if seeds else 0).uniform(
+            size=(n, 2)
+          )
+
       cop = Independence()
       cop.hinv1(np.array([[0.3, 0.7]]))   # -> array([0.7]) (numerical inverse)
 """
@@ -159,8 +164,9 @@ class BicopLike(Protocol[ArrayT]):
 
   The easy way to satisfy this contract is to subclass
   :class:`~pyvinecopulib.core.BicopBase`, which supplies ``hinv1`` / ``hinv2``
-  (numerical inversion) and ``sample`` on top of ``pdf`` / ``hfunc1`` /
-  ``hfunc2``. :class:`pyvinecopulib.core.Bicop` and
+  (numerical inversion) on top of ``pdf`` / ``hfunc1`` / ``hfunc2``; providing
+  its ``_sample_uniform`` hook enables the inherited ``sample``.
+  :class:`pyvinecopulib.core.Bicop` and
   :class:`pyvinecopulib.torch.TorchBicop` are the reference implementations.
 
   See Also
@@ -361,8 +367,8 @@ class VinecopLike(Protocol[ArrayT]):
     u : array, shape (n, d), dtype float
         Pseudo-observations in ``[0, 1]^d``.
     x : array, shape (n, p), or None, optional
-        External covariates threaded to each pair copula (non-simplified vines);
-        ``None`` for the unconditional / simplified case.
+        External covariates threaded to each pair copula. A simplified vine may
+        still depend on them; ``None`` means there are no external covariates.
     num_threads : int, default=1
         Accepted for parity with :meth:`pyvinecopulib.core.Vinecop.pdf`.
 
@@ -389,7 +395,10 @@ class VinecopLike(Protocol[ArrayT]):
     u : array, shape (m, d), dtype float
         Query points in ``[0, 1]^d``.
     x : array, shape (m, p), or None, optional
-        External covariates (non-simplified vines), else ``None``.
+        External covariates, or ``None``. The canonical
+        :class:`~pyvinecopulib.core.VinecopBase` Monte-Carlo implementation does
+        not support a non-``None`` value; a conditional implementation may
+        override that limitation.
     N : int, default=10000
         Number of Monte-Carlo samples.
     num_threads : int, default=1
@@ -414,7 +423,7 @@ class VinecopLike(Protocol[ArrayT]):
     u : array, shape (n, d), dtype float
         Pseudo-observations in ``[0, 1]^d``.
     x : array, shape (n, p), or None, optional
-        External covariates (non-simplified vines), else ``None``.
+        External covariates threaded to each pair copula, or ``None``.
     num_threads : int, default=1
         Accepted for parity with :meth:`pyvinecopulib.core.Vinecop.rosenblatt`.
 
@@ -435,7 +444,7 @@ class VinecopLike(Protocol[ArrayT]):
     u : array, shape (n, d), dtype float
         Independent uniforms in ``[0, 1]^d``.
     x : array, shape (n, p), or None, optional
-        External covariates (non-simplified vines), else ``None``.
+        External covariates threaded to each pair copula, or ``None``.
     num_threads : int, default=1
         Accepted for parity with
         :meth:`pyvinecopulib.core.Vinecop.inverse_rosenblatt`.

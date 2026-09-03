@@ -28,8 +28,8 @@ class IndependencePair(BicopBase[ArrayT]):
 
   The evaluation surface is the closed form rather than an inherited
   numerical one, so nothing here bisects and nothing depends on a grid.
-  ``sample`` and ``loglik`` come from :class:`BicopBase` unchanged, the
-  closed form buying them nothing.
+  ``loglik`` comes from :class:`BicopBase`; ``sample`` uses the library's
+  NumPy uniform generator and the inherited inverse Rosenblatt transform.
 
   See Also
   --------
@@ -156,6 +156,27 @@ class IndependencePair(BicopBase[ArrayT]):
         ``self``; the independence copula is symmetric.
     """
     return self
+
+  def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:
+    """Draw NumPy base uniforms for the inherited sampler.
+
+    Parameters
+    ----------
+    n : int
+        Number of draws.
+    qrng : bool
+        Whether to use a quasi-random sequence.
+    seeds : list of int
+        RNG seeds.
+
+    Returns
+    -------
+    array, shape (n, 2), dtype float
+        Base uniforms from :func:`pyvinecopulib.utils.sample_uniform`.
+    """
+    from ..pyvinecopulib_ext import sample_uniform
+
+    return cast(ArrayT, sample_uniform(n, 2, qrng, seeds))
 
   def __repr__(self) -> str:
     """Short representation.

@@ -62,6 +62,8 @@ class _WrappedMargin(MarginBase[Any]):
   pdf, cdf, icdf : callable
       The three primitives, already bound to ``obj`` and named as the
       :class:`~pyvinecopulib.core.MarginLike` contract expects.
+  logpdf : callable or None, optional
+      Native log-density; ``None`` derives it from ``pdf``.
   var_type : str, optional
       Variable type of the wrapped distribution.
   cdf_left : callable or None, optional
@@ -79,6 +81,7 @@ class _WrappedMargin(MarginBase[Any]):
     pdf: Callable[[Any], Any],
     cdf: Callable[[Any], Any],
     icdf: Callable[[Any], Any],
+    logpdf: Optional[Callable[[Any], Any]] = None,
     var_type: str = "c",
     cdf_left: Optional[Callable[[Any], Any]] = None,
     support: Optional[tuple[float, float]] = None,
@@ -88,6 +91,7 @@ class _WrappedMargin(MarginBase[Any]):
     self._pdf = pdf
     self._cdf = cdf
     self._icdf = icdf
+    self._logpdf = logpdf
     self._var_type = var_type
     self._cdf_left = cdf_left
     self._support = support if support is not None else support_of(obj)
@@ -103,6 +107,11 @@ class _WrappedMargin(MarginBase[Any]):
 
   def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
     return self._pdf(y)
+
+  def logpdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    if self._logpdf is None:
+      return super().logpdf(y)
+    return self._logpdf(y)
 
   def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
     return self._cdf(y)
@@ -148,11 +157,17 @@ def _adapt_scipy_new(obj: Any) -> MarginLike[Any]:
   """
   if not _is_scipy_new_discrete(obj):
     return _WrappedMargin(
-      obj, pdf=obj.pdf, cdf=obj.cdf, icdf=obj.icdf, var_type="c"
+      obj,
+      pdf=obj.pdf,
+      logpdf=obj.logpdf,
+      cdf=obj.cdf,
+      icdf=obj.icdf,
+      var_type="c",
     )
   return _WrappedMargin(
     obj,
     pdf=obj.pmf,
+    logpdf=obj.logpmf,
     cdf=obj.cdf,
     icdf=obj.icdf,
     var_type="d",
@@ -176,6 +191,7 @@ def _adapt_scipy_legacy(obj: Any) -> MarginLike[Any]:
     return _WrappedMargin(
       obj,
       pdf=obj.pdf,
+      logpdf=obj.logpdf,
       cdf=obj.cdf,
       icdf=obj.ppf,
       var_type="c",
@@ -184,9 +200,13 @@ def _adapt_scipy_legacy(obj: Any) -> MarginLike[Any]:
   return _WrappedMargin(
     obj,
     pdf=obj.pmf,
+    logpdf=obj.logpmf,
     cdf=obj.cdf,
     icdf=obj.ppf,
     var_type="d",
+    # This works on shifted and irregular numeric lattices as well as counts:
+    # away from an atom `pmf` is zero, so the left limit equals `cdf`.
+    cdf_left=lambda x: obj.cdf(x) - obj.pmf(x),
     family_name=name,
   )
 
@@ -205,9 +225,31 @@ def _adapt_torch(obj: Any) -> MarginLike[Any]:
 
   ``log_prob`` is the only density it offers, and ``cdf`` / ``icdf`` are
   declared on the base class and raise unless the concrete family implements
-  them — so conformance cannot be inferred from member names here. A missing
-  ``icdf`` falls back to inverting ``cdf`` numerically.
+  them — so conformance cannot be inferred from member names here. Continuous
+  families without a cdf and every discrete family are rejected immediately;
+  a missing ``icdf`` falls back to inverting an implemented ``cdf`` numerically.
   """
+  support = getattr(obj, "support", None)
+  if bool(getattr(support, "is_discrete", False)):
+    raise TypeError(
+      f"cannot adapt discrete torch distribution {type(obj).__name__!r}: "
+      "torch.distributions does not provide the cdf and left-limit cdf a "
+      "discrete vine margin needs. Use Kde1d, a SciPy or OpenTURNS margin, "
+      "or implement MarginBase.cdf_left explicitly."
+    )
+
+  cdf = getattr(type(obj), "cdf", None)
+  if (
+    cdf is None
+    or getattr(cdf, "__module__", "") == "torch.distributions.distribution"
+    and getattr(cdf, "__qualname__", "") == "Distribution.cdf"
+  ):
+    raise TypeError(
+      f"cannot adapt torch distribution {type(obj).__name__!r}: its cdf is "
+      "not implemented. Use a continuous torch distribution with a cdf, "
+      "provide a MarginBase implementation, or use a SciPy/OpenTURNS margin."
+    )
+
   lo, hi = support_of(obj)
 
   def _icdf(p: Any) -> Any:
@@ -221,6 +263,7 @@ def _adapt_torch(obj: Any) -> MarginLike[Any]:
   return _WrappedMargin(
     obj,
     pdf=lambda x: obj.log_prob(x).exp(),
+    logpdf=obj.log_prob,
     cdf=obj.cdf,
     icdf=_icdf,
     var_type="c",
@@ -231,10 +274,11 @@ def _adapt_torch(obj: Any) -> MarginLike[Any]:
 def as_margin(obj: Any) -> MarginLike[Any]:
   """Present ``obj`` as a :class:`~pyvinecopulib.core.MarginLike`.
 
-  Idempotent: anything this library produced is returned unchanged. Foreign
-  objects are wrapped, because satisfying the contract's member *names* is not
-  the same as satisfying its semantics — a modern SciPy discrete distribution
-  has ``pdf`` / ``cdf`` / ``icdf`` and would pass an ``isinstance`` check while
+  Idempotent: anything this library produced, or a structural implementation of
+  ``MarginLike``, is returned unchanged. Recognized foreign objects are checked
+  and wrapped first, because satisfying the contract's member *names* is not the
+  same as satisfying its semantics — a modern SciPy discrete distribution has
+  ``pdf`` / ``cdf`` / ``icdf`` and would pass an ``isinstance`` check while
   reporting ``+inf`` for every mass.
 
   Parameters
@@ -259,6 +303,13 @@ def as_margin(obj: Any) -> MarginLike[Any]:
   for predicate, adapter in _ADAPTERS:
     if predicate(obj):
       return adapter(obj)
+  # Known foreign APIs are considered above, before this structural check.
+  # Their matching names do not necessarily carry the contract's semantics
+  # (notably SciPy's modern discrete `pdf`). A user-defined structural margin,
+  # however, is the extension seam promised by `MarginLike` and needs no base
+  # class or registry entry.
+  if isinstance(obj, MarginLike):
+    return obj
   raise TypeError(
     f"cannot use {type(obj).__name__!r} as a margin. Subclass "
     "pyvinecopulib.core.MarginBase, or teach as_margin about it with "

@@ -68,6 +68,14 @@ def test_predict_quantiles_only(regression_setup):
   assert np.all(pred_quant[:, 1] <= pred_quant[:, 2])  # Q50 <= Q90
 
 
+def test_quantile_regressor_score_is_rejected(regression_setup):
+  """R² is defined for the mean prediction, not a quantile matrix."""
+  X_train, X_test, y_train, y_test, _, _ = regression_setup
+  est = VineRegressor(mean=False, quantiles=[0.25, 0.75]).fit(X_train, y_train)
+  with pytest.raises(ValueError, match="mean predictions"):
+    est.score(X_test, y_test)
+
+
 def test_predict_mean_and_quantiles(regression_setup):
   """Test prediction with both mean and quantiles."""
   X_train, X_test, y_train, y_test, _, _ = regression_setup
@@ -180,11 +188,16 @@ def test_normalize_weights_parameter(regression_setup):
   )
   pred_raw = reg_raw.predict(X_test)
 
-  # With normalized weights, rows sum to 1 and the prediction is a
-  # convex combination of the response nodes; without normalization it
-  # picks up the absolute scale of the copula density, so outputs
-  # generally differ.
-  assert not np.allclose(pred_default, pred_raw)
+  # The conditional mean is `sum(w y) / sum(w)`, so it does not depend on the
+  # weights' scale: the flag changes what `_weights_for_batch` returns -- the
+  # seam a caller combining several vines normalizes across -- not the
+  # prediction. This test used to assert the opposite, pinning a mean that was
+  # scaled by the weight total.
+  np.testing.assert_allclose(pred_default, pred_raw, rtol=1e-10, atol=1e-10)
+  w_default = reg_default._weights_for_batch(X_test[:3])
+  w_raw = reg_raw._weights_for_batch(X_test[:3])
+  np.testing.assert_allclose(w_default.sum(axis=1), 1.0)
+  assert not np.allclose(w_default, w_raw)
 
 
 def test_copula_marginal_density_single_covariate(regression_setup):
@@ -245,3 +258,25 @@ def test_vine_regressor_predict_keeps_the_sample_axis() -> None:
   multi = VineRegressor(quantiles=[0.25, 0.75]).fit(X, y)
   assert multi.predict(X[:1]).shape == (1, 3)
   assert multi.predict(X[:4]).shape == (4, 3)
+
+
+@pytest.mark.parametrize("use_grid", [True, False])
+def test_normalize_weights_does_not_move_the_conditional_mean(
+  use_grid, regression_data
+) -> None:
+  """The mean is `sum(w y) / sum(w)`, whatever the weights' scale.
+
+  It used to be a plain dot product, so `normalize_weights=False` returned a
+  mean scaled by the weight total -- around 100x with the default grid -- while
+  the quantile columns of the same matrix stayed correct. The flag exists so a
+  caller combining several vines can normalize once, across all of them.
+  """
+  X, y, _, _ = regression_data
+  preds = [
+    VineRegressor(mean=True, use_grid=use_grid, normalize_weights=nw)
+    .fit(X, y)
+    .predict(X[:40])
+    for nw in (True, False)
+  ]
+  np.testing.assert_allclose(preds[0], preds[1], rtol=1e-10, atol=1e-10)
+  assert np.std(preds[0]) < 5.0 * np.std(y)

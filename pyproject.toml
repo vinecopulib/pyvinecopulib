@@ -15,7 +15,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "pyvinecopulib"
-version = "0.8.0"
+version = "1.0.0"
 authors = [
   { name = "Thibault Vatter", email = "info@vinecopulib.com" },
   { name = "Thomas Nagler", email = "info@vinecopulib.com" },
@@ -140,7 +140,19 @@ editable.rebuild = true
 editable.verbose = false
 # scikit-build-core's default sdist exclude drops `build/`-named dirs,
 # which also catches scripts/build.
-sdist.include = ["scripts/**"]
+# Extension-scoped rather than `scripts/**`: a force-include outranks
+# `sdist.exclude`, so the directory glob shipped `scripts/__pycache__/*.pyc`.
+sdist.include = [
+  "scripts/*.py",
+  "scripts/*.sh",
+  "scripts/*.ipynb",
+  "scripts/*.json",
+]
+sdist.exclude = [
+  "build*/**",
+  "**/__pycache__/**",
+  "**/*.pyc",
+]
 
 [tool.cibuildwheel]
 build-verbosity = 1

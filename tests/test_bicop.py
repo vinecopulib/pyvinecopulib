@@ -107,10 +107,14 @@ def test_bicop(unique_json_path: str) -> None:
   # Test str method
   assert isinstance(str(bicop), str)
 
-  # Test parameters_to_tau method
-  parameters = np.array([[0.5, 0.6], [0.7, 0.8]])
-  tau = bicop.parameters_to_tau(parameters)
+  # Test parameters_to_tau method. The argument must have the family's own
+  # shape: the leaf indexes it positionally, so a 2x2 matrix handed to a
+  # one-parameter family used to read past its own storage and return a tau
+  # computed from whatever was there.
+  tau = bicop.parameters_to_tau(bicop.parameters)
   assert isinstance(tau, float)
+  with pytest.raises(RuntimeError, match="wrong shape"):
+    bicop.parameters_to_tau(np.array([[0.5, 0.6], [0.7, 0.8]]))
 
   # Test tau_to_parameters method
   tau = 0.5
