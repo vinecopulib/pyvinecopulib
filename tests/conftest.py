@@ -45,7 +45,10 @@ class HostedVinecop(VinecopBase[Any]):
     self._pairs = pairs
     self._bind_vine(structure, context, var_types=var_types)
 
-  def _get_pair_copula(self, tree: int, edge: int) -> BicopLike[Any]:
+  def set_pair_copulas(self, pair_copulas: Any) -> None:
+    self._pairs = pair_copulas
+
+  def get_pair_copula(self, tree: int, edge: int) -> BicopLike[Any]:
     return self._pairs[tree][edge]
 
   def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Any:

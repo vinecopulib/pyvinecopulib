@@ -28,7 +28,8 @@ whose parameters are given at construction is already fitted.
   specification per variable.
 
 Custom margins subclass :class:`pyvinecopulib.core.MarginBase`, which needs only
-``pdf`` and ``cdf``.
+``pdf`` and ``cdf``; a custom *distribution* to put them in subclasses
+:class:`pyvinecopulib.core.VinedistBase`.
 
 Notes
 -----

@@ -164,7 +164,7 @@ class _VinecopBackendBase:
     lo, hi = (None, None) if bounds is None else (bounds[0], bounds[1])
     return pv.core.Kde1d(type=var_type, xmin=lo, xmax=hi)
 
-  def bind_distribution(self, vine: Any, margins: Any) -> Any:
+  def bind_distribution(self, vine: Any, margins: Any) -> pv.core.VinedistLike:
     """Assemble the fitted vine and its margins into one distribution.
 
     The copula is wrapped in ``_BackendVinecop`` so the distribution evaluates
@@ -213,7 +213,7 @@ class _VinecopBackendBase:
     Parameters
     ----------
     seeds : list of int
-        Seeds passed to the compiled random-tree selector.
+        Seeds passed to the random-tree selector.
 
     Returns
     -------
@@ -411,13 +411,13 @@ class TorchVinecopBackend(_VinecopBackendBase):
       dtype=controls.dtype if controls.dtype is not None else torch.float64,
     )
 
-  def bind_distribution(self, vine: Any, margins: Any) -> Any:
+  def bind_distribution(self, vine: Any, margins: Any) -> pv.core.VinedistLike:
     """Assemble a ``TorchVinedist`` from the fitted torch vine and its margins.
 
     The raw vine goes in rather than a ``_BackendVinecop`` wrapper: the point of
     publishing this object is that it is torch throughout, so ``.to(device)``
     moves it and a loss through ``logpdf`` reaches the margins' buffers -- which
-    a wrapper converting to NumPy at every call would undo. A compiled ``Kde1d``
+    a wrapper converting to NumPy at every call would undo. A core ``Kde1d``
     margin (from ``margins="kde"``, or one the caller passed already fitted) is
     lifted with ``TorchKde1d.from_kde1d``, an exact transfer of the same
     grid.

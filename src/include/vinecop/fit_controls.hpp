@@ -27,6 +27,35 @@ inline FitControlsVinecop fcv_from_bicop_controls(
                             show_trace, tree_algorithm, seeds);
 }
 
+inline nb::dict vinecop_controls_to_dict(const FitControlsVinecop& controls) {
+  nb::dict state;
+  state["family_set"] = controls.get_family_set();
+  state["parametric_method"] = controls.get_parametric_method();
+  state["nonparametric_method"] = controls.get_nonparametric_method();
+  state["nonparametric_mult"] = controls.get_nonparametric_mult();
+  state["nonparametric_grid_size"] = controls.get_nonparametric_grid_size();
+  state["trunc_lvl"] = controls.get_trunc_lvl();
+  state["tree_criterion"] = controls.get_tree_criterion();
+  // Empty std::function casts to None; a wrapped Python callable
+  // casts back to the original object (picklable if module-level).
+  state["tree_criterion_function"] = controls.get_tree_criterion_function();
+  state["threshold"] = controls.get_threshold();
+  state["selection_criterion"] = controls.get_selection_criterion();
+  state["weights"] = controls.get_weights();
+  state["psi0"] = controls.get_psi0();
+  state["preselect_families"] = controls.get_preselect_families();
+  state["select_trunc_lvl"] = controls.get_select_trunc_lvl();
+  state["select_threshold"] = controls.get_select_threshold();
+  state["select_families"] = controls.get_select_families();
+  state["show_trace"] = controls.get_show_trace();
+  state["num_threads"] = controls.get_num_threads();
+  state["tree_algorithm"] = controls.get_tree_algorithm();
+  state["allow_rotations"] = controls.get_allow_rotations();
+  state["seeds"] = controls.get_seeds();
+  state["conditioning_set"] = controls.get_conditioning_set();
+  return state;
+}
+
 inline void init_vinecop_fit_controls(nb::module_& module) {
   constexpr auto& doc = pyvinecopulib_doc;
   constexpr auto& fitcontrolsvinecop_doc = doc.vinecopulib.FitControlsVinecop;
@@ -36,8 +65,13 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
   // for those.
   constexpr auto& fitcontrolsbicop_doc = doc.vinecopulib.FitControlsBicop;
 
-  nb::class_<FitControlsVinecop>(module, "FitControlsVinecop",
-                                 fitcontrolsvinecop_doc.doc)
+  // `FitControlsVinecop` derives from `FitControlsBicop` in C++, and declaring
+  // that here is what lets one controls object drive both a vine fit and the
+  // pair fits inside it: `isinstance` holds, so it is accepted anywhere pair
+  // controls are. `init_bicop_fit_controls` runs first, so the base is
+  // registered by now.
+  nb::class_<FitControlsVinecop, FitControlsBicop>(module, "FitControlsVinecop",
+                                                   fitcontrolsvinecop_doc.doc)
       .def(nb::init<std::vector<BicopFamily>, std::string, std::string, double,
                     size_t, size_t, std::string, double, std::string,
                     const Eigen::VectorXd&, double, bool, bool, bool, bool,
@@ -70,27 +104,6 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
                    fitcontrolsvinecop_doc.get_fit_controls_bicop.doc,
                    nb::call_guard<nb::gil_scoped_release>())
       // Inherited from FitControlsBicop — reference its docs.
-      .def_prop_rw("family_set", &FitControlsVinecop::get_family_set,
-                   &FitControlsVinecop::set_family_set,
-                   fitcontrolsbicop_doc.get_family_set.doc,
-                   nb::call_guard<nb::gil_scoped_release>())
-      .def_prop_rw("parametric_method",
-                   &FitControlsVinecop::get_parametric_method,
-                   &FitControlsVinecop::set_parametric_method,
-                   fitcontrolsbicop_doc.get_parametric_method.doc)
-      .def_prop_rw("nonparametric_method",
-                   &FitControlsVinecop::get_nonparametric_method,
-                   &FitControlsVinecop::set_nonparametric_method,
-                   fitcontrolsbicop_doc.get_nonparametric_method.doc)
-      .def_prop_rw("nonparametric_mult",
-                   &FitControlsVinecop::get_nonparametric_mult,
-                   &FitControlsVinecop::set_nonparametric_mult,
-                   fitcontrolsbicop_doc.get_nonparametric_mult.doc)
-      .def_prop_rw("nonparametric_grid_size",
-                   &FitControlsVinecop::get_nonparametric_grid_size,
-                   &FitControlsVinecop::set_nonparametric_grid_size,
-                   fitcontrolsbicop_doc.get_nonparametric_grid_size.doc)
-      // Vinecop-specific knobs.
       .def_prop_rw("trunc_lvl", &FitControlsVinecop::get_trunc_lvl,
                    &FitControlsVinecop::set_trunc_lvl,
                    fitcontrolsvinecop_doc.get_trunc_lvl.doc)
@@ -118,21 +131,6 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
                    &FitControlsVinecop::set_threshold,
                    fitcontrolsvinecop_doc.get_threshold.doc)
       // Inherited.
-      .def_prop_rw("selection_criterion",
-                   &FitControlsVinecop::get_selection_criterion,
-                   &FitControlsVinecop::set_selection_criterion,
-                   fitcontrolsbicop_doc.get_selection_criterion.doc)
-      .def_prop_rw("weights", &FitControlsVinecop::get_weights,
-                   &FitControlsVinecop::set_weights,
-                   fitcontrolsbicop_doc.get_weights.doc)
-      .def_prop_rw("psi0", &FitControlsVinecop::get_psi0,
-                   &FitControlsVinecop::set_psi0,
-                   fitcontrolsbicop_doc.get_psi0.doc)
-      .def_prop_rw("preselect_families",
-                   &FitControlsVinecop::get_preselect_families,
-                   &FitControlsVinecop::set_preselect_families,
-                   fitcontrolsbicop_doc.get_preselect_families.doc)
-      // Vinecop-specific knobs.
       .def_prop_rw("select_trunc_lvl",
                    &FitControlsVinecop::get_select_trunc_lvl,
                    &FitControlsVinecop::set_select_trunc_lvl,
@@ -148,18 +146,10 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
                    &FitControlsVinecop::set_show_trace,
                    fitcontrolsvinecop_doc.get_show_trace.doc)
       // Inherited.
-      .def_prop_rw("num_threads", &FitControlsVinecop::get_num_threads,
-                   &FitControlsVinecop::set_num_threads,
-                   fitcontrolsbicop_doc.get_num_threads.doc)
-      // Vinecop-specific.
       .def_prop_rw("tree_algorithm", &FitControlsVinecop::get_tree_algorithm,
                    &FitControlsVinecop::set_tree_algorithm,
                    fitcontrolsvinecop_doc.get_tree_algorithm.doc)
       // Inherited.
-      .def_prop_rw("allow_rotations", &FitControlsVinecop::get_allow_rotations,
-                   &FitControlsVinecop::set_allow_rotations,
-                   fitcontrolsbicop_doc.get_allow_rotations.doc)
-      // Vinecop-specific.
       .def_prop_rw("seeds", &FitControlsVinecop::get_seeds,
                    &FitControlsVinecop::set_seeds,
                    fitcontrolsvinecop_doc.get_seeds.doc)
@@ -182,38 +172,19 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
             return "<pyvinecopulib.core.FitControlsVinecop>\n" + controls.str();
           },
           fitcontrolsvinecop_doc.str.doc)
-      .def("__getstate__",
-           [](const FitControlsVinecop& controls) {
-             nb::dict state;
-             state["family_set"] = controls.get_family_set();
-             state["parametric_method"] = controls.get_parametric_method();
-             state["nonparametric_method"] =
-                 controls.get_nonparametric_method();
-             state["nonparametric_mult"] = controls.get_nonparametric_mult();
-             state["nonparametric_grid_size"] =
-                 controls.get_nonparametric_grid_size();
-             state["trunc_lvl"] = controls.get_trunc_lvl();
-             state["tree_criterion"] = controls.get_tree_criterion();
-             // Empty std::function casts to None; a wrapped Python callable
-             // casts back to the original object (picklable if module-level).
-             state["tree_criterion_function"] =
-                 controls.get_tree_criterion_function();
-             state["threshold"] = controls.get_threshold();
-             state["selection_criterion"] = controls.get_selection_criterion();
-             state["weights"] = controls.get_weights();
-             state["psi0"] = controls.get_psi0();
-             state["preselect_families"] = controls.get_preselect_families();
-             state["select_trunc_lvl"] = controls.get_select_trunc_lvl();
-             state["select_threshold"] = controls.get_select_threshold();
-             state["select_families"] = controls.get_select_families();
-             state["show_trace"] = controls.get_show_trace();
-             state["num_threads"] = controls.get_num_threads();
-             state["tree_algorithm"] = controls.get_tree_algorithm();
-             state["allow_rotations"] = controls.get_allow_rotations();
-             state["seeds"] = controls.get_seeds();
-             state["conditioning_set"] = controls.get_conditioning_set();
-             return state;
-           })
+      .def("__getstate__", &vinecop_controls_to_dict)
+      .def("to_dict", &vinecop_controls_to_dict,
+           R"(Return the settings as a plain dictionary.
+
+Returns
+-------
+dict
+    One entry per setting, keyed by the attribute name.
+
+See Also
+--------
+pyvinecopulib.core.ControlsLike : The contract this satisfies.
+)")
 
       .def("__setstate__", [](FitControlsVinecop& controls, nb::dict state) {
         FitControlsConfig config;

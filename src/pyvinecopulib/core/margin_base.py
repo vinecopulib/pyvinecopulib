@@ -10,7 +10,7 @@ inherits precise return types.
 from __future__ import annotations
 
 from abc import ABC
-from typing import Any, Optional, cast
+from typing import Any, Optional, Self, cast
 
 from array_api_compat import array_namespace
 
@@ -211,17 +211,6 @@ class MarginBase(MarginLike[ArrayT], ABC):
   #: ``x`` entirely for an unconditional margin, which is what lets a margin
   #: written against ``pdf(self, y)`` stay valid.
   supports_covariates: bool = False
-
-  def __init_subclass__(cls, **kwargs: Any) -> None:
-    """Reject an override of the pre-1.0 hook name.
-
-    Parameters
-    ----------
-    **kwargs
-        Forwarded to ``super().__init_subclass__``.
-    """
-    super().__init_subclass__(**kwargs)
-
   # --- optional capabilities, with continuous-correct defaults ------------- #
 
   @property
@@ -265,7 +254,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
     *,
     var_type: Optional[str] = None,
     support: Optional[tuple[float, float]] = None,
-  ) -> "MarginBase[ArrayT]":
+  ) -> Self:
     """Accept what the caller knows about the variable, before fitting it.
 
     A caller often knows the variable type and the declared support when the
@@ -295,6 +284,45 @@ class MarginBase(MarginLike[ArrayT], ABC):
     """
     return self
 
+  @classmethod
+  def from_data(
+    cls,
+    y: ArrayT,
+    /,
+    *,
+    x: Optional[ArrayT] = None,
+    weights: Optional[ArrayT] = None,
+    **kwargs: Any,
+  ) -> Self:
+    """Construct a margin and estimate it from data.
+
+    ``cls(**kwargs).fit(y, ...)``, so a subclass that implements :meth:`fit`
+    gets this for free -- which is what lets a vine distribution name this
+    class as its ``margin_class`` and fit one per variable.
+
+    Parameters
+    ----------
+    y : array, shape (n,), dtype float
+        Observations on the original scale.
+    x : array, shape (n, k), or None, optional
+        Exogenous covariates, one row per observation.
+    weights : array, shape (n,), or None, optional
+        Observation weights.
+    **kwargs : Any
+        Passed to the constructor, so a family or a support bound is named here
+        rather than in a separate step.
+
+    Returns
+    -------
+    MarginBase
+        The fitted margin.
+
+    See Also
+    --------
+    fit : Estimate an already-constructed margin in place.
+    """
+    return cls(**kwargs).fit(y, x=x, weights=weights)
+
   def fit(
     self,
     y: ArrayT,
@@ -302,7 +330,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
     *,
     x: Optional[ArrayT] = None,
     weights: Optional[ArrayT] = None,
-  ) -> "MarginBase[ArrayT]":
+  ) -> Self:
     """Estimate the margin's parameters from data, in place.
 
     Parameters
@@ -325,6 +353,10 @@ class MarginBase(MarginLike[ArrayT], ABC):
     NotImplementedError
         If the subclass has no estimator; a margin specified entirely at
         construction is already fitted and does not need one.
+
+    See Also
+    --------
+    from_data : Construct and fit in one call.
     """
     raise NotImplementedError(
       f"{type(self).__name__}.fit is not defined; implement it to estimate "

@@ -1,67 +1,27 @@
-"""Vine distribution: a vine copula combined with univariate margins."""
+"""Vine distribution on NumPy.
+
+The concrete :class:`~pyvinecopulib.core.VinedistBase` for the default lane:
+NumPy arrays, :class:`~pyvinecopulib.core.Kde1d` margins, and a
+:class:`~pyvinecopulib.core.Vinecop`. Everything the class evaluates is
+inherited; what it adds is the fitting and the JSON round-trip, both of which
+have to name the concrete copula.
+"""
 
 from __future__ import annotations
 
 import copy
-from typing import Any, Generic, Optional, Sequence, cast
+from typing import Any, ClassVar, Optional, Self
 
-from array_api_compat import array_namespace
+import numpy as np
 
-from .margin_base import _margin_eval, derive_cdf_left
-from ._trim import trim
-from ._validation import validate_covariates, validate_weights
-from .protocols import ArrayT, MarginLike
-
-
-def _named(spec: Any, name: Optional[str]) -> Any:
-  """Label a selecting margin with the variable it is fitted to.
-
-  A selector records the variable on each row of its report; without this the
-  rows of a multi-variable report are indistinguishable.
-
-  Parameters
-  ----------
-  spec : object
-      A margin specification.
-  name : str, or None
-      The variable's name, or ``None`` when the data carry none.
-
-  Returns
-  -------
-  object
-      The specification, labeled. Only a nameless selector is copied and
-      relabeled, so a specification the caller still holds is left untouched.
-  """
-  if name is None or not hasattr(spec, "report_"):
-    return spec
-  if getattr(spec, "name", "") is not None:
-    return spec
-  spec = copy.deepcopy(spec)
-  spec.name = name
-  return spec
-
+from ..pyvinecopulib_ext import Kde1d, Vinecop
+from .protocols import ControlsLike
+from .vinedist_base import VinedistBase
 
 __all__ = ["Vinedist"]
 
 
-def _copula_eval(
-  copula: Any, name: str, u: Any, x: Optional[Any], **kwargs: Any
-) -> Any:
-  """Call a copula method, forwarding ``x`` only when the copula reads it.
-
-  The commonest half of a vine distribution is the compiled ``Vinecop``, whose
-  second positional slot is per-row ``parameters`` rather than a conditioning
-  matrix, so covariates must not reach it -- and a vine of unconditional pairs
-  would refuse them one level further down. A copula declares that its pairs are
-  conditional through ``supports_covariates``, exactly as a margin does.
-  """
-  method = getattr(copula, name)
-  if x is None or not getattr(copula, "supports_covariates", False):
-    return method(u, **kwargs)
-  return method(u, x=x, **kwargs)
-
-
-class Vinedist(Generic[ArrayT]):
+class Vinedist(VinedistBase[np.ndarray]):
   r"""A multivariate distribution built from a vine copula and its margins.
 
   By Sklar's theorem a joint distribution factorizes into a copula and its
@@ -78,37 +38,36 @@ class Vinedist(Generic[ArrayT]):
   measure and the copula factor is normalized by the marginal masses. Nothing
   in the evaluation path branches on the variable type.
 
-  Every method takes the observations as ``y`` and optional exogenous
-  covariates as a keyword-only ``x``, which are forwarded to both halves: to
-  each margin that declares ``supports_covariates``, and to the copula when it
-  declares ``supports_covariates`` too. Conditional margins under a copula that
-  ignores covariates model ``Y | X`` with dependence held fixed across
-  covariate values.
+  This is the NumPy route, so both halves are NumPy ones: a
+  :class:`~pyvinecopulib.core.Vinecop` or any other NumPy-side
+  :class:`VinecopLike` for the copula, and any :class:`MarginLike` for the
+  margins, including distributions from other libraries once passed through
+  :func:`pyvinecopulib.margins.as_margin`. A PyTorch part is refused rather
+  than silently detached from its graph — use
+  :class:`~pyvinecopulib.torch.TorchVinedist` for that.
 
-  Any :class:`VinecopLike` will do — the compiled
-  :class:`~pyvinecopulib.core.Vinecop`, a :class:`VinecopBase` subclass, or the
-  PyTorch evaluator — and any :class:`MarginLike`, including distributions from
-  other libraries once passed through
-  :func:`pyvinecopulib.margins.as_margin`.
+  :meth:`from_data` fits :class:`~pyvinecopulib.core.Kde1d` margins and a
+  :class:`~pyvinecopulib.core.Vinecop`, and :meth:`from_json` reads one back.
+  Everything else — the whole evaluation surface — comes from
+  :class:`~pyvinecopulib.core.VinedistBase` and is shared with the PyTorch
+  route.
 
-  Parameters
-  ----------
-  copula : VinecopLike
-      A fitted vine copula on ``[0, 1]^d``.
-  margins : sequence of MarginLike, or MarginLike
-      One fitted margin per variable. A single margin stands for every
-      variable, which is the identical-margins case; the cascade evaluates it
-      once per column, so a margin carrying one parameter *per variable* has to
-      be passed as a sequence instead.
+  Constructed as ``Vinedist(vinecop, margins)``; the constructor is
+  :class:`~pyvinecopulib.core.VinedistBase`'s and is documented there, down to
+  what a single broadcast margin means.
 
   Raises
   ------
   ValueError
       If the number of margins disagrees with the copula's dimension, or if the
       copula's ``var_types`` disagrees with what the margins declare.
+  TypeError
+      If the copula or a margin comes from :mod:`pyvinecopulib.torch`.
 
   See Also
   --------
+  pyvinecopulib.core.VinedistBase : The array-agnostic base to subclass.
+  pyvinecopulib.torch.TorchVinedist : The PyTorch route.
   pyvinecopulib.core.MarginLike : The margin contract.
   pyvinecopulib.core.VinecopLike : The copula contract.
   pyvinecopulib.margins.as_margin : Coerce a foreign distribution to a margin.
@@ -122,37 +81,34 @@ class Vinedist(Generic[ArrayT]):
       u = pv.utils.to_pseudo_obs(y)
       dist = pv.Vinedist(
         pv.Vinecop.from_data(u),
-        margins=[st.Normal(mu=0.0, sigma=1.0), st.gamma(2.0), st.norm(0, 1)],
+        margins=[st.norm(0, 1), st.gamma(2.0), st.norm(0, 1)],
       )
       dist.logpdf(y)
       dist.sample(100, seeds=[1])
   """
 
-  def __init__(
-    self,
-    copula: Any,
-    margins: Sequence[Any] | Any,
-  ) -> None:
-    # `copula` is a `VinecopLike`, but typed `Any`: the compiled `Vinecop`
-    # satisfies that contract nominally, not statically (its signatures spell
-    # per-row `parameters` where the protocol spells the conditioning matrix
-    # `x`), so narrowing here would reject the commonest call. Same reason the
-    # sklearn backend layer returns `Any` from `fit_vine`.
-    self._bind_dist(copula, margins)
+  # The two halves this route fits: NumPy arrays throughout. Plain comments,
+  # not `#:` ones -- autosummary cannot resolve an attribute whose value is
+  # itself a class, and the declarations are documented on the base.
+  vinecop_class: ClassVar[Optional[type]] = Vinecop
+  margin_class: ClassVar[Optional[type]] = Kde1d
 
   def _bind_dist(
     self,
-    copula: Any,
-    margins: Sequence[Any] | Any,
+    vinecop: Any,
+    margins: Any,
   ) -> None:
-    """Install the copula and margins.
+    """Install the parts, refusing PyTorch ones.
 
-    The initialization seam a subclass calls once from its ``__init__``, after
-    any framework base class has been initialized.
+    The mirror of :class:`~pyvinecopulib.torch.TorchVinedist`'s refusal of a
+    NumPy copula, and for the same reason: this class evaluates on NumPy, so a
+    torch part would have its gradients detached and would ignore
+    ``.to(device)``. The check is by provenance rather than ``isinstance``,
+    since :mod:`pyvinecopulib.core` must import without PyTorch.
 
     Parameters
     ----------
-    copula : VinecopLike
+    vinecop : VinecopLike
         The vine copula.
     margins : sequence of MarginLike, or MarginLike
         The margins.
@@ -160,194 +116,106 @@ class Vinedist(Generic[ArrayT]):
     Returns
     -------
     None
-    """
-    from ..margins import as_margin
-
-    d = int(
-      getattr(copula, "dim", 0) or len(getattr(copula, "order", ()) or ())
-    )
-    if not d:
-      structure = getattr(copula, "structure", None)
-      d = int(getattr(structure, "dim", 0))
-    if not d:
-      raise ValueError("cannot determine the copula's dimension")
-
-    if isinstance(margins, (list, tuple)):
-      resolved = [as_margin(m) for m in margins]
-    else:
-      # One object standing for every variable. Shared rather than copied:
-      # evaluation never mutates a fitted margin, and a copy per variable would
-      # duplicate a kernel-density grid `d` times.
-      resolved = [as_margin(margins)] * d
-    if len(resolved) != d:
-      raise ValueError(
-        f"got {len(resolved)} margins for a {d}-dimensional copula"
-      )
-
-    self._copula = copula
-    self._margins = tuple(resolved)
-    self._var_types = self.copula_var_types(self._margins)
-
-    declared = getattr(copula, "var_types", None)
-    if declared is not None and list(declared) != self._var_types:
-      raise ValueError(
-        f"the copula declares var_types={list(declared)}, but the margins "
-        f"imply {self._var_types}; refit the copula on the matching layout"
-      )
-
-  # --- structure ----------------------------------------------------------- #
-
-  @property
-  def copula(self) -> Any:
-    """The vine copula.
-
-    Returns
-    -------
-    VinecopLike
-        The copula this distribution was built on, typed ``Any`` for the reason
-        given on ``__init__``.
-    """
-    return self._copula
-
-  @property
-  def margins(self) -> tuple[MarginLike, ...]:
-    """The margins, in variable order.
-
-    Returns
-    -------
-    tuple of MarginLike
-        One margin per variable.
-    """
-    return self._margins
-
-  def selection_report(self) -> list[dict[str, Any]]:
-    """Per-candidate family-selection rows, across every margin that selected.
-
-    Margins that were given rather than selected contribute nothing, so an
-    all-fixed or all-KDE distribution reports an empty list.
-
-    Returns
-    -------
-    list of dict
-        One row per candidate considered, in variable order. Each carries the
-        variable, the family, its parameter count, the criteria, whether it was
-        selected, and — for a candidate that was not fitted — why.
-    """
-    return [
-      dict(row)
-      for margin in self._margins
-      for row in getattr(margin, "report_", ())
-    ]
-
-  def margin_summary(self) -> list[dict[str, Any]]:
-    """One row per variable describing the margin that models it.
-
-    Where :meth:`selection_report` details the candidates a selector *considered*
-    and reports nothing for a margin that was given, this describes what every
-    variable actually ended up with -- so an all-fixed distribution has a full
-    table too.
-
-    Every field is read as an optional capability, so a margin from another
-    ecosystem contributes whatever it declares and ``None`` for the rest.
-
-    Returns
-    -------
-    list of dict
-        One row per variable in variable order, carrying its position, the
-        margin's own ``name`` if it has one, the class, the family, the variable
-        type as the copula sees it, the support, the number of parameters and
-        the log-likelihood attained at the fit.
-    """
-    rows: list[dict[str, Any]] = []
-    for j, margin in enumerate(self._margins):
-      loglik = getattr(margin, "loglik", None)
-      try:
-        value = float(loglik()) if callable(loglik) else None
-      except (RuntimeError, TypeError, ValueError, NotImplementedError):
-        # `loglik()` with no data is only defined for a margin that was fitted
-        # here; a fixed or foreign one has no fit to report.
-        value = None
-      rows.append(
-        {
-          "variable": j,
-          "name": getattr(margin, "name", None),
-          "margin": type(margin).__name__,
-          "family": getattr(margin, "family_name", None),
-          "var_type": self._var_types[j],
-          "support": getattr(margin, "support", None),
-          "n_parameters": getattr(margin, "n_parameters", None),
-          "loglik": value,
-        }
-      )
-    return rows
-
-  @property
-  def dim(self) -> int:
-    """Number of variables.
-
-    Returns
-    -------
-    int
-        The dimension ``d``.
-    """
-    return len(self._margins)
-
-  @property
-  def var_types(self) -> list[str]:
-    """Variable types as the copula sees them.
-
-    Returns
-    -------
-    list of str
-        ``"c"`` or ``"d"`` per variable; a zero-inflated margin is ``"d"``,
-        since what the copula needs from it is the left limit.
-    """
-    return list(self._var_types)
-
-  # --- persistence --------------------------------------------------------- #
-
-  def to_json(self) -> str:
-    """Serialize to a JSON string.
-
-    Both halves are stored: the copula through its own ``to_json``, and one
-    payload per margin. A margin type this package does not ship must provide
-    ``to_json`` and register a reader with
-    :func:`~pyvinecopulib.core.register_margin_json`.
-
-    Returns
-    -------
-    str
-        A JSON string that :meth:`from_json` reads back.
 
     Raises
     ------
     TypeError
-        If the copula or a margin cannot be serialized.
-
-    See Also
-    --------
-    to_file : Write to a file, JSON or CBOR.
+        If any part comes from :mod:`pyvinecopulib.torch`.
     """
-    from ._serialization import MARGIN_JSON_VERSION, dumps, margin_to_json
+    parts = [("vinecop", vinecop)]
+    if isinstance(margins, (list, tuple)):
+      parts += [(f"margins[{j}]", m) for j, m in enumerate(margins)]
+    else:
+      parts.append(("margins", margins))
+    for name, part in parts:
+      module = type(part).__module__
+      if module == "torch" or module.startswith(
+        ("torch.", "pyvinecopulib.torch")
+      ):
+        raise TypeError(
+          f"Vinedist cannot hold {name}={type(part).__name__}: it evaluates "
+          "on NumPy, so a PyTorch part would be detached from its graph and "
+          "would ignore `.to(device)`. Use "
+          "pyvinecopulib.torch.TorchVinedist instead."
+        )
+    super()._bind_dist(vinecop, margins)
 
-    copula_to_json = getattr(self._copula, "to_json", None)
-    if copula_to_json is None:
-      raise TypeError(
-        f"{type(self._copula).__name__} cannot be serialized: it has no "
-        "`to_json`. A `TorchVinecop` is an `nn.Module`; use `state_dict` for "
-        "that half, or hold a compiled `Vinecop` instead."
-      )
-    return dumps(
-      {
-        "kind": type(self).__name__,
-        "version": MARGIN_JSON_VERSION,
-        "copula": copula_to_json(),
-        "margins": [margin_to_json(m) for m in self._margins],
-      }
+  @classmethod
+  def _coerce_fit_data(
+    cls,
+    y: Any,
+    weights: Optional[Any],
+    controls: Optional[ControlsLike],
+  ) -> tuple[Any, Any]:
+    """Put the fit inputs on NumPy.
+
+    Parameters
+    ----------
+    y : object
+        Observations, including a DataFrame.
+    weights : object, or None
+        Observation weights.
+    controls : ControlsLike, or None
+        Unused here; NumPy carries no placement.
+
+    Returns
+    -------
+    tuple
+        The observations as a float array, and the weights unchanged —
+        ``validate_weights`` coerces those against the data.
+    """
+    del controls
+    return np.asarray(y, dtype=float), weights
+
+  @classmethod
+  def _fit_copula(
+    cls,
+    u: Any,
+    *,
+    var_types: list[str],
+    controls: Optional[ControlsLike],
+    structure: Optional[Any] = None,
+    weights: Optional[Any] = None,
+  ) -> Any:
+    """Fit a ``Vinecop`` on the pseudo-observations.
+
+    Parameters
+    ----------
+    u : array, shape (n, d + k), dtype float
+        The copula-scale layout the margins produced.
+    var_types : list of str
+        One ``"c"`` or ``"d"`` per variable.
+    controls : FitControlsVinecop, or None
+        Copula fit controls.
+    structure : RVineStructure, or None, optional
+        A fixed structure; selected from the data when ``None``.
+    weights : array, shape (n,), or None, optional
+        Observation weights, written into a copy of the controls so both halves
+        of the fit are weighted by the one argument.
+
+    Returns
+    -------
+    Vinecop
+        The fitted copula.
+    """
+    from ..pyvinecopulib_ext import FitControlsVinecop
+
+    resolved: Any = FitControlsVinecop() if controls is None else controls
+    if weights is not None:
+      # The explicit argument governs both halves. Copy first so overriding a
+      # controls object's weights cannot mutate an object the caller still owns.
+      resolved = copy.deepcopy(resolved)
+      resolved.weights = np.asarray(weights, dtype=float)
+    return super()._fit_copula(
+      u,
+      var_types=var_types,
+      controls=resolved,
+      structure=structure,
+      weights=None,
     )
 
   @classmethod
-  def from_json(cls, json: str) -> "Vinedist[Any]":
+  def from_json(cls, json: str) -> Self:
     """Instantiate from a JSON string.
 
     Parameters
@@ -358,7 +226,7 @@ class Vinedist(Generic[ArrayT]):
     Returns
     -------
     Vinedist
-        The deserialized distribution, with a compiled ``Vinecop`` copula.
+        The deserialized distribution, with a ``Vinecop`` copula.
 
     Raises
     ------
@@ -366,7 +234,7 @@ class Vinedist(Generic[ArrayT]):
         If the payload's version is unrecognized, or a margin's ``kind`` has no
         registered reader.
     """
-    from . import Vinecop
+    from ..pyvinecopulib_ext import Vinecop
     from ._serialization import (
       MARGIN_JSON_VERSION,
       loads,
@@ -383,743 +251,3 @@ class Vinedist(Generic[ArrayT]):
       Vinecop.from_json(payload["copula"]),
       [margin_from_json(m) for m in payload["margins"]],
     )
-
-  def to_file(self, filename: str) -> None:
-    """Write to a JSON file, or a CBOR file when the name ends in ``.cbor``.
-
-    Parameters
-    ----------
-    filename : str
-        Path to write.
-    """
-    from ._serialization import write_file
-
-    write_file(filename, self.to_json())
-
-  @classmethod
-  def from_file(cls, filename: str) -> "Vinedist[Any]":
-    """Instantiate from a JSON file, or a CBOR file by extension.
-
-    Parameters
-    ----------
-    filename : str
-        Path to read.
-
-    Returns
-    -------
-    Vinedist
-        The deserialized distribution.
-    """
-    from ._serialization import read_file
-
-    return cls.from_json(read_file(filename))
-
-  # --- marginal transforms ------------------------------------------------- #
-
-  def _prep(self, a: Any) -> Any:
-    """Bring one input array onto this distribution's array namespace.
-
-    The identity here, since a NumPy distribution reads NumPy input. A subclass
-    living on another namespace overrides it, which is what lets a caller pass
-    the array type they have rather than the one the parts happen to hold.
-
-    Parameters
-    ----------
-    a : array
-        An input array on any namespace.
-
-    Returns
-    -------
-    array
-        The same values, on this distribution's namespace.
-    """
-    return a
-
-  def _columns(self, y: ArrayT) -> tuple[Any, Any, int]:
-    """Split ``y`` into columns and resolve its array namespace.
-
-    Parameters
-    ----------
-    y : array, shape (n, d), dtype float
-        Observations on the original scale.
-
-    Returns
-    -------
-    tuple
-        The namespace, the array, and its row count.
-
-    Raises
-    ------
-    ValueError
-        If ``y`` does not have ``d`` columns.
-    """
-    ya: Any = self._prep(y)
-    xp = array_namespace(ya)
-    if ya.ndim != 2 or ya.shape[1] != self.dim:
-      raise ValueError(
-        f"y must have shape (n, {self.dim}); got {tuple(ya.shape)}"
-      )
-    return xp, ya, int(ya.shape[0])
-
-  def marginal_cdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
-    """Apply each margin's ``cdf`` to its column.
-
-    Parameters
-    ----------
-    y : array, shape (n, d), dtype float
-        Observations on the original scale.
-    x : array, shape (n, k), or None, optional
-        Exogenous covariates, forwarded to every margin that reads them.
-
-    Returns
-    -------
-    array, shape (n, d), dtype float
-        Marginal distribution values, the copula-scale data.
-    """
-    _, ya, n = self._columns(y)
-    self._check_covariates(x, n)
-    cols = [
-      _margin_eval(m, "cdf", ya[:, j], x) for j, m in enumerate(self._margins)
-    ]
-    # The margins' namespace, not the input's: a torch copula hosting NumPy
-    # margins is legal, and `torch.stack` cannot consume NumPy columns.
-    xp = array_namespace(cols[0])
-    return cast(ArrayT, trim(xp, xp.stack(cols, axis=-1)))
-
-  def marginal_icdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
-    """Apply each margin's ``icdf`` to its column.
-
-    Parameters
-    ----------
-    u : array, shape (n, d), dtype float
-        Copula-scale values in ``[0, 1]^d``.
-    x : array, shape (n, k), or None, optional
-        Exogenous covariates, forwarded to every margin that reads them.
-
-    Returns
-    -------
-    array, shape (n, d), dtype float
-        Observations on the original scale.
-    """
-    _, ua, n = self._columns(u)
-    self._check_covariates(x, n)
-    cols = [
-      _margin_eval(m, "icdf", ua[:, j], x) for j, m in enumerate(self._margins)
-    ]
-    xp = array_namespace(cols[0])
-    return cast(ArrayT, xp.stack(cols, axis=-1))
-
-  @staticmethod
-  def copula_var_types(margins: Sequence[Any]) -> list[str]:
-    """Variable types a copula must be fitted with to host these margins.
-
-    Parameters
-    ----------
-    margins : sequence of MarginLike
-        One margin per variable, in variable order. Foreign distribution
-        objects are coerced with :func:`pyvinecopulib.margins.as_margin`, since
-        a bare one carries no variable type of its own.
-
-    Returns
-    -------
-    list of str
-        ``"c"`` or ``"d"`` per variable; a zero-inflated margin is ``"d"``,
-        since what the copula needs from it is the left limit.
-    """
-    from ..margins import as_margin
-
-    return [
-      "d" if getattr(as_margin(m), "var_type", "c") in ("d", "zi") else "c"
-      for m in margins
-    ]
-
-  @staticmethod
-  def copula_data(
-    margins: Sequence[Any], y: Any, *, x: Optional[Any] = None
-  ) -> Any:
-    """Assemble the copula-scale data in the layout a copula expects.
-
-    Continuous variables contribute one column each. A variable with atoms
-    contributes a second, its left limit ``F(x^-)``, appended after the first
-    block in variable order — the compact ``(n, d + k)`` layout. Users never
-    build this by hand, which is the point, and neither does code that fits its
-    own copula before handing it to ``Vinedist``.
-
-    Parameters
-    ----------
-    margins : sequence of MarginLike
-        One margin per variable, in variable order. Foreign distribution
-        objects are coerced with :func:`pyvinecopulib.margins.as_margin`.
-    y : array, shape (n, d), dtype float
-        Observations on the original scale.
-    x : array, shape (n, k), or None, optional
-        Exogenous covariates, forwarded to every margin that reads them.
-
-    Returns
-    -------
-    array, shape (n, d + k), dtype float
-        The copula-scale data, clamped away from the unit square's boundary.
-
-    Raises
-    ------
-    ValueError
-        If ``y`` does not carry one column per margin, or if a margin reports a
-        left limit above its own distribution function.
-    """
-    from ..margins import as_margin
-
-    resolved = [as_margin(m) for m in margins]
-    var_types = Vinedist.copula_var_types(resolved)
-    ya: Any = y
-    if ya.ndim != 2 or ya.shape[1] != len(resolved):
-      raise ValueError(
-        f"y must have shape (n, {len(resolved)}); got {tuple(ya.shape)}"
-      )
-    validate_covariates(x, int(ya.shape[0]))
-    upper = [
-      _margin_eval(m, "cdf", ya[:, j], x) for j, m in enumerate(resolved)
-    ]
-    # The margins' namespace, not the input's, as `marginal_cdf` does: a margin
-    # may legitimately return another array type than it was handed, and
-    # stacking that through the input's namespace either raises or silently
-    # detaches.
-    xp = array_namespace(upper[0])
-    lower = []
-    for j, m in enumerate(resolved):
-      if var_types[j] != "d":
-        continue
-      # A margin that declares atoms and carries no left limit of its own gets
-      # the derived one: copying its `cdf` column would leave the pair copula a
-      # zero-width rectangle, the marginal mass would stop canceling, and the
-      # joint "density" would not integrate to one.
-      left = getattr(m, "cdf_left", None)
-      sub = (
-        _margin_eval(m, "cdf_left", ya[:, j], x)
-        if left is not None
-        else derive_cdf_left(m, ya[:, j], x, var_types[j])
-      )
-      if bool(xp.any(sub > upper[j] + 1e-12)):
-        raise ValueError(
-          f"margin {j} reports cdf_left > cdf, which cannot happen for a "
-          "distribution function; check its var_type and cdf_left"
-        )
-      lower.append(sub)
-    block = xp.stack([*upper, *lower], axis=-1)
-    return trim(xp, block)
-
-  def _check_covariates(self, x: Optional[Any], n_rows: int) -> None:
-    """Refuse covariates that neither half of this distribution reads.
-
-    Evaluation ignores ``x`` per margin, which is what lets conditional and
-    unconditional margins sit in one distribution. When *nothing* reads them the
-    silence is indistinguishable from a conditional answer, so it is an error.
-
-    Parameters
-    ----------
-    x : array, shape (n, k), or None
-        The covariates the caller supplied.
-    n_rows : int
-        Number of observations they must align with.
-
-    Raises
-    ------
-    ValueError
-        If ``x`` is not two-dimensional and row-aligned, or if no margin nor
-        the copula declares ``supports_covariates``.
-    """
-    if x is None:
-      return
-    validate_covariates(x, n_rows)
-    readers = [
-      getattr(m, "supports_covariates", False) for m in self._margins
-    ] + [getattr(self._copula, "supports_covariates", False)]
-    if not any(readers):
-      raise ValueError(
-        "covariates were given, but neither the margins nor the copula read "
-        "them, so the result would be the unconditional one. Build the "
-        "distribution from margins (or a copula) that declare "
-        "supports_covariates, or drop x."
-      )
-
-  def _u_layout(self, y: ArrayT, x: Optional[ArrayT] = None) -> Any:
-    """This distribution's copula-scale data for ``y``.
-
-    Parameters
-    ----------
-    y : array, shape (n, d), dtype float
-        Observations on the original scale.
-    x : array, shape (n, k), or None, optional
-        Exogenous covariates, forwarded to every margin that reads them.
-
-    Returns
-    -------
-    array, shape (n, d + k), dtype float
-        The copula-scale data.
-    """
-    _, ya, n = self._columns(y)
-    self._check_covariates(x, n)
-    return self.copula_data(self._margins, ya, x=x)
-
-  # --- evaluation ---------------------------------------------------------- #
-
-  def logpdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
-    """Log-density of the joint distribution.
-
-    Summed in log space rather than multiplied: for even a moderate ``d`` the
-    product of marginal densities underflows long before the sum of their logs
-    does, and the marginal term is the one carrying the scale.
-
-    Parameters
-    ----------
-    y : array, shape (n, d), dtype float
-        Observations on the original scale.
-    x : array, shape (n, k), or None, optional
-        Exogenous covariates, forwarded to every margin that reads them and to
-        the copula.
-
-    Returns
-    -------
-    array, shape (n,), dtype float
-        Joint log-density values.
-    """
-    xp, ya, _ = self._columns(y)
-    copula_term: Any = _copula_eval(
-      self._copula, "pdf", cast(ArrayT, self._u_layout(y, x)), x
-    )
-    total = xp.log(copula_term)
-    for j, m in enumerate(self._margins):
-      if getattr(m, "logpdf", None) is not None:
-        total = total + _margin_eval(m, "logpdf", ya[:, j], x)
-      else:
-        dens = _margin_eval(m, "pdf", ya[:, j], x)
-        positive = dens > 0
-        safe = xp.where(positive, dens, xp.ones_like(dens))
-        total = total + xp.where(
-          positive, xp.log(safe), xp.full_like(dens, float("-inf"))
-        )
-    return cast(ArrayT, total)
-
-  def pdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
-    """Density of the joint distribution.
-
-    Parameters
-    ----------
-    y : array, shape (n, d), dtype float
-        Observations on the original scale.
-    x : array, shape (n, k), or None, optional
-        Exogenous covariates, forwarded to every margin that reads them and to
-        the copula.
-
-    Returns
-    -------
-    array, shape (n,), dtype float
-        Joint density values, with respect to the product of the margins' own
-        reference measures.
-    """
-    out: Any = self.logpdf(y, x=x)
-    xp = array_namespace(out)
-    return cast(ArrayT, xp.exp(out))
-
-  def cdf(
-    self, y: ArrayT, *, x: Optional[ArrayT] = None, **kwargs: Any
-  ) -> ArrayT:
-    """Distribution function of the joint distribution.
-
-    Parameters
-    ----------
-    y : array, shape (n, d), dtype float
-        Observations on the original scale.
-    x : array, shape (n, k), or None, optional
-        Exogenous covariates, forwarded to every margin that reads them and to
-        the copula.
-    **kwargs
-        Forwarded to the copula's ``cdf`` (e.g. ``N``, ``seeds``), whose value
-        is estimated by Monte-Carlo.
-
-    Returns
-    -------
-    array, shape (n,), dtype float
-        Joint distribution values in ``[0, 1]``.
-
-    Raises
-    ------
-    NotImplementedError
-        If the copula reads ``x`` but does not implement a conditional CDF.
-        In particular, ``VinecopBase``'s generic Monte-Carlo CDF supports only
-        an unconditional copula.
-    """
-    # ``C(F_1(y_1), ..., F_d(y_d))`` needs no left limits, but a copula with
-    # discrete variables accepts only the layouts that carry them, so hand it
-    # the full layout and let it drop what it does not read.
-    return _copula_eval(
-      self._copula, "cdf", cast(ArrayT, self._u_layout(y, x)), x, **kwargs
-    )
-
-  def loglik(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
-    """Log-likelihood of the observations.
-
-    Parameters
-    ----------
-    y : array, shape (n, d), dtype float
-        Observations on the original scale.
-    x : array, shape (n, k), or None, optional
-        Exogenous covariates, forwarded to every margin that reads them and to
-        the copula.
-
-    Returns
-    -------
-    array, shape (), dtype float
-        A 0-d array, so it stays differentiable on autograd backends.
-    """
-    terms: Any = self.logpdf(y, x=x)
-    xp = array_namespace(terms)
-    return cast(ArrayT, xp.sum(terms))
-
-  def rosenblatt(
-    self, y: ArrayT, *, x: Optional[ArrayT] = None, **kwargs: Any
-  ) -> ArrayT:
-    """Rosenblatt transform of observations to independent uniforms.
-
-    Parameters
-    ----------
-    y : array, shape (n, d), dtype float
-        Observations on the original scale.
-    x : array, shape (n, k), or None, optional
-        Exogenous covariates, forwarded to every margin that reads them and to
-        the copula.
-    **kwargs
-        Forwarded to the copula's ``rosenblatt``.
-
-    Returns
-    -------
-    array, shape (n, d), dtype float
-        Independent uniforms.
-    """
-    return _copula_eval(
-      self._copula,
-      "rosenblatt",
-      cast(ArrayT, self._u_layout(y, x)),
-      x,
-      **kwargs,
-    )
-
-  def inverse_rosenblatt(
-    self, w: ArrayT, *, x: Optional[ArrayT] = None, **kwargs: Any
-  ) -> ArrayT:
-    """Inverse Rosenblatt transform, from independent uniforms to the data scale.
-
-    Parameters
-    ----------
-    w : array, shape (n, d), dtype float
-        Independent uniforms.
-    x : array, shape (n, k), or None, optional
-        Exogenous covariates, forwarded to every margin that reads them and to
-        the copula.
-    **kwargs
-        Forwarded to the copula's ``inverse_rosenblatt``.
-
-    Returns
-    -------
-    array, shape (n, d), dtype float
-        Observations on the original scale.
-    """
-    _, wa, n = self._columns(w)
-    self._check_covariates(x, n)
-    u = _copula_eval(
-      self._copula, "inverse_rosenblatt", cast(ArrayT, wa), x, **kwargs
-    )
-    return self.marginal_icdf(u, x=x)
-
-  def sample(
-    self, n: int, *, x: Optional[ArrayT] = None, **kwargs: Any
-  ) -> ArrayT:
-    """Draw ``n`` samples from the joint distribution.
-
-    Parameters
-    ----------
-    n : int
-        Number of samples to draw. With covariates, ``x`` supplies one row per
-        draw, so it must have ``n`` of them.
-    x : array, shape (n, k), or None, optional
-        Exogenous covariates, forwarded to every margin that reads them and to
-        the copula.
-    **kwargs
-        Forwarded to the copula's ``sample`` (e.g. ``qrng``, ``seeds``).
-
-    Returns
-    -------
-    array, shape (n, d), dtype float
-        Samples on the original scale.
-    """
-    self._check_covariates(x, n)
-    u = _copula_eval(self._copula, "sample", n, x, **kwargs)
-    return self.marginal_icdf(u, x=x)
-
-  def sample_conditional(
-    self,
-    y_cond: ArrayT,
-    *,
-    conditioning_set: Optional[list[int]] = None,
-    x: Optional[ArrayT] = None,
-    **kwargs: Any,
-  ) -> ArrayT:
-    """Sample the remaining variables given fixed values of some of them.
-
-    The data-scale counterpart of the copula's ``sample_conditional``: each row
-    of ``y_cond`` is one conditioning point on the **original** scale, and the
-    matching output row draws every variable from its distribution conditional on
-    it. To draw many samples at one point, pass that point repeated over ``n``
-    rows.
-
-    Parameters
-    ----------
-    y_cond : array, shape (n, k), dtype float
-        Conditioning values on the original scale, one point per row. Column
-        ``i`` is the value of conditioning variable ``i``. Unlike the copula
-        scale, a discrete conditioner needs no left-limit column: it is derived
-        from that variable's margin.
-    conditioning_set : list of int or None, optional
-        The 1-based variables to condition on, so column ``i`` of ``y_cond`` is
-        variable ``conditioning_set[i]``. ``None`` takes the last ``k`` variables
-        of the copula's sampling order, ``k`` being ``y_cond``'s width -- the
-        same convention the copula scale uses.
-    x : array, shape (n, p), or None, optional
-        Exogenous covariates, forwarded to every margin that reads them and to
-        the copula.
-    **kwargs
-        Forwarded to the copula's ``sample_conditional`` (e.g. ``qrng``,
-        ``seeds``, ``num_threads``).
-
-    Returns
-    -------
-    array, shape (n, d), dtype float
-        Samples on the original scale. The conditioning columns come back
-        holding the values they were given, up to the margin's own round trip.
-        With several discrete conditioners, later-drawn conditioning variables
-        may land slightly outside their atom; the free-variable draws remain
-        correct.
-
-    Raises
-    ------
-    ValueError
-        If ``y_cond`` is not two-dimensional, names more variables than there
-        are, or its width matches no order tail when ``conditioning_set`` is
-        ``None``; or if a named variable is out of range.
-    """
-    from .vinecop_base import infer_conditioning_set
-
-    ya: Any = self._prep(y_cond)
-    if ya.ndim != 2:
-      raise ValueError(
-        f"y_cond must be two-dimensional; got shape {tuple(ya.shape)}"
-      )
-    self._check_covariates(x, int(ya.shape[0]))
-    k = ya.shape[1]
-    if conditioning_set is None:
-      # One rule for both scales. On the data scale a discrete conditioner
-      # contributes no extra column, so the width *is* k.
-      cond = infer_conditioning_set(
-        [int(v) for v in self._copula.structure.order],
-        ["c"] * self.dim,
-        k,
-      )
-    else:
-      cond = [int(v) for v in conditioning_set]
-      if len(cond) != k:
-        raise ValueError(
-          f"conditioning_set names {len(cond)} variables but y_cond has {k} "
-          "columns"
-        )
-      if any(v < 1 or v > self.dim for v in cond):
-        raise ValueError(
-          f"conditioning_set entries must be in 1, ..., {self.dim}; got {cond}"
-        )
-    u_cond = self._conditioning_data(ya, cond, x)
-    u = _copula_eval(
-      self._copula,
-      "sample_conditional",
-      u_cond,
-      x,
-      conditioning_set=cond,
-      **kwargs,
-    )
-    return self.marginal_icdf(u, x=x)
-
-  def _conditioning_data(
-    self, y_cond: Any, cond: list[int], x: Optional[Any]
-  ) -> Any:
-    """Put the conditioners on the copula scale, in the compact layout.
-
-    The same assembly as :meth:`copula_data`, over the conditioning variables
-    only: one column each, then the left limit of every discrete one appended
-    after the first block, in the order they appear.
-
-    Parameters
-    ----------
-    y_cond : array, shape (n, k), dtype float
-        Conditioning values on the original scale.
-    cond : list of int
-        The 1-based conditioning variables, one per column of ``y_cond``.
-    x : array, shape (n, p), or None
-        Exogenous covariates.
-
-    Returns
-    -------
-    array, shape (n, k + k_d), dtype float
-        The compact conditioning layout, clamped away from the boundary.
-    """
-    margins = [self._margins[v - 1] for v in cond]
-    types = [self._var_types[v - 1] for v in cond]
-    upper = [
-      _margin_eval(m, "cdf", y_cond[:, i], x) for i, m in enumerate(margins)
-    ]
-    xp = array_namespace(upper[0])
-    lower = []
-    for i, m in enumerate(margins):
-      if types[i] != "d":
-        continue
-      left = getattr(m, "cdf_left", None)
-      lower.append(
-        _margin_eval(m, "cdf_left", y_cond[:, i], x)
-        if left is not None
-        else derive_cdf_left(m, y_cond[:, i], x, types[i])
-      )
-    block = xp.stack([*upper, *lower], axis=-1)
-    return trim(xp, block)
-
-  # --- construction from data ---------------------------------------------- #
-
-  @classmethod
-  def from_data(
-    cls,
-    y: Any,
-    *,
-    x: Optional[Any] = None,
-    margins: Any = None,
-    controls: Optional[Any] = None,
-    structure: Optional[Any] = None,
-    weights: Optional[Any] = None,
-    names: Optional[Sequence[str]] = None,
-  ) -> "Vinedist[Any]":
-    """Fit margins and a vine copula to data, in that order.
-
-    The two-step estimator: each margin is fitted from its own column, the data
-    are transformed to the copula scale, and the copula is fitted on the result
-    (Joe and Xu, 1996). Margins already fitted are left alone, so a fixed margin
-    and one to estimate can be mixed freely.
-
-    Parameters
-    ----------
-    y : array, shape (n, d), dtype float
-        Observations on the original scale.
-    x : array, shape (n, k), or None, optional
-        Exogenous covariates. Each margin that declares
-        ``supports_covariates`` is fitted conditionally on them, and the copula
-        is then fitted on the resulting conditional probability-integral
-        transforms — the two-step estimator, with conditional margins.
-    margins : object, optional
-        What to use for each variable; see
-        :func:`pyvinecopulib.margins.resolve_margins` for the accepted forms.
-        The default is a kernel-density margin per variable.
-    controls : FitControlsVinecop, or None, optional
-        Copula fit controls.
-    structure : RVineStructure, or None, optional
-        A fixed vine structure; selected from the data when ``None``.
-    weights : array, shape (n,), or None, optional
-        Observation weights, applied to both the margins and the copula.
-    names : sequence of str, or None, optional
-        Variable names, so ``margins`` may be a mapping keyed by name.
-
-    Returns
-    -------
-    Vinedist
-        The fitted distribution.
-
-    Notes
-    -----
-    The built-in fitter supports conditional margins, but its copula half is
-    always the compiled, ``x``-independent ``Vinecop``.
-    Fitting dependence that changes with external covariates is an extension
-    workflow: transform the data with :meth:`copula_data`, fit conditional pair
-    copulas through ``VinecopBase.fit``, then compose
-    them with the fitted margins by constructing ``Vinedist``.
-
-    References
-    ----------
-    .. [1] Joe, H. and Xu, J. J. (1996). *The estimation method of inference
-           functions for margins for multivariate models.* Technical Report
-           166, Department of Statistics, University of British Columbia.
-    """
-    import numpy as np
-
-    from ..margins import resolve_margins
-    from ..margins._resolve import fit_margin
-    from ..pyvinecopulib_ext import FitControlsVinecop, Vinecop
-
-    data = np.asarray(y, dtype=float)
-    if data.ndim != 2:
-      raise ValueError(f"y must be two-dimensional; got {data.ndim} dimensions")
-    d = data.shape[1]
-    validate_covariates(x, int(data.shape[0]))
-    weights = validate_weights(weights, np.empty(data.shape[0], dtype=float))
-
-    if names is None:
-      # A DataFrame carries its own names, and `margins` is often keyed by them.
-      # Duck-typed: pandas is an extra, not a dependency of `core`.
-      columns = getattr(y, "columns", None)
-      if columns is not None:
-        names = [str(c) for c in columns]
-
-    specs = resolve_margins(margins, d, names=names)
-    if x is not None and not any(
-      getattr(spec, "supports_covariates", False) for spec in specs
-    ):
-      raise ValueError(
-        "covariates were given, but no margin reads them: every specification "
-        "in `margins` is unconditional, so the fit would ignore `x` and return "
-        "a model of f(y) labeled as one of f(y | x). Pass margins that declare "
-        "supports_covariates, or drop x."
-      )
-    fitted = [
-      fit_margin(
-        _named(specs[j], names[j] if names is not None else None),
-        data[:, j],
-        x=x,
-        weights=weights,
-      )
-      for j in range(d)
-    ]
-
-    # A copula needs its var_types up front, so both come from the fitted
-    # margins before the copula exists; `_bind_dist` then re-derives and
-    # cross-checks them.
-    var_types = cls.copula_var_types(fitted)
-    u = cls.copula_data(fitted, data, x=x)
-
-    if controls is None:
-      controls = FitControlsVinecop()
-    if weights is not None:
-      # The explicit argument governs both halves. Copy first so overriding a
-      # controls object's weights cannot mutate an object the caller still owns.
-      controls = copy.deepcopy(controls)
-      controls.weights = np.asarray(weights, dtype=float)
-    copula = Vinecop.from_data(
-      data=u,
-      structure=structure,
-      var_types=var_types,
-      controls=controls,
-    )
-    return cls(copula, list(fitted))
-
-  def __repr__(self) -> str:
-    """Return a structural representation.
-
-    Returns
-    -------
-    str
-        The dimension and the margin families.
-    """
-    families = ", ".join(
-      str(getattr(m, "family_name", type(m).__name__)) for m in self._margins
-    )
-    return f"Vinedist(dim={self.dim}, margins=[{families}])"

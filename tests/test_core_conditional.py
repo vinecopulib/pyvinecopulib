@@ -7,6 +7,13 @@ conditioning on it possible. The contract these tests pin is parity with
 ``Vinecop``: hosting its pair copulas and its RNG, the array-agnostic sampler
 reproduces the compiled one exactly, and the relabeling reproduces the compiled
 ``reorient`` slot for slot.
+
+``VinecopBase._fit_parts`` / ``._select_parts`` are reached directly here: they
+are the array-agnostic engines whose contract is exact parity with the compiled
+selector, and a parity assertion needs the loose ``(structure, pairs)`` the
+engines return rather than an assembled vine. The public ``fit`` / ``select`` /
+``from_data`` that install those parts are covered in
+``tests/test_structure_selection.py``.
 """
 
 import copy
@@ -175,7 +182,7 @@ def test_fixed_structure_fit_requires_row_aligned_covariates() -> None:
   structure = pv.RVineStructure.from_order([1, 2, 3])
   u = np.full((5, 3), 0.5)
   with pytest.raises(ValueError, match="one row per observation"):
-    VinecopBase.fit(
+    VinecopBase._fit_parts(
       structure,
       u,
       _gaussian_fit_edge,
@@ -482,7 +489,7 @@ def test_select_conditioning_set_matches_vinecop(cs: list[int]) -> None:
   # conditioning-aware selector's matrix exactly, and the reused pairs must land
   # on the same slots -- an O(1) density error otherwise.
   u = _data(11)
-  structure, pairs = VinecopBase.select(
+  structure, pairs = VinecopBase._select_parts(
     u, _gaussian_fit_edge, conditioning_set=cs
   )
   controls = pv.FitControlsVinecop(
@@ -521,7 +528,7 @@ def test_select_validates_the_conditioning_set(
   kwargs: dict[str, Any], match: str
 ) -> None:
   with pytest.raises(ValueError, match=match):
-    VinecopBase.select(_data(13), _gaussian_fit_edge, **kwargs)
+    VinecopBase._select_parts(_data(13), _gaussian_fit_edge, **kwargs)
 
 
 @pytest.mark.parametrize("trunc_lvl", [1, 2])
@@ -536,7 +543,7 @@ def test_select_combines_a_conditioning_set_with_truncation(
   pair store must hold exactly the selected trees.
   """
   cond = [2, 5]
-  structure, pairs = VinecopBase.select(
+  structure, pairs = VinecopBase._select_parts(
     _data(13),
     _gaussian_fit_edge,
     conditioning_set=cond,

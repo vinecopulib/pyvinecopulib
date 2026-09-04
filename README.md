@@ -121,19 +121,25 @@ before anything is removed.
 
 `pyvinecopulib.margins`, `pyvinecopulib.sklearn` and `pyvinecopulib.torch` are
 **provisional in 1.x**. Their contracts are new in this release and may still
-change in a minor version as they meet real data -- the margin contract
-(`MarginLike` / `MarginBase`) and the torch/C++ evaluation parity are the parts
-already treated as load-bearing. Pin an exact version if you depend on their
+change in a minor version as they meet real data -- the margin and distribution
+contracts (`MarginLike` / `MarginBase`, `VinedistLike` / `VinedistBase`) and
+the torch/C++ evaluation parity are the parts already treated as
+load-bearing. Pin an exact version if you depend on their
 surface.
 
-### Custom and conditional pair copulas
+### Custom and conditional models
 
-The core evaluators (`Bicop` / `Vinecop`, and their torch counterparts)
-implement two backend-neutral contracts, `BicopLike` and `VinecopLike`.
-Subclass the canonical, pure-Python `BicopBase` / `VinecopBase` (NumPy or
-PyTorch) to plug your **own** pair copula into a vine. A pair may depend on its
-vine conditioning-set values (a **non-simplified** vine), on row-aligned
-external covariates, or on both. `Vinedist` can compose covariate-dependent
+The core evaluators (`Bicop` / `Vinecop` / `Kde1d` / `Vinedist`, and their torch
+counterparts) implement four backend-neutral contracts: `BicopLike`,
+`VinecopLike`, `MarginLike` and `VinedistLike`. Subclass the matching
+canonical, pure-Python base -- `BicopBase`, `VinecopBase`, `MarginBase` or
+`VinedistBase` (NumPy or PyTorch) -- to plug your **own** pair copula, margin
+or whole distribution into the library. Fitting has one shape on all four:
+`fit` returns `self`, `from_data` constructs, and configuration travels as a
+`ControlsLike` (anything with `to_dict()`).
+
+A pair may depend on its vine conditioning-set values (a **non-simplified**
+vine), on row-aligned external covariates, or on both. `Vinedist` can compose covariate-dependent
 margins and such a copula into a full data-scale distribution `Y | X`.
 
 This joint conditional model is an extension seam, not a built-in fitter:
@@ -142,8 +148,8 @@ specifications, but fits an `x`-independent compiled `Vinecop` for the copula
 half. Fit custom conditional pairs through `VinecopBase.fit` and compose the
 parts explicitly when dependence must also vary with `X`. See the
 [concepts page](https://pyvinecopulib.readthedocs.io/en/latest/concepts.html)
-and notebooks `examples/10_extending_pyvinecopulib.ipynb` and
-`examples/11_vine_distributions.ipynb`.
+and notebooks `examples/11_extending_pyvinecopulib.ipynb` and
+`examples/10_vine_distributions.ipynb`.
 
 ### Conditional sampling and likelihood diagnostics
 

@@ -252,7 +252,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     ----------
     u : Tensor, shape (P, n, 2), dtype float
         Copula-scale observations, one ``(n, 2)`` block per pair. Continuous
-        only -- a discrete edge's fit reuses a compiled per-pair draw that
+        only -- a discrete edge's fit reuses a core per-pair draw that
         has no batch axis.
     controls : FitControlsTorchBicop, optional
         Fit controls, shared by every pair. Defaults to

@@ -16,9 +16,16 @@ import numpy as np
 import pytest
 
 import pyvinecopulib as pv
-from pyvinecopulib.core import Kde1d, MarginBase, Vinedist
+from pyvinecopulib.core import (
+  Kde1d,
+  MarginBase,
+  Vinedist,
+  VinedistBase,
+  VinedistLike,
+)
 from pyvinecopulib.margins import MarginSelector
 
+from .helpers import widen
 from .conftest import GaussianBicop, HostedVinecop
 
 # The discrete cascade owns these; the end-to-end test at the bottom reuses them
@@ -56,7 +63,7 @@ def _sklar_logpdf(dist: Any, y: np.ndarray) -> np.ndarray:
   atom. Pinning it rather than only finiteness is what makes a change to the
   discrete branch visible: `logpdf` stays finite through a wrong quotient.
   """
-  manual = np.log(np.asarray(dist.copula.pdf(dist._u_layout(y))))
+  manual = np.log(np.asarray(dist.vinecop.pdf(dist.copula_layout(y))))
   for j, m in enumerate(dist.margins):
     manual = manual + np.log(np.asarray(m.pdf(y[:, j])))
   return manual
@@ -112,7 +119,7 @@ def test_sample_conditional_matches_the_copula_scale(
   bit rather than in distribution.
   """
   dist = pv.Vinedist.from_data(continuous, margins="kde")
-  tail = int(dist.copula.structure.order[-1])
+  tail = int(dist.vinecop.structure.order[-1])
   y_cond = np.full((7, 1), float(np.median(continuous[:, tail - 1])))
 
   got = dist.sample_conditional(y_cond, seeds=[1, 2, 3])
@@ -120,7 +127,7 @@ def test_sample_conditional_matches_the_copula_scale(
   margin: Any = dist.margins[tail - 1]
   u_cond = np.asarray(margin.cdf(y_cond[:, 0])).reshape(-1, 1)
   reference = dist.marginal_icdf(
-    np.asarray(dist.copula.sample_conditional(u_cond, seeds=[1, 2, 3]))
+    np.asarray(widen(dist.vinecop).sample_conditional(u_cond, seeds=[1, 2, 3]))
   )
   np.testing.assert_array_equal(got, reference)
 
@@ -207,7 +214,7 @@ def test_discrete_margin_builds_the_compact_layout(data: np.ndarray) -> None:
   """One extra column per variable with atoms, appended after the first block."""
   dist = pv.Vinedist.from_data(data, margins=["kde", "kde", stats.poisson(3.0)])
   assert dist.var_types == ["c", "c", "d"]
-  layout: Any = dist._u_layout(data)
+  layout: Any = dist.copula_layout(data)
   assert layout.shape == (data.shape[0], 4)
   # The first block is the cdf values; the trailing column is the left limit.
   np.testing.assert_allclose(layout[:, :3], dist.marginal_cdf(data), atol=1e-12)
@@ -224,7 +231,7 @@ def test_all_discrete_margins(data: np.ndarray) -> None:
     counts, margins=[stats.poisson(1.0), stats.poisson(2.0), stats.poisson(1.0)]
   )
   assert dist.var_types == ["d", "d", "d"]
-  assert dist._u_layout(counts).shape == (counts.shape[0], 6)
+  assert dist.copula_layout(counts).shape == (counts.shape[0], 6)
   np.testing.assert_allclose(
     dist.logpdf(counts), _sklar_logpdf(dist, counts), atol=0.0
   )
@@ -261,7 +268,7 @@ def test_copula_data_needs_no_copula(data: np.ndarray) -> None:
   # Which is exactly the workflow of fitting your own copula and wrapping it.
   copula = pv.Vinecop.from_data(layout, var_types=["c", "c", "d"])
   dist = pv.Vinedist(copula, margins)
-  np.testing.assert_array_equal(layout, dist._u_layout(data))
+  np.testing.assert_array_equal(layout, dist.copula_layout(data))
 
 
 def test_left_limit_above_the_cdf_is_refused() -> None:
@@ -288,7 +295,7 @@ def test_left_limit_above_the_cdf_is_refused() -> None:
   layout = np.column_stack([u, u * 0.9])
   copula = pv.Vinecop.from_data(layout, var_types=["d", "d"])
   with pytest.raises(ValueError, match="cdf_left > cdf"):
-    pv.Vinedist(copula, [_Broken(), _Broken()])._u_layout(
+    pv.Vinedist(copula, [_Broken(), _Broken()]).copula_layout(
       np.ones((5, 2), dtype=float)
     )
 
@@ -524,7 +531,7 @@ class _ConditionalVine(HostedVinecop):
   supports_covariates = True
 
 
-def _conditional_dist() -> tuple[Vinedist[np.ndarray], GaussianBicop]:
+def _conditional_dist() -> tuple[Vinedist, GaussianBicop]:
   """Two conditional-normal margins and one externally conditional pair."""
   pair = GaussianBicop(scale=0.7, rho_max=0.75)
   structure = pv.RVineStructure.from_order([1, 2])
@@ -749,8 +756,8 @@ def test_explicit_weights_override_controls_weights() -> None:
     controls=controls,
   )
   np.testing.assert_allclose(
-    got.copula.get_pair_copula(0, 0).parameters,
-    reference.copula.get_pair_copula(0, 0).parameters,
+    widen(got.vinecop).get_pair_copula(0, 0).parameters,
+    widen(reference.vinecop).get_pair_copula(0, 0).parameters,
     rtol=0.0,
     atol=0.0,
   )
@@ -852,7 +859,7 @@ def test_a_margin_without_to_json_is_refused_by_name():
   """A custom margin has to opt in, and is told how."""
   rng = np.random.default_rng(2)
   x = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=300)
-  copula = pv.core.Vinedist.from_data(x).copula
+  copula = pv.core.Vinedist.from_data(x).vinecop
 
   class Unserializable(pv.core.MarginBase):
     def pdf(self, y, x=None):
@@ -872,7 +879,7 @@ def test_a_registered_custom_margin_round_trips():
   """`register_margin_json` is the documented seam, so it must work."""
   rng = np.random.default_rng(3)
   x = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=300)
-  copula = pv.core.Vinedist.from_data(x).copula
+  copula = pv.core.Vinedist.from_data(x).vinecop
 
   class Uniform(pv.core.MarginBase):
     def pdf(self, y, x=None):
@@ -898,3 +905,142 @@ def test_an_unknown_margin_kind_and_a_bad_version_both_raise():
     margin_from_json({"kind": "NotAMargin", "version": 1})
   with pytest.raises(ValueError, match="unsupported margin JSON version"):
     margin_from_json({"kind": "Kde1d", "version": 999})
+
+
+# ---------------------------------------------------------------------------
+# The extension-point triad: VinedistLike / VinedistBase / Vinedist
+# ---------------------------------------------------------------------------
+
+
+def test_both_shipped_distributions_satisfy_the_contract() -> None:
+  # The contract is what downstream code types against, so both routes must
+  # satisfy it -- and the sklearn backend layer returns it from
+  # `bind_distribution`.
+  copula = pv.Vinecop.from_data(
+    pv.utils.to_pseudo_obs(np.random.default_rng(0).normal(size=(200, 2)))
+  )
+  dist = Vinedist(copula, [Kde1d().fit(np.zeros(5)), Kde1d().fit(np.zeros(5))])
+  assert isinstance(dist, VinedistLike)
+  assert isinstance(dist, VinedistBase)
+
+
+def test_a_minimal_vinedist_base_subclass_needs_no_hook_to_evaluate(
+  random_state: Any,
+) -> None:
+  # The answer to "what do I subclass to build a new kind of vine
+  # distribution?". Evaluation needs no hook at all: a vine distribution is
+  # determined by its two halves, so installing them is the whole job.
+  class MyDist(VinedistBase[Any]):
+    pass
+
+  y = random_state.normal(size=(300, 3))
+  u = pv.utils.to_pseudo_obs(y)
+  margins = [Kde1d().fit(y[:, j]) for j in range(3)]
+  dist = MyDist(pv.Vinecop.from_data(u), margins)
+
+  assert isinstance(dist, VinedistLike)
+  assert dist.dim == 3
+  assert repr(dist).startswith("MyDist(dim=3")
+  assert np.all(np.isfinite(dist.logpdf(y)))
+  np.testing.assert_allclose(dist.pdf(y), np.exp(dist.logpdf(y)))
+  assert dist.copula_layout(y).shape == (300, 3)
+  # The Rosenblatt round trip holds on the data scale.
+  np.testing.assert_allclose(
+    dist.inverse_rosenblatt(dist.rosenblatt(y)), y, rtol=1e-6, atol=1e-6
+  )
+
+
+def test_a_subclass_without_fit_hooks_refuses_to_fit() -> None:
+  # Fitting is the only namespace-specific half, so it is the only thing that
+  # needs hooks -- and their absence is reported, not guessed around.
+  class MyDist(VinedistBase[Any]):
+    pass
+
+  with pytest.raises(NotImplementedError, match="_coerce_fit_data"):
+    MyDist.from_data(np.random.default_rng(0).normal(size=(50, 2)))
+
+
+def test_base_from_json_names_the_concrete_route() -> None:
+  class MyDist(VinedistBase[Any]):
+    pass
+
+  with pytest.raises(NotImplementedError, match="from_json is not defined"):
+    MyDist.from_json("{}")
+
+
+def test_copula_var_types_dispatches_through_the_subclass() -> None:
+  # `copula_data` used to reach `Vinedist.copula_var_types` by name, which
+  # silently bypassed an override; it goes through `cls` now.
+  seen: list[int] = []
+
+  class Counting(Vinedist):
+    @classmethod
+    def copula_var_types(cls, margins: Any) -> list[str]:
+      seen.append(1)
+      return super().copula_var_types(margins)
+
+  Counting.copula_data([Kde1d().fit(np.zeros(5))], np.zeros((3, 1)))
+  assert seen, "copula_data must dispatch copula_var_types through `cls`"
+
+
+def test_a_vinedist_base_subclass_fits_from_declared_parts(
+  random_state: Any,
+) -> None:
+  # The payoff of naming the parts: a subclass declares which classes its two
+  # halves are and inherits the whole two-step fit, with no hook but the array
+  # coercion.
+  class MyDist(VinedistBase[Any]):
+    vinecop_class = pv.Vinecop
+    margin_class = Kde1d
+
+    @classmethod
+    def _coerce_fit_data(cls, y: Any, weights: Any, controls: Any) -> Any:
+      return np.asarray(y, dtype=float), weights
+
+  y = random_state.normal(size=(400, 3))
+  dist = MyDist.from_data(y)
+  assert isinstance(dist, VinedistLike)
+  assert isinstance(dist.vinecop, pv.Vinecop)
+  assert all(isinstance(m, Kde1d) for m in dist.margins)
+  assert np.all(np.isfinite(dist.logpdf(y)))
+  assert repr(dist).startswith("MyDist(dim=3")
+
+
+def test_declaring_no_vinecop_class_reports_it() -> None:
+  class MyDist(VinedistBase[Any]):
+    @classmethod
+    def _coerce_fit_data(cls, y: Any, weights: Any, controls: Any) -> Any:
+      return np.asarray(y, dtype=float), weights
+
+  with pytest.raises(NotImplementedError, match="vinecop_class"):
+    MyDist.from_data(np.random.default_rng(0).normal(size=(60, 2)))
+
+
+def test_vinedist_refuses_torch_parts() -> None:
+  # The mirror of `TorchVinedist` refusing a NumPy copula: this class
+  # evaluates on NumPy, so a torch part would be detached from its graph.
+  torch_mod = pytest.importorskip("pyvinecopulib.torch")
+  u = pv.utils.to_pseudo_obs(np.random.default_rng(0).normal(size=(200, 2)))
+  copula = pv.Vinecop.from_data(u)
+  margins = [Kde1d().fit(np.zeros(5)), Kde1d().fit(np.zeros(5))]
+
+  lifted = torch_mod.TorchVinecop.from_vinecop(copula)
+  with pytest.raises(TypeError, match="TorchVinedist"):
+    Vinedist(lifted, margins)
+
+  # And a torch margin, on an otherwise fine NumPy copula.
+  with pytest.raises(TypeError, match="TorchVinedist"):
+    Vinedist(copula, [torch_mod.TorchKde1d(), torch_mod.TorchKde1d()])
+
+
+def test_weights_reach_both_halves_on_the_numpy_lane(
+  random_state: Any,
+) -> None:
+  # The copula half is weighted now, not merely the margins, so the two
+  # weightings give different models.
+  y = random_state.normal(size=(500, 3))
+  w = random_state.uniform(0.1, 2.0, 500)
+  plain = Vinedist.from_data(y)
+  weighted = Vinedist.from_data(y, weights=w)
+  assert Vinedist.supports_weighted_copula
+  assert not np.allclose(plain.logpdf(y), weighted.logpdf(y))

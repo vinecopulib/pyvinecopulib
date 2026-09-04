@@ -191,7 +191,7 @@ class TestTorchDistribution:
     X = self._data()
     est = VineDensity(backend=TorchVinecopBackend(), random_state=0).fit(X)
     assert isinstance(est.distribution_, TorchVinedist)
-    assert isinstance(est.distribution_.copula, TorchVinecop)
+    assert isinstance(est.distribution_.vinecop, TorchVinecop)
     assert all(isinstance(m, TorchKde1d) for m in est.distribution_.margins)
     # Still NumPy at the estimator's own boundary.
     out = est.pdf(X[:20])

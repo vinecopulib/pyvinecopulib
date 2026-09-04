@@ -14,6 +14,22 @@ namespace nb = nanobind;
 using namespace nb::literals;
 using namespace vinecopulib;
 
+inline nb::dict bicop_controls_to_dict(const FitControlsBicop& controls) {
+  nb::dict state;
+  state["family_set"] = controls.get_family_set();
+  state["parametric_method"] = controls.get_parametric_method();
+  state["nonparametric_method"] = controls.get_nonparametric_method();
+  state["nonparametric_mult"] = controls.get_nonparametric_mult();
+  state["nonparametric_grid_size"] = controls.get_nonparametric_grid_size();
+  state["selection_criterion"] = controls.get_selection_criterion();
+  state["weights"] = controls.get_weights();
+  state["psi0"] = controls.get_psi0();
+  state["preselect_families"] = controls.get_preselect_families();
+  state["allow_rotations"] = controls.get_allow_rotations();
+  state["num_threads"] = controls.get_num_threads();
+  return state;
+}
+
 inline void init_bicop_fit_controls(nb::module_& module) {
   constexpr auto& fitcontrolsbicop_doc =
       pyvinecopulib_doc.vinecopulib.FitControlsBicop;
@@ -90,24 +106,19 @@ inline void init_bicop_fit_controls(nb::module_& module) {
             return "<pyvinecopulib.core.FitControlsBicop>\n" + controls.str();
           },
           fitcontrolsbicop_doc.str.doc)
-      .def("__getstate__",
-           [](const FitControlsBicop& controls) {
-             nb::dict state;
-             state["family_set"] = controls.get_family_set();
-             state["parametric_method"] = controls.get_parametric_method();
-             state["nonparametric_method"] =
-                 controls.get_nonparametric_method();
-             state["nonparametric_mult"] = controls.get_nonparametric_mult();
-             state["nonparametric_grid_size"] =
-                 controls.get_nonparametric_grid_size();
-             state["selection_criterion"] = controls.get_selection_criterion();
-             state["weights"] = controls.get_weights();
-             state["psi0"] = controls.get_psi0();
-             state["preselect_families"] = controls.get_preselect_families();
-             state["allow_rotations"] = controls.get_allow_rotations();
-             state["num_threads"] = controls.get_num_threads();
-             return state;
-           })
+      .def("__getstate__", &bicop_controls_to_dict)
+      .def("to_dict", &bicop_controls_to_dict,
+           R"(Return the settings as a plain dictionary.
+
+Returns
+-------
+dict
+    One entry per setting, keyed by the attribute name.
+
+See Also
+--------
+pyvinecopulib.core.ControlsLike : The contract this satisfies.
+)")
 
       .def("__setstate__", [](FitControlsBicop& controls, nb::dict state) {
         FitControlsConfig config;

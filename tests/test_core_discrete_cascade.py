@@ -6,6 +6,13 @@ parity of ``pdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` on
 mixed continuous / discrete data, in both the expanded ``(n, 2d)`` and the
 compact ``(n, d + k)`` layout — the same pair copulas run through both
 evaluators, so any difference is the cascade's.
+
+``VinecopBase._fit_parts`` / ``._select_parts`` are reached directly here: they
+are the array-agnostic engines whose contract is exact parity with the compiled
+selector, and a parity assertion needs the loose ``(structure, pairs)`` the
+engines return rather than an assembled vine. The public ``fit`` / ``select`` /
+``from_data`` that install those parts are covered in
+``tests/test_structure_selection.py``.
 """
 
 from typing import Any, Optional, cast
@@ -346,7 +353,7 @@ def test_inverse_rosenblatt_hosts_a_pair_without_as_continuous() -> None:
       self._custom = [[GaussianBicop(base_rho=r) for r in row] for row in _RHOS]
       self._bind_vine(structure, var_types=var_types)
 
-    def _get_pair_copula(self, tree: int, edge: int) -> BicopLike[Any]:
+    def get_pair_copula(self, tree: int, edge: int) -> BicopLike[Any]:
       return self._custom[tree][edge]
 
   structure = pv.RVineStructure.from_order(list(range(1, _D + 1)))
@@ -692,7 +699,7 @@ class _WrappingVinecop(_ListVinecop):
     self._pairs = pairs
     self._bind_vine(structure, var_types=var_types)
 
-  def _get_pair_copula(self, tree: int, edge: int) -> BicopLike[Any]:
+  def get_pair_copula(self, tree: int, edge: int) -> BicopLike[Any]:
     pair = cast("BicopLike[Any]", self._pairs[tree][edge])
     types = self.pair_var_types(tree, edge)
     if "d" not in types:
@@ -784,7 +791,9 @@ def test_fit_matches_vinecop(var_types: list[str]) -> None:
   # agree to the parity bounds; a mis-assembled column lands at O(0.1).
   structure = _order_structure(len(var_types))
   u = _to_compact(_dependent_expanded(var_types, seed=4), var_types)
-  pairs = VinecopBase.fit(structure, u, _discrete_fit_edge, var_types=var_types)
+  pairs = VinecopBase._fit_parts(
+    structure, u, _discrete_fit_edge, var_types=var_types
+  )
   mine = _ListVinecop(_as_bicops(pairs), structure, var_types=var_types)
   ref = pv.Vinecop.from_data(
     u, structure=structure, var_types=var_types, controls=_GAUSSIAN_VINE
@@ -799,7 +808,7 @@ def test_select_matches_vinecop(var_types: list[str]) -> None:
   # must match the compiled selector's exactly -- byte for byte, as it does for
   # continuous data.
   u = _to_compact(_dependent_expanded(var_types, seed=9), var_types)
-  structure, pairs = VinecopBase.select(
+  structure, pairs = VinecopBase._select_parts(
     u, _discrete_fit_edge, var_types=var_types
   )
   auto = pv.Vinecop.from_data(u, var_types=var_types, controls=_GAUSSIAN_VINE)
@@ -820,7 +829,7 @@ def test_selected_pairs_carry_the_derived_variable_types(
   # pairs onto a structure whose types are re-derived. The two must agree, or
   # every hosting vine would silently disagree with the fit.
   u = _to_compact(_dependent_expanded(var_types, seed=13), var_types)
-  structure, pairs = VinecopBase.select(
+  structure, pairs = VinecopBase._select_parts(
     u, _discrete_fit_edge, var_types=var_types
   )
   # `_WrappingVinecop` is the host that does *not* stamp its pairs, so the types
@@ -847,7 +856,7 @@ def test_fit_edge_receives_the_edge_types_and_four_columns() -> None:
 
   structure = _order_structure(len(var_types))
   u = _to_compact(_dependent_expanded(var_types, seed=2), var_types)
-  pairs = VinecopBase.fit(structure, u, recording, var_types=var_types)
+  pairs = VinecopBase._fit_parts(structure, u, recording, var_types=var_types)
   host = _WrappingVinecop(_as_bicops(pairs), structure, var_types=var_types)
   assert len(seen) == sum(len(row) for row in pairs)
   for (tree, edge), (n_cols, types) in seen.items():
@@ -868,14 +877,14 @@ def test_a_continuous_fit_edge_fails_loudly_on_a_discrete_edge() -> None:
   var_types = ["d", "c", "c", "c"]
   u = _to_compact(_dependent_expanded(var_types, seed=6), var_types)
   with pytest.raises(TypeError, match="var_types"):
-    VinecopBase.fit(
+    VinecopBase._fit_parts(
       _order_structure(len(var_types)),
       u,
       continuous_only,
       var_types=var_types,
     )
   with pytest.raises(TypeError, match="var_types"):
-    VinecopBase.select(u, continuous_only, var_types=var_types)
+    VinecopBase._select_parts(u, continuous_only, var_types=var_types)
 
 
 @pytest.mark.parametrize("engine", ["fit", "select"])
@@ -885,11 +894,13 @@ def test_fit_engines_reject_a_missing_left_limit_block(engine: str) -> None:
   u = _to_compact(_dependent_expanded(var_types, seed=8), var_types)
   with pytest.raises(ValueError, match=f"{engine}: u must have shape"):
     if engine == "fit":
-      VinecopBase.fit(
+      VinecopBase._fit_parts(
         _order_structure(d), u[:, :d], _discrete_fit_edge, var_types=var_types
       )
     else:
-      VinecopBase.select(u[:, :d], _discrete_fit_edge, var_types=var_types)
+      VinecopBase._select_parts(
+        u[:, :d], _discrete_fit_edge, var_types=var_types
+      )
 
 
 @pytest.mark.parametrize("engine", ["fit", "select"])
@@ -898,18 +909,18 @@ def test_fit_engines_reject_an_unknown_variable_type(engine: str) -> None:
   u = _dependent_expanded(["d", "c", "c", "c"], seed=8)
   with pytest.raises(ValueError, match="var_types entries must be 'c' or 'd'"):
     if engine == "fit":
-      VinecopBase.fit(
+      VinecopBase._fit_parts(
         _order_structure(4), u, _discrete_fit_edge, var_types=var_types
       )
     else:
-      VinecopBase.select(u, _discrete_fit_edge, var_types=var_types)
+      VinecopBase._select_parts(u, _discrete_fit_edge, var_types=var_types)
 
 
 def test_fit_checks_var_types_against_the_structure() -> None:
   # `fit` walks a given structure, so that structure fixes the dimension.
   u = _dependent_expanded(["d", "c", "c", "c"], seed=8)
   with pytest.raises(ValueError, match="var_types has 3 entries, expected 4"):
-    VinecopBase.fit(
+    VinecopBase._fit_parts(
       _order_structure(4), u, _discrete_fit_edge, var_types=["c", "c", "c"]
     )
 
@@ -922,7 +933,7 @@ def test_select_takes_its_dimension_from_var_types() -> None:
   u = _to_compact(_dependent_expanded(var_types, seed=8), var_types)
   assert u.shape[1] == 5
   with pytest.raises(ValueError, match="select: u must have shape"):
-    VinecopBase.select(u, _discrete_fit_edge, var_types=var_types[:3])
+    VinecopBase._select_parts(u, _discrete_fit_edge, var_types=var_types[:3])
 
 
 def _count_expanded(

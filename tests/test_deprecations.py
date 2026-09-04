@@ -96,28 +96,30 @@ def test_sample_conditional_has_no_alias() -> None:
   assert not hasattr(Vinecop, "simulate_conditional")
 
 
-# --- the renamed RNG hook --------------------------------------------------- #
+# --- the RNG hook ----------------------------------------------------------- #
 
 
 @pytest.mark.parametrize("base", [BicopBase, VinecopBase])
-def test_overriding_the_old_rng_hook_name_is_rejected(base: Any) -> None:
-  """A silent rename would leave the override ignored and the base raising."""
-  with pytest.raises(TypeError, match=r"_simulate_uniform.*_sample_uniform"):
+def test_the_rng_hook_is_the_only_spelling(base: Any) -> None:
+  """``_simulate_uniform`` never shipped, so there is nothing to reject.
 
-    class _Stale(base):  # type: ignore[misc, valid-type]
-      def _simulate_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Any:
-        return np.zeros((n, 2))
-
-
-@pytest.mark.parametrize("base", [BicopBase, VinecopBase])
-def test_overriding_the_new_rng_hook_name_is_accepted(base: Any) -> None:
-  """Defining only the current name is the supported case."""
+  The bases used to raise on the old name in ``__init_subclass__``. Nothing was
+  ever released under it, so the guard was dead weight and is gone; what
+  remains is that only the current name is wired up.
+  """
 
   class _Fresh(base):  # type: ignore[misc, valid-type]
     def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Any:
       return np.zeros((n, 2))
 
   assert hasattr(_Fresh, "_sample_uniform")
+
+  # Defining the old name is simply ignored now, not an error.
+  class _Stale(base):  # type: ignore[misc, valid-type]
+    def _simulate_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Any:
+      return np.zeros((n, 2))
+
+  assert not hasattr(base, "_simulate_uniform")
 
 
 # --- the two coexisting `sample` conventions -------------------------------- #

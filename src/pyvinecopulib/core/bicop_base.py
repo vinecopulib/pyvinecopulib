@@ -22,11 +22,10 @@ delegated to a ``_sample_uniform`` hook.
 from __future__ import annotations
 
 from abc import ABC
-from typing import Any, Callable, Optional, cast
+from typing import Any, Callable, Optional, Self, cast
 
 from array_api_compat import array_namespace
 
-from .._deprecations import _reject_renamed_hook
 from ._rootfind import solve_increasing
 from ._validation import validate_covariates
 from .protocols import ArrayT, BicopLike, _BICOP_EXAMPLE
@@ -60,17 +59,6 @@ class BicopBase(BicopLike[ArrayT], ABC):
   pyvinecopulib.core.BicopLike : The contract this implements.
   pyvinecopulib.torch.TorchBicop : A concrete (grid / TLL) subclass.
   """
-
-  def __init_subclass__(cls, **kwargs: Any) -> None:
-    """Reject an override of the pre-1.0 hook name.
-
-    Parameters
-    ----------
-    **kwargs
-        Forwarded to ``super().__init_subclass__``.
-    """
-    super().__init_subclass__(**kwargs)
-    _reject_renamed_hook(cls, "_simulate_uniform", "_sample_uniform")
 
   def loglik(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Total log-likelihood ``sum(log c(u))`` of the pair at ``u``.
@@ -181,6 +169,90 @@ class BicopBase(BicopLike[ArrayT], ABC):
       "Monte-Carlo simulation and does not require a per-pair cdf. Implement it "
       "to host this pair copula on a discrete edge, whose h-functions are "
       "difference quotients of the distribution function."
+    )
+
+  @classmethod
+  def from_data(
+    cls,
+    u: ArrayT,
+    /,
+    *,
+    controls: Optional[Any] = None,
+    var_types: Optional[list[str]] = None,
+  ) -> Self:
+    """Construct a pair copula and estimate it from data.
+
+    ``cls().fit(u, ...)``, so a subclass that implements :meth:`fit` gets this
+    for free. It is what a vine calls per edge when it names this class as its
+    ``bicop_class``.
+
+    Parameters
+    ----------
+    u : array, shape (n, 2), dtype float
+        Pseudo-observations in ``[0, 1]^2``.
+    controls : object, or None, optional
+        Fit configuration, in whatever form the subclass accepts.
+    var_types : list of str, or None, optional
+        The two variable types of the edge this pair sits on, ``"c"`` or
+        ``"d"`` each. ``None`` means both are continuous.
+
+    Returns
+    -------
+    BicopBase
+        The fitted pair copula.
+
+    See Also
+    --------
+    fit : Estimate an already-constructed pair copula in place.
+    """
+    return cls().fit(u, controls=controls, var_types=var_types)
+
+  def fit(
+    self,
+    u: ArrayT,
+    /,
+    *,
+    controls: Optional[Any] = None,
+    var_types: Optional[list[str]] = None,
+  ) -> Self:
+    """Raise; override to estimate this pair copula from data, in place.
+
+    The pair-copula analog of
+    :meth:`~pyvinecopulib.core.MarginBase.fit`, and what makes a pair copula
+    class usable as a fitter: a vine that names this class as its
+    ``bicop_class`` fits each edge through :meth:`from_data`, which is
+    ``cls().fit(...)``. It stays optional, because a pair copula specified
+    entirely at construction is already fitted, and a vine can always be given
+    an explicit ``fit_edge`` callback instead.
+
+    Parameters
+    ----------
+    u : array, shape (n, 2), dtype float
+        Pseudo-observations in ``[0, 1]^2``.
+    controls : object, or None, optional
+        Fit configuration, in whatever form the subclass accepts.
+    var_types : list of str, or None, optional
+        The two variable types of the edge this pair sits on. ``None`` means
+        both are continuous.
+
+    Returns
+    -------
+    BicopBase
+        ``self``, so the call chains — only when a subclass overrides this
+        method.
+
+    Raises
+    ------
+    NotImplementedError
+        Always, unless a subclass provides an estimator.
+
+    See Also
+    --------
+    from_data : Construct and fit in one call.
+    """
+    raise NotImplementedError(
+      f"{type(self).__name__}.fit is not defined; implement it to estimate "
+      "this pair copula from data, or construct it with explicit parameters."
     )
 
   def flip(self) -> "BicopBase[ArrayT]":

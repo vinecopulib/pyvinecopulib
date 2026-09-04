@@ -17,6 +17,13 @@ uses to build a conditional vine of scikit-style pairs. Covers:
 * array-namespace agnosticism (the same ``VinecopBase`` cascades match on numpy
   and torch);
 * row alignment and the batched auto-fallback for a non-grid pair.
+
+``VinecopBase._fit_parts`` / ``._select_parts`` are reached directly here: they
+are the array-agnostic engines whose contract is exact parity with the compiled
+selector, and a parity assertion needs the loose ``(structure, pairs)`` the
+engines return rather than an assembled vine. The public ``fit`` / ``select`` /
+``from_data`` that install those parts are covered in
+``tests/test_structure_selection.py``.
 """
 
 from __future__ import annotations
@@ -132,7 +139,7 @@ def test_fit_conditional_seam() -> None:
     seen.append((tree, edge, None if x_e is None else x_e.shape[1]))
     return GaussianBicop(scale=_SCALE, base_rho=_BASE_RHO)
 
-  pairs = VinecopBase.fit(
+  pairs = VinecopBase._fit_parts(
     structure, u, fit_edge, context=NonSimplifiedContext(), x=x
   )
 

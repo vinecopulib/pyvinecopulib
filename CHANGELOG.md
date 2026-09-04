@@ -30,6 +30,9 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Rename the sampling entry points to `sample`, keeping the released spellings as warning aliases (#297).
     - `Bicop.simulate(n)` -> `Bicop.sample(n)`, and likewise on `Vinecop`, `RVineStructure` and `Kde1d`
     - `pyvinecopulib.simulate_uniform` -> `pyvinecopulib.utils.sample_uniform`
+- Return `self` from `Bicop.fit` / `.select` and `Vinecop.fit` / `.select` instead of `None`, so every estimator in the package composes the same way (#324).
+- Drop `Vinecop.fit`'s `num_threads` argument, which duplicated `FitControlsBicop.num_threads` (#324).
+    - `vine.fit(u, controls, num_threads=4)` -> `vine.fit(u, FitControlsBicop(num_threads=4))`
 - Rename `Kde1d`'s `quantile` to `icdf`, the name modern SciPy and `torch.distributions` use for the inverse distribution function, with no alias (#292).
     - `kde.quantile(p)` -> `kde.icdf(p)`
 - Make `Kde1d.loglik` a method taking optional data rather than a property, matching `Bicop.loglik` and `Vinecop.loglik` (#292).
@@ -53,9 +56,27 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Add `OpenTURNSMargin` and `OpenTURNSSelector` behind a new `pyvinecopulib[openturns]` extra (#292).
 #### The backend-neutral extension layer
 
-- Add the backend-neutral contracts `BicopLike`, `VinecopLike` and `MarginLike` to `pyvinecopulib.core`, which the compiled `Bicop`, `Vinecop` and `Kde1d` satisfy, so downstream code can type against the contract instead of a concrete class (#236, #237, #292).
-- Add the canonical partial implementations `BicopBase`, `VinecopBase` and `MarginBase`, which run on NumPy or PyTorch: a custom pair copula defines `pdf` / `hfunc1` / `hfunc2`, a custom vine the single `_get_pair_copula` hook, and a custom margin `pdf` / `cdf` (#236, #237, #292).
-- `VinecopBase` ships the public `fit` and `select` engines, an array-agnostic port of `Vinecop`'s Dissmann and Wilson structure selection whose selected matrix matches the compiled selector's byte for byte (#237, #244, #317).
+- Give the four canonical bases one fitting surface: `fit` returns `self`, `from_data` constructs, and `BicopBase` / `VinecopBase` add `select` where there is a family or a structure to choose (#324).
+- Make `VinecopBase.fit` / `.select` instance methods returning `self` via a new `set_pair_copulas` hook, and add `VinecopBase.from_data`; the engines returning loose parts are now `_fit_parts` / `_select_parts` (#324).
+    - `fit_edge` is keyword-only on all three, and `TorchVinecop.from_data` takes one too, overriding its built-in TLL fitter
+- Declare the parts instead of hooking them: `VinecopBase.bicop_class` names the pair copula a vine fits, and `VinedistBase.vinecop_class` / `margin_class` its two halves, so `from_data` needs no callback -- a part class is itself a fitter (#324).
+    - naming the pair class also lets `select` refuse one without `flip` before it reads the data, instead of after fitting an edge
+- Rename `VinecopBase`'s pair accessor to the public `get_pair_copula`, dropping the pass-through wrapper over it, and pair it with `set_pair_copulas`; only the reader is abstract, since writing is needed just to fit (#324).
+- Derive `FitControlsVinecop` from `FitControlsBicop` and `FitControlsTorchVinecop` from `FitControlsTorchBicop`, so one controls object configures both halves of a vine fit and the nested `bicop_controls` field is gone (#324).
+- Weight the array-agnostic tree criterion, so `VinecopBase` selection honors `controls.weights` and reproduces `Vinecop.select` exactly; it had silently ignored them (#324).
+- Support `tree_criterion="custom"` on the array-agnostic selector, which previously raised from C++ because the binding forwarded no criterion function (#324).
+- Refuse a PyTorch copula or margin in `Vinedist`, mirroring `TorchVinedist`'s refusal of a core `Vinecop`: either mix silently loses gradients and device placement (#324).
+- Rename a vine distribution's `copula` attribute to `vinecop`, matching the `vinecop_class` / `bicop_class` declarations, and type it and `margins` against their contracts rather than `Any` (#324).
+- Drop `num_threads` from the `VinecopLike` protocol; a threading knob is an implementation's performance option, and `VinecopBase` discarded it on the first line of every method that declared one (#324).
+- Remove the `__init_subclass__` hooks that rejected the pre-1.0 `_simulate_uniform` spelling, a rename that never shipped (#324).
+- Add `ControlsLike`, the fit-configuration contract — anything with `to_dict()` — and `to_dict()` on all four `FitControls*` classes. A consumer reads the settings it owns and refuses one it cannot honor: `VinecopBase` rejects `weights`, which its tree criterion cannot apply (#324).
+- Add `VinedistLike` and `VinedistBase`, so a custom vine distribution has a contract and a base to subclass rather than the concrete class; `Vinedist` is now the NumPy subclass, and `TorchVinedist` derives from the base instead of from it (#324).
+- `VinedistBase.from_data` owns the two-step (IFM) estimator for both array namespaces, asking a subclass only for `_coerce_fit_data`, `_default_margins` and `_fit_copula`. `TorchVinedist` had silently weighted only its margins, and validated no weights at all (#324).
+- Refuse rather than half-apply: `supports_weighted_copula` and `supports_fit_covariates` are `False` on `TorchVinedist`, whose fitter is unweighted and whose margins read no covariates (#324).
+- Add the public `Vinedist.copula_layout`, the copula-scale layout the sklearn estimators previously reached into a private helper for, and dispatch `Vinedist.copula_data`'s variable types through `cls` so a subclass override is honored (#324).
+- Add the backend-neutral contracts `BicopLike`, `VinecopLike`, `MarginLike` and `VinedistLike` to `pyvinecopulib.core`, which `Bicop`, `Vinecop`, `Kde1d` and `Vinedist` satisfy, so downstream code can type against the contract instead of a concrete class (#236, #237, #292, #324).
+- Add the canonical partial implementations `BicopBase`, `VinecopBase`, `MarginBase` and `VinedistBase`, which run on NumPy or PyTorch: a custom pair copula defines `pdf` / `hfunc1` / `hfunc2`, a custom vine the single `_get_pair_copula` hook, a custom margin `pdf` / `cdf`, and a custom distribution nothing at all beyond its two halves (#236, #237, #292, #324).
+- `VinecopBase` ships `fit`, `select` and `from_data`, an array-agnostic port of `Vinecop`'s Dissmann and Wilson structure selection whose selected matrix matches `Vinecop.select`'s byte for byte (#237, #244, #317, #324).
 - Build non-simplified / conditional vines with `ConditioningContext` and its `SimplifiedContext` (default) and `NonSimplifiedContext` policies (#237).
 - Add `core.DiscretePair`, which evaluates a continuous pair copula on a discrete or mixed edge, so a custom pair copula gains discrete support by implementing `cdf` (#306).
 - Add `core.IndependencePair`, the pair a `VinecopBase.select` edge below `threshold` holds instead of a fit (#317).

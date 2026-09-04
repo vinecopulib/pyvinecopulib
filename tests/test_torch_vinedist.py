@@ -125,7 +125,7 @@ def test_the_parts_are_registered_children(dist: TorchVinedist) -> None:
   assert {f"_margins.{j}.{p}" for j in range(3) for p in ("loc", "scale")} <= (
     keys
   )
-  assert any(key.startswith("_copula.") for key in keys)
+  assert any(key.startswith("_vinecop.") for key in keys)
   assert {name for name, _ in dist.named_parameters()} == {
     f"_margins.{j}.{p}" for j in range(3) for p in ("loc", "scale")
   }
@@ -154,7 +154,7 @@ def test_state_dict_round_trip_and_no_derived_cache_leak(
   keys_before = set(dist.state_dict())
   dist.pdf(x)
   dist.rosenblatt(x)
-  dist.copula.pdf(dist.marginal_cdf(x), batched=True)
+  widen(dist.vinecop).pdf(dist.marginal_cdf(x), batched=True)
   assert set(dist.state_dict()) == keys_before
 
   fresh = TorchVinedist(
@@ -320,7 +320,7 @@ def test_from_data_fits_end_to_end_in_torch(data: np.ndarray) -> None:
   y = torch.as_tensor(data, dtype=torch.float64)
   dist = TorchVinedist.from_data(y)
 
-  assert isinstance(dist.copula, TorchVinecop)
+  assert isinstance(dist.vinecop, TorchVinecop)
   assert all(isinstance(m, TorchKde1d) for m in dist.margins)
   assert dist.var_types == ["c"] * y.shape[1]
 
@@ -328,7 +328,7 @@ def test_from_data_fits_end_to_end_in_torch(data: np.ndarray) -> None:
   assert logpdf.shape == (32,)
   assert bool(torch.isfinite(logpdf).all())
   # The Sklar identity, on the object's own terms.
-  manual = torch.log(dist.copula.pdf(dist.marginal_cdf(y[:32])))
+  manual = torch.log(dist.vinecop.pdf(dist.marginal_cdf(y[:32])))
   for j, margin in enumerate(dist.margins):
     # `logpdf` is an optional capability, not a protocol member.
     lifted: Any = margin
@@ -397,7 +397,7 @@ def test_holds_margins_with_atoms() -> None:
   )
   assert np.array_equal(
     np.asarray(cop.structure.matrix),
-    np.asarray(dist.copula.structure.matrix),
+    np.asarray(dist.vinecop.structure.matrix),
   )
   expected = np.log(np.asarray(cop.pdf(u_np)))
   for j, margin in enumerate(dist.margins):

@@ -94,7 +94,7 @@ def test_the_held_copula_still_answers_as_the_vine(
   """Wrapping the vine for the backend does not hide the vine's own surface."""
   X, _, _ = sample_array_data
   est = VineDensity().fit(X)
-  copula = est.distribution_.copula
+  copula = est.distribution_.vinecop
   assert copula.dim == est.n_features_in_
   assert copula.var_types == ["c", "c"]
   np.testing.assert_array_equal(

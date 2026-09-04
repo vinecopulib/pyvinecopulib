@@ -111,32 +111,3 @@ def _method_alias(new: Any, old_name: str, qualname: str) -> Any:
   tagged: Any = alias
   del tagged.__wrapped__
   return alias
-
-
-def _reject_renamed_hook(cls: type, old: str, new: str) -> None:
-  """Fail loudly when a subclass overrides a hook under its former name.
-
-  A renamed hook is the one rename that cannot fail visibly on its own: the base
-  class simply stops calling the old name, so the override is ignored and the
-  inherited default raises as though nothing were overridden.
-
-  Parameters
-  ----------
-  cls : type
-      The subclass being defined.
-  old : str
-      The former hook name.
-  new : str
-      The current hook name.
-
-  Raises
-  ------
-  TypeError
-      If ``cls`` defines ``old`` and not ``new``.
-  """
-  if old in vars(cls) and new not in vars(cls):
-    raise TypeError(
-      f"{cls.__name__} defines `{old}`, which is now `{new}`. Rename the "
-      f"override: the base class no longer calls `{old}`, so sampling would "
-      "raise NotImplementedError rather than use it."
-    )

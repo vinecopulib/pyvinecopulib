@@ -652,7 +652,7 @@ compiled, ``x``-independent :class:`pyvinecopulib.core.Vinecop`. When
 dependence must vary with :math:`X`, fit custom pairs through
 :meth:`pyvinecopulib.core.VinecopBase.fit`, host them in a
 ``VinecopBase`` subclass that declares covariate support, and compose the
-parts explicitly. ``examples/11_vine_distributions.ipynb`` checks such
+parts explicitly. ``examples/10_vine_distributions.ipynb`` checks such
 a model against an analytic bivariate-normal density; notebook 10
 develops the custom-pair machinery.
 
@@ -780,7 +780,7 @@ likelihood, and three consequences are worth stating:
   ``report_`` is there to be read — a winner that beat the runner-up by
   a fraction of an AIC unit is not an established family.
 
-``examples/11_vine_distributions.ipynb`` works through the whole
+``examples/10_vine_distributions.ipynb`` works through the whole
 surface, including a mixed continuous / count example and a custom
 margin written against :class:`pyvinecopulib.core.MarginBase`.
 
@@ -831,7 +831,7 @@ discrete conditioning variable likewise contributes two columns.
 
 The ``examples/04_discrete_variables.ipynb`` notebook works an example
 end to end, from raw counts to a fitted vine;
-``examples/11_vine_distributions.ipynb`` shows the same model as a
+``examples/10_vine_distributions.ipynb`` shows the same model as a
 distribution, with the layout handled for you.
 
 Two arguments elsewhere in the API are consequences of the same
@@ -1128,7 +1128,12 @@ arrays:
   ``sample``;
 * :class:`~pyvinecopulib.core.VinecopLike` — a fitted vine, exposing
   ``pdf`` / ``cdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` /
-  ``sample`` on an :class:`~pyvinecopulib.core.RVineStructure`.
+  ``sample`` on an :class:`~pyvinecopulib.core.RVineStructure`;
+* :class:`~pyvinecopulib.core.MarginLike` — a univariate margin, exposing
+  ``pdf`` / ``cdf`` / ``icdf``;
+* :class:`~pyvinecopulib.core.VinedistLike` — the two halves together on the
+  data scale, exposing the same evaluation surface in terms of ``y`` rather
+  than ``u``.
 
 You can plug your **own** pair copula into a vine by implementing the
 contract — most easily by subclassing the canonical partial
@@ -1140,9 +1145,40 @@ define ``pdf`` / ``hfunc1`` / ``hfunc2`` and inherits numerical
 and ``cdf`` are the two optional additions, needed to reuse the pair in
 structure selection and to host it on a discrete edge respectively); a
 ``VinecopBase`` subclass need only return its pairs from
-``_get_pair_copula`` and inherits the whole tree-by-tree cascade. The
+``get_pair_copula`` and inherits the whole tree-by-tree cascade. The
 bases are pure Python (no PyTorch), so custom pairs also work in a
 torch-less environment.
+
+Fitting is *declared* rather than implemented wherever it can be. A
+``VinecopBase`` subclass that names ``bicop_class`` -- the pair-copula class it
+fits -- gets ``from_data`` with no callback, because a pair class is itself a
+fitter; naming it also lets structure selection refuse a pair copula without
+``flip`` before it reads the data. Adding ``set_pair_copulas`` on top is what
+lets ``fit`` and ``select`` install what they fitted and hand back ``self``.
+A ``fit_edge`` callback remains the seam for a genuinely custom or conditional
+per-edge fit.
+
+The same holds one level up: a custom **vine distribution** subclasses
+:class:`~pyvinecopulib.core.VinedistBase` and inherits the entire data-scale
+surface with no hook at all, because a vine distribution is determined by its
+two halves. Hooks are needed only to make it *fittable* —
+:meth:`~pyvinecopulib.core.VinedistBase.from_data` runs the two-step estimator
+once, in the base, and asks the subclass which margin class to default to, how
+to fit the copula, and how to coerce input arrays.
+:class:`~pyvinecopulib.core.Vinedist` (NumPy and a compiled copula) and
+:class:`~pyvinecopulib.torch.TorchVinedist` are the two shipped subclasses.
+
+Fitting has one shape throughout: on all four bases ``fit`` mutates and returns
+``self``, ``from_data`` constructs, and — where there is a family or a structure
+to choose — ``select`` returns ``self`` too. Configuration travels as a
+:class:`~pyvinecopulib.core.ControlsLike`, anything exposing ``to_dict()``,
+which is how one call site accepts both the core ``FitControls*`` objects and
+the PyTorch ones. And a vine's controls *are* pair controls —
+:class:`~pyvinecopulib.core.FitControlsVinecop` is a
+:class:`~pyvinecopulib.core.FitControlsBicop`, and
+:class:`~pyvinecopulib.torch.FitControlsTorchVinecop` likewise — so one object
+configures both halves of a vine fit, and the settings a vine does not read
+reach its pair copulas unchanged.
 
 Every method carries an optional external covariate matrix ``x``. A vine
 whose pairs read it declares ``supports_covariates=True``; the default
@@ -1172,7 +1208,7 @@ Custom vines also condition: see :ref:`conditional sampling
 <concepts-conditional>` for ``sample_conditional`` / ``reorient`` and the
 ``conditioning_set`` arguments, which need ``flip`` on the pair copulas.
 
-The ``examples/10_extending_pyvinecopulib.ipynb`` notebook is a
+The ``examples/11_extending_pyvinecopulib.ipynb`` notebook is a
 worked, end-to-end walk-through: a custom Gaussian pair copula hosted
 first in a simplified vine (matching
 :meth:`pyvinecopulib.core.Vinecop.from_structure`), then a Gumbel one on

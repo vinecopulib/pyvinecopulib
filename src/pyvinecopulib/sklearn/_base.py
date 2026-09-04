@@ -983,8 +983,8 @@ class VineBase(BaseEstimator):
 
     dist = self.distribution_
     if copula_only:
-      u = dist._u_layout(Z)
-      out = np.log(_as_ndarray(dist.copula.pdf(u)))
+      u = dist.copula_layout(Z)
+      out = np.log(_as_ndarray(dist.vinecop.pdf(u)))
     else:
       out = _as_ndarray(dist.logpdf(Z))
 

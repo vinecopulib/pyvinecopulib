@@ -575,7 +575,7 @@ def test_pdf_autograd_through_grid_param() -> None:
   u_fit = _simulate(d=4, n=800, seed=700)
   cop = _fit_tll_vine(u_fit)
   bc = TorchVinecop.from_vinecop(cop, cache_integrals=False)
-  # The stored module, not what `_get_pair_copula` hands the cascade: that is
+  # The stored module, not what `get_pair_copula` hands the cascade: that is
   # the grid the parameters live on, and it is the same object here (this vine
   # is continuous, so nothing is wrapped).
   pair = bc._pair_module(0, 0)
@@ -728,7 +728,7 @@ def test_the_batched_cache_re_bakes_when_grad_tracking_changes() -> None:
   # optimize -- then start tracking the grid.
   baked = cop.pdf(u, batched=True)
   assert not baked.requires_grad
-  values = cop._get_pair_copula(0, 0).interp_grid.values
+  values = cop.get_pair_copula(0, 0).interp_grid.values
   values.requires_grad_(True)
 
   (g_batched,) = torch.autograd.grad(cop.pdf(u, batched=True).sum(), values)
@@ -738,7 +738,7 @@ def test_the_batched_cache_re_bakes_when_grad_tracking_changes() -> None:
 
   # The other ordering agrees, so neither is the special case.
   other = lift()
-  other_values = other._get_pair_copula(0, 0).interp_grid.values
+  other_values = other.get_pair_copula(0, 0).interp_grid.values
   other_values.requires_grad_(True)
   (g_first,) = torch.autograd.grad(
     other.pdf(u, batched=True).sum(), other_values
@@ -1573,7 +1573,7 @@ def test_a_thresholded_pair_carries_no_grid_to_disagree_about(
   fitted = TorchVinecop.from_data(
     torch.from_numpy(u_fit),
     controls=FitControlsTorchVinecop(
-      bicop_controls=FitControlsTorchBicop(grid_type=grid_type),
+      grid_type=grid_type,
       trunc_lvl=20,
       threshold=0.3,
     ),

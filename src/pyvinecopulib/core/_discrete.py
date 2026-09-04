@@ -430,7 +430,7 @@ class DiscretePair(BicopBase[ArrayT]):
 
   This is how a pair copula that knows nothing about discreteness is hosted on a
   discrete edge of a :class:`~pyvinecopulib.core.VinecopBase`: wrap it in
-  ``_get_pair_copula`` with the types the vine derives for that slot,
+  ``get_pair_copula`` with the types the vine derives for that slot,
   :meth:`~pyvinecopulib.core.VinecopBase.pair_var_types`. The h-functions of a
   discrete argument, and the density of a pair with two, are built from the
   copula's distribution function, so a pair hosted on a discrete edge must
@@ -451,7 +451,7 @@ class DiscretePair(BicopBase[ArrayT]):
 
   Notes
   -----
-  ``examples/10_extending_pyvinecopulib.ipynb`` hosts a custom pair copula on a
+  ``examples/11_extending_pyvinecopulib.ipynb`` hosts a custom pair copula on a
   discrete edge and checks it against ``Vinecop``.
 
   The output matches ``Bicop``'s own discrete surface bit-for-bit, for every
