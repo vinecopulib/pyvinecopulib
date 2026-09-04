@@ -265,6 +265,18 @@ torch wrappers) uses the simplified model;
 families to consider, *which* structures to search, and *how* to
 truncate the model in higher dimensions.
 
+A vine's controls **are** pair controls:
+:class:`~pyvinecopulib.core.FitControlsVinecop` derives from
+:class:`~pyvinecopulib.core.FitControlsBicop`, so one object configures both
+halves of a vine fit -- the vine reads the settings it owns, and the rest reach
+its pair copulas unchanged. That is why
+:meth:`~pyvinecopulib.core.Vinecop.select`, which chooses a structure, is
+annotated with the vine controls while
+:meth:`~pyvinecopulib.core.Vinecop.fit`, which has no structure to choose, is
+annotated with the pair controls: the narrower type is all `fit` reads, and a
+vine controls object satisfies it. The same holds for
+:class:`~pyvinecopulib.torch.FitControlsTorchVinecop`.
+
 The backend-neutral :class:`~pyvinecopulib.core.VinecopBase` can go
 further: a :class:`~pyvinecopulib.core.NonSimplifiedContext` lets each
 pair copula also depend on its conditioning-set value

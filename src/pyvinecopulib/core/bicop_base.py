@@ -1,22 +1,26 @@
 """Canonical partial implementation of the pair-copula contract.
 
-:class:`BicopBase` is the array-agnostic (NumPy / PyTorch) base class for
-:class:`~pyvinecopulib.core.BicopLike`. A subclass supplies only the three
-primitives ``pdf`` / ``hfunc1`` / ``hfunc2`` and inherits ``hinv1`` / ``hinv2``
-(numerical inversion of the h-functions), ``sample`` (inverse Rosenblatt of
-the pair), ``loglik``, ``plot`` and ``__repr__`` for free; each is overridable
-when a native exact form exists (as :class:`~pyvinecopulib.torch.TorchBicop`
-does for ``cdf`` / ``hinv`` / ``sample``). ``cdf`` raises unless overridden:
-the vine CDF is Monte-Carlo, so an unconditional vine needs no per-pair ``cdf``
-— but a pair hosted on a *discrete* edge does, its h-functions being difference
-quotients of the distribution function (see
-:class:`~pyvinecopulib.core.DiscretePair`).
+``BicopBase`` is the array-agnostic (NumPy or PyTorch) base class for
+``BicopLike``, and the short path to hosting a custom pair copula in a vine: a
+subclass writes the density ``pdf`` and the two h-functions ``hfunc1`` /
+``hfunc2``, and inherits the rest of the evaluation surface together with the
+estimator surface ``fit`` / ``select`` / ``from_data``. The member inventory,
+and which members ship a raising default, is on ``BicopBase`` itself.
 
-Written against the Array API (:func:`array_api_compat.array_namespace`) so the
-same code runs on numpy and torch (via ``pdf`` / ``hfunc`` outputs); the numeric
-bodies handle arrays as ``Any`` (the generic ``ArrayT`` lives on the public
-signatures). RNG for ``sample`` depends on the array namespace, so it is
-delegated to a ``_sample_uniform`` hook.
+``x`` is keyword-only on every method, as it is on the contract: it carries the
+covariates a conditional pair copula reads, row-aligned with ``u``. ``Bicop``
+takes per-row ``parameters`` in that positional slot, so the two surfaces are
+near-twins rather than one signature.
+
+``_pair_eval`` lives here too, shared with the vine cascades: the rule that a
+pair-copula method is handed ``x`` only when there is one, so a pair copula
+accepting no covariates -- ``Bicop`` above all -- stays a valid host for a
+simplified vine.
+
+Array values are handled as ``Any`` inside the numeric bodies per the
+``pyvinecopulib.core`` typing policy (``array_api_compat``, which resolves the
+array namespace, is itself untyped); the generic ``ArrayT`` lives on the public
+signatures.
 """
 
 from __future__ import annotations
@@ -46,13 +50,41 @@ def _pair_eval(method: Callable[..., Any], u: Any, x: Optional[Any]) -> Any:
 
 
 class BicopBase(BicopLike[ArrayT], ABC):
-  """Canonical partial implementation of :class:`~pyvinecopulib.core.BicopLike`.
+  """Canonical partial implementation of ``BicopLike``.
 
-  Subclasses implement ``pdf`` / ``hfunc1`` / ``hfunc2`` and inherit ``hinv1`` /
-  ``hinv2`` (bisection of the h-functions), ``sample``, ``loglik``, ``plot``
-  and ``__repr__``. ``cdf`` raises unless overridden, and is needed only to host
-  the pair on a discrete edge. To enable ``sample``, override
-  ``_sample_uniform`` with the array namespace's RNG.
+  A subclass writes three methods -- ``pdf``, the pair density, and ``hfunc1``
+  / ``hfunc2``, its two conditional distributions -- and inherits the rest of
+  the evaluation surface:
+
+  - :meth:`hinv1` / :meth:`hinv2`, the h-function inverses. An h-function
+    increases in the argument being inverted, so these need nothing beyond
+    ``hfunc1`` / ``hfunc2``; override either where the family has a closed
+    form.
+  - :meth:`sample`, the pair's inverse Rosenblatt draw, which rests on
+    :meth:`hinv1` and on ``_sample_uniform`` -- the array library's RNG, the
+    one hook with no array-agnostic default.
+  - :meth:`loglik`, :meth:`plot` and ``__repr__``.
+
+  Three members make the class an estimator, so a vine can name it as its
+  ``bicop_class`` and fit one pair per edge: :meth:`fit` estimates the current
+  family's parameters in place, :meth:`select` chooses a family as well --
+  defaulting to :meth:`fit` wherever there is nothing to choose -- and
+  :meth:`from_data` constructs and selects in one call. :meth:`fit` raises
+  here, since a pair copula handed its parameters at construction is already
+  fitted.
+
+  Two members raise by default, each needed to host the pair somewhere
+  particular rather than to evaluate it:
+
+  - :meth:`flip`, the pair with its arguments swapped, which structure
+    selection needs to reorient a fitted pair onto its finalized slot;
+    evaluation along a fixed structure never asks for it.
+  - :meth:`cdf`, needed on a **discrete** edge, whose h-functions are
+    difference quotients of the distribution function. Add one and wrap the
+    pair in :class:`~pyvinecopulib.core.DiscretePair` to sit on such an edge.
+
+  ``TorchBicop`` is the reference subclass: it supplies ``cdf``, both inverses,
+  ``sample`` and ``flip`` natively, and fits its density grid in :meth:`fit`.
 
   See Also
   --------
@@ -66,15 +98,16 @@ class BicopBase(BicopLike[ArrayT], ABC):
     Parameters
     ----------
     u : array, shape (n, 2), dtype float
-        Pseudo-observations in the unit square.
+        Pair pseudo-observations in the unit square.
     x : array, shape (n, k), or None, optional
-        Conditioning variables forwarded to :meth:`pdf`.
+        Exogenous covariates, one row per observation; ignored by an
+        unconditional pair copula.
 
     Returns
     -------
     array, shape (), dtype float
-        The summed log-density (a differentiable scalar under autograd, e.g.
-        PyTorch).
+        The summed log-density, carrying gradients wherever the array library
+        tracks them.
     """
     validate_covariates(x, int(cast(Any, u).shape[0]))
     dens: Any = self.pdf(u, x=x)
@@ -82,11 +115,10 @@ class BicopBase(BicopLike[ArrayT], ABC):
     return cast(ArrayT, xp.sum(xp.log(dens)))
 
   def hinv1(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
-    """Numerically invert :meth:`hfunc1` in its second argument.
+    """Inverse of ``hfunc1`` in its second argument.
 
-    Solves ``hfunc1([u1, .], x) = u2`` for the second argument by bisection
-    (``solve_increasing``), since ``hfunc1``
-    is increasing in it.
+    Solved numerically, so a subclass needs only ``hfunc1``; override it where
+    the family inverts in closed form.
 
     Parameters
     ----------
@@ -94,7 +126,8 @@ class BicopBase(BicopLike[ArrayT], ABC):
         Column 0 is the conditioning value ``u1``; column 1 is the level to
         invert.
     x : array, shape (n, k), or None, optional
-        Conditioning variables forwarded to :meth:`hfunc1`.
+        Exogenous covariates, one row per observation; ignored by an
+        unconditional pair copula.
 
     Returns
     -------
@@ -113,11 +146,9 @@ class BicopBase(BicopLike[ArrayT], ABC):
     )
 
   def hinv2(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
-    """Numerically invert :meth:`hfunc2` in its first argument.
+    """Inverse of ``hfunc2`` in its first argument.
 
-    Solves ``hfunc2([., u2], x) = u1`` for the first argument by bisection
-    (``solve_increasing``), since ``hfunc2``
-    is increasing in it.
+    The counterpart of :meth:`hinv1`, on the other h-function.
 
     Parameters
     ----------
@@ -125,7 +156,8 @@ class BicopBase(BicopLike[ArrayT], ABC):
         Column 0 is the level to invert; column 1 is the conditioning value
         ``u2``.
     x : array, shape (n, k), or None, optional
-        Conditioning variables forwarded to :meth:`hfunc2`.
+        Exogenous covariates, one row per observation; ignored by an
+        unconditional pair copula.
 
     Returns
     -------
@@ -144,24 +176,32 @@ class BicopBase(BicopLike[ArrayT], ABC):
     )
 
   def cdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
-    """Raise; needed only to host the pair copula on a discrete edge.
+    """Raise; override to give the pair copula a distribution ``C(u)``.
+
+    Needed only to host the pair on a discrete edge, whose h-functions are
+    difference quotients of the distribution function: add a ``cdf``, then
+    wrap the pair in :class:`~pyvinecopulib.core.DiscretePair`. Nothing else
+    asks for one -- a vine's own ``cdf`` is evaluated by Monte-Carlo
+    simulation, which needs no per-pair distribution.
 
     Parameters
     ----------
     u : array, shape (n, 2), dtype float
-        Pair pseudo-observations (unused in the raising default).
+        Pair pseudo-observations in the unit square.
     x : array, shape (n, k), or None, optional
-        Conditioning variables (unused in the raising default).
+        Exogenous covariates, one row per observation; ignored by an
+        unconditional pair copula.
 
     Returns
     -------
     array, shape (n,), dtype float
-        Distribution values — only when a subclass overrides this method.
+        Distribution values in ``[0, 1]`` -- only when a subclass overrides
+        this method.
 
     Raises
     ------
     NotImplementedError
-        Always, unless a subclass provides a native ``cdf``.
+        Always, unless a subclass provides a ``cdf``.
     """
     validate_covariates(x, int(cast(Any, u).shape[0]))
     raise NotImplementedError(
@@ -182,8 +222,8 @@ class BicopBase(BicopLike[ArrayT], ABC):
     """Construct a pair copula and select it from data.
 
     ``cls().select(u, ...)``, so a subclass that implements :meth:`fit` gets
-    this for free. It is what a vine calls per edge when it names this class as
-    its ``bicop_class``.
+    this for free -- which is what lets a vine name this class as its
+    ``bicop_class`` and fit one pair per edge.
 
     Parameters
     ----------
@@ -192,8 +232,9 @@ class BicopBase(BicopLike[ArrayT], ABC):
     controls : object, or None, optional
         Fit configuration, in whatever form the subclass accepts.
     var_types : list of str, or None, optional
-        The two variable types of the edge this pair sits on, ``"c"`` or
-        ``"d"`` each. ``None`` means both are continuous.
+        The two variable types of the edge this pair sits on, ``"c"``
+        (continuous) or ``"d"`` (discrete) each. ``None`` means both are
+        continuous.
 
     Returns
     -------
@@ -216,13 +257,12 @@ class BicopBase(BicopLike[ArrayT], ABC):
   ) -> Self:
     """Raise; override to estimate this pair copula from data, in place.
 
-    The pair-copula analog of
-    :meth:`~pyvinecopulib.core.MarginBase.fit`, and what makes a pair copula
-    class usable as a fitter: a vine that names this class as its
-    ``bicop_class`` fits each edge through :meth:`from_data`, which is
-    ``cls().fit(...)``. It stays optional, because a pair copula specified
-    entirely at construction is already fitted, and a vine can always be given
-    an explicit ``fit_edge`` callback instead.
+    The pair-copula analog of ``MarginBase.fit()``, and what makes a pair
+    copula class usable as a fitter: a vine that names it as its
+    ``bicop_class`` fits every edge through :meth:`from_data`. It stays
+    optional, because a pair copula specified entirely at construction is
+    already fitted, and a vine can always be given an explicit ``fit_edge``
+    callback instead.
 
     Parameters
     ----------
@@ -237,7 +277,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
     Returns
     -------
     BicopBase
-        ``self``, so the call chains — only when a subclass overrides this
+        ``self``, so the call chains -- only when a subclass overrides this
         method.
 
     Raises
@@ -247,6 +287,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
 
     See Also
     --------
+    select : Choose a family as well, where the pair copula has one to choose.
     from_data : Construct and fit in one call.
     """
     raise NotImplementedError(
@@ -287,6 +328,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
     See Also
     --------
     fit : Estimate the current family's parameters, leaving the family alone.
+    from_data : Construct and select in one call.
     """
     if controls is None and var_types is None:
       # Forwarded only when there is something to forward, so a subclass whose
@@ -298,22 +340,21 @@ class BicopBase(BicopLike[ArrayT], ABC):
     """Raise; override to return the pair with its arguments swapped.
 
     The flipped copula satisfies ``c'(u1, u2) = c(u2, u1)`` with the two
-    h-functions (and inverses) exchanged. It is only required for hosting the
-    pair in structure *selection*
-    (:meth:`~pyvinecopulib.core.VinecopBase.select` reorients selection-time
-    pairs onto their finalized slots with it); evaluation along a fixed
-    structure never calls it.
+    h-functions (and their inverses) exchanged. It is required only to host the
+    pair in structure *selection*, which reorients each selected pair onto its
+    finalized slot (``VinecopBase.select()``); evaluation along a fixed
+    structure never asks for it.
 
     Returns
     -------
     BicopBase
-        The argument-swapped pair copula — only when a subclass overrides this
+        The argument-swapped pair copula -- only when a subclass overrides this
         method.
 
     Raises
     ------
     NotImplementedError
-        Always, unless a subclass provides a native ``flip``.
+        Always, unless a subclass provides a ``flip``.
     """
     raise NotImplementedError(
       f"{type(self).__name__}.flip is not defined; implement it (return the "
@@ -328,27 +369,31 @@ class BicopBase(BicopLike[ArrayT], ABC):
     qrng: bool = False,
     seeds: Optional[list[int]] = None,
   ) -> ArrayT:
-    """Draw ``n`` samples via the pair's inverse Rosenblatt transform.
+    """Draw ``n`` samples from the pair copula.
 
-    Draws two independent uniforms ``(w1, w2)`` from ``_sample_uniform``
-    and returns ``(w1, hinv1([w1, w2], x))``, so the pair carries its fitted
-    dependence.
+    Available on any subclass that supplies ``_sample_uniform``, the array
+    library's RNG.
 
     Parameters
     ----------
     n : int
         Number of samples to draw.
     x : array, shape (n, k), or None, optional
-        Conditioning variables (one row per sample) for a conditional draw.
+        Exogenous covariates, one row per sample, for a conditional draw.
     qrng : bool, default=False
         Draw quasi-random base uniforms instead of pseudo-random ones.
-    seeds : list of int or None, optional
-        RNG seeds forwarded to ``_sample_uniform``.
+    seeds : list of int, or None, optional
+        RNG seeds for the draw.
 
     Returns
     -------
     array, shape (n, 2), dtype float
         Samples in the unit square.
+
+    Raises
+    ------
+    NotImplementedError
+        If the subclass supplies no ``_sample_uniform``.
     """
     validate_covariates(x, n)
     base_u: Any = self._sample_uniform(n, qrng, list(seeds) if seeds else [])
@@ -357,11 +402,12 @@ class BicopBase(BicopLike[ArrayT], ABC):
     return cast(ArrayT, xp.stack([base_u[:, 0], u2], axis=-1))
 
   def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:
-    """Draw ``(n, 2)`` base uniforms for :meth:`sample` (namespace-dependent RNG).
+    """Draw the ``(n, 2)`` base uniforms ``sample`` transforms.
 
-    Raises unless a subclass overrides it (numpy / torch differ on RNG);
-    overriding it is all that is needed to enable :meth:`sample`. Named after
-    the exposed :func:`pyvinecopulib.utils.sample_uniform` free function.
+    Raises unless a subclass overrides it: NumPy and PyTorch differ on RNG, so
+    this is the one hook with no array-agnostic default, and overriding it is
+    all ``sample`` needs. Named after the ``sample_uniform`` free function in
+    ``pyvinecopulib.utils``.
     """
     raise NotImplementedError(
       f"{type(self).__name__} does not implement _sample_uniform; override it "
@@ -375,10 +421,9 @@ class BicopBase(BicopLike[ArrayT], ABC):
     xylim: Optional[tuple[float, float]] = None,
     grid_size: Optional[int] = None,
   ) -> None:
-    """Plot the pair-copula density (contour or 3-D surface).
+    """Plot the pair-copula density, as a contour or a 3-D surface.
 
-    Evaluates :meth:`pdf` on a grid and renders it with matplotlib, mirroring
-    :meth:`pyvinecopulib.core.Bicop.plot`.
+    Mirrors ``Bicop.plot()``.
 
     Parameters
     ----------
@@ -387,10 +432,10 @@ class BicopBase(BicopLike[ArrayT], ABC):
     margin_type : str, default="unif"
         Margins the density is shown on: ``"unif"``, ``"norm"`` or ``"exp"``.
     xylim : tuple of float, or None, optional
-        Axis limits; a sensible default per ``margin_type`` is used when ``None``.
+        Axis limits; ``None`` uses a default per ``margin_type``.
     grid_size : int, or None, optional
-        Number of grid points per axis; a default per ``plot_type`` is used when
-        ``None``.
+        Number of grid points per axis; ``None`` uses a default per
+        ``plot_type``.
 
     Returns
     -------

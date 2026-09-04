@@ -1,15 +1,29 @@
 """Canonical vine distribution: the array-agnostic half of ``Vinedist``.
 
-The cascades here run on any array namespace (NumPy or PyTorch): the joint
-density is Sklar's factorization, and the Rosenblatt transforms and simulation
-are the copula's own sandwiched between the marginal transforms. Arrays are
-typed ``Any`` per the :mod:`pyvinecopulib.core` typing policy (the Array API
-namespace is untyped); the public signatures carry ``ArrayT`` so a concrete
-subclass inherits precise return types.
+:class:`VinedistBase` is a :class:`~pyvinecopulib.core.VinecopLike` combined
+with one :class:`~pyvinecopulib.core.MarginLike` per variable, evaluated on the
+**data** scale rather than the copula scale: the joint density is Sklar's
+factorization, and the Rosenblatt transforms and simulation are the copula's
+own sandwiched between the marginal transforms. The cascades run on any array
+namespace (NumPy or PyTorch), so a concrete subclass —
+:class:`~pyvinecopulib.core.Vinedist` or
+:class:`~pyvinecopulib.torch.TorchVinedist` — inherits the whole evaluation
+surface as soon as its two halves are installed.
 
-What a subclass supplies is the *fitting*, which is the only namespace-specific
-half: which margin class to use by default, how to fit the copula, and how to
-coerce input arrays. Evaluation needs no hook at all.
+Two things live here rather than in a subclass. The copula-scale **layout** is
+assembled in one place, :meth:`VinedistBase.copula_data`: one column per
+variable, then a left-limit column for each variable with atoms, so nothing
+downstream builds that block by hand. And the **two-step (IFM) estimator** is
+here as well — :meth:`VinedistBase.from_data` for a fresh distribution,
+:meth:`VinedistBase.fit` and :meth:`VinedistBase.select` for the parts an
+object already holds — so the lanes cannot drift apart in what they validate,
+or in which half of a fit a setting reaches. What each lane declares instead of
+implementing is enumerated on :class:`VinedistBase` itself.
+
+Arrays are typed ``Any`` inside the cascades per the
+:mod:`pyvinecopulib.core` typing policy (the Array API namespace is untyped);
+the public signatures carry ``ArrayT`` so a concrete subclass inherits precise
+return types.
 """
 
 from __future__ import annotations
@@ -40,10 +54,9 @@ def _copula_eval(
 ) -> Any:
   """Call a copula method, forwarding ``x`` only when the copula reads it.
 
-  The commonest half of a vine distribution is ``Vinecop``, whose
-  second positional slot is per-row ``parameters`` rather than a conditioning
-  matrix, so covariates must not reach it -- and a vine of unconditional pairs
-  would refuse them one level further down. A copula declares that its pairs are
+  The commonest half of a vine distribution is ``Vinecop``, whose signatures
+  carry no conditioning matrix at all -- and a vine of unconditional pairs
+  would refuse one a level further down. A copula declares that its pairs are
   conditional through ``supports_covariates``, exactly as a margin does.
   """
   method = getattr(copula, name)
@@ -69,12 +82,16 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
   measure and the copula factor is normalized by the marginal masses. Nothing
   in the evaluation path branches on the variable type.
 
-  Every method takes the observations as ``y`` and optional exogenous
-  covariates as a keyword-only ``x``, which are forwarded to both halves: to
-  each margin that declares ``supports_covariates``, and to the copula when it
-  declares ``supports_covariates`` too. Conditional margins under a copula that
-  ignores covariates model ``Y | X`` with dependence held fixed across
-  covariate values.
+  Everything is read and returned on the **original** scale: :meth:`pdf` /
+  :meth:`logpdf` / :meth:`cdf` / :meth:`loglik` / :meth:`rosenblatt` /
+  :meth:`inverse_rosenblatt` / :meth:`sample` / :meth:`sample_conditional`
+  take observations rather than copula arguments, and :meth:`copula_layout`
+  hands back the copula-scale data they run on for a caller who wants it. Each
+  of them also takes optional exogenous covariates as a keyword-only ``x``,
+  forwarded to both halves: to every margin that declares
+  ``supports_covariates``, and to the copula when it declares it too.
+  Conditional margins under a copula that ignores covariates model ``Y | X``
+  with the dependence held fixed across covariate values.
 
   Any :class:`VinecopLike` will do —
   :class:`~pyvinecopulib.core.Vinecop`, a :class:`VinecopBase` subclass, or the
@@ -106,13 +123,33 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
   determined by its two halves, so every method above works the moment they are
   installed, and the class is directly usable.
 
-  Fitting is the only namespace-specific half, and it is mostly *declared*
-  rather than implemented. Set ``vinecop_class`` and ``margin_class`` to the
-  classes the two halves are, and :meth:`from_data` runs the two-step (IFM)
-  estimator here, once, for every array namespace. ``_coerce_fit_data`` is the
-  one real hook, because a subclass may have to resolve a placement — a device
-  and a dtype — before any part exists to read it from. Override
-  ``_fit_copula`` or ``_default_margins`` where a lane needs a step of its own.
+  Fitting is the only namespace-specific half, and it too is implemented here,
+  once: :meth:`from_data` fits a fresh distribution, while :meth:`fit` and
+  :meth:`select` re-estimate the parts an object already holds. What a lane
+  contributes is mostly *declared*:
+
+  - ``vinecop_class`` and ``margin_class`` name the classes the two halves
+    are. Naming them is what lets the estimators fit with no callback of any
+    kind, a part class being its own fitter. Without a ``vinecop_class`` a
+    lane cannot fit a copula at all unless it overrides ``_fit_copula``;
+    without a ``margin_class`` an unaddressed variable falls back to a
+    kernel-density margin.
+  - ``_coerce_fit_data`` is the one real hook, and the only member fitting
+    strictly requires: a lane may have to resolve a placement — a device and a
+    dtype — before any part exists to read one from.
+  - ``_fit_copula`` fits the copula half and defaults to ``vinecop_class``.
+    Override it where a lane needs a step of its own:
+    :class:`~pyvinecopulib.core.Vinedist` writes ``weights`` into a copy of the
+    controls there.
+  - ``_default_margins`` supplies the margin each variable gets when the caller
+    named none, one ``margin_class`` per variable. Override it when those
+    margins need an argument the class attribute cannot carry, as a placement
+    is; override ``_margin_from_controls`` alone when the margin class takes
+    its variable type or its bounds at *construction*, as a kernel density
+    does.
+  - ``supports_weighted_copula`` and ``supports_fit_covariates`` declare what
+    the lane can honor. Either one ``False`` makes the matching request an
+    error up front, instead of a fit that applies it to one half only.
 
   See Also
   --------
@@ -201,9 +238,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     Returns
     -------
     VinecopLike
-        The copula this distribution was built on. The *constructor* takes it
-        as ``Any`` for the reason given there — narrowing an argument would
-        reject the commonest call — but what this class hands back is known.
+        The copula this distribution was built on.
     """
     return cast(VinecopLike[ArrayT], self._vinecop)
 
@@ -221,8 +256,8 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
   def margin_summary(self) -> list[dict[str, Any]]:
     """One row per variable describing the margin that models it.
 
-    Every field is read as an optional capability, so a margin from another
-    ecosystem contributes whatever it declares and ``None`` for the rest.
+    Every field is optional, so a margin from another ecosystem contributes
+    whatever it declares and ``None`` for the rest.
 
     Returns
     -------
@@ -343,8 +378,12 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
 
     Returns
     -------
-    Vinedist
-        The deserialized distribution.
+    VinedistBase
+        The distribution the file holds.
+
+    See Also
+    --------
+    to_file : Write one out.
     """
     from ._serialization import read_file
 
@@ -355,9 +394,10 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
   def _prep(self, a: Any) -> Any:
     """Bring one input array onto this distribution's array namespace.
 
-    The identity here, since a NumPy distribution reads NumPy input. A subclass
-    living on another namespace overrides it, which is what lets a caller pass
-    the array type they have rather than the one the parts happen to hold.
+    The identity here: parts that read the caller's own array type need no
+    coercion. A subclass living on another namespace overrides it, which is
+    what lets a caller pass the array type they have rather than the one the
+    parts hold.
 
     Parameters
     ----------
@@ -372,7 +412,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     return a
 
   def _columns(self, y: ArrayT) -> tuple[Any, Any, int]:
-    """Split ``y`` into columns and resolve its array namespace.
+    """Coerce ``y``, check its width, and resolve its array namespace.
 
     Parameters
     ----------
@@ -382,7 +422,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     Returns
     -------
     tuple
-        The namespace, the array, and its row count.
+        The array namespace, the coerced array, and its row count.
 
     Raises
     ------
@@ -410,7 +450,8 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     Returns
     -------
     array, shape (n, d), dtype float
-        Marginal distribution values, the copula-scale data.
+        Marginal distribution values, on the array namespace the margins
+        answer in -- which need not be the one ``y`` was passed on.
     """
     _, ya, n = self._columns(y)
     self._check_covariates(x, n)
@@ -435,7 +476,8 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     Returns
     -------
     array, shape (n, d), dtype float
-        Observations on the original scale.
+        Observations on the original scale, on the array namespace the margins
+        answer in.
     """
     _, ua, n = self._columns(u)
     self._check_covariates(x, n)
@@ -476,10 +518,10 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     """Assemble the copula-scale data in the layout a copula expects.
 
     Continuous variables contribute one column each. A variable with atoms
-    contributes a second, its left limit ``F(x^-)``, appended after the first
-    block in variable order — the compact ``(n, d + k)`` layout. Users never
-    build this by hand, which is the point, and neither does code that fits its
-    own copula before handing it to ``Vinedist``.
+    contributes a second, its left limit ``F(y^-)``, appended after the first
+    block in variable order — the compact ``(n, d + k)`` layout. So no caller
+    assembles a left-limit block by hand, which is the point — not even code
+    that fits its own copula before handing it to ``Vinedist``.
 
     Parameters
     ----------
@@ -494,7 +536,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     Returns
     -------
     array, shape (n, d + k), dtype float
-        The copula-scale data, clamped away from the unit square's boundary.
+        The copula-scale data, clamped strictly inside ``(0, 1)``.
 
     Raises
     ------
@@ -590,7 +632,12 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     Returns
     -------
     array, shape (n, d + k), dtype float
-        The copula-scale data.
+        The compact layout: one column per variable, then a left-limit column
+        for each variable with atoms.
+
+    See Also
+    --------
+    copula_data : The same assembly, over margins the caller supplies.
     """
     _, ya, n = self._columns(y)
     self._check_covariates(x, n)
@@ -601,9 +648,9 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
   def logpdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Log-density of the joint distribution.
 
-    Summed in log space rather than multiplied: for even a moderate ``d`` the
-    product of marginal densities underflows long before the sum of their logs
-    does, and the marginal term is the one carrying the scale.
+    The primitive, rather than the log of :meth:`pdf`: the marginal term is the
+    one carrying the scale, and for even a moderate ``d`` the product of
+    marginal densities underflows long before the sum of their logs does.
 
     Parameters
     ----------
@@ -650,7 +697,8 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     -------
     array, shape (n,), dtype float
         Joint density values, with respect to the product of the margins' own
-        reference measures.
+        reference measures -- a Lebesgue density where a margin is continuous,
+        a probability at an atom.
     """
     out: Any = self.logpdf(y, x=x)
     xp = array_namespace(out)
@@ -669,8 +717,8 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         Exogenous covariates, forwarded to every margin that reads them and to
         the copula.
     **kwargs
-        Forwarded to the copula's ``cdf`` (e.g. ``N``, ``seeds``), whose value
-        is estimated by Monte-Carlo.
+        Forwarded to the copula's ``cdf`` (e.g. ``N``, ``seeds``), which
+        estimates its value by Monte-Carlo.
 
     Returns
     -------
@@ -709,7 +757,8 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     Returns
     -------
     array, shape (), dtype float
-        A 0-d array, so it stays differentiable on autograd backends.
+        A 0-d array, so it stays differentiable on an array namespace that
+        carries gradients.
     """
     terms: Any = self.logpdf(y, x=x)
     xp = array_namespace(terms)
@@ -746,7 +795,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
   def inverse_rosenblatt(
     self, w: ArrayT, *, x: Optional[ArrayT] = None, **kwargs: Any
   ) -> ArrayT:
-    """Inverse Rosenblatt transform, from independent uniforms to the data scale.
+    """Inverse Rosenblatt transform, from uniforms to the original scale.
 
     Parameters
     ----------
@@ -774,6 +823,10 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     self, n: int, *, x: Optional[ArrayT] = None, **kwargs: Any
   ) -> ArrayT:
     """Draw ``n`` samples from the joint distribution.
+
+    The copula's own draw, mapped through each margin's ``icdf``: the copula's
+    quasi-random and seeding options therefore apply, and no margin's own
+    sampler is consulted.
 
     Parameters
     ----------
@@ -805,11 +858,11 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
   ) -> ArrayT:
     """Sample the remaining variables given fixed values of some of them.
 
-    The data-scale counterpart of the copula's ``sample_conditional``: each row
-    of ``y_cond`` is one conditioning point on the **original** scale, and the
-    matching output row draws every variable from its distribution conditional on
-    it. To draw many samples at one point, pass that point repeated over ``n``
-    rows.
+    The data-scale counterpart of the copula's ``sample_conditional``: each
+    row of ``y_cond`` is one conditioning point on the **original** scale, and
+    the matching output row draws every variable from its distribution
+    conditional on it. To draw many samples at one point, pass that point
+    repeated over ``n`` rows.
 
     Parameters
     ----------
@@ -819,10 +872,10 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         scale, a discrete conditioner needs no left-limit column: it is derived
         from that variable's margin.
     conditioning_set : list of int or None, optional
-        The 1-based variables to condition on, so column ``i`` of ``y_cond`` is
-        variable ``conditioning_set[i]``. ``None`` takes the last ``k`` variables
-        of the copula's sampling order, ``k`` being ``y_cond``'s width -- the
-        same convention the copula scale uses.
+        The 1-based variables to condition on, so column ``i`` of ``y_cond``
+        is variable ``conditioning_set[i]``. ``None`` takes the last ``k``
+        variables of the copula's sampling order, ``k`` being ``y_cond``'s
+        width -- the same convention the copula scale uses.
     x : array, shape (n, p), or None, optional
         Exogenous covariates, forwarded to every margin that reads them and to
         the copula.
@@ -890,7 +943,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
   ) -> Any:
     """Put the conditioners on the copula scale, in the compact layout.
 
-    The same assembly as :meth:`copula_data`, over the conditioning variables
+    The assembly :meth:`copula_data` performs, over the conditioning variables
     only: one column each, then the left limit of every discrete one appended
     after the first block, in the order they appear.
 
@@ -927,9 +980,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     block = xp.stack([*upper, *lower], axis=-1)
     return trim(xp, block)
 
-  # --- construction from data ---------------------------------------------- #
-
-  # --- fitting -------------------------------------------------------------- #
+  # --- fitting ------------------------------------------------------------- #
 
   # The two part classes `from_data` fits; see the class docstring. Plain
   # comments, not `#:` ones: autosummary cannot generate a page for an
@@ -938,14 +989,14 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
   vinecop_class: ClassVar[Optional[type]] = None
   margin_class: ClassVar[Optional[type]] = None
 
-  #: Whether this namespace's copula fitter accepts observation weights.
-  #: Declared rather than discovered, so a caller passing weights to a lane
-  #: that cannot apply them to *both* halves gets an error instead of a fit
-  #: whose margins are weighted and whose copula is not.
+  #: Whether this lane's copula fitter accepts observation weights. Declared
+  #: rather than discovered, so weights given to a lane that cannot apply them
+  #: to *both* halves are refused up front instead of yielding a fit whose
+  #: margins are weighted and whose copula is not.
   supports_weighted_copula: bool = True
 
-  #: Whether any margin on this namespace can be fitted conditionally. When
-  #: ``False`` the refusal is categorical, so :meth:`from_data` says so rather
+  #: Whether any margin on this array namespace can be fitted conditionally.
+  #: When ``False`` the refusal is categorical, so the estimators say so rather
   #: than suggesting the caller pass margins that read covariates.
   supports_fit_covariates: bool = True
 
@@ -958,10 +1009,11 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
   ) -> tuple[Any, Any]:
     """Raise; override to put the fit inputs on this subclass's namespace.
 
-    Called once at the top of :meth:`from_data`, before any margin exists.
+    Called once before any part is fitted, by every estimator on the class.
     That is why it is a classmethod and not the instance-level ``_prep``: the
     placement a subclass fits on can come from ``controls`` (a device and a
-    dtype, say), and there is no object yet to read it from.
+    dtype, say), and on :meth:`from_data` there is no object yet to read it
+    from.
 
     Parameters
     ----------
@@ -985,7 +1037,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         Always, unless a subclass provides the coercion.
     """
     raise NotImplementedError(
-      f"{type(cls).__name__}._coerce_fit_data is not defined; implement it to "
+      f"{cls.__name__}._coerce_fit_data is not defined; implement it to "
       "fit this distribution from data, or compose an already-fitted copula "
       "and margins by construction."
     )
@@ -999,14 +1051,14 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
   ) -> Optional[Sequence[Any]]:
     """The margin each variable gets when the caller named none.
 
-    Constructs one ``margin_class`` per variable, which is why most subclasses
-    declare that instead of overriding this. Override it when the margins need
-    an argument the class attribute cannot carry -- a placement, or a family.
+    One ``margin_class`` per variable, which is why most subclasses declare
+    that instead of overriding this. Override it when the margins need an
+    argument the class attribute cannot carry -- a placement, or a family.
 
-    A variable's own ``margin_controls`` entry is authoritative here, since
-    the margin does not exist yet and so has nothing to override: a declared
-    type or support reaches the default margin's constructor. That is what
-    makes a bounded default reachable without naming a class.
+    Each variable's margin is built from its own ``margin_controls`` entry
+    through ``_margin_from_controls``: the margin does not exist yet, so a
+    declared type or support has nothing to override. That is what makes a
+    bounded default reachable without naming a class.
 
     Parameters
     ----------
@@ -1038,7 +1090,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     """Build one default margin honoring what its controls declare.
 
     Defaults to ignoring the declaration, which is right for any margin class
-    that reads it at fit time through ``declare``. A subclass whose
+    whose estimator reads its controls at fit time. A subclass whose
     ``margin_class`` takes its variable type or its bounds at *construction*
     overrides this -- a kernel density is the case that matters, since a bound
     it learns after fitting is a bound it has already padded past.
@@ -1075,8 +1127,8 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
 
     ``weights`` arrive explicitly rather than folded into ``controls``, so a
     subclass whose fitter cannot use them is not silently handed them: declare
-    ``supports_weighted_copula`` ``False`` instead and
-    :meth:`from_data` refuses the request before fitting anything.
+    ``supports_weighted_copula`` ``False`` instead and the estimators refuse
+    the request before fitting anything.
 
     Parameters
     ----------
@@ -1099,7 +1151,8 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     Raises
     ------
     NotImplementedError
-        Always, unless a subclass provides a copula fitter.
+        If this class names no ``vinecop_class`` and does not override this
+        hook.
     """
     if cls.vinecop_class is None:
       raise NotImplementedError(
@@ -1127,8 +1180,8 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
 
     The two-step estimator run over the parts this object already holds: each
     margin is re-estimated from its own column with the family it already has,
-    and the copula's pairs are re-estimated along the structure it already has.
-    Nothing is selected -- the data-scale analog of
+    and the copula's pairs along the structure it already has. That shape is
+    what the call holds fixed -- the data-scale analog of
     :meth:`~pyvinecopulib.core.VinecopBase.fit`.
 
     Parameters
@@ -1138,7 +1191,11 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     controls : ControlsLike, or None, optional
         Copula fit configuration.
     margin_controls : object, or None, optional
-        Marginal fit configuration.
+        Marginal fit configuration, one object per variable: a single object
+        broadcast to every variable, a length-``d`` sequence, or a mapping
+        keyed by position -- or by name, for margins that name themselves --
+        leaving the variables it does not address unconfigured. See
+        :func:`pyvinecopulib.margins.resolve_margin_controls`.
     x : array, shape (n, k), or None, optional
         Exogenous covariates, reaching each margin that declares
         ``supports_covariates``.
@@ -1149,6 +1206,12 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     -------
     VinedistBase
         ``self``, so the call chains.
+
+    Notes
+    -----
+    The margins are re-estimated in place, so one held elsewhere shows the new
+    fit; the copula half is replaced by a freshly fitted one, whose pair
+    copulas therefore hold the families ``controls`` admits.
 
     See Also
     --------
@@ -1189,7 +1252,8 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     controls : ControlsLike, or None, optional
         Copula fit configuration.
     margin_controls : object, or None, optional
-        Marginal fit configuration, bounding each margin's family search.
+        Marginal fit configuration, per variable as in :meth:`fit`; a declared
+        family set is what bounds each margin's search.
     x : array, shape (n, k), or None, optional
         Exogenous covariates, reaching each margin that declares
         ``supports_covariates``.
@@ -1227,7 +1291,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     structure: Optional[Any],
     verb: str,
   ) -> Self:
-    """Re-estimate the held parts and rebind them.
+    """Re-estimate the held parts and rebind them, for ``fit`` and ``select``.
 
     Parameters
     ----------
@@ -1254,8 +1318,12 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     Raises
     ------
     ValueError
-        If ``y``'s shape does not match this distribution's dimension, or if
-        weights or covariates are given that this lane cannot honor.
+        If ``y`` is not two-dimensional, if its width does not match this
+        distribution's dimension, or if weights are given that this lane
+        cannot apply to the copula half.
+    NotImplementedError
+        If covariates are given and no margin on this array namespace reads
+        them.
     """
     from ..margins import resolve_margin_controls
     from ..margins._resolve import fit_margin
@@ -1272,7 +1340,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         f"use {cls.__name__}.from_data to fit a distribution of another "
         "dimension"
       )
-    self._check_fit_inputs(x, weights, n, data, verb)
+    weights = self._check_fit_inputs(x, weights, n, data, verb)
 
     # A mapping may be keyed by name, but the only labels this object has are
     # whatever its margins carry -- nothing here assigns one. So a name-keyed
@@ -1383,10 +1451,10 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     result (Joe and Xu, 1996). Margins already fitted are left alone, so a
     fixed margin and one to estimate can be mixed freely.
 
-    This is one implementation for every array namespace. What varies — the
-    default margin class, the copula fitter, and how input arrays are
-    coerced — is asked of the subclass, so the two lanes cannot drift apart in
-    what they validate or in which half a setting reaches.
+    Unlike :meth:`fit` and :meth:`select`, which re-estimate the parts a
+    distribution already holds, this is where the margins are *chosen*: what
+    each variable gets comes from ``margins``, or from the lane's own default
+    when the caller names none.
 
     Parameters
     ----------
@@ -1398,7 +1466,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         ``supports_covariates`` is fitted conditionally on them, and the copula
         is then fitted on the resulting conditional probability-integral
         transforms.
-    margins : object, optional
+    margins : object, or None, optional
         What to use for each variable; see
         :func:`pyvinecopulib.margins.resolve_margins` for the accepted forms.
     controls : ControlsLike, or None, optional
@@ -1429,6 +1497,11 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     NotImplementedError
         If covariates are given and no margin on this array namespace can read
         them at all.
+
+    See Also
+    --------
+    fit : Re-estimate the parts a distribution already holds.
+    select : Re-estimate them, letting both halves change shape.
 
     References
     ----------

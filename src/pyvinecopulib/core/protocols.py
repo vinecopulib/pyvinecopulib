@@ -40,12 +40,31 @@ Every protocol here is ``runtime_checkable``, which compares member *names*
 only: ``isinstance(cop, BicopLike)`` reports that the names are present, not
 that the signatures agree.
 
-**Typing.** :data:`ArrayT` is an unbounded ``TypeVar`` carried only on these
-public signatures, so a concrete implementation (e.g.
+**Typing.** :data:`ArrayT` is an unbounded, invariant ``TypeVar`` carried only
+on these public signatures, so a concrete implementation (e.g.
 :class:`~pyvinecopulib.torch.TorchBicop`) inherits precise ``torch.Tensor``
 return types. The numeric implementations in
 :mod:`~pyvinecopulib.core.bicop_base` operate on arrays as ``Any`` (the Array API
 namespace ``array_api_compat`` is itself untyped).
+
+That plain spelling is the only legal one, not a lazy default, and the
+alternatives were considered rather than overlooked:
+
+- **Invariance is forced.** ``ArrayT`` appears in parameter position on
+  essentially every member, so ``covariant=True`` is an outright type error,
+  and the return positions rule out contravariance.
+- **A structural bound would exclude PyTorch.** The natural Array-API bound is
+  ``__array_namespace__``, which ``torch.Tensor`` does not have -- that absence
+  is the whole reason ``array_api_compat`` exists.
+- **Constraining to two concrete types costs two things.** It closes the
+  extension point these protocols advertise (``array_api_compat`` also covers
+  cupy, dask and jax), and it pulls ``torch`` into the *type-check* closure of
+  a subpackage that deliberately imports without it.
+- **A PEP 696 default** (``default=Any``) would let callers write
+  ``MarginLike`` for ``MarginLike[Any]``, and **PEP 695 syntax**
+  (``class BicopLike[ArrayT]``) would be tidier still. The first needs 3.13 in
+  the standard library, the second is *syntax* and needs 3.12; the floor here
+  is 3.11. Revisit both in one pass when it moves.
 """
 
 from __future__ import annotations
