@@ -524,7 +524,13 @@ class ParametricMargin(MarginBase[np.ndarray]):
     return margin
 
   def fit(
-    self, y: Any, *, x: Optional[Any] = None, weights: Optional[Any] = None
+    self,
+    y: Any,
+    /,
+    controls: Optional[Any] = None,
+    *,
+    x: Optional[Any] = None,
+    weights: Optional[Any] = None,
   ) -> "ParametricMargin":
     """Estimate the free parameters by maximum likelihood.
 
@@ -532,6 +538,9 @@ class ParametricMargin(MarginBase[np.ndarray]):
     ----------
     y : array, shape (n,), dtype float
         Observations; NaNs are dropped.
+    controls : object, or None, optional
+        Unused; the family is fixed here, so there is nothing to configure.
+        A search over families is :meth:`select`.
     x : array, shape (n, k), or None, optional
         Not supported; passing covariates raises rather than silently
         fitting an unconditional margin.

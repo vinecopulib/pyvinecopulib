@@ -336,13 +336,14 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   def from_data(
     cls,
     u,
-    structure: Optional[Any] = None,
+    /,
     # `structure` and `controls` are typed `Any` so this stays a widening of
     # `VinecopBase.from_data`, which accepts any `ControlsLike`: narrowing a
     # parameter is what a subclass may not do. The accepted objects are an
     # `RVineStructure` and a `FitControlsTorchVinecop`, as documented below.
-    controls: Optional[Any] = None,
+    structure: Optional[Any] = None,
     var_types: Optional[list[str]] = None,
+    controls: Optional[Any] = None,
     *,
     fit_edge: Optional[FitEdge] = None,
   ) -> "TorchVinecop":
@@ -374,14 +375,14 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     structure : RVineStructure or None, default=None
         Vine skeleton. ``None`` selects one natively in torch (continuous
         variables only).
-    controls : FitControlsTorchVinecop or None, default=None
-        Pair-copula fit controls bundled with the vine-level structure-selection
-        and placement / cascade knobs. ``None`` defaults to TLL on a 30x30
-        normal-spaced grid, float64, ``mst_prim`` with ``trunc_lvl=20``.
     var_types : list of str, or None, default=None
         Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete);
         ``None`` means all continuous. Given, they also fix the dimension, so
         ``u`` may carry the extra left-limit columns.
+    controls : FitControlsTorchVinecop or None, default=None
+        Pair-copula fit controls bundled with the vine-level structure-selection
+        and placement / cascade knobs. ``None`` defaults to TLL on a 30x30
+        normal-spaced grid, float64, ``mst_prim`` with ``trunc_lvl=20``.
     fit_edge : callable, or None, default=None
         ``(tree, edge, u_e, x_e) -> BicopLike``, overriding the built-in TLL
         fit. ``None`` fits ``bicop_class`` -- a :class:`TorchBicop` -- on each

@@ -486,7 +486,13 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
   # --- estimation ---------------------------------------------------------- #
 
   def fit(
-    self, y: Any, *, x: Optional[Any] = None, weights: Optional[Any] = None
+    self,
+    y: Any,
+    /,
+    controls: Optional[Any] = None,
+    *,
+    x: Optional[Any] = None,
+    weights: Optional[Any] = None,
   ) -> "OpenTURNSMargin":
     """Estimate the family's parameters with its OpenTURNS factory.
 
@@ -494,6 +500,9 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     ----------
     y : array, shape (n,), dtype float
         Observations; NaNs are dropped.
+    controls : object, or None, optional
+        Unused; this margin's family is named at construction, so there is
+        nothing left to configure.
     x : array, shape (n, k), or None, optional
         Not supported; passing covariates raises rather than silently
         fitting an unconditional margin.
@@ -770,6 +779,8 @@ class OpenTURNSSelector(_SelectorBase):
   def fit(
     self,
     y: Any,
+    /,
+    controls: Optional[Any] = None,
     *,
     x: Optional[Any] = None,
     weights: Optional[Any] = None,
@@ -780,6 +791,8 @@ class OpenTURNSSelector(_SelectorBase):
     ----------
     y : array, shape (n,), dtype float
         Observations; NaNs are dropped.
+    controls : object, or None, optional
+        Unused; the candidate set and criterion are named at construction.
     x : array, shape (n, k), or None, optional
         Not supported; selection is unconditional.
     weights : array, shape (n,), or None, optional

@@ -1129,14 +1129,264 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
       kwargs["var_types"] = var_types
     return cast("Any", cls.vinecop_class).from_data(u, **kwargs)
 
+  def fit(
+    self,
+    y: Any,
+    /,
+    controls: Optional[ControlsLike] = None,
+    margin_controls: Optional[Any] = None,
+    *,
+    x: Optional[Any] = None,
+    weights: Optional[Any] = None,
+  ) -> Self:
+    """Re-estimate both halves of this distribution, in place.
+
+    The two-step estimator run over the parts this object already holds: each
+    margin is re-estimated from its own column with the family it already has,
+    and the copula's pairs are re-estimated along the structure it already has.
+    Nothing is selected -- the data-scale analog of
+    :meth:`~pyvinecopulib.core.VinecopBase.fit`.
+
+    Parameters
+    ----------
+    y : array, shape (n, d), dtype float
+        Observations on the original scale.
+    controls : ControlsLike, or None, optional
+        Copula fit configuration.
+    margin_controls : object, or None, optional
+        Marginal fit configuration.
+    x : array, shape (n, k), or None, optional
+        Exogenous covariates, reaching each margin that declares
+        ``supports_covariates``.
+    weights : array, shape (n,), or None, optional
+        Observation weights, applied to both halves.
+
+    Returns
+    -------
+    VinedistBase
+        ``self``, so the call chains.
+
+    See Also
+    --------
+    select : Re-select the structure and the margin families as well.
+    from_data : Fit a fresh distribution, choosing the margins.
+    """
+    return self._reestimate(
+      y,
+      controls,
+      margin_controls,
+      x=x,
+      weights=weights,
+      structure=self.vinecop.structure,
+      verb="fit",
+    )
+
+  def select(
+    self,
+    y: Any,
+    /,
+    controls: Optional[ControlsLike] = None,
+    margin_controls: Optional[Any] = None,
+    *,
+    x: Optional[Any] = None,
+    weights: Optional[Any] = None,
+  ) -> Self:
+    """Re-select and re-estimate both halves, in place.
+
+    As :meth:`fit`, except that both halves may change shape: each margin
+    chooses a family from its own candidate set, and the copula re-selects its
+    structure. The margin classes stay as they are -- to change those, fit a
+    fresh distribution with :meth:`from_data`.
+
+    Parameters
+    ----------
+    y : array, shape (n, d), dtype float
+        Observations on the original scale.
+    controls : ControlsLike, or None, optional
+        Copula fit configuration.
+    margin_controls : object, or None, optional
+        Marginal fit configuration, bounding each margin's family search.
+    x : array, shape (n, k), or None, optional
+        Exogenous covariates, reaching each margin that declares
+        ``supports_covariates``.
+    weights : array, shape (n,), or None, optional
+        Observation weights, applied to both halves.
+
+    Returns
+    -------
+    VinedistBase
+        ``self``, so the call chains.
+
+    See Also
+    --------
+    fit : Keep the structure and the margin families, re-estimate parameters.
+    from_data : Fit a fresh distribution, choosing the margins.
+    """
+    return self._reestimate(
+      y,
+      controls,
+      margin_controls,
+      x=x,
+      weights=weights,
+      structure=None,
+      verb="select",
+    )
+
+  def _reestimate(
+    self,
+    y: Any,
+    controls: Optional[ControlsLike],
+    margin_controls: Optional[Any],
+    *,
+    x: Optional[Any],
+    weights: Optional[Any],
+    structure: Optional[Any],
+    verb: str,
+  ) -> Self:
+    """Re-estimate the held parts and rebind them.
+
+    Parameters
+    ----------
+    y : array, shape (n, d), dtype float
+        Observations on the original scale.
+    controls : ControlsLike, or None
+        Copula fit configuration.
+    margin_controls : object, or None
+        Marginal fit configuration.
+    x : array, shape (n, k), or None
+        Exogenous covariates.
+    weights : array, shape (n,), or None
+        Observation weights.
+    structure : RVineStructure, or None
+        The structure to fit along, or ``None`` to select one.
+    verb : str
+        ``"fit"`` or ``"select"``, the estimator asked of each margin.
+
+    Returns
+    -------
+    VinedistBase
+        ``self``.
+
+    Raises
+    ------
+    ValueError
+        If ``y``'s shape does not match this distribution's dimension, or if
+        weights or covariates are given that this lane cannot honor.
+    """
+    from ..margins import resolve_margin_controls
+    from ..margins._resolve import fit_margin
+
+    cls = type(self)
+    data, weights = cls._coerce_fit_data(y, weights, controls)
+    if data.ndim != 2:
+      raise ValueError(f"y must be two-dimensional; got {data.ndim} dimensions")
+    n, d = int(data.shape[0]), int(data.shape[1])
+    if d != self.dim:
+      raise ValueError(
+        f"y has {d} columns but this {cls.__name__} has {self.dim} "
+        "variables; "
+        f"use {cls.__name__}.from_data to fit a distribution of another "
+        "dimension"
+      )
+    self._check_fit_inputs(x, weights, n, data, verb)
+
+    # A mapping may be keyed by name, and the only names this object has are
+    # the ones its margins were labeled with when it was fitted.
+    names = [getattr(m, "name", None) for m in self._margins]
+    per_variable = resolve_margin_controls(
+      margin_controls,
+      d,
+      names=None if any(n is None for n in names) else cast(Any, names),
+    )
+    margins = [
+      fit_margin(
+        margin,
+        data[:, j],
+        x=x,
+        weights=weights,
+        controls=per_variable[j],
+        verb=verb,
+        refit=True,
+      )
+      for j, margin in enumerate(self._margins)
+    ]
+    var_types = cls.copula_var_types(margins)
+    u = cls.copula_data(margins, data, x=x)
+    vinecop = cls._fit_copula(
+      u,
+      var_types=var_types,
+      controls=controls,
+      structure=structure,
+      weights=weights,
+    )
+    self._bind_dist(vinecop, margins)
+    return self
+
+  @classmethod
+  def _check_fit_inputs(
+    cls,
+    x: Optional[Any],
+    weights: Optional[Any],
+    n: int,
+    data: Any,
+    verb: str,
+  ) -> Any:
+    """Validate covariates and weights against what this lane can honor.
+
+    Parameters
+    ----------
+    x : array, shape (n, k), or None
+        Exogenous covariates.
+    weights : array, shape (n,), or None
+        Observation weights.
+    n : int
+        Number of observations.
+    data : array, shape (n, d), dtype float
+        The coerced observations, whose first column types the weights.
+    verb : str
+        The calling method's name, quoted in the error messages.
+
+    Returns
+    -------
+    array, shape (n,), or None
+        The validated weights.
+
+    Raises
+    ------
+    NotImplementedError
+        If covariates are given and no margin on this array namespace reads
+        them.
+    ValueError
+        If weights are given that the copula half cannot apply.
+    """
+    if x is not None and not cls.supports_fit_covariates:
+      raise NotImplementedError(
+        f"{cls.__name__}.{verb} takes no covariates: no margin on this "
+        "array namespace reads them, so the margins would be fitted "
+        "unconditionally while the call suggested otherwise. Fit the parts "
+        "yourself if the copula alone is conditional."
+      )
+    validate_covariates(x, n)
+    weights = validate_weights(weights, data[:, 0])
+    if weights is not None and not cls.supports_weighted_copula:
+      raise ValueError(
+        f"{cls.__name__}.{verb} cannot weight the copula half, so the "
+        "margins would be weighted and the copula would not -- which is not "
+        "the weighted fit of anything. Drop `weights`, or fit the margins "
+        "yourself and compose them with a copula you weighted."
+      )
+    return weights
+
   @classmethod
   def from_data(
     cls,
     y: Any,
+    /,
     *,
     x: Optional[Any] = None,
     margins: Any = None,
     controls: Optional[ControlsLike] = None,
+    margin_controls: Optional[Any] = None,
     structure: Optional[Any] = None,
     weights: Optional[Any] = None,
     names: Optional[Sequence[str]] = None,
@@ -1168,6 +1418,11 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         :func:`pyvinecopulib.margins.resolve_margins` for the accepted forms.
     controls : ControlsLike, or None, optional
         Copula fit configuration, in the form this subclass's fitter takes.
+    margin_controls : object, or None, optional
+        Marginal fit configuration, reaching every margin that is estimated
+        here. The two halves are configured separately because they are fitted
+        separately: ``margins`` says which class each variable gets, and this
+        says how to fit or select it.
     structure : RVineStructure, or None, optional
         A fixed vine structure; selected from the data when ``None``.
     weights : array, shape (n,), or None, optional
@@ -1196,29 +1451,14 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
            functions for margins for multivariate models.* Technical Report
            166, Department of Statistics, University of British Columbia.
     """
-    from ..margins import resolve_margins
+    from ..margins import resolve_margin_controls, resolve_margins
     from ..margins._resolve import fit_margin
 
     data, weights = cls._coerce_fit_data(y, weights, controls)
     if data.ndim != 2:
       raise ValueError(f"y must be two-dimensional; got {data.ndim} dimensions")
     n, d = int(data.shape[0]), int(data.shape[1])
-    if x is not None and not cls.supports_fit_covariates:
-      raise NotImplementedError(
-        f"{cls.__name__}.from_data takes no covariates: no margin on this "
-        "array namespace reads them, so the margins would be fitted "
-        "unconditionally while the call suggested otherwise. Fit the parts "
-        "yourself if the copula alone is conditional."
-      )
-    validate_covariates(x, n)
-    weights = validate_weights(weights, data[:, 0])
-    if weights is not None and not cls.supports_weighted_copula:
-      raise ValueError(
-        f"{cls.__name__}.from_data cannot weight the copula half, so the "
-        "margins would be weighted and the copula would not -- which is not "
-        "the weighted fit of anything. Drop `weights`, or fit the margins "
-        "yourself and compose them with a copula you weighted."
-      )
+    weights = cls._check_fit_inputs(x, weights, n, data, "from_data")
 
     if names is None:
       # A DataFrame carries its own names, and `margins` is often keyed by
@@ -1239,12 +1479,14 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         "a model of f(y) labeled as one of f(y | x). Pass margins that declare "
         "supports_covariates, or drop x."
       )
+    per_variable = resolve_margin_controls(margin_controls, d, names=names)
     fitted = [
       fit_margin(
         _named(specs[j], names[j] if names is not None else None),
         data[:, j],
         x=x,
         weights=weights,
+        controls=per_variable[j],
       )
       for j in range(d)
     ]

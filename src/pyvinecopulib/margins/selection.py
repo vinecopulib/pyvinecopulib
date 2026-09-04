@@ -594,7 +594,13 @@ class MarginSelector(_SelectorBase):
     return selector
 
   def fit(
-    self, y: Any, *, x: Optional[Any] = None, weights: Optional[Any] = None
+    self,
+    y: Any,
+    /,
+    controls: Optional[Any] = None,
+    *,
+    x: Optional[Any] = None,
+    weights: Optional[Any] = None,
   ) -> "MarginSelector":
     """Fit every candidate and keep the best.
 
@@ -602,6 +608,8 @@ class MarginSelector(_SelectorBase):
     ----------
     y : array, shape (n,), dtype float
         Observations; NaNs are dropped.
+    controls : object, or None, optional
+        Unused; the candidate set and criterion are named at construction.
     x : array, shape (n, k), or None, optional
         Not supported; passing covariates raises rather than silently
         fitting an unconditional margin.

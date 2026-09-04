@@ -394,7 +394,13 @@ def _needs_fitting() -> Any:
       return False
 
     def fit(
-      self, y: Any, *, x: Optional[Any] = None, weights: Any = None
+      self,
+      y: Any,
+      /,
+      controls: Any = None,
+      *,
+      x: Optional[Any] = None,
+      weights: Any = None,
     ) -> Any:
       return self
 
@@ -690,7 +696,13 @@ def test_from_data_fits_conditional_margins_on_the_covariates() -> None:
       return False
 
     def fit(
-      self, data: Any, *, x: Optional[Any] = None, weights: Any = None
+      self,
+      data: Any,
+      /,
+      controls: Any = None,
+      *,
+      x: Optional[Any] = None,
+      weights: Any = None,
     ) -> Any:
       seen.append(x)
       return self

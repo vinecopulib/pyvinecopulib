@@ -176,15 +176,14 @@ class BicopBase(BicopLike[ArrayT], ABC):
     cls,
     u: ArrayT,
     /,
-    *,
     controls: Optional[Any] = None,
     var_types: Optional[list[str]] = None,
   ) -> Self:
-    """Construct a pair copula and estimate it from data.
+    """Construct a pair copula and select it from data.
 
-    ``cls().fit(u, ...)``, so a subclass that implements :meth:`fit` gets this
-    for free. It is what a vine calls per edge when it names this class as its
-    ``bicop_class``.
+    ``cls().select(u, ...)``, so a subclass that implements :meth:`fit` gets
+    this for free. It is what a vine calls per edge when it names this class as
+    its ``bicop_class``.
 
     Parameters
     ----------
@@ -203,15 +202,15 @@ class BicopBase(BicopLike[ArrayT], ABC):
 
     See Also
     --------
-    fit : Estimate an already-constructed pair copula in place.
+    select : Choose a family for an already-constructed pair copula, in place.
+    fit : Estimate the current family's parameters, leaving the family alone.
     """
-    return cls().fit(u, controls=controls, var_types=var_types)
+    return cls().select(u, controls, var_types)
 
   def fit(
     self,
     u: ArrayT,
     /,
-    *,
     controls: Optional[Any] = None,
     var_types: Optional[list[str]] = None,
   ) -> Self:
@@ -254,6 +253,42 @@ class BicopBase(BicopLike[ArrayT], ABC):
       f"{type(self).__name__}.fit is not defined; implement it to estimate "
       "this pair copula from data, or construct it with explicit parameters."
     )
+
+  def select(
+    self,
+    u: ArrayT,
+    /,
+    controls: Optional[Any] = None,
+    var_types: Optional[list[str]] = None,
+  ) -> Self:
+    """Choose a family for this pair copula and estimate it, in place.
+
+    Defaults to :meth:`fit`, which is the right answer whenever there is
+    nothing to choose: a pair copula with a single fixed family, or a
+    nonparametric one, is fully determined by its parameters. Override it in a
+    subclass that searches a family set, and have it reset any state the search
+    is meant to replace -- a rotation, a family tag -- before estimating.
+
+    Parameters
+    ----------
+    u : array, shape (n, 2), dtype float
+        Pseudo-observations in ``[0, 1]^2``.
+    controls : object, or None, optional
+        Fit configuration, in whatever form the subclass accepts.
+    var_types : list of str, or None, optional
+        The two variable types of the edge this pair sits on. ``None`` means
+        both are continuous.
+
+    Returns
+    -------
+    BicopBase
+        ``self``, so the call chains.
+
+    See Also
+    --------
+    fit : Estimate the current family's parameters, leaving the family alone.
+    """
+    return self.fit(u, controls, var_types)
 
   def flip(self) -> "BicopBase[ArrayT]":
     """Raise; override to return the pair with its arguments swapped.

@@ -43,7 +43,7 @@ from ._adapters import as_margin, register_margin_adapter
 # Imported for its side effect as much as its names: it registers the OpenTURNS
 # adapter with `as_margin`, and it imports OpenTURNS itself only when used.
 from ._openturns import OpenTURNSMargin, OpenTURNSSelector
-from ._resolve import resolve_margins
+from ._resolve import resolve_margin_controls, resolve_margins
 from .parametric import ParametricMargin
 from .selection import MarginSelector
 
@@ -53,6 +53,7 @@ __all__ = [
   "OpenTURNSSelector",
   "ParametricMargin",
   "as_margin",
+  "resolve_margin_controls",
   "resolve_margins",
   "register_margin_adapter",
 ]

@@ -221,6 +221,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self,
     y: Tensor,
     /,
+    controls: Optional[Any] = None,
     *,
     x: Optional[Tensor] = None,
     weights: Optional[Tensor] = None,
@@ -231,6 +232,10 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     ----------
     y : Tensor, shape (n,)
         Observations on the original scale.
+    controls : object, or None, optional
+        Unused; the bandwidth, bounds and variable type are named at
+        construction, so a margin fitted differently is constructed
+        differently.
     x : Tensor or None, optional
         Not supported; a kernel density reads no covariates, so passing them
         raises rather than fitting an unconditional margin silently.
@@ -335,9 +340,11 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   def from_data(
     cls,
     y: Tensor,
+    /,
+    controls: Optional[Any] = None,
     *,
+    x: Optional[Tensor] = None,
     weights: Optional[Tensor] = None,
-    **kwargs: Any,
   ) -> "TorchKde1d":
     """Construct and fit in one call.
 
@@ -345,17 +352,20 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     ----------
     y : Tensor, shape (n,)
         Observations on the original scale.
+    controls : object, or None, optional
+        Unused; the estimator is configured at construction, so a margin whose
+        bandwidth or bounds differ is named that way instead.
+    x : Tensor, shape (n, k), or None, optional
+        Not supported; passing covariates raises.
     weights : Tensor, shape (n,), or None, optional
         Observation weights.
-    **kwargs
-        Forwarded to the constructor.
 
     Returns
     -------
     TorchKde1d
         The fitted margin.
     """
-    return cls(**kwargs).fit(y, weights=weights)
+    return cls().fit(y, controls, x=x, weights=weights)
 
   @classmethod
   def from_grid(

@@ -247,6 +247,7 @@ class AtomicMargin(MarginBase[NDArray[np.float64]]):
     self,
     y: NDArray[np.float64],
     /,
+    controls: object = None,
     *,
     x: Optional[NDArray[np.float64]] = None,
     weights: Optional[NDArray[np.float64]] = None,

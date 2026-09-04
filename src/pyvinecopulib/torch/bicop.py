@@ -331,12 +331,13 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
   def from_data(
     cls,
     u,
+    /,
     controls: Optional[FitControlsTorchBicop] = None,
+    var_types: Optional[list[str]] = None,
     *,
     cache_integrals: bool = True,
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
-    var_types: Optional[list[str]] = None,
   ) -> "TorchBicop":
     """Fits a bicop on pseudo-observations and wraps in a ``TorchBicop``.
 
@@ -353,18 +354,18 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     controls : FitControlsTorchBicop or None, default=None
         Fit-time controls. `None` defaults to TLL with
         ``grid_size=30`` on the normal-spaced grid.
-    cache_integrals : bool, default=True
-        See ``TorchBicop.__init__``.
-    device : torch.device or None, default=None
-        See ``TorchBicop.__init__``.
-    dtype : torch.dtype, default=torch.float64
-        See ``TorchBicop.__init__``.
     var_types : list of str or None, default=None
         The two arguments' types, ``"c"`` or ``"d"``; ``None`` means both
         continuous. A discrete argument changes only how ties are broken when
         ranking, and the fitted grid is continuous either way — the mixed-
         discrete surface is supplied by
         :class:`~pyvinecopulib.core.DiscretePair`.
+    cache_integrals : bool, default=True
+        See ``TorchBicop.__init__``.
+    device : torch.device or None, default=None
+        See ``TorchBicop.__init__``.
+    dtype : torch.dtype, default=torch.float64
+        See ``TorchBicop.__init__``.
 
     Returns
     -------

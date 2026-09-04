@@ -289,28 +289,31 @@ class MarginBase(MarginLike[ArrayT], ABC):
     cls,
     y: ArrayT,
     /,
+    controls: Optional[Any] = None,
     *,
     x: Optional[ArrayT] = None,
     weights: Optional[ArrayT] = None,
-    **kwargs: Any,
   ) -> Self:
-    """Construct a margin and estimate it from data.
+    """Construct a margin and select it from data.
 
-    ``cls(**kwargs).fit(y, ...)``, so a subclass that implements :meth:`fit`
-    gets this for free -- which is what lets a vine distribution name this
-    class as its ``margin_class`` and fit one per variable.
+    ``cls().select(y, ...)``, so a subclass that implements :meth:`fit` gets
+    this for free -- which is what lets a vine distribution name this class as
+    its ``margin_class`` and fit one per variable.
+
+    A margin whose family is chosen at construction is named that way instead
+    (``ParametricMargin("gamma").fit(y)``); this factory is for the case where
+    the class itself is the whole specification.
 
     Parameters
     ----------
     y : array, shape (n,), dtype float
         Observations on the original scale.
+    controls : object, or None, optional
+        Fit configuration, in whatever form the subclass accepts.
     x : array, shape (n, k), or None, optional
         Exogenous covariates, one row per observation.
     weights : array, shape (n,), or None, optional
         Observation weights.
-    **kwargs : Any
-        Passed to the constructor, so a family or a support bound is named here
-        rather than in a separate step.
 
     Returns
     -------
@@ -319,14 +322,16 @@ class MarginBase(MarginLike[ArrayT], ABC):
 
     See Also
     --------
-    fit : Estimate an already-constructed margin in place.
+    select : Choose a family for an already-constructed margin, in place.
+    fit : Estimate the current family's parameters, leaving the family alone.
     """
-    return cls(**kwargs).fit(y, x=x, weights=weights)
+    return cls().select(y, controls, x=x, weights=weights)
 
   def fit(
     self,
     y: ArrayT,
     /,
+    controls: Optional[Any] = None,
     *,
     x: Optional[ArrayT] = None,
     weights: Optional[ArrayT] = None,
@@ -337,6 +342,8 @@ class MarginBase(MarginLike[ArrayT], ABC):
     ----------
     y : array, shape (n,), dtype float
         Observations on the original scale.
+    controls : object, or None, optional
+        Fit configuration, in whatever form the subclass accepts.
     x : array, shape (n, k), or None, optional
         Exogenous covariates, one row per observation. A margin that reads them
         declares :attr:`supports_covariates`, and sets it when it does.
@@ -356,12 +363,55 @@ class MarginBase(MarginLike[ArrayT], ABC):
 
     See Also
     --------
+    select : Choose a family as well, where the margin has one to choose.
     from_data : Construct and fit in one call.
     """
     raise NotImplementedError(
       f"{type(self).__name__}.fit is not defined; implement it to estimate "
       "this margin from data, or construct it with explicit parameters."
     )
+
+  def select(
+    self,
+    y: ArrayT,
+    /,
+    controls: Optional[Any] = None,
+    *,
+    x: Optional[ArrayT] = None,
+    weights: Optional[ArrayT] = None,
+  ) -> Self:
+    """Choose a family for this margin and estimate it, in place.
+
+    Defaults to :meth:`fit`, which is the right answer whenever there is
+    nothing to choose: a margin named with its family, or a nonparametric one,
+    is fully determined by its parameters. Override it in a subclass that
+    searches a candidate set -- :class:`~pyvinecopulib.margins.ParametricMargin`
+    does -- and have it set the family it chose before estimating.
+
+    Parameters
+    ----------
+    y : array, shape (n,), dtype float
+        Observations on the original scale.
+    controls : object, or None, optional
+        Fit configuration, in whatever form the subclass accepts. The margins
+        in :mod:`pyvinecopulib.margins` read a
+        :class:`~pyvinecopulib.margins.FitControlsMargin`, whose ``family_set``
+        and ``selection_criterion`` bound the search.
+    x : array, shape (n, k), or None, optional
+        Exogenous covariates, one row per observation.
+    weights : array, shape (n,), or None, optional
+        Observation weights.
+
+    Returns
+    -------
+    MarginBase
+        ``self``, so the call chains.
+
+    See Also
+    --------
+    fit : Estimate the current family's parameters, leaving the family alone.
+    """
+    return self.fit(y, controls, x=x, weights=weights)
 
   # --- derived evaluation surface ------------------------------------------ #
 

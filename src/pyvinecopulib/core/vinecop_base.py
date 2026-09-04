@@ -1953,11 +1953,12 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   def fit(
     self,
     u: Any,
-    *,
-    fit_edge: Optional[FitEdge] = None,
+    /,
     controls: Optional[ControlsLike] = None,
-    x: Optional[Any] = None,
     var_types: Optional[list[str]] = None,
+    *,
+    x: Optional[Any] = None,
+    fit_edge: Optional[FitEdge] = None,
     fit_level: Optional[FitLevel] = None,
   ) -> Self:
     """Fit the pair copulas along this vine's own structure, in place.
@@ -1970,16 +1971,16 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     ----------
     u : array, shape (n, d), dtype float
         Pseudo-observations in ``[0, 1]^d``.
+    controls : ControlsLike, or None, optional
+        Fit configuration, read here and handed to each pair fit.
+    var_types : list of str, or None, optional
+        One ``"c"`` or ``"d"`` per variable; defaults to this vine's own.
+    x : array, shape (n, p), or None, optional
+        External covariates, threaded to each pair.
     fit_edge : callable, or None, optional
         ``(tree, edge, u_e, x_e) -> BicopLike``, receiving each edge's
         ``var_types`` as a keyword when that edge has one. Defaults to fitting
         ``bicop_class``. Conditional fitting is driven through this seam.
-    controls : ControlsLike, or None, optional
-        Fit configuration, read here and handed to each pair fit.
-    x : array, shape (n, p), or None, optional
-        External covariates, threaded to each pair.
-    var_types : list of str, or None, optional
-        One ``"c"`` or ``"d"`` per variable; defaults to this vine's own.
     fit_level : callable, or None, optional
         ``(tree, u_level, types) -> Sequence[BicopLike]``, fitting a whole tree
         level at once instead of edge by edge.
@@ -2015,10 +2016,11 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   def select(
     self,
     u: Any,
-    *,
-    fit_edge: Optional[FitEdge] = None,
+    /,
     controls: Optional[ControlsLike] = None,
     var_types: Optional[list[str]] = None,
+    *,
+    fit_edge: Optional[FitEdge] = None,
     fit_level: Optional[FitLevel] = None,
   ) -> Self:
     """Select a structure from data and fit its pairs, in place.
@@ -2031,13 +2033,13 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     ----------
     u : array, shape (n, d), dtype float
         Pseudo-observations in ``[0, 1]^d``.
-    fit_edge : callable, or None, optional
-        See :meth:`fit`. The pair must also implement ``flip``, which
-        reorients it onto its finalized slot.
     controls : ControlsLike, or None, optional
         Fit configuration.
     var_types : list of str, or None, optional
         One ``"c"`` or ``"d"`` per variable; defaults to this vine's own.
+    fit_edge : callable, or None, optional
+        See :meth:`fit`. The pair must also implement ``flip``, which
+        reorients it onto its finalized slot.
     fit_level : callable, or None, optional
         Fits a whole tree level at once; see :meth:`fit`.
 
@@ -2068,11 +2070,12 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   def from_data(
     cls,
     u: Any,
-    *,
-    fit_edge: Optional[FitEdge] = None,
-    controls: Optional[ControlsLike] = None,
+    /,
     structure: Optional[Any] = None,
     var_types: Optional[list[str]] = None,
+    controls: Optional[ControlsLike] = None,
+    *,
+    fit_edge: Optional[FitEdge] = None,
   ) -> Self:
     """Construct a vine fitted to data.
 
@@ -2084,14 +2087,14 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     ----------
     u : array, shape (n, d), dtype float
         Pseudo-observations in ``[0, 1]^d``.
-    fit_edge : callable, or None, optional
-        See :meth:`fit`. Defaults to fitting ``bicop_class``.
-    controls : ControlsLike, or None, optional
-        Fit configuration; see :meth:`select`.
     structure : RVineStructure, or None, optional
         A fixed structure. Selected from the data when ``None``.
     var_types : list of str, or None, optional
         One ``"c"`` or ``"d"`` per variable.
+    controls : ControlsLike, or None, optional
+        Fit configuration; see :meth:`select`.
+    fit_edge : callable, or None, optional
+        See :meth:`fit`. Defaults to fitting ``bicop_class``.
 
     Returns
     -------
