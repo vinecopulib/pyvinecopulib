@@ -508,7 +508,6 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         threshold=controls.threshold,
         tree_algorithm=controls.tree_algorithm,
         seeds=list(controls.seeds),
-        to_numpy=lambda t: t.detach().cpu().numpy(),
         var_types=list(var_types or []) or None,
         conditioning_set=list(controls.conditioning_set) or None,
       )
@@ -527,7 +526,6 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         fit_level=level_hook,
         tree_criterion=controls.tree_criterion,
         threshold=controls.threshold,
-        to_numpy=lambda t: t.detach().cpu().numpy(),
       )
     # Store the continuous grids; `get_pair_copula` re-wraps a discrete edge,
     # so the ModuleList holds only real nn.Modules. A thresholded edge arrives

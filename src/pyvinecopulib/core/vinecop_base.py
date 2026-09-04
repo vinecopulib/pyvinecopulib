@@ -161,11 +161,6 @@ if TYPE_CHECKING:
 __all__ = ["VinecopBase"]
 
 
-#: ``(tree, edge, u_e, x_e) -> BicopLike``, fitting one edge's pair copula: the
-#: seam external packages drive conditional fitting through (see
-#: :meth:`VinecopBase.fit`). An edge with a discrete argument additionally
-#: receives ``var_types=[t1, t2]`` and a four-column ``u_e``, so the alias cannot
-#: pin the arity -- a ``Callable`` has no way to express a keyword argument.
 #: Sentinel the core controls use for "no truncation"; the engines spell the
 #: same thing ``None``.
 _NO_TRUNCATION = 2**63
@@ -218,6 +213,11 @@ def _selection_options(controls: Optional[ControlsLike]) -> dict[str, Any]:
   return out
 
 
+#: ``(tree, edge, u_e, x_e) -> BicopLike``, fitting one edge's pair copula: the
+#: seam external packages drive conditional fitting through (see
+#: :meth:`VinecopBase.fit`). An edge with a discrete argument additionally
+#: receives ``var_types=[t1, t2]`` and a four-column ``u_e``, so the alias cannot
+#: pin the arity -- a ``Callable`` has no way to express a keyword argument.
 FitEdge = Callable[..., BicopLike]
 
 #: ``(tree, u_level, types) -> list[BicopLike]``, fitting a whole tree level
@@ -1959,7 +1959,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     x: Optional[Any] = None,
     var_types: Optional[list[str]] = None,
     fit_level: Optional[FitLevel] = None,
-    to_numpy: Optional[Callable[[Any], Any]] = None,
   ) -> Self:
     """Fit the pair copulas along this vine's own structure, in place.
 
@@ -1984,8 +1983,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     fit_level : callable, or None, optional
         ``(tree, u_level, types) -> Sequence[BicopLike]``, fitting a whole tree
         level at once instead of edge by edge.
-    to_numpy : callable, or None, optional
-        Converts an array to NumPy for the dependence-measure routines.
 
     Returns
     -------
@@ -2009,7 +2006,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         fit_level=fit_level,
         tree_criterion=options.get("tree_criterion", "tau"),
         threshold=options.get("threshold", 0.0),
-        to_numpy=to_numpy,
         weights=options.get("weights"),
         criterion_function=options.get("criterion_function"),
       )
@@ -2024,7 +2020,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     controls: Optional[ControlsLike] = None,
     var_types: Optional[list[str]] = None,
     fit_level: Optional[FitLevel] = None,
-    to_numpy: Optional[Callable[[Any], Any]] = None,
   ) -> Self:
     """Select a structure from data and fit its pairs, in place.
 
@@ -2045,8 +2040,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         One ``"c"`` or ``"d"`` per variable; defaults to this vine's own.
     fit_level : callable, or None, optional
         Fits a whole tree level at once; see :meth:`fit`.
-    to_numpy : callable, or None, optional
-        Converts an array to NumPy for the dependence-measure routines.
 
     Returns
     -------
@@ -2065,7 +2058,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       self._resolve_fit_edge(fit_edge, controls),
       var_types=types,
       fit_level=fit_level,
-      to_numpy=to_numpy,
       **_selection_options(controls),
     )
     self._bind_vine(structure, self._context, var_types=types)
@@ -2161,7 +2153,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     fit_level: Optional[FitLevel] = None,
     tree_criterion: str = "tau",
     threshold: float = 0.0,
-    to_numpy: Optional[Callable[[Any], Any]] = None,
     weights: Optional[Any] = None,
     criterion_function: Optional[Callable[[Any], float]] = None,
   ) -> list[list[BicopLike]]:
@@ -2214,9 +2205,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         Dependence threshold. An edge whose criterion falls below it holds
         :class:`~pyvinecopulib.core.IndependencePair` and is not fitted, as
         it does under selection. At the default nothing is below it.
-    to_numpy : callable, optional
-        Host transfer for one column, used to evaluate the criterion.
-        Defaults to the array API's own, which any backend supports.
     weights : array, shape (n,), optional
         Observation weights. Applied to the tree criterion and forwarded to
         ``fit_edge``, so a weighted selection agrees with
@@ -2255,7 +2243,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     validate_covariates(x, int(n))
     criterion = _make_criterion(
       tree_criterion,
-      _to_numpy_default if to_numpy is None else to_numpy,
+      _to_numpy_default,
       int(n),
       weights,
       criterion_function,
@@ -2377,7 +2365,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     threshold: float = 0.0,
     tree_algorithm: str = "mst_prim",
     seeds: Optional[list[int]] = None,
-    to_numpy: Optional[Callable[[Any], Any]] = None,
     var_types: Optional[list[str]] = None,
     conditioning_set: Optional[list[int]] = None,
     weights: Optional[Any] = None,
@@ -2448,10 +2435,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         ``"random_unweighted"`` (Wilson).
     seeds : list of int, optional
         RNG seeds for the random tree algorithms (ignored by the MST ones).
-    to_numpy : callable, optional
-        Maps a 1-d array to a NumPy array for criterion evaluation. Defaults to
-        :func:`numpy.asarray`; PyTorch callers pass one that detaches and moves
-        to host (e.g. ``lambda t: t.detach().cpu().numpy()``).
     weights : array, shape (n,), optional
         Observation weights. Applied to the tree criterion and forwarded to
         ``fit_edge``, so a weighted selection agrees with
@@ -2510,8 +2493,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     seed_list = [int(s) for s in (seeds or [])]
     # ``np.asarray`` raises on a GPU tensor, so the default routes any
     # non-NumPy array through the array API's own host transfer. A caller
-    # that knows its backend can still pass a cheaper ``to_numpy``.
-    convert = _to_numpy_default if to_numpy is None else to_numpy
+    convert = _to_numpy_default
     max_trees = (
       d - 1 if trunc_lvl is None else max(0, min(int(trunc_lvl), d - 1))
     )
