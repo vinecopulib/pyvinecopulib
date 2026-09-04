@@ -23,7 +23,7 @@ from pyvinecopulib.core import (
   VinedistBase,
   VinedistLike,
 )
-from pyvinecopulib.margins import MarginSelector
+from pyvinecopulib.margins import FitControlsMargin, SciPyMargin
 
 from .helpers import widen
 from .conftest import GaussianBicop, HostedVinecop
@@ -188,11 +188,7 @@ def test_sample_conditional_validates_its_arguments(
 
 
 def test_margin_summary_has_a_row_per_variable(data: np.ndarray) -> None:
-  """Every variable is described, whether its margin selected a family or not.
-
-  `selection_report` covers only margins that *chose*, so an all-fixed
-  distribution reports nothing there and everything here.
-  """
+  """Every variable is described, whether its margin chose a family or not."""
   dist = pv.Vinedist.from_data(
     data, margins=["kde", stats.norm(0.0, 1.0), stats.poisson(3.0)]
   )
@@ -204,7 +200,6 @@ def test_margin_summary_has_a_row_per_variable(data: np.ndarray) -> None:
   # fit to report, and says so with None rather than a number.
   assert isinstance(rows[0]["loglik"], float)
   assert rows[1]["loglik"] is None
-  assert dist.selection_report() == []
 
 
 # --- discrete margins ------------------------------------------------------- #
@@ -318,10 +313,10 @@ def test_margins_may_mix_fitted_and_unfitted(continuous: np.ndarray) -> None:
 def test_margins_mapping_is_keyed_by_name(continuous: np.ndarray) -> None:
   """A mapping addresses variables by name over a default."""
   dist = pv.Vinedist.from_data(
-    continuous, margins={"b": MarginSelector()}, names=["a", "b"]
+    continuous, margins={"b": SciPyMargin()}, names=["a", "b"]
   )
   assert isinstance(dist.margins[0], Kde1d)
-  assert isinstance(dist.margins[1], MarginSelector)
+  assert isinstance(dist.margins[1], SciPyMargin)
 
 
 def test_margins_mapping_rejects_an_unknown_name(
@@ -472,7 +467,16 @@ def test_repr_names_the_margin_families(continuous: np.ndarray) -> None:
   assert repr(dist) == "Vinedist(dim=2, margins=[kde1d, kde1d])"
 
 
-# --- selection reporting ---------------------------------------------------- #
+# --- family selection ------------------------------------------------------- #
+
+
+def _families(dist: Any) -> list[str]:
+  """The family each margin settled on.
+
+  Read off `Any`: `family_name` is an optional capability rather than part of
+  the margin contract.
+  """
+  return [margin.family_name for margin in dist.margins]
 
 
 def test_from_data_reads_dataframe_column_names(data: np.ndarray) -> None:
@@ -483,32 +487,175 @@ def test_from_data_reads_dataframe_column_names(data: np.ndarray) -> None:
   assert dist.dim == 3
 
 
-def test_selection_report_names_each_variable(data: np.ndarray) -> None:
-  """Report rows identify their variable, so a multi-column table is readable."""
+def test_parametric_margins_choose_a_family_per_variable(
+  data: np.ndarray,
+) -> None:
+  """Each variable's family is chosen from its own column, not from the first.
+
+  The first column is normal and the second is the exponential of one, so the
+  two land in different support groups from the same call -- and
+  `margin_summary` is what makes that readable, one row per variable.
+  """
   dist = pv.Vinedist.from_data(
     data[:, :2], margins="parametric", names=["real", "positive"]
   )
-  report = dist.selection_report()
-  assert report
-  assert {row["column"] for row in report} == {"real", "positive"}
-  selected = {row["column"] for row in report if row["selected"]}
-  assert selected == {"real", "positive"}
+  assert all(isinstance(m, SciPyMargin) for m in dist.margins)
+  rows = dist.margin_summary()
+  assert [row["variable"] for row in rows] == [0, 1]
+  assert [row["family"] for row in rows] == ["norm", "lognorm"]
 
 
-def test_selection_report_is_empty_without_a_selector(data: np.ndarray) -> None:
-  """Margins that were given rather than selected contribute no rows."""
-  assert pv.Vinedist.from_data(data).selection_report() == []
-
-
-def test_from_data_leaves_the_caller_s_specification_alone(
-  data: np.ndarray,
+def test_from_data_honors_a_named_family_and_chooses_an_unnamed_one(
+  continuous: np.ndarray,
 ) -> None:
-  """Naming a selector must not mutate an object the caller still holds."""
-  selector = MarginSelector(candidates=["norm", "logistic"])
-  dist = pv.Vinedist.from_data(data[:, :1], margins=[selector], names=["real"])
-  assert selector.name is None
-  assert list(selector.report_) == []
-  assert dist.selection_report()[0]["column"] == "real"
+  """A named family is what the caller asked for; `from_data` keeps it.
+
+  The second column is lognormal, so the two spellings separate here: naming
+  `norm` for it gets a normal, and leaving the family out gets the search.
+  """
+  named = pv.Vinedist.from_data(
+    continuous, margins=[SciPyMargin("norm"), SciPyMargin("norm")]
+  )
+  assert _families(named) == ["norm", "norm"]
+
+  chosen = pv.Vinedist.from_data(
+    continuous, margins=[SciPyMargin(), SciPyMargin()]
+  )
+  assert _families(chosen) == ["norm", "lognorm"]
+
+
+def test_fit_keeps_the_family_where_select_replaces_it(
+  continuous: np.ndarray,
+) -> None:
+  """The data-scale analog of `Vinecop.fit` versus `Vinecop.select`.
+
+  Both verbs keep a family the caller named, since naming it is the choice.
+  What separates them is `family_set`: it asks `select` to search again, and
+  `fit` has nothing to search with.
+  """
+  margins = [SciPyMargin("norm").fit(continuous[:, j]) for j in range(2)]
+  # Already fitted, so `from_data` leaves both alone and the wrong family on
+  # the second column survives to be re-estimated below.
+  dist = pv.Vinedist.from_data(continuous, margins=margins)
+  assert _families(dist) == ["norm", "norm"]
+
+  wider = FitControlsMargin(family_set=["norm", "lognorm"])
+  assert _families(dist.fit(continuous, None, wider)) == ["norm", "norm"]
+  assert _families(dist.select(continuous, None, wider)) == [
+    "norm",
+    "lognorm",
+  ]
+
+
+def test_a_margin_given_per_variable_is_fitted_in_place(
+  continuous: np.ndarray,
+) -> None:
+  """One margin per variable is the caller's own object, estimated in place.
+
+  A margin is both the specification and the fitted object, so the sequence
+  form hands ownership over -- unlike the broadcast form, which has to copy.
+  """
+  spec = SciPyMargin()
+  dist = pv.Vinedist.from_data(continuous, margins=[spec, "kde"])
+  assert dist.margins[0] is spec
+  assert spec.is_fitted and spec.family_name == "norm"
+
+
+@pytest.mark.parametrize(
+  ("spec", "expected"),
+  [
+    (FitControlsMargin(family_set=["logistic"]), ["logistic", "logistic"]),
+    (
+      [
+        FitControlsMargin(family_set=["norm"]),
+        FitControlsMargin(family_set=["logistic"]),
+      ],
+      ["norm", "logistic"],
+    ),
+    (
+      {"positive": FitControlsMargin(family_set=["logistic"])},
+      ["norm", "logistic"],
+    ),
+    ({1: FitControlsMargin(family_set=["logistic"])}, ["norm", "logistic"]),
+  ],
+  ids=["broadcast", "sequence", "by-name", "by-index"],
+)
+def test_margin_controls_are_resolved_per_variable(
+  continuous: np.ndarray, spec: Any, expected: list[str]
+) -> None:
+  """`margin_controls` follows `margins`' own resolution rules, form for form.
+
+  A mapping configures the variables it addresses and leaves the rest to the
+  curated search, which is what lets one call constrain the one variable whose
+  family is known.
+  """
+  dist = pv.Vinedist.from_data(
+    continuous,
+    margins="parametric",
+    margin_controls=spec,
+    names=["real", "positive"],
+  )
+  assert _families(dist) == expected
+
+
+def test_margin_controls_bound_the_default_kde_margin(
+  continuous: np.ndarray,
+) -> None:
+  """A declared support reaches a margin the library itself constructs.
+
+  Which is what makes a bounded default reachable without naming a class: the
+  second column is positive, and an unbounded kernel density pads its grid past
+  zero, so the draws go where nothing can occur.
+  """
+  plain = pv.Vinedist.from_data(continuous)
+  bounded = pv.Vinedist.from_data(
+    continuous, margin_controls={1: FitControlsMargin(support=(0.0, None))}
+  )
+  margin: Any = bounded.margins[1]
+  assert isinstance(margin, Kde1d) and margin.xmin == 0.0
+  assert plain.sample(500, seeds=[1, 2, 3])[:, 1].min() < 0.0
+  assert bounded.sample(500, seeds=[1, 2, 3])[:, 1].min() >= 0.0
+
+
+def test_margin_controls_resolution_is_refused_by_name(
+  continuous: np.ndarray,
+) -> None:
+  """A misresolved marginal configuration says which argument it came from."""
+  with pytest.raises(ValueError, match="margin_controls mapping names 'z'"):
+    pv.Vinedist.from_data(
+      continuous,
+      margin_controls={"z": FitControlsMargin()},
+      names=["a", "b"],
+    )
+  with pytest.raises(ValueError, match="margin_controls has length 1"):
+    pv.Vinedist.from_data(continuous, margin_controls=[FitControlsMargin()])
+
+
+def test_margin_controls_fallback_substitutes_a_kde_margin(
+  continuous: np.ndarray,
+) -> None:
+  """An impossible family set fails loudly, or falls back once and says so.
+
+  `beta` lives on the unit interval, so neither column admits it. Answering a
+  parametric request nonparametrically is a downgrade the caller has to ask
+  for, which is why the default is the refusal.
+  """
+  with pytest.raises(ValueError, match="no parametric family fits"):
+    pv.Vinedist.from_data(
+      continuous,
+      margins="parametric",
+      margin_controls=FitControlsMargin(family_set=["beta"]),
+    )
+
+  with pytest.warns(UserWarning, match="kernel-density margin was substituted"):
+    fallen_back = pv.Vinedist.from_data(
+      continuous,
+      margins="parametric",
+      margin_controls=FitControlsMargin(
+        family_set=["beta"], on_failure="fallback"
+      ),
+    )
+  assert all(isinstance(m, Kde1d) for m in fallen_back.margins)
 
 
 # --- exogenous covariates ---------------------------------------------------- #
@@ -829,7 +976,6 @@ def test_json_round_trip_is_exact_for_every_shipped_margin(unique_json_path):
   store a model; the objects this release adds had only `pickle`.
   """
   pytest.importorskip("scipy")
-  from pyvinecopulib.margins import MarginSelector, ParametricMargin
 
   rng = np.random.default_rng(0)
   cov = [[1.0, 0.7, 0.3], [0.7, 1.0, 0.5], [0.3, 0.5, 1.0]]
@@ -837,9 +983,9 @@ def test_json_round_trip_is_exact_for_every_shipped_margin(unique_json_path):
   q = x[:6]
   specs = {
     "default": None,
-    "parametric": [ParametricMargin("norm") for _ in range(3)],
-    "selector": [MarginSelector() for _ in range(3)],
-    "mixed": [pv.core.Kde1d(), ParametricMargin("norm"), MarginSelector()],
+    "parametric": [SciPyMargin("norm") for _ in range(3)],
+    "selected": [SciPyMargin() for _ in range(3)],
+    "mixed": [pv.core.Kde1d(), SciPyMargin("norm"), SciPyMargin()],
   }
   for label, margins in specs.items():
     dist = pv.core.Vinedist.from_data(x, margins=margins)
@@ -907,6 +1053,23 @@ def test_a_registered_custom_margin_round_trips():
   dist = pv.core.Vinedist(copula, [Uniform(), pv.core.Kde1d().fit(x[:, 1])])
   restored = pv.core.Vinedist.from_json(dist.to_json())
   assert isinstance(restored.margins[0], pv.core.MarginBase)
+
+
+def test_a_margin_selector_payload_explains_that_the_class_is_gone():
+  """A file written before 1.0.0 says what to do instead of failing obscurely.
+
+  `MarginSelector` wrapped the margin it chose, so its payload nests one --
+  which is why the reader is still registered: an unregistered kind would
+  report only that the kind is unknown.
+  """
+  rng = np.random.default_rng(4)
+  x = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=300)
+  dist = pv.core.Vinedist.from_data(
+    x, margins=[SciPyMargin("norm"), SciPyMargin("norm")]
+  )
+  legacy = dist.to_json().replace('"SciPyMargin"', '"MarginSelector"')
+  with pytest.raises(ValueError, match="MarginSelector.*no longer exists"):
+    pv.core.Vinedist.from_json(legacy)
 
 
 def test_an_unknown_margin_kind_and_a_bad_version_both_raise():

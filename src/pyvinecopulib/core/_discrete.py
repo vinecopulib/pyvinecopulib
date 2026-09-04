@@ -451,7 +451,7 @@ class DiscretePair(BicopBase[ArrayT]):
 
   Notes
   -----
-  ``examples/11_extending_pyvinecopulib.ipynb`` hosts a custom pair copula on a
+  ``examples/10_extending_pyvinecopulib.ipynb`` hosts a custom pair copula on a
   discrete edge and checks it against ``Vinecop``.
 
   The output matches ``Bicop``'s own discrete surface bit-for-bit, for every

@@ -3,10 +3,11 @@
 OpenTURNS spells the univariate surface its own way -- ``computePDF`` /
 ``computeCDF`` / ``computeQuantile``, over ``Point`` and ``Sample`` rather than
 NumPy arrays -- so it needs an adapter of its own rather than one of the SciPy
-ones. Three things ship here: that adapter, registered on import so
-:func:`as_margin` accepts an OpenTURNS distribution; :class:`OpenTURNSMargin`,
-one family fitted by a ``DistributionFactory``; and
-:class:`OpenTURNSSelector`, a choice among several by an information criterion.
+ones. Two things ship here: that adapter, registered on import so
+:func:`as_margin` accepts an OpenTURNS distribution; and
+:class:`OpenTURNSMargin`, one family fitted by a ``DistributionFactory`` --
+or, left unnamed, whichever family of the registry an information criterion
+picks.
 
 OpenTURNS is an optional dependency: it is imported when one of these is
 constructed, not when this module is imported, and the adapter's predicate
@@ -16,19 +17,18 @@ it.
 
 from __future__ import annotations
 
-import time
 import warnings
 from typing import Any, Optional
 
 import numpy as np
 
-from ..core import Kde1d, MarginBase, MarginLike
+from ..core import MarginBase, MarginLike
 from ..core.margin_base import _reject_covariates
 from ..core._validation import validate_univariate
 from ._adapters import register_margin_adapter
-from .selection import _CRITERIA, _SelectorBase, _criteria
+from .controls import CRITERIA, FitControlsMargin
 
-__all__ = ["OpenTURNSMargin", "OpenTURNSSelector"]
+__all__ = ["OpenTURNSMargin"]
 
 #: The ``openturns.FittingTest`` entry point behind each criterion name. All
 #: three are minimized, and all three are reported per observation.
@@ -286,8 +286,8 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
 
   See Also
   --------
-  pyvinecopulib.margins.OpenTURNSSelector : Choose among several of these.
-  pyvinecopulib.margins.ParametricMargin : The same thing over SciPy.
+  pyvinecopulib.margins.SciPyMargin : The SciPy counterpart.
+  pyvinecopulib.margins.SciPyMargin : The same thing over SciPy.
 
   Notes
   -----
@@ -324,12 +324,24 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     distribution: Optional[Any] = None,
   ) -> None:
     _openturns()
-    if (factory is None) == (distribution is None):
+    self._declared_var_type: Optional[str] = None
+    if factory is None and distribution is None:
+      # Neither: the family is chosen by `select`, from the registry for
+      # whichever variable type the data read as.
+      self._factory = None
+      self._distribution = None
+      self._var_type = "c"
+      self._n_free = 0
+      self._loglik: Optional[float] = None
+      self._nobs: Optional[int] = None
+      self._unnamed = True
+      return
+    if factory is not None and distribution is not None:
       raise ValueError(
         "OpenTURNSMargin takes either a factory to estimate a family with or "
-        "a distribution that already carries its parameters, not both and not "
-        "neither"
+        "a distribution that already carries its parameters, not both"
       )
+    self._unnamed = False
     # Branch on the arguments rather than on the attributes: the check above
     # guarantees exactly one is set, but that invariant is not expressible in
     # the attribute types.
@@ -349,7 +361,8 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     self._distribution = resolved_distribution
     self._var_type = "d" if known.isDiscrete() else "c"
     self._n_free = 0
-    self._loglik: Optional[float] = None
+    self._loglik = None
+    self._nobs = None
 
   @staticmethod
   def from_distribution(distribution: Any) -> "OpenTURNSMargin":
@@ -399,10 +412,33 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     str
         The distribution's own name once fitted, and the factory's family name
         before that.
+
+    Raises
+    ------
+    RuntimeError
+        If the family is neither named nor selected yet.
     """
     if self._distribution is not None:
       return str(self._distribution.getName())
+    if self._factory is None:
+      raise RuntimeError(
+        "OpenTURNSMargin() has no family yet; name a factory at construction "
+        "or call select(y) to choose from the registry"
+      )
     return _factory_name(self._factory)
+
+  @property
+  def nobs(self) -> Optional[int]:
+    """Number of observations the fit used.
+
+    Returns
+    -------
+    int or None
+        The sample size, or ``None`` on a margin built from a distribution
+        that already carried its parameters. It is what penalizes ``bic`` and
+        ``aicc``.
+    """
+    return self._nobs
 
   @property
   def parameter_names(self) -> tuple[str, ...]:
@@ -547,6 +583,214 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     )
     self._n_free = len(self._distribution.getParameter())
     self._loglik = float(np.sum(self.logpdf(data)))
+    self._nobs = int(data.size)
+    return self
+
+  # --- selection ----------------------------------------------------------- #
+
+  def declare(
+    self,
+    *,
+    var_type: Optional[str] = None,
+    support: Optional[tuple[float, float]] = None,
+  ) -> "OpenTURNSMargin":
+    """Accept what the caller knows, to be honored by :meth:`select`.
+
+    A named factory already fixes the variable type, so this only steers a
+    search: it decides which of OpenTURNS' two registries is searched.
+
+    Parameters
+    ----------
+    var_type : str or None, optional
+        ``"c"``, ``"d"`` or ``"zi"``. ``"zi"`` reduces to ``"d"``, the
+        partition OpenTURNS exposes for families with atoms.
+    support : tuple of float, or None, optional
+        Ignored. The registries are partitioned by variable type rather than
+        by support, so bounds do not narrow them.
+
+    Returns
+    -------
+    OpenTURNSMargin
+        ``self``, so the call chains into :meth:`select`.
+    """
+    del support
+    if var_type is not None:
+      self._declared_var_type = "d" if var_type == "zi" else var_type
+    return self
+
+  def select(
+    self,
+    y: Any,
+    /,
+    controls: Optional[Any] = None,
+    *,
+    x: Optional[Any] = None,
+    weights: Optional[Any] = None,
+  ) -> "OpenTURNSMargin":
+    """Choose a family from OpenTURNS' registry, fit it, and become it.
+
+    Every candidate the registry offers for the variable's type is built and
+    scored, and the best on the criterion wins; this margin then *is* that
+    family. Which registry is searched follows the data, or
+    ``controls.var_type`` when the caller states it: OpenTURNS partitions its
+    univariate families into continuous and discrete, and a probability mass
+    is not comparable with a Lebesgue density on one criterion.
+
+    Parameters
+    ----------
+    y : array, shape (n,), dtype float
+        Observations; NaNs are dropped.
+    controls : FitControlsMargin, or None, optional
+        Bounds the search: ``family_set`` names the candidate factories,
+        ``selection_criterion`` scores them, and ``var_type`` says which
+        registry to search. ``support`` is ignored, as in :meth:`declare`.
+    x : array, shape (n, k), or None, optional
+        Not supported; passing covariates raises rather than silently
+        selecting an unconditional margin.
+    weights : array, shape (n,), or None, optional
+        Not supported; an OpenTURNS ``Sample`` carries none.
+
+    Returns
+    -------
+    OpenTURNSMargin
+        ``self``, now carrying the chosen family.
+
+    Raises
+    ------
+    TypeError
+        If ``weights`` is given.
+    ValueError
+        If no observation survives, or if every candidate was refused.
+
+    See Also
+    --------
+    fit : Estimate a named family, leaving the family alone.
+
+    Examples
+    --------
+    ::
+
+        import numpy as np
+        from pyvinecopulib.margins import FitControlsMargin, OpenTURNSMargin
+
+        y = np.random.default_rng(0).gamma(2.5, 1.5, size=500)
+        chosen = OpenTURNSMargin().select(
+          y, FitControlsMargin(selection_criterion="bic")
+        )
+        chosen.family_name
+    """
+    _reject_covariates(self, x)
+    if weights is not None:
+      raise TypeError(
+        "OpenTURNSMargin cannot use observation weights: an OpenTURNS Sample "
+        "carries none. Pass margins='kde' for a weighted fit, or drop weights="
+      )
+    settings = controls if controls is not None else FitControlsMargin()
+    criterion = getattr(settings, "selection_criterion", "aic")
+    self.declare(var_type=getattr(settings, "var_type", None))
+
+    openturns = _openturns()
+    data = validate_univariate(np.asarray(y, dtype=float))
+    data = data[~np.isnan(data)]
+    if data.size == 0:
+      raise ValueError("OpenTURNSMargin.select got no usable observation")
+    sample = openturns.Sample(data.reshape(-1, 1))
+
+    discrete = self._reads_as_discrete(data)
+    scored: list[tuple[float, OpenTURNSMargin]] = []
+    refused: list[str] = []
+    for factory in self._candidate_factories(
+      discrete=discrete, family_set=getattr(settings, "family_set", None)
+    ):
+      candidate, reason = _try_factory(factory, data, sample, discrete=discrete)
+      if candidate is None:
+        refused.append(f"{_factory_name(factory)}: {reason}")
+        continue
+      score = _openturns_criteria(
+        sample,
+        candidate.distribution,
+        int(candidate.n_parameters),
+        candidate.loglik(),
+      )[criterion]
+      scored.append((score, candidate))
+
+    if not scored:
+      detail = "\n  ".join(refused) or "(the registry offered no candidate)"
+      raise ValueError(
+        "no OpenTURNS family fits this variable; every candidate was "
+        f"refused:\n  {detail}\nName a factory directly, or narrow "
+        "family_set."
+      )
+    scored.sort(key=lambda pair: pair[0])
+    return self._adopt(scored[0][1])
+
+  def _reads_as_discrete(self, data: np.ndarray) -> bool:
+    """Whether the discrete registry is the candidate set.
+
+    Parameters
+    ----------
+    data : array, shape (n,), dtype float
+        The observations.
+
+    Returns
+    -------
+    bool
+        ``True`` for the discrete group. Integer-valued data qualify whatever
+        their sign, since OpenTURNS' discrete families include ``Skellam`` on
+        all of the integers.
+    """
+    if self._declared_var_type is not None:
+      return self._declared_var_type == "d"
+    return bool(np.all(data == np.round(data)))
+
+  @staticmethod
+  def _candidate_factories(
+    *, discrete: bool, family_set: Optional[Any]
+  ) -> list[Any]:
+    """Resolve the factories to try.
+
+    Parameters
+    ----------
+    discrete : bool
+        Whether the discrete group applies.
+    family_set : sequence, or None
+        Family names or OpenTURNS factories, or ``None`` for the whole
+        registry of the applicable type.
+
+    Returns
+    -------
+    list
+        OpenTURNS factories.
+    """
+    if family_set is None:
+      registry = _openturns().DistributionFactory
+      return list(
+        registry.GetDiscreteUniVariateFactories()
+        if discrete
+        else registry.GetContinuousUniVariateFactories()
+      )
+    return [_resolve_factory(entry) for entry in family_set]
+
+  def _adopt(self, winner: "OpenTURNSMargin") -> "OpenTURNSMargin":
+    """Become the selected candidate.
+
+    Parameters
+    ----------
+    winner : OpenTURNSMargin
+        The candidate that won.
+
+    Returns
+    -------
+    OpenTURNSMargin
+        ``self``.
+    """
+    self._factory = winner._factory
+    self._distribution = winner._distribution
+    self._var_type = winner._var_type
+    self._n_free = winner._n_free
+    self._loglik = winner._loglik
+    self._nobs = winner._nobs
+    self._unnamed = False
     return self
 
   # --- evaluation ---------------------------------------------------------- #
@@ -589,6 +833,8 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     return np.random.default_rng(seeds or None).random(n)
 
   def __repr__(self) -> str:
+    if self._factory is None and self._distribution is None:
+      return "OpenTURNSMargin(no family yet)"
     if self._distribution is None:
       return f"OpenTURNSMargin({self.family_name!r}, unfitted)"
     shown = ", ".join(
@@ -599,6 +845,52 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
 
 
 # --- family selection ------------------------------------------------------ #
+
+
+def _try_factory(
+  factory: Any,
+  data: np.ndarray,
+  sample: Any,
+  *,
+  discrete: bool,
+) -> tuple[Optional["OpenTURNSMargin"], Optional[str]]:
+  """Build one candidate and report why it is inadmissible, or ``None``.
+
+  Parameters
+  ----------
+  factory : openturns.DistributionFactory
+      The candidate family.
+  data : array, shape (n,), dtype float
+      The observations.
+  sample : openturns.Sample
+      The same observations, shape ``(n, 1)``.
+  discrete : bool
+      Whether the data read as discrete.
+
+  Returns
+  -------
+  tuple
+      The fitted candidate and ``None``, or ``None`` and a one-line reason.
+  """
+  del sample
+  # A factory's optimizer chatter says nothing a caller can act on -- the
+  # outcome is admissible or not either way -- so it is collected rather than
+  # emitted once per family tried.
+  with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    try:
+      candidate = OpenTURNSMargin(factory).fit(data)
+    except Exception as e:  # noqa: BLE001 - any build failure is a rejection
+      return None, f"{type(e).__name__}: {e}"
+  if (candidate.var_type == "d") != discrete:
+    return None, (
+      f"a {candidate.var_type!r} family on data read as "
+      f"{'d' if discrete else 'c'}; masses and densities are not comparable"
+    )
+  loglik = candidate.loglik()
+  if not np.isfinite(loglik):
+    return None, f"non-finite log-likelihood ({loglik})"
+  return candidate, None
 
 
 def _openturns_criteria(
@@ -624,404 +916,15 @@ def _openturns_criteria(
       finite, so a candidate can never win by being undefined.
   """
   if not np.isfinite(loglik):
-    return dict.fromkeys(_CRITERIA, float("inf"))
+    return dict.fromkeys(CRITERIA, float("inf"))
   fitting = _openturns().FittingTest
   # OpenTURNS reports its criteria per observation; rescaling to the usual total
-  # puts a row on the same scale as `MarginSelector`'s.
+  # puts a criterion on the usual scale for a whole sample.
   n = float(sample.getSize())
   return {
     key: n * float(getattr(fitting, method)(sample, distribution, k))
     for key, method in _FITTING_TEST.items()
   }
-
-
-class OpenTURNSSelector(_SelectorBase):
-  """Pick an OpenTURNS family by an information criterion.
-
-  A selector is itself a margin: :meth:`fit` estimates every admissible
-  candidate, keeps the best one on :attr:`selected_`, and forwards ``pdf`` /
-  ``cdf`` / ``icdf`` to it, so a selected margin drops into a
-  :class:`~pyvinecopulib.core.Vinedist` exactly like a fixed one. The
-  per-candidate table is on :attr:`report_`.
-
-  Parameters
-  ----------
-  candidates : str or sequence, optional
-      ``"auto"`` (the default) takes OpenTURNS' own univariate factory list for
-      the variable's type. A sequence selects explicitly, and may mix family
-      names with ``DistributionFactory`` objects.
-  criterion : {"aic", "bic", "aicc"}, optional
-      What to minimize.
-  var_type : {"c", "d"} or None, optional
-      Force the data to be read as continuous or as discrete. Inferred when
-      ``None``: integer-valued data are discrete.
-  name : str or None, optional
-      Name of the variable being fitted, reported in :attr:`report_` and in the
-      fallback warning.
-
-  Raises
-  ------
-  ImportError
-      If OpenTURNS is not installed.
-  ValueError
-      If ``criterion`` is not one of the three, or ``var_type`` is not ``"c"``
-      or ``"d"``.
-
-  See Also
-  --------
-  pyvinecopulib.margins.OpenTURNSMargin : The candidates.
-  pyvinecopulib.margins.MarginSelector : The same thing over SciPy.
-  pyvinecopulib.core.Kde1d : The fallback, and the library default.
-
-  Notes
-  -----
-  **Candidates are scored one at a time, not through
-  ``FittingTest.BestModelBIC``.** That helper takes a single flat factory list,
-  and drops without raising the candidates it cannot build -- including ones
-  that would have won -- while happily comparing a continuous density's
-  likelihood against discrete masses if the list mixes the two. Here the
-  candidates are partitioned by ``isDiscrete()`` so that only the group
-  matching the variable's type competes, and each one is scored on its own.
-
-  **The criteria are OpenTURNS' own**, from ``FittingTest.AIC`` / ``BIC`` /
-  ``AICC``, rescaled from per-observation to the usual total so a row sits
-  alongside :attr:`MarginSelector.report_`'s.
-
-  **Nothing is skipped silently.** A candidate that fails to build, that lands
-  on the wrong side of the discrete / continuous split, or that reaches a
-  non-finite log-likelihood still gets a row in :attr:`report_` with the
-  reason. When every candidate fails, the selector falls back to
-  :class:`~pyvinecopulib.core.Kde1d` and warns once, naming the variable and
-  the reasons -- never to a normal, which would misspecify silently.
-
-  **Observation weights are not supported**, because the candidates cannot use
-  them; see the notes on :class:`OpenTURNSMargin`.
-
-  Examples
-  --------
-  ::
-
-      import numpy as np
-      from pyvinecopulib.margins import OpenTURNSSelector
-
-      x = np.random.default_rng(0).gamma(2.5, 1.5, size=500)
-      sel = OpenTURNSSelector(criterion="bic").fit(x)
-      sel.selected_.family_name
-      [(r["family"], r["status"]) for r in sel.report_]
-  """
-
-  supports_weights: bool = False
-
-  def __init__(
-    self,
-    candidates: Any = "auto",
-    *,
-    criterion: str = "aic",
-    var_type: Optional[str] = None,
-    name: Optional[str] = None,
-  ) -> None:
-    _openturns()
-    if criterion not in _CRITERIA:
-      raise ValueError(
-        f"unknown criterion={criterion!r}; expected one of {list(_CRITERIA)}"
-      )
-    if var_type not in (None, "c", "d"):
-      raise ValueError(
-        f"unknown var_type={var_type!r}; expected 'c', 'd' or None"
-      )
-    self.candidates = candidates
-    self.criterion = criterion
-    self._forced_var_type = var_type
-    self._pinned_var_type = var_type is not None
-    self.name = name
-    self._selected: Optional[Any] = None
-    self._report: list[dict[str, Any]] = []
-
-  #: OpenTURNS provides both continuous and discrete candidate registries.
-  supported_var_types: tuple[str, ...] = ("c", "d")
-
-  def declare(
-    self,
-    *,
-    var_type: Optional[str] = None,
-    support: Optional[tuple[float, float]] = None,
-  ) -> "OpenTURNSSelector":
-    """Adopt the caller's variable type when none was pinned.
-
-    Parameters
-    ----------
-    var_type : str or None, optional
-        ``"c"``, ``"d"`` or ``"zi"``. ``"zi"`` is reduced to ``"d"``, the
-        partition OpenTURNS exposes for families with atoms.
-    support : tuple of float, or None, optional
-        Accepted as part of the common selector declaration contract.
-        OpenTURNS candidate registries are partitioned by variable type rather
-        than support, so bounds do not narrow them.
-
-    Returns
-    -------
-    OpenTURNSSelector
-        ``self``, so the call chains into :meth:`fit`.
-    """
-    del support
-    if var_type is not None and not self._pinned_var_type:
-      if var_type not in ("c", "d", "zi"):
-        raise ValueError(
-          f"unknown var_type={var_type!r}; expected 'c', 'd', 'zi' or None"
-        )
-      self._forced_var_type = "d" if var_type == "zi" else var_type
-    return self
-
-  # --- fitted state -------------------------------------------------------- #
-
-  # --- estimation ---------------------------------------------------------- #
-
-  def fit(
-    self,
-    y: Any,
-    /,
-    controls: Optional[Any] = None,
-    *,
-    x: Optional[Any] = None,
-    weights: Optional[Any] = None,
-  ) -> "OpenTURNSSelector":
-    """Fit every candidate and keep the best.
-
-    Parameters
-    ----------
-    y : array, shape (n,), dtype float
-        Observations; NaNs are dropped.
-    controls : object, or None, optional
-        Unused; the candidate set and criterion are named at construction.
-    x : array, shape (n, k), or None, optional
-        Not supported; selection is unconditional.
-    weights : array, shape (n,), or None, optional
-        Not supported; the candidates cannot use them.
-
-    Returns
-    -------
-    OpenTURNSSelector
-        ``self``.
-
-    Raises
-    ------
-    TypeError
-        If ``weights`` is given.
-    ValueError
-        If no observation survives.
-
-    Warns
-    -----
-    UserWarning
-        Once, when every candidate is rejected and the kernel-density fallback
-        is used instead.
-    """
-    _reject_covariates(self, x)
-    if weights is not None:
-      raise TypeError(
-        "OpenTURNSSelector cannot use observation weights: an OpenTURNS "
-        "Sample carries none. Pass margins='kde' for a weighted fit, or drop "
-        "weights="
-      )
-    data = validate_univariate(np.asarray(y, dtype=float))
-    data = data[~np.isnan(data)]
-    if data.size == 0:
-      raise ValueError("OpenTURNSSelector.fit got no usable observation")
-
-    discrete = self._reads_as_discrete(data)
-    sample = _openturns().Sample(data.reshape(-1, 1))
-    rows: list[dict[str, Any]] = []
-    admissible: list[tuple[float, int, Any]] = []
-    for index, factory in enumerate(self._candidates(discrete=discrete)):
-      row, candidate = self._try(factory, data, sample, discrete=discrete)
-      rows.append(row)
-      if candidate is not None:
-        # The index breaks ties toward the earlier candidate, which is what
-        # keeps the outcome independent of OpenTURNS' list order changing.
-        admissible.append((row[self.criterion], index, candidate))
-
-    if admissible:
-      _, index, winner = min(admissible, key=lambda item: item[:2])
-      rows[index]["status"] = "selected"
-      rows[index]["selected"] = True
-    else:
-      winner = self._fallback(data, rows, discrete=discrete)
-    self._selected = winner
-    self._report = rows
-    return self
-
-  def _reads_as_discrete(self, data: np.ndarray) -> bool:
-    """Whether the data should be fitted with the discrete families.
-
-    Parameters
-    ----------
-    data : array, shape (n,), dtype float
-        The observations.
-
-    Returns
-    -------
-    bool
-        ``True`` for the discrete group. Integer-valued data qualify whatever
-        their sign, since OpenTURNS' discrete families include ``Skellam`` on
-        all of the integers.
-    """
-    if self._forced_var_type is not None:
-      return self._forced_var_type == "d"
-    return bool(np.all(data == np.round(data)))
-
-  def _candidates(self, *, discrete: bool) -> list[Any]:
-    """Resolve the factories to try.
-
-    Parameters
-    ----------
-    discrete : bool
-        Whether the discrete group applies.
-
-    Returns
-    -------
-    list
-        OpenTURNS factories.
-
-    Raises
-    ------
-    ValueError
-        If ``candidates`` is a string other than ``"auto"``.
-    """
-    if isinstance(self.candidates, str):
-      if self.candidates != "auto":
-        raise ValueError(
-          f"unknown candidates={self.candidates!r}; expected 'auto' or a "
-          "sequence of family names and OpenTURNS factories"
-        )
-      registry = _openturns().DistributionFactory
-      return list(
-        registry.GetDiscreteUniVariateFactories()
-        if discrete
-        else registry.GetContinuousUniVariateFactories()
-      )
-    return [_resolve_factory(entry) for entry in self.candidates]
-
-  def _try(
-    self, factory: Any, data: np.ndarray, sample: Any, *, discrete: bool
-  ) -> tuple[dict[str, Any], Optional[OpenTURNSMargin]]:
-    """Fit one candidate and score it.
-
-    Parameters
-    ----------
-    factory : openturns.DistributionFactory
-        The candidate's factory.
-    data : array, shape (n,), dtype float
-        The observations.
-    sample : openturns.Sample
-        The same observations, as the ``(n, 1)`` sample the criteria read.
-    discrete : bool
-        Whether the data were read as discrete.
-
-    Returns
-    -------
-    tuple
-        The report row, and the fitted candidate when it is admissible.
-    """
-    family = _factory_name(factory)
-    candidate: Optional[OpenTURNSMargin] = None
-    status: Optional[str] = None
-    started = time.perf_counter()
-    # A factory's optimizer chatter says nothing a caller can act on -- the
-    # outcome is the row below either way -- so collect it into the row rather
-    # than emitting one warning per family tried.
-    with warnings.catch_warnings(record=True) as caught:
-      warnings.simplefilter("always")
-      try:
-        candidate = OpenTURNSMargin(factory).fit(data)
-      except Exception as e:  # noqa: BLE001 - any build failure is a rejection
-        status = f"{type(e).__name__}: {e}"
-    elapsed = time.perf_counter() - started
-
-    loglik, k, support = float("nan"), float("nan"), None
-    criteria = dict.fromkeys(_CRITERIA, float("inf"))
-    if candidate is not None:
-      family = candidate.family_name
-      loglik = candidate.loglik()
-      k = candidate.n_parameters
-      support = candidate.support
-      criteria = _openturns_criteria(
-        sample, candidate.distribution, int(k), loglik
-      )
-      if (candidate.var_type == "d") != discrete:
-        status = (
-          f"a {candidate.var_type!r} family on data read as "
-          f"{'d' if discrete else 'c'}; masses and densities are not comparable"
-        )
-      elif not np.isfinite(loglik):
-        status = f"non-finite log-likelihood ({loglik})"
-      if status is not None:
-        candidate = None
-
-    row: dict[str, Any] = {
-      "column": self.name,
-      "family": family,
-      "n_parameters": k,
-      "loglik": loglik,
-      "criterion": self.criterion,
-      "support": support,
-      "seconds": elapsed,
-      "warnings": [str(w.message) for w in caught],
-      "status": "ok" if status is None else status,
-      "selected": False,
-    }
-    row.update(criteria)
-    return row, candidate
-
-  def _fallback(
-    self, data: np.ndarray, rows: list[dict[str, Any]], *, discrete: bool
-  ) -> Any:
-    """Fit the kernel-density margin used when no candidate survives.
-
-    Parameters
-    ----------
-    data : array, shape (n,), dtype float
-        The observations.
-    rows : list of dict
-        The report so far; a row for the fallback is appended.
-    discrete : bool
-        Whether the data were read as discrete.
-
-    Returns
-    -------
-    Kde1d
-        The fitted fallback.
-    """
-    reasons = "; ".join(f"{row['family']}: {row['status']}" for row in rows)
-    where = f"variable {self.name!r}" if self.name else "this variable"
-    warnings.warn(
-      f"no OpenTURNS family was admissible for {where}; falling back to a "
-      f"kernel-density margin. Rejected: {reasons or 'no candidates'}",
-      UserWarning,
-      stacklevel=3,
-    )
-    margin = Kde1d(type="discrete" if discrete else "continuous")
-    margin.fit(data)
-    loglik = float(np.sum(margin.logpdf(data)))
-    row: dict[str, Any] = {
-      "column": self.name,
-      "family": margin.family_name,
-      "n_parameters": margin.n_parameters,
-      "loglik": loglik,
-      "criterion": self.criterion,
-      "support": margin.support,
-      "seconds": float("nan"),
-      "warnings": [],
-      "status": "fallback",
-      "selected": True,
-    }
-    row.update(_criteria(loglik, margin.n_parameters, data.size))
-    rows.append(row)
-    return margin
-
-  # --- forwarding ---------------------------------------------------------- #
-
-
-# --- coercion -------------------------------------------------------------- #
 
 
 def _is_openturns_distribution(obj: Any) -> bool:

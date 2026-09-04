@@ -1,29 +1,27 @@
-"""PyTorch evaluator for a bivariate pair copula on a density grid.
+"""PyTorch pair copula on a bilinear interpolation grid.
 
-The evaluation chain (``pdf`` / ``cdf`` / ``hfunc`` / ``hinv`` /
-``sample``) lives entirely in PyTorch, so the pair copula can be
-moved to GPU with ``.to("cuda")`` and composed with autograd-aware
-downstream code.
+``TorchBicop``, the only class here, holds a bivariate copula density on an
+``m x m`` grid over the unit square and is bilinear between its nodes. It is a
+``BicopBase`` over tensors and a ``torch.nn.Module``, so ``pdf`` / ``cdf`` /
+the two h-functions / their inverses / ``sample`` stay in PyTorch throughout:
+the pair copula moves to an accelerator with ``.to("cuda")``, joins a
+``state_dict``, and carries autograd in its arguments and -- on request -- in
+its density grid.
 
-Three constructors are provided:
+One is built from a grid directly, lifted from a fitted ``Bicop`` with
+``TorchBicop.from_bicop()``, or fitted from pseudo-observations with
+``TorchBicop.from_data()`` -- and ``TorchBicop.from_data_batched()`` fits
+``P`` pairs at once. Fitting reproduces the ``tll`` fit of ``Bicop`` to
+floating-point tolerance.
 
-* :meth:`TorchBicop.from_data` — fit on pseudo-observations directly
-  in PyTorch. Dispatches on the ``method`` field of a
-  :class:`FitControlsTorchBicop`. ``"tll"`` (default) is the
-  *Transformed Local Likelihood* kernel density estimator (Geenens
-  2014; Nagler 2018), the non-parametric family exposed as
-  ``tll``; this path matches the
-  ``Bicop.from_data()`` TLL fit to machine precision.
-* :meth:`TorchBicop.from_bicop` — lift a fitted
-  ``Bicop`` (TLL family) into a ``TorchBicop``.
-  Useful when you already fit with ``Bicop`` and
-  want GPU / autograd evaluation downstream.
-* ``TorchBicop(grid_points=..., values=...)`` — construct from an
-  externally-prepared ``(m, m)`` density grid.
+The grid arithmetic all of them share -- interpolation, the integral tables, a
+rectangle's mass -- lives in the internal ``_interp.py``, and the TLL fitter
+in ``_fit_tll.py``.
 
 See Also
 --------
 pyvinecopulib.core.Bicop : Reference pair copula.
+pyvinecopulib.core.BicopBase : The contract this completes.
 FitControlsTorchBicop : Fit-time controls.
 """
 
@@ -41,46 +39,80 @@ from .controls import FitControlsTorchBicop
 
 
 class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
-  """PyTorch evaluator for a bivariate copula stored as a density grid.
+  """Bivariate copula held as a density grid on the unit square, in PyTorch.
 
-  Torch counterpart of the non-parametric pair-copula path in
-  ``Bicop`` (the *Transformed Local Likelihood* /
-  ``tll`` family). The fitted density lives on
-  an ``m x m`` grid in ``[0, 1]^2`` and is evaluated by bilinear
-  interpolation. Non-zero copula rotations are not supported — TLL
-  pair-copulas always have ``rotation=0``.
+  The torch counterpart of the nonparametric ``tll`` (*transformed local
+  likelihood*) pair copula of ``Bicop``: the density sits on an ``m x m``
+  tensor-product grid and is bilinear between its nodes. There is no
+  rotation -- a ``tll`` pair copula always has ``rotation=0``.
+
+  Three ways to get one, each building on the one before: hand it a grid with
+  the parameters below (omit both for the independence copula), lift a fitted
+  ``Bicop`` with ``TorchBicop.from_bicop()``, or fit pseudo-observations with
+  ``TorchBicop.from_data()`` -- ``TorchBicop.from_data_batched()`` for ``P``
+  pairs in one call. A grid arrives at construction, which is why those
+  factories are the fitting entry points: the in-place ``fit`` inherited from
+  ``BicopBase`` is not implemented here, and ``select``, which defaults to it,
+  would have nothing to choose in any case -- a density grid has no family.
+
+  Beyond ``BicopBase`` it brings its own exact ``cdf``, h-functions and their
+  inverses, ``sample``, ``flip``, and the extra
+  ``TorchBicop.rect_mass()``; ``loglik`` and ``plot`` are inherited. The grid
+  is a buffer rather than a parameter -- a fitted density, not a learned one --
+  so optimizing it is opt-in: set ``requires_grad_(True)`` on the grid values
+  and every method carries a gradient in them.
 
   Parameters
   ----------
-  grid_points : Tensor, shape (m,), dtype float
-      Strictly increasing 1-D tensor of grid points on ``[0, 1]``
-      (the same grid is used along both axes). Endpoints are
-      clipped to exactly ``0`` and ``1`` to avoid extrapolation.
-  values : Tensor, shape (m, m), dtype float
-      Density values on the tensor-product grid.
+  grid_points : Tensor, shape (m,), or None, default=None
+      Strictly increasing grid points in ``[0, 1]``, shared by both axes; the
+      first and last are taken as exactly ``0`` and ``1``, so no evaluation
+      extrapolates. ``None`` together with ``values`` gives the independence
+      copula.
+  values : Tensor, shape (m, m), or None, default=None
+      Nonnegative density values at the tensor-product grid. The
+      nonnegativity is a precondition rather than a convention: the integral
+      tables and ``TorchBicop.rect_mass()`` are free of cancellation only
+      because every term they sum is nonnegative.
   cache_integrals : bool, default=True
-      If ``True``, precompute prefix tables for ``cdf`` and h-functions.
-      Cached and uncached integrals agree up to summation order. When grid
-      values require gradients, the tables are rebuilt in-graph, so gradients
-      continue to reach ``values``. Inverse h-functions always use the same
-      piecewise-quadratic inverse because locating its cell needs a complete
-      conditional cumulative. ``pdf`` never uses integral tables.
+      Precompute the three ``(m, m)`` cumulative-trapezoid prefix tables that
+      ``cdf`` / ``hfunc1`` / ``hfunc2`` then read their value from in closed
+      form. The reconstruction is exact rather than approximate -- the
+      interpolant is bilinear, so its integral along a grid line is piecewise
+      linear across cells -- and it is differentiable in ``values`` as well as
+      in ``u``, so the two modes agree to summation order and carry the same
+      gradients. ``hinv1`` / ``hinv2`` invert the same closed form either way,
+      reading a table only to locate the cell they invert in, and are the one
+      member whose two modes differ by rounding. ``pdf`` and
+      ``TorchBicop.rect_mass()`` do not depend on the setting.
   norm_maxiter : int, default=25
-      Maximum number of margin-rescaling passes; rescaling also stops
-      as soon as both margins integrate to 1 within ``1e-10``. Matches
-      the ``Bicop`` TLL default. Pass ``0`` to skip when the grid
-      already integrates to uniform margins.
+      Cap on the passes that rescale ``values`` until both margins integrate
+      to 1; they stop as soon as both do, to within ``1e-10``. ``25`` is the
+      cap a ``tll`` fit of ``Bicop`` allows. Pass ``0`` for a grid that is
+      already normalized, which leaves the values exactly as given.
   is_linear : bool, default=False
-      Internal flag selecting the linear-grid fast-path in the
-      underlying ``InterpolationGrid2D``. Set by
-      :meth:`from_data` when ``grid_type="linear"``; users
-      normally do not pass it directly.
+      Declare ``grid_points`` uniform on ``[0, 1]``, which makes locating a
+      cell ``O(1)`` instead of a search. The fitting factories set it from
+      ``controls.grid_type``; pass it yourself only for a grid that really is
+      uniform, since it is taken at its word.
   device : torch.device or None, default=None
-      Placement of the underlying tensors. ``None`` keeps them on
-      the input's device.
+      Where the tensors live; ``None`` keeps them on the inputs' device.
   dtype : torch.dtype, default=torch.float64
-      Precision of the underlying tensors. ``torch.float64`` mirrors
-      the ``Bicop`` evaluation.
+      Precision the grid is held and evaluated in. Agreement with ``Bicop``
+      is a ``float64`` statement.
+
+  Raises
+  ------
+  ValueError
+      If one of ``grid_points`` / ``values`` is given without the other, if
+      ``values`` is not square or has a negative entry, or if ``grid_points``
+      is not strictly increasing with at least two points.
+
+  See Also
+  --------
+  pyvinecopulib.core.Bicop : Reference pair copula.
+  pyvinecopulib.core.BicopBase : The contract this class completes.
+  FitControlsTorchBicop : Fit-time controls.
   """
 
   is_indep: bool
@@ -90,7 +122,8 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
   _sy: Tensor | None
   _sx: Tensor | None
   _prefix: Tensor | None
-  #: TorchBicop exposes the grid/cache internals the batched vine path needs.
+  #: Declares the grid and cache internals ``TorchVinecop``'s batched
+  #: cascades read, so a vine of these pairs can take the stacked path.
   supports_batched: bool = True
 
   def __init__(
@@ -158,38 +191,33 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchBicop":
-    """Lifts a fitted ``Bicop`` into a ``TorchBicop``.
+    """Lift a fitted ``Bicop`` into a ``TorchBicop``.
 
-    The resulting ``TorchBicop`` is a ``torch.nn.Module`` (so
-    ``.to("cuda")`` moves the density grid in one line) built from a
-    differentiable bilinear interpolator: autograd flows through every
-    ``pdf`` / ``cdf`` / ``hfunc`` / ``hinv`` call in ``u``, and through
-    ``pdf`` in the density grid. With ``cache_integrals=True`` the other
-    four read a frozen table, so they carry no gradient in the grid; see
-    that parameter on ``TorchBicop.__init__``.
+    The density values are taken as fitted, so the lifted copula evaluates
+    the same grid as ``cop`` -- in PyTorch, on a device, with autograd.
 
     Parameters
     ----------
     cop : Bicop
-        A fitted ``Bicop`` of the TLL family at
-        ``rotation=0`` (the only shape ``TorchBicop`` represents
-        directly). The density values are taken straight from
-        ``cop.parameters``; the grid coordinates come from
-        ``InterpolationGrid2D.make_grid_points`` with the canonical
-        Phi-spaced normal grid ``Bicop`` uses. The grid is
-        already normalized, so renormalization is skipped (parity
-        is typically ``< 1e-12`` per cell on fresh fits).
+        A fitted pair copula of the ``tll`` family at ``rotation=0``, the one
+        shape a ``TorchBicop`` represents.
     cache_integrals : bool, default=True
-        See ``TorchBicop.__init__``.
+        As on ``TorchBicop``.
     device : torch.device or None, default=None
-        See ``TorchBicop.__init__``.
+        As on ``TorchBicop``.
     dtype : torch.dtype, default=torch.float64
-        See ``TorchBicop.__init__``.
+        As on ``TorchBicop``.
 
     Returns
     -------
     TorchBicop
-        A ``TorchBicop`` mirroring ``cop``.
+        A pair copula mirroring ``cop``.
+
+    Raises
+    ------
+    ValueError
+        If ``cop`` is not of the ``tll`` family, is rotated, or does not carry
+        a square grid of density values.
     """
     if cop.family != _TLL_FAMILY:
       raise ValueError(
@@ -236,33 +264,26 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
   ) -> "list[TorchBicop]":
     """Fit ``P`` pair copulas from one stacked sample, in one call.
 
-    The pairs share the sample size, the interpolation grid and the
-    evaluation points, so everything that does not depend on the data is
-    computed once and the two convergence loops of the bandwidth search
-    advance all ``P`` lanes together, each freezing as it converges. What
-    comes back is ``P`` ordinary :class:`TorchBicop` objects; the batching
-    is confined to the fit.
-
-    Nothing here knows what the pairs are *for*: the leading axis is just
-    ``P`` independent pairs on shared rows. One vine's tree level is the
-    obvious caller, but several vines' levels concatenate into the same
-    axis just as well.
+    What comes back is ``P`` ordinary ``TorchBicop`` objects; only the fit is
+    batched. Nothing here reads the pairs as related -- the leading axis is
+    ``P`` independent pairs on shared rows -- so one vine's tree level and
+    several vines' levels stack alike.
 
     Parameters
     ----------
     u : Tensor, shape (P, n, 2), dtype float
         Copula-scale observations, one ``(n, 2)`` block per pair. Continuous
-        only -- a discrete edge's fit reuses a core per-pair draw that
-        has no batch axis.
-    controls : FitControlsTorchBicop, optional
-        Fit controls, shared by every pair. Defaults to
+        arguments only; an edge with atoms is fitted on its own through
+        ``TorchBicop.from_data()``.
+    controls : FitControlsTorchBicop or None, default=None
+        Fit controls, shared by every pair. ``None`` is
         ``FitControlsTorchBicop()``.
     cache_integrals : bool, default=True
-        Precompute each returned pair's integral tables.
-    device : torch.device, optional
-        Placement; defaults to ``u``'s.
+        As on ``TorchBicop``, for each pair returned.
+    device : torch.device or None, default=None
+        As on ``TorchBicop``.
     dtype : torch.dtype, default=torch.float64
-        Working precision.
+        As on ``TorchBicop``.
 
     Returns
     -------
@@ -277,16 +298,13 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     Notes
     -----
     A pair's fit is unaffected by *which* other pairs share its call: each
-    lane's bandwidth search freezes as it converges, so the iterations a
-    pair takes are the ones its own data earns.
+    lane's bandwidth search freezes as it converges, so the iterations a pair
+    takes are the ones its own data earns.
 
-    It is affected by *how many*, in the last bits. Torch selects
-    elementwise kernels by element count, and the bandwidth search's
-    ``pow`` takes a vectorized path past
-    ``2 * Vectorized<double>::size()`` lanes -- 8 on AVX2, 4 on NEON -- so
-    stacking ``P`` pairs agrees with fitting them one by one to floating
-    point rather than bit for bit, on every device. The gap is around
-    ``1e-15`` on a grid value. Where that matters, fit the pair alone.
+    It is affected by *how many*, in the last bits. Torch selects elementwise
+    kernels by element count, so stacking ``P`` pairs agrees with fitting them
+    one by one to floating point rather than bit for bit, on every device --
+    around ``1e-15`` on a grid value. Fit the pair alone where that matters.
 
     See Also
     --------
@@ -339,43 +357,47 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchBicop":
-    """Fits a bicop on pseudo-observations and wraps in a ``TorchBicop``.
+    """Fit a pair copula on pseudo-observations, in pure PyTorch.
 
-    Dispatches on ``controls.method`` (``"tll"``: pure-torch
-    Transformed Local Likelihood, matching the ``Bicop``
-    TLL fit to machine precision).
+    Reproduces the ``tll`` fit of ``Bicop`` to floating-point tolerance, with
+    ``controls.method`` naming the fitter (``"tll"`` is the one shipped).
 
     Parameters
     ----------
     u : ndarray or Tensor, shape (n, 2) or (n, 4), dtype float
-        Pseudo-observations, ``[u1, u2]`` — or ``[u1, u2, u1^-, u2^-]`` when
-        ``var_types`` marks an argument discrete, of which only the values are
-        fitted on.
+        Pseudo-observations ``[u1, u2]``, or ``[u1, u2, u1^-, u2^-]`` when
+        ``var_types`` marks an argument discrete.
     controls : FitControlsTorchBicop or None, default=None
-        Fit-time controls. `None` defaults to TLL with
-        ``grid_size=30`` on the normal-spaced grid.
+        Fit controls. ``None`` is ``FitControlsTorchBicop()``: a TLL fit on a
+        30-point normal-spaced grid.
     var_types : list of str or None, default=None
         The two arguments' types, ``"c"`` or ``"d"``; ``None`` means both
-        continuous. A discrete argument changes only how ties are broken when
-        ranking, and the fitted grid is continuous either way — the mixed-
-        discrete surface is supplied by
+        continuous, and a ``"d"`` is what asks for the four-column layout.
+        Either way the fitted grid is a continuous density -- the
+        mixed-discrete surface an atom needs comes from
         :class:`~pyvinecopulib.core.DiscretePair`.
     cache_integrals : bool, default=True
-        See ``TorchBicop.__init__``.
+        As on ``TorchBicop``.
     device : torch.device or None, default=None
-        See ``TorchBicop.__init__``.
+        As on ``TorchBicop``.
     dtype : torch.dtype, default=torch.float64
-        See ``TorchBicop.__init__``.
+        As on ``TorchBicop``.
 
     Returns
     -------
     TorchBicop
-        A fitted ``TorchBicop``.
+        The fitted pair copula.
 
     Raises
     ------
     ValueError
-        If ``u``'s column count does not match ``var_types``.
+        If ``u``'s column count does not match ``var_types``, or if
+        ``controls`` asks for a grid of fewer than two points or a
+        non-positive bandwidth multiplier.
+
+    See Also
+    --------
+    TorchBicop.from_data_batched : Fit ``P`` pairs in one call.
     """
     if controls is None:
       controls = FitControlsTorchBicop()
@@ -435,20 +457,85 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
       dtype=dtype,
     )
 
-  def flip(self) -> "TorchBicop":
-    """Return the copula with its two arguments swapped (``c'(u,v)=c(v,u)``).
+  def fit(
+    self,
+    u,
+    /,
+    controls: Optional[FitControlsTorchBicop] = None,
+    var_types: Optional[list[str]] = None,
+  ) -> "TorchBicop":
+    """Refit this pair copula's density grid, in place.
 
-    Transposes the (already margin-normalized) interpolation grid — the same
-    reorientation :class:`~pyvinecopulib.core.Bicop` applies to a ``tll`` pair
-    — so the result is a fresh :class:`~pyvinecopulib.torch.TorchBicop`, an
-    ``nn.Module`` that keeps the batched fast path. Used by
-    :meth:`~pyvinecopulib.core.VinecopBase.select` to reorient a selection-time
-    pair onto its slot in the finalized structure.
+    The in-place counterpart of :meth:`from_data`, keeping this module's
+    identity: its device, its dtype and its cache mode are what the refitted
+    grid gets, and any reference held to it -- a vine's stored pair, an
+    optimizer's parameter list -- sees the new density.
+
+    Parameters
+    ----------
+    u : Tensor, shape (n, 2) or (n, 4)
+        Pseudo-observations, with the two left-limit columns when
+        ``var_types`` marks an argument discrete.
+    controls : FitControlsTorchBicop, or None, optional
+        Fit configuration; defaults are used when ``None``.
+    var_types : list of str, or None, optional
+        The two variable types of the edge this pair sits on. ``None`` means
+        both are continuous.
 
     Returns
     -------
     TorchBicop
-        The argument-swapped copula; the object itself is left unchanged.
+        ``self``, so the call chains.
+
+    See Also
+    --------
+    TorchBicop.from_data : Construct and fit in one call.
+    """
+    values = self.interp_grid.values
+    fitted = type(self).from_data(
+      u,
+      controls,
+      var_types,
+      cache_integrals=self._cache_integrals,
+      device=values.device,
+      dtype=values.dtype,
+    )
+    self._adopt(fitted)
+    return self
+
+  def _adopt(self, other: "TorchBicop") -> None:
+    """Take over another pair copula's grid and caches.
+
+    Parameters
+    ----------
+    other : TorchBicop
+        The pair copula whose density to adopt.
+
+    Returns
+    -------
+    None
+    """
+    self.is_indep = other.is_indep
+    self.interp_grid = other.interp_grid
+    self._cache_integrals = other._cache_integrals
+    for name in ("_sy", "_sx", "_prefix"):
+      table = getattr(other, name)
+      # A buffer cannot be reassigned by attribute once registered, so the
+      # registry entry itself is replaced.
+      self._buffers.pop(name, None)
+      if table is None:
+        setattr(self, name, None)
+      else:
+        self.__dict__.pop(name, None)
+        self.register_buffer(name, table)
+
+  def flip(self) -> "TorchBicop":
+    """Return the copula with its two arguments swapped (``c'(u,v)=c(v,u)``).
+
+    Returns
+    -------
+    TorchBicop
+        A new argument-swapped copula; this one is left unchanged.
     """
     device = self.interp_grid.values.device
     dtype = self.interp_grid.values.dtype
@@ -482,24 +569,22 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     return _trim(u)
 
   def pdf(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
-    """Evaluates the bivariate copula density ``c(u1, u2)``.
+    """Evaluate the copula density ``c(u1, u2)``.
 
     Parameters
     ----------
     u : Tensor, shape (n, 2), dtype float
-        Pseudo-observations in ``[0, 1]^2``. Inputs outside the
-        unit square are clamped to ``[1e-10, 1 - 1e-10]``; ``NaN``
-        propagates through the interpolation.
-    x : Tensor or None, optional
-        Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
-        (an unconditional pair copula); accepted so the class satisfies the
-        :class:`~pyvinecopulib.core.BicopLike` contract.
+        Pseudo-observations, clamped strictly inside the unit square before
+        evaluation (``1e-10`` from each end in ``float64``); a ``NaN`` comes
+        back as ``NaN``.
+    x : Tensor, shape (n, k), or None, optional
+        Unused: a ``TorchBicop`` is unconditional. Accepted so the class
+        satisfies ``BicopLike``.
 
     Returns
     -------
     Tensor, shape (n,), dtype float
-        Density values, clamped to a strictly-positive floor of
-        ``1e-20``.
+        Density values, floored at ``1e-20``.
     """
     u = self._prep(u)
     if self.is_indep:
@@ -507,30 +592,29 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     return self.interp_grid.interpolate(u).clamp_min(1e-20)
 
   def cdf(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
-    """Evaluates the bivariate copula CDF.
+    """Evaluate the copula distribution function.
 
     .. math::
 
        C(u_1, u_2) = \\int_0^{u_1} \\int_0^{u_2} c(s, t)\\, ds\\, dt.
 
-    Computed via nested trapezoidal integration when
-    ``cache_integrals=False``, or via a single bilinear
-    interpolation on the precomputed cache when
-    ``cache_integrals=True``.
-
     Parameters
     ----------
     u : Tensor, shape (n, 2), dtype float
-        Pseudo-observations in ``[0, 1]^2``.
-    x : Tensor or None, optional
-        Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
-        (an unconditional pair copula); accepted so the class satisfies the
-        :class:`~pyvinecopulib.core.BicopLike` contract.
+        Pseudo-observations, clamped as in ``TorchBicop.pdf()``.
+    x : Tensor, shape (n, k), or None, optional
+        Unused: a ``TorchBicop`` is unconditional. Accepted so the class
+        satisfies ``BicopLike``.
 
     Returns
     -------
     Tensor, shape (n,), dtype float
-        CDF values in ``[1e-10, 1 - 1e-10]``.
+        Distribution values, clamped strictly inside ``(0, 1)``.
+
+    Notes
+    -----
+    Each grid line is rescaled by its own total, so ``C(1, u2) = u2`` holds
+    exactly.
     """
     u = self._prep(u)
     if self.is_indep:
@@ -541,14 +625,14 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     return self.interp_grid.integrate_2d(u)
 
   def rect_mass(self, a1: Tensor, b1: Tensor, a2: Tensor, b2: Tensor) -> Tensor:
-    """The probability of ``(a1, b1] x (a2, b2]``, without the cancellation.
+    """Probability of the rectangle ``(a1, b1] x (a2, b2]``.
 
-    An optional capability a discrete edge discovers with ``getattr``: it lets
-    the mixed-discrete density read the atom's probability directly instead of
-    differencing four :meth:`cdf` values, which amplifies any absolute error by
-    ``~4 / (w1 w2)`` in the atom widths where this route amplifies by
-    ``1 / w2`` alone. Available in both cache modes -- it reads the grid, not
-    the prefix tables.
+    The value a four-corner difference of ``TorchBicop.cdf()`` defines,
+    arranged so that almost none of it cancels: differencing amplifies an
+    absolute error by ``~4 / (w1 w2)`` in the rectangle's widths, where this
+    route amplifies by ``1 / w2`` alone. Available in both cache modes -- it
+    reads the density grid, not the prefix tables -- and cancellation-free
+    only because ``values`` is nonnegative.
 
     Parameters
     ----------
@@ -558,8 +642,16 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     Returns
     -------
     Tensor, shape (n,), dtype float
-        Rectangle probabilities. Independence returns
+        Rectangle probabilities. The independence copula gives
         ``(b1 - a1) * (b2 - a2)``.
+
+    Notes
+    -----
+    A probability, not the density grid's own mass over the rectangle: the two
+    differ by the rescaling ``TorchBicop.cdf()`` applies.
+    :class:`~pyvinecopulib.core.DiscretePair` deliberately leaves this
+    accuracy on the table and differences ``cdf`` instead, which is what keeps
+    a discrete torch vine in step with ``Vinecop``.
     """
     # Coerced but *not* trimmed: `[1e-10, 1-1e-10]` is the guard `cdf` applies
     # to a query point, and a rectangle's lower bound is legitimately zero --
@@ -578,12 +670,10 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
   def _tables(self) -> tuple[Tensor, Tensor, Tensor]:
     """The prefix tables, rebuilt in-graph when a gradient is being taken.
 
-    They are cumulative sums of ``values``, so the closed forms that read them
-    are exact functions of the grid -- but the stored copies are detached
-    buffers, and differentiating through those would silently drop most of the
-    gradient rather than all of it. They are therefore recomputed whenever grad
-    is live: three cumulative sums over ``(m, m)``, and never on the
-    no-gradient path.
+    The stored copies are detached buffers, and differentiating through those
+    would silently drop most of the gradient in ``values`` rather than all of
+    it. They are therefore recomputed whenever grad is live: three cumulative
+    sums over ``(m, m)``, and never on the no-gradient path.
     """
     assert self._sy is not None
     assert self._sx is not None and self._prefix is not None
@@ -606,7 +696,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     return self.interp_grid.integrate_1d(u, cond_var=cond_var)
 
   def hfunc1(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
-    """Evaluates the first h-function.
+    """Evaluate the first h-function.
 
     .. math::
 
@@ -615,16 +705,15 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     Parameters
     ----------
     u : Tensor, shape (n, 2), dtype float
-        Pseudo-observations in ``[0, 1]^2``.
-    x : Tensor or None, optional
-        Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
-        (an unconditional pair copula); accepted so the class satisfies the
-        :class:`~pyvinecopulib.core.BicopLike` contract.
+        Pseudo-observations; column 0 is the conditioning value.
+    x : Tensor, shape (n, k), or None, optional
+        Unused: a ``TorchBicop`` is unconditional. Accepted so the class
+        satisfies ``BicopLike``.
 
     Returns
     -------
     Tensor, shape (n,), dtype float
-        Conditional CDF values in ``[0, 1]``.
+        Conditional distribution values in ``[0, 1]``.
     """
     u = self._prep(u)
     if self.is_indep:
@@ -632,7 +721,7 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     return self._hfunc_raw(u, 1).clamp(0.0, 1.0)
 
   def hfunc2(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
-    """Evaluates the second h-function.
+    """Evaluate the second h-function.
 
     .. math::
 
@@ -641,16 +730,15 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     Parameters
     ----------
     u : Tensor, shape (n, 2), dtype float
-        Pseudo-observations in ``[0, 1]^2``.
-    x : Tensor or None, optional
-        Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
-        (an unconditional pair copula); accepted so the class satisfies the
-        :class:`~pyvinecopulib.core.BicopLike` contract.
+        Pseudo-observations; column 1 is the conditioning value.
+    x : Tensor, shape (n, k), or None, optional
+        Unused: a ``TorchBicop`` is unconditional. Accepted so the class
+        satisfies ``BicopLike``.
 
     Returns
     -------
     Tensor, shape (n,), dtype float
-        Conditional CDF values in ``[0, 1]``.
+        Conditional distribution values in ``[0, 1]``.
     """
     u = self._prep(u)
     if self.is_indep:
@@ -662,48 +750,38 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
   # --------------------------------------------------------------------- #
 
   def _hinv_raw(self, u: Tensor, cond_var: int) -> Tensor:
-    """Shared inverse-h-function body for `hinv1` / `hinv2`.
+    """Shared inverse-h-function body for ``hinv1`` / ``hinv2``.
 
     ``cond_var=1`` solves ``H1(u1, x) = p`` for ``x`` (free column 1,
-    ``u = [u1, p]``); ``cond_var=2`` solves ``H2(x, u2) = p`` (free
-    column 0, ``u = [p, u2]``). Both cache modes use the exact closed-form
-    inversion of the piecewise-quadratic conditional cdf
-    (:meth:`InterpolationGrid2D.inverse_integrate_1d`, mirroring
-    vinecopulib#691).
+    ``u = [u1, p]``); ``cond_var=2`` solves ``H2(x, u2) = p`` (free column 0,
+    ``u = [p, u2]``). Both cache modes run the same closed-form inversion of
+    the piecewise-quadratic conditional distribution function, as
+    ``inverse_integrate_1d`` implements it (vinecopulib#691).
     """
-    # Always the closed-form inversion. Tabulating the inverse at the grid
-    # nodes and interpolating between them was the one cached member whose
-    # error was not merely a tolerance -- up to 1e-2 -- and unlike `cdf` and
-    # the h-functions it has no O(1) exact reconstruction: locating the
+    # Always the closed-form inversion: unlike `cdf` and the h-functions there
+    # is no O(1) exact reconstruction to cache here, because locating the
     # bracketing cell needs the conditional cumulative along the whole free
-    # axis, which is O(m) to assemble whatever is cached. So the cache buys
-    # O(1) where it can, and consistency where it cannot.
-    # The prefix table is the conditional cumulative the inversion needs to
-    # locate its bracketing cell, so pass it when there is one: the same
-    # quantity, a gather instead of a trapezoid and a scan.
+    # axis, which is O(m) to assemble whatever is cached. That cumulative is
+    # exactly what a prefix table holds, so pass it when there is one: the
+    # same quantity, a gather instead of a trapezoid and a scan.
     cum = None if self._sy is None else self._tables()[cond_var - 1]
     return self.interp_grid.inverse_integrate_1d(u, cond_var, cum).clamp(
       0.0, 1.0
     )
 
   def hinv1(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
-    """Inverts `hfunc1` w.r.t. the second argument.
+    """Invert ``TorchBicop.hfunc1()`` in its second argument.
 
-    Given ``u = [u1, p]``, returns ``u2`` such that
-    ``H1(u1, u2) = p``. With ``cache_integrals=True`` this is a
-    single bilinear interpolation on the precomputed cache;
-    otherwise each call inverts the piecewise-quadratic conditional
-    cdf in closed form (exact inverse of the on-the-fly h-function).
+    Given ``u = [u1, p]``, returns the ``u2`` at which
+    ``h_1(u_1, u_2) = p``.
 
     Parameters
     ----------
     u : Tensor, shape (n, 2), dtype float
-        Column 0 is ``u1``; column 1 is the target probability
-        ``p``.
-    x : Tensor or None, optional
-        Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
-        (an unconditional pair copula); accepted so the class satisfies the
-        :class:`~pyvinecopulib.core.BicopLike` contract.
+        Column 0 is ``u1``; column 1 is the target probability ``p``.
+    x : Tensor, shape (n, k), or None, optional
+        Unused: a ``TorchBicop`` is unconditional. Accepted so the class
+        satisfies ``BicopLike``.
 
     Returns
     -------
@@ -716,21 +794,18 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     return self._hinv_raw(u, 1)
 
   def hinv2(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
-    """Inverts `hfunc2` w.r.t. the first argument.
+    """Invert ``TorchBicop.hfunc2()`` in its first argument.
 
-    Given ``u = [p, u2]``, returns ``u1`` such that
-    ``H2(u1, u2) = p``. See `hinv1` for the cache vs. closed-form
-    semantics.
+    Given ``u = [p, u2]``, returns the ``u1`` at which
+    ``h_2(u_1, u_2) = p``.
 
     Parameters
     ----------
     u : Tensor, shape (n, 2), dtype float
-        Column 0 is the target probability ``p``; column 1 is
-        ``u2``.
-    x : Tensor or None, optional
-        Conditioning variables, shape ``(n, k)``. Ignored by ``TorchBicop``
-        (an unconditional pair copula); accepted so the class satisfies the
-        :class:`~pyvinecopulib.core.BicopLike` contract.
+        Column 0 is the target probability ``p``; column 1 is ``u2``.
+    x : Tensor, shape (n, k), or None, optional
+        Unused: a ``TorchBicop`` is unconditional. Accepted so the class
+        satisfies ``BicopLike``.
 
     Returns
     -------
@@ -755,33 +830,37 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     qrng: bool = False,
     seeds: Optional[list[int]] = None,
   ) -> Tensor:
-    """Draws ``n`` joint samples from the fitted copula.
-
-    Uses the inverse Rosenblatt scheme: sample two independent
-    uniforms ``(U1, P)`` and set ``U2 = hinv1((U1, P))`` so that
-    ``(U1, U2)`` has the fitted joint distribution.
+    """Draw ``n`` samples from the pair copula.
 
     Parameters
     ----------
     n : int, default=100
-        Number of samples to draw (must be ``> 0``).
-    x : Tensor or None, optional
-        Conditioning variables. Ignored by ``TorchBicop`` (an unconditional
-        pair copula); accepted for signature parity with the ``BicopLike``
-        contract.
+        Number of samples to draw; must be positive.
+    x : Tensor, shape (n, k), or None, optional
+        Unused: a ``TorchBicop`` is unconditional. Accepted so the class
+        satisfies ``BicopLike``.
     qrng : bool, default=False
-        If ``True``, draw the base uniforms from a scrambled Sobol
-        sequence instead of pseudo-random uniforms.
+        Draw the base uniforms from a scrambled Sobol sequence instead of
+        pseudo-random ones.
     seeds : list of int or None, optional
-        When ``qrng=True`` the first entry seeds the
-        ``torch.quasirandom.SobolEngine`` scramble; when ``qrng=False`` it
-        seeds a private device-local generator. ``None`` uses PyTorch's normal
-        generator selection without resetting global RNG state.
+        The first entry seeds the draw: the Sobol scramble when ``qrng=True``,
+        and otherwise a generator private to this call, so seeding one pair
+        copula leaves every other consumer of PyTorch's RNG alone. ``None``
+        draws from the default generator without reseeding it.
 
     Returns
     -------
     Tensor, shape (n, 2), dtype float
-        Samples in ``(0, 1)^2``.
+        Samples in the unit square.
+
+    Raises
+    ------
+    ValueError
+        If ``n`` is not positive.
+
+    Notes
+    -----
+    Drawn under ``torch.no_grad``, so the samples carry no gradient.
     """
     del x
     seeds = list(seeds) if seeds else []

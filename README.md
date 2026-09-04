@@ -69,14 +69,18 @@ out these core workflows.
 Three opt-in subpackages extend the core library:
 
 * `pyvinecopulib.margins` — parametric margins and family selection
-  (`ParametricMargin`, `MarginSelector`) to pair with `Vinedist` when a
+  (`SciPyMargin`, `OpenTURNSMargin`) to pair with `Vinedist` when a
   kernel-density margin is not what you want:
 
   ```python
   from pyvinecopulib.core import Vinedist
-  from pyvinecopulib.margins import MarginSelector
-  dist = Vinedist.from_data(x, margins=MarginSelector())
-  print(dist.margins[0].selected_)
+  from pyvinecopulib.margins import FitControlsMargin
+  dist = Vinedist.from_data(
+    x,
+    margins="parametric",  # a family per column, chosen from the data
+    margin_controls=FitControlsMargin(selection_criterion="bic"),
+  )
+  print(dist.margins[0].family_name)
   ```
 
   Install with `pip install pyvinecopulib[scipy]` (or `[openturns]`).
@@ -148,8 +152,8 @@ specifications, but fits an `x`-independent compiled `Vinecop` for the copula
 half. Fit custom conditional pairs through `VinecopBase.fit` and compose the
 parts explicitly when dependence must also vary with `X`. See the
 [concepts page](https://pyvinecopulib.readthedocs.io/en/latest/concepts.html)
-and notebooks `examples/11_extending_pyvinecopulib.ipynb` and
-`examples/10_vine_distributions.ipynb`.
+and notebooks `examples/10_extending_pyvinecopulib.ipynb` and
+`examples/03_vine_distributions.ipynb`.
 
 ### Conditional sampling and likelihood diagnostics
 

@@ -20,6 +20,8 @@ TorchVinecop : The copula this holds.
 
 from __future__ import annotations
 
+import math
+
 import dataclasses
 from itertools import chain
 from typing import Any, ClassVar, Optional, Sequence, cast
@@ -105,6 +107,38 @@ def _check_copula(copula: Any) -> None:
       "arrays, so it would detach every gradient and ignore `.to(device)`. "
       "Lift it first with TorchVinecop.from_vinecop(copula)."
     )
+
+
+def _declared_kwargs(controls: Optional[Any]) -> dict[str, Any]:
+  """Translate one margin's declared type and support into constructor kwargs.
+
+  A kernel density takes both at construction, so a declaration has to reach
+  it before the fit: a grid fitted unbounded is already padded past the data.
+
+  Parameters
+  ----------
+  controls : FitControlsMargin, or None
+      This variable's marginal configuration.
+
+  Returns
+  -------
+  dict
+      Keyword arguments for :class:`~pyvinecopulib.torch.TorchKde1d`.
+  """
+  kwargs: dict[str, Any] = {}
+  var_type = getattr(controls, "var_type", None)
+  if var_type == "d":
+    kwargs["type"] = "discrete"
+  elif var_type == "zi":
+    kwargs["type"] = "zero_inflated"
+  support = getattr(controls, "support", None)
+  if support is not None:
+    lo, hi = support
+    if lo is not None and math.isfinite(lo):
+      kwargs["xmin"] = float(lo)
+    if hi is not None and math.isfinite(hi):
+      kwargs["xmax"] = float(hi)
+  return kwargs
 
 
 class TorchVinedist(VinedistBase[Tensor], torch.nn.Module):
@@ -273,15 +307,23 @@ class TorchVinedist(VinedistBase[Tensor], torch.nn.Module):
     return ya, weights
 
   @classmethod
-  def _default_margins(cls, d: int, controls: Optional[Any]) -> Sequence[Any]:
+  def _default_margins(
+    cls,
+    d: int,
+    controls: Optional[Any] = None,
+    margin_controls: Optional[Sequence[Any]] = None,
+  ) -> Sequence[Any]:
     """One :class:`TorchKde1d` per variable, on the resolved placement.
 
     Parameters
     ----------
     d : int
         Number of variables.
-    controls : FitControlsTorchVinecop, or None
+    controls : FitControlsTorchVinecop, or None, optional
         Carries the device and dtype the margins share with the copula.
+    margin_controls : sequence, or None, optional
+        One marginal configuration per variable, whose declared variable type
+        and support each margin is built with.
 
     Returns
     -------
@@ -291,10 +333,13 @@ class TorchVinedist(VinedistBase[Tensor], torch.nn.Module):
     resolved = controls or FitControlsTorchVinecop()
     # `TorchKde1d` fixes its own default dtype, so name one only when the
     # controls actually carry it.
-    kwargs: dict[str, Any] = {"device": resolved.device}
+    placement: dict[str, Any] = {"device": resolved.device}
     if resolved.dtype is not None:
-      kwargs["dtype"] = resolved.dtype
-    return [TorchKde1d(**kwargs) for _ in range(d)]
+      placement["dtype"] = resolved.dtype
+    per_variable = margin_controls or [None] * d
+    return [
+      TorchKde1d(**placement, **_declared_kwargs(mc)) for mc in per_variable
+    ]
 
   @classmethod
   def _fit_copula(

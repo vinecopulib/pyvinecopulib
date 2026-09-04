@@ -20,7 +20,7 @@ import pyvinecopulib as pv
 from pyvinecopulib.core import MarginLike
 from pyvinecopulib.core import Kde1d
 from pyvinecopulib.margins import (
-  ParametricMargin,
+  SciPyMargin,
   as_margin,
   register_margin_adapter,
   resolve_margins,
@@ -185,7 +185,7 @@ def test_callable_margin_specifications_receive_weights() -> None:
 
   def make_margin(y: Any, **kwargs: Any) -> Any:
     seen.append(kwargs)
-    return ParametricMargin("norm", (float(np.mean(y)), 1.0))
+    return SciPyMargin("norm", (float(np.mean(y)), 1.0))
 
   rng = np.random.default_rng(8)
   data = rng.normal(size=(40, 2))
@@ -339,7 +339,7 @@ def test_register_margin_adapter_takes_precedence() -> None:
     pass
 
   sentinel = _Sentinel()
-  target = ParametricMargin("norm", (0.0, 1.0))
+  target = SciPyMargin("norm", (0.0, 1.0))
   register_margin_adapter(lambda o: isinstance(o, _Sentinel), lambda o: target)
   assert as_margin(sentinel) is target
 

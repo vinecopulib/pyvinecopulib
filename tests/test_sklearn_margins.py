@@ -5,10 +5,12 @@ the same layout, the same log-density, the same draws -- rather than a second
 implementation of Sklar's theorem that can drift from the first. That
 `margins=None` still means what it meant before margins were configurable: a
 `Kde1d` per column, to the last bit. That a specification the caller gives is
-honored per column and never mutated, so `clone` reproduces the estimator. And
-that the ``{0, 1}`` dummies of an expanded unordered categorical are fitted on
-the support they actually have, rather than on a padded grid that puts mass on
-values that cannot occur.
+honored per column and never mutated, so `clone` reproduces the estimator. That
+a family search runs per column and reads what `schema_` declared about that
+column rather than re-inferring it from the sample. And that the ``{0, 1}``
+dummies of an expanded unordered categorical are fitted on the support they
+actually have, rather than on a padded grid that puts mass on values that
+cannot occur.
 """
 
 from __future__ import annotations
@@ -27,10 +29,7 @@ from sklearn.base import clone  # noqa: E402
 
 import pyvinecopulib as pv  # noqa: E402
 from pyvinecopulib.core import Kde1d  # noqa: E402
-from pyvinecopulib.margins import (  # noqa: E402
-  MarginSelector,
-  ParametricMargin,
-)
+from pyvinecopulib.margins import SciPyMargin  # noqa: E402
 from pyvinecopulib.sklearn import VineDensity, VineRegressor  # noqa: E402
 
 from .helpers import AtomicMargin  # noqa: E402
@@ -170,25 +169,56 @@ def test_the_schema_reaches_a_column_the_specification_addresses() -> None:
   """A `margins=` argument does not cost the margin what the input declared.
 
   The per-variable default only covers the columns a specification leaves
-  unaddressed, so a broadcast alias used to hand every selector
-  `var_type=None, bounds=None` and have it re-infer both from the sample --
-  strictly less than `schema_` already knew.
+  unaddressed, so a broadcast alias would otherwise hand every margin
+  `var_type=None, support=None` and have it re-infer both from the sample --
+  strictly less than `schema_` already knew. What the declaration buys is
+  visible in the family that wins: a float column whose observations happen to
+  be whole numbers reads as counts on its own, and is selected among the
+  continuous families only because the input said the column was continuous.
   """
+  pytest.importorskip("scipy")
   rng = np.random.default_rng(0)
-  counts = rng.integers(0, 5, size=400)
+  whole = rng.integers(0, 50, size=400) * 1.0
   X_df = pd.DataFrame(
     {
-      "grade": pd.Categorical(counts, categories=range(5), ordered=True),
-      "z": rng.normal(size=400),
+      "grade": pd.Categorical(
+        rng.integers(0, 5, size=400), categories=range(5), ordered=True
+      ),
+      "whole": whole,
     }
   )
   est = VineDensity(margins="parametric", random_state=0).fit(X_df)
-  selector: Any = est.distribution_.margins[0]
-  assert selector.bounds == (0.0, 4.0)
-  assert selector.var_type == "d"
-  # The unbounded continuous column is left alone.
-  other: Any = est.distribution_.margins[1]
-  assert other.bounds is None
+  ordered: Any = est.distribution_.margins[0]
+  assert ordered.var_type == "d"
+  assert ordered.family_name in ("poisson", "nbinom", "geom")
+  continuous: Any = est.distribution_.margins[1]
+  assert continuous.var_type == "c"
+  # Which is not what the column says about itself, left to a bare search.
+  assert SciPyMargin().select(whole).var_type == "d"
+
+
+def test_a_declared_support_reaches_a_selected_family() -> None:
+  """Bounds a specification-addressed column carries steer the search too.
+
+  The bounded candidates are the ones that can pin their endpoints, and they
+  are reachable in no other way: nothing in a sample on ``(0, 1)`` says the
+  variable is a proportion rather than a positive variable that stayed small.
+  """
+  pytest.importorskip("scipy")
+  rng = np.random.default_rng(0)
+  X = np.column_stack([rng.uniform(0.0, 1.0, 300), rng.normal(size=300)])
+  est = VineDensity(margins="parametric", random_state=0)
+  est.schema_ = {
+    "kde1d_types": ["continuous", "continuous"],
+    "bounds": [(0.0, 1.0), None],
+  }
+  est.fit(X)
+  bounded: Any = est.distribution_.margins[0]
+  assert bounded.family_name in ("uniform", "beta")
+  assert bounded.support == (0.0, 1.0)
+  # The column that declared nothing is not bounded to its own sample.
+  free: Any = est.distribution_.margins[1]
+  assert free.support == (-np.inf, np.inf)
 
 
 def test_margin_summary_is_published(
@@ -293,9 +323,9 @@ def test_a_mapping_leaves_the_other_columns_on_the_inferred_default(
 ) -> None:
   """Addressing one column must not silently retype the rest."""
   X_df, expanded = sample_dataframe_data
-  est = VineDensity(margins={"cont1": ParametricMargin("norm")}).fit(X_df)
+  est = VineDensity(margins={"cont1": SciPyMargin("norm")}).fit(X_df)
   margins = est.distribution_.margins
-  assert isinstance(margins[0], ParametricMargin)
+  assert isinstance(margins[0], SciPyMargin)
   dummy: Any = margins[expanded.index("cat1_B")]
   assert isinstance(dummy, Kde1d)
   assert dummy.var_type == "d"
@@ -333,34 +363,92 @@ def test_a_fixed_foreign_margin_is_used_as_given(
 # --- family selection ------------------------------------------------------- #
 
 
-def test_selection_report_is_empty_without_a_selector(
+def test_parametric_margins_select_a_family_per_column(
   sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
 ) -> None:
-  """Nothing selected a family, so the table is empty rather than absent."""
-  X, _, _ = sample_array_data
-  assert VineDensity().fit(X).selection_report_ == []
+  """`margins="parametric"` chooses a family per column, and publishes it.
 
-
-def test_parametric_margins_report_their_selection(
-  sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
-) -> None:
-  """`margins="parametric"` selects per column and names the column it fitted."""
+  The margin *is* the winner, so what it selected is read off the margin and
+  reported by `margin_summary_` alongside every other column's.
+  """
   pytest.importorskip("scipy")
   X, _, _ = sample_array_data
   est = VineDensity(margins="parametric").fit(X)
-  assert all(isinstance(m, MarginSelector) for m in est.distribution_.margins)
-  assert {row["column"] for row in est.selection_report_} == {"x0", "x1"}
-  assert "selected" in {row["status"] for row in est.selection_report_}
+  margins: tuple[Any, ...] = est.distribution_.margins
+  assert all(isinstance(margin, SciPyMargin) for margin in margins)
+  assert all(margin.is_fitted for margin in margins)
+  rows = est.margin_summary_
+  assert [row["family"] for row in rows] == [m.family_name for m in margins]
+  assert all(row["margin"] == "SciPyMargin" for row in rows)
+  assert all(row["loglik"] is not None for row in rows)
 
 
-def test_selection_report_names_dataframe_columns(
+def test_the_estimator_honors_a_named_family_and_chooses_an_unnamed_one() -> (
+  None
+):
+  """The estimator asks each margin to `select`, which respects a named family.
+
+  `select` is the weaker requirement: a margin with nothing to choose reduces
+  it to its own `fit`, and naming a family *is* the choice -- so the
+  specification stands. Leaving the family out is what asks for the search.
+  """
+  pytest.importorskip("scipy")
+  rs = np.random.RandomState(3)
+  X = np.column_stack([rs.gamma(2.0, 1.0, 200), rs.gamma(3.0, 1.0, 200)])
+
+  named = VineDensity(margins=SciPyMargin("norm"), random_state=0).fit(X)
+  assert [m.family_name for m in named.distribution_.margins] == [
+    "norm",
+    "norm",
+  ]
+
+  chosen = VineDensity(margins="parametric", random_state=0).fit(X)
+  assert "norm" not in [m.family_name for m in chosen.distribution_.margins]
+
+
+def test_selection_runs_per_expanded_column(
   sample_dataframe_data: tuple[pd.DataFrame, list[str]],
 ) -> None:
-  """With named features, the report is keyed by the expanded column name."""
+  """Every expanded column is selected on its own, dummies included.
+
+  A ``{0, 1}`` dummy is a count and the continuous columns are not, so the two
+  get candidate sets of their own: a probability mass and a Lebesgue density
+  are not comparable on one information criterion.
+  """
   pytest.importorskip("scipy")
   X_df, expanded = sample_dataframe_data
-  est = VineDensity(margins="parametric").fit(X_df)
-  assert {row["column"] for row in est.selection_report_} == set(expanded)
+  est = VineDensity(margins="parametric", random_state=0).fit(X_df)
+  rows = est.margin_summary_
+  assert len(rows) == len(expanded)
+  by_name = dict(zip(expanded, rows))
+  counts = ("poisson", "nbinom", "geom")
+  assert by_name["cat1_B"]["var_type"] == "d"
+  assert by_name["cat1_B"]["family"] in counts
+  assert by_name["cont1"]["var_type"] == "c"
+  assert by_name["cont1"]["family"] not in counts
+
+
+def test_a_failed_family_search_names_its_column() -> None:
+  """A search that refuses every candidate names the column, as a fit does.
+
+  The levels of an ordered categorical are the variable's support, so the
+  column is declared discrete and searched over the count families -- which
+  none of these non-integer levels can be.
+  """
+  pytest.importorskip("scipy")
+  rs = np.random.RandomState(0)
+  df = pd.DataFrame(
+    {
+      "a": rs.normal(size=200),
+      "grade": pd.Categorical(
+        rs.choice([1.5, 2.5, 3.5], 200),
+        categories=[1.5, 2.5, 3.5],
+        ordered=True,
+      ),
+    }
+  )
+  with pytest.raises(ValueError, match=r"margin for 'grade': no parametric"):
+    VineDensity(margins="parametric").fit(df)
 
 
 # --- the response margin ---------------------------------------------------- #
@@ -370,15 +458,14 @@ def test_the_response_margin_follows_a_broadcast_specification(
   regression_data: tuple[np.ndarray, np.ndarray, np.ndarray, float],
 ) -> None:
   """An alias covers the response too; a per-column sequence does not."""
+  pytest.importorskip("scipy")
   X, y, _, _ = regression_data
   broadcast = VineRegressor(margins="parametric").fit(X, y)
-  assert isinstance(broadcast.distribution_.margins[0], MarginSelector)
+  assert isinstance(broadcast.distribution_.margins[0], SciPyMargin)
 
-  per_column = VineRegressor(margins=[MarginSelector(), MarginSelector()]).fit(
-    X, y
-  )
+  per_column = VineRegressor(margins=[SciPyMargin(), SciPyMargin()]).fit(X, y)
   assert isinstance(per_column.distribution_.margins[0], Kde1d)
-  assert isinstance(per_column.distribution_.margins[1], MarginSelector)
+  assert isinstance(per_column.distribution_.margins[1], SciPyMargin)
 
 
 def test_a_discrete_response_margin_is_refused(

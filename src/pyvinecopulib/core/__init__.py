@@ -21,7 +21,7 @@ primitives (with ``fit`` / ``predict``-style interfaces, DataFrame
 handling, and batched evaluation), see
 :mod:`pyvinecopulib.sklearn`. The
 ``examples/02_vine_copulas.ipynb`` and
-``examples/03_vine_copulas_fit_sample.ipynb`` notebooks walk through
+``examples/03_vine_distributions.ipynb`` notebooks walk through
 end-to-end use of these classes.
 
 Notes

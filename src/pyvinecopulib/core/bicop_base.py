@@ -288,6 +288,10 @@ class BicopBase(BicopLike[ArrayT], ABC):
     --------
     fit : Estimate the current family's parameters, leaving the family alone.
     """
+    if controls is None and var_types is None:
+      # Forwarded only when there is something to forward, so a subclass whose
+      # `fit` takes neither still works through `select`.
+      return self.fit(u)
     return self.fit(u, controls, var_types)
 
   def flip(self) -> "BicopBase[ArrayT]":

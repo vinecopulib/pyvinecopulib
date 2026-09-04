@@ -219,17 +219,23 @@ def _register_builtin_readers() -> None:
     return Kde1d.from_json(payload["json"])
 
   def _parametric(payload: dict[str, Any]) -> Any:
-    from ..margins import ParametricMargin
+    from ..margins import SciPyMargin
 
-    return ParametricMargin._from_json_payload(payload)
+    return SciPyMargin._from_json_payload(payload)
 
   def _selector(payload: dict[str, Any]) -> Any:
-    from ..margins import MarginSelector
-
-    return MarginSelector._from_json_payload(payload)
+    del payload
+    raise ValueError(
+      "this file was written by a `MarginSelector`, which no longer exists: "
+      "family selection is now `SciPyMargin.select`, and the margin a "
+      "selector wrapped was stored inside it rather than as itself. Refit the "
+      "distribution with margins='parametric'."
+    )
 
   register_margin_json("Kde1d", _kde1d)
-  register_margin_json("ParametricMargin", _parametric)
+  register_margin_json("SciPyMargin", _parametric)
+  # Registered rather than dropped, so a file written before the change says
+  # what to do instead of failing on an unknown kind.
   register_margin_json("MarginSelector", _selector)
 
 

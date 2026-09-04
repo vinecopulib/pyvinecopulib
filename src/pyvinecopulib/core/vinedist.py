@@ -168,6 +168,29 @@ class Vinedist(VinedistBase[np.ndarray]):
     return np.asarray(y, dtype=float), weights
 
   @classmethod
+  def _margin_from_controls(cls, controls: Optional[Any]) -> Any:
+    """Build one ``Kde1d`` margin honoring what its controls declare.
+
+    A kernel density takes its variable type and its bounds at construction,
+    so a declaration has to reach it before the fit rather than after: an
+    unbounded grid is padded past the data, and for a variable that cannot be
+    negative that puts mass where nothing can occur.
+
+    Parameters
+    ----------
+    controls : object, or None
+        This variable's marginal configuration.
+
+    Returns
+    -------
+    Kde1d
+        An unfitted margin, bounded and typed as declared.
+    """
+    from ..margins._resolve import kde_from_controls
+
+    return kde_from_controls(controls)
+
+  @classmethod
   def _fit_copula(
     cls,
     u: Any,

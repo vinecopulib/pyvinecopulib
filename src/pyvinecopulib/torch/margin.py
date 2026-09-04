@@ -1,15 +1,25 @@
-"""PyTorch univariate margin built on a ``torch.distributions`` family.
+"""PyTorch univariate margins on a ``torch.distributions`` family.
 
-A ``torch.distributions.Distribution`` is not a :class:`torch.nn.Module`: it has
-no ``.to(device)``, and held as a plain attribute it contributes nothing to a
-module's ``state_dict``. :class:`TorchMargin` therefore registers the
-*parameters* — as ``torch.nn.Parameter`` or as buffers — and rebuilds the
-distribution on every call, which is the same shape
-:class:`~pyvinecopulib.torch.TorchBicop` uses for its interpolation grid.
+``TorchMargin`` is the marginal half a ``TorchVinedist`` composes with its
+copula: a ``MarginBase`` that is also a ``torch.nn.Module``, so a family's
+parameters move with ``.to(device)``, appear in ``state_dict()`` and are
+visible to an optimizer.
+
+A ``torch.distributions.Distribution`` is not a module — it has no
+``.to(device)``, and held as a plain attribute it contributes nothing to a
+``state_dict`` — so what a margin registers is the *parameters*, and the
+distribution is rebuilt from them on every call. That is the same shape
+``TorchBicop`` uses for its interpolation grid.
+
+Continuous families only: a margin with atoms needs a left-limit ``cdf``,
+which ``torch.distributions`` does not expose. ``TorchKde1d`` is the discrete
+and zero-inflated margin on this lane; ``Vinedist`` with
+``pyvinecopulib.margins`` is the NumPy one.
 
 See Also
 --------
 pyvinecopulib.core.MarginBase : The contract this fills in.
+TorchKde1d : The margin for discrete and zero-inflated variables.
 TorchVinedist : The joint distribution these margins go into.
 """
 
@@ -32,12 +42,11 @@ ParameterSpec = Union[Mapping[str, Any], Iterable[tuple[str, Any]]]
 
 
 def _implements(distribution: Distribution, name: str) -> bool:
-  """Whether a family overrides one of ``Distribution``'s stubs.
+  """Whether a family supplies its own ``cdf`` or ``icdf``.
 
-  ``Distribution.cdf`` and ``Distribution.icdf`` exist on every distribution and
-  raise :exc:`NotImplementedError` unless the concrete family overrides them, so
-  member names carry no information here. Comparing the resolved function
-  against the base one does, and costs no evaluation.
+  ``Distribution`` defines both and raises ``NotImplementedError`` unless the
+  concrete family overrides them, so the member is there either way and its
+  presence says nothing; which function the name resolves to does.
 
   Parameters
   ----------
@@ -59,10 +68,28 @@ def _implements(distribution: Distribution, name: str) -> bool:
 class TorchMargin(MarginBase[Tensor], torch.nn.Module):
   """Univariate margin on a ``torch.distributions`` family.
 
-  A :class:`~pyvinecopulib.core.MarginBase` that is also a
-  :class:`torch.nn.Module`, so its parameters move with ``.to(device)``, appear
-  in ``state_dict()``, and are visible to an optimizer. The distribution object
-  itself is rebuilt from those parameters on every call and never stored.
+  A ``MarginBase`` that is also a ``torch.nn.Module``: the parameter values are
+  registered tensors, so they move with ``.to(device)``, appear in
+  ``state_dict()`` and are visible to an optimizer, while the distribution
+  itself is rebuilt from them on every call and never stored.
+
+  What a caller supplies is the family and its parameters — as ``factory`` plus
+  ``parameters`` here, or as an already-built distribution through
+  ``from_distribution``. Everything else reads off those:
+
+  - ``distribution`` is the family at the parameter values as they stand now,
+    which is what every member below evaluates.
+  - ``parameter_names`` names the parameters in the order they were given, and
+    ``support`` reports the bounds those values imply.
+  - ``pdf`` / ``logpdf`` (``log_prob`` is the ``torch.distributions`` spelling
+    of the same method) / ``cdf`` / ``icdf`` are the evaluation surface, and
+    ``MarginBase`` derives ``cdf_left`` / ``loglik`` / ``sample`` from them.
+
+  The parameters are the whole specification, so a margin is ready to evaluate
+  as soon as it is constructed and the inherited ``fit`` / ``select`` /
+  ``from_data`` estimators have nothing to estimate and raise: hand the
+  constructor an estimate, or let an optimizer move the registered parameters.
+  ``TorchKde1d`` is the margin on this lane that fits itself to data.
 
   Parameters
   ----------
@@ -72,26 +99,26 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
       ``torch.distributions.Normal``.
   parameters : mapping or iterable of pair, optional
       Parameter values, keyed by the keyword ``factory`` expects. Anything
-      :class:`dict` accepts; the default is no parameters at all.
+      ``dict`` accepts; the default is no parameters at all, for a factory that
+      closes over its own.
   trainable : bool, default=True
       Register floating-point parameters as ``torch.nn.Parameter`` rather
       than as buffers. Integer parameters are always buffers, since a tensor of
       integers cannot carry a gradient.
   validate_args : bool or None, default=None
       Forwarded to ``factory``; ``None`` leaves the family's own default, which
-      is what makes an optimizer step that leaves the parameter domain raise
-      rather than return silent ``nan``.
+      normally checks its parameters, so a value outside the family's domain
+      raises rather than returning silent ``nan``.
   device : torch.device or None, default=None
       Placement of the registered tensors.
   dtype : torch.dtype, default=torch.float64
       Precision of the registered floating-point tensors, matching the rest of
-      :mod:`pyvinecopulib.torch`.
+      ``pyvinecopulib.torch``.
 
   Raises
   ------
   NotImplementedError
-      If the family's support is discrete, or if the family does not implement
-      ``cdf``.
+      If the family is discrete, or if it does not implement ``cdf``.
 
   See Also
   --------
@@ -102,31 +129,32 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
   Notes
   -----
   **Coverage.** ``cdf`` is what puts a variable on the copula scale, so a family
-  without one cannot be a margin at all and is rejected at construction. Of the
-  families in ``torch.distributions`` (checked against torch 2.13):
+  without one cannot be a margin at all and is rejected at construction.
+  Grouping the families of ``torch.distributions`` by what they implement
+  (torch 2.13):
 
   - ``cdf`` and ``icdf`` both: ``Normal``, ``Uniform``, ``Exponential``,
-    ``Cauchy``, ``Laplace``, ``LogNormal``, ``Weibull``, ``Gumbel``,
-    ``HalfNormal``.
-  - ``cdf`` only: ``Gamma``, ``Chi2``. :meth:`icdf` inverts ``cdf`` by
-    bisection over :attr:`support`, so these work too.
+    ``Cauchy``, ``HalfCauchy``, ``Laplace``, ``LogNormal``, ``Weibull``,
+    ``Gumbel``, ``HalfNormal``, ``Pareto``, ``InverseGamma``, ``Kumaraswamy``.
+  - ``cdf`` only: ``Gamma``, ``Chi2``. ``icdf`` inverts ``cdf`` by
+    bisection over ``support``, so these work too.
   - neither: ``Beta``, ``StudentT``, ``FisherSnedecor``, ``VonMises``. No
     fallback can rescue them — inverting a ``cdf`` that does not exist is not a
-    matter of effort — so they raise. Reach for
-    :class:`pyvinecopulib.core.Kde1d`, or a SciPy distribution through
-    :class:`pyvinecopulib.core.Vinedist` on NumPy.
-  - discrete (``Poisson``, ``Binomial``, ``Categorical``, …): rejected. The
-    torch lane is continuous-only for now; the copula needs a left-limit ``cdf``
-    at every atom, which the discrete cascade on
-    :class:`pyvinecopulib.core.Vinedist` provides and this one does not.
+    matter of effort — so they raise. Reach for ``Kde1d``, or a SciPy
+    distribution through ``Vinedist`` on NumPy.
+  - discrete (``Poisson``, ``Binomial``, ``Categorical``, …): rejected. A
+    margin with atoms needs a left-limit ``cdf`` at each of them, which none of
+    them exposes; ``TorchKde1d``, or ``Vinedist`` with
+    ``pyvinecopulib.margins``, covers discrete and mixed data instead.
 
-  **Autograd.** ``Normal.cdf`` is differentiable with respect to both its
-  parameters and its argument. ``Gamma.cdf`` is differentiable with respect to
-  its argument only — ``igamma`` has no derivative for its first argument — so
-  a Gamma margin can be fitted by its own marginal likelihood (``log_prob`` *is*
-  differentiable in the concentration) but cannot be optimized end to end
-  through a copula, which needs ``dF/dtheta``. That asymmetry is a reason to
-  keep two-step estimation the default even here.
+  **Autograd.** ``Normal.cdf`` is differentiable with respect to its argument
+  and to both parameters. ``Gamma.cdf`` is differentiable with respect to its
+  argument and to ``rate``, but not to ``concentration`` — ``igamma`` has no
+  derivative for its first argument — so a Gamma margin's shape can be
+  estimated from its own marginal likelihood (``log_prob`` *is* differentiable
+  in it) but not end to end through a copula, which reaches a margin as
+  ``F(y)`` alone. That asymmetry is a reason to keep two-step estimation the
+  default even here.
 
   **Constrained parameters.** Values are stored on the family's natural scale,
   unconstrained. An optimizer is free to step a scale negative; wrap the
@@ -135,7 +163,7 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
 
   Examples
   --------
-  A standard-normal margin whose location is learnable::
+  A standard-normal margin whose parameters are learnable::
 
       import torch
       from pyvinecopulib.torch import TorchMargin
@@ -217,9 +245,8 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
   ) -> "TorchMargin":
     """Lift an already-constructed ``torch.distributions`` object.
 
-    The family and its parameter names are read off the object — the latter
-    from ``arg_constraints``, which is how ``torch.distributions`` itself
-    declares them — and the values are copied into registered tensors.
+    The family and the names of its parameters are read off the object, and the
+    values are copied into registered tensors.
 
     Parameters
     ----------
@@ -241,7 +268,9 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
     Raises
     ------
     ValueError
-        If a name in ``arg_constraints`` is not readable off the object.
+        If the family declares a parameter in ``arg_constraints`` that the
+        object does not expose; pass the parameters to the constructor
+        instead.
 
     Notes
     -----
@@ -275,7 +304,7 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
 
   @property
   def distribution(self) -> Distribution:
-    """The distribution, rebuilt from the currently registered parameters.
+    """The family at the currently registered parameter values.
 
     A fresh object every call, so an in-place parameter update, an optimizer
     step, or a ``.to(device)`` is picked up immediately.
@@ -297,7 +326,7 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
     """Names of the registered parameters, in the order given.
 
     Spelled ``parameter_names`` rather than ``parameters``, which
-    :class:`torch.nn.Module` already uses for the tensors themselves.
+    ``torch.nn.Module`` already uses for the tensors themselves.
 
     Returns
     -------
@@ -310,8 +339,9 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
   def support(self) -> tuple[float, float]:
     """Closed bounds of the support.
 
-    Read off the distribution rather than cached, since a family such as
-    ``Uniform`` derives its support from its parameters.
+    Follows the current parameter values, so a family such as ``Uniform``,
+    whose support is set by them, stays right after an update. ``icdf``
+    brackets its search here.
 
     Returns
     -------
@@ -344,8 +374,7 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
   def logpdf(self, y: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Log-density of the margin.
 
-    Taken straight from the family's ``log_prob`` rather than through
-    :meth:`pdf`, which keeps the far tails finite.
+    Finite far into the tails, where ``pdf`` itself underflows to zero.
 
     Parameters
     ----------
@@ -362,7 +391,7 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
     return self.distribution.log_prob(y)
 
   def log_prob(self, y: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
-    """Alias of :meth:`logpdf`, the ``torch.distributions`` spelling.
+    """The ``torch.distributions`` spelling of ``logpdf``.
 
     Parameters
     ----------
@@ -398,15 +427,12 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
   def icdf(self, p: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Inverse distribution function of the margin.
 
-    Uses the family's own ``icdf`` where it has one, and otherwise inverts
-    :meth:`cdf` by bisection over :attr:`support` — which is what makes
-    ``Gamma`` and ``Chi2`` usable.
-
-    The bisection runs outside autograd, as
-    :meth:`pyvinecopulib.torch.TorchVinecop.sample` does: the derivative of a
-    fixed number of bisection steps is not the derivative of the inverse, and
-    the families that need the fallback have no ``dF/dtheta`` to propagate
-    anyway. The result of the closed-form branch stays differentiable.
+    The family's own ``icdf`` where it has one, and otherwise ``cdf`` inverted
+    numerically over ``support`` — which is what makes ``Gamma`` and ``Chi2``
+    usable as margins. Only the first of those carries a gradient: the
+    derivative of a fixed number of bisection steps is not the derivative of an
+    inverse, so the numerical branch returns a detached quantile, and with it a
+    detached ``sample``.
 
     Parameters
     ----------
@@ -426,12 +452,11 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
       return super().icdf(p)
 
   def _apply(self, fn: Any, *args: Any, **kwargs: Any) -> "TorchMargin":
-    """Track ``.to()`` in the fallback placement.
+    """Keep the fallback placement current across a ``.to()``.
 
     A factory that closes over its own parameters registers none, so the
-    fallback is the only record of where this margin lives -- and it was
-    frozen at construction, leaving such a margin drawing on the cpu after
-    a move.
+    fallback dtype and device are the only record of where this margin lives,
+    and they are where ``sample`` draws.
     """
     out = super()._apply(fn, *args, **kwargs)
     probe = fn(

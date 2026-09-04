@@ -720,7 +720,7 @@ class VinedistLike(Protocol[ArrayT]):
   Discreteness, conditioning and the fit-time reports are **optional
   capabilities** rather than members of this contract, discovered with
   ``getattr``: ``dim``, ``var_types``, ``sample_conditional``,
-  ``supports_covariates``, ``selection_report`` and ``margin_summary``.
+  ``supports_covariates`` and ``margin_summary``.
   Serialization is likewise out of scope, as it is for the other contracts.
 
   See Also

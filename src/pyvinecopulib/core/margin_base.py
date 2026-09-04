@@ -12,6 +12,7 @@ from __future__ import annotations
 from abc import ABC
 from typing import Any, Optional, Self, cast
 
+import numpy as _np
 from array_api_compat import array_namespace
 
 from ._rootfind import solve_increasing
@@ -249,6 +250,12 @@ class MarginBase(MarginLike[ArrayT], ABC):
     """
     return True
 
+  #: Whether :meth:`fit` and :meth:`select` take a ``controls`` argument.
+  #: ``True`` here, since both do; a margin whose estimator is configured
+  #: entirely at construction sets it ``False`` so a caller's controls are
+  #: refused rather than passed to a signature that has no room for them.
+  supports_controls: bool = True
+
   def declare(
     self,
     *,
@@ -301,7 +308,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
     its ``margin_class`` and fit one per variable.
 
     A margin whose family is chosen at construction is named that way instead
-    (``ParametricMargin("gamma").fit(y)``); this factory is for the case where
+    (``SciPyMargin("gamma").fit(y)``); this factory is for the case where
     the class itself is the whole specification.
 
     Parameters
@@ -385,7 +392,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
     Defaults to :meth:`fit`, which is the right answer whenever there is
     nothing to choose: a margin named with its family, or a nonparametric one,
     is fully determined by its parameters. Override it in a subclass that
-    searches a candidate set -- :class:`~pyvinecopulib.margins.ParametricMargin`
+    searches a candidate set -- :class:`~pyvinecopulib.margins.SciPyMargin`
     does -- and have it set the family it chose before estimating.
 
     Parameters
@@ -411,7 +418,18 @@ class MarginBase(MarginLike[ArrayT], ABC):
     --------
     fit : Estimate the current family's parameters, leaving the family alone.
     """
-    return self.fit(y, controls, x=x, weights=weights)
+    # Each argument is forwarded only when there is one, so a subclass whose
+    # `fit` takes no covariates, no weights or no controls still works through
+    # `select` -- and refuses loudly when handed one it cannot honor. The rule
+    # `fit_margin` already applies.
+    passed: dict[str, Any] = {}
+    if x is not None:
+      passed["x"] = x
+    if weights is not None:
+      passed["weights"] = weights
+    if controls is None:
+      return self.fit(y, **passed)
+    return self.fit(y, controls, **passed)
 
   # --- derived evaluation surface ------------------------------------------ #
 
@@ -591,6 +609,140 @@ class MarginBase(MarginLike[ArrayT], ABC):
       weights = validate_weights(weights, terms)
       terms = terms * weights
     return cast(ArrayT, xp.sum(terms))
+
+  def aic(self, y: Optional[ArrayT] = None, /) -> float:
+    """Akaike information criterion of the fit.
+
+    ``-2 loglik + 2 k``, matching what ``Bicop.aic`` and ``Vinecop.aic``
+    report for the copula half. Lower is better.
+
+    Parameters
+    ----------
+    y : array, shape (n,), or None, optional
+        Observations to evaluate the log-likelihood at; the value attained
+        when the margin was fitted if ``None``.
+
+    Returns
+    -------
+    float
+        The criterion.
+
+    See Also
+    --------
+    bic : The same, penalizing by ``log n`` per parameter.
+    """
+    return -2.0 * self._loglik_value(y) + 2.0 * self._n_parameters()
+
+  def bic(self, y: Optional[ArrayT] = None, /) -> float:
+    """Bayesian information criterion of the fit.
+
+    ``-2 loglik + k log n``. Lower is better; the heavier penalty makes it
+    prefer fewer parameters than :meth:`aic` does.
+
+    Parameters
+    ----------
+    y : array, shape (n,), or None, optional
+        Observations to evaluate the log-likelihood at; the value attained
+        when the margin was fitted if ``None``.
+
+    Returns
+    -------
+    float
+        The criterion.
+
+    Raises
+    ------
+    ValueError
+        If called without data on a margin that did not record its sample
+        size, since the penalty needs ``n``.
+    """
+    return -2.0 * self._loglik_value(y) + self._n_parameters() * float(
+      _np.log(self._sample_size(y))
+    )
+
+  def aicc(self, y: Optional[ArrayT] = None, /) -> float:
+    """Small-sample-corrected Akaike information criterion.
+
+    :meth:`aic` plus ``2k(k + 1) / (n - k - 1)``, which is ``inf`` where that
+    denominator is not positive -- so a fit with more parameters than the
+    sample can support never wins by being undefined.
+
+    Parameters
+    ----------
+    y : array, shape (n,), or None, optional
+        Observations to evaluate the log-likelihood at; the value attained
+        when the margin was fitted if ``None``.
+
+    Returns
+    -------
+    float
+        The criterion.
+
+    Raises
+    ------
+    ValueError
+        If called without data on a margin that did not record its sample
+        size.
+    """
+    k = self._n_parameters()
+    tail = self._sample_size(y) - k - 1.0
+    if tail <= 0.0:
+      return float("inf")
+    return self.aic(y) + 2.0 * k * (k + 1.0) / tail
+
+  def _loglik_value(self, y: Optional[ArrayT]) -> float:
+    """Log-likelihood as a plain float.
+
+    Parameters
+    ----------
+    y : array, shape (n,), or None
+        Observations, or ``None`` for the fitted value.
+
+    Returns
+    -------
+    float
+        The log-likelihood.
+    """
+    return float(self.loglik(y))
+
+  def _n_parameters(self) -> float:
+    """Number of freely estimated parameters.
+
+    Returns
+    -------
+    float
+        What ``n_parameters`` reports, or ``0`` for a margin that declares
+        none -- a fixed margin costs nothing in a criterion.
+    """
+    return float(getattr(self, "n_parameters", 0.0))
+
+  def _sample_size(self, y: Optional[ArrayT]) -> float:
+    """Number of observations the criterion penalizes against.
+
+    Parameters
+    ----------
+    y : array, shape (n,), or None
+        Observations, or ``None`` to read the fitted sample size.
+
+    Returns
+    -------
+    float
+        The sample size.
+
+    Raises
+    ------
+    ValueError
+        If ``y`` is ``None`` and the margin recorded no sample size.
+    """
+    if y is not None:
+      return float(cast(Any, y).shape[0])
+    n = getattr(self, "nobs", None)
+    if n is None:
+      raise ValueError(
+        f"{type(self).__name__} did not record its sample size, so the "
+        "criterion cannot be penalized; pass the observations"
+      )
+    return float(n)
 
   def sample(
     self,

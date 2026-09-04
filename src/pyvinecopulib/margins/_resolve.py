@@ -4,21 +4,45 @@ from __future__ import annotations
 
 import copy
 import operator
+import warnings
 from typing import Any, Callable, Optional, Sequence, Union
+
+import numpy as _np
 
 from ..core import MarginLike
 from ._adapters import as_margin
 from ..core import Kde1d
-from .selection import MarginSelector
 
-__all__ = ["resolve_margins", "resolve_margin_controls", "fit_margin"]
+__all__ = [
+  "resolve_margins",
+  "resolve_margin_controls",
+  "kde_from_controls",
+  "fit_margin",
+]
 
-#: String aliases for the built-in margin families. ``"parametric"`` is the
-#: selector rather than one family: a parametric margin is only meaningful once
-#: a family has been chosen, and choosing it from the data is the whole job.
+
+def _parametric_margin() -> Any:
+  """Build a parametric margin with its family left to be selected.
+
+  Deferred so that :mod:`pyvinecopulib.margins` imports without SciPy, which
+  ``SciPyMargin`` needs and this module does not.
+
+  Returns
+  -------
+  SciPyMargin
+      An unfitted margin with no family yet.
+  """
+  from .scipy import SciPyMargin
+
+  return SciPyMargin()
+
+
+#: String aliases for the built-in margins. ``"parametric"`` names the class
+#: without naming a family, which is what makes it an alias at all: choosing
+#: the family from the data is `SciPyMargin.select`'s job.
 _ALIASES = {
   "kde": Kde1d,
-  "parametric": MarginSelector,
+  "parametric": _parametric_margin,
 }
 
 
@@ -71,7 +95,10 @@ def _resolve_one(entry: Any) -> Any:
 
 #: What an unaddressed variable gets: one entry per variable, or a callable
 #: producing them, invoked only if some variable is in fact unaddressed.
-_Default = Union[Sequence[Any], Callable[[], Sequence[Any]]]
+_Default = Union[
+  Sequence[Any],
+  Callable[[], Optional[Sequence[Any]]],
+]
 
 
 def _per_variable(
@@ -127,7 +154,11 @@ def _per_variable(
         if key not in lookup:
           raise ValueError(
             f"{label} mapping names {key!r}, which is not a variable"
-            + (f"; known names are {sorted(lookup)}" if lookup else "")
+            + (
+              f"; known names are {sorted(lookup)}"
+              if lookup
+              else "; no names are known here, so key the mapping by position"
+            )
           )
         index = lookup[key]
       else:
@@ -259,9 +290,14 @@ def resolve_margins(
   def base_specs() -> list[Any]:
     if default is None:
       return [_prototype("kde") for _ in range(d)]
-    entries: Sequence[Any] = (
-      default() if isinstance(default, Callable) else default
-    )
+    computed = default() if isinstance(default, Callable) else default
+    if computed is None:
+      # A callable that answers `None` says what `default=None` says: this
+      # module's own default. Deferred precisely so a specification naming
+      # every variable is not held hostage to a default it never uses -- one
+      # that can legitimately raise.
+      return [_prototype("kde") for _ in range(d)]
+    entries: Sequence[Any] = computed
     if len(entries) != d:
       raise ValueError(
         f"default has length {len(entries)}, but there are {d} variables"
@@ -309,6 +345,64 @@ def resolve_margins(
   one = _resolve_one(spec)
   # Copy per variable: a shared mutable estimator would leak state.
   return [one if callable(one) else copy.deepcopy(one) for _ in range(d)]
+
+
+def kde_from_controls(controls: Optional[Any]) -> Kde1d:
+  """Build a kernel-density margin honoring what the controls declare.
+
+  The declaration is authoritative here, unlike on a margin the caller
+  constructed: this margin does not exist yet, so there is nothing for it to
+  override. It is what makes a bounded default reachable without naming a
+  class -- ``margin_controls`` alone can say that one variable is positive and
+  another is a proportion.
+
+  Parameters
+  ----------
+  controls : FitControlsMargin, or None
+      Read for ``var_type`` and ``support``; both optional.
+
+  Returns
+  -------
+  Kde1d
+      An unfitted margin, bounded and typed as declared.
+  """
+  kwargs: dict[str, Any] = {}
+  var_type = getattr(controls, "var_type", None)
+  if var_type == "d":
+    kwargs["type"] = "discrete"
+  elif var_type == "zi":
+    kwargs["type"] = "zero_inflated"
+  support = getattr(controls, "support", None)
+  if support is not None:
+    lo, hi = support
+    if lo is not None and _np.isfinite(lo):
+      kwargs["xmin"] = float(lo)
+    if hi is not None and _np.isfinite(hi):
+      kwargs["xmax"] = float(hi)
+  return Kde1d(**kwargs)
+
+
+def _fallback_kde(
+  controls: Optional[Any], y: Any, weights: Optional[Any]
+) -> Kde1d:
+  """Fit the kernel-density margin substituted for a failed candidate set.
+
+  Parameters
+  ----------
+  controls : FitControlsMargin, or None
+      Read for the declared type and bounds.
+  y : array, shape (n,), dtype float
+      The column.
+  weights : array, shape (n,), or None
+      Observation weights.
+
+  Returns
+  -------
+  Kde1d
+      The fitted margin.
+  """
+  margin = kde_from_controls(controls)
+  return margin.fit(y) if weights is None else margin.fit(y, weights)
 
 
 def fit_margin(
@@ -393,11 +487,33 @@ def fit_margin(
   declare = getattr(margin, "declare", None)
   if declare is not None and (var_type is not None or support is not None):
     declare(var_type=var_type, support=support)
-  if controls is not None:
-    # Forwarded only when the caller asked for configuration, so a margin
-    # whose estimator takes none still fits -- and refuses loudly when it was
-    # handed settings it cannot honor. Same rule `x` follows above.
-    kwargs["controls"] = controls
   estimator = getattr(margin, verb, None) or margin.fit
-  estimator(y, **kwargs)
+  if controls is not None:
+    if getattr(margin, "supports_controls", False):
+      kwargs["controls"] = controls
+    elif getattr(controls, "family_set", None) is not None:
+      # A declared type or support is a *default*, so an estimator that cannot
+      # read one has usually already been built with it. A family_set is not a
+      # default -- it is an instruction to search -- so a margin that cannot
+      # search must say so rather than fit one family and look like it chose.
+      raise TypeError(
+        f"{type(margin).__name__} cannot select a family, so family_set= "
+        "would be ignored. Pass margins='parametric' (or a margin with a "
+        "select method), or drop family_set"
+      )
+  try:
+    estimator(y, **kwargs)
+  except ValueError as e:
+    # Substituting a different kind of margin is a decision about which margin
+    # this column gets, so it is made here rather than inside a margin that
+    # would have to stop being itself to make it.
+    if getattr(controls, "on_failure", "raise") != "fallback":
+      raise
+    warnings.warn(
+      f"{type(margin).__name__} could not fit this variable, so a "
+      f"kernel-density margin was substituted. The cause was:\n{e}",
+      UserWarning,
+      stacklevel=2,
+    )
+    return as_margin(_fallback_kde(controls, y, weights))
   return margin

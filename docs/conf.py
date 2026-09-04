@@ -223,9 +223,8 @@ _CLASS_MODULE = {
   "MarginLike": "pyvinecopulib.core",
   "MarginBase": "pyvinecopulib.core",
   "OpenTURNSMargin": "pyvinecopulib.margins",
-  "OpenTURNSSelector": "pyvinecopulib.margins",
-  "ParametricMargin": "pyvinecopulib.margins",
-  "MarginSelector": "pyvinecopulib.margins",
+  "SciPyMargin": "pyvinecopulib.margins",
+  "FitControlsMargin": "pyvinecopulib.margins",
   "Bicop": "pyvinecopulib.core",
   "VinecopLike": "pyvinecopulib.core",
   "VinecopBase": "pyvinecopulib.core",
@@ -392,15 +391,15 @@ DOCSTRING_SUBPACKAGES = {
   },
   "margins": {
     "classes": [
-      "ParametricMargin",
-      "MarginSelector",
+      "SciPyMargin",
       "OpenTURNSMargin",
-      "OpenTURNSSelector",
+      "FitControlsMargin",
     ],
     "functions": [
       "as_margin",
       "register_margin_adapter",
       "resolve_margins",
+      "resolve_margin_controls",
     ],
   },
   "sklearn": {

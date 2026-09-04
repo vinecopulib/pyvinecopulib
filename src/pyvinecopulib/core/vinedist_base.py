@@ -14,7 +14,6 @@ coerce input arrays. Evaluation needs no hook at all.
 
 from __future__ import annotations
 
-import copy
 from abc import ABC
 from typing import Any, ClassVar, Optional, Self, Sequence, cast
 
@@ -31,34 +30,6 @@ from .protocols import (
   VinedistLike,
 )
 from .protocols import _VINEDIST_EXAMPLE
-
-
-def _named(spec: Any, name: Optional[str]) -> Any:
-  """Label a selecting margin with the variable it is fitted to.
-
-  A selector records the variable on each row of its report; without this the
-  rows of a multi-variable report are indistinguishable.
-
-  Parameters
-  ----------
-  spec : object
-      A margin specification.
-  name : str, or None
-      The variable's name, or ``None`` when the data carry none.
-
-  Returns
-  -------
-  object
-      The specification, labeled. Only a nameless selector is copied and
-      relabeled, so a specification the caller still holds is left untouched.
-  """
-  if name is None or not hasattr(spec, "report_"):
-    return spec
-  if getattr(spec, "name", "") is not None:
-    return spec
-  spec = copy.deepcopy(spec)
-  spec.name = name
-  return spec
 
 
 __all__ = ["VinedistBase"]
@@ -247,32 +218,8 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     """
     return self._margins
 
-  def selection_report(self) -> list[dict[str, Any]]:
-    """Per-candidate family-selection rows, across every margin that selected.
-
-    Margins that were given rather than selected contribute nothing, so an
-    all-fixed or all-KDE distribution reports an empty list.
-
-    Returns
-    -------
-    list of dict
-        One row per candidate considered, in variable order. Each carries the
-        variable, the family, its parameter count, the criteria, whether it was
-        selected, and — for a candidate that was not fitted — why.
-    """
-    return [
-      dict(row)
-      for margin in self._margins
-      for row in getattr(margin, "report_", ())
-    ]
-
   def margin_summary(self) -> list[dict[str, Any]]:
     """One row per variable describing the margin that models it.
-
-    Where :meth:`selection_report` details the candidates a selector *considered*
-    and reports nothing for a margin that was given, this describes what every
-    variable actually ended up with -- so an all-fixed distribution has a full
-    table too.
 
     Every field is read as an optional capability, so a margin from another
     ecosystem contributes whatever it declares and ``None`` for the rest.
@@ -1045,7 +992,10 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
 
   @classmethod
   def _default_margins(
-    cls, d: int, controls: Optional[ControlsLike]
+    cls,
+    d: int,
+    controls: Optional[ControlsLike],
+    margin_controls: Optional[Sequence[Any]] = None,
   ) -> Optional[Sequence[Any]]:
     """The margin each variable gets when the caller named none.
 
@@ -1053,12 +1003,21 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     declare that instead of overriding this. Override it when the margins need
     an argument the class attribute cannot carry -- a placement, or a family.
 
+    A variable's own ``margin_controls`` entry is authoritative here, since
+    the margin does not exist yet and so has nothing to override: a declared
+    type or support reaches the default margin's constructor. That is what
+    makes a bounded default reachable without naming a class.
+
     Parameters
     ----------
     d : int
         Number of variables.
     controls : ControlsLike, or None
-        Fit configuration, which may carry a placement the margins share.
+        Copula fit configuration, which may carry a placement the margins
+        share.
+    margin_controls : sequence, or None, optional
+        One marginal configuration per variable, already resolved, or ``None``
+        when the caller named none.
 
     Returns
     -------
@@ -1070,7 +1029,32 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     del controls
     if cls.margin_class is None:
       return None
-    return [cls.margin_class() for _ in range(d)]
+    if margin_controls is None:
+      return [cls.margin_class() for _ in range(d)]
+    return [cls._margin_from_controls(mc) for mc in margin_controls]
+
+  @classmethod
+  def _margin_from_controls(cls, controls: Optional[Any]) -> Any:
+    """Build one default margin honoring what its controls declare.
+
+    Defaults to ignoring the declaration, which is right for any margin class
+    that reads it at fit time through ``declare``. A subclass whose
+    ``margin_class`` takes its variable type or its bounds at *construction*
+    overrides this -- a kernel density is the case that matters, since a bound
+    it learns after fitting is a bound it has already padded past.
+
+    Parameters
+    ----------
+    controls : object, or None
+        This variable's marginal configuration.
+
+    Returns
+    -------
+    MarginLike
+        An unfitted margin.
+    """
+    del controls
+    return cast("Any", cls.margin_class)()
 
   @classmethod
   def _fit_copula(
@@ -1290,13 +1274,14 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
       )
     self._check_fit_inputs(x, weights, n, data, verb)
 
-    # A mapping may be keyed by name, and the only names this object has are
-    # the ones its margins were labeled with when it was fitted.
-    names = [getattr(m, "name", None) for m in self._margins]
+    # A mapping may be keyed by name, but the only labels this object has are
+    # whatever its margins carry -- nothing here assigns one. So a name-keyed
+    # mapping resolves only for margins that name themselves, and otherwise
+    # `resolve_margin_controls` says to key by position.
+    labels = [getattr(m, "name", None) for m in self._margins]
+    named = None if any(label is None for label in labels) else labels
     per_variable = resolve_margin_controls(
-      margin_controls,
-      d,
-      names=None if any(n is None for n in names) else cast(Any, names),
+      margin_controls, d, names=cast("Optional[Sequence[str]]", named)
     )
     margins = [
       fit_margin(
@@ -1467,8 +1452,12 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
       if columns is not None:
         names = [str(c) for c in columns]
 
+    per_variable = resolve_margin_controls(margin_controls, d, names=names)
     specs = resolve_margins(
-      margins, d, names=names, default=cls._default_margins(d, controls)
+      margins,
+      d,
+      names=names,
+      default=lambda: cls._default_margins(d, controls, per_variable),
     )
     if x is not None and not any(
       getattr(spec, "supports_covariates", False) for spec in specs
@@ -1479,10 +1468,9 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         "a model of f(y) labeled as one of f(y | x). Pass margins that declare "
         "supports_covariates, or drop x."
       )
-    per_variable = resolve_margin_controls(margin_controls, d, names=names)
     fitted = [
       fit_margin(
-        _named(specs[j], names[j] if names is not None else None),
+        specs[j],
         data[:, j],
         x=x,
         weights=weights,

@@ -1,14 +1,20 @@
 """A one-dimensional kernel density margin evaluated in pure PyTorch.
 
-Fitting delegates to the compiled :class:`pyvinecopulib.core.Kde1d`; every
-evaluation runs on tensors, on device, under autograd. The split is not a
-compromise -- ``grid_points``, ``values``, ``type``, ``prob0`` and the
-declared bounds are the whole of what the compiled ``pdf`` / ``cdf`` / ``icdf``
-read, so a lifted grid is a complete model rather than an approximation of
-one. What a torch fitter would
-add is bandwidth selection and the local-likelihood fit -- a separate piece of
-work, which would attach as a ``method`` on a fit-controls dataclass beside the
-existing ones.
+Home of ``TorchKde1d``, the torch marginal estimator, and the only torch
+margin that serves discrete and zero-inflated variables.
+
+Fitting delegates to ``Kde1d``; every evaluation runs on tensors, on device,
+under autograd. The split is not a compromise -- ``grid_points``, ``values``,
+the variable type, ``prob0`` and the declared bounds are the whole of what
+``Kde1d``'s ``pdf`` / ``cdf`` / ``icdf`` read, the bounds among them because
+for a discrete variable they *are* the integer support, so a lifted grid is a
+complete model rather than an approximation of one. Bandwidth selection and
+the local-likelihood fit stay with ``Kde1d``, which is why a fit here takes no
+controls.
+
+The interpolation every evaluation runs on lives in ``_kde1d_interp``, a port
+of kde1d's own interpolation grid whose contract is fidelity to it rather than
+improvement on it.
 """
 
 from __future__ import annotations
@@ -25,7 +31,7 @@ from . import _kde1d_interp as interp
 
 
 def _bound(value: Any, unbounded: float) -> float:
-  """One end of a support, with the compiled class's ``nan`` normalized.
+  """One end of a support, with ``Kde1d``'s ``nan`` normalized.
 
   Parameters
   ----------
@@ -45,20 +51,33 @@ def _bound(value: Any, unbounded: float) -> float:
   return unbounded if out != out else out
 
 
-#: The compiled spellings of the variable type, and the contract's.
+#: ``Kde1d``'s spellings of the variable type, and the contract's.
 _VAR_TYPE_OF = {"continuous": "c", "discrete": "d", "zero-inflated": "zi"}
 
 
 class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
-  """A kernel density margin on tensors, with the compiled fitter behind it.
+  """A kernel density margin on tensors, fitted by ``Kde1d``.
 
-  Satisfies the ``MarginLike`` contract, so it drops into
-  :class:`pyvinecopulib.core.Vinedist` or
-  :class:`pyvinecopulib.torch.TorchVinedist` exactly like any other margin, and
-  is an ``nn.Module``, so ``.to(device)``, ``state_dict`` and autograd all work.
-  Unlike :class:`pyvinecopulib.torch.TorchMargin` it handles **discrete** and
-  **zero-inflated** variables, which is what lets a torch vine distribution be
-  fitted to data with atoms at all.
+  Evaluates ``pdf`` / ``cdf`` / ``icdf`` on tensors and inherits the rest of
+  the ``MarginLike`` surface -- ``logpdf`` / ``cdf_left`` / ``loglik`` /
+  ``sample`` -- from ``MarginBase``. It is also an ``nn.Module``, so
+  ``.to(device)``, ``state_dict`` and autograd reach the whole margin. Unlike
+  ``TorchMargin`` it serves **discrete** and **zero-inflated** variables as
+  well as continuous ones, which is what lets a torch vine distribution be
+  fitted to data with atoms at all; ``Vinedist``, evaluating on NumPy, refuses
+  a torch margin, so this one belongs to ``TorchVinedist``.
+
+  The variable type, the bounds and the bandwidth are named at construction.
+  Everything else follows from that:
+
+  - ``fit(y, weights=...)`` estimates the density from one column and returns
+    ``self``. The inherited ``select`` is that same fit: a kernel density has
+    no family to choose.
+  - ``from_data(y, ...)`` constructs a margin with the defaults and fits it,
+    for the case where the class is the whole specification.
+  - ``from_kde1d(kde)`` lifts a ``Kde1d`` that is already fitted, exactly.
+  - ``from_grid(grid_points, values)`` installs a density that no fit here
+    produced.
 
   ``grid_points``, ``values`` and ``prob0`` are registered as buffers rather
   than parameters: the density is fitted, not learned. A caller who wants to
@@ -73,45 +92,61 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
 
   Parameters
   ----------
-  xmin : float or None, optional
-      Lower bound of the support, or ``None`` for unbounded.
-  xmax : float or None, optional
-      Upper bound of the support, or ``None`` for unbounded.
-  type : {"continuous", "discrete", "zero-inflated"}, optional
-      The variable type, in the compiled spelling. Note the hyphen.
-  multiplier : float, optional
-      Bandwidth multiplier.
-  bandwidth : float or None, optional
-      Fixed bandwidth, or ``None`` to select one.
-  degree : int, optional
-      Local-polynomial degree: ``0``, ``1`` or ``2``.
-  grid_size : int, optional
+  xmin : float or None, default=None
+      Lower bound of the support, or ``None`` for unbounded. What a bound
+      means depends on the variable type: for a discrete variable it is the
+      smallest integer the variable can take. See the
+      ``concepts-kde-margins`` section of the concepts page.
+  xmax : float or None, default=None
+      Upper bound of the support, or ``None`` for unbounded; read as ``xmin``
+      is, so the largest integer for a discrete variable.
+  type : {"continuous", "discrete", "zero-inflated"}, default="continuous"
+      The variable type, spelled as ``Kde1d`` reports it. The hyphen is not
+      optional here.
+  multiplier : float, default=1.0
+      Bandwidth multiplier: the bandwidth used is ``bandwidth * multiplier``.
+  bandwidth : float or None, default=None
+      Fixed bandwidth, or ``None`` to select one at every fit.
+  degree : int, default=2
+      Local-polynomial degree -- ``0``, ``1`` or ``2``, for a log-constant,
+      log-linear or log-quadratic fit.
+  grid_size : int, default=400
       Number of interpolation grid points.
-  boundary_repair : bool, optional
-      Whether a declared bound may be fitted with a dedicated boundary
-      estimator; see :class:`pyvinecopulib.core.Kde1d`. Carried through to the
-      fit, and preserved when an estimator is lifted.
-  device : torch.device or None, optional
+  boundary_repair : bool, default=True
+      Whether a finite bound may be fitted with a dedicated boundary
+      estimator instead of the transformed bulk fit; eligibility rather than
+      a guarantee, and no effect when neither bound is set. Carried through to
+      the fit, and preserved when a fitted estimator is lifted.
+  device : torch.device or None, default=None
       Where the buffers live.
-  dtype : torch.dtype, optional
-      Buffer precision; ``float64`` by default, since the copula scale is a
-      distribution function and ``float32`` costs three digits of it.
+  dtype : torch.dtype, default=torch.float64
+      Buffer precision. ``float64``, since the copula scale is a distribution
+      function and ``float32`` costs three digits of it.
+
+  Raises
+  ------
+  ValueError
+      If ``type`` is none of the three spellings above.
 
   See Also
   --------
-  pyvinecopulib.core.Kde1d : The compiled estimator, and the fitter used here.
+  pyvinecopulib.core.Kde1d : The estimator behind the fit, and the reference.
   pyvinecopulib.torch.TorchMargin : Parametric torch families, continuous only.
+  pyvinecopulib.torch.TorchVinedist : The distribution these margins compose.
 
   Notes
   -----
-  Evaluation reproduces the compiled implementation rather than improving on
-  it, including where the C++ is quirky: the unnormalized integral carries no
-  Gaussian-tail mass even though the density beyond the grid does. It is pinned
-  by a parity test; a divergence there is a defect in this class, not a fix.
+  Evaluation reproduces ``Kde1d`` rather than improving on it, including where
+  ``Kde1d`` is quirky: the unnormalized integral carries no Gaussian-tail mass
+  even though the density beyond the grid does. It is pinned by a parity test;
+  a divergence there is a defect in this class, not a fix.
 
-  Parity is an equality everywhere except the continuous ``icdf``, which is an
-  iteration whose last bits follow the instruction set the C++ was built for --
-  see ``_QUANTILE_RTOL`` in ``tests/test_torch_kde1d.py``.
+  That parity is an equality everywhere but the quantile of a continuous or
+  zero-inflated margin, which is an iteration whose last bits follow the
+  instruction set ``Kde1d`` was built for -- rebuilding kde1d with
+  ``-march=native`` and nothing else moves it 19 ULPs, so no port can equal
+  every build of it. The tolerance is ``_QUANTILE_RTOL`` in
+  ``tests/test_torch_kde1d.py``.
   """
 
   supports_weights: bool = True
@@ -226,7 +261,11 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     x: Optional[Tensor] = None,
     weights: Optional[Tensor] = None,
   ) -> "TorchKde1d":
-    """Fit the density with the compiled estimator, then lift its grid.
+    """Estimate the density from one column of data, in place.
+
+    The fit is ``Kde1d``'s, and the grid it settles on is what this margin
+    evaluates from then on -- carried onto the device and dtype named at
+    construction.
 
     Parameters
     ----------
@@ -235,17 +274,28 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     controls : object, or None, optional
         Unused; the bandwidth, bounds and variable type are named at
         construction, so a margin fitted differently is constructed
-        differently.
+        differently. Accepted because every margin's fit takes one.
     x : Tensor or None, optional
         Not supported; a kernel density reads no covariates, so passing them
         raises rather than fitting an unconditional margin silently.
     weights : Tensor, shape (n,), or None, optional
-        Observation weights.
+        Observation weights, one per observation.
 
     Returns
     -------
     TorchKde1d
         ``self``, so the call chains.
+
+    Raises
+    ------
+    ValueError
+        If ``y`` or ``weights`` is not one-dimensional, if the two have
+        different lengths, or if ``x`` was supplied.
+
+    See Also
+    --------
+    from_data : Construct and fit in one call.
+    from_kde1d : Lift a ``Kde1d`` that is already fitted.
     """
     _reject_covariates(self, x)
     kde = Kde1d(
@@ -294,7 +344,12 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchKde1d":
-    """Lift a fitted compiled estimator onto tensors.
+    """Lift a fitted ``Kde1d`` onto tensors.
+
+    An exact transfer rather than a second fit: the same grid, bounds,
+    variable type and diagnostics, evaluated in torch. A later refit on other
+    data selects a bandwidth again, exactly as the estimator handed over here
+    would have.
 
     Parameters
     ----------
@@ -346,7 +401,11 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     x: Optional[Tensor] = None,
     weights: Optional[Tensor] = None,
   ) -> "TorchKde1d":
-    """Construct and fit in one call.
+    """Construct a margin with the defaults and fit it, in one call.
+
+    For the case where the class is the whole specification: a margin that
+    needs bounds, a variable type or a fixed bandwidth is constructed with
+    them and fitted instead.
 
     Parameters
     ----------
@@ -364,6 +423,10 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     -------
     TorchKde1d
         The fitted margin.
+
+    See Also
+    --------
+    fit : Estimate an already-constructed margin, in place.
     """
     return cls().fit(y, controls, x=x, weights=weights)
 
@@ -380,7 +443,8 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
 
     The fit-free injection point, mirroring ``Kde1d.from_grid``: a density
     obtained some other way -- optimized, transferred, hand-built -- becomes a
-    margin without going through the compiled estimator.
+    margin. Nothing was estimated, so ``loglik()`` and ``n_parameters`` have no
+    fitted value to report.
 
     Parameters
     ----------
@@ -401,7 +465,8 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     Raises
     ------
     ValueError
-        If the two tensors disagree in length, or the grid is not ascending.
+        If the two tensors disagree in length, or the grid is not strictly
+        ascending.
     """
     out = cls(**kwargs)
     g = torch.as_tensor(grid_points, dtype=out._dtype, device=out._device)
@@ -421,7 +486,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     return out
 
   def _adopt(self, kde: Any) -> "TorchKde1d":
-    """Copy a fitted compiled estimator's state onto this module's buffers."""
+    """Copy a fitted ``Kde1d``'s state onto this module's buffers."""
     ref = self.grid_points
     self.grid_points = torch.as_tensor(
       kde.grid_points, dtype=ref.dtype, device=ref.device
@@ -475,6 +540,11 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     ----------
     state : dict
         State returned by :meth:`get_extra_state`.
+
+    Raises
+    ------
+    RuntimeError
+        If the state was not written by this version of the class.
     """
     if not isinstance(state, dict) or state.get("version") != 1:
       raise RuntimeError("unsupported TorchKde1d state-dict version")
@@ -504,8 +574,8 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     Returns
     -------
     str
-        ``"continuous"``, ``"discrete"`` or ``"zero-inflated"`` -- hyphenated,
-        as the compiled class spells it.
+        ``"continuous"``, ``"discrete"`` or ``"zero-inflated"``, hyphenated as
+        ``Kde1d`` spells it.
     """
     return self._type
 
@@ -527,11 +597,11 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     Returns
     -------
     tuple of float
-        ``(xmin, xmax)``, with an unset bound reported as infinite. The
-        compiled class spells an unset bound ``nan``, which is neither ordered
-        nor equal to itself, so it is normalized here -- ``MarginBase.icdf``
-        brackets its search on this pair and comparisons against it have to be
-        total.
+        ``(xmin, xmax)``, with an unset bound reported as infinite. ``Kde1d``
+        spells an unset bound ``nan``, which is neither ordered nor equal to
+        itself, so it is normalized here: every evaluation compares against
+        this pair, and for a discrete margin it is the integer support the
+        masses sit on -- the fitted grid runs half a unit wider at each end.
     """
     return (_bound(self.xmin, float("-inf")), _bound(self.xmax, float("inf")))
 
@@ -598,10 +668,10 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     A declared bound *is* the support endpoint; the grid runs half a unit
     wider, since the jittered observations fill the boundary cells. Where no
     bound was declared the grid is all there is to go on, so the support is
-    read off it. Derived rather than stored, as the C++ does, so a grid that
-    moves takes its support with it -- and pinned against ``Kde1d``'s own
-    ``discrete_support`` by a parity test, since the two are separate copies of
-    one rule.
+    read off it. Derived rather than stored, as ``Kde1d`` derives it, so a grid
+    that moves takes its support with it -- and matched by a parity test
+    against the levels ``Kde1d`` itself gives mass to, since the two are
+    separate copies of one rule.
     """
     g = self.grid_points
     lo_b, hi_b = self.support
@@ -717,7 +787,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     return self._cdf_continuous(ya)
 
   def _icdf_continuous(self, p: Tensor) -> Tensor:
-    """Invert as the C++ does, then reattach an exact gradient.
+    """Invert as ``Kde1d`` does -- cell by cell -- then reattach a gradient.
 
     The forward value is the iteration's, bit for bit. The gradient comes from
     the implicit function theorem -- ``dq/dtheta = -(dF/dtheta) / f(q)``, and
@@ -765,6 +835,14 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     ------
     ValueError
         If any probability lies outside ``[0, 1]``.
+
+    Notes
+    -----
+    On a continuous or zero-inflated margin the quantile is differentiable in
+    ``p``, and in the grid where a caller opted into that with
+    ``values.requires_grad_(True)``; neither costs accuracy, since the value
+    returned is the one a gradient-free call gives. A discrete quantile is a
+    step function and carries no gradient.
     """
     self._check_fitted()
     pa = self._as_tensor(p)
