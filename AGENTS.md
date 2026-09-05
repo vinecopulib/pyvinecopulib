@@ -632,8 +632,8 @@ automatically.
     `hinv2` (bisection), `sample`, `loglik`, `plot` (`flip` — needed
     only to host the pair in structure *selection* — defaults to
     raising); a `VinecopBase` subclass defines the one hook
-    `_get_pair_copula` and inherits the whole tree-by-tree cascade plus
-    the public `fit` and `select` engines. `select` is an
+    `get_pair_copula` and inherits the whole tree-by-tree cascade plus
+    the public `fit` and `select`. `select` is an
     exact port of `Vinecop`'s Dissmann / Wilson structure selection
     (same matrix encoding, selection-time pairs reused via `flip`, no
     re-fit; parity is a hard guarantee). `threshold` acts twice there, and
@@ -1045,7 +1045,7 @@ Key surface:
     integral per query.
 - Discrete variables are declared with `var_types` on `TorchVinecop`'s three
   constructors. The stored pair copulas stay continuous interpolation grids and
-  `_get_pair_copula` wraps a discrete edge in `DiscretePair`, so `state_dict` /
+  `get_pair_copula` wraps a discrete edge in `DiscretePair`, so `state_dict` /
   `.to()` / pickling see only real `nn.Module` parameters. `TorchBicop.from_data`
   takes the four-column layout and reuses the compiled `find_latent_sample`,
   which is what `TllBicop::fit` now consumes for a discrete edge; the jittered
@@ -1279,11 +1279,11 @@ Round-trip / parity properties to preserve when touching numerics:
 - **Custom pair copulas / vines (`pyvinecopulib.core`).** Subclass
   `BicopBase` (define `pdf` / `hfunc1` / `hfunc2`) for a custom pair
   copula, and host it by subclassing `VinecopBase` (define the one hook
-  `_get_pair_copula`); both run on NumPy or PyTorch and inherit the full
+  `get_pair_copula`); both run on NumPy or PyTorch and inherit the full
   evaluation surface. Implement `BicopLike` / `VinecopLike` directly for
   an immutable / functional backend. To put that pair on a **discrete**
   edge, add a `cdf` and return `DiscretePair(pair, self.pair_var_types(t, e))`
-  from `_get_pair_copula` (and from `fit_edge`, which receives the edge's
+  from `get_pair_copula` (and from `fit_edge`, which receives the edge's
   `var_types`); the vine supplies the left-limit columns. For a
   **non-simplified / conditional** vine, pass a `NonSimplifiedContext` and drive
   `VinecopBase.fit` with a `fit_edge` callback. To condition on a subset of
@@ -1353,10 +1353,13 @@ Round-trip / parity properties to preserve when touching numerics:
   estimator itself, in the base, leaving `_coerce_fit_data` the only real hook
   because the torch lane resolves a device and dtype before any part exists.
   Override `_fit_copula` when a lane needs its own step — `Vinedist` writes
-  `weights` into a copy of the controls there. Declare
-  `supports_weighted_copula` /
-  `supports_fit_covariates` `False` where the lane cannot honor a request, so
-  it is refused rather than half-applied. `Vinedist` (NumPy + compiled
+  `weights` into a copy of the controls there. `supports_weighted_copula` is
+  `False` on the base for that reason: the inherited `_fit_copula` has only the
+  part class and the caller's controls, so it *cannot* weight the copula, and a
+  lane declares the capability together with the override that honors it.
+  `supports_fit_covariates` works the same way. Declaring one a lane cannot
+  honor is what produces a half-applied fit — margins weighted, copula not —
+  so the request is refused up front instead. `Vinedist` (NumPy + compiled
   `Vinecop`) and `TorchVinedist` are the two reference subclasses; implement
   `VinedistLike` directly for an immutable / functional distribution.
 

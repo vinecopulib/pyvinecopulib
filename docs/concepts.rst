@@ -792,9 +792,13 @@ likelihood, and three consequences are worth stating:
   the fitted dependence; a misspecified copula leaves the marginal fits
   untouched. Spend the modeling effort accordingly.
 * **Family selection is itself an estimation step.** A likelihood or an
-  interval computed at the selected margin ignores the selection, so
-  ``report_`` is there to be read — a winner that beat the runner-up by
-  a fraction of an AIC unit is not an established family.
+  interval computed at the selected margin ignores the selection, and a
+  winner that beat the runner-up by a fraction of an AIC unit is not an
+  established family. Where the distinction matters, name the family
+  instead of searching for it — ``SciPyMargin("gamma")`` fits the family
+  you chose, and :meth:`~pyvinecopulib.margins.SciPyMargin.select` on a
+  named margin leaves it alone — or refit the shortlist yourself and
+  compare the criteria you care about.
 
 ``examples/03_vine_distributions.ipynb`` works through the whole
 surface, including a mixed continuous / count example and a custom
