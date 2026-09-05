@@ -20,7 +20,7 @@ import sys
 import numpy as np
 import pytest
 
-from pyvinecopulib.core import Kde1d, MarginLike, Vinedist, margin_from_json
+from pyvinecopulib.core import Kde1d, MarginLike, Vinedist
 from pyvinecopulib.margins import (
   FitControlsMargin,
   SciPyMargin,
@@ -870,19 +870,6 @@ def test_vinedist_from_data_selects_margins(
   assert len(chosen) == dist.dim
   assert all(m.is_fitted for m in chosen)
   assert np.all(np.isfinite(dist.logpdf(lognormal_pair)))
-
-
-def test_a_selector_payload_says_what_replaced_it() -> None:
-  """A file written by the removed `MarginSelector` explains the change.
-
-  The kind stays registered so an old payload names its successor rather than
-  failing on an unknown one.
-  """
-  with pytest.raises(ValueError, match="which no longer exists") as caught:
-    margin_from_json({"kind": "MarginSelector", "version": 1})
-  message = str(caught.value)
-  assert "SciPyMargin.select" in message
-  assert "margins='parametric'" in message
 
 
 def test_margins_imports_without_scipy() -> None:

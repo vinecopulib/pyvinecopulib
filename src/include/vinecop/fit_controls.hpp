@@ -59,12 +59,6 @@ inline nb::dict vinecop_controls_to_dict(const FitControlsVinecop& controls) {
 inline void init_vinecop_fit_controls(nb::module_& module) {
   constexpr auto& doc = pyvinecopulib_doc;
   constexpr auto& fitcontrolsvinecop_doc = doc.vinecopulib.FitControlsVinecop;
-  // Inherited properties (`family_set`, `parametric_method`, …)
-  // surface in the FitControlsBicop entry of `pyvinecopulib_doc`,
-  // not under FitControlsVinecop. Reference the parent class's docs
-  // for those.
-  constexpr auto& fitcontrolsbicop_doc = doc.vinecopulib.FitControlsBicop;
-
   // `FitControlsVinecop` derives from `FitControlsBicop` in C++, and declaring
   // that here is what lets one controls object drive both a vine fit and the
   // pair fits inside it: `isinstance` holds, so it is accepted anywhere pair

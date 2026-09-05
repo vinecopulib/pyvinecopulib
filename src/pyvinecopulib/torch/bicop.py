@@ -38,6 +38,47 @@ from ._interp import InterpolationGrid2D, _trim
 from .controls import FitControlsTorchBicop
 
 
+def _resolve_placement(
+  controls: FitControlsTorchBicop,
+  cache_integrals: Optional[bool],
+  device: Optional[torch.device],
+  dtype: Optional[torch.dtype],
+) -> tuple[bool, Optional[torch.device], torch.dtype]:
+  """Fill in the placement and cache mode a fit was not given explicitly.
+
+  A vine's controls *are* pair controls, so the device, dtype and cache mode a
+  ``FitControlsTorchVinecop`` carries reach a pair fit the same way its grid
+  settings do. That is what makes ``TorchVinecop``'s inherited ``fit`` and
+  ``select`` agree with its own ``from_data``, which passes them by hand.
+
+  Parameters
+  ----------
+  controls : FitControlsTorchBicop
+      The fit controls; a plain pair controls object carries none of the three.
+  cache_integrals : bool, or None
+      The explicit argument, or ``None`` to read ``controls``.
+  device : torch.device, or None
+      The explicit argument, or ``None`` to read ``controls``.
+  dtype : torch.dtype, or None
+      The explicit argument, or ``None`` to read ``controls``.
+
+  Returns
+  -------
+  tuple
+      ``(cache_integrals, device, dtype)``, with the documented fallbacks
+      applied: ``True``, the default device, and ``torch.float64``.
+  """
+  if cache_integrals is None:
+    cache_integrals = getattr(controls, "cache_integrals", None)
+    if cache_integrals is None:
+      cache_integrals = True
+  if device is None:
+    device = getattr(controls, "device", None)
+  if dtype is None:
+    dtype = getattr(controls, "dtype", None) or torch.float64
+  return bool(cache_integrals), device, dtype
+
+
 class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
   """Bivariate copula held as a density grid on the unit square, in PyTorch.
 
@@ -258,9 +299,9 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     u: Tensor,
     controls: Optional[FitControlsTorchBicop] = None,
     *,
-    cache_integrals: bool = True,
+    cache_integrals: Optional[bool] = None,
     device: Optional[torch.device] = None,
-    dtype: torch.dtype = torch.float64,
+    dtype: Optional[torch.dtype] = None,
   ) -> "list[TorchBicop]":
     """Fit ``P`` pair copulas from one stacked sample, in one call.
 
@@ -278,12 +319,15 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     controls : FitControlsTorchBicop or None, default=None
         Fit controls, shared by every pair. ``None`` is
         ``FitControlsTorchBicop()``.
-    cache_integrals : bool, default=True
-        As on ``TorchBicop``, for each pair returned.
+    cache_integrals : bool or None, default=None
+        As on ``TorchBicop``, for each pair returned; ``None`` reads
+        ``controls``, then ``True``.
     device : torch.device or None, default=None
-        As on ``TorchBicop``.
-    dtype : torch.dtype, default=torch.float64
-        As on ``TorchBicop``.
+        As on ``TorchBicop``; ``None`` reads ``controls``, then the default
+        device.
+    dtype : torch.dtype or None, default=None
+        As on ``TorchBicop``; ``None`` reads ``controls``, then
+        ``torch.float64``.
 
     Returns
     -------
@@ -312,6 +356,9 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     """
     if controls is None:
       controls = FitControlsTorchBicop()
+    cache_integrals, device, dtype = _resolve_placement(
+      controls, cache_integrals, device, dtype
+    )
     u_t = torch.as_tensor(u, dtype=dtype, device=device)
     if u_t.ndim != 3 or u_t.shape[-1] != 2:
       raise ValueError(f"u must have shape (P, n, 2); got {tuple(u_t.shape)}")
@@ -353,9 +400,9 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     controls: Optional[FitControlsTorchBicop] = None,
     var_types: Optional[list[str]] = None,
     *,
-    cache_integrals: bool = True,
+    cache_integrals: Optional[bool] = None,
     device: Optional[torch.device] = None,
-    dtype: torch.dtype = torch.float64,
+    dtype: Optional[torch.dtype] = None,
   ) -> "TorchBicop":
     """Fit a pair copula on pseudo-observations, in pure PyTorch.
 
@@ -376,12 +423,14 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
         Either way the fitted grid is a continuous density -- the
         mixed-discrete surface an atom needs comes from
         :class:`~pyvinecopulib.core.DiscretePair`.
-    cache_integrals : bool, default=True
-        As on ``TorchBicop``.
+    cache_integrals : bool or None, default=None
+        As on ``TorchBicop``; ``None`` reads ``controls``, then ``True``.
     device : torch.device or None, default=None
-        As on ``TorchBicop``.
-    dtype : torch.dtype, default=torch.float64
-        As on ``TorchBicop``.
+        As on ``TorchBicop``; ``None`` reads ``controls``, then the default
+        device.
+    dtype : torch.dtype or None, default=None
+        As on ``TorchBicop``; ``None`` reads ``controls``, then
+        ``torch.float64``.
 
     Returns
     -------
@@ -401,6 +450,9 @@ class TorchBicop(BicopBase[torch.Tensor], torch.nn.Module):
     """
     if controls is None:
       controls = FitControlsTorchBicop()
+    cache_integrals, device, dtype = _resolve_placement(
+      controls, cache_integrals, device, dtype
+    )
     types = ("c", "c") if var_types is None else tuple(var_types)
     discrete = "d" in types
     expected = 4 if discrete else 2

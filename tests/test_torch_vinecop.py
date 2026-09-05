@@ -417,6 +417,73 @@ def test_batched_to_device_invalidates() -> None:
   assert torch.isfinite(out).all()
 
 
+def test_refitting_in_place_invalidates_the_batched_bake() -> None:
+  """An in-place ``fit`` replaces the pairs the bake copied, so it must drop it.
+
+  ``select`` gets this from ``_bind_vine``; ``fit`` keeps the structure, and a
+  bake left behind answers from the previous fit's grids. The grad signature
+  cannot notice -- a refit leaves every ``requires_grad`` flag alone.
+  """
+  u1 = _simulate(d=4, n=400, seed=901)
+  u2 = _simulate(d=4, n=400, seed=902)
+  vine = TorchVinecop.from_data(u1, controls=FitControlsTorchVinecop())
+  u_t = torch.from_numpy(_eval_grid(60, d=4, seed=903))
+
+  stale = vine.pdf(u_t, batched=True).clone()  # bake under the first fit
+  assert vine._batched is not None
+  vine.fit(u2, FitControlsTorchVinecop())
+  assert vine._batched is None
+
+  refit_batched = vine.pdf(u_t, batched=True)
+  torch.testing.assert_close(
+    refit_batched, vine.pdf(u_t, batched=False), atol=1e-12, rtol=1e-12
+  )
+  # And it is genuinely the new vine, not the old one re-derived.
+  assert not torch.allclose(refit_batched, stale)
+
+
+def test_setting_pair_copulas_invalidates_the_batched_bake() -> None:
+  """The write hook is the other way the pairs change under a bake."""
+  vine = TorchVinecop.from_data(
+    _simulate(d=3, n=300, seed=911), controls=FitControlsTorchVinecop()
+  )
+  u_t = torch.from_numpy(_eval_grid(40, d=3, seed=912))
+  vine.pdf(u_t, batched=True)
+  assert vine._batched is not None
+  vine.set_pair_copulas(
+    [
+      [vine.get_pair_copula(t, e) for e in range(vine.d - t - 1)]
+      for t in range(vine.trunc_lvl)
+    ]
+  )
+  assert vine._batched is None
+
+
+@pytest.mark.parametrize("cache_integrals", [True, False])
+def test_fit_and_from_data_agree_on_placement(cache_integrals: bool) -> None:
+  """The two entry points to one fit must read the same controls the same way.
+
+  ``from_data`` passes the device, dtype and cache mode to each pair fit by
+  hand; ``fit`` and ``select`` are inherited, so they can only get them from
+  the controls -- which is where a vine's pair settings live anyway.
+  """
+  u = _simulate(d=3, n=300, seed=921)
+  controls = FitControlsTorchVinecop(
+    dtype=torch.float32, cache_integrals=cache_integrals
+  )
+  built = TorchVinecop.from_data(u, controls=controls)
+  assert built._pair_module(0, 0).interp_grid.values.dtype is torch.float32
+
+  refitted = built.fit(u, controls)
+  pair = refitted._pair_module(0, 0)
+  assert pair.interp_grid.values.dtype is torch.float32
+  assert pair._cache_integrals is cache_integrals
+  # A float32 module answering in float64 is the symptom this guards.
+  assert refitted.pdf(torch.as_tensor(u, dtype=torch.float32)).dtype is (
+    torch.float32
+  )
+
+
 # --------------------------------------------------------------------------- #
 # User-facing input validation for TorchVinecop                                #
 # --------------------------------------------------------------------------- #

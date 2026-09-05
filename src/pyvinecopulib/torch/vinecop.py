@@ -612,6 +612,11 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         for row in pair_copulas
       ]
     )
+    # Same reason `load_state_dict` and `_apply` drop them: the stacked bake
+    # and the compiled cascades hold copies of the grids, not views, so pairs
+    # replaced under them leave both answering from the old density.
+    self._batched = None
+    self._compiled = {}
 
   def _pair_module(self, tree: int, edge: int) -> TorchBicop:
     """The stored (always continuous) pair copula at ``(tree, edge)``."""

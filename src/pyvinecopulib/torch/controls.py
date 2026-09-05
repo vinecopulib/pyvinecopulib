@@ -234,21 +234,6 @@ default="tau"
   compile: bool = False
   batched_fit: Optional[bool] = None
 
-  def to_dict(self) -> dict:
-    """Return the settings as a plain dictionary.
-
-    Returns
-    -------
-    dict
-        One entry per setting, keyed by the field name. Nested controls are
-        kept as objects rather than flattened, so the entry round-trips.
-
-    See Also
-    --------
-    pyvinecopulib.core.ControlsLike : The contract this satisfies.
-    """
-    return {f.name: getattr(self, f.name) for f in fields(self)}
-
   def __post_init__(self) -> None:
     super().__post_init__()
     if self.tree_algorithm not in TREE_ALGORITHMS:

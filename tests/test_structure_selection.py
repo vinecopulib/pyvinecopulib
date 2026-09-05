@@ -433,6 +433,97 @@ def test_a_named_pair_class_without_flip_is_refused_before_any_fitting() -> (
   assert calls["n"] == 0
 
 
+def _weak_link_chain(seed: int, n: int = 1500) -> np.ndarray:
+  """A Markov chain whose weakest link joins the two lowest-numbered columns.
+
+  The spanning tree has to select that edge to stay connected, and it sorts
+  first by candidate index -- so a threshold above it makes the *first* edge of
+  tree 0 the thresholded one.
+  """
+  rng = np.random.default_rng(seed)
+  cols = [rng.normal(size=n)]
+  for r in (0.25, 0.95, 0.95):
+    cols.append(r * cols[-1] + np.sqrt(1 - r * r) * rng.normal(size=n))
+  return pv.to_pseudo_obs(np.column_stack(cols))
+
+
+def test_a_thresholded_edge_does_not_consume_the_flip_probe() -> None:
+  """A pair without `flip` must be caught behind a caller's own `fit_edge` too.
+
+  The probe fires once. A thresholded edge holds an `IndependencePair`, whose
+  `flip` returns `self`, so letting one consume the probe passes it on behalf
+  of a pair that cannot flip -- which then fails from the finalizing
+  reorientation, after every other edge has been fitted.
+  """
+  u = _weak_link_chain(0)
+  controls = _vine_controls(pv.families.gaussian)
+  controls.threshold = 0.22
+
+  # The setup this test needs, asserted so it cannot quietly go vacuous: in the
+  # selection loop's own order the first edge of tree 0 is thresholded, so the
+  # first pair the probe can legitimately see is a later, fitted one.
+  seen: list[int] = []
+
+  def recording_fit_edge(tree: int, edge: int, u_e: Any, x_e: Any) -> Any:
+    if tree == 0:
+      seen.append(edge)
+    return pv.Bicop.from_data(
+      u_e, pv.FitControlsBicop(family_set=[pv.families.gaussian])
+    )
+
+  HostedVinecop.from_data(u, controls=controls, fit_edge=recording_fit_edge)
+  assert seen and min(seen) > 0
+
+  class _NoFlipPair(pv.core.BicopBase[Any]):
+    def pdf(self, u: Any, *, x: Any = None) -> Any:
+      return np.ones(u.shape[0])
+
+    def hfunc1(self, u: Any, *, x: Any = None) -> Any:
+      return u[:, 1]
+
+    def hfunc2(self, u: Any, *, x: Any = None) -> Any:
+      return u[:, 0]
+
+  def fit_edge(tree: int, edge: int, u_e: Any, x_e: Any) -> Any:
+    return _NoFlipPair()
+
+  with pytest.raises(NotImplementedError, match="has no `flip`"):
+    HostedVinecop.from_data(u, controls=controls, fit_edge=fit_edge)
+
+
+@pytest.mark.parametrize(
+  "setting,value",
+  [
+    ("select_trunc_lvl", True),
+    ("select_threshold", True),
+    ("select_families", False),
+    ("show_trace", True),
+  ],
+)
+def test_vine_level_settings_it_cannot_honor_are_refused(
+  setting: str, value: bool
+) -> None:
+  """Refused, not dropped -- the `ControlsLike` contract.
+
+  These four are on `FitControlsVinecop` only, so no pair-copula fit can read
+  them either. Dropping one returns a model the caller's controls do not
+  describe, and silently disagrees with `Vinecop.select` on the same object.
+  """
+  controls = _vine_controls(pv.families.gaussian)
+  setattr(controls, setting, value)
+  with pytest.raises(ValueError, match=setting):
+    _BicopVine.from_data(_correlated_pseudo_obs(0, 4), controls=controls)
+
+
+def test_the_defaults_of_those_settings_still_select() -> None:
+  """The refusal keys off a non-default value, not off the field existing."""
+  vine = _BicopVine.from_data(
+    _correlated_pseudo_obs(0, 4),
+    controls=_vine_controls(pv.families.gaussian),
+  )
+  assert vine.dim == 4
+
+
 @pytest.mark.parametrize("seed,d", [(0, 5), (1, 6), (2, 7)])
 def test_weighted_selection_matches_vinecop(seed: int, d: int) -> None:
   # The tree criterion is weighted now, so a weighted array-agnostic selection

@@ -308,14 +308,18 @@ def resolve_margins(
     return base_specs()
 
   if isinstance(spec, dict):
-    resolved: list[Any] = list(base_specs())
     lookup = {name: j for j, name in enumerate(names or [])}
+    addressed: dict[int, Any] = {}
     for key, value in spec.items():
       if isinstance(key, str):
         if key not in lookup:
           raise ValueError(
             f"margins mapping names {key!r}, which is not a variable"
-            + (f"; known names are {sorted(lookup)}" if lookup else "")
+            + (
+              f"; known names are {sorted(lookup)}"
+              if lookup
+              else "; no names are known here, so key the mapping by position"
+            )
           )
         index = lookup[key]
       else:
@@ -328,7 +332,15 @@ def resolve_margins(
           ) from e
         if not 0 <= index < d:
           raise ValueError(f"margins mapping has out-of-range index {index}")
-      resolved[index] = _resolve_one(value)
+      addressed[index] = _resolve_one(value)
+    # Resolve the keys first, then build the default only if a variable is
+    # actually left over -- the deferral the `default` parameter documents, and
+    # the reason it matters is that building one can raise.
+    if len(addressed) == d:
+      return [addressed[j] for j in range(d)]
+    resolved: list[Any] = list(base_specs())
+    for index, value in addressed.items():
+      resolved[index] = value
     return resolved
 
   if isinstance(spec, str):

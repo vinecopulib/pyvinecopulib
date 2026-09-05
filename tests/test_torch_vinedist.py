@@ -336,6 +336,32 @@ def test_from_data_fits_end_to_end_in_torch(data: np.ndarray) -> None:
   torch.testing.assert_close(logpdf, manual, rtol=1e-10, atol=1e-10)
 
 
+def test_from_data_refuses_a_family_set_it_cannot_search(
+  data: np.ndarray,
+) -> None:
+  """`TorchKde1d` reads no controls, so a `family_set` must be a refusal.
+
+  Answering a parametric request with a kernel density is the silent downgrade
+  the weights contract already refuses. The margin declares that it cannot
+  search, which is what turns the request into an error -- introspection cannot
+  answer it, since the fit accepts a `controls` argument either way.
+  """
+  from pyvinecopulib.margins import FitControlsMargin
+
+  assert not TorchKde1d.supports_controls
+  with pytest.raises(TypeError, match="cannot select a family"):
+    TorchVinedist.from_data(
+      torch.as_tensor(data, dtype=_F64),
+      margin_controls=FitControlsMargin(family_set=["gamma"]),
+    )
+  # A declared type or support is a *default*, so it is still honored.
+  fitted = TorchVinedist.from_data(
+    torch.as_tensor(data, dtype=_F64),
+    margin_controls=FitControlsMargin(support=(-10.0, 10.0)),
+  )
+  assert all(isinstance(m, TorchKde1d) for m in fitted.margins)
+
+
 def test_from_data_refuses_covariates(data: np.ndarray) -> None:
   """No torch margin reads them, so an unconditional fit would be a lie."""
   y = torch.as_tensor(data, dtype=torch.float64)

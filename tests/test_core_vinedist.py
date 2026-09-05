@@ -1055,23 +1055,6 @@ def test_a_registered_custom_margin_round_trips():
   assert isinstance(restored.margins[0], pv.core.MarginBase)
 
 
-def test_a_margin_selector_payload_explains_that_the_class_is_gone():
-  """A file written before 1.0.0 says what to do instead of failing obscurely.
-
-  `MarginSelector` wrapped the margin it chose, so its payload nests one --
-  which is why the reader is still registered: an unregistered kind would
-  report only that the kind is unknown.
-  """
-  rng = np.random.default_rng(4)
-  x = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=300)
-  dist = pv.core.Vinedist.from_data(
-    x, margins=[SciPyMargin("norm"), SciPyMargin("norm")]
-  )
-  legacy = dist.to_json().replace('"SciPyMargin"', '"MarginSelector"')
-  with pytest.raises(ValueError, match="MarginSelector.*no longer exists"):
-    pv.core.Vinedist.from_json(legacy)
-
-
 def test_an_unknown_margin_kind_and_a_bad_version_both_raise():
   """A format change must fail loudly rather than build a wrong model."""
   from pyvinecopulib.core._serialization import margin_from_json
@@ -1179,6 +1162,35 @@ def test_a_vinedist_base_subclass_fits_from_declared_parts(
   assert all(isinstance(m, Kde1d) for m in dist.margins)
   assert np.all(np.isfinite(dist.logpdf(y)))
   assert repr(dist).startswith("MyDist(dim=3")
+
+
+def test_a_subclass_that_declares_only_its_parts_refuses_weights() -> None:
+  """The inherited `_fit_copula` cannot weight the copula, so it must not try.
+
+  It has the part class and the caller's controls and nothing else, so applying
+  the weights is not something it can do -- and weighting the margins alone is
+  not the weighted fit of anything. `Vinedist` overrides the hook and declares
+  the capability; the base does neither.
+  """
+
+  class MyDist(VinedistBase[Any]):
+    vinecop_class = pv.Vinecop
+    margin_class = Kde1d
+
+    @classmethod
+    def _coerce_fit_data(cls, y: Any, weights: Any, controls: Any) -> Any:
+      return np.asarray(y, dtype=float), weights
+
+  assert not MyDist.supports_weighted_copula
+  assert Vinedist.supports_weighted_copula
+
+  rng = np.random.default_rng(7)
+  y = rng.normal(size=(200, 3))
+  w = rng.uniform(0.5, 2.0, size=200)
+  with pytest.raises(ValueError, match="cannot weight the copula half"):
+    MyDist.from_data(y, weights=w)
+  # Unweighted still fits end to end.
+  assert np.all(np.isfinite(MyDist.from_data(y).logpdf(y)))
 
 
 def test_declaring_no_vinecop_class_reports_it() -> None:

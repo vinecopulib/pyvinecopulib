@@ -992,8 +992,12 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
   #: Whether this lane's copula fitter accepts observation weights. Declared
   #: rather than discovered, so weights given to a lane that cannot apply them
   #: to *both* halves are refused up front instead of yielding a fit whose
-  #: margins are weighted and whose copula is not.
-  supports_weighted_copula: bool = True
+  #: margins are weighted and whose copula is not. ``False`` here because the
+  #: default ``_fit_copula`` cannot apply them -- it has only the part
+  #: class and the caller's controls -- so a subclass declares ``True``
+  #: together with the override that honors them, as
+  #: :class:`~pyvinecopulib.core.Vinedist` does.
+  supports_weighted_copula: bool = False
 
   #: Whether any margin on this array namespace can be fitted conditionally.
   #: When ``False`` the refusal is categorical, so the estimators say so rather
@@ -1152,7 +1156,8 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     ------
     NotImplementedError
         If this class names no ``vinecop_class`` and does not override this
-        hook.
+        hook, or if it declares :attr:`supports_weighted_copula` without
+        overriding this hook to apply the weights.
     """
     if cls.vinecop_class is None:
       raise NotImplementedError(
@@ -1160,7 +1165,16 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         "`_fit_copula`, so it cannot fit a copula. Set one, or compose an "
         "already-fitted copula and margins by construction."
       )
-    del weights
+    if weights is not None:
+      # Reachable only if a subclass declared `supports_weighted_copula` and
+      # then left this hook in place, which is the half-weighted fit the
+      # declaration exists to prevent. Say so rather than dropping them.
+      raise NotImplementedError(
+        f"{cls.__name__} declares `supports_weighted_copula` but does not "
+        "override `_fit_copula`, which cannot apply weights to the copula "
+        "half. Override it to pass them to the fitter, or declare "
+        "`supports_weighted_copula = False`."
+      )
     kwargs: dict[str, Any] = {"structure": structure, "controls": controls}
     if var_types is not None:
       kwargs["var_types"] = var_types

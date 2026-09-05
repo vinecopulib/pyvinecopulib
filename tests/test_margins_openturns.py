@@ -397,6 +397,34 @@ def test_from_data_selects_a_family_where_fit_keeps_the_named_one(
   )
 
 
+def test_select_on_a_named_margin_keeps_the_family(
+  count_sample: np.ndarray,
+) -> None:
+  """Naming a factory *is* the choice, so `select` reduces to `fit`.
+
+  The same rule `SciPyMargin` follows. It matters because `fit_margin` calls
+  `select` by default, so without it `margins=OpenTURNSMargin("Normal")` comes
+  back as whatever won the registry search -- answering a specification with a
+  different model.
+  """
+  from pyvinecopulib.margins._resolve import fit_margin
+
+  named = OpenTURNSMargin("Normal")
+  assert not named.is_fitted
+  assert named.select(count_sample).family_name == "Normal"
+
+  # And through the resolution path a vine distribution actually takes.
+  resolved = fit_margin(OpenTURNSMargin("Normal"), count_sample)
+  assert isinstance(resolved, OpenTURNSMargin)
+  assert resolved.family_name == "Normal"
+
+  # `family_set` is how a caller asks for the search back on a named margin.
+  reopened = OpenTURNSMargin("Normal").select(
+    count_sample, FitControlsMargin(family_set=["Normal", "Poisson"])
+  )
+  assert reopened.family_name == "Poisson"
+
+
 def test_select_rejects_bad_arguments(normal_sample: np.ndarray) -> None:
   """Argument checks happen before any fitting."""
   with pytest.raises(ValueError, match="unknown OpenTURNS factory"):

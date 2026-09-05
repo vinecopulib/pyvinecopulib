@@ -693,6 +693,10 @@ class SciPyMargin(MarginBase[np.ndarray]):
     misstates its own support above the truth. See the class Notes for the
     grouping and the exclusions.
 
+    A margin that already names a family reduces this to :meth:`fit`: naming
+    the family *is* the choice, so ``family_set`` is how a caller asks for the
+    search back on one.
+
     Nothing is dropped silently. A candidate that fails to fit, or fits to
     something inadmissible, is refused with its reason, and a variable where
     every candidate fails raises and names each one.

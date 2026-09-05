@@ -93,6 +93,10 @@ class Vinedist(VinedistBase[np.ndarray]):
   vinecop_class: ClassVar[Optional[type]] = Vinecop
   margin_class: ClassVar[Optional[type]] = Kde1d
 
+  #: `_fit_copula` writes weights into a copy of the controls, so both halves
+  #: of the fit are weighted by the one argument.
+  supports_weighted_copula: bool = True
+
   def _bind_dist(
     self,
     vinecop: Any,

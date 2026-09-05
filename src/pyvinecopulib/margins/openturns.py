@@ -636,6 +636,10 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     univariate families into continuous and discrete, and a probability mass
     is not comparable with a Lebesgue density on one criterion.
 
+    A margin that already names a factory reduces this to :meth:`fit`: naming
+    the family *is* the choice, so ``family_set`` is how a caller asks for the
+    search back on one.
+
     Parameters
     ----------
     y : array, shape (n,), dtype float
@@ -687,7 +691,14 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
       )
     settings = controls if controls is not None else FitControlsMargin()
     criterion = getattr(settings, "selection_criterion", "aic")
+    family_set = getattr(settings, "family_set", None)
     self.declare(var_type=getattr(settings, "var_type", None))
+    if not self._unnamed and family_set is None:
+      # Naming a family *is* the choice, so there is nothing left to select and
+      # the base contract applies: reduce to `fit`. Replacing it silently would
+      # answer a specification with a different model. A caller who does want
+      # the search back asks for it by name, with `family_set`.
+      return self.fit(y, x=x, weights=weights)
 
     openturns = _openturns()
     data = validate_univariate(np.asarray(y, dtype=float))
@@ -700,7 +711,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     scored: list[tuple[float, OpenTURNSMargin]] = []
     refused: list[str] = []
     for factory in self._candidate_factories(
-      discrete=discrete, family_set=getattr(settings, "family_set", None)
+      discrete=discrete, family_set=family_set
     ):
       candidate, reason = _try_factory(factory, data, sample, discrete=discrete)
       if candidate is None:

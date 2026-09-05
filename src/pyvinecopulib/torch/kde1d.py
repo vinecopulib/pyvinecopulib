@@ -151,6 +151,10 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
 
   supports_weights: bool = True
   supported_var_types: tuple[str, ...] = ("c", "d", "zi")
+  #: The bandwidth, bounds and variable type are named at construction, so
+  #: `fit` reads no controls. Declaring it is what makes a `family_set` a
+  #: refusal rather than a kernel density fitted in silence.
+  supports_controls: bool = False
 
   def __init__(
     self,
