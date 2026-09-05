@@ -49,10 +49,9 @@ object --- and every post-fit method evaluates through it. It is
 published as ``distribution_``, so the fitted joint distribution is
 usable outside the estimator; on the torch backend that object is a
 ``TorchVinedist``, which stays on its device and differentiable even
-though the estimator's own methods return arrays; ``margin_summary_`` describes the margin
-each variable ended up with, and ``selection_report_`` carries the
-per-candidate table of any margin that selected its own family. See
-the :doc:`concepts page </concepts>` for the underlying vine-copula
+though the estimator's own methods return arrays; ``margin_summary_``
+describes the margin each variable ended up with. See the
+:doc:`concepts page </concepts>` for the underlying vine-copula
 construction.
 """
 
@@ -659,10 +658,6 @@ class VineBase(BaseEstimator):
     # that has to survive `fit` untouched so `clone` reproduces the estimator;
     # hence every specification is fitted on a copy of itself.
     spec = copy.deepcopy(spec)
-    # A selector records which variable each candidate was fitted to; supply
-    # the name when the caller has not.
-    if hasattr(spec, "report_") and getattr(spec, "name", "") is None:
-      spec.name = name
     var_type, support = self._declared_for(index)
     try:
       margin = fit_margin(
@@ -820,9 +815,6 @@ class VineBase(BaseEstimator):
       self._check_response_is_continuous(self._y_margin)
       fitted.append(self._y_margin)
 
-    self.selection_report_ = [
-      dict(row) for margin in fitted for row in getattr(margin, "report_", ())
-    ]
     if y is not None:
       return X, y
     return X
@@ -983,8 +975,8 @@ class VineBase(BaseEstimator):
 
     dist = self.distribution_
     if copula_only:
-      u = dist._u_layout(Z)
-      out = np.log(_as_ndarray(dist.copula.pdf(u)))
+      u = dist.copula_layout(Z)
+      out = np.log(_as_ndarray(dist.vinecop.pdf(u)))
     else:
       out = _as_ndarray(dist.logpdf(Z))
 

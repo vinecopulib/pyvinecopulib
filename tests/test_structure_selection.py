@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 import pyvinecopulib as pv
-from pyvinecopulib.core import BicopLike, VinecopBase
+from pyvinecopulib.core import BicopLike
 
 # Internal C++ primitive backing Python structure selection (boost prim /
 # kruskal / Wilson). Imported from the extension directly as it has no public
@@ -147,6 +147,25 @@ def test_select_spanning_tree_weighted_random_accepts_zero_weights() -> None:
 
 
 # ---------------------------------------------------------------------------
+class _Controls:
+  """A minimal ``ControlsLike``: the engines read settings through ``to_dict``.
+
+  Used rather than ``FitControlsVinecop`` so a test can hand the engine a
+  value the compiled controls would reject at construction, and so each test
+  sets only the knobs it cares about.
+  """
+
+  def __init__(self, **settings: Any) -> None:
+    self._settings = settings
+
+  def to_dict(self) -> dict:
+    return dict(self._settings)
+
+
+def _base_controls(**settings: Any) -> _Controls:
+  return _Controls(**settings)
+
+
 # VinecopBase.select — exact parity with Vinecop
 # ---------------------------------------------------------------------------
 
@@ -159,7 +178,9 @@ def test_select_matches_vinecop_matrix() -> None:
   for seed in range(3):
     for d, trunc in ((4, 20), (5, 20), (7, 20), (8, 3)):
       u = _correlated_pseudo_obs(seed, d)
-      mine, _ = VinecopBase.select(u, _gaussian_fit_edge, trunc_lvl=trunc)
+      mine = HostedVinecop.from_data(
+        u, fit_edge=_gaussian_fit_edge, controls=_base_controls(trunc_lvl=trunc)
+      ).structure
       cpp = pv.Vinecop.from_data(
         u, controls=_vine_controls(pv.families.gaussian, trunc)
       ).structure
@@ -176,18 +197,15 @@ def test_select_reused_pairs_match_vinecop_exactly() -> None:
   for seed in (0, 5):
     d = 5
     u = _correlated_pseudo_obs(seed, d, n=800)
-    structure, pairs = VinecopBase.select(u, _tll_fit_edge)
+    mine = HostedVinecop.from_data(u, fit_edge=_tll_fit_edge)
     auto = pv.Vinecop.from_data(u, controls=_vine_controls(pv.families.tll))
     assert np.array_equal(
-      np.asarray(structure.matrix), np.asarray(auto.structure.matrix)
+      np.asarray(mine.structure.matrix), np.asarray(auto.structure.matrix)
     )
     rng = np.random.default_rng(seed)
     grid = rng.uniform(0.02, 0.98, size=(300, d))
     np.testing.assert_allclose(
-      HostedVinecop(pairs, structure).pdf(grid),
-      auto.pdf(grid),
-      rtol=1e-12,
-      atol=1e-12,
+      mine.pdf(grid), auto.pdf(grid), rtol=1e-12, atol=1e-12
     )
 
 
@@ -198,7 +216,7 @@ def test_select_refit_pdf_parity_with_vinecop() -> None:
   for seed in range(3):
     d = 5
     u = _correlated_pseudo_obs(seed, d)
-    mine, _ = VinecopBase.select(u, _gaussian_fit_edge)
+    mine = HostedVinecop.from_data(u, fit_edge=_gaussian_fit_edge).structure
     controls = _vine_controls(pv.families.gaussian)
     auto = pv.Vinecop.from_data(u, controls=controls)
     refit = pv.Vinecop.from_data(u, structure=mine, controls=controls)
@@ -216,21 +234,28 @@ def test_select_respects_truncation() -> None:
   d = 6
   u = _correlated_pseudo_obs(0, d)
   for trunc in (1, 2, 3):
-    s, pairs = VinecopBase.select(u, _gaussian_fit_edge, trunc_lvl=trunc)
-    assert s.dim == d
-    assert s.trunc_lvl == trunc
-    assert [len(row) for row in pairs] == [d - 1 - t for t in range(trunc)]
+    vine = HostedVinecop.from_data(
+      u, fit_edge=_gaussian_fit_edge, controls=_base_controls(trunc_lvl=trunc)
+    )
+    assert vine.structure.dim == d
+    assert vine.structure.trunc_lvl == trunc
+    # Every slot the truncated structure declares is populated, and none above.
+    assert [
+      len([e for e in range(d - 1 - t) if vine.get_pair_copula(t, e)])
+      for t in range(trunc)
+    ] == [d - 1 - t for t in range(trunc)]
 
 
 def test_select_random_weighted_is_reproducible() -> None:
   d = 5
   u = _correlated_pseudo_obs(1, d)
-  s1, _ = VinecopBase.select(
-    u, _gaussian_fit_edge, tree_algorithm="random_weighted", seeds=[1, 2, 3]
-  )
-  s2, _ = VinecopBase.select(
-    u, _gaussian_fit_edge, tree_algorithm="random_weighted", seeds=[1, 2, 3]
-  )
+  controls = _base_controls(tree_algorithm="random_weighted", seeds=[1, 2, 3])
+  s1 = HostedVinecop.from_data(
+    u, fit_edge=_gaussian_fit_edge, controls=controls
+  ).structure
+  s2 = HostedVinecop.from_data(
+    u, fit_edge=_gaussian_fit_edge, controls=controls
+  ).structure
   # Same seeds -> identical structure; and a valid full R-vine.
   assert np.array_equal(np.asarray(s1.matrix), np.asarray(s2.matrix))
   assert s1.trunc_lvl == d - 1
@@ -238,20 +263,21 @@ def test_select_random_weighted_is_reproducible() -> None:
 
 def test_select_random_weighted_accepts_small_samples() -> None:
   u = _correlated_pseudo_obs(1, 5, n=10)
-  structure, _ = VinecopBase.select(
+  structure = HostedVinecop.from_data(
     u,
-    _gaussian_fit_edge,
-    tree_algorithm="random_weighted",
-    seeds=[1, 2, 3],
-  )
+    fit_edge=_gaussian_fit_edge,
+    controls=_base_controls(tree_algorithm="random_weighted", seeds=[1, 2, 3]),
+  ).structure
   assert structure.trunc_lvl == 4
 
 
 def test_select_rejects_unknown_tree_algorithm() -> None:
   u = _correlated_pseudo_obs(1, 4, n=50)
   with pytest.raises(ValueError, match="tree_algorithm must be one of"):
-    VinecopBase.select(
-      u, _gaussian_fit_edge, tree_algorithm="definitely_not_an_algorithm"
+    HostedVinecop.from_data(
+      u,
+      fit_edge=_gaussian_fit_edge,
+      controls=_base_controls(tree_algorithm="definitely_not_an_algorithm"),
     )
 
 
@@ -273,7 +299,11 @@ def test_select_skips_hfunctions_after_final_tree() -> None:
   def fit_edge(tree: int, edge: int, u_e: object, x_e: object) -> CountingPair:
     return CountingPair(pv.Bicop())
 
-  VinecopBase.select(_correlated_pseudo_obs(1, 6, n=50), fit_edge, trunc_lvl=1)
+  HostedVinecop.from_data(
+    _correlated_pseudo_obs(1, 6, n=50),
+    fit_edge=fit_edge,
+    controls=_base_controls(trunc_lvl=1),
+  )
   assert calls == {"hfunc1": 0, "hfunc2": 0}
 
 
@@ -335,9 +365,11 @@ def test_select_matches_vinecop_for_every_tree_criterion(
   """
   d = 5
   u = _correlated_pseudo_obs(1, d)
-  mine, _ = VinecopBase.select(
-    u, _gaussian_fit_edge, tree_criterion=tree_criterion
-  )
+  mine = HostedVinecop.from_data(
+    u,
+    fit_edge=_gaussian_fit_edge,
+    controls=_base_controls(tree_criterion=tree_criterion),
+  ).structure
   controls = pv.FitControlsVinecop(
     family_set=[pv.families.gaussian],
     tree_criterion=tree_criterion,
@@ -347,3 +379,195 @@ def test_select_matches_vinecop_for_every_tree_criterion(
   np.testing.assert_array_equal(
     np.asarray(mine.matrix), np.asarray(theirs.structure.matrix)
   )
+
+
+# ---------------------------------------------------------------------------
+# Declared parts: bicop_class, the up-front flip gate, and weighted selection
+# ---------------------------------------------------------------------------
+
+
+class _BicopVine(HostedVinecop):
+  """A vine that names the pair copula it fits, so `from_data` needs no
+  callback."""
+
+  bicop_class = pv.Bicop
+
+
+def test_bicop_class_fits_without_a_fit_edge_callback() -> None:
+  # Naming the pair class is what replaces the callback: a pair class is
+  # itself a fitter, so the vine can fit its own edges.
+  u = _correlated_pseudo_obs(0, 5)
+  vine = _BicopVine.from_data(u)
+  assert vine.dim == 5
+  assert np.all(np.isfinite(vine.pdf(u)))
+  assert isinstance(vine.get_pair_copula(0, 0), pv.Bicop)
+
+
+def test_a_named_pair_class_without_flip_is_refused_before_any_fitting() -> (
+  None
+):
+  # Selection finalizes by reorienting pairs, so a pair without `flip` cannot
+  # be selected with. Naming the class makes that knowable before the data is
+  # touched -- the point of `bicop_class` over an opaque callback.
+  calls = {"n": 0}
+
+  class _NoFlipPair(pv.core.BicopBase[Any]):
+    def __init__(self) -> None:
+      calls["n"] += 1
+
+    def pdf(self, u: Any, *, x: Any = None) -> Any:
+      return np.ones(u.shape[0])
+
+    def hfunc1(self, u: Any, *, x: Any = None) -> Any:
+      return u[:, 1]
+
+    def hfunc2(self, u: Any, *, x: Any = None) -> Any:
+      return u[:, 0]
+
+  class _NoFlipVine(HostedVinecop):
+    bicop_class = _NoFlipPair
+
+  with pytest.raises(NotImplementedError, match="has no `flip`"):
+    _NoFlipVine.from_data(_correlated_pseudo_obs(0, 5))
+  # Nothing was constructed, so nothing was fitted.
+  assert calls["n"] == 0
+
+
+def _weak_link_chain(seed: int, n: int = 1500) -> np.ndarray:
+  """A Markov chain whose weakest link joins the two lowest-numbered columns.
+
+  The spanning tree has to select that edge to stay connected, and it sorts
+  first by candidate index -- so a threshold above it makes the *first* edge of
+  tree 0 the thresholded one.
+  """
+  rng = np.random.default_rng(seed)
+  cols = [rng.normal(size=n)]
+  for r in (0.25, 0.95, 0.95):
+    cols.append(r * cols[-1] + np.sqrt(1 - r * r) * rng.normal(size=n))
+  return pv.to_pseudo_obs(np.column_stack(cols))
+
+
+def test_a_thresholded_edge_does_not_consume_the_flip_probe() -> None:
+  """A pair without `flip` must be caught behind a caller's own `fit_edge` too.
+
+  The probe fires once. A thresholded edge holds an `IndependencePair`, whose
+  `flip` returns `self`, so letting one consume the probe passes it on behalf
+  of a pair that cannot flip -- which then fails from the finalizing
+  reorientation, after every other edge has been fitted.
+  """
+  u = _weak_link_chain(0)
+  controls = _vine_controls(pv.families.gaussian)
+  controls.threshold = 0.22
+
+  # The setup this test needs, asserted so it cannot quietly go vacuous: in the
+  # selection loop's own order the first edge of tree 0 is thresholded, so the
+  # first pair the probe can legitimately see is a later, fitted one.
+  seen: list[int] = []
+
+  def recording_fit_edge(tree: int, edge: int, u_e: Any, x_e: Any) -> Any:
+    if tree == 0:
+      seen.append(edge)
+    return pv.Bicop.from_data(
+      u_e, pv.FitControlsBicop(family_set=[pv.families.gaussian])
+    )
+
+  HostedVinecop.from_data(u, controls=controls, fit_edge=recording_fit_edge)
+  assert seen and min(seen) > 0
+
+  class _NoFlipPair(pv.core.BicopBase[Any]):
+    def pdf(self, u: Any, *, x: Any = None) -> Any:
+      return np.ones(u.shape[0])
+
+    def hfunc1(self, u: Any, *, x: Any = None) -> Any:
+      return u[:, 1]
+
+    def hfunc2(self, u: Any, *, x: Any = None) -> Any:
+      return u[:, 0]
+
+  def fit_edge(tree: int, edge: int, u_e: Any, x_e: Any) -> Any:
+    return _NoFlipPair()
+
+  with pytest.raises(NotImplementedError, match="has no `flip`"):
+    HostedVinecop.from_data(u, controls=controls, fit_edge=fit_edge)
+
+
+@pytest.mark.parametrize(
+  "setting,value",
+  [
+    ("select_trunc_lvl", True),
+    ("select_threshold", True),
+    ("select_families", False),
+    ("show_trace", True),
+  ],
+)
+def test_vine_level_settings_it_cannot_honor_are_refused(
+  setting: str, value: bool
+) -> None:
+  """Refused, not dropped -- the `ControlsLike` contract.
+
+  These four are on `FitControlsVinecop` only, so no pair-copula fit can read
+  them either. Dropping one returns a model the caller's controls do not
+  describe, and silently disagrees with `Vinecop.select` on the same object.
+  """
+  controls = _vine_controls(pv.families.gaussian)
+  setattr(controls, setting, value)
+  with pytest.raises(ValueError, match=setting):
+    _BicopVine.from_data(_correlated_pseudo_obs(0, 4), controls=controls)
+
+
+def test_the_defaults_of_those_settings_still_select() -> None:
+  """The refusal keys off a non-default value, not off the field existing."""
+  vine = _BicopVine.from_data(
+    _correlated_pseudo_obs(0, 4),
+    controls=_vine_controls(pv.families.gaussian),
+  )
+  assert vine.dim == 4
+
+
+@pytest.mark.parametrize("seed,d", [(0, 5), (1, 6), (2, 7)])
+def test_weighted_selection_matches_vinecop(seed: int, d: int) -> None:
+  # The tree criterion is weighted now, so a weighted array-agnostic selection
+  # reproduces `Vinecop.select`'s matrix exactly. Before the weights reached
+  # the criterion this silently disagreed.
+  rng = np.random.default_rng(seed)
+  u = _correlated_pseudo_obs(seed, d, n=800)
+  controls = _vine_controls(pv.families.gaussian)
+  controls.weights = rng.uniform(0.2, 2.0, u.shape[0])
+
+  mine = HostedVinecop.from_data(
+    u, fit_edge=_gaussian_fit_edge, controls=controls
+  ).structure
+  theirs = pv.Vinecop.from_data(u, controls=controls).structure
+  assert np.array_equal(np.asarray(mine.matrix), np.asarray(theirs.matrix))
+
+
+def test_unweighted_selection_is_unchanged_by_the_weights_plumbing() -> None:
+  # The criterion's new weights argument defaults to empty, which is what the
+  # call site passed before, so every unweighted selection is untouched.
+  u = _correlated_pseudo_obs(3, 6)
+  plain = HostedVinecop.from_data(u, fit_edge=_gaussian_fit_edge).structure
+  unit = _vine_controls(pv.families.gaussian)
+  unit.weights = np.ones(u.shape[0])
+  weighted = HostedVinecop.from_data(
+    u, fit_edge=_gaussian_fit_edge, controls=unit
+  ).structure
+  assert np.array_equal(np.asarray(plain.matrix), np.asarray(weighted.matrix))
+
+
+def test_custom_tree_criterion_is_callable_instead_of_raising() -> None:
+  # `tree_criterion="custom"` had nothing to call, so it raised from C++.
+  u = _correlated_pseudo_obs(1, 5)
+  seen = {"n": 0}
+
+  def criterion(pair: Any) -> float:
+    seen["n"] += 1
+    return float(abs(np.corrcoef(pair, rowvar=False)[0, 1]))
+
+  controls = _base_controls(
+    tree_criterion="custom", criterion_function=criterion
+  )
+  vine = HostedVinecop.from_data(
+    u, fit_edge=_gaussian_fit_edge, controls=controls
+  )
+  assert seen["n"] > 0
+  assert vine.structure.dim == 5

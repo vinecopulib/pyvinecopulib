@@ -103,13 +103,10 @@ top-level aliases below, these are scheduled for removal in 2.0.
 release, so only code written against a development build can be affected.
 
 The RNG hook that `MarginBase`, `BicopBase` and `VinecopBase` draw their
-uniforms through is renamed with them: `_simulate_uniform` becomes
-`_sample_uniform`. A renamed hook is the one rename that cannot fail visibly on
-its own — the base class simply stops calling the old name, so an override
-under the old name would be ignored and the inherited default would raise as
-though nothing had been overridden. A subclass that defines `_simulate_uniform`
-and not `_sample_uniform` therefore raises `TypeError` at class-definition
-time, naming both spellings.
+uniforms through is spelled `_sample_uniform`. It was `_simulate_uniform` in
+development builds only, so a subclass written against one of those needs the
+new name; nothing was released under the old one, and the bases no longer
+check for it.
 
 Two `sample` conventions now coexist, deliberately. The `core` classes keep the
 quasi-random arguments they always had — `sample(n, qrng=False, seeds=[])`,

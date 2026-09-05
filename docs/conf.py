@@ -134,6 +134,20 @@ nitpick_ignore_regex = [
     r"pyvinecopulib\.core\.FitControlsVinecop\.(get|set)_conditioning_set",
   ),
   (r"py:.*", r"pyvinecopulib\.sklearn\..*\.set_score_request"),
+  # The `bicop_class` / `vinecop_class` / `margin_class` declarations name the
+  # class a base fits, so the attribute's *value* is a class. autosummary
+  # treats that as a re-exported class rather than an attribute and generates
+  # no stub, so the Attributes entry a subclass inherits has nothing to point
+  # at. Retires when autosummary can page a class-valued attribute; the
+  # declarations are documented in their owners' class docstrings meanwhile.
+  (
+    r"py:obj",
+    r"pyvinecopulib\.\w+\.\w+\.(bicop|vinecop|margin)_class",
+  ),
+  # `ArrayT` is the TypeVar the array-agnostic contracts are generic over. It
+  # appears in rendered signatures wherever one is parameterized, and a
+  # TypeVar has no page of its own to link to.
+  (r"py:class", r"pyvinecopulib\.core\.protocols\.ArrayT"),
 ]
 
 
@@ -209,9 +223,8 @@ _CLASS_MODULE = {
   "MarginLike": "pyvinecopulib.core",
   "MarginBase": "pyvinecopulib.core",
   "OpenTURNSMargin": "pyvinecopulib.margins",
-  "OpenTURNSSelector": "pyvinecopulib.margins",
-  "ParametricMargin": "pyvinecopulib.margins",
-  "MarginSelector": "pyvinecopulib.margins",
+  "SciPyMargin": "pyvinecopulib.margins",
+  "FitControlsMargin": "pyvinecopulib.margins",
   "Bicop": "pyvinecopulib.core",
   "VinecopLike": "pyvinecopulib.core",
   "VinecopBase": "pyvinecopulib.core",
@@ -349,6 +362,9 @@ DOCSTRING_SUBPACKAGES = {
       "MarginLike",
       "MarginBase",
       "Vinedist",
+      "VinedistLike",
+      "VinedistBase",
+      "ControlsLike",
     ],
     "functions": [
       "margin_from_json",
@@ -375,15 +391,15 @@ DOCSTRING_SUBPACKAGES = {
   },
   "margins": {
     "classes": [
-      "ParametricMargin",
-      "MarginSelector",
+      "SciPyMargin",
       "OpenTURNSMargin",
-      "OpenTURNSSelector",
+      "FitControlsMargin",
     ],
     "functions": [
       "as_margin",
       "register_margin_adapter",
       "resolve_margins",
+      "resolve_margin_controls",
     ],
   },
   "sklearn": {

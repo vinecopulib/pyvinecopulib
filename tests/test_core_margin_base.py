@@ -375,7 +375,13 @@ def test_fit_refuses_covariates_it_cannot_read() -> None:
 
   class _Fittable(MarginBase[np.ndarray]):
     def fit(
-      self, y: Any, *, x: Optional[Any] = None, weights: Any = None
+      self,
+      y: Any,
+      /,
+      controls: Any = None,
+      *,
+      x: Optional[Any] = None,
+      weights: Any = None,
     ) -> Any:
       _reject_covariates(self, x)
       return self

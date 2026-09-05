@@ -978,3 +978,32 @@ def test_var_types_needs_one_entry_per_variable(types) -> None:
     vinecop.var_types = types
   vinecop.var_types = ["c", "d", "c", "d"]
   assert vinecop.var_types == ["c", "d", "c", "d"]
+
+
+def test_vinecop_controls_are_bicop_controls() -> None:
+  # `FitControlsVinecop` derives from `FitControlsBicop` in C++, and the
+  # binding says so, which is what lets one controls object drive both a vine
+  # fit and the pair fits inside it.
+  controls = pv.FitControlsVinecop(
+    family_set=[pv.families.gaussian], trunc_lvl=2
+  )
+  assert isinstance(controls, pv.FitControlsBicop)
+  # The inherited half is reachable as its own attributes, not through a
+  # nested object.
+  assert controls.family_set == [pv.families.gaussian]
+  controls.num_threads = 2
+  assert controls.num_threads == 2
+
+
+def test_one_controls_object_drives_a_vine_and_its_pairs() -> None:
+  rng = np.random.default_rng(0)
+  u = pv.to_pseudo_obs(rng.standard_normal((300, 2)))
+  controls = pv.FitControlsVinecop(family_set=[pv.families.gaussian])
+
+  # Accepted where *pair* controls are expected...
+  pair = pv.Bicop.from_family(pv.families.gaussian)
+  assert pair.fit(u, controls) is pair
+  assert pair.family == pv.families.gaussian
+  # ...and where vine controls are.
+  vine = pv.Vinecop.from_data(u, controls=controls)
+  assert vine.get_family(0, 0) == pv.families.gaussian

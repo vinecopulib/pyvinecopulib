@@ -490,22 +490,35 @@ Bicop
           flip_doc.c_str(), nb::call_guard<nb::gil_scoped_release>())
       .def("as_continuous", &Bicop::as_continuous, bicop_doc.as_continuous.doc,
            nb::call_guard<nb::gil_scoped_release>())
+      // `fit` and `select` hand the object back so they compose like every
+      // other estimator in the package. The GIL is released around the fit
+      // itself rather than by a call guard, because handing back the object
+      // needs it.
       .def(
           "fit",
           [](Bicop& self, const Eigen::MatrixXd& data,
-             const FitControlsBicop* controls) {
-            self.fit(data, controls ? *controls : default_bicop_controls());
+             const FitControlsBicop* controls) -> Bicop& {
+            {
+              nb::gil_scoped_release release;
+              self.fit(data, controls ? *controls : default_bicop_controls());
+            }
+            return self;
           },
           "data"_a, "controls"_a.sig("FitControlsBicop()") = nb::none(),
-          bicop_doc.fit.doc, nb::call_guard<nb::gil_scoped_release>())
+          bicop_doc.fit.doc, nb::rv_policy::reference_internal)
       .def(
           "select",
           [](Bicop& self, const Eigen::MatrixXd& data,
-             const FitControlsBicop* controls) {
-            self.select(data, controls ? *controls : default_bicop_controls());
+             const FitControlsBicop* controls) -> Bicop& {
+            {
+              nb::gil_scoped_release release;
+              self.select(data,
+                          controls ? *controls : default_bicop_controls());
+            }
+            return self;
           },
           "data"_a, "controls"_a.sig("FitControlsBicop()") = nb::none(),
-          bicop_doc.select.doc, nb::call_guard<nb::gil_scoped_release>())
+          bicop_doc.select.doc, nb::rv_policy::reference_internal)
       .def("plot", &bicop_plot_wrapper, "type"_a = "surface",
            "margin_type"_a = "unif", "xylim"_a = nb::none(),
            "grid_size"_a = nb::none(),

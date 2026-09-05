@@ -265,6 +265,18 @@ torch wrappers) uses the simplified model;
 families to consider, *which* structures to search, and *how* to
 truncate the model in higher dimensions.
 
+A vine's controls **are** pair controls:
+:class:`~pyvinecopulib.core.FitControlsVinecop` derives from
+:class:`~pyvinecopulib.core.FitControlsBicop`, so one object configures both
+halves of a vine fit -- the vine reads the settings it owns, and the rest reach
+its pair copulas unchanged. That is why
+:meth:`~pyvinecopulib.core.Vinecop.select`, which chooses a structure, is
+annotated with the vine controls while
+:meth:`~pyvinecopulib.core.Vinecop.fit`, which has no structure to choose, is
+annotated with the pair controls: the narrower type is all `fit` reads, and a
+vine controls object satisfies it. The same holds for
+:class:`~pyvinecopulib.torch.FitControlsTorchVinecop`.
+
 The backend-neutral :class:`~pyvinecopulib.core.VinecopBase` can go
 further: a :class:`~pyvinecopulib.core.NonSimplifiedContext` lets each
 pair copula also depend on its conditioning-set value
@@ -652,7 +664,7 @@ compiled, ``x``-independent :class:`pyvinecopulib.core.Vinecop`. When
 dependence must vary with :math:`X`, fit custom pairs through
 :meth:`pyvinecopulib.core.VinecopBase.fit`, host them in a
 ``VinecopBase`` subclass that declares covariate support, and compose the
-parts explicitly. ``examples/11_vine_distributions.ipynb`` checks such
+parts explicitly. ``examples/03_vine_distributions.ipynb`` checks such
 a model against an analytic bivariate-normal density; notebook 10
 develops the custom-pair machinery.
 
@@ -667,14 +679,19 @@ Choosing margins
 ~~~~~~~~~~~~~~~~
 
 ``margins=`` accepts a string alias, one margin broadcast across
-columns, a sequence of length :math:`d`, or a dict keyed by column:
+columns, a sequence of length :math:`d`, or a dict keyed by column;
+``margin_controls=`` accepts the same four shapes and says how each
+margin is fitted or selected:
 
 .. code-block:: python
 
    pv.Vinedist.from_data(x)                       # "kde" (the default)
-   pv.Vinedist.from_data(x, margins=MarginSelector(criterion="aic"))
-   pv.Vinedist.from_data(df, margins={"income": MarginSelector(),
+   pv.Vinedist.from_data(x, margins="parametric")
+   pv.Vinedist.from_data(df, margins={"income": SciPyMargin(),
                                       "score": st.norm(0, 1)})
+   pv.Vinedist.from_data(                         # bound one column only
+     df, margin_controls={"income": FitControlsMargin(support=(0.0, None))}
+   )
 
 Margins follow the same construct-then-``fit`` pattern as ``Bicop``,
 ``Vinecop`` and ``Kde1d``, with ``fit`` returning ``self``. One class is
@@ -682,18 +699,17 @@ therefore both the specification and the fitted object, which is what
 lets a single ``margins=`` argument mix the two: ``from_data`` fits the
 margins that are not yet fitted and leaves the already-fitted ones
 alone. So ``st.norm(0, 1)`` above stays exactly :math:`N(0, 1)` while
-``MarginSelector`` estimates its family from the ``income`` column.
+``SciPyMargin()`` chooses its family from the ``income`` column.
 
-:class:`pyvinecopulib.margins.MarginSelector` fits every admissible
-candidate and keeps the best by AIC, BIC or AICc, reporting the rest;
-:meth:`pyvinecopulib.core.Vinedist.selection_report` collects those rows across
-every variable, labeled by the variable each was fitted to.
-Two choices in it are deliberate. The candidate set is **curated and
-partitioned by support**, not "every family in SciPy": an unconstrained
-sweep is actively misleading, because a family whose reported support is
-wider than its density integrates over can win on likelihood without
+Choosing that family is :meth:`pyvinecopulib.margins.SciPyMargin.select`,
+a method on the margin rather than a separate class -- the shape
+:meth:`pyvinecopulib.core.Bicop.select` has always had, so after the call the
+margin *is* the winning family. Two choices in it are deliberate. The candidate
+set is **curated and partitioned by support**, not "every family in SciPy": an
+unconstrained sweep is actively misleading, because a family whose reported
+support is wider than its density integrates over can win on likelihood without
 being a candidate any statistician would accept. And a candidate that
-fails is **reported with a reason** rather than silently skipped — a
+fails is **refused with a reason** rather than silently skipped — a
 column where every candidate fails raises, naming each family and why.
 ``on_failure="fallback"`` asks for a KDE margin instead, with one
 warning; it is never a normal, since marginal misspecification distorts
@@ -776,11 +792,15 @@ likelihood, and three consequences are worth stating:
   the fitted dependence; a misspecified copula leaves the marginal fits
   untouched. Spend the modeling effort accordingly.
 * **Family selection is itself an estimation step.** A likelihood or an
-  interval computed at the selected margin ignores the selection, so
-  ``report_`` is there to be read — a winner that beat the runner-up by
-  a fraction of an AIC unit is not an established family.
+  interval computed at the selected margin ignores the selection, and a
+  winner that beat the runner-up by a fraction of an AIC unit is not an
+  established family. Where the distinction matters, name the family
+  instead of searching for it — ``SciPyMargin("gamma")`` fits the family
+  you chose, and :meth:`~pyvinecopulib.margins.SciPyMargin.select` on a
+  named margin leaves it alone — or refit the shortlist yourself and
+  compare the criteria you care about.
 
-``examples/11_vine_distributions.ipynb`` works through the whole
+``examples/03_vine_distributions.ipynb`` works through the whole
 surface, including a mixed continuous / count example and a custom
 margin written against :class:`pyvinecopulib.core.MarginBase`.
 
@@ -831,7 +851,7 @@ discrete conditioning variable likewise contributes two columns.
 
 The ``examples/04_discrete_variables.ipynb`` notebook works an example
 end to end, from raw counts to a fitted vine;
-``examples/11_vine_distributions.ipynb`` shows the same model as a
+``examples/03_vine_distributions.ipynb`` shows the same model as a
 distribution, with the layout handled for you.
 
 Two arguments elsewhere in the API are consequences of the same
@@ -885,7 +905,7 @@ fitted model round-trips through anything that speaks pickle
 
 A ``Vinedist`` stores both halves: the copula through its own
 ``to_json``, and one payload per margin. The margins this package ships
--- ``Kde1d``, ``ParametricMargin`` and ``MarginSelector`` -- serialize
+-- ``Kde1d`` and ``SciPyMargin`` -- serialize
 themselves; a margin class you wrote needs a ``to_json`` returning a
 mapping, plus one call to ``register_margin_json`` so it can be read
 back. The :mod:`pyvinecopulib.torch` modules are ``nn.Module`` s and use
@@ -997,7 +1017,7 @@ These operations condition on variables that are themselves part of the vine;
 they do not supply an external design matrix. For pair copulas that depend on
 their edge conditioning-set values, see the extending guide (example notebook
 10). For a full exogenous :math:`Y \mid X=x` model, see
-:ref:`concepts-exogenous-conditional` and example notebook 11. A fitted vine's
+:ref:`concepts-exogenous-conditional` and example notebook 03. A fitted vine's
 tree-by-tree decomposition — the conditioned pairs, conditioning sets, and
 pair-copulas — is
 available as nested lists through
@@ -1063,7 +1083,7 @@ Where to next
   that implement everything above. The notebooks
   ``examples/01_bivariate_copulas.ipynb``,
   ``examples/02_vine_copulas.ipynb``, and
-  ``examples/03_vine_copulas_fit_sample.ipynb`` walk through
+  ``examples/03_vine_distributions.ipynb`` walk through
   end-to-end use.
 * :mod:`pyvinecopulib.sklearn` — scikit-learn-compatible
   estimators :class:`~pyvinecopulib.sklearn.VineDensity` and
@@ -1128,7 +1148,12 @@ arrays:
   ``sample``;
 * :class:`~pyvinecopulib.core.VinecopLike` — a fitted vine, exposing
   ``pdf`` / ``cdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` /
-  ``sample`` on an :class:`~pyvinecopulib.core.RVineStructure`.
+  ``sample`` on an :class:`~pyvinecopulib.core.RVineStructure`;
+* :class:`~pyvinecopulib.core.MarginLike` — a univariate margin, exposing
+  ``pdf`` / ``cdf`` / ``icdf``;
+* :class:`~pyvinecopulib.core.VinedistLike` — the two halves together on the
+  data scale, exposing the same evaluation surface in terms of ``y`` rather
+  than ``u``.
 
 You can plug your **own** pair copula into a vine by implementing the
 contract — most easily by subclassing the canonical partial
@@ -1140,9 +1165,40 @@ define ``pdf`` / ``hfunc1`` / ``hfunc2`` and inherits numerical
 and ``cdf`` are the two optional additions, needed to reuse the pair in
 structure selection and to host it on a discrete edge respectively); a
 ``VinecopBase`` subclass need only return its pairs from
-``_get_pair_copula`` and inherits the whole tree-by-tree cascade. The
+``get_pair_copula`` and inherits the whole tree-by-tree cascade. The
 bases are pure Python (no PyTorch), so custom pairs also work in a
 torch-less environment.
+
+Fitting is *declared* rather than implemented wherever it can be. A
+``VinecopBase`` subclass that names ``bicop_class`` -- the pair-copula class it
+fits -- gets ``from_data`` with no callback, because a pair class is itself a
+fitter; naming it also lets structure selection refuse a pair copula without
+``flip`` before it reads the data. Adding ``set_pair_copulas`` on top is what
+lets ``fit`` and ``select`` install what they fitted and hand back ``self``.
+A ``fit_edge`` callback remains the seam for a genuinely custom or conditional
+per-edge fit.
+
+The same holds one level up: a custom **vine distribution** subclasses
+:class:`~pyvinecopulib.core.VinedistBase` and inherits the entire data-scale
+surface with no hook at all, because a vine distribution is determined by its
+two halves. Hooks are needed only to make it *fittable* —
+:meth:`~pyvinecopulib.core.VinedistBase.from_data` runs the two-step estimator
+once, in the base, and asks the subclass which margin class to default to, how
+to fit the copula, and how to coerce input arrays.
+:class:`~pyvinecopulib.core.Vinedist` (NumPy and a compiled copula) and
+:class:`~pyvinecopulib.torch.TorchVinedist` are the two shipped subclasses.
+
+Fitting has one shape throughout: on all four bases ``fit`` mutates and returns
+``self``, ``from_data`` constructs, and — where there is a family or a structure
+to choose — ``select`` returns ``self`` too. Configuration travels as a
+:class:`~pyvinecopulib.core.ControlsLike`, anything exposing ``to_dict()``,
+which is how one call site accepts both the core ``FitControls*`` objects and
+the PyTorch ones. And a vine's controls *are* pair controls —
+:class:`~pyvinecopulib.core.FitControlsVinecop` is a
+:class:`~pyvinecopulib.core.FitControlsBicop`, and
+:class:`~pyvinecopulib.torch.FitControlsTorchVinecop` likewise — so one object
+configures both halves of a vine fit, and the settings a vine does not read
+reach its pair copulas unchanged.
 
 Every method carries an optional external covariate matrix ``x``. A vine
 whose pairs read it declares ``supports_covariates=True``; the default
@@ -1177,7 +1233,7 @@ worked, end-to-end walk-through: a custom Gaussian pair copula hosted
 first in a simplified vine (matching
 :meth:`pyvinecopulib.core.Vinecop.from_structure`), then a Gumbel one on
 a discrete edge, and finally separate non-simplified and
-external-covariate extensions. Notebook 11 composes the latter with
+external-covariate extensions. Notebook 10 composes the latter with
 conditional margins into :math:`Y \mid X`.
 
 

@@ -2,6 +2,7 @@
 
 #include <nanobind/eigen/dense.h>
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/function.h>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
@@ -14,8 +15,10 @@
 #include <boost/random/mersenne_twister.hpp>
 #include <boost/random/seed_seq.hpp>
 #include <boost/random/uniform_int_distribution.hpp>
+#include <functional>
 #include <map>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -24,10 +27,25 @@
 namespace nb = nanobind;
 using namespace nb::literals;
 
-inline double calculate_tree_criterion(const Eigen::MatrixXd& data,
-                                       const std::string& tree_criterion) {
+// Weights and a custom criterion function are forwarded rather than dropped:
+// without them the Python-side selector could not weight its tree criterion,
+// and `tree_criterion="custom"` had nothing to call. Both default to empty,
+// which is what an unweighted built-in criterion passes, so those selections
+// are unchanged.
+inline double calculate_tree_criterion(
+    const Eigen::MatrixXd& data, const std::string& tree_criterion,
+    const Eigen::VectorXd& weights,
+    const std::function<double(const Eigen::MatrixXd&)>& criterion_function) {
+  if (tree_criterion == "custom") {
+    if (!criterion_function) {
+      throw std::invalid_argument(
+          "tree_criterion='custom' needs a criterion function; pass "
+          "tree_criterion_function on the controls.");
+    }
+    return criterion_function(data);
+  }
   return vinecopulib::tools_select::calculate_criterion(data, tree_criterion,
-                                                        Eigen::VectorXd());
+                                                        weights);
 }
 
 // Select a spanning tree over a candidate graph, mirroring
@@ -141,7 +159,9 @@ inline std::vector<size_t> select_spanning_tree(
 
 inline void init_spanning_tree(nb::module_& m) {
   m.def("_calculate_tree_criterion", &calculate_tree_criterion, "data"_a,
-        "tree_criterion"_a, nb::call_guard<nb::gil_scoped_release>());
+        "tree_criterion"_a, "weights"_a = Eigen::VectorXd(),
+        "criterion_function"_a = nb::none(),
+        nb::call_guard<nb::gil_scoped_release>());
   m.def("_select_spanning_tree", &select_spanning_tree, "n_vertices"_a,
         "edges"_a, "weights"_a, "tree_algorithm"_a,
         "seeds"_a = std::vector<int>(),

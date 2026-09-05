@@ -247,6 +247,7 @@ class AtomicMargin(MarginBase[NDArray[np.float64]]):
     self,
     y: NDArray[np.float64],
     /,
+    controls: object = None,
     *,
     x: Optional[NDArray[np.float64]] = None,
     weights: Optional[NDArray[np.float64]] = None,
@@ -312,13 +313,18 @@ def run_without(package: str, body: str) -> None:
   import subprocess
   import sys as _sys
 
+  # `level` decides whether the name is the third-party package at all: a
+  # relative import resolves inside the importing package, so
+  # `from .scipy import ...` arrives here as name="scipy", level=1 and must
+  # not be blocked. Ignoring `level` would make a submodule unimportable
+  # whenever it shares a name with the package being blocked.
   preamble = (
     "import sys, builtins\n"
     "real = builtins.__import__\n"
-    "def blocked(name, *a, **k):\n"
-    f"  if name.split('.')[0] == {package!r}:\n"
+    "def blocked(name, globals=None, locals=None, fromlist=(), level=0):\n"
+    f"  if level == 0 and name.split('.')[0] == {package!r}:\n"
     f"    raise ImportError('no {package}')\n"
-    "  return real(name, *a, **k)\n"
+    "  return real(name, globals, locals, fromlist, level)\n"
     "builtins.__import__ = blocked\n"
   )
   result = subprocess.run(  # noqa: S603

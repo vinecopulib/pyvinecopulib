@@ -12,7 +12,7 @@ relevant dataclass and the dispatch in the corresponding ``from_data``
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any, Optional
 
 METHODS: tuple[str, ...] = ("tll",)
@@ -82,6 +82,21 @@ class FitControlsTorchBicop:
   grid_type: str = "normal"
   compile_fit: bool = False
 
+  def to_dict(self) -> dict:
+    """Return the settings as a plain dictionary.
+
+    Returns
+    -------
+    dict
+        One entry per setting, keyed by the field name. Nested controls are
+        kept as objects rather than flattened, so the entry round-trips.
+
+    See Also
+    --------
+    pyvinecopulib.core.ControlsLike : The contract this satisfies.
+    """
+    return {f.name: getattr(self, f.name) for f in fields(self)}
+
   def __post_init__(self) -> None:
     if self.method not in METHODS:
       raise ValueError(
@@ -90,7 +105,7 @@ class FitControlsTorchBicop:
 
 
 @dataclass
-class FitControlsTorchVinecop:
+class FitControlsTorchVinecop(FitControlsTorchBicop):
   """Controls for :meth:`~pyvinecopulib.torch.TorchVinecop.from_data` and the cascade.
 
   Mirrors :class:`~pyvinecopulib.core.FitControlsVinecop`: bundles all vine-fit
@@ -101,8 +116,6 @@ class FitControlsTorchVinecop:
 
   Attributes
   ----------
-  bicop_controls : FitControlsTorchBicop
-      Controls applied to every pair-copula fit.
   trunc_lvl : int, default=20
       Maximum number of trees to select when
       :meth:`~pyvinecopulib.torch.TorchVinecop.from_data` is called with
@@ -180,7 +193,7 @@ default="tau"
       torch uses every core by default, so the cpu default is the
       conservative reading of a measurement that moves with thread count
       rather than a claim that batching cannot pay there. Either way the
-      torch fit is far from competitive with the compiled backend on cpu.
+      torch fit is far from competitive with the core backend on cpu.
 
       A level carrying a discrete edge or a conditioning context is always
       fitted edge at a time: those cannot stack.
@@ -201,11 +214,14 @@ default="tau"
   Structure selection runs natively on the torch interpolation grids. It is
   TLL-only, and the criteria for automatic truncation / thresholding (``aic`` /
   ``bic`` / ``mbicv``) are not available here: ``trunc_lvl`` is a fixed cap.
+
+  This *is* a :class:`FitControlsTorchBicop`, so the settings governing each
+  pair-copula fit are its own attributes rather than a nested object, and one
+  controls instance configures both halves of a vine fit. The same holds for
+  :class:`~pyvinecopulib.core.FitControlsVinecop` and
+  :class:`~pyvinecopulib.core.FitControlsBicop`.
   """
 
-  bicop_controls: FitControlsTorchBicop = field(
-    default_factory=FitControlsTorchBicop
-  )
   trunc_lvl: int = 20
   tree_criterion: str = "tau"
   threshold: float = 0.0
@@ -219,6 +235,7 @@ default="tau"
   batched_fit: Optional[bool] = None
 
   def __post_init__(self) -> None:
+    super().__post_init__()
     if self.tree_algorithm not in TREE_ALGORITHMS:
       raise ValueError(
         f"unknown tree_algorithm={self.tree_algorithm!r}; expected one of "

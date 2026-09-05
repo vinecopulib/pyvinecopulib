@@ -219,18 +219,12 @@ def _register_builtin_readers() -> None:
     return Kde1d.from_json(payload["json"])
 
   def _parametric(payload: dict[str, Any]) -> Any:
-    from ..margins import ParametricMargin
+    from ..margins import SciPyMargin
 
-    return ParametricMargin._from_json_payload(payload)
-
-  def _selector(payload: dict[str, Any]) -> Any:
-    from ..margins import MarginSelector
-
-    return MarginSelector._from_json_payload(payload)
+    return SciPyMargin._from_json_payload(payload)
 
   register_margin_json("Kde1d", _kde1d)
-  register_margin_json("ParametricMargin", _parametric)
-  register_margin_json("MarginSelector", _selector)
+  register_margin_json("SciPyMargin", _parametric)
 
 
 _register_builtin_readers()

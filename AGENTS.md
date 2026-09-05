@@ -33,12 +33,13 @@ extensions on top:
 
 1. `pyvinecopulib.core`, `pyvinecopulib.families`, `pyvinecopulib.utils`
    — re-exports of the bound C++ surface, organized by topic; `core`
-   additionally ships a backend-neutral pair-copula / vine abstraction
-   layer (`BicopLike` / `VinecopLike` protocols, `BicopBase` /
-   `VinecopBase` canonical bases, `ConditioningContext` policies) that
-   custom NumPy / PyTorch backends subclass, and `Vinedist` — a vine
-   copula combined with univariate margins, i.e. a full multivariate
-   distribution on the data scale.
+   additionally ships a backend-neutral abstraction layer
+   (`BicopLike` / `VinecopLike` / `MarginLike` / `VinedistLike` protocols,
+   `BicopBase` / `VinecopBase` / `MarginBase` / `VinedistBase` canonical
+   bases, `ControlsLike` for fit configuration, `ConditioningContext`
+   policies) that custom NumPy / PyTorch backends subclass, and `Vinedist`
+   — a vine copula combined with univariate margins, i.e. a full
+   multivariate distribution on the data scale.
 2. `pyvinecopulib.margins` — the univariate marginal layer `Vinedist`
    composes: the built-in margins, family selection, and an adapter
    registry that presents a SciPy / PyTorch / other-ecosystem
@@ -171,11 +172,11 @@ closed unmerged, and some commits carry no number at all.
 - **Univariate marginals** — `Kde1d` (`lib/kde1d`) with continuous,
   ordered-discrete, and unordered-categorical support; plus the
   `pyvinecopulib.margins` layer on top of it: `Kde1d` *is* the
-  nonparametric margin, `ParametricMargin` the parametric one,
-  with AIC / BIC / AICc family selection over a curated candidate
-  set (`MarginSelector`), and an adapter registry (`as_margin` /
-  `register_margin_adapter`) that accepts a SciPy or PyTorch
-  distribution object as a margin.
+  nonparametric margin, `SciPyMargin` the parametric one — named, it fits
+  that family; unnamed, `select` chooses one by AIC / BIC / AICc over a
+  curated candidate set — plus `FitControlsMargin` to configure either, and
+  an adapter registry (`as_margin` / `register_margin_adapter`) that accepts
+  a SciPy or PyTorch distribution object as a margin.
 - **Vine distributions** — `Vinedist`: any `VinecopLike` combined with
   one margin per variable, giving `pdf` / `logpdf` / `cdf` / `loglik` /
   `sample` / `sample_conditional` / `rosenblatt` /
@@ -254,12 +255,13 @@ pyvinecopulib/
       py.typed                   # PEP 561 marker (built by scripts/generate_stubs.py)
 
       core/__init__.py           # Bicop, Vinecop, *VineStructure, FitControls*, Kde1d (re-exports from ext)
-        protocols.py             # BicopLike / VinecopLike backend-neutral contracts
+        protocols.py             # Bicop/Vinecop/Margin/Vinedist/Controls contracts
         bicop_base.py            # BicopBase (canonical BicopLike partial impl)
         vinecop_base.py          # VinecopBase (array-agnostic cascades + fit/select)
         context.py               # ConditioningContext / Simplified / NonSimplified
         margin_base.py           # MarginBase (canonical MarginLike partial impl)
-        vinedist.py              # Vinedist (copula + margins = a distribution)
+        vinedist_base.py         # VinedistBase (array-agnostic cascade + IFM fit)
+        vinedist.py              # Vinedist (NumPy + compiled Vinecop)
         _discrete.py             # DiscretePair + the discrete layouts / per-edge types
         _reorient.py             # relabel a structure onto a chosen order tail (internal)
         _rootfind.py             # solve_increasing (monotone bisection; internal)
@@ -268,11 +270,11 @@ pyvinecopulib/
         _pair_plots.py           # pairs_copula_data plotting helper (pure Python)
 
       margins/__init__.py        # as_margin, register_margin_adapter, resolve_margins, the margins
-        parametric.py            # ParametricMargin (one SciPy family) — needs the [scipy] extra
-        selection.py             # MarginSelector (fit every admissible candidate, keep the best)
-        _openturns.py            # OpenTURNSMargin / OpenTURNSSelector — needs the [openturns] extra
+        scipy.py                 # SciPyMargin (one SciPy family, or select one) — needs the [scipy] extra
+        openturns.py             # OpenTURNSMargin — needs the [openturns] extra
+        controls.py              # FitControlsMargin (candidate set, criterion, declared type / support)
         _adapters.py             # the coercion registry + per-ecosystem adapters — internal
-        _resolve.py              # resolve_margins / fit_margin — internal
+        _resolve.py              # resolve_margins / resolve_margin_controls / fit_margin — internal
 
       sklearn/__init__.py        # VineDensity, VineRegressor, backends
         backends.py              # VinecopBackend / TorchVinecopBackend + resolve_backend
@@ -458,6 +460,20 @@ For any behavior change:
   only when it is genuinely a term of art, never to silence a real
   misspelling.
 
+- **Never say "compiled" or "C++" in a docstring.** A user of
+  `pyvinecopulib.core.Bicop` does not know — and does not need to know — that
+  it is bound from C++, so the words are implementation detail leaking into
+  rendered API text. Name the class instead: not "the compiled pair-copula
+  controls" but "controls for a ``Bicop`` fit"; where a *contrast* with the
+  PyTorch layer is the point, contrast the classes (``Vinecop`` versus
+  ``TorchVinecop``) or say "core" rather than "compiled". Inline `#` comments
+  are exempt — they address the next person to edit the code, for whom the
+  distinction is load-bearing — and so are the internal `torch/_*.py` fidelity
+  modules, where "reproduces the compiled `kde1d`" *is* the documented
+  contract. Note `torch.compile` is a different sense of the word and stays:
+  `compile_cascades` is genuinely about compilation. Same reasoning as the
+  entry below, applied to vocabulary.
+
 - **Write for the caller, not the implementer.** A docstring says what a
   method does, what its arguments mean, and what it returns — never how it
   is computed. The algorithm it delegates to, which helper it calls, why a
@@ -616,8 +632,8 @@ automatically.
     `hinv2` (bisection), `sample`, `loglik`, `plot` (`flip` — needed
     only to host the pair in structure *selection* — defaults to
     raising); a `VinecopBase` subclass defines the one hook
-    `_get_pair_copula` and inherits the whole tree-by-tree cascade plus
-    the public `fit` and `select` engines. `select` is an
+    `get_pair_copula` and inherits the whole tree-by-tree cascade plus
+    the public `fit` and `select`. `select` is an
     exact port of `Vinecop`'s Dissmann / Wilson structure selection
     (same matrix encoding, selection-time pairs reused via `flip`, no
     re-fit; parity is a hard guarantee). `threshold` acts twice there, and
@@ -740,9 +756,25 @@ imports without SciPy. Three groups:
   for a discrete variable it is the **integer support**, so the bound and the
   data must both be integers and the fitted grid runs half a unit wider at each
   end. A categorical whose levels are not integers is therefore refused, by
-  name, at fit time rather than by a bare `invalid_argument` from C++. Then `ParametricMargin` (one SciPy family) and
-  `MarginSelector` (fit every admissible candidate, keep the best on
-  `selected_`, report the rest on `report_` — the `GridSearchCV` shape).
+  name, at fit time rather than by a bare `invalid_argument` from C++. Then
+  `SciPyMargin`: named a family, `fit` estimates it; unnamed, `select` fits
+  every admissible candidate and *becomes* the best one. Selection is a
+  **method on the margin**, not a wrapper class — the shape `Bicop.select`
+  has always had, and the reason there is no `MarginSelector`: if the wrapper
+  were the right shape the library would want a `BicopSelector` and a
+  `VinecopSelector` too. **Naming a family is the choice**, so `select` on a
+  named margin reduces to `fit` rather than replacing what the caller asked
+  for; an unnamed `SciPyMargin()` is the signal to search, and `family_set` is
+  the explicit request to re-search a named one. A narrowed search anchors
+  each family exactly as the curated search would (`_anchoring_group`), or the
+  two estimate different parameter counts for the same family and their
+  criteria stop being comparable.
+
+  **A margin class is named for the ecosystem whose families it wraps** --
+  `SciPyMargin` in `margins/scipy.py`, `OpenTURNSMargin` in
+  `margins/openturns.py`. Neither module is underscore-prefixed, because both
+  export a public class; the same-named modules do not shadow the real
+  packages, since Python 3 resolves `import scipy` absolutely.
 - **Coercion** — `as_margin(obj)` is idempotent and routes **every**
   margin `Vinedist` receives, so a discrete SciPy object cannot slip
   past on a bare `pdf` (in SciPy's new API `pdf` is `+∞` at an atom;
@@ -755,17 +787,39 @@ imports without SciPy. Three groups:
   so one class is both the specification and the fitted object, and a
   spec may freely mix already-fitted margins with unfitted ones —
   `from_data` fits only the latter.
+- **Configuration** — `FitControlsMargin` is the marginal half of a
+  `Vinedist` fit, and `resolve_margin_controls` expands `margin_controls=`
+  by the *same four shapes* `margins=` accepts. The two are complementary:
+  `margins` says which class each variable gets, controls say how to fit or
+  select it, so one call can bound the two variables with known bounds and
+  leave the rest alone. A declared `var_type` / `support` is a **default**,
+  not an instruction — a margin the caller constructed keeps what it was
+  built with — except where the library is the one constructing the margin,
+  which is what makes a bounded `Kde1d` reachable without naming a class
+  (`VinedistBase._margin_from_controls`). A margin that cannot honor a
+  `family_set` **refuses** it rather than fitting one family and looking
+  like it chose; whether controls are forwarded at all is the declared
+  `supports_controls`, because nanobind reports every bound signature as
+  `(*args, **kwargs)` and introspection cannot answer it.
 
 Conventions that bind: the fit is **two-step (IFM)** — margins first,
 then the copula on the resulting pseudo-observations — never fit all of
 SciPy (a blind sweep ranks `vonmises` above the true `gamma` because its
 reported support lies), and never silently skip a failed candidate: every
-rejection gets a row in `report_` with a reason, and a column where
-everything fails **raises**, naming each family and its cause.
-`on_failure="fallback"` substitutes `Kde1d` with one warning instead --
-available, but not the default, because answering a parametric request
-nonparametrically is the same class of silent downgrade the weights
-contract already refuses.
+rejection is reported with its reason, and a column where everything fails
+**raises**, naming each family and its cause. `on_failure="fallback"`
+substitutes `Kde1d` with one warning instead -- available, but not the
+default, because answering a parametric request nonparametrically is the
+same class of silent downgrade the weights contract already refuses. The
+substitution happens in `fit_margin`, not in the margin: a `SciPyMargin`
+would have to stop being parametric to make it, so the decision belongs to
+whatever chooses which margin a column gets.
+
+There is deliberately **no structured selection report**. The copula layer's
+answer to the same question is `show_trace` printing to stdout, and margins
+inventing a second, structured paradigm is what made the two layers
+asymmetric in the first place. When diagnostics are designed, design both
+layers at once.
 
 ### `pyvinecopulib.families`
 
@@ -991,7 +1045,7 @@ Key surface:
     integral per query.
 - Discrete variables are declared with `var_types` on `TorchVinecop`'s three
   constructors. The stored pair copulas stay continuous interpolation grids and
-  `_get_pair_copula` wraps a discrete edge in `DiscretePair`, so `state_dict` /
+  `get_pair_copula` wraps a discrete edge in `DiscretePair`, so `state_dict` /
   `.to()` / pickling see only real `nn.Module` parameters. `TorchBicop.from_data`
   takes the four-column layout and reuses the compiled `find_latent_sample`,
   which is what `TllBicop::fit` now consumes for a discrete edge; the jittered
@@ -1116,10 +1170,12 @@ below are a quick orientation.
 - **`pyvinecopulib.core`** — `Bicop`, `Vinecop`, `RVineStructure`,
   `CVineStructure`, `DVineStructure`, `FitControlsBicop`,
   `FitControlsVinecop`; plus the backend-neutral abstraction layer
-  `BicopLike`, `VinecopLike`, `BicopBase`, `VinecopBase`, `DiscretePair`,
-  `ConditioningContext`, `SimplifiedContext`, `NonSimplifiedContext`;
-  plus the marginal layer `MarginLike`, `MarginBase` and the joint
-  object `Vinedist`.
+  `BicopLike`, `VinecopLike`, `BicopBase`, `VinecopBase`, `ControlsLike`,
+  `DiscretePair`, `IndependencePair`, `ConditioningContext`,
+  `SimplifiedContext`, `NonSimplifiedContext`; plus the marginal layer
+  `MarginLike`, `MarginBase` and the joint object with its contract and base,
+  `Vinedist`, `VinedistLike`, `VinedistBase`; plus the margin serialization
+  helpers `margin_from_json`, `margin_to_json`, `register_margin_json`.
 - **`pyvinecopulib.families`** — `BicopFamily` enum; per-family
   constants (`indep`, `gaussian`, `student`, `clayton`, `gumbel`,
   `frank`, `joe`, `bb1`, `bb6`, `bb7`, `bb8`, `tawn`, `tll`); group
@@ -1129,9 +1185,9 @@ below are a quick orientation.
 - **`pyvinecopulib.utils`** — `to_pseudo_obs`, `wdm`,
   `find_latent_sample`, `sobol`, `ghalton`, `sample_uniform`,
   `benchmark`, `pairs_copula_data`.
-- **`pyvinecopulib.margins`** — `ParametricMargin`, `MarginSelector`,
-  `OpenTURNSMargin`, `OpenTURNSSelector`, `as_margin`,
-  `register_margin_adapter`, `resolve_margins`.
+- **`pyvinecopulib.margins`** — `SciPyMargin`, `OpenTURNSMargin`,
+  `FitControlsMargin`, `as_margin`, `register_margin_adapter`,
+  `resolve_margins`, `resolve_margin_controls`.
 - **`pyvinecopulib.sklearn`** — `VineDensity`, `VineRegressor`,
  plus the `backends`
   submodule (`VinecopBackend`, `TorchVinecopBackend`,
@@ -1223,11 +1279,11 @@ Round-trip / parity properties to preserve when touching numerics:
 - **Custom pair copulas / vines (`pyvinecopulib.core`).** Subclass
   `BicopBase` (define `pdf` / `hfunc1` / `hfunc2`) for a custom pair
   copula, and host it by subclassing `VinecopBase` (define the one hook
-  `_get_pair_copula`); both run on NumPy or PyTorch and inherit the full
+  `get_pair_copula`); both run on NumPy or PyTorch and inherit the full
   evaluation surface. Implement `BicopLike` / `VinecopLike` directly for
   an immutable / functional backend. To put that pair on a **discrete**
   edge, add a `cdf` and return `DiscretePair(pair, self.pair_var_types(t, e))`
-  from `_get_pair_copula` (and from `fit_edge`, which receives the edge's
+  from `get_pair_copula` (and from `fit_edge`, which receives the edge's
   `var_types`); the vine supplies the left-limit columns. For a
   **non-simplified / conditional** vine, pass a `NonSimplifiedContext` and drive
   `VinecopBase.fit` with a `fit_edge` callback. To condition on a subset of
@@ -1235,6 +1291,51 @@ Round-trip / parity properties to preserve when touching numerics:
   `select(conditioning_set=)`; see
   `examples/10_extending_pyvinecopulib.ipynb`. `TorchBicop` /
   `TorchVinecop` are the reference torch subclasses.
+- **Fitting has one shape across all four bases.** `MarginBase`, `BicopBase`,
+  `VinecopBase` and `VinedistBase` each expose `fit(...) -> Self` (mutates in
+  place, returns the object) and `from_data(...) -> cls` (constructs one), and
+  `BicopBase` / `VinecopBase` add `select(...) -> Self` where there is
+  something to select — a family, a structure. `Bicop` / `Vinecop` return the
+  object from `fit` / `select` too, so the idiom is the same whichever class
+  you hold. Configuration travels as a `ControlsLike` — anything with
+  `to_dict()`, which is how one signature accepts both `FitControlsVinecop`
+  and `FitControlsTorchVinecop` — while data and callbacks stay explicit
+  arguments.
+- **`fit_edge` is keyword-only, and `VinecopBase.from_data` is the plain
+  factory.** Keyword-only because a subclass that ships its own pair fitter
+  (`TorchVinecop`) must be able to override the factory *compatibly*, and a
+  required second positional would make that impossible; `ty` enforces it.
+  For the same reason `from_data` carries only `fit_edge` / `controls` /
+  `structure` / `var_types`: a **non-simplified** or covariate-driven fit is
+  built the other way round — construct the vine with its
+  `ConditioningContext`, then call `fit(u, fit_edge=..., x=...)`. `VinecopBase`
+  keeps the array-agnostic engines behind `_fit_parts` / `_select_parts`, which
+  return the loose parts a factory assembles, because `from_data` needs them
+  before an object exists; `_assemble` is the construction hook `from_data`
+  finishes with.
+- **Declare the parts, inherit the fitting.** A base knows how to fit once it
+  knows what its parts *are*: `VinecopBase.bicop_class` names the pair copula
+  it fits, and `VinedistBase.vinecop_class` / `margin_class` name its two
+  halves. Naming them is what makes `from_data` work with no callback — a part
+  class is itself a fitter, since `fit` / `from_data` exist on every base — and
+  what lets `VinecopBase.select` refuse a pair copula without `flip` *before*
+  it reads the data. `None` means the object only ever hosts parts it is
+  handed, and fitting then needs an explicit `fit_edge`.
+- **`get_pair_copula` reads, `set_pair_copulas` writes, and only the first is
+  abstract.** Reading is required to *evaluate*, which every subclass does;
+  writing is required only to *fit*, so a vine that merely hosts pairs — or an
+  immutable one — stays valid without it, and `set_pair_copulas` reports its
+  own absence instead. Same rule as `MarginBase.fit`. Neither has an
+  underscore-prefixed twin: a public wrapper over a private hook bought
+  nothing and is gone.
+- **A vine's controls *are* pair controls.** `FitControlsVinecop` derives from
+  `FitControlsBicop` — the binding declares the C++ inheritance, as it does for
+  `CVineStructure` — and `FitControlsTorchVinecop` from
+  `FitControlsTorchBicop`. So one controls object configures both halves of a
+  vine fit: a vine reads the settings it owns and the rest reach its pair
+  copulas unchanged, with no nested object and no accessor. That is also how
+  observation weights get to both halves.
+
 - **Custom margins (`pyvinecopulib.core`).** Subclass `MarginBase` and
   define `pdf` / `cdf`; `icdf`, `logpdf`, `cdf_left`, `loglik`,
   `sample` and `support` come with it. Add `fit(y, weights=None) ->
@@ -1244,6 +1345,24 @@ Round-trip / parity properties to preserve when touching numerics:
   `gammaincc(k, μ)`, a categorical's `cumsum(probs)[k-1]`): the derived
   `cdf(x) - pdf(x)` cancels in the right tail and `cdf(x - 1)` is
   meaningless off an integer lattice.
+- **Custom vine distributions (`pyvinecopulib.core`).** Subclass
+  `VinedistBase` and you have the whole data-scale surface immediately —
+  evaluation needs no hook, because a vine distribution is determined by its
+  two halves. Making it *fittable* is mostly a declaration: name
+  `vinecop_class` and `margin_class` and `from_data` runs the two-step (IFM)
+  estimator itself, in the base, leaving `_coerce_fit_data` the only real hook
+  because the torch lane resolves a device and dtype before any part exists.
+  Override `_fit_copula` when a lane needs its own step — `Vinedist` writes
+  `weights` into a copy of the controls there. `supports_weighted_copula` is
+  `False` on the base for that reason: the inherited `_fit_copula` has only the
+  part class and the caller's controls, so it *cannot* weight the copula, and a
+  lane declares the capability together with the override that honors it.
+  `supports_fit_covariates` works the same way. Declaring one a lane cannot
+  honor is what produces a half-applied fit — margins weighted, copula not —
+  so the request is refused up front instead. `Vinedist` (NumPy + compiled
+  `Vinecop`) and `TorchVinedist` are the two reference subclasses; implement
+  `VinedistLike` directly for an immutable / functional distribution.
+
 - **Another ecosystem's distributions (`pyvinecopulib.margins`).** Call
   `register_margin_adapter(predicate, adapter)` — from a package or a
   notebook cell — rather than editing `_adapters.py`. That is what keeps

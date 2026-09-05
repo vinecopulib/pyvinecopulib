@@ -125,7 +125,7 @@ def test_the_parts_are_registered_children(dist: TorchVinedist) -> None:
   assert {f"_margins.{j}.{p}" for j in range(3) for p in ("loc", "scale")} <= (
     keys
   )
-  assert any(key.startswith("_copula.") for key in keys)
+  assert any(key.startswith("_vinecop.") for key in keys)
   assert {name for name, _ in dist.named_parameters()} == {
     f"_margins.{j}.{p}" for j in range(3) for p in ("loc", "scale")
   }
@@ -154,7 +154,7 @@ def test_state_dict_round_trip_and_no_derived_cache_leak(
   keys_before = set(dist.state_dict())
   dist.pdf(x)
   dist.rosenblatt(x)
-  dist.copula.pdf(dist.marginal_cdf(x), batched=True)
+  widen(dist.vinecop).pdf(dist.marginal_cdf(x), batched=True)
   assert set(dist.state_dict()) == keys_before
 
   fresh = TorchVinedist(
@@ -320,7 +320,7 @@ def test_from_data_fits_end_to_end_in_torch(data: np.ndarray) -> None:
   y = torch.as_tensor(data, dtype=torch.float64)
   dist = TorchVinedist.from_data(y)
 
-  assert isinstance(dist.copula, TorchVinecop)
+  assert isinstance(dist.vinecop, TorchVinecop)
   assert all(isinstance(m, TorchKde1d) for m in dist.margins)
   assert dist.var_types == ["c"] * y.shape[1]
 
@@ -328,12 +328,38 @@ def test_from_data_fits_end_to_end_in_torch(data: np.ndarray) -> None:
   assert logpdf.shape == (32,)
   assert bool(torch.isfinite(logpdf).all())
   # The Sklar identity, on the object's own terms.
-  manual = torch.log(dist.copula.pdf(dist.marginal_cdf(y[:32])))
+  manual = torch.log(dist.vinecop.pdf(dist.marginal_cdf(y[:32])))
   for j, margin in enumerate(dist.margins):
     # `logpdf` is an optional capability, not a protocol member.
     lifted: Any = margin
     manual = manual + lifted.logpdf(y[:32, j])
   torch.testing.assert_close(logpdf, manual, rtol=1e-10, atol=1e-10)
+
+
+def test_from_data_refuses_a_family_set_it_cannot_search(
+  data: np.ndarray,
+) -> None:
+  """`TorchKde1d` reads no controls, so a `family_set` must be a refusal.
+
+  Answering a parametric request with a kernel density is the silent downgrade
+  the weights contract already refuses. The margin declares that it cannot
+  search, which is what turns the request into an error -- introspection cannot
+  answer it, since the fit accepts a `controls` argument either way.
+  """
+  from pyvinecopulib.margins import FitControlsMargin
+
+  assert not TorchKde1d.supports_controls
+  with pytest.raises(TypeError, match="cannot select a family"):
+    TorchVinedist.from_data(
+      torch.as_tensor(data, dtype=_F64),
+      margin_controls=FitControlsMargin(family_set=["gamma"]),
+    )
+  # A declared type or support is a *default*, so it is still honored.
+  fitted = TorchVinedist.from_data(
+    torch.as_tensor(data, dtype=_F64),
+    margin_controls=FitControlsMargin(support=(-10.0, 10.0)),
+  )
+  assert all(isinstance(m, TorchKde1d) for m in fitted.margins)
 
 
 def test_from_data_refuses_covariates(data: np.ndarray) -> None:
@@ -397,7 +423,7 @@ def test_holds_margins_with_atoms() -> None:
   )
   assert np.array_equal(
     np.asarray(cop.structure.matrix),
-    np.asarray(dist.copula.structure.matrix),
+    np.asarray(dist.vinecop.structure.matrix),
   )
   expected = np.log(np.asarray(cop.pdf(u_np)))
   for j, margin in enumerate(dist.margins):

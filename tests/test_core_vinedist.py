@@ -16,9 +16,16 @@ import numpy as np
 import pytest
 
 import pyvinecopulib as pv
-from pyvinecopulib.core import Kde1d, MarginBase, Vinedist
-from pyvinecopulib.margins import MarginSelector
+from pyvinecopulib.core import (
+  Kde1d,
+  MarginBase,
+  Vinedist,
+  VinedistBase,
+  VinedistLike,
+)
+from pyvinecopulib.margins import FitControlsMargin, SciPyMargin
 
+from .helpers import widen
 from .conftest import GaussianBicop, HostedVinecop
 
 # The discrete cascade owns these; the end-to-end test at the bottom reuses them
@@ -56,7 +63,7 @@ def _sklar_logpdf(dist: Any, y: np.ndarray) -> np.ndarray:
   atom. Pinning it rather than only finiteness is what makes a change to the
   discrete branch visible: `logpdf` stays finite through a wrong quotient.
   """
-  manual = np.log(np.asarray(dist.copula.pdf(dist._u_layout(y))))
+  manual = np.log(np.asarray(dist.vinecop.pdf(dist.copula_layout(y))))
   for j, m in enumerate(dist.margins):
     manual = manual + np.log(np.asarray(m.pdf(y[:, j])))
   return manual
@@ -112,7 +119,7 @@ def test_sample_conditional_matches_the_copula_scale(
   bit rather than in distribution.
   """
   dist = pv.Vinedist.from_data(continuous, margins="kde")
-  tail = int(dist.copula.structure.order[-1])
+  tail = int(dist.vinecop.structure.order[-1])
   y_cond = np.full((7, 1), float(np.median(continuous[:, tail - 1])))
 
   got = dist.sample_conditional(y_cond, seeds=[1, 2, 3])
@@ -120,7 +127,7 @@ def test_sample_conditional_matches_the_copula_scale(
   margin: Any = dist.margins[tail - 1]
   u_cond = np.asarray(margin.cdf(y_cond[:, 0])).reshape(-1, 1)
   reference = dist.marginal_icdf(
-    np.asarray(dist.copula.sample_conditional(u_cond, seeds=[1, 2, 3]))
+    np.asarray(widen(dist.vinecop).sample_conditional(u_cond, seeds=[1, 2, 3]))
   )
   np.testing.assert_array_equal(got, reference)
 
@@ -181,11 +188,7 @@ def test_sample_conditional_validates_its_arguments(
 
 
 def test_margin_summary_has_a_row_per_variable(data: np.ndarray) -> None:
-  """Every variable is described, whether its margin selected a family or not.
-
-  `selection_report` covers only margins that *chose*, so an all-fixed
-  distribution reports nothing there and everything here.
-  """
+  """Every variable is described, whether its margin chose a family or not."""
   dist = pv.Vinedist.from_data(
     data, margins=["kde", stats.norm(0.0, 1.0), stats.poisson(3.0)]
   )
@@ -197,7 +200,6 @@ def test_margin_summary_has_a_row_per_variable(data: np.ndarray) -> None:
   # fit to report, and says so with None rather than a number.
   assert isinstance(rows[0]["loglik"], float)
   assert rows[1]["loglik"] is None
-  assert dist.selection_report() == []
 
 
 # --- discrete margins ------------------------------------------------------- #
@@ -207,7 +209,7 @@ def test_discrete_margin_builds_the_compact_layout(data: np.ndarray) -> None:
   """One extra column per variable with atoms, appended after the first block."""
   dist = pv.Vinedist.from_data(data, margins=["kde", "kde", stats.poisson(3.0)])
   assert dist.var_types == ["c", "c", "d"]
-  layout: Any = dist._u_layout(data)
+  layout: Any = dist.copula_layout(data)
   assert layout.shape == (data.shape[0], 4)
   # The first block is the cdf values; the trailing column is the left limit.
   np.testing.assert_allclose(layout[:, :3], dist.marginal_cdf(data), atol=1e-12)
@@ -224,7 +226,7 @@ def test_all_discrete_margins(data: np.ndarray) -> None:
     counts, margins=[stats.poisson(1.0), stats.poisson(2.0), stats.poisson(1.0)]
   )
   assert dist.var_types == ["d", "d", "d"]
-  assert dist._u_layout(counts).shape == (counts.shape[0], 6)
+  assert dist.copula_layout(counts).shape == (counts.shape[0], 6)
   np.testing.assert_allclose(
     dist.logpdf(counts), _sklar_logpdf(dist, counts), atol=0.0
   )
@@ -261,7 +263,7 @@ def test_copula_data_needs_no_copula(data: np.ndarray) -> None:
   # Which is exactly the workflow of fitting your own copula and wrapping it.
   copula = pv.Vinecop.from_data(layout, var_types=["c", "c", "d"])
   dist = pv.Vinedist(copula, margins)
-  np.testing.assert_array_equal(layout, dist._u_layout(data))
+  np.testing.assert_array_equal(layout, dist.copula_layout(data))
 
 
 def test_left_limit_above_the_cdf_is_refused() -> None:
@@ -288,7 +290,7 @@ def test_left_limit_above_the_cdf_is_refused() -> None:
   layout = np.column_stack([u, u * 0.9])
   copula = pv.Vinecop.from_data(layout, var_types=["d", "d"])
   with pytest.raises(ValueError, match="cdf_left > cdf"):
-    pv.Vinedist(copula, [_Broken(), _Broken()])._u_layout(
+    pv.Vinedist(copula, [_Broken(), _Broken()]).copula_layout(
       np.ones((5, 2), dtype=float)
     )
 
@@ -311,10 +313,10 @@ def test_margins_may_mix_fitted_and_unfitted(continuous: np.ndarray) -> None:
 def test_margins_mapping_is_keyed_by_name(continuous: np.ndarray) -> None:
   """A mapping addresses variables by name over a default."""
   dist = pv.Vinedist.from_data(
-    continuous, margins={"b": MarginSelector()}, names=["a", "b"]
+    continuous, margins={"b": SciPyMargin()}, names=["a", "b"]
   )
   assert isinstance(dist.margins[0], Kde1d)
-  assert isinstance(dist.margins[1], MarginSelector)
+  assert isinstance(dist.margins[1], SciPyMargin)
 
 
 def test_margins_mapping_rejects_an_unknown_name(
@@ -387,7 +389,13 @@ def _needs_fitting() -> Any:
       return False
 
     def fit(
-      self, y: Any, *, x: Optional[Any] = None, weights: Any = None
+      self,
+      y: Any,
+      /,
+      controls: Any = None,
+      *,
+      x: Optional[Any] = None,
+      weights: Any = None,
     ) -> Any:
       return self
 
@@ -459,7 +467,16 @@ def test_repr_names_the_margin_families(continuous: np.ndarray) -> None:
   assert repr(dist) == "Vinedist(dim=2, margins=[kde1d, kde1d])"
 
 
-# --- selection reporting ---------------------------------------------------- #
+# --- family selection ------------------------------------------------------- #
+
+
+def _families(dist: Any) -> list[str]:
+  """The family each margin settled on.
+
+  Read off `Any`: `family_name` is an optional capability rather than part of
+  the margin contract.
+  """
+  return [margin.family_name for margin in dist.margins]
 
 
 def test_from_data_reads_dataframe_column_names(data: np.ndarray) -> None:
@@ -470,32 +487,175 @@ def test_from_data_reads_dataframe_column_names(data: np.ndarray) -> None:
   assert dist.dim == 3
 
 
-def test_selection_report_names_each_variable(data: np.ndarray) -> None:
-  """Report rows identify their variable, so a multi-column table is readable."""
+def test_parametric_margins_choose_a_family_per_variable(
+  data: np.ndarray,
+) -> None:
+  """Each variable's family is chosen from its own column, not from the first.
+
+  The first column is normal and the second is the exponential of one, so the
+  two land in different support groups from the same call -- and
+  `margin_summary` is what makes that readable, one row per variable.
+  """
   dist = pv.Vinedist.from_data(
     data[:, :2], margins="parametric", names=["real", "positive"]
   )
-  report = dist.selection_report()
-  assert report
-  assert {row["column"] for row in report} == {"real", "positive"}
-  selected = {row["column"] for row in report if row["selected"]}
-  assert selected == {"real", "positive"}
+  assert all(isinstance(m, SciPyMargin) for m in dist.margins)
+  rows = dist.margin_summary()
+  assert [row["variable"] for row in rows] == [0, 1]
+  assert [row["family"] for row in rows] == ["norm", "lognorm"]
 
 
-def test_selection_report_is_empty_without_a_selector(data: np.ndarray) -> None:
-  """Margins that were given rather than selected contribute no rows."""
-  assert pv.Vinedist.from_data(data).selection_report() == []
-
-
-def test_from_data_leaves_the_caller_s_specification_alone(
-  data: np.ndarray,
+def test_from_data_honors_a_named_family_and_chooses_an_unnamed_one(
+  continuous: np.ndarray,
 ) -> None:
-  """Naming a selector must not mutate an object the caller still holds."""
-  selector = MarginSelector(candidates=["norm", "logistic"])
-  dist = pv.Vinedist.from_data(data[:, :1], margins=[selector], names=["real"])
-  assert selector.name is None
-  assert list(selector.report_) == []
-  assert dist.selection_report()[0]["column"] == "real"
+  """A named family is what the caller asked for; `from_data` keeps it.
+
+  The second column is lognormal, so the two spellings separate here: naming
+  `norm` for it gets a normal, and leaving the family out gets the search.
+  """
+  named = pv.Vinedist.from_data(
+    continuous, margins=[SciPyMargin("norm"), SciPyMargin("norm")]
+  )
+  assert _families(named) == ["norm", "norm"]
+
+  chosen = pv.Vinedist.from_data(
+    continuous, margins=[SciPyMargin(), SciPyMargin()]
+  )
+  assert _families(chosen) == ["norm", "lognorm"]
+
+
+def test_fit_keeps_the_family_where_select_replaces_it(
+  continuous: np.ndarray,
+) -> None:
+  """The data-scale analog of `Vinecop.fit` versus `Vinecop.select`.
+
+  Both verbs keep a family the caller named, since naming it is the choice.
+  What separates them is `family_set`: it asks `select` to search again, and
+  `fit` has nothing to search with.
+  """
+  margins = [SciPyMargin("norm").fit(continuous[:, j]) for j in range(2)]
+  # Already fitted, so `from_data` leaves both alone and the wrong family on
+  # the second column survives to be re-estimated below.
+  dist = pv.Vinedist.from_data(continuous, margins=margins)
+  assert _families(dist) == ["norm", "norm"]
+
+  wider = FitControlsMargin(family_set=["norm", "lognorm"])
+  assert _families(dist.fit(continuous, None, wider)) == ["norm", "norm"]
+  assert _families(dist.select(continuous, None, wider)) == [
+    "norm",
+    "lognorm",
+  ]
+
+
+def test_a_margin_given_per_variable_is_fitted_in_place(
+  continuous: np.ndarray,
+) -> None:
+  """One margin per variable is the caller's own object, estimated in place.
+
+  A margin is both the specification and the fitted object, so the sequence
+  form hands ownership over -- unlike the broadcast form, which has to copy.
+  """
+  spec = SciPyMargin()
+  dist = pv.Vinedist.from_data(continuous, margins=[spec, "kde"])
+  assert dist.margins[0] is spec
+  assert spec.is_fitted and spec.family_name == "norm"
+
+
+@pytest.mark.parametrize(
+  ("spec", "expected"),
+  [
+    (FitControlsMargin(family_set=["logistic"]), ["logistic", "logistic"]),
+    (
+      [
+        FitControlsMargin(family_set=["norm"]),
+        FitControlsMargin(family_set=["logistic"]),
+      ],
+      ["norm", "logistic"],
+    ),
+    (
+      {"positive": FitControlsMargin(family_set=["logistic"])},
+      ["norm", "logistic"],
+    ),
+    ({1: FitControlsMargin(family_set=["logistic"])}, ["norm", "logistic"]),
+  ],
+  ids=["broadcast", "sequence", "by-name", "by-index"],
+)
+def test_margin_controls_are_resolved_per_variable(
+  continuous: np.ndarray, spec: Any, expected: list[str]
+) -> None:
+  """`margin_controls` follows `margins`' own resolution rules, form for form.
+
+  A mapping configures the variables it addresses and leaves the rest to the
+  curated search, which is what lets one call constrain the one variable whose
+  family is known.
+  """
+  dist = pv.Vinedist.from_data(
+    continuous,
+    margins="parametric",
+    margin_controls=spec,
+    names=["real", "positive"],
+  )
+  assert _families(dist) == expected
+
+
+def test_margin_controls_bound_the_default_kde_margin(
+  continuous: np.ndarray,
+) -> None:
+  """A declared support reaches a margin the library itself constructs.
+
+  Which is what makes a bounded default reachable without naming a class: the
+  second column is positive, and an unbounded kernel density pads its grid past
+  zero, so the draws go where nothing can occur.
+  """
+  plain = pv.Vinedist.from_data(continuous)
+  bounded = pv.Vinedist.from_data(
+    continuous, margin_controls={1: FitControlsMargin(support=(0.0, None))}
+  )
+  margin: Any = bounded.margins[1]
+  assert isinstance(margin, Kde1d) and margin.xmin == 0.0
+  assert plain.sample(500, seeds=[1, 2, 3])[:, 1].min() < 0.0
+  assert bounded.sample(500, seeds=[1, 2, 3])[:, 1].min() >= 0.0
+
+
+def test_margin_controls_resolution_is_refused_by_name(
+  continuous: np.ndarray,
+) -> None:
+  """A misresolved marginal configuration says which argument it came from."""
+  with pytest.raises(ValueError, match="margin_controls mapping names 'z'"):
+    pv.Vinedist.from_data(
+      continuous,
+      margin_controls={"z": FitControlsMargin()},
+      names=["a", "b"],
+    )
+  with pytest.raises(ValueError, match="margin_controls has length 1"):
+    pv.Vinedist.from_data(continuous, margin_controls=[FitControlsMargin()])
+
+
+def test_margin_controls_fallback_substitutes_a_kde_margin(
+  continuous: np.ndarray,
+) -> None:
+  """An impossible family set fails loudly, or falls back once and says so.
+
+  `beta` lives on the unit interval, so neither column admits it. Answering a
+  parametric request nonparametrically is a downgrade the caller has to ask
+  for, which is why the default is the refusal.
+  """
+  with pytest.raises(ValueError, match="no parametric family fits"):
+    pv.Vinedist.from_data(
+      continuous,
+      margins="parametric",
+      margin_controls=FitControlsMargin(family_set=["beta"]),
+    )
+
+  with pytest.warns(UserWarning, match="kernel-density margin was substituted"):
+    fallen_back = pv.Vinedist.from_data(
+      continuous,
+      margins="parametric",
+      margin_controls=FitControlsMargin(
+        family_set=["beta"], on_failure="fallback"
+      ),
+    )
+  assert all(isinstance(m, Kde1d) for m in fallen_back.margins)
 
 
 # --- exogenous covariates ---------------------------------------------------- #
@@ -524,7 +684,7 @@ class _ConditionalVine(HostedVinecop):
   supports_covariates = True
 
 
-def _conditional_dist() -> tuple[Vinedist[np.ndarray], GaussianBicop]:
+def _conditional_dist() -> tuple[Vinedist, GaussianBicop]:
   """Two conditional-normal margins and one externally conditional pair."""
   pair = GaussianBicop(scale=0.7, rho_max=0.75)
   structure = pv.RVineStructure.from_order([1, 2])
@@ -683,7 +843,13 @@ def test_from_data_fits_conditional_margins_on_the_covariates() -> None:
       return False
 
     def fit(
-      self, data: Any, *, x: Optional[Any] = None, weights: Any = None
+      self,
+      data: Any,
+      /,
+      controls: Any = None,
+      *,
+      x: Optional[Any] = None,
+      weights: Any = None,
     ) -> Any:
       seen.append(x)
       return self
@@ -749,8 +915,8 @@ def test_explicit_weights_override_controls_weights() -> None:
     controls=controls,
   )
   np.testing.assert_allclose(
-    got.copula.get_pair_copula(0, 0).parameters,
-    reference.copula.get_pair_copula(0, 0).parameters,
+    widen(got.vinecop).get_pair_copula(0, 0).parameters,
+    widen(reference.vinecop).get_pair_copula(0, 0).parameters,
     rtol=0.0,
     atol=0.0,
   )
@@ -810,7 +976,6 @@ def test_json_round_trip_is_exact_for_every_shipped_margin(unique_json_path):
   store a model; the objects this release adds had only `pickle`.
   """
   pytest.importorskip("scipy")
-  from pyvinecopulib.margins import MarginSelector, ParametricMargin
 
   rng = np.random.default_rng(0)
   cov = [[1.0, 0.7, 0.3], [0.7, 1.0, 0.5], [0.3, 0.5, 1.0]]
@@ -818,9 +983,9 @@ def test_json_round_trip_is_exact_for_every_shipped_margin(unique_json_path):
   q = x[:6]
   specs = {
     "default": None,
-    "parametric": [ParametricMargin("norm") for _ in range(3)],
-    "selector": [MarginSelector() for _ in range(3)],
-    "mixed": [pv.core.Kde1d(), ParametricMargin("norm"), MarginSelector()],
+    "parametric": [SciPyMargin("norm") for _ in range(3)],
+    "selected": [SciPyMargin() for _ in range(3)],
+    "mixed": [pv.core.Kde1d(), SciPyMargin("norm"), SciPyMargin()],
   }
   for label, margins in specs.items():
     dist = pv.core.Vinedist.from_data(x, margins=margins)
@@ -852,7 +1017,7 @@ def test_a_margin_without_to_json_is_refused_by_name():
   """A custom margin has to opt in, and is told how."""
   rng = np.random.default_rng(2)
   x = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=300)
-  copula = pv.core.Vinedist.from_data(x).copula
+  copula = pv.core.Vinedist.from_data(x).vinecop
 
   class Unserializable(pv.core.MarginBase):
     def pdf(self, y, x=None):
@@ -872,7 +1037,7 @@ def test_a_registered_custom_margin_round_trips():
   """`register_margin_json` is the documented seam, so it must work."""
   rng = np.random.default_rng(3)
   x = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=300)
-  copula = pv.core.Vinedist.from_data(x).copula
+  copula = pv.core.Vinedist.from_data(x).vinecop
 
   class Uniform(pv.core.MarginBase):
     def pdf(self, y, x=None):
@@ -898,3 +1063,171 @@ def test_an_unknown_margin_kind_and_a_bad_version_both_raise():
     margin_from_json({"kind": "NotAMargin", "version": 1})
   with pytest.raises(ValueError, match="unsupported margin JSON version"):
     margin_from_json({"kind": "Kde1d", "version": 999})
+
+
+# ---------------------------------------------------------------------------
+# The extension-point triad: VinedistLike / VinedistBase / Vinedist
+# ---------------------------------------------------------------------------
+
+
+def test_both_shipped_distributions_satisfy_the_contract() -> None:
+  # The contract is what downstream code types against, so both routes must
+  # satisfy it -- and the sklearn backend layer returns it from
+  # `bind_distribution`.
+  copula = pv.Vinecop.from_data(
+    pv.utils.to_pseudo_obs(np.random.default_rng(0).normal(size=(200, 2)))
+  )
+  dist = Vinedist(copula, [Kde1d().fit(np.zeros(5)), Kde1d().fit(np.zeros(5))])
+  assert isinstance(dist, VinedistLike)
+  assert isinstance(dist, VinedistBase)
+
+
+def test_a_minimal_vinedist_base_subclass_needs_no_hook_to_evaluate(
+  random_state: Any,
+) -> None:
+  # The answer to "what do I subclass to build a new kind of vine
+  # distribution?". Evaluation needs no hook at all: a vine distribution is
+  # determined by its two halves, so installing them is the whole job.
+  class MyDist(VinedistBase[Any]):
+    pass
+
+  y = random_state.normal(size=(300, 3))
+  u = pv.utils.to_pseudo_obs(y)
+  margins = [Kde1d().fit(y[:, j]) for j in range(3)]
+  dist = MyDist(pv.Vinecop.from_data(u), margins)
+
+  assert isinstance(dist, VinedistLike)
+  assert dist.dim == 3
+  assert repr(dist).startswith("MyDist(dim=3")
+  assert np.all(np.isfinite(dist.logpdf(y)))
+  np.testing.assert_allclose(dist.pdf(y), np.exp(dist.logpdf(y)))
+  assert dist.copula_layout(y).shape == (300, 3)
+  # The Rosenblatt round trip holds on the data scale.
+  np.testing.assert_allclose(
+    dist.inverse_rosenblatt(dist.rosenblatt(y)), y, rtol=1e-6, atol=1e-6
+  )
+
+
+def test_a_subclass_without_fit_hooks_refuses_to_fit() -> None:
+  # Fitting is the only namespace-specific half, so it is the only thing that
+  # needs hooks -- and their absence is reported, not guessed around.
+  class MyDist(VinedistBase[Any]):
+    pass
+
+  with pytest.raises(NotImplementedError, match="_coerce_fit_data"):
+    MyDist.from_data(np.random.default_rng(0).normal(size=(50, 2)))
+
+
+def test_base_from_json_names_the_concrete_route() -> None:
+  class MyDist(VinedistBase[Any]):
+    pass
+
+  with pytest.raises(NotImplementedError, match="from_json is not defined"):
+    MyDist.from_json("{}")
+
+
+def test_copula_var_types_dispatches_through_the_subclass() -> None:
+  # `copula_data` used to reach `Vinedist.copula_var_types` by name, which
+  # silently bypassed an override; it goes through `cls` now.
+  seen: list[int] = []
+
+  class Counting(Vinedist):
+    @classmethod
+    def copula_var_types(cls, margins: Any) -> list[str]:
+      seen.append(1)
+      return super().copula_var_types(margins)
+
+  Counting.copula_data([Kde1d().fit(np.zeros(5))], np.zeros((3, 1)))
+  assert seen, "copula_data must dispatch copula_var_types through `cls`"
+
+
+def test_a_vinedist_base_subclass_fits_from_declared_parts(
+  random_state: Any,
+) -> None:
+  # The payoff of naming the parts: a subclass declares which classes its two
+  # halves are and inherits the whole two-step fit, with no hook but the array
+  # coercion.
+  class MyDist(VinedistBase[Any]):
+    vinecop_class = pv.Vinecop
+    margin_class = Kde1d
+
+    @classmethod
+    def _coerce_fit_data(cls, y: Any, weights: Any, controls: Any) -> Any:
+      return np.asarray(y, dtype=float), weights
+
+  y = random_state.normal(size=(400, 3))
+  dist = MyDist.from_data(y)
+  assert isinstance(dist, VinedistLike)
+  assert isinstance(dist.vinecop, pv.Vinecop)
+  assert all(isinstance(m, Kde1d) for m in dist.margins)
+  assert np.all(np.isfinite(dist.logpdf(y)))
+  assert repr(dist).startswith("MyDist(dim=3")
+
+
+def test_a_subclass_that_declares_only_its_parts_refuses_weights() -> None:
+  """The inherited `_fit_copula` cannot weight the copula, so it must not try.
+
+  It has the part class and the caller's controls and nothing else, so applying
+  the weights is not something it can do -- and weighting the margins alone is
+  not the weighted fit of anything. `Vinedist` overrides the hook and declares
+  the capability; the base does neither.
+  """
+
+  class MyDist(VinedistBase[Any]):
+    vinecop_class = pv.Vinecop
+    margin_class = Kde1d
+
+    @classmethod
+    def _coerce_fit_data(cls, y: Any, weights: Any, controls: Any) -> Any:
+      return np.asarray(y, dtype=float), weights
+
+  assert not MyDist.supports_weighted_copula
+  assert Vinedist.supports_weighted_copula
+
+  rng = np.random.default_rng(7)
+  y = rng.normal(size=(200, 3))
+  w = rng.uniform(0.5, 2.0, size=200)
+  with pytest.raises(ValueError, match="cannot weight the copula half"):
+    MyDist.from_data(y, weights=w)
+  # Unweighted still fits end to end.
+  assert np.all(np.isfinite(MyDist.from_data(y).logpdf(y)))
+
+
+def test_declaring_no_vinecop_class_reports_it() -> None:
+  class MyDist(VinedistBase[Any]):
+    @classmethod
+    def _coerce_fit_data(cls, y: Any, weights: Any, controls: Any) -> Any:
+      return np.asarray(y, dtype=float), weights
+
+  with pytest.raises(NotImplementedError, match="vinecop_class"):
+    MyDist.from_data(np.random.default_rng(0).normal(size=(60, 2)))
+
+
+def test_vinedist_refuses_torch_parts() -> None:
+  # The mirror of `TorchVinedist` refusing a NumPy copula: this class
+  # evaluates on NumPy, so a torch part would be detached from its graph.
+  torch_mod = pytest.importorskip("pyvinecopulib.torch")
+  u = pv.utils.to_pseudo_obs(np.random.default_rng(0).normal(size=(200, 2)))
+  copula = pv.Vinecop.from_data(u)
+  margins = [Kde1d().fit(np.zeros(5)), Kde1d().fit(np.zeros(5))]
+
+  lifted = torch_mod.TorchVinecop.from_vinecop(copula)
+  with pytest.raises(TypeError, match="TorchVinedist"):
+    Vinedist(lifted, margins)
+
+  # And a torch margin, on an otherwise fine NumPy copula.
+  with pytest.raises(TypeError, match="TorchVinedist"):
+    Vinedist(copula, [torch_mod.TorchKde1d(), torch_mod.TorchKde1d()])
+
+
+def test_weights_reach_both_halves_on_the_numpy_lane(
+  random_state: Any,
+) -> None:
+  # The copula half is weighted now, not merely the margins, so the two
+  # weightings give different models.
+  y = random_state.normal(size=(500, 3))
+  w = random_state.uniform(0.1, 2.0, 500)
+  plain = Vinedist.from_data(y)
+  weighted = Vinedist.from_data(y, weights=w)
+  assert Vinedist.supports_weighted_copula
+  assert not np.allclose(plain.logpdf(y), weighted.logpdf(y))

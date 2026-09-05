@@ -474,25 +474,39 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
       .def_prop_ro("nobs", &Vinecop::get_nobs, vinecop_doc.get_nobs.doc)
       .def_prop_ro("threshold", &Vinecop::get_threshold,
                    vinecop_doc.get_threshold.doc)
+      // `fit` and `select` hand the object back so they compose like every
+      // other estimator in the package. The GIL is released around the fit
+      // itself rather than by a call guard, because handing back the object
+      // needs it. `fit` takes its thread count from the controls it is given,
+      // which already carry one, rather than from a second argument that could
+      // disagree with it.
       .def(
           "select",
           [](Vinecop& self, const Eigen::MatrixXd& data,
-             const FitControlsVinecop* controls) {
-            self.select(data,
-                        controls ? *controls : default_vinecop_controls());
+             const FitControlsVinecop* controls) -> Vinecop& {
+            {
+              nb::gil_scoped_release release;
+              self.select(data,
+                          controls ? *controls : default_vinecop_controls());
+            }
+            return self;
           },
           "data"_a, "controls"_a.sig("FitControlsVinecop()") = nb::none(),
-          vinecop_doc.select.doc, nb::call_guard<nb::gil_scoped_release>())
+          vinecop_doc.select.doc, nb::rv_policy::reference_internal)
       .def(
           "fit",
           [](Vinecop& self, const Eigen::MatrixXd& data,
-             const FitControlsBicop* controls, size_t num_threads) {
-            self.fit(data, controls ? *controls : default_bicop_controls(),
-                     num_threads);
+             const FitControlsBicop* controls) -> Vinecop& {
+            {
+              nb::gil_scoped_release release;
+              const FitControlsBicop& resolved =
+                  controls ? *controls : default_bicop_controls();
+              self.fit(data, resolved, resolved.get_num_threads());
+            }
+            return self;
           },
           "data"_a, "controls"_a.sig("FitControlsBicop()") = nb::none(),
-          "num_threads"_a = 1, vinecop_doc.fit.doc,
-          nb::call_guard<nb::gil_scoped_release>())
+          vinecop_doc.fit.doc, nb::rv_policy::reference_internal)
       // `parameters` (optional) selects the per-observation-parameter overload:
       // an n x npars matrix, one full-vine parameter vector per row, columns in
       // the (tree, edge, parameter) order of `scores()`. Continuous,

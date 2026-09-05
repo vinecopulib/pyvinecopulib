@@ -20,7 +20,7 @@ import pyvinecopulib as pv
 from pyvinecopulib.core import MarginLike
 from pyvinecopulib.core import Kde1d
 from pyvinecopulib.margins import (
-  ParametricMargin,
+  SciPyMargin,
   as_margin,
   register_margin_adapter,
   resolve_margins,
@@ -161,6 +161,33 @@ def test_resolve_margins_falls_back_to_the_given_default() -> None:
   assert resolve_margins(None, 2, default=default)[0].type == "discrete"
 
 
+def test_resolve_margins_defers_a_default_no_variable_needs() -> None:
+  """A specification naming every variable must not build the default at all.
+
+  The `default` parameter documents this, and it matters because building one
+  can legitimately raise -- the sklearn estimators pass a callable that reads
+  the variable types off the data, and `Kde1d` refuses a categorical whose
+  levels are not integers. Every branch has to honor it, mapping included.
+  """
+  calls = {"n": 0}
+
+  def default() -> Any:
+    calls["n"] += 1
+    raise AssertionError("built a default no variable needed")
+
+  assert len(resolve_margins({0: Kde1d(), 1: Kde1d()}, 2, default=default)) == 2
+  assert len(resolve_margins([Kde1d(), Kde1d()], 2, default=default)) == 2
+  assert len(resolve_margins(Kde1d(), 2, default=default)) == 2
+  assert len(resolve_margins("kde", 2, default=default)) == 2
+  assert calls["n"] == 0
+
+  # And it *is* built when a variable is genuinely left over.
+  resolved = resolve_margins(
+    {0: Kde1d()}, 2, default=lambda: [Kde1d(), Kde1d(type="discrete")]
+  )
+  assert resolved[1].type == "discrete"
+
+
 def test_resolve_margins_checks_the_default_length() -> None:
   """A default is per variable, so its length is checked like a sequence's."""
   with pytest.raises(ValueError, match="default has length 1"):
@@ -185,7 +212,7 @@ def test_callable_margin_specifications_receive_weights() -> None:
 
   def make_margin(y: Any, **kwargs: Any) -> Any:
     seen.append(kwargs)
-    return ParametricMargin("norm", (float(np.mean(y)), 1.0))
+    return SciPyMargin("norm", (float(np.mean(y)), 1.0))
 
   rng = np.random.default_rng(8)
   data = rng.normal(size=(40, 2))
@@ -339,7 +366,7 @@ def test_register_margin_adapter_takes_precedence() -> None:
     pass
 
   sentinel = _Sentinel()
-  target = ParametricMargin("norm", (0.0, 1.0))
+  target = SciPyMargin("norm", (0.0, 1.0))
   register_margin_adapter(lambda o: isinstance(o, _Sentinel), lambda o: target)
   assert as_margin(sentinel) is target
 

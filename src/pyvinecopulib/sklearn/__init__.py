@@ -27,9 +27,8 @@ accepts: an alias (``"kde"``, the default,
 ``"parametric"``), one margin broadcast to every column, a per-column
 sequence, a mapping keyed by feature name, or a callable. Fitting
 assembles both halves into a :class:`pyvinecopulib.core.Vinedist`,
-published as ``distribution_``; ``margin_summary_`` describes the
-margin each variable ended up with, and ``selection_report_`` carries
-the per-candidate table of any margin that chose its own family.
+published as ``distribution_``, and ``margin_summary_`` describes the
+margin each variable ended up with.
 
 **Backends.** By default the estimators run on ``Vinecop`` (the
 default backend), so the sklearn module
