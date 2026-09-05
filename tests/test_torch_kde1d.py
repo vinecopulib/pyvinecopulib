@@ -334,7 +334,7 @@ def test_from_kde1d_refuses_an_unfitted_estimator() -> None:
 
 
 def test_gradients_reach_the_grid_values() -> None:
-  """Opt-in, as `TorchBicop` does with its grid: the density is fitted, not learned."""
+  """Opt-in, as `TorchTllBicop` does with its grid: the density is fitted, not learned."""
   _, lifted, y = _fitted("continuous")
   assert lifted.values.requires_grad is False
   lifted.values.requires_grad_(True)

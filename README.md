@@ -98,7 +98,7 @@ Three opt-in subpackages extend the core library:
   Install with `pip install pyvinecopulib[sklearn]`.
 
 * `pyvinecopulib.torch` — pure-PyTorch evaluators and data-scale modules
-  (`TorchBicop`, `TorchVinecop`, `TorchKde1d`, `TorchMargin`, and
+  (`TorchTllBicop`, `TorchVinecop`, `TorchKde1d`, `TorchDistributionMargin`, and
   `TorchVinedist`) for GPU placement and autograd:
 
   ```python

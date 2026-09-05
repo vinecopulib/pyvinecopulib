@@ -18,7 +18,7 @@ the caller owns registration and nothing here caches: coefficients and cumulativ
 cell integrals are recomputed inside the graph on each call. At ``m = 401`` that
 is microseconds against an ``n``-sized query, and a cache would both freeze the
 gradient and go stale the moment ``values.requires_grad_(True)`` is set --
-the opposite call from ``TorchBicop.cache_integrals``, where the cached quantity
+the opposite call from ``TorchTllBicop.cache_integrals``, where the cached quantity
 is an ``O(m^2)`` two-dimensional integral per query rather than an ``O(m)``
 vector shared by the whole batch.
 """

@@ -1,4 +1,4 @@
-"""Tests for `pyvinecopulib.torch.TorchMargin`.
+"""Tests for `pyvinecopulib.torch.TorchDistributionMargin`.
 
 Skipped without PyTorch. The claims worth pinning are the ones that motivated
 the class rather than the arithmetic, which is torch's:
@@ -29,7 +29,7 @@ import pytest
 torch = pytest.importorskip("torch")
 stats = pytest.importorskip("scipy.stats")
 
-from pyvinecopulib.torch import TorchMargin  # noqa: E402
+from pyvinecopulib.torch import TorchDistributionMargin  # noqa: E402
 from .helpers import widen  # noqa: E402
 
 _D = torch.distributions
@@ -89,9 +89,13 @@ _DISCRETE = {
 }
 
 
-def _normal(loc: float = 0.0, scale: float = 1.0, **kwargs: Any) -> TorchMargin:
+def _normal(
+  loc: float = 0.0, scale: float = 1.0, **kwargs: Any
+) -> TorchDistributionMargin:
   """A normal margin, the workhorse of these tests."""
-  return TorchMargin(_D.Normal, {"loc": loc, "scale": scale}, **kwargs)
+  return TorchDistributionMargin(
+    _D.Normal, {"loc": loc, "scale": scale}, **kwargs
+  )
 
 
 # --- agreement with SciPy --------------------------------------------------- #
@@ -101,7 +105,7 @@ def _normal(loc: float = 0.0, scale: float = 1.0, **kwargs: Any) -> TorchMargin:
 def test_evaluation_matches_scipy(family: str) -> None:
   """`pdf` / `logpdf` / `cdf` / `icdf` agree with the SciPy equivalent."""
   factory, parameters, ref = _FAMILIES[family]
-  margin = TorchMargin(factory, parameters)
+  margin = TorchDistributionMargin(factory, parameters)
   x = ref.ppf(_LEVELS)
   x_t = torch.as_tensor(x, dtype=_F64)
 
@@ -127,7 +131,7 @@ def test_icdf_falls_back_to_bisection(family: str) -> None:
   `cdf`-only column of `torch.distributions` is usable at all.
   """
   factory, parameters, ref = _FAMILIES[family]
-  margin = TorchMargin(factory, parameters)
+  margin = TorchDistributionMargin(factory, parameters)
   with pytest.raises(NotImplementedError):
     margin.distribution.icdf(torch.tensor([0.5], dtype=_F64))
   got = margin.icdf(torch.as_tensor(_LEVELS, dtype=_F64)).detach().numpy()
@@ -138,14 +142,14 @@ def test_icdf_falls_back_to_bisection(family: str) -> None:
 def test_rejects_families_without_a_cdf(family: str) -> None:
   """No `cdf` means no copula scale, and nothing to invert; say so up front."""
   with pytest.raises(NotImplementedError, match="does not implement cdf"):
-    TorchMargin.from_distribution(_NO_CDF[family])
+    TorchDistributionMargin.from_distribution(_NO_CDF[family])
 
 
 @pytest.mark.parametrize("family", sorted(_DISCRETE))
 def test_rejects_discrete_families(family: str) -> None:
   """Discrete margins need a left-limit cdf the torch lane does not carry."""
   with pytest.raises(NotImplementedError, match="continuous-only"):
-    TorchMargin.from_distribution(_DISCRETE[family])
+    TorchDistributionMargin.from_distribution(_DISCRETE[family])
 
 
 # --- the nn.Module half ----------------------------------------------------- #
@@ -212,7 +216,7 @@ def test_state_dict_round_trip() -> None:
 def test_to_device_round_trip(device: str) -> None:
   """`.to()` moves the registered tensors, and the rebuilt object follows.
 
-  ``y`` is built on ``device`` because ``TorchMargin`` hands it straight to
+  ``y`` is built on ``device`` because ``TorchDistributionMargin`` hands it straight to
   ``torch.distributions``, unlike ``TorchVinecop`` / ``TorchVinedist``, which
   coerce their inputs in ``_prep``.
   """
@@ -236,7 +240,7 @@ def test_pickle_round_trip() -> None:
 
 def test_support_follows_the_parameters() -> None:
   """`Uniform` derives its support from its parameters, so it is not cached."""
-  margin = TorchMargin(_D.Uniform, {"low": -1.0, "high": 2.0})
+  margin = TorchDistributionMargin(_D.Uniform, {"low": -1.0, "high": 2.0})
   assert margin.support == (-1.0, 2.0)
   with torch.no_grad():
     widen(margin.high).fill_(5.0)
@@ -246,7 +250,9 @@ def test_support_follows_the_parameters() -> None:
 def test_a_factory_registering_no_parameters_still_evaluates() -> None:
   """A factory closing over its own tensors is placed by construction alone."""
   loc = torch.tensor(0.0, dtype=_F64)
-  margin = TorchMargin(lambda: _D.Normal(loc, torch.tensor(1.0, dtype=_F64)))
+  margin = TorchDistributionMargin(
+    lambda: _D.Normal(loc, torch.tensor(1.0, dtype=_F64))
+  )
   assert margin.parameter_names == ()
   assert margin.state_dict() == {}
   draws = margin.sample(5, seeds=[3])
@@ -268,7 +274,9 @@ def test_gradients_reach_the_parameters() -> None:
 
 def test_gamma_marginal_likelihood_is_differentiable() -> None:
   """A Gamma margin can be fitted by its own likelihood: `log_prob` has grads."""
-  margin = TorchMargin(_D.Gamma, {"concentration": 2.0, "rate": 1.0})
+  margin = TorchDistributionMargin(
+    _D.Gamma, {"concentration": 2.0, "rate": 1.0}
+  )
   margin.logpdf(torch.tensor([0.5, 1.5], dtype=_F64)).sum().backward()
   assert widen(margin.concentration).grad is not None
   assert torch.isfinite(widen(margin.concentration).grad).all()
@@ -286,13 +294,15 @@ def test_gamma_marginal_likelihood_is_differentiable() -> None:
 )
 def test_gamma_shape_gradient_through_the_copula_scale() -> None:
   """Optimizing a Gamma margin through `cdf` — the copula scale — cannot work."""
-  margin = TorchMargin(_D.Gamma, {"concentration": 2.0, "rate": 1.0})
+  margin = TorchDistributionMargin(
+    _D.Gamma, {"concentration": 2.0, "rate": 1.0}
+  )
   margin.cdf(torch.tensor([0.5, 1.5], dtype=_F64)).sum().backward()
 
 
 def test_gamma_cdf_is_differentiable_in_its_argument() -> None:
   """What does work: the derivative in the data, which is the density."""
-  margin = TorchMargin(
+  margin = TorchDistributionMargin(
     _D.Gamma, {"concentration": 2.0, "rate": 1.0}, trainable=False
   )
   x = torch.tensor([0.5, 1.5], dtype=_F64, requires_grad=True)
@@ -343,7 +353,10 @@ def test_loglik_sums_the_log_density() -> None:
 
 def test_repr_names_the_family_and_its_parameters() -> None:
   """The repr has to survive a grad-tracking parameter without detaching it."""
-  assert repr(_normal(0.3, 1.4)) == "TorchMargin(Normal(loc=0.3, scale=1.4))"
+  assert (
+    repr(_normal(0.3, 1.4))
+    == "TorchDistributionMargin(Normal(loc=0.3, scale=1.4))"
+  )
 
 
 # --- from_distribution ------------------------------------------------------ #
@@ -354,7 +367,7 @@ def test_from_distribution_copies_the_parameters() -> None:
   source = _D.Normal(
     torch.tensor(0.3, dtype=_F64), torch.tensor(1.4, dtype=_F64)
   )
-  margin = TorchMargin.from_distribution(source)
+  margin = TorchDistributionMargin.from_distribution(source)
   assert margin.parameter_names == ("loc", "scale")
   with torch.no_grad():
     widen(source.loc).fill_(99.0)
@@ -368,7 +381,7 @@ def test_from_distribution_rejects_unreadable_parameters() -> None:
     arg_constraints = {"hyperparameter": _D.constraints.real}
 
   with pytest.raises(ValueError, match="arg_constraints"):
-    TorchMargin.from_distribution(_Opaque(validate_args=False))
+    TorchDistributionMargin.from_distribution(_Opaque(validate_args=False))
 
 
 def test_validate_args_is_forwarded_to_the_family() -> None:
@@ -377,11 +390,13 @@ def test_validate_args_is_forwarded_to_the_family() -> None:
   Left to the family's own default it is silent, which is the wrong answer for
   an optimizer that has stepped a parameter out of its domain.
   """
-  strict = TorchMargin(
+  strict = TorchDistributionMargin(
     _D.Uniform, {"low": 0.0, "high": 1.0}, validate_args=True
   )
   with pytest.raises(ValueError):
     strict.logpdf(torch.tensor([2.0], dtype=_F64))
 
-  lax = TorchMargin(_D.Uniform, {"low": 0.0, "high": 1.0}, validate_args=False)
+  lax = TorchDistributionMargin(
+    _D.Uniform, {"low": 0.0, "high": 1.0}, validate_args=False
+  )
   assert lax.logpdf(torch.tensor([2.0], dtype=_F64)).item() == float("-inf")

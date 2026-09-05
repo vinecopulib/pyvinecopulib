@@ -197,7 +197,7 @@ closed unmerged, and some commits carry no number at all.
 - **Scikit-learn-compatible estimators** — `VineDensity`,
   `VineRegressor` with a pluggable backend (`VinecopBackend` /
   `TorchVinecopBackend`).
-- **PyTorch evaluator** — `TorchBicop`, `TorchVinecop` (pure-torch
+- **PyTorch evaluator** — `TorchTllBicop`, `TorchVinecop` (pure-torch
   cascade with GPU placement, autograd, and an optional `batched`
   evaluation fast path; byte-for-byte parity with the C++ cascade).
 - **Backend-neutral extension layer** — the `BicopLike` / `VinecopLike`
@@ -213,11 +213,15 @@ closed unmerged, and some commits carry no number at all.
 - **Custom C++ forks.** The repo always tracks the upstream
   `lib/vinecopulib` submodule pin; local C++ patches under
   `lib/` are not accepted.
-- **Discrete margins on the torch *marginal* layer.** `TorchVinecop` and
-  `TorchVinecopBackend` handle discrete variables (the copula half), but
-  `TorchMargin` rejects a discrete family: a margin with atoms needs a
-  left-limit `cdf`, which `torch.distributions` does not expose. Use
-  `Vinedist` with `pyvinecopulib.margins` for the marginal half.
+- **A copula-family registry to adapt.** The three parametric margin classes
+  (`SciPyMargin`, `OpenTURNSMargin`, `TorchDistributionMargin`) each adapt one
+  ecosystem's family registry. There is no pair-copula counterpart, and that is
+  deliberate rather than pending: scipy and `torch.distributions` ship no
+  copulas at all, and OpenTURNS' 19 are **not** adapted either — pair copulas
+  are `lib/vinecopulib`'s own domain (rotations, h-functions, discrete
+  handling, tau maps). A learnable pair copula is written by subclassing
+  `BicopBase`, which `TorchVinecop` hosts like any other; see
+  `examples/10_extending_pyvinecopulib.ipynb`.
 - **Density estimators outside the vine framework.** General-purpose
   multivariate density models (normalizing flows, Gaussian mixtures,
   …) are not in scope; `pyvinecopulib` is a vine-copula library.
@@ -282,9 +286,9 @@ pyvinecopulib/
         density.py               # VineDensity
         regressor.py             # VineRegressor
 
-      torch/__init__.py          # TorchBicop, TorchVinecop, TorchKde1d, TorchMargin, TorchVinedist, FitControlsTorch*
+      torch/__init__.py          # TorchTllBicop, TorchVinecop, TorchKde1d, TorchDistributionMargin, TorchVinedist, FitControlsTorch*
         bicop.py, vinecop.py     # nn.Module evaluators
-        margin.py, vinedist.py   # TorchMargin / TorchVinedist (nn.Module margins + distribution)
+        margin.py, vinedist.py   # TorchDistributionMargin / TorchVinedist (nn.Module margins + distribution)
         kde1d.py                 # TorchKde1d (the torch marginal estimator)
         _kde1d_interp.py         # kde1d's InterpolationGrid, ported — internal
         controls.py              # FitControlsTorchBicop / FitControlsTorchVinecop dataclasses
@@ -394,7 +398,7 @@ For any behavior change:
   packaging path, an sdist build and install — `build_sdist` is the only
   CI leg that runs `make check`.
 - **A submodule bump additionally runs the numerics gate**, which differs by
-  submodule. For `lib/vinecopulib` and `lib/wdm`: `tests/test_torch_bicop.py`,
+  submodule. For `lib/vinecopulib` and `lib/wdm`: `tests/test_torch_tll_bicop.py`,
   `tests/test_torch_vinecop.py` and `tests/test_structure_selection.py`. For
   `lib/kde1d`: `tests/test_kde1d.py`, `tests/test_torch_kde1d.py`,
   `tests/test_margins.py`, `tests/test_sklearn_margins.py` and
@@ -642,7 +646,7 @@ automatically.
     fit (`tools_select.ipp` `fit_or_reuse_pair_copula`). Porting only the
     weight is a silent divergence, and the default `threshold=0.0` hides
     it: nothing is below zero there, so every test that does not set it
-    sees the two agree. `TorchBicop` / `TorchVinecop` are the torch
+    sees the two agree. `TorchTllBicop` / `TorchVinecop` are the torch
     subclasses.
   - `DiscretePair` (`_discrete.py`) — a *continuous* pair copula evaluated on a
     discrete or mixed edge. **The vine owns the discrete layouts, the pair
@@ -667,7 +671,7 @@ automatically.
     `1 − 2e-10` for a correct density and for a 38%-wrong one alike.
     A rectangle's probability is read by differencing four `cdf` values, which
     is what the compiled pair does, so a `DiscretePair` is bit-identical to it.
-    `TorchBicop.rect_mass` would be more accurate — 1.2e-15 against 9.2e-15 at
+    `TorchTllBicop.rect_mass` would be more accurate — 1.2e-15 against 9.2e-15 at
     a `1/8`-wide atom, measured against exact rational truth, and far more at
     narrower ones — but it is **deliberately not used**: the density divides by
     the atom's area, and the discrete cascade then turns a 1e-15 pair-level
@@ -979,21 +983,21 @@ torch at import time (raises `ImportError` with an install hint).
 
 Key surface:
 
-- `TorchBicop` / `TorchVinecop` — evaluators.
-  - `TorchBicop` is a density on a grid; constructors:
-    `TorchBicop(grid_points, values, cache_integrals=True, ...)`,
-    `TorchBicop.from_bicop(cop, ...)` (lift a C++ `Bicop`),
-    `TorchBicop.from_data(u, controls=None, ...)` (fit; dispatches on
+- `TorchTllBicop` / `TorchVinecop` — evaluators.
+  - `TorchTllBicop` is a density on a grid; constructors:
+    `TorchTllBicop(grid_points, values, cache_integrals=True, ...)`,
+    `TorchTllBicop.from_bicop(cop, ...)` (lift a C++ `Bicop`),
+    `TorchTllBicop.from_data(u, controls=None, ...)` (fit; dispatches on
     `controls.method`).
   - `TorchVinecop` mirrors `pv.Vinecop`'s `pdf` / `cdf` /
     `rosenblatt` / `inverse_rosenblatt` / `sample` signatures.
-- `TorchMargin` / `TorchVinedist` — the marginal and joint halves.
-  - `TorchMargin` is a `MarginBase[Tensor]` that is *also* an
+- `TorchDistributionMargin` / `TorchVinedist` — the marginal and joint halves.
+  - `TorchDistributionMargin` is a `MarginBase[Tensor]` that is *also* an
     `nn.Module`: `torch.distributions.Distribution` has no
     `.to(device)` and contributes nothing to `state_dict` as a plain
     attribute, so the parameters are registered and the distribution is
-    **rebuilt per call** — the same shape `TorchBicop` uses for its
-    grid. `TorchMargin.from_distribution(factory, parameters=...)` is
+    **rebuilt per call** — the same shape `TorchTllBicop` uses for its
+    grid. `TorchDistributionMargin.from_distribution(factory, parameters=...)` is
     the general entry point; `icdf` bisects `cdf` over `support` for the
     families that implement one but not the other (`Gamma`, `Chi2`).
   - `TorchVinedist` is `Vinedist[Tensor]` plus `nn.Module`, with margins
@@ -1013,7 +1017,7 @@ Key surface:
     whole of what the compiled `pdf` / `cdf` / `icdf` read -- the bounds joined
     that list when kde1d#37 made them the discrete support. The grid is a **buffer**, not a
     parameter — the density is fitted, not learned — so optimizing it is the
-    opt-in `values.requires_grad_(True)`, the `TorchBicop` precedent.
+    opt-in `values.requires_grad_(True)`, the `TorchTllBicop` precedent.
     `icdf` reproduces the C++ inversion exactly — a bracketed Newton within
     the cell holding the requested mass, bisecting where the density is flat,
     with the C++ early exit reproduced as a frozen-once-converged mask — and
@@ -1040,13 +1044,13 @@ Key surface:
     invites: check the list against upstream on every bump, because a quirk
     that has been fixed reads exactly like a quirk that has not. Nothing is cached: coefficients and cell
     integrals are recomputed in the graph, which is the opposite call from
-    `TorchBicop.cache_integrals` and for a stated reason — here the cached
+    `TorchTllBicop.cache_integrals` and for a stated reason — here the cached
     quantity would be an `O(m)` vector shared by the batch, not an `O(m^2)`
     integral per query.
 - Discrete variables are declared with `var_types` on `TorchVinecop`'s three
   constructors. The stored pair copulas stay continuous interpolation grids and
   `get_pair_copula` wraps a discrete edge in `DiscretePair`, so `state_dict` /
-  `.to()` / pickling see only real `nn.Module` parameters. `TorchBicop.from_data`
+  `.to()` / pickling see only real `nn.Module` parameters. `TorchTllBicop.from_data`
   takes the four-column layout and reuses the compiled `find_latent_sample`,
   which is what `TllBicop::fit` now consumes for a discrete edge; the jittered
   ranks only seed the bandwidth. A discrete torch vine refuses the **batched
@@ -1107,7 +1111,7 @@ Key surface:
     per device on each call, and overridable per call.
   - `batched_fit` — fits a whole tree level in one call instead of edge at a
     time, through the optional `fit_level` hook on `VinecopBase.fit` /
-    `.select` (`TorchBicop.from_data_batched` is the pair-level entry point,
+    `.select` (`TorchTllBicop.from_data_batched` is the pair-level entry point,
     taking `(P, n, 2)`). Resolved per device like the cascade's `batched`.
     The hook is deliberately ignorant of what the pairs are for — `P`
     independent pairs on shared rows — so several vines' levels concatenate
@@ -1121,7 +1125,7 @@ Key surface:
     Selection runs through `VinecopBase.select`, so it stays on the array
     namespace rather than round-tripping a compiled `pv.Vinecop`.
 - `InterpolationGrid2D` (`torch/_interp.py`) — the 2-d bilinear grid
-  backing `TorchBicop`; **internal** (not re-exported). Margin
+  backing `TorchTllBicop`; **internal** (not re-exported). Margin
   normalization uses Sinkhorn iterations to drive marginals to uniform.
 
 ### Top-level `pyvinecopulib`
@@ -1192,8 +1196,8 @@ below are a quick orientation.
  plus the `backends`
   submodule (`VinecopBackend`, `TorchVinecopBackend`,
   `resolve_backend`).
-- **`pyvinecopulib.torch`** — `TorchBicop`, `TorchVinecop`, `TorchKde1d`,
-  `TorchMargin`, `TorchVinedist`, `FitControlsTorchBicop`,
+- **`pyvinecopulib.torch`** — `TorchTllBicop`, `TorchVinecop`, `TorchKde1d`,
+  `TorchDistributionMargin`, `TorchVinedist`, `FitControlsTorchBicop`,
   `FitControlsTorchVinecop`.
 
 Top-level `pyvinecopulib` re-exports the eight core classes and
@@ -1289,7 +1293,7 @@ Round-trip / parity properties to preserve when touching numerics:
   `VinecopBase.fit` with a `fit_edge` callback. To condition on a subset of
   variables, implement `flip` as well and use `sample_conditional` /
   `select(conditioning_set=)`; see
-  `examples/10_extending_pyvinecopulib.ipynb`. `TorchBicop` /
+  `examples/10_extending_pyvinecopulib.ipynb`. `TorchTllBicop` /
   `TorchVinecop` are the reference torch subclasses.
 - **Fitting has one shape across all four bases.** `MarginBase`, `BicopBase`,
   `VinecopBase` and `VinedistBase` each expose `fit(...) -> Self` (mutates in
@@ -1383,7 +1387,7 @@ Round-trip / parity properties to preserve when touching numerics:
 - **New torch fit methods.** Add the implementation under
   `pyvinecopulib/torch/_fit_<name>.py`, add `"<name>"` to `METHODS`
   in `controls.py`, and add the dispatch branch in
-  `TorchBicop.from_data` (the lone `"tll"` path is the template).
+  `TorchTllBicop.from_data` (the lone `"tll"` path is the template).
 - **New sklearn-style estimators.** Subclass `VineBase` and add the
   mixin that matches the task (`DensityMixin` / `RegressorMixin`),
   reusing the 3-step pipeline (`_validate_input` / `_fit_marginals` /

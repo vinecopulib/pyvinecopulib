@@ -42,7 +42,7 @@ that the signatures agree.
 
 **Typing.** :data:`ArrayT` is an unbounded, invariant ``TypeVar`` carried only
 on these public signatures, so a concrete implementation (e.g.
-:class:`~pyvinecopulib.torch.TorchBicop`) inherits precise ``torch.Tensor``
+:class:`~pyvinecopulib.torch.TorchTllBicop`) inherits precise ``torch.Tensor``
 return types. The numeric implementations in
 :mod:`~pyvinecopulib.core.bicop_base` operate on arrays as ``Any`` (the Array API
 namespace ``array_api_compat`` is itself untyped).
@@ -286,7 +286,7 @@ class BicopLike(Protocol[ArrayT]):
   (numerical inversion) on top of ``pdf`` / ``hfunc1`` / ``hfunc2``; providing
   its ``_sample_uniform`` hook enables the inherited ``sample``.
   :class:`pyvinecopulib.core.Bicop` and
-  :class:`pyvinecopulib.torch.TorchBicop` are the reference implementations.
+  :class:`pyvinecopulib.torch.TorchTllBicop` are the reference implementations.
 
   See Also
   --------

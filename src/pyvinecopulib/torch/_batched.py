@@ -498,7 +498,7 @@ class BatchedTreeLevel(torch.nn.Module):
 
   # Class-level type hints so the buffers registered in __init__ are
   # statically typed as Tensors instead of nn.Module (cf. ``_sy`` in
-  # TorchBicop, same pattern).
+  # TorchTllBicop, same pattern).
   values: Tensor
   grids2: Tensor | None
   tables2: Tensor | None
@@ -824,7 +824,7 @@ class BatchedWave(torch.nn.Module):
 def _shared_grid(tvc, trunc_lvl: int, d: int):
   """The grid every pair stacks on, plus an independence pair built on it.
 
-  ``TorchBicop`` gives an independence pair a 2x2 sentinel grid and no prefix
+  ``TorchTllBicop`` gives an independence pair a 2x2 sentinel grid and no prefix
   tables, because none of its own evaluations read either -- every method
   short-circuits on ``is_indep``. A stacked level does read them: ``torch.stack``
   needs one shape across the level, and one pair without tables drops the whole

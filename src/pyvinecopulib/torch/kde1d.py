@@ -62,7 +62,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   the ``MarginLike`` surface -- ``logpdf`` / ``cdf_left`` / ``loglik`` /
   ``sample`` -- from ``MarginBase``. It is also an ``nn.Module``, so
   ``.to(device)``, ``state_dict`` and autograd reach the whole margin. Unlike
-  ``TorchMargin`` it serves **discrete** and **zero-inflated** variables as
+  ``TorchDistributionMargin`` it serves **discrete** and **zero-inflated** variables as
   well as continuous ones, which is what lets a torch vine distribution be
   fitted to data with atoms at all; ``Vinedist``, evaluating on NumPy, refuses
   a torch margin, so this one belongs to ``TorchVinedist``.
@@ -82,7 +82,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   ``grid_points``, ``values`` and ``prob0`` are registered as buffers rather
   than parameters: the density is fitted, not learned. A caller who wants to
   optimize it calls ``values.requires_grad_(True)`` -- the same opt-in
-  ``TorchBicop`` uses for its grid.
+  ``TorchTllBicop`` uses for its grid.
 
   Two of ``Kde1d``'s attribute names cannot be reused here, because the base
   classes already own them: ``type`` is ``nn.Module``'s legacy dtype cast, and
@@ -131,7 +131,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   See Also
   --------
   pyvinecopulib.core.Kde1d : The estimator behind the fit, and the reference.
-  pyvinecopulib.torch.TorchMargin : Parametric torch families, continuous only.
+  pyvinecopulib.torch.TorchDistributionMargin : Parametric torch families, continuous only.
   pyvinecopulib.torch.TorchVinedist : The distribution these margins compose.
 
   Notes

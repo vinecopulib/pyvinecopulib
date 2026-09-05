@@ -517,7 +517,12 @@ class VineBase(BaseEstimator):
             "schema_['bounds'] length does not match number of features in X."
           )
         self.schema_ = {"kde1d_types": kde1d_types, "bounds": bounds}
-        self._schema_from_fit = True
+        # Only a schema this estimator derived on its own may be discarded on
+        # the next `fit`. A caller who pre-set one is declaring something the
+        # array cannot show -- which columns are discrete, where a variable is
+        # bounded -- and re-inferring it would silently change the model on the
+        # second fit. That is what an ensembling wrapper does to every survivor.
+        self._schema_from_fit = not existing
         self.n_features_in_ = X.shape[1]
         self.n_model_features_ = X.shape[1]
       else:

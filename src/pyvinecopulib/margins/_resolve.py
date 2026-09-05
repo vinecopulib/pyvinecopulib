@@ -13,12 +13,7 @@ from ..core import MarginLike
 from ._adapters import as_margin
 from ..core import Kde1d
 
-__all__ = [
-  "resolve_margins",
-  "resolve_margin_controls",
-  "kde_from_controls",
-  "fit_margin",
-]
+__all__ = ["resolve_margins", "resolve_margin_controls"]
 
 
 def _parametric_margin() -> Any:
@@ -359,14 +354,49 @@ def resolve_margins(
   return [one if callable(one) else copy.deepcopy(one) for _ in range(d)]
 
 
+def declared_kde_kwargs(controls: Optional[Any]) -> dict[str, Any]:
+  """Translate a margin's declared type and support into kernel-density kwargs.
+
+  A kernel density takes both at construction, so a declaration has to reach it
+  *before* the fit: a grid fitted unbounded is already padded past the data by
+  the time anything could tell it otherwise. The declaration is authoritative
+  here, unlike on a margin the caller built, because this margin does not exist
+  yet -- which is what makes a bounded default reachable without naming a class.
+
+  Shared by both lanes on purpose. ``Kde1d`` accepts either spelling of the
+  zero-inflated type and ``TorchKde1d`` accepts only the hyphenated one, so a
+  second copy of this mapping is a divergence waiting to happen -- it already
+  was one.
+
+  Parameters
+  ----------
+  controls : FitControlsMargin, or None
+      Read for ``var_type`` and ``support``; both optional.
+
+  Returns
+  -------
+  dict
+      Keyword arguments for ``Kde1d`` or
+      :class:`~pyvinecopulib.torch.TorchKde1d`.
+  """
+  kwargs: dict[str, Any] = {}
+  var_type = getattr(controls, "var_type", None)
+  if var_type == "d":
+    kwargs["type"] = "discrete"
+  elif var_type == "zi":
+    kwargs["type"] = "zero-inflated"
+  support = getattr(controls, "support", None)
+  if support is not None:
+    lo, hi = support
+    if lo is not None and _np.isfinite(lo):
+      kwargs["xmin"] = float(lo)
+    if hi is not None and _np.isfinite(hi):
+      kwargs["xmax"] = float(hi)
+  return kwargs
+
+
 def kde_from_controls(controls: Optional[Any]) -> Kde1d:
   """Build a kernel-density margin honoring what the controls declare.
-
-  The declaration is authoritative here, unlike on a margin the caller
-  constructed: this margin does not exist yet, so there is nothing for it to
-  override. It is what makes a bounded default reachable without naming a
-  class -- ``margin_controls`` alone can say that one variable is positive and
-  another is a proportion.
 
   Parameters
   ----------
@@ -378,43 +408,7 @@ def kde_from_controls(controls: Optional[Any]) -> Kde1d:
   Kde1d
       An unfitted margin, bounded and typed as declared.
   """
-  kwargs: dict[str, Any] = {}
-  var_type = getattr(controls, "var_type", None)
-  if var_type == "d":
-    kwargs["type"] = "discrete"
-  elif var_type == "zi":
-    kwargs["type"] = "zero_inflated"
-  support = getattr(controls, "support", None)
-  if support is not None:
-    lo, hi = support
-    if lo is not None and _np.isfinite(lo):
-      kwargs["xmin"] = float(lo)
-    if hi is not None and _np.isfinite(hi):
-      kwargs["xmax"] = float(hi)
-  return Kde1d(**kwargs)
-
-
-def _fallback_kde(
-  controls: Optional[Any], y: Any, weights: Optional[Any]
-) -> Kde1d:
-  """Fit the kernel-density margin substituted for a failed candidate set.
-
-  Parameters
-  ----------
-  controls : FitControlsMargin, or None
-      Read for the declared type and bounds.
-  y : array, shape (n,), dtype float
-      The column.
-  weights : array, shape (n,), or None
-      Observation weights.
-
-  Returns
-  -------
-  Kde1d
-      The fitted margin.
-  """
-  margin = kde_from_controls(controls)
-  return margin.fit(y) if weights is None else margin.fit(y, weights)
+  return Kde1d(**declared_kde_kwargs(controls))
 
 
 def fit_margin(
@@ -501,18 +495,28 @@ def fit_margin(
     declare(var_type=var_type, support=support)
   estimator = getattr(margin, verb, None) or margin.fit
   if controls is not None:
+    # A `family_set` is an instruction to search, so whatever is about to run
+    # has to be able to. Two ways it cannot: the margin reads no controls at
+    # all, or the verb is `fit`, which estimates the family it already has.
+    # Either way, refusing beats fitting one family and looking like it chose.
+    # A declared type or support is a *default* rather than an instruction, so
+    # neither case refuses one -- an estimator that cannot read it has usually
+    # been built with it already.
+    if getattr(controls, "family_set", None) is not None and (
+      verb == "fit" or not getattr(margin, "supports_controls", False)
+    ):
+      cannot = (
+        "`fit` estimates the family it already has"
+        if verb == "fit"
+        else f"{type(margin).__name__} cannot select a family"
+      )
+      raise TypeError(
+        f"family_set= would be ignored: {cannot}. Use select (or "
+        "`Vinedist.select`) to choose a family, pass margins='parametric', "
+        "or drop family_set"
+      )
     if getattr(margin, "supports_controls", False):
       kwargs["controls"] = controls
-    elif getattr(controls, "family_set", None) is not None:
-      # A declared type or support is a *default*, so an estimator that cannot
-      # read one has usually already been built with it. A family_set is not a
-      # default -- it is an instruction to search -- so a margin that cannot
-      # search must say so rather than fit one family and look like it chose.
-      raise TypeError(
-        f"{type(margin).__name__} cannot select a family, so family_set= "
-        "would be ignored. Pass margins='parametric' (or a margin with a "
-        "select method), or drop family_set"
-      )
   try:
     estimator(y, **kwargs)
   except ValueError as e:
@@ -527,5 +531,7 @@ def fit_margin(
       UserWarning,
       stacklevel=2,
     )
-    return as_margin(_fallback_kde(controls, y, weights))
+    margin = kde_from_controls(controls)
+    fitted = margin.fit(y) if weights is None else margin.fit(y, weights)
+    return as_margin(fitted)
   return margin

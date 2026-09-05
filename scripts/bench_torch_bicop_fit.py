@@ -1,12 +1,12 @@
 #!/usr/bin/env python
-"""Bench TorchBicop / pv.Bicop bicop fitters on a shared Gaussian sample.
+"""Bench TorchTllBicop / pv.Bicop bicop fitters on a shared Gaussian sample.
 
 Three modes selected via ``--mode``:
 
 * ``fit`` (default) — time the from_data fit:
     - sample n pseudo-obs via a Gaussian copula,
     - time ``pv.Bicop.from_data`` with TLL family per thread count,
-    - time ``TorchBicop.from_data`` per device and grid_type (TLL).
+    - time ``TorchTllBicop.from_data`` per device and grid_type (TLL).
   Output columns:
     mode, n, backend, threads, device, grid_type, grid_size, time_ms
 
@@ -46,7 +46,7 @@ import numpy as np
 import torch
 
 import pyvinecopulib as pv
-from pyvinecopulib.torch import FitControlsTorchBicop, TorchBicop
+from pyvinecopulib.torch import FitControlsTorchBicop, TorchTllBicop
 
 
 def _parse_int_list(s: str) -> list[int]:
@@ -145,7 +145,7 @@ def _bench_fit(
         for g in grid_sizes:
           ctl_torch = FitControlsTorchBicop(grid_type=grid_type, grid_size=g)
           ms = _time_repeats(
-            lambda u=u_t, c=ctl_torch: TorchBicop.from_data(u, c),
+            lambda u=u_t, c=ctl_torch: TorchTllBicop.from_data(u, c),
             repeats,
             sync=sync,
           )
@@ -227,7 +227,7 @@ def _bench_eval(
       for grid_type in grid_types:
         for g in grid_sizes:
           for cache in caches:
-            bc = TorchBicop.from_data(
+            bc = TorchTllBicop.from_data(
               u_fit_t,
               FitControlsTorchBicop(grid_type=grid_type, grid_size=g),
               cache_integrals=cache,
@@ -302,7 +302,9 @@ def _solve_itp(
   return 0.5 * (x_a + x_b)
 
 
-def _hinv_itp(bc: TorchBicop, u: torch.Tensor, cond_var: int) -> torch.Tensor:
+def _hinv_itp(
+  bc: TorchTllBicop, u: torch.Tensor, cond_var: int
+) -> torch.Tensor:
   """ITP inversion over the on-the-fly h-function (reference for ``hinv``)."""
   if cond_var == 1:
     fixed, p = u[:, 0:1], u[:, 1:2]
@@ -345,8 +347,8 @@ def _bench_hinv(
     for device in devices:
       sync = torch.cuda.synchronize if device.startswith("cuda") else None
       u_t = torch.as_tensor(u_eval_np, dtype=torch.float64, device=device)
-      bc_plain = TorchBicop.from_bicop(cpp, cache_integrals=False).to(device)
-      bc_cached = TorchBicop.from_bicop(cpp, cache_integrals=True).to(device)
+      bc_plain = TorchTllBicop.from_bicop(cpp, cache_integrals=False).to(device)
+      bc_cached = TorchTllBicop.from_bicop(cpp, cache_integrals=True).to(device)
       for op in ("hinv1", "hinv2"):
         cv = 1 if op == "hinv1" else 2
         methods = {
@@ -414,7 +416,7 @@ def main() -> None:
     "--grid-types",
     default="normal,linear",
     type=_parse_str_list,
-    help="TorchBicop grid types to sweep (default: normal,linear).",
+    help="TorchTllBicop grid types to sweep (default: normal,linear).",
   )
   ap.add_argument(
     "--grid-sizes",

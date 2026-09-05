@@ -1,6 +1,6 @@
 """The torch cascade on CUDA: same numbers, same placement, no host detours.
 
-The C++-parity suite in ``test_torch_bicop`` / ``test_torch_vinecop`` pins
+The C++-parity suite in ``test_torch_tll_bicop`` / ``test_torch_vinecop`` pins
 torch against the compiled library on the cpu, in float64. This file pins
 cuda against *that*, so the compiled-library agreement carries over to the
 device without running the whole parity suite twice.
@@ -20,7 +20,7 @@ torch = pytest.importorskip("torch")
 import pyvinecopulib as pv  # noqa: E402
 from pyvinecopulib.torch import (  # noqa: E402
   FitControlsTorchVinecop,
-  TorchBicop,
+  TorchTllBicop,
   TorchKde1d,
   TorchVinecop,
   TorchVinedist,
@@ -159,7 +159,7 @@ def test_float32_keeps_arguments_inside_the_unit_square(device: str) -> None:
   cpp = pv.Bicop.from_data(
     u, controls=pv.FitControlsBicop(family_set=[pv.BicopFamily.tll])
   )
-  bc = TorchBicop.from_bicop(
+  bc = TorchTllBicop.from_bicop(
     cpp, device=torch.device(device), dtype=torch.float32
   )
   edge = torch.tensor(
@@ -178,7 +178,7 @@ def test_float16_keeps_arguments_inside_the_unit_square(
   device: str, cpp_vine: pv.Vinecop
 ) -> None:
   """The lower trim bound remains representable in half precision."""
-  bc = TorchBicop.from_bicop(
+  bc = TorchTllBicop.from_bicop(
     cpp_vine.get_pair_copula(0, 0),
     device=torch.device(device),
     dtype=torch.float16,

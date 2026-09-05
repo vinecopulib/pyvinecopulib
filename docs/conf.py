@@ -243,9 +243,9 @@ _CLASS_MODULE = {
   "VineRegressor": "pyvinecopulib.sklearn",
   "VinecopBackend": "pyvinecopulib.sklearn.backends",
   "TorchVinecopBackend": "pyvinecopulib.sklearn.backends",
-  "TorchBicop": "pyvinecopulib.torch",
+  "TorchTllBicop": "pyvinecopulib.torch",
   "TorchKde1d": "pyvinecopulib.torch",
-  "TorchMargin": "pyvinecopulib.torch",
+  "TorchDistributionMargin": "pyvinecopulib.torch",
   "TorchVinecop": "pyvinecopulib.torch",
   "TorchVinedist": "pyvinecopulib.torch",
   "FitControlsTorchBicop": "pyvinecopulib.torch",
@@ -418,9 +418,9 @@ DOCSTRING_SUBPACKAGES = {
   },
   "torch": {
     "classes": [
-      "TorchBicop",
+      "TorchTllBicop",
       "TorchKde1d",
-      "TorchMargin",
+      "TorchDistributionMargin",
       "TorchVinecop",
       "TorchVinedist",
       "FitControlsTorchBicop",

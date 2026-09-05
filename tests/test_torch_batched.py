@@ -16,7 +16,7 @@ import pyvinecopulib as pv
 
 torch = pytest.importorskip("torch")
 
-from pyvinecopulib.torch import TorchBicop  # noqa: E402
+from pyvinecopulib.torch import TorchTllBicop  # noqa: E402
 from pyvinecopulib.torch._batched import (  # noqa: E402
   int_on_grid_batched,
   integrate_1d_batched,
@@ -42,7 +42,7 @@ def _eval_grid(n: int, seed: int) -> np.ndarray:
 def test_interpolate_batched_matches_unbatched() -> None:
   """N=3 stacked grids vs three independent ``InterpolationGrid2D.interpolate``."""
   cops = [_fit_tll_bicop(seed) for seed in (10, 20, 30)]
-  bcs = [TorchBicop.from_bicop(c) for c in cops]
+  bcs = [TorchTllBicop.from_bicop(c) for c in cops]
   grid_points = bcs[0].interp_grid.grid_points
   values = torch.stack([bc.interp_grid.values for bc in bcs], dim=0)
 
@@ -59,7 +59,7 @@ def test_interpolate_batched_matches_unbatched() -> None:
 
 def test_int_on_grid_batched_matches_unbatched() -> None:
   """Batched trapezoidal integration vs the per-pair ``_int_on_grid``."""
-  bc = TorchBicop.from_bicop(_fit_tll_bicop(42))
+  bc = TorchTllBicop.from_bicop(_fit_tll_bicop(42))
   grid_points = bc.interp_grid.grid_points
   m = grid_points.shape[0]
   rng = np.random.default_rng(7)
@@ -80,7 +80,7 @@ def test_int_on_grid_batched_matches_unbatched() -> None:
 def test_integrate_1d_batched_matches_unbatched() -> None:
   """3 stacked grids vs three ``InterpolationGrid2D.integrate_1d`` calls."""
   cops = [_fit_tll_bicop(seed) for seed in (1, 2, 3)]
-  bcs = [TorchBicop.from_bicop(c) for c in cops]
+  bcs = [TorchTllBicop.from_bicop(c) for c in cops]
   grid_points = bcs[0].interp_grid.grid_points
   values = torch.stack([bc.interp_grid.values for bc in bcs], dim=0)
 
@@ -101,7 +101,7 @@ def test_integrate_1d_batched_matches_unbatched() -> None:
 
 def test_integrate_2d_batched_matches_unbatched() -> None:
   cops = [_fit_tll_bicop(seed) for seed in (4, 5, 6)]
-  bcs = [TorchBicop.from_bicop(c) for c in cops]
+  bcs = [TorchTllBicop.from_bicop(c) for c in cops]
   grid_points = bcs[0].interp_grid.grid_points
   values = torch.stack([bc.interp_grid.values for bc in bcs], dim=0)
 

@@ -10,7 +10,7 @@ have to name the concrete copula.
 from __future__ import annotations
 
 import copy
-from typing import Any, ClassVar, Optional, Self
+from typing import Any, ClassVar, Optional, Self, Sequence
 
 import numpy as np
 
@@ -172,27 +172,38 @@ class Vinedist(VinedistBase[np.ndarray]):
     return np.asarray(y, dtype=float), weights
 
   @classmethod
-  def _margin_from_controls(cls, controls: Optional[Any]) -> Any:
-    """Build one ``Kde1d`` margin honoring what its controls declare.
+  def _default_margins(
+    cls,
+    d: int,
+    controls: Optional[Any] = None,
+    margin_controls: Optional[Sequence[Any]] = None,
+  ) -> Sequence[Any]:
+    """One ``Kde1d`` per variable, bounded and typed as its controls declare.
 
-    A kernel density takes its variable type and its bounds at construction,
-    so a declaration has to reach it before the fit rather than after: an
-    unbounded grid is padded past the data, and for a variable that cannot be
-    negative that puts mass where nothing can occur.
+    A kernel density takes its variable type and its bounds at construction, so
+    a declaration has to reach it before the fit: an unbounded grid is padded
+    past the data, and for a variable that cannot be negative that puts mass
+    where nothing can occur.
 
     Parameters
     ----------
-    controls : object, or None
-        This variable's marginal configuration.
+    d : int
+        Number of variables.
+    controls : ControlsLike, or None, optional
+        Copula fit configuration; unused here.
+    margin_controls : sequence, or None, optional
+        One marginal configuration per variable, already resolved.
 
     Returns
     -------
-    Kde1d
-        An unfitted margin, bounded and typed as declared.
+    sequence of Kde1d
+        One unfitted margin per variable.
     """
+    del controls
     from ..margins._resolve import kde_from_controls
 
-    return kde_from_controls(controls)
+    per_variable = margin_controls or [None] * d
+    return [kde_from_controls(mc) for mc in per_variable]
 
   @classmethod
   def _fit_copula(

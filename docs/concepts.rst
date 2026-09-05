@@ -229,7 +229,7 @@ trade compute for accuracy.
 
 The same factorization backs the PyTorch port
 :class:`pyvinecopulib.torch.TorchVinecop` (every pair copula is a
-:class:`pyvinecopulib.torch.TorchBicop`); its cascade matches the C++
+:class:`pyvinecopulib.torch.TorchTllBicop`); its cascade matches the C++
 evaluator byte-for-byte and additionally offers a ``batched=True``
 fast path, which fires one stacked pair-copula call per group of edges that
 do not depend on each other -- a tree level for ``pdf`` and ``rosenblatt``,
@@ -536,7 +536,7 @@ TLL is the default family for both the C++ and PyTorch backends
 because it captures arbitrary non-Gaussian-like dependence (heavy
 tails, asymmetry) without committing to a parametric form, and
 because its density-grid representation is exactly what
-:class:`pyvinecopulib.torch.TorchBicop` consumes for GPU and
+:class:`pyvinecopulib.torch.TorchTllBicop` consumes for GPU and
 autograd evaluation.
 
 Family selection across the parametric set runs by AIC / BIC /
@@ -1092,7 +1092,7 @@ Where to next
   estimators accept a backend (default C++, optional PyTorch) via
   :mod:`pyvinecopulib.sklearn.backends`.
 * :mod:`pyvinecopulib.torch` — PyTorch evaluators
-  :class:`~pyvinecopulib.torch.TorchBicop` and
+  :class:`~pyvinecopulib.torch.TorchTllBicop` and
   :class:`~pyvinecopulib.torch.TorchVinecop` for GPU placement and
   autograd. Notebook ``examples/09_torch_backend.ipynb``.
 * :mod:`pyvinecopulib.utils` —
@@ -1138,7 +1138,7 @@ Extending: custom and conditional pair copulas
 
 The evaluators :class:`pyvinecopulib.core.Bicop` /
 :class:`~pyvinecopulib.core.Vinecop` and their PyTorch counterparts
-:class:`pyvinecopulib.torch.TorchBicop` /
+:class:`pyvinecopulib.torch.TorchTllBicop` /
 :class:`~pyvinecopulib.torch.TorchVinecop` are concrete implementations
 of two backend-neutral contracts, evaluated on either NumPy or PyTorch
 arrays:

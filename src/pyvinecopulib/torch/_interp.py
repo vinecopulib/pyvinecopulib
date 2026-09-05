@@ -409,7 +409,7 @@ class InterpolationGrid2D(torch.nn.Module):
     ).squeeze(0)
 
   # --------------------------------------------------------------------- #
-  # Cached evaluation grids (optional, see TorchBicop(cache_integrals=…)). #
+  # Cached evaluation grids (optional, see TorchTllBicop(cache_integrals=…)). #
   # --------------------------------------------------------------------- #
 
   def build_caches(self) -> tuple[Tensor, Tensor, Tensor]:
@@ -431,7 +431,7 @@ class InterpolationGrid2D(torch.nn.Module):
     Three cumulative sums over ``(m, m)``. Built inside the graph, so an exact
     gradient with respect to ``values`` survives; they are registered as
     buffers, so
-    ``TorchBicop._tables`` rebuilds them when ``values`` starts tracking grad
+    ``TorchTllBicop._tables`` rebuilds them when ``values`` starts tracking grad
     afterwards.
 
     Returns
@@ -632,7 +632,7 @@ class InterpolationGrid2D(torch.nn.Module):
     sy : Tensor, shape (m, m), dtype float
         The first table from :meth:`build_caches` for ``cond_var=1``; its
         transpose-situation twin is built from the transposed values, so
-        ``TorchBicop`` passes the one that matches.
+        ``TorchTllBicop`` passes the one that matches.
 
     Returns
     -------

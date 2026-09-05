@@ -1,6 +1,6 @@
 """PyTorch univariate margins on a ``torch.distributions`` family.
 
-``TorchMargin`` is the marginal half a ``TorchVinedist`` composes with its
+``TorchDistributionMargin`` is the marginal half a ``TorchVinedist`` composes with its
 copula: a ``MarginBase`` that is also a ``torch.nn.Module``, so a family's
 parameters move with ``.to(device)``, appear in ``state_dict()`` and are
 visible to an optimizer.
@@ -9,17 +9,22 @@ A ``torch.distributions.Distribution`` is not a module — it has no
 ``.to(device)``, and held as a plain attribute it contributes nothing to a
 ``state_dict`` — so what a margin registers is the *parameters*, and the
 distribution is rebuilt from them on every call. That is the same shape
-``TorchBicop`` uses for its interpolation grid.
+``TorchTllBicop`` uses for its interpolation grid.
+
+This is the torch member of a trio -- ``SciPyMargin``, ``OpenTURNSMargin``,
+``TorchDistributionMargin`` -- each adapting one ecosystem's family registry.
+What is particular to this one is that torch's families are differentiable, so
+the adapter's parameters are learnable; the design is otherwise the same.
 
 Continuous families only: a margin with atoms needs a left-limit ``cdf``,
-which ``torch.distributions`` does not expose. ``TorchKde1d`` is the discrete
-and zero-inflated margin on this lane; ``Vinedist`` with
-``pyvinecopulib.margins`` is the NumPy one.
+which ``torch.distributions`` does not expose. For a margin **estimated from
+data** rather than learned -- and for discrete or zero-inflated variables --
+use ``TorchKde1d``, which is the default on this lane.
 
 See Also
 --------
 pyvinecopulib.core.MarginBase : The contract this fills in.
-TorchKde1d : The margin for discrete and zero-inflated variables.
+TorchKde1d : The margin estimated from data; the default on this lane.
 TorchVinedist : The joint distribution these margins go into.
 """
 
@@ -35,7 +40,7 @@ from torch.distributions import Distribution
 from ..core import MarginBase
 from ..core.margin_base import support_of
 
-__all__ = ["TorchMargin"]
+__all__ = ["TorchDistributionMargin"]
 
 #: Accepted spellings of the ``parameters`` argument: anything ``dict`` takes.
 ParameterSpec = Union[Mapping[str, Any], Iterable[tuple[str, Any]]]
@@ -65,7 +70,7 @@ def _implements(distribution: Distribution, name: str) -> bool:
   )
 
 
-class TorchMargin(MarginBase[Tensor], torch.nn.Module):
+class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
   """Univariate margin on a ``torch.distributions`` family.
 
   A ``MarginBase`` that is also a ``torch.nn.Module``: the parameter values are
@@ -166,9 +171,9 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
   A standard-normal margin whose parameters are learnable::
 
       import torch
-      from pyvinecopulib.torch import TorchMargin
+      from pyvinecopulib.torch import TorchDistributionMargin
 
-      margin = TorchMargin(
+      margin = TorchDistributionMargin(
         torch.distributions.Normal,
         {"loc": 0.0, "scale": 1.0},
       )
@@ -186,7 +191,7 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
   ) -> None:
-    # Initialize nn.Module explicitly: TorchMargin also subclasses MarginBase
+    # Initialize nn.Module explicitly: TorchDistributionMargin also subclasses MarginBase
     # (a Protocol-derived ABC), whose __init__ chain would otherwise shadow
     # nn.Module's under super().
     torch.nn.Module.__init__(self)
@@ -242,7 +247,7 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
     trainable: bool = True,
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
-  ) -> "TorchMargin":
+  ) -> "TorchDistributionMargin":
     """Lift an already-constructed ``torch.distributions`` object.
 
     The family and the names of its parameters are read off the object, and the
@@ -262,7 +267,7 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
 
     Returns
     -------
-    TorchMargin
+    TorchDistributionMargin
         A margin equivalent to ``distribution``.
 
     Raises
@@ -288,7 +293,7 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
       raise ValueError(
         f"{type(distribution).__name__} declares {missing} in "
         "arg_constraints but does not expose them; pass the parameters to "
-        "TorchMargin(...) explicitly"
+        "TorchDistributionMargin(...) explicitly"
       )
     return cls(
       type(distribution),
@@ -451,7 +456,9 @@ class TorchMargin(MarginBase[Tensor], torch.nn.Module):
     with torch.no_grad():
       return super().icdf(p)
 
-  def _apply(self, fn: Any, *args: Any, **kwargs: Any) -> "TorchMargin":
+  def _apply(
+    self, fn: Any, *args: Any, **kwargs: Any
+  ) -> "TorchDistributionMargin":
     """Keep the fallback placement current across a ``.to()``.
 
     A factory that closes over its own parameters registers none, so the

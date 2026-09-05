@@ -83,13 +83,13 @@ class BicopBase(BicopLike[ArrayT], ABC):
     difference quotients of the distribution function. Add one and wrap the
     pair in :class:`~pyvinecopulib.core.DiscretePair` to sit on such an edge.
 
-  ``TorchBicop`` is the reference subclass: it supplies ``cdf``, both inverses,
+  ``TorchTllBicop`` is the reference subclass: it supplies ``cdf``, both inverses,
   ``sample`` and ``flip`` natively, and fits its density grid in :meth:`fit`.
 
   See Also
   --------
   pyvinecopulib.core.BicopLike : The contract this implements.
-  pyvinecopulib.torch.TorchBicop : A concrete (grid / TLL) subclass.
+  pyvinecopulib.torch.TorchTllBicop : A concrete (grid / TLL) subclass.
   """
 
   def loglik(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:

@@ -39,7 +39,7 @@ Notes on the fit mode:
   would stop meaning anything. On the fixed-structure torch arm the cap
   is ignored anyway -- truncation comes from ``structure.trunc_lvl``.
 * ``cache_integrals`` is a fit-time knob as well as an eval-time one:
-  ``TorchBicop`` builds the three prefix tables per fitted pair, so a
+  ``TorchTllBicop`` builds the three prefix tables per fitted pair, so a
   d = 20 vine pays 190 of them.
 * Timings are per-arm fault-tolerant: a fit that raises records
   ``time_ms = nan`` and a ``# FAILED`` line on stderr rather than losing
@@ -693,7 +693,7 @@ def _build_parser() -> argparse.ArgumentParser:
     "--grid-types",
     default=None,
     type=_parse_str_list,
-    help="TorchBicop grid types (default: normal,linear in eval mode, "
+    help="TorchTllBicop grid types (default: normal,linear in eval mode, "
     "normal in fit mode).",
   )
   ap.add_argument(

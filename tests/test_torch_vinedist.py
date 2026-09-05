@@ -31,7 +31,7 @@ stats = pytest.importorskip("scipy.stats")
 from pyvinecopulib.torch import (  # noqa: E402
   FitControlsTorchVinecop,
   TorchKde1d,
-  TorchMargin,
+  TorchDistributionMargin,
   TorchVinecop,
   TorchVinedist,
 )
@@ -60,10 +60,10 @@ def copula(data: np.ndarray) -> pv.Vinecop:
   )
 
 
-def _margins() -> list[TorchMargin]:
+def _margins() -> list[TorchDistributionMargin]:
   """One normal margin per column, matching `_PARAMS`."""
   return [
-    TorchMargin(_D.Normal, {"loc": loc, "scale": scale})
+    TorchDistributionMargin(_D.Normal, {"loc": loc, "scale": scale})
     for loc, scale in _PARAMS
   ]
 
@@ -85,7 +85,7 @@ def test_logpdf_matches_the_numpy_vinedist(
   """The same model evaluated on either lane gives the same log-density.
 
   The tolerance is the one `test_torch_vinecop.py` pins for the copula term:
-  what separates the two sides is `TorchBicop`'s bilinear grid against the C++
+  what separates the two sides is `TorchTllBicop`'s bilinear grid against the C++
   on-the-fly cascade, since the marginal terms are closed forms that agree to
   machine precision.
   """
@@ -135,9 +135,11 @@ def test_margins_property_reads_the_module_list(dist: TorchVinedist) -> None:
   """The public accessor still hands back a tuple of the very same objects."""
   assert isinstance(dist.margins, tuple)
   assert len(dist.margins) == dist.dim == 3
-  assert all(isinstance(m, TorchMargin) for m in dist.margins)
+  assert all(isinstance(m, TorchDistributionMargin) for m in dist.margins)
   # The very same objects the registered `ModuleList` holds, not copies.
-  registered = [m for m in dist.modules() if isinstance(m, TorchMargin)]
+  registered = [
+    m for m in dist.modules() if isinstance(m, TorchDistributionMargin)
+  ]
   assert [id(m) for m in dist.margins] == [id(m) for m in registered]
 
 
@@ -159,7 +161,10 @@ def test_state_dict_round_trip_and_no_derived_cache_leak(
 
   fresh = TorchVinedist(
     TorchVinecop.from_vinecop(copula, cache_integrals=False),
-    [TorchMargin(_D.Normal, {"loc": 0.0, "scale": 1.0}) for _ in range(3)],
+    [
+      TorchDistributionMargin(_D.Normal, {"loc": 0.0, "scale": 1.0})
+      for _ in range(3)
+    ],
   )
   fresh.load_state_dict(dist.state_dict(), strict=True)
   torch.testing.assert_close(fresh.logpdf(x), dist.logpdf(x))
@@ -281,7 +286,7 @@ def test_a_single_margin_is_broadcast_across_the_variables(
   copula: pv.Vinecop, data: np.ndarray
 ) -> None:
   """One margin standing for every variable ties their parameters together."""
-  shared = TorchMargin(_D.Normal, {"loc": 0.0, "scale": 1.0})
+  shared = TorchDistributionMargin(_D.Normal, {"loc": 0.0, "scale": 1.0})
   dist = TorchVinedist(
     TorchVinecop.from_vinecop(copula, cache_integrals=False), shared
   )
@@ -441,7 +446,7 @@ def test_rejects_a_margin_with_atoms_and_no_left_limit(
 ) -> None:
   """A margin declaring atoms must supply the left limit the cascade needs.
 
-  `TorchMargin` cannot: `torch.distributions`' discrete families implement
+  `TorchDistributionMargin` cannot: `torch.distributions`' discrete families implement
   neither `cdf` nor `icdf`, so there is nothing to take a left limit of.
   """
 

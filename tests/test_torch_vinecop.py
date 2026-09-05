@@ -23,7 +23,7 @@ torch = pytest.importorskip("torch")
 from pyvinecopulib.torch import (  # noqa: E402
   FitControlsTorchBicop,
   FitControlsTorchVinecop,
-  TorchBicop,
+  TorchTllBicop,
   TorchVinecop,
 )
 
@@ -531,7 +531,7 @@ def test_from_structure_pair_copulas_matches_init():
   rng = np.random.default_rng(0)
   U = rng.uniform(0.001, 0.999, (300, 3))
   cop = _fit_tll_vine(U)
-  pcs = [[TorchBicop.from_bicop(b) for b in row] for row in cop.pair_copulas]
+  pcs = [[TorchTllBicop.from_bicop(b) for b in row] for row in cop.pair_copulas]
   via_init = TorchVinecop(pair_copulas=pcs, structure=cop.structure)
   via_factory = TorchVinecop.from_structure(
     structure=cop.structure, pair_copulas=pcs
@@ -542,7 +542,7 @@ def test_from_structure_pair_copulas_matches_init():
 
 
 def test_from_structure_empty_is_independence_vine():
-  """No pair_copulas -> every edge is an independence TorchBicop;
+  """No pair_copulas -> every edge is an independence TorchTllBicop;
   pdf is identically 1."""
   s = pv.RVineStructure.sample(4, seeds=[1, 2, 3, 4, 5])
   tv = TorchVinecop.from_structure(structure=s)
@@ -633,7 +633,7 @@ def test_rosenblatt_inverse_rosenblatt_accept_num_threads():
 
 
 def test_pdf_autograd_through_grid_param() -> None:
-  """Grad flows through ``TorchVinecop.pdf`` to a ``TorchBicop`` grid value.
+  """Grad flows through ``TorchVinecop.pdf`` to a ``TorchTllBicop`` grid value.
 
   Guards the Stage-2a cascade extraction onto ``VinecopBase``: ``pdf`` /
   ``rosenblatt`` must stay autograd-capable (only inverse / sample / cdf are
@@ -987,7 +987,7 @@ def test_the_discrete_pair_fit_reproduces_the_compiled_grid(
 
   ``TllBicop::fit`` selects the bandwidth from randomly-jittered ranks and then
   fits on the *latent sample* drawn with it, so a discrete fit needs both steps.
-  ``TorchBicop.from_data`` reuses the compiled ``find_latent_sample`` for the
+  ``TorchTllBicop.from_data`` reuses the compiled ``find_latent_sample`` for the
   second, since it is a stochastic iterative reconstruction over a spatial index
   and a reimplementation would put this parity at its mercy rather than at the
   same code's. Measured 1.5e-13 / 1.4e-13 / 5.5e-14.
@@ -1005,7 +1005,7 @@ def test_the_discrete_pair_fit_reproduces_the_compiled_grid(
   u4 = np.column_stack([u[:, 0], u[:, 1], *limits])
 
   ref = pv.Bicop.from_data(u, controls=_TLL_BICOP, var_types=var_types)
-  bc = TorchBicop.from_data(
+  bc = TorchTllBicop.from_data(
     torch.from_numpy(u4), cache_integrals=False, var_types=var_types
   )
   np.testing.assert_allclose(
@@ -1130,7 +1130,7 @@ def test_pickles_after_an_evaluation() -> None:
 def test_batched_handles_a_vine_mixing_indep_and_tll(op: str) -> None:
   """An independence pair has its own 2x2 grid; the level still stacks.
 
-  `TorchBicop` gives an independence copula a two-point sentinel grid and no
+  `TorchTllBicop` gives an independence copula a two-point sentinel grid and no
   prefix tables, because none of its own methods read either. Stacking a tree
   level reads both, so the bake substitutes an independence density built on
   the shared grid -- otherwise a vine whose fit chose `indep` anywhere raises
@@ -1223,7 +1223,7 @@ def test_batched_fit_matches_the_per_edge_fit(d: int) -> None:
   Stacking a level changes how many elements the bandwidth search's `pow`
   sees, and torch picks an elementwise kernel by element count. What a
   schedule must not touch is whether a lane's companions change its answer,
-  and that is pinned exactly in `test_torch_bicop`.
+  and that is pinned exactly in `test_torch_tll_bicop`.
   """
   u_fit = _simulate(d=d, n=1200, seed=500 + d)
   structure = _fit_tll_vine(u_fit).structure
@@ -1257,7 +1257,7 @@ def test_batched_fit_defaults_to_off_on_cpu() -> None:
   u_fit = _simulate(d=4, n=400, seed=61)
   structure = _fit_tll_vine(u_fit).structure
   seen: list[int] = []
-  real = TorchBicop.from_data_batched
+  real = TorchTllBicop.from_data_batched
 
   def spy(u: torch.Tensor, *args: Any, **kwargs: Any) -> Any:
     seen.append(int(u.shape[0]))
@@ -1266,7 +1266,7 @@ def test_batched_fit_defaults_to_off_on_cpu() -> None:
   # The resolution is only observable through whether the level fitter runs,
   # so watch that rather than the field that was left unset.
   with pytest.MonkeyPatch.context() as mp:
-    mp.setattr(TorchBicop, "from_data_batched", spy)
+    mp.setattr(TorchTllBicop, "from_data_batched", spy)
     TorchVinecop.from_data(torch.from_numpy(u_fit), structure)
     assert seen == [], "cpu resolved batched_fit on"
     TorchVinecop.from_data(
@@ -1428,8 +1428,8 @@ def test_mixed_grids_refuse_the_batched_path() -> None:
     0.6 * rng.standard_normal((n, 1)) + 0.5 * rng.standard_normal((n, d))
   )
 
-  def pair(a: int, b: int, grid_type: str) -> TorchBicop:
-    return TorchBicop.from_data(
+  def pair(a: int, b: int, grid_type: str) -> TorchTllBicop:
+    return TorchTllBicop.from_data(
       np.column_stack([u[:, a], u[:, b]]),
       FitControlsTorchBicop(grid_type=grid_type, grid_size=30),
     )
@@ -1727,13 +1727,13 @@ def test_batched_fit_runs_one_call_per_tree(
   u_fit = _simulate(d=d, n=400, seed=91)
   structure = _fit_tll_vine(u_fit).structure
   seen: list[int] = []
-  real = TorchBicop.from_data_batched
+  real = TorchTllBicop.from_data_batched
 
   def spy(u: torch.Tensor, *args: Any, **kwargs: Any) -> Any:
     seen.append(int(u.shape[0]))
     return real(u, *args, **kwargs)
 
-  monkeypatch.setattr(TorchBicop, "from_data_batched", spy)
+  monkeypatch.setattr(TorchTllBicop, "from_data_batched", spy)
   TorchVinecop.from_data(
     torch.from_numpy(u_fit),
     structure,
@@ -1859,7 +1859,7 @@ def test_state_dict_carries_the_model_identity() -> None:
 
   # And a var_types mismatch is refused on an identical structure.
   discrete = TorchVinecop(
-    [[TorchBicop.from_bicop(b) for b in row] for row in cpp_a.pair_copulas],
+    [[TorchTllBicop.from_bicop(b) for b in row] for row in cpp_a.pair_copulas],
     cpp_a.structure,
     var_types=["d", "c", "c", "c"],
   )

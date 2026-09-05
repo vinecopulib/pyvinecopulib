@@ -144,7 +144,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
   - ``_default_margins`` supplies the margin each variable gets when the caller
     named none, one ``margin_class`` per variable. Override it when those
     margins need an argument the class attribute cannot carry, as a placement
-    is; override ``_margin_from_controls`` alone when the margin class takes
+    is; override ``_default_margins`` alone when the margin class takes
     its variable type or its bounds at *construction*, as a kernel density
     does.
   - ``supports_weighted_copula`` and ``supports_fit_covariates`` declare what
@@ -1059,9 +1059,11 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     that instead of overriding this. Override it when the margins need an
     argument the class attribute cannot carry -- a placement, or a family.
 
-    Each variable's margin is built from its own ``margin_controls`` entry
-    through ``_margin_from_controls``: the margin does not exist yet, so a
-    declared type or support has nothing to override. That is what makes a
+    The base ignores ``margin_controls``, which is right for a margin class
+    that reads its controls at fit time. A subclass whose ``margin_class``
+    takes its variable type or its bounds at *construction* overrides this --
+    ``Vinedist`` does, since a kernel density fitted unbounded has already
+    padded past the data by the time anything could tell it otherwise. That is what makes a
     bounded default reachable without naming a class.
 
     Parameters
@@ -1085,32 +1087,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     del controls
     if cls.margin_class is None:
       return None
-    if margin_controls is None:
-      return [cls.margin_class() for _ in range(d)]
-    return [cls._margin_from_controls(mc) for mc in margin_controls]
-
-  @classmethod
-  def _margin_from_controls(cls, controls: Optional[Any]) -> Any:
-    """Build one default margin honoring what its controls declare.
-
-    Defaults to ignoring the declaration, which is right for any margin class
-    whose estimator reads its controls at fit time. A subclass whose
-    ``margin_class`` takes its variable type or its bounds at *construction*
-    overrides this -- a kernel density is the case that matters, since a bound
-    it learns after fitting is a bound it has already padded past.
-
-    Parameters
-    ----------
-    controls : object, or None
-        This variable's marginal configuration.
-
-    Returns
-    -------
-    MarginLike
-        An unfitted margin.
-    """
-    del controls
-    return cast("Any", cls.margin_class)()
+    return [cls.margin_class() for _ in range(d)]
 
   @classmethod
   def _fit_copula(

@@ -531,7 +531,8 @@ def test_fit_keeps_the_family_where_select_replaces_it(
 
   Both verbs keep a family the caller named, since naming it is the choice.
   What separates them is `family_set`: it asks `select` to search again, and
-  `fit` has nothing to search with.
+  `fit` has nothing to search with -- so `fit` refuses it rather than dropping
+  it and returning a model the controls do not describe.
   """
   margins = [SciPyMargin("norm").fit(continuous[:, j]) for j in range(2)]
   # Already fitted, so `from_data` leaves both alone and the wrong family on
@@ -540,11 +541,17 @@ def test_fit_keeps_the_family_where_select_replaces_it(
   assert _families(dist) == ["norm", "norm"]
 
   wider = FitControlsMargin(family_set=["norm", "lognorm"])
-  assert _families(dist.fit(continuous, None, wider)) == ["norm", "norm"]
+  with pytest.raises(TypeError, match="family_set= would be ignored"):
+    dist.fit(continuous, None, wider)
   assert _families(dist.select(continuous, None, wider)) == [
     "norm",
     "lognorm",
   ]
+
+  # What `fit` *can* honor in the same controls object, it still does: a
+  # declared support is a default, not an instruction to search.
+  bounded = FitControlsMargin(support=(0.0, None))
+  assert _families(dist.fit(continuous, None, bounded)) == ["norm", "lognorm"]
 
 
 def test_a_margin_given_per_variable_is_fitted_in_place(

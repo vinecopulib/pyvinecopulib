@@ -639,7 +639,7 @@ class DiscretePair(BicopBase[ArrayT]):
     """``P((a1, b1] x (a2, b2])`` as the four-corner difference.
 
     A pair that can compute the rectangle without the cancellation this carries
-    -- ``TorchBicop.rect_mass`` does -- would be more accurate here, by 7.6x at
+    -- ``TorchTllBicop.rect_mass`` does -- would be more accurate here, by 7.6x at
     a `1/8`-wide atom and far more at the widths the inner trees reach. It is
     deliberately not used: the density divides by the atom's area, and the
     discrete cascade then amplifies a 1e-15 pair-level difference to 8.5e-8 at

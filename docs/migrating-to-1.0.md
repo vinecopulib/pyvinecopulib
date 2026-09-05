@@ -159,7 +159,7 @@ The optional subpackages ship in the same distribution and have important 1.0
 changes. sklearn estimators now take a single `backend=` object instead of
 loose controls/structure/seed arguments; `seed` became `random_state`; and
 `VineRegressor` keeps a sample axis for one-row predictions. Torch fitting now
-uses `FitControlsTorchBicop` / `FitControlsTorchVinecop`, and `TorchBicop.sample`
+uses `FitControlsTorchBicop` / `FitControlsTorchVinecop`, and `TorchTllBicop.sample`
 uses the core-style `(n, qrng=False, seeds=[])` signature. See the complete
 breaking-change inventory in `CHANGELOG.md` before upgrading either surface.
 

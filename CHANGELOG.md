@@ -68,10 +68,10 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - `VinedistBase.from_data` owns the two-step (IFM) estimator for both array namespaces, asking a subclass only for `_coerce_fit_data`, `_default_margins` and `_fit_copula` (#326).
 - Refuse rather than half-apply: `supports_weighted_copula` and `supports_fit_covariates` are `False` on `TorchVinedist`, whose fitter is unweighted and whose margins read no covariates (#326).
 - Add `Vinedist.copula_layout`, the copula-scale layout a consumer of the fitted distribution needs, and dispatch `Vinedist.copula_data`'s variable types through `cls` so a subclass override is honored (#326).
-- Use one argument order on every estimator, matching each method's twin on `Bicop` / `Vinecop`: the observations first and positional-only, then the declarations the object cannot infer, then `controls`, then keyword-only callbacks. `TorchVinecop.from_data` and `TorchBicop.from_data` are straight widenings of the base (#326).
+- Use one argument order on every estimator, matching each method's twin on `Bicop` / `Vinecop`: the observations first and positional-only, then the declarations the object cannot infer, then `controls`, then keyword-only callbacks. `TorchVinecop.from_data` and `TorchTllBicop.from_data` are straight widenings of the base (#326).
 - Add `select` to all four bases, defaulting to `fit` where there is nothing to choose -- upstream's own `select_families = false` equivalence -- so `from_data` is `cls().select(...)` throughout, as `Bicop`'s data constructor has always been (#326).
 - Add `VinedistBase.fit` and `.select`: `fit` re-estimates both halves along the structure and families it holds, `select` lets both change shape (#326).
-- Add `TorchBicop.fit`, which refits the density grid in place keeping the module's device, dtype and cache mode (#326).
+- Add `TorchTllBicop.fit`, which refits the density grid in place keeping the module's device, dtype and cache mode (#326).
 - Select a margin's family with `select` on the margin class that owns the families, the shape `Bicop.select` has: after the call the margin *is* the winning family. Naming a family is itself the choice, so `select` on a named margin reduces to `fit` and `family_set` is how a caller asks for the search back (#292, #326).
 - Add `FitControlsMargin` and `margin_controls=`, the marginal half of a vine-distribution fit, resolved per variable by the same four shapes `margins=` accepts -- so one call can bound the two variables whose bounds are known and leave the rest alone (#326).
 - Add `MarginBase.aic` / `.bic` / `.aicc`, which `Bicop` and `Vinecop` have always had and margins did not (#326).
@@ -105,18 +105,18 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 
 #### PyTorch
 
-- Add `pyvinecopulib.torch` behind a `pyvinecopulib[torch]` extra: `TorchBicop` and `TorchVinecop` are pure-PyTorch `nn.Module` evaluators mirroring `Bicop` / `Vinecop`, configured through the `FitControlsTorchBicop` / `FitControlsTorchVinecop` dataclasses (#216, #217, #225, #237, #244).
-- Add the torch half of the vine-distribution stack: `TorchMargin` over any continuous `torch.distributions` family, and `TorchVinedist`, a `Vinedist` that is `nn.Module` throughout, so one `.to(device)` moves the whole joint distribution (#292).
+- Add `pyvinecopulib.torch` behind a `pyvinecopulib[torch]` extra: `TorchTllBicop` and `TorchVinecop` are pure-PyTorch `nn.Module` evaluators mirroring `Bicop` / `Vinecop`, configured through the `FitControlsTorchBicop` / `FitControlsTorchVinecop` dataclasses (#216, #217, #225, #237, #244).
+- Add the torch half of the vine-distribution stack: `TorchDistributionMargin` over any continuous `torch.distributions` family, and `TorchVinedist`, a `Vinedist` that is `nn.Module` throughout, so one `.to(device)` moves the whole joint distribution (#292).
 - `TorchVinecop.from_data` selects an R-vine structure natively in torch when `structure=None`, instead of round-tripping through a compiled `Vinecop` (#241, #244).
 - Add `TorchKde1d`, the torch marginal estimator, and the only torch margin that handles discrete and zero-inflated variables (#292, #312).
 - The torch cascades gain a batched fast path that evaluates a whole tree level at once, resolved per device and 3-12x faster on CUDA than the per-edge cascade on
   `pdf` and `rosenblatt`; `FitControlsTorchVinecop.compile` additionally runs them through `torch.compile` (#219, #239, #305, #307).
-- `cache_integrals=True` is now the default and exact, with `cdf` and `hfunc*` read in closed form from cumulative-trapezoid prefix tables carrying an exact gradient, plus `TorchBicop.rect_mass` for a rectangle's exact probability (#219, #305, #307).
+- `cache_integrals=True` is now the default and exact, with `cdf` and `hfunc*` read in closed form from cumulative-trapezoid prefix tables carrying an exact gradient, plus `TorchTllBicop.rect_mass` for a rectangle's exact probability (#219, #305, #307).
 - Compute the `tll` window smoother in `O(n)` rather than `O(n**2)`: the window
   grows with the data, so at `n = 12000` it was 97% of a vine fit, and a
   fixed-structure CUDA fit at `d = 9` is 26x faster (#315).
-- Fit a whole tree level in one call: `FitControlsTorchVinecop.batched_fit` drives the new `fit_level` hook and `TorchBicop.from_data_batched`, making a vine fit 1.3-4.0x faster on CUDA, while the opt-in `compile_fit` fuses the `tll` bandwidth search (#316, #319).
-- Invert the `tll` conditional cdf in closed form on the torch path, so `TorchBicop.hinv1` / `hinv2` match the compiled ones to machine precision and run 60-120x faster on CPU (#234, [vinecopulib#691](https://github.com/vinecopulib/vinecopulib/pull/691)).
+- Fit a whole tree level in one call: `FitControlsTorchVinecop.batched_fit` drives the new `fit_level` hook and `TorchTllBicop.from_data_batched`, making a vine fit 1.3-4.0x faster on CUDA, while the opt-in `compile_fit` fuses the `tll` bandwidth search (#316, #319).
+- Invert the `tll` conditional cdf in closed form on the torch path, so `TorchTllBicop.hinv1` / `hinv2` match the compiled ones to machine precision and run 60-120x faster on CPU (#234, [vinecopulib#691](https://github.com/vinecopulib/vinecopulib/pull/691)).
 
 #### scikit-learn
 

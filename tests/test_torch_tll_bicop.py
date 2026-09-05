@@ -1,6 +1,6 @@
 """Tests for the optional ``pyvinecopulib.torch`` submodule.
 
-Skipped when PyTorch isn't installed. Compares the torch ``TorchBicop``
+Skipped when PyTorch isn't installed. Compares the torch ``TorchTllBicop``
 against the C++ ``pv.Bicop`` (TLL family) for ``pdf`` / ``cdf`` / ``hfunc``
 on the same fitted interpolation grid and verifies ``hinv`` round-trips.
 """
@@ -16,7 +16,7 @@ import pyvinecopulib as pv
 
 torch = pytest.importorskip("torch")
 
-from pyvinecopulib.torch import FitControlsTorchBicop, TorchBicop  # noqa: E402
+from pyvinecopulib.torch import FitControlsTorchBicop, TorchTllBicop  # noqa: E402
 
 _TLL_CONTROLS = pv.FitControlsBicop(family_set=[pv.families.tll], num_threads=1)
 
@@ -39,7 +39,7 @@ def test_pdf_matches_pvbicop() -> None:
   # integration math at 1e-10. The default cache_integrals=True uses
   # bilinear-interp on the cache, which intentionally introduces a
   # ~1e-3 IAE gap and is covered by test_cached_*_smoke below.
-  bc = TorchBicop.from_bicop(cop_tll, cache_integrals=False)
+  bc = TorchTllBicop.from_bicop(cop_tll, cache_integrals=False)
   u_eval = _eval_grid(500, seed=11)
 
   out_torch = bc.pdf(torch.from_numpy(u_eval)).numpy()
@@ -53,7 +53,7 @@ def test_cdf_matches_pvbicop() -> None:
   cop_tll = _fit_tll(u_fit)
 
   # Pin cache=False — C++ parity at 1e-10; see test_pdf_matches_pvbicop.
-  bc = TorchBicop.from_bicop(cop_tll, cache_integrals=False)
+  bc = TorchTllBicop.from_bicop(cop_tll, cache_integrals=False)
   u_eval = _eval_grid(500, seed=12)
 
   out_torch = bc.cdf(torch.from_numpy(u_eval)).numpy()
@@ -67,7 +67,7 @@ def test_hfunc_matches_pvbicop() -> None:
   cop_tll = _fit_tll(u_fit)
 
   # Pin cache=False — C++ parity at 1e-10; see test_pdf_matches_pvbicop.
-  bc = TorchBicop.from_bicop(cop_tll, cache_integrals=False)
+  bc = TorchTllBicop.from_bicop(cop_tll, cache_integrals=False)
   u_eval = _eval_grid(500, seed=13)
   u_t = torch.from_numpy(u_eval)
 
@@ -88,7 +88,7 @@ def test_hinv_roundtrip() -> None:
   # on-the-fly h-function, so the round-trip holds to machine precision. The
   # cached path inverts the same quadratic but reads `hfunc1` off the prefix
   # tables, so it round-trips to summation-order noise rather than exactly.
-  bc = TorchBicop.from_bicop(cop_tll, cache_integrals=False)
+  bc = TorchTllBicop.from_bicop(cop_tll, cache_integrals=False)
   u_eval = _eval_grid(400, seed=21)
   u_t = torch.from_numpy(u_eval)
 
@@ -109,7 +109,7 @@ def test_hinv_closed_form_matches_cpp() -> None:
   u_fit = cop.sample(2000, seeds=[4, 5, 6])
   cop_tll = _fit_tll(u_fit)
 
-  bc = TorchBicop.from_bicop(cop_tll, cache_integrals=False)
+  bc = TorchTllBicop.from_bicop(cop_tll, cache_integrals=False)
   u_eval = _eval_grid(400, seed=22)
   u_t = torch.from_numpy(u_eval)
 
@@ -126,7 +126,7 @@ def test_inverse_integrate_1d() -> None:
   exact inverse of ``integrate_1d``, NaN propagation, shape validation."""
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   u_fit = cop.sample(1500, seeds=[7, 8, 9])
-  grid = TorchBicop.from_bicop(
+  grid = TorchTllBicop.from_bicop(
     _fit_tll(u_fit), cache_integrals=False
   ).interp_grid
 
@@ -158,7 +158,7 @@ def test_inverse_integrate_1d() -> None:
 
 def test_from_bicop_rejects_rotated() -> None:
   """TLL pair-copulas in pyvinecopulib always have rotation=0; the
-  TorchBicop wrapper enforces this at construction."""
+  TorchTllBicop wrapper enforces this at construction."""
 
   class _FakeCop:
     family = _fit_tll(_eval_grid(100, seed=0)).family
@@ -166,11 +166,11 @@ def test_from_bicop_rejects_rotated() -> None:
     parameters = np.eye(2)
 
   with pytest.raises(ValueError, match="rotation"):
-    TorchBicop.from_bicop(_FakeCop())  # type: ignore[arg-type]
+    TorchTllBicop.from_bicop(_FakeCop())  # type: ignore[arg-type]
 
 
 # --------------------------------------------------------------------------- #
-# TorchBicop.from_data — pure-torch TLL fit                                    #
+# TorchTllBicop.from_data — pure-torch TLL fit                                    #
 # --------------------------------------------------------------------------- #
 
 
@@ -187,7 +187,7 @@ def test_from_data_matches_cpp(n: int, rho: float) -> None:
     u_np,
     controls=pv.FitControlsBicop(family_set=[pv.families.tll], num_threads=1),
   )
-  bc_torch = TorchBicop.from_data(u_np)
+  bc_torch = TorchTllBicop.from_data(u_np)
   np.testing.assert_allclose(
     bc_torch.interp_grid.values.numpy(),
     cop_cpp.parameters,
@@ -205,7 +205,7 @@ def test_from_data_evaluates_consistently() -> None:
   closed-form inverse; the cached path round-trips only to ~1e-3."""
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   u_np = cop.sample(1000, seeds=[11, 22, 33])
-  bc = TorchBicop.from_data(u_np, cache_integrals=False)
+  bc = TorchTllBicop.from_data(u_np, cache_integrals=False)
 
   u_eval = _eval_grid(300, seed=99)
   u_t = torch.from_numpy(u_eval)
@@ -234,7 +234,7 @@ def test_cached_integrals_smoke() -> None:
   u_fit = cop.sample(2000, seeds=[10, 11, 12])
   cop_tll = _fit_tll(u_fit)
 
-  bc_cache = TorchBicop.from_bicop(cop_tll, cache_integrals=True)
+  bc_cache = TorchTllBicop.from_bicop(cop_tll, cache_integrals=True)
   # All three prefix tables must be populated for a non-indep pair.
   assert bc_cache._sy is not None
   assert bc_cache._sx is not None
@@ -266,8 +266,8 @@ def test_cached_and_uncached_hinv_agree() -> None:
   u_fit = cop.sample(2000, seeds=[1, 2, 3])
   cop_tll = _fit_tll(u_fit)
 
-  bc_bisect = TorchBicop.from_bicop(cop_tll, cache_integrals=False)
-  bc_cached = TorchBicop.from_bicop(cop_tll, cache_integrals=True)
+  bc_bisect = TorchTllBicop.from_bicop(cop_tll, cache_integrals=False)
+  bc_cached = TorchTllBicop.from_bicop(cop_tll, cache_integrals=True)
 
   u_t = torch.from_numpy(_eval_grid(500, seed=77))
   for which in ("hinv1", "hinv2"):
@@ -277,7 +277,7 @@ def test_cached_and_uncached_hinv_agree() -> None:
 
 
 def test_independent_bicop() -> None:
-  bc = TorchBicop()  # default: independence
+  bc = TorchTllBicop()  # default: independence
   u = torch.tensor([[0.2, 0.7], [0.5, 0.5], [0.9, 0.1]], dtype=torch.float64)
   assert torch.allclose(bc.pdf(u), torch.ones(3, dtype=torch.float64))
   assert torch.allclose(bc.cdf(u), u[:, 0] * u[:, 1])
@@ -289,7 +289,7 @@ def test_simulate_smoke() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   u_fit = cop.sample(2000, seeds=[20, 21, 22])
   cop_tll = _fit_tll(u_fit)
-  bc = TorchBicop.from_bicop(cop_tll)
+  bc = TorchTllBicop.from_bicop(cop_tll)
 
   samples = bc.sample(n=1000, qrng=False, seeds=[0])
   assert samples.shape == (1000, 2)
@@ -305,11 +305,11 @@ def test_simulate_smoke() -> None:
 def test_from_bicop_rejects_non_kernel_family() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   with pytest.raises(ValueError, match="kernel-family"):
-    TorchBicop.from_bicop(cop)
+    TorchTllBicop.from_bicop(cop)
 
 
 # --------------------------------------------------------------------------- #
-# TorchBicop linear-grid path                                                  #
+# TorchTllBicop linear-grid path                                                  #
 # --------------------------------------------------------------------------- #
 
 
@@ -323,10 +323,10 @@ def test_linear_grid_roundtrip_and_range() -> None:
   u_fit = cop.sample(2000, seeds=[10, 11, 12])
   # cache=False so the hinv round-trip below is the exact inverse of the
   # h-function it is composed with, holding at 1e-9.
-  bc_lin = TorchBicop.from_data(
+  bc_lin = TorchTllBicop.from_data(
     u_fit, FitControlsTorchBicop(grid_type="linear"), cache_integrals=False
   )
-  bc_nrm = TorchBicop.from_data(
+  bc_nrm = TorchTllBicop.from_data(
     u_fit, FitControlsTorchBicop(grid_type="normal"), cache_integrals=False
   )
 
@@ -359,7 +359,7 @@ def test_linear_grid_cell_index_matches_searchsorted() -> None:
   """
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.4]]))
   u_fit = cop.sample(500, seeds=[1, 2, 3])
-  bc_lin = TorchBicop.from_data(
+  bc_lin = TorchTllBicop.from_data(
     u_fit, FitControlsTorchBicop(grid_type="linear")
   )
   grid = bc_lin.interp_grid
@@ -379,7 +379,7 @@ def test_linear_grid_cached_integrals_consistent() -> None:
   in-range outputs on the linear grid as well as on the normal grid."""
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
   u_fit = cop.sample(1500, seeds=[7, 8, 9])
-  bc = TorchBicop.from_data(
+  bc = TorchTllBicop.from_data(
     u_fit, FitControlsTorchBicop(grid_type="linear"), cache_integrals=True
   )
   assert bc._sy is not None
@@ -397,7 +397,7 @@ def test_linear_rejects_invalid_grid_type() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.4]]))
   u_fit = cop.sample(200, seeds=[1, 2, 3])
   with pytest.raises(ValueError, match="grid_type"):
-    TorchBicop.from_data(u_fit, FitControlsTorchBicop(grid_type="quadratic"))
+    TorchTllBicop.from_data(u_fit, FitControlsTorchBicop(grid_type="quadratic"))
 
 
 # --------------------------------------------------------------------------- #
@@ -412,7 +412,7 @@ def test_eval_rejects_wrong_input_shape(op: str) -> None:
   """Every eval entry point requires (n, 2) and raises ValueError otherwise."""
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   u_fit = cop.sample(500, seeds=[1, 2, 3])
-  bc = TorchBicop.from_data(u_fit)
+  bc = TorchTllBicop.from_data(u_fit)
   fn = getattr(bc, op)
   with pytest.raises(ValueError, match=r"shape \(n, 2\)"):
     fn(torch.zeros(100, dtype=torch.float64))  # 1-D
@@ -423,9 +423,9 @@ def test_eval_rejects_wrong_input_shape(op: str) -> None:
 def test_from_data_rejects_wrong_input_shape() -> None:
   """`from_data` rejects inputs that aren't ``(n, 2)``."""
   with pytest.raises(ValueError, match="must have shape"):
-    TorchBicop.from_data(torch.zeros(100, dtype=torch.float64))
+    TorchTllBicop.from_data(torch.zeros(100, dtype=torch.float64))
   with pytest.raises(ValueError, match="must have shape"):
-    TorchBicop.from_data(torch.zeros(100, 3, dtype=torch.float64))
+    TorchTllBicop.from_data(torch.zeros(100, 3, dtype=torch.float64))
 
 
 def test_from_data_rejects_bad_args() -> None:
@@ -433,9 +433,9 @@ def test_from_data_rejects_bad_args() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   u_fit = cop.sample(200, seeds=[1, 2, 3])
   with pytest.raises(ValueError, match="grid_size"):
-    TorchBicop.from_data(u_fit, FitControlsTorchBicop(grid_size=1))
+    TorchTllBicop.from_data(u_fit, FitControlsTorchBicop(grid_size=1))
   with pytest.raises(ValueError, match="mult"):
-    TorchBicop.from_data(u_fit, FitControlsTorchBicop(mult=0.0))
+    TorchTllBicop.from_data(u_fit, FitControlsTorchBicop(mult=0.0))
 
 
 def test_from_data_rejects_unknown_method() -> None:
@@ -447,7 +447,7 @@ def test_from_data_rejects_unknown_method() -> None:
 def test_simulate_rejects_nonpositive_n() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   u_fit = cop.sample(200, seeds=[1, 2, 3])
-  bc = TorchBicop.from_data(u_fit)
+  bc = TorchTllBicop.from_data(u_fit)
   with pytest.raises(ValueError, match="must be > 0"):
     bc.sample(n=0)
   with pytest.raises(ValueError, match="must be > 0"):
@@ -523,7 +523,7 @@ def test_flip_swaps_arguments() -> None:
     family=pv.families.clayton, rotation=90, parameters=np.array([[3.0]])
   )
   u_fit = cop.sample(4000, seeds=[1, 2, 3])
-  tb = TorchBicop.from_data(
+  tb = TorchTllBicop.from_data(
     u_fit, FitControlsTorchBicop(), cache_integrals=False
   )
   before = tb.pdf(torch.tensor([[0.3, 0.7]], dtype=torch.float64)).clone()
@@ -571,7 +571,7 @@ def test_hinv_is_differentiable() -> None:
   )
 
   for cache in (True, False):
-    bc = TorchBicop.from_bicop(cop, cache_integrals=cache)
+    bc = TorchTllBicop.from_bicop(cop, cache_integrals=cache)
     for name in ("hinv1", "hinv2"):
       method = getattr(bc, name)
       x = q.clone().requires_grad_(True)
@@ -609,7 +609,7 @@ def test_cached_integrals_carry_a_grid_gradient() -> None:
 
   grads = {}
   for cache in (True, False):
-    bc = TorchBicop.from_bicop(cop, cache_integrals=cache)
+    bc = TorchTllBicop.from_bicop(cop, cache_integrals=cache)
     bc.interp_grid.values.requires_grad_(True)
     assert bc.pdf(q).requires_grad
     out = bc.cdf(q)
@@ -764,7 +764,7 @@ def test_rect_mass_reproduces_the_cdf_on_a_corner_rectangle() -> None:
   """
   gauss = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
   cop = _fit_tll(gauss.sample(2000, seeds=[31, 32, 33]))
-  bc = TorchBicop.from_bicop(cop)
+  bc = TorchTllBicop.from_bicop(cop)
   u = torch.from_numpy(_eval_grid(200, seed=34))
   zero = torch.zeros_like(u[:, 0])
   torch.testing.assert_close(
@@ -967,12 +967,12 @@ def test_from_data_batched_matches_the_per_pair_loop(n: int) -> None:
     for r in rhos
   ]
   stack = torch.from_numpy(np.stack(us))
-  batched = TorchBicop.from_data_batched(stack)
+  batched = TorchTllBicop.from_data_batched(stack)
   assert len(batched) == len(rhos)
   for i, u in enumerate(us):
     torch.testing.assert_close(
       batched[i].interp_grid.values,
-      TorchBicop.from_data(u).interp_grid.values,
+      TorchTllBicop.from_data(u).interp_grid.values,
       atol=1e-14,
       rtol=1e-13,
     )
@@ -1033,8 +1033,8 @@ def test_compile_fit_matches_the_eager_fit() -> None:
   u = pv.Bicop(
     family=pv.families.gaussian, parameters=np.array([[0.6]])
   ).sample(500, seeds=[1, 2, 3])
-  eager = TorchBicop.from_data(u, FitControlsTorchBicop())
-  fused = TorchBicop.from_data(u, FitControlsTorchBicop(compile_fit=True))
+  eager = TorchTllBicop.from_data(u, FitControlsTorchBicop())
+  fused = TorchTllBicop.from_data(u, FitControlsTorchBicop(compile_fit=True))
   ref = _fit_tll(u).parameters
   np.testing.assert_allclose(
     fused.interp_grid.values.numpy(), ref, atol=1e-11, rtol=1e-11
@@ -1065,12 +1065,14 @@ def test_compile_fit_batches_over_a_pair_axis() -> None:
   ]
   controls = FitControlsTorchBicop(compile_fit=True)
   # Two different widths through one compiled step, then a single pair.
-  wide = TorchBicop.from_data_batched(torch.from_numpy(np.stack(us)), controls)
-  narrow = TorchBicop.from_data_batched(
+  wide = TorchTllBicop.from_data_batched(
+    torch.from_numpy(np.stack(us)), controls
+  )
+  narrow = TorchTllBicop.from_data_batched(
     torch.from_numpy(np.stack(us[:2])), controls
   )
   for i, u in enumerate(us[:2]):
-    solo = TorchBicop.from_data(u, controls)
+    solo = TorchTllBicop.from_data(u, controls)
     for got in (wide[i], narrow[i]):
       torch.testing.assert_close(
         got.interp_grid.values,
@@ -1094,7 +1096,7 @@ def test_from_data_batched_matches_cpp() -> None:
     )
     for r in rhos
   ]
-  batched = TorchBicop.from_data_batched(torch.from_numpy(np.stack(us)))
+  batched = TorchTllBicop.from_data_batched(torch.from_numpy(np.stack(us)))
   for got, u in zip(batched, us):
     np.testing.assert_allclose(
       got.interp_grid.values.numpy(),
@@ -1109,7 +1111,7 @@ def test_from_data_batched_rejects_a_non_stacked_input() -> None:
     np.random.default_rng(0).uniform(0.05, 0.95, size=(64, 2))
   )
   with pytest.raises(ValueError, match=r"\(P, n, 2\)"):
-    TorchBicop.from_data_batched(u)
+    TorchTllBicop.from_data_batched(u)
 
 
 def test_a_discrete_edge_is_refused_a_pair_axis() -> None:
@@ -1144,10 +1146,10 @@ def test_from_data_batched_at_one_pair() -> None:
   u = pv.Bicop(
     family=pv.families.gaussian, parameters=np.array([[0.5]])
   ).sample(500, seeds=[1, 2, 3])
-  (batched,) = TorchBicop.from_data_batched(torch.from_numpy(u[None, ...]))
+  (batched,) = TorchTllBicop.from_data_batched(torch.from_numpy(u[None, ...]))
   torch.testing.assert_close(
     batched.interp_grid.values,
-    TorchBicop.from_data(u).interp_grid.values,
+    TorchTllBicop.from_data(u).interp_grid.values,
     atol=0.0,
     rtol=0.0,
   )
@@ -1171,4 +1173,4 @@ def test_a_malformed_grid_is_refused_not_silently_wrong(grid, match) -> None:
   points = torch.as_tensor(grid, dtype=torch.float64)
   values = torch.ones(len(grid), len(grid), dtype=torch.float64)
   with pytest.raises(ValueError, match=match):
-    TorchBicop(points, values)
+    TorchTllBicop(points, values)

@@ -1,11 +1,11 @@
-"""Fit-time controls for :class:`TorchBicop` and :class:`TorchVinecop`.
+"""Fit-time controls for :class:`TorchTllBicop` and :class:`TorchVinecop`.
 
 Mirrors ``FitControlsBicop`` /
 ``FitControlsVinecop``: method-specific args live on
 the dataclass; cross-cutting args stay on the relevant ``from_data``
 signature only where they don't fit naturally on the controls.
 
-Adding a new fitter to ``TorchBicop`` only requires extending the
+Adding a new fitter to ``TorchTllBicop`` only requires extending the
 relevant dataclass and the dispatch in the corresponding ``from_data``
 — the public ``from_data`` signatures are forward-stable.
 """
@@ -29,7 +29,7 @@ TREE_ALGORITHMS: tuple[str, ...] = (
 
 @dataclass
 class FitControlsTorchBicop:
-  """Controls for ``TorchBicop.from_data()``.
+  """Controls for ``TorchTllBicop.from_data()``.
 
   Mirrors ``FitControlsBicop``: ``method`` picks the
   pair-copula fitter and the remaining fields carry method-specific

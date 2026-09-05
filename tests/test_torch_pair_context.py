@@ -3,7 +3,7 @@
 The conditional / non-simplified capability lives on the array-agnostic
 ``VinecopBase`` (``ConditioningContext`` + ``x``-threaded cascades + the
 ``fit`` engine), not on ``TorchVinecop`` (which stays an
-``nn.Module`` vine of ``TorchBicop`` pairs). These tests host a toy conditional
+``nn.Module`` vine of ``TorchTllBicop`` pairs). These tests host a toy conditional
 ``GaussianBicop`` (correlation depends on ``x`` via a position-weighted link, so
 it is genuinely non-simplified *and* sensitive to the C1 column order) in a
 minimal ``VinecopBase`` subclass — the pattern a downstream package (e.g. npcc)

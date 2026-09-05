@@ -16,9 +16,9 @@ The default fits use the **TLL** family — *Transformed Local
 Likelihood* (Geenens 2014 [1]_; Nagler 2018 [2]_) — a non-parametric
 pair-copula estimator that fits a kernel density on a grid in the
 inverse-normal-transformed copula space. This is the same family
-exposed as ``tll`` and is the
-the default for the Torch fitting lane. Compiled core fitting instead performs
-family selection unless its controls restrict the candidate family set.
+``tll`` names in :mod:`pyvinecopulib.families`, and the default for this lane.
+``Vinecop`` instead selects a family per edge, unless its controls restrict the
+candidate set.
 
 If you have not used vine copulas before, the
 :doc:`concepts page </concepts>` introduces pair copulas and R-vines
@@ -35,17 +35,17 @@ Notes
 -----
 **What's exposed.**
 
-- :class:`TorchBicop` — evaluator for a single bivariate pair copula
+- :class:`TorchTllBicop` — evaluator for a single bivariate pair copula
   on a density grid. Build from a fitted
-  ``Bicop`` via :meth:`TorchBicop.from_bicop`, or
-  fit directly from data via :meth:`TorchBicop.from_data` (which
+  ``Bicop`` via :meth:`TorchTllBicop.from_bicop`, or
+  fit directly from data via :meth:`TorchTllBicop.from_data` (which
   dispatches on :class:`FitControlsTorchBicop`: pure-torch TLL).
   Exposes the standard surface:
   ``pdf`` / ``cdf`` / ``hfunc1`` / ``hfunc2`` / ``hinv1`` / ``hinv2``
   / ``sample``.
 
 - :class:`TorchVinecop` — evaluator for a full R-vine built on top of
-  :class:`TorchBicop` pair copulas. Provides ``pdf`` / ``cdf`` /
+  :class:`TorchTllBicop` pair copulas. Provides ``pdf`` / ``cdf`` /
   ``rosenblatt`` / ``inverse_rosenblatt`` / ``sample`` with the same
   signatures as ``Vinecop``. The cascade mirrors
   ``Vinecop`` byte-for-byte; every cascade also accepts ``batched=True``, one
@@ -53,14 +53,26 @@ Notes
   a level of the dependency graph for the inverse -- and
   ``compile_cascades`` runs those through :func:`torch.compile`.
 
-- :class:`TorchMargin` — a univariate margin on a ``torch.distributions``
-  family. Registers the family's parameters and rebuilds the distribution on
-  each call, so ``.to(device)``, ``state_dict()`` and autograd all reach them.
-  Continuous families only, and only those implementing ``cdf``.
+- :class:`TorchKde1d` — the margin you want unless you know otherwise: a
+  density **estimated from the data**, on a grid, and the only one here that
+  serves discrete and zero-inflated variables (it supplies the ``cdf_left``
+  a mixed-data vine needs). Its grid is a buffer, since a fitted density is
+  not a learned one.
 
-- :class:`TorchKde1d` — a fitted grid margin that evaluates in Torch and also
-  supports discrete and zero-inflated variables, including the ``cdf_left``
-  needed by mixed-data vines.
+- :class:`TorchDistributionMargin` — a margin on a ``torch.distributions``
+  family, whose **parameters an optimizer learns**. It is the torch member of
+  the same trio as :class:`~pyvinecopulib.margins.SciPyMargin` and
+  :class:`~pyvinecopulib.margins.OpenTURNSMargin`: each adapts one ecosystem's
+  family registry. Registers the family's parameters and rebuilds the
+  distribution on each call, so ``.to(device)``, ``state_dict()`` and autograd
+  all reach them. Continuous families only, and only those implementing
+  ``cdf``.
+
+  So the two do not compete: **fitted from data** versus **learned by an
+  optimizer**. There is no pair-copula counterpart to the second, because no
+  ecosystem ships a copula registry to adapt -- write one by subclassing
+  ``BicopBase`` (``examples/10_extending_pyvinecopulib.ipynb``, section 1) and
+  a :class:`TorchVinecop` will host it.
 
 - :class:`TorchVinedist` — a full multivariate distribution: a
   :class:`TorchVinecop` plus one margin per variable, with ``logpdf`` / ``pdf``
@@ -92,17 +104,17 @@ except ImportError as e:
     "Install it with `pip install pyvinecopulib[torch]`."
   ) from e
 
-from .bicop import TorchBicop
+from .tll_bicop import TorchTllBicop
 from .kde1d import TorchKde1d
-from .margin import TorchMargin
+from .distribution_margin import TorchDistributionMargin
 from .vinecop import TorchVinecop
 from .vinedist import TorchVinedist
 from .controls import FitControlsTorchBicop, FitControlsTorchVinecop
 
 __all__ = [
-  "TorchBicop",
+  "TorchTllBicop",
   "TorchKde1d",
-  "TorchMargin",
+  "TorchDistributionMargin",
   "TorchVinecop",
   "TorchVinedist",
   "FitControlsTorchBicop",
