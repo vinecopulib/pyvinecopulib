@@ -723,7 +723,15 @@ automatically.
     `MarginBase.icdf` on an infinite support.
 - **The marginal layer.** `MarginLike[ArrayT]` (`protocols.py`) is
   `{pdf, cdf, icdf}` and declares no attributes, the same discipline as
-  `BicopLike`. `pdf` means *the density with respect to the margin's own
+  `BicopLike`. **`x` means exogenous covariates everywhere in the
+  Python API, and the compiled `Kde1d` is the one settled exception**: its
+  bindings name the observations `x` and `icdf`'s argument — a probability —
+  `x` too. That is `lib/kde1d`'s long-standing convention and it **stays**;
+  the Python API diverges here on purpose, so do not "fix" the binding and do
+  not raise it again. The divergence is contained by design rather than by
+  luck: the protocol makes the observations **positional-only** for exactly
+  this reason, and `_margin_eval` calls every margin method positionally, so
+  the argument name is never used as a keyword. `pdf` means *the density with respect to the margin's own
   reference measure* — a Lebesgue density for a continuous margin, a
   probability mass at an atom — which is what makes
   `log f(x) = log c(u) + Σ_j log pdf_j(x_j)` hold verbatim for
