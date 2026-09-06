@@ -56,7 +56,6 @@ NB_MODULE(pyvinecopulib_ext, pv) {
   {
     ScopedModuleNameOverride n(pv, "pyvinecopulib.utils");
     init_stats(pv);
-    init_benchmark(pv);
   }
 
 #ifdef VERSION_INFO

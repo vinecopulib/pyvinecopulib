@@ -43,6 +43,30 @@ def test_kde1d_initialization() -> None:
   assert kde.type == "zero-inflated"
 
 
+def test_kde1d_answers_the_three_fitting_verbs() -> None:
+  """`fit`, `select` and `from_data`, as every other margin does.
+
+  `Kde1d` is the default margin, so a reader following the one-fitting-shape
+  rule reaches for `from_data` on it first. `select` reduces to `fit` because
+  a kernel density has no family to choose -- the equivalence upstream states
+  for `Bicop::select` with `select_families = false`.
+  """
+  y = np.random.default_rng(0).gamma(2.0, 1.0, size=300)
+
+  fitted = pv.core.Kde1d.from_data(y, xmin=0.0)
+  assert isinstance(fitted, pv.core.Kde1d)
+  assert fitted.xmin == 0.0
+  assert np.isfinite(fitted.loglik())
+
+  # `select` is `fit`: the same object back, and the same fit.
+  chosen = pv.core.Kde1d(xmin=0.0)
+  assert chosen.select(y) is chosen
+  np.testing.assert_allclose(chosen.loglik(), fitted.loglik(), rtol=0.0)
+
+  by_hand = pv.core.Kde1d(xmin=0.0).fit(y)
+  np.testing.assert_allclose(fitted.pdf(y[:20]), by_hand.pdf(y[:20]), rtol=0.0)
+
+
 def test_kde1d_factory_methods() -> None:
   """Test static factory methods."""
 

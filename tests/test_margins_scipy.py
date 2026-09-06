@@ -215,11 +215,10 @@ def test_an_unnamed_margin_has_no_family_until_select(
 
   It is what `margins="parametric"` resolves to, so everything that reads a
   family has to say so rather than fail obscurely -- and the type it can
-  represent narrows from both kinds to one once a family is chosen.
+  represent is settled by the family it chooses.
   """
   m = SciPyMargin()
   assert not m.is_fitted
-  assert m.supported_var_types == ("c", "d")
   assert "unfitted" in repr(m)
   with pytest.raises(RuntimeError, match="has no family yet"):
     m.family_name
@@ -229,7 +228,9 @@ def test_an_unnamed_margin_has_no_family_until_select(
     SciPyMargin(None, (0.0, 1.0))
 
   assert m.select(gamma_sample).family_name == "gamma"
-  assert m.supported_var_types == ("c",)
+  # Continuous data selected a continuous family; count data would have
+  # selected a count one, which is what "either kind until chosen" means.
+  assert m.var_type == "c"
 
 
 def test_parametric_margin_round_trips_through_pickle(
@@ -611,8 +612,10 @@ def test_candidates_that_would_tie_are_deduplicated(
   # And distinct optimizer domains for one family are two candidates.
   bounded = _dedupe(
     [
-      SciPyMargin("nbinom", bounds={"n": (1.0, 2.0), "p": (0.01, 0.99)}),
-      SciPyMargin("nbinom", bounds={"n": (10.0, 20.0), "p": (0.01, 0.99)}),
+      SciPyMargin("nbinom", param_bounds={"n": (1.0, 2.0), "p": (0.01, 0.99)}),
+      SciPyMargin(
+        "nbinom", param_bounds={"n": (10.0, 20.0), "p": (0.01, 0.99)}
+      ),
     ]
   )
   assert families(bounded) == ["nbinom", "nbinom"]

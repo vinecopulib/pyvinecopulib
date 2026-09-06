@@ -14,7 +14,7 @@ about them.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional, cast
+from typing import Any, Callable, Optional
 
 from ..core import MarginBase, MarginLike
 from ..core.margin_base import support_of
@@ -317,27 +317,10 @@ def as_margin(obj: Any) -> MarginLike[Any]:
   )
 
 
-def _is_kde1d(obj: Any) -> bool:
-  """Whether ``obj`` is a :class:`pyvinecopulib.core.Kde1d`."""
-  from ..core import Kde1d
-
-  return isinstance(obj, Kde1d)
-
-
-def _adapt_kde1d(obj: Any) -> MarginLike[Any]:
-  """Pass a ``Kde1d`` through: it satisfies the contract already.
-
-  The pass-through is explicit rather than a structural check on
-  ``MarginLike``, because a name-only test would also admit objects whose
-  ``pdf`` means something else -- a modern SciPy discrete distribution
-  reports ``+inf`` for every mass and would sail through.
-  """
-  return cast(MarginLike[Any], obj)
-
-
 # Registered newest-first, so the order here is reversed on lookup: the two
-# SciPy predicates are mutually exclusive, and the torch one is cheap.
-register_margin_adapter(_is_kde1d, _adapt_kde1d)
+# SciPy predicates are mutually exclusive, and the torch one is cheap. `Kde1d`
+# needs no predicate of its own: no other one matches it, and it then reaches
+# the structural `MarginLike` check below, which passes it through unchanged.
 register_margin_adapter(_is_torch_distribution, _adapt_torch)
 register_margin_adapter(_is_scipy_legacy, _adapt_scipy_legacy)
 register_margin_adapter(_is_scipy_new, _adapt_scipy_new)

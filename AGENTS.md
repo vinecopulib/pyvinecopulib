@@ -189,10 +189,25 @@ closed unmerged, and some commits carry no number at all.
   fitted vines — bagging, averaging over candidate structures,
   post-hoc selection among them — is left to downstream packages.
   The library ships single-vine estimators plus the seams such a
-  package needs: the copy-on-write `with_*` backend derivations, a
-  pre-settable `schema_`, `VineRegressor.normalize_weights`, and the
-  `_weights_for_batch` / `_predict_from_iter` split. Do not remove
-  those as "unused" — they are deliberate, tested extension points.
+  package needs. Do not remove any of these as "unused" — several have no
+  in-library caller *by design*, and all of them have one downstream:
+
+  - the copy-on-write `with_*` backend derivations
+    (`with_random_structure` / `with_local_random` / `with_num_threads`);
+    the first two have no in-library caller at all
+  - a pre-settable `schema_`, honored across a *refit* and not only the first
+    `fit` — an ensembling wrapper refits its survivors, and re-inferring the
+    types there silently changes the model
+  - `VineRegressor.normalize_weights`, a real `__init__` parameter so it
+    survives `sklearn.base.clone`
+  - the `_weights_for_batch` / `_predict_from_iter` split, whose injection
+    contract only a foreign `iter_weights` exercises
+  - `VineRegressor._copula_marginal_density`, `VineBase._validate_input`,
+    `_pdf_samples(..., copula_only=True)`, `_y_margin` / `_y_nodes`, and the
+    fitted `backend_` (read *and written*) and `structure_`
+
+  The last group is the one at risk: those have no in-library caller and were
+  not listed here until a downstream package said it depends on them.
 
 - **Scikit-learn-compatible estimators** — `VineDensity`,
   `VineRegressor` with a pluggable backend (`VinecopBackend` /
@@ -270,7 +285,7 @@ pyvinecopulib/
         _reorient.py             # relabel a structure onto a chosen order tail (internal)
         _rootfind.py             # solve_increasing (monotone bisection; internal)
       families/__init__.py       # BicopFamily enum + 13 family constants + 15 group constants
-      utils/__init__.py          # to_pseudo_obs, wdm, sobol, ghalton, sample_uniform, benchmark
+      utils/__init__.py          # to_pseudo_obs, wdm, sobol, ghalton, sample_uniform
         _pair_plots.py           # pairs_copula_data plotting helper (pure Python)
 
       margins/__init__.py        # as_margin, register_margin_adapter, resolve_margins, the margins
@@ -287,8 +302,9 @@ pyvinecopulib/
         regressor.py             # VineRegressor
 
       torch/__init__.py          # TorchTllBicop, TorchVinecop, TorchKde1d, TorchDistributionMargin, TorchVinedist, FitControlsTorch*
-        bicop.py, vinecop.py     # nn.Module evaluators
-        margin.py, vinedist.py   # TorchDistributionMargin / TorchVinedist (nn.Module margins + distribution)
+        tll_bicop.py, vinecop.py # nn.Module evaluators
+        distribution_margin.py   # TorchDistributionMargin (torch.distributions adapter)
+        vinedist.py              # TorchVinedist (nn.Module margins + distribution)
         kde1d.py                 # TorchKde1d (the torch marginal estimator)
         _kde1d_interp.py         # kde1d's InterpolationGrid, ported — internal
         controls.py              # FitControlsTorchBicop / FitControlsTorchVinecop dataclasses
@@ -840,7 +856,7 @@ layers at once.
 ### `pyvinecopulib.utils`
 
 - Re-exports `Kde1d`, `to_pseudo_obs`, `wdm`, `find_latent_sample`,
-  `sobol`, `ghalton`, `sample_uniform`, `benchmark` (all C++) plus the
+  `sobol`, `ghalton`, `sample_uniform` (all C++) plus the
   pure-Python `pairs_copula_data` helper from `_pair_plots.py`.
 - `wdm`'s `method` includes Chatterjee's ξ (`"chatterjee"` / `"cxi"` /
   `"xi"`), the one **asymmetric** measure in the list — it measures how far
@@ -1188,7 +1204,7 @@ below are a quick orientation.
   `rotationless`, `lt`, `ut`, `itau`, `analytic_derivs`).
 - **`pyvinecopulib.utils`** — `to_pseudo_obs`, `wdm`,
   `find_latent_sample`, `sobol`, `ghalton`, `sample_uniform`,
-  `benchmark`, `pairs_copula_data`.
+  `pairs_copula_data`.
 - **`pyvinecopulib.margins`** — `SciPyMargin`, `OpenTURNSMargin`,
   `FitControlsMargin`, `as_margin`, `register_margin_adapter`,
   `resolve_margins`, `resolve_margin_controls`.
@@ -1378,8 +1394,7 @@ Round-trip / parity properties to preserve when touching numerics:
   `default_margin`, `bind_distribution` and the
   copy-on-write `with_*` derivations (`with_random_structure` /
   `with_local_random` / `with_num_threads`); override the divergent
-  members (`fit_vine`, `pdf`, `cdf`, `sample`, `_default_controls`,
-  and `_default_controls`, which `_effective_controls` resolves
+  members (`fit_vine`, `pdf`, `cdf`, `sample`, `_default_controls`, which `_effective_controls` resolves
   lazily). `resolve_backend`
   accepts any such object (it only defaults `None`). Consider whether
   the underlying vine satisfies the `pyvinecopulib.core.VinecopLike`

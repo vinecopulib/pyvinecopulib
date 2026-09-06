@@ -80,6 +80,29 @@ what they always meant: `rosenblatt(u, 4)` is still `num_threads=4`, and
 You only need to change code that was already passing these by keyword, which
 is to say: none.
 
+## `Vinecop.fit` no longer takes `num_threads`
+
+It duplicated `FitControlsBicop.num_threads`, which `fit` already reads, so the
+argument is gone rather than kept as a second way to say the same thing. Both
+the positional and the keyword form now raise `TypeError`:
+
+```python
+vine.fit(u, controls, 4)              # 0.7.6
+vine.fit(u, num_threads=4)            # 0.7.6
+
+vine.fit(u, FitControlsBicop(num_threads=4))          # 1.0.0
+```
+
+This is the one exception to the section above: `fit`'s third positional
+argument did not survive.
+
+## A selected structure is labeled differently
+
+`RVineStructure` now puts the conditioned variable on the diagonal, matching
+what `Vinecop.select` finalizes. So `get_matrix()` and `order` can differ from
+0.7.6 for the *same* model. Densities, log-likelihoods and samples do not
+change — but a stored matrix diffed against a fresh fit will.
+
 ## Sampling methods are now called `sample`
 
 `sample` is what scikit-learn, `torch.distributions` and SciPy's modern
@@ -176,7 +199,10 @@ treated as load-bearing. Pin an exact version if you build on the rest.
 ## What did not change
 
 - Serialized models. JSON and CBOR files written by 0.7.x load unchanged, and so
-  do pickles (through the deprecated aliases). `Kde1d`, `Vinedist` and the
-  `margins` types gain the same `to_json` / `from_json` surface in 1.0; the
-  `torch` modules use `state_dict` instead.
+  do pickles (through the deprecated aliases). `Kde1d`, `Vinedist` and
+  `SciPyMargin` gain a `to_json` surface in 1.0 -- `Kde1d` and `Vinedist` read
+  themselves back with `from_json`, a margin through
+  `core.margin_from_json`. `OpenTURNSMargin` does not serialize, so a
+  `Vinedist` holding one cannot be written to JSON. The `torch` modules use
+  `state_dict` instead.
 - Every evaluation signature other than the keyword-only arguments above.

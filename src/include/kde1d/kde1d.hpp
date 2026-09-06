@@ -451,6 +451,82 @@ inline void init_kde1d(nb::module_& module) {
               },
               "x"_a, "weights"_a = Eigen::VectorXd(), kde1d_doc.fit.doc,
               nb::rv_policy::reference_internal)
+          // `select` and `from_data` complete the fitting surface every
+          // other margin has. A kernel density has no family to choose, so
+          // `select` reduces to `fit` -- the equivalence upstream states for
+          // `Bicop::select` with `select_families = false`.
+          .def(
+              "select",
+              [](Kde1d& self, const Eigen::VectorXd& x,
+                 const Eigen::VectorXd& weights) -> Kde1d& {
+                {
+                  nb::gil_scoped_release release;
+                  self.fit(x, weights);
+                }
+                return self;
+              },
+              "x"_a, "weights"_a = Eigen::VectorXd(),
+              "Fit the density; there is no family to select.\n"
+              "\n"
+              "A kernel density is determined by its parameters, so choosing "
+              "a\n"
+              "family is vacuous and this is ``fit``. It exists so that every\n"
+              "margin answers the same three verbs.\n"
+              "\n"
+              "Parameters\n"
+              "----------\n"
+              "x : array, shape (n,), dtype float\n"
+              "    Observations.\n"
+              "\n"
+              "weights : array, shape (n,), dtype float, optional\n"
+              "    Observation weights.\n"
+              "\n"
+              "Returns\n"
+              "-------\n"
+              "Kde1d\n"
+              "    ``self``, so the call chains.",
+              nb::rv_policy::reference_internal)
+          .def_static(
+              "from_data",
+              [](const Eigen::VectorXd& x, const Eigen::VectorXd& weights,
+                 std::optional<double> xmin, std::optional<double> xmax,
+                 const std::string& type) {
+                Kde1d kde(xmin.value_or(NAN), xmax.value_or(NAN), type);
+                {
+                  nb::gil_scoped_release release;
+                  kde.fit(x, weights);
+                }
+                return kde;
+              },
+              "x"_a, "weights"_a = Eigen::VectorXd(), "xmin"_a = std::nullopt,
+              "xmax"_a = std::nullopt, "type"_a = "continuous",
+              "Construct a margin and fit it to data.\n"
+              "\n"
+              "``Kde1d(...).fit(x)`` in one call, the factory every other\n"
+              "margin in the package provides.\n"
+              "\n"
+              "Parameters\n"
+              "----------\n"
+              "x : array, shape (n,), dtype float\n"
+              "    Observations.\n"
+              "\n"
+              "weights : array, shape (n,), dtype float, optional\n"
+              "    Observation weights.\n"
+              "\n"
+              "xmin : float, optional\n"
+              "    Lower bound of the support.\n"
+              "\n"
+              "xmax : float, optional\n"
+              "    Upper bound of the support.\n"
+              "\n"
+              "type : str, optional\n"
+              "    ``\"continuous\"``, ``\"discrete\"`` or "
+              "``\"zero-inflated\"``.\n"
+              "\n"
+              "Returns\n"
+              "-------\n"
+              "Kde1d\n"
+              "    The fitted margin.")
           .def(
               "pdf",
               [](const Kde1d& kde, const Eigen::VectorXd& x,

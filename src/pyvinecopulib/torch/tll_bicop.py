@@ -406,8 +406,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
   ) -> "TorchTllBicop":
     """Fit a pair copula on pseudo-observations, in pure PyTorch.
 
-    Reproduces the ``tll`` fit of ``Bicop`` to floating-point tolerance, with
-    ``controls.method`` naming the fitter (``"tll"`` is the one shipped).
+    Reproduces the ``tll`` fit of ``Bicop`` to floating-point tolerance.
 
     Parameters
     ----------

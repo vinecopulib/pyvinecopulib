@@ -28,6 +28,7 @@ from .helpers import widen
 torch = pytest.importorskip("torch")
 stats = pytest.importorskip("scipy.stats")
 
+from pyvinecopulib.margins import FitControlsMargin  # noqa: E402
 from pyvinecopulib.torch import (  # noqa: E402
   FitControlsTorchVinecop,
   TorchKde1d,
@@ -365,6 +366,47 @@ def test_from_data_refuses_a_family_set_it_cannot_search(
     margin_controls=FitControlsMargin(support=(-10.0, 10.0)),
   )
   assert all(isinstance(m, TorchKde1d) for m in fitted.margins)
+
+
+@pytest.mark.parametrize(
+  ("declared", "expected_kde_type", "expected_var_type"),
+  [
+    ("c", "continuous", "c"),
+    ("d", "discrete", "d"),
+    ("zi", "zero-inflated", "d"),
+  ],
+)
+def test_margin_controls_declare_the_variable_type(
+  declared: str, expected_kde_type: str, expected_var_type: str
+) -> None:
+  """Every declared type reaches the torch margin's constructor.
+
+  Parametrized over all three because the two lanes translate the declaration
+  separately: the core `Kde1d` accepts either spelling of the zero-inflated
+  type and `TorchKde1d` accepts only the hyphenated one, so a second copy of
+  the mapping diverged silently on exactly that value.
+  """
+  rng = np.random.default_rng(0)
+  y = torch.as_tensor(
+    np.column_stack([rng.normal(size=300), rng.poisson(3.0, 300).astype(float)])
+  )
+  dist = TorchVinedist.from_data(
+    y, margin_controls={1: FitControlsMargin(var_type=declared)}
+  )
+  margin = cast(Any, dist.margins[1])
+  assert margin.kde_type == expected_kde_type
+  assert dist.var_types[1] == expected_var_type
+  assert torch.isfinite(dist.logpdf(y)).all()
+
+
+def test_margin_controls_declare_a_bound() -> None:
+  """A declared support bounds the margin the library builds."""
+  rng = np.random.default_rng(1)
+  y = torch.as_tensor(rng.gamma(2.0, 1.0, size=(400, 2)))
+  bounded = TorchVinedist.from_data(
+    y, margin_controls=FitControlsMargin(support=(0.0, None))
+  )
+  assert all(float(cast(Any, m).xmin) == 0.0 for m in bounded.margins)
 
 
 def test_from_data_refuses_covariates(data: np.ndarray) -> None:

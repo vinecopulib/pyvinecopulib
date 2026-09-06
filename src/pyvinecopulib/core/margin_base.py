@@ -242,7 +242,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
   consumer reads with ``getattr``, because each member added to the contract
   is one an object from another ecosystem must happen to have. Hence the
   declarations rather than inferences: :attr:`supports_weights`,
-  :attr:`supports_controls`, :attr:`supported_var_types` and
+  :attr:`supports_controls` and
   :attr:`supports_covariates`.
 
   See Also
@@ -256,13 +256,6 @@ class MarginBase(MarginLike[ArrayT], ABC):
   #: caller passing weights to a family that cannot use them gets an error
   #: rather than a silently unweighted fit.
   supports_weights: bool = False
-
-  #: Which variable types this family can serve, as a superset of what any
-  #: one instance currently declares through :attr:`var_type`. Declared so
-  #: that a caller choosing among margin classes can judge admissibility
-  #: before configuring a candidate, where ``var_type`` can only report what
-  #: the candidate already is.
-  supported_var_types: tuple[str, ...] = ("c",)
 
   #: Whether this margin reads the exogenous covariates ``x``, i.e. whether it
   #: models ``f(y | x)`` rather than ``f(y)``. Declared so consumers can omit

@@ -438,12 +438,6 @@ def test_from_data_rejects_bad_args() -> None:
     TorchTllBicop.from_data(u_fit, FitControlsTorchBicop(mult=0.0))
 
 
-def test_from_data_rejects_unknown_method() -> None:
-  """`FitControlsTorchBicop` rejects unknown ``method`` values up-front."""
-  with pytest.raises(ValueError, match="unknown method"):
-    FitControlsTorchBicop(method="bogus")
-
-
 def test_simulate_rejects_nonpositive_n() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   u_fit = cop.sample(200, seeds=[1, 2, 3])

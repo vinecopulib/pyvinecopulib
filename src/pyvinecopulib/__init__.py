@@ -38,6 +38,7 @@ __all__ = [
   "CVineStructure",
   "DVineStructure",
   "FitControlsBicop",
+  "FitControlsMargin",
   "FitControlsVinecop",
   "RVineStructure",
   "Vinecop",
@@ -48,6 +49,7 @@ __all__ = [
   "margins",
   "utils",
   "sklearn",
+  "torch",
   "__version__",
 ]
 
@@ -55,11 +57,16 @@ __all__ = [
 def __getattr__(name: str):
   if name in _DEPRECATED_TOP_LEVEL:
     return _resolve_deprecated(name)
-  if name == "sklearn":
-    # Lazy: only `import pyvinecopulib.sklearn` triggers the extra.
+  if name == "FitControlsMargin":
+    from .core import FitControlsMargin
+
+    return FitControlsMargin
+  if name in ("sklearn", "torch"):
+    # Lazy: attribute access is what triggers the extra, so importing
+    # `pyvinecopulib` never requires either one.
     import importlib
 
-    return importlib.import_module("pyvinecopulib.sklearn")
+    return importlib.import_module(f"pyvinecopulib.{name}")
   raise AttributeError(f"module 'pyvinecopulib' has no attribute {name!r}")
 
 

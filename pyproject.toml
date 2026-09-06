@@ -73,7 +73,7 @@ scipy = [
 openturns = [
   # An extra rather than a dependency on two counts: OpenTURNS is LGPL where
   # this package is MIT, and its wheel is ~60 MB. 1.16 is the floor for
-  # `FittingTest.AICC`, one of the three criteria `OpenTURNSSelector` offers.
+  # `FittingTest.AICC`, one of the three criteria `OpenTURNSMargin.select` offers.
   "openturns>=1.16",
 ]
 doc = [

@@ -484,10 +484,12 @@ class SciPyMargin(MarginBase[np.ndarray]):
       ``loc``, then ``scale`` for a continuous family). Given here, the margin
       is already fitted and :attr:`n_parameters` is 0, since nothing was
       estimated from data.
-  bounds : mapping of str to tuple of float, or None, optional
-      Search bounds per parameter name, used only by the discrete families.
-      Curated families come with their own; pass this to widen them or to fit
-      a family the curated set does not cover.
+  param_bounds : mapping of str to tuple of float, or None, optional
+      Search bounds **per parameter name**, used only by the discrete
+      families -- not the variable's support, which is
+      ``FitControlsMargin(support=...)``. Curated families come with their
+      own; pass this to widen them, or to fit a family the curated set does
+      not cover.
   **fixed : float
       Parameters to hold fixed, named as SciPy's legacy fitter names them:
       ``floc``, ``fscale``, and ``f`` followed by a shape parameter's name
@@ -562,7 +564,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
     family: Optional[str] = None,
     params: Optional[Sequence[float]] = None,
     *,
-    bounds: Optional[Mapping[str, tuple[float, float]]] = None,
+    param_bounds: Optional[Mapping[str, tuple[float, float]]] = None,
     **fixed: float,
   ) -> None:
     self._declared_var_type: Optional[str] = None
@@ -573,7 +575,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
           "params= was given without a family; name the family it belongs to, "
           "or leave both out and let select(y) choose one"
         )
-      self._unnamed(bounds, fixed)
+      self._unnamed(param_bounds, fixed)
       return
     stats = _stats()
     dist = getattr(stats, family, None)
@@ -591,7 +593,9 @@ class SciPyMargin(MarginBase[np.ndarray]):
       # lattice offset is not identified alongside the shape parameters.
       self._fixed["loc"] = 0.0
     self._bounds = (
-      dict(bounds) if bounds is not None else dict(_FIT_BOUNDS.get(family, {}))
+      dict(param_bounds)
+      if param_bounds is not None
+      else dict(_FIT_BOUNDS.get(family, {}))
     )
 
     self._params: Optional[tuple[float, ...]] = None
@@ -609,15 +613,15 @@ class SciPyMargin(MarginBase[np.ndarray]):
 
   def _unnamed(
     self,
-    bounds: Optional[Mapping[str, tuple[float, float]]],
+    param_bounds: Optional[Mapping[str, tuple[float, float]]],
     fixed: Mapping[str, float],
   ) -> None:
     """Initialize a margin whose family is not chosen yet.
 
     Parameters
     ----------
-    bounds : mapping, or None
-        Search bounds to apply to whichever family is chosen.
+    param_bounds : mapping, or None
+        Per-parameter search bounds to apply to whichever family is chosen.
     fixed : mapping
         Parameters to pin on whichever family is chosen.
 
@@ -629,7 +633,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
     self._discrete = False
     self._names: tuple[str, ...] = ()
     self._fixed: dict[str, float] = dict(fixed)
-    self._bounds = dict(bounds) if bounds is not None else {}
+    self._bounds = dict(param_bounds) if param_bounds is not None else {}
     self._params: Optional[tuple[float, ...]] = None
     self._n_free = 0
     self._loglik: Optional[float] = None
@@ -778,7 +782,12 @@ class SciPyMargin(MarginBase[np.ndarray]):
       scored.append((score, candidate))
 
     if not scored:
-      return self._no_candidate(data, refused, settings)
+      detail = "\n  ".join(refused) or "(no candidate was admissible)"
+      raise ValueError(
+        "no parametric family fits this variable; every candidate was "
+        f"refused:\n  {detail}\nName a family directly, widen family_set, or "
+        'pass on_failure="fallback" for a kernel-density margin.'
+      )
     scored.sort(key=lambda pair: pair[0])
     return self._adopt(scored[0][1])
 
@@ -922,44 +931,6 @@ class SciPyMargin(MarginBase[np.ndarray]):
     self._loglik = winner._loglik
     self._nobs = winner._nobs
     return self
-
-  def _no_candidate(
-    self,
-    data: np.ndarray,
-    refused: Sequence[str],
-    settings: Any,
-  ) -> "SciPyMargin":
-    """Answer a variable where every candidate was refused.
-
-    Parameters
-    ----------
-    data : array, shape (n,), dtype float
-        The observations.
-    refused : sequence of str
-        One ``family: reason`` line per candidate.
-    settings : FitControlsMargin
-        The resolved settings, read for ``on_failure``.
-
-    Returns
-    -------
-    SciPyMargin
-        Never returns; the annotation matches :meth:`select`.
-
-    Raises
-    ------
-    ValueError
-        Always. Substituting a different kind of margin is not something this
-        class can do -- it would have to stop being parametric -- so
-        ``on_failure="fallback"`` is honored one level up, where the margin
-        for a column is chosen.
-    """
-    del data, settings
-    detail = "\n  ".join(refused) or "(no candidate was admissible)"
-    raise ValueError(
-      "no parametric family fits this variable; every candidate was "
-      f"refused:\n  {detail}\nName a family directly, widen family_set, or "
-      'pass on_failure="fallback" for a kernel-density margin.'
-    )
 
   # --- scoring ------------------------------------------------------------- #
   # --- identity ------------------------------------------------------------ #
@@ -1169,7 +1140,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
       str(k): float(v) for k, v in (payload.get("fixed") or {}).items()
     }
     # `params` positionally, so the `**fixed` unpacking cannot reach it.
-    margin = cls(str(payload["family"]), None, bounds=bounds, **fixed)
+    margin = cls(str(payload["family"]), None, param_bounds=bounds, **fixed)
     if "params" in payload:
       margin._params = tuple(float(v) for v in payload["params"])
     if payload.get("loglik") is not None:
@@ -1279,7 +1250,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
     if missing:
       raise ValueError(
         f"fitting {self._family!r} needs search bounds for {missing}; pass "
-        "bounds={'name': (lo, hi)} or pin the parameter with f<name>="
+        "param_bounds={'name': (lo, hi)} or pin the parameter with f<name>="
       )
     search: dict[str, tuple[float, float]] = {}
     for name in self._names:

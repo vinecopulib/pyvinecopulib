@@ -22,7 +22,6 @@ pyvinecopulib
 .. toctree::
    :maxdepth: 2
 
-   README
    concepts
    examples
    features

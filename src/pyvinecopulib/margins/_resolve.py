@@ -96,6 +96,57 @@ _Default = Union[
 ]
 
 
+def _index_for(key: Any, lookup: dict[str, int], d: int, label: str) -> int:
+  """Resolve one mapping key to a variable position.
+
+  Shared by ``margins=`` and ``margin_controls=``, which accept the same four
+  shapes and must therefore refuse the same keys the same way.
+
+  Parameters
+  ----------
+  key : object
+      A variable name or an integer position.
+  lookup : dict
+      Variable name to position; empty when the data carry no names.
+  d : int
+      Number of variables.
+  label : str
+      The argument's name, quoted in the error messages.
+
+  Returns
+  -------
+  int
+      The variable's position.
+
+  Raises
+  ------
+  ValueError
+      If the key names no variable, is neither a name nor an integer, or is
+      out of range.
+  """
+  if isinstance(key, str):
+    if key not in lookup:
+      raise ValueError(
+        f"{label} mapping names {key!r}, which is not a variable"
+        + (
+          f"; known names are {sorted(lookup)}"
+          if lookup
+          else "; no names are known here, so key the mapping by position"
+        )
+      )
+    return lookup[key]
+  try:
+    index = operator.index(key)
+  except TypeError as e:
+    raise ValueError(
+      f"{label} mapping key {key!r} is neither a variable name nor an "
+      "integer position"
+    ) from e
+  if not 0 <= index < d:
+    raise ValueError(f"{label} mapping has out-of-range index {index}")
+  return index
+
+
 def _per_variable(
   spec: Any,
   d: int,
@@ -145,27 +196,7 @@ def _per_variable(
     resolved: list[Any] = [default] * d
     lookup = {name: j for j, name in enumerate(names or [])}
     for key, value in spec.items():
-      if isinstance(key, str):
-        if key not in lookup:
-          raise ValueError(
-            f"{label} mapping names {key!r}, which is not a variable"
-            + (
-              f"; known names are {sorted(lookup)}"
-              if lookup
-              else "; no names are known here, so key the mapping by position"
-            )
-          )
-        index = lookup[key]
-      else:
-        try:
-          index = operator.index(key)
-        except TypeError as e:
-          raise ValueError(
-            f"{label} mapping key {key!r} is neither a variable name nor an "
-            "integer position"
-          ) from e
-        if not 0 <= index < d:
-          raise ValueError(f"{label} mapping has out-of-range index {index}")
+      index = _index_for(key, lookup, d, label)
       resolved[index] = value
     return resolved
 
@@ -306,28 +337,7 @@ def resolve_margins(
     lookup = {name: j for j, name in enumerate(names or [])}
     addressed: dict[int, Any] = {}
     for key, value in spec.items():
-      if isinstance(key, str):
-        if key not in lookup:
-          raise ValueError(
-            f"margins mapping names {key!r}, which is not a variable"
-            + (
-              f"; known names are {sorted(lookup)}"
-              if lookup
-              else "; no names are known here, so key the mapping by position"
-            )
-          )
-        index = lookup[key]
-      else:
-        try:
-          index = operator.index(key)
-        except TypeError as e:
-          raise ValueError(
-            f"margins mapping key {key!r} is neither a variable name nor an "
-            "integer position"
-          ) from e
-        if not 0 <= index < d:
-          raise ValueError(f"margins mapping has out-of-range index {index}")
-      addressed[index] = _resolve_one(value)
+      addressed[_index_for(key, lookup, d, "margins")] = _resolve_one(value)
     # Resolve the keys first, then build the default only if a variable is
     # actually left over -- the deferral the `default` parameter documents, and
     # the reason it matters is that building one can raise.

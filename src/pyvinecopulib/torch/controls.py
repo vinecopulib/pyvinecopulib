@@ -15,8 +15,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field, fields
 from typing import Any, Optional
 
-METHODS: tuple[str, ...] = ("tll",)
-
 #: Structure-selection algorithms accepted by ``FitControlsTorchVinecop``,
 #: mirroring ``FitControlsVinecop.tree_algorithm``.
 TREE_ALGORITHMS: tuple[str, ...] = (
@@ -31,19 +29,13 @@ TREE_ALGORITHMS: tuple[str, ...] = (
 class FitControlsTorchBicop:
   """Controls for ``TorchTllBicop.from_data()``.
 
-  Mirrors ``FitControlsBicop``: ``method`` picks the
-  pair-copula fitter and the remaining fields carry method-specific
-  hyperparameters.
+  Mirrors ``FitControlsBicop``, for the one fitter this lane has: a pure-torch
+  *Transformed Local Likelihood* kernel density estimator on a 2-D grid in the
+  inverse-normal-transformed copula space (Geenens, 2014; Nagler, 2018),
+  matching the ``Bicop`` TLL fit to machine precision.
 
   Attributes
   ----------
-  method : {"tll"}, default="tll"
-      Fitter to use. ``"tll"`` is a pure-torch *Transformed Local
-      Likelihood* kernel density estimator on a 2-D grid in the
-      inverse-normal-transformed copula space (Geenens, 2014;
-      Nagler, 2018), matching the ``Bicop`` TLL fit to
-      machine precision. It is the only fitter currently shipped;
-      ``method`` is kept as the extension seam for future torch fitters.
   grid_size : int, default=30
       *TLL only.* Density grid size per axis.
   mult : float, default=1.0
@@ -74,8 +66,6 @@ class FitControlsTorchBicop:
       unaffected.
   """
 
-  method: str = "tll"
-
   # TLL-only
   grid_size: int = 30
   mult: float = 1.0
@@ -98,10 +88,16 @@ class FitControlsTorchBicop:
     return {f.name: getattr(self, f.name) for f in fields(self)}
 
   def __post_init__(self) -> None:
-    if self.method not in METHODS:
-      raise ValueError(
-        f"unknown method={self.method!r}; expected one of {METHODS}"
-      )
+    """Validate the settings.
+
+    Nothing to check at this level today; the subclass chains to it, so the
+    hook stays rather than moving the chain's base each time a field is added
+    or removed.
+
+    Returns
+    -------
+    None
+    """
 
 
 @dataclass

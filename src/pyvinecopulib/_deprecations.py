@@ -41,7 +41,6 @@ _DEPRECATED_TOP_LEVEL: dict[str, tuple[str, str]] = {
   "sobol": ("utils", "sobol"),
   "ghalton": ("utils", "ghalton"),
   "simulate_uniform": ("utils", "sample_uniform"),
-  "benchmark": ("utils", "benchmark"),
   "pairs_copula_data": ("utils", "pairs_copula_data"),
 }
 

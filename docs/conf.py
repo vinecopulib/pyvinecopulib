@@ -179,7 +179,15 @@ master_doc = "index"
 # reads them back as source documents.
 # `releasing.md` is a maintainer checklist that lives next to the docs for
 # discoverability, not a page of the user site.
-exclude_patterns = ["_build", "**/.ipynb_checkpoints", "releasing.md"]
+# `README.md` is staged only so `_README_inlined.md` can be derived from it;
+# the landing page includes that, so the standalone copy would be a second
+# rendering of the same text and the first click out of the toctree.
+exclude_patterns = [
+  "_build",
+  "**/.ipynb_checkpoints",
+  "releasing.md",
+  "README.md",
+]
 
 project = "pyvinecopulib"
 copyright = "2024, Thomas Nagler and Thibault Vatter"
@@ -386,7 +394,6 @@ DOCSTRING_SUBPACKAGES = {
       "ghalton",
       "sobol",
       "pairs_copula_data",
-      "benchmark",
     ],
   },
   "margins": {

@@ -479,9 +479,6 @@ pre-built lists you can pass directly to
 
 The notebook ``examples/01_bivariate_copulas.ipynb`` walks through
 a fit on synthetic data for several of these families.
-:func:`pyvinecopulib.utils.benchmark` times three vine fits on caller-supplied
-pseudo-observations: parametric maximum likelihood, parametric inversion of
-Kendall's tau, and transformation local likelihood.
 
 
 .. _concepts-estimation:
@@ -1084,7 +1081,20 @@ Where to next
   ``examples/01_bivariate_copulas.ipynb``,
   ``examples/02_vine_copulas.ipynb``, and
   ``examples/03_vine_distributions.ipynb`` walk through
-  end-to-end use.
+  end-to-end use. :class:`~pyvinecopulib.core.Kde1d` is the default margin
+  and stands alone as a 1-d kernel density (notebook
+  ``examples/07_kde1d.ipynb``).
+* :mod:`pyvinecopulib.margins` — the marginal half of a vine distribution:
+  :class:`~pyvinecopulib.margins.SciPyMargin` and
+  :class:`~pyvinecopulib.margins.OpenTURNSMargin` for a parametric family
+  (named, or chosen from the data), and
+  :class:`~pyvinecopulib.margins.FitControlsMargin` to configure either
+  (notebook ``examples/03_vine_distributions.ipynb``).
+* The four contracts and their canonical bases in :mod:`pyvinecopulib.core` —
+  ``BicopLike`` / ``BicopBase``, ``VinecopLike`` / ``VinecopBase``,
+  ``MarginLike`` / ``MarginBase``, ``VinedistLike`` / ``VinedistBase`` — are
+  what a custom pair copula, margin, vine or distribution subclasses (notebook
+  ``examples/10_extending_pyvinecopulib.ipynb``).
 * :mod:`pyvinecopulib.sklearn` — scikit-learn-compatible
   estimators :class:`~pyvinecopulib.sklearn.VineDensity` and
   :class:`~pyvinecopulib.sklearn.VineRegressor`. The notebook
@@ -1096,8 +1106,6 @@ Where to next
   :class:`~pyvinecopulib.torch.TorchVinecop` for GPU placement and
   autograd. Notebook ``examples/09_torch_backend.ipynb``.
 * :mod:`pyvinecopulib.utils` —
-  :class:`~pyvinecopulib.core.Kde1d` for the marginals (notebook
-  ``examples/07_kde1d.ipynb``);
   :func:`~pyvinecopulib.utils.wdm` for weighted dependence
   measures (notebook ``examples/06_weighted_dependence_measures.ipynb``);
   :func:`~pyvinecopulib.utils.sobol`,

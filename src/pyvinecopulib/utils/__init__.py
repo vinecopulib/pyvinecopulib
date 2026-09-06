@@ -20,9 +20,6 @@ classes themselves:
   copula CDFs and by random vine-structure generation.
 - **Plotting helper** — :func:`pairs_copula_data` produces a
   pair-plot of a copula sample or a fitted ``Vinecop``.
-- **Benchmarking** — :func:`benchmark` times three vine fits on
-  caller-supplied pseudo-observations: parametric maximum likelihood,
-  inversion of Kendall's :math:`\tau`, and nonparametric TLL.
 
 Most users reach for these via :mod:`pyvinecopulib.sklearn` rather
 than calling them directly. The ``examples/06_weighted_dependence_measures.ipynb`` notebook demos
@@ -40,7 +37,6 @@ import warnings
 from typing import Any
 
 from ..pyvinecopulib_ext import (
-  benchmark,
   find_latent_sample,
   ghalton,
   sample_uniform,
@@ -51,7 +47,6 @@ from ..pyvinecopulib_ext import (
 from ._pair_plots import pairs_copula_data
 
 __all__ = [
-  "benchmark",
   "find_latent_sample",
   "ghalton",
   "pairs_copula_data",
