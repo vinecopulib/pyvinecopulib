@@ -5,7 +5,7 @@ import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 from mpl_toolkits.mplot3d.axis3d import XAxis as XAxis3D, YAxis as YAxis3D
 
-from ..core.bicop_base import _pair_eval
+from ..core._covariates import pair_eval
 from .stats import expon_cdf, expon_pdf, expon_ppf, norm_cdf, norm_pdf, norm_ppf
 
 BICOP_PLOT_DOC = """
@@ -150,15 +150,15 @@ def bicop_plot(
     as_continuous = getattr(type(cop), "as_continuous", None)
     if callable(as_continuous):
       eval_cop = as_continuous(cop)
-      vals = _pair_eval(eval_cop.pdf, u_grid, x_grid)
+      vals = pair_eval(eval_cop.pdf, u_grid, x_grid)
     else:
       cop.var_types = ["c", "c"]
       try:
-        vals = _pair_eval(cop.pdf, u_grid, x_grid)
+        vals = pair_eval(cop.pdf, u_grid, x_grid)
       finally:
         cop.var_types = vt
   else:
-    vals = _pair_eval(cop.pdf, u_grid, x_grid)
+    vals = pair_eval(cop.pdf, u_grid, x_grid)
   # Coerce the density to a NumPy array so a torch-tensor return reshapes
   # cleanly -- via the host, since ``np.asarray`` raises on a device tensor.
   detach = getattr(vals, "detach", None)

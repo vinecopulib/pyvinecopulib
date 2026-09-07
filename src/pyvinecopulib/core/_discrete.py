@@ -28,7 +28,8 @@ from array_api_compat import array_namespace
 from ._rootfind import solve_increasing
 from ._trim import trim
 from ._validation import validate_covariates
-from .bicop_base import BicopBase, _pair_eval
+from ._covariates import pair_eval
+from .bicop_base import BicopBase
 from .protocols import ArrayT, BicopLike
 
 __all__ = ["DiscretePair"]
@@ -42,7 +43,7 @@ class _ContinuousPair(Protocol):
   ``Bicop`` satisfies structurally -- ``BicopLike`` it satisfies only nominally,
   its methods taking per-row ``parameters`` where the protocol takes a
   keyword-only ``x``. A conditioning matrix, when there is one, is forwarded
-  dynamically (see ``_pair_eval``), which is what makes a pair that cannot
+  dynamically (see ``pair_eval``), which is what makes a pair that cannot
   accept one fail loudly rather than silently.
   """
 
@@ -574,16 +575,16 @@ class DiscretePair(BicopBase[ArrayT]):
     )
 
   def _pdf(self, xp: Any, a: Any, b: Any, x: Optional[Any]) -> Any:
-    return _pair_eval(self._pair.pdf, xp.stack([a, b], axis=-1), x)
+    return pair_eval(self._pair.pdf, xp.stack([a, b], axis=-1), x)
 
   def _cdf(self, xp: Any, a: Any, b: Any, x: Optional[Any]) -> Any:
-    return _pair_eval(self._pair.cdf, xp.stack([a, b], axis=-1), x)
+    return pair_eval(self._pair.cdf, xp.stack([a, b], axis=-1), x)
 
   def _h1(self, xp: Any, a: Any, b: Any, x: Optional[Any]) -> Any:
-    return _pair_eval(self._pair.hfunc1, xp.stack([a, b], axis=-1), x)
+    return pair_eval(self._pair.hfunc1, xp.stack([a, b], axis=-1), x)
 
   def _h2(self, xp: Any, a: Any, b: Any, x: Optional[Any]) -> Any:
-    return _pair_eval(self._pair.hfunc2, xp.stack([a, b], axis=-1), x)
+    return pair_eval(self._pair.hfunc2, xp.stack([a, b], axis=-1), x)
 
   @staticmethod
   def _take(value: Optional[Any], mask: Any) -> Optional[Any]:
@@ -836,7 +837,7 @@ class DiscretePair(BicopBase[ArrayT]):
     xp, u1, p, u1m, _ = self._split(u)
     if not self._d1:
       return cast(
-        ArrayT, _pair_eval(self._pair.hinv1, xp.stack([u1, p], axis=-1), x)
+        ArrayT, pair_eval(self._pair.hinv1, xp.stack([u1, p], axis=-1), x)
       )
     return cast(
       ArrayT,
@@ -871,7 +872,7 @@ class DiscretePair(BicopBase[ArrayT]):
     xp, p, u2, _, u2m = self._split(u)
     if not self._d2:
       return cast(
-        ArrayT, _pair_eval(self._pair.hinv2, xp.stack([p, u2], axis=-1), x)
+        ArrayT, pair_eval(self._pair.hinv2, xp.stack([p, u2], axis=-1), x)
       )
     return cast(
       ArrayT,

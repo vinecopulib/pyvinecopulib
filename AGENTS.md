@@ -281,6 +281,7 @@ pyvinecopulib/
         margin_base.py           # MarginBase (canonical MarginLike partial impl)
         vinedist_base.py         # VinedistBase (array-agnostic cascade + IFM fit)
         vinedist.py              # Vinedist (NumPy + compiled Vinecop)
+        _covariates.py           # the two `x`-forwarding rules, side by side (internal)
         _discrete.py             # DiscretePair + the discrete layouts / per-edge types
         _placement.py            # place / reference_array — the `_prep` seam's default (internal)
         _reorient.py             # relabel a structure onto a chosen order tail (internal)
@@ -476,6 +477,29 @@ For any behavior change:
   covariate matrix is always `(n, p)`, which is what `validate_covariates`'
   own error message says; it was documented `(n, k)` at 78 sites, colliding
   with both of `k`'s other uses in the same files.
+- **Two covariate-forwarding rules, and they are not interchangeable**
+  (`core/_covariates.py`). `pair_eval` forwards `x` to a pair copula
+  **whenever there is one**: `ty` makes every `BicopBase` subclass declare the
+  parameter, so the signature *is* the declaration, and forwarding
+  unconditionally is what makes a pair that takes none -- `Bicop` above all --
+  raise instead of quietly modeling something else. `declared_eval` forwards
+  to a margin or a whole copula **only when it declares
+  `supports_covariates`**, because those are reached through structural
+  protocols that foreign objects satisfy (a SciPy distribution, `Vinecop`)
+  whose signatures answer nothing, and because one distribution may hold
+  conditional and unconditional parts side by side -- a per-column choice the
+  caller made, not an accident. Collapsing the first rule into the second
+  would make a forgotten flag a *silent* unconditional fit, which is the one
+  outcome neither rule may produce; what keeps the second honest instead is
+  that the object refuses covariates **nothing** reads
+  (`VinedistBase._check_covariates`). At fit time there is no skipping:
+  `reject_covariates` refuses outright.
+- **A capability flag exists where a consumer reads it, and nowhere else.**
+  `supports_covariates` is declared on `MarginBase` and `VinecopBase` because
+  `declared_eval` reads it there; it is deliberately *absent* from `BicopBase`
+  (whose rule is the signature) and from `VinedistBase` (which nothing
+  composes). Adding either would be a declaration with no reader -- the thing
+  `supported_var_types` was deleted for.
 - **American English** in code, comments, documentation, commit messages,
   and changelog entries: *behavior*, *normalize*, *serialize*, *finalize*,
   *center*, *modeling*, *honored*, *color*. There is no legacy exemption.
@@ -721,7 +745,7 @@ automatically.
     contract — and a custom pair copula opts in by implementing `cdf` and
     wrapping itself in `DiscretePair`. `fit` / `select` take `var_types` too and
     forward each edge's types to `fit_edge` as a keyword, only on the edges that
-    have one (the rule `_pair_eval` applies to `x`). The parity test that binds
+    have one (the rule `pair_eval` applies to `x`). The parity test that binds
     is the **normalization identity** `Σ_atoms c(u₁,u₂)·(u₁ − u₁⁻) = 1`: the
     quotients telescope, so it holds exactly and needs no reference
     implementation and no tolerance argument. It is what established that
@@ -777,7 +801,7 @@ automatically.
   the Python API diverges here on purpose, so do not "fix" the binding and do
   not raise it again. The divergence is contained by design rather than by
   luck: the protocol makes the observations **positional-only** for exactly
-  this reason, and `_margin_eval` calls every margin method positionally, so
+  this reason, and `declared_eval` calls every margin method positionally, so
   the argument name is never used as a keyword. `pdf` means *the density with respect to the margin's own
   reference measure* — a Lebesgue density for a continuous margin, a
   probability mass at an atom — which is what makes

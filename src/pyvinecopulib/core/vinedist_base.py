@@ -33,7 +33,8 @@ from typing import Any, ClassVar, Optional, Self, Sequence, cast
 
 from array_api_compat import array_namespace
 
-from .margin_base import _margin_eval, derive_cdf_left, safe_log
+from ._covariates import declared_eval
+from .margin_base import derive_cdf_left, safe_log
 from ._placement import place
 from ._trim import trim
 from ._validation import validate_covariates, validate_weights
@@ -48,22 +49,6 @@ from .protocols import _VINEDIST_EXAMPLE
 
 
 __all__ = ["VinedistBase"]
-
-
-def _copula_eval(
-  copula: Any, name: str, u: Any, x: Optional[Any], **kwargs: Any
-) -> Any:
-  """Call a copula method, forwarding ``x`` only when the copula reads it.
-
-  The commonest half of a vine distribution is ``Vinecop``, whose signatures
-  carry no conditioning matrix at all -- and a vine of unconditional pairs
-  would refuse one a level further down. A copula declares that its pairs are
-  conditional through ``supports_covariates``, exactly as a margin does.
-  """
-  method = getattr(copula, name)
-  if x is None or not getattr(copula, "supports_covariates", False):
-    return method(u, **kwargs)
-  return method(u, x=x, **kwargs)
 
 
 class VinedistBase(VinedistLike[ArrayT], ABC):
@@ -480,7 +465,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     _, ya, n = self._columns(y)
     self._check_covariates(x, n)
     cols = [
-      _margin_eval(m, "cdf", ya[:, j], x) for j, m in enumerate(self._margins)
+      declared_eval(m, "cdf", ya[:, j], x) for j, m in enumerate(self._margins)
     ]
     # The margins' namespace, not the input's: a torch copula hosting NumPy
     # margins is legal, and `torch.stack` cannot consume NumPy columns.
@@ -506,7 +491,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     _, ua, n = self._columns(u)
     self._check_covariates(x, n)
     cols = [
-      _margin_eval(m, "icdf", ua[:, j], x) for j, m in enumerate(self._margins)
+      declared_eval(m, "icdf", ua[:, j], x) for j, m in enumerate(self._margins)
     ]
     xp = array_namespace(cols[0])
     return cast(ArrayT, xp.stack(cols, axis=-1))
@@ -579,7 +564,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
       )
     validate_covariates(x, int(ya.shape[0]))
     upper = [
-      _margin_eval(m, "cdf", ya[:, j], x) for j, m in enumerate(resolved)
+      declared_eval(m, "cdf", ya[:, j], x) for j, m in enumerate(resolved)
     ]
     # The margins' namespace, not the input's, as `marginal_cdf` does: a margin
     # may legitimately return another array type than it was handed, and
@@ -596,7 +581,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
       # joint "density" would not integrate to one.
       left = getattr(m, "cdf_left", None)
       sub = (
-        _margin_eval(m, "cdf_left", ya[:, j], x)
+        declared_eval(m, "cdf_left", ya[:, j], x)
         if left is not None
         else derive_cdf_left(m, ya[:, j], x, var_types[j])
       )
@@ -690,7 +675,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         Joint log-density values.
     """
     _, ya, _ = self._columns(y)
-    copula_term: Any = _copula_eval(
+    copula_term: Any = declared_eval(
       self._vinecop, "pdf", cast(ArrayT, self.copula_layout(y, x=x)), x
     )
     # The parts' namespace, not the input's, as `marginal_cdf` and
@@ -704,9 +689,9 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     total = xp.log(copula_term)
     for j, m in enumerate(self._margins):
       if getattr(m, "logpdf", None) is not None:
-        term: Any = _margin_eval(m, "logpdf", ya[:, j], x)
+        term: Any = declared_eval(m, "logpdf", ya[:, j], x)
       else:
-        term = safe_log(_margin_eval(m, "pdf", ya[:, j], x))
+        term = safe_log(declared_eval(m, "pdf", ya[:, j], x))
       # Only when they actually differ: coercing a tensor that already
       # tracks grad through `asarray` warns about the flag it inherits.
       if array_namespace(term) is not xp:
@@ -767,7 +752,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     # ``C(F_1(y_1), ..., F_d(y_d))`` needs no left limits, but a copula with
     # discrete variables accepts only the layouts that carry them, so hand it
     # the full layout and let it drop what it does not read.
-    return _copula_eval(
+    return declared_eval(
       self._vinecop,
       "cdf",
       cast(ArrayT, self.copula_layout(y, x=x)),
@@ -816,7 +801,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     array, shape (n, d), dtype float
         Independent uniforms.
     """
-    return _copula_eval(
+    return declared_eval(
       self._vinecop,
       "rosenblatt",
       cast(ArrayT, self.copula_layout(y, x=x)),
@@ -846,7 +831,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     """
     _, wa, n = self._columns(w)
     self._check_covariates(x, n)
-    u = _copula_eval(
+    u = declared_eval(
       self._vinecop, "inverse_rosenblatt", cast(ArrayT, wa), x, **kwargs
     )
     return self.marginal_icdf(u, x=x)
@@ -877,7 +862,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         Samples on the original scale.
     """
     self._check_covariates(x, n)
-    u = _copula_eval(self._vinecop, "sample", n, x, **kwargs)
+    u = declared_eval(self._vinecop, "sample", n, x, **kwargs)
     return self.marginal_icdf(u, x=x)
 
   def sample_conditional(
@@ -960,7 +945,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
           f"conditioning_set entries must be in 1, ..., {self.dim}; got {cond}"
         )
     u_cond = self._conditioning_data(ya, cond, x)
-    u = _copula_eval(
+    u = declared_eval(
       self._vinecop,
       "sample_conditional",
       u_cond,

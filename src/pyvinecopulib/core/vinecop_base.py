@@ -82,7 +82,8 @@ from ._discrete import (
 from ._independence import IndependencePair
 from ._reorient import Reorientation, reorientation
 from ._validation import validate_covariates, validate_weights
-from .bicop_base import BicopBase, _pair_eval
+from ._covariates import pair_eval
+from .bicop_base import BicopBase
 from .context import ConditioningContext, SimplifiedContext
 from .protocols import (
   ArrayT,
@@ -951,18 +952,18 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         x_e = self._edge_context(tree, edge, x, u_nat, None)
         # Accumulate the density as a product over edges (cwiseProduct,
         # class.ipp:1047).
-        pdf = pdf * _pair_eval(edge_copula.pdf, u_e, x_e)
+        pdf = pdf * pair_eval(edge_copula.pdf, u_e, x_e)
         # h-functions only evaluated if a later tree needs them (class.ipp:1050).
         if s.needed_hfunc1(tree, edge):
-          hfunc1[:, edge] = _pair_eval(edge_copula.hfunc1, u_e, x_e)
+          hfunc1[:, edge] = pair_eval(edge_copula.hfunc1, u_e, x_e)
           if subs is not None and types[1] == "d":
             u_h1 = xp.stack([col0, subs[1], *subs], axis=-1)
-            hfunc1_sub[:, edge] = _pair_eval(edge_copula.hfunc1, u_h1, x_e)
+            hfunc1_sub[:, edge] = pair_eval(edge_copula.hfunc1, u_h1, x_e)
         if s.needed_hfunc2(tree, edge):
-          hfunc2[:, edge] = _pair_eval(edge_copula.hfunc2, u_e, x_e)
+          hfunc2[:, edge] = pair_eval(edge_copula.hfunc2, u_e, x_e)
           if subs is not None and types[0] == "d":
             u_h2 = xp.stack([subs[0], col1, *subs], axis=-1)
-            hfunc2_sub[:, edge] = _pair_eval(edge_copula.hfunc2, u_h2, x_e)
+            hfunc2_sub[:, edge] = pair_eval(edge_copula.hfunc2, u_h2, x_e)
     return pdf
 
   def _rosenblatt(
@@ -1025,14 +1026,14 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         x_e = self._edge_context(tree, edge, x, u_nat, None)
         # hfunc1 only if needed downstream; hfunc2 is the running transform.
         if s.needed_hfunc1(tree, edge):
-          hfunc1[:, edge] = _pair_eval(edge_copula.hfunc1, u_e, x_e)
+          hfunc1[:, edge] = pair_eval(edge_copula.hfunc1, u_e, x_e)
           if subs is not None and types[1] == "d":
             u_h1 = xp.stack([col0, subs[1], *subs], axis=-1)
-            hfunc1_sub[:, edge] = _pair_eval(edge_copula.hfunc1, u_h1, x_e)
-        hfunc2[:, edge] = _pair_eval(edge_copula.hfunc2, u_e, x_e)
+            hfunc1_sub[:, edge] = pair_eval(edge_copula.hfunc1, u_h1, x_e)
+        hfunc2[:, edge] = pair_eval(edge_copula.hfunc2, u_e, x_e)
         if subs is not None and types[0] == "d":
           u_h2 = xp.stack([subs[0], col1, *subs], axis=-1)
-          hfunc2_sub[:, edge] = _pair_eval(edge_copula.hfunc2, u_h2, x_e)
+          hfunc2_sub[:, edge] = pair_eval(edge_copula.hfunc2, u_h2, x_e)
     # Scatter the transformed columns back to variable order.
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
@@ -1110,11 +1111,11 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         # Conditioning u_D is read from the finalized hinv2[0] rows (the
         # conditioning variables are finalized before this var by the invariant).
         x_e = self._edge_context(tree, var, x, None, hinv2[0])
-        hinv2[tree, var, :] = _pair_eval(edge_copula.hinv2, u_e, x_e)
+        hinv2[tree, var, :] = pair_eval(edge_copula.hinv2, u_e, x_e)
         # Propagate hfunc1 for the next-inner inversion when needed.
         if var < d - 1 and s.needed_hfunc1(tree, var):
           u_e_after = xp.stack([hinv2[tree, var, :], u_e_col1], axis=-1)
-          hfunc1[tree + 1, var, :] = _pair_eval(
+          hfunc1[tree + 1, var, :] = pair_eval(
             edge_copula.hfunc1, u_e_after, x_e
           )
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
@@ -2511,15 +2512,15 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
           )
         row.append(edge_copula)
         if s.needed_hfunc1(tree, edge):
-          hfunc1[:, edge] = _pair_eval(edge_copula.hfunc1, u_e, x_e)
+          hfunc1[:, edge] = pair_eval(edge_copula.hfunc1, u_e, x_e)
           if subs is not None and edge_types[1] == "d":
-            hfunc1_sub[:, edge] = _pair_eval(
+            hfunc1_sub[:, edge] = pair_eval(
               edge_copula.hfunc1, with_left_limit(u_e, 1), x_e
             )
         if s.needed_hfunc2(tree, edge):
-          hfunc2[:, edge] = _pair_eval(edge_copula.hfunc2, u_e, x_e)
+          hfunc2[:, edge] = pair_eval(edge_copula.hfunc2, u_e, x_e)
           if subs is not None and edge_types[0] == "d":
-            hfunc2_sub[:, edge] = _pair_eval(
+            hfunc2_sub[:, edge] = pair_eval(
               edge_copula.hfunc2, with_left_limit(u_e, 0), x_e
             )
       pairs.append(row)
@@ -2960,17 +2961,17 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
           new_nodes.append(
             {
               "all_indices": tuple(sorted((a_var, b_var, *conditioning))),
-              "h1": _pair_eval(pair.hfunc1, u_e, x_e),
-              "h2": _pair_eval(pair.hfunc2, u_e, x_e),
+              "h1": pair_eval(pair.hfunc1, u_e, x_e),
+              "h2": pair_eval(pair.hfunc2, u_e, x_e),
               # A discrete argument's next tree needs the h-function at the
               # atom's lower end too, exactly as the cascades compute it.
               "h1_sub": (
-                _pair_eval(pair.hfunc1, with_left_limit(u_e, 1), x_e)
+                pair_eval(pair.hfunc1, with_left_limit(u_e, 1), x_e)
                 if edge_types[1] == "d"
                 else None
               ),
               "h2_sub": (
-                _pair_eval(pair.hfunc2, with_left_limit(u_e, 0), x_e)
+                pair_eval(pair.hfunc2, with_left_limit(u_e, 0), x_e)
                 if edge_types[0] == "d"
                 else None
               ),

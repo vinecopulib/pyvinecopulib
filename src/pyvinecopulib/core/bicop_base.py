@@ -12,10 +12,10 @@ covariates a conditional pair copula reads, row-aligned with ``u``. ``Bicop``
 takes per-row ``parameters`` in that positional slot, so the two surfaces are
 near-twins rather than one signature.
 
-``_pair_eval`` lives here too, shared with the vine cascades: the rule that a
-pair-copula method is handed ``x`` only when there is one, so a pair copula
-accepting no covariates -- ``Bicop`` above all -- stays a valid host for a
-simplified vine.
+The rule for handing a pair copula its covariates is ``_covariates.pair_eval``
+-- forward whenever there is one, so a pair accepting none, ``Bicop`` above
+all, stays a valid host for a simplified vine -- kept beside the library's
+other forwarding rule rather than here.
 
 Array values are handled as ``Any`` inside the numeric bodies per the
 ``pyvinecopulib.core`` typing policy (``array_api_compat``, which resolves the
@@ -26,7 +26,7 @@ signatures.
 from __future__ import annotations
 
 from abc import ABC
-from typing import Any, Callable, Optional, Self, cast
+from typing import Any, Optional, Self, cast
 
 from array_api_compat import array_namespace
 
@@ -37,18 +37,6 @@ from ._validation import validate_covariates
 from .protocols import ArrayT, BicopLike, _BICOP_EXAMPLE
 
 __all__ = ["BicopBase"]
-
-
-def _pair_eval(method: Callable[..., Any], u: Any, x: Optional[Any]) -> Any:
-  """Evaluate a pair-copula method, forwarding ``x`` only when there is one.
-
-  A pair copula that takes no conditioning argument -- ``Bicop`` above all --
-  is a valid host for a simplified vine, so an absent context must not reach
-  it as a keyword. When there *is* a conditioning matrix, it is passed by
-  keyword, which is what makes a pair copula that cannot accept one fail
-  loudly instead of binding it to some unrelated positional parameter.
-  """
-  return method(u) if x is None else method(u, x=x)
 
 
 class BicopBase(BicopLike[ArrayT], ABC):
