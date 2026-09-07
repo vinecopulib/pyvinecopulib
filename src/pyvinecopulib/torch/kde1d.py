@@ -27,6 +27,7 @@ from torch import Tensor
 
 from ..core import Kde1d, MarginBase
 from ..core._validation import (
+  reject_array_controls,
   reject_covariates,
   validate_univariate,
   validate_weights,
@@ -306,6 +307,9 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     from_kde1d : Lift a ``Kde1d`` that is already fitted.
     """
     reject_covariates(self, x)
+    # `kde.fit(x, w)` is the compiled `Kde1d`'s spelling, and here it would
+    # bind the weights to `controls` and fit unweighted.
+    reject_array_controls(self, controls)
     kde = Kde1d(
       xmin=self.xmin,
       xmax=self.xmax,

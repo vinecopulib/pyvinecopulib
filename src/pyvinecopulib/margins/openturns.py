@@ -24,6 +24,7 @@ import numpy as np
 
 from ..core import MarginBase, MarginLike
 from ..core._validation import (
+  reject_array_controls,
   reject_covariates,
   usable_observations,
 )
@@ -560,6 +561,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     ValueError
         If no observation survives.
     """
+    reject_array_controls(self, controls)
     reject_covariates(self, x)
     if weights is not None:
       raise TypeError(
@@ -683,6 +685,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
         )
         chosen.family_name
     """
+    reject_array_controls(self, controls)
     reject_covariates(self, x)
     if weights is not None:
       raise TypeError(

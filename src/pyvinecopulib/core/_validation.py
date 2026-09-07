@@ -222,3 +222,44 @@ def reject_covariates(part: Any, x: Optional[Any], *, name: str = "x") -> None:
       f"fitted with {name}=; write one whose fit reads them and that declares "
       f"supports_covariates, or drop {name}."
     )
+
+
+def reject_array_controls(part: Any, controls: Any) -> None:
+  """Raise if an array landed in the ``controls`` slot.
+
+  Every estimator in the package takes the observations, then ``controls``.
+  The compiled ``Kde1d`` is the documented exception -- its second positional
+  argument is ``weights`` -- so ``kde.fit(x, w)`` is a spelling a reader
+  carries over, and on any other margin it binds the weights to ``controls``,
+  where they are ignored: an unweighted fit under a weighted-looking call.
+
+  Nothing in the library passes an array here, so refusing one costs nothing
+  and turns that typo into a message naming the keyword to use.
+
+  Parameters
+  ----------
+  part : object
+      The margin being fitted; named in the message. Either the instance or
+      the class, so a classmethod may pass ``cls``.
+  controls : object
+      Whatever arrived in the controls slot.
+
+  Returns
+  -------
+  None
+
+  Raises
+  ------
+  TypeError
+      If ``controls`` looks like an array rather than a configuration object.
+  """
+  if controls is None or hasattr(controls, "to_dict"):
+    return
+  if not any(hasattr(controls, name) for name in ("shape", "__array__")):
+    return
+  named = part if isinstance(part, type) else type(part)
+  raise TypeError(
+    f"{named.__name__} received an array where `controls` goes. Observation "
+    "weights are the keyword-only `weights=`; the compiled `Kde1d` is the one "
+    "class whose second positional argument is `weights`."
+  )

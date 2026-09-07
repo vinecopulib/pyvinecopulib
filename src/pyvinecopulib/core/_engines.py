@@ -248,7 +248,8 @@ def fit_parts(
       weights and has to apply them itself.
   criterion_function : callable, optional
       Required when ``tree_criterion`` is ``"custom"``; maps an ``(n, 2)``
-      matrix to a criterion value.
+      matrix -- and, when there are covariates, ``x`` by keyword -- to a
+      criterion value.
 
   Returns
   -------
@@ -520,7 +521,8 @@ def select_parts(
       weights and has to apply them itself.
   criterion_function : callable, optional
       Required when ``tree_criterion`` is ``"custom"``; maps an ``(n, 2)``
-      matrix to a criterion value.
+      matrix -- and, when there are covariates, ``x`` by keyword -- to a
+      criterion value.
 
   Returns
   -------

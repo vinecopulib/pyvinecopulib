@@ -140,20 +140,21 @@ are:
 
   Parameters
   ----------
-  data :
-      Input data matrix.
+  data : ndarray, shape (n, d) or (n, d + k), dtype float
+      Input data matrix. With ``k`` discrete variables their left limits are
+      required too; see ``Vinecop.select`` on the layouts.
 
-  structure :
+  controls : FitControlsVinecop, optional
+      Fit controls for the vinecop. Defaults to the default constructor.
+
+  structure : RVineStructure, optional
       An ``RVineStructure``. Provide either this or `matrix`, but not both.
 
-  matrix :
+  matrix : ndarray, dtype uint64, optional
       RVine matrix. Provide either this or `structure`, but not both.
 
-  var_types :
+  var_types : sequence of str, optional
       Variable types for each variable (e.g., 'c' for continuous, 'd' for discrete). Defaults to all continuous.
-
-  controls :
-      Fit controls for the vinecop. Defaults to the default constructor.
   )""";
 
   // Supplied inline rather than via the generated docstring: the C++ facade

@@ -170,6 +170,14 @@ inline void init_vinecop_fit_controls(nb::module_& module) {
       .def("to_dict", &vinecop_controls_to_dict,
            R"(Return the settings as a plain dictionary.
 
+A *report* of the settings, not a constructor payload: it also carries
+``conditioning_set`` and ``tree_criterion_function``, which are set as
+properties after construction rather than passed to ``__init__``, so
+``FitControlsVinecop(**controls.to_dict())`` raises. This is what
+``ControlsLike`` asks of a controls object -- one signature reads
+``FitControlsVinecop`` and ``FitControlsTorchVinecop`` alike -- and the
+array-agnostic fit engines read it to pick out the settings they own.
+
 Returns
 -------
 dict

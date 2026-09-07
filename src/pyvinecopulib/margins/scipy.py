@@ -21,6 +21,7 @@ import numpy as np
 
 from ..core import MarginBase
 from ..core._validation import (
+  reject_array_controls,
   reject_covariates,
   usable_observations,
 )
@@ -735,6 +736,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
     fit : Estimate a named family, leaving the family alone.
     aic : Score the chosen fit.
     """
+    reject_array_controls(self, controls)
     reject_covariates(self, x)
     if weights is not None:
       raise TypeError(
@@ -1171,6 +1173,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
         If no observation survives, or a free discrete parameter has no search
         bound.
     """
+    reject_array_controls(self, controls)
     reject_covariates(self, x)
     if self._family is None:
       # `RuntimeError`, as the property readers use for the same missing

@@ -31,7 +31,7 @@ from array_api_compat import array_namespace
 from ._covariates import declared_eval, prepare
 from ._placement import place
 from ._rootfind import solve_increasing
-from ._validation import validate_weights
+from ._validation import reject_array_controls, validate_weights
 from .protocols import _MARGIN_EXAMPLE, ArrayT, MarginLike
 
 __all__ = ["MarginBase"]
@@ -503,6 +503,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
     --------
     fit : Estimate the current family's parameters, leaving the family alone.
     """
+    reject_array_controls(self, controls)
     # Each argument is forwarded only when there is one, so a subclass whose
     # `fit` takes no covariates, no weights or no controls still works through
     # `select` -- and refuses loudly when handed one it cannot honor. The rule

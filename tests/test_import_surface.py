@@ -211,6 +211,7 @@ def test_agents_md_public_api_lists_match_the_code() -> None:
   import pyvinecopulib.margins as margins
   import pyvinecopulib.utils as utils
 
+  subpackages = {"core", "families", "utils", "margins", "sklearn", "torch"}
   section = text[text.index("## Public APIs") :]
   for label, module in (
     ("`pyvinecopulib.core`", core),
@@ -221,12 +222,27 @@ def test_agents_md_public_api_lists_match_the_code() -> None:
     start = section.index(f"- **{label}**")
     entry = section[start : section.index("\n- **", start + 1)]
     named = set(re.findall(r"`([A-Za-z_][A-Za-z_0-9]*)`", entry))
-    exported: list[str] = list(getattr(module, "__all__", ()))
-    missing = {
+    exported = {
       name
-      for name in exported
-      if name not in named and not name.startswith("__")
+      for name in getattr(module, "__all__", ())
+      if not name.startswith("__")
+    } - subpackages
+    # Both directions: a name the code exports and the list omits is the drift
+    # that hid `Kde1d`, and a name the list claims and the code does not export
+    # is the drift that put `Kde1d` in `utils`. One-way would catch neither.
+    assert exported - named == set(), (
+      label,
+      "undocumented",
+      sorted(exported - named),
+    )
+    stale = {n for n in named if n in dir(module)} | (named & exported)
+    invented = {
+      n
+      for n in named
+      if n not in exported
+      and n not in dir(module)
+      and n[:1].isupper()
+      and n not in subpackages
     }
-    # Subpackage re-exports are listed under their own heading.
-    missing -= {"core", "families", "utils", "margins", "sklearn", "torch"}
-    assert missing == set(), (label, sorted(missing))
+    assert invented == set(), (label, "claimed but absent", sorted(invented))
+    del stale

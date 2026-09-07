@@ -543,3 +543,45 @@ def test_the_information_criteria_have_one_implementation() -> None:
   expected = criteria(float(margin.loglik(y)), 0.0, float(y.size))
   for name, value in expected.items():
     assert getattr(margin, name)(y) == pytest.approx(value)
+
+
+def test_an_array_in_the_controls_slot_is_refused_across_the_margin_rung() -> (
+  None
+):
+  """`kde.fit(x, w)` is the compiled `Kde1d`'s spelling and nothing else's.
+
+  Every `MarginBase` margin reads `fit(y, controls, *, weights=...)`, so the
+  carried-over positional spelling binds the weights to `controls`, where they
+  are ignored -- an unweighted fit behind a weighted-looking call. Nothing in
+  the library passes an array there, so refusing one costs nothing.
+  """
+  rng = np.random.default_rng(0)
+  y = rng.normal(size=200)
+  w = np.linspace(0.1, 3.0, 200)
+
+  class _Estimator(MarginBase[np.ndarray]):
+    def fit(
+      self,
+      y: Any,
+      /,
+      controls: Any = None,
+      *,
+      x: Any = None,
+      weights: Any = None,
+    ) -> Any:
+      del y, controls, x, weights
+      return self
+
+    def pdf(self, y: Any, *, x: Any = None) -> Any:
+      return np.ones_like(np.asarray(y, dtype=float))
+
+    def cdf(self, y: Any, *, x: Any = None) -> Any:
+      return np.clip(np.asarray(y, dtype=float), 0.0, 1.0)
+
+  with pytest.raises(TypeError, match="array where `controls` goes"):
+    _Estimator().select(y, w)
+  # The legitimate spellings are untouched.
+  assert _Estimator().select(y, weights=w) is not None
+  assert _Estimator().select(y) is not None
+  # And the documented exception still reads the way its own docs say.
+  assert pv.core.Kde1d().fit(y, w) is not None

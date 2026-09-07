@@ -181,6 +181,99 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
       list(margin.state_dict())  # ['loc', 'scale']
   """
 
+  def fit(
+    self,
+    y: Tensor,
+    /,
+    controls: Optional[Any] = None,
+    *,
+    x: Optional[Tensor] = None,
+    weights: Optional[Tensor] = None,
+  ) -> "TorchDistributionMargin":
+    """Raise: this margin's parameters are given, not estimated here.
+
+    The inherited default says "implement it", which is advice for a subclass
+    author and wrong for a caller holding one of these: the class deliberately
+    has no maximum-likelihood step. A ``torch.distributions`` family is
+    constructed with the parameters you want, and *learned* by leaving
+    ``trainable=True`` and stepping an optimizer over them -- which is the
+    point of registering them.
+
+    Parameters
+    ----------
+    y : Tensor, shape (n,), dtype float
+        Ignored.
+    controls : object, or None, optional
+        Ignored.
+    x : Tensor, or None, optional
+        Ignored.
+    weights : Tensor, or None, optional
+        Ignored.
+
+    Returns
+    -------
+    TorchDistributionMargin
+        Never returns.
+
+    Raises
+    ------
+    NotImplementedError
+        Always.
+    """
+    del y, controls, x, weights
+    raise NotImplementedError(
+      "TorchDistributionMargin has no maximum-likelihood fit: construct it "
+      "with the parameters you want -- "
+      "`TorchDistributionMargin.from_distribution(torch.distributions.Normal("
+      "loc, scale))` -- and optimize them by stepping an optimizer over its "
+      "registered parameters, which is what `trainable=True` is for. For a "
+      "fitted parametric margin use `SciPyMargin`, and for a fitted "
+      "nonparametric one `TorchKde1d`."
+    )
+
+  @classmethod
+  def from_data(
+    cls,
+    y: Tensor,
+    /,
+    controls: Optional[Any] = None,
+    *,
+    x: Optional[Tensor] = None,
+    weights: Optional[Tensor] = None,
+  ) -> "TorchDistributionMargin":
+    """Raise: there is no family to estimate from data. See :meth:`fit`.
+
+    Parameters
+    ----------
+    y : Tensor, shape (n,), dtype float
+        Ignored.
+    controls : object, or None, optional
+        Ignored.
+    x : Tensor, or None, optional
+        Ignored.
+    weights : Tensor, or None, optional
+        Ignored.
+
+    Returns
+    -------
+    TorchDistributionMargin
+        Never returns.
+
+    Raises
+    ------
+    NotImplementedError
+        Always. The inherited default would have reached
+        ``cls()``, whose ``factory`` argument is required, so the failure was a
+        bare ``TypeError`` naming a parameter the caller never saw.
+    """
+    del y, controls, x, weights
+    raise NotImplementedError(
+      "TorchDistributionMargin cannot be fitted from data: it adapts a "
+      "`torch.distributions` family whose parameters you supply. Use "
+      "`TorchDistributionMargin.from_distribution(...)`, or `TorchKde1d."
+      "from_data(y)` for a margin that is estimated."
+    )
+
   def __init__(
     self,
     factory: Callable[..., Distribution],

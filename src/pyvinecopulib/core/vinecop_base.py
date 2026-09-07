@@ -38,9 +38,10 @@ quotients from its continuous ``pdf`` / ``cdf`` / ``hfunc1`` / ``hfunc2``.
 Two structural notes about what lives here rather than in a subclass. The
 batched *cascade loops* are array-agnostic and are in this module; only the
 grid/cache builder they walk, returned by ``_build_batched``, is
-subclass-specific. And the selection and per-edge fit **engines** are the
-module-private ``_select_parts`` / ``_fit_parts``, which return the structure
-and pairs they produced rather than storing them — ``from_data`` needs those
+subclass-specific. And the selection and per-edge fit **engines** live in
+``_engines``, reached through the ``_select_parts`` / ``_fit_parts`` names
+here; they return the structure and pairs they produced rather than storing
+them — ``from_data`` needs those
 parts before an object exists to put them on, so the public ``fit`` / ``select``
 are thin wrappers that install what the engines return.
 

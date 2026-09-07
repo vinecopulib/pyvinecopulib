@@ -1152,8 +1152,9 @@ of two backend-neutral contracts, evaluated on either NumPy or PyTorch
 arrays:
 
 * :class:`~pyvinecopulib.core.BicopLike` — a pair copula, exposing
-  ``pdf`` / ``cdf`` / ``hfunc1`` / ``hfunc2`` / ``hinv1`` / ``hinv2`` /
-  ``sample``;
+  ``pdf`` / ``hfunc1`` / ``hfunc2`` / ``hinv1`` / ``hinv2`` / ``sample``
+  (``cdf`` and ``flip`` are optional capabilities, needed only on a discrete
+  edge and in structure selection respectively);
 * :class:`~pyvinecopulib.core.VinecopLike` — a fitted vine, exposing
   ``pdf`` / ``cdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` /
   ``sample`` on an :class:`~pyvinecopulib.core.RVineStructure`;

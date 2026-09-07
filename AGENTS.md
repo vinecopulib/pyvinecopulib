@@ -1298,10 +1298,12 @@ class surface so the long-standing
 `from pyvinecopulib import Bicop, Vinecop, to_pseudo_obs` pattern keeps
 working. Specifically:
 
-- `__all__` covers the eight core classes, `BicopFamily`, the three
-  controls classes, `Vinedist`, `to_pseudo_obs`, `__version__` and the four
-  subpackages that import with no extra (`core`, `families`, `margins`,
-  `utils`). The two that need one -- `sklearn`, `torch` -- are deliberately
+- `__all__` is **16** names: the five copula classes (`Bicop`, `Vinecop` and
+  the three `*VineStructure`s), `BicopFamily`, the three `FitControls*`,
+  `Vinedist`, `to_pseudo_obs`, `__version__`, and the four subpackages that
+  import with no extra (`core`, `families`, `margins`, `utils`). `Kde1d` is
+  *not* among them -- it is reached as `pyvinecopulib.core.Kde1d`, or through
+  the deprecation shim, never by star-import. The two that need one -- `sklearn`, `torch` -- are deliberately
   **out** of it: `from pyvinecopulib import *` resolves every name in
   `__all__`, so listing them made both extras hard requirements of the one
   import form a beginner reaches for first. Both stay reachable by attribute
@@ -1371,7 +1373,7 @@ below are a quick orientation.
   `TorchDistributionMargin`, `TorchVinedist`, `FitControlsTorchBicop`,
   `FitControlsTorchVinecop`.
 
-Top-level `pyvinecopulib` re-exports the eight core classes and
+Top-level `pyvinecopulib` re-exports the ten classes named above and
 `to_pseudo_obs`; everything else — including the `core` abstraction
 layer (`BicopBase` / `VinecopBase`, the protocols, the contexts) — is
 reachable only through the subpackages.
@@ -1490,8 +1492,7 @@ Round-trip / parity properties to preserve when touching numerics:
   `core/_engines.py`'s `fit_parts` / `select_parts`: both are module functions
   — neither reads `self` or `cls` — and they sat in the class body only for
   namespacing, 718 lines of a 2677-line class. The class keeps the names
-  because that is what external drivers reach them through; `from_data`
-  finishes with.
+  because that is what external drivers reach them through.
 - **Declare the parts, inherit the fitting.** A base knows how to fit once it
   knows what its parts *are*: `VinecopBase.bicop_class` names the pair copula
   it fits, and `VinedistBase.vinecop_class` / `margin_class` name its two
@@ -1583,9 +1584,11 @@ Round-trip / parity properties to preserve when touching numerics:
   add to any more -- `FitControlsTorchBicop.method` was a one-value enum
   nothing dispatched on, and it is gone. `TorchTllBicop.from_data` fits a TLL
   grid, full stop. A different estimator is a different **class**: subclass
-  `BicopBase` (an `nn.Module`, for `state_dict` and `.to(device)`), give it
-  `fit` / `from_data`, and host it by naming it as a vine's `bicop_class` or
-  by passing `fit_edge`. `torch/_fit_tll.py` is the reference for the kernel
+  `BicopBase` **and** `torch.nn.Module` -- `BicopBase` is backend-neutral, so
+  the second base is what supplies `state_dict` / `.to(device)` and lets a
+  vine own the pair as a child, and its `__init__` has to be called
+  explicitly, as `TorchTllBicop` does -- give it `fit` / `from_data`, and host
+  it by naming it as a vine's `bicop_class` or by passing `fit_edge`. `torch/_fit_tll.py` is the reference for the kernel
   itself, and `examples/10_extending_pyvinecopulib.ipynb` for the hosting.
 - **New sklearn-style estimators.** Subclass `VineBase` and add the
   mixin that matches the task (`DensityMixin` / `RegressorMixin`),

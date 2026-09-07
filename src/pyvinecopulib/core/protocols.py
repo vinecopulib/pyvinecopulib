@@ -273,13 +273,14 @@ class BicopLike(Protocol[ArrayT]):
   """Contract for a bivariate (optionally conditional) pair copula.
 
   A pair copula maps pseudo-observations ``u`` of shape ``(n, 2)`` (in the unit
-  square, clamped to ``[1e-10, 1 - 1e-10]``) to a density (``pdf``), a
-  distribution (``cdf``), the two conditional distributions
+  square, clamped to ``[1e-10, 1 - 1e-10]``) to a density (``pdf``), the two
+  conditional distributions
   ``hfunc1(u) = P(U2 <= u2 | U1 = u1)`` / ``hfunc2(u) = P(U1 <= u1 | U2 = u2)``
   and their inverses (``hinv1`` / ``hinv2``, inverting in the second / first
-  argument), plus a sampler (``sample``). The optional ``x`` of shape
-  ``(n, k)`` carries conditioning variables: a conditional copula reads them, an
-  unconditional one ignores them.
+  argument), plus a sampler (``sample``). The distribution ``cdf`` is an
+  optional capability rather than a member; see below. The optional ``x`` of
+  shape ``(n, p)`` carries conditioning variables: a conditional copula reads
+  them, an unconditional one ignores them.
 
   The easy way to satisfy this contract is to subclass
   :class:`~pyvinecopulib.core.BicopBase`, which supplies ``hinv1`` / ``hinv2``
@@ -288,12 +289,15 @@ class BicopLike(Protocol[ArrayT]):
   :class:`pyvinecopulib.core.Bicop` and
   :class:`pyvinecopulib.torch.TorchTllBicop` are the reference implementations.
 
-  **What is required is what a cascade calls.** ``pdf`` / ``hfunc1`` /
-  ``hfunc2`` / ``hinv1`` / ``hinv2`` / ``sample`` are the whole of it: a vine's
-  ``pdf``, ``rosenblatt``, ``inverse_rosenblatt`` and ``sample`` need nothing
-  else from a pair. Everything else is an **optional capability**, read with
-  ``getattr`` where it is needed, so a foreign object provides it only if it
-  applies:
+  **What is required is the evaluation surface.** ``pdf`` / ``hfunc1`` /
+  ``hfunc2`` / ``hinv1`` / ``hinv2`` / ``sample`` are the whole of it -- the
+  surface :class:`pyvinecopulib.core.Bicop` presents, so that the contract is
+  something a foreign pair copula can be typed against rather than a list of
+  whichever methods the cascades happen to call today. (``sample`` is in it for
+  that reason: no vine cascade asks a pair to sample, a vine drawing by inverse
+  Rosenblatt, but a pair copula that cannot be drawn from is not one.)
+  Everything else is an **optional capability**, read with ``getattr`` where it
+  is needed, so a foreign object provides it only if it applies:
 
   - ``cdf`` — the distribution ``C(u)``, needed only to sit on a **discrete**
     edge, where the h-functions are difference quotients of it. A vine's own

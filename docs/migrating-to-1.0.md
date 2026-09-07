@@ -92,9 +92,11 @@ which every example in this repository did -- nothing changes. The same order
 holds on `BicopBase`, `VinecopBase`, `VinedistBase` and their PyTorch
 subclasses; `MarginBase` and the margin classes already read this way.
 
-The one exception is `Kde1d`, whose second positional argument is `weights`.
-It takes no controls object at all, so there is nothing to confuse it with,
-and `kde.fit(x, w)` keeps working.
+The one exception is the **compiled** `Kde1d`, whose second positional
+argument is `weights`. It takes no controls object at all, so there is nothing
+to confuse it with, and `kde.fit(x, w)` keeps working. That is specific to that
+class: every `MarginBase` margin, `TorchKde1d` included, reads
+`fit(y, controls, *, weights=...)` like the rest, so spell `weights=` there.
 
 ## Some arguments are keyword-only
 

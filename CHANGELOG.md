@@ -17,7 +17,7 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 
 ### Breaking API changes in `pyvinecopulib`
 
-- Use one argument order on every estimator: the observations first and positional-only, then `controls`, then keyword-only whatever the object cannot infer. `Vinecop.from_data` took `controls` fifth, behind `structure`, so the call carried over from `fit` bound a controls object as a structure (#326).
+- Use one argument order on every estimator: the observations first, then `controls`, then keyword-only whatever the object cannot infer. `Vinecop.from_data` took `controls` fifth, behind `structure`, so the call carried over from `fit` bound a controls object as a structure (#326).
     - `pv.Vinecop.from_data(u, structure, matrix, var_types, controls)` -> `pv.Vinecop.from_data(u, controls, structure=..., matrix=..., var_types=...)`
     - `pv.Bicop.from_data(u, controls, var_types)` -> `pv.Bicop.from_data(u, controls, var_types=...)`
     - likewise on `BicopBase`, `VinecopBase`, `VinedistBase` and their torch subclasses; `MarginBase` already read this way
@@ -164,6 +164,9 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Document all of it: a `concepts.rst` primer on Sklar's theorem, pair-copula constructions, R-vines and the TLL family, a migration guide, and ten executed example notebooks (#211, #216, #218, #246, #247, #261, #292, #326).
 
 ### Bug fixes in `pyvinecopulib`
+
+- Refuse an array in a margin's `controls` slot: `fit(y, w)` is the compiled `Kde1d`'s spelling and binds the weights to `controls` on every other margin, where they were ignored -- an unweighted fit behind a weighted-looking call (#326).
+- Place the exogenous covariates on the fitting path too, not only when evaluating: a margin's estimator received the caller's raw array where its own column had already been placed (#326).
 
 - Leave the grid-batched bake out of a `TorchVinecop` pickle: it is a cache holding a copy of every pair's grid, so a pickle taken after one batched call was 2.9x the size and restored a bake nothing revalidated (#326).
 - Persist a `SciPyMargin`'s sample size, so `bic()` and `aicc()` no longer raise after a JSON round-trip where `loglik()` and `aic()` survived (#326).

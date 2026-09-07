@@ -448,7 +448,7 @@ def _bench_eval_cell(
               # pair-copula fits, isolating the eval-time effect.
               bc = TorchVinecop.from_data(
                 torch.from_numpy(u_fit).to(device),
-                ref.structure,
+                structure=ref.structure,
                 controls=_torch_controls(
                   grid_type, g, cache, trunc_lvl, device, torch_dtype
                 ),

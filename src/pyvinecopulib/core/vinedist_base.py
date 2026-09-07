@@ -37,7 +37,7 @@ from ._covariates import declared_eval, prepare
 from .margin_base import derive_cdf_left, safe_log
 from ._placement import place
 from ._trim import trim
-from ._validation import validate_weights
+from ._validation import validate_covariates, validate_weights
 from .protocols import (
   ArrayT,
   ControlsLike,
@@ -616,7 +616,10 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     """
     if x is None:
       return
-    x = prepare(self, x, n_rows)
+    # Validated, not placed: every entry point forwards the caller's `x` on and
+    # each part places it for itself, so placing here would be a tensor copy
+    # per call whose result nothing reads.
+    validate_covariates(x, n_rows)
     readers = [
       getattr(m, "supports_covariates", False) for m in self._margins
     ] + [getattr(self._vinecop, "supports_covariates", False)]
@@ -1326,9 +1329,18 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
 
     Notes
     -----
-    The margins are re-estimated in place, so one held elsewhere shows the new
-    fit; the copula half is replaced by a freshly fitted one, whose pair
-    copulas therefore hold the families ``controls`` admits.
+    Both halves are re-estimated **in place**, so a part held elsewhere shows
+    the new fit and keeps its class -- including a
+    :class:`~pyvinecopulib.core.VinecopLike` a caller composed the
+    distribution from. The copula refits its own pair copulas along its own
+    structure, so it holds the families it holds: a ``family_set`` in
+    ``controls`` does not apply here, exactly as it does not to
+    :meth:`~pyvinecopulib.core.Vinecop.fit`, and :meth:`select` is what
+    chooses families. The margin half *refuses* the same request instead of
+    ignoring it, because it can tell it was made --
+    ``FitControlsMargin.family_set`` defaults to ``None`` where
+    ``FitControlsVinecop.family_set`` defaults to every family, so only one of
+    the two can distinguish "search these" from "the default".
 
     See Also
     --------
@@ -1457,7 +1469,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         f"use {cls.__name__}.from_data to fit a distribution of another "
         "dimension"
       )
-    weights = self._check_fit_inputs(x, weights, n, data, verb)
+    x, weights = self._check_fit_inputs(x, weights, n, data, verb)
 
     # A mapping may be keyed by name, but the only labels this object has are
     # whatever its margins carry -- nothing here assigns one. So a name-keyed
@@ -1505,8 +1517,13 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     n: int,
     data: Any,
     verb: str,
-  ) -> Any:
-    """Validate covariates and weights against what this lane can honor.
+  ) -> tuple[Optional[Any], Optional[Any]]:
+    """Validate and place the covariates, and validate the weights.
+
+    Returns both, because placing is half the job: the covariates a margin's
+    estimator is handed have to live on the same namespace as the column it is
+    handed, and returning only the weights left the placed value dying with
+    this frame.
 
     Parameters
     ----------
@@ -1551,7 +1568,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         "the weighted fit of anything. Drop `weights`, or fit the margins "
         "yourself and compose them with a copula you weighted."
       )
-    return weights
+    return x, weights
 
   @classmethod
   def from_data(
@@ -1639,7 +1656,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     if data.ndim != 2:
       raise ValueError(f"y must be two-dimensional; got {data.ndim} dimensions")
     n, d = int(data.shape[0]), int(data.shape[1])
-    weights = cls._check_fit_inputs(x, weights, n, data, "from_data")
+    x, weights = cls._check_fit_inputs(x, weights, n, data, "from_data")
 
     if names is None:
       # A DataFrame carries its own names, and `margins` is often keyed by
