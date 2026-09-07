@@ -363,3 +363,56 @@ def test_supports_batched_is_declared_on_the_base() -> None:
   from pyvinecopulib.torch import TorchTllBicop
 
   assert TorchTllBicop.supports_batched is True
+
+
+# --------------------------------------------------------------------------- #
+# `x` on the estimator surface: threaded everywhere, refused where unusable    #
+# --------------------------------------------------------------------------- #
+
+
+def test_fit_select_and_from_data_all_take_covariates() -> None:
+  """A conditional pair must be able to express a conditional *fit*.
+
+  Every evaluation method took ``x`` already; the estimator surface did not, so
+  the only route to a conditional pair was the vine's ``fit_edge`` seam, which
+  bypasses this class entirely.
+  """
+  seen: list[tuple[str, object]] = []
+
+  class Recording(BicopBase[np.ndarray]):
+    supports_covariates = True
+
+    def fit(
+      self,
+      u: np.ndarray,
+      /,
+      controls: Any = None,
+      var_types: Optional[list[str]] = None,
+      *,
+      x: Optional[np.ndarray] = None,
+    ) -> "Recording":
+      seen.append(("fit", None if x is None else tuple(np.shape(x))))
+      return self
+
+    def pdf(self, u: np.ndarray, *, x: Optional[np.ndarray] = None) -> Any:
+      return np.ones(u.shape[0], dtype=float)
+
+    def hfunc1(self, u: np.ndarray, *, x: Optional[np.ndarray] = None) -> Any:
+      return u[:, 1]
+
+    def hfunc2(self, u: np.ndarray, *, x: Optional[np.ndarray] = None) -> Any:
+      return u[:, 0]
+
+  u = np.random.default_rng(0).uniform(0.05, 0.95, size=(20, 2))
+  covariates = np.zeros((20, 3))
+
+  Recording().fit(u, x=covariates)
+  Recording().select(u, x=covariates)
+  Recording.from_data(u, x=covariates)
+  assert seen == [("fit", (20, 3))] * 3
+
+  # And absent, it is never mentioned, so a pair whose `fit` declares no `x`
+  # still works through `select` and `from_data`.
+  seen.clear()
+  Recording().select(u)
+  assert seen == [("fit", None)]

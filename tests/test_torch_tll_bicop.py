@@ -1253,3 +1253,36 @@ def test_refitting_a_stored_pair_invalidates_the_vines_bake() -> None:
     atol=1e-12,
     rtol=1e-12,
   )
+
+
+def test_fitting_refuses_covariates_it_cannot_use() -> None:
+  """A TLL grid is unconditional, so a conditional *fit* must be refused.
+
+  The split is the one ``reject_covariates`` documents: evaluation accepts and
+  ignores an ``x``, since one vine may host conditional and unconditional pairs
+  that all see the same matrix, while fitting cannot -- estimating an
+  unconditional density when a conditional one was asked for returns a
+  different model than the caller believes they have.
+  """
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  u = cop.sample(200, seeds=[7])
+  covariates = torch.zeros(200, 2, dtype=torch.float64)
+
+  for call in (
+    lambda: TorchTllBicop.from_data(u, x=covariates),
+    lambda: TorchTllBicop.from_data(u).fit(u, x=covariates),
+  ):
+    with pytest.raises(ValueError, match="does not model covariates"):
+      call()
+
+  # The message must name the class, not the metaclass a classmethod's
+  # `type(cls)` would report.
+  with pytest.raises(ValueError, match="TorchTllBicop"):
+    TorchTllBicop.from_data(u, x=covariates)
+
+  # Evaluation still accepts and ignores it.
+  fitted = TorchTllBicop.from_data(u)
+  ut = torch.as_tensor(u, dtype=torch.float64)
+  torch.testing.assert_close(
+    fitted.pdf(ut, x=covariates), fitted.pdf(ut), atol=0.0, rtol=0.0
+  )

@@ -33,6 +33,7 @@ import torch
 from torch import Tensor
 
 from ..core import BicopBase
+from ..core._validation import reject_covariates
 from ..pyvinecopulib_ext import Bicop, tll as _TLL_FAMILY
 from ._interp import InterpolationGrid2D, _trim
 from .controls import FitControlsTorchBicop
@@ -404,6 +405,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     controls: Optional[FitControlsTorchBicop] = None,
     var_types: Optional[list[str]] = None,
     *,
+    x: Optional[Tensor] = None,
     cache_integrals: Optional[bool] = None,
     device: Optional[torch.device] = None,
     dtype: Optional[torch.dtype] = None,
@@ -426,6 +428,12 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
         Either way the fitted grid is a continuous density -- the
         mixed-discrete surface an atom needs comes from
         :class:`~pyvinecopulib.core.DiscretePair`.
+    x : Tensor, shape (n, p), or None, default=None
+        Refused. A TLL grid is an unconditional density, so covariates cannot
+        reach it, and fitting one while ignoring them would return a different
+        model than was asked for. Evaluation *does* accept and ignore an ``x``,
+        since one vine may host conditional and unconditional pairs side by
+        side and they all see the same matrix.
     cache_integrals : bool or None, default=None
         As on ``TorchTllBicop``; ``None`` reads ``controls``, then ``True``.
     device : torch.device or None, default=None
@@ -451,6 +459,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     --------
     TorchTllBicop.from_data_batched : Fit ``P`` pairs in one call.
     """
+    reject_covariates(cls, x)
     if controls is None:
       controls = FitControlsTorchBicop()
     cache_integrals, device, dtype = _resolve_placement(
@@ -518,6 +527,8 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     /,
     controls: Optional[FitControlsTorchBicop] = None,
     var_types: Optional[list[str]] = None,
+    *,
+    x: Optional[Tensor] = None,
   ) -> "TorchTllBicop":
     """Refit this pair copula's density grid, in place.
 
@@ -536,6 +547,12 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     var_types : list of str, or None, optional
         The two variable types of the edge this pair sits on. ``None`` means
         both are continuous.
+    x : Tensor, shape (n, p), or None, default=None
+        Refused. A TLL grid is an unconditional density, so covariates cannot
+        reach it, and fitting one while ignoring them would return a different
+        model than was asked for. Evaluation *does* accept and ignore an ``x``,
+        since one vine may host conditional and unconditional pairs side by
+        side and they all see the same matrix.
 
     Returns
     -------
@@ -547,6 +564,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     TorchTllBicop.from_data : Construct and fit in one call.
     """
     values = self.interp_grid.values
+    reject_covariates(self, x)
     fitted = type(self).from_data(
       u,
       controls,
