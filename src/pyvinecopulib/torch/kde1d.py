@@ -417,7 +417,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     controls : object, or None, optional
         Unused; the estimator is configured at construction, so a margin whose
         bandwidth or bounds differ is named that way instead.
-    x : Tensor, shape (n, k), or None, optional
+    x : Tensor, shape (n, p), or None, optional
         Not supported; passing covariates raises.
     weights : Tensor, shape (n,), or None, optional
         Observation weights.

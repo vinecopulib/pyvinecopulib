@@ -101,7 +101,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
     ----------
     u : array, shape (n, 2), dtype float
         Pair pseudo-observations in the unit square.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation; ignored by an
         unconditional pair copula.
 
@@ -127,7 +127,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
     u : array, shape (n, 2), dtype float
         Column 0 is the conditioning value ``u1``; column 1 is the level to
         invert.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation; ignored by an
         unconditional pair copula.
 
@@ -157,7 +157,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
     u : array, shape (n, 2), dtype float
         Column 0 is the level to invert; column 1 is the conditioning value
         ``u2``.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation; ignored by an
         unconditional pair copula.
 
@@ -190,7 +190,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
     ----------
     u : array, shape (n, 2), dtype float
         Pair pseudo-observations in the unit square.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation; ignored by an
         unconditional pair copula.
 
@@ -380,7 +380,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
     ----------
     n : int
         Number of samples to draw.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per sample, for a conditional draw.
     qrng : bool, default=False
         Draw quasi-random base uniforms instead of pseudo-random ones.

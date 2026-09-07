@@ -469,6 +469,13 @@ For any behavior change:
   annotations. `numpydoc.validation` is enabled as a pre-commit check;
   rule set + path exclusions live in `[tool.numpydoc_validation]` in
   `pyproject.toml`.
+- **One letter, one meaning, in every shape annotation.** `n` is the number of
+  observations, `d` the dimension, `p` the number of exogenous covariates, and
+  `k` a count of a *subset* of the variables -- the discrete ones in the
+  `(n, d + k)` copula layout, the conditioners in `u_cond`'s `(n, k)`. So a
+  covariate matrix is always `(n, p)`, which is what `validate_covariates`'
+  own error message says; it was documented `(n, k)` at 78 sites, colliding
+  with both of `k`'s other uses in the same files.
 - **American English** in code, comments, documentation, commit messages,
   and changelog entries: *behavior*, *normalize*, *serialize*, *finalize*,
   *center*, *modeling*, *honored*, *color*. There is no legacy exemption.

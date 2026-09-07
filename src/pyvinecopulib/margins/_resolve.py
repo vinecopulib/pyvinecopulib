@@ -441,7 +441,7 @@ def fit_margin(
       A specification produced by :func:`resolve_margins`.
   y : array, shape (n,), dtype float
       The column.
-  x : array, shape (n, k), or None, optional
+  x : array, shape (n, p), or None, optional
       Exogenous covariates, forwarded only to a margin that declares
       ``supports_covariates``; a callable specification is handed them by
       keyword, so one that models no covariates fails loudly rather than

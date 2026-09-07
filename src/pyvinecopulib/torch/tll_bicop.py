@@ -676,7 +676,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
         Pseudo-observations, clamped strictly inside the unit square before
         evaluation (``1e-10`` from each end in ``float64``); a ``NaN`` comes
         back as ``NaN``.
-    x : Tensor, shape (n, k), or None, optional
+    x : Tensor, shape (n, p), or None, optional
         Unused: a ``TorchTllBicop`` is unconditional. Accepted so the class
         satisfies ``BicopLike``.
 
@@ -701,7 +701,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     ----------
     u : Tensor, shape (n, 2), dtype float
         Pseudo-observations, clamped as in ``TorchTllBicop.pdf()``.
-    x : Tensor, shape (n, k), or None, optional
+    x : Tensor, shape (n, p), or None, optional
         Unused: a ``TorchTllBicop`` is unconditional. Accepted so the class
         satisfies ``BicopLike``.
 
@@ -805,7 +805,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     ----------
     u : Tensor, shape (n, 2), dtype float
         Pseudo-observations; column 0 is the conditioning value.
-    x : Tensor, shape (n, k), or None, optional
+    x : Tensor, shape (n, p), or None, optional
         Unused: a ``TorchTllBicop`` is unconditional. Accepted so the class
         satisfies ``BicopLike``.
 
@@ -830,7 +830,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     ----------
     u : Tensor, shape (n, 2), dtype float
         Pseudo-observations; column 1 is the conditioning value.
-    x : Tensor, shape (n, k), or None, optional
+    x : Tensor, shape (n, p), or None, optional
         Unused: a ``TorchTllBicop`` is unconditional. Accepted so the class
         satisfies ``BicopLike``.
 
@@ -878,7 +878,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     ----------
     u : Tensor, shape (n, 2), dtype float
         Column 0 is ``u1``; column 1 is the target probability ``p``.
-    x : Tensor, shape (n, k), or None, optional
+    x : Tensor, shape (n, p), or None, optional
         Unused: a ``TorchTllBicop`` is unconditional. Accepted so the class
         satisfies ``BicopLike``.
 
@@ -902,7 +902,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     ----------
     u : Tensor, shape (n, 2), dtype float
         Column 0 is the target probability ``p``; column 1 is ``u2``.
-    x : Tensor, shape (n, k), or None, optional
+    x : Tensor, shape (n, p), or None, optional
         Unused: a ``TorchTllBicop`` is unconditional. Accepted so the class
         satisfies ``BicopLike``.
 
@@ -935,7 +935,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     ----------
     n : int, default=100
         Number of samples to draw; must be positive.
-    x : Tensor, shape (n, k), or None, optional
+    x : Tensor, shape (n, p), or None, optional
         Unused: a ``TorchTllBicop`` is unconditional. Accepted so the class
         satisfies ``BicopLike``.
     qrng : bool, default=False

@@ -852,3 +852,46 @@ def test_loglik_rejects_a_wrong_column_count() -> None:
   cop = pv.Bicop.from_data(u)
   with pytest.raises(RuntimeError):
     cop.loglik(np.column_stack([u, u[:, [0]], u[:, [1]], u[:, [0]]]))
+
+
+@pytest.mark.parametrize(
+  "family_set",
+  [
+    [pv.families.gaussian],
+    [pv.families.clayton, pv.families.gumbel, pv.families.frank],
+    [pv.families.tll],
+  ],
+)
+def test_a_weighted_fit_is_flip_equivariant(family_set) -> None:
+  """Weighting the rows cannot depend on which argument comes first.
+
+  A weighted fit on ``(u1, u2)`` must equal the weighted fit on ``(u2, u1)`` up
+  to a flip: the weights are per-observation, so exchanging the two arguments
+  exchanges the fitted copula's arguments and nothing else. It is the pair-copula
+  analog of the argument-order invariance ``find_latent_sample`` guarantees,
+  and nothing pinned it.
+  """
+  rng = np.random.default_rng(0)
+  u = pv.to_pseudo_obs(
+    rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], 600)
+  )
+  controls = pv.FitControlsBicop(family_set=family_set, num_threads=1)
+  controls.weights = rng.uniform(0.2, 2.0, u.shape[0])
+
+  forward = pv.Bicop.from_data(u, controls=controls)
+  reversed_ = pv.Bicop.from_data(u[:, [1, 0]], controls=controls)
+  flipped = forward.flip()
+
+  assert flipped.family == reversed_.family
+  assert flipped.rotation == reversed_.rotation
+  np.testing.assert_allclose(
+    np.asarray(flipped.parameters),
+    np.asarray(reversed_.parameters),
+    rtol=1e-10,
+    atol=1e-10,
+  )
+  # And the densities agree with the arguments exchanged.
+  grid = rng.uniform(0.02, 0.98, size=(200, 2))
+  np.testing.assert_allclose(
+    forward.pdf(grid), reversed_.pdf(grid[:, [1, 0]]), rtol=1e-10, atol=1e-10
+  )

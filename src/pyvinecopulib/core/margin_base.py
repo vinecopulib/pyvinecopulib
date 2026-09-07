@@ -107,7 +107,7 @@ def derive_cdf_left(
       The margin to read ``cdf`` (and, for ``"zi"``, ``pdf``) from.
   y : array, shape (n,), dtype float
       Observations on the original scale.
-  x : array, shape (n, k), or None
+  x : array, shape (n, p), or None
       Exogenous covariates, forwarded only to a margin that reads them.
   var_type : {"c", "d", "zi"}
       The margin's variable type.
@@ -378,7 +378,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
         Observations on the original scale.
     controls : object, or None, optional
         Fit configuration, in whatever form the subclass accepts.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation.
     weights : array, shape (n,), or None, optional
         Observation weights.
@@ -417,7 +417,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
     controls : object, or None, optional
         Fit configuration, in whatever form the subclass accepts; a margin
         that takes none declares :attr:`supports_controls` ``False``.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation. Read only by a margin
         that declares :attr:`supports_covariates`.
     weights : array, shape (n,), or None, optional
@@ -468,7 +468,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
         Fit configuration, in whatever form the subclass accepts. The margins
         in ``pyvinecopulib.margins`` read a ``FitControlsMargin``, whose
         ``family_set`` and ``selection_criterion`` bound the search.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation.
     weights : array, shape (n,), or None, optional
         Observation weights.
@@ -504,7 +504,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
     ----------
     y : array, shape (n,), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation.
 
     Returns
@@ -534,7 +534,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
     ----------
     y : array, shape (n,), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation.
 
     Returns
@@ -564,7 +564,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
     ----------
     p : array, shape (n,), dtype float
         Probabilities in ``[0, 1]``.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation.
 
     Returns
@@ -647,7 +647,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
     ----------
     y : array, shape (n,), or None, optional
         Observations on the original scale; the fitted value when ``None``.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation.
     weights : array, shape (n,), or None, optional
         Observation weights; unweighted when ``None``.
@@ -846,7 +846,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
     n : int
         Number of samples to draw. With covariates, ``x`` supplies one row per
         draw, so it must have ``n`` of them.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates to condition each draw on.
     seeds : list of int, or None, optional
         RNG seeds; the draw is unseeded when ``None``.

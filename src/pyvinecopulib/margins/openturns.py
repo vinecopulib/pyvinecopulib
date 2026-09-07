@@ -541,7 +541,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     controls : object, or None, optional
         Unused; this margin's family is named at construction, so there is
         nothing left to configure.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Not supported; passing covariates raises rather than silently
         fitting an unconditional margin.
     weights : array, shape (n,), or None, optional
@@ -648,7 +648,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
         Bounds the search: ``family_set`` names the candidate factories,
         ``selection_criterion`` scores them, and ``var_type`` says which
         registry to search. ``support`` is ignored, as in :meth:`declare`.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Not supported; passing covariates raises rather than silently
         selecting an unconditional margin.
     weights : array, shape (n,), or None, optional
@@ -818,7 +818,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     ----------
     y : array, shape (n,), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Ignored; this margin is unconditional.
 
     Returns

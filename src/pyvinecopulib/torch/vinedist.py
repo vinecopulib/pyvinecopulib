@@ -423,7 +423,7 @@ class TorchVinedist(VinedistBase[Tensor], torch.nn.Module):
     ----------
     y : Tensor, shape (n, d), dtype float
         Observations on the original scale.
-    x : Tensor, shape (n, k), or None, optional
+    x : Tensor, shape (n, p), or None, optional
         Exogenous covariates, forwarded as ``logpdf`` forwards them.
 
     Returns

@@ -526,7 +526,7 @@ class DiscretePair(BicopBase[ArrayT]):
     ----------
     n : int
         Number of samples.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         External covariates for a conditional draw.
     qrng : bool, default=False
         Draw quasi-random base uniforms instead of pseudo-random ones.
@@ -682,7 +682,7 @@ class DiscretePair(BicopBase[ArrayT]):
     u : array, shape (n, 2) or (n, 4), dtype float
         ``[u1, u2]`` when both arguments are continuous, else
         ``[u1, u2, u1^-, u2^-]``.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Conditioning variables, forwarded to the wrapped pair when given.
 
     Returns
@@ -744,7 +744,7 @@ class DiscretePair(BicopBase[ArrayT]):
     ----------
     u : array, shape (n, 2) or (n, 4), dtype float
         See :meth:`pdf`.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Conditioning variables, forwarded to the wrapped pair when given.
 
     Returns
@@ -774,7 +774,7 @@ class DiscretePair(BicopBase[ArrayT]):
     ----------
     u : array, shape (n, 2) or (n, 4), dtype float
         See :meth:`pdf`.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Conditioning variables, forwarded to the wrapped pair when given.
 
     Returns
@@ -802,7 +802,7 @@ class DiscretePair(BicopBase[ArrayT]):
     ----------
     u : array, shape (n, 2) or (n, 4), dtype float
         See :meth:`pdf`.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Conditioning variables, forwarded to the wrapped pair when given.
 
     Returns
@@ -825,7 +825,7 @@ class DiscretePair(BicopBase[ArrayT]):
     u : array, shape (n, 2) or (n, 4), dtype float
         Column ``0`` is the conditioning value and column ``1`` the level; see
         :meth:`pdf` for the layout.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Conditioning variables, forwarded to the wrapped pair when given.
 
     Returns
@@ -860,7 +860,7 @@ class DiscretePair(BicopBase[ArrayT]):
     u : array, shape (n, 2) or (n, 4), dtype float
         Column ``0`` is the level and column ``1`` the conditioning value; see
         :meth:`pdf` for the layout.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Conditioning variables, forwarded to the wrapped pair when given.
 
     Returns

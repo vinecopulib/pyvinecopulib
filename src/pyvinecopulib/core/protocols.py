@@ -315,7 +315,7 @@ class BicopLike(Protocol[ArrayT]):
     ----------
     u : array, shape (n, 2), dtype float
         Pair pseudo-observations in the unit square.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Conditioning variables; ignored by an unconditional copula.
 
     Returns
@@ -332,7 +332,7 @@ class BicopLike(Protocol[ArrayT]):
     ----------
     u : array, shape (n, 2), dtype float
         Pair pseudo-observations in the unit square.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Conditioning variables; ignored by an unconditional copula.
 
     Returns
@@ -349,7 +349,7 @@ class BicopLike(Protocol[ArrayT]):
     ----------
     u : array, shape (n, 2), dtype float
         Pair pseudo-observations; conditions on the first column.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Conditioning variables; ignored by an unconditional copula.
 
     Returns
@@ -366,7 +366,7 @@ class BicopLike(Protocol[ArrayT]):
     ----------
     u : array, shape (n, 2), dtype float
         Pair pseudo-observations; conditions on the second column.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Conditioning variables; ignored by an unconditional copula.
 
     Returns
@@ -386,7 +386,7 @@ class BicopLike(Protocol[ArrayT]):
     u : array, shape (n, 2), dtype float
         Column 0 is the conditioning value ``u1``; column 1 is the level to
         invert.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Conditioning variables; ignored by an unconditional copula.
 
     Returns
@@ -406,7 +406,7 @@ class BicopLike(Protocol[ArrayT]):
     u : array, shape (n, 2), dtype float
         Column 0 is the level to invert; column 1 is the conditioning value
         ``u2``.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Conditioning variables; ignored by an unconditional copula.
 
     Returns
@@ -430,7 +430,7 @@ class BicopLike(Protocol[ArrayT]):
     ----------
     n : int
         Number of samples to draw.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Conditioning variables (one row per sample) for a conditional draw.
     qrng : bool, default=False
         Draw quasi-random base uniforms instead of pseudo-random ones.
@@ -675,7 +675,7 @@ class MarginLike(Protocol[ArrayT]):
     ----------
     y : array, shape (n,), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation. Ignored by a margin that
         does not model them.
 
@@ -694,7 +694,7 @@ class MarginLike(Protocol[ArrayT]):
     ----------
     y : array, shape (n,), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation.
 
     Returns
@@ -711,7 +711,7 @@ class MarginLike(Protocol[ArrayT]):
     ----------
     p : array, shape (n,), dtype float
         Probabilities in ``[0, 1]``.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation.
 
     Returns
@@ -773,7 +773,7 @@ class VinedistLike(Protocol[ArrayT]):
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, forwarded to each part that reads them.
 
     Returns
@@ -790,7 +790,7 @@ class VinedistLike(Protocol[ArrayT]):
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates.
 
     Returns
@@ -807,7 +807,7 @@ class VinedistLike(Protocol[ArrayT]):
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates.
 
     Returns
@@ -825,7 +825,7 @@ class VinedistLike(Protocol[ArrayT]):
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates.
 
     Returns
@@ -845,7 +845,7 @@ class VinedistLike(Protocol[ArrayT]):
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates.
     **kwargs : Any
         Forwarded to the copula's ``cdf``.
@@ -866,7 +866,7 @@ class VinedistLike(Protocol[ArrayT]):
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates.
     **kwargs : Any
         Forwarded to the copula's ``rosenblatt``.
@@ -887,7 +887,7 @@ class VinedistLike(Protocol[ArrayT]):
     ----------
     w : array, shape (n, d), dtype float
         Independent uniforms in ``[0, 1]^d``.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates.
     **kwargs : Any
         Forwarded to the copula's ``inverse_rosenblatt``.
@@ -908,7 +908,7 @@ class VinedistLike(Protocol[ArrayT]):
     ----------
     n : int
         Number of observations.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates.
     **kwargs : Any
         Forwarded to the copula's ``sample``.

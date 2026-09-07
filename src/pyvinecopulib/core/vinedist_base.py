@@ -468,7 +468,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, forwarded to every margin that reads them.
 
     Returns
@@ -494,7 +494,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     ----------
     u : array, shape (n, d), dtype float
         Copula-scale values in ``[0, 1]^d``.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, forwarded to every margin that reads them.
 
     Returns
@@ -554,7 +554,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         objects are coerced with :func:`pyvinecopulib.margins.as_margin`.
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, forwarded to every margin that reads them.
 
     Returns
@@ -618,7 +618,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
 
     Parameters
     ----------
-    x : array, shape (n, k), or None
+    x : array, shape (n, p), or None
         The covariates the caller supplied.
     n_rows : int
         Number of observations they must align with.
@@ -650,7 +650,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, forwarded to every margin that reads them.
 
     Returns
@@ -680,7 +680,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, forwarded to every margin that reads them and to
         the copula.
 
@@ -721,7 +721,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, forwarded to every margin that reads them and to
         the copula.
 
@@ -745,7 +745,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, forwarded to every margin that reads them and to
         the copula.
     **kwargs
@@ -782,7 +782,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, forwarded to every margin that reads them and to
         the copula.
 
@@ -805,7 +805,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, forwarded to every margin that reads them and to
         the copula.
     **kwargs
@@ -833,7 +833,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     ----------
     w : array, shape (n, d), dtype float
         Independent uniforms.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, forwarded to every margin that reads them and to
         the copula.
     **kwargs
@@ -865,7 +865,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     n : int
         Number of samples to draw. With covariates, ``x`` supplies one row per
         draw, so it must have ``n`` of them.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, forwarded to every margin that reads them and to
         the copula.
     **kwargs
@@ -993,24 +993,12 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     array, shape (n, k + k_d), dtype float
         The compact conditioning layout, clamped away from the boundary.
     """
-    margins = [self._margins[v - 1] for v in cond]
-    types = [self._var_types[v - 1] for v in cond]
-    upper = [
-      _margin_eval(m, "cdf", y_cond[:, i], x) for i, m in enumerate(margins)
-    ]
-    xp = array_namespace(upper[0])
-    lower = []
-    for i, m in enumerate(margins):
-      if types[i] != "d":
-        continue
-      left = getattr(m, "cdf_left", None)
-      lower.append(
-        _margin_eval(m, "cdf_left", y_cond[:, i], x)
-        if left is not None
-        else derive_cdf_left(m, y_cond[:, i], x, types[i])
-      )
-    block = xp.stack([*upper, *lower], axis=-1)
-    return trim(xp, block)
+    # The same assembly as `copula_data`, over the conditioning variables only
+    # -- so it *is* that method, on their margins. Re-implementing it meant one
+    # of the two checked that a margin's `cdf_left` does not exceed its `cdf`
+    # and the other did not, and the one that did not is the path where a bad
+    # left limit puts a conditioner outside its own atom.
+    return self.copula_data([self._margins[v - 1] for v in cond], y_cond, x=x)
 
   # --- fitting ------------------------------------------------------------- #
 
@@ -1228,7 +1216,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         keyed by position -- or by name, for margins that name themselves --
         leaving the variables it does not address unconfigured. See
         :func:`pyvinecopulib.margins.resolve_margin_controls`.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, reaching each margin that declares
         ``supports_covariates``.
     weights : array, shape (n,), or None, optional
@@ -1286,7 +1274,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     margin_controls : object, or None, optional
         Marginal fit configuration, per variable as in :meth:`fit`; a declared
         family set is what bounds each margin's search.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, reaching each margin that declares
         ``supports_covariates``.
     weights : array, shape (n,), or None, optional
@@ -1333,7 +1321,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         Copula fit configuration.
     margin_controls : object, or None
         Marginal fit configuration.
-    x : array, shape (n, k), or None
+    x : array, shape (n, p), or None
         Exogenous covariates.
     weights : array, shape (n,), or None
         Observation weights.
@@ -1421,7 +1409,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
 
     Parameters
     ----------
-    x : array, shape (n, k), or None
+    x : array, shape (n, p), or None
         Exogenous covariates.
     weights : array, shape (n,), or None
         Observation weights.
@@ -1494,7 +1482,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     y : array, shape (n, d), dtype float
         Observations on the original scale. A DataFrame's column names are
         read as ``names`` when that is not given.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates. Each margin that declares
         ``supports_covariates`` is fitted conditionally on them, and the copula
         is then fitted on the resulting conditional probability-integral

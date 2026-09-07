@@ -407,7 +407,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     ----------
     y : Tensor, shape (n,), dtype float
         Observations on the original scale.
-    x : Tensor, shape (n, k), or None, optional
+    x : Tensor, shape (n, p), or None, optional
         Ignored; this margin is unconditional.
 
     Returns
@@ -426,7 +426,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     ----------
     y : Tensor, shape (n,), dtype float
         Observations on the original scale.
-    x : Tensor, shape (n, k), or None, optional
+    x : Tensor, shape (n, p), or None, optional
         Ignored; this margin is unconditional.
 
     Returns
@@ -443,7 +443,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     ----------
     y : Tensor, shape (n,), dtype float
         Observations on the original scale.
-    x : Tensor, shape (n, k), or None, optional
+    x : Tensor, shape (n, p), or None, optional
         Ignored; this margin is unconditional.
 
     Returns
@@ -460,7 +460,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     ----------
     y : Tensor, shape (n,), dtype float
         Observations on the original scale.
-    x : Tensor, shape (n, k), or None, optional
+    x : Tensor, shape (n, p), or None, optional
         Ignored; this margin is unconditional.
 
     Returns
@@ -484,7 +484,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     ----------
     p : Tensor, shape (n,), dtype float
         Probabilities in ``[0, 1]``.
-    x : Tensor, shape (n, k), or None, optional
+    x : Tensor, shape (n, p), or None, optional
         Ignored; this margin is unconditional.
 
     Returns

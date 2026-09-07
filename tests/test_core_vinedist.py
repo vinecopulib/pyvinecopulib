@@ -1281,3 +1281,33 @@ def test_logpdf_reads_the_parts_namespace_not_the_inputs() -> None:
   pair.interp_grid.values.requires_grad_(True)
   with_grad = dist.logpdf(y)
   assert with_grad.requires_grad
+
+
+def test_sample_conditional_also_refuses_a_left_limit_above_the_cdf() -> None:
+  """The same impossibility, on the path that used to miss it.
+
+  `copula_data` refused it and `_conditioning_data` assembled the same block by
+  hand without the check -- so a bad left limit was caught everywhere except
+  `sample_conditional`, the one path where it puts a conditioner outside its
+  own atom. The two share one assembly now.
+  """
+
+  class _Broken(MarginBase[Any]):
+    var_type = "d"
+
+    def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+      return np.full_like(np.asarray(y, dtype=float), 0.5)
+
+    def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+      return np.full_like(np.asarray(y, dtype=float), 0.3)
+
+    def cdf_left(self, y: Any, *, x: Optional[Any] = None) -> Any:
+      return np.full_like(np.asarray(y, dtype=float), 0.9)
+
+  u = np.random.default_rng(0).uniform(size=(50, 2))
+  copula = pv.Vinecop.from_data(
+    np.column_stack([u, u * 0.9]), var_types=["d", "d"]
+  )
+  dist = pv.Vinedist(copula, [_Broken(), _Broken()])
+  with pytest.raises(ValueError, match="cdf_left > cdf"):
+    dist.sample_conditional(np.ones((5, 1), dtype=float))

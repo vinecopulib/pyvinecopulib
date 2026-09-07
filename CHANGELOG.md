@@ -159,6 +159,7 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 
 ### Bug fixes in `pyvinecopulib`
 
+- `Vinedist.sample_conditional` refuses a margin whose `cdf_left` exceeds its `cdf`, which every other path already did: the conditioning block was assembled by a second copy of `copula_data` that omitted the check, and it is the one path where an impossible left limit puts a conditioner outside its own atom (#326).
 - `TorchVinedist.fit` and `.select` work at all, where both raised `TypeError: cannot assign 'tuple' as child module` for every torch vine distribution: the margin store is a hook now, so a refit installs a `ModuleList` rather than assigning a tuple over the one `nn.Module` was already tracking (#326).
 - `Kde1d.fit`, `.select` and `.from_data` refuse inputs that leave no observation standing, where all-`NaN` or all-zero weights and all-`NaN` observations each terminated the process: a `NaN` observation, a `NaN` weight and a zero weight are drop markers, and the fit rescales by what survives them. An infinite or negative weight is refused too, the latter having silently fitted an unweighted density (#326, [kde1d#40](https://github.com/vinecopulib/kde1d-cpp/pull/40)).
 - Every discrete or mixed `tll` fit is corrected: the fit uses its latent sample rather than discarding it, and evaluation computes a real discrete density whose atom masses sum to one, where the midpoint density missed that sum by up

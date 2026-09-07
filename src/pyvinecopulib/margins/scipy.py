@@ -716,7 +716,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
         ``selection_criterion`` scores them, ``var_type`` and ``support`` say
         what the caller knows, and ``on_failure`` decides what an
         all-candidates-failed variable does.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Not supported; passing covariates raises rather than silently
         selecting an unconditional margin.
     weights : array, shape (n,), or None, optional
@@ -1150,7 +1150,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
     controls : object, or None, optional
         Unused; the family is fixed here, so there is nothing to configure.
         A search over families is :meth:`select`.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Not supported; passing covariates raises rather than silently
         fitting an unconditional margin.
     weights : array, shape (n,), or None, optional
@@ -1264,7 +1264,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
     ----------
     y : array, shape (n,), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Ignored; this margin is unconditional.
 
     Returns
@@ -1300,7 +1300,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
     ----------
     n : int
         Number of samples.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Ignored; this margin is unconditional.
     seeds : list of int, or None, optional
         RNG seeds.
