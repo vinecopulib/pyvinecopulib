@@ -268,10 +268,12 @@ def test_vinedist() -> None:
 
 def test_scipy_margin() -> None:
   """A parametric margin, including the criteria its payload has to carry."""
-  scipy_margin = pytest.importorskip("pyvinecopulib.margins").SciPyMargin
+  pytest.importorskip("scipy.stats")
+  from pyvinecopulib.margins import SciPyMargin
+
   rng = np.random.default_rng(1)
   y = rng.normal(size=250)
-  margin = scipy_margin("norm").fit(y)
+  margin = SciPyMargin("norm").fit(y)
   back = pickle.loads(pickle.dumps(margin))
 
   q = np.array([-1.0, 0.0, 1.0])

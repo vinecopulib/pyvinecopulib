@@ -1227,7 +1227,9 @@ def test_declaring_no_vinecop_class_reports_it() -> None:
 def test_vinedist_refuses_torch_parts() -> None:
   # The mirror of `TorchVinedist` refusing a NumPy copula: this class
   # evaluates on NumPy, so a torch part would be detached from its graph.
-  torch_mod = pytest.importorskip("pyvinecopulib.torch")
+  pytest.importorskip("torch")
+  import pyvinecopulib.torch as torch_mod
+
   u = pv.utils.to_pseudo_obs(np.random.default_rng(0).normal(size=(200, 2)))
   copula = pv.Vinecop.from_data(u)
   margins = [Kde1d().fit(np.zeros(5)), Kde1d().fit(np.zeros(5))]
