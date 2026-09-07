@@ -307,7 +307,11 @@ def _measure_layer_edges(root: pathlib.Path) -> dict[tuple[str, str], bool]:
   """
   layers = {p.name for p in root.iterdir() if (p / "__init__.py").is_file()}
   layers |= {p.stem for p in root.glob("*.py") if p.stem != "__init__"}
-  layers.add("pyvinecopulib_ext")
+  # Two layers the build produces rather than the checkout: the extension
+  # module is never a `.py`, and `_build_info.py` is generated. Both are
+  # layers whether or not this tree has been built, or the edges into them
+  # would read as absent on a fresh clone.
+  layers |= {"pyvinecopulib_ext", "_build_info"}
 
   def _layer(parts: tuple[str, ...]) -> str:
     if parts == ("__init__.py",):
