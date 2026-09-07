@@ -293,14 +293,6 @@ class InterpolationGrid2D(torch.nn.Module):
       self.values.copy_(values.to(self.values.device))
 
   @torch.no_grad()
-  def flip(self) -> None:
-    """Transpose ``values`` in place (mirror of ``KernelBicop::flip``)."""
-    self.values = self.values.t().contiguous()
-
-  # --------------------------------------------------------------------- #
-  # Helpers                                                                #
-  # --------------------------------------------------------------------- #
-
   def _cell_index(self, u: Tensor) -> Tensor:
     """Cell index for each value of ``u`` (shape preserved), clamped to ``[0, m-2]``."""
     return _batched_cell_index(self.grid_points, u, self._is_linear)

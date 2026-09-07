@@ -345,3 +345,21 @@ def test_plot_takes_one_covariate_row_only(bad: Any) -> None:
   """A 2-d surface shows the density at one covariate value, not many."""
   with pytest.raises(ValueError, match="single covariate row"):
     _IndepPair().plot(x=bad)
+
+
+def test_supports_batched_is_declared_on_the_base() -> None:
+  """The grid fast path is opt-in, and the answer must be findable.
+
+  It was a three-valued contract with no home: declared on two concrete
+  classes, read at one ``getattr(..., False)`` site, and absent from every base
+  and every protocol -- so a subclass author could only discover it by
+  tripping its error.
+  """
+  assert BicopBase.supports_batched is False
+  assert _IndepPair().supports_batched is False
+  # A pair that exposes an interpolation grid opts in.
+  torch = pytest.importorskip("torch")
+  del torch
+  from pyvinecopulib.torch import TorchTllBicop
+
+  assert TorchTllBicop.supports_batched is True

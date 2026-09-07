@@ -1107,8 +1107,6 @@ Key surface:
   `cache_integrals` resolves the same way it does for a continuous vine.
 - `FitControlsTorchBicop` / `FitControlsTorchVinecop` — fit-time
   dataclasses. Notable knobs:
-  - `method` — `"tll"` (the only fitter; kept as the dispatch seam
-    for future torch fitters).
   - `compile_fit` — off by default; fuses the bandwidth search's per-pass
     body with `torch.compile`. The pass is 39 launches over tensors whose
     arithmetic stays invisible even at `n = 30000`, so fusing it is worth

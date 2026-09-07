@@ -340,6 +340,12 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     """
     return self._parameter_names
 
+  #: This margin carries its parameters rather than estimating them -- it has
+  #: no `fit` -- so there is nothing for controls to configure. Declaring it is
+  #: what makes a `family_set` a refusal rather than a silently ignored
+  #: request, the same reason `TorchKde1d` declares it.
+  supports_controls: bool = False
+
   @property
   def n_parameters(self) -> float:
     """Number of free parameters, for the information criteria.

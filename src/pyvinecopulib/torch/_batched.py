@@ -619,31 +619,6 @@ class BatchedTreeLevel(torch.nn.Module):
     )
     return both[: self.n_pairs], both[self.n_pairs :]
 
-  def _h1_at(self, gp: Tensor, u: Tensor, loc: tuple) -> Tensor:
-    return self._h1_h2_at(gp, u, loc)[0]
-
-  def _h2_at(self, gp: Tensor, u: Tensor, loc: tuple) -> Tensor:
-    return self._h1_h2_at(gp, u, loc)[1]
-
-  def pdf(self, grid_points: Tensor, u: Tensor) -> Tensor:
-    """Per-pair pdf at the stacked queries. Indep slots return 1."""
-    i, wx, _, j, wy, _ = self._locate_both(grid_points, u)
-    return self._pdf_at(i, j, wx, wy)
-
-  def hfunc1(self, grid_points: Tensor, u: Tensor) -> Tensor:
-    """Per-pair hfunc1.
-
-    ``cache=True`` reconstructs the conditional distribution function exactly
-    from the cumulative table in O(1); ``cache=False`` runs
-    :func:`integrate_1d_batched` on ``values`` at every call. The two agree to
-    floating point: they are the same integral, summed in a different order.
-    """
-    return self._h1_at(grid_points, u, self._locate_both(grid_points, u))
-
-  def hfunc2(self, grid_points: Tensor, u: Tensor) -> Tensor:
-    """Per-pair hfunc2; see :meth:`hfunc1`."""
-    return self._h2_at(grid_points, u, self._locate_both(grid_points, u))
-
   def pdf_h1_h2(
     self, grid_points: Tensor, u: Tensor
   ) -> tuple[Tensor, Tensor, Tensor]:

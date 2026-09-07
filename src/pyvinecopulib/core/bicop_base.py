@@ -416,6 +416,15 @@ class BicopBase(BicopLike[ArrayT], ABC):
       "to enable sample()."
     )
 
+  #: Whether a vine may bake this pair into its stacked, grid-batched
+  #: cascade. ``False`` here because the fast path reads an interpolation grid
+  #: off each pair and a pair copula in general has none -- so a subclass opts
+  #: in only if it exposes one. Declared rather than discovered, and declared
+  #: on the base rather than left to a ``getattr`` default, so that the third
+  #: state (declared ``False``) is distinguishable from "never heard of it"
+  #: and a subclass author can find the flag without tripping its error.
+  supports_batched: bool = False
+
   def _prep(self, a: Any) -> Any:
     """Bring one input array onto the namespace this object evaluates on.
 

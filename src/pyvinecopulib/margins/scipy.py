@@ -1059,25 +1059,6 @@ class SciPyMargin(MarginBase[np.ndarray]):
     return "d" if self._discrete else "c"
 
   @property
-  def supported_var_types(self) -> tuple[str, ...]:
-    """Variable types this margin can represent.
-
-    A SciPy family is either continuous or discrete, never both, so once a
-    family is named the set is a singleton and a declared type cannot widen
-    it. A margin whose family is still to be selected serves both, since the
-    candidate set spans continuous and count families.
-
-    Returns
-    -------
-    tuple of str
-        ``("d",)`` for a discrete family, ``("c",)`` for a continuous one, and
-        both while the family is unchosen.
-    """
-    if self._family is None:
-      return ("c", "d")
-    return ("d",) if self._discrete else ("c",)
-
-  @property
   def support(self) -> tuple[float, float]:
     """Closed bounds of the fitted support.
 

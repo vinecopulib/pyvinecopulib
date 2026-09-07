@@ -288,6 +288,18 @@ class BicopLike(Protocol[ArrayT]):
   :class:`pyvinecopulib.core.Bicop` and
   :class:`pyvinecopulib.torch.TorchTllBicop` are the reference implementations.
 
+  Two capabilities beyond the methods are read with ``getattr``, so a foreign
+  object need only have them if they apply:
+
+  - ``supports_covariates`` — whether ``x`` is read rather than ignored;
+    absent means it is not, and the compiled :class:`pyvinecopulib.core.Bicop`
+    answers that way by having none.
+  - ``supports_batched`` — whether a vine may bake this pair into its stacked
+    grid cascade, which reads an interpolation grid off each pair; absent
+    means it may not. :class:`~pyvinecopulib.core.BicopBase` declares it
+    ``False`` so the answer is findable rather than only discoverable by
+    tripping the error.
+
   See Also
   --------
   pyvinecopulib.core.BicopBase : Canonical partial implementation to subclass.
