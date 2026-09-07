@@ -292,7 +292,7 @@ def _fit_edge_call(
   continuous edge must not hand it a fifth. When the edge does have a discrete
   argument the types go by keyword, which is what makes a callback that cannot
   accept them fail loudly instead of fitting a continuous pair copula to four
-  columns of data -- the rule :func:`_pair_eval` applies to ``x``, for the same
+  columns of data -- the rule ``_pair_eval`` applies to ``x``, for the same
   reason.
   """
   if "d" not in var_types:
@@ -415,7 +415,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   bicop_class: ClassVar[Optional[type]] = None
   _context: ConditioningContext
   _cond_pos_cache: dict[tuple[int, int], tuple[int, ...]]
-  #: Lazily-built grid-batched state (see :meth:`_build_batched`); ``None`` until
+  #: Lazily-built grid-batched state (see ``_build_batched``); ``None`` until
   #: the first batched call. Subclasses invalidate it on device moves.
   _batched: Any
   #: Array namespace of this vine's working arrays; ``None`` until resolved.
@@ -556,7 +556,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
 
     Placement only -- no layout check and no clamping -- so it is equally
     correct for exogenous covariates, which must be placed but never trimmed.
-    :meth:`_prep_args` is the composite the cascades call on copula arguments.
+    ``_prep_args`` is the composite the cascades call on copula arguments.
 
     The default infers the placement from the arrays this vine already holds,
     so hosting a subclass on PyTorch requires writing none of it. Override it
@@ -580,9 +580,9 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     """Place ``u``, normalize its layout, and clamp it into the unit square.
 
     The three steps a copula argument needs, in the one order that is correct:
-    placement first (:meth:`_prep`), then the layout the vine's
+    placement first (``_prep``), then the layout the vine's
     :attr:`var_types` admits, then the domain clamp at the working precision.
-    Covariates go through :meth:`_prep` alone, being reals rather than copula
+    Covariates go through ``_prep`` alone, being reals rather than copula
     arguments.
 
     An all-continuous vine takes ``(n, d)``, or ``(n, 2d)`` whose left-limit
@@ -668,7 +668,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   def _build_batched(self) -> Any:
     """Build the grid-batched state for the fast path (subclass-specific).
 
-    The default raises :class:`_NotBatchable`, so the dispatch layer falls back
+    The default raises ``_NotBatchable``, so the dispatch layer falls back
     to the non-batched cascade. A grid subclass overrides this to return an
     object exposing the batched-vine surface the cascades call
     (``level`` / ``grid_points`` / per-level ``gather_inputs`` / ``pdf`` /
@@ -694,7 +694,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     Returns
     -------
     object
-        The memoized :meth:`_build_batched` result.
+        The memoized ``_build_batched`` result.
     """
     if self._batched is None:
       # Bypass any framework `__setattr__`: on the torch subclass this value
@@ -764,7 +764,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   ) -> Optional[Any]:
     """Assemble the per-edge conditioning context ``x_e`` = context(``u_D``, ``x``).
 
-    ``u_D`` is gathered in the C1 column order (see :meth:`_cond_positions`),
+    ``u_D`` is gathered in the C1 column order (see ``_cond_positions``),
     then the context appends the external covariates ``x`` last. The source of
     ``u_D`` differs by direction: the forward cascades pass ``u_nat`` (the
     natural-order observations, columns), the inverse cascade passes
@@ -1143,7 +1143,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   def _inverse_rosenblatt_batched(self, u: Any) -> Any:
     """Batched inverse Rosenblatt: one stacked call per dependency wave.
 
-    Bit-identical to :meth:`_inverse_rosenblatt` on a simplified vine: the
+    Bit-identical to ``_inverse_rosenblatt`` on a simplified vine: the
     waves reorder the cells without changing what any one of them computes.
     The inverse's dependencies do not reduce to tree levels -- a wave holds
     one cell from almost every tree -- so the grouping is by longest-path
@@ -1235,13 +1235,13 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     cascade, which a tracing compiler then has to trace through --
     ``array_namespace`` is memoized on the type, but the memo is itself Python
     that ends up in the graph. Every entry point resolves it through
-    :meth:`_prep`, which runs before the cascade, so by the time a cascade asks
+    ``_prep``, which runs before the cascade, so by the time a cascade asks
     it is already answered.
 
     The memo is keyed on the array type rather than held for the vine's
-    lifetime. Only a subclass that coerces in :meth:`_prep` -- as
+    lifetime. Only a subclass that coerces in ``_prep`` -- as
     :class:`~pyvinecopulib.torch.TorchVinecop` does -- guarantees one type per
-    vine; the default :meth:`_prep` works on whatever namespace it is handed,
+    vine; the default ``_prep`` works on whatever namespace it is handed,
     so a vine may legitimately see two. An identity check is still far cheaper
     than the dispatch walk it avoids.
 
@@ -1263,7 +1263,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   def __getstate__(self) -> dict:
     """The picklable state: everything but the resolved array namespace.
 
-    :meth:`_namespace` memoizes a *module*, which no pickle can carry, so it
+    ``_namespace`` memoizes a *module*, which no pickle can carry, so it
     is dropped and re-resolved on first use. Nothing else about the vine
     depends on it having been resolved.
 
@@ -1286,17 +1286,17 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     """Resolve the ``batched`` flag; force ``False`` for conditional or discrete.
 
     Declining is the right answer rather than raising: ``batched`` defaults to
-    the subclass's :meth:`_default_batched` (device-dependent on the torch
+    the subclass's ``_default_batched`` (device-dependent on the torch
     vine), so a raise would make an ordinary ``pdf(u)`` fail on a discrete vine
     for a reason the caller never asked about. Discreteness is a property of the
     vine, not of the subclass's grid, which is why it is decided here rather
-    than through :class:`_NotBatchable`.
+    than through ``_NotBatchable``.
 
     Parameters
     ----------
     requested : bool or None
         The caller's ``batched`` argument; ``None`` defers to
-        :meth:`_default_batched`.
+        ``_default_batched``.
     x : array or None
         External covariates for the call; any non-``None`` value forces the
         non-batched cascade.

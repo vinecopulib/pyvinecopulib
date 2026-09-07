@@ -150,7 +150,7 @@ def safe_log(dens: Any) -> Any:
   returns a ``nan``. The mask is applied before the log rather than after, so
   nothing invalid is evaluated.
 
-  Lives here beside :func:`_margin_eval` because both halves of a vine
+  Lives here beside ``_margin_eval`` because both halves of a vine
   distribution need it: a margin's own ``logpdf`` and the fallback
   :class:`~pyvinecopulib.core.VinedistBase` applies to a foreign margin that
   supplies no ``logpdf`` of its own.

@@ -927,7 +927,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   def _pair_revisions(self) -> tuple[int, ...]:
     """How many times each pair has had its grid replaced.
 
-    Kept apart from :meth:`_grad_signature` because the two answer different
+    Kept apart from ``_grad_signature`` because the two answer different
     questions: that one decides whether a bake needs the graph, this one
     whether it is a bake of the right density at all. Refitting a pair the vine
     already holds -- ``vine.get_pair_copula(t, e).fit(u)`` -- replaces its grid
@@ -953,7 +953,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     -- as ``sample`` / ``cdf`` / ``inverse_rosenblatt`` are evaluated -- holds
     detached copies even where the grids themselves track grad, so it is
     redone once, for the first call that needs the graph; and refitting a pair
-    the vine holds replaces its grid, which :meth:`_pair_revisions` counts.
+    the vine holds replaces its grid, which ``_pair_revisions`` counts.
     Only the last is wrong rather than merely detached, but all three are
     silent where the bake is read.
 

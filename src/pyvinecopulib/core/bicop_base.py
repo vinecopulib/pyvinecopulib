@@ -443,9 +443,9 @@ class BicopBase(BicopLike[ArrayT], ABC):
     """Place ``u``, check its width, and clamp it into the unit square.
 
     The three steps a copula argument needs, in the one order that is correct:
-    placement (:meth:`_prep`), then the two-column layout the contract
+    placement (``_prep``), then the two-column layout the contract
     specifies, then the domain clamp at the working precision. Covariates go
-    through :meth:`_prep` alone, being reals rather than copula arguments.
+    through ``_prep`` alone, being reals rather than copula arguments.
 
     A discrete edge is reached through
     :class:`~pyvinecopulib.core.DiscretePair`, which owns the four-column
@@ -489,7 +489,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
 
     The evaluation grid is the one place this class manufactures an array from
     nothing, so it is the one place a subclass could be handed the wrong array
-    type. It is placed through :meth:`_prep` first, which means a pair copula
+    type. It is placed through ``_prep`` first, which means a pair copula
     on PyTorch plots without converting anything inside its own ``pdf``.
 
     Parameters

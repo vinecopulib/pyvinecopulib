@@ -396,7 +396,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     """Store the resolved margins on this distribution.
 
     A hook rather than a plain assignment because a lane may need its margins
-    *registered* rather than merely held -- and because :meth:`_bind_dist` runs
+    *registered* rather than merely held -- and because ``_bind_dist`` runs
     again on every refit, so the store has to be idempotent. The write
     counterpart of :attr:`margins`, and the same shape as
     :meth:`~pyvinecopulib.core.VinecopBase.set_pair_copulas` on the vine lane.
