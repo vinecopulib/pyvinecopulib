@@ -253,8 +253,8 @@ class Vinedist(VinedistBase[np.ndarray]):
     Raises
     ------
     ValueError
-        If the payload's version is unrecognized, or a margin's ``kind`` has no
-        registered reader.
+        If the payload's version is unrecognized, if its ``kind`` names a
+        different class, or if a margin's ``kind`` has no registered reader.
     """
     from ..pyvinecopulib_ext import Vinecop
     from ._serialization import (
@@ -268,6 +268,15 @@ class Vinedist(VinedistBase[np.ndarray]):
       raise ValueError(
         f"unsupported Vinedist JSON version {payload.get('version')!r}; this "
         f"build reads version {MARGIN_JSON_VERSION}"
+      )
+    # `to_json` writes the class name and nothing read it, so a subclass's
+    # payload loaded as this class -- quietly the wrong model, since a
+    # subclass is a different distribution.
+    kind = payload.get("kind")
+    if kind != cls.__name__:
+      raise ValueError(
+        f"this payload was written by {kind!r}, not {cls.__name__!r}; read it "
+        f"back with {kind}.from_json, or write it with {cls.__name__}.to_json"
       )
     return cls(
       Vinecop.from_json(payload["copula"]),

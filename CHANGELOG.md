@@ -169,6 +169,10 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 
 ### Bug fixes in `pyvinecopulib`
 
+- Leave the grid-batched bake out of a `TorchVinecop` pickle: it is a cache holding a copy of every pair's grid, so a pickle taken after one batched call was 2.9x the size and restored a bake nothing revalidated (#326).
+- Persist a `SciPyMargin`'s sample size, so `bic()` and `aicc()` no longer raise after a JSON round-trip where `loglik()` and `aic()` survived (#326).
+- Check the `kind` a `Vinedist` payload records, which `to_json` always wrote and `from_json` never read, so a subclass's payload loaded as the wrong class (#326).
+
 - Floor the batched cascade's renormalizing integral with the mass floor rather than `_trim`'s domain bound, which clamped a denominator ten orders of magnitude early and reached across a package boundary for the wrong constant (#326).
 
 - Re-estimate the copula a `Vinedist` already holds in `fit` / `select` instead of rebuilding `vinecop_class`, so a hosted `VinecopLike` keeps its class across a refit and `fit` holds the pair families it holds, as it already did for the margins; a copula with no `fit` reports that rather than being replaced (#326).

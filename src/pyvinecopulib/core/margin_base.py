@@ -143,6 +143,43 @@ def derive_cdf_left(
   return xp.where(ya == 0, xp.clip(upper - mass, 0.0, 1.0), upper)
 
 
+def criteria(loglik: float, k: float, n: Optional[float]) -> dict[str, float]:
+  """The three information criteria at one fit.
+
+  The arithmetic in one place, because it is needed twice over: from a fitted
+  margin, which knows its own log-likelihood and parameter count, and from
+  loose numbers during a family search, where no margin object exists yet.
+
+  Parameters
+  ----------
+  loglik : float
+      Maximized log-likelihood.
+  k : float
+      Number of freely estimated parameters.
+  n : float, or None
+      Number of observations -- a float, since a weighted fit's effective
+      count is not an integer. ``None`` leaves the two criteria that penalize
+      by sample size undefined rather than guessing one.
+
+  Returns
+  -------
+  dict
+      ``{"aic", "bic", "aicc"}``. A criterion is ``inf`` where it is not
+      defined -- a non-finite log-likelihood, an unknown ``n``, or fewer
+      observations than ``aicc``'s correction can carry -- so a candidate can
+      never win a search by being undefined.
+  """
+  if not _np.isfinite(loglik):
+    return {"aic": float("inf"), "bic": float("inf"), "aicc": float("inf")}
+  aic = -2.0 * loglik + 2.0 * k
+  if n is None:
+    return {"aic": aic, "bic": float("inf"), "aicc": float("inf")}
+  bic = -2.0 * loglik + k * float(_np.log(n))
+  tail = n - k - 1.0
+  aicc = aic + (2.0 * k * (k + 1.0) / tail if tail > 0 else float("inf"))
+  return {"aic": aic, "bic": bic, "aicc": aicc}
+
+
 def safe_log(dens: Any) -> Any:
   """Log of a density, with a zero mapped to ``-inf`` rather than a warning.
 
@@ -698,7 +735,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
     bic : The same, penalizing by ``log n`` per parameter.
     aicc : The same, with a small-sample correction.
     """
-    return -2.0 * self._loglik_value(y) + 2.0 * self._n_parameters()
+    return criteria(self._loglik_value(y), self._n_parameters(), None)["aic"]
 
   def bic(self, y: Optional[ArrayT] = None, /) -> float:
     """Bayesian information criterion of the fit.
@@ -724,9 +761,9 @@ class MarginBase(MarginLike[ArrayT], ABC):
         If called without data on a margin that did not record its sample
         size, since the penalty needs ``n``.
     """
-    return -2.0 * self._loglik_value(y) + self._n_parameters() * float(
-      _np.log(self._sample_size(y))
-    )
+    return criteria(
+      self._loglik_value(y), self._n_parameters(), self._sample_size(y)
+    )["bic"]
 
   def aicc(self, y: Optional[ArrayT] = None, /) -> float:
     """Small-sample-corrected Akaike information criterion.
@@ -752,11 +789,9 @@ class MarginBase(MarginLike[ArrayT], ABC):
         If called without data on a margin that did not record its sample
         size.
     """
-    k = self._n_parameters()
-    tail = self._sample_size(y) - k - 1.0
-    if tail <= 0.0:
-      return float("inf")
-    return self.aic(y) + 2.0 * k * (k + 1.0) / tail
+    return criteria(
+      self._loglik_value(y), self._n_parameters(), self._sample_size(y)
+    )["aicc"]
 
   def _loglik_value(self, y: Optional[ArrayT]) -> float:
     """Log-likelihood as a plain float.

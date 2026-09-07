@@ -871,18 +871,23 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     return cast(Tensor, self._cascade("_inverse_rosenblatt_batched")(u))
 
   def __getstate__(self) -> dict:
-    """The picklable state: everything except the compiled-cascade cache.
+    """The picklable state: everything except the two derived caches.
 
-    Compiled callables do not pickle, and they are a pure cache -- the
-    unpickled vine recompiles on demand.
+    Both are pure caches rebuilt on demand, and neither belongs in a pickle.
+    Compiled callables cannot be pickled at all. The grid-batched bake can,
+    which is the trap: it is a *copy* of every pair's grid, so a pickle taken
+    after one batched call carried the grids twice -- 2.9x the bytes on a
+    3-variable vine -- and restored a bake nothing revalidated against the
+    pairs it was baked from.
 
     Returns
     -------
     dict
-        The instance state, with an empty compiled-cascade cache.
+        The instance state, with both caches cleared.
     """
     state = dict(super().__getstate__())
     state["_compiled"] = {}
+    state["_batched"] = None
     return state
 
   def load_state_dict(self, *args: Any, **kwargs: Any) -> Any:

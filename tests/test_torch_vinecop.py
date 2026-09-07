@@ -1869,3 +1869,28 @@ def test_state_dict_carries_the_model_identity() -> None:
   )
   with pytest.raises(RuntimeError, match="different var_types"):
     discrete.load_state_dict(a.state_dict(), strict=True)
+
+
+def test_a_pickle_does_not_carry_the_batched_bake() -> None:
+  """The grid-batched state is a cache, and a copy of every pair's grid.
+
+  Pickling it doubled the payload after a single batched call, and restored a
+  bake that nothing revalidated against the pairs it was baked from. It is
+  rebuilt on demand, so both cascades still agree afterwards.
+  """
+  import pickle
+
+  u = torch.from_numpy(_simulate(d=3, n=300, seed=3))
+  vine = TorchVinecop.from_data(u)
+  cold = len(pickle.dumps(vine))
+  vine.pdf(u, batched=True)  # bakes it
+  warm = len(pickle.dumps(vine))
+  # Was 2.9x on this vine; the bake must not be in there at all.
+  assert warm < cold * 1.05, (cold, warm)
+
+  back = pickle.loads(pickle.dumps(vine))
+  assert back._batched is None
+  torch.testing.assert_close(back.pdf(u), vine.pdf(u))
+  torch.testing.assert_close(
+    back.pdf(u, batched=True), vine.pdf(u, batched=True)
+  )

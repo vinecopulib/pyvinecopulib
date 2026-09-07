@@ -24,7 +24,8 @@ from ..core._validation import (
   reject_covariates,
   usable_observations,
 )
-from ..core.margin_controls import CRITERIA, FitControlsMargin
+from ..core.margin_base import criteria as _criteria_at
+from ..core.margin_controls import FitControlsMargin
 
 __all__ = ["SciPyMargin"]
 
@@ -295,13 +296,7 @@ def _criteria(loglik: float, k: float, n: int) -> dict[str, float]:
       One entry per criterion name; ``inf`` where a criterion is not
       defined, so a candidate can never win by being undefined.
   """
-  if not np.isfinite(loglik):
-    return dict.fromkeys(CRITERIA, float("inf"))
-  aic = -2.0 * loglik + 2.0 * k
-  bic = -2.0 * loglik + k * float(np.log(n))
-  tail = n - k - 1.0
-  aicc = aic + (2.0 * k * (k + 1.0) / tail if tail > 0 else float("inf"))
-  return {"aic": aic, "bic": bic, "aicc": aicc}
+  return _criteria_at(loglik, k, n)
 
 
 def _reject(candidate: Any, y: np.ndarray) -> Optional[str]:
@@ -1108,6 +1103,11 @@ class SciPyMargin(MarginBase[np.ndarray]):
       payload["params"] = list(self._params)
     if self._loglik is not None:
       payload["loglik"] = self._loglik
+    if self._nobs is not None:
+      # The sample size is what penalizes `bic` and `aicc`, so a margin that
+      # travels without it comes back able to report `loglik` and `aic` and
+      # not the other two.
+      payload["nobs"] = self._nobs
     payload["n_free"] = self._n_free
     return payload
 
@@ -1127,6 +1127,8 @@ class SciPyMargin(MarginBase[np.ndarray]):
       margin._params = tuple(float(v) for v in payload["params"])
     if payload.get("loglik") is not None:
       margin._loglik = float(payload["loglik"])
+    if payload.get("nobs") is not None:
+      margin._nobs = int(payload["nobs"])
     # `n_free` is what `n_parameters` reports, and it separates a fitted margin
     # from one constructed with `params=` pinned.
     margin._n_free = int(payload.get("n_free", 0))

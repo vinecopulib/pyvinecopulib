@@ -502,3 +502,44 @@ def test_a_margin_places_and_checks_its_own_argument() -> None:
   for call in (margin.logpdf, margin.cdf_left, margin.icdf):
     with pytest.raises(ValueError, match="one-dimensional"):
       call(np.zeros((3, 1)))
+
+
+def test_the_information_criteria_have_one_implementation() -> None:
+  """`criteria` is the arithmetic, and the search and the margins share it.
+
+  It was written twice -- once over a fitted margin, once over loose numbers
+  for the family search, which has no margin object yet. The `inf` guards are
+  what a search depends on: a candidate must never win by being undefined.
+  """
+  from pyvinecopulib.core.margin_base import criteria
+
+  # Every criterion undefined where the fit is.
+  assert criteria(float("-inf"), 2, 100) == {
+    "aic": float("inf"),
+    "bic": float("inf"),
+    "aicc": float("inf"),
+  }
+  # `aic` needs no `n`; the two that penalize by sample size do.
+  unknown = criteria(-100.0, 2.0, None)
+  assert unknown["aic"] == 204.0
+  assert unknown["bic"] == float("inf") and unknown["aicc"] == float("inf")
+  # `aicc`'s correction needs n - k - 1 > 0.
+  assert criteria(-100.0, 5.0, 6.0)["aicc"] == float("inf")
+
+  # And a fitted margin reports exactly what the shared arithmetic says.
+  rng = np.random.default_rng(0)
+  y = rng.normal(size=200)
+
+  class _Normal(MarginBase[np.ndarray]):
+    def pdf(self, y: Any, *, x: Any = None) -> Any:
+      ya = np.asarray(y, dtype=float)
+      return np.exp(-0.5 * ya**2) / math.sqrt(2.0 * math.pi)
+
+    def cdf(self, y: Any, *, x: Any = None) -> Any:
+      ya = np.asarray(y, dtype=float)
+      return 0.5 * (1.0 + np.vectorize(math.erf)(ya / math.sqrt(2.0)))
+
+  margin = _Normal()
+  expected = criteria(float(margin.loglik(y)), 0.0, float(y.size))
+  for name, value in expected.items():
+    assert getattr(margin, name)(y) == pytest.approx(value)

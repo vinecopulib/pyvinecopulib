@@ -1467,3 +1467,38 @@ def test_fit_holds_the_copula_families_where_select_re_chooses_them() -> None:
   # And `select` is the call that may change it.
   dist.select(y)
   assert families(dist)
+
+
+def test_a_json_payload_is_read_back_by_the_class_that_wrote_it() -> None:
+  """`to_json` records the class and `from_json` now checks it.
+
+  A subclass is a different distribution, so loading its payload as this class
+  is quietly the wrong model -- and the field was written from the start and
+  read by nothing.
+  """
+  import json as _json
+
+  rng = np.random.default_rng(0)
+  dist = pv.Vinedist.from_data(rng.normal(size=(150, 2)))
+  raw = dist.to_json()
+  assert _json.loads(raw)["kind"] == "Vinedist"
+  assert isinstance(pv.Vinedist.from_json(raw), pv.Vinedist)
+
+  foreign = _json.dumps({**_json.loads(raw), "kind": "SomeOtherDist"})
+  with pytest.raises(ValueError, match="written by 'SomeOtherDist'"):
+    pv.Vinedist.from_json(foreign)
+
+
+def test_a_margin_keeps_every_criterion_across_a_json_round_trip() -> None:
+  """`bic` and `aicc` need the sample size, which the payload now carries.
+
+  `loglik` and `aic` survived without it, so the loss showed up only on the
+  two criteria that penalize by ``n`` -- and as a raise, not a wrong number.
+  """
+  from pyvinecopulib.core import margin_from_json, margin_to_json
+
+  rng = np.random.default_rng(0)
+  margin = SciPyMargin("norm").fit(rng.normal(size=300))
+  back = margin_from_json(margin_to_json(margin))
+  for name in ("loglik", "aic", "bic", "aicc"):
+    assert getattr(back, name)() == pytest.approx(getattr(margin, name)())
