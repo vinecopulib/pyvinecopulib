@@ -867,3 +867,42 @@ def test_select_fits_the_model_it_then_evaluates(seed: int, d: int) -> None:
   np.testing.assert_allclose(
     float(selected.loglik(u)), achieved, rtol=1e-12, atol=0.0
   )
+
+
+@pytest.mark.parametrize(
+  "controls",
+  [
+    pv.FitControlsVinecop(),
+    pv.FitControlsVinecop(family_set=[pv.families.gaussian]),
+    pv.FitControlsVinecop(tree_criterion="cxi"),
+    pv.FitControlsVinecop(threshold=0.2),
+    pv.FitControlsVinecop(trunc_lvl=2),
+  ],
+  ids=["default", "family-set", "cxi", "threshold", "truncated"],
+)
+def test_a_real_controls_object_drives_the_public_select(
+  controls: pv.FitControlsVinecop,
+) -> None:
+  """The path a user takes, with the controls class a user has.
+
+  Every other test here builds a minimal `ControlsLike` instead, so that it
+  can set one knob or pass a value the compiled constructor would reject --
+  useful, and it left the actual `FitControlsVinecop` untested through
+  `select` / `from_data`. What the engines read is `to_dict()`, so a field
+  renamed or removed upstream shows up here and nowhere else.
+  """
+  u = _correlated_pseudo_obs(0, 4)
+
+  class _Vine(HostedVinecop):
+    bicop_class = pv.Bicop
+
+  vine = _Vine.from_data(u, controls)
+  assert vine.dim == 4
+  assert 1 <= int(vine.structure.trunc_lvl) <= 3
+  assert np.all(np.isfinite(vine.pdf(u)))
+  # And in place, on an existing vine.
+  refit = _Vine(
+    [[pv.Bicop() for _ in range(4 - 1 - t)] for t in range(3)],
+    pv.RVineStructure.from_order([1, 2, 3, 4]),
+  ).select(u, controls)
+  assert np.all(np.isfinite(refit.pdf(u)))

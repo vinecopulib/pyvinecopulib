@@ -548,7 +548,9 @@ def test_discrete_pair_matches_every_fitted_family(
 
 
 @pytest.mark.parametrize("levels", [2, 8, 32])
-@pytest.mark.parametrize("family", [pv.families.tll, pv.families.gaussian])
+# Every family, not a representative couple: AGENTS.md is explicit that
+# covering two is how this class of defect stayed invisible on both sides.
+@pytest.mark.parametrize("family", _FAMILIES)
 def test_the_atom_masses_of_a_discrete_edge_sum_to_one(
   family: pv.BicopFamily, levels: int
 ) -> None:

@@ -1083,13 +1083,24 @@ def test_an_unknown_margin_kind_and_a_bad_version_both_raise():
 def test_both_shipped_distributions_satisfy_the_contract() -> None:
   # The contract is what downstream code types against, so both routes must
   # satisfy it -- and the sklearn backend layer returns it from
-  # `bind_distribution`.
+  # `bind_distribution`. The name says *both*, so check both: the torch half
+  # went untested here, which is the lane where a `ModuleList` of margins and
+  # an `nn.Module` copula could plausibly diverge from the protocol.
   copula = pv.Vinecop.from_data(
     pv.utils.to_pseudo_obs(np.random.default_rng(0).normal(size=(200, 2)))
   )
   dist = Vinedist(copula, [Kde1d().fit(np.zeros(5)), Kde1d().fit(np.zeros(5))])
   assert isinstance(dist, VinedistLike)
   assert isinstance(dist, VinedistBase)
+
+  torch = pytest.importorskip("torch")
+  from pyvinecopulib.torch import TorchVinedist
+
+  rng = np.random.default_rng(1)
+  y = torch.as_tensor(rng.normal(size=(200, 2)) + rng.normal(size=(200, 1)))
+  torch_dist = TorchVinedist.from_data(y)
+  assert isinstance(torch_dist, VinedistLike)
+  assert isinstance(torch_dist, VinedistBase)
 
 
 def test_a_minimal_vinedist_base_subclass_needs_no_hook_to_evaluate(
