@@ -99,9 +99,18 @@ def _make_criterion(
   convert: Callable[[Any], Any],
   n: int,
   weights: Optional[Any] = None,
-  criterion_function: Optional[Callable[[Any], float]] = None,
+  criterion_function: Optional[Callable[..., float]] = None,
+  x: Optional[Any] = None,
 ) -> Callable[[Any, Any], float]:
   """Build the edge criterion ``calculate_criterion`` computes.
+
+  Covariates are optional to the criterion, the way they are to a pair copula:
+  the built-in dependence measures ignore ``x`` -- they read the
+  pseudo-observations and nothing else -- while a caller's own
+  ``criterion_function`` may use it to score an edge conditionally. It is
+  passed only when there is one, so a criterion function written without it
+  keeps working, and one that cannot accept an ``x`` it is handed fails loudly
+  rather than scoring the wrong thing.
 
   Parameters
   ----------
@@ -117,7 +126,11 @@ def _make_criterion(
       selection agrees with :meth:`~pyvinecopulib.core.Vinecop.select`.
   criterion_function : callable, or None, optional
       Required when ``tree_criterion`` is ``"custom"``; maps an ``(n, 2)``
-      matrix to a criterion value.
+      matrix -- and, when there are covariates, ``x`` by keyword -- to a
+      criterion value.
+  x : array, shape (n, p), or None, optional
+      Exogenous covariates, forwarded to ``criterion_function`` only. The
+      built-in measures are unconditional and never see them.
 
   Returns
   -------
@@ -129,6 +142,14 @@ def _make_criterion(
   from ..pyvinecopulib_ext import _calculate_tree_criterion
 
   w = np.empty(0) if weights is None else np.asarray(convert(weights), float)
+  # The binding calls the criterion function with the matrix alone, so the
+  # covariates are bound here rather than threaded through C++.
+  scorer: Optional[Callable[..., float]] = criterion_function
+  if criterion_function is not None and x is not None:
+    xa = convert(x)
+
+    def scorer(matrix: Any) -> float:  # noqa: F811 - the conditional variant
+      return float(cast(Any, criterion_function)(matrix, x=xa))
 
   def criterion(col0: Any, col1: Any) -> float:
     if n <= 10:
@@ -136,7 +157,7 @@ def _make_criterion(
     a, b = convert(col0), convert(col1)
     return float(
       _calculate_tree_criterion(
-        np.column_stack((a, b)), tree_criterion, w, criterion_function
+        np.column_stack((a, b)), tree_criterion, w, scorer
       )
     )
 

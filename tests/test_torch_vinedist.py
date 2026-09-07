@@ -545,3 +545,27 @@ def test_from_data_does_not_take_its_dtype_from_integer_data() -> None:
   tensors = [v for v in dist.state_dict().values() if hasattr(v, "dtype")]
   assert len({t.dtype for t in tensors}) == 1
   assert tensors[0].dtype.is_floating_point
+
+
+def test_fit_and_select_work_on_every_torch_vine_distribution() -> None:
+  """``fit`` and ``select`` raised ``TypeError`` for every torch distribution.
+
+  ``_bind_dist`` runs again on each refit, and the base stored the margins with
+  a plain assignment. That is fine the first time -- ``_margins`` is not yet a
+  registered child -- and fatal the second, when ``nn.Module`` refuses a tuple
+  over the ``ModuleList`` it is tracking. The storage is a hook now, so the
+  torch lane installs a ``ModuleList`` on every bind rather than repairing one
+  the base already wrote.
+  """
+  y = torch.as_tensor(
+    np.random.default_rng(4).normal(size=(300, 3)), dtype=torch.float64
+  )
+  dist = TorchVinedist.from_data(y)
+  for verb in ("fit", "select"):
+    returned = getattr(dist, verb)(y)
+    assert returned is dist
+    # Still registered children, or the parameters would be invisible to
+    # `state_dict`, `.to()` and every optimizer.
+    assert isinstance(dist._margins, torch.nn.ModuleList)
+    assert any("_margins" in key for key in dist.state_dict())
+    assert bool(torch.isfinite(dist.logpdf(y)).all())

@@ -214,6 +214,7 @@ class Vinedist(VinedistBase[np.ndarray]):
     controls: Optional[ControlsLike],
     structure: Optional[Any] = None,
     weights: Optional[Any] = None,
+    x: Optional[Any] = None,
   ) -> Any:
     """Fit a ``Vinecop`` on the pseudo-observations.
 

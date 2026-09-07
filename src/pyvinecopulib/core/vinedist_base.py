@@ -220,7 +220,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
       )
 
     self._vinecop = vinecop
-    self._margins = tuple(resolved)
+    self._set_margins(resolved)
     self._var_types = self.copula_var_types(self._margins)
 
     declared = getattr(vinecop, "var_types", None)
@@ -391,6 +391,26 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     return cls.from_json(read_file(filename))
 
   # --- marginal transforms ------------------------------------------------- #
+
+  def _set_margins(self, margins: Sequence[Any]) -> None:
+    """Store the resolved margins on this distribution.
+
+    A hook rather than a plain assignment because a lane may need its margins
+    *registered* rather than merely held -- and because :meth:`_bind_dist` runs
+    again on every refit, so the store has to be idempotent. The write
+    counterpart of :attr:`margins`, and the same shape as
+    :meth:`~pyvinecopulib.core.VinecopBase.set_pair_copulas` on the vine lane.
+
+    Parameters
+    ----------
+    margins : sequence of MarginLike
+        The coerced, length-checked margins.
+
+    Returns
+    -------
+    None
+    """
+    self._margins = tuple(margins)
 
   def _prep(self, a: Any) -> Any:
     """Bring one input array onto the namespace this object evaluates on.
@@ -1110,6 +1130,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     controls: Optional[ControlsLike],
     structure: Optional[Any],
     weights: Optional[Any],
+    x: Optional[Any] = None,
   ) -> Any:
     """Fit the copula half on the pseudo-observations.
 
@@ -1135,6 +1156,12 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         A fixed structure, or ``None`` to select one from the data.
     weights : array, shape (n,), or None
         Observation weights.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates. Reaching the copula's *pairs* needs a structure
+        to fit along and a conditional pair fitter, so this is forwarded to
+        ``vinecop_class.from_data`` and refused there when neither is
+        available -- rather than accepted here and dropped, which is what
+        made a conditional distribution fit come back unconditional.
 
     Returns
     -------
@@ -1167,6 +1194,8 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     kwargs: dict[str, Any] = {"structure": structure, "controls": controls}
     if var_types is not None:
       kwargs["var_types"] = var_types
+    if x is not None:
+      kwargs["x"] = x
     return cast("Any", cls.vinecop_class).from_data(u, **kwargs)
 
   def fit(
@@ -1374,6 +1403,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
       controls=controls,
       structure=structure,
       weights=weights,
+      x=x,
     )
     self._bind_dist(vinecop, margins)
     return self
@@ -1566,6 +1596,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
       controls=controls,
       structure=structure,
       weights=weights,
+      x=x,
     )
     return cls(vinecop, list(fitted))
 

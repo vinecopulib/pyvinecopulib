@@ -211,11 +211,31 @@ class TorchVinedist(VinedistBase[Tensor], torch.nn.Module):
       _check_margin(margins, "margins")
 
     super()._bind_dist(vinecop, margins)
-    # `nn.Module` tracks a `ModuleList`, not the plain tuple the base stores, so
-    # rebind through one: without it the margins' parameters are invisible to
-    # `state_dict`, `.to()` and every optimizer. The cascades only iterate and
-    # index the attribute, both of which a `ModuleList` supports.
-    registered = cast("list[torch.nn.Module]", list(self._margins))
+
+  def _set_margins(self, margins: Sequence[Any]) -> None:
+    """Install the margins as registered children.
+
+    `nn.Module` tracks a `ModuleList`, not the plain tuple the base stores:
+    without one the margins' parameters are invisible to `state_dict`,
+    `.to()` and every optimizer. The cascades only iterate and index the
+    attribute, both of which a `ModuleList` supports.
+
+    This is a hook rather than a rebind after `super()._bind_dist` because
+    `_bind_dist` runs again on every refit, and by then `_margins` is a
+    registered child -- so the base's plain-tuple assignment raised
+    ``TypeError: cannot assign 'tuple' as child module``, which made `fit` and
+    `select` unusable on every torch vine distribution.
+
+    Parameters
+    ----------
+    margins : sequence of torch.nn.Module
+        The coerced, length-checked margins.
+
+    Returns
+    -------
+    None
+    """
+    registered = cast("list[torch.nn.Module]", list(margins))
     self._margins = cast(Any, torch.nn.ModuleList(registered))
 
   # The vine copula this route fits; the margins need a placement, so
@@ -317,6 +337,7 @@ class TorchVinedist(VinedistBase[Tensor], torch.nn.Module):
     controls: Optional[Any] = None,
     structure: Optional[Any] = None,
     weights: Optional[Any] = None,
+    x: Optional[Any] = None,
   ) -> Any:
     """Fit a :class:`TorchVinecop` on the pseudo-observations.
 
