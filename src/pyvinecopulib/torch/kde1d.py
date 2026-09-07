@@ -26,7 +26,11 @@ import torch
 from torch import Tensor
 
 from ..core import Kde1d, MarginBase
-from ..core.margin_base import _reject_covariates
+from ..core._validation import (
+  reject_covariates,
+  validate_univariate,
+  validate_weights,
+)
 from . import _kde1d_interp as interp
 
 
@@ -301,7 +305,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     from_data : Construct and fit in one call.
     from_kde1d : Lift a ``Kde1d`` that is already fitted.
     """
-    _reject_covariates(self, x)
+    reject_covariates(self, x)
     kde = Kde1d(
       xmin=self.xmin,
       xmax=self.xmax,
@@ -315,28 +319,15 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       grid_size=self.grid_size,
       boundary_repair=self.boundary_repair,
     )
-    y_tensor = torch.as_tensor(y)
-    if y_tensor.ndim != 1:
-      raise ValueError(
-        "y must be one-dimensional with shape (n,), "
-        f"got {tuple(y_tensor.shape)}"
-      )
+    y_tensor = validate_univariate(torch.as_tensor(y))
+    # The shared validators, not a local pair of shape checks: their dtype,
+    # finiteness, nonnegativity and positive-sum rules are what keep a weight
+    # array out of `Kde1d`'s bandwidth selection, which divides by the sum.
+    weight_tensor = validate_weights(weights, y_tensor)
     data = y_tensor.detach().cpu().numpy()
-    if weights is None:
+    if weight_tensor is None:
       kde.fit(data)
     else:
-      weight_tensor = torch.as_tensor(weights)
-      if weight_tensor.ndim != 1:
-        raise ValueError(
-          "weights must be one-dimensional with shape (n,), "
-          f"got {tuple(weight_tensor.shape)}"
-        )
-      if weight_tensor.shape[0] != y_tensor.shape[0]:
-        raise ValueError(
-          "weights must have one entry per observation: "
-          f"got {weight_tensor.shape[0]} weights for {y_tensor.shape[0]} "
-          "observations"
-        )
       kde.fit(data, weight_tensor.detach().cpu().numpy())
     return self._adopt(kde)
 

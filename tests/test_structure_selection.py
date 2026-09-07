@@ -554,6 +554,57 @@ def test_unweighted_selection_is_unchanged_by_the_weights_plumbing() -> None:
   assert np.array_equal(np.asarray(plain.matrix), np.asarray(weighted.matrix))
 
 
+@pytest.mark.parametrize(
+  ("bad", "match"),
+  [
+    ("all_nan", "at least one observation standing"),
+    ("all_zero", "at least one observation standing"),
+    ("inf", "must not contain infinite"),
+    ("negative", "nonnegative"),
+    ("wrong_length", "one weight per observation"),
+  ],
+)
+def test_selection_refuses_unusable_weights(bad: str, match: str) -> None:
+  # The criterion hands the weights straight to the binding, so the engines
+  # validate them with the same validator every other layer uses -- they used
+  # to go through unchecked.
+  u = _correlated_pseudo_obs(0, 4, n=200)
+  n = u.shape[0]
+  weights = {
+    "all_nan": np.full(n, np.nan),
+    "all_zero": np.zeros(n),
+    "inf": np.where(np.arange(n) == 3, np.inf, 1.0),
+    "negative": np.where(np.arange(n) == 3, -1.0, 1.0),
+    "wrong_length": np.ones(n - 1),
+  }[bad]
+  controls = _Controls(tree_criterion="tau", weights=weights)
+  with pytest.raises(ValueError, match=match):
+    HostedVinecop.from_data(u, fit_edge=_gaussian_fit_edge, controls=controls)
+
+
+def test_selection_accepts_the_drop_markers_wdm_honors() -> None:
+  # `wdm` removes missing rows by default and gives a NaN weight and a zero
+  # weight the same answer, so the validator must let both through rather than
+  # refusing a weighting the criterion below it handles.
+  u = _correlated_pseudo_obs(0, 4, n=200)
+  n = u.shape[0]
+  as_nan = _Controls(
+    tree_criterion="tau",
+    weights=np.where(np.arange(n) % 2 == 0, 1.0, np.nan),
+  )
+  as_zero = _Controls(
+    tree_criterion="tau",
+    weights=np.where(np.arange(n) % 2 == 0, 1.0, 0.0),
+  )
+  dropped = HostedVinecop.from_data(
+    u, fit_edge=_gaussian_fit_edge, controls=as_nan
+  ).structure
+  zeroed = HostedVinecop.from_data(
+    u, fit_edge=_gaussian_fit_edge, controls=as_zero
+  ).structure
+  assert np.array_equal(np.asarray(dropped.matrix), np.asarray(zeroed.matrix))
+
+
 def test_custom_tree_criterion_is_callable_instead_of_raising() -> None:
   # `tree_criterion="custom"` had nothing to call, so it raised from C++.
   u = _correlated_pseudo_obs(1, 5)

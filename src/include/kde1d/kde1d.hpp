@@ -13,6 +13,8 @@
 // `Bicop.to_file` / `Vinecop.to_file` do.
 #include <limits>
 #include <optional>
+#include <stdexcept>
+#include <string>
 #include <tuple>
 #include <vinecopulib/misc/tools_serialization.hpp>
 
@@ -24,6 +26,50 @@ using namespace nb::literals;
 using namespace kde1d;
 
 constexpr auto& kde1d_doc = pyvinecopulib_doc.kde1d.Kde1d;
+
+// `Kde1d::fit` drops every row whose observation is `NaN`, whose weight is
+// `NaN`, or whose weight is zero -- the three documented "missing" markers --
+// and then rescales by the surviving weight sum. When nothing survives it
+// divides by zero and walks an empty grid, which reaches the caller as a
+// segfault rather than an exception; a negative weight is not a marker at all
+// and silently fits a density that is not the weighted one. Mirrors
+// `core/_validation.validate_weights`, so the compiled margin refuses what the
+// Python ones do. The real fix belongs upstream in `lib/kde1d`; the guard is
+// here because a crash takes the interpreter down.
+inline void check_kde1d_inputs(const Eigen::VectorXd& x,
+                               const Eigen::VectorXd& weights) {
+  const bool weighted = weights.size() > 0;
+  if (weighted && weights.size() != x.size()) {
+    throw std::invalid_argument("weights must have shape (" +
+                                std::to_string(x.size()) +
+                                ",), with one weight per observation; got (" +
+                                std::to_string(weights.size()) + ",)");
+  }
+  if (weighted) {
+    if (weights.array().isInf().any()) {
+      throw std::invalid_argument("weights must not contain infinite values");
+    }
+    // `NaN < 0` is false, so this reads only the entries that are not markers.
+    if ((weights.array() < 0.0).any()) {
+      throw std::invalid_argument("weights must be nonnegative");
+    }
+  }
+  for (Eigen::Index i = 0; i < x.size(); ++i) {
+    if (std::isnan(x(i))) {
+      continue;
+    }
+    if (!weighted) {
+      return;
+    }
+    if (!std::isnan(weights(i)) && weights(i) > 0.0) {
+      return;
+    }
+  }
+  throw std::invalid_argument(
+      "x and weights must leave at least one observation standing; a NaN "
+      "observation, a NaN weight and a zero weight each mark a dropped "
+      "observation, and every row is dropped");
+}
 
 // Python-binding-only docstring for the unified `__init__` factory — the
 // upstream C++ class has four constructor overloads that libclang cannot
@@ -443,6 +489,7 @@ inline void init_kde1d(nb::module_& module) {
               "fit",
               [](Kde1d& self, const Eigen::VectorXd& x,
                  const Eigen::VectorXd& weights) -> Kde1d& {
+                check_kde1d_inputs(x, weights);
                 {
                   nb::gil_scoped_release release;
                   self.fit(x, weights);
@@ -459,6 +506,7 @@ inline void init_kde1d(nb::module_& module) {
               "select",
               [](Kde1d& self, const Eigen::VectorXd& x,
                  const Eigen::VectorXd& weights) -> Kde1d& {
+                check_kde1d_inputs(x, weights);
                 {
                   nb::gil_scoped_release release;
                   self.fit(x, weights);
@@ -491,6 +539,7 @@ inline void init_kde1d(nb::module_& module) {
               [](const Eigen::VectorXd& x, const Eigen::VectorXd& weights,
                  std::optional<double> xmin, std::optional<double> xmax,
                  const std::string& type) {
+                check_kde1d_inputs(x, weights);
                 Kde1d kde(xmin.value_or(NAN), xmax.value_or(NAN), type);
                 {
                   nb::gil_scoped_release release;

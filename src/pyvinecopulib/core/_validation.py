@@ -1,4 +1,10 @@
-"""Shared validation for row-aligned conditional and weighted evaluations."""
+"""The package's validators, so one rule and one message serve every layer.
+
+Every check a margin, pair copula, vine or vine distribution performs on its
+inputs lives here: the univariate and covariate layouts, observation weights,
+and the fit-time refusal of covariates a part cannot read. Each takes ``name=``
+so the message names the argument the caller actually passed.
+"""
 
 from __future__ import annotations
 
@@ -94,10 +100,18 @@ def validate_weights(
   array, or None
       The weights on the observations' namespace, or ``None``.
 
+  Notes
+  -----
+  ``NaN`` and ``0`` mark a *dropped* observation, the same convention the data
+  follow -- so a weight vector may carry either, and what must hold is that
+  something survives them. ``+/-inf`` and a negative weight are not drop
+  markers and are refused.
+
   Raises
   ------
   ValueError
-      If the weights are not one per observation, not finite, or negative.
+      If the weights are not one per observation, are infinite or negative, or
+      leave no observation standing.
   TypeError
       If they do not have a real numeric dtype.
   """
@@ -122,8 +136,84 @@ def validate_weights(
     raise TypeError(
       f"{name} must have a real numeric dtype; got {weights.dtype}"
     )
-  if not bool(xp.all(xp.isfinite(weights))):
-    raise ValueError(f"{name} must contain only finite values")
+  if bool(xp.any(xp.isinf(weights))):
+    raise ValueError(f"{name} must not contain infinite values")
+  # `NaN < 0` is False, so this reads only the entries that are not drops.
   if bool(xp.any(weights < 0)):
     raise ValueError(f"{name} must be nonnegative")
+  # Every entry being a drop marker leaves nothing to fit: `Kde1d` rescales by
+  # the surviving sum, so it reaches the caller as a crash rather than an
+  # error, and `utils.wdm` refuses the same input for the same reason.
+  kept = weights[~xp.isnan(weights)]
+  if not float(xp.sum(kept)) > 0.0:
+    raise ValueError(
+      f"{name} must leave at least one observation standing; NaN and 0 mark a "
+      "dropped observation, and every entry is one"
+    )
   return weights
+
+
+def usable_observations(values: Any, *, name: str = "y") -> Any:
+  """Validate a univariate sample and drop the observations that are not one.
+
+  The margins all need the same three steps before they can fit -- require the
+  one-dimensional layout, drop ``NaN``, and refuse a column with nothing left
+  -- so they share them rather than each spelling the refusal differently.
+
+  Parameters
+  ----------
+  values : array
+      The observations.
+  name : str, default="y"
+      The argument's name, used in the error messages.
+
+  Returns
+  -------
+  array
+      The finite observations, one dimension, possibly shorter than the input.
+
+  Raises
+  ------
+  ValueError
+      If ``values`` is not one-dimensional, or if no observation survives.
+  """
+  values = validate_univariate(values, name=name)
+  xp = array_namespace(values)
+  values = values[~xp.isnan(values)]
+  if int(values.shape[0]) == 0:
+    raise ValueError(f"{name} has no usable observation")
+  return values
+
+
+def reject_covariates(part: Any, x: Optional[Any], *, name: str = "x") -> None:
+  """Raise if ``x`` was supplied to a part that fits unconditionally.
+
+  Evaluation ignores covariates a part does not read, since one distribution
+  may mix conditional and unconditional parts and they all see the same ``x``.
+  Fitting cannot: silently estimating ``f(y)`` when ``f(y | x)`` was asked for
+  returns a different model than the caller believes they have.
+
+  Parameters
+  ----------
+  part : object
+      The margin, pair copula or vine being fitted; named in the message.
+  x : array, shape (n, p), or None
+      The covariates the caller passed.
+  name : str, default="x"
+      The argument's name, used in the error message.
+
+  Returns
+  -------
+  None
+
+  Raises
+  ------
+  ValueError
+      If ``x`` is not ``None``.
+  """
+  if x is not None:
+    raise ValueError(
+      f"{type(part).__name__} does not model covariates, so it cannot be "
+      f"fitted with {name}=; write one whose fit reads them and that declares "
+      f"supports_covariates, or drop {name}."
+    )

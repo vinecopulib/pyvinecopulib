@@ -18,7 +18,7 @@ import pytest
 
 import pyvinecopulib as pv
 from pyvinecopulib.core import MarginBase, MarginLike
-from pyvinecopulib.core.margin_base import _reject_covariates
+from pyvinecopulib.core._validation import reject_covariates
 
 
 class _ShiftedExp(MarginBase[np.ndarray]):
@@ -383,7 +383,7 @@ def test_fit_refuses_covariates_it_cannot_read() -> None:
       x: Optional[Any] = None,
       weights: Any = None,
     ) -> Any:
-      _reject_covariates(self, x)
+      reject_covariates(self, x)
       return self
 
     def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:

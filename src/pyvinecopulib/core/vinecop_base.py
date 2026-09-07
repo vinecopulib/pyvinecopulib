@@ -80,7 +80,7 @@ from ._discrete import (
 )
 from ._independence import IndependencePair
 from ._reorient import Reorientation, reorientation
-from ._validation import validate_covariates
+from ._validation import validate_covariates, validate_weights
 from .bicop_base import BicopBase, _pair_eval
 from .context import ConditioningContext, SimplifiedContext
 from .protocols import (
@@ -2280,6 +2280,10 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     ua = collapse_data(ua, d, types, "fit")
     n = ua.shape[0]
     validate_covariates(x, int(n))
+    # The criterion hands these straight to the binding, so they are checked
+    # here rather than there: this is the first point that knows both the
+    # weights and the row count they must align with.
+    weights = validate_weights(weights, ua[:, 0])
     criterion = _make_criterion(
       tree_criterion,
       _to_numpy_default,
@@ -2573,6 +2577,9 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
 
     # Only the value columns enter, so a discrete vine selects the tree it
     # would select continuous.
+    # Checked here for the same reason as in `_fit_parts`: the criterion hands
+    # them straight to the binding.
+    weights = validate_weights(weights, u[:, 0])
     criterion = _make_criterion(
       tree_criterion, convert, n, weights, criterion_function
     )

@@ -89,34 +89,6 @@ def support_of(obj: Any) -> tuple[float, float]:
   )
 
 
-def _reject_covariates(margin: Any, x: Optional[Any]) -> None:
-  """Raise if ``x`` was supplied to a margin that fits unconditionally.
-
-  Evaluation ignores covariates a margin does not read, since one distribution
-  may mix conditional and unconditional margins and they all see the same
-  ``x``. Fitting cannot: silently estimating ``f(y)`` when ``f(y | x)`` was
-  asked for returns a different model than the caller believes they have.
-
-  Parameters
-  ----------
-  margin : MarginLike
-      The margin being fitted; named in the message.
-  x : array, shape (n, k), or None
-      The covariates the caller passed.
-
-  Raises
-  ------
-  ValueError
-      If ``x`` is not ``None``.
-  """
-  if x is not None:
-    raise ValueError(
-      f"{type(margin).__name__} does not model covariates, so it cannot be "
-      "fitted with x=; write a margin whose fit reads them and that declares "
-      "supports_covariates, or drop x."
-    )
-
-
 def derive_cdf_left(
   margin: Any, y: Any, x: Optional[Any], var_type: str
 ) -> Any:

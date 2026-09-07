@@ -20,8 +20,10 @@ from typing import (
 import numpy as np
 
 from ..core import MarginBase
-from ..core.margin_base import _reject_covariates
-from ..core._validation import validate_univariate
+from ..core._validation import (
+  reject_covariates,
+  usable_observations,
+)
 from .controls import CRITERIA, FitControlsMargin
 
 __all__ = ["SciPyMargin"]
@@ -738,7 +740,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
     fit : Estimate a named family, leaving the family alone.
     aic : Score the chosen fit.
     """
-    _reject_covariates(self, x)
+    reject_covariates(self, x)
     if weights is not None:
       raise TypeError(
         "SciPyMargin cannot use observation weights: SciPy's estimators "
@@ -759,10 +761,9 @@ class SciPyMargin(MarginBase[np.ndarray]):
       # the search back asks for it by name, with `family_set`.
       return self.fit(y, x=x, weights=weights)
 
-    data = validate_univariate(np.asarray(y, dtype=float))
-    data = data[~np.isnan(data)]
-    if data.size == 0:
-      raise ValueError("SciPyMargin.select got no usable observation")
+    data = usable_observations(
+      np.asarray(y, dtype=float), name="SciPyMargin.select's y"
+    )
 
     counts = self._reads_as_counts(data)
     candidates = self._candidates(data, counts=counts, family_set=family_set)
@@ -1187,7 +1188,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
         If no observation survives, or a free discrete parameter has no search
         bound.
     """
-    _reject_covariates(self, x)
+    reject_covariates(self, x)
     if self._family is None:
       # `RuntimeError`, as the property readers use for the same missing
       # state -- and deliberately not `ValueError`, which `fit_margin`'s
@@ -1203,12 +1204,10 @@ class SciPyMargin(MarginBase[np.ndarray]):
         "SciPy's estimators do not accept them. Pass margins='kde' for a "
         "weighted fit, or drop weights="
       )
-    data = validate_univariate(np.asarray(y, dtype=float))
-    data = data[~np.isnan(data)]
-    if data.size == 0:
-      raise ValueError(
-        f"SciPyMargin({self._family!r}).fit got no usable observation"
-      )
+    data = usable_observations(
+      np.asarray(y, dtype=float),
+      name=f"SciPyMargin({self._family!r}).fit's y",
+    )
 
     free = [name for name in self._names if name not in self._fixed]
     if not free:

@@ -414,14 +414,73 @@ def test_state_dict_round_trip() -> None:
 
 
 def test_fit_rejects_non_vector_data_and_weights() -> None:
-  """Fitting accepts one observation vector and aligned vector weights."""
+  """Fitting accepts one observation vector and aligned vector weights.
+
+  The messages are the shared validators', so they read the same here as on
+  every other margin.
+  """
   y = _t(np.arange(5.0))
-  with pytest.raises(ValueError, match="one-dimensional"):
+  with pytest.raises(ValueError, match=r"y must have shape \(n,\)"):
     TorchKde1d().fit(y[:, None])
-  with pytest.raises(ValueError, match="one-dimensional"):
+  with pytest.raises(ValueError, match="one weight per observation"):
     TorchKde1d().fit(y, weights=y[:, None])
-  with pytest.raises(ValueError, match="one entry per observation"):
+  with pytest.raises(ValueError, match="one weight per observation"):
     TorchKde1d().fit(y, weights=y[:-1])
+
+
+@pytest.mark.parametrize(
+  ("bad", "match"),
+  [
+    ("all_nan", "at least one observation standing"),
+    ("all_zero", "at least one observation standing"),
+    ("inf", "must not contain infinite"),
+    ("negative", "nonnegative"),
+  ],
+)
+def test_fit_refuses_weights_that_leave_nothing_to_fit(
+  bad: str, match: str
+) -> None:
+  """The only margin that accepts weights must refuse the unusable ones.
+
+  A vector of nothing but drop markers used to reach the caller as a segfault,
+  since the delegated ``Kde1d`` rescales by the surviving weight sum.
+  """
+  y = _t(np.random.default_rng(0).normal(size=64))
+  weights = {
+    "all_nan": torch.full((64,), float("nan"), dtype=torch.float64),
+    "all_zero": torch.zeros(64, dtype=torch.float64),
+    "inf": torch.where(
+      torch.arange(64) == 3,
+      torch.tensor(float("inf"), dtype=torch.float64),
+      torch.ones(64, dtype=torch.float64),
+    ),
+    "negative": torch.where(
+      torch.arange(64) == 3,
+      torch.tensor(-1.0, dtype=torch.float64),
+      torch.ones(64, dtype=torch.float64),
+    ),
+  }[bad]
+  with pytest.raises(ValueError, match=match):
+    TorchKde1d().fit(y, weights=weights)
+
+
+def test_fit_accepts_the_drop_markers_kde1d_documents() -> None:
+  """A ``NaN`` or zero weight drops its observation, as it does in ``Kde1d``."""
+  y = _t(np.random.default_rng(1).normal(size=64))
+  q = _t(np.linspace(-2.0, 2.0, 7))
+  every_other = torch.where(
+    torch.arange(64) % 2 == 0,
+    torch.ones(64, dtype=torch.float64),
+    torch.tensor(float("nan"), dtype=torch.float64),
+  )
+  half_zero = torch.where(
+    torch.arange(64) % 2 == 0,
+    torch.ones(64, dtype=torch.float64),
+    torch.zeros(64, dtype=torch.float64),
+  )
+  for weights in (every_other, half_zero):
+    fitted = TorchKde1d().fit(y, weights=weights)
+    assert bool(torch.isfinite(fitted.pdf(q)).all())
 
 
 def test_pickle_round_trip() -> None:

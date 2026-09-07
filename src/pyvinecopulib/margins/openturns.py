@@ -23,8 +23,10 @@ from typing import Any, Optional
 import numpy as np
 
 from ..core import MarginBase, MarginLike
-from ..core.margin_base import _reject_covariates
-from ..core._validation import validate_univariate
+from ..core._validation import (
+  reject_covariates,
+  usable_observations,
+)
 from ._adapters import register_margin_adapter
 from .controls import CRITERIA, FitControlsMargin
 
@@ -558,7 +560,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     ValueError
         If no observation survives.
     """
-    _reject_covariates(self, x)
+    reject_covariates(self, x)
     if weights is not None:
       raise TypeError(
         f"OpenTURNSMargin({self.family_name!r}) cannot use observation "
@@ -572,12 +574,10 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
         "estimate one from data"
       )
     openturns = _openturns()
-    data = validate_univariate(np.asarray(y, dtype=float))
-    data = data[~np.isnan(data)]
-    if data.size == 0:
-      raise ValueError(
-        f"OpenTURNSMargin({self.family_name!r}).fit got no usable observation"
-      )
+    data = usable_observations(
+      np.asarray(y, dtype=float),
+      name=f"OpenTURNSMargin({self.family_name!r}).fit's y",
+    )
     self._distribution = _univariate(
       self._factory.build(openturns.Sample(data.reshape(-1, 1)))
     )
@@ -683,7 +683,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
         )
         chosen.family_name
     """
-    _reject_covariates(self, x)
+    reject_covariates(self, x)
     if weights is not None:
       raise TypeError(
         "OpenTURNSMargin cannot use observation weights: an OpenTURNS Sample "
@@ -701,10 +701,9 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
       return self.fit(y, x=x, weights=weights)
 
     openturns = _openturns()
-    data = validate_univariate(np.asarray(y, dtype=float))
-    data = data[~np.isnan(data)]
-    if data.size == 0:
-      raise ValueError("OpenTURNSMargin.select got no usable observation")
+    data = usable_observations(
+      np.asarray(y, dtype=float), name="OpenTURNSMargin.select's y"
+    )
     sample = openturns.Sample(data.reshape(-1, 1))
 
     discrete = self._reads_as_discrete(data)
