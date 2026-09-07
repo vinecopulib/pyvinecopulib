@@ -27,8 +27,8 @@ from array_api_compat import array_namespace
 
 from ._rootfind import solve_increasing
 from ._trim import trim
-from ._validation import validate_covariates
-from ._covariates import pair_eval
+
+from ._covariates import pair_eval, prepare
 from .bicop_base import BicopBase
 from .protocols import ArrayT, BicopLike
 
@@ -539,7 +539,7 @@ class DiscretePair(BicopBase[ArrayT]):
     array, shape (n, 2), dtype float
         Samples in the unit square.
     """
-    validate_covariates(x, n)
+    x = prepare(self, x, n)
     method = cast("BicopLike[ArrayT]", self._pair).sample
     draw_seeds = list(seeds) if seeds else []
     if x is None:

@@ -15,8 +15,10 @@ layer performs on its input:
 
 They are separated because the three do not always apply together. Exogenous
 covariates are *placed* but never *trimmed* -- they are arbitrary reals, not
-copula arguments -- and a manufactured evaluation grid needs placement without
-any layout check at all.
+copula arguments, and ``_covariates.prepare`` is the composite that applies
+exactly those two steps to them. A manufactured evaluation grid needs placement
+without any layout check at all, and a margin's argument is on the data scale,
+so it is placed and checked but never clamped.
 
 Placement is *inferred* rather than declared, so hosting a custom pair copula,
 margin or vine on PyTorch requires writing none of it: the object already holds
@@ -43,14 +45,25 @@ def reference_array(obj: Any) -> Optional[Any]:
   ``vars()`` on such a module yields the registries rather than the tensors.
   Then the instance's own attributes, for a subclass that stores a plain array.
 
+  A **floating-point** array wins wherever one is available, because what the
+  answer is used for is placing copula arguments and covariates -- both real
+  valued. An object may hold an integer array too (an index table, a variable
+  -type code, a count buffer), and it is only the fallback: adopting its dtype
+  would truncate every argument to zero.
+
   Duck-typing here mirrors what the plotting helper already does on the way
   *out*, where a returned density is brought to the host through ``detach()``
   and ``cpu()`` without importing PyTorch either.
 
+  An **array** is its own reference, which is what lets a caller holding no
+  object -- the fit engines, which are static -- place covariates onto the
+  observations being fitted.
+
   Parameters
   ----------
   obj : object
-      The margin, pair copula, vine or vine distribution.
+      The margin, pair copula, vine or vine distribution, or an array to place
+      onto directly.
 
   Returns
   -------
@@ -59,19 +72,49 @@ def reference_array(obj: Any) -> Optional[Any]:
       the right answer for a functional part that computes in whatever
       namespace it is handed.
   """
+  if _is_array(obj):
+    return obj
+  fallback: Optional[Any] = None
   for name in ("parameters", "buffers"):
     method = getattr(obj, name, None)
     if callable(method):
       try:
         for tensor in method():
-          return tensor
+          if _is_float(tensor):
+            return tensor
+          if fallback is None:
+            fallback = tensor
       except TypeError:
         # Not the nn.Module member of that name; fall through to the next.
         continue
   for value in vars(obj).values():
-    if _is_array(value):
+    if not _is_array(value):
+      continue
+    if _is_float(value):
       return value
-  return None
+    if fallback is None:
+      fallback = value
+  return fallback
+
+
+def _is_float(value: Any) -> bool:
+  """Whether ``value`` is an array with a floating-point dtype.
+
+  Parameters
+  ----------
+  value : object
+      The candidate.
+
+  Returns
+  -------
+  bool
+      ``True`` for a real floating-point array; ``False`` for an integer or
+      boolean one, and for anything no array namespace claims.
+  """
+  if not _is_array(value):
+    return False
+  xp = array_namespace(value)
+  return bool(xp.isdtype(value.dtype, "real floating"))
 
 
 def _is_array(value: Any) -> bool:
@@ -112,7 +155,7 @@ def place(obj: Any, a: Any) -> Any:
   ----------
   obj : object
       The object whose placement to match, read through
-      :func:`reference_array`.
+      :func:`reference_array` -- or an array to match directly.
   a : array
       The values to place.
 
@@ -126,12 +169,16 @@ def place(obj: Any, a: Any) -> Any:
   if reference is None:
     return a
   xp = array_namespace(reference)
+  # Only a floating reference names a dtype worth adopting. An integer one
+  # names a namespace and a device and nothing else: casting `0.25` to it
+  # would place a zero, so the values keep their own precision instead.
+  dtype = reference.dtype if _is_float(reference) else None
   # Already there: skip the conversion, which would otherwise warn about the
   # `requires_grad` flag it inherits from a tensor that tracks one.
-  if getattr(a, "dtype", None) is reference.dtype:
+  if dtype is None or getattr(a, "dtype", None) is dtype:
     try:
       if array_namespace(a) is xp:
         return a
     except TypeError:
       pass
-  return xp.asarray(a, dtype=reference.dtype, device=_device_of(reference))
+  return xp.asarray(a, dtype=dtype, device=_device_of(reference))

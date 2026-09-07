@@ -28,10 +28,10 @@ from typing import Any, Optional, Self, cast
 import numpy as _np
 from array_api_compat import array_namespace
 
-from ._covariates import declared_eval
+from ._covariates import declared_eval, prepare
 from ._placement import place
 from ._rootfind import solve_increasing
-from ._validation import validate_covariates, validate_weights
+from ._validation import validate_weights
 from .protocols import _MARGIN_EXAMPLE, ArrayT, MarginLike
 
 __all__ = ["MarginBase"]
@@ -496,8 +496,9 @@ class MarginBase(MarginLike[ArrayT], ABC):
     array, shape (n,), dtype float
         Log-density, ``-inf`` where the density vanishes.
     """
-    validate_covariates(x, int(cast(Any, y).shape[0]))
-    dens: Any = declared_eval(self, "pdf", y, x)
+    ya = self._prep_args(y)
+    x = prepare(self, x, int(cast(Any, ya).shape[0]))
+    dens: Any = declared_eval(self, "pdf", ya, x)
     return cast(ArrayT, safe_log(dens))
 
   def cdf_left(self, y: ArrayT, /, *, x: Optional[ArrayT] = None) -> ArrayT:
@@ -532,8 +533,9 @@ class MarginBase(MarginLike[ArrayT], ABC):
         If :attr:`var_type` is ``"d"`` and ``y`` is not integer-valued, since
         the default steps back by one.
     """
-    validate_covariates(x, int(cast(Any, y).shape[0]))
-    return cast(ArrayT, derive_cdf_left(self, y, x, self.var_type))
+    ya = self._prep_args(y)
+    x = prepare(self, x, int(cast(Any, ya).shape[0]))
+    return cast(ArrayT, derive_cdf_left(self, ya, x, self.var_type))
 
   def icdf(self, p: ArrayT, /, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Inverse distribution function, by numerical inversion of ``cdf``.
@@ -564,8 +566,8 @@ class MarginBase(MarginLike[ArrayT], ABC):
         If ``p`` contains a non-finite value or a value outside ``[0, 1]``, or
         if ``x`` is not two-dimensional and row-aligned.
     """
-    pa: Any = p
-    validate_covariates(x, int(pa.shape[0]))
+    pa: Any = self._prep_args(p, "p")
+    x = prepare(self, x, int(pa.shape[0]))
     xp = array_namespace(pa)
     if bool(xp.any((pa < 0) | (pa > 1) | ~xp.isfinite(pa))):
       raise ValueError("p must contain only probabilities in [0, 1]")
@@ -658,8 +660,9 @@ class MarginBase(MarginLike[ArrayT], ABC):
       if weights is not None:
         raise ValueError("weights are only meaningful with data; pass y too")
       return self._fitted_loglik
-    validate_covariates(x, int(cast(Any, y).shape[0]))
-    terms: Any = declared_eval(self, "logpdf", y, x)
+    ya = self._prep_args(y)
+    x = prepare(self, x, int(cast(Any, ya).shape[0]))
+    terms: Any = declared_eval(self, "logpdf", ya, x)
     xp = array_namespace(terms)
     if weights is not None:
       weights = validate_weights(weights, terms)
@@ -848,7 +851,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
         If the subclass supplies no ``_sample_uniform``, the array namespace's
         RNG being the one thing this class cannot default.
     """
-    validate_covariates(x, n)
+    x = prepare(self, x, n)
     base = self._sample_uniform(n, list(seeds) if seeds else [])
     return cast(ArrayT, declared_eval(self, "icdf", base, x))
 
@@ -903,6 +906,41 @@ class MarginBase(MarginLike[ArrayT], ABC):
         The same values, on this object's namespace, dtype and device.
     """
     return place(self, a)
+
+  def _prep_args(self, y: ArrayT, name: str = "y") -> ArrayT:
+    """Place one column of observations and check that is what it is.
+
+    The margin rung's two steps, in order: placement (``_prep``), then the
+    single-column layout every member of the contract reads. There is no
+    third: a margin's argument is on the **data** scale, so it is an arbitrary
+    real and must not be clamped -- unlike a copula argument, and unlike
+    :meth:`icdf`'s probability, which is range-checked where it is inverted.
+
+    Parameters
+    ----------
+    y : array, shape (n,), dtype float
+        Observations, or probabilities for :meth:`icdf`.
+    name : str, default="y"
+        The argument's name, for the error message.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        ``y`` placed on this margin's namespace.
+
+    Raises
+    ------
+    ValueError
+        If ``y`` is not one-dimensional. A margin describes one variable, and
+        a second axis silently changed which values each answer belonged to.
+    """
+    ya: Any = self._prep(y)
+    if getattr(ya, "ndim", None) != 1:
+      raise ValueError(
+        f"{name} must be one-dimensional -- a margin describes one variable; "
+        f"got shape {tuple(getattr(ya, 'shape', ()))}"
+      )
+    return cast(ArrayT, ya)
 
   def __repr__(self) -> str:
     """Return a structural representation of the margin.

@@ -470,3 +470,35 @@ def test_declare_is_a_no_op_that_chains() -> None:
   assert m.declare(var_type="d", support=(0.0, 10.0)) is m
   assert m.var_type == "c"
   assert m.support == (1.0, math.inf)
+
+
+def test_a_margin_places_and_checks_its_own_argument() -> None:
+  """The margin rung applies the two steps its siblings do.
+
+  Placement, so a margin holding one array type answers on it; and the
+  single-column layout, because a margin describes one variable and a second
+  axis silently changed which value each answer belonged to.
+  """
+  torch = pytest.importorskip("torch")
+
+  class _Normal(MarginBase[Any]):
+    """A standard normal holding a torch tensor, so placement is observable."""
+
+    def __init__(self) -> None:
+      self.loc = torch.zeros(1, dtype=torch.float32)
+
+    def pdf(self, y: Any, *, x: Any = None) -> Any:
+      del x
+      return torch.exp(-0.5 * y**2) / math.sqrt(2.0 * math.pi)
+
+    def cdf(self, y: Any, *, x: Any = None) -> Any:
+      del x
+      return 0.5 * (1.0 + torch.erf(y / math.sqrt(2.0)))
+
+  margin = _Normal()
+  out = margin.logpdf(np.array([-1.0, 0.0, 1.0]))
+  assert isinstance(out, torch.Tensor)
+  assert out.dtype is torch.float32
+  for call in (margin.logpdf, margin.cdf_left, margin.icdf):
+    with pytest.raises(ValueError, match="one-dimensional"):
+      call(np.zeros((3, 1)))

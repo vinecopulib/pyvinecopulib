@@ -610,3 +610,42 @@ def test_selected_conditioning_order_is_the_fitted_one(seed: int) -> None:
   # finalized matrix would be authority enough and none of this would be
   # needed. The test would then still pass while gating nothing.
   assert divergent > 0
+
+
+def test_a_custom_tree_criterion_receives_the_covariates() -> None:
+  """A caller's tree criterion is handed ``x``, the way a pair copula is.
+
+  The built-in dependence measures are unconditional and never see it, so the
+  only way this is observable is through ``criterion_function`` -- which is
+  the point of threading it: an edge can be scored conditionally.
+  """
+  u = _data(5)
+  cov = np.random.default_rng(5).normal(size=(u.shape[0], 2))
+  seen: list[Any] = []
+
+  def criterion(matrix: Any, x: Any = None) -> float:
+    seen.append(x)
+    return float(abs(np.corrcoef(matrix, rowvar=False)[0, 1]))
+
+  shared: dict[str, Any] = {
+    # A conditional pair, since `x` reaches the pair copulas as well.
+    "fit_edge": _fixed_conditional_edge,
+    "x": cov,
+    "tree_criterion": "custom",
+    "criterion_function": criterion,
+    # `_fit_parts` reads the criterion only to apply a threshold.
+    "threshold": 0.5,
+  }
+
+  VinecopBase._select_parts(u, **shared)
+  assert seen, "`_select_parts` never called the criterion"
+  assert all(s is not None for s in seen)
+  assert all(np.asarray(s).shape == cov.shape for s in seen)
+
+  seen.clear()
+  VinecopBase._fit_parts(
+    pv.RVineStructure.from_order(list(range(1, _D + 1))), u, **shared
+  )
+  assert seen, "`_fit_parts` never called the criterion"
+  assert all(s is not None for s in seen)
+  assert all(np.asarray(s).shape == cov.shape for s in seen)

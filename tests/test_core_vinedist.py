@@ -1311,3 +1311,156 @@ def test_sample_conditional_also_refuses_a_left_limit_above_the_cdf() -> None:
   dist = pv.Vinedist(copula, [_Broken(), _Broken()])
   with pytest.raises(ValueError, match="cdf_left > cdf"):
     dist.sample_conditional(np.ones((5, 1), dtype=float))
+
+
+# --- fit re-estimates the parts it holds ------------------------------------- #
+
+
+class _SelfFittingVine(HostedVinecop):
+  """A hosted vine that can refit its own pairs, so `Vinedist.fit` can ask."""
+
+  bicop_class = pv.Bicop
+
+
+def _hosted_dist(y: np.ndarray) -> tuple[pv.Vinedist, Any]:
+  """A `Vinedist` over a caller's own vine class and kernel-density margins."""
+  structure = pv.RVineStructure.from_order(list(range(1, y.shape[1] + 1)))
+  vine = _SelfFittingVine.from_data(pv.to_pseudo_obs(y), structure=structure)
+  margins = [Kde1d.from_data(y[:, j]) for j in range(y.shape[1])]
+  return pv.Vinedist(vine, margins), vine
+
+
+def test_fit_re_estimates_the_copula_it_holds(continuous: np.ndarray) -> None:
+  """`fit` must not swap a caller's own vine for the default one.
+
+  The copula half is asked to re-estimate *itself*, so a hosted `VinecopLike`
+  keeps its class and its identity across a refit -- the same promise `fit`
+  keeps for a margin's family. Building a fresh `vinecop_class` instead would
+  silently replace the part the caller composed the distribution from.
+  """
+  dist, vine = _hosted_dist(continuous)
+  dist.fit(continuous)
+  assert dist.vinecop is vine
+  assert type(dist.vinecop) is _SelfFittingVine
+
+
+def test_select_re_estimates_the_copula_it_holds(
+  continuous: np.ndarray,
+) -> None:
+  """`select` re-selects the held copula's structure, still in place."""
+  dist, vine = _hosted_dist(continuous)
+  dist.select(continuous)
+  assert dist.vinecop is vine
+
+
+def test_fit_reports_a_copula_that_cannot_re_estimate_itself(
+  continuous: np.ndarray,
+) -> None:
+  """A vine with no pair fitter says so, rather than being replaced."""
+  structure = pv.RVineStructure.from_order(
+    list(range(1, continuous.shape[1] + 1))
+  )
+
+  def fit_edge(
+    tree: int,
+    edge: int,
+    u_e: Any,
+    x_e: Any,
+    var_types: Any = ("c", "c"),
+  ) -> Any:
+    del tree, edge, x_e, var_types
+    return pv.Bicop.from_data(np.asarray(u_e))
+
+  vine = HostedVinecop.from_data(
+    pv.to_pseudo_obs(continuous), structure=structure, fit_edge=fit_edge
+  )
+  margins = [
+    Kde1d.from_data(continuous[:, j]) for j in range(continuous.shape[1])
+  ]
+  dist = pv.Vinedist(vine, margins)
+  with pytest.raises(ValueError, match="fit_edge` is required"):
+    dist.fit(continuous)
+
+
+def test_a_weighted_refit_still_weights_both_halves(
+  continuous: np.ndarray,
+) -> None:
+  """Weights reach the copula through the same hook `from_data` uses."""
+  weights = np.linspace(0.5, 1.5, continuous.shape[0])
+  flat = pv.Vinedist.from_data(continuous)
+  flat.fit(continuous)
+  weighted = pv.Vinedist.from_data(continuous)
+  weighted.fit(continuous, weights=weights)
+  grid = continuous[:20]
+  assert not np.allclose(flat.pdf(grid), weighted.pdf(grid))
+
+
+def test_covariates_reach_the_parts_that_declare_them_only() -> None:
+  """A conditional fit is per part, and the copula half declares for itself.
+
+  `Vinedist`'s copula is a `Vinecop` of compiled pair copulas, which models no
+  covariates and takes no `x` argument at all -- so `x` must not be forwarded
+  to it. Reaching it anyway would raise instead of fitting something, and
+  dropping it silently is only honest because the *object* refuses covariates
+  nothing on the lane reads (`supports_fit_covariates`).
+  """
+  rng = np.random.default_rng(3)
+  cov = rng.normal(size=(200, 1))
+  y = np.column_stack([cov[:, 0] + rng.normal(size=200), rng.normal(size=200)])
+
+  class _Refittable(_ShiftedNormal):
+    """`_ShiftedNormal` plus the estimator `fit` re-runs (nothing to fit)."""
+
+    def fit(
+      self,
+      data: Any,
+      /,
+      controls: Any = None,
+      *,
+      x: Optional[Any] = None,
+      weights: Any = None,
+    ) -> Any:
+      del data, controls, x, weights
+      return self
+
+  assert getattr(pv.Vinecop, "supports_covariates", False) is False
+  dist = pv.Vinedist.from_data(y, x=cov, margins=[_Refittable(), _Refittable()])
+  # Both halves are there and the conditional margins were used, so the fit
+  # completed rather than raising on the copula's missing `x`.
+  assert isinstance(dist.vinecop, pv.Vinecop)
+  assert all(getattr(m, "supports_covariates", False) for m in dist.margins)
+
+  # And `fit` -- which re-estimates the held copula -- follows the same rule.
+  dist.fit(y, x=cov)
+  assert isinstance(dist.vinecop, pv.Vinecop)
+
+
+def test_fit_holds_the_copula_families_where_select_re_chooses_them() -> None:
+  """`fit` estimates the shape it holds; `select` is what may change it.
+
+  The margin half has always refused a family search inside `fit` -- it raises
+  on `family_set=` there. The copula half went through `from_data`, which
+  re-searched, so one call meant two different things: a vine fitted to
+  gaussian pairs came back independent. Asking the held copula to refit itself
+  is what makes the two halves agree.
+  """
+  rng = np.random.default_rng(0)
+  y = rng.normal(size=(400, 3)) + rng.normal(size=(400, 1))
+
+  def families(dist: Any) -> list[str]:
+    vine = dist.vinecop
+    return [
+      str(vine.get_pair_copula(t, e).family).split(".")[-1]
+      for t in range(int(vine.structure.trunc_lvl))
+      for e in range(vine.dim - 1 - t)
+    ]
+
+  controls = pv.FitControlsVinecop(family_set=[pv.families.gaussian])
+  dist = pv.Vinedist.from_data(y, controls=controls)
+  assert set(families(dist)) == {"gaussian"}
+  dist.fit(y)
+  assert set(families(dist)) == {"gaussian"}
+
+  # And `select` is the call that may change it.
+  dist.select(y)
+  assert families(dist)

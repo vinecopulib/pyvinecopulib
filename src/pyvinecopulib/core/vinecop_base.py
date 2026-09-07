@@ -81,8 +81,8 @@ from ._discrete import (
 )
 from ._independence import IndependencePair
 from ._reorient import Reorientation, reorientation
-from ._validation import validate_covariates, validate_weights
-from ._covariates import pair_eval
+from ._validation import validate_weights
+from ._covariates import pair_eval, prepare
 from .bicop_base import BicopBase
 from .context import ConditioningContext, SimplifiedContext
 from .protocols import (
@@ -1481,7 +1481,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     """
     del num_threads
     u_p = self._prep_args(u, "pdf")
-    validate_covariates(x, int(cast(Any, u_p).shape[0]))
+    x = prepare(self, x, int(cast(Any, u_p).shape[0]))
     if self._resolve_batched(batched, x):
       try:
         return cast(ArrayT, self._pdf_batched(u_p))
@@ -1550,7 +1550,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         batched=batched,
       )
     u_p = self._prep_args(u, "rosenblatt")
-    validate_covariates(x, int(cast(Any, u_p).shape[0]))
+    x = prepare(self, x, int(cast(Any, u_p).shape[0]))
     if self._resolve_batched(batched, x):
       try:
         return cast(ArrayT, self._rosenblatt_batched(u_p))
@@ -1606,7 +1606,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     if view is not self:
       return view.inverse_rosenblatt(u, x=x, batched=batched)
     u_p = self._prep_args(u, "inverse_rosenblatt", values_only=True)
-    validate_covariates(x, int(cast(Any, u_p).shape[0]))
+    x = prepare(self, x, int(cast(Any, u_p).shape[0]))
     with self._eval_context():
       if self._resolve_batched(batched, x):
         try:
@@ -1649,7 +1649,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     """
     del num_threads
     seeds = list(seeds) if seeds else []
-    validate_covariates(x, n)
+    x = prepare(self, x, n)
     with self._eval_context():
       base_u = self._sample_uniform(n, qrng, seeds)
       return self.inverse_rosenblatt(base_u, x=x, batched=batched)
@@ -1740,7 +1740,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       )
     d = self.d
     n, n_cols = int(ua.shape[0]), int(ua.shape[1])
-    validate_covariates(x, n)
+    x = prepare(self, x, n)
     view = self._reoriented(conditioning_set)
     if conditioning_set is None:
       cond_vars = self._infer_conditioning_set(n_cols)
@@ -2408,7 +2408,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     pair_types = pair_var_types(structure, types) if n_discrete(types) else None
     ua = collapse_data(ua, d, types, "fit")
     n = ua.shape[0]
-    validate_covariates(x, int(n))
+    x = prepare(ua, x, int(n))
     # The criterion hands these straight to the binding, so they are checked
     # here rather than there: this is the first point that knows both the
     # weights and the row count they must align with.
@@ -2419,6 +2419,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       int(n),
       weights,
       criterion_function,
+      x,
     )
     hfunc1 = xp.zeros((n, d), dtype=ua.dtype, device=ua.device)
     hfunc2 = xp.empty((n, d), dtype=ua.dtype, device=ua.device)
@@ -2692,7 +2693,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     ctx: ConditioningContext = (
       SimplifiedContext() if context is None else context
     )
-    validate_covariates(x, n)
+    x = prepare(u, x, n)
     # With left-limit columns present, `u` is wider than the vine: `var_types`
     # is what fixes the dimension.
     d = len(var_types) if var_types is not None else int(u.shape[1])
@@ -2754,7 +2755,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     # them straight to the binding.
     weights = validate_weights(weights, u[:, 0])
     criterion = _make_criterion(
-      tree_criterion, convert, n, weights, criterion_function
+      tree_criterion, convert, n, weights, criterion_function, x
     )
 
     # A node is one edge of the previous tree (a single variable for the base

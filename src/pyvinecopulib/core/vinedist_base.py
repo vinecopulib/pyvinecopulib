@@ -33,11 +33,11 @@ from typing import Any, ClassVar, Optional, Self, Sequence, cast
 
 from array_api_compat import array_namespace
 
-from ._covariates import declared_eval
+from ._covariates import declared_eval, prepare
 from .margin_base import derive_cdf_left, safe_log
 from ._placement import place
 from ._trim import trim
-from ._validation import validate_covariates, validate_weights
+from ._validation import validate_weights
 from .protocols import (
   ArrayT,
   ControlsLike,
@@ -562,7 +562,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
       raise ValueError(
         f"y must have shape (n, {len(resolved)}); got {tuple(ya.shape)}"
       )
-    validate_covariates(x, int(ya.shape[0]))
+    x = prepare(ya, x, int(ya.shape[0]))
     upper = [
       declared_eval(m, "cdf", ya[:, j], x) for j, m in enumerate(resolved)
     ]
@@ -616,7 +616,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     """
     if x is None:
       return
-    validate_covariates(x, n_rows)
+    x = prepare(self, x, n_rows)
     readers = [
       getattr(m, "supports_covariates", False) for m in self._margins
     ] + [getattr(self._vinecop, "supports_covariates", False)]
@@ -1095,6 +1095,56 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     return [cls.margin_class() for _ in range(d)]
 
   @classmethod
+  def _copula_controls(
+    cls, controls: Optional[ControlsLike], u: Any, weights: Optional[Any]
+  ) -> Any:
+    """The controls the copula half is estimated with, for this lane.
+
+    The one lane-specific step in the copula estimate, and the only hook a
+    subclass normally overrides: :class:`~pyvinecopulib.core.Vinedist` writes
+    ``weights`` into a copy of the controls here, and
+    :class:`~pyvinecopulib.torch.TorchVinedist` pins the device and dtype the
+    margins resolved. Reading it in one place is what lets ``from_data`` and
+    ``fit`` share it -- one constructs the copula and the other re-estimates
+    the one already held, and both must configure it identically.
+
+    ``weights`` arrive explicitly rather than folded into ``controls``, so a
+    lane whose fitter cannot use them is not silently handed them: declare
+    ``supports_weighted_copula`` ``False`` instead and the estimators refuse
+    the request before fitting anything.
+
+    Parameters
+    ----------
+    controls : ControlsLike, or None
+        What the caller passed.
+    u : array, shape (n, d + k), dtype float
+        The copula-scale layout, for a lane that reads its placement.
+    weights : array, shape (n,), or None
+        Observation weights.
+
+    Returns
+    -------
+    ControlsLike, or None
+        The controls to estimate with; ``controls`` unchanged by default.
+
+    Raises
+    ------
+    NotImplementedError
+        If weights are given and this class declares
+        :attr:`supports_weighted_copula` without overriding this hook, which
+        is the half-weighted fit the declaration exists to prevent.
+    """
+    del u
+    if weights is not None:
+      raise NotImplementedError(
+        f"{cls.__name__} declares `supports_weighted_copula` but does not "
+        "override `_copula_controls`, which is where weights reach the "
+        "copula half. Override it to write them into the controls, or "
+        "declare `supports_weighted_copula = False`."
+      )
+    return controls
+
+  @classmethod
   def _fit_copula(
     cls,
     u: Any,
@@ -1105,17 +1155,15 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     weights: Optional[Any],
     x: Optional[Any] = None,
   ) -> Any:
-    """Fit the copula half on the pseudo-observations.
+    """Construct and fit the copula half on the pseudo-observations.
 
-    Defaults to ``vinecop_class``, so most subclasses declare that instead
-    of overriding this. Override it when the fit needs a lane-specific step --
-    :class:`~pyvinecopulib.core.Vinedist` writes ``weights`` into a copy of the
-    controls here.
+    The **construction** path, used by :meth:`from_data` when there is no
+    copula yet. :meth:`fit` and :meth:`select` re-estimate the copula the
+    object already holds instead -- see :meth:`_reestimate_copula` -- so a
+    hosted :class:`~pyvinecopulib.core.VinecopLike` survives a refit.
 
-    ``weights`` arrive explicitly rather than folded into ``controls``, so a
-    subclass whose fitter cannot use them is not silently handed them: declare
-    ``supports_weighted_copula`` ``False`` instead and the estimators refuse
-    the request before fitting anything.
+    Defaults to ``vinecop_class``, so most subclasses declare that and
+    override :meth:`_copula_controls` rather than this.
 
     Parameters
     ----------
@@ -1130,11 +1178,14 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     weights : array, shape (n,), or None
         Observation weights.
     x : array, shape (n, p), or None, optional
-        Exogenous covariates. Reaching the copula's *pairs* needs a structure
-        to fit along and a conditional pair fitter, so this is forwarded to
-        ``vinecop_class.from_data`` and refused there when neither is
-        available -- rather than accepted here and dropped, which is what
-        made a conditional distribution fit come back unconditional.
+        Exogenous covariates, forwarded to ``vinecop_class.from_data`` only
+        when that class declares ``supports_covariates`` -- the rule
+        ``_covariates.declared_eval`` applies to a whole copula at evaluation,
+        applied here at fitting. A ``Vinecop`` of compiled pair copulas models
+        none, so a conditional ``Vinedist`` is one whose *margins* read ``x``;
+        what keeps that honest is the refusal one level up, where
+        ``supports_fit_covariates`` says whether anything on the lane is
+        fitted on covariates at all.
 
     Returns
     -------
@@ -1154,22 +1205,83 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         "`_fit_copula`, so it cannot fit a copula. Set one, or compose an "
         "already-fitted copula and margins by construction."
       )
-    if weights is not None:
-      # Reachable only if a subclass declared `supports_weighted_copula` and
-      # then left this hook in place, which is the half-weighted fit the
-      # declaration exists to prevent. Say so rather than dropping them.
-      raise NotImplementedError(
-        f"{cls.__name__} declares `supports_weighted_copula` but does not "
-        "override `_fit_copula`, which cannot apply weights to the copula "
-        "half. Override it to pass them to the fitter, or declare "
-        "`supports_weighted_copula = False`."
-      )
-    kwargs: dict[str, Any] = {"structure": structure, "controls": controls}
+    resolved = cls._copula_controls(controls, u, weights)
+    kwargs: dict[str, Any] = {"structure": structure, "controls": resolved}
     if var_types is not None:
       kwargs["var_types"] = var_types
-    if x is not None:
+    # Declared, not attempted: a copula class that models no covariates takes
+    # no `x` argument at all, so forwarding one would raise rather than fit
+    # something. Whether *anything* on the lane reads them is settled before
+    # this, by `supports_fit_covariates`.
+    if x is not None and getattr(
+      cls.vinecop_class, "supports_covariates", False
+    ):
       kwargs["x"] = x
     return cast("Any", cls.vinecop_class).from_data(u, **kwargs)
+
+  def _reestimate_copula(
+    self,
+    u: Any,
+    *,
+    var_types: list[str],
+    controls: Optional[ControlsLike],
+    weights: Optional[Any],
+    x: Optional[Any],
+    verb: str,
+  ) -> Any:
+    """Re-estimate the copula this distribution already holds, in place.
+
+    The counterpart of :meth:`_fit_copula` for :meth:`fit` and :meth:`select`,
+    and the reason they mean what they say: the copula is asked to re-estimate
+    *itself*, so a hosted :class:`~pyvinecopulib.core.VinecopLike` keeps its
+    class and its pair-copula types across a refit -- exactly as a margin keeps
+    its family. Constructing a fresh ``vinecop_class`` here would silently
+    replace a caller's own vine with the default one.
+
+    Parameters
+    ----------
+    u : array, shape (n, d + k), dtype float
+        The copula-scale layout the margins produced.
+    var_types : list of str
+        One ``"c"`` or ``"d"`` per variable.
+    controls : ControlsLike, or None
+        Fit configuration.
+    weights : array, shape (n,), or None
+        Observation weights.
+    x : array, shape (n, p), or None
+        Exogenous covariates.
+    verb : str
+        ``"fit"`` to keep the copula's structure, ``"select"`` to re-select it.
+
+    Returns
+    -------
+    VinecopLike
+        The copula, re-estimated in place.
+
+    Raises
+    ------
+    NotImplementedError
+        If the held copula has no estimator of that name -- an immutable or
+        purely functional copula, which cannot be re-estimated in place.
+    """
+    copula = self._vinecop
+    estimator = getattr(copula, verb, None)
+    if estimator is None:
+      raise NotImplementedError(
+        f"{type(copula).__name__} has no `{verb}`, so this "
+        f"{type(self).__name__} cannot re-estimate its copula half in place. "
+        f"Use {type(self).__name__}.from_data to fit a fresh distribution."
+      )
+    resolved = type(self)._copula_controls(controls, u, weights)
+    # Forwarded one at a time, so a copula whose estimator declares only what
+    # it uses still works -- the idiom `BicopBase.select` follows. `var_types`
+    # is left to the copula it already carries: a refit along itself cannot
+    # change which variables have atoms.
+    passed: dict[str, Any] = {}
+    if x is not None and getattr(copula, "supports_covariates", False):
+      passed["x"] = x
+    estimator(u, resolved, **passed)
+    return copula
 
   def fit(
     self,
@@ -1327,8 +1439,8 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         distribution's dimension, or if weights are given that this lane
         cannot apply to the copula half.
     NotImplementedError
-        If covariates are given and no margin on this array namespace reads
-        them.
+        If covariates are given and this lane cannot estimate both halves on
+        them, or if the held copula has no estimator to re-run.
     """
     from ..margins import resolve_margin_controls
     from ..margins._resolve import fit_margin
@@ -1370,13 +1482,17 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     ]
     var_types = cls.copula_var_types(margins)
     u = cls.copula_data(margins, data, x=x)
-    vinecop = cls._fit_copula(
+    # The copula re-estimates *itself*, so a hosted `VinecopLike` keeps its
+    # class -- `structure` is already the held one for `fit`, and `select`
+    # re-selects it.
+    del structure
+    vinecop = self._reestimate_copula(
       u,
       var_types=var_types,
       controls=controls,
-      structure=structure,
       weights=weights,
       x=x,
+      verb=verb,
     )
     self._bind_dist(vinecop, margins)
     return self
@@ -1413,19 +1529,20 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     Raises
     ------
     NotImplementedError
-        If covariates are given and no margin on this array namespace reads
-        them.
+        If covariates are given and this lane declares it cannot estimate
+        both halves on them.
     ValueError
         If weights are given that the copula half cannot apply.
     """
     if x is not None and not cls.supports_fit_covariates:
       raise NotImplementedError(
-        f"{cls.__name__}.{verb} takes no covariates: no margin on this "
-        "array namespace reads them, so the margins would be fitted "
-        "unconditionally while the call suggested otherwise. Fit the parts "
-        "yourself if the copula alone is conditional."
+        f"{cls.__name__}.{verb} takes no covariates: no part on this array "
+        f"namespace is fitted on them ({cls.__name__} declares "
+        "`supports_fit_covariates = False`), so the fit would come back "
+        "unconditional while the call suggested otherwise. Fit the parts "
+        "yourself if only one half is conditional."
       )
-    validate_covariates(x, n)
+    x = prepare(data, x, n)
     weights = validate_weights(weights, data[:, 0])
     if weights is not None and not cls.supports_weighted_copula:
       raise ValueError(
@@ -1498,11 +1615,11 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     Raises
     ------
     ValueError
-        If ``y`` is not two-dimensional, if covariates are given that no margin
-        reads, or if weights are given that the copula half cannot apply.
+        If ``y`` is not two-dimensional, or if weights are given that the
+        copula half cannot apply.
     NotImplementedError
-        If covariates are given and no margin on this array namespace can read
-        them at all.
+        If covariates are given and this lane cannot estimate both halves on
+        them.
 
     See Also
     --------

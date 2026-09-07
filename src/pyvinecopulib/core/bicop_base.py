@@ -30,10 +30,11 @@ from typing import Any, Optional, Self, cast
 
 from array_api_compat import array_namespace
 
+from ._covariates import prepare
 from ._placement import place
 from ._trim import trim
 from ._rootfind import solve_increasing
-from ._validation import validate_covariates
+
 from .protocols import ArrayT, BicopLike, _BICOP_EXAMPLE
 
 __all__ = ["BicopBase"]
@@ -99,7 +100,10 @@ class BicopBase(BicopLike[ArrayT], ABC):
         The summed log-density, carrying gradients wherever the array library
         tracks them.
     """
-    validate_covariates(x, int(cast(Any, u).shape[0]))
+    x = prepare(self, x, int(cast(Any, u).shape[0]))
+    # `u` is left to the subclass's own `pdf`, which is where the two-column
+    # layout is checked -- the base cannot know whether a pair is on a
+    # discrete edge, whose argument is four columns wide.
     dens: Any = self.pdf(u, x=x)
     xp = array_namespace(dens)
     return cast(ArrayT, xp.sum(xp.log(dens)))
@@ -124,8 +128,8 @@ class BicopBase(BicopLike[ArrayT], ABC):
     array, shape (n,), dtype float
         The inverted values in ``[0, 1]``.
     """
-    ua: Any = u
-    validate_covariates(x, int(ua.shape[0]))
+    ua: Any = self._prep_args(u)
+    x = prepare(self, x, int(ua.shape[0]))
     xp = array_namespace(ua)
     u1, p = ua[:, 0], ua[:, 1]
     return cast(
@@ -154,8 +158,8 @@ class BicopBase(BicopLike[ArrayT], ABC):
     array, shape (n,), dtype float
         The inverted values in ``[0, 1]``.
     """
-    ua: Any = u
-    validate_covariates(x, int(ua.shape[0]))
+    ua: Any = self._prep_args(u)
+    x = prepare(self, x, int(ua.shape[0]))
     xp = array_namespace(ua)
     p, u2 = ua[:, 0], ua[:, 1]
     return cast(
@@ -193,7 +197,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
     NotImplementedError
         Always, unless a subclass provides a ``cdf``.
     """
-    validate_covariates(x, int(cast(Any, u).shape[0]))
+    del u, x
     raise NotImplementedError(
       f"{type(self).__name__}.cdf is not defined; the vine cdf uses "
       "Monte-Carlo simulation and does not require a per-pair cdf. Implement it "
@@ -413,7 +417,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
     NotImplementedError
         If the subclass supplies no ``_sample_uniform``.
     """
-    validate_covariates(x, n)
+    x = prepare(self, x, n)
     base_u: Any = self._sample_uniform(n, qrng, list(seeds) if seeds else [])
     xp = array_namespace(base_u)
     u2: Any = self.hinv1(base_u, x=x)

@@ -93,8 +93,8 @@ class Vinedist(VinedistBase[np.ndarray]):
   vinecop_class: ClassVar[Optional[type]] = Vinecop
   margin_class: ClassVar[Optional[type]] = Kde1d
 
-  #: `_fit_copula` writes weights into a copy of the controls, so both halves
-  #: of the fit are weighted by the one argument.
+  #: `_copula_controls` writes weights into a copy of the controls, so both
+  #: halves of the fit are weighted by the one argument.
   supports_weighted_copula: bool = True
 
   def _bind_dist(
@@ -206,52 +206,35 @@ class Vinedist(VinedistBase[np.ndarray]):
     return [kde_from_controls(mc) for mc in per_variable]
 
   @classmethod
-  def _fit_copula(
-    cls,
-    u: Any,
-    *,
-    var_types: list[str],
-    controls: Optional[ControlsLike],
-    structure: Optional[Any] = None,
-    weights: Optional[Any] = None,
-    x: Optional[Any] = None,
+  def _copula_controls(
+    cls, controls: Optional[ControlsLike], u: Any, weights: Optional[Any]
   ) -> Any:
-    """Fit a ``Vinecop`` on the pseudo-observations.
+    """``controls`` with the explicit ``weights`` written in.
 
     Parameters
     ----------
-    u : array, shape (n, d + k), dtype float
-        The copula-scale layout the margins produced.
-    var_types : list of str
-        One ``"c"`` or ``"d"`` per variable.
     controls : FitControlsVinecop, or None
-        Copula fit controls.
-    structure : RVineStructure, or None, optional
-        A fixed structure; selected from the data when ``None``.
-    weights : array, shape (n,), or None, optional
-        Observation weights, written into a copy of the controls so both halves
-        of the fit are weighted by the one argument.
+        What the caller passed.
+    u : array, shape (n, d + k), dtype float
+        The copula-scale layout; unused, a ``Vinecop`` needing no placement.
+    weights : array, shape (n,), or None
+        Observation weights. The explicit argument governs both halves of the
+        fit, so it is written into a *copy* -- overriding a controls object's
+        own weights must not mutate one the caller still holds.
 
     Returns
     -------
-    Vinecop
-        The fitted copula.
+    FitControlsVinecop
+        The controls to estimate the copula with.
     """
+    del u
     from ..pyvinecopulib_ext import FitControlsVinecop
 
     resolved: Any = FitControlsVinecop() if controls is None else controls
     if weights is not None:
-      # The explicit argument governs both halves. Copy first so overriding a
-      # controls object's weights cannot mutate an object the caller still owns.
       resolved = copy.deepcopy(resolved)
       resolved.weights = np.asarray(weights, dtype=float)
-    return super()._fit_copula(
-      u,
-      var_types=var_types,
-      controls=resolved,
-      structure=structure,
-      weights=None,
-    )
+    return resolved
 
   @classmethod
   def from_json(cls, json: str) -> Self:

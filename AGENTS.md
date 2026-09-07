@@ -688,16 +688,28 @@ automatically.
     which shapes are admissible; **domain** (`_trim.py`'s `trim`) clamps copula
     arguments into the open unit square at the working precision. The
     composites that apply all three to a copula argument are `_prep_args` —
-    `BicopBase._prep_args(u)` and `VinecopBase._prep_args(u, name, *,
+    `BicopBase._prep_args(u)`, `MarginBase._prep_args(y, name)` (placement
+    plus the single-column layout -- a margin's argument is on the data scale,
+    so it is never clamped) and `VinecopBase._prep_args(u, name, *,
     values_only)`. What forces the split is that **exogenous covariates are
     placed but never trimmed**: they are arbitrary reals, not copula
-    arguments. Placement is *inferred* from the arrays an object already
+    arguments, and `_covariates.prepare(onto, x, n)` is the composite applying
+    exactly those two steps -- called at every entry point that takes an `x`,
+    including the static fit engines, where an *array* is its own placement
+    reference. Placing `x` is not cosmetic: a non-simplified vine concatenates
+    it with the conditioning columns it gathered, so a NumPy `x` handed to a
+    PyTorch vine has to be brought across before they can meet. Placement is *inferred* from the arrays an object already
     holds, so hosting a subclass on PyTorch requires writing none of it —
     override `_prep` only where those arrays live somewhere the inference
     misses (`TorchVinecop` does, for the `trunc_lvl == 0` case that has no
     pair to read). The one array a base manufactures from nothing is
     `BicopBase.plot`'s evaluation grid, which is why that is the one place the
     seam is load-bearing rather than a convenience.
+    Since the inference is the whole contract, what it reads has to be right:
+    `reference_array` prefers a **floating-point** array and an integer one is
+    only its fallback, whose dtype `place` then does *not* adopt. An object may
+    hold an index table or a count buffer, and adopting `int64` from it placed
+    every copula argument at zero — a wrong answer, not a failure.
   - `BicopBase` (`bicop_base.py`) / `VinecopBase` (`vinecop_base.py`) —
     canonical partial implementations to subclass. A `BicopBase`
     subclass defines `pdf` / `hfunc1` / `hfunc2` and inherits `hinv1` /
@@ -1449,16 +1461,37 @@ Round-trip / parity properties to preserve when touching numerics:
   `vinecop_class` and `margin_class` and `from_data` runs the two-step (IFM)
   estimator itself, in the base, leaving `_coerce_fit_data` the only real hook
   because the torch lane resolves a device and dtype before any part exists.
-  Override `_fit_copula` when a lane needs its own step — `Vinedist` writes
-  `weights` into a copy of the controls there. `supports_weighted_copula` is
-  `False` on the base for that reason: the inherited `_fit_copula` has only the
-  part class and the caller's controls, so it *cannot* weight the copula, and a
-  lane declares the capability together with the override that honors it.
-  `supports_fit_covariates` works the same way. Declaring one a lane cannot
-  honor is what produces a half-applied fit — margins weighted, copula not —
-  so the request is refused up front instead. `Vinedist` (NumPy + compiled
-  `Vinecop`) and `TorchVinedist` are the two reference subclasses; implement
-  `VinedistLike` directly for an immutable / functional distribution.
+  The one hook a lane normally overrides is `_copula_controls`, the single
+  lane-specific step in the copula estimate: `Vinedist` writes `weights` into a
+  copy of the controls there and `TorchVinedist` pins the device and dtype the
+  margins resolved. It is read from **both** copula paths, which is what keeps
+  them configured identically. `supports_weighted_copula` is `False` on the
+  base for that reason: the inherited `_copula_controls` cannot weight the
+  copula, so a lane declares the capability together with the override that
+  honors it. Declaring one a lane cannot honor is what produces a half-applied
+  fit, so the request is refused up front instead.
+- **`from_data` constructs the copula; `fit` and `select` re-estimate the one
+  already held.** `_fit_copula` builds `vinecop_class` and is the *construction*
+  path only; `fit` / `select` go through `_reestimate_copula`, which calls the
+  held copula's own `fit` / `select`. That is what makes a hosted
+  `VinecopLike` — a `VinecopBase` subclass a caller composed the distribution
+  from — keep its class, its identity and its pair-copula types across a refit,
+  exactly as a margin keeps its family. Building a fresh `vinecop_class` in
+  `fit` silently replaced the caller's vine with the default one, which is the
+  defect that established the split; a copula with no `fit` now reports that
+  instead of being swapped.
+- **`supports_fit_covariates` is a lane-level "anything at all", not "both
+  halves".** A conditional `Vinedist` is one whose *margins* read `x`: the
+  compiled `Vinecop` models no covariates and takes no `x` argument, so the
+  copula half is never conditional there and `x` reaches only the margins that
+  declare it — the same per-part rule `declared_eval` applies at evaluation,
+  and `_fit_copula` forwards to a copula class only when *it* declares
+  `supports_covariates`. What keeps that honest is the object-level refusal:
+  the flag says whether anything on the lane is fitted on covariates, and when
+  nothing is, the request is refused rather than answered unconditionally.
+  `Vinedist` (NumPy + compiled `Vinecop`) and `TorchVinedist` are the two
+  reference subclasses; implement `VinedistLike` directly for an immutable /
+  functional distribution.
 
 - **Another ecosystem's distributions (`pyvinecopulib.margins`).** Call
   `register_margin_adapter(predicate, adapter)` — from a package or a

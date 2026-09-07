@@ -34,7 +34,10 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional
 
-__all__ = ["declared_eval", "pair_eval"]
+from ._placement import place
+from ._validation import validate_covariates
+
+__all__ = ["declared_eval", "pair_eval", "prepare"]
 
 
 def pair_eval(method: Callable[..., Any], u: Any, x: Optional[Any]) -> Any:
@@ -87,3 +90,41 @@ def declared_eval(
   if x is None or not getattr(part, "supports_covariates", False):
     return method(values, **kwargs)
   return method(values, x=x, **kwargs)
+
+
+def prepare(onto: Any, x: Optional[Any], n: int) -> Optional[Any]:
+  """Validate covariates and place them where the numerics run.
+
+  The two steps ``x`` needs and the third it must not get: it is checked for
+  the row-aligned two-dimensional layout, and placed onto the namespace, dtype
+  and device the values it will be combined with live on -- but never trimmed,
+  being arbitrary reals rather than copula arguments.
+
+  Placing is not cosmetic. A non-simplified vine concatenates ``x`` with the
+  conditioning columns it gathered from the observations, so a NumPy ``x``
+  handed to a PyTorch vine has to be brought across before they can meet.
+
+  Parameters
+  ----------
+  onto : object
+      The part whose placement to match, or the array to match directly --
+      the observations, for a static fit engine that holds nothing itself.
+  x : array, shape (n, p), or None
+      The covariates the caller supplied.
+  n : int
+      Number of observations they must align with.
+
+  Returns
+  -------
+  array, shape (n, p), or None
+      The placed covariates, or ``None`` when there were none.
+
+  Raises
+  ------
+  ValueError
+      If ``x`` is not two-dimensional or not row-aligned with ``n``.
+  """
+  if x is None:
+    return None
+  validate_covariates(x, n)
+  return place(onto, x)

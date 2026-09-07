@@ -416,3 +416,43 @@ def test_fit_select_and_from_data_all_take_covariates() -> None:
   seen.clear()
   Recording().select(u)
   assert seen == [("fit", None)]
+
+
+def test_the_inherited_inverses_place_their_argument() -> None:
+  """`hinv1` / `hinv2` bisect, so they need the argument placed first.
+
+  The bisection's bracket and its target come from ``u``, and the function it
+  calls is the pair's own ``hfunc``. Left unplaced, a torch-hosted pair is
+  handed NumPy targets it cannot combine with its own tensors -- the case the
+  ``_prep`` seam exists for.
+  """
+  torch = pytest.importorskip("torch")
+
+  class _TorchIndep(BicopBase[Any]):
+    """Independence, holding a tensor so its placement is observable."""
+
+    def __init__(self) -> None:
+      self.scale = torch.ones(1, dtype=torch.float32)
+
+    def pdf(self, u: Any, *, x: Any = None) -> Any:
+      del x
+      return torch.ones(u.shape[0], dtype=u.dtype)
+
+    def hfunc1(self, u: Any, *, x: Any = None) -> Any:
+      del x
+      return u[:, 1]
+
+    def hfunc2(self, u: Any, *, x: Any = None) -> Any:
+      del x
+      return u[:, 0]
+
+  pair = _TorchIndep()
+  u = np.array([[0.3, 0.4], [0.7, 0.6]])
+  for inverse in (pair.hinv1, pair.hinv2):
+    out = inverse(u)
+    assert isinstance(out, torch.Tensor)
+    assert out.dtype is torch.float32
+  # Independence inverts to the level itself.
+  np.testing.assert_allclose(
+    np.asarray(pair.hinv1(u), dtype=float), u[:, 1], atol=1e-6
+  )

@@ -329,47 +329,30 @@ class TorchVinedist(VinedistBase[Tensor], torch.nn.Module):
     ]
 
   @classmethod
-  def _fit_copula(
-    cls,
-    u: Any,
-    *,
-    var_types: list[str],
-    controls: Optional[Any] = None,
-    structure: Optional[Any] = None,
-    weights: Optional[Any] = None,
-    x: Optional[Any] = None,
+  def _copula_controls(
+    cls, controls: Optional[Any], u: Any, weights: Optional[Any]
   ) -> Any:
-    """Fit a :class:`TorchVinecop` on the pseudo-observations.
+    """``controls`` with the placement the margins resolved pinned in.
 
     Parameters
     ----------
+    controls : FitControlsTorchVinecop, or None
+        What the caller passed.
     u : Tensor, shape (n, d + k)
-        The copula-scale layout the margins produced.
-    var_types : list of str
-        One ``"c"`` or ``"d"`` per variable.
-    controls : FitControlsTorchVinecop, or None, optional
-        Copula fit controls.
-    structure : RVineStructure, or None, optional
-        A fixed structure, or ``None`` to select one.
-    weights : None, optional
-        Always ``None`` here: ``supports_weighted_copula`` is ``False``, so
-        ``from_data`` refuses a weighted request before reaching this hook.
+        The copula-scale layout, read for its device and dtype so the copula
+        cannot default to a different placement than the margins used.
+    weights : None
+        Always ``None``: ``supports_weighted_copula`` is ``False``, so the
+        estimators refuse a weighted request before reaching this hook.
 
     Returns
     -------
-    TorchVinecop
-        The fitted copula.
+    FitControlsTorchVinecop
+        The controls to estimate the copula with.
     """
     del weights
     resolved = controls or FitControlsTorchVinecop()
-    return TorchVinecop.from_data(
-      u,
-      structure=structure,
-      # The same resolved placement the margins got, so the copula cannot
-      # default to a different dtype than they did.
-      controls=dataclasses.replace(resolved, device=u.device, dtype=u.dtype),
-      var_types=var_types,
-    )
+    return dataclasses.replace(resolved, device=u.device, dtype=u.dtype)
 
   @property
   def margins(self) -> tuple[MarginLike, ...]:
