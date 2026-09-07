@@ -82,7 +82,8 @@ dist = pv.Vinedist.from_data(
 )
 ```
 
-Notebooks 03, 07 and 10 build out these core workflows.
+Notebooks 01, 02 and 03 build out these core workflows, and 07 covers the
+kernel-density margin they default to.
 
 ### Optional subpackages
 

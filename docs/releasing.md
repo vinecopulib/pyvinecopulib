@@ -39,7 +39,7 @@ indistinguishable from an unreleased one.
    confidence intervals, process RSS, and peak CUDA allocated/reserved memory
    with the release PR. The CPU matrix cannot validate these advertised paths.
    First verify `nvidia-smi`, then run
-   `uv run pytest tests/test_torch_device.py tests/test_torch_bicop.py tests/test_torch_vinecop.py -m cuda --no-cov`
+   `uv run pytest tests/test_torch_device.py tests/test_torch_tll_bicop.py tests/test_torch_vinecop.py -m cuda --no-cov`
    and the maintained paired harness, `uv run python scripts/bench_torch_runner.py
    --repeats 10`; attach its raw JSON and the drivers' paired results to the PR.
 

@@ -26,7 +26,7 @@ whose parameters are given at construction is already fitted.
   (an alias, one margin, a sequence, a mapping, or a callable) into one
   specification per variable, and :func:`resolve_margin_controls` does the same
   for ``margin_controls=``. The two are complementary: ``margins`` says which
-  class each variable gets, and :class:`FitControlsMargin` says how to fit or
+  class each variable gets, and :class:`~pyvinecopulib.core.FitControlsMargin` says how to fit or
   select it — so one call can bound the two variables whose bounds are known
   and leave the rest alone.
 

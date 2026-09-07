@@ -232,7 +232,7 @@ _CLASS_MODULE = {
   "MarginBase": "pyvinecopulib.core",
   "OpenTURNSMargin": "pyvinecopulib.margins",
   "SciPyMargin": "pyvinecopulib.margins",
-  "FitControlsMargin": "pyvinecopulib.margins",
+  "FitControlsMargin": "pyvinecopulib.core",
   "Bicop": "pyvinecopulib.core",
   "VinecopLike": "pyvinecopulib.core",
   "VinecopBase": "pyvinecopulib.core",
@@ -351,6 +351,7 @@ DOCSTRING_SUBPACKAGES = {
   "core": {
     "classes": [
       "Bicop",
+      "BicopFamily",
       "Kde1d",
       "BicopLike",
       "BicopBase",
@@ -359,6 +360,7 @@ DOCSTRING_SUBPACKAGES = {
       "VinecopLike",
       "VinecopBase",
       "FitControlsVinecop",
+      "FitControlsMargin",
       "CVineStructure",
       "DVineStructure",
       "RVineStructure",
@@ -397,10 +399,13 @@ DOCSTRING_SUBPACKAGES = {
     ],
   },
   "margins": {
+    # `FitControlsMargin` is re-exported here and documented under `core`,
+    # which owns it: autosummary generates one page per (module, name), so a
+    # name in two `__all__`s must be listed once, and
+    # `process_cross_references` resolves the bare name to `core`.
     "classes": [
       "SciPyMargin",
       "OpenTURNSMargin",
-      "FitControlsMargin",
     ],
     "functions": [
       "as_margin",

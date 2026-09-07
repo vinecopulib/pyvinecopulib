@@ -17,6 +17,11 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 
 ### Breaking API changes in `pyvinecopulib`
 
+- Use one argument order on every estimator: the observations first and positional-only, then `controls`, then keyword-only whatever the object cannot infer. `Vinecop.from_data` took `controls` fifth, behind `structure`, so the call carried over from `fit` bound a controls object as a structure (#326).
+    - `pv.Vinecop.from_data(u, structure, matrix, var_types, controls)` -> `pv.Vinecop.from_data(u, controls, structure=..., matrix=..., var_types=...)`
+    - `pv.Bicop.from_data(u, controls, var_types)` -> `pv.Bicop.from_data(u, controls, var_types=...)`
+    - likewise on `BicopBase`, `VinecopBase`, `VinedistBase` and their torch subclasses; `MarginBase` already read this way
+
 - Move the margin contract plumbing into `core`, which owns the half a `Vinedist` fit runs on: `FitControlsMargin` (`core.margin_controls`), the coercion registry and the resolution helpers. None needs SciPy, and keeping them in `margins` had `core` importing *up* a layer at ten sites, three into a private module. `pyvinecopulib.margins` re-exports every one, so its surface is unchanged (#326).
 
 - Drop `cdf` and `flip` from `BicopLike`'s required surface: a protocol requires what a cascade calls, and both are optional capabilities read with `getattr` -- `cdf` only on a discrete edge, `flip` only in structure selection. `isinstance` now accepts the minimal pair the docs describe, and `BicopLike` can be implemented directly (#326).
@@ -72,25 +77,16 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Add `VinedistLike` and `VinedistBase`, so a custom vine distribution has a contract and a base to subclass rather than the concrete class; `Vinedist` is now the NumPy subclass, and `TorchVinedist` derives from the base instead of from it (#326).
 - `VinedistBase.from_data` owns the two-step (IFM) estimator for both array namespaces, asking a subclass only for `_coerce_fit_data`, `_default_margins` and `_fit_copula` (#326).
 - Refuse rather than half-apply: `supports_weighted_copula` and `supports_fit_covariates` are `False` on `TorchVinedist`, whose fitter is unweighted and whose margins read no covariates (#326).
-- Add `Vinedist.copula_layout`, the copula-scale layout a consumer of the fitted distribution needs, and dispatch `Vinedist.copula_data`'s variable types through `cls` so a subclass override is honored (#326).
-- Use one argument order on every estimator: the observations first and positional-only, then `controls`, then keyword-only whatever the object cannot infer. `Vinecop.from_data` took `controls` fifth, behind `structure`, so the call carried over from `fit` bound a controls object as a structure (#326).
-    - `pv.Vinecop.from_data(u, structure, matrix, var_types, controls)` -> `pv.Vinecop.from_data(u, controls, structure=..., matrix=..., var_types=...)`
-    - `pv.Bicop.from_data(u, controls, var_types)` -> `pv.Bicop.from_data(u, controls, var_types=...)`
-    - likewise on `BicopBase`, `VinecopBase`, `VinedistBase` and their torch subclasses; `MarginBase` already read this way
+- Add `Vinedist.copula_layout`, the copula-scale layout a consumer of the fitted distribution needs (#326).
 - Add `select` to all four bases, defaulting to `fit` where there is nothing to choose -- upstream's own `select_families = false` equivalence -- so `from_data` is `cls().select(...)` throughout, as `Bicop`'s data constructor has always been (#326).
-- Add `VinedistBase.fit` and `.select`: `fit` re-estimates both halves along the structure and families it holds, `select` lets both change shape (#326).
+- Add `VinedistBase.fit` and `.select`: `fit` re-estimates both halves along the structure and families it holds, `select` lets both change shape. `fit` refuses a `family_set` it cannot honor rather than dropping it, while a declared `var_type` or `support` in the same controls object is applied -- those are defaults, not instructions (#326).
 - Add `TorchTllBicop.fit`, which refits the density grid in place keeping the module's device, dtype and cache mode (#326).
 - Select a margin's family with `select` on the margin class that owns the families, the shape `Bicop.select` has: after the call the margin *is* the winning family. Naming a family is itself the choice, so `select` on a named margin reduces to `fit` and `family_set` is how a caller asks for the search back (#292, #326).
 - Add `FitControlsMargin` and `margin_controls=`, the marginal half of a vine-distribution fit, resolved per variable by the same four shapes `margins=` accepts -- so one call can bound the two variables whose bounds are known and leave the rest alone (#326).
 - Add `MarginBase.aic` / `.bic` / `.aicc`, which `Bicop` and `Vinecop` have always had and margins did not (#326).
-- Name the specific torch classes specifically: `TorchBicop` becomes `TorchTllBicop` (a density on a grid) and `TorchMargin` becomes `TorchDistributionMargin` (an adapter for `torch.distributions`, the torch member of the `SciPyMargin` / `OpenTURNSMargin` trio). The generic names were what made the two look like competing margins rather than different jobs (#326).
-- Let a `TorchVinecop` host any pair copula, not only a grid one: its two dtype/device probes read the first pair's parameters-or-buffers instead of an interpolation grid, so a `BicopBase` + `nn.Module` pair with learnable parameters composes and trains. `examples/10_extending_pyvinecopulib.ipynb` gains it as section 1.1 (#326).
-- Refuse a `family_set` that `fit` cannot honor: `Vinedist.fit` dropped it silently while `.select` honored it. A declared `var_type` or `support` in the same controls object is still applied -- those are defaults, not instructions (#326).
-- Fix a zero-inflated margin on the torch lane, which raised `unknown type='zero_inflated'`: the controls-to-constructor translation existed twice and the two spellings had diverged. One `declared_kde_kwargs` now serves both lanes (#326).
-- Honor a pre-set `schema_` across a refit, not only the first `fit`: an ensembling wrapper refitting its survivors had its declared discrete columns silently re-inferred as continuous (#326).
-- Reach `pyvinecopulib.torch` as an attribute, as `pyvinecopulib.sklearn` already resolved, and re-export `FitControlsMargin` from `core` and the top level so all three controls classes sit together (#326).
-- Rename `SciPyMargin`'s `bounds=` to `param_bounds=`: it means per-parameter *search* bounds, while `FitControlsMargin(support=)` and `Kde1d(xmin=/xmax=)` mean the variable's support (#326).
-- Remove `utils.benchmark`, a timing harness with no caller or test, and three internals with no reader: the `supported_var_types` declaration on margins (two declarations in two different shapes), the `method` field on `FitControlsTorchBicop` (a one-value enum nothing dispatched on), and the `Kde1d` margin adapter (a provable no-op, since the structural `MarginLike` check passes it through unchanged) (#326).
+- Host any pair copula in a `TorchVinecop`, not only a grid one: a `BicopBase` that is also an `nn.Module`, with learnable parameters, composes and trains. `examples/10_extending_pyvinecopulib.ipynb` walks through it (#326).
+- Re-export `FitControlsMargin` from `core` and the top level, so all three controls classes sit together where a caller looks for them (#326).
+- Remove `utils.benchmark`, a timing harness with no caller or test (#326).
 - Add the backend-neutral contracts `BicopLike`, `VinecopLike`, `MarginLike` and `VinedistLike` to `pyvinecopulib.core`, which `Bicop`, `Vinecop`, `Kde1d` and `Vinedist` satisfy, so downstream code can type against the contract instead of a concrete class (#236, #237, #292, #326).
 - Add the canonical partial implementations `BicopBase`, `VinecopBase`, `MarginBase` and `VinedistBase`, which run on NumPy or PyTorch: a custom pair copula defines `pdf` / `hfunc1` / `hfunc2`, a custom vine the single `get_pair_copula` hook, a custom margin `pdf` / `cdf`, and a custom distribution nothing at all beyond its two halves (#236, #237, #292, #326).
     - all four take incoming arrays through one `_prep` seam whose default *infers* the namespace, dtype and device from the arrays they already hold, so a subclass on PyTorch writes no conversion code — including for `BicopBase.plot`'s evaluation grid, the one array a base manufactures itself (#327)
@@ -164,7 +160,7 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 
 #### Documentation and examples
 
-- Merge `03_vine_copulas_fit_sample.ipynb` into `02_vine_copulas.ipynb` and renumber, so the examples read bivariate copula, vine copula, vine distribution: `10_vine_distributions` becomes `03` and `11_extending_pyvinecopulib` becomes `10`. Fixes four cross-references that named the wrong notebook (#326).
+- Merge `03_vine_copulas_fit_sample.ipynb` into `02_vine_copulas.ipynb` and renumber, so the examples read bivariate copula, vine copula, vine distribution: `11_vine_distributions` becomes `03`, and `10_extending_pyvinecopulib` keeps its number. Fixes four cross-references that named the wrong notebook (#326).
 - Document all of it: a `concepts.rst` primer on Sklar's theorem, pair-copula constructions, R-vines and the TLL family, a migration guide, and ten executed example notebooks (#211, #216, #218, #246, #247, #261, #292, #326).
 
 ### Bug fixes in `pyvinecopulib`

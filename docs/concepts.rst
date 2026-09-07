@@ -1088,7 +1088,7 @@ Where to next
   :class:`~pyvinecopulib.margins.SciPyMargin` and
   :class:`~pyvinecopulib.margins.OpenTURNSMargin` for a parametric family
   (named, or chosen from the data), and
-  :class:`~pyvinecopulib.margins.FitControlsMargin` to configure either
+  :class:`~pyvinecopulib.core.FitControlsMargin` to configure either
   (notebook ``examples/03_vine_distributions.ipynb``).
 * The four contracts and their canonical bases in :mod:`pyvinecopulib.core` —
   ``BicopLike`` / ``BicopBase``, ``VinecopLike`` / ``VinecopBase``,

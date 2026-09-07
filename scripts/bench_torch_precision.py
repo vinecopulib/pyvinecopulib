@@ -111,7 +111,7 @@ def _run_bicop_section(
         for grid_size in grid_sizes:
           for cache in (False, True):
             ctl = FitControlsTorchBicop(
-              method="tll", grid_type=grid_type, grid_size=grid_size
+              grid_type=grid_type, grid_size=grid_size
             )
             bc_fit = TorchTllBicop.from_data(
               torch.from_numpy(u_true),
@@ -188,11 +188,10 @@ def _run_vine_section(
       for cache in (False, True):
         vc_fit = TorchVinecop.from_data(
           torch.from_numpy(u_true),
-          cop_true.structure,
-          controls=FitControlsTorchVinecop(
-            bicop_controls=FitControlsTorchBicop(grid_type=grid_type),
-            cache_integrals=cache,
-          ),
+          # A vine's controls *are* pair controls, so the grid settings sit on
+          # the one object rather than a nested `bicop_controls`.
+          FitControlsTorchVinecop(grid_type=grid_type, cache_integrals=cache),
+          structure=cop_true.structure,
         )
         fit_pdf = vc_fit.pdf(u_eval_t).numpy()
         fit_rosen = vc_fit.rosenblatt(u_eval_t).numpy()

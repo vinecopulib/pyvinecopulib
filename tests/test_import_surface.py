@@ -159,3 +159,74 @@ def test_the_fit_callback_aliases_resolve_from_any_module() -> None:
 
   for method in (VinecopBase.fit, VinecopBase.select, VinecopBase.from_data):
     typing.get_type_hints(method)
+
+
+def test_agents_md_names_every_module_that_exists() -> None:
+  """The package tree in AGENTS.md is a map, so it has to match the territory.
+
+  It was missing six modules -- including `_validation.py` and `_trim.py`, the
+  layout and domain steps of the input pipeline the file spends a page on.
+  Comparing the two by eye is what let that happen.
+  """
+  import os
+  import pathlib
+  import re
+
+  spec = pathlib.Path("AGENTS.md")
+  root = pathlib.Path("src/pyvinecopulib")
+  if not spec.is_file() or not root.is_dir():
+    pytest.skip("source tree not available")
+
+  tree = re.search(r"```text\n(.*?)```", spec.read_text(encoding="utf-8"), re.S)
+  assert tree is not None, "AGENTS.md has no package-structure block"
+  listed = {
+    os.path.basename(token)
+    for line in tree.group(1).splitlines()
+    for token in re.findall(r"[\w./*]+\.py", line.split("#")[0])
+  }
+  actual = {
+    path.name
+    for path in root.rglob("*.py")
+    if path.name != "__init__.py" and "__pycache__" not in path.parts
+  }
+  assert actual - listed == set(), sorted(actual - listed)
+
+
+def test_agents_md_public_api_lists_match_the_code() -> None:
+  """AGENTS.md's "Public APIs" section is a second copy of every `__all__`.
+
+  Two copies drift, and this one had: it placed `Kde1d` in `utils`, where it
+  has never been.
+  """
+  import pathlib
+  import re
+
+  spec = pathlib.Path("AGENTS.md")
+  if not spec.is_file():
+    pytest.skip("source tree not available")
+  text = spec.read_text(encoding="utf-8")
+
+  import pyvinecopulib.core as core
+  import pyvinecopulib.families as families
+  import pyvinecopulib.margins as margins
+  import pyvinecopulib.utils as utils
+
+  section = text[text.index("## Public APIs") :]
+  for label, module in (
+    ("`pyvinecopulib.core`", core),
+    ("`pyvinecopulib.families`", families),
+    ("`pyvinecopulib.utils`", utils),
+    ("`pyvinecopulib.margins`", margins),
+  ):
+    start = section.index(f"- **{label}**")
+    entry = section[start : section.index("\n- **", start + 1)]
+    named = set(re.findall(r"`([A-Za-z_][A-Za-z_0-9]*)`", entry))
+    exported: list[str] = list(getattr(module, "__all__", ()))
+    missing = {
+      name
+      for name in exported
+      if name not in named and not name.startswith("__")
+    }
+    # Subpackage re-exports are listed under their own heading.
+    missing -= {"core", "families", "utils", "margins", "sklearn", "torch"}
+    assert missing == set(), (label, sorted(missing))
