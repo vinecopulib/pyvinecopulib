@@ -33,7 +33,8 @@ from typing import Any, ClassVar, Optional, Self, Sequence, cast
 
 from array_api_compat import array_namespace
 
-from .margin_base import _margin_eval, derive_cdf_left
+from .margin_base import _margin_eval, derive_cdf_left, safe_log
+from ._placement import place
 from ._trim import trim
 from ._validation import validate_covariates, validate_weights
 from .protocols import (
@@ -392,12 +393,15 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
   # --- marginal transforms ------------------------------------------------- #
 
   def _prep(self, a: Any) -> Any:
-    """Bring one input array onto this distribution's array namespace.
+    """Bring one input array onto the namespace this object evaluates on.
 
-    The identity here: parts that read the caller's own array type need no
-    coercion. A subclass living on another namespace overrides it, which is
-    what lets a caller pass the array type they have rather than the one the
-    parts hold.
+    Placement only -- no shape check and no clamping -- so it is equally
+    correct for exogenous covariates, which must be placed but never trimmed,
+    and for an array this class manufactures itself.
+
+    The default infers the placement from the arrays this object already
+    holds, so hosting a subclass on PyTorch requires writing none of it.
+    Override it where those arrays live somewhere the inference misses.
 
     Parameters
     ----------
@@ -407,9 +411,9 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     Returns
     -------
     array
-        The same values, on this distribution's namespace.
+        The same values, on this object's namespace, dtype and device.
     """
-    return a
+    return place(self, a)
 
   def _columns(self, y: ArrayT) -> tuple[Any, Any, int]:
     """Coerce ``y``, check its width, and resolve its array namespace.
@@ -665,21 +669,29 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     array, shape (n,), dtype float
         Joint log-density values.
     """
-    xp, ya, _ = self._columns(y)
+    _, ya, _ = self._columns(y)
     copula_term: Any = _copula_eval(
       self._vinecop, "pdf", cast(ArrayT, self.copula_layout(y, x=x)), x
     )
+    # The parts' namespace, not the input's, as `marginal_cdf` and
+    # `copula_data` both do: a copula or a margin may legitimately answer in
+    # another array type than it was handed -- a torch copula hosting NumPy
+    # margins is legal -- and operating on that through the input's namespace
+    # either raises or silently detaches. Each term is then coerced onto the
+    # accumulator for the same reason: adding an ndarray to a tensor that
+    # tracks grad sends NumPy looking for `__array__` and raises.
+    xp = array_namespace(copula_term)
     total = xp.log(copula_term)
     for j, m in enumerate(self._margins):
       if getattr(m, "logpdf", None) is not None:
-        total = total + _margin_eval(m, "logpdf", ya[:, j], x)
+        term: Any = _margin_eval(m, "logpdf", ya[:, j], x)
       else:
-        dens = _margin_eval(m, "pdf", ya[:, j], x)
-        positive = dens > 0
-        safe = xp.where(positive, dens, xp.ones_like(dens))
-        total = total + xp.where(
-          positive, xp.log(safe), xp.full_like(dens, float("-inf"))
-        )
+        term = safe_log(_margin_eval(m, "pdf", ya[:, j], x))
+      # Only when they actually differ: coercing a tensor that already
+      # tracks grad through `asarray` warns about the flag it inherits.
+      if array_namespace(term) is not xp:
+        term = xp.asarray(term)
+      total = total + term
     return cast(ArrayT, total)
 
   def pdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:

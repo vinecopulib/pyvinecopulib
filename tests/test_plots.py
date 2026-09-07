@@ -1040,3 +1040,67 @@ class TestEdgeCases:
     assert jet_colors is not None
     assert jet_colors.N == 100
     assert jet_colors.name == "jet_colors"
+
+
+def test_bicop_plot_refuses_x_on_a_pair_that_reads_no_covariates() -> None:
+  """Better a loud refusal than an unconditional surface under a conditional call.
+
+  Exercised at the helper level because the object under test deliberately does
+  *not* conform to ``BicopLike``: a ``pdf`` with no ``x`` parameter is the
+  compiled ``Bicop``'s shape, and a ``BicopBase`` subclass cannot express it
+  without violating the contract -- which is itself why the forwarding rule
+  cannot rely on the parameter being absent.
+  """
+  from pyvinecopulib._python_helpers.bicop import bicop_plot
+
+  class NoCovariates:
+    var_types = None
+
+    def pdf(self, u):
+      return np.ones(u.shape[0], dtype=float)
+
+  with pytest.raises(TypeError):
+    bicop_plot(NoCovariates(), "contour", x=[0.5])
+
+
+def test_bicop_plot_takes_one_covariate_row_only() -> None:
+  """A 2-d surface shows the density at one covariate value, not many."""
+  from pyvinecopulib._python_helpers.bicop import bicop_plot
+
+  class Conditional:
+    var_types = None
+
+    def pdf(self, u, *, x=None):
+      return np.ones(u.shape[0], dtype=float)
+
+  for bad in (np.zeros((17, 1)), np.zeros((2, 2, 1))):
+    with pytest.raises(ValueError, match="single covariate row"):
+      bicop_plot(Conditional(), "contour", x=bad)
+
+
+def test_bicop_plot_places_the_grid_through_the_supplied_seam() -> None:
+  """``place`` is passed explicitly, so the compiled path keeps its NumPy grid."""
+  from pyvinecopulib._python_helpers.bicop import bicop_plot
+
+  seen: dict[str, object] = {}
+
+  class Recording:
+    var_types = None
+
+    def pdf(self, u):
+      seen["type"] = type(u).__name__
+      return np.ones(u.shape[0], dtype=float)
+
+  # No `place`: the grid arrives exactly as it always did.
+  bicop_plot(Recording(), "contour")
+  assert seen["type"] == "ndarray"
+
+  # With one: every manufactured array goes through it.
+  calls: list[tuple[int, ...]] = []
+
+  def place(a):
+    calls.append(tuple(a.shape))
+    return a
+
+  bicop_plot(Recording(), "contour", place=place)
+  assert calls and all(len(shape) == 2 for shape in calls)

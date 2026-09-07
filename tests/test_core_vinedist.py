@@ -10,7 +10,7 @@ needs is assembled for the user, since assembling it by hand is what
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import numpy as np
 import pytest
@@ -1238,3 +1238,46 @@ def test_weights_reach_both_halves_on_the_numpy_lane(
   weighted = Vinedist.from_data(y, weights=w)
   assert Vinedist.supports_weighted_copula
   assert not np.allclose(plain.logpdf(y), weighted.logpdf(y))
+
+
+def test_logpdf_reads_the_parts_namespace_not_the_inputs() -> None:
+  """A torch copula hosting NumPy margins is legal, and must evaluate.
+
+  ``marginal_cdf`` and ``copula_data`` both state the rule and take their
+  namespace from the columns the parts returned; ``logpdf`` -- the primitive
+  the whole data-scale surface routes through -- took it from the input, so
+  ``numpy.log`` was applied to a tensor. That is silent on the CPU and raises
+  the moment the grid tracks a gradient, which is the entire point of the
+  torch lane.
+  """
+  torch = pytest.importorskip("torch")
+  from pyvinecopulib.torch import TorchVinecop
+
+  class NumpyNormal(MarginBase[Any]):
+    """A NumPy margin: it answers in ndarray whatever it is handed."""
+
+    def pdf(self, y: Any, /, *, x: Optional[Any] = None) -> Any:
+      a = np.asarray(y, dtype=float)
+      return np.exp(-0.5 * a * a) / math.sqrt(2.0 * math.pi)
+
+    def cdf(self, y: Any, /, *, x: Optional[Any] = None) -> Any:
+      a = np.asarray(y, dtype=float)
+      return np.array([0.5 * (1.0 + math.erf(v / math.sqrt(2.0))) for v in a])
+
+  class MixedDist(VinedistBase[Any]):
+    """Torch copula, NumPy margins -- the configuration the rule allows."""
+
+  y = np.random.default_rng(0).normal(size=(40, 2))
+  copula = TorchVinecop.from_data(pv.to_pseudo_obs(y))
+  dist = MixedDist(copula, [NumpyNormal(), NumpyNormal()])
+
+  plain = dist.logpdf(y)
+  assert bool(torch.isfinite(torch.as_tensor(plain)).all())
+
+  # With the grid tracking grad there is no silent path: either the namespace
+  # is right or NumPy reaches for `__array__` on a tensor and raises.
+  # Typed against the evaluation-only contract, which carries no grid.
+  pair = cast(Any, copula.get_pair_copula(0, 0))
+  pair.interp_grid.values.requires_grad_(True)
+  with_grad = dist.logpdf(y)
+  assert with_grad.requires_grad

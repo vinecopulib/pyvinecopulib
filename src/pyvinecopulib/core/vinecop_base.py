@@ -90,6 +90,7 @@ from .protocols import (
   VinecopLike,
   _VINECOP_EXAMPLE,
 )
+from ._placement import place
 from ._trim import trim
 
 
@@ -529,14 +530,39 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         The pair copula hosted at that position.
     """
 
-  def _prep(self, u: ArrayT, name: str, *, values_only: bool = False) -> ArrayT:
-    """Coerce ``u`` to the working array, normalize its layout, and clamp it.
+  def _prep(self, a: Any) -> Any:
+    """Bring one input array onto the namespace this vine evaluates on.
 
-    Concrete default: accept any layout the vine's :attr:`var_types` admits,
-    reduce it to the compact ``(n, d + k)`` form (``k`` discrete variables), and
-    clamp to ``[1e-10, 1 - 1e-10]`` on ``u``'s own array namespace. A subclass
-    that needs dtype / device coercion (e.g. accepting NumPy input on a torch
-    vine) overrides this.
+    Placement only -- no layout check and no clamping -- so it is equally
+    correct for exogenous covariates, which must be placed but never trimmed.
+    :meth:`_prep_args` is the composite the cascades call on copula arguments.
+
+    The default infers the placement from the arrays this vine already holds,
+    so hosting a subclass on PyTorch requires writing none of it. Override it
+    where those arrays live somewhere the inference misses.
+
+    Parameters
+    ----------
+    a : array
+        An input array on any namespace.
+
+    Returns
+    -------
+    array
+        The same values, on this vine's namespace, dtype and device.
+    """
+    return place(self, a)
+
+  def _prep_args(
+    self, u: ArrayT, name: str, *, values_only: bool = False
+  ) -> ArrayT:
+    """Place ``u``, normalize its layout, and clamp it into the unit square.
+
+    The three steps a copula argument needs, in the one order that is correct:
+    placement first (:meth:`_prep`), then the layout the vine's
+    :attr:`var_types` admits, then the domain clamp at the working precision.
+    Covariates go through :meth:`_prep` alone, being reals rather than copula
+    arguments.
 
     An all-continuous vine takes ``(n, d)``, or ``(n, 2d)`` whose left-limit
     block is dropped. With ``k`` discrete variables it takes the expanded
@@ -567,7 +593,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     ValueError
         If ``u`` is not 2-d or its column count matches no accepted layout.
     """
-    ua: Any = u
+    ua: Any = self._prep(u)
     xp = self._namespace(ua)
     return cast(ArrayT, trim(xp, self._layout(ua, name, values_only)))
 
@@ -1389,7 +1415,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         Joint density values.
     """
     del num_threads
-    u_p = self._prep(u, "pdf")
+    u_p = self._prep_args(u, "pdf")
     validate_covariates(x, int(cast(Any, u_p).shape[0]))
     if self._resolve_batched(batched, x):
       try:
@@ -1458,7 +1484,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         x=x,
         batched=batched,
       )
-    u_p = self._prep(u, "rosenblatt")
+    u_p = self._prep_args(u, "rosenblatt")
     validate_covariates(x, int(cast(Any, u_p).shape[0]))
     if self._resolve_batched(batched, x):
       try:
@@ -1514,7 +1540,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     view = self._reoriented(conditioning_set)
     if view is not self:
       return view.inverse_rosenblatt(u, x=x, batched=batched)
-    u_p = self._prep(u, "inverse_rosenblatt", values_only=True)
+    u_p = self._prep_args(u, "inverse_rosenblatt", values_only=True)
     validate_covariates(x, int(cast(Any, u_p).shape[0]))
     with self._eval_context():
       if self._resolve_batched(batched, x):
@@ -1760,7 +1786,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       )
     seeds = list(seeds) if seeds else []
     with self._eval_context():
-      prepped: Any = self._prep(u, "cdf")
+      prepped: Any = self._prep_args(u, "cdf")
       # Only the value block enters the dominance count: C(u) is a right limit.
       u_t: Any = prepped[:, : self.d]
       samples: Any = self.sample(N, qrng=qrng, seeds=seeds, batched=batched)
@@ -2870,8 +2896,13 @@ class _ReorientedVine(VinecopBase[ArrayT]):
   # being viewed. `_default_batched` / `_build_batched` are deliberately *not*
   # delegated: the base's batched state is baked against the base's structure and
   # edge order, so the view stays on the non-batched cascade.
-  def _prep(self, u: ArrayT, name: str, *, values_only: bool = False) -> ArrayT:
-    return self._base._prep(u, name, values_only=values_only)
+  def _prep(self, a: Any) -> Any:
+    return self._base._prep(a)
+
+  def _prep_args(
+    self, u: ArrayT, name: str, *, values_only: bool = False
+  ) -> ArrayT:
+    return self._base._prep_args(u, name, values_only=values_only)
 
   def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:
     return self._base._sample_uniform(n, qrng, seeds)

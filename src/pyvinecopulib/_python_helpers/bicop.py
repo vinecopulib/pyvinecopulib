@@ -5,6 +5,7 @@ import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 from mpl_toolkits.mplot3d.axis3d import XAxis as XAxis3D, YAxis as YAxis3D
 
+from ..core.bicop_base import _pair_eval
 from .stats import expon_cdf, expon_pdf, expon_ppf, norm_cdf, norm_pdf, norm_ppf
 
 BICOP_PLOT_DOC = """
@@ -66,6 +67,9 @@ def bicop_plot(
   margin_type: str = "unif",
   xylim: Optional[tuple[float, float]] = None,
   grid_size: Optional[int] = None,
+  *,
+  x: Optional[Any] = None,
+  place: Optional[Any] = None,
 ) -> None:
   """{}""".format(BICOP_PLOT_DOC)
 
@@ -113,6 +117,28 @@ def bicop_plot(
   else:
     raise ValueError("Unknown margin type")
 
+  ## The grid is manufactured here, so this is the one place a pair copula is
+  ## handed an array it did not supply and cannot infer a namespace from.
+  ## `place` brings it onto the pair's own namespace, dtype and device; a
+  ## compiled `Bicop` passes none and keeps the NumPy grid it always had.
+  grid = np.stack(g, axis=-1).reshape(-1, 2)
+  u_grid: Any = grid if place is None else place(grid)
+  ## A conditional pair copula's density is a different surface for every
+  ## covariate value, so a 2-d plot shows one slice: a single row, repeated
+  ## across the grid. Placed but not clamped -- covariates are reals.
+  x_grid: Optional[Any] = None
+  if x is not None:
+    row = np.asarray(x, dtype=float)
+    if row.ndim == 1:
+      row = row.reshape(1, -1)
+    if row.ndim != 2 or row.shape[0] != 1:
+      raise ValueError(
+        "x must be a single covariate row, shape (p,) or (1, p): a 2-d plot "
+        f"shows the density at one covariate value; got {tuple(row.shape)}"
+      )
+    tiled = np.repeat(row, grid.shape[0], axis=0)
+    x_grid = tiled if place is None else place(tiled)
+
   ## evaluate on grid. Use a continuous copy when the pair stores discrete
   ## variable types. A third-party pair without that capability is restored in
   ## a finally block, so plotting can never leave caller-owned model state
@@ -124,15 +150,15 @@ def bicop_plot(
     as_continuous = getattr(type(cop), "as_continuous", None)
     if callable(as_continuous):
       eval_cop = as_continuous(cop)
-      vals = eval_cop.pdf(np.stack(g, axis=-1).reshape(-1, 2))
+      vals = _pair_eval(eval_cop.pdf, u_grid, x_grid)
     else:
       cop.var_types = ["c", "c"]
       try:
-        vals = cop.pdf(np.stack(g, axis=-1).reshape(-1, 2))
+        vals = _pair_eval(cop.pdf, u_grid, x_grid)
       finally:
         cop.var_types = vt
   else:
-    vals = cop.pdf(np.stack(g, axis=-1).reshape(-1, 2))
+    vals = _pair_eval(cop.pdf, u_grid, x_grid)
   # Coerce the density to a NumPy array so a torch-tensor return reshapes
   # cleanly -- via the host, since ``np.asarray`` raises on a device tensor.
   detach = getattr(vals, "detach", None)

@@ -30,6 +30,8 @@ from typing import Any, Callable, Optional, Self, cast
 
 from array_api_compat import array_namespace
 
+from ._placement import place
+from ._trim import trim
 from ._rootfind import solve_increasing
 from ._validation import validate_covariates
 from .protocols import ArrayT, BicopLike, _BICOP_EXAMPLE
@@ -414,16 +416,81 @@ class BicopBase(BicopLike[ArrayT], ABC):
       "to enable sample()."
     )
 
+  def _prep(self, a: Any) -> Any:
+    """Bring one input array onto the namespace this object evaluates on.
+
+    Placement only -- no shape check and no clamping -- so it is equally
+    correct for exogenous covariates, which must be placed but never trimmed,
+    and for an array this class manufactures itself.
+
+    The default infers the placement from the arrays this object already
+    holds, so hosting a subclass on PyTorch requires writing none of it.
+    Override it where those arrays live somewhere the inference misses.
+
+    Parameters
+    ----------
+    a : array
+        An input array on any namespace.
+
+    Returns
+    -------
+    array
+        The same values, on this object's namespace, dtype and device.
+    """
+    return place(self, a)
+
+  def _prep_args(self, u: ArrayT) -> ArrayT:
+    """Place ``u``, check its width, and clamp it into the unit square.
+
+    The three steps a copula argument needs, in the one order that is correct:
+    placement (:meth:`_prep`), then the two-column layout the contract
+    specifies, then the domain clamp at the working precision. Covariates go
+    through :meth:`_prep` alone, being reals rather than copula arguments.
+
+    A discrete edge is reached through
+    :class:`~pyvinecopulib.core.DiscretePair`, which owns the four-column
+    layout and hands each wrapped pair two columns at a time -- so this stays
+    the continuous two-column contract.
+
+    Parameters
+    ----------
+    u : array, shape (n, 2), dtype float
+        Pseudo-observations to prepare.
+
+    Returns
+    -------
+    array, shape (n, 2), dtype float
+        ``u`` placed and clamped.
+
+    Raises
+    ------
+    ValueError
+        If ``u`` is not two-dimensional with exactly two columns.
+    """
+    ua: Any = self._prep(u)
+    if getattr(ua, "ndim", None) != 2 or int(ua.shape[1]) != 2:
+      raise ValueError(
+        f"u must have shape (n, 2); got {tuple(getattr(ua, 'shape', ()))}"
+      )
+    return cast(ArrayT, trim(array_namespace(ua), ua))
+
   def plot(
     self,
     plot_type: str = "surface",
     margin_type: str = "unif",
     xylim: Optional[tuple[float, float]] = None,
     grid_size: Optional[int] = None,
+    *,
+    x: Optional[Any] = None,
   ) -> None:
     """Plot the pair-copula density, as a contour or a 3-D surface.
 
-    Mirrors ``Bicop.plot()``.
+    Mirrors ``Bicop.plot()``, and adds ``x`` for a conditional pair copula.
+
+    The evaluation grid is the one place this class manufactures an array from
+    nothing, so it is the one place a subclass could be handed the wrong array
+    type. It is placed through :meth:`_prep` first, which means a pair copula
+    on PyTorch plots without converting anything inside its own ``pdf``.
 
     Parameters
     ----------
@@ -436,15 +503,28 @@ class BicopBase(BicopLike[ArrayT], ABC):
     grid_size : int, or None, optional
         Number of grid points per axis; ``None`` uses a default per
         ``plot_type``.
+    x : array, shape (p,) or (1, p), or None, optional
+        One covariate row, for a conditional pair copula. The density is a
+        different surface at every covariate value, so a plot shows the slice
+        at this one; the row is repeated across the grid. A pair copula that
+        reads no covariates refuses it, rather than drawing an unconditional
+        surface under a conditional-looking call.
 
     Returns
     -------
     None
         The figure is drawn with matplotlib.
+
+    Raises
+    ------
+    ValueError
+        If ``x`` is not a single covariate row.
     """
     from .._python_helpers.bicop import bicop_plot
 
-    bicop_plot(self, plot_type, margin_type, xylim, grid_size)
+    bicop_plot(
+      self, plot_type, margin_type, xylim, grid_size, x=x, place=self._prep
+    )
 
   def __repr__(self) -> str:
     return f"{type(self).__name__}()"

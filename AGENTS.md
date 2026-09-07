@@ -282,6 +282,7 @@ pyvinecopulib/
         vinedist_base.py         # VinedistBase (array-agnostic cascade + IFM fit)
         vinedist.py              # Vinedist (NumPy + compiled Vinecop)
         _discrete.py             # DiscretePair + the discrete layouts / per-edge types
+        _placement.py            # place / reference_array — the `_prep` seam's default (internal)
         _reorient.py             # relabel a structure onto a chosen order tail (internal)
         _rootfind.py             # solve_increasing (monotone bisection; internal)
       families/__init__.py       # BicopFamily enum + 13 family constants + 15 group constants
@@ -646,10 +647,32 @@ automatically.
     nothing else. It is not a statement that the signatures agree: the
     compiled classes take per-row `parameters` where the protocols take a
     conditioning matrix `x`, which is why `x` is keyword-only on both.
+  - **One input pipeline, three separable steps, one owner each.** Every
+    layer does the same three things to an incoming array, and they are kept
+    apart because they do not always apply together:
+    **placement** (`_placement.py`'s `place`, reached through the `_prep(a)`
+    seam on all four bases) puts the values on the namespace, dtype and device
+    the object evaluates on; **layout** (`_validation.py`, plus
+    `VinecopBase._layout` for the vine's `var_types`-dependent widths) says
+    which shapes are admissible; **domain** (`_trim.py`'s `trim`) clamps copula
+    arguments into the open unit square at the working precision. The
+    composites that apply all three to a copula argument are `_prep_args` —
+    `BicopBase._prep_args(u)` and `VinecopBase._prep_args(u, name, *,
+    values_only)`. What forces the split is that **exogenous covariates are
+    placed but never trimmed**: they are arbitrary reals, not copula
+    arguments. Placement is *inferred* from the arrays an object already
+    holds, so hosting a subclass on PyTorch requires writing none of it —
+    override `_prep` only where those arrays live somewhere the inference
+    misses (`TorchVinecop` does, for the `trunc_lvl == 0` case that has no
+    pair to read). The one array a base manufactures from nothing is
+    `BicopBase.plot`'s evaluation grid, which is why that is the one place the
+    seam is load-bearing rather than a convenience.
   - `BicopBase` (`bicop_base.py`) / `VinecopBase` (`vinecop_base.py`) —
     canonical partial implementations to subclass. A `BicopBase`
     subclass defines `pdf` / `hfunc1` / `hfunc2` and inherits `hinv1` /
-    `hinv2` (bisection), `sample`, `loglik`, `plot` (`flip` — needed
+    `hinv2` (bisection), `sample`, `loglik`, `plot` — which takes an optional
+    single-row `x`, since a conditional pair's density is a different surface
+    at every covariate value and a 2-d plot shows one slice (`flip` — needed
     only to host the pair in structure *selection* — defaults to
     raising); a `VinecopBase` subclass defines the one hook
     `get_pair_copula` and inherits the whole tree-by-tree cascade plus

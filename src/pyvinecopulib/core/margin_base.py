@@ -28,6 +28,7 @@ from typing import Any, Optional, Self, cast
 import numpy as _np
 from array_api_compat import array_namespace
 
+from ._placement import place
 from ._rootfind import solve_increasing
 from ._validation import validate_covariates, validate_weights
 from .protocols import _MARGIN_EXAMPLE, ArrayT, MarginLike
@@ -139,6 +140,35 @@ def derive_cdf_left(
   upper: Any = _margin_eval(margin, "cdf", y, x)
   mass: Any = _margin_eval(margin, "pdf", y, x)
   return xp.where(ya == 0, xp.clip(upper - mass, 0.0, 1.0), upper)
+
+
+def safe_log(dens: Any) -> Any:
+  """Log of a density, with a zero mapped to ``-inf`` rather than a warning.
+
+  A density is legitimately zero off its support, and ``log(0)`` there is the
+  right answer -- but computing it directly warns, and on some namespaces
+  returns a ``nan``. The mask is applied before the log rather than after, so
+  nothing invalid is evaluated.
+
+  Lives here beside :func:`_margin_eval` because both halves of a vine
+  distribution need it: a margin's own ``logpdf`` and the fallback
+  :class:`~pyvinecopulib.core.VinedistBase` applies to a foreign margin that
+  supplies no ``logpdf`` of its own.
+
+  Parameters
+  ----------
+  dens : array
+      Density or mass values, nonnegative.
+
+  Returns
+  -------
+  array
+      ``log(dens)``, and ``-inf`` wherever ``dens`` is not positive.
+  """
+  xp = array_namespace(dens)
+  positive = dens > 0
+  safe = xp.where(positive, dens, xp.ones_like(dens))
+  return xp.where(positive, xp.log(safe), xp.full_like(dens, float("-inf")))
 
 
 def _margin_eval(margin: Any, name: str, values: Any, x: Optional[Any]) -> Any:
@@ -484,13 +514,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
     """
     validate_covariates(x, int(cast(Any, y).shape[0]))
     dens: Any = _margin_eval(self, "pdf", y, x)
-    xp = array_namespace(dens)
-    positive = dens > 0
-    safe = xp.where(positive, dens, xp.ones_like(dens))
-    return cast(
-      ArrayT,
-      xp.where(positive, xp.log(safe), xp.full_like(dens, float("-inf"))),
-    )
+    return cast(ArrayT, safe_log(dens))
 
   def cdf_left(self, y: ArrayT, /, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Left limit ``F(y^-)`` of the distribution function.
@@ -872,6 +896,29 @@ class MarginBase(MarginLike[ArrayT], ABC):
       f"{type(self).__name__}._sample_uniform is not defined; override it "
       "with the array namespace's RNG to enable sample()."
     )
+
+  def _prep(self, a: Any) -> Any:
+    """Bring one input array onto the namespace this object evaluates on.
+
+    Placement only -- no shape check and no clamping -- so it is equally
+    correct for exogenous covariates, which must be placed but never trimmed,
+    and for an array this class manufactures itself.
+
+    The default infers the placement from the arrays this object already
+    holds, so hosting a subclass on PyTorch requires writing none of it.
+    Override it where those arrays live somewhere the inference misses.
+
+    Parameters
+    ----------
+    a : array
+        An input array on any namespace.
+
+    Returns
+    -------
+    array
+        The same values, on this object's namespace, dtype and device.
+    """
+    return place(self, a)
 
   def __repr__(self) -> str:
     """Return a structural representation of the margin.

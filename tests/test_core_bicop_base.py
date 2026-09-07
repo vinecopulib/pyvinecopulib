@@ -258,3 +258,90 @@ def test_independence_pair_is_the_independence_copula() -> None:
   wide = np.hstack([u, u - 1e-3])
   np.testing.assert_array_equal(pair.pdf(wide), np.ones(len(u)))
   np.testing.assert_array_equal(pair.hfunc1(wide), u[:, 1])
+
+
+# --------------------------------------------------------------------------- #
+# Placement: the seam `plot` needs, and the only array a base manufactures     #
+# --------------------------------------------------------------------------- #
+
+
+def test_prep_is_the_identity_when_the_pair_holds_no_array() -> None:
+  """A functional pair computes in whatever namespace it is handed."""
+  pair = _IndepPair()
+  grid = np.linspace(0.1, 0.9, 6).reshape(3, 2)
+  assert pair._prep(grid) is grid
+
+
+def test_prep_args_checks_the_width_and_clamps_the_domain() -> None:
+  """Placement, layout and domain, in the one order that is correct."""
+  pair = _IndepPair()
+  prepared = pair._prep_args(np.array([[0.0, 1.0], [0.5, 0.5]]))
+  assert prepared.shape == (2, 2)
+  # Clamped strictly inside, so a downstream normal quantile is finite.
+  assert prepared.min() > 0.0 and prepared.max() < 1.0
+  with pytest.raises(ValueError, match=r"u must have shape \(n, 2\)"):
+    pair._prep_args(np.zeros((4, 3)))
+
+
+def test_plot_places_its_grid_on_a_torch_pairs_namespace() -> None:
+  """Issue #327: a torch pair must plot without converting inside ``pdf``.
+
+  The evaluation grid is the one array a base manufactures from nothing, so it
+  is the one place a subclass can be handed the wrong type. ``pdf`` here
+  asserts it received a tensor and does no coercion of its own.
+  """
+  torch = pytest.importorskip("torch")
+  import matplotlib.pyplot as plt
+
+  class TorchPair(BicopBase[Any], torch.nn.Module):
+    def __init__(self) -> None:
+      torch.nn.Module.__init__(self)
+      self.rho_raw = torch.nn.Parameter(
+        torch.tensor([0.5], dtype=torch.float32)
+      )
+
+    def _rho(self, u: Any, x: Optional[Any]) -> Any:
+      base = torch.tanh(self.rho_raw)
+      return (
+        base.expand(u.shape[0])
+        if x is None
+        else torch.tanh(self.rho_raw + x[:, 0])
+      )
+
+    def pdf(self, u: Any, *, x: Optional[Any] = None) -> Any:
+      assert isinstance(u, torch.Tensor), f"got {type(u).__name__}"
+      assert u.dtype is torch.float32, f"got {u.dtype}"
+      z1, z2 = torch.special.ndtri(u[:, 0]), torch.special.ndtri(u[:, 1])
+      rho = self._rho(u, x)
+      one_minus = 1.0 - rho * rho
+      quad = 2 * rho * z1 * z2 - rho * rho * (z1 * z1 + z2 * z2)
+      return torch.exp(quad / (2 * one_minus)) / torch.sqrt(one_minus)
+
+    def hfunc1(self, u: Any, *, x: Optional[Any] = None) -> Any:
+      rho = self._rho(u, x)
+      z1, z2 = torch.special.ndtri(u[:, 0]), torch.special.ndtri(u[:, 1])
+      return torch.special.ndtr((z2 - rho * z1) / torch.sqrt(1 - rho * rho))
+
+    def hfunc2(self, u: Any, *, x: Optional[Any] = None) -> Any:
+      rho = self._rho(u, x)
+      z1, z2 = torch.special.ndtri(u[:, 0]), torch.special.ndtri(u[:, 1])
+      return torch.special.ndtr((z1 - rho * z2) / torch.sqrt(1 - rho * rho))
+
+  pair = TorchPair()
+  # Inferred from the registered parameter: no override, no conversion code.
+  assert pair._prep(np.zeros((2, 2))).dtype is torch.float32
+  for plot_type in ("contour", "surface"):
+    pair.plot(plot_type=plot_type)
+    plt.close("all")
+
+  # And the conditional slice.
+  for row in ([0.8], np.array([[-0.8]])):
+    pair.plot(x=row)
+    plt.close("all")
+
+
+@pytest.mark.parametrize("bad", [np.zeros((17, 1)), np.zeros((2, 2, 1))])
+def test_plot_takes_one_covariate_row_only(bad: Any) -> None:
+  """A 2-d surface shows the density at one covariate value, not many."""
+  with pytest.raises(ValueError, match="single covariate row"):
+    _IndepPair().plot(x=bad)

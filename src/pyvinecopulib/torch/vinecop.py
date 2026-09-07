@@ -763,13 +763,15 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     """
     return self._ref_tensor().device.type == "cuda"
 
-  def _prep(self, u: Tensor, name: str, *, values_only: bool = False) -> Tensor:
-    # Coerce foreign input onto this vine's dtype/device, then let the base
-    # class own the layout: which widths are admissible depends on `var_types`,
-    # not on the array namespace.
+  def _prep(self, a: Any) -> Tensor:
+    # Placement only; the base owns the layout and the clamp, since which
+    # widths are admissible depends on `var_types` and not on the namespace.
+    # Overridden rather than inherited because `_ref_tensor` knows one thing
+    # the generic inference cannot: at `trunc_lvl == 0` there is no pair to
+    # read a placement from, and the `_device_ref` buffer is what the
+    # constructor registers for exactly that case.
     ref = self._ref_tensor()
-    u = torch.as_tensor(u, dtype=ref.dtype, device=ref.device)
-    return super()._prep(u, name, values_only=values_only)
+    return torch.as_tensor(a, dtype=ref.dtype, device=ref.device)
 
   @property
   def compile_cascades(self) -> bool:

@@ -660,16 +660,12 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     self._cache_integrals = bool(state["cache_integrals"])
     self.interp_grid._is_linear = bool(state["is_linear"])
 
-  def _prep(self, u: Tensor) -> Tensor:
-    u = torch.as_tensor(
-      u,
-      dtype=self.interp_grid.values.dtype,
-      device=self.interp_grid.values.device,
-    )
-    if u.ndim != 2 or u.shape[1] != 2:
-      raise ValueError(f"u must have shape (n, 2); got {tuple(u.shape)}")
-    # Trim to (1e-10, 1 - 1e-10), mirroring Bicop::prep_for_abstract.
-    return _trim(u)
+  def _prep(self, a: Any) -> Tensor:
+    # Placement only; the base owns the width check and the clamp. Overridden
+    # rather than inherited because the grid is a buffer of a submodule, and
+    # naming it directly is cheaper than walking the module tree for it.
+    values = self.interp_grid.values
+    return torch.as_tensor(a, dtype=values.dtype, device=values.device)
 
   def pdf(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Evaluate the copula density ``c(u1, u2)``.
@@ -689,7 +685,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     Tensor, shape (n,), dtype float
         Density values, floored at ``1e-20``.
     """
-    u = self._prep(u)
+    u = self._prep_args(u)
     if self.is_indep:
       return torch.ones(u.shape[0], dtype=u.dtype, device=u.device)
     return self.interp_grid.interpolate(u).clamp_min(1e-20)
@@ -719,7 +715,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     Each grid line is rescaled by its own total, so ``C(1, u2) = u2`` holds
     exactly.
     """
-    u = self._prep(u)
+    u = self._prep_args(u)
     if self.is_indep:
       return _trim(u[:, 0] * u[:, 1])
     if self._sy is not None:
@@ -818,7 +814,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     Tensor, shape (n,), dtype float
         Conditional distribution values in ``[0, 1]``.
     """
-    u = self._prep(u)
+    u = self._prep_args(u)
     if self.is_indep:
       return _trim(u[:, 1])
     return self._hfunc_raw(u, 1).clamp(0.0, 1.0)
@@ -843,7 +839,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     Tensor, shape (n,), dtype float
         Conditional distribution values in ``[0, 1]``.
     """
-    u = self._prep(u)
+    u = self._prep_args(u)
     if self.is_indep:
       return _trim(u[:, 0])
     return self._hfunc_raw(u, 2).clamp(0.0, 1.0)
@@ -891,7 +887,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     Tensor, shape (n,), dtype float
         ``u2`` values in ``[0, 1]``.
     """
-    u = self._prep(u)
+    u = self._prep_args(u)
     if self.is_indep:
       return _trim(u[:, 1])
     return self._hinv_raw(u, 1)
@@ -915,7 +911,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     Tensor, shape (n,), dtype float
         ``u1`` values in ``[0, 1]``.
     """
-    u = self._prep(u)
+    u = self._prep_args(u)
     if self.is_indep:
       return _trim(u[:, 0])
     return self._hinv_raw(u, 2)
