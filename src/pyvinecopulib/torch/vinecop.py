@@ -922,16 +922,38 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         out.append(bool(grid.grid_points.requires_grad))
     return tuple(out)
 
+  def _pair_revisions(self) -> tuple[int, ...]:
+    """How many times each pair has had its grid replaced.
+
+    Kept apart from :meth:`_grad_signature` because the two answer different
+    questions: that one decides whether a bake needs the graph, this one
+    whether it is a bake of the right density at all. Refitting a pair the vine
+    already holds -- ``vine.get_pair_copula(t, e).fit(u)`` -- replaces its grid
+    in place and moves no ``requires_grad`` flag, so nothing else would notice.
+
+    Returns
+    -------
+    tuple of int
+        One entry per pair copula, in tree-then-edge order.
+    """
+    return tuple(
+      int(getattr(self.get_pair_copula(tree, edge), "_revision", 0))
+      for tree in range(self.trunc_lvl)
+      for edge in range(self.d - tree - 1)
+    )
+
   def _ensure_batched(self) -> Any:
     """The batched state, re-baked when grad tracking has changed under it.
 
-    A bake is a copy of each pair's grid, which goes stale in two ways a
+    A bake is a copy of each pair's grid, which goes stale in three ways a
     device move does not cover. ``requires_grad_`` flips a flag in place, so
-    a bake made before it is left behind; and a bake made under ``no_grad``
+    a bake made before it is left behind; a bake made under ``no_grad``
     -- as ``sample`` / ``cdf`` / ``inverse_rosenblatt`` are evaluated -- holds
     detached copies even where the grids themselves track grad, so it is
-    redone once, for the first call that needs the graph. Neither would raise
-    where it is read: the batched result would simply arrive detached.
+    redone once, for the first call that needs the graph; and refitting a pair
+    the vine holds replaces its grid, which :meth:`_pair_revisions` counts.
+    Only the last is wrong rather than merely detached, but all three are
+    silent where the bake is read.
 
     Returns
     -------
@@ -939,10 +961,14 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         The memoized batched state.
     """
     signature = self._grad_signature()
+    revisions = self._pair_revisions()
     wants_graph = torch.is_grad_enabled() and any(signature)
     baked = getattr(self, "_bake_signature", None)
     if self._batched is not None and (
-      baked is None or baked[0] != signature or (wants_graph and not baked[1])
+      baked is None
+      or baked[0] != signature
+      or baked[2] != revisions
+      or (wants_graph and not baked[1])
     ):
       object.__setattr__(self, "_batched", None)
       # A compiled cascade was traced against the grids the stale bake holds.
@@ -950,7 +976,9 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     fresh = self._batched is None
     out = super()._ensure_batched()
     if fresh:
-      object.__setattr__(self, "_bake_signature", (signature, wants_graph))
+      object.__setattr__(
+        self, "_bake_signature", (signature, wants_graph, revisions)
+      )
     return out
 
   # --------------------------------------------------------------------- #

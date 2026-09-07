@@ -341,6 +341,41 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     return self._parameter_names
 
   @property
+  def n_parameters(self) -> float:
+    """Number of free parameters, for the information criteria.
+
+    The registered tensors that carry gradients: a ``trainable=False`` margin
+    is a fixed distribution and is penalized for nothing, while a trainable one
+    is penalized for every scalar an optimizer can move. Without this the
+    criteria read the ``MarginBase`` default of zero and a fitted margin scored
+    as though it had estimated nothing.
+
+    Returns
+    -------
+    float
+        The count of trainable scalar parameters.
+    """
+    return float(
+      sum(int(p.numel()) for p in self.parameters() if p.requires_grad)
+    )
+
+  @property
+  def nobs(self) -> Optional[int]:
+    """Number of observations the parameters were estimated from.
+
+    Always ``None``: this margin is constructed from parameters rather than
+    fitted, so ``bic`` and ``aicc`` need the observations passed to them. It is
+    declared so the answer is the documented ``None`` rather than an attribute
+    error resolved by ``getattr``.
+
+    Returns
+    -------
+    None
+        This margin records no sample size.
+    """
+    return None
+
+  @property
   def support(self) -> tuple[float, float]:
     """Closed bounds of the support.
 

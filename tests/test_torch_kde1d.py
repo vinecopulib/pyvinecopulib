@@ -635,3 +635,41 @@ def test_a_lifted_margin_can_still_reselect() -> None:
   wide = rng.normal(0.0, 25.0, size=400)
   lifted.fit(_t(wide))
   assert lifted.bandwidth == pytest.approx(Kde1d().fit(wide).bandwidth)
+
+
+def test_the_criteria_answer_from_a_fitted_margin() -> None:
+  """``bic`` and ``aicc`` need the sample size, which the fit now records.
+
+  All three criteria are inherited from ``MarginBase``, but two of them
+  penalize by ``n`` and used to raise for want of it -- on the library's own
+  default torch margin, where both NumPy margins answered.
+  """
+  y = _t(np.random.default_rng(2).normal(size=300))
+  fitted = TorchKde1d().fit(y)
+  assert fitted.nobs == 300
+  aic, bic, aicc = fitted.aic(), fitted.bic(), fitted.aicc()
+  assert all(np.isfinite([aic, bic, aicc]))
+  # `bic`'s log(n) penalty exceeds `aic`'s 2 for n > e^2, and `aicc` adds a
+  # positive correction to `aic`, so the three are ordered and distinct.
+  assert aic < aicc < bic
+
+
+def test_nobs_counts_the_retained_rows_not_the_input() -> None:
+  """A dropped observation is not an observation the criteria penalize."""
+  rng = np.random.default_rng(0)
+  y = np.where(np.arange(100) < 60, rng.normal(size=100), np.nan)
+  assert TorchKde1d().fit(_t(y)).nobs == 60
+  # A zero or NaN weight drops its row just as a NaN observation does.
+  weights = np.where(np.arange(100) % 2 == 0, 1.0, 0.0)
+  assert (
+    TorchKde1d().fit(_t(rng.normal(size=100)), weights=_t(weights)).nobs == 50
+  )
+
+
+def test_nobs_survives_a_state_dict_round_trip() -> None:
+  """The criteria must answer the same after a load as before it."""
+  fitted = TorchKde1d().fit(_t(np.random.default_rng(3).normal(size=180)))
+  restored = TorchKde1d()
+  restored.load_state_dict(fitted.state_dict())
+  assert restored.nobs == fitted.nobs == 180
+  assert restored.bic() == fitted.bic()

@@ -8,6 +8,7 @@ on the same fitted interpolation grid and verifies ``hinv`` round-trips.
 from __future__ import annotations
 
 from fractions import Fraction
+from typing import cast
 
 import numpy as np
 import pytest
@@ -1168,3 +1169,87 @@ def test_a_malformed_grid_is_refused_not_silently_wrong(grid, match) -> None:
   values = torch.ones(len(grid), len(grid), dtype=torch.float64)
   with pytest.raises(ValueError, match=match):
     TorchTllBicop(points, values)
+
+
+def test_state_dict_round_trip_preserves_the_grid_geometry() -> None:
+  """``grid_type`` decides what the grid buffers mean, and is not a tensor.
+
+  Two fits of the same size differ only in their spacing, so a load between
+  them lined every buffer up and went on reading them under the wrong
+  geometry -- silently, and by five orders of magnitude.
+  """
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  u = cop.sample(400, seeds=[11])
+  normal = TorchTllBicop.from_data(u, FitControlsTorchBicop(grid_type="normal"))
+  linear = TorchTllBicop.from_data(u, FitControlsTorchBicop(grid_type="linear"))
+  assert normal.interp_grid._is_linear is not linear.interp_grid._is_linear
+
+  linear.load_state_dict(normal.state_dict())
+  assert linear.interp_grid._is_linear is normal.interp_grid._is_linear
+  ut = torch.as_tensor(u, dtype=torch.float64)
+  torch.testing.assert_close(linear.pdf(ut), normal.pdf(ut), atol=0.0, rtol=0.0)
+
+
+def test_state_dict_carries_the_cache_mode_and_the_independence_flag() -> None:
+  """The other two non-tensor settings round-trip, and a mismatch is loud.
+
+  Unlike ``grid_type``, these two change which buffers exist, so a mismatched
+  load fails on the buffer names before it can be misread. They travel in the
+  extra state anyway, so the state is complete rather than complete-by-luck.
+  """
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  u = cop.sample(300, seeds=[12])
+  cached = TorchTllBicop.from_data(u, cache_integrals=True)
+  assert cached.get_extra_state()["cache_integrals"] is True
+  assert cached.get_extra_state()["is_indep"] is False
+
+  same = TorchTllBicop.from_data(u, cache_integrals=True)
+  same.load_state_dict(cached.state_dict())
+  assert same._cache_integrals is True
+  assert same.is_indep is False
+
+  # A different cache mode holds different buffers, so this cannot go quiet.
+  uncached = TorchTllBicop.from_data(u, cache_integrals=False)
+  with pytest.raises(RuntimeError, match="Unexpected key"):
+    uncached.load_state_dict(cached.state_dict())
+
+
+def test_set_extra_state_refuses_a_foreign_version() -> None:
+  """A format change must fail loudly rather than restore a wrong model."""
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  pair = TorchTllBicop.from_data(cop.sample(200, seeds=[13]))
+  with pytest.raises(RuntimeError, match="unsupported"):
+    pair.set_extra_state({"version": 99})
+
+
+def test_refitting_a_stored_pair_invalidates_the_vines_bake() -> None:
+  """A vine bakes a copy of each grid, so replacing one must be noticed.
+
+  ``set_pair_copulas`` covers the vine's own ``fit`` and ``select``; refitting
+  a pair the vine already holds moves no ``requires_grad`` flag, so the grad
+  signature alone could not see it.
+  """
+  from pyvinecopulib.torch import FitControlsTorchVinecop, TorchVinecop
+
+  rng = np.random.default_rng(0)
+  d, n = 3, 400
+  first = pv.to_pseudo_obs(
+    rng.multivariate_normal(np.zeros(d), np.eye(d) + 0.8 * (1 - np.eye(d)), n)
+  )
+  second = pv.to_pseudo_obs(
+    rng.multivariate_normal(np.zeros(d), np.eye(d) - 0.5 * (1 - np.eye(d)), n)
+  )
+  vine = TorchVinecop.from_data(first, controls=FitControlsTorchVinecop())
+  points = torch.as_tensor(second, dtype=torch.float64)
+  vine.pdf(points, batched=True)  # bake against the first fit
+
+  # `get_pair_copula` is typed against the evaluation-only contract, which
+  # carries no `fit`; the stored pair is the concrete class.
+  stored = cast(TorchTllBicop, vine.get_pair_copula(0, 0))
+  stored.fit(second[:, :2])
+  torch.testing.assert_close(
+    vine.pdf(points, batched=True),
+    vine.pdf(points, batched=False),
+    atol=1e-12,
+    rtol=1e-12,
+  )

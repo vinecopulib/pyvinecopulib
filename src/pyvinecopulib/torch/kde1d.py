@@ -193,6 +193,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self.boundary_repair = boundary_repair
     self._loglik: Optional[float] = None
     self.edf: Optional[float] = None
+    self._nobs: Optional[int] = None
     self._selected_bandwidth: Optional[float] = None
     self._dtype = dtype
     self._device = device
@@ -329,7 +330,15 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       kde.fit(data)
     else:
       kde.fit(data, weight_tensor.detach().cpu().numpy())
-    return self._adopt(kde)
+    fitted = self._adopt(kde)
+    # The retained rows, not the input length: `Kde1d` drops a NaN observation
+    # and a NaN or zero weight, and the log-likelihood `_adopt` just read is
+    # over what is left, so that is what the criteria penalize against.
+    kept = ~torch.isnan(y_tensor)
+    if weight_tensor is not None:
+      kept = kept & ~torch.isnan(weight_tensor) & (weight_tensor > 0)
+    fitted._nobs = int(kept.sum())
+    return fitted
 
   @classmethod
   def from_kde1d(
@@ -526,6 +535,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       "boundary_repair": self.boundary_repair,
       "loglik": self._loglik,
       "edf": self.edf,
+      "nobs": self._nobs,
     }
 
   def set_extra_state(self, state: Any) -> None:
@@ -555,6 +565,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self.boundary_repair = state["boundary_repair"]
     self._loglik = state["loglik"]
     self.edf = state["edf"]
+    self._nobs = state["nobs"]
 
   # --- declared capabilities ------------------------------------------------ #
 
@@ -610,6 +621,21 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
         ``True`` once a grid has been fitted or supplied.
     """
     return int(self.grid_points.numel()) > 0
+
+  @property
+  def nobs(self) -> Optional[int]:
+    """Number of observations the fit retained.
+
+    What ``bic`` and ``aicc`` penalize against, so that they answer from a
+    fitted margin the way they do on every other one rather than reporting no
+    sample size.
+
+    Returns
+    -------
+    int or None
+        The retained sample size, or ``None`` before a fit.
+    """
+    return self._nobs
 
   @property
   def n_parameters(self) -> float:

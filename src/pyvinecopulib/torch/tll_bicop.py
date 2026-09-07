@@ -27,7 +27,7 @@ FitControlsTorchBicop : Fit-time controls.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 import torch
 from torch import Tensor
@@ -207,6 +207,10 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     )
 
     self._cache_integrals = bool(cache_integrals)
+    #: Bumped whenever the grid is replaced, so a vine that baked a copy
+    #: of it can tell. Not part of `state_dict`: a load replaces the
+    #: buffers, which `TorchVinecop.load_state_dict` already reacts to.
+    self._revision = 0
     if self._cache_integrals and not self.is_indep:
       # Detached, because a buffer is a cache and holding a graph in one would
       # keep it alive for the module's lifetime. `_tables` rebuilds them inside
@@ -569,6 +573,11 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     self.is_indep = other.is_indep
     self.interp_grid = other.interp_grid
     self._cache_integrals = other._cache_integrals
+    # A vine holding this pair bakes a *copy* of the grid, and nothing about
+    # replacing one moves a `requires_grad` flag -- so the count is what lets
+    # `TorchVinecop` notice. `set_pair_copulas` covers the vine's own `fit` and
+    # `select`; this covers refitting a pair the vine already holds.
+    self._revision += 1
     for name in ("_sy", "_sx", "_prefix"):
       table = getattr(other, name)
       # A buffer cannot be reassigned by attribute once registered, so the
@@ -607,6 +616,49 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
   # --------------------------------------------------------------------- #
   # Densities                                                              #
   # --------------------------------------------------------------------- #
+
+  def get_extra_state(self) -> dict[str, Any]:
+    """Return the fitted state that is not a tensor.
+
+    Three settings decide what the grid buffers *mean* and none of them is a
+    tensor, so without them a ``state_dict`` load lands real values in a module
+    that goes on reading them under the wrong geometry -- the same reason
+    ``TorchKde1d`` carries its variable type and bounds here.
+
+    Returns
+    -------
+    dict
+        The independence flag, the cache mode, and the grid spacing.
+    """
+    return {
+      "version": 1,
+      "is_indep": self.is_indep,
+      "cache_integrals": self._cache_integrals,
+      "is_linear": self.interp_grid._is_linear,
+    }
+
+  def set_extra_state(self, state: Any) -> None:
+    """Restore the state saved by :meth:`get_extra_state`.
+
+    Parameters
+    ----------
+    state : dict
+        State returned by :meth:`get_extra_state`.
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    RuntimeError
+        If the state was not written by this version of the class.
+    """
+    if not isinstance(state, dict) or state.get("version") != 1:
+      raise RuntimeError("unsupported TorchTllBicop state-dict version")
+    self.is_indep = bool(state["is_indep"])
+    self._cache_integrals = bool(state["cache_integrals"])
+    self.interp_grid._is_linear = bool(state["is_linear"])
 
   def _prep(self, u: Tensor) -> Tensor:
     u = torch.as_tensor(

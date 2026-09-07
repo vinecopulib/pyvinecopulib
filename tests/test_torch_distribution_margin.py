@@ -21,6 +21,7 @@ independent implementation available.
 from __future__ import annotations
 
 import pickle
+import warnings
 from typing import Any
 
 import numpy as np
@@ -400,3 +401,53 @@ def test_validate_args_is_forwarded_to_the_family() -> None:
     _D.Uniform, {"low": 0.0, "high": 1.0}, validate_args=False
   )
   assert lax.logpdf(torch.tensor([2.0], dtype=_F64)).item() == float("-inf")
+
+
+def test_the_criteria_penalize_the_trainable_parameters() -> None:
+  """A trainable margin is penalized for what an optimizer can move.
+
+  Without a ``n_parameters`` the inherited criteria read ``MarginBase``'s
+  default of zero, so all three collapsed to ``-2 * loglik`` and a fitted
+  margin scored as though it had estimated nothing.
+  """
+  y = torch.as_tensor(np.random.default_rng(1).normal(size=200), dtype=_F64)
+  margin = TorchDistributionMargin.from_distribution(_D.Normal(0.0, 1.0))
+  assert margin.n_parameters == 2.0
+  aic, bic, aicc = margin.aic(y), margin.bic(y), margin.aicc(y)
+  assert len({round(float(v), 9) for v in (aic, bic, aicc)}) == 3
+  # `aic` is exactly `-2 * loglik + 2 * k`, so the penalty is visible.
+  loglik = float(margin.loglik(y).detach())
+  assert float(aic) == pytest.approx(-2.0 * loglik + 2.0 * 2.0)
+
+
+def test_a_frozen_margin_is_penalized_for_nothing() -> None:
+  """``trainable=False`` estimates nothing, so it costs no parameters."""
+  margin = TorchDistributionMargin.from_distribution(
+    _D.Normal(0.0, 1.0), trainable=False
+  )
+  assert margin.n_parameters == 0.0
+  y = torch.as_tensor(np.random.default_rng(2).normal(size=120), dtype=_F64)
+  loglik = float(margin.loglik(y))
+  assert float(margin.aic(y)) == pytest.approx(-2.0 * loglik)
+
+
+def test_nobs_is_none_because_the_margin_is_built_not_fitted() -> None:
+  """This margin carries its parameters, so a criterion needs the data.
+
+  ``nobs`` is declared rather than absent so the answer is the documented
+  ``None``, and asking for a criterion without data says which argument is
+  missing instead of resolving one silently.
+  """
+  margin = TorchDistributionMargin.from_distribution(_D.Normal(0.0, 1.0))
+  assert margin.nobs is None
+  with pytest.raises(NotImplementedError, match="pass data to loglik"):
+    margin.bic()
+
+
+def test_the_criteria_do_not_warn_about_the_graph() -> None:
+  """An information criterion is a number to compare, not one to differentiate."""
+  y = torch.as_tensor(np.random.default_rng(3).normal(size=64), dtype=_F64)
+  margin = TorchDistributionMargin.from_distribution(_D.Normal(0.0, 1.0))
+  with warnings.catch_warnings():
+    warnings.simplefilter("error")
+    assert np.isfinite(margin.aic(y))

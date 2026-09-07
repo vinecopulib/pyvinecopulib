@@ -750,6 +750,10 @@ class MarginBase(MarginLike[ArrayT], ABC):
   def _loglik_value(self, y: Optional[ArrayT]) -> float:
     """Log-likelihood as a plain float.
 
+    An information criterion is a number to compare, never a term to
+    differentiate, so a trainable margin's log-likelihood is detached on the
+    way out rather than warning about the conversion.
+
     Parameters
     ----------
     y : array, shape (n,), or None
@@ -760,7 +764,9 @@ class MarginBase(MarginLike[ArrayT], ABC):
     float
         The log-likelihood.
     """
-    return float(self.loglik(y))
+    value: Any = self.loglik(y)
+    detach = getattr(value, "detach", None)
+    return float(value if detach is None else detach())
 
   def _n_parameters(self) -> float:
     """Number of freely estimated parameters.
