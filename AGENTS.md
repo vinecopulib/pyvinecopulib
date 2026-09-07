@@ -694,6 +694,23 @@ automatically.
     it: nothing is below zero there, so every test that does not set it
     sees the two agree. `TorchTllBicop` / `TorchVinecop` are the torch
     subclasses.
+  - **A selected slot's conditioning order is fitted state, not a reading of
+    the matrix.** `select` fits each edge in the orientation the search built
+    it in and reorients it at finalization with `flip`, which swaps the pair's
+    two arguments and leaves its conditioning columns alone. So on a swapped
+    slot the C1 order the finalized matrix names is the *other* endpoint's
+    chain — the same conditioning set in a different order, measured at 19 of
+    272 slots (7%) — and gathering `u_D` in it evaluates a conditional pair on
+    a permutation of what it was estimated on. `_select_parts` therefore
+    returns the order each pair was fitted on as a third value, `_set_cond_order`
+    installs it, and `_cond_positions` answers with it where there is one. Three
+    consequences: `fit` **drops** it (it fits along the structure's own order,
+    so an order left over from a `select` is a claim about pairs that are gone);
+    a simplified vine never gathers `u_D`, so all of this is inert there; and
+    the order is carried as **variable labels**, not natural-order columns, so
+    it survives the relabeling `conditioning_set=` performs. Do not "simplify"
+    this back to `struct_array` — the two agree on 93% of slots, which is
+    exactly enough for a spot check to pass.
   - `DiscretePair` (`_discrete.py`) — a *continuous* pair copula evaluated on a
     discrete or mixed edge. **The vine owns the discrete layouts, the pair
     copulas stay continuous**: `_bind_vine(..., var_types=)` declares which

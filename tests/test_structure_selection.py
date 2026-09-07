@@ -403,6 +403,27 @@ def test_bicop_class_fits_without_a_fit_edge_callback() -> None:
   assert isinstance(vine.get_pair_copula(0, 0), pv.Bicop)
 
 
+def test_a_named_pair_class_that_cannot_condition_refuses_the_context() -> None:
+  """An unconditional pair class must not be fitted under a conditional vine.
+
+  The default per-edge fitter hands each pair class the edge's conditioning
+  matrix. A class that names no covariate argument -- ``Bicop`` -- then refuses
+  it, which is the point: fitting the simplified model and evaluating it as the
+  conditional one is what the refusal replaces.
+  """
+  u = _correlated_pseudo_obs(0, 4)
+  vine = _BicopVine(
+    [
+      [pv.Bicop() for _ in range(4 - 1 - t)]  # placeholders; select refits
+      for t in range(4 - 1)
+    ],
+    pv.RVineStructure.from_order([1, 2, 3, 4]),
+    context=NonSimplifiedContext(),
+  )
+  with pytest.raises(TypeError, match="from_data"):
+    vine.select(u)
+
+
 def test_a_named_pair_class_without_flip_is_refused_before_any_fitting() -> (
   None
 ):
@@ -794,40 +815,55 @@ def test_the_same_pair_with_x_dependence_on_is_a_different_model() -> None:
   assert not np.allclose(flat, conditional, rtol=1e-6, atol=1e-6)
 
 
-@pytest.mark.xfail(
-  strict=True,
-  reason="`select` fits the pairs with x_e=None and then re-installs the "
-  "conditioning context, so the vine evaluates as a model it was never "
-  "fitted as. Fixing it needs the C1 column order, which is only fixed once "
-  "the structure is -- resolved at finalization from the same `diag` that "
-  "already decides the `flip`. Remove this marker when that lands.",
-)
-def test_select_fits_the_model_it_then_evaluates() -> None:
-  """A selected non-simplified vine must be fitted as what it evaluates as.
+# Each of these selects a vine with at least one slot whose conditioning order
+# is *not* the one its finalized matrix names, which is the case the identity
+# below is here to catch; the rest of the file covers the agreeing case.
+@pytest.mark.parametrize(("seed", "d"), [(4, 5), (0, 6), (1, 7)])
+def test_select_fits_the_model_it_then_evaluates(seed: int, d: int) -> None:
+  """A selected non-simplified vine evaluates each pair on what it was fitted on.
 
-  With the covariate term on, `select` hands every `fit_edge` `x_e = None` and
-  then re-installs the context, so the pairs are estimated as a simplified vine
-  and read as a conditional one. The log-likelihood the object reports is then
-  not the one its own fit maximized.
+  Selection reorients each fitted pair onto its finalized slot with ``flip``,
+  which swaps the pair's two arguments and leaves its conditioning columns
+  alone. So a swapped slot's conditioning order is the one the *fit* used and
+  not the one the finalized matrix names, and reading it off the matrix is what
+  made the object report a log-likelihood its own fit never maximized.
+
+  Pinned on the arguments rather than on a scalar of its own: a vine's density
+  is the product of its pairs' densities at whatever the cascade hands them, so
+  the fit's own record of those arguments reconstructs the log-likelihood
+  exactly when -- and only when -- evaluation reproduces them.
   """
-  d, seed, slope = 4, 0, 1.5
+  slope = 0.6
   u = _correlated_pseudo_obs(seed, d, n=600)
-  structure = pv.RVineStructure.from_order(list(range(1, d + 1)))
+  fitted: list[tuple[Any, np.ndarray, Optional[np.ndarray]]] = []
 
-  def fit_edge(t, e, u_e, x_e, var_types=("c", "c")):
-    return _ConditionalGaussian(slope=slope).fit(u_e)
+  def fit_edge(
+    t: int,
+    e: int,
+    u_e: np.ndarray,
+    x_e: Optional[np.ndarray],
+    var_types: tuple[str, str] = ("c", "c"),
+  ) -> Any:
+    pair = _ConditionalGaussian(slope=slope).fit(u_e)
+    fitted.append(
+      (pair, np.asarray(u_e), None if x_e is None else np.asarray(x_e))
+    )
+    return pair
 
   selected = HostedVinecop(
     _conditional_pairs(d, slope=slope),
-    structure,
+    pv.RVineStructure.from_order(list(range(1, d + 1))),
     context=NonSimplifiedContext(),
   )
   selected.select(u, fit_edge=fit_edge)
 
-  # The same pairs, read as the simplified vine they were actually fitted as.
-  as_fitted = HostedVinecop(
-    [list(row) for row in selected._pairs], selected.structure
+  assert len(fitted) == d * (d - 1) // 2
+  # Above the first tree every edge conditions on something, so the fit that
+  # did not see one was not a conditional fit at all.
+  assert sum(x_e is not None for _, _, x_e in fitted) == len(fitted) - (d - 1)
+  achieved = sum(
+    float(np.sum(np.log(pair.pdf(u_e, x=x_e)))) for pair, u_e, x_e in fitted
   )
   np.testing.assert_allclose(
-    float(selected.loglik(u)), float(as_fitted.loglik(u)), rtol=1e-9
+    float(selected.loglik(u)), achieved, rtol=1e-12, atol=0.0
   )

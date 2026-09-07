@@ -10,8 +10,9 @@ reproduces the compiled one exactly, and the relabeling reproduces the compiled
 
 ``VinecopBase._fit_parts`` / ``._select_parts`` are reached directly here: they
 are the array-agnostic engines whose contract is exact parity with the compiled
-selector, and a parity assertion needs the loose ``(structure, pairs)`` the
-engines return rather than an assembled vine. The public ``fit`` / ``select`` /
+selector, and a parity assertion needs the loose parts the engines return --
+structure, pairs, and the conditioning order each pair was fitted on -- rather
+than an assembled vine. The public ``fit`` / ``select`` /
 ``from_data`` that install those parts are covered in
 ``tests/test_structure_selection.py``.
 """
@@ -489,7 +490,7 @@ def test_select_conditioning_set_matches_vinecop(cs: list[int]) -> None:
   # conditioning-aware selector's matrix exactly, and the reused pairs must land
   # on the same slots -- an O(1) density error otherwise.
   u = _data(11)
-  structure, pairs = VinecopBase._select_parts(
+  structure, pairs, _ = VinecopBase._select_parts(
     u, _gaussian_fit_edge, conditioning_set=cs
   )
   controls = pv.FitControlsVinecop(
@@ -543,7 +544,7 @@ def test_select_combines_a_conditioning_set_with_truncation(
   pair store must hold exactly the selected trees.
   """
   cond = [2, 5]
-  structure, pairs = VinecopBase._select_parts(
+  structure, pairs, _ = VinecopBase._select_parts(
     _data(13),
     _gaussian_fit_edge,
     conditioning_set=cond,
@@ -552,3 +553,60 @@ def test_select_combines_a_conditioning_set_with_truncation(
   assert int(structure.trunc_lvl) == trunc_lvl
   assert len(pairs) == trunc_lvl
   assert set(int(v) for v in structure.order[-2:]) == set(cond)
+
+
+class _FlippableGaussian(GaussianBicop):
+  """``GaussianBicop`` plus the ``flip`` structure selection needs.
+
+  A Gaussian copula is exchangeable, so the copula of ``(U2, U1)`` is the same
+  one — and this pair's correlation reads its conditioning matrix, never the
+  argument order, so the flip carries the same link.
+  """
+
+  def flip(self) -> "_FlippableGaussian":
+    return _FlippableGaussian(
+      scale=self._scale, base_rho=self._base_rho, rho_max=self._rho_max
+    )
+
+
+def _fixed_conditional_edge(
+  tree: int, edge: int, u_e: Any, x_e: Any, var_types: Any = ("c", "c")
+) -> Any:
+  del tree, edge, u_e, x_e, var_types
+  return _FlippableGaussian(scale=0.6, base_rho=0.5)
+
+
+@pytest.mark.parametrize("seed", [2, 3, 6, 12])
+def test_selected_conditioning_order_is_the_fitted_one(seed: int) -> None:
+  """Each slot records the conditioning order its own pair was fitted on.
+
+  Selection finalizes by reorienting a fitted pair onto its slot with ``flip``,
+  which swaps the pair's two arguments and leaves its conditioning columns
+  alone. So the order a slot conditions on is the order the *fit* used, and on
+  a swapped slot that is the other endpoint's chain — the same conditioning set
+  in a different order. That is why it is carried out of selection rather than
+  read back off the finalized matrix.
+  """
+  d = 7
+  structure, _, cond_order = VinecopBase._select_parts(
+    _data(seed, d=d),
+    _fixed_conditional_edge,
+    context=NonSimplifiedContext(),
+  )
+  trunc = int(structure.trunc_lvl)
+  assert set(cond_order) == {
+    (t, e) for t in range(1, trunc) for e in range(d - 1 - t)
+  }
+  divergent = 0
+  for (t, e), chain in cond_order.items():
+    derived = tuple(
+      int(structure.struct_array(i, e, natural_order=False)) for i in range(t)
+    )
+    # The same variables either way -- a slot conditions on the set its column
+    # names, and only the order it reads them in is at issue.
+    assert sorted(chain) == sorted(derived), ((t, e), chain, derived)
+    divergent += chain != derived
+  # Not incidental to these seeds: were the two orders always the same, the
+  # finalized matrix would be authority enough and none of this would be
+  # needed. The test would then still pass while gating nothing.
+  assert divergent > 0
