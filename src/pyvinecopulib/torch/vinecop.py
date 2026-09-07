@@ -50,7 +50,8 @@ from ..core import (
 )
 from ..core._discrete import continuous_view
 from ..core._independence import IndependencePair
-from ..core.vinecop_base import FitEdge, _NotBatchable
+from ..core._validation import reject_covariates
+from ..core.vinecop_base import FitEdge, FitLevel, _NotBatchable
 from ..pyvinecopulib_ext import (
   RVineStructure,
   Vinecop,
@@ -410,7 +411,9 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     var_types: Optional[list[str]] = None,
     controls: Optional[Any] = None,
     *,
+    x: Optional[Any] = None,
     fit_edge: Optional[FitEdge] = None,
+    fit_level: Optional[FitLevel] = None,
   ) -> "TorchVinecop":
     """Fit a vine to pseudo-observations, in PyTorch throughout.
 
@@ -440,11 +443,20 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         placement, precision, and the cascade variants. ``None`` defaults to
         TLL on a 30x30 normal-spaced grid, float64, and ``mst_prim`` with
         ``trunc_lvl=20``.
+    x : Tensor or None, default=None
+        Refused. A TLL grid is an unconditional density, so fitting one while
+        ignoring covariates would return a different model than the caller
+        asked for; a conditional pair copula is fitted through ``fit_edge``.
     fit_edge : callable, or None, default=None
         ``(tree, edge, u_e, x_e) -> BicopLike``, fitting one edge's pair
         copula in place of the built-in TLL fit; an edge with a discrete
         variable additionally receives its own ``var_types`` by keyword.
         ``None`` fits a ``TorchTllBicop`` per edge, which is the usual case.
+    fit_level : callable, or None, default=None
+        ``(tree, u_level, types) -> Sequence[BicopLike]``, fitting a whole tree
+        level at once, in place of the built-in batched TLL fit -- the
+        level-wise counterpart of ``fit_edge``. ``None`` resolves it from
+        ``controls.batched_fit``.
 
     Returns
     -------
@@ -454,14 +466,15 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     Raises
     ------
     ValueError
-        If ``u`` is not 2-D, or if ``structure``'s dimension disagrees with the
-        one ``var_types`` or ``u`` implies.
+        If ``u`` is not 2-D, if ``structure``'s dimension disagrees with the
+        one ``var_types`` or ``u`` implies, or if ``x`` is given.
 
     See Also
     --------
     pyvinecopulib.core.VinecopBase.fit : Refit an existing vine's pairs.
     pyvinecopulib.core.VinecopBase.select : Reselect its structure and pairs.
     """
+    reject_covariates(cls, x)
     if controls is None:
       controls = FitControlsTorchVinecop()
 
@@ -520,7 +533,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     if batched_fit is None:
       batched_fit = u_t.device.type == "cuda"
 
-    def fit_level(
+    def fit_level_tll(
       tree: int, u_level: Tensor, types: list[tuple[str, str]]
     ) -> Sequence[BicopLike[Tensor]]:
       """Fit a whole continuous tree level in one call.
@@ -549,7 +562,10 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         dtype=eff_dtype,
       )
 
-    level_hook = fit_level if batched_fit else None
+    # A caller's own level fitter wins, as their `fit_edge` does; otherwise
+    # the built-in one, and only where batching is worth its launch overhead.
+    level_hook = fit_level or (fit_level_tll if batched_fit else None)
+    cond_order: dict[tuple[int, int], tuple[int, ...]] = {}
 
     if structure is None:
       # Select the structure natively in torch, reusing the pairs fit during
@@ -557,7 +573,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       # what Vinecop's selector does, so no re-fit is needed. Kendall's tau
       # via wdm needs a host copy; detach so grad-tracking tensors are
       # accepted.
-      structure, pairs = cls._select_parts(
+      structure, pairs, cond_order = cls._select_parts(
         u_t,
         pair_fitter,
         fit_level=level_hook,
@@ -613,6 +629,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       structure=structure,
       var_types=list(var_types or []) or None,
     )
+    out._set_cond_order(cond_order)
     out.compile_cascades = controls.compile
     return out
 

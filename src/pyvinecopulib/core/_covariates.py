@@ -1,0 +1,89 @@
+"""Forwarding exogenous covariates ``x`` to a part being evaluated.
+
+Every evaluation method in the library takes an optional ``x``, and every layer
+that composes parts has to decide, per call, whether to hand it on. There are
+exactly **two** rules, and the split is the point of this module: they look
+alike and are not interchangeable.
+
+- :func:`pair_eval` -- **forward whenever there is one.** A conforming pair
+  copula declares ``x`` in its signature, which ``ty`` enforces on every
+  ``BicopBase`` subclass, so the signature *is* the declaration and nothing
+  else has to be maintained alongside it. Forwarding unconditionally is also
+  what makes a pair that cannot take one fail loudly -- a compiled ``Bicop``
+  raises on the keyword rather than quietly modeling something else.
+- :func:`declared_eval` -- **forward only to a part that declares
+  ``supports_covariates``.** Margins and whole copulas are reached through
+  structural protocols that foreign objects satisfy (a SciPy distribution, an
+  adapter, ``Vinecop`` itself), so their signatures answer nothing: nanobind
+  reports every bound method as ``(*args, **kwargs)``. And one distribution may
+  legitimately hold conditional and unconditional parts side by side -- a
+  covariate-driven margin next to a plain one is a model the caller chose per
+  column, not an accident -- so an undeclared part must be *skipped*, not
+  refused.
+
+What keeps the second rule from hiding a silent downgrade is that the refusal
+happens one level up, at the object the covariates were handed to:
+``VinedistBase._check_covariates`` raises when *nothing* reads them, which is
+the case where silence would be indistinguishable from a conditional answer.
+The fit-time member of the same family is ``_validation.reject_covariates``,
+which refuses outright -- fitting cannot skip an ``x`` and stay honest, because
+estimating ``f(y)`` when ``f(y | x)`` was asked for returns a different model.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Callable, Optional
+
+__all__ = ["declared_eval", "pair_eval"]
+
+
+def pair_eval(method: Callable[..., Any], u: Any, x: Optional[Any]) -> Any:
+  """Evaluate a pair-copula method, forwarding ``x`` whenever there is one.
+
+  Parameters
+  ----------
+  method : callable
+      The bound method to call, e.g. ``pair.hfunc1``.
+  u : array
+      The pair-copula argument, passed positionally.
+  x : array, shape (n, p), or None
+      The edge's conditioning matrix, passed by keyword when not ``None``.
+
+  Returns
+  -------
+  array
+      Whatever ``method`` returns.
+  """
+  return method(u) if x is None else method(u, x=x)
+
+
+def declared_eval(
+  part: Any, name: str, values: Any, x: Optional[Any], **kwargs: Any
+) -> Any:
+  """Call ``part.name(values)``, forwarding ``x`` only if ``part`` reads one.
+
+  Parameters
+  ----------
+  part : object
+      The margin or copula to evaluate; its ``supports_covariates`` attribute
+      decides, and an absent one means ``False``.
+  name : str
+      The method to call.
+  values : object
+      The first argument, passed positionally -- observations for a margin,
+      copula-scale data or a sample size for a copula. Positional because a
+      margin may name it whatever its own ecosystem does.
+  x : array, shape (n, p), or None
+      The covariates, passed by keyword to a part that declares them.
+  **kwargs : Any
+      Further keyword arguments, forwarded either way.
+
+  Returns
+  -------
+  object
+      Whatever the method returns.
+  """
+  method = getattr(part, name)
+  if x is None or not getattr(part, "supports_covariates", False):
+    return method(values, **kwargs)
+  return method(values, x=x, **kwargs)

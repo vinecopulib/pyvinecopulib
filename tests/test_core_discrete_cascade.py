@@ -808,7 +808,7 @@ def test_select_matches_vinecop(var_types: list[str]) -> None:
   # must match the compiled selector's exactly -- byte for byte, as it does for
   # continuous data.
   u = _to_compact(_dependent_expanded(var_types, seed=9), var_types)
-  structure, pairs = VinecopBase._select_parts(
+  structure, pairs, _ = VinecopBase._select_parts(
     u, _discrete_fit_edge, var_types=var_types
   )
   auto = pv.Vinecop.from_data(u, var_types=var_types, controls=_GAUSSIAN_VINE)
@@ -829,7 +829,7 @@ def test_selected_pairs_carry_the_derived_variable_types(
   # pairs onto a structure whose types are re-derived. The two must agree, or
   # every hosting vine would silently disagree with the fit.
   u = _to_compact(_dependent_expanded(var_types, seed=13), var_types)
-  structure, pairs = VinecopBase._select_parts(
+  structure, pairs, _ = VinecopBase._select_parts(
     u, _discrete_fit_edge, var_types=var_types
   )
   # `_WrappingVinecop` is the host that does *not* stamp its pairs, so the types

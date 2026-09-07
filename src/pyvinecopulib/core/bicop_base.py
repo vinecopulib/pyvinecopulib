@@ -12,10 +12,10 @@ covariates a conditional pair copula reads, row-aligned with ``u``. ``Bicop``
 takes per-row ``parameters`` in that positional slot, so the two surfaces are
 near-twins rather than one signature.
 
-``_pair_eval`` lives here too, shared with the vine cascades: the rule that a
-pair-copula method is handed ``x`` only when there is one, so a pair copula
-accepting no covariates -- ``Bicop`` above all -- stays a valid host for a
-simplified vine.
+The rule for handing a pair copula its covariates is ``_covariates.pair_eval``
+-- forward whenever there is one, so a pair accepting none, ``Bicop`` above
+all, stays a valid host for a simplified vine -- kept beside the library's
+other forwarding rule rather than here.
 
 Array values are handled as ``Any`` inside the numeric bodies per the
 ``pyvinecopulib.core`` typing policy (``array_api_compat``, which resolves the
@@ -26,7 +26,7 @@ signatures.
 from __future__ import annotations
 
 from abc import ABC
-from typing import Any, Callable, Optional, Self, cast
+from typing import Any, Optional, Self, cast
 
 from array_api_compat import array_namespace
 
@@ -37,18 +37,6 @@ from ._validation import validate_covariates
 from .protocols import ArrayT, BicopLike, _BICOP_EXAMPLE
 
 __all__ = ["BicopBase"]
-
-
-def _pair_eval(method: Callable[..., Any], u: Any, x: Optional[Any]) -> Any:
-  """Evaluate a pair-copula method, forwarding ``x`` only when there is one.
-
-  A pair copula that takes no conditioning argument -- ``Bicop`` above all --
-  is a valid host for a simplified vine, so an absent context must not reach
-  it as a keyword. When there *is* a conditioning matrix, it is passed by
-  keyword, which is what makes a pair copula that cannot accept one fail
-  loudly instead of binding it to some unrelated positional parameter.
-  """
-  return method(u) if x is None else method(u, x=x)
 
 
 class BicopBase(BicopLike[ArrayT], ABC):
@@ -220,6 +208,8 @@ class BicopBase(BicopLike[ArrayT], ABC):
     /,
     controls: Optional[Any] = None,
     var_types: Optional[list[str]] = None,
+    *,
+    x: Optional[ArrayT] = None,
   ) -> Self:
     """Construct a pair copula and select it from data.
 
@@ -237,6 +227,12 @@ class BicopBase(BicopLike[ArrayT], ABC):
         The two variable types of the edge this pair sits on, ``"c"``
         (continuous) or ``"d"`` (discrete) each. ``None`` means both are
         continuous.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, row-aligned with ``u``, for a conditional pair
+        copula. Optional the way it is on the evaluation surface: a pair that
+        models covariates reads them, and one that does not is never handed
+        them, since a fit that quietly ignored them would return a different
+        model than was asked for.
 
     Returns
     -------
@@ -248,7 +244,7 @@ class BicopBase(BicopLike[ArrayT], ABC):
     select : Choose a family for an already-constructed pair copula, in place.
     fit : Estimate the current family's parameters, leaving the family alone.
     """
-    return cls().select(u, controls, var_types)
+    return cls().select(u, controls, var_types, x=x)
 
   def fit(
     self,
@@ -256,6 +252,8 @@ class BicopBase(BicopLike[ArrayT], ABC):
     /,
     controls: Optional[Any] = None,
     var_types: Optional[list[str]] = None,
+    *,
+    x: Optional[ArrayT] = None,
   ) -> Self:
     """Raise; override to estimate this pair copula from data, in place.
 
@@ -275,6 +273,12 @@ class BicopBase(BicopLike[ArrayT], ABC):
     var_types : list of str, or None, optional
         The two variable types of the edge this pair sits on. ``None`` means
         both are continuous.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, row-aligned with ``u``, for a conditional pair
+        copula. Optional the way it is on the evaluation surface: a pair that
+        models covariates reads them, and one that does not is never handed
+        them, since a fit that quietly ignored them would return a different
+        model than was asked for.
 
     Returns
     -------
@@ -303,6 +307,8 @@ class BicopBase(BicopLike[ArrayT], ABC):
     /,
     controls: Optional[Any] = None,
     var_types: Optional[list[str]] = None,
+    *,
+    x: Optional[ArrayT] = None,
   ) -> Self:
     """Choose a family for this pair copula and estimate it, in place.
 
@@ -321,6 +327,9 @@ class BicopBase(BicopLike[ArrayT], ABC):
     var_types : list of str, or None, optional
         The two variable types of the edge this pair sits on. ``None`` means
         both are continuous.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, row-aligned with ``u``, for a conditional pair
+        copula. Forwarded to :meth:`fit` only when there is one.
 
     Returns
     -------
@@ -332,11 +341,18 @@ class BicopBase(BicopLike[ArrayT], ABC):
     fit : Estimate the current family's parameters, leaving the family alone.
     from_data : Construct and select in one call.
     """
-    if controls is None and var_types is None:
-      # Forwarded only when there is something to forward, so a subclass whose
-      # `fit` takes neither still works through `select`.
-      return self.fit(u)
-    return self.fit(u, controls, var_types)
+    # Forwarded one at a time, so a subclass whose `fit` declares only the
+    # arguments it uses still works through `select`. All-or-nothing would
+    # break such a subclass on `var_types` alone; this is the idiom
+    # `MarginBase.select` uses, and it degrades the same way.
+    passed: dict[str, Any] = {}
+    if var_types is not None:
+      passed["var_types"] = var_types
+    if x is not None:
+      passed["x"] = x
+    if controls is None:
+      return self.fit(u, **passed)
+    return self.fit(u, controls, **passed)
 
   def flip(self) -> "BicopBase[ArrayT]":
     """Raise; override to return the pair with its arguments swapped.

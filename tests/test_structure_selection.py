@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 import pyvinecopulib as pv
-from pyvinecopulib.core import BicopLike
+from pyvinecopulib.core import BicopBase, BicopLike, NonSimplifiedContext
 
 # Internal C++ primitive backing Python structure selection (boost prim /
 # kruskal / Wilson). Imported from the extension directly as it has no public
@@ -403,6 +403,27 @@ def test_bicop_class_fits_without_a_fit_edge_callback() -> None:
   assert isinstance(vine.get_pair_copula(0, 0), pv.Bicop)
 
 
+def test_a_named_pair_class_that_cannot_condition_refuses_the_context() -> None:
+  """An unconditional pair class must not be fitted under a conditional vine.
+
+  The default per-edge fitter hands each pair class the edge's conditioning
+  matrix. A class that names no covariate argument -- ``Bicop`` -- then refuses
+  it, which is the point: fitting the simplified model and evaluating it as the
+  conditional one is what the refusal replaces.
+  """
+  u = _correlated_pseudo_obs(0, 4)
+  vine = _BicopVine(
+    [
+      [pv.Bicop() for _ in range(4 - 1 - t)]  # placeholders; select refits
+      for t in range(4 - 1)
+    ],
+    pv.RVineStructure.from_order([1, 2, 3, 4]),
+    context=NonSimplifiedContext(),
+  )
+  with pytest.raises(TypeError, match="from_data"):
+    vine.select(u)
+
+
 def test_a_named_pair_class_without_flip_is_refused_before_any_fitting() -> (
   None
 ):
@@ -622,3 +643,227 @@ def test_custom_tree_criterion_is_callable_instead_of_raising() -> None:
   )
   assert seen["n"] > 0
   assert vine.structure.dim == 5
+
+
+# --------------------------------------------------------------------------- #
+# Conditional pairs: the null hypothesis, where the x-dependence is switched   #
+# off and a non-simplified vine must reduce to the simplified one exactly.     #
+# --------------------------------------------------------------------------- #
+
+
+class _ConditionalGaussian(BicopBase[np.ndarray]):
+  """A fitted Gaussian pair wrapped in a conditional shell.
+
+  The correlation is pushed through ``tanh`` in *z* space around whatever the
+  ordinary Gaussian fit estimated::
+
+      rho(x) = rho_max * tanh(atanh(rho_hat / rho_max) + slope * g(x))
+
+  At ``slope == 0`` that is ``rho_hat`` and the shell evaluates through the
+  scalar-parameter path, so it *is* the compiled Gaussian pair. That is what
+  makes it a null hypothesis: a non-simplified vine built from these must
+  reduce exactly to the simplified one, and structure selection must recover
+  what the compiled selector recovers. With ``slope != 0`` the same class is
+  genuinely conditional, so any difference is attributable to the covariates
+  and not to the wrapper.
+
+  The per-row correlation reaches the density through ``Bicop``'s own per-row
+  ``parameters`` argument, rather than a hand-written Gaussian, so the two legs
+  differ in exactly one thing.
+  """
+
+  supports_covariates = True
+
+  def __init__(
+    self,
+    *,
+    slope: float = 0.0,
+    rho_max: float = 0.95,
+    bicop: Optional[pv.Bicop] = None,
+  ) -> None:
+    self._slope = float(slope)
+    self._rho_max = float(rho_max)
+    self._bicop = bicop
+
+  def fit(
+    self,
+    u: np.ndarray,
+    /,
+    controls: Any = None,
+    var_types: Optional[list[str]] = None,
+    *,
+    x: Optional[np.ndarray] = None,
+  ) -> "_ConditionalGaussian":
+    del controls, var_types, x
+    self._bicop = pv.Bicop.from_data(np.asarray(u), controls=_GAUSSIAN)
+    return self
+
+  def _per_row(self, x: Optional[np.ndarray]) -> Optional[np.ndarray]:
+    """Per-row correlations, or ``None`` to take the scalar path."""
+    if x is None or self._slope == 0.0:
+      return None
+    assert self._bicop is not None
+    rho = float(np.asarray(self._bicop.parameters).ravel()[0])
+    xa = np.asarray(x, dtype=float)
+    weights = np.arange(1, xa.shape[1] + 1, dtype=float)
+    shift = self._slope * (xa * weights).sum(axis=-1) / xa.shape[1]
+    # A fitted correlation can sit outside `rho_max`, which would make the
+    # inverse tanh undefined; the anchor only has to be *some* z whose tanh
+    # recovers `rho` when the shift is zero.
+    anchor = np.arctanh(np.clip(rho / self._rho_max, -1 + 1e-12, 1 - 1e-12))
+    z = anchor + shift
+    return (self._rho_max * np.tanh(z)).reshape(-1, 1)
+
+  def _call(self, name: str, u: np.ndarray, x: Optional[np.ndarray]) -> Any:
+    assert self._bicop is not None, "fit the pair first"
+    method = getattr(self._bicop, name)
+    per_row = self._per_row(x)
+    return method(u) if per_row is None else method(u, per_row)
+
+  def pdf(self, u: np.ndarray, *, x: Optional[np.ndarray] = None) -> Any:
+    return self._call("pdf", u, x)
+
+  def hfunc1(self, u: np.ndarray, *, x: Optional[np.ndarray] = None) -> Any:
+    return self._call("hfunc1", u, x)
+
+  def hfunc2(self, u: np.ndarray, *, x: Optional[np.ndarray] = None) -> Any:
+    return self._call("hfunc2", u, x)
+
+  def flip(self) -> "_ConditionalGaussian":
+    assert self._bicop is not None
+    return _ConditionalGaussian(
+      slope=self._slope, rho_max=self._rho_max, bicop=self._bicop.flip()
+    )
+
+
+def _conditional_pairs(d: int, slope: float) -> list[list[Any]]:
+  return [
+    [_ConditionalGaussian(slope=slope) for _ in range(d - 1 - t)]
+    for t in range(d - 1)
+  ]
+
+
+@pytest.mark.parametrize(("seed", "d"), [(0, 4), (1, 5), (2, 6)])
+def test_a_conditional_pair_with_no_x_dependence_recovers_the_cpp_structure(
+  seed: int, d: int
+) -> None:
+  """The null hypothesis: switch the covariate term off and nothing changes.
+
+  With ``slope == 0`` the shell is the compiled Gaussian pair, so selecting
+  through a *non-simplified* vine must recover byte-for-byte what
+  ``Vinecop.select`` recovers, and evaluate to the same density. This is the
+  leg that isolates the wrapper, the placement and the finalizing ``flip``
+  from the conditioning itself -- it is insensitive to the C1 column order,
+  because the pair never reads a column.
+  """
+  u = _correlated_pseudo_obs(seed, d, n=600)
+
+  mine = HostedVinecop(
+    _conditional_pairs(d, slope=0.0),
+    pv.RVineStructure.from_order(list(range(1, d + 1))),
+    context=NonSimplifiedContext(),
+  )
+  mine.select(
+    u,
+    fit_edge=lambda t, e, u_e, x_e, var_types=("c", "c"): (
+      _ConditionalGaussian(slope=0.0).fit(u_e)
+    ),
+  )
+  theirs = pv.Vinecop.from_data(
+    u, controls=_vine_controls(pv.families.gaussian)
+  )
+
+  assert np.array_equal(
+    np.asarray(mine.structure.matrix), np.asarray(theirs.structure.matrix)
+  )
+  assert list(mine.structure.order) == list(theirs.structure.order)
+
+  grid = np.random.default_rng(seed + 99).uniform(0.02, 0.98, size=(300, d))
+  np.testing.assert_allclose(
+    mine.pdf(grid), theirs.pdf(grid), rtol=1e-12, atol=1e-12
+  )
+
+
+def test_the_same_pair_with_x_dependence_on_is_a_different_model() -> None:
+  """The control leg: with ``slope != 0`` the covariates must actually bite.
+
+  Otherwise the null-hypothesis test above would pass for the trivial reason
+  that the shell ignores ``x`` in both legs.
+  """
+  d, seed = 5, 3
+  u = _correlated_pseudo_obs(seed, d, n=600)
+  structure = pv.RVineStructure.from_order(list(range(1, d + 1)))
+  grid = np.random.default_rng(7).uniform(0.02, 0.98, size=(200, d))
+
+  fitted = [
+    HostedVinecop(
+      _conditional_pairs(d, slope=slope),
+      structure,
+      context=NonSimplifiedContext(),
+    )
+    for slope in (0.0, 1.5)
+  ]
+  for vine, slope in zip(fitted, (0.0, 1.5)):
+    vine.fit(
+      u,
+      fit_edge=lambda t, e, u_e, x_e, var_types=("c", "c"), s=slope: (
+        _ConditionalGaussian(slope=s).fit(u_e)
+      ),
+    )
+
+  flat, conditional = (vine.pdf(grid) for vine in fitted)
+  assert not np.allclose(flat, conditional, rtol=1e-6, atol=1e-6)
+
+
+# Each of these selects a vine with at least one slot whose conditioning order
+# is *not* the one its finalized matrix names, which is the case the identity
+# below is here to catch; the rest of the file covers the agreeing case.
+@pytest.mark.parametrize(("seed", "d"), [(4, 5), (0, 6), (1, 7)])
+def test_select_fits_the_model_it_then_evaluates(seed: int, d: int) -> None:
+  """A selected non-simplified vine evaluates each pair on what it was fitted on.
+
+  Selection reorients each fitted pair onto its finalized slot with ``flip``,
+  which swaps the pair's two arguments and leaves its conditioning columns
+  alone. So a swapped slot's conditioning order is the one the *fit* used and
+  not the one the finalized matrix names, and reading it off the matrix is what
+  made the object report a log-likelihood its own fit never maximized.
+
+  Pinned on the arguments rather than on a scalar of its own: a vine's density
+  is the product of its pairs' densities at whatever the cascade hands them, so
+  the fit's own record of those arguments reconstructs the log-likelihood
+  exactly when -- and only when -- evaluation reproduces them.
+  """
+  slope = 0.6
+  u = _correlated_pseudo_obs(seed, d, n=600)
+  fitted: list[tuple[Any, np.ndarray, Optional[np.ndarray]]] = []
+
+  def fit_edge(
+    t: int,
+    e: int,
+    u_e: np.ndarray,
+    x_e: Optional[np.ndarray],
+    var_types: tuple[str, str] = ("c", "c"),
+  ) -> Any:
+    pair = _ConditionalGaussian(slope=slope).fit(u_e)
+    fitted.append(
+      (pair, np.asarray(u_e), None if x_e is None else np.asarray(x_e))
+    )
+    return pair
+
+  selected = HostedVinecop(
+    _conditional_pairs(d, slope=slope),
+    pv.RVineStructure.from_order(list(range(1, d + 1))),
+    context=NonSimplifiedContext(),
+  )
+  selected.select(u, fit_edge=fit_edge)
+
+  assert len(fitted) == d * (d - 1) // 2
+  # Above the first tree every edge conditions on something, so the fit that
+  # did not see one was not a conditional fit at all.
+  assert sum(x_e is not None for _, _, x_e in fitted) == len(fitted) - (d - 1)
+  achieved = sum(
+    float(np.sum(np.log(pair.pdf(u_e, x=x_e)))) for pair, u_e, x_e in fitted
+  )
+  np.testing.assert_allclose(
+    float(selected.loglik(u)), achieved, rtol=1e-12, atol=0.0
+  )

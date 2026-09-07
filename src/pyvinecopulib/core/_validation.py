@@ -197,6 +197,7 @@ def reject_covariates(part: Any, x: Optional[Any], *, name: str = "x") -> None:
   ----------
   part : object
       The margin, pair copula or vine being fitted; named in the message.
+      Either the instance or the class, so a classmethod may pass ``cls``.
   x : array, shape (n, p), or None
       The covariates the caller passed.
   name : str, default="x"
@@ -212,8 +213,12 @@ def reject_covariates(part: Any, x: Optional[Any], *, name: str = "x") -> None:
       If ``x`` is not ``None``.
   """
   if x is not None:
+    # A classmethod passes `cls`, an instance method `self`; naming
+    # `type(cls)` would print the metaclass, which for a Protocol subclass is
+    # `_ProtocolMeta` and tells the caller nothing.
+    named = part if isinstance(part, type) else type(part)
     raise ValueError(
-      f"{type(part).__name__} does not model covariates, so it cannot be "
+      f"{named.__name__} does not model covariates, so it cannot be "
       f"fitted with {name}=; write one whose fit reads them and that declares "
       f"supports_covariates, or drop {name}."
     )

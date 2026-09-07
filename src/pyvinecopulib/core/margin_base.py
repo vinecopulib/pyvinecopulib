@@ -28,6 +28,7 @@ from typing import Any, Optional, Self, cast
 import numpy as _np
 from array_api_compat import array_namespace
 
+from ._covariates import declared_eval
 from ._placement import place
 from ._rootfind import solve_increasing
 from ._validation import validate_covariates, validate_weights
@@ -124,7 +125,7 @@ def derive_cdf_left(
       derivation steps back one lattice point.
   """
   if var_type == "c":
-    return _margin_eval(margin, "cdf", y, x)
+    return declared_eval(margin, "cdf", y, x)
 
   ya: Any = y
   xp = array_namespace(ya)
@@ -134,11 +135,11 @@ def derive_cdf_left(
         f"{type(margin).__name__} declares var_type='d', so y must be "
         "integer-valued; give it a cdf_left for a support on another lattice."
       )
-    return _margin_eval(margin, "cdf", ya - 1, x)
+    return declared_eval(margin, "cdf", ya - 1, x)
 
   # Zero-inflated: the only atom is at 0, and its mass is `pdf(0)`.
-  upper: Any = _margin_eval(margin, "cdf", y, x)
-  mass: Any = _margin_eval(margin, "pdf", y, x)
+  upper: Any = declared_eval(margin, "cdf", y, x)
+  mass: Any = declared_eval(margin, "pdf", y, x)
   return xp.where(ya == 0, xp.clip(upper - mass, 0.0, 1.0), upper)
 
 
@@ -150,8 +151,7 @@ def safe_log(dens: Any) -> Any:
   returns a ``nan``. The mask is applied before the log rather than after, so
   nothing invalid is evaluated.
 
-  Lives here beside ``_margin_eval`` because both halves of a vine
-  distribution need it: a margin's own ``logpdf`` and the fallback
+  Lives here because both halves of a vine distribution need it: a margin's own ``logpdf`` and the fallback
   :class:`~pyvinecopulib.core.VinedistBase` applies to a foreign margin that
   supplies no ``logpdf`` of its own.
 
@@ -169,22 +169,6 @@ def safe_log(dens: Any) -> Any:
   positive = dens > 0
   safe = xp.where(positive, dens, xp.ones_like(dens))
   return xp.where(positive, xp.log(safe), xp.full_like(dens, float("-inf")))
-
-
-def _margin_eval(margin: Any, name: str, values: Any, x: Optional[Any]) -> Any:
-  """Evaluate a margin method, forwarding ``x`` only when it is read.
-
-  Unlike the pair-copula gate, an unconditional margin *ignores* covariates
-  rather than refusing them: one vine distribution may hold conditional and
-  unconditional margins side by side, and the caller cannot be asked to know
-  which is which. A margin opts in by declaring ``supports_covariates``, which
-  is also what makes forgetting the declaration a visibly unconditional fit
-  rather than a silently ignored keyword.
-  """
-  method = getattr(margin, name)
-  if x is None or not getattr(margin, "supports_covariates", False):
-    return method(values)
-  return method(values, x=x)
 
 
 class MarginBase(MarginLike[ArrayT], ABC):
@@ -513,7 +497,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
         Log-density, ``-inf`` where the density vanishes.
     """
     validate_covariates(x, int(cast(Any, y).shape[0]))
-    dens: Any = _margin_eval(self, "pdf", y, x)
+    dens: Any = declared_eval(self, "pdf", y, x)
     return cast(ArrayT, safe_log(dens))
 
   def cdf_left(self, y: ArrayT, /, *, x: Optional[ArrayT] = None) -> ArrayT:
@@ -592,7 +576,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
     interior = (pa > 0) & (pa < 1)
     target = xp.where(interior, pa, xp.full_like(pa, 0.5))
     out: Any = solve_increasing(
-      lambda v: _margin_eval(self, "cdf", v, x),
+      lambda v: declared_eval(self, "cdf", v, x),
       target,
       lo=lo,
       hi=hi,
@@ -675,7 +659,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
         raise ValueError("weights are only meaningful with data; pass y too")
       return self._fitted_loglik
     validate_covariates(x, int(cast(Any, y).shape[0]))
-    terms: Any = _margin_eval(self, "logpdf", y, x)
+    terms: Any = declared_eval(self, "logpdf", y, x)
     xp = array_namespace(terms)
     if weights is not None:
       weights = validate_weights(weights, terms)
@@ -866,7 +850,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
     """
     validate_covariates(x, n)
     base = self._sample_uniform(n, list(seeds) if seeds else [])
-    return cast(ArrayT, _margin_eval(self, "icdf", base, x))
+    return cast(ArrayT, declared_eval(self, "icdf", base, x))
 
   def _sample_uniform(self, n: int, seeds: list[int]) -> ArrayT:
     """Draw ``n`` uniforms on the subclass's array namespace.
