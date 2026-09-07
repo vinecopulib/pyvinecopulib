@@ -353,8 +353,8 @@ class TorchVinecopBackend(_VinecopBackendBase):
 
     return TorchVinecop.from_data(
       U,
-      self.structure,
-      controls=self._effective_controls(),
+      self._effective_controls(),
+      structure=self.structure,
       var_types=var_types,
     )
 

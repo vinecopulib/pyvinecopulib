@@ -542,8 +542,8 @@ def test_fit_keeps_the_family_where_select_replaces_it(
 
   wider = FitControlsMargin(family_set=["norm", "lognorm"])
   with pytest.raises(TypeError, match="family_set= would be ignored"):
-    dist.fit(continuous, None, wider)
-  assert _families(dist.select(continuous, None, wider)) == [
+    dist.fit(continuous, margin_controls=wider)
+  assert _families(dist.select(continuous, margin_controls=wider)) == [
     "norm",
     "lognorm",
   ]
@@ -551,7 +551,10 @@ def test_fit_keeps_the_family_where_select_replaces_it(
   # What `fit` *can* honor in the same controls object, it still does: a
   # declared support is a default, not an instruction to search.
   bounded = FitControlsMargin(support=(0.0, None))
-  assert _families(dist.fit(continuous, None, bounded)) == ["norm", "lognorm"]
+  assert _families(dist.fit(continuous, margin_controls=bounded)) == [
+    "norm",
+    "lognorm",
+  ]
 
 
 def test_a_margin_given_per_variable_is_fitted_in_place(

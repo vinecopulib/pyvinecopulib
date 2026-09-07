@@ -533,3 +533,71 @@ def test_a_pair_without_flip_is_named_where_flip_is_required() -> None:
 
   with pytest.raises(NotImplementedError, match="_Bare.*has no `flip`"):
     flip_of(_Bare())
+
+
+def test_every_estimator_takes_controls_in_the_second_slot() -> None:
+  """One argument order across the package, checked rather than asserted.
+
+  `fit`, `select` and `from_data` on all four bases, on the torch lane and on
+  the compiled classes take the observations, then `controls`. Everything the
+  object cannot infer -- `structure`, `var_types`, `margins`, `x`, `weights`,
+  the callbacks -- is keyword-only. `Vinecop.from_data` took `controls` fifth,
+  behind `structure`, so the call a user carries over from `fit` bound a
+  controls object as a structure.
+  """
+  import inspect
+
+  import pyvinecopulib as pv
+  from pyvinecopulib.core import MarginBase, VinecopBase, VinedistBase
+
+  owners: list[Any] = [MarginBase, BicopBase, VinecopBase, VinedistBase]
+  owners += [pv.Vinedist]
+  for owner in owners:
+    for name in ("fit", "select", "from_data"):
+      member = getattr(owner, name, None)
+      if member is None:
+        continue
+      params = [
+        p
+        for n, p in inspect.signature(member).parameters.items()
+        if n not in ("self", "cls")
+      ]
+      positional = [p.name for p in params if p.kind is not p.KEYWORD_ONLY]
+      assert len(positional) == 2, (owner.__name__, name, positional)
+      assert positional[1] == "controls", (owner.__name__, name, positional)
+
+
+def test_the_compiled_factories_follow_the_same_order() -> None:
+  """The two bound factories read the same way, which is where it went wrong.
+
+  nanobind reports no real signature, so the order is read off the first line
+  of ``__doc__`` -- which is also what a user sees in a traceback.
+  """
+  import pyvinecopulib as pv
+
+  def parameters(signature: str) -> list[str]:
+    """Split a nanobind signature on its top-level commas.
+
+    Naive splitting does not work: the ndarray annotations carry commas of
+    their own, as in ``shape=(*, *)``.
+    """
+    body = signature[signature.index("(") + 1 : signature.rindex(")")]
+    fields, depth, start = [], 0, 0
+    for i, ch in enumerate(body):
+      if ch in "([{":
+        depth += 1
+      elif ch in ")]}":
+        depth -= 1
+      elif ch == "," and depth == 0:
+        fields.append(body[start:i].strip())
+        start = i + 1
+    fields.append(body[start:].strip())
+    return fields
+
+  for factory in (pv.Bicop.from_data, pv.Vinecop.from_data):
+    line = (factory.__doc__ or "").strip().splitlines()[0]
+    fields = parameters(line)
+    assert fields[1].startswith("controls"), fields
+    # And the declarations are keyword-only, so a positional structure or
+    # var_types is refused rather than silently bound to the wrong parameter.
+    assert fields[2] == "*", fields

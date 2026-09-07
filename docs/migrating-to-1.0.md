@@ -69,6 +69,33 @@ controls = pv.FitControlsVinecop(selection_criterion="bic")
 Saved models are unaffected — the criterion is a fit-time setting, not part of
 a serialized model.
 
+## `from_data` takes `controls` second, everywhere
+
+Every estimator in the package now reads the same way: the observations, then
+`controls`, then keyword-only whatever the object cannot infer. `fit` and
+`select` always did; `Vinecop.from_data` took `controls` *fifth*, behind
+`structure`, so the call you carry over from `fit` bound your controls object
+as a structure.
+
+```python
+# before
+pv.Vinecop.from_data(u, structure, matrix, var_types, controls)
+pv.Bicop.from_data(u, controls, var_types)
+
+# now
+pv.Vinecop.from_data(u, controls, structure=..., matrix=..., var_types=...)
+pv.Bicop.from_data(u, controls, var_types=...)
+```
+
+If you already passed `structure=` / `matrix=` / `var_types=` by keyword --
+which every example in this repository did -- nothing changes. The same order
+holds on `BicopBase`, `VinecopBase`, `VinedistBase` and their PyTorch
+subclasses; `MarginBase` and the margin classes already read this way.
+
+The one exception is `Kde1d`, whose second positional argument is `weights`.
+It takes no controls object at all, so there is nothing to confuse it with,
+and `kde.fit(x, w)` keeps working.
+
 ## Some arguments are keyword-only
 
 `parameters` on `Bicop.sample`, and `conditioning_set` on

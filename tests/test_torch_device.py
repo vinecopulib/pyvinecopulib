@@ -254,10 +254,10 @@ def test_batched_fit_peak_memory_stays_bounded(device: str) -> None:
   controls = FitControlsTorchVinecop(
     device=torch.device(device), batched_fit=True
   )
-  TorchVinecop.from_data(u, structure, controls=controls)  # warm
+  TorchVinecop.from_data(u, structure=structure, controls=controls)  # warm
   torch.cuda.empty_cache()
   torch.cuda.reset_peak_memory_stats()
-  TorchVinecop.from_data(u, structure, controls=controls)
+  TorchVinecop.from_data(u, structure=structure, controls=controls)
   peak = torch.cuda.max_memory_allocated()
   # Generous against the budget, the data and the fitted pairs sitting
   # outside it, and far under the ~1.8 GiB a fixed block took.
@@ -272,7 +272,7 @@ def test_fit_and_select_run_on_device(device: str) -> None:
   fixed = pv.Vinecop.from_data(
     u, controls=pv.FitControlsVinecop(family_set=[pv.BicopFamily.tll])
   )
-  vine = TorchVinecop.from_data(ut, fixed.structure, controls=ctl)
+  vine = TorchVinecop.from_data(ut, structure=fixed.structure, controls=ctl)
   assert vine.pdf(ut).device.type == torch.device(device).type
   selected = TorchVinecop.from_data(ut, controls=ctl)
   assert selected.pdf(ut).device.type == torch.device(device).type
@@ -417,7 +417,7 @@ def test_batched_fit_matches_the_per_edge_fit_on_device(
   fits = {
     flag: TorchVinecop.from_data(
       u_t,
-      structure,
+      structure=structure,
       controls=FitControlsTorchVinecop(
         device=torch.device(device), batched_fit=flag
       ),

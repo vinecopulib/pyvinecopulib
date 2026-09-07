@@ -403,8 +403,8 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     u,
     /,
     controls: Optional[FitControlsTorchBicop] = None,
-    var_types: Optional[list[str]] = None,
     *,
+    var_types: Optional[list[str]] = None,
     x: Optional[Tensor] = None,
     cache_integrals: Optional[bool] = None,
     device: Optional[torch.device] = None,
@@ -526,8 +526,8 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     u,
     /,
     controls: Optional[FitControlsTorchBicop] = None,
-    var_types: Optional[list[str]] = None,
     *,
+    var_types: Optional[list[str]] = None,
     x: Optional[Tensor] = None,
   ) -> "TorchTllBicop":
     """Refit this pair copula's density grid, in place.
@@ -568,7 +568,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     fitted = type(self).from_data(
       u,
       controls,
-      var_types,
+      var_types=var_types,
       cache_integrals=self._cache_integrals,
       device=values.device,
       dtype=values.dtype,

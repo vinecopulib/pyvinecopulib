@@ -403,14 +403,14 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     cls,
     u,
     /,
-    # `structure` and `controls` are typed `Any` so this stays a widening of
+    # `controls` and `structure` are typed `Any` so this stays a widening of
     # `VinecopBase.from_data`, which accepts any `ControlsLike`: narrowing a
-    # parameter is what a subclass may not do. The accepted objects are an
-    # `RVineStructure` and a `FitControlsTorchVinecop`, as documented below.
-    structure: Optional[Any] = None,
-    var_types: Optional[list[str]] = None,
+    # parameter is what a subclass may not do. The accepted objects are a
+    # `FitControlsTorchVinecop` and an `RVineStructure`, as documented below.
     controls: Optional[Any] = None,
     *,
+    structure: Optional[Any] = None,
+    var_types: Optional[list[str]] = None,
     x: Optional[Any] = None,
     fit_edge: Optional[FitEdge] = None,
     fit_level: Optional[FitLevel] = None,
@@ -431,18 +431,18 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     ----------
     u : ndarray or Tensor, shape (n, d), dtype float
         Pseudo-observations in ``[0, 1]``.
-    structure : RVineStructure or None, default=None
-        A fixed structure. Selected from the data when ``None``.
-    var_types : list of str, or None, default=None
-        Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete);
-        ``None`` means all continuous. Given, they also fix the dimension, so
-        ``u`` may carry the extra left-limit columns.
     controls : FitControlsTorchVinecop or None, default=None
         Fit configuration for both halves of the fit -- the structure
         selection the vine runs and the pair-copula fits its edges run -- plus
         placement, precision, and the cascade variants. ``None`` defaults to
         TLL on a 30x30 normal-spaced grid, float64, and ``mst_prim`` with
         ``trunc_lvl=20``.
+    structure : RVineStructure or None, default=None
+        A fixed structure. Selected from the data when ``None``.
+    var_types : list of str, or None, default=None
+        Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete);
+        ``None`` means all continuous. Given, they also fix the dimension, so
+        ``u`` may carry the extra left-limit columns.
     x : Tensor or None, default=None
         Refused. A TLL grid is an unconditional density, so fitting one while
         ignoring covariates would return a different model than the caller

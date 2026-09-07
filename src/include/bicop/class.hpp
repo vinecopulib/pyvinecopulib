@@ -247,8 +247,12 @@ Bicop
                   "var_types"_a = std::vector<std::string>(2, "c"),
                   bicop_doc.ctor.doc_4args_family_rotation_parameters_var_types,
                   nb::call_guard<nb::gil_scoped_release>())
+      // One argument order across every estimator in the package: the
+      // observations, then `controls`, then keyword-only whatever the object
+      // cannot infer. `var_types` is a declaration, so it is keyword-only.
       .def_static("from_data", &bc_from_data, "data"_a,
                   "controls"_a.sig("FitControlsBicop()") = nb::none(),
+                  nb::kw_only(),
                   "var_types"_a = std::vector<std::string>(2, "c"),
                   bicop_doc.ctor.doc_3args_data_controls_var_types,
                   nb::call_guard<nb::gil_scoped_release>())

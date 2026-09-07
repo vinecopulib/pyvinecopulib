@@ -71,7 +71,10 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - `VinedistBase.from_data` owns the two-step (IFM) estimator for both array namespaces, asking a subclass only for `_coerce_fit_data`, `_default_margins` and `_fit_copula` (#326).
 - Refuse rather than half-apply: `supports_weighted_copula` and `supports_fit_covariates` are `False` on `TorchVinedist`, whose fitter is unweighted and whose margins read no covariates (#326).
 - Add `Vinedist.copula_layout`, the copula-scale layout a consumer of the fitted distribution needs, and dispatch `Vinedist.copula_data`'s variable types through `cls` so a subclass override is honored (#326).
-- Use one argument order on every estimator, matching each method's twin on `Bicop` / `Vinecop`: the observations first and positional-only, then the declarations the object cannot infer, then `controls`, then keyword-only callbacks. `TorchVinecop.from_data` and `TorchTllBicop.from_data` are straight widenings of the base (#326).
+- Use one argument order on every estimator: the observations first and positional-only, then `controls`, then keyword-only whatever the object cannot infer. `Vinecop.from_data` took `controls` fifth, behind `structure`, so the call carried over from `fit` bound a controls object as a structure (#326).
+    - `pv.Vinecop.from_data(u, structure, matrix, var_types, controls)` -> `pv.Vinecop.from_data(u, controls, structure=..., matrix=..., var_types=...)`
+    - `pv.Bicop.from_data(u, controls, var_types)` -> `pv.Bicop.from_data(u, controls, var_types=...)`
+    - likewise on `BicopBase`, `VinecopBase`, `VinedistBase` and their torch subclasses; `MarginBase` already read this way
 - Add `select` to all four bases, defaulting to `fit` where there is nothing to choose -- upstream's own `select_families = false` equivalence -- so `from_data` is `cls().select(...)` throughout, as `Bicop`'s data constructor has always been (#326).
 - Add `VinedistBase.fit` and `.select`: `fit` re-estimates both halves along the structure and families it holds, `select` lets both change shape (#326).
 - Add `TorchTllBicop.fit`, which refits the density grid in place keeping the module's device, dtype and cache mode (#326).

@@ -367,7 +367,7 @@ def _torch_fit_call(u_t, structure, ctl):
   `structure` is `from_data`'s second positional argument: `None` routes
   to the array-agnostic selector, a skeleton routes to the fit engine.
   """
-  return lambda: TorchVinecop.from_data(u_t, structure, controls=ctl)
+  return lambda: TorchVinecop.from_data(u_t, structure=structure, controls=ctl)
 
 
 # ---- Mode = eval ------------------------------------------------------

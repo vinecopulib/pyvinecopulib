@@ -254,8 +254,8 @@ class BicopBase(BicopLike[ArrayT], ABC):
     u: ArrayT,
     /,
     controls: Optional[Any] = None,
-    var_types: Optional[list[str]] = None,
     *,
+    var_types: Optional[list[str]] = None,
     x: Optional[ArrayT] = None,
   ) -> Self:
     """Construct a pair copula and select it from data.
@@ -291,15 +291,15 @@ class BicopBase(BicopLike[ArrayT], ABC):
     select : Choose a family for an already-constructed pair copula, in place.
     fit : Estimate the current family's parameters, leaving the family alone.
     """
-    return cls().select(u, controls, var_types, x=x)
+    return cls().select(u, controls, var_types=var_types, x=x)
 
   def fit(
     self,
     u: ArrayT,
     /,
     controls: Optional[Any] = None,
-    var_types: Optional[list[str]] = None,
     *,
+    var_types: Optional[list[str]] = None,
     x: Optional[ArrayT] = None,
   ) -> Self:
     """Raise; override to estimate this pair copula from data, in place.
@@ -353,8 +353,8 @@ class BicopBase(BicopLike[ArrayT], ABC):
     u: ArrayT,
     /,
     controls: Optional[Any] = None,
-    var_types: Optional[list[str]] = None,
     *,
+    var_types: Optional[list[str]] = None,
     x: Optional[ArrayT] = None,
   ) -> Self:
     """Choose a family for this pair copula and estimate it, in place.

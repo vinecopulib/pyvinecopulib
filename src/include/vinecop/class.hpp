@@ -68,11 +68,11 @@ inline Vinecop vc_from_structure(
 
 inline Vinecop vc_from_data(
     const Eigen::MatrixXd& data,
+    const FitControlsVinecop* controls_ptr = nullptr,
     std::optional<RVineStructure> structure = std::nullopt,
     std::optional<Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>>
         matrix = std::nullopt,
-    const std::vector<std::string>& var_types = {},
-    const FitControlsVinecop* controls_ptr = nullptr) {
+    const std::vector<std::string>& var_types = {}) {
   const FitControlsVinecop& controls =
       controls_ptr ? *controls_ptr : default_vinecop_controls();
   if (structure && matrix) {
@@ -368,11 +368,17 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
                   "pair_copulas"_a = std::vector<std::vector<Bicop>>(),
                   "var_types"_a = std::vector<std::string>(),
                   from_structure_doc, nb::call_guard<nb::gil_scoped_release>())
+      // `controls` sits in the second positional slot, as it does on `fit`,
+      // `select` and every other estimator in the package -- it used to be
+      // fifth, behind `structure`, so `from_data(u, controls)` bound the
+      // controls object as a structure. The three declarations are
+      // keyword-only for the same reason.
       .def_static("from_data", &vc_from_data, "data"_a,
-                  "structure"_a = std::nullopt, "matrix"_a = std::nullopt,
-                  "var_types"_a = std::vector<std::string>(),
                   "controls"_a.sig("FitControlsVinecop()") = nb::none(),
-                  from_data_doc, nb::call_guard<nb::gil_scoped_release>())
+                  nb::kw_only(), "structure"_a = std::nullopt,
+                  "matrix"_a = std::nullopt,
+                  "var_types"_a = std::vector<std::string>(), from_data_doc,
+                  nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_file", &vc_from_file, "filename"_a, "check"_a = true,
                   vinecop_doc.ctor.doc_2args_filename_check,
                   nb::call_guard<nb::gil_scoped_release>())

@@ -2087,8 +2087,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     u: Any,
     /,
     controls: Optional[ControlsLike] = None,
-    var_types: Optional[list[str]] = None,
     *,
+    var_types: Optional[list[str]] = None,
     x: Optional[Any] = None,
     fit_edge: Optional[FitEdge] = None,
     fit_level: Optional[FitLevel] = None,
@@ -2158,8 +2158,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     u: Any,
     /,
     controls: Optional[ControlsLike] = None,
-    var_types: Optional[list[str]] = None,
     *,
+    var_types: Optional[list[str]] = None,
     x: Optional[Any] = None,
     fit_edge: Optional[FitEdge] = None,
     fit_level: Optional[FitLevel] = None,
@@ -2217,10 +2217,10 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     cls,
     u: Any,
     /,
-    structure: Optional[Any] = None,
-    var_types: Optional[list[str]] = None,
     controls: Optional[ControlsLike] = None,
     *,
+    structure: Optional[Any] = None,
+    var_types: Optional[list[str]] = None,
     x: Optional[Any] = None,
     fit_edge: Optional[FitEdge] = None,
     fit_level: Optional[FitLevel] = None,
@@ -2235,12 +2235,12 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     ----------
     u : array, shape (n, d), dtype float
         Pseudo-observations in ``[0, 1]^d``.
+    controls : ControlsLike, or None, optional
+        Fit configuration; see :meth:`select`.
     structure : RVineStructure, or None, optional
         A fixed structure. Selected from the data when ``None``.
     var_types : list of str, or None, optional
         One ``"c"`` or ``"d"`` per variable.
-    controls : ControlsLike, or None, optional
-        Fit configuration; see :meth:`select`.
     x : array, shape (n, p), or None, optional
         External covariates, threaded to each pair. A vine built here is
         simplified, so these are the whole of what a pair conditions on.

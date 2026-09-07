@@ -321,7 +321,7 @@ def test_batched_matches_cpp_rosenblatt() -> None:
 
 @pytest.mark.parametrize("d", [5, 10])
 def test_from_data_matches_from_vinecop(d: int) -> None:
-  """``TorchVinecop.from_data(u, structure)`` should agree with
+  """``TorchVinecop.from_data(u, structure=structure)`` should agree with
   ``pv.Vinecop.from_data(u, controls=..., structure=structure)`` to machine
   precision. Note: this is the *fixed-structure* C++ path. Freely-selected
   C++ Vinecop.from_data produces a different pair-copula orientation per
@@ -342,7 +342,7 @@ def test_from_data_matches_from_vinecop(d: int) -> None:
   bc_cpp = TorchVinecop.from_vinecop(cop_cpp_fixed, cache_integrals=False)
   bc_torch = TorchVinecop.from_data(
     torch.from_numpy(u_fit),
-    structure,
+    structure=structure,
     controls=FitControlsTorchVinecop(cache_integrals=False),
   )
 
@@ -493,10 +493,12 @@ def test_from_data_rejects_non_2d_u() -> None:
   """``TorchVinecop.from_data`` rejects 1-D / 3-D inputs."""
   structure = pv.RVineStructure.sample(5, seeds=[1])
   with pytest.raises(ValueError, match="must be 2-D"):
-    TorchVinecop.from_data(torch.zeros(100, dtype=torch.float64), structure)
+    TorchVinecop.from_data(
+      torch.zeros(100, dtype=torch.float64), structure=structure
+    )
   with pytest.raises(ValueError, match="must be 2-D"):
     TorchVinecop.from_data(
-      torch.zeros(100, 5, 2, dtype=torch.float64), structure
+      torch.zeros(100, 5, 2, dtype=torch.float64), structure=structure
     )
 
 
@@ -504,7 +506,9 @@ def test_from_data_rejects_structure_dim_mismatch() -> None:
   """``TorchVinecop.from_data`` rejects ``structure.dim != u.shape[1]``."""
   structure = pv.RVineStructure.sample(5, seeds=[1])  # d=5
   with pytest.raises(ValueError, match="does not match"):
-    TorchVinecop.from_data(torch.zeros(100, 7, dtype=torch.float64), structure)
+    TorchVinecop.from_data(
+      torch.zeros(100, 7, dtype=torch.float64), structure=structure
+    )
 
 
 @pytest.mark.parametrize("op", ["pdf", "rosenblatt", "inverse_rosenblatt"])
@@ -1231,7 +1235,7 @@ def test_batched_fit_matches_the_per_edge_fit(d: int) -> None:
   fits = {
     flag: TorchVinecop.from_data(
       u_t,
-      structure,
+      structure=structure,
       controls=FitControlsTorchVinecop(batched_fit=flag),
     )
     for flag in (False, True)
@@ -1267,11 +1271,11 @@ def test_batched_fit_defaults_to_off_on_cpu() -> None:
   # so watch that rather than the field that was left unset.
   with pytest.MonkeyPatch.context() as mp:
     mp.setattr(TorchTllBicop, "from_data_batched", spy)
-    TorchVinecop.from_data(torch.from_numpy(u_fit), structure)
+    TorchVinecop.from_data(torch.from_numpy(u_fit), structure=structure)
     assert seen == [], "cpu resolved batched_fit on"
     TorchVinecop.from_data(
       torch.from_numpy(u_fit),
-      structure,
+      structure=structure,
       controls=FitControlsTorchVinecop(batched_fit=True),
     )
     assert seen == [3, 2, 1], f"explicit batched_fit=True not honored: {seen}"
@@ -1294,7 +1298,7 @@ def test_batched_fit_falls_back_for_a_discrete_level() -> None:
   fits = {
     flag: TorchVinecop.from_data(
       torch.from_numpy(wide),
-      structure,
+      structure=structure,
       controls=FitControlsTorchVinecop(batched_fit=flag),
       var_types=var_types,
     )
@@ -1400,7 +1404,7 @@ def test_fit_matches_cpp_on_a_given_structure(
   cpp = pv.Vinecop.from_data(u_fit, controls=_TLL_CONTROLS, structure=structure)
   fitted = TorchVinecop.from_data(
     torch.from_numpy(u_fit),
-    structure,
+    structure=structure,
     controls=FitControlsTorchVinecop(cache_integrals=False),
   )
   lifted = TorchVinecop.from_vinecop(cpp, cache_integrals=False)
@@ -1465,10 +1469,10 @@ def test_load_state_dict_drops_the_stacked_bake() -> None:
   structure = _fit_tll_vine(strong).structure
   controls = FitControlsTorchVinecop(cache_integrals=False)
   vine = TorchVinecop.from_data(
-    torch.from_numpy(strong), structure, controls=controls
+    torch.from_numpy(strong), structure=structure, controls=controls
   )
   other = TorchVinecop.from_data(
-    torch.from_numpy(weak), structure, controls=controls
+    torch.from_numpy(weak), structure=structure, controls=controls
   )
   u_eval = torch.from_numpy(_eval_grid(64, d=d, seed=7))
   vine.pdf(u_eval, batched=True)
@@ -1508,7 +1512,7 @@ def test_a_discrete_edge_below_the_threshold_is_independent() -> None:
     assert got_indep == want_indep, f"fixture drifted at {threshold}"
     fitted = TorchVinecop.from_data(
       torch.from_numpy(wide),
-      structure,
+      structure=structure,
       controls=FitControlsTorchVinecop(
         threshold=threshold, cache_integrals=False
       ),
@@ -1609,7 +1613,7 @@ def test_threshold_on_a_fixed_structure_matches_pvvinecop(
   )
   fitted = TorchVinecop.from_data(
     torch.from_numpy(u_fit),
-    structure,
+    structure=structure,
     controls=FitControlsTorchVinecop(
       trunc_lvl=20, threshold=threshold, cache_integrals=False
     ),
@@ -1736,7 +1740,7 @@ def test_batched_fit_runs_one_call_per_tree(
   monkeypatch.setattr(TorchTllBicop, "from_data_batched", spy)
   TorchVinecop.from_data(
     torch.from_numpy(u_fit),
-    structure,
+    structure=structure,
     controls=FitControlsTorchVinecop(batched_fit=True),
   )
   assert seen == list(range(d - 1, 0, -1))

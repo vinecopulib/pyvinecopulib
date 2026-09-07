@@ -76,7 +76,8 @@ when proposing API changes:
 | Surface | Tier | Policy |
 |---|---|---|
 | `pyvinecopulib.core`, `pyvinecopulib.families`, `pyvinecopulib.utils`, top-level `pyvinecopulib` (core class re-exports) | **Stable-ish** | Solid user base. Prefer deprecation aliases over breaks; document migrations in `CHANGELOG.md`. PR #207 is the model: the reorg kept old import paths working via `_deprecations.py` + `DeprecationWarning`. Breaks are allowed (e.g. the pybind11→nanobind migration; the #207 cleanup) but must be intentional, documented, and worth the churn. |
-| `pyvinecopulib.margins` | **Active development** | New in the vine-distribution work. The margin contract (`MarginLike` / `MarginBase` in `core`) is the part to treat as load-bearing; the curated parametric family registry, the selection criteria, and the report schema are all expected to move as they meet real data. |
+| The four contracts and their bases in `core` (`BicopLike` / `BicopBase`, `VinecopLike` / `VinecopBase`, `MarginLike` / `MarginBase`, `VinedistLike` / `VinedistBase`) | **Stable from 1.0.0** | `README.md` tells users to subclass these "with the same confidence as on `Vinecop`", so they are covered by the same policy as the rest of `core` from the 1.0.0 tag onward. New in 1.0.0, which is why the argument order and the optional-capability split were settled *before* it shipped rather than after. A protocol may still gain an optional capability -- that widens it -- but not a required member. |
+| `pyvinecopulib.margins` | **Active development** | New in the vine-distribution work. The margin *contract* is stable (see the row above, where it belongs); the curated parametric family registry, the selection criteria, and the report schema are all expected to move as they meet real data. |
 | `pyvinecopulib.sklearn` | **Active development** | API may change in breaking ways between minor releases. The latest break is the `#218` public backend system (estimators now take a single `backend=` instead of loose `controls=`/`structure=`/`seed=` kwargs). |
 | `pyvinecopulib.torch` | **Active development** | Same status. Defaults are still being tuned (cf. `990f997` device-aware `batched`, `cache_integrals=True`); the torch↔C++ cascade parity is a hard guarantee, but the `FitControlsTorchVinecop` surface and `TorchVinecop` method signatures may still shift. |
 | `pyvinecopulib._python_helpers`, `pyvinecopulib._deprecations` | **Internal** | Underscore-prefixed. Not part of any contract; rename / restructure freely. `_deprecations.py` itself is slated for removal in 2.0. |
@@ -558,6 +559,19 @@ For any behavior change:
   enumerated in `src/include/vinecop/class.hpp`).
 - **Doxygen upstream, numpydoc downstream.** The generator translates one
   into the other. Never "fix" an upstream `//!` comment into numpydoc.
+- **One argument order on every estimator: the observations, then `controls`,
+  then keyword-only whatever the object cannot infer.** `fit`, `select` and
+  `from_data` take `(data, controls)` positionally on all four bases, on the
+  torch lane and on the compiled `Bicop` / `Vinecop` -- and `structure`,
+  `matrix`, `var_types`, `margins`, `margin_controls`, `names`, `x`, `weights`
+  and the callback seams are keyword-only. `Vinecop.from_data` used to take
+  `controls` *fifth*, behind `structure`, so the call a user carries over from
+  `fit` bound a controls object as a structure: a `TypeError` from the binding
+  and an `AttributeError` naming `dim` from the Python lane. The rule is worth
+  more than the two characters it costs at a call site, and the changelog
+  claimed it before the code did. The one deliberate exception is the compiled
+  `Kde1d`, whose second positional is `weights`: it takes no controls at all,
+  so there is nothing to confuse it with, and it is on a Stable-ish surface.
 - **Bind alternative constructors as named factories, not overloads.** C++
   overloads a constructor; Python names it. Every alternative way to build an
   object is a `def_static` — `Bicop.from_family` / `from_data` / `from_file` /

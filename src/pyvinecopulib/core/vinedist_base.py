@@ -1288,8 +1288,8 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     y: Any,
     /,
     controls: Optional[ControlsLike] = None,
-    margin_controls: Optional[Any] = None,
     *,
+    margin_controls: Optional[Any] = None,
     x: Optional[Any] = None,
     weights: Optional[Any] = None,
   ) -> Self:
@@ -1350,8 +1350,8 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     y: Any,
     /,
     controls: Optional[ControlsLike] = None,
-    margin_controls: Optional[Any] = None,
     *,
+    margin_controls: Optional[Any] = None,
     x: Optional[Any] = None,
     weights: Optional[Any] = None,
   ) -> Self:
@@ -1558,12 +1558,12 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     cls,
     y: Any,
     /,
-    *,
-    x: Optional[Any] = None,
-    margins: Any = None,
     controls: Optional[ControlsLike] = None,
+    *,
+    margins: Any = None,
     margin_controls: Optional[Any] = None,
     structure: Optional[Any] = None,
+    x: Optional[Any] = None,
     weights: Optional[Any] = None,
     names: Optional[Sequence[str]] = None,
   ) -> Self:
@@ -1584,16 +1584,11 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     y : array, shape (n, d), dtype float
         Observations on the original scale. A DataFrame's column names are
         read as ``names`` when that is not given.
-    x : array, shape (n, p), or None, optional
-        Exogenous covariates. Each margin that declares
-        ``supports_covariates`` is fitted conditionally on them, and the copula
-        is then fitted on the resulting conditional probability-integral
-        transforms.
+    controls : ControlsLike, or None, optional
+        Copula fit configuration, in the form this subclass's fitter takes.
     margins : object, or None, optional
         What to use for each variable; see
         :func:`pyvinecopulib.margins.resolve_margins` for the accepted forms.
-    controls : ControlsLike, or None, optional
-        Copula fit configuration, in the form this subclass's fitter takes.
     margin_controls : object, or None, optional
         Marginal fit configuration, reaching every margin that is estimated
         here. The two halves are configured separately because they are fitted
@@ -1601,6 +1596,11 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         says how to fit or select it.
     structure : RVineStructure, or None, optional
         A fixed vine structure; selected from the data when ``None``.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates. Each margin that declares
+        ``supports_covariates`` is fitted conditionally on them, and the copula
+        is then fitted on the resulting conditional probability-integral
+        transforms.
     weights : array, shape (n,), or None, optional
         Observation weights, applied to both halves. Refused when this
         subclass's copula fitter cannot apply them.
