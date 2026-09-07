@@ -235,7 +235,9 @@ def test_independence_pair_is_the_independence_copula() -> None:
   """
   rng = np.random.default_rng(11)
   u = rng.uniform(0.01, 0.99, size=(500, 2))
-  pair: BicopLike[np.ndarray] = IndependencePair()
+  # Typed as the concrete class, not `BicopLike`: this exercises `cdf` and
+  # `flip`, which are optional capabilities the contract does not declare.
+  pair = IndependencePair[np.ndarray]()
   ref = pv.Bicop(family=pv.families.indep)
 
   np.testing.assert_array_equal(pair.pdf(u), np.ones(len(u)))

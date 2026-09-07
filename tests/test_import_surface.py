@@ -143,3 +143,19 @@ def test_core_reaches_up_a_layer_only_where_it_must() -> None:
   assert len(deferred) == 2, deferred
   # And neither reaches a private module of the layer above.
   assert not any("._" in d.split("-> ")[1] for d in deferred), deferred
+
+
+def test_the_fit_callback_aliases_resolve_from_any_module() -> None:
+  """`FitEdge` / `FitLevel` must carry no unresolved forward reference.
+
+  A string inside a type *alias* is resolved in whichever module uses the
+  alias, not where it is defined -- so quoting one made every importer keep a
+  name in scope for it, and the docs build, which resolves annotations at
+  runtime, was what noticed when one stopped.
+  """
+  import typing
+
+  from pyvinecopulib.core.vinecop_base import VinecopBase
+
+  for method in (VinecopBase.fit, VinecopBase.select, VinecopBase.from_data):
+    typing.get_type_hints(method)

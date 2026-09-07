@@ -24,10 +24,15 @@ from typing import Optional, cast
 import torch
 from torch import Tensor
 
-from ..core._trim import _TRIM_LO, trim_bounds
+from ..core._trim import trim_bounds
 from ..core.vinecop_base import _NotBatchable
 
 #: Guard on a conditional total mass, so a zero-mass grid line cannot 0/0.
+#: Floor for a *mass* the cascades divide by -- a renormalizing integral or a
+#: rectangle's probability. Not `_trim`'s `_TRIM_LO`: that is a **domain**
+#: bound on copula arguments (1e-10), and using it here clamped a denominator
+#: ten orders of magnitude early. Both sites reachable only where the numerator
+#: vanishes too, so nothing moved; the constant was simply the wrong one.
 _MIN_MASS: float = 1e-20
 
 
@@ -394,7 +399,7 @@ def integrate_2d_batched(
   )
   out = torch.where(
     tmpint1 > 0,
-    tmpint * u2 / tmpint1.clamp_min(_TRIM_LO),
+    tmpint * u2 / tmpint1.clamp_min(_MIN_MASS),
     torch.zeros_like(tmpint),
   )
   return _trim(out)

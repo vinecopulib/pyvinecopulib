@@ -49,7 +49,7 @@ from ..core import (
   VinecopBase,
 )
 from ..core._discrete import continuous_view
-from ..core._independence import IndependencePair
+from ..core.independence import IndependencePair
 from ..core._validation import reject_covariates
 from ..core.vinecop_base import FitEdge, FitLevel, _NotBatchable
 from ..pyvinecopulib_ext import (

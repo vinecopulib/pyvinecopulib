@@ -286,7 +286,8 @@ pyvinecopulib/
         _adapters.py             # as_margin + the coercion registry (internal)
         _covariates.py           # the two `x`-forwarding rules + `prepare` (internal)
         _discrete.py             # DiscretePair + the discrete layouts / per-edge types
-        _independence.py         # IndependencePair (internal module, public class)
+        _engines.py              # fit_parts / select_parts — the two fit engines (internal)
+        independence.py          # IndependencePair
         _placement.py            # place / reference_array — the `_prep` seam's default (internal)
         _reorient.py             # relabel a structure onto a chosen order tail (internal)
         _resolve.py              # resolve_margins / resolve_margin_controls / fit_margin (internal)
@@ -930,9 +931,20 @@ Three groups:
 
   **A margin class is named for the ecosystem whose families it wraps** --
   `SciPyMargin` in `margins/scipy.py`, `OpenTURNSMargin` in
-  `margins/openturns.py`. Neither module is underscore-prefixed, because both
-  export a public class; the same-named modules do not shadow the real
-  packages, since Python 3 resolves `import scipy` absolutely.
+  `margins/openturns.py`. Neither module is underscore-prefixed, because each
+  *is* an import path a user may reasonably reach for -- both are named for an
+  ecosystem and gated behind its extra; the same-named modules do not shadow
+  the real packages, since Python 3 resolves `import scipy` absolutely.
+
+  **The underscore describes the module, not the names it exports.** It says
+  "not an import path": `core/protocols.py`, `bicop_base.py`, `vinedist.py`,
+  `margin_controls.py` and `independence.py` carry no underscore because each
+  is one public thing, while `core/_discrete.py` and `core/_serialization.py`
+  keep theirs even though `DiscretePair` and the three `margin_*_json` helpers
+  are public -- ten internal layout helpers and four internal JSON helpers are
+  the bulk of those files, and the public names are reached through `core`.
+  Do not resolve a mismatch here by renaming a mixed module; resolve it by
+  asking whether the module is something to import from.
 - **Coercion** — `as_margin(obj)` is idempotent and routes **every**
   margin `Vinedist` receives, so a discrete SciPy object cannot slip
   past on a bare `pdf` (in SciPy's new API `pdf` is `+∞` at an atom;
@@ -1467,7 +1479,11 @@ Round-trip / parity properties to preserve when touching numerics:
   `ConditioningContext`, then call `fit(u, fit_edge=..., x=...)`. `VinecopBase`
   keeps the array-agnostic engines behind `_fit_parts` / `_select_parts`, which
   return the loose parts a factory assembles, because `from_data` needs them
-  before an object exists; `_assemble` is the construction hook `from_data`
+  before an object exists. Those two names are `staticmethod` bindings of
+  `core/_engines.py`'s `fit_parts` / `select_parts`: both are module functions
+  — neither reads `self` or `cls` — and they sat in the class body only for
+  namespacing, 718 lines of a 2677-line class. The class keeps the names
+  because that is what external drivers reach them through; `_assemble` is the construction hook `from_data`
   finishes with.
 - **Declare the parts, inherit the fitting.** A base knows how to fit once it
   knows what its parts *are*: `VinecopBase.bicop_class` names the pair copula

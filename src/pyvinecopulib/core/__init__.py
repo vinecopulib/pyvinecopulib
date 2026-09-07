@@ -90,7 +90,7 @@ from ..pyvinecopulib_ext import (
 )
 from .._deprecations import _method_alias
 from ._discrete import DiscretePair
-from ._independence import IndependencePair
+from .independence import IndependencePair
 from .bicop_base import BicopBase
 from .context import (
   ConditioningContext,
