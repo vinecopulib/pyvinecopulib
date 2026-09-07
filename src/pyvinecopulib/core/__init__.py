@@ -103,6 +103,7 @@ from ._serialization import (
   register_margin_json,
 )
 from .margin_base import MarginBase
+from .margin_controls import FitControlsMargin
 from .protocols import (
   BicopLike,
   ControlsLike,
@@ -155,33 +156,3 @@ __all__ = [
   "VinedistBase",
   "VinedistLike",
 ]
-
-
-def __getattr__(name: str):
-  """Resolve the margin controls without importing the margins layer eagerly.
-
-  ``FitControlsMargin`` configures a marginal fit, so it belongs beside
-  ``FitControlsBicop`` and ``FitControlsVinecop`` where a caller looks for it.
-  It lives in :mod:`pyvinecopulib.margins`, though, and ``core`` imports
-  without that layer -- hence the lazy hop.
-
-  Parameters
-  ----------
-  name : str
-      The attribute being looked up.
-
-  Returns
-  -------
-  object
-      The resolved attribute.
-
-  Raises
-  ------
-  AttributeError
-      If the name is not exported here.
-  """
-  if name == "FitControlsMargin":
-    from ..margins.controls import FitControlsMargin
-
-    return FitControlsMargin
-  raise AttributeError(f"module 'pyvinecopulib.core' has no attribute {name!r}")

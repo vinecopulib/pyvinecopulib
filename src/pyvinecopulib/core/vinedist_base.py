@@ -181,7 +181,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     -------
     None
     """
-    from ..margins import as_margin
+    from ._adapters import as_margin
 
     d = int(
       getattr(vinecop, "dim", 0) or len(getattr(vinecop, "order", ()) or ())
@@ -513,7 +513,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         ``"c"`` or ``"d"`` per variable; a zero-inflated margin is ``"d"``,
         since what the copula needs from it is the left limit.
     """
-    from ..margins import as_margin
+    from ._adapters import as_margin
 
     return [
       "d" if getattr(as_margin(m), "var_type", "c") in ("d", "zi") else "c"
@@ -553,7 +553,7 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         If ``y`` does not carry one column per margin, or if a margin reports a
         left limit above its own distribution function.
     """
-    from ..margins import as_margin
+    from ._adapters import as_margin
 
     resolved = [as_margin(m) for m in margins]
     var_types = cls.copula_var_types(resolved)
@@ -1442,8 +1442,8 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
         If covariates are given and this lane cannot estimate both halves on
         them, or if the held copula has no estimator to re-run.
     """
-    from ..margins import resolve_margin_controls
-    from ..margins._resolve import fit_margin
+    from ._resolve import resolve_margin_controls
+    from ._resolve import fit_margin
 
     cls = type(self)
     data, weights = cls._coerce_fit_data(y, weights, controls)
@@ -1632,8 +1632,8 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
            functions for margins for multivariate models.* Technical Report
            166, Department of Statistics, University of British Columbia.
     """
-    from ..margins import resolve_margin_controls, resolve_margins
-    from ..margins._resolve import fit_margin
+    from ._resolve import resolve_margin_controls, resolve_margins
+    from ._resolve import fit_margin
 
     data, weights = cls._coerce_fit_data(y, weights, controls)
     if data.ndim != 2:

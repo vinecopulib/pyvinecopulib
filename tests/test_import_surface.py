@@ -77,3 +77,69 @@ def test_margins_stays_in_all_because_it_needs_no_extra() -> None:
     "import sys; sys.modules['scipy'] = None\nimport pyvinecopulib.margins\n"
   )
   assert done.returncode == 0, done.stderr
+
+
+def test_core_owns_the_margin_plumbing_and_margins_re_exports_it() -> None:
+  """The layering: `core` owns the contract, `margins` the ecosystem adapters.
+
+  `FitControlsMargin`, the coercion registry and the resolution helpers need no
+  extra, and `core.VinedistBase` runs the two-step fit with them -- so keeping
+  them a layer up had `core` importing *from* `margins`, privates included, at
+  every use. They live in `core` and `margins` re-exports them, so the
+  documented surface is unchanged.
+  """
+  import pyvinecopulib.core as core
+  import pyvinecopulib.margins as margins
+
+  for name in (
+    "FitControlsMargin",
+    "as_margin",
+    "register_margin_adapter",
+    "resolve_margins",
+    "resolve_margin_controls",
+  ):
+    shared = getattr(margins, name)
+    owner = getattr(shared, "__module__", "")
+    assert owner.startswith("pyvinecopulib.core"), (name, owner)
+  # And the one a caller reaches for beside its two siblings is right there.
+  assert core.FitControlsMargin is margins.FitControlsMargin
+  assert "FitControlsMargin" in dir(core)
+
+
+def test_core_reaches_up_a_layer_only_where_it_must() -> None:
+  """`core` must not import `margins` at module scope, and barely at all.
+
+  Read statically rather than by watching `sys.modules`: importing
+  `pyvinecopulib.core` runs the top-level `__init__`, which loads `margins`
+  eagerly by design, so a runtime check would measure the wrong thing.
+
+  Two deferred hops are expected and irreducible -- resolving the
+  ``"parametric"`` alias and the ``"SciPyMargin"`` JSON ``kind`` to a class
+  that lives behind an extra. Any more, or any at module scope, is the layer
+  inversion coming back.
+  """
+  import ast
+  import pathlib
+
+  core = pathlib.Path("src/pyvinecopulib/core")
+  if not core.is_dir():  # installed rather than checked out
+    pytest.skip("source tree not available")
+
+  module_scope: list[str] = []
+  deferred: list[str] = []
+  for path in sorted(core.glob("*.py")):
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    top = set(tree.body)
+    for node in ast.walk(tree):
+      if not isinstance(node, (ast.Import, ast.ImportFrom)):
+        continue
+      target = getattr(node, "module", "") or ""
+      if "margins" not in target:
+        continue
+      where = module_scope if node in top else deferred
+      where.append(f"{path.name}:{node.lineno} -> {target}")
+
+  assert module_scope == [], module_scope
+  assert len(deferred) == 2, deferred
+  # And neither reaches a private module of the layer above.
+  assert not any("._" in d.split("-> ")[1] for d in deferred), deferred

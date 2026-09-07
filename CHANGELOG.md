@@ -17,6 +17,8 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 
 ### Breaking API changes in `pyvinecopulib`
 
+- Move the margin contract plumbing into `core`, which owns the half a `Vinedist` fit runs on: `FitControlsMargin` (`core.margin_controls`), the coercion registry and the resolution helpers. None needs SciPy, and keeping them in `margins` had `core` importing *up* a layer at ten sites, three into a private module. `pyvinecopulib.margins` re-exports every one, so its surface is unchanged (#326).
+
 - Drop `cdf` and `flip` from `BicopLike`'s required surface: a protocol requires what a cascade calls, and both are optional capabilities read with `getattr` -- `cdf` only on a discrete edge, `flip` only in structure selection. `isinstance` now accepts the minimal pair the docs describe, and `BicopLike` can be implemented directly (#326).
 - Keep `torch` and `sklearn` out of the top-level `__all__`, so `from pyvinecopulib import *` no longer requires the extras; both stay reachable by attribute access and `import pyvinecopulib.<name>`, and `dir()` still names them (#326).
 

@@ -200,7 +200,7 @@ class Vinedist(VinedistBase[np.ndarray]):
         One unfitted margin per variable.
     """
     del controls
-    from ..margins._resolve import kde_from_controls
+    from ._resolve import kde_from_controls
 
     per_variable = margin_controls or [None] * d
     return [kde_from_controls(mc) for mc in per_variable]

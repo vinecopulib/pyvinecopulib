@@ -27,8 +27,8 @@ from ..core._validation import (
   reject_covariates,
   usable_observations,
 )
-from ._adapters import register_margin_adapter
-from .controls import CRITERIA, FitControlsMargin
+from ..core._adapters import register_margin_adapter
+from ..core.margin_controls import CRITERIA, FitControlsMargin
 
 __all__ = ["OpenTURNSMargin"]
 

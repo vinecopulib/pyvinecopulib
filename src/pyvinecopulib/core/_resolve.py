@@ -9,9 +9,9 @@ from typing import Any, Callable, Optional, Sequence, Union
 
 import numpy as _np
 
-from ..core import MarginLike
+from .protocols import MarginLike
 from ._adapters import as_margin
-from ..core import Kde1d
+from ..pyvinecopulib_ext import Kde1d
 
 __all__ = ["resolve_margins", "resolve_margin_controls"]
 
@@ -27,7 +27,7 @@ def _parametric_margin() -> Any:
   SciPyMargin
       An unfitted margin with no family yet.
   """
-  from .scipy import SciPyMargin
+  from ..margins.scipy import SciPyMargin
 
   return SciPyMargin()
 

@@ -24,7 +24,7 @@ from ..core._validation import (
   reject_covariates,
   usable_observations,
 )
-from .controls import CRITERIA, FitControlsMargin
+from ..core.margin_controls import CRITERIA, FitControlsMargin
 
 __all__ = ["SciPyMargin"]
 

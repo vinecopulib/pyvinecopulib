@@ -16,8 +16,9 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional
 
-from ..core import MarginBase, MarginLike
-from ..core.margin_base import support_of
+from .margin_base import MarginBase
+from .protocols import MarginLike
+from .margin_base import support_of
 
 __all__ = ["as_margin", "register_margin_adapter"]
 

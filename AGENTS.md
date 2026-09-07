@@ -282,21 +282,25 @@ pyvinecopulib/
         margin_base.py           # MarginBase (canonical MarginLike partial impl)
         vinedist_base.py         # VinedistBase (array-agnostic cascade + IFM fit)
         vinedist.py              # Vinedist (NumPy + compiled Vinecop)
-        _covariates.py           # the two `x`-forwarding rules, side by side (internal)
+        margin_controls.py       # FitControlsMargin (the marginal half of a fit)
+        _adapters.py             # as_margin + the coercion registry (internal)
+        _covariates.py           # the two `x`-forwarding rules + `prepare` (internal)
         _discrete.py             # DiscretePair + the discrete layouts / per-edge types
+        _independence.py         # IndependencePair (internal module, public class)
         _placement.py            # place / reference_array — the `_prep` seam's default (internal)
         _reorient.py             # relabel a structure onto a chosen order tail (internal)
+        _resolve.py              # resolve_margins / resolve_margin_controls / fit_margin (internal)
         _rootfind.py             # solve_increasing (monotone bisection; internal)
+        _serialization.py        # the margin JSON registry (internal module, public helpers)
+        _trim.py                 # trim — the domain step of the input pipeline (internal)
+        _validation.py           # the layout / weights / covariate validators (internal)
       families/__init__.py       # BicopFamily enum + 13 family constants + 15 group constants
       utils/__init__.py          # to_pseudo_obs, wdm, sobol, ghalton, sample_uniform
         _pair_plots.py           # pairs_copula_data plotting helper (pure Python)
 
-      margins/__init__.py        # as_margin, register_margin_adapter, resolve_margins, the margins
+      margins/__init__.py        # the two ecosystem adapters + re-exports of core's margin plumbing
         scipy.py                 # SciPyMargin (one SciPy family, or select one) — needs the [scipy] extra
         openturns.py             # OpenTURNSMargin — needs the [openturns] extra
-        controls.py              # FitControlsMargin (candidate set, criterion, declared type / support)
-        _adapters.py             # the coercion registry + per-ecosystem adapters — internal
-        _resolve.py              # resolve_margins / resolve_margin_controls / fit_margin — internal
 
       sklearn/__init__.py        # VineDensity, VineRegressor, backends
         backends.py              # VinecopBackend / TorchVinecopBackend + resolve_backend
@@ -315,6 +319,8 @@ pyvinecopulib/
         _fit_tll.py              # pure-torch TLL kernel
         _batched.py              # batched evaluation variants
 
+      _build_info.py             # build provenance, read by `__version__` reporting
+      _cpu.py                    # the AVX2 / FMA check the x86-64 wheels need
       _python_helpers/           # internal; pure-Python wrappers used by the binding
         bicop.py, vinecop.py, kde1d.py, stats.py
       pyvinecopulib_ext.*.so     # compiled extension (gitignored build artifact)
@@ -884,8 +890,20 @@ automatically.
 
 ### `pyvinecopulib.margins`
 
-The univariate half of `Vinedist`, kept out of `core` so that `core`
-imports without SciPy. Three groups:
+The two ecosystem adapters, kept out of `core` because they are the only part
+that needs an extra. The **contract plumbing lives in `core`**, which owns the
+half a `Vinedist` fit runs on: `MarginLike` / `MarginBase`, `FitControlsMargin`
+(`core/margin_controls.py`), the coercion registry (`core/_adapters.py`) and
+the resolution helpers (`core/_resolve.py`). None of those needs SciPy -- they
+import stdlib, NumPy and `core` -- and putting them here had `core` reaching
+*up* a layer at ten sites, three of them into a private module of a package
+above it, all deferred to hide the cycle. `pyvinecopulib.margins` re-exports
+them, so its documented surface is unchanged and it stays where a user looks
+for margins. Two deferred `core` -> `margins` imports remain and are
+irreducible: resolving the `"parametric"` string alias and the `"SciPyMargin"`
+JSON `kind` to a class that lives behind an extra.
+
+Three groups:
 
 - **Built-in margins** — `Kde1d` *is* the default margin, needing no
   wrapper; it takes `xmin` / `xmax` so a bounded variable is not fitted

@@ -28,7 +28,7 @@ import torch
 from torch import Tensor
 
 from ..core import MarginLike, VinedistBase
-from ..margins._resolve import declared_kde_kwargs
+from ..core._resolve import declared_kde_kwargs
 from .controls import FitControlsTorchVinecop
 from .kde1d import TorchKde1d
 from .vinecop import TorchVinecop

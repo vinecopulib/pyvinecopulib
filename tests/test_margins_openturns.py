@@ -407,7 +407,7 @@ def test_select_on_a_named_margin_keeps_the_family(
   back as whatever won the registry search -- answering a specification with a
   different model.
   """
-  from pyvinecopulib.margins._resolve import fit_margin
+  from pyvinecopulib.core._resolve import fit_margin
 
   named = OpenTURNSMargin("Normal")
   assert not named.is_fitted
