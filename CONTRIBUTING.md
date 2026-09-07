@@ -4,6 +4,11 @@ This guide covers the dev-side workflow: setting up an environment, the
 build pipeline, the Makefile, pre-commit conventions, and the release flow.
 End-user install instructions live in [README.md](README.md).
 
+Where the *code* is concerned — which layer may import which, what each of
+the four extension rungs owes, and where every cross-cutting convention is
+written down — start with [AGENTS.md](AGENTS.md#module-boundaries). It is the
+normative spec; this file is only the mechanics.
+
 ## Quick start
 
 ```bash

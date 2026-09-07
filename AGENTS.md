@@ -395,7 +395,12 @@ matrix run.
 
 Before changing code, read in this order:
 
-1. `AGENTS.md` (this file) — invariants and boundaries.
+1. `AGENTS.md` (this file) — invariants and boundaries. Start with
+   [the layers](#the-layers-and-which-way-they-depend) and
+   [the four rungs](#the-four-rungs-are-one-pattern): which layer you are in
+   and which rung you are on determine most of what follows, and
+   [the rule index](#where-each-cross-cutting-rule-is-written-down) says
+   where each cross-cutting decision is stated.
 2. `docs/` — high-level intent, including the Sphinx `concepts.rst`
    primer on Sklar's theorem, pair copulas, R-vines, and TLL.
 3. `src/pyvinecopulib/<subpackage>/__init__.py` — the module docstring
@@ -648,6 +653,106 @@ or machine-local preferences here. The `CHANGELOG.md` is the place for
 release-by-release context; this file is for invariants.
 
 ## Module boundaries
+
+### The layers, and which way they depend
+
+Four tiers. An import may point **down** a tier, never up, and within a tier
+only where this list says so. `tests/test_import_surface.py` pins the whole
+edge set, so crossing a layer is a deliberate edit to a declared table with
+the reason written beside it — not something a stray import can do quietly.
+
+```text
+  __init__.py                                     the root re-export surface
+      |
+      v
+  margins      torch      sklearn                 tier 2: may need an extra
+      |          |           |
+      +----------+-----------+---> core           tier 1: NumPy only
+                                    |             (with families, utils,
+                                    v              _python_helpers)
+                            pyvinecopulib_ext     tier 0: the binding
+                                    |
+                                    v
+                     lib/{vinecopulib,wdm,kde1d}   upstream C++
+```
+
+- **Tier 1 depends on no optional extra and on nothing above it.** That is
+  what makes `import pyvinecopulib` work with nothing but NumPy installed,
+  and most of the rules below follow from it. Two function-local imports do
+  reach up into `margins`, and they are the documented exception: both name
+  `SciPyMargin`, which `core` must be able to *name* — it is the curated
+  parametric default, and a JSON payload kind that has to be resolvable from
+  the payload alone, in a process that may never have imported `margins` —
+  but cannot *contain*, because it needs the SciPy extra. Deferring the
+  import is the only way to have both. A third one needs the same argument,
+  not merely the same shape.
+- **Within tier 2 there are exactly two edges.** `sklearn` imports `margins`
+  at module scope (both need no extra of `sklearn`'s own), and reaches
+  `torch` through a single function-local import inside
+  `TorchVinecopBackend` — constructing that class *is* the opt-in signal
+  that PyTorch is required, which is why the signal has to be the
+  constructor and never the module. `margins` and `torch` import neither of
+  the other two.
+- **`_python_helpers` imports `core`, not the reverse.** It holds the
+  pure-Python callables the binding looks up by name, so it belongs beside
+  the extension rather than under `core`; `core`'s own hop back into it is
+  function-local.
+- **The extras stay out of `__all__`.** They are reachable through the
+  top-level `__getattr__` only, because `from pyvinecopulib import *`
+  resolves every name in `__all__` and would otherwise make PyTorch a hard
+  dependency of the one import form beginners reach for first.
+
+### The four rungs are one pattern
+
+A margin, a pair copula, a vine and a vine distribution are the same
+construction four times: a `runtime_checkable` Protocol naming what a
+*consumer* needs, a canonical base supplying everything derivable from it,
+and a short list of members a subclass owes. Know which rung you are on and
+most of the rest is determined.
+
+| Rung | Protocol requires | Abstract — no evaluating without it | Reports its own absence — only fitting needs it | Names its parts as |
+|---|---|---|---|---|
+| `MarginBase` | `pdf`, `cdf`, `icdf` | `pdf`, `cdf` | `fit` | — |
+| `BicopBase` | `pdf`, `hfunc1/2`, `hinv1/2`, `sample` | `pdf`, `hfunc1`, `hfunc2` | `fit`; `flip` and `cdf` to host the pair in *selection* or on a *discrete* edge | — |
+| `VinecopBase` | `pdf`, `cdf`, `rosenblatt`, `inverse_rosenblatt`, `sample`, `structure` | `get_pair_copula` | `set_pair_copulas` | `bicop_class` |
+| `VinedistBase` | the ten above plus `logpdf`, `loglik`, `margins`, `vinecop`, `copula_layout` | *(none)* | `_coerce_fit_data` | `vinecop_class`, `margin_class` |
+
+Three things in that table are deliberate and worth not undoing:
+
+- **The two middle columns are different mechanisms on purpose.** A member is
+  `@abstractmethod` when the object cannot be *evaluated* without it, and a
+  stub that raises when it is needed only to *fit* — so a vine that merely
+  hosts pairs, or an immutable one, is still a valid subclass and says so at
+  the one call it cannot serve. The rule is stated once, under
+  *"`get_pair_copula` reads, `set_pair_copulas` writes"*.
+- **The protocol is always narrower than the base.** Everything past it is an
+  optional capability read with `getattr`, because each member added to a
+  protocol is one a foreign object must happen to have.
+- **`VinedistBase` has no abstract member at all.** A vine distribution is
+  determined by its two halves, so nothing has to be declared to evaluate
+  one; naming the part classes is what makes it *fittable*, and `_fit_copula`
+  reports a `vinecop_class` of `None` rather than the base pretending it
+  could fit one.
+
+### Where each cross-cutting rule is written down
+
+The decisions that span layers live next to the layer that motivated them
+rather than in one chapter. This index is the map; the rule is stated once,
+where the link points, and nowhere else.
+
+| The decision | Stated in |
+|---|---|
+| The three input steps — placement / layout / domain — and why covariates are placed but never trimmed | `### pyvinecopulib.core`, *"One input pipeline, three separable steps"* |
+| Which of the two covariate-forwarding rules applies to a callee | `### Coding conventions`, *"Two covariate-forwarding rules"* |
+| Whether a capability flag may exist at all | `### Coding conventions`, *"A capability flag exists where a consumer reads it"* |
+| The argument order every estimator method takes | `### Coding conventions`, *"One argument order"* |
+| What `fit` / `select` / `from_data` each mean, on all four rungs | `## Extension points`, *"Fitting has one shape across all four bases"* |
+| What naming a part class buys, and what `None` means | `## Extension points`, *"Declare the parts, inherit the fitting"* |
+| Which hook a subclass must implement to evaluate vs. to fit | `## Extension points`, *"`get_pair_copula` reads, `set_pair_copulas` writes"* |
+| Which modules may carry a leading underscore | `### pyvinecopulib.margins`, *"A margin class is named for the ecosystem"* |
+| Why a fitted slot's conditioning order is state, not a reading of the matrix | `### pyvinecopulib.core`, *"A selected slot's conditioning order"* |
+| What may break, and what needs a deprecation alias | `### Stability tiers` |
+| Which suites actually run where, and what silently skips | `### Which CI leg covers what` |
 
 ### Upstream C++ (`lib/`)
 

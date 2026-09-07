@@ -13,6 +13,8 @@ would where the package is absent.
 
 from __future__ import annotations
 
+import ast
+import pathlib
 import subprocess
 import sys
 
@@ -246,3 +248,158 @@ def test_agents_md_public_api_lists_match_the_code() -> None:
     }
     assert invented == set(), (label, "claimed but absent", sorted(invented))
     del stale
+
+
+#: The package root, which sits above every layer.
+_TOP = "<top>"
+
+#: Every intra-package import edge, and whether every occurrence of it is
+#: function-local. An edge missing here is a layer crossing nobody argued
+#: for; an edge whose value flips from `True` is a deferral that stopped
+#: deferring, which is how an optional extra becomes a hard dependency.
+_LAYER_EDGES: dict[tuple[str, str], bool] = {
+  # The root re-export surface, above everything.
+  (_TOP, "core"): False,
+  (_TOP, "families"): False,
+  (_TOP, "margins"): False,
+  (_TOP, "utils"): False,
+  (_TOP, "pyvinecopulib_ext"): False,
+  (_TOP, "_cpu"): False,
+  (_TOP, "_deprecations"): False,
+  # Tier 2 -> tier 1, plus the two edges within tier 2. Constructing
+  # `TorchVinecopBackend` is the opt-in signal that PyTorch is required, so
+  # that one import has to stay inside the constructor.
+  ("margins", "core"): False,
+  ("torch", "core"): False,
+  ("torch", "utils"): False,
+  ("torch", "pyvinecopulib_ext"): False,
+  ("sklearn", "core"): False,
+  ("sklearn", "margins"): False,
+  ("sklearn", "torch"): True,
+  # Tier 1, and its two deferred hops: up into `margins` for `SciPyMargin`
+  # (see `test_core_reaches_up_a_layer_only_where_it_must`), and across into
+  # the binding's helpers.
+  ("core", "pyvinecopulib_ext"): False,
+  ("core", "_deprecations"): False,
+  ("core", "_python_helpers"): True,
+  ("core", "margins"): True,
+  ("families", "pyvinecopulib_ext"): False,
+  ("utils", "pyvinecopulib_ext"): False,
+  ("utils", "_python_helpers"): False,
+  ("_python_helpers", "core"): False,
+  # The x86-64-v3 guard reads the build's own record of what it compiled.
+  ("_cpu", "_build_info"): True,
+}
+
+
+def _measure_layer_edges(root: pathlib.Path) -> dict[tuple[str, str], bool]:
+  """Read every intra-package import edge, and whether it is deferred.
+
+  Parameters
+  ----------
+  root : pathlib.Path
+      The ``src/pyvinecopulib`` directory.
+
+  Returns
+  -------
+  dict
+      ``(importer, imported) -> whether every occurrence is function-local``.
+  """
+  layers = {p.name for p in root.iterdir() if (p / "__init__.py").is_file()}
+  layers |= {p.stem for p in root.glob("*.py") if p.stem != "__init__"}
+  layers.add("pyvinecopulib_ext")
+
+  def _layer(parts: tuple[str, ...]) -> str:
+    if parts == ("__init__.py",):
+      return _TOP
+    return parts[0] if parts[0] in layers else parts[0].removesuffix(".py")
+
+  def _targets(
+    node: ast.Import | ast.ImportFrom, parts: tuple[str, ...]
+  ) -> set[str]:
+    """The layers one import statement names, whatever form it takes."""
+    names = [a.name for a in node.names]
+    if isinstance(node, ast.Import):
+      # `import pyvinecopulib.torch` -- every alias, not just the first.
+      return {n.split(".")[1] for n in names if n.startswith("pyvinecopulib.")}
+    if node.level:  # `from .. import x`, `from ..core import y`
+      base = list(parts[:-1])
+      if node.level > 1:
+        base = base[: len(base) - (node.level - 1)]
+      prefix = base + (node.module.split(".") if node.module else [])
+    elif (absolute := node.module or "").startswith("pyvinecopulib"):
+      prefix = absolute.split(".")[1:]
+    else:
+      return set()
+    # With a prefix, the first component is the layer; without one the
+    # statement is `from . import <layer>`, so the names are the layers.
+    return {prefix[0]} if prefix else set(names)
+
+  edges: dict[tuple[str, str], bool] = {}
+  for path in sorted(root.rglob("*.py")):
+    parts = path.relative_to(root).parts
+    src = _layer(parts)
+    if src not in layers | {_TOP}:
+      continue
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    top = set(tree.body)
+    for node in ast.walk(tree):
+      if not isinstance(node, (ast.Import, ast.ImportFrom)):
+        continue
+      for dst in _targets(node, parts) & layers:
+        if dst == src:
+          continue
+        key = (src, dst)
+        edges[key] = edges.get(key, True) and node not in top
+  return edges
+
+
+def test_the_layers_only_depend_downwards() -> None:
+  """The dependency direction AGENTS.md draws is the one the code has.
+
+  A new import is the cheapest way to invert a layer, and the damage shows up
+  far away -- as an extra a plain `import pyvinecopulib` suddenly needs. So
+  the whole edge set is pinned, not just the one edge that inverted once:
+  adding an import that crosses layers has to be a deliberate edit here, with
+  the reason written beside it.
+  """
+  root = pathlib.Path("src/pyvinecopulib")
+  if not root.is_dir():  # installed rather than checked out
+    pytest.skip("source tree not available")
+
+  measured = _measure_layer_edges(root)
+  assert set(measured) == set(_LAYER_EDGES), {
+    "undeclared": sorted(set(measured) - set(_LAYER_EDGES)),
+    "gone": sorted(set(_LAYER_EDGES) - set(measured)),
+  }
+  must_defer = {e for e, deferred in _LAYER_EDGES.items() if deferred}
+  eager = {e for e in must_defer if not measured[e]}
+  assert eager == set(), eager
+
+
+def test_no_test_guards_an_extra_by_a_first_party_import() -> None:
+  """`importorskip` must name the extra, never a `pyvinecopulib` module.
+
+  Whether importing one of our own modules raises depends on its internals --
+  `pyvinecopulib.margins` imports fine without SciPy, since only
+  `SciPyMargin`'s constructor needs it -- so such a guard skips nothing and
+  the test then fails on the extras-free CI legs instead. Naming the extra
+  cannot go stale that way.
+  """
+  offenders: list[str] = []
+  for path in sorted(pathlib.Path("tests").glob("*.py")):
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+      if not isinstance(node, ast.Call):
+        continue
+      func = node.func
+      named = getattr(func, "attr", None) or getattr(func, "id", None)
+      if named != "importorskip" or not node.args:
+        continue
+      first = node.args[0]
+      if (
+        isinstance(first, ast.Constant)
+        and isinstance(first.value, str)
+        and first.value.startswith("pyvinecopulib")
+      ):
+        offenders.append(f"{path.name}:{node.lineno} -> {first.value}")
+  assert offenders == [], offenders
