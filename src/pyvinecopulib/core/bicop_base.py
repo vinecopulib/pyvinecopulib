@@ -40,6 +40,49 @@ from .protocols import ArrayT, BicopLike, _BICOP_EXAMPLE
 __all__ = ["BicopBase"]
 
 
+def flip_of(pair: Any) -> Any:
+  """The argument-swapped pair, for a caller that has established it has one.
+
+  ``flip`` is an optional capability on :class:`BicopLike` -- needed only to
+  host a pair in structure *selection* or in a relabeling, never to evaluate
+  one -- so the contract does not require it and the type checker will not let
+  it be called unguarded. This is the single place that reads it, so the guard
+  each caller relies on is named once rather than cast away four times:
+
+  - ``VinecopBase.select`` refuses a pair class without one up front
+    (``_check_selectable``), and probes the first fitted pair behind an opaque
+    ``fit_edge``;
+  - ``reorient`` and the reoriented view only reach slots of a vine that was
+    selected or built with flippable pairs;
+  - ``DiscretePair.flip`` delegates to the continuous pair it wraps.
+
+  Parameters
+  ----------
+  pair : BicopLike
+      The pair copula to flip.
+
+  Returns
+  -------
+  BicopLike
+      The pair with its two arguments swapped.
+
+  Raises
+  ------
+  NotImplementedError
+      If the pair has no ``flip``, which is what
+      :class:`~pyvinecopulib.core.BicopBase` raises and what the guards above
+      are there to turn into an earlier, clearer failure.
+  """
+  method = getattr(pair, "flip", None)
+  if method is None:
+    raise NotImplementedError(
+      f"{type(pair).__name__} has no `flip` (the argument-swapped copula), "
+      "which structure selection and relabeling need to reorient a pair onto "
+      "its slot. Implement it, or supply a structure and fit along it."
+    )
+  return method()
+
+
 class BicopBase(BicopLike[ArrayT], ABC):
   """Canonical partial implementation of ``BicopLike``.
 

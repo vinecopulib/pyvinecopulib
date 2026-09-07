@@ -29,7 +29,7 @@ from ._rootfind import solve_increasing
 from ._trim import trim
 
 from ._covariates import pair_eval, prepare
-from .bicop_base import BicopBase
+from .bicop_base import BicopBase, flip_of
 from .protocols import ArrayT, BicopLike
 
 __all__ = ["DiscretePair"]
@@ -506,7 +506,7 @@ class DiscretePair(BicopBase[ArrayT]):
     DiscretePair
         A wrapper around the flipped pair, reading ``[u2, u1, u2^-, u1^-]``.
     """
-    flipped = cast("BicopLike[ArrayT]", self._pair).flip()
+    flipped = flip_of(self._pair)
     return DiscretePair(flipped, (self._var_types[1], self._var_types[0]))
 
   def sample(

@@ -499,7 +499,22 @@ For any behavior change:
   `declared_eval` reads it there; it is deliberately *absent* from `BicopBase`
   (whose rule is the signature) and from `VinedistBase` (which nothing
   composes). Adding either would be a declaration with no reader -- the thing
-  `supported_var_types` was deleted for.
+  `supported_var_types` was deleted for. The same test applies to the
+  *protocols*: `BicopLike` and `VinedistLike` each documented a
+  `supports_covariates` no code reads at that rung, and both entries are gone.
+- **A protocol requires what a cascade calls; anything a pair needs only to be
+  hosted somewhere particular is an optional capability.** `BicopLike` is
+  `pdf` / `hfunc1` / `hfunc2` / `hinv1` / `hinv2` / `sample` -- the whole of
+  what a vine's `pdf`, `rosenblatt`, `inverse_rosenblatt` and `sample` ask of a
+  pair. `cdf` (needed only on a **discrete** edge, via `DiscretePair`; a vine's
+  own `cdf` is Monte-Carlo) and `flip` (needed only in `select` and in a
+  relabeling) are read with `getattr` instead. Requiring them made `isinstance`
+  stricter than the documented contract and made implementing `BicopLike`
+  *directly* -- which the extension-point docs offer -- impossible without two
+  methods those same docs call optional. `BicopBase` keeps both as raising
+  stubs, which is where each explanation lives, and `bicop_base.flip_of` is the
+  one place that reads `flip`, so the guard each caller relies on is named once
+  rather than cast away at four sites.
 - **American English** in code, comments, documentation, commit messages,
   and changelog entries: *behavior*, *normalize*, *serialize*, *finalize*,
   *center*, *modeling*, *honored*, *color*. There is no legacy exemption.

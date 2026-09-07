@@ -83,7 +83,7 @@ from ._independence import IndependencePair
 from ._reorient import Reorientation, reorientation
 from ._validation import validate_weights
 from ._covariates import pair_eval, prepare
-from .bicop_base import BicopBase
+from .bicop_base import BicopBase, flip_of
 from .context import ConditioningContext, SimplifiedContext
 from .protocols import (
   ArrayT,
@@ -1408,7 +1408,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         The relabeled structure; its order ends with ``conditioning_set``.
     pair_copulas : list of list of BicopLike
         The same pair copulas on their new slots, argument-swapped with
-        :meth:`~pyvinecopulib.core.BicopLike.flip` where the slot requires it --
+        :meth:`~pyvinecopulib.core.BicopBase.flip` where the slot requires it --
         ready to host in a vine without re-fitting.
 
     Raises
@@ -1440,7 +1440,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       for edge in range(self.d - 1 - tree):
         old_edge, flipped = r.locations[(tree, edge)]
         pair = self.get_pair_copula(tree, old_edge)
-        row.append(pair.flip() if flipped else pair)
+        row.append(flip_of(pair) if flipped else pair)
       pairs.append(row)
     return r.structure, pairs
 
@@ -2569,7 +2569,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
 
     The fitted pairs are returned reused, never re-fit: each is placed on its
     slot in the finalized structure and reoriented with its
-    :meth:`~pyvinecopulib.core.BicopLike.flip` where the slot's orientation
+    :meth:`~pyvinecopulib.core.BicopBase.flip` where the slot's orientation
     requires it.
 
     A **non-simplified** selection works the same way, because the two halves
@@ -2601,7 +2601,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     fit_edge : callable
         ``(tree, edge, u_e, x_e) -> BicopLike`` fitting one edge's pair copula;
         its ``hfunc1`` / ``hfunc2`` must be valid immediately, and it must
-        implement :meth:`~pyvinecopulib.core.BicopLike.flip` (used to
+        implement :meth:`~pyvinecopulib.core.BicopBase.flip` (used to
         reorient reused pairs onto
         their finalized slots). ``x_e`` is the edge's conditioning matrix, as
         ``context`` assembles it. An edge with a
@@ -2654,7 +2654,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         conditioning set a self-contained block, and the finalized structure is
         then relabeled onto that tail. Requires an MST ``tree_algorithm``, and
         the pairs must implement
-        :meth:`~pyvinecopulib.core.BicopLike.flip`.
+        :meth:`~pyvinecopulib.core.BicopBase.flip`.
 
     Returns
     -------
@@ -2938,7 +2938,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
           # `self` and would pass the probe for them.
           flip_checked = True
           try:
-            pair.flip()
+            flip_of(pair)
           except NotImplementedError as err:
             raise NotImplementedError(
               f"{type(pair).__name__} has no `flip`, which structure "
@@ -3019,7 +3019,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         a_label, pair, chain = records[t][
           (frozenset((diag, partner)), conditioning_key)
         ]
-        row.append(pair if a_label == diag else pair.flip())
+        row.append(pair if a_label == diag else flip_of(pair))
         # `flip` swaps the pair's two arguments; nothing reorders the
         # conditioning columns, so the slot inherits the order its pair was
         # fitted on. On an unswapped slot that is the order the finalized
@@ -3073,7 +3073,7 @@ class _ReorientedVine(VinecopBase[ArrayT]):
       # integral caches -- and each slot is read once per cascade pass, of which
       # conditional sampling makes two. Callers relabeling repeatedly should use
       # `reorient()` once and host the pairs it returns.
-      pair = self._base.get_pair_copula(tree, old_edge).flip()
+      pair = flip_of(self._base.get_pair_copula(tree, old_edge))
       self._flipped[key] = pair
     return pair
 

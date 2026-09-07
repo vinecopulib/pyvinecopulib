@@ -17,6 +17,9 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 
 ### Breaking API changes in `pyvinecopulib`
 
+- Drop `cdf` and `flip` from `BicopLike`'s required surface: a protocol requires what a cascade calls, and both are optional capabilities read with `getattr` -- `cdf` only on a discrete edge, `flip` only in structure selection. `isinstance` now accepts the minimal pair the docs describe, and `BicopLike` can be implemented directly (#326).
+- Keep `torch` and `sklearn` out of the top-level `__all__`, so `from pyvinecopulib import *` no longer requires the extras; both stay reachable by attribute access and `import pyvinecopulib.<name>`, and `dir()` still names them (#326).
+
 - Reorganize the public API into the `core`, `families` and `utils` subpackages; the family constants, `Kde1d` and the utility functions still resolve at the top level, but warn on access and are removed in 2.0 (#207, #292).
     - `pyvinecopulib.gaussian` -> `pyvinecopulib.families.gaussian`, and likewise every family constant and group
     - `pyvinecopulib.Kde1d` -> `pyvinecopulib.core.Kde1d`

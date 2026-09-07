@@ -48,10 +48,15 @@ __all__ = [
   "families",
   "margins",
   "utils",
-  "sklearn",
-  "torch",
   "__version__",
 ]
+
+#: Subpackages that need an optional dependency, reachable by attribute access
+#: and by `import pyvinecopulib.<name>` -- but deliberately **out** of
+#: `__all__`, because `from pyvinecopulib import *` resolves every name in it
+#: and would then require every extra. `margins` is in `__all__` instead: it
+#: imports with no extra, deferring SciPy to the margin class that needs it.
+_LAZY_SUBPACKAGES = ("sklearn", "torch")
 
 
 def __getattr__(name: str):
@@ -61,9 +66,9 @@ def __getattr__(name: str):
     from .core import FitControlsMargin
 
     return FitControlsMargin
-  if name in ("sklearn", "torch"):
-    # Lazy: attribute access is what triggers the extra, so importing
-    # `pyvinecopulib` never requires either one.
+  if name in _LAZY_SUBPACKAGES:
+    # Lazy: attribute access is what triggers the extra, so neither importing
+    # `pyvinecopulib` nor star-importing from it requires either one.
     import importlib
 
     return importlib.import_module(f"pyvinecopulib.{name}")
@@ -71,4 +76,9 @@ def __getattr__(name: str):
 
 
 def __dir__():
-  return sorted(set(__all__) | set(_DEPRECATED_TOP_LEVEL))
+  # The lazy subpackages belong here even though they are not in `__all__`:
+  # `dir()` is discovery, which should name them, while `__all__` is what a
+  # star-import binds, which must not require an extra.
+  return sorted(
+    set(__all__) | set(_LAZY_SUBPACKAGES) | set(_DEPRECATED_TOP_LEVEL)
+  )

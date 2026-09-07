@@ -700,10 +700,13 @@ class _WrappingVinecop(_ListVinecop):
     self._bind_vine(structure, var_types=var_types)
 
   def get_pair_copula(self, tree: int, edge: int) -> BicopLike[Any]:
-    pair = cast("BicopLike[Any]", self._pairs[tree][edge])
+    # Not cast to `BicopLike` before wrapping: `DiscretePair` needs a `cdf`,
+    # which is an optional capability the contract does not promise, so the
+    # concrete pair is what satisfies it.
+    pair = self._pairs[tree][edge]
     types = self.pair_var_types(tree, edge)
     if "d" not in types:
-      return pair
+      return cast("BicopLike[Any]", pair)
     return DiscretePair(pair, types)
 
 

@@ -207,7 +207,13 @@ def test_conditioning_matrix_is_keyword_only() -> None:
 
   for owner in (BicopLike, BicopBase):
     for name in ("pdf", "cdf", "hfunc1", "hfunc2", "hinv1", "hinv2"):
-      kind = inspect.signature(getattr(owner, name)).parameters["x"].kind
+      member = getattr(owner, name, None)
+      if member is None:
+        # `cdf` is an optional capability on the protocol and a raising stub
+        # on the base, so only one of the two owners declares it.
+        assert (owner, name) == (BicopLike, "cdf")
+        continue
+      kind = inspect.signature(member).parameters["x"].kind
       assert kind is inspect.Parameter.KEYWORD_ONLY, f"{owner.__name__}.{name}"
 
   u = np.full((4, 2), 0.5)
@@ -456,3 +462,74 @@ def test_the_inherited_inverses_place_their_argument() -> None:
   np.testing.assert_allclose(
     np.asarray(pair.hinv1(u), dtype=float), u[:, 1], atol=1e-6
   )
+
+
+def test_the_contract_requires_only_what_a_cascade_calls() -> None:
+  """`cdf` and `flip` are optional capabilities, not members of `BicopLike`.
+
+  A vine's `pdf` / `rosenblatt` / `inverse_rosenblatt` / `sample` ask a pair
+  for the six evaluation methods and nothing else: `cdf` is needed only on a
+  discrete edge and `flip` only in structure selection. Requiring them made
+  `isinstance` stricter than the documented contract, and made implementing
+  `BicopLike` directly -- which the extension-point docs offer -- impossible
+  without two methods those same docs call optional.
+  """
+
+  class _Minimal:
+    """Independence, with exactly the required surface and nothing more."""
+
+    def pdf(self, u: Any, *, x: Any = None) -> Any:
+      return np.ones(u.shape[0])
+
+    def hfunc1(self, u: Any, *, x: Any = None) -> Any:
+      return u[:, 1]
+
+    def hfunc2(self, u: Any, *, x: Any = None) -> Any:
+      return u[:, 0]
+
+    def hinv1(self, u: Any, *, x: Any = None) -> Any:
+      return u[:, 1]
+
+    def hinv2(self, u: Any, *, x: Any = None) -> Any:
+      return u[:, 0]
+
+    def sample(
+      self,
+      n: int,
+      *,
+      x: Any = None,
+      qrng: bool = False,
+      seeds: Optional[list[int]] = None,
+    ) -> Any:
+      return np.full((n, 2), 0.5)
+
+  minimal = _Minimal()
+  assert not hasattr(minimal, "cdf") and not hasattr(minimal, "flip")
+  assert isinstance(minimal, BicopLike)
+  # And a direct, nominal implementation instantiates.
+  assert "cdf" not in getattr(BicopLike, "__abstractmethods__", ())
+  assert "flip" not in getattr(BicopLike, "__abstractmethods__", ())
+
+
+def test_a_pair_without_flip_is_named_where_flip_is_required() -> None:
+  """The optional capability is read in one place, which reports its absence."""
+  from pyvinecopulib.core.bicop_base import flip_of
+
+  class _NoFlip(BicopBase[Any]):
+    def pdf(self, u: Any, *, x: Any = None) -> Any:
+      return np.ones(u.shape[0])
+
+    def hfunc1(self, u: Any, *, x: Any = None) -> Any:
+      return u[:, 1]
+
+    def hfunc2(self, u: Any, *, x: Any = None) -> Any:
+      return u[:, 0]
+
+  with pytest.raises(NotImplementedError, match="_NoFlip"):
+    flip_of(_NoFlip())
+
+  class _Bare:
+    """A foreign pair that simply omits the capability."""
+
+  with pytest.raises(NotImplementedError, match="_Bare.*has no `flip`"):
+    flip_of(_Bare())

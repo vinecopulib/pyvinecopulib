@@ -288,17 +288,39 @@ class BicopLike(Protocol[ArrayT]):
   :class:`pyvinecopulib.core.Bicop` and
   :class:`pyvinecopulib.torch.TorchTllBicop` are the reference implementations.
 
-  Two capabilities beyond the methods are read with ``getattr``, so a foreign
-  object need only have them if they apply:
+  **What is required is what a cascade calls.** ``pdf`` / ``hfunc1`` /
+  ``hfunc2`` / ``hinv1`` / ``hinv2`` / ``sample`` are the whole of it: a vine's
+  ``pdf``, ``rosenblatt``, ``inverse_rosenblatt`` and ``sample`` need nothing
+  else from a pair. Everything else is an **optional capability**, read with
+  ``getattr`` where it is needed, so a foreign object provides it only if it
+  applies:
 
-  - ``supports_covariates`` — whether ``x`` is read rather than ignored;
-    absent means it is not, and the compiled :class:`pyvinecopulib.core.Bicop`
-    answers that way by having none.
+  - ``cdf`` — the distribution ``C(u)``, needed only to sit on a **discrete**
+    edge, where the h-functions are difference quotients of it. A vine's own
+    ``cdf`` is Monte-Carlo and asks no pair for one.
+    :class:`~pyvinecopulib.core.DiscretePair` is what requires it, and says so.
+  - ``flip`` — the pair with its arguments swapped, needed only to host the
+    pair in structure **selection**, which reorients each fitted pair onto its
+    finalized slot. ``VinecopBase.select`` refuses a pair without one before
+    it touches the data.
   - ``supports_batched`` — whether a vine may bake this pair into its stacked
     grid cascade, which reads an interpolation grid off each pair; absent
     means it may not. :class:`~pyvinecopulib.core.BicopBase` declares it
     ``False`` so the answer is findable rather than only discoverable by
     tripping the error.
+
+  :class:`~pyvinecopulib.core.BicopBase` supplies ``cdf`` and ``flip`` as
+  raising stubs, which is where the message explaining each lives -- so a
+  subclass gets a good error and a foreign object simply omits them.
+
+  There is deliberately **no** ``supports_covariates`` flag on a pair copula,
+  unlike on a margin or a whole copula. What decides here is the *signature*:
+  every method above declares a keyword-only ``x``, which ``ty`` enforces on
+  each :class:`~pyvinecopulib.core.BicopBase` subclass, so the declaration is
+  maintained by the type checker rather than beside it. A conditioning matrix
+  is forwarded whenever there is one, which is what makes a pair that models
+  none -- the compiled :class:`pyvinecopulib.core.Bicop`, which names no ``x``
+  at all -- raise instead of quietly returning an unconditional answer.
 
   See Also
   --------
@@ -322,23 +344,6 @@ class BicopLike(Protocol[ArrayT]):
     -------
     array, shape (n,), dtype float
         Density values.
-    """
-
-  @abstractmethod
-  def cdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
-    """Pair-copula distribution ``C(u)`` at each observation.
-
-    Parameters
-    ----------
-    u : array, shape (n, 2), dtype float
-        Pair pseudo-observations in the unit square.
-    x : array, shape (n, p), or None, optional
-        Conditioning variables; ignored by an unconditional copula.
-
-    Returns
-    -------
-    array, shape (n,), dtype float
-        Distribution values in ``[0, 1]``.
     """
 
   @abstractmethod
@@ -441,23 +446,6 @@ class BicopLike(Protocol[ArrayT]):
     -------
     array, shape (n, 2), dtype float
         Samples in the unit square.
-    """
-
-  @abstractmethod
-  def flip(self) -> "BicopLike[ArrayT]":
-    """Return the pair copula with its two arguments swapped.
-
-    The flipped copula satisfies ``c'(u1, u2) = c(u2, u1)``, with the two
-    h-functions (and their inverses) exchanged accordingly. Structure
-    selection (:meth:`~pyvinecopulib.core.VinecopBase.select`) uses it to
-    reorient a fitted pair onto its slot in the finalized vine, mirroring
-    :class:`~pyvinecopulib.core.Vinecop`.
-
-    Returns
-    -------
-    BicopLike
-        The argument-swapped pair copula; the object itself is left
-        unchanged.
     """
 
 
@@ -750,8 +738,16 @@ class VinedistLike(Protocol[ArrayT]):
   -----
   Discreteness, conditioning and the fit-time reports are **optional
   capabilities** rather than members of this contract, discovered with
-  ``getattr``: ``dim``, ``var_types``, ``sample_conditional``,
-  ``supports_covariates`` and ``margin_summary``.
+  ``getattr``: ``dim``, ``var_types``, ``sample_conditional`` and
+  ``margin_summary`` -- the last of which
+  :class:`pyvinecopulib.sklearn.VineDensity` reads to publish
+  ``margin_summary_``, so a backend returning a distribution without one is
+  told so by name.
+
+  A distribution declares no ``supports_covariates`` of its own. It reads the
+  flag on the parts it holds -- every margin, and the copula -- and refuses an
+  ``x`` that none of them reads; there is nothing above it to read a flag of
+  its own, and a capability nothing consumes is one that goes stale.
   Serialization is likewise out of scope, as it is for the other contracts.
 
   See Also

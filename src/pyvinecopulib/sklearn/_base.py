@@ -852,7 +852,18 @@ class VineBase(BaseEstimator):
       self._x_margins = tuple(bound[1:])
     else:
       self._x_margins = tuple(bound)
-    self.margin_summary_ = self.distribution_.margin_summary()
+    # An optional capability on `VinedistLike`, read the way the contract
+    # says -- but this estimator publishes `margin_summary_`, so a backend
+    # whose distribution has none is named rather than silently summaryless.
+    summary = getattr(self.distribution_, "margin_summary", None)
+    if summary is None:
+      raise TypeError(
+        f"{type(self.distribution_).__name__} has no `margin_summary`, which "
+        f"{type(self).__name__} publishes as `margin_summary_`. Return a "
+        "`VinedistBase` subclass from the backend's `bind_distribution`, or "
+        "add a `margin_summary()` to the distribution it returns."
+      )
+    self.margin_summary_ = summary()
 
   def _resolve_runtime_state(self) -> None:
     """Resolve the random-state and backend at fit time. Sets
