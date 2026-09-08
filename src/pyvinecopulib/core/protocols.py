@@ -64,7 +64,6 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from typing import (
-  TYPE_CHECKING,
   Any,
   Optional,
   Protocol,
@@ -73,8 +72,7 @@ from typing import (
   runtime_checkable,
 )
 
-if TYPE_CHECKING:
-  from ..pyvinecopulib_ext import RVineStructure
+from ..pyvinecopulib_ext import RVineStructure
 
 # PEP 695 syntax (``class BicopLike[ArrayT]``) needs 3.12 and a PEP 696
 # ``default=Any`` needs 3.13 in the standard library; the floor here is 3.11,
@@ -295,7 +293,7 @@ class BicopLike(Protocol[ArrayT]):
   ``flip`` are the two, and :class:`~pyvinecopulib.core.BicopBase` supplies
   both as raising stubs, which is where the message explaining each lives -- so
   a subclass gets a good error and a foreign object simply omits them. A third,
-  ``supports_batched``, is a plain declaration: whether a vine may bake this
+  ``supports_batched``, is a plain declaration: whether a vine may stack this
   pair into its stacked grid cascade, which reads an interpolation grid off
   each pair. Absent means it may not, and
   :class:`~pyvinecopulib.core.BicopBase` declares it ``False`` so the answer is

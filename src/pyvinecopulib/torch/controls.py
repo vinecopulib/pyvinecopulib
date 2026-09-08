@@ -13,10 +13,10 @@ relevant dataclass and the dispatch in the corresponding ``from_data``
 from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
-if TYPE_CHECKING:
-  import torch
+import torch
+
 
 #: Structure-selection algorithms accepted by ``FitControlsTorchVinecop``,
 #: mirroring ``FitControlsVinecop.tree_algorithm``.

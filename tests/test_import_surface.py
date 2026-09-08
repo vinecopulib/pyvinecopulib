@@ -115,11 +115,14 @@ def test_core_reaches_up_a_layer_only_where_it_must() -> None:
   `pyvinecopulib.core` runs the top-level `__init__`, which loads `margins`
   eagerly by design, so a runtime check would measure the wrong thing.
 
-  Three deferred hops are expected and irreducible, each resolving a name to a
-  class that lives behind an extra: the ``"parametric"`` alias, the
-  ``"SciPyMargin"`` JSON ``kind``, and the adapter ``as_margin`` builds for an
-  OpenTURNS object. Any more, or any at module scope, is the layer inversion
-  coming back.
+  Exactly one function-local import is expected, and it is forced: the
+  ``"parametric"`` alias is a string ``core``'s own ``resolve_margins``
+  accepts, so ``core`` has to be able to resolve it to a class that lives
+  behind an extra. Everything else an extension point can carry does --
+  ``as_margin``'s adapters and ``margin_from_json``'s readers are registered
+  by the module that owns each class, through the same public hooks a third
+  party uses. Any more, or any at module scope, is the layer inversion coming
+  back.
   """
   import ast
   import pathlib
@@ -155,7 +158,7 @@ def test_core_reaches_up_a_layer_only_where_it_must() -> None:
         where.append(f"{path.name}:{node.lineno} -> {target}")
 
   assert module_scope == [], module_scope
-  assert len(deferred) == 3, deferred
+  assert len(deferred) == 1, deferred
   # And neither reaches a private module of the layer above.
   assert not any("._" in d.split("-> ")[1] for d in deferred), deferred
 

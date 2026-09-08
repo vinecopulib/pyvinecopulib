@@ -1225,7 +1225,7 @@ def test_set_extra_state_refuses_a_foreign_version() -> None:
 
 
 def test_refitting_a_stored_pair_invalidates_the_vines_bake() -> None:
-  """A vine bakes a copy of each grid, so replacing one must be noticed.
+  """A vine copies each grid, so replacing one must be noticed.
 
   ``set_pair_copulas`` covers the vine's own ``fit`` and ``select``; refitting
   a pair the vine already holds moves no ``requires_grad`` flag, so the grad
@@ -1243,7 +1243,7 @@ def test_refitting_a_stored_pair_invalidates_the_vines_bake() -> None:
   )
   vine = TorchVinecop.from_data(first, controls=FitControlsTorchVinecop())
   points = torch.as_tensor(second, dtype=torch.float64)
-  vine.pdf(points, batched=True)  # bake against the first fit
+  vine.pdf(points, batched=True)  # cache against the first fit
 
   # `get_pair_copula` is typed against the evaluation-only contract, which
   # carries no `fit`; the stored pair is the concrete class.

@@ -20,10 +20,12 @@ call helpers.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional, Sequence, TYPE_CHECKING, cast
+from typing import Any, Callable, Optional, Sequence, cast
 
+import numpy as np
 from array_api_compat import array_namespace
 
+from ..pyvinecopulib_ext import RVineStructure
 from ._covariates import pair_eval, prepare
 from ._discrete import (
   check_var_types,
@@ -41,11 +43,6 @@ from ._validation import validate_weights
 from .bicop_base import flip_of
 from .context import ConditioningContext, SimplifiedContext
 from .protocols import ArrayT, BicopLike
-
-if TYPE_CHECKING:
-  import numpy as np
-
-  from ..pyvinecopulib_ext import RVineStructure
 
 __all__ = ["FitEdge", "FitLevel", "fit_parts", "select_parts"]
 
@@ -90,8 +87,6 @@ def _make_criterion(
   callable
       Maps an edge's two value columns to a non-negative criterion.
   """
-  import numpy as np
-
   from ..pyvinecopulib_ext import _calculate_tree_criterion
 
   convert = _to_numpy_default
@@ -124,15 +119,13 @@ def _to_numpy_default(a: ArrayT) -> np.ndarray:
   ``np.asarray`` raises on a tensor that lives on an accelerator, so this
   detaches and transfers before converting.
   """
-  import numpy as _np
-
   detach = getattr(a, "detach", None)
   if detach is not None:
     a = detach()
   cpu = getattr(a, "cpu", None)
   if cpu is not None:
     a = cpu()
-  return _np.asarray(a)
+  return np.asarray(a)
 
 
 #: ``(tree, edge, u_e, x_e) -> BicopLike``, fitting one edge's pair copula: the

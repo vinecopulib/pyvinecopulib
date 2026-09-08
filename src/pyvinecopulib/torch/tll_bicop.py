@@ -27,8 +27,9 @@ FitControlsTorchBicop : Fit-time controls.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional, Union, cast
+from typing import Any, Optional, Union, cast
 
+import numpy as np
 import torch
 from torch import Tensor
 
@@ -37,9 +38,6 @@ from ..core._validation import reject_covariates
 from ..pyvinecopulib_ext import Bicop, tll as _TLL_FAMILY
 from ._interp import InterpolationGrid2D, _trim
 from .controls import FitControlsTorchBicop
-
-if TYPE_CHECKING:
-  import numpy as np
 
 
 def _resolve_placement(
@@ -250,7 +248,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     )
 
     self._cache_integrals = bool(cache_integrals)
-    #: Bumped whenever the grid is replaced, so a vine that baked a copy
+    #: Bumped whenever the grid is replaced, so a vine that copied the grid
     #: of it can tell. Not part of `state_dict`: a load replaces the
     #: buffers, which `TorchVinecop.load_state_dict` already reacts to.
     self._revision = 0
@@ -631,7 +629,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     self.is_indep = other.is_indep
     self.interp_grid = other.interp_grid
     self._cache_integrals = other._cache_integrals
-    # A vine holding this pair bakes a *copy* of the grid, and nothing about
+    # A vine holding this pair holds a *copy* of the grid, and nothing about
     # replacing one moves a `requires_grad` flag -- so the count is what lets
     # `TorchVinecop` notice. `set_pair_copulas` covers the vine's own `fit` and
     # `select`; this covers refitting a pair the vine already holds.

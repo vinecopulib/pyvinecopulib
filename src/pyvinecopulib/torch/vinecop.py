@@ -237,7 +237,7 @@ class TorchVinecop(
       "_device_ref", torch.empty(0, dtype=ref.dtype, device=ref.device)
     )
     # `self._batched` (lazy grid-batched state) is initialized to None by
-    # `_bind_vine`; `_apply` clears it so device moves re-bake it.
+    # `_bind_vine`; `_apply` clears it so device moves rebuild it.
     self._compile_cascades = False
     self._compiled: dict[str, Callable[[Tensor], Tensor]] = {}
 
@@ -681,7 +681,7 @@ class TorchVinecop(
         for row in pair_copulas
       ]
     )
-    # Same reason `load_state_dict` and `_apply` drop them: the stacked bake
+    # Same reason `load_state_dict` and `_apply` drop them: the stacked state
     # and the compiled cascades hold copies of the grids, not views, so pairs
     # replaced under them leave both answering from the old density.
     self._batched = None
@@ -886,11 +886,11 @@ class TorchVinecop(
     """The picklable state: everything except the two derived caches.
 
     Both are pure caches rebuilt on demand, and neither belongs in a pickle.
-    Compiled callables cannot be pickled at all. The grid-batched bake can,
+    Compiled callables cannot be pickled at all. The grid-batched state can,
     which is the trap: it is a *copy* of every pair's grid, so a pickle taken
     after one batched call carried the grids twice -- 2.9x the bytes on a
-    3-variable vine -- and restored a bake nothing revalidated against the
-    pairs it was baked from.
+    3-variable vine -- and restored a state nothing revalidated against the
+    pairs it was built from.
 
     Returns
     -------
@@ -921,7 +921,7 @@ class TorchVinecop(
     torch.nn.modules.module._IncompatibleKeys
         Whatever the base implementation returns.
     """
-    # The stacked bake and the compiled cascades are copies of the grids, not
+    # The stacked state and the compiled cascades are copies of the grids, not
     # views of them, so a load that replaces the grids leaves both answering
     # from the old density. `_apply` drops them for the same reason.
     out = super().load_state_dict(*args, **kwargs)
@@ -937,7 +937,7 @@ class TorchVinecop(
   ) -> Self:
     # `.to()`, `.cuda()`, `.cpu()` all route through `_apply`. The
     # BatchedVine container holds buffers — `super()._apply` would move
-    # them, but we drop the whole structure so it gets re-baked from the
+    # them, but we drop the whole structure so it gets rebuilt from the
     # (already-moved) source pair_copulas on next use; that keeps the
     # wire-up tensors aligned with the destination dtype/device.
     self._batched = None
@@ -959,7 +959,7 @@ class TorchVinecop(
         Two entries per pair copula, in tree-then-edge order.
     """
     out: list[bool] = []
-    # The same pairs `_build_batched` bakes, in the same order.
+    # The same pairs `_build_batched` precomputes, in the same order.
     for tree in range(self.trunc_lvl):
       for edge in range(self.d - tree - 1):
         grid = getattr(self.get_pair_copula(tree, edge), "interp_grid", None)
@@ -973,8 +973,8 @@ class TorchVinecop(
     """How many times each pair has had its grid replaced.
 
     Kept apart from ``_grad_signature`` because the two answer different
-    questions: that one decides whether a bake needs the graph, this one
-    whether it is a bake of the right density at all. Refitting a pair the vine
+    questions: that one decides whether the state needs the graph, this one
+    whether it is state for the right density at all. Refitting a pair the vine
     already holds -- ``vine.get_pair_copula(t, e).fit(u)`` -- replaces its grid
     in place and moves no ``requires_grad`` flag, so nothing else would notice.
 
@@ -990,17 +990,17 @@ class TorchVinecop(
     )
 
   def _ensure_batched(self) -> "BatchedVine":
-    """The batched state, re-baked when grad tracking has changed under it.
+    """The batched state, rebuilt when grad tracking has changed under it.
 
-    A bake is a copy of each pair's grid, which goes stale in three ways a
+    The state holds a copy of each pair's grid, which goes stale in three ways a
     device move does not cover. ``requires_grad_`` flips a flag in place, so
-    a bake made before it is left behind; a bake made under ``no_grad``
+    state built before it is left behind; state built under ``no_grad``
     -- as ``sample`` / ``cdf`` / ``inverse_rosenblatt`` are evaluated -- holds
     detached copies even where the grids themselves track grad, so it is
     redone once, for the first call that needs the graph; and refitting a pair
     the vine holds replaces its grid, which ``_pair_revisions`` counts.
     Only the last is wrong rather than merely detached, but all three are
-    silent where the bake is read.
+    silent where the state is read.
 
     Returns
     -------
@@ -1010,21 +1010,21 @@ class TorchVinecop(
     signature = self._grad_signature()
     revisions = self._pair_revisions()
     wants_graph = torch.is_grad_enabled() and any(signature)
-    baked = getattr(self, "_bake_signature", None)
+    stamped = getattr(self, "_batched_signature", None)
     if self._batched is not None and (
-      baked is None
-      or baked[0] != signature
-      or baked[2] != revisions
-      or (wants_graph and not baked[1])
+      stamped is None
+      or stamped[0] != signature
+      or stamped[2] != revisions
+      or (wants_graph and not stamped[1])
     ):
       object.__setattr__(self, "_batched", None)
-      # A compiled cascade was traced against the grids the stale bake holds.
+      # A compiled cascade was traced against the grids the stale state holds.
       object.__setattr__(self, "_compiled", {})
     fresh = self._batched is None
     out = cast("BatchedVine", super()._ensure_batched())
     if fresh:
       object.__setattr__(
-        self, "_bake_signature", (signature, wants_graph, revisions)
+        self, "_batched_signature", (signature, wants_graph, revisions)
       )
     return out
 
@@ -1075,10 +1075,10 @@ class TorchVinecop(
   #
   # The batched *cascade loops* live on VinecopBase (array-agnostic). This hook
   # supplies the TLL/grid-specific state they run on: a lazily-built BatchedVine
-  # (stacked / pre-baked per-tree-level grids + caches).
+  # (stacked, precomputed per-tree-level grids + caches).
 
   def _build_batched(self) -> "BatchedVine":
-    """Bake the grid-batched state from this vine's ``TorchTllBicop`` pairs.
+    """Precompute the grid-batched state from this vine's ``TorchTllBicop`` pairs.
 
     Returns
     -------

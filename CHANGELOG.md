@@ -174,7 +174,7 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Refuse an array in a margin's `controls` slot: `fit(y, w)` is the compiled `Kde1d`'s spelling and binds the weights to `controls` on every other margin, where they were ignored -- an unweighted fit behind a weighted-looking call (#326).
 - Place the exogenous covariates on the fitting path too, not only when evaluating: a margin's estimator received the caller's raw array where its own column had already been placed (#326).
 
-- Leave the grid-batched bake out of a `TorchVinecop` pickle: it is a cache holding a copy of every pair's grid, so a pickle taken after one batched call was 2.9x the size and restored a bake nothing revalidated (#326).
+- Leave the grid-batched cache out of a `TorchVinecop` pickle: it holds a copy of every pair's grid, so a pickle taken after one batched call was 2.9x the size and restored state nothing revalidated (#326).
 - Persist a `SciPyMargin`'s sample size, so `bic()` and `aicc()` no longer raise after a JSON round-trip where `loglik()` and `aic()` survived (#326).
 - Check the `kind` a `Vinedist` payload records, which `to_json` always wrote and `from_json` never read, so a subclass's payload loaded as the wrong class (#326).
 

@@ -934,7 +934,7 @@ class VinecopBase(
     The inverse's dependencies do not reduce to tree levels -- a wave holds
     one cell from almost every tree -- so the grouping is by longest-path
     level of the static ``(var, tree)`` graph, which the subclass's batched
-    state levels once at bake time. The scratch is flattened to
+    state levels once when the state is built. The scratch is flattened to
     ``((trunc_lvl + 1) * d, n)`` so a cell's slot is one row, and a whole wave
     is one gather per input and one scatter per output.
 
@@ -1673,7 +1673,7 @@ class VinecopBase(
 
     An implementation that memoizes anything derived from the pairs must
     invalidate it here, since this is the one place they change without the
-    structure changing -- ``_build_batched`` bakes copies of their grids, and
+    structure changing -- ``_build_batched`` copies their grids, and
     ``_bind_vine`` only covers the paths that rebind the structure.
 
     Parameters
@@ -1843,7 +1843,7 @@ class VinecopBase(
       )
     )
     # `select` gets these from `_bind_vine`; `fit` keeps the structure, so it
-    # has to drop them itself. A bake is a copy of the pairs' grids, and the
+    # has to drop them itself. The state holds a copy of the pairs' grids, and the
     # pairs just changed; and the fit ran along the structure's own
     # conditioning order, so any order recorded from an earlier `select` is now
     # a claim about pairs that are gone.
@@ -2045,7 +2045,7 @@ class _ReorientedVine(VinecopBase[ArrayT]):
     key = (tree, old_edge)
     pair = self._flipped.get(key)
     if pair is None:
-      # `flip` can be costly -- a grid pair rebuilds itself and re-bakes its
+      # `flip` can be costly -- a grid pair rebuilds itself and rebuilds its
       # integral caches -- and each slot is read once per cascade pass, of which
       # conditional sampling makes two. Callers relabeling repeatedly should use
       # `reorient()` once and host the pairs it returns.
@@ -2055,7 +2055,7 @@ class _ReorientedVine(VinecopBase[ArrayT]):
 
   # dtype / device coercion, RNG placement and grad control belong to the vine
   # being viewed. `_default_batched` / `_build_batched` are *not*
-  # delegated: the base's batched state is baked against the base's structure and
+  # delegated: the base's batched state is built against the base's structure and
   # edge order, so the view stays on the non-batched cascade.
   def _prep(self, a: Any) -> ArrayT:  # noqa: ANN401 - any array type, placed
     return cast("ArrayT", self._base._prep(a))

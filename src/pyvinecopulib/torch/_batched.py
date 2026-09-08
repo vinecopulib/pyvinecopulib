@@ -24,11 +24,11 @@ from typing import TYPE_CHECKING, Optional, cast
 import torch
 from torch import Tensor
 
+from ..pyvinecopulib_ext import RVineStructure
 from ..core._trim import trim_bounds
 from ..core.vinecop_base import _NotBatchable
 
 if TYPE_CHECKING:
-  from ..pyvinecopulib_ext import RVineStructure
   from .vinecop import TorchVinecop
 
 #: Guard on a conditional total mass, so a zero-mass grid line cannot 0/0.
@@ -114,7 +114,7 @@ def interpolate_batched(
     grid_points: shape ``(m,)``, shared across all pairs.
     values: shape ``(N, m, m)``, one grid per pair.
     u: shape ``(N, n, 2)``, queries per pair (in the unrotated frame —
-      the rotation must already be baked into ``values``).
+      the rotation must already be applied to ``values``).
 
   Returns:
     Tensor of shape ``(N, n)``.
@@ -185,11 +185,11 @@ def integrate_1d_batched(
 
   Args:
     grid_points: shape ``(m,)``.
-    values: shape ``(N, m, m)``, baked pdf grids.
-    u: shape ``(N, n, 2)``, queries (unrotated frame; the bake absorbs the
+    values: shape ``(N, m, m)``, precomputed pdf grids.
+    u: shape ``(N, n, 2)``, queries (unrotated frame; the precomputation absorbs the
       rotation).
     cond_var: scalar in ``{1, 2}`` — kept consistent across all pairs in the
-      batch because the bake puts every pair in the same "natural" frame.
+      batch because the precomputation puts every pair in the same "natural" frame.
       ``cond_var=1`` returns the h-function conditioning on ``u[..., 0]``;
       ``cond_var=2`` conditions on ``u[..., 1]``.
 
@@ -816,14 +816,14 @@ def _shared_grid(
   tables, because none of its own evaluations read either -- every method
   short-circuits on ``is_indep``. A stacked level does read them: ``torch.stack``
   needs one shape across the level, and one pair without tables drops the whole
-  level to the on-the-fly path. So the bake substitutes an independence density
+  level to the on-the-fly path. So the precomputation substitutes an independence density
   built on the shared grid, which is a real ``InterpolationGrid2D`` rather than
   a hand-derived table, so it cannot drift from what the pairs beside it do.
 
   Parameters
   ----------
   tvc : TorchVinecop
-      The vine being baked.
+      The vine to precompute from.
   trunc_lvl, d : int
       Its truncation level and dimension.
 
@@ -890,7 +890,7 @@ def _shared_grid(
 
 
 class BatchedVine(torch.nn.Module):
-  """All tree levels of a :class:`TorchVinecop`, stacked and pre-baked.
+  """All tree levels of a :class:`TorchVinecop`, stacked and precomputed.
 
   Built lazily by :meth:`TorchVinecop._ensure_batched` on first call to any
   batched cascade. The wire-up tensors are computed once by walking the
@@ -948,7 +948,7 @@ class BatchedVine(torch.nn.Module):
   def from_torch_vinecop(cls, tvc: TorchVinecop) -> "BatchedVine":
     """Build a ``BatchedVine`` from a fitted :class:`TorchVinecop`.
 
-    Walks ``tvc.pair_copulas`` and ``tvc.structure`` once; bakes per-pair
+    Walks ``tvc.pair_copulas`` and ``tvc.structure`` once; precomputes per-pair
     grids; collects per-level wiring tensors.
     """
     s = tvc.structure
@@ -992,7 +992,7 @@ class BatchedVine(torch.nn.Module):
           sy_t_list.append(None)
         else:
           # `_tables` rather than the buffers, so a grid that started tracking
-          # grad bakes its tables in-graph -- `_ensure_batched` re-bakes on a
+          # grad builds its tables in-graph -- `_ensure_batched` rebuilds on a
           # grad-signature change, which is what makes that reachable.
           sy, sx, _ = bc._tables()
           vals.append(bc.interp_grid.values)

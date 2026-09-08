@@ -345,7 +345,7 @@ make test           # pytest tests/                 (serial — see note)
 make docs           # sphinx -W
 ```
 
-Conventions baked in by the toolchain:
+Conventions the toolchain enforces:
 
 - **`uv` is canonical.** Every `make` target dispatches to `uv run …`.
   Use `uv run pytest …` directly when iterating on a single test.
@@ -581,7 +581,12 @@ For any behavior change:
   *center*, *modeling*, *honored*, *color*. There is no legacy exemption.
   `codespell` enforces it in `make lint` and in pre-commit, using its
   `en-GB_to_en-US` dictionary, so the rule covers every British spelling
-  rather than a list this repository happened to drift on. It catches
+  rather than a list this repository happened to drift on.
+  A banned word or phrase is occasionally the right one: wrap those lines in
+  `# codespell:ignore-begin` / `-end`, which both `codespell` and
+  `tests/test_prose.py` skip. Use that form rather than the single-line
+  `# codespell:ignore <word>`, which does not match a hyphenated entry and
+  reports the marker itself. It catches
   ordinary typos in the same pass. Configuration -- the skip list for
   generated and vendored files, and the domain vocabulary it would otherwise
   flag -- lives in `[tool.codespell]` in `pyproject.toml`; add a word there
@@ -751,14 +756,14 @@ the reason written beside it — not something a stray import can do quietly.
 
 - **Tier 1 depends on no optional extra and on nothing above it.** That is
   what makes `import pyvinecopulib` work with nothing but NumPy installed,
-  and most of the rules below follow from it. Three function-local imports do
-  reach up into `margins`, and they are the documented exception. Each names a
-  class `core` must be able to *name* but cannot *contain*, because it needs an
-  extra: `SciPyMargin` twice — the curated parametric default, and a JSON
-  payload kind that has to be resolvable from the payload alone — and
-  `OpenTURNSMargin` once, the adapter `as_margin` reaches when it recognizes an
-  OpenTURNS object. Deferring the import is the only way to have both.
-  A fourth needs the same argument, not merely the same shape.
+  and most of the rules below follow from it. **One** function-local import
+  reaches up into `margins`, and it is the documented exception: `"parametric"`
+  is a string `core`'s own `resolve_margins` accepts, so `core` has to resolve
+  it to `SciPyMargin`, which it can *name* but not *contain* because that needs
+  the SciPy extra. Deferring the import is the only way to have both. A second
+  needs an argument of the same kind — a `core` API whose contract names the
+  class — and not merely the same shape: everything an extension point can
+  carry is registered by the module that owns the class instead.
 - **Within tier 2 there are exactly two edges.** `sklearn` imports `margins`
   at module scope (both need no extra of `sklearn`'s own), and reaches
   `torch` through a single function-local import inside
@@ -1088,10 +1093,9 @@ import stdlib, NumPy and `core` -- and putting them here had `core` reaching
 *up* a layer at ten sites, three of them into a private module of a package
 above it, all deferred to hide the cycle. `pyvinecopulib.margins` re-exports
 them, so its documented surface is unchanged and it stays where a user looks
-for margins. Three deferred `core` -> `margins` imports remain and are
-irreducible, each resolving a name to a class that lives behind an extra: the
-`"parametric"` string alias, the `"SciPyMargin"` JSON `kind`, and the adapter
-`as_margin` builds for an OpenTURNS object.
+for margins. One function-local `core` -> `margins` import remains and is
+irreducible: resolving the `"parametric"` string alias, which `core`'s own
+`resolve_margins` accepts, to a class behind an extra.
 
 Three groups:
 
@@ -1138,14 +1142,16 @@ Three groups:
 - **Coercion** — `as_margin(obj)` is idempotent and routes **every**
   margin `Vinedist` receives, so a discrete SciPy object cannot slip
   past on a bare `pdf` (in SciPy's new API `pdf` is `+∞` at an atom;
-  the mass is `pmf`). The ecosystems this package adapts sit in one table in
-  `core/_margins.py`, beside the JSON readers, rather than each registering
-  itself its own way. Registration does not belong in the adapted module's
-  body: whether an object is recognized would then depend on another module's
-  import list — `margins/__init__.py` importing `openturns.py` eagerly is what
-  used to make the OpenTURNS adapter reachable at all.
-  `register_margin_adapter(predicate, adapter)` is how another ecosystem is
-  added without touching this package.
+  the mass is `pmf`). **`core` holds the two registries and names no
+  ecosystem.** An adapter or a JSON reader is registered by the module that
+  owns the class it produces — `margins/scipy.py`, `margins/openturns.py`,
+  `pyvinecopulib/torch/__init__.py` — through the same
+  `register_margin_adapter` / `register_margin_json` hooks a third party uses,
+  so the first-party margins exercise the documented extension point rather
+  than a private table beside it. Putting those tables in `core` instead is
+  what forced `core` to name a class from every extra, and a `core` -> `torch`
+  edge that `tests/test_import_surface.py` refuses outright. The one exception
+  is `Kde1d`, which `core` owns and can therefore name.
 - **Resolution** — `resolve_margins(spec, ...)` mirrors
   `resolve_backend`: a string alias, one instance broadcast per column,
   a length-`d` sequence, or a dict keyed by column. Margins follow the

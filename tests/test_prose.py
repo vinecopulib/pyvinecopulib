@@ -10,6 +10,10 @@ here instead:
   so it cannot tell a docstring from an identifier -- which is why a `Tensor`
   named for a boolean mask has to be exempt, and why that exemption is pinned
   here rather than scattered as inline ignores.
+
+A banned phrase is sometimes the right phrase. Wrap the lines in
+``# codespell:ignore-begin`` / ``-end`` and both halves of the rule skip them,
+which is the one escape hatch rather than two.
 """
 
 from __future__ import annotations
@@ -69,6 +73,36 @@ def _sources() -> Iterator[pathlib.Path]:
           yield path
 
 
+def _without_exempt_regions(text: str) -> str:
+  """Blank out the lines inside a ``codespell:ignore`` region.
+
+  The same escape hatch the single-token half of the rule uses, honored here so
+  a phrase and a word are exempted the same way. Lines are blanked rather than
+  removed so every reported line number still points at the real line.
+
+  Parameters
+  ----------
+  text : str
+      The file's source.
+
+  Returns
+  -------
+  str
+      The source with exempt regions replaced by blank lines.
+  """
+  out: list[str] = []
+  inside = False
+  for line in text.splitlines(True):
+    if "codespell:ignore-begin" in line:
+      inside = True
+    elif "codespell:ignore-end" in line:
+      inside = False
+      out.append("\n")
+      continue
+    out.append("\n" if inside else line)
+  return "".join(out)
+
+
 def _prose_of(path: pathlib.Path) -> list[tuple[int, str]]:
   """The docstrings and comments in one file, as ``(line, text)``.
 
@@ -82,7 +116,7 @@ def _prose_of(path: pathlib.Path) -> list[tuple[int, str]]:
   list of tuple
       One entry per docstring or comment.
   """
-  src = path.read_text(encoding="utf-8")
+  src = _without_exempt_regions(path.read_text(encoding="utf-8"))
   out: list[tuple[int, str]] = []
   tree = ast.parse(src)
   for node in ast.walk(tree):

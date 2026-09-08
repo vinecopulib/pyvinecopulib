@@ -418,10 +418,10 @@ def test_batched_to_device_invalidates() -> None:
 
 
 def test_refitting_in_place_invalidates_the_batched_bake() -> None:
-  """An in-place ``fit`` replaces the pairs the bake copied, so it must drop it.
+  """An in-place ``fit`` replaces the pairs the cache copied, so it must drop it.
 
   ``select`` gets this from ``_bind_vine``; ``fit`` keeps the structure, and a
-  bake left behind answers from the previous fit's grids. The grad signature
+  cache left behind answers from the previous fit's grids. The grad signature
   cannot notice -- a refit leaves every ``requires_grad`` flag alone.
   """
   u1 = _simulate(d=4, n=400, seed=901)
@@ -429,7 +429,7 @@ def test_refitting_in_place_invalidates_the_batched_bake() -> None:
   vine = TorchVinecop.from_data(u1, controls=FitControlsTorchVinecop())
   u_t = torch.from_numpy(_eval_grid(60, d=4, seed=903))
 
-  stale = vine.pdf(u_t, batched=True).clone()  # bake under the first fit
+  stale = vine.pdf(u_t, batched=True).clone()  # cached under the first fit
   assert vine._batched is not None
   vine.fit(u2, FitControlsTorchVinecop())
   assert vine._batched is None
@@ -443,7 +443,7 @@ def test_refitting_in_place_invalidates_the_batched_bake() -> None:
 
 
 def test_setting_pair_copulas_invalidates_the_batched_bake() -> None:
-  """The write hook is the other way the pairs change under a bake."""
+  """The write hook is the other way the pairs change under a cache."""
   vine = TorchVinecop.from_data(
     _simulate(d=3, n=300, seed=911), controls=FitControlsTorchVinecop()
   )
@@ -785,7 +785,7 @@ def test_cached_and_uncached_gradients_agree_in_direction() -> None:
 def test_the_batched_cache_re_bakes_when_grad_tracking_changes() -> None:
   """`requires_grad_` after a batched call must not leave a stale cache.
 
-  The bake copies each pair's grid into a stacked tensor and `requires_grad_`
+  The cache copies each pair's grid into a stacked tensor and `requires_grad_`
   mutates a flag in place, so flipping it afterwards used to leave the copy
   behind. It did not raise where it was read: the batched cascade returned a
   value detached from the grid, and it surfaced as torch's generic "does not
@@ -799,10 +799,10 @@ def test_the_batched_cache_re_bakes_when_grad_tracking_changes() -> None:
     return TorchVinecop.from_vinecop(fitted, cache_integrals=False)
 
   cop = lift()
-  # Bake first -- the ordering a caller hits by evaluating before deciding to
+  # Build the cache first -- the ordering a caller hits by evaluating before
   # optimize -- then start tracking the grid.
-  baked = cop.pdf(u, batched=True)
-  assert not baked.requires_grad
+  cached = cop.pdf(u, batched=True)
+  assert not cached.requires_grad
   pair = cast("TorchTllBicop", cop.get_pair_copula(0, 0))
   values = pair.interp_grid.values
   values.requires_grad_(True)
@@ -1142,7 +1142,7 @@ def test_batched_handles_a_vine_mixing_indep_and_tll(op: str) -> None:
 
   `TorchTllBicop` gives an independence copula a two-point sentinel grid and no
   prefix tables, because none of its own methods read either. Stacking a tree
-  level reads both, so the bake substitutes an independence density built on
+  level reads both, so the cache substitutes an independence density built on
   the shared grid -- otherwise a vine whose fit chose `indep` anywhere raises
   from `torch.stack`, which is most vines.
   """
@@ -1184,9 +1184,9 @@ def test_batched_handles_a_vine_mixing_indep_and_tll(op: str) -> None:
 def test_a_no_grad_cascade_does_not_detach_the_bake(first: str) -> None:
   """`sample` / `cdf` / the inverse evaluate under `no_grad`; `pdf` still fits.
 
-  Those three bake the stacked grids inside `torch.no_grad()`, which copies
+  Those three build the stacked grids inside `torch.no_grad()`, which copies
   them detached while the grids themselves still track grad -- so the flags
-  the re-bake watches do not change and the detached copy would be kept.
+  the rebuild watches do not change and the detached copy would be kept.
   """
   cop_tll = _fit_tll_vine(_simulate(d=4, n=400, seed=84))
   bc = TorchVinecop.from_vinecop(cop_tll)
@@ -1464,10 +1464,10 @@ def test_mixed_grids_refuse_the_batched_path() -> None:
 def test_load_state_dict_drops_the_stacked_bake() -> None:
   """Loading new grids must not leave the batched path on the old ones.
 
-  The bake and the compiled cascades copy the grids rather than viewing
+  The cache and the compiled cascades copy the grids rather than viewing
   them, so a load that replaces the grids leaves both answering from the
   density they were built with. Evaluating first is the point: it is what
-  builds the bake that the load then has to invalidate.
+  builds the cache that the load then has to invalidate.
   """
   d, n = 4, 400
   strong = _simulate(d=d, n=n, seed=5)
@@ -1881,7 +1881,7 @@ def test_a_pickle_does_not_carry_the_batched_bake() -> None:
   """The grid-batched state is a cache, and a copy of every pair's grid.
 
   Pickling it doubled the payload after a single batched call, and restored a
-  bake that nothing revalidated against the pairs it was baked from. It is
+  cache that nothing revalidated against the pairs it was built from. It is
   rebuilt on demand, so both cascades still agree afterwards.
   """
   import pickle
@@ -1889,9 +1889,9 @@ def test_a_pickle_does_not_carry_the_batched_bake() -> None:
   u = torch.from_numpy(_simulate(d=3, n=300, seed=3))
   vine = TorchVinecop.from_data(u)
   cold = len(pickle.dumps(vine))
-  vine.pdf(u, batched=True)  # bakes it
+  vine.pdf(u, batched=True)  # builds it
   warm = len(pickle.dumps(vine))
-  # Was 2.9x on this vine; the bake must not be in there at all.
+  # Was 2.9x on this vine; the cache must not be in there at all.
   assert warm < cold * 1.05, (cold, warm)
 
   back = pickle.loads(pickle.dumps(vine))

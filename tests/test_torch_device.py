@@ -213,7 +213,7 @@ def test_evaluation_does_not_round_trip_through_the_host(
 
   ``fit`` / ``select`` legitimately do -- Kendall's tau goes through the
   compiled ``wdm`` -- which is why this is scoped to evaluation. The first
-  call is untimed: it bakes the batched cache, which reads the structure
+  call is untimed: it builds the batched cache, which reads the structure
   from the compiled extension.
   """
   vine = TorchVinecop.from_vinecop(cpp_vine, device=torch.device(device))

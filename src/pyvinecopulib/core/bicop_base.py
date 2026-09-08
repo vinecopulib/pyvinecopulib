@@ -476,7 +476,7 @@ class BicopBase(
     u2: Any = self.hinv1(base_u, x=x)
     return cast("ArrayT", xp.stack([base_u[:, 0], u2], axis=-1))
 
-  #: Whether a vine may bake this pair into its stacked, grid-batched
+  #: Whether a vine may stack this pair into its grid-batched
   #: cascade. ``False`` here because the fast path reads an interpolation grid
   #: off each pair and a pair copula in general has none -- so a subclass opts
   #: in only if it exposes one. Declared rather than discovered, and declared

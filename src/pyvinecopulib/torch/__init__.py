@@ -119,3 +119,14 @@ __all__ = [
   "FitControlsTorchBicop",
   "FitControlsTorchVinecop",
 ]
+
+
+# Registered here for the same reason the margin adapters are: `core` holds
+# the registries and names no ecosystem, so the lane that owns a class is the
+# lane that teaches `margin_from_json` to rebuild it.
+from ..core._margins import register_margin_json
+
+register_margin_json("TorchKde1d", TorchKde1d.from_json_payload)
+register_margin_json(
+  "TorchDistributionMargin", TorchDistributionMargin.from_json_payload
+)

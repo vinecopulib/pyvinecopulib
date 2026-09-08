@@ -22,19 +22,17 @@ Internal: the vine cascades and the fit engines call these helpers, and
 from __future__ import annotations
 
 from types import ModuleType
-from typing import TYPE_CHECKING, Any, Optional, Protocol, cast
+from typing import Any, Optional, Protocol, cast
 
 from array_api_compat import array_namespace
 
+from ..pyvinecopulib_ext import RVineStructure
 from ._rootfind import solve_increasing
 from ._trim import trim
 
 from ._covariates import pair_eval, prepare
 from .bicop_base import BicopBase, flip_of
 from .protocols import ArrayT, BicopLike
-
-if TYPE_CHECKING:
-  from ..pyvinecopulib_ext import RVineStructure
 
 __all__ = ["DiscretePair"]
 

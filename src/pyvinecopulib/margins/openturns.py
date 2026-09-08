@@ -23,7 +23,8 @@ from typing import Any, Optional, Self, Sequence, Union
 
 import numpy as np
 
-from ..core import ControlsLike, MarginBase
+from ..core._margins import register_margin_adapter, register_margin_json
+from ..core import ControlsLike, MarginBase, MarginLike
 from ..core._validation import (
   extra_required,
   reject_array_controls,
@@ -426,6 +427,65 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
         "pass distribution="
       )
     return self._distribution
+
+  def to_json(self) -> dict[str, Any]:
+    """Return this margin's JSON payload.
+
+    Returns
+    -------
+    dict
+        A JSON-serializable mapping that
+        :func:`~pyvinecopulib.core.margin_from_json` reads back.
+
+    Raises
+    ------
+    ValueError
+        If the family has not been chosen yet, so there is nothing to store.
+    """
+    if self._unnamed and self._distribution is None:
+      raise ValueError(
+        "an OpenTURNSMargin with no family cannot be serialized; fit or "
+        "select one first"
+      )
+    payload: dict[str, Any] = {
+      "kind": "OpenTURNSMargin",
+      "family": self.family_name,
+      "var_type": self._var_type,
+    }
+    if self._distribution is not None:
+      payload["parameters"] = list(self.parameters)
+    if self._loglik is not None:
+      payload["loglik"] = self._loglik
+    return payload
+
+  @classmethod
+  def from_json_payload(cls, payload: dict[str, Any]) -> "OpenTURNSMargin":
+    """Rebuild a margin from the payload :meth:`to_json` produced.
+
+    Parameters
+    ----------
+    payload : dict
+        The mapping :meth:`to_json` returned.
+
+    Returns
+    -------
+    OpenTURNSMargin
+        The reconstructed margin.
+    """
+    openturns = _openturns()
+    family = str(payload["family"])
+    parameters = payload.get("parameters")
+    if parameters is None:
+      return cls(family)
+    # Rebuilt from the family's own parameter setter rather than its
+    # constructor: OpenTURNS orders constructor arguments per family, while
+    # `setParameter` takes the vector `getParameter` produced.
+    distribution = getattr(openturns, family)()
+    distribution.setParameter(openturns.Point([float(v) for v in parameters]))
+    out = cls.from_distribution(distribution)
+    if payload.get("loglik") is not None:
+      out._loglik = float(payload["loglik"])
+    return out
 
   @property
   def family_name(self) -> str:
@@ -915,3 +975,49 @@ def _openturns_criteria(
     key: n * float(getattr(fitting, method)(sample, distribution, k))
     for key, method in _FITTING_TEST.items()
   }
+
+
+def _is_openturns_distribution(obj: object) -> bool:
+  """Whether ``obj`` is an ``openturns`` distribution.
+
+  Parameters
+  ----------
+  obj : object
+      Any object.
+
+  Returns
+  -------
+  bool
+      ``True`` for a concrete OpenTURNS distribution and for the
+      ``Distribution`` interface object a factory returns, which share no base
+      class beyond ``Object``.
+  """
+  return any(
+    str(getattr(base, "__module__", "")).startswith("openturns")
+    and base.__name__ in ("Distribution", "DistributionImplementation")
+    for base in type(obj).__mro__
+  )
+
+
+def _adapt_openturns(obj: Any) -> MarginLike[Any]:
+  """Adapt an ``openturns`` distribution.
+
+  Parameters
+  ----------
+  obj : openturns.Distribution
+      The distribution to wrap.
+
+  Returns
+  -------
+  MarginLike
+      An :class:`OpenTURNSMargin` around it, already fitted.
+  """
+  return OpenTURNSMargin.from_distribution(obj)
+
+
+# Registered here rather than beside the other three: this is the one built-in
+# adapter that has to name a class living behind an extra, which `core` cannot
+# import. The other three build a generic wrapper and need no such class, so
+# they sit with the registry.
+register_margin_adapter(_is_openturns_distribution, _adapt_openturns)
+register_margin_json("OpenTURNSMargin", OpenTURNSMargin.from_json_payload)

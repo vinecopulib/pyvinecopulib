@@ -479,6 +479,64 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self.edf = float(kde.edf)
     return self
 
+  def to_json(self) -> dict[str, Any]:
+    """Return this margin's JSON payload.
+
+    Returns
+    -------
+    dict
+        A JSON-serializable mapping that
+        :func:`~pyvinecopulib.core.margin_from_json` reads back.
+
+    Raises
+    ------
+    ValueError
+        If the density has not been fitted, so there is no grid to store.
+    """
+    if not self.is_fitted:
+      raise ValueError(
+        "an unfitted TorchKde1d cannot be serialized; call fit(y) first"
+      )
+    return {
+      "kind": "TorchKde1d",
+      "state": self.get_extra_state(),
+      "grid_points": [float(v) for v in self.grid_points.tolist()],
+      "values": [float(v) for v in self.values.tolist()],
+      "prob0": float(self.prob0),
+    }
+
+  @classmethod
+  def from_json_payload(cls, payload: dict[str, Any]) -> "TorchKde1d":
+    """Rebuild a margin from the payload :meth:`to_json` produced.
+
+    Parameters
+    ----------
+    payload : dict
+        The mapping :meth:`to_json` returned.
+
+    Returns
+    -------
+    TorchKde1d
+        The reconstructed margin, on the default device and dtype.
+    """
+    state = dict(payload["state"])
+    out = cls.from_grid(
+      torch.as_tensor(payload["grid_points"], dtype=torch.float64),
+      torch.as_tensor(payload["values"], dtype=torch.float64),
+      prob0=float(payload.get("prob0", 0.0)),
+      xmin=state.get("xmin"),
+      xmax=state.get("xmax"),
+      type=str(state.get("type", "continuous")),
+      multiplier=float(state.get("multiplier", 1.0)),
+      degree=int(state.get("degree", 2)),
+      boundary_repair=bool(state.get("boundary_repair", True)),
+    )
+    # The diagnostics `get_extra_state` carries and `from_grid` cannot take:
+    # a grid supplied directly has no fit behind it, so these are restored
+    # rather than recomputed.
+    out.set_extra_state(state)
+    return out
+
   def get_extra_state(self) -> dict[str, Any]:
     """Return non-tensor fitted state for ``state_dict`` round-trips.
 

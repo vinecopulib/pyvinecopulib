@@ -22,6 +22,7 @@ from typing import (
 
 import numpy as np
 
+from ..core._margins import register_margin_json
 from ..core import ControlsLike, MarginBase, MarginLike
 from ..core._validation import (
   extra_required,
@@ -1351,3 +1352,8 @@ SciPyMargin.__doc__ = re.sub(
   SciPyMargin.__doc__ or "",
   flags=re.MULTILINE,
 )
+
+
+# Registered here, beside the class it rebuilds: `core` cannot name a class
+# living behind an extra, and this is the same hook a third party uses.
+register_margin_json("SciPyMargin", SciPyMargin.from_json_payload)

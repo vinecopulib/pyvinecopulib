@@ -461,3 +461,89 @@ def test_as_margin_supports_torch_families_with_a_cdf(family: str) -> None:
   margin = as_margin(raw)
   p = torch.tensor([0.25, 0.5, 0.75], dtype=torch.float64)
   torch.testing.assert_close(margin.cdf(margin.icdf(p)), p, atol=1e-6, rtol=0)
+
+
+# --- persistence, for every margin this package ships ----------------------- #
+
+
+def _shipped_margin_classes() -> dict[str, type]:
+  """Every margin class reachable from a public namespace.
+
+  Discovered rather than listed, so a margin added without a JSON reader fails
+  this file instead of being found by a user.
+
+  Returns
+  -------
+  dict
+      Class name to class, for the extras that are installed.
+  """
+  import importlib
+  import inspect
+
+  from pyvinecopulib.core import MarginBase
+
+  found: dict[str, type] = {"Kde1d": Kde1d}
+  for name in (
+    "pyvinecopulib.core",
+    "pyvinecopulib.margins",
+    "pyvinecopulib.torch",
+  ):
+    try:
+      module = importlib.import_module(name)
+    except ImportError:  # the extra is not installed
+      continue
+    for attr, value in vars(module).items():
+      if (
+        inspect.isclass(value)
+        and issubclass(value, MarginBase)
+        and value is not MarginBase
+        and not attr.startswith("_")
+      ):
+        found[attr] = value
+  return found
+
+
+def _fitted(cls: type, y: np.ndarray) -> Any:
+  """One fitted instance of ``cls``, however that class is built."""
+  if cls.__name__ == "TorchDistributionMargin":
+    torch = pytest.importorskip("torch")
+    return cls(torch.distributions.Normal, {"loc": 0.3, "scale": 1.2})
+  if cls.__name__ == "TorchKde1d":
+    torch = pytest.importorskip("torch")
+    return cls().fit(torch.as_tensor(y))
+  if cls.__name__ == "OpenTURNSMargin":
+    pytest.importorskip("openturns")
+    return cls("Normal").fit(y)
+  if cls.__name__ == "SciPyMargin":
+    return cls("norm").fit(y)
+  return cls().fit(y)
+
+
+def test_every_shipped_margin_round_trips_through_json() -> None:
+  """`Vinedist.to_json` tells the caller only a *foreign* margin needs work.
+
+  Three of the five shipped classes had no `to_json` at all, so a distribution
+  holding one could not be stored -- which the promise did not say.
+  """
+  y = np.random.RandomState(0).normal(size=300)
+  classes = _shipped_margin_classes()
+  assert len(classes) >= 2, classes
+
+  for name, cls in sorted(classes.items()):
+    margin = _fitted(cls, y)
+    payload = pv.core.margin_to_json(margin)
+    assert payload["kind"] == name, (name, payload["kind"])
+    restored = pv.core.margin_from_json(payload)
+    assert type(restored) is cls, (name, type(restored))
+
+    probe = np.array([-0.5, 0.0, 0.5])
+    if name.startswith("Torch"):
+      torch = pytest.importorskip("torch")
+      probe_t = torch.as_tensor(probe, dtype=torch.float64)
+      torch.testing.assert_close(
+        restored.cdf(probe_t), margin.cdf(probe_t), atol=0, rtol=0
+      )
+    else:
+      np.testing.assert_array_equal(
+        np.asarray(restored.cdf(probe)), np.asarray(margin.cdf(probe)), name
+      )

@@ -21,10 +21,9 @@ borrows ``_select_spanning_tree`` and ``RVineStructure.from_trees``.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, NamedTuple
+from typing import NamedTuple
 
-if TYPE_CHECKING:
-  from ..pyvinecopulib_ext import RVineStructure
+from ..pyvinecopulib_ext import RVineStructure
 
 __all__ = ["Reorientation", "reorientation"]
 

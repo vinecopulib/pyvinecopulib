@@ -25,21 +25,14 @@ from __future__ import annotations
 
 import json
 import math
-from typing import TYPE_CHECKING, Any, Callable, Optional, cast
+from typing import Any, Callable, Optional, cast
 
 import numpy as np
 
+from ..pyvinecopulib_ext import Kde1d
 from .margin_base import MarginBase, support_of
 from .protocols import ArrayT, MarginLike
 
-if TYPE_CHECKING:
-  # `core` imports without PyTorch; these names are read by the type checker
-  # only. torch ships `py.typed`, so they are its own declarations rather than
-  # a restatement of them.
-  from torch import Tensor
-  from torch.distributions import Distribution
-
-  from ..pyvinecopulib_ext import Kde1d
 
 __all__ = [
   "as_margin",
@@ -252,7 +245,7 @@ def _is_torch_distribution(obj: object) -> bool:
   )
 
 
-def _adapt_torch(obj: Distribution) -> MarginLike[Tensor]:
+def _adapt_torch(obj: Any) -> MarginLike[Any]:  # noqa: ANN401
   """Adapt a ``torch.distributions`` object.
 
   ``log_prob`` is the only density it offers, and ``cdf`` / ``icdf`` are
@@ -284,7 +277,7 @@ def _adapt_torch(obj: Distribution) -> MarginLike[Tensor]:
 
   lo, hi = support_of(obj)
 
-  def _icdf(p: Tensor) -> Tensor:
+  def _icdf(p: Any) -> Any:  # noqa: ANN401 - a tensor, which `core` cannot name
     try:
       return obj.icdf(p)
     except NotImplementedError:
@@ -349,46 +342,6 @@ def as_margin(obj: object) -> MarginLike[Any]:
   )
 
 
-def _adapt_openturns(obj: Any) -> MarginLike[Any]:  # noqa: ANN401
-  """Adapt an ``openturns`` distribution.
-
-  Parameters
-  ----------
-  obj : openturns.Distribution
-      The distribution to wrap.
-
-  Returns
-  -------
-  MarginLike
-      An ``OpenTURNSMargin`` around it, already fitted.
-  """
-  from ..margins.openturns import OpenTURNSMargin
-
-  return OpenTURNSMargin.from_distribution(obj)
-
-
-def _is_openturns_distribution(obj: object) -> bool:
-  """Whether ``obj`` is an ``openturns`` distribution.
-
-  Parameters
-  ----------
-  obj : object
-      Any object.
-
-  Returns
-  -------
-  bool
-      ``True`` for a concrete OpenTURNS distribution and for the
-      ``Distribution`` interface object a factory returns, which share no base
-      class beyond ``Object``.
-  """
-  return any(
-    str(getattr(base, "__module__", "")).startswith("openturns")
-    and base.__name__ in ("Distribution", "DistributionImplementation")
-    for base in type(obj).__mro__
-  )
-
-
 #: The ecosystems this package adapts, tried in order after anything
 #: registered. Every predicate reads ``type(obj).__mro__``, so none of them
 #: imports the ecosystem it recognizes. The two SciPy predicates are mutually
@@ -400,7 +353,6 @@ _BUILTIN_ADAPTERS: tuple[
   (_is_scipy_new, _adapt_scipy_new),
   (_is_scipy_legacy, _adapt_scipy_legacy),
   (_is_torch_distribution, _adapt_torch),
-  (_is_openturns_distribution, _adapt_openturns),
 )
 
 
@@ -504,7 +456,10 @@ def margin_from_json(payload: dict[str, Any]) -> MarginLike[Any]:
     known = ", ".join(sorted({*_READERS, *_BUILTIN_READERS})) or "(none)"
     raise ValueError(
       f"no reader registered for margin kind {kind!r}; known kinds: {known}. "
-      "Call `pyvinecopulib.core.register_margin_json` first."
+      "A margin from an optional extra registers its reader when its module "
+      "is imported, so `import pyvinecopulib.margins` or "
+      "`import pyvinecopulib.torch` first if the payload names one of those; "
+      "otherwise call `pyvinecopulib.core.register_margin_json`."
     )
   return reader(payload)
 
@@ -601,23 +556,16 @@ def loads(text: str) -> dict[str, Any]:
 
 def _read_kde1d(payload: dict[str, Any]) -> Kde1d:
   """Rebuild a ``Kde1d``, whose own JSON is a string rather than a mapping."""
-  from . import Kde1d
-
   return Kde1d.from_json(payload["json"])
 
 
-def _read_scipy_margin(payload: dict[str, Any]) -> MarginLike[Any]:
-  """Rebuild a ``SciPyMargin``, which lives behind the SciPy extra."""
-  from ..margins.scipy import SciPyMargin
-
-  return SciPyMargin.from_json_payload(payload)
-
-
-#: ``kind`` -> the reader for it, for the margins this package ships. Consulted
-#: after :func:`register_margin_json`'s table, so a caller may override one.
+#: ``kind`` -> the reader for it. Only ``Kde1d`` is here: it is a ``core``
+#: class, so ``core`` can name it. Every other margin registers its own
+#: reader from its own module through :func:`register_margin_json`, which is
+#: what keeps ``core`` from naming a class it must not import -- and makes the
+#: first-party margins use the same hook a third party does.
 _BUILTIN_READERS: dict[str, Callable[[dict[str, Any]], Any]] = {
   "Kde1d": _read_kde1d,
-  "SciPyMargin": _read_scipy_margin,
 }
 
 

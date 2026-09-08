@@ -419,6 +419,80 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
       kwargs["validate_args"] = self._validate_args
     return self._factory(**kwargs)
 
+  def to_json(self) -> dict[str, Any]:
+    """Return this margin's JSON payload.
+
+    Returns
+    -------
+    dict
+        A JSON-serializable mapping that
+        :func:`~pyvinecopulib.core.margin_from_json` reads back.
+
+    Raises
+    ------
+    ValueError
+        If the factory is not a ``torch.distributions`` class, since only a
+        name can be written down and only a name can be resolved back.
+    """
+    factory = self._factory
+    module = getattr(factory, "__module__", "")
+    name = getattr(factory, "__name__", "")
+    if not str(module).startswith("torch.distributions") or not name:
+      raise ValueError(
+        f"cannot serialize a TorchDistributionMargin built from "
+        f"{factory!r}: only a `torch.distributions` class can be named in a "
+        "payload and resolved back from one"
+      )
+    return {
+      "kind": "TorchDistributionMargin",
+      "family": str(name),
+      "parameters": {
+        # Detached: a trainable parameter carries a graph, and reading a
+        # scalar off one warns.
+        key: [
+          float(v)
+          for v in torch.as_tensor(getattr(self, key)).detach().flatten()
+        ]
+        for key in self._parameter_names
+      },
+      "validate_args": self._validate_args,
+    }
+
+  @classmethod
+  def from_json_payload(
+    cls, payload: dict[str, Any]
+  ) -> "TorchDistributionMargin":
+    """Rebuild a margin from the payload :meth:`to_json` produced.
+
+    Parameters
+    ----------
+    payload : dict
+        The mapping :meth:`to_json` returned.
+
+    Returns
+    -------
+    TorchDistributionMargin
+        The reconstructed margin, on the default device in ``float64``.
+
+    Raises
+    ------
+    ValueError
+        If ``torch.distributions`` has no family of that name.
+    """
+    family = str(payload["family"])
+    factory = getattr(torch.distributions, family, None)
+    if factory is None:
+      raise ValueError(f"torch.distributions has no family {family!r}")
+    parameters = {
+      key: (value[0] if len(value) == 1 else list(value))
+      for key, value in dict(payload["parameters"]).items()
+    }
+    return cls(
+      factory,
+      parameters,
+      validate_args=payload.get("validate_args"),
+    )
+
   @property
   def parameter_names(self) -> tuple[str, ...]:
     """Names of the registered parameters, in the order given.
