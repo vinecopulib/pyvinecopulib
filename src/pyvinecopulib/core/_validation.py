@@ -3,19 +3,24 @@
 Every check a margin, pair copula, vine or vine distribution performs on its
 inputs lives here: the univariate and covariate layouts, observation weights,
 and the fit-time refusal of covariates a part cannot read. Each takes ``name=``
-so the message names the argument the caller actually passed.
+so the message names the argument the caller actually passed. The refusal an
+absent optional dependency earns lives here too, so every extra is named the
+same way.
 """
 
 from __future__ import annotations
 
-from typing import Any, Optional
+import contextlib
+from typing import Any, Iterator, Optional, cast
 
 from array_api_compat import array_namespace
+
+from .protocols import ArrayT
 
 __all__: list[str] = []
 
 
-def validate_univariate(values: Any, *, name: str = "y") -> Any:
+def validate_univariate(values: ArrayT, *, name: str = "y") -> ArrayT:
   """Require the documented one-dimensional univariate-data layout.
 
   Parameters
@@ -48,7 +53,7 @@ def validate_covariates(
 
   Parameters
   ----------
-  x : array, or None
+  x : array, or None, optional
       The covariate matrix, or ``None`` to accept.
   n_rows : int
       Number of observations the covariates must align with.
@@ -81,13 +86,13 @@ def validate_covariates(
 
 
 def validate_weights(
-  weights: Optional[Any], values: Any, *, name: str = "weights"
-) -> Optional[Any]:
+  weights: Optional[ArrayT], values: Any, *, name: str = "weights"
+) -> Optional[ArrayT]:
   """Normalize and validate one real, finite, nonnegative weight per row.
 
   Parameters
   ----------
-  weights : array, or None
+  weights : array, or None, optional
       The weights to check, or ``None`` to accept.
   values : array
       The observations the weights align with; also fixes the array namespace
@@ -150,7 +155,7 @@ def validate_weights(
       f"{name} must leave at least one observation standing; NaN and 0 mark a "
       "dropped observation, and every entry is one"
     )
-  return weights
+  return cast("ArrayT", weights)
 
 
 def usable_observations(values: Any, *, name: str = "y") -> Any:
@@ -185,7 +190,9 @@ def usable_observations(values: Any, *, name: str = "y") -> Any:
   return values
 
 
-def reject_covariates(part: Any, x: Optional[Any], *, name: str = "x") -> None:
+def reject_covariates(
+  part: object, x: Optional[ArrayT], *, name: str = "x"
+) -> None:
   """Raise if ``x`` was supplied to a part that fits unconditionally.
 
   Evaluation ignores covariates a part does not read, since one distribution
@@ -198,7 +205,7 @@ def reject_covariates(part: Any, x: Optional[Any], *, name: str = "x") -> None:
   part : object
       The margin, pair copula or vine being fitted; named in the message.
       Either the instance or the class, so a classmethod may pass ``cls``.
-  x : array, shape (n, p), or None
+  x : array, shape (n, p), or None, optional
       The covariates the caller passed.
   name : str, default="x"
       The argument's name, used in the error message.
@@ -224,14 +231,14 @@ def reject_covariates(part: Any, x: Optional[Any], *, name: str = "x") -> None:
     )
 
 
-def reject_array_controls(part: Any, controls: Any) -> None:
+def reject_array_controls(part: object, controls: object) -> None:
   """Raise if an array landed in the ``controls`` slot.
 
   Every estimator in the package takes the observations, then ``controls``.
-  The compiled ``Kde1d`` is the documented exception -- its second positional
-  argument is ``weights`` -- so ``kde.fit(x, w)`` is a spelling a reader
-  carries over, and on any other margin it binds the weights to ``controls``,
-  where they are ignored: an unweighted fit under a weighted-looking call.
+  ``Kde1d`` is the documented exception -- its second positional argument is
+  ``weights`` -- so ``kde.fit(x, w)`` is a spelling a reader carries over, and
+  on any other margin it binds the weights to ``controls``, where they are
+  ignored: an unweighted fit under a weighted-looking call.
 
   Nothing in the library passes an array here, so refusing one costs nothing
   and turns that typo into a message naming the keyword to use.
@@ -260,6 +267,43 @@ def reject_array_controls(part: Any, controls: Any) -> None:
   named = part if isinstance(part, type) else type(part)
   raise TypeError(
     f"{named.__name__} received an array where `controls` goes. Observation "
-    "weights are the keyword-only `weights=`; the compiled `Kde1d` is the one "
-    "class whose second positional argument is `weights`."
+    "weights are the keyword-only `weights=`; `Kde1d` is the one class whose "
+    "second positional argument is `weights`."
   )
+
+
+@contextlib.contextmanager
+def extra_required(*, extra: str, requirement: str) -> Iterator[None]:
+  """Rewrite an optional dependency's ``ImportError`` to name its extra.
+
+  Guards the ``import`` statement rather than taking a module name to import
+  itself. Two reasons: the statement stays where a reader and a type checker
+  can see it, and ``importlib.import_module`` would not go through
+  ``builtins.__import__`` -- which is how the extras-absent tests simulate an
+  absent package, so a guard built on it reports success there.
+
+  Parameters
+  ----------
+  extra : str
+      The extra that installs the dependency, as ``pyvinecopulib[<extra>]``.
+  requirement : str
+      One sentence saying what needs it, leading the message. It carries its
+      own subject and verb, since one class requires a package where a group
+      of them require it.
+
+  Yields
+  ------
+  None
+      With the guard installed for the block.
+
+  Raises
+  ------
+  ImportError
+      If the guarded import fails.
+  """
+  try:
+    yield
+  except ImportError as e:  # pragma: no cover - exercised in a subprocess
+    raise ImportError(
+      f"{requirement} Install it with `pip install pyvinecopulib[{extra}]`."
+    ) from e

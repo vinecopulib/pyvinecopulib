@@ -1,4 +1,4 @@
-"""Pre-import compatibility checks for deliberately non-baseline wheels."""
+"""Pre-import compatibility checks for wheels built above the baseline."""
 
 from __future__ import annotations
 

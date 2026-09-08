@@ -33,8 +33,9 @@ pip install --no-binary pyvinecopulib pyvinecopulib
 
 ## Nearly every fitted number moves
 
-The vendored C++ libraries advanced substantially, so a refit will not
-reproduce a 0.7.6 model exactly. Nothing raises; the numbers differ.
+The upstream `vinecopulib`, `wdm` and `kde1d` libraries advanced
+substantially, so a refit will not reproduce a 0.7.6 model exactly. Nothing
+raises; the numbers differ.
 
 - Every `tll` fit changes -- and `tll` is what family selection usually picks
   for a nonparametric pair. The interpolation grid's margins are now balanced
@@ -92,7 +93,7 @@ which every example in this repository did -- nothing changes. The same order
 holds on `BicopBase`, `VinecopBase`, `VinedistBase` and their PyTorch
 subclasses; `MarginBase` and the margin classes already read this way.
 
-The one exception is the **compiled** `Kde1d`, whose second positional
+The one exception is `Kde1d` itself, whose second positional
 argument is `weights`. It takes no controls object at all, so there is nothing
 to confuse it with, and `kde.fit(x, w)` keeps working. That is specific to that
 class: every `MarginBase` margin, `TorchKde1d` included, reads
@@ -160,7 +161,7 @@ development builds only, so a subclass written against one of those needs the
 new name; nothing was released under the old one, and the bases no longer
 check for it.
 
-Two `sample` conventions now coexist, deliberately. The `core` classes keep the
+Two `sample` conventions now coexist. The `core` classes keep the
 quasi-random arguments they always had — `sample(n, qrng=False, seeds=[])`,
 where `seeds` is a list of `int`. The `pyvinecopulib.sklearn` estimators keep
 `sample(n_samples, random_state)`, because that is the signature scikit-learn's
@@ -222,8 +223,9 @@ here.
 
 `margins`, `sklearn` and `torch` are **provisional in 1.x**: they ship for the
 first time in this release, and their surfaces may change in a minor version.
-The margin contract and the torch/C++ parity guarantees are the parts already
-treated as load-bearing. Pin an exact version if you build on the rest.
+The margin contract and the `TorchVinecop`-against-`Vinecop` parity
+guarantees are the parts already treated as required. Pin an exact
+version if you build on the rest.
 
 ## What did not change
 

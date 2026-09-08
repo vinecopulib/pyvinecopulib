@@ -10,7 +10,7 @@ independent vine; and confirms the truncation and discrete paths.
 from __future__ import annotations
 
 import pickle
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 import numpy as np
 import pytest
@@ -33,7 +33,7 @@ _TLL_CONTROLS = pv.FitControlsVinecop(
 )
 
 
-def _fit_tll_vine(u: np.ndarray, **extra) -> pv.Vinecop:
+def _fit_tll_vine(u: np.ndarray, **extra: Any) -> pv.Vinecop:
   ctl = pv.FitControlsVinecop(
     family_set=[pv.families.tll], num_threads=1, **extra
   )
@@ -280,7 +280,7 @@ def test_rosenblatt_batched_matches_unbatched(cache: bool) -> None:
 def test_inverse_rosenblatt_batched_matches_sequential() -> None:
   """The wave-scheduled inverse is a reordering, so it agrees bit-for-bit.
 
-  The inverse cascade's dependency graph is genuinely 2-D -- a cell depends on
+  The inverse cascade's dependency graph is actually 2-D -- a cell depends on
   one at a *different* tree level -- so the per-tree-level wavefront that works
   for pdf / rosenblatt does not apply, and the batched path groups cells by
   longest-path level of that graph instead. Every cell still consumes exactly
@@ -438,7 +438,7 @@ def test_refitting_in_place_invalidates_the_batched_bake() -> None:
   torch.testing.assert_close(
     refit_batched, vine.pdf(u_t, batched=False), atol=1e-12, rtol=1e-12
   )
-  # And it is genuinely the new vine, not the old one re-derived.
+  # And it is actually the new vine, not the old one re-derived.
   assert not torch.allclose(refit_batched, stale)
 
 
@@ -529,7 +529,7 @@ def test_eval_rejects_wrong_input_shape(op: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_from_structure_pair_copulas_matches_init():
+def test_from_structure_pair_copulas_matches_init() -> None:
   """from_structure(structure, pair_copulas) builds the same vine as
   TorchVinecop(pair_copulas, structure)."""
   rng = np.random.default_rng(0)
@@ -545,7 +545,7 @@ def test_from_structure_pair_copulas_matches_init():
   assert torch.allclose(via_init.pdf(u_t), via_factory.pdf(u_t))
 
 
-def test_from_structure_empty_is_independence_vine():
+def test_from_structure_empty_is_independence_vine() -> None:
   """No pair_copulas -> every edge is an independence TorchTllBicop;
   pdf is identically 1."""
   s = pv.RVineStructure.sample(4, seeds=[1, 2, 3, 4, 5])
@@ -556,7 +556,7 @@ def test_from_structure_empty_is_independence_vine():
   )
 
 
-def test_from_structure_matrix_path():
+def test_from_structure_matrix_path() -> None:
   """Matrix kwarg routes through RVineStructure.from_matrix."""
   s = pv.RVineStructure.sample(3, seeds=[1, 2, 3, 4, 5])
   mat = np.asarray(s.matrix, dtype=np.uint64)
@@ -565,7 +565,7 @@ def test_from_structure_matrix_path():
   assert tv.trunc_lvl == 2
 
 
-def test_from_structure_rejects_both_or_neither():
+def test_from_structure_rejects_both_or_neither() -> None:
   s = pv.RVineStructure.sample(3, seeds=[1, 2, 3, 4, 5])
   with pytest.raises(ValueError, match="exactly one"):
     TorchVinecop.from_structure()
@@ -575,7 +575,7 @@ def test_from_structure_rejects_both_or_neither():
     )
 
 
-def test_simulate_seeded_reproducible():
+def test_simulate_seeded_reproducible() -> None:
   rng = np.random.default_rng(0)
   U = rng.uniform(0.001, 0.999, (300, 3))
   tv = TorchVinecop.from_vinecop(_fit_tll_vine(U))
@@ -587,7 +587,7 @@ def test_simulate_seeded_reproducible():
   assert not torch.allclose(a, c)
 
 
-def test_simulate_qrng_runs_and_returns_uniforms():
+def test_simulate_qrng_runs_and_returns_uniforms() -> None:
   """qrng=True draws Halton/Sobol via pv.utils.sample_uniform, then
   pushes through inverse_rosenblatt. We check basic shape + range."""
   rng = np.random.default_rng(0)
@@ -599,7 +599,7 @@ def test_simulate_qrng_runs_and_returns_uniforms():
   assert (s > 0).all() and (s < 1).all()
 
 
-def test_cdf_matches_cpp_within_mc_error():
+def test_cdf_matches_cpp_within_mc_error() -> None:
   rng = np.random.default_rng(0)
   U = rng.uniform(0.001, 0.999, (300, 3))
   cop = _fit_tll_vine(U)
@@ -612,7 +612,7 @@ def test_cdf_matches_cpp_within_mc_error():
   np.testing.assert_allclose(cdf_torch, cdf_cpp, atol=2e-2)
 
 
-def test_pdf_accepts_num_threads_no_op():
+def test_pdf_accepts_num_threads_no_op() -> None:
   rng = np.random.default_rng(0)
   U = rng.uniform(0.001, 0.999, (200, 3))
   tv = TorchVinecop.from_vinecop(_fit_tll_vine(U))
@@ -622,7 +622,7 @@ def test_pdf_accepts_num_threads_no_op():
   assert torch.allclose(p1, p4)
 
 
-def test_rosenblatt_inverse_rosenblatt_accept_num_threads():
+def test_rosenblatt_inverse_rosenblatt_accept_num_threads() -> None:
   rng = np.random.default_rng(0)
   U = rng.uniform(0.001, 0.999, (200, 3))
   tv = TorchVinecop.from_vinecop(_fit_tll_vine(U))
@@ -709,7 +709,11 @@ def test_batched_cache_stays_out_of_the_state_dict() -> None:
 # --- gradients ---------------------------------------------------------------- #
 
 
-def _central_fd(fn, q, eps: float = 1e-6):
+def _central_fd(
+  fn: Callable[[torch.Tensor], torch.Tensor],
+  q: torch.Tensor,
+  eps: float = 1e-6,
+) -> torch.Tensor:
   """Central finite differences of a scalar-per-row function in every column."""
   fd = torch.zeros_like(q)
   with torch.no_grad():
@@ -791,7 +795,7 @@ def test_the_batched_cache_re_bakes_when_grad_tracking_changes() -> None:
   fitted = _fit_tll_vine(_simulate(d=3, n=600, seed=900))
   u = torch.from_numpy(_eval_grid(48, d=3, seed=901))
 
-  def lift():
+  def lift() -> TorchVinecop:
     return TorchVinecop.from_vinecop(fitted, cache_integrals=False)
 
   cop = lift()
@@ -799,7 +803,8 @@ def test_the_batched_cache_re_bakes_when_grad_tracking_changes() -> None:
   # optimize -- then start tracking the grid.
   baked = cop.pdf(u, batched=True)
   assert not baked.requires_grad
-  values = cop.get_pair_copula(0, 0).interp_grid.values
+  pair = cast("TorchTllBicop", cop.get_pair_copula(0, 0))
+  values = pair.interp_grid.values
   values.requires_grad_(True)
 
   (g_batched,) = torch.autograd.grad(cop.pdf(u, batched=True).sum(), values)
@@ -809,7 +814,8 @@ def test_the_batched_cache_re_bakes_when_grad_tracking_changes() -> None:
 
   # The other ordering agrees, so neither is the special case.
   other = lift()
-  other_values = other.get_pair_copula(0, 0).interp_grid.values
+  other_pair = cast("TorchTllBicop", other.get_pair_copula(0, 0))
+  other_values = other_pair.interp_grid.values
   other_values.requires_grad_(True)
   (g_first,) = torch.autograd.grad(
     other.pdf(u, batched=True).sum(), other_values
@@ -1764,7 +1770,7 @@ def test_batched_fit_runs_one_call_per_tree(
   ],
 )
 def test_batched_selection_survives_a_shortened_cascade(
-  kwargs: dict, why: str
+  kwargs: dict[str, Any], why: str
 ) -> None:
   """The batched selector holds where a level could come out ragged.
 

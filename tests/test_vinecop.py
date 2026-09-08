@@ -2,6 +2,7 @@ import copy
 import itertools
 import os
 import pickle
+from collections.abc import Callable
 
 import numpy as np
 import pytest
@@ -209,7 +210,9 @@ def test_custom_criterion_multithread_smoke() -> None:
   assert np.array_equal(cop1.matrix, cop2.matrix)
 
 
-def _check_triangular(arr: object, d: int, leaf_check) -> None:
+def _check_triangular(
+  arr: object, d: int, leaf_check: Callable[[object], None]
+) -> None:
   """Validate a ``[tree][edge]`` nested list: tree ``i`` has ``d - 1 - i``
   entries, each passing ``leaf_check``. isinstance narrowing at every level
   keeps the (untyped) dict/list contents type-checkable."""
@@ -555,7 +558,7 @@ def test_vinecop_reorient() -> None:
   ll0, pdf0 = cop.loglik(u), cop.pdf(u)
   order = [int(v) for v in cop.structure.order]
 
-  # Exercise a GENUINE reorientation: search for an admissible tail that is not
+  # Exercise a REAL reorientation: search for an admissible tail that is not
   # already the current suffix (a suffix hits the no-op early return and would
   # test nothing). Inadmissible sets raise, exercising the rejection path.
   did_reorient = did_reject = False
@@ -571,7 +574,7 @@ def test_vinecop_reorient() -> None:
         continue
       new_order = [int(v) for v in vc.structure.order]
       assert set(new_order[-k:]) == set(cand)  # requested set placed at tail
-      assert new_order != order  # order genuinely changed (not a no-op)
+      assert new_order != order  # order actually changed (not a no-op)
       # Value-preserving: the reoriented vine has the same density / loglik.
       np.testing.assert_allclose(vc.loglik(u), ll0, rtol=1e-9, atol=1e-10)
       np.testing.assert_allclose(vc.pdf(u), pdf0, rtol=1e-8, atol=1e-10)
@@ -621,7 +624,7 @@ def test_vinecop_get_trees_and_roundtrip() -> None:
   # in test_rvinestructure_get_trees_faithful_roundtrip).
   s = cop.structure
   assert pv.RVineStructure.from_trees(s.dim, s.get_trees()) == s
-  # __eq__ / __ne__ are genuine equality: a truncated copy compares unequal.
+  # __eq__ / __ne__ are actual equality: a truncated copy compares unequal.
   st = copy.deepcopy(s)
   st.truncate(1)
   assert st.trunc_lvl == 1
@@ -781,7 +784,7 @@ def test_fit_controls_vinecop_from_bicop_controls() -> None:
   assert controls.family_set == [pv.families.clayton]
 
 
-def _cop_and_data(d: int = 5, n: int = 400):
+def _cop_and_data(d: int = 5, n: int = 400) -> tuple[pv.Vinecop, np.ndarray]:
   u = pv.to_pseudo_obs(random_data(d, n))
   return pv.Vinecop.from_data(u), u
 
@@ -848,7 +851,9 @@ def test_rosenblatt_second_positional_is_still_num_threads() -> None:
 @pytest.mark.parametrize(
   "bad", [[], [1, 1], [0], [99], [1, 2, 3, 4, 5]], ids=str
 )
-def test_rosenblatt_rejects_inadmissible_conditioning_set(bad) -> None:
+def test_rosenblatt_rejects_inadmissible_conditioning_set(
+  bad: list[int],
+) -> None:
   cop, u = _cop_and_data()
   with pytest.raises(RuntimeError):
     cop.rosenblatt(u, conditioning_set=bad)
@@ -879,7 +884,9 @@ def test_rosenblatt_conditioning_set_handles_a_truncated_vine(
   )
 
 
-def _cop_conditioned_on(cs: list[int], d: int = 5, n: int = 400):
+def _cop_conditioned_on(
+  cs: list[int], d: int = 5, n: int = 400
+) -> tuple[pv.Vinecop, np.ndarray]:
   """A vine whose order tail is ``cs``, so ``cs`` is an admissible set."""
   controls = pv.FitControlsVinecop()
   controls.conditioning_set = cs
@@ -965,7 +972,7 @@ def test_sample_conditional_discrete_set_takes_a_left_limit_column() -> None:
 
 
 @pytest.mark.parametrize("types", [["c"], ["c", "c"], ["c"] * 9])
-def test_var_types_needs_one_entry_per_variable(types) -> None:
+def test_var_types_needs_one_entry_per_variable(types: list[str]) -> None:
   """A short ``var_types`` used to terminate the interpreter.
 
   The setter rejected a vector longer than the dimension but stored a shorter

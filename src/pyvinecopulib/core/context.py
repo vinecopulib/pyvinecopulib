@@ -3,7 +3,7 @@
 A :class:`ConditioningContext` decides, for a single pair-copula edge, the ``x`` matrix
 (``x_e`` in the cascades) the pair copula receives — assembled from the edge's
 conditioning-set values ``u_D`` (gathered by the vine cascade) and the optional
-external covariate matrix ``x`` (passed per call). It is the pluggable seam that
+external covariate matrix ``x`` (passed per call). It is the hook that
 turns the otherwise simplified cascades into non-simplified ones:
 
 * :class:`SimplifiedContext` (default) forwards only the external covariates
@@ -34,7 +34,7 @@ each pair's conditioning matrix ``x_e`` is built::
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Optional, Protocol, runtime_checkable
+from typing import Optional, Protocol, cast, runtime_checkable
 
 from array_api_compat import array_namespace
 
@@ -65,10 +65,10 @@ class ConditioningContext(Protocol[ArrayT]):
 
     Parameters
     ----------
-    u_D : array, shape (n, len(D)), or None
+    u_D : array, shape (n, len(D)), or None, optional
         The edge's conditioning-set values (gathered by the cascade when
         :attr:`assembles_conditioning` is ``True``), else ``None``.
-    x : array, shape (n, p), or None
+    x : array, shape (n, p), or None, optional
         External covariates for this call, or ``None``.
 
     Returns
@@ -98,7 +98,7 @@ class SimplifiedContext(ConditioningContext[ArrayT]):
 
     Parameters
     ----------
-    u_D : array or None, optional
+    u_D : array, or None, optional
         Ignored (never gathered under a simplified context).
     x : array, shape (n, p), or None, optional
         External covariates for this call.
@@ -145,4 +145,4 @@ class NonSimplifiedContext(ConditioningContext[ArrayT]):
       return None
     if len(parts) == 1:
       return parts[0]
-    return array_namespace(parts[0]).concat(parts, axis=-1)
+    return cast("ArrayT", array_namespace(parts[0]).concat(parts, axis=-1))

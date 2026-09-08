@@ -117,7 +117,7 @@ def assert_on_device(
 
   Walks ``named_parameters()`` and ``named_buffers()`` recursively, then
   every tensor reachable in ``outputs``. ``extra`` covers state that is
-  deliberately unregistered -- notably ``TorchVinecop._batched``, installed
+  left unregistered -- notably ``TorchVinecop._batched``, installed
   via ``object.__setattr__`` so it stays out of ``state_dict()`` and is
   therefore invisible to ``named_buffers()``.
 

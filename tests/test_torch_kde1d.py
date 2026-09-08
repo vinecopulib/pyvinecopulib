@@ -1,6 +1,6 @@
 """Tests for `pyvinecopulib.torch.TorchKde1d`.
 
-The load-bearing claim is **parity**: a lifted grid evaluates to the same
+The required claim is **parity**: a lifted grid evaluates to the same
 numbers as the compiled `Kde1d` it came from, across all three variable types,
 bounded and unbounded, at every local-polynomial degree. One of those numbers
 comes from C++ behavior that looks like a bug and is not, so it is pinned
@@ -67,7 +67,7 @@ def _t(values: np.ndarray) -> Any:
   ],
 )
 def test_pdf_and_cdf_match_the_compiled_estimator(
-  kind: str, kwargs: dict, degree: int
+  kind: str, kwargs: dict[str, Any], degree: int
 ) -> None:
   """Every type, bounded and unbounded, at every degree."""
   kde, lifted, y = _fitted(kind, degree=degree, **kwargs)
@@ -106,7 +106,9 @@ def test_pdf_and_cdf_match_the_compiled_estimator(
 _QUANTILE_RTOL = {"discrete": 0.0, "continuous": 1e-12, "zi": 1e-12}
 
 
-def _assert_quantiles_agree(got, want, kind: str = "continuous") -> None:
+def _assert_quantiles_agree(
+  got: np.ndarray, want: np.ndarray, kind: str = "continuous"
+) -> None:
   """Compare a torch quantile against the compiled one; see `_QUANTILE_RTOL`."""
   rtol = _QUANTILE_RTOL[kind]
   if rtol == 0.0:
@@ -123,7 +125,9 @@ def _assert_quantiles_agree(got, want, kind: str = "continuous") -> None:
     ("zi", {"type": "zero-inflated", "xmin": 0.0}),
   ],
 )
-def test_icdf_matches_the_compiled_estimator(kind: str, kwargs: dict) -> None:
+def test_icdf_matches_the_compiled_estimator(
+  kind: str, kwargs: dict[str, Any]
+) -> None:
   """The inversion is reproduced step for step; see `_QUANTILE_RTOL`."""
   kde, lifted, _ = _fitted(kind, **kwargs)
   _assert_quantiles_agree(
@@ -190,7 +194,7 @@ def test_nan_in_gives_nan_out() -> None:
 
 
 def test_discrete_masses_sum_to_one_over_the_lattice() -> None:
-  """The normalization is the whole point of the discrete branch."""
+  """The normalization is what the discrete branch exists for."""
   _, lifted, _ = _fitted("discrete", type="discrete", xmin=0.0)
   levels = _t(np.arange(-2.0, 40.0))
   assert float(lifted.pdf(levels).sum()) == pytest.approx(1.0, abs=1e-10)
@@ -232,7 +236,7 @@ def test_it_satisfies_the_margin_contract() -> None:
   ],
 )
 def test_var_type_maps_the_compiled_spelling(
-  kwargs: dict, expected: str
+  kwargs: dict[str, Any], expected: str
 ) -> None:
   """`kde_type` keeps the hyphenated compiled name; `var_type` is the contract's."""
   margin = TorchKde1d(**kwargs)

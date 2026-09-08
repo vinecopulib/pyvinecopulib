@@ -1,10 +1,10 @@
 """JSON persistence for the margin and distribution layer.
 
-``Bicop`` / ``Vinecop`` / ``RVineStructure`` carry ``to_json`` / ``from_json``
-from the compiled library, and ``docs/concepts.rst`` presents that as the way to
-persist a model. The objects this package adds on top -- ``Vinedist`` and the
-margins -- need the same surface, and a margin can be any class a caller wrote,
-so reconstruction goes through a registry rather than a fixed list of types.
+``Bicop`` / ``Vinecop`` / ``RVineStructure`` already carry ``to_json`` /
+``from_json``, and ``docs/concepts.rst`` presents that as the way to persist a
+model. The objects this package adds on top -- ``Vinedist`` and the margins --
+need the same surface, and a margin can be any class a caller wrote, so
+reconstruction goes through a registry rather than a fixed list of types.
 
 The payload carries a ``kind`` naming the margin's type and a ``version`` that a
 reader checks, so a format change is a loud failure rather than a wrong model.
@@ -14,7 +14,12 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, cast
+
+from .protocols import MarginLike
+
+if TYPE_CHECKING:
+  from ..pyvinecopulib_ext import Kde1d
 
 #: Bumped when the payload's shape changes incompatibly.
 MARGIN_JSON_VERSION = 1
@@ -48,12 +53,12 @@ def register_margin_json(
   _READERS[kind] = reader
 
 
-def margin_to_json(margin: Any) -> dict[str, Any]:
+def margin_to_json(margin: object) -> dict[str, Any]:
   """Return one margin's JSON payload.
 
   Parameters
   ----------
-  margin : MarginLike
+  margin : object
       The margin to serialize. It must provide ``to_json``, which every margin
       this package ships does.
 
@@ -85,7 +90,7 @@ def margin_to_json(margin: Any) -> dict[str, Any]:
   return payload
 
 
-def margin_from_json(payload: dict[str, Any]) -> Any:
+def margin_from_json(payload: dict[str, Any]) -> MarginLike[Any]:
   """Rebuild one margin from the payload :func:`margin_to_json` produced.
 
   Parameters
@@ -120,11 +125,11 @@ def margin_from_json(payload: dict[str, Any]) -> Any:
   return reader(payload)
 
 
-def _encode_nonfinite(value: Any) -> Any:
+def _encode_nonfinite(value: object) -> object:
   """Replace non-finite floats with strings, recursively.
 
   ``json.dumps`` writes ``Infinity`` / ``NaN``, which strict JSON has no
-  literal for -- and which the C++ reader behind :func:`write_file` rejects.
+  literal for -- and which the reader behind :func:`write_file` rejects.
   They travel as strings and are restored on read, so a ``-inf`` log-likelihood
   in a selection report survives exactly rather than becoming ``null``.
 
@@ -147,7 +152,7 @@ def _encode_nonfinite(value: Any) -> Any:
   return value
 
 
-def _decode_nonfinite(value: Any) -> Any:
+def _decode_nonfinite(value: object) -> object:
   """Invert :func:`_encode_nonfinite`.
 
   Parameters
@@ -213,12 +218,12 @@ def loads(text: str) -> dict[str, Any]:
 def _register_builtin_readers() -> None:
   """Register the readers for the margins this package ships."""
 
-  def _kde1d(payload: dict[str, Any]) -> Any:
+  def _kde1d(payload: dict[str, Any]) -> Kde1d:
     from . import Kde1d
 
     return Kde1d.from_json(payload["json"])
 
-  def _parametric(payload: dict[str, Any]) -> Any:
+  def _parametric(payload: dict[str, Any]) -> MarginLike[Any]:
     from ..margins import SciPyMargin
 
     return SciPyMargin._from_json_payload(payload)
@@ -234,7 +239,7 @@ def write_file(filename: str, text: str) -> None:
   """Write a JSON payload, as CBOR when the name ends in ``.cbor``.
 
   The extension rule is the one ``Bicop.to_file`` / ``Vinecop.to_file`` follow
-  -- the same C++ helper, so the whole model surface reads and writes the same
+  -- the same helper, so the whole model surface reads and writes the same
   formats.
 
   Parameters
@@ -264,4 +269,4 @@ def read_file(filename: str) -> str:
   """
   from ..pyvinecopulib_ext import _file_to_json
 
-  return _file_to_json(filename)
+  return cast("str", _file_to_json(filename))

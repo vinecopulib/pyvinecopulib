@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from typing import Any
 
 import numpy as np
 import pytest
@@ -408,7 +409,7 @@ def test_a_collapsed_scale_is_rejected() -> None:
 
   Half exact zeros and half N(0, 1): a `t` fitted there comes back with
   `scale` around 1e-20 and a log-likelihood in the thousands, because a density
-  concentrating on a repeated value diverges. It beats every honest candidate by
+  concentrating on a repeated value diverges. It beats every plausible candidate by
   more than 12,000 AIC units, so the gate -- not the criterion -- is what keeps
   it out.
   """
@@ -417,12 +418,12 @@ def test_a_collapsed_scale_is_rejected() -> None:
     SciPyMargin().select(y, FitControlsMargin(family_set=["t"]))
   assert "degenerate parameter scale" in str(caught.value)
 
-  honest = SciPyMargin().select(y)
+  chosen = SciPyMargin().select(y)
   collapsed = SciPyMargin("t").fit(y)
-  assert honest.family_name != "t"
-  assert honest.aic() - collapsed.aic() > 12000
-  # And the winner is scored on a finite, honest likelihood.
-  assert np.isfinite(honest.loglik())
+  assert chosen.family_name != "t"
+  assert chosen.aic() - collapsed.aic() > 12000
+  # And the winner is scored on a finite likelihood.
+  assert np.isfinite(chosen.loglik())
 
 
 def test_select_rejects_a_degenerate_parameter() -> None:
@@ -498,7 +499,7 @@ def test_candidates_that_would_tie_are_deduplicated(
   """
   from pyvinecopulib.margins.scipy import _dedupe
 
-  def families(candidates: list) -> list[str]:
+  def families(candidates: list[SciPyMargin]) -> list[str]:
     return [c.family_name for c in candidates]
 
   collapsed = _dedupe(
@@ -570,7 +571,7 @@ def test_criteria_take_a_sample_or_read_the_fitted_value(
   ],
 )
 def test_fit_controls_margin_validates_its_arguments(
-  kwargs: dict, match: str
+  kwargs: dict[str, Any], match: str
 ) -> None:
   """Every setting is checked at construction, where the caller can see it."""
   with pytest.raises(ValueError, match=match):

@@ -54,19 +54,23 @@ from __future__ import annotations
 
 import contextlib
 from abc import ABC, abstractmethod
+from types import ModuleType
 from typing import (
-  TYPE_CHECKING,
   Any,
   Callable,
   ClassVar,
   Mapping,
   Optional,
   Self,
+  Sequence,
+  Union,
   cast,
 )
 
+import numpy as np
 from array_api_compat import array_namespace
 
+from ..pyvinecopulib_ext import RVineStructure
 from ._discrete import (
   check_var_types,
   collapse_data,
@@ -94,12 +98,9 @@ from .protocols import (
   VinecopLike,
   _VINECOP_EXAMPLE,
 )
-from ._placement import PlacementMixin
+from ._placement import PlacementMixin, QrngUniformMixin
 from ._trim import trim
 
-
-if TYPE_CHECKING:
-  from ..pyvinecopulib_ext import RVineStructure
 
 __all__ = ["VinecopBase"]
 
@@ -220,10 +221,12 @@ def infer_conditioning_set(
   )
 
 
-class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
+class VinecopBase(
+  VinecopLike[ArrayT], QrngUniformMixin[ArrayT], PlacementMixin, ABC
+):
   """Canonical array-agnostic vine cascades (numpy / torch).
 
-  A concrete subclass writes one method and calls one seam: it implements
+  A concrete subclass writes one method and calls one hook: it implements
   ``get_pair_copula(tree, edge)``, which returns the pair copula hosted at a
   position, and calls ``_bind_vine`` once from its ``__init__`` to install the
   structure, the conditioning context and the variable types. It then inherits
@@ -250,7 +253,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     reads the data, rather than after fitting the first edge. Left ``None``,
     fitting requires an explicit ``fit_edge``.
 
-  ``fit_edge`` remains the seam for a fit a pair class cannot express on its
+  ``fit_edge`` remains the hook for a fit a pair class cannot express on its
   own: a **conditional** pair copula, which sees its edge's conditioning values
   through the vine's :class:`~pyvinecopulib.core.ConditioningContext`.
 
@@ -275,8 +278,8 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
   #: inferred: a vine assembles each edge's conditioning matrix through its
   #: ``ConditioningContext`` and cannot know whether the pairs it hosts accept
   #: one, so a consumer such as ``Vinedist`` reads this flag rather than
-  #: forwarding covariates a compiled ``Bicop`` pair would refuse. Set it in a
-  #: subclass whose pairs are conditional.
+  #: forwarding covariates a ``Bicop`` pair would refuse. Set it in a subclass
+  #: whose pairs are conditional.
   supports_covariates: bool = False
 
   # The pair-copula class this vine fits; see the class docstring. A plain
@@ -284,7 +287,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
   # attribute whose value is a class, so a subclass that sets this would leave
   # the inherited entry dangling and fail the nitpicky docs build.
   bicop_class: ClassVar[Optional[type]] = None
-  _context: ConditioningContext
+  _context: ConditioningContext[ArrayT]
   _cond_pos_cache: dict[tuple[int, int], tuple[int, ...]]
   #: Slot -> the 1-based labels of its conditioning set in the order the pair
   #: on it was *fitted* on, for the slots where that is not the order the
@@ -295,9 +298,9 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
   #: the first batched call. Subclasses invalidate it on device moves.
   _batched: Any
   #: Array namespace of this vine's working arrays; ``None`` until resolved.
-  _xp: Any
+  _xp: Optional[ModuleType]
   #: Array type ``_xp`` was resolved from; the memo is only good for that type.
-  _xp_type: Any
+  _xp_type: Optional[type]
   _var_types: tuple[str, ...]
   _n_discrete: int
   #: Variable index -> its offset within the compact layout's left-limit block;
@@ -308,12 +311,12 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
   def _bind_vine(
     self,
     structure: RVineStructure,
-    context: Optional[ConditioningContext] = None,
+    context: Optional[ConditioningContext[ArrayT]] = None,
     var_types: Optional[list[str]] = None,
   ) -> None:
     """Install the vine structure + context and derive the order arrays.
 
-    The initialization seam a concrete subclass calls once from its ``__init__``
+    The initialization hook a concrete subclass calls once from its ``__init__``
     (after storing its pair copulas). ``context`` defaults to
     :class:`~pyvinecopulib.core.SimplifiedContext` — the unconditional /
     simplified vine that covers the common case — so most subclasses pass only a
@@ -331,10 +334,10 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     ----------
     structure : RVineStructure
         The (fixed) vine structure to evaluate along.
-    context : ConditioningContext, optional
+    context : ConditioningContext, or None, optional
         Per-edge conditioning-context policy; ``None`` uses
         :class:`~pyvinecopulib.core.SimplifiedContext`.
-    var_types : list of str, optional
+    var_types : list of str, or None, optional
         Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete), in
         variable order; ``None`` means all continuous.
 
@@ -495,42 +498,12 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     """
     ua: Any = self._prep(u)
     xp = self._namespace(ua)
-    return cast(ArrayT, trim(xp, self._layout(ua, name, values_only)))
+    return cast("ArrayT", trim(xp, self._layout(ua, name, values_only)))
 
   def _layout(self, ua: Any, name: str, values_only: bool) -> Any:
     """Validate ``ua``'s layout and reduce it to the columns the caller needs."""
     return collapse_data(
       ua, self.d, self._var_types, name, values_only=values_only
-    )
-
-  def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:
-    """Draw ``(n, d)`` base uniforms for :meth:`sample` (namespace-dependent RNG).
-
-    Raising default; override it (numpy / torch differ on RNG) to enable
-    :meth:`sample`. Named after :func:`pyvinecopulib.utils.sample_uniform`.
-
-    Parameters
-    ----------
-    n : int
-        Number of samples to draw.
-    qrng : bool
-        Whether to draw a quasi-random (low-discrepancy) sequence.
-    seeds : list of int
-        RNG seeds.
-
-    Returns
-    -------
-    array, shape (n, d), dtype float
-        Base uniforms in ``[0, 1)``.
-
-    Raises
-    ------
-    NotImplementedError
-        Unless a subclass overrides this hook.
-    """
-    raise NotImplementedError(
-      f"{type(self).__name__} does not implement _sample_uniform; override it "
-      "to enable sample()."
     )
 
   def _default_batched(self) -> bool:
@@ -578,7 +551,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
       object.__setattr__(self, "_batched", self._build_batched())
     return self._batched
 
-  def _eval_context(self):
+  def _eval_context(self) -> contextlib.AbstractContextManager[Any]:
     """Context manager disabling grad for inverse / sample / cdf.
 
     Defaults to a no-op; the torch subclass overrides it with
@@ -623,10 +596,10 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     self,
     tree: int,
     edge: int,
-    x: Optional[Any],
+    x: Optional[ArrayT],
     u_nat: Optional[Any],
-    hinv2_final: Optional[Any],
-  ) -> Optional[Any]:
+    hinv2_final: Optional[ArrayT],
+  ) -> Optional[ArrayT]:
     """Assemble the per-edge conditioning context ``x_e`` = context(``u_D``, ``x``).
 
     ``u_D`` is gathered in the C1 column order (see ``_cond_positions``),
@@ -641,12 +614,12 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
         Tree index (``0``-based).
     edge : int
         Edge index within the tree (``0``-based).
-    x : array, shape (n, p), or None
+    x : array, shape (n, p), or None, optional
         External covariates for this call, or ``None``.
-    u_nat : array, shape (n, d), or None
+    u_nat : array, shape (n, d), or None, optional
         Natural-order observations (forward cascades); ``None`` in the inverse
         direction.
-    hinv2_final : array, shape (d, n), or None
+    hinv2_final : array, shape (d, n), or None, optional
         The finalized ``hinv2[0]`` scratch rows (inverse cascade); ``None`` in
         the forward direction.
 
@@ -660,7 +633,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     # Simplified + unconditional: skip the gather entirely (zero cost).
     if not ctx.assembles_conditioning and x is None:
       return None
-    u_D: Optional[Any] = None
+    u_D: Optional[ArrayT] = None
     if ctx.assembles_conditioning:
       cols = list(self._cond_positions(tree, edge))
       if cols:
@@ -673,7 +646,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     return ctx.edge_context(u_D=u_D, x=x)
 
   # --- non-batched cascades (single source of truth) -------------------- #
-  def _pdf(self, u: Any, x: Optional[Any]) -> Any:
+  def _pdf(self, u: Any, x: Optional[ArrayT]) -> ArrayT:
     """Vine density as a product of per-edge copula densities (``Vinecop::pdf``).
 
     Parameters
@@ -681,14 +654,14 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     u : array, shape (n, d + k), dtype float
         Prepared pseudo-observations in the compact layout (natural-order
         seeding happens inside).
-    x : array, shape (n, p), or None
+    x : array, shape (n, p), or None, optional
         External covariates threaded to each pair copula, or ``None``.
     """
     xp = array_namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
     if trunc_lvl == 0:
-      return xp.ones(n, dtype=u.dtype, device=u.device)
+      return cast("ArrayT", xp.ones(n, dtype=u.dtype, device=u.device))
     # Dense (n, d) h-function scratch; seed hfunc2 with the observations in
     # natural order (class.ipp:399).
     hfunc1 = xp.zeros((n, d), dtype=u.dtype, device=u.device)
@@ -739,22 +712,22 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
           if subs is not None and types[0] == "d":
             u_h2 = xp.stack([subs[0], col1, *subs], axis=-1)
             hfunc2_sub[:, edge] = pair_eval(edge_copula.hfunc2, u_h2, x_e)
-    return pdf
+    return cast("ArrayT", pdf)
 
   def _rosenblatt(
     self,
     u: Any,
-    x: Optional[Any],
+    x: Optional[ArrayT],
     randomize_discrete: bool = True,
     seeds: Optional[list[int]] = None,
-  ) -> Any:
+  ) -> ArrayT:
     """Rosenblatt transform (``Vinecop::rosenblatt``).
 
     Parameters
     ----------
     u : array, shape (n, d + k), dtype float
         Prepared pseudo-observations in the compact layout.
-    x : array, shape (n, p), or None
+    x : array, shape (n, p), or None, optional
         External covariates threaded to each pair copula, or ``None``.
     randomize_discrete : bool, default=True
         Mix each discrete variable's conditional distribution function with its
@@ -820,9 +793,9 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
         left[:, j] = source[:, inv[j]]
       r: Any = self._sample_uniform(n, False, list(seeds or []))
       out = out * r + left * (1.0 - r)
-    return trim(xp, out)
+    return cast("ArrayT", trim(xp, out))
 
-  def _inverse_rosenblatt(self, u: Any, x: Optional[Any]) -> Any:
+  def _inverse_rosenblatt(self, u: Any, x: Optional[ArrayT]) -> ArrayT:
     """Inverse Rosenblatt transform (``Vinecop::inverse_rosenblatt``).
 
     Walks variables from ``d - 2`` down to ``0``; at each ``var`` it fills the
@@ -838,7 +811,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     ----------
     u : array, shape (n, d), dtype float
         Prepared independent uniforms.
-    x : array, shape (n, p), or None
+    x : array, shape (n, p), or None, optional
         External covariates threaded to each pair copula, or ``None``.
     """
     xp = array_namespace(u)
@@ -849,7 +822,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
       out = xp.empty((n, d), dtype=u.dtype, device=u.device)
       for j in range(d):
         out[:, j] = u[:, order[inv[j]] - 1]
-      return out
+      return cast("ArrayT", out)
     hinv2 = xp.empty((trunc_lvl + 1, d, n), dtype=u.dtype, device=u.device)
     hfunc1 = xp.empty_like(hinv2)
     for j in range(d):
@@ -887,7 +860,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       out[:, j] = hinv2[0, inv[j], :]
-    return trim(xp, out)
+    return cast("ArrayT", trim(xp, out))
 
   # --- batched cascades (grid fast path; array-agnostic loops) ---------- #
   #
@@ -901,7 +874,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
   # bilinear cell search across pdf + both h-functions) plus the ``needs_h1`` /
   # ``needs_h2`` masks. These receive already-prepped ``u`` (the public methods
   # prep before dispatch).
-  def _pdf_batched(self, u: Any) -> Any:
+  def _pdf_batched(self, u: Any) -> ArrayT:
     """Batched vine pdf: product over per-tree-level stacked densities.
 
     Numerically equivalent to ``_pdf`` on a simplified vine, but each tree
@@ -916,7 +889,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
     if trunc_lvl == 0:
-      return xp.ones(n, dtype=u.dtype, device=u.device)
+      return cast("ArrayT", xp.ones(n, dtype=u.dtype, device=u.device))
     bv = self._ensure_batched()
     hfunc1 = xp.zeros((n, d), dtype=u.dtype, device=u.device)
     hfunc2 = xp.empty((n, d), dtype=u.dtype, device=u.device)
@@ -943,9 +916,9 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
       hfunc2[:, :n_pairs] = xp.where(
         lvl.needs_h2[None, :], h2_new, hfunc2[:, :n_pairs]
       )
-    return pdf
+    return cast("ArrayT", pdf)
 
-  def _inverse_rosenblatt_batched(self, u: Any) -> Any:
+  def _inverse_rosenblatt_batched(self, u: Any) -> ArrayT:
     """Batched inverse Rosenblatt: one stacked call per dependency wave.
 
     Bit-identical to ``_inverse_rosenblatt`` on a simplified vine: the
@@ -970,7 +943,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
       out = xp.empty((n, d), dtype=u.dtype, device=u.device)
       for j in range(d):
         out[:, j] = u[:, order[inv[j]] - 1]
-      return out
+      return cast("ArrayT", out)
     bv = self._ensure_batched()
     rows = (trunc_lvl + 1) * d
     hinv2 = xp.empty((rows, n), dtype=u.dtype, device=u.device)
@@ -983,9 +956,9 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       out[:, j] = hinv2[inv[j], :]
-    return trim(xp, out)
+    return cast("ArrayT", trim(xp, out))
 
-  def _rosenblatt_batched(self, u: Any) -> Any:
+  def _rosenblatt_batched(self, u: Any) -> ArrayT:
     """Batched Rosenblatt transform (per-tree-level stacked h-functions).
 
     Numerically equivalent to ``_rosenblatt`` on a simplified vine.
@@ -1020,10 +993,10 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       out[:, j] = hfunc2[:, inv[j]]
-    return trim(xp, out)
+    return cast("ArrayT", trim(xp, out))
 
   # --- batched dispatch ------------------------------------------------- #
-  def _namespace(self, a: Any) -> Any:
+  def _namespace(self, a: object) -> ModuleType:
     """The array namespace of this vine's working arrays, resolved once.
 
     Resolving it per call would put a type-dispatch table walk inside each
@@ -1040,12 +1013,14 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     so a vine may legitimately see two. An identity check is still far cheaper
     than the dispatch walk it avoids.
     """
-    if self._xp is None or self._xp_type is not type(a):
-      object.__setattr__(self, "_xp", array_namespace(a))
+    xp = self._xp
+    if xp is None or self._xp_type is not type(a):
+      xp = array_namespace(a)
+      object.__setattr__(self, "_xp", xp)
       object.__setattr__(self, "_xp_type", type(a))
-    return self._xp
+    return xp
 
-  def __getstate__(self) -> dict:
+  def __getstate__(self) -> dict[str, Any]:
     """The picklable state: everything but the resolved array namespace.
 
     ``_namespace`` memoizes a *module*, which no pickle can carry, so it
@@ -1058,7 +1033,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
         The instance state, with the namespace memo cleared.
     """
     # `object.__getstate__` answers `None` for an empty instance; every
-    # concrete vine has state, so this only keeps the type honest.
+    # concrete vine has state, so this only keeps the annotation correct.
     raw = cast("dict[str, Any]", super().__getstate__() or {})
     state = dict(raw)
     state["_xp"] = None
@@ -1066,7 +1041,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     return state
 
   def _resolve_batched(
-    self, requested: Optional[bool], x: Optional[Any]
+    self, requested: Optional[bool], x: Optional[ArrayT]
   ) -> bool:
     """Resolve the ``batched`` flag; force ``False`` for conditional or discrete.
 
@@ -1199,7 +1174,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
         External covariates threaded to each pair copula. A simplified vine may
         still depend on these; simplification excludes dependence on the edge
         conditioning-set values, not on external covariates.
-    batched : bool or None, optional
+    batched : bool, or None, optional
         Fire one batched pair-copula call per tree level. ``None`` resolves
         via the subclass default; forced ``False`` when conditioning is active
         or any variable is discrete, and falls back to the non-batched cascade
@@ -1212,13 +1187,13 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     """
     del num_threads
     u_p = self._prep_args(u, "pdf")
-    x = prepare(self, x, int(cast(Any, u_p).shape[0]))
+    x = prepare(self, x, int(cast("Any", u_p).shape[0]))
     if self._resolve_batched(batched, x):
       try:
-        return cast(ArrayT, self._pdf_batched(u_p))
+        return self._pdf_batched(u_p)
       except _NotBatchable:
         pass  # no grid fast path available -> non-batched cascade
-    return cast(ArrayT, self._pdf(u_p, x))
+    return self._pdf(u_p, x)
 
   def rosenblatt(
     self,
@@ -1243,14 +1218,14 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
         For a discrete variable the conditional distribution function jumps, so
         the transform is uniform only after mixing the jump's two ends with an
         independent uniform. Continuous variables are unaffected either way.
-    seeds : list of int or None, optional
+    seeds : list of int, or None, optional
         RNG seeds for that randomization; forwarded to the subclass's
         base-uniform draw.
     x : array, shape (n, p), or None, optional
         External covariates threaded to each pair copula, or ``None``.
-    batched : bool or None, optional
+    batched : bool, or None, optional
         See :meth:`pdf`.
-    conditioning_set : list of int or None, optional
+    conditioning_set : list of int, or None, optional
         Condition on these 1-based variables instead of the ones at the tail of
         the vine order. It does not subset ``u``, which stays the full matrix;
         what changes is which conditional distributions the output columns
@@ -1281,13 +1256,13 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
         batched=batched,
       )
     u_p = self._prep_args(u, "rosenblatt")
-    x = prepare(self, x, int(cast(Any, u_p).shape[0]))
+    x = prepare(self, x, int(cast("Any", u_p).shape[0]))
     if self._resolve_batched(batched, x):
       try:
-        return cast(ArrayT, self._rosenblatt_batched(u_p))
+        return self._rosenblatt_batched(u_p)
       except _NotBatchable:
         pass  # no grid fast path available -> non-batched cascade
-    return cast(ArrayT, self._rosenblatt(u_p, x, randomize_discrete, seeds))
+    return self._rosenblatt(u_p, x, randomize_discrete, seeds)
 
   def inverse_rosenblatt(
     self,
@@ -1309,13 +1284,13 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
         Accepted for parity; ignored.
     x : array, shape (n, p), or None, optional
         External covariates threaded to each pair copula, or ``None``.
-    batched : bool or None, optional
+    batched : bool, or None, optional
         Whether to evaluate whole groups of pair copulas per call rather than
         one at a time; ``None`` takes the subclass default. The inverse
         cascade's dependencies run across tree levels, so the groups here are
         the levels of the dependency graph rather than the trees themselves.
         Ignored when no batched path is available.
-    conditioning_set : list of int or None, optional
+    conditioning_set : list of int, or None, optional
         See :meth:`rosenblatt`.
 
     Returns
@@ -1337,14 +1312,14 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     if view is not self:
       return view.inverse_rosenblatt(u, x=x, batched=batched)
     u_p = self._prep_args(u, "inverse_rosenblatt", values_only=True)
-    x = prepare(self, x, int(cast(Any, u_p).shape[0]))
+    x = prepare(self, x, int(cast("Any", u_p).shape[0]))
     with self._eval_context():
       if self._resolve_batched(batched, x):
         try:
-          return cast(ArrayT, self._inverse_rosenblatt_batched(u_p))
+          return self._inverse_rosenblatt_batched(u_p)
         except _NotBatchable:
           pass
-      return cast(ArrayT, self._inverse_rosenblatt(u_p, x))
+      return self._inverse_rosenblatt(u_p, x)
 
   def sample(
     self,
@@ -1366,11 +1341,11 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
         Draw quasi-random base uniforms instead of pseudo-random.
     num_threads : int, default=1
         Accepted for parity; ignored.
-    seeds : list of int or None, optional
+    seeds : list of int, or None, optional
         RNG seeds forwarded to the subclass's base-uniform draw.
     x : array, shape (n, p), or None, optional
         External covariates for a conditional draw (one row per sample).
-    batched : bool or None, optional
+    batched : bool, or None, optional
         Forwarded to :meth:`inverse_rosenblatt`.
 
     Returns
@@ -1415,9 +1390,9 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
         Draw quasi-random base uniforms for the conditioned variables.
     num_threads : int, default=1
         Accepted for parity; ignored.
-    seeds : list of int or None, optional
+    seeds : list of int, or None, optional
         RNG seeds forwarded to the subclass's base-uniform draw.
-    conditioning_set : list of int or None, optional
+    conditioning_set : list of int, or None, optional
         The 1-based variables to condition on. ``None`` takes the last
         ``k`` of :attr:`order`, with ``k`` inferred from ``u_cond``'s width.
         **The two forms map the columns differently**: without it, column ``i``
@@ -1510,7 +1485,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
       # The conditioning variables' own Rosenblatt coordinates; randomized so a
       # discrete conditioner's jump becomes a uniform the inverse can invert.
       w: Any = view.rosenblatt(
-        cast(ArrayT, u_completed),
+        cast("ArrayT", u_completed),
         randomize_discrete=True,
         seeds=seeds,
         x=x,
@@ -1518,7 +1493,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
       base_u: Any = self._sample_uniform(n, qrng, seeds)
       for var in cond_vars:
         base_u[:, var - 1] = w[:, var - 1]
-      return view.inverse_rosenblatt(cast(ArrayT, base_u), x=x)
+      return view.inverse_rosenblatt(cast("ArrayT", base_u), x=x)
 
   def _infer_conditioning_set(self, n_cols: int) -> list[int]:
     """The order tail whose layout is ``n_cols`` columns wide."""
@@ -1553,15 +1528,15 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
         Draw quasi-random samples (matches ``Vinecop.cdf()``).
     num_threads : int, default=1
         Accepted for parity; ignored.
-    seeds : list of int or None, optional
+    seeds : list of int, or None, optional
         RNG seeds forwarded to :meth:`sample`.
-    x : array or None, optional
+    x : array, or None, optional
         Must be ``None`` — a per-row conditional CDF is not supported (the
         Monte-Carlo dominance estimate cannot condition each query row on a
         different covariate without per-``x`` resampling).
     block_size : int, default=4096
         Query rows processed per iteration (peak-memory control).
-    batched : bool or None, optional
+    batched : bool, or None, optional
         Forwarded to :meth:`sample`, which draws the Monte-Carlo sample.
 
     Returns
@@ -1595,7 +1570,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
           samples[None, :, :] <= u_t[start:end][:, None, :], axis=-1
         )
         out[start:end] = xp.mean(xp.astype(dominated, u_t.dtype), axis=1)
-      return cast(ArrayT, out)
+      return cast("ArrayT", out)
 
   # --- convenience surface (loglik / plot / accessors) ------------------ #
   def loglik(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
@@ -1616,7 +1591,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     """
     dens: Any = self.pdf(u, x=x)
     xp = array_namespace(dens)
-    return cast(ArrayT, xp.sum(xp.log(dens)))
+    return cast("ArrayT", xp.sum(xp.log(dens)))
 
   @property
   def dim(self) -> int:
@@ -1630,7 +1605,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     return self.d
 
   @property
-  def matrix(self) -> Any:
+  def matrix(self) -> np.ndarray:
     """R-vine structure matrix (from :attr:`structure`).
 
     Returns
@@ -1743,10 +1718,10 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     def fit_edge_default(
       tree: int,
       edge: int,
-      u_e: Any,
-      x_e: Optional[Any] = None,
-      var_types: Any = ("c", "c"),
-    ) -> BicopLike:
+      u_e: ArrayT,
+      x_e: Optional[ArrayT] = None,
+      var_types: Sequence[str] = ("c", "c"),
+    ) -> BicopLike[ArrayT]:
       del tree, edge
       # `x_e` is forwarded rather than dropped: a pair class that cannot
       # condition on covariates then refuses them -- `reject_covariates` on a
@@ -1759,7 +1734,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
       # `BicopBase.select` forwards by.
       conditional = {} if x_e is None else {"x": x_e}
       return cast(
-        BicopLike,
+        "BicopLike[ArrayT]",
         cast("Any", pair_cls).from_data(
           u_e, controls=controls, var_types=list(var_types), **conditional
         ),
@@ -1800,12 +1775,12 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
 
   def fit(
     self,
-    u: Any,
+    u: Union[np.ndarray, ArrayT],
     /,
     controls: Optional[ControlsLike] = None,
     *,
     var_types: Optional[list[str]] = None,
-    x: Optional[Any] = None,
+    x: Optional[ArrayT] = None,
     fit_edge: Optional[FitEdge] = None,
     fit_level: Optional[FitLevel] = None,
   ) -> Self:
@@ -1828,7 +1803,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     fit_edge : callable, or None, optional
         ``(tree, edge, u_e, x_e) -> BicopLike``, receiving each edge's
         ``var_types`` as a keyword when that edge has one. Defaults to fitting
-        ``bicop_class``. Conditional fitting is driven through this seam.
+        ``bicop_class``. Conditional fitting is driven through this hook.
     fit_level : callable, or None, optional
         ``(tree, u_level, types) -> Sequence[BicopLike]``, fitting a whole tree
         level at once instead of edge by edge.
@@ -1871,12 +1846,12 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
 
   def select(
     self,
-    u: Any,
+    u: Union[np.ndarray, ArrayT],
     /,
     controls: Optional[ControlsLike] = None,
     *,
     var_types: Optional[list[str]] = None,
-    x: Optional[Any] = None,
+    x: Optional[ArrayT] = None,
     fit_edge: Optional[FitEdge] = None,
     fit_level: Optional[FitLevel] = None,
   ) -> Self:
@@ -1931,13 +1906,13 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
   @classmethod
   def from_data(
     cls,
-    u: Any,
+    u: Union[np.ndarray, ArrayT],
     /,
     controls: Optional[ControlsLike] = None,
     *,
-    structure: Optional[Any] = None,
+    structure: Optional[RVineStructure] = None,
     var_types: Optional[list[str]] = None,
-    x: Optional[Any] = None,
+    x: Optional[ArrayT] = None,
     fit_edge: Optional[FitEdge] = None,
     fit_level: Optional[FitLevel] = None,
   ) -> Self:
@@ -1959,7 +1934,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
         One ``"c"`` or ``"d"`` per variable.
     x : array, shape (n, p), or None, optional
         External covariates, threaded to each pair. A vine built here is
-        simplified, so these are the whole of what a pair conditions on.
+        simplified, so these are all of what a pair conditions on.
     fit_edge : callable, or None, optional
         See :meth:`fit`. Defaults to fitting ``bicop_class``.
     fit_level : callable, or None, optional
@@ -1977,7 +1952,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     whose ``__init__`` differs overrides this method, as
     :class:`~pyvinecopulib.torch.TorchVinecop` does.
 
-    Deliberately the plain factory: a **non-simplified** or covariate-driven
+    The plain factory, because a **non-simplified** or covariate-driven
     fit is built the other way round, by constructing the vine with its
     :class:`~pyvinecopulib.core.ConditioningContext` and then calling
     :meth:`fit` with ``x``. That keeps this signature to what every vine
@@ -2027,7 +2002,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
 class _ReorientedVine(VinecopBase[ArrayT]):
   """A vine evaluated in a relabeled sampling order, without copying it.
 
-  The counterpart of the compiled ``VinecopView``: it binds the relabeled
+  The counterpart of ``Vinecop``'s own relabeled view: it binds the relabeled
   structure and resolves every pair copula back to the viewed vine's slot,
   swapping the pair's arguments where the relabeling requires it. Every cascade
   comes from :class:`VinecopBase`; only the pair lookup is redirected.
@@ -2071,7 +2046,7 @@ class _ReorientedVine(VinecopBase[ArrayT]):
     return pair
 
   # dtype / device coercion, RNG placement and grad control belong to the vine
-  # being viewed. `_default_batched` / `_build_batched` are deliberately *not*
+  # being viewed. `_default_batched` / `_build_batched` are *not*
   # delegated: the base's batched state is baked against the base's structure and
   # edge order, so the view stays on the non-batched cascade.
   def _prep(self, a: Any) -> Any:
@@ -2085,7 +2060,7 @@ class _ReorientedVine(VinecopBase[ArrayT]):
   def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:
     return self._base._sample_uniform(n, qrng, seeds)
 
-  def _eval_context(self):
+  def _eval_context(self) -> contextlib.AbstractContextManager[Any]:
     return self._base._eval_context()
 
 

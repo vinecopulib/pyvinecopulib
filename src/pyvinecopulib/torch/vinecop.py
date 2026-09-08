@@ -35,8 +35,17 @@ FitControlsTorchVinecop : Fit-time controls.
 
 from __future__ import annotations
 
-from itertools import chain
-from typing import Any, ClassVar, Optional, Sequence, cast
+from typing import (
+  TYPE_CHECKING,
+  Any,
+  Callable,
+  ClassVar,
+  Optional,
+  Self,
+  Sequence,
+  Union,
+  cast,
+)
 
 import numpy as np
 import torch
@@ -60,21 +69,25 @@ from ..pyvinecopulib_ext import (
 )
 from ..utils import sample_uniform
 from ._batched import BatchedVine
+from ._placement import TensorPlacementMixin, reference_tensor
 from .controls import FitControlsTorchVinecop
 from .tll_bicop import TorchTllBicop
 
+if TYPE_CHECKING:
+  from torch.nn.modules.module import _IncompatibleKeys
 
-def _placement_of(pair: Any) -> Tensor:
+
+def _placement_of(pair: torch.nn.Module) -> Tensor:
   """A tensor to read dtype and device from, for any pair copula.
 
   Every pair a vine can hold is an ``nn.Module``, so it carries at least one
-  parameter or buffer -- which is all a placement probe needs. Reading a
-  grid-specific attribute instead would make the vine hold only grid pairs,
-  and a vine is a container: what it hosts is the caller's business.
+  floating-point parameter or buffer -- which is all a placement probe needs.
+  Reading a grid-specific attribute instead would make the vine hold only grid
+  pairs, and a vine is a container: what it hosts is the caller's business.
 
   Parameters
   ----------
-  pair : BicopLike
+  pair : torch.nn.Module
       The pair copula to read the placement from.
 
   Returns
@@ -85,19 +98,22 @@ def _placement_of(pair: Any) -> Tensor:
   Raises
   ------
   TypeError
-      If the pair registers neither a parameter nor a buffer, so its placement
-      cannot be determined.
+      If the pair registers no floating-point parameter or buffer, so its
+      placement cannot be determined.
   """
-  for tensor in chain(pair.parameters(), pair.buffers()):
-    return tensor
-  raise TypeError(
-    f"{type(pair).__name__} registers no parameter or buffer, so a vine "
-    "cannot read its dtype and device. Register the tensors it evaluates "
-    "with, as `TorchTllBicop` registers its grid."
-  )
+  ref = reference_tensor(pair)
+  if ref is None:
+    raise TypeError(
+      f"{type(pair).__name__} registers no floating-point parameter or "
+      "buffer, so a vine cannot read its dtype and device. Register the "
+      "tensors it evaluates with, as `TorchTllBicop` registers its grid."
+    )
+  return ref
 
 
-class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
+class TorchVinecop(
+  TensorPlacementMixin, VinecopBase[torch.Tensor], torch.nn.Module
+):
   """PyTorch R-vine copula on ``TorchTllBicop`` pair copulas.
 
   A ``VinecopBase`` whose pair copulas are density grids and whose cascades --
@@ -154,11 +170,11 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       host it -- including one whose parameters an optimizer learns.
   structure : RVineStructure
       The vine structure to evaluate along.
-  context : ConditioningContext or None, default=None
+  context : ConditioningContext, or None, optional
       Per-edge policy assembling each pair copula's ``x``. ``None`` uses
       :class:`~pyvinecopulib.core.SimplifiedContext` -- an unconditional,
       simplified vine.
-  var_types : list of str or None, default=None
+  var_types : list of str, or None, optional
       Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete), in
       variable order; ``None`` means all continuous.
 
@@ -182,7 +198,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     pair_copulas: Sequence[Sequence[torch.nn.Module]],
     structure: RVineStructure,
     *,
-    context: Optional[ConditioningContext] = None,
+    context: Optional[ConditioningContext[Tensor]] = None,
     var_types: Optional[list[str]] = None,
   ) -> None:
     # Initialize nn.Module explicitly: TorchVinecop also subclasses VinecopBase
@@ -222,7 +238,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     # `self._batched` (lazy grid-batched state) is initialized to None by
     # `_bind_vine`; `_apply` clears it so device moves re-bake it.
     self._compile_cascades = False
-    self._compiled: dict[str, Any] = {}
+    self._compiled: dict[str, Callable[[Tensor], Tensor]] = {}
 
   # --------------------------------------------------------------------- #
   # Constructor                                                            #
@@ -241,7 +257,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
 
     Parameters
     ----------
-    cache_integrals : bool or None
+    cache_integrals : bool, or None, optional
         What the caller asked for; ``None`` means "whatever suits this vine".
 
     Returns
@@ -269,11 +285,11 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     cop : Vinecop
         A fitted vine whose pair copulas are all of the ``tll`` or ``indep``
         family, in any continuous, discrete or mixed variable layout.
-    cache_integrals : bool or None, default=None
+    cache_integrals : bool, or None, optional
         Whether each pair copula precomputes the prefix tables its ``cdf`` and
         h-functions read. ``None`` resolves to ``True`` for every variable
         layout.
-    device : torch.device or None, default=None
+    device : torch.device, or None, optional
         Placement of the underlying tensors.
     dtype : torch.dtype, default=torch.float64
         Precision of the underlying tensors.
@@ -342,9 +358,9 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
 
     Parameters
     ----------
-    structure : RVineStructure or None, default=None
+    structure : RVineStructure, or None, optional
         The vine structure. Provide either this or ``matrix``.
-    matrix : ndarray, shape (d, d), dtype int, or None, default=None
+    matrix : ndarray, shape (d, d), dtype int, or None, optional
         R-vine structure matrix. Provide either this or ``structure``.
     pair_copulas : list of list of TorchTllBicop, default=[]
         The pair copulas, indexed ``[tree][edge]`` with tree ``t`` holding
@@ -355,7 +371,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         variable order; empty means all continuous. A discrete variable makes
         the cascades read its left limit too, and the pair copulas that see it
         are evaluated through :class:`~pyvinecopulib.core.DiscretePair`.
-    device : torch.device or None, default=None
+    device : torch.device, or None, optional
         Placement of the independence pair copulas that fill missing edges.
     dtype : torch.dtype, default=torch.float64
         Precision of the independence pair copulas that fill missing edges.
@@ -396,17 +412,17 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   @classmethod
   def from_data(
     cls,
-    u,
+    u: Union[np.ndarray, Tensor],
     /,
-    # `controls` and `structure` are typed `Any` so this stays a widening of
-    # `VinecopBase.from_data`, which accepts any `ControlsLike`: narrowing a
-    # parameter is what a subclass may not do. The accepted objects are a
-    # `FitControlsTorchVinecop` and an `RVineStructure`, as documented below.
+    # `controls` is a `FitControlsTorchVinecop` -- the placement, the cache
+    # mode and the selection knobs are all read off it below -- but typed
+    # `Any` so this stays a widening of `VinecopBase.from_data`, which accepts
+    # any `ControlsLike`: narrowing a parameter is what a subclass may not do.
     controls: Optional[Any] = None,
     *,
-    structure: Optional[Any] = None,
+    structure: Optional[RVineStructure] = None,
     var_types: Optional[list[str]] = None,
-    x: Optional[Any] = None,
+    x: Optional[Tensor] = None,
     fit_edge: Optional[FitEdge] = None,
     fit_level: Optional[FitLevel] = None,
   ) -> "TorchVinecop":
@@ -426,28 +442,28 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     ----------
     u : ndarray or Tensor, shape (n, d), dtype float
         Pseudo-observations in ``[0, 1]``.
-    controls : FitControlsTorchVinecop or None, default=None
+    controls : FitControlsTorchVinecop, or None, optional
         Fit configuration for both halves of the fit -- the structure
         selection the vine runs and the pair-copula fits its edges run -- plus
         placement, precision, and the cascade variants. ``None`` defaults to
         TLL on a 30x30 normal-spaced grid, float64, and ``mst_prim`` with
         ``trunc_lvl=20``.
-    structure : RVineStructure or None, default=None
+    structure : RVineStructure, or None, optional
         A fixed structure. Selected from the data when ``None``.
-    var_types : list of str, or None, default=None
+    var_types : list of str, or None, optional
         Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete);
         ``None`` means all continuous. Given, they also fix the dimension, so
         ``u`` may carry the extra left-limit columns.
-    x : Tensor or None, default=None
+    x : Tensor, or None, optional
         Refused. A TLL grid is an unconditional density, so fitting one while
         ignoring covariates would return a different model than the caller
         asked for; a conditional pair copula is fitted through ``fit_edge``.
-    fit_edge : callable, or None, default=None
+    fit_edge : callable, or None, optional
         ``(tree, edge, u_e, x_e) -> BicopLike``, fitting one edge's pair
         copula in place of the built-in TLL fit; an edge with a discrete
         variable additionally receives its own ``var_types`` by keyword.
         ``None`` fits a ``TorchTllBicop`` per edge, which is the usual case.
-    fit_level : callable, or None, default=None
+    fit_level : callable, or None, optional
         ``(tree, u_level, types) -> Sequence[BicopLike]``, fitting a whole tree
         level at once, in place of the built-in batched TLL fit -- the
         level-wise counterpart of ``fit_edge``. ``None`` resolves it from
@@ -492,7 +508,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       edge: int,
       u_e: Tensor,
       x_e: Optional[Tensor],
-      var_types: Any = ("c", "c"),
+      var_types: Sequence[str] = ("c", "c"),
     ) -> BicopLike[Tensor]:
       # `var_types` here is *this edge's* two types, which the fit engines pass
       # by that keyword; the vine's own list is the enclosing argument.
@@ -630,7 +646,9 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   # Helpers                                                                #
   # --------------------------------------------------------------------- #
 
-  def set_pair_copulas(self, pair_copulas: "list[list[Any]]") -> None:
+  def set_pair_copulas(
+    self, pair_copulas: list[list[BicopLike[Tensor]]]
+  ) -> None:
     """Install fitted pairs, so ``fit`` and ``select`` can return ``self``.
 
     Parameters
@@ -672,7 +690,8 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   def _pair_module(self, tree: int, edge: int) -> TorchTllBicop:
     """The stored (always continuous) pair copula at ``(tree, edge)``."""
     return cast(
-      TorchTllBicop, cast(torch.nn.ModuleList, self.pair_copulas[tree])[edge]
+      "TorchTllBicop",
+      cast("torch.nn.ModuleList", self.pair_copulas[tree])[edge],
     )
 
   def get_pair_copula(self, tree: int, edge: int) -> BicopLike[Tensor]:
@@ -717,7 +736,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       "var_types": list(self.var_types),
     }
 
-  def set_extra_state(self, state: Any) -> None:
+  def set_extra_state(self, state: object) -> None:
     """Check the non-tensor model identity in a ``state_dict``.
 
     The pair-copula grids are the only tensors a ``state_dict`` holds, so
@@ -727,8 +746,9 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
 
     Parameters
     ----------
-    state : dict
-        State returned by ``TorchVinecop.get_extra_state()``.
+    state : object
+        State returned by ``TorchVinecop.get_extra_state()``; anything else is
+        refused.
 
     Raises
     ------
@@ -750,10 +770,17 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       )
 
   def _ref_tensor(self) -> Tensor:
-    """A registered buffer to read dtype and device from."""
-    # Read the placement off the first pair, whatever kind of pair it is; a
-    # vine truncated at zero has none and falls back to the buffer the
-    # constructor registers for exactly that case.
+    """A registered buffer to read dtype and device from.
+
+    Returns
+    -------
+    Tensor
+        A tensor carrying the vine's dtype and device.
+    """
+    # Read the placement off the first pair, whatever kind of pair it is,
+    # rather than through the mixin's module-wide search: a pair names it in
+    # one hop. A vine truncated at zero has no pair and falls back to the
+    # buffer the constructor registers for exactly that case.
     if self.trunc_lvl > 0:
       return _placement_of(self._pair_module(0, 0))
     ref = self._buffers["_device_ref"]
@@ -772,16 +799,6 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         for the overhead to dominate either way.
     """
     return self._ref_tensor().device.type == "cuda"
-
-  def _prep(self, a: Any) -> Tensor:
-    # Placement only; the base owns the layout and the clamp, since which
-    # widths are admissible depends on `var_types` and not on the namespace.
-    # Overridden rather than inherited because `_ref_tensor` knows one thing
-    # the generic inference cannot: at `trunc_lvl == 0` there is no pair to
-    # read a placement from, and the `_device_ref` buffer is what the
-    # constructor registers for exactly that case.
-    ref = self._ref_tensor()
-    return torch.as_tensor(a, dtype=ref.dtype, device=ref.device)
 
   @property
   def compile_cascades(self) -> bool:
@@ -809,7 +826,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     (``torch._dynamo.config.cache_size_limit``, 8 by default), and each vine
     is a variant, as is each input shape. A process that compiles more than
     that falls back to eager, which shows up as this flag doing nothing; raise
-    the cap if you genuinely need many compiled vines at once.
+    the cap if you actually need many compiled vines at once.
     """
     return self._compile_cascades
 
@@ -817,9 +834,9 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   def compile_cascades(self, value: bool) -> None:
     self._compile_cascades = bool(value)
 
-  def _cascade(self, name: str) -> Any:
+  def _cascade(self, name: str) -> Callable[[Tensor], Tensor]:
     """The named batched cascade, compiled if ``compile_cascades`` is set."""
-    base = getattr(super(), name)
+    base = cast("Callable[[Tensor], Tensor]", getattr(super(), name))
     if not self._compile_cascades:
       return base
     fn = self._compiled.get(name)
@@ -828,7 +845,9 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       self._compiled[name] = fn
     return fn
 
-  def _compile_cascade(self, base: Any) -> Any:
+  def _compile_cascade(
+    self, base: Callable[[Tensor], Tensor]
+  ) -> Callable[[Tensor], Tensor]:
     """Compile one cascade, on CUDA through CUDA graphs.
 
     The graph replay writes its result into a buffer the next replay reuses,
@@ -850,20 +869,20 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
 
     def graphed(u: Tensor) -> Tensor:
       torch.compiler.cudagraph_mark_step_begin()
-      return cast(Tensor, inner(u)).clone()
+      return inner(u).clone()
 
     return graphed
 
   def _pdf_batched(self, u: Tensor) -> Tensor:
-    return cast(Tensor, self._cascade("_pdf_batched")(u))
+    return self._cascade("_pdf_batched")(u)
 
   def _rosenblatt_batched(self, u: Tensor) -> Tensor:
-    return cast(Tensor, self._cascade("_rosenblatt_batched")(u))
+    return self._cascade("_rosenblatt_batched")(u)
 
   def _inverse_rosenblatt_batched(self, u: Tensor) -> Tensor:
-    return cast(Tensor, self._cascade("_inverse_rosenblatt_batched")(u))
+    return self._cascade("_inverse_rosenblatt_batched")(u)
 
-  def __getstate__(self) -> dict:
+  def __getstate__(self) -> dict[str, Any]:
     """The picklable state: everything except the two derived caches.
 
     Both are pure caches rebuilt on demand, and neither belongs in a pickle.
@@ -883,7 +902,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     state["_batched"] = None
     return state
 
-  def load_state_dict(self, *args: Any, **kwargs: Any) -> Any:
+  def load_state_dict(self, *args: Any, **kwargs: Any) -> "_IncompatibleKeys":
     """Load parameters and buffers, dropping anything derived from them.
 
     Parameters
@@ -902,9 +921,11 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     out = super().load_state_dict(*args, **kwargs)
     self._batched = None
     self._compiled = {}
-    return out
+    return cast("_IncompatibleKeys", out)
 
-  def _apply(self, fn, *args, **kwargs):
+  def _apply(
+    self, fn: Callable[[Tensor], Tensor], *args: Any, **kwargs: Any
+  ) -> Self:
     # `.to()`, `.cuda()`, `.cpu()` all route through `_apply`. The
     # BatchedVine container holds buffers — `super()._apply` would move
     # them, but we drop the whole structure so it gets re-baked from the
@@ -914,7 +935,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     # Compiled code is specialized on the tensors it was traced with; the
     # guards would recompile anyway, so drop the stale entries.
     self._compiled = {}
-    return super()._apply(fn, *args, **kwargs)
+    return cast("Self", super()._apply(fn, *args, **kwargs))
 
   def _grad_signature(self) -> tuple[bool, ...]:
     """Which of the pairs' grids currently track gradients.
@@ -959,7 +980,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       for edge in range(self.d - tree - 1)
     )
 
-  def _ensure_batched(self) -> Any:
+  def _ensure_batched(self) -> "BatchedVine":
     """The batched state, re-baked when grad tracking has changed under it.
 
     A bake is a copy of each pair's grid, which goes stale in three ways a
@@ -974,7 +995,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
 
     Returns
     -------
-    object
+    BatchedVine
         The memoized batched state.
     """
     signature = self._grad_signature()
@@ -991,7 +1012,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       # A compiled cascade was traced against the grids the stale bake holds.
       object.__setattr__(self, "_compiled", {})
     fresh = self._batched is None
-    out = super()._ensure_batched()
+    out = cast("BatchedVine", super()._ensure_batched())
     if fresh:
       object.__setattr__(
         self, "_bake_signature", (signature, wants_graph, revisions)
@@ -1029,7 +1050,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       gen = torch.Generator(device=device).manual_seed(int(seeds[0]))
     return torch.rand(n, self.d, generator=gen, dtype=dtype, device=device)
 
-  def _eval_context(self):
+  def _eval_context(self) -> torch.no_grad:
     """Disable autograd for ``inverse_rosenblatt`` / ``sample`` / ``cdf``.
 
     Returns

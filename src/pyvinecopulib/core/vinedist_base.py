@@ -33,6 +33,7 @@ from typing import Any, ClassVar, Optional, Self, Sequence, cast
 
 from array_api_compat import array_namespace
 
+from ..pyvinecopulib_ext import RVineStructure
 from ._covariates import declared_eval, prepare
 from .margin_base import derive_cdf_left, safe_log
 from ._placement import PlacementMixin
@@ -46,7 +47,6 @@ from .protocols import (
   VinedistLike,
 )
 from .protocols import _VINEDIST_EXAMPLE
-
 
 __all__ = ["VinedistBase"]
 
@@ -151,7 +151,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   def __init__(
     self,
     vinecop: Any,
-    margins: Sequence[Any] | Any,
+    margins: object,
   ) -> None:
     # `copula` is a `VinecopLike`, but typed `Any`: the compiled `Vinecop`
     # satisfies that contract nominally, not statically (its signatures spell
@@ -163,11 +163,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   def _bind_dist(
     self,
     vinecop: Any,
-    margins: Sequence[Any] | Any,
+    margins: object,
   ) -> None:
     """Install the copula and margins.
 
-    The initialization seam a subclass calls once from its ``__init__``, after
+    The initialization hook a subclass calls once from its ``__init__``, after
     any framework base class has been initialized.
 
     Parameters
@@ -226,7 +226,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     VinecopLike
         The copula this distribution was built on.
     """
-    return cast(VinecopLike[ArrayT], self._vinecop)
+    return cast("VinecopLike[ArrayT]", self._vinecop)
 
   @property
   def margins(self) -> tuple[MarginLike[ArrayT], ...]:
@@ -377,7 +377,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
 
   # --- marginal transforms ------------------------------------------------- #
 
-  def _set_margins(self, margins: Sequence[Any]) -> None:
+  def _set_margins(self, margins: Sequence[MarginLike[ArrayT]]) -> None:
     """Store the resolved margins on this distribution.
 
     A hook rather than a plain assignment because a lane may need its margins
@@ -428,7 +428,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     # The margins' namespace, not the input's: a torch copula hosting NumPy
     # margins is legal, and `torch.stack` cannot consume NumPy columns.
     xp = array_namespace(cols[0])
-    return cast(ArrayT, trim(xp, xp.stack(cols, axis=-1)))
+    return cast("ArrayT", trim(xp, xp.stack(cols, axis=-1)))
 
   def marginal_icdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Apply each margin's ``icdf`` to its column.
@@ -452,7 +452,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       declared_eval(m, "icdf", ua[:, j], x) for j, m in enumerate(self._margins)
     ]
     xp = array_namespace(cols[0])
-    return cast(ArrayT, xp.stack(cols, axis=-1))
+    return cast("ArrayT", xp.stack(cols, axis=-1))
 
   @classmethod
   def copula_var_types(cls, margins: Sequence[Any]) -> list[str]:
@@ -480,8 +480,12 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
 
   @classmethod
   def copula_data(
-    cls, margins: Sequence[Any], y: Any, *, x: Optional[Any] = None
-  ) -> Any:
+    cls,
+    margins: Sequence[Any],
+    y: ArrayT,
+    *,
+    x: Optional[ArrayT] = None,
+  ) -> ArrayT:
     """Assemble the copula-scale data in the layout a copula expects.
 
     Continuous variables contribute one column each. A variable with atoms
@@ -550,9 +554,9 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         )
       lower.append(sub)
     block = xp.stack([*upper, *lower], axis=-1)
-    return trim(xp, block)
+    return cast("ArrayT", trim(xp, block))
 
-  def _check_covariates(self, x: Optional[Any], n_rows: int) -> None:
+  def _check_covariates(self, x: Optional[ArrayT], n_rows: int) -> None:
     """Refuse covariates that neither half of this distribution reads.
 
     Evaluation ignores ``x`` per margin, which is what lets conditional and
@@ -582,7 +586,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         "supports_covariates, or drop x."
       )
 
-  def copula_layout(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> Any:
+  def copula_layout(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """This distribution's copula-scale data for ``y``.
 
     Parameters
@@ -630,7 +634,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     """
     _, ya, _ = self._columns(y)
     copula_term: Any = declared_eval(
-      self._vinecop, "pdf", cast(ArrayT, self.copula_layout(y, x=x)), x
+      self._vinecop, "pdf", self.copula_layout(y, x=x), x
     )
     # The parts' namespace, not the input's, as `marginal_cdf` and
     # `copula_data` both do: a copula or a margin may legitimately answer in
@@ -651,7 +655,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       if array_namespace(term) is not xp:
         term = xp.asarray(term)
       total = total + term
-    return cast(ArrayT, total)
+    return cast("ArrayT", total)
 
   def pdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Density of the joint distribution.
@@ -673,7 +677,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     """
     out: Any = self.logpdf(y, x=x)
     xp = array_namespace(out)
-    return cast(ArrayT, xp.exp(out))
+    return cast("ArrayT", xp.exp(out))
 
   def cdf(
     self, y: ArrayT, *, x: Optional[ArrayT] = None, **kwargs: Any
@@ -706,12 +710,15 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     # ``C(F_1(y_1), ..., F_d(y_d))`` needs no left limits, but a copula with
     # discrete variables accepts only the layouts that carry them, so hand it
     # the full layout and let it drop what it does not read.
-    return declared_eval(
-      self._vinecop,
-      "cdf",
-      cast(ArrayT, self.copula_layout(y, x=x)),
-      x,
-      **kwargs,
+    return cast(
+      "ArrayT",
+      declared_eval(
+        self._vinecop,
+        "cdf",
+        self.copula_layout(y, x=x),
+        x,
+        **kwargs,
+      ),
     )
 
   def loglik(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
@@ -733,7 +740,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     """
     terms: Any = self.logpdf(y, x=x)
     xp = array_namespace(terms)
-    return cast(ArrayT, xp.sum(terms))
+    return cast("ArrayT", xp.sum(terms))
 
   def rosenblatt(
     self, y: ArrayT, *, x: Optional[ArrayT] = None, **kwargs: Any
@@ -755,12 +762,15 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     array, shape (n, d), dtype float
         Independent uniforms.
     """
-    return declared_eval(
-      self._vinecop,
-      "rosenblatt",
-      cast(ArrayT, self.copula_layout(y, x=x)),
-      x,
-      **kwargs,
+    return cast(
+      "ArrayT",
+      declared_eval(
+        self._vinecop,
+        "rosenblatt",
+        self.copula_layout(y, x=x),
+        x,
+        **kwargs,
+      ),
     )
 
   def inverse_rosenblatt(
@@ -786,7 +796,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     _, wa, n = self._columns(w)
     self._check_covariates(x, n)
     u = declared_eval(
-      self._vinecop, "inverse_rosenblatt", cast(ArrayT, wa), x, **kwargs
+      self._vinecop, "inverse_rosenblatt", cast("ArrayT", wa), x, **kwargs
     )
     return self.marginal_icdf(u, x=x)
 
@@ -842,7 +852,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         ``i`` is the value of conditioning variable ``i``. Unlike the copula
         scale, a discrete conditioner needs no left-limit column: it is derived
         from that variable's margin.
-    conditioning_set : list of int or None, optional
+    conditioning_set : list of int, or None, optional
         The 1-based variables to condition on, so column ``i`` of ``y_cond``
         is variable ``conditioning_set[i]``. ``None`` takes the last ``k``
         variables of the copula's sampling order, ``k`` being ``y_cond``'s
@@ -939,9 +949,9 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   def _coerce_fit_data(
     cls,
     y: Any,
-    weights: Optional[Any],
+    weights: Optional[ArrayT],
     controls: Optional[ControlsLike],
-  ) -> tuple[Any, Any]:
+  ) -> tuple[Any, Optional[ArrayT]]:
     """Raise; override to put the fit inputs on this subclass's namespace.
 
     Called once before any part is fitted, by every estimator on the class.
@@ -955,9 +965,9 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     y : object
         The caller's observations, in whatever form they passed — including a
         DataFrame.
-    weights : object, or None
+    weights : object, or None, optional
         The caller's observation weights, or ``None``.
-    controls : ControlsLike, or None
+    controls : ControlsLike, or None, optional
         Fit configuration, which may carry the placement.
 
     Returns
@@ -982,8 +992,8 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     cls,
     d: int,
     controls: Optional[ControlsLike],
-    margin_controls: Optional[Sequence[Any]] = None,
-  ) -> Optional[Sequence[Any]]:
+    margin_controls: Optional[Sequence[Optional[ControlsLike]]] = None,
+  ) -> Optional[Sequence[MarginLike[ArrayT]]]:
     """The margin each variable gets when the caller named none.
 
     One ``margin_class`` per variable, which is why most subclasses declare
@@ -1001,7 +1011,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     ----------
     d : int
         Number of variables.
-    controls : ControlsLike, or None
+    controls : ControlsLike, or None, optional
         Copula fit configuration, which may carry a placement the margins
         share.
     margin_controls : sequence, or None, optional
@@ -1018,12 +1028,17 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     del controls
     if cls.margin_class is None:
       return None
-    return [cls.margin_class() for _ in range(d)]
+    return cast(
+      "list[MarginLike[ArrayT]]", [cls.margin_class() for _ in range(d)]
+    )
 
   @classmethod
   def _copula_controls(
-    cls, controls: Optional[ControlsLike], u: Any, weights: Optional[Any]
-  ) -> Any:
+    cls,
+    controls: Optional[ControlsLike],
+    u: ArrayT,
+    weights: Optional[ArrayT],
+  ) -> Optional[ControlsLike]:
     """The controls the copula half is estimated with, for this lane.
 
     The one lane-specific step in the copula estimate, and the only hook a
@@ -1041,11 +1056,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
 
     Parameters
     ----------
-    controls : ControlsLike, or None
+    controls : ControlsLike, or None, optional
         What the caller passed.
     u : array, shape (n, d + k), dtype float
         The copula-scale layout, for a lane that reads its placement.
-    weights : array, shape (n,), or None
+    weights : array, shape (n,), or None, optional
         Observation weights.
 
     Returns
@@ -1073,14 +1088,14 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   @classmethod
   def _fit_copula(
     cls,
-    u: Any,
+    u: ArrayT,
     *,
     var_types: list[str],
     controls: Optional[ControlsLike],
-    structure: Optional[Any],
-    weights: Optional[Any],
-    x: Optional[Any] = None,
-  ) -> Any:
+    structure: Optional[RVineStructure],
+    weights: Optional[ArrayT],
+    x: Optional[ArrayT] = None,
+  ) -> VinecopLike[ArrayT]:
     """Construct and fit the copula half on the pseudo-observations.
 
     The **construction** path, used by :meth:`from_data` when there is no
@@ -1097,21 +1112,21 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         The copula-scale layout the margins produced.
     var_types : list of str
         One ``"c"`` or ``"d"`` per variable.
-    controls : ControlsLike, or None
+    controls : ControlsLike, or None, optional
         Fit configuration.
-    structure : RVineStructure, or None
+    structure : RVineStructure, or None, optional
         A fixed structure, or ``None`` to select one from the data.
-    weights : array, shape (n,), or None
+    weights : array, shape (n,), or None, optional
         Observation weights.
     x : array, shape (n, p), or None, optional
         Exogenous covariates, forwarded to ``vinecop_class.from_data`` only
         when that class declares ``supports_covariates`` -- the rule
         ``_covariates.declared_eval`` applies to a whole copula at evaluation,
-        applied here at fitting. A ``Vinecop`` of compiled pair copulas models
-        none, so a conditional ``Vinedist`` is one whose *margins* read ``x``;
-        what keeps that honest is the refusal one level up, where
-        ``supports_fit_covariates`` says whether anything on the lane is
-        fitted on covariates at all.
+        applied here at fitting. A ``Vinecop`` of ``Bicop`` pairs models none,
+        so a conditional ``Vinedist`` is one whose *margins* read ``x``; what
+        enforces that is the refusal one level up, where
+        ``supports_fit_covariates`` says whether anything on the lane is fitted
+        on covariates at all.
 
     Returns
     -------
@@ -1147,14 +1162,14 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
 
   def _reestimate_copula(
     self,
-    u: Any,
+    u: ArrayT,
     *,
     var_types: list[str],
     controls: Optional[ControlsLike],
-    weights: Optional[Any],
-    x: Optional[Any],
+    weights: Optional[ArrayT],
+    x: Optional[ArrayT],
     verb: str,
-  ) -> Any:
+  ) -> VinecopLike[ArrayT]:
     """Re-estimate the copula this distribution already holds, in place.
 
     The counterpart of :meth:`_fit_copula` for :meth:`fit` and :meth:`select`,
@@ -1170,11 +1185,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         The copula-scale layout the margins produced.
     var_types : list of str
         One ``"c"`` or ``"d"`` per variable.
-    controls : ControlsLike, or None
+    controls : ControlsLike, or None, optional
         Fit configuration.
-    weights : array, shape (n,), or None
+    weights : array, shape (n,), or None, optional
         Observation weights.
-    x : array, shape (n, p), or None
+    x : array, shape (n, p), or None, optional
         Exogenous covariates.
     verb : str
         ``"fit"`` to keep the copula's structure, ``"select"`` to re-select it.
@@ -1210,9 +1225,9 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     /,
     controls: Optional[ControlsLike] = None,
     *,
-    margin_controls: Optional[Any] = None,
-    x: Optional[Any] = None,
-    weights: Optional[Any] = None,
+    margin_controls: object = None,
+    x: Optional[ArrayT] = None,
+    weights: Optional[ArrayT] = None,
   ) -> Self:
     """Re-estimate both halves of this distribution, in place.
 
@@ -1281,9 +1296,9 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     /,
     controls: Optional[ControlsLike] = None,
     *,
-    margin_controls: Optional[Any] = None,
-    x: Optional[Any] = None,
-    weights: Optional[Any] = None,
+    margin_controls: object = None,
+    x: Optional[ArrayT] = None,
+    weights: Optional[ArrayT] = None,
   ) -> Self:
     """Re-select and re-estimate both halves, in place.
 
@@ -1331,11 +1346,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     self,
     y: Any,
     controls: Optional[ControlsLike],
-    margin_controls: Optional[Any],
+    margin_controls: object,
     *,
-    x: Optional[Any],
-    weights: Optional[Any],
-    structure: Optional[Any],
+    x: Optional[ArrayT],
+    weights: Optional[ArrayT],
+    structure: Optional[RVineStructure],
     verb: str,
   ) -> Self:
     """Re-estimate the held parts and rebind them, for ``fit`` and ``select``.
@@ -1344,15 +1359,15 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    controls : ControlsLike, or None
+    controls : ControlsLike, or None, optional
         Copula fit configuration.
-    margin_controls : object, or None
+    margin_controls : object, or None, optional
         Marginal fit configuration.
-    x : array, shape (n, p), or None
+    x : array, shape (n, p), or None, optional
         Exogenous covariates.
-    weights : array, shape (n,), or None
+    weights : array, shape (n,), or None, optional
         Observation weights.
-    structure : RVineStructure, or None
+    structure : RVineStructure, or None, optional
         The structure to fit along, or ``None`` to select one.
     verb : str
         ``"fit"`` or ``"select"``, the estimator asked of each margin.
@@ -1425,12 +1440,12 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   @classmethod
   def _check_fit_inputs(
     cls,
-    x: Optional[Any],
-    weights: Optional[Any],
+    x: Optional[ArrayT],
+    weights: Optional[ArrayT],
     n: int,
     data: Any,
     verb: str,
-  ) -> tuple[Optional[Any], Optional[Any]]:
+  ) -> tuple[Optional[ArrayT], Optional[ArrayT]]:
     """Validate and place the covariates, and validate the weights.
 
     Returns both, because placing is half the job: the covariates a margin's
@@ -1456,16 +1471,16 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         "unconditional while the call suggested otherwise. Fit the parts "
         "yourself if only one half is conditional."
       )
-    x = prepare(data, x, n)
-    weights = validate_weights(weights, data[:, 0])
-    if weights is not None and not cls.supports_weighted_copula:
+    placed: Optional[ArrayT] = prepare(data, x, n)
+    checked: Optional[ArrayT] = validate_weights(weights, data[:, 0])
+    if checked is not None and not cls.supports_weighted_copula:
       raise ValueError(
         f"{cls.__name__}.{verb} cannot weight the copula half, so the "
         "margins would be weighted and the copula would not -- which is not "
         "the weighted fit of anything. Drop `weights`, or fit the margins "
         "yourself and compose them with a copula you weighted."
       )
-    return x, weights
+    return placed, checked
 
   @classmethod
   def from_data(
@@ -1474,11 +1489,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     /,
     controls: Optional[ControlsLike] = None,
     *,
-    margins: Any = None,
-    margin_controls: Optional[Any] = None,
-    structure: Optional[Any] = None,
-    x: Optional[Any] = None,
-    weights: Optional[Any] = None,
+    margins: object = None,
+    margin_controls: object = None,
+    structure: Optional[RVineStructure] = None,
+    x: Optional[ArrayT] = None,
+    weights: Optional[ArrayT] = None,
     names: Optional[Sequence[str]] = None,
   ) -> Self:
     """Fit margins and a vine copula to data, in that order.

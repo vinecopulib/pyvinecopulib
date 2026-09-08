@@ -1,4 +1,4 @@
-from typing import Any, Optional, cast
+from typing import Any, Callable, Optional, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -6,6 +6,7 @@ from matplotlib.colors import LinearSegmentedColormap
 from mpl_toolkits.mplot3d.axis3d import XAxis as XAxis3D, YAxis as YAxis3D
 
 from ..core._covariates import pair_eval
+from ..core.protocols import ArrayT
 from .stats import expon_cdf, expon_pdf, expon_ppf, norm_cdf, norm_pdf, norm_ppf
 
 BICOP_PLOT_DOC = """
@@ -68,8 +69,8 @@ def bicop_plot(
   xylim: Optional[tuple[float, float]] = None,
   grid_size: Optional[int] = None,
   *,
-  x: Optional[Any] = None,
-  place: Optional[Any] = None,
+  x: Optional[ArrayT] = None,
+  place: Optional[Callable[[np.ndarray], Any]] = None,
 ) -> None:
   """{}""".format(BICOP_PLOT_DOC)
 
@@ -182,6 +183,8 @@ def bicop_plot(
   elif margin_type == "exp":
     dens = np.minimum(dens, 6)
     zlim = (0, max(1, 1.1 * max(dens.flatten())))
+  else:
+    raise ValueError("Unknown margin type")
 
   # Define the colors as in the R code
   colors = [
@@ -221,8 +224,8 @@ def bicop_plot(
     # ax is Axes3D, but matplotlib's stubs declare ax.xaxis / ax.yaxis as
     # the 2D XAxis / YAxis (which lack `pane`). Cast to the 3D variants.
     # ax.zaxis is already typed correctly as the 3D ZAxis.
-    cast(XAxis3D, ax.xaxis).pane.fill = False
-    cast(YAxis3D, ax.yaxis).pane.fill = False
+    cast("XAxis3D", ax.xaxis).pane.fill = False
+    cast("YAxis3D", ax.yaxis).pane.fill = False
     ax.zaxis.pane.fill = False
     ax.grid(False)
     plt.draw()

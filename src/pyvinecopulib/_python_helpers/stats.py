@@ -1,4 +1,5 @@
 import math
+from typing import cast
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
@@ -10,7 +11,9 @@ def polevl(x: float, coefs: list[float], N: int) -> float:
   ans = 0.0
   power = len(coefs) - 1
   for coef in coefs[:N]:
-    ans += coef * x**power
+    # `float ** int` is a float, but typeshed also offers the reflected
+    # `int.__rpow__`, whose result is `Any`.
+    ans += cast("float", coef * x**power)
     power -= 1
   return ans
 

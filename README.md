@@ -155,7 +155,7 @@ What is **provisional in 1.x** are the *implementations* in
 `pyvinecopulib.margins`, `pyvinecopulib.sklearn` and `pyvinecopulib.torch` --
 the curated family registry, the selection criteria, the backend and controls
 surfaces -- which may change in a minor version as they meet real data. The
-torch-to-core evaluation parity is treated as load-bearing regardless. Pin an
+torch-to-core evaluation parity is treated as required regardless. Pin an
 exact version if you depend on those implementation surfaces.
 
 ### Custom and conditional models
@@ -173,7 +173,7 @@ A pair may depend on its vine conditioning-set values (a **non-simplified**
 vine), on row-aligned external covariates, or on both. `Vinedist` can compose covariate-dependent
 margins and such a copula into a full data-scale distribution `Y | X`.
 
-This joint conditional model is an extension seam, not a built-in fitter:
+This joint conditional model is an extension point, not a built-in fitter:
 `Vinedist.from_data(y, x=...)` can fit custom conditional margin
 specifications, but fits an `x`-independent compiled `Vinecop` for the copula
 half. Fit custom conditional pairs through `VinecopBase.fit` and compose the

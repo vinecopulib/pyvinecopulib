@@ -469,7 +469,7 @@ def test_bicop_deriv_tll() -> None:
     tll.hfunc1_deriv(u, "u2"), tll.pdf(u), rtol=1e-10, atol=1e-12
   )
 
-  # Parameter selectors, second-order derivatives, and genuine h-function
+  # Parameter selectors, second-order derivatives, and actual h-function
   # derivatives are undefined for tll.
   with pytest.raises(RuntimeError):
     tll.pdf_deriv(u, "par1")
@@ -485,7 +485,7 @@ def test_families_analytic_derivs() -> None:
   assert all(isinstance(f, pv.BicopFamily) for f in group)
   # Currently every parametric family has closed forms (vinecopulib#683/#687);
   # assert bb1/tawn membership explicitly so an upstream change is caught
-  # deliberately.
+  # for that reason.
   assert set(group) == set(pv.families.parametric)
   assert pv.families.bb1 in group
   assert pv.families.tawn in group
@@ -579,7 +579,7 @@ def test_bicop_taildep_and_beta() -> None:
 
 def test_bicop_flip_returns_swapped_copy() -> None:
   # flip() returns the argument-swapped copula and leaves the original
-  # unchanged. A 90-degree Clayton is asymmetric, so the flip is a genuine
+  # unchanged. A 90-degree Clayton is asymmetric, so the flip is a actual
   # change (rotation 90 <-> 270).
   cop = pv.Bicop.from_family(
     family=pv.families.clayton, rotation=90, parameters=np.array([[3.0]])
@@ -800,7 +800,9 @@ def test_simulate_positional_signature_is_unchanged() -> None:
   assert cop.sample(12, False, [1, 2]).shape == (12, 2)
 
 
-def _discrete_pair(n: int = 500, seed: int = 3):
+def _discrete_pair(
+  n: int = 500, seed: int = 3
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
   """A (continuous, discrete) pair as F(x) and the discrete left limit."""
   rng = np.random.default_rng(seed)
   z = rng.normal(size=(n, 2))
@@ -862,7 +864,9 @@ def test_loglik_rejects_a_wrong_column_count() -> None:
     [pv.families.tll],
   ],
 )
-def test_a_weighted_fit_is_flip_equivariant(family_set) -> None:
+def test_a_weighted_fit_is_flip_equivariant(
+  family_set: list[pv.BicopFamily],
+) -> None:
   """Weighting the rows cannot depend on which argument comes first.
 
   A weighted fit on ``(u1, u2)`` must equal the weighted fit on ``(u2, u1)`` up

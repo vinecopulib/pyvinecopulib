@@ -8,6 +8,8 @@ gitignored stub artifacts on disk.
 import ast
 import importlib.util
 from pathlib import Path
+from types import ModuleType
+from typing import cast
 
 import pyvinecopulib as pv
 from pyvinecopulib.families import BicopFamily
@@ -17,7 +19,7 @@ _SCRIPTS = (
 )
 
 
-def _load_generator():
+def _load_generator() -> ModuleType:
   spec = importlib.util.spec_from_file_location("generate_stubs", _SCRIPTS)
   assert spec is not None and spec.loader is not None
   mod = importlib.util.module_from_spec(spec)
@@ -25,7 +27,7 @@ def _load_generator():
   return mod
 
 
-def test_bicopfamily_members_rendered_as_class_attributes():
+def test_bicopfamily_members_rendered_as_class_attributes() -> None:
   """Enum members are declared inside the class body (see issue #223).
 
   ``pv.BicopFamily.clayton`` is the documented access pattern; the stub must
@@ -33,7 +35,9 @@ def test_bicopfamily_members_rendered_as_class_attributes():
   checking, not only as a module-level constant.
   """
   gen = _load_generator()
-  body = "\n".join(gen.render_class_stub(BicopFamily, "BicopFamily"))
+  body = "\n".join(
+    cast("list[str]", gen.render_class_stub(BicopFamily, "BicopFamily"))
+  )
   members = [
     n
     for n in dir(BicopFamily)
@@ -45,12 +49,13 @@ def test_bicopfamily_members_rendered_as_class_attributes():
     assert f"  {m}: BicopFamily = ..." in body
 
 
-def _rendered(cls, name: str) -> str:
+def _rendered(cls: type, name: str) -> str:
   gen = _load_generator()
-  return "\n".join(gen.render_class_stub(cls, name))
+  # The generator is loaded by file path, so its return type is opaque here.
+  return "\n".join(cast("list[str]", gen.render_class_stub(cls, name)))
 
 
-def test_keyword_only_arguments_survive_into_the_stub():
+def test_keyword_only_arguments_survive_into_the_stub() -> None:
   """The new conditioning / per-row arguments are keyword-only.
 
   A nanobind overload set renders as ``"Overloaded function."`` and loses its
@@ -81,7 +86,7 @@ def test_keyword_only_arguments_survive_into_the_stub():
     assert "*, conditioning_set:" in line, line
 
 
-def test_a_deprecated_alias_renders_with_a_real_signature():
+def test_a_deprecated_alias_renders_with_a_real_signature() -> None:
   """A shim must not degrade to ``*args, **kwargs`` in the stubs.
 
   `generate_stubs.py` recovers a signature -- and ``@staticmethod`` -- by parsing
@@ -105,7 +110,7 @@ def test_a_deprecated_alias_renders_with_a_real_signature():
   assert line.lstrip().startswith("def simulate(d: int"), line
 
 
-def test_from_data_accepts_a_dynamically_sized_matrix():
+def test_from_data_accepts_a_dynamically_sized_matrix() -> None:
   """`Bicop.from_data` must not re-acquire a static two-column shape.
 
   A statically two-column Eigen type makes the discrete layouts unpassable.
@@ -120,7 +125,7 @@ def test_from_data_accepts_a_dynamically_sized_matrix():
   assert "shape=(*, 2)" not in line, line
 
 
-def test_no_binding_is_an_overload_set():
+def test_no_binding_is_an_overload_set() -> None:
   """Alternative constructors are named factories, not C++-style overloads.
 
   An overload set costs twice: nanobind concatenates the docstrings, so two
@@ -160,7 +165,7 @@ def test_no_binding_is_an_overload_set():
   )
 
 
-def test_subclass_declares_its_base():
+def test_subclass_declares_its_base() -> None:
   """``DVineStructure`` / ``CVineStructure`` derive from ``RVineStructure``.
 
   The binding declares the inheritance and the runtime MRO carries it, so the
@@ -174,18 +179,20 @@ def test_subclass_declares_its_base():
     assert body.startswith(f"class {cls.__name__}(RVineStructure):")
 
 
-def test_base_without_a_definition_here_is_not_declared():
+def test_base_without_a_definition_here_is_not_declared() -> None:
   """Only bases the stub itself defines are named.
 
   ``BicopFamily`` derives from ``enum.Enum``, which the stub never declares, so
   naming it would leave a dangling reference.
   """
   gen = _load_generator()
-  body = "\n".join(gen.render_class_stub(BicopFamily, "BicopFamily"))
+  body = "\n".join(
+    cast("list[str]", gen.render_class_stub(BicopFamily, "BicopFamily"))
+  )
   assert body.startswith("class BicopFamily:")
 
 
-def test_docstrings_are_escaped_as_valid_python():
+def test_docstrings_are_escaped_as_valid_python() -> None:
   """LaTeX backslashes cannot form truncated escapes in generated stubs."""
   gen = _load_generator()
   rendered = "\n".join(gen.render_docstring(r"criterion $\xi$", 0))
@@ -193,7 +200,7 @@ def test_docstrings_are_escaped_as_valid_python():
   assert r"\\xi" in rendered
 
 
-def test_every_generated_stub_parses():
+def test_every_generated_stub_parses() -> None:
   """The build's PEP 561 artifacts are syntactically valid Python."""
   root = Path(pv.__file__).resolve().parent
   stubs = sorted(root.glob("**/__init__.pyi"))

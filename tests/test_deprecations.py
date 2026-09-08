@@ -108,14 +108,14 @@ def test_the_rng_hook_is_the_only_spelling(base: Any) -> None:
   remains is that only the current name is wired up.
   """
 
-  class _Fresh(base):  # type: ignore[misc, valid-type]
+  class _Fresh(base):
     def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Any:
       return np.zeros((n, 2))
 
   assert hasattr(_Fresh, "_sample_uniform")
 
   # Defining the old name is simply ignored now, not an error.
-  class _Stale(base):  # type: ignore[misc, valid-type]
+  class _Stale(base):
     def _simulate_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Any:
       return np.zeros((n, 2))
 
@@ -128,7 +128,7 @@ def test_the_rng_hook_is_the_only_spelling(base: Any) -> None:
 def test_sklearn_sample_signature_is_pinned() -> None:
   """`check_estimator` requires `sample(n_samples, random_state)`; core takes `n`.
 
-  The two conventions coexist deliberately. Pinned so a later "unification"
+  The two conventions coexist. Pinned so a later "unification"
   cannot quietly break scikit-learn compatibility.
   """
   import inspect

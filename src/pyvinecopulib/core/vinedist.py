@@ -15,7 +15,7 @@ from typing import Any, ClassVar, Optional, Self, Sequence
 import numpy as np
 
 from ..pyvinecopulib_ext import Kde1d, Vinecop
-from .protocols import ControlsLike
+from .protocols import ControlsLike, MarginLike
 from .vinedist_base import VinedistBase
 
 __all__ = ["Vinedist"]
@@ -100,7 +100,7 @@ class Vinedist(VinedistBase[np.ndarray]):
   def _bind_dist(
     self,
     vinecop: Any,
-    margins: Any,
+    margins: object,
   ) -> None:
     """Install the parts, refusing PyTorch ones.
 
@@ -137,9 +137,9 @@ class Vinedist(VinedistBase[np.ndarray]):
   def _coerce_fit_data(
     cls,
     y: Any,
-    weights: Optional[Any],
+    weights: Optional[np.ndarray],
     controls: Optional[ControlsLike],
-  ) -> tuple[Any, Any]:
+  ) -> tuple[np.ndarray, Optional[np.ndarray]]:
     """Put the fit inputs on NumPy.
 
     NumPy carries no placement, so ``controls`` goes unread, and the weights
@@ -153,9 +153,9 @@ class Vinedist(VinedistBase[np.ndarray]):
   def _default_margins(
     cls,
     d: int,
-    controls: Optional[Any] = None,
-    margin_controls: Optional[Sequence[Any]] = None,
-  ) -> Sequence[Any]:
+    controls: Optional[ControlsLike] = None,
+    margin_controls: Optional[Sequence[Optional[ControlsLike]]] = None,
+  ) -> Sequence[MarginLike[np.ndarray]]:
     """One ``Kde1d`` per variable, bounded and typed as its controls declare.
 
     A kernel density takes its variable type and its bounds at construction, so
@@ -171,8 +171,11 @@ class Vinedist(VinedistBase[np.ndarray]):
 
   @classmethod
   def _copula_controls(
-    cls, controls: Optional[ControlsLike], u: Any, weights: Optional[Any]
-  ) -> Any:
+    cls,
+    controls: Optional[ControlsLike],
+    u: np.ndarray,
+    weights: Optional[np.ndarray],
+  ) -> Optional[ControlsLike]:
     """``controls`` with the explicit ``weights`` written in.
 
     The explicit argument governs both halves of the fit, so it is written

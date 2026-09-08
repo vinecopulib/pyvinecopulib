@@ -285,7 +285,7 @@ def test_thresholded_pairs_land_where_the_data_is(
   """A thresholded edge follows the data, not `controls.device`.
 
   A thresholded edge is not fitted, so its pair is constructed rather than
-  derived from `u`, and it has to be placed deliberately. Taking the
+  derived from `u`, and it has to be placed explicitly. Taking the
   placement from `controls.device` gets it wrong whenever the caller left
   that `None` and let the data choose -- which is the documented way to pass
   an already-resident tensor.
@@ -299,7 +299,7 @@ def test_thresholded_pairs_land_where_the_data_is(
   d, n = 6, 400
   u = _u(d, n, 7)
   ut = torch.as_tensor(u, device=device)
-  # `controls.device` deliberately left None: the data carries the placement.
+  # `controls.device` left None: the data carries the placement.
   vine = TorchVinecop.from_data(
     ut, controls=FitControlsTorchVinecop(trunc_lvl=20, threshold=threshold)
   )

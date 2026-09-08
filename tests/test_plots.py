@@ -40,7 +40,7 @@ class TestPairCopulaData:
       # `cast` rather than a `ty: ignore`: the ignore reads as unused in
       # some environments and is required in others, so either spelling
       # fails the type check somewhere.
-      pairs_copula_data(cast(Any, None))
+      pairs_copula_data(cast("Any", None))
 
     # Test non-numeric data
     with pytest.raises(
@@ -118,17 +118,17 @@ class TestPairCopulaData:
     with pytest.raises(
       ValueError, match="`grid_size` must be a positive integer"
     ):
-      pairs_copula_data(valid_data, grid_size=10.5)  # type: ignore
+      pairs_copula_data(valid_data, grid_size=cast("int", 10.5))
 
     # Test non-integer bins
     with pytest.raises(ValueError, match="`bins` must be a positive integer"):
-      pairs_copula_data(valid_data, bins=5.5)  # type: ignore
+      pairs_copula_data(valid_data, bins=cast("int", 5.5))
 
     # Test string scatter_size
     with pytest.raises(
       ValueError, match="`scatter_size` must be a positive number"
     ):
-      pairs_copula_data(valid_data, scatter_size="large")  # type: ignore
+      pairs_copula_data(valid_data, scatter_size=cast("float", "large"))
 
   def test_pairs_copula_data_basic_validation_success(self) -> None:
     """Test that valid inputs pass basic validation"""
@@ -1045,7 +1045,7 @@ class TestEdgeCases:
 def test_bicop_plot_refuses_x_on_a_pair_that_reads_no_covariates() -> None:
   """Better a loud refusal than an unconditional surface under a conditional call.
 
-  Exercised at the helper level because the object under test deliberately does
+  Exercised at the helper level because the object under test does
   *not* conform to ``BicopLike``: a ``pdf`` with no ``x`` parameter is the
   compiled ``Bicop``'s shape, and a ``BicopBase`` subclass cannot express it
   without violating the contract -- which is itself why the forwarding rule
@@ -1056,7 +1056,7 @@ def test_bicop_plot_refuses_x_on_a_pair_that_reads_no_covariates() -> None:
   class NoCovariates:
     var_types = None
 
-    def pdf(self, u):
+    def pdf(self, u: np.ndarray) -> np.ndarray:
       return np.ones(u.shape[0], dtype=float)
 
   with pytest.raises(TypeError):
@@ -1070,7 +1070,7 @@ def test_bicop_plot_takes_one_covariate_row_only() -> None:
   class Conditional:
     var_types = None
 
-    def pdf(self, u, *, x=None):
+    def pdf(self, u: np.ndarray, *, x: Any = None) -> np.ndarray:
       return np.ones(u.shape[0], dtype=float)
 
   for bad in (np.zeros((17, 1)), np.zeros((2, 2, 1))):
@@ -1087,7 +1087,7 @@ def test_bicop_plot_places_the_grid_through_the_supplied_seam() -> None:
   class Recording:
     var_types = None
 
-    def pdf(self, u):
+    def pdf(self, u: np.ndarray) -> np.ndarray:
       seen["type"] = type(u).__name__
       return np.ones(u.shape[0], dtype=float)
 
@@ -1098,7 +1098,7 @@ def test_bicop_plot_places_the_grid_through_the_supplied_seam() -> None:
   # With one: every manufactured array goes through it.
   calls: list[tuple[int, ...]] = []
 
-  def place(a):
+  def place(a: np.ndarray) -> np.ndarray:
     calls.append(tuple(a.shape))
     return a
 

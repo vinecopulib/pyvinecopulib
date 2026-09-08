@@ -2,7 +2,7 @@ import math
 import statistics
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import matplotlib
 import numpy as np
@@ -11,6 +11,9 @@ from array_api_compat import array_namespace
 
 import pyvinecopulib as pv
 from pyvinecopulib.core import BicopBase, BicopLike, VinecopBase
+
+if TYPE_CHECKING:
+  import pandas as pd
 
 matplotlib.use("Agg")
 
@@ -115,7 +118,7 @@ class GaussianBicop(BicopBase[Any]):
 
   The correlation is a Fisher-style link of a *position-weighted mean* of the
   conditioning matrix, ``rho = rho_max * tanh(scale * mean_j (j + 1) * x[:, j])``,
-  so the copula is genuinely non-simplified when hosted with a
+  so the copula is actually non-simplified when hosted with a
   :class:`~pyvinecopulib.core.NonSimplifiedContext`, and — because the weights
   differ per column — its output *depends on the column order of* ``x`` (used to
   pin the C1 order). With ``x=None`` the correlation is ``base_rho``. Capping at
@@ -245,7 +248,7 @@ def sample_array_data(
 @pytest.fixture
 def sample_dataframe_data(
   random_state: np.random.RandomState,
-):
+) -> tuple["pd.DataFrame", list[str]]:
   """Mixed-dtype DataFrame for factor-expansion tests."""
   import pandas as pd
 
@@ -331,7 +334,7 @@ _HAS_CUDA = _cuda_available()
 )
 def device(request: pytest.FixtureRequest) -> str:
   """Torch device a test runs on."""
-  return request.param
+  return cast("str", request.param)
 
 
 @pytest.fixture

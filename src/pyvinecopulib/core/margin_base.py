@@ -32,7 +32,7 @@ from ._covariates import declared_eval, prepare
 from ._placement import PlacementMixin
 from ._rootfind import solve_increasing
 from ._validation import reject_array_controls, validate_weights
-from .protocols import _MARGIN_EXAMPLE, ArrayT, MarginLike
+from .protocols import _MARGIN_EXAMPLE, ArrayT, ControlsLike, MarginLike
 
 __all__ = ["MarginBase"]
 
@@ -50,7 +50,7 @@ __all__ = ["MarginBase"]
 _ICDF_ITER: int = 110
 
 
-def support_of(obj: Any) -> tuple[float, float]:
+def support_of(obj: object) -> tuple[float, float]:
   """Read ``(lo, hi)`` off an object that may spell its support three ways.
 
   SciPy exposes ``support()`` as a method, PyTorch a ``support`` property
@@ -92,8 +92,8 @@ def support_of(obj: Any) -> tuple[float, float]:
 
 
 def derive_cdf_left(
-  margin: Any, y: Any, x: Optional[Any], var_type: str
-) -> Any:
+  margin: MarginLike[ArrayT], y: ArrayT, x: Optional[ArrayT], var_type: str
+) -> ArrayT:
   """Left limit ``F(y^-)`` derived from a margin's ``cdf`` and ``var_type``.
 
   The one place the derivation lives, so a margin that declares atoms and
@@ -108,7 +108,7 @@ def derive_cdf_left(
       The margin to read ``cdf`` (and, for ``"zi"``, ``pdf``) from.
   y : array, shape (n,), dtype float
       Observations on the original scale.
-  x : array, shape (n, p), or None
+  x : array, shape (n, p), or None, optional
       Exogenous covariates, forwarded only to a margin that reads them.
   var_type : {"c", "d", "zi"}
       The margin's variable type.
@@ -125,7 +125,7 @@ def derive_cdf_left(
       derivation steps back one lattice point.
   """
   if var_type == "c":
-    return declared_eval(margin, "cdf", y, x)
+    return cast("ArrayT", declared_eval(margin, "cdf", y, x))
 
   ya: Any = y
   xp = array_namespace(ya)
@@ -135,12 +135,14 @@ def derive_cdf_left(
         f"{type(margin).__name__} declares var_type='d', so y must be "
         "integer-valued; give it a cdf_left for a support on another lattice."
       )
-    return declared_eval(margin, "cdf", ya - 1, x)
+    return cast("ArrayT", declared_eval(margin, "cdf", ya - 1, x))
 
   # Zero-inflated: the only atom is at 0, and its mass is `pdf(0)`.
   upper: Any = declared_eval(margin, "cdf", y, x)
   mass: Any = declared_eval(margin, "pdf", y, x)
-  return xp.where(ya == 0, xp.clip(upper - mass, 0.0, 1.0), upper)
+  return cast(
+    "ArrayT", xp.where(ya == 0, xp.clip(upper - mass, 0.0, 1.0), upper)
+  )
 
 
 def criteria(loglik: float, k: float, n: Optional[float]) -> dict[str, float]:
@@ -156,7 +158,7 @@ def criteria(loglik: float, k: float, n: Optional[float]) -> dict[str, float]:
       Maximized log-likelihood.
   k : float
       Number of freely estimated parameters.
-  n : float, or None
+  n : float, or None, optional
       Number of observations -- a float, since a weighted fit's effective
       count is not an integer. ``None`` leaves the two criteria that penalize
       by sample size undefined rather than guessing one.
@@ -373,7 +375,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
 
     Parameters
     ----------
-    var_type : str or None, optional
+    var_type : str, or None, optional
         ``"c"``, ``"d"`` or ``"zi"``, or ``None`` when the caller does not
         know.
     support : tuple of float, or None, optional
@@ -395,7 +397,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     cls,
     y: ArrayT,
     /,
-    controls: Optional[Any] = None,
+    controls: Optional[ControlsLike] = None,
     *,
     x: Optional[ArrayT] = None,
     weights: Optional[ArrayT] = None,
@@ -414,7 +416,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     ----------
     y : array, shape (n,), dtype float
         Observations on the original scale.
-    controls : object, or None, optional
+    controls : ControlsLike, or None, optional
         Fit configuration, in whatever form the subclass accepts.
     x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation.
@@ -437,7 +439,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     self,
     y: ArrayT,
     /,
-    controls: Optional[Any] = None,
+    controls: Optional[ControlsLike] = None,
     *,
     x: Optional[ArrayT] = None,
     weights: Optional[ArrayT] = None,
@@ -452,7 +454,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     ----------
     y : array, shape (n,), dtype float
         Observations on the original scale.
-    controls : object, or None, optional
+    controls : ControlsLike, or None, optional
         Fit configuration, in whatever form the subclass accepts; a margin
         that takes none declares :attr:`supports_controls` ``False``.
     x : array, shape (n, p), or None, optional
@@ -485,7 +487,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     self,
     y: ArrayT,
     /,
-    controls: Optional[Any] = None,
+    controls: Optional[ControlsLike] = None,
     *,
     x: Optional[ArrayT] = None,
     weights: Optional[ArrayT] = None,
@@ -502,7 +504,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     ----------
     y : array, shape (n,), dtype float
         Observations on the original scale.
-    controls : object, or None, optional
+    controls : ControlsLike, or None, optional
         Fit configuration, in whatever form the subclass accepts. The margins
         in ``pyvinecopulib.margins`` read a ``FitControlsMargin``, whose
         ``family_set`` and ``selection_criterion`` bound the search.
@@ -552,9 +554,9 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         Log-density, ``-inf`` where the density vanishes.
     """
     ya = self._prep_args(y)
-    x = prepare(self, x, int(cast(Any, ya).shape[0]))
+    x = prepare(self, x, int(cast("Any", ya).shape[0]))
     dens: Any = declared_eval(self, "pdf", ya, x)
-    return cast(ArrayT, safe_log(dens))
+    return cast("ArrayT", safe_log(dens))
 
   def cdf_left(self, y: ArrayT, /, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Left limit ``F(y^-)`` of the distribution function.
@@ -589,8 +591,8 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         the default steps back by one.
     """
     ya = self._prep_args(y)
-    x = prepare(self, x, int(cast(Any, ya).shape[0]))
-    return cast(ArrayT, derive_cdf_left(self, ya, x, self.var_type))
+    x = prepare(self, x, int(cast("Any", ya).shape[0]))
+    return cast("ArrayT", derive_cdf_left(self, ya, x, self.var_type))
 
   def icdf(self, p: ArrayT, /, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Inverse distribution function, by numerical inversion of ``cdf``.
@@ -646,7 +648,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
       # jump rather than landing on it, and an answer a few ulp below an integer
       # is one its own `cdf_left` would reject as non-integral.
       out = xp.round(out)
-    return cast(ArrayT, out)
+    return cast("ArrayT", out)
 
   #: What :attr:`nobs` reports. A subclass's :meth:`fit` records the sample
   #: size here; ``None`` means the margin never estimated one.
@@ -751,13 +753,13 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         raise ValueError("weights are only meaningful with data; pass y too")
       return self._fitted_loglik
     ya = self._prep_args(y)
-    x = prepare(self, x, int(cast(Any, ya).shape[0]))
+    x = prepare(self, x, int(cast("Any", ya).shape[0]))
     terms: Any = declared_eval(self, "logpdf", ya, x)
     xp = array_namespace(terms)
     if weights is not None:
       weights = validate_weights(weights, terms)
       terms = terms * weights
-    return cast(ArrayT, xp.sum(terms))
+    return cast("ArrayT", xp.sum(terms))
 
   def aic(self, y: Optional[ArrayT] = None, /) -> float:
     """Akaike information criterion of the fit.
@@ -866,7 +868,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         If ``y`` is ``None`` and the margin recorded no sample size.
     """
     if y is not None:
-      return float(cast(Any, y).shape[0])
+      return float(cast("Any", y).shape[0])
     n = self.nobs
     if n is None:
       raise ValueError(
@@ -909,7 +911,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     """
     x = prepare(self, x, n)
     base = self._sample_uniform(n, list(seeds) if seeds else [])
-    return cast(ArrayT, declared_eval(self, "icdf", base, x))
+    return cast("ArrayT", declared_eval(self, "icdf", base, x))
 
   def _sample_uniform(self, n: int, seeds: list[int]) -> ArrayT:
     """Draw ``n`` uniforms on the subclass's array namespace.
@@ -973,7 +975,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         f"{name} must be one-dimensional -- a margin describes one variable; "
         f"got shape {tuple(getattr(ya, 'shape', ()))}"
       )
-    return cast(ArrayT, ya)
+    return cast("ArrayT", ya)
 
   def __repr__(self) -> str:
     """Return a structural representation of the margin.

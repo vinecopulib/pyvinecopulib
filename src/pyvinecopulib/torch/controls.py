@@ -13,7 +13,10 @@ relevant dataclass and the dispatch in the corresponding ``from_data``
 from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+  import torch
 
 #: Structure-selection algorithms accepted by ``FitControlsTorchVinecop``,
 #: mirroring ``FitControlsVinecop.tree_algorithm``.
@@ -72,7 +75,7 @@ class FitControlsTorchBicop:
   grid_type: str = "normal"
   compile_fit: bool = False
 
-  def to_dict(self) -> dict:
+  def to_dict(self) -> dict[str, Any]:
     """Return the settings as a plain dictionary.
 
     Returns
@@ -143,7 +146,7 @@ default="tau"
       They reconstruct the uncached integrals up to summation order and rebuild
       in-graph when grid values require gradients. ``None`` resolves to
       ``True``, including for discrete vines.
-  device : torch.device or None, default=None
+  device : torch.device or str or int, or None, default=None
       Target torch device for the fitted pair copulas. ``None``
       keeps the input's device.
   dtype : torch.dtype or None, default=None
@@ -189,7 +192,7 @@ default="tau"
       torch uses every core by default, so the cpu default is the
       conservative reading of a measurement that moves with thread count
       rather than a claim that batching cannot pay there. Either way the
-      torch fit is far from competitive with the core backend on cpu.
+      torch fit is far from competitive with ``Vinecop`` on cpu.
 
       A level carrying a discrete edge or a conditioning context is always
       fitted edge at a time: those cannot stack.
@@ -225,8 +228,8 @@ default="tau"
   seeds: list[int] = field(default_factory=list)
   conditioning_set: list[int] = field(default_factory=list)
   cache_integrals: Optional[bool] = None
-  device: Optional[Any] = None
-  dtype: Optional[Any] = None
+  device: torch.types.Device = None
+  dtype: Optional[torch.dtype] = None
   compile: bool = False
   batched_fit: Optional[bool] = None
 

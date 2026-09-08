@@ -159,7 +159,7 @@ inline Kde1d kde1d_from_grid(const Eigen::VectorXd& grid_points,
 // carries the same surface. One representation serves both `to_json` and
 // pickling, so the two cannot drift.
 //
-// The mapping lives here rather than in `kde1d` deliberately. Owning the format
+// The mapping lives here rather than in `kde1d`. Owning the format
 // upstream would mean a JSON library in a repository that has no dependencies
 // at all, and `vinecopulib`'s equivalent is a 1.1 MB vendored header; that is
 // not worth it while Python is the only binding that serializes a `Kde1d`.
@@ -318,7 +318,7 @@ inline Eigen::VectorXd kde1d_cdf_left(const Kde1d& kde,
 
 // Log-density. A margin's consumers read `logpdf` when it exists rather than
 // taking a log themselves, and the estimator can do it without a Python round
-// trip. Zero density gives `-inf`, which is the honest answer.
+// trip. Zero density gives `-inf`, which is correct.
 inline Eigen::VectorXd kde1d_logpdf(const Kde1d& kde,
                                     const Eigen::VectorXd& x) {
   return kde.pdf(x).array().log();

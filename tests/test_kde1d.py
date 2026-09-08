@@ -1,5 +1,6 @@
 import math
 import pickle
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -579,7 +580,7 @@ def test_json_round_trip_of_an_unfitted_estimator() -> None:
   assert restored.type == kde.type
 
 
-def test_to_file_selects_cbor_by_extension(tmp_path) -> None:
+def test_to_file_selects_cbor_by_extension(tmp_path: Path) -> None:
   """The same extension rule `Bicop.to_file` follows."""
   kde = pv.core.Kde1d().fit(np.random.default_rng(2).normal(size=300))
   q = np.linspace(-2.0, 2.0, 5)

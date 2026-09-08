@@ -43,7 +43,7 @@ class IndependencePair(BicopBase[ArrayT]):
     ----------
     u : array, shape (n, 2) or wider, dtype float
         Copula-scale observations. Only the shape is read.
-    x : array, optional
+    x : array, or None, optional
         Ignored; the pair is unconditional.
 
     Returns
@@ -52,9 +52,9 @@ class IndependencePair(BicopBase[ArrayT]):
         Ones.
     """
     del x
-    cols = cast(Any, u)
+    cols = cast("Any", u)
     xp = array_namespace(cols)
-    return cast(ArrayT, xp.ones_like(cols[:, 0]))
+    return cast("ArrayT", xp.ones_like(cols[:, 0]))
 
   def cdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Distribution function ``u1 * u2``.
@@ -63,7 +63,7 @@ class IndependencePair(BicopBase[ArrayT]):
     ----------
     u : array, shape (n, 2) or wider, dtype float
         Copula-scale observations.
-    x : array, optional
+    x : array, or None, optional
         Ignored; the pair is unconditional.
 
     Returns
@@ -72,8 +72,8 @@ class IndependencePair(BicopBase[ArrayT]):
         The product of the two arguments.
     """
     del x
-    cols = cast(Any, u)
-    return cast(ArrayT, cols[:, 0] * cols[:, 1])
+    cols = cast("Any", u)
+    return cast("ArrayT", cols[:, 0] * cols[:, 1])
 
   def hfunc1(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """``P(U2 <= u2 | U1) = u2``.
@@ -82,7 +82,7 @@ class IndependencePair(BicopBase[ArrayT]):
     ----------
     u : array, shape (n, 2) or wider, dtype float
         Copula-scale observations.
-    x : array, optional
+    x : array, or None, optional
         Ignored; the pair is unconditional.
 
     Returns
@@ -91,7 +91,7 @@ class IndependencePair(BicopBase[ArrayT]):
         The second argument.
     """
     del x
-    return cast(ArrayT, cast(Any, u)[:, 1])
+    return cast("ArrayT", cast("Any", u)[:, 1])
 
   def hfunc2(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """``P(U1 <= u1 | U2) = u1``.
@@ -100,7 +100,7 @@ class IndependencePair(BicopBase[ArrayT]):
     ----------
     u : array, shape (n, 2) or wider, dtype float
         Copula-scale observations.
-    x : array, optional
+    x : array, or None, optional
         Ignored; the pair is unconditional.
 
     Returns
@@ -109,7 +109,7 @@ class IndependencePair(BicopBase[ArrayT]):
         The first argument.
     """
     del x
-    return cast(ArrayT, cast(Any, u)[:, 0])
+    return cast("ArrayT", cast("Any", u)[:, 0])
 
   def hinv1(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Inverse of :meth:`hfunc1` in its second argument, which is identity.
@@ -118,7 +118,7 @@ class IndependencePair(BicopBase[ArrayT]):
     ----------
     u : array, shape (n, 2) or wider, dtype float
         Conditioning value in column 0, level in column 1.
-    x : array, optional
+    x : array, or None, optional
         Ignored; the pair is unconditional.
 
     Returns
@@ -127,7 +127,7 @@ class IndependencePair(BicopBase[ArrayT]):
         The second argument.
     """
     del x
-    return cast(ArrayT, cast(Any, u)[:, 1])
+    return cast("ArrayT", cast("Any", u)[:, 1])
 
   def hinv2(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Inverse of :meth:`hfunc2` in its first argument, which is identity.
@@ -136,7 +136,7 @@ class IndependencePair(BicopBase[ArrayT]):
     ----------
     u : array, shape (n, 2) or wider, dtype float
         Level in column 0, conditioning value in column 1.
-    x : array, optional
+    x : array, or None, optional
         Ignored; the pair is unconditional.
 
     Returns
@@ -145,7 +145,7 @@ class IndependencePair(BicopBase[ArrayT]):
         The first argument.
     """
     del x
-    return cast(ArrayT, cast(Any, u)[:, 0])
+    return cast("ArrayT", cast("Any", u)[:, 0])
 
   def flip(self) -> "IndependencePair[ArrayT]":
     """The argument-swapped copula, which is this one.
@@ -176,7 +176,7 @@ class IndependencePair(BicopBase[ArrayT]):
     """
     from ..pyvinecopulib_ext import sample_uniform
 
-    return cast(ArrayT, sample_uniform(n, 2, qrng, seeds))
+    return cast("ArrayT", sample_uniform(n, 2, qrng, seeds))
 
   def __repr__(self) -> str:
     """Short representation.

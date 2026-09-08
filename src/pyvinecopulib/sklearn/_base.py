@@ -2,10 +2,11 @@ import copy
 import os
 import warnings
 from numbers import Integral
-from typing import Any, Optional
+from typing import Any, Optional, Sequence, Union, overload
 
 import numpy as np
 import pandas as pd
+from pandas.api.extensions import ExtensionDtype
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import DataConversionWarning
 from sklearn.utils._param_validation import Interval, Options
@@ -15,10 +16,10 @@ from sklearn.utils.validation import (
   check_random_state,
 )
 
-from ..core import Vinedist
+from ..core import MarginLike, Vinedist
 from ..margins import resolve_margins
 from ..core._resolve import fit_margin
-from .backends import resolve_backend
+from .backends import _VinecopBackendBase, resolve_backend
 
 # Shared docstring fragments interpolated into VineDensity / VineRegressor
 # class docstrings via f-strings. Defined once here, used by both subclasses
@@ -97,7 +98,23 @@ _DOC_REFERENCES = r"""References
 #: contract's. One map, so the two never drift apart.
 _VAR_TYPE_OF = {"continuous": "c", "discrete": "d", "zero-inflated": "zi"}
 
+#: What an estimator accepts for ``X``: the two shapes the pipeline models
+#: directly, or any nested sequence of rows -- sklearn's convention is that
+#: an array-like is valid input, and `VineBase._validate_input` coerces one.
+_XLike = Union[np.ndarray, pd.DataFrame, Sequence[Sequence[object]]]
 
+#: What it accepts for ``y``, and for per-observation weights: one column of
+#: numbers, as an array or a sequence.
+_YLike = Union[np.ndarray, Sequence[float]]
+
+#: What ``random_state=`` accepts, per the scikit-learn convention that
+#: `sklearn.utils.check_random_state` implements.
+_RandomStateLike = Union[int, np.random.RandomState, None]
+
+
+# `a` is an `np.ndarray` or a tensor, and typed `Any` because the branch that
+# tells them apart is a `hasattr`: on a union, `ty` gives the attribute it
+# narrowed on the type `object`, so the tensor call reads as uncallable.
 def _as_ndarray(a: Any) -> np.ndarray:
   """Bring one array back to NumPy at the estimator's public boundary.
 
@@ -149,7 +166,9 @@ def _named_for(name: str, exc: BaseException) -> BaseException:
     return ValueError(message)
 
 
-def _categorical_bounds(dtype: Any) -> Optional[tuple[float, float]]:
+def _categorical_bounds(
+  dtype: Union[np.dtype, ExtensionDtype],
+) -> Optional[tuple[float, float]]:
   """Exact support of an ordered categorical column, when it states one.
 
   Parameters
@@ -251,7 +270,7 @@ class VineBase(BaseEstimator):
   #: quadrature reads the copula density and the response margin's `icdf` only.
   _needs_marginal_density: bool = False
 
-  _parameter_constraints: dict = {
+  _parameter_constraints: dict[str, list[object]] = {
     "backend": [object, None],
     "margins": [object, None],
     "batch_size": [Interval(Integral, 1, None, closed="left")],
@@ -265,23 +284,23 @@ class VineBase(BaseEstimator):
 
   def __init__(
     self,
-    backend=None,
-    margins=None,
+    backend: Optional[_VinecopBackendBase] = None,
+    margins: object = None,
     batch_size: int = 100,
-    random_state=None,
-    n_jobs=None,
+    random_state: _RandomStateLike = None,
+    n_jobs: Optional[int] = None,
   ) -> None:
     """Base vine copula estimator.
 
     Parameters
     ----------
-    backend : VinecopBackend or compatible, default=None
+    backend : VinecopBackend or compatible, or None, optional
         Backend strategy that holds fit-time controls (a
         ``FitControlsVinecop`` for the default backend or a
         ``FitControlsTorchVinecop`` for the torch backend) and an
         optional structure. `None` resolves to a default
         ``VinecopBackend`` at fit time.
-    margins : object, default=None
+    margins : object, or None, optional
         What to fit to each column, in any form
         :func:`pyvinecopulib.margins.resolve_margins` accepts: an alias
         (``"kde"``, ``"parametric"``), one margin
@@ -299,12 +318,12 @@ class VineBase(BaseEstimator):
         predictions. ``1`` minimizes memory at the cost of speed;
         ``n_test`` is the opposite extreme; intermediate values
         trade off memory and throughput.
-    random_state : int, RandomState instance or None, default=None
+    random_state : int, RandomState instance, or None, optional
         Seeds the RNG used by stochastic operations (e.g.
         `sample`, `cdf` quasi-MC, structure simulation). Stored
         as-is; resolved via `sklearn.utils.check_random_state`
         inside `fit`.
-    n_jobs : int or None, default=None
+    n_jobs : int, or None, optional
         Threads the vine may use, for fitting and for every evaluation
         (`pdf`, `cdf`, `sample`, and the prediction paths built on them).
         `None` means one thread and `-1` means every processor, following
@@ -312,7 +331,7 @@ class VineBase(BaseEstimator):
         structure, the fitted pair copulas and every evaluated value are
         bit-identical at any thread count.
 
-        `None` is deliberate: a caller that parallelizes *over* vines owns
+        `None` has a reason: a caller that parallelizes *over* vines owns
         the parallelism, and nesting would oversubscribe the machine. Set it
         when one vine is the whole job.
     """
@@ -342,13 +361,31 @@ class VineBase(BaseEstimator):
     ):
       self.__dict__.pop(name, None)
 
+  @overload
   def _validate_input(
     self,
-    X,
-    y=None,
+    X: _XLike,
+    y: None = None,
     *,
     reset: bool,
-  ):
+  ) -> np.ndarray: ...
+
+  @overload
+  def _validate_input(
+    self,
+    X: _XLike,
+    y: _YLike,
+    *,
+    reset: bool,
+  ) -> tuple[np.ndarray, np.ndarray]: ...
+
+  def _validate_input(
+    self,
+    X: _XLike,
+    y: Optional[_YLike] = None,
+    *,
+    reset: bool,
+  ) -> Union[np.ndarray, tuple[np.ndarray, np.ndarray]]:
     """Validate the ``X`` (and optional ``y``) input.
 
     For DataFrames, captures the canonical
@@ -359,8 +396,8 @@ class VineBase(BaseEstimator):
 
     Parameters
     ----------
-    X : ndarray or DataFrame
-    y : array-like, optional
+    X : array-like, shape (n_samples, n_features), or DataFrame
+    y : array-like, or None, optional
     reset : bool
         If ``True`` (called from ``fit``), set fitted attributes; if
         ``False`` (called from ``predict``-style methods), validate
@@ -569,7 +606,7 @@ class VineBase(BaseEstimator):
       return str(names[j])
     return f"x{j}"
 
-  def _default_margin_specs(self) -> list[Any]:
+  def _default_margin_specs(self) -> list[MarginLike[Any]]:
     """One unfitted kernel-density margin per column, from the schema.
 
     This is what ``margins=None`` means, and what a column a ``margins=``
@@ -615,7 +652,7 @@ class VineBase(BaseEstimator):
 
     Parameters
     ----------
-    index : int or None
+    index : int, or None, optional
         The feature's position, or ``None`` for the response.
 
     Returns
@@ -633,7 +670,7 @@ class VineBase(BaseEstimator):
 
   def _fit_one_margin(
     self,
-    spec: Any,
+    spec: object,
     column: np.ndarray,
     name: str,
     *,
@@ -649,7 +686,7 @@ class VineBase(BaseEstimator):
         The column to fit.
     name : str
         The variable's name, for a selector's report.
-    index : int or None, optional
+    index : int, or None, optional
         Which feature this is, used to hand the margin the variable type and
         bounds from :attr:`schema_`. ``None`` for the response, whose type the
         estimator already constrains to continuous.
@@ -682,7 +719,7 @@ class VineBase(BaseEstimator):
     return margin
 
   def _require_density(
-    self, margin: Any, name: str, column: np.ndarray
+    self, margin: MarginLike[Any], name: str, column: np.ndarray
   ) -> None:
     """Refuse a margin with no density, at fit time rather than at first score.
 
@@ -716,7 +753,7 @@ class VineBase(BaseEstimator):
         "for that column."
       ) from exc
 
-  def _response_margin_spec(self) -> Any:
+  def _response_margin_spec(self) -> object:
     """The specification for the response margin.
 
     ``margins`` addresses the features, so a per-variable form -- a sequence, or
@@ -731,7 +768,7 @@ class VineBase(BaseEstimator):
         One specification, not yet fitted.
     """
     if isinstance(self.margins, (list, tuple, dict)):
-      # Same seam as `_default_margin_specs`: without it the torch backend would
+      # Same hook as `_default_margin_specs`: without it the torch backend would
       # give the covariates torch margins and the response a NumPy one. Resolved
       # rather than read off `backend_`, since an internal may be reached before
       # `fit` pins it. On the default backend this *is* `Kde1d()`.
@@ -740,7 +777,7 @@ class VineBase(BaseEstimator):
     return resolve_margins(self.margins, 1)[0]
 
   @staticmethod
-  def _check_response_is_continuous(margin: Any) -> None:
+  def _check_response_is_continuous(margin: object) -> None:
     """Refuse a response margin with atoms.
 
     The joint model orders the response first and gives it no left-limit
@@ -784,14 +821,14 @@ class VineBase(BaseEstimator):
     ----------
     X : ndarray
         Input features.
-    y : ndarray, optional
+    y : ndarray, or None, optional
         Target values. If None, only X marginals are fitted.
 
     Returns
     -------
     X : ndarray
         Input features (unchanged).
-    y : ndarray or None
+    y : ndarray, or None
         Target values (unchanged) if provided, None otherwise.
     """
     specs = resolve_margins(
@@ -824,7 +861,7 @@ class VineBase(BaseEstimator):
       return X, y
     return X
 
-  def _bind_distribution(self, margins: Any) -> None:
+  def _bind_distribution(self, margins: Sequence[MarginLike[Any]]) -> None:
     """Publish the fitted vine and its margins as one distribution.
 
     Which distribution is the backend's call, so the object is on the same array
@@ -878,7 +915,7 @@ class VineBase(BaseEstimator):
     self.backend_ = backend
 
   def _draw_seeds(self, size: int = 5) -> list[int]:
-    """Derive a list of ints suitable for C++ ``seeds=[...]`` kwargs
+    """Derive a list of ints suitable for ``FitControlsVinecop.seeds``
     from the resolved RNG. Reproducible iff ``random_state_`` is."""
     return [int(x) for x in self.random_state_.randint(0, 2**31 - 1, size=size)]
 
@@ -927,7 +964,7 @@ class VineBase(BaseEstimator):
     ----------
     U : ndarray
         Pseudo-observations in [0,1]^d.
-    var_types : list, optional
+    var_types : list, or None, optional
         Variable types for vine fitting. If None, inferred from schema.
 
     Returns
@@ -951,7 +988,7 @@ class VineBase(BaseEstimator):
   # the copula factor c(u) alone; `VineDensity.pdf` exposes it directly.
   def _pdf_samples(
     self,
-    X: np.ndarray | pd.DataFrame,
+    X: _XLike,
     y: np.ndarray | None = None,
     log: bool = False,
     copula_only: bool = False,
@@ -961,9 +998,9 @@ class VineBase(BaseEstimator):
 
     Parameters
     ----------
-    X : array-like of shape (n_samples, n_features)
+    X : array-like of float, shape (n_samples, n_features), or DataFrame
         Input features.
-    y : array-like of shape (n_samples,), optional
+    y : array-like of shape (n_samples,), or None, optional
         Target values. If provided, computes joint density of (X, y).
         If None, computes density of X only (for density estimation).
     log : bool, default=False

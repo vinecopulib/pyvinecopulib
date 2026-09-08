@@ -30,15 +30,15 @@ TorchVinedist : The joint distribution these margins go into.
 
 from __future__ import annotations
 
-from itertools import chain
 from typing import Any, Callable, Iterable, Mapping, Optional, Union, cast
 
 import torch
 from torch import Tensor
 from torch.distributions import Distribution
 
-from ..core import MarginBase
+from ..core import ControlsLike, MarginBase
 from ..core.margin_base import support_of
+from ._placement import reference_tensor
 
 __all__ = ["TorchDistributionMargin"]
 
@@ -102,7 +102,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
       Called with the registered parameters as keywords to produce the
       distribution. Normally the family itself, e.g.
       ``torch.distributions.Normal``.
-  parameters : mapping or iterable of pair, optional
+  parameters : mapping or iterable of pair, default=()
       Parameter values, keyed by the keyword ``factory`` expects. Anything
       ``dict`` accepts; the default is no parameters at all, for a factory that
       closes over its own.
@@ -110,11 +110,11 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
       Register floating-point parameters as ``torch.nn.Parameter`` rather
       than as buffers. Integer parameters are always buffers, since a tensor of
       integers cannot carry a gradient.
-  validate_args : bool or None, default=None
+  validate_args : bool, or None, optional
       Forwarded to ``factory``; ``None`` leaves the family's own default, which
       normally checks its parameters, so a value outside the family's domain
       raises rather than returning silent ``nan``.
-  device : torch.device or None, default=None
+  device : torch.device, or None, optional
       Placement of the registered tensors.
   dtype : torch.dtype, default=torch.float64
       Precision of the registered floating-point tensors, matching the rest of
@@ -185,7 +185,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     self,
     y: Tensor,
     /,
-    controls: Optional[Any] = None,
+    controls: Optional[ControlsLike] = None,
     *,
     x: Optional[Tensor] = None,
     weights: Optional[Tensor] = None,
@@ -193,7 +193,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     """Raise: this margin's parameters are given, not estimated here.
 
     The inherited default says "implement it", which is advice for a subclass
-    author and wrong for a caller holding one of these: the class deliberately
+    author and wrong for a caller holding one of these: the class
     has no maximum-likelihood step. A ``torch.distributions`` family is
     constructed with the parameters you want, and *learned* by leaving
     ``trainable=True`` and stepping an optimizer over them -- which is the
@@ -203,7 +203,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     ----------
     y : Tensor, shape (n,), dtype float
         Ignored.
-    controls : object, or None, optional
+    controls : ControlsLike, or None, optional
         Ignored.
     x : Tensor, or None, optional
         Ignored.
@@ -236,7 +236,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     cls,
     y: Tensor,
     /,
-    controls: Optional[Any] = None,
+    controls: Optional[ControlsLike] = None,
     *,
     x: Optional[Tensor] = None,
     weights: Optional[Tensor] = None,
@@ -247,7 +247,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     ----------
     y : Tensor, shape (n,), dtype float
         Ignored.
-    controls : object, or None, optional
+    controls : ControlsLike, or None, optional
         Ignored.
     x : Tensor, or None, optional
         Ignored.
@@ -353,7 +353,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
         mutating it afterwards does not affect the margin.
     trainable : bool, default=True
         See the class docstring.
-    device : torch.device or None, default=None
+    device : torch.device, or None, optional
         Placement of the registered tensors; ``None`` keeps the originals'.
     dtype : torch.dtype, default=torch.float64
         Precision of the registered floating-point tensors.
@@ -575,7 +575,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
       return super().icdf(p)
 
   def _apply(
-    self, fn: Any, *args: Any, **kwargs: Any
+    self, fn: Callable[[Tensor], Tensor], *args: Any, **kwargs: Any
   ) -> "TorchDistributionMargin":
     """Keep the fallback placement current across a ``.to()``.
 
@@ -589,14 +589,16 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     )
     self._fallback_dtype = probe.dtype
     self._fallback_device = probe.device
-    return out
+    return cast("TorchDistributionMargin", out)
 
   def _ref_tensor(self) -> Tensor:
     """A registered tensor to crib dtype/device from."""
-    for tensor in chain(self.parameters(), self.buffers()):
-      return tensor
-    # A factory closing over its own parameters registers none, and so is not
-    # placed anywhere; fall back to what construction asked for.
+    ref = reference_tensor(self)
+    if ref is not None:
+      return ref
+    # A factory closing over its own parameters registers none, and a family
+    # parameterized by a count registers only integers; neither is placed
+    # anywhere, so fall back to what construction asked for.
     return torch.empty(
       0, dtype=self._fallback_dtype, device=self._fallback_device
     )
@@ -620,7 +622,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
         The family and its current parameter values.
     """
     body = ", ".join(
-      f"{name}={cast(Tensor, getattr(self, name)).detach().cpu().tolist()}"
+      f"{name}={cast('Tensor', getattr(self, name)).detach().cpu().tolist()}"
       for name in self._parameter_names
     )
     return f"{type(self).__name__}({self.family_name}({body}))"

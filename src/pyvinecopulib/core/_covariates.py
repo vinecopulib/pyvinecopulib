@@ -9,38 +9,41 @@ alike and are not interchangeable.
   copula declares ``x`` in its signature, which ``ty`` enforces on every
   ``BicopBase`` subclass, so the signature *is* the declaration and nothing
   else has to be maintained alongside it. Forwarding unconditionally is also
-  what makes a pair that cannot take one fail loudly -- a compiled ``Bicop``
-  raises on the keyword rather than quietly modeling something else.
+  what makes a pair that cannot take one fail loudly -- ``Bicop`` raises on the
+  keyword rather than quietly modeling something else.
 - :func:`declared_eval` -- **forward only to a part that declares
   ``supports_covariates``.** Margins and whole copulas are reached through
   structural protocols that foreign objects satisfy (a SciPy distribution, an
-  adapter, ``Vinecop`` itself), so their signatures answer nothing: nanobind
-  reports every bound method as ``(*args, **kwargs)``. And one distribution may
-  legitimately hold conditional and unconditional parts side by side -- a
-  covariate-driven margin next to a plain one is a model the caller chose per
-  column, not an accident -- so an undeclared part must be *skipped*, not
-  refused.
+  adapter, ``Vinecop`` itself), so their signatures answer nothing: ``Vinecop``
+  reports every method as ``(*args, **kwargs)`` under introspection. And one
+  distribution may legitimately hold conditional and unconditional parts side
+  by side -- a covariate-driven margin next to a plain one is a model the
+  caller chose per column, not an accident -- so an undeclared part must be
+  *skipped*, not refused.
 
 What keeps the second rule from hiding a silent downgrade is that the refusal
 happens one level up, at the object the covariates were handed to:
 ``VinedistBase._check_covariates`` raises when *nothing* reads them, which is
 the case where silence would be indistinguishable from a conditional answer.
 The fit-time member of the same family is ``_validation.reject_covariates``,
-which refuses outright -- fitting cannot skip an ``x`` and stay honest, because
+which refuses outright -- fitting cannot skip an ``x`` and stay correct, because
 estimating ``f(y)`` when ``f(y | x)`` was asked for returns a different model.
 """
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, cast
 
 from ._placement import place
 from ._validation import validate_covariates
+from .protocols import ArrayT
 
 __all__ = ["declared_eval", "pair_eval", "prepare"]
 
 
-def pair_eval(method: Callable[..., Any], u: Any, x: Optional[Any]) -> Any:
+def pair_eval(
+  method: Callable[..., ArrayT], u: ArrayT, x: Optional[ArrayT]
+) -> ArrayT:
   """Evaluate a pair-copula method, forwarding ``x`` whenever there is one.
 
   Parameters
@@ -49,7 +52,7 @@ def pair_eval(method: Callable[..., Any], u: Any, x: Optional[Any]) -> Any:
       The bound method to call, e.g. ``pair.hfunc1``.
   u : array
       The pair-copula argument, passed positionally.
-  x : array, shape (n, p), or None
+  x : array, shape (n, p), or None, optional
       The edge's conditioning matrix, passed by keyword when not ``None``.
 
   Returns
@@ -61,7 +64,7 @@ def pair_eval(method: Callable[..., Any], u: Any, x: Optional[Any]) -> Any:
 
 
 def declared_eval(
-  part: Any, name: str, values: Any, x: Optional[Any], **kwargs: Any
+  part: object, name: str, values: Any, x: Optional[ArrayT], **kwargs: Any
 ) -> Any:
   """Call ``part.name(values)``, forwarding ``x`` only if ``part`` reads one.
 
@@ -76,7 +79,7 @@ def declared_eval(
       The first argument, passed positionally -- observations for a margin,
       copula-scale data or a sample size for a copula. Positional because a
       margin may name it whatever its own ecosystem does.
-  x : array, shape (n, p), or None
+  x : array, shape (n, p), or None, optional
       The covariates, passed by keyword to a part that declares them.
   **kwargs : Any
       Further keyword arguments, forwarded either way.
@@ -92,7 +95,7 @@ def declared_eval(
   return method(values, x=x, **kwargs)
 
 
-def prepare(onto: Any, x: Optional[Any], n: int) -> Optional[Any]:
+def prepare(onto: object, x: Optional[ArrayT], n: int) -> Optional[ArrayT]:
   """Validate covariates and place them where the numerics run.
 
   The two steps ``x`` needs and the third it must not get: it is checked for
@@ -109,7 +112,7 @@ def prepare(onto: Any, x: Optional[Any], n: int) -> Optional[Any]:
   onto : object
       The part whose placement to match, or the array to match directly --
       the observations, for a static fit engine that holds nothing itself.
-  x : array, shape (n, p), or None
+  x : array, shape (n, p), or None, optional
       The covariates the caller supplied.
   n : int
       Number of observations they must align with.
@@ -127,4 +130,4 @@ def prepare(onto: Any, x: Optional[Any], n: int) -> Optional[Any]:
   if x is None:
     return None
   validate_covariates(x, n)
-  return place(onto, x)
+  return cast("ArrayT", place(onto, x))

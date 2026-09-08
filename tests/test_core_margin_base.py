@@ -11,13 +11,13 @@ contract was named after its surface so that it needs no wrapper.
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import numpy as np
 import pytest
 
 import pyvinecopulib as pv
-from pyvinecopulib.core import MarginBase, MarginLike
+from pyvinecopulib.core import ControlsLike, MarginBase, MarginLike
 
 from .helpers import FlatMargin
 
@@ -281,7 +281,7 @@ def test_repr_is_structural() -> None:
 class _Recording(MarginBase[np.ndarray]):
   """Records whether covariates reached each primitive.
 
-  A location-shift model, so `pdf` / `cdf` genuinely change with `x` and a
+  A location-shift model, so `pdf` / `cdf` actually change with `x` and a
   forwarding bug shows up in the numbers as well as in the log.
   """
 
@@ -526,8 +526,11 @@ def test_an_array_in_the_controls_slot_is_refused_across_the_margin_rung() -> (
   y = rng.normal(size=200)
   w = np.linspace(0.1, 3.0, 200)
 
+  # `cast` because the wrongness is the subject: `controls` is typed
+  # `ControlsLike`, so a type-checked caller cannot reach this at all, and the
+  # guard exists for the one who is not.
   with pytest.raises(TypeError, match="array where `controls` goes"):
-    FlatMargin().select(y, w)
+    FlatMargin().select(y, cast("ControlsLike", w))
   # The legitimate spellings are untouched.
   assert FlatMargin().select(y, weights=w) is not None
   assert FlatMargin().select(y) is not None

@@ -5,18 +5,18 @@ from __future__ import annotations
 import copy
 import operator
 import warnings
-from typing import Any, Callable, Optional, Sequence, Union
+from typing import Any, Callable, Optional, Sequence, Union, cast
 
 import numpy as _np
 
-from .protocols import MarginLike
+from .protocols import ArrayT, ControlsLike, MarginLike
 from ._adapters import as_margin
 from ..pyvinecopulib_ext import Kde1d
 
 __all__ = ["resolve_margins", "resolve_margin_controls"]
 
 
-def _parametric_margin() -> Any:
+def _parametric_margin() -> MarginLike[Any]:
   """Build a parametric margin with its family left to be selected.
 
   Deferred so that :mod:`pyvinecopulib.margins` imports without SciPy, which
@@ -24,8 +24,8 @@ def _parametric_margin() -> Any:
 
   Returns
   -------
-  SciPyMargin
-      An unfitted margin with no family yet.
+  MarginLike
+      An unfitted ``SciPyMargin``, with no family yet.
   """
   from ..margins.scipy import SciPyMargin
 
@@ -41,7 +41,7 @@ _ALIASES = {
 }
 
 
-def _prototype(alias: str) -> Any:
+def _prototype(alias: str) -> object:
   """Build a margin from a string alias.
 
   Parameters
@@ -51,8 +51,8 @@ def _prototype(alias: str) -> Any:
 
   Returns
   -------
-  MarginBase
-      A fresh, unfitted margin.
+  object
+      A fresh, unfitted margin -- a ``Kde1d`` or a ``SciPyMargin``.
 
   Raises
   ------
@@ -67,7 +67,7 @@ def _prototype(alias: str) -> Any:
   return _ALIASES[alias]()
 
 
-def _resolve_one(entry: Any) -> Any:
+def _resolve_one(entry: object) -> object:
   """Resolve a single column's specification.
 
   Parameters
@@ -148,11 +148,11 @@ def _index_for(key: Any, lookup: dict[str, int], d: int, label: str) -> int:
 
 
 def _per_variable(
-  spec: Any,
+  spec: object,
   d: int,
   *,
   names: Optional[Sequence[str]],
-  default: Any,
+  default: object,
   label: str,
   is_atom: Callable[[Any], bool],
 ) -> list[Any]:
@@ -168,7 +168,7 @@ def _per_variable(
       The user's specification.
   d : int
       Number of variables.
-  names : sequence of str, or None
+  names : sequence of str, or None, optional
       Variable names, needed only to resolve a mapping keyed by name.
   default : object
       What an unaddressed variable gets.
@@ -211,7 +211,7 @@ def _per_variable(
 
 
 def resolve_margin_controls(
-  spec: Any,
+  spec: object,
   d: int,
   *,
   names: Optional[Sequence[str]] = None,
@@ -264,7 +264,7 @@ def resolve_margin_controls(
 
 
 def resolve_margins(
-  spec: Any,
+  spec: object,
   d: int,
   *,
   names: Optional[Sequence[str]] = None,
@@ -364,7 +364,7 @@ def resolve_margins(
   return [one if callable(one) else copy.deepcopy(one) for _ in range(d)]
 
 
-def declared_kde_kwargs(controls: Optional[Any]) -> dict[str, Any]:
+def declared_kde_kwargs(controls: Optional[ControlsLike]) -> dict[str, Any]:
   """Translate a margin's declared type and support into kernel-density kwargs.
 
   A kernel density takes both at construction, so a declaration has to reach it
@@ -380,8 +380,9 @@ def declared_kde_kwargs(controls: Optional[Any]) -> dict[str, Any]:
 
   Parameters
   ----------
-  controls : FitControlsMargin, or None
-      Read for ``var_type`` and ``support``; both optional.
+  controls : ControlsLike, or None, optional
+      A ``FitControlsMargin``, read for ``var_type`` and ``support``; both
+      optional.
 
   Returns
   -------
@@ -405,13 +406,14 @@ def declared_kde_kwargs(controls: Optional[Any]) -> dict[str, Any]:
   return kwargs
 
 
-def kde_from_controls(controls: Optional[Any]) -> Kde1d:
+def kde_from_controls(controls: Optional[ControlsLike]) -> Kde1d:
   """Build a kernel-density margin honoring what the controls declare.
 
   Parameters
   ----------
-  controls : FitControlsMargin, or None
-      Read for ``var_type`` and ``support``; both optional.
+  controls : ControlsLike, or None, optional
+      A ``FitControlsMargin``, read for ``var_type`` and ``support``; both
+      optional.
 
   Returns
   -------
@@ -423,16 +425,16 @@ def kde_from_controls(controls: Optional[Any]) -> Kde1d:
 
 def fit_margin(
   entry: Any,
-  y: Any,
+  y: ArrayT,
   *,
-  x: Optional[Any] = None,
-  weights: Optional[Any] = None,
+  x: Optional[ArrayT] = None,
+  weights: Optional[ArrayT] = None,
   var_type: Optional[str] = None,
   support: Optional[tuple[float, float]] = None,
-  controls: Optional[Any] = None,
+  controls: Optional[ControlsLike] = None,
   verb: str = "select",
   refit: bool = False,
-) -> MarginLike[Any]:
+) -> MarginLike[ArrayT]:
   """Obtain a fitted margin for one column.
 
   Parameters
@@ -448,20 +450,20 @@ def fit_margin(
       fitting the wrong model.
   weights : array, shape (n,), or None, optional
       Observation weights. A callable specification receives them by keyword.
-  var_type : str or None, optional
+  var_type : str, or None, optional
       The variable type the caller resolved, handed to a margin that
       implements ``declare``. Without it such a margin re-infers the type
       from the sample, which knows less than the caller does.
   support : tuple of float, or None, optional
       The declared bounds, handed over the same way.
-  controls : object, or None, optional
+  controls : ControlsLike, or None, optional
       Fit configuration, forwarded to the margin's estimator.
-  verb : str, optional
+  verb : str, default='select'
       Which estimator to call, ``"select"`` (the default, so a margin that
       searches a family set does) or ``"fit"`` (the current family only).
       ``MarginBase.select`` reduces to ``fit`` where there is nothing to
       choose, so the default is the weaker requirement.
-  refit : bool, optional
+  refit : bool, default=False
       Re-estimate a margin that reports itself already fitted. Off by default,
       so a specification may mix fixed margins with ones to estimate.
 
@@ -482,13 +484,13 @@ def fit_margin(
       kwargs["x"] = x
     if weights is not None:
       kwargs["weights"] = weights
-    return as_margin(entry(y, **kwargs))
+    return cast("MarginLike[ArrayT]", as_margin(entry(y, **kwargs)))
 
   # Capability-based dispatch: `fit` / `is_fitted` / `supports_weights` are
-  # optional members, so this is deliberately not narrowed to `MarginLike`.
+  # optional members, so this is not narrowed to `MarginLike`.
   margin: Any = as_margin(entry)
   if not refit and getattr(margin, "is_fitted", True):
-    return margin
+    return cast("MarginLike[ArrayT]", margin)
 
   if weights is not None and not getattr(margin, "supports_weights", False):
     raise TypeError(
@@ -543,5 +545,5 @@ def fit_margin(
     )
     margin = kde_from_controls(controls)
     fitted = margin.fit(y) if weights is None else margin.fit(y, weights)
-    return as_margin(fitted)
-  return margin
+    return cast("MarginLike[ArrayT]", as_margin(fitted))
+  return cast("MarginLike[ArrayT]", margin)

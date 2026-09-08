@@ -158,7 +158,7 @@ class _Controls:
   def __init__(self, **settings: Any) -> None:
     self._settings = settings
 
-  def to_dict(self) -> dict:
+  def to_dict(self) -> dict[str, Any]:
     return dict(self._settings)
 
 
@@ -655,7 +655,7 @@ class _ConditionalGaussian(BicopBase[np.ndarray]):
   makes it a null hypothesis: a non-simplified vine built from these must
   reduce exactly to the simplified one, and structure selection must recover
   what the compiled selector recovers. With ``slope != 0`` the same class is
-  genuinely conditional, so any difference is attributable to the covariates
+  actually conditional, so any difference is attributable to the covariates
   and not to the wrapper.
 
   The per-row correlation reaches the density through ``Bicop``'s own per-row

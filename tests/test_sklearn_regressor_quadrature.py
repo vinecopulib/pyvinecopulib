@@ -31,7 +31,9 @@ from .helpers import AtomicMargin  # noqa: E402
 BETA = np.array([1.0, -0.7])
 
 
-def _data(n: int, seed: int = 20260818, heavy: bool = False):
+def _data(
+  n: int, seed: int = 20260818, heavy: bool = False
+) -> tuple[np.ndarray, np.ndarray]:
   """Covariates and a linear response, optionally heavy-tailed."""
   rng = np.random.default_rng(seed)
   X = rng.standard_normal((n, 2))

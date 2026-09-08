@@ -189,7 +189,7 @@ closed unmerged, and some commits carry no number at all.
 - **Estimator ensembling / model averaging.** Combining several
   fitted vines — bagging, averaging over candidate structures,
   post-hoc selection among them — is left to downstream packages.
-  The library ships single-vine estimators plus the seams such a
+  The library ships single-vine estimators plus the hooks such a
   package needs. Do not remove any of these as "unused" — several have no
   in-library caller *by design*, and all of them have one downstream:
 
@@ -232,7 +232,7 @@ closed unmerged, and some commits carry no number at all.
 - **A copula-family registry to adapt.** The three parametric margin classes
   (`SciPyMargin`, `OpenTURNSMargin`, `TorchDistributionMargin`) each adapt one
   ecosystem's family registry. There is no pair-copula counterpart, and that is
-  deliberate rather than pending: scipy and `torch.distributions` ship no
+  settled rather than pending: scipy and `torch.distributions` ship no
   copulas at all, and OpenTURNS' 19 are **not** adapted either — pair copulas
   are `lib/vinecopulib`'s own domain (rotations, h-functions, discrete
   handling, tau maps). A learnable pair copula is written by subclassing
@@ -243,7 +243,7 @@ closed unmerged, and some commits carry no number at all.
   …) are not in scope; `pyvinecopulib` is a vine-copula library.
 - **Pinned legacy alias for every old import path forever.**
   Deprecation aliases live in `_deprecations.py` and warn on access;
-  they are removed in 2.0. They survive 1.0.0 deliberately — that release
+  they are removed in 2.0. They survive 1.0.0 because that release
   already breaks enough — but the reprieve is one cycle, not indefinite.
 
 ## Package structure
@@ -288,7 +288,7 @@ pyvinecopulib/
         _discrete.py             # DiscretePair + the discrete layouts / per-edge types
         _engines.py              # fit_parts / select_parts — the two fit engines (internal)
         independence.py          # IndependencePair
-        _placement.py            # place / reference_array / PlacementMixin — the `_prep` seam (internal)
+        _placement.py            # place / reference_array + the `_prep` and `_sample_uniform` hooks (internal)
         _reorient.py             # relabel a structure onto a chosen order tail (internal)
         _resolve.py              # resolve_margins / resolve_margin_controls / fit_margin (internal)
         _rootfind.py             # solve_increasing (monotone bisection; internal)
@@ -319,6 +319,7 @@ pyvinecopulib/
         _interp.py               # InterpolationGrid2D (bilinear; Sinkhorn margin renormalization) — internal
         _fit_tll.py              # pure-torch TLL kernel
         _batched.py              # batched evaluation variants
+        _placement.py            # the torch lane's `_prep` hook / reference tensor — internal
 
       _build_info.py             # build provenance, read by `__version__` reporting
       _cpu.py                    # the AVX2 / FMA check the x86-64 wheels need
@@ -361,7 +362,7 @@ Conventions baked in by the toolchain:
   properly terminated"). The note is in
   [pyproject.toml](pyproject.toml) next to `addopts`.
 - **`ruff` is pinned at `0.11.6`** (formatter output stability); only
-  bump deliberately. Line length 80; indent width 2.
+  bump only with a reason. Line length 80; indent width 2.
 - **Tests for own deprecations are loud:** `filterwarnings` in
   `[tool.pytest.ini_options]` promotes `pyvinecopulib.*` deprecation
   warnings to errors, so internal code that still calls a deprecated
@@ -503,13 +504,47 @@ For any behavior change:
   conditional and unconditional parts side by side -- a per-column choice the
   caller made, not an accident. Collapsing the first rule into the second
   would make a forgotten flag a *silent* unconditional fit, which is the one
-  outcome neither rule may produce; what keeps the second honest instead is
+  outcome neither rule may produce; what enforces the second instead is
   that the object refuses covariates **nothing** reads
   (`VinedistBase._check_covariates`). At fit time there is no skipping:
   `reject_covariates` refuses outright.
+- **A mixin at the placement position defines only ordinary private methods.**
+  `core/_placement.PlacementMixin`, `QrngUniformMixin` and
+  `torch/_placement.TensorPlacementMixin` all land **ahead of
+  `torch.nn.Module`** in the MRO of every torch class, because the canonical
+  bases precede it. So anything such a mixin defines that `nn.Module` also
+  defines would shadow it silently -- `to`, `cpu`, `cuda`, `state_dict`,
+  `load_state_dict`, `_apply`, `parameters`, `buffers`, `forward`, and every
+  dunder. `VinecopBase.__getstate__` reaches `nn.Module.__getstate__` through
+  that same chain, so a mixin defining `__getstate__` or `__reduce__` breaks
+  every torch pickling test. Note `__repr__` is *already* shadowed this way
+  through the bases: `repr(TorchTllBicop.from_data(u))` is `'TorchTllBicop()'`
+  rather than the submodule tree a torch user expects. That is the failure a
+  `__repr__` mixin would institutionalize, and the reason not to write one.
+
+  Ordering is part of the contract, not a detail: a torch class lists
+  `TensorPlacementMixin` **before** its canonical base, or the base's
+  `PlacementMixin` linearizes first and `_prep` resolves to the array-API
+  inference instead of the tensor one.
+
+- **One spelling for a parameter's type, and it says which.** Three forms,
+  each with a rule: `<T>, or None, optional` for a parameter that accepts
+  `None`; `<T>, default=X` where the default is a real value; and
+  `<T>, or None` for a *return* that may be `None`, never with `optional`,
+  which means nothing in a `Returns` block. `PR04` is enabled, so a parameter
+  with no type at all fails the docs check rather than rendering without one --
+  which is how `Vinecop.from_structure` shipped four untyped parameters.
+  Documented classes are linked from a type field automatically: `docs/conf.py`
+  derives `numpydoc_xref_aliases` from the same `_CLASS_MODULE` table
+  `process_cross_references` uses, so a name cannot be a link in prose and
+  dead text in the table below it. `numpydoc_xref_ignore = "all"` is what
+  keeps that safe -- numpydoc leaves every unrecognized token alone, so the
+  shape grammar stays plain text instead of becoming unresolvable references
+  under `-W`.
+
 - **A capability flag exists where a consumer reads it, and nowhere else.**
   `supports_covariates` is declared on `MarginBase` and `VinecopBase` because
-  `declared_eval` reads it there; it is deliberately *absent* from `BicopBase`
+  `declared_eval` reads it there; it is *absent* from `BicopBase`
   (whose rule is the signature) and from `VinedistBase` (which nothing
   composes). Adding either would be a declaration with no reader -- the thing
   `supported_var_types` was deleted for. The same test applies to the
@@ -537,8 +572,33 @@ For any behavior change:
   ordinary typos in the same pass. Configuration -- the skip list for
   generated and vendored files, and the domain vocabulary it would otherwise
   flag -- lives in `[tool.codespell]` in `pyproject.toml`; add a word there
-  only when it is genuinely a term of art, never to silence a real
+  only when it really is a term of art, never to silence a real
   misspelling.
+
+- **Write plainly, and there is a list.** `.codespell-prose.txt` names the
+  words this repository does not use, each with its replacement and the
+  reason. It is a codespell dictionary, wired in through
+  `[tool.codespell] dictionary`, so `make lint` and pre-commit both enforce
+  it; every entry carries a reason after a comma, which is what makes
+  codespell **report a suggestion without auto-fixing** -- the right
+  replacement depends on the sentence. Two mechanics worth knowing before
+  editing that setting: the file must come *first*
+  (`".codespell-prose.txt,-"`), because a value beginning with `-` is read as
+  another flag, and the trailing `-` is what preserves the `en-GB_to_en-US`
+  builtins the rule above depends on.
+
+  The list is the source of truth and is not repeated here -- a rule that
+  quotes its own banned words fails itself, which is how this entry was first
+  written. The substitutions mostly converge on vocabulary the repository
+  already prefers rather than coining any; the largest of them replaced a term
+  used 42 times with one already used 91 times for the same idea, which
+  `core/_placement.py` had been using both of, two lines apart.
+
+  codespell tokenizes, and cannot tell a docstring from an identifier, so
+  `tests/test_prose.py` carries what it structurally cannot: the multi-word
+  phrases, and the exemptions -- a `Tensor` parameter named for a mask in
+  `torch/_fit_tll.py`, the ordinary noun in "test harness", and one phrase
+  quoting upstream PyTorch's own support tier.
 
 - **Never say "compiled" or "C++" in a docstring.** A user of
   `pyvinecopulib.core.Bicop` does not know — and does not need to know — that
@@ -548,10 +608,10 @@ For any behavior change:
   PyTorch layer is the point, contrast the classes (``Vinecop`` versus
   ``TorchVinecop``) or say "core" rather than "compiled". Inline `#` comments
   are exempt — they address the next person to edit the code, for whom the
-  distinction is load-bearing — and so are the internal `torch/_*.py` fidelity
+  distinction is required — and so are the internal `torch/_*.py` fidelity
   modules, where "reproduces the compiled `kde1d`" *is* the documented
   contract. Note `torch.compile` is a different sense of the word and stays:
-  `compile_cascades` is genuinely about compilation. Same reasoning as the
+  `compile_cascades` is actually about compilation. Same reasoning as the
   entry below, applied to vocabulary.
 
 - **Write for the caller, not the implementer.** A docstring says what a
@@ -567,7 +627,7 @@ For any behavior change:
   text on the rendered site. **When an upstream docstring reads as
   implementation detail, fix it upstream and bump the pin** — do not patch
   it in `src/include/**` and do not hand-write a replacement, except at
-  the sites where libclang genuinely cannot disambiguate (they are
+  the sites where libclang actually cannot disambiguate (they are
   enumerated in `src/include/vinecop/class.hpp`).
 - **Doxygen upstream, numpydoc downstream.** The generator translates one
   into the other. Never "fix" an upstream `//!` comment into numpydoc.
@@ -576,12 +636,12 @@ For any behavior change:
   `from_data` take `(data, controls)` positionally on all four bases, on the
   torch lane and on the compiled `Bicop` / `Vinecop` -- and `structure`,
   `matrix`, `var_types`, `margins`, `margin_controls`, `names`, `x`, `weights`
-  and the callback seams are keyword-only. `Vinecop.from_data` used to take
+  and the callback hooks are keyword-only. `Vinecop.from_data` used to take
   `controls` *fifth*, behind `structure`, so the call a user carries over from
   `fit` bound a controls object as a structure: a `TypeError` from the binding
   and an `AttributeError` naming `dim` from the Python lane. The rule is worth
   more than the two characters it costs at a call site, and the changelog
-  claimed it before the code did. The one deliberate exception is the compiled
+  claimed it before the code did. The one exception is the compiled
   `Kde1d`, whose second positional is `weights`: it takes no controls at all,
   so there is nothing to confuse it with, and it is on a Stable-ish surface.
 - **Bind alternative constructors as named factories, not overloads.** C++
@@ -594,7 +654,7 @@ For any behavior change:
   the only shape the toolchain renders: nanobind concatenates the docstrings of
   overloaded bindings, so two `Parameters` sections collide and numpydoc fails
   the docs build, while the `.pyi` generator emits only the first signature.
-  Where two forms genuinely are one operation, prefer a single method that
+  Where two forms actually are one operation, prefer a single method that
   dispatches on an optional argument — as `Bicop.pdf` does for per-row
   `parameters` — over two bound overloads.
 - **Do not restate what a sibling documents.** A method that differs from a
@@ -640,7 +700,7 @@ For any behavior change:
   (`docs/_templates/autosummary/class.rst`) gives *Attributes* a `:toctree:`
   so property refs get pages; nanobind's `numpy.ndarray[dtype=…]` signatures
   are collapsed to `numpy.ndarray` by an `autodoc-process-signature` hook. The
-  only sanctioned suppression is the short `nitpick_ignore_regex` list
+  only allowed suppression is the short `nitpick_ignore_regex` list
   (upstream-C++ getter-name mismatches, `BicopFamily` value aliases,
   scikit-learn-generated methods); prefer fixing a reference over extending it.
 
@@ -658,7 +718,7 @@ release-by-release context; this file is for invariants.
 
 Four tiers. An import may point **down** a tier, never up, and within a tier
 only where this list says so. `tests/test_import_surface.py` pins the whole
-edge set, so crossing a layer is a deliberate edit to a declared table with
+edge set, so crossing a layer is an edit to a declared table with
 the reason written beside it — not something a stray import can do quietly.
 
 ```text
@@ -717,7 +777,7 @@ most of the rest is determined.
 | `VinecopBase` | `pdf`, `cdf`, `rosenblatt`, `inverse_rosenblatt`, `sample`, `structure` | `get_pair_copula` | `set_pair_copulas` | `bicop_class` |
 | `VinedistBase` | the ten above plus `logpdf`, `loglik`, `margins`, `vinecop`, `copula_layout` | *(none)* | `_coerce_fit_data` | `vinecop_class`, `margin_class` |
 
-Three things in that table are deliberate and worth not undoing:
+Three things in that table have a reason. Do not undo them:
 
 - **The two middle columns are different mechanisms on purpose.** A member is
   `@abstractmethod` when the object cannot be *evaluated* without it, and a
@@ -773,7 +833,7 @@ automatically.
 - Single binding module compiled from `src/pyvinecopulib_ext.cpp` +
   `src/include/**`.
 - `nanobind` (>= 2.7) is the binding system, **not** pybind11. The
-  pybind11 → nanobind switch was a deliberate API-affecting change;
+  pybind11 → nanobind switch changed the API on purpose;
   do not partially revert it. Use `nb::` types and `nanobind_add_module`
   conventions.
 - `src/include/docstr.hpp` is generated by `scripts/generate_docstring.py`
@@ -823,7 +883,7 @@ automatically.
     layer does the same three things to an incoming array, and they are kept
     apart because they do not always apply together:
     **placement** (`_placement.py`'s `place`, reached through the `_prep(a)`
-    seam the four bases inherit from its `PlacementMixin`) puts the values on
+    hook the four bases inherit from its `PlacementMixin`) puts the values on
     the namespace, dtype and device the object evaluates on; **layout** (`_validation.py`, plus
     `VinecopBase._layout` for the vine's `var_types`-dependent widths) says
     which shapes are admissible; **domain** (`_trim.py`'s `trim`) clamps copula
@@ -842,15 +902,24 @@ automatically.
     PyTorch vine has to be brought across before they can meet. Placement is *inferred* from the arrays an object already
     holds, so hosting a subclass on PyTorch requires writing none of it —
     override `_prep` only where those arrays live somewhere the inference
-    misses (`TorchVinecop` does, for the `trunc_lvl == 0` case that has no
-    pair to read). The one array a base manufactures from nothing is
+    misses, or where finding them again per evaluation costs more than naming
+    them (`TorchTllBicop` names its grid; `torch/_placement.py` reads a
+    module's own tensors for the rungs that hold submodules, 12.1 us against
+    `reference_array`'s 64.9). The one array a base manufactures from nothing is
     `BicopBase.plot`'s evaluation grid, which is why that is the one place the
-    seam is load-bearing rather than a convenience.
-    Since the inference is the whole contract, what it reads has to be right:
-    `reference_array` prefers a **floating-point** array and an integer one is
-    only its fallback, whose dtype `place` then does *not* adopt. An object may
-    hold an index table or a count buffer, and adopting `int64` from it placed
-    every copula argument at zero — a wrong answer, not a failure.
+    hook is required rather than a convenience.
+    Since the inference is the whole contract, what it reads has to be right,
+    and **every** search for a reference array ranks candidates the same way:
+    a **floating-point** array wins. An object may hold an index table or a
+    count buffer, and adopting `int64` from it placed every copula argument at
+    zero — a wrong answer, not a failure. `reference_array` keeps an integer
+    array as its fallback, whose dtype `place` then does *not* adopt, since one
+    still names a namespace and a device; the torch lane's `reference_tensor`
+    has no fallback at all, because each of its callers has a floating default
+    of its own and an integer dtype is the one answer none of them can use.
+    Two searches over one object that rank differently is what put a margin's
+    `_prep` on `float64` while its own sampler drew in `int64`, so a new
+    placement site adopts the rule rather than restating the first-hit loop.
   - `BicopBase` (`bicop_base.py`) / `VinecopBase` (`vinecop_base.py`) —
     canonical partial implementations to subclass. A `BicopBase`
     subclass defines `pdf` / `hfunc1` / `hfunc2` and inherits `hinv1` /
@@ -913,7 +982,7 @@ automatically.
     is what the compiled pair does, so a `DiscretePair` is bit-identical to it.
     `TorchTllBicop.rect_mass` would be more accurate — 1.2e-15 against 9.2e-15 at
     a `1/8`-wide atom, measured against exact rational truth, and far more at
-    narrower ones — but it is **deliberately not used**: the density divides by
+    narrower ones — but it is **not used**: the density divides by
     the atom's area, and the discrete cascade then turns a 1e-15 pair-level
     difference into `8.5e-8` at the vine, a visible divergence from
     `Vinecop`. The torch↔C++ cascade parity is a documented guarantee, and it
@@ -1091,9 +1160,9 @@ substitution happens in `fit_margin`, not in the margin: a `SciPyMargin`
 would have to stop being parametric to make it, so the decision belongs to
 whatever chooses which margin a column gets.
 
-There is deliberately **no structured selection report**. The copula layer's
+There is **no structured selection report**. The copula layer's
 answer to the same question is `show_trace` printing to stdout, and margins
-inventing a second, structured paradigm is what made the two layers
+inventing a second, structured mechanism is what made the two layers
 asymmetric in the first place. When diagnostics are designed, design both
 layers at once.
 
@@ -1296,7 +1365,7 @@ Key surface:
     does not move the value while `dq/dp` and `dq/d values` are right. The
     residual is written in units of mass, so the total mass carries its share
     of `dq/d values`. This is the one parity claim in the port that is a
-    tolerance rather than an equality, and deliberately so: the compiled
+    tolerance rather than an equality, and has to be: the compiled
     quantile is not portable to a few ULPs -- rebuilding kde1d with
     `-march=native` alone moves it 19 -- so no port can equal every build of
     it. The correction is gated on
@@ -1338,7 +1407,7 @@ Key surface:
     below 1. Off because the first call compiles for ~5 s and a second lane
     count for ~8 more — about 500 pair fits to break even, so a loss for one
     vine and a win for a few dozen. Compiled with `dynamic=True`
-    deliberately: a `d = 20` vine presents 19 lane counts, static shapes
+    on purpose: a `d = 20` vine presents 19 lane counts, static shapes
     would exceed `cache_size_limit` (8) and drop the widest levels back to
     eager in silence, and raising that limit from a library would reach
     every other compiled function in the process.
@@ -1382,7 +1451,7 @@ Key surface:
     time, through the optional `fit_level` hook on `VinecopBase.fit` /
     `.select` (`TorchTllBicop.from_data_batched` is the pair-level entry point,
     taking `(P, n, 2)`). Resolved per device like the cascade's `batched`.
-    The hook is deliberately ignorant of what the pairs are for — `P`
+    The hook does not know what the pairs are for — `P`
     independent pairs on shared rows — so several vines' levels concatenate
     into the same axis as readily as one vine's. A level carrying a discrete
     edge or a conditioning context cannot stack and stays per-edge.
@@ -1409,7 +1478,7 @@ working. Specifically:
   `Vinedist`, `to_pseudo_obs`, `__version__`, and the four subpackages that
   import with no extra (`core`, `families`, `margins`, `utils`). `Kde1d` is
   *not* among them -- it is reached as `pyvinecopulib.core.Kde1d`, or through
-  the deprecation shim, never by star-import. The two that need one -- `sklearn`, `torch` -- are deliberately
+  the deprecation shim, never by star-import. The two that need one -- `sklearn`, `torch` -- are
   **out** of it: `from pyvinecopulib import *` resolves every name in
   `__all__`, so listing them made both extras hard requirements of the one
   import form a beginner reaches for first. Both stay reachable by attribute
@@ -1665,7 +1734,7 @@ Round-trip / parity properties to preserve when touching numerics:
   copula half is never conditional there and `x` reaches only the margins that
   declare it — the same per-part rule `declared_eval` applies at evaluation,
   and `_fit_copula` forwards to a copula class only when *it* declares
-  `supports_covariates`. What keeps that honest is the object-level refusal:
+  `supports_covariates`. What enforces that is the object-level refusal:
   the flag says whether anything on the lane is fitted on covariates, and when
   nothing is, the request is refused rather than answered unconditionally.
   `Vinedist` (NumPy + compiled `Vinecop`) and `TorchVinedist` are the two

@@ -24,18 +24,31 @@ Placement is *inferred* rather than declared, so hosting a custom pair copula,
 margin or vine on PyTorch requires writing none of it: the object already holds
 the tensors that answer the question, and :func:`reference_array` finds them.
 A subclass whose arrays live somewhere this misses overrides ``_prep``.
+
+Arrays reach a rung one other way -- drawn from the array library's own RNG,
+which is the one thing no inference can supply -- so the raising hook for that
+lives here too, beside the hook that places what a caller supplied. The two
+copula rungs share it verbatim. The marginal rung's takes no ``qrng`` flag,
+since ``MarginBase.sample`` offers none, and stays on ``MarginBase``.
 """
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Generic, Optional
 
 from array_api_compat import array_namespace, device as _device_of
 
-__all__ = ["PlacementMixin", "place", "reference_array"]
+from .protocols import ArrayT
+
+__all__ = [
+  "PlacementMixin",
+  "QrngUniformMixin",
+  "place",
+  "reference_array",
+]
 
 
-def reference_array(obj: Any) -> Optional[Any]:
+def reference_array(obj: object) -> Optional[Any]:
   """An array ``obj`` holds, naming where its numerics run.
 
   Looks in the two places an object keeps arrays, in the order that finds the
@@ -117,7 +130,7 @@ def _is_float(value: Any) -> bool:
   return bool(xp.isdtype(value.dtype, "real floating"))
 
 
-def _is_array(value: Any) -> bool:
+def _is_array(value: object) -> bool:
   """Whether ``value`` is an array the array API recognizes.
 
   Asked of the namespace rather than by duck-typing ``dtype`` and ``shape``,
@@ -144,7 +157,7 @@ def _is_array(value: Any) -> bool:
   return True
 
 
-def place(obj: Any, a: Any) -> Any:
+def place(obj: object, a: Any) -> Any:
   """Coerce ``a`` onto the namespace, dtype and device ``obj`` evaluates on.
 
   Placement only: no shape is checked and no value is clamped, so this is
@@ -188,7 +201,7 @@ def place(obj: Any, a: Any) -> Any:
 
 
 class PlacementMixin:
-  """The default ``_prep`` seam, shared by all four canonical bases.
+  """The default ``_prep`` hook, shared by all four canonical bases.
 
   Each rung needs the same hook -- one array, brought onto the namespace the
   object evaluates on -- and inferring that from the arrays the object already
@@ -221,3 +234,44 @@ class PlacementMixin:
         The same values, on this object's namespace, dtype and device.
     """
     return place(self, a)
+
+
+class QrngUniformMixin(Generic[ArrayT]):
+  """The uniform-draw hook ``BicopBase`` and ``VinecopBase`` share.
+
+  Kept apart from ``PlacementMixin``, which all four rungs inherit, because the
+  marginal rung's hook has a different signature -- see the module docstring.
+  """
+
+  def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:
+    """Draw the base uniforms ``sample`` transforms into a copula draw.
+
+    Raising default; override it to enable ``sample``, which is all ``sample``
+    needs. NumPy and PyTorch differ on RNG, so this is the one hook with no
+    array-agnostic default. Named after
+    :func:`pyvinecopulib.utils.sample_uniform`.
+
+    Parameters
+    ----------
+    n : int
+        Number of samples to draw.
+    qrng : bool
+        Whether to draw a quasi-random (low-discrepancy) sequence.
+    seeds : list of int
+        RNG seeds.
+
+    Returns
+    -------
+    array, shape (n, 2) or (n, d), dtype float
+        Base uniforms in ``[0, 1)`` -- two columns for a pair copula, one per
+        variable for a vine.
+
+    Raises
+    ------
+    NotImplementedError
+        Unless a subclass overrides this hook.
+    """
+    raise NotImplementedError(
+      f"{type(self).__name__} does not implement _sample_uniform; override it "
+      "to enable sample()."
+    )

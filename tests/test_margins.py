@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from collections.abc import Callable
+
 import numpy as np
 import pytest
 
@@ -185,7 +187,7 @@ def test_resolve_margins_defers_a_default_no_variable_needs() -> None:
   assert len(resolve_margins("kde", 2, default=default)) == 2
   assert calls["n"] == 0
 
-  # And it *is* built when a variable is genuinely left over.
+  # And it *is* built when a variable is actually left over.
   resolved = resolve_margins(
     {0: Kde1d()}, 2, default=lambda: [Kde1d(), Kde1d(type="discrete")]
   )
@@ -239,7 +241,7 @@ def test_as_margin_adopts_a_raw_kde1d(sample: np.ndarray) -> None:
 
 
 def test_as_margin_accepts_a_structural_margin() -> None:
-  """The documented `MarginLike` seam does not require a library base class."""
+  """The documented `MarginLike` hook does not require a library base class."""
 
   class StructuralMargin:
     def pdf(self, y: Any, /, *, x: Any = None) -> Any:
@@ -269,7 +271,9 @@ def test_as_margin_accepts_a_structural_margin() -> None:
     ),
   ],
 )
-def test_as_margin_coerces_scipy(factory, var_type: str) -> None:
+def test_as_margin_coerces_scipy(
+  factory: Callable[[], Any], var_type: str
+) -> None:
   """Both SciPy generations coerce, with the right variable type."""
   m: Any = as_margin(factory())
   assert isinstance(m, MarginLike)
@@ -291,7 +295,7 @@ def test_as_margin_coerces_scipy(factory, var_type: str) -> None:
   ],
 )
 def test_as_margin_discrete_pdf_is_the_mass_not_the_lebesgue_density(
-  factory, ref
+  factory: Callable[[], Any], ref: Callable[[np.ndarray], np.ndarray]
 ) -> None:
   """The trap: a modern SciPy discrete `pdf` is `+inf` at every atom.
 

@@ -1,4 +1,4 @@
-"""PyTorch backend for vine copula evaluation.
+"""PyTorch lane for vine copula evaluation.
 
 This subpackage is a pure-PyTorch port of the evaluation chain in
 :mod:`pyvinecopulib.core`. Pick it when you need any of:
@@ -96,13 +96,12 @@ References
        Letters 137, 326–330 — multivariate TLL.
 """
 
-try:
+from ..core._validation import extra_required
+
+with extra_required(
+  extra="torch", requirement="pyvinecopulib.torch requires PyTorch."
+):
   import torch  # noqa: F401
-except ImportError as e:
-  raise ImportError(
-    "pyvinecopulib.torch requires PyTorch. "
-    "Install it with `pip install pyvinecopulib[torch]`."
-  ) from e
 
 from .tll_bicop import TorchTllBicop
 from .kde1d import TorchKde1d

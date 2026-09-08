@@ -33,7 +33,7 @@ class _SqrtPair(BicopBase[np.ndarray]):
   """Toy pair with monotone ``hfunc == (free arg)**2``.
 
   Non-identity h-functions, so :meth:`BicopBase.hinv1` / :meth:`BicopBase.hinv2`
-  genuinely exercise the numerical (bisection) inverse.
+  actually exercise the numerical (bisection) inverse.
   """
 
   def pdf(self, u: np.ndarray, x: Optional[np.ndarray] = None) -> np.ndarray:
@@ -249,7 +249,7 @@ def test_independence_pair_is_the_independence_copula() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Placement: the seam `plot` needs, and the only array a base manufactures     #
+# Placement: the hook `plot` needs, and the only array a base manufactures     #
 # --------------------------------------------------------------------------- #
 
 
@@ -362,7 +362,7 @@ def test_fit_select_and_from_data_all_take_covariates() -> None:
   """A conditional pair must be able to express a conditional *fit*.
 
   Every evaluation method took ``x`` already; the estimator surface did not, so
-  the only route to a conditional pair was the vine's ``fit_edge`` seam, which
+  the only route to a conditional pair was the vine's ``fit_edge`` hook, which
   bypasses this class entirely.
   """
   seen: list[tuple[str, object]] = []
@@ -412,7 +412,7 @@ def test_the_inherited_inverses_place_their_argument() -> None:
   The bisection's bracket and its target come from ``u``, and the function it
   calls is the pair's own ``hfunc``. Left unplaced, a torch-hosted pair is
   handed NumPy targets it cannot combine with its own tensors -- the case the
-  ``_prep`` seam exists for.
+  ``_prep`` hook exists for.
   """
   torch = pytest.importorskip("torch")
 
@@ -554,7 +554,8 @@ def test_the_compiled_factories_follow_the_same_order() -> None:
     their own, as in ``shape=(*, *)``.
     """
     body = signature[signature.index("(") + 1 : signature.rindex(")")]
-    fields, depth, start = [], 0, 0
+    fields: list[str] = []
+    depth, start = 0, 0
     for i, ch in enumerate(body):
       if ch in "([{":
         depth += 1

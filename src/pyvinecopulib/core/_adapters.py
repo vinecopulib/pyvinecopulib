@@ -14,17 +14,95 @@ about them.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Protocol
+
+import numpy as np
 
 from .margin_base import MarginBase
-from .protocols import MarginLike
+from .protocols import ArrayT, MarginLike
 from .margin_base import support_of
 
 __all__ = ["as_margin", "register_margin_adapter"]
 
+
+class _ScipyDistribution(Protocol):
+  """The members :func:`_adapt_scipy_new` reads off a SciPy distribution.
+
+  Both shapes are named here because one function reads either: a continuous
+  instance carries ``pdf`` / ``logpdf`` and a discrete one ``pmf`` / ``logpmf``,
+  and which it is has been settled by the predicate that selected the adapter.
+  Written as a protocol rather than imported, since ``core`` must type-check
+  without the SciPy extra.
+  """
+
+  def pdf(self, x: np.ndarray, /) -> np.ndarray: ...
+
+  def logpdf(self, x: np.ndarray, /) -> np.ndarray: ...
+
+  def pmf(self, x: np.ndarray, /) -> np.ndarray: ...
+
+  def logpmf(self, x: np.ndarray, /) -> np.ndarray: ...
+
+  def cdf(self, x: np.ndarray, /) -> np.ndarray: ...
+
+  def icdf(self, p: np.ndarray, /) -> np.ndarray: ...
+
+
+class _ScipyFrozen(Protocol):
+  """The same, for a *frozen legacy* SciPy distribution.
+
+  Two differences from :class:`_ScipyDistribution`: the quantile function is
+  ``ppf``, and the family's name is reached through the unfrozen ``dist`` the
+  object holds.
+  """
+
+  dist: object
+
+  def pdf(self, x: np.ndarray, /) -> np.ndarray: ...
+
+  def logpdf(self, x: np.ndarray, /) -> np.ndarray: ...
+
+  def pmf(self, x: np.ndarray, /) -> np.ndarray: ...
+
+  def logpmf(self, x: np.ndarray, /) -> np.ndarray: ...
+
+  def cdf(self, x: np.ndarray, /) -> np.ndarray: ...
+
+  def ppf(self, p: np.ndarray, /) -> np.ndarray: ...
+
+
+class _TorchTensor(Protocol):
+  """A tensor as this module touches one: ``exp`` and nothing else.
+
+  ``core`` cannot import ``torch``, so the one method the torch adapter calls
+  on a returned tensor is named instead.
+  """
+
+  def exp(self) -> _TorchTensor: ...
+
+
+class _TorchDistribution(Protocol):
+  """The members :func:`_adapt_torch` reads off a ``torch.distributions`` object.
+
+  ``log_prob`` is the only density it offers; ``cdf`` and ``icdf`` are declared
+  on the base class and raise unless the concrete family implements them, which
+  is why the adapter checks for them at runtime rather than trusting the names.
+  """
+
+  support: object
+
+  def log_prob(self, value: _TorchTensor, /) -> _TorchTensor: ...
+
+  def cdf(self, value: _TorchTensor, /) -> _TorchTensor: ...
+
+  def icdf(self, value: _TorchTensor, /) -> _TorchTensor: ...
+
+
 #: Registered ``(predicate, adapter)`` pairs, newest first so a later
 #: registration can take precedence over an earlier one.
-_ADAPTERS: list[tuple[Callable[[Any], bool], Callable[[Any], MarginLike]]] = []
+_ADAPTERS: list[
+  tuple[Callable[[Any], bool], Callable[[Any], MarginLike[Any]]]
+] = []
 
 
 def register_margin_adapter(
@@ -50,7 +128,7 @@ def register_margin_adapter(
   _ADAPTERS.insert(0, (predicate, adapter))
 
 
-class _WrappedMargin(MarginBase[Any]):
+class _WrappedMargin(MarginBase[ArrayT]):
   """A foreign distribution presented as a :class:`MarginBase`.
 
   Holds the wrapped object and the handful of callables that differ between
@@ -63,28 +141,28 @@ class _WrappedMargin(MarginBase[Any]):
   pdf, cdf, icdf : callable
       The three primitives, already bound to ``obj`` and named as the
       :class:`~pyvinecopulib.core.MarginLike` contract expects.
-  logpdf : callable or None, optional
+  logpdf : callable, or None, optional
       Native log-density; ``None`` derives it from ``pdf``.
-  var_type : str, optional
+  var_type : str, default='c'
       Variable type of the wrapped distribution.
-  cdf_left : callable or None, optional
+  cdf_left : callable, or None, optional
       Left-limit cdf; ``None`` derives it from ``var_type``.
   support : tuple of float, or None, optional
       Support bounds; ``None`` reads them off ``obj``.
-  family_name : str or None, optional
+  family_name : str, or None, optional
       Name to report in selection output; ``None`` uses the wrapped type's.
   """
 
   def __init__(
     self,
-    obj: Any,
+    obj: object,
     *,
-    pdf: Callable[[Any], Any],
-    cdf: Callable[[Any], Any],
-    icdf: Callable[[Any], Any],
-    logpdf: Optional[Callable[[Any], Any]] = None,
+    pdf: Callable[[ArrayT], ArrayT],
+    cdf: Callable[[ArrayT], ArrayT],
+    icdf: Callable[[ArrayT], ArrayT],
+    logpdf: Optional[Callable[[ArrayT], ArrayT]] = None,
     var_type: str = "c",
-    cdf_left: Optional[Callable[[Any], Any]] = None,
+    cdf_left: Optional[Callable[[ArrayT], ArrayT]] = None,
     support: Optional[tuple[float, float]] = None,
     family_name: Optional[str] = None,
   ) -> None:
@@ -106,21 +184,21 @@ class _WrappedMargin(MarginBase[Any]):
   def support(self) -> tuple[float, float]:
     return self._support
 
-  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def pdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     return self._pdf(y)
 
-  def logpdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def logpdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     if self._logpdf is None:
       return super().logpdf(y)
     return self._logpdf(y)
 
-  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def cdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     return self._cdf(y)
 
-  def icdf(self, p: Any, *, x: Optional[Any] = None) -> Any:
+  def icdf(self, p: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     return self._icdf(p)
 
-  def cdf_left(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def cdf_left(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     if self._cdf_left is None:
       return super().cdf_left(y)
     return self._cdf_left(y)
@@ -129,7 +207,7 @@ class _WrappedMargin(MarginBase[Any]):
     return f"as_margin({self.family_name}, var_type={self._var_type!r})"
 
 
-def _is_scipy_new(obj: Any) -> bool:
+def _is_scipy_new(obj: object) -> bool:
   """Whether ``obj`` is one of SciPy's modern distribution objects."""
   return any(
     base.__name__
@@ -142,14 +220,14 @@ def _is_scipy_new(obj: Any) -> bool:
   )
 
 
-def _is_scipy_new_discrete(obj: Any) -> bool:
+def _is_scipy_new_discrete(obj: object) -> bool:
   """Whether ``obj`` is a modern SciPy *discrete* distribution."""
   return any(
     base.__name__ == "DiscreteDistribution" for base in type(obj).__mro__
   )
 
 
-def _adapt_scipy_new(obj: Any) -> MarginLike[Any]:
+def _adapt_scipy_new(obj: _ScipyDistribution) -> MarginLike[np.ndarray]:
   """Adapt a modern SciPy distribution.
 
   A continuous one already matches the contract; a discrete one does not, and
@@ -178,13 +256,13 @@ def _adapt_scipy_new(obj: Any) -> MarginLike[Any]:
   )
 
 
-def _is_scipy_legacy(obj: Any) -> bool:
+def _is_scipy_legacy(obj: object) -> bool:
   """Whether ``obj`` is a frozen legacy SciPy distribution."""
   dist = getattr(obj, "dist", None)
   return dist is not None and hasattr(obj, "ppf") and hasattr(dist, "name")
 
 
-def _adapt_scipy_legacy(obj: Any) -> MarginLike[Any]:
+def _adapt_scipy_legacy(obj: _ScipyFrozen) -> MarginLike[np.ndarray]:
   """Adapt a frozen legacy SciPy distribution (``ppf`` -> ``icdf``)."""
   discrete = hasattr(obj, "pmf") and not hasattr(obj, "pdf")
   name = getattr(obj.dist, "name", type(obj).__name__)
@@ -212,7 +290,7 @@ def _adapt_scipy_legacy(obj: Any) -> MarginLike[Any]:
   )
 
 
-def _is_torch_distribution(obj: Any) -> bool:
+def _is_torch_distribution(obj: object) -> bool:
   """Whether ``obj`` is a ``torch.distributions.Distribution``."""
   return any(
     base.__module__.startswith("torch.distributions")
@@ -221,7 +299,7 @@ def _is_torch_distribution(obj: Any) -> bool:
   )
 
 
-def _adapt_torch(obj: Any) -> MarginLike[Any]:
+def _adapt_torch(obj: _TorchDistribution) -> MarginLike[_TorchTensor]:
   """Adapt a ``torch.distributions`` object.
 
   ``log_prob`` is the only density it offers, and ``cdf`` / ``icdf`` are
@@ -253,7 +331,7 @@ def _adapt_torch(obj: Any) -> MarginLike[Any]:
 
   lo, hi = support_of(obj)
 
-  def _icdf(p: Any) -> Any:
+  def _icdf(p: _TorchTensor) -> _TorchTensor:
     try:
       return obj.icdf(p)
     except NotImplementedError:
@@ -272,7 +350,7 @@ def _adapt_torch(obj: Any) -> MarginLike[Any]:
   )
 
 
-def as_margin(obj: Any) -> MarginLike[Any]:
+def as_margin(obj: object) -> MarginLike[Any]:
   """Present ``obj`` as a :class:`~pyvinecopulib.core.MarginLike`.
 
   Idempotent: anything this library produced, or a structural implementation of
@@ -307,7 +385,7 @@ def as_margin(obj: Any) -> MarginLike[Any]:
   # Known foreign APIs are considered above, before this structural check.
   # Their matching names do not necessarily carry the contract's semantics
   # (notably SciPy's modern discrete `pdf`). A user-defined structural margin,
-  # however, is the extension seam promised by `MarginLike` and needs no base
+  # however, is the extension point promised by `MarginLike` and needs no base
   # class or registry entry.
   if isinstance(obj, MarginLike):
     return obj

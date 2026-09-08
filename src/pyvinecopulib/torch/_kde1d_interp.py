@@ -3,7 +3,7 @@
 Reproduces ``kde1d::interp::InterpolationGrid`` (``lib/kde1d/include/kde1d/
 interpolation.hpp``) on tensors, so a fitted density can be evaluated on device
 and under autograd. Fidelity to the C++ is the contract, including two
-deliberate oddities that a "fix" would silently turn into a parity failure:
+oddities that a "fix" would silently turn into a parity failure:
 
 * **`integrate` has no tail contribution.** It accumulates cell integrals only,
   so the unnormalized integral saturates at the grid's total mass rather than
@@ -96,7 +96,7 @@ def find_cell(grid_points: Tensor, x: Tensor) -> Tensor:
   """Index of the cell each point falls in.
 
   The C++ ``find_cell`` bisection: the largest ``k`` with ``g[k] <= x``, clipped
-  into ``[0, m - 2]``. The right-hand search side is load-bearing -- at an
+  into ``[0, m - 2]``. The right-hand search side is required -- at an
   interior knot the cell to the *right* is the one used, which is why the
   batched bicop helper's left-sided search is not interchangeable with this.
 

@@ -364,7 +364,7 @@ def test_the_layers_only_depend_downwards() -> None:
   A new import is the cheapest way to invert a layer, and the damage shows up
   far away -- as an extra a plain `import pyvinecopulib` suddenly needs. So
   the whole edge set is pinned, not just the one edge that inverted once:
-  adding an import that crosses layers has to be a deliberate edit here, with
+  adding an import that crosses layers has to be an edit here, with
   the reason written beside it.
   """
   root = pathlib.Path("src/pyvinecopulib")

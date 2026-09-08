@@ -176,7 +176,7 @@ def test_to_device_round_trip(
 ) -> None:
   """`.to()` walks the registered children and the evaluation still runs.
 
-  ``x`` deliberately stays on the host: coercing it is ``_prep``'s job, and
+  ``x`` stays on the host: coercing it is ``_prep``'s job, and
   this is the test that would notice if it stopped doing it.
   """
   want = torch.device(device).type
@@ -393,7 +393,7 @@ def test_margin_controls_declare_the_variable_type(
   dist = TorchVinedist.from_data(
     y, margin_controls={1: FitControlsMargin(var_type=declared)}
   )
-  margin = cast(Any, dist.margins[1])
+  margin = cast("Any", dist.margins[1])
   assert margin.kde_type == expected_kde_type
   assert dist.var_types[1] == expected_var_type
   assert torch.isfinite(dist.logpdf(y)).all()
@@ -406,7 +406,7 @@ def test_margin_controls_declare_a_bound() -> None:
   bounded = TorchVinedist.from_data(
     y, margin_controls=FitControlsMargin(support=(0.0, None))
   )
-  assert all(float(cast(Any, m).xmin) == 0.0 for m in bounded.margins)
+  assert all(float(cast("Any", m).xmin) == 0.0 for m in bounded.margins)
 
 
 def test_from_data_refuses_covariates(data: np.ndarray) -> None:
@@ -475,7 +475,7 @@ def test_holds_margins_with_atoms() -> None:
   expected = np.log(np.asarray(cop.pdf(u_np)))
   for j, margin in enumerate(dist.margins):
     # `logpdf` is an optional capability on `MarginLike`, declared on the base.
-    kde = cast(TorchKde1d, margin)
+    kde = cast("TorchKde1d", margin)
     expected = expected + kde.logpdf(y_t[:, j]).detach().numpy()
 
   np.testing.assert_allclose(
@@ -495,7 +495,7 @@ def test_rejects_a_margin_with_atoms_and_no_left_limit(
   class _Atomic(TorchKde1d):
     """Declares atoms and hides the inherited left limit."""
 
-    cdf_left = None  # type: ignore[assignment]
+    cdf_left = None
 
   discrete = _Atomic(type="discrete", xmin=0.0)
   discrete.fit(
@@ -515,7 +515,7 @@ def test_rejects_a_margin_with_atoms_and_no_left_limit(
   [(None, None), (None, torch.float32), ("cpu", torch.float64)],
 )
 def test_from_data_puts_everything_on_one_device_and_dtype(
-  device, dtype
+  device: str | None, dtype: torch.dtype | None
 ) -> None:
   """`from_data` documents one device and one dtype for the whole object.
 
