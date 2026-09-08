@@ -67,7 +67,7 @@ indistinguishable from an unreleased one.
 
 9. **If the release surfaced a problem in the C++ library**, file it upstream
    rather than working around it here — the docstrings, signatures and CMake
-   seams all belong to `vinecopulib`.
+   hooks all belong to `vinecopulib`.
 
 ## What is automated
 

@@ -161,7 +161,7 @@ development builds only, so a subclass written against one of those needs the
 new name; nothing was released under the old one, and the bases no longer
 check for it.
 
-Two `sample` conventions now coexist, deliberately. The `core` classes keep the
+Two `sample` conventions now coexist. The `core` classes keep the
 quasi-random arguments they always had — `sample(n, qrng=False, seeds=[])`,
 where `seeds` is a list of `int`. The `pyvinecopulib.sklearn` estimators keep
 `sample(n_samples, random_state)`, because that is the signature scikit-learn's
@@ -224,7 +224,7 @@ here.
 `margins`, `sklearn` and `torch` are **provisional in 1.x**: they ship for the
 first time in this release, and their surfaces may change in a minor version.
 The margin contract and the `TorchVinecop`-against-`Vinecop` parity
-guarantees are the parts already treated as load-bearing. Pin an exact
+guarantees are the parts already treated as required. Pin an exact
 version if you build on the rest.
 
 ## What did not change

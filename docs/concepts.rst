@@ -122,7 +122,7 @@ and their inverses :math:`h_1^{-1}`, :math:`h_2^{-1}`. These map to
 * :meth:`pyvinecopulib.core.Bicop.hinv1`,
   :meth:`pyvinecopulib.core.Bicop.hinv2`.
 
-H-functions are the workhorse of vine evaluation: they turn the
+H-functions are the core operation of vine evaluation: they turn the
 :math:`[0, 1]^2` outputs of one tree into the conditional
 pseudo-observations consumed by the next, and their inverses drive
 :meth:`pyvinecopulib.core.Vinecop.sample` and
@@ -256,7 +256,7 @@ that they do not:
 
 Under this assumption the model reduces to a collection of
 two-dimensional copulas, which is what makes vines practical.
-The choice of vine structure becomes load-bearing — different
+The choice of vine structure becomes required — different
 structures yield different approximations of the same true
 density. See Stoeber, Joe & Czado (2013), Spanhel & Kurz (2019)
 and Nagler (2025) for the theoretical discussion. Every fit in
@@ -281,7 +281,7 @@ vine controls object satisfies it. The same holds for
 The backend-neutral :class:`~pyvinecopulib.core.VinecopBase` can go
 further: a :class:`~pyvinecopulib.core.NonSimplifiedContext` lets each
 pair copula also depend on its conditioning-set value
-:math:`\mathbf u_{D_e}`, giving a genuinely **non-simplified** vine.
+:math:`\mathbf u_{D_e}`, giving a actually **non-simplified** vine.
 External covariates are a separate axis: the default
 :class:`~pyvinecopulib.core.SimplifiedContext` forwards them too, so an
 ``x``-dependent copula may still satisfy the simplifying assumption.
@@ -581,7 +581,7 @@ The marginal contract
 
 A margin is anything with ``pdf``, ``cdf`` and ``icdf`` (the inverse
 cdf). That is the whole required surface — the
-:class:`pyvinecopulib.core.MarginLike` protocol — and it is deliberately
+:class:`pyvinecopulib.core.MarginLike` protocol — and it is
 small, because every member added is one a foreign distribution object
 must happen to have. Structural implementations of the protocol and ``Kde1d``
 are accepted directly. ``scipy.stats`` distributions and OpenTURNS
@@ -658,7 +658,7 @@ two-dimensional with one row per observation and forwards that same
 matrix to every conditional component. Unconditional components remain
 valid alongside them and simply do not receive ``x``.
 
-There is deliberately no built-in fitter for both conditional halves.
+There is no built-in fitter for both conditional halves.
 :meth:`pyvinecopulib.core.Vinedist.from_data` can fit a custom
 conditional margin specification, but its automatic copula fit is the
 ``x``-independent :class:`pyvinecopulib.core.Vinecop`. When dependence
@@ -705,7 +705,7 @@ alone. So ``st.norm(0, 1)`` above stays exactly :math:`N(0, 1)` while
 Choosing that family is :meth:`pyvinecopulib.margins.SciPyMargin.select`,
 a method on the margin rather than a separate class -- the shape
 :meth:`pyvinecopulib.core.Bicop.select` has always had, so after the call the
-margin *is* the winning family. Two choices in it are deliberate. The candidate
+margin *is* the winning family. Two choices in it have reasons. The candidate
 set is **curated and partitioned by support**, not "every family in SciPy": an
 unconstrained sweep is actively misleading, because a family whose reported
 support is wider than its density integrates over can win on likelihood without
@@ -722,7 +722,7 @@ What a bound means to the KDE margin
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``Kde1d`` takes ``xmin`` and ``xmax``, and stating them is worth doing
-whenever the support is genuinely known: without them the fitted grid is
+whenever the support is actually known: without them the fitted grid is
 padded past the data, so a variable that cannot be negative picks up
 density below zero. What a bound *means* depends on the variable type,
 and the three cases differ in ways worth knowing.
@@ -785,7 +785,7 @@ high-dimensional vines tractable, but it is not full maximum
 likelihood, and three consequences are worth stating:
 
 * **Standard errors from the copula step alone are too small**, because
-  they condition on :math:`\hat F_j` as if it were :math:`F_j`. Honest
+  they condition on :math:`\hat F_j` as if it were :math:`F_j`. Valid
   inference needs the sandwich form that accounts for the marginal
   estimation (Godambe, 1991).
 * **Marginal error propagates into the copula, not the reverse.** A
@@ -864,7 +864,7 @@ you get it:
   decides what the transform returns at an atom. The conditional
   distribution there is an interval, not a point, so the transform draws
   uniformly within :math:`[F(x^-), F(x)]`. That is what makes the output
-  genuinely uniform — the randomized transform is the one whose
+  actually uniform — the randomized transform is the one whose
   distributional statement holds — but it also makes the call
   non-deterministic. Pass ``seeds`` to reproduce it, or
   ``randomize_discrete=False`` to take the upper endpoint instead and
@@ -1190,7 +1190,7 @@ fits -- gets ``from_data`` with no callback, because a pair class is itself a
 fitter; naming it also lets structure selection refuse a pair copula without
 ``flip`` before it reads the data. Adding ``set_pair_copulas`` on top is what
 lets ``fit`` and ``select`` install what they fitted and hand back ``self``.
-A ``fit_edge`` callback remains the seam for a genuinely custom or conditional
+A ``fit_edge`` callback remains the hook for a actually custom or conditional
 per-edge fit.
 
 The same holds one level up: a custom **vine distribution** subclasses
@@ -1225,7 +1225,7 @@ under a :class:`~pyvinecopulib.core.NonSimplifiedContext`: the cascade
 then prepends each edge's conditioning-set values
 :math:`\mathbf u_{D_e}` to any external covariates and threads the
 combined matrix to the pair. :meth:`pyvinecopulib.core.VinecopBase.fit`
-is the seam for fitting either kind of custom vine edge by edge. See
+is the hook for fitting either kind of custom vine edge by edge. See
 :ref:`concepts-exogenous-conditional` for the full data-scale
 :math:`Y \mid X` composition and its fitting boundary.
 

@@ -52,7 +52,7 @@ Notes on the fit mode:
   ``.item()`` occurs in the whole installed package in five places, all
   in ``pyvinecopulib.torch._fit_tll``, so patching ``torch.Tensor.item``
   is exact attribution rather than sampling. Reaching into a private
-  module is deliberate: a bench script may do what the library may not,
+  module is intentional: a bench script may do what the library may not,
   the same rule already written beside ``cache_size_limit`` below.
 
 Outputs a long-format CSV (one row per timed configuration) to --output,
@@ -186,7 +186,7 @@ def _timed_or_nan(fn, repeats: int, sync=None, label: str = "") -> float:
   try:
     return _time_repeats(fn, repeats, sync=sync)
   except Exception as exc:
-    # Deliberately broad: the point is that no failure mode of a fit takes
+    # Broad on purpose: the point is that no failure mode of a fit takes
     # the sweep down with it, and every one of them is reported.
     print(f"# FAILED {label}: {exc!r}", file=sys.stderr, flush=True)
     if sync is not None:

@@ -1922,7 +1922,7 @@ def main():
     # lose whole symbols and mis-disambiguate overloads — which only surfaces
     # later as cryptic "no member named ..." compile errors. Surface that here.
     #
-    # We deliberately do NOT abort on plain `error:`-severity diagnostics.
+    # We do NOT abort on plain `error:`-severity diagnostics.
     # libclang is not a full compiler, and parsing Eigen/Boost pulls in
     # vendor intrinsic headers (xmmintrin.h, arm_neon.h, ...) whose builtins
     # are version-specific; libclang emits ~100 harmless errors there. Those
