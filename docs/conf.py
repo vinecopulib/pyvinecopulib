@@ -147,6 +147,15 @@ nitpick_ignore_regex = [
     r"py:obj",
     r"pyvinecopulib\.\w+\.\w+\.(bicop|vinecop|margin)_class",
   ),
+  # The structural Protocols that type an unimported ecosystem's objects --
+  # `margins/openturns.py`'s `_Distribution`, `_Factory` and their kin. Neither
+  # SciPy nor OpenTURNS ships `py.typed`, and `scipy-stubs` needs Python 3.12
+  # against this project's 3.11 floor, so a Protocol naming exactly the members
+  # the code calls is what types those boundaries. They are private, so
+  # autosummary generates no page for them to point at, while the numpydoc
+  # `Returns` beside each says the ecosystem type a reader wants
+  # (`openturns.Distribution`). Retires if either library ships types.
+  (r"py:.*", r"pyvinecopulib\.\w+\.\w+\._[A-Z]\w+"),
   # `ArrayT` is the TypeVar the array-agnostic contracts are generic over. It
   # appears in rendered signatures wherever one is parameterized, and a
   # TypeVar has no page of its own to link to.

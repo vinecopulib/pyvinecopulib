@@ -169,8 +169,86 @@ indent-width = 2
 extend-include = ["*.ipynb"]
 exclude = ["lib", "src/pyvinecopulib/**/__init__.pyi", "src/pyvinecopulib/__init__.pyi"]
 
+[tool.ruff.lint]
+# Ruff ran its defaults (`E4,E7,E9,F`) until 1.0.0. These four sets are the
+# ones that complement `ty` rather than restating this repository's own
+# conventions: annotations, type-checking hygiene, stub correctness, and the
+# blanket-`type: ignore` check. `preview` is what lets `PYI` inspect `.py`
+# files as well as stubs.
+#
+# Not adopted, and why, so it is not re-litigated: `ALL` reports 7851, and its
+# largest entries contradict rules AGENTS.md states -- `UP007` wants
+# `X | None` where `Optional[X]` is used deliberately and consistently,
+# `TID252` forbids the relative imports the layering rests on, and
+# `TRY003`/`EM101`/`EM102` want the short exception messages this codebase
+# deliberately does not write. Adopting it would mean an ignore list
+# restating the spec.
+extend-select = ["ANN", "TC", "PYI", "PGH003", "RUF045"]
+preview = true
+# `TC006` (quote a runtime `cast` target) is the half of flake8-type-checking
+# this codebase wants; the three import-movement rules are wrong here.
+# Annotations are resolved **at runtime** in two places -- the docs build,
+# through sphinx-autodoc-typehints, and
+# `tests/test_import_surface.py::test_the_fit_callback_aliases_resolve_from_any_module`
+# -- so moving e.g. `RVineStructure` behind `TYPE_CHECKING` would leave
+# `VinecopBase.fit`'s own signature unresolvable. That test exists because a
+# quoted alias had already broken the docs build once.
+ignore = ["TC001", "TC002", "TC003"]
+
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F403", "F405"]
+# `ANN401` (a parameter or return annotated `Any`) is enforced everywhere
+# except where `Any` is the answer. Each entry below is a place the type
+# cannot be narrowed, not a place nobody got round to:
+#
+# `core/_discrete.py` and the two big bases evaluate array *values* -- they
+# subtract, divide, mask and index them -- and `ArrayT` is an unbounded
+# TypeVar, so it names no operator, no `.shape` and no `__getitem__`.
+# `array_api_compat` publishes no `Array` protocol to bound it with, and
+# bounding it would close the extension point the contracts advertise.
+"src/pyvinecopulib/core/_discrete.py" = ["ANN401"]
+"src/pyvinecopulib/core/vinecop_base.py" = ["ANN401"]
+"src/pyvinecopulib/core/vinedist_base.py" = ["ANN401"]
+# The placement layer's whole job is to accept an array from any namespace and
+# put it on another; typing its input would defeat it.
+"src/pyvinecopulib/core/_placement.py" = ["ANN401"]
+"src/pyvinecopulib/core/_covariates.py" = ["ANN401"]
+"src/pyvinecopulib/core/_trim.py" = ["ANN401"]
+"src/pyvinecopulib/core/_rootfind.py" = ["ANN401"]
+# The four protocols' `**kwargs`, forwarded to whatever the held object
+# accepts, and the resolution helpers that take any of five documented spec
+# shapes.
+"src/pyvinecopulib/core/protocols.py" = ["ANN401"]
+"src/pyvinecopulib/core/_resolve.py" = ["ANN401"]
+"src/pyvinecopulib/core/_validation.py" = ["ANN401"]
+"src/pyvinecopulib/core/_engines.py" = ["ANN401"]
+"src/pyvinecopulib/core/margin_base.py" = ["ANN401"]
+"src/pyvinecopulib/core/vinedist.py" = ["ANN401"]
+# The backend layer holds either a `Vinecop` or a `TorchVinecop` and the
+# estimators accept any of the documented `margins=` spec shapes.
+"src/pyvinecopulib/sklearn/backends.py" = ["ANN401"]
+"src/pyvinecopulib/sklearn/_base.py" = ["ANN401"]
+# `nn.Module` members torch leaves untyped upstream, plus the batched state,
+# which only the torch lane knows the shape of.
+"src/pyvinecopulib/torch/vinecop.py" = ["ANN401"]
+"src/pyvinecopulib/torch/vinedist.py" = ["ANN401"]
+"src/pyvinecopulib/torch/kde1d.py" = ["ANN401"]
+"src/pyvinecopulib/torch/tll_bicop.py" = ["ANN401"]
+"src/pyvinecopulib/torch/distribution_margin.py" = ["ANN401"]
+"src/pyvinecopulib/torch/_placement.py" = ["ANN401"]
+# The one place a foreign object's type is unknowable: `as_margin`'s funnel.
+"src/pyvinecopulib/margins/openturns.py" = ["ANN401"]
+# The deprecation shim resolves an arbitrary name to a class, a function or a
+# subpackage, and the plotting glue is handed matplotlib objects.
+"src/pyvinecopulib/_deprecations.py" = ["ANN401"]
+# The top-level `__getattr__` resolves a name to a class, a function or a
+# subpackage, which is what `Any` means.
+"src/pyvinecopulib/__init__.py" = ["ANN401"]
+"src/pyvinecopulib/_python_helpers/bicop.py" = ["ANN401"]
+"src/pyvinecopulib/utils/__init__.py" = ["ANN401"]
+# A test may pass a deliberately wrong type to prove a runtime guard fires,
+# and a fixture may traffic in whatever the object under test accepts.
+"tests/**" = ["ANN401"]
 
 [tool.ty.src]
 include = ["src", "tests"]
@@ -180,8 +258,30 @@ python-version = "3.11"
 
 [tool.ty.rules]
 unresolved-import = "error"
+# Off by default in ty; every one of these costs nothing on this tree except
+# the two noted, which were fixed in the commit that turned them on.
+missing-type-argument = "error"
+unsound-return-statement = "error"
+dynamic-function-decorator-return = "error"
+blanket-ignore-comment = "error"
+unsound-yield = "error"
+unsupported-dynamic-base = "error"
+possibly-unresolved-reference = "error"
+division-by-zero = "error"
+possibly-missing-attribute = "error"
+possibly-missing-import = "error"
 
 [tool.ty.analysis]
+# Conservative inference: no narrowing a `str` to a `Literal` on `==`, and
+# `isinstance` narrows to a top type rather than a gradual one.
+strict-equality-semantics = true
+# strict-generic-narrowing is left off: it costs 39 diagnostics here, all of
+# them `isinstance` narrowing to a top type in code written against the
+# `runtime_checkable` protocols, which is the design rather than a defect.
+strict-generic-narrowing = false
+# `# type: ignore` no longer silences ty; `# ty: ignore[rule]` is required,
+# which is the narrow-and-justified form AGENTS.md already asks for.
+respect-type-ignore-comments = false
 # ty can't introspect the compiled .so; the .pyi stubs cover it.
 allowed-unresolved-imports = ["pyvinecopulib.pyvinecopulib_ext"]
 
@@ -282,12 +382,16 @@ filterwarnings = [
 # `en-GB_to_en-US` is what enforces the American-English rule from AGENTS.md;
 # the rest catches ordinary typos in the same pass.
 builtin = "clear,rare,en-GB_to_en-US"
+# The prose rule beside the spelling one: a banned word reports with a
+# suggestion and, because each entry carries a reason after a comma, is never
+# auto-fixed -- the right replacement depends on the sentence.
+dictionary = ".codespell-prose.txt,-"
 # Generated or vendored: `docstr.hpp` and the `.pyi` stubs are build artifacts
 # whose text comes from upstream C++ (fix it there), and `lib/` is upstream.
 # `make lint` additionally passes the paths we own explicitly, because CI
 # unpacks Eigen and Boost into the workspace and a skip list cannot anticipate
 # every directory a build step drops there.
-skip = "*/_build/*,*/_generate/*,*/_static/*,*/htmlcov/*,*/lib/*,*/uv.lock,*.pyi,*/docstr.hpp,*/docs/CHANGELOG.md,*/docs/README.md,*/docs/_README_inlined.md,*/docs/examples"
+skip = "*/_build/*,*/_generate/*,*/_static/*,*/htmlcov/*,*/lib/*,*/uv.lock,*.pyi,*/docstr.hpp,*/docs/CHANGELOG.md,*/docs/README.md,*/docs/_README_inlined.md,*/docs/examples,*.codespell-prose.txt,*test_prose.py"
 # `aas` is Kjersti Aas, author of the paper the vine literature is built on.
 # The rest are domain vocabulary or identifiers read as misspellings.
 # `fonctions` is Sklar (1959)'s French title, quoted verbatim in the references.
