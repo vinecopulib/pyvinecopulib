@@ -813,50 +813,12 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     return self.interp_grid.integrate_1d(u, cond_var=cond_var)
 
   def hfunc1(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
-    """Evaluate the first h-function.
-
-    .. math::
-
-       h_1(u_1, u_2) = \\mathbb{P}(U_2 \\le u_2 \\mid U_1 = u_1).
-
-    Parameters
-    ----------
-    u : Tensor, shape (n, 2), dtype float
-        Pseudo-observations; column 0 is the conditioning value.
-    x : Tensor, shape (n, p), or None, optional
-        Unused: a ``TorchTllBicop`` is unconditional. Accepted so the class
-        satisfies ``BicopLike``.
-
-    Returns
-    -------
-    Tensor, shape (n,), dtype float
-        Conditional distribution values in ``[0, 1]``.
-    """
     u = self._prep_args(u)
     if self.is_indep:
       return _trim(u[:, 1])
     return self._hfunc_raw(u, 1).clamp(0.0, 1.0)
 
   def hfunc2(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
-    """Evaluate the second h-function.
-
-    .. math::
-
-       h_2(u_1, u_2) = \\mathbb{P}(U_1 \\le u_1 \\mid U_2 = u_2).
-
-    Parameters
-    ----------
-    u : Tensor, shape (n, 2), dtype float
-        Pseudo-observations; column 1 is the conditioning value.
-    x : Tensor, shape (n, p), or None, optional
-        Unused: a ``TorchTllBicop`` is unconditional. Accepted so the class
-        satisfies ``BicopLike``.
-
-    Returns
-    -------
-    Tensor, shape (n,), dtype float
-        Conditional distribution values in ``[0, 1]``.
-    """
     u = self._prep_args(u)
     if self.is_indep:
       return _trim(u[:, 0])

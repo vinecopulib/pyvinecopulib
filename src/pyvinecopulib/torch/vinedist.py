@@ -272,13 +272,6 @@ class TorchVinedist(VinedistBase[Tensor], torch.nn.Module):
 
   @property
   def margins(self) -> tuple[MarginLike, ...]:
-    """The margins, in variable order.
-
-    Returns
-    -------
-    tuple of MarginLike
-        One margin per variable, read off the registered ``ModuleList``.
-    """
     return cast("tuple[MarginLike, ...]", tuple(self._margins))
 
   def _ref_tensor(self) -> Tensor:

@@ -43,28 +43,14 @@ that the signatures agree.
 **Typing.** :data:`ArrayT` is an unbounded, invariant ``TypeVar`` carried only
 on these public signatures, so a concrete implementation (e.g.
 :class:`~pyvinecopulib.torch.TorchTllBicop`) inherits precise ``torch.Tensor``
-return types. The numeric implementations in
-:mod:`~pyvinecopulib.core.bicop_base` operate on arrays as ``Any`` (the Array API
-namespace ``array_api_compat`` is itself untyped).
-
-That plain spelling is the only legal one, not a lazy default, and the
-alternatives were considered rather than overlooked:
-
-- **Invariance is forced.** ``ArrayT`` appears in parameter position on
-  essentially every member, so ``covariant=True`` is an outright type error,
-  and the return positions rule out contravariance.
-- **A structural bound would exclude PyTorch.** The natural Array-API bound is
-  ``__array_namespace__``, which ``torch.Tensor`` does not have -- that absence
-  is the whole reason ``array_api_compat`` exists.
-- **Constraining to two concrete types costs two things.** It closes the
-  extension point these protocols advertise (``array_api_compat`` also covers
-  cupy, dask and jax), and it pulls ``torch`` into the *type-check* closure of
-  a subpackage that deliberately imports without it.
-- **A PEP 696 default** (``default=Any``) would let callers write
-  ``MarginLike`` for ``MarginLike[Any]``, and **PEP 695 syntax**
-  (``class BicopLike[ArrayT]``) would be tidier still. The first needs 3.13 in
-  the standard library, the second is *syntax* and needs 3.12; the floor here
-  is 3.11. Revisit both in one pass when it moves.
+return types. Invariance is forced: it stands in both parameter and return
+position on essentially every member. It carries no bound because the natural
+Array-API one, ``__array_namespace__``, is what ``torch.Tensor`` lacks, and
+naming the two concrete array types instead would close the extension point
+these protocols advertise and pull ``torch`` into the type-check closure of a
+subpackage that imports without it. The numeric implementations in
+:mod:`~pyvinecopulib.core.bicop_base` operate on arrays as ``Any`` (the Array
+API namespace ``array_api_compat`` is itself untyped).
 """
 
 from __future__ import annotations
@@ -82,6 +68,9 @@ from typing import (
 if TYPE_CHECKING:
   from ..pyvinecopulib_ext import RVineStructure
 
+# PEP 695 syntax (``class BicopLike[ArrayT]``) needs 3.12 and a PEP 696
+# ``default=Any`` needs 3.13 in the standard library; the floor here is 3.11,
+# so neither is usable yet. Revisit both in one pass when it moves.
 #: Array type an implementation commits to (``numpy.ndarray`` | ``torch.Tensor``).
 ArrayT = TypeVar("ArrayT")
 
@@ -112,13 +101,6 @@ class ControlsLike(Protocol):
   a vine's structure selection reads ``tree_criterion`` while the per-edge
   ``family_set`` is the pair-copula fitter's business. A setting the consumer
   can neither honor nor delegate is refused rather than dropped.
-
-  Passing it on works because a vine's controls *are* pair controls:
-  :class:`FitControlsVinecop` derives from :class:`FitControlsBicop`, and
-  :class:`~pyvinecopulib.torch.FitControlsTorchVinecop` from
-  :class:`~pyvinecopulib.torch.FitControlsTorchBicop`. So one object configures
-  both halves of a vine fit, which is also how observation weights reach the
-  pair copulas.
 
   See Also
   --------
@@ -301,34 +283,23 @@ class BicopLike(Protocol[ArrayT]):
   that reason: no vine cascade asks a pair to sample, a vine drawing by inverse
   Rosenblatt, but a pair copula that cannot be drawn from is not one.)
   Everything else is an **optional capability**, read with ``getattr`` where it
-  is needed, so a foreign object provides it only if it applies:
+  is needed, so a foreign object provides it only if it applies. ``cdf`` and
+  ``flip`` are the two, and :class:`~pyvinecopulib.core.BicopBase` supplies
+  both as raising stubs, which is where the message explaining each lives -- so
+  a subclass gets a good error and a foreign object simply omits them. A third,
+  ``supports_batched``, is a plain declaration: whether a vine may bake this
+  pair into its stacked grid cascade, which reads an interpolation grid off
+  each pair. Absent means it may not, and
+  :class:`~pyvinecopulib.core.BicopBase` declares it ``False`` so the answer is
+  findable rather than only discoverable by tripping the error.
 
-  - ``cdf`` — the distribution ``C(u)``, needed only to sit on a **discrete**
-    edge, where the h-functions are difference quotients of it. A vine's own
-    ``cdf`` is Monte-Carlo and asks no pair for one.
-    :class:`~pyvinecopulib.core.DiscretePair` is what requires it, and says so.
-  - ``flip`` — the pair with its arguments swapped, needed only to host the
-    pair in structure **selection**, which reorients each fitted pair onto its
-    finalized slot. ``VinecopBase.select`` refuses a pair without one before
-    it touches the data.
-  - ``supports_batched`` — whether a vine may bake this pair into its stacked
-    grid cascade, which reads an interpolation grid off each pair; absent
-    means it may not. :class:`~pyvinecopulib.core.BicopBase` declares it
-    ``False`` so the answer is findable rather than only discoverable by
-    tripping the error.
-
-  :class:`~pyvinecopulib.core.BicopBase` supplies ``cdf`` and ``flip`` as
-  raising stubs, which is where the message explaining each lives -- so a
-  subclass gets a good error and a foreign object simply omits them.
-
-  There is deliberately **no** ``supports_covariates`` flag on a pair copula,
-  unlike on a margin or a whole copula. What decides here is the *signature*:
-  every method above declares a keyword-only ``x``, which ``ty`` enforces on
-  each :class:`~pyvinecopulib.core.BicopBase` subclass, so the declaration is
-  maintained by the type checker rather than beside it. A conditioning matrix
-  is forwarded whenever there is one, which is what makes a pair that models
-  none -- the compiled :class:`pyvinecopulib.core.Bicop`, which names no ``x``
-  at all -- raise instead of quietly returning an unconditional answer.
+  There is deliberately **no** ``supports_covariates`` flag here, unlike on a
+  margin or a whole copula: the *signature* decides. Every method above
+  declares a keyword-only ``x``, which ``ty`` enforces on each
+  :class:`~pyvinecopulib.core.BicopBase` subclass, and a matrix is forwarded
+  whenever there is one -- so a pair that models none, the compiled
+  :class:`pyvinecopulib.core.Bicop` above all, raises rather than quietly
+  answering unconditionally.
 
   See Also
   --------
@@ -358,6 +329,10 @@ class BicopLike(Protocol[ArrayT]):
   def hfunc1(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """First h-function ``P(U2 <= u2 | U1 = u1)``.
 
+    .. math::
+
+       h_1(u_1, u_2) = \\mathbb{P}(U_2 \\le u_2 \\mid U_1 = u_1).
+
     Parameters
     ----------
     u : array, shape (n, 2), dtype float
@@ -374,6 +349,10 @@ class BicopLike(Protocol[ArrayT]):
   @abstractmethod
   def hfunc2(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Second h-function ``P(U1 <= u1 | U2 = u2)``.
+
+    .. math::
+
+       h_2(u_1, u_2) = \\mathbb{P}(U_1 \\le u_1 \\mid U_2 = u_2).
 
     Parameters
     ----------
@@ -627,16 +606,6 @@ class MarginLike(Protocol[ArrayT]):
   cases, with no branch on the variable type::
 
       log f(x) = log c(F_1(x_1), ..., F_d(x_d)) + sum_j log pdf_j(x_j)
-
-  :class:`pyvinecopulib.core.Kde1d` satisfies this contract directly, in all
-  three of its modes. Beware that a discrete distribution from another library
-  may spell the mass ``pmf`` and use ``pdf`` for the (infinite) Lebesgue
-  density; coerce foreign objects rather than relying on member names.
-
-  The easy way to satisfy this contract is to subclass
-  :class:`~pyvinecopulib.core.MarginBase`, which supplies ``icdf`` (numerical
-  inversion of ``cdf`` over ``support``) on top of ``pdf`` / ``cdf``, plus the
-  optional capabilities below.
 
   Notes
   -----

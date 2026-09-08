@@ -423,51 +423,16 @@ def select_parts(
   :meth:`~pyvinecopulib.core.Vinecop.select`, with the pair-copula fit
   supplied by the ``fit_edge`` callback, it **returns** the selected
   structure and pairs rather than storing them. It runs the tree-by-tree
-  Dissmann greedy search
-  [1]_: for each tree it builds a candidate graph honoring the proximity
-  condition, weights every candidate edge by ``1 - |tau|`` (``tau`` is the
-  dependence measure named by ``tree_criterion``, Kendall's tau by default,
-  through the same criterion routine as the compiled selector), and keeps a
-  spanning tree (``tree_algorithm``) —
-  maximum-dependence for the MST variants, Wilson-weighted random for the
-  random ones. Each surviving edge's pair copula is fit by the ``fit_edge``
-  callback, whose h-functions feed the next tree.
-
-  The fitted pairs are returned reused, never re-fit: each is placed on its
-  slot in the finalized structure and reoriented with its
-  :meth:`~pyvinecopulib.core.BicopBase.flip` where the slot's orientation
-  requires it.
-
-  A **non-simplified** selection works the same way, because the two halves
-  of that reorientation resolve at one moment from one value. Each edge is
-  fitted in the orientation the search built it in, on the conditioning
-  matrix of its first argument's chain; at finalization the diagonal decides
-  whether the pair's arguments are swapped, and the chain it was fitted on
-  travels with it as the third return value. So there is no second pass and
-  no re-fit — and the conditioning-column order (C1) a conditional pair sees
-  is by construction the one it was estimated on, which it cannot be if
-  derived from the finalized matrix: a swapped slot's matrix names the
-  *other* endpoint's chain. Edge weights read the unconditional
-  pseudo-observations either way; a ``tree_criterion`` that conditions is
-  supplied through ``criterion_function``.
+  Dissmann greedy search [1]_.
 
   Parameters
   ----------
   u : array, shape (n, d), (n, d + k) or (n, 2d), dtype float
-      Pseudo-observations on any array-API namespace (NumPy or PyTorch). With
-      ``k`` discrete variables their left limits ``F(x^-)`` are required too;
-      see :meth:`pdf` on the layouts.
+      See ``fit_parts``.
   fit_edge : callable
-      ``(tree, edge, u_e, x_e) -> BicopLike`` fitting one edge's pair copula;
-      its ``hfunc1`` / ``hfunc2`` must be valid immediately, and it must
-      implement :meth:`~pyvinecopulib.core.BicopBase.flip` (used to
-      reorient reused pairs onto
-      their finalized slots). ``x_e`` is the edge's conditioning matrix, as
-      ``context`` assembles it. An edge with a
-      discrete argument gets a four-column ``u_e`` and the additional keyword
-      ``var_types=[t1, t2]``; the pair it returns must read that layout, so
-      wrap a continuous one in
-      :class:`~pyvinecopulib.core.DiscretePair`.
+      See ``fit_parts``. The pair must also implement
+      :meth:`~pyvinecopulib.core.BicopBase.flip`, which reorients it onto its
+      finalized slot.
   context : ConditioningContext, optional
       Conditioning-context policy (default: simplified / unconditional). A
       :class:`~pyvinecopulib.core.NonSimplifiedContext` makes each edge's
@@ -476,11 +441,8 @@ def select_parts(
   x : array, shape (n, p), or None, optional
       External covariates for conditional fitting, else ``None``.
   fit_level : callable, optional
-      ``(tree, u_level, types) -> list[BicopLike]``, fitting a whole tree
-      level at once; see ``FitLevel``. Preferred over ``fit_edge`` for a
-      level whose surviving edges are all continuous. Whatever it returns
-      must still be per-slot ``flip``-able, since finalization reorients
-      reused pairs.
+      See ``fit_parts``. Whatever it returns must still be per-slot
+      ``flip``-able, since finalization reorients reused pairs.
   trunc_lvl : int, optional
       Maximum number of trees to select (default: ``d - 1``, i.e. untruncated).
   tree_criterion : str, default "tau"
@@ -497,13 +459,12 @@ def select_parts(
       fitted. At the default no non-negative criterion is below it.
   tree_algorithm : str, default "mst_prim"
       ``"mst_prim"`` / ``"mst_kruskal"`` (Dissmann) or ``"random_weighted"`` /
-      ``"random_unweighted"`` (Wilson).
+      ``"random_unweighted"`` (Wilson); the MST variants maximize dependence.
   seeds : list of int, optional
       RNG seeds for the random tree algorithms (ignored by the MST ones).
   var_types : list of str, optional
-      Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete), in
-      variable order; ``None`` means all continuous. Given, it also fixes the
-      dimension, so ``u`` may carry the extra left-limit columns.
+      See ``fit_parts``. Given here it also fixes the dimension, so ``u`` may
+      carry the extra left-limit columns.
   conditioning_set : list of int or None, optional
       1-based variables to place at the tail of the selected order, so they can
       be conditioned on with :meth:`sample_conditional`. Every candidate edge
@@ -512,17 +473,12 @@ def select_parts(
       then relabeled onto that tail. Requires an MST ``tree_algorithm``, and
       the pairs must implement
       :meth:`~pyvinecopulib.core.BicopBase.flip`.
-
   weights : array, shape (n,), optional
-      Observation weights, applied to the tree criterion so a weighted
-      selection agrees with :meth:`~pyvinecopulib.core.Vinecop.select`. They
-      reach the pair fits through ``controls``, which a default
-      ``bicop_class`` fit reads; a caller's own ``fit_edge`` receives no
-      weights and has to apply them itself.
+      See ``fit_parts``.
   criterion_function : callable, optional
-      Required when ``tree_criterion`` is ``"custom"``; maps an ``(n, 2)``
-      matrix -- and, when there are covariates, ``x`` by keyword -- to a
-      criterion value.
+      See ``fit_parts``. Edge weights read the unconditional
+      pseudo-observations even under a non-simplified selection, so a
+      ``tree_criterion`` that conditions is supplied through this.
 
   Returns
   -------
