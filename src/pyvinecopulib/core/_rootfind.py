@@ -1,6 +1,6 @@
-"""Vectorized monotone root-finder (the backend-agnostic ``hinv`` / ``icdf`` default).
+"""Vectorized monotone root-finder (the array-agnostic ``hinv`` / ``icdf`` default).
 
-Array-backend-agnostic (numpy / torch) via the Array API: resolves the
+Array-agnostic (numpy / torch) via the Array API: resolves the
 namespace from the target array and uses only standard elementwise ops. Grad is
 disabled by the *caller's* evaluation context (torch ``no_grad`` /
 ``nullcontext``), not here, so this stays a pure function. Arrays are typed

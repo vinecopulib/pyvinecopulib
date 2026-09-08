@@ -2,11 +2,10 @@
 
 ``fit_parts`` estimates pair copulas tree by tree along a **fixed** structure;
 ``select_parts`` chooses the structure from the data as well, an exact port of
-``Vinecop``'s Dissmann / Wilson search whose selected matrix matches the
-compiled selector's byte for byte. Both **return** the loose parts a caller
-assembles -- pairs, and for a selection the structure and each slot's fitted
-conditioning order -- because a factory needs them before an object exists to
-install them on.
+``Vinecop.select``'s Dissmann / Wilson search, whose selected matrix it matches
+byte for byte. Both **return** the loose parts a caller assembles -- pairs, and
+for a selection the structure and each slot's fitted conditioning order --
+because a factory needs them before an object exists to install them on.
 
 They live here rather than on the class because they are module functions
 already: neither reads ``self`` or ``cls``, and both were ``@staticmethod``s in
@@ -118,7 +117,7 @@ def _make_criterion(
 
 
 def _to_numpy_default(a: Any) -> Any:
-  """Host NumPy view of ``a``, for backends that leave it off the host.
+  """Host NumPy view of ``a``, for an array library that leaves it off the host.
 
   ``np.asarray`` raises on a tensor that lives on an accelerator, so this
   detaches and transfers before converting.
@@ -142,8 +141,8 @@ def _to_numpy_default(a: Any) -> Any:
 FitEdge = Callable[..., BicopLike]
 
 #: ``(tree, u_level, types) -> list[BicopLike]``, fitting a whole tree level
-#: at once: the optional companion to ``FitEdge``, for a backend whose
-#: fitter carries a leading pair axis. ``u_level`` stacks the level's edges in
+#: at once: the optional companion to ``FitEdge``, for a lane whose fitter
+#: carries a leading pair axis. ``u_level`` stacks the level's edges in
 #: ascending edge order and ``types`` gives each edge's pair of variable types,
 #: so the callback needs no structural knowledge. A subclass that supplies one
 #: gets it preferred over ``fit_edge``; everything else keeps working, since a

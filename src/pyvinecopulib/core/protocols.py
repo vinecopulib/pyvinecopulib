@@ -297,9 +297,8 @@ class BicopLike(Protocol[ArrayT]):
   margin or a whole copula: the *signature* decides. Every method above
   declares a keyword-only ``x``, which ``ty`` enforces on each
   :class:`~pyvinecopulib.core.BicopBase` subclass, and a matrix is forwarded
-  whenever there is one -- so a pair that models none, the compiled
-  :class:`pyvinecopulib.core.Bicop` above all, raises rather than quietly
-  answering unconditionally.
+  whenever there is one -- so a pair that models none, ``Bicop`` above all,
+  raises rather than quietly answering unconditionally.
 
   See Also
   --------
@@ -787,7 +786,7 @@ class VinedistLike(Protocol[ArrayT]):
     -------
     array, shape (), dtype float
         The summed log-density, kept zero-dimensional so it stays
-        differentiable on an autograd backend.
+        differentiable under autograd.
     """
 
   @abstractmethod

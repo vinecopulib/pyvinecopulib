@@ -1,4 +1,4 @@
-"""PyTorch backend for vine copula evaluation.
+"""PyTorch lane for vine copula evaluation.
 
 This subpackage is a pure-PyTorch port of the evaluation chain in
 :mod:`pyvinecopulib.core`. Pick it when you need any of:

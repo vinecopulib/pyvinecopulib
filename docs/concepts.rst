@@ -229,11 +229,12 @@ trade compute for accuracy.
 
 The same factorization backs the PyTorch port
 :class:`pyvinecopulib.torch.TorchVinecop` (every pair copula is a
-:class:`pyvinecopulib.torch.TorchTllBicop`); its cascade matches the C++
-evaluator byte-for-byte and additionally offers a ``batched=True``
-fast path, which fires one stacked pair-copula call per group of edges that
-do not depend on each other -- a tree level for ``pdf`` and ``rosenblatt``,
-a level of the dependency graph for ``inverse_rosenblatt``.
+:class:`pyvinecopulib.torch.TorchTllBicop`); its cascade matches
+:class:`pyvinecopulib.core.Vinecop`'s byte-for-byte and additionally
+offers a ``batched=True`` fast path, which fires one stacked pair-copula
+call per group of edges that do not depend on each other -- a tree level
+for ``pdf`` and ``rosenblatt``, a level of the dependency graph for
+``inverse_rosenblatt``.
 
 
 .. _concepts-simplifying:
@@ -303,7 +304,7 @@ below. The first column links the family constant, which lives on
 fit-time search space.
 
 Parameter ranges below are the conventional textbook ones; the
-exact bounds the C++ library enforces are visible via
+exact bounds :class:`~pyvinecopulib.core.Bicop` enforces are visible via
 :attr:`pyvinecopulib.core.Bicop.parameters_lower_bounds` and
 :attr:`pyvinecopulib.core.Bicop.parameters_upper_bounds`. The
 "Kendall's :math:`\tau`" column says how
@@ -424,7 +425,8 @@ the correlation and leaves the degrees of freedom free.
      - :data:`pyvinecopulib.families.tawn`
      - extreme-value
      - 3
-     - bounded; see C++ bounds
+     - bounded; see
+       :attr:`~pyvinecopulib.core.Bicop.parameters_lower_bounds`
      - 0° / 90° / 180° / 270°
      - upper (asymmetric)
      - by quadrature
@@ -529,9 +531,11 @@ family. Three regimes are available via
   ``FitControlsBicop`` tune the kernel order and the
   bandwidth multiplier respectively.
 
-TLL is the default family for both the C++ and PyTorch backends
-because it captures arbitrary non-Gaussian-like dependence (heavy
-tails, asymmetry) without committing to a parametric form, and
+TLL is the default family for both
+:class:`~pyvinecopulib.core.Vinecop` and
+:class:`~pyvinecopulib.torch.TorchVinecop` because it captures
+arbitrary non-Gaussian-like dependence (heavy tails, asymmetry)
+without committing to a parametric form, and
 because its density-grid representation is exactly what
 :class:`pyvinecopulib.torch.TorchTllBicop` consumes for GPU and
 autograd evaluation.
@@ -657,8 +661,8 @@ valid alongside them and simply do not receive ``x``.
 There is deliberately no built-in fitter for both conditional halves.
 :meth:`pyvinecopulib.core.Vinedist.from_data` can fit a custom
 conditional margin specification, but its automatic copula fit is the
-compiled, ``x``-independent :class:`pyvinecopulib.core.Vinecop`. When
-dependence must vary with :math:`X`, fit custom pairs through
+``x``-independent :class:`pyvinecopulib.core.Vinecop`. When dependence
+must vary with :math:`X`, fit custom pairs through
 :meth:`pyvinecopulib.core.VinecopBase.fit`, host them in a
 ``VinecopBase`` subclass that declares covariate support, and compose the
 parts explicitly. ``examples/03_vine_distributions.ipynb`` checks such
@@ -1076,7 +1080,7 @@ Where to next
 -------------
 
 * :class:`pyvinecopulib.core.Bicop` and
-  :class:`pyvinecopulib.core.Vinecop` — the C++/nanobind classes
+  :class:`pyvinecopulib.core.Vinecop` — the core classes
   that implement everything above. The notebooks
   ``examples/01_bivariate_copulas.ipynb``,
   ``examples/02_vine_copulas.ipynb``, and
@@ -1099,8 +1103,10 @@ Where to next
   estimators :class:`~pyvinecopulib.sklearn.VineDensity` and
   :class:`~pyvinecopulib.sklearn.VineRegressor`. The notebook
   ``examples/08_sklearn_estimators.ipynb`` demonstrates them. Both
-  estimators accept a backend (default C++, optional PyTorch) via
-  :mod:`pyvinecopulib.sklearn.backends`.
+  estimators accept a backend —
+  :class:`~pyvinecopulib.sklearn.backends.VinecopBackend` by default,
+  :class:`~pyvinecopulib.sklearn.backends.TorchVinecopBackend` for
+  PyTorch — from :mod:`pyvinecopulib.sklearn.backends`.
 * :mod:`pyvinecopulib.torch` — PyTorch evaluators
   :class:`~pyvinecopulib.torch.TorchTllBicop` and
   :class:`~pyvinecopulib.torch.TorchVinecop` for GPU placement and
@@ -1194,7 +1200,8 @@ two halves. Hooks are needed only to make it *fittable* —
 :meth:`~pyvinecopulib.core.VinedistBase.from_data` runs the two-step estimator
 once, in the base, and asks the subclass which margin class to default to, how
 to fit the copula, and how to coerce input arrays.
-:class:`~pyvinecopulib.core.Vinedist` (NumPy and a compiled copula) and
+:class:`~pyvinecopulib.core.Vinedist` (NumPy and a
+:class:`~pyvinecopulib.core.Vinecop`) and
 :class:`~pyvinecopulib.torch.TorchVinedist` are the two shipped subclasses.
 
 Fitting has one shape throughout: on all four bases ``fit`` mutates and returns

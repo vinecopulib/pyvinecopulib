@@ -189,7 +189,7 @@ default="tau"
       torch uses every core by default, so the cpu default is the
       conservative reading of a measurement that moves with thread count
       rather than a claim that batching cannot pay there. Either way the
-      torch fit is far from competitive with the core backend on cpu.
+      torch fit is far from competitive with ``Vinecop`` on cpu.
 
       A level carrying a discrete edge or a conditioning context is always
       fitted edge at a time: those cannot stack.

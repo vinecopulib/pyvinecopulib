@@ -9,17 +9,17 @@ alike and are not interchangeable.
   copula declares ``x`` in its signature, which ``ty`` enforces on every
   ``BicopBase`` subclass, so the signature *is* the declaration and nothing
   else has to be maintained alongside it. Forwarding unconditionally is also
-  what makes a pair that cannot take one fail loudly -- a compiled ``Bicop``
-  raises on the keyword rather than quietly modeling something else.
+  what makes a pair that cannot take one fail loudly -- ``Bicop`` raises on the
+  keyword rather than quietly modeling something else.
 - :func:`declared_eval` -- **forward only to a part that declares
   ``supports_covariates``.** Margins and whole copulas are reached through
   structural protocols that foreign objects satisfy (a SciPy distribution, an
-  adapter, ``Vinecop`` itself), so their signatures answer nothing: nanobind
-  reports every bound method as ``(*args, **kwargs)``. And one distribution may
-  legitimately hold conditional and unconditional parts side by side -- a
-  covariate-driven margin next to a plain one is a model the caller chose per
-  column, not an accident -- so an undeclared part must be *skipped*, not
-  refused.
+  adapter, ``Vinecop`` itself), so their signatures answer nothing: ``Vinecop``
+  reports every method as ``(*args, **kwargs)`` under introspection. And one
+  distribution may legitimately hold conditional and unconditional parts side
+  by side -- a covariate-driven margin next to a plain one is a model the
+  caller chose per column, not an accident -- so an undeclared part must be
+  *skipped*, not refused.
 
 What keeps the second rule from hiding a silent downgrade is that the refusal
 happens one level up, at the object the covariates were handed to:

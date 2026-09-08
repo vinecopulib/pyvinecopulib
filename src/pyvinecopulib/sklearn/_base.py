@@ -878,7 +878,7 @@ class VineBase(BaseEstimator):
     self.backend_ = backend
 
   def _draw_seeds(self, size: int = 5) -> list[int]:
-    """Derive a list of ints suitable for C++ ``seeds=[...]`` kwargs
+    """Derive a list of ints suitable for ``FitControlsVinecop.seeds``
     from the resolved RNG. Reproducible iff ``random_state_`` is."""
     return [int(x) for x in self.random_state_.randint(0, 2**31 - 1, size=size)]
 

@@ -168,8 +168,8 @@ inline void init_spanning_tree(nb::module_& m) {
         R"""(Select a spanning tree over a candidate graph.
 
 Internal helper for Python-side vine structure selection: it re-exposes the
-boost minimum-/random-spanning-tree routines used by the compiled vinecopulib
-selector, so the Python selector chooses the same edges.
+boost minimum-/random-spanning-tree routines ``Vinecop.select()`` uses, so
+the Python selector chooses the same edges.
 
 Parameters
 ----------

@@ -1107,11 +1107,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         Exogenous covariates, forwarded to ``vinecop_class.from_data`` only
         when that class declares ``supports_covariates`` -- the rule
         ``_covariates.declared_eval`` applies to a whole copula at evaluation,
-        applied here at fitting. A ``Vinecop`` of compiled pair copulas models
-        none, so a conditional ``Vinedist`` is one whose *margins* read ``x``;
-        what keeps that honest is the refusal one level up, where
-        ``supports_fit_covariates`` says whether anything on the lane is
-        fitted on covariates at all.
+        applied here at fitting. A ``Vinecop`` of ``Bicop`` pairs models none,
+        so a conditional ``Vinedist`` is one whose *margins* read ``x``; what
+        keeps that honest is the refusal one level up, where
+        ``supports_fit_covariates`` says whether anything on the lane is fitted
+        on covariates at all.
 
     Returns
     -------

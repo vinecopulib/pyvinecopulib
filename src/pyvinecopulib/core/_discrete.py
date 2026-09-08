@@ -39,8 +39,8 @@ class _ContinuousPair(Protocol):
   """The four unconditional evaluations :class:`DiscretePair` builds on.
 
   Narrower than :class:`~pyvinecopulib.core.BicopLike` on purpose: it is what
-  the difference quotients actually call, and it is a surface the compiled
-  ``Bicop`` satisfies structurally -- ``BicopLike`` it satisfies only nominally,
+  the difference quotients actually call, and it is a surface ``Bicop``
+  satisfies structurally -- ``BicopLike`` it satisfies only nominally,
   its methods taking per-row ``parameters`` where the protocol takes a
   keyword-only ``x``. A conditioning matrix, when there is one, is forwarded
   dynamically (see ``pair_eval``), which is what makes a pair that cannot
@@ -628,10 +628,10 @@ class DiscretePair(BicopBase[ArrayT]):
     a `1/8`-wide atom and far more at the widths the inner trees reach. It is
     deliberately not used: the density divides by the atom's area, and the
     discrete cascade then amplifies a 1e-15 pair-level difference to 8.5e-8 at
-    the vine, which is a visible divergence from the compiled ``Vinecop``. The
-    torch-to-C++ cascade parity is a documented guarantee, so this route stays
-    the reference's, exactly. Taking the rectangle upstream is what would let
-    both sides use it (vinecopulib#757).
+    the vine, which is a visible divergence from ``Vinecop``. Parity between
+    ``TorchVinecop``'s cascade and ``Vinecop``'s is a documented guarantee, so
+    this route stays the reference's, exactly. Taking the rectangle upstream is
+    what would let both sides use it (vinecopulib#757).
     """
     # Summed in two pairs, as the compiled pair copula sums them: the grouping
     # is what makes the two agree to the last bit rather than to rounding.

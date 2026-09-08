@@ -12,8 +12,8 @@ relabeling is value-preserving: the density and log-likelihood are unchanged, an
 only which conditional distributions the sampling order walks changes.
 
 The peel that steers the diagonal towards a chosen tail lives upstream and is
-reachable only through the compiled ``Vinecop.reorient``, so that is what runs --
-on a throwaway vine of independence copulas, whose pair copulas are discarded.
+reachable only through ``Vinecop.reorient``, so that is what runs -- on a
+throwaway vine of independence copulas, whose pair copulas are discarded.
 Borrowing it keeps this exactly as admissible as ``Vinecop`` is, down to the
 error messages, and is the same trade ``VinecopBase.select`` makes when it
 borrows ``_select_spanning_tree`` and ``RVineStructure.from_trees``.
@@ -85,9 +85,8 @@ def reorientation(structure: Any, conditioning_set: list[int]) -> Reorientation:
   RuntimeError
       If ``conditioning_set`` is empty, holds duplicates or entries outside
       ``1, ..., d``, does not leave a variable free, or is not admissible as a
-      sampling-order tail. The messages are the compiled relabeling's, so a
-      caller can catch and match the same thing whichever class it went
-      through.
+      sampling-order tail. The messages are ``Vinecop.reorient``'s, so a caller
+      can catch and match the same thing whichever class it went through.
   """
   from ..pyvinecopulib_ext import Vinecop
 

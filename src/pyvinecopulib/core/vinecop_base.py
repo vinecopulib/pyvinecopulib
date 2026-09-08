@@ -275,8 +275,8 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
   #: inferred: a vine assembles each edge's conditioning matrix through its
   #: ``ConditioningContext`` and cannot know whether the pairs it hosts accept
   #: one, so a consumer such as ``Vinedist`` reads this flag rather than
-  #: forwarding covariates a compiled ``Bicop`` pair would refuse. Set it in a
-  #: subclass whose pairs are conditional.
+  #: forwarding covariates a ``Bicop`` pair would refuse. Set it in a subclass
+  #: whose pairs are conditional.
   supports_covariates: bool = False
 
   # The pair-copula class this vine fits; see the class docstring. A plain
@@ -2027,7 +2027,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
 class _ReorientedVine(VinecopBase[ArrayT]):
   """A vine evaluated in a relabeled sampling order, without copying it.
 
-  The counterpart of the compiled ``VinecopView``: it binds the relabeled
+  The counterpart of ``Vinecop``'s own relabeled view: it binds the relabeled
   structure and resolves every pair copula back to the viewed vine's slot,
   swapping the pair's arguments where the relabeling requires it. Every cascade
   comes from :class:`VinecopBase`; only the pair lookup is redirected.

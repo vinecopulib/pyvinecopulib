@@ -1,10 +1,10 @@
 """JSON persistence for the margin and distribution layer.
 
-``Bicop`` / ``Vinecop`` / ``RVineStructure`` carry ``to_json`` / ``from_json``
-from the compiled library, and ``docs/concepts.rst`` presents that as the way to
-persist a model. The objects this package adds on top -- ``Vinedist`` and the
-margins -- need the same surface, and a margin can be any class a caller wrote,
-so reconstruction goes through a registry rather than a fixed list of types.
+``Bicop`` / ``Vinecop`` / ``RVineStructure`` already carry ``to_json`` /
+``from_json``, and ``docs/concepts.rst`` presents that as the way to persist a
+model. The objects this package adds on top -- ``Vinedist`` and the margins --
+need the same surface, and a margin can be any class a caller wrote, so
+reconstruction goes through a registry rather than a fixed list of types.
 
 The payload carries a ``kind`` naming the margin's type and a ``version`` that a
 reader checks, so a format change is a loud failure rather than a wrong model.
@@ -124,7 +124,7 @@ def _encode_nonfinite(value: Any) -> Any:
   """Replace non-finite floats with strings, recursively.
 
   ``json.dumps`` writes ``Infinity`` / ``NaN``, which strict JSON has no
-  literal for -- and which the C++ reader behind :func:`write_file` rejects.
+  literal for -- and which the reader behind :func:`write_file` rejects.
   They travel as strings and are restored on read, so a ``-inf`` log-likelihood
   in a selection report survives exactly rather than becoming ``null``.
 
@@ -234,7 +234,7 @@ def write_file(filename: str, text: str) -> None:
   """Write a JSON payload, as CBOR when the name ends in ``.cbor``.
 
   The extension rule is the one ``Bicop.to_file`` / ``Vinecop.to_file`` follow
-  -- the same C++ helper, so the whole model surface reads and writes the same
+  -- the same helper, so the whole model surface reads and writes the same
   formats.
 
   Parameters

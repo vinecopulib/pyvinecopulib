@@ -76,14 +76,14 @@ def _check_copula(copula: Any) -> None:
   Raises
   ------
   TypeError
-      If the copula is the compiled ``Vinecop``, which evaluates on NumPy.
+      If the copula is a ``Vinecop``, which evaluates on NumPy.
   """
   from ..pyvinecopulib_ext import Vinecop
 
   if isinstance(copula, Vinecop):
     raise TypeError(
-      "TorchVinedist cannot hold a compiled Vinecop: it evaluates on NumPy "
-      "arrays, so it would detach every gradient and ignore `.to(device)`. "
+      "TorchVinedist cannot hold a Vinecop: it evaluates on NumPy arrays, "
+      "so it would detach every gradient and ignore `.to(device)`. "
       "Lift it first with TorchVinecop.from_vinecop(copula)."
     )
 
