@@ -962,7 +962,8 @@ automatically.
   continuous, discrete and mixed margins with no branch in the
   likelihood path. `MarginBase` (`margin_base.py`) needs only `pdf` /
   `cdf` and supplies `icdf` (bisection), `logpdf`, `cdf_left`, `loglik`,
-  `sample`, `var_type`, `support`, `is_fitted` and a raising `fit`.
+  `sample`, `var_type`, `support`, `is_fitted`, the `nobs` / `n_parameters`
+  a criterion penalizes against, `declare` and a raising `fit`.
   Everything beyond `{pdf, cdf, icdf}` is an **optional capability**
   read with `getattr` (`var_type` ∈ `{"c","d","zi"}`, `cdf_left`,
   `logpdf`, `sample`, `support`, `supports_covariates`), per the house
@@ -1623,7 +1624,9 @@ Round-trip / parity properties to preserve when touching numerics:
 
 - **Custom margins (`pyvinecopulib.core`).** Subclass `MarginBase` and
   define `pdf` / `cdf`; `icdf`, `logpdf`, `cdf_left`, `loglik`,
-  `sample` and `support` come with it. Add `fit(y, weights=None) ->
+  `sample`, `support`, `nobs`, `n_parameters` and `declare` come with it --
+  a fit records the first two into the `_nobs` / `_n_free` slots the base
+  owns, so the criteria work without a subclass restating them. Add `fit(y, weights=None) ->
   Self` to make it an estimator, or leave it out for a fixed margin —
   `is_fitted` is what `resolve_margins` dispatches on. Override
   `cdf_left` whenever the family has an exact left limit (Poisson's

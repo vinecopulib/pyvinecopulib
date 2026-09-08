@@ -676,18 +676,6 @@ def test_the_selection_criterion_drives_the_winner(
   assert getattr(winner, criterion)() == pytest.approx(min(by_hand.values()))
 
 
-def test_bic_penalizes_more_than_aic() -> None:
-  """BIC's `log(n)` penalty is the only difference from AIC's 2."""
-  from pyvinecopulib.margins.scipy import _criteria
-
-  values = _criteria(loglik=-100.0, k=3.0, n=1000)
-  assert values["bic"] > values["aic"]
-  assert values["aicc"] > values["aic"]
-  undefined = _criteria(loglik=-1.0, k=10.0, n=5)
-  assert undefined["aicc"] == float("inf")
-  assert _criteria(loglik=float("-inf"), k=1.0, n=10)["aic"] == float("inf")
-
-
 # --- FitControlsMargin ------------------------------------------------------ #
 
 

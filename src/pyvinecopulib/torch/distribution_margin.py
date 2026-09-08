@@ -459,22 +459,6 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     )
 
   @property
-  def nobs(self) -> Optional[int]:
-    """Number of observations the parameters were estimated from.
-
-    Always ``None``: this margin is constructed from parameters rather than
-    fitted, so ``bic`` and ``aicc`` need the observations passed to them. It is
-    declared so the answer is the documented ``None`` rather than an attribute
-    error resolved by ``getattr``.
-
-    Returns
-    -------
-    None
-        This margin records no sample size.
-    """
-    return None
-
-  @property
   def support(self) -> tuple[float, float]:
     """Closed bounds of the support.
 

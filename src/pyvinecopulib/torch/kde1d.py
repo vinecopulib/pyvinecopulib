@@ -193,7 +193,6 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self.boundary_repair = boundary_repair
     self._loglik: Optional[float] = None
     self.edf: Optional[float] = None
-    self._nobs: Optional[int] = None
     self._selected_bandwidth: Optional[float] = None
     self._dtype = dtype
     self._device = device
@@ -399,45 +398,6 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     return out._adopt(kde)
 
   @classmethod
-  def from_data(
-    cls,
-    y: Tensor,
-    /,
-    controls: Optional[Any] = None,
-    *,
-    x: Optional[Tensor] = None,
-    weights: Optional[Tensor] = None,
-  ) -> "TorchKde1d":
-    """Construct a margin with the defaults and fit it, in one call.
-
-    For the case where the class is the whole specification: a margin that
-    needs bounds, a variable type or a fixed bandwidth is constructed with
-    them and fitted instead.
-
-    Parameters
-    ----------
-    y : Tensor, shape (n,)
-        Observations on the original scale.
-    controls : object, or None, optional
-        Unused; the estimator is configured at construction, so a margin whose
-        bandwidth or bounds differ is named that way instead.
-    x : Tensor, shape (n, p), or None, optional
-        Not supported; passing covariates raises.
-    weights : Tensor, shape (n,), or None, optional
-        Observation weights.
-
-    Returns
-    -------
-    TorchKde1d
-        The fitted margin.
-
-    See Also
-    --------
-    fit : Estimate an already-constructed margin, in place.
-    """
-    return cls().fit(y, controls, x=x, weights=weights)
-
-  @classmethod
   def from_grid(
     cls,
     grid_points: Tensor,
@@ -627,11 +587,10 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
 
   @property
   def nobs(self) -> Optional[int]:
-    """Number of observations the fit retained.
+    """Number of observations the fit **retained**.
 
-    What ``bic`` and ``aicc`` penalize against, so that they answer from a
-    fitted margin the way they do on every other one rather than reporting no
-    sample size.
+    ``Kde1d`` drops a NaN observation and a NaN or zero weight, so this falls
+    below the input length whenever one was dropped.
 
     Returns
     -------

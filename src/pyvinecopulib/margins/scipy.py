@@ -14,6 +14,7 @@ from typing import (
   Iterable,
   Mapping,
   Optional,
+  Self,
   Sequence,
 )
 
@@ -25,7 +26,7 @@ from ..core._validation import (
   reject_covariates,
   usable_observations,
 )
-from ..core.margin_base import criteria as _criteria_at
+from ..core.margin_base import criteria as _criteria
 from ..core.margin_controls import FitControlsMargin
 
 __all__ = ["SciPyMargin"]
@@ -217,6 +218,15 @@ def _curated_margin(
 ) -> "SciPyMargin":
   """Build a candidate with its group's fixed-parameter policy applied.
 
+  Whether ``loc`` and ``scale`` are estimated or pinned is a property of the
+  group a family is used in, not of the family itself -- so ``family`` only
+  names the distribution: ``gamma`` on positive data has ``loc = 0`` by
+  assumption, whereas the same family on an interval of unknown origin does
+  not. Pinning matters twice over — a free ``loc`` is the boundary escape that
+  makes ``weibull_min`` return a plausible triple whose support excludes the
+  smallest observation, and every pinned parameter is one fewer parameter in
+  the information criterion.
+
   Parameters
   ----------
   family : str
@@ -231,73 +241,16 @@ def _curated_margin(
   SciPyMargin
       An unfitted candidate.
   """
-  return SciPyMargin(family, **_curated_fixed(family, partition, bounds))
-
-
-def _curated_fixed(
-  family: str,
-  partition: str,
-  bounds: Optional[tuple[float, float]] = None,
-) -> dict[str, Any]:
-  """Return the fixed-parameter policy for a curated family.
-
-  Whether ``loc`` and ``scale`` are estimated or pinned is a property of the
-  group a family is used in, not of the family itself: ``gamma`` on positive
-  data has ``loc = 0`` by assumption, whereas the same family on an interval of
-  unknown origin does not. Pinning matters twice over — a free ``loc`` is the
-  boundary escape that makes ``weibull_min`` return a plausible triple whose
-  support excludes the smallest observation, and every pinned parameter is one
-  fewer parameter in the information criterion.
-
-  Parameters
-  ----------
-  family : str
-      A family name.
-  partition : str
-      One of the support groups.
-  bounds : tuple of float, or None, optional
-      Known support ``(a, b)``; required by the ``"bounded"`` group.
-
-  Returns
-  -------
-  dict
-      Keyword arguments to pass to :class:`SciPyMargin`. Typed loosely
-      because they are splatted into a signature whose ``**fixed`` sits
-      alongside named parameters of other types.
-
-  """
-  del family  # every family in a group is anchored the same way
   if partition == "real":
-    return {}
-  if partition == "positive":
-    return {"floc": 0.0}
+    return SciPyMargin(family)
+  if partition in ("positive", "count"):
+    return SciPyMargin(family, floc=0.0)
   if partition == "unit":
-    return {"floc": 0.0, "fscale": 1.0}
-  if partition == "count":
-    return {"floc": 0.0}
+    return SciPyMargin(family, floc=0.0, fscale=1.0)
   assert bounds is not None, "the bounded group is only used with bounds"
-  return {"floc": float(bounds[0]), "fscale": float(bounds[1] - bounds[0])}
-
-
-def _criteria(loglik: float, k: float, n: int) -> dict[str, float]:
-  """Evaluate every criterion at one fit.
-
-  Parameters
-  ----------
-  loglik : float
-      Maximized log-likelihood.
-  k : float
-      Number of freely estimated parameters.
-  n : int
-      Number of observations.
-
-  Returns
-  -------
-  dict
-      One entry per criterion name; ``inf`` where a criterion is not
-      defined, so a candidate can never win by being undefined.
-  """
-  return _criteria_at(loglik, k, n)
+  return SciPyMargin(
+    family, floc=float(bounds[0]), fscale=float(bounds[1] - bounds[0])
+  )
 
 
 def _reject(candidate: Any, y: np.ndarray) -> Optional[str]:
@@ -565,7 +518,6 @@ class SciPyMargin(MarginBase[np.ndarray]):
     param_bounds: Optional[Mapping[str, tuple[float, float]]] = None,
     **fixed: float,
   ) -> None:
-    self._declared_var_type: Optional[str] = None
     self._declared_support: Optional[tuple[float, float]] = None
     if family is None:
       if params is not None:
@@ -597,9 +549,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
     )
 
     self._params: Optional[tuple[float, ...]] = None
-    self._n_free = 0
     self._loglik: Optional[float] = None
-    self._nobs: Optional[int] = None
     if params is not None:
       values = tuple(float(v) for v in params)
       if len(values) != len(self._names):
@@ -633,21 +583,21 @@ class SciPyMargin(MarginBase[np.ndarray]):
     self._fixed: dict[str, float] = dict(fixed)
     self._bounds = dict(param_bounds) if param_bounds is not None else {}
     self._params: Optional[tuple[float, ...]] = None
-    self._n_free = 0
     self._loglik: Optional[float] = None
-    self._nobs: Optional[int] = None
 
   def declare(
     self,
     *,
     var_type: Optional[str] = None,
     support: Optional[tuple[float, float]] = None,
-  ) -> "SciPyMargin":
-    """Accept what the caller knows, to be honored by :meth:`select`.
+  ) -> Self:
+    """Take the declared support as well as the type.
 
     A named family already fixes both, so this only steers a search: the type
     decides whether the count families or the continuous ones are candidates,
-    and the support selects the bounded group and pins its endpoints.
+    and the support selects the bounded group and pins its endpoints. Only a
+    bound that is finite at **both** ends does the latter, since the bounded
+    group's policy pins ``loc`` and ``scale`` to the interval's endpoints.
 
     Parameters
     ----------
@@ -661,8 +611,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
     SciPyMargin
         ``self``, so the call chains into :meth:`select`.
     """
-    if var_type is not None:
-      self._declared_var_type = "d" if var_type == "zi" else var_type
+    super().declare(var_type=var_type)
     if support is not None:
       lo, hi = support
       if (
@@ -988,18 +937,6 @@ class SciPyMargin(MarginBase[np.ndarray]):
     return self._params
 
   @property
-  def nobs(self) -> Optional[int]:
-    """Number of observations the fit used.
-
-    Returns
-    -------
-    int or None
-        The sample size, or ``None`` on a margin given its parameters rather
-        than fitted. It is what penalizes ``bic`` and ``aicc``.
-    """
-    return self._nobs
-
-  @property
   def fixed_parameters(self) -> dict[str, float]:
     """Parameters held fixed rather than estimated.
 
@@ -1009,22 +946,6 @@ class SciPyMargin(MarginBase[np.ndarray]):
         Parameter name to pinned value.
     """
     return dict(self._fixed)
-
-  @property
-  def n_parameters(self) -> float:
-    """Number of freely estimated parameters.
-
-    Only what :meth:`fit` actually estimated counts. SciPy's legacy fitter
-    always returns ``loc`` and ``scale``, so the length of the parameter vector
-    overstates this whenever one of them was pinned — by enough to reverse a
-    close comparison, since it moves AIC by 2 per parameter.
-
-    Returns
-    -------
-    float
-        The count; 0 for a margin whose parameters were given at construction.
-    """
-    return float(self._n_free)
 
   @property
   def _fitted_loglik(self) -> float:

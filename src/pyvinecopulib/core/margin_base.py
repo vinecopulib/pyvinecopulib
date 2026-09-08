@@ -225,8 +225,9 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
 
   Everything else comes with the class: :meth:`logpdf`; :meth:`cdf_left`, the
   left limit a variable with atoms needs; :meth:`icdf`, by numerical inversion
-  of ``cdf`` over :attr:`support`; :meth:`loglik`, and the criteria
-  :meth:`aic` / :meth:`bic` / :meth:`aicc` on top of it; :meth:`sample`, which
+  of ``cdf`` over :attr:`support`; :meth:`loglik`, the fit record
+  :attr:`nobs` / :attr:`n_parameters`, and the criteria :meth:`aic` /
+  :meth:`bic` / :meth:`aicc` on top of the three; :meth:`sample`, which
   needs a ``_sample_uniform`` hook for the array namespace's RNG; and
   ``__repr__``. Override any of them where the family has a closed form --
   above all ``icdf`` and ``cdf_left``, whose defaults are correct but are not
@@ -255,11 +256,15 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     per variable.
   - :meth:`declare` accepts what the *caller* knows about the variable ahead
     of the fit -- a type, declared bounds. Those are defaults, never
-    instructions: an explicit constructor argument outranks them.
+    instructions: an explicit constructor argument outranks them. The type is
+    recorded in ``_declared_var_type``, which a searching :meth:`select`
+    reads.
 
   Called with no data, :meth:`loglik` and the criteria report the fit itself:
-  the value a subclass records under ``_fitted_loglik``, penalized by its
-  ``n_parameters`` and, for :meth:`bic` and :meth:`aicc`, its ``nobs``.
+  the value a subclass records under ``_fitted_loglik``, penalized by
+  :attr:`n_parameters` and, for :meth:`bic` and :meth:`aicc`, by :attr:`nobs`.
+  An estimator records those two in ``_n_free`` and ``_nobs`` and inherits both
+  properties, so a fitted margin is comparable with every other one.
 
   Everything past ``pdf`` / ``cdf`` / ``icdf`` is an optional capability a
   consumer reads with ``getattr``, because each member added to the contract
@@ -337,6 +342,12 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
   #: carry is an instruction to search rather than a default.
   supports_controls: bool = True
 
+  #: The variable type a caller declared through :meth:`declare`, with
+  #: ``"zi"`` reduced to ``"d"`` -- the partition a family registry offers. A
+  #: searching :meth:`select` reads it to decide which candidates apply;
+  #: ``None`` means the caller said nothing and the sample decides.
+  _declared_var_type: Optional[str] = None
+
   def declare(
     self,
     *,
@@ -352,10 +363,13 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     strictly less information -- a count column whose smallest observation is
     3 looks unbounded from below.
 
-    The base implementation ignores both, so a margin whose type and support
-    are fixed by construction needs nothing. An override must treat an
-    explicit constructor argument as authoritative and only fill in what was
-    left open, since the caller's schema is a default and not an instruction.
+    A declared type is recorded in ``_declared_var_type`` for a searching
+    :meth:`select` to read, and nothing here honors it: a margin whose type is
+    fixed by construction keeps that type, which is what makes the caller's
+    schema a default rather than an instruction. ``support`` is recorded
+    nowhere, because what a bound narrows differs by family -- override this
+    to take one, as ``SciPyMargin`` does, and treat an explicit constructor
+    argument as authoritative there too.
 
     Parameters
     ----------
@@ -371,6 +385,9 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     MarginBase
         ``self``, so the call chains into :meth:`fit` or :meth:`select`.
     """
+    del support
+    if var_type is not None:
+      self._declared_var_type = "d" if var_type == "zi" else var_type
     return self
 
   @classmethod
@@ -631,6 +648,41 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
       out = xp.round(out)
     return cast(ArrayT, out)
 
+  #: What :attr:`nobs` reports. A subclass's :meth:`fit` records the sample
+  #: size here; ``None`` means the margin never estimated one.
+  _nobs: Optional[int] = None
+
+  #: What :attr:`n_parameters` reports. A subclass's :meth:`fit` records the
+  #: number of parameters it freely estimated here.
+  _n_free: float = 0.0
+
+  @property
+  def nobs(self) -> Optional[int]:
+    """Number of observations the fit used.
+
+    Returns
+    -------
+    int or None
+        The sample size, or ``None`` on a margin carrying parameters it never
+        estimated. It is what penalizes :meth:`bic` and :meth:`aicc`.
+    """
+    return self._nobs
+
+  @property
+  def n_parameters(self) -> float:
+    """Number of freely estimated parameters.
+
+    Only what a fit actually estimated counts, not the length of the parameter
+    vector: a pinned parameter is one fewer here, by enough to reverse a close
+    comparison, since it moves :meth:`aic` by 2 per parameter.
+
+    Returns
+    -------
+    float
+        The count; ``0`` for a margin given its parameters at construction.
+    """
+    return float(self._n_free)
+
   @property
   def _fitted_loglik(self) -> float:
     """Log-likelihood attained at :meth:`fit`.
@@ -736,7 +788,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     bic : The same, penalizing by ``log n`` per parameter.
     aicc : The same, with a small-sample correction.
     """
-    return criteria(self._loglik_value(y), self._n_parameters(), None)["aic"]
+    return criteria(self._loglik_value(y), self.n_parameters, None)["aic"]
 
   def bic(self, y: Optional[ArrayT] = None, /) -> float:
     """Bayesian information criterion of the fit.
@@ -763,7 +815,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         size, since the penalty needs ``n``.
     """
     return criteria(
-      self._loglik_value(y), self._n_parameters(), self._sample_size(y)
+      self._loglik_value(y), self.n_parameters, self._sample_size(y)
     )["bic"]
 
   def aicc(self, y: Optional[ArrayT] = None, /) -> float:
@@ -791,7 +843,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         size.
     """
     return criteria(
-      self._loglik_value(y), self._n_parameters(), self._sample_size(y)
+      self._loglik_value(y), self.n_parameters, self._sample_size(y)
     )["aicc"]
 
   def _loglik_value(self, y: Optional[ArrayT]) -> float:
@@ -805,14 +857,6 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     detach = getattr(value, "detach", None)
     return float(value if detach is None else detach())
 
-  def _n_parameters(self) -> float:
-    """Number of freely estimated parameters.
-
-    What ``n_parameters`` reports, or ``0`` for a margin that declares none --
-    a fixed margin costs nothing in a criterion.
-    """
-    return float(getattr(self, "n_parameters", 0.0))
-
   def _sample_size(self, y: Optional[ArrayT]) -> float:
     """Number of observations the criterion penalizes against.
 
@@ -823,7 +867,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     """
     if y is not None:
       return float(cast(Any, y).shape[0])
-    n = getattr(self, "nobs", None)
+    n = self.nobs
     if n is None:
       raise ValueError(
         f"{type(self).__name__} did not record its sample size, so the "

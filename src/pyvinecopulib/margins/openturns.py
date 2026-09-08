@@ -328,16 +328,13 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     distribution: Optional[Any] = None,
   ) -> None:
     _openturns()
-    self._declared_var_type: Optional[str] = None
     if factory is None and distribution is None:
       # Neither: the family is chosen by `select`, from the registry for
       # whichever variable type the data read as.
       self._factory = None
       self._distribution = None
       self._var_type = "c"
-      self._n_free = 0
       self._loglik: Optional[float] = None
-      self._nobs: Optional[int] = None
       self._unnamed = True
       return
     if factory is not None and distribution is not None:
@@ -364,9 +361,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     self._factory = resolved_factory
     self._distribution = resolved_distribution
     self._var_type = "d" if known.isDiscrete() else "c"
-    self._n_free = 0
     self._loglik = None
-    self._nobs = None
 
   def __deepcopy__(self, memo: dict[int, Any]) -> "OpenTURNSMargin":
     """Copy the margin, rebuilding the one part OpenTURNS refuses to copy.
@@ -464,19 +459,6 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     return _factory_name(self._factory)
 
   @property
-  def nobs(self) -> Optional[int]:
-    """Number of observations the fit used.
-
-    Returns
-    -------
-    int or None
-        The sample size, or ``None`` on a margin built from a distribution
-        that already carried its parameters. It is what penalizes ``bic`` and
-        ``aicc``.
-    """
-    return self._nobs
-
-  @property
   def parameter_names(self) -> tuple[str, ...]:
     """Parameter names in OpenTURNS' order.
 
@@ -499,18 +481,6 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
         One value per entry of :attr:`parameter_names`.
     """
     return tuple(float(value) for value in self.distribution.getParameter())
-
-  @property
-  def n_parameters(self) -> float:
-    """Number of freely estimated parameters.
-
-    Returns
-    -------
-    float
-        What :meth:`fit` estimated; 0 for a margin built from a distribution
-        that already carried its parameters.
-    """
-    return float(self._n_free)
 
   @property
   def _fitted_loglik(self) -> float:
@@ -623,36 +593,6 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
 
   # --- selection ----------------------------------------------------------- #
 
-  def declare(
-    self,
-    *,
-    var_type: Optional[str] = None,
-    support: Optional[tuple[float, float]] = None,
-  ) -> "OpenTURNSMargin":
-    """Accept what the caller knows, to be honored by :meth:`select`.
-
-    A named factory already fixes the variable type, so this only steers a
-    search: it decides which of OpenTURNS' two registries is searched.
-
-    Parameters
-    ----------
-    var_type : str or None, optional
-        ``"c"``, ``"d"`` or ``"zi"``. ``"zi"`` reduces to ``"d"``, the
-        partition OpenTURNS exposes for families with atoms.
-    support : tuple of float, or None, optional
-        Ignored. The registries are partitioned by variable type rather than
-        by support, so bounds do not narrow them.
-
-    Returns
-    -------
-    OpenTURNSMargin
-        ``self``, so the call chains into :meth:`select`.
-    """
-    del support
-    if var_type is not None:
-      self._declared_var_type = "d" if var_type == "zi" else var_type
-    return self
-
   def select(
     self,
     y: Any,
@@ -682,7 +622,9 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     controls : FitControlsMargin, or None, optional
         Bounds the search: ``family_set`` names the candidate factories,
         ``selection_criterion`` scores them, and ``var_type`` says which
-        registry to search. ``support`` is ignored, as in :meth:`declare`.
+        registry to search. ``support`` is ignored: the registries are
+        partitioned by variable type rather than by support, so bounds do not
+        narrow them.
     x : array, shape (n, p), or None, optional
         Not supported; passing covariates raises rather than silently
         selecting an unconditional margin.
