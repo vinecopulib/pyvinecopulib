@@ -196,6 +196,31 @@ class GaussianBicop(BicopBase[Any]):
     return _std_normal_cdf(rho * z2 + xp.sqrt(1.0 - rho * rho) * zp)
 
 
+class IndepBicop(BicopBase[Any]):
+  """Independence pair copula (``c == 1``); inherits the BicopBase defaults.
+
+  Implements only the abstract surface (``pdf`` / ``hfunc1`` / ``hfunc2``), so
+  ``hinv1`` / ``hinv2`` / ``cdf`` / ``flip`` come from :class:`BicopBase` --
+  the two inverses numerically, the latter two as the raising stubs -- and are
+  what the tests hosting it exercise. Array-backend-agnostic apart from
+  ``_sample_uniform``, the one hook with no array-agnostic default.
+  """
+
+  def pdf(self, u: Any, *, x: Optional[Any] = None) -> Any:
+    xp = array_namespace(u)
+    return xp.ones((u.shape[0],), dtype=u.dtype, device=u.device)
+
+  def hfunc1(self, u: Any, *, x: Optional[Any] = None) -> Any:
+    return u[:, 1]
+
+  def hfunc2(self, u: Any, *, x: Optional[Any] = None) -> Any:
+    return u[:, 0]
+
+  def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Any:
+    rng = np.random.default_rng(seeds[0] if seeds else 0)
+    return rng.uniform(size=(n, 2))
+
+
 # --- Fixtures for the pyvinecopulib.sklearn estimator tests ---
 
 

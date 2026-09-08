@@ -25,7 +25,7 @@ from pyvinecopulib.core import (
 )
 from pyvinecopulib.margins import FitControlsMargin, SciPyMargin
 
-from .helpers import widen
+from .helpers import FlatMargin, widen
 from .conftest import GaussianBicop, HostedVinecop
 
 # The discrete cascade owns these; the end-to-end test at the bottom reuses them
@@ -266,22 +266,22 @@ def test_copula_data_needs_no_copula(data: np.ndarray) -> None:
   np.testing.assert_array_equal(layout, dist.copula_layout(data))
 
 
-def test_left_limit_above_the_cdf_is_refused() -> None:
-  """A margin that reports `F(x^-) > F(x)` is caught at the boundary."""
-  from pyvinecopulib.core import MarginBase
+def test_left_limit_above_the_cdf_is_refused_on_both_paths() -> None:
+  """A margin that reports `F(x^-) > F(x)` is caught at the boundary.
 
-  class _Broken(MarginBase[np.ndarray]):
-    @property
-    def var_type(self) -> str:
-      return "d"
+  `copula_data` refused it and `_conditioning_data` assembled the same block by
+  hand without the check -- so a bad left limit was caught everywhere except
+  `sample_conditional`, the one path where it puts a conditioner outside its
+  own atom. The two share one assembly now, so one margin drives both.
+  """
 
-    def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
-      return np.full_like(np.asarray(y, dtype=float), 0.5)
+  class _Broken(FlatMargin):
+    var_type = "d"
 
-    def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    def cdf(self, y: Any, /, *, x: Optional[Any] = None) -> Any:
       return np.full_like(np.asarray(y, dtype=float), 0.3)
 
-    def cdf_left(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    def cdf_left(self, y: Any, /, *, x: Optional[Any] = None) -> Any:
       return np.full_like(np.asarray(y, dtype=float), 0.9)
 
   # A discrete copula, so the var_types cross-check passes and the layout
@@ -289,10 +289,14 @@ def test_left_limit_above_the_cdf_is_refused() -> None:
   u = np.random.default_rng(0).uniform(size=(50, 2))
   layout = np.column_stack([u, u * 0.9])
   copula = pv.Vinecop.from_data(layout, var_types=["d", "d"])
-  with pytest.raises(ValueError, match="cdf_left > cdf"):
-    pv.Vinedist(copula, [_Broken(), _Broken()]).copula_layout(
-      np.ones((5, 2), dtype=float)
-    )
+  dist = pv.Vinedist(copula, [_Broken(), _Broken()])
+  calls = (
+    lambda: dist.copula_layout(np.ones((5, 2), dtype=float)),
+    lambda: dist.sample_conditional(np.ones((5, 1), dtype=float)),
+  )
+  for call in calls:
+    with pytest.raises(ValueError, match="cdf_left > cdf"):
+      call()
 
 
 # --- construction ----------------------------------------------------------- #
@@ -378,32 +382,18 @@ def test_weights_on_a_margin_that_cannot_use_them_raises(
 
 
 def _needs_fitting() -> Any:
-  """An unfitted margin that does not accept weights."""
-  from pyvinecopulib.core import MarginBase
+  """An unfitted margin that does not accept weights.
 
-  class _Unweighted(MarginBase[np.ndarray]):
+  Both declarations are the premise of the test above rather than scenery, so
+  they are made here instead of on the shared `FlatMargin`.
+  """
+
+  class _Unweighted(FlatMargin):
     supports_weights = False
 
     @property
     def is_fitted(self) -> bool:
       return False
-
-    def fit(
-      self,
-      y: Any,
-      /,
-      controls: Any = None,
-      *,
-      x: Optional[Any] = None,
-      weights: Any = None,
-    ) -> Any:
-      return self
-
-    def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
-      return np.ones_like(np.asarray(y, dtype=float))
-
-    def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
-      return np.clip(np.asarray(y, dtype=float), 0.0, 1.0)
 
   return _Unweighted()
 
@@ -1029,16 +1019,7 @@ def test_a_margin_without_to_json_is_refused_by_name():
   x = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=300)
   copula = pv.core.Vinedist.from_data(x).vinecop
 
-  class Unserializable(pv.core.MarginBase):
-    def pdf(self, y, x=None):
-      return np.full(np.shape(y), 0.5)
-
-    def cdf(self, y, x=None):
-      return np.clip(np.asarray(y) * 0.5 + 0.5, 0.0, 1.0)
-
-  dist = pv.core.Vinedist(
-    copula, [Unserializable(), pv.core.Kde1d().fit(x[:, 1])]
-  )
+  dist = pv.core.Vinedist(copula, [FlatMargin(), pv.core.Kde1d().fit(x[:, 1])])
   with pytest.raises(TypeError, match="register_margin_json"):
     dist.to_json()
 
@@ -1049,14 +1030,8 @@ def test_a_registered_custom_margin_round_trips():
   x = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=300)
   copula = pv.core.Vinedist.from_data(x).vinecop
 
-  class Uniform(pv.core.MarginBase):
-    def pdf(self, y, x=None):
-      return np.ones(np.shape(y))
-
-    def cdf(self, y, x=None):
-      return np.clip(np.asarray(y), 0.0, 1.0)
-
-    def to_json(self):
+  class Uniform(FlatMargin):
+    def to_json(self) -> dict[str, Any]:
       return {"kind": "_TestUniform"}
 
   pv.core.register_margin_json("_TestUniform", lambda payload: Uniform())
@@ -1297,36 +1272,6 @@ def test_logpdf_reads_the_parts_namespace_not_the_inputs() -> None:
   pair.interp_grid.values.requires_grad_(True)
   with_grad = dist.logpdf(y)
   assert with_grad.requires_grad
-
-
-def test_sample_conditional_also_refuses_a_left_limit_above_the_cdf() -> None:
-  """The same impossibility, on the path that used to miss it.
-
-  `copula_data` refused it and `_conditioning_data` assembled the same block by
-  hand without the check -- so a bad left limit was caught everywhere except
-  `sample_conditional`, the one path where it puts a conditioner outside its
-  own atom. The two share one assembly now.
-  """
-
-  class _Broken(MarginBase[Any]):
-    var_type = "d"
-
-    def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
-      return np.full_like(np.asarray(y, dtype=float), 0.5)
-
-    def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
-      return np.full_like(np.asarray(y, dtype=float), 0.3)
-
-    def cdf_left(self, y: Any, *, x: Optional[Any] = None) -> Any:
-      return np.full_like(np.asarray(y, dtype=float), 0.9)
-
-  u = np.random.default_rng(0).uniform(size=(50, 2))
-  copula = pv.Vinecop.from_data(
-    np.column_stack([u, u * 0.9]), var_types=["d", "d"]
-  )
-  dist = pv.Vinedist(copula, [_Broken(), _Broken()])
-  with pytest.raises(ValueError, match="cdf_left > cdf"):
-    dist.sample_conditional(np.ones((5, 1), dtype=float))
 
 
 # --- fit re-estimates the parts it holds ------------------------------------- #

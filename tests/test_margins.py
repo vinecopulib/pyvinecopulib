@@ -143,7 +143,11 @@ def test_kde1d_margin_raises_before_fit() -> None:
 
 
 def test_kde1d_is_passed_through_by_as_margin(sample: np.ndarray) -> None:
-  """A `Kde1d` needs no adapter: it satisfies the contract already."""
+  """A `Kde1d` needs no adapter: it satisfies the contract already.
+
+  Anything this library made is returned unchanged, so routing every margin
+  through `as_margin` cannot re-wrap one.
+  """
   kde = Kde1d(xmin=0.0).fit(sample)
   assert as_margin(kde) is kde
   assert as_margin(as_margin(kde)) is kde
@@ -225,12 +229,6 @@ def test_callable_margin_specifications_receive_weights() -> None:
 
 
 # --- as_margin -------------------------------------------------------------- #
-
-
-def test_as_margin_is_idempotent(sample: np.ndarray) -> None:
-  """Anything this library made is returned unchanged."""
-  m = Kde1d().fit(sample)
-  assert as_margin(m) is m
 
 
 def test_as_margin_adopts_a_raw_kde1d(sample: np.ndarray) -> None:

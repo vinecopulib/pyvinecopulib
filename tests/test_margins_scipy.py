@@ -1,15 +1,18 @@
 """Tests for `SciPyMargin`, its family search, and `FitControlsMargin`.
 
-Five contracts are pinned here. That a parametric margin counts only the
+Four contracts are pinned here. That a parametric margin counts only the
 parameters it actually estimated, since SciPy's legacy fitter always returns
-`loc` and `scale` and every miscounted parameter moves AIC by 2. That `fit`
-estimates the family it was given while `select` also chooses one. That the
+`loc` and `scale` and every miscounted parameter moves AIC by 2. That the
 curated candidate set is *ours*: the documented traps -- `vonmises` winning a
 blind sweep on clean gamma data, a `weibull_min` fit whose `loc` overshoots the
 smallest observation, a Student `t` collapsing onto an atom, and counts ranked
 against densities -- must not reach the caller, and every refusal names its
-cause rather than being skipped. That the criteria agree with their own
-definitions. And that `pyvinecopulib.margins` imports without SciPy at all.
+cause rather than being skipped. That the marginal configuration reaches each
+variable's own search. And that `pyvinecopulib.margins` imports without SciPy
+at all.
+
+What every ecosystem adapter owes -- `fit` versus `select`, the criteria, the
+weights and shape refusals -- is in `test_margins_contract.py`.
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ import sys
 import numpy as np
 import pytest
 
-from pyvinecopulib.core import Kde1d, MarginLike, Vinedist
+from pyvinecopulib.core import Kde1d, Vinedist
 from pyvinecopulib.margins import (
   FitControlsMargin,
   SciPyMargin,
@@ -64,20 +67,6 @@ def parametric_margins(dist: Vinedist) -> list[SciPyMargin]:
 # --- SciPyMargin ------------------------------------------------------- #
 
 
-def test_parametric_margin_conforms(gamma_sample: np.ndarray) -> None:
-  """A fitted parametric margin satisfies the margin contract."""
-  m = SciPyMargin("gamma", floc=0.0).fit(gamma_sample)
-  assert isinstance(m, MarginLike)
-  assert m.family_name == "gamma"
-  assert m.var_type == "c"
-  assert m.support == (0.0, float("inf"))
-  np.testing.assert_allclose(
-    m.cdf(m.icdf(np.array([0.1, 0.5, 0.9]))),
-    [0.1, 0.5, 0.9],
-    atol=1e-10,
-  )
-
-
 def test_parametric_margin_counts_only_free_parameters(
   gamma_sample: np.ndarray,
 ) -> None:
@@ -89,6 +78,8 @@ def test_parametric_margin_counts_only_free_parameters(
   assert free.n_parameters == 3.0
   assert pinned.n_parameters == 2.0
   assert pinned.fixed_parameters == {"loc": 0.0}
+  # And pinning it is what makes the support the family's own half-line.
+  assert pinned.support == (0.0, float("inf"))
 
 
 def test_parametric_margin_fully_specified_is_already_fitted() -> None:
@@ -142,16 +133,6 @@ def test_parametric_margin_fits_when_nothing_is_free() -> None:
   assert m.loglik() == pytest.approx(100 * np.log(0.5))
 
 
-@pytest.mark.parametrize("verb", ["fit", "select"])
-def test_parametric_margin_rejects_weights(
-  verb: str, gamma_sample: np.ndarray
-) -> None:
-  """SciPy cannot fit with weights, so asking must raise, not ignore them."""
-  margin = SciPyMargin("gamma", floc=0.0) if verb == "fit" else SciPyMargin()
-  with pytest.raises(TypeError, match="cannot use observation weights"):
-    getattr(margin, verb)(gamma_sample, weights=np.ones_like(gamma_sample))
-
-
 def test_parametric_margin_rejects_an_unknown_family() -> None:
   """A typo in the family name fails at construction, not at fit."""
   with pytest.raises(ValueError, match="unknown scipy.stats family"):
@@ -178,17 +159,6 @@ def test_parametric_margin_rejects_an_empty_sample(verb: str) -> None:
     getattr(margin, verb)(np.array([np.nan, np.nan]))
 
 
-@pytest.mark.parametrize("verb", ["fit", "select"])
-@pytest.mark.parametrize("shape", [(4, 1), (2, 2)])
-def test_scipy_margin_fitters_require_a_univariate_shape(
-  verb: str, shape: tuple[int, int]
-) -> None:
-  """Column matrices must not be flattened into a pooled sample."""
-  margin = SciPyMargin("norm") if verb == "fit" else SciPyMargin()
-  with pytest.raises(ValueError, match=r"y must have shape \(n,\)"):
-    getattr(margin, verb)(np.arange(np.prod(shape), dtype=float).reshape(shape))
-
-
 def test_parametric_margin_needs_bounds_for_an_uncurated_discrete_family() -> (
   None
 ):
@@ -197,40 +167,22 @@ def test_parametric_margin_needs_bounds_for_an_uncurated_discrete_family() -> (
     SciPyMargin("randint").fit(np.array([1.0, 2.0, 3.0]))
 
 
-def test_parametric_margin_raises_before_fit() -> None:
-  """An unfitted margin has neither parameters nor a log-likelihood."""
-  m = SciPyMargin("gamma", floc=0.0)
-  assert not m.is_fitted
-  assert m.support == (float("-inf"), float("inf"))
-  with pytest.raises(RuntimeError, match="is not fitted"):
-    m.parameters
-  with pytest.raises(RuntimeError, match="only defined after"):
-    m.loglik()
-
-
-def test_an_unnamed_margin_has_no_family_until_select(
+def test_an_unnamed_margin_refuses_what_needs_a_family(
   gamma_sample: np.ndarray,
 ) -> None:
   """`SciPyMargin()` is a request to choose a family, not a broken one.
 
   It is what `margins="parametric"` resolves to, so everything that reads a
-  family has to say so rather than fail obscurely -- and the type it can
-  represent is settled by the family it chooses.
+  family has to say so rather than fail obscurely. There is nothing for `fit`
+  to estimate either -- only `select` can supply the family, which is what
+  `test_margins_contract.py` pins for both adapters.
   """
   m = SciPyMargin()
-  assert not m.is_fitted
   assert "unfitted" in repr(m)
-  with pytest.raises(RuntimeError, match="has no family yet"):
-    m.family_name
   with pytest.raises(RuntimeError, match="has no family yet"):
     m.fit(gamma_sample)
   with pytest.raises(ValueError, match="params= was given without a family"):
     SciPyMargin(None, (0.0, 1.0))
-
-  assert m.select(gamma_sample).family_name == "gamma"
-  # Continuous data selected a continuous family; count data would have
-  # selected a count one, which is what "either kind until chosen" means.
-  assert m.var_type == "c"
 
 
 def test_parametric_margin_round_trips_through_pickle(
@@ -259,55 +211,7 @@ def test_a_selected_margin_round_trips_through_pickle(
   assert clone.nobs == m.nobs
 
 
-def test_parametric_margin_simulates_reproducibly() -> None:
-  """Same seeds, same draws."""
-  m = SciPyMargin("norm", (0.0, 1.0))
-  np.testing.assert_array_equal(
-    m.sample(16, seeds=[5]), m.sample(16, seeds=[5])
-  )
-
-
 # --- fit versus select ------------------------------------------------------ #
-
-
-def test_select_replaces_a_wrong_family_and_fit_keeps_it(
-  gamma_sample: np.ndarray,
-) -> None:
-  """One method estimates the family it was given, the other also chooses it.
-
-  The same margin object and the same controls: `fit` has nothing to search,
-  so the `family_set` is inert there, while `select` adopts the winner and
-  *becomes* it.
-  """
-  controls = FitControlsMargin(family_set=["gamma"])
-  kept = SciPyMargin("norm").fit(gamma_sample, controls)
-  assert kept.family_name == "norm"
-
-  replaced = SciPyMargin("norm").select(gamma_sample, controls)
-  assert replaced.family_name == "gamma"
-  assert replaced.is_fitted
-  assert replaced.loglik() > kept.loglik()
-
-
-def test_loglik_evaluates_or_reports_the_fitted_value(
-  gamma_sample: np.ndarray,
-) -> None:
-  """One method, two jobs, as on `Bicop`: data evaluates, no data reports.
-
-  A property would shadow the method and make the polymorphic
-  `margin.loglik(sample)` call raise `TypeError`, which is why the fitted value
-  is reached through the same name rather than a second one.
-  """
-  for margin in (
-    SciPyMargin("norm").fit(gamma_sample),
-    SciPyMargin().select(
-      gamma_sample, FitControlsMargin(family_set=["norm", "gamma"])
-    ),
-  ):
-    total = margin.loglik(gamma_sample)
-    assert np.ndim(total) == 0
-    np.testing.assert_allclose(total, np.sum(margin.logpdf(gamma_sample)))
-    assert isinstance(margin.loglik(), float)
 
 
 def test_from_data_honors_a_named_family_and_chooses_an_unnamed_one(
@@ -411,15 +315,16 @@ def test_a_half_bounded_support_is_not_a_bounded_one() -> None:
   assert m.family_name not in ("uniform", "beta")
 
 
-def test_a_declared_var_type_overrides_the_inference() -> None:
-  """Integer-valued data can still be declared continuous, or vice versa."""
+def test_the_variable_type_is_inferred_from_the_sample() -> None:
+  """Non-negative integers read as counts; the same values signed do not.
+
+  A declared `var_type` overrides the inference either way, which is the
+  contract's and is pinned in `test_margins_contract.py`; where the inference
+  lands with nothing declared is SciPy's own.
+  """
   x = np.round(np.random.default_rng(2).normal(0.0, 20.0, size=400))
   assert SciPyMargin().select(x).var_type == "c"  # negative, so not counts
   assert SciPyMargin().select(np.abs(x)).var_type == "d"
-  forced_c = SciPyMargin().select(np.abs(x), FitControlsMargin(var_type="c"))
-  assert forced_c.var_type == "c"
-  forced_d = SciPyMargin().select(np.abs(x), FitControlsMargin(var_type="d"))
-  assert forced_d.var_type == "d"
 
 
 def test_a_declared_var_type_supplies_what_the_sample_cannot_show() -> None:
@@ -629,16 +534,6 @@ def test_candidates_that_would_tie_are_deduplicated(
 # --- criteria --------------------------------------------------------------- #
 
 
-def test_criteria_match_their_definitions(gamma_sample: np.ndarray) -> None:
-  """Each criterion is its own formula in the fitted log-likelihood."""
-  m = SciPyMargin("gamma", floc=0.0).fit(gamma_sample)
-  loglik, k, n = m.loglik(), m.n_parameters, float(m.nobs or 0)
-  assert m.aic() == pytest.approx(-2.0 * loglik + 2.0 * k)
-  assert m.bic() == pytest.approx(-2.0 * loglik + k * np.log(n))
-  assert m.aicc() == pytest.approx(m.aic() + 2.0 * k * (k + 1.0) / (n - k - 1))
-  assert m.bic() > m.aic()
-
-
 def test_criteria_take_a_sample_or_read_the_fitted_value(
   gamma_sample: np.ndarray,
 ) -> None:
@@ -656,24 +551,6 @@ def test_criteria_take_a_sample_or_read_the_fitted_value(
   assert fixed.aicc(gamma_sample) == pytest.approx(deviance)
   with pytest.raises(RuntimeError, match="only defined after"):
     fixed.bic()
-
-
-@pytest.mark.parametrize("criterion", ["aic", "bic", "aicc"])
-def test_the_selection_criterion_drives_the_winner(
-  criterion: str, gamma_sample: np.ndarray
-) -> None:
-  """Whichever criterion is asked for is the one the search minimizes."""
-  families = ["norm", "logistic", "laplace"]
-  winner = SciPyMargin().select(
-    gamma_sample,
-    FitControlsMargin(family_set=families, selection_criterion=criterion),
-  )
-  by_hand = {
-    family: getattr(SciPyMargin(family).fit(gamma_sample), criterion)()
-    for family in families
-  }
-  assert winner.family_name == min(by_hand, key=lambda f: by_hand[f])
-  assert getattr(winner, criterion)() == pytest.approx(min(by_hand.values()))
 
 
 # --- FitControlsMargin ------------------------------------------------------ #
@@ -740,22 +617,6 @@ def test_select_raises_rather_than_silently_falling_back(
     )
 
 
-def test_on_failure_fallback_substitutes_a_kernel_density(
-  collapsed_trap: np.ndarray,
-) -> None:
-  """When nothing is admissible the fallback is nonparametric, never `norm`."""
-  controls = FitControlsMargin(family_set=["t"], on_failure="fallback")
-  with pytest.warns(UserWarning, match="kernel-density margin was") as caught:
-    dist = Vinedist.from_data(
-      collapsed_trap, margins="parametric", margin_controls=controls
-    )
-  assert all(isinstance(m, Kde1d) for m in dist.margins)
-  assert len(caught) == 2  # one per column, and no more
-  # The warning carries the cause, so the substitution is not a mystery.
-  assert "t: degenerate parameter scale" in str(caught[0].message)
-  assert np.all(np.isfinite(dist.logpdf(collapsed_trap)))
-
-
 def test_family_set_is_refused_by_a_margin_that_cannot_search(
   lognormal_pair: np.ndarray,
 ) -> None:
@@ -816,23 +677,6 @@ def test_declared_bounds_reach_the_default_margin(
   draws = dist.sample(2000, seeds=[3])
   assert draws[:, 0].min() >= 0.0
   assert draws[:, 1].min() < 0.0
-
-
-def test_margin_controls_reach_the_family_search(
-  lognormal_pair: np.ndarray,
-) -> None:
-  """A broadcast `family_set` bounds the search on every column."""
-  dist = Vinedist.from_data(
-    lognormal_pair,
-    margins="parametric",
-    margin_controls=FitControlsMargin(
-      family_set=["gamma", "lognorm"], selection_criterion="bic"
-    ),
-  )
-  assert [m.family_name for m in parametric_margins(dist)] == [
-    "lognorm",
-    "lognorm",
-  ]
 
 
 # --- wiring ----------------------------------------------------------------- #

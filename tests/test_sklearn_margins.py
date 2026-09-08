@@ -35,6 +35,22 @@ from pyvinecopulib.sklearn import VineDensity, VineRegressor  # noqa: E402
 from .helpers import AtomicMargin  # noqa: E402
 
 
+@pytest.fixture
+def cat_df() -> pd.DataFrame:
+  """A frame whose ordered categorical has non-integer levels."""
+  rs = np.random.RandomState(0)
+  return pd.DataFrame(
+    {
+      "a": rs.normal(size=200),
+      "grade": pd.Categorical(
+        rs.choice([1.5, 2.5, 3.5], 200),
+        categories=[1.5, 2.5, 3.5],
+        ordered=True,
+      ),
+    }
+  )
+
+
 # --- the default is the old pipeline ---------------------------------------- #
 
 
@@ -428,7 +444,7 @@ def test_selection_runs_per_expanded_column(
   assert by_name["cont1"]["family"] not in counts
 
 
-def test_a_failed_family_search_names_its_column() -> None:
+def test_a_failed_family_search_names_its_column(cat_df: pd.DataFrame) -> None:
   """A search that refuses every candidate names the column, as a fit does.
 
   The levels of an ordered categorical are the variable's support, so the
@@ -436,19 +452,8 @@ def test_a_failed_family_search_names_its_column() -> None:
   none of these non-integer levels can be.
   """
   pytest.importorskip("scipy")
-  rs = np.random.RandomState(0)
-  df = pd.DataFrame(
-    {
-      "a": rs.normal(size=200),
-      "grade": pd.Categorical(
-        rs.choice([1.5, 2.5, 3.5], 200),
-        categories=[1.5, 2.5, 3.5],
-        ordered=True,
-      ),
-    }
-  )
   with pytest.raises(ValueError, match=r"margin for 'grade': no parametric"):
-    VineDensity(margins="parametric").fit(df)
+    VineDensity(margins="parametric").fit(cat_df)
 
 
 # --- the response margin ---------------------------------------------------- #
@@ -479,7 +484,7 @@ def test_a_discrete_response_margin_is_refused(
     )
 
 
-def test_a_failing_margin_names_its_column() -> None:
+def test_a_failing_margin_names_its_column(cat_df: pd.DataFrame) -> None:
   """A margin sees one array and cannot say which; the estimator can.
 
   `Kde1d` models a discrete variable on the integer lattice, so an ordered
@@ -488,20 +493,10 @@ def test_a_failing_margin_names_its_column() -> None:
   specification is built, one while it is fitted -- so both have to name the
   column.
   """
-  rs = np.random.RandomState(0)
-  df = pd.DataFrame(
-    {
-      "a": rs.normal(size=200),
-      "grade": pd.Categorical(
-        rs.choice([1.5, 2.5, 3.5], 200),
-        categories=[1.5, 2.5, 3.5],
-        ordered=True,
-      ),
-    }
-  )
   with pytest.raises(ValueError, match=r"margin for 'grade': discrete bounds"):
-    VineDensity().fit(df)
+    VineDensity().fit(cat_df)
 
+  rs = np.random.RandomState(1)
   plain = pd.DataFrame({"a": rs.normal(size=200), "b": rs.normal(size=200)})
   with pytest.raises(ValueError, match=r"margin for 'a': discrete data"):
     VineDensity(margins=Kde1d(type="discrete")).fit(plain)
@@ -534,9 +529,9 @@ def test_an_integer_categorical_is_fitted_on_its_declared_support() -> None:
   assert margin.pdf(np.array([-1.0, 4.0])).tolist() == [0.0, 0.0]
 
 
-def test_a_named_margin_survives_a_default_that_would_refuse_the_column() -> (
-  None
-):
+def test_a_named_margin_survives_a_default_that_would_refuse_the_column(
+  cat_df: pd.DataFrame,
+) -> None:
   """The default is only built where it is needed.
 
   A column can be one the default margin refuses -- an ordered categorical with
@@ -544,16 +539,5 @@ def test_a_named_margin_survives_a_default_that_would_refuse_the_column() -> (
   for every column has answered that already, and should not be stopped by a
   default their specification never uses.
   """
-  rs = np.random.RandomState(2)
-  df = pd.DataFrame(
-    {
-      "a": rs.normal(size=200),
-      "grade": pd.Categorical(
-        rs.choice([1.5, 2.5, 3.5], 200),
-        categories=[1.5, 2.5, 3.5],
-        ordered=True,
-      ),
-    }
-  )
-  est = VineDensity(margins=Kde1d()).fit(df)
+  est = VineDensity(margins=Kde1d()).fit(cat_df)
   assert len(est.distribution_.margins) == 2

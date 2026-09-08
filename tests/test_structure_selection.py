@@ -19,7 +19,7 @@ from pyvinecopulib.core import BicopBase, BicopLike, NonSimplifiedContext
 # wrapper; it is an implementation detail of ``VinecopBase.select``.
 from pyvinecopulib.pyvinecopulib_ext import _select_spanning_tree
 
-from .conftest import HostedVinecop
+from .conftest import HostedVinecop, IndepBicop
 
 
 class _CppBicopLike:
@@ -432,18 +432,9 @@ def test_a_named_pair_class_without_flip_is_refused_before_any_fitting() -> (
   # touched -- the point of `bicop_class` over an opaque callback.
   calls = {"n": 0}
 
-  class _NoFlipPair(pv.core.BicopBase[Any]):
+  class _NoFlipPair(IndepBicop):
     def __init__(self) -> None:
       calls["n"] += 1
-
-    def pdf(self, u: Any, *, x: Any = None) -> Any:
-      return np.ones(u.shape[0])
-
-    def hfunc1(self, u: Any, *, x: Any = None) -> Any:
-      return u[:, 1]
-
-    def hfunc2(self, u: Any, *, x: Any = None) -> Any:
-      return u[:, 0]
 
   class _NoFlipVine(HostedVinecop):
     bicop_class = _NoFlipPair

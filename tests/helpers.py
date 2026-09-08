@@ -5,6 +5,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from pyvinecopulib.core import MarginBase
+from pyvinecopulib.core._validation import reject_covariates
 
 
 def random_data(d: int = 5, n: int = 1000) -> NDArray[np.float64]:
@@ -219,6 +220,51 @@ def count_transfers(device: str) -> Any:
 
   with _Counter():
     yield counts
+
+
+class FlatMargin(MarginBase[NDArray[np.float64]]):
+  """A flat density on the unit interval -- the smallest complete margin.
+
+  ``MarginBase`` needs only ``pdf`` and ``cdf``, and a flat density on a
+  bounded support is the shortest pair satisfying both whose ``icdf`` inverts
+  exactly with no bracket widening, so every test that needs *a* margin rather
+  than a particular one shares this one. ``fit`` is the documented shape for a
+  margin that reads no covariates: it accepts the call and hands ``x`` to
+  ``reject_covariates``.
+
+  Nothing is deferred to ``fit``, so :attr:`is_fitted` is the inherited
+  ``True``; weights are ignored, so :attr:`supports_weights` is the inherited
+  ``False``. A test whose premise is either declares it on a subclass of this,
+  where it reads as the premise rather than as scenery.
+  """
+
+  @property
+  def support(self) -> tuple[float, float]:
+    return (0.0, 1.0)
+
+  def fit(
+    self,
+    y: NDArray[np.float64],
+    /,
+    controls: object = None,
+    *,
+    x: Optional[NDArray[np.float64]] = None,
+    weights: Optional[NDArray[np.float64]] = None,
+  ) -> "FlatMargin":
+    reject_covariates(self, x)
+    del y, controls, weights
+    return self
+
+  def pdf(
+    self, y: NDArray[np.float64], /, *, x: Optional[NDArray[np.float64]] = None
+  ) -> NDArray[np.float64]:
+    ya = np.asarray(y, dtype=float)
+    return np.where((ya >= 0.0) & (ya <= 1.0), 1.0, 0.0)
+
+  def cdf(
+    self, y: NDArray[np.float64], /, *, x: Optional[NDArray[np.float64]] = None
+  ) -> NDArray[np.float64]:
+    return np.clip(np.asarray(y, dtype=float), 0.0, 1.0)
 
 
 class AtomicMargin(MarginBase[NDArray[np.float64]]):

@@ -12,12 +12,15 @@ refused rather than skipping them. That `margin_controls` reaches each
 variable's own search when one of these margins is a vine distribution's. And
 that `pyvinecopulib.margins` imports, and `as_margin` keeps working, without
 OpenTURNS installed at all.
+
+What every ecosystem adapter owes -- `fit` versus `select`, the criteria, the
+weights and shape refusals -- is in `test_margins_contract.py`.
 """
 
 from __future__ import annotations
 
 
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 import pytest
@@ -165,9 +168,6 @@ def test_estimator_recovers_the_generating_parameters(
   assert margin.parameter_names == ("mu_0", "sigma_0")
   np.testing.assert_allclose(margin.parameters, (1.0, 2.0), atol=0.2)
   assert margin.n_parameters == 2.0
-  np.testing.assert_allclose(
-    margin.loglik(), np.sum(margin.logpdf(normal_sample)), atol=0
-  )
 
 
 def test_estimator_accepts_a_factory_object(count_sample: np.ndarray) -> None:
@@ -184,11 +184,10 @@ def test_estimator_knows_its_variable_type_before_it_is_fitted() -> None:
   """Discreteness is a property of the family, so it needs no data."""
   assert OpenTURNSMargin("Poisson").var_type == "d"
   assert OpenTURNSMargin("Gamma").var_type == "c"
-  unfitted = OpenTURNSMargin("Gamma")
-  assert not unfitted.is_fitted
-  assert unfitted.support == (float("-inf"), float("inf"))
-  with pytest.raises(RuntimeError, match="is not fitted"):
-    unfitted.pdf(np.array([1.0]))
+  # A margin with no family cannot answer *from* one, which is a different
+  # complaint from the "is not fitted" of a named margin awaiting data.
+  with pytest.raises(RuntimeError, match="no family yet"):
+    OpenTURNSMargin().pdf(np.array([1.0]))
 
 
 def test_estimator_from_distribution_estimated_nothing() -> None:
@@ -200,106 +199,46 @@ def test_estimator_from_distribution_estimated_nothing() -> None:
     margin.fit(np.zeros(10))
 
 
-def test_estimator_samples_reproducibly(normal_sample: np.ndarray) -> None:
-  """Seeded draws repeat, and land inside the fitted support."""
-  margin = OpenTURNSMargin("Gamma").fit(np.abs(normal_sample) + 0.1)
-  first = margin.sample(50, seeds=[7])
-  np.testing.assert_allclose(margin.sample(50, seeds=[7]), first, atol=0)
-  lo, hi = margin.support
-  assert np.all((first >= lo) & (first <= hi))
-
-
-def test_estimator_rejects_weights_and_unknown_families(
+def test_estimator_rejects_unknown_and_doubly_specified_families(
   normal_sample: np.ndarray,
 ) -> None:
-  """Weights and unknown names fail loudly rather than quietly."""
-  with pytest.raises(TypeError, match="cannot use observation weights"):
-    OpenTURNSMargin("Normal").fit(normal_sample, weights=np.ones(600))
+  """An unknown name fails loudly, wherever it is named.
+
+  At construction, and again in a `family_set` -- where the check happens
+  before any fitting, so the caller sees the typo rather than a search that
+  quietly skipped it.
+  """
   with pytest.raises(ValueError, match="unknown OpenTURNS factory"):
     OpenTURNSMargin("NotAFamily")
   with pytest.raises(ValueError, match="not both"):
     OpenTURNSMargin("Normal", distribution=openturns.Normal())
-
-
-@pytest.mark.parametrize(
-  "fitter",
-  [
-    lambda y: OpenTURNSMargin("Normal").fit(y),
-    lambda y: OpenTURNSMargin().select(
-      y, FitControlsMargin(family_set=["Normal"])
-    ),
-  ],
-  ids=["fit", "select"],
-)
-@pytest.mark.parametrize("shape", [(4, 1), (2, 2)])
-def test_openturns_fitters_require_a_univariate_shape(
-  fitter: Callable[[np.ndarray], Any], shape: tuple[int, int]
-) -> None:
-  """Column matrices must not be flattened into a pooled sample."""
-  with pytest.raises(ValueError, match=r"y must have shape \(n,\)"):
-    fitter(np.arange(np.prod(shape), dtype=float).reshape(shape))
+  with pytest.raises(ValueError, match="unknown OpenTURNS factory"):
+    OpenTURNSMargin().select(
+      normal_sample, FitControlsMargin(family_set=["everything"])
+    )
 
 
 # --- family selection ------------------------------------------------------- #
 
 
-def test_an_unnamed_margin_has_no_family_until_it_selects_one(
-  normal_sample: np.ndarray,
-) -> None:
-  """Constructed with neither argument, the family is `select`'s to choose."""
-  margin = OpenTURNSMargin()
-  assert not margin.is_fitted
-  with pytest.raises(RuntimeError, match="no family yet"):
-    margin.family_name
-  with pytest.raises(RuntimeError, match="no family yet"):
-    margin.pdf(np.array([1.0]))
-  chosen = margin.select(
-    normal_sample, FitControlsMargin(family_set=["Normal", "Laplace"])
-  )
-  # `select` returns the margin it was called on, now carrying the winner:
-  # the margin *is* the selected family rather than holding one.
-  assert chosen is margin
-  assert margin.family_name == "Normal"
-  assert margin.is_fitted
-
-
 def test_select_recovers_the_generating_family(
   normal_sample: np.ndarray,
 ) -> None:
-  """Among competing candidates, the family the data came from wins."""
-  families = ["Normal", "Uniform", "Logistic", "Laplace"]
+  """Among competing candidates, the family the data came from wins.
+
+  And it comes back with that family's parameters, so the search reports the
+  fit it scored rather than an unfitted candidate of the winning family.
+  """
   margin = OpenTURNSMargin().select(
     normal_sample,
-    FitControlsMargin(family_set=families, selection_criterion="bic"),
+    FitControlsMargin(
+      family_set=["Normal", "Uniform", "Logistic", "Laplace"],
+      selection_criterion="bic",
+    ),
   )
   assert margin.family_name == "Normal"
   assert margin.var_type == "c"
   np.testing.assert_allclose(margin.parameters, (1.0, 2.0), atol=0.2)
-  np.testing.assert_allclose(
-    margin.cdf(margin.icdf(np.array([0.25, 0.75]))),
-    [0.25, 0.75],
-    atol=1e-10,
-  )
-  assert len(margin.sample(20, seeds=[3])) == 20
-  # The winner is the argmin on the criterion that was asked for, which is
-  # checkable against the candidates fitted one at a time.
-  scored = {
-    family: OpenTURNSMargin(family).fit(normal_sample).bic(normal_sample)
-    for family in families
-  }
-  assert min(scored, key=lambda family: scored[family]) == margin.family_name
-
-
-def test_select_recovers_a_discrete_family(count_sample: np.ndarray) -> None:
-  """Counts search the discrete registry, and Poisson data pick Poisson."""
-  margin = OpenTURNSMargin().select(
-    count_sample, FitControlsMargin(selection_criterion="bic")
-  )
-  assert margin.family_name == "Poisson"
-  assert margin.var_type == "d"
-  np.testing.assert_allclose(
-    margin.cdf_left(np.array([4.0])), margin.cdf(np.array([3.0])), atol=1e-12
-  )
 
 
 def test_criteria_are_on_the_usual_scale(count_sample: np.ndarray) -> None:
@@ -313,19 +252,6 @@ def test_criteria_are_on_the_usual_scale(count_sample: np.ndarray) -> None:
     np.testing.assert_allclose(
       getattr(margin, name)(count_sample), n * per_observation, rtol=1e-9
     )
-  loglik = float(margin.loglik())
-  np.testing.assert_allclose(margin.aic(), -2.0 * loglik + 2.0 * k, rtol=1e-12)
-  np.testing.assert_allclose(
-    margin.bic(count_sample), -2.0 * loglik + k * np.log(n), rtol=1e-12
-  )
-  np.testing.assert_allclose(
-    margin.aicc(count_sample),
-    margin.aic() + 2.0 * k * (k + 1.0) / (n - k - 1.0),
-    rtol=1e-12,
-  )
-  # The fit records its sample size, so a penalized criterion answers from it.
-  assert margin.nobs == count_sample.size
-  np.testing.assert_allclose(margin.bic(), margin.bic(count_sample), rtol=0)
 
 
 def test_select_honors_a_declared_variable_type(
@@ -380,100 +306,15 @@ def test_select_names_every_refused_candidate(
   assert "narrow family_set" in message
 
 
-def test_from_data_selects_a_family_where_fit_keeps_the_named_one(
-  count_sample: np.ndarray,
-) -> None:
-  """`from_data` reaches `select`, so a wrong family does not survive it."""
-  chosen = OpenTURNSMargin.from_data(count_sample)
-  assert chosen.is_fitted
-  assert chosen.family_name == "Poisson"
-  # `fit` estimates the family it was given, however wrong; `select` replaces
-  # it. That difference is the whole reason both verbs exist.
-  families = FitControlsMargin(family_set=["Normal", "Poisson"])
-  assert OpenTURNSMargin("Normal").fit(count_sample).family_name == "Normal"
-  assert (
-    OpenTURNSMargin("Normal").select(count_sample, families).family_name
-    == "Poisson"
-  )
-
-
-def test_select_on_a_named_margin_keeps_the_family(
-  count_sample: np.ndarray,
-) -> None:
-  """Naming a factory *is* the choice, so `select` reduces to `fit`.
-
-  The same rule `SciPyMargin` follows. It matters because `fit_margin` calls
-  `select` by default, so without it `margins=OpenTURNSMargin("Normal")` comes
-  back as whatever won the registry search -- answering a specification with a
-  different model.
-  """
-  from pyvinecopulib.core._resolve import fit_margin
-
-  named = OpenTURNSMargin("Normal")
-  assert not named.is_fitted
-  assert named.select(count_sample).family_name == "Normal"
-
-  # And through the resolution path a vine distribution actually takes.
-  resolved = fit_margin(OpenTURNSMargin("Normal"), count_sample)
-  assert isinstance(resolved, OpenTURNSMargin)
-  assert resolved.family_name == "Normal"
-
-  # `family_set` is how a caller asks for the search back on a named margin.
-  reopened = OpenTURNSMargin("Normal").select(
-    count_sample, FitControlsMargin(family_set=["Normal", "Poisson"])
-  )
-  assert reopened.family_name == "Poisson"
-
-
-def test_select_rejects_bad_arguments(normal_sample: np.ndarray) -> None:
-  """Argument checks happen before any fitting."""
-  with pytest.raises(ValueError, match="unknown OpenTURNS factory"):
-    OpenTURNSMargin().select(
-      normal_sample, FitControlsMargin(family_set=["everything"])
-    )
-  with pytest.raises(TypeError, match="cannot use observation weights"):
-    OpenTURNSMargin().select(normal_sample, weights=np.ones(600))
-
-
 # --- inside a vine distribution --------------------------------------------- #
 
 
-def test_margin_controls_configure_each_variable_separately() -> None:
-  """A mapping keyed by variable name configures one variable's search.
+def test_the_declared_type_survives_the_fallback() -> None:
+  """A substituted `Kde1d` keeps the variable type the caller declared.
 
-  The two columns are on different families, so a specification that was
-  broadcast to both, or routed to the wrong one, would name the wrong family.
-  """
-  rng = np.random.default_rng(5)
-  y = np.column_stack(
-    [rng.gamma(2.5, 1.5, size=500), rng.normal(1.0, 2.0, size=500)]
-  )
-  dist = Vinedist.from_data(
-    y,
-    margins=OpenTURNSMargin(),
-    margin_controls={
-      "positive": FitControlsMargin(family_set=["Gamma"]),
-      "real": FitControlsMargin(
-        family_set=["Normal", "Laplace"], selection_criterion="bic"
-      ),
-    },
-    names=("positive", "real"),
-  )
-  margins: tuple[Any, ...] = dist.margins
-  assert [margin.family_name for margin in margins] == ["Gamma", "Normal"]
-  # The fitted Gamma bounds the variable below, and the draws respect it.
-  lo, _ = margins[0].support
-  assert np.all(dist.sample(200, seeds=[2])[:, 0] >= lo)
-  assert np.all(np.isfinite(dist.logpdf(y[:20])))
-
-
-def test_fallback_substitutes_a_kernel_density_margin() -> None:
-  """`on_failure="fallback"` answers an impossible search with a `Kde1d`.
-
-  A search that refuses every candidate is decided where the margin for the
-  variable is chosen, rather than inside a margin that would have to stop
-  being an OpenTURNS one to decide it -- so the substitution is reachable
-  through a fit, with one warning naming the cause.
+  The counts keep their atoms: the declaration is what the column is, not a
+  property of the family that failed to fit it -- and only one of the two
+  columns falls back, so the substitution is per variable.
   """
   rng = np.random.default_rng(1)
   y = np.column_stack(

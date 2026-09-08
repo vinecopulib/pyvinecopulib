@@ -18,7 +18,8 @@ import pytest
 
 import pyvinecopulib as pv
 from pyvinecopulib.core import MarginBase, MarginLike
-from pyvinecopulib.core._validation import reject_covariates
+
+from .helpers import FlatMargin
 
 
 class _ShiftedExp(MarginBase[np.ndarray]):
@@ -50,20 +51,6 @@ class _ShiftedExp(MarginBase[np.ndarray]):
   def exact_icdf(self, p: Any) -> Any:
     """The closed form, for comparison against the inherited bisection."""
     return self.shift - np.log1p(-p) / self.rate
-
-
-class _Uniform01(MarginBase[np.ndarray]):
-  """Bounded support, so ``icdf`` needs no bracket search at all."""
-
-  @property
-  def support(self) -> tuple[float, float]:
-    return (0.0, 1.0)
-
-  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
-    return np.where((y >= 0.0) & (y <= 1.0), 1.0, 0.0)
-
-  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
-    return np.clip(y, 0.0, 1.0)
 
 
 class _Geometricish(MarginBase[np.ndarray]):
@@ -130,7 +117,7 @@ def test_icdf_matches_the_closed_form(rate: float, shift: float) -> None:
 
 def test_icdf_on_a_bounded_support() -> None:
   """A finite bracket needs no widening and stays inside the support."""
-  m = _Uniform01()
+  m = FlatMargin()
   p = np.linspace(0.0, 1.0, 11)
   got = m.icdf(p)
   np.testing.assert_allclose(got, p, atol=1e-12)
@@ -372,27 +359,7 @@ def test_covariates_are_not_forwarded_to_an_unconditional_margin() -> None:
 
 def test_fit_refuses_covariates_it_cannot_read() -> None:
   """Silently fitting `f(y)` when `f(y | x)` was asked for is the bad outcome."""
-
-  class _Fittable(MarginBase[np.ndarray]):
-    def fit(
-      self,
-      y: Any,
-      /,
-      controls: Any = None,
-      *,
-      x: Optional[Any] = None,
-      weights: Any = None,
-    ) -> Any:
-      reject_covariates(self, x)
-      return self
-
-    def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
-      return np.ones_like(np.asarray(y, dtype=float))
-
-    def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
-      return np.clip(np.asarray(y, dtype=float), 0.0, 1.0)
-
-  m = _Fittable()
+  m = FlatMargin()
   assert m.fit(np.array([0.5])) is m
   with pytest.raises(ValueError, match="supports_covariates"):
     m.fit(np.array([0.5]), x=np.array([[1.0]]))
@@ -559,29 +526,10 @@ def test_an_array_in_the_controls_slot_is_refused_across_the_margin_rung() -> (
   y = rng.normal(size=200)
   w = np.linspace(0.1, 3.0, 200)
 
-  class _Estimator(MarginBase[np.ndarray]):
-    def fit(
-      self,
-      y: Any,
-      /,
-      controls: Any = None,
-      *,
-      x: Any = None,
-      weights: Any = None,
-    ) -> Any:
-      del y, controls, x, weights
-      return self
-
-    def pdf(self, y: Any, *, x: Any = None) -> Any:
-      return np.ones_like(np.asarray(y, dtype=float))
-
-    def cdf(self, y: Any, *, x: Any = None) -> Any:
-      return np.clip(np.asarray(y, dtype=float), 0.0, 1.0)
-
   with pytest.raises(TypeError, match="array where `controls` goes"):
-    _Estimator().select(y, w)
+    FlatMargin().select(y, w)
   # The legitimate spellings are untouched.
-  assert _Estimator().select(y, weights=w) is not None
-  assert _Estimator().select(y) is not None
+  assert FlatMargin().select(y, weights=w) is not None
+  assert FlatMargin().select(y) is not None
   # And the documented exception still reads the way its own docs say.
   assert pv.core.Kde1d().fit(y, w) is not None
