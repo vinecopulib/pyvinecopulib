@@ -25,6 +25,7 @@ import numpy as np
 
 from ..core import MarginBase, MarginLike
 from ..core._validation import (
+  extra_required,
   reject_array_controls,
   reject_covariates,
   usable_observations,
@@ -40,25 +41,12 @@ _FITTING_TEST: dict[str, str] = {"aic": "AIC", "bic": "BIC", "aicc": "AICC"}
 
 
 def _openturns() -> Any:
-  """Import ``openturns``, or explain which extra provides it.
-
-  Returns
-  -------
-  module
-      The ``openturns`` module.
-
-  Raises
-  ------
-  ImportError
-      If OpenTURNS is not installed.
-  """
-  try:
+  """Return ``openturns``, or raise naming the extra that provides it."""
+  with extra_required(
+    extra="openturns",
+    requirement="pyvinecopulib's OpenTURNS margins require OpenTURNS.",
+  ):
     import openturns
-  except ImportError as e:  # pragma: no cover - exercised in a subprocess
-    raise ImportError(
-      "pyvinecopulib's OpenTURNS margins require OpenTURNS. Install it with "
-      "`pip install pyvinecopulib[openturns]`."
-    ) from e
   return openturns
 
 

@@ -52,13 +52,13 @@ beyond the sklearn convenience layer. See each class docstring for
 the full methodology and references.
 """
 
-try:
+from ..core._validation import extra_required
+
+with extra_required(
+  extra="sklearn",
+  requirement="pyvinecopulib.sklearn requires scikit-learn.",
+):
   import sklearn  # noqa: F401
-except ImportError as e:
-  raise ImportError(
-    "pyvinecopulib.sklearn requires scikit-learn. "
-    "Install it with `pip install pyvinecopulib[sklearn]`."
-  ) from e
 
 from . import backends
 from .backends import (

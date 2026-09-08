@@ -22,6 +22,7 @@ import numpy as np
 
 from ..core import MarginBase
 from ..core._validation import (
+  extra_required,
   reject_array_controls,
   reject_covariates,
   usable_observations,
@@ -128,25 +129,12 @@ def _excluded_block(indent: str = "  ") -> str:
 
 
 def _stats() -> Any:
-  """Import ``scipy.stats``, or explain which extra provides it.
-
-  Returns
-  -------
-  module
-      The ``scipy.stats`` module.
-
-  Raises
-  ------
-  ImportError
-      If SciPy is not installed.
-  """
-  try:
+  """Return ``scipy.stats``, or raise naming the extra that provides it."""
+  with extra_required(
+    extra="scipy",
+    requirement="pyvinecopulib.margins.SciPyMargin requires SciPy.",
+  ):
     import scipy.stats as stats
-  except ImportError as e:  # pragma: no cover - exercised in a subprocess
-    raise ImportError(
-      "pyvinecopulib.margins.SciPyMargin requires SciPy. "
-      "Install it with `pip install pyvinecopulib[scipy]`."
-    ) from e
   return stats
 
 

@@ -3,12 +3,15 @@
 Every check a margin, pair copula, vine or vine distribution performs on its
 inputs lives here: the univariate and covariate layouts, observation weights,
 and the fit-time refusal of covariates a part cannot read. Each takes ``name=``
-so the message names the argument the caller actually passed.
+so the message names the argument the caller actually passed. The refusal an
+absent optional dependency earns lives here too, so every extra is named the
+same way.
 """
 
 from __future__ import annotations
 
-from typing import Any, Optional
+import contextlib
+from typing import Any, Iterator, Optional
 
 from array_api_compat import array_namespace
 
@@ -263,3 +266,40 @@ def reject_array_controls(part: Any, controls: Any) -> None:
     "weights are the keyword-only `weights=`; `Kde1d` is the one class whose "
     "second positional argument is `weights`."
   )
+
+
+@contextlib.contextmanager
+def extra_required(*, extra: str, requirement: str) -> Iterator[None]:
+  """Rewrite an optional dependency's ``ImportError`` to name its extra.
+
+  Guards the ``import`` statement rather than taking a module name to import
+  itself. Two reasons: the statement stays where a reader and a type checker
+  can see it, and ``importlib.import_module`` would not go through
+  ``builtins.__import__`` -- which is how the extras-absent tests simulate an
+  absent package, so a guard built on it reports success there.
+
+  Parameters
+  ----------
+  extra : str
+      The extra that installs the dependency, as ``pyvinecopulib[<extra>]``.
+  requirement : str
+      One sentence saying what needs it, leading the message. It carries its
+      own subject and verb, since one class requires a package where a group
+      of them require it.
+
+  Yields
+  ------
+  None
+      With the guard installed for the block.
+
+  Raises
+  ------
+  ImportError
+      If the guarded import fails.
+  """
+  try:
+    yield
+  except ImportError as e:  # pragma: no cover - exercised in a subprocess
+    raise ImportError(
+      f"{requirement} Install it with `pip install pyvinecopulib[{extra}]`."
+    ) from e
