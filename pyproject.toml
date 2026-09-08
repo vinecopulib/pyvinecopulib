@@ -209,7 +209,7 @@ skips = ["B101"]
 # capitalized.
 checks = [
   "GL02", "GL03", "GL05", "GL07",
-  "PR01", "PR02", "PR03", "PR05", "PR07",
+  "PR01", "PR02", "PR03", "PR04", "PR05", "PR07",
   "RT01", "RT04",
   "SS01", "SS02",
 ]

@@ -140,20 +140,20 @@ are:
 
   Parameters
   ----------
-  data : ndarray, shape (n, d) or (n, d + k), dtype float
+  data : array, shape (n, d) or (n, d + k), dtype float
       Input data matrix. With ``k`` discrete variables their left limits are
       required too; see ``Vinecop.select`` on the layouts.
 
-  controls : FitControlsVinecop, optional
+  controls : FitControlsVinecop, or None, optional
       Fit controls for the vinecop. Defaults to the default constructor.
 
-  structure : RVineStructure, optional
-      An ``RVineStructure``. Provide either this or `matrix`, but not both.
+  structure : RVineStructure, or None, optional
+      An ``RVineStructure``. Provide either this or ``matrix``, but not both.
 
-  matrix : ndarray, dtype uint64, optional
-      RVine matrix. Provide either this or `structure`, but not both.
+  matrix : array, shape (d, d), dtype uint64, or None, optional
+      RVine matrix. Provide either this or ``structure``, but not both.
 
-  var_types : sequence of str, optional
+  var_types : sequence of str, or None, optional
       Variable types for each variable (e.g., 'c' for continuous, 'd' for discrete). Defaults to all continuous.
   )""";
 
@@ -345,17 +345,19 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
 
   Parameters
   ----------
-  structure :
-      An ``RVineStructure``. Provide either this or `matrix`, but not both.
+  structure : RVineStructure, or None, optional
+      The structure. Provide either this or ``matrix``, but not both.
 
-  matrix :
-      Vinecop matrix. Provide either this or `structure`, but not both.
+  matrix : array, shape (d, d), dtype uint64, or None, optional
+      The structure as a matrix. Provide either this or ``structure``, but
+      not both.
 
-  pair_copulas :
-      Pairwise copulas for each edge in the vine. Defaults to an empty list.
+  pair_copulas : list of list of Bicop, optional
+      Pair copulas for each edge in the vine. Defaults to an empty list.
 
-  var_types :
-      Variable types for each variable (e.g., 'c' for continuous, 'd' for discrete). Defaults to all continuous.
+  var_types : sequence of str, optional
+      Variable type per variable -- ``"c"`` for continuous, ``"d"`` for
+      discrete. Defaults to all continuous.
   )""";
 
   nb::class_<Vinecop>(module, "Vinecop", vinecop_doc.doc)

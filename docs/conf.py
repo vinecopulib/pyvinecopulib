@@ -79,6 +79,9 @@ intersphinx_mapping = {
   "python": ("https://docs.python.org/3", None),
   "numpy": ("https://numpy.org/doc/stable", None),
   "torch": ("https://pytorch.org/docs/stable", None),
+  # For the `DataFrame` alias below: the sklearn lane accepts one, and its
+  # docstrings name the type unqualified.
+  "pandas": ("https://pandas.pydata.org/docs", None),
 }
 
 # numpydoc owns the Numpy-style section parser; we keep
@@ -258,6 +261,51 @@ _CLASS_MODULE = {
   "TorchVinedist": "pyvinecopulib.torch",
   "FitControlsTorchBicop": "pyvinecopulib.torch",
   "FitControlsTorchVinecop": "pyvinecopulib.torch",
+  "ControlsLike": "pyvinecopulib.core",
+  "DiscretePair": "pyvinecopulib.core",
+  "IndependencePair": "pyvinecopulib.core",
+  "VinedistLike": "pyvinecopulib.core",
+  "VinedistBase": "pyvinecopulib.core",
+}
+
+#: The documented *functions*, which need ``:func:`` rather than ``:class:``.
+#: Kept apart from ``_CLASS_MODULE`` for that reason alone; both feed
+#: ``numpydoc_xref_aliases`` below.
+_FUNCTION_MODULE = {
+  "margin_from_json": "pyvinecopulib.core",
+  "margin_to_json": "pyvinecopulib.core",
+  "register_margin_json": "pyvinecopulib.core",
+  "as_margin": "pyvinecopulib.margins",
+  "register_margin_adapter": "pyvinecopulib.margins",
+  "resolve_margins": "pyvinecopulib.margins",
+  "resolve_margin_controls": "pyvinecopulib.margins",
+  "to_pseudo_obs": "pyvinecopulib.utils",
+  "sample_uniform": "pyvinecopulib.utils",
+  "wdm": "pyvinecopulib.utils",
+  "find_latent_sample": "pyvinecopulib.utils",
+  "ghalton": "pyvinecopulib.utils",
+  "sobol": "pyvinecopulib.utils",
+  "pairs_copula_data": "pyvinecopulib.utils",
+}
+
+
+#: Link the documented names where they appear in a numpydoc ``Parameters``
+#: or ``Returns`` *type* field, which nothing did before: on every page a
+#: class was a link in the signature and plain text in the table below it.
+#: The alias table is derived from the two dicts above rather than written
+#: again, so a name cannot be linked in prose and dead in a type field.
+#: ``"all"`` means numpydoc leaves every *other* token alone -- which is what
+#: keeps the shape grammar (``shape``, ``n``, ``dtype``, ``or``, ``optional``)
+#: out of the nitpicky build's way.
+numpydoc_xref_param_type = True
+numpydoc_xref_ignore = "all"
+numpydoc_xref_aliases = {
+  **{name: f"{mod}.{name}" for name, mod in _CLASS_MODULE.items()},
+  **{name: f"{mod}.{name}" for name, mod in _FUNCTION_MODULE.items()},
+  # The two array types the package names unqualified, plus the pandas one.
+  "Tensor": "torch.Tensor",
+  "ndarray": "numpy.ndarray",
+  "DataFrame": "pandas.DataFrame",
 }
 
 
@@ -276,6 +324,7 @@ def process_cross_references(content: str, is_docstring: bool = True) -> str:
   meth_ref = r":meth:`" if is_docstring else r"{py:meth}`"
   cls_ref = r":class:`" if is_docstring else r"{py:class}`"
   mod_ref = r":mod:`" if is_docstring else r"{py:mod}`"
+  func_ref = r":func:`" if is_docstring else r"{py:func}`"
 
   # Docstrings (RST) use double backticks; markdown sources use single.
   bt = "``" if is_docstring else "`"
@@ -300,10 +349,23 @@ def process_cross_references(content: str, is_docstring: bool = True) -> str:
     lambda m: f"{cls_ref}~{_fqn(m.group(1))}.{m.group(2)}`",
     content,
   )
+  # ``Class()`` -> :class:`~pkg.mod.Class`, the constructor-call spelling.
+  # Written before the bare form, which would otherwise leave the parentheses
+  # outside the role and render them as literal text.
+  content = re.sub(
+    rf"{bt}({class_alt})\(\){bt}",
+    lambda m: f"{cls_ref}~{_fqn(m.group(1))}`",
+    content,
+  )
   # bare ``Class`` -> :class:`~pkg.mod.Class`
   for cls in classes:
     content = re.sub(
       rf"{bt}{re.escape(cls)}{bt}", f"{cls_ref}~{_fqn(cls)}`", content
+    )
+  # bare ``function`` -> :func:`~pkg.mod.function`
+  for func, mod in _FUNCTION_MODULE.items():
+    content = re.sub(
+      rf"{bt}{re.escape(func)}{bt}", f"{func_ref}~{mod}.{func}`", content
     )
   # Module references — longest-prefix first so `pyvinecopulib.sklearn.backends`
   # wins over `pyvinecopulib.sklearn`.
