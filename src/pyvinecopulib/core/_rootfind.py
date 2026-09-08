@@ -120,7 +120,7 @@ def solve_increasing(
 
   ``f`` must be monotone increasing per element. Bisection with ``n_iter``
   steps gives a bracket width ``(hi - lo) * 2 ** -n_iter`` — with the default 50
-  that is far below the ``[1e-10, 1 - 1e-10]`` clamp the h-functions impose, so
+  that is far below the domain clamp the h-functions impose, so
   the result is exact to that floor. A superlinear (ITP) upgrade can drop in
   behind this signature later without touching callers.
 

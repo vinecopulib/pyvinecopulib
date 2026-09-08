@@ -259,7 +259,7 @@ class BicopLike(Protocol[ArrayT]):
   """Contract for a bivariate (optionally conditional) pair copula.
 
   A pair copula maps pseudo-observations ``u`` of shape ``(n, 2)`` (in the unit
-  square, clamped to ``[1e-10, 1 - 1e-10]``) to a density (``pdf``), the two
+  square, clamped strictly inside it) to a density (``pdf``), the two
   conditional distributions
   ``hfunc1(u) = P(U2 <= u2 | U1 = u1)`` / ``hfunc2(u) = P(U1 <= u1 | U2 = u2)``
   and their inverses (``hinv1`` / ``hinv2``, inverting in the second / first

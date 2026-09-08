@@ -73,9 +73,9 @@ from ._discrete import (
   continuous_view,
   disc_cols,
   edge_columns,
-  n_discrete,
   pair_var_types,
   seed_left_limits,
+  stack_edge,
 )
 from ._reorient import Reorientation, reorientation
 from ._covariates import pair_eval, prepare
@@ -397,7 +397,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     """Store the variable types and derive the per-edge type table."""
     types = check_var_types(var_types, self.d)
     self._var_types = types
-    self._n_discrete = n_discrete(types)
+    self._n_discrete = types.count("d")
     self._disc_cols = disc_cols(types)
     self._pair_types = pair_var_types(self.structure, types)
 
@@ -485,8 +485,8 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     -------
     array, shape (n, d + k) or (n, d), dtype float
         ``u`` coerced to the working array, reduced to the compact layout (to
-        the ``d`` value columns when ``values_only``), and clamped to
-        ``[1e-10, 1 - 1e-10]``.
+        the ``d`` value columns when ``values_only``), and clamped strictly
+        inside the unit square at the working precision.
 
     Raises
     ------
@@ -672,48 +672,6 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
           u_D = xp.matrix_transpose(finalized[cols, :])
     return ctx.edge_context(u_D=u_D, x=x)
 
-  # --- discrete left-limit scratch -------------------------------------- #
-  def _seed_sub(self, u: Any, xp: Any) -> Optional[Any]:
-    """Natural-order left limits from the compact layout, or ``None``.
-
-    ``None`` for an all-continuous vine, which is what switches the whole
-    left-limit cascade off. A continuous variable's column holds its own value:
-    a pair only ever reads the left-limit column of a variable it declares
-    discrete, and this keeps the four-column edge input well defined anyway.
-    """
-    return seed_left_limits(
-      u, self.d, self.order, self._var_types, self._disc_cols, xp
-    )
-
-  def _edge_columns(
-    self,
-    tree: int,
-    edge: int,
-    hfunc1: Any,
-    hfunc2: Any,
-    hfunc1_sub: Optional[Any],
-    hfunc2_sub: Optional[Any],
-  ) -> tuple[Any, Any, Optional[tuple[Any, Any]], tuple[str, str]]:
-    """Resolve one edge's pair-copula input columns and its variable types.
-
-    ``m`` is the min-array entry: the natural-order index of the column
-    finalized in a previous tree. The second pair input comes from ``hfunc2``
-    when ``m`` sits on the natural-order diagonal, else from ``hfunc1``
-    (``class.ipp:1026-1034``). The left-limit pair is returned only when the
-    edge has a discrete variable, and mirrors ``Bicop::format_data``: a
-    continuous variable's left limit is its own value.
-    """
-    return edge_columns(
-      self.structure,
-      self._pair_types,
-      tree,
-      edge,
-      hfunc1,
-      hfunc2,
-      hfunc1_sub,
-      hfunc2_sub,
-    )
-
   # --- non-batched cascades (single source of truth) -------------------- #
   def _pdf(self, u: Any, x: Optional[Any]) -> Any:
     """Vine density as a product of per-edge copula densities (``Vinecop::pdf``).
@@ -741,7 +699,9 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     # Parallel left-limit scratch, allocated only for a discrete vine. hfunc1_sub
     # needs no seed: tree 0 always reads its second input on the diagonal, so
     # every entry is written before it is read.
-    hfunc2_sub: Any = self._seed_sub(u, xp)
+    hfunc2_sub: Any = seed_left_limits(
+      u, self.d, self.order, self._var_types, self._disc_cols, xp
+    )
     hfunc1_sub: Any = (
       None
       if hfunc2_sub is None
@@ -756,15 +716,14 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     )
     pdf = xp.ones(n, dtype=u.dtype, device=u.device)
     s = self.structure
+    pair_types = self._pair_types
     for tree in range(trunc_lvl):
       for edge in range(d - tree - 1):
         edge_copula = self.get_pair_copula(tree, edge)
-        col0, col1, subs, types = self._edge_columns(
-          tree, edge, hfunc1, hfunc2, hfunc1_sub, hfunc2_sub
+        col0, col1, subs, types = edge_columns(
+          s, pair_types, tree, edge, hfunc1, hfunc2, hfunc1_sub, hfunc2_sub
         )
-        u_e = xp.stack(
-          [col0, col1] if subs is None else [col0, col1, *subs], axis=-1
-        )
+        u_e = stack_edge(xp, col0, col1, subs)
         x_e = self._edge_context(tree, edge, x, u_nat, None)
         # Accumulate the density as a product over edges (cwiseProduct,
         # class.ipp:1047).
@@ -813,7 +772,9 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
       hfunc2[:, j] = u[:, order[j] - 1]
     hfunc1 = xp.asarray(hfunc2, copy=True)
     # See _pdf on why hfunc1_sub needs no seed.
-    hfunc2_sub: Any = self._seed_sub(u, xp)
+    hfunc2_sub: Any = seed_left_limits(
+      u, self.d, self.order, self._var_types, self._disc_cols, xp
+    )
     hfunc1_sub: Any = (
       None
       if hfunc2_sub is None
@@ -825,15 +786,14 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
       else None
     )
     s = self.structure
+    pair_types = self._pair_types
     for tree in range(trunc_lvl):
       for edge in range(d - tree - 1):
         edge_copula = self.get_pair_copula(tree, edge)
-        col0, col1, subs, types = self._edge_columns(
-          tree, edge, hfunc1, hfunc2, hfunc1_sub, hfunc2_sub
+        col0, col1, subs, types = edge_columns(
+          s, pair_types, tree, edge, hfunc1, hfunc2, hfunc1_sub, hfunc2_sub
         )
-        u_e = xp.stack(
-          [col0, col1] if subs is None else [col0, col1, *subs], axis=-1
-        )
+        u_e = stack_edge(xp, col0, col1, subs)
         x_e = self._edge_context(tree, edge, x, u_nat, None)
         # hfunc1 only if needed downstream; hfunc2 is the running transform.
         if s.needed_hfunc1(tree, edge):
@@ -1228,7 +1188,8 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     Parameters
     ----------
     u : array, shape (n, d), (n, d + k) or (n, 2d), dtype float
-        Pseudo-observations in ``[0, 1]`` (clamped to ``[1e-10, 1 - 1e-10]``).
+        Pseudo-observations in ``[0, 1]``, clamped strictly inside it at
+        the working precision.
         With ``k`` discrete variables, the left limits ``F(x^-)`` are required
         too: pass the expanded ``(n, 2d)`` layout, or the compact ``(n, d + k)``
         one that omits the left-limit columns of the continuous variables.
@@ -1298,7 +1259,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     Returns
     -------
     array, shape (n, d), dtype float
-        Independent uniforms in ``[1e-10, 1 - 1e-10]``.
+        Independent uniforms, strictly inside ``[0, 1]``.
 
     Raises
     ------
@@ -1360,7 +1321,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     Returns
     -------
     array, shape (n, d), dtype float
-        Dependent uniforms in ``[1e-10, 1 - 1e-10]``.
+        Dependent uniforms, strictly inside ``[0, 1]``.
 
     Raises
     ------
@@ -1415,7 +1376,7 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     Returns
     -------
     array, shape (n, d), dtype float
-        Dependent uniforms in ``[1e-10, 1 - 1e-10]``.
+        Dependent uniforms, strictly inside ``[0, 1]``.
     """
     del num_threads
     seeds = list(seeds) if seeds else []

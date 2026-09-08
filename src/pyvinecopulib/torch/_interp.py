@@ -332,8 +332,8 @@ class InterpolationGrid2D(torch.nn.Module):
     """Conditional integral along one axis.
 
     ``cond_var=1`` returns ``H1(u1, u2) = int_0^{u2} c(u1, s) ds / int_0^1 c(u1, s) ds``;
-    ``cond_var=2`` returns the symmetric quantity. Output is clamped to
-    ``[1e-10, 1-1e-10]``. Thin ``N=1`` wrapper over
+    ``cond_var=2`` returns the symmetric quantity. Output is clamped
+    strictly inside ``[0, 1]``. Thin ``N=1`` wrapper over
     :func:`._batched.integrate_1d_batched`.
     """
     return integrate_1d_batched(
@@ -350,8 +350,8 @@ class InterpolationGrid2D(torch.nn.Module):
     Trapezoidally integrate each grid row up to ``u2`` to get an
     ``(n, m)`` strip, then integrate that strip up to ``u1``,
     renormalizing by the full-strip outer integral so C(1, u2) = u2
-    holds exactly (post-vinecopulib#667 C++ behavior). Clamped to
-    ``[1e-10, 1-1e-10]``. Thin ``N=1`` wrapper over
+    holds exactly (post-vinecopulib#667 C++ behavior). Clamped strictly
+    inside ``[0, 1]``. Thin ``N=1`` wrapper over
     :func:`._batched.integrate_2d_batched`.
     """
     return integrate_2d_batched(
@@ -453,8 +453,8 @@ class InterpolationGrid2D(torch.nn.Module):
     a fixed linear combination of two columns of ``values`` -- so integrating it
     over the first argument reads ``sx`` rather than needing its own table.
 
-    The result carries the same ``* u2 / total`` renormalization and
-    ``[1e-10, 1-1e-10]`` clamp as :meth:`integrate_2d`, so it is that function's
+    The result carries the same ``* u2 / total`` renormalization and domain
+    clamp as :meth:`integrate_2d`, so it is that function's
     value and not a different definition of it.
 
     Parameters

@@ -190,7 +190,7 @@ def integrate_1d_batched(
       ``cond_var=2`` conditions on ``u[..., 1]``.
 
   Returns:
-    Tensor of shape ``(N, n)`` with values in ``[1e-10, 1-1e-10]``.
+    Tensor of shape ``(N, n)``, strictly inside ``[0, 1]``.
   """
   if cond_var not in (1, 2):
     raise ValueError(f"cond_var must be 1 or 2; got {cond_var}")
@@ -366,7 +366,7 @@ def integrate_2d_batched(
   """Batched bivariate CDF (trapezoidal-trapezoidal).
 
   Same shape contract as :func:`integrate_1d_batched`: ``values: (N, m, m)``,
-  ``u: (N, n, 2)``, returns ``(N, n)`` clamped to ``[1e-10, 1-1e-10]``.
+  ``u: (N, n, 2)``, returns ``(N, n)`` clamped strictly inside ``[0, 1]``.
   The result is renormalized by the full-strip outer integral so
   C(1, u2) = u2 holds exactly — matches the post-vinecopulib#667 C++
   behavior and stays in parity with the unbatched
@@ -443,7 +443,7 @@ def _hfunc_from_cells(
   Returns
   -------
   Tensor, shape (N, n), dtype float
-      Conditional distribution values, clamped to ``[1e-10, 1-1e-10]``.
+      Conditional distribution values, clamped strictly inside ``[0, 1]``.
   """
   n_batch, m, _ = values.shape
   flat_v = values.reshape(n_batch, m * m)

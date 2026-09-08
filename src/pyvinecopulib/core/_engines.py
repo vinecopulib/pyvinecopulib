@@ -31,14 +31,13 @@ from ._discrete import (
   collapse_data,
   disc_cols,
   edge_columns,
-  n_discrete,
   pair_var_types,
   seed_left_limits,
   stack_edge,
   with_left_limit,
 )
 from .independence import IndependencePair
-from ._reorient import reorientation
+from ._reorient import _slot_key, reorientation
 from ._validation import validate_weights
 from .bicop_base import flip_of
 from .context import ConditioningContext, SimplifiedContext
@@ -277,7 +276,7 @@ def fit_parts(
   trunc_lvl = int(structure.trunc_lvl)
   order = tuple(int(v) for v in structure.order)
   types = check_var_types(var_types, d)
-  pair_types = pair_var_types(structure, types) if n_discrete(types) else None
+  pair_types = pair_var_types(structure, types) if "d" in types else None
   ua = collapse_data(ua, d, types, "fit")
   n = ua.shape[0]
   x = prepare(ua, x, int(n))
@@ -818,20 +817,13 @@ def select_parts(
   # conditioning set is {struct_array(0..t-1, e)}; the pair is flipped iff
   # the diagonal variable differs from its first argument ``a``
   # (rvine_trees.ipp peel).
-  order = [int(v) for v in structure.order]
   pairs: list[list[BicopLike[ArrayT]]] = []
   cond_order: dict[tuple[int, int], tuple[int, ...]] = {}
   for t in range(int(structure.trunc_lvl)):
     row: list[BicopLike[ArrayT]] = []
     for e in range(d - 1 - t):
-      diag = order[e]
-      partner = int(structure.struct_array(t, e, natural_order=False))
-      conditioning_key = frozenset(
-        int(structure.struct_array(i, e, natural_order=False)) for i in range(t)
-      )
-      a_label, pair, chain = records[t][
-        (frozenset((diag, partner)), conditioning_key)
-      ]
+      diag, key = _slot_key(structure, t, e)
+      a_label, pair, chain = records[t][key]
       row.append(pair if a_label == diag else flip_of(pair))
       # `flip` swaps the pair's two arguments; nothing reorders the
       # conditioning columns, so the slot inherits the order its pair was

@@ -91,22 +91,6 @@ def check_var_types(var_types: Optional[list[str]], d: int) -> tuple[str, ...]:
   return types
 
 
-def n_discrete(var_types: tuple[str, ...]) -> int:
-  """Count the discrete variables.
-
-  Parameters
-  ----------
-  var_types : tuple of str
-      Per-variable types.
-
-  Returns
-  -------
-  int
-      How many entries are ``"d"``.
-  """
-  return sum(t == "d" for t in var_types)
-
-
 def disc_cols(var_types: tuple[str, ...]) -> tuple[int, ...]:
   """Offsets of the left-limit columns within the compact layout's second block.
 
@@ -169,7 +153,7 @@ def collapse_data(
   ValueError
       If ``u`` is not 2-d or its column count matches no accepted layout.
   """
-  k = n_discrete(var_types)
+  k = var_types.count("d")
   accepted = {d + k, 2 * d} | ({d} if values_only else set())
   if u.ndim != 2 or int(u.shape[1]) not in accepted:
     shapes = ", ".join(f"(n, {c})" for c in sorted(accepted))
@@ -265,7 +249,7 @@ def seed_left_limits(
   array, shape (n, d), dtype float, or None
       Left limits in natural order, or ``None`` when nothing is discrete.
   """
-  if n_discrete(var_types) == 0:
+  if "d" not in var_types:
     return None
   sub = xp.empty((u.shape[0], d), dtype=u.dtype, device=u.device)
   for j in range(d):
