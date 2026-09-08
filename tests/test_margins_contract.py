@@ -6,7 +6,7 @@ and a third adapter inherits the suite by adding a row.
 
 What stays in `test_margins_scipy.py` / `test_margins_openturns.py` is what is
 actually one ecosystem's: SciPy's curated candidate set, its traps and its
-admissibility gate; OpenTURNS' marshaling conventions and its
+admissibility check; OpenTURNS' marshaling conventions and its
 `DistributionFactory`; and each lane's own refusal messages -- including the
 discrete split, which SciPy pre-filters with a warning where OpenTURNS refuses
 candidate by candidate.

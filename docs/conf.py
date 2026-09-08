@@ -104,7 +104,7 @@ suppress_warnings = ["autosummary", "myst.header"]
 
 # Fail the build on any unresolved cross-reference. Combined with the ``-W``
 # already passed by ``make docs`` (and the ``verify_docs_build`` CI job), this
-# is the gate that keeps documentation cross-references resolvable.
+# is what keeps documentation cross-references resolvable.
 nitpicky = True
 
 # References with no target to fix. The family aliases are documented on the

@@ -17,7 +17,7 @@ require_x86_64_v3()
 
 from . import core, families, margins, pyvinecopulib_ext, utils  # noqa: E402
 
-# The CPU gate must run before importing the compiled extension.
+# The CPU check must run before importing the compiled extension.
 from ._deprecations import _DEPRECATED_TOP_LEVEL, _resolve_deprecated  # noqa: E402
 from .core import (  # noqa: E402
   Bicop,

@@ -230,7 +230,8 @@ trade compute for accuracy.
 The same factorization backs the PyTorch port
 :class:`pyvinecopulib.torch.TorchVinecop` (every pair copula is a
 :class:`pyvinecopulib.torch.TorchTllBicop`); its cascade matches
-:class:`pyvinecopulib.core.Vinecop`'s byte-for-byte and additionally
+:class:`pyvinecopulib.core.Vinecop`'s to floating-point tolerance, and
+additionally
 offers a ``batched=True`` fast path, which fires one stacked pair-copula
 call per group of edges that do not depend on each other -- a tree level
 for ``pdf`` and ``rosenblatt``, a level of the dependency graph for

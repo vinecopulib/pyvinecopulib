@@ -608,7 +608,7 @@ def test_selected_conditioning_order_is_the_fitted_one(seed: int) -> None:
     divergent += chain != derived
   # Not incidental to these seeds: were the two orders always the same, the
   # finalized matrix would be authority enough and none of this would be
-  # needed. The test would then still pass while gating nothing.
+  # needed. The test would then still pass while checking nothing.
   assert divergent > 0
 
 

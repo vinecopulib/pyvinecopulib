@@ -118,7 +118,7 @@ long-lived development branch. Read the Docs' `latest` follows `main` and
   consequences: CI's `pull_request` trigger must stay unfiltered, because a
   stacked child targets the branch below it; and nothing may push to a
   branch in a stack outside `gh stack` — including bots, which is why
-  `regenerate_notebooks` is label-gated.
+  `regenerate_notebooks` runs only on its label.
 - **Never merge to `main` without express consent.** Open the pull request,
   get it green, and stop. A green matrix and an approved plan are not
   authorization. This applies equally to pushing tags and to changing
@@ -215,7 +215,8 @@ closed unmerged, and some commits carry no number at all.
   `TorchVinecopBackend`).
 - **PyTorch evaluator** — `TorchTllBicop`, `TorchVinecop` (pure-torch
   cascade with GPU placement, autograd, and an optional `batched`
-  evaluation fast path; byte-for-byte parity with the C++ cascade).
+  evaluation fast path; parity with the `Vinecop` cascade to
+  floating-point tolerance).
 - **Backend-neutral extension layer** — the `BicopLike` / `VinecopLike`
   contracts and canonical `BicopBase` / `VinecopBase` bases (NumPy or
   PyTorch) for hosting custom pair copulas in a vine, including
@@ -298,7 +299,7 @@ pyvinecopulib/
       utils/__init__.py          # to_pseudo_obs, wdm, sobol, ghalton, sample_uniform
         _pair_plots.py           # pairs_copula_data plotting helper (pure Python)
 
-      margins/__init__.py        # the two ecosystem adapters + re-exports of core's margin plumbing
+      margins/__init__.py        # the two ecosystem adapters + re-exports of core's margin internals
         scipy.py                 # SciPyMargin (one SciPy family, or select one) — needs the [scipy] extra
         openturns.py             # OpenTURNSMargin — needs the [openturns] extra
 
@@ -428,7 +429,7 @@ For any behavior change:
 - Run the [validation sequence](#tooling), and for anything touching the
   packaging path, an sdist build and install — `build_sdist` is the only
   CI leg that runs `make check`.
-- **A submodule bump additionally runs the numerics gate**, which differs by
+- **A submodule bump additionally runs the numerics suites**, which differ by
   submodule. For `lib/vinecopulib` and `lib/wdm`: `tests/test_torch_tll_bicop.py`,
   `tests/test_torch_vinecop.py` and `tests/test_structure_selection.py`. For
   `lib/kde1d`: `tests/test_kde1d.py`, `tests/test_torch_kde1d.py`,
@@ -885,7 +886,7 @@ automatically.
   `conditioned[0]` on the diagonal — so `from_trees(s.dim, s.get_trees()) == s`).
   Upstream `Vinecop.select` finalizes with the *same* (flip-free)
   convention, so `VinecopBase.select` assembles its selected trees through this
-  same `from_trees` and matches the compiled selector's matrix byte-for-byte —
+  same `from_trees` and matches the compiled selector's matrix exactly —
   one diagonal convention throughout.
 - **Backend-neutral abstraction layer** (pure Python; `core` imports
   without PyTorch). The extension point for custom (e.g. neural,
@@ -1086,7 +1087,7 @@ automatically.
 ### `pyvinecopulib.margins`
 
 The two ecosystem adapters, kept out of `core` because they are the only part
-that needs an extra. The **contract plumbing lives in `core`**, which owns the
+that needs an extra. The **contract internals live in `core`**, which own the
 half a `Vinedist` fit runs on: `MarginLike` / `MarginBase`, `FitControlsMargin`
 (`core/margin_controls.py`), the two registries (`core/_margins.py`) and
 the resolution helpers (`core/_resolve.py`). None of those needs SciPy -- they
@@ -1127,7 +1128,7 @@ Three groups:
   `SciPyMargin` in `margins/scipy.py`, `OpenTURNSMargin` in
   `margins/openturns.py`. Neither module is underscore-prefixed, because each
   *is* an import path a user may reasonably reach for -- both are named for an
-  ecosystem and gated behind its extra; the same-named modules do not shadow
+  ecosystem and behind its extra; the same-named modules do not shadow
   the real packages, since Python 3 resolves `import scipy` absolutely.
 
   **The underscore describes the module, not the names it exports.** It says
@@ -1177,7 +1178,7 @@ Three groups:
 
 Conventions that bind: the fit is **two-step (IFM)** — margins first,
 then the copula on the resulting pseudo-observations — never fit all of
-SciPy (a blind sweep ranks `vonmises` above the true `gamma` because its
+SciPy (an unfiltered sweep ranks `vonmises` above the true `gamma` because its
 reported support lies), and never silently skip a failed candidate: every
 rejection is reported with its reason, and a column where everything fails
 **raises**, naming each family and its cause. `on_failure="fallback"`
@@ -1396,7 +1397,7 @@ Key surface:
     tolerance rather than an equality, and has to be: the compiled
     quantile is not portable to a few ULPs -- rebuilding kde1d with
     `-march=native` alone moves it 19 -- so no port can equal every build of
-    it. The correction is gated on
+    it. The correction is conditional on
     grad being enabled, not on the grid being learned — a fitted fixed grid
     still has to differentiate the quantile in `p`. Two of `Kde1d`'s attribute names could not
     be reused: `type` is `nn.Module`'s dtype cast (read `kde_type`) and

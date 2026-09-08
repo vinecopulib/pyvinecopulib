@@ -356,7 +356,7 @@ def test_as_margin_scipy_forwards_native_log_density(raw: Any) -> None:
 
 
 def test_as_margin_rejects_the_unknown() -> None:
-  """An unrecognized object names both escape hatches."""
+  """An unrecognized object names both opt-outs."""
   with pytest.raises(TypeError, match="MarginBase"):
     as_margin(object())
 

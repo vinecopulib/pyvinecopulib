@@ -417,7 +417,7 @@ def test_batched_to_device_invalidates() -> None:
   assert torch.isfinite(out).all()
 
 
-def test_refitting_in_place_invalidates_the_batched_bake() -> None:
+def test_refitting_in_place_invalidates_the_batched_cache() -> None:
   """An in-place ``fit`` replaces the pairs the cache copied, so it must drop it.
 
   ``select`` gets this from ``_bind_vine``; ``fit`` keeps the structure, and a
@@ -442,7 +442,7 @@ def test_refitting_in_place_invalidates_the_batched_bake() -> None:
   assert not torch.allclose(refit_batched, stale)
 
 
-def test_setting_pair_copulas_invalidates_the_batched_bake() -> None:
+def test_setting_pair_copulas_invalidates_the_batched_cache() -> None:
   """The write hook is the other way the pairs change under a cache."""
   vine = TorchVinecop.from_data(
     _simulate(d=3, n=300, seed=911), controls=FitControlsTorchVinecop()
@@ -782,7 +782,7 @@ def test_cached_and_uncached_gradients_agree_in_direction() -> None:
   assert cosine.item() > 0.99, cosine.item()
 
 
-def test_the_batched_cache_re_bakes_when_grad_tracking_changes() -> None:
+def test_the_batched_cache_rebuilds_when_grad_tracking_changes() -> None:
   """`requires_grad_` after a batched call must not leave a stale cache.
 
   The cache copies each pair's grid into a stacked tensor and `requires_grad_`
@@ -1181,7 +1181,7 @@ def test_batched_handles_a_vine_mixing_indep_and_tll(op: str) -> None:
 
 
 @pytest.mark.parametrize("first", ["sample", "cdf", "inverse_rosenblatt"])
-def test_a_no_grad_cascade_does_not_detach_the_bake(first: str) -> None:
+def test_a_no_grad_cascade_does_not_detach_the_cache(first: str) -> None:
   """`sample` / `cdf` / the inverse evaluate under `no_grad`; `pdf` still fits.
 
   Those three build the stacked grids inside `torch.no_grad()`, which copies
@@ -1388,7 +1388,7 @@ def test_fit_matches_cpp_on_a_given_structure(
   from one generator. These five are chosen rather than generated, and the
   C-vine and D-vine are *complementary* rather than redundant -- measured by
   injecting three mis-indexings into the gather and seeing which cases the
-  1e-9 gate then catches:
+  1e-9 tolerance then catches:
 
   =================  ==========  ==========  ==========
   case               shifted     wrong h     swapped
@@ -1461,7 +1461,7 @@ def test_mixed_grids_refuse_the_batched_path() -> None:
   )
 
 
-def test_load_state_dict_drops_the_stacked_bake() -> None:
+def test_load_state_dict_drops_the_stacked_cache() -> None:
   """Loading new grids must not leave the batched path on the old ones.
 
   The cache and the compiled cascades copy the grids rather than viewing
@@ -1877,7 +1877,7 @@ def test_state_dict_carries_the_model_identity() -> None:
     discrete.load_state_dict(a.state_dict(), strict=True)
 
 
-def test_a_pickle_does_not_carry_the_batched_bake() -> None:
+def test_a_pickle_does_not_carry_the_batched_cache() -> None:
   """The grid-batched state is a cache, and a copy of every pair's grid.
 
   Pickling it doubled the payload after a single batched call, and restored a

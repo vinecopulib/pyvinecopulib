@@ -121,7 +121,7 @@ general whitespace/TOML/JSON checks. `make sync` installs them.
 
 `.github/workflows/pypi.yml` is the single workflow. Jobs:
 
-- **`lint`** — ruff, ruff format and bandit; gates the wheel matrix so a
+- **`lint`** — ruff, ruff format and bandit; guards the wheel matrix so a
   formatting error does not cost 10 cibuildwheel legs.
 - **`build`** — cibuildwheel matrix (10 wheels: Linux glibc/musl, macOS x86_64,
   macOS arm64, Windows × cp311/cp312-ABI3).

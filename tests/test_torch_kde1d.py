@@ -375,7 +375,7 @@ def test_the_quantile_carries_an_exact_gradient() -> None:
 def test_the_quantile_is_differentiable_in_the_probability() -> None:
   """`d icdf / d p = 1 / f(q)`, and it must not depend on the grid being learned.
 
-  The Newton correction that supplies the gradient was gated on
+  The Newton correction that supplies the gradient was conditional on
   `values.requires_grad`, so `d icdf/d p` was dead for a fitted, fixed grid --
   the common case, since the density is fitted rather than learned. The
   correction does not move the value, which is what the comparisons below pin.

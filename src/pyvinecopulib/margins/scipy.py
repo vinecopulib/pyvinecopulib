@@ -85,7 +85,7 @@ _FIT_BOUNDS: dict[str, dict[str, tuple[float, float]]] = {
 
 #: Families kept out of ``_PARTITIONS``, and why. Each is still
 #: reachable by name — ``SciPyMargin("vonmises")`` works — but never enters
-#: an automatic candidate set, because a blind sweep over all of SciPy's
+#: an automatic candidate set, because an unfiltered sweep over all of SciPy's
 #: continuous families ranks ``vonmises`` first on clean gamma data, beating the
 #: true family by 701 AIC units, purely because it advertises the whole real
 #: line as its support while its density integrates to 63.75 there. The reasons
@@ -482,7 +482,8 @@ class SciPyMargin(MarginBase[np.ndarray]):
   **The candidate set** :meth:`select` searches is curated rather than
   everything SciPy ships, and that is a statistical decision. A
   log-likelihood is only comparable across families normalized over the same
-  set, so a blind sweep promotes a family that misstates its own support above
+  set, so an unfiltered sweep promotes a family that misstates its own support
+  above
   the truth: over all of SciPy's continuous families, ``vonmises`` ranks first
   on clean gamma data, beating the true family by 701 AIC units, purely
   because it advertises the whole real line while its density integrates to
@@ -646,7 +647,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
     criterion wins; this margin then *is* that family. The default candidate
     set is curated rather than everything SciPy ships, and that is a
     statistical decision: a log-likelihood is only comparable across families
-    normalized over the same set, so a blind sweep promotes a family that
+    normalized over the same set, so an unfiltered sweep promotes a family that
     misstates its own support above the truth. See the class Notes for the
     grouping and the exclusions.
 

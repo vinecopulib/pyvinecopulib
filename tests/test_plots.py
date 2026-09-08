@@ -1078,7 +1078,7 @@ def test_bicop_plot_takes_one_covariate_row_only() -> None:
       bicop_plot(Conditional(), "contour", x=bad)
 
 
-def test_bicop_plot_places_the_grid_through_the_supplied_seam() -> None:
+def test_bicop_plot_places_the_grid_through_the_supplied_hook() -> None:
   """``place`` is passed explicitly, so the compiled path keeps its NumPy grid."""
   from pyvinecopulib._python_helpers.bicop import bicop_plot
 

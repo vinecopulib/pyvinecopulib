@@ -128,7 +128,7 @@ def _ace_step(
   eps_prev: Tensor,
   abs_err: Tensor,
   trip: Tensor,
-  gate: Tensor,
+  outer: Tensor,
   n: int,
   ind: Tensor,
   ranks: Tensor,
@@ -139,7 +139,7 @@ def _ace_step(
   """One ACE pass, including the per-lane loop state it advances.
 
   Both of :func:`_ace`'s loops take this same step, differing in which score
-  they smooth, which permutation they smooth it under, and what gates their
+  they smooth, which permutation they smooth it under, and what bounds their
   liveness. The state moves with the step rather than beside it so that the
   whole pass is one region -- the counter updates are four more kernels on
   ``(P,)`` tensors, which cost the same as the arithmetic they bookkeep.
@@ -157,7 +157,7 @@ def _ace_step(
       Lanes still iterating.
   eps_prev, abs_err, trip : Tensor, shape (...)
       The previous criterion, the last change in it, and the trip counter.
-  gate : Tensor, shape (...), dtype bool
+  outer : Tensor, shape (...), dtype bool
       An outer condition every lane must also satisfy to stay live. The
       inner loop passes the outer loop's liveness; the outer passes all-true.
   n : int
@@ -189,7 +189,7 @@ def _ace_step(
     eps_prev,
     abs_err,
     trip,
-    gate & (trip <= iter_max) & (abs_err > abs_tol),
+    outer & (trip <= iter_max) & (abs_err > abs_tol),
   )
 
 
@@ -270,7 +270,7 @@ def _ace(
       invisible, so fusing it is worth several times its cost at the sizes a
       vine is usually fitted at. It perturbs the last bits, and the outer
       criterion sits at the float64 noise floor, so a lane's iteration count
-      can move; the C++ grid gate covers the result.
+      can move; the C++ grid check covers the result.
 
   Returns:
     ``(..., n, 2)`` tensor of the ACE-transformed scores ``phi``.
@@ -327,7 +327,7 @@ def _ace(
       & (inner_abs_err > inner_abs_tol)
     )
     while bool(inner_live.any()):
-      # `phi1` is written by the inner loop, so it is gated on `inner_live`
+      # `phi1` is written by the inner loop, so it is conditional on `inner_live`
       # -- which carries `outer_live`. A lane whose *outer* loop converged
       # must not have its `phi1` moved by other lanes' inner iterations.
       phi1, inner_eps, inner_abs_err, inner_iter, inner_live = step(
@@ -421,7 +421,7 @@ def _select_bandwidth_constant(
 
 #: Peak the grid blocking in :func:`_fit_local_likelihood_constant` aims to
 #: stay under. The block's live ``(P, block, n)`` temporaries dominate the
-#: fit's footprint, and six of them are in flight at once, so the peak is
+#: fit's footprint, and six of them are live at once, so the peak is
 #: ``6 * itemsize * block * n * P`` -- measured 48.5 bytes per element at
 #: float64, against 48 predicted. Blocking is exact, grid points not
 #: interacting, so trading block size for memory changes only the launch

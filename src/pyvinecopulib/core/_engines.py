@@ -3,7 +3,7 @@
 ``fit_parts`` estimates pair copulas tree by tree along a **fixed** structure;
 ``select_parts`` chooses the structure from the data as well, an exact port of
 ``Vinecop.select``'s Dissmann / Wilson search, whose selected matrix it matches
-byte for byte. Both **return** the loose parts a caller assembles -- pairs, and
+exactly. Both **return** the loose parts a caller assembles -- pairs, and
 for a selection the structure and each slot's fitted conditioning order --
 because a factory needs them before an object exists to install them on.
 

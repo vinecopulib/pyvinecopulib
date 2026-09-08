@@ -82,11 +82,12 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Host any pair copula in a `TorchVinecop`, not only a grid one: a `BicopBase` that is also an `nn.Module`, with learnable parameters, composes and trains. `examples/10_extending_pyvinecopulib.ipynb` walks through it (#326).
 - Re-export `FitControlsMargin` from `core` and the top level, so all three controls classes sit together where a caller looks for them (#326).
 - Remove `utils.benchmark`, a timing harness with no caller or test (#326).
-- Add the backend-neutral contracts `BicopLike`, `VinecopLike`, `MarginLike` and `VinedistLike` to `pyvinecopulib.core`, which `Bicop`, `Vinecop`, `Kde1d` and `Vinedist` satisfy, so downstream code can type against the contract instead of a concrete class. Each requires what a cascade calls and no more: `cdf` and `flip` on a pair copula are optional capabilities read with `getattr`, needed only on a discrete edge and in structure selection (#236, #237, #292, #326).
+- Add the backend-neutral contracts `BicopLike`, `VinecopLike`, `MarginLike` and `VinedistLike` to `pyvinecopulib.core`, which `Bicop`, `Vinecop`, `Kde1d` and `Vinedist` satisfy, so downstream code can type against the contract instead of a concrete class. Each requires what a cascade calls and no more: `cdf` and `flip` on a pair copula are optional capabilities read with `getattr`, needed only on a discrete edge and in structure selection (#236, #237, #265, #292, #326).
+
 - Add the canonical partial implementations `BicopBase`, `VinecopBase`, `MarginBase` and `VinedistBase`, which run on NumPy or PyTorch: a custom pair copula defines `pdf` / `hfunc1` / `hfunc2`, a custom vine the single `get_pair_copula` hook, a custom margin `pdf` / `cdf`, and a custom distribution nothing at all beyond its two halves (#236, #237, #292, #326).
     - all four take incoming arrays through one `_prep` hook whose default *infers* the namespace, dtype and device from the arrays they already hold, so a subclass on PyTorch writes no conversion code — including for `BicopBase.plot`'s evaluation grid, the one array a base manufactures itself (#327)
     - `BicopBase.plot` takes an optional single-row `x`, since a conditional pair's density is a different surface at every covariate value and a plot shows one slice (#327)
-- `VinecopBase` ships `fit`, `select` and `from_data`, an array-agnostic port of `Vinecop`'s Dissmann and Wilson structure selection whose selected matrix matches `Vinecop.select`'s byte for byte. The fitted pairs are stored through the `set_pair_copulas` hook, and `fit_edge` / `fit_level` are keyword-only on all three (#237, #244, #317, #326, #328).
+- `VinecopBase` ships `fit`, `select` and `from_data`, an array-agnostic port of `Vinecop`'s Dissmann and Wilson structure selection whose selected matrix matches `Vinecop.select`'s exactly. The fitted pairs are stored through the `set_pair_copulas` hook, and `fit_edge` / `fit_level` are keyword-only on all three (#237, #244, #317, #326, #328).
 - Build non-simplified / conditional vines with `ConditioningContext` and its `SimplifiedContext` (default) and `NonSimplifiedContext` policies (#237, #328).
     - `VinecopBase.select` and `.from_data` honor the context while they fit, so a selected conditional vine is estimated as the model it evaluates as; each slot carries the conditioning order its own pair was fitted on, which the finalizing `flip` would otherwise permute (#328)
     - every estimator on `BicopBase` and `VinecopBase` takes an optional `x`, and one that cannot condition on it refuses it rather than fitting the unconditional model (#328)
@@ -121,17 +122,20 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - `TorchVinecop.from_data` selects an R-vine structure natively in torch when `structure=None`, instead of round-tripping through a compiled `Vinecop` (#241, #244).
 - Add `TorchKde1d`, the torch marginal estimator, and the only torch margin that handles discrete and zero-inflated variables (#292, #312).
 - The torch cascades gain a batched fast path that evaluates a whole tree level at once, resolved per device and 3-12x faster on CUDA than the per-edge cascade on
-  `pdf` and `rosenblatt`; `FitControlsTorchVinecop.compile` additionally runs them through `torch.compile` (#219, #239, #305, #307).
+  `pdf` and `rosenblatt`; `FitControlsTorchVinecop.compile` additionally runs them through `torch.compile` (#219, #239, #264, #305, #307).
+
 - `cache_integrals=True` is now the default and exact, with `cdf` and `hfunc*` read in closed form from cumulative-trapezoid prefix tables carrying an exact gradient, plus `TorchTllBicop.rect_mass` for a rectangle's exact probability (#219, #305, #307).
 - Compute the `tll` window smoother in `O(n)` rather than `O(n**2)`: the window
   grows with the data, so at `n = 12000` it was 97% of a vine fit, and a
-  fixed-structure CUDA fit at `d = 9` is 26x faster (#315).
+  fixed-structure CUDA fit at `d = 9` is 26x faster (#313, #315).
+
 - Fit a whole tree level in one call: `FitControlsTorchVinecop.batched_fit` drives the new `fit_level` hook and `TorchTllBicop.from_data_batched`, making a vine fit 1.3-4.0x faster on CUDA, while the opt-in `compile_fit` fuses the `tll` bandwidth search (#316, #319).
 - Invert the `tll` conditional cdf in closed form on the torch path, so `TorchTllBicop.hinv1` / `hinv2` match the compiled ones to machine precision and run 60-120x faster on CPU (#234, [vinecopulib#691](https://github.com/vinecopulib/vinecopulib/pull/691)).
 
 #### scikit-learn
 
-- Add `pyvinecopulib.sklearn` behind a `pyvinecopulib[sklearn]` extra: `VineDensity` and `VineRegressor`, scikit-learn-compatible estimators over mixed continuous and discrete input as a DataFrame or an ndarray (#211).
+- Add `pyvinecopulib.sklearn` behind a `pyvinecopulib[sklearn]` extra: `VineDensity` and `VineRegressor`, scikit-learn-compatible estimators over mixed continuous and discrete input as a DataFrame or an ndarray (#211, #213, #263).
+
 - Add the public backend system `pyvinecopulib.sklearn.backends`: `VinecopBackend` (default) and `TorchVinecopBackend` route the same estimator through either engine, with copy-on-write `with_*` derivations (#218, #241).
 - Both sklearn estimators take a `margins=` keyword and delegate their marginal half to `Vinedist`, publishing the fitted model as `distribution_` alongside `schema_`, `structure_`, `margin_summary_`, `backend_` and `random_state_` (#218, #292).
 - Add `n_jobs` to `VineDensity` and `VineRegressor`, governing fitting *and* every evaluation where the fit-time thread count used to pin both; results are bit-identical at any thread count (#297).
@@ -156,7 +160,7 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 #### Documentation and examples
 
 - Merge `03_vine_copulas_fit_sample.ipynb` into `02_vine_copulas.ipynb` and renumber, so the examples read bivariate copula, vine copula, vine distribution: `11_vine_distributions` becomes `03`, and `10_extending_pyvinecopulib` keeps its number. Fixes four cross-references that named the wrong notebook (#326).
-- Document all of it: a `concepts.rst` primer on Sklar's theorem, pair-copula constructions, R-vines and the TLL family, a migration guide, and ten executed example notebooks (#211, #216, #218, #246, #247, #261, #292, #326).
+- Document all of it: a `concepts.rst` primer on Sklar's theorem, pair-copula constructions, R-vines and the TLL family, a migration guide, and ten executed example notebooks (#211, #214, #216, #218, #240, #243, #246, #247, #252, #261, #262, #292, #326).
 
 ### Bug fixes in `pyvinecopulib`
 
@@ -190,6 +194,8 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 
 ### Build / packaging
 
+- Enforce the engineering conventions rather than documenting them: `ty` type-checks `src` and `tests` with ten off-by-default rules on, `ruff` runs `ANN` / `TC` / `PYI` / `RUF100` so an unjustified `Any` or a stale `noqa` fails the build, `codespell` holds the American-English rule and a banned-word list, and `tests/test_prose.py` covers the multi-word phrases and identifiers a tokenizer cannot see (#210, #252, #262, #326).
+- Fail the documentation build on an unresolved cross-reference: Sphinx runs nitpicky with `-W`, `numpydoc` validation is a pre-commit check, and every code example is a notebook cell executed in CI rather than a paste (#214, #240, #243, #326).
 - Resolve the Eigen include directory from the `Eigen3::Eigen` target, so a
   source build works against Eigen 5.x (#235).
 - Build the x86-64 wheels for the x86-64-v3 baseline (AVX2 and FMA) instead of
@@ -202,8 +208,9 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
   (#250, [vinecopulib#711](https://github.com/vinecopulib/vinecopulib/pull/711)).
 - Build the source distribution from an explicit allowlist, so a dirty worktree
   cannot leak build trees, caches or untracked notes into it (#320).
-- Gate the tag-triggered PyPI upload on the tagged commit being an ancestor of `main`, on the documentation build passing, and on the version in `pyproject.toml`, `CHANGELOG.md`, `CITATION.cff` and `.zenodo.json` matching the tag (#253, #320).
-- Move the build to `uv` and `scikit-build-core`, with `[build-system].requires` mirroring the development dependency groups so `--no-build-isolation` works out of the box; `[dev]` is now a `uv` dependency group rather than an installable extra (#205, #209).
+- Require, before the tag-triggered PyPI upload runs, that the tagged commit is an ancestor of `main`, that the documentation build passes, and that the version in `pyproject.toml`, `CHANGELOG.md`, `CITATION.cff` and `.zenodo.json` matches the tag (#245, #253, #267, #320).
+
+- Move the build to `uv` and `scikit-build-core`, with `[build-system].requires` mirroring the development dependency groups so `--no-build-isolation` works out of the box; `[dev]` is now a `uv` dependency group rather than an installable extra (#205, #209, #210, #248, #249, #258, #321, #322, #323).
 
 ### Dependency changes
 

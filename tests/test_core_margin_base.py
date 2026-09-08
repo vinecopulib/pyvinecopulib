@@ -344,7 +344,7 @@ def test_derived_members_require_row_aligned_covariates() -> None:
 
 
 def test_covariates_are_not_forwarded_to_an_unconditional_margin() -> None:
-  """The gate omits `x` entirely, which is what keeps `pdf(self, y)` valid."""
+  """The check omits `x` entirely, which is what keeps `pdf(self, y)` valid."""
 
   class _Unconditional(_Recording):
     supports_covariates = False
@@ -512,7 +512,7 @@ def test_the_information_criteria_have_one_implementation() -> None:
     assert getattr(margin, name)(y) == pytest.approx(value)
 
 
-def test_an_array_in_the_controls_slot_is_refused_across_the_margin_rung() -> (
+def test_an_array_in_the_controls_slot_is_refused_across_the_margin_level() -> (
   None
 ):
   """`kde.fit(x, w)` is the compiled `Kde1d`'s spelling and nothing else's.

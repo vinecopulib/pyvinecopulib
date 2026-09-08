@@ -810,7 +810,7 @@ def test_fit_matches_vinecop(var_types: list[str]) -> None:
 @pytest.mark.parametrize("var_types", _MIXED)
 def test_select_matches_vinecop(var_types: list[str]) -> None:
   # The edge weights read only the value columns, so the selected R-vine matrix
-  # must match the compiled selector's exactly -- byte for byte, as it does for
+  # must match the compiled selector's exactly, as it does for
   # continuous data.
   u = _to_compact(_dependent_expanded(var_types, seed=9), var_types)
   structure, pairs, _ = VinecopBase._select_parts(

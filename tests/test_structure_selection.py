@@ -382,7 +382,7 @@ def test_select_matches_vinecop_for_every_tree_criterion(
 
 
 # ---------------------------------------------------------------------------
-# Declared parts: bicop_class, the up-front flip gate, and weighted selection
+# Declared parts: bicop_class, the up-front flip check, and weighted selection
 # ---------------------------------------------------------------------------
 
 
@@ -553,7 +553,7 @@ def test_weighted_selection_matches_vinecop(seed: int, d: int) -> None:
   assert np.array_equal(np.asarray(mine.matrix), np.asarray(theirs.matrix))
 
 
-def test_unweighted_selection_is_unchanged_by_the_weights_plumbing() -> None:
+def test_unweighted_selection_is_unchanged_by_the_weights_wiring() -> None:
   # The criterion's new weights argument defaults to empty, which is what the
   # call site passed before, so every unweighted selection is untouched.
   u = _correlated_pseudo_obs(3, 6)
@@ -741,7 +741,7 @@ def test_a_conditional_pair_with_no_x_dependence_recovers_the_cpp_structure(
   """The null hypothesis: switch the covariate term off and nothing changes.
 
   With ``slope == 0`` the shell is the compiled Gaussian pair, so selecting
-  through a *non-simplified* vine must recover byte-for-byte what
+  through a *non-simplified* vine must recover exactly what
   ``Vinecop.select`` recovers, and evaluate to the same density. This is the
   leg that isolates the wrapper, the placement and the finalizing ``flip``
   from the conditioning itself -- it is insensitive to the C1 column order,

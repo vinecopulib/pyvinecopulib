@@ -47,8 +47,8 @@ Notes
 - :class:`TorchVinecop` — evaluator for a full R-vine built on top of
   :class:`TorchTllBicop` pair copulas. Provides ``pdf`` / ``cdf`` /
   ``rosenblatt`` / ``inverse_rosenblatt`` / ``sample`` with the same
-  signatures as ``Vinecop``. The cascade mirrors
-  ``Vinecop`` byte-for-byte; every cascade also accepts ``batched=True``, one
+  signatures as ``Vinecop``. The cascade reproduces ``Vinecop``'s to
+  floating-point tolerance; every cascade also accepts ``batched=True``, one
   stacked bicop call per group of pair copulas -- a tree level going forward,
   a level of the dependency graph for the inverse -- and
   ``compile_cascades`` runs those through :func:`torch.compile`.

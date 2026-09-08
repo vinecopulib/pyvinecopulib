@@ -4,7 +4,8 @@ Four contracts are pinned here. That a parametric margin counts only the
 parameters it actually estimated, since SciPy's legacy fitter always returns
 `loc` and `scale` and every miscounted parameter moves AIC by 2. That the
 curated candidate set is *ours*: the documented traps -- `vonmises` winning a
-blind sweep on clean gamma data, a `weibull_min` fit whose `loc` overshoots the
+an unfiltered sweep on clean gamma data, a `weibull_min` fit whose `loc`
+overshoots the
 smallest observation, a Student `t` collapsing onto an atom, and counts ranked
 against densities -- must not reach the caller, and every refusal names its
 cause rather than being skipped. That the marginal configuration reaches each
@@ -261,7 +262,7 @@ def test_select_picks_the_true_family(gamma_sample: np.ndarray) -> None:
 def test_the_curated_set_never_proposes_vonmises(
   gamma_sample: np.ndarray,
 ) -> None:
-  """The `vonmises` trap: it wins a blind sweep, so it is not in the set.
+  """`vonmises` wins an unfiltered sweep, so it is not in the set.
 
   A sweep over all 110 SciPy continuous families ranks `vonmises` first on this
   very sample -- ahead of the true gamma by 306 AIC units here, and by 701 with
@@ -376,16 +377,16 @@ def test_counts_and_densities_are_never_ranked_together(
     )
 
 
-# --- the admissibility gate ------------------------------------------------- #
+# --- the admissibility check ------------------------------------------------ #
 
 
-def test_the_gate_rejects_a_support_that_excludes_the_data() -> None:
+def test_the_check_rejects_a_support_that_excludes_the_data() -> None:
   """The `weibull_min` trap: a free `loc` lands above the smallest observation.
 
   The fit succeeds and returns a plausible triple, but every log-density is then
   `-inf`. Reaching it needs an unanchored candidate, which no candidate set
   produces any more -- both the curated search and a named `family_set` pin
-  `loc` on positive data -- so the gate is exercised directly.
+  `loc` on positive data -- so the check is exercised directly.
   """
   from pyvinecopulib.margins.scipy import _reject
 
@@ -410,7 +411,7 @@ def test_a_collapsed_scale_is_rejected() -> None:
   Half exact zeros and half N(0, 1): a `t` fitted there comes back with
   `scale` around 1e-20 and a log-likelihood in the thousands, because a density
   concentrating on a repeated value diverges. It beats every plausible candidate by
-  more than 12,000 AIC units, so the gate -- not the criterion -- is what keeps
+  more than 12,000 AIC units, so the check -- not the criterion -- is what keeps
   it out.
   """
   y = np.concatenate([np.zeros(250), np.random.default_rng(0).normal(size=250)])
@@ -461,13 +462,13 @@ def test_select_reports_a_candidate_that_cannot_be_fitted(
   )
 
 
-def test_the_gate_catches_what_a_family_set_cannot_express() -> None:
+def test_the_check_catches_what_a_family_set_cannot_express() -> None:
   """Two refusals need a candidate no `family_set` can name.
 
   `family_set` names families, so it cannot pin a parameter to a NaN or a
   density to zero mass on an observation -- yet both are ways a fitter comes
   back with something inadmissible, and neither is implied by the support check
-  or by the parameter check alone. They are reached at the gate itself, which
+  or by the parameter check alone. They are reached at the check itself, which
   is the only place they are observable.
   """
   from pyvinecopulib.margins.scipy import _reject

@@ -65,7 +65,7 @@ class FitControlsTorchBicop:
 
       Fusion reorders the arithmetic, so the fitted grid moves by about
       1e-15 and a lane's iteration count can change -- the outer criterion
-      sits at the float64 noise floor. The ``Bicop`` parity gate is
+      sits at the float64 noise floor. The ``Bicop`` parity check is
       unaffected.
   """
 

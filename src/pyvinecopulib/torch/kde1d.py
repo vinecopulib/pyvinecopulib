@@ -844,7 +844,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     the total mass, which is itself a function of ``values``, carries its share
     of ``dq/dtheta``.
 
-    The correction is skipped only when no gradient is wanted at all. Gating it
+    The correction is skipped only when no gradient is wanted at all. Keying it
     on ``values.requires_grad`` alone would kill ``dq/dp`` for a fitted, fixed
     grid, which is the common case: the density is fitted, not learned, and the
     quantile is still a differentiable function of its probability.

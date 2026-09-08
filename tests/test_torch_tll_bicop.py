@@ -1016,12 +1016,12 @@ def test_ace_step_carries_its_own_state() -> None:
 
 @pytest.mark.compile
 def test_compile_fit_matches_the_eager_fit() -> None:
-  """Fusing the bandwidth search does not move the fit off the C++ gate.
+  """Fusing the bandwidth search does not move the fit off the C++ check.
 
   Fusion reorders the arithmetic, so this is not bit-identical and cannot
   be: the grid moves by ~1e-15 and, since the outer criterion sits at the
   float64 noise floor, a lane's iteration count can change with it. What has
-  to hold is the gate that binds every other fit -- the compiled grid
+  to hold is the check that binds every other fit -- the compiled grid
   against ``pv.Bicop.from_data`` at 1e-11 -- and agreement with the eager
   torch fit well inside it.
   """
@@ -1078,7 +1078,7 @@ def test_compile_fit_batches_over_a_pair_axis() -> None:
 
 
 def test_from_data_batched_matches_cpp() -> None:
-  """The batched fit clears the same C++ gate the single-pair fit does.
+  """The batched fit clears the same C++ check the single-pair fit does.
 
   Not implied by agreeing with the per-pair loop: that would also hold if
   both had drifted together.
@@ -1224,7 +1224,7 @@ def test_set_extra_state_refuses_a_foreign_version() -> None:
     pair.set_extra_state({"version": 99})
 
 
-def test_refitting_a_stored_pair_invalidates_the_vines_bake() -> None:
+def test_refitting_a_stored_pair_invalidates_the_vines_cache() -> None:
   """A vine copies each grid, so replacing one must be noticed.
 
   ``set_pair_copulas`` covers the vine's own ``fit`` and ``select``; refitting

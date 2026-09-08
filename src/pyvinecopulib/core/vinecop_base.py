@@ -914,7 +914,7 @@ class VinecopBase(
       # (the batched analog of _pdf's per-edge cwiseProduct).
       pdf = pdf * xp.prod(pdf_e, axis=0)
       # Overwrite the next-tree columns flagged by needs_h{1,2} (mirrors _pdf's
-      # gated per-edge writes).
+      # conditional per-edge writes).
       n_pairs = lvl.n_pairs
       h1_new = xp.matrix_transpose(h1_e)  # (n, N_t)
       h2_new = xp.matrix_transpose(h2_e)
@@ -993,7 +993,7 @@ class VinecopBase(
       h1_e, h2_e = lvl.h1_h2(bv.grid_points, u_e)
       h1_new = xp.matrix_transpose(h1_e)
       h2_new = xp.matrix_transpose(h2_e)
-      # hfunc2 is overwritten unconditionally at every edge; hfunc1 is gated.
+      # hfunc2 is overwritten unconditionally at every edge; hfunc1 is not.
       hfunc2[:, :n_pairs] = h2_new
       hfunc1[:, :n_pairs] = xp.where(
         lvl.needs_h1[None, :], h1_new, hfunc1[:, :n_pairs]

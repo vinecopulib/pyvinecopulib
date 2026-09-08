@@ -119,7 +119,7 @@ def test_c1_column_order_is_load_bearing() -> None:
   assert not torch.allclose(pdf_c1, pdf_rev, atol=1e-6)
 
 
-def test_fit_conditional_seam() -> None:
+def test_fit_conditional_hook() -> None:
   """``VinecopBase.fit`` threads x_e (C1 widths) into a conditional fit.
 
   This is the public hook a downstream package drives to build a non-simplified

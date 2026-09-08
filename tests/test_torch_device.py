@@ -7,7 +7,7 @@ device without running the whole parity suite twice.
 
 ``float32`` is compared only to our own ``float64`` answer, never to the
 compiled library: it is a lower precision, so the float64 tolerances do not
-apply to it and loosening them would weaken the gate that does.
+apply to it and loosening them would weaken the check that does.
 """
 
 from typing import Any
@@ -28,7 +28,7 @@ from pyvinecopulib.torch import (  # noqa: E402
 from tests.helpers import assert_on_device, count_transfers  # noqa: E402
 
 # cuda vs cpu at the same dtype. Tight enough that the cpu-vs-C++ 1e-10
-# gates carry over to cuda by the triangle inequality.
+# tolerances carry over to cuda by the triangle inequality.
 DEVICE_TOL = {torch.float64: 1e-12, torch.float32: 2e-5}
 # float32 against our own float64 result.
 F32_VS_F64_TOL = 5e-5

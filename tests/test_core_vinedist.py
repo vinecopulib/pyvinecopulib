@@ -897,7 +897,7 @@ def test_covariates_reach_the_margins(continuous: np.ndarray) -> None:
 def test_an_unconditional_copula_is_never_handed_covariates(
   continuous: np.ndarray,
 ) -> None:
-  """`Vinecop` takes no conditioning matrix, so the gate must omit it."""
+  """`Vinecop` takes no conditioning matrix, so the check must omit it."""
   copula = pv.Vinecop.from_data(np.asarray(pv.to_pseudo_obs(continuous)))
   dist = pv.Vinedist(copula, [_ShiftedNormal(), _ShiftedNormal()])
   # A `TypeError` here would mean `x=` reached the compiled copula.

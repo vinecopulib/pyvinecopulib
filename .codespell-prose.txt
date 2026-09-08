@@ -37,3 +37,10 @@ baked->precomputed, banned word - say "precomputed" or "built"
 baking->precomputing, banned word - say "precomputing" or "building"
 rung->level, banned word - say "level" or name the class
 rungs->levels, banned word - say "levels" or name the classes
+gate->check, banned word - say "check" or "tolerance"
+gates->checks, banned word - say "checks" or "tolerances"
+gated->conditional, banned word - say "conditional on" or "runs only when"
+gating->checking, banned word - say "checking" or name the condition
+byte-for-byte->bit-identical, banned word - say "bit-identical" for floats or "exactly" for a structure matrix
+escape-hatch->opt-out, banned word - say "opt-out" or "exemption"
+plumbing->internals, banned word - say "internals" or name the machinery

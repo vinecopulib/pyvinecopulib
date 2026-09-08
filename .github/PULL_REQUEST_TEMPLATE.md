@@ -18,7 +18,7 @@
 - [ ] Public-API changes reach the module docstring and the matching notebook
 - [ ] `make check && make test && make docs` pass locally
 
-<!-- Submodule bumps additionally run the numerics gate:
+<!-- Submodule bumps additionally run the numerics suites:
      tests/test_torch_bicop.py, tests/test_torch_vinecop.py and
      tests/test_structure_selection.py. Regenerate expected values rather than
      widening tolerances. See AGENTS.md. -->

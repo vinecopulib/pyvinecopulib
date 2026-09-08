@@ -44,7 +44,7 @@ from pyvinecopulib.sklearn import VineDensity, VineRegressor  # noqa: E402
 # ---------------------------------------------------------------------------
 
 
-_GENUINE_OPT_OUTS = {
+_REAL_OPT_OUTS = {
   "check_fit2d_1feature": "1-D vine is degenerate (no pair copulas)",
   "check_fit2d_1sample": "Kde1d requires >= 2 samples to estimate a bandwidth",
   "check_fit2d_predict1d": "predict requires 2-D inputs",
@@ -57,7 +57,7 @@ _GENUINE_OPT_OUTS = {
 # ``parametrize_with_checks`` sees the dict — otherwise pytest emits
 # XPASS noise. Shrink the per-estimator list as the underlying check
 # semantics shift across sklearn versions; the matching baseline
-# entries can move into ``_GENUINE_OPT_OUTS`` once the pass is
+# entries can move into ``_REAL_OPT_OUTS`` once the pass is
 # universal.
 _KNOWN_PASSING_PER_ESTIMATOR: dict[str, tuple[str, ...]] = {
   "VineDensity": (
@@ -79,11 +79,11 @@ def _prune(skips: dict[str, str], cls_name: str) -> dict[str, str]:
 
 
 def _density_opt_outs() -> dict[str, str]:
-  return _prune(dict(_GENUINE_OPT_OUTS), "VineDensity")
+  return _prune(dict(_REAL_OPT_OUTS), "VineDensity")
 
 
 def _regressor_opt_outs() -> dict[str, str]:
-  d = dict(_GENUINE_OPT_OUTS)
+  d = dict(_REAL_OPT_OUTS)
   d.update(
     {
       # Quantile-stacked output is a per-call shape, not a fitted

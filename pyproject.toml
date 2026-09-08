@@ -325,7 +325,7 @@ dictionary = ".codespell-prose.txt,-"
 # `# codespell:ignore-begin` / `-end`, which is the form that works for every
 # entry -- the single-line `# codespell:ignore <word>` silently fails on a
 # hyphenated one, and flags the marker itself.
-ignore-multiline-regex = "codespell:ignore-begin *\\n.*codespell:ignore-end *\\n"
+ignore-multiline-regex = "codespell:ignore-begin *\\n.*?codespell:ignore-end *\\n"
 # Generated or vendored. `docstr.hpp` and the `.pyi` stubs come from upstream
 # C++, so a typo there is fixed upstream.
 skip = "*/_build/*,*/_generate/*,*/_static/*,*/htmlcov/*,*/lib/*,*/uv.lock,*.pyi,*/docstr.hpp,*/docs/CHANGELOG.md,*/docs/README.md,*/docs/_README_inlined.md,*/docs/examples,*.codespell-prose.txt,*test_prose.py"

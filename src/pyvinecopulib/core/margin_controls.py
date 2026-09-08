@@ -41,8 +41,9 @@ class FitControlsMargin:
   family_set : sequence of str, or None, default=None
       Candidate families for a search, named as in the ecosystem the margin
       belongs to (``"gamma"``, ``"lognorm"``). ``None`` searches the curated
-      set admissible for the variable, which is the recommendation: a blind
-      sweep ranks a family that misstates its own support above the truth.
+      set admissible for the variable, which is the recommendation: an
+      unfiltered sweep ranks a family that misstates its own support above
+      the truth.
   selection_criterion : {"aic", "bic", "aicc"}, default="aic"
       ``"aic"`` (the default), ``"bic"`` or ``"aicc"``.
   var_type : {"c", "d", "zi"}, or None, default=None

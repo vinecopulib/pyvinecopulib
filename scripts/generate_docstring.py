@@ -1801,7 +1801,7 @@ def main():
     "-D__MKDOC_PY__",
     # Bypass MSVC STL's __clang_major__ >= 19 static_assert when parsing on
     # Windows. PyPI's libclang tops out at 18.x; the define is defined by
-    # MSVC STL itself as the official escape hatch and is harmless on other
+    # MSVC STL itself as the official opt-out and is harmless on other
     # platforms (it just isn't referenced by libstdc++/libc++).
     "-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH",
     # Neutralize __builtin_verbose_trap. The VS 2026 / MSVC 14.51 STL emits

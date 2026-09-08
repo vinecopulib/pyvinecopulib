@@ -22,7 +22,7 @@ import pytest
 
 import pyvinecopulib as pv
 
-#: The extras, and the subpackage each one gates.
+#: The extras, and the subpackage each one is required by.
 _EXTRAS = ("torch", "sklearn", "scipy")
 
 
@@ -81,7 +81,7 @@ def test_margins_stays_in_all_because_it_needs_no_extra() -> None:
   assert done.returncode == 0, done.stderr
 
 
-def test_core_owns_the_margin_plumbing_and_margins_re_exports_it() -> None:
+def test_core_owns_the_margin_internals_and_margins_re_exports_them() -> None:
   """The layering: `core` owns the contract, `margins` the ecosystem adapters.
 
   `FitControlsMargin`, the coercion registry and the resolution helpers need no

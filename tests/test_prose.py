@@ -6,6 +6,10 @@ here instead:
 
 * **Multi-word phrases.** codespell's word regex is `[\\w\\-'’]+`, so a phrase
   is several tokens and can never be one dictionary key.
+* **Banned words inside identifiers.** That same regex makes
+  `_GENUINE_OPT_OUTS` a *single* token, which matches no dictionary key, so
+  the whole name is invisible to codespell. This file reads the identifiers
+  out of the AST and checks them against the same list.
 * **The difference between prose and code.** codespell reads a file as text,
   so it cannot tell a docstring from an identifier -- which is why a `Tensor`
   named for a boolean mask has to be exempt, and why that exemption is pinned
@@ -42,16 +46,17 @@ _BANNED_PHRASES = (
   r"heavy lifting",
   r"in the wild",
   r"(?:precisely|exactly) why",
+  # Multi-word, so codespell's tokenizer can never hold them.
+  r"byte for byte",
+  r"escape hatch",
+  r"blind sweep",
+  r"in flight",
 )
 
 #: Files whose *identifiers* legitimately use a banned word, with the reason.
 #: codespell has no way to skip an identifier while still reading the prose
 #: around it, so the exemption is recorded rather than suppressed.
-_IDENTIFIER_EXEMPTIONS = {
-  "src/pyvinecopulib/torch/_fit_tll.py": "`gate` names a boolean mask, which "
-  "is ordinary array-programming vocabulary; the numpydoc entry documents the "
-  "parameter name, so renaming it would be a code change.",
-}
+_IDENTIFIER_EXEMPTIONS: dict[str, str] = {}
 
 
 def _sources() -> Iterator[pathlib.Path]:
@@ -132,6 +137,71 @@ def _prose_of(path: pathlib.Path) -> list[tuple[int, str]]:
   return out
 
 
+def _banned_words() -> set[str]:
+  """The single-token half of the rule, read from the dictionary itself.
+
+  Returns
+  -------
+  set of str
+      Every banned word, lowercased.
+  """
+  path = pathlib.Path(".codespell-prose.txt")
+  if not path.is_file():  # installed rather than checked out
+    return set()
+  out: set[str] = set()
+  for raw in path.read_text(encoding="utf-8").splitlines():
+    if "->" in raw:
+      out.add(raw.split("->", 1)[0].strip().lower())
+  return out
+
+
+def _identifiers_of(path: pathlib.Path) -> Iterator[tuple[int, str]]:
+  """Every name a file binds or reads, as ``(line, name)``.
+
+  Yields
+  ------
+  tuple
+      The line and the identifier.
+  """
+  tree = ast.parse(_without_exempt_regions(path.read_text(encoding="utf-8")))
+  for node in ast.walk(tree):
+    if isinstance(node, ast.Name):
+      yield node.lineno, node.id
+    elif isinstance(node, ast.arg):
+      yield node.lineno, node.arg
+    elif isinstance(
+      node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+    ):
+      yield node.lineno, node.name
+    elif isinstance(node, ast.Attribute):
+      yield node.lineno, node.attr
+
+
+def test_no_banned_word_hides_inside_an_identifier() -> None:
+  """`_GENUINE_OPT_OUTS` passed codespell because it is one token.
+
+  The dictionary is the source of truth, so this reads it rather than
+  restating it. An identifier that legitimately uses a banned word is
+  recorded in ``_IDENTIFIER_EXEMPTIONS`` or wrapped in an ignore region --
+  the same two escapes the rest of the rule offers.
+  """
+  banned = _banned_words()
+  if not banned:
+    pytest.skip("ban list not present")
+  exempt = {pathlib.Path(rel) for rel in _IDENTIFIER_EXEMPTIONS}
+
+  found: list[str] = []
+  for path in _sources():
+    if path in exempt:
+      continue
+    for line, name in _identifiers_of(path):
+      parts = {p.lower() for p in re.split(r"[^A-Za-z]+", name) if p}
+      hit = parts & banned
+      if hit:
+        found.append(f"{path}:{line}: {name} contains {sorted(hit)}")
+  assert found == [], found
+
+
 @pytest.mark.parametrize("phrase", _BANNED_PHRASES)
 def test_no_banned_phrase_in_prose(phrase: str) -> None:
   """A phrase codespell cannot tokenize is still banned.
@@ -152,19 +222,24 @@ def test_no_banned_phrase_in_prose(phrase: str) -> None:
 def test_the_identifier_exemptions_are_still_needed() -> None:
   """An exemption outlives its reason unless something checks.
 
-  Each entry claims a file uses a banned word as an *identifier*. If the
-  identifier is gone, the entry should be too -- otherwise the list slowly
-  becomes a place to hide new violations.
+  Each entry claims a file needs a banned word as an *identifier*. The list is
+  empty: every case so far had a name that read better anyway -- the mask
+  `_fit_tll.py` called `gate` is the `outer` condition its own docstring
+  describes. Keep it that way if you can; the entry is the fallback.
   """
   for rel, reason in _IDENTIFIER_EXEMPTIONS.items():
     path = pathlib.Path(rel)
     if not path.is_file():  # installed rather than checked out
       pytest.skip(f"{rel} not present")
+    banned = _banned_words()
     tree = ast.parse(path.read_text(encoding="utf-8"))
     names = {
       node.arg for node in ast.walk(tree) if isinstance(node, ast.arg)
     } | {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
-    assert names & {"gate"}, f"{rel}: exemption no longer applies -- {reason}"
+    parts = {
+      part.lower() for name in names for part in re.split(r"[^A-Za-z]+", name)
+    }
+    assert parts & banned, f"{rel}: exemption no longer applies -- {reason}"
 
 
 def test_the_ban_list_is_wired_into_codespell() -> None:
