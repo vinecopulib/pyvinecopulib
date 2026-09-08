@@ -17,6 +17,7 @@ it.
 
 from __future__ import annotations
 
+import copy
 import warnings
 from typing import Any, Optional
 
@@ -366,6 +367,38 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     self._n_free = 0
     self._loglik = None
     self._nobs = None
+
+  def __deepcopy__(self, memo: dict[int, Any]) -> "OpenTURNSMargin":
+    """Copy the margin, rebuilding the one part OpenTURNS refuses to copy.
+
+    ``DistributionFactory``'s copy dispatches to a constructor overload
+    OpenTURNS does not provide, so a plain ``copy.deepcopy`` of a margin
+    holding one raises -- and that is the operation behind the documented
+    "one instance broadcast per column" spec. It is the only attribute
+    affected: everything else copies normally, a fitted ``Distribution``
+    included. So the factory is rebuilt around the same implementation
+    rather than copied -- or copied like the rest when there is none, which is
+    the case for a margin wrapping a distribution that carries its own
+    parameters.
+
+    Parameters
+    ----------
+    memo : dict
+        The ``copy`` module's record of what it has already copied.
+
+    Returns
+    -------
+    OpenTURNSMargin
+        An independent copy.
+    """
+    clone = self.__class__.__new__(self.__class__)
+    memo[id(self)] = clone
+    for name, value in vars(self).items():
+      if name == "_factory" and value is not None:
+        setattr(clone, name, type(value)(value.getImplementation()))
+      else:
+        setattr(clone, name, copy.deepcopy(value, memo))
+    return clone
 
   @staticmethod
   def from_distribution(distribution: Any) -> "OpenTURNSMargin":

@@ -529,3 +529,44 @@ def test_openturns_margin_names_the_extra_without_openturns() -> None:
     "  sys.exit(0 if 'pyvinecopulib[openturns]' in str(e) else 2)\n"
     "sys.exit(3)\n",
   )
+
+
+def test_one_instance_broadcasts_across_every_column() -> None:
+  """The documented "one instance broadcast per column" shape, on this lane.
+
+  `resolve_margins` broadcasts by deep-copying the instance, and OpenTURNS'
+  `DistributionFactory` is a SWIG object whose copy dispatches to a
+  constructor it does not provide -- so this raised `TypeError` and no test
+  noticed, because the margin suite and the vinedist suite were written apart.
+  """
+  y = np.random.default_rng(0).normal(size=(150, 3))
+  dist = Vinedist.from_data(y, margins=OpenTURNSMargin("Normal"))
+
+  assert [type(m).__name__ for m in dist.margins] == ["OpenTURNSMargin"] * 3
+  # Independent objects, not three references to the one that was passed in.
+  assert len({id(m) for m in dist.margins}) == 3
+  assert np.isfinite(dist.logpdf(y[:5])).all()
+
+
+def test_deepcopy_survives_the_swig_factory() -> None:
+  """The mechanism the broadcast rests on, pinned on its own.
+
+  The factory is rebuilt rather than copied, so the check that matters is that
+  the two margins are independent afterwards -- a shared factory would make
+  one column's fit visible from another's.
+  """
+  import copy
+
+  data = np.random.default_rng(0).normal(size=200)
+  margin = OpenTURNSMargin("Normal").fit(data)
+  clone = copy.deepcopy(margin)
+
+  assert clone is not margin
+  assert clone.family_name == margin.family_name
+  assert clone.parameters == margin.parameters
+  assert clone.loglik() == margin.loglik()
+
+  before = margin.parameters
+  clone.fit(np.random.default_rng(1).normal(size=200) * 5.0 + 10.0)
+  assert margin.parameters == before
+  assert clone.parameters != before

@@ -128,3 +128,29 @@ def test_prepare_still_refuses_a_misaligned_covariate_matrix() -> None:
   with pytest.raises(ValueError):
     prepare(np.zeros((3, 2)), np.zeros(3), 3)
   assert prepare(np.zeros((3, 2)), None, 3) is None
+
+
+def test_a_matching_dtype_does_not_excuse_the_wrong_device() -> None:
+  """`place` promises namespace, dtype *and* device; the fast path skipped one.
+
+  An input whose dtype already agrees took an early return that compared only
+  the namespace, so it stayed where it was -- on the host, while the object
+  evaluates somewhere else. Torch's ``meta`` device makes that reachable
+  without an accelerator: it is a real device that every machine has.
+  """
+  torch = pytest.importorskip("torch")
+  from array_api_compat import device as device_of
+
+  from pyvinecopulib.core._placement import place
+
+  class Holder:
+    def __init__(self, grid: object) -> None:
+      self.grid = grid
+
+  elsewhere = torch.zeros(3, dtype=torch.float64, device="meta")
+  host = torch.zeros(3, dtype=torch.float64)
+
+  assert device_of(place(Holder(elsewhere), host)) == device_of(elsewhere)
+  # And the fast path still returns the input untouched when it is already
+  # there, which is what keeps a gradient-carrying tensor from being copied.
+  assert place(Holder(host), host) is host

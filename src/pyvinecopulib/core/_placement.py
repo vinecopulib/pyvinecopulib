@@ -174,10 +174,13 @@ def place(obj: Any, a: Any) -> Any:
   # would place a zero, so the values keep their own precision instead.
   dtype = reference.dtype if _is_float(reference) else None
   # Already there: skip the conversion, which would otherwise warn about the
-  # `requires_grad` flag it inherits from a tensor that tracks one.
+  # `requires_grad` flag it inherits from a tensor that tracks one. The device
+  # has to agree as well -- an array whose dtype already matches can still sit
+  # on the host while the reference is on an accelerator, and placing it is
+  # what this function is for.
   if dtype is None or getattr(a, "dtype", None) is dtype:
     try:
-      if array_namespace(a) is xp:
+      if array_namespace(a) is xp and _device_of(a) == _device_of(reference):
         return a
     except TypeError:
       pass

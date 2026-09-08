@@ -147,6 +147,10 @@ _VINEDIST_EXAMPLE = """
 
       import numpy as np, scipy.stats as st, pyvinecopulib as pv
 
+      rng = np.random.default_rng(0)
+      z = rng.normal(size=(300, 3))
+      y = np.column_stack([z[:, 0], np.abs(z[:, 1]) + 0.5, z[:, 2]])
+
       u = pv.utils.to_pseudo_obs(y)
       dist = pv.Vinedist(
         pv.Vinecop.from_data(u),
