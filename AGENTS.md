@@ -283,7 +283,6 @@ pyvinecopulib/
         vinedist_base.py         # VinedistBase (array-agnostic cascade + IFM fit)
         vinedist.py              # Vinedist (NumPy + compiled Vinecop)
         margin_controls.py       # FitControlsMargin (the marginal half of a fit)
-        _adapters.py             # as_margin + the coercion registry (internal)
         _covariates.py           # the two `x`-forwarding rules + `prepare` (internal)
         _discrete.py             # DiscretePair + the discrete layouts / per-edge types
         _engines.py              # fit_parts / select_parts — the two fit engines (internal)
@@ -292,7 +291,7 @@ pyvinecopulib/
         _reorient.py             # relabel a structure onto a chosen order tail (internal)
         _resolve.py              # resolve_margins / resolve_margin_controls / fit_margin (internal)
         _rootfind.py             # solve_increasing (monotone bisection; internal)
-        _serialization.py        # the margin JSON registry (internal module, public helpers)
+        _margins.py              # the two margin registries: as_margin + the JSON readers (internal)
         _trim.py                 # trim — the domain step of the input pipeline (internal)
         _validation.py           # the layout / weights / covariate validators (internal)
       families/__init__.py       # BicopFamily enum + 13 family constants + 15 group constants
@@ -738,14 +737,14 @@ the reason written beside it — not something a stray import can do quietly.
 
 - **Tier 1 depends on no optional extra and on nothing above it.** That is
   what makes `import pyvinecopulib` work with nothing but NumPy installed,
-  and most of the rules below follow from it. Two function-local imports do
-  reach up into `margins`, and they are the documented exception: both name
-  `SciPyMargin`, which `core` must be able to *name* — it is the curated
-  parametric default, and a JSON payload kind that has to be resolvable from
-  the payload alone, in a process that may never have imported `margins` —
-  but cannot *contain*, because it needs the SciPy extra. Deferring the
-  import is the only way to have both. A third one needs the same argument,
-  not merely the same shape.
+  and most of the rules below follow from it. Three function-local imports do
+  reach up into `margins`, and they are the documented exception. Each names a
+  class `core` must be able to *name* but cannot *contain*, because it needs an
+  extra: `SciPyMargin` twice — the curated parametric default, and a JSON
+  payload kind that has to be resolvable from the payload alone — and
+  `OpenTURNSMargin` once, the adapter `as_margin` reaches when it recognizes an
+  OpenTURNS object. Deferring the import is the only way to have both.
+  A fourth needs the same argument, not merely the same shape.
 - **Within tier 2 there are exactly two edges.** `sklearn` imports `margins`
   at module scope (both need no extra of `sklearn`'s own), and reaches
   `torch` through a single function-local import inside
@@ -1069,15 +1068,16 @@ automatically.
 The two ecosystem adapters, kept out of `core` because they are the only part
 that needs an extra. The **contract plumbing lives in `core`**, which owns the
 half a `Vinedist` fit runs on: `MarginLike` / `MarginBase`, `FitControlsMargin`
-(`core/margin_controls.py`), the coercion registry (`core/_adapters.py`) and
+(`core/margin_controls.py`), the two registries (`core/_margins.py`) and
 the resolution helpers (`core/_resolve.py`). None of those needs SciPy -- they
 import stdlib, NumPy and `core` -- and putting them here had `core` reaching
 *up* a layer at ten sites, three of them into a private module of a package
 above it, all deferred to hide the cycle. `pyvinecopulib.margins` re-exports
 them, so its documented surface is unchanged and it stays where a user looks
-for margins. Two deferred `core` -> `margins` imports remain and are
-irreducible: resolving the `"parametric"` string alias and the `"SciPyMargin"`
-JSON `kind` to a class that lives behind an extra.
+for margins. Three deferred `core` -> `margins` imports remain and are
+irreducible, each resolving a name to a class that lives behind an extra: the
+`"parametric"` string alias, the `"SciPyMargin"` JSON `kind`, and the adapter
+`as_margin` builds for an OpenTURNS object.
 
 Three groups:
 
@@ -1114,17 +1114,24 @@ Three groups:
   **The underscore describes the module, not the names it exports.** It says
   "not an import path": `core/protocols.py`, `bicop_base.py`, `vinedist.py`,
   `margin_controls.py` and `independence.py` carry no underscore because each
-  is one public thing, while `core/_discrete.py` and `core/_serialization.py`
-  keep theirs even though `DiscretePair` and the three `margin_*_json` helpers
-  are public -- ten internal layout helpers and four internal JSON helpers are
-  the bulk of those files, and the public names are reached through `core`.
+  is one public thing, while `core/_discrete.py` and `core/_margins.py`
+  keep theirs even though `DiscretePair`, `as_margin` and the three
+  `margin_*_json` helpers are public -- the internal layout helpers, the two
+  registry tables and the per-ecosystem predicates are the bulk of those
+  files, and the public names are reached through `core` or `margins`.
   Do not resolve a mismatch here by renaming a mixed module; resolve it by
   asking whether the module is something to import from.
 - **Coercion** — `as_margin(obj)` is idempotent and routes **every**
   margin `Vinedist` receives, so a discrete SciPy object cannot slip
   past on a bare `pdf` (in SciPy's new API `pdf` is `+∞` at an atom;
-  the mass is `pmf`). `register_margin_adapter(predicate, adapter)` is
-  how another ecosystem is added without touching this package.
+  the mass is `pmf`). The ecosystems this package adapts sit in one table in
+  `core/_margins.py`, beside the JSON readers, rather than each registering
+  itself its own way. Registration does not belong in the adapted module's
+  body: whether an object is recognized would then depend on another module's
+  import list — `margins/__init__.py` importing `openturns.py` eagerly is what
+  used to make the OpenTURNS adapter reachable at all.
+  `register_margin_adapter(predicate, adapter)` is how another ecosystem is
+  added without touching this package.
 - **Resolution** — `resolve_margins(spec, ...)` mirrors
   `resolve_backend`: a string alias, one instance broadcast per column,
   a length-`d` sequence, or a dict keyed by column. Margins follow the
@@ -1743,7 +1750,7 @@ Round-trip / parity properties to preserve when touching numerics:
 
 - **Another ecosystem's distributions (`pyvinecopulib.margins`).** Call
   `register_margin_adapter(predicate, adapter)` — from a package or a
-  notebook cell — rather than editing `_adapters.py`. That is what keeps
+  notebook cell — rather than editing `core/_margins.py`. That is what keeps
   OpenTURNS, TFP and NumPyro out of `core` while remaining usable, and
   what lets `as_margin` stay the single funnel every margin passes
   through.

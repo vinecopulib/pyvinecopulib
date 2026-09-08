@@ -41,7 +41,7 @@ theorem, and :class:`pyvinecopulib.core.MarginLike` states the contract these
 all satisfy.
 """
 
-from ..core._adapters import as_margin, register_margin_adapter
+from ..core._margins import as_margin, register_margin_adapter
 
 # Imported for its side effect as much as its names: it registers the OpenTURNS
 # adapter with `as_margin`, and it imports OpenTURNS itself only when used.

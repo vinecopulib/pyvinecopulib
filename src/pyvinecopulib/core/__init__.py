@@ -97,7 +97,7 @@ from .context import (
   NonSimplifiedContext,
   SimplifiedContext,
 )
-from ._serialization import (
+from ._margins import (
   margin_from_json,
   margin_to_json,
   register_margin_json,

@@ -15,7 +15,6 @@ from typing import (
   Iterable,
   Mapping,
   Optional,
-  Protocol,
   Self,
   Sequence,
   TypeVar,
@@ -136,95 +135,15 @@ def _excluded_block(indent: str = "  ") -> str:
   )
 
 
-# --- the SciPy surface, named by what is called on it ---------------------- #
-# SciPy ships no type information, and `scipy-stubs` is not an option here: its
-# current releases require Python 3.12 while this package supports 3.11, and
-# they pin `scipy` to one minor version. So the objects crossing this boundary
-# are described by the members used on them.
+# SciPy ships no type information and `scipy-stubs` cannot be used here: its
+# releases require Python 3.12 while this package supports 3.11, and they pin
+# `scipy` to one minor version. Two of the objects crossing this boundary would
+# resist stubs anyway -- `_dist` is a name lookup, and the family surface fuses
+# `pdf` with `pmf`, which no single SciPy class carries. The numpydoc entry on
+# each signature names the real type.
 
 
-class _Family(Protocol):
-  """A ``scipy.stats`` family, as the name lookup and ``isinstance`` see it."""
-
-  #: SciPy's comma-separated shape-parameter names, or ``None`` when a family
-  #: has none.
-  @property
-  def shapes(self) -> Optional[str]: ...
-
-
-class _FamilyEval(Protocol):
-  """The surface a family answers on, both kinds at once.
-
-  ``rv_continuous`` has no ``pmf`` and ``rv_discrete`` no ``pdf``, so no one
-  class satisfies all of this: which half applies is what ``_discrete``
-  records, and the object is reached by name rather than by class.
-  """
-
-  def support(self, *params: float) -> tuple[float, float]: ...
-
-  def fit(self, data: np.ndarray, **fixed: float) -> Sequence[float]: ...
-
-  def pdf(self, y: np.ndarray, *params: float) -> np.ndarray: ...
-
-  def pmf(self, y: np.ndarray, *params: float) -> np.ndarray: ...
-
-  def logpdf(self, y: np.ndarray, *params: float) -> np.ndarray: ...
-
-  def logpmf(self, y: np.ndarray, *params: float) -> np.ndarray: ...
-
-  def cdf(self, y: np.ndarray, *params: float) -> np.ndarray: ...
-
-  def ppf(self, p: np.ndarray, *params: float) -> np.ndarray: ...
-
-  def rvs(
-    self,
-    *params: float,
-    size: int,
-    random_state: np.random.Generator,
-  ) -> np.ndarray: ...
-
-
-class _FitResult(Protocol):
-  """What ``scipy.stats.fit`` reports."""
-
-  params: Sequence[float]
-
-
-class _Optimizer(Protocol):
-  """The optimizer callable ``scipy.stats.fit`` invokes."""
-
-  def __call__(
-    self, objective: Callable[[np.ndarray], float], **kwargs: object
-  ) -> "_OptimizeResult": ...
-
-
-class _OptimizeResult(Protocol):
-  """The part of ``scipy.optimize``'s result ``scipy.stats.fit`` reads."""
-
-  x: np.ndarray
-  fun: float
-
-
-class _Stats(Protocol):
-  """The ``scipy.stats`` module surface this margin uses."""
-
-  @property
-  def rv_continuous(self) -> type[_Family]: ...
-
-  @property
-  def rv_discrete(self) -> type[_Family]: ...
-
-  def fit(
-    self,
-    dist: _FamilyEval,
-    data: np.ndarray,
-    *,
-    bounds: Mapping[str, tuple[float, float]],
-    optimizer: _Optimizer,
-  ) -> _FitResult: ...
-
-
-def _stats() -> _Stats:
+def _stats() -> Any:  # noqa: ANN401
   """Return ``scipy.stats``, or raise naming the extra that provides it."""
   with extra_required(
     extra="scipy",
@@ -243,7 +162,7 @@ _DISCRETE_FIT_SEED = 5489
 
 def _seeded_optimizer(
   objective: Callable[[np.ndarray], float], **kwargs: object
-) -> _OptimizeResult:
+) -> Any:  # noqa: ANN401
   """Optimize as ``scipy.stats.fit`` does, with the RNG pinned.
 
   Parameters
@@ -1080,7 +999,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
   # --- estimation ---------------------------------------------------------- #
 
   @property
-  def _dist(self) -> _FamilyEval:
+  def _dist(self) -> Any:  # noqa: ANN401
     """Return the SciPy distribution object.
 
     Looked up by name rather than stored, so the margin pickles as a name and
@@ -1121,8 +1040,19 @@ class SciPyMargin(MarginBase[np.ndarray]):
     return payload
 
   @classmethod
-  def _from_json_payload(cls, payload: dict[str, Any]) -> "SciPyMargin":
-    """Rebuild a margin from the payload :meth:`to_json` produced."""
+  def from_json_payload(cls, payload: dict[str, Any]) -> "SciPyMargin":
+    """Rebuild a margin from the payload :meth:`to_json` produced.
+
+    Parameters
+    ----------
+    payload : dict
+        The mapping :meth:`to_json` returned.
+
+    Returns
+    -------
+    SciPyMargin
+        The reconstructed margin.
+    """
     bounds = {
       k: (float(v[0]), float(v[1]))
       for k, v in (payload.get("bounds") or {}).items()
@@ -1349,7 +1279,11 @@ class SciPyMargin(MarginBase[np.ndarray]):
     return f"SciPyMargin({self._family!r}, {shown})"
 
 
-def _parameter_names(dist: _Family, *, discrete: bool) -> tuple[str, ...]:
+def _parameter_names(
+  dist: Any,  # noqa: ANN401
+  *,
+  discrete: bool,
+) -> tuple[str, ...]:
   """Return a family's parameter names in SciPy's order.
 
   Parameters
@@ -1364,9 +1298,10 @@ def _parameter_names(dist: _Family, *, discrete: bool) -> tuple[str, ...]:
   tuple of str
       Shape parameter names, then ``"loc"``, then ``"scale"`` when continuous.
   """
-  shapes = tuple(
-    part.strip() for part in (dist.shapes or "").split(",") if part.strip()
-  )
+  # `str()` rather than a cast: SciPy's `shapes` is untyped here, and this is
+  # the one place its value becomes a name the rest of the module compares.
+  declared = str(dist.shapes or "")
+  shapes = tuple(part.strip() for part in declared.split(",") if part.strip())
   return shapes + ("loc",) if discrete else shapes + ("loc", "scale")
 
 

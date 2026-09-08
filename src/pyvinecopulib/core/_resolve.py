@@ -10,7 +10,7 @@ from typing import Any, Callable, Optional, Sequence, Union, cast
 import numpy as _np
 
 from .protocols import ArrayT, ControlsLike, MarginLike
-from ._adapters import as_margin
+from ._margins import as_margin
 from ..pyvinecopulib_ext import Kde1d
 
 __all__ = ["resolve_margins", "resolve_margin_controls"]

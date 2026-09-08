@@ -181,7 +181,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     -------
     None
     """
-    from ._adapters import as_margin
+    from ._margins import as_margin
 
     d = int(
       getattr(vinecop, "dim", 0) or len(getattr(vinecop, "order", ()) or ())
@@ -323,7 +323,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     --------
     to_file : Write to a file, JSON or CBOR.
     """
-    from ._serialization import MARGIN_JSON_VERSION, dumps, margin_to_json
+    from ._margins import MARGIN_JSON_VERSION, dumps, margin_to_json
 
     copula_to_json = getattr(self._vinecop, "to_json", None)
     if copula_to_json is None:
@@ -349,7 +349,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     filename : str
         Path to write.
     """
-    from ._serialization import write_file
+    from ._margins import write_file
 
     write_file(filename, self.to_json())
 
@@ -371,7 +371,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     --------
     to_file : Write one out.
     """
-    from ._serialization import read_file
+    from ._margins import read_file
 
     return cls.from_json(read_file(filename))
 
@@ -471,7 +471,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         ``"c"`` or ``"d"`` per variable; a zero-inflated margin is ``"d"``,
         since what the copula needs from it is the left limit.
     """
-    from ._adapters import as_margin
+    from ._margins import as_margin
 
     return [
       "d" if getattr(as_margin(m), "var_type", "c") in ("d", "zi") else "c"
@@ -515,7 +515,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         If ``y`` does not carry one column per margin, or if a margin reports a
         left limit above its own distribution function.
     """
-    from ._adapters import as_margin
+    from ._margins import as_margin
 
     resolved = [as_margin(m) for m in margins]
     var_types = cls.copula_var_types(resolved)

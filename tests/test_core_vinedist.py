@@ -1045,7 +1045,7 @@ def test_a_registered_custom_margin_round_trips() -> None:
 
 def test_an_unknown_margin_kind_and_a_bad_version_both_raise() -> None:
   """A format change must fail loudly rather than build a wrong model."""
-  from pyvinecopulib.core._serialization import margin_from_json
+  from pyvinecopulib.core import margin_from_json
 
   with pytest.raises(ValueError, match="no reader registered"):
     margin_from_json({"kind": "NotAMargin", "version": 1})

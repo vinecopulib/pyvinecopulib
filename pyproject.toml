@@ -236,7 +236,9 @@ ignore = ["TC001", "TC002", "TC003"]
 "src/pyvinecopulib/torch/tll_bicop.py" = ["ANN401"]
 "src/pyvinecopulib/torch/distribution_margin.py" = ["ANN401"]
 "src/pyvinecopulib/torch/_placement.py" = ["ANN401"]
-# The one place a foreign object's type is unknowable: `as_margin`'s funnel.
+# OpenTURNS is SWIG-generated: no `py.typed`, no stub package, and this module
+# must not import it in order to be importable. It is the one ecosystem here
+# with no types at all.
 "src/pyvinecopulib/margins/openturns.py" = ["ANN401"]
 # The deprecation shim resolves an arbitrary name to a class, a function or a
 # subpackage, and the plotting glue is handed matplotlib objects.

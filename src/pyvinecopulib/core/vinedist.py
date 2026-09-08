@@ -212,7 +212,7 @@ class Vinedist(VinedistBase[np.ndarray]):
         different class, or if a margin's ``kind`` has no registered reader.
     """
     from ..pyvinecopulib_ext import Vinecop
-    from ._serialization import (
+    from ._margins import (
       MARGIN_JSON_VERSION,
       loads,
       margin_from_json,

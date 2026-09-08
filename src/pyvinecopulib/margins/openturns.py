@@ -19,18 +19,17 @@ from __future__ import annotations
 
 import copy
 import warnings
-from typing import Any, Optional, Protocol, Self, Sequence, Union, cast
+from typing import Any, Optional, Self, Sequence, Union
 
 import numpy as np
 
-from ..core import ControlsLike, MarginBase, MarginLike
+from ..core import ControlsLike, MarginBase
 from ..core._validation import (
   extra_required,
   reject_array_controls,
   reject_covariates,
   usable_observations,
 )
-from ..core._adapters import register_margin_adapter
 from ..core.margin_controls import CRITERIA, FitControlsMargin
 
 __all__ = ["OpenTURNSMargin"]
@@ -40,138 +39,13 @@ __all__ = ["OpenTURNSMargin"]
 _FITTING_TEST: dict[str, str] = {"aic": "AIC", "bic": "BIC", "aicc": "AICC"}
 
 
-# --- the OpenTURNS surface, named by what is called on it ------------------- #
-# OpenTURNS carries no type information of its own, and this module must not
-# import it to be imported, so the objects crossing this boundary are described
-# by the members used here rather than by their classes. Every argument is
-# positional-only, which is how OpenTURNS' generated methods take them.
+# OpenTURNS is SWIG-generated: it carries no type information, has no stub
+# package, and this module must not import it in order to be importable. So
+# every object crossing this boundary is opaque to a checker, and the numpydoc
+# entry on each signature names the real class instead.
 
 
-class _Floats(Protocol):
-  """A vector of reals -- an ``openturns.Point``, or a univariate ``Sample``.
-
-  Indexable and sized, but not iterable: OpenTURNS' vectors iterate through
-  ``__getitem__`` rather than defining ``__iter__``.
-  """
-
-  def __len__(self) -> int: ...
-
-  def __getitem__(self, index: int, /) -> float: ...
-
-
-class _Flags(Protocol):
-  """A vector of booleans, as ``getRange``'s finiteness flags are."""
-
-  def __getitem__(self, index: int, /) -> bool: ...
-
-
-class _Names(Protocol):
-  """A vector of strings -- an ``openturns.Description``."""
-
-  def __len__(self) -> int: ...
-
-  def __getitem__(self, index: int, /) -> str: ...
-
-
-class _Sample(Protocol):
-  """The ``openturns.Sample`` surface this module reads."""
-
-  def getSize(self) -> int: ...
-
-
-class _Interval(Protocol):
-  """The ``openturns.Interval`` a distribution reports as its range."""
-
-  def getLowerBound(self) -> _Floats: ...
-
-  def getUpperBound(self) -> _Floats: ...
-
-  def getFiniteLowerBound(self) -> _Flags: ...
-
-  def getFiniteUpperBound(self) -> _Flags: ...
-
-
-class _PointMethod(Protocol):
-  """A bound ``computePDF`` / ``computeCDF`` / ``computeLogPDF``."""
-
-  def __call__(self, sample: _Sample, /) -> _Floats: ...
-
-
-class _Distribution(Protocol):
-  """The ``openturns.Distribution`` surface a margin evaluates through."""
-
-  def computePDF(self, sample: _Sample, /) -> _Floats: ...
-
-  def computeCDF(self, sample: _Sample, /) -> _Floats: ...
-
-  def computeLogPDF(self, sample: _Sample, /) -> _Floats: ...
-
-  def computeQuantile(self, p: _Floats, /) -> _Floats: ...
-
-  def getRange(self) -> _Interval: ...
-
-  def getDimension(self) -> int: ...
-
-  def isDiscrete(self) -> bool: ...
-
-  def getName(self) -> str: ...
-
-  def getParameter(self) -> _Floats: ...
-
-  def getParameterDescription(self) -> _Names: ...
-
-
-class _Factory(Protocol):
-  """The ``openturns.DistributionFactory`` surface a fit drives."""
-
-  def build(self, sample: Optional[_Sample] = None, /) -> _Distribution: ...
-
-  def getImplementation(self) -> "_Factory": ...
-
-  def getClassName(self) -> str: ...
-
-
-class _FactoryRegistry(Protocol):
-  """``openturns.DistributionFactory``'s own registry lookups."""
-
-  def GetByName(self, name: str, /) -> _Factory: ...
-
-  def GetContinuousUniVariateFactories(self) -> Sequence[_Factory]: ...
-
-  def GetDiscreteUniVariateFactories(self) -> Sequence[_Factory]: ...
-
-
-class _FittingTest(Protocol):
-  """``openturns.FittingTest``, whose criteria are reached by name."""
-
-  def AIC(
-    self, sample: _Sample, distribution: _Distribution, k: int, /
-  ) -> float: ...
-
-  def BIC(
-    self, sample: _Sample, distribution: _Distribution, k: int, /
-  ) -> float: ...
-
-  def AICC(
-    self, sample: _Sample, distribution: _Distribution, k: int, /
-  ) -> float: ...
-
-
-class _OpenTURNS(Protocol):
-  """The ``openturns`` module surface this module uses."""
-
-  @property
-  def DistributionFactory(self) -> _FactoryRegistry: ...
-
-  @property
-  def FittingTest(self) -> _FittingTest: ...
-
-  def Sample(self, values: np.ndarray, /) -> _Sample: ...
-
-  def Point(self, values: np.ndarray, /) -> _Floats: ...
-
-
-def _openturns() -> _OpenTURNS:
+def _openturns() -> Any:
   """Return ``openturns``, or raise naming the extra that provides it."""
   with extra_required(
     extra="openturns",
@@ -184,7 +58,7 @@ def _openturns() -> _OpenTURNS:
 # --- marshaling ----------------------------------------------------------- #
 
 
-def _at_points(method: _PointMethod, x: np.ndarray) -> np.ndarray:
+def _at_points(method: Any, x: np.ndarray) -> np.ndarray:
   """Evaluate a per-point OpenTURNS method over a NumPy array.
 
   Parameters
@@ -212,7 +86,7 @@ def _at_points(method: _PointMethod, x: np.ndarray) -> np.ndarray:
   return out.reshape(values.shape)
 
 
-def _at_probabilities(distribution: _Distribution, p: np.ndarray) -> np.ndarray:
+def _at_probabilities(distribution: Any, p: np.ndarray) -> np.ndarray:
   """Evaluate ``computeQuantile`` over a NumPy array of probabilities.
 
   Parameters
@@ -240,7 +114,7 @@ def _at_probabilities(distribution: _Distribution, p: np.ndarray) -> np.ndarray:
   return out.reshape(values.shape)
 
 
-def _left_limit(distribution: _Distribution, x: np.ndarray) -> np.ndarray:
+def _left_limit(distribution: Any, x: np.ndarray) -> np.ndarray:
   """Left limit ``F(x^-)`` of a discrete OpenTURNS distribution.
 
   Parameters
@@ -263,7 +137,7 @@ def _left_limit(distribution: _Distribution, x: np.ndarray) -> np.ndarray:
   return np.clip(upper - _at_points(distribution.computePDF, x), 0.0, 1.0)
 
 
-def _support(distribution: _Distribution) -> tuple[float, float]:
+def _support(distribution: Any) -> tuple[float, float]:
   """Read a distribution's support off its range.
 
   Parameters
@@ -292,7 +166,7 @@ def _support(distribution: _Distribution) -> tuple[float, float]:
   return (lo, hi)
 
 
-def _univariate(distribution: _Distribution) -> _Distribution:
+def _univariate(distribution: Any) -> Any:
   """Check that an OpenTURNS distribution can stand in for a margin.
 
   Parameters
@@ -319,10 +193,7 @@ def _univariate(distribution: _Distribution) -> _Distribution:
   return distribution
 
 
-# `spec` is a `str | _Factory`; it is typed `Any` because the one caller
-# arrives having excluded `None` through a pair of guards no annotation can
-# express -- exactly one of `factory` and `distribution` is set.
-def _resolve_factory(spec: Any) -> _Factory:
+def _resolve_factory(spec: Any) -> Any:
   """Resolve a factory specification into an OpenTURNS factory.
 
   Parameters
@@ -343,7 +214,7 @@ def _resolve_factory(spec: Any) -> _Factory:
   """
   openturns = _openturns()
   if not isinstance(spec, str):
-    return cast("_Factory", spec)
+    return spec
   name = spec if spec.endswith("Factory") else spec + "Factory"
   try:
     return openturns.DistributionFactory.GetByName(name)
@@ -354,7 +225,7 @@ def _resolve_factory(spec: Any) -> _Factory:
     ) from e
 
 
-def _factory_name(factory: _Factory) -> str:
+def _factory_name(factory: Any) -> str:
   """Name the family a factory estimates.
 
   Parameters
@@ -445,9 +316,9 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
 
   def __init__(
     self,
-    factory: Optional[Union[str, _Factory]] = None,
+    factory: Any = None,
     *,
-    distribution: Optional[_Distribution] = None,
+    distribution: Any = None,
   ) -> None:
     _openturns()
     if factory is None and distribution is None:
@@ -468,10 +339,10 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     # Branch on the arguments rather than on the attributes: the check above
     # guarantees exactly one is set, but that invariant is not expressible in
     # the attribute types.
-    known: _Distribution
+    known: Any
     if distribution is not None:
-      resolved_distribution: Optional[_Distribution] = _univariate(distribution)
-      resolved_factory: Optional[_Factory] = None
+      resolved_distribution: Any = _univariate(distribution)
+      resolved_factory: Any = None
       known = resolved_distribution
     else:
       resolved_distribution = None
@@ -518,7 +389,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     return clone
 
   @staticmethod
-  def from_distribution(distribution: _Distribution) -> "OpenTURNSMargin":
+  def from_distribution(distribution: Any) -> "OpenTURNSMargin":
     """Wrap a distribution that already carries its parameters.
 
     Parameters
@@ -536,7 +407,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
   # --- identity ------------------------------------------------------------ #
 
   @property
-  def distribution(self) -> _Distribution:
+  def distribution(self) -> Any:
     """The underlying OpenTURNS distribution.
 
     Returns
@@ -855,8 +726,8 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
 
   @staticmethod
   def _candidate_factories(
-    *, discrete: bool, family_set: Optional[Sequence[Union[str, _Factory]]]
-  ) -> list[_Factory]:
+    *, discrete: bool, family_set: Optional[Sequence[Any]]
+  ) -> list[Any]:
     """Resolve the factories to try.
 
     Parameters
@@ -964,9 +835,9 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
 
 
 def _try_factory(
-  factory: _Factory,
+  factory: Any,
   data: np.ndarray,
-  sample: _Sample,
+  sample: Any,
   *,
   discrete: bool,
 ) -> tuple[Optional["OpenTURNSMargin"], Optional[str]]:
@@ -1010,8 +881,8 @@ def _try_factory(
 
 
 def _openturns_criteria(
-  sample: _Sample,
-  distribution: _Distribution,
+  sample: Any,
+  distribution: Any,
   k: int,
   loglik: Union[float, np.ndarray],
 ) -> dict[str, float]:
@@ -1044,44 +915,3 @@ def _openturns_criteria(
     key: n * float(getattr(fitting, method)(sample, distribution, k))
     for key, method in _FITTING_TEST.items()
   }
-
-
-def _is_openturns_distribution(obj: object) -> bool:
-  """Whether ``obj`` is an ``openturns`` distribution.
-
-  Parameters
-  ----------
-  obj : object
-      Any object.
-
-  Returns
-  -------
-  bool
-      ``True`` for a concrete OpenTURNS distribution and for the
-      ``Distribution`` interface object a factory returns, which share no base
-      class beyond ``Object``.
-  """
-  return any(
-    str(getattr(base, "__module__", "")).startswith("openturns")
-    and base.__name__ in ("Distribution", "DistributionImplementation")
-    for base in type(obj).__mro__
-  )
-
-
-def _adapt_openturns(obj: _Distribution) -> MarginLike[Any]:
-  """Adapt an ``openturns`` distribution.
-
-  Parameters
-  ----------
-  obj : openturns.Distribution
-      The distribution to wrap.
-
-  Returns
-  -------
-  MarginLike
-      An :class:`OpenTURNSMargin` around it, already fitted.
-  """
-  return OpenTURNSMargin.from_distribution(obj)
-
-
-register_margin_adapter(_is_openturns_distribution, _adapt_openturns)

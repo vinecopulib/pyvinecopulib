@@ -115,10 +115,11 @@ def test_core_reaches_up_a_layer_only_where_it_must() -> None:
   `pyvinecopulib.core` runs the top-level `__init__`, which loads `margins`
   eagerly by design, so a runtime check would measure the wrong thing.
 
-  Two deferred hops are expected and irreducible -- resolving the
-  ``"parametric"`` alias and the ``"SciPyMargin"`` JSON ``kind`` to a class
-  that lives behind an extra. Any more, or any at module scope, is the layer
-  inversion coming back.
+  Three deferred hops are expected and irreducible, each resolving a name to a
+  class that lives behind an extra: the ``"parametric"`` alias, the
+  ``"SciPyMargin"`` JSON ``kind``, and the adapter ``as_margin`` builds for an
+  OpenTURNS object. Any more, or any at module scope, is the layer inversion
+  coming back.
   """
   import ast
   import pathlib
@@ -126,6 +127,18 @@ def test_core_reaches_up_a_layer_only_where_it_must() -> None:
   core = pathlib.Path("src/pyvinecopulib/core")
   if not core.is_dir():  # installed rather than checked out
     pytest.skip("source tree not available")
+
+  def targets_of(node: ast.Import | ast.ImportFrom) -> list[str]:
+    """Resolve one import statement to the dotted modules it names.
+
+    Resolved rather than matched as a substring, because ``core`` has a
+    sibling named ``_margins``: level 1 is a module inside ``core``, level 2
+    the package above it.
+    """
+    if isinstance(node, ast.Import):
+      return [alias.name for alias in node.names]
+    here = ["pyvinecopulib", "core"][: 2 - ((node.level or 1) - 1)]
+    return [".".join([*here, node.module or ""])]
 
   module_scope: list[str] = []
   deferred: list[str] = []
@@ -135,14 +148,14 @@ def test_core_reaches_up_a_layer_only_where_it_must() -> None:
     for node in ast.walk(tree):
       if not isinstance(node, (ast.Import, ast.ImportFrom)):
         continue
-      target = getattr(node, "module", "") or ""
-      if "margins" not in target:
-        continue
-      where = module_scope if node in top else deferred
-      where.append(f"{path.name}:{node.lineno} -> {target}")
+      for target in targets_of(node):
+        if not target.startswith("pyvinecopulib.margins"):
+          continue
+        where = module_scope if node in top else deferred
+        where.append(f"{path.name}:{node.lineno} -> {target}")
 
   assert module_scope == [], module_scope
-  assert len(deferred) == 2, deferred
+  assert len(deferred) == 3, deferred
   # And neither reaches a private module of the layer above.
   assert not any("._" in d.split("-> ")[1] for d in deferred), deferred
 
