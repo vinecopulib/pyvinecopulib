@@ -1041,8 +1041,12 @@ class SciPyMargin(MarginBase[np.ndarray]):
       k: (float(v[0]), float(v[1]))
       for k, v in (payload.get("bounds") or {}).items()
     } or None
+    # The payload carries the normalized parameter names, which is what
+    # `_fixed` holds; the constructor takes SciPy's `f`-prefixed pin
+    # spelling, so this is the same conversion `_frozen` makes on the way
+    # into `family.freeze`.
     fixed: dict[str, float] = {
-      str(k): float(v) for k, v in (payload.get("fixed") or {}).items()
+      f"f{k}": float(v) for k, v in (payload.get("fixed") or {}).items()
     }
     # `params` positionally, so the `**fixed` unpacking cannot reach it.
     margin = cls(str(payload["family"]), None, param_bounds=bounds, **fixed)

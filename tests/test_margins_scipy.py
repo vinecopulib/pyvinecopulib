@@ -892,3 +892,41 @@ def test_parametric_margin_names_the_extra_without_scipy() -> None:
     "  sys.exit(0 if 'pyvinecopulib[scipy]' in str(e) else 2)\n"
     "sys.exit(3)\n",
   )
+
+
+@pytest.mark.parametrize(
+  ("data_kind", "expect_pinned"),
+  [("real", False), ("positive", True), ("unit", True), ("count", True)],
+)
+def test_a_selected_margin_survives_a_json_round_trip(
+  data_kind: str, expect_pinned: bool
+) -> None:
+  """A pinned parameter has two spellings, and the payload used the other one.
+
+  `_fixed` holds normalized names (``loc``) while the constructor takes
+  SciPy's pin spelling (``floc``), so writing one and reading it as the other
+  raised for every margin with a pin -- which is every curated candidate
+  outside the ``real`` group, and therefore the `margins="parametric"`
+  default on positive, unit, bounded or count data. Only unpinned ``norm``
+  round-tripped, which is what the one existing test used.
+  """
+  from pyvinecopulib.core import margin_from_json, margin_to_json
+
+  rng = np.random.default_rng(0)
+  data = {
+    "real": rng.normal(size=300),
+    "positive": np.abs(rng.normal(size=300)) + 0.1,
+    "unit": rng.uniform(0.05, 0.95, size=300),
+    "count": rng.poisson(3.0, size=300).astype(float),
+  }[data_kind]
+
+  margin = SciPyMargin().select(data)
+  assert bool(margin.fixed_parameters) is expect_pinned, margin.family_name
+
+  back = margin_from_json(margin_to_json(margin))
+  assert back.family_name == margin.family_name
+  assert back.fixed_parameters == margin.fixed_parameters
+  assert back.parameters == margin.parameters
+  np.testing.assert_allclose(back.pdf(data[:20]), margin.pdf(data[:20]))
+  for name in ("loglik", "aic", "bic", "aicc"):
+    assert getattr(back, name)() == pytest.approx(getattr(margin, name)())
