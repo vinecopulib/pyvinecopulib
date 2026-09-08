@@ -463,7 +463,7 @@ def test_controls_are_refused_because_there_is_no_fit_to_configure() -> None:
   could not act on it and be dropped instead of refused.
   """
   from pyvinecopulib.margins import FitControlsMargin
-  from pyvinecopulib.core._resolve import fit_margin
+  from pyvinecopulib.core._margins import fit_margin
 
   assert TorchDistributionMargin.supports_controls is False
   margin = TorchDistributionMargin.from_distribution(_D.Normal(0.0, 1.0))

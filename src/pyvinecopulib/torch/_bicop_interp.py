@@ -17,7 +17,7 @@ from torch import Tensor
 # ``_batched`` (they are shape-polymorphic over leading batch dims). The
 # scalar methods below are thin ``N=1`` wrappers so there is a single
 # source of truth for the numerics shared with the batched vine cascade.
-from ._batched import (
+from ._vinecop_batched import (
   _batched_cell_index,
   int_on_grid_batched,
   integrate_1d_batched,

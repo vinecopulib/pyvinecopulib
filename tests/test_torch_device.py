@@ -240,7 +240,7 @@ def test_batched_fit_peak_memory_stays_bounded(device: str) -> None:
   """
   if torch.device(device).type != "cuda":
     pytest.skip("peak allocation is only observable on cuda")
-  from pyvinecopulib.torch._fit_tll import _KDE_MEM_BUDGET_BYTES
+  from pyvinecopulib.torch._bicop_fit_tll import _KDE_MEM_BUDGET_BYTES
 
   d, n = 20, 8000
   u_np = _u(d, n, 7)

@@ -1,6 +1,6 @@
-"""Batched primitive equivalence against :mod:`pyvinecopulib.torch._interp`.
+"""Batched primitive equivalence against :mod:`pyvinecopulib.torch._bicop_interp`.
 
-The batched primitives in :mod:`pyvinecopulib.torch._batched` are the
+The batched primitives in :mod:`pyvinecopulib.torch._vinecop_batched` are the
 ``(N, m, m)`` analogs of the operations in :mod:`._interp`. This file
 asserts the two paths produce identical outputs when ``N`` independent
 grids are fed through the batched version vs. an explicit Python loop
@@ -17,7 +17,7 @@ import pyvinecopulib as pv
 torch = pytest.importorskip("torch")
 
 from pyvinecopulib.torch import TorchTllBicop  # noqa: E402
-from pyvinecopulib.torch._batched import (  # noqa: E402
+from pyvinecopulib.torch._vinecop_batched import (  # noqa: E402
   int_on_grid_batched,
   integrate_1d_batched,
   integrate_2d_batched,

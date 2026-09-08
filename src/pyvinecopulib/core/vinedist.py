@@ -164,7 +164,7 @@ class Vinedist(VinedistBase[np.ndarray]):
     where nothing can occur.
     """
     del controls
-    from ._resolve import kde_from_controls
+    from ._margins import kde_from_controls
 
     per_variable = margin_controls or [None] * d
     return [kde_from_controls(mc) for mc in per_variable]
@@ -212,17 +212,14 @@ class Vinedist(VinedistBase[np.ndarray]):
         different class, or if a margin's ``kind`` has no registered reader.
     """
     from ..pyvinecopulib_ext import Vinecop
-    from ._margins import (
-      MARGIN_JSON_VERSION,
-      loads,
-      margin_from_json,
-    )
+    from ._json import MODEL_JSON_VERSION, loads
+    from ._margins import margin_from_json
 
     payload = loads(json)
-    if payload.get("version") != MARGIN_JSON_VERSION:
+    if payload.get("version") != MODEL_JSON_VERSION:
       raise ValueError(
         f"unsupported Vinedist JSON version {payload.get('version')!r}; this "
-        f"build reads version {MARGIN_JSON_VERSION}"
+        f"build reads version {MODEL_JSON_VERSION}"
       )
     # `to_json` writes the class name and nothing read it, so a subclass's
     # payload loaded as this class -- quietly the wrong model, since a

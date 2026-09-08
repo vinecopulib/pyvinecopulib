@@ -279,20 +279,20 @@ pyvinecopulib/
         protocols.py             # Bicop/Vinecop/Margin/Vinedist/Controls contracts
         bicop_base.py            # BicopBase (canonical BicopLike partial impl)
         vinecop_base.py          # VinecopBase (array-agnostic cascades + fit/select)
-        context.py               # ConditioningContext / Simplified / NonSimplified
+        vinecop_context.py       # ConditioningContext / Simplified / NonSimplified
         margin_base.py           # MarginBase (canonical MarginLike partial impl)
         vinedist_base.py         # VinedistBase (array-agnostic cascade + IFM fit)
         vinedist.py              # Vinedist (NumPy + compiled Vinecop)
         margin_controls.py       # FitControlsMargin (the marginal half of a fit)
         _covariates.py           # the two `x`-forwarding rules + `prepare` (internal)
-        _discrete.py             # DiscretePair + the discrete layouts / per-edge types
-        _engines.py              # fit_parts / select_parts — the two fit engines (internal)
-        independence.py          # IndependencePair
+        _vinecop_discrete.py     # DiscretePair + the discrete layouts / per-edge types
+        _vinecop_fit_engines.py  # fit_parts / select_parts — the two fit engines (internal)
+        bicop_independence.py    # IndependencePair
         _placement.py            # place / reference_array + the `_prep` and `_sample_uniform` hooks (internal)
-        _reorient.py             # relabel a structure onto a chosen order tail (internal)
-        _resolve.py              # resolve_margins / resolve_margin_controls / fit_margin (internal)
+        _vinecop_reorient.py     # relabel a structure onto a chosen order tail (internal)
         _rootfind.py             # solve_increasing (monotone bisection; internal)
-        _margins.py              # the two margin registries: as_margin + the JSON readers (internal)
+        _json.py                 # how a model payload is encoded and written (internal)
+        _margins.py              # everything about a margin but its contract: coercion, resolution, JSON (internal)
         _trim.py                 # trim — the domain step of the input pipeline (internal)
         _validation.py           # the layout / weights / covariate validators (internal)
       families/__init__.py       # BicopFamily enum + 13 family constants + 15 group constants
@@ -314,11 +314,11 @@ pyvinecopulib/
         distribution_margin.py   # TorchDistributionMargin (torch.distributions adapter)
         vinedist.py              # TorchVinedist (nn.Module margins + distribution)
         kde1d.py                 # TorchKde1d (the torch marginal estimator)
-        _kde1d_interp.py         # kde1d's InterpolationGrid, ported — internal
+        _margin_kde1d_interp.py  # kde1d's InterpolationGrid, ported — internal
         controls.py              # FitControlsTorchBicop / FitControlsTorchVinecop dataclasses
-        _interp.py               # InterpolationGrid2D (bilinear; Sinkhorn margin renormalization) — internal
-        _fit_tll.py              # pure-torch TLL kernel
-        _batched.py              # batched evaluation variants
+        _bicop_interp.py         # InterpolationGrid2D (bilinear; Sinkhorn margin renormalization) — internal
+        _bicop_fit_tll.py        # pure-torch TLL kernel
+        _vinecop_batched.py      # batched evaluation variants
         _placement.py            # the torch lane's `_prep` hook / reference tensor — internal
 
       _build_info.py             # build provenance, read by `__version__` reporting
@@ -456,10 +456,10 @@ For any behavior change:
   standard's bound is `__array_namespace__`, which `torch.Tensor` lacks). So a
   body that indexes or does arithmetic takes a local `Any` and hands the result
   back through `cast("ArrayT", ...)` -- `core/bicop_base.py` and
-  `core/independence.py` are the reference. What that buys is worth the two
+  `core/bicop_independence.py` are the reference. What that buys is worth the two
   casts: an `Any` in a *signature* erases the type for every caller and is
   published contract text, while one in a body is confined to an expression.
-  Where a whole file's `Any` is one reason (`core/_discrete.py`'s difference
+  Where a whole file's `Any` is one reason (`core/_vinecop_discrete.py`'s difference
   quotients, OpenTURNS having no types at all) it goes in
   `per-file-ignores` with that reason stated once; everywhere else it is a
   `# noqa: ANN401` at the site, and `RUF100` fails the build when one goes
@@ -471,7 +471,7 @@ For any behavior change:
   pyvinecopulib.sklearn import VineDensity`), not deep internals.
   `_python_helpers` and other underscore-prefixed modules are off
   limits to tests, with one carve-out: the innermost numeric kernels in
-  `torch/_fit_tll.py` (`_win_smoother`, `_ace`) are reached directly,
+  `torch/_bicop_fit_tll.py` (`_win_smoother`, `_ace`) are reached directly,
   because what they guarantee is not observable through the public surface
   at the precision that matters — a leaking per-lane freeze moves a vine's
   pdf by less than the arithmetic noise a batched fit has to tolerate, and
@@ -616,7 +616,7 @@ For any behavior change:
   codespell tokenizes, and cannot tell a docstring from an identifier, so
   `tests/test_prose.py` carries what it structurally cannot: the multi-word
   phrases, and the exemptions -- a `Tensor` parameter named for a mask in
-  `torch/_fit_tll.py`, the ordinary noun in "test harness", and one phrase
+  `torch/_bicop_fit_tll.py`, the ordinary noun in "test harness", and one phrase
   quoting upstream PyTorch's own support tier.
 
 - **Never say "compiled" or "C++" in a docstring.** A user of
@@ -977,7 +977,7 @@ automatically.
     it survives the relabeling `conditioning_set=` performs. Do not "simplify"
     this back to `struct_array` — the two agree on 93% of slots, which is
     exactly enough for a spot check to pass.
-  - `DiscretePair` (`_discrete.py`) — a *continuous* pair copula evaluated on a
+  - `DiscretePair` (`_vinecop_discrete.py`) — a *continuous* pair copula evaluated on a
     discrete or mixed edge. **The vine owns the discrete layouts, the pair
     copulas stay continuous**: `_bind_vine(..., var_types=)` declares which
     variables have atoms, `pair_var_types(tree, edge)` derives the types each
@@ -1007,7 +1007,8 @@ automatically.
     difference into `8.5e-8` at the vine, a visible divergence from
     `Vinecop`. The torch↔C++ cascade parity is a documented guarantee, and it
     outranks the accuracy here; revisit only together.
-  - `sample_conditional` / `reorient` (`_reorient.py`) — conditional sampling and
+  - `sample_conditional` / `reorient` (`_vinecop_reorient.py`) — conditional
+    sampling and
     the value-preserving relabeling it rests on. A **truncated** model relabels
     like any other: the trees above the truncation are independence, so the peel
     has nothing to move there and the slot map covers only `trunc_lvl` trees. At
@@ -1025,7 +1026,7 @@ automatically.
     which makes the result a different model. `select` takes `conditioning_set`
     too (the `+d` MST penalty, then the relabeling).
   - `ConditioningContext` / `SimplifiedContext` (default) /
-    `NonSimplifiedContext` (`context.py`) — the per-edge policy that
+    `NonSimplifiedContext` (`vinecop_context.py`) — the per-edge policy that
     turns the simplified cascade into a **non-simplified / conditional**
     vine (each pair also sees its conditioning-set values `u_D` and any
     external covariates `x`). Walk-through:
@@ -1089,8 +1090,9 @@ automatically.
 The two ecosystem adapters, kept out of `core` because they are the only part
 that needs an extra. The **contract internals live in `core`**, which own the
 half a `Vinedist` fit runs on: `MarginLike` / `MarginBase`, `FitControlsMargin`
-(`core/margin_controls.py`), the two registries (`core/_margins.py`) and
-the resolution helpers (`core/_resolve.py`). None of those needs SciPy -- they
+(`core/margin_controls.py`) and everything in `core/_margins.py` -- the two
+registries, the `margins=` resolution and `fit_margin`. None of those needs
+SciPy -- they
 import stdlib, NumPy and `core` -- and putting them here had `core` reaching
 *up* a layer at ten sites, three of them into a private module of a package
 above it, all deferred to hide the cycle. `pyvinecopulib.margins` re-exports
@@ -1134,11 +1136,12 @@ Three groups:
   **The underscore describes the module, not the names it exports.** It says
   "not an import path": `core/protocols.py`, `bicop_base.py`, `vinedist.py`,
   `margin_controls.py` and `independence.py` carry no underscore because each
-  is one public thing, while `core/_discrete.py` and `core/_margins.py`
-  keep theirs even though `DiscretePair`, `as_margin` and the three
-  `margin_*_json` helpers are public -- the internal layout helpers, the two
-  registry tables and the per-ecosystem predicates are the bulk of those
-  files, and the public names are reached through `core` or `margins`.
+  is one public thing, while `core/_vinecop_discrete.py` and `core/_margins.py`
+  keep theirs even though `DiscretePair`, `as_margin`, `resolve_margins` and
+  the `margin_*_json` helpers are public -- the internal layout helpers, the
+  two registry tables, the per-ecosystem predicates and the specification
+  shapes are the bulk of those files, and the public names are reached
+  through `core` or `margins`.
   Do not resolve a mismatch here by renaming a mixed module; resolve it by
   asking whether the module is something to import from.
 - **Coercion** — `as_margin(obj)` is idempotent and routes **every**
@@ -1402,7 +1405,7 @@ Key surface:
     still has to differentiate the quantile in `p`. Two of `Kde1d`'s attribute names could not
     be reused: `type` is `nn.Module`'s dtype cast (read `kde_type`) and
     `loglik` is the contract's method.
-  - `torch/_kde1d_interp.py` ports `kde1d`'s `InterpolationGrid`, and its
+  - `torch/_margin_kde1d_interp.py` ports `kde1d`'s `InterpolationGrid`, and its
     contract is *fidelity*, not improvement. One C++ behavior looks like a bug
     and must be reproduced: `integrate` adds no tail contribution, so the
     unnormalized integral saturates at the grid's mass even though the density
@@ -1491,7 +1494,7 @@ Key surface:
     when `TorchVinecop.from_data` is called with `structure=None`.
     Selection runs through `VinecopBase.select`, so it stays on the array
     namespace rather than round-tripping a compiled `pv.Vinecop`.
-- `InterpolationGrid2D` (`torch/_interp.py`) — the 2-d bilinear grid
+- `InterpolationGrid2D` (`torch/_bicop_interp.py`) — the 2-d bilinear grid
   backing `TorchTllBicop`; **internal** (not re-exported). Margin
   normalization uses Sinkhorn iterations to drive marginals to uniform.
 
@@ -1693,7 +1696,8 @@ Round-trip / parity properties to preserve when touching numerics:
   keeps the array-agnostic engines behind `_fit_parts` / `_select_parts`, which
   return the loose parts a factory assembles, because `from_data` needs them
   before an object exists. Those two names are `staticmethod` bindings of
-  `core/_engines.py`'s `fit_parts` / `select_parts`: both are module functions
+  `core/_vinecop_fit_engines.py`'s `fit_parts` / `select_parts`: both are module
+  functions
   — neither reads `self` or `cls` — and they sat in the class body only for
   namespacing, 718 lines of a 2677-line class. The class keeps the names
   because that is what external drivers reach them through.
@@ -1794,7 +1798,7 @@ Round-trip / parity properties to preserve when touching numerics:
   the second base is what supplies `state_dict` / `.to(device)` and lets a
   vine own the pair as a child, and its `__init__` has to be called
   explicitly, as `TorchTllBicop` does -- give it `fit` / `from_data`, and host
-  it by naming it as a vine's `bicop_class` or by passing `fit_edge`. `torch/_fit_tll.py` is the reference for the kernel
+  it by naming it as a vine's `bicop_class` or by passing `fit_edge`. `torch/_bicop_fit_tll.py` is the reference for the kernel
   itself, and `examples/10_extending_pyvinecopulib.ipynb` for the hosting.
 - **New sklearn-style estimators.** Subclass `VineBase` and add the
   mixin that matches the task (`DensityMixin` / `RegressorMixin`),

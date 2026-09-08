@@ -463,7 +463,10 @@ def test_normalize_margins_balances_both_margins() -> None:
   Averaging the two sweep orders splits the residual, which is what makes the
   balance assertion meaningful rather than tautological.
   """
-  from pyvinecopulib.torch._interp import InterpolationGrid2D, _trap_weights
+  from pyvinecopulib.torch._bicop_interp import (
+    InterpolationGrid2D,
+    _trap_weights,
+  )
 
   m = 16
   grid = torch.linspace(0.0, 1.0, m, dtype=torch.float64)
@@ -487,7 +490,7 @@ def test_normalize_margins_commutes_with_transposition() -> None:
   `fit(a, b).flip()` and `fit(b, a)` would be different models. Under the old
   three-sweep scheme they differed by 2.7e-4.
   """
-  from pyvinecopulib.torch._interp import InterpolationGrid2D
+  from pyvinecopulib.torch._bicop_interp import InterpolationGrid2D
 
   m = 16
   grid = torch.linspace(0.0, 1.0, m, dtype=torch.float64)
@@ -501,7 +504,7 @@ def test_normalize_margins_commutes_with_transposition() -> None:
 
 def test_normalize_margins_leaves_a_normalized_grid_alone() -> None:
   """An already-uniform grid costs one margin check and no scaling."""
-  from pyvinecopulib.torch._interp import InterpolationGrid2D
+  from pyvinecopulib.torch._bicop_interp import InterpolationGrid2D
 
   grid = torch.linspace(0.0, 1.0, 8, dtype=torch.float64)
   values = torch.ones(8, 8, dtype=torch.float64)
@@ -710,7 +713,7 @@ def test_rect_mass_is_exact_at_every_atom_width(
   """``rect_mass`` against exact rational truth, with the differencing route
   measured beside it.
   """
-  from pyvinecopulib.torch._interp import InterpolationGrid2D
+  from pyvinecopulib.torch._bicop_interp import InterpolationGrid2D
 
   m = 30
   grid_f = [Fraction(i, m - 1) for i in range(m)]
@@ -776,7 +779,7 @@ def test_values_must_be_nonnegative() -> None:
   The exact tables and ``rect_mass`` both rely on nonnegativity for their
   no-cancellation bound, so it is a precondition rather than a nicety.
   """
-  from pyvinecopulib.torch._interp import InterpolationGrid2D
+  from pyvinecopulib.torch._bicop_interp import InterpolationGrid2D
 
   gp = torch.linspace(0.0, 1.0, 8, dtype=torch.float64)
   vals = torch.ones(8, 8, dtype=torch.float64)
@@ -816,7 +819,7 @@ def test_win_smoother_is_a_box_mean(n: int) -> None:
   transcription of the C++ rather than against the end-to-end fit, which
   would not say which of the three went wrong.
   """
-  from pyvinecopulib.torch._fit_tll import _win_smoother
+  from pyvinecopulib.torch._bicop_fit_tll import _win_smoother
 
   wl = int(np.ceil(n / 5.0))
   x = torch.from_numpy(np.random.default_rng(n).standard_normal(n))
@@ -833,7 +836,7 @@ def test_win_smoother_batches_over_leading_dims() -> None:
   it here says whether a divergence upstack came from the smoother or from
   what surrounds it.
   """
-  from pyvinecopulib.torch._fit_tll import _win_smoother
+  from pyvinecopulib.torch._bicop_fit_tll import _win_smoother
 
   n, wl = 501, 101
   x = torch.from_numpy(np.random.default_rng(7).standard_normal((4, n)))
@@ -852,7 +855,7 @@ def test_kde_grid_block_bounds_the_working_set() -> None:
   width. Sizing the block from those two instead keeps the product -- and
   so the footprint -- inside one budget however wide the level is.
   """
-  from pyvinecopulib.torch._fit_tll import (
+  from pyvinecopulib.torch._bicop_fit_tll import (
     _KDE_MEM_BUDGET_BYTES,
     _kde_grid_block,
   )
@@ -885,17 +888,19 @@ def test_kde_grid_block_does_not_change_the_fit(
   -- so the block is a scheduling choice and nothing else. Pinned at zero
   because anything looser would let a real coupling hide.
   """
-  from pyvinecopulib.torch import _fit_tll
+  from pyvinecopulib.torch import _bicop_fit_tll
 
   u = torch.from_numpy(
     pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]])).sample(
       1500, seeds=[1, 2, 3]
     )
   )
-  monkeypatch.setattr(_fit_tll, "_KDE_MEM_BUDGET_BYTES", 1 << 30)
-  _, reference = _fit_tll.fit_tll_constant(u)
-  monkeypatch.setattr(_fit_tll, "_KDE_MEM_BUDGET_BYTES", budget)
-  _, got = _fit_tll.fit_tll_constant(u)
+  # The module, not this file's same-named helper: the old module name
+  # shadowed it here, which the rename made visible.
+  monkeypatch.setattr(_bicop_fit_tll, "_KDE_MEM_BUDGET_BYTES", 1 << 30)
+  _, reference = _bicop_fit_tll.fit_tll_constant(u)
+  monkeypatch.setattr(_bicop_fit_tll, "_KDE_MEM_BUDGET_BYTES", budget)
+  _, got = _bicop_fit_tll.fit_tll_constant(u)
   torch.testing.assert_close(got, reference, atol=0.0, rtol=0.0)
 
 
@@ -923,7 +928,7 @@ def test_ace_freezes_each_lane_independently() -> None:
   so it grinds against its own rounding noise: 63 and 147 smoothing passes
   against the probe's 30.
   """
-  from pyvinecopulib.torch._fit_tll import _ace
+  from pyvinecopulib.torch._bicop_fit_tll import _ace
 
   rng = np.random.default_rng(4)
   probe = pv.Bicop(
@@ -981,7 +986,7 @@ def test_ace_step_carries_its_own_state() -> None:
   That only reproduces the sequential answer if every one of them is masked
   -- an unmasked trip counter would retire a frozen lane's neighbors early.
   """
-  from pyvinecopulib.torch._fit_tll import _ace_step
+  from pyvinecopulib.torch._bicop_fit_tll import _ace_step
 
   torch.manual_seed(0)
   n, p = 200, 3
@@ -1116,7 +1121,7 @@ def test_a_discrete_edge_is_refused_a_pair_axis() -> None:
   a latent sample reconstructed from a fixed-seed generator, so there is no
   batched equivalent to fall back to.
   """
-  from pyvinecopulib.torch._fit_tll import fit_tll_constant
+  from pyvinecopulib.torch._bicop_fit_tll import fit_tll_constant
 
   rng = np.random.default_rng(5)
   u = np.ceil(rng.uniform(0.0, 1.0, size=(200, 2)) * 4) / 4

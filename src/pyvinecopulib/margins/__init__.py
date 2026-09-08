@@ -47,7 +47,7 @@ from ..core._margins import as_margin, register_margin_adapter
 # adapter with `as_margin`, and it imports OpenTURNS itself only when used.
 from .openturns import OpenTURNSMargin
 from ..core.margin_controls import FitControlsMargin
-from ..core._resolve import resolve_margin_controls, resolve_margins
+from ..core._margins import resolve_margin_controls, resolve_margins
 from .scipy import SciPyMargin
 
 __all__ = [

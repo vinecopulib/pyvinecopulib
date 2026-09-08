@@ -39,7 +39,8 @@ Two structural notes about what lives here rather than in a subclass. The
 batched *cascade loops* are array-agnostic and are in this module; only the
 grid/cache builder they walk, returned by ``_build_batched``, is
 subclass-specific. And the selection and per-edge fit **engines** live in
-``_engines``, reached through the ``_select_parts`` / ``_fit_parts`` names
+``_vinecop_fit_engines``, reached through the ``_select_parts`` /
+``_fit_parts`` names
 here; they return the structure and pairs they produced rather than storing
 them — ``from_data`` needs those
 parts before an object exists to put them on, so the public ``fit`` / ``select``
@@ -71,7 +72,7 @@ import numpy as np
 from array_api_compat import array_namespace
 
 from ..pyvinecopulib_ext import RVineStructure
-from ._discrete import (
+from ._vinecop_discrete import (
   check_var_types,
   collapse_data,
   continuous_view,
@@ -81,16 +82,16 @@ from ._discrete import (
   seed_left_limits,
   stack_edge,
 )
-from ._reorient import Reorientation, reorientation
+from ._vinecop_reorient import Reorientation, reorientation
 from ._covariates import pair_eval, prepare
-from ._engines import (
+from ._vinecop_fit_engines import (
   FitEdge,
   FitLevel,
   fit_parts,
   select_parts,
 )
 from .bicop_base import BicopBase, flip_of
-from .context import ConditioningContext, SimplifiedContext
+from .vinecop_context import ConditioningContext, SimplifiedContext
 from .protocols import (
   ArrayT,
   BicopLike,
@@ -1750,7 +1751,8 @@ class VinecopBase(
 
     return fit_edge_default
 
-  #: The two fit engines, which are module functions in ``_engines`` -- neither
+  #: The two fit engines, module functions in ``_vinecop_fit_engines`` --
+  #: neither
   #: reads ``self`` or ``cls``. Bound here because these are the names `fit`,
   #: `select`, `from_data` and every external driver reach them through.
   _fit_parts = staticmethod(fit_parts)

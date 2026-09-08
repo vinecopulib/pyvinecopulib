@@ -33,7 +33,7 @@ from typing import Callable, Optional, cast
 import torch
 from torch import Tensor
 
-from ._interp import InterpolationGrid2D
+from ._bicop_interp import InterpolationGrid2D
 
 _SQRT_2PI_INV = 1.0 / math.sqrt(2.0 * math.pi)
 

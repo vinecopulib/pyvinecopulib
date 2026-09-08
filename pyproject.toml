@@ -187,7 +187,7 @@ ignore = ["TC001", "TC002", "TC003"]
 # each one many sites share a single reason -- see the AGENTS.md rule.
 # `DiscretePair`'s private helpers compute difference quotients on array
 # columns, which an unbounded `ArrayT` cannot type.
-"src/pyvinecopulib/core/_discrete.py" = ["ANN401"]
+"src/pyvinecopulib/core/_vinecop_discrete.py" = ["ANN401"]
 # OpenTURNS is SWIG-generated: no `py.typed` and no stub package.
 "src/pyvinecopulib/margins/openturns.py" = ["ANN401"]
 # A test passes a wrong type on purpose to prove a runtime guard fires.
@@ -261,10 +261,10 @@ exclude_files = [
   'src/pyvinecopulib/_python_helpers/.*\.py$',
   'src/pyvinecopulib/_deprecations\.py$',
   'src/pyvinecopulib/sklearn/_base\.py$',
-  'src/pyvinecopulib/torch/_batched\.py$',
-  'src/pyvinecopulib/torch/_fit_tll\.py$',
-  'src/pyvinecopulib/torch/_interp\.py$',
-  'src/pyvinecopulib/torch/_kde1d_interp\.py$',
+  'src/pyvinecopulib/torch/_vinecop_batched\.py$',
+  'src/pyvinecopulib/torch/_bicop_fit_tll\.py$',
+  'src/pyvinecopulib/torch/_bicop_interp\.py$',
+  'src/pyvinecopulib/torch/_margin_kde1d_interp\.py$',
 ]
 
 [tool.coverage.run]

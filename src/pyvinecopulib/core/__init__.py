@@ -89,10 +89,10 @@ from ..pyvinecopulib_ext import (
   Vinecop,
 )
 from .._deprecations import _method_alias
-from ._discrete import DiscretePair
-from .independence import IndependencePair
+from ._vinecop_discrete import DiscretePair
+from .bicop_independence import IndependencePair
 from .bicop_base import BicopBase
-from .context import (
+from .vinecop_context import (
   ConditioningContext,
   NonSimplifiedContext,
   SimplifiedContext,

@@ -186,8 +186,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     -------
     None
     """
-    from ._margins import as_margin
-    from ._resolve import unshare
+    from ._margins import as_margin, unshare
 
     d = int(
       getattr(vinecop, "dim", 0) or len(getattr(vinecop, "order", ()) or ())
@@ -334,7 +333,8 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     --------
     to_file : Write to a file, JSON or CBOR.
     """
-    from ._margins import MARGIN_JSON_VERSION, dumps, margin_to_json
+    from ._json import MODEL_JSON_VERSION, dumps
+    from ._margins import margin_to_json
 
     copula_to_json = getattr(self._vinecop, "to_json", None)
     if copula_to_json is None:
@@ -346,7 +346,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     return dumps(
       {
         "kind": type(self).__name__,
-        "version": MARGIN_JSON_VERSION,
+        "version": MODEL_JSON_VERSION,
         "copula": copula_to_json(),
         "margins": [margin_to_json(m) for m in self._margins],
       }
@@ -360,7 +360,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     filename : str
         Path to write.
     """
-    from ._margins import write_file
+    from ._json import write_file
 
     write_file(filename, self.to_json())
 
@@ -382,7 +382,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     --------
     to_file : Write one out.
     """
-    from ._margins import read_file
+    from ._json import read_file
 
     return cls.from_json(read_file(filename))
 
@@ -1413,9 +1413,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         If covariates are given and this lane cannot estimate both halves on
         them, or if the held copula has no estimator to re-run.
     """
-    from ._resolve import resolve_margin_controls
-    from ._resolve import fit_margin
-    from ._resolve import unshare
+    from ._margins import fit_margin, resolve_margin_controls, unshare
 
     cls = type(self)
     coerced, weights = cls._coerce_fit_data(y, weights, controls)
@@ -1600,8 +1598,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
            functions for margins for multivariate models.* Technical Report
            166, Department of Statistics, University of British Columbia.
     """
-    from ._resolve import resolve_margin_controls, resolve_margins
-    from ._resolve import fit_margin
+    from ._margins import fit_margin, resolve_margin_controls, resolve_margins
 
     coerced, weights = cls._coerce_fit_data(y, weights, controls)
     data: Any = coerced

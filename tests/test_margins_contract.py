@@ -191,7 +191,7 @@ def test_select_on_a_named_margin_keeps_the_family(eco: Ecosystem) -> None:
   specification with a different model. `family_set` is how a caller asks for
   the search back on one.
   """
-  from pyvinecopulib.core._resolve import fit_margin
+  from pyvinecopulib.core._margins import fit_margin
 
   named = eco.cls(eco.real)
   assert not named.is_fitted

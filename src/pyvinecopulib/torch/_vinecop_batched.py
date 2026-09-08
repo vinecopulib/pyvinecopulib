@@ -840,7 +840,7 @@ def _shared_grid(
   """
   # Deferred: `_interp` imports the kernels in this module, so the dependency
   # only goes the other way at call time.
-  from ._interp import InterpolationGrid2D
+  from ._bicop_interp import InterpolationGrid2D
 
   ref = None
   for t in range(trunc_lvl):

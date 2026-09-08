@@ -58,8 +58,8 @@ from ..core import (
   DiscretePair,
   VinecopBase,
 )
-from ..core._discrete import continuous_view
-from ..core.independence import IndependencePair
+from ..core._vinecop_discrete import continuous_view
+from ..core.bicop_independence import IndependencePair
 from ..core._validation import reject_covariates
 from ..core.vinecop_base import FitEdge, FitLevel, _NotBatchable
 from ..pyvinecopulib_ext import (
@@ -69,7 +69,7 @@ from ..pyvinecopulib_ext import (
   tll as _TLL_FAMILY,
 )
 from ..utils import sample_uniform
-from ._batched import BatchedVine
+from ._vinecop_batched import BatchedVine
 from ._placement import TensorPlacementMixin, reference_tensor
 from .controls import FitControlsTorchVinecop
 from .tll_bicop import TorchTllBicop

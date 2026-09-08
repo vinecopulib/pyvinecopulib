@@ -36,7 +36,7 @@ from torch import Tensor
 from ..core import BicopBase, ControlsLike
 from ..core._validation import reject_covariates
 from ..pyvinecopulib_ext import Bicop, tll as _TLL_FAMILY
-from ._interp import InterpolationGrid2D, _trim
+from ._bicop_interp import InterpolationGrid2D, _trim
 from .controls import FitControlsTorchBicop
 
 
@@ -408,7 +408,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       raise ValueError(f"u must have shape (P, n, 2); got {tuple(u_t.shape)}")
     u_t = _trim(u_t)
 
-    from ._fit_tll import fit_tll_constant
+    from ._bicop_fit_tll import fit_tll_constant
 
     grid_points, values = fit_tll_constant(
       u_t,
@@ -538,7 +538,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
     # ``method`` is validated to be "tll" by FitControlsTorchBicop; it is
     # kept as the dispatch hook for future torch fitters.
-    from ._fit_tll import fit_tll_constant
+    from ._bicop_fit_tll import fit_tll_constant
 
     grid_points, values = fit_tll_constant(
       values_only,

@@ -18,7 +18,7 @@ from sklearn.utils.validation import (
 
 from ..core import MarginLike, Vinedist
 from ..margins import resolve_margins
-from ..core._resolve import MarginSpec, fit_margin
+from ..core._margins import MarginSpec, fit_margin
 from .backends import _VinecopBackendBase, resolve_backend
 
 # Shared docstring fragments interpolated into VineDensity / VineRegressor

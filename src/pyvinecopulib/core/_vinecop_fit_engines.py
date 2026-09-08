@@ -27,7 +27,7 @@ from array_api_compat import array_namespace
 
 from ..pyvinecopulib_ext import RVineStructure
 from ._covariates import pair_eval, prepare
-from ._discrete import (
+from ._vinecop_discrete import (
   check_var_types,
   collapse_data,
   disc_cols,
@@ -37,11 +37,11 @@ from ._discrete import (
   stack_edge,
   with_left_limit,
 )
-from .independence import IndependencePair
-from ._reorient import _SlotKey, _slot_key, reorientation
+from .bicop_independence import IndependencePair
+from ._vinecop_reorient import _SlotKey, _slot_key, reorientation
 from ._validation import validate_weights
 from .bicop_base import flip_of
-from .context import ConditioningContext, SimplifiedContext
+from .vinecop_context import ConditioningContext, SimplifiedContext
 from .protocols import ArrayT, BicopLike
 
 __all__ = ["FitEdge", "FitLevel", "fit_parts", "select_parts"]

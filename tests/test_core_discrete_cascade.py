@@ -26,7 +26,7 @@ from pyvinecopulib.core import (
   DiscretePair,
   VinecopBase,
 )
-from pyvinecopulib.core._discrete import continuous_view
+from pyvinecopulib.core._vinecop_discrete import continuous_view
 
 from .conftest import GaussianBicop, HostedVinecop
 

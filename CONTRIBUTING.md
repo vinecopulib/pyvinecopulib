@@ -192,7 +192,7 @@ Enforcement runs through `numpydoc.validation` at pre-commit time
 (and ad-hoc via `uv run python -m numpydoc lint <path>`); the
 active rule set is configured in `[tool.numpydoc_validation]` in
 `pyproject.toml`. Internal modules (`_python_helpers`, `_base`,
-`_batched`, `_fit_tll`, `_util`, `_interp`, `_deprecations`) are
+`_vinecop_batched`, `_bicop_fit_tll`, `_bicop_interp`, `_deprecations`) are
 excluded by path —
 they're off-contract per AGENTS.md §"Module boundaries".
 

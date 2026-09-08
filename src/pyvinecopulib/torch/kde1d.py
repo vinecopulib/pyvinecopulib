@@ -32,7 +32,7 @@ from ..core._validation import (
   validate_univariate,
   validate_weights,
 )
-from . import _kde1d_interp as interp
+from . import _margin_kde1d_interp as interp
 
 
 def _bound(value: Optional[float], unbounded: float) -> float:
