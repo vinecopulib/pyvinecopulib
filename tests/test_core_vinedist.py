@@ -1268,7 +1268,7 @@ def test_logpdf_reads_the_parts_namespace_not_the_inputs() -> None:
   # With the grid tracking grad there is no silent path: either the namespace
   # is right or NumPy reaches for `__array__` on a tensor and raises.
   # Typed against the evaluation-only contract, which carries no grid.
-  pair = cast(Any, copula.get_pair_copula(0, 0))
+  pair = cast("Any", copula.get_pair_copula(0, 0))
   pair.interp_grid.values.requires_grad_(True)
   with_grad = dist.logpdf(y)
   assert with_grad.requires_grad

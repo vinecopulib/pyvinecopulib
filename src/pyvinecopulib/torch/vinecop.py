@@ -675,7 +675,8 @@ class TorchVinecop(
   def _pair_module(self, tree: int, edge: int) -> TorchTllBicop:
     """The stored (always continuous) pair copula at ``(tree, edge)``."""
     return cast(
-      TorchTllBicop, cast(torch.nn.ModuleList, self.pair_copulas[tree])[edge]
+      "TorchTllBicop",
+      cast("torch.nn.ModuleList", self.pair_copulas[tree])[edge],
     )
 
   def get_pair_copula(self, tree: int, edge: int) -> BicopLike[Tensor]:
@@ -850,18 +851,18 @@ class TorchVinecop(
 
     def graphed(u: Tensor) -> Tensor:
       torch.compiler.cudagraph_mark_step_begin()
-      return cast(Tensor, inner(u)).clone()
+      return cast("Tensor", inner(u)).clone()
 
     return graphed
 
   def _pdf_batched(self, u: Tensor) -> Tensor:
-    return cast(Tensor, self._cascade("_pdf_batched")(u))
+    return cast("Tensor", self._cascade("_pdf_batched")(u))
 
   def _rosenblatt_batched(self, u: Tensor) -> Tensor:
-    return cast(Tensor, self._cascade("_rosenblatt_batched")(u))
+    return cast("Tensor", self._cascade("_rosenblatt_batched")(u))
 
   def _inverse_rosenblatt_batched(self, u: Tensor) -> Tensor:
-    return cast(Tensor, self._cascade("_inverse_rosenblatt_batched")(u))
+    return cast("Tensor", self._cascade("_inverse_rosenblatt_batched")(u))
 
   def __getstate__(self) -> dict:
     """The picklable state: everything except the two derived caches.

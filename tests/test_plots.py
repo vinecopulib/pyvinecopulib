@@ -40,7 +40,7 @@ class TestPairCopulaData:
       # `cast` rather than a `ty: ignore`: the ignore reads as unused in
       # some environments and is required in others, so either spelling
       # fails the type check somewhere.
-      pairs_copula_data(cast(Any, None))
+      pairs_copula_data(cast("Any", None))
 
     # Test non-numeric data
     with pytest.raises(

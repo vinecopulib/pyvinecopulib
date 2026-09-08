@@ -497,7 +497,7 @@ class VinecopBase(
     """
     ua: Any = self._prep(u)
     xp = self._namespace(ua)
-    return cast(ArrayT, trim(xp, self._layout(ua, name, values_only)))
+    return cast("ArrayT", trim(xp, self._layout(ua, name, values_only)))
 
   def _layout(self, ua: Any, name: str, values_only: bool) -> Any:
     """Validate ``ua``'s layout and reduce it to the columns the caller needs."""
@@ -1184,13 +1184,13 @@ class VinecopBase(
     """
     del num_threads
     u_p = self._prep_args(u, "pdf")
-    x = prepare(self, x, int(cast(Any, u_p).shape[0]))
+    x = prepare(self, x, int(cast("Any", u_p).shape[0]))
     if self._resolve_batched(batched, x):
       try:
-        return cast(ArrayT, self._pdf_batched(u_p))
+        return cast("ArrayT", self._pdf_batched(u_p))
       except _NotBatchable:
         pass  # no grid fast path available -> non-batched cascade
-    return cast(ArrayT, self._pdf(u_p, x))
+    return cast("ArrayT", self._pdf(u_p, x))
 
   def rosenblatt(
     self,
@@ -1253,13 +1253,13 @@ class VinecopBase(
         batched=batched,
       )
     u_p = self._prep_args(u, "rosenblatt")
-    x = prepare(self, x, int(cast(Any, u_p).shape[0]))
+    x = prepare(self, x, int(cast("Any", u_p).shape[0]))
     if self._resolve_batched(batched, x):
       try:
-        return cast(ArrayT, self._rosenblatt_batched(u_p))
+        return cast("ArrayT", self._rosenblatt_batched(u_p))
       except _NotBatchable:
         pass  # no grid fast path available -> non-batched cascade
-    return cast(ArrayT, self._rosenblatt(u_p, x, randomize_discrete, seeds))
+    return cast("ArrayT", self._rosenblatt(u_p, x, randomize_discrete, seeds))
 
   def inverse_rosenblatt(
     self,
@@ -1309,14 +1309,14 @@ class VinecopBase(
     if view is not self:
       return view.inverse_rosenblatt(u, x=x, batched=batched)
     u_p = self._prep_args(u, "inverse_rosenblatt", values_only=True)
-    x = prepare(self, x, int(cast(Any, u_p).shape[0]))
+    x = prepare(self, x, int(cast("Any", u_p).shape[0]))
     with self._eval_context():
       if self._resolve_batched(batched, x):
         try:
-          return cast(ArrayT, self._inverse_rosenblatt_batched(u_p))
+          return cast("ArrayT", self._inverse_rosenblatt_batched(u_p))
         except _NotBatchable:
           pass
-      return cast(ArrayT, self._inverse_rosenblatt(u_p, x))
+      return cast("ArrayT", self._inverse_rosenblatt(u_p, x))
 
   def sample(
     self,
@@ -1482,7 +1482,7 @@ class VinecopBase(
       # The conditioning variables' own Rosenblatt coordinates; randomized so a
       # discrete conditioner's jump becomes a uniform the inverse can invert.
       w: Any = view.rosenblatt(
-        cast(ArrayT, u_completed),
+        cast("ArrayT", u_completed),
         randomize_discrete=True,
         seeds=seeds,
         x=x,
@@ -1490,7 +1490,7 @@ class VinecopBase(
       base_u: Any = self._sample_uniform(n, qrng, seeds)
       for var in cond_vars:
         base_u[:, var - 1] = w[:, var - 1]
-      return view.inverse_rosenblatt(cast(ArrayT, base_u), x=x)
+      return view.inverse_rosenblatt(cast("ArrayT", base_u), x=x)
 
   def _infer_conditioning_set(self, n_cols: int) -> list[int]:
     """The order tail whose layout is ``n_cols`` columns wide."""
@@ -1567,7 +1567,7 @@ class VinecopBase(
           samples[None, :, :] <= u_t[start:end][:, None, :], axis=-1
         )
         out[start:end] = xp.mean(xp.astype(dominated, u_t.dtype), axis=1)
-      return cast(ArrayT, out)
+      return cast("ArrayT", out)
 
   # --- convenience surface (loglik / plot / accessors) ------------------ #
   def loglik(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
@@ -1588,7 +1588,7 @@ class VinecopBase(
     """
     dens: Any = self.pdf(u, x=x)
     xp = array_namespace(dens)
-    return cast(ArrayT, xp.sum(xp.log(dens)))
+    return cast("ArrayT", xp.sum(xp.log(dens)))
 
   @property
   def dim(self) -> int:
@@ -1731,7 +1731,7 @@ class VinecopBase(
       # `BicopBase.select` forwards by.
       conditional = {} if x_e is None else {"x": x_e}
       return cast(
-        BicopLike,
+        "BicopLike",
         cast("Any", pair_cls).from_data(
           u_e, controls=controls, var_types=list(var_types), **conditional
         ),

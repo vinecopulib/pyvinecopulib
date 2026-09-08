@@ -314,7 +314,7 @@ def edge_columns(
   elif on_diagonal:
     sub1 = hfunc2_sub[:, m - 1]
   else:
-    sub1 = cast(Any, hfunc1_sub)[:, m - 1]
+    sub1 = cast("Any", hfunc1_sub)[:, m - 1]
   return col0, col1, (sub0, sub1), types
 
 
@@ -677,12 +677,16 @@ class DiscretePair(BicopBase[ArrayT]):
     """
     xp, u1, u2, u1m, u2m = self._split(u)
     if self._d1 and self._d2:
-      return cast(ArrayT, self._pdf_d_d(xp, u1, u2, u1m, u2m, x))
+      return cast("ArrayT", self._pdf_d_d(xp, u1, u2, u1m, u2m, x))
     if self._d1:
-      return cast(ArrayT, self._pdf_mixed(xp, u1, u2, u1m, u2m, x, discrete=1))
+      return cast(
+        "ArrayT", self._pdf_mixed(xp, u1, u2, u1m, u2m, x, discrete=1)
+      )
     if self._d2:
-      return cast(ArrayT, self._pdf_mixed(xp, u1, u2, u1m, u2m, x, discrete=2))
-    return cast(ArrayT, self._pdf(xp, u1, u2, x))
+      return cast(
+        "ArrayT", self._pdf_mixed(xp, u1, u2, u1m, u2m, x, discrete=2)
+      )
+    return cast("ArrayT", self._pdf(xp, u1, u2, x))
 
   def _pdf_d_d(
     self, xp: Any, u1: Any, u2: Any, u1m: Any, u2m: Any, x: Optional[Any]
@@ -739,11 +743,11 @@ class DiscretePair(BicopBase[ArrayT]):
     """
     xp, u1, u2, u1m, _ = self._split(u)
     if not self._d1:
-      return cast(ArrayT, self._h1(xp, u1, u2, x))
+      return cast("ArrayT", self._h1(xp, u1, u2, x))
     # Conditioning on `u1^- < U1 <= u1` divides the rectangle probability by the
     # atom's width; the second argument enters at its value either way.
     return cast(
-      ArrayT,
+      "ArrayT",
       self._quotient(
         xp,
         self._strip(xp, u1m, u1, u2, x, axis=1),
@@ -769,9 +773,9 @@ class DiscretePair(BicopBase[ArrayT]):
     """
     xp, u1, u2, _, u2m = self._split(u)
     if not self._d2:
-      return cast(ArrayT, self._h2(xp, u1, u2, x))
+      return cast("ArrayT", self._h2(xp, u1, u2, x))
     return cast(
-      ArrayT,
+      "ArrayT",
       self._quotient(
         xp,
         self._strip(xp, u2m, u2, u1, x, axis=2),
@@ -796,7 +800,7 @@ class DiscretePair(BicopBase[ArrayT]):
         Distribution values.
     """
     xp, u1, u2, _, _ = self._split(u)
-    return cast(ArrayT, self._cdf(xp, u1, u2, x))
+    return cast("ArrayT", self._cdf(xp, u1, u2, x))
 
   def hinv1(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Inverse of :meth:`hfunc1` in its second argument.
@@ -821,13 +825,13 @@ class DiscretePair(BicopBase[ArrayT]):
     xp, u1, p, u1m, _ = self._split(u)
     if not self._d1:
       return cast(
-        ArrayT, pair_eval(self._pair.hinv1, xp.stack([u1, p], axis=-1), x)
+        "ArrayT", pair_eval(self._pair.hinv1, xp.stack([u1, p], axis=-1), x)
       )
     return cast(
-      ArrayT,
+      "ArrayT",
       solve_increasing(
         lambda v: self.hfunc1(
-          cast(ArrayT, xp.stack([u1, v, u1m, v], axis=-1)), x=x
+          cast("ArrayT", xp.stack([u1, v, u1m, v], axis=-1)), x=x
         ),
         p,
       ),
@@ -856,13 +860,13 @@ class DiscretePair(BicopBase[ArrayT]):
     xp, p, u2, _, u2m = self._split(u)
     if not self._d2:
       return cast(
-        ArrayT, pair_eval(self._pair.hinv2, xp.stack([p, u2], axis=-1), x)
+        "ArrayT", pair_eval(self._pair.hinv2, xp.stack([p, u2], axis=-1), x)
       )
     return cast(
-      ArrayT,
+      "ArrayT",
       solve_increasing(
         lambda v: self.hfunc2(
-          cast(ArrayT, xp.stack([v, u2, v, u2m], axis=-1)), x=x
+          cast("ArrayT", xp.stack([v, u2, v, u2m], axis=-1)), x=x
         ),
         p,
       ),

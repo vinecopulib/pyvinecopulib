@@ -101,7 +101,7 @@ def _make_criterion(
     xa = convert(x)
 
     def scorer(matrix: Any) -> float:  # noqa: F811 - the conditional variant
-      return float(cast(Any, criterion_function)(matrix, x=xa))
+      return float(cast("Any", criterion_function)(matrix, x=xa))
 
   def criterion(col0: Any, col1: Any) -> float:
     if n <= 10:

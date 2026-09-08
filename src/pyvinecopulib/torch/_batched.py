@@ -924,7 +924,7 @@ class BatchedVine(torch.nn.Module):
 
   def wave(self, k: int) -> BatchedWave:
     """Typed accessor for inverse-cascade wave ``k``."""
-    return cast(BatchedWave, self.waves[k])
+    return cast("BatchedWave", self.waves[k])
 
   @property
   def n_waves(self) -> int:
@@ -934,7 +934,7 @@ class BatchedVine(torch.nn.Module):
   def level(self, t: int) -> BatchedTreeLevel:
     """Typed accessor for tree level ``t`` (``self.levels[t]`` returns
     ``Module``, but every element is a :class:`BatchedTreeLevel`)."""
-    return cast(BatchedTreeLevel, self.levels[t])
+    return cast("BatchedTreeLevel", self.levels[t])
 
   @classmethod
   def from_torch_vinecop(cls, tvc) -> "BatchedVine":
@@ -1001,8 +1001,8 @@ class BatchedVine(torch.nn.Module):
       sy: Tensor | None
       sy_t: Tensor | None
       if all_have_cache:
-        sy = torch.stack(cast(list[Tensor], sy_list), dim=0).to(device=device)
-        sy_t = torch.stack(cast(list[Tensor], sy_t_list), dim=0).to(
+        sy = torch.stack(cast("list[Tensor]", sy_list), dim=0).to(device=device)
+        sy_t = torch.stack(cast("list[Tensor]", sy_t_list), dim=0).to(
           device=device
         )
       else:
@@ -1060,12 +1060,12 @@ class BatchedVine(torch.nn.Module):
         BatchedWave(
           values=torch.stack(w_vals, dim=0).to(device=device),
           sy=(
-            torch.stack(cast(list[Tensor], w_sy), dim=0).to(device=device)
+            torch.stack(cast("list[Tensor]", w_sy), dim=0).to(device=device)
             if w_has_cache
             else None
           ),
           sx=(
-            torch.stack(cast(list[Tensor], w_sx), dim=0).to(device=device)
+            torch.stack(cast("list[Tensor]", w_sx), dim=0).to(device=device)
             if w_has_cache
             else None
           ),

@@ -622,7 +622,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
         The family and its current parameter values.
     """
     body = ", ".join(
-      f"{name}={cast(Tensor, getattr(self, name)).detach().cpu().tolist()}"
+      f"{name}={cast('Tensor', getattr(self, name)).detach().cpu().tolist()}"
       for name in self._parameter_names
     )
     return f"{type(self).__name__}({self.family_name}({body}))"

@@ -226,7 +226,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     VinecopLike
         The copula this distribution was built on.
     """
-    return cast(VinecopLike[ArrayT], self._vinecop)
+    return cast("VinecopLike[ArrayT]", self._vinecop)
 
   @property
   def margins(self) -> tuple[MarginLike[ArrayT], ...]:
@@ -428,7 +428,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     # The margins' namespace, not the input's: a torch copula hosting NumPy
     # margins is legal, and `torch.stack` cannot consume NumPy columns.
     xp = array_namespace(cols[0])
-    return cast(ArrayT, trim(xp, xp.stack(cols, axis=-1)))
+    return cast("ArrayT", trim(xp, xp.stack(cols, axis=-1)))
 
   def marginal_icdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Apply each margin's ``icdf`` to its column.
@@ -452,7 +452,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       declared_eval(m, "icdf", ua[:, j], x) for j, m in enumerate(self._margins)
     ]
     xp = array_namespace(cols[0])
-    return cast(ArrayT, xp.stack(cols, axis=-1))
+    return cast("ArrayT", xp.stack(cols, axis=-1))
 
   @classmethod
   def copula_var_types(cls, margins: Sequence[Any]) -> list[str]:
@@ -630,7 +630,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     """
     _, ya, _ = self._columns(y)
     copula_term: Any = declared_eval(
-      self._vinecop, "pdf", cast(ArrayT, self.copula_layout(y, x=x)), x
+      self._vinecop, "pdf", cast("ArrayT", self.copula_layout(y, x=x)), x
     )
     # The parts' namespace, not the input's, as `marginal_cdf` and
     # `copula_data` both do: a copula or a margin may legitimately answer in
@@ -651,7 +651,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       if array_namespace(term) is not xp:
         term = xp.asarray(term)
       total = total + term
-    return cast(ArrayT, total)
+    return cast("ArrayT", total)
 
   def pdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Density of the joint distribution.
@@ -673,7 +673,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     """
     out: Any = self.logpdf(y, x=x)
     xp = array_namespace(out)
-    return cast(ArrayT, xp.exp(out))
+    return cast("ArrayT", xp.exp(out))
 
   def cdf(
     self, y: ArrayT, *, x: Optional[ArrayT] = None, **kwargs: Any
@@ -709,7 +709,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     return declared_eval(
       self._vinecop,
       "cdf",
-      cast(ArrayT, self.copula_layout(y, x=x)),
+      cast("ArrayT", self.copula_layout(y, x=x)),
       x,
       **kwargs,
     )
@@ -733,7 +733,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     """
     terms: Any = self.logpdf(y, x=x)
     xp = array_namespace(terms)
-    return cast(ArrayT, xp.sum(terms))
+    return cast("ArrayT", xp.sum(terms))
 
   def rosenblatt(
     self, y: ArrayT, *, x: Optional[ArrayT] = None, **kwargs: Any
@@ -758,7 +758,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     return declared_eval(
       self._vinecop,
       "rosenblatt",
-      cast(ArrayT, self.copula_layout(y, x=x)),
+      cast("ArrayT", self.copula_layout(y, x=x)),
       x,
       **kwargs,
     )
@@ -786,7 +786,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     _, wa, n = self._columns(w)
     self._check_covariates(x, n)
     u = declared_eval(
-      self._vinecop, "inverse_rosenblatt", cast(ArrayT, wa), x, **kwargs
+      self._vinecop, "inverse_rosenblatt", cast("ArrayT", wa), x, **kwargs
     )
     return self.marginal_icdf(u, x=x)
 

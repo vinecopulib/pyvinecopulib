@@ -1245,7 +1245,7 @@ def test_refitting_a_stored_pair_invalidates_the_vines_bake() -> None:
 
   # `get_pair_copula` is typed against the evaluation-only contract, which
   # carries no `fit`; the stored pair is the concrete class.
-  stored = cast(TorchTllBicop, vine.get_pair_copula(0, 0))
+  stored = cast("TorchTllBicop", vine.get_pair_copula(0, 0))
   stored.fit(second[:, :2])
   torch.testing.assert_close(
     vine.pdf(points, batched=True),

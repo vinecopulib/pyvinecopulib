@@ -221,8 +221,8 @@ def bicop_plot(
     # ax is Axes3D, but matplotlib's stubs declare ax.xaxis / ax.yaxis as
     # the 2D XAxis / YAxis (which lack `pane`). Cast to the 3D variants.
     # ax.zaxis is already typed correctly as the 3D ZAxis.
-    cast(XAxis3D, ax.xaxis).pane.fill = False
-    cast(YAxis3D, ax.yaxis).pane.fill = False
+    cast("XAxis3D", ax.xaxis).pane.fill = False
+    cast("YAxis3D", ax.yaxis).pane.fill = False
     ax.zaxis.pane.fill = False
     ax.grid(False)
     plt.draw()

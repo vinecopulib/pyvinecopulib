@@ -197,7 +197,7 @@ class TorchVinedist(
     `select` unusable on every torch vine distribution.
     """
     registered = cast("list[torch.nn.Module]", list(margins))
-    self._margins = cast(Any, torch.nn.ModuleList(registered))
+    self._margins = cast("Any", torch.nn.ModuleList(registered))
 
   # The vine copula this route fits; the margins need a placement, so
   # `_default_margins` is overridden rather than declared.

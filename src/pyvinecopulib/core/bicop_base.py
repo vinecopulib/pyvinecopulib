@@ -145,13 +145,13 @@ class BicopBase(
         The summed log-density, carrying gradients wherever the array library
         tracks them.
     """
-    x = prepare(self, x, int(cast(Any, u).shape[0]))
+    x = prepare(self, x, int(cast("Any", u).shape[0]))
     # `u` is left to the subclass's own `pdf`, which is where the two-column
     # layout is checked -- the base cannot know whether a pair is on a
     # discrete edge, whose argument is four columns wide.
     dens: Any = self.pdf(u, x=x)
     xp = array_namespace(dens)
-    return cast(ArrayT, xp.sum(xp.log(dens)))
+    return cast("ArrayT", xp.sum(xp.log(dens)))
 
   def hinv1(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Inverse of ``hfunc1`` in its second argument.
@@ -178,7 +178,7 @@ class BicopBase(
     xp = array_namespace(ua)
     u1, p = ua[:, 0], ua[:, 1]
     return cast(
-      ArrayT,
+      "ArrayT",
       solve_increasing(
         lambda v: self.hfunc1(xp.stack([u1, v], axis=-1), x=x), p
       ),
@@ -208,7 +208,7 @@ class BicopBase(
     xp = array_namespace(ua)
     p, u2 = ua[:, 0], ua[:, 1]
     return cast(
-      ArrayT,
+      "ArrayT",
       solve_increasing(
         lambda v: self.hfunc2(xp.stack([v, u2], axis=-1), x=x), p
       ),
@@ -466,7 +466,7 @@ class BicopBase(
     base_u: Any = self._sample_uniform(n, qrng, list(seeds) if seeds else [])
     xp = array_namespace(base_u)
     u2: Any = self.hinv1(base_u, x=x)
-    return cast(ArrayT, xp.stack([base_u[:, 0], u2], axis=-1))
+    return cast("ArrayT", xp.stack([base_u[:, 0], u2], axis=-1))
 
   #: Whether a vine may bake this pair into its stacked, grid-batched
   #: cascade. ``False`` here because the fast path reads an interpolation grid
@@ -510,7 +510,7 @@ class BicopBase(
       raise ValueError(
         f"u must have shape (n, 2); got {tuple(getattr(ua, 'shape', ()))}"
       )
-    return cast(ArrayT, trim(array_namespace(ua), ua))
+    return cast("ArrayT", trim(array_namespace(ua), ua))
 
   def plot(
     self,
