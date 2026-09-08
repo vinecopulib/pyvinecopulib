@@ -35,7 +35,6 @@ FitControlsTorchVinecop : Fit-time controls.
 
 from __future__ import annotations
 
-from itertools import chain
 from typing import Any, ClassVar, Optional, Sequence, cast
 
 import numpy as np
@@ -60,6 +59,7 @@ from ..pyvinecopulib_ext import (
 )
 from ..utils import sample_uniform
 from ._batched import BatchedVine
+from ._placement import TensorPlacementMixin, reference_tensor
 from .controls import FitControlsTorchVinecop
 from .tll_bicop import TorchTllBicop
 
@@ -68,9 +68,9 @@ def _placement_of(pair: Any) -> Tensor:
   """A tensor to read dtype and device from, for any pair copula.
 
   Every pair a vine can hold is an ``nn.Module``, so it carries at least one
-  parameter or buffer -- which is all a placement probe needs. Reading a
-  grid-specific attribute instead would make the vine hold only grid pairs,
-  and a vine is a container: what it hosts is the caller's business.
+  floating-point parameter or buffer -- which is all a placement probe needs.
+  Reading a grid-specific attribute instead would make the vine hold only grid
+  pairs, and a vine is a container: what it hosts is the caller's business.
 
   Parameters
   ----------
@@ -85,19 +85,22 @@ def _placement_of(pair: Any) -> Tensor:
   Raises
   ------
   TypeError
-      If the pair registers neither a parameter nor a buffer, so its placement
-      cannot be determined.
+      If the pair registers no floating-point parameter or buffer, so its
+      placement cannot be determined.
   """
-  for tensor in chain(pair.parameters(), pair.buffers()):
-    return tensor
-  raise TypeError(
-    f"{type(pair).__name__} registers no parameter or buffer, so a vine "
-    "cannot read its dtype and device. Register the tensors it evaluates "
-    "with, as `TorchTllBicop` registers its grid."
-  )
+  ref = reference_tensor(pair)
+  if ref is None:
+    raise TypeError(
+      f"{type(pair).__name__} registers no floating-point parameter or "
+      "buffer, so a vine cannot read its dtype and device. Register the "
+      "tensors it evaluates with, as `TorchTllBicop` registers its grid."
+    )
+  return ref
 
 
-class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
+class TorchVinecop(
+  TensorPlacementMixin, VinecopBase[torch.Tensor], torch.nn.Module
+):
   """PyTorch R-vine copula on ``TorchTllBicop`` pair copulas.
 
   A ``VinecopBase`` whose pair copulas are density grids and whose cascades --
@@ -750,10 +753,17 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
       )
 
   def _ref_tensor(self) -> Tensor:
-    """A registered buffer to read dtype and device from."""
-    # Read the placement off the first pair, whatever kind of pair it is; a
-    # vine truncated at zero has none and falls back to the buffer the
-    # constructor registers for exactly that case.
+    """A registered buffer to read dtype and device from.
+
+    Returns
+    -------
+    Tensor
+        A tensor carrying the vine's dtype and device.
+    """
+    # Read the placement off the first pair, whatever kind of pair it is,
+    # rather than through the mixin's module-wide search: a pair names it in
+    # one hop. A vine truncated at zero has no pair and falls back to the
+    # buffer the constructor registers for exactly that case.
     if self.trunc_lvl > 0:
       return _placement_of(self._pair_module(0, 0))
     ref = self._buffers["_device_ref"]
@@ -772,16 +782,6 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         for the overhead to dominate either way.
     """
     return self._ref_tensor().device.type == "cuda"
-
-  def _prep(self, a: Any) -> Tensor:
-    # Placement only; the base owns the layout and the clamp, since which
-    # widths are admissible depends on `var_types` and not on the namespace.
-    # Overridden rather than inherited because `_ref_tensor` knows one thing
-    # the generic inference cannot: at `trunc_lvl == 0` there is no pair to
-    # read a placement from, and the `_device_ref` buffer is what the
-    # constructor registers for exactly that case.
-    ref = self._ref_tensor()
-    return torch.as_tensor(a, dtype=ref.dtype, device=ref.device)
 
   @property
   def compile_cascades(self) -> bool:

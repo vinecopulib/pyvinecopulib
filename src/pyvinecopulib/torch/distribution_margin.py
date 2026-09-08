@@ -30,7 +30,6 @@ TorchVinedist : The joint distribution these margins go into.
 
 from __future__ import annotations
 
-from itertools import chain
 from typing import Any, Callable, Iterable, Mapping, Optional, Union, cast
 
 import torch
@@ -39,6 +38,7 @@ from torch.distributions import Distribution
 
 from ..core import MarginBase
 from ..core.margin_base import support_of
+from ._placement import reference_tensor
 
 __all__ = ["TorchDistributionMargin"]
 
@@ -593,10 +593,12 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
 
   def _ref_tensor(self) -> Tensor:
     """A registered tensor to crib dtype/device from."""
-    for tensor in chain(self.parameters(), self.buffers()):
-      return tensor
-    # A factory closing over its own parameters registers none, and so is not
-    # placed anywhere; fall back to what construction asked for.
+    ref = reference_tensor(self)
+    if ref is not None:
+      return ref
+    # A factory closing over its own parameters registers none, and a family
+    # parameterized by a count registers only integers; neither is placed
+    # anywhere, so fall back to what construction asked for.
     return torch.empty(
       0, dtype=self._fallback_dtype, device=self._fallback_device
     )

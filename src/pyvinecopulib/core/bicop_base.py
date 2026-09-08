@@ -31,7 +31,7 @@ from typing import Any, Optional, Self, cast
 from array_api_compat import array_namespace
 
 from ._covariates import prepare
-from ._placement import PlacementMixin
+from ._placement import PlacementMixin, QrngUniformMixin
 from ._trim import trim
 from ._rootfind import solve_increasing
 
@@ -83,7 +83,9 @@ def flip_of(pair: Any) -> Any:
   return method()
 
 
-class BicopBase(BicopLike[ArrayT], PlacementMixin, ABC):
+class BicopBase(
+  BicopLike[ArrayT], QrngUniformMixin[ArrayT], PlacementMixin, ABC
+):
   """Canonical partial implementation of ``BicopLike``.
 
   A subclass writes three methods -- ``pdf``, the pair density, and ``hfunc1``
@@ -465,19 +467,6 @@ class BicopBase(BicopLike[ArrayT], PlacementMixin, ABC):
     xp = array_namespace(base_u)
     u2: Any = self.hinv1(base_u, x=x)
     return cast(ArrayT, xp.stack([base_u[:, 0], u2], axis=-1))
-
-  def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:
-    """Draw the ``(n, 2)`` base uniforms ``sample`` transforms.
-
-    Raises unless a subclass overrides it: NumPy and PyTorch differ on RNG, so
-    this is the one hook with no array-agnostic default, and overriding it is
-    all ``sample`` needs. Named after the ``sample_uniform`` free function in
-    ``pyvinecopulib.utils``.
-    """
-    raise NotImplementedError(
-      f"{type(self).__name__} does not implement _sample_uniform; override it "
-      "to enable sample()."
-    )
 
   #: Whether a vine may bake this pair into its stacked, grid-batched
   #: cascade. ``False`` here because the fast path reads an interpolation grid

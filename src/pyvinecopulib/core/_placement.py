@@ -24,15 +24,28 @@ Placement is *inferred* rather than declared, so hosting a custom pair copula,
 margin or vine on PyTorch requires writing none of it: the object already holds
 the tensors that answer the question, and :func:`reference_array` finds them.
 A subclass whose arrays live somewhere this misses overrides ``_prep``.
+
+Arrays reach a rung one other way -- drawn from the array library's own RNG,
+which is the one thing no inference can supply -- so the raising seam for that
+lives here too, beside the seam that places what a caller supplied. The two
+copula rungs share it verbatim. The marginal rung's takes no ``qrng`` flag,
+since ``MarginBase.sample`` offers none, and stays on ``MarginBase``.
 """
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Generic, Optional
 
 from array_api_compat import array_namespace, device as _device_of
 
-__all__ = ["PlacementMixin", "place", "reference_array"]
+from .protocols import ArrayT
+
+__all__ = [
+  "PlacementMixin",
+  "QrngUniformMixin",
+  "place",
+  "reference_array",
+]
 
 
 def reference_array(obj: Any) -> Optional[Any]:
@@ -221,3 +234,44 @@ class PlacementMixin:
         The same values, on this object's namespace, dtype and device.
     """
     return place(self, a)
+
+
+class QrngUniformMixin(Generic[ArrayT]):
+  """The uniform-draw seam ``BicopBase`` and ``VinecopBase`` share.
+
+  Kept apart from ``PlacementMixin``, which all four rungs inherit, because the
+  marginal rung's hook has a different signature -- see the module docstring.
+  """
+
+  def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:
+    """Draw the base uniforms ``sample`` transforms into a copula draw.
+
+    Raising default; override it to enable ``sample``, which is all ``sample``
+    needs. NumPy and PyTorch differ on RNG, so this is the one hook with no
+    array-agnostic default. Named after
+    :func:`pyvinecopulib.utils.sample_uniform`.
+
+    Parameters
+    ----------
+    n : int
+        Number of samples to draw.
+    qrng : bool
+        Whether to draw a quasi-random (low-discrepancy) sequence.
+    seeds : list of int
+        RNG seeds.
+
+    Returns
+    -------
+    array, shape (n, 2) or (n, d), dtype float
+        Base uniforms in ``[0, 1)`` -- two columns for a pair copula, one per
+        variable for a vine.
+
+    Raises
+    ------
+    NotImplementedError
+        Unless a subclass overrides this hook.
+    """
+    raise NotImplementedError(
+      f"{type(self).__name__} does not implement _sample_uniform; override it "
+      "to enable sample()."
+    )

@@ -288,7 +288,7 @@ pyvinecopulib/
         _discrete.py             # DiscretePair + the discrete layouts / per-edge types
         _engines.py              # fit_parts / select_parts — the two fit engines (internal)
         independence.py          # IndependencePair
-        _placement.py            # place / reference_array / PlacementMixin — the `_prep` seam (internal)
+        _placement.py            # place / reference_array + the `_prep` and `_sample_uniform` seams (internal)
         _reorient.py             # relabel a structure onto a chosen order tail (internal)
         _resolve.py              # resolve_margins / resolve_margin_controls / fit_margin (internal)
         _rootfind.py             # solve_increasing (monotone bisection; internal)
@@ -319,6 +319,7 @@ pyvinecopulib/
         _interp.py               # InterpolationGrid2D (bilinear; Sinkhorn margin renormalization) — internal
         _fit_tll.py              # pure-torch TLL kernel
         _batched.py              # batched evaluation variants
+        _placement.py            # the torch lane's `_prep` seam / reference tensor — internal
 
       _build_info.py             # build provenance, read by `__version__` reporting
       _cpu.py                    # the AVX2 / FMA check the x86-64 wheels need
@@ -842,15 +843,24 @@ automatically.
     PyTorch vine has to be brought across before they can meet. Placement is *inferred* from the arrays an object already
     holds, so hosting a subclass on PyTorch requires writing none of it —
     override `_prep` only where those arrays live somewhere the inference
-    misses (`TorchVinecop` does, for the `trunc_lvl == 0` case that has no
-    pair to read). The one array a base manufactures from nothing is
+    misses, or where finding them again per evaluation costs more than naming
+    them (`TorchTllBicop` names its grid; `torch/_placement.py` reads a
+    module's own tensors for the rungs that hold submodules, 12.1 us against
+    `reference_array`'s 64.9). The one array a base manufactures from nothing is
     `BicopBase.plot`'s evaluation grid, which is why that is the one place the
     seam is load-bearing rather than a convenience.
-    Since the inference is the whole contract, what it reads has to be right:
-    `reference_array` prefers a **floating-point** array and an integer one is
-    only its fallback, whose dtype `place` then does *not* adopt. An object may
-    hold an index table or a count buffer, and adopting `int64` from it placed
-    every copula argument at zero — a wrong answer, not a failure.
+    Since the inference is the whole contract, what it reads has to be right,
+    and **every** search for a reference array ranks candidates the same way:
+    a **floating-point** array wins. An object may hold an index table or a
+    count buffer, and adopting `int64` from it placed every copula argument at
+    zero — a wrong answer, not a failure. `reference_array` keeps an integer
+    array as its fallback, whose dtype `place` then does *not* adopt, since one
+    still names a namespace and a device; the torch lane's `reference_tensor`
+    has no fallback at all, because each of its callers has a floating default
+    of its own and an integer dtype is the one answer none of them can use.
+    Two searches over one object that rank differently is what put a margin's
+    `_prep` on `float64` while its own sampler drew in `int64`, so a new
+    placement site adopts the rule rather than restating the first-hit loop.
   - `BicopBase` (`bicop_base.py`) / `VinecopBase` (`vinecop_base.py`) —
     canonical partial implementations to subclass. A `BicopBase`
     subclass defines `pdf` / `hfunc1` / `hfunc2` and inherits `hinv1` /

@@ -154,3 +154,67 @@ def test_a_matching_dtype_does_not_excuse_the_wrong_device() -> None:
   # And the fast path still returns the input untouched when it is already
   # there, which is what keeps a gradient-carrying tensor from being copied.
   assert place(Holder(host), host) is host
+
+
+# --- the torch lane's own search, which has to agree with this one ----------- #
+
+
+def test_the_torch_search_prefers_a_float_tensor_over_an_earlier_integer() -> (
+  None
+):
+  """The two searches must rank candidates the same way.
+
+  ``pyvinecopulib.torch._placement`` reads a module's tensors directly rather
+  than through the array API, because placement is on a per-evaluation path.
+  Ranking them differently is what made one object hold two placements at
+  once: a first-hit search answered with an integer tensor while ``_prep``
+  answered with the float one beside it.
+  """
+  torch = pytest.importorskip("torch")
+
+  from pyvinecopulib.torch._placement import reference_tensor
+
+  class _Module(torch.nn.Module):
+    def __init__(self) -> None:
+      super().__init__()
+      self.register_buffer("codes", torch.tensor([1, 2, 3]))
+      self.register_buffer(
+        "grid", torch.linspace(0.0, 1.0, 5, dtype=torch.float64)
+      )
+
+  module = _Module()
+  reference = reference_tensor(module)
+  assert reference is not None and reference.dtype is torch.float64
+  through_the_array_api = reference_array(module)
+  assert through_the_array_api is not None
+  assert through_the_array_api.dtype is reference.dtype
+  # Nothing floating to name: the caller's own default answers, rather than an
+  # integer dtype that neither `torch.as_tensor` nor `torch.rand` can use.
+  assert reference_tensor(torch.nn.Module()) is None
+
+
+def test_a_margin_with_an_integer_parameter_can_still_be_sampled() -> None:
+  """A family parameterized by a count registers an integer tensor.
+
+  ``Gamma(concentration=2, rate=1.0)`` keeps the count's own dtype, so the
+  margin holds an integer tensor ahead of a float one, and ``Chi2(df=5)``
+  holds nothing else at all. Placement always read past those; the draw did
+  not, and asked for uniforms in ``int64``.
+  """
+  torch = pytest.importorskip("torch")
+
+  from pyvinecopulib.torch import TorchDistributionMargin
+
+  for factory, parameters in (
+    (torch.distributions.Gamma, {"concentration": 2, "rate": 1.0}),
+    (torch.distributions.Chi2, {"df": 5}),
+  ):
+    margin = TorchDistributionMargin(
+      factory, parameters=parameters, trainable=False
+    )
+    placed = margin._prep(np.array([0.25, 0.75]))
+    drawn = margin.sample(4, seeds=[7])
+    assert placed.dtype is torch.float64
+    assert drawn.dtype is placed.dtype
+    assert drawn.shape == (4,)
+    assert bool(torch.all(drawn > 0.0))

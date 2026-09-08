@@ -21,7 +21,6 @@ TorchVinecop : The copula this holds.
 from __future__ import annotations
 
 import dataclasses
-from itertools import chain
 from typing import Any, ClassVar, Optional, Sequence, cast
 
 import torch
@@ -29,6 +28,7 @@ from torch import Tensor
 
 from ..core import MarginLike, VinedistBase
 from ..core._resolve import declared_kde_kwargs
+from ._placement import TensorPlacementMixin
 from .controls import FitControlsTorchVinecop
 from .kde1d import TorchKde1d
 from .vinecop import TorchVinecop
@@ -88,7 +88,9 @@ def _check_copula(copula: Any) -> None:
     )
 
 
-class TorchVinedist(VinedistBase[Tensor], torch.nn.Module):
+class TorchVinedist(
+  TensorPlacementMixin, VinedistBase[Tensor], torch.nn.Module
+):
   """A vine distribution whose copula and margins are all PyTorch modules.
 
   Same surface as :class:`~pyvinecopulib.core.VinedistBase` — ``logpdf`` / ``pdf`` /
@@ -273,27 +275,6 @@ class TorchVinedist(VinedistBase[Tensor], torch.nn.Module):
   @property
   def margins(self) -> tuple[MarginLike, ...]:
     return cast("tuple[MarginLike, ...]", tuple(self._margins))
-
-  def _ref_tensor(self) -> Tensor:
-    """A registered tensor to crib dtype and device from.
-
-    The first registered parameter or buffer, or an empty CPU tensor when the
-    parts register neither.
-    """
-    for tensor in chain(self.parameters(), self.buffers()):
-      return tensor
-    return torch.empty(0, dtype=torch.float64)
-
-  def _prep(self, a: Any) -> Tensor:
-    """Bring one input array onto this distribution's dtype and device.
-
-    ``as_tensor`` rather than ``tensor`` or ``detach``, so a tensor that already
-    matches is returned untouched and a gradient-carrying one stays in the
-    graph. It is what lets an estimator hand this object plain NumPy while the
-    cascade and every margin stay on device.
-    """
-    ref = self._ref_tensor()
-    return torch.as_tensor(a, dtype=ref.dtype, device=ref.device)
 
   def log_prob(self, y: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Alias of ``logpdf``, the ``torch.distributions`` spelling.

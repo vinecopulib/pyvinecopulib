@@ -94,7 +94,7 @@ from .protocols import (
   VinecopLike,
   _VINECOP_EXAMPLE,
 )
-from ._placement import PlacementMixin
+from ._placement import PlacementMixin, QrngUniformMixin
 from ._trim import trim
 
 
@@ -220,7 +220,9 @@ def infer_conditioning_set(
   )
 
 
-class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
+class VinecopBase(
+  VinecopLike[ArrayT], QrngUniformMixin[ArrayT], PlacementMixin, ABC
+):
   """Canonical array-agnostic vine cascades (numpy / torch).
 
   A concrete subclass writes one method and calls one seam: it implements
@@ -501,36 +503,6 @@ class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
     """Validate ``ua``'s layout and reduce it to the columns the caller needs."""
     return collapse_data(
       ua, self.d, self._var_types, name, values_only=values_only
-    )
-
-  def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:
-    """Draw ``(n, d)`` base uniforms for :meth:`sample` (namespace-dependent RNG).
-
-    Raising default; override it (numpy / torch differ on RNG) to enable
-    :meth:`sample`. Named after :func:`pyvinecopulib.utils.sample_uniform`.
-
-    Parameters
-    ----------
-    n : int
-        Number of samples to draw.
-    qrng : bool
-        Whether to draw a quasi-random (low-discrepancy) sequence.
-    seeds : list of int
-        RNG seeds.
-
-    Returns
-    -------
-    array, shape (n, d), dtype float
-        Base uniforms in ``[0, 1)``.
-
-    Raises
-    ------
-    NotImplementedError
-        Unless a subclass overrides this hook.
-    """
-    raise NotImplementedError(
-      f"{type(self).__name__} does not implement _sample_uniform; override it "
-      "to enable sample()."
     )
 
   def _default_batched(self) -> bool:
