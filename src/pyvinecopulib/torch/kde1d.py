@@ -407,7 +407,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     values: Tensor,
     *,
     prob0: float = 0.0,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ANN401 - forwarded to `__init__`
   ) -> "TorchKde1d":
     """Build a margin directly from a grid, with no fit.
 
@@ -644,7 +644,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     if not self.is_fitted:
       raise RuntimeError("TorchKde1d is not fitted; call fit(y)")
 
-  def _as_tensor(self, values: Any) -> Tensor:
+  def _as_tensor(self, values: Any) -> Tensor:  # noqa: ANN401 - as_tensor input
     """Coerce a query onto the buffers' dtype and device, flattened."""
     return torch.as_tensor(
       values, dtype=self.grid_points.dtype, device=self.grid_points.device

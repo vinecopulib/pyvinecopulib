@@ -23,7 +23,7 @@ inherits precise return types.
 from __future__ import annotations
 
 from abc import ABC
-from typing import Any, Optional, Self, cast
+from typing import Any, Optional, Self, Union, cast
 
 import numpy as _np
 from array_api_compat import array_namespace
@@ -70,10 +70,11 @@ def support_of(obj: object) -> tuple[float, float]:
   """
   unbounded = (float("-inf"), float("inf"))
 
-  def scalar(bound: Any, fallback: float) -> float:
+  def scalar(bound: Union[float, ArrayT, None], fallback: float) -> float:
     if bound is None:
       return fallback
-    return float(bound.detach() if hasattr(bound, "detach") else bound)
+    b: Any = bound
+    return float(b.detach() if hasattr(b, "detach") else b)
 
   support = getattr(obj, "support", None)
   if support is None:
@@ -81,7 +82,7 @@ def support_of(obj: object) -> tuple[float, float]:
   if callable(support):
     try:
       lo, hi = support()
-    except Exception:  # noqa: BLE001 - a foreign object may refuse; fall back
+    except Exception:
       return unbounded
     return (scalar(lo, unbounded[0]), scalar(hi, unbounded[1]))
   # A torch `Constraint`; only the interval-like ones carry usable bounds.
@@ -182,7 +183,7 @@ def criteria(loglik: float, k: float, n: Optional[float]) -> dict[str, float]:
   return {"aic": aic, "bic": bic, "aicc": aicc}
 
 
-def safe_log(dens: Any) -> Any:
+def safe_log(dens: ArrayT) -> ArrayT:
   """Log of a density, with a zero mapped to ``-inf`` rather than a warning.
 
   A density is legitimately zero off its support, and ``log(0)`` there is the
@@ -204,10 +205,13 @@ def safe_log(dens: Any) -> Any:
   array
       ``log(dens)``, and ``-inf`` wherever ``dens`` is not positive.
   """
-  xp = array_namespace(dens)
-  positive = dens > 0
-  safe = xp.where(positive, dens, xp.ones_like(dens))
-  return xp.where(positive, xp.log(safe), xp.full_like(dens, float("-inf")))
+  d: Any = dens
+  xp = array_namespace(d)
+  positive = d > 0
+  safe = xp.where(positive, d, xp.ones_like(d))
+  return cast(
+    "ArrayT", xp.where(positive, xp.log(safe), xp.full_like(d, float("-inf")))
+  )
 
 
 class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
@@ -715,7 +719,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     *,
     x: Optional[ArrayT] = None,
     weights: Optional[ArrayT] = None,
-  ) -> Any:
+  ) -> Union[float, ArrayT]:
     """Log-likelihood of the observations under the margin.
 
     Called without data, returns the value attained when the margin was

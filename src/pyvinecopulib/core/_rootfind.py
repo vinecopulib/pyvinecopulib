@@ -21,7 +21,14 @@ from .protocols import ArrayT
 __all__ = ["solve_increasing"]
 
 
-def _is_finite_bound(xp: ModuleType, bound: Any, broadcast: ArrayT) -> bool:
+# The bisection computes on its bracket -- doubles it, compares it, blends
+# it -- and a bound may be a scalar or an array, neither of which an unbounded
+# `ArrayT` types (see `protocols.py`).
+def _is_finite_bound(
+  xp: ModuleType,
+  bound: Any,  # noqa: ANN401
+  broadcast: ArrayT,
+) -> bool:
   """Whether ``bound`` is finite everywhere.
 
   Scalars answer without touching the array namespace, which keeps the
@@ -52,8 +59,8 @@ def _bracket(
   xp: ModuleType,
   f: Callable[[Any], Any],
   p: ArrayT,
-  a: Any,
-  b: Any,
+  a: Any,  # noqa: ANN401 - as `_is_finite_bound`
+  b: Any,  # noqa: ANN401
   finite_lo: bool,
   finite_hi: bool,
   max_expand: int,

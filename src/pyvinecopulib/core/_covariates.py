@@ -32,7 +32,7 @@ estimating ``f(y)`` when ``f(y | x)`` was asked for returns a different model.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional, cast
+from typing import Any, Callable, Optional, Union, cast
 
 from ._placement import place
 from ._validation import validate_covariates
@@ -64,8 +64,17 @@ def pair_eval(
 
 
 def declared_eval(
-  part: object, name: str, values: Any, x: Optional[ArrayT], **kwargs: Any
-) -> Any:
+  part: object,
+  name: str,
+  # The forwarded method's first positional argument: an array for `pdf` /
+  # `cdf` / `icdf`, a draw count for `sample`.
+  values: Union[ArrayT, int],
+  x: Optional[ArrayT],
+  # Forwarded to a method on a foreign object, so the keyword set is open --
+  # and the answer may legitimately be another array type than `values`, which
+  # is why the callers read `xp` off what came back rather than off the input.
+  **kwargs: Any,  # noqa: ANN401
+) -> Any:  # noqa: ANN401
   """Call ``part.name(values)``, forwarding ``x`` only if ``part`` reads one.
 
   Parameters

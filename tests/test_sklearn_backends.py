@@ -13,14 +13,14 @@ import pytest
 
 pytest.importorskip("sklearn")
 
-import pyvinecopulib as pv  # noqa: E402
-from sklearn.utils._param_validation import (  # noqa: E402
+import pyvinecopulib as pv
+from sklearn.utils._param_validation import (
   InvalidParameterError,
 )
 
-from pyvinecopulib.core import VinecopLike  # noqa: E402
-from pyvinecopulib.sklearn import VineDensity, VineRegressor  # noqa: E402
-from pyvinecopulib.sklearn.backends import (  # noqa: E402
+from pyvinecopulib.core import VinecopLike
+from pyvinecopulib.sklearn import VineDensity, VineRegressor
+from pyvinecopulib.sklearn.backends import (
   TorchVinecopBackend,
   VinecopBackend,
   resolve_backend,

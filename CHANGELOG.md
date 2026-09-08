@@ -22,6 +22,10 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
     - `pv.Bicop.from_data(u, controls, var_types)` -> `pv.Bicop.from_data(u, controls, var_types=...)`
     - likewise on `BicopBase`, `VinecopBase`, `VinedistBase` and their torch subclasses; `MarginBase` already read this way
 
+- Answer coercion and JSON persistence from one table each, in `core/_margins.py`. `Kde1d` and `SciPyMargin` were read back by closures a private function installed at import, `OpenTURNSMargin` registered its adapter from its own module body, and the torch margins registered nothing -- so whether an adapter existed depended on another module's import list. `register_margin_adapter` and `register_margin_json` keep their signatures and become the third-party hook rather than the mechanism the built-ins use (#326).
+
+- Widen `_ContinuousPair` to the six evaluations `DiscretePair` calls: it documented four while the class also called `hinv1` / `hinv2`, which an `Any` return on `continuous_view` had hidden (#326).
+
 - Move the margin contract plumbing into `core`, which owns the half a `Vinedist` fit runs on: `FitControlsMargin` (`core.margin_controls`), the coercion registry and the resolution helpers. None needs SciPy, and keeping them in `margins` had `core` importing *up* a layer at ten sites, three into a private module. `pyvinecopulib.margins` re-exports every one, so its surface is unchanged (#326).
 
 - Drop `cdf` and `flip` from `BicopLike`'s required surface: a protocol requires what a cascade calls, and both are optional capabilities read with `getattr` -- `cdf` only on a discrete edge, `flip` only in structure selection. `isinstance` now accepts the minimal pair the docs describe, and `BicopLike` can be implemented directly (#326).
@@ -165,6 +169,8 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 
 ### Bug fixes in `pyvinecopulib`
 
+- Copy a broadcast margin when it still needs fitting: `Vinedist(copula, Kde1d())` shared one unfitted margin across every variable, so each column's estimate overwrote the last and every column ended up on the fit from the final one -- `logpdf` was `-inf` wherever the columns were on different scales. A fitted margin stays shared, which is the tied-parameter case; `fit` and `select` separate aliased slots first (#326).
+
 - Refuse an array in a margin's `controls` slot: `fit(y, w)` is the compiled `Kde1d`'s spelling and binds the weights to `controls` on every other margin, where they were ignored -- an unweighted fit behind a weighted-looking call (#326).
 - Place the exogenous covariates on the fitting path too, not only when evaluating: a margin's estimator received the caller's raw array where its own column had already been placed (#326).
 
@@ -209,6 +215,10 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Declare the `BicopFamily` members and the `RVineStructure` base of `CVineStructure` / `DVineStructure` in the generated type stubs, so both documented patterns pass static type checking (#224, #268).
 
 ### Build / packaging
+
+- Delete the 21 structural protocols written to satisfy `ANN401`, and use each ecosystem's own types where it ships them: torch has `py.typed`, so its two become `TYPE_CHECKING` imports. Nothing verified the protocols -- the check ran between two hand-written declarations in one file (#326).
+
+- Type `Any` only where the reason is stated: 26 whole-file `ANN401` exemptions become 2, with 60 per-line `# noqa: ANN401` carrying their reason and `RUF100` failing the build when one goes stale. The two that remain are `core/_discrete.py`'s difference quotients and OpenTURNS, the one ecosystem here with no type information at all (#326).
 
 - Resolve the Eigen include directory from the `Eigen3::Eigen` target, so a
   source build works against Eigen 5.x (#235).

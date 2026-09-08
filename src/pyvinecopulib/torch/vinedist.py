@@ -218,9 +218,11 @@ class TorchVinedist(
   @classmethod
   def _coerce_fit_data(
     cls,
-    y: Tensor,
+    # Anything `torch.as_tensor` accepts, which is the hook's whole job: a
+    # caller may hand a NumPy array to a torch distribution.
+    y: object,
     weights: Optional[Tensor],
-    controls: Optional[Any],
+    controls: Optional[ControlsLike],
   ) -> tuple[Tensor, Optional[Tensor]]:
     """Put the fit inputs on one device, in one dtype.
 
@@ -231,7 +233,7 @@ class TorchVinedist(
     would likewise have given the margins an integer grid.
     """
     ya = torch.as_tensor(y)
-    resolved = controls or FitControlsTorchVinecop()
+    resolved: Any = controls or FitControlsTorchVinecop()
     device = resolved.device if resolved.device is not None else ya.device
     if resolved.dtype is not None:
       dtype = resolved.dtype
@@ -248,11 +250,11 @@ class TorchVinedist(
   def _default_margins(
     cls,
     d: int,
-    controls: Optional[Any] = None,
+    controls: Optional[ControlsLike] = None,
     margin_controls: Optional[Sequence[Optional[ControlsLike]]] = None,
   ) -> Sequence[TorchKde1d]:
     """One :class:`TorchKde1d` per variable, on the resolved placement."""
-    resolved = controls or FitControlsTorchVinecop()
+    resolved: Any = controls or FitControlsTorchVinecop()
     # `TorchKde1d` fixes its own default dtype, so name one only when the
     # controls actually carry it.
     placement: dict[str, Any] = {"device": resolved.device}
@@ -266,7 +268,7 @@ class TorchVinedist(
   @classmethod
   def _copula_controls(
     cls,
-    controls: Optional[Any],
+    controls: Optional[ControlsLike],
     u: Tensor,
     weights: Optional[Tensor],
   ) -> FitControlsTorchVinecop:
@@ -276,8 +278,11 @@ class TorchVinedist(
     so the estimators refuse a weighted request before reaching this hook.
     """
     del weights
-    resolved: FitControlsTorchVinecop = controls or FitControlsTorchVinecop()
-    return dataclasses.replace(resolved, device=u.device, dtype=u.dtype)
+    resolved: Any = controls or FitControlsTorchVinecop()
+    return cast(
+      "FitControlsTorchVinecop",
+      dataclasses.replace(resolved, device=u.device, dtype=u.dtype),
+    )
 
   @property
   def margins(self) -> tuple[MarginLike[Tensor], ...]:

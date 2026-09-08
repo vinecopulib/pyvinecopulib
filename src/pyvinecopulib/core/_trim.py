@@ -13,7 +13,9 @@ unchanged so that precision's results are unmoved.
 """
 
 from types import ModuleType
-from typing import Any, Tuple
+from typing import Any, Tuple, cast
+
+from .protocols import ArrayT
 
 _TRIM_LO: float = 1e-10
 _TRIM_HI: float = 1.0 - 1e-10
@@ -39,7 +41,7 @@ def trim_bounds(xp: ModuleType, dtype: object) -> Tuple[float, float]:
   return max(_TRIM_LO, eps * eps), min(_TRIM_HI, 1.0 - eps)
 
 
-def trim(xp: ModuleType, a: Any) -> Any:
+def trim(xp: ModuleType, a: ArrayT) -> ArrayT:
   """Clamp ``a`` into the open unit interval at its own precision.
 
   Parameters
@@ -54,5 +56,5 @@ def trim(xp: ModuleType, a: Any) -> Any:
   array
       ``a`` clamped to :func:`trim_bounds` for its dtype.
   """
-  lo, hi = trim_bounds(xp, a.dtype)
-  return xp.clip(a, lo, hi)
+  lo, hi = trim_bounds(xp, cast("Any", a).dtype)
+  return cast("ArrayT", xp.clip(a, lo, hi))

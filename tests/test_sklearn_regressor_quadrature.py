@@ -22,11 +22,11 @@ import pytest
 
 pytest.importorskip("sklearn")
 
-import pyvinecopulib as pv  # noqa: E402
-from pyvinecopulib.core import Kde1d  # noqa: E402
-from pyvinecopulib.sklearn import VineRegressor  # noqa: E402
+import pyvinecopulib as pv
+from pyvinecopulib.core import Kde1d
+from pyvinecopulib.sklearn import VineRegressor
 
-from .helpers import AtomicMargin  # noqa: E402
+from .helpers import AtomicMargin
 
 BETA = np.array([1.0, -0.7])
 

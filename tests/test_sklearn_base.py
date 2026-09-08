@@ -8,12 +8,12 @@ import pytest
 pytest.importorskip("sklearn")
 pytest.importorskip("pandas")
 
-import pandas as pd  # noqa: E402
+import pandas as pd
 
-from sklearn.exceptions import DataConversionWarning  # noqa: E402
+from sklearn.exceptions import DataConversionWarning
 
-from pyvinecopulib.sklearn import VineDensity, VineRegressor  # noqa: E402
-from pyvinecopulib.sklearn._base import expand_factors  # noqa: E402
+from pyvinecopulib.sklearn import VineDensity, VineRegressor
+from pyvinecopulib.sklearn._base import expand_factors
 
 
 def test_expand_factors_numeric_unchanged() -> None:
@@ -191,7 +191,11 @@ def test_vinebase_marginal_fitting(
 
   # Check that marginals are fitted
   assert len(density._x_margins) == 2
-  assert all(margin.is_fitted for margin in density._x_margins)
+  # `is_fitted` is an optional capability on `MarginLike`, so it is read the
+  # way the library reads it.
+  assert all(
+    getattr(margin, "is_fitted", False) for margin in density._x_margins
+  )
 
 
 def test_vinebase_pseudoobservations(

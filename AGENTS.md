@@ -449,6 +449,20 @@ For any behavior change:
 - **Type hints are required** on public Python source. `ty` checks
   them; the only allowed unresolved import is
   `pyvinecopulib.pyvinecopulib_ext` (the compiled `.so`).
+- **A signature says `ArrayT`; a body that computes holds `Any`.** `ArrayT` is
+  unbounded, so it names no operator, no `.shape` and no `__getitem__`
+  (`core/protocols.py` says why, and why bounding it is not available: the
+  standard's bound is `__array_namespace__`, which `torch.Tensor` lacks). So a
+  body that indexes or does arithmetic takes a local `Any` and hands the result
+  back through `cast("ArrayT", ...)` -- `core/bicop_base.py` and
+  `core/independence.py` are the reference. What that buys is worth the two
+  casts: an `Any` in a *signature* erases the type for every caller and is
+  published contract text, while one in a body is confined to an expression.
+  Where a whole file's `Any` is one reason (`core/_discrete.py`'s difference
+  quotients, OpenTURNS having no types at all) it goes in
+  `per-file-ignores` with that reason stated once; everywhere else it is a
+  `# noqa: ANN401` at the site, and `RUF100` fails the build when one goes
+  stale.
 - **`__init__.py` files use explicit `__all__`** to define the public
   surface; ruff's per-file ignore (`F403`/`F405`) covers the
   re-export pattern. No wildcard re-exports elsewhere.

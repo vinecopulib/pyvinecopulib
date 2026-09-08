@@ -63,7 +63,9 @@ def get_default_grid_size(plot_type: str) -> int:
 
 
 def bicop_plot(
-  cop: Any,
+  # A `Bicop`, handed here by the binding, which looks this function up by
+  # name; importing the extension to name the type would invert the layering.
+  cop: Any,  # noqa: ANN401
   plot_type: str = "surface",
   margin_type: str = "unif",
   xylim: Optional[tuple[float, float]] = None,

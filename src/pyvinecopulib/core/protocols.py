@@ -817,7 +817,11 @@ class VinedistLike(Protocol[ArrayT]):
 
   @abstractmethod
   def cdf(
-    self, y: ArrayT, *, x: Optional[ArrayT] = None, **kwargs: Any
+    self,
+    y: ArrayT,
+    *,
+    x: Optional[ArrayT] = None,
+    **kwargs: Any,  # noqa: ANN401 - forwarded to the implementation
   ) -> ArrayT:
     """Joint distribution function at each observation.
 
@@ -838,7 +842,11 @@ class VinedistLike(Protocol[ArrayT]):
 
   @abstractmethod
   def rosenblatt(
-    self, y: ArrayT, *, x: Optional[ArrayT] = None, **kwargs: Any
+    self,
+    y: ArrayT,
+    *,
+    x: Optional[ArrayT] = None,
+    **kwargs: Any,  # noqa: ANN401 - forwarded to the implementation
   ) -> ArrayT:
     """Rosenblatt transform: observations to independent uniforms.
 
@@ -859,7 +867,11 @@ class VinedistLike(Protocol[ArrayT]):
 
   @abstractmethod
   def inverse_rosenblatt(
-    self, w: ArrayT, *, x: Optional[ArrayT] = None, **kwargs: Any
+    self,
+    w: ArrayT,
+    *,
+    x: Optional[ArrayT] = None,
+    **kwargs: Any,  # noqa: ANN401 - forwarded to the implementation
   ) -> ArrayT:
     """Inverse Rosenblatt transform: independent uniforms to observations.
 
@@ -880,7 +892,11 @@ class VinedistLike(Protocol[ArrayT]):
 
   @abstractmethod
   def sample(
-    self, n: int, *, x: Optional[ArrayT] = None, **kwargs: Any
+    self,
+    n: int,
+    *,
+    x: Optional[ArrayT] = None,
+    **kwargs: Any,  # noqa: ANN401 - forwarded to the implementation
   ) -> ArrayT:
     """Draw observations on the original scale.
 

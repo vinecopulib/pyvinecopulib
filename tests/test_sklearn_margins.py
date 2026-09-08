@@ -23,16 +23,16 @@ import pytest
 pytest.importorskip("sklearn")
 pytest.importorskip("pandas")
 
-import pandas as pd  # noqa: E402  (import order: after the availability check)
+import pandas as pd
 
-from sklearn.base import clone  # noqa: E402
+from sklearn.base import clone
 
-import pyvinecopulib as pv  # noqa: E402
-from pyvinecopulib.core import Kde1d  # noqa: E402
-from pyvinecopulib.margins import SciPyMargin  # noqa: E402
-from pyvinecopulib.sklearn import VineDensity, VineRegressor  # noqa: E402
+import pyvinecopulib as pv
+from pyvinecopulib.core import Kde1d
+from pyvinecopulib.margins import SciPyMargin
+from pyvinecopulib.sklearn import VineDensity, VineRegressor
 
-from .helpers import AtomicMargin  # noqa: E402
+from .helpers import AtomicMargin
 
 
 @pytest.fixture

@@ -718,7 +718,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     self._cache_integrals = bool(state["cache_integrals"])
     self.interp_grid._is_linear = bool(state["is_linear"])
 
-  def _prep(self, a: Any) -> Tensor:
+  def _prep(self, a: Any) -> Tensor:  # noqa: ANN401 - any array type, placed
     # Placement only; the base owns the width check and the clamp. Overridden
     # rather than inherited because the grid is a buffer of a submodule, and
     # naming it directly is cheaper than walking the module tree for it.

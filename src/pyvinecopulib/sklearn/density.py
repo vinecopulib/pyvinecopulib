@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 from sklearn.base import DensityMixin
@@ -24,7 +24,7 @@ class VineDensity(DensityMixin, VineBase):
 
   def __init__(
     self,
-    backend: Optional[_VinecopBackendBase] = None,
+    backend: Optional[_VinecopBackendBase[Any]] = None,
     margins: object = None,
     batch_size: int = 100,
     random_state: _RandomStateLike = None,

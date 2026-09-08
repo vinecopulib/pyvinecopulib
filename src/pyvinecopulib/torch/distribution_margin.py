@@ -575,7 +575,12 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
       return super().icdf(p)
 
   def _apply(
-    self, fn: Callable[[Tensor], Tensor], *args: Any, **kwargs: Any
+    self,
+    fn: Callable[[Tensor], Tensor],
+    # Forwarded verbatim to `nn.Module._apply`, which torch itself declares
+    # untyped and has re-signed across releases.
+    *args: Any,  # noqa: ANN401
+    **kwargs: Any,  # noqa: ANN401
   ) -> "TorchDistributionMargin":
     """Keep the fallback placement current across a ``.to()``.
 

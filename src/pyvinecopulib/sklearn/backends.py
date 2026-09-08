@@ -68,7 +68,17 @@ Pass a configured backend instance to any sklearn estimator via
 from __future__ import annotations
 
 import copy as _copy
-from typing import TYPE_CHECKING, Any, Optional, Protocol, Self, Sequence
+from typing import (
+  TYPE_CHECKING,
+  Any,
+  Generic,
+  Optional,
+  Protocol,
+  Self,
+  Sequence,
+  TypeVar,
+  cast,
+)
 
 import numpy as np
 
@@ -103,7 +113,13 @@ def _default_cpp_controls() -> pv.FitControlsVinecop:
   )
 
 
-class _VinecopBackendBase:
+#: The vine a backend fits. Carried as a type parameter so a concrete backend
+#: names its own class -- `Vinecop` or `TorchVinecop` -- in every signature
+#: without narrowing an inherited parameter, which an override may not do.
+_VineT = TypeVar("_VineT", bound=_FittedVine)
+
+
+class _VinecopBackendBase(Generic[_VineT]):
   """Shared adapter surface for the vine-copula backends.
 
   Holds the vine-fit configuration and the fitted vine's evaluation surface,
@@ -146,27 +162,24 @@ class _VinecopBackendBase:
   # (`num_threads` here, `device` / `dtype` there). Every type narrow enough to
   # name any of those excludes the other lane's controls, so the hook that
   # hands them out is where the looseness lives.
-  def _effective_controls(self) -> Any:
+  def _effective_controls(self) -> Any:  # noqa: ANN401 - see above
     return (
       self.controls if self.controls is not None else self._default_controls()
     )
 
-  # `vine` is a `VinecopLike` on either lane, and typed `Any` for the reason
-  # `_FittedVine` states: the concrete backends narrow it to the class they
-  # fitted, which a protocol here would forbid.
-  def fit_vine(self, U: np.ndarray, *, var_types: list[str]) -> Any:
+  def fit_vine(self, U: np.ndarray, *, var_types: list[str]) -> _VineT:
     raise NotImplementedError
 
-  def pdf(self, vine: Any, U: np.ndarray) -> np.ndarray:
+  def pdf(self, vine: _VineT, U: np.ndarray) -> np.ndarray:
     raise NotImplementedError
 
   def cdf(
-    self, vine: Any, U: np.ndarray, *, N: int, seeds: list[int]
+    self, vine: _VineT, U: np.ndarray, *, N: int, seeds: list[int]
   ) -> np.ndarray:
     raise NotImplementedError
 
   def sample(
-    self, vine: Any, n_samples: int, *, seeds: list[int]
+    self, vine: _VineT, n_samples: int, *, seeds: list[int]
   ) -> np.ndarray:
     raise NotImplementedError
 
@@ -177,7 +190,7 @@ class _VinecopBackendBase:
   # on its own array namespace, so no closed union describes the hook either.
   def default_margin(
     self, var_type: str, bounds: Optional[tuple[float, float]]
-  ) -> Any:
+  ) -> Any:  # noqa: ANN401 - see above
     """The margin an estimator should fit when the caller named none.
 
     A hook rather than an `isinstance` check, so a backend whose vine lives on
@@ -200,7 +213,7 @@ class _VinecopBackendBase:
     return pv.core.Kde1d(type=var_type, xmin=lo, xmax=hi)
 
   def bind_distribution(
-    self, vine: Any, margins: Sequence[pv.core.MarginLike[Any]]
+    self, vine: _VineT, margins: Sequence[pv.core.MarginLike[Any]]
   ) -> pv.core.VinedistLike[Any]:
     """Assemble the fitted vine and its margins into one distribution.
 
@@ -252,7 +265,7 @@ class _VinecopBackendBase:
 
     Returns
     -------
-    _VinecopBackendBase
+    _VinecopBackendBase[Any]
         Independent backend configuration for one fit, of this backend's own
         class.
 
@@ -274,7 +287,7 @@ class _VinecopBackendBase:
     return new
 
 
-class VinecopBackend(_VinecopBackendBase):
+class VinecopBackend(_VinecopBackendBase["pv.Vinecop"]):
   """Default backend. Wraps ``Vinecop``.
 
   Stores constructor arguments verbatim per the scikit-learn developer guide;
@@ -343,7 +356,7 @@ class VinecopBackend(_VinecopBackendBase):
     )
 
 
-class TorchVinecopBackend(_VinecopBackendBase):
+class TorchVinecopBackend(_VinecopBackendBase["TorchVinecop"]):
   """PyTorch backend. Wraps :class:`pyvinecopulib.torch.TorchVinecop`.
 
   Pick this backend for GPU placement (``.to("cuda")``), autograd through the
@@ -405,16 +418,16 @@ class TorchVinecopBackend(_VinecopBackendBase):
   # methods that hand it an array, because the cascade declares a `Tensor` and
   # what arrives is the estimator's NumPy array, which the vine's placement
   # hook brings across.
-  def pdf(self, vine: Any, U: np.ndarray) -> np.ndarray:
+  def pdf(self, vine: "TorchVinecop", U: np.ndarray) -> np.ndarray:
     # No `batched=`: the vine resolves it per device, which is what every
     # other call on it does -- `cdf` and `sample` here, and `TorchVinedist`.
-    out = vine.pdf(U)
+    out = vine.pdf(cast("Any", U))
     return out.detach().cpu().numpy()
 
   def cdf(
-    self, vine: Any, U: np.ndarray, *, N: int, seeds: list[int]
+    self, vine: "TorchVinecop", U: np.ndarray, *, N: int, seeds: list[int]
   ) -> np.ndarray:
-    out = vine.cdf(U, N=N, qrng=True, seeds=seeds)
+    out = vine.cdf(cast("Any", U), N=N, qrng=True, seeds=seeds)
     return out.detach().cpu().numpy()
 
   def sample(
@@ -514,17 +527,19 @@ class _BackendVinecop:
 
   Parameters
   ----------
-  backend : _VinecopBackendBase
+  backend : _VinecopBackendBase[Any]
       A resolved backend.
   vine : _FittedVine
       The vine that backend fitted.
   """
 
-  def __init__(self, backend: _VinecopBackendBase, vine: _FittedVine) -> None:
+  def __init__(
+    self, backend: _VinecopBackendBase[Any], vine: _FittedVine
+  ) -> None:
     self.backend = backend
     self.vine = vine
 
-  def __getattr__(self, name: str) -> Any:
+  def __getattr__(self, name: str) -> Any:  # noqa: ANN401 - proxied attribute
     # Underscored names are never forwarded: unpickling looks up `__setstate__`
     # before `vine` exists, and forwarding it would recurse.
     vine = self.__dict__.get("vine")
@@ -607,18 +622,20 @@ class _BackendVinecop:
 # `VineBase.backend_`: `bind_distribution` can only promise a `VinedistLike`,
 # which is narrower than the `Vinedist` the estimators publish as
 # `distribution_`, so naming the type here would narrow every read of it.
-def resolve_backend(backend: Optional[_VinecopBackendBase]) -> Any:
+def resolve_backend(
+  backend: Optional[_VinecopBackendBase[Any]],
+) -> Any:  # noqa: ANN401 - see above
   """Coerce a user-supplied ``backend=`` value to a concrete backend.
 
   Parameters
   ----------
-  backend : _VinecopBackendBase, or None, optional
+  backend : _VinecopBackendBase[Any], or None, optional
       `None` returns a default-constructed :class:`VinecopBackend`; any other
       value (a backend instance) is returned unchanged.
 
   Returns
   -------
-  _VinecopBackendBase
+  _VinecopBackendBase[Any]
       A concrete backend instance.
   """
   return backend if backend is not None else VinecopBackend()

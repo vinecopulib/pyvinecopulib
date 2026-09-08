@@ -170,102 +170,33 @@ extend-include = ["*.ipynb"]
 exclude = ["lib", "src/pyvinecopulib/**/__init__.pyi", "src/pyvinecopulib/__init__.pyi"]
 
 [tool.ruff.lint]
-# Ruff ran its defaults (`E4,E7,E9,F`) until 1.0.0. These four sets are the
-# ones that complement `ty` rather than restating this repository's own
-# conventions: annotations, type-checking hygiene, stub correctness, and the
-# blanket-`type: ignore` check. `preview` is what lets `PYI` inspect `.py`
-# files as well as stubs.
-#
-# Not adopted, and why, so it is not re-litigated: `ALL` reports 7851, and its
-# largest entries contradict rules AGENTS.md states -- `UP007` wants
-# `X | None` where `Optional[X]` is used consistently and on purpose,
-# `TID252` forbids the relative imports the layering rests on, and
-# `TRY003`/`EM101`/`EM102` want short exception messages, which this
-# codebase does not write. Adopting it would mean an ignore list
-# restating the spec.
-extend-select = ["ANN", "TC", "PYI", "PGH003", "RUF045"]
+# These sets complement `ty` instead of restating conventions AGENTS.md
+# already states, which is why `ALL` is not used. `preview` lets `PYI` read
+# `.py` files as well as stubs.
+extend-select = ["ANN", "TC", "PYI", "PGH003", "RUF045", "RUF100"]
 preview = true
-# `TC006` (quote a runtime `cast` target) is the half of flake8-type-checking
-# this codebase wants; the three import-movement rules are wrong here.
-# Annotations are resolved **at runtime** in two places -- the docs build,
-# through sphinx-autodoc-typehints, and
-# `tests/test_import_surface.py::test_the_fit_callback_aliases_resolve_from_any_module`
-# -- so moving e.g. `RVineStructure` behind `TYPE_CHECKING` would leave
-# `VinecopBase.fit`'s own signature unresolvable. That test exists because a
-# quoted alias had already broken the docs build once.
+# Annotations resolve at runtime here -- the docs build reads them through
+# sphinx-autodoc-typehints -- so moving an import behind `TYPE_CHECKING` makes
+# the signature that uses it unresolvable. `TC006` stays.
 ignore = ["TC001", "TC002", "TC003"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F403", "F405"]
-# `ANN401` (a parameter or return annotated `Any`) is enforced everywhere
-# except where `Any` is the answer. Each entry below is a place the type
-# cannot be narrowed, not a place nobody got round to:
-#
-# `core/_discrete.py` and the two big bases evaluate array *values* -- they
-# subtract, divide, mask and index them -- and `ArrayT` is an unbounded
-# TypeVar, so it names no operator, no `.shape` and no `__getitem__`.
-# `array_api_compat` publishes no `Array` protocol to bound it with, and
-# bounding it would close the extension point the contracts advertise.
+# `ANN401` is on everywhere, and every `Any` in `src` states its reason at the
+# site with a `# noqa: ANN401`. These two files are the exception, because in
+# each one many sites share a single reason -- see the AGENTS.md rule.
+# `DiscretePair`'s private helpers compute difference quotients on array
+# columns, which an unbounded `ArrayT` cannot type.
 "src/pyvinecopulib/core/_discrete.py" = ["ANN401"]
-"src/pyvinecopulib/core/vinecop_base.py" = ["ANN401"]
-"src/pyvinecopulib/core/vinedist_base.py" = ["ANN401"]
-# The placement layer's whole job is to accept an array from any namespace and
-# put it on another; typing its input would defeat it.
-"src/pyvinecopulib/core/_placement.py" = ["ANN401"]
-"src/pyvinecopulib/core/_covariates.py" = ["ANN401"]
-"src/pyvinecopulib/core/_trim.py" = ["ANN401"]
-"src/pyvinecopulib/core/_rootfind.py" = ["ANN401"]
-# The four protocols' `**kwargs`, forwarded to whatever the held object
-# accepts, and the resolution helpers that take any of five documented spec
-# shapes.
-"src/pyvinecopulib/core/protocols.py" = ["ANN401"]
-"src/pyvinecopulib/core/_resolve.py" = ["ANN401"]
-"src/pyvinecopulib/core/_validation.py" = ["ANN401"]
-"src/pyvinecopulib/core/_engines.py" = ["ANN401"]
-"src/pyvinecopulib/core/margin_base.py" = ["ANN401"]
-"src/pyvinecopulib/core/vinedist.py" = ["ANN401"]
-# The backend layer holds either a `Vinecop` or a `TorchVinecop` and the
-# estimators accept any of the documented `margins=` spec shapes.
-"src/pyvinecopulib/sklearn/backends.py" = ["ANN401"]
-"src/pyvinecopulib/sklearn/_base.py" = ["ANN401"]
-# `nn.Module` members torch leaves untyped upstream, plus the batched state,
-# which only the torch lane knows the shape of.
-"src/pyvinecopulib/torch/vinecop.py" = ["ANN401"]
-"src/pyvinecopulib/torch/vinedist.py" = ["ANN401"]
-"src/pyvinecopulib/torch/kde1d.py" = ["ANN401"]
-"src/pyvinecopulib/torch/tll_bicop.py" = ["ANN401"]
-"src/pyvinecopulib/torch/distribution_margin.py" = ["ANN401"]
-"src/pyvinecopulib/torch/_placement.py" = ["ANN401"]
-# OpenTURNS is SWIG-generated: no `py.typed`, no stub package, and this module
-# must not import it in order to be importable. It is the one ecosystem here
-# with no types at all.
+# OpenTURNS is SWIG-generated: no `py.typed` and no stub package.
 "src/pyvinecopulib/margins/openturns.py" = ["ANN401"]
-# The deprecation shim resolves an arbitrary name to a class, a function or a
-# subpackage, and the plotting glue is handed matplotlib objects.
-"src/pyvinecopulib/_deprecations.py" = ["ANN401"]
-# The top-level `__getattr__` resolves a name to a class, a function or a
-# subpackage, which is what `Any` means.
-"src/pyvinecopulib/__init__.py" = ["ANN401"]
-"src/pyvinecopulib/_python_helpers/bicop.py" = ["ANN401"]
-"src/pyvinecopulib/utils/__init__.py" = ["ANN401"]
-# A test may pass a wrong type on purpose to prove a runtime guard fires, and
-# a fixture may traffic in whatever the object under test accepts.
+# A test passes a wrong type on purpose to prove a runtime guard fires.
 "tests/**" = ["ANN401"]
-# AGENTS.md scopes the type-hint requirement to "public Python source", and
-# these three are not that:
-#
-# A notebook cell is read by someone learning the library, and
-# `def kendall_tau(data, weights)` teaches better than the annotated form.
-# Correctness is covered instead by executing every notebook in CI.
+# AGENTS.md scopes the type-hint requirement to public Python source. A
+# teaching notebook, a libclang-walking build helper, and Sphinx's own
+# unannotated hook signatures are none of it.
 "examples/**" = ["ANN"]
-# Benchmark and build-helper scripts: internal tooling with no importers, and
-# `scripts/generate_docstring.py` walks libclang cursors, which are `Any` to
-# any checker.
 "scripts/**" = ["ANN"]
-# `docs/conf.py` is a Sphinx configuration module whose functions are called
-# by Sphinx through documented but unannotated hook signatures (`app`, `what`,
-# `obj`, `options`, `lines`), so annotating them would restate Sphinx's own
-# untyped API.
 "docs/conf.py" = ["ANN"]
 
 [tool.ty.src]
@@ -290,15 +221,11 @@ possibly-missing-attribute = "error"
 possibly-missing-import = "error"
 
 [tool.ty.analysis]
-# Conservative inference: no narrowing a `str` to a `Literal` on `==`, and
-# `isinstance` narrows to a top type rather than a gradual one.
 strict-equality-semantics = true
-# strict-generic-narrowing is left off: it costs 39 diagnostics here, all of
-# them `isinstance` narrowing to a top type in code written against the
-# `runtime_checkable` protocols, which is the design rather than a defect.
+# Off: its 39 diagnostics are all `isinstance` narrowing to a top type against
+# the `runtime_checkable` protocols, which is how they are meant to be used.
 strict-generic-narrowing = false
-# `# type: ignore` no longer silences ty; `# ty: ignore[rule]` is required,
-# which is the narrow-and-justified form AGENTS.md already asks for.
+# `# ty: ignore[rule]` required instead of a blanket `# type: ignore`.
 respect-type-ignore-comments = false
 # ty can't introspect the compiled .so; the .pyi stubs cover it.
 allowed-unresolved-imports = ["pyvinecopulib.pyvinecopulib_ext"]
@@ -313,18 +240,10 @@ allowed-unresolved-imports = ["pyvinecopulib.pyvinecopulib_ext"]
 skips = ["B101"]
 
 [tool.numpydoc_validation]
-# Public-API docstrings follow the numpydoc spec
-# (https://numpydoc.readthedocs.io/en/latest/format.html). Enforced via
-# `pre-commit run numpydoc-validation` and runnable ad-hoc with
-# `uv run numpydoc lint src/pyvinecopulib`.
-#
-# Active check codes (see https://numpydoc.readthedocs.io/en/latest/validation.html).
-# GL01 (summary must start on the line after the opening triple-quote)
-# is OFF: it's opinionated, contradicts numpydoc's own format-spec
-# example (`"""Short summary."""`), and major projects (scikit-learn) sit
-# on the other side. We allow both same-line and newline-first
-# summaries; SS01/SS02 still enforce that the summary exists and starts
-# capitalized.
+# Run by pre-commit; ad-hoc with `uv run numpydoc lint src/pyvinecopulib`.
+# GL01 is off: it contradicts numpydoc's own format-spec example, so both
+# same-line and newline-first summaries are allowed. SS01/SS02 still require
+# a capitalized summary.
 checks = [
   "GL02", "GL03", "GL05", "GL07",
   "PR01", "PR02", "PR03", "PR04", "PR05", "PR07",
@@ -336,10 +255,8 @@ exclude = [
   # public modules: still off-contract per the underscore-prefix rule.
   '\._[a-z][a-zA-Z0-9_]*$',
 ]
-# File-path patterns for internal helpers (AGENTS.md §"Module boundaries"):
-# not part of any public contract. The numpydoc hook resolves modules to
-# their `Path.stem`, so we match by file path here rather than by dotted
-# module name.
+# Internal helpers, which are not part of any public contract. Matched by
+# file path because the hook resolves modules to their `Path.stem`.
 exclude_files = [
   'src/pyvinecopulib/_python_helpers/.*\.py$',
   'src/pyvinecopulib/_deprecations\.py$',
@@ -397,22 +314,18 @@ filterwarnings = [
 ]
 
 [tool.codespell]
-# `en-GB_to_en-US` is what enforces the American-English rule from AGENTS.md;
-# the rest catches ordinary typos in the same pass.
+# `en-GB_to_en-US` enforces the American-English rule from AGENTS.md.
 builtin = "clear,rare,en-GB_to_en-US"
-# The prose rule beside the spelling one: a banned word reports with a
-# suggestion and, because each entry carries a reason after a comma, is never
-# auto-fixed -- the right replacement depends on the sentence.
+# The banned-word list. Each entry carries a reason after a comma, which is
+# what makes codespell report a suggestion instead of auto-fixing: the right
+# replacement depends on the sentence. The file must come first -- a value
+# beginning with `-` is read as another flag.
 dictionary = ".codespell-prose.txt,-"
-# Generated or vendored: `docstr.hpp` and the `.pyi` stubs are build artifacts
-# whose text comes from upstream C++ (fix it there), and `lib/` is upstream.
-# `make lint` additionally passes the paths we own explicitly, because CI
-# unpacks Eigen and Boost into the workspace and a skip list cannot anticipate
-# every directory a build step drops there.
+# Generated or vendored. `docstr.hpp` and the `.pyi` stubs come from upstream
+# C++, so a typo there is fixed upstream.
 skip = "*/_build/*,*/_generate/*,*/_static/*,*/htmlcov/*,*/lib/*,*/uv.lock,*.pyi,*/docstr.hpp,*/docs/CHANGELOG.md,*/docs/README.md,*/docs/_README_inlined.md,*/docs/examples,*.codespell-prose.txt,*test_prose.py"
-# `aas` is Kjersti Aas, author of the paper the vine literature is built on.
-# The rest are domain vocabulary or identifiers read as misspellings.
-# `fonctions` is Sklar (1959)'s French title, quoted verbatim in the references.
+# `aas` is Kjersti Aas; `fonctions` is Sklar (1959)'s title, quoted verbatim.
+# The rest is domain vocabulary read as misspelled.
 ignore-words-list = "aas,fonctions,nd,iff,ans,strat,te"
 # Base64 payloads in notebook outputs are not prose.
 ignore-regex = "[A-Za-z0-9+/]{32,}={0,2}"

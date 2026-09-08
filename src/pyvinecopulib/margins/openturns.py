@@ -867,7 +867,7 @@ def _try_factory(
     warnings.simplefilter("ignore")
     try:
       candidate = OpenTURNSMargin(factory).fit(data)
-    except Exception as e:  # noqa: BLE001 - any build failure is a rejection
+    except Exception as e:
       return None, f"{type(e).__name__}: {e}"
   if (candidate.var_type == "d") != discrete:
     return None, (

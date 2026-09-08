@@ -356,7 +356,7 @@ def _fit_candidate(candidate: "SciPyMargin", y: np.ndarray) -> Optional[str]:
       if not getattr(candidate, "is_fitted", True):
         candidate.fit(y)
       return _reject(candidate, y)
-    except Exception as e:  # noqa: BLE001 - any fitter failure is a rejection
+    except Exception as e:
       return f"{type(e).__name__}: {e}"
 
 

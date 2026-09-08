@@ -88,7 +88,7 @@ class TensorPlacementMixin(_ModuleBase):
       return torch.empty(0, dtype=torch.float64)
     return ref
 
-  def _prep(self, a: Any) -> Tensor:
+  def _prep(self, a: Any) -> Tensor:  # noqa: ANN401 - any array type, placed
     """Bring one input array onto this module's dtype and device.
 
     ``as_tensor`` rather than ``tensor`` or ``detach``, so a tensor that

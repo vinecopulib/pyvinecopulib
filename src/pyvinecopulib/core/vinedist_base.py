@@ -154,7 +154,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
 
   def __init__(
     self,
-    vinecop: Any,
+    vinecop: Any,  # noqa: ANN401 - see the comment below
     margins: object,
   ) -> None:
     # `copula` is a `VinecopLike`, but typed `Any`: the compiled `Vinecop`
@@ -166,7 +166,8 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
 
   def _bind_dist(
     self,
-    vinecop: Any,
+    # A `VinecopLike`, but `Any` for the reason `__init__` states.
+    vinecop: Any,  # noqa: ANN401
     margins: object,
   ) -> None:
     """Install the copula and margins.
@@ -690,7 +691,15 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     return cast("ArrayT", xp.exp(out))
 
   def cdf(
-    self, y: ArrayT, *, x: Optional[ArrayT] = None, **kwargs: Any
+    self,
+    y: ArrayT,
+    *,
+    x: Optional[ArrayT] = None,
+    # Forwarded to the held copula, whose accepted keywords vary by
+    # implementation -- `Vinecop.cdf` takes `N` and `seeds`, `TorchVinecop`
+    # also `batched` -- and a custom `VinecopLike` may take its own. A
+    # `TypedDict` would close a set the extension point leaves open.
+    **kwargs: Any,  # noqa: ANN401
   ) -> ArrayT:
     """Distribution function of the joint distribution.
 
@@ -753,7 +762,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     return cast("ArrayT", xp.sum(terms))
 
   def rosenblatt(
-    self, y: ArrayT, *, x: Optional[ArrayT] = None, **kwargs: Any
+    self,
+    y: ArrayT,
+    *,
+    x: Optional[ArrayT] = None,
+    **kwargs: Any,  # noqa: ANN401 - open keyword set, as `cdf`
   ) -> ArrayT:
     """Rosenblatt transform of observations to independent uniforms.
 
@@ -784,7 +797,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     )
 
   def inverse_rosenblatt(
-    self, w: ArrayT, *, x: Optional[ArrayT] = None, **kwargs: Any
+    self,
+    w: ArrayT,
+    *,
+    x: Optional[ArrayT] = None,
+    **kwargs: Any,  # noqa: ANN401 - open keyword set, as `cdf`
   ) -> ArrayT:
     """Inverse Rosenblatt transform, from uniforms to the original scale.
 
@@ -811,7 +828,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     return self.marginal_icdf(u, x=x)
 
   def sample(
-    self, n: int, *, x: Optional[ArrayT] = None, **kwargs: Any
+    self,
+    n: int,
+    *,
+    x: Optional[ArrayT] = None,
+    **kwargs: Any,  # noqa: ANN401 - open keyword set, as `cdf`
   ) -> ArrayT:
     """Draw ``n`` samples from the joint distribution.
 
@@ -845,7 +866,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     *,
     conditioning_set: Optional[list[int]] = None,
     x: Optional[ArrayT] = None,
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ANN401 - open keyword set, as `cdf`
   ) -> ArrayT:
     """Sample the remaining variables given fixed values of some of them.
 
@@ -958,10 +979,10 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   @classmethod
   def _coerce_fit_data(
     cls,
-    y: Any,
+    y: object,
     weights: Optional[ArrayT],
     controls: Optional[ControlsLike],
-  ) -> tuple[Any, Optional[ArrayT]]:
+  ) -> tuple[ArrayT, Optional[ArrayT]]:
     """Raise; override to put the fit inputs on this subclass's namespace.
 
     Called once before any part is fitted, by every estimator on the class.
@@ -1231,7 +1252,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
 
   def fit(
     self,
-    y: Any,
+    y: ArrayT,
     /,
     controls: Optional[ControlsLike] = None,
     *,
@@ -1302,7 +1323,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
 
   def select(
     self,
-    y: Any,
+    y: ArrayT,
     /,
     controls: Optional[ControlsLike] = None,
     *,
@@ -1354,7 +1375,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
 
   def _reestimate(
     self,
-    y: Any,
+    y: ArrayT,
     controls: Optional[ControlsLike],
     margin_controls: object,
     *,
@@ -1397,7 +1418,8 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     from ._resolve import unshare
 
     cls = type(self)
-    data, weights = cls._coerce_fit_data(y, weights, controls)
+    coerced, weights = cls._coerce_fit_data(y, weights, controls)
+    data: Any = coerced
     if data.ndim != 2:
       raise ValueError(f"y must be two-dimensional; got {data.ndim} dimensions")
     n, d = int(data.shape[0]), int(data.shape[1])
@@ -1458,7 +1480,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     x: Optional[ArrayT],
     weights: Optional[ArrayT],
     n: int,
-    data: Any,
+    data: ArrayT,
     verb: str,
   ) -> tuple[Optional[ArrayT], Optional[ArrayT]]:
     """Validate and place the covariates, and validate the weights.
@@ -1487,7 +1509,9 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         "yourself if only one half is conditional."
       )
     placed: Optional[ArrayT] = prepare(data, x, n)
-    checked: Optional[ArrayT] = validate_weights(weights, data[:, 0])
+    checked: Optional[ArrayT] = validate_weights(
+      weights, cast("Any", data)[:, 0]
+    )
     if checked is not None and not cls.supports_weighted_copula:
       raise ValueError(
         f"{cls.__name__}.{verb} cannot weight the copula half, so the "
@@ -1500,7 +1524,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   @classmethod
   def from_data(
     cls,
-    y: Any,
+    y: ArrayT,
     /,
     controls: Optional[ControlsLike] = None,
     *,
@@ -1579,11 +1603,12 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     from ._resolve import resolve_margin_controls, resolve_margins
     from ._resolve import fit_margin
 
-    data, weights = cls._coerce_fit_data(y, weights, controls)
+    coerced, weights = cls._coerce_fit_data(y, weights, controls)
+    data: Any = coerced
     if data.ndim != 2:
       raise ValueError(f"y must be two-dimensional; got {data.ndim} dimensions")
     n, d = int(data.shape[0]), int(data.shape[1])
-    x, weights = cls._check_fit_inputs(x, weights, n, data, "from_data")
+    x, weights = cls._check_fit_inputs(x, weights, n, coerced, "from_data")
 
     if names is None:
       # A DataFrame carries its own names, and `margins` is often keyed by

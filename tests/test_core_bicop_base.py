@@ -165,7 +165,7 @@ def test_core_import_is_torch_free() -> None:
     "import sys; import pyvinecopulib.core; "
     "sys.exit(0 if 'torch' not in sys.modules else 1)"
   )
-  result = subprocess.run(  # noqa: S603
+  result = subprocess.run(
     [sys.executable, "-c", code], capture_output=True, text=True
   )
   assert result.returncode == 0, result.stderr

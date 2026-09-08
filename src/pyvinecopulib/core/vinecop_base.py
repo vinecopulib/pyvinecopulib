@@ -498,9 +498,9 @@ class VinecopBase(
     """
     ua: Any = self._prep(u)
     xp = self._namespace(ua)
-    return cast("ArrayT", trim(xp, self._layout(ua, name, values_only)))
+    return trim(xp, self._layout(ua, name, values_only))
 
-  def _layout(self, ua: Any, name: str, values_only: bool) -> Any:
+  def _layout(self, ua: ArrayT, name: str, values_only: bool) -> ArrayT:
     """Validate ``ua``'s layout and reduce it to the columns the caller needs."""
     return collapse_data(
       ua, self.d, self._var_types, name, values_only=values_only
@@ -517,7 +517,7 @@ class VinecopBase(
     """
     return False
 
-  def _build_batched(self) -> Any:
+  def _build_batched(self) -> Any:  # noqa: ANN401 - subclass-specific state
     """Build the grid-batched state for the fast path (subclass-specific).
 
     The default raises ``_NotBatchable``, so the dispatch layer falls back
@@ -540,7 +540,7 @@ class VinecopBase(
       f"{type(self).__name__} does not provide a batched fast path."
     )
 
-  def _ensure_batched(self) -> Any:
+  def _ensure_batched(self) -> Any:  # noqa: ANN401 - as `_build_batched`
     """Return the cached batched state, building it once on first use."""
     if self._batched is None:
       # Bypass any framework `__setattr__`: on the torch subclass this value
@@ -597,7 +597,7 @@ class VinecopBase(
     tree: int,
     edge: int,
     x: Optional[ArrayT],
-    u_nat: Optional[Any],
+    u_nat: Optional[ArrayT],
     hinv2_final: Optional[ArrayT],
   ) -> Optional[ArrayT]:
     """Assemble the per-edge conditioning context ``x_e`` = context(``u_D``, ``x``).
@@ -638,7 +638,7 @@ class VinecopBase(
       cols = list(self._cond_positions(tree, edge))
       if cols:
         if u_nat is not None:  # forward: read observation columns
-          u_D = u_nat[:, cols]
+          u_D = cast("Any", u_nat)[:, cols]
         else:  # inverse: read finalized hinv2[0] rows, transpose to (n, |D|)
           finalized: Any = hinv2_final
           xp = array_namespace(finalized)
@@ -646,7 +646,11 @@ class VinecopBase(
     return ctx.edge_context(u_D=u_D, x=x)
 
   # --- non-batched cascades (single source of truth) -------------------- #
-  def _pdf(self, u: Any, x: Optional[ArrayT]) -> ArrayT:
+  # Each cascade below computes on `u` -- indexes it, reads its `dtype` and
+  # `device`, does arithmetic -- so it holds it as `Any`, per `protocols.py`
+  # on what an unbounded `ArrayT` can type. Every one receives an
+  # already-prepped array from a public method typed `ArrayT`.
+  def _pdf(self, u: Any, x: Optional[ArrayT]) -> ArrayT:  # noqa: ANN401
     """Vine density as a product of per-edge copula densities (``Vinecop::pdf``).
 
     Parameters
@@ -716,7 +720,7 @@ class VinecopBase(
 
   def _rosenblatt(
     self,
-    u: Any,
+    u: Any,  # noqa: ANN401 - computed on, as `_pdf`
     x: Optional[ArrayT],
     randomize_discrete: bool = True,
     seeds: Optional[list[int]] = None,
@@ -795,7 +799,11 @@ class VinecopBase(
       out = out * r + left * (1.0 - r)
     return cast("ArrayT", trim(xp, out))
 
-  def _inverse_rosenblatt(self, u: Any, x: Optional[ArrayT]) -> ArrayT:
+  def _inverse_rosenblatt(
+    self,
+    u: Any,  # noqa: ANN401 - computed on, as `_pdf`
+    x: Optional[ArrayT],
+  ) -> ArrayT:
     """Inverse Rosenblatt transform (``Vinecop::inverse_rosenblatt``).
 
     Walks variables from ``d - 2`` down to ``0``; at each ``var`` it fills the
@@ -874,7 +882,7 @@ class VinecopBase(
   # bilinear cell search across pdf + both h-functions) plus the ``needs_h1`` /
   # ``needs_h2`` masks. These receive already-prepped ``u`` (the public methods
   # prep before dispatch).
-  def _pdf_batched(self, u: Any) -> ArrayT:
+  def _pdf_batched(self, u: Any) -> ArrayT:  # noqa: ANN401 - as `_pdf`
     """Batched vine pdf: product over per-tree-level stacked densities.
 
     Numerically equivalent to ``_pdf`` on a simplified vine, but each tree
@@ -918,7 +926,7 @@ class VinecopBase(
       )
     return cast("ArrayT", pdf)
 
-  def _inverse_rosenblatt_batched(self, u: Any) -> ArrayT:
+  def _inverse_rosenblatt_batched(self, u: Any) -> ArrayT:  # noqa: ANN401
     """Batched inverse Rosenblatt: one stacked call per dependency wave.
 
     Bit-identical to ``_inverse_rosenblatt`` on a simplified vine: the
@@ -958,7 +966,7 @@ class VinecopBase(
       out[:, j] = hinv2[inv[j], :]
     return cast("ArrayT", trim(xp, out))
 
-  def _rosenblatt_batched(self, u: Any) -> ArrayT:
+  def _rosenblatt_batched(self, u: Any) -> ArrayT:  # noqa: ANN401 - as `_pdf`
     """Batched Rosenblatt transform (per-tree-level stacked h-functions).
 
     Numerically equivalent to ``_rosenblatt`` on a simplified vine.
@@ -2049,8 +2057,8 @@ class _ReorientedVine(VinecopBase[ArrayT]):
   # being viewed. `_default_batched` / `_build_batched` are *not*
   # delegated: the base's batched state is baked against the base's structure and
   # edge order, so the view stays on the non-batched cascade.
-  def _prep(self, a: Any) -> Any:
-    return self._base._prep(a)
+  def _prep(self, a: Any) -> ArrayT:  # noqa: ANN401 - any array type, placed
+    return cast("ArrayT", self._base._prep(a))
 
   def _prep_args(
     self, u: ArrayT, name: str, *, values_only: bool = False

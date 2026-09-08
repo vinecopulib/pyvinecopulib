@@ -54,6 +54,7 @@ from torch import Tensor
 from ..core import (
   BicopLike,
   ConditioningContext,
+  ControlsLike,
   DiscretePair,
   VinecopBase,
 )
@@ -414,11 +415,9 @@ class TorchVinecop(
     cls,
     u: Union[np.ndarray, Tensor],
     /,
-    # `controls` is a `FitControlsTorchVinecop` -- the placement, the cache
-    # mode and the selection knobs are all read off it below -- but typed
-    # `Any` so this stays a widening of `VinecopBase.from_data`, which accepts
-    # any `ControlsLike`: narrowing a parameter is what a subclass may not do.
-    controls: Optional[Any] = None,
+    # Declared as the base does -- narrowing a parameter is what an override
+    # may not do -- while the lane's own fields are read off a local below.
+    controls: Optional[ControlsLike] = None,
     *,
     structure: Optional[RVineStructure] = None,
     var_types: Optional[list[str]] = None,
@@ -486,11 +485,12 @@ class TorchVinecop(
     pyvinecopulib.core.VinecopBase.select : Reselect its structure and pairs.
     """
     reject_covariates(cls, x)
-    if controls is None:
-      controls = FitControlsTorchVinecop()
+    resolved: Any = controls
+    if resolved is None:
+      resolved = FitControlsTorchVinecop()
 
-    eff_dtype = controls.dtype if controls.dtype is not None else torch.float64
-    eff_device = controls.device
+    eff_dtype = resolved.dtype if resolved.dtype is not None else torch.float64
+    eff_device = resolved.device
     u_t = torch.as_tensor(u, dtype=eff_dtype, device=eff_device)
     if u_t.ndim != 2:
       raise ValueError(f"u must be 2-D; got shape {tuple(u_t.shape)}")
@@ -500,8 +500,8 @@ class TorchVinecop(
 
     # The vine's controls are pair controls: `FitControlsTorchVinecop`
     # derives from `FitControlsTorchBicop`, as its core counterparts do.
-    bc_controls = controls
-    cache_integrals = cls._resolve_cache_integrals(controls.cache_integrals)
+    bc_controls = resolved
+    cache_integrals = cls._resolve_cache_integrals(resolved.cache_integrals)
 
     def fit_edge_tll(
       tree: int,
@@ -538,7 +538,7 @@ class TorchVinecop(
 
     # `None` resolves per device, as the evaluation cascade's `batched` does:
     # the per-level fitter buys launch amortization, which cpu has none of.
-    batched_fit = controls.batched_fit
+    batched_fit = resolved.batched_fit
     if batched_fit is None:
       batched_fit = u_t.device.type == "cuda"
 
@@ -586,13 +586,13 @@ class TorchVinecop(
         u_t,
         pair_fitter,
         fit_level=level_hook,
-        trunc_lvl=controls.trunc_lvl,
-        tree_criterion=controls.tree_criterion,
-        threshold=controls.threshold,
-        tree_algorithm=controls.tree_algorithm,
-        seeds=list(controls.seeds),
+        trunc_lvl=resolved.trunc_lvl,
+        tree_criterion=resolved.tree_criterion,
+        threshold=resolved.threshold,
+        tree_algorithm=resolved.tree_algorithm,
+        seeds=list(resolved.seeds),
         var_types=list(var_types or []) or None,
-        conditioning_set=list(controls.conditioning_set) or None,
+        conditioning_set=list(resolved.conditioning_set) or None,
       )
     else:
       if int(structure.dim) != d:
@@ -607,8 +607,8 @@ class TorchVinecop(
         pair_fitter,
         var_types=list(var_types or []) or None,
         fit_level=level_hook,
-        tree_criterion=controls.tree_criterion,
-        threshold=controls.threshold,
+        tree_criterion=resolved.tree_criterion,
+        threshold=resolved.threshold,
       )
     # Store the continuous grids; `get_pair_copula` re-wraps a discrete edge,
     # so the ModuleList holds only real nn.Modules. A thresholded edge arrives
@@ -624,7 +624,7 @@ class TorchVinecop(
         # sentinel that short-circuits every method on `is_indep`, exactly
         # rather than to rounding -- so it needs no grid of its own and
         # cannot disagree with its siblings about one. `u_t.device`, as
-        # `fit_edge` uses: `controls.device` is `None` whenever the caller
+        # `fit_edge` uses: `resolved.device` is `None` whenever the caller
         # let the data carry the placement.
         TorchTllBicop(device=u_t.device, dtype=eff_dtype)
         if isinstance(p, IndependencePair)
@@ -639,7 +639,7 @@ class TorchVinecop(
       var_types=list(var_types or []) or None,
     )
     out._set_cond_order(cond_order)
-    out.compile_cascades = controls.compile
+    out.compile_cascades = resolved.compile
     return out
 
   # --------------------------------------------------------------------- #
@@ -674,7 +674,7 @@ class TorchVinecop(
           [
             TorchTllBicop(device=ref.device, dtype=ref.dtype)
             if isinstance(pair, IndependencePair)
-            else continuous_view(pair)
+            else cast("torch.nn.Module", continuous_view(pair))
             for pair in row
           ]
         )
@@ -902,7 +902,13 @@ class TorchVinecop(
     state["_batched"] = None
     return state
 
-  def load_state_dict(self, *args: Any, **kwargs: Any) -> "_IncompatibleKeys":
+  def load_state_dict(
+    self,
+    # Forwarded verbatim to `nn.Module.load_state_dict`, which torch itself
+    # declares untyped and has re-signed across releases.
+    *args: Any,  # noqa: ANN401
+    **kwargs: Any,  # noqa: ANN401
+  ) -> "_IncompatibleKeys":
     """Load parameters and buffers, dropping anything derived from them.
 
     Parameters
@@ -924,7 +930,10 @@ class TorchVinecop(
     return cast("_IncompatibleKeys", out)
 
   def _apply(
-    self, fn: Callable[[Tensor], Tensor], *args: Any, **kwargs: Any
+    self,
+    fn: Callable[[Tensor], Tensor],
+    *args: Any,  # noqa: ANN401 - as `load_state_dict`
+    **kwargs: Any,  # noqa: ANN401
   ) -> Self:
     # `.to()`, `.cuda()`, `.cpu()` all route through `_apply`. The
     # BatchedVine container holds buffers — `super()._apply` would move

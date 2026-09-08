@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import pickle
 import warnings
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -347,7 +347,9 @@ def test_loglik_sums_the_log_density() -> None:
   """`loglik` stays a 0-d tensor, so it remains differentiable."""
   margin = _normal(0.3, 1.4)
   x = torch.tensor([-0.5, 0.2, 1.1], dtype=_F64)
-  total = margin.loglik(x)
+  # Called *with* data it is the tensor branch of `loglik`'s return, which
+  # is what this test is about.
+  total = cast("Any", margin.loglik(x))
   assert total.ndim == 0
   torch.testing.assert_close(total, margin.logpdf(x).sum())
 
@@ -416,7 +418,7 @@ def test_the_criteria_penalize_the_trainable_parameters() -> None:
   aic, bic, aicc = margin.aic(y), margin.bic(y), margin.aicc(y)
   assert len({round(float(v), 9) for v in (aic, bic, aicc)}) == 3
   # `aic` is exactly `-2 * loglik + 2 * k`, so the penalty is visible.
-  loglik = float(margin.loglik(y).detach())
+  loglik = float(cast("Any", margin.loglik(y)).detach())
   assert float(aic) == pytest.approx(-2.0 * loglik + 2.0 * 2.0)
 
 

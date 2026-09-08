@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("sklearn")
 
-from pyvinecopulib.sklearn import VineRegressor  # noqa: E402
+from pyvinecopulib.sklearn import VineRegressor
 
 # The two shared fixtures return wide tuples; naming them keeps every
 # signature below readable.

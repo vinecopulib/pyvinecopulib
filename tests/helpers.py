@@ -373,7 +373,7 @@ def run_without(package: str, body: str) -> None:
     "  return real(name, globals, locals, fromlist, level)\n"
     "builtins.__import__ = blocked\n"
   )
-  result = subprocess.run(  # noqa: S603
+  result = subprocess.run(
     [_sys.executable, "-c", preamble + body], capture_output=True, text=True
   )
   assert result.returncode == 0, result.stdout + result.stderr

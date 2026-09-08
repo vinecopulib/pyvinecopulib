@@ -20,7 +20,7 @@ call helpers.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence, cast
+from typing import Any, Callable, Optional, Sequence, TYPE_CHECKING, cast
 
 from array_api_compat import array_namespace
 
@@ -102,7 +102,7 @@ def _make_criterion(
   if criterion_function is not None and x is not None:
     xa = convert(x)
 
-    def scorer(matrix: np.ndarray) -> float:  # noqa: F811 - the conditional variant
+    def scorer(matrix: np.ndarray) -> float:
       return float(cast("Any", criterion_function)(matrix, x=xa))
 
   def criterion(col0: ArrayT, col1: ArrayT) -> float:
@@ -118,7 +118,7 @@ def _make_criterion(
   return criterion
 
 
-def _to_numpy_default(a: Any) -> np.ndarray:
+def _to_numpy_default(a: ArrayT) -> np.ndarray:
   """Host NumPy view of ``a``, for an array library that leaves it off the host.
 
   ``np.asarray`` raises on a tensor that lives on an accelerator, so this
@@ -181,7 +181,10 @@ def _fit_edge_call(
 
 def fit_parts(
   structure: RVineStructure,
-  u: Any,
+  # The engines index `u`, read its shape and compute the tree criterion on
+  # it, which an unbounded `ArrayT` cannot type (see `protocols.py`). The
+  # public `fit` / `select` that call these are typed.
+  u: Any,  # noqa: ANN401
   fit_edge: FitEdge,
   *,
   context: Optional[ConditioningContext[ArrayT]] = None,
@@ -396,7 +399,10 @@ def fit_parts(
 
 
 def select_parts(
-  u: Any,
+  # The engines index `u`, read its shape and compute the tree criterion on
+  # it, which an unbounded `ArrayT` cannot type (see `protocols.py`). The
+  # public `fit` / `select` that call these are typed.
+  u: Any,  # noqa: ANN401
   fit_edge: FitEdge,
   *,
   context: Optional[ConditioningContext[ArrayT]] = None,

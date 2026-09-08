@@ -63,7 +63,8 @@ __all__ = [
 _DEPRECATED_FUNCTIONS = {"simulate_uniform": "sample_uniform"}
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str) -> Any:  # noqa: ANN401 - a name resolves to any
+  # class, function or subpackage, which is what `Any` means here.
   """Resolve a deprecated function name.
 
   Parameters

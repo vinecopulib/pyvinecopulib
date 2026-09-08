@@ -1,6 +1,6 @@
 import math
 from numbers import Integral
-from typing import Callable, Iterable, Iterator, Optional
+from typing import Any, Callable, Iterable, Iterator, Optional
 
 import numpy as np
 from sklearn.base import RegressorMixin
@@ -45,7 +45,7 @@ class VineRegressor(RegressorMixin, VineBase):
     self,
     mean: bool = True,
     quantiles: Optional[_YLike] = None,
-    backend: Optional[_VinecopBackendBase] = None,
+    backend: Optional[_VinecopBackendBase[Any]] = None,
     margins: object = None,
     batch_size: int = 100,
     use_grid: bool = True,

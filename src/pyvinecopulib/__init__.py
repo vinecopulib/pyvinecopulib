@@ -62,7 +62,8 @@ __all__ = [
 _LAZY_SUBPACKAGES = ("sklearn", "torch")
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str) -> Any:  # noqa: ANN401 - a name resolves to any
+  # class, function or subpackage, which is what `Any` means here.
   if name in _DEPRECATED_TOP_LEVEL:
     return _resolve_deprecated(name)
   if name in _LAZY_SUBPACKAGES:

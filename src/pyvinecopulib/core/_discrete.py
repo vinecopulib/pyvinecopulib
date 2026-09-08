@@ -40,15 +40,20 @@ __all__ = ["DiscretePair"]
 
 
 class _ContinuousPair(Protocol[ArrayT]):
-  """The four unconditional evaluations :class:`DiscretePair` builds on.
+  """The unconditional evaluations :class:`DiscretePair` calls on its pair.
 
-  Narrower than :class:`~pyvinecopulib.core.BicopLike` on purpose: it is what
-  the difference quotients actually call, and it is a surface ``Bicop``
-  satisfies structurally -- ``BicopLike`` it satisfies only nominally,
-  its methods taking per-row ``parameters`` where the protocol takes a
-  keyword-only ``x``. A conditioning matrix, when there is one, is forwarded
-  dynamically (see ``pair_eval``), which is what makes a pair that cannot
-  accept one fail loudly rather than silently.
+  ``cdf`` is what separates this from
+  :class:`~pyvinecopulib.core.BicopLike`, where it is an optional capability:
+  a difference quotient over an atom is built from it. The two inverses are
+  here because a discrete argument's inverse falls back to them on the
+  continuous side. ``sample`` is not, since ``DiscretePair`` draws through its
+  own inverse Rosenblatt.
+
+  This is also a surface ``Bicop`` satisfies structurally -- ``BicopLike`` it
+  satisfies only nominally, its methods taking per-row ``parameters`` where the
+  protocol takes a keyword-only ``x``. A conditioning matrix, when there is
+  one, is forwarded dynamically (see ``pair_eval``), which is what makes a pair
+  that cannot accept one fail loudly rather than silently.
   """
 
   def pdf(self, u: ArrayT) -> ArrayT: ...
@@ -58,6 +63,10 @@ class _ContinuousPair(Protocol[ArrayT]):
   def hfunc1(self, u: ArrayT) -> ArrayT: ...
 
   def hfunc2(self, u: ArrayT) -> ArrayT: ...
+
+  def hinv1(self, u: ArrayT) -> ArrayT: ...
+
+  def hinv2(self, u: ArrayT) -> ArrayT: ...
 
 
 #: Atom width below which a difference quotient is numerically unstable and the
@@ -118,13 +127,13 @@ def disc_cols(var_types: tuple[str, ...]) -> tuple[int, ...]:
 
 
 def collapse_data(
-  u: Any,
+  u: ArrayT,
   d: int,
   var_types: tuple[str, ...],
   name: str,
   *,
   values_only: bool = False,
-) -> Any:
+) -> ArrayT:
   """Validate ``u``'s column layout and reduce it to the columns needed.
 
   Accepts the layouts ``Vinecop`` accepts: ``(n, d)`` for an all-continuous
@@ -157,23 +166,24 @@ def collapse_data(
   ValueError
       If ``u`` is not 2-d or its column count matches no accepted layout.
   """
+  ua: Any = u
   k = var_types.count("d")
   accepted = {d + k, 2 * d} | ({d} if values_only else set())
-  if u.ndim != 2 or int(u.shape[1]) not in accepted:
+  if ua.ndim != 2 or int(ua.shape[1]) not in accepted:
     shapes = ", ".join(f"(n, {c})" for c in sorted(accepted))
     raise ValueError(
       f"{name}: u must have shape {shapes} for a vine with var_types="
-      f"{list(var_types)}; got {tuple(u.shape)}"
+      f"{list(var_types)}; got {tuple(ua.shape)}"
     )
   if values_only or k == 0:
-    return u[:, :d]
-  if int(u.shape[1]) == d + k:
+    return cast("ArrayT", ua[:, :d])
+  if int(ua.shape[1]) == d + k:
     return u
   # Expanded (n, 2d) -> compact (n, d + k): keep the left-limit columns of the
   # discrete variables only, in variable order.
-  xp = array_namespace(u)
+  xp = array_namespace(ua)
   keep = [d + i for i, t in enumerate(var_types) if t == "d"]
-  return xp.concat([u[:, :d], u[:, keep]], axis=1)
+  return cast("ArrayT", xp.concat([ua[:, :d], ua[:, keep]], axis=1))
 
 
 def pair_var_types(
@@ -219,13 +229,13 @@ def pair_var_types(
 
 
 def seed_left_limits(
-  u: Any,
+  u: ArrayT,
   d: int,
   order: tuple[int, ...],
   var_types: tuple[str, ...],
   offsets: tuple[int, ...],
   xp: ModuleType,
-) -> Optional[Any]:
+) -> Optional[ArrayT]:
   """Natural-order left limits read off the compact layout, or ``None``.
 
   ``None`` for an all-continuous model, which is what switches the whole
@@ -255,11 +265,12 @@ def seed_left_limits(
   """
   if "d" not in var_types:
     return None
-  sub = xp.empty((u.shape[0], d), dtype=u.dtype, device=u.device)
+  ua: Any = u
+  sub = xp.empty((ua.shape[0], d), dtype=ua.dtype, device=ua.device)
   for j in range(d):
     v = order[j] - 1
-    sub[:, j] = u[:, d + offsets[v] if var_types[v] == "d" else v]
-  return sub
+    sub[:, j] = ua[:, d + offsets[v] if var_types[v] == "d" else v]
+  return cast("ArrayT", sub)
 
 
 def edge_columns(
@@ -267,11 +278,11 @@ def edge_columns(
   pair_types: Optional[tuple[tuple[tuple[str, str], ...], ...]],
   tree: int,
   edge: int,
-  hfunc1: Any,
-  hfunc2: Any,
-  hfunc1_sub: Optional[Any],
-  hfunc2_sub: Optional[Any],
-) -> tuple[Any, Any, Optional[tuple[Any, Any]], tuple[str, str]]:
+  hfunc1: ArrayT,
+  hfunc2: ArrayT,
+  hfunc1_sub: Optional[ArrayT],
+  hfunc2_sub: Optional[ArrayT],
+) -> tuple[ArrayT, ArrayT, Optional[tuple[ArrayT, ArrayT]], tuple[str, str]]:
   """Resolve one edge's pair-copula input columns and its variable types.
 
   ``m`` is the min-array entry: the natural-order index of the column finalized
@@ -305,20 +316,23 @@ def edge_columns(
   types : tuple of str
       The edge's ``(type1, type2)``.
   """
+  h1: Any = hfunc1
+  h2: Any = hfunc2
+  h2_sub: Any = hfunc2_sub
   m = int(structure.min_array(tree, edge))
   on_diagonal = m == int(structure.struct_array(tree, edge, True))
-  col0 = hfunc2[:, edge]
-  col1 = hfunc2[:, m - 1] if on_diagonal else hfunc1[:, m - 1]
+  col0 = cast("ArrayT", h2[:, edge])
+  col1 = cast("ArrayT", h2[:, m - 1] if on_diagonal else h1[:, m - 1])
   types = ("c", "c") if pair_types is None else pair_types[tree][edge]
   if hfunc2_sub is None or "d" not in types:
     return col0, col1, None, types
-  sub0 = hfunc2_sub[:, edge] if types[0] == "d" else col0
+  sub0 = cast("ArrayT", h2_sub[:, edge]) if types[0] == "d" else col0
   if types[1] != "d":
     sub1 = col1
   elif on_diagonal:
-    sub1 = hfunc2_sub[:, m - 1]
+    sub1 = cast("ArrayT", h2_sub[:, m - 1])
   else:
-    sub1 = cast("Any", hfunc1_sub)[:, m - 1]
+    sub1 = cast("ArrayT", cast("Any", hfunc1_sub)[:, m - 1])
   return col0, col1, (sub0, sub1), types
 
 
@@ -348,7 +362,7 @@ def stack_edge(
   return cast("ArrayT", xp.stack(cols, axis=-1))
 
 
-def with_left_limit(u_e: Any, arg: int) -> Any:
+def with_left_limit(u_e: ArrayT, arg: int) -> ArrayT:
   """A four-column edge input with one argument replaced by its left limit.
 
   The input the cascade needs for a left-limit h-function: conditioning on (or
@@ -366,13 +380,14 @@ def with_left_limit(u_e: Any, arg: int) -> Any:
   array, shape (n, 4), dtype float
       ``u_e`` with column ``arg`` replaced by column ``2 + arg``.
   """
-  xp = array_namespace(u_e)
-  cols = [u_e[:, 0], u_e[:, 1], u_e[:, 2], u_e[:, 3]]
-  cols[arg] = u_e[:, 2 + arg]
-  return xp.stack(cols, axis=-1)
+  edge: Any = u_e
+  xp = array_namespace(edge)
+  cols = [edge[:, 0], edge[:, 1], edge[:, 2], edge[:, 3]]
+  cols[arg] = edge[:, 2 + arg]
+  return cast("ArrayT", xp.stack(cols, axis=-1))
 
 
-def continuous_view(pair: object) -> Any:
+def continuous_view(pair: object) -> _ContinuousPair[ArrayT]:
   """Return ``pair`` evaluated as a continuous copula, when it can be.
 
   A pair copula may carry its own variable types -- ``Bicop`` does -- in which
@@ -397,7 +412,7 @@ def continuous_view(pair: object) -> Any:
   """
   view = getattr(pair, "as_continuous", None)
   if view is not None:
-    return view()
+    return cast("_ContinuousPair[ArrayT]", view())
   types = getattr(pair, "var_types", None)
   if types is not None and any(t != "c" for t in types):
     raise ValueError(
@@ -407,7 +422,7 @@ def continuous_view(pair: object) -> Any:
       "be taken of. Host the continuous copula in a DiscretePair instead, or "
       "add as_continuous()."
     )
-  return pair
+  return cast("_ContinuousPair[ArrayT]", pair)
 
 
 class DiscretePair(BicopBase[ArrayT]):
@@ -543,19 +558,25 @@ class DiscretePair(BicopBase[ArrayT]):
     return f"DiscretePair({self._pair!r}, var_types={list(self._var_types)})"
 
   # --- argument handling ------------------------------------------------ #
-  def _split(self, u: Any) -> tuple[ModuleType, Any, Any, Any, Any]:
+  # The helpers below compute on the columns rather than forwarding them --
+  # differences, quotients, comparisons -- so they hold their arguments as
+  # `Any`, which is what `protocols.py` says an unbounded `ArrayT` requires of
+  # a body that does arithmetic. Every one is private to this class; the
+  # module-level functions above, which only forward, are typed `ArrayT`.
+  def _split(self, u: ArrayT) -> tuple[ModuleType, Any, Any, Any, Any]:
     """Namespace plus the two values and their left limits."""
+    ua: Any = u
     expected = 4 if (self._d1 or self._d2) else 2
-    if u.ndim != 2 or int(u.shape[1]) != expected:
+    if ua.ndim != 2 or int(ua.shape[1]) != expected:
       raise ValueError(
         f"u must have shape (n, {expected}) for var_types="
-        f"{list(self._var_types)}; got {tuple(u.shape)}"
+        f"{list(self._var_types)}; got {tuple(ua.shape)}"
       )
-    xp = array_namespace(u)
+    xp = array_namespace(ua)
     # Trimmed before anything is subtracted, as ``Bicop::prep_for_abstract``
     # does: an h-function feeding the next tree may land exactly on 0 or 1, and
     # the atom width in the denominator has to be the width of the trimmed atom.
-    ut = trim(xp, u)
+    ut: Any = trim(xp, u)
     u1, u2 = ut[:, 0], ut[:, 1]
     # A continuous argument's left limit is its own value
     # (``Bicop::format_data``), so the cascade's column for it is never read.

@@ -45,7 +45,10 @@ _DEPRECATED_TOP_LEVEL: dict[str, tuple[str, str]] = {
 }
 
 
-def _resolve_deprecated(name: str) -> Any:
+# Every `Any` in this module is one name resolving to another: a class, a
+# function or a subpackage on the way out, and a forwarded call's own
+# arguments. There is no narrower type for "whatever was renamed".
+def _resolve_deprecated(name: str) -> Any:  # noqa: ANN401
   subpkg, attr = _DEPRECATED_TOP_LEVEL[name]
   warnings.warn(
     f"`pyvinecopulib.{name}` is deprecated; use "
@@ -56,7 +59,11 @@ def _resolve_deprecated(name: str) -> Any:
   return getattr(importlib.import_module(f"pyvinecopulib.{subpkg}"), attr)
 
 
-def _method_alias(new: Any, old_name: str, qualname: str) -> Any:
+def _method_alias(
+  new: Any,  # noqa: ANN401
+  old_name: str,
+  qualname: str,
+) -> Any:  # noqa: ANN401
   """Build a deprecated alias for a renamed method.
 
   Parameters
@@ -81,7 +88,7 @@ def _method_alias(new: Any, old_name: str, qualname: str) -> Any:
   # with "Cannot handle as a local function". It also sets `__wrapped__`, so
   # `inspect.signature` reports the forwarded method's real signature.
   @functools.wraps(new)
-  def alias(*args: Any, **kwargs: Any) -> Any:
+  def alias(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
     warnings.warn(
       f"`pyvinecopulib.{qualname}.{old_name}()` is deprecated; use "
       f"`pyvinecopulib.{qualname}.{new_name}()` instead.",

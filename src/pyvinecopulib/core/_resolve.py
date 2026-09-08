@@ -96,7 +96,15 @@ _Default = Union[
 ]
 
 
-def _index_for(key: Any, lookup: dict[str, int], d: int, label: str) -> int:
+#: What :func:`resolve_margins` produces and :func:`fit_margin` consumes: a
+#: margin to fit, one already fitted, or a callable handed the column. The
+#: array type is not known until the fit, which is why it is not carried here.
+MarginSpec = Union[MarginLike[Any], Callable[..., Any]]
+
+
+def _index_for(
+  key: Union[str, int], lookup: dict[str, int], d: int, label: str
+) -> int:
   """Resolve one mapping key to a variable position.
 
   Shared by ``margins=`` and ``margin_controls=``, which accept the same four
@@ -459,7 +467,7 @@ def kde_from_controls(controls: Optional[ControlsLike]) -> Kde1d:
 
 
 def fit_margin(
-  entry: Any,
+  entry: MarginSpec,
   y: ArrayT,
   *,
   x: Optional[ArrayT] = None,

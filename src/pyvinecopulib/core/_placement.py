@@ -34,7 +34,7 @@ since ``MarginBase.sample`` offers none, and stays on ``MarginBase``.
 
 from __future__ import annotations
 
-from typing import Any, Generic, Optional
+from typing import Any, Generic, Optional, cast
 
 from array_api_compat import array_namespace, device as _device_of
 
@@ -48,7 +48,7 @@ __all__ = [
 ]
 
 
-def reference_array(obj: object) -> Optional[Any]:
+def reference_array(obj: object) -> Optional[Any]:  # noqa: ANN401
   """An array ``obj`` holds, naming where its numerics run.
 
   Looks in the two places an object keeps arrays, in the order that finds the
@@ -110,7 +110,7 @@ def reference_array(obj: object) -> Optional[Any]:
   return fallback
 
 
-def _is_float(value: Any) -> bool:
+def _is_float(value: object) -> bool:
   """Whether ``value`` is an array with a floating-point dtype.
 
   Parameters
@@ -127,7 +127,7 @@ def _is_float(value: Any) -> bool:
   if not _is_array(value):
     return False
   xp = array_namespace(value)
-  return bool(xp.isdtype(value.dtype, "real floating"))
+  return bool(xp.isdtype(cast("Any", value).dtype, "real floating"))
 
 
 def _is_array(value: object) -> bool:
@@ -157,7 +157,7 @@ def _is_array(value: object) -> bool:
   return True
 
 
-def place(obj: object, a: Any) -> Any:
+def place(obj: object, a: Any) -> Any:  # noqa: ANN401
   """Coerce ``a`` onto the namespace, dtype and device ``obj`` evaluates on.
 
   Placement only: no shape is checked and no value is clamped, so this is
@@ -210,7 +210,7 @@ class PlacementMixin:
   ``place`` it delegates to.
   """
 
-  def _prep(self, a: Any) -> Any:
+  def _prep(self, a: Any) -> Any:  # noqa: ANN401
     """Bring one input array onto the namespace this object evaluates on.
 
     Placement only -- no shape or layout check and no clamping -- so it is

@@ -27,7 +27,7 @@ import pytest
 
 pytest.importorskip("sklearn")
 
-from sklearn.utils.estimator_checks import parametrize_with_checks  # noqa: E402
+from sklearn.utils.estimator_checks import parametrize_with_checks
 
 # ``xfail_strict`` was added in sklearn 1.7; on older versions pytest's
 # default is strict. An unexpected pass must fail the suite and retire the

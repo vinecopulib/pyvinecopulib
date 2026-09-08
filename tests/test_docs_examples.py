@@ -113,7 +113,7 @@ def test_a_contracts_worked_example_runs(name: str) -> None:
   namespace: dict[str, object] = {}
   for index, block in enumerate(blocks):
     with contextlib.redirect_stdout(io.StringIO()):
-      exec(compile(block, f"{name}#{index}", "exec"), namespace)  # noqa: S102
+      exec(compile(block, f"{name}#{index}", "exec"), namespace)
 
 
 def test_every_example_in_the_module_is_covered() -> None:

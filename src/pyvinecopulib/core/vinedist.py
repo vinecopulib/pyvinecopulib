@@ -99,7 +99,7 @@ class Vinedist(VinedistBase[np.ndarray]):
 
   def _bind_dist(
     self,
-    vinecop: Any,
+    vinecop: Any,  # noqa: ANN401 - as `VinedistBase.__init__`
     margins: object,
   ) -> None:
     """Install the parts, refusing PyTorch ones.
@@ -136,7 +136,7 @@ class Vinedist(VinedistBase[np.ndarray]):
   @classmethod
   def _coerce_fit_data(
     cls,
-    y: Any,
+    y: object,
     weights: Optional[np.ndarray],
     controls: Optional[ControlsLike],
   ) -> tuple[np.ndarray, Optional[np.ndarray]]:

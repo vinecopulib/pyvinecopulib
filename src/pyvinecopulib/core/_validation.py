@@ -47,7 +47,7 @@ def validate_univariate(values: ArrayT, *, name: str = "y") -> ArrayT:
 
 
 def validate_covariates(
-  x: Optional[Any], n_rows: int, *, name: str = "x"
+  x: Optional[ArrayT], n_rows: int, *, name: str = "x"
 ) -> None:
   """Require a two-dimensional covariate matrix row-aligned with the data.
 
@@ -77,7 +77,7 @@ def validate_covariates(
       f"{name} must have shape (n, p), with one row per observation; "
       f"got {shape}"
     )
-  rows = int(x.shape[0])
+  rows = int(cast("Any", x).shape[0])
   if rows != n_rows:
     raise ValueError(
       f"{name} must have one row per observation; got {rows} rows for "
@@ -86,7 +86,7 @@ def validate_covariates(
 
 
 def validate_weights(
-  weights: Optional[ArrayT], values: Any, *, name: str = "weights"
+  weights: Optional[ArrayT], values: ArrayT, *, name: str = "weights"
 ) -> Optional[ArrayT]:
   """Normalize and validate one real, finite, nonnegative weight per row.
 
@@ -132,9 +132,10 @@ def validate_weights(
     raise ValueError(
       f"{name} must be an array compatible with the observations"
     ) from exc
-  if weights.ndim != 1 or int(weights.shape[0]) != int(values.shape[0]):
+  ref: Any = values
+  if weights.ndim != 1 or int(weights.shape[0]) != int(ref.shape[0]):
     raise ValueError(
-      f"{name} must have shape ({int(values.shape[0])},), with one weight "
+      f"{name} must have shape ({int(ref.shape[0])},), with one weight "
       f"per observation; got {tuple(weights.shape)}"
     )
   if not xp.isdtype(weights.dtype, ("real floating", "integral")):
@@ -158,7 +159,7 @@ def validate_weights(
   return cast("ArrayT", weights)
 
 
-def usable_observations(values: Any, *, name: str = "y") -> Any:
+def usable_observations(values: ArrayT, *, name: str = "y") -> ArrayT:
   """Validate a univariate sample and drop the observations that are not one.
 
   The margins all need the same three steps before they can fit -- require the
@@ -182,12 +183,12 @@ def usable_observations(values: Any, *, name: str = "y") -> Any:
   ValueError
       If ``values`` is not one-dimensional, or if no observation survives.
   """
-  values = validate_univariate(values, name=name)
-  xp = array_namespace(values)
-  values = values[~xp.isnan(values)]
-  if int(values.shape[0]) == 0:
+  checked: Any = validate_univariate(values, name=name)
+  xp = array_namespace(checked)
+  checked = checked[~xp.isnan(checked)]
+  if int(checked.shape[0]) == 0:
     raise ValueError(f"{name} has no usable observation")
-  return values
+  return cast("ArrayT", checked)
 
 
 def reject_covariates(

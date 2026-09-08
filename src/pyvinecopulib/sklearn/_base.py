@@ -18,7 +18,7 @@ from sklearn.utils.validation import (
 
 from ..core import MarginLike, Vinedist
 from ..margins import resolve_margins
-from ..core._resolve import fit_margin
+from ..core._resolve import MarginSpec, fit_margin
 from .backends import _VinecopBackendBase, resolve_backend
 
 # Shared docstring fragments interpolated into VineDensity / VineRegressor
@@ -115,7 +115,7 @@ _RandomStateLike = Union[int, np.random.RandomState, None]
 # `a` is an `np.ndarray` or a tensor, and typed `Any` because the branch that
 # tells them apart is a `hasattr`: on a union, `ty` gives the attribute it
 # narrowed on the type `object`, so the tensor call reads as uncallable.
-def _as_ndarray(a: Any) -> np.ndarray:
+def _as_ndarray(a: Any) -> np.ndarray:  # noqa: ANN401 - see the comment above
   """Bring one array back to NumPy at the estimator's public boundary.
 
   The estimators return NumPy whatever namespace their parts live on, and on the
@@ -284,7 +284,7 @@ class VineBase(BaseEstimator):
 
   def __init__(
     self,
-    backend: Optional[_VinecopBackendBase] = None,
+    backend: Optional[_VinecopBackendBase[Any]] = None,
     margins: object = None,
     batch_size: int = 100,
     random_state: _RandomStateLike = None,
@@ -670,17 +670,17 @@ class VineBase(BaseEstimator):
 
   def _fit_one_margin(
     self,
-    spec: object,
+    spec: MarginSpec,
     column: np.ndarray,
     name: str,
     *,
     index: Optional[int] = None,
-  ) -> Any:
+  ) -> MarginLike[Any]:
     """Fit one column's margin.
 
     Parameters
     ----------
-    spec : object
+    spec : MarginSpec
         A specification from :func:`pyvinecopulib.margins.resolve_margins`.
     column : ndarray, shape (n_samples,), dtype float
         The column to fit.
@@ -753,7 +753,7 @@ class VineBase(BaseEstimator):
         "for that column."
       ) from exc
 
-  def _response_margin_spec(self) -> object:
+  def _response_margin_spec(self) -> MarginSpec:
     """The specification for the response margin.
 
     ``margins`` addresses the features, so a per-variable form -- a sequence, or
@@ -764,7 +764,7 @@ class VineBase(BaseEstimator):
 
     Returns
     -------
-    object
+    MarginSpec
         One specification, not yet fitted.
     """
     if isinstance(self.margins, (list, tuple, dict)):

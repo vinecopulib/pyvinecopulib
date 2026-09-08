@@ -9,9 +9,9 @@ import pytest
 pytest.importorskip("sklearn")
 pytest.importorskip("scipy")
 
-from scipy.stats import multivariate_normal  # noqa: E402
+from scipy.stats import multivariate_normal
 
-from pyvinecopulib.sklearn import VineDensity  # noqa: E402
+from pyvinecopulib.sklearn import VineDensity
 
 if TYPE_CHECKING:
   import pandas as pd

@@ -720,7 +720,7 @@ def test_margins_imports_without_scipy() -> None:
     "c.Kde1d(); m.FitControlsMargin(); "
     "sys.exit(0 if 'scipy.stats' not in sys.modules else 1)"
   )
-  result = subprocess.run(  # noqa: S603
+  result = subprocess.run(
     [sys.executable, "-c", code], capture_output=True, text=True
   )
   assert result.returncode == 0, result.stderr
