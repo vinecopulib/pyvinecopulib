@@ -729,7 +729,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     ----------
     discrete : bool
         Whether the discrete group applies.
-    family_set : sequence, or None
+    family_set : sequence, or None, optional
         Family names or OpenTURNS factories, or ``None`` for the whole
         registry of the applicable type.
 

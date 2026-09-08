@@ -65,10 +65,10 @@ class ConditioningContext(Protocol[ArrayT]):
 
     Parameters
     ----------
-    u_D : array, shape (n, len(D)), or None
+    u_D : array, shape (n, len(D)), or None, optional
         The edge's conditioning-set values (gathered by the cascade when
         :attr:`assembles_conditioning` is ``True``), else ``None``.
-    x : array, shape (n, p), or None
+    x : array, shape (n, p), or None, optional
         External covariates for this call, or ``None``.
 
     Returns
@@ -98,7 +98,7 @@ class SimplifiedContext(ConditioningContext[ArrayT]):
 
     Parameters
     ----------
-    u_D : array or None, optional
+    u_D : array, or None, optional
         Ignored (never gathered under a simplified context).
     x : array, shape (n, p), or None, optional
         External covariates for this call.

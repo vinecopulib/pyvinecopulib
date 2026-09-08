@@ -218,14 +218,14 @@ def fit_parts(
       additional keyword ``var_types=[t1, t2]``; the pair it returns must read
       that layout, so wrap a continuous one in
       :class:`~pyvinecopulib.core.DiscretePair`.
-  context : ConditioningContext, optional
+  context : ConditioningContext, or None, optional
       Conditioning-context policy (default: simplified / unconditional).
   x : array, shape (n, p), or None, optional
       External covariates for conditional fitting, else ``None``.
-  var_types : list of str, optional
+  var_types : list of str, or None, optional
       Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete), in
       variable order; ``None`` means all continuous.
-  fit_level : callable, optional
+  fit_level : callable, or None, optional
       ``(tree, u_level, types) -> list[BicopLike]``, fitting a whole tree
       level at once; see ``FitLevel``. Preferred over ``fit_edge``
       for a level whose edges are all continuous and unconditional,
@@ -240,13 +240,13 @@ def fit_parts(
       Dependence threshold. An edge whose criterion falls below it holds
       :class:`~pyvinecopulib.core.IndependencePair` and is not fitted, as
       it does under selection. At the default nothing is below it.
-  weights : array, shape (n,), optional
+  weights : array, shape (n,), or None, optional
       Observation weights, applied to the tree criterion so a weighted
       selection agrees with :meth:`~pyvinecopulib.core.Vinecop.select`. They
       reach the pair fits through ``controls``, which a default
       ``bicop_class`` fit reads; a caller's own ``fit_edge`` receives no
       weights and has to apply them itself.
-  criterion_function : callable, optional
+  criterion_function : callable, or None, optional
       Required when ``tree_criterion`` is ``"custom"``; maps an ``(n, 2)``
       matrix -- and, when there are covariates, ``x`` by keyword -- to a
       criterion value.
@@ -432,17 +432,17 @@ def select_parts(
       See ``fit_parts``. The pair must also implement
       :meth:`~pyvinecopulib.core.BicopBase.flip`, which reorients it onto its
       finalized slot.
-  context : ConditioningContext, optional
+  context : ConditioningContext, or None, optional
       Conditioning-context policy (default: simplified / unconditional). A
       :class:`~pyvinecopulib.core.NonSimplifiedContext` makes each edge's
       pair copula see its conditioning-set values while it is being fitted,
       not only when it is evaluated.
   x : array, shape (n, p), or None, optional
       External covariates for conditional fitting, else ``None``.
-  fit_level : callable, optional
+  fit_level : callable, or None, optional
       See ``fit_parts``. Whatever it returns must still be per-slot
       ``flip``-able, since finalization reorients reused pairs.
-  trunc_lvl : int, optional
+  trunc_lvl : int, or None, optional
       Maximum number of trees to select (default: ``d - 1``, i.e. untruncated).
   tree_criterion : str, default "tau"
       Dependence measure used for edge weighting: ``"tau"``,
@@ -459,12 +459,12 @@ def select_parts(
   tree_algorithm : str, default "mst_prim"
       ``"mst_prim"`` / ``"mst_kruskal"`` (Dissmann) or ``"random_weighted"`` /
       ``"random_unweighted"`` (Wilson); the MST variants maximize dependence.
-  seeds : list of int, optional
+  seeds : list of int, or None, optional
       RNG seeds for the random tree algorithms (ignored by the MST ones).
-  var_types : list of str, optional
+  var_types : list of str, or None, optional
       See ``fit_parts``. Given here it also fixes the dimension, so ``u`` may
       carry the extra left-limit columns.
-  conditioning_set : list of int or None, optional
+  conditioning_set : list of int, or None, optional
       1-based variables to place at the tail of the selected order, so they can
       be conditioned on with :meth:`sample_conditional`. Every candidate edge
       touching a non-conditioning variable is penalized, which makes the
@@ -472,9 +472,9 @@ def select_parts(
       then relabeled onto that tail. Requires an MST ``tree_algorithm``, and
       the pairs must implement
       :meth:`~pyvinecopulib.core.BicopBase.flip`.
-  weights : array, shape (n,), optional
+  weights : array, shape (n,), or None, optional
       See ``fit_parts``.
-  criterion_function : callable, optional
+  criterion_function : callable, or None, optional
       See ``fit_parts``. Edge weights read the unconditional
       pseudo-observations even under a non-simplified selection, so a
       ``tree_criterion`` that conditions is supplied through this.

@@ -32,13 +32,13 @@ class VineDensity(DensityMixin, VineBase):
 
     Parameters
     ----------
-    backend : VinecopBackend or compatible, default=None
+    backend : VinecopBackend or compatible, or None, optional
         Backend instance bundling fit-time controls and an optional
         pre-specified structure. `None` resolves to a default
         ``VinecopBackend`` at fit time, which calls ``Vinecop.from_data()``
         with the nonparametric ``tll`` pair family. Pass
         ``TorchVinecopBackend`` for the PyTorch backend.
-    margins : object, default=None
+    margins : object, or None, optional
         The marginal half of the model, in any form
         :func:`pyvinecopulib.margins.resolve_margins` accepts. `None`
         fits a ``Kde1d`` per column with the variable type
@@ -46,11 +46,11 @@ class VineDensity(DensityMixin, VineBase):
     batch_size : int, default=100
         Number of test points processed per batch when evaluating
         the density. Higher values trade memory for throughput.
-    random_state : int, RandomState instance or None, default=None
+    random_state : int, RandomState instance, or None, optional
         Seeds the RNG used by stochastic operations (`cdf` quasi-MC,
         `sample`). Resolved via `sklearn.utils.check_random_state`
         inside `fit`.
-    n_jobs : int or None, default=None
+    n_jobs : int, or None, optional
         Threads the vine may use, for fitting and for every evaluation
         (`pdf`, `cdf`, `sample`, and the prediction paths built on them).
         `None` means one thread and `-1` every processor, following the
@@ -80,7 +80,7 @@ class VineDensity(DensityMixin, VineBase):
         ordered-categorical, and unordered-categorical dtypes;
         unordered categoricals are expanded to ordered ``{0, 1}``
         dummies before fitting.
-    y : None
+    y : None, or None, optional
         Ignored; present for sklearn API compatibility.
 
     Returns
@@ -125,7 +125,7 @@ class VineDensity(DensityMixin, VineBase):
     ----------
     X : ndarray, shape (n_samples, n_features), dtype float, or DataFrame
         Test samples. Sparse matrices are not supported.
-    y : None
+    y : None, or None, optional
         Ignored; present for `DensityMixin.score` compatibility.
 
     Returns
@@ -152,7 +152,7 @@ class VineDensity(DensityMixin, VineBase):
     ----------
     n_samples : int, default=1
         Number of samples to generate.
-    random_state : int, RandomState instance or None, default=None
+    random_state : int, RandomState instance, or None, optional
         Resolved fresh via `sklearn.utils.check_random_state` for
         this call. `None` reuses the RNG resolved at fit time.
 
@@ -222,7 +222,7 @@ class VineDensity(DensityMixin, VineBase):
         Number of quasi-random points used for the Monte-Carlo
         integration. Larger `N` gives more accurate CDF values at
         the cost of more compute.
-    random_state : int, RandomState instance or None, default=None
+    random_state : int, RandomState instance, or None, optional
         Resolved fresh via `sklearn.utils.check_random_state` for
         this call. `None` reuses the RNG resolved at fit time.
 

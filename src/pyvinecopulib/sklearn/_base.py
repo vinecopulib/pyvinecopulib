@@ -275,13 +275,13 @@ class VineBase(BaseEstimator):
 
     Parameters
     ----------
-    backend : VinecopBackend or compatible, default=None
+    backend : VinecopBackend or compatible, or None, optional
         Backend strategy that holds fit-time controls (a
         ``FitControlsVinecop`` for the default backend or a
         ``FitControlsTorchVinecop`` for the torch backend) and an
         optional structure. `None` resolves to a default
         ``VinecopBackend`` at fit time.
-    margins : object, default=None
+    margins : object, or None, optional
         What to fit to each column, in any form
         :func:`pyvinecopulib.margins.resolve_margins` accepts: an alias
         (``"kde"``, ``"parametric"``), one margin
@@ -299,12 +299,12 @@ class VineBase(BaseEstimator):
         predictions. ``1`` minimizes memory at the cost of speed;
         ``n_test`` is the opposite extreme; intermediate values
         trade off memory and throughput.
-    random_state : int, RandomState instance or None, default=None
+    random_state : int, RandomState instance, or None, optional
         Seeds the RNG used by stochastic operations (e.g.
         `sample`, `cdf` quasi-MC, structure simulation). Stored
         as-is; resolved via `sklearn.utils.check_random_state`
         inside `fit`.
-    n_jobs : int or None, default=None
+    n_jobs : int, or None, optional
         Threads the vine may use, for fitting and for every evaluation
         (`pdf`, `cdf`, `sample`, and the prediction paths built on them).
         `None` means one thread and `-1` means every processor, following
@@ -360,7 +360,7 @@ class VineBase(BaseEstimator):
     Parameters
     ----------
     X : ndarray or DataFrame
-    y : array-like, optional
+    y : array-like, or None, optional
     reset : bool
         If ``True`` (called from ``fit``), set fitted attributes; if
         ``False`` (called from ``predict``-style methods), validate
@@ -615,7 +615,7 @@ class VineBase(BaseEstimator):
 
     Parameters
     ----------
-    index : int or None
+    index : int, or None, optional
         The feature's position, or ``None`` for the response.
 
     Returns
@@ -649,7 +649,7 @@ class VineBase(BaseEstimator):
         The column to fit.
     name : str
         The variable's name, for a selector's report.
-    index : int or None, optional
+    index : int, or None, optional
         Which feature this is, used to hand the margin the variable type and
         bounds from :attr:`schema_`. ``None`` for the response, whose type the
         estimator already constrains to continuous.
@@ -784,14 +784,14 @@ class VineBase(BaseEstimator):
     ----------
     X : ndarray
         Input features.
-    y : ndarray, optional
+    y : ndarray, or None, optional
         Target values. If None, only X marginals are fitted.
 
     Returns
     -------
     X : ndarray
         Input features (unchanged).
-    y : ndarray or None
+    y : ndarray, or None
         Target values (unchanged) if provided, None otherwise.
     """
     specs = resolve_margins(
@@ -927,7 +927,7 @@ class VineBase(BaseEstimator):
     ----------
     U : ndarray
         Pseudo-observations in [0,1]^d.
-    var_types : list, optional
+    var_types : list, or None, optional
         Variable types for vine fitting. If None, inferred from schema.
 
     Returns
@@ -963,7 +963,7 @@ class VineBase(BaseEstimator):
     ----------
     X : array-like of shape (n_samples, n_features)
         Input features.
-    y : array-like of shape (n_samples,), optional
+    y : array-like of shape (n_samples,), or None, optional
         Target values. If provided, computes joint density of (X, y).
         If None, computes density of X only (for density estimation).
     log : bool, default=False

@@ -67,7 +67,7 @@ def check_var_types(var_types: Optional[list[str]], d: int) -> tuple[str, ...]:
 
   Parameters
   ----------
-  var_types : list of str, or None
+  var_types : list of str, or None, optional
       Per-variable types, ``"c"`` or ``"d"``; ``None`` means all continuous.
   d : int
       Dimension the types must cover.
@@ -281,7 +281,7 @@ def edge_columns(
   ----------
   structure : RVineStructure
       The vine structure being walked.
-  pair_types : tuple of tuple of tuple of str, or None
+  pair_types : tuple of tuple of tuple of str, or None, optional
       Per-edge types from :func:`pair_var_types`; ``None`` when all continuous.
   tree : int
       Tree index (``0``-based).
@@ -289,7 +289,7 @@ def edge_columns(
       Edge index within the tree (``0``-based).
   hfunc1, hfunc2 : array, shape (n, d), dtype float
       The h-function scratch matrices.
-  hfunc1_sub, hfunc2_sub : array, shape (n, d), dtype float, or None
+  hfunc1_sub, hfunc2_sub : array, shape (n, d), dtype float, or None, optional
       The left-limit scratch matrices; ``None`` when all continuous.
 
   Returns
@@ -329,7 +329,7 @@ def stack_edge(
       The array namespace to build on.
   col0, col1 : array, shape (n,), dtype float
       The pair's two value inputs.
-  subs : tuple of array, or None
+  subs : tuple of array, or None, optional
       Their left limits, or ``None`` for a fully continuous edge.
 
   Returns

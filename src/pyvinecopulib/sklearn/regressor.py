@@ -62,15 +62,15 @@ class VineRegressor(RegressorMixin, VineBase):
         If ``True``, predict the conditional mean. Set to ``False``
         to get quantile-only predictions (``quantiles`` must then be
         set).
-    quantiles : array-like of float, shape (n_quantiles,), default=None
+    quantiles : array-like of float, shape (n_quantiles,), or None, optional
         Quantile levels in ``(0, 1)`` to predict. ``None`` disables
         quantile prediction.
-    backend : VinecopBackend or compatible, default=None
+    backend : VinecopBackend or compatible, or None, optional
         Backend instance bundling fit-time controls and an optional
         pre-specified structure on ``(Y, X_1, ..., X_d)`` (`Y`
         always in the first dimension). `None` resolves to a default
         ``VinecopBackend`` with the ``tll`` pair family at fit time.
-    margins : object, default=None
+    margins : object, or None, optional
         The marginal half of the model, in any form
         :func:`pyvinecopulib.margins.resolve_margins` accepts. `None`
         fits a ``Kde1d`` per column. The specification addresses
@@ -105,10 +105,10 @@ class VineRegressor(RegressorMixin, VineBase):
         ``False`` to get the raw copula weights instead -- useful
         when a caller combines the weights of several fitted
         estimators and wants to rescale once, after combining.
-    random_state : int, RandomState instance or None, default=None
+    random_state : int, RandomState instance, or None, optional
         Seeds the RNG used by stochastic operations. Resolved via
         `sklearn.utils.check_random_state` inside `fit`.
-    n_jobs : int or None, default=None
+    n_jobs : int, or None, optional
         Threads the vine may use, for fitting and for every evaluation
         (`pdf`, `cdf`, `sample`, and the prediction paths built on them).
         `None` means one thread and `-1` every processor, following the
@@ -461,7 +461,7 @@ class VineRegressor(RegressorMixin, VineBase):
         Covariates to predict.
     y : array-like
         Observed response values.
-    sample_weight : array-like, optional
+    sample_weight : array-like, or None, optional
         Per-observation weights for the coefficient of determination.
 
     Returns

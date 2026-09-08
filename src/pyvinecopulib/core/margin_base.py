@@ -108,7 +108,7 @@ def derive_cdf_left(
       The margin to read ``cdf`` (and, for ``"zi"``, ``pdf``) from.
   y : array, shape (n,), dtype float
       Observations on the original scale.
-  x : array, shape (n, p), or None
+  x : array, shape (n, p), or None, optional
       Exogenous covariates, forwarded only to a margin that reads them.
   var_type : {"c", "d", "zi"}
       The margin's variable type.
@@ -156,7 +156,7 @@ def criteria(loglik: float, k: float, n: Optional[float]) -> dict[str, float]:
       Maximized log-likelihood.
   k : float
       Number of freely estimated parameters.
-  n : float, or None
+  n : float, or None, optional
       Number of observations -- a float, since a weighted fit's effective
       count is not an integer. ``None`` leaves the two criteria that penalize
       by sample size undefined rather than guessing one.
@@ -373,7 +373,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
 
     Parameters
     ----------
-    var_type : str or None, optional
+    var_type : str, or None, optional
         ``"c"``, ``"d"`` or ``"zi"``, or ``None`` when the caller does not
         know.
     support : tuple of float, or None, optional

@@ -51,7 +51,7 @@ def validate_covariates(
 
   Parameters
   ----------
-  x : array, or None
+  x : array, or None, optional
       The covariate matrix, or ``None`` to accept.
   n_rows : int
       Number of observations the covariates must align with.
@@ -90,7 +90,7 @@ def validate_weights(
 
   Parameters
   ----------
-  weights : array, or None
+  weights : array, or None, optional
       The weights to check, or ``None`` to accept.
   values : array
       The observations the weights align with; also fixes the array namespace
@@ -201,7 +201,7 @@ def reject_covariates(part: Any, x: Optional[Any], *, name: str = "x") -> None:
   part : object
       The margin, pair copula or vine being fitted; named in the message.
       Either the instance or the class, so a classmethod may pass ``cls``.
-  x : array, shape (n, p), or None
+  x : array, shape (n, p), or None, optional
       The covariates the caller passed.
   name : str, default="x"
       The argument's name, used in the error message.

@@ -135,9 +135,11 @@ def solve_increasing(
       Maps an array of candidates ``x`` to ``f(x)``, monotone increasing.
   p : array, shape (n,)
       Target values.
-  lo, hi : float or array, optional
-      Search bracket (default the unit interval). Arrays broadcast against
-      ``p``, so a per-element support is allowed; infinite entries are widened.
+  lo : float or array, default=0.0
+      Lower end of the search bracket. Arrays broadcast against ``p``, so a
+      per-element support is allowed; infinite entries are widened.
+  hi : float or array, default=1.0
+      Upper end of the search bracket.
   n_iter : int
       Number of bisection steps.
   max_expand : int

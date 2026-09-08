@@ -43,7 +43,7 @@ class IndependencePair(BicopBase[ArrayT]):
     ----------
     u : array, shape (n, 2) or wider, dtype float
         Copula-scale observations. Only the shape is read.
-    x : array, optional
+    x : array, or None, optional
         Ignored; the pair is unconditional.
 
     Returns
@@ -63,7 +63,7 @@ class IndependencePair(BicopBase[ArrayT]):
     ----------
     u : array, shape (n, 2) or wider, dtype float
         Copula-scale observations.
-    x : array, optional
+    x : array, or None, optional
         Ignored; the pair is unconditional.
 
     Returns
@@ -82,7 +82,7 @@ class IndependencePair(BicopBase[ArrayT]):
     ----------
     u : array, shape (n, 2) or wider, dtype float
         Copula-scale observations.
-    x : array, optional
+    x : array, or None, optional
         Ignored; the pair is unconditional.
 
     Returns
@@ -100,7 +100,7 @@ class IndependencePair(BicopBase[ArrayT]):
     ----------
     u : array, shape (n, 2) or wider, dtype float
         Copula-scale observations.
-    x : array, optional
+    x : array, or None, optional
         Ignored; the pair is unconditional.
 
     Returns
@@ -118,7 +118,7 @@ class IndependencePair(BicopBase[ArrayT]):
     ----------
     u : array, shape (n, 2) or wider, dtype float
         Conditioning value in column 0, level in column 1.
-    x : array, optional
+    x : array, or None, optional
         Ignored; the pair is unconditional.
 
     Returns
@@ -136,7 +136,7 @@ class IndependencePair(BicopBase[ArrayT]):
     ----------
     u : array, shape (n, 2) or wider, dtype float
         Level in column 0, conditioning value in column 1.
-    x : array, optional
+    x : array, or None, optional
         Ignored; the pair is unconditional.
 
     Returns

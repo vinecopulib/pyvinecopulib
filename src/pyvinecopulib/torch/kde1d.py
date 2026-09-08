@@ -40,7 +40,7 @@ def _bound(value: Any, unbounded: float) -> float:
 
   Parameters
   ----------
-  value : float or None
+  value : float, or None, optional
       A bound as ``Kde1d`` reports it: a number, ``None``, or ``nan``.
   unbounded : float
       What an unset bound means at this end.
@@ -97,12 +97,12 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
 
   Parameters
   ----------
-  xmin : float or None, default=None
+  xmin : float, or None, optional
       Lower bound of the support, or ``None`` for unbounded. What a bound
       means depends on the variable type: for a discrete variable it is the
       smallest integer the variable can take. See the
       ``concepts-kde-margins`` section of the concepts page.
-  xmax : float or None, default=None
+  xmax : float, or None, optional
       Upper bound of the support, or ``None`` for unbounded; read as ``xmin``
       is, so the largest integer for a discrete variable.
   type : {"continuous", "discrete", "zero-inflated"}, default="continuous"
@@ -110,7 +110,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       optional here.
   multiplier : float, default=1.0
       Bandwidth multiplier: the bandwidth used is ``bandwidth * multiplier``.
-  bandwidth : float or None, default=None
+  bandwidth : float, or None, optional
       Fixed bandwidth, or ``None`` to select one at every fit.
   degree : int, default=2
       Local-polynomial degree -- ``0``, ``1`` or ``2``, for a log-constant,
@@ -122,7 +122,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       estimator instead of the transformed bulk fit; eligibility rather than
       a guarantee, and no effect when neither bound is set. Carried through to
       the fit, and preserved when a fitted estimator is lifted.
-  device : torch.device or None, default=None
+  device : torch.device, or None, optional
       Where the buffers live.
   dtype : torch.dtype, default=torch.float64
       Buffer precision. ``float64``, since the copula scale is a distribution
@@ -283,7 +283,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
         Unused; the bandwidth, bounds and variable type are named at
         construction, so a margin fitted differently is constructed
         differently. Accepted because every margin's fit takes one.
-    x : Tensor or None, optional
+    x : Tensor, or None, optional
         Not supported; a kernel density reads no covariates, so passing them
         raises rather than fitting an unconditional margin silently.
     weights : Tensor, shape (n,), or None, optional
@@ -361,9 +361,9 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     ----------
     kde : Kde1d
         A fitted estimator.
-    device : torch.device or None, optional
+    device : torch.device, or None, optional
         Where the buffers live.
-    dtype : torch.dtype, optional
+    dtype : torch.dtype, default=torch.float64
         Buffer precision.
 
     Returns
@@ -419,7 +419,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
         Ascending grid.
     values : Tensor, shape (m,)
         Density values on the grid.
-    prob0 : float, optional
+    prob0 : float, default=0.0
         Point mass at zero, for a zero-inflated margin.
     **kwargs
         Forwarded to the constructor.
@@ -718,7 +718,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     ----------
     y : Tensor, shape (n,)
         Evaluation points.
-    x : Tensor or None, optional
+    x : Tensor, or None, optional
         Ignored; a kernel density reads no covariates.
 
     Returns
@@ -747,7 +747,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     ----------
     y : Tensor, shape (n,)
         Evaluation points.
-    x : Tensor or None, optional
+    x : Tensor, or None, optional
         Ignored; a kernel density reads no covariates.
 
     Returns
@@ -805,7 +805,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     ----------
     p : Tensor, shape (n,)
         Probabilities in ``[0, 1]``.
-    x : Tensor or None, optional
+    x : Tensor, or None, optional
         Ignored; a kernel density reads no covariates.
 
     Returns

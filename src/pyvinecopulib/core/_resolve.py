@@ -168,7 +168,7 @@ def _per_variable(
       The user's specification.
   d : int
       Number of variables.
-  names : sequence of str, or None
+  names : sequence of str, or None, optional
       Variable names, needed only to resolve a mapping keyed by name.
   default : object
       What an unaddressed variable gets.
@@ -380,7 +380,7 @@ def declared_kde_kwargs(controls: Optional[Any]) -> dict[str, Any]:
 
   Parameters
   ----------
-  controls : FitControlsMargin, or None
+  controls : FitControlsMargin, or None, optional
       Read for ``var_type`` and ``support``; both optional.
 
   Returns
@@ -410,7 +410,7 @@ def kde_from_controls(controls: Optional[Any]) -> Kde1d:
 
   Parameters
   ----------
-  controls : FitControlsMargin, or None
+  controls : FitControlsMargin, or None, optional
       Read for ``var_type`` and ``support``; both optional.
 
   Returns
@@ -448,7 +448,7 @@ def fit_margin(
       fitting the wrong model.
   weights : array, shape (n,), or None, optional
       Observation weights. A callable specification receives them by keyword.
-  var_type : str or None, optional
+  var_type : str, or None, optional
       The variable type the caller resolved, handed to a margin that
       implements ``declare``. Without it such a margin re-infers the type
       from the sample, which knows less than the caller does.
@@ -456,12 +456,12 @@ def fit_margin(
       The declared bounds, handed over the same way.
   controls : object, or None, optional
       Fit configuration, forwarded to the margin's estimator.
-  verb : str, optional
+  verb : str, default='select'
       Which estimator to call, ``"select"`` (the default, so a margin that
       searches a family set does) or ``"fit"`` (the current family only).
       ``MarginBase.select`` reduces to ``fit`` where there is nothing to
       choose, so the default is the weaker requirement.
-  refit : bool, optional
+  refit : bool, default=False
       Re-estimate a margin that reports itself already fitted. Off by default,
       so a specification may mix fixed margins with ones to estimate.
 

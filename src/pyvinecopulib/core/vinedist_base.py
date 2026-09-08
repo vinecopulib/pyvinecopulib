@@ -842,7 +842,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         ``i`` is the value of conditioning variable ``i``. Unlike the copula
         scale, a discrete conditioner needs no left-limit column: it is derived
         from that variable's margin.
-    conditioning_set : list of int or None, optional
+    conditioning_set : list of int, or None, optional
         The 1-based variables to condition on, so column ``i`` of ``y_cond``
         is variable ``conditioning_set[i]``. ``None`` takes the last ``k``
         variables of the copula's sampling order, ``k`` being ``y_cond``'s
@@ -955,9 +955,9 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     y : object
         The caller's observations, in whatever form they passed — including a
         DataFrame.
-    weights : object, or None
+    weights : object, or None, optional
         The caller's observation weights, or ``None``.
-    controls : ControlsLike, or None
+    controls : ControlsLike, or None, optional
         Fit configuration, which may carry the placement.
 
     Returns
@@ -1001,7 +1001,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     ----------
     d : int
         Number of variables.
-    controls : ControlsLike, or None
+    controls : ControlsLike, or None, optional
         Copula fit configuration, which may carry a placement the margins
         share.
     margin_controls : sequence, or None, optional
@@ -1041,11 +1041,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
 
     Parameters
     ----------
-    controls : ControlsLike, or None
+    controls : ControlsLike, or None, optional
         What the caller passed.
     u : array, shape (n, d + k), dtype float
         The copula-scale layout, for a lane that reads its placement.
-    weights : array, shape (n,), or None
+    weights : array, shape (n,), or None, optional
         Observation weights.
 
     Returns
@@ -1097,11 +1097,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         The copula-scale layout the margins produced.
     var_types : list of str
         One ``"c"`` or ``"d"`` per variable.
-    controls : ControlsLike, or None
+    controls : ControlsLike, or None, optional
         Fit configuration.
-    structure : RVineStructure, or None
+    structure : RVineStructure, or None, optional
         A fixed structure, or ``None`` to select one from the data.
-    weights : array, shape (n,), or None
+    weights : array, shape (n,), or None, optional
         Observation weights.
     x : array, shape (n, p), or None, optional
         Exogenous covariates, forwarded to ``vinecop_class.from_data`` only
@@ -1170,11 +1170,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         The copula-scale layout the margins produced.
     var_types : list of str
         One ``"c"`` or ``"d"`` per variable.
-    controls : ControlsLike, or None
+    controls : ControlsLike, or None, optional
         Fit configuration.
-    weights : array, shape (n,), or None
+    weights : array, shape (n,), or None, optional
         Observation weights.
-    x : array, shape (n, p), or None
+    x : array, shape (n, p), or None, optional
         Exogenous covariates.
     verb : str
         ``"fit"`` to keep the copula's structure, ``"select"`` to re-select it.
@@ -1344,15 +1344,15 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    controls : ControlsLike, or None
+    controls : ControlsLike, or None, optional
         Copula fit configuration.
-    margin_controls : object, or None
+    margin_controls : object, or None, optional
         Marginal fit configuration.
-    x : array, shape (n, p), or None
+    x : array, shape (n, p), or None, optional
         Exogenous covariates.
-    weights : array, shape (n,), or None
+    weights : array, shape (n,), or None, optional
         Observation weights.
-    structure : RVineStructure, or None
+    structure : RVineStructure, or None, optional
         The structure to fit along, or ``None`` to select one.
     verb : str
         ``"fit"`` or ``"select"``, the estimator asked of each margin.

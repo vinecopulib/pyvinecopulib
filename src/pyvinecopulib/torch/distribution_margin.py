@@ -102,7 +102,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
       Called with the registered parameters as keywords to produce the
       distribution. Normally the family itself, e.g.
       ``torch.distributions.Normal``.
-  parameters : mapping or iterable of pair, optional
+  parameters : mapping or iterable of pair, default=()
       Parameter values, keyed by the keyword ``factory`` expects. Anything
       ``dict`` accepts; the default is no parameters at all, for a factory that
       closes over its own.
@@ -110,11 +110,11 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
       Register floating-point parameters as ``torch.nn.Parameter`` rather
       than as buffers. Integer parameters are always buffers, since a tensor of
       integers cannot carry a gradient.
-  validate_args : bool or None, default=None
+  validate_args : bool, or None, optional
       Forwarded to ``factory``; ``None`` leaves the family's own default, which
       normally checks its parameters, so a value outside the family's domain
       raises rather than returning silent ``nan``.
-  device : torch.device or None, default=None
+  device : torch.device, or None, optional
       Placement of the registered tensors.
   dtype : torch.dtype, default=torch.float64
       Precision of the registered floating-point tensors, matching the rest of
@@ -353,7 +353,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
         mutating it afterwards does not affect the margin.
     trainable : bool, default=True
         See the class docstring.
-    device : torch.device or None, default=None
+    device : torch.device, or None, optional
         Placement of the registered tensors; ``None`` keeps the originals'.
     dtype : torch.dtype, default=torch.float64
         Precision of the registered floating-point tensors.

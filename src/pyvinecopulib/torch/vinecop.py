@@ -157,11 +157,11 @@ class TorchVinecop(
       host it -- including one whose parameters an optimizer learns.
   structure : RVineStructure
       The vine structure to evaluate along.
-  context : ConditioningContext or None, default=None
+  context : ConditioningContext, or None, optional
       Per-edge policy assembling each pair copula's ``x``. ``None`` uses
       :class:`~pyvinecopulib.core.SimplifiedContext` -- an unconditional,
       simplified vine.
-  var_types : list of str or None, default=None
+  var_types : list of str, or None, optional
       Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete), in
       variable order; ``None`` means all continuous.
 
@@ -244,7 +244,7 @@ class TorchVinecop(
 
     Parameters
     ----------
-    cache_integrals : bool or None
+    cache_integrals : bool, or None, optional
         What the caller asked for; ``None`` means "whatever suits this vine".
 
     Returns
@@ -272,11 +272,11 @@ class TorchVinecop(
     cop : Vinecop
         A fitted vine whose pair copulas are all of the ``tll`` or ``indep``
         family, in any continuous, discrete or mixed variable layout.
-    cache_integrals : bool or None, default=None
+    cache_integrals : bool, or None, optional
         Whether each pair copula precomputes the prefix tables its ``cdf`` and
         h-functions read. ``None`` resolves to ``True`` for every variable
         layout.
-    device : torch.device or None, default=None
+    device : torch.device, or None, optional
         Placement of the underlying tensors.
     dtype : torch.dtype, default=torch.float64
         Precision of the underlying tensors.
@@ -345,9 +345,9 @@ class TorchVinecop(
 
     Parameters
     ----------
-    structure : RVineStructure or None, default=None
+    structure : RVineStructure, or None, optional
         The vine structure. Provide either this or ``matrix``.
-    matrix : ndarray, shape (d, d), dtype int, or None, default=None
+    matrix : ndarray, shape (d, d), dtype int, or None, optional
         R-vine structure matrix. Provide either this or ``structure``.
     pair_copulas : list of list of TorchTllBicop, default=[]
         The pair copulas, indexed ``[tree][edge]`` with tree ``t`` holding
@@ -358,7 +358,7 @@ class TorchVinecop(
         variable order; empty means all continuous. A discrete variable makes
         the cascades read its left limit too, and the pair copulas that see it
         are evaluated through :class:`~pyvinecopulib.core.DiscretePair`.
-    device : torch.device or None, default=None
+    device : torch.device, or None, optional
         Placement of the independence pair copulas that fill missing edges.
     dtype : torch.dtype, default=torch.float64
         Precision of the independence pair copulas that fill missing edges.
@@ -429,28 +429,28 @@ class TorchVinecop(
     ----------
     u : ndarray or Tensor, shape (n, d), dtype float
         Pseudo-observations in ``[0, 1]``.
-    controls : FitControlsTorchVinecop or None, default=None
+    controls : FitControlsTorchVinecop, or None, optional
         Fit configuration for both halves of the fit -- the structure
         selection the vine runs and the pair-copula fits its edges run -- plus
         placement, precision, and the cascade variants. ``None`` defaults to
         TLL on a 30x30 normal-spaced grid, float64, and ``mst_prim`` with
         ``trunc_lvl=20``.
-    structure : RVineStructure or None, default=None
+    structure : RVineStructure, or None, optional
         A fixed structure. Selected from the data when ``None``.
-    var_types : list of str, or None, default=None
+    var_types : list of str, or None, optional
         Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete);
         ``None`` means all continuous. Given, they also fix the dimension, so
         ``u`` may carry the extra left-limit columns.
-    x : Tensor or None, default=None
+    x : Tensor, or None, optional
         Refused. A TLL grid is an unconditional density, so fitting one while
         ignoring covariates would return a different model than the caller
         asked for; a conditional pair copula is fitted through ``fit_edge``.
-    fit_edge : callable, or None, default=None
+    fit_edge : callable, or None, optional
         ``(tree, edge, u_e, x_e) -> BicopLike``, fitting one edge's pair
         copula in place of the built-in TLL fit; an edge with a discrete
         variable additionally receives its own ``var_types`` by keyword.
         ``None`` fits a ``TorchTllBicop`` per edge, which is the usual case.
-    fit_level : callable, or None, default=None
+    fit_level : callable, or None, optional
         ``(tree, u_level, types) -> Sequence[BicopLike]``, fitting a whole tree
         level at once, in place of the built-in batched TLL fit -- the
         level-wise counterpart of ``fit_edge``. ``None`` resolves it from

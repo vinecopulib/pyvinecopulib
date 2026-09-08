@@ -63,15 +63,15 @@ class _WrappedMargin(MarginBase[Any]):
   pdf, cdf, icdf : callable
       The three primitives, already bound to ``obj`` and named as the
       :class:`~pyvinecopulib.core.MarginLike` contract expects.
-  logpdf : callable or None, optional
+  logpdf : callable, or None, optional
       Native log-density; ``None`` derives it from ``pdf``.
-  var_type : str, optional
+  var_type : str, default='c'
       Variable type of the wrapped distribution.
-  cdf_left : callable or None, optional
+  cdf_left : callable, or None, optional
       Left-limit cdf; ``None`` derives it from ``var_type``.
   support : tuple of float, or None, optional
       Support bounds; ``None`` reads them off ``obj``.
-  family_name : str or None, optional
+  family_name : str, or None, optional
       Name to report in selection output; ``None`` uses the wrapped type's.
   """
 

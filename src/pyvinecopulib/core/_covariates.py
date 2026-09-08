@@ -49,7 +49,7 @@ def pair_eval(method: Callable[..., Any], u: Any, x: Optional[Any]) -> Any:
       The bound method to call, e.g. ``pair.hfunc1``.
   u : array
       The pair-copula argument, passed positionally.
-  x : array, shape (n, p), or None
+  x : array, shape (n, p), or None, optional
       The edge's conditioning matrix, passed by keyword when not ``None``.
 
   Returns
@@ -76,7 +76,7 @@ def declared_eval(
       The first argument, passed positionally -- observations for a margin,
       copula-scale data or a sample size for a copula. Positional because a
       margin may name it whatever its own ecosystem does.
-  x : array, shape (n, p), or None
+  x : array, shape (n, p), or None, optional
       The covariates, passed by keyword to a part that declares them.
   **kwargs : Any
       Further keyword arguments, forwarded either way.
@@ -109,7 +109,7 @@ def prepare(onto: Any, x: Optional[Any], n: int) -> Optional[Any]:
   onto : object
       The part whose placement to match, or the array to match directly --
       the observations, for a static fit engine that holds nothing itself.
-  x : array, shape (n, p), or None
+  x : array, shape (n, p), or None, optional
       The covariates the caller supplied.
   n : int
       Number of observations they must align with.

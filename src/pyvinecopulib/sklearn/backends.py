@@ -153,7 +153,7 @@ class _VinecopBackendBase:
     ----------
     var_type : str
         ``Kde1d``'s spelling of the variable type.
-    bounds : tuple of float, or None
+    bounds : tuple of float, or None, optional
         Declared support, or ``None`` where the input states none.
 
     Returns
@@ -389,7 +389,7 @@ class TorchVinecopBackend(_VinecopBackendBase):
     ----------
     var_type : str
         ``Kde1d``'s spelling of the variable type.
-    bounds : tuple of float, or None
+    bounds : tuple of float, or None, optional
         Declared support, or ``None`` where the input states none.
 
     Returns
@@ -511,7 +511,7 @@ class _BackendVinecop:
     ----------
     u : ndarray, shape (n, d) or (n, d + k), dtype float
         Copula-scale data.
-    N : int, optional
+    N : int, default=10000
         Number of quasi-random points for the Monte-Carlo integration.
     seeds : list of int, or None, optional
         RNG seeds.
@@ -559,7 +559,7 @@ def resolve_backend(backend: Any) -> Any:
 
   Parameters
   ----------
-  backend : object, or None
+  backend : object, or None, optional
       `None` returns a default-constructed :class:`VinecopBackend`; any other
       value (a backend instance) is returned unchanged.
 

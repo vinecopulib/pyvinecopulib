@@ -294,7 +294,7 @@ def inverse_integrate_1d_batched(
       ``[u_cond, p]`` for ``cond_var=1``, ``[p, u_cond]`` for 2.
   cond_var : int
       1 or 2, the conditioning argument.
-  is_linear : bool, optional
+  is_linear : bool, default=False
       Whether the grid is uniform, enabling O(1) cell lookup.
   cum : Tensor, shape (N, m, m), or None, optional
       The prefix-integral table matching ``cond_var`` (``sy`` for 1, ``sx``

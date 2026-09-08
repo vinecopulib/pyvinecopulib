@@ -333,10 +333,10 @@ class VinecopBase(
     ----------
     structure : RVineStructure
         The (fixed) vine structure to evaluate along.
-    context : ConditioningContext, optional
+    context : ConditioningContext, or None, optional
         Per-edge conditioning-context policy; ``None`` uses
         :class:`~pyvinecopulib.core.SimplifiedContext`.
-    var_types : list of str, optional
+    var_types : list of str, or None, optional
         Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete), in
         variable order; ``None`` means all continuous.
 
@@ -613,12 +613,12 @@ class VinecopBase(
         Tree index (``0``-based).
     edge : int
         Edge index within the tree (``0``-based).
-    x : array, shape (n, p), or None
+    x : array, shape (n, p), or None, optional
         External covariates for this call, or ``None``.
-    u_nat : array, shape (n, d), or None
+    u_nat : array, shape (n, d), or None, optional
         Natural-order observations (forward cascades); ``None`` in the inverse
         direction.
-    hinv2_final : array, shape (d, n), or None
+    hinv2_final : array, shape (d, n), or None, optional
         The finalized ``hinv2[0]`` scratch rows (inverse cascade); ``None`` in
         the forward direction.
 
@@ -653,7 +653,7 @@ class VinecopBase(
     u : array, shape (n, d + k), dtype float
         Prepared pseudo-observations in the compact layout (natural-order
         seeding happens inside).
-    x : array, shape (n, p), or None
+    x : array, shape (n, p), or None, optional
         External covariates threaded to each pair copula, or ``None``.
     """
     xp = array_namespace(u)
@@ -726,7 +726,7 @@ class VinecopBase(
     ----------
     u : array, shape (n, d + k), dtype float
         Prepared pseudo-observations in the compact layout.
-    x : array, shape (n, p), or None
+    x : array, shape (n, p), or None, optional
         External covariates threaded to each pair copula, or ``None``.
     randomize_discrete : bool, default=True
         Mix each discrete variable's conditional distribution function with its
@@ -810,7 +810,7 @@ class VinecopBase(
     ----------
     u : array, shape (n, d), dtype float
         Prepared independent uniforms.
-    x : array, shape (n, p), or None
+    x : array, shape (n, p), or None, optional
         External covariates threaded to each pair copula, or ``None``.
     """
     xp = array_namespace(u)
@@ -1171,7 +1171,7 @@ class VinecopBase(
         External covariates threaded to each pair copula. A simplified vine may
         still depend on these; simplification excludes dependence on the edge
         conditioning-set values, not on external covariates.
-    batched : bool or None, optional
+    batched : bool, or None, optional
         Fire one batched pair-copula call per tree level. ``None`` resolves
         via the subclass default; forced ``False`` when conditioning is active
         or any variable is discrete, and falls back to the non-batched cascade
@@ -1215,14 +1215,14 @@ class VinecopBase(
         For a discrete variable the conditional distribution function jumps, so
         the transform is uniform only after mixing the jump's two ends with an
         independent uniform. Continuous variables are unaffected either way.
-    seeds : list of int or None, optional
+    seeds : list of int, or None, optional
         RNG seeds for that randomization; forwarded to the subclass's
         base-uniform draw.
     x : array, shape (n, p), or None, optional
         External covariates threaded to each pair copula, or ``None``.
-    batched : bool or None, optional
+    batched : bool, or None, optional
         See :meth:`pdf`.
-    conditioning_set : list of int or None, optional
+    conditioning_set : list of int, or None, optional
         Condition on these 1-based variables instead of the ones at the tail of
         the vine order. It does not subset ``u``, which stays the full matrix;
         what changes is which conditional distributions the output columns
@@ -1281,13 +1281,13 @@ class VinecopBase(
         Accepted for parity; ignored.
     x : array, shape (n, p), or None, optional
         External covariates threaded to each pair copula, or ``None``.
-    batched : bool or None, optional
+    batched : bool, or None, optional
         Whether to evaluate whole groups of pair copulas per call rather than
         one at a time; ``None`` takes the subclass default. The inverse
         cascade's dependencies run across tree levels, so the groups here are
         the levels of the dependency graph rather than the trees themselves.
         Ignored when no batched path is available.
-    conditioning_set : list of int or None, optional
+    conditioning_set : list of int, or None, optional
         See :meth:`rosenblatt`.
 
     Returns
@@ -1338,11 +1338,11 @@ class VinecopBase(
         Draw quasi-random base uniforms instead of pseudo-random.
     num_threads : int, default=1
         Accepted for parity; ignored.
-    seeds : list of int or None, optional
+    seeds : list of int, or None, optional
         RNG seeds forwarded to the subclass's base-uniform draw.
     x : array, shape (n, p), or None, optional
         External covariates for a conditional draw (one row per sample).
-    batched : bool or None, optional
+    batched : bool, or None, optional
         Forwarded to :meth:`inverse_rosenblatt`.
 
     Returns
@@ -1387,9 +1387,9 @@ class VinecopBase(
         Draw quasi-random base uniforms for the conditioned variables.
     num_threads : int, default=1
         Accepted for parity; ignored.
-    seeds : list of int or None, optional
+    seeds : list of int, or None, optional
         RNG seeds forwarded to the subclass's base-uniform draw.
-    conditioning_set : list of int or None, optional
+    conditioning_set : list of int, or None, optional
         The 1-based variables to condition on. ``None`` takes the last
         ``k`` of :attr:`order`, with ``k`` inferred from ``u_cond``'s width.
         **The two forms map the columns differently**: without it, column ``i``
@@ -1525,15 +1525,15 @@ class VinecopBase(
         Draw quasi-random samples (matches ``Vinecop.cdf()``).
     num_threads : int, default=1
         Accepted for parity; ignored.
-    seeds : list of int or None, optional
+    seeds : list of int, or None, optional
         RNG seeds forwarded to :meth:`sample`.
-    x : array or None, optional
+    x : array, or None, optional
         Must be ``None`` — a per-row conditional CDF is not supported (the
         Monte-Carlo dominance estimate cannot condition each query row on a
         different covariate without per-``x`` resampling).
     block_size : int, default=4096
         Query rows processed per iteration (peak-memory control).
-    batched : bool or None, optional
+    batched : bool, or None, optional
         Forwarded to :meth:`sample`, which draws the Monte-Carlo sample.
 
     Returns

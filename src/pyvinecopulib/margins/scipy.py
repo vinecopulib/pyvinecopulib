@@ -114,7 +114,7 @@ def _excluded_block(indent: str = "  ") -> str:
 
   Parameters
   ----------
-  indent : str, optional
+  indent : str, default='  '
       Leading whitespace for each bullet.
 
   Returns
@@ -556,7 +556,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
 
     Parameters
     ----------
-    param_bounds : mapping, or None
+    param_bounds : mapping, or None, optional
         Per-parameter search bounds to apply to whichever family is chosen.
     fixed : mapping
         Parameters to pin on whichever family is chosen.
@@ -589,7 +589,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
 
     Parameters
     ----------
-    var_type : str or None, optional
+    var_type : str, or None, optional
         ``"c"``, ``"d"`` or ``"zi"``.
     support : tuple of float, or None, optional
         Declared bounds as ``(lo, hi)``.
@@ -758,7 +758,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
         The observations, which decide the applicable support groups.
     counts : bool
         Whether the count group applies.
-    family_set : sequence of str, or None
+    family_set : sequence of str, or None, optional
         Families to consider, or ``None`` for the curated set.
 
     Returns
