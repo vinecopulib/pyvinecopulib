@@ -11,16 +11,19 @@ import re
 import warnings
 from typing import (
   Any,
+  Callable,
   Iterable,
   Mapping,
   Optional,
+  Protocol,
   Self,
   Sequence,
+  TypeVar,
 )
 
 import numpy as np
 
-from ..core import MarginBase
+from ..core import ControlsLike, MarginBase, MarginLike
 from ..core._validation import (
   extra_required,
   reject_array_controls,
@@ -31,6 +34,11 @@ from ..core.margin_base import criteria as _criteria
 from ..core.margin_controls import FitControlsMargin
 
 __all__ = ["SciPyMargin"]
+
+#: One margin, of whatever kind was handed in. Unbounded on purpose: a
+#: candidate set may hold margins from anywhere, `Kde1d` included, and those
+#: satisfy the contract nominally rather than statically.
+_MarginT = TypeVar("_MarginT")
 
 #: Curated candidate families, grouped by the support they can represent.
 #: `SciPyMargin.select` draws its candidates from the groups the data are
@@ -75,7 +83,7 @@ _FIT_BOUNDS: dict[str, dict[str, tuple[float, float]]] = {
   "binom": {"n": (1.0, 1e4), "p": (1e-8, 1.0)},
 }
 
-#: Families deliberately kept out of ``_PARTITIONS``, and why. Each is still
+#: Families kept out of ``_PARTITIONS``, and why. Each is still
 #: reachable by name — ``SciPyMargin("vonmises")`` works — but never enters
 #: an automatic candidate set, because a blind sweep over all of SciPy's
 #: continuous families ranks ``vonmises`` first on clean gamma data, beating the
@@ -128,7 +136,95 @@ def _excluded_block(indent: str = "  ") -> str:
   )
 
 
-def _stats() -> Any:
+# --- the SciPy surface, named by what is called on it ---------------------- #
+# SciPy ships no type information, and `scipy-stubs` is not an option here: its
+# current releases require Python 3.12 while this package supports 3.11, and
+# they pin `scipy` to one minor version. So the objects crossing this boundary
+# are described by the members used on them.
+
+
+class _Family(Protocol):
+  """A ``scipy.stats`` family, as the name lookup and ``isinstance`` see it."""
+
+  #: SciPy's comma-separated shape-parameter names, or ``None`` when a family
+  #: has none.
+  @property
+  def shapes(self) -> Optional[str]: ...
+
+
+class _FamilyEval(Protocol):
+  """The surface a family answers on, both kinds at once.
+
+  ``rv_continuous`` has no ``pmf`` and ``rv_discrete`` no ``pdf``, so no one
+  class satisfies all of this: which half applies is what ``_discrete``
+  records, and the object is reached by name rather than by class.
+  """
+
+  def support(self, *params: float) -> tuple[float, float]: ...
+
+  def fit(self, data: np.ndarray, **fixed: float) -> Sequence[float]: ...
+
+  def pdf(self, y: np.ndarray, *params: float) -> np.ndarray: ...
+
+  def pmf(self, y: np.ndarray, *params: float) -> np.ndarray: ...
+
+  def logpdf(self, y: np.ndarray, *params: float) -> np.ndarray: ...
+
+  def logpmf(self, y: np.ndarray, *params: float) -> np.ndarray: ...
+
+  def cdf(self, y: np.ndarray, *params: float) -> np.ndarray: ...
+
+  def ppf(self, p: np.ndarray, *params: float) -> np.ndarray: ...
+
+  def rvs(
+    self,
+    *params: float,
+    size: int,
+    random_state: np.random.Generator,
+  ) -> np.ndarray: ...
+
+
+class _FitResult(Protocol):
+  """What ``scipy.stats.fit`` reports."""
+
+  params: Sequence[float]
+
+
+class _Optimizer(Protocol):
+  """The optimizer callable ``scipy.stats.fit`` invokes."""
+
+  def __call__(
+    self, objective: Callable[[np.ndarray], float], **kwargs: object
+  ) -> "_OptimizeResult": ...
+
+
+class _OptimizeResult(Protocol):
+  """The part of ``scipy.optimize``'s result ``scipy.stats.fit`` reads."""
+
+  x: np.ndarray
+  fun: float
+
+
+class _Stats(Protocol):
+  """The ``scipy.stats`` module surface this margin uses."""
+
+  @property
+  def rv_continuous(self) -> type[_Family]: ...
+
+  @property
+  def rv_discrete(self) -> type[_Family]: ...
+
+  def fit(
+    self,
+    dist: _FamilyEval,
+    data: np.ndarray,
+    *,
+    bounds: Mapping[str, tuple[float, float]],
+    optimizer: _Optimizer,
+  ) -> _FitResult: ...
+
+
+def _stats() -> _Stats:
   """Return ``scipy.stats``, or raise naming the extra that provides it."""
   with extra_required(
     extra="scipy",
@@ -145,14 +241,16 @@ def _stats() -> Any:
 _DISCRETE_FIT_SEED = 5489
 
 
-def _seeded_optimizer(objective: Any, **kwargs: Any) -> Any:
+def _seeded_optimizer(
+  objective: Callable[[np.ndarray], float], **kwargs: object
+) -> _OptimizeResult:
   """Optimize as ``scipy.stats.fit`` does, with the RNG pinned.
 
   Parameters
   ----------
   objective : callable
       The negative log-likelihood, as ``scipy.stats.fit`` builds it.
-  **kwargs
+  **kwargs : object
       The remaining arguments ``scipy.stats.fit`` supplies, ``bounds`` and
       ``integrality``.
 
@@ -241,7 +339,7 @@ def _curated_margin(
   )
 
 
-def _reject(candidate: Any, y: np.ndarray) -> Optional[str]:
+def _reject(candidate: MarginLike[np.ndarray], y: np.ndarray) -> Optional[str]:
   """Return why a fitted candidate is inadmissible, or ``None`` if it is fine.
 
   Four things have to hold, and none of them implies the others. Every
@@ -285,7 +383,7 @@ def _reject(candidate: Any, y: np.ndarray) -> Optional[str]:
   # escape, and the one an information criterion rewards hardest: a density
   # concentrating on a repeated value diverges, and so does its likelihood. On
   # data that is half exact zeros, a `t` fitted with scale ~1e-9 beats every
-  # honest candidate by thousands of AIC units.
+  # plausible candidate by thousands of AIC units.
   if len(names) == len(values):
     spread = float(np.max(y) - np.min(y))
     floor = 1e-6 * spread if spread > 0.0 else 0.0
@@ -315,7 +413,7 @@ def _reject(candidate: Any, y: np.ndarray) -> Optional[str]:
   return None
 
 
-def _fit_candidate(candidate: Any, y: np.ndarray) -> Optional[str]:
+def _fit_candidate(candidate: "SciPyMargin", y: np.ndarray) -> Optional[str]:
   """Fit one candidate and report why it is inadmissible, or ``None``.
 
   Parameters
@@ -343,7 +441,7 @@ def _fit_candidate(candidate: Any, y: np.ndarray) -> Optional[str]:
       return f"{type(e).__name__}: {e}"
 
 
-def _dedupe(candidates: Iterable[Any]) -> list[Any]:
+def _dedupe(candidates: Iterable[_MarginT]) -> list[_MarginT]:
   """Drop candidates that would tie with one already present.
 
   Two unfitted candidates of the same family with the same pinned parameters
@@ -365,7 +463,7 @@ def _dedupe(candidates: Iterable[Any]) -> list[Any]:
       order preserved.
   """
   seen: set[tuple[Any, ...]] = set()
-  out: list[Any] = []
+  out: list[_MarginT] = []
   for margin in candidates:
     family = getattr(margin, "family_name", None)
     if family is None:
@@ -615,13 +713,13 @@ class SciPyMargin(MarginBase[np.ndarray]):
 
   def select(
     self,
-    y: Any,
+    y: np.ndarray,
     /,
-    controls: Optional[Any] = None,
+    controls: Optional[ControlsLike] = None,
     *,
-    x: Optional[Any] = None,
-    weights: Optional[Any] = None,
-  ) -> "SciPyMargin":
+    x: Optional[np.ndarray] = None,
+    weights: Optional[np.ndarray] = None,
+  ) -> Self:
     """Choose a family from the candidate set, fit it, and become it.
 
     Every admissible candidate is fitted and scored, and the best on the
@@ -843,7 +941,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
         groups.append("unit")
     return groups
 
-  def _adopt(self, winner: "SciPyMargin") -> "SciPyMargin":
+  def _adopt(self, winner: "SciPyMargin") -> Self:
     """Become the selected candidate.
 
     Parameters
@@ -982,7 +1080,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
   # --- estimation ---------------------------------------------------------- #
 
   @property
-  def _dist(self) -> Any:
+  def _dist(self) -> _FamilyEval:
     """Return the SciPy distribution object.
 
     Looked up by name rather than stored, so the margin pickles as a name and
@@ -1051,20 +1149,20 @@ class SciPyMargin(MarginBase[np.ndarray]):
 
   def fit(
     self,
-    y: Any,
+    y: np.ndarray,
     /,
-    controls: Optional[Any] = None,
+    controls: Optional[ControlsLike] = None,
     *,
-    x: Optional[Any] = None,
-    weights: Optional[Any] = None,
-  ) -> "SciPyMargin":
+    x: Optional[np.ndarray] = None,
+    weights: Optional[np.ndarray] = None,
+  ) -> Self:
     """Estimate the free parameters by maximum likelihood.
 
     Parameters
     ----------
     y : array, shape (n,), dtype float
         Observations; NaNs are dropped.
-    controls : object, or None, optional
+    controls : ControlsLike, or None, optional
         Unused; the family is fixed here, so there is nothing to configure.
         A search over families is :meth:`select`.
     x : array, shape (n, p), or None, optional
@@ -1090,7 +1188,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
     reject_covariates(self, x)
     if self._family is None:
       # `RuntimeError`, as the property readers use for the same missing
-      # state -- and deliberately not `ValueError`, which `fit_margin`'s
+      # state -- and not `ValueError`, which `fit_margin`'s
       # `on_failure="fallback"` catches: a margin with no family is a misuse,
       # not a variable no family fits.
       raise RuntimeError(
@@ -1164,7 +1262,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
 
   # --- evaluation ---------------------------------------------------------- #
 
-  def pdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
+  def pdf(self, y: np.ndarray, *, x: Optional[np.ndarray] = None) -> np.ndarray:
     params = self.parameters
     dist = self._dist
     values = np.asarray(y, dtype=float)
@@ -1172,7 +1270,9 @@ class SciPyMargin(MarginBase[np.ndarray]):
       return np.asarray(dist.pmf(values, *params), dtype=float)
     return np.asarray(dist.pdf(values, *params), dtype=float)
 
-  def logpdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
+  def logpdf(
+    self, y: np.ndarray, *, x: Optional[np.ndarray] = None
+  ) -> np.ndarray:
     """Log of :meth:`pdf`, from SciPy's own log-density.
 
     Overrides the inherited ``log(pdf(y))``, which loses the tails to underflow
@@ -1197,20 +1297,26 @@ class SciPyMargin(MarginBase[np.ndarray]):
       return np.asarray(dist.logpmf(values, *params), dtype=float)
     return np.asarray(dist.logpdf(values, *params), dtype=float)
 
-  def cdf(self, y: Any, *, x: Optional[Any] = None) -> np.ndarray:
+  def cdf(self, y: np.ndarray, *, x: Optional[np.ndarray] = None) -> np.ndarray:
     return np.asarray(
       self._dist.cdf(np.asarray(y, dtype=float), *self.parameters),
       dtype=float,
     )
 
-  def icdf(self, p: Any, *, x: Optional[Any] = None) -> np.ndarray:
+  def icdf(
+    self, p: np.ndarray, *, x: Optional[np.ndarray] = None
+  ) -> np.ndarray:
     return np.asarray(
       self._dist.ppf(np.asarray(p, dtype=float), *self.parameters),
       dtype=float,
     )
 
   def sample(
-    self, n: int, *, x: Optional[Any] = None, seeds: Optional[list[int]] = None
+    self,
+    n: int,
+    *,
+    x: Optional[np.ndarray] = None,
+    seeds: Optional[list[int]] = None,
   ) -> np.ndarray:
     """Draw ``n`` samples from the family.
 
@@ -1243,7 +1349,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
     return f"SciPyMargin({self._family!r}, {shown})"
 
 
-def _parameter_names(dist: Any, *, discrete: bool) -> tuple[str, ...]:
+def _parameter_names(dist: _Family, *, discrete: bool) -> tuple[str, ...]:
   """Return a family's parameter names in SciPy's order.
 
   Parameters

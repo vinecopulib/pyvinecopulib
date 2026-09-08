@@ -40,17 +40,24 @@ Every protocol here is ``runtime_checkable``, which compares member *names*
 only: ``isinstance(cop, BicopLike)`` reports that the names are present, not
 that the signatures agree.
 
-**Typing.** :data:`ArrayT` is an unbounded, invariant ``TypeVar`` carried only
-on these public signatures, so a concrete implementation (e.g.
+**Typing.** :data:`ArrayT` is an unbounded, invariant ``TypeVar`` carried on
+these signatures and on everything that implements them, so a concrete
+implementation (e.g.
 :class:`~pyvinecopulib.torch.TorchTllBicop`) inherits precise ``torch.Tensor``
 return types. Invariance is forced: it stands in both parameter and return
 position on essentially every member. It carries no bound because the natural
 Array-API one, ``__array_namespace__``, is what ``torch.Tensor`` lacks, and
 naming the two concrete array types instead would close the extension point
 these protocols advertise and pull ``torch`` into the type-check closure of a
-subpackage that imports without it. The numeric implementations in
-:mod:`~pyvinecopulib.core.bicop_base` operate on arrays as ``Any`` (the Array
-API namespace ``array_api_compat`` is itself untyped).
+subpackage that imports without it.
+
+Having no bound is also what bounds how far ``ArrayT`` reaches: it names no
+attribute and no operator, so it types an array a body only *forwards* --
+every signature in ``core``, and the arguments handed on to a part -- while a
+body that indexes an array or does arithmetic on it holds the value as ``Any``
+(``array_api_compat`` publishes no ``Array`` protocol to bound the variable
+with, and the array namespace it resolves is itself untyped). The namespace
+itself is a plain ``types.ModuleType``, conventionally ``xp``.
 """
 
 from __future__ import annotations
@@ -61,6 +68,7 @@ from typing import (
   Any,
   Optional,
   Protocol,
+  Sequence,
   TypeVar,
   runtime_checkable,
 )
@@ -111,7 +119,7 @@ class ControlsLike(Protocol):
   """
 
   @abstractmethod
-  def to_dict(self) -> dict:
+  def to_dict(self) -> dict[str, Any]:
     """Return the settings as a plain dictionary.
 
     Returns
@@ -276,7 +284,7 @@ class BicopLike(Protocol[ArrayT]):
   :class:`pyvinecopulib.torch.TorchTllBicop` are the reference implementations.
 
   **What is required is the evaluation surface.** ``pdf`` / ``hfunc1`` /
-  ``hfunc2`` / ``hinv1`` / ``hinv2`` / ``sample`` are the whole of it -- the
+  ``hfunc2`` / ``hinv1`` / ``hinv2`` / ``sample`` are all of it -- the
   surface :class:`pyvinecopulib.core.Bicop` presents, so that the contract is
   something a foreign pair copula can be typed against rather than a list of
   whichever methods the cascades happen to call today. (``sample`` is in it for
@@ -293,7 +301,7 @@ class BicopLike(Protocol[ArrayT]):
   :class:`~pyvinecopulib.core.BicopBase` declares it ``False`` so the answer is
   findable rather than only discoverable by tripping the error.
 
-  There is deliberately **no** ``supports_covariates`` flag here, unlike on a
+  There is **no** ``supports_covariates`` flag here, unlike on a
   margin or a whole copula: the *signature* decides. Every method above
   declares a keyword-only ``x``, which ``ty`` enforces on each
   :class:`~pyvinecopulib.core.BicopBase` subclass, and a matrix is forwarded
@@ -734,8 +742,8 @@ class VinedistLike(Protocol[ArrayT]):
   MarginLike : The marginal half's contract.
   """
 
-  vinecop: object
-  margins: object
+  vinecop: VinecopLike[ArrayT]
+  margins: Sequence[MarginLike[ArrayT]]
 
   @abstractmethod
   def logpdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:

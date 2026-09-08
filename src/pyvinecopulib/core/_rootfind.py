@@ -3,22 +3,25 @@
 Array-agnostic (numpy / torch) via the Array API: resolves the
 namespace from the target array and uses only standard elementwise ops. Grad is
 disabled by the *caller's* evaluation context (torch ``no_grad`` /
-``nullcontext``), not here, so this stays a pure function. Arrays are typed
-``Any`` per the ``pyvinecopulib.core`` typing policy (the Array API namespace is
-untyped).
+``nullcontext``), not here, so this stays a pure function. The bracket the
+bisection carries is typed ``Any`` rather than ``ArrayT``: it is arithmetic on
+the values, and the generic array type is unbounded, so it names no operators.
 """
 
 from __future__ import annotations
 
 import math
-from typing import Any, Callable
+from types import ModuleType
+from typing import Any, Callable, Union, cast
 
 from array_api_compat import array_namespace
+
+from .protocols import ArrayT
 
 __all__ = ["solve_increasing"]
 
 
-def _is_finite_bound(xp: Any, bound: Any, broadcast: Any) -> bool:
+def _is_finite_bound(xp: ModuleType, bound: Any, broadcast: ArrayT) -> bool:
   """Whether ``bound`` is finite everywhere.
 
   Scalars answer without touching the array namespace, which keeps the
@@ -46,9 +49,9 @@ def _is_finite_bound(xp: Any, bound: Any, broadcast: Any) -> bool:
 
 
 def _bracket(
-  xp: Any,
+  xp: ModuleType,
   f: Callable[[Any], Any],
-  p: Any,
+  p: ArrayT,
   a: Any,
   b: Any,
   finite_lo: bool,
@@ -109,13 +112,13 @@ def _bracket(
 
 def solve_increasing(
   f: Callable[[Any], Any],
-  p: Any,
+  p: ArrayT,
   *,
-  lo: Any = 0.0,
-  hi: Any = 1.0,
+  lo: Union[float, ArrayT] = 0.0,
+  hi: Union[float, ArrayT] = 1.0,
   n_iter: int = 50,
   max_expand: int = 64,
-) -> Any:
+) -> ArrayT:
   """Solve ``f(x) = p`` for ``x`` in ``[lo, hi]``, elementwise.
 
   ``f`` must be monotone increasing per element. Bisection with ``n_iter``
@@ -177,4 +180,4 @@ def solve_increasing(
     lower = f(mid) < p
     a = xp.where(lower, mid, a)
     b = xp.where(lower, b, mid)
-  return xp.clip(0.5 * (a + b), clip_lo, clip_hi)
+  return cast("ArrayT", xp.clip(0.5 * (a + b), clip_lo, clip_hi))

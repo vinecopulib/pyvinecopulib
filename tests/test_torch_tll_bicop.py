@@ -167,7 +167,7 @@ def test_from_bicop_rejects_rotated() -> None:
     parameters = np.eye(2)
 
   with pytest.raises(ValueError, match="rotation"):
-    TorchTllBicop.from_bicop(_FakeCop())  # type: ignore[arg-type]
+    TorchTllBicop.from_bicop(_FakeCop())
 
 
 # --------------------------------------------------------------------------- #
@@ -510,7 +510,7 @@ def test_normalize_margins_leaves_a_normalized_grid_alone() -> None:
 
 
 def test_flip_swaps_arguments() -> None:
-  # Rotated Clayton data give an asymmetric TLL fit, so the flip is a genuine
+  # Rotated Clayton data give an asymmetric TLL fit, so the flip is a actual
   # change (not a no-op). flip() must give c'(u1, u2) = c(u2, u1) with the
   # h-functions swapped, exactly (it transposes the interpolation grid), and
   # leave the original unchanged.
@@ -540,7 +540,7 @@ def test_flip_swaps_arguments() -> None:
     atol=1e-12,
     rtol=1e-12,
   )
-  # Genuinely different from the unflipped copula on an asymmetric fit, and
+  # Actually different from the unflipped copula on an asymmetric fit, and
   # the original is left unchanged.
   assert not np.allclose(flipped.pdf(u).numpy(), tb.pdf(u).numpy())
   np.testing.assert_array_equal(
@@ -788,7 +788,7 @@ def test_values_must_be_nonnegative() -> None:
 def _win_reference(x: torch.Tensor, wl: int) -> torch.Tensor:
   """``tools_stats::win`` spelled out: zero-pad, convolve, clamp the edges.
 
-  Deliberately the slow O(n * wl) form. It is the definition the fast
+  The slow O(n * wl) form, which is the definition the fast
   implementation has to reproduce, so it is written here from the C++ rather
   than shared with it.
   """
@@ -1158,7 +1158,9 @@ def test_from_data_batched_at_one_pair() -> None:
     ([0.0, 0.5, 0.5, 1.0], "strictly increasing"),
   ],
 )
-def test_a_malformed_grid_is_refused_not_silently_wrong(grid, match) -> None:
+def test_a_malformed_grid_is_refused_not_silently_wrong(
+  grid: list[float], match: str
+) -> None:
   """The cell widths divide every interpolation, so they must be positive.
 
   A one-point grid leaves no cell and returned NaN; a repeated or decreasing

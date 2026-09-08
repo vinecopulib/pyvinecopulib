@@ -17,15 +17,25 @@ places every copula argument and every uniform draw at zero.
 from __future__ import annotations
 
 from itertools import chain
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import torch
 from torch import Tensor
 
 __all__ = ["TensorPlacementMixin", "reference_tensor"]
 
+# Everything the mixin does rests on being mixed into an `nn.Module`: it reads
+# the module's registered tensors. Declaring that to the type checker is what
+# lets `reference_tensor` name the type it actually takes, and it costs nothing
+# at runtime, `class X(object)` being `class X`. A real base here would put
+# `nn.Module` ahead of the canonical base in every subclass's MRO.
+if TYPE_CHECKING:
+  _ModuleBase = torch.nn.Module
+else:
+  _ModuleBase = object
 
-def reference_tensor(module: Any) -> Optional[Tensor]:
+
+def reference_tensor(module: torch.nn.Module) -> Optional[Tensor]:
   """A floating-point tensor ``module`` holds, naming where its numerics run.
 
   ``parameters()`` and ``buffers()`` recurse, so a grid held by a submodule
@@ -53,8 +63,8 @@ def reference_tensor(module: Any) -> Optional[Tensor]:
   return None
 
 
-class TensorPlacementMixin:
-  """The ``_prep`` seam for a module placed on its own registered tensors.
+class TensorPlacementMixin(_ModuleBase):
+  """The ``_prep`` hook for a module placed on its own registered tensors.
 
   The torch counterpart of
   ``pyvinecopulib.core._placement.PlacementMixin``, which it shadows: a

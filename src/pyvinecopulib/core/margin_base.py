@@ -32,7 +32,7 @@ from ._covariates import declared_eval, prepare
 from ._placement import PlacementMixin
 from ._rootfind import solve_increasing
 from ._validation import reject_array_controls, validate_weights
-from .protocols import _MARGIN_EXAMPLE, ArrayT, MarginLike
+from .protocols import _MARGIN_EXAMPLE, ArrayT, ControlsLike, MarginLike
 
 __all__ = ["MarginBase"]
 
@@ -50,7 +50,7 @@ __all__ = ["MarginBase"]
 _ICDF_ITER: int = 110
 
 
-def support_of(obj: Any) -> tuple[float, float]:
+def support_of(obj: object) -> tuple[float, float]:
   """Read ``(lo, hi)`` off an object that may spell its support three ways.
 
   SciPy exposes ``support()`` as a method, PyTorch a ``support`` property
@@ -92,8 +92,8 @@ def support_of(obj: Any) -> tuple[float, float]:
 
 
 def derive_cdf_left(
-  margin: Any, y: Any, x: Optional[Any], var_type: str
-) -> Any:
+  margin: MarginLike[ArrayT], y: ArrayT, x: Optional[ArrayT], var_type: str
+) -> ArrayT:
   """Left limit ``F(y^-)`` derived from a margin's ``cdf`` and ``var_type``.
 
   The one place the derivation lives, so a margin that declares atoms and
@@ -125,7 +125,7 @@ def derive_cdf_left(
       derivation steps back one lattice point.
   """
   if var_type == "c":
-    return declared_eval(margin, "cdf", y, x)
+    return cast("ArrayT", declared_eval(margin, "cdf", y, x))
 
   ya: Any = y
   xp = array_namespace(ya)
@@ -135,12 +135,14 @@ def derive_cdf_left(
         f"{type(margin).__name__} declares var_type='d', so y must be "
         "integer-valued; give it a cdf_left for a support on another lattice."
       )
-    return declared_eval(margin, "cdf", ya - 1, x)
+    return cast("ArrayT", declared_eval(margin, "cdf", ya - 1, x))
 
   # Zero-inflated: the only atom is at 0, and its mass is `pdf(0)`.
   upper: Any = declared_eval(margin, "cdf", y, x)
   mass: Any = declared_eval(margin, "pdf", y, x)
-  return xp.where(ya == 0, xp.clip(upper - mass, 0.0, 1.0), upper)
+  return cast(
+    "ArrayT", xp.where(ya == 0, xp.clip(upper - mass, 0.0, 1.0), upper)
+  )
 
 
 def criteria(loglik: float, k: float, n: Optional[float]) -> dict[str, float]:
@@ -395,7 +397,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     cls,
     y: ArrayT,
     /,
-    controls: Optional[Any] = None,
+    controls: Optional[ControlsLike] = None,
     *,
     x: Optional[ArrayT] = None,
     weights: Optional[ArrayT] = None,
@@ -414,7 +416,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     ----------
     y : array, shape (n,), dtype float
         Observations on the original scale.
-    controls : object, or None, optional
+    controls : ControlsLike, or None, optional
         Fit configuration, in whatever form the subclass accepts.
     x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation.
@@ -437,7 +439,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     self,
     y: ArrayT,
     /,
-    controls: Optional[Any] = None,
+    controls: Optional[ControlsLike] = None,
     *,
     x: Optional[ArrayT] = None,
     weights: Optional[ArrayT] = None,
@@ -452,7 +454,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     ----------
     y : array, shape (n,), dtype float
         Observations on the original scale.
-    controls : object, or None, optional
+    controls : ControlsLike, or None, optional
         Fit configuration, in whatever form the subclass accepts; a margin
         that takes none declares :attr:`supports_controls` ``False``.
     x : array, shape (n, p), or None, optional
@@ -485,7 +487,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     self,
     y: ArrayT,
     /,
-    controls: Optional[Any] = None,
+    controls: Optional[ControlsLike] = None,
     *,
     x: Optional[ArrayT] = None,
     weights: Optional[ArrayT] = None,
@@ -502,7 +504,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     ----------
     y : array, shape (n,), dtype float
         Observations on the original scale.
-    controls : object, or None, optional
+    controls : ControlsLike, or None, optional
         Fit configuration, in whatever form the subclass accepts. The margins
         in ``pyvinecopulib.margins`` read a ``FitControlsMargin``, whose
         ``family_set`` and ``selection_criterion`` bound the search.

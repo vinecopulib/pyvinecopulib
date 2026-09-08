@@ -36,13 +36,15 @@ from ._discrete import (
   with_left_limit,
 )
 from .independence import IndependencePair
-from ._reorient import _slot_key, reorientation
+from ._reorient import _SlotKey, _slot_key, reorientation
 from ._validation import validate_weights
 from .bicop_base import flip_of
 from .context import ConditioningContext, SimplifiedContext
 from .protocols import ArrayT, BicopLike
 
 if TYPE_CHECKING:
+  import numpy as np
+
   from ..pyvinecopulib_ext import RVineStructure
 
 __all__ = ["FitEdge", "FitLevel", "fit_parts", "select_parts"]
@@ -51,10 +53,10 @@ __all__ = ["FitEdge", "FitLevel", "fit_parts", "select_parts"]
 def _make_criterion(
   tree_criterion: str,
   n: int,
-  weights: Optional[Any] = None,
+  weights: Optional[ArrayT] = None,
   criterion_function: Optional[Callable[..., float]] = None,
-  x: Optional[Any] = None,
-) -> Callable[[Any, Any], float]:
+  x: Optional[ArrayT] = None,
+) -> Callable[[ArrayT, ArrayT], float]:
   """Build the edge criterion ``calculate_criterion`` computes.
 
   Covariates are optional to the criterion, the way they are to a pair copula:
@@ -100,10 +102,10 @@ def _make_criterion(
   if criterion_function is not None and x is not None:
     xa = convert(x)
 
-    def scorer(matrix: Any) -> float:  # noqa: F811 - the conditional variant
+    def scorer(matrix: np.ndarray) -> float:  # noqa: F811 - the conditional variant
       return float(cast("Any", criterion_function)(matrix, x=xa))
 
-  def criterion(col0: Any, col1: Any) -> float:
+  def criterion(col0: ArrayT, col1: ArrayT) -> float:
     if n <= 10:
       return 0.0
     a, b = convert(col0), convert(col1)
@@ -116,7 +118,7 @@ def _make_criterion(
   return criterion
 
 
-def _to_numpy_default(a: Any) -> Any:
+def _to_numpy_default(a: Any) -> np.ndarray:
   """Host NumPy view of ``a``, for an array library that leaves it off the host.
 
   ``np.asarray`` raises on a tensor that lives on an accelerator, so this
@@ -134,11 +136,11 @@ def _to_numpy_default(a: Any) -> Any:
 
 
 #: ``(tree, edge, u_e, x_e) -> BicopLike``, fitting one edge's pair copula: the
-#: seam external packages drive conditional fitting through (see
+#: hook external packages drive conditional fitting through (see
 #: :meth:`VinecopBase.fit`). An edge with a discrete argument additionally
 #: receives ``var_types=[t1, t2]`` and a four-column ``u_e``, so the alias cannot
 #: pin the arity -- a ``Callable`` has no way to express a keyword argument.
-FitEdge = Callable[..., BicopLike]
+FitEdge = Callable[..., BicopLike[Any]]
 
 #: ``(tree, u_level, types) -> list[BicopLike]``, fitting a whole tree level
 #: at once: the optional companion to ``FitEdge``, for a lane whose fitter
@@ -152,17 +154,17 @@ FitEdge = Callable[..., BicopLike]
 # whichever module uses the alias, so quoting it made `Sequence` a name every
 # importer had to keep in scope -- and dropping that import broke the docs
 # build, which resolves annotations at runtime.
-FitLevel = Callable[[int, Any, list[tuple[str, str]]], Sequence[BicopLike]]
+FitLevel = Callable[[int, Any, list[tuple[str, str]]], Sequence[BicopLike[Any]]]
 
 
 def _fit_edge_call(
   fit_edge: FitEdge,
   tree: int,
   edge: int,
-  u_e: Any,
-  x_e: Optional[Any],
+  u_e: ArrayT,
+  x_e: Optional[ArrayT],
   var_types: tuple[str, str],
-) -> BicopLike:
+) -> BicopLike[Any]:
   """Call ``fit_edge``, forwarding ``var_types`` only for a discrete edge.
 
   A callback written for a continuous vine takes four arguments, so a fully
@@ -178,19 +180,19 @@ def _fit_edge_call(
 
 
 def fit_parts(
-  structure: Any,
+  structure: RVineStructure,
   u: Any,
   fit_edge: FitEdge,
   *,
-  context: Optional[ConditioningContext] = None,
-  x: Optional[Any] = None,
+  context: Optional[ConditioningContext[ArrayT]] = None,
+  x: Optional[ArrayT] = None,
   var_types: Optional[list[str]] = None,
   fit_level: Optional[FitLevel] = None,
   tree_criterion: str = "tau",
   threshold: float = 0.0,
-  weights: Optional[Any] = None,
+  weights: Optional[ArrayT] = None,
   criterion_function: Optional[Callable[[Any], float]] = None,
-) -> list[list[BicopLike]]:
+) -> list[list[BicopLike[Any]]]:
   """Fit pair copulas tree-by-tree along a fixed structure (returns them).
 
   The engine behind ``fit``, kept separate because a factory needs the pairs
@@ -201,7 +203,7 @@ def fit_parts(
   It mirrors the forward pdf traversal with the density
   evaluation replaced by ``fit_edge(tree, edge, u_e, x_e)``; the returned
   pair's ``hfunc1`` / ``hfunc2`` must be valid immediately for tree
-  propagation. Conditional fitting is driven through this seam (a
+  propagation. Conditional fitting is driven through this hook (a
   ``fit_edge`` that fits a conditional pair copula on ``(u_e, x_e)``), with
   ``x_e`` assembled in the same C1 order the cascades use.
 
@@ -307,12 +309,12 @@ def fit_parts(
   )
   cache: dict[tuple[int, int], tuple[int, ...]] = {}
 
-  def edge_context_for(tree: int, edge: int) -> Optional[Any]:
+  def edge_context_for(tree: int, edge: int) -> Optional[ArrayT]:
     # Assemble x_e = context(u_D, x); u_D columns in ascending conditioning
     # -tree order (C1), matching VinecopBase._cond_positions / _edge_context.
     if not context.assembles_conditioning and x is None:
       return None
-    u_D: Optional[Any] = None
+    u_D: Optional[ArrayT] = None
     if context.assembles_conditioning:
       key = (tree, edge)
       if key not in cache:
@@ -326,9 +328,9 @@ def fit_parts(
     return context.edge_context(u_D=u_D, x=x)
 
   s = structure
-  pairs: list[list[BicopLike]] = []
+  pairs: list[list[BicopLike[Any]]] = []
   for tree in range(trunc_lvl):
-    row: list[BicopLike] = []
+    row: list[BicopLike[Any]] = []
     # Every edge of one tree reads only columns finalized by earlier trees
     # -- `min_array(tree, edge) - 1 > edge`, so the column an edge reads
     # second is written later in this same tree -- which is why upstream
@@ -353,7 +355,7 @@ def fit_parts(
       for c0, c1, _, _ in level
     ]
     to_fit = [e for e, s_e in enumerate(skip) if not s_e]
-    fitted: Optional[dict[int, BicopLike]] = None
+    fitted: Optional[dict[int, BicopLike[Any]]] = None
     if (
       fit_level is not None
       and to_fit
@@ -369,7 +371,7 @@ def fit_parts(
     for edge in range(d - tree - 1):
       _, _, subs, edge_types = level[edge]
       u_e, x_e = inputs[edge], contexts[edge]
-      edge_copula: BicopLike
+      edge_copula: BicopLike[Any]
       if skip[edge]:
         edge_copula = IndependencePair()
       elif fitted is not None:
@@ -397,8 +399,8 @@ def select_parts(
   u: Any,
   fit_edge: FitEdge,
   *,
-  context: Optional[ConditioningContext] = None,
-  x: Optional[Any] = None,
+  context: Optional[ConditioningContext[ArrayT]] = None,
+  x: Optional[ArrayT] = None,
   fit_level: Optional[FitLevel] = None,
   trunc_lvl: Optional[int] = None,
   tree_criterion: str = "tau",
@@ -407,7 +409,7 @@ def select_parts(
   seeds: Optional[list[int]] = None,
   var_types: Optional[list[str]] = None,
   conditioning_set: Optional[list[int]] = None,
-  weights: Optional[Any] = None,
+  weights: Optional[ArrayT] = None,
   criterion_function: Optional[Callable[[Any], float]] = None,
 ) -> tuple[
   RVineStructure,
@@ -513,7 +515,9 @@ def select_parts(
 
   xp = array_namespace(u)
   n = int(u.shape[0])
-  ctx: ConditioningContext = SimplifiedContext() if context is None else context
+  ctx: ConditioningContext[ArrayT] = (
+    SimplifiedContext() if context is None else context
+  )
   x = prepare(u, x, n)
   # With left-limit columns present, `u` is wider than the vine: `var_types`
   # is what fixes the dimension.
@@ -554,7 +558,7 @@ def select_parts(
   # candidate graph is complete (the C++ base tree is a star).
   root = d
 
-  def selection_context(chain: tuple[int, ...]) -> Optional[Any]:
+  def selection_context(chain: tuple[int, ...]) -> Optional[ArrayT]:
     # x_e for an edge whose conditioning set is `chain`, in the C1 order it
     # is fitted on -- variable indices into `u`, since selection has no
     # structure to read natural-order columns from yet.
@@ -600,7 +604,7 @@ def select_parts(
   # Per tree: {(conditioned pair, conditioning set) -> (arg1 label, fitted
   # pair, the chain it was fitted on)}, used to place + reorient the pairs
   # onto the finalized slots and to record what each conditions on.
-  records: list[dict[Any, tuple[int, Any, tuple[int, ...]]]] = []
+  records: list[dict[_SlotKey, tuple[int, Any, tuple[int, ...]]]] = []
   for _ in range(max_trees):
     m = len(nodes)
     cand: list[tuple[int, int]] = []
@@ -673,7 +677,7 @@ def select_parts(
 
     tree_edges: list[tuple[int, int, list[int]]] = []
     new_nodes: list[dict[str, Any]] = []
-    tree_records: dict[Any, tuple[int, Any, tuple[int, ...]]] = {}
+    tree_records: dict[_SlotKey, tuple[int, Any, tuple[int, ...]]] = {}
     build_next_level = len(trees) + 1 < max_trees and len(selected) > 1
     # The surviving edges' inputs were all materialized above, off the
     # previous tree's nodes, and each fitted pair is written to a fresh
@@ -714,7 +718,7 @@ def select_parts(
     # nothing here is thresholded.
     thresholded = [cand_crits[e] < threshold for e in selected]
     to_fit = [i for i, skip in enumerate(thresholded) if not skip]
-    fitted_level: Optional[dict[int, BicopLike]] = None
+    fitted_level: Optional[dict[int, BicopLike[Any]]] = None
     if (
       fit_level is not None
       and to_fit

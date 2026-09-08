@@ -249,7 +249,7 @@ class InterpolationGrid2D(torch.nn.Module):
     and its flipped counterpart normalize to flipped counterparts whether or not
     the iteration has converged.
 
-    Three details are load-bearing rather than incidental, and match the
+    Three details are required rather than incidental, and match the
     reference: the residual is measured on the margins *before* the scaling, so
     an already-normalized grid costs one margin computation and no scaling; the
     scaling is one fused multiply rather than two successive rescalings, which

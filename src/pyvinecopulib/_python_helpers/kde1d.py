@@ -1,7 +1,32 @@
-from typing import Any, Optional
+from typing import Optional, Protocol
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+
+class _PlottableKde(Protocol):
+  """What these helpers read off a fitted ``Kde1d``.
+
+  Written as a protocol because the object arrives from the binding, which
+  ``ty`` cannot see into: naming the five members here says what a plot needs
+  of a kernel density -- the variable type, the fitted grid, the declared
+  bounds and the density itself.
+  """
+
+  @property
+  def type(self) -> str: ...
+
+  @property
+  def grid_points(self) -> np.ndarray: ...
+
+  @property
+  def xmin(self) -> float: ...
+
+  @property
+  def xmax(self) -> float: ...
+
+  def pdf(self, x: np.ndarray, /) -> np.ndarray: ...
+
 
 KDE1D_PLOT_DOC = """
     Generates a plot for the Kde1d object.
@@ -50,7 +75,7 @@ KDE1D_PLOT_DOC = """
 """
 
 
-def make_plotting_grid(kde: Any, grid_size: int = 200) -> np.ndarray:
+def make_plotting_grid(kde: _PlottableKde, grid_size: int = 200) -> np.ndarray:
   """Create appropriate plotting grid based on kde type and data."""
 
   if kde.type == "discrete":
@@ -90,7 +115,7 @@ def make_plotting_grid(kde: Any, grid_size: int = 200) -> np.ndarray:
 
 
 def kde1d_plot(
-  kde: Any,
+  kde: _PlottableKde,
   xlim: Optional[tuple[float, float]] = None,
   ylim: Optional[tuple[float, float]] = None,
   grid_size: int = 200,

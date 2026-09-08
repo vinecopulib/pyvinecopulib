@@ -208,7 +208,10 @@ def test_vinecop() -> None:
     )
 
 
-def _fitted_estimator(backend: object) -> tuple[Any, np.ndarray]:
+# `Any`, not the backend base class: that base is private, and the two
+# concrete backends cannot both be named here -- importing the torch one at
+# module scope would require the extra this file skips without.
+def _fitted_estimator(backend: Any) -> tuple[Any, np.ndarray]:
   from pyvinecopulib.sklearn import VineDensity
 
   rng = np.random.default_rng(0)

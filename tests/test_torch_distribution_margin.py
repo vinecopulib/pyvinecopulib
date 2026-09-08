@@ -93,7 +93,7 @@ _DISCRETE = {
 def _normal(
   loc: float = 0.0, scale: float = 1.0, **kwargs: Any
 ) -> TorchDistributionMargin:
-  """A normal margin, the workhorse of these tests."""
+  """A normal margin, the core operation of these tests."""
   return TorchDistributionMargin(
     _D.Normal, {"loc": loc, "scale": scale}, **kwargs
   )

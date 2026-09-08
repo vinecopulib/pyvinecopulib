@@ -21,7 +21,8 @@ Internal: the vine cascades and the fit engines call these helpers, and
 
 from __future__ import annotations
 
-from typing import Any, Optional, Protocol, cast
+from types import ModuleType
+from typing import TYPE_CHECKING, Any, Optional, Protocol, cast
 
 from array_api_compat import array_namespace
 
@@ -32,10 +33,13 @@ from ._covariates import pair_eval, prepare
 from .bicop_base import BicopBase, flip_of
 from .protocols import ArrayT, BicopLike
 
+if TYPE_CHECKING:
+  from ..pyvinecopulib_ext import RVineStructure
+
 __all__ = ["DiscretePair"]
 
 
-class _ContinuousPair(Protocol):
+class _ContinuousPair(Protocol[ArrayT]):
   """The four unconditional evaluations :class:`DiscretePair` builds on.
 
   Narrower than :class:`~pyvinecopulib.core.BicopLike` on purpose: it is what
@@ -47,13 +51,13 @@ class _ContinuousPair(Protocol):
   accept one fail loudly rather than silently.
   """
 
-  def pdf(self, u: Any) -> Any: ...
+  def pdf(self, u: ArrayT) -> ArrayT: ...
 
-  def cdf(self, u: Any) -> Any: ...
+  def cdf(self, u: ArrayT) -> ArrayT: ...
 
-  def hfunc1(self, u: Any) -> Any: ...
+  def hfunc1(self, u: ArrayT) -> ArrayT: ...
 
-  def hfunc2(self, u: Any) -> Any: ...
+  def hfunc2(self, u: ArrayT) -> ArrayT: ...
 
 
 #: Atom width below which a difference quotient is numerically unstable and the
@@ -173,7 +177,7 @@ def collapse_data(
 
 
 def pair_var_types(
-  structure: Any, var_types: tuple[str, ...]
+  structure: RVineStructure, var_types: tuple[str, ...]
 ) -> tuple[tuple[tuple[str, str], ...], ...]:
   """Per-edge variable types implied by a structure and its variable types.
 
@@ -220,7 +224,7 @@ def seed_left_limits(
   order: tuple[int, ...],
   var_types: tuple[str, ...],
   offsets: tuple[int, ...],
-  xp: Any,
+  xp: ModuleType,
 ) -> Optional[Any]:
   """Natural-order left limits read off the compact layout, or ``None``.
 
@@ -259,7 +263,7 @@ def seed_left_limits(
 
 
 def edge_columns(
-  structure: Any,
+  structure: RVineStructure,
   pair_types: Optional[tuple[tuple[tuple[str, str], ...], ...]],
   tree: int,
   edge: int,
@@ -319,8 +323,11 @@ def edge_columns(
 
 
 def stack_edge(
-  xp: Any, col0: Any, col1: Any, subs: Optional[tuple[Any, Any]]
-) -> Any:
+  xp: ModuleType,
+  col0: ArrayT,
+  col1: ArrayT,
+  subs: Optional[tuple[ArrayT, ArrayT]],
+) -> ArrayT:
   """Assemble a pair-copula argument from its value columns and left limits.
 
   Parameters
@@ -338,7 +345,7 @@ def stack_edge(
       ``[u1, u2]``, or ``[u1, u2, u1^-, u2^-]`` when left limits are given.
   """
   cols = [col0, col1] if subs is None else [col0, col1, *subs]
-  return xp.stack(cols, axis=-1)
+  return cast("ArrayT", xp.stack(cols, axis=-1))
 
 
 def with_left_limit(u_e: Any, arg: int) -> Any:
@@ -365,7 +372,7 @@ def with_left_limit(u_e: Any, arg: int) -> Any:
   return xp.stack(cols, axis=-1)
 
 
-def continuous_view(pair: Any) -> Any:
+def continuous_view(pair: object) -> Any:
   """Return ``pair`` evaluated as a continuous copula, when it can be.
 
   A pair copula may carry its own variable types -- ``Bicop`` does -- in which
@@ -450,7 +457,9 @@ class DiscretePair(BicopBase[ArrayT]):
   #: discrete h-functions need, so a wrapped pair never takes that fast path.
   supports_batched: bool = False
 
-  def __init__(self, pair: _ContinuousPair, var_types: tuple[str, str]) -> None:
+  def __init__(
+    self, pair: _ContinuousPair[ArrayT], var_types: tuple[str, str]
+  ) -> None:
     self._pair = continuous_view(pair)
     self.var_types = list(var_types)
 
@@ -534,7 +543,7 @@ class DiscretePair(BicopBase[ArrayT]):
     return f"DiscretePair({self._pair!r}, var_types={list(self._var_types)})"
 
   # --- argument handling ------------------------------------------------ #
-  def _split(self, u: Any) -> tuple[Any, Any, Any, Any, Any]:
+  def _split(self, u: Any) -> tuple[ModuleType, Any, Any, Any, Any]:
     """Namespace plus the two values and their left limits."""
     expected = 4 if (self._d1 or self._d2) else 2
     if u.ndim != 2 or int(u.shape[1]) != expected:
@@ -558,16 +567,16 @@ class DiscretePair(BicopBase[ArrayT]):
       ut[:, 3] if self._d2 else u2,
     )
 
-  def _pdf(self, xp: Any, a: Any, b: Any, x: Optional[Any]) -> Any:
+  def _pdf(self, xp: ModuleType, a: Any, b: Any, x: Optional[ArrayT]) -> Any:
     return pair_eval(self._pair.pdf, xp.stack([a, b], axis=-1), x)
 
-  def _cdf(self, xp: Any, a: Any, b: Any, x: Optional[Any]) -> Any:
+  def _cdf(self, xp: ModuleType, a: Any, b: Any, x: Optional[ArrayT]) -> Any:
     return pair_eval(self._pair.cdf, xp.stack([a, b], axis=-1), x)
 
-  def _h1(self, xp: Any, a: Any, b: Any, x: Optional[Any]) -> Any:
+  def _h1(self, xp: ModuleType, a: Any, b: Any, x: Optional[ArrayT]) -> Any:
     return pair_eval(self._pair.hfunc1, xp.stack([a, b], axis=-1), x)
 
-  def _h2(self, xp: Any, a: Any, b: Any, x: Optional[Any]) -> Any:
+  def _h2(self, xp: ModuleType, a: Any, b: Any, x: Optional[ArrayT]) -> Any:
     return pair_eval(self._pair.hfunc2, xp.stack([a, b], axis=-1), x)
 
   @staticmethod
@@ -576,7 +585,7 @@ class DiscretePair(BicopBase[ArrayT]):
     return None if value is None else value[mask]
 
   @staticmethod
-  def _quotient(xp: Any, num: Any, delta: Any, fallback: Any) -> Any:
+  def _quotient(xp: ModuleType, num: Any, delta: Any, fallback: Any) -> Any:
     """``|num / delta|`` over a wide-enough atom, else ``|fallback|``."""
     wide = delta > DELTA_MIN
     safe = xp.where(wide, delta, xp.ones_like(delta))
@@ -584,12 +593,12 @@ class DiscretePair(BicopBase[ArrayT]):
 
   def _pdf_mixed(
     self,
-    xp: Any,
+    xp: ModuleType,
     u1: Any,
     u2: Any,
     u1m: Any,
     u2m: Any,
-    x: Optional[Any],
+    x: Optional[ArrayT],
     *,
     discrete: int,
   ) -> Any:
@@ -619,14 +628,20 @@ class DiscretePair(BicopBase[ArrayT]):
     return xp.abs(out)
 
   def _rect(
-    self, xp: Any, a1: Any, b1: Any, a2: Any, b2: Any, x: Optional[Any]
+    self,
+    xp: ModuleType,
+    a1: Any,
+    b1: Any,
+    a2: Any,
+    b2: Any,
+    x: Optional[ArrayT],
   ) -> Any:
     """``P((a1, b1] x (a2, b2])`` as the four-corner difference.
 
     A pair that can compute the rectangle without the cancellation this carries
     -- ``TorchTllBicop.rect_mass`` does -- would be more accurate here, by 7.6x at
     a `1/8`-wide atom and far more at the widths the inner trees reach. It is
-    deliberately not used: the density divides by the atom's area, and the
+    not used: the density divides by the atom's area, and the
     discrete cascade then amplifies a 1e-15 pair-level difference to 8.5e-8 at
     the vine, which is a visible divergence from ``Vinecop``. Parity between
     ``TorchVinecop``'s cascade and ``Vinecop``'s is a documented guarantee, so
@@ -640,7 +655,13 @@ class DiscretePair(BicopBase[ArrayT]):
     )
 
   def _strip(
-    self, xp: Any, a1: Any, b1: Any, b2: Any, x: Optional[Any], axis: int
+    self,
+    xp: ModuleType,
+    a1: Any,
+    b1: Any,
+    b2: Any,
+    x: Optional[ArrayT],
+    axis: int,
   ) -> Any:
     """``P((a1, b1] x (0, b2])`` for ``axis=1``, transposed for ``axis=2``.
 
@@ -689,7 +710,13 @@ class DiscretePair(BicopBase[ArrayT]):
     return cast("ArrayT", self._pdf(xp, u1, u2, x))
 
   def _pdf_d_d(
-    self, xp: Any, u1: Any, u2: Any, u1m: Any, u2m: Any, x: Optional[Any]
+    self,
+    xp: ModuleType,
+    u1: Any,
+    u2: Any,
+    u1m: Any,
+    u2m: Any,
+    x: Optional[ArrayT],
   ) -> Any:
     """Rectangle probability per unit area, with the degenerate fallbacks."""
     d1, d2 = xp.abs(u1 - u1m), xp.abs(u2 - u2m)

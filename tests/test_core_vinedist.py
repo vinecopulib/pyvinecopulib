@@ -10,6 +10,7 @@ needs is assembled for the user, since assembling it by hand is what
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from typing import Any, Optional, cast
 
 import numpy as np
@@ -968,7 +969,9 @@ def test_vinedist_with_a_discrete_margin_uses_the_cascade() -> None:
   assert dist_mine.cdf(x[:20], N=500, seeds=[2]).shape == (20,)
 
 
-def test_json_round_trip_is_exact_for_every_shipped_margin(unique_json_path):
+def test_json_round_trip_is_exact_for_every_shipped_margin(
+  unique_json_path: Path,
+) -> None:
   """`Vinedist` persists to JSON like the copula classes it composes.
 
   `Bicop` / `Vinecop` / `RVineStructure` have carried `to_json` / `to_file`
@@ -1000,7 +1003,7 @@ def test_json_round_trip_is_exact_for_every_shipped_margin(unique_json_path):
     ]
 
 
-def test_to_file_selects_cbor_by_extension(unique_json_path):
+def test_to_file_selects_cbor_by_extension(unique_json_path: Path) -> None:
   """The extension rule is the one the compiled classes already follow."""
   rng = np.random.default_rng(1)
   x = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=300)
@@ -1013,7 +1016,7 @@ def test_to_file_selects_cbor_by_extension(unique_json_path):
     )
 
 
-def test_a_margin_without_to_json_is_refused_by_name():
+def test_a_margin_without_to_json_is_refused_by_name() -> None:
   """A custom margin has to opt in, and is told how."""
   rng = np.random.default_rng(2)
   x = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=300)
@@ -1024,8 +1027,8 @@ def test_a_margin_without_to_json_is_refused_by_name():
     dist.to_json()
 
 
-def test_a_registered_custom_margin_round_trips():
-  """`register_margin_json` is the documented seam, so it must work."""
+def test_a_registered_custom_margin_round_trips() -> None:
+  """`register_margin_json` is the documented hook, so it must work."""
   rng = np.random.default_rng(3)
   x = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=300)
   copula = pv.core.Vinedist.from_data(x).vinecop
@@ -1040,7 +1043,7 @@ def test_a_registered_custom_margin_round_trips():
   assert isinstance(restored.margins[0], pv.core.MarginBase)
 
 
-def test_an_unknown_margin_kind_and_a_bad_version_both_raise():
+def test_an_unknown_margin_kind_and_a_bad_version_both_raise() -> None:
   """A format change must fail loudly rather than build a wrong model."""
   from pyvinecopulib.core._serialization import margin_from_json
 
@@ -1362,7 +1365,7 @@ def test_covariates_reach_the_parts_that_declare_them_only() -> None:
   `Vinedist`'s copula is a `Vinecop` of compiled pair copulas, which models no
   covariates and takes no `x` argument at all -- so `x` must not be forwarded
   to it. Reaching it anyway would raise instead of fitting something, and
-  dropping it silently is only honest because the *object* refuses covariates
+  dropping it silently is only correct because the *object* refuses covariates
   nothing on the lane reads (`supports_fit_covariates`).
   """
   rng = np.random.default_rng(3)

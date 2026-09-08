@@ -19,13 +19,17 @@ to this file.
 
 from __future__ import annotations
 
-from typing import Optional, cast
+from typing import TYPE_CHECKING, Optional, cast
 
 import torch
 from torch import Tensor
 
 from ..core._trim import trim_bounds
 from ..core.vinecop_base import _NotBatchable
+
+if TYPE_CHECKING:
+  from ..pyvinecopulib_ext import RVineStructure
+  from .vinecop import TorchVinecop
 
 #: Guard on a conditional total mass, so a zero-mass grid line cannot 0/0.
 #: Floor for a *mass* the cascades divide by -- a renormalizing integral or a
@@ -586,7 +590,7 @@ class BatchedTreeLevel(torch.nn.Module):
     return torch.where(self.is_indep[:, None], torch.ones_like(raw), raw)
 
   def _h1_h2_at(
-    self, gp: Tensor, u: Tensor, loc: tuple
+    self, gp: Tensor, u: Tensor, loc: tuple[Tensor, ...]
   ) -> tuple[Tensor, Tensor]:
     """Both h-functions at one located query.
 
@@ -644,7 +648,9 @@ class BatchedTreeLevel(torch.nn.Module):
     return self._h1_h2_at(grid_points, u, self._locate_both(grid_points, u))
 
 
-def inverse_waves(s, d: int, trunc_lvl: int) -> list[list[tuple[int, int]]]:
+def inverse_waves(
+  s: RVineStructure, d: int, trunc_lvl: int
+) -> list[list[tuple[int, int]]]:
   """Group the inverse cascade's ``(var, tree)`` cells into parallel waves.
 
   ``_inverse_rosenblatt`` walks variables outward and, within each, trees
@@ -801,7 +807,9 @@ class BatchedWave(torch.nn.Module):
     hfunc1.index_copy_(0, self.out_hfunc1, h)
 
 
-def _shared_grid(tvc, trunc_lvl: int, d: int):
+def _shared_grid(
+  tvc: TorchVinecop, trunc_lvl: int, d: int
+) -> tuple[Tensor, bool, Tensor, Tensor, Tensor]:
   """The grid every pair stacks on, plus an independence pair built on it.
 
   ``TorchTllBicop`` gives an independence pair a 2x2 sentinel grid and no prefix
@@ -937,7 +945,7 @@ class BatchedVine(torch.nn.Module):
     return cast("BatchedTreeLevel", self.levels[t])
 
   @classmethod
-  def from_torch_vinecop(cls, tvc) -> "BatchedVine":
+  def from_torch_vinecop(cls, tvc: TorchVinecop) -> "BatchedVine":
     """Build a ``BatchedVine`` from a fitted :class:`TorchVinecop`.
 
     Walks ``tvc.pair_copulas`` and ``tvc.structure`` once; bakes per-pair

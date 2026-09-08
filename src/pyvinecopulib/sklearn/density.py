@@ -1,7 +1,6 @@
-from typing import Any
+from typing import Optional
 
 import numpy as np
-import pandas as pd
 from sklearn.base import DensityMixin
 from sklearn.utils.validation import check_is_fitted
 
@@ -12,7 +11,10 @@ from ._base import (
   _DOC_REFERENCES,
   VineBase,
   _as_ndarray,
+  _RandomStateLike,
+  _XLike,
 )
+from .backends import _VinecopBackendBase
 
 
 class VineDensity(DensityMixin, VineBase):
@@ -22,11 +24,11 @@ class VineDensity(DensityMixin, VineBase):
 
   def __init__(
     self,
-    backend=None,
-    margins=None,
+    backend: Optional[_VinecopBackendBase] = None,
+    margins: object = None,
     batch_size: int = 100,
-    random_state=None,
-    n_jobs=None,
+    random_state: _RandomStateLike = None,
+    n_jobs: Optional[int] = None,
   ) -> None:
     """Vine-copula based density estimator.
 
@@ -58,7 +60,7 @@ class VineDensity(DensityMixin, VineBase):
         structure, the fitted pair copulas and every evaluated value are
         bit-identical at any thread count.
 
-        `None` is deliberate: a caller that parallelizes *over* vines owns
+        `None` has a reason: a caller that parallelizes *over* vines owns
         the parallelism, and nesting it would oversubscribe the machine. Set
         it when a single vine is the whole job.
     """
@@ -70,17 +72,17 @@ class VineDensity(DensityMixin, VineBase):
       n_jobs=n_jobs,
     )
 
-  def fit(self, X, y=None) -> "VineDensity":
+  def fit(self, X: _XLike, y: object = None) -> "VineDensity":
     """Fits the joint density to the training data.
 
     Parameters
     ----------
-    X : ndarray, shape (n_samples, n_features), dtype float, or DataFrame
+    X : array-like of float, shape (n_samples, n_features), or DataFrame
         Training data. DataFrame columns may mix numeric,
         ordered-categorical, and unordered-categorical dtypes;
         unordered categoricals are expanded to ordered ``{0, 1}``
         dummies before fitting.
-    y : None, or None, optional
+    y : object, or None, optional
         Ignored; present for sklearn API compatibility.
 
     Returns
@@ -96,7 +98,7 @@ class VineDensity(DensityMixin, VineBase):
     self._bind_distribution(self._x_margins)
     return self
 
-  def score_samples(self, X: np.ndarray | pd.DataFrame) -> np.ndarray:
+  def score_samples(self, X: _XLike) -> np.ndarray:
     """Evaluates the per-sample log-likelihood under the fitted density.
 
     Equivalent to ``np.log(self.pdf(X, copula_only=False))`` but
@@ -104,7 +106,7 @@ class VineDensity(DensityMixin, VineBase):
 
     Parameters
     ----------
-    X : ndarray, shape (n_samples, n_features), dtype float, or DataFrame
+    X : array-like of float, shape (n_samples, n_features), or DataFrame
         Test samples. Columns must match the training schema.
 
     Returns
@@ -116,16 +118,16 @@ class VineDensity(DensityMixin, VineBase):
 
   def score(
     self,
-    X: Any,  # MatrixLike per DensityMixin; runtime accepts ndarray/DataFrame.
-    y: Any = None,
+    X: _XLike,
+    y: object = None,
   ) -> float:
     """Mean log-likelihood over a sample (sklearn ``score`` convention).
 
     Parameters
     ----------
-    X : ndarray, shape (n_samples, n_features), dtype float, or DataFrame
+    X : array-like of float, shape (n_samples, n_features), or DataFrame
         Test samples. Sparse matrices are not supported.
-    y : None, or None, optional
+    y : object, or None, optional
         Ignored; present for `DensityMixin.score` compatibility.
 
     Returns
@@ -141,7 +143,9 @@ class VineDensity(DensityMixin, VineBase):
 
     return float(self.score_samples(X).mean())
 
-  def sample(self, n_samples: int = 1, random_state=None) -> np.ndarray:
+  def sample(
+    self, n_samples: int = 1, random_state: _RandomStateLike = None
+  ) -> np.ndarray:
     """Draws samples from the fitted joint density.
 
     Samples :math:`U \\sim C` from the fitted copula and pushes each
@@ -176,7 +180,7 @@ class VineDensity(DensityMixin, VineBase):
     seeds = [int(x) for x in rng.randint(0, 2**31 - 1, size=5)]
     return _as_ndarray(self.distribution_.sample(n_samples, seeds=seeds))
 
-  def pdf(self, X: np.ndarray, copula_only: bool = False) -> np.ndarray:
+  def pdf(self, X: _XLike, copula_only: bool = False) -> np.ndarray:
     """Evaluates the joint density at the given samples.
 
     Returns the full joint density
@@ -187,7 +191,7 @@ class VineDensity(DensityMixin, VineBase):
 
     Parameters
     ----------
-    X : ndarray, shape (n_samples, n_features), dtype float, or DataFrame
+    X : array-like of float, shape (n_samples, n_features), or DataFrame
         Test samples.
     copula_only : bool, default=False
         If ``True``, return only the copula density evaluated at
@@ -202,9 +206,9 @@ class VineDensity(DensityMixin, VineBase):
 
   def cdf(
     self,
-    X,
+    X: _XLike,
     N: int = 10000,
-    random_state=None,
+    random_state: _RandomStateLike = None,
   ) -> np.ndarray:
     """Evaluates the joint CDF at the given samples.
 
@@ -216,7 +220,7 @@ class VineDensity(DensityMixin, VineBase):
 
     Parameters
     ----------
-    X : ndarray, shape (n_samples, n_features), dtype float, or DataFrame
+    X : array-like of float, shape (n_samples, n_features), or DataFrame
         Test samples.
     N : int, default=10000
         Number of quasi-random points used for the Monte-Carlo

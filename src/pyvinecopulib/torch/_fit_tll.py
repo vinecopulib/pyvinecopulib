@@ -28,7 +28,7 @@ Only the ``constant`` method is supported here; the ``linear`` and
 from __future__ import annotations
 
 import math
-from typing import Callable, Optional
+from typing import Callable, Optional, cast
 
 import torch
 from torch import Tensor
@@ -45,7 +45,7 @@ _SQRT_2PI_INV = 1.0 / math.sqrt(2.0 * math.pi)
 
 def _qnorm(p: Tensor) -> Tensor:
   """Inverse standard normal CDF; matches C++ ``tools_stats::qnorm``."""
-  return torch.special.ndtri(p)
+  return cast("Tensor", torch.special.ndtri(p))
 
 
 def _to_pseudo_obs_continuous(x: Tensor) -> Tensor:
@@ -413,7 +413,7 @@ def _select_bandwidth_constant(
   cor = _pearson_cor(z).clamp(-0.95, 0.95)
   eye = torch.eye(2, dtype=z.dtype, device=z.device)
   cov = eye + cor[..., None, None] * (1.0 - eye)
-  mult = n ** (-1.0 / 3.0)
+  mult = cast("float", n ** (-1.0 / 3.0))
   mcor = _pairwise_mcor(z, compile_step=compile_step)
   scale = (cor / mcor).abs() ** (0.5 * mcor)
   return mult * cov * scale[..., None, None]

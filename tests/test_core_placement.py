@@ -1,4 +1,4 @@
-"""Tests for the placement seam behind every base's ``_prep``.
+"""Tests for the placement hook behind every base's ``_prep``.
 
 ``pyvinecopulib.core._placement`` is reached directly here. It is the one step
 of the input pipeline whose whole contract is *inference* -- a subclass writes
@@ -97,7 +97,7 @@ def test_a_torch_module_is_read_through_its_buffers() -> None:
   assert placed.dtype is torch.float32
 
 
-# --- what the seam is for: the three steps, applied where they belong -------- #
+# --- what the hook is for: the three steps, applied where they belong -------- #
 
 
 def test_covariates_are_placed_but_never_trimmed() -> None:

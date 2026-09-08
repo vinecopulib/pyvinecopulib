@@ -176,7 +176,7 @@ def test_to_device_round_trip(
 ) -> None:
   """`.to()` walks the registered children and the evaluation still runs.
 
-  ``x`` deliberately stays on the host: coercing it is ``_prep``'s job, and
+  ``x`` stays on the host: coercing it is ``_prep``'s job, and
   this is the test that would notice if it stopped doing it.
   """
   want = torch.device(device).type
@@ -495,7 +495,7 @@ def test_rejects_a_margin_with_atoms_and_no_left_limit(
   class _Atomic(TorchKde1d):
     """Declares atoms and hides the inherited left limit."""
 
-    cdf_left = None  # type: ignore[assignment]
+    cdf_left = None
 
   discrete = _Atomic(type="discrete", xmin=0.0)
   discrete.fit(
@@ -515,7 +515,7 @@ def test_rejects_a_margin_with_atoms_and_no_left_limit(
   [(None, None), (None, torch.float32), ("cpu", torch.float64)],
 )
 def test_from_data_puts_everything_on_one_device_and_dtype(
-  device, dtype
+  device: str | None, dtype: torch.dtype | None
 ) -> None:
   """`from_data` documents one device and one dtype for the whole object.
 

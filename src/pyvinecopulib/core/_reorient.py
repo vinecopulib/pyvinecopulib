@@ -21,9 +21,16 @@ borrows ``_select_spanning_tree`` and ``RVineStructure.from_trees``.
 
 from __future__ import annotations
 
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
+
+if TYPE_CHECKING:
+  from ..pyvinecopulib_ext import RVineStructure
 
 __all__ = ["Reorientation", "reorientation"]
+
+#: A matrix slot's identity: the edge's conditioned pair and its conditioning
+#: set, both as 1-based variable labels.
+_SlotKey = tuple[frozenset[int], frozenset[int]]
 
 
 class Reorientation(NamedTuple):
@@ -43,12 +50,14 @@ class Reorientation(NamedTuple):
       case ``structure`` is the original object and ``locations`` is empty.
   """
 
-  structure: Any
+  structure: RVineStructure
   locations: dict[tuple[int, int], tuple[int, bool]]
   identity: bool
 
 
-def _slot_key(structure: Any, tree: int, edge: int) -> tuple[int, Any]:
+def _slot_key(
+  structure: RVineStructure, tree: int, edge: int
+) -> tuple[int, _SlotKey]:
   """The diagonal variable and label sets identifying one matrix slot."""
   # A slot hosts the edge with conditioned pair {order[edge],
   # struct_array(tree, edge)} and conditioning set {struct_array(i, edge) :
@@ -62,7 +71,9 @@ def _slot_key(structure: Any, tree: int, edge: int) -> tuple[int, Any]:
   return diag, (frozenset((diag, partner)), conditioning)
 
 
-def reorientation(structure: Any, conditioning_set: list[int]) -> Reorientation:
+def reorientation(
+  structure: RVineStructure, conditioning_set: list[int]
+) -> Reorientation:
   """Relabel ``structure`` so that its order ends with ``conditioning_set``.
 
   Parameters
@@ -121,9 +132,9 @@ def reorientation(structure: Any, conditioning_set: list[int]) -> Reorientation:
   # map covers the trees it stores; the trees above are independence, and a
   # relabeling of independence is independence.
   trunc = int(structure.trunc_lvl)
-  index: list[dict[Any, tuple[int, int]]] = []
+  index: list[dict[_SlotKey, tuple[int, int]]] = []
   for tree in range(trunc):
-    by_key: dict[Any, tuple[int, int]] = {}
+    by_key: dict[_SlotKey, tuple[int, int]] = {}
     for edge in range(d - 1 - tree):
       diag, key = _slot_key(structure, tree, edge)
       by_key[key] = (edge, diag)

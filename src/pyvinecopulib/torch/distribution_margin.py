@@ -36,7 +36,7 @@ import torch
 from torch import Tensor
 from torch.distributions import Distribution
 
-from ..core import MarginBase
+from ..core import ControlsLike, MarginBase
 from ..core.margin_base import support_of
 from ._placement import reference_tensor
 
@@ -185,7 +185,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     self,
     y: Tensor,
     /,
-    controls: Optional[Any] = None,
+    controls: Optional[ControlsLike] = None,
     *,
     x: Optional[Tensor] = None,
     weights: Optional[Tensor] = None,
@@ -193,7 +193,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     """Raise: this margin's parameters are given, not estimated here.
 
     The inherited default says "implement it", which is advice for a subclass
-    author and wrong for a caller holding one of these: the class deliberately
+    author and wrong for a caller holding one of these: the class
     has no maximum-likelihood step. A ``torch.distributions`` family is
     constructed with the parameters you want, and *learned* by leaving
     ``trainable=True`` and stepping an optimizer over them -- which is the
@@ -203,7 +203,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     ----------
     y : Tensor, shape (n,), dtype float
         Ignored.
-    controls : object, or None, optional
+    controls : ControlsLike, or None, optional
         Ignored.
     x : Tensor, or None, optional
         Ignored.
@@ -236,7 +236,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     cls,
     y: Tensor,
     /,
-    controls: Optional[Any] = None,
+    controls: Optional[ControlsLike] = None,
     *,
     x: Optional[Tensor] = None,
     weights: Optional[Tensor] = None,
@@ -247,7 +247,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     ----------
     y : Tensor, shape (n,), dtype float
         Ignored.
-    controls : object, or None, optional
+    controls : ControlsLike, or None, optional
         Ignored.
     x : Tensor, or None, optional
         Ignored.
@@ -575,7 +575,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
       return super().icdf(p)
 
   def _apply(
-    self, fn: Any, *args: Any, **kwargs: Any
+    self, fn: Callable[[Tensor], Tensor], *args: Any, **kwargs: Any
   ) -> "TorchDistributionMargin":
     """Keep the fallback placement current across a ``.to()``.
 
@@ -589,7 +589,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     )
     self._fallback_dtype = probe.dtype
     self._fallback_device = probe.device
-    return out
+    return cast("TorchDistributionMargin", out)
 
   def _ref_tensor(self) -> Tensor:
     """A registered tensor to crib dtype/device from."""

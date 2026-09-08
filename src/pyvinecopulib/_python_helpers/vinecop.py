@@ -1,10 +1,29 @@
 import math
-from typing import Any, Optional
+from typing import Optional, Protocol
 
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
+
+
+class _PlottableVine(Protocol):
+  """The three members these helpers read off a vine.
+
+  Narrower than ``VinecopLike``, and a different three: a plot needs the
+  structure matrix and the two counts that bound the trees, not the evaluation
+  surface. Both ``Vinecop`` and a ``VinecopBase`` subclass carry them.
+  """
+
+  @property
+  def matrix(self) -> NDArray[np.int_]: ...
+
+  @property
+  def dim(self) -> int: ...
+
+  @property
+  def trunc_lvl(self) -> int: ...
+
 
 VINECOP_PLOT_DOC = """
     Generates a plot for the Vinecop object.
@@ -42,7 +61,9 @@ VINECOP_PLOT_DOC = """
 """
 
 
-def get_name(vc: Any, tree: int, edge: int, vars_names: list[str]) -> str:
+def get_name(
+  vc: _PlottableVine, tree: int, edge: int, vars_names: list[str]
+) -> str:
   M = vc.matrix
   d = M.shape[0]  # Number of rows (equivalent to nrow(M) in R)
 
@@ -66,7 +87,7 @@ def get_name(vc: Any, tree: int, edge: int, vars_names: list[str]) -> str:
 
 
 def get_graph(
-  tree: int, vc: Any, vars_names: list[str]
+  tree: int, vc: _PlottableVine, vars_names: list[str]
 ) -> tuple[NDArray[np.int_], dict[int, str], dict[tuple[int, int], str]]:
   M = vc.matrix
   d = vc.dim
@@ -110,7 +131,7 @@ def get_graph(
 
 
 def vinecop_plot(
-  cop: Any,
+  cop: _PlottableVine,
   tree: Optional[list[int]] = None,
   add_edge_labels: bool = True,
   layout: str = "graphviz",

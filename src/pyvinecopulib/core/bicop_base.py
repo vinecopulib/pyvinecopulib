@@ -26,7 +26,7 @@ signatures.
 from __future__ import annotations
 
 from abc import ABC
-from typing import Any, Optional, Self, cast
+from typing import Any, Optional, Self, TypeVar, cast
 
 from array_api_compat import array_namespace
 
@@ -35,12 +35,20 @@ from ._placement import PlacementMixin, QrngUniformMixin
 from ._trim import trim
 from ._rootfind import solve_increasing
 
-from .protocols import ArrayT, BicopLike, _BICOP_EXAMPLE
+from .protocols import ArrayT, BicopLike, ControlsLike, _BICOP_EXAMPLE
 
 __all__ = ["BicopBase"]
 
+# A pair copula's own type, which `flip_of` hands back: every `flip` in the
+# library returns a pair of the same kind as the one it was asked of, and a
+# caller that established more about its pair than the contract requires --
+# a `cdf`, for a pair on a discrete edge -- still has it afterwards. Unbounded
+# on purpose: a foreign object that satisfies nothing at all is exactly what
+# the raise below is for, so this cannot demand `BicopLike`.
+_PairT = TypeVar("_PairT")
 
-def flip_of(pair: Any) -> Any:
+
+def flip_of(pair: _PairT) -> _PairT:
   """The argument-swapped pair, for a caller that has established it has one.
 
   ``flip`` is an optional capability on :class:`BicopLike` -- needed only to
@@ -80,7 +88,7 @@ def flip_of(pair: Any) -> Any:
       "which structure selection and relabeling need to reorient a pair onto "
       "its slot. Implement it, or supply a structure and fit along it."
     )
-  return method()
+  return cast("_PairT", method())
 
 
 class BicopBase(
@@ -255,7 +263,7 @@ class BicopBase(
     cls,
     u: ArrayT,
     /,
-    controls: Optional[Any] = None,
+    controls: Optional[ControlsLike] = None,
     *,
     var_types: Optional[list[str]] = None,
     x: Optional[ArrayT] = None,
@@ -270,7 +278,7 @@ class BicopBase(
     ----------
     u : array, shape (n, 2), dtype float
         Pseudo-observations in ``[0, 1]^2``.
-    controls : object, or None, optional
+    controls : ControlsLike, or None, optional
         Fit configuration, in whatever form the subclass accepts.
     var_types : list of str, or None, optional
         The two variable types of the edge this pair sits on, ``"c"``
@@ -299,7 +307,7 @@ class BicopBase(
     self,
     u: ArrayT,
     /,
-    controls: Optional[Any] = None,
+    controls: Optional[ControlsLike] = None,
     *,
     var_types: Optional[list[str]] = None,
     x: Optional[ArrayT] = None,
@@ -317,7 +325,7 @@ class BicopBase(
     ----------
     u : array, shape (n, 2), dtype float
         Pseudo-observations in ``[0, 1]^2``.
-    controls : object, or None, optional
+    controls : ControlsLike, or None, optional
         Fit configuration, in whatever form the subclass accepts.
     var_types : list of str, or None, optional
         The two variable types of the edge this pair sits on. ``None`` means
@@ -354,7 +362,7 @@ class BicopBase(
     self,
     u: ArrayT,
     /,
-    controls: Optional[Any] = None,
+    controls: Optional[ControlsLike] = None,
     *,
     var_types: Optional[list[str]] = None,
     x: Optional[ArrayT] = None,
@@ -371,7 +379,7 @@ class BicopBase(
     ----------
     u : array, shape (n, 2), dtype float
         Pseudo-observations in ``[0, 1]^2``.
-    controls : object, or None, optional
+    controls : ControlsLike, or None, optional
         Fit configuration, in whatever form the subclass accepts.
     var_types : list of str, or None, optional
         The two variable types of the edge this pair sits on. ``None`` means
@@ -519,7 +527,7 @@ class BicopBase(
     xylim: Optional[tuple[float, float]] = None,
     grid_size: Optional[int] = None,
     *,
-    x: Optional[Any] = None,
+    x: Optional[ArrayT] = None,
   ) -> None:
     """Plot the pair-copula density, as a contour or a 3-D surface.
 

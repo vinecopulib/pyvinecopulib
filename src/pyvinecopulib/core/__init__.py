@@ -46,7 +46,7 @@ Notes
   ``pdf`` / ``cdf`` / ``sample`` on the original scale;
   :meth:`Vinedist.from_data` fits the margins and an ``x``-independent
   :class:`Vinecop` in one call. An externally conditional copula is fitted through the
-  :meth:`VinecopBase.fit` extension seam and then composed with ``Vinedist``.
+  :meth:`VinecopBase.fit` extension point and then composed with ``Vinedist``.
 - *A new kind of vine distribution* — subclass :class:`VinedistBase`. The
   whole data-scale surface comes with it, since a vine distribution is
   determined by its two halves; the three fit hooks are needed only to make

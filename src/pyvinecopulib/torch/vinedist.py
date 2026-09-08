@@ -26,7 +26,7 @@ from typing import Any, ClassVar, Optional, Sequence, cast
 import torch
 from torch import Tensor
 
-from ..core import MarginLike, VinedistBase
+from ..core import ControlsLike, MarginLike, VinedistBase
 from ..core._resolve import declared_kde_kwargs
 from ._placement import TensorPlacementMixin
 from .controls import FitControlsTorchVinecop
@@ -36,7 +36,7 @@ from .vinecop import TorchVinecop
 __all__ = ["TorchVinedist"]
 
 
-def _check_margin(margin: Any, name: str) -> None:
+def _check_margin(margin: object, name: str) -> None:
   """Reject a margin the torch lane cannot hold.
 
   Raises
@@ -70,7 +70,7 @@ def _check_margin(margin: Any, name: str) -> None:
     )
 
 
-def _check_copula(copula: Any) -> None:
+def _check_copula(copula: object) -> None:
   """Reject a copula the torch lane cannot evaluate.
 
   Raises
@@ -158,10 +158,10 @@ class TorchVinedist(
 
   def __init__(
     self,
-    vinecop: Any,
-    margins: Sequence[Any] | Any,
+    vinecop: object,
+    margins: object,
   ) -> None:
-    # Initialize nn.Module explicitly, then hand over to the Vinedist seam:
+    # Initialize nn.Module explicitly, then hand over to the Vinedist hook:
     # TorchVinedist also subclasses Vinedist, whose __init__ chain would
     # otherwise shadow nn.Module's under super(). Same shape as TorchVinecop.
     torch.nn.Module.__init__(self)
@@ -169,8 +169,8 @@ class TorchVinedist(
 
   def _bind_dist(
     self,
-    vinecop: Any,
-    margins: Sequence[Any] | Any,
+    vinecop: object,
+    margins: object,
   ) -> None:
     """Validate the parts, then install them as registered children."""
     _check_copula(vinecop)
@@ -182,7 +182,7 @@ class TorchVinedist(
 
     super()._bind_dist(vinecop, margins)
 
-  def _set_margins(self, margins: Sequence[Any]) -> None:
+  def _set_margins(self, margins: Sequence[MarginLike[Tensor]]) -> None:
     """Install the margins as registered children.
 
     `nn.Module` tracks a `ModuleList`, not the plain tuple the base stores:
@@ -211,11 +211,15 @@ class TorchVinedist(
   #: rather than answered with an unconditional one.
   supports_fit_covariates: bool = False
 
+  # `controls` is a `FitControlsTorchVinecop` in all three hooks below -- each
+  # reads the device and dtype off it -- but typed `Any`, because
+  # `VinedistBase` declares them as taking any `ControlsLike`, and narrowing a
+  # parameter is what an override may not do.
   @classmethod
   def _coerce_fit_data(
     cls,
-    y: Any,
-    weights: Optional[Any],
+    y: Tensor,
+    weights: Optional[Tensor],
     controls: Optional[Any],
   ) -> tuple[Tensor, Optional[Tensor]]:
     """Put the fit inputs on one device, in one dtype.
@@ -245,8 +249,8 @@ class TorchVinedist(
     cls,
     d: int,
     controls: Optional[Any] = None,
-    margin_controls: Optional[Sequence[Any]] = None,
-  ) -> Sequence[Any]:
+    margin_controls: Optional[Sequence[Optional[ControlsLike]]] = None,
+  ) -> Sequence[TorchKde1d]:
     """One :class:`TorchKde1d` per variable, on the resolved placement."""
     resolved = controls or FitControlsTorchVinecop()
     # `TorchKde1d` fixes its own default dtype, so name one only when the
@@ -261,20 +265,23 @@ class TorchVinedist(
 
   @classmethod
   def _copula_controls(
-    cls, controls: Optional[Any], u: Any, weights: Optional[Any]
-  ) -> Any:
+    cls,
+    controls: Optional[Any],
+    u: Tensor,
+    weights: Optional[Tensor],
+  ) -> FitControlsTorchVinecop:
     """``controls`` with the placement the margins resolved pinned in.
 
     ``weights`` is always ``None``: ``supports_weighted_copula`` is ``False``,
     so the estimators refuse a weighted request before reaching this hook.
     """
     del weights
-    resolved = controls or FitControlsTorchVinecop()
+    resolved: FitControlsTorchVinecop = controls or FitControlsTorchVinecop()
     return dataclasses.replace(resolved, device=u.device, dtype=u.dtype)
 
   @property
-  def margins(self) -> tuple[MarginLike, ...]:
-    return cast("tuple[MarginLike, ...]", tuple(self._margins))
+  def margins(self) -> tuple[MarginLike[Tensor], ...]:
+    return cast("tuple[MarginLike[Tensor], ...]", tuple(self._margins))
 
   def log_prob(self, y: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Alias of ``logpdf``, the ``torch.distributions`` spelling.

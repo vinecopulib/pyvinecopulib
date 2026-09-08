@@ -9,6 +9,8 @@ at the top level; noisier aliases (family constants, utilities) still
 resolve there but emit a ``DeprecationWarning`` on access.
 """
 
+from typing import Any
+
 from ._cpu import require_x86_64_v3
 
 require_x86_64_v3()
@@ -23,6 +25,7 @@ from .core import (  # noqa: E402
   CVineStructure,
   DVineStructure,
   FitControlsBicop,
+  FitControlsMargin,
   FitControlsVinecop,
   RVineStructure,
   Vinecop,
@@ -52,20 +55,16 @@ __all__ = [
 ]
 
 #: Subpackages that need an optional dependency, reachable by attribute access
-#: and by `import pyvinecopulib.<name>` -- but deliberately **out** of
+#: and by `import pyvinecopulib.<name>` -- but **out** of
 #: `__all__`, because `from pyvinecopulib import *` resolves every name in it
 #: and would then require every extra. `margins` is in `__all__` instead: it
 #: imports with no extra, deferring SciPy to the margin class that needs it.
 _LAZY_SUBPACKAGES = ("sklearn", "torch")
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
   if name in _DEPRECATED_TOP_LEVEL:
     return _resolve_deprecated(name)
-  if name == "FitControlsMargin":
-    from .core import FitControlsMargin
-
-    return FitControlsMargin
   if name in _LAZY_SUBPACKAGES:
     # Lazy: attribute access is what triggers the extra, so neither importing
     # `pyvinecopulib` nor star-importing from it requires either one.
@@ -75,7 +74,7 @@ def __getattr__(name: str):
   raise AttributeError(f"module 'pyvinecopulib' has no attribute {name!r}")
 
 
-def __dir__():
+def __dir__() -> list[str]:
   # The lazy subpackages belong here even though they are not in `__all__`:
   # `dir()` is discovery, which should name them, while `__all__` is what a
   # star-import binds, which must not require an extra.

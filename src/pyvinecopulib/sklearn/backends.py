@@ -68,11 +68,33 @@ Pass a configured backend instance to any sklearn estimator via
 from __future__ import annotations
 
 import copy as _copy
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, Protocol, Self, Sequence
 
 import numpy as np
 
 import pyvinecopulib as pv
+
+if TYPE_CHECKING:
+  # Types only: the runtime import of `torch` stays inside
+  # `TorchVinecopBackend`, where constructing the class is the opt-in signal.
+  from pyvinecopulib.torch import (
+    FitControlsTorchVinecop,
+    TorchKde1d,
+    TorchVinecop,
+  )
+
+
+class _FittedVine(Protocol):
+  """What a backend reads off a fitted vine, whichever lane fitted it.
+
+  Not ``VinecopLike``: the compiled ``Vinecop`` satisfies that contract
+  nominally rather than statically (its ``cdf`` takes no ``x``), and the two
+  lanes' ``pdf`` / ``cdf`` / ``sample`` take different keywords -- which is
+  what the concrete backends exist to adapt.
+  """
+
+  @property
+  def structure(self) -> pv.RVineStructure: ...
 
 
 def _default_cpp_controls() -> pv.FitControlsVinecop:
@@ -90,13 +112,13 @@ class _VinecopBackendBase:
   ``with_*`` derivations) here. Both controls types expose the same
   tree-selection fields (``tree_algorithm`` / ``seeds`` / ``trunc_lvl``),
   so the ``with_*`` helpers act on ``_effective_controls()`` uniformly.
-  Concrete backends override only the genuinely divergent members: which vine
+  Concrete backends override only the actually divergent members: which vine
   class ``fit_vine`` builds, the per-op evaluation kwargs / output conversion,
   and the default controls.
 
   Parameters
   ----------
-  controls : object, or None, optional
+  controls : ControlsLike, or None, optional
       Fit-time controls for the concrete backend (a ``FitControlsVinecop`` or a
       ``FitControlsTorchVinecop``). `None` resolves to the backend's default at
       fit time.
@@ -108,21 +130,30 @@ class _VinecopBackendBase:
   def __init__(
     self,
     *,
-    controls: Optional[Any] = None,
+    controls: Optional[pv.core.ControlsLike] = None,
     structure: Optional[pv.RVineStructure] = None,
   ) -> None:
     self.controls = controls
     self.structure = structure
 
   # -- hooks a concrete backend provides ---------------------------------- #
-  def _default_controls(self) -> Any:
+  def _default_controls(self) -> pv.core.ControlsLike:
     raise NotImplementedError
 
+  # The two controls types share no field beyond `to_dict`, and both halves of
+  # this class read fields: the `with_*` derivations write `tree_algorithm` /
+  # `seeds` / `num_threads`, and each concrete backend reads its own lane's
+  # (`num_threads` here, `device` / `dtype` there). Every type narrow enough to
+  # name any of those excludes the other lane's controls, so the hook that
+  # hands them out is where the looseness lives.
   def _effective_controls(self) -> Any:
     return (
       self.controls if self.controls is not None else self._default_controls()
     )
 
+  # `vine` is a `VinecopLike` on either lane, and typed `Any` for the reason
+  # `_FittedVine` states: the concrete backends narrow it to the class they
+  # fitted, which a protocol here would forbid.
   def fit_vine(self, U: np.ndarray, *, var_types: list[str]) -> Any:
     raise NotImplementedError
 
@@ -140,12 +171,16 @@ class _VinecopBackendBase:
     raise NotImplementedError
 
   # -- shared surface (single source of truth) ---------------------------- #
+  # The return is a `MarginLike`, typed `Any` for the reason `_FittedVine`
+  # states one rung down: the compiled `Kde1d` this returns satisfies that
+  # contract nominally rather than statically, and a subclass supplies a margin
+  # on its own array namespace, so no closed union describes the hook either.
   def default_margin(
     self, var_type: str, bounds: Optional[tuple[float, float]]
   ) -> Any:
     """The margin an estimator should fit when the caller named none.
 
-    A seam rather than an `isinstance` check, so a backend whose vine lives on
+    A hook rather than an `isinstance` check, so a backend whose vine lives on
     another array namespace supplies a margin on that namespace and the two
     halves of one ``Vinedist`` stay together.
 
@@ -164,7 +199,9 @@ class _VinecopBackendBase:
     lo, hi = (None, None) if bounds is None else (bounds[0], bounds[1])
     return pv.core.Kde1d(type=var_type, xmin=lo, xmax=hi)
 
-  def bind_distribution(self, vine: Any, margins: Any) -> pv.core.VinedistLike:
+  def bind_distribution(
+    self, vine: Any, margins: Sequence[pv.core.MarginLike[Any]]
+  ) -> pv.core.VinedistLike[Any]:
     """Assemble the fitted vine and its margins into one distribution.
 
     The copula is wrapped in ``_BackendVinecop`` so the distribution evaluates
@@ -185,17 +222,15 @@ class _VinecopBackendBase:
     """
     return pv.core.Vinedist(_BackendVinecop(self, vine), list(margins))
 
-  def structure_of(self, vine: Any) -> pv.RVineStructure:
+  def structure_of(self, vine: _FittedVine) -> pv.RVineStructure:
     return vine.structure
 
-  def with_random_structure(
-    self, d: int, seeds: list[int]
-  ) -> "_VinecopBackendBase":
+  def with_random_structure(self, d: int, seeds: list[int]) -> Self:
     new = _copy.copy(self)
     new.structure = pv.RVineStructure.sample(d, seeds=seeds)
     return new
 
-  def with_local_random(self, seeds: list[int]) -> "_VinecopBackendBase":
+  def with_local_random(self, seeds: list[int]) -> Self:
     # Both controls types carry ``tree_algorithm`` / ``seeds``; set them on a
     # copy of the effective controls (copy-on-write) and clear the structure so
     # ``fit_vine`` selects a fresh Kendall-tau-weighted random tree.
@@ -207,7 +242,7 @@ class _VinecopBackendBase:
     new.structure = None
     return new
 
-  def with_fit_seeds(self, seeds: list[int]) -> "_VinecopBackendBase":
+  def with_fit_seeds(self, seeds: list[int]) -> Self:
     """Return a copy whose stochastic fit draws use ``seeds``.
 
     Parameters
@@ -218,7 +253,8 @@ class _VinecopBackendBase:
     Returns
     -------
     _VinecopBackendBase
-        Independent backend configuration for one fit.
+        Independent backend configuration for one fit, of this backend's own
+        class.
 
     The estimator owns its ``random_state``. Copying the controls keeps a
     caller-owned backend reusable while making random-tree selection
@@ -230,7 +266,7 @@ class _VinecopBackendBase:
     new.controls = controls
     return new
 
-  def with_num_threads(self, num_threads: int) -> "_VinecopBackendBase":
+  def with_num_threads(self, num_threads: int) -> Self:
     new_controls = _copy.copy(self._effective_controls())
     new_controls.num_threads = num_threads
     new = _copy.copy(self)
@@ -255,6 +291,10 @@ class VinecopBackend(_VinecopBackendBase):
       selection.
   """
 
+  #: This lane's controls, narrower than the base's ``ControlsLike``: the
+  #: fields ``fit_vine`` and the evaluation methods read are this type's.
+  controls: Optional[pv.FitControlsVinecop]
+
   def __init__(
     self,
     *,
@@ -266,7 +306,7 @@ class VinecopBackend(_VinecopBackendBase):
   def _default_controls(self) -> pv.FitControlsVinecop:
     return _default_cpp_controls()
 
-  def fit_vine(self, U: np.ndarray, *, var_types: list[str]) -> Any:
+  def fit_vine(self, U: np.ndarray, *, var_types: list[str]) -> pv.Vinecop:
     return pv.Vinecop.from_data(
       data=U,
       structure=self.structure,
@@ -274,13 +314,13 @@ class VinecopBackend(_VinecopBackendBase):
       controls=self._effective_controls(),
     )
 
-  def pdf(self, vine: Any, U: np.ndarray) -> np.ndarray:
+  def pdf(self, vine: pv.Vinecop, U: np.ndarray) -> np.ndarray:
     return np.asarray(
       vine.pdf(U, num_threads=self._effective_controls().num_threads)
     )
 
   def cdf(
-    self, vine: Any, U: np.ndarray, *, N: int, seeds: list[int]
+    self, vine: pv.Vinecop, U: np.ndarray, *, N: int, seeds: list[int]
   ) -> np.ndarray:
     return np.asarray(
       vine.cdf(
@@ -292,7 +332,7 @@ class VinecopBackend(_VinecopBackendBase):
     )
 
   def sample(
-    self, vine: Any, n_samples: int, *, seeds: list[int]
+    self, vine: pv.Vinecop, n_samples: int, *, seeds: list[int]
   ) -> np.ndarray:
     return np.asarray(
       vine.sample(
@@ -333,22 +373,25 @@ class TorchVinecopBackend(_VinecopBackendBase):
   independently.
   """
 
+  #: This lane's controls; see :class:`VinecopBackend`'s.
+  controls: Optional["FitControlsTorchVinecop"]
+
   def __init__(
     self,
     *,
-    controls: Optional[Any] = None,
+    controls: Optional["FitControlsTorchVinecop"] = None,
     structure: Optional[pv.RVineStructure] = None,
   ) -> None:
     from pyvinecopulib.torch import TorchVinecop  # noqa: F401  (torch opt-in)
 
     super().__init__(controls=controls, structure=structure)
 
-  def _default_controls(self) -> Any:
+  def _default_controls(self) -> "FitControlsTorchVinecop":
     from pyvinecopulib.torch import FitControlsTorchVinecop
 
     return FitControlsTorchVinecop()
 
-  def fit_vine(self, U: np.ndarray, *, var_types: list[str]) -> Any:
+  def fit_vine(self, U: np.ndarray, *, var_types: list[str]) -> "TorchVinecop":
     from pyvinecopulib.torch import TorchVinecop
 
     return TorchVinecop.from_data(
@@ -358,6 +401,10 @@ class TorchVinecopBackend(_VinecopBackendBase):
       var_types=var_types,
     )
 
+  # `vine` is a `TorchVinecop`, as it is on `sample` -- typed `Any` on the two
+  # methods that hand it an array, because the cascade declares a `Tensor` and
+  # what arrives is the estimator's NumPy array, which the vine's placement
+  # hook brings across.
   def pdf(self, vine: Any, U: np.ndarray) -> np.ndarray:
     # No `batched=`: the vine resolves it per device, which is what every
     # other call on it does -- `cdf` and `sample` here, and `TorchVinedist`.
@@ -371,14 +418,14 @@ class TorchVinecopBackend(_VinecopBackendBase):
     return out.detach().cpu().numpy()
 
   def sample(
-    self, vine: Any, n_samples: int, *, seeds: list[int]
+    self, vine: "TorchVinecop", n_samples: int, *, seeds: list[int]
   ) -> np.ndarray:
     out = vine.sample(n_samples, qrng=False, seeds=seeds)
     return out.detach().cpu().numpy()
 
   def default_margin(
     self, var_type: str, bounds: Optional[tuple[float, float]]
-  ) -> Any:
+  ) -> "TorchKde1d":
     """A ``TorchKde1d`` placed and typed like the copula this backend fits.
 
     ``device`` and ``dtype`` come from the effective controls, so
@@ -411,7 +458,9 @@ class TorchVinecopBackend(_VinecopBackendBase):
       dtype=controls.dtype if controls.dtype is not None else torch.float64,
     )
 
-  def bind_distribution(self, vine: Any, margins: Any) -> pv.core.VinedistLike:
+  def bind_distribution(
+    self, vine: "TorchVinecop", margins: Sequence[pv.core.MarginLike[Any]]
+  ) -> pv.core.VinedistLike[Any]:
     """Assemble a ``TorchVinedist`` from the fitted torch vine and its margins.
 
     The raw vine goes in rather than a ``_BackendVinecop`` wrapper: the point of
@@ -424,8 +473,8 @@ class TorchVinecopBackend(_VinecopBackendBase):
 
     Parameters
     ----------
-    vine : object
-        The fitted ``TorchVinecop``.
+    vine : TorchVinecop
+        The fitted vine.
     margins : sequence of MarginLike
         The fitted margins, in the vine's variable order.
 
@@ -448,7 +497,7 @@ class TorchVinecopBackend(_VinecopBackendBase):
     ]
     return TorchVinedist(vine, lifted)
 
-  def with_num_threads(self, num_threads: int) -> "TorchVinecopBackend":
+  def with_num_threads(self, num_threads: int) -> Self:
     # No-op: torch threading is global / device-bound.
     return self
 
@@ -465,13 +514,13 @@ class _BackendVinecop:
 
   Parameters
   ----------
-  backend : object
+  backend : _VinecopBackendBase
       A resolved backend.
-  vine : object
+  vine : _FittedVine
       The vine that backend fitted.
   """
 
-  def __init__(self, backend: Any, vine: Any) -> None:
+  def __init__(self, backend: _VinecopBackendBase, vine: _FittedVine) -> None:
     self.backend = backend
     self.vine = vine
 
@@ -554,18 +603,22 @@ class _BackendVinecop:
     )
 
 
-def resolve_backend(backend: Any) -> Any:
+# The return is the backend itself, and typed `Any` because it is what pins
+# `VineBase.backend_`: `bind_distribution` can only promise a `VinedistLike`,
+# which is narrower than the `Vinedist` the estimators publish as
+# `distribution_`, so naming the type here would narrow every read of it.
+def resolve_backend(backend: Optional[_VinecopBackendBase]) -> Any:
   """Coerce a user-supplied ``backend=`` value to a concrete backend.
 
   Parameters
   ----------
-  backend : object, or None, optional
+  backend : _VinecopBackendBase, or None, optional
       `None` returns a default-constructed :class:`VinecopBackend`; any other
       value (a backend instance) is returned unchanged.
 
   Returns
   -------
-  object
+  _VinecopBackendBase
       A concrete backend instance.
   """
   return backend if backend is not None else VinecopBackend()

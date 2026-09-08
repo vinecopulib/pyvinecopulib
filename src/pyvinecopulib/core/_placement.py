@@ -26,8 +26,8 @@ the tensors that answer the question, and :func:`reference_array` finds them.
 A subclass whose arrays live somewhere this misses overrides ``_prep``.
 
 Arrays reach a rung one other way -- drawn from the array library's own RNG,
-which is the one thing no inference can supply -- so the raising seam for that
-lives here too, beside the seam that places what a caller supplied. The two
+which is the one thing no inference can supply -- so the raising hook for that
+lives here too, beside the hook that places what a caller supplied. The two
 copula rungs share it verbatim. The marginal rung's takes no ``qrng`` flag,
 since ``MarginBase.sample`` offers none, and stays on ``MarginBase``.
 """
@@ -48,7 +48,7 @@ __all__ = [
 ]
 
 
-def reference_array(obj: Any) -> Optional[Any]:
+def reference_array(obj: object) -> Optional[Any]:
   """An array ``obj`` holds, naming where its numerics run.
 
   Looks in the two places an object keeps arrays, in the order that finds the
@@ -130,7 +130,7 @@ def _is_float(value: Any) -> bool:
   return bool(xp.isdtype(value.dtype, "real floating"))
 
 
-def _is_array(value: Any) -> bool:
+def _is_array(value: object) -> bool:
   """Whether ``value`` is an array the array API recognizes.
 
   Asked of the namespace rather than by duck-typing ``dtype`` and ``shape``,
@@ -157,7 +157,7 @@ def _is_array(value: Any) -> bool:
   return True
 
 
-def place(obj: Any, a: Any) -> Any:
+def place(obj: object, a: Any) -> Any:
   """Coerce ``a`` onto the namespace, dtype and device ``obj`` evaluates on.
 
   Placement only: no shape is checked and no value is clamped, so this is
@@ -201,7 +201,7 @@ def place(obj: Any, a: Any) -> Any:
 
 
 class PlacementMixin:
-  """The default ``_prep`` seam, shared by all four canonical bases.
+  """The default ``_prep`` hook, shared by all four canonical bases.
 
   Each rung needs the same hook -- one array, brought onto the namespace the
   object evaluates on -- and inferring that from the arrays the object already
@@ -237,7 +237,7 @@ class PlacementMixin:
 
 
 class QrngUniformMixin(Generic[ArrayT]):
-  """The uniform-draw seam ``BicopBase`` and ``VinecopBase`` share.
+  """The uniform-draw hook ``BicopBase`` and ``VinecopBase`` share.
 
   Kept apart from ``PlacementMixin``, which all four rungs inherit, because the
   marginal rung's hook has a different signature -- see the module docstring.

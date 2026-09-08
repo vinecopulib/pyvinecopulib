@@ -5,7 +5,7 @@ margin that serves discrete and zero-inflated variables.
 
 Fitting delegates to ``Kde1d``; every evaluation runs on tensors, on device,
 under autograd. The split is not a compromise -- ``grid_points``, ``values``,
-the variable type, ``prob0`` and the declared bounds are the whole of what
+the variable type, ``prob0`` and the declared bounds are all that
 ``Kde1d``'s ``pdf`` / ``cdf`` / ``icdf`` read, the bounds among them because
 for a discrete variable they *are* the integer support, so a lifted grid is a
 complete model rather than an approximation of one. Bandwidth selection and
@@ -20,12 +20,12 @@ improvement on it.
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import torch
 from torch import Tensor
 
-from ..core import Kde1d, MarginBase
+from ..core import ControlsLike, Kde1d, MarginBase
 from ..core._validation import (
   reject_array_controls,
   reject_covariates,
@@ -35,7 +35,7 @@ from ..core._validation import (
 from . import _kde1d_interp as interp
 
 
-def _bound(value: Any, unbounded: float) -> float:
+def _bound(value: Optional[float], unbounded: float) -> float:
   """One end of a support, with ``Kde1d``'s ``nan`` normalized.
 
   Parameters
@@ -159,6 +159,9 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   #: `fit` reads no controls. Declaring it is what makes a `family_set` a
   #: refusal rather than a kernel density fitted in silence.
   supports_controls: bool = False
+  #: The variable type in ``Kde1d``'s spelling; read back as
+  #: :attr:`kde_type`, since ``type`` is ``nn.Module``'s dtype cast.
+  _type: str
 
   def __init__(
     self,
@@ -204,13 +207,13 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
 
   def _load_from_state_dict(
     self,
-    state_dict: Any,
+    state_dict: dict[str, Any],
     prefix: str,
-    local_metadata: Any,
+    local_metadata: dict[str, Any],
     strict: bool,
-    missing_keys: Any,
-    unexpected_keys: Any,
-    error_msgs: Any,
+    missing_keys: list[str],
+    unexpected_keys: list[str],
+    error_msgs: list[str],
   ) -> None:
     """Resize the buffers before loading, since a fresh module has none.
 
@@ -229,7 +232,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
         Version metadata, unused.
     strict : bool
         Whether to require an exact key match.
-    missing_keys, unexpected_keys, error_msgs : list
+    missing_keys, unexpected_keys, error_msgs : list of str
         Accumulators ``nn.Module`` passes down.
 
     Returns
@@ -264,7 +267,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self,
     y: Tensor,
     /,
-    controls: Optional[Any] = None,
+    controls: Optional[ControlsLike] = None,
     *,
     x: Optional[Tensor] = None,
     weights: Optional[Tensor] = None,
@@ -279,7 +282,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     ----------
     y : Tensor, shape (n,)
         Observations on the original scale.
-    controls : object, or None, optional
+    controls : ControlsLike, or None, optional
         Unused; the bandwidth, bounds and variable type are named at
         construction, so a margin fitted differently is constructed
         differently. Accepted because every margin's fit takes one.
@@ -345,7 +348,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   @classmethod
   def from_kde1d(
     cls,
-    kde: Any,
+    kde: Kde1d,
     *,
     device: Optional[torch.device] = None,
     dtype: torch.dtype = torch.float64,
@@ -452,7 +455,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     )
     return out
 
-  def _adopt(self, kde: Any) -> "TorchKde1d":
+  def _adopt(self, kde: Kde1d) -> "TorchKde1d":
     """Copy a fitted ``Kde1d``'s state onto this module's buffers."""
     ref = self.grid_points
     self.grid_points = torch.as_tensor(
@@ -501,13 +504,13 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       "nobs": self._nobs,
     }
 
-  def set_extra_state(self, state: Any) -> None:
+  def set_extra_state(self, state: object) -> None:
     """Restore non-tensor fitted state saved by :meth:`get_extra_state`.
 
     Parameters
     ----------
-    state : dict
-        State returned by :meth:`get_extra_state`.
+    state : object
+        State returned by :meth:`get_extra_state`; anything else is refused.
 
     Raises
     ------
@@ -528,7 +531,9 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self.boundary_repair = state["boundary_repair"]
     self._loglik = state["loglik"]
     self.edf = state["edf"]
-    self._nobs = state["nobs"]
+    # The payload is an opaque ``object``, and the retained sample size is
+    # declared on ``MarginBase`` as what the `nobs` property answers.
+    self._nobs = cast("Optional[int]", state["nobs"])
 
   # --- declared capabilities ------------------------------------------------ #
 

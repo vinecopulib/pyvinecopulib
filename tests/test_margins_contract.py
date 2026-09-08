@@ -5,7 +5,7 @@ the same questions, so the answers are pinned here over the `ECOSYSTEMS` table
 and a third adapter inherits the suite by adding a row.
 
 What stays in `test_margins_scipy.py` / `test_margins_openturns.py` is what is
-genuinely one ecosystem's: SciPy's curated candidate set, its traps and its
+actually one ecosystem's: SciPy's curated candidate set, its traps and its
 admissibility gate; OpenTURNS' marshaling conventions and its
 `DistributionFactory`; and each lane's own refusal messages -- including the
 discrete split, which SciPy pre-filters with a warning where OpenTURNS refuses

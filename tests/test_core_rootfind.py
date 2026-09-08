@@ -2,7 +2,7 @@
 
 `solve_increasing` backs two different inverses: the pair-copula h-inverses,
 which always search the unit interval, and the marginal `icdf`, which may have
-to search an unbounded support. The unit-interval path is load-bearing for
+to search an unbounded support. The unit-interval path is required for
 torch<->C++ parity, so the first test pins it against a literal transcription of
 the bisection loop; the rest cover the bracket search that unbounded supports
 need.

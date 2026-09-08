@@ -11,14 +11,16 @@ same way.
 from __future__ import annotations
 
 import contextlib
-from typing import Any, Iterator, Optional
+from typing import Any, Iterator, Optional, cast
 
 from array_api_compat import array_namespace
+
+from .protocols import ArrayT
 
 __all__: list[str] = []
 
 
-def validate_univariate(values: Any, *, name: str = "y") -> Any:
+def validate_univariate(values: ArrayT, *, name: str = "y") -> ArrayT:
   """Require the documented one-dimensional univariate-data layout.
 
   Parameters
@@ -84,8 +86,8 @@ def validate_covariates(
 
 
 def validate_weights(
-  weights: Optional[Any], values: Any, *, name: str = "weights"
-) -> Optional[Any]:
+  weights: Optional[ArrayT], values: Any, *, name: str = "weights"
+) -> Optional[ArrayT]:
   """Normalize and validate one real, finite, nonnegative weight per row.
 
   Parameters
@@ -153,7 +155,7 @@ def validate_weights(
       f"{name} must leave at least one observation standing; NaN and 0 mark a "
       "dropped observation, and every entry is one"
     )
-  return weights
+  return cast("ArrayT", weights)
 
 
 def usable_observations(values: Any, *, name: str = "y") -> Any:
@@ -188,7 +190,9 @@ def usable_observations(values: Any, *, name: str = "y") -> Any:
   return values
 
 
-def reject_covariates(part: Any, x: Optional[Any], *, name: str = "x") -> None:
+def reject_covariates(
+  part: object, x: Optional[ArrayT], *, name: str = "x"
+) -> None:
   """Raise if ``x`` was supplied to a part that fits unconditionally.
 
   Evaluation ignores covariates a part does not read, since one distribution
@@ -227,7 +231,7 @@ def reject_covariates(part: Any, x: Optional[Any], *, name: str = "x") -> None:
     )
 
 
-def reject_array_controls(part: Any, controls: Any) -> None:
+def reject_array_controls(part: object, controls: object) -> None:
   """Raise if an array landed in the ``controls`` slot.
 
   Every estimator in the package takes the observations, then ``controls``.

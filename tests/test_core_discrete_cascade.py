@@ -61,11 +61,11 @@ def _assert_parity(actual: Any, desired: Any) -> None:
 
 
 _D = 4
-# Correlations for the D-vine's three trees, deliberately mixed in sign so a
+# Correlations for the D-vine's three trees, mixed in sign so a
 # swapped pair argument shows up as an O(1) density error.
 _RHOS = ([0.6, -0.4, 0.3], [0.25, 0.2], [0.15])
 #: Cumulative-mass boundaries of the ordered-categorical variables used for
-#: ``"d"``: five atoms, and deliberately strictly inside the unit interval so
+#: ``"d"``: five atoms, strictly inside the unit interval so
 #: that ``VinecopBase``'s input clamp is a no-op and the comparison against
 #: ``Vinecop`` -- which instead trims inside each pair copula -- isolates the
 #: cascade.
@@ -422,7 +422,7 @@ def test_discrete_pair_samples_the_wrapped_continuous_copula() -> None:
 def test_discrete_pair_skips_unused_wide_atom_fallbacks() -> None:
   """Wide atoms evaluate only the authoritative quotient primitives."""
 
-  class CountingIndependence(pv.core.IndependencePair):
+  class CountingIndependence(pv.core.IndependencePair[np.ndarray]):
     def __init__(self) -> None:
       self.calls = {name: 0 for name in ("pdf", "cdf", "hfunc1", "hfunc2")}
 
@@ -944,7 +944,7 @@ def test_select_takes_its_dimension_from_var_types() -> None:
 def _count_expanded(
   var_types: list[str], seed: int, n: int = 800
 ) -> np.ndarray:
-  """An ``(n, 2d)`` sample whose atoms are a genuine count variable's.
+  """An ``(n, 2d)`` sample whose atoms are a actual count variable's.
 
   Unlike ``_expanded_data``, the discrete margins here are a ``Binomial(4, 0.5)``
   distribution function: the top atom has ``F(x) = 1`` and the bottom
