@@ -229,12 +229,10 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
   # --------------------------------------------------------------------- #
 
   @staticmethod
-  def _resolve_cache_integrals(
-    cache_integrals: Optional[bool], var_types: list[str]
-  ) -> bool:
+  def _resolve_cache_integrals(cache_integrals: Optional[bool]) -> bool:
     """Whether to precompute the prefix tables. ``None`` resolves to ``True``.
 
-    ``var_types`` does not enter the decision: the prefix tables reconstruct
+    A variable's type does not enter the decision: the prefix tables reconstruct
     the integral exactly rather than approximately, so an edge that reads its
     density from differences over an atom's width can difference them safely.
     Such an edge still differences the distribution function rather than
@@ -245,15 +243,12 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     ----------
     cache_integrals : bool or None
         What the caller asked for; ``None`` means "whatever suits this vine".
-    var_types : list of str
-        The variables' types. Retained so callers need not branch on it.
 
     Returns
     -------
     bool
         The effective setting.
     """
-    del var_types
     return True if cache_integrals is None else bool(cache_integrals)
 
   @classmethod
@@ -294,7 +289,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
         If a pair copula of ``cop`` is of neither family.
     """
     var_types = list(cop.var_types)
-    cache_integrals = cls._resolve_cache_integrals(cache_integrals, var_types)
+    cache_integrals = cls._resolve_cache_integrals(cache_integrals)
     if not cop.pair_copulas:
       # An empty compiled store means independence everywhere, whatever the
       # structure's depth, so route it to the fill rather than to the
@@ -490,9 +485,7 @@ class TorchVinecop(VinecopBase[torch.Tensor], torch.nn.Module):
     # The vine's controls are pair controls: `FitControlsTorchVinecop`
     # derives from `FitControlsTorchBicop`, as its core counterparts do.
     bc_controls = controls
-    cache_integrals = cls._resolve_cache_integrals(
-      controls.cache_integrals, list(var_types or [])
-    )
+    cache_integrals = cls._resolve_cache_integrals(controls.cache_integrals)
 
     def fit_edge_tll(
       tree: int,

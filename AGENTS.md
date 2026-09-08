@@ -986,11 +986,11 @@ automatically.
   `conditioning_set` through one `infer_conditioning_set`, so the
   column-to-variable rule cannot drift between them. Every method also takes optional exogenous covariates `x`,
   forwarded to each margin that declares `supports_covariates` and to a
-  copula that declares it too. Two seams keep the array namespace
+  copula that declares it too. Two hooks keep the array namespace
   coherent: `_prep` (identity here, `torch.as_tensor` on
   `TorchVinedist`) coerces one input array onto the parts' namespace, so a
-  caller may hand the type they have; and `copula_data` /
-  `_conditioning_data` / `marginal_cdf` / `marginal_icdf` take `xp` from
+  caller may hand the type they have; and `copula_data` / `marginal_cdf` /
+  `marginal_icdf` take `xp` from
   the *columns the margins returned*, never from the input — a margin may
   legitimately answer in another array type, and stacking that through the
   input's namespace either raises or silently detaches.

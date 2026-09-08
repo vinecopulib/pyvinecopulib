@@ -10,6 +10,7 @@
 
 #include <vinecopulib.hpp>
 
+#include "bicop/fit_controls.hpp"
 #include "docstr.hpp"
 
 namespace nb = nanobind;
@@ -28,29 +29,21 @@ inline FitControlsVinecop fcv_from_bicop_controls(
 }
 
 inline nb::dict vinecop_controls_to_dict(const FitControlsVinecop& controls) {
-  nb::dict state;
-  state["family_set"] = controls.get_family_set();
-  state["parametric_method"] = controls.get_parametric_method();
-  state["nonparametric_method"] = controls.get_nonparametric_method();
-  state["nonparametric_mult"] = controls.get_nonparametric_mult();
-  state["nonparametric_grid_size"] = controls.get_nonparametric_grid_size();
+  // `FitControlsVinecop` derives from `FitControlsBicop` and the binding
+  // declares it, so the pair-level half of the state is exactly what
+  // `bicop_controls_to_dict` reports.
+  nb::dict state = bicop_controls_to_dict(controls);
   state["trunc_lvl"] = controls.get_trunc_lvl();
   state["tree_criterion"] = controls.get_tree_criterion();
   // Empty std::function casts to None; a wrapped Python callable
   // casts back to the original object (picklable if module-level).
   state["tree_criterion_function"] = controls.get_tree_criterion_function();
   state["threshold"] = controls.get_threshold();
-  state["selection_criterion"] = controls.get_selection_criterion();
-  state["weights"] = controls.get_weights();
-  state["psi0"] = controls.get_psi0();
-  state["preselect_families"] = controls.get_preselect_families();
   state["select_trunc_lvl"] = controls.get_select_trunc_lvl();
   state["select_threshold"] = controls.get_select_threshold();
   state["select_families"] = controls.get_select_families();
   state["show_trace"] = controls.get_show_trace();
-  state["num_threads"] = controls.get_num_threads();
   state["tree_algorithm"] = controls.get_tree_algorithm();
-  state["allow_rotations"] = controls.get_allow_rotations();
   state["seeds"] = controls.get_seeds();
   state["conditioning_set"] = controls.get_conditioning_set();
   return state;

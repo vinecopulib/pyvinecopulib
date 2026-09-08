@@ -112,6 +112,19 @@ boundary_repair :
 
 // Factory function to create a Kde1d from xmin, xmax, type string, multiplier,
 // bandwidth, degree
+// `fit` and `select` are the same call: a kernel density has no family to
+// choose. `from_data` cannot share this, because it builds its `Kde1d` by
+// value and the deduced `Kde1d&` return would dangle.
+inline Kde1d& kde1d_fit(Kde1d& self, const Eigen::VectorXd& x,
+                        const Eigen::VectorXd& weights) {
+  check_kde1d_inputs(x, weights);
+  {
+    nb::gil_scoped_release release;
+    self.fit(x, weights);
+  }
+  return self;
+}
+
 inline Kde1d kde1d_from_params(std::optional<double> xmin = std::nullopt,
                                std::optional<double> xmax = std::nullopt,
                                const std::string& type = "continuous",
@@ -485,35 +498,14 @@ inline void init_kde1d(nb::module_& module) {
           // Returns `self` so a fit chains, as it does on every Python
           // estimator. The GIL is released around the fit itself rather than by
           // a call guard, because handing back the object needs it.
-          .def(
-              "fit",
-              [](Kde1d& self, const Eigen::VectorXd& x,
-                 const Eigen::VectorXd& weights) -> Kde1d& {
-                check_kde1d_inputs(x, weights);
-                {
-                  nb::gil_scoped_release release;
-                  self.fit(x, weights);
-                }
-                return self;
-              },
-              "x"_a, "weights"_a = Eigen::VectorXd(), kde1d_doc.fit.doc,
-              nb::rv_policy::reference_internal)
+          .def("fit", &kde1d_fit, "x"_a, "weights"_a = Eigen::VectorXd(),
+               kde1d_doc.fit.doc, nb::rv_policy::reference_internal)
           // `select` and `from_data` complete the fitting surface every
           // other margin has. A kernel density has no family to choose, so
           // `select` reduces to `fit` -- the equivalence upstream states for
           // `Bicop::select` with `select_families = false`.
           .def(
-              "select",
-              [](Kde1d& self, const Eigen::VectorXd& x,
-                 const Eigen::VectorXd& weights) -> Kde1d& {
-                check_kde1d_inputs(x, weights);
-                {
-                  nb::gil_scoped_release release;
-                  self.fit(x, weights);
-                }
-                return self;
-              },
-              "x"_a, "weights"_a = Eigen::VectorXd(),
+              "select", &kde1d_fit, "x"_a, "weights"_a = Eigen::VectorXd(),
               "Fit the density; there is no family to select.\n"
               "\n"
               "A kernel density is determined by its parameters, so choosing "

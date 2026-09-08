@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Any, Optional, Sequence
 
 __all__ = ["FitControlsMargin"]
@@ -131,12 +131,6 @@ class FitControlsMargin:
     Returns
     -------
     dict
-        One entry per setting.
+        One entry per setting, keyed by the field name.
     """
-    return {
-      "family_set": None if self.family_set is None else list(self.family_set),
-      "selection_criterion": self.selection_criterion,
-      "var_type": self.var_type,
-      "support": self.support,
-      "on_failure": self.on_failure,
-    }
+    return {f.name: getattr(self, f.name) for f in fields(self)}

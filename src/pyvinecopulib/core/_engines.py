@@ -52,7 +52,6 @@ __all__ = ["FitEdge", "FitLevel", "fit_parts", "select_parts"]
 
 def _make_criterion(
   tree_criterion: str,
-  convert: Callable[[Any], Any],
   n: int,
   weights: Optional[Any] = None,
   criterion_function: Optional[Callable[..., float]] = None,
@@ -72,8 +71,6 @@ def _make_criterion(
   ----------
   tree_criterion : str
       Dependence measure, as on ``FitControlsVinecop``.
-  convert : callable
-      Host transfer for one column.
   n : int
       Number of observations; at or below ten the criterion is zero, as
       upstream's guard has it.
@@ -97,6 +94,7 @@ def _make_criterion(
 
   from ..pyvinecopulib_ext import _calculate_tree_criterion
 
+  convert = _to_numpy_default
   w = np.empty(0) if weights is None else np.asarray(convert(weights), float)
   # The binding calls the criterion function with the matrix alone, so the
   # covariates are bound here rather than threaded through C++.
@@ -121,7 +119,11 @@ def _make_criterion(
 
 
 def _to_numpy_default(a: Any) -> Any:
-  """Host NumPy view of ``a``, for backends that leave it off the host."""
+  """Host NumPy view of ``a``, for backends that leave it off the host.
+
+  ``np.asarray`` raises on a tensor that lives on an accelerator, so this
+  detaches and transfers before converting.
+  """
   import numpy as _np
 
   detach = getattr(a, "detach", None)
@@ -285,7 +287,6 @@ def fit_parts(
   weights = validate_weights(weights, ua[:, 0])
   criterion = _make_criterion(
     tree_criterion,
-    _to_numpy_default,
     int(n),
     weights,
     criterion_function,
@@ -523,9 +524,6 @@ def select_parts(
   offsets = disc_cols(types)
   u = collapse_data(u, d, types, "select")
   seed_list = [int(s) for s in (seeds or [])]
-  # ``np.asarray`` raises on a GPU tensor, so the default routes any
-  # non-NumPy array through the array API's own host transfer. A caller
-  convert = _to_numpy_default
   max_trees = d - 1 if trunc_lvl is None else max(0, min(int(trunc_lvl), d - 1))
   tree_algorithms = (
     "mst_prim",
@@ -572,9 +570,7 @@ def select_parts(
   # Checked here for the same reason as in `_fit_parts`: the criterion hands
   # them straight to the binding.
   weights = validate_weights(weights, u[:, 0])
-  criterion = _make_criterion(
-    tree_criterion, convert, n, weights, criterion_function, x
-  )
+  criterion = _make_criterion(tree_criterion, n, weights, criterion_function, x)
 
   # A node is one edge of the previous tree (a single variable for the base
   # tree). ``prev`` holds the two previous-tree vertex ids that this edge

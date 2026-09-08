@@ -898,7 +898,9 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         raise ValueError(
           f"conditioning_set entries must be in 1, ..., {self.dim}; got {cond}"
         )
-    u_cond = self._conditioning_data(ya, cond, x)
+    # `copula_data` over the conditioning variables' margins only: one
+    # column each, then the left limit of every discrete one.
+    u_cond = self.copula_data([self._margins[v - 1] for v in cond], ya, x=x)
     u = declared_eval(
       self._vinecop,
       "sample_conditional",
@@ -908,22 +910,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       **kwargs,
     )
     return self.marginal_icdf(u, x=x)
-
-  def _conditioning_data(
-    self, y_cond: Any, cond: list[int], x: Optional[Any]
-  ) -> Any:
-    """Put the conditioners on the copula scale, in the compact layout.
-
-    The assembly :meth:`copula_data` performs, over the conditioning variables
-    only: one column each, then the left limit of every discrete one appended
-    after the first block, in the order they appear.
-    """
-    # The same assembly as `copula_data`, over the conditioning variables only
-    # -- so it *is* that method, on their margins. Re-implementing it meant one
-    # of the two checked that a margin's `cdf_left` does not exceed its `cdf`
-    # and the other did not, and the one that did not is the path where a bad
-    # left limit puts a conditioner outside its own atom.
-    return self.copula_data([self._margins[v - 1] for v in cond], y_cond, x=x)
 
   # --- fitting ------------------------------------------------------------- #
 

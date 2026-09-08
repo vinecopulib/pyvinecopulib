@@ -269,10 +269,10 @@ def test_copula_data_needs_no_copula(data: np.ndarray) -> None:
 def test_left_limit_above_the_cdf_is_refused_on_both_paths() -> None:
   """A margin that reports `F(x^-) > F(x)` is caught at the boundary.
 
-  `copula_data` refused it and `_conditioning_data` assembled the same block by
-  hand without the check -- so a bad left limit was caught everywhere except
-  `sample_conditional`, the one path where it puts a conditioner outside its
-  own atom. The two share one assembly now, so one margin drives both.
+  `copula_data` refused it while `sample_conditional` assembled the same block
+  by hand without the check -- so a bad left limit was caught everywhere
+  except the one path where it puts a conditioner outside its own atom. Both
+  go through `copula_data` now, so one margin drives both.
   """
 
   class _Broken(FlatMargin):
