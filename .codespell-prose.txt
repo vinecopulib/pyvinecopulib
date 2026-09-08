@@ -35,3 +35,5 @@ bake->precompute, banned word - say "precompute" or "build"
 bakes->precomputes, banned word - say "precomputes" or "builds"
 baked->precomputed, banned word - say "precomputed" or "built"
 baking->precomputing, banned word - say "precomputing" or "building"
+rung->level, banned word - say "level" or name the class
+rungs->levels, banned word - say "levels" or name the classes

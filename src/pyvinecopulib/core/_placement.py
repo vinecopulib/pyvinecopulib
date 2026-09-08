@@ -25,10 +25,11 @@ margin or vine on PyTorch requires writing none of it: the object already holds
 the tensors that answer the question, and :func:`reference_array` finds them.
 A subclass whose arrays live somewhere this misses overrides ``_prep``.
 
-Arrays reach a rung one other way -- drawn from the array library's own RNG,
+An array reaches these levels one other way -- drawn from the array
+library's own RNG,
 which is the one thing no inference can supply -- so the raising hook for that
 lives here too, beside the hook that places what a caller supplied. The two
-copula rungs share it verbatim. The marginal rung's takes no ``qrng`` flag,
+copula bases share it verbatim. The marginal one takes no ``qrng`` flag,
 since ``MarginBase.sample`` offers none, and stays on ``MarginBase``.
 """
 
@@ -203,7 +204,7 @@ def place(obj: object, a: Any) -> Any:  # noqa: ANN401
 class PlacementMixin:
   """The default ``_prep`` hook, shared by all four canonical bases.
 
-  Each rung needs the same hook -- one array, brought onto the namespace the
+  All four need the same hook -- one array, brought onto the namespace the
   object evaluates on -- and inferring that from the arrays the object already
   holds is what makes hosting a subclass on PyTorch require writing none of
   it. The four wrote it out identically; it lives here instead, beside the
@@ -215,7 +216,7 @@ class PlacementMixin:
 
     Placement only -- no shape or layout check and no clamping -- so it is
     equally correct for exogenous covariates, which must be placed but never
-    trimmed, and for an array the class manufactures itself. Each rung's
+    trimmed, and for an array the class manufactures itself. Each base's
     ``_prep_args`` is the composite that adds the layout and domain steps a
     copula argument needs.
 
@@ -239,8 +240,9 @@ class PlacementMixin:
 class QrngUniformMixin(Generic[ArrayT]):
   """The uniform-draw hook ``BicopBase`` and ``VinecopBase`` share.
 
-  Kept apart from ``PlacementMixin``, which all four rungs inherit, because the
-  marginal rung's hook has a different signature -- see the module docstring.
+  Kept apart from ``PlacementMixin``, which all four bases inherit, because
+  the marginal one's hook has a different signature -- see the module
+  docstring.
   """
 
   def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:

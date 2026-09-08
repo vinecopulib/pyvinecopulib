@@ -440,7 +440,7 @@ def test_declare_is_a_no_op_that_chains() -> None:
 
 
 def test_a_margin_places_and_checks_its_own_argument() -> None:
-  """The margin rung applies the two steps its siblings do.
+  """The margin level applies the two steps its siblings do.
 
   Placement, so a margin holding one array type answers on it; and the
   single-column layout, because a margin describes one variable and a second

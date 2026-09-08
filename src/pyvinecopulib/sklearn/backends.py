@@ -185,7 +185,7 @@ class _VinecopBackendBase(Generic[_VineT]):
 
   # -- shared surface (single source of truth) ---------------------------- #
   # The return is a `MarginLike`, typed `Any` for the reason `_FittedVine`
-  # states one rung down: the compiled `Kde1d` this returns satisfies that
+  # states one level down: the compiled `Kde1d` this returns satisfies that
   # contract nominally rather than statically, and a subclass supplies a margin
   # on its own array namespace, so no closed union describes the hook either.
   def default_margin(

@@ -397,8 +397,8 @@ Before changing code, read in this order:
 
 1. `AGENTS.md` (this file) — invariants and boundaries. Start with
    [the layers](#the-layers-and-which-way-they-depend) and
-   [the four rungs](#the-four-rungs-are-one-pattern): which layer you are in
-   and which rung you are on determine most of what follows, and
+   [the four levels](#the-four-levels-of-one-construction): which layer you are
+   in and which level you are on determine most of what follows, and
    [the rule index](#where-each-cross-cutting-rule-is-written-down) says
    where each cross-cutting decision is stated.
 2. `docs/` — high-level intent, including the Sphinx `concepts.rst`
@@ -562,7 +562,7 @@ For any behavior change:
   composes). Adding either would be a declaration with no reader -- the thing
   `supported_var_types` was deleted for. The same test applies to the
   *protocols*: `BicopLike` and `VinedistLike` each documented a
-  `supports_covariates` no code reads at that rung, and both entries are gone.
+  `supports_covariates` no code reads at that level, and both entries are gone.
 - **A protocol requires what a cascade calls; anything a pair needs only to be
   hosted somewhere particular is an optional capability.** `BicopLike` is
   `pdf` / `hfunc1` / `hfunc2` / `hinv1` / `hinv2` / `sample` -- the whole of
@@ -780,15 +780,16 @@ the reason written beside it — not something a stray import can do quietly.
   resolves every name in `__all__` and would otherwise make PyTorch a hard
   dependency of the one import form beginners reach for first.
 
-### The four rungs are one pattern
+### The four levels of one construction
 
 A margin, a pair copula, a vine and a vine distribution are the same
 construction four times: a `runtime_checkable` Protocol naming what a
 *consumer* needs, a canonical base supplying everything derivable from it,
-and a short list of members a subclass owes. Know which rung you are on and
+and a short list of members a subclass owes. Know which level you are writing
+and
 most of the rest is determined.
 
-| Rung | Protocol requires | Abstract — no evaluating without it | Reports its own absence — only fitting needs it | Names its parts as |
+| Base | Protocol requires | Abstract — no evaluating without it | Reports its own absence — only fitting needs it | Names its parts as |
 |---|---|---|---|---|
 | `MarginBase` | `pdf`, `cdf`, `icdf` | `pdf`, `cdf` | `fit` | — |
 | `BicopBase` | `pdf`, `hfunc1/2`, `hinv1/2`, `sample` | `pdf`, `hfunc1`, `hfunc2` | `fit`; `flip` and `cdf` to host the pair in *selection* or on a *discrete* edge | — |
@@ -824,7 +825,7 @@ where the link points, and nowhere else.
 | Which of the two covariate-forwarding rules applies to a callee | `### Coding conventions`, *"Two covariate-forwarding rules"* |
 | Whether a capability flag may exist at all | `### Coding conventions`, *"A capability flag exists where a consumer reads it"* |
 | The argument order every estimator method takes | `### Coding conventions`, *"One argument order"* |
-| What `fit` / `select` / `from_data` each mean, on all four rungs | `## Extension points`, *"Fitting has one shape across all four bases"* |
+| What `fit` / `select` / `from_data` each mean, on all four bases | `## Extension points`, *"Fitting has one shape across all four bases"* |
 | What naming a part class buys, and what `None` means | `## Extension points`, *"Declare the parts, inherit the fitting"* |
 | Which hook a subclass must implement to evaluate vs. to fit | `## Extension points`, *"`get_pair_copula` reads, `set_pair_copulas` writes"* |
 | Which modules may carry a leading underscore | `### pyvinecopulib.margins`, *"A margin class is named for the ecosystem"* |
@@ -922,7 +923,7 @@ automatically.
     override `_prep` only where those arrays live somewhere the inference
     misses, or where finding them again per evaluation costs more than naming
     them (`TorchTllBicop` names its grid; `torch/_placement.py` reads a
-    module's own tensors for the rungs that hold submodules, 12.1 us against
+    module's own tensors for the classes that hold submodules, 12.1 us against
     `reference_array`'s 64.9). The one array a base manufactures from nothing is
     `BicopBase.plot`'s evaluation grid, which is why that is the one place the
     hook is required rather than a convenience.

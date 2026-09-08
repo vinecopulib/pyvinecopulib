@@ -949,7 +949,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
   def _prep_args(self, y: ArrayT, name: str = "y") -> ArrayT:
     """Place one column of observations and check that is what it is.
 
-    The margin rung's two steps, in order: placement (``_prep``), then the
+    The margin's two steps, in order: placement (``_prep``), then the
     single-column layout every member of the contract reads. There is no
     third: a margin's argument is on the **data** scale, so it is an arbitrary
     real and must not be clamped -- unlike a copula argument, and unlike

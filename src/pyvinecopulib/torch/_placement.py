@@ -69,7 +69,7 @@ class TensorPlacementMixin(_ModuleBase):
   The torch counterpart of
   ``pyvinecopulib.core._placement.PlacementMixin``, which it shadows: a
   subclass mixes this in **ahead** of its canonical base, so ``_prep``
-  resolves here rather than to the array-API inference the other rungs use.
+  resolves here rather than to the array-API inference the other classes use.
 
   Only ordinary private members belong on a mixin at that position. It lands
   ahead of ``torch.nn.Module`` in the resulting MRO, so anything defined here
