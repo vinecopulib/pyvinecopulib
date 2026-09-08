@@ -300,6 +300,39 @@ def test_a_single_margin_is_broadcast_across_the_variables(
   assert torch.isfinite(dist.logpdf(torch.as_tensor(data, dtype=_F64))).all()
 
 
+def test_an_unfitted_broadcast_margin_is_copied_on_this_lane(
+  copula: pv.Vinecop, data: np.ndarray
+) -> None:
+  """A torch margin is an `nn.Module`, so `callable(margin)` is `True`.
+
+  The copy is guarded on there being no `cdf`, which is what separates a
+  *fitter* -- a plain callable handed the column -- from a margin. Testing
+  `callable` alone treated every torch margin as a fitter, so the copy never
+  happened and all three columns shared one estimate.
+  """
+  torch_copula = TorchVinecop.from_vinecop(copula, cache_integrals=False)
+  dist = TorchVinedist(torch_copula, TorchKde1d())
+  assert len({id(m) for m in dist.margins}) == 3
+
+  y = torch.as_tensor(data, dtype=_F64)
+  dist.fit(y)
+  assert torch.isfinite(dist.logpdf(y)).all()
+  medians = [float(np.median(data[:, k])) for k in range(3)]
+  for j, margin in enumerate(dist.margins):
+    center = float(margin.icdf(torch.tensor([0.5], dtype=_F64))[0])
+    closest = min(range(3), key=lambda k: abs(center - medians[k]))
+    assert closest == j
+
+
+def test_resolve_margins_copies_an_unfitted_torch_margin() -> None:
+  """The same guard, at the resolver every `from_data` goes through."""
+  from pyvinecopulib.margins import resolve_margins
+
+  resolved = resolve_margins(TorchKde1d(), 3)
+  assert len({id(m) for m in resolved}) == 3
+  assert all(isinstance(m, TorchKde1d) for m in resolved)
+
+
 # --- boundaries ------------------------------------------------------------- #
 
 

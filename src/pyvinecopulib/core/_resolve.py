@@ -360,8 +360,43 @@ def resolve_margins(
     return [_resolve_one(entry) for entry in spec]
 
   one = _resolve_one(spec)
-  # Copy per variable: a shared mutable estimator would leak state.
-  return [one if callable(one) else copy.deepcopy(one) for _ in range(d)]
+  if callable(one) and not hasattr(one, "cdf"):
+    # A fitter, called once per column and returning a fresh margin each time.
+    return [one for _ in range(d)]
+  # A margin: fitting mutates it, so every column needs its own.
+  return [copy.deepcopy(one) for _ in range(d)]
+
+
+def unshare(margins: Sequence[Any]) -> list[Any]:
+  """Give every position its own margin, copying only what is aliased.
+
+  Parameters
+  ----------
+  margins : sequence of MarginLike
+      The margins to de-alias, one per variable.
+
+  Returns
+  -------
+  list
+      The same margins, with every repeated reference replaced by a copy.
+
+  Notes
+  -----
+  Estimating a margin mutates it, so one margin standing at several positions
+  would be estimated once per column -- each fit overwriting the last -- and
+  every one of those columns would end up on the fit from the final column.
+  Each *distinct* margin is left alone, so a caller holding one still sees it
+  re-estimated where a lane promises to do that in place.
+  """
+  seen: set[int] = set()
+  out: list[Any] = []
+  for margin in margins:
+    if id(margin) in seen:
+      out.append(copy.deepcopy(margin))
+    else:
+      seen.add(id(margin))
+      out.append(margin)
+  return out
 
 
 def declared_kde_kwargs(controls: Optional[ControlsLike]) -> dict[str, Any]:

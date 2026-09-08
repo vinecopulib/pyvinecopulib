@@ -348,6 +348,80 @@ def test_broadcast_margin_is_copied_not_shared(continuous: np.ndarray) -> None:
   assert first.bandwidth != second.bandwidth
 
 
+def _assert_each_margin_matches_its_own_column(
+  dist: Any, y: np.ndarray
+) -> None:
+  """Every margin must be the closest fit to its own column, not another's.
+
+  Stated as "closest of the candidates" rather than as a tolerance on the
+  median, because a kernel density on a skewed column is legitimately some way
+  off its sample median while still being unmistakably that column's margin.
+  """
+  medians = [float(np.median(y[:, k])) for k in range(y.shape[1])]
+  for j, margin in enumerate(dist.margins):
+    center = float(margin.icdf(np.array([0.5]))[0])
+    closest = min(range(len(medians)), key=lambda k: abs(center - medians[k]))
+    assert closest == j, (
+      f"margin {j} centered at {center}, closest to column {closest}"
+    )
+
+
+def test_the_constructor_copies_an_unfitted_broadcast_margin(
+  continuous: np.ndarray,
+) -> None:
+  """An unfitted prototype cannot be shared: `fit` estimates it in place.
+
+  Sharing one made every column carry the fit from the *last* column, since
+  each estimate overwrote the previous one, and `logpdf` was then `-inf`
+  wherever the columns were on different scales.
+  """
+  copula = pv.Vinecop.from_data(pv.to_pseudo_obs(continuous))
+  dist = Vinedist(copula, Kde1d())
+  assert len({id(m) for m in dist.margins}) == 2
+
+  dist.fit(continuous)
+  first: Any = dist.margins[0]
+  second: Any = dist.margins[1]
+  assert first is not second
+  assert np.isfinite(dist.logpdf(continuous)).all()
+  _assert_each_margin_matches_its_own_column(dist, continuous)
+
+
+def test_the_constructor_shares_a_fitted_broadcast_margin(
+  continuous: np.ndarray,
+) -> None:
+  """A fitted margin standing for every variable ties their parameters."""
+  copula = pv.Vinecop.from_data(pv.to_pseudo_obs(continuous))
+  shared = Kde1d().fit(continuous[:, 0])
+  dist = Vinedist(copula, shared)
+  assert all(m is shared for m in dist.margins)
+
+
+@pytest.mark.parametrize("verb", ["fit", "select"])
+def test_reestimating_separates_margins_tied_at_construction(
+  continuous: np.ndarray, verb: str
+) -> None:
+  """Each column is estimated from its own data, so tied margins come apart."""
+  copula = pv.Vinecop.from_data(pv.to_pseudo_obs(continuous))
+  shared = Kde1d().fit(continuous[:, 0])
+  dist = Vinedist(copula, shared)
+
+  getattr(dist, verb)(continuous)
+  assert len({id(m) for m in dist.margins}) == 2
+  assert np.isfinite(dist.logpdf(continuous)).all()
+  _assert_each_margin_matches_its_own_column(dist, continuous)
+
+
+def test_an_explicitly_aliased_sequence_is_taken_as_given(
+  continuous: np.ndarray,
+) -> None:
+  """Repeating one entry is how tied parameters are requested explicitly."""
+  copula = pv.Vinecop.from_data(pv.to_pseudo_obs(continuous))
+  shared = Kde1d().fit(continuous[:, 0])
+  dist = Vinedist(copula, [shared, shared])
+  assert dist.margins[0] is dist.margins[1] is shared
+
+
 def test_callable_margin_is_used_as_a_fitter(continuous: np.ndarray) -> None:
   """A plain callable receives the column and returns a margin."""
   dist = pv.Vinedist.from_data(

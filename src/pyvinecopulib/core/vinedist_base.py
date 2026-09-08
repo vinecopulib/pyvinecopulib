@@ -90,10 +90,14 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   vinecop : VinecopLike
       A fitted vine copula on ``[0, 1]^d``.
   margins : sequence of MarginLike, or MarginLike
-      One fitted margin per variable. A single margin stands for every
-      variable, which is the identical-margins case; the cascade evaluates it
-      once per column, so a margin carrying one parameter *per variable* has to
-      be passed as a sequence instead.
+      One margin per variable, or a single margin standing for every variable.
+      A single *fitted* margin is shared, which is the identical-margins case
+      and ties the variables' parameters together; a single *unfitted* one is
+      copied per variable, since each has to be estimated from its own column.
+      A sequence is taken as given, so aliasing one entry across positions is
+      how tied parameters are asked for explicitly. Either way :meth:`fit` and
+      :meth:`select` separate tied margins first, because they estimate each
+      column independently.
 
   Raises
   ------
@@ -182,6 +186,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     None
     """
     from ._margins import as_margin
+    from ._resolve import unshare
 
     d = int(
       getattr(vinecop, "dim", 0) or len(getattr(vinecop, "order", ()) or ())
@@ -195,10 +200,15 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     if isinstance(margins, (list, tuple)):
       resolved = [as_margin(m) for m in margins]
     else:
-      # One object standing for every variable. Shared rather than copied:
-      # evaluation never mutates a fitted margin, and a copy per variable would
-      # duplicate a kernel-density grid `d` times.
-      resolved = [as_margin(margins)] * d
+      one = as_margin(margins)
+      # One object standing for every variable. A fitted one is shared, which
+      # ties the variables' parameters together and costs no memory; an
+      # unfitted one has to be estimated from each column separately, so it is
+      # copied. `is_fitted` is absent only on a margin that also has no
+      # estimator, and sharing is right for those.
+      resolved = (
+        [one] * d if getattr(one, "is_fitted", True) else unshare([one] * d)
+      )
     if len(resolved) != d:
       raise ValueError(
         f"got {len(resolved)} margins for a {d}-dimensional copula"
@@ -1384,6 +1394,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     """
     from ._resolve import resolve_margin_controls
     from ._resolve import fit_margin
+    from ._resolve import unshare
 
     cls = type(self)
     data, weights = cls._coerce_fit_data(y, weights, controls)
@@ -1408,6 +1419,10 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     per_variable = resolve_margin_controls(
       margin_controls, d, names=cast("Optional[Sequence[str]]", named)
     )
+    # Each column is re-estimated from its own data, so margins tied together
+    # at bind time have to come apart first: `fit_margin` estimates in place,
+    # and a shared one would be fitted once per column with only the last fit
+    # surviving.
     margins = [
       fit_margin(
         margin,
@@ -1418,7 +1433,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         verb=verb,
         refit=True,
       )
-      for j, margin in enumerate(self._margins)
+      for j, margin in enumerate(unshare(self._margins))
     ]
     var_types = cls.copula_var_types(margins)
     u = cls.copula_data(margins, data, x=x)
