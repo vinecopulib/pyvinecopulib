@@ -178,10 +178,10 @@ exclude = ["lib", "src/pyvinecopulib/**/__init__.pyi", "src/pyvinecopulib/__init
 #
 # Not adopted, and why, so it is not re-litigated: `ALL` reports 7851, and its
 # largest entries contradict rules AGENTS.md states -- `UP007` wants
-# `X | None` where `Optional[X]` is used deliberately and consistently,
+# `X | None` where `Optional[X]` is used consistently and on purpose,
 # `TID252` forbids the relative imports the layering rests on, and
-# `TRY003`/`EM101`/`EM102` want the short exception messages this codebase
-# deliberately does not write. Adopting it would mean an ignore list
+# `TRY003`/`EM101`/`EM102` want short exception messages, which this
+# codebase does not write. Adopting it would mean an ignore list
 # restating the spec.
 extend-select = ["ANN", "TC", "PYI", "PGH003", "RUF045"]
 preview = true
@@ -246,9 +246,25 @@ ignore = ["TC001", "TC002", "TC003"]
 "src/pyvinecopulib/__init__.py" = ["ANN401"]
 "src/pyvinecopulib/_python_helpers/bicop.py" = ["ANN401"]
 "src/pyvinecopulib/utils/__init__.py" = ["ANN401"]
-# A test may pass a deliberately wrong type to prove a runtime guard fires,
-# and a fixture may traffic in whatever the object under test accepts.
+# A test may pass a wrong type on purpose to prove a runtime guard fires, and
+# a fixture may traffic in whatever the object under test accepts.
 "tests/**" = ["ANN401"]
+# AGENTS.md scopes the type-hint requirement to "public Python source", and
+# these three are not that:
+#
+# A notebook cell is read by someone learning the library, and
+# `def kendall_tau(data, weights)` teaches better than the annotated form.
+# Correctness is covered instead by executing every notebook in CI.
+"examples/**" = ["ANN"]
+# Benchmark and build-helper scripts: internal tooling with no importers, and
+# `scripts/generate_docstring.py` walks libclang cursors, which are `Any` to
+# any checker.
+"scripts/**" = ["ANN"]
+# `docs/conf.py` is a Sphinx configuration module whose functions are called
+# by Sphinx through documented but unannotated hook signatures (`app`, `what`,
+# `obj`, `options`, `lines`), so annotating them would restate Sphinx's own
+# untyped API.
+"docs/conf.py" = ["ANN"]
 
 [tool.ty.src]
 include = ["src", "tests"]

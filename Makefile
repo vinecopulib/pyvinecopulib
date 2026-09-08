@@ -32,10 +32,13 @@ clean: ## Wipe build artifacts, staged docs sources, and Python caches
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
 lint: ## Lint + format-check + security-lint; needs no compiled extension
-	$(UV) run ruff check src tests
-	$(UV) run ruff format --check src tests
+	$(UV) run ruff check .
+	$(UV) run ruff format --check .
 	$(UV) run bandit -c pyproject.toml -q -r src/pyvinecopulib scripts
-	$(UV) run codespell src tests scripts docs examples .github *.md *.cff
+# Tracked files only: a shell glob would also read whatever untracked notes
+# happen to be in the working tree, so a local run could fail where CI --
+# which checks out only tracked files -- passes.
+	git ls-files -z ':!:lib/*' | xargs -0 $(UV) run codespell --
 
 check: lint ## `lint` plus the type check, which reads the generated .pyi stubs
 	$(UV) run ty check

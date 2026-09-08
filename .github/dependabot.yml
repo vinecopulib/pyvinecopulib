@@ -24,7 +24,7 @@ updates:
     labels:
       - dependencies
     ignore:
-      # Pinned deliberately; a bump breaks the build rather than the lockfile.
+      # Pinned on purpose; a bump breaks the build rather than the lockfile.
       # `docs/conf.py` monkey-patches Sphinx internals behind
       # `assert inspect.getsource(...) == ...` guards, so a Sphinx or nbsphinx
       # bump fails the docs build until those are re-derived.
