@@ -39,17 +39,6 @@ __all__ = ["TorchVinedist"]
 def _check_margin(margin: Any, name: str) -> None:
   """Reject a margin the torch lane cannot hold.
 
-  Parameters
-  ----------
-  margin : object
-      The candidate margin, before coercion.
-  name : str
-      How to refer to it in an error message.
-
-  Returns
-  -------
-  None
-
   Raises
   ------
   TypeError
@@ -83,15 +72,6 @@ def _check_margin(margin: Any, name: str) -> None:
 
 def _check_copula(copula: Any) -> None:
   """Reject a copula the torch lane cannot evaluate.
-
-  Parameters
-  ----------
-  copula : object
-      The candidate copula.
-
-  Returns
-  -------
-  None
 
   Raises
   ------
@@ -190,19 +170,7 @@ class TorchVinedist(VinedistBase[Tensor], torch.nn.Module):
     vinecop: Any,
     margins: Sequence[Any] | Any,
   ) -> None:
-    """Validate the parts, then install them as registered children.
-
-    Parameters
-    ----------
-    vinecop : VinecopLike
-        The vine copula.
-    margins : sequence of TorchDistributionMargin, or TorchDistributionMargin
-        The margins.
-
-    Returns
-    -------
-    None
-    """
+    """Validate the parts, then install them as registered children."""
     _check_copula(vinecop)
     if isinstance(margins, (list, tuple)):
       for j, margin in enumerate(margins):
@@ -225,15 +193,6 @@ class TorchVinedist(VinedistBase[Tensor], torch.nn.Module):
     registered child -- so the base's plain-tuple assignment raised
     ``TypeError: cannot assign 'tuple' as child module``, which made `fit` and
     `select` unusable on every torch vine distribution.
-
-    Parameters
-    ----------
-    margins : sequence of torch.nn.Module
-        The coerced, length-checked margins.
-
-    Returns
-    -------
-    None
     """
     registered = cast("list[torch.nn.Module]", list(margins))
     self._margins = cast(Any, torch.nn.ModuleList(registered))
@@ -264,20 +223,6 @@ class TorchVinedist(VinedistBase[Tensor], torch.nn.Module):
     happened to be while the copula went to ``controls.device``, so
     ``state_dict`` spanned two devices and ``logpdf`` raised; an integer ``y``
     would likewise have given the margins an integer grid.
-
-    Parameters
-    ----------
-    y : object
-        Observations on the original scale.
-    weights : object, or None
-        Observation weights.
-    controls : FitControlsTorchVinecop, or None
-        Carries the device and dtype when the caller set them.
-
-    Returns
-    -------
-    tuple
-        The observations and weights, both on the resolved placement.
     """
     ya = torch.as_tensor(y)
     resolved = controls or FitControlsTorchVinecop()
@@ -300,23 +245,7 @@ class TorchVinedist(VinedistBase[Tensor], torch.nn.Module):
     controls: Optional[Any] = None,
     margin_controls: Optional[Sequence[Any]] = None,
   ) -> Sequence[Any]:
-    """One :class:`TorchKde1d` per variable, on the resolved placement.
-
-    Parameters
-    ----------
-    d : int
-        Number of variables.
-    controls : FitControlsTorchVinecop, or None, optional
-        Carries the device and dtype the margins share with the copula.
-    margin_controls : sequence, or None, optional
-        One marginal configuration per variable, whose declared variable type
-        and support each margin is built with.
-
-    Returns
-    -------
-    sequence of TorchKde1d
-        One unfitted margin per variable.
-    """
+    """One :class:`TorchKde1d` per variable, on the resolved placement."""
     resolved = controls or FitControlsTorchVinecop()
     # `TorchKde1d` fixes its own default dtype, so name one only when the
     # controls actually carry it.
@@ -334,21 +263,8 @@ class TorchVinedist(VinedistBase[Tensor], torch.nn.Module):
   ) -> Any:
     """``controls`` with the placement the margins resolved pinned in.
 
-    Parameters
-    ----------
-    controls : FitControlsTorchVinecop, or None
-        What the caller passed.
-    u : Tensor, shape (n, d + k)
-        The copula-scale layout, read for its device and dtype so the copula
-        cannot default to a different placement than the margins used.
-    weights : None
-        Always ``None``: ``supports_weighted_copula`` is ``False``, so the
-        estimators refuse a weighted request before reaching this hook.
-
-    Returns
-    -------
-    FitControlsTorchVinecop
-        The controls to estimate the copula with.
+    ``weights`` is always ``None``: ``supports_weighted_copula`` is ``False``,
+    so the estimators refuse a weighted request before reaching this hook.
     """
     del weights
     resolved = controls or FitControlsTorchVinecop()
@@ -368,11 +284,8 @@ class TorchVinedist(VinedistBase[Tensor], torch.nn.Module):
   def _ref_tensor(self) -> Tensor:
     """A registered tensor to crib dtype and device from.
 
-    Returns
-    -------
-    Tensor
-        The first registered parameter or buffer, or an empty CPU tensor when
-        the parts register neither.
+    The first registered parameter or buffer, or an empty CPU tensor when the
+    parts register neither.
     """
     for tensor in chain(self.parameters(), self.buffers()):
       return tensor
@@ -385,16 +298,6 @@ class TorchVinedist(VinedistBase[Tensor], torch.nn.Module):
     matches is returned untouched and a gradient-carrying one stays in the
     graph. It is what lets an estimator hand this object plain NumPy while the
     cascade and every margin stay on device.
-
-    Parameters
-    ----------
-    a : array
-        An input array, tensor or NumPy.
-
-    Returns
-    -------
-    Tensor
-        The same values, as a tensor placed like the registered ones.
     """
     ref = self._ref_tensor()
     return torch.as_tensor(a, dtype=ref.dtype, device=ref.device)

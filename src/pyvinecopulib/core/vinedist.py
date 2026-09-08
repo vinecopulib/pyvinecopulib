@@ -110,17 +110,6 @@ class Vinedist(VinedistBase[np.ndarray]):
     ``.to(device)``. The check is by provenance rather than ``isinstance``,
     since :mod:`pyvinecopulib.core` must import without PyTorch.
 
-    Parameters
-    ----------
-    vinecop : VinecopLike
-        The vine copula.
-    margins : sequence of MarginLike, or MarginLike
-        The margins.
-
-    Returns
-    -------
-    None
-
     Raises
     ------
     TypeError
@@ -153,20 +142,9 @@ class Vinedist(VinedistBase[np.ndarray]):
   ) -> tuple[Any, Any]:
     """Put the fit inputs on NumPy.
 
-    Parameters
-    ----------
-    y : object
-        Observations, including a DataFrame.
-    weights : object, or None
-        Observation weights.
-    controls : ControlsLike, or None
-        Unused here; NumPy carries no placement.
-
-    Returns
-    -------
-    tuple
-        The observations as a float array, and the weights unchanged —
-        ``validate_weights`` coerces those against the data.
+    NumPy carries no placement, so ``controls`` goes unread, and the weights
+    pass through unchanged — ``validate_weights`` coerces those against the
+    data.
     """
     del controls
     return np.asarray(y, dtype=float), weights
@@ -184,20 +162,6 @@ class Vinedist(VinedistBase[np.ndarray]):
     a declaration has to reach it before the fit: an unbounded grid is padded
     past the data, and for a variable that cannot be negative that puts mass
     where nothing can occur.
-
-    Parameters
-    ----------
-    d : int
-        Number of variables.
-    controls : ControlsLike, or None, optional
-        Copula fit configuration; unused here.
-    margin_controls : sequence, or None, optional
-        One marginal configuration per variable, already resolved.
-
-    Returns
-    -------
-    sequence of Kde1d
-        One unfitted margin per variable.
     """
     del controls
     from ._resolve import kde_from_controls
@@ -211,21 +175,9 @@ class Vinedist(VinedistBase[np.ndarray]):
   ) -> Any:
     """``controls`` with the explicit ``weights`` written in.
 
-    Parameters
-    ----------
-    controls : FitControlsVinecop, or None
-        What the caller passed.
-    u : array, shape (n, d + k), dtype float
-        The copula-scale layout; unused, a ``Vinecop`` needing no placement.
-    weights : array, shape (n,), or None
-        Observation weights. The explicit argument governs both halves of the
-        fit, so it is written into a *copy* -- overriding a controls object's
-        own weights must not mutate one the caller still holds.
-
-    Returns
-    -------
-    FitControlsVinecop
-        The controls to estimate the copula with.
+    The explicit argument governs both halves of the fit, so it is written
+    into a *copy* -- overriding a controls object's own weights must not
+    mutate one the caller still holds.
     """
     del u
     from ..pyvinecopulib_ext import FitControlsVinecop
