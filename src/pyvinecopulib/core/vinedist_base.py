@@ -385,15 +385,6 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     again on every refit, so the store has to be idempotent. The write
     counterpart of :attr:`margins`, and the same shape as
     :meth:`~pyvinecopulib.core.VinecopBase.set_pair_copulas` on the vine lane.
-
-    Parameters
-    ----------
-    margins : sequence of MarginLike
-        The coerced, length-checked margins.
-
-    Returns
-    -------
-    None
     """
     self._margins = tuple(margins)
 
@@ -422,16 +413,6 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
 
   def _columns(self, y: ArrayT) -> tuple[Any, Any, int]:
     """Coerce ``y``, check its width, and resolve its array namespace.
-
-    Parameters
-    ----------
-    y : array, shape (n, d), dtype float
-        Observations on the original scale.
-
-    Returns
-    -------
-    tuple
-        The array namespace, the coerced array, and its row count.
 
     Raises
     ------
@@ -600,13 +581,6 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     Evaluation ignores ``x`` per margin, which is what lets conditional and
     unconditional margins sit in one distribution. When *nothing* reads them the
     silence is indistinguishable from a conditional answer, so it is an error.
-
-    Parameters
-    ----------
-    x : array, shape (n, p), or None
-        The covariates the caller supplied.
-    n_rows : int
-        Number of observations they must align with.
 
     Raises
     ------
@@ -966,20 +940,6 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     The assembly :meth:`copula_data` performs, over the conditioning variables
     only: one column each, then the left limit of every discrete one appended
     after the first block, in the order they appear.
-
-    Parameters
-    ----------
-    y_cond : array, shape (n, k), dtype float
-        Conditioning values on the original scale.
-    cond : list of int
-        The 1-based conditioning variables, one per column of ``y_cond``.
-    x : array, shape (n, p), or None
-        Exogenous covariates.
-
-    Returns
-    -------
-    array, shape (n, k + k_d), dtype float
-        The compact conditioning layout, clamped away from the boundary.
     """
     # The same assembly as `copula_data`, over the conditioning variables only
     # -- so it *is* that method, on their margins. Re-implementing it meant one
@@ -1256,11 +1216,6 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     verb : str
         ``"fit"`` to keep the copula's structure, ``"select"`` to re-select it.
 
-    Returns
-    -------
-    VinecopLike
-        The copula, re-estimated in place.
-
     Raises
     ------
     NotImplementedError
@@ -1439,11 +1394,6 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     verb : str
         ``"fit"`` or ``"select"``, the estimator asked of each margin.
 
-    Returns
-    -------
-    VinedistBase
-        ``self``.
-
     Raises
     ------
     ValueError
@@ -1523,25 +1473,9 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     Returns both, because placing is half the job: the covariates a margin's
     estimator is handed have to live on the same namespace as the column it is
     handed, and returning only the weights left the placed value dying with
-    this frame.
-
-    Parameters
-    ----------
-    x : array, shape (n, p), or None
-        Exogenous covariates.
-    weights : array, shape (n,), or None
-        Observation weights.
-    n : int
-        Number of observations.
-    data : array, shape (n, d), dtype float
-        The coerced observations, whose first column types the weights.
-    verb : str
-        The calling method's name, quoted in the error messages.
-
-    Returns
-    -------
-    array, shape (n,), or None
-        The validated weights.
+    this frame. The coerced observations are the reference for both: ``x`` is
+    placed onto them and their first column types the weights. ``verb`` is the
+    calling method's name, quoted in the error messages.
 
     Raises
     ------

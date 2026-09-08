@@ -117,16 +117,6 @@ def _selection_options(controls: Optional[ControlsLike]) -> dict[str, Any]:
   controls *are* pair controls -- except the four vine-level selection switches
   below, which no pair fit reads either and which the engines do not implement.
 
-  Parameters
-  ----------
-  controls : ControlsLike, or None
-      Fit configuration, or ``None`` for the engine defaults.
-
-  Returns
-  -------
-  dict
-      Keyword arguments for the engines.
-
   Raises
   ------
   ValueError
@@ -601,13 +591,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     )
 
   def _ensure_batched(self) -> Any:
-    """Return the cached batched state, building it once on first use.
-
-    Returns
-    -------
-    object
-        The memoized ``_build_batched`` result.
-    """
+    """Return the cached batched state, building it once on first use."""
     if self._batched is None:
       # Bypass any framework `__setattr__`: on the torch subclass this value
       # is an `nn.Module`, and a normal assignment would register it as a
@@ -622,12 +606,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
 
     Defaults to a no-op; the torch subclass overrides it with
     ``torch.no_grad()``.
-
-    Returns
-    -------
-    contextlib.AbstractContextManager
-        A context manager wrapping the grad-sensitive sections (a
-        ``nullcontext`` by default).
     """
     return contextlib.nullcontext()
 
@@ -646,19 +624,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     A slot whose pair was fitted on a different order of the same set answers
     with *that* order instead (``_set_cond_order``), so the pair is always
     evaluated on the columns it was estimated on.
-
-    Parameters
-    ----------
-    tree : int
-        Tree index (``0``-based).
-    edge : int
-        Edge index within the tree (``0``-based).
-
-    Returns
-    -------
-    tuple of int
-        Natural-order column indices of the conditioning variables, in ascending
-        conditioning-tree order (the C1 order).
     """
     key = (tree, edge)
     cache = self._cond_pos_cache
@@ -783,11 +748,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         seeding happens inside).
     x : array, shape (n, p), or None
         External covariates threaded to each pair copula, or ``None``.
-
-    Returns
-    -------
-    array, shape (n,), dtype float
-        Joint density values.
     """
     xp = array_namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
@@ -865,11 +825,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         left limit using independent uniforms.
     seeds : list of int, or None, optional
         RNG seeds for that randomization.
-
-    Returns
-    -------
-    array, shape (n, d), dtype float
-        Independent uniforms in ``[1e-10, 1 - 1e-10]``.
     """
     xp = array_namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
@@ -948,11 +903,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         Prepared independent uniforms.
     x : array, shape (n, p), or None
         External covariates threaded to each pair copula, or ``None``.
-
-    Returns
-    -------
-    array, shape (n, d), dtype float
-        Dependent uniforms in ``[1e-10, 1 - 1e-10]``.
     """
     xp = array_namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
@@ -1024,11 +974,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     ----------
     u : array, shape (n, d), dtype float
         Prepared pseudo-observations.
-
-    Returns
-    -------
-    array, shape (n,), dtype float
-        Joint density values.
     """
     xp = self._namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
@@ -1079,11 +1024,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     ----------
     u : array, shape (n, d), dtype float
         Prepared independent uniforms.
-
-    Returns
-    -------
-    array, shape (n, d), dtype float
-        Dependent uniforms in ``[1e-10, 1 - 1e-10]``.
     """
     xp = self._namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
@@ -1117,11 +1057,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     ----------
     u : array, shape (n, d), dtype float
         Prepared pseudo-observations.
-
-    Returns
-    -------
-    array, shape (n, d), dtype float
-        Independent uniforms in ``[1e-10, 1 - 1e-10]``.
     """
     xp = self._namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
@@ -1167,16 +1102,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     vine; the default ``_prep`` works on whatever namespace it is handed,
     so a vine may legitimately see two. An identity check is still far cheaper
     than the dispatch walk it avoids.
-
-    Parameters
-    ----------
-    a : array
-        An array of the vine's working type.
-
-    Returns
-    -------
-    module
-        The array-API namespace for ``a``.
     """
     if self._xp is None or self._xp_type is not type(a):
       object.__setattr__(self, "_xp", array_namespace(a))
@@ -1208,26 +1133,15 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   ) -> bool:
     """Resolve the ``batched`` flag; force ``False`` for conditional or discrete.
 
+    Covariates count as conditional here: any non-``None`` ``x`` forces the
+    non-batched cascade.
+
     Declining is the right answer rather than raising: ``batched`` defaults to
     the subclass's ``_default_batched`` (device-dependent on the torch
     vine), so a raise would make an ordinary ``pdf(u)`` fail on a discrete vine
     for a reason the caller never asked about. Discreteness is a property of the
     vine, not of the subclass's grid, which is why it is decided here rather
     than through ``_NotBatchable``.
-
-    Parameters
-    ----------
-    requested : bool or None
-        The caller's ``batched`` argument; ``None`` defers to
-        ``_default_batched``.
-    x : array or None
-        External covariates for the call; any non-``None`` value forces the
-        non-batched cascade.
-
-    Returns
-    -------
-    bool
-        Whether to attempt the batched fast path.
     """
     if self._context.assembles_conditioning or x is not None:
       return False
@@ -1872,18 +1786,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     since ``FitControlsVinecop`` is a ``FitControlsBicop`` -- and the edge's
     conditioning matrix, so a non-simplified vine fits the model it evaluates.
 
-    Parameters
-    ----------
-    fit_edge : callable, or None
-        What the caller passed.
-    controls : ControlsLike, or None
-        Fit configuration, handed to each pair fit.
-
-    Returns
-    -------
-    callable
-        ``(tree, edge, u_e, x_e) -> BicopLike``.
-
     Raises
     ------
     ValueError
@@ -1941,15 +1843,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     without ``flip`` cannot be selected with. When ``bicop_class`` names
     the class this is knowable up front; behind an opaque ``fit_edge`` it is
     not, and the first fitted pair is probed instead.
-
-    Parameters
-    ----------
-    fit_edge : callable, or None
-        What the caller passed; a non-``None`` value defers the check.
-
-    Returns
-    -------
-    None
 
     Raises
     ------

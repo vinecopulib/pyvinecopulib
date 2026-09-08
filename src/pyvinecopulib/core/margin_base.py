@@ -800,16 +800,6 @@ class MarginBase(MarginLike[ArrayT], ABC):
     An information criterion is a number to compare, never a term to
     differentiate, so a trainable margin's log-likelihood is detached on the
     way out rather than warning about the conversion.
-
-    Parameters
-    ----------
-    y : array, shape (n,), or None
-        Observations, or ``None`` for the fitted value.
-
-    Returns
-    -------
-    float
-        The log-likelihood.
     """
     value: Any = self.loglik(y)
     detach = getattr(value, "detach", None)
@@ -818,27 +808,13 @@ class MarginBase(MarginLike[ArrayT], ABC):
   def _n_parameters(self) -> float:
     """Number of freely estimated parameters.
 
-    Returns
-    -------
-    float
-        What ``n_parameters`` reports, or ``0`` for a margin that declares
-        none -- a fixed margin costs nothing in a criterion.
+    What ``n_parameters`` reports, or ``0`` for a margin that declares none --
+    a fixed margin costs nothing in a criterion.
     """
     return float(getattr(self, "n_parameters", 0.0))
 
   def _sample_size(self, y: Optional[ArrayT]) -> float:
     """Number of observations the criterion penalizes against.
-
-    Parameters
-    ----------
-    y : array, shape (n,), or None
-        Observations, or ``None`` to read the fitted sample size from
-        ``nobs``.
-
-    Returns
-    -------
-    float
-        The sample size.
 
     Raises
     ------
