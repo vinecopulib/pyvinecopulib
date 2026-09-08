@@ -32,7 +32,7 @@ from typing import Any, Optional
 
 from array_api_compat import array_namespace, device as _device_of
 
-__all__ = ["place", "reference_array"]
+__all__ = ["PlacementMixin", "place", "reference_array"]
 
 
 def reference_array(obj: Any) -> Optional[Any]:
@@ -185,3 +185,39 @@ def place(obj: Any, a: Any) -> Any:
     except TypeError:
       pass
   return xp.asarray(a, dtype=dtype, device=_device_of(reference))
+
+
+class PlacementMixin:
+  """The default ``_prep`` seam, shared by all four canonical bases.
+
+  Each rung needs the same hook -- one array, brought onto the namespace the
+  object evaluates on -- and inferring that from the arrays the object already
+  holds is what makes hosting a subclass on PyTorch require writing none of
+  it. The four wrote it out identically; it lives here instead, beside the
+  ``place`` it delegates to.
+  """
+
+  def _prep(self, a: Any) -> Any:
+    """Bring one input array onto the namespace this object evaluates on.
+
+    Placement only -- no shape or layout check and no clamping -- so it is
+    equally correct for exogenous covariates, which must be placed but never
+    trimmed, and for an array the class manufactures itself. Each rung's
+    ``_prep_args`` is the composite that adds the layout and domain steps a
+    copula argument needs.
+
+    The default infers the placement from the arrays this object already
+    holds. Override it where those arrays live somewhere the inference
+    misses.
+
+    Parameters
+    ----------
+    a : array
+        An input array on any namespace.
+
+    Returns
+    -------
+    array
+        The same values, on this object's namespace, dtype and device.
+    """
+    return place(self, a)

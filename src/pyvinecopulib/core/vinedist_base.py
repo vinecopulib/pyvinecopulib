@@ -35,7 +35,7 @@ from array_api_compat import array_namespace
 
 from ._covariates import declared_eval, prepare
 from .margin_base import derive_cdf_left, safe_log
-from ._placement import place
+from ._placement import PlacementMixin
 from ._trim import trim
 from ._validation import validate_covariates, validate_weights
 from .protocols import (
@@ -51,7 +51,7 @@ from .protocols import _VINEDIST_EXAMPLE
 __all__ = ["VinedistBase"]
 
 
-class VinedistBase(VinedistLike[ArrayT], ABC):
+class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   r"""Canonical vine distribution: a vine copula and one margin per variable.
 
   By Sklar's theorem a joint distribution factorizes into a copula and its
@@ -387,29 +387,6 @@ class VinedistBase(VinedistLike[ArrayT], ABC):
     :meth:`~pyvinecopulib.core.VinecopBase.set_pair_copulas` on the vine lane.
     """
     self._margins = tuple(margins)
-
-  def _prep(self, a: Any) -> Any:
-    """Bring one input array onto the namespace this object evaluates on.
-
-    Placement only -- no shape check and no clamping -- so it is equally
-    correct for exogenous covariates, which must be placed but never trimmed,
-    and for an array this class manufactures itself.
-
-    The default infers the placement from the arrays this object already
-    holds, so hosting a subclass on PyTorch requires writing none of it.
-    Override it where those arrays live somewhere the inference misses.
-
-    Parameters
-    ----------
-    a : array
-        An input array on any namespace.
-
-    Returns
-    -------
-    array
-        The same values, on this object's namespace, dtype and device.
-    """
-    return place(self, a)
 
   def _columns(self, y: ArrayT) -> tuple[Any, Any, int]:
     """Coerce ``y``, check its width, and resolve its array namespace.

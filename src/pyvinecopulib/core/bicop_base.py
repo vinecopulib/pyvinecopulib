@@ -31,7 +31,7 @@ from typing import Any, Optional, Self, cast
 from array_api_compat import array_namespace
 
 from ._covariates import prepare
-from ._placement import place
+from ._placement import PlacementMixin
 from ._trim import trim
 from ._rootfind import solve_increasing
 
@@ -83,7 +83,7 @@ def flip_of(pair: Any) -> Any:
   return method()
 
 
-class BicopBase(BicopLike[ArrayT], ABC):
+class BicopBase(BicopLike[ArrayT], PlacementMixin, ABC):
   """Canonical partial implementation of ``BicopLike``.
 
   A subclass writes three methods -- ``pdf``, the pair density, and ``hfunc1``
@@ -487,29 +487,6 @@ class BicopBase(BicopLike[ArrayT], ABC):
   #: state (declared ``False``) is distinguishable from "never heard of it"
   #: and a subclass author can find the flag without tripping its error.
   supports_batched: bool = False
-
-  def _prep(self, a: Any) -> Any:
-    """Bring one input array onto the namespace this object evaluates on.
-
-    Placement only -- no shape check and no clamping -- so it is equally
-    correct for exogenous covariates, which must be placed but never trimmed,
-    and for an array this class manufactures itself.
-
-    The default infers the placement from the arrays this object already
-    holds, so hosting a subclass on PyTorch requires writing none of it.
-    Override it where those arrays live somewhere the inference misses.
-
-    Parameters
-    ----------
-    a : array
-        An input array on any namespace.
-
-    Returns
-    -------
-    array
-        The same values, on this object's namespace, dtype and device.
-    """
-    return place(self, a)
 
   def _prep_args(self, u: ArrayT) -> ArrayT:
     """Place ``u``, check its width, and clamp it into the unit square.

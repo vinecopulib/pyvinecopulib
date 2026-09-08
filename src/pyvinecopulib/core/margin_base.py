@@ -29,7 +29,7 @@ import numpy as _np
 from array_api_compat import array_namespace
 
 from ._covariates import declared_eval, prepare
-from ._placement import place
+from ._placement import PlacementMixin
 from ._rootfind import solve_increasing
 from ._validation import reject_array_controls, validate_weights
 from .protocols import _MARGIN_EXAMPLE, ArrayT, MarginLike
@@ -208,7 +208,7 @@ def safe_log(dens: Any) -> Any:
   return xp.where(positive, xp.log(safe), xp.full_like(dens, float("-inf")))
 
 
-class MarginBase(MarginLike[ArrayT], ABC):
+class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
   """Canonical partial implementation of ``MarginLike``.
 
   A subclass writes two methods. ``pdf`` is the density with respect to the
@@ -895,29 +895,6 @@ class MarginBase(MarginLike[ArrayT], ABC):
       f"{type(self).__name__}._sample_uniform is not defined; override it "
       "with the array namespace's RNG to enable sample()."
     )
-
-  def _prep(self, a: Any) -> Any:
-    """Bring one input array onto the namespace this object evaluates on.
-
-    Placement only -- no shape check and no clamping -- so it is equally
-    correct for exogenous covariates, which must be placed but never trimmed,
-    and for an array this class manufactures itself.
-
-    The default infers the placement from the arrays this object already
-    holds, so hosting a subclass on PyTorch requires writing none of it.
-    Override it where those arrays live somewhere the inference misses.
-
-    Parameters
-    ----------
-    a : array
-        An input array on any namespace.
-
-    Returns
-    -------
-    array
-        The same values, on this object's namespace, dtype and device.
-    """
-    return place(self, a)
 
   def _prep_args(self, y: ArrayT, name: str = "y") -> ArrayT:
     """Place one column of observations and check that is what it is.

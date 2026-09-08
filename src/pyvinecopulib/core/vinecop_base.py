@@ -94,7 +94,7 @@ from .protocols import (
   VinecopLike,
   _VINECOP_EXAMPLE,
 )
-from ._placement import place
+from ._placement import PlacementMixin
 from ._trim import trim
 
 
@@ -220,7 +220,7 @@ def infer_conditioning_set(
   )
 
 
-class VinecopBase(VinecopLike[ArrayT], ABC):
+class VinecopBase(VinecopLike[ArrayT], PlacementMixin, ABC):
   """Canonical array-agnostic vine cascades (numpy / torch).
 
   A concrete subclass writes one method and calls one seam: it implements
@@ -231,7 +231,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   :meth:`rosenblatt` / :meth:`inverse_rosenblatt` / :meth:`sample`,
   :meth:`loglik` / :meth:`plot` / ``__repr__``, the ``dim`` / ``trunc_lvl`` /
   ``order`` accessors, and :meth:`sample_conditional` / :meth:`reorient`.
-  ``_prep`` (input coercion and the unit-box clamp), ``_sample_uniform`` (the
+  ``_prep`` (input placement), ``_sample_uniform`` (the
   RNG that :meth:`sample` draws through) and the batched-path hooks all ship
   defaults.
 
@@ -452,29 +452,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     BicopLike
         The pair copula hosted at that position.
     """
-
-  def _prep(self, a: Any) -> Any:
-    """Bring one input array onto the namespace this vine evaluates on.
-
-    Placement only -- no layout check and no clamping -- so it is equally
-    correct for exogenous covariates, which must be placed but never trimmed.
-    ``_prep_args`` is the composite the cascades call on copula arguments.
-
-    The default infers the placement from the arrays this vine already holds,
-    so hosting a subclass on PyTorch requires writing none of it. Override it
-    where those arrays live somewhere the inference misses.
-
-    Parameters
-    ----------
-    a : array
-        An input array on any namespace.
-
-    Returns
-    -------
-    array
-        The same values, on this vine's namespace, dtype and device.
-    """
-    return place(self, a)
 
   def _prep_args(
     self, u: ArrayT, name: str, *, values_only: bool = False

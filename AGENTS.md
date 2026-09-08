@@ -288,7 +288,7 @@ pyvinecopulib/
         _discrete.py             # DiscretePair + the discrete layouts / per-edge types
         _engines.py              # fit_parts / select_parts — the two fit engines (internal)
         independence.py          # IndependencePair
-        _placement.py            # place / reference_array — the `_prep` seam's default (internal)
+        _placement.py            # place / reference_array / PlacementMixin — the `_prep` seam (internal)
         _reorient.py             # relabel a structure onto a chosen order tail (internal)
         _resolve.py              # resolve_margins / resolve_margin_controls / fit_margin (internal)
         _rootfind.py             # solve_increasing (monotone bisection; internal)
@@ -823,8 +823,8 @@ automatically.
     layer does the same three things to an incoming array, and they are kept
     apart because they do not always apply together:
     **placement** (`_placement.py`'s `place`, reached through the `_prep(a)`
-    seam on all four bases) puts the values on the namespace, dtype and device
-    the object evaluates on; **layout** (`_validation.py`, plus
+    seam the four bases inherit from its `PlacementMixin`) puts the values on
+    the namespace, dtype and device the object evaluates on; **layout** (`_validation.py`, plus
     `VinecopBase._layout` for the vine's `var_types`-dependent widths) says
     which shapes are admissible; **domain** (`_trim.py`'s `trim`) clamps copula
     arguments into the open unit square at the working precision. The
