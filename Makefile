@@ -13,7 +13,7 @@ help: ## Show this help message
 
 sync: ## Install all deps + editable build + pre-commit hooks
 # `--no-install-project`: `build-dir` is a persistent tree, so a first,
-# build-isolated install of the project bakes that throwaway environment's
+# build-isolated install of the project writes that throwaway environment's
 # `ninja` path into `CMakeCache.txt`. The editable rebuild then invokes a
 # binary that no longer exists, and every later import dies in cmake.
 	$(UV) sync --no-install-project --all-extras --group dev --group test --group notebooks
@@ -31,13 +31,19 @@ clean: ## Wipe build artifacts, staged docs sources, and Python caches
 	       docs/CHANGELOG.md
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
+#: Everything whose Python this repository owns. Not `.`: see `lint`.
+OWNED := src tests examples scripts docs
+
 lint: ## Lint + format-check + security-lint; needs no compiled extension
-	$(UV) run ruff check .
-	$(UV) run ruff format --check .
+# Both linters name what this repository owns rather than scanning the tree:
+# CI's dependency step unpacks Eigen and Boost into the workspace, and Eigen
+# ships Python 2 scripts that ruff reads as syntax errors.
+	$(UV) run ruff check $(OWNED)
+	$(UV) run ruff format --check $(OWNED)
 	$(UV) run bandit -c pyproject.toml -q -r src/pyvinecopulib scripts
-# Tracked files only: a shell glob would also read whatever untracked notes
-# happen to be in the working tree, so a local run could fail where CI --
-# which checks out only tracked files -- passes.
+# Tracked files, for the same reason plus one more: a shell glob would also
+# read whatever untracked notes are in the working tree, so a local run could
+# fail where CI -- which checks out only tracked files -- passes.
 	git ls-files -z ':!:lib/*' | xargs -0 $(UV) run codespell --
 
 check: lint ## `lint` plus the type check, which reads the generated .pyi stubs
