@@ -52,13 +52,10 @@ _REAL_OPT_OUTS = {
 }
 
 
-# Checks that actually pass on each estimator despite living in the
-# baseline skip list. Listed here so they get popped before
-# ``parametrize_with_checks`` sees the dict — otherwise pytest emits
-# XPASS noise. Shrink the per-estimator list as the underlying check
-# semantics shift across sklearn versions; the matching baseline
-# entries can move into ``_REAL_OPT_OUTS`` once the pass is
-# universal.
+# Checks that pass despite living in the baseline skip list, popped before
+# `parametrize_with_checks` sees the dict so pytest emits no XPASS noise.
+# Shrink these as sklearn's check semantics shift; a baseline entry moves into
+# `_REAL_OPT_OUTS` once every estimator passes it.
 _KNOWN_PASSING_PER_ESTIMATOR: dict[str, tuple[str, ...]] = {
   "VineDensity": (
     "check_estimators_dtypes",

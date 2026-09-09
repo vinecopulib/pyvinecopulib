@@ -99,13 +99,6 @@ class TestPairCopulaData:
     ):
       pairs_copula_data(valid_data, scatter_size=0.0)
 
-    # # Test too many dimensions
-    # high_dim_data = np.random.uniform(0.1, 0.9, size=(10, 11))
-    # with pytest.raises(
-    #   ValueError, match="Dimension 11 is too large for visualization"
-    # ):
-    #   pairs_copula_data(high_dim_data)
-
     # Test too few observations
     few_obs_data = np.random.uniform(0.1, 0.9, size=(1, 2))
     with pytest.raises(ValueError, match="Need at least 2 observations, got 1"):

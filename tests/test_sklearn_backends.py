@@ -382,13 +382,10 @@ class TestEstimatorWiring:
     assert est.random_state == 7
 
   def test_init_does_not_validate(self) -> None:
-    # Per the sklearn dev guide, ``__init__`` stores parameters
-    # as-is; out-of-range values are caught later by
-    # ``_validate_params()`` at ``fit`` time. Here we confirm
-    # construction with an invalid (but correctly-typed) value
-    # succeeds; the matching fit-time rejection is exercised in
-    # ``tests/test_sklearn_density.py::test_constructor_validation``
-    # and the regressor's analog.
+    # Per the sklearn dev guide, `__init__` stores parameters as-is and
+    # `_validate_params()` rejects them at `fit` time -- which
+    # `test_sklearn_density.py::test_constructor_validation` covers, and the
+    # regressor's analog.
     est = VineDensity(batch_size=0)
     assert est.batch_size == 0
     reg = VineRegressor(quantiles=[1.5])  # 1.5 not in (0, 1)
