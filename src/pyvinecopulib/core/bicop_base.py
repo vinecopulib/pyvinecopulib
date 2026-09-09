@@ -30,6 +30,7 @@ from typing import Any, Optional, Self, TypeVar, cast
 
 from array_api_compat import array_namespace
 
+from ._bicop_plot import bicop_plot
 from ._covariates import prepare
 from ._placement import PlacementMixin, QrngUniformMixin
 from ._trim import trim
@@ -571,8 +572,6 @@ class BicopBase(
     ValueError
         If ``x`` is not a single covariate row.
     """
-    from .._python_helpers.bicop import bicop_plot
-
     bicop_plot(
       self, plot_type, margin_type, xylim, grid_size, x=x, place=self._prep
     )

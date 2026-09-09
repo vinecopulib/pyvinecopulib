@@ -258,7 +258,10 @@ exclude = [
 # Internal helpers, which are not part of any public contract. Matched by
 # file path because the hook resolves modules to their `Path.stem`.
 exclude_files = [
-  'src/pyvinecopulib/_python_helpers/.*\.py$',
+  'src/pyvinecopulib/core/_bicop_plot\.py$',
+  'src/pyvinecopulib/core/_vinecop_plot\.py$',
+  'src/pyvinecopulib/core/_margin_plot\.py$',
+  'src/pyvinecopulib/core/_normal\.py$',
   'src/pyvinecopulib/_deprecations\.py$',
   'src/pyvinecopulib/sklearn/_base\.py$',
   'src/pyvinecopulib/torch/_vinecop_batched\.py$',

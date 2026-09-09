@@ -32,7 +32,7 @@ inline void vinecop_plot_wrapper(const Vinecop& cop, nb::object tree,
                                  const std::string& layout,
                                  nb::object vars_names) {
   // Import the vinecop helper Python module
-  auto mod = nb::module_::import_("pyvinecopulib._python_helpers.vinecop");
+  auto mod = nb::module_::import_("pyvinecopulib.core._vinecop_plot");
 
   // Import the Python plotting function
   auto vinecop_plot = mod.attr("vinecop_plot");
@@ -747,7 +747,7 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
       .def("plot", &vinecop_plot_wrapper, "tree"_a = nb::none(),
            "add_edge_labels"_a = true, "layout"_a = "graphviz",
            "vars_names"_a = nb::none(),
-           python_doc_helper("pyvinecopulib._python_helpers.vinecop",
+           python_doc_helper("pyvinecopulib.core._vinecop_plot",
                              "VINECOP_PLOT_DOC",
                              "Plot the vine copula (extended doc unavailable)")
                .c_str())

@@ -191,9 +191,9 @@ docstring; do not hand-edit the generated `src/include/docstr.hpp`.
 Enforcement runs through `numpydoc.validation` at pre-commit time
 (and ad-hoc via `uv run python -m numpydoc lint <path>`); the
 active rule set is configured in `[tool.numpydoc_validation]` in
-`pyproject.toml`. Internal modules (`_python_helpers`, `_base`,
-`_vinecop_batched`, `_bicop_fit_tll`, `_bicop_interp`, `_deprecations`) are
-excluded by path —
+`pyproject.toml`. Internal modules (`core/_bicop_plot`, `core/_vinecop_plot`,
+`core/_margin_plot`, `core/_normal`, `sklearn/_base`, `_vinecop_batched`,
+`_bicop_fit_tll`, `_bicop_interp`, `_deprecations`) are excluded by path —
 they're off-contract per AGENTS.md §"Module boundaries".
 
 ## Troubleshooting

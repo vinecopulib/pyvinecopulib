@@ -20,7 +20,7 @@ using namespace vinecopulib;
 inline void bicop_plot_wrapper(const Bicop& cop, const std::string& type,
                                const std::string& margin_type, nb::object xylim,
                                nb::object grid_size) {
-  auto mod = nb::module_::import_("pyvinecopulib._python_helpers.bicop");
+  auto mod = nb::module_::import_("pyvinecopulib.core._bicop_plot");
   auto bicop_plot = mod.attr("bicop_plot");
   bicop_plot(nb::cast(cop), type, margin_type, xylim, grid_size);
 }
@@ -527,7 +527,7 @@ Bicop
            "margin_type"_a = "unif", "xylim"_a = nb::none(),
            "grid_size"_a = nb::none(),
            python_doc_helper(
-               "pyvinecopulib._python_helpers.bicop", "BICOP_PLOT_DOC",
+               "pyvinecopulib.core._bicop_plot", "BICOP_PLOT_DOC",
                "Plot the bivariate copula (extended doc unavailable) ")
                .c_str())
       .def("__getstate__",

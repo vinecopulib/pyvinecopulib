@@ -80,7 +80,7 @@ when proposing API changes:
 | `pyvinecopulib.margins` | **Active development** | New in the vine-distribution work. The margin *contract* is stable (see the row above, where it belongs); the curated parametric family registry, the selection criteria, and the report schema are all expected to move as they meet real data. |
 | `pyvinecopulib.sklearn` | **Active development** | API may change in breaking ways between minor releases. The latest break is the `#218` public backend system (estimators now take a single `backend=` instead of loose `controls=`/`structure=`/`seed=` kwargs). |
 | `pyvinecopulib.torch` | **Active development** | Same status. Defaults are still being tuned (cf. `990f997` device-aware `batched`, `cache_integrals=True`); the torch↔C++ cascade parity is a hard guarantee, but the `FitControlsTorchVinecop` surface and `TorchVinecop` method signatures may still shift. |
-| `pyvinecopulib._python_helpers`, `pyvinecopulib._deprecations` | **Internal** | Underscore-prefixed. Not part of any contract; rename / restructure freely. `_deprecations.py` itself is slated for removal in 2.0. |
+| Every underscore-prefixed module, and `pyvinecopulib._deprecations` | **Internal** | Not part of any contract; rename / restructure freely. `_deprecations.py` itself is slated for removal in 2.0. |
 
 The "Solid user base" claim refers to the newest tag (see the
 [GitHub project](https://github.com/vinecopulib/pyvinecopulib)).
@@ -295,6 +295,10 @@ pyvinecopulib/
         _margins.py              # everything about a margin but its contract: coercion, resolution, JSON (internal)
         _trim.py                 # trim — the domain step of the input pipeline (internal)
         _validation.py           # the layout / weights / covariate validators (internal)
+        _bicop_plot.py           # what `Bicop.plot` / `BicopBase.plot` draw (internal)
+        _vinecop_plot.py         # what `Vinecop.plot` / `VinecopBase.plot` draw (internal)
+        _margin_plot.py          # what `Kde1d.plot` / `MarginBase.plot` draw (internal)
+        _normal.py               # SciPy-free normal / exponential scales for those plots (internal)
       families/__init__.py       # BicopFamily enum + 13 family constants + 15 group constants
       utils/__init__.py          # to_pseudo_obs, wdm, sobol, ghalton, sample_uniform
         _pair_plots.py           # pairs_copula_data plotting helper (pure Python)
@@ -323,8 +327,6 @@ pyvinecopulib/
 
       _build_info.py             # build provenance, read by `__version__` reporting
       _cpu.py                    # the AVX2 / FMA check the x86-64 wheels need
-      _python_helpers/           # internal; pure-Python wrappers used by the binding
-        bicop.py, vinecop.py, kde1d.py, stats.py
       pyvinecopulib_ext.*.so     # compiled extension (gitignored build artifact)
       **/__init__.pyi            # type stubs AUTO-GENERATED via scripts/generate_stubs.py (gitignored)
 
@@ -469,22 +471,27 @@ For any behavior change:
   re-export pattern. No wildcard re-exports elsewhere.
 - **Tests import from public namespaces** (`from
   pyvinecopulib.sklearn import VineDensity`), not deep internals.
-  `_python_helpers` and other underscore-prefixed modules are off
-  limits to tests, with one carve-out: the innermost numeric kernels in
-  `torch/_bicop_fit_tll.py` (`_win_smoother`, `_ace`) are reached directly,
-  because what they guarantee is not observable through the public surface
-  at the precision that matters — a leaking per-lane freeze moves a vine's
-  pdf by less than the arithmetic noise a batched fit has to tolerate, and
-  is unmistakable one call in. Import inside the test function, as those do,
-  so the module stays out of collection for a torch-free run.
+  Underscore-prefixed modules are off limits to tests, with two
+  carve-outs. The innermost numeric kernels in `torch/_bicop_fit_tll.py`
+  (`_win_smoother`, `_ace`) are reached directly, because what they guarantee
+  is not observable through the public surface at the precision that matters —
+  a leaking per-lane freeze moves a vine's pdf by less than the arithmetic
+  noise a batched fit has to tolerate, and is unmistakable one call in. Import
+  inside the test function, as those do, so the module stays out of collection
+  for a torch-free run. And the three plot modules
+  (`core/_bicop_plot.py`, `core/_vinecop_plot.py`, `core/_margin_plot.py`)
+  are called directly because the public surface reaches them only through
+  `.plot()`, which draws and returns nothing: their grids, marks and limits
+  are checkable at the function and nowhere above it.
 - **Generated files stay generated.** `docstr.hpp` and every
   `__init__.pyi` are produced by `scripts/generate_docstring.py` and
   `scripts/generate_stubs.py` respectively. Do not hand-edit; do not
   commit. If a docstring or stub is wrong, fix the C++ source or the
   binding code, then rebuild.
-- **Underscore-prefixed modules are internal.** Move helpers into
-  `_python_helpers/` or a leading-underscore file inside the subpackage
-  rather than exposing them.
+- **Underscore-prefixed modules are internal.** Move helpers into a
+  leading-underscore file inside the subpackage that uses them rather than
+  exposing them, and name it for the level it serves (`core/_bicop_plot.py`,
+  `torch/_bicop_fit_tll.py`).
 - **Numpydoc docstring convention.** Public-API docstrings follow the
   [numpydoc spec](https://numpydoc.readthedocs.io/en/latest/format.html):
   short summary as the first line, `Parameters` / `Returns` /
@@ -747,8 +754,8 @@ the reason written beside it — not something a stray import can do quietly.
   margins      torch      sklearn                 tier 2: may need an extra
       |          |           |
       +----------+-----------+---> core           tier 1: NumPy only
-                                    |             (with families, utils,
-                                    v              _python_helpers)
+                                    |             (with families and utils)
+                                    v
                             pyvinecopulib_ext     tier 0: the binding
                                     |
                                     v
@@ -772,10 +779,16 @@ the reason written beside it — not something a stray import can do quietly.
   that PyTorch is required, which is why the signal has to be the
   constructor and never the module. `margins` and `torch` import neither of
   the other two.
-- **`_python_helpers` imports `core`, not the reverse.** It holds the
-  pure-Python callables the binding looks up by name, so it belongs beside
-  the extension rather than under `core`; `core`'s own hop back into it is
-  function-local.
+- **The callables the binding looks up by name live under `core`.**
+  `Bicop.plot`, `Vinecop.plot` and `Kde1d.plot` are bound to
+  `core/_bicop_plot.py`, `core/_vinecop_plot.py` and `core/_margin_plot.py`,
+  resolved by module path at call time — which is why `tests/test_plots.py` is
+  what proves a repoint, and why a wrong path fails only when the method runs.
+  Housing them beside the extension instead put them *above* `core` while
+  `core` imported back into them, a cycle two declared edges recorded rather
+  than forbade. Within tier 1 the one edge is `utils` -> `core`, for the
+  SciPy-free normal and exponential scales in `core/_normal.py` that both
+  `core/_bicop_plot.py` and `utils/_pair_plots.py` draw on.
 - **The extras stay out of `__all__`.** They are reachable through the
   top-level `__getattr__` only, because `from pyvinecopulib import *`
   resolves every name in `__all__` and would otherwise make PyTorch a hard
@@ -1530,13 +1543,8 @@ working. Specifically:
 as submodule imports, but neither is in `__all__` (see above). `sklearn.backends`
 is reached only as `pyvinecopulib.sklearn.backends`.
 
-### Internal: `_python_helpers`, `_deprecations`
+### Internal: `_deprecations`
 
-- `_python_helpers/{bicop,vinecop,kde1d,stats}.py` — pure-Python
-  helpers (DataFrame conversions, plotting glue) called by the
-  nanobind extension via `nb::module_::def(...)` lookup. Not part of
-  any public contract. Move new internal helpers here rather than
-  exposing them.
 - `_deprecations.py` — `_DEPRECATED_TOP_LEVEL` dict + `_resolve_deprecated`
   helper for the top-level `__getattr__` shim. Slated for removal in 2.0;
   new deprecation aliases can be added here in the meantime, but each entry

@@ -28,7 +28,7 @@ class _PlottableKde(Protocol):
   def pdf(self, x: np.ndarray, /) -> np.ndarray: ...
 
 
-KDE1D_PLOT_DOC = """
+MARGIN_PLOT_DOC = """
     Generates a plot for the Kde1d object.
 
     This method creates a line plot for continuous data, a point plot for discrete data,
@@ -114,14 +114,14 @@ def make_plotting_grid(kde: _PlottableKde, grid_size: int = 200) -> np.ndarray:
     return np.asarray(ev)
 
 
-def kde1d_plot(
+def margin_plot(
   kde: _PlottableKde,
   xlim: Optional[tuple[float, float]] = None,
   ylim: Optional[tuple[float, float]] = None,
   grid_size: int = 200,
   show_zero_mass: bool = True,
 ) -> None:
-  """{}""".format(KDE1D_PLOT_DOC)
+  """{}""".format(MARGIN_PLOT_DOC)
 
   # Check if kde is fitted
   if kde.grid_points.size == 0:

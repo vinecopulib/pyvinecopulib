@@ -5,9 +5,16 @@ import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 from mpl_toolkits.mplot3d.axis3d import XAxis as XAxis3D, YAxis as YAxis3D
 
-from ..core._covariates import pair_eval
-from ..core.protocols import ArrayT
-from .stats import expon_cdf, expon_pdf, expon_ppf, norm_cdf, norm_pdf, norm_ppf
+from ._covariates import pair_eval
+from ._normal import (
+  expon_cdf,
+  expon_pdf,
+  expon_ppf,
+  norm_cdf,
+  norm_pdf,
+  norm_ppf,
+)
+from .protocols import ArrayT
 
 BICOP_PLOT_DOC = """
     Generates a plot for the Bicop object.

@@ -1,5 +1,5 @@
 """
-Tests for statistical helper functions in pyvinecopulib._python_helpers.stats
+Tests for the pure-NumPy normal and exponential helpers in `core._normal`.
 """
 
 import math
@@ -13,7 +13,7 @@ from numpy.testing import (
 )
 
 import pyvinecopulib as pv
-from pyvinecopulib._python_helpers.stats import (
+from pyvinecopulib.core._normal import (
   expon_cdf,
   expon_pdf,
   expon_ppf,

@@ -223,7 +223,7 @@ class TestBicopHelpers:
 
   def test_get_default_xylim(self) -> None:
     """Test get_default_xylim function"""
-    from pyvinecopulib._python_helpers.bicop import get_default_xylim
+    from pyvinecopulib.core._bicop_plot import get_default_xylim
 
     # Test valid margin types
     assert get_default_xylim("unif") == (1e-2, 1 - 1e-2)
@@ -236,7 +236,7 @@ class TestBicopHelpers:
 
   def test_get_default_grid_size(self) -> None:
     """Test get_default_grid_size function"""
-    from pyvinecopulib._python_helpers.bicop import get_default_grid_size
+    from pyvinecopulib.core._bicop_plot import get_default_grid_size
 
     # Test valid plot types
     assert get_default_grid_size("contour") == 100
@@ -248,7 +248,7 @@ class TestBicopHelpers:
 
   def test_bicop_plot_parameter_validation(self) -> None:
     """Test bicop_plot parameter validation"""
-    from pyvinecopulib._python_helpers.bicop import bicop_plot
+    from pyvinecopulib.core._bicop_plot import bicop_plot
 
     # Create a mock copula object
     mock_cop = MagicMock()
@@ -265,7 +265,7 @@ class TestBicopHelpers:
 
   def test_bicop_plot_restores_discrete_type_after_failure(self) -> None:
     """A plotting error cannot mutate a caller-owned discrete pair."""
-    from pyvinecopulib._python_helpers.bicop import bicop_plot
+    from pyvinecopulib.core._bicop_plot import bicop_plot
 
     class Pair:
       var_types = ["d", "c"]
@@ -285,7 +285,7 @@ class TestBicopHelpers:
     self, mock_clabel: Any, mock_contour: Any, mock_show: Any
   ) -> None:
     """Test bicop_plot with contour type"""
-    from pyvinecopulib._python_helpers.bicop import bicop_plot
+    from pyvinecopulib.core._bicop_plot import bicop_plot
 
     # Create a mock copula object
     mock_cop = MagicMock()
@@ -304,7 +304,7 @@ class TestBicopHelpers:
   @patch("matplotlib.pyplot.figure")
   def test_bicop_plot_surface(self, mock_figure: Any, mock_show: Any) -> None:
     """Test bicop_plot with surface type"""
-    from pyvinecopulib._python_helpers.bicop import bicop_plot
+    from pyvinecopulib.core._bicop_plot import bicop_plot
 
     # Create mock figure and axis
     mock_fig = MagicMock()
@@ -332,7 +332,7 @@ class TestBicopHelpers:
     self, mock_contour: Any, mock_show: Any
   ) -> None:
     """Test bicop_plot with different margin types"""
-    from pyvinecopulib._python_helpers.bicop import bicop_plot
+    from pyvinecopulib.core._bicop_plot import bicop_plot
 
     # Create a mock copula object
     mock_cop = MagicMock()
@@ -358,7 +358,7 @@ class TestBicopHelpers:
     self, mock_contour: Any, mock_show: Any
   ) -> None:
     """Test bicop_plot with custom xylim and grid_size"""
-    from pyvinecopulib._python_helpers.bicop import bicop_plot
+    from pyvinecopulib.core._bicop_plot import bicop_plot
 
     # Create a mock copula object
     mock_cop = MagicMock()
@@ -402,7 +402,7 @@ class TestVinecopHelpers:
 
   def test_get_name(self) -> None:
     """Test get_name function"""
-    from pyvinecopulib._python_helpers.vinecop import get_name
+    from pyvinecopulib.core._vinecop_plot import get_name
 
     vars_names = ["X1", "X2", "X3", "X4"]
 
@@ -420,7 +420,7 @@ class TestVinecopHelpers:
 
   def test_get_graph(self) -> None:
     """Test get_graph function"""
-    from pyvinecopulib._python_helpers.vinecop import get_graph
+    from pyvinecopulib.core._vinecop_plot import get_graph
 
     vars_names = ["X1", "X2", "X3", "X4"]
 
@@ -450,7 +450,7 @@ class TestVinecopHelpers:
 
   def test_get_graph_higher_trees(self) -> None:
     """Test get_graph for higher order trees"""
-    from pyvinecopulib._python_helpers.vinecop import get_graph
+    from pyvinecopulib.core._vinecop_plot import get_graph
 
     vars_names = ["X1", "X2", "X3", "X4"]
 
@@ -464,7 +464,7 @@ class TestVinecopHelpers:
 
   def test_vinecop_plot_parameter_validation(self) -> None:
     """Test vinecop_plot parameter validation"""
-    from pyvinecopulib._python_helpers.vinecop import vinecop_plot
+    from pyvinecopulib.core._vinecop_plot import vinecop_plot
 
     # Test with wrong number of variable names
     with pytest.raises(
@@ -474,7 +474,7 @@ class TestVinecopHelpers:
 
   def test_vinecop_plot_high_dimension_error(self) -> None:
     """Test vinecop_plot with high truncation level"""
-    from pyvinecopulib._python_helpers.vinecop import vinecop_plot
+    from pyvinecopulib.core._vinecop_plot import vinecop_plot
 
     # Create a mock vinecop with high truncation level
     mock_vinecop = MagicMock()
@@ -487,7 +487,7 @@ class TestVinecopHelpers:
 
   def test_vinecop_plot_basic(self) -> None:
     """Test basic vinecop_plot functionality"""
-    from pyvinecopulib._python_helpers.vinecop import vinecop_plot
+    from pyvinecopulib.core._vinecop_plot import vinecop_plot
 
     # Instead of mocking the complex matplotlib behavior,
     # let's test that the function accepts correct parameters and handles validation
@@ -522,7 +522,7 @@ class TestVinecopHelpers:
 
   def test_vinecop_plot_multiple_trees(self) -> None:
     """Test vinecop_plot with multiple trees"""
-    from pyvinecopulib._python_helpers.vinecop import vinecop_plot
+    from pyvinecopulib.core._vinecop_plot import vinecop_plot
 
     # Use the same simpler mocking approach as test_vinecop_plot_basic
     with patch("matplotlib.pyplot.subplots") as mock_subplots:
@@ -567,7 +567,7 @@ class TestVinecopHelpers:
 
   def test_vinecop_plot_edge_labels(self) -> None:
     """Test vinecop_plot with and without edge labels"""
-    from pyvinecopulib._python_helpers.vinecop import vinecop_plot
+    from pyvinecopulib.core._vinecop_plot import vinecop_plot
 
     # Use the same simpler mocking approach as test_vinecop_plot_basic
     with patch("matplotlib.pyplot.subplots") as mock_subplots:
@@ -625,7 +625,7 @@ class TestVinecopHelpers:
 
   def test_vinecop_plot_layouts(self) -> None:
     """Test vinecop_plot with different layouts"""
-    from pyvinecopulib._python_helpers.vinecop import vinecop_plot
+    from pyvinecopulib.core._vinecop_plot import vinecop_plot
 
     # Use the same simpler mocking approach as test_vinecop_plot_basic
     with patch("matplotlib.pyplot.subplots") as mock_subplots:
@@ -675,7 +675,7 @@ class TestVinecopHelpers:
 
   def test_vinecop_plot_custom_variable_names(self) -> None:
     """Test vinecop_plot with custom variable names"""
-    from pyvinecopulib._python_helpers.vinecop import vinecop_plot
+    from pyvinecopulib.core._vinecop_plot import vinecop_plot
 
     # Use the same simpler mocking approach as test_vinecop_plot_basic
     with patch("matplotlib.pyplot.subplots") as mock_subplots:
@@ -709,7 +709,7 @@ class TestVinecopHelpers:
 
   def test_vinecop_plot_subplot_calculation(self) -> None:
     """Test subplot layout calculation"""
-    from pyvinecopulib._python_helpers.vinecop import vinecop_plot
+    from pyvinecopulib.core._vinecop_plot import vinecop_plot
 
     # Use the same simpler mocking approach as test_vinecop_plot_basic
     with patch("matplotlib.pyplot.subplots") as mock_subplots:
@@ -777,7 +777,7 @@ class TestKde1dHelpers:
 
   def test_make_plotting_grid_continuous(self) -> None:
     """Test make_plotting_grid function for continuous data"""
-    from pyvinecopulib._python_helpers.kde1d import make_plotting_grid
+    from pyvinecopulib.core._margin_plot import make_plotting_grid
 
     # Create a mock Kde1d object
     mock_kde = MagicMock()
@@ -796,7 +796,7 @@ class TestKde1dHelpers:
 
   def test_make_plotting_grid_discrete(self) -> None:
     """Test make_plotting_grid function for discrete data"""
-    from pyvinecopulib._python_helpers.kde1d import make_plotting_grid
+    from pyvinecopulib.core._margin_plot import make_plotting_grid
 
     # Create a mock Kde1d object
     mock_kde = MagicMock()
@@ -815,7 +815,7 @@ class TestKde1dHelpers:
 
   def test_make_plotting_grid_zero_inflated(self) -> None:
     """Test make_plotting_grid function for zero-inflated data"""
-    from pyvinecopulib._python_helpers.kde1d import make_plotting_grid
+    from pyvinecopulib.core._margin_plot import make_plotting_grid
 
     # Create a mock Kde1d object
     mock_kde = MagicMock()
@@ -832,7 +832,7 @@ class TestKde1dHelpers:
 
   def test_make_plotting_grid_with_bounds(self) -> None:
     """Test make_plotting_grid function with specified bounds"""
-    from pyvinecopulib._python_helpers.kde1d import make_plotting_grid
+    from pyvinecopulib.core._margin_plot import make_plotting_grid
 
     # Create a mock Kde1d object with bounds
     mock_kde = MagicMock()
@@ -847,9 +847,9 @@ class TestKde1dHelpers:
     assert grid[0] == 0.0
     assert grid[-1] == 5.0
 
-  def test_kde1d_plot_parameter_validation(self) -> None:
-    """Test kde1d_plot parameter validation"""
-    from pyvinecopulib._python_helpers.kde1d import kde1d_plot
+  def test_margin_plot_parameter_validation(self) -> None:
+    """Test margin_plot parameter validation"""
+    from pyvinecopulib.core._margin_plot import margin_plot
 
     # Create a mock kde object that appears unfitted
     mock_kde = MagicMock()
@@ -857,13 +857,13 @@ class TestKde1dHelpers:
 
     # Test unfitted kde raises error
     with pytest.raises(ValueError, match="Kde1d object must be fitted"):
-      kde1d_plot(mock_kde)
+      margin_plot(mock_kde)
 
   @patch("matplotlib.pyplot.show")
   @patch("matplotlib.pyplot.plot")
-  def test_kde1d_plot_continuous(self, mock_plot: Any, mock_show: Any) -> None:
-    """Test kde1d_plot with continuous data"""
-    from pyvinecopulib._python_helpers.kde1d import kde1d_plot
+  def test_margin_plot_continuous(self, mock_plot: Any, mock_show: Any) -> None:
+    """Test margin_plot with continuous data"""
+    from pyvinecopulib.core._margin_plot import margin_plot
 
     # Create a mock fitted kde object
     mock_kde = MagicMock()
@@ -874,7 +874,7 @@ class TestKde1dHelpers:
     mock_kde.pdf.return_value = np.ones(100) * 0.5
 
     # Test continuous plot
-    kde1d_plot(mock_kde, grid_size=100)
+    margin_plot(mock_kde, grid_size=100)
 
     # Verify matplotlib functions were called
     mock_plot.assert_called()
@@ -882,9 +882,9 @@ class TestKde1dHelpers:
 
   @patch("matplotlib.pyplot.show")
   @patch("matplotlib.pyplot.plot")
-  def test_kde1d_plot_discrete(self, mock_plot: Any, mock_show: Any) -> None:
-    """Test kde1d_plot with discrete data"""
-    from pyvinecopulib._python_helpers.kde1d import kde1d_plot
+  def test_margin_plot_discrete(self, mock_plot: Any, mock_show: Any) -> None:
+    """Test margin_plot with discrete data"""
+    from pyvinecopulib.core._margin_plot import margin_plot
 
     # Create a mock fitted kde object
     mock_kde = MagicMock()
@@ -895,7 +895,7 @@ class TestKde1dHelpers:
     mock_kde.pdf.return_value = np.ones(10) * 0.1
 
     # Test discrete plot
-    kde1d_plot(mock_kde, grid_size=50)
+    margin_plot(mock_kde, grid_size=50)
 
     # Verify matplotlib functions were called
     mock_plot.assert_called()
@@ -903,11 +903,11 @@ class TestKde1dHelpers:
 
   @patch("matplotlib.pyplot.show")
   @patch("matplotlib.pyplot.plot")
-  def test_kde1d_plot_zero_inflated(
+  def test_margin_plot_zero_inflated(
     self, mock_plot: Any, mock_show: Any
   ) -> None:
-    """Test kde1d_plot with zero-inflated data"""
-    from pyvinecopulib._python_helpers.kde1d import kde1d_plot
+    """Test margin_plot with zero-inflated data"""
+    from pyvinecopulib.core._margin_plot import margin_plot
 
     # Create a mock fitted kde object
     mock_kde = MagicMock()
@@ -918,7 +918,7 @@ class TestKde1dHelpers:
     mock_kde.pdf.return_value = np.ones(100) * 0.2
 
     # Test zero-inflated plot
-    kde1d_plot(mock_kde, grid_size=100, show_zero_mass=True)
+    margin_plot(mock_kde, grid_size=100, show_zero_mass=True)
 
     # Verify matplotlib functions were called (should be called twice - main plot + zero point)
     assert mock_plot.call_count >= 1
@@ -926,11 +926,11 @@ class TestKde1dHelpers:
 
   @patch("matplotlib.pyplot.show")
   @patch("matplotlib.pyplot.plot")
-  def test_kde1d_plot_custom_limits(
+  def test_margin_plot_custom_limits(
     self, mock_plot: Any, mock_show: Any
   ) -> None:
-    """Test kde1d_plot with custom axis limits"""
-    from pyvinecopulib._python_helpers.kde1d import kde1d_plot
+    """Test margin_plot with custom axis limits"""
+    from pyvinecopulib.core._margin_plot import margin_plot
 
     # Create a mock fitted kde object
     mock_kde = MagicMock()
@@ -941,7 +941,7 @@ class TestKde1dHelpers:
     mock_kde.pdf.return_value = np.ones(100) * 0.5
 
     # Test with custom limits
-    kde1d_plot(mock_kde, xlim=(1, 4), ylim=(0, 1), grid_size=100)
+    margin_plot(mock_kde, xlim=(1, 4), ylim=(0, 1), grid_size=100)
 
     # Verify matplotlib functions were called
     mock_plot.assert_called()
@@ -953,7 +953,7 @@ class TestPlotDocstrings:
 
   def test_bicop_plot_doc(self) -> None:
     """Test BICOP_PLOT_DOC is defined"""
-    from pyvinecopulib._python_helpers.bicop import BICOP_PLOT_DOC
+    from pyvinecopulib.core._bicop_plot import BICOP_PLOT_DOC
 
     assert isinstance(BICOP_PLOT_DOC, str)
     assert len(BICOP_PLOT_DOC) > 0
@@ -962,21 +962,21 @@ class TestPlotDocstrings:
 
   def test_vinecop_plot_doc(self) -> None:
     """Test VINECOP_PLOT_DOC is defined"""
-    from pyvinecopulib._python_helpers.vinecop import VINECOP_PLOT_DOC
+    from pyvinecopulib.core._vinecop_plot import VINECOP_PLOT_DOC
 
     assert isinstance(VINECOP_PLOT_DOC, str)
     assert len(VINECOP_PLOT_DOC) > 0
     assert "Parameters" in VINECOP_PLOT_DOC
     assert "Returns" in VINECOP_PLOT_DOC
 
-  def test_kde1d_plot_doc(self) -> None:
-    """Test KDE1D_PLOT_DOC is defined"""
-    from pyvinecopulib._python_helpers.kde1d import KDE1D_PLOT_DOC
+  def test_margin_plot_doc(self) -> None:
+    """Test MARGIN_PLOT_DOC is defined"""
+    from pyvinecopulib.core._margin_plot import MARGIN_PLOT_DOC
 
-    assert isinstance(KDE1D_PLOT_DOC, str)
-    assert len(KDE1D_PLOT_DOC) > 0
-    assert "Parameters" in KDE1D_PLOT_DOC
-    assert "Returns" in KDE1D_PLOT_DOC
+    assert isinstance(MARGIN_PLOT_DOC, str)
+    assert len(MARGIN_PLOT_DOC) > 0
+    assert "Parameters" in MARGIN_PLOT_DOC
+    assert "Returns" in MARGIN_PLOT_DOC
 
 
 class TestEdgeCases:
@@ -984,7 +984,7 @@ class TestEdgeCases:
 
   def test_bicop_plot_with_identical_density_values(self) -> None:
     """Test bicop_plot when all density values are identical"""
-    from pyvinecopulib._python_helpers.bicop import bicop_plot
+    from pyvinecopulib.core._bicop_plot import bicop_plot
 
     # Create a mock copula that returns identical density values
     mock_cop = MagicMock()
@@ -998,7 +998,7 @@ class TestEdgeCases:
 
   def test_vinecop_get_name_edge_cases(self) -> None:
     """Test get_name function edge cases"""
-    from pyvinecopulib._python_helpers.vinecop import get_name
+    from pyvinecopulib.core._vinecop_plot import get_name
 
     # Create a simple 3D vine copula
     np.random.seed(1234)
@@ -1051,7 +1051,7 @@ def test_bicop_plot_refuses_x_on_a_pair_that_reads_no_covariates() -> None:
   without violating the contract -- which is itself why the forwarding rule
   cannot rely on the parameter being absent.
   """
-  from pyvinecopulib._python_helpers.bicop import bicop_plot
+  from pyvinecopulib.core._bicop_plot import bicop_plot
 
   class NoCovariates:
     var_types = None
@@ -1065,7 +1065,7 @@ def test_bicop_plot_refuses_x_on_a_pair_that_reads_no_covariates() -> None:
 
 def test_bicop_plot_takes_one_covariate_row_only() -> None:
   """A 2-d surface shows the density at one covariate value, not many."""
-  from pyvinecopulib._python_helpers.bicop import bicop_plot
+  from pyvinecopulib.core._bicop_plot import bicop_plot
 
   class Conditional:
     var_types = None
@@ -1080,7 +1080,7 @@ def test_bicop_plot_takes_one_covariate_row_only() -> None:
 
 def test_bicop_plot_places_the_grid_through_the_supplied_hook() -> None:
   """``place`` is passed explicitly, so the compiled path keeps its NumPy grid."""
-  from pyvinecopulib._python_helpers.bicop import bicop_plot
+  from pyvinecopulib.core._bicop_plot import bicop_plot
 
   seen: dict[str, object] = {}
 

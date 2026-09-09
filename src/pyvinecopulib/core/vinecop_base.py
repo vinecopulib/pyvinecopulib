@@ -83,6 +83,7 @@ from ._vinecop_discrete import (
   stack_edge,
 )
 from ._vinecop_reorient import Reorientation, reorientation
+from ._vinecop_plot import vinecop_plot
 from ._covariates import pair_eval, prepare
 from ._vinecop_fit_engines import (
   FitEdge,
@@ -1652,8 +1653,6 @@ class VinecopBase(
     None
         The figure is drawn with matplotlib.
     """
-    from .._python_helpers.vinecop import vinecop_plot
-
     vinecop_plot(self, tree, add_edge_labels, layout, vars_names)
 
   def __repr__(self) -> str:
