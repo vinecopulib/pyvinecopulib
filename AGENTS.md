@@ -912,15 +912,20 @@ automatically.
     nothing else. It is not a statement that the signatures agree: the
     compiled classes take per-row `parameters` where the protocols take a
     conditioning matrix `x`, which is why `x` is keyword-only on both.
-  - **One input pipeline, three separable steps, one owner each.** Every
+  - **One input pipeline, three separable steps, one owner per level.** Every
     layer does the same three things to an incoming array, and they are kept
     apart because they do not always apply together:
     **placement** (`_placement.py`'s `place`, reached through the `_prep(a)`
     hook the four bases inherit from its `PlacementMixin`) puts the values on
-    the namespace, dtype and device the object evaluates on; **layout** (`_validation.py`, plus
-    `VinecopBase._layout` for the vine's `var_types`-dependent widths) says
-    which shapes are admissible; **domain** (`_trim.py`'s `trim`) clamps copula
-    arguments into the open unit square at the working precision. The
+    the namespace, dtype and device the object evaluates on; **layout** (the
+    `_layout` hook, one per level -- a two-column check on `BicopBase`, a
+    one-dimensional check on `MarginBase`, and `collapse_data`'s
+    `var_types`-dependent widths on `VinecopBase`) says which shapes are
+    admissible; **domain** (`_trim.py`'s `trim`) clamps copula arguments into
+    the open unit square at the working precision. `trim` is not
+    entry-only: two of its nine call sites are pipeline entry and seven clamp
+    an h-function or distribution-function value the cascades produced, which
+    is the same domain question asked on the way out. The
     composites that apply all three to a copula argument are `_prep_args` —
     `BicopBase._prep_args(u)`, `MarginBase._prep_args(y, name)` (placement
     plus the single-column layout -- a margin's argument is on the data scale,
@@ -1065,8 +1070,15 @@ automatically.
   continuous, discrete and mixed margins with no branch in the
   likelihood path. `MarginBase` (`margin_base.py`) needs only `pdf` /
   `cdf` and supplies `icdf` (bisection), `logpdf`, `cdf_left`, `loglik`,
-  `sample`, `var_type`, `support`, `is_fitted`, the `nobs` / `n_parameters`
-  a criterion penalizes against, `declare` and a raising `fit`.
+  `sample`, `plot`, `var_type`, `support`, `is_fitted`, the `nobs` /
+  `n_parameters` a criterion penalizes against, `declare` and a raising `fit`.
+  `plot` draws the density or the distribution function of any of the three
+  variable types, on the `BicopBase.plot` pattern -- the grid is manufactured
+  from nothing, so it is placed through `_prep`, and one covariate row is a
+  slice of a conditional margin rather than the whole of it. It refuses an `x`
+  a margin does not declare, because forwarding to a margin is by flag and
+  `declared_eval` *skips* rather than raises: the alternative is the
+  unconditional curve under a conditional-looking call.
   Everything beyond `{pdf, cdf, icdf}` is an **optional capability**
   read with `getattr` (`var_type` ∈ `{"c","d","zi"}`, `cdf_left`,
   `logpdf`, `sample`, `support`, `supports_covariates`), per the house
@@ -1734,7 +1746,8 @@ Round-trip / parity properties to preserve when touching numerics:
 
 - **Custom margins (`pyvinecopulib.core`).** Subclass `MarginBase` and
   define `pdf` / `cdf`; `icdf`, `logpdf`, `cdf_left`, `loglik`,
-  `sample`, `support`, `nobs`, `n_parameters` and `declare` come with it --
+  `sample`, `plot`, `support`, `nobs`, `n_parameters` and `declare` come with
+  it --
   a fit records the first two into the `_nobs` / `_n_free` slots the base
   owns, so the criteria work without a subclass restating them. Add `fit(y, weights=None) ->
   Self` to make it an estimator, or leave it out for a fixed margin —
