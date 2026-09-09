@@ -61,7 +61,7 @@ from ..core import (
 from ..core._vinecop_discrete import continuous_view
 from ..core.bicop_independence import IndependenceBicop
 from ..core._validation import reject_covariates
-from ..core.vinecop_base import FitEdge, FitLevel, _NotBatchable
+from ..core.vinecop_base import FitEdge, FitLevel, NotBatchable
 from ..pyvinecopulib_ext import (
   RVineStructure,
   Vinecop,
@@ -1085,7 +1085,7 @@ class TorchVinecop(
 
     Raises
     ------
-    _NotBatchable
+    NotBatchable
         If any variable is discrete -- the stacked per-level grids carry no
         distribution function, which a discrete edge's h-functions are
         difference quotients of -- or if any pair lacks the grid internals the
@@ -1093,7 +1093,7 @@ class TorchVinecop(
         layer catches it and falls back to the non-batched cascade.
     """
     if self._n_discrete:
-      raise _NotBatchable(
+      raise NotBatchable(
         "batched path is continuous-only: the stacked per-level grids carry no "
         "distribution function, which a discrete edge's h-functions are "
         "difference quotients of"
@@ -1103,7 +1103,7 @@ class TorchVinecop(
       for t in range(self.trunc_lvl)
       for e in range(self.d - t - 1)
     ):
-      raise _NotBatchable(
+      raise NotBatchable(
         "batched path requires every pair to expose grid/cache internals "
         "(supports_batched=True); this vine has a non-grid pair copula."
       )

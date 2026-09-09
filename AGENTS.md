@@ -112,6 +112,11 @@ long-lived development branch. Read the Docs' `latest` follows `main` and
   breaking change. Scopes are the subpackages and areas: `core`, `families`,
   `utils`, `sklearn`, `torch`, `bicop`, `vinecop`, `build`, `ci`, `docs`,
   `deps`, `examples`.
+    - **`!` is measured from the newest tag**, the same baseline
+      `CHANGELOG.md` uses, so inside an unreleased cycle a signature no
+      release shipped is a surface nothing can break. The test is the
+      changelog's own: if no bullet belongs under *Breaking API changes*, the
+      `!` does not belong either.
 - **Stack dependent work** rather than merging to unblock yourself: each
   pull request branches off the previous one and targets it. `gh stack`
   (`init` / `add` / `submit` / `sync` / `rebase`) manages the chain. Two
@@ -1608,7 +1613,12 @@ below are a quick orientation.
   `Vinedist`, `VinedistLike`, `VinedistBase`; plus the margin serialization
   helpers `margin_from_json`, `margin_to_json`, `register_margin_json`; plus
   the input-pipeline steps a subclass composes itself, `place`,
-  `reference_array`, `trim`, `prepare_covariates` and `to_numpy`.
+  `reference_array`, `trim`, `prepare_covariates`, `covariate_row` and
+  `to_numpy`; plus the rest of what an extension point's own documentation
+  asks for -- `NotBatchable`, `reject_covariates`, `validate_weights`,
+  `usable_observations`, `collapse_data`, `continuous_view`,
+  `model_from_json`, `MODEL_JSON_VERSION`, `FitEdge`, `FitLevel` and
+  `ArrayT`.
 - **`pyvinecopulib.families`** — `BicopFamily` enum; per-family
   constants (`indep`, `gaussian`, `student`, `clayton`, `gumbel`,
   `frank`, `joe`, `bb1`, `bb6`, `bb7`, `bb8`, `tawn`, `tll`); group

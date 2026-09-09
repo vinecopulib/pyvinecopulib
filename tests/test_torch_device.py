@@ -431,3 +431,91 @@ def test_batched_fit_matches_the_per_edge_fit_on_device(
     rtol=1e-9,
     atol=1e-11,
   )
+
+
+def test_a_declared_placement_serves_a_host_that_is_not_a_module(
+  device: str,
+) -> None:
+  """The mixin resolves a declaration, not only registered tensors.
+
+  A pair copula that is not an ``nn.Module`` -- backend
+  estimators, a device handle and Python scalars, no tensor -- registers
+  nothing for ``reference_tensor`` to find. Before this it reached
+  ``self.parameters()`` and raised ``AttributeError``; the array-API inference
+  it falls back to instead returned its argument untouched, which is how a
+  host ``x`` met a device ``u`` inside a ``column_stack`` downstream.
+  """
+  from pyvinecopulib.core import BicopBase
+  from pyvinecopulib.torch import TensorPlacementMixin
+
+  class _Declared(TensorPlacementMixin, BicopBase[torch.Tensor]):
+    supports_covariates = True
+
+    def __init__(self) -> None:
+      self.device = torch.device(device)
+      self.dtype = torch.float64
+
+    def pdf(self, u: Any, *, x: Any = None) -> Any:
+      u = self._prep_args(u)
+      assert isinstance(u, torch.Tensor) and u.device.type == device
+      assert x is None or (
+        isinstance(x, torch.Tensor) and x.device.type == device
+      )
+      return torch.ones(u.shape[0], dtype=u.dtype, device=u.device)
+
+    def hfunc1(self, u: Any, *, x: Any = None) -> Any:
+      return self._prep_args(u)[:, 1]
+
+    def hfunc2(self, u: Any, *, x: Any = None) -> Any:
+      return self._prep_args(u)[:, 0]
+
+  pair = _Declared()
+  u_np = np.array([[0.3, 0.5], [0.7, 0.2]])
+
+  placed = pair._prep(u_np)
+  assert placed.dtype is torch.float64 and placed.device.type == device
+  # The dtype is normalized rather than inherited: `torch.tensor([0.3])` is
+  # float32, and a downstream test had been pinning that as correct.
+  assert pair._prep(u_np.astype(np.float32)).dtype is torch.float64
+  # Both arguments arrive placed, so they can meet in one expression.
+  assert float(pair.loglik(u_np, x=np.array([[1.0], [2.0]]))) == 0.0
+
+
+def test_an_undeclared_host_gets_the_documented_default() -> None:
+  """No registered tensor and no declaration is the third step, not a raise."""
+  from pyvinecopulib.core import BicopBase
+  from pyvinecopulib.torch import TensorPlacementMixin
+
+  class _Bare(TensorPlacementMixin, BicopBase[torch.Tensor]):
+    def pdf(self, u: Any, *, x: Any = None) -> Any:
+      return torch.ones(u.shape[0], dtype=u.dtype)
+
+    def hfunc1(self, u: Any, *, x: Any = None) -> Any:
+      return u[:, 1]
+
+    def hfunc2(self, u: Any, *, x: Any = None) -> Any:
+      return u[:, 0]
+
+  placed = _Bare()._prep(np.array([[0.3, 0.5]], dtype=np.float32))
+  assert placed.dtype is torch.float64 and placed.device.type == "cpu"
+
+
+def test_fit_and_select_place_their_data(device: str) -> None:
+  """The two re-estimators placed nothing, unlike every other entry point.
+
+  `TorchVinecop.fit(numpy_u)` on a CUDA vine raised `can't convert cuda:0
+  device type tensor to numpy`: the engines allocate their per-tree scratch in
+  the data's namespace, so a vine whose pairs answer elsewhere then assigns
+  across namespaces. `from_data` was unaffected -- it places from the controls.
+  """
+  u_np = pv.to_pseudo_obs(np.random.default_rng(0).normal(size=(150, 3)))
+  controls = FitControlsTorchVinecop(
+    device=torch.device(device), dtype=torch.float64
+  )
+  vine = TorchVinecop.from_data(
+    torch.as_tensor(u_np, dtype=torch.float64, device=device), controls
+  )
+  assert vine.fit(u_np, controls) is vine
+  assert vine.select(u_np, controls) is vine
+  out = vine.pdf(torch.as_tensor(u_np[:4], dtype=torch.float64, device=device))
+  assert out.shape == (4,) and out.device.type == device

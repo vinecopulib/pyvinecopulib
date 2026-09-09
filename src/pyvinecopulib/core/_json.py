@@ -14,6 +14,8 @@ import json
 import math
 from typing import Any, cast
 
+__all__ = ["MODEL_JSON_VERSION", "dumps", "loads"]
+
 #: Bumped when a payload's shape changes incompatibly. One number for the
 #: whole model: a margin payload and the distribution payload that embeds it
 #: are read by the same build, so a change to either breaks both.
@@ -92,7 +94,7 @@ def loads(text: str) -> dict[str, Any]:
   Parameters
   ----------
   text : str
-      A JSON object produced by :func:`dumps`.
+      A JSON object produced by ``dumps``.
 
   Returns
   -------

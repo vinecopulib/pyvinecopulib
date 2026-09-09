@@ -102,6 +102,10 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Export the input pipeline's steps from `pyvinecopulib.core` -- `place`, `reference_array`, `trim`, `prepare_covariates` and `to_numpy` -- so a subclass composing `_prep_args` itself reaches them by name instead of importing three private modules (#334).
     - `_prep` now says that placement is inference, and that an object holding no array gets its values back untouched; `reference_array(self) is None` is the check and an overridden `_prep` the fix
 - Add `_invalidate_batched` on `VinecopBase`, the named way to drop what `set_pair_copulas` documents as needing invalidation; `TorchVinecop` overrides it to clear the compiled cascades alongside the stacked grids (#334).
+- Export the rest of what an extension point's own documentation asks for: `NotBatchable` (raised by a `_build_batched` override to decline the grid fast path), `reject_covariates`, `validate_weights`, `usable_observations`, `collapse_data`, `continuous_view`, `covariate_row`, `model_from_json`, `MODEL_JSON_VERSION`, `FitEdge`, `FitLevel` and `ArrayT` (#334).
+    - `_NotBatchable` is renamed `NotBatchable`, since a name a subclass has to raise cannot be private
+- Resolve `trim`'s array namespace from its argument: `trim(a)`, with `trim(a, xp)` kept as the fast path for a caller that already holds one. A consumer of a single array library otherwise names an array namespace nowhere else in its code, purely to hand one to a function about to ask what namespace the array is in (#334).
+- Add `TensorPlacementMixin` to `pyvinecopulib.torch`, and let a host that registers no tensors *declare* its `device` and `dtype` instead. A torch class that is not an `nn.Module` -- estimators, a device handle and scalars, no tensor -- resolved no placement at all, and reached `self.parameters()` looking for one (#334).
 
 #### Discrete and conditional models
 
@@ -188,6 +192,9 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
   own constructors accept, so nothing constructible fails to unpickle, which used to raise `MemoryError` or hang the interpreter (#320).
 - `Kde1d.icdf` returns an empty array for an empty input instead of terminating the process (#320).
 - `Bicop.plot` evaluates a continuous copy of a discrete copula instead of retyping the caller's model in place (#320).
+- `VinecopBase.fit` and `.select` place their observations, as every other entry point does. The fit engines allocate their per-tree scratch in the data's namespace, so `TorchVinecop.fit` on a CUDA vine raised `can't convert cuda:0 device type tensor to numpy` for a NumPy `u`; `from_data` was unaffected, placing from the controls (#334).
+- `prepare_covariates` places through the `_prep` hook rather than around it, so an object whose placement is declared rather than inferable is honored on the covariate path as it already was on the argument path -- the same object and call had two behaviors for its two arguments (#334).
+- `Vinedist.margin_summary()` returns `None` for a field a margin declines, as its documentation says. `name`, `family_name`, `support` and `n_parameters` were read with a bare `getattr`, which absorbs only `AttributeError`, so a margin whose property raised took the whole summary down (#334).
 - `Kde1d.plot` draws a discrete margin on its own integer support, where rounding the fitted grid outwards added one level below the smallest observation and one above the largest; its continuous grid is monotone rather than overwritten at the first point (#330).
 - `utils.wdm` and `utils.benchmark` release the GIL, so they no longer serialize against other Python threads (#320).
 - `utils.wdm` raises on weights that are not finite and nonnegative with a positive sum, where it returned `NaN` (#305, [wdm#21](https://github.com/tnagler/wdm/pull/21)).

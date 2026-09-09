@@ -34,11 +34,18 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional, Union, cast
 
+from array_api_compat import array_namespace
+
 from ._placement import place
 from ._validation import validate_covariates
 from .protocols import ArrayT
 
-__all__ = ["declared_eval", "pair_eval", "prepare_covariates"]
+__all__ = [
+  "covariate_row",
+  "declared_eval",
+  "pair_eval",
+  "prepare_covariates",
+]
 
 
 def pair_eval(
@@ -118,6 +125,13 @@ def prepare_covariates(
   conditioning columns it gathered from the observations, so a NumPy ``x``
   handed to a PyTorch vine has to be brought across before they can meet.
 
+  The layout it requires is not a subclass's to widen at its own entry
+  points: the bases call this directly from ``logpdf`` / ``cdf_left`` /
+  ``loglik`` / ``sample`` and from the vine and pair cascades, so a subclass
+  that accepts a different ``x`` shape on the methods it wrote still meets
+  this check on every method it inherited. Changing the layout means changing
+  it where the composite runs, not at the entry points.
+
   Parameters
   ----------
   onto : object
@@ -141,4 +155,55 @@ def prepare_covariates(
   if x is None:
     return None
   validate_covariates(x, n)
-  return cast("ArrayT", place(onto, x))
+  # Through the `_prep` hook where there is one, so that an object whose
+  # placement is *declared* rather than inferable is honored here as it is on
+  # the argument path -- `_prep`'s own docstring promises it is "equally
+  # correct for exogenous covariates", which routing around it made false.
+  # Guarded because `onto` is not always an object: the static fit engines
+  # pass an *array* as its own placement reference, and an array has no hook.
+  hook = getattr(onto, "_prep", None)
+  placed = hook(x) if callable(hook) else place(onto, x)
+  return cast("ArrayT", placed)
+
+
+def covariate_row(x: ArrayT, name: str = "x") -> ArrayT:
+  """Check that ``x`` is one covariate row, and shape it ``(1, p)``.
+
+  The narrower sibling of :func:`prepare_covariates`, and narrower on purpose.
+  That one refuses a one-dimensional ``x`` because ``(n,)`` is ambiguous --
+  ``n`` observations of one covariate, or one observation of ``n`` of them --
+  and it is row-aligned with the data, so guessing would silently align the
+  wrong values. A *single* row is not ambiguous, which is why the plots accept
+  ``(p,)``: a conditional object is a different surface at every covariate
+  value, so drawing one shows the slice at one value.
+
+  Placement is not applied here. This shapes the row; the caller places it,
+  and tiles it to ``(n, p)`` where it needs one row per observation.
+
+  Parameters
+  ----------
+  x : array, shape (p,) or (1, p), dtype float
+      One covariate row.
+  name : str, default="x"
+      Name to use in the error message.
+
+  Returns
+  -------
+  array, shape (1, p), dtype float
+      The same values, with a leading axis of length one.
+
+  Raises
+  ------
+  ValueError
+      If ``x`` has more than one row, or more than two axes.
+  """
+  a: Any = x
+  xp = array_namespace(a)
+  if getattr(a, "ndim", None) == 1:
+    a = xp.reshape(a, (1, -1))
+  if getattr(a, "ndim", None) != 2 or int(a.shape[0]) != 1:
+    raise ValueError(
+      f"{name} must be a single covariate row, shape (p,) or (1, p); "
+      f"got {tuple(getattr(x, 'shape', ()))}"
+    )
+  return cast("ArrayT", a)

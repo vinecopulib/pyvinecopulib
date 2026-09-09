@@ -1520,3 +1520,37 @@ def test_a_margin_keeps_every_criterion_across_a_json_round_trip() -> None:
   back = margin_from_json(margin_to_json(margin))
   for name in ("loglik", "aic", "bic", "aicc"):
     assert getattr(back, name)() == pytest.approx(getattr(margin, name)())
+
+
+def test_margin_summary_survives_a_margin_that_declines_a_field() -> None:
+  """Every field is optional, and declining is a way of declaring.
+
+  The docstring promises `None` for whatever a margin does not contribute, but
+  `name` / `family_name` / `support` / `n_parameters` were read with a bare
+  `getattr(..., None)`, which absorbs only `AttributeError` -- so a property
+  that *raises* took the whole summary down, while `loglik()` beside it was
+  already guarded. A margin wrapping a regressor with no well-defined free
+  parameter count is the case that hits it.
+  """
+
+  class _Declines(ShiftedNormalMargin):
+    @property
+    def n_parameters(self) -> float:
+      raise NotImplementedError("no well-defined free-parameter count")
+
+    @property
+    def support(self) -> tuple[float, float]:
+      raise RuntimeError("support depends on covariates")
+
+  dist = pv.Vinedist(
+    pv.Vinecop.from_data(
+      pv.to_pseudo_obs(np.random.default_rng(3).normal(size=(80, 2)))
+    ),
+    [_Declines(), _Declines()],
+  )
+  rows = dist.margin_summary()
+  assert len(rows) == 2
+  for row in rows:
+    assert row["n_parameters"] is None
+    assert row["support"] is None
+    assert row["margin"] == "_Declines"

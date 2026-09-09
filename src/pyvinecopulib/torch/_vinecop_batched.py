@@ -26,7 +26,7 @@ from torch import Tensor
 
 from ..pyvinecopulib_ext import RVineStructure
 from ..core._trim import trim
-from ..core.vinecop_base import _NotBatchable
+from ..core.vinecop_base import NotBatchable
 
 if TYPE_CHECKING:
   from .vinecop import TorchVinecop
@@ -227,7 +227,7 @@ def integrate_1d_batched(
   )  # (N, n)
   # Without the floor a grid line can carry no mass at all, so the
   # division needs its own guard.
-  return trim(torch, number / denom.clamp_min(_MIN_MASS))
+  return trim(number / denom.clamp_min(_MIN_MASS), torch)
 
 
 def _cond_strip(
@@ -316,7 +316,7 @@ def inverse_integrate_1d_batched(
   cond, p = (u[..., 0], u[..., 1]) if cond_var == 1 else (u[..., 1], u[..., 0])
   nan_mask = torch.isnan(cond) | torch.isnan(p)
   cond = cond.nan_to_num(0.5).clamp(0.0, 1.0)
-  p = trim(torch, p.nan_to_num(0.5))
+  p = trim(p.nan_to_num(0.5), torch)
 
   fixed_axis = 1 if cond_var == 1 else 2
   cell = _batched_cell_index(grid_points, cond, is_linear)
@@ -404,7 +404,7 @@ def integrate_2d_batched(
     tmpint * u2 / tmpint1.clamp_min(_MIN_MASS),
     torch.zeros_like(tmpint),
   )
-  return trim(torch, out)
+  return trim(out, torch)
 
 
 # --------------------------------------------------------------------------- #
@@ -471,7 +471,7 @@ def _hfunc_from_cells(
   den = torch.lerp(
     flat_s.gather(1, base_lo + last), flat_s.gather(1, base_hi + last), w
   )
-  return trim(torch, num / den.clamp_min(_MIN_MASS))
+  return trim(num / den.clamp_min(_MIN_MASS), torch)
 
 
 class BatchedTreeLevel(torch.nn.Module):
@@ -621,7 +621,7 @@ class BatchedTreeLevel(torch.nn.Module):
     # `hfunc1`, argument 1 for `hfunc2` -- which is the same swap again.
     both = torch.where(
       self.is_indep.repeat(2)[:, None],
-      trim(torch, torch.cat([u[..., 1], u[..., 0]], 0)),
+      trim(torch.cat([u[..., 1], u[..., 0]], 0), torch),
       raw,
     )
     return both[: self.n_pairs], both[self.n_pairs :]
@@ -778,7 +778,7 @@ class BatchedWave(torch.nn.Module):
     raw = inverse_integrate_1d_batched(
       grid_points, self.values, u_e, 2, self._is_linear, self.sx
     )
-    inv = torch.where(self.is_indep[:, None], trim(torch, col0), raw)
+    inv = torch.where(self.is_indep[:, None], trim(col0, torch), raw)
     hinv2.index_copy_(0, self.out_hinv2, inv)
 
     if self.h1_rows.numel() == 0:
@@ -799,7 +799,7 @@ class BatchedWave(torch.nn.Module):
       h = integrate_1d_batched(grid_points, vals, u_after, 1, self._is_linear)
     h = torch.where(
       self.is_indep.index_select(0, rows)[:, None],
-      trim(torch, u_after[..., 1]),
+      trim(u_after[..., 1], torch),
       h,
     )
     hfunc1.index_copy_(0, self.out_hfunc1, h)
@@ -833,7 +833,7 @@ def _shared_grid(
 
   Raises
   ------
-  _NotBatchable
+  NotBatchable
       If two pairs that are not independence copulas disagree on the grid.
   """
   # Deferred: `_interp` imports the kernels in this module, so the dependency
@@ -854,13 +854,13 @@ def _shared_grid(
       # interpolate to different functions, and the level would be evaluated
       # on the wrong one without anything raising.
       if bc.interp_grid.values.shape != ref.interp_grid.values.shape:
-        raise _NotBatchable(
+        raise NotBatchable(
           "batched path requires one shared grid: pair copulas differ in grid "
           f"size ({tuple(ref.interp_grid.values.shape)} vs "
           f"{tuple(bc.interp_grid.values.shape)})."
         )
       if bool(bc.interp_grid._is_linear) != bool(ref.interp_grid._is_linear):
-        raise _NotBatchable(
+        raise NotBatchable(
           "batched path requires one shared grid: pair copulas differ in "
           "grid spacing (is_linear "
           f"{bool(ref.interp_grid._is_linear)} vs "
@@ -869,7 +869,7 @@ def _shared_grid(
       if not torch.equal(
         bc.interp_grid.grid_points, ref.interp_grid.grid_points
       ):
-        raise _NotBatchable(
+        raise NotBatchable(
           "batched path requires one shared grid: pair copulas of equal size "
           "differ in their grid points."
         )

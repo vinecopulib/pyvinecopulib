@@ -239,14 +239,33 @@ def test_the_pipeline_steps_are_reachable_from_core() -> None:
   # neighboring surface and stub tests do for the same reason.
   exported = set(getattr(core, "__all__", ()))
   for name in (
+    "collapse_data",
+    "continuous_view",
+    "covariate_row",
+    "model_from_json",
     "place",
     "prepare_covariates",
     "reference_array",
+    "reject_covariates",
     "to_numpy",
     "trim",
+    "usable_observations",
+    "validate_weights",
   ):
     assert name in exported, name
     assert callable(getattr(core, name)), name
+  # Not callables: the batching sentinel, the two fit-callback aliases, the
+  # payload version and the TypeVar every public signature carries.
+  for name in (
+    "ArrayT",
+    "FitEdge",
+    "FitLevel",
+    "MODEL_JSON_VERSION",
+    "NotBatchable",
+  ):
+    assert name in exported, name
+    assert getattr(core, name, None) is not None, name
+  assert issubclass(core.NotBatchable, Exception)
 
 
 def test_to_numpy_brings_back_what_asarray_refuses() -> None:
@@ -274,10 +293,12 @@ def test_trim_clamps_into_the_open_interval_at_its_own_precision() -> None:
 
   for dtype in (np.float64, np.float32):
     a = np.array([0.0, 1.0], dtype=dtype)
-    clamped = trim(array_namespace(a), a)
+    clamped = trim(a)
     assert clamped.dtype == a.dtype
     assert float(clamped.min()) > 0.0
     assert float(clamped.max()) < 1.0
+    # The namespace is the optional fast path, not part of the call.
+    np.testing.assert_array_equal(clamped, trim(a, array_namespace(a)))
 
 
 def test_a_part_holding_no_array_can_tell_that_placement_is_a_no_op() -> None:
@@ -310,3 +331,53 @@ def test_a_part_holding_no_array_can_tell_that_placement_is_a_no_op() -> None:
   placed = place(reference, u)
   assert isinstance(placed, torch.Tensor)
   assert placed.dtype is torch.float32
+
+
+def test_covariates_are_placed_through_the_hook_not_around_it() -> None:
+  """``prepare_covariates`` honors an overridden ``_prep``.
+
+  It used to place through the module-level ``place``, so an object whose
+  placement is *declared* rather than inferable was honored on the argument
+  path (``_prep_args`` calls the hook) and skipped on the covariate path -- the
+  same object, the same call, two behaviors. Downstream that put a NumPy ``x``
+  inside a pair copula whose backend then failed on ``.to(dtype=...)``.
+  """
+
+  class _Declared:
+    """No array of its own, so only an override can place anything."""
+
+    def __init__(self) -> None:
+      self.seen: list[Any] = []
+
+    def _prep(self, a: Any) -> Any:
+      self.seen.append(a)
+      return np.asarray(a, dtype=np.float32)
+
+  onto = _Declared()
+  out = prepare_covariates(onto, np.array([[1.0], [2.0]]), 2)
+  assert onto.seen, "the hook was not consulted"
+  assert out is not None and out.dtype == np.float32
+
+  # An *array* as `onto` is the static fit engines' case: it has no hook, and
+  # falls back to placing onto itself rather than raising.
+  ref = np.zeros(2, dtype=np.float32)
+  placed = prepare_covariates(ref, np.array([[1.0], [2.0]]), 2)
+  assert placed is not None and placed.dtype == np.float32
+
+
+def test_a_single_covariate_row_is_accepted_in_both_spellings() -> None:
+  """``covariate_row`` is the narrower sibling, and narrower on purpose.
+
+  ``prepare_covariates`` refuses a one-dimensional ``x`` because ``(n,)`` is
+  ambiguous per row. A single row is not, which is why a plot takes ``(p,)``.
+  """
+  from pyvinecopulib.core import covariate_row
+
+  flat = covariate_row(np.array([1.0, 2.0, 3.0]))
+  assert flat.shape == (1, 3)
+  already = np.array([[1.0, 2.0, 3.0]])
+  np.testing.assert_array_equal(covariate_row(already), already)
+
+  for bad in (np.zeros((2, 3)), np.zeros((1, 2, 3))):
+    with pytest.raises(ValueError, match="single covariate row"):
+      covariate_row(bad)

@@ -497,7 +497,7 @@ class InterpolationGrid2D(torch.nn.Module):
     # the same expression at u1 = 1, where both first-argument partials vanish
     last = torch.full_like(jc, m - 1)
     total = p[last, jc] + al * sx[last, jc] + be * sx[last, jc + 1]
-    return trim(torch, out * u2 / total.clamp_min(_MIN_MASS))
+    return trim(out * u2 / total.clamp_min(_MIN_MASS), torch)
 
   def _interval_weights(self, lo: Tensor, hi: Tensor) -> Tensor:
     """Nonnegative quadrature weights for ``int_lo^hi`` on the grid.

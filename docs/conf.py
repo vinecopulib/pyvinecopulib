@@ -249,6 +249,7 @@ _CLASS_MODULE = {
   "FitControlsTorchVinecop": "pyvinecopulib.torch",
   "ControlsLike": "pyvinecopulib.core",
   "DiscreteBicop": "pyvinecopulib.core",
+  "NotBatchable": "pyvinecopulib.core",
   "IndependenceBicop": "pyvinecopulib.core",
   "VinedistLike": "pyvinecopulib.core",
   "VinedistBase": "pyvinecopulib.core",
@@ -258,8 +259,15 @@ _CLASS_MODULE = {
 #: Kept apart from ``_CLASS_MODULE`` for that reason alone; both feed
 #: ``numpydoc_xref_aliases`` below.
 _FUNCTION_MODULE = {
+  "collapse_data": "pyvinecopulib.core",
+  "continuous_view": "pyvinecopulib.core",
+  "covariate_row": "pyvinecopulib.core",
+  "model_from_json": "pyvinecopulib.core",
   "place": "pyvinecopulib.core",
   "prepare_covariates": "pyvinecopulib.core",
+  "reject_covariates": "pyvinecopulib.core",
+  "usable_observations": "pyvinecopulib.core",
+  "validate_weights": "pyvinecopulib.core",
   "reference_array": "pyvinecopulib.core",
   "to_numpy": "pyvinecopulib.core",
   "trim": "pyvinecopulib.core",
@@ -434,6 +442,14 @@ DOCSTRING_SUBPACKAGES = {
       "to_numpy",
       "trim",
       "prepare_covariates",
+      "covariate_row",
+      "reject_covariates",
+      "validate_weights",
+      "usable_observations",
+      "collapse_data",
+      "continuous_view",
+      "model_from_json",
+      "NotBatchable",
     ],
   },
   "families": {

@@ -13,7 +13,9 @@ unchanged so that precision's results are unmoved.
 """
 
 from types import ModuleType
-from typing import Any, Tuple, cast
+from typing import Any, Optional, Tuple, cast
+
+from array_api_compat import array_namespace
 
 from .protocols import ArrayT
 
@@ -41,20 +43,31 @@ def trim_bounds(xp: ModuleType, dtype: object) -> Tuple[float, float]:
   return max(_TRIM_LO, eps * eps), min(_TRIM_HI, 1.0 - eps)
 
 
-def trim(xp: ModuleType, a: ArrayT) -> ArrayT:
+def trim(a: ArrayT, xp: Optional[ModuleType] = None) -> ArrayT:
   """Clamp ``a`` into the open unit interval at its own precision.
+
+  For a value **this library produced** -- an h-function, a distribution
+  function, an interpolated integral -- where landing on ``0`` or ``1`` is
+  arithmetic rounding and clamping is the only sane answer. A value a *caller*
+  supplied is a different question: one that has been through a probability
+  integral transform cannot legitimately be ``0`` or ``1``, so clamping it
+  converts a real defect upstream into a plausible number and hides it. Refuse
+  such a value rather than passing it through here.
 
   Parameters
   ----------
-  xp : module
-      Array namespace of ``a`` (NumPy or PyTorch).
   a : array
       Values to clamp.
+  xp : module, or None, optional
+      Array namespace of ``a``, resolved from ``a`` when omitted. Pass it only
+      where the caller already holds it: the cascades do, and the lookup is
+      per-call.
 
   Returns
   -------
   array
       ``a`` clamped to ``trim_bounds`` for its dtype.
   """
-  lo, hi = trim_bounds(xp, cast("Any", a).dtype)
-  return cast("ArrayT", xp.clip(a, lo, hi))
+  ns = array_namespace(a) if xp is None else xp
+  lo, hi = trim_bounds(ns, cast("Any", a).dtype)
+  return cast("ArrayT", ns.clip(a, lo, hi))

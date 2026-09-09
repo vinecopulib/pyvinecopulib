@@ -51,6 +51,32 @@ from .protocols import _VINEDIST_EXAMPLE
 __all__ = ["VinedistBase"]
 
 
+#: What an optional field is allowed to fail with. A margin from another
+#: ecosystem contributes what it declares, and declining is a way of
+#: declaring: a property that raises is answering "not applicable", which is
+#: the same answer as not having it.
+_OPTIONAL_FIELD_ERRORS = (
+  RuntimeError,
+  TypeError,
+  ValueError,
+  NotImplementedError,
+  AttributeError,
+)
+
+
+def _declared(margin: object, name: str) -> Any:  # noqa: ANN401 - any field
+  """One optional summary field, or ``None`` where the margin declines it.
+
+  A bare ``getattr(margin, name, None)`` absorbs only ``AttributeError``, so a
+  margin whose property *raises* took the whole summary down with it -- while
+  ``loglik()`` beside it was already guarded. Both are the same question.
+  """
+  try:
+    return getattr(margin, name, None)
+  except _OPTIONAL_FIELD_ERRORS:
+    return None
+
+
 class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   r"""Canonical vine distribution: a vine copula and one margin per variable.
 
@@ -268,19 +294,19 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       loglik = getattr(margin, "loglik", None)
       try:
         value = float(loglik()) if callable(loglik) else None
-      except (RuntimeError, TypeError, ValueError, NotImplementedError):
+      except _OPTIONAL_FIELD_ERRORS:
         # `loglik()` with no data is only defined for a margin that was fitted
         # here; a fixed or foreign one has no fit to report.
         value = None
       rows.append(
         {
           "variable": j,
-          "name": getattr(margin, "name", None),
+          "name": _declared(margin, "name"),
           "margin": type(margin).__name__,
-          "family": getattr(margin, "family_name", None),
+          "family": _declared(margin, "family_name"),
           "var_type": self._var_types[j],
-          "support": getattr(margin, "support", None),
-          "n_parameters": getattr(margin, "n_parameters", None),
+          "support": _declared(margin, "support"),
+          "n_parameters": _declared(margin, "n_parameters"),
           "loglik": value,
         }
       )
@@ -439,7 +465,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     # The margins' namespace, not the input's: a torch copula hosting NumPy
     # margins is legal, and `torch.stack` cannot consume NumPy columns.
     xp = array_namespace(cols[0])
-    return cast("ArrayT", trim(xp, xp.stack(cols, axis=-1)))
+    return cast("ArrayT", trim(xp.stack(cols, axis=-1), xp))
 
   def marginal_icdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Apply each margin's ``icdf`` to its column.
@@ -565,7 +591,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         )
       lower.append(sub)
     block = xp.stack([*upper, *lower], axis=-1)
-    return cast("ArrayT", trim(xp, block))
+    return cast("ArrayT", trim(block, xp))
 
   def _check_covariates(self, x: Optional[ArrayT], n_rows: int) -> None:
     """Refuse covariates that neither half of this distribution reads.

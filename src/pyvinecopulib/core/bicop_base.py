@@ -519,7 +519,7 @@ class BicopBase(
         If ``u`` is not two-dimensional with exactly two columns.
     """
     ua: Any = self._layout(self._prep(u))
-    return cast("ArrayT", trim(array_namespace(ua), ua))
+    return cast("ArrayT", trim(ua))
 
   def _layout(self, ua: ArrayT) -> ArrayT:
     """Check the two-column layout the pair-copula contract specifies."""

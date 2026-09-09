@@ -17,7 +17,11 @@ from array_api_compat import array_namespace
 
 from .protocols import ArrayT
 
-__all__: list[str] = []
+__all__ = [
+  "reject_covariates",
+  "usable_observations",
+  "validate_weights",
+]
 
 
 def validate_univariate(values: ArrayT, *, name: str = "y") -> ArrayT:

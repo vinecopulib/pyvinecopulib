@@ -420,3 +420,39 @@ def test_no_test_guards_an_extra_by_a_first_party_import() -> None:
       ):
         offenders.append(f"{path.name}:{node.lineno} -> {first.value}")
   assert offenders == [], offenders
+
+
+def test_no_module_declares_a_name_twice() -> None:
+  """A duplicated ``__all__`` entry is invisible to every other test.
+
+  Python does not mind one, so nothing importing or star-importing the module
+  behaves differently, and no assertion anywhere can see it. It is a defect
+  only in the structure, so reading the structure is the only way to catch it
+  -- which is what this does, over every module in the package.
+  """
+  root = pathlib.Path(__file__).resolve().parents[1] / "src" / "pyvinecopulib"
+  if not root.is_dir():
+    pytest.skip("source tree not available")
+
+  duplicated: dict[str, list[str]] = {}
+  for path in sorted(root.rglob("*.py")):
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+      if not isinstance(node, ast.Assign):
+        continue
+      if not any(
+        isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets
+      ):
+        continue
+      if not isinstance(node.value, (ast.List, ast.Tuple)):
+        continue
+      names = [
+        e.value
+        for e in node.value.elts
+        if isinstance(e, ast.Constant) and isinstance(e.value, str)
+      ]
+      repeats = sorted({n for n in names if names.count(n) > 1})
+      if repeats:
+        duplicated[str(path.relative_to(root))] = repeats
+
+  assert duplicated == {}, duplicated
