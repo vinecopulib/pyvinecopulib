@@ -14,6 +14,8 @@ from typing import Any, Callable, Optional
 import matplotlib.pyplot as plt
 import numpy as np
 
+from ._placement import to_numpy
+
 MARGIN_PLOT_DOC = """
     Generates a plot for the Kde1d object.
 
@@ -66,17 +68,6 @@ MARGIN_PLOT_DOC = """
 _TAIL = (1e-3, 1 - 1e-3)
 
 
-def _to_numpy(a: Any) -> np.ndarray:  # noqa: ANN401
-  """Bring one array of any namespace onto NumPy, host memory included."""
-  detach = getattr(a, "detach", None)
-  if detach is not None:
-    a = detach()
-  to_cpu = getattr(a, "cpu", None)
-  if to_cpu is not None:
-    a = to_cpu()
-  return np.asarray(a, dtype=float)
-
-
 def _support(margin: Any) -> tuple[float, float]:  # noqa: ANN401
   """The margin's declared support, as two floats."""
   lo, hi = getattr(margin, "support", (-np.inf, np.inf))
@@ -88,7 +79,7 @@ def _grid_points(margin: Any) -> Optional[np.ndarray]:  # noqa: ANN401
   gp = getattr(margin, "grid_points", None)
   if gp is None:
     return None
-  points = _to_numpy(gp)
+  points = to_numpy(gp)
   return points if points.size else None
 
 
@@ -119,7 +110,7 @@ def _draw_range(
       "has no `icdf` to read a quantile from; pass `xlim=`"
     )
   p = np.asarray(_TAIL, dtype=float)
-  tails = _to_numpy(icdf(p if place is None else place(p)))
+  tails = to_numpy(icdf(p if place is None else place(p)))
   return (
     lo if np.isfinite(lo) else float(tails[0]),
     hi if np.isfinite(hi) else float(tails[1]),
@@ -212,7 +203,7 @@ def margin_plot(
       tiled = np.repeat(row, y.shape[0], axis=0)
       kwargs["x"] = tiled if place is None else place(tiled)
     fn = margin.pdf if kind == "density" else margin.cdf
-    return _to_numpy(fn(ya, **kwargs))
+    return to_numpy(fn(ya, **kwargs))
 
   vals = evaluate(ev)
   zero = evaluate(np.zeros(1)) if var_type == "zi" and show_zero_mass else None

@@ -288,7 +288,7 @@ pyvinecopulib/
         _vinecop_discrete.py     # DiscreteBicop + the discrete layouts / per-edge types
         _vinecop_fit_engines.py  # fit_parts / select_parts — the two fit engines (internal)
         bicop_independence.py    # IndependenceBicop
-        _placement.py            # place / reference_array + the `_prep` and `_sample_uniform` hooks (internal)
+        _placement.py            # place / reference_array / to_numpy + the `_prep` and `_sample_uniform` hooks (internal)
         _vinecop_reorient.py     # relabel a structure onto a chosen order tail (internal)
         _rootfind.py             # solve_increasing (monotone bisection; internal)
         _json.py                 # how a model payload is encoded and written (internal)
@@ -958,6 +958,12 @@ automatically.
     Two searches over one object that rank differently is what put a margin's
     `_prep` on `float64` while its own sampler drew in `int64`, so a new
     placement site adopts the rule rather than restating the first-hit loop.
+    The return trip is `to_numpy`, in the same module and shared for the same
+    reason: `np.asarray` alone raises on a tensor that requires grad and again
+    on one held on an accelerator, so everything outside the array namespace
+    that reads a value -- the criterion binding, the three plots, the sklearn
+    estimator boundary -- goes through the one walk rather than a fourth copy
+    of it.
   - `BicopBase` (`bicop_base.py`) / `VinecopBase` (`vinecop_base.py`) —
     canonical partial implementations to subclass. A `BicopBase`
     subclass defines `pdf` / `hfunc1` / `hfunc2` and inherits `hinv1` /

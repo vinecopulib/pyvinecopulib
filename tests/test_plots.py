@@ -808,6 +808,39 @@ class TestMarginPlot:
     kde.fit(y)
     return kde
 
+  def test_the_bound_kde1d_plot_resolves_and_takes_kind(self) -> None:
+    """`Kde1d.plot` is looked up by module path at call time.
+
+    So a repoint of `core/_margin_plot.py` fails only here -- nothing static
+    reaches the binding's `nb::module_::import_`. `kind` is keyword-only there
+    too, since the four positional arguments predate it.
+    """
+    kde = self._continuous()
+    with (
+      patch("matplotlib.pyplot.show") as show,
+      patch("matplotlib.pyplot.plot"),
+    ):
+      kde.plot()
+      kde.plot(kind="cdf")
+    assert show.call_count == 2
+    assert "kind" in (pv.core.Kde1d.plot.__doc__ or "")
+    with pytest.raises(TypeError):
+      cast("Any", kde.plot)((0.0, 1.0), None, 50, True, "cdf")
+
+  def test_the_bound_bicop_and_vinecop_plots_resolve(self) -> None:
+    """The other two module paths the binding holds, for the same reason."""
+    cop = pv.Bicop.from_family(
+      pv.BicopFamily.gaussian, parameters=np.array([[0.5]])
+    )
+    vine = pv.Vinecop.from_data(
+      pv.to_pseudo_obs(np.random.RandomState(4).normal(size=(80, 3)))
+    )
+    with patch("matplotlib.pyplot.show"), patch("matplotlib.pyplot.contour"):
+      # By keyword, which is what the rendered docstring documents.
+      cop.plot(plot_type="contour")
+    with patch("matplotlib.pyplot.show"), patch("networkx.draw_networkx"):
+      vine.plot(layout="spring")
+
   def test_the_continuous_grid_spans_the_fitted_range(self) -> None:
     from pyvinecopulib.core._margin_plot import make_plotting_grid
 

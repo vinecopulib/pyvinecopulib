@@ -8,8 +8,8 @@ layer performs on its input:
 
 - **placement** -- this module: which namespace, dtype and device the values
   must be in for the object's own arrays to combine with them.
-- **layout** -- ``_validation``: which shapes are admissible, which the base
-  knows from its own dimension and variable types.
+- **layout** -- the ``_layout`` hook, one per level: which shapes are
+  admissible, which the base knows from its own dimension and variable types.
 - **domain** -- ``_trim``: clamping copula arguments into the open unit square
   at the working precision.
 
@@ -37,6 +37,7 @@ from __future__ import annotations
 
 from typing import Any, Generic, Optional, cast
 
+import numpy as np
 from array_api_compat import array_namespace, device as _device_of
 
 from .protocols import ArrayT
@@ -47,6 +48,36 @@ __all__ = [
   "place",
   "reference_array",
 ]
+
+
+def to_numpy(a: ArrayT) -> np.ndarray:
+  """Host NumPy view of ``a`` -- placement's return trip.
+
+  The one direction inference cannot help with: a value has to come back to
+  NumPy wherever something outside the array namespace reads it -- the
+  criterion binding, a plot, a printed report. ``np.asarray`` alone raises on
+  a tensor that requires grad and again on one that lives on an accelerator,
+  so this detaches and transfers first, both through ``getattr`` since a
+  NumPy array has neither method.
+
+  Parameters
+  ----------
+  a : array
+      Values in any array namespace.
+
+  Returns
+  -------
+  numpy.ndarray
+      The same values, on the host, detached.
+  """
+  v: Any = a
+  detach = getattr(v, "detach", None)
+  if detach is not None:
+    v = detach()
+  cpu = getattr(v, "cpu", None)
+  if cpu is not None:
+    v = cpu()
+  return np.asarray(v)
 
 
 def reference_array(obj: object) -> Optional[Any]:  # noqa: ANN401

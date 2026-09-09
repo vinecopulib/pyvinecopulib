@@ -40,6 +40,8 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
     - `vine.fit(u, controls, num_threads=4)` -> `vine.fit(u, FitControlsBicop(num_threads=4))`
 - Rename `Kde1d`'s `quantile` to `icdf`, the name modern SciPy and `torch.distributions` use for the inverse distribution function, with no alias (#292).
     - `kde.quantile(p)` -> `kde.icdf(p)`
+- Rename `Bicop.plot`'s first parameter from `type` to `plot_type`, which is what its own rendered documentation has always called it -- so the call the docs describe raised -- and what `BicopBase.plot` takes, so one call carries between the two (#330).
+    - `cop.plot(type="contour")` -> `cop.plot(plot_type="contour")`
 - Make `Kde1d.loglik` a method taking optional data rather than a property, matching `Bicop.loglik` and `Vinecop.loglik` (#292).
     - `kde.loglik` -> `kde.loglik()`
 - Serve `repr` and pickle from the canonical module paths (`Bicop`'s `__module__` is now `pyvinecopulib.core`); pickles written by 0.7.x still load through the deprecated aliases (#207).

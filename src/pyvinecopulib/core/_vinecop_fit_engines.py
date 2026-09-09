@@ -27,6 +27,7 @@ from array_api_compat import array_namespace
 
 from ..pyvinecopulib_ext import RVineStructure
 from ._covariates import pair_eval, prepare
+from ._placement import to_numpy
 from ._vinecop_discrete import (
   check_var_types,
   collapse_data,
@@ -89,7 +90,7 @@ def _make_criterion(
   """
   from ..pyvinecopulib_ext import _calculate_tree_criterion
 
-  convert = _to_numpy_default
+  convert = to_numpy
   w = np.empty(0) if weights is None else np.asarray(convert(weights), float)
   # The binding calls the criterion function with the matrix alone, so the
   # covariates are bound here rather than threaded through C++.
@@ -111,21 +112,6 @@ def _make_criterion(
     )
 
   return criterion
-
-
-def _to_numpy_default(a: ArrayT) -> np.ndarray:
-  """Host NumPy view of ``a``, for an array library that leaves it off the host.
-
-  ``np.asarray`` raises on a tensor that lives on an accelerator, so this
-  detaches and transfers before converting.
-  """
-  detach = getattr(a, "detach", None)
-  if detach is not None:
-    a = detach()
-  cpu = getattr(a, "cpu", None)
-  if cpu is not None:
-    a = cpu()
-  return np.asarray(a)
 
 
 #: ``(tree, edge, u_e, x_e) -> BicopLike``, fitting one edge's pair copula: the

@@ -17,12 +17,12 @@ using namespace nb::literals;
 using namespace vinecopulib;
 
 // Wrapper function to call the Python bicop_plot function
-inline void bicop_plot_wrapper(const Bicop& cop, const std::string& type,
+inline void bicop_plot_wrapper(const Bicop& cop, const std::string& plot_type,
                                const std::string& margin_type, nb::object xylim,
                                nb::object grid_size) {
   auto mod = nb::module_::import_("pyvinecopulib.core._bicop_plot");
   auto bicop_plot = mod.attr("bicop_plot");
-  bicop_plot(nb::cast(cop), type, margin_type, xylim, grid_size);
+  bicop_plot(nb::cast(cop), plot_type, margin_type, xylim, grid_size);
 }
 
 // Factory function to create a Bicop from family, rotation, parameters, and
@@ -523,7 +523,7 @@ Bicop
           },
           "data"_a, "controls"_a.sig("FitControlsBicop()") = nb::none(),
           bicop_doc.select.doc, nb::rv_policy::reference_internal)
-      .def("plot", &bicop_plot_wrapper, "type"_a = "surface",
+      .def("plot", &bicop_plot_wrapper, "plot_type"_a = "surface",
            "margin_type"_a = "unif", "xylim"_a = nb::none(),
            "grid_size"_a = nb::none(),
            python_doc_helper(

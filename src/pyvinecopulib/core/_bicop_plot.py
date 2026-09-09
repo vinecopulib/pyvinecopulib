@@ -6,6 +6,7 @@ from matplotlib.colors import LinearSegmentedColormap
 from mpl_toolkits.mplot3d.axis3d import XAxis as XAxis3D, YAxis as YAxis3D
 
 from ._covariates import pair_eval
+from ._placement import to_numpy
 from ._normal import (
   expon_cdf,
   expon_pdf,
@@ -169,15 +170,8 @@ def bicop_plot(
         cop.var_types = vt
   else:
     vals = pair_eval(cop.pdf, u_grid, x_grid)
-  # Coerce the density to a NumPy array so a torch-tensor return reshapes
-  # cleanly -- via the host, since ``np.asarray`` raises on a device tensor.
-  detach = getattr(vals, "detach", None)
-  if detach is not None:
-    vals = detach()
-  to_cpu = getattr(vals, "cpu", None)
-  if to_cpu is not None:
-    vals = to_cpu()
-  vals = np.asarray(vals)
+  # Coerce the density so a torch-tensor return reshapes cleanly.
+  vals = to_numpy(vals)
   cop = np.reshape(vals, (grid_size, grid_size))
 
   ## adjust for margins
