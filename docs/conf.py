@@ -268,7 +268,7 @@ _FUNCTION_MODULE = {
   "reject_covariates": "pyvinecopulib.core.extend",
   "usable_observations": "pyvinecopulib.core.extend",
   "validate_weights": "pyvinecopulib.core.extend",
-  "reference_array": "pyvinecopulib.core",
+  "reference_array": "pyvinecopulib.core.extend",
   "to_numpy": "pyvinecopulib.core.extend",
   "trim": "pyvinecopulib.core.extend",
   "margin_from_json": "pyvinecopulib.core",
