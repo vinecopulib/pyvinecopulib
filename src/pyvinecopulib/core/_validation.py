@@ -83,9 +83,9 @@ def validate_covariates(
       f"got {shape}"
       + (
         ". A one-dimensional x is refused because it says nothing about "
-        "which axis is which: `covariate_column(x, n)` reads it as one "
-        "covariate per observation, `covariate_row(x)` as one row shared "
-        "across them."
+        "which axis is which: reshape it to (n, 1) for one covariate per "
+        "observation, or use `covariate_row(x)` for one row shared across "
+        "them."
         if one_d
         else ""
       )

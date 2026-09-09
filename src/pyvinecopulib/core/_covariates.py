@@ -41,7 +41,6 @@ from ._validation import validate_covariates
 from .protocols import ArrayT
 
 __all__ = [
-  "covariate_column",
   "covariate_row",
   "declared_eval",
   "pair_eval",
@@ -178,20 +177,12 @@ def prepare_covariates(
 def covariate_row(x: ArrayT, name: str = "x") -> ArrayT:
   """Check that ``x`` is one covariate row, and shape it ``(1, p)``.
 
-  One of the two ways to resolve what :func:`prepare_covariates` refuses.
-  That one rejects a one-dimensional ``x`` because ``(n,)`` is ambiguous --
-  ``n`` observations of one covariate, or one observation of ``n`` of them --
-  and it is row-aligned with the data, so guessing would silently align the
-  wrong values. Naming a function is how the caller says which reading it
-  means: this one reads ``(p,)`` as a single row, and
-  :func:`covariate_column` reads ``(n,)`` as a single column.
-
-  This direction needs no observation count to be safe. A single row is one
-  row whatever ``n`` is -- a conditional object is a different surface at
-  every covariate value, so drawing one shows the slice at one value, and the
-  caller tiles it. ``covariate_column`` does need one, because there the
-  length *is* the observation count and an unchecked length is exactly the
-  silent misalignment this pair exists to prevent.
+  :func:`prepare_covariates` refuses a one-dimensional ``x``, since ``(n,)``
+  says nothing about which axis is which and is row-aligned with the data, so
+  guessing would align the wrong values. A *single row* is unambiguous whatever
+  ``n`` is, which is why the plots accept ``(p,)``: a conditional object is a
+  different surface at every covariate value, so drawing one shows the slice
+  at one value.
 
   Placement is not applied here. This shapes the row; the caller places it,
   and tiles it to ``(n, p)`` where it needs one row per observation.
@@ -221,88 +212,7 @@ def covariate_row(x: ArrayT, name: str = "x") -> ArrayT:
     raise ValueError(
       f"{name} must be a single covariate row, shape (p,) or (1, p); got "
       f"{tuple(getattr(x, 'shape', ()))}. For one covariate per observation, "
-      "which is the other reading of a one-dimensional x, use "
-      "`covariate_column(x, n)`."
-    )
-  return cast("ArrayT", a)
-
-
-def covariate_column(x: ArrayT, n: int, name: str = "x") -> ArrayT:
-  """Read a one-dimensional ``x`` as one covariate per observation: ``(n, 1)``.
-
-  The other resolution of the ambiguity :func:`prepare_covariates` refuses,
-  and the sibling of :func:`covariate_row`. A conditional model over a single
-  covariate produces exactly this shape -- a ``linspace`` over one variable,
-  a single column read from a frame -- and every consumer of one otherwise
-  writes the same reshape in front of ``prepare_covariates``.
-
-  ``n`` is required, and what it buys is *where* the misalignment is caught
-  rather than whether. The shape ``(n,)`` carries no statement about which
-  axis is which, so the caller supplies that statement by choosing this
-  function, and ``n`` is what lets the values be checked against it rather
-  than trusted. A caller who hands the result straight to
-  ``prepare_covariates`` would have a wrong length rejected there too, by the
-  row check -- so this is not the only guard on that path, and claiming
-  otherwise would be wrong.
-
-  It is the only guard on the two paths that matter. The producer of a
-  covariate is what knows which axis is which -- it computed ``n`` -- and it
-  is the one place that can state the claim plainly; a consumer downstream
-  only knows it received "a covariate". And an array that travels before it
-  reaches an estimator -- built into an evaluation grid, stored, passed on --
-  meets no row check until it arrives, by which point the producer is gone.
-  So ``n`` is not defaulted and not inferred: a check the producer can run is
-  worth more than the same check run later by something that cannot say what
-  went wrong.
-
-  Already-shaped input passes through: ``(n, 1)`` states the same thing
-  explicitly and is returned unchanged, after the same row check. A second
-  column is refused rather than accepted, since the caller asked for one
-  covariate.
-
-  Placement is not applied here, as in :func:`covariate_row`. Compose it:
-  ``prepare_covariates(onto, covariate_column(x, n), n)`` validates the
-  layout again and places the result.
-
-  Parameters
-  ----------
-  x : array, shape (n,) or (n, 1), dtype float
-      One covariate, one value per observation.
-  n : int
-      Number of observations the values must align with.
-  name : str, default="x"
-      Name to use in the error message.
-
-  Returns
-  -------
-  array, shape (n, 1), dtype float
-      The same values, as a single column.
-
-  Raises
-  ------
-  ValueError
-      If ``x`` does not have exactly ``n`` values, if it has more than one
-      column, or if it has more than two axes. The message names the other
-      reading, since choosing the wrong sibling is the likely cause.
-  """
-  a: Any = x
-  xp = array_namespace(a)
-  shape = tuple(getattr(a, "shape", ()))
-  if getattr(a, "ndim", None) == 1:
-    a = xp.reshape(a, (-1, 1))
-  if getattr(a, "ndim", None) != 2 or int(a.shape[1]) != 1:
-    raise ValueError(
-      f"{name} must be one covariate per observation, shape (n,) or (n, 1); "
-      f"got {shape}. For a single covariate row shared across observations, "
-      "which is the other reading of a one-dimensional x, use "
-      "`covariate_row(x)`."
-    )
-  rows = int(a.shape[0])
-  if rows != n:
-    raise ValueError(
-      f"{name} has {rows} values but {n} observations were declared; a "
-      "one-dimensional x is read here as one value per observation, so the "
-      "two have to agree. For a single covariate row of that length, use "
-      "`covariate_row(x)`."
+      "which is the other reading of a one-dimensional x, reshape it to "
+      "(n, 1) and hand that to `prepare_covariates`."
     )
   return cast("ArrayT", a)

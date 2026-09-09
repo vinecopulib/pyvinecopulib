@@ -23,7 +23,6 @@ written in.
 """
 
 from ._covariates import (
-  covariate_column,
   covariate_row,
   prepare_covariates,
 )
@@ -46,7 +45,6 @@ __all__ = [
   "NotBatchable",
   "collapse_data",
   "continuous_view",
-  "covariate_column",
   "covariate_row",
   "model_from_json",
   "place",

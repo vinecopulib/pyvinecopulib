@@ -1616,8 +1616,8 @@ below are a quick orientation.
   `ArrayT`, the type variable those signatures are written in.
 - **`pyvinecopulib.core.extend`** — what an extension writes against rather
   than what a caller uses: the input-pipeline steps `place`,
-  `reference_array`, `to_numpy`, `trim`, `prepare_covariates`,
-  `covariate_row` and `covariate_column`; the validators `reject_covariates`, `validate_weights` and
+  `reference_array`, `to_numpy`, `trim`, `prepare_covariates` and
+  `covariate_row`; the validators `reject_covariates`, `validate_weights` and
   `usable_observations`, so a refusal reads like the library's own; the vine's
   layout step `collapse_data` and the unwrapper `continuous_view`;
   `NotBatchable`, which a `_build_batched` override raises to decline the grid
