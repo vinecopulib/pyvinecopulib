@@ -17,6 +17,7 @@ from torch import Tensor
 # ``_batched`` (they are shape-polymorphic over leading batch dims). The
 # scalar methods below are thin ``N=1`` wrappers so there is a single
 # source of truth for the numerics shared with the batched vine cascade.
+from ..core._trim import trim
 from ._vinecop_batched import (
   _batched_cell_index,
   int_on_grid_batched,
@@ -27,7 +28,6 @@ from ._vinecop_batched import (
   _hfunc_from_cells,
   inverse_integrate_1d_batched,
   _locate,
-  _trim,
 )
 
 
@@ -497,7 +497,7 @@ class InterpolationGrid2D(torch.nn.Module):
     # the same expression at u1 = 1, where both first-argument partials vanish
     last = torch.full_like(jc, m - 1)
     total = p[last, jc] + al * sx[last, jc] + be * sx[last, jc + 1]
-    return _trim(out * u2 / total.clamp_min(_MIN_MASS))
+    return trim(torch, out * u2 / total.clamp_min(_MIN_MASS))
 
   def _interval_weights(self, lo: Tensor, hi: Tensor) -> Tensor:
     """Nonnegative quadrature weights for ``int_lo^hi`` on the grid.

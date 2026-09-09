@@ -26,7 +26,7 @@ from pyvinecopulib.core import (
 )
 from pyvinecopulib.margins import FitControlsMargin, SciPyMargin
 
-from .helpers import FlatMargin, widen
+from .helpers import FlatMargin, ShiftedNormalMargin, widen
 from .conftest import GaussianBicop, HostedVinecop
 
 # The discrete cascade owns these; the end-to-end test at the bottom reuses them
@@ -736,23 +736,6 @@ def test_margin_controls_fallback_substitutes_a_kde_margin(
 # --- exogenous covariates ---------------------------------------------------- #
 
 
-class _ShiftedNormal(MarginBase[np.ndarray]):
-  """A conditional margin: a standard normal shifted by the first covariate."""
-
-  supports_covariates = True
-
-  def _shift(self, x: Optional[Any]) -> Any:
-    return 0.0 if x is None else np.asarray(x, dtype=float)[:, 0]
-
-  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
-    z = np.asarray(y, dtype=float) - self._shift(x)
-    return np.exp(-0.5 * z**2) / np.sqrt(2.0 * np.pi)
-
-  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
-    z = np.asarray(y, dtype=float) - self._shift(x)
-    return 0.5 * (1.0 + np.vectorize(math.erf)(z / np.sqrt(2.0)))
-
-
 class _ConditionalVine(HostedVinecop):
   """A hosted vine whose pair copulas read external covariates."""
 
@@ -764,7 +747,7 @@ def _conditional_dist() -> tuple[Vinedist, GaussianBicop]:
   pair = GaussianBicop(scale=0.7, rho_max=0.75)
   structure = pv.RVineStructure.from_order([1, 2])
   copula = _ConditionalVine([[pair]], structure)
-  return Vinedist(copula, [_ShiftedNormal(), _ShiftedNormal()]), pair
+  return Vinedist(copula, [ShiftedNormalMargin(), ShiftedNormalMargin()]), pair
 
 
 def test_full_y_given_x_matches_an_analytic_bivariate_normal() -> None:
@@ -850,14 +833,14 @@ def test_from_data_rejects_misaligned_covariates_before_fitting() -> None:
     Vinedist.from_data(
       y,
       x=np.zeros((1, 1)),
-      margins=[_ShiftedNormal(), _ShiftedNormal()],
+      margins=[ShiftedNormalMargin(), ShiftedNormalMargin()],
     )
 
 
 def test_covariates_reach_the_margins(continuous: np.ndarray) -> None:
   """Conditioning the margins moves the joint density, through every entry point."""
   copula = pv.Vinecop.from_data(np.asarray(pv.to_pseudo_obs(continuous)))
-  dist = pv.Vinedist(copula, [_ShiftedNormal(), _ShiftedNormal()])
+  dist = pv.Vinedist(copula, [ShiftedNormalMargin(), ShiftedNormalMargin()])
   y = continuous[:10]
   cov = np.full((10, 1), 0.5)
 
@@ -899,7 +882,7 @@ def test_an_unconditional_copula_is_never_handed_covariates(
 ) -> None:
   """`Vinecop` takes no conditioning matrix, so the check must omit it."""
   copula = pv.Vinecop.from_data(np.asarray(pv.to_pseudo_obs(continuous)))
-  dist = pv.Vinedist(copula, [_ShiftedNormal(), _ShiftedNormal()])
+  dist = pv.Vinedist(copula, [ShiftedNormalMargin(), ShiftedNormalMargin()])
   # A `TypeError` here would mean `x=` reached the compiled copula.
   assert dist.logpdf(continuous[:5], x=np.zeros((5, 1))).shape == (5,)
 
@@ -912,7 +895,7 @@ def test_from_data_fits_conditional_margins_on_the_covariates() -> None:
 
   seen: list[Optional[Any]] = []
 
-  class _Recording(_ShiftedNormal):
+  class _Recording(ShiftedNormalMargin):
     @property
     def is_fitted(self) -> bool:
       return False
@@ -1446,8 +1429,8 @@ def test_covariates_reach_the_parts_that_declare_them_only() -> None:
   cov = rng.normal(size=(200, 1))
   y = np.column_stack([cov[:, 0] + rng.normal(size=200), rng.normal(size=200)])
 
-  class _Refittable(_ShiftedNormal):
-    """`_ShiftedNormal` plus the estimator `fit` re-runs (nothing to fit)."""
+  class _Refittable(ShiftedNormalMargin):
+    """`ShiftedNormalMargin` plus the estimator `fit` re-runs (nothing to fit)."""
 
     def fit(
       self,

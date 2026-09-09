@@ -19,6 +19,7 @@ independent implementation available.
 """
 
 from __future__ import annotations
+import math
 
 import pickle
 import warnings
@@ -30,6 +31,7 @@ import pytest
 torch = pytest.importorskip("torch")
 stats = pytest.importorskip("scipy.stats")
 
+from pyvinecopulib.core import MarginBase  # noqa: E402
 from pyvinecopulib.torch import TorchDistributionMargin  # noqa: E402
 from .helpers import widen  # noqa: E402
 
@@ -475,3 +477,118 @@ def test_controls_are_refused_because_there_is_no_fit_to_configure() -> None:
       controls=FitControlsMargin(family_set=["norm"]),
       refit=True,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Covariates on this lane. No margin shipped here declares                     #
+# `supports_covariates`, so `declared_eval`'s forwarding to a margin had no     #
+# tensor-valued test at all: the inherited members had only ever carried an     #
+# `x` on NumPy.                                                                 #
+# --------------------------------------------------------------------------- #
+
+
+class _ConditionalNormalMargin(MarginBase[Any], torch.nn.Module):
+  """A standard normal centered at ``slope * x[:, 0]``, on tensors.
+
+  A learnable ``slope`` registered as a parameter, so what reaches ``pdf`` has
+  to be a tensor on this module's device and dtype for the graph to close --
+  which is what makes a dropped or un-placed ``x`` a failure here rather than
+  a silently unconditional answer.
+  """
+
+  supports_covariates = True
+
+  def __init__(self, slope: float = 1.5) -> None:
+    torch.nn.Module.__init__(self)
+    self.slope = torch.nn.Parameter(torch.as_tensor(slope, dtype=_F64))
+
+  def _center(self, y: Any, x: Any) -> Any:
+    if x is None:
+      return torch.zeros_like(y)
+    assert isinstance(x, torch.Tensor)
+    return self.slope * x[:, 0]
+
+  def pdf(self, y: Any, /, *, x: Any = None) -> Any:
+    assert isinstance(y, torch.Tensor)
+    z = y - self._center(y, x)
+    return torch.exp(-0.5 * z * z) / math.sqrt(2.0 * math.pi)
+
+  def cdf(self, y: Any, /, *, x: Any = None) -> Any:
+    assert isinstance(y, torch.Tensor)
+    return torch.special.ndtr(y - self._center(y, x))
+
+  def _sample_uniform(self, n: int, seeds: list[int]) -> Any:
+    g = torch.Generator().manual_seed(seeds[0] if seeds else 0)
+    return torch.rand(n, generator=g, dtype=_F64)
+
+
+def _cov(values: list[float]) -> Any:
+  return torch.as_tensor(values, dtype=_F64).reshape(-1, 1)
+
+
+def test_covariates_reach_every_derived_member_on_tensors() -> None:
+  """The whole inherited surface, carrying an `x` that stays a tensor."""
+  margin = _ConditionalNormalMargin(slope=1.5)
+  y = torch.as_tensor([0.0, 1.5, -1.5], dtype=_F64)
+  cov = _cov([0.0, 1.0, -1.0])
+
+  torch.testing.assert_close(
+    margin.logpdf(y, x=cov), torch.log(margin.pdf(y, x=cov))
+  )
+  # Continuous, so the left limit coincides -- but it is reached through
+  # `declared_eval` all the same.
+  torch.testing.assert_close(margin.cdf_left(y, x=cov), margin.cdf(y, x=cov))
+  torch.testing.assert_close(
+    margin.loglik(y, x=cov), margin.logpdf(y, x=cov).sum()
+  )
+  # The median at each covariate row is that row's own center.
+  torch.testing.assert_close(
+    margin.icdf(torch.full((3,), 0.5, dtype=_F64), x=cov),
+    torch.as_tensor([0.0, 1.5, -1.5], dtype=_F64),
+    atol=1e-6,
+    rtol=0.0,
+  )
+  drawn = margin.sample(3, x=cov, seeds=[7])
+  assert drawn.shape == (3,) and drawn.dtype == _F64
+
+
+def test_the_covariate_gradient_reaches_a_registered_parameter() -> None:
+  """`x` arrives inside the graph, so the conditional log-likelihood differentiates.
+
+  A covariate detached on the way in would leave `slope.grad` at zero rather
+  than raising, which is the failure this pins.
+  """
+  margin = _ConditionalNormalMargin(slope=0.5)
+  y = torch.as_tensor([1.0, 2.0, 3.0], dtype=_F64)
+  cov = _cov([1.0, 2.0, 3.0])
+
+  widen(margin.loglik(y, x=cov)).backward()
+  grad = margin.slope.grad
+  assert grad is not None
+  # d/db sum -(y - b x)^2 / 2 = sum x (y - b x), at b = 0.5.
+  torch.testing.assert_close(
+    grad, torch.as_tensor(7.0, dtype=_F64), atol=1e-9, rtol=0.0
+  )
+
+
+def test_a_numpy_covariate_is_brought_onto_the_lane() -> None:
+  """`prepare` places `x`, so a caller may hand the array type they have."""
+  margin = _ConditionalNormalMargin(slope=1.5)
+  y = torch.as_tensor([0.0, 1.5], dtype=_F64)
+  cov = np.array([[0.0], [1.0]])
+
+  torch.testing.assert_close(
+    margin.logpdf(y, x=cov), margin.logpdf(y, x=_cov([0.0, 1.0]))
+  )
+
+
+def test_covariates_are_not_forwarded_to_a_torch_margin_that_declares_none() -> (
+  None
+):
+  """Every margin shipped on this lane is unconditional, and answers as one."""
+  margin = TorchDistributionMargin.from_distribution(_D.Normal(0.0, 1.0))
+  assert margin.supports_covariates is False
+  y = torch.as_tensor([0.0, 1.0], dtype=_F64)
+  torch.testing.assert_close(
+    margin.logpdf(y, x=_cov([3.0, -3.0])), margin.logpdf(y)
+  )

@@ -185,7 +185,7 @@ ignore = ["TC001", "TC002", "TC003"]
 # `ANN401` is on everywhere, and every `Any` in `src` states its reason at the
 # site with a `# noqa: ANN401`. These two files are the exception, because in
 # each one many sites share a single reason -- see the AGENTS.md rule.
-# `DiscretePair`'s private helpers compute difference quotients on array
+# `DiscreteBicop`'s private helpers compute difference quotients on array
 # columns, which an unbounded `ArrayT` cannot type.
 "src/pyvinecopulib/core/_vinecop_discrete.py" = ["ANN401"]
 # OpenTURNS is SWIG-generated: no `py.typed` and no stub package.
@@ -258,7 +258,10 @@ exclude = [
 # Internal helpers, which are not part of any public contract. Matched by
 # file path because the hook resolves modules to their `Path.stem`.
 exclude_files = [
-  'src/pyvinecopulib/_python_helpers/.*\.py$',
+  'src/pyvinecopulib/core/_bicop_plot\.py$',
+  'src/pyvinecopulib/core/_vinecop_plot\.py$',
+  'src/pyvinecopulib/core/_margin_plot\.py$',
+  'src/pyvinecopulib/core/_normal\.py$',
   'src/pyvinecopulib/_deprecations\.py$',
   'src/pyvinecopulib/sklearn/_base\.py$',
   'src/pyvinecopulib/torch/_vinecop_batched\.py$',

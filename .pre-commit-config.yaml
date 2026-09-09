@@ -91,7 +91,10 @@ repos:
         files: ^src/pyvinecopulib/.*\.py$
         exclude: |
           (?x)^src/pyvinecopulib/(
-            _python_helpers/.*\.py |
+            core/_bicop_plot\.py |
+            core/_vinecop_plot\.py |
+            core/_margin_plot\.py |
+            core/_normal\.py |
             _deprecations\.py |
             sklearn/_base\.py |
             torch/_vinecop_batched\.py |

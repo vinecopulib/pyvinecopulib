@@ -29,6 +29,11 @@ import numpy as _np
 from array_api_compat import array_namespace
 
 from ._covariates import declared_eval, prepare
+from ._margin_plot import (
+  MARGIN_PLOT_PARAMS,
+  MARGIN_PLOT_SUMMARY,
+  margin_plot,
+)
 from ._placement import PlacementMixin
 from ._rootfind import solve_increasing
 from ._validation import reject_array_controls, validate_weights
@@ -917,6 +922,27 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     base = self._sample_uniform(n, list(seeds) if seeds else [])
     return cast("ArrayT", declared_eval(self, "icdf", base, x))
 
+  def plot(
+    self,
+    xlim: Optional[tuple[float, float]] = None,
+    ylim: Optional[tuple[float, float]] = None,
+    grid_size: int = 200,
+    show_zero_mass: bool = True,
+    *,
+    kind: str = "density",
+    x: Optional[ArrayT] = None,
+  ) -> None:
+    margin_plot(
+      self,
+      xlim,
+      ylim,
+      grid_size,
+      show_zero_mass,
+      kind=kind,
+      x=x,
+      place=self._prep,
+    )
+
   def _sample_uniform(self, n: int, seeds: list[int]) -> ArrayT:
     """Draw ``n`` uniforms on the subclass's array namespace.
 
@@ -973,13 +999,17 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         If ``y`` is not one-dimensional. A margin describes one variable, and
         a second axis silently changed which values each answer belonged to.
     """
-    ya: Any = self._prep(y)
-    if getattr(ya, "ndim", None) != 1:
+    return self._layout(self._prep(y), name)
+
+  def _layout(self, ya: ArrayT, name: str = "y") -> ArrayT:
+    """Check the single-column layout a margin describes."""
+    a: Any = ya
+    if getattr(a, "ndim", None) != 1:
       raise ValueError(
         f"{name} must be one-dimensional -- a margin describes one variable; "
-        f"got shape {tuple(getattr(ya, 'shape', ()))}"
+        f"got shape {tuple(getattr(a, 'shape', ()))}"
       )
-    return cast("ArrayT", ya)
+    return ya
 
   def __repr__(self) -> str:
     """Return a structural representation of the margin.
@@ -993,3 +1023,44 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
 
 
 MarginBase.__doc__ = (MarginBase.__doc__ or "") + _MARGIN_EXAMPLE
+
+
+#: Composed, so the shared half is written once; `test_docs_examples.py`
+#: runs the project's numpydoc checks over the result.
+MarginBase.plot.__doc__ = (
+  MARGIN_PLOT_SUMMARY
+  + """
+    The evaluation grid is the one array this class manufactures from nothing,
+    so it is placed through ``_prep`` before the margin sees it -- which means
+    a margin on PyTorch plots without converting anything inside its own
+    ``pdf``.
+
+    Parameters
+    ----------
+"""
+  + MARGIN_PLOT_PARAMS
+  + """    x : array, shape (p,) or (1, p), or None, optional
+        One covariate row, for a conditional margin. Such a margin is a
+        different curve at every covariate value, so a plot shows the one at
+        this value; the row is repeated across the grid.
+
+    Returns
+    -------
+    None
+        The figure is drawn with matplotlib.
+
+    Raises
+    ------
+    ValueError
+        If ``kind`` is neither ``"density"`` nor ``"cdf"``; if the margin is
+        not fitted; if ``x`` is not a single covariate row; or if ``x`` is
+        given and :attr:`supports_covariates` is ``False`` -- a margin that
+        reads no covariates has no covariate value to be drawn at, and
+        answering unconditionally under a conditional-looking call is the
+        outcome the refusal exists to prevent.
+
+    See Also
+    --------
+    pyvinecopulib.core.Kde1d.plot : The same plot on the default margin.
+"""
+)

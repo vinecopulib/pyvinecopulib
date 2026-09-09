@@ -19,6 +19,7 @@ from sklearn.utils.validation import (
 from ..core import MarginLike, Vinedist
 from ..margins import resolve_margins
 from ..core._margins import MarginSpec, fit_margin
+from ..core._placement import to_numpy
 from .backends import _VinecopBackendBase, resolve_backend
 
 # Shared docstring fragments interpolated into VineDensity / VineRegressor
@@ -119,23 +120,21 @@ def _as_ndarray(a: Any) -> np.ndarray:  # noqa: ANN401 - see the comment above
   """Bring one array back to NumPy at the estimator's public boundary.
 
   The estimators return NumPy whatever namespace their parts live on, and on the
-  torch backend the distribution answers in tensors. A bare ``np.asarray``
-  cannot do it: it raises on a tensor that requires grad and on one held on an
-  accelerator.
+  torch backend the distribution answers in tensors. ``core._placement.to_numpy``
+  is the walk that gets one back; this adds the estimator boundary's own
+  contract, which is a float array.
 
   Parameters
   ----------
   a : array
-      A NumPy array, or a tensor-like object carrying ``detach``.
+      Values in any array namespace.
 
   Returns
   -------
   ndarray
       The same values, as a NumPy array of floats.
   """
-  if hasattr(a, "detach"):
-    a = a.detach().cpu()
-  return np.asarray(a, dtype=float)
+  return np.asarray(to_numpy(a), dtype=float)
 
 
 def _named_for(name: str, exc: BaseException) -> BaseException:

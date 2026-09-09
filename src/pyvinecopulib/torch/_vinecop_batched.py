@@ -25,7 +25,7 @@ import torch
 from torch import Tensor
 
 from ..pyvinecopulib_ext import RVineStructure
-from ..core._trim import trim_bounds
+from ..core._trim import trim
 from ..core.vinecop_base import _NotBatchable
 
 if TYPE_CHECKING:
@@ -33,17 +33,11 @@ if TYPE_CHECKING:
 
 #: Guard on a conditional total mass, so a zero-mass grid line cannot 0/0.
 #: Floor for a *mass* the cascades divide by -- a renormalizing integral or a
-#: rectangle's probability. Not `_trim`'s `_TRIM_LO`: that is a **domain**
+#: rectangle's probability. Not `trim`'s own lower bound: that is a **domain**
 #: bound on copula arguments (1e-10), and using it here clamped a denominator
 #: ten orders of magnitude early. Both sites reachable only where the numerator
 #: vanishes too, so nothing moved; the constant was simply the wrong one.
 _MIN_MASS: float = 1e-20
-
-
-def _trim(t: Tensor) -> Tensor:
-  """Clamp ``t`` into the open unit interval at its own precision."""
-  lo, hi = trim_bounds(torch, t.dtype)
-  return t.clamp(lo, hi)
 
 
 # --------------------------------------------------------------------------- #
@@ -127,6 +121,10 @@ def interpolate_batched(
     raise ValueError(
       f"u.shape[0]={u.shape[0]} != values.shape[0]={values.shape[0]}"
     )
+  # The *closed* interval, not `trim`'s open one: this clamp keeps a grid
+  # lookup inside the grid, which is a different question from the domain step
+  # `trim` applies to a copula argument. Every `.clamp(0.0, 1.0)` in this
+  # module is one of these, and the kernels apply `trim` on the way out.
   u = u.clamp(0.0, 1.0)
   N, n, _ = u.shape
 
@@ -229,7 +227,7 @@ def integrate_1d_batched(
   )  # (N, n)
   # Without the floor a grid line can carry no mass at all, so the
   # division needs its own guard.
-  return _trim(number / denom.clamp_min(_MIN_MASS))
+  return trim(torch, number / denom.clamp_min(_MIN_MASS))
 
 
 def _cond_strip(
@@ -318,7 +316,7 @@ def inverse_integrate_1d_batched(
   cond, p = (u[..., 0], u[..., 1]) if cond_var == 1 else (u[..., 1], u[..., 0])
   nan_mask = torch.isnan(cond) | torch.isnan(p)
   cond = cond.nan_to_num(0.5).clamp(0.0, 1.0)
-  p = _trim(p.nan_to_num(0.5))
+  p = trim(torch, p.nan_to_num(0.5))
 
   fixed_axis = 1 if cond_var == 1 else 2
   cell = _batched_cell_index(grid_points, cond, is_linear)
@@ -406,7 +404,7 @@ def integrate_2d_batched(
     tmpint * u2 / tmpint1.clamp_min(_MIN_MASS),
     torch.zeros_like(tmpint),
   )
-  return _trim(out)
+  return trim(torch, out)
 
 
 # --------------------------------------------------------------------------- #
@@ -473,7 +471,7 @@ def _hfunc_from_cells(
   den = torch.lerp(
     flat_s.gather(1, base_lo + last), flat_s.gather(1, base_hi + last), w
   )
-  return _trim(num / den.clamp_min(_MIN_MASS))
+  return trim(torch, num / den.clamp_min(_MIN_MASS))
 
 
 class BatchedTreeLevel(torch.nn.Module):
@@ -623,8 +621,8 @@ class BatchedTreeLevel(torch.nn.Module):
     # `hfunc1`, argument 1 for `hfunc2` -- which is the same swap again.
     both = torch.where(
       self.is_indep.repeat(2)[:, None],
-      _trim(torch.cat([u[..., 1], u[..., 0]], 0)),
-      raw.clamp(0.0, 1.0),
+      trim(torch, torch.cat([u[..., 1], u[..., 0]], 0)),
+      raw,
     )
     return both[: self.n_pairs], both[self.n_pairs :]
 
@@ -779,8 +777,8 @@ class BatchedWave(torch.nn.Module):
 
     raw = inverse_integrate_1d_batched(
       grid_points, self.values, u_e, 2, self._is_linear, self.sx
-    ).clamp(0.0, 1.0)
-    inv = torch.where(self.is_indep[:, None], _trim(col0), raw)
+    )
+    inv = torch.where(self.is_indep[:, None], trim(torch, col0), raw)
     hinv2.index_copy_(0, self.out_hinv2, inv)
 
     if self.h1_rows.numel() == 0:
@@ -801,8 +799,8 @@ class BatchedWave(torch.nn.Module):
       h = integrate_1d_batched(grid_points, vals, u_after, 1, self._is_linear)
     h = torch.where(
       self.is_indep.index_select(0, rows)[:, None],
-      _trim(u_after[..., 1]),
-      h.clamp(0.0, 1.0),
+      trim(torch, u_after[..., 1]),
+      h,
     )
     hfunc1.index_copy_(0, self.out_hfunc1, h)
 

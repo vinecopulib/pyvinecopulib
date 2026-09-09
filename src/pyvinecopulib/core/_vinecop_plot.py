@@ -1,64 +1,73 @@
+from __future__ import annotations
+
 import math
-from typing import Optional, Protocol
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
+from ..pyvinecopulib_ext import RVineStructure, Vinecop
 
-class _PlottableVine(Protocol):
-  """The three members these helpers read off a vine.
-
-  Narrower than ``VinecopLike``, and a different three: a plot needs the
-  structure matrix and the two counts that bound the trees, not the evaluation
-  surface. Both ``Vinecop`` and a ``VinecopBase`` subclass carry them.
-  """
-
-  @property
-  def matrix(self) -> NDArray[np.int_]: ...
-
-  @property
-  def dim(self) -> int: ...
-
-  @property
-  def trunc_lvl(self) -> int: ...
+# Type-only: `vinecop_base` imports this module, so a run-time hop back is a
+# cycle.
+if TYPE_CHECKING:
+  from .vinecop_base import VinecopBase
 
 
-VINECOP_PLOT_DOC = """
-    Generates a plot for the Vinecop object.
+#: A plot reads the structure matrix and the two counts that bound the trees,
+#: which `VinecopLike` does not name -- and a structure alone is enough to draw.
+_PlottableVine = Union["VinecopBase[Any]", Vinecop, RVineStructure]
 
-    This method generates a plot of the vine copula structure. It can be used to visualize the tree structure of the vine copula.
 
+#: Shared with `VinecopBase.plot`, whose signature is identical.
+VINECOP_PLOT_PARAMS = """    tree : list of int, or None, optional
+        Tree indices to plot; all trees when ``None``.
+    add_edge_labels : bool, default=True
+        Annotate edges with their conditioned / conditioning sets.
+    layout : str, default="graphviz"
+        ``"graphviz"`` (needs pydot and graphviz) or ``"spring_layout"``.
+    vars_names : list of str, or None, optional
+        Variable names; the integer indices are used when ``None``.
+"""
+
+#: Shared with `VinecopBase.plot`.
+VINECOP_PLOT_SUMMARY = """
+    Plot the vine tree structure, one panel per tree.
+
+    Each node is a variable or a conditioned pair, each edge a pair copula.
+    Only the structure is drawn, so nothing here depends on the pair copulas
+    a vine holds.
+"""
+
+#: `Vinecop.plot`'s docstring, which the binding reads from here by name.
+VINECOP_PLOT_DOC = (
+  VINECOP_PLOT_SUMMARY
+  + """
     Parameters
     ----------
-    tree: list[int] (default=None)
-        The tree indice(s) to plot. If None, all trees are plotted.
-    add_edge_labels: bool (default=True)
-        Whether to add edge labels to the plot.
-    layout: str (default="graphviz")
-        The layout to use for plotting. Either "graphviz" or "spring_layout".
-    vars_names: list[str] (default=None)
-        The names of the variables for the vine model. If None, the indices are used.
-
+"""
+  + VINECOP_PLOT_PARAMS
+  + """
     Returns
     -------
-    Nothing, the function generates a plot and shows it using matplotlib.
+    None
+        The figure is drawn with matplotlib.
 
     Examples
     --------
-    >>> import pyvinecopulib as pv
     >>> import numpy as np
-    >>> np.random.seed(1234)
-    >>> u = np.random.uniform(0, 1, size=(20, 10))
+    >>> import pyvinecopulib as pv
+    >>> u = np.random.default_rng(1234).uniform(size=(20, 10))
     >>> vc = pv.Vinecop.from_data(
     ...     u,
     ...     controls=pv.FitControlsVinecop(family_set=[pv.BicopFamily.indep]),
     ... )
-    >>> vc.plot(tree=[0, 1, 2])  # Plots the first three trees
-    >>> vars_names = ["X" + str(i) for i in range(10)]
-    >>> vc.plot(vars_names=vars_names)
+    >>> vc.plot(tree=[0, 1, 2])
+    >>> vc.plot(vars_names=["X" + str(i) for i in range(10)])
 """
+)
 
 
 def get_name(

@@ -1,45 +1,75 @@
-from typing import Any, Callable, Optional, cast
+from typing import Any, Callable, Optional, Union, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 from mpl_toolkits.mplot3d.axis3d import XAxis as XAxis3D, YAxis as YAxis3D
 
-from ..core._covariates import pair_eval
-from ..core.protocols import ArrayT
-from .stats import expon_cdf, expon_pdf, expon_ppf, norm_cdf, norm_pdf, norm_ppf
+from ..pyvinecopulib_ext import Bicop
+from ._covariates import pair_eval
+from ._placement import to_numpy
+from ._normal import (
+  expon_cdf,
+  expon_pdf,
+  expon_ppf,
+  norm_cdf,
+  norm_pdf,
+  norm_ppf,
+)
+from .protocols import ArrayT, BicopLike
 
-BICOP_PLOT_DOC = """
-    Generates a plot for the Bicop object.
 
-    This method generates a contour or surface plot of the copula density. It can be used to visualize the copula density with different types of margins.
+#: `Bicop` is named outright because it satisfies `BicopLike` *nominally*
+#: only: its `pdf` takes per-row `parameters` where the contract takes `x`.
+_PairCopula = Union[BicopLike[ArrayT], Bicop]
 
+#: Shared with `BicopBase.plot`, which adds `x` and a `Raises`.
+BICOP_PLOT_PARAMS = """    plot_type : str, default="surface"
+        ``"surface"`` for a 3-D surface, ``"contour"`` for a contour plot.
+    margin_type : str, default="unif"
+        Margins the density is shown on: ``"unif"``, ``"norm"`` or ``"exp"``.
+    xylim : tuple of float, or None, optional
+        Limits for both axes; ``None`` uses a default per ``margin_type``.
+    grid_size : int, or None, optional
+        Number of grid points per axis; ``None`` uses a default per
+        ``plot_type``.
+"""
+
+#: Shared with `BicopBase.plot`.
+BICOP_PLOT_SUMMARY = """
+    Plot the pair-copula density, as a contour or a 3-D surface.
+
+    ``margin_type`` chooses the scale the density is shown on: the unit square
+    itself, or the density of the copula transformed to standard normal or
+    standard exponential margins.
+"""
+
+#: `Bicop.plot`'s docstring, which the binding reads from here by name.
+BICOP_PLOT_DOC = (
+  BICOP_PLOT_SUMMARY
+  + """
     Parameters
     ----------
-    plot_type : str (default="contour")
-        The type of plot to generate. Either `"contour"` or `"surface"`.
-    margin_type : str (default="unif")
-        The type of margins to use. Either `"unif"`, `"norm"`, or `"exp"`.
-    xylim : tuple (default=None)
-        The limits for the x and y axes. Automatically set if None.
-    grid_size : int (default=None)
-        The number of grid points to use. Automatically set if None.
-
+"""
+  + BICOP_PLOT_PARAMS
+  + """
     Returns
     -------
-    Nothing, the function generates a plot and shows it using matplotlib.
+    None
+        The figure is drawn with matplotlib.
 
     Examples
     --------
-    >>> import pyvinecopulib as pv
     >>> import numpy as np
-    >>> cop = pv.Bicop(
-    ...     family=pv.BicopFamily.gaussian, parameters=np.array([[0.5]]),
+    >>> import pyvinecopulib as pv
+    >>> cop = pv.Bicop.from_family(
+    ...     pv.BicopFamily.gaussian, parameters=np.array([[0.5]]),
     ... )
-    >>> cop.plot()  # surface plot of copula density
+    >>> cop.plot()
     >>> cop.plot(plot_type="contour", margin_type="norm")
     >>> cop.plot(plot_type="contour", margin_type="unif")
 """
+)
 
 
 def get_default_xylim(margin_type: str) -> tuple[float, float]:
@@ -63,9 +93,7 @@ def get_default_grid_size(plot_type: str) -> int:
 
 
 def bicop_plot(
-  # A `Bicop`, handed here by the binding, which looks this function up by
-  # name; importing the extension to name the type would invert the layering.
-  cop: Any,  # noqa: ANN401
+  cop: _PairCopula[ArrayT],
   plot_type: str = "surface",
   margin_type: str = "unif",
   xylim: Optional[tuple[float, float]] = None,
@@ -155,26 +183,21 @@ def bicop_plot(
       eval_cop = as_continuous(cop)
       vals = pair_eval(eval_cop.pdf, u_grid, x_grid)
     else:
-      cop.var_types = ["c", "c"]
+      # Written through a local, since `var_types` is a capability only the
+      # compiled class carries and the contract does not name.
+      mutable: Any = cop
+      mutable.var_types = ["c", "c"]
       try:
         vals = pair_eval(cop.pdf, u_grid, x_grid)
       finally:
-        cop.var_types = vt
+        mutable.var_types = vt
   else:
     vals = pair_eval(cop.pdf, u_grid, x_grid)
-  # Coerce the density to a NumPy array so a torch-tensor return reshapes
-  # cleanly -- via the host, since ``np.asarray`` raises on a device tensor.
-  detach = getattr(vals, "detach", None)
-  if detach is not None:
-    vals = detach()
-  to_cpu = getattr(vals, "cpu", None)
-  if to_cpu is not None:
-    vals = to_cpu()
-  vals = np.asarray(vals)
-  cop = np.reshape(vals, (grid_size, grid_size))
+  # Coerce the density so a torch-tensor return reshapes cleanly.
+  grid_vals = np.reshape(to_numpy(vals), (grid_size, grid_size))
 
   ## adjust for margins
-  dens = cop * adj
+  dens = grid_vals * adj
   if len(np.unique(dens)) == 1:
     dens[0] = 1.000001 * dens[0]
 

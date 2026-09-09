@@ -1,4 +1,5 @@
 import contextlib
+import math
 from typing import Any, Optional
 
 import numpy as np
@@ -265,6 +266,41 @@ class FlatMargin(MarginBase[NDArray[np.float64]]):
     self, y: NDArray[np.float64], /, *, x: Optional[NDArray[np.float64]] = None
   ) -> NDArray[np.float64]:
     return np.clip(np.asarray(y, dtype=float), 0.0, 1.0)
+
+
+class ShiftedNormalMargin(MarginBase[NDArray[np.float64]]):
+  """A standard normal centered at ``slope * x[:, 0]`` -- a conditional margin.
+
+  Shared for the reason :class:`FlatMargin` is, and it was written four times
+  before it was: its density, distribution function and median at a fixed
+  covariate row are all closed forms, so what a covariate *did* is checkable
+  exactly rather than by whether a call happened. A test that needs more
+  subclasses this and adds only that -- a call log, an unfitted state, a
+  slope estimated from data.
+  """
+
+  supports_covariates = True
+
+  def __init__(self, slope: float = 1.0) -> None:
+    self.slope = float(slope)
+
+  def center(self, y: Any, x: Any) -> Any:
+    """The mean each row is drawn around; zero where no covariates arrived."""
+    if x is None:
+      return np.zeros(np.shape(y))
+    return self.slope * np.asarray(x, dtype=float)[:, 0]
+
+  def pdf(
+    self, y: NDArray[np.float64], /, *, x: Optional[NDArray[np.float64]] = None
+  ) -> NDArray[np.float64]:
+    z = np.asarray(y, dtype=float) - self.center(y, x)
+    return np.asarray(np.exp(-0.5 * z * z) / np.sqrt(2.0 * np.pi))
+
+  def cdf(
+    self, y: NDArray[np.float64], /, *, x: Optional[NDArray[np.float64]] = None
+  ) -> NDArray[np.float64]:
+    z = np.asarray(y, dtype=float) - self.center(y, x)
+    return np.asarray(0.5 * (1.0 + np.vectorize(math.erf)(z / np.sqrt(2.0))))
 
 
 class AtomicMargin(MarginBase[NDArray[np.float64]]):

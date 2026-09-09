@@ -113,6 +113,27 @@ def _std_normal_ppf(p: Any) -> Any:
   return _norm_inv_cdf(np.asarray(p))
 
 
+def position_weighted_mean(x: Any, ref: Any) -> Any:
+  """Mean of ``x``'s columns, weighted by 1-based column position.
+
+  The one link both conditional pair-copula doubles push a correlation
+  through, and it is shared because two spellings of it would let the two
+  legs of a conditional-vine comparison disagree about what ``x`` means.
+  Distinct per-column weights make anything built on it sensitive to the
+  *column order* of ``x``, which is what pins the C1 conditioning contract; a
+  plain sum would not. Dividing by the column count keeps it bounded across a
+  vine's varying ``x_e`` widths.
+
+  ``ref`` supplies the dtype and device the weights are built on, since ``x``
+  may be an integer array while the model evaluates in floating point.
+  """
+  xp = array_namespace(ref)
+  xa: Any = x
+  k = xa.shape[1]
+  weights = xp.arange(1, k + 1, dtype=ref.dtype, device=ref.device)
+  return xp.sum(xa * weights, axis=-1) / k
+
+
 class GaussianBicop(BicopBase[Any]):
   """Toy conditional Gaussian pair copula (correlation depends on ``x``).
 
@@ -148,13 +169,9 @@ class GaussianBicop(BicopBase[Any]):
     n = u.shape[0]
     if x is None:
       return xp.full((n,), self._base_rho, dtype=u.dtype, device=u.device)
-    xa: Any = x
-    k = xa.shape[1]
-    # Distinct per-column weights -> the link is sensitive to the x column
-    # order (pins the C1 contract), unlike a plain sum. Normalize by k and cap
-    # at rho_max so rho stays well away from +-1 across varying x_e widths.
-    weights = xp.arange(1, k + 1, dtype=u.dtype, device=u.device)
-    z = self._scale * xp.sum(xa * weights, axis=-1) / k
+    # Capped at rho_max so rho stays well away from +-1 across varying
+    # x_e widths.
+    z = self._scale * position_weighted_mean(x, u)
     return self._rho_max * xp.tanh(z)
 
   def pdf(self, u: Any, x: Optional[Any] = None) -> Any:
@@ -199,9 +216,11 @@ class GaussianBicop(BicopBase[Any]):
     return _std_normal_cdf(rho * z2 + xp.sqrt(1.0 - rho * rho) * zp)
 
 
-class IndepBicop(BicopBase[Any]):
-  """Independence pair copula (``c == 1``); inherits the BicopBase defaults.
+class MinimalBicop(BicopBase[Any]):
+  """The smallest valid pair copula: independence, and nothing declared twice.
 
+  Named for what it exercises rather than for what it models -- the library's
+  own ``IndependenceBicop`` is the class to reach for outside the suite.
   Implements only the abstract surface (``pdf`` / ``hfunc1`` / ``hfunc2``), so
   ``hinv1`` / ``hinv2`` / ``cdf`` / ``flip`` come from :class:`BicopBase` --
   the two inverses numerically, the latter two as the raising stubs -- and are

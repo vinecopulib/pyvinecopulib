@@ -30,6 +30,11 @@ from typing import Any, Optional, Self, TypeVar, cast
 
 from array_api_compat import array_namespace
 
+from ._bicop_plot import (
+  BICOP_PLOT_PARAMS,
+  BICOP_PLOT_SUMMARY,
+  bicop_plot,
+)
 from ._covariates import prepare
 from ._placement import PlacementMixin, QrngUniformMixin
 from ._trim import trim
@@ -62,7 +67,7 @@ def flip_of(pair: _PairT) -> _PairT:
     ``fit_edge``;
   - ``reorient`` and the reoriented view only reach slots of a vine that was
     selected or built with flippable pairs;
-  - ``DiscretePair.flip`` delegates to the continuous pair it wraps.
+  - ``DiscreteBicop.flip`` delegates to the continuous pair it wraps.
 
   Parameters
   ----------
@@ -125,7 +130,7 @@ class BicopBase(
     evaluation along a fixed structure never asks for it.
   - :meth:`cdf`, needed on a **discrete** edge, whose h-functions are
     difference quotients of the distribution function. Add one and wrap the
-    pair in :class:`~pyvinecopulib.core.DiscretePair` to sit on such an edge.
+    pair in :class:`~pyvinecopulib.core.DiscreteBicop` to sit on such an edge.
 
   ``TorchTllBicop`` is the reference subclass: it supplies ``cdf``, both inverses,
   ``sample`` and ``flip`` natively, and fits its density grid in :meth:`fit`.
@@ -227,7 +232,7 @@ class BicopBase(
 
     Needed only to host the pair on a discrete edge, whose h-functions are
     difference quotients of the distribution function: add a ``cdf``, then
-    wrap the pair in :class:`~pyvinecopulib.core.DiscretePair`. Nothing else
+    wrap the pair in :class:`~pyvinecopulib.core.DiscreteBicop`. Nothing else
     asks for one -- a vine's own ``cdf`` is evaluated by Monte-Carlo
     simulation, which needs no per-pair distribution.
 
@@ -494,7 +499,7 @@ class BicopBase(
     through ``_prep`` alone, being reals rather than copula arguments.
 
     A discrete edge is reached through
-    :class:`~pyvinecopulib.core.DiscretePair`, which owns the four-column
+    :class:`~pyvinecopulib.core.DiscreteBicop`, which owns the four-column
     layout and hands each wrapped pair two columns at a time -- so this stays
     the continuous two-column contract.
 
@@ -513,12 +518,17 @@ class BicopBase(
     ValueError
         If ``u`` is not two-dimensional with exactly two columns.
     """
-    ua: Any = self._prep(u)
-    if getattr(ua, "ndim", None) != 2 or int(ua.shape[1]) != 2:
-      raise ValueError(
-        f"u must have shape (n, 2); got {tuple(getattr(ua, 'shape', ()))}"
-      )
+    ua: Any = self._layout(self._prep(u))
     return cast("ArrayT", trim(array_namespace(ua), ua))
+
+  def _layout(self, ua: ArrayT) -> ArrayT:
+    """Check the two-column layout the pair-copula contract specifies."""
+    a: Any = ua
+    if getattr(a, "ndim", None) != 2 or int(a.shape[1]) != 2:
+      raise ValueError(
+        f"u must have shape (n, 2); got {tuple(getattr(a, 'shape', ()))}"
+      )
+    return ua
 
   def plot(
     self,
@@ -529,32 +539,34 @@ class BicopBase(
     *,
     x: Optional[ArrayT] = None,
   ) -> None:
-    """Plot the pair-copula density, as a contour or a 3-D surface.
+    bicop_plot(
+      self, plot_type, margin_type, xylim, grid_size, x=x, place=self._prep
+    )
 
-    Mirrors ``Bicop.plot()``, and adds ``x`` for a conditional pair copula.
+  def __repr__(self) -> str:
+    return f"{type(self).__name__}()"
 
-    The evaluation grid is the one place this class manufactures an array from
-    nothing, so it is the one place a subclass could be handed the wrong array
-    type. It is placed through ``_prep`` first, which means a pair copula
-    on PyTorch plots without converting anything inside its own ``pdf``.
+
+BicopBase.__doc__ = (BicopBase.__doc__ or "") + _BICOP_EXAMPLE
+
+#: Composed, so the shared half is written once; `test_docs_examples.py`
+#: runs the project's numpydoc checks over the result.
+BicopBase.plot.__doc__ = (
+  BICOP_PLOT_SUMMARY
+  + """
+    The evaluation grid is the one array this class manufactures from nothing,
+    so it is placed through ``_prep`` before the pair copula sees it -- which
+    means a pair copula on PyTorch plots without converting anything inside
+    its own ``pdf``.
 
     Parameters
     ----------
-    plot_type : str, default="surface"
-        ``"surface"`` for a 3-D surface, ``"contour"`` for a contour plot.
-    margin_type : str, default="unif"
-        Margins the density is shown on: ``"unif"``, ``"norm"`` or ``"exp"``.
-    xylim : tuple of float, or None, optional
-        Axis limits; ``None`` uses a default per ``margin_type``.
-    grid_size : int, or None, optional
-        Number of grid points per axis; ``None`` uses a default per
-        ``plot_type``.
-    x : array, shape (p,) or (1, p), or None, optional
-        One covariate row, for a conditional pair copula. The density is a
-        different surface at every covariate value, so a plot shows the slice
-        at this one; the row is repeated across the grid. A pair copula that
-        reads no covariates refuses it, rather than drawing an unconditional
-        surface under a conditional-looking call.
+"""
+  + BICOP_PLOT_PARAMS
+  + """    x : array, shape (p,) or (1, p), or None, optional
+        One covariate row, for a conditional pair copula. Such a pair copula
+        is a different surface at every covariate value, so a plot shows the
+        one at this value; the row is repeated across the grid.
 
     Returns
     -------
@@ -565,15 +577,15 @@ class BicopBase(
     ------
     ValueError
         If ``x`` is not a single covariate row.
-    """
-    from .._python_helpers.bicop import bicop_plot
+    TypeError
+        If ``x`` is given and the pair copula's ``pdf`` takes none. A pair
+        copula declares its covariates by its signature rather than by a
+        flag, so the refusal is the argument binding's -- and it is a refusal,
+        not an oversight: drawing the unconditional density under a
+        conditional-looking call is the outcome it exists to prevent.
 
-    bicop_plot(
-      self, plot_type, margin_type, xylim, grid_size, x=x, place=self._prep
-    )
-
-  def __repr__(self) -> str:
-    return f"{type(self).__name__}()"
-
-
-BicopBase.__doc__ = (BicopBase.__doc__ or "") + _BICOP_EXAMPLE
+    See Also
+    --------
+    pyvinecopulib.core.Bicop.plot : The same plot on a fitted family.
+"""
+)

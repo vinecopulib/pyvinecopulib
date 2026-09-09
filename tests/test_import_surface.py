@@ -292,17 +292,14 @@ _LAYER_EDGES: dict[tuple[str, str], bool] = {
   ("sklearn", "core"): False,
   ("sklearn", "margins"): False,
   ("sklearn", "torch"): True,
-  # Tier 1, and its two deferred hops: up into `margins` for `SciPyMargin`
-  # (see `test_core_reaches_up_a_layer_only_where_it_must`), and across into
-  # the binding's helpers.
+  # Tier 1, and its one deferred hop: up into `margins` for `SciPyMargin`
+  # (see `test_core_reaches_up_a_layer_only_where_it_must`).
   ("core", "pyvinecopulib_ext"): False,
   ("core", "_deprecations"): False,
-  ("core", "_python_helpers"): True,
   ("core", "margins"): True,
   ("families", "pyvinecopulib_ext"): False,
   ("utils", "pyvinecopulib_ext"): False,
-  ("utils", "_python_helpers"): False,
-  ("_python_helpers", "core"): False,
+  ("utils", "core"): False,
   # The x86-64-v3 guard reads the build's own record of what it compiled.
   ("_cpu", "_build_info"): True,
 }

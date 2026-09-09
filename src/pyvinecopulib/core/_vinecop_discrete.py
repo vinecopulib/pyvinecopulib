@@ -4,7 +4,7 @@ A discrete variable is described by two numbers, ``F(x)`` and its left limit
 ``F(x^-)``, and the copula quantities that are derivatives in a continuous
 argument become difference quotients over the atom ``[F(x^-), F(x)]``. This
 module owns that layer: the data-layout normalization vine input needs, the
-per-edge variable types a vine's own types imply, and :class:`DiscretePair` --
+per-edge variable types a vine's own types imply, and :class:`DiscreteBicop` --
 a pair copula that reads a four-column argument and supplies the mixed-discrete
 density and h-functions from the *continuous* ``pdf`` / ``cdf`` / ``hfunc1`` /
 ``hfunc2`` of the pair it wraps.
@@ -16,7 +16,7 @@ and needs to know nothing else. A pair that handles the four-column layout
 itself -- ``Bicop`` above all -- is hosted directly and never wrapped.
 
 Internal: the vine cascades and the fit engines call these helpers, and
-:class:`DiscretePair` is re-exported from :mod:`pyvinecopulib.core`.
+:class:`DiscreteBicop` is re-exported from :mod:`pyvinecopulib.core`.
 """
 
 from __future__ import annotations
@@ -34,17 +34,17 @@ from ._covariates import pair_eval, prepare
 from .bicop_base import BicopBase, flip_of
 from .protocols import ArrayT, BicopLike
 
-__all__ = ["DiscretePair"]
+__all__ = ["DiscreteBicop"]
 
 
-class _ContinuousPair(Protocol[ArrayT]):
-  """The unconditional evaluations :class:`DiscretePair` calls on its pair.
+class _ContinuousBicop(Protocol[ArrayT]):
+  """The unconditional evaluations :class:`DiscreteBicop` calls on its pair.
 
   ``cdf`` is what separates this from
   :class:`~pyvinecopulib.core.BicopLike`, where it is an optional capability:
   a difference quotient over an atom is built from it. The two inverses are
   here because a discrete argument's inverse falls back to them on the
-  continuous side. ``sample`` is not, since ``DiscretePair`` draws through its
+  continuous side. ``sample`` is not, since ``DiscreteBicop`` draws through its
   own inverse Rosenblatt.
 
   This is also a surface ``Bicop`` satisfies structurally -- ``BicopLike`` it
@@ -385,7 +385,7 @@ def with_left_limit(u_e: ArrayT, arg: int) -> ArrayT:
   return cast("ArrayT", xp.stack(cols, axis=-1))
 
 
-def continuous_view(pair: object) -> _ContinuousPair[ArrayT]:
+def continuous_view(pair: object) -> _ContinuousBicop[ArrayT]:
   """Return ``pair`` evaluated as a continuous copula, when it can be.
 
   A pair copula may carry its own variable types -- ``Bicop`` does -- in which
@@ -410,20 +410,20 @@ def continuous_view(pair: object) -> _ContinuousPair[ArrayT]:
   """
   view = getattr(pair, "as_continuous", None)
   if view is not None:
-    return cast("_ContinuousPair[ArrayT]", view())
+    return cast("_ContinuousBicop[ArrayT]", view())
   types = getattr(pair, "var_types", None)
   if types is not None and any(t != "c" for t in types):
     raise ValueError(
       f"{type(pair).__name__} declares var_types={list(types)} but has no "
       "as_continuous(); the inverse Rosenblatt cascade evaluates every pair "
       "copula as continuous, since it produces the values a left limit would "
-      "be taken of. Host the continuous copula in a DiscretePair instead, or "
+      "be taken of. Host the continuous copula in a DiscreteBicop instead, or "
       "add as_continuous()."
     )
-  return cast("_ContinuousPair[ArrayT]", pair)
+  return cast("_ContinuousBicop[ArrayT]", pair)
 
 
-class DiscretePair(BicopBase[ArrayT]):
+class DiscreteBicop(BicopBase[ArrayT]):
   """A continuous pair copula evaluated as a mixed-discrete one.
 
   Reads the four-column layout ``[F(u1), F(u2), F(u1^-), F(u2^-)]`` and returns
@@ -471,7 +471,7 @@ class DiscretePair(BicopBase[ArrayT]):
   supports_batched: bool = False
 
   def __init__(
-    self, pair: _ContinuousPair[ArrayT], var_types: tuple[str, str]
+    self, pair: _ContinuousBicop[ArrayT], var_types: tuple[str, str]
   ) -> None:
     self._pair = continuous_view(pair)
     self.var_types = list(var_types)
@@ -504,16 +504,16 @@ class DiscretePair(BicopBase[ArrayT]):
     """
     return cast("BicopLike[ArrayT]", self._pair)
 
-  def flip(self) -> "DiscretePair[ArrayT]":
+  def flip(self) -> "DiscreteBicop[ArrayT]":
     """The argument-swapped copula, with its variable types swapped too.
 
     Returns
     -------
-    DiscretePair
+    DiscreteBicop
         A wrapper around the flipped pair, reading ``[u2, u1, u2^-, u1^-]``.
     """
     flipped = flip_of(self._pair)
-    return DiscretePair(flipped, (self._var_types[1], self._var_types[0]))
+    return DiscreteBicop(flipped, (self._var_types[1], self._var_types[0]))
 
   def sample(
     self,
@@ -553,7 +553,7 @@ class DiscretePair(BicopBase[ArrayT]):
     return method(n, x=x, qrng=qrng, seeds=draw_seeds)
 
   def __repr__(self) -> str:
-    return f"DiscretePair({self._pair!r}, var_types={list(self._var_types)})"
+    return f"DiscreteBicop({self._pair!r}, var_types={list(self._var_types)})"
 
   # --- argument handling ------------------------------------------------ #
   # The helpers below compute on the columns rather than forwarding them --

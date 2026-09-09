@@ -57,11 +57,11 @@ Notes
   works (:class:`MarginLike`); subclass :class:`MarginBase` to write
   one, or reach for the parametric families and family selection in
   :mod:`pyvinecopulib.margins`.
-- *A custom pair copula on a discrete edge* — :class:`DiscretePair`.
+- *A custom pair copula on a discrete edge* — :class:`DiscreteBicop`.
   Wrap a continuous pair copula (anything with a ``cdf``) in the variable
   types :meth:`VinecopBase.pair_var_types` derives for its slot, and it
   supplies the mixed-discrete density and h-functions the cascades ask for.
-- *An edge below a dependence threshold* — :class:`IndependencePair`.
+- *An edge below a dependence threshold* — :class:`IndependenceBicop`.
   What :meth:`VinecopBase.select` places on a surviving edge whose criterion
   falls below ``threshold``, matching what :meth:`Vinecop.select` leaves there:
   the edge is not fitted, and holds the independence copula.
@@ -89,8 +89,8 @@ from ..pyvinecopulib_ext import (
   Vinecop,
 )
 from .._deprecations import _method_alias
-from ._vinecop_discrete import DiscretePair
-from .bicop_independence import IndependencePair
+from ._vinecop_discrete import DiscreteBicop
+from .bicop_independence import IndependenceBicop
 from .bicop_base import BicopBase
 from .vinecop_context import (
   ConditioningContext,
@@ -134,12 +134,12 @@ __all__ = [
   "ConditioningContext",
   "ControlsLike",
   "CVineStructure",
-  "DiscretePair",
+  "DiscreteBicop",
   "DVineStructure",
   "FitControlsBicop",
   "FitControlsMargin",
   "FitControlsVinecop",
-  "IndependencePair",
+  "IndependenceBicop",
   "Kde1d",
   "MarginBase",
   "margin_from_json",
