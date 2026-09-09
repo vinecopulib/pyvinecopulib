@@ -12,6 +12,8 @@ bounds from the dtype, while returning the historical ``float64`` pair
 unchanged so that precision's results are unmoved.
 """
 
+from __future__ import annotations
+
 from types import ModuleType
 from typing import Any, Optional, Tuple, cast
 

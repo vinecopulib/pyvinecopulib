@@ -249,7 +249,7 @@ _CLASS_MODULE = {
   "FitControlsTorchVinecop": "pyvinecopulib.torch",
   "ControlsLike": "pyvinecopulib.core",
   "DiscreteBicop": "pyvinecopulib.core",
-  "NotBatchable": "pyvinecopulib.core",
+  "NotBatchable": "pyvinecopulib.core.extend",
   "IndependenceBicop": "pyvinecopulib.core",
   "VinedistLike": "pyvinecopulib.core",
   "VinedistBase": "pyvinecopulib.core",
@@ -259,18 +259,18 @@ _CLASS_MODULE = {
 #: Kept apart from ``_CLASS_MODULE`` for that reason alone; both feed
 #: ``numpydoc_xref_aliases`` below.
 _FUNCTION_MODULE = {
-  "collapse_data": "pyvinecopulib.core",
-  "continuous_view": "pyvinecopulib.core",
-  "covariate_row": "pyvinecopulib.core",
-  "model_from_json": "pyvinecopulib.core",
-  "place": "pyvinecopulib.core",
-  "prepare_covariates": "pyvinecopulib.core",
-  "reject_covariates": "pyvinecopulib.core",
-  "usable_observations": "pyvinecopulib.core",
-  "validate_weights": "pyvinecopulib.core",
+  "collapse_data": "pyvinecopulib.core.extend",
+  "continuous_view": "pyvinecopulib.core.extend",
+  "covariate_row": "pyvinecopulib.core.extend",
+  "model_from_json": "pyvinecopulib.core.extend",
+  "place": "pyvinecopulib.core.extend",
+  "prepare_covariates": "pyvinecopulib.core.extend",
+  "reject_covariates": "pyvinecopulib.core.extend",
+  "usable_observations": "pyvinecopulib.core.extend",
+  "validate_weights": "pyvinecopulib.core.extend",
   "reference_array": "pyvinecopulib.core",
-  "to_numpy": "pyvinecopulib.core",
-  "trim": "pyvinecopulib.core",
+  "to_numpy": "pyvinecopulib.core.extend",
+  "trim": "pyvinecopulib.core.extend",
   "margin_from_json": "pyvinecopulib.core",
   "margin_to_json": "pyvinecopulib.core",
   "register_margin_json": "pyvinecopulib.core",
@@ -437,6 +437,15 @@ DOCSTRING_SUBPACKAGES = {
       "margin_from_json",
       "margin_to_json",
       "register_margin_json",
+    ],
+  },
+  # `core.extend` is the extension surface, documented apart from `core`
+  # because using pyvinecopulib needs none of it -- listing
+  # `usable_observations` beside `to_pseudo_obs` serves the few at the cost of
+  # the many.
+  "core.extend": {
+    "classes": ["NotBatchable"],
+    "functions": [
       "place",
       "reference_array",
       "to_numpy",
@@ -449,7 +458,6 @@ DOCSTRING_SUBPACKAGES = {
       "collapse_data",
       "continuous_view",
       "model_from_json",
-      "NotBatchable",
     ],
   },
   "families": {

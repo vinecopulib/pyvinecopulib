@@ -298,6 +298,7 @@ pyvinecopulib/
         _rootfind.py             # solve_increasing (monotone bisection; internal)
         _json.py                 # how a model payload is encoded and written (internal)
         _margins.py              # everything about a margin but its contract: coercion, resolution, JSON (internal)
+        extend.py                # the extension surface: the pipeline steps, validators, sentinel, aliases, codec
         _trim.py                 # trim — the domain step of the input pipeline
         _validation.py           # the layout / weights / covariate validators (internal)
         _bicop_plot.py           # what `Bicop.plot` / `BicopBase.plot` draw (internal)
@@ -1612,13 +1613,21 @@ below are a quick orientation.
   `MarginLike`, `MarginBase` and the joint object with its contract and base,
   `Vinedist`, `VinedistLike`, `VinedistBase`; plus the margin serialization
   helpers `margin_from_json`, `margin_to_json`, `register_margin_json`; plus
-  the input-pipeline steps a subclass composes itself, `place`,
-  `reference_array`, `trim`, `prepare_covariates`, `covariate_row` and
-  `to_numpy`; plus the rest of what an extension point's own documentation
-  asks for -- `NotBatchable`, `reject_covariates`, `validate_weights`,
-  `usable_observations`, `collapse_data`, `continuous_view`,
-  `model_from_json`, `MODEL_JSON_VERSION`, `FitEdge`, `FitLevel` and
-  `ArrayT`.
+  `ArrayT`, the type variable those signatures are written in.
+- **`pyvinecopulib.core.extend`** — what an extension writes against rather
+  than what a caller uses: the input-pipeline steps `place`,
+  `reference_array`, `to_numpy`, `trim`, `prepare_covariates` and
+  `covariate_row`; the validators `reject_covariates`, `validate_weights` and
+  `usable_observations`, so a refusal reads like the library's own; the vine's
+  layout step `collapse_data` and the unwrapper `continuous_view`;
+  `NotBatchable`, which a `_build_batched` override raises to decline the grid
+  fast path; the callback aliases `FitEdge` / `FitLevel`; and the model codec
+  `model_from_json` / `MODEL_JSON_VERSION`. Reached as
+  `pyvinecopulib.core.extend`, the way `pyvinecopulib.sklearn.backends` is,
+  and kept out of `core`'s own namespace because using pyvinecopulib needs
+  none of it. The four canonical bases and their protocols stay in `core`:
+  `README.md` tells users to subclass them, so they are part of the surface
+  rather than machinery behind it.
 - **`pyvinecopulib.families`** — `BicopFamily` enum; per-family
   constants (`indep`, `gaussian`, `student`, `clayton`, `gumbel`,
   `frank`, `joe`, `bb1`, `bb6`, `bb7`, `bb8`, `tawn`, `tll`); group

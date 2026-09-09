@@ -65,13 +65,11 @@ Notes
   What :meth:`VinecopBase.select` places on a surviving edge whose criterion
   falls below ``threshold``, matching what :meth:`Vinecop.select` leaves there:
   the edge is not fitted, and holds the independence copula.
-- *Writing part of the input pipeline yourself* — ``place``,
-  ``reference_array``, ``trim`` and ``prepare_covariates`` are the steps
-  every base applies to an incoming array, and ``to_numpy`` is the return
-  trip for a value leaving the array namespace. A subclass that overrides
-  the ``_prep_args`` composite reassembles it from these rather than
-  rewriting them, and one whose object holds no array of its own writes its
-  ``_prep`` with ``place``.
+- *Writing part of the input pipeline yourself* — the steps every base
+  applies to an incoming array, the validators that make a refusal read like
+  the library's own, and the rest of what an extension needs are in
+  ``pyvinecopulib.core.extend``, which is where they are documented. They are
+  kept out of this namespace because using pyvinecopulib needs none of them.
 - *C-vine / D-vine special cases* — :class:`CVineStructure` and
   :class:`DVineStructure` are the path-shaped and star-shaped
   specializations of :class:`RVineStructure` and can be passed
@@ -96,17 +94,7 @@ from ..pyvinecopulib_ext import (
   Vinecop,
 )
 from .._deprecations import _method_alias
-from ._covariates import covariate_row, prepare_covariates
-from ._json import MODEL_JSON_VERSION, loads as model_from_json
-from ._placement import place, reference_array, to_numpy
-from ._trim import trim
-from ._validation import (
-  reject_covariates,
-  usable_observations,
-  validate_weights,
-)
-from ._vinecop_fit_engines import FitEdge, FitLevel
-from ._vinecop_discrete import DiscreteBicop, collapse_data, continuous_view
+from ._vinecop_discrete import DiscreteBicop
 from .bicop_independence import IndependenceBicop
 from .bicop_base import BicopBase
 from .vinecop_context import (
@@ -131,7 +119,7 @@ from .protocols import (
 )
 from .vinedist import Vinedist
 from .vinedist_base import VinedistBase
-from .vinecop_base import NotBatchable, VinecopBase
+from .vinecop_base import VinecopBase
 
 # Deprecated aliases for the pre-1.0 `simulate` spelling. The canonical name is
 # `sample`, matching scikit-learn, `torch.distributions` and SciPy's modern
@@ -165,25 +153,9 @@ __all__ = [
   "margin_to_json",
   "register_margin_json",
   "MarginLike",
-  "MODEL_JSON_VERSION",
-  "model_from_json",
-  "NotBatchable",
   "NonSimplifiedContext",
-  "collapse_data",
-  "continuous_view",
-  "covariate_row",
-  "FitEdge",
-  "FitLevel",
-  "place",
-  "prepare_covariates",
-  "reference_array",
-  "reject_covariates",
   "RVineStructure",
   "SimplifiedContext",
-  "to_numpy",
-  "trim",
-  "usable_observations",
-  "validate_weights",
   "Vinecop",
   "VinecopBase",
   "VinecopLike",

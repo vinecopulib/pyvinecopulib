@@ -5,6 +5,7 @@ is loaded by file path. These tests guard the rendered output rather than the
 gitignored stub artifacts on disk.
 """
 
+import builtins
 import ast
 import importlib.util
 from pathlib import Path
@@ -207,3 +208,67 @@ def test_every_generated_stub_parses() -> None:
   assert stubs
   for stub in stubs:
     ast.parse(stub.read_text(encoding="utf-8"), filename=str(stub))
+
+
+def test_every_stub_annotation_resolves() -> None:
+  """A name an annotation refers to has to be defined or imported.
+
+  Parsing does not catch this: `~ArrayT` is a valid unary invert on a name and
+  `Optional[module]` is a valid subscript, so a stub that renders
+  `repr(TypeVar)` or a class's bare `__name__` parses cleanly and then means
+  nothing to a consumer. Both shapes reached the published `core` stub, and
+  the second silently degraded every generic signature in it to `Any`.
+  """
+  root = Path(pv.__file__).resolve().parent
+  stubs = sorted(root.glob("**/__init__.pyi"))
+  assert stubs
+
+  unresolved: dict[str, set[str]] = {}
+  for stub in stubs:
+    text = stub.read_text(encoding="utf-8")
+    tree = ast.parse(text, filename=str(stub))
+
+    bound: set[str] = set(dir(builtins)) | {"typing"}
+    for node in ast.walk(tree):
+      if isinstance(node, ast.Import):
+        bound |= {(a.asname or a.name).split(".")[0] for a in node.names}
+      elif isinstance(node, ast.ImportFrom):
+        bound |= {a.asname or a.name for a in node.names}
+      elif isinstance(node, (ast.ClassDef, ast.FunctionDef)):
+        bound.add(node.name)
+      elif isinstance(node, ast.AnnAssign) and isinstance(
+        node.target, ast.Name
+      ):
+        bound.add(node.target.id)
+      elif isinstance(node, ast.Assign):
+        bound |= {t.id for t in node.targets if isinstance(t, ast.Name)}
+
+    # Every annotation, whether written as a string or evaluated into one.
+    referenced: set[str] = set()
+    for node in ast.walk(tree):
+      annotations = []
+      if isinstance(node, ast.arg) and node.annotation is not None:
+        annotations.append(node.annotation)
+      elif isinstance(node, ast.FunctionDef) and node.returns is not None:
+        annotations.append(node.returns)
+      elif isinstance(node, ast.AnnAssign):
+        annotations.append(node.annotation)
+      for annotation in annotations:
+        source = (
+          annotation.value
+          if isinstance(annotation, ast.Constant)
+          and isinstance(annotation.value, str)
+          else ast.unparse(annotation)
+        )
+        try:
+          inner = ast.parse(source, mode="eval")
+        except SyntaxError:
+          unresolved.setdefault(stub.name, set()).add(source)
+          continue
+        referenced |= {n.id for n in ast.walk(inner) if isinstance(n, ast.Name)}
+
+    missing = {n for n in referenced if n not in bound}
+    if missing:
+      unresolved.setdefault(stub.name, set()).update(missing)
+
+  assert unresolved == {}, {k: sorted(v) for k, v in unresolved.items()}

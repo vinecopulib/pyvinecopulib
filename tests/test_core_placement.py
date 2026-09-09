@@ -13,7 +13,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from pyvinecopulib.core import (
+from pyvinecopulib.core.extend import (
   place,
   prepare_covariates,
   reference_array,
@@ -237,7 +237,9 @@ def test_the_pipeline_steps_are_reachable_from_core() -> None:
 
   # `getattr` because the generated stub declares no `__all__`, as the
   # neighboring surface and stub tests do for the same reason.
-  exported = set(getattr(core, "__all__", ()))
+  import pyvinecopulib.core.extend as extend
+
+  exported = set(getattr(extend, "__all__", ()))
   for name in (
     "collapse_data",
     "continuous_view",
@@ -253,19 +255,18 @@ def test_the_pipeline_steps_are_reachable_from_core() -> None:
     "validate_weights",
   ):
     assert name in exported, name
-    assert callable(getattr(core, name)), name
-  # Not callables: the batching sentinel, the two fit-callback aliases, the
-  # payload version and the TypeVar every public signature carries.
-  for name in (
-    "ArrayT",
-    "FitEdge",
-    "FitLevel",
-    "MODEL_JSON_VERSION",
-    "NotBatchable",
-  ):
+    assert callable(getattr(extend, name)), name
+  # Not callables: the batching sentinel, the two fit-callback aliases and the
+  # payload version.
+  for name in ("FitEdge", "FitLevel", "MODEL_JSON_VERSION", "NotBatchable"):
     assert name in exported, name
-    assert getattr(core, name, None) is not None, name
-  assert issubclass(core.NotBatchable, Exception)
+    assert getattr(extend, name, None) is not None, name
+  assert issubclass(extend.NotBatchable, Exception)
+  # `core` keeps the type variable those signatures are written in, and none
+  # of the rest: the two namespaces have different audiences.
+  core_exported = set(getattr(core, "__all__", ()))
+  assert "ArrayT" in core_exported
+  assert exported.isdisjoint(core_exported)
 
 
 def test_to_numpy_brings_back_what_asarray_refuses() -> None:
@@ -291,8 +292,11 @@ def test_trim_clamps_into_the_open_interval_at_its_own_precision() -> None:
   """
   from array_api_compat import array_namespace
 
-  for dtype in (np.float64, np.float32):
-    a = np.array([0.0, 1.0], dtype=dtype)
+  # Two dtype *names* rather than two classes: iterating the classes gives `a`
+  # a union dtype, which numpy's own `.min` overloads do not accept -- visible
+  # only once `trim` returns a real type instead of `Any`.
+  for name in ("float64", "float32"):
+    a = np.array([0.0, 1.0], dtype=name)
     clamped = trim(a)
     assert clamped.dtype == a.dtype
     assert float(clamped.min()) > 0.0
@@ -371,7 +375,7 @@ def test_a_single_covariate_row_is_accepted_in_both_spellings() -> None:
   ``prepare_covariates`` refuses a one-dimensional ``x`` because ``(n,)`` is
   ambiguous per row. A single row is not, which is why a plot takes ``(p,)``.
   """
-  from pyvinecopulib.core import covariate_row
+  from pyvinecopulib.core.extend import covariate_row
 
   flat = covariate_row(np.array([1.0, 2.0, 3.0]))
   assert flat.shape == (1, 3)
