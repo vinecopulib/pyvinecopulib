@@ -83,7 +83,7 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Add `FitControlsMargin` and `margin_controls=`, the marginal half of a vine-distribution fit, resolved per variable by the same four shapes `margins=` accepts -- so one call can bound the two variables whose bounds are known and leave the rest alone (#326).
 - Add `MarginBase.aic` / `.bic` / `.aicc`, which `Bicop` and `Vinecop` have always had and margins did not (#326).
 - Plot a custom object from its base: `BicopBase.plot`, `VinecopBase.plot` and `MarginBase.plot` draw what `Bicop.plot`, `Vinecop.plot` and `Kde1d.plot` draw, so a hand-written pair copula, vine or margin is inspected like a fitted one (#327, #330).
-    - the two density plots take an optional single-row `x`, since a conditional object is a different surface at every covariate value and a plot shows one slice, and both refuse an `x` their object reads no covariates from (#327, #330)
+    - `BicopBase.plot` and `MarginBase.plot` take an optional single-row `x`, since a conditional object is a different surface at every covariate value and a plot shows one slice; both refuse an `x` their object reads no covariates from (#327, #330)
     - `MarginBase.plot` covers all three variable types, drawing a curve, marks on an integer support, or both for a zero-inflated variable (#330)
 - Host any pair copula in a `TorchVinecop`, not only a grid one: a `BicopBase` that is also an `nn.Module`, with learnable parameters, composes and trains. `examples/10_extending_pyvinecopulib.ipynb` walks through it (#326).
 - Re-export `FitControlsMargin` from `core` and the top level, so all three controls classes sit together where a caller looks for them (#326).
