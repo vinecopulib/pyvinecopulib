@@ -126,6 +126,14 @@ def prepare_covariates(
   conditioning columns it gathered from the observations, so a NumPy ``x``
   handed to a PyTorch vine has to be brought across before they can meet.
 
+  **Every entry point that takes an ``x`` should route it through this**,
+  including the ones a subclass writes itself. Not doing so is easy to miss,
+  because what goes wrong is not a refusal: a covariate that skips the layout
+  check is simply never checked, and one that skips the placement reaches the
+  numerics in whatever namespace and precision the caller had -- a NumPy array
+  failing several frames deep inside a torch call rather than at the boundary,
+  or a ``float32`` one quietly setting the precision of everything it touches.
+
   The layout it requires is not a subclass's to widen at its own entry
   points: the bases call this directly from ``logpdf`` / ``cdf_left`` /
   ``loglik`` / ``sample`` and from the vine and pair cascades, so a subclass
