@@ -513,12 +513,17 @@ class BicopBase(
     ValueError
         If ``u`` is not two-dimensional with exactly two columns.
     """
-    ua: Any = self._prep(u)
-    if getattr(ua, "ndim", None) != 2 or int(ua.shape[1]) != 2:
-      raise ValueError(
-        f"u must have shape (n, 2); got {tuple(getattr(ua, 'shape', ()))}"
-      )
+    ua: Any = self._layout(self._prep(u))
     return cast("ArrayT", trim(array_namespace(ua), ua))
+
+  def _layout(self, ua: ArrayT) -> ArrayT:
+    """Check the two-column layout the pair-copula contract specifies."""
+    a: Any = ua
+    if getattr(a, "ndim", None) != 2 or int(a.shape[1]) != 2:
+      raise ValueError(
+        f"u must have shape (n, 2); got {tuple(getattr(a, 'shape', ()))}"
+      )
+    return ua
 
   def plot(
     self,

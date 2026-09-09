@@ -973,13 +973,17 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         If ``y`` is not one-dimensional. A margin describes one variable, and
         a second axis silently changed which values each answer belonged to.
     """
-    ya: Any = self._prep(y)
-    if getattr(ya, "ndim", None) != 1:
+    return self._layout(self._prep(y), name)
+
+  def _layout(self, ya: ArrayT, name: str = "y") -> ArrayT:
+    """Check the single-column layout a margin describes."""
+    a: Any = ya
+    if getattr(a, "ndim", None) != 1:
       raise ValueError(
         f"{name} must be one-dimensional -- a margin describes one variable; "
-        f"got shape {tuple(getattr(ya, 'shape', ()))}"
+        f"got shape {tuple(getattr(a, 'shape', ()))}"
       )
-    return cast("ArrayT", ya)
+    return ya
 
   def __repr__(self) -> str:
     """Return a structural representation of the margin.
