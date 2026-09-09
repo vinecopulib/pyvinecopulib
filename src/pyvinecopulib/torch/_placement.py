@@ -116,7 +116,10 @@ class TensorPlacementMixin(_ModuleBase):
 
     ``as_tensor`` rather than ``tensor`` or ``detach``, so a tensor that
     already matches is returned untouched and a gradient-carrying one stays in
-    the graph.
+    the graph. That is a *guarantee* here and not one the array-API route
+    makes: ``place`` converts through the namespace's own ``asarray``, whose
+    answer for a tracked tensor is that library's and has changed between
+    releases of it.
     """
     ref = self._ref_tensor()
     return torch.as_tensor(a, dtype=ref.dtype, device=ref.device)

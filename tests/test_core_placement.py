@@ -381,3 +381,34 @@ def test_a_single_covariate_row_is_accepted_in_both_spellings() -> None:
   for bad in (np.zeros((2, 3)), np.zeros((1, 2, 3))):
     with pytest.raises(ValueError, match="single covariate row"):
       covariate_row(bad)
+
+
+def test_place_makes_no_promise_about_a_gradient() -> None:
+  """What `place` inherits from the namespace, and the one case that raises.
+
+  Conversion goes through the array namespace's own ``asarray``, so whether a
+  tracked tensor stays tracked is that library's answer -- ``torch.asarray``
+  defaulted ``requires_grad`` to ``False`` up to 2.11 and to the input's value
+  from 2.13, so pinning either here would pin the installed torch rather than
+  anything about this package. What *is* stable is the NumPy-reference case,
+  and that it raises rather than silently detaching.
+  """
+  torch = pytest.importorskip("torch")
+
+  tracked = torch.ones((2, 1), dtype=torch.float64, requires_grad=True)
+  # A NumPy reference and a tracked tensor: reachable, because the static fit
+  # engines pass an array as `onto`.
+  with pytest.raises(RuntimeError, match="requires grad"):
+    prepare_covariates(np.zeros((2, 3)), tracked, 2)
+  # Detached, the same call is an ordinary placement onto NumPy.
+  assert isinstance(
+    prepare_covariates(np.zeros((2, 3)), tracked.detach(), 2), np.ndarray
+  )
+  # The torch route is the one that guarantees an answer, whatever the version.
+  from pyvinecopulib.torch import TensorPlacementMixin
+
+  class _Hooked(TensorPlacementMixin):
+    device = torch.device("cpu")
+    dtype = torch.float64
+
+  assert _Hooked()._prep(tracked).requires_grad

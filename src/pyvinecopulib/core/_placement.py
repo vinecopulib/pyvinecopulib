@@ -220,6 +220,22 @@ def place(obj: object, a: Any) -> Any:  # noqa: ANN401
   array
       ``a`` on ``obj``'s namespace, or unchanged when ``obj`` holds no array
       of its own to read a placement from.
+
+  Notes
+  -----
+  This makes no promise about a gradient. Conversion goes through the array
+  namespace's own ``asarray``, so whether a tracked tensor stays tracked is
+  that library's answer and has changed between releases of it --
+  ``torch.asarray`` defaulted ``requires_grad`` to ``False`` up to 2.11 and to
+  the input's value from 2.13. ``torch/_placement.py``'s ``_prep`` uses
+  ``as_tensor`` precisely so that the answer is the same on every version;
+  where a gradient has to survive, that is the route.
+
+  A **NumPy** reference and a tracked tensor is the one combination that
+  raises rather than converting -- ``Can't call numpy() on Tensor that
+  requires grad`` -- and it is reachable: the static fit engines pass an array
+  as ``obj``, so a NumPy-lane vine handed a tracked ``x`` fails there rather
+  than being refused at the boundary.
   """
   reference = reference_array(obj)
   if reference is None:
