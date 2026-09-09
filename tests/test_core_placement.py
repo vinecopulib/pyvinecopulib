@@ -416,3 +416,62 @@ def test_place_makes_no_promise_about_a_gradient() -> None:
     dtype = torch.float64
 
   assert _Hooked()._prep(tracked).requires_grad
+
+
+def test_one_covariate_per_observation_is_checked_against_the_count() -> None:
+  """`(n,)` is resolvable two ways, so `n` is what makes one of them safe.
+
+  Choosing `covariate_column` is the caller stating that the axis is
+  observations; `n` is what lets that statement be checked rather than
+  trusted. Without it, an `x` of the wrong length reshapes to `(len(x), 1)`
+  and pairs every observation with some other observation's covariate.
+  """
+  from pyvinecopulib.core.extend import covariate_column
+
+  column = covariate_column(np.arange(3.0), 3)
+  assert column.shape == (3, 1)
+  np.testing.assert_array_equal(column[:, 0], np.arange(3.0))
+  # `(n, 1)` says the same thing explicitly and survives the same check.
+  already = np.zeros((3, 1))
+  np.testing.assert_array_equal(covariate_column(already, 3), already)
+
+  # The check that earns the required `n`: a length that cannot be n rows.
+  with pytest.raises(ValueError, match="5 values but 3 observations"):
+    covariate_column(np.arange(5.0), 3)
+  # And a second column, having asked for one covariate.
+  with pytest.raises(ValueError, match="one covariate per observation"):
+    covariate_column(np.zeros((3, 2)), 3)
+
+
+def test_the_two_readings_of_a_one_dimensional_x_stay_separate() -> None:
+  """Where both readings are valid, the function named is the disambiguation.
+
+  At `n == p` each produces a well-formed and *different* answer, which is the
+  whole reason there are two names rather than a flag: no argument can tell
+  them apart, so the call site has to.
+  """
+  from pyvinecopulib.core.extend import covariate_column, covariate_row
+
+  x = np.array([0.1, 0.2, 0.3])
+  assert covariate_column(x, 3).shape == (3, 1)
+  assert covariate_row(x).shape == (1, 3)
+
+  # Each refusal names the other, since picking the wrong one is the likely
+  # mistake rather than a malformed array.
+  with pytest.raises(ValueError, match="covariate_row"):
+    covariate_column(np.zeros((1, 4)), 4)
+  with pytest.raises(ValueError, match="covariate_column"):
+    covariate_row(np.zeros((4, 1)))
+
+
+def test_the_refusal_a_caller_hits_names_both_ways_out() -> None:
+  """`prepare_covariates` is where a one-dimensional `x` is actually rejected.
+
+  A message that only says "must have shape (n, p)" invites a reshape, which
+  is the caller picking a reading by accident.
+  """
+  with pytest.raises(ValueError, match="covariate_column.*covariate_row"):
+    prepare_covariates(np.zeros(3), np.arange(3.0), 3)
+  # A two-dimensional mismatch is a different error and stays terse.
+  with pytest.raises(ValueError, match="one row per observation"):
+    prepare_covariates(np.zeros(3), np.zeros((2, 1)), 3)

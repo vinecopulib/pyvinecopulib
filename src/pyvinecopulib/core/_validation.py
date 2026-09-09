@@ -77,9 +77,18 @@ def validate_covariates(
     return
   if getattr(x, "ndim", None) != 2:
     shape = tuple(getattr(x, "shape", ()))
+    one_d = getattr(x, "ndim", None) == 1
     raise ValueError(
       f"{name} must have shape (n, p), with one row per observation; "
       f"got {shape}"
+      + (
+        ". A one-dimensional x is refused because it says nothing about "
+        "which axis is which: `covariate_column(x, n)` reads it as one "
+        "covariate per observation, `covariate_row(x)` as one row shared "
+        "across them."
+        if one_d
+        else ""
+      )
     )
   rows = int(cast("Any", x).shape[0])
   if rows != n_rows:

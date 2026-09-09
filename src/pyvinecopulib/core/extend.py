@@ -22,7 +22,11 @@ they are a documented part of the surface rather than machinery behind it.
 written in.
 """
 
-from ._covariates import covariate_row, prepare_covariates
+from ._covariates import (
+  covariate_column,
+  covariate_row,
+  prepare_covariates,
+)
 from ._json import MODEL_JSON_VERSION, loads as model_from_json
 from ._placement import place, reference_array, to_numpy
 from ._trim import trim
@@ -42,6 +46,7 @@ __all__ = [
   "NotBatchable",
   "collapse_data",
   "continuous_view",
+  "covariate_column",
   "covariate_row",
   "model_from_json",
   "place",

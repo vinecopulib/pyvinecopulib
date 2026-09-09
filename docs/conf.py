@@ -261,6 +261,7 @@ _CLASS_MODULE = {
 _FUNCTION_MODULE = {
   "collapse_data": "pyvinecopulib.core.extend",
   "continuous_view": "pyvinecopulib.core.extend",
+  "covariate_column": "pyvinecopulib.core.extend",
   "covariate_row": "pyvinecopulib.core.extend",
   "model_from_json": "pyvinecopulib.core.extend",
   "place": "pyvinecopulib.core.extend",
@@ -452,6 +453,7 @@ DOCSTRING_SUBPACKAGES = {
       "trim",
       "prepare_covariates",
       "covariate_row",
+      "covariate_column",
       "reject_covariates",
       "validate_weights",
       "usable_observations",
