@@ -435,6 +435,7 @@ def test_no_module_declares_a_name_twice() -> None:
     pytest.skip("source tree not available")
 
   duplicated: dict[str, list[str]] = {}
+  seen = 0
   for path in sorted(root.rglob("*.py")):
     tree = ast.parse(path.read_text(encoding="utf-8"))
     for node in ast.walk(tree):
@@ -452,7 +453,11 @@ def test_no_module_declares_a_name_twice() -> None:
         if isinstance(e, ast.Constant) and isinstance(e.value, str)
       ]
       repeats = sorted({n for n in names if names.count(n) > 1})
+      seen += 1
       if repeats:
         duplicated[str(path.relative_to(root))] = repeats
 
   assert duplicated == {}, duplicated
+  # Without this the test passes by reading nothing: a broken glob and a
+  # package with no duplicates report the same empty result.
+  assert seen > 1, f"only {seen} `__all__` lists found; the walk is not walking"

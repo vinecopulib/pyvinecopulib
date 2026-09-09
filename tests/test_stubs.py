@@ -224,6 +224,7 @@ def test_every_stub_annotation_resolves() -> None:
   assert stubs
 
   unresolved: dict[str, set[str]] = {}
+  contributed: dict[str, int] = {}
   for stub in stubs:
     text = stub.read_text(encoding="utf-8")
     tree = ast.parse(text, filename=str(stub))
@@ -270,5 +271,13 @@ def test_every_stub_annotation_resolves() -> None:
     missing = {n for n in referenced if n not in bound}
     if missing:
       unresolved.setdefault(stub.name, set()).update(missing)
+    # An empty `missing` is also what a walk that collected nothing reports,
+    # so every stub carrying a signature has to have contributed a reference
+    # before the empty result means anything.
+    if "def " in text:
+      contributed[str(stub.relative_to(root))] = len(referenced)
 
   assert unresolved == {}, {k: sorted(v) for k, v in unresolved.items()}
+  assert contributed, "no stub carried a signature: the glob found nothing"
+  barren = sorted(k for k, n in contributed.items() if n == 0)
+  assert barren == [], f"annotations collected from no names in: {barren}"
