@@ -225,6 +225,7 @@ def test_agents_md_public_api_lists_match_the_code() -> None:
   text = spec.read_text(encoding="utf-8")
 
   import pyvinecopulib.core as core
+  import pyvinecopulib.core.extend as extend
   import pyvinecopulib.families as families
   import pyvinecopulib.margins as margins
   import pyvinecopulib.utils as utils
@@ -233,6 +234,7 @@ def test_agents_md_public_api_lists_match_the_code() -> None:
   section = text[text.index("## Public APIs") :]
   for label, module in (
     ("`pyvinecopulib.core`", core),
+    ("`pyvinecopulib.core.extend`", extend),
     ("`pyvinecopulib.families`", families),
     ("`pyvinecopulib.utils`", utils),
     ("`pyvinecopulib.margins`", margins),
@@ -253,7 +255,12 @@ def test_agents_md_public_api_lists_match_the_code() -> None:
       "undocumented",
       sorted(exported - named),
     )
-    stale = {n for n in named if n in dir(module)} | (named & exported)
+    # Only class-shaped names in the second direction: these bullets name
+    # methods, parameters and prose words in backticks too, so a lowercase
+    # token the module does not export is more often prose than drift. A
+    # withdrawn *function* therefore leaves no signal here, which is what
+    # makes a tree-wide `git ls-files | xargs grep` the check when a public
+    # name is removed.
     invented = {
       n
       for n in named
@@ -263,7 +270,6 @@ def test_agents_md_public_api_lists_match_the_code() -> None:
       and n not in subpackages
     }
     assert invented == set(), (label, "claimed but absent", sorted(invented))
-    del stale
 
 
 #: The package root, which sits above every layer.
