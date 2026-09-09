@@ -19,7 +19,7 @@ import pytest
 import pyvinecopulib as pv
 from pyvinecopulib.core import ControlsLike, MarginBase, MarginLike
 
-from .helpers import FlatMargin
+from .helpers import FlatMargin, ShiftedNormalMargin
 
 
 class _ShiftedExp(MarginBase[np.ndarray]):
@@ -278,30 +278,25 @@ def test_repr_is_structural() -> None:
 # --- exogenous covariates ---------------------------------------------------- #
 
 
-class _Recording(MarginBase[np.ndarray]):
-  """Records whether covariates reached each primitive.
+class _Recording(ShiftedNormalMargin):
+  """The shared conditional margin, plus a log of which primitive saw an ``x``.
 
-  A location-shift model, so `pdf` / `cdf` actually change with `x` and a
-  forwarding bug shows up in the numbers as well as in the log.
+  The numbers move with the covariate on their own, so a forwarding bug is
+  visible in them; the log is what distinguishes *skipped* from *forwarded as
+  None*, which the numbers cannot.
   """
 
-  supports_covariates = True
-
   def __init__(self) -> None:
+    super().__init__()
     self.seen: list[str] = []
 
-  def _shift(self, x: Optional[Any]) -> Any:
-    return 0.0 if x is None else np.asarray(x, dtype=float)[:, 0]
-
-  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def pdf(self, y: Any, /, *, x: Optional[Any] = None) -> Any:
     self.seen.append("pdf" if x is not None else "pdf-bare")
-    z = np.asarray(y, dtype=float) - self._shift(x)
-    return np.exp(-0.5 * z**2) / np.sqrt(2.0 * np.pi)
+    return super().pdf(y, x=x)
 
-  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def cdf(self, y: Any, /, *, x: Optional[Any] = None) -> Any:
     self.seen.append("cdf" if x is not None else "cdf-bare")
-    z = np.asarray(y, dtype=float) - self._shift(x)
-    return 0.5 * (1.0 + np.vectorize(math.erf)(z / np.sqrt(2.0)))
+    return super().cdf(y, x=x)
 
 
 def test_covariates_reach_every_derived_member() -> None:
@@ -536,3 +531,171 @@ def test_an_array_in_the_controls_slot_is_refused_across_the_margin_level() -> (
   assert FlatMargin().select(y) is not None
   # And the documented exception still reads the way its own docs say.
   assert pv.core.Kde1d().fit(y, w) is not None
+
+
+# --------------------------------------------------------------------------- #
+# Covariates on the two variable types that carry atoms. The derived            #
+# `cdf_left` reaches `cdf` and `pdf` a second time there -- stepping back a     #
+# lattice point, or removing the mass at zero -- and both of those forwardings  #
+# were unexercised: every conditional double above is continuous, and every     #
+# discrete one unconditional.                                                   #
+# --------------------------------------------------------------------------- #
+
+
+class _ConditionalPoisson(MarginBase[np.ndarray]):
+  """Poisson with ``mu = exp(x[:, 0])`` -- discrete *and* conditional."""
+
+  supports_covariates = True
+
+  @property
+  def var_type(self) -> str:
+    return "d"
+
+  @property
+  def support(self) -> tuple[float, float]:
+    return (0.0, float("inf"))
+
+  @staticmethod
+  def _mu(y: Any, x: Optional[Any]) -> Any:
+    if x is None:
+      return np.ones(np.shape(y))
+    return np.exp(np.asarray(x, dtype=float)[:, 0])
+
+  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    k = np.asarray(y, dtype=float)
+    mu = self._mu(y, x)
+    logp = -mu + k * np.log(mu) - np.vectorize(math.lgamma)(k + 1.0)
+    return np.where(k >= 0.0, np.exp(logp), 0.0)
+
+  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    k = np.floor(np.asarray(y, dtype=float))
+    mu = self._mu(y, x)
+    # Sum the mass up to `k`, which needs no special function.
+    out = np.zeros(np.shape(k))
+    top = int(max(0.0, float(np.max(k))))
+    for j in range(top + 1):
+      term = np.exp(-mu + j * np.log(mu) - math.lgamma(j + 1.0))
+      out = out + np.where(k >= j, term, 0.0)
+    return np.where(k >= 0.0, out, 0.0)
+
+
+class _ConditionalZeroInflated(MarginBase[np.ndarray]):
+  """Atom at zero of mass ``expit(x[:, 0])``, exponential body above it."""
+
+  supports_covariates = True
+
+  @property
+  def var_type(self) -> str:
+    return "zi"
+
+  @property
+  def support(self) -> tuple[float, float]:
+    return (0.0, float("inf"))
+
+  @staticmethod
+  def _prob0(y: Any, x: Optional[Any]) -> Any:
+    if x is None:
+      return np.full(np.shape(y), 0.5)
+    return 1.0 / (1.0 + np.exp(-np.asarray(x, dtype=float)[:, 0]))
+
+  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    ya = np.asarray(y, dtype=float)
+    p0 = self._prob0(y, x)
+    body = (1.0 - p0) * np.exp(-ya)
+    return np.where(ya == 0.0, p0, np.where(ya > 0.0, body, 0.0))
+
+  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    ya = np.asarray(y, dtype=float)
+    p0 = self._prob0(y, x)
+    return np.where(ya >= 0.0, p0 + (1.0 - p0) * (1.0 - np.exp(-ya)), 0.0)
+
+
+def test_a_conditional_discrete_margin_steps_back_its_own_lattice() -> None:
+  """`F(k^- | x)` is `F(k-1 | x)`, at the covariate row `k` came with."""
+  m = _ConditionalPoisson()
+  k = np.array([0.0, 1.0, 2.0, 5.0])
+  cov = np.array([[0.4], [-0.3], [1.1], [0.0]])
+
+  left = m.cdf_left(k, x=cov)
+  np.testing.assert_allclose(left, m.cdf(k - 1.0, x=cov), atol=0.0)
+  np.testing.assert_allclose(
+    left, m.cdf(k, x=cov) - m.pdf(k, x=cov), atol=1e-12
+  )
+  assert left[0] == 0.0
+  # The covariate actually moved it, so a dropped `x` would be visible.
+  assert not np.allclose(left, m.cdf_left(k))
+
+
+def test_a_conditional_zero_inflated_margin_removes_its_own_atom() -> None:
+  """`F(0 | x) - F(0^- | x)` is that row's mass, not some other row's."""
+  m = _ConditionalZeroInflated()
+  y = np.array([0.0, 0.0, 2.0])
+  cov = np.array([[1.5], [-1.5], [0.0]])
+
+  left = m.cdf_left(y, x=cov)
+  mass = m.cdf(y, x=cov) - left
+  np.testing.assert_allclose(mass[:2], m.pdf(y, x=cov)[:2], atol=1e-12)
+  # Two rows at the same y with different covariates, hence different masses.
+  assert mass[0] > 0.7 and mass[1] < 0.3
+  # Above the atom the margin is continuous, so nothing is removed.
+  np.testing.assert_allclose(left[2], m.cdf(y, x=cov)[2], atol=0.0)
+
+
+class _EstimatedShift(ShiftedNormalMargin):
+  """The shared conditional margin, with its ``slope`` estimated rather than given.
+
+  Every other conditional double hard-codes its dependence on ``x``, so they
+  cover the forwarding and not the estimate. This one reads the covariates it
+  was handed and produces a number that can be checked against the truth that
+  generated the data.
+  """
+
+  def __init__(self) -> None:
+    super().__init__(slope=float("nan"))
+
+  @property
+  def is_fitted(self) -> bool:
+    return not math.isnan(self.slope)
+
+  def fit(
+    self,
+    y: np.ndarray,
+    /,
+    controls: Optional[ControlsLike] = None,
+    *,
+    x: Optional[np.ndarray] = None,
+    weights: Optional[np.ndarray] = None,
+  ) -> "_EstimatedShift":
+    del controls, weights
+    if x is None:
+      raise ValueError("this margin is conditional; give it covariates")
+    col = np.asarray(x, dtype=float)[:, 0]
+    self.slope = float(col @ np.asarray(y, dtype=float) / (col @ col))
+    # The two slots the base's criteria penalize against.
+    self._nobs = int(np.size(y))
+    self._n_free = 1.0
+    return self
+
+
+def test_a_margin_estimated_from_covariates_recovers_the_truth() -> None:
+  """The estimate, not just the forwarding: a fitted slope against its own."""
+  rng = np.random.default_rng(11)
+  cov = rng.normal(size=(4000, 1))
+  slope = 1.75
+  y = slope * cov[:, 0] + rng.normal(size=4000)
+
+  m = _EstimatedShift()
+  assert m.is_fitted is False
+  assert m.fit(y, x=cov) is m
+  assert m.slope == pytest.approx(slope, abs=0.05)
+  assert (m.nobs, m.n_parameters) == (4000, 1)
+
+  # And the fitted margin evaluates at the covariates it was fitted on.
+  at_zero = m.icdf(np.full(3, 0.5), x=np.array([[0.0], [1.0], [-1.0]]))
+  np.testing.assert_allclose(at_zero, [0.0, m.slope, -m.slope], atol=1e-6)
+
+
+def test_a_conditional_margin_fitted_without_covariates_refuses() -> None:
+  """A conditional margin says so rather than fitting the unconditional one."""
+  with pytest.raises(ValueError, match="conditional"):
+    _EstimatedShift().fit(np.zeros(3))

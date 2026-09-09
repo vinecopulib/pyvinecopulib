@@ -6,7 +6,8 @@ import numpy as np
 import pytest
 
 import pyvinecopulib as pv
-from pyvinecopulib.core._normal import norm_cdf
+
+from .helpers import ShiftedNormalMargin
 
 
 def assert_called_once_or_twice(mock: Any) -> None:
@@ -974,7 +975,7 @@ class TestMarginPlot:
       margin_plot(self._continuous(), x=np.zeros(2))
 
   def test_a_conditional_margin_is_drawn_at_one_covariate_row(self) -> None:
-    margin = _ShiftedByCovariate(shift=2.0)
+    margin = ShiftedNormalMargin(slope=2.0)
     with patch("matplotlib.pyplot.show"), patch("matplotlib.pyplot.plot") as p:
       margin.plot(x=np.array([1.0]))
 
@@ -988,7 +989,7 @@ class TestMarginPlot:
     from pyvinecopulib.core._margin_plot import margin_plot
 
     with pytest.raises(ValueError, match="single covariate row"):
-      margin_plot(_ShiftedByCovariate(), x=np.zeros((3, 1)))
+      margin_plot(ShiftedNormalMargin(), x=np.zeros((3, 1)))
 
   def test_the_base_places_the_grid_on_the_margins_own_namespace(self) -> None:
     """A margin on tensors plots without converting inside its own ``pdf``.
@@ -1028,36 +1029,6 @@ class TestMarginPlot:
     assert margin.seen and isinstance(margin.seen[0], torch.Tensor)
     # The drawn values come back as NumPy, whatever the margin answered in.
     assert isinstance(p.call_args_list[0].args[1], np.ndarray)
-
-
-class _ShiftedByCovariate(pv.core.MarginBase[np.ndarray]):
-  """A standard normal centered at ``shift * x[:, 0]``.
-
-  The one conditional margin the plot tests need: its density at a fixed
-  covariate row is a closed form, so what was drawn is checkable exactly.
-  """
-
-  supports_covariates = True
-
-  def __init__(self, *, shift: float = 1.0) -> None:
-    self._shift = float(shift)
-
-  def _center(self, y: np.ndarray, x: Any) -> np.ndarray:
-    if x is None:
-      return np.zeros(np.shape(y))
-    return self._shift * np.asarray(x, dtype=float)[:, 0]
-
-  def pdf(self, y: np.ndarray, /, *, x: Any = None) -> np.ndarray:
-    z = np.asarray(y, dtype=float) - self._center(y, x)
-    return np.exp(-0.5 * z * z) / np.sqrt(2.0 * np.pi)
-
-  def cdf(self, y: np.ndarray, /, *, x: Any = None) -> np.ndarray:
-    z = np.asarray(y, dtype=float) - self._center(y, x)
-    return norm_cdf(z)
-
-  @property
-  def support(self) -> tuple[float, float]:
-    return (-6.0, 6.0)
 
 
 class TestPlotDocstrings:

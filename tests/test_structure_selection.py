@@ -19,7 +19,7 @@ from pyvinecopulib.core import BicopBase, BicopLike, NonSimplifiedContext
 # wrapper; it is an implementation detail of ``VinecopBase.select``.
 from pyvinecopulib.pyvinecopulib_ext import _select_spanning_tree
 
-from .conftest import HostedVinecop, MinimalBicop
+from .conftest import HostedVinecop, MinimalBicop, position_weighted_mean
 
 
 class _CppBicopLike:
@@ -663,8 +663,6 @@ class _ConditionalGaussian(BicopBase[np.ndarray]):
   differ in exactly one thing.
   """
 
-  supports_covariates = True
-
   def __init__(
     self,
     *,
@@ -696,8 +694,7 @@ class _ConditionalGaussian(BicopBase[np.ndarray]):
     assert self._bicop is not None
     rho = float(np.asarray(self._bicop.parameters).ravel()[0])
     xa = np.asarray(x, dtype=float)
-    weights = np.arange(1, xa.shape[1] + 1, dtype=float)
-    shift = self._slope * (xa * weights).sum(axis=-1) / xa.shape[1]
+    shift = self._slope * position_weighted_mean(xa, xa)
     # A fitted correlation can sit outside `rho_max`, which would make the
     # inverse tanh undefined; the anchor only has to be *some* z whose tanh
     # recovers `rho` when the shift is zero.
