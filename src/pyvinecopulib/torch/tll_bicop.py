@@ -466,7 +466,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
         continuous, and a ``"d"`` is what asks for the four-column layout.
         Either way the fitted grid is a continuous density -- the
         mixed-discrete surface an atom needs comes from
-        :class:`~pyvinecopulib.core.DiscretePair`.
+        :class:`~pyvinecopulib.core.DiscreteBicop`.
     x : Tensor, shape (n, p), or None, optional
         Refused. A TLL grid is an unconditional density, so covariates cannot
         reach it, and fitting one while ignoring them would return a different
@@ -804,7 +804,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     -----
     A probability, not the density grid's own mass over the rectangle: the two
     differ by the rescaling ``TorchTllBicop.cdf()`` applies.
-    :class:`~pyvinecopulib.core.DiscretePair` leaves this
+    :class:`~pyvinecopulib.core.DiscreteBicop` leaves this
     accuracy on the table and differences ``cdf`` instead, which is what keeps
     a discrete torch vine in step with ``Vinecop``.
     """

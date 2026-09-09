@@ -199,9 +199,11 @@ class GaussianBicop(BicopBase[Any]):
     return _std_normal_cdf(rho * z2 + xp.sqrt(1.0 - rho * rho) * zp)
 
 
-class IndepBicop(BicopBase[Any]):
-  """Independence pair copula (``c == 1``); inherits the BicopBase defaults.
+class MinimalBicop(BicopBase[Any]):
+  """The smallest valid pair copula: independence, and nothing declared twice.
 
+  Named for what it exercises rather than for what it models -- the library's
+  own ``IndependenceBicop`` is the class to reach for outside the suite.
   Implements only the abstract surface (``pdf`` / ``hfunc1`` / ``hfunc2``), so
   ``hinv1`` / ``hinv2`` / ``cdf`` / ``flip`` come from :class:`BicopBase` --
   the two inverses numerically, the latter two as the raising stubs -- and are

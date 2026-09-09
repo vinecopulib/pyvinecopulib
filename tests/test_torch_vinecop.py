@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 
 import pyvinecopulib as pv
-from pyvinecopulib.core import DiscretePair
+from pyvinecopulib.core import DiscreteBicop
 
 torch = pytest.importorskip("torch")
 
@@ -858,7 +858,7 @@ def _discrete_vinecop(var_types: list[str], u: np.ndarray) -> pv.Vinecop:
 )
 def test_from_vinecop_matches_discrete_vinecop(var_types: list[str]) -> None:
   # A discrete C++ vine lifted into torch. The stored grids are continuous and
-  # `DiscretePair` supplies the mixed-discrete surface, so what is compared is
+  # `DiscreteBicop` supplies the mixed-discrete surface, so what is compared is
   # two difference quotients over the same grid: measured 1.0e-14 / 2.4e-14 /
   # 5.6e-14 across the three type patterns. `cache_integrals=None` resolves to
   # `False` here, which is what makes that floor reachable -- differencing the
@@ -947,10 +947,10 @@ def test_the_integral_cache_is_allowed_on_a_discrete_vine(
   edge = _pair_edge(types, seed=61)
   for method in ("pdf", "hfunc1", "hfunc2"):
     torch.testing.assert_close(
-      getattr(DiscretePair(cached._pair_module(tree, edge_ix), types), method)(
+      getattr(DiscreteBicop(cached._pair_module(tree, edge_ix), types), method)(
         edge
       ),
-      getattr(DiscretePair(plain._pair_module(tree, edge_ix), types), method)(
+      getattr(DiscreteBicop(plain._pair_module(tree, edge_ix), types), method)(
         edge
       ),
       rtol=1e-12,

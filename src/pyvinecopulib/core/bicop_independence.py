@@ -23,7 +23,7 @@ from .bicop_base import BicopBase
 from .protocols import ArrayT
 
 
-class IndependencePair(BicopBase[ArrayT]):
+class IndependenceBicop(BicopBase[ArrayT]):
   """The independence copula ``C(u1, u2) = u1 * u2``.
 
   The evaluation surface is the closed form rather than an inherited
@@ -147,12 +147,12 @@ class IndependencePair(BicopBase[ArrayT]):
     del x
     return cast("ArrayT", cast("Any", u)[:, 0])
 
-  def flip(self) -> "IndependencePair[ArrayT]":
+  def flip(self) -> "IndependenceBicop[ArrayT]":
     """The argument-swapped copula, which is this one.
 
     Returns
     -------
-    IndependencePair
+    IndependenceBicop
         ``self``; the independence copula is symmetric.
     """
     return self
@@ -186,4 +186,4 @@ class IndependencePair(BicopBase[ArrayT]):
     str
         The class name.
     """
-    return "IndependencePair()"
+    return "IndependenceBicop()"

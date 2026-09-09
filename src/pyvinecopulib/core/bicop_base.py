@@ -63,7 +63,7 @@ def flip_of(pair: _PairT) -> _PairT:
     ``fit_edge``;
   - ``reorient`` and the reoriented view only reach slots of a vine that was
     selected or built with flippable pairs;
-  - ``DiscretePair.flip`` delegates to the continuous pair it wraps.
+  - ``DiscreteBicop.flip`` delegates to the continuous pair it wraps.
 
   Parameters
   ----------
@@ -126,7 +126,7 @@ class BicopBase(
     evaluation along a fixed structure never asks for it.
   - :meth:`cdf`, needed on a **discrete** edge, whose h-functions are
     difference quotients of the distribution function. Add one and wrap the
-    pair in :class:`~pyvinecopulib.core.DiscretePair` to sit on such an edge.
+    pair in :class:`~pyvinecopulib.core.DiscreteBicop` to sit on such an edge.
 
   ``TorchTllBicop`` is the reference subclass: it supplies ``cdf``, both inverses,
   ``sample`` and ``flip`` natively, and fits its density grid in :meth:`fit`.
@@ -228,7 +228,7 @@ class BicopBase(
 
     Needed only to host the pair on a discrete edge, whose h-functions are
     difference quotients of the distribution function: add a ``cdf``, then
-    wrap the pair in :class:`~pyvinecopulib.core.DiscretePair`. Nothing else
+    wrap the pair in :class:`~pyvinecopulib.core.DiscreteBicop`. Nothing else
     asks for one -- a vine's own ``cdf`` is evaluated by Monte-Carlo
     simulation, which needs no per-pair distribution.
 
@@ -495,7 +495,7 @@ class BicopBase(
     through ``_prep`` alone, being reals rather than copula arguments.
 
     A discrete edge is reached through
-    :class:`~pyvinecopulib.core.DiscretePair`, which owns the four-column
+    :class:`~pyvinecopulib.core.DiscreteBicop`, which owns the four-column
     layout and hands each wrapped pair two columns at a time -- so this stays
     the continuous two-column contract.
 

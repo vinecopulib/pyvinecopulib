@@ -22,11 +22,11 @@ import pyvinecopulib as pv
 from pyvinecopulib.core import (
   BicopBase,
   BicopLike,
-  IndependencePair,
+  IndependenceBicop,
   VinecopLike,
 )
 
-from .conftest import IndepBicop
+from .conftest import MinimalBicop
 
 
 class _SqrtPair(BicopBase[np.ndarray]):
@@ -48,7 +48,7 @@ class _SqrtPair(BicopBase[np.ndarray]):
 
 def test_bicopbase_numerical_hinv_identity() -> None:
   """Numerical ``hinv`` inverts the identity h-functions to the target."""
-  cop = IndepBicop()
+  cop = MinimalBicop()
   u = np.array([[0.3, 0.7], [0.5, 0.2], [0.1, 0.9]])
   np.testing.assert_allclose(cop.hinv1(u), u[:, 1], atol=1e-9)
   np.testing.assert_allclose(cop.hinv2(u), u[:, 0], atol=1e-9)
@@ -69,14 +69,14 @@ def test_bicopbase_numerical_hinv_nontrivial() -> None:
 
 def test_bicopbase_cdf_raises() -> None:
   """The base ``cdf`` raises (the vine cdf uses Monte-Carlo, not per-pair)."""
-  cop = IndepBicop()
+  cop = MinimalBicop()
   with pytest.raises(NotImplementedError):
     cop.cdf(np.array([[0.5, 0.5]]))
 
 
 def test_bicopbase_loglik() -> None:
   """``loglik`` sums the log-density; the independence pair gives 0."""
-  cop = IndepBicop()
+  cop = MinimalBicop()
   u = np.array([[0.3, 0.7], [0.5, 0.5], [0.9, 0.1]])
   assert float(cop.loglik(u)) == pytest.approx(0.0, abs=1e-12)
 
@@ -104,12 +104,12 @@ def test_bicopbase_loglik_preserves_extreme_tail_density() -> None:
 
 def test_bicopbase_simulate_default() -> None:
   """Default ``sample`` (inverse Rosenblatt) returns (n, 2) samples in (0, 1)."""
-  cop = IndepBicop()
+  cop = MinimalBicop()
   s = cop.sample(50, seeds=[7])
   assert s.shape == (50, 2)
   assert bool((s > 0).all()) and bool((s < 1).all())
   # independence hfunc1 is the identity -> the sample is the base uniforms.
-  base = IndepBicop()._sample_uniform(50, False, [7])
+  base = MinimalBicop()._sample_uniform(50, False, [7])
   np.testing.assert_allclose(s, base, atol=1e-9)
 
 
@@ -122,7 +122,7 @@ def test_bicopbase_simulate_requires_draw_hook() -> None:
 
 def test_bicopbase_requires_row_aligned_covariates() -> None:
   """Inherited pair operations do not broadcast a one-row conditioning design."""
-  cop = IndepBicop()
+  cop = MinimalBicop()
   u = np.full((3, 2), 0.5)
   for x in (np.zeros(3), np.zeros((1, 1))):
     for call in (
@@ -139,7 +139,7 @@ def test_bicopbase_plot_runs() -> None:
   """The inherited ``plot`` delegates to the shared helper without error (Agg)."""
   import matplotlib.pyplot as plt
 
-  IndepBicop().plot(plot_type="contour")
+  MinimalBicop().plot(plot_type="contour")
   plt.close("all")
 
 
@@ -207,7 +207,7 @@ def test_conditioning_matrix_is_keyword_only() -> None:
 
 
 def test_independence_pair_is_the_independence_copula() -> None:
-  """Every member of `IndependencePair`, against the compiled `indep` `Bicop`.
+  """Every member of `IndependenceBicop`, against the compiled `indep` `Bicop`.
 
   The class is public and `VinecopBase.select` hands it out, but the torch
   vine substitutes its own grid for storage, so nothing else here calls its
@@ -217,7 +217,7 @@ def test_independence_pair_is_the_independence_copula() -> None:
   u = rng.uniform(0.01, 0.99, size=(500, 2))
   # Typed as the concrete class, not `BicopLike`: this exercises `cdf` and
   # `flip`, which are optional capabilities the contract does not declare.
-  pair = IndependencePair[np.ndarray]()
+  pair = IndependenceBicop[np.ndarray]()
   ref = pv.Bicop(family=pv.families.indep)
 
   np.testing.assert_array_equal(pair.pdf(u), np.ones(len(u)))
@@ -234,7 +234,7 @@ def test_independence_pair_is_the_independence_copula() -> None:
 
   # Symmetric, so flipping is a no-op rather than a new object's behavior.
   assert pair.flip() is pair
-  assert repr(pair) == "IndependencePair()"
+  assert repr(pair) == "IndependenceBicop()"
 
   # The public concrete pair also fulfills the sampling member of BicopLike.
   np.testing.assert_array_equal(
@@ -255,14 +255,14 @@ def test_independence_pair_is_the_independence_copula() -> None:
 
 def test_prep_is_the_identity_when_the_pair_holds_no_array() -> None:
   """A functional pair computes in whatever namespace it is handed."""
-  pair = IndepBicop()
+  pair = MinimalBicop()
   grid = np.linspace(0.1, 0.9, 6).reshape(3, 2)
   assert pair._prep(grid) is grid
 
 
 def test_prep_args_checks_the_width_and_clamps_the_domain() -> None:
   """Placement, layout and domain, in the one order that is correct."""
-  pair = IndepBicop()
+  pair = MinimalBicop()
   prepared = pair._prep_args(np.array([[0.0, 1.0], [0.5, 0.5]]))
   assert prepared.shape == (2, 2)
   # Clamped strictly inside, so a downstream normal quantile is finite.
@@ -332,7 +332,7 @@ def test_plot_places_its_grid_on_a_torch_pairs_namespace() -> None:
 def test_plot_takes_one_covariate_row_only(bad: Any) -> None:
   """A 2-d surface shows the density at one covariate value, not many."""
   with pytest.raises(ValueError, match="single covariate row"):
-    IndepBicop().plot(x=bad)
+    MinimalBicop().plot(x=bad)
 
 
 def test_supports_batched_is_declared_on_the_base() -> None:
@@ -344,7 +344,7 @@ def test_supports_batched_is_declared_on_the_base() -> None:
   tripping its error.
   """
   assert BicopBase.supports_batched is False
-  assert IndepBicop().supports_batched is False
+  assert MinimalBicop().supports_batched is False
   # A pair that exposes an interpolation grid opts in.
   torch = pytest.importorskip("torch")
   del torch
@@ -497,8 +497,8 @@ def test_a_pair_without_flip_is_named_where_flip_is_required() -> None:
   """The optional capability is read in one place, which reports its absence."""
   from pyvinecopulib.core.bicop_base import flip_of
 
-  with pytest.raises(NotImplementedError, match="IndepBicop"):
-    flip_of(IndepBicop())
+  with pytest.raises(NotImplementedError, match="MinimalBicop"):
+    flip_of(MinimalBicop())
 
   class _Bare:
     """A foreign pair that simply omits the capability."""

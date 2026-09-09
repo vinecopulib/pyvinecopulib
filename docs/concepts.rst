@@ -1234,7 +1234,7 @@ A custom pair copula reaches a :ref:`discrete <concepts-discrete>` edge
 too. The vine owns the discreteness: declare ``var_types`` when binding
 it, and :meth:`pyvinecopulib.core.VinecopBase.pair_var_types` says which
 of the pairs sees an argument with atoms. Wrapping such a pair in
-:class:`~pyvinecopulib.core.DiscretePair` builds the mixed-discrete
+:class:`~pyvinecopulib.core.DiscreteBicop` builds the mixed-discrete
 density and h-functions out of its continuous ``pdf`` / ``cdf`` /
 ``hfunc1`` / ``hfunc2``, so the only thing to add is a ``cdf``.
 :meth:`~pyvinecopulib.core.VinecopBase.fit` and

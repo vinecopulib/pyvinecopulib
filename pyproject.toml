@@ -185,7 +185,7 @@ ignore = ["TC001", "TC002", "TC003"]
 # `ANN401` is on everywhere, and every `Any` in `src` states its reason at the
 # site with a `# noqa: ANN401`. These two files are the exception, because in
 # each one many sites share a single reason -- see the AGENTS.md rule.
-# `DiscretePair`'s private helpers compute difference quotients on array
+# `DiscreteBicop`'s private helpers compute difference quotients on array
 # columns, which an unbounded `ArrayT` cannot type.
 "src/pyvinecopulib/core/_vinecop_discrete.py" = ["ANN401"]
 # OpenTURNS is SWIG-generated: no `py.typed` and no stub package.

@@ -91,8 +91,8 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Build non-simplified / conditional vines with `ConditioningContext` and its `SimplifiedContext` (default) and `NonSimplifiedContext` policies (#237, #328).
     - `VinecopBase.select` and `.from_data` honor the context while they fit, so a selected conditional vine is estimated as the model it evaluates as; each slot carries the conditioning order its own pair was fitted on, which the finalizing `flip` would otherwise permute (#328)
     - every estimator on `BicopBase` and `VinecopBase` takes an optional `x`, and one that cannot condition on it refuses it rather than fitting the unconditional model (#328)
-- Add `core.DiscretePair`, which evaluates a continuous pair copula on a discrete or mixed edge, so a custom pair copula gains discrete support by implementing `cdf` (#306).
-- Add `core.IndependencePair`, the pair a `VinecopBase.select` edge below `threshold` holds instead of a fit (#317).
+- Add `core.DiscreteBicop`, which evaluates a continuous pair copula on a discrete or mixed edge, so a custom pair copula gains discrete support by implementing `cdf` (#306).
+- Add `core.IndependenceBicop`, the pair a `VinecopBase.select` edge below `threshold` holds instead of a fit (#317).
 - Every `Vinedist` and margin method takes optional exogenous covariates as a keyword-only `x`, forwarded to each part that declares `supports_covariates` (#292, #328).
 
 #### Discrete and conditional models

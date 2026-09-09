@@ -23,7 +23,7 @@ through :func:`torch.compile`.
 Variables with atoms are declared with ``var_types`` and passed in the layouts
 ``Vinecop`` takes. The stored pair copulas remain continuous interpolation
 grids; the mixed-discrete surface comes from
-:class:`~pyvinecopulib.core.DiscretePair`.
+:class:`~pyvinecopulib.core.DiscreteBicop`.
 
 See Also
 --------
@@ -55,11 +55,11 @@ from ..core import (
   BicopLike,
   ConditioningContext,
   ControlsLike,
-  DiscretePair,
+  DiscreteBicop,
   VinecopBase,
 )
 from ..core._vinecop_discrete import continuous_view
-from ..core.bicop_independence import IndependencePair
+from ..core.bicop_independence import IndependenceBicop
 from ..core._validation import reject_covariates
 from ..core.vinecop_base import FitEdge, FitLevel, _NotBatchable
 from ..pyvinecopulib_ext import (
@@ -131,7 +131,7 @@ class TorchVinecop(
   - ``get_pair_copula(tree, edge)`` returns the pair copula the cascades
     evaluate at a position. The stored modules are continuous grids, so an
     edge with a discrete variable comes back wrapped in
-    :class:`~pyvinecopulib.core.DiscretePair`. The wrapper itself is not
+    :class:`~pyvinecopulib.core.DiscreteBicop`. The wrapper itself is not
     stored, which is what keeps ``state_dict`` / ``.to()`` / pickling over
     real ``torch.nn.Module`` parameters only.
   - ``set_pair_copulas(pair_copulas)`` stores fitted pairs, which is what
@@ -371,7 +371,7 @@ class TorchVinecop(
         Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete), in
         variable order; empty means all continuous. A discrete variable makes
         the cascades read its left limit too, and the pair copulas that see it
-        are evaluated through :class:`~pyvinecopulib.core.DiscretePair`.
+        are evaluated through :class:`~pyvinecopulib.core.DiscreteBicop`.
     device : torch.device, or None, optional
         Placement of the independence pair copulas that fill missing edges.
     dtype : torch.dtype, default=torch.float64
@@ -526,7 +526,7 @@ class TorchVinecop(
       # also what the next tree's four-column input is built from.
       if "d" not in var_types:
         return bc
-      return DiscretePair(bc, (var_types[0], var_types[1]))
+      return DiscreteBicop(bc, (var_types[0], var_types[1]))
 
     if fit_edge is not None:
       # A caller who brings their own pair fitter overrides the built-in TLL
@@ -612,14 +612,14 @@ class TorchVinecop(
       )
     # Store the continuous grids; `get_pair_copula` re-wraps a discrete edge,
     # so the ModuleList holds only real nn.Modules. A thresholded edge arrives
-    # from `select` as a `core.IndependencePair`, which is not one -- it becomes
+    # from `select` as a `core.IndependenceBicop`, which is not one -- it becomes
     # the grid that *is* independence, whose `pdf` is exactly 1 and whose
     # h-functions are exactly the identity, so it stores, moves and pickles like
     # any other pair.
     modules = [
       [
         # A thresholded edge arrives from the engines as a
-        # `core.IndependencePair`, which is not an `nn.Module`. The
+        # `core.IndependenceBicop`, which is not an `nn.Module`. The
         # no-argument `TorchTllBicop` *is* the independence copula -- a 2x2
         # sentinel that short-circuits every method on `is_indep`, exactly
         # rather than to rounding -- so it needs no grid of its own and
@@ -627,7 +627,7 @@ class TorchVinecop(
         # `fit_edge` uses: `resolved.device` is `None` whenever the caller
         # let the data carry the placement.
         TorchTllBicop(device=u_t.device, dtype=eff_dtype)
-        if isinstance(p, IndependencePair)
+        if isinstance(p, IndependenceBicop)
         else continuous_view(p)
         for p in row
       ]
@@ -666,14 +666,14 @@ class TorchVinecop(
     ref = cast("Tensor", self._buffers["_device_ref"])
     # Only real `nn.Module`s go in the `ModuleList`: a discrete edge is
     # re-wrapped on read by `get_pair_copula`, and a thresholded edge arrives
-    # as a `core.IndependencePair`, which the no-argument `TorchTllBicop` -- the
+    # as a `core.IndependenceBicop`, which the no-argument `TorchTllBicop` -- the
     # independence copula exactly rather than to rounding -- stands in for.
     self.pair_copulas = torch.nn.ModuleList(
       [
         torch.nn.ModuleList(
           [
             TorchTllBicop(device=ref.device, dtype=ref.dtype)
-            if isinstance(pair, IndependencePair)
+            if isinstance(pair, IndependenceBicop)
             else cast("torch.nn.Module", continuous_view(pair))
             for pair in row
           ]
@@ -699,7 +699,7 @@ class TorchVinecop(
 
     The stored modules are continuous grids, so an edge with a discrete
     variable comes back wrapped in
-    :class:`~pyvinecopulib.core.DiscretePair`, which supplies the
+    :class:`~pyvinecopulib.core.DiscreteBicop`, which supplies the
     mixed-discrete surface. Keeping the wrapper out of the stored
     ``torch.nn.ModuleList`` is what keeps ``state_dict`` / ``.to()`` /
     pickling over the real parameters only.
@@ -720,7 +720,7 @@ class TorchVinecop(
     types = self.pair_var_types(tree, edge)
     if "d" not in types:
       return pair
-    return DiscretePair(pair, types)
+    return DiscreteBicop(pair, types)
 
   def get_extra_state(self) -> dict[str, Any]:
     """Return the non-tensor model identity for ``state_dict`` round-trips.

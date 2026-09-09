@@ -19,7 +19,7 @@ from pyvinecopulib.core import BicopBase, BicopLike, NonSimplifiedContext
 # wrapper; it is an implementation detail of ``VinecopBase.select``.
 from pyvinecopulib.pyvinecopulib_ext import _select_spanning_tree
 
-from .conftest import HostedVinecop, IndepBicop
+from .conftest import HostedVinecop, MinimalBicop
 
 
 class _CppBicopLike:
@@ -432,7 +432,7 @@ def test_a_named_pair_class_without_flip_is_refused_before_any_fitting() -> (
   # touched -- the point of `bicop_class` over an opaque callback.
   calls = {"n": 0}
 
-  class _NoFlipPair(IndepBicop):
+  class _NoFlipPair(MinimalBicop):
     def __init__(self) -> None:
       calls["n"] += 1
 
@@ -462,7 +462,7 @@ def _weak_link_chain(seed: int, n: int = 1500) -> np.ndarray:
 def test_a_thresholded_edge_does_not_consume_the_flip_probe() -> None:
   """A pair without `flip` must be caught behind a caller's own `fit_edge` too.
 
-  The probe fires once. A thresholded edge holds an `IndependencePair`, whose
+  The probe fires once. A thresholded edge holds an `IndependenceBicop`, whose
   `flip` returns `self`, so letting one consume the probe passes it on behalf
   of a pair that cannot flip -- which then fails from the finalizing
   reorientation, after every other edge has been fitted.

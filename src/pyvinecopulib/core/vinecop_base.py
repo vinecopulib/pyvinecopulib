@@ -32,7 +32,7 @@ data enters in the expanded ``(n, 2d)`` or compact ``(n, d + k)`` layout that
 ``var_types`` too, handing each edge's types to the ``fit_edge`` callback so it
 can fit the pair copula the edge actually needs. A pair copula that reads only
 two columns is hosted on a discrete edge by wrapping it in
-:class:`~pyvinecopulib.core.DiscretePair`, which supplies the difference
+:class:`~pyvinecopulib.core.DiscreteBicop`, which supplies the difference
 quotients from its continuous ``pdf`` / ``cdf`` / ``hfunc1`` / ``hfunc2``.
 
 Two structural notes about what lives here rather than in a subclass. The

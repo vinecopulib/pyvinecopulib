@@ -23,7 +23,7 @@ import pytest
 import pyvinecopulib as pv
 from pyvinecopulib.core import (
   BicopLike,
-  DiscretePair,
+  DiscreteBicop,
   VinecopBase,
 )
 from pyvinecopulib.core._vinecop_discrete import continuous_view
@@ -366,7 +366,7 @@ def test_inverse_rosenblatt_hosts_a_pair_without_as_continuous() -> None:
 
 
 # ---------------------------------------------------------------------------
-# DiscretePair: a continuous pair copula hosted on a discrete edge
+# DiscreteBicop: a continuous pair copula hosted on a discrete edge
 # ---------------------------------------------------------------------------
 
 #: Fit controls restricted to one family, so a pair fitted here and one fitted
@@ -375,7 +375,7 @@ _GAUSSIAN_PAIR = pv.FitControlsBicop(family_set=[pv.families.gaussian])
 _GAUSSIAN_VINE = pv.FitControlsVinecop(
   family_set=[pv.families.gaussian], num_threads=1
 )
-#: Rotations of an asymmetric family: `DiscretePair` differences the *public*
+#: Rotations of an asymmetric family: `DiscreteBicop` differences the *public*
 #: (rotated) distribution function where the compiled pair differences the
 #: unrotated one, so a rotation is what exercises the equivalence of the two.
 _ROTATIONS = [0, 90, 180, 270]
@@ -399,7 +399,7 @@ def test_discrete_pair_matches_bicop_unrotated(var_types: list[str]) -> None:
   ref = pv.Bicop.from_family(
     pv.families.gaussian, parameters=par, var_types=var_types
   )
-  pair = DiscretePair(wrapped, (var_types[0], var_types[1]))
+  pair = DiscreteBicop(wrapped, (var_types[0], var_types[1]))
   u = _pair_edge_data(seed=7)
   for method in ("pdf", "cdf", "hfunc1", "hfunc2"):
     _assert_parity(
@@ -413,7 +413,7 @@ def test_discrete_pair_samples_the_wrapped_continuous_copula() -> None:
   wrapped = pv.Bicop.from_family(
     pv.families.gaussian, parameters=np.array([[0.6]])
   )
-  pair = DiscretePair(wrapped, ("d", "c"))
+  pair = DiscreteBicop(wrapped, ("d", "c"))
   np.testing.assert_array_equal(
     pair.sample(50, seeds=[3, 4]), wrapped.sample(50, seeds=[3, 4])
   )
@@ -422,7 +422,7 @@ def test_discrete_pair_samples_the_wrapped_continuous_copula() -> None:
 def test_discrete_pair_skips_unused_wide_atom_fallbacks() -> None:
   """Wide atoms evaluate only the authoritative quotient primitives."""
 
-  class CountingIndependence(pv.core.IndependencePair[np.ndarray]):
+  class CountingIndependence(pv.core.IndependenceBicop[np.ndarray]):
     def __init__(self) -> None:
       self.calls = {name: 0 for name in ("pdf", "cdf", "hfunc1", "hfunc2")}
 
@@ -444,11 +444,11 @@ def test_discrete_pair_skips_unused_wide_atom_fallbacks() -> None:
 
   u = np.array([[0.6, 0.7, 0.2, 0.3], [0.8, 0.5, 0.4, 0.1]])
   mixed_base = CountingIndependence()
-  DiscretePair(mixed_base, ("d", "c")).pdf(u)
+  DiscreteBicop(mixed_base, ("d", "c")).pdf(u)
   assert mixed_base.calls == {"pdf": 0, "cdf": 0, "hfunc1": 0, "hfunc2": 2}
 
   discrete_base = CountingIndependence()
-  DiscretePair(discrete_base, ("d", "d")).pdf(u)
+  DiscreteBicop(discrete_base, ("d", "d")).pdf(u)
   assert discrete_base.calls == {"pdf": 0, "cdf": 4, "hfunc1": 0, "hfunc2": 0}
 
 
@@ -472,7 +472,7 @@ def test_discrete_pair_matches_bicop_rotated(
     parameters=par,
     var_types=var_types,
   )
-  pair = DiscretePair(wrapped, (var_types[0], var_types[1]))
+  pair = DiscreteBicop(wrapped, (var_types[0], var_types[1]))
   u = _pair_edge_data(seed=11)
   for method in ("pdf", "hfunc1", "hfunc2"):
     np.testing.assert_allclose(
@@ -535,7 +535,7 @@ def test_discrete_pair_matches_every_fitted_family(
   touching the parameters, so the two objects are the same copula.
   """
   ref = _fitted_pair(family, var_types)
-  pair = DiscretePair(ref.as_continuous(), (var_types[0], var_types[1]))
+  pair = DiscreteBicop(ref.as_continuous(), (var_types[0], var_types[1]))
   u = _pair_edge_data(seed=13)
   for method in ("pdf", "cdf", "hfunc1", "hfunc2"):
     np.testing.assert_allclose(
@@ -563,14 +563,14 @@ def test_the_atom_masses_of_a_discrete_edge_sum_to_one(
   pair used to apply violated -- by 2% at two atoms, and not converging away.
   """
   ref = _fitted_pair(family, ["d", "c"])
-  pair = DiscretePair(ref.as_continuous(), ("d", "c"))
+  pair = DiscreteBicop(ref.as_continuous(), ("d", "c"))
   edges = np.arange(levels + 1) / levels
   hi, lo = edges[1:], edges[:-1]
   for u2 in (0.1, 0.5, 0.9):
     col = np.full(levels, u2)
     u = np.column_stack([hi, col, lo, col])
     for name, dens in (
-      ("DiscretePair", np.asarray(pair.pdf(u))),
+      ("DiscreteBicop", np.asarray(pair.pdf(u))),
       ("Bicop", np.asarray(ref.pdf(u))),
     ):
       np.testing.assert_allclose(
@@ -599,7 +599,7 @@ def test_discrete_pair_narrow_atoms_match_the_collapsed_bicop(
   ref = pv.Bicop.from_family(
     pv.families.gaussian, parameters=par, var_types=["d", "d"]
   )
-  pair = DiscretePair(wrapped, ("d", "d"))
+  pair = DiscreteBicop(wrapped, ("d", "d"))
   values = np.array([[0.4, 0.7], [0.25, 0.55], [0.62, 0.31]])
   u = np.column_stack([values, values - np.asarray(widths)])
   for method in ("pdf", "hfunc1", "hfunc2"):
@@ -614,7 +614,7 @@ def test_a_vanishing_atom_is_the_continuous_quantity() -> None:
   # arguments collapse and the density is the continuous one at the midpoint.
   par = np.array([[0.5]])
   cop = pv.Bicop.from_family(pv.families.gaussian, parameters=par)
-  pair = DiscretePair(cop, ("d", "d"))
+  pair = DiscreteBicop(cop, ("d", "d"))
   values = np.array([[0.4, 0.7], [0.25, 0.55]])
   u = np.column_stack([values, values - 1e-9])
   np.testing.assert_allclose(
@@ -631,7 +631,7 @@ def test_a_vanishing_atom_is_the_continuous_quantity() -> None:
 def test_discrete_pair_hinv_inverts_the_discrete_hfunc() -> None:
   par = np.array([[0.6]])
   cop = pv.Bicop.from_family(pv.families.gaussian, parameters=par)
-  pair = DiscretePair(cop, ("d", "d"))
+  pair = DiscreteBicop(cop, ("d", "d"))
   u = _pair_edge_data(seed=5, n=200)
   # hinv1 solves hfunc1 in the second argument, so column 1 is the level.
   level = u[:, 1]
@@ -650,7 +650,7 @@ def test_discrete_pair_flip_swaps_the_variable_types() -> None:
   cop = pv.Bicop.from_family(
     pv.families.clayton, rotation=90, parameters=np.array([[2.0]])
   )
-  pair = DiscretePair(cop, ("d", "c"))
+  pair = DiscreteBicop(cop, ("d", "c"))
   flipped = pair.flip()
   assert flipped.var_types == ["c", "d"]
   u = _pair_edge_data(seed=3, n=100)
@@ -667,15 +667,15 @@ def test_discrete_pair_requires_a_cdf() -> None:
   # mixed *density* is a quotient of h-functions and needs none, which is why the
   # failure surfaces here rather than on `pdf`.
   u = _pair_edge_data(seed=1, n=10)
-  pair = DiscretePair(GaussianBicop(base_rho=0.5), ("d", "c"))
+  pair = DiscreteBicop(GaussianBicop(base_rho=0.5), ("d", "c"))
   with pytest.raises(NotImplementedError, match="cdf"):
     pair.hfunc1(u)
   with pytest.raises(NotImplementedError, match="cdf"):
-    DiscretePair(GaussianBicop(base_rho=0.5), ("d", "d")).pdf(u)
+    DiscreteBicop(GaussianBicop(base_rho=0.5), ("d", "d")).pdf(u)
 
 
 def test_discrete_pair_rejects_a_two_column_input() -> None:
-  pair = DiscretePair(
+  pair = DiscreteBicop(
     pv.Bicop.from_family(pv.families.gaussian, parameters=np.array([[0.5]])),
     ("d", "c"),
   )
@@ -688,7 +688,7 @@ class _WrappingVinecop(_ListVinecop):
 
   The counterpart of :class:`_ListVinecop`, which stamps ``var_types`` onto the
   compiled pairs it hosts: here the hosted pairs stay continuous and
-  ``DiscretePair`` supplies the mixed-discrete surface, which is the route a
+  ``DiscreteBicop`` supplies the mixed-discrete surface, which is the route a
   custom pair copula takes.
   """
 
@@ -702,14 +702,14 @@ class _WrappingVinecop(_ListVinecop):
     self._bind_vine(structure, var_types=var_types)
 
   def get_pair_copula(self, tree: int, edge: int) -> BicopLike[Any]:
-    # Not cast to `BicopLike` before wrapping: `DiscretePair` needs a `cdf`,
+    # Not cast to `BicopLike` before wrapping: `DiscreteBicop` needs a `cdf`,
     # which is an optional capability the contract does not promise, so the
     # concrete pair is what satisfies it.
     pair = self._pairs[tree][edge]
     types = self.pair_var_types(tree, edge)
     if "d" not in types:
       return cast("BicopLike[Any]", pair)
-    return DiscretePair(pair, types)
+    return DiscreteBicop(pair, types)
 
 
 @pytest.mark.parametrize("var_types", _MIXED)
@@ -971,7 +971,7 @@ def test_wrapped_pairs_match_vinecop_on_count_margins(
   var_types: list[str],
 ) -> None:
   # Tail-dependent pairs on a real count margin, whose atoms reach both ends of
-  # the unit interval. `DiscretePair` has to trim its four columns before
+  # the unit interval. `DiscreteBicop` has to trim its four columns before
   # differencing them, exactly as the compiled pair copula does -- the width of
   # the *trimmed* atom is the denominator. Trimming afterwards leaves a relative
   # error of order 1e-10 in the quotient, which a tail-dependent density of

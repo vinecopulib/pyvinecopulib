@@ -37,7 +37,7 @@ from ._vinecop_discrete import (
   stack_edge,
   with_left_limit,
 )
-from .bicop_independence import IndependencePair
+from .bicop_independence import IndependenceBicop
 from ._vinecop_reorient import _SlotKey, _slot_key, reorientation
 from ._validation import validate_weights
 from .bicop_base import flip_of
@@ -215,7 +215,7 @@ def fit_parts(
       An edge with a discrete argument gets a four-column ``u_e`` and the
       additional keyword ``var_types=[t1, t2]``; the pair it returns must read
       that layout, so wrap a continuous one in
-      :class:`~pyvinecopulib.core.DiscretePair`.
+      :class:`~pyvinecopulib.core.DiscreteBicop`.
   context : ConditioningContext, or None, optional
       Conditioning-context policy (default: simplified / unconditional).
   x : array, shape (n, p), or None, optional
@@ -236,7 +236,7 @@ def fit_parts(
       ``FitControlsVinecop``. Read only when ``threshold`` is positive.
   threshold : float, default 0.0
       Dependence threshold. An edge whose criterion falls below it holds
-      :class:`~pyvinecopulib.core.IndependencePair` and is not fitted, as
+      :class:`~pyvinecopulib.core.IndependenceBicop` and is not fitted, as
       it does under selection. At the default nothing is below it.
   weights : array, shape (n,), or None, optional
       Observation weights, applied to the tree criterion so a weighted
@@ -369,7 +369,7 @@ def fit_parts(
       u_e, x_e = inputs[edge], contexts[edge]
       edge_copula: BicopLike[Any]
       if skip[edge]:
-        edge_copula = IndependencePair()
+        edge_copula = IndependenceBicop()
       elif fitted is not None:
         edge_copula = fitted[edge]
       else:
@@ -455,7 +455,7 @@ def select_parts(
       ``Vinecop.select``: an edge whose criterion falls below it is
       deprioritized during spanning-tree selection (weight ``1.0``), and if
       it survives anyway it is left holding
-      :class:`~pyvinecopulib.core.IndependencePair` rather than being
+      :class:`~pyvinecopulib.core.IndependenceBicop` rather than being
       fitted. At the default no non-negative criterion is below it.
   tree_algorithm : str, default "mst_prim"
       ``"mst_prim"`` / ``"mst_kruskal"`` (Dissmann) or ``"random_weighted"`` /
@@ -737,7 +737,7 @@ def select_parts(
       x_e = contexts[edge_idx]
       pair: BicopLike[ArrayT]
       if thresholded[edge_idx]:
-        pair = IndependencePair()
+        pair = IndependenceBicop()
       elif fitted_level is not None:
         pair = fitted_level[edge_idx]
       else:
@@ -749,7 +749,7 @@ def select_parts(
         # `bicop_class`; behind a caller's own `fit_edge` the class is not
         # knowable until one pair exists, so probe that one rather than
         # discovering it after every edge has been fitted. A thresholded
-        # edge is not one of theirs -- `IndependencePair.flip` returns
+        # edge is not one of theirs -- `IndependenceBicop.flip` returns
         # `self` and would pass the probe for them.
         flip_checked = True
         try:
