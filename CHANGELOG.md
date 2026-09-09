@@ -59,8 +59,8 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Add `as_margin`, which presents another ecosystem's distribution object as a margin, and `register_margin_adapter` for one it does not know (#292).
 - Add `resolve_margins`, which turns a `margins=` specification into one margin per variable: an alias, one instance broadcast per column, a length-`d` sequence, a mapping keyed by column, or a callable (#292).
 - Add `Vinedist.margin_summary()`, one row per variable naming the margin it ended up with (#292).
-- Plot any margin: `MarginBase.plot` draws the density or the distribution function of a continuous, discrete or zero-inflated variable, so `Kde1d`, `TorchKde1d`, `SciPyMargin`, `OpenTURNSMargin` and any subclass share one picture, and a conditional margin is drawn at one covariate row. `Kde1d.plot` gains the same `kind="cdf"` (#330).
 - Add `OpenTURNSMargin` behind a new `pyvinecopulib[openturns]` extra, fitting one OpenTURNS family or selecting one from its registry (#292, #326).
+- `Kde1d.plot` draws the distribution function too, with `kind="cdf"` (#330).
 
 #### The backend-neutral extension layer
 
@@ -82,6 +82,9 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Select a margin's family with `select` on the margin class that owns the families, the shape `Bicop.select` has: after the call the margin *is* the winning family. Naming a family is itself the choice, so `select` on a named margin reduces to `fit` and `family_set` is how a caller asks for the search back (#292, #326).
 - Add `FitControlsMargin` and `margin_controls=`, the marginal half of a vine-distribution fit, resolved per variable by the same four shapes `margins=` accepts -- so one call can bound the two variables whose bounds are known and leave the rest alone (#326).
 - Add `MarginBase.aic` / `.bic` / `.aicc`, which `Bicop` and `Vinecop` have always had and margins did not (#326).
+- Plot a custom object from its base: `BicopBase.plot`, `VinecopBase.plot` and `MarginBase.plot` draw what `Bicop.plot`, `Vinecop.plot` and `Kde1d.plot` draw, so a hand-written pair copula, vine or margin is inspected like a fitted one (#327, #330).
+    - the two density plots take an optional single-row `x`, since a conditional object is a different surface at every covariate value and a plot shows one slice, and both refuse an `x` their object reads no covariates from (#327, #330)
+    - `MarginBase.plot` covers all three variable types, drawing a curve, marks on an integer support, or both for a zero-inflated variable (#330)
 - Host any pair copula in a `TorchVinecop`, not only a grid one: a `BicopBase` that is also an `nn.Module`, with learnable parameters, composes and trains. `examples/10_extending_pyvinecopulib.ipynb` walks through it (#326).
 - Re-export `FitControlsMargin` from `core` and the top level, so all three controls classes sit together where a caller looks for them (#326).
 - Remove `utils.benchmark`, a timing harness with no caller or test (#326).
@@ -89,7 +92,6 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 
 - Add the canonical partial implementations `BicopBase`, `VinecopBase`, `MarginBase` and `VinedistBase`, which run on NumPy or PyTorch: a custom pair copula defines `pdf` / `hfunc1` / `hfunc2`, a custom vine the single `get_pair_copula` hook, a custom margin `pdf` / `cdf`, and a custom distribution nothing at all beyond its two halves (#236, #237, #292, #326).
     - all four take incoming arrays through one `_prep` hook whose default *infers* the namespace, dtype and device from the arrays they already hold, so a subclass on PyTorch writes no conversion code — including for `BicopBase.plot`'s evaluation grid, the one array a base manufactures itself (#327)
-    - `BicopBase.plot` takes an optional single-row `x`, since a conditional pair's density is a different surface at every covariate value and a plot shows one slice; a pair copula that reads none refuses it (#327, #330)
 - `VinecopBase` ships `fit`, `select` and `from_data`, an array-agnostic port of `Vinecop`'s Dissmann and Wilson structure selection whose selected matrix matches `Vinecop.select`'s exactly. The fitted pairs are stored through the `set_pair_copulas` hook, and `fit_edge` / `fit_level` are keyword-only on all three (#237, #244, #317, #326, #328).
 - Build non-simplified / conditional vines with `ConditioningContext` and its `SimplifiedContext` (default) and `NonSimplifiedContext` policies (#237, #328).
     - `VinecopBase.select` and `.from_data` honor the context while they fit, so a selected conditional vine is estimated as the model it evaluates as; each slot carries the conditioning order its own pair was fitted on, which the finalizing `flip` would otherwise permute (#328)
@@ -183,7 +185,7 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
   own constructors accept, so nothing constructible fails to unpickle, which used to raise `MemoryError` or hang the interpreter (#320).
 - `Kde1d.icdf` returns an empty array for an empty input instead of terminating the process (#320).
 - `Bicop.plot` evaluates a continuous copy of a discrete copula instead of retyping the caller's model in place (#320).
-- `Kde1d.plot` draws a discrete margin on its own integer support: the fitted grid runs half a unit past the support at each end, so rounding it outwards plotted one level below the smallest observation and one above the largest, neither of which can occur. Its continuous grid is monotone by construction rather than by overwriting its first point with a declared bound (#330).
+- `Kde1d.plot` draws a discrete margin on its own integer support, where rounding the fitted grid outwards added one level below the smallest observation and one above the largest; its continuous grid is monotone rather than overwritten at the first point (#330).
 - `utils.wdm` and `utils.benchmark` release the GIL, so they no longer serialize against other Python threads (#320).
 - `utils.wdm` raises on weights that are not finite and nonnegative with a positive sum, where it returned `NaN` (#305, [wdm#21](https://github.com/tnagler/wdm/pull/21)).
 - `utils.to_pseudo_obs(..., ties_method="random")` breaks ties uniformly; the random offsets were one step out of phase, so a tie group of two always came out equal (#305, [wdm#17](https://github.com/tnagler/wdm/pull/17)).

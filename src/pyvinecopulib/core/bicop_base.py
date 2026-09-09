@@ -30,7 +30,11 @@ from typing import Any, Optional, Self, TypeVar, cast
 
 from array_api_compat import array_namespace
 
-from ._bicop_plot import bicop_plot
+from ._bicop_plot import (
+  BICOP_PLOT_PARAMS,
+  BICOP_PLOT_SUMMARY,
+  bicop_plot,
+)
 from ._covariates import prepare
 from ._placement import PlacementMixin, QrngUniformMixin
 from ._trim import trim
@@ -535,32 +539,34 @@ class BicopBase(
     *,
     x: Optional[ArrayT] = None,
   ) -> None:
-    """Plot the pair-copula density, as a contour or a 3-D surface.
+    bicop_plot(
+      self, plot_type, margin_type, xylim, grid_size, x=x, place=self._prep
+    )
 
-    Mirrors ``Bicop.plot()``, and adds ``x`` for a conditional pair copula.
+  def __repr__(self) -> str:
+    return f"{type(self).__name__}()"
 
-    The evaluation grid is the one place this class manufactures an array from
-    nothing, so it is the one place a subclass could be handed the wrong array
-    type. It is placed through ``_prep`` first, which means a pair copula
-    on PyTorch plots without converting anything inside its own ``pdf``.
+
+BicopBase.__doc__ = (BicopBase.__doc__ or "") + _BICOP_EXAMPLE
+
+#: Composed, so the shared half is written once; `test_docs_examples.py`
+#: runs the project's numpydoc checks over the result.
+BicopBase.plot.__doc__ = (
+  BICOP_PLOT_SUMMARY
+  + """
+    The evaluation grid is the one array this class manufactures from nothing,
+    so it is placed through ``_prep`` before the pair copula sees it -- which
+    means a pair copula on PyTorch plots without converting anything inside
+    its own ``pdf``.
 
     Parameters
     ----------
-    plot_type : str, default="surface"
-        ``"surface"`` for a 3-D surface, ``"contour"`` for a contour plot.
-    margin_type : str, default="unif"
-        Margins the density is shown on: ``"unif"``, ``"norm"`` or ``"exp"``.
-    xylim : tuple of float, or None, optional
-        Axis limits; ``None`` uses a default per ``margin_type``.
-    grid_size : int, or None, optional
-        Number of grid points per axis; ``None`` uses a default per
-        ``plot_type``.
-    x : array, shape (p,) or (1, p), or None, optional
-        One covariate row, for a conditional pair copula. The density is a
-        different surface at every covariate value, so a plot shows the slice
-        at this one; the row is repeated across the grid. A pair copula that
-        reads no covariates refuses it, rather than drawing an unconditional
-        surface under a conditional-looking call.
+"""
+  + BICOP_PLOT_PARAMS
+  + """    x : array, shape (p,) or (1, p), or None, optional
+        One covariate row, for a conditional pair copula. Such a pair copula
+        is a different surface at every covariate value, so a plot shows the
+        one at this value; the row is repeated across the grid.
 
     Returns
     -------
@@ -577,13 +583,9 @@ class BicopBase(
         flag, so the refusal is the argument binding's -- and it is a refusal,
         not an oversight: drawing the unconditional density under a
         conditional-looking call is the outcome it exists to prevent.
-    """
-    bicop_plot(
-      self, plot_type, margin_type, xylim, grid_size, x=x, place=self._prep
-    )
 
-  def __repr__(self) -> str:
-    return f"{type(self).__name__}()"
-
-
-BicopBase.__doc__ = (BicopBase.__doc__ or "") + _BICOP_EXAMPLE
+    See Also
+    --------
+    pyvinecopulib.core.Bicop.plot : The same plot on a fitted family.
+"""
+)

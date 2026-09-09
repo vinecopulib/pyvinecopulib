@@ -131,3 +131,44 @@ def test_every_example_in_the_module_is_covered() -> None:
     "_VINEDIST_EXAMPLE",
   }
   assert set(_examples()) == covered
+
+
+# The three `plot` docstrings are assembled from the strings the binding
+# installs on the compiled classes, which puts them out of the numpydoc
+# pre-commit hook's reach: it reads the source tree, not the imported module.
+
+#: The three methods whose docstring is assigned rather than written inline.
+_COMPOSED = [
+  "pyvinecopulib.core.MarginBase.plot",
+  "pyvinecopulib.core.BicopBase.plot",
+  "pyvinecopulib.core.VinecopBase.plot",
+]
+
+
+def _enabled_checks() -> set[str]:
+  """The check codes `pyproject.toml` turns on, read rather than restated."""
+  import tomllib
+
+  root = pathlib.Path(__file__).resolve().parents[1]
+  config = tomllib.loads((root / "pyproject.toml").read_text())
+  return set(config["tool"]["numpydoc_validation"]["checks"])
+
+
+@pytest.mark.parametrize("name", _COMPOSED)
+def test_a_composed_docstring_passes_the_projects_numpydoc_checks(
+  name: str,
+) -> None:
+  """A docstring assembled from shared parts is held to the same rules.
+
+  Sharing the parameter table with the compiled class is what keeps the two
+  from drifting; it must not also be what lets one of them go unchecked.
+  """
+  validate = pytest.importorskip("numpydoc.validate")
+
+  results = validate.validate(name)
+  failures = [
+    f"{code}: {message}"
+    for code, message in results["errors"]
+    if code in _enabled_checks()
+  ]
+  assert failures == [], f"{name}\n" + "\n".join(failures)

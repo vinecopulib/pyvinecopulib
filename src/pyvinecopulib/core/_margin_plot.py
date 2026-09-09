@@ -9,72 +9,89 @@ supplies with a continuous-correct default, and prefers an optional
 ``grid_points`` for the x-range where the margin has one.
 """
 
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 
+from ..pyvinecopulib_ext import Kde1d
 from ._placement import to_numpy
+from .protocols import ArrayT, MarginLike
 
-MARGIN_PLOT_DOC = """
-    Generates a plot for the Kde1d object.
 
-    This method creates a line plot for continuous data, a point plot for discrete data,
-    and handles zero-inflated data with special point marking at zero.
+#: `Kde1d` is named outright because it satisfies `MarginLike` *nominally*
+#: only: its `pdf` / `cdf` take no covariate `x`, so a static check rejects it.
+_Margin = Union[MarginLike[ArrayT], Kde1d]
 
+
+#: Shared with `MarginBase.plot`, which adds `x` and a `Raises`.
+MARGIN_PLOT_PARAMS = """    xlim : tuple of float, or None, optional
+        Limits for the x axis. ``None`` uses the declared support where it is
+        finite and pads the drawn range otherwise.
+    ylim : tuple of float, or None, optional
+        Limits for the y axis. ``None`` fits them to what was drawn.
+    grid_size : int, default=200
+        Number of grid points, for a continuous or zero-inflated variable. A
+        discrete one is drawn on its lattice, whose length it does not choose.
+    show_zero_mass : bool, default=True
+        Whether a zero-inflated variable's point mass at zero is marked.
+    kind : str, default="density"
+        What to draw: ``"density"`` or ``"cdf"``.
+"""
+
+#: Shared with `MarginBase.plot`.
+MARGIN_PLOT_SUMMARY = """
+    Plot the density or the distribution function of this margin.
+
+    Each variable type is drawn as what it is: a continuous variable as a
+    curve, a discrete one as marks on its integer support, and a
+    zero-inflated one as the curve with zero excised plus the one emphasized
+    point mass.
+"""
+
+#: `Kde1d.plot`'s docstring, which the binding reads from here by name.
+MARGIN_PLOT_DOC = (
+  MARGIN_PLOT_SUMMARY
+  + """
     Parameters
     ----------
-    xlim : tuple (default=None)
-        The limits for the x axis. Automatically set if None.
-    ylim : tuple (default=None)
-        The limits for the y axis. Automatically set if None.
-    grid_size : int (default=200)
-        The number of grid points to use for continuous data.
-    show_zero_mass : bool (default=True)
-        Whether to show the point mass at zero for zero-inflated data.
-    kind : str (default="density")
-        What to draw: `"density"` or `"cdf"`.
-
+"""
+  + MARGIN_PLOT_PARAMS
+  + """
     Returns
     -------
-    Nothing, the function generates a plot and shows it using matplotlib.
+    None
+        The figure is drawn with matplotlib.
 
     Examples
     --------
-    >>> import pyvinecopulib as pv
     >>> import numpy as np
-    >>> # Continuous data
-    >>> np.random.seed(123)
-    >>> x = np.random.beta(0.5, 2.0, 100)
-    >>> kde = pv.core.Kde1d()
-    >>> kde.fit(x)
+    >>> import pyvinecopulib as pv
+    >>> rng = np.random.default_rng(123)
+    >>> kde = pv.core.Kde1d().fit(rng.beta(0.5, 2.0, 100))
     >>> kde.plot()
     >>> kde.plot(kind="cdf")
-    >>> # Discrete data
-    >>> x_discrete = np.random.poisson(3, 100)
-    >>> kde_discrete = pv.core.Kde1d(type="discrete")
-    >>> kde_discrete.fit(x_discrete)
-    >>> kde_discrete.plot()
-    >>> # Zero-inflated data
-    >>> x_zi = np.random.exponential(2, 100)
-    >>> x_zi[np.random.choice(100, 30, replace=False)] = 0
-    >>> kde_zi = pv.core.Kde1d(xmin=0, type="zero-inflated")
-    >>> kde_zi.fit(x_zi)
-    >>> kde_zi.plot()
+    >>> counts = pv.core.Kde1d(type="discrete")
+    >>> counts.fit(rng.poisson(3, 100).astype(float))
+    >>> counts.plot()
+    >>> y = rng.exponential(2, 100)
+    >>> y[rng.choice(100, 30, replace=False)] = 0.0
+    >>> pv.core.Kde1d(xmin=0, type="zero-inflated").fit(y).plot()
 """
+)
 
 #: The two quantiles a margin with an unbounded support is drawn between,
 #: reached only where there is no fitted grid to read the range off.
 _TAIL = (1e-3, 1 - 1e-3)
 
 
-def _support(margin: Any) -> tuple[float, float]:  # noqa: ANN401
+def _support(margin: _Margin[Any]) -> tuple[float, float]:
   """The margin's declared support, as two floats."""
   lo, hi = getattr(margin, "support", (-np.inf, np.inf))
   return (float(lo), float(hi))
 
 
-def _grid_points(margin: Any) -> Optional[np.ndarray]:  # noqa: ANN401
+def _grid_points(margin: _Margin[Any]) -> Optional[np.ndarray]:
   """The fitted evaluation grid, where the margin publishes one."""
   gp = getattr(margin, "grid_points", None)
   if gp is None:
@@ -84,7 +101,7 @@ def _grid_points(margin: Any) -> Optional[np.ndarray]:  # noqa: ANN401
 
 
 def _draw_range(
-  margin: Any,  # noqa: ANN401
+  margin: _Margin[ArrayT],
   place: Optional[Callable[[np.ndarray], Any]],
 ) -> tuple[float, float]:
   """The interval to evaluate over.
@@ -118,7 +135,7 @@ def _draw_range(
 
 
 def make_plotting_grid(
-  margin: Any,  # noqa: ANN401
+  margin: _Margin[ArrayT],
   grid_size: int = 200,
   *,
   place: Optional[Callable[[np.ndarray], Any]] = None,
@@ -143,17 +160,14 @@ def make_plotting_grid(
 
 
 def margin_plot(
-  # A margin -- a `MarginLike`, or the `Kde1d` the binding hands here, which
-  # it looks this function up by name to reach. Importing the extension to
-  # name that type would invert the layering.
-  margin: Any,  # noqa: ANN401
+  margin: _Margin[ArrayT],
   xlim: Optional[tuple[float, float]] = None,
   ylim: Optional[tuple[float, float]] = None,
   grid_size: int = 200,
   show_zero_mass: bool = True,
   *,
   kind: str = "density",
-  x: Optional[Any] = None,  # noqa: ANN401
+  x: Optional[ArrayT] = None,
   place: Optional[Callable[[np.ndarray], Any]] = None,
 ) -> None:
   """{}""".format(MARGIN_PLOT_DOC)

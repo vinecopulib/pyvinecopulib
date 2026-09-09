@@ -83,7 +83,11 @@ from ._vinecop_discrete import (
   stack_edge,
 )
 from ._vinecop_reorient import Reorientation, reorientation
-from ._vinecop_plot import vinecop_plot
+from ._vinecop_plot import (
+  VINECOP_PLOT_PARAMS,
+  VINECOP_PLOT_SUMMARY,
+  vinecop_plot,
+)
 from ._covariates import pair_eval, prepare
 from ._vinecop_fit_engines import (
   FitEdge,
@@ -1632,27 +1636,6 @@ class VinecopBase(
     layout: str = "graphviz",
     vars_names: Optional[list[str]] = None,
   ) -> None:
-    """Plot the vine tree structure with networkx.
-
-    Draws one panel per requested tree from :attr:`structure`, mirroring
-    :meth:`pyvinecopulib.core.Vinecop.plot`.
-
-    Parameters
-    ----------
-    tree : list of int, or None, optional
-        Tree indices to plot; all trees when ``None``.
-    add_edge_labels : bool, default=True
-        Annotate edges with their conditioned / conditioning sets.
-    layout : str, default="graphviz"
-        ``"graphviz"`` (needs pydot + graphviz) or ``"spring_layout"``.
-    vars_names : list of str, or None, optional
-        Variable names; the integer indices are used when ``None``.
-
-    Returns
-    -------
-    None
-        The figure is drawn with matplotlib.
-    """
     vinecop_plot(self, tree, add_edge_labels, layout, vars_names)
 
   def __repr__(self) -> str:
@@ -2076,3 +2059,25 @@ class _ReorientedVine(VinecopBase[ArrayT]):
 # Shares the worked example with :class:`~pyvinecopulib.core.VinecopLike` (see
 # protocols.py) so the contract and its canonical base never drift apart.
 VinecopBase.__doc__ = (VinecopBase.__doc__ or "") + _VINECOP_EXAMPLE
+
+
+#: Composed, so the shared half is written once; `test_docs_examples.py`
+#: runs the project's numpydoc checks over the result.
+VinecopBase.plot.__doc__ = (
+  VINECOP_PLOT_SUMMARY
+  + """
+    Parameters
+    ----------
+"""
+  + VINECOP_PLOT_PARAMS
+  + """
+    Returns
+    -------
+    None
+        The figure is drawn with matplotlib.
+
+    See Also
+    --------
+    pyvinecopulib.core.Vinecop.plot : The same plot on a fitted vine.
+"""
+)
