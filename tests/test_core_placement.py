@@ -1,10 +1,9 @@
 """Tests for the placement hook behind every base's ``_prep``.
 
-``pyvinecopulib.core._placement`` is reached directly here. It is the one step
-of the input pipeline whose whole contract is *inference* -- a subclass writes
-no conversion code, so what it infers from is the only thing that can be wrong
--- and none of that is observable through the public surface until an
-evaluation returns the wrong number.
+Placement is the one step of the input pipeline whose whole contract is
+*inference* -- a subclass writes no conversion code, so what it infers from is
+the only thing that can be wrong -- and none of that is observable through an
+evaluation until it returns the wrong number.
 """
 
 from __future__ import annotations
@@ -14,7 +13,13 @@ from typing import Any
 import numpy as np
 import pytest
 
-from pyvinecopulib.core._placement import place, reference_array
+from pyvinecopulib.core import (
+  place,
+  prepare_covariates,
+  reference_array,
+  to_numpy,
+  trim,
+)
 
 
 class _Holder:
@@ -101,18 +106,16 @@ def test_a_torch_module_is_read_through_its_buffers() -> None:
 
 
 def test_covariates_are_placed_but_never_trimmed() -> None:
-  """`prepare` is the covariate half of the pipeline: place, do not clamp.
+  """The covariate half of the pipeline: place, and do not clamp.
 
   Covariates are arbitrary reals, so the domain step that copula arguments get
   would corrupt them -- while the placement step is what lets a NumPy `x` meet
   the conditioning columns a PyTorch vine gathered.
   """
-  from pyvinecopulib.core._covariates import prepare
-
   torch = pytest.importorskip("torch")
   u = torch.linspace(0.0, 1.0, 6, dtype=torch.float32).reshape(3, 2)
   x = np.array([[-3.0], [0.0], [7.5]])
-  placed = prepare(u, x, 3)
+  placed = prepare_covariates(u, x, 3)
   assert isinstance(placed, torch.Tensor)
   assert placed.dtype is torch.float32
   # Untouched values: no clamp into (0, 1), which is the point.
@@ -121,13 +124,11 @@ def test_covariates_are_placed_but_never_trimmed() -> None:
 
 def test_prepare_still_refuses_a_misaligned_covariate_matrix() -> None:
   """Placement does not replace the layout check; it follows it."""
-  from pyvinecopulib.core._covariates import prepare
-
   with pytest.raises(ValueError):
-    prepare(np.zeros((3, 2)), np.zeros((4, 1)), 3)
+    prepare_covariates(np.zeros((3, 2)), np.zeros((4, 1)), 3)
   with pytest.raises(ValueError):
-    prepare(np.zeros((3, 2)), np.zeros(3), 3)
-  assert prepare(np.zeros((3, 2)), None, 3) is None
+    prepare_covariates(np.zeros((3, 2)), np.zeros(3), 3)
+  assert prepare_covariates(np.zeros((3, 2)), None, 3) is None
 
 
 def test_a_matching_dtype_does_not_excuse_the_wrong_device() -> None:
@@ -218,3 +219,94 @@ def test_a_margin_with_an_integer_parameter_can_still_be_sampled() -> None:
     assert drawn.dtype is placed.dtype
     assert drawn.shape == (4,)
     assert bool(torch.all(drawn > 0.0))
+
+
+# --- the pipeline steps as a surface an extension can reach ------------------ #
+
+
+def test_the_pipeline_steps_are_reachable_from_core() -> None:
+  """A subclass composing ``_prep_args`` itself must not import a private module.
+
+  The hooks it writes (``_prep``, ``_layout``) and the composite they feed
+  (``_prep_args``) are public, so the steps composing them are too. Reaching
+  them through `core._placement` / `core._trim` / `core._covariates` is what
+  had a downstream extension run a covariate contract of its own, accepting a
+  one-dimensional `x` on the same object whose base refuses one.
+  """
+  import pyvinecopulib.core as core
+
+  # `getattr` because the generated stub declares no `__all__`, as the
+  # neighboring surface and stub tests do for the same reason.
+  exported = set(getattr(core, "__all__", ()))
+  for name in (
+    "place",
+    "prepare_covariates",
+    "reference_array",
+    "to_numpy",
+    "trim",
+  ):
+    assert name in exported, name
+    assert callable(getattr(core, name)), name
+
+
+def test_to_numpy_brings_back_what_asarray_refuses() -> None:
+  """The return trip exists because ``np.asarray`` raises on this tensor."""
+  torch = pytest.importorskip("torch")
+
+  tracked = torch.ones(3, dtype=torch.float64, requires_grad=True)
+  with pytest.raises(RuntimeError):
+    np.asarray(tracked)
+  back = to_numpy(tracked)
+  assert isinstance(back, np.ndarray)
+  np.testing.assert_array_equal(back, np.ones(3))
+  # Neither `detach` nor `cpu` exists on a NumPy array, which passes through.
+  plain = np.array([0.25, 0.75])
+  assert to_numpy(plain) is plain
+
+
+def test_trim_clamps_into_the_open_interval_at_its_own_precision() -> None:
+  """The domain step, whose bounds have to be representable in the dtype.
+
+  ``1 - 1e-10`` rounds to exactly ``1.0`` in ``float32``, so the historical
+  ``float64`` pair would hand a downstream normal quantile an infinity.
+  """
+  from array_api_compat import array_namespace
+
+  for dtype in (np.float64, np.float32):
+    a = np.array([0.0, 1.0], dtype=dtype)
+    clamped = trim(array_namespace(a), a)
+    assert clamped.dtype == a.dtype
+    assert float(clamped.min()) > 0.0
+    assert float(clamped.max()) < 1.0
+
+
+def test_a_part_holding_no_array_can_tell_that_placement_is_a_no_op() -> None:
+  """Inference's third answer, and the documented way to detect it.
+
+  ``_prep`` returns the values untouched when there is nothing to infer from:
+  right for a part that computes in whatever namespace it is handed, and
+  silently wrong for a torch part that keeps its device as a handle rather than
+  as a tensor. ``reference_array(self) is None`` separates the two, and
+  ``place`` taking an array as its own reference is the override.
+  """
+  torch = pytest.importorskip("torch")
+
+  class _Deviced:
+    """A device handle and a scalar; no array of its own."""
+
+    def __init__(self) -> None:
+      self.device = torch.device("cpu")
+      self.threshold = 0.5
+
+    def _prep(self, a: Any) -> Any:
+      return place(self, a)
+
+  part = _Deviced()
+  u = np.array([[0.25, 0.75]])
+  assert reference_array(part) is None
+  # The no-op the check reports, rather than a placement or a failure.
+  assert part._prep(u) is u
+  reference = torch.empty(0, dtype=torch.float32, device=part.device)
+  placed = place(reference, u)
+  assert isinstance(placed, torch.Tensor)
+  assert placed.dtype is torch.float32

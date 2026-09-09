@@ -7,7 +7,7 @@ off the interpolation grid.
 
 The bounds have to be representable in the working precision to do that.
 ``1 - 1e-10`` rounds to exactly ``1.0`` in ``float32``, while ``1e-10``
-rounds to zero in ``float16``. :func:`trim_bounds` therefore derives safe
+rounds to zero in ``float16``. ``trim_bounds`` therefore derives safe
 bounds from the dtype, while returning the historical ``float64`` pair
 unchanged so that precision's results are unmoved.
 """
@@ -54,7 +54,7 @@ def trim(xp: ModuleType, a: ArrayT) -> ArrayT:
   Returns
   -------
   array
-      ``a`` clamped to :func:`trim_bounds` for its dtype.
+      ``a`` clamped to ``trim_bounds`` for its dtype.
   """
   lo, hi = trim_bounds(xp, cast("Any", a).dtype)
   return cast("ArrayT", xp.clip(a, lo, hi))

@@ -30,7 +30,7 @@ from ..pyvinecopulib_ext import RVineStructure
 from ._rootfind import solve_increasing
 from ._trim import trim
 
-from ._covariates import pair_eval, prepare
+from ._covariates import pair_eval, prepare_covariates
 from .bicop_base import BicopBase, flip_of
 from .protocols import ArrayT, BicopLike
 
@@ -545,7 +545,7 @@ class DiscreteBicop(BicopBase[ArrayT]):
     array, shape (n, 2), dtype float
         Samples in the unit square.
     """
-    x = prepare(self, x, n)
+    x = prepare_covariates(self, x, n)
     method = cast("BicopLike[ArrayT]", self._pair).sample
     draw_seeds = list(seeds) if seeds else []
     if x is None:

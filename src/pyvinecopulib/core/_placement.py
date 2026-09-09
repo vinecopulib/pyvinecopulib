@@ -15,15 +15,25 @@ layer performs on its input:
 
 They are separated because the three do not always apply together. Exogenous
 covariates are *placed* but never *trimmed* -- they are arbitrary reals, not
-copula arguments, and ``_covariates.prepare`` is the composite that applies
+copula arguments, and ``prepare_covariates`` is the composite that applies
 exactly those two steps to them. A manufactured evaluation grid needs placement
 without any layout check at all, and a margin's argument is on the data scale,
 so it is placed and checked but never clamped.
 
 Placement is *inferred* rather than declared, so hosting a custom pair copula,
 margin or vine on PyTorch requires writing none of it: the object already holds
-the tensors that answer the question, and :func:`reference_array` finds them.
+the tensors that answer the question, and ``reference_array`` finds them.
 A subclass whose arrays live somewhere this misses overrides ``_prep``.
+
+Inference has a third answer besides a namespace and a failure: an object
+holding no array has nothing to infer from, and the values come back untouched.
+That is the right answer for a part that computes in whatever namespace it is
+handed, and the wrong one, silently, for a part that does not -- a torch class
+that is no ``nn.Module`` at all and keeps its device as a handle rather than as
+a tensor is the case that hits it. So the contract is
+best-effort by construction: ``reference_array(obj) is None`` is the check,
+overriding ``_prep`` is the fix, and ``place`` takes an array as its own
+reference so one line usually covers it.
 
 An array reaches these levels one other way -- drawn from the array
 library's own RNG,
@@ -47,6 +57,7 @@ __all__ = [
   "QrngUniformMixin",
   "place",
   "reference_array",
+  "to_numpy",
 ]
 
 
@@ -200,7 +211,7 @@ def place(obj: object, a: Any) -> Any:  # noqa: ANN401
   ----------
   obj : object
       The object whose placement to match, read through
-      :func:`reference_array` -- or an array to match directly.
+      ``reference_array`` -- or an array to match directly.
   a : array
       The values to place.
 
@@ -253,7 +264,12 @@ class PlacementMixin:
 
     The default infers the placement from the arrays this object already
     holds. Override it where those arrays live somewhere the inference
-    misses.
+    misses, and where it holds none at all: there is nothing to infer from
+    then, and the values come back untouched rather than raising, since that
+    is the right answer for a part that computes in whatever namespace it is
+    handed. ``reference_array(self) is None`` is how to tell the two apart,
+    and ``place`` takes an array as its own reference, so
+    ``place(self.grid, a)`` is usually the whole override.
 
     Parameters
     ----------
@@ -263,7 +279,8 @@ class PlacementMixin:
     Returns
     -------
     array
-        The same values, on this object's namespace, dtype and device.
+        The same values, on this object's namespace, dtype and device -- or
+        untouched, when this object holds no array to read one from.
     """
     return place(self, a)
 

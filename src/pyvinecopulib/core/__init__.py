@@ -65,6 +65,13 @@ Notes
   What :meth:`VinecopBase.select` places on a surviving edge whose criterion
   falls below ``threshold``, matching what :meth:`Vinecop.select` leaves there:
   the edge is not fitted, and holds the independence copula.
+- *Writing part of the input pipeline yourself* — ``place``,
+  ``reference_array``, ``trim`` and ``prepare_covariates`` are the steps
+  every base applies to an incoming array, and ``to_numpy`` is the return
+  trip for a value leaving the array namespace. A subclass that overrides
+  the ``_prep_args`` composite reassembles it from these rather than
+  rewriting them, and one whose object holds no array of its own writes its
+  ``_prep`` with ``place``.
 - *C-vine / D-vine special cases* — :class:`CVineStructure` and
   :class:`DVineStructure` are the path-shaped and star-shaped
   specializations of :class:`RVineStructure` and can be passed
@@ -89,6 +96,9 @@ from ..pyvinecopulib_ext import (
   Vinecop,
 )
 from .._deprecations import _method_alias
+from ._covariates import prepare_covariates
+from ._placement import place, reference_array, to_numpy
+from ._trim import trim
 from ._vinecop_discrete import DiscreteBicop
 from .bicop_independence import IndependenceBicop
 from .bicop_base import BicopBase
@@ -147,8 +157,13 @@ __all__ = [
   "register_margin_json",
   "MarginLike",
   "NonSimplifiedContext",
+  "place",
+  "prepare_covariates",
+  "reference_array",
   "RVineStructure",
   "SimplifiedContext",
+  "to_numpy",
+  "trim",
   "Vinecop",
   "VinecopBase",
   "VinecopLike",

@@ -88,7 +88,7 @@ from ._vinecop_plot import (
   VINECOP_PLOT_SUMMARY,
   vinecop_plot,
 )
-from ._covariates import pair_eval, prepare
+from ._covariates import pair_eval, prepare_covariates
 from ._vinecop_fit_engines import (
   FitEdge,
   FitLevel,
@@ -556,6 +556,17 @@ class VinecopBase(
       # model. It is a memo of the pair copulas, not part of the model.
       object.__setattr__(self, "_batched", self._build_batched())
     return self._batched
+
+  def _invalidate_batched(self) -> None:
+    """Drop everything memoized from the current pair copulas.
+
+    Called wherever the pairs change without the structure changing, which
+    ``set_pair_copulas`` documents as the one place that happens. A subclass
+    that memoizes anything else derived from the pairs overrides this and
+    calls ``super()``, so the contract has a name to implement rather than an
+    attribute to assign.
+    """
+    self._batched = None
 
   def _eval_context(self) -> contextlib.AbstractContextManager[Any]:
     """Context manager disabling grad for inverse / sample / cdf.
@@ -1196,7 +1207,7 @@ class VinecopBase(
     """
     del num_threads
     u_p = self._prep_args(u, "pdf")
-    x = prepare(self, x, int(cast("Any", u_p).shape[0]))
+    x = prepare_covariates(self, x, int(cast("Any", u_p).shape[0]))
     if self._resolve_batched(batched, x):
       try:
         return self._pdf_batched(u_p)
@@ -1265,7 +1276,7 @@ class VinecopBase(
         batched=batched,
       )
     u_p = self._prep_args(u, "rosenblatt")
-    x = prepare(self, x, int(cast("Any", u_p).shape[0]))
+    x = prepare_covariates(self, x, int(cast("Any", u_p).shape[0]))
     if self._resolve_batched(batched, x):
       try:
         return self._rosenblatt_batched(u_p)
@@ -1321,7 +1332,7 @@ class VinecopBase(
     if view is not self:
       return view.inverse_rosenblatt(u, x=x, batched=batched)
     u_p = self._prep_args(u, "inverse_rosenblatt", values_only=True)
-    x = prepare(self, x, int(cast("Any", u_p).shape[0]))
+    x = prepare_covariates(self, x, int(cast("Any", u_p).shape[0]))
     with self._eval_context():
       if self._resolve_batched(batched, x):
         try:
@@ -1364,7 +1375,7 @@ class VinecopBase(
     """
     del num_threads
     seeds = list(seeds) if seeds else []
-    x = prepare(self, x, n)
+    x = prepare_covariates(self, x, n)
     with self._eval_context():
       base_u = self._sample_uniform(n, qrng, seeds)
       return self.inverse_rosenblatt(base_u, x=x, batched=batched)
@@ -1455,7 +1466,7 @@ class VinecopBase(
       )
     d = self.d
     n, n_cols = int(ua.shape[0]), int(ua.shape[1])
-    x = prepare(self, x, n)
+    x = prepare_covariates(self, x, n)
     view = self._reoriented(conditioning_set)
     if conditioning_set is None:
       cond_vars = self._infer_conditioning_set(n_cols)
@@ -1652,7 +1663,10 @@ class VinecopBase(
     An implementation that memoizes anything derived from the pairs must
     invalidate it here, since this is the one place they change without the
     structure changing -- ``_build_batched`` copies their grids, and
-    ``_bind_vine`` only covers the paths that rebind the structure.
+    ``_bind_vine`` only covers the paths that rebind the structure. Calling
+    ``_invalidate_batched`` is how: it drops the batched state, and a subclass
+    holding further derived state overrides it rather than reaching for the
+    attribute behind it.
 
     Parameters
     ----------
@@ -1822,7 +1836,7 @@ class VinecopBase(
     # pairs just changed; and the fit ran along the structure's own
     # conditioning order, so any order recorded from an earlier `select` is now
     # a claim about pairs that are gone.
-    self._batched = None
+    self._invalidate_batched()
     self._cond_order = {}
     self._cond_pos_cache = {}
     return self

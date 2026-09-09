@@ -572,7 +572,7 @@ def test_the_covariate_gradient_reaches_a_registered_parameter() -> None:
 
 
 def test_a_numpy_covariate_is_brought_onto_the_lane() -> None:
-  """`prepare` places `x`, so a caller may hand the array type they have."""
+  """`prepare_covariates` places `x`, so a caller may hand the array type they have."""
   margin = _ConditionalNormalMargin(slope=1.5)
   y = torch.as_tensor([0.0, 1.5], dtype=_F64)
   cov = np.array([[0.0], [1.0]])

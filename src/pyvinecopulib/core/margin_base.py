@@ -28,7 +28,7 @@ from typing import Any, Optional, Self, Union, cast
 import numpy as _np
 from array_api_compat import array_namespace
 
-from ._covariates import declared_eval, prepare
+from ._covariates import declared_eval, prepare_covariates
 from ._margin_plot import (
   MARGIN_PLOT_PARAMS,
   MARGIN_PLOT_SUMMARY,
@@ -563,7 +563,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         Log-density, ``-inf`` where the density vanishes.
     """
     ya = self._prep_args(y)
-    x = prepare(self, x, int(cast("Any", ya).shape[0]))
+    x = prepare_covariates(self, x, int(cast("Any", ya).shape[0]))
     dens: Any = declared_eval(self, "pdf", ya, x)
     return cast("ArrayT", safe_log(dens))
 
@@ -600,7 +600,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         the default steps back by one.
     """
     ya = self._prep_args(y)
-    x = prepare(self, x, int(cast("Any", ya).shape[0]))
+    x = prepare_covariates(self, x, int(cast("Any", ya).shape[0]))
     return cast("ArrayT", derive_cdf_left(self, ya, x, self.var_type))
 
   def icdf(self, p: ArrayT, /, *, x: Optional[ArrayT] = None) -> ArrayT:
@@ -633,7 +633,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         if ``x`` is not two-dimensional and row-aligned.
     """
     pa: Any = self._prep_args(p, "p")
-    x = prepare(self, x, int(pa.shape[0]))
+    x = prepare_covariates(self, x, int(pa.shape[0]))
     xp = array_namespace(pa)
     if bool(xp.any((pa < 0) | (pa > 1) | ~xp.isfinite(pa))):
       raise ValueError("p must contain only probabilities in [0, 1]")
@@ -762,7 +762,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         raise ValueError("weights are only meaningful with data; pass y too")
       return self._fitted_loglik
     ya = self._prep_args(y)
-    x = prepare(self, x, int(cast("Any", ya).shape[0]))
+    x = prepare_covariates(self, x, int(cast("Any", ya).shape[0]))
     terms: Any = declared_eval(self, "logpdf", ya, x)
     xp = array_namespace(terms)
     if weights is not None:
@@ -918,7 +918,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         If the subclass supplies no ``_sample_uniform``, the array namespace's
         RNG being the one thing this class cannot default.
     """
-    x = prepare(self, x, n)
+    x = prepare_covariates(self, x, n)
     base = self._sample_uniform(n, list(seeds) if seeds else [])
     return cast("ArrayT", declared_eval(self, "icdf", base, x))
 

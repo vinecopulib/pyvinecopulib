@@ -284,16 +284,16 @@ pyvinecopulib/
         vinedist_base.py         # VinedistBase (array-agnostic cascade + IFM fit)
         vinedist.py              # Vinedist (NumPy + compiled Vinecop)
         margin_controls.py       # FitControlsMargin (the marginal half of a fit)
-        _covariates.py           # the two `x`-forwarding rules + `prepare` (internal)
+        _covariates.py           # the two `x`-forwarding rules + `prepare_covariates`
         _vinecop_discrete.py     # DiscreteBicop + the discrete layouts / per-edge types
         _vinecop_fit_engines.py  # fit_parts / select_parts — the two fit engines (internal)
         bicop_independence.py    # IndependenceBicop
-        _placement.py            # place / reference_array / to_numpy + the `_prep` and `_sample_uniform` hooks (internal)
+        _placement.py            # place / reference_array / to_numpy + the `_prep` and `_sample_uniform` hooks
         _vinecop_reorient.py     # relabel a structure onto a chosen order tail (internal)
         _rootfind.py             # solve_increasing (monotone bisection; internal)
         _json.py                 # how a model payload is encoded and written (internal)
         _margins.py              # everything about a margin but its contract: coercion, resolution, JSON (internal)
-        _trim.py                 # trim — the domain step of the input pipeline (internal)
+        _trim.py                 # trim — the domain step of the input pipeline
         _validation.py           # the layout / weights / covariate validators (internal)
         _bicop_plot.py           # what `Bicop.plot` / `BicopBase.plot` draw (internal)
         _vinecop_plot.py         # what `Vinecop.plot` / `VinecopBase.plot` draw (internal)
@@ -932,7 +932,7 @@ automatically.
     so it is never clamped) and `VinecopBase._prep_args(u, name, *,
     values_only)`. What forces the split is that **exogenous covariates are
     placed but never trimmed**: they are arbitrary reals, not copula
-    arguments, and `_covariates.prepare(onto, x, n)` is the composite applying
+    arguments, and `prepare_covariates(onto, x, n)` is the composite applying
     exactly those two steps -- called at every entry point that takes an `x`,
     including the static fit engines, where an *array* is its own placement
     reference. Placing `x` is not cosmetic: a non-simplified vine concatenates
@@ -964,6 +964,25 @@ automatically.
     that reads a value -- the criterion binding, the three plots, the sklearn
     estimator boundary -- goes through the one walk rather than a fourth copy
     of it.
+
+    **The steps are exported; the inference is best-effort.** `place`,
+    `reference_array`, `trim`, `prepare_covariates` and `to_numpy` are named in
+    `pyvinecopulib.core`, because the two hooks a subclass writes (`_prep`,
+    `_layout`) and the composite they feed (`_prep_args`) were public while the
+    steps composing them were not — so an extension overriding `_prep_args` had
+    to import three private modules to reassemble it, and one that wrote its own
+    covariate check instead ran a second, 1-d-accepting contract on the same
+    object. And placement has a **third** answer besides a namespace and a
+    failure: an object holding no array has nothing to infer from, so `place`
+    returns the values untouched. That is right for a part that computes in
+    whatever namespace it is handed and silently wrong for one that does not — a
+    torch class that is no `nn.Module` at all and keeps its device as a handle
+    rather than as a tensor is the case that hits it. Hence
+    `reference_array(obj) is None` as the check and an overridden `_prep` as the
+    fix, both stated on the hook; and hence *not* a loud `place`, which would
+    refuse the functional part the `None` was written for. `TensorPlacementMixin`
+    is no answer to it either: it reads a module's registered tensors, so it
+    needs the `nn.Module` such a class does not have.
   - `BicopBase` (`bicop_base.py`) / `VinecopBase` (`vinecop_base.py`) —
     canonical partial implementations to subclass. A `BicopBase`
     subclass defines `pdf` / `hfunc1` / `hfunc2` and inherits `hinv1` /
@@ -1167,11 +1186,13 @@ Three groups:
   **The underscore describes the module, not the names it exports.** It says
   "not an import path": `core/protocols.py`, `bicop_base.py`, `vinedist.py`,
   `margin_controls.py` and `independence.py` carry no underscore because each
-  is one public thing, while `core/_vinecop_discrete.py` and `core/_margins.py`
-  keep theirs even though `DiscreteBicop`, `as_margin`, `resolve_margins` and
-  the `margin_*_json` helpers are public -- the internal layout helpers, the
-  two registry tables, the per-ecosystem predicates and the specification
-  shapes are the bulk of those files, and the public names are reached
+  is one public thing, while `core/_vinecop_discrete.py`, `core/_margins.py`,
+  `core/_placement.py`, `core/_trim.py` and `core/_covariates.py` keep theirs
+  even though `DiscreteBicop`, `as_margin`, `resolve_margins`, the
+  `margin_*_json` helpers and the five input-pipeline steps are public -- the
+  internal layout helpers, the two registry tables, the per-ecosystem
+  predicates, the specification shapes, the two mixins and the two forwarding
+  rules are the bulk of those files, and the public names are reached
   through `core` or `margins`.
   Do not resolve a mismatch here by renaming a mixed module; resolve it by
   asking whether the module is something to import from.
@@ -1585,7 +1606,9 @@ below are a quick orientation.
   `SimplifiedContext`, `NonSimplifiedContext`; plus the marginal layer
   `MarginLike`, `MarginBase` and the joint object with its contract and base,
   `Vinedist`, `VinedistLike`, `VinedistBase`; plus the margin serialization
-  helpers `margin_from_json`, `margin_to_json`, `register_margin_json`.
+  helpers `margin_from_json`, `margin_to_json`, `register_margin_json`; plus
+  the input-pipeline steps a subclass composes itself, `place`,
+  `reference_array`, `trim`, `prepare_covariates` and `to_numpy`.
 - **`pyvinecopulib.families`** — `BicopFamily` enum; per-family
   constants (`indep`, `gaussian`, `student`, `clayton`, `gumbel`,
   `frank`, `joe`, `bb1`, `bb6`, `bb7`, `bb8`, `tawn`, `tll`); group
@@ -1741,7 +1764,12 @@ Round-trip / parity properties to preserve when touching numerics:
   immutable one — stays valid without it, and `set_pair_copulas` reports its
   own absence instead. Same rule as `MarginBase.fit`. Neither has an
   underscore-prefixed twin: a public wrapper over a private hook bought
-  nothing and is gone.
+  nothing and is gone. What `set_pair_copulas` *does* owe is invalidation —
+  it is the one place the pairs change without the structure changing — and
+  `_invalidate_batched` is the name for it, so an implementation writes a call
+  rather than an assignment to `_batched`. A lane holding further derived state
+  overrides that hook and calls `super()`, which is how `TorchVinecop` clears
+  the compiled cascades alongside the stacked grids.
 - **A vine's controls *are* pair controls.** `FitControlsVinecop` derives from
   `FitControlsBicop` — the binding declares the C++ inheritance, as it does for
   `CVineStructure` — and `FitControlsTorchVinecop` from

@@ -38,7 +38,7 @@ from ._placement import place
 from ._validation import validate_covariates
 from .protocols import ArrayT
 
-__all__ = ["declared_eval", "pair_eval", "prepare"]
+__all__ = ["declared_eval", "pair_eval", "prepare_covariates"]
 
 
 def pair_eval(
@@ -104,7 +104,9 @@ def declared_eval(
   return method(values, x=x, **kwargs)
 
 
-def prepare(onto: object, x: Optional[ArrayT], n: int) -> Optional[ArrayT]:
+def prepare_covariates(
+  onto: object, x: Optional[ArrayT], n: int
+) -> Optional[ArrayT]:
   """Validate covariates and place them where the numerics run.
 
   The two steps ``x`` needs and the third it must not get: it is checked for

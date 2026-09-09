@@ -99,6 +99,9 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Add `core.DiscreteBicop`, which evaluates a continuous pair copula on a discrete or mixed edge, so a custom pair copula gains discrete support by implementing `cdf` (#306, #330).
 - Add `core.IndependenceBicop`, the pair a `VinecopBase.select` edge below `threshold` holds instead of a fit (#317, #330).
 - Every `Vinedist` and margin method takes optional exogenous covariates as a keyword-only `x`, forwarded to each part that declares `supports_covariates` (#292, #328).
+- Export the input pipeline's steps from `pyvinecopulib.core` -- `place`, `reference_array`, `trim`, `prepare_covariates` and `to_numpy` -- so a subclass composing `_prep_args` itself reaches them by name instead of importing three private modules (#334).
+    - `_prep` now says that placement is inference, and that an object holding no array gets its values back untouched; `reference_array(self) is None` is the check and an overridden `_prep` the fix
+- Add `_invalidate_batched` on `VinecopBase`, the named way to drop what `set_pair_copulas` documents as needing invalidation; `TorchVinecop` overrides it to clear the compiled cascades alongside the stacked grids (#334).
 
 #### Discrete and conditional models
 

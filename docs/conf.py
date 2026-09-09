@@ -258,6 +258,11 @@ _CLASS_MODULE = {
 #: Kept apart from ``_CLASS_MODULE`` for that reason alone; both feed
 #: ``numpydoc_xref_aliases`` below.
 _FUNCTION_MODULE = {
+  "place": "pyvinecopulib.core",
+  "prepare_covariates": "pyvinecopulib.core",
+  "reference_array": "pyvinecopulib.core",
+  "to_numpy": "pyvinecopulib.core",
+  "trim": "pyvinecopulib.core",
   "margin_from_json": "pyvinecopulib.core",
   "margin_to_json": "pyvinecopulib.core",
   "register_margin_json": "pyvinecopulib.core",
@@ -424,6 +429,11 @@ DOCSTRING_SUBPACKAGES = {
       "margin_from_json",
       "margin_to_json",
       "register_margin_json",
+      "place",
+      "reference_array",
+      "to_numpy",
+      "trim",
+      "prepare_covariates",
     ],
   },
   "families": {

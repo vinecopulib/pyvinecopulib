@@ -34,7 +34,7 @@ from typing import Any, ClassVar, Optional, Self, Sequence, cast
 from array_api_compat import array_namespace
 
 from ..pyvinecopulib_ext import RVineStructure
-from ._covariates import declared_eval, prepare
+from ._covariates import declared_eval, prepare_covariates
 from .margin_base import derive_cdf_left, safe_log
 from ._placement import PlacementMixin
 from ._trim import trim
@@ -535,7 +535,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       raise ValueError(
         f"y must have shape (n, {len(resolved)}); got {tuple(ya.shape)}"
       )
-    x = prepare(ya, x, int(ya.shape[0]))
+    x = prepare_covariates(ya, x, int(ya.shape[0]))
     upper = [
       declared_eval(m, "cdf", ya[:, j], x) for j, m in enumerate(resolved)
     ]
@@ -1506,7 +1506,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         "unconditional while the call suggested otherwise. Fit the parts "
         "yourself if only one half is conditional."
       )
-    placed: Optional[ArrayT] = prepare(data, x, n)
+    placed: Optional[ArrayT] = prepare_covariates(data, x, n)
     checked: Optional[ArrayT] = validate_weights(
       weights, cast("Any", data)[:, 0]
     )
