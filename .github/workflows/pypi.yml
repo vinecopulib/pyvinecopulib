@@ -133,7 +133,7 @@ jobs:
         id: install-dependencies
         # Pinned to a SHA, not a branch: upstream deleted `dev` out from under
         # this reference, and a moving ref lets upstream CI churn break wheels.
-        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@be96dd90760879b98fb44713c8cb073ddef52814
+        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@7d8debecff02fdf3b2924db6e8b4de994baa3a74
         with:
           os: ${{ matrix.cfg.os }}
           platform: ${{ matrix.cfg.platform }}
@@ -464,7 +464,7 @@ jobs:
         id: install-dependencies
         # Pinned to a SHA, not a branch: upstream deleted `dev` out from under
         # this reference, and a moving ref lets upstream CI churn break wheels.
-        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@be96dd90760879b98fb44713c8cb073ddef52814
+        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@7d8debecff02fdf3b2924db6e8b4de994baa3a74
         with:
           os: "ubuntu-latest"
           boost_install_dir: "/home/runner/work"
