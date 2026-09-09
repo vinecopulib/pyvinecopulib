@@ -1,0 +1,46 @@
+seam->hook, banned word - use "hook" or "extension point"
+seams->hooks, banned word - use "hooks" or "extension points"
+genuine->actual, banned word - say "actual" or "exact"
+genuinely->actually, banned word - say "actually" or drop it
+load-bearing->required, banned word - say "required" or name the consequence
+honest->correct, banned word - say "correct" or "valid"
+honestly->plainly, banned word
+workhorse->core operation, banned word
+spine->core, banned word
+substrate->layer, banned word
+deliberately->, banned word - state the reason instead of asserting intent
+deliberate->intentional, banned word - state the reason instead
+paradigm->mechanism, banned word
+sanctioned->allowed, banned word
+showcase->demonstrate, banned word
+crucial->required, banned word
+crucially->, banned word
+elegant->, banned word - describe what it does instead
+tapestry->, banned word
+realm->area, banned word
+landscape->, banned word
+unlock->enable, banned word
+embark->start, banned word
+testament->evidence, banned word
+meticulous->careful, banned word
+seamless->, banned word
+holistic->, banned word
+cornerstone->, banned word
+backbone->, banned word
+linchpin->, banned word
+bedrock->, banned word
+foundational->basic, banned word
+delve->, banned word - say "read" or "examine"
+bake->precompute, banned word - say "precompute" or "build"
+bakes->precomputes, banned word - say "precomputes" or "builds"
+baked->precomputed, banned word - say "precomputed" or "built"
+baking->precomputing, banned word - say "precomputing" or "building"
+rung->level, banned word - say "level" or name the class
+rungs->levels, banned word - say "levels" or name the classes
+gate->check, banned word - say "check" or "tolerance"
+gates->checks, banned word - say "checks" or "tolerances"
+gated->conditional, banned word - say "conditional on" or "runs only when"
+gating->checking, banned word - say "checking" or name the condition
+byte-for-byte->bit-identical, banned word - say "bit-identical" for floats or "exactly" for a structure matrix
+escape-hatch->opt-out, banned word - say "opt-out" or "exemption"
+plumbing->internals, banned word - say "internals" or name the machinery

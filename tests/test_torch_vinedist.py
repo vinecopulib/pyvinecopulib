@@ -28,10 +28,11 @@ from .helpers import widen
 torch = pytest.importorskip("torch")
 stats = pytest.importorskip("scipy.stats")
 
+from pyvinecopulib.margins import FitControlsMargin  # noqa: E402
 from pyvinecopulib.torch import (  # noqa: E402
   FitControlsTorchVinecop,
   TorchKde1d,
-  TorchMargin,
+  TorchDistributionMargin,
   TorchVinecop,
   TorchVinedist,
 )
@@ -60,10 +61,10 @@ def copula(data: np.ndarray) -> pv.Vinecop:
   )
 
 
-def _margins() -> list[TorchMargin]:
+def _margins() -> list[TorchDistributionMargin]:
   """One normal margin per column, matching `_PARAMS`."""
   return [
-    TorchMargin(_D.Normal, {"loc": loc, "scale": scale})
+    TorchDistributionMargin(_D.Normal, {"loc": loc, "scale": scale})
     for loc, scale in _PARAMS
   ]
 
@@ -85,7 +86,7 @@ def test_logpdf_matches_the_numpy_vinedist(
   """The same model evaluated on either lane gives the same log-density.
 
   The tolerance is the one `test_torch_vinecop.py` pins for the copula term:
-  what separates the two sides is `TorchBicop`'s bilinear grid against the C++
+  what separates the two sides is `TorchTllBicop`'s bilinear grid against the C++
   on-the-fly cascade, since the marginal terms are closed forms that agree to
   machine precision.
   """
@@ -125,7 +126,7 @@ def test_the_parts_are_registered_children(dist: TorchVinedist) -> None:
   assert {f"_margins.{j}.{p}" for j in range(3) for p in ("loc", "scale")} <= (
     keys
   )
-  assert any(key.startswith("_copula.") for key in keys)
+  assert any(key.startswith("_vinecop.") for key in keys)
   assert {name for name, _ in dist.named_parameters()} == {
     f"_margins.{j}.{p}" for j in range(3) for p in ("loc", "scale")
   }
@@ -135,9 +136,11 @@ def test_margins_property_reads_the_module_list(dist: TorchVinedist) -> None:
   """The public accessor still hands back a tuple of the very same objects."""
   assert isinstance(dist.margins, tuple)
   assert len(dist.margins) == dist.dim == 3
-  assert all(isinstance(m, TorchMargin) for m in dist.margins)
+  assert all(isinstance(m, TorchDistributionMargin) for m in dist.margins)
   # The very same objects the registered `ModuleList` holds, not copies.
-  registered = [m for m in dist.modules() if isinstance(m, TorchMargin)]
+  registered = [
+    m for m in dist.modules() if isinstance(m, TorchDistributionMargin)
+  ]
   assert [id(m) for m in dist.margins] == [id(m) for m in registered]
 
 
@@ -154,12 +157,15 @@ def test_state_dict_round_trip_and_no_derived_cache_leak(
   keys_before = set(dist.state_dict())
   dist.pdf(x)
   dist.rosenblatt(x)
-  dist.copula.pdf(dist.marginal_cdf(x), batched=True)
+  widen(dist.vinecop).pdf(dist.marginal_cdf(x), batched=True)
   assert set(dist.state_dict()) == keys_before
 
   fresh = TorchVinedist(
     TorchVinecop.from_vinecop(copula, cache_integrals=False),
-    [TorchMargin(_D.Normal, {"loc": 0.0, "scale": 1.0}) for _ in range(3)],
+    [
+      TorchDistributionMargin(_D.Normal, {"loc": 0.0, "scale": 1.0})
+      for _ in range(3)
+    ],
   )
   fresh.load_state_dict(dist.state_dict(), strict=True)
   torch.testing.assert_close(fresh.logpdf(x), dist.logpdf(x))
@@ -170,7 +176,7 @@ def test_to_device_round_trip(
 ) -> None:
   """`.to()` walks the registered children and the evaluation still runs.
 
-  ``x`` deliberately stays on the host: coercing it is ``_prep``'s job, and
+  ``x`` stays on the host: coercing it is ``_prep``'s job, and
   this is the test that would notice if it stopped doing it.
   """
   want = torch.device(device).type
@@ -281,7 +287,7 @@ def test_a_single_margin_is_broadcast_across_the_variables(
   copula: pv.Vinecop, data: np.ndarray
 ) -> None:
   """One margin standing for every variable ties their parameters together."""
-  shared = TorchMargin(_D.Normal, {"loc": 0.0, "scale": 1.0})
+  shared = TorchDistributionMargin(_D.Normal, {"loc": 0.0, "scale": 1.0})
   dist = TorchVinedist(
     TorchVinecop.from_vinecop(copula, cache_integrals=False), shared
   )
@@ -292,6 +298,39 @@ def test_a_single_margin_is_broadcast_across_the_variables(
     "_margins.0.scale",
   }
   assert torch.isfinite(dist.logpdf(torch.as_tensor(data, dtype=_F64))).all()
+
+
+def test_an_unfitted_broadcast_margin_is_copied_on_this_lane(
+  copula: pv.Vinecop, data: np.ndarray
+) -> None:
+  """A torch margin is an `nn.Module`, so `callable(margin)` is `True`.
+
+  The copy is guarded on there being no `cdf`, which is what separates a
+  *fitter* -- a plain callable handed the column -- from a margin. Testing
+  `callable` alone treated every torch margin as a fitter, so the copy never
+  happened and all three columns shared one estimate.
+  """
+  torch_copula = TorchVinecop.from_vinecop(copula, cache_integrals=False)
+  dist = TorchVinedist(torch_copula, TorchKde1d())
+  assert len({id(m) for m in dist.margins}) == 3
+
+  y = torch.as_tensor(data, dtype=_F64)
+  dist.fit(y)
+  assert torch.isfinite(dist.logpdf(y)).all()
+  medians = [float(np.median(data[:, k])) for k in range(3)]
+  for j, margin in enumerate(dist.margins):
+    center = float(margin.icdf(torch.tensor([0.5], dtype=_F64))[0])
+    closest = min(range(3), key=lambda k: abs(center - medians[k]))
+    assert closest == j
+
+
+def test_resolve_margins_copies_an_unfitted_torch_margin() -> None:
+  """The same guard, at the resolver every `from_data` goes through."""
+  from pyvinecopulib.margins import resolve_margins
+
+  resolved = resolve_margins(TorchKde1d(), 3)
+  assert len({id(m) for m in resolved}) == 3
+  assert all(isinstance(m, TorchKde1d) for m in resolved)
 
 
 # --- boundaries ------------------------------------------------------------- #
@@ -320,7 +359,7 @@ def test_from_data_fits_end_to_end_in_torch(data: np.ndarray) -> None:
   y = torch.as_tensor(data, dtype=torch.float64)
   dist = TorchVinedist.from_data(y)
 
-  assert isinstance(dist.copula, TorchVinecop)
+  assert isinstance(dist.vinecop, TorchVinecop)
   assert all(isinstance(m, TorchKde1d) for m in dist.margins)
   assert dist.var_types == ["c"] * y.shape[1]
 
@@ -328,12 +367,79 @@ def test_from_data_fits_end_to_end_in_torch(data: np.ndarray) -> None:
   assert logpdf.shape == (32,)
   assert bool(torch.isfinite(logpdf).all())
   # The Sklar identity, on the object's own terms.
-  manual = torch.log(dist.copula.pdf(dist.marginal_cdf(y[:32])))
+  manual = torch.log(dist.vinecop.pdf(dist.marginal_cdf(y[:32])))
   for j, margin in enumerate(dist.margins):
     # `logpdf` is an optional capability, not a protocol member.
     lifted: Any = margin
     manual = manual + lifted.logpdf(y[:32, j])
   torch.testing.assert_close(logpdf, manual, rtol=1e-10, atol=1e-10)
+
+
+def test_from_data_refuses_a_family_set_it_cannot_search(
+  data: np.ndarray,
+) -> None:
+  """`TorchKde1d` reads no controls, so a `family_set` must be a refusal.
+
+  Answering a parametric request with a kernel density is the silent downgrade
+  the weights contract already refuses. The margin declares that it cannot
+  search, which is what turns the request into an error -- introspection cannot
+  answer it, since the fit accepts a `controls` argument either way.
+  """
+  from pyvinecopulib.margins import FitControlsMargin
+
+  assert not TorchKde1d.supports_controls
+  with pytest.raises(TypeError, match="cannot select a family"):
+    TorchVinedist.from_data(
+      torch.as_tensor(data, dtype=_F64),
+      margin_controls=FitControlsMargin(family_set=["gamma"]),
+    )
+  # A declared type or support is a *default*, so it is still honored.
+  fitted = TorchVinedist.from_data(
+    torch.as_tensor(data, dtype=_F64),
+    margin_controls=FitControlsMargin(support=(-10.0, 10.0)),
+  )
+  assert all(isinstance(m, TorchKde1d) for m in fitted.margins)
+
+
+@pytest.mark.parametrize(
+  ("declared", "expected_kde_type", "expected_var_type"),
+  [
+    ("c", "continuous", "c"),
+    ("d", "discrete", "d"),
+    ("zi", "zero-inflated", "d"),
+  ],
+)
+def test_margin_controls_declare_the_variable_type(
+  declared: str, expected_kde_type: str, expected_var_type: str
+) -> None:
+  """Every declared type reaches the torch margin's constructor.
+
+  Parametrized over all three because the two lanes translate the declaration
+  separately: the core `Kde1d` accepts either spelling of the zero-inflated
+  type and `TorchKde1d` accepts only the hyphenated one, so a second copy of
+  the mapping diverged silently on exactly that value.
+  """
+  rng = np.random.default_rng(0)
+  y = torch.as_tensor(
+    np.column_stack([rng.normal(size=300), rng.poisson(3.0, 300).astype(float)])
+  )
+  dist = TorchVinedist.from_data(
+    y, margin_controls={1: FitControlsMargin(var_type=declared)}
+  )
+  margin = cast("Any", dist.margins[1])
+  assert margin.kde_type == expected_kde_type
+  assert dist.var_types[1] == expected_var_type
+  assert torch.isfinite(dist.logpdf(y)).all()
+
+
+def test_margin_controls_declare_a_bound() -> None:
+  """A declared support bounds the margin the library builds."""
+  rng = np.random.default_rng(1)
+  y = torch.as_tensor(rng.gamma(2.0, 1.0, size=(400, 2)))
+  bounded = TorchVinedist.from_data(
+    y, margin_controls=FitControlsMargin(support=(0.0, None))
+  )
+  assert all(float(cast("Any", m).xmin) == 0.0 for m in bounded.margins)
 
 
 def test_from_data_refuses_covariates(data: np.ndarray) -> None:
@@ -397,12 +503,12 @@ def test_holds_margins_with_atoms() -> None:
   )
   assert np.array_equal(
     np.asarray(cop.structure.matrix),
-    np.asarray(dist.copula.structure.matrix),
+    np.asarray(dist.vinecop.structure.matrix),
   )
   expected = np.log(np.asarray(cop.pdf(u_np)))
   for j, margin in enumerate(dist.margins):
     # `logpdf` is an optional capability on `MarginLike`, declared on the base.
-    kde = cast(TorchKde1d, margin)
+    kde = cast("TorchKde1d", margin)
     expected = expected + kde.logpdf(y_t[:, j]).detach().numpy()
 
   np.testing.assert_allclose(
@@ -415,14 +521,14 @@ def test_rejects_a_margin_with_atoms_and_no_left_limit(
 ) -> None:
   """A margin declaring atoms must supply the left limit the cascade needs.
 
-  `TorchMargin` cannot: `torch.distributions`' discrete families implement
+  `TorchDistributionMargin` cannot: `torch.distributions`' discrete families implement
   neither `cdf` nor `icdf`, so there is nothing to take a left limit of.
   """
 
   class _Atomic(TorchKde1d):
     """Declares atoms and hides the inherited left limit."""
 
-    cdf_left = None  # type: ignore[assignment]
+    cdf_left = None
 
   discrete = _Atomic(type="discrete", xmin=0.0)
   discrete.fit(
@@ -442,7 +548,7 @@ def test_rejects_a_margin_with_atoms_and_no_left_limit(
   [(None, None), (None, torch.float32), ("cpu", torch.float64)],
 )
 def test_from_data_puts_everything_on_one_device_and_dtype(
-  device, dtype
+  device: str | None, dtype: torch.dtype | None
 ) -> None:
   """`from_data` documents one device and one dtype for the whole object.
 
@@ -472,3 +578,27 @@ def test_from_data_does_not_take_its_dtype_from_integer_data() -> None:
   tensors = [v for v in dist.state_dict().values() if hasattr(v, "dtype")]
   assert len({t.dtype for t in tensors}) == 1
   assert tensors[0].dtype.is_floating_point
+
+
+def test_fit_and_select_work_on_every_torch_vine_distribution() -> None:
+  """``fit`` and ``select`` raised ``TypeError`` for every torch distribution.
+
+  ``_bind_dist`` runs again on each refit, and the base stored the margins with
+  a plain assignment. That is fine the first time -- ``_margins`` is not yet a
+  registered child -- and fatal the second, when ``nn.Module`` refuses a tuple
+  over the ``ModuleList`` it is tracking. The storage is a hook now, so the
+  torch lane installs a ``ModuleList`` on every bind rather than repairing one
+  the base already wrote.
+  """
+  y = torch.as_tensor(
+    np.random.default_rng(4).normal(size=(300, 3)), dtype=torch.float64
+  )
+  dist = TorchVinedist.from_data(y)
+  for verb in ("fit", "select"):
+    returned = getattr(dist, verb)(y)
+    assert returned is dist
+    # Still registered children, or the parameters would be invisible to
+    # `state_dict`, `.to()` and every optimizer.
+    assert isinstance(dist._margins, torch.nn.ModuleList)
+    assert any("_margins" in key for key in dist.state_dict())
+    assert bool(torch.isfinite(dist.logpdf(y)).all())

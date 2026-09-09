@@ -1,10 +1,12 @@
 import contextlib
+import math
 from typing import Any, Optional
 
 import numpy as np
 from numpy.typing import NDArray
 
 from pyvinecopulib.core import MarginBase
+from pyvinecopulib.core._validation import reject_covariates
 
 
 def random_data(d: int = 5, n: int = 1000) -> NDArray[np.float64]:
@@ -116,7 +118,7 @@ def assert_on_device(
 
   Walks ``named_parameters()`` and ``named_buffers()`` recursively, then
   every tensor reachable in ``outputs``. ``extra`` covers state that is
-  deliberately unregistered -- notably ``TorchVinecop._batched``, installed
+  left unregistered -- notably ``TorchVinecop._batched``, installed
   via ``object.__setattr__`` so it stays out of ``state_dict()`` and is
   therefore invisible to ``named_buffers()``.
 
@@ -221,6 +223,86 @@ def count_transfers(device: str) -> Any:
     yield counts
 
 
+class FlatMargin(MarginBase[NDArray[np.float64]]):
+  """A flat density on the unit interval -- the smallest complete margin.
+
+  ``MarginBase`` needs only ``pdf`` and ``cdf``, and a flat density on a
+  bounded support is the shortest pair satisfying both whose ``icdf`` inverts
+  exactly with no bracket widening, so every test that needs *a* margin rather
+  than a particular one shares this one. ``fit`` is the documented shape for a
+  margin that reads no covariates: it accepts the call and hands ``x`` to
+  ``reject_covariates``.
+
+  Nothing is deferred to ``fit``, so :attr:`is_fitted` is the inherited
+  ``True``; weights are ignored, so :attr:`supports_weights` is the inherited
+  ``False``. A test whose premise is either declares it on a subclass of this,
+  where it reads as the premise rather than as scenery.
+  """
+
+  @property
+  def support(self) -> tuple[float, float]:
+    return (0.0, 1.0)
+
+  def fit(
+    self,
+    y: NDArray[np.float64],
+    /,
+    controls: object = None,
+    *,
+    x: Optional[NDArray[np.float64]] = None,
+    weights: Optional[NDArray[np.float64]] = None,
+  ) -> "FlatMargin":
+    reject_covariates(self, x)
+    del y, controls, weights
+    return self
+
+  def pdf(
+    self, y: NDArray[np.float64], /, *, x: Optional[NDArray[np.float64]] = None
+  ) -> NDArray[np.float64]:
+    ya = np.asarray(y, dtype=float)
+    return np.where((ya >= 0.0) & (ya <= 1.0), 1.0, 0.0)
+
+  def cdf(
+    self, y: NDArray[np.float64], /, *, x: Optional[NDArray[np.float64]] = None
+  ) -> NDArray[np.float64]:
+    return np.clip(np.asarray(y, dtype=float), 0.0, 1.0)
+
+
+class ShiftedNormalMargin(MarginBase[NDArray[np.float64]]):
+  """A standard normal centered at ``slope * x[:, 0]`` -- a conditional margin.
+
+  Shared for the reason :class:`FlatMargin` is, and it was written four times
+  before it was: its density, distribution function and median at a fixed
+  covariate row are all closed forms, so what a covariate *did* is checkable
+  exactly rather than by whether a call happened. A test that needs more
+  subclasses this and adds only that -- a call log, an unfitted state, a
+  slope estimated from data.
+  """
+
+  supports_covariates = True
+
+  def __init__(self, slope: float = 1.0) -> None:
+    self.slope = float(slope)
+
+  def center(self, y: Any, x: Any) -> Any:
+    """The mean each row is drawn around; zero where no covariates arrived."""
+    if x is None:
+      return np.zeros(np.shape(y))
+    return self.slope * np.asarray(x, dtype=float)[:, 0]
+
+  def pdf(
+    self, y: NDArray[np.float64], /, *, x: Optional[NDArray[np.float64]] = None
+  ) -> NDArray[np.float64]:
+    z = np.asarray(y, dtype=float) - self.center(y, x)
+    return np.asarray(np.exp(-0.5 * z * z) / np.sqrt(2.0 * np.pi))
+
+  def cdf(
+    self, y: NDArray[np.float64], /, *, x: Optional[NDArray[np.float64]] = None
+  ) -> NDArray[np.float64]:
+    z = np.asarray(y, dtype=float) - self.center(y, x)
+    return np.asarray(0.5 * (1.0 + np.vectorize(math.erf)(z / np.sqrt(2.0))))
+
+
 class AtomicMargin(MarginBase[NDArray[np.float64]]):
   """A margin whose mass is not a density, with an atomic inverse CDF.
 
@@ -247,6 +329,7 @@ class AtomicMargin(MarginBase[NDArray[np.float64]]):
     self,
     y: NDArray[np.float64],
     /,
+    controls: object = None,
     *,
     x: Optional[NDArray[np.float64]] = None,
     weights: Optional[NDArray[np.float64]] = None,
@@ -312,16 +395,21 @@ def run_without(package: str, body: str) -> None:
   import subprocess
   import sys as _sys
 
+  # `level` decides whether the name is the third-party package at all: a
+  # relative import resolves inside the importing package, so
+  # `from .scipy import ...` arrives here as name="scipy", level=1 and must
+  # not be blocked. Ignoring `level` would make a submodule unimportable
+  # whenever it shares a name with the package being blocked.
   preamble = (
     "import sys, builtins\n"
     "real = builtins.__import__\n"
-    "def blocked(name, *a, **k):\n"
-    f"  if name.split('.')[0] == {package!r}:\n"
+    "def blocked(name, globals=None, locals=None, fromlist=(), level=0):\n"
+    f"  if level == 0 and name.split('.')[0] == {package!r}:\n"
     f"    raise ImportError('no {package}')\n"
-    "  return real(name, *a, **k)\n"
+    "  return real(name, globals, locals, fromlist, level)\n"
     "builtins.__import__ = blocked\n"
   )
-  result = subprocess.run(  # noqa: S603
+  result = subprocess.run(
     [_sys.executable, "-c", preamble + body], capture_output=True, text=True
   )
   assert result.returncode == 0, result.stdout + result.stderr

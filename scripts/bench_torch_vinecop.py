@@ -39,7 +39,7 @@ Notes on the fit mode:
   would stop meaning anything. On the fixed-structure torch arm the cap
   is ignored anyway -- truncation comes from ``structure.trunc_lvl``.
 * ``cache_integrals`` is a fit-time knob as well as an eval-time one:
-  ``TorchBicop`` builds the three prefix tables per fitted pair, so a
+  ``TorchTllBicop`` builds the three prefix tables per fitted pair, so a
   d = 20 vine pays 190 of them.
 * Timings are per-arm fault-tolerant: a fit that raises records
   ``time_ms = nan`` and a ``# FAILED`` line on stderr rather than losing
@@ -52,7 +52,7 @@ Notes on the fit mode:
   ``.item()`` occurs in the whole installed package in five places, all
   in ``pyvinecopulib.torch._fit_tll``, so patching ``torch.Tensor.item``
   is exact attribution rather than sampling. Reaching into a private
-  module is deliberate: a bench script may do what the library may not,
+  module is intentional: a bench script may do what the library may not,
   the same rule already written beside ``cache_size_limit`` below.
 
 Outputs a long-format CSV (one row per timed configuration) to --output,
@@ -186,7 +186,7 @@ def _timed_or_nan(fn, repeats: int, sync=None, label: str = "") -> float:
   try:
     return _time_repeats(fn, repeats, sync=sync)
   except Exception as exc:
-    # Deliberately broad: the point is that no failure mode of a fit takes
+    # Broad on purpose: the point is that no failure mode of a fit takes
     # the sweep down with it, and every one of them is reported.
     print(f"# FAILED {label}: {exc!r}", file=sys.stderr, flush=True)
     if sync is not None:
@@ -367,7 +367,7 @@ def _torch_fit_call(u_t, structure, ctl):
   `structure` is `from_data`'s second positional argument: `None` routes
   to the array-agnostic selector, a skeleton routes to the fit engine.
   """
-  return lambda: TorchVinecop.from_data(u_t, structure, controls=ctl)
+  return lambda: TorchVinecop.from_data(u_t, structure=structure, controls=ctl)
 
 
 # ---- Mode = eval ------------------------------------------------------
@@ -448,7 +448,7 @@ def _bench_eval_cell(
               # pair-copula fits, isolating the eval-time effect.
               bc = TorchVinecop.from_data(
                 torch.from_numpy(u_fit).to(device),
-                ref.structure,
+                structure=ref.structure,
                 controls=_torch_controls(
                   grid_type, g, cache, trunc_lvl, device, torch_dtype
                 ),
@@ -693,7 +693,7 @@ def _build_parser() -> argparse.ArgumentParser:
     "--grid-types",
     default=None,
     type=_parse_str_list,
-    help="TorchBicop grid types (default: normal,linear in eval mode, "
+    help="TorchTllBicop grid types (default: normal,linear in eval mode, "
     "normal in fit mode).",
   )
   ap.add_argument(

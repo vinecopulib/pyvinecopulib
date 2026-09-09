@@ -1,21 +1,22 @@
-"""Fit-time controls for :class:`TorchBicop` and :class:`TorchVinecop`.
+"""Fit-time controls for :class:`TorchTllBicop` and :class:`TorchVinecop`.
 
 Mirrors ``FitControlsBicop`` /
 ``FitControlsVinecop``: method-specific args live on
 the dataclass; cross-cutting args stay on the relevant ``from_data``
 signature only where they don't fit naturally on the controls.
 
-Adding a new fitter to ``TorchBicop`` only requires extending the
+Adding a new fitter to ``TorchTllBicop`` only requires extending the
 relevant dataclass and the dispatch in the corresponding ``from_data``
 — the public ``from_data`` signatures are forward-stable.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any, Optional
 
-METHODS: tuple[str, ...] = ("tll",)
+import torch
+
 
 #: Structure-selection algorithms accepted by ``FitControlsTorchVinecop``,
 #: mirroring ``FitControlsVinecop.tree_algorithm``.
@@ -29,21 +30,15 @@ TREE_ALGORITHMS: tuple[str, ...] = (
 
 @dataclass
 class FitControlsTorchBicop:
-  """Controls for ``TorchBicop.from_data()``.
+  """Controls for ``TorchTllBicop.from_data()``.
 
-  Mirrors ``FitControlsBicop``: ``method`` picks the
-  pair-copula fitter and the remaining fields carry method-specific
-  hyperparameters.
+  Mirrors ``FitControlsBicop``, for the one fitter this lane has: a pure-torch
+  *Transformed Local Likelihood* kernel density estimator on a 2-D grid in the
+  inverse-normal-transformed copula space (Geenens, 2014; Nagler, 2018),
+  matching the ``Bicop`` TLL fit to machine precision.
 
   Attributes
   ----------
-  method : {"tll"}, default="tll"
-      Fitter to use. ``"tll"`` is a pure-torch *Transformed Local
-      Likelihood* kernel density estimator on a 2-D grid in the
-      inverse-normal-transformed copula space (Geenens, 2014;
-      Nagler, 2018), matching the ``Bicop`` TLL fit to
-      machine precision. It is the only fitter currently shipped;
-      ``method`` is kept as the extension seam for future torch fitters.
   grid_size : int, default=30
       *TLL only.* Density grid size per axis.
   mult : float, default=1.0
@@ -70,11 +65,9 @@ class FitControlsTorchBicop:
 
       Fusion reorders the arithmetic, so the fitted grid moves by about
       1e-15 and a lane's iteration count can change -- the outer criterion
-      sits at the float64 noise floor. The ``Bicop`` parity gate is
+      sits at the float64 noise floor. The ``Bicop`` parity check is
       unaffected.
   """
-
-  method: str = "tll"
 
   # TLL-only
   grid_size: int = 30
@@ -82,15 +75,36 @@ class FitControlsTorchBicop:
   grid_type: str = "normal"
   compile_fit: bool = False
 
+  def to_dict(self) -> dict[str, Any]:
+    """Return the settings as a plain dictionary.
+
+    Returns
+    -------
+    dict
+        One entry per setting, keyed by the field name. Nested controls are
+        kept as objects rather than flattened, so the entry round-trips.
+
+    See Also
+    --------
+    pyvinecopulib.core.ControlsLike : The contract this satisfies.
+    """
+    return {f.name: getattr(self, f.name) for f in fields(self)}
+
   def __post_init__(self) -> None:
-    if self.method not in METHODS:
-      raise ValueError(
-        f"unknown method={self.method!r}; expected one of {METHODS}"
-      )
+    """Validate the settings.
+
+    Nothing to check at this level today; the subclass chains to it, so the
+    hook stays rather than moving the chain's base each time a field is added
+    or removed.
+
+    Returns
+    -------
+    None
+    """
 
 
 @dataclass
-class FitControlsTorchVinecop:
+class FitControlsTorchVinecop(FitControlsTorchBicop):
   """Controls for :meth:`~pyvinecopulib.torch.TorchVinecop.from_data` and the cascade.
 
   Mirrors :class:`~pyvinecopulib.core.FitControlsVinecop`: bundles all vine-fit
@@ -101,8 +115,6 @@ class FitControlsTorchVinecop:
 
   Attributes
   ----------
-  bicop_controls : FitControlsTorchBicop
-      Controls applied to every pair-copula fit.
   trunc_lvl : int, default=20
       Maximum number of trees to select when
       :meth:`~pyvinecopulib.torch.TorchVinecop.from_data` is called with
@@ -134,7 +146,7 @@ default="tau"
       They reconstruct the uncached integrals up to summation order and rebuild
       in-graph when grid values require gradients. ``None`` resolves to
       ``True``, including for discrete vines.
-  device : torch.device or None, default=None
+  device : torch.device or str or int, or None, default=None
       Target torch device for the fitted pair copulas. ``None``
       keeps the input's device.
   dtype : torch.dtype or None, default=None
@@ -180,7 +192,7 @@ default="tau"
       torch uses every core by default, so the cpu default is the
       conservative reading of a measurement that moves with thread count
       rather than a claim that batching cannot pay there. Either way the
-      torch fit is far from competitive with the compiled backend on cpu.
+      torch fit is far from competitive with ``Vinecop`` on cpu.
 
       A level carrying a discrete edge or a conditioning context is always
       fitted edge at a time: those cannot stack.
@@ -201,11 +213,14 @@ default="tau"
   Structure selection runs natively on the torch interpolation grids. It is
   TLL-only, and the criteria for automatic truncation / thresholding (``aic`` /
   ``bic`` / ``mbicv``) are not available here: ``trunc_lvl`` is a fixed cap.
+
+  This *is* a :class:`FitControlsTorchBicop`, so the settings governing each
+  pair-copula fit are its own attributes rather than a nested object, and one
+  controls instance configures both halves of a vine fit. The same holds for
+  :class:`~pyvinecopulib.core.FitControlsVinecop` and
+  :class:`~pyvinecopulib.core.FitControlsBicop`.
   """
 
-  bicop_controls: FitControlsTorchBicop = field(
-    default_factory=FitControlsTorchBicop
-  )
   trunc_lvl: int = 20
   tree_criterion: str = "tau"
   threshold: float = 0.0
@@ -213,12 +228,13 @@ default="tau"
   seeds: list[int] = field(default_factory=list)
   conditioning_set: list[int] = field(default_factory=list)
   cache_integrals: Optional[bool] = None
-  device: Optional[Any] = None
-  dtype: Optional[Any] = None
+  device: torch.types.Device = None
+  dtype: Optional[torch.dtype] = None
   compile: bool = False
   batched_fit: Optional[bool] = None
 
   def __post_init__(self) -> None:
+    super().__post_init__()
     if self.tree_algorithm not in TREE_ALGORITHMS:
       raise ValueError(
         f"unknown tree_algorithm={self.tree_algorithm!r}; expected one of "

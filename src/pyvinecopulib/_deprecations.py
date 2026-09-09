@@ -41,12 +41,14 @@ _DEPRECATED_TOP_LEVEL: dict[str, tuple[str, str]] = {
   "sobol": ("utils", "sobol"),
   "ghalton": ("utils", "ghalton"),
   "simulate_uniform": ("utils", "sample_uniform"),
-  "benchmark": ("utils", "benchmark"),
   "pairs_copula_data": ("utils", "pairs_copula_data"),
 }
 
 
-def _resolve_deprecated(name: str) -> Any:
+# Every `Any` in this module is one name resolving to another: a class, a
+# function or a subpackage on the way out, and a forwarded call's own
+# arguments. There is no narrower type for "whatever was renamed".
+def _resolve_deprecated(name: str) -> Any:  # noqa: ANN401
   subpkg, attr = _DEPRECATED_TOP_LEVEL[name]
   warnings.warn(
     f"`pyvinecopulib.{name}` is deprecated; use "
@@ -57,7 +59,11 @@ def _resolve_deprecated(name: str) -> Any:
   return getattr(importlib.import_module(f"pyvinecopulib.{subpkg}"), attr)
 
 
-def _method_alias(new: Any, old_name: str, qualname: str) -> Any:
+def _method_alias(
+  new: Any,  # noqa: ANN401
+  old_name: str,
+  qualname: str,
+) -> Any:  # noqa: ANN401
   """Build a deprecated alias for a renamed method.
 
   Parameters
@@ -82,7 +88,7 @@ def _method_alias(new: Any, old_name: str, qualname: str) -> Any:
   # with "Cannot handle as a local function". It also sets `__wrapped__`, so
   # `inspect.signature` reports the forwarded method's real signature.
   @functools.wraps(new)
-  def alias(*args: Any, **kwargs: Any) -> Any:
+  def alias(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
     warnings.warn(
       f"`pyvinecopulib.{qualname}.{old_name}()` is deprecated; use "
       f"`pyvinecopulib.{qualname}.{new_name}()` instead.",
@@ -111,32 +117,3 @@ def _method_alias(new: Any, old_name: str, qualname: str) -> Any:
   tagged: Any = alias
   del tagged.__wrapped__
   return alias
-
-
-def _reject_renamed_hook(cls: type, old: str, new: str) -> None:
-  """Fail loudly when a subclass overrides a hook under its former name.
-
-  A renamed hook is the one rename that cannot fail visibly on its own: the base
-  class simply stops calling the old name, so the override is ignored and the
-  inherited default raises as though nothing were overridden.
-
-  Parameters
-  ----------
-  cls : type
-      The subclass being defined.
-  old : str
-      The former hook name.
-  new : str
-      The current hook name.
-
-  Raises
-  ------
-  TypeError
-      If ``cls`` defines ``old`` and not ``new``.
-  """
-  if old in vars(cls) and new not in vars(cls):
-    raise TypeError(
-      f"{cls.__name__} defines `{old}`, which is now `{new}`. Rename the "
-      f"override: the base class no longer calls `{old}`, so sampling would "
-      "raise NotImplementedError rather than use it."
-    )

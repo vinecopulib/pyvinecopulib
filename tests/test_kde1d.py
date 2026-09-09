@@ -1,5 +1,6 @@
 import math
 import pickle
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -41,6 +42,30 @@ def test_kde1d_initialization() -> None:
   # Test zero-inflated type
   kde = pv.core.Kde1d(type="zero_inflated")
   assert kde.type == "zero-inflated"
+
+
+def test_kde1d_answers_the_three_fitting_verbs() -> None:
+  """`fit`, `select` and `from_data`, as every other margin does.
+
+  `Kde1d` is the default margin, so a reader following the one-fitting-shape
+  rule reaches for `from_data` on it first. `select` reduces to `fit` because
+  a kernel density has no family to choose -- the equivalence upstream states
+  for `Bicop::select` with `select_families = false`.
+  """
+  y = np.random.default_rng(0).gamma(2.0, 1.0, size=300)
+
+  fitted = pv.core.Kde1d.from_data(y, xmin=0.0)
+  assert isinstance(fitted, pv.core.Kde1d)
+  assert fitted.xmin == 0.0
+  assert np.isfinite(fitted.loglik())
+
+  # `select` is `fit`: the same object back, and the same fit.
+  chosen = pv.core.Kde1d(xmin=0.0)
+  assert chosen.select(y) is chosen
+  np.testing.assert_allclose(chosen.loglik(), fitted.loglik(), rtol=0.0)
+
+  by_hand = pv.core.Kde1d(xmin=0.0).fit(y)
+  np.testing.assert_allclose(fitted.pdf(y[:20]), by_hand.pdf(y[:20]), rtol=0.0)
 
 
 def test_kde1d_factory_methods() -> None:
@@ -555,7 +580,7 @@ def test_json_round_trip_of_an_unfitted_estimator() -> None:
   assert restored.type == kde.type
 
 
-def test_to_file_selects_cbor_by_extension(tmp_path) -> None:
+def test_to_file_selects_cbor_by_extension(tmp_path: Path) -> None:
   """The same extension rule `Bicop.to_file` follows."""
   kde = pv.core.Kde1d().fit(np.random.default_rng(2).normal(size=300))
   q = np.linspace(-2.0, 2.0, 5)
@@ -564,3 +589,99 @@ def test_to_file_selects_cbor_by_extension(tmp_path) -> None:
     kde.to_file(str(path))
     restored = pv.core.Kde1d.from_file(str(path))
     np.testing.assert_array_equal(restored.pdf(q), kde.pdf(q), name)
+
+
+@pytest.mark.parametrize(
+  ("bad", "match"),
+  [
+    ("all_nan_weights", "at least one observation standing"),
+    ("all_zero_weights", "at least one observation standing"),
+    ("all_nan_data", "at least one observation standing"),
+    ("inf", "must not contain infinite"),
+    ("negative", "nonnegative"),
+    ("wrong_length", "one weight per observation"),
+  ],
+)
+def test_kde1d_refuses_inputs_that_leave_nothing_to_fit(
+  bad: str, match: str
+) -> None:
+  """``Kde1d`` refuses inputs its rescaling cannot survive.
+
+  A ``NaN`` observation, a ``NaN`` weight and a zero weight each mark a dropped
+  observation, and the fit rescales by what is left; when nothing is left it
+  divided by zero and walked an empty grid, which reached the caller as a
+  segfault. A negative weight is not a marker at all and used to fit a density
+  that was not the weighted one.
+  """
+  y = np.random.default_rng(0).normal(size=100)
+  data, weights = {
+    "all_nan_weights": (y, np.full(100, np.nan)),
+    "all_zero_weights": (y, np.zeros(100)),
+    "all_nan_data": (np.full(100, np.nan), np.ones(100)),
+    "inf": (y, np.where(np.arange(100) == 3, np.inf, 1.0)),
+    "negative": (y, np.where(np.arange(100) == 3, -1.0, 1.0)),
+    "wrong_length": (y, np.ones(99)),
+  }[bad]
+  for call in (
+    lambda: pv.core.Kde1d().fit(data, weights),
+    lambda: pv.core.Kde1d().select(data, weights),
+    lambda: pv.core.Kde1d.from_data(data, weights),
+  ):
+    with pytest.raises(ValueError, match=match):
+      call()
+
+
+def test_kde1d_survives_the_inputs_that_used_to_crash_it() -> None:
+  """The refusal must be an exception, not a crash.
+
+  Asserted out of process: if the guard is ever dropped, the failure is a
+  ``SIGSEGV`` that would take the whole pytest run down rather than fail a
+  single test, so ``pytest.raises`` cannot express it.
+  """
+  import subprocess
+  import sys
+
+  program = (
+    "import numpy as np, pyvinecopulib as pv\n"
+    "y = np.random.default_rng(0).normal(size=100)\n"
+    "cases = ((y, np.full(100, np.nan)), (y, np.zeros(100)),\n"
+    "         (np.full(100, np.nan), np.ones(100)))\n"
+    "for data, w in cases:\n"
+    "    try:\n"
+    "        pv.core.Kde1d().fit(data, w)\n"
+    "    except ValueError:\n"
+    "        pass\n"
+    "try:\n"
+    "    pv.core.Kde1d().fit(np.full(100, np.nan))\n"
+    "except ValueError:\n"
+    "    pass\n"
+    "print('survived')\n"
+  )
+  done = subprocess.run(
+    [sys.executable, "-c", program], capture_output=True, text=True
+  )
+  assert done.returncode == 0, f"interpreter died: {done.returncode}"
+  assert "survived" in done.stdout
+
+
+def test_kde1d_still_accepts_the_drop_markers_it_documents() -> None:
+  """A ``NaN`` or zero weight drops its observation; it is not an error.
+
+  Upstream's own ``remove_nans`` treats all three markers that way, so the
+  guard must refuse only the case where *every* row is dropped.
+  """
+  rng = np.random.default_rng(1)
+  y = rng.normal(size=200)
+  q = np.linspace(-2.0, 2.0, 9)
+  every_other = np.where(np.arange(200) % 2 == 0, 1.0, np.nan)
+  half_zero = np.where(np.arange(200) % 2 == 0, 1.0, 0.0)
+  partial_nan_data = np.where(np.arange(200) < 100, y, np.nan)
+  for data, weights in (
+    (y, rng.random(200) + 0.5),
+    (y, every_other),
+    (y, half_zero),
+    (partial_nan_data, np.ones(200)),
+  ):
+    assert np.all(np.isfinite(pv.core.Kde1d().fit(data, weights).pdf(q)))
+  # An omitted vector is the documented "no weights" default, not all-zero.
+  assert np.all(np.isfinite(pv.core.Kde1d().fit(y).pdf(q)))

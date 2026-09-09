@@ -30,7 +30,7 @@ env:
 jobs:
 
   lint:
-    # Gates the wheel matrix: 10 cibuildwheel legs should not start behind a
+    # Guards the wheel matrix: 10 cibuildwheel legs should not start behind a
     # formatting error. `ty` is not here — it reads the .pyi stubs a build
     # generates, so it stays in `build_sdist` where the editable install exists.
     name: Lint
@@ -613,8 +613,8 @@ jobs:
       # Rehearsal for the real upload: the same artifacts, action and
       # credentialing path, against a registry where a mistake is survivable.
       # Manual because it is one-shot -- Test PyPI refuses a re-upload of a
-      # version it already has, just as PyPI does -- so it is spent
-      # deliberately, on the commit about to be tagged.
+      # version it already has, just as PyPI does -- so it is spent once, on
+      # the commit about to be tagged.
       - name: Publish distribution to Test PyPI
         if: |
           job.status == 'success'

@@ -1,5 +1,6 @@
 import math
 from numbers import Integral
+from typing import Any, Callable, Iterable, Iterator, Optional
 
 import numpy as np
 from sklearn.base import RegressorMixin
@@ -15,7 +16,11 @@ from ._base import (
   _DOC_REFERENCES,
   VineBase,
   _as_ndarray,
+  _RandomStateLike,
+  _XLike,
+  _YLike,
 )
+from .backends import _VinecopBackendBase
 
 # Half-width, in standard deviations, of the probit substitution behind the
 # quadrature nodes: the outermost node sits at Phi(-a), so this is how far into
@@ -27,7 +32,7 @@ _PROBIT_HALF_WIDTH = 5.0
 
 class VineRegressor(RegressorMixin, VineBase):
   # Inherits VineBase._parameter_constraints; extend with regressor knobs.
-  _parameter_constraints: dict = {
+  _parameter_constraints: dict[str, list[object]] = {
     **VineBase._parameter_constraints,
     "mean": ["boolean"],
     "quantiles": ["array-like", None],
@@ -39,15 +44,15 @@ class VineRegressor(RegressorMixin, VineBase):
   def __init__(
     self,
     mean: bool = True,
-    quantiles=None,
-    backend=None,
-    margins=None,
+    quantiles: Optional[_YLike] = None,
+    backend: Optional[_VinecopBackendBase[Any]] = None,
+    margins: object = None,
     batch_size: int = 100,
     use_grid: bool = True,
     n_nodes: int = 401,
     normalize_weights: bool = True,
-    random_state=None,
-    n_jobs=None,
+    random_state: _RandomStateLike = None,
+    n_jobs: Optional[int] = None,
   ) -> None:
     """Sklearn-compatible vine-copula regressor.
 
@@ -62,15 +67,15 @@ class VineRegressor(RegressorMixin, VineBase):
         If ``True``, predict the conditional mean. Set to ``False``
         to get quantile-only predictions (``quantiles`` must then be
         set).
-    quantiles : array-like of float, shape (n_quantiles,), default=None
+    quantiles : array-like of float, shape (n_quantiles,), or None, optional
         Quantile levels in ``(0, 1)`` to predict. ``None`` disables
         quantile prediction.
-    backend : VinecopBackend or compatible, default=None
+    backend : VinecopBackend or compatible, or None, optional
         Backend instance bundling fit-time controls and an optional
         pre-specified structure on ``(Y, X_1, ..., X_d)`` (`Y`
         always in the first dimension). `None` resolves to a default
         ``VinecopBackend`` with the ``tll`` pair family at fit time.
-    margins : object, default=None
+    margins : object, or None, optional
         The marginal half of the model, in any form
         :func:`pyvinecopulib.margins.resolve_margins` accepts. `None`
         fits a ``Kde1d`` per column. The specification addresses
@@ -105,10 +110,10 @@ class VineRegressor(RegressorMixin, VineBase):
         ``False`` to get the raw copula weights instead -- useful
         when a caller combines the weights of several fitted
         estimators and wants to rescale once, after combining.
-    random_state : int, RandomState instance or None, default=None
+    random_state : int, RandomState instance, or None, optional
         Seeds the RNG used by stochastic operations. Resolved via
         `sklearn.utils.check_random_state` inside `fit`.
-    n_jobs : int or None, default=None
+    n_jobs : int, or None, optional
         Threads the vine may use, for fitting and for every evaluation
         (`pdf`, `cdf`, `sample`, and the prediction paths built on them).
         `None` means one thread and `-1` every processor, following the
@@ -116,7 +121,7 @@ class VineRegressor(RegressorMixin, VineBase):
         structure, the fitted pair copulas and every evaluated value are
         bit-identical at any thread count.
 
-        `None` is deliberate: a caller that parallelizes *over* vines owns
+        `None` has a reason: a caller that parallelizes *over* vines owns
         the parallelism, and nesting it would oversubscribe the machine. Set
         it when a single vine is the whole job.
     """
@@ -286,12 +291,12 @@ class VineRegressor(RegressorMixin, VineBase):
 
     return np.log(np.clip(out, eps, None)) if log else out
 
-  def _weights_for_batch(self, X_batch):
+  def _weights_for_batch(self, X_batch: np.ndarray) -> np.ndarray:
     """Conditional copula weights for one batch of test rows.
 
     Single source of truth for the weight math: `_iter_weights` is
     the batched generator over it and `_predict_from_iter` the
-    consumer. Kept as a separate, directly callable seam so external
+    consumer. Kept as a separate, directly callable hook so external
     code can reuse the exact weight definition. Each weight pairs one
     node :math:`y_k` -- a training response when ``use_grid=False``,
     else :math:`\\hat F_Y^{-1}(p_k)` -- with
@@ -332,7 +337,9 @@ class VineRegressor(RegressorMixin, VineBase):
       w /= np.sum(w, axis=1, keepdims=True)
     return w
 
-  def _iter_weights(self, X):
+  def _iter_weights(
+    self, X: np.ndarray
+  ) -> Iterator[tuple[np.ndarray, int, int]]:
     """Yields ``(weights, start, end)`` per batch for `_predict_from_iter`.
 
     Thin batching wrapper over `_weights_for_batch` (which defines the
@@ -358,7 +365,11 @@ class VineRegressor(RegressorMixin, VineBase):
       end = min(start + self.batch_size, n_test)
       yield self._weights_for_batch(X[start:end]), start, end
 
-  def _predict_from_iter(self, X, iter_weights):
+  def _predict_from_iter(
+    self,
+    X: np.ndarray,
+    iter_weights: Callable[[np.ndarray], Iterable[tuple[np.ndarray, int, int]]],
+  ) -> np.ndarray:
     """Combines batched weights with the response nodes into predictions.
 
     Parameters
@@ -418,7 +429,7 @@ class VineRegressor(RegressorMixin, VineBase):
     # `squeeze()` turns a one-row prediction into a scalar.
     return y_pred[:, 0] if y_pred.shape[1] == 1 else y_pred
 
-  def predict(self, X):
+  def predict(self, X: _XLike) -> np.ndarray:
     """Predicts the conditional mean and/or quantiles of ``Y`` given ``X``.
 
     Computes weights :math:`w_k(x)` from the fitted copula
@@ -432,7 +443,7 @@ class VineRegressor(RegressorMixin, VineBase):
 
     Parameters
     ----------
-    X : ndarray, shape (n_samples, n_features), dtype float, or DataFrame
+    X : array-like of float, shape (n_samples, n_features), or DataFrame
         Test covariates. Must match the training schema.
 
     Returns
@@ -448,7 +459,12 @@ class VineRegressor(RegressorMixin, VineBase):
     X = self._validate_input(X, reset=False)
     return self._predict_from_iter(X, self._iter_weights)
 
-  def score(self, X, y, sample_weight=None) -> float:
+  def score(
+    self,
+    X: _XLike,
+    y: _YLike,
+    sample_weight: Optional[_YLike] = None,
+  ) -> float:
     """Return :math:`R^2` for the fitted conditional mean.
 
     Quantile columns are supplementary prediction outputs, not independent
@@ -457,11 +473,11 @@ class VineRegressor(RegressorMixin, VineBase):
 
     Parameters
     ----------
-    X : array-like or pandas.DataFrame
+    X : array-like of float, shape (n_samples, n_features), or DataFrame
         Covariates to predict.
-    y : array-like
+    y : array-like of float, shape (n_samples,)
         Observed response values.
-    sample_weight : array-like, optional
+    sample_weight : array-like of float, shape (n_samples,), or None, optional
         Per-observation weights for the coefficient of determination.
 
     Returns

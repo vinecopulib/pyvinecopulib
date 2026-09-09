@@ -1,5 +1,18 @@
 """Canonical partial implementation of the univariate-margin contract.
 
+``MarginBase`` is the array-agnostic base class for ``MarginLike``: a subclass
+supplies the density ``pdf`` and the distribution function ``cdf``, and
+inherits the quantile function, the derived log-density and left limit, the
+log-likelihood with its information criteria, and the sampler. One more
+method, ``fit``, makes the class an estimator, since ``select`` and
+``from_data`` are defined in terms of it.
+
+Two helpers the rest of the package shares live here as well, so that one
+definition serves every margin: ``derive_cdf_left``, the left limit ``F(y^-)``
+a variable type implies for a family that supplies no exact one of its own,
+and ``support_of``, which reads ``(lo, hi)`` off a distribution object from
+another ecosystem however that object spells its support.
+
 Written against the Array API (``array_api_compat.array_namespace``), so a
 subclass works on NumPy or PyTorch without change. Arrays are typed ``Any``
 per the ``pyvinecopulib.core`` typing policy (the Array API namespace is
@@ -10,13 +23,21 @@ inherits precise return types.
 from __future__ import annotations
 
 from abc import ABC
-from typing import Any, Optional, cast
+from typing import Any, Optional, Self, Union, cast
 
+import numpy as _np
 from array_api_compat import array_namespace
 
+from ._covariates import declared_eval, prepare
+from ._margin_plot import (
+  MARGIN_PLOT_PARAMS,
+  MARGIN_PLOT_SUMMARY,
+  margin_plot,
+)
+from ._placement import PlacementMixin
 from ._rootfind import solve_increasing
-from ._validation import validate_covariates, validate_weights
-from .protocols import _MARGIN_EXAMPLE, ArrayT, MarginLike
+from ._validation import reject_array_controls, validate_weights
+from .protocols import _MARGIN_EXAMPLE, ArrayT, ControlsLike, MarginLike
 
 __all__ = ["MarginBase"]
 
@@ -33,17 +54,14 @@ __all__ = ["MarginBase"]
 #: has a closed form.
 _ICDF_ITER: int = 110
 
-#: Variable types a margin may declare. ``"zi"`` (zero-inflated) is a margin-level
-#: distinction; a vine sees it as ``"d"``, since what it needs is the left limit.
 
-
-def support_of(obj: Any) -> tuple[float, float]:
+def support_of(obj: object) -> tuple[float, float]:
   """Read ``(lo, hi)`` off an object that may spell its support three ways.
 
-  SciPy exposes ``support()`` as a method, PyTorch a ``support`` property holding
-  a ``Constraint``, and most objects nothing at all. A parameter-derived endpoint
-  arrives as a tensor that may carry a gradient, so it is detached before being
-  read as a scalar -- duck-typed, since ``core`` does not import torch.
+  SciPy exposes ``support()`` as a method, PyTorch a ``support`` property
+  holding a ``Constraint``, and most objects nothing at all. An endpoint
+  derived from a parameter may arrive carrying a gradient, so it is read as a
+  detached scalar -- duck-typed, since ``core`` does not import torch.
 
   Parameters
   ----------
@@ -57,10 +75,11 @@ def support_of(obj: Any) -> tuple[float, float]:
   """
   unbounded = (float("-inf"), float("inf"))
 
-  def scalar(bound: Any, fallback: float) -> float:
+  def scalar(bound: Union[float, ArrayT, None], fallback: float) -> float:
     if bound is None:
       return fallback
-    return float(bound.detach() if hasattr(bound, "detach") else bound)
+    b: Any = bound
+    return float(b.detach() if hasattr(b, "detach") else b)
 
   support = getattr(obj, "support", None)
   if support is None:
@@ -68,7 +87,7 @@ def support_of(obj: Any) -> tuple[float, float]:
   if callable(support):
     try:
       lo, hi = support()
-    except Exception:  # noqa: BLE001 - a foreign object may refuse; fall back
+    except Exception:
       return unbounded
     return (scalar(lo, unbounded[0]), scalar(hi, unbounded[1]))
   # A torch `Constraint`; only the interval-like ones carry usable bounds.
@@ -78,30 +97,9 @@ def support_of(obj: Any) -> tuple[float, float]:
   )
 
 
-def _reject_covariates(margin: Any, x: Optional[Any]) -> None:
-  """Raise if ``x`` was supplied to a margin that fits unconditionally.
-
-  Evaluation ignores covariates a margin does not read, since one distribution
-  may mix conditional and unconditional margins and they all see the same ``x``.
-  Fitting cannot: silently estimating ``f(y)`` when ``f(y | x)`` was asked for
-  returns a different model than the caller believes they have.
-
-  Raises
-  ------
-  ValueError
-      If ``x`` is not ``None``.
-  """
-  if x is not None:
-    raise ValueError(
-      f"{type(margin).__name__} does not model covariates, so it cannot be "
-      "fitted with x=; write a margin whose fit reads them and that declares "
-      "supports_covariates, or drop x."
-    )
-
-
 def derive_cdf_left(
-  margin: Any, y: Any, x: Optional[Any], var_type: str
-) -> Any:
+  margin: MarginLike[ArrayT], y: ArrayT, x: Optional[ArrayT], var_type: str
+) -> ArrayT:
   """Left limit ``F(y^-)`` derived from a margin's ``cdf`` and ``var_type``.
 
   The one place the derivation lives, so a margin that declares atoms and
@@ -116,7 +114,7 @@ def derive_cdf_left(
       The margin to read ``cdf`` (and, for ``"zi"``, ``pdf``) from.
   y : array, shape (n,), dtype float
       Observations on the original scale.
-  x : array, shape (n, k), or None
+  x : array, shape (n, p), or None, optional
       Exogenous covariates, forwarded only to a margin that reads them.
   var_type : {"c", "d", "zi"}
       The margin's variable type.
@@ -133,7 +131,7 @@ def derive_cdf_left(
       derivation steps back one lattice point.
   """
   if var_type == "c":
-    return _margin_eval(margin, "cdf", y, x)
+    return cast("ArrayT", declared_eval(margin, "cdf", y, x))
 
   ya: Any = y
   xp = array_namespace(ya)
@@ -143,56 +141,154 @@ def derive_cdf_left(
         f"{type(margin).__name__} declares var_type='d', so y must be "
         "integer-valued; give it a cdf_left for a support on another lattice."
       )
-    return _margin_eval(margin, "cdf", ya - 1, x)
+    return cast("ArrayT", declared_eval(margin, "cdf", ya - 1, x))
 
   # Zero-inflated: the only atom is at 0, and its mass is `pdf(0)`.
-  upper: Any = _margin_eval(margin, "cdf", y, x)
-  mass: Any = _margin_eval(margin, "pdf", y, x)
-  return xp.where(ya == 0, xp.clip(upper - mass, 0.0, 1.0), upper)
+  upper: Any = declared_eval(margin, "cdf", y, x)
+  mass: Any = declared_eval(margin, "pdf", y, x)
+  return cast(
+    "ArrayT", xp.where(ya == 0, xp.clip(upper - mass, 0.0, 1.0), upper)
+  )
 
 
-def _margin_eval(margin: Any, name: str, values: Any, x: Optional[Any]) -> Any:
-  """Evaluate a margin method, forwarding ``x`` only when it is read.
+def criteria(loglik: float, k: float, n: Optional[float]) -> dict[str, float]:
+  """The three information criteria at one fit.
 
-  Unlike the pair-copula gate, an unconditional margin *ignores* covariates
-  rather than refusing them: one vine distribution may hold conditional and
-  unconditional margins side by side, and the caller cannot be asked to know
-  which is which. A margin opts in by declaring ``supports_covariates``, which
-  is also what makes forgetting the declaration a visibly unconditional fit
-  rather than a silently ignored keyword.
+  The arithmetic in one place, because it is needed twice over: from a fitted
+  margin, which knows its own log-likelihood and parameter count, and from
+  loose numbers during a family search, where no margin object exists yet.
+
+  Parameters
+  ----------
+  loglik : float
+      Maximized log-likelihood.
+  k : float
+      Number of freely estimated parameters.
+  n : float, or None, optional
+      Number of observations -- a float, since a weighted fit's effective
+      count is not an integer. ``None`` leaves the two criteria that penalize
+      by sample size undefined rather than guessing one.
+
+  Returns
+  -------
+  dict
+      ``{"aic", "bic", "aicc"}``. A criterion is ``inf`` where it is not
+      defined -- a non-finite log-likelihood, an unknown ``n``, or fewer
+      observations than ``aicc``'s correction can carry -- so a candidate can
+      never win a search by being undefined.
   """
-  method = getattr(margin, name)
-  if x is None or not getattr(margin, "supports_covariates", False):
-    return method(values)
-  return method(values, x=x)
+  if not _np.isfinite(loglik):
+    return {"aic": float("inf"), "bic": float("inf"), "aicc": float("inf")}
+  aic = -2.0 * loglik + 2.0 * k
+  if n is None:
+    return {"aic": aic, "bic": float("inf"), "aicc": float("inf")}
+  bic = -2.0 * loglik + k * float(_np.log(n))
+  tail = n - k - 1.0
+  aicc = aic + (2.0 * k * (k + 1.0) / tail if tail > 0 else float("inf"))
+  return {"aic": aic, "bic": bic, "aicc": aicc}
 
 
-class MarginBase(MarginLike[ArrayT], ABC):
-  """Canonical partial implementation of :class:`MarginLike`.
+def safe_log(dens: ArrayT) -> ArrayT:
+  """Log of a density, with a zero mapped to ``-inf`` rather than a warning.
 
-  Subclasses implement ``pdf`` and ``cdf`` and inherit ``icdf`` (numerical
-  inversion of ``cdf`` over :attr:`support`), ``logpdf``, ``cdf_left``,
-  ``loglik``, ``sample`` and ``__repr__``. Override any of them with a
-  closed form where one exists — in particular ``icdf`` and ``cdf_left``, whose
-  defaults are correct but not the most accurate route for a family that knows
-  its own quantile function or left limit.
+  A density is legitimately zero off its support, and ``log(0)`` there is the
+  right answer -- but computing it directly warns, and on some namespaces
+  returns a ``nan``. The mask is applied before the log rather than after, so
+  nothing invalid is evaluated.
+
+  Lives here because both halves of a vine distribution need it: a margin's own ``logpdf`` and the fallback
+  :class:`~pyvinecopulib.core.VinedistBase` applies to a foreign margin that
+  supplies no ``logpdf`` of its own.
+
+  Parameters
+  ----------
+  dens : array
+      Density or mass values, nonnegative.
+
+  Returns
+  -------
+  array
+      ``log(dens)``, and ``-inf`` wherever ``dens`` is not positive.
+  """
+  d: Any = dens
+  xp = array_namespace(d)
+  positive = d > 0
+  safe = xp.where(positive, d, xp.ones_like(d))
+  return cast(
+    "ArrayT", xp.where(positive, xp.log(safe), xp.full_like(d, float("-inf")))
+  )
+
+
+class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
+  """Canonical partial implementation of ``MarginLike``.
+
+  A subclass writes two methods. ``pdf`` is the density with respect to the
+  margin's **own** reference measure -- a Lebesgue density for a continuous
+  margin, a probability mass at an atom -- which is what makes
+  ``log f(y) = log c(u) + sum_j log pdf_j(y_j)`` hold verbatim for continuous,
+  discrete and mixed margins alike, with no branch on the variable type.
+  ``cdf`` is the distribution function.
+
+  Two properties say what kind of variable the margin describes, and the
+  derived members read them: :attr:`var_type` (``"c"``, ``"d"`` or ``"zi"``)
+  and :attr:`support`, the bounds ``(lo, hi)``, either of which may be
+  infinite. Both default to the continuous, unbounded answer.
+
+  Everything else comes with the class: :meth:`logpdf`; :meth:`cdf_left`, the
+  left limit a variable with atoms needs; :meth:`icdf`, by numerical inversion
+  of ``cdf`` over :attr:`support`; :meth:`loglik`, the fit record
+  :attr:`nobs` / :attr:`n_parameters`, and the criteria :meth:`aic` /
+  :meth:`bic` / :meth:`aicc` on top of the three; :meth:`sample`, which
+  needs a ``_sample_uniform`` hook for the array namespace's RNG; and
+  ``__repr__``. Override any of them where the family has a closed form --
+  above all ``icdf`` and ``cdf_left``, whose defaults are correct but are not
+  the most accurate route for a family that knows its own quantile function or
+  left limit.
 
   Every member takes the observations positionally and covariates as a
-  keyword-only ``x``, so a subclass that models ``f(y)`` writes ``pdf(self, y)``
-  and one that models ``f(y | x)`` writes ``pdf(self, y, *, x=None)`` and sets
-  :attr:`supports_covariates`. The inherited members forward ``x`` only to a
-  margin that declares it, so both shapes are complete.
+  keyword-only ``x``, so a subclass that models ``f(y)`` writes
+  ``pdf(self, y)`` and one that models ``f(y | x)`` writes
+  ``pdf(self, y, *, x=None)`` and sets :attr:`supports_covariates`. The
+  inherited members forward ``x`` only to a margin that declares it, so both
+  shapes are complete.
 
-  A margin is also its own estimator: hyperparameters go in ``__init__``, and
-  :meth:`fit` estimates the remaining parameters in place and returns ``self``,
-  as :class:`pyvinecopulib.core.Kde1d` and the scikit-learn estimators do. A
-  margin whose parameters are fully specified at construction is already fitted
-  and need not override :meth:`fit`.
+  A margin is also its own estimator. Hyperparameters go in ``__init__``, and
+  the estimator surface is four members:
+
+  - :meth:`fit` estimates the remaining parameters in place and returns
+    ``self``, as ``Kde1d`` and the scikit-learn estimators do. It raises
+    here, because a margin whose parameters are fully specified at
+    construction is already fitted -- which is what :attr:`is_fitted`
+    reports.
+  - :meth:`select` chooses the family as well, and defaults to :meth:`fit`
+    wherever there is nothing to choose.
+  - :meth:`from_data` is ``cls().select(...)``, so naming this class as a
+    vine distribution's ``margin_class`` is enough to have one margin fitted
+    per variable.
+  - :meth:`declare` accepts what the *caller* knows about the variable ahead
+    of the fit -- a type, declared bounds. Those are defaults, never
+    instructions: an explicit constructor argument outranks them. The type is
+    recorded in ``_declared_var_type``, which a searching :meth:`select`
+    reads.
+
+  Called with no data, :meth:`loglik` and the criteria report the fit itself:
+  the value a subclass records under ``_fitted_loglik``, penalized by
+  :attr:`n_parameters` and, for :meth:`bic` and :meth:`aicc`, by :attr:`nobs`.
+  An estimator records those two in ``_n_free`` and ``_nobs`` and inherits both
+  properties, so a fitted margin is comparable with every other one.
+
+  Everything past ``pdf`` / ``cdf`` / ``icdf`` is an optional capability a
+  consumer reads with ``getattr``, because each member added to the contract
+  is one an object from another ecosystem must happen to have. Hence the
+  declarations rather than inferences: :attr:`supports_weights`,
+  :attr:`supports_controls` and
+  :attr:`supports_covariates`.
 
   See Also
   --------
   MarginLike : The contract this fills in.
   pyvinecopulib.core.BicopBase : The pair-copula analog.
+  pyvinecopulib.margins.SciPyMargin : A reference subclass.
   """
 
   #: Whether :meth:`fit` accepts observation weights. Declared per family so a
@@ -200,33 +296,19 @@ class MarginBase(MarginLike[ArrayT], ABC):
   #: rather than a silently unweighted fit.
   supports_weights: bool = False
 
-  #: Which variable types this family can serve, as a superset of what any one
-  #: instance currently declares through :attr:`var_type`. A selector uses it to
-  #: judge admissibility before configuring a candidate, where ``var_type`` can
-  #: only report what the candidate already is.
-  supported_var_types: tuple[str, ...] = ("c",)
-
   #: Whether this margin reads the exogenous covariates ``x``, i.e. whether it
   #: models ``f(y | x)`` rather than ``f(y)``. Declared so consumers can omit
   #: ``x`` entirely for an unconditional margin, which is what lets a margin
   #: written against ``pdf(self, y)`` stay valid.
   supports_covariates: bool = False
-
-  def __init_subclass__(cls, **kwargs: Any) -> None:
-    """Reject an override of the pre-1.0 hook name.
-
-    Parameters
-    ----------
-    **kwargs
-        Forwarded to ``super().__init_subclass__``.
-    """
-    super().__init_subclass__(**kwargs)
-
   # --- optional capabilities, with continuous-correct defaults ------------- #
 
   @property
   def var_type(self) -> str:
     """Variable type: ``"c"``, ``"d"`` or ``"zi"``.
+
+    ``"zi"`` (zero-inflated) is a margin-level distinction; a vine sees such a
+    variable as ``"d"``, since what it needs from it is the left limit.
 
     Returns
     -------
@@ -239,8 +321,9 @@ class MarginBase(MarginLike[ArrayT], ABC):
   def support(self) -> tuple[float, float]:
     """Closed bounds of the support, as ``(lo, hi)``.
 
-    Infinite bounds are ``-inf`` / ``inf`` rather than ``None`` or ``NaN``, so
-    comparisons against them are total. :meth:`icdf` brackets its search here.
+    The interval :meth:`icdf` inverts over. Infinite bounds are ``-inf`` /
+    ``inf`` rather than ``None`` or ``NaN``, so comparisons against them are
+    total.
 
     Returns
     -------
@@ -253,6 +336,9 @@ class MarginBase(MarginLike[ArrayT], ABC):
   def is_fitted(self) -> bool:
     """Whether the margin is ready to evaluate.
 
+    A consumer resolving a margin specification reads this to decide whether
+    the margin still needs fitting.
+
     Returns
     -------
     bool
@@ -260,76 +346,204 @@ class MarginBase(MarginLike[ArrayT], ABC):
     """
     return True
 
+  #: Whether :meth:`fit` and :meth:`select` take a ``controls`` argument.
+  #: ``True`` here, since both do. A margin whose estimator is configured
+  #: entirely at construction sets it ``False``, so a consumer keeps controls
+  #: out of a call that has no room for them -- and can say so when what they
+  #: carry is an instruction to search rather than a default.
+  supports_controls: bool = True
+
+  #: The variable type a caller declared through :meth:`declare`, with
+  #: ``"zi"`` reduced to ``"d"`` -- the partition a family registry offers. A
+  #: searching :meth:`select` reads it to decide which candidates apply;
+  #: ``None`` means the caller said nothing and the sample decides.
+  _declared_var_type: Optional[str] = None
+
   def declare(
     self,
     *,
     var_type: Optional[str] = None,
     support: Optional[tuple[float, float]] = None,
-  ) -> "MarginBase[ArrayT]":
+  ) -> Self:
     """Accept what the caller knows about the variable, before fitting it.
 
     A caller often knows the variable type and the declared support when the
     margin cannot infer them: an ordered categorical's levels, a column
-    documented as a count, a rate bounded below by zero. Without this, a margin
-    handed such a column re-infers both from the sample, which is strictly less
-    information -- a count column whose smallest observation is 3 looks
-    unbounded from below.
+    documented as a count, a rate bounded below by zero. Without this, a
+    margin handed such a column re-infers both from the sample, which is
+    strictly less information -- a count column whose smallest observation is
+    3 looks unbounded from below.
 
-    The base implementation ignores both, so a margin whose type and support are
-    fixed by construction needs nothing. An override must treat an explicit
-    constructor argument as authoritative and only fill in what was left open,
-    since the caller's schema is a default and not an instruction.
+    A declared type is recorded in ``_declared_var_type`` for a searching
+    :meth:`select` to read, and nothing here honors it: a margin whose type is
+    fixed by construction keeps that type, which is what makes the caller's
+    schema a default rather than an instruction. ``support`` is recorded
+    nowhere, because what a bound narrows differs by family -- override this
+    to take one, as ``SciPyMargin`` does, and treat an explicit constructor
+    argument as authoritative there too.
 
     Parameters
     ----------
-    var_type : str or None, optional
-        ``"c"``, ``"d"`` or ``"zi"``, or ``None`` when the caller does not know.
+    var_type : str, or None, optional
+        ``"c"``, ``"d"`` or ``"zi"``, or ``None`` when the caller does not
+        know.
     support : tuple of float, or None, optional
-        Declared bounds as ``(lo, hi)``, or ``None``. Infinite bounds are
-        ``-inf`` / ``inf``.
+        Declared bounds as ``(lo, hi)``, or ``None``. An unbounded side is
+        ``-inf`` / ``inf``, or ``None`` as ``FitControlsMargin`` spells it.
 
     Returns
     -------
     MarginBase
-        ``self``, so the call chains into :meth:`fit`.
+        ``self``, so the call chains into :meth:`fit` or :meth:`select`.
     """
+    del support
+    if var_type is not None:
+      self._declared_var_type = "d" if var_type == "zi" else var_type
     return self
 
-  def fit(
-    self,
+  @classmethod
+  def from_data(
+    cls,
     y: ArrayT,
     /,
+    controls: Optional[ControlsLike] = None,
     *,
     x: Optional[ArrayT] = None,
     weights: Optional[ArrayT] = None,
-  ) -> "MarginBase[ArrayT]":
-    """Estimate the margin's parameters from data, in place.
+  ) -> Self:
+    """Construct a margin and select it from data.
+
+    ``cls().select(y, ...)``, so a subclass that implements :meth:`fit` gets
+    this for free -- which is what lets a vine distribution name this class as
+    its ``margin_class`` and fit one per variable.
+
+    A margin whose family is named at construction is built that way instead
+    (``SciPyMargin("gamma").fit(y)``); this factory is for the case where the
+    class itself is the whole specification.
 
     Parameters
     ----------
     y : array, shape (n,), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
-        Exogenous covariates, one row per observation. A margin that reads them
-        declares :attr:`supports_covariates`, and sets it when it does.
+    controls : ControlsLike, or None, optional
+        Fit configuration, in whatever form the subclass accepts.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, one row per observation.
+    weights : array, shape (n,), or None, optional
+        Observation weights.
+
+    Returns
+    -------
+    MarginBase
+        The fitted margin.
+
+    See Also
+    --------
+    select : Choose a family for an already-constructed margin, in place.
+    fit : Estimate the current family's parameters, leaving the family alone.
+    """
+    return cls().select(y, controls, x=x, weights=weights)
+
+  def fit(
+    self,
+    y: ArrayT,
+    /,
+    controls: Optional[ControlsLike] = None,
+    *,
+    x: Optional[ArrayT] = None,
+    weights: Optional[ArrayT] = None,
+  ) -> Self:
+    """Estimate the margin's parameters from data, in place.
+
+    Raises here, since a margin whose parameters are fully specified at
+    construction is already fitted; override it to make the class an
+    estimator.
+
+    Parameters
+    ----------
+    y : array, shape (n,), dtype float
+        Observations on the original scale.
+    controls : ControlsLike, or None, optional
+        Fit configuration, in whatever form the subclass accepts; a margin
+        that takes none declares :attr:`supports_controls` ``False``.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, one row per observation. Read only by a margin
+        that declares :attr:`supports_covariates`.
     weights : array, shape (n,), or None, optional
         Observation weights; only accepted when :attr:`supports_weights`.
 
     Returns
     -------
     MarginBase
-        ``self``, so the call chains.
+        ``self``, so the call chains -- once a subclass overrides this.
 
     Raises
     ------
     NotImplementedError
-        If the subclass has no estimator; a margin specified entirely at
-        construction is already fitted and does not need one.
+        Always, unless a subclass provides an estimator.
+
+    See Also
+    --------
+    select : Choose a family as well, where the margin has one to choose.
+    from_data : Construct and fit in one call.
     """
     raise NotImplementedError(
       f"{type(self).__name__}.fit is not defined; implement it to estimate "
       "this margin from data, or construct it with explicit parameters."
     )
+
+  def select(
+    self,
+    y: ArrayT,
+    /,
+    controls: Optional[ControlsLike] = None,
+    *,
+    x: Optional[ArrayT] = None,
+    weights: Optional[ArrayT] = None,
+  ) -> Self:
+    """Choose a family for this margin and estimate it, in place.
+
+    Defaults to :meth:`fit`, which is the right answer whenever there is
+    nothing to choose: a margin named with its family, or a nonparametric one,
+    is fully determined by its parameters. Override it in a subclass that
+    searches a candidate set -- ``SciPyMargin`` does -- and have it set the
+    family it chose before estimating.
+
+    Parameters
+    ----------
+    y : array, shape (n,), dtype float
+        Observations on the original scale.
+    controls : ControlsLike, or None, optional
+        Fit configuration, in whatever form the subclass accepts. The margins
+        in ``pyvinecopulib.margins`` read a ``FitControlsMargin``, whose
+        ``family_set`` and ``selection_criterion`` bound the search.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, one row per observation.
+    weights : array, shape (n,), or None, optional
+        Observation weights.
+
+    Returns
+    -------
+    MarginBase
+        ``self``, so the call chains.
+
+    See Also
+    --------
+    fit : Estimate the current family's parameters, leaving the family alone.
+    """
+    reject_array_controls(self, controls)
+    # Each argument is forwarded only when there is one, so a subclass whose
+    # `fit` takes no covariates, no weights or no controls still works through
+    # `select` -- and refuses loudly when handed one it cannot honor. The rule
+    # `fit_margin` already applies.
+    passed: dict[str, Any] = {}
+    if x is not None:
+      passed["x"] = x
+    if weights is not None:
+      passed["weights"] = weights
+    if controls is None:
+      return self.fit(y, **passed)
+    return self.fit(y, controls, **passed)
 
   # --- derived evaluation surface ------------------------------------------ #
 
@@ -340,7 +554,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
     ----------
     y : array, shape (n,), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation.
 
     Returns
@@ -348,29 +562,30 @@ class MarginBase(MarginLike[ArrayT], ABC):
     array, shape (n,), dtype float
         Log-density, ``-inf`` where the density vanishes.
     """
-    validate_covariates(x, int(cast(Any, y).shape[0]))
-    dens: Any = _margin_eval(self, "pdf", y, x)
-    xp = array_namespace(dens)
-    positive = dens > 0
-    safe = xp.where(positive, dens, xp.ones_like(dens))
-    return cast(
-      ArrayT,
-      xp.where(positive, xp.log(safe), xp.full_like(dens, float("-inf"))),
-    )
+    ya = self._prep_args(y)
+    x = prepare(self, x, int(cast("Any", ya).shape[0]))
+    dens: Any = declared_eval(self, "pdf", ya, x)
+    return cast("ArrayT", safe_log(dens))
 
   def cdf_left(self, y: ArrayT, /, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Left limit ``F(y^-)`` of the distribution function.
 
     A vine needs this wherever a margin has atoms: ``F(y)`` alone does not
-    identify the copula there. The default is derived from :attr:`var_type` —
+    identify the copula there. The default is derived from :attr:`var_type` --
     it coincides with ``cdf`` for a continuous margin, steps back one lattice
     point for a discrete one, and removes the atom for a zero-inflated one.
+
+    Override it wherever the family has an exact left limit (Poisson's
+    ``gammaincc(k, mu)``, a categorical's ``cumsum(probs)[k - 1]``). A derived
+    one is weaker on both routes: subtracting the atom from ``cdf`` cancels in
+    the right tail, and stepping back a lattice point is meaningless off an
+    integer lattice.
 
     Parameters
     ----------
     y : array, shape (n,), dtype float
         Observations on the original scale.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation.
 
     Returns
@@ -384,29 +599,32 @@ class MarginBase(MarginLike[ArrayT], ABC):
         If :attr:`var_type` is ``"d"`` and ``y`` is not integer-valued, since
         the default steps back by one.
     """
-    validate_covariates(x, int(cast(Any, y).shape[0]))
-    return cast(ArrayT, derive_cdf_left(self, y, x, self.var_type))
+    ya = self._prep_args(y)
+    x = prepare(self, x, int(cast("Any", ya).shape[0]))
+    return cast("ArrayT", derive_cdf_left(self, ya, x, self.var_type))
 
   def icdf(self, p: ArrayT, /, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Inverse distribution function, by numerical inversion of ``cdf``.
 
-    Bisects over :attr:`support`, widening an infinite bound outward first.
-    Override with a closed form where the family has one — and necessarily so
-    for a conditional margin whose support moves with ``x``, since
-    :attr:`support` describes the margin as a whole.
+    Inverted over :attr:`support`, so an infinite bound is no obstacle, but a
+    quantile whose magnitude is far below the bracket's scale is resolved only
+    to an absolute floor. Override with a closed form where the family has one
+    -- and necessarily so for a conditional margin whose support moves with
+    ``x``, since :attr:`support` describes the margin as a whole.
 
     Parameters
     ----------
     p : array, shape (n,), dtype float
         Probabilities in ``[0, 1]``.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation.
 
     Returns
     -------
     array, shape (n,), dtype float
-        Quantiles on the original scale; probabilities ``0`` and ``1`` map
-        exactly to the corresponding endpoints of :attr:`support`.
+        Quantiles on the original scale, on the integer lattice when
+        :attr:`var_type` is ``"d"``; probabilities ``0`` and ``1`` map exactly
+        to the corresponding endpoints of :attr:`support`.
 
     Raises
     ------
@@ -414,8 +632,8 @@ class MarginBase(MarginLike[ArrayT], ABC):
         If ``p`` contains a non-finite value or a value outside ``[0, 1]``, or
         if ``x`` is not two-dimensional and row-aligned.
     """
-    pa: Any = p
-    validate_covariates(x, int(pa.shape[0]))
+    pa: Any = self._prep_args(p, "p")
+    x = prepare(self, x, int(pa.shape[0]))
     xp = array_namespace(pa)
     if bool(xp.any((pa < 0) | (pa > 1) | ~xp.isfinite(pa))):
       raise ValueError("p must contain only probabilities in [0, 1]")
@@ -426,7 +644,7 @@ class MarginBase(MarginLike[ArrayT], ABC):
     interior = (pa > 0) & (pa < 1)
     target = xp.where(interior, pa, xp.full_like(pa, 0.5))
     out: Any = solve_increasing(
-      lambda v: _margin_eval(self, "cdf", v, x),
+      lambda v: declared_eval(self, "cdf", v, x),
       target,
       lo=lo,
       hi=hi,
@@ -439,11 +657,49 @@ class MarginBase(MarginLike[ArrayT], ABC):
       # jump rather than landing on it, and an answer a few ulp below an integer
       # is one its own `cdf_left` would reject as non-integral.
       out = xp.round(out)
-    return cast(ArrayT, out)
+    return cast("ArrayT", out)
+
+  #: What :attr:`nobs` reports. A subclass's :meth:`fit` records the sample
+  #: size here; ``None`` means the margin never estimated one.
+  _nobs: Optional[int] = None
+
+  #: What :attr:`n_parameters` reports. A subclass's :meth:`fit` records the
+  #: number of parameters it freely estimated here.
+  _n_free: float = 0.0
+
+  @property
+  def nobs(self) -> Optional[int]:
+    """Number of observations the fit used.
+
+    Returns
+    -------
+    int or None
+        The sample size, or ``None`` on a margin carrying parameters it never
+        estimated. It is what penalizes :meth:`bic` and :meth:`aicc`.
+    """
+    return self._nobs
+
+  @property
+  def n_parameters(self) -> float:
+    """Number of freely estimated parameters.
+
+    Only what a fit actually estimated counts, not the length of the parameter
+    vector: a pinned parameter is one fewer here, by enough to reverse a close
+    comparison, since it moves :meth:`aic` by 2 per parameter.
+
+    Returns
+    -------
+    float
+        The count; ``0`` for a margin given its parameters at construction.
+    """
+    return float(self._n_free)
 
   @property
   def _fitted_loglik(self) -> float:
     """Log-likelihood attained at :meth:`fit`.
+
+    The hook :meth:`loglik` and the criteria read when they are called with no
+    data.
 
     Returns
     -------
@@ -468,17 +724,17 @@ class MarginBase(MarginLike[ArrayT], ABC):
     *,
     x: Optional[ArrayT] = None,
     weights: Optional[ArrayT] = None,
-  ) -> Any:
+  ) -> Union[float, ArrayT]:
     """Log-likelihood of the observations under the margin.
 
-    Called without data, returns the value attained when the margin was fitted,
-    as ``Bicop.loglik`` and ``Vinecop.loglik`` do.
+    Called without data, returns the value attained when the margin was
+    fitted, as ``Bicop.loglik()`` and ``Vinecop.loglik()`` do.
 
     Parameters
     ----------
     y : array, shape (n,), or None, optional
         Observations on the original scale; the fitted value when ``None``.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation.
     weights : array, shape (n,), or None, optional
         Observation weights; unweighted when ``None``.
@@ -486,8 +742,8 @@ class MarginBase(MarginLike[ArrayT], ABC):
     Returns
     -------
     array, shape (), dtype float, or float
-        A 0-d array when evaluated, so it stays differentiable on autograd
-        backends; a float when the fitted value is returned.
+        A 0-d array when evaluated, so it stays differentiable under autograd
+        (e.g. PyTorch); a float when the fitted value is returned.
 
     Raises
     ------
@@ -497,18 +753,138 @@ class MarginBase(MarginLike[ArrayT], ABC):
         two-dimensional and row-aligned.
     TypeError
         If ``weights`` does not have a real numeric dtype.
+    NotImplementedError
+        If called without data on a margin that records no fitted
+        log-likelihood.
     """
     if y is None:
       if weights is not None:
         raise ValueError("weights are only meaningful with data; pass y too")
       return self._fitted_loglik
-    validate_covariates(x, int(cast(Any, y).shape[0]))
-    terms: Any = _margin_eval(self, "logpdf", y, x)
+    ya = self._prep_args(y)
+    x = prepare(self, x, int(cast("Any", ya).shape[0]))
+    terms: Any = declared_eval(self, "logpdf", ya, x)
     xp = array_namespace(terms)
     if weights is not None:
       weights = validate_weights(weights, terms)
       terms = terms * weights
-    return cast(ArrayT, xp.sum(terms))
+    return cast("ArrayT", xp.sum(terms))
+
+  def aic(self, y: Optional[ArrayT] = None, /) -> float:
+    """Akaike information criterion of the fit.
+
+    ``-2 loglik + 2 k``, for ``k`` freely estimated parameters, as
+    ``Bicop.aic()`` and ``Vinecop.aic()`` report it for the copula half. Lower
+    is better.
+
+    Parameters
+    ----------
+    y : array, shape (n,), or None, optional
+        Observations to evaluate the log-likelihood at; the value attained
+        when the margin was fitted if ``None``.
+
+    Returns
+    -------
+    float
+        The criterion.
+
+    Raises
+    ------
+    NotImplementedError
+        If called without data on a margin that records no fitted
+        log-likelihood.
+
+    See Also
+    --------
+    bic : The same, penalizing by ``log n`` per parameter.
+    aicc : The same, with a small-sample correction.
+    """
+    return criteria(self._loglik_value(y), self.n_parameters, None)["aic"]
+
+  def bic(self, y: Optional[ArrayT] = None, /) -> float:
+    """Bayesian information criterion of the fit.
+
+    ``-2 loglik + k log n``, for ``k`` freely estimated parameters and ``n``
+    observations. Lower is better; the heavier penalty makes it prefer fewer
+    parameters than :meth:`aic` does.
+
+    Parameters
+    ----------
+    y : array, shape (n,), or None, optional
+        Observations to evaluate the log-likelihood at; the value attained
+        when the margin was fitted if ``None``.
+
+    Returns
+    -------
+    float
+        The criterion.
+
+    Raises
+    ------
+    ValueError
+        If called without data on a margin that did not record its sample
+        size, since the penalty needs ``n``.
+    """
+    return criteria(
+      self._loglik_value(y), self.n_parameters, self._sample_size(y)
+    )["bic"]
+
+  def aicc(self, y: Optional[ArrayT] = None, /) -> float:
+    """Small-sample-corrected Akaike information criterion.
+
+    :meth:`aic` plus ``2k(k + 1) / (n - k - 1)``, which is ``inf`` where that
+    denominator is not positive -- so a fit with more parameters than the
+    sample can support never wins by being undefined.
+
+    Parameters
+    ----------
+    y : array, shape (n,), or None, optional
+        Observations to evaluate the log-likelihood at; the value attained
+        when the margin was fitted if ``None``.
+
+    Returns
+    -------
+    float
+        The criterion.
+
+    Raises
+    ------
+    ValueError
+        If called without data on a margin that did not record its sample
+        size.
+    """
+    return criteria(
+      self._loglik_value(y), self.n_parameters, self._sample_size(y)
+    )["aicc"]
+
+  def _loglik_value(self, y: Optional[ArrayT]) -> float:
+    """Log-likelihood as a plain float.
+
+    An information criterion is a number to compare, never a term to
+    differentiate, so a trainable margin's log-likelihood is detached on the
+    way out rather than warning about the conversion.
+    """
+    value: Any = self.loglik(y)
+    detach = getattr(value, "detach", None)
+    return float(value if detach is None else detach())
+
+  def _sample_size(self, y: Optional[ArrayT]) -> float:
+    """Number of observations the criterion penalizes against.
+
+    Raises
+    ------
+    ValueError
+        If ``y`` is ``None`` and the margin recorded no sample size.
+    """
+    if y is not None:
+      return float(cast("Any", y).shape[0])
+    n = self.nobs
+    if n is None:
+      raise ValueError(
+        f"{type(self).__name__} did not record its sample size, so the "
+        "criterion cannot be penalized; pass the observations"
+      )
+    return float(n)
 
   def sample(
     self,
@@ -524,10 +900,10 @@ class MarginBase(MarginLike[ArrayT], ABC):
     n : int
         Number of samples to draw. With covariates, ``x`` supplies one row per
         draw, so it must have ``n`` of them.
-    x : array, shape (n, k), or None, optional
+    x : array, shape (n, p), or None, optional
         Exogenous covariates to condition each draw on.
     seeds : list of int, or None, optional
-        RNG seeds.
+        RNG seeds; the draw is unseeded when ``None``.
 
     Returns
     -------
@@ -538,37 +914,102 @@ class MarginBase(MarginLike[ArrayT], ABC):
     ------
     ValueError
         If ``x`` is not two-dimensional with exactly ``n`` rows.
+    NotImplementedError
+        If the subclass supplies no ``_sample_uniform``, the array namespace's
+        RNG being the one thing this class cannot default.
     """
-    validate_covariates(x, n)
+    x = prepare(self, x, n)
     base = self._sample_uniform(n, list(seeds) if seeds else [])
-    return cast(ArrayT, _margin_eval(self, "icdf", base, x))
+    return cast("ArrayT", declared_eval(self, "icdf", base, x))
+
+  def plot(
+    self,
+    xlim: Optional[tuple[float, float]] = None,
+    ylim: Optional[tuple[float, float]] = None,
+    grid_size: int = 200,
+    show_zero_mass: bool = True,
+    *,
+    kind: str = "density",
+    x: Optional[ArrayT] = None,
+  ) -> None:
+    margin_plot(
+      self,
+      xlim,
+      ylim,
+      grid_size,
+      show_zero_mass,
+      kind=kind,
+      x=x,
+      place=self._prep,
+    )
 
   def _sample_uniform(self, n: int, seeds: list[int]) -> ArrayT:
     """Draw ``n`` uniforms on the subclass's array namespace.
+
+    The hook :meth:`sample` draws through, named after the exposed
+    :func:`pyvinecopulib.utils.sample_uniform` free function.
 
     Parameters
     ----------
     n : int
         Number of draws.
     seeds : list of int
-        RNG seeds.
+        RNG seeds; empty for an unseeded draw.
 
     Returns
     -------
     array, shape (n,), dtype float
-        Uniforms in ``(0, 1)``.
+        Uniforms in the unit interval.
 
     Raises
     ------
     NotImplementedError
         Always, unless overridden; the base class has no array namespace to
-        draw from. Named after the exposed
-        :func:`pyvinecopulib.utils.sample_uniform` free function.
+        draw from.
     """
     raise NotImplementedError(
       f"{type(self).__name__}._sample_uniform is not defined; override it "
       "with the array namespace's RNG to enable sample()."
     )
+
+  def _prep_args(self, y: ArrayT, name: str = "y") -> ArrayT:
+    """Place one column of observations and check that is what it is.
+
+    The margin's two steps, in order: placement (``_prep``), then the
+    single-column layout every member of the contract reads. There is no
+    third: a margin's argument is on the **data** scale, so it is an arbitrary
+    real and must not be clamped -- unlike a copula argument, and unlike
+    :meth:`icdf`'s probability, which is range-checked where it is inverted.
+
+    Parameters
+    ----------
+    y : array, shape (n,), dtype float
+        Observations, or probabilities for :meth:`icdf`.
+    name : str, default="y"
+        The argument's name, for the error message.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        ``y`` placed on this margin's namespace.
+
+    Raises
+    ------
+    ValueError
+        If ``y`` is not one-dimensional. A margin describes one variable, and
+        a second axis silently changed which values each answer belonged to.
+    """
+    return self._layout(self._prep(y), name)
+
+  def _layout(self, ya: ArrayT, name: str = "y") -> ArrayT:
+    """Check the single-column layout a margin describes."""
+    a: Any = ya
+    if getattr(a, "ndim", None) != 1:
+      raise ValueError(
+        f"{name} must be one-dimensional -- a margin describes one variable; "
+        f"got shape {tuple(getattr(a, 'shape', ()))}"
+      )
+    return ya
 
   def __repr__(self) -> str:
     """Return a structural representation of the margin.
@@ -582,3 +1023,44 @@ class MarginBase(MarginLike[ArrayT], ABC):
 
 
 MarginBase.__doc__ = (MarginBase.__doc__ or "") + _MARGIN_EXAMPLE
+
+
+#: Composed, so the shared half is written once; `test_docs_examples.py`
+#: runs the project's numpydoc checks over the result.
+MarginBase.plot.__doc__ = (
+  MARGIN_PLOT_SUMMARY
+  + """
+    The evaluation grid is the one array this class manufactures from nothing,
+    so it is placed through ``_prep`` before the margin sees it -- which means
+    a margin on PyTorch plots without converting anything inside its own
+    ``pdf``.
+
+    Parameters
+    ----------
+"""
+  + MARGIN_PLOT_PARAMS
+  + """    x : array, shape (p,) or (1, p), or None, optional
+        One covariate row, for a conditional margin. Such a margin is a
+        different curve at every covariate value, so a plot shows the one at
+        this value; the row is repeated across the grid.
+
+    Returns
+    -------
+    None
+        The figure is drawn with matplotlib.
+
+    Raises
+    ------
+    ValueError
+        If ``kind`` is neither ``"density"`` nor ``"cdf"``; if the margin is
+        not fitted; if ``x`` is not a single covariate row; or if ``x`` is
+        given and :attr:`supports_covariates` is ``False`` -- a margin that
+        reads no covariates has no covariate value to be drawn at, and
+        answering unconditionally under a conditional-looking call is the
+        outcome the refusal exists to prevent.
+
+    See Also
+    --------
+    pyvinecopulib.core.Kde1d.plot : The same plot on the default margin.
+"""
+)

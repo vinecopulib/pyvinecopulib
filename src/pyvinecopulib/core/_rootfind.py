@@ -1,24 +1,34 @@
-"""Vectorized monotone root-finder (the backend-agnostic ``hinv`` / ``icdf`` default).
+"""Vectorized monotone root-finder (the array-agnostic ``hinv`` / ``icdf`` default).
 
-Array-backend-agnostic (numpy / torch) via the Array API: resolves the
+Array-agnostic (numpy / torch) via the Array API: resolves the
 namespace from the target array and uses only standard elementwise ops. Grad is
 disabled by the *caller's* evaluation context (torch ``no_grad`` /
-``nullcontext``), not here, so this stays a pure function. Arrays are typed
-``Any`` per the ``pyvinecopulib.core`` typing policy (the Array API namespace is
-untyped).
+``nullcontext``), not here, so this stays a pure function. The bracket the
+bisection carries is typed ``Any`` rather than ``ArrayT``: it is arithmetic on
+the values, and the generic array type is unbounded, so it names no operators.
 """
 
 from __future__ import annotations
 
 import math
-from typing import Any, Callable
+from types import ModuleType
+from typing import Any, Callable, Union, cast
 
 from array_api_compat import array_namespace
+
+from .protocols import ArrayT
 
 __all__ = ["solve_increasing"]
 
 
-def _is_finite_bound(xp: Any, bound: Any, broadcast: Any) -> bool:
+# The bisection computes on its bracket -- doubles it, compares it, blends
+# it -- and a bound may be a scalar or an array, neither of which an unbounded
+# `ArrayT` types (see `protocols.py`).
+def _is_finite_bound(
+  xp: ModuleType,
+  bound: Any,  # noqa: ANN401
+  broadcast: ArrayT,
+) -> bool:
   """Whether ``bound`` is finite everywhere.
 
   Scalars answer without touching the array namespace, which keeps the
@@ -46,11 +56,11 @@ def _is_finite_bound(xp: Any, bound: Any, broadcast: Any) -> bool:
 
 
 def _bracket(
-  xp: Any,
+  xp: ModuleType,
   f: Callable[[Any], Any],
-  p: Any,
-  a: Any,
-  b: Any,
+  p: ArrayT,
+  a: Any,  # noqa: ANN401 - as `_is_finite_bound`
+  b: Any,  # noqa: ANN401
   finite_lo: bool,
   finite_hi: bool,
   max_expand: int,
@@ -109,18 +119,18 @@ def _bracket(
 
 def solve_increasing(
   f: Callable[[Any], Any],
-  p: Any,
+  p: ArrayT,
   *,
-  lo: Any = 0.0,
-  hi: Any = 1.0,
+  lo: Union[float, ArrayT] = 0.0,
+  hi: Union[float, ArrayT] = 1.0,
   n_iter: int = 50,
   max_expand: int = 64,
-) -> Any:
+) -> ArrayT:
   """Solve ``f(x) = p`` for ``x`` in ``[lo, hi]``, elementwise.
 
   ``f`` must be monotone increasing per element. Bisection with ``n_iter``
   steps gives a bracket width ``(hi - lo) * 2 ** -n_iter`` — with the default 50
-  that is far below the ``[1e-10, 1 - 1e-10]`` clamp the h-functions impose, so
+  that is far below the domain clamp the h-functions impose, so
   the result is exact to that floor. A superlinear (ITP) upgrade can drop in
   behind this signature later without touching callers.
 
@@ -135,9 +145,11 @@ def solve_increasing(
       Maps an array of candidates ``x`` to ``f(x)``, monotone increasing.
   p : array, shape (n,)
       Target values.
-  lo, hi : float or array, optional
-      Search bracket (default the unit interval). Arrays broadcast against
-      ``p``, so a per-element support is allowed; infinite entries are widened.
+  lo : float or array, default=0.0
+      Lower end of the search bracket. Arrays broadcast against ``p``, so a
+      per-element support is allowed; infinite entries are widened.
+  hi : float or array, default=1.0
+      Upper end of the search bracket.
   n_iter : int
       Number of bisection steps.
   max_expand : int
@@ -175,4 +187,4 @@ def solve_increasing(
     lower = f(mid) < p
     a = xp.where(lower, mid, a)
     b = xp.where(lower, b, mid)
-  return xp.clip(0.5 * (a + b), clip_lo, clip_hi)
+  return cast("ArrayT", xp.clip(0.5 * (a + b), clip_lo, clip_hi))

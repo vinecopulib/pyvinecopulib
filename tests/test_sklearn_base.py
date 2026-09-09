@@ -8,12 +8,12 @@ import pytest
 pytest.importorskip("sklearn")
 pytest.importorskip("pandas")
 
-import pandas as pd  # noqa: E402
+import pandas as pd
 
-from sklearn.exceptions import DataConversionWarning  # noqa: E402
+from sklearn.exceptions import DataConversionWarning
 
-from pyvinecopulib.sklearn import VineDensity, VineRegressor  # noqa: E402
-from pyvinecopulib.sklearn._base import expand_factors  # noqa: E402
+from pyvinecopulib.sklearn import VineDensity, VineRegressor
+from pyvinecopulib.sklearn._base import expand_factors
 
 
 def test_expand_factors_numeric_unchanged() -> None:
@@ -191,7 +191,11 @@ def test_vinebase_marginal_fitting(
 
   # Check that marginals are fitted
   assert len(density._x_margins) == 2
-  assert all(margin.is_fitted for margin in density._x_margins)
+  # `is_fitted` is an optional capability on `MarginLike`, so it is read the
+  # way the library reads it.
+  assert all(
+    getattr(margin, "is_fitted", False) for margin in density._x_margins
+  )
 
 
 def test_vinebase_pseudoobservations(
@@ -296,7 +300,7 @@ def test_column_vector_y_is_raveled_with_a_warning() -> None:
 
 
 def test_fit_resets_the_schema_a_previous_fit_derived(
-  sample_dataframe_data,
+  sample_dataframe_data: tuple[pd.DataFrame, list[str]],
 ) -> None:
   """A second `fit` must not validate against the first fit's schema.
 
@@ -314,7 +318,7 @@ def test_fit_resets_the_schema_a_previous_fit_derived(
 
 
 def test_a_caller_preset_schema_survives_fit() -> None:
-  """The pre-settable `schema_` seam still overrides the array default."""
+  """The pre-settable `schema_` hook still overrides the array default."""
   est = VineDensity()
   est.schema_ = {
     "kde1d_types": ["discrete", "continuous"],
@@ -341,7 +345,7 @@ def test_dataframe_after_an_array_fit_is_not_reported_unfitted() -> None:
 
 
 def test_an_unseen_category_is_refused_not_silently_recoded(
-  sample_dataframe_data,
+  sample_dataframe_data: tuple[pd.DataFrame, list[str]],
 ) -> None:
   """`set_categories` maps an unseen level to NaN, which expands to all zeros.
 

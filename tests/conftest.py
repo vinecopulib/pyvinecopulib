@@ -2,7 +2,7 @@ import math
 import statistics
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import matplotlib
 import numpy as np
@@ -11,6 +11,9 @@ from array_api_compat import array_namespace
 
 import pyvinecopulib as pv
 from pyvinecopulib.core import BicopBase, BicopLike, VinecopBase
+
+if TYPE_CHECKING:
+  import pandas as pd
 
 matplotlib.use("Agg")
 
@@ -45,7 +48,10 @@ class HostedVinecop(VinecopBase[Any]):
     self._pairs = pairs
     self._bind_vine(structure, context, var_types=var_types)
 
-  def _get_pair_copula(self, tree: int, edge: int) -> BicopLike[Any]:
+  def set_pair_copulas(self, pair_copulas: Any) -> None:
+    self._pairs = pair_copulas
+
+  def get_pair_copula(self, tree: int, edge: int) -> BicopLike[Any]:
     return self._pairs[tree][edge]
 
   def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Any:
@@ -107,12 +113,33 @@ def _std_normal_ppf(p: Any) -> Any:
   return _norm_inv_cdf(np.asarray(p))
 
 
+def position_weighted_mean(x: Any, ref: Any) -> Any:
+  """Mean of ``x``'s columns, weighted by 1-based column position.
+
+  The one link both conditional pair-copula doubles push a correlation
+  through, and it is shared because two spellings of it would let the two
+  legs of a conditional-vine comparison disagree about what ``x`` means.
+  Distinct per-column weights make anything built on it sensitive to the
+  *column order* of ``x``, which is what pins the C1 conditioning contract; a
+  plain sum would not. Dividing by the column count keeps it bounded across a
+  vine's varying ``x_e`` widths.
+
+  ``ref`` supplies the dtype and device the weights are built on, since ``x``
+  may be an integer array while the model evaluates in floating point.
+  """
+  xp = array_namespace(ref)
+  xa: Any = x
+  k = xa.shape[1]
+  weights = xp.arange(1, k + 1, dtype=ref.dtype, device=ref.device)
+  return xp.sum(xa * weights, axis=-1) / k
+
+
 class GaussianBicop(BicopBase[Any]):
   """Toy conditional Gaussian pair copula (correlation depends on ``x``).
 
   The correlation is a Fisher-style link of a *position-weighted mean* of the
   conditioning matrix, ``rho = rho_max * tanh(scale * mean_j (j + 1) * x[:, j])``,
-  so the copula is genuinely non-simplified when hosted with a
+  so the copula is actually non-simplified when hosted with a
   :class:`~pyvinecopulib.core.NonSimplifiedContext`, and — because the weights
   differ per column — its output *depends on the column order of* ``x`` (used to
   pin the C1 order). With ``x=None`` the correlation is ``base_rho``. Capping at
@@ -142,13 +169,9 @@ class GaussianBicop(BicopBase[Any]):
     n = u.shape[0]
     if x is None:
       return xp.full((n,), self._base_rho, dtype=u.dtype, device=u.device)
-    xa: Any = x
-    k = xa.shape[1]
-    # Distinct per-column weights -> the link is sensitive to the x column
-    # order (pins the C1 contract), unlike a plain sum. Normalize by k and cap
-    # at rho_max so rho stays well away from +-1 across varying x_e widths.
-    weights = xp.arange(1, k + 1, dtype=u.dtype, device=u.device)
-    z = self._scale * xp.sum(xa * weights, axis=-1) / k
+    # Capped at rho_max so rho stays well away from +-1 across varying
+    # x_e widths.
+    z = self._scale * position_weighted_mean(x, u)
     return self._rho_max * xp.tanh(z)
 
   def pdf(self, u: Any, x: Optional[Any] = None) -> Any:
@@ -193,6 +216,33 @@ class GaussianBicop(BicopBase[Any]):
     return _std_normal_cdf(rho * z2 + xp.sqrt(1.0 - rho * rho) * zp)
 
 
+class MinimalBicop(BicopBase[Any]):
+  """The smallest valid pair copula: independence, and nothing declared twice.
+
+  Named for what it exercises rather than for what it models -- the library's
+  own ``IndependenceBicop`` is the class to reach for outside the suite.
+  Implements only the abstract surface (``pdf`` / ``hfunc1`` / ``hfunc2``), so
+  ``hinv1`` / ``hinv2`` / ``cdf`` / ``flip`` come from :class:`BicopBase` --
+  the two inverses numerically, the latter two as the raising stubs -- and are
+  what the tests hosting it exercise. Array-backend-agnostic apart from
+  ``_sample_uniform``, the one hook with no array-agnostic default.
+  """
+
+  def pdf(self, u: Any, *, x: Optional[Any] = None) -> Any:
+    xp = array_namespace(u)
+    return xp.ones((u.shape[0],), dtype=u.dtype, device=u.device)
+
+  def hfunc1(self, u: Any, *, x: Optional[Any] = None) -> Any:
+    return u[:, 1]
+
+  def hfunc2(self, u: Any, *, x: Optional[Any] = None) -> Any:
+    return u[:, 0]
+
+  def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Any:
+    rng = np.random.default_rng(seeds[0] if seeds else 0)
+    return rng.uniform(size=(n, 2))
+
+
 # --- Fixtures for the pyvinecopulib.sklearn estimator tests ---
 
 
@@ -217,7 +267,7 @@ def sample_array_data(
 @pytest.fixture
 def sample_dataframe_data(
   random_state: np.random.RandomState,
-):
+) -> tuple["pd.DataFrame", list[str]]:
   """Mixed-dtype DataFrame for factor-expansion tests."""
   import pandas as pd
 
@@ -303,7 +353,7 @@ _HAS_CUDA = _cuda_available()
 )
 def device(request: pytest.FixtureRequest) -> str:
   """Torch device a test runs on."""
-  return request.param
+  return cast("str", request.param)
 
 
 @pytest.fixture

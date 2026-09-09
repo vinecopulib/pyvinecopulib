@@ -17,12 +17,12 @@ using namespace nb::literals;
 using namespace vinecopulib;
 
 // Wrapper function to call the Python bicop_plot function
-inline void bicop_plot_wrapper(const Bicop& cop, const std::string& type,
+inline void bicop_plot_wrapper(const Bicop& cop, const std::string& plot_type,
                                const std::string& margin_type, nb::object xylim,
                                nb::object grid_size) {
-  auto mod = nb::module_::import_("pyvinecopulib._python_helpers.bicop");
+  auto mod = nb::module_::import_("pyvinecopulib.core._bicop_plot");
   auto bicop_plot = mod.attr("bicop_plot");
-  bicop_plot(nb::cast(cop), type, margin_type, xylim, grid_size);
+  bicop_plot(nb::cast(cop), plot_type, margin_type, xylim, grid_size);
 }
 
 // Factory function to create a Bicop from family, rotation, parameters, and
@@ -247,8 +247,12 @@ Bicop
                   "var_types"_a = std::vector<std::string>(2, "c"),
                   bicop_doc.ctor.doc_4args_family_rotation_parameters_var_types,
                   nb::call_guard<nb::gil_scoped_release>())
+      // One argument order across every estimator in the package: the
+      // observations, then `controls`, then keyword-only whatever the object
+      // cannot infer. `var_types` is a declaration, so it is keyword-only.
       .def_static("from_data", &bc_from_data, "data"_a,
                   "controls"_a.sig("FitControlsBicop()") = nb::none(),
+                  nb::kw_only(),
                   "var_types"_a = std::vector<std::string>(2, "c"),
                   bicop_doc.ctor.doc_3args_data_controls_var_types,
                   nb::call_guard<nb::gil_scoped_release>())
@@ -490,27 +494,40 @@ Bicop
           flip_doc.c_str(), nb::call_guard<nb::gil_scoped_release>())
       .def("as_continuous", &Bicop::as_continuous, bicop_doc.as_continuous.doc,
            nb::call_guard<nb::gil_scoped_release>())
+      // `fit` and `select` hand the object back so they compose like every
+      // other estimator in the package. The GIL is released around the fit
+      // itself rather than by a call guard, because handing back the object
+      // needs it.
       .def(
           "fit",
           [](Bicop& self, const Eigen::MatrixXd& data,
-             const FitControlsBicop* controls) {
-            self.fit(data, controls ? *controls : default_bicop_controls());
+             const FitControlsBicop* controls) -> Bicop& {
+            {
+              nb::gil_scoped_release release;
+              self.fit(data, controls ? *controls : default_bicop_controls());
+            }
+            return self;
           },
           "data"_a, "controls"_a.sig("FitControlsBicop()") = nb::none(),
-          bicop_doc.fit.doc, nb::call_guard<nb::gil_scoped_release>())
+          bicop_doc.fit.doc, nb::rv_policy::reference_internal)
       .def(
           "select",
           [](Bicop& self, const Eigen::MatrixXd& data,
-             const FitControlsBicop* controls) {
-            self.select(data, controls ? *controls : default_bicop_controls());
+             const FitControlsBicop* controls) -> Bicop& {
+            {
+              nb::gil_scoped_release release;
+              self.select(data,
+                          controls ? *controls : default_bicop_controls());
+            }
+            return self;
           },
           "data"_a, "controls"_a.sig("FitControlsBicop()") = nb::none(),
-          bicop_doc.select.doc, nb::call_guard<nb::gil_scoped_release>())
-      .def("plot", &bicop_plot_wrapper, "type"_a = "surface",
+          bicop_doc.select.doc, nb::rv_policy::reference_internal)
+      .def("plot", &bicop_plot_wrapper, "plot_type"_a = "surface",
            "margin_type"_a = "unif", "xylim"_a = nb::none(),
            "grid_size"_a = nb::none(),
            python_doc_helper(
-               "pyvinecopulib._python_helpers.bicop", "BICOP_PLOT_DOC",
+               "pyvinecopulib.core._bicop_plot", "BICOP_PLOT_DOC",
                "Plot the bivariate copula (extended doc unavailable) ")
                .c_str())
       .def("__getstate__",

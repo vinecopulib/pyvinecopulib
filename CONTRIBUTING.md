@@ -4,6 +4,11 @@ This guide covers the dev-side workflow: setting up an environment, the
 build pipeline, the Makefile, pre-commit conventions, and the release flow.
 End-user install instructions live in [README.md](README.md).
 
+Where the *code* is concerned — which layer may import which, what each of
+each of the four extension levels owes, and where every cross-cutting convention is
+written down — start with [AGENTS.md](AGENTS.md#module-boundaries). It is the
+normative spec; this file is only the mechanics.
+
 ## Quick start
 
 ```bash
@@ -116,7 +121,7 @@ general whitespace/TOML/JSON checks. `make sync` installs them.
 
 `.github/workflows/pypi.yml` is the single workflow. Jobs:
 
-- **`lint`** — ruff, ruff format and bandit; gates the wheel matrix so a
+- **`lint`** — ruff, ruff format and bandit; guards the wheel matrix so a
   formatting error does not cost 10 cibuildwheel legs.
 - **`build`** — cibuildwheel matrix (10 wheels: Linux glibc/musl, macOS x86_64,
   macOS arm64, Windows × cp311/cp312-ABI3).
@@ -186,9 +191,9 @@ docstring; do not hand-edit the generated `src/include/docstr.hpp`.
 Enforcement runs through `numpydoc.validation` at pre-commit time
 (and ad-hoc via `uv run python -m numpydoc lint <path>`); the
 active rule set is configured in `[tool.numpydoc_validation]` in
-`pyproject.toml`. Internal modules (`_python_helpers`, `_base`,
-`_batched`, `_fit_tll`, `_util`, `_interp`, `_deprecations`) are
-excluded by path —
+`pyproject.toml`. Internal modules (`core/_bicop_plot`, `core/_vinecop_plot`,
+`core/_margin_plot`, `core/_normal`, `sklearn/_base`, `_vinecop_batched`,
+`_bicop_fit_tll`, `_bicop_interp`, `_deprecations`) are excluded by path —
 they're off-contract per AGENTS.md §"Module boundaries".
 
 ## Troubleshooting

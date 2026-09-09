@@ -1,6 +1,6 @@
 """PyTorch vine distribution: a torch vine copula with torch margins.
 
-:class:`~pyvinecopulib.core.Vinedist` is already array-agnostic, so the joint
+:class:`~pyvinecopulib.core.VinedistBase` is already array-agnostic, so the joint
 density, the Rosenblatt transform and simulation need no porting. What this
 subclass adds is the :class:`torch.nn.Module` half: the copula and every margin
 are registered children, so one ``.to(device)`` moves the whole distribution,
@@ -13,21 +13,22 @@ numerically later.
 
 See Also
 --------
-pyvinecopulib.core.Vinedist : The array-agnostic base.
-TorchMargin : The margins this holds.
+pyvinecopulib.core.VinedistBase : The array-agnostic base.
+TorchDistributionMargin : The margins this holds.
 TorchVinecop : The copula this holds.
 """
 
 from __future__ import annotations
 
 import dataclasses
-from itertools import chain
-from typing import Any, Optional, Sequence, cast
+from typing import Any, ClassVar, Optional, Sequence, cast
 
 import torch
 from torch import Tensor
 
-from ..core import MarginLike, Vinedist
+from ..core import ControlsLike, MarginLike, VinedistBase
+from ..core._margins import declared_kde_kwargs
+from ._placement import TensorPlacementMixin
 from .controls import FitControlsTorchVinecop
 from .kde1d import TorchKde1d
 from .vinecop import TorchVinecop
@@ -35,19 +36,8 @@ from .vinecop import TorchVinecop
 __all__ = ["TorchVinedist"]
 
 
-def _check_margin(margin: Any, name: str) -> None:
+def _check_margin(margin: object, name: str) -> None:
   """Reject a margin the torch lane cannot hold.
-
-  Parameters
-  ----------
-  margin : object
-      The candidate margin, before coercion.
-  name : str
-      How to refer to it in an error message.
-
-  Returns
-  -------
-  None
 
   Raises
   ------
@@ -61,13 +51,13 @@ def _check_margin(margin: Any, name: str) -> None:
       f"TorchVinedist requires every margin to be a torch.nn.Module, so that "
       f"`.to(device)`, `state_dict()` and autograd reach its parameters; "
       f"{name} is a {type(margin).__name__}. Wrap a torch.distributions "
-      "family with TorchMargin.from_distribution(...), or use TorchKde1d, "
+      "family with TorchDistributionMargin.from_distribution(...), or use TorchKde1d, "
       "which fits any of the three variable types. A NumPy margin such as "
       "Kde1d belongs in pyvinecopulib.core.Vinedist instead."
     )
   # Atoms are fine now that the copula half has a discrete cascade -- what a
   # margin with atoms must supply is the left limit the cascade differences.
-  # `TorchKde1d` inherits `cdf_left` from `MarginBase`; `TorchMargin` cannot
+  # `TorchKde1d` inherits `cdf_left` from `MarginBase`; `TorchDistributionMargin` cannot
   # have one, because `torch.distributions`' discrete families implement
   # neither `cdf` nor `icdf`.
   if getattr(margin, "var_type", "c") != "c" and (
@@ -80,37 +70,30 @@ def _check_margin(margin: Any, name: str) -> None:
     )
 
 
-def _check_copula(copula: Any) -> None:
+def _check_copula(copula: object) -> None:
   """Reject a copula the torch lane cannot evaluate.
-
-  Parameters
-  ----------
-  copula : object
-      The candidate copula.
-
-  Returns
-  -------
-  None
 
   Raises
   ------
   TypeError
-      If the copula is the compiled ``Vinecop``, which evaluates on NumPy.
+      If the copula is a ``Vinecop``, which evaluates on NumPy.
   """
   from ..pyvinecopulib_ext import Vinecop
 
   if isinstance(copula, Vinecop):
     raise TypeError(
-      "TorchVinedist cannot hold a compiled Vinecop: it evaluates on NumPy "
-      "arrays, so it would detach every gradient and ignore `.to(device)`. "
+      "TorchVinedist cannot hold a Vinecop: it evaluates on NumPy arrays, "
+      "so it would detach every gradient and ignore `.to(device)`. "
       "Lift it first with TorchVinecop.from_vinecop(copula)."
     )
 
 
-class TorchVinedist(Vinedist[Tensor], torch.nn.Module):
+class TorchVinedist(
+  TensorPlacementMixin, VinedistBase[Tensor], torch.nn.Module
+):
   """A vine distribution whose copula and margins are all PyTorch modules.
 
-  Same surface as :class:`~pyvinecopulib.core.Vinedist` — ``logpdf`` / ``pdf`` /
+  Same surface as :class:`~pyvinecopulib.core.VinedistBase` — ``logpdf`` / ``pdf`` /
   ``cdf`` / ``loglik`` / ``sample`` / ``rosenblatt`` /
   ``inverse_rosenblatt`` / ``marginal_cdf`` / ``marginal_icdf`` — evaluated
   entirely in PyTorch, and additionally a :class:`torch.nn.Module`, so the
@@ -122,16 +105,18 @@ class TorchVinedist(Vinedist[Tensor], torch.nn.Module):
 
   Discrete and mixed data are supported, through :class:`TorchKde1d` margins:
   a margin that declares atoms must supply the left limit ``cdf_left`` the
-  copula's discrete cascade differences, which :class:`TorchMargin` cannot
+  copula's discrete cascade differences, which :class:`TorchDistributionMargin` cannot
   (``torch.distributions``' discrete families implement neither ``cdf`` nor
   ``icdf``).
 
   Parameters
   ----------
-  copula : VinecopLike
-      A fitted vine copula on ``[0, 1]^d``, normally a
-      :class:`~pyvinecopulib.torch.TorchVinecop`.
-  margins : sequence of TorchMargin, or TorchMargin
+  vinecop : VinecopLike
+      A fitted vine copula on ``[0, 1]^d`` that evaluates in PyTorch —
+      normally a :class:`~pyvinecopulib.torch.TorchVinecop`. A
+      :class:`~pyvinecopulib.core.Vinecop` is **refused**, not merely
+      discouraged: it evaluates on NumPy, so it would detach every gradient.
+  margins : sequence of TorchDistributionMargin, or TorchDistributionMargin
       One margin per variable, each a :class:`torch.nn.Module`. A single margin
       is accepted when it carries array-valued parameters and so already
       represents all ``d``.
@@ -139,15 +124,16 @@ class TorchVinedist(Vinedist[Tensor], torch.nn.Module):
   Raises
   ------
   TypeError
-      If a margin is not a :class:`torch.nn.Module`, or the copula is the
-      compiled ``Vinecop``.
+      If a margin is not a :class:`torch.nn.Module`, or the copula is a
+      :class:`~pyvinecopulib.core.Vinecop`.
   NotImplementedError
       If a margin declares atoms but does not provide ``cdf_left``.
 
   See Also
   --------
-  pyvinecopulib.core.Vinedist : The array-agnostic base, and the NumPy route.
-  TorchMargin : The margins this holds.
+  pyvinecopulib.core.VinedistBase : The array-agnostic base both routes share.
+  pyvinecopulib.core.Vinedist : The NumPy route.
+  TorchDistributionMargin : The margins this holds.
   TorchVinecop : The copula this holds.
 
   Examples
@@ -156,13 +142,13 @@ class TorchVinedist(Vinedist[Tensor], torch.nn.Module):
 
       import torch
       import pyvinecopulib as pv
-      from pyvinecopulib.torch import TorchMargin, TorchVinecop, TorchVinedist
+      from pyvinecopulib.torch import TorchDistributionMargin, TorchVinecop, TorchVinedist
 
       u = pv.utils.to_pseudo_obs(x)
       dist = TorchVinedist(
         TorchVinecop.from_data(torch.as_tensor(u)),
         [
-          TorchMargin(torch.distributions.Normal, {"loc": 0.0, "scale": 1.0})
+          TorchDistributionMargin(torch.distributions.Normal, {"loc": 0.0, "scale": 1.0})
           for _ in range(3)
         ],
       )
@@ -172,119 +158,82 @@ class TorchVinedist(Vinedist[Tensor], torch.nn.Module):
 
   def __init__(
     self,
-    copula: Any,
-    margins: Sequence[Any] | Any,
+    vinecop: object,
+    margins: object,
   ) -> None:
-    # Initialize nn.Module explicitly, then hand over to the Vinedist seam:
+    # Initialize nn.Module explicitly, then hand over to the Vinedist hook:
     # TorchVinedist also subclasses Vinedist, whose __init__ chain would
     # otherwise shadow nn.Module's under super(). Same shape as TorchVinecop.
     torch.nn.Module.__init__(self)
-    self._bind_dist(copula, margins)
+    self._bind_dist(vinecop, margins)
 
   def _bind_dist(
     self,
-    copula: Any,
-    margins: Sequence[Any] | Any,
+    vinecop: object,
+    margins: object,
   ) -> None:
-    """Validate the parts, then install them as registered children.
-
-    Parameters
-    ----------
-    copula : VinecopLike
-        The vine copula.
-    margins : sequence of TorchMargin, or TorchMargin
-        The margins.
-
-    Returns
-    -------
-    None
-    """
-    _check_copula(copula)
+    """Validate the parts, then install them as registered children."""
+    _check_copula(vinecop)
     if isinstance(margins, (list, tuple)):
       for j, margin in enumerate(margins):
         _check_margin(margin, f"margins[{j}]")
     else:
       _check_margin(margins, "margins")
 
-    super()._bind_dist(copula, margins)
-    # `nn.Module` tracks a `ModuleList`, not the plain tuple the base stores, so
-    # rebind through one: without it the margins' parameters are invisible to
-    # `state_dict`, `.to()` and every optimizer. The cascades only iterate and
-    # index the attribute, both of which a `ModuleList` supports.
-    registered = cast("list[torch.nn.Module]", list(self._margins))
-    self._margins = cast(Any, torch.nn.ModuleList(registered))
+    super()._bind_dist(vinecop, margins)
 
-  @classmethod
-  def from_data(
-    cls,
-    y: Any,
-    *,
-    x: Optional[Tensor] = None,
-    margins: Any = None,
-    controls: Optional[FitControlsTorchVinecop] = None,
-    structure: Optional[Any] = None,
-    weights: Optional[Tensor] = None,
-    names: Optional[Any] = None,
-  ) -> "TorchVinedist":
-    """Fit margins and a torch vine copula to data, in that order.
+  def _set_margins(self, margins: Sequence[MarginLike[Tensor]]) -> None:
+    """Install the margins as registered children.
 
-    End to end in torch: :class:`TorchKde1d` per column, then
-    :meth:`TorchVinecop.from_data` on the copula data the margins produce. The
-    result is on one device, in one dtype, and differentiable throughout --
-    which the inherited NumPy route could not give, since it fits ``Kde1d``
-    margins and a compiled ``Vinecop``.
+    `nn.Module` tracks a `ModuleList`, not the plain tuple the base stores:
+    without one the margins' parameters are invisible to `state_dict`,
+    `.to()` and every optimizer. The cascades only iterate and index the
+    attribute, both of which a `ModuleList` supports.
 
-    Parameters
-    ----------
-    y : Tensor, shape (n, d)
-        Observations on the original scale.
-    x : Tensor or None, optional
-        Not supported; no torch margin reads covariates, and a silently
-        unconditional fit is worse than a refusal.
-    margins : object, optional
-        Specification per :func:`pyvinecopulib.margins.resolve_margins`.
-        ``None`` means one :class:`TorchKde1d` per column. Every resolved
-        margin must be an ``nn.Module``.
-    controls : FitControlsTorchVinecop or None, optional
-        Copula fit controls.
-    structure : RVineStructure or None, optional
-        A fixed structure, or ``None`` to select one.
-    weights : Tensor, shape (n,), or None, optional
-        Observation weights, forwarded to every margin that accepts them.
-    names : sequence of str or None, optional
-        Variable names, used only to resolve a mapping specification.
-
-    Returns
-    -------
-    TorchVinedist
-        The fitted distribution.
-
-    Raises
-    ------
-    NotImplementedError
-        If ``x`` is given, or if a resolved margin declares atoms without
-        supplying a left limit.
+    This is a hook rather than a rebind after `super()._bind_dist` because
+    `_bind_dist` runs again on every refit, and by then `_margins` is a
+    registered child -- so the base's plain-tuple assignment raised
+    ``TypeError: cannot assign 'tuple' as child module``, which made `fit` and
+    `select` unusable on every torch vine distribution.
     """
-    from ..margins import resolve_margins
-    from ..margins._resolve import fit_margin
+    registered = cast("list[torch.nn.Module]", list(margins))
+    self._margins = cast("Any", torch.nn.ModuleList(registered))
 
-    if x is not None:
-      raise NotImplementedError(
-        "TorchVinedist.from_data takes no covariates: no torch margin reads "
-        "them, so the margins would be fitted unconditionally while the call "
-        "suggested otherwise. Fit the parts yourself if the copula alone is "
-        "conditional."
-      )
+  # The vine copula this route fits; the margins need a placement, so
+  # `_default_margins` is overridden rather than declared.
+  vinecop_class: ClassVar[Optional[type]] = TorchVinecop
+
+  #: The torch TLL fitter and the tree criterion are both unweighted, so a
+  #: weighted request is refused rather than applied to the margins alone.
+  supports_weighted_copula: bool = False
+
+  #: No torch margin reads covariates, so a conditional fit is refused outright
+  #: rather than answered with an unconditional one.
+  supports_fit_covariates: bool = False
+
+  # `controls` is a `FitControlsTorchVinecop` in all three hooks below -- each
+  # reads the device and dtype off it -- but typed `Any`, because
+  # `VinedistBase` declares them as taking any `ControlsLike`, and narrowing a
+  # parameter is what an override may not do.
+  @classmethod
+  def _coerce_fit_data(
+    cls,
+    # Anything `torch.as_tensor` accepts, which is the hook's whole job: a
+    # caller may hand a NumPy array to a torch distribution.
+    y: object,
+    weights: Optional[Tensor],
+    controls: Optional[ControlsLike],
+  ) -> tuple[Tensor, Optional[Tensor]]:
+    """Put the fit inputs on one device, in one dtype.
+
+    The controls decide the placement and the data follow, as documented.
+    Reading it off ``y`` instead left the margins wherever the caller's data
+    happened to be while the copula went to ``controls.device``, so
+    ``state_dict`` spanned two devices and ``logpdf`` raised; an integer ``y``
+    would likewise have given the margins an integer grid.
+    """
     ya = torch.as_tensor(y)
-    if ya.ndim != 2:
-      raise ValueError(f"y must be two-dimensional; got {tuple(ya.shape)}")
-    # One device and one dtype for the whole distribution, as documented: the
-    # controls decide, and the data follows. Reading them off `y` instead left
-    # the margins wherever the caller's data happened to be while the copula
-    # went to `controls.device`, so `state_dict` spanned two devices and
-    # `logpdf` raised. An integer `y` would likewise have given the margins an
-    # integer grid.
-    resolved = controls or FitControlsTorchVinecop()
+    resolved: Any = controls or FitControlsTorchVinecop()
     device = resolved.device if resolved.device is not None else ya.device
     if resolved.dtype is not None:
       dtype = resolved.dtype
@@ -295,66 +244,49 @@ class TorchVinedist(Vinedist[Tensor], torch.nn.Module):
     ya = ya.to(device=device, dtype=dtype)
     if weights is not None:
       weights = torch.as_tensor(weights).to(device=device, dtype=dtype)
-    d = int(ya.shape[1])
-    default = [TorchKde1d(device=device, dtype=dtype) for _ in range(d)]
-    specs = resolve_margins(margins, d, names=names, default=default)
-    fitted = [fit_margin(specs[j], ya[:, j], weights=weights) for j in range(d)]
-    u = cls.copula_data(fitted, ya)
-    var_types = cls.copula_var_types(fitted)
-    copula = TorchVinecop.from_data(
-      u,
-      structure=structure,
-      # The same resolved placement the margins got, so the copula cannot
-      # default to a different dtype than they did.
-      controls=dataclasses.replace(resolved, device=device, dtype=dtype),
-      var_types=var_types,
+    return ya, weights
+
+  @classmethod
+  def _default_margins(
+    cls,
+    d: int,
+    controls: Optional[ControlsLike] = None,
+    margin_controls: Optional[Sequence[Optional[ControlsLike]]] = None,
+  ) -> Sequence[TorchKde1d]:
+    """One :class:`TorchKde1d` per variable, on the resolved placement."""
+    resolved: Any = controls or FitControlsTorchVinecop()
+    # `TorchKde1d` fixes its own default dtype, so name one only when the
+    # controls actually carry it.
+    placement: dict[str, Any] = {"device": resolved.device}
+    if resolved.dtype is not None:
+      placement["dtype"] = resolved.dtype
+    per_variable = margin_controls or [None] * d
+    return [
+      TorchKde1d(**placement, **declared_kde_kwargs(mc)) for mc in per_variable
+    ]
+
+  @classmethod
+  def _copula_controls(
+    cls,
+    controls: Optional[ControlsLike],
+    u: Tensor,
+    weights: Optional[Tensor],
+  ) -> FitControlsTorchVinecop:
+    """``controls`` with the placement the margins resolved pinned in.
+
+    ``weights`` is always ``None``: ``supports_weighted_copula`` is ``False``,
+    so the estimators refuse a weighted request before reaching this hook.
+    """
+    del weights
+    resolved: Any = controls or FitControlsTorchVinecop()
+    return cast(
+      "FitControlsTorchVinecop",
+      dataclasses.replace(resolved, device=u.device, dtype=u.dtype),
     )
-    return cls(copula, fitted)
 
   @property
-  def margins(self) -> tuple[MarginLike, ...]:
-    """The margins, in variable order.
-
-    Returns
-    -------
-    tuple of MarginLike
-        One margin per variable, read off the registered ``ModuleList``.
-    """
-    return cast("tuple[MarginLike, ...]", tuple(self._margins))
-
-  def _ref_tensor(self) -> Tensor:
-    """A registered tensor to crib dtype and device from.
-
-    Returns
-    -------
-    Tensor
-        The first registered parameter or buffer, or an empty CPU tensor when
-        the parts register neither.
-    """
-    for tensor in chain(self.parameters(), self.buffers()):
-      return tensor
-    return torch.empty(0, dtype=torch.float64)
-
-  def _prep(self, a: Any) -> Tensor:
-    """Bring one input array onto this distribution's dtype and device.
-
-    ``as_tensor`` rather than ``tensor`` or ``detach``, so a tensor that already
-    matches is returned untouched and a gradient-carrying one stays in the
-    graph. It is what lets an estimator hand this object plain NumPy while the
-    cascade and every margin stay on device.
-
-    Parameters
-    ----------
-    a : array
-        An input array, tensor or NumPy.
-
-    Returns
-    -------
-    Tensor
-        The same values, as a tensor placed like the registered ones.
-    """
-    ref = self._ref_tensor()
-    return torch.as_tensor(a, dtype=ref.dtype, device=ref.device)
+  def margins(self) -> tuple[MarginLike[Tensor], ...]:
+    return cast("tuple[MarginLike[Tensor], ...]", tuple(self._margins))
 
   def log_prob(self, y: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     """Alias of ``logpdf``, the ``torch.distributions`` spelling.
@@ -363,7 +295,7 @@ class TorchVinedist(Vinedist[Tensor], torch.nn.Module):
     ----------
     y : Tensor, shape (n, d), dtype float
         Observations on the original scale.
-    x : Tensor, shape (n, k), or None, optional
+    x : Tensor, shape (n, p), or None, optional
         Exogenous covariates, forwarded as ``logpdf`` forwards them.
 
     Returns

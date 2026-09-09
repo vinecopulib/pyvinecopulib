@@ -11,14 +11,15 @@ contract was named after its surface so that it needs no wrapper.
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import numpy as np
 import pytest
 
 import pyvinecopulib as pv
-from pyvinecopulib.core import MarginBase, MarginLike
-from pyvinecopulib.core.margin_base import _reject_covariates
+from pyvinecopulib.core import ControlsLike, MarginBase, MarginLike
+
+from .helpers import FlatMargin, ShiftedNormalMargin
 
 
 class _ShiftedExp(MarginBase[np.ndarray]):
@@ -50,20 +51,6 @@ class _ShiftedExp(MarginBase[np.ndarray]):
   def exact_icdf(self, p: Any) -> Any:
     """The closed form, for comparison against the inherited bisection."""
     return self.shift - np.log1p(-p) / self.rate
-
-
-class _Uniform01(MarginBase[np.ndarray]):
-  """Bounded support, so ``icdf`` needs no bracket search at all."""
-
-  @property
-  def support(self) -> tuple[float, float]:
-    return (0.0, 1.0)
-
-  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
-    return np.where((y >= 0.0) & (y <= 1.0), 1.0, 0.0)
-
-  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
-    return np.clip(y, 0.0, 1.0)
 
 
 class _Geometricish(MarginBase[np.ndarray]):
@@ -130,7 +117,7 @@ def test_icdf_matches_the_closed_form(rate: float, shift: float) -> None:
 
 def test_icdf_on_a_bounded_support() -> None:
   """A finite bracket needs no widening and stays inside the support."""
-  m = _Uniform01()
+  m = FlatMargin()
   p = np.linspace(0.0, 1.0, 11)
   got = m.icdf(p)
   np.testing.assert_allclose(got, p, atol=1e-12)
@@ -291,30 +278,25 @@ def test_repr_is_structural() -> None:
 # --- exogenous covariates ---------------------------------------------------- #
 
 
-class _Recording(MarginBase[np.ndarray]):
-  """Records whether covariates reached each primitive.
+class _Recording(ShiftedNormalMargin):
+  """The shared conditional margin, plus a log of which primitive saw an ``x``.
 
-  A location-shift model, so `pdf` / `cdf` genuinely change with `x` and a
-  forwarding bug shows up in the numbers as well as in the log.
+  The numbers move with the covariate on their own, so a forwarding bug is
+  visible in them; the log is what distinguishes *skipped* from *forwarded as
+  None*, which the numbers cannot.
   """
 
-  supports_covariates = True
-
   def __init__(self) -> None:
+    super().__init__()
     self.seen: list[str] = []
 
-  def _shift(self, x: Optional[Any]) -> Any:
-    return 0.0 if x is None else np.asarray(x, dtype=float)[:, 0]
-
-  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def pdf(self, y: Any, /, *, x: Optional[Any] = None) -> Any:
     self.seen.append("pdf" if x is not None else "pdf-bare")
-    z = np.asarray(y, dtype=float) - self._shift(x)
-    return np.exp(-0.5 * z**2) / np.sqrt(2.0 * np.pi)
+    return super().pdf(y, x=x)
 
-  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def cdf(self, y: Any, /, *, x: Optional[Any] = None) -> Any:
     self.seen.append("cdf" if x is not None else "cdf-bare")
-    z = np.asarray(y, dtype=float) - self._shift(x)
-    return 0.5 * (1.0 + np.vectorize(math.erf)(z / np.sqrt(2.0)))
+    return super().cdf(y, x=x)
 
 
 def test_covariates_reach_every_derived_member() -> None:
@@ -357,7 +339,7 @@ def test_derived_members_require_row_aligned_covariates() -> None:
 
 
 def test_covariates_are_not_forwarded_to_an_unconditional_margin() -> None:
-  """The gate omits `x` entirely, which is what keeps `pdf(self, y)` valid."""
+  """The check omits `x` entirely, which is what keeps `pdf(self, y)` valid."""
 
   class _Unconditional(_Recording):
     supports_covariates = False
@@ -372,21 +354,7 @@ def test_covariates_are_not_forwarded_to_an_unconditional_margin() -> None:
 
 def test_fit_refuses_covariates_it_cannot_read() -> None:
   """Silently fitting `f(y)` when `f(y | x)` was asked for is the bad outcome."""
-
-  class _Fittable(MarginBase[np.ndarray]):
-    def fit(
-      self, y: Any, *, x: Optional[Any] = None, weights: Any = None
-    ) -> Any:
-      _reject_covariates(self, x)
-      return self
-
-    def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
-      return np.ones_like(np.asarray(y, dtype=float))
-
-    def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
-      return np.clip(np.asarray(y, dtype=float), 0.0, 1.0)
-
-  m = _Fittable()
+  m = FlatMargin()
   assert m.fit(np.array([0.5])) is m
   with pytest.raises(ValueError, match="supports_covariates"):
     m.fit(np.array([0.5]), x=np.array([[1.0]]))
@@ -464,3 +432,270 @@ def test_declare_is_a_no_op_that_chains() -> None:
   assert m.declare(var_type="d", support=(0.0, 10.0)) is m
   assert m.var_type == "c"
   assert m.support == (1.0, math.inf)
+
+
+def test_a_margin_places_and_checks_its_own_argument() -> None:
+  """The margin level applies the two steps its siblings do.
+
+  Placement, so a margin holding one array type answers on it; and the
+  single-column layout, because a margin describes one variable and a second
+  axis silently changed which value each answer belonged to.
+  """
+  torch = pytest.importorskip("torch")
+
+  class _Normal(MarginBase[Any]):
+    """A standard normal holding a torch tensor, so placement is observable."""
+
+    def __init__(self) -> None:
+      self.loc = torch.zeros(1, dtype=torch.float32)
+
+    def pdf(self, y: Any, *, x: Any = None) -> Any:
+      del x
+      return torch.exp(-0.5 * y**2) / math.sqrt(2.0 * math.pi)
+
+    def cdf(self, y: Any, *, x: Any = None) -> Any:
+      del x
+      return 0.5 * (1.0 + torch.erf(y / math.sqrt(2.0)))
+
+  margin = _Normal()
+  out = margin.logpdf(np.array([-1.0, 0.0, 1.0]))
+  assert isinstance(out, torch.Tensor)
+  assert out.dtype is torch.float32
+  for call in (margin.logpdf, margin.cdf_left, margin.icdf):
+    with pytest.raises(ValueError, match="one-dimensional"):
+      call(np.zeros((3, 1)))
+
+
+def test_the_information_criteria_have_one_implementation() -> None:
+  """`criteria` is the arithmetic, and the search and the margins share it.
+
+  It was written twice -- once over a fitted margin, once over loose numbers
+  for the family search, which has no margin object yet. The `inf` guards are
+  what a search depends on: a candidate must never win by being undefined.
+  """
+  from pyvinecopulib.core.margin_base import criteria
+
+  # Every criterion undefined where the fit is.
+  assert criteria(float("-inf"), 2, 100) == {
+    "aic": float("inf"),
+    "bic": float("inf"),
+    "aicc": float("inf"),
+  }
+  # `aic` needs no `n`; the two that penalize by sample size do.
+  unknown = criteria(-100.0, 2.0, None)
+  assert unknown["aic"] == 204.0
+  assert unknown["bic"] == float("inf") and unknown["aicc"] == float("inf")
+  # `aicc`'s correction needs n - k - 1 > 0.
+  assert criteria(-100.0, 5.0, 6.0)["aicc"] == float("inf")
+
+  # And a fitted margin reports exactly what the shared arithmetic says.
+  rng = np.random.default_rng(0)
+  y = rng.normal(size=200)
+
+  class _Normal(MarginBase[np.ndarray]):
+    def pdf(self, y: Any, *, x: Any = None) -> Any:
+      ya = np.asarray(y, dtype=float)
+      return np.exp(-0.5 * ya**2) / math.sqrt(2.0 * math.pi)
+
+    def cdf(self, y: Any, *, x: Any = None) -> Any:
+      ya = np.asarray(y, dtype=float)
+      return 0.5 * (1.0 + np.vectorize(math.erf)(ya / math.sqrt(2.0)))
+
+  margin = _Normal()
+  expected = criteria(float(margin.loglik(y)), 0.0, float(y.size))
+  for name, value in expected.items():
+    assert getattr(margin, name)(y) == pytest.approx(value)
+
+
+def test_an_array_in_the_controls_slot_is_refused_across_the_margin_level() -> (
+  None
+):
+  """`kde.fit(x, w)` is the compiled `Kde1d`'s spelling and nothing else's.
+
+  Every `MarginBase` margin reads `fit(y, controls, *, weights=...)`, so the
+  carried-over positional spelling binds the weights to `controls`, where they
+  are ignored -- an unweighted fit behind a weighted-looking call. Nothing in
+  the library passes an array there, so refusing one costs nothing.
+  """
+  rng = np.random.default_rng(0)
+  y = rng.normal(size=200)
+  w = np.linspace(0.1, 3.0, 200)
+
+  # `cast` because the wrongness is the subject: `controls` is typed
+  # `ControlsLike`, so a type-checked caller cannot reach this at all, and the
+  # guard exists for the one who is not.
+  with pytest.raises(TypeError, match="array where `controls` goes"):
+    FlatMargin().select(y, cast("ControlsLike", w))
+  # The legitimate spellings are untouched.
+  assert FlatMargin().select(y, weights=w) is not None
+  assert FlatMargin().select(y) is not None
+  # And the documented exception still reads the way its own docs say.
+  assert pv.core.Kde1d().fit(y, w) is not None
+
+
+# --------------------------------------------------------------------------- #
+# Covariates on the two variable types that carry atoms. The derived            #
+# `cdf_left` reaches `cdf` and `pdf` a second time there -- stepping back a     #
+# lattice point, or removing the mass at zero -- and both of those forwardings  #
+# were unexercised: every conditional double above is continuous, and every     #
+# discrete one unconditional.                                                   #
+# --------------------------------------------------------------------------- #
+
+
+class _ConditionalPoisson(MarginBase[np.ndarray]):
+  """Poisson with ``mu = exp(x[:, 0])`` -- discrete *and* conditional."""
+
+  supports_covariates = True
+
+  @property
+  def var_type(self) -> str:
+    return "d"
+
+  @property
+  def support(self) -> tuple[float, float]:
+    return (0.0, float("inf"))
+
+  @staticmethod
+  def _mu(y: Any, x: Optional[Any]) -> Any:
+    if x is None:
+      return np.ones(np.shape(y))
+    return np.exp(np.asarray(x, dtype=float)[:, 0])
+
+  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    k = np.asarray(y, dtype=float)
+    mu = self._mu(y, x)
+    logp = -mu + k * np.log(mu) - np.vectorize(math.lgamma)(k + 1.0)
+    return np.where(k >= 0.0, np.exp(logp), 0.0)
+
+  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    k = np.floor(np.asarray(y, dtype=float))
+    mu = self._mu(y, x)
+    # Sum the mass up to `k`, which needs no special function.
+    out = np.zeros(np.shape(k))
+    top = int(max(0.0, float(np.max(k))))
+    for j in range(top + 1):
+      term = np.exp(-mu + j * np.log(mu) - math.lgamma(j + 1.0))
+      out = out + np.where(k >= j, term, 0.0)
+    return np.where(k >= 0.0, out, 0.0)
+
+
+class _ConditionalZeroInflated(MarginBase[np.ndarray]):
+  """Atom at zero of mass ``expit(x[:, 0])``, exponential body above it."""
+
+  supports_covariates = True
+
+  @property
+  def var_type(self) -> str:
+    return "zi"
+
+  @property
+  def support(self) -> tuple[float, float]:
+    return (0.0, float("inf"))
+
+  @staticmethod
+  def _prob0(y: Any, x: Optional[Any]) -> Any:
+    if x is None:
+      return np.full(np.shape(y), 0.5)
+    return 1.0 / (1.0 + np.exp(-np.asarray(x, dtype=float)[:, 0]))
+
+  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    ya = np.asarray(y, dtype=float)
+    p0 = self._prob0(y, x)
+    body = (1.0 - p0) * np.exp(-ya)
+    return np.where(ya == 0.0, p0, np.where(ya > 0.0, body, 0.0))
+
+  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    ya = np.asarray(y, dtype=float)
+    p0 = self._prob0(y, x)
+    return np.where(ya >= 0.0, p0 + (1.0 - p0) * (1.0 - np.exp(-ya)), 0.0)
+
+
+def test_a_conditional_discrete_margin_steps_back_its_own_lattice() -> None:
+  """`F(k^- | x)` is `F(k-1 | x)`, at the covariate row `k` came with."""
+  m = _ConditionalPoisson()
+  k = np.array([0.0, 1.0, 2.0, 5.0])
+  cov = np.array([[0.4], [-0.3], [1.1], [0.0]])
+
+  left = m.cdf_left(k, x=cov)
+  np.testing.assert_allclose(left, m.cdf(k - 1.0, x=cov), atol=0.0)
+  np.testing.assert_allclose(
+    left, m.cdf(k, x=cov) - m.pdf(k, x=cov), atol=1e-12
+  )
+  assert left[0] == 0.0
+  # The covariate actually moved it, so a dropped `x` would be visible.
+  assert not np.allclose(left, m.cdf_left(k))
+
+
+def test_a_conditional_zero_inflated_margin_removes_its_own_atom() -> None:
+  """`F(0 | x) - F(0^- | x)` is that row's mass, not some other row's."""
+  m = _ConditionalZeroInflated()
+  y = np.array([0.0, 0.0, 2.0])
+  cov = np.array([[1.5], [-1.5], [0.0]])
+
+  left = m.cdf_left(y, x=cov)
+  mass = m.cdf(y, x=cov) - left
+  np.testing.assert_allclose(mass[:2], m.pdf(y, x=cov)[:2], atol=1e-12)
+  # Two rows at the same y with different covariates, hence different masses.
+  assert mass[0] > 0.7 and mass[1] < 0.3
+  # Above the atom the margin is continuous, so nothing is removed.
+  np.testing.assert_allclose(left[2], m.cdf(y, x=cov)[2], atol=0.0)
+
+
+class _EstimatedShift(ShiftedNormalMargin):
+  """The shared conditional margin, with its ``slope`` estimated rather than given.
+
+  Every other conditional double hard-codes its dependence on ``x``, so they
+  cover the forwarding and not the estimate. This one reads the covariates it
+  was handed and produces a number that can be checked against the truth that
+  generated the data.
+  """
+
+  def __init__(self) -> None:
+    super().__init__(slope=float("nan"))
+
+  @property
+  def is_fitted(self) -> bool:
+    return not math.isnan(self.slope)
+
+  def fit(
+    self,
+    y: np.ndarray,
+    /,
+    controls: Optional[ControlsLike] = None,
+    *,
+    x: Optional[np.ndarray] = None,
+    weights: Optional[np.ndarray] = None,
+  ) -> "_EstimatedShift":
+    del controls, weights
+    if x is None:
+      raise ValueError("this margin is conditional; give it covariates")
+    col = np.asarray(x, dtype=float)[:, 0]
+    self.slope = float(col @ np.asarray(y, dtype=float) / (col @ col))
+    # The two slots the base's criteria penalize against.
+    self._nobs = int(np.size(y))
+    self._n_free = 1.0
+    return self
+
+
+def test_a_margin_estimated_from_covariates_recovers_the_truth() -> None:
+  """The estimate, not just the forwarding: a fitted slope against its own."""
+  rng = np.random.default_rng(11)
+  cov = rng.normal(size=(4000, 1))
+  slope = 1.75
+  y = slope * cov[:, 0] + rng.normal(size=4000)
+
+  m = _EstimatedShift()
+  assert m.is_fitted is False
+  assert m.fit(y, x=cov) is m
+  assert m.slope == pytest.approx(slope, abs=0.05)
+  assert (m.nobs, m.n_parameters) == (4000, 1)
+
+  # And the fitted margin evaluates at the covariates it was fitted on.
+  at_zero = m.icdf(np.full(3, 0.5), x=np.array([[0.0], [1.0], [-1.0]]))
+  np.testing.assert_allclose(at_zero, [0.0, m.slope, -m.slope], atol=1e-6)
+
+
+def test_a_conditional_margin_fitted_without_covariates_refuses() -> None:
+  """A conditional margin says so rather than fitting the unconditional one."""
+  with pytest.raises(ValueError, match="conditional"):
+    _EstimatedShift().fit(np.zeros(3))

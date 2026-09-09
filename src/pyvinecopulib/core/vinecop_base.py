@@ -3,11 +3,11 @@
 :class:`VinecopBase` is the array-agnostic (NumPy / PyTorch, via
 :func:`array_api_compat.array_namespace`) implementation of the vine cascades —
 ``pdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` / ``sample`` / ``cdf`` — plus
-``loglik`` / ``plot`` and the shared sequential-fit engine. It walks the vine
-tree by tree, evaluating one pair copula per edge, so a concrete subclass (e.g.
-:class:`~pyvinecopulib.core.Vinecop`'s torch counterpart
-:class:`~pyvinecopulib.torch.TorchVinecop`) only supplies a small set of hooks
-and inherits the whole evaluation surface.
+``loglik`` / ``plot`` and the estimator surface ``fit`` / ``select`` /
+``from_data``. It walks the vine tree by tree, evaluating one pair copula per
+edge, so a concrete subclass (e.g. :class:`~pyvinecopulib.core.Vinecop`'s torch
+counterpart :class:`~pyvinecopulib.torch.TorchVinecop`) supplies a small set of
+hooks — enumerated on :class:`VinecopBase` itself — and inherits the rest.
 
 Conditioning is threaded through a pluggable
 :class:`~pyvinecopulib.core.ConditioningContext`: each pair-copula call receives an
@@ -32,151 +32,150 @@ data enters in the expanded ``(n, 2d)`` or compact ``(n, d + k)`` layout that
 ``var_types`` too, handing each edge's types to the ``fit_edge`` callback so it
 can fit the pair copula the edge actually needs. A pair copula that reads only
 two columns is hosted on a discrete edge by wrapping it in
-:class:`~pyvinecopulib.core.DiscretePair`, which supplies the difference
+:class:`~pyvinecopulib.core.DiscreteBicop`, which supplies the difference
 quotients from its continuous ``pdf`` / ``cdf`` / ``hfunc1`` / ``hfunc2``.
 
-The only hook a concrete subclass must provide is ``_get_pair_copula``; ``_prep``
-(input coercion + unit-box clamp) ships a concrete default, and
-``_sample_uniform`` (RNG) is needed only to enable ``sample``. To enable the
-grid-batched fast path, override ``_build_batched`` (plus ``_default_batched``).
-The batched *cascade loops* are
-array-agnostic and live here; only the grid/cache builder returned by
-``_build_batched`` is subclass-specific. The concrete subclass calls
-``_bind_vine`` once to install the structure and context. Array values are
-handled as ``Any`` inside the cascades per the ``pyvinecopulib.core`` typing
-policy (the Array API namespace is untyped); the generic ``ArrayT`` lives on the
-public signatures.
+Two structural notes about what lives here rather than in a subclass. The
+batched *cascade loops* are array-agnostic and are in this module; only the
+grid/cache builder they walk, returned by ``_build_batched``, is
+subclass-specific. And the selection and per-edge fit **engines** live in
+``_vinecop_fit_engines``, reached through the ``_select_parts`` /
+``_fit_parts`` names
+here; they return the structure and pairs they produced rather than storing
+them — ``from_data`` needs those
+parts before an object exists to put them on, so the public ``fit`` / ``select``
+are thin wrappers that install what the engines return.
+
+Array values are handled as ``Any`` inside the cascades per the
+``pyvinecopulib.core`` typing policy (the Array API namespace is untyped); the
+generic ``ArrayT`` lives on the public signatures.
 """
 
 from __future__ import annotations
 
 import contextlib
 from abc import ABC, abstractmethod
+from types import ModuleType
 from typing import (
-  TYPE_CHECKING,
   Any,
   Callable,
+  ClassVar,
+  Mapping,
   Optional,
+  Self,
   Sequence,
+  Union,
   cast,
 )
 
+import numpy as np
 from array_api_compat import array_namespace
 
-from ._discrete import (
+from ..pyvinecopulib_ext import RVineStructure
+from ._vinecop_discrete import (
   check_var_types,
   collapse_data,
   continuous_view,
   disc_cols,
   edge_columns,
-  n_discrete,
   pair_var_types,
   seed_left_limits,
   stack_edge,
-  with_left_limit,
 )
-from ._independence import IndependencePair
-from ._reorient import Reorientation, reorientation
-from ._validation import validate_covariates
-from .bicop_base import _pair_eval
-from .context import ConditioningContext, SimplifiedContext
-from .._deprecations import _reject_renamed_hook
-from .protocols import ArrayT, BicopLike, VinecopLike, _VINECOP_EXAMPLE
+from ._vinecop_reorient import Reorientation, reorientation
+from ._vinecop_plot import (
+  VINECOP_PLOT_PARAMS,
+  VINECOP_PLOT_SUMMARY,
+  vinecop_plot,
+)
+from ._covariates import pair_eval, prepare
+from ._vinecop_fit_engines import (
+  FitEdge,
+  FitLevel,
+  fit_parts,
+  select_parts,
+)
+from .bicop_base import BicopBase, flip_of
+from .vinecop_context import ConditioningContext, SimplifiedContext
+from .protocols import (
+  ArrayT,
+  BicopLike,
+  ControlsLike,
+  VinecopLike,
+  _VINECOP_EXAMPLE,
+)
+from ._placement import PlacementMixin, QrngUniformMixin
 from ._trim import trim
 
-
-def _make_criterion(
-  tree_criterion: str, convert: Callable[[Any], Any], n: int
-) -> Callable[[Any, Any], float]:
-  """Build the edge criterion ``calculate_criterion`` computes.
-
-  Parameters
-  ----------
-  tree_criterion : str
-      Dependence measure, as on ``FitControlsVinecop``.
-  convert : callable
-      Host transfer for one column.
-  n : int
-      Number of observations; at or below ten the criterion is zero, as
-      upstream's guard has it.
-
-  Returns
-  -------
-  callable
-      Maps an edge's two value columns to a non-negative criterion.
-  """
-  import numpy as np
-
-  from ..pyvinecopulib_ext import _calculate_tree_criterion
-
-  def criterion(col0: Any, col1: Any) -> float:
-    if n <= 10:
-      return 0.0
-    a, b = convert(col0), convert(col1)
-    return float(
-      _calculate_tree_criterion(np.column_stack((a, b)), tree_criterion)
-    )
-
-  return criterion
-
-
-def _to_numpy_default(a: Any) -> Any:
-  """Host NumPy view of ``a``, for backends that leave it off the host."""
-  import numpy as _np
-
-  detach = getattr(a, "detach", None)
-  if detach is not None:
-    a = detach()
-  cpu = getattr(a, "cpu", None)
-  if cpu is not None:
-    a = cpu()
-  return _np.asarray(a)
-
-
-if TYPE_CHECKING:
-  from ..pyvinecopulib_ext import RVineStructure
 
 __all__ = ["VinecopBase"]
 
 
-#: ``(tree, edge, u_e, x_e) -> BicopLike``, fitting one edge's pair copula: the
-#: seam external packages drive conditional fitting through (see
-#: :meth:`VinecopBase.fit`). An edge with a discrete argument additionally
-#: receives ``var_types=[t1, t2]`` and a four-column ``u_e``, so the alias cannot
-#: pin the arity -- a ``Callable`` has no way to express a keyword argument.
-FitEdge = Callable[..., BicopLike]
-
-#: ``(tree, u_level, types) -> list[BicopLike]``, fitting a whole tree level
-#: at once: the optional companion to ``FitEdge``, for a backend whose
-#: fitter carries a leading pair axis. ``u_level`` stacks the level's edges in
-#: ascending edge order and ``types`` gives each edge's pair of variable types,
-#: so the callback needs no structural knowledge. A subclass that supplies one
-#: gets it preferred over ``fit_edge``; everything else keeps working, since a
-#: level is only ever fitted this way when every one of its edges is
-#: continuous -- a mixed level cannot stack, its edges having different widths.
-FitLevel = Callable[[int, Any, "list[tuple[str, str]]"], "Sequence[BicopLike]"]
+#: Sentinel the core controls use for "no truncation"; the engines spell the
+#: same thing ``None``.
+_NO_TRUNCATION = 2**63
 
 
-def _fit_edge_call(
-  fit_edge: FitEdge,
-  tree: int,
-  edge: int,
-  u_e: Any,
-  x_e: Optional[Any],
-  var_types: tuple[str, str],
-) -> BicopLike:
-  """Call ``fit_edge``, forwarding ``var_types`` only for a discrete edge.
+def _selection_options(controls: Optional[ControlsLike]) -> dict[str, Any]:
+  """Read the structure-selection settings a controls object carries.
 
-  A callback written for a continuous vine takes four arguments, so a fully
-  continuous edge must not hand it a fifth. When the edge does have a discrete
-  argument the types go by keyword, which is what makes a callback that cannot
-  accept them fail loudly instead of fitting a continuous pair copula to four
-  columns of data -- the rule :func:`_pair_eval` applies to ``x``, for the same
-  reason.
+  Only the settings the array-agnostic engines own are read. The rest belong to
+  the pair-copula fit, which receives the same controls object, since a vine's
+  controls *are* pair controls -- except the four vine-level selection switches
+  below, which no pair fit reads either and which the engines do not implement.
+
+  Raises
+  ------
+  ValueError
+      If ``select_trunc_lvl``, ``select_threshold``, ``select_families`` or
+      ``show_trace`` asks for something the engines cannot do.
   """
-  if "d" not in var_types:
-    return fit_edge(tree, edge, u_e, x_e)
-  return fit_edge(tree, edge, u_e, x_e, var_types=list(var_types))
+  if controls is None:
+    return {}
+  settings = dict(controls.to_dict())
+
+  # Neither honored here nor delegable to a pair fit, which is what the
+  # `ControlsLike` contract says must be refused rather than dropped: dropping
+  # one returns a different model than the caller's controls describe, and
+  # silently disagrees with `Vinecop.select` on the same object.
+  for switch, default in (
+    ("select_trunc_lvl", False),
+    ("select_threshold", False),
+    ("select_families", True),
+    ("show_trace", False),
+  ):
+    asked = settings.get(switch)
+    if asked is not None and bool(asked) is not default:
+      raise ValueError(
+        f"{switch}={asked!r} is not available on the array-agnostic selector, "
+        "which does not implement it and has no pair-copula fit to delegate "
+        f"it to. Drop {switch}, or select with `Vinecop.select`."
+      )
+
+  out: dict[str, Any] = {}
+  for key in ("tree_criterion", "threshold", "tree_algorithm"):
+    if settings.get(key) is not None:
+      out[key] = settings[key]
+  seeds = settings.get("seeds")
+  if seeds:
+    out["seeds"] = list(seeds)
+  cond = settings.get("conditioning_set")
+  if cond:
+    out["conditioning_set"] = [int(v) for v in cond]
+  trunc = settings.get("trunc_lvl")
+  if trunc is not None and int(trunc) < _NO_TRUNCATION:
+    out["trunc_lvl"] = int(trunc)
+  weights = settings.get("weights")
+  if weights is not None and len(weights) > 0:
+    out["weights"] = weights
+  # Spelled `tree_criterion_function` on the core controls; a plain
+  # `ControlsLike` may use the shorter name the engines take.
+  fn = settings.get("tree_criterion_function") or settings.get(
+    "criterion_function"
+  )
+  if fn is not None:
+    out["criterion_function"] = fn
+  return out
 
 
 class _NotBatchable(Exception):
@@ -228,17 +227,44 @@ def infer_conditioning_set(
   )
 
 
-class VinecopBase(VinecopLike[ArrayT], ABC):
+class VinecopBase(
+  VinecopLike[ArrayT], QrngUniformMixin[ArrayT], PlacementMixin, ABC
+):
   """Canonical array-agnostic vine cascades (numpy / torch).
 
-  Concrete subclasses implement ``_get_pair_copula`` (and optionally override
-  ``_prep`` / ``_sample_uniform`` / the batched-path hooks) and call
-  ``_bind_vine`` once; they
-  then inherit the whole evaluator surface — ``pdf`` / ``cdf`` / ``rosenblatt`` /
-  ``inverse_rosenblatt`` / ``sample``, ``loglik`` / ``plot`` / ``__repr__``,
-  the ``dim`` / ``trunc_lvl`` / ``order`` accessors, and the :meth:`fit` /
-  :meth:`select` engines. Not an ``nn.Module``, so it composes with any
-  pair-copula implementation (including non-torch ones).
+  A concrete subclass writes one method and calls one hook: it implements
+  ``get_pair_copula(tree, edge)``, which returns the pair copula hosted at a
+  position, and calls ``_bind_vine`` once from its ``__init__`` to install the
+  structure, the conditioning context and the variable types. It then inherits
+  the whole evaluator surface — :meth:`pdf` / :meth:`cdf` /
+  :meth:`rosenblatt` / :meth:`inverse_rosenblatt` / :meth:`sample`,
+  :meth:`loglik` / :meth:`plot` / ``__repr__``, the ``dim`` / ``trunc_lvl`` /
+  ``order`` accessors, and :meth:`sample_conditional` / :meth:`reorient`.
+  ``_prep`` (input placement), ``_sample_uniform`` (the
+  RNG that :meth:`sample` draws through) and the batched-path hooks all ship
+  defaults.
+
+  Two further members turn that evaluator into an **estimator**, and neither is
+  abstract, because neither is needed to evaluate:
+
+  - ``set_pair_copulas(pair_copulas)`` is the write counterpart of
+    ``get_pair_copula``. Storing pairs is what lets :meth:`fit` and
+    :meth:`select` install what they fitted and hand back ``self``, so without
+    it those two raise and the class remains a perfectly valid vine that hosts
+    pairs it is handed.
+  - ``bicop_class`` names the pair-copula class this vine fits. With it,
+    :meth:`from_data` needs no ``fit_edge`` callback — a pair class is itself a
+    fitter, since every canonical base has ``fit`` / ``from_data`` — and
+    :meth:`select` can refuse a pair copula that has no ``flip`` *before* it
+    reads the data, rather than after fitting the first edge. Left ``None``,
+    fitting requires an explicit ``fit_edge``.
+
+  ``fit_edge`` remains the hook for a fit a pair class cannot express on its
+  own: a **conditional** pair copula, which sees its edge's conditioning values
+  through the vine's :class:`~pyvinecopulib.core.ConditioningContext`.
+
+  Not an ``nn.Module``, so it composes with any pair-copula implementation,
+  torch or otherwise.
 
   See Also
   --------
@@ -258,30 +284,29 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   #: inferred: a vine assembles each edge's conditioning matrix through its
   #: ``ConditioningContext`` and cannot know whether the pairs it hosts accept
   #: one, so a consumer such as ``Vinedist`` reads this flag rather than
-  #: forwarding covariates a compiled ``Bicop`` pair would refuse. Set it in a
-  #: subclass whose pairs are conditional.
+  #: forwarding covariates a ``Bicop`` pair would refuse. Set it in a subclass
+  #: whose pairs are conditional.
   supports_covariates: bool = False
 
-  def __init_subclass__(cls, **kwargs: Any) -> None:
-    """Reject an override of the pre-1.0 hook name.
-
-    Parameters
-    ----------
-    **kwargs
-        Forwarded to ``super().__init_subclass__``.
-    """
-    super().__init_subclass__(**kwargs)
-    _reject_renamed_hook(cls, "_simulate_uniform", "_sample_uniform")
-
-  _context: ConditioningContext
+  # The pair-copula class this vine fits; see the class docstring. A plain
+  # comment, not a `#:` one: autosummary cannot generate a page for an
+  # attribute whose value is a class, so a subclass that sets this would leave
+  # the inherited entry dangling and fail the nitpicky docs build.
+  bicop_class: ClassVar[Optional[type]] = None
+  _context: ConditioningContext[ArrayT]
   _cond_pos_cache: dict[tuple[int, int], tuple[int, ...]]
-  #: Lazily-built grid-batched state (see :meth:`_build_batched`); ``None`` until
+  #: Slot -> the 1-based labels of its conditioning set in the order the pair
+  #: on it was *fitted* on, for the slots where that is not the order the
+  #: matrix names (see ``_set_cond_order``). Empty for a vine whose pairs were
+  #: not selected, where the matrix is the only answer there is.
+  _cond_order: dict[tuple[int, int], tuple[int, ...]]
+  #: Lazily-built grid-batched state (see ``_build_batched``); ``None`` until
   #: the first batched call. Subclasses invalidate it on device moves.
   _batched: Any
   #: Array namespace of this vine's working arrays; ``None`` until resolved.
-  _xp: Any
+  _xp: Optional[ModuleType]
   #: Array type ``_xp`` was resolved from; the memo is only good for that type.
-  _xp_type: Any
+  _xp_type: Optional[type]
   _var_types: tuple[str, ...]
   _n_discrete: int
   #: Variable index -> its offset within the compact layout's left-limit block;
@@ -292,12 +317,12 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   def _bind_vine(
     self,
     structure: RVineStructure,
-    context: Optional[ConditioningContext] = None,
+    context: Optional[ConditioningContext[ArrayT]] = None,
     var_types: Optional[list[str]] = None,
   ) -> None:
     """Install the vine structure + context and derive the order arrays.
 
-    The initialization seam a concrete subclass calls once from its ``__init__``
+    The initialization hook a concrete subclass calls once from its ``__init__``
     (after storing its pair copulas). ``context`` defaults to
     :class:`~pyvinecopulib.core.SimplifiedContext` — the unconditional /
     simplified vine that covers the common case — so most subclasses pass only a
@@ -315,10 +340,10 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     ----------
     structure : RVineStructure
         The (fixed) vine structure to evaluate along.
-    context : ConditioningContext, optional
+    context : ConditioningContext, or None, optional
         Per-edge conditioning-context policy; ``None`` uses
         :class:`~pyvinecopulib.core.SimplifiedContext`.
-    var_types : list of str, optional
+    var_types : list of str, or None, optional
         Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete), in
         variable order; ``None`` means all continuous.
 
@@ -346,16 +371,42 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       inv[k - 1] = j
     self.inverse_order = tuple(inv)
     self._cond_pos_cache = {}
+    self._cond_order = {}
     self._batched = None
     self._xp = None
     self._xp_type = None
     self._bind_var_types(var_types)
 
+  def _set_cond_order(
+    self, cond_order: Mapping[tuple[int, int], tuple[int, ...]]
+  ) -> None:
+    """Record the conditioning order each slot's pair copula was fitted on.
+
+    The companion of installing selected pairs: ``select`` reorients a pair
+    onto its slot with ``flip``, which swaps the pair's two arguments and
+    leaves its conditioning columns alone — so on a swapped slot the order the
+    finalized matrix names is the *other* endpoint's, and gathering ``u_D`` in
+    it would evaluate the pair on a permutation of what it was estimated on.
+    A simplified vine never gathers ``u_D``, so this is inert there.
+
+    Parameters
+    ----------
+    cond_order : mapping
+        ``(tree, edge)`` to the 1-based conditioning labels in fitted order, as
+        ``_select_parts`` returns them.
+
+    Returns
+    -------
+    None
+    """
+    self._cond_order = dict(cond_order)
+    self._cond_pos_cache = {}
+
   def _bind_var_types(self, var_types: Optional[list[str]]) -> None:
     """Store the variable types and derive the per-edge type table."""
     types = check_var_types(var_types, self.d)
     self._var_types = types
-    self._n_discrete = n_discrete(types)
+    self._n_discrete = types.count("d")
     self._disc_cols = disc_cols(types)
     self._pair_types = pair_var_types(self.structure, types)
 
@@ -395,7 +446,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
 
   # --- hooks a concrete subclass provides ------------------------------- #
   @abstractmethod
-  def _get_pair_copula(self, tree: int, edge: int) -> BicopLike[ArrayT]:
+  def get_pair_copula(self, tree: int, edge: int) -> BicopLike[ArrayT]:
     """Return the pair copula at ``(tree, edge)`` (the one required hook).
 
     Parameters
@@ -411,14 +462,16 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         The pair copula hosted at that position.
     """
 
-  def _prep(self, u: ArrayT, name: str, *, values_only: bool = False) -> ArrayT:
-    """Coerce ``u`` to the working array, normalize its layout, and clamp it.
+  def _prep_args(
+    self, u: ArrayT, name: str, *, values_only: bool = False
+  ) -> ArrayT:
+    """Place ``u``, normalize its layout, and clamp it into the unit square.
 
-    Concrete default: accept any layout the vine's :attr:`var_types` admits,
-    reduce it to the compact ``(n, d + k)`` form (``k`` discrete variables), and
-    clamp to ``[1e-10, 1 - 1e-10]`` on ``u``'s own array namespace. A subclass
-    that needs dtype / device coercion (e.g. accepting NumPy input on a torch
-    vine) overrides this.
+    The three steps a copula argument needs, in the one order that is correct:
+    placement first (``_prep``), then the layout the vine's
+    :attr:`var_types` admits, then the domain clamp at the working precision.
+    Covariates go through ``_prep`` alone, being reals rather than copula
+    arguments.
 
     An all-continuous vine takes ``(n, d)``, or ``(n, 2d)`` whose left-limit
     block is dropped. With ``k`` discrete variables it takes the expanded
@@ -441,52 +494,22 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     -------
     array, shape (n, d + k) or (n, d), dtype float
         ``u`` coerced to the working array, reduced to the compact layout (to
-        the ``d`` value columns when ``values_only``), and clamped to
-        ``[1e-10, 1 - 1e-10]``.
+        the ``d`` value columns when ``values_only``), and clamped strictly
+        inside the unit square at the working precision.
 
     Raises
     ------
     ValueError
         If ``u`` is not 2-d or its column count matches no accepted layout.
     """
-    ua: Any = u
+    ua: Any = self._prep(u)
     xp = self._namespace(ua)
-    return cast(ArrayT, trim(xp, self._layout(ua, name, values_only)))
+    return trim(xp, self._layout(ua, name, values_only))
 
-  def _layout(self, ua: Any, name: str, values_only: bool) -> Any:
+  def _layout(self, ua: ArrayT, name: str, values_only: bool) -> ArrayT:
     """Validate ``ua``'s layout and reduce it to the columns the caller needs."""
     return collapse_data(
       ua, self.d, self._var_types, name, values_only=values_only
-    )
-
-  def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:
-    """Draw ``(n, d)`` base uniforms for :meth:`sample` (namespace-dependent RNG).
-
-    Raising default; override it (numpy / torch differ on RNG) to enable
-    :meth:`sample`. Named after :func:`pyvinecopulib.utils.sample_uniform`.
-
-    Parameters
-    ----------
-    n : int
-        Number of samples to draw.
-    qrng : bool
-        Whether to draw a quasi-random (low-discrepancy) sequence.
-    seeds : list of int
-        RNG seeds.
-
-    Returns
-    -------
-    array, shape (n, d), dtype float
-        Base uniforms in ``[0, 1)``.
-
-    Raises
-    ------
-    NotImplementedError
-        Unless a subclass overrides this hook.
-    """
-    raise NotImplementedError(
-      f"{type(self).__name__} does not implement _sample_uniform; override it "
-      "to enable sample()."
     )
 
   def _default_batched(self) -> bool:
@@ -500,10 +523,10 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     """
     return False
 
-  def _build_batched(self) -> Any:
+  def _build_batched(self) -> Any:  # noqa: ANN401 - subclass-specific state
     """Build the grid-batched state for the fast path (subclass-specific).
 
-    The default raises :class:`_NotBatchable`, so the dispatch layer falls back
+    The default raises ``_NotBatchable``, so the dispatch layer falls back
     to the non-batched cascade. A grid subclass overrides this to return an
     object exposing the batched-vine surface the cascades call
     (``level`` / ``grid_points`` / per-level ``gather_inputs`` / ``pdf`` /
@@ -523,14 +546,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       f"{type(self).__name__} does not provide a batched fast path."
     )
 
-  def _ensure_batched(self) -> Any:
-    """Return the cached batched state, building it once on first use.
-
-    Returns
-    -------
-    object
-        The memoized :meth:`_build_batched` result.
-    """
+  def _ensure_batched(self) -> Any:  # noqa: ANN401 - as `_build_batched`
+    """Return the cached batched state, building it once on first use."""
     if self._batched is None:
       # Bypass any framework `__setattr__`: on the torch subclass this value
       # is an `nn.Module`, and a normal assignment would register it as a
@@ -540,17 +557,11 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       object.__setattr__(self, "_batched", self._build_batched())
     return self._batched
 
-  def _eval_context(self):
+  def _eval_context(self) -> contextlib.AbstractContextManager[Any]:
     """Context manager disabling grad for inverse / sample / cdf.
 
     Defaults to a no-op; the torch subclass overrides it with
     ``torch.no_grad()``.
-
-    Returns
-    -------
-    contextlib.AbstractContextManager
-        A context manager wrapping the grad-sensitive sections (a
-        ``nullcontext`` by default).
     """
     return contextlib.nullcontext()
 
@@ -566,40 +577,38 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     and a conditional pair consumes positionally. All are ``> edge`` (the
     inverse-cascade invariant), so they are finalized before this edge is read.
 
-    Parameters
-    ----------
-    tree : int
-        Tree index (``0``-based).
-    edge : int
-        Edge index within the tree (``0``-based).
-
-    Returns
-    -------
-    tuple of int
-        Natural-order column indices of the conditioning variables, in ascending
-        conditioning-tree order (the C1 order).
+    A slot whose pair was fitted on a different order of the same set answers
+    with *that* order instead (``_set_cond_order``), so the pair is always
+    evaluated on the columns it was estimated on.
     """
     key = (tree, edge)
     cache = self._cond_pos_cache
     if key not in cache:
-      s = self.structure
-      cache[key] = tuple(
-        int(s.struct_array(i, edge, natural_order=True)) - 1
-        for i in range(tree)
-      )
+      fitted = self._cond_order.get(key)
+      if fitted is not None:
+        # `inverse_order[label - 1]` is the natural-order column of a labeled
+        # variable, which is what `natural_order=True` reports below.
+        inv = self.inverse_order
+        cache[key] = tuple(inv[label - 1] for label in fitted)
+      else:
+        s = self.structure
+        cache[key] = tuple(
+          int(s.struct_array(i, edge, natural_order=True)) - 1
+          for i in range(tree)
+        )
     return cache[key]
 
   def _edge_context(
     self,
     tree: int,
     edge: int,
-    x: Optional[Any],
-    u_nat: Optional[Any],
-    hinv2_final: Optional[Any],
-  ) -> Optional[Any]:
+    x: Optional[ArrayT],
+    u_nat: Optional[ArrayT],
+    hinv2_final: Optional[ArrayT],
+  ) -> Optional[ArrayT]:
     """Assemble the per-edge conditioning context ``x_e`` = context(``u_D``, ``x``).
 
-    ``u_D`` is gathered in the C1 column order (see :meth:`_cond_positions`),
+    ``u_D`` is gathered in the C1 column order (see ``_cond_positions``),
     then the context appends the external covariates ``x`` last. The source of
     ``u_D`` differs by direction: the forward cascades pass ``u_nat`` (the
     natural-order observations, columns), the inverse cascade passes
@@ -611,12 +620,12 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         Tree index (``0``-based).
     edge : int
         Edge index within the tree (``0``-based).
-    x : array, shape (n, p), or None
+    x : array, shape (n, p), or None, optional
         External covariates for this call, or ``None``.
-    u_nat : array, shape (n, d), or None
+    u_nat : array, shape (n, d), or None, optional
         Natural-order observations (forward cascades); ``None`` in the inverse
         direction.
-    hinv2_final : array, shape (d, n), or None
+    hinv2_final : array, shape (d, n), or None, optional
         The finalized ``hinv2[0]`` scratch rows (inverse cascade); ``None`` in
         the forward direction.
 
@@ -630,62 +639,24 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     # Simplified + unconditional: skip the gather entirely (zero cost).
     if not ctx.assembles_conditioning and x is None:
       return None
-    u_D: Optional[Any] = None
+    u_D: Optional[ArrayT] = None
     if ctx.assembles_conditioning:
       cols = list(self._cond_positions(tree, edge))
       if cols:
         if u_nat is not None:  # forward: read observation columns
-          u_D = u_nat[:, cols]
+          u_D = cast("Any", u_nat)[:, cols]
         else:  # inverse: read finalized hinv2[0] rows, transpose to (n, |D|)
           finalized: Any = hinv2_final
           xp = array_namespace(finalized)
           u_D = xp.matrix_transpose(finalized[cols, :])
     return ctx.edge_context(u_D=u_D, x=x)
 
-  # --- discrete left-limit scratch -------------------------------------- #
-  def _seed_sub(self, u: Any, xp: Any) -> Optional[Any]:
-    """Natural-order left limits from the compact layout, or ``None``.
-
-    ``None`` for an all-continuous vine, which is what switches the whole
-    left-limit cascade off. A continuous variable's column holds its own value:
-    a pair only ever reads the left-limit column of a variable it declares
-    discrete, and this keeps the four-column edge input well defined anyway.
-    """
-    return seed_left_limits(
-      u, self.d, self.order, self._var_types, self._disc_cols, xp
-    )
-
-  def _edge_columns(
-    self,
-    tree: int,
-    edge: int,
-    hfunc1: Any,
-    hfunc2: Any,
-    hfunc1_sub: Optional[Any],
-    hfunc2_sub: Optional[Any],
-  ) -> tuple[Any, Any, Optional[tuple[Any, Any]], tuple[str, str]]:
-    """Resolve one edge's pair-copula input columns and its variable types.
-
-    ``m`` is the min-array entry: the natural-order index of the column
-    finalized in a previous tree. The second pair input comes from ``hfunc2``
-    when ``m`` sits on the natural-order diagonal, else from ``hfunc1``
-    (``class.ipp:1026-1034``). The left-limit pair is returned only when the
-    edge has a discrete variable, and mirrors ``Bicop::format_data``: a
-    continuous variable's left limit is its own value.
-    """
-    return edge_columns(
-      self.structure,
-      self._pair_types,
-      tree,
-      edge,
-      hfunc1,
-      hfunc2,
-      hfunc1_sub,
-      hfunc2_sub,
-    )
-
   # --- non-batched cascades (single source of truth) -------------------- #
-  def _pdf(self, u: Any, x: Optional[Any]) -> Any:
+  # Each cascade below computes on `u` -- indexes it, reads its `dtype` and
+  # `device`, does arithmetic -- so it holds it as `Any`, per `protocols.py`
+  # on what an unbounded `ArrayT` can type. Every one receives an
+  # already-prepped array from a public method typed `ArrayT`.
+  def _pdf(self, u: Any, x: Optional[ArrayT]) -> ArrayT:  # noqa: ANN401
     """Vine density as a product of per-edge copula densities (``Vinecop::pdf``).
 
     Parameters
@@ -693,19 +664,14 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     u : array, shape (n, d + k), dtype float
         Prepared pseudo-observations in the compact layout (natural-order
         seeding happens inside).
-    x : array, shape (n, p), or None
+    x : array, shape (n, p), or None, optional
         External covariates threaded to each pair copula, or ``None``.
-
-    Returns
-    -------
-    array, shape (n,), dtype float
-        Joint density values.
     """
     xp = array_namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
     if trunc_lvl == 0:
-      return xp.ones(n, dtype=u.dtype, device=u.device)
+      return cast("ArrayT", xp.ones(n, dtype=u.dtype, device=u.device))
     # Dense (n, d) h-function scratch; seed hfunc2 with the observations in
     # natural order (class.ipp:399).
     hfunc1 = xp.zeros((n, d), dtype=u.dtype, device=u.device)
@@ -716,7 +682,9 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     # Parallel left-limit scratch, allocated only for a discrete vine. hfunc1_sub
     # needs no seed: tree 0 always reads its second input on the diagonal, so
     # every entry is written before it is read.
-    hfunc2_sub: Any = self._seed_sub(u, xp)
+    hfunc2_sub: Any = seed_left_limits(
+      u, self.d, self.order, self._var_types, self._disc_cols, xp
+    )
     hfunc1_sub: Any = (
       None
       if hfunc2_sub is None
@@ -731,57 +699,51 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     )
     pdf = xp.ones(n, dtype=u.dtype, device=u.device)
     s = self.structure
+    pair_types = self._pair_types
     for tree in range(trunc_lvl):
       for edge in range(d - tree - 1):
-        edge_copula = self._get_pair_copula(tree, edge)
-        col0, col1, subs, types = self._edge_columns(
-          tree, edge, hfunc1, hfunc2, hfunc1_sub, hfunc2_sub
+        edge_copula = self.get_pair_copula(tree, edge)
+        col0, col1, subs, types = edge_columns(
+          s, pair_types, tree, edge, hfunc1, hfunc2, hfunc1_sub, hfunc2_sub
         )
-        u_e = xp.stack(
-          [col0, col1] if subs is None else [col0, col1, *subs], axis=-1
-        )
+        u_e = stack_edge(xp, col0, col1, subs)
         x_e = self._edge_context(tree, edge, x, u_nat, None)
         # Accumulate the density as a product over edges (cwiseProduct,
         # class.ipp:1047).
-        pdf = pdf * _pair_eval(edge_copula.pdf, u_e, x_e)
+        pdf = pdf * pair_eval(edge_copula.pdf, u_e, x_e)
         # h-functions only evaluated if a later tree needs them (class.ipp:1050).
         if s.needed_hfunc1(tree, edge):
-          hfunc1[:, edge] = _pair_eval(edge_copula.hfunc1, u_e, x_e)
+          hfunc1[:, edge] = pair_eval(edge_copula.hfunc1, u_e, x_e)
           if subs is not None and types[1] == "d":
             u_h1 = xp.stack([col0, subs[1], *subs], axis=-1)
-            hfunc1_sub[:, edge] = _pair_eval(edge_copula.hfunc1, u_h1, x_e)
+            hfunc1_sub[:, edge] = pair_eval(edge_copula.hfunc1, u_h1, x_e)
         if s.needed_hfunc2(tree, edge):
-          hfunc2[:, edge] = _pair_eval(edge_copula.hfunc2, u_e, x_e)
+          hfunc2[:, edge] = pair_eval(edge_copula.hfunc2, u_e, x_e)
           if subs is not None and types[0] == "d":
             u_h2 = xp.stack([subs[0], col1, *subs], axis=-1)
-            hfunc2_sub[:, edge] = _pair_eval(edge_copula.hfunc2, u_h2, x_e)
-    return pdf
+            hfunc2_sub[:, edge] = pair_eval(edge_copula.hfunc2, u_h2, x_e)
+    return cast("ArrayT", pdf)
 
   def _rosenblatt(
     self,
-    u: Any,
-    x: Optional[Any],
+    u: Any,  # noqa: ANN401 - computed on, as `_pdf`
+    x: Optional[ArrayT],
     randomize_discrete: bool = True,
     seeds: Optional[list[int]] = None,
-  ) -> Any:
+  ) -> ArrayT:
     """Rosenblatt transform (``Vinecop::rosenblatt``).
 
     Parameters
     ----------
     u : array, shape (n, d + k), dtype float
         Prepared pseudo-observations in the compact layout.
-    x : array, shape (n, p), or None
+    x : array, shape (n, p), or None, optional
         External covariates threaded to each pair copula, or ``None``.
     randomize_discrete : bool, default=True
         Mix each discrete variable's conditional distribution function with its
         left limit using independent uniforms.
     seeds : list of int, or None, optional
         RNG seeds for that randomization.
-
-    Returns
-    -------
-    array, shape (n, d), dtype float
-        Independent uniforms in ``[1e-10, 1 - 1e-10]``.
     """
     xp = array_namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
@@ -793,7 +755,9 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       hfunc2[:, j] = u[:, order[j] - 1]
     hfunc1 = xp.asarray(hfunc2, copy=True)
     # See _pdf on why hfunc1_sub needs no seed.
-    hfunc2_sub: Any = self._seed_sub(u, xp)
+    hfunc2_sub: Any = seed_left_limits(
+      u, self.d, self.order, self._var_types, self._disc_cols, xp
+    )
     hfunc1_sub: Any = (
       None
       if hfunc2_sub is None
@@ -805,26 +769,25 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       else None
     )
     s = self.structure
+    pair_types = self._pair_types
     for tree in range(trunc_lvl):
       for edge in range(d - tree - 1):
-        edge_copula = self._get_pair_copula(tree, edge)
-        col0, col1, subs, types = self._edge_columns(
-          tree, edge, hfunc1, hfunc2, hfunc1_sub, hfunc2_sub
+        edge_copula = self.get_pair_copula(tree, edge)
+        col0, col1, subs, types = edge_columns(
+          s, pair_types, tree, edge, hfunc1, hfunc2, hfunc1_sub, hfunc2_sub
         )
-        u_e = xp.stack(
-          [col0, col1] if subs is None else [col0, col1, *subs], axis=-1
-        )
+        u_e = stack_edge(xp, col0, col1, subs)
         x_e = self._edge_context(tree, edge, x, u_nat, None)
         # hfunc1 only if needed downstream; hfunc2 is the running transform.
         if s.needed_hfunc1(tree, edge):
-          hfunc1[:, edge] = _pair_eval(edge_copula.hfunc1, u_e, x_e)
+          hfunc1[:, edge] = pair_eval(edge_copula.hfunc1, u_e, x_e)
           if subs is not None and types[1] == "d":
             u_h1 = xp.stack([col0, subs[1], *subs], axis=-1)
-            hfunc1_sub[:, edge] = _pair_eval(edge_copula.hfunc1, u_h1, x_e)
-        hfunc2[:, edge] = _pair_eval(edge_copula.hfunc2, u_e, x_e)
+            hfunc1_sub[:, edge] = pair_eval(edge_copula.hfunc1, u_h1, x_e)
+        hfunc2[:, edge] = pair_eval(edge_copula.hfunc2, u_e, x_e)
         if subs is not None and types[0] == "d":
           u_h2 = xp.stack([subs[0], col1, *subs], axis=-1)
-          hfunc2_sub[:, edge] = _pair_eval(edge_copula.hfunc2, u_h2, x_e)
+          hfunc2_sub[:, edge] = pair_eval(edge_copula.hfunc2, u_h2, x_e)
     # Scatter the transformed columns back to variable order.
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
@@ -840,9 +803,13 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         left[:, j] = source[:, inv[j]]
       r: Any = self._sample_uniform(n, False, list(seeds or []))
       out = out * r + left * (1.0 - r)
-    return trim(xp, out)
+    return cast("ArrayT", trim(xp, out))
 
-  def _inverse_rosenblatt(self, u: Any, x: Optional[Any]) -> Any:
+  def _inverse_rosenblatt(
+    self,
+    u: Any,  # noqa: ANN401 - computed on, as `_pdf`
+    x: Optional[ArrayT],
+  ) -> ArrayT:
     """Inverse Rosenblatt transform (``Vinecop::inverse_rosenblatt``).
 
     Walks variables from ``d - 2`` down to ``0``; at each ``var`` it fills the
@@ -858,13 +825,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     ----------
     u : array, shape (n, d), dtype float
         Prepared independent uniforms.
-    x : array, shape (n, p), or None
+    x : array, shape (n, p), or None, optional
         External covariates threaded to each pair copula, or ``None``.
-
-    Returns
-    -------
-    array, shape (n, d), dtype float
-        Dependent uniforms in ``[1e-10, 1 - 1e-10]``.
     """
     xp = array_namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
@@ -874,7 +836,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       out = xp.empty((n, d), dtype=u.dtype, device=u.device)
       for j in range(d):
         out[:, j] = u[:, order[inv[j]] - 1]
-      return out
+      return cast("ArrayT", out)
     hinv2 = xp.empty((trunc_lvl + 1, d, n), dtype=u.dtype, device=u.device)
     hfunc1 = xp.empty_like(hinv2)
     for j in range(d):
@@ -884,7 +846,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     for var in range(d - 2, -1, -1):
       tree_start = min(trunc_lvl - 1, d - var - 2)
       for tree in range(tree_start, -1, -1):
-        edge_copula = self._get_pair_copula(tree, var)
+        edge_copula = self.get_pair_copula(tree, var)
         if self._n_discrete and "d" in self._pair_types[tree][var]:
           # The inverse cascade *produces* the values a left limit would be
           # taken of, so it evaluates every pair as continuous -- exactly as
@@ -902,17 +864,17 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         # Conditioning u_D is read from the finalized hinv2[0] rows (the
         # conditioning variables are finalized before this var by the invariant).
         x_e = self._edge_context(tree, var, x, None, hinv2[0])
-        hinv2[tree, var, :] = _pair_eval(edge_copula.hinv2, u_e, x_e)
+        hinv2[tree, var, :] = pair_eval(edge_copula.hinv2, u_e, x_e)
         # Propagate hfunc1 for the next-inner inversion when needed.
         if var < d - 1 and s.needed_hfunc1(tree, var):
           u_e_after = xp.stack([hinv2[tree, var, :], u_e_col1], axis=-1)
-          hfunc1[tree + 1, var, :] = _pair_eval(
+          hfunc1[tree + 1, var, :] = pair_eval(
             edge_copula.hfunc1, u_e_after, x_e
           )
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       out[:, j] = hinv2[0, inv[j], :]
-    return trim(xp, out)
+    return cast("ArrayT", trim(xp, out))
 
   # --- batched cascades (grid fast path; array-agnostic loops) ---------- #
   #
@@ -926,7 +888,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
   # bilinear cell search across pdf + both h-functions) plus the ``needs_h1`` /
   # ``needs_h2`` masks. These receive already-prepped ``u`` (the public methods
   # prep before dispatch).
-  def _pdf_batched(self, u: Any) -> Any:
+  def _pdf_batched(self, u: Any) -> ArrayT:  # noqa: ANN401 - as `_pdf`
     """Batched vine pdf: product over per-tree-level stacked densities.
 
     Numerically equivalent to ``_pdf`` on a simplified vine, but each tree
@@ -936,17 +898,12 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     ----------
     u : array, shape (n, d), dtype float
         Prepared pseudo-observations.
-
-    Returns
-    -------
-    array, shape (n,), dtype float
-        Joint density values.
     """
     xp = self._namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
     if trunc_lvl == 0:
-      return xp.ones(n, dtype=u.dtype, device=u.device)
+      return cast("ArrayT", xp.ones(n, dtype=u.dtype, device=u.device))
     bv = self._ensure_batched()
     hfunc1 = xp.zeros((n, d), dtype=u.dtype, device=u.device)
     hfunc2 = xp.empty((n, d), dtype=u.dtype, device=u.device)
@@ -963,7 +920,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       # (the batched analog of _pdf's per-edge cwiseProduct).
       pdf = pdf * xp.prod(pdf_e, axis=0)
       # Overwrite the next-tree columns flagged by needs_h{1,2} (mirrors _pdf's
-      # gated per-edge writes).
+      # conditional per-edge writes).
       n_pairs = lvl.n_pairs
       h1_new = xp.matrix_transpose(h1_e)  # (n, N_t)
       h2_new = xp.matrix_transpose(h2_e)
@@ -973,17 +930,17 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       hfunc2[:, :n_pairs] = xp.where(
         lvl.needs_h2[None, :], h2_new, hfunc2[:, :n_pairs]
       )
-    return pdf
+    return cast("ArrayT", pdf)
 
-  def _inverse_rosenblatt_batched(self, u: Any) -> Any:
+  def _inverse_rosenblatt_batched(self, u: Any) -> ArrayT:  # noqa: ANN401
     """Batched inverse Rosenblatt: one stacked call per dependency wave.
 
-    Bit-identical to :meth:`_inverse_rosenblatt` on a simplified vine: the
+    Bit-identical to ``_inverse_rosenblatt`` on a simplified vine: the
     waves reorder the cells without changing what any one of them computes.
     The inverse's dependencies do not reduce to tree levels -- a wave holds
     one cell from almost every tree -- so the grouping is by longest-path
     level of the static ``(var, tree)`` graph, which the subclass's batched
-    state levels once at bake time. The scratch is flattened to
+    state levels once when the state is built. The scratch is flattened to
     ``((trunc_lvl + 1) * d, n)`` so a cell's slot is one row, and a whole wave
     is one gather per input and one scatter per output.
 
@@ -991,11 +948,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     ----------
     u : array, shape (n, d), dtype float
         Prepared independent uniforms.
-
-    Returns
-    -------
-    array, shape (n, d), dtype float
-        Dependent uniforms in ``[1e-10, 1 - 1e-10]``.
     """
     xp = self._namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
@@ -1005,7 +957,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       out = xp.empty((n, d), dtype=u.dtype, device=u.device)
       for j in range(d):
         out[:, j] = u[:, order[inv[j]] - 1]
-      return out
+      return cast("ArrayT", out)
     bv = self._ensure_batched()
     rows = (trunc_lvl + 1) * d
     hinv2 = xp.empty((rows, n), dtype=u.dtype, device=u.device)
@@ -1018,9 +970,9 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       out[:, j] = hinv2[inv[j], :]
-    return trim(xp, out)
+    return cast("ArrayT", trim(xp, out))
 
-  def _rosenblatt_batched(self, u: Any) -> Any:
+  def _rosenblatt_batched(self, u: Any) -> ArrayT:  # noqa: ANN401 - as `_pdf`
     """Batched Rosenblatt transform (per-tree-level stacked h-functions).
 
     Numerically equivalent to ``_rosenblatt`` on a simplified vine.
@@ -1029,11 +981,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     ----------
     u : array, shape (n, d), dtype float
         Prepared pseudo-observations.
-
-    Returns
-    -------
-    array, shape (n, d), dtype float
-        Independent uniforms in ``[1e-10, 1 - 1e-10]``.
     """
     xp = self._namespace(u)
     d, trunc_lvl = self.d, self.trunc_lvl
@@ -1052,7 +999,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       h1_e, h2_e = lvl.h1_h2(bv.grid_points, u_e)
       h1_new = xp.matrix_transpose(h1_e)
       h2_new = xp.matrix_transpose(h2_e)
-      # hfunc2 is overwritten unconditionally at every edge; hfunc1 is gated.
+      # hfunc2 is overwritten unconditionally at every edge; hfunc1 is not.
       hfunc2[:, :n_pairs] = h2_new
       hfunc1[:, :n_pairs] = xp.where(
         lvl.needs_h1[None, :], h1_new, hfunc1[:, :n_pairs]
@@ -1060,45 +1007,37 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       out[:, j] = hfunc2[:, inv[j]]
-    return trim(xp, out)
+    return cast("ArrayT", trim(xp, out))
 
   # --- batched dispatch ------------------------------------------------- #
-  def _namespace(self, a: Any) -> Any:
+  def _namespace(self, a: object) -> ModuleType:
     """The array namespace of this vine's working arrays, resolved once.
 
     Resolving it per call would put a type-dispatch table walk inside each
     cascade, which a tracing compiler then has to trace through --
     ``array_namespace`` is memoized on the type, but the memo is itself Python
     that ends up in the graph. Every entry point resolves it through
-    :meth:`_prep`, which runs before the cascade, so by the time a cascade asks
+    ``_prep``, which runs before the cascade, so by the time a cascade asks
     it is already answered.
 
     The memo is keyed on the array type rather than held for the vine's
-    lifetime. Only a subclass that coerces in :meth:`_prep` -- as
+    lifetime. Only a subclass that coerces in ``_prep`` -- as
     :class:`~pyvinecopulib.torch.TorchVinecop` does -- guarantees one type per
-    vine; the default :meth:`_prep` works on whatever namespace it is handed,
+    vine; the default ``_prep`` works on whatever namespace it is handed,
     so a vine may legitimately see two. An identity check is still far cheaper
     than the dispatch walk it avoids.
-
-    Parameters
-    ----------
-    a : array
-        An array of the vine's working type.
-
-    Returns
-    -------
-    module
-        The array-API namespace for ``a``.
     """
-    if self._xp is None or self._xp_type is not type(a):
-      object.__setattr__(self, "_xp", array_namespace(a))
+    xp = self._xp
+    if xp is None or self._xp_type is not type(a):
+      xp = array_namespace(a)
+      object.__setattr__(self, "_xp", xp)
       object.__setattr__(self, "_xp_type", type(a))
-    return self._xp
+    return xp
 
-  def __getstate__(self) -> dict:
+  def __getstate__(self) -> dict[str, Any]:
     """The picklable state: everything but the resolved array namespace.
 
-    :meth:`_namespace` memoizes a *module*, which no pickle can carry, so it
+    ``_namespace`` memoizes a *module*, which no pickle can carry, so it
     is dropped and re-resolved on first use. Nothing else about the vine
     depends on it having been resolved.
 
@@ -1108,7 +1047,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         The instance state, with the namespace memo cleared.
     """
     # `object.__getstate__` answers `None` for an empty instance; every
-    # concrete vine has state, so this only keeps the type honest.
+    # concrete vine has state, so this only keeps the annotation correct.
     raw = cast("dict[str, Any]", super().__getstate__() or {})
     state = dict(raw)
     state["_xp"] = None
@@ -1116,30 +1055,19 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     return state
 
   def _resolve_batched(
-    self, requested: Optional[bool], x: Optional[Any]
+    self, requested: Optional[bool], x: Optional[ArrayT]
   ) -> bool:
     """Resolve the ``batched`` flag; force ``False`` for conditional or discrete.
 
+    Covariates count as conditional here: any non-``None`` ``x`` forces the
+    non-batched cascade.
+
     Declining is the right answer rather than raising: ``batched`` defaults to
-    the subclass's :meth:`_default_batched` (device-dependent on the torch
+    the subclass's ``_default_batched`` (device-dependent on the torch
     vine), so a raise would make an ordinary ``pdf(u)`` fail on a discrete vine
     for a reason the caller never asked about. Discreteness is a property of the
     vine, not of the subclass's grid, which is why it is decided here rather
-    than through :class:`_NotBatchable`.
-
-    Parameters
-    ----------
-    requested : bool or None
-        The caller's ``batched`` argument; ``None`` defers to
-        :meth:`_default_batched`.
-    x : array or None
-        External covariates for the call; any non-``None`` value forces the
-        non-batched cascade.
-
-    Returns
-    -------
-    bool
-        Whether to attempt the batched fast path.
+    than through ``_NotBatchable``.
     """
     if self._context.assembles_conditioning or x is not None:
       return False
@@ -1199,7 +1127,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         The relabeled structure; its order ends with ``conditioning_set``.
     pair_copulas : list of list of BicopLike
         The same pair copulas on their new slots, argument-swapped with
-        :meth:`~pyvinecopulib.core.BicopLike.flip` where the slot requires it --
+        :meth:`~pyvinecopulib.core.BicopBase.flip` where the slot requires it --
         ready to host in a vine without re-fitting.
 
     Raises
@@ -1220,7 +1148,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     r = reorientation(self.structure, [int(v) for v in conditioning_set])
     if r.identity:
       return self.structure, [
-        [self._get_pair_copula(t, e) for e in range(self.d - 1 - t)]
+        [self.get_pair_copula(t, e) for e in range(self.d - 1 - t)]
         for t in range(self.trunc_lvl)
       ]
     if self._context.assembles_conditioning:
@@ -1230,8 +1158,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       row: list[BicopLike[ArrayT]] = []
       for edge in range(self.d - 1 - tree):
         old_edge, flipped = r.locations[(tree, edge)]
-        pair = self._get_pair_copula(tree, old_edge)
-        row.append(pair.flip() if flipped else pair)
+        pair = self.get_pair_copula(tree, old_edge)
+        row.append(flip_of(pair) if flipped else pair)
       pairs.append(row)
     return r.structure, pairs
 
@@ -1249,7 +1177,8 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     Parameters
     ----------
     u : array, shape (n, d), (n, d + k) or (n, 2d), dtype float
-        Pseudo-observations in ``[0, 1]`` (clamped to ``[1e-10, 1 - 1e-10]``).
+        Pseudo-observations in ``[0, 1]``, clamped strictly inside it at
+        the working precision.
         With ``k`` discrete variables, the left limits ``F(x^-)`` are required
         too: pass the expanded ``(n, 2d)`` layout, or the compact ``(n, d + k)``
         one that omits the left-limit columns of the continuous variables.
@@ -1259,7 +1188,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         External covariates threaded to each pair copula. A simplified vine may
         still depend on these; simplification excludes dependence on the edge
         conditioning-set values, not on external covariates.
-    batched : bool or None, optional
+    batched : bool, or None, optional
         Fire one batched pair-copula call per tree level. ``None`` resolves
         via the subclass default; forced ``False`` when conditioning is active
         or any variable is discrete, and falls back to the non-batched cascade
@@ -1271,14 +1200,14 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         Joint density values.
     """
     del num_threads
-    u_p = self._prep(u, "pdf")
-    validate_covariates(x, int(cast(Any, u_p).shape[0]))
+    u_p = self._prep_args(u, "pdf")
+    x = prepare(self, x, int(cast("Any", u_p).shape[0]))
     if self._resolve_batched(batched, x):
       try:
-        return cast(ArrayT, self._pdf_batched(u_p))
+        return self._pdf_batched(u_p)
       except _NotBatchable:
         pass  # no grid fast path available -> non-batched cascade
-    return cast(ArrayT, self._pdf(u_p, x))
+    return self._pdf(u_p, x)
 
   def rosenblatt(
     self,
@@ -1303,14 +1232,14 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         For a discrete variable the conditional distribution function jumps, so
         the transform is uniform only after mixing the jump's two ends with an
         independent uniform. Continuous variables are unaffected either way.
-    seeds : list of int or None, optional
+    seeds : list of int, or None, optional
         RNG seeds for that randomization; forwarded to the subclass's
         base-uniform draw.
     x : array, shape (n, p), or None, optional
         External covariates threaded to each pair copula, or ``None``.
-    batched : bool or None, optional
+    batched : bool, or None, optional
         See :meth:`pdf`.
-    conditioning_set : list of int or None, optional
+    conditioning_set : list of int, or None, optional
         Condition on these 1-based variables instead of the ones at the tail of
         the vine order. It does not subset ``u``, which stays the full matrix;
         what changes is which conditional distributions the output columns
@@ -1319,7 +1248,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     Returns
     -------
     array, shape (n, d), dtype float
-        Independent uniforms in ``[1e-10, 1 - 1e-10]``.
+        Independent uniforms, strictly inside ``[0, 1]``.
 
     Raises
     ------
@@ -1340,14 +1269,14 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         x=x,
         batched=batched,
       )
-    u_p = self._prep(u, "rosenblatt")
-    validate_covariates(x, int(cast(Any, u_p).shape[0]))
+    u_p = self._prep_args(u, "rosenblatt")
+    x = prepare(self, x, int(cast("Any", u_p).shape[0]))
     if self._resolve_batched(batched, x):
       try:
-        return cast(ArrayT, self._rosenblatt_batched(u_p))
+        return self._rosenblatt_batched(u_p)
       except _NotBatchable:
         pass  # no grid fast path available -> non-batched cascade
-    return cast(ArrayT, self._rosenblatt(u_p, x, randomize_discrete, seeds))
+    return self._rosenblatt(u_p, x, randomize_discrete, seeds)
 
   def inverse_rosenblatt(
     self,
@@ -1369,19 +1298,19 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         Accepted for parity; ignored.
     x : array, shape (n, p), or None, optional
         External covariates threaded to each pair copula, or ``None``.
-    batched : bool or None, optional
+    batched : bool, or None, optional
         Whether to evaluate whole groups of pair copulas per call rather than
         one at a time; ``None`` takes the subclass default. The inverse
         cascade's dependencies run across tree levels, so the groups here are
         the levels of the dependency graph rather than the trees themselves.
         Ignored when no batched path is available.
-    conditioning_set : list of int or None, optional
+    conditioning_set : list of int, or None, optional
         See :meth:`rosenblatt`.
 
     Returns
     -------
     array, shape (n, d), dtype float
-        Dependent uniforms in ``[1e-10, 1 - 1e-10]``.
+        Dependent uniforms, strictly inside ``[0, 1]``.
 
     Raises
     ------
@@ -1396,15 +1325,15 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     view = self._reoriented(conditioning_set)
     if view is not self:
       return view.inverse_rosenblatt(u, x=x, batched=batched)
-    u_p = self._prep(u, "inverse_rosenblatt", values_only=True)
-    validate_covariates(x, int(cast(Any, u_p).shape[0]))
+    u_p = self._prep_args(u, "inverse_rosenblatt", values_only=True)
+    x = prepare(self, x, int(cast("Any", u_p).shape[0]))
     with self._eval_context():
       if self._resolve_batched(batched, x):
         try:
-          return cast(ArrayT, self._inverse_rosenblatt_batched(u_p))
+          return self._inverse_rosenblatt_batched(u_p)
         except _NotBatchable:
           pass
-      return cast(ArrayT, self._inverse_rosenblatt(u_p, x))
+      return self._inverse_rosenblatt(u_p, x)
 
   def sample(
     self,
@@ -1426,21 +1355,21 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         Draw quasi-random base uniforms instead of pseudo-random.
     num_threads : int, default=1
         Accepted for parity; ignored.
-    seeds : list of int or None, optional
+    seeds : list of int, or None, optional
         RNG seeds forwarded to the subclass's base-uniform draw.
     x : array, shape (n, p), or None, optional
         External covariates for a conditional draw (one row per sample).
-    batched : bool or None, optional
+    batched : bool, or None, optional
         Forwarded to :meth:`inverse_rosenblatt`.
 
     Returns
     -------
     array, shape (n, d), dtype float
-        Dependent uniforms in ``[1e-10, 1 - 1e-10]``.
+        Dependent uniforms, strictly inside ``[0, 1]``.
     """
     del num_threads
     seeds = list(seeds) if seeds else []
-    validate_covariates(x, n)
+    x = prepare(self, x, n)
     with self._eval_context():
       base_u = self._sample_uniform(n, qrng, seeds)
       return self.inverse_rosenblatt(base_u, x=x, batched=batched)
@@ -1475,9 +1404,9 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         Draw quasi-random base uniforms for the conditioned variables.
     num_threads : int, default=1
         Accepted for parity; ignored.
-    seeds : list of int or None, optional
+    seeds : list of int, or None, optional
         RNG seeds forwarded to the subclass's base-uniform draw.
-    conditioning_set : list of int or None, optional
+    conditioning_set : list of int, or None, optional
         The 1-based variables to condition on. ``None`` takes the last
         ``k`` of :attr:`order`, with ``k`` inferred from ``u_cond``'s width.
         **The two forms map the columns differently**: without it, column ``i``
@@ -1531,7 +1460,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       )
     d = self.d
     n, n_cols = int(ua.shape[0]), int(ua.shape[1])
-    validate_covariates(x, n)
+    x = prepare(self, x, n)
     view = self._reoriented(conditioning_set)
     if conditioning_set is None:
       cond_vars = self._infer_conditioning_set(n_cols)
@@ -1570,7 +1499,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       # The conditioning variables' own Rosenblatt coordinates; randomized so a
       # discrete conditioner's jump becomes a uniform the inverse can invert.
       w: Any = view.rosenblatt(
-        cast(ArrayT, u_completed),
+        cast("ArrayT", u_completed),
         randomize_discrete=True,
         seeds=seeds,
         x=x,
@@ -1578,7 +1507,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       base_u: Any = self._sample_uniform(n, qrng, seeds)
       for var in cond_vars:
         base_u[:, var - 1] = w[:, var - 1]
-      return view.inverse_rosenblatt(cast(ArrayT, base_u), x=x)
+      return view.inverse_rosenblatt(cast("ArrayT", base_u), x=x)
 
   def _infer_conditioning_set(self, n_cols: int) -> list[int]:
     """The order tail whose layout is ``n_cols`` columns wide."""
@@ -1613,15 +1542,15 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
         Draw quasi-random samples (matches ``Vinecop.cdf()``).
     num_threads : int, default=1
         Accepted for parity; ignored.
-    seeds : list of int or None, optional
+    seeds : list of int, or None, optional
         RNG seeds forwarded to :meth:`sample`.
-    x : array or None, optional
+    x : array, or None, optional
         Must be ``None`` — a per-row conditional CDF is not supported (the
         Monte-Carlo dominance estimate cannot condition each query row on a
         different covariate without per-``x`` resampling).
     block_size : int, default=4096
         Query rows processed per iteration (peak-memory control).
-    batched : bool or None, optional
+    batched : bool, or None, optional
         Forwarded to :meth:`sample`, which draws the Monte-Carlo sample.
 
     Returns
@@ -1642,7 +1571,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
       )
     seeds = list(seeds) if seeds else []
     with self._eval_context():
-      prepped: Any = self._prep(u, "cdf")
+      prepped: Any = self._prep_args(u, "cdf")
       # Only the value block enters the dominance count: C(u) is a right limit.
       u_t: Any = prepped[:, : self.d]
       samples: Any = self.sample(N, qrng=qrng, seeds=seeds, batched=batched)
@@ -1655,7 +1584,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
           samples[None, :, :] <= u_t[start:end][:, None, :], axis=-1
         )
         out[start:end] = xp.mean(xp.astype(dominated, u_t.dtype), axis=1)
-      return cast(ArrayT, out)
+      return cast("ArrayT", out)
 
   # --- convenience surface (loglik / plot / accessors) ------------------ #
   def loglik(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
@@ -1676,7 +1605,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     """
     dens: Any = self.pdf(u, x=x)
     xp = array_namespace(dens)
-    return cast(ArrayT, xp.sum(xp.log(dens)))
+    return cast("ArrayT", xp.sum(xp.log(dens)))
 
   @property
   def dim(self) -> int:
@@ -1690,7 +1619,7 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     return self.d
 
   @property
-  def matrix(self) -> Any:
+  def matrix(self) -> np.ndarray:
     """R-vine structure matrix (from :attr:`structure`).
 
     Returns
@@ -1700,23 +1629,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     """
     return self.structure.matrix
 
-  def get_pair_copula(self, tree: int, edge: int) -> BicopLike[ArrayT]:
-    """Return the pair copula at ``(tree, edge)``.
-
-    Parameters
-    ----------
-    tree : int
-        Tree index (``0``-based).
-    edge : int
-        Edge index within the tree (``0``-based).
-
-    Returns
-    -------
-    BicopLike
-        The pair copula hosted at that position.
-    """
-    return self._get_pair_copula(tree, edge)
-
   def plot(
     self,
     tree: Optional[list[int]] = None,
@@ -1724,29 +1636,6 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     layout: str = "graphviz",
     vars_names: Optional[list[str]] = None,
   ) -> None:
-    """Plot the vine tree structure with networkx.
-
-    Draws one panel per requested tree from :attr:`structure`, mirroring
-    :meth:`pyvinecopulib.core.Vinecop.plot`.
-
-    Parameters
-    ----------
-    tree : list of int, or None, optional
-        Tree indices to plot; all trees when ``None``.
-    add_edge_labels : bool, default=True
-        Annotate edges with their conditioned / conditioning sets.
-    layout : str, default="graphviz"
-        ``"graphviz"`` (needs pydot + graphviz) or ``"spring_layout"``.
-    vars_names : list of str, or None, optional
-        Variable names; the integer indices are used when ``None``.
-
-    Returns
-    -------
-    None
-        The figure is drawn with matplotlib.
-    """
-    from .._python_helpers.vinecop import vinecop_plot
-
     vinecop_plot(self, tree, add_edge_labels, layout, vars_names)
 
   def __repr__(self) -> str:
@@ -1756,613 +1645,356 @@ class VinecopBase(VinecopLike[ArrayT], ABC):
     )
 
   # --- shared sequential-fit engine ------------------------------------- #
-  @staticmethod
-  def fit(
-    structure: Any,
-    u: Any,
-    fit_edge: FitEdge,
-    *,
-    context: Optional[ConditioningContext] = None,
-    x: Optional[Any] = None,
-    var_types: Optional[list[str]] = None,
-    fit_level: Optional[FitLevel] = None,
-    tree_criterion: str = "tau",
-    threshold: float = 0.0,
-    to_numpy: Optional[Callable[[Any], Any]] = None,
-  ) -> list[list[BicopLike]]:
-    """Fit pair copulas tree-by-tree along a fixed structure (returns them).
+  def set_pair_copulas(
+    self, pair_copulas: list[list[BicopLike[ArrayT]]]
+  ) -> None:
+    """Raise; override to store fitted pair copulas on this vine.
 
-    The array-agnostic (NumPy or PyTorch) analog of
-    :meth:`~pyvinecopulib.core.Vinecop.fit`, with the pair-copula fit supplied
-    by the ``fit_edge`` callback. It differs in one way: rather than mutating a
-    vine in place (as :meth:`~pyvinecopulib.core.Vinecop.fit` does), it
-    **returns** the fitted pairs as a nested ``[tree][edge]`` list — since
-    ``VinecopBase`` leaves pair storage to the subclass, there is no single
-    object to mutate. It mirrors the forward pdf traversal with the density
-    evaluation replaced by ``fit_edge(tree, edge, u_e, x_e)``; the returned
-    pair's ``hfunc1`` / ``hfunc2`` must be valid immediately for tree
-    propagation. Conditional fitting is driven through this seam (a
-    ``fit_edge`` that fits a conditional pair copula on ``(u_e, x_e)``), with
-    ``x_e`` assembled in the same C1 order the cascades use.
+    The write counterpart of :meth:`get_pair_copula`: a subclass stores pairs
+    however it likes, so only it can install them. Implementing it is what
+    turns this vine into an estimator, as the class docstring describes.
+
+    An implementation that memoizes anything derived from the pairs must
+    invalidate it here, since this is the one place they change without the
+    structure changing -- ``_build_batched`` copies their grids, and
+    ``_bind_vine`` only covers the paths that rebind the structure.
 
     Parameters
     ----------
-    structure : RVineStructure
-        The (fixed) vine structure to fit along.
-    u : array, shape (n, d), (n, d + k) or (n, 2d), dtype float
-        Pseudo-observations. With ``k`` discrete variables their left limits
-        ``F(x^-)`` are required too; see :meth:`pdf` on the layouts.
-    fit_edge : callable
-        ``(tree, edge, u_e, x_e) -> BicopLike`` fitting one edge's pair copula.
-        An edge with a discrete argument gets a four-column ``u_e`` and the
-        additional keyword ``var_types=[t1, t2]``; the pair it returns must read
-        that layout, so wrap a continuous one in
-        :class:`~pyvinecopulib.core.DiscretePair`.
-    context : ConditioningContext, optional
-        Conditioning-context policy (default: simplified / unconditional).
-    x : array, shape (n, p), or None, optional
-        External covariates for conditional fitting, else ``None``.
-    var_types : list of str, optional
-        Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete), in
-        variable order; ``None`` means all continuous.
-    fit_level : callable, optional
-        ``(tree, u_level, types) -> list[BicopLike]``, fitting a whole tree
-        level at once; see ``FitLevel``. Preferred over ``fit_edge``
-        for a level whose edges are all continuous and unconditional,
-        which is the only shape that stacks -- a discrete edge is four
-        columns wide where a continuous one is two. ``None`` fits every
-        edge separately, which is what every caller did before the hook
-        existed.
-    tree_criterion : str, default "tau"
-        Dependence measure ``threshold`` compares against, as on
-        ``FitControlsVinecop``. Read only when ``threshold`` is positive.
-    threshold : float, default 0.0
-        Dependence threshold. An edge whose criterion falls below it holds
-        :class:`~pyvinecopulib.core.IndependencePair` and is not fitted, as
-        it does under selection. At the default nothing is below it.
-    to_numpy : callable, optional
-        Host transfer for one column, used to evaluate the criterion.
-        Defaults to the array API's own, which any backend supports.
+    pair_copulas : list of list of BicopLike
+        Fitted pairs indexed ``[tree][edge]``.
 
     Returns
     -------
-    list of list of BicopLike
-        Fitted pair copulas indexed ``[tree][edge]``.
+    None
+
+    Raises
+    ------
+    NotImplementedError
+        Always, unless a subclass provides storage.
+    """
+    raise NotImplementedError(
+      f"{type(self).__name__}.set_pair_copulas is not defined; implement it "
+      "to store fitted pairs, which is what `fit` and `select` need in order "
+      "to return `self`."
+    )
+
+  @classmethod
+  def _resolve_fit_edge(
+    cls, fit_edge: Optional[FitEdge], controls: Optional[ControlsLike]
+  ) -> FitEdge:
+    """The pair-copula fitter to use.
+
+    An explicit ``fit_edge`` wins; otherwise ``bicop_class`` is fitted per
+    edge, receiving the vine's own ``controls`` -- which are pair controls,
+    since ``FitControlsVinecop`` is a ``FitControlsBicop`` -- and the edge's
+    conditioning matrix, so a non-simplified vine fits the model it evaluates.
 
     Raises
     ------
     ValueError
-        If ``var_types`` has the wrong length or an entry outside
-        ``{"c", "d"}``, or if ``u``'s column count matches no accepted layout.
-
-    See Also
-    --------
-    pyvinecopulib.core.VinecopBase.select : Select a structure and fit it.
-    pyvinecopulib.core.Vinecop.fit : The reference (in-place) fit.
+        If no ``fit_edge`` was given and this class names no
+        ``bicop_class``.
     """
-    if context is None:
-      context = SimplifiedContext()
-    ua: Any = u
-    xp = array_namespace(ua)
-    d = int(structure.dim)
-    trunc_lvl = int(structure.trunc_lvl)
-    order = tuple(int(v) for v in structure.order)
-    types = check_var_types(var_types, d)
-    pair_types = pair_var_types(structure, types) if n_discrete(types) else None
-    ua = collapse_data(ua, d, types, "fit")
-    n = ua.shape[0]
-    validate_covariates(x, int(n))
-    criterion = _make_criterion(
-      tree_criterion,
-      _to_numpy_default if to_numpy is None else to_numpy,
-      int(n),
-    )
-    hfunc1 = xp.zeros((n, d), dtype=ua.dtype, device=ua.device)
-    hfunc2 = xp.empty((n, d), dtype=ua.dtype, device=ua.device)
-    for j in range(d):
-      hfunc2[:, j] = ua[:, order[j] - 1]
-    # Parallel left-limit scratch, zero-initialized like the pdf traversal this
-    # mirrors; a column is only read where the edge's types say it was written.
-    hfunc2_sub: Any = seed_left_limits(
-      ua, d, order, types, disc_cols(types), xp
-    )
-    hfunc1_sub: Any = (
-      None
-      if hfunc2_sub is None
-      else xp.zeros((n, d), dtype=ua.dtype, device=ua.device)
-    )
-    u_nat = (
-      xp.asarray(hfunc2, copy=True) if context.assembles_conditioning else None
-    )
-    cache: dict[tuple[int, int], tuple[int, ...]] = {}
+    if fit_edge is not None:
+      return fit_edge
+    pair_cls = cls.bicop_class
+    if pair_cls is None:
+      raise ValueError(
+        f"{cls.__name__} names no `bicop_class`, so `fit_edge` is required: "
+        "pass a callable `(tree, edge, u_e, x_e) -> BicopLike`, or set "
+        "`bicop_class` to the pair-copula class this vine fits."
+      )
 
-    def edge_context_for(tree: int, edge: int) -> Optional[Any]:
-      # Assemble x_e = context(u_D, x); u_D columns in ascending conditioning
-      # -tree order (C1), matching VinecopBase._cond_positions / _edge_context.
-      if not context.assembles_conditioning and x is None:
-        return None
-      u_D: Optional[Any] = None
-      if context.assembles_conditioning:
-        key = (tree, edge)
-        if key not in cache:
-          cache[key] = tuple(
-            int(structure.struct_array(i, edge, natural_order=True)) - 1
-            for i in range(tree)
-          )
-        cols = cache[key]
-        if cols and u_nat is not None:
-          u_D = u_nat[:, list(cols)]
-      return context.edge_context(u_D=u_D, x=x)
+    def fit_edge_default(
+      tree: int,
+      edge: int,
+      u_e: ArrayT,
+      x_e: Optional[ArrayT] = None,
+      var_types: Sequence[str] = ("c", "c"),
+    ) -> BicopLike[ArrayT]:
+      del tree, edge
+      # `x_e` is forwarded rather than dropped: a pair class that cannot
+      # condition on covariates then refuses them -- `reject_covariates` on a
+      # `BicopBase` subclass, a `TypeError` from a compiled `Bicop`, which
+      # names no `x` at all -- instead of returning the unconditional model
+      # under a conditional name. Dropping it here is what let a
+      # non-simplified vine fit the simplified model and evaluate the
+      # conditional one. Passed only when there is one, so an unconditional
+      # vine reaches every pair class unchanged; the same rule
+      # `BicopBase.select` forwards by.
+      conditional = {} if x_e is None else {"x": x_e}
+      return cast(
+        "BicopLike[ArrayT]",
+        cast("Any", pair_cls).from_data(
+          u_e, controls=controls, var_types=list(var_types), **conditional
+        ),
+      )
 
-    s = structure
-    pairs: list[list[BicopLike]] = []
-    for tree in range(trunc_lvl):
-      row: list[BicopLike] = []
-      # Every edge of one tree reads only columns finalized by earlier trees
-      # -- `min_array(tree, edge) - 1 > edge`, so the column an edge reads
-      # second is written later in this same tree -- which is why upstream
-      # runs a level on a thread pool. Gathering the level's inputs before
-      # fitting any of it is the same reordering, and it is what lets a
-      # level be fitted in one call.
-      level = [
-        edge_columns(
-          s, pair_types, tree, edge, hfunc1, hfunc2, hfunc1_sub, hfunc2_sub
-        )
-        for edge in range(d - tree - 1)
-      ]
-      inputs = [stack_edge(xp, c0, c1, subs) for c0, c1, subs, _ in level]
-      contexts = [edge_context_for(tree, e) for e in range(len(level))]
-      # Per-edge type *pairs*, distinct from the per-variable `types` above.
-      level_types = [t for _, _, _, t in level]
-      # A fixed structure thresholds exactly as selection does: upstream builds
-      # the same selector on the given matrix, so `fit_or_reuse_pair_copula`
-      # leaves an edge below the threshold holding independence here too.
-      skip = [
-        threshold > 0.0 and criterion(c0, c1) < threshold
-        for c0, c1, _, _ in level
-      ]
-      to_fit = [e for e, s_e in enumerate(skip) if not s_e]
-      fitted: Optional[dict[int, BicopLike]] = None
-      if (
-        fit_level is not None
-        and to_fit
-        and all(contexts[e] is None for e in to_fit)
-        and all("d" not in level_types[e] for e in to_fit)
-      ):
-        got = fit_level(
-          tree,
-          xp.stack([inputs[e] for e in to_fit], axis=0),
-          [level_types[e] for e in to_fit],
-        )
-        fitted = dict(zip(to_fit, got))
-      for edge in range(d - tree - 1):
-        _, _, subs, edge_types = level[edge]
-        u_e, x_e = inputs[edge], contexts[edge]
-        edge_copula: BicopLike
-        if skip[edge]:
-          edge_copula = IndependencePair()
-        elif fitted is not None:
-          edge_copula = fitted[edge]
-        else:
-          edge_copula = _fit_edge_call(
-            fit_edge, tree, edge, u_e, x_e, edge_types
-          )
-        row.append(edge_copula)
-        if s.needed_hfunc1(tree, edge):
-          hfunc1[:, edge] = _pair_eval(edge_copula.hfunc1, u_e, x_e)
-          if subs is not None and edge_types[1] == "d":
-            hfunc1_sub[:, edge] = _pair_eval(
-              edge_copula.hfunc1, with_left_limit(u_e, 1), x_e
-            )
-        if s.needed_hfunc2(tree, edge):
-          hfunc2[:, edge] = _pair_eval(edge_copula.hfunc2, u_e, x_e)
-          if subs is not None and edge_types[0] == "d":
-            hfunc2_sub[:, edge] = _pair_eval(
-              edge_copula.hfunc2, with_left_limit(u_e, 0), x_e
-            )
-      pairs.append(row)
-    return pairs
+    return fit_edge_default
 
-  @staticmethod
-  def select(
-    u: Any,
-    fit_edge: FitEdge,
+  #: The two fit engines, module functions in ``_vinecop_fit_engines`` --
+  #: neither
+  #: reads ``self`` or ``cls``. Bound here because these are the names `fit`,
+  #: `select`, `from_data` and every external driver reach them through.
+  _fit_parts = staticmethod(fit_parts)
+  _select_parts = staticmethod(select_parts)
+
+  @classmethod
+  def _check_selectable(cls, fit_edge: Optional[FitEdge]) -> None:
+    """Refuse a pair copula that cannot be reoriented, before fitting anything.
+
+    Selection finalizes by reorienting each pair onto its slot, so a pair
+    without ``flip`` cannot be selected with. When ``bicop_class`` names
+    the class this is knowable up front; behind an opaque ``fit_edge`` it is
+    not, and the first fitted pair is probed instead.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``bicop_class`` does not override ``flip``.
+    """
+    pair_cls = cls.bicop_class
+    if fit_edge is not None or pair_cls is None:
+      return
+    flip = getattr(pair_cls, "flip", None)
+    if flip is None or flip is BicopBase.flip:
+      raise NotImplementedError(
+        f"{pair_cls.__name__} has no `flip`, which structure selection needs "
+        "to reorient each pair onto its finalized slot. Implement it (return "
+        "the argument-swapped copula), or supply a structure and fit along it."
+      )
+
+  def fit(
+    self,
+    u: Union[np.ndarray, ArrayT],
+    /,
+    controls: Optional[ControlsLike] = None,
     *,
-    fit_level: Optional[FitLevel] = None,
-    trunc_lvl: Optional[int] = None,
-    tree_criterion: str = "tau",
-    threshold: float = 0.0,
-    tree_algorithm: str = "mst_prim",
-    seeds: Optional[list[int]] = None,
-    to_numpy: Optional[Callable[[Any], Any]] = None,
     var_types: Optional[list[str]] = None,
-    conditioning_set: Optional[list[int]] = None,
-  ) -> tuple[RVineStructure, list[list[BicopLike[ArrayT]]]]:
-    """Select an R-vine structure from data (array-agnostic Dissmann).
+    x: Optional[ArrayT] = None,
+    fit_edge: Optional[FitEdge] = None,
+    fit_level: Optional[FitLevel] = None,
+  ) -> Self:
+    """Fit the pair copulas along this vine's own structure, in place.
 
     The array-agnostic (NumPy or PyTorch) analog of
-    :meth:`~pyvinecopulib.core.Vinecop.select`, with the pair-copula fit
-    supplied by the ``fit_edge`` callback. It differs in one way: rather than
-    mutating a vine in place (as :meth:`~pyvinecopulib.core.Vinecop.select`
-    does), it **returns** the selected structure and pairs — ``VinecopBase``
-    leaves pair storage to the subclass, so there is no single object to
-    mutate. It runs the tree-by-tree Dissmann greedy search
-    [1]_: for each tree it builds a candidate graph honoring the proximity
-    condition, weights every candidate edge by ``1 - |tau|`` (``tau`` is the
-    dependence measure named by ``tree_criterion``, Kendall's tau by default,
-    through the same criterion routine as the compiled selector), and keeps a
-    spanning tree (``tree_algorithm``) —
-    maximum-dependence for the MST variants, Wilson-weighted random for the
-    random ones. Each surviving edge's pair copula is fit by the ``fit_edge``
-    callback, whose h-functions feed the next tree.
-
-    The fitted pairs are returned reused, never re-fit: each is placed on its
-    slot in the finalized structure and reoriented with its
-    :meth:`~pyvinecopulib.core.BicopLike.flip` where the slot's orientation
-    requires it. Selection is for a simplified vine — edge weights use the
-    unconditional pseudo-observations, so ``fit_edge`` receives ``x_e = None``.
+    :meth:`~pyvinecopulib.core.Vinecop.fit`: the structure is taken as given --
+    this vine's -- and only the pairs are estimated.
 
     Parameters
     ----------
-    u : array, shape (n, d), (n, d + k) or (n, 2d), dtype float
-        Pseudo-observations on any array-API namespace (NumPy or PyTorch). With
-        ``k`` discrete variables their left limits ``F(x^-)`` are required too;
-        see :meth:`pdf` on the layouts.
-    fit_edge : callable
-        ``(tree, edge, u_e, x_e) -> BicopLike`` fitting one edge's pair copula;
-        its ``hfunc1`` / ``hfunc2`` must be valid immediately, and it must
-        implement :meth:`~pyvinecopulib.core.BicopLike.flip` (used to
-        reorient reused pairs onto
-        their finalized slots). ``x_e`` is always ``None`` here. An edge with a
-        discrete argument gets a four-column ``u_e`` and the additional keyword
-        ``var_types=[t1, t2]``; the pair it returns must read that layout, so
-        wrap a continuous one in
-        :class:`~pyvinecopulib.core.DiscretePair`.
-    fit_level : callable, optional
-        ``(tree, u_level, types) -> list[BicopLike]``, fitting a whole tree
-        level at once; see ``FitLevel``. Preferred over ``fit_edge`` for a
-        level whose surviving edges are all continuous. Whatever it returns
-        must still be per-slot ``flip``-able, since finalization reorients
-        reused pairs.
-    trunc_lvl : int, optional
-        Maximum number of trees to select (default: ``d - 1``, i.e. untruncated).
-    tree_criterion : str, default "tau"
-        Dependence measure used for edge weighting: ``"tau"``,
-        ``"rho"``, ``"hoeffd"``, ``"mcor"``, ``"cxi"`` or ``"joe"``, matching
-        ``FitControlsVinecop``. ``"cxi"`` is Chatterjee's xi, which is
-        asymmetric, so the weight is the larger of the two directions.
-    threshold : float, default 0.0
-        Dependence threshold. It acts twice, as it does in
-        ``Vinecop.select``: an edge whose criterion falls below it is
-        deprioritized during spanning-tree selection (weight ``1.0``), and if
-        it survives anyway it is left holding
-        :class:`~pyvinecopulib.core.IndependencePair` rather than being
-        fitted. At the default no non-negative criterion is below it.
-    tree_algorithm : str, default "mst_prim"
-        ``"mst_prim"`` / ``"mst_kruskal"`` (Dissmann) or ``"random_weighted"`` /
-        ``"random_unweighted"`` (Wilson).
-    seeds : list of int, optional
-        RNG seeds for the random tree algorithms (ignored by the MST ones).
-    to_numpy : callable, optional
-        Maps a 1-d array to a NumPy array for criterion evaluation. Defaults to
-        :func:`numpy.asarray`; PyTorch callers pass one that detaches and moves
-        to host (e.g. ``lambda t: t.detach().cpu().numpy()``).
-    var_types : list of str, optional
-        Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete), in
-        variable order; ``None`` means all continuous. Given, it also fixes the
-        dimension, so ``u`` may carry the extra left-limit columns.
-    conditioning_set : list of int or None, optional
-        1-based variables to place at the tail of the selected order, so they can
-        be conditioned on with :meth:`sample_conditional`. Every candidate edge
-        touching a non-conditioning variable is penalized, which makes the
-        conditioning set a self-contained block, and the finalized structure is
-        then relabeled onto that tail. Requires an MST ``tree_algorithm``, and
-        the pairs must implement
-        :meth:`~pyvinecopulib.core.BicopLike.flip`.
+    u : array, shape (n, d), dtype float
+        Pseudo-observations in ``[0, 1]^d``.
+    controls : ControlsLike, or None, optional
+        Fit configuration, read here and handed to each pair fit.
+    var_types : list of str, or None, optional
+        One ``"c"`` or ``"d"`` per variable; defaults to this vine's own.
+    x : array, shape (n, p), or None, optional
+        External covariates, threaded to each pair.
+    fit_edge : callable, or None, optional
+        ``(tree, edge, u_e, x_e) -> BicopLike``, receiving each edge's
+        ``var_types`` as a keyword when that edge has one. Defaults to fitting
+        ``bicop_class``. Conditional fitting is driven through this hook.
+    fit_level : callable, or None, optional
+        ``(tree, u_level, types) -> Sequence[BicopLike]``, fitting a whole tree
+        level at once instead of edge by edge.
 
     Returns
     -------
-    structure : RVineStructure
-        The selected vine structure.
-    pair_copulas : list of list of BicopLike
-        The fitted pair copulas, indexed ``[tree][edge]`` in the structure's
-        column order and reoriented onto their slots — ready to host in a vine
-        without re-fitting.
+    VinecopBase
+        ``self``, so the call chains.
 
     See Also
     --------
-    pyvinecopulib.core.VinecopBase.fit : Fit pair copulas along a fixed
-        structure.
-    pyvinecopulib.core.Vinecop.select : The reference (in-place) selector.
-
-    References
-    ----------
-    .. [1] Dissmann, J. F., E. C. Brechmann, C. Czado, and D. Kurowicka (2013).
-       *Selecting and estimating regular vine copulae and application to
-       financial returns.* Computational Statistics & Data Analysis, 59 (1),
-       52-69.
+    select : Choose a structure from the data as well.
+    from_data : Construct a fitted vine in one call.
     """
-    from ..pyvinecopulib_ext import (
-      RVineStructure,
-      _select_spanning_tree,
-    )
-
-    xp = array_namespace(u)
-    n = int(u.shape[0])
-    # With left-limit columns present, `u` is wider than the vine: `var_types`
-    # is what fixes the dimension.
-    d = len(var_types) if var_types is not None else int(u.shape[1])
-    types = check_var_types(var_types, d)
-    offsets = disc_cols(types)
-    u = collapse_data(u, d, types, "select")
-    seed_list = [int(s) for s in (seeds or [])]
-    # ``np.asarray`` raises on a GPU tensor, so the default routes any
-    # non-NumPy array through the array API's own host transfer. A caller
-    # that knows its backend can still pass a cheaper ``to_numpy``.
-    convert = _to_numpy_default if to_numpy is None else to_numpy
-    max_trees = (
-      d - 1 if trunc_lvl is None else max(0, min(int(trunc_lvl), d - 1))
-    )
-    tree_algorithms = (
-      "mst_prim",
-      "mst_kruskal",
-      "random_weighted",
-      "random_unweighted",
-    )
-    if tree_algorithm not in tree_algorithms:
-      raise ValueError(
-        f"tree_algorithm must be one of {tree_algorithms}; "
-        f"got {tree_algorithm!r}."
+    options = _selection_options(controls)
+    self.set_pair_copulas(
+      self._fit_parts(
+        self.structure,
+        u,
+        self._resolve_fit_edge(fit_edge, controls),
+        context=self._context,
+        x=x,
+        var_types=list(self.var_types) if var_types is None else var_types,
+        fit_level=fit_level,
+        tree_criterion=options.get("tree_criterion", "tau"),
+        threshold=options.get("threshold", 0.0),
+        weights=options.get("weights"),
+        criterion_function=options.get("criterion_function"),
       )
-    cond = [int(v) for v in (conditioning_set or [])]
-    in_cond = [False] * d
-    if cond:
-      # Mirrors `Vinecop::check_conditioning_set`: an MST is what makes the
-      # penalty below lay the conditioning block down first.
-      if len(cond) >= d:
-        raise ValueError(
-          "conditioning_set must contain at most d - 1 variables."
-        )
-      if any(v < 1 or v > d for v in cond):
-        raise ValueError("conditioning_set entries must be in 1, ..., d.")
-      if tree_algorithm not in ("mst_prim", "mst_kruskal"):
-        raise ValueError(
-          "conditioning-aware selection requires an MST tree_algorithm "
-          "('mst_prim' or 'mst_kruskal')."
-        )
-      for v in cond:
-        in_cond[v - 1] = True
-    # Sentinel "root" shared by every base-tree node, so the first tree's
-    # candidate graph is complete (the C++ base tree is a star).
-    root = d
+    )
+    # `select` gets these from `_bind_vine`; `fit` keeps the structure, so it
+    # has to drop them itself. The state holds a copy of the pairs' grids, and the
+    # pairs just changed; and the fit ran along the structure's own
+    # conditioning order, so any order recorded from an earlier `select` is now
+    # a claim about pairs that are gone.
+    self._batched = None
+    self._cond_order = {}
+    self._cond_pos_cache = {}
+    return self
 
-    # Only the value columns enter, so a discrete vine selects the tree it
-    # would select continuous; the weighted / NaN-compaction corrections are
-    # skipped, this path being unweighted.
-    criterion = _make_criterion(tree_criterion, convert, n)
+  def select(
+    self,
+    u: Union[np.ndarray, ArrayT],
+    /,
+    controls: Optional[ControlsLike] = None,
+    *,
+    var_types: Optional[list[str]] = None,
+    x: Optional[ArrayT] = None,
+    fit_edge: Optional[FitEdge] = None,
+    fit_level: Optional[FitLevel] = None,
+  ) -> Self:
+    """Select a structure from data and fit its pairs, in place.
 
-    # A node is one edge of the previous tree (a single variable for the base
-    # tree). ``prev`` holds the two previous-tree vertex ids that this edge
-    # joined; a shared prev id is the proximity condition and picks which
-    # h-function feeds the next tree.
-    # A base-tree vertex is a single variable, so both of its slots carry that
-    # variable's type and its left limit fills the first slot only -- the base
-    # tree is a star, so every edge reads slot 0 (`make_base_tree`).
-    nodes: list[dict[str, Any]] = [
-      {
-        "all_indices": (i,),
-        "h1": u[:, i],
-        "h2": u[:, i],
-        "h1_sub": u[:, d + offsets[i]] if types[i] == "d" else None,
-        "h2_sub": None,
-        "types": ("d", "d") if types[i] == "d" else ("c", "c"),
-        "prev": (root, i),
-      }
-      for i in range(d)
-    ]
+    The array-agnostic (NumPy or PyTorch) analog of
+    :meth:`~pyvinecopulib.core.Vinecop.select`: it replaces both halves of this
+    vine -- the structure *and* the pairs -- with what the data support.
 
-    trees: list[list[tuple[int, int, list[int]]]] = []
-    # Per tree: {(conditioned pair, conditioning set) -> (arg1 label, fitted
-    # pair)}, used to place + reorient the pairs onto the finalized slots.
-    records: list[dict[Any, tuple[int, Any]]] = []
-    for _ in range(max_trees):
-      m = len(nodes)
-      cand: list[tuple[int, int]] = []
-      cand_cols: list[tuple[Any, Any]] = []
-      cand_subs: list[Optional[tuple[Any, Any]]] = []
-      cand_types: list[tuple[str, str]] = []
-      cand_crits: list[float] = []
-      weights: list[float] = []
-      # Candidate enumeration mirrors the C++ selector exactly
-      # (tools_select.ipp add_allowed_edges_proximity): the outer loop runs
-      # over v0 and the inner over v1 < v0, so an edge's *first* endpoint v0 —
-      # which contributes pc_data column 0 and the first conditioned variable —
-      # is the larger vertex index, and candidate insertion order is preserved.
-      for v0 in range(m):
-        prev0 = nodes[v0]["prev"]
-        for v1 in range(v0):
-          prev1 = nodes[v1]["prev"]
-          shared = set(prev0) & set(prev1)
-          if not shared:
-            continue
-          common = min(shared)
-          pos0, pos1 = prev0.index(common), prev1.index(common)
-          col0 = nodes[v0]["h1"] if pos0 == 0 else nodes[v0]["h2"]
-          col1 = nodes[v1]["h1"] if pos1 == 0 else nodes[v1]["h2"]
-          # The h-function comes from slot `pos`, the type from the *other*
-          # slot: an h-function integrates out its conditioning variable and
-          # keeps the other one (`add_pc_info`).
-          edge_types = (
-            nodes[v0]["types"][1 - pos0],
-            nodes[v1]["types"][1 - pos1],
-          )
-          subs: Optional[tuple[Any, Any]] = None
-          if "d" in edge_types:
-            # A slot without a left limit is continuous, and its own value is
-            # its left limit (`get_hfunc_sub`).
-            sub0 = nodes[v0]["h1_sub" if pos0 == 0 else "h2_sub"]
-            sub1 = nodes[v1]["h1_sub" if pos1 == 0 else "h2_sub"]
-            subs = (
-              col0 if sub0 is None else sub0,
-              col1 if sub1 is None else sub1,
-            )
-          # The edge weight reads the value columns only, so the spanning tree
-          # a discrete vine selects is the one it would select continuous.
-          tau = criterion(col0, col1)
-          weight = 1.0 - (tau >= threshold) * tau
-          if cond:
-            # Base weights lie in [0, 1], so adding `d` keeps them non-negative
-            # (Prim requires it) while making every all-conditioning edge
-            # strictly cheaper: the minimum spanning tree lays down the
-            # conditioning set's own optimal sub-vine first at every tree, which
-            # is what makes it a block the relabeling can move to the tail
-            # (tools_select.ipp add_allowed_edges_proximity).
-            all_cond = all(
-              in_cond[i] for i in nodes[v0]["all_indices"]
-            ) and all(in_cond[i] for i in nodes[v1]["all_indices"])
-            if not all_cond:
-              weight += float(d)
-          cand.append((v0, v1))
-          cand_cols.append((col0, col1))
-          cand_subs.append(subs)
-          cand_types.append(edge_types)
-          cand_crits.append(float(tau))
-          weights.append(weight)
+    Parameters
+    ----------
+    u : array, shape (n, d), dtype float
+        Pseudo-observations in ``[0, 1]^d``.
+    controls : ControlsLike, or None, optional
+        Fit configuration.
+    var_types : list of str, or None, optional
+        One ``"c"`` or ``"d"`` per variable; defaults to this vine's own.
+    x : array, shape (n, p), or None, optional
+        External covariates, threaded to each pair.
+    fit_edge : callable, or None, optional
+        See :meth:`fit`. The pair must also implement ``flip``, which
+        reorients it onto its finalized slot.
+    fit_level : callable, or None, optional
+        Fits a whole tree level at once; see :meth:`fit`.
 
-      # Ascending candidate index = boost's edge-list (insertion) order, which
-      # is the order the C++ selector iterates surviving edges in.
-      selected = sorted(
-        _select_spanning_tree(m, cand, weights, tree_algorithm, seed_list)
+    Returns
+    -------
+    VinecopBase
+        ``self``, so the call chains.
+
+    See Also
+    --------
+    fit : Keep this vine's structure and fit only the pairs.
+    from_data : Construct a fitted vine in one call.
+    """
+    self._check_selectable(fit_edge)
+    types = list(self.var_types) if var_types is None else var_types
+    structure, pair_copulas, cond_order = self._select_parts(
+      u,
+      self._resolve_fit_edge(fit_edge, controls),
+      context=self._context,
+      x=x,
+      var_types=types,
+      fit_level=fit_level,
+      **_selection_options(controls),
+    )
+    self._bind_vine(structure, self._context, var_types=types)
+    self.set_pair_copulas(pair_copulas)
+    self._set_cond_order(cond_order)
+    return self
+
+  @classmethod
+  def from_data(
+    cls,
+    u: Union[np.ndarray, ArrayT],
+    /,
+    controls: Optional[ControlsLike] = None,
+    *,
+    structure: Optional[RVineStructure] = None,
+    var_types: Optional[list[str]] = None,
+    x: Optional[ArrayT] = None,
+    fit_edge: Optional[FitEdge] = None,
+    fit_level: Optional[FitLevel] = None,
+  ) -> Self:
+    """Construct a vine fitted to data.
+
+    The factory counterpart of :meth:`select`, for when there is no vine yet.
+    With ``structure=None`` the structure is selected from the data; supplying
+    one skips selection and fits only the pairs along it.
+
+    Parameters
+    ----------
+    u : array, shape (n, d), dtype float
+        Pseudo-observations in ``[0, 1]^d``.
+    controls : ControlsLike, or None, optional
+        Fit configuration; see :meth:`select`.
+    structure : RVineStructure, or None, optional
+        A fixed structure. Selected from the data when ``None``.
+    var_types : list of str, or None, optional
+        One ``"c"`` or ``"d"`` per variable.
+    x : array, shape (n, p), or None, optional
+        External covariates, threaded to each pair. A vine built here is
+        simplified, so these are all of what a pair conditions on.
+    fit_edge : callable, or None, optional
+        See :meth:`fit`. Defaults to fitting ``bicop_class``.
+    fit_level : callable, or None, optional
+        Fits a whole tree level at once; see :meth:`fit`.
+
+    Returns
+    -------
+    VinecopBase
+        The fitted vine.
+
+    Notes
+    -----
+    It finishes by calling ``cls(pair_copulas, structure, var_types=...)`` --
+    the constructor signature every subclass in this package uses. A subclass
+    whose ``__init__`` differs overrides this method, as
+    :class:`~pyvinecopulib.torch.TorchVinecop` does.
+
+    The plain factory, because a **non-simplified** or covariate-driven
+    fit is built the other way round, by constructing the vine with its
+    :class:`~pyvinecopulib.core.ConditioningContext` and then calling
+    :meth:`fit` with ``x``. That keeps this signature to what every vine
+    factory can mean, so a subclass shipping its own pair fitter can override
+    it.
+
+    See Also
+    --------
+    fit : Refit an existing vine's pairs.
+    select : Reselect an existing vine's structure and pairs.
+    """
+    resolved = cls._resolve_fit_edge(fit_edge, controls)
+    cond_order: dict[tuple[int, int], tuple[int, ...]] = {}
+    if structure is None:
+      cls._check_selectable(fit_edge)
+      structure, pair_copulas, cond_order = cls._select_parts(
+        u,
+        resolved,
+        x=x,
+        var_types=var_types,
+        fit_level=fit_level,
+        **_selection_options(controls),
       )
-
-      tree_edges: list[tuple[int, int, list[int]]] = []
-      new_nodes: list[dict[str, Any]] = []
-      tree_records: dict[Any, tuple[int, Any]] = {}
-      build_next_level = len(trees) + 1 < max_trees and len(selected) > 1
-      # The surviving edges' inputs were all materialized above, off the
-      # previous tree's nodes, and each fitted pair is written to a fresh
-      # `new_nodes` -- so unlike `fit`, this level needs no reordering to be
-      # fitted in one call.
-      survivors = [
-        stack_edge(xp, cand_cols[e][0], cand_cols[e][1], cand_subs[e])
-        for e in selected
-      ]
-      level_types = [cand_types[e] for e in selected]
-      # The weight above only decides which edges survive. Whether a surviving
-      # edge is *fitted* is a second question with the same answer upstream
-      # gives: an edge whose criterion falls below the threshold keeps a
-      # default-constructed pair -- independence -- and `select` is never
-      # called on it (tools_select.ipp fit_or_reuse_pair_copula). At the
-      # default `threshold=0.0` no non-negative criterion is below it, so
-      # nothing here is thresholded.
-      thresholded = [cand_crits[e] < threshold for e in selected]
-      to_fit = [i for i, skip in enumerate(thresholded) if not skip]
-      fitted_level: Optional[dict[int, BicopLike]] = None
-      if (
-        fit_level is not None
-        and to_fit
-        and all("d" not in level_types[i] for i in to_fit)
-      ):
-        got = fit_level(
-          len(trees),
-          xp.stack([survivors[i] for i in to_fit], axis=0),
-          [level_types[i] for i in to_fit],
-        )
-        fitted_level = dict(zip(to_fit, got))
-      for edge_idx, e in enumerate(selected):
-        v0, v1 = cand[e]
-        subs, edge_types = cand_subs[e], cand_types[e]
-        u_e = survivors[edge_idx]
-        pair: BicopLike[ArrayT]
-        if thresholded[edge_idx]:
-          pair = IndependencePair()
-        elif fitted_level is not None:
-          pair = fitted_level[edge_idx]
-        else:
-          pair = _fit_edge_call(
-            fit_edge, len(trees), edge_idx, u_e, None, edge_types
-          )
-        indices0 = set(nodes[v0]["all_indices"])
-        indices1 = set(nodes[v1]["all_indices"])
-        # Conditioned pair in the C++ set_sym_diff order: v0's unique variable
-        # first (the fitted pair's first argument), then v1's.
-        a_var = next(iter(indices0 - indices1))
-        b_var = next(iter(indices1 - indices0))
-        conditioning = sorted(indices0 & indices1)
-        tree_edges.append((a_var + 1, b_var + 1, [c + 1 for c in conditioning]))
-        key = (
-          frozenset((a_var + 1, b_var + 1)),
-          frozenset(c + 1 for c in conditioning),
-        )
-        tree_records[key] = (a_var + 1, pair)
-        if build_next_level:
-          new_nodes.append(
-            {
-              "all_indices": tuple(sorted((a_var, b_var, *conditioning))),
-              "h1": pair.hfunc1(u_e),
-              "h2": pair.hfunc2(u_e),
-              # A discrete argument's next tree needs the h-function at the
-              # atom's lower end too, exactly as the cascades compute it.
-              "h1_sub": (
-                pair.hfunc1(with_left_limit(u_e, 1))
-                if edge_types[1] == "d"
-                else None
-              ),
-              "h2_sub": (
-                pair.hfunc2(with_left_limit(u_e, 0))
-                if edge_types[0] == "d"
-                else None
-              ),
-              "types": edge_types,
-              "prev": (v0, v1),
-            }
-          )
-      trees.append(tree_edges)
-      records.append(tree_records)
-      nodes = new_nodes
-      if not build_next_level:
-        break
-
-    # Selection finalization via the shared list-of-trees primitive.
-    # ``Vinecop.select`` and ``RVineStructure.from_trees`` share one diagonal
-    # convention (conditioned[0], flip-free), so this reproduces the compiled
-    # selector's matrix exactly.
-    structure = RVineStructure.from_trees(d, trees)
-    if cond:
-      # Place the conditioning set at the tail, as `Vinecop.select` does after
-      # finalizing. The placement below keys off each slot's label sets rather
-      # than the diagonal policy, so it lands -- and flips -- the selection-time
-      # pairs on the relabeled slots with no further bookkeeping.
-      structure = reorientation(structure, cond).structure
-    # Place each selection-time pair onto its finalized slot, mirroring the
-    # peel: the slot at column ``e`` of tree ``t`` hosts the (unique) edge
-    # whose conditioned pair is {order[e], struct_array(t, e)} and whose
-    # conditioning set is {struct_array(0..t-1, e)}; the pair is flipped iff
-    # the diagonal variable differs from its first argument ``a``
-    # (rvine_trees.ipp peel).
-    order = [int(v) for v in structure.order]
-    pairs: list[list[BicopLike[ArrayT]]] = []
-    for t in range(int(structure.trunc_lvl)):
-      row: list[BicopLike[ArrayT]] = []
-      for e in range(d - 1 - t):
-        diag = order[e]
-        partner = int(structure.struct_array(t, e, natural_order=False))
-        conditioning_key = frozenset(
-          int(structure.struct_array(i, e, natural_order=False))
-          for i in range(t)
-        )
-        a_label, pair = records[t][
-          (frozenset((diag, partner)), conditioning_key)
-        ]
-        row.append(pair if a_label == diag else pair.flip())
-      pairs.append(row)
-    return structure, pairs
+    else:
+      options = _selection_options(controls)
+      pair_copulas = cls._fit_parts(
+        structure,
+        u,
+        resolved,
+        x=x,
+        var_types=var_types,
+        fit_level=fit_level,
+        tree_criterion=options.get("tree_criterion", "tau"),
+        threshold=options.get("threshold", 0.0),
+        weights=options.get("weights"),
+        criterion_function=options.get("criterion_function"),
+      )
+    # The canonical constructor, which is the signature every `VinecopBase`
+    # subclass in the package uses; one whose `__init__` differs overrides
+    # `from_data` itself, as `TorchVinecop` does.
+    ctor = cast("Callable[..., Self]", cls)
+    vine = ctor(pair_copulas, structure, var_types=var_types)
+    vine._set_cond_order(cond_order)
+    return vine
 
 
 class _ReorientedVine(VinecopBase[ArrayT]):
   """A vine evaluated in a relabeled sampling order, without copying it.
 
-  The counterpart of the compiled ``VinecopView``: it binds the relabeled
+  The counterpart of ``Vinecop``'s own relabeled view: it binds the relabeled
   structure and resolves every pair copula back to the viewed vine's slot,
   swapping the pair's arguments where the relabeling requires it. Every cascade
   comes from :class:`VinecopBase`; only the pair lookup is redirected.
@@ -2390,35 +2022,62 @@ class _ReorientedVine(VinecopBase[ArrayT]):
       relabeling.structure, base._context, var_types=base.var_types
     )
 
-  def _get_pair_copula(self, tree: int, edge: int) -> BicopLike[ArrayT]:
+  def get_pair_copula(self, tree: int, edge: int) -> BicopLike[ArrayT]:
     old_edge, flipped = self._locations[(tree, edge)]
     if not flipped:
-      return self._base._get_pair_copula(tree, old_edge)
+      return self._base.get_pair_copula(tree, old_edge)
     key = (tree, old_edge)
     pair = self._flipped.get(key)
     if pair is None:
-      # `flip` can be costly -- a grid pair rebuilds itself and re-bakes its
+      # `flip` can be costly -- a grid pair rebuilds itself and rebuilds its
       # integral caches -- and each slot is read once per cascade pass, of which
       # conditional sampling makes two. Callers relabeling repeatedly should use
       # `reorient()` once and host the pairs it returns.
-      pair = self._base._get_pair_copula(tree, old_edge).flip()
+      pair = flip_of(self._base.get_pair_copula(tree, old_edge))
       self._flipped[key] = pair
     return pair
 
   # dtype / device coercion, RNG placement and grad control belong to the vine
-  # being viewed. `_default_batched` / `_build_batched` are deliberately *not*
-  # delegated: the base's batched state is baked against the base's structure and
+  # being viewed. `_default_batched` / `_build_batched` are *not*
+  # delegated: the base's batched state is built against the base's structure and
   # edge order, so the view stays on the non-batched cascade.
-  def _prep(self, u: ArrayT, name: str, *, values_only: bool = False) -> ArrayT:
-    return self._base._prep(u, name, values_only=values_only)
+  def _prep(self, a: Any) -> ArrayT:  # noqa: ANN401 - any array type, placed
+    return cast("ArrayT", self._base._prep(a))
+
+  def _prep_args(
+    self, u: ArrayT, name: str, *, values_only: bool = False
+  ) -> ArrayT:
+    return self._base._prep_args(u, name, values_only=values_only)
 
   def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> ArrayT:
     return self._base._sample_uniform(n, qrng, seeds)
 
-  def _eval_context(self):
+  def _eval_context(self) -> contextlib.AbstractContextManager[Any]:
     return self._base._eval_context()
 
 
 # Shares the worked example with :class:`~pyvinecopulib.core.VinecopLike` (see
 # protocols.py) so the contract and its canonical base never drift apart.
 VinecopBase.__doc__ = (VinecopBase.__doc__ or "") + _VINECOP_EXAMPLE
+
+
+#: Composed, so the shared half is written once; `test_docs_examples.py`
+#: runs the project's numpydoc checks over the result.
+VinecopBase.plot.__doc__ = (
+  VINECOP_PLOT_SUMMARY
+  + """
+    Parameters
+    ----------
+"""
+  + VINECOP_PLOT_PARAMS
+  + """
+    Returns
+    -------
+    None
+        The figure is drawn with matplotlib.
+
+    See Also
+    --------
+    pyvinecopulib.core.Vinecop.plot : The same plot on a fitted vine.
+"""
+)

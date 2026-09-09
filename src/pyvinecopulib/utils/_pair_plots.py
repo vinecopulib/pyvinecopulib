@@ -6,7 +6,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from numpy.typing import ArrayLike, NDArray
 
-from .._python_helpers.stats import norm_cdf, norm_pdf
+from ..core._normal import norm_cdf, norm_pdf
 from ..pyvinecopulib_ext import (
   Bicop,
   BicopFamily,
@@ -36,7 +36,7 @@ def pairs_copula_data(
       Copula data with entries strictly in ``(0, 1)``.
   main : str, default=""
       Figure title.
-  cols : list of str or None, default=None
+  cols : list of str, or None, optional
       Per-column labels (length ``d``). When `None`, columns are
       labeled ``"u1"`` … ``"ud"``.
   grid_size : int, default=50

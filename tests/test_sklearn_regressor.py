@@ -1,28 +1,55 @@
 """Tests for VineRegressor class."""
 
+from collections.abc import Callable
+from typing import Any
+
 import numpy as np
 import pytest
 
 pytest.importorskip("sklearn")
 
-from pyvinecopulib.sklearn import VineRegressor  # noqa: E402
+from pyvinecopulib.sklearn import VineRegressor
+
+# The two shared fixtures return wide tuples; naming them keeps every
+# signature below readable.
+_Setup = tuple[
+  np.ndarray,
+  np.ndarray,
+  np.ndarray,
+  np.ndarray,
+  Callable[[np.ndarray], np.ndarray],
+  np.ndarray,
+]
+_Fitted = tuple[
+  VineRegressor,
+  np.ndarray,
+  np.ndarray,
+  np.ndarray,
+  np.ndarray,
+  Callable[[np.ndarray], np.ndarray],
+]
+_RegressionData = tuple[np.ndarray, np.ndarray, np.ndarray, float]
 
 
 @pytest.fixture
-def regression_setup(regression_data):
+def regression_setup(
+  regression_data: _RegressionData,
+) -> _Setup:
   """Setup regression data and split."""
   X, y, true_coef, noise_std = regression_data
   X_train, X_test = X[:200], X[200:]
   y_train, y_test = y[:200], y[200:]
 
-  def true_mean(x):
+  def true_mean(x: np.ndarray) -> np.ndarray:
     return x @ true_coef
 
   return X_train, X_test, y_train, y_test, true_mean, true_coef
 
 
 @pytest.fixture
-def fitted_regressor(regression_setup):
+def fitted_regressor(
+  regression_setup: _Setup,
+) -> _Fitted:
   """Fitted VineRegressor for testing."""
   X_train, X_test, y_train, y_test, true_mean, true_coef = regression_setup
   regressor = VineRegressor(
@@ -32,7 +59,9 @@ def fitted_regressor(regression_setup):
   return regressor, X_train, X_test, y_train, y_test, true_mean
 
 
-def test_fit_properties(fitted_regressor):
+def test_fit_properties(
+  fitted_regressor: _Fitted,
+) -> None:
   """Test properties after fitting."""
   regressor, _, _, _, _, _ = fitted_regressor
   assert hasattr(regressor, "_vine")
@@ -41,7 +70,9 @@ def test_fit_properties(fitted_regressor):
   assert regressor.distribution_.dim == 3
 
 
-def test_predict_mean_only(regression_setup):
+def test_predict_mean_only(
+  regression_setup: _Setup,
+) -> None:
   """Test prediction with mean only."""
   X_train, X_test, y_train, y_test, _, _ = regression_setup
   regressor = VineRegressor(mean=True)
@@ -53,7 +84,9 @@ def test_predict_mean_only(regression_setup):
   assert np.all(np.isfinite(pred_mean))
 
 
-def test_predict_quantiles_only(regression_setup):
+def test_predict_quantiles_only(
+  regression_setup: _Setup,
+) -> None:
   """Test prediction with quantiles only."""
   X_train, X_test, y_train, y_test, _, _ = regression_setup
   regressor = VineRegressor(mean=False, quantiles=[0.1, 0.5, 0.9])
@@ -68,7 +101,9 @@ def test_predict_quantiles_only(regression_setup):
   assert np.all(pred_quant[:, 1] <= pred_quant[:, 2])  # Q50 <= Q90
 
 
-def test_quantile_regressor_score_is_rejected(regression_setup):
+def test_quantile_regressor_score_is_rejected(
+  regression_setup: _Setup,
+) -> None:
   """R² is defined for the mean prediction, not a quantile matrix."""
   X_train, X_test, y_train, y_test, _, _ = regression_setup
   est = VineRegressor(mean=False, quantiles=[0.25, 0.75]).fit(X_train, y_train)
@@ -76,7 +111,9 @@ def test_quantile_regressor_score_is_rejected(regression_setup):
     est.score(X_test, y_test)
 
 
-def test_predict_mean_and_quantiles(regression_setup):
+def test_predict_mean_and_quantiles(
+  regression_setup: _Setup,
+) -> None:
   """Test prediction with both mean and quantiles."""
   X_train, X_test, y_train, y_test, _, _ = regression_setup
   regressor = VineRegressor(mean=True, quantiles=[0.1, 0.9])
@@ -86,7 +123,9 @@ def test_predict_mean_and_quantiles(regression_setup):
   assert pred_both.shape == (len(X_test), 3)  # mean + 2 quantiles
 
 
-def test_prediction_accuracy(fitted_regressor):
+def test_prediction_accuracy(
+  fitted_regressor: _Fitted,
+) -> None:
   """Test prediction accuracy against true mean."""
   regressor, _, X_test, _, y_test, true_mean = fitted_regressor
 
@@ -102,7 +141,9 @@ def test_prediction_accuracy(fitted_regressor):
   assert rmse < 0.5, "RMSE should be reasonable"
 
 
-def test_quantile_predictions(regression_setup):
+def test_quantile_predictions(
+  regression_setup: _Setup,
+) -> None:
   """Test quantile prediction properties."""
   X_train, X_test, y_train, y_test, _, _ = regression_setup
 
@@ -120,7 +161,9 @@ def test_quantile_predictions(regression_setup):
   assert correlation > 0.9, "Median should be close to mean"
 
 
-def test_wrong_dimensions(fitted_regressor):
+def test_wrong_dimensions(
+  fitted_regressor: _Fitted,
+) -> None:
   """Test error handling for wrong dimensions."""
   regressor, _, X_test, _, y_test, _ = fitted_regressor
 
@@ -130,7 +173,9 @@ def test_wrong_dimensions(fitted_regressor):
     regressor.predict(X_wrong)
 
 
-def test_invalid_configuration(regression_setup):
+def test_invalid_configuration(
+  regression_setup: _Setup,
+) -> None:
   """Test invalid regressor configurations surface at fit time."""
   X_train, _, y_train, _, _, _ = regression_setup
   # Neither mean nor quantiles enabled
@@ -154,7 +199,11 @@ def test_invalid_configuration(regression_setup):
     ({"quantiles": []}, ValueError),
   ],
 )
-def test_constructor_validation(kwargs, exc, regression_setup):
+def test_constructor_validation(
+  kwargs: dict[str, Any],
+  exc: type[Exception],
+  regression_setup: _Setup,
+) -> None:
   """Bad parameters surface at ``fit`` time, per the sklearn dev guide."""
   X_train, _, y_train, _, _, _ = regression_setup
   est = VineRegressor(**kwargs)
@@ -163,7 +212,10 @@ def test_constructor_validation(kwargs, exc, regression_setup):
 
 
 @pytest.mark.parametrize("use_grid", [True, False])
-def test_parameter_variations(regression_setup, use_grid):
+def test_parameter_variations(
+  regression_setup: _Setup,
+  use_grid: bool,
+) -> None:
   """Test different parameter combinations."""
   X_train, X_test, y_train, _, _, _ = regression_setup
 
@@ -176,7 +228,9 @@ def test_parameter_variations(regression_setup, use_grid):
   assert np.all(np.isfinite(pred))
 
 
-def test_normalize_weights_parameter(regression_setup):
+def test_normalize_weights_parameter(
+  regression_setup: _Setup,
+) -> None:
   """``normalize_weights`` parameter toggles row-wise weight normalization."""
   X_train, X_test, y_train, _, _, _ = regression_setup
 
@@ -190,7 +244,7 @@ def test_normalize_weights_parameter(regression_setup):
 
   # The conditional mean is `sum(w y) / sum(w)`, so it does not depend on the
   # weights' scale: the flag changes what `_weights_for_batch` returns -- the
-  # seam a caller combining several vines normalizes across -- not the
+  # hook a caller combining several vines normalizes across -- not the
   # prediction. This test used to assert the opposite, pinning a mean that was
   # scaled by the weight total.
   np.testing.assert_allclose(pred_default, pred_raw, rtol=1e-10, atol=1e-10)
@@ -200,7 +254,9 @@ def test_normalize_weights_parameter(regression_setup):
   assert not np.allclose(w_default, w_raw)
 
 
-def test_copula_marginal_density_single_covariate(regression_setup):
+def test_copula_marginal_density_single_covariate(
+  regression_setup: _Setup,
+) -> None:
   """``_copula_marginal_density`` recovers :math:`c_X \\equiv 1` in 2-d.
 
   Integrating a bivariate copula density over one of its arguments is
@@ -262,7 +318,8 @@ def test_vine_regressor_predict_keeps_the_sample_axis() -> None:
 
 @pytest.mark.parametrize("use_grid", [True, False])
 def test_normalize_weights_does_not_move_the_conditional_mean(
-  use_grid, regression_data
+  use_grid: bool,
+  regression_data: _RegressionData,
 ) -> None:
   """The mean is `sum(w y) / sum(w)`, whatever the weights' scale.
 

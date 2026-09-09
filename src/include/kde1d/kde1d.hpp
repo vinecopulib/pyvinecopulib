@@ -13,6 +13,8 @@
 // `Bicop.to_file` / `Vinecop.to_file` do.
 #include <limits>
 #include <optional>
+#include <stdexcept>
+#include <string>
 #include <tuple>
 #include <vinecopulib/misc/tools_serialization.hpp>
 
@@ -24,6 +26,50 @@ using namespace nb::literals;
 using namespace kde1d;
 
 constexpr auto& kde1d_doc = pyvinecopulib_doc.kde1d.Kde1d;
+
+// `Kde1d::fit` drops every row whose observation is `NaN`, whose weight is
+// `NaN`, or whose weight is zero -- the three documented "missing" markers --
+// and then rescales by the surviving weight sum. When nothing survives it
+// divides by zero and walks an empty grid, which reaches the caller as a
+// segfault rather than an exception; a negative weight is not a marker at all
+// and silently fits a density that is not the weighted one. Mirrors
+// `core/_validation.validate_weights`, so the compiled margin refuses what the
+// Python ones do. The real fix belongs upstream in `lib/kde1d`; the guard is
+// here because a crash takes the interpreter down.
+inline void check_kde1d_inputs(const Eigen::VectorXd& x,
+                               const Eigen::VectorXd& weights) {
+  const bool weighted = weights.size() > 0;
+  if (weighted && weights.size() != x.size()) {
+    throw std::invalid_argument("weights must have shape (" +
+                                std::to_string(x.size()) +
+                                ",), with one weight per observation; got (" +
+                                std::to_string(weights.size()) + ",)");
+  }
+  if (weighted) {
+    if (weights.array().isInf().any()) {
+      throw std::invalid_argument("weights must not contain infinite values");
+    }
+    // `NaN < 0` is false, so this reads only the entries that are not markers.
+    if ((weights.array() < 0.0).any()) {
+      throw std::invalid_argument("weights must be nonnegative");
+    }
+  }
+  for (Eigen::Index i = 0; i < x.size(); ++i) {
+    if (std::isnan(x(i))) {
+      continue;
+    }
+    if (!weighted) {
+      return;
+    }
+    if (!std::isnan(weights(i)) && weights(i) > 0.0) {
+      return;
+    }
+  }
+  throw std::invalid_argument(
+      "x and weights must leave at least one observation standing; a NaN "
+      "observation, a NaN weight and a zero weight each mark a dropped "
+      "observation, and every row is dropped");
+}
 
 // Python-binding-only docstring for the unified `__init__` factory — the
 // upstream C++ class has four constructor overloads that libclang cannot
@@ -66,6 +112,19 @@ boundary_repair :
 
 // Factory function to create a Kde1d from xmin, xmax, type string, multiplier,
 // bandwidth, degree
+// `fit` and `select` are the same call: a kernel density has no family to
+// choose. `from_data` cannot share this, because it builds its `Kde1d` by
+// value and the deduced `Kde1d&` return would dangle.
+inline Kde1d& kde1d_fit(Kde1d& self, const Eigen::VectorXd& x,
+                        const Eigen::VectorXd& weights) {
+  check_kde1d_inputs(x, weights);
+  {
+    nb::gil_scoped_release release;
+    self.fit(x, weights);
+  }
+  return self;
+}
+
 inline Kde1d kde1d_from_params(std::optional<double> xmin = std::nullopt,
                                std::optional<double> xmax = std::nullopt,
                                const std::string& type = "continuous",
@@ -100,7 +159,7 @@ inline Kde1d kde1d_from_grid(const Eigen::VectorXd& grid_points,
 // carries the same surface. One representation serves both `to_json` and
 // pickling, so the two cannot drift.
 //
-// The mapping lives here rather than in `kde1d` deliberately. Owning the format
+// The mapping lives here rather than in `kde1d`. Owning the format
 // upstream would mean a JSON library in a repository that has no dependencies
 // at all, and `vinecopulib`'s equivalent is a 1.1 MB vendored header; that is
 // not worth it while Python is the only binding that serializes a `Kde1d`.
@@ -259,7 +318,7 @@ inline Eigen::VectorXd kde1d_cdf_left(const Kde1d& kde,
 
 // Log-density. A margin's consumers read `logpdf` when it exists rather than
 // taking a log themselves, and the estimator can do it without a Python round
-// trip. Zero density gives `-inf`, which is the honest answer.
+// trip. Zero density gives `-inf`, which is correct.
 inline Eigen::VectorXd kde1d_logpdf(const Kde1d& kde,
                                     const Eigen::VectorXd& x) {
   return kde.pdf(x).array().log();
@@ -293,13 +352,14 @@ inline void kde1d_set_xmin_xmax(Kde1d& self,
   self.set_xmin_xmax(xmin.value_or(NAN), xmax.value_or(NAN));
 }
 
-// Wrapper function to call the Python kde1d_plot function
+// Wrapper function to call the Python margin_plot function
 inline void kde1d_plot_wrapper(const Kde1d& kde, nb::object xlim,
                                nb::object ylim, int grid_size,
-                               bool show_zero_mass) {
-  auto mod = nb::module_::import_("pyvinecopulib._python_helpers.kde1d");
-  auto kde1d_plot = mod.attr("kde1d_plot");
-  kde1d_plot(nb::cast(kde), xlim, ylim, grid_size, show_zero_mass);
+                               bool show_zero_mass, const std::string& kind) {
+  auto mod = nb::module_::import_("pyvinecopulib.core._margin_plot");
+  auto margin_plot = mod.attr("margin_plot");
+  margin_plot(nb::cast(kde), xlim, ylim, grid_size, show_zero_mass,
+              "kind"_a = kind);
 }
 
 inline void init_kde1d(nb::module_& module) {
@@ -439,18 +499,76 @@ inline void init_kde1d(nb::module_& module) {
           // Returns `self` so a fit chains, as it does on every Python
           // estimator. The GIL is released around the fit itself rather than by
           // a call guard, because handing back the object needs it.
+          .def("fit", &kde1d_fit, "x"_a, "weights"_a = Eigen::VectorXd(),
+               kde1d_doc.fit.doc, nb::rv_policy::reference_internal)
+          // `select` and `from_data` complete the fitting surface every
+          // other margin has. A kernel density has no family to choose, so
+          // `select` reduces to `fit` -- the equivalence upstream states for
+          // `Bicop::select` with `select_families = false`.
           .def(
-              "fit",
-              [](Kde1d& self, const Eigen::VectorXd& x,
-                 const Eigen::VectorXd& weights) -> Kde1d& {
+              "select", &kde1d_fit, "x"_a, "weights"_a = Eigen::VectorXd(),
+              "Fit the density; there is no family to select.\n"
+              "\n"
+              "A kernel density is determined by its parameters, so choosing "
+              "a\n"
+              "family is vacuous and this is ``fit``. It exists so that every\n"
+              "margin answers the same three verbs.\n"
+              "\n"
+              "Parameters\n"
+              "----------\n"
+              "x : array, shape (n,), dtype float\n"
+              "    Observations.\n"
+              "\n"
+              "weights : array, shape (n,), dtype float, optional\n"
+              "    Observation weights.\n"
+              "\n"
+              "Returns\n"
+              "-------\n"
+              "Kde1d\n"
+              "    ``self``, so the call chains.",
+              nb::rv_policy::reference_internal)
+          .def_static(
+              "from_data",
+              [](const Eigen::VectorXd& x, const Eigen::VectorXd& weights,
+                 std::optional<double> xmin, std::optional<double> xmax,
+                 const std::string& type) {
+                check_kde1d_inputs(x, weights);
+                Kde1d kde(xmin.value_or(NAN), xmax.value_or(NAN), type);
                 {
                   nb::gil_scoped_release release;
-                  self.fit(x, weights);
+                  kde.fit(x, weights);
                 }
-                return self;
+                return kde;
               },
-              "x"_a, "weights"_a = Eigen::VectorXd(), kde1d_doc.fit.doc,
-              nb::rv_policy::reference_internal)
+              "x"_a, "weights"_a = Eigen::VectorXd(), "xmin"_a = std::nullopt,
+              "xmax"_a = std::nullopt, "type"_a = "continuous",
+              "Construct a margin and fit it to data.\n"
+              "\n"
+              "``Kde1d(...).fit(x)`` in one call, the factory every other\n"
+              "margin in the package provides.\n"
+              "\n"
+              "Parameters\n"
+              "----------\n"
+              "x : array, shape (n,), dtype float\n"
+              "    Observations.\n"
+              "\n"
+              "weights : array, shape (n,), dtype float, optional\n"
+              "    Observation weights.\n"
+              "\n"
+              "xmin : float, optional\n"
+              "    Lower bound of the support.\n"
+              "\n"
+              "xmax : float, optional\n"
+              "    Upper bound of the support.\n"
+              "\n"
+              "type : str, optional\n"
+              "    ``\"continuous\"``, ``\"discrete\"`` or "
+              "``\"zero-inflated\"``.\n"
+              "\n"
+              "Returns\n"
+              "-------\n"
+              "Kde1d\n"
+              "    The fitted margin.")
           .def(
               "pdf",
               [](const Kde1d& kde, const Eigen::VectorXd& x,
@@ -520,9 +638,9 @@ inline void init_kde1d(nb::module_& module) {
                "xmax"_a = std::nullopt, kde1d_doc.set_xmin_xmax.doc)
           .def("plot", &kde1d_plot_wrapper, "xlim"_a = nb::none(),
                "ylim"_a = nb::none(), "grid_size"_a = 200,
-               "show_zero_mass"_a = true,
-               python_doc_helper("pyvinecopulib._python_helpers.kde1d",
-                                 "KDE1D_PLOT_DOC",
+               "show_zero_mass"_a = true, nb::kw_only(), "kind"_a = "density",
+               python_doc_helper("pyvinecopulib.core._margin_plot",
+                                 "MARGIN_PLOT_DOC",
                                  "Plot the KDE (extended doc unavailable) ")
                    .c_str())
 

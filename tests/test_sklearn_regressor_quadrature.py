@@ -22,16 +22,18 @@ import pytest
 
 pytest.importorskip("sklearn")
 
-import pyvinecopulib as pv  # noqa: E402
-from pyvinecopulib.core import Kde1d  # noqa: E402
-from pyvinecopulib.sklearn import VineRegressor  # noqa: E402
+import pyvinecopulib as pv
+from pyvinecopulib.core import Kde1d
+from pyvinecopulib.sklearn import VineRegressor
 
-from .helpers import AtomicMargin  # noqa: E402
+from .helpers import AtomicMargin
 
 BETA = np.array([1.0, -0.7])
 
 
-def _data(n: int, seed: int = 20260818, heavy: bool = False):
+def _data(
+  n: int, seed: int = 20260818, heavy: bool = False
+) -> tuple[np.ndarray, np.ndarray]:
   """Covariates and a linear response, optionally heavy-tailed."""
   rng = np.random.default_rng(seed)
   X = rng.standard_normal((n, 2))
@@ -69,7 +71,7 @@ def test_the_weights_are_the_copula_density_times_the_node_spacing() -> None:
       pv.Vinedist.copula_data(dist.margins[1:], row.reshape(1, -1))
     )
     u = np.column_stack([p, np.repeat(ux, p.size, axis=0)])
-    w = np.asarray(dist.copula.pdf(u)) * spacing
+    w = np.asarray(dist.vinecop.pdf(u)) * spacing
     expected.append((w / w.sum()) @ nodes)
 
   np.testing.assert_allclose(
@@ -122,7 +124,7 @@ def test_it_integrates_the_inverse_cdf_against_the_copula() -> None:
       pv.Vinedist.copula_data(dist.margins[1:], row.reshape(1, -1))
     )
     u = np.column_stack([p, np.repeat(ux, n_reference, axis=0)])
-    w = np.asarray(dist.copula.pdf(u))
+    w = np.asarray(dist.vinecop.pdf(u))
     expected.append((w / w.sum()) @ nodes)
 
   assert _relative_rmse(est.predict(X[:8]), np.asarray(expected), scale) < 1e-4

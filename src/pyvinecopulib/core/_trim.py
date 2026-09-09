@@ -12,21 +12,24 @@ bounds from the dtype, while returning the historical ``float64`` pair
 unchanged so that precision's results are unmoved.
 """
 
-from typing import Any, Tuple
+from types import ModuleType
+from typing import Any, Tuple, cast
+
+from .protocols import ArrayT
 
 _TRIM_LO: float = 1e-10
 _TRIM_HI: float = 1.0 - 1e-10
 
 
-def trim_bounds(xp: Any, dtype: Any) -> Tuple[float, float]:
+def trim_bounds(xp: ModuleType, dtype: object) -> Tuple[float, float]:
   """Clamp bounds for ``dtype``, strictly inside ``(0, 1)``.
 
   Parameters
   ----------
   xp : module
       Array namespace exposing ``finfo`` (NumPy or PyTorch).
-  dtype : dtype
-      Floating dtype the values are held in.
+  dtype : object
+      Floating dtype the values are held in, as the namespace spells one.
 
   Returns
   -------
@@ -38,7 +41,7 @@ def trim_bounds(xp: Any, dtype: Any) -> Tuple[float, float]:
   return max(_TRIM_LO, eps * eps), min(_TRIM_HI, 1.0 - eps)
 
 
-def trim(xp: Any, a: Any) -> Any:
+def trim(xp: ModuleType, a: ArrayT) -> ArrayT:
   """Clamp ``a`` into the open unit interval at its own precision.
 
   Parameters
@@ -53,5 +56,5 @@ def trim(xp: Any, a: Any) -> Any:
   array
       ``a`` clamped to :func:`trim_bounds` for its dtype.
   """
-  lo, hi = trim_bounds(xp, a.dtype)
-  return xp.clip(a, lo, hi)
+  lo, hi = trim_bounds(xp, cast("Any", a).dtype)
+  return cast("ArrayT", xp.clip(a, lo, hi))

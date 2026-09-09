@@ -1,28 +1,36 @@
 """Tests for VineDensity class."""
 
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
+
 import numpy as np
 import pytest
 
 pytest.importorskip("sklearn")
 pytest.importorskip("scipy")
 
-from scipy.stats import multivariate_normal  # noqa: E402
+from scipy.stats import multivariate_normal
 
-from pyvinecopulib.sklearn import VineDensity  # noqa: E402
+from pyvinecopulib.sklearn import VineDensity
+
+if TYPE_CHECKING:
+  import pandas as pd
 
 
 @pytest.fixture
-def multivariate_normal_dist():
+def multivariate_normal_dist() -> Callable[[Any, Any], Any]:
   """Factory for creating multivariate normal distributions."""
 
-  def _create_dist(mean, cov):
+  def _create_dist(mean: Any, cov: Any) -> Any:
     return multivariate_normal(mean, cov)
 
   return _create_dist
 
 
 @pytest.fixture
-def fitted_density(sample_array_data):
+def fitted_density(
+  sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+) -> tuple[VineDensity, np.ndarray]:
   """Fitted VineDensity for testing."""
   X, _, _ = sample_array_data
   density = VineDensity(batch_size=50)
@@ -38,7 +46,11 @@ def fitted_density(sample_array_data):
     ({"batch_size": 1.5}, TypeError),
   ],
 )
-def test_constructor_validation(kwargs, exc, sample_array_data):
+def test_constructor_validation(
+  kwargs: dict[str, Any],
+  exc: type[Exception],
+  sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+) -> None:
   """Bad parameters surface at ``fit`` time, per the sklearn dev guide
   (``__init__`` performs no validation)."""
   X, _, _ = sample_array_data
@@ -47,7 +59,7 @@ def test_constructor_validation(kwargs, exc, sample_array_data):
     est.fit(X)
 
 
-def test_fit_properties(fitted_density):
+def test_fit_properties(fitted_density: tuple[VineDensity, np.ndarray]) -> None:
   """Test properties after fitting."""
   density, _ = fitted_density
   assert hasattr(density, "_vine")
@@ -56,7 +68,9 @@ def test_fit_properties(fitted_density):
   assert len(density.distribution_.margins) == 2
 
 
-def test_score_samples_shapes_and_types(fitted_density):
+def test_score_samples_shapes_and_types(
+  fitted_density: tuple[VineDensity, np.ndarray],
+) -> None:
   """Test score_samples method shapes and types."""
   density, X = fitted_density
   X_test = X[:20]
@@ -80,7 +94,9 @@ def test_score_uses_fitted_dataframe_schema() -> None:
   )
 
 
-def test_pdf_shapes_and_types(fitted_density):
+def test_pdf_shapes_and_types(
+  fitted_density: tuple[VineDensity, np.ndarray],
+) -> None:
   """Test pdf method shapes and types."""
   density, X = fitted_density
   X_test = X[:20]
@@ -93,7 +109,9 @@ def test_pdf_shapes_and_types(fitted_density):
   assert np.all(np.isfinite(densities))
 
 
-def test_pdf_log_consistency(fitted_density):
+def test_pdf_log_consistency(
+  fitted_density: tuple[VineDensity, np.ndarray],
+) -> None:
   """Test consistency between pdf and score_samples."""
   density, X = fitted_density
   X_test = X[:20]
@@ -104,7 +122,9 @@ def test_pdf_log_consistency(fitted_density):
   np.testing.assert_allclose(densities, np.exp(log_scores), rtol=1e-10)
 
 
-def test_cdf_shapes_and_range(fitted_density):
+def test_cdf_shapes_and_range(
+  fitted_density: tuple[VineDensity, np.ndarray],
+) -> None:
   """CDF returns values in [0, 1] with the right shape."""
   density, X = fitted_density
   X_test = X[:20]
@@ -117,7 +137,9 @@ def test_cdf_shapes_and_range(fitted_density):
   assert np.all(np.isfinite(cdf_vals))
 
 
-def test_cdf_monotone_along_axis(fitted_density):
+def test_cdf_monotone_along_axis(
+  fitted_density: tuple[VineDensity, np.ndarray],
+) -> None:
   """CDF is approximately monotone along a single-coordinate sweep."""
   density, X = fitted_density
   # Build a path: sweep x_1 from its 5th to 95th percentile, fix x_2 at the median.
@@ -135,7 +157,7 @@ def test_cdf_monotone_along_axis(fitted_density):
   assert cdf_sweep[-1] > cdf_sweep[0]
 
 
-def test_score_method(fitted_density):
+def test_score_method(fitted_density: tuple[VineDensity, np.ndarray]) -> None:
   """Test score method."""
   density, X = fitted_density
   X_test = X[:20]
@@ -147,7 +169,10 @@ def test_score_method(fitted_density):
   np.testing.assert_allclose(score, np.mean(log_scores))
 
 
-def test_density_accuracy(sample_array_data, multivariate_normal_dist):
+def test_density_accuracy(
+  sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+  multivariate_normal_dist: Callable[[Any, Any], Any],
+) -> None:
   """Test density estimation accuracy against true distribution."""
   X, mean, cov = sample_array_data
   true_dist = multivariate_normal_dist(mean, cov)
@@ -175,7 +200,9 @@ def test_density_accuracy(sample_array_data, multivariate_normal_dist):
 
 
 @pytest.mark.parametrize("n_samples", [1, 5, 10])
-def test_sample_method(fitted_density, n_samples):
+def test_sample_method(
+  fitted_density: tuple[VineDensity, np.ndarray], n_samples: int
+) -> None:
   """Test sample generation."""
   density, _ = fitted_density
   samples = density.sample(n_samples)
@@ -186,7 +213,9 @@ def test_sample_method(fitted_density, n_samples):
   assert np.all(np.isfinite(samples))
 
 
-def test_sample_distribution(fitted_density):
+def test_sample_distribution(
+  fitted_density: tuple[VineDensity, np.ndarray],
+) -> None:
   """Test that samples follow approximately the right distribution."""
   density, X = fitted_density
   n_samples = 1000
@@ -203,7 +232,9 @@ def test_sample_distribution(fitted_density):
   np.testing.assert_allclose(sample_std, data_std, rtol=0.5)
 
 
-def test_batch_processing(sample_array_data):
+def test_batch_processing(
+  sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
+) -> None:
   """Test that different batch sizes give same results."""
   X, _, _ = sample_array_data
   X_test = X[:50]
@@ -221,7 +252,9 @@ def test_batch_processing(sample_array_data):
     np.testing.assert_allclose(results[0], results[i], rtol=1e-12)
 
 
-def test_pdf_accepts_its_own_samples(sample_dataframe_data) -> None:
+def test_pdf_accepts_its_own_samples(
+  sample_dataframe_data: tuple["pd.DataFrame", list[str]],
+) -> None:
   """`sample` emits the modeled layout, so its own density must accept it.
 
   A categorical fit expands, making `sample` wider than `n_features_in_`; the

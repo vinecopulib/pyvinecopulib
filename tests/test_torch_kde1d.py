@@ -1,6 +1,6 @@
 """Tests for `pyvinecopulib.torch.TorchKde1d`.
 
-The load-bearing claim is **parity**: a lifted grid evaluates to the same
+The required claim is **parity**: a lifted grid evaluates to the same
 numbers as the compiled `Kde1d` it came from, across all three variable types,
 bounded and unbounded, at every local-polynomial degree. One of those numbers
 comes from C++ behavior that looks like a bug and is not, so it is pinned
@@ -67,7 +67,7 @@ def _t(values: np.ndarray) -> Any:
   ],
 )
 def test_pdf_and_cdf_match_the_compiled_estimator(
-  kind: str, kwargs: dict, degree: int
+  kind: str, kwargs: dict[str, Any], degree: int
 ) -> None:
   """Every type, bounded and unbounded, at every degree."""
   kde, lifted, y = _fitted(kind, degree=degree, **kwargs)
@@ -106,7 +106,9 @@ def test_pdf_and_cdf_match_the_compiled_estimator(
 _QUANTILE_RTOL = {"discrete": 0.0, "continuous": 1e-12, "zi": 1e-12}
 
 
-def _assert_quantiles_agree(got, want, kind: str = "continuous") -> None:
+def _assert_quantiles_agree(
+  got: np.ndarray, want: np.ndarray, kind: str = "continuous"
+) -> None:
   """Compare a torch quantile against the compiled one; see `_QUANTILE_RTOL`."""
   rtol = _QUANTILE_RTOL[kind]
   if rtol == 0.0:
@@ -123,7 +125,9 @@ def _assert_quantiles_agree(got, want, kind: str = "continuous") -> None:
     ("zi", {"type": "zero-inflated", "xmin": 0.0}),
   ],
 )
-def test_icdf_matches_the_compiled_estimator(kind: str, kwargs: dict) -> None:
+def test_icdf_matches_the_compiled_estimator(
+  kind: str, kwargs: dict[str, Any]
+) -> None:
   """The inversion is reproduced step for step; see `_QUANTILE_RTOL`."""
   kde, lifted, _ = _fitted(kind, **kwargs)
   _assert_quantiles_agree(
@@ -190,7 +194,7 @@ def test_nan_in_gives_nan_out() -> None:
 
 
 def test_discrete_masses_sum_to_one_over_the_lattice() -> None:
-  """The normalization is the whole point of the discrete branch."""
+  """The normalization is what the discrete branch exists for."""
   _, lifted, _ = _fitted("discrete", type="discrete", xmin=0.0)
   levels = _t(np.arange(-2.0, 40.0))
   assert float(lifted.pdf(levels).sum()) == pytest.approx(1.0, abs=1e-10)
@@ -220,7 +224,7 @@ def test_it_satisfies_the_margin_contract() -> None:
   assert isinstance(lifted, MarginLike)
   assert isinstance(lifted, torch.nn.Module)
   assert lifted.supports_weights is True
-  assert lifted.supported_var_types == ("c", "d", "zi")
+  assert lifted.supports_controls is False
 
 
 @pytest.mark.parametrize(
@@ -232,7 +236,7 @@ def test_it_satisfies_the_margin_contract() -> None:
   ],
 )
 def test_var_type_maps_the_compiled_spelling(
-  kwargs: dict, expected: str
+  kwargs: dict[str, Any], expected: str
 ) -> None:
   """`kde_type` keeps the hyphenated compiled name; `var_type` is the contract's."""
   margin = TorchKde1d(**kwargs)
@@ -334,7 +338,7 @@ def test_from_kde1d_refuses_an_unfitted_estimator() -> None:
 
 
 def test_gradients_reach_the_grid_values() -> None:
-  """Opt-in, as `TorchBicop` does with its grid: the density is fitted, not learned."""
+  """Opt-in, as `TorchTllBicop` does with its grid: the density is fitted, not learned."""
   _, lifted, y = _fitted("continuous")
   assert lifted.values.requires_grad is False
   lifted.values.requires_grad_(True)
@@ -371,7 +375,7 @@ def test_the_quantile_carries_an_exact_gradient() -> None:
 def test_the_quantile_is_differentiable_in_the_probability() -> None:
   """`d icdf / d p = 1 / f(q)`, and it must not depend on the grid being learned.
 
-  The Newton correction that supplies the gradient was gated on
+  The Newton correction that supplies the gradient was conditional on
   `values.requires_grad`, so `d icdf/d p` was dead for a fitted, fixed grid --
   the common case, since the density is fitted rather than learned. The
   correction does not move the value, which is what the comparisons below pin.
@@ -414,14 +418,73 @@ def test_state_dict_round_trip() -> None:
 
 
 def test_fit_rejects_non_vector_data_and_weights() -> None:
-  """Fitting accepts one observation vector and aligned vector weights."""
+  """Fitting accepts one observation vector and aligned vector weights.
+
+  The messages are the shared validators', so they read the same here as on
+  every other margin.
+  """
   y = _t(np.arange(5.0))
-  with pytest.raises(ValueError, match="one-dimensional"):
+  with pytest.raises(ValueError, match=r"y must have shape \(n,\)"):
     TorchKde1d().fit(y[:, None])
-  with pytest.raises(ValueError, match="one-dimensional"):
+  with pytest.raises(ValueError, match="one weight per observation"):
     TorchKde1d().fit(y, weights=y[:, None])
-  with pytest.raises(ValueError, match="one entry per observation"):
+  with pytest.raises(ValueError, match="one weight per observation"):
     TorchKde1d().fit(y, weights=y[:-1])
+
+
+@pytest.mark.parametrize(
+  ("bad", "match"),
+  [
+    ("all_nan", "at least one observation standing"),
+    ("all_zero", "at least one observation standing"),
+    ("inf", "must not contain infinite"),
+    ("negative", "nonnegative"),
+  ],
+)
+def test_fit_refuses_weights_that_leave_nothing_to_fit(
+  bad: str, match: str
+) -> None:
+  """The only margin that accepts weights must refuse the unusable ones.
+
+  A vector of nothing but drop markers used to reach the caller as a segfault,
+  since the delegated ``Kde1d`` rescales by the surviving weight sum.
+  """
+  y = _t(np.random.default_rng(0).normal(size=64))
+  weights = {
+    "all_nan": torch.full((64,), float("nan"), dtype=torch.float64),
+    "all_zero": torch.zeros(64, dtype=torch.float64),
+    "inf": torch.where(
+      torch.arange(64) == 3,
+      torch.tensor(float("inf"), dtype=torch.float64),
+      torch.ones(64, dtype=torch.float64),
+    ),
+    "negative": torch.where(
+      torch.arange(64) == 3,
+      torch.tensor(-1.0, dtype=torch.float64),
+      torch.ones(64, dtype=torch.float64),
+    ),
+  }[bad]
+  with pytest.raises(ValueError, match=match):
+    TorchKde1d().fit(y, weights=weights)
+
+
+def test_fit_accepts_the_drop_markers_kde1d_documents() -> None:
+  """A ``NaN`` or zero weight drops its observation, as it does in ``Kde1d``."""
+  y = _t(np.random.default_rng(1).normal(size=64))
+  q = _t(np.linspace(-2.0, 2.0, 7))
+  every_other = torch.where(
+    torch.arange(64) % 2 == 0,
+    torch.ones(64, dtype=torch.float64),
+    torch.tensor(float("nan"), dtype=torch.float64),
+  )
+  half_zero = torch.where(
+    torch.arange(64) % 2 == 0,
+    torch.ones(64, dtype=torch.float64),
+    torch.zeros(64, dtype=torch.float64),
+  )
+  for weights in (every_other, half_zero):
+    fitted = TorchKde1d().fit(y, weights=weights)
+    assert bool(torch.isfinite(fitted.pdf(q)).all())
 
 
 def test_pickle_round_trip() -> None:
@@ -576,3 +639,41 @@ def test_a_lifted_margin_can_still_reselect() -> None:
   wide = rng.normal(0.0, 25.0, size=400)
   lifted.fit(_t(wide))
   assert lifted.bandwidth == pytest.approx(Kde1d().fit(wide).bandwidth)
+
+
+def test_the_criteria_answer_from_a_fitted_margin() -> None:
+  """``bic`` and ``aicc`` need the sample size, which the fit now records.
+
+  All three criteria are inherited from ``MarginBase``, but two of them
+  penalize by ``n`` and used to raise for want of it -- on the library's own
+  default torch margin, where both NumPy margins answered.
+  """
+  y = _t(np.random.default_rng(2).normal(size=300))
+  fitted = TorchKde1d().fit(y)
+  assert fitted.nobs == 300
+  aic, bic, aicc = fitted.aic(), fitted.bic(), fitted.aicc()
+  assert all(np.isfinite([aic, bic, aicc]))
+  # `bic`'s log(n) penalty exceeds `aic`'s 2 for n > e^2, and `aicc` adds a
+  # positive correction to `aic`, so the three are ordered and distinct.
+  assert aic < aicc < bic
+
+
+def test_nobs_counts_the_retained_rows_not_the_input() -> None:
+  """A dropped observation is not an observation the criteria penalize."""
+  rng = np.random.default_rng(0)
+  y = np.where(np.arange(100) < 60, rng.normal(size=100), np.nan)
+  assert TorchKde1d().fit(_t(y)).nobs == 60
+  # A zero or NaN weight drops its row just as a NaN observation does.
+  weights = np.where(np.arange(100) % 2 == 0, 1.0, 0.0)
+  assert (
+    TorchKde1d().fit(_t(rng.normal(size=100)), weights=_t(weights)).nobs == 50
+  )
+
+
+def test_nobs_survives_a_state_dict_round_trip() -> None:
+  """The criteria must answer the same after a load as before it."""
+  fitted = TorchKde1d().fit(_t(np.random.default_rng(3).normal(size=180)))
+  restored = TorchKde1d()
+  restored.load_state_dict(fitted.state_dict())
+  assert restored.nobs == fitted.nobs == 180
+  assert restored.bic() == fitted.bic()

@@ -208,7 +208,10 @@ def test_vinecop() -> None:
     )
 
 
-def _fitted_estimator(backend: object) -> tuple[Any, np.ndarray]:
+# `Any`, not the backend base class: that base is private, and the two
+# concrete backends cannot both be named here -- importing the torch one at
+# module scope would require the extra this file skips without.
+def _fitted_estimator(backend: Any) -> tuple[Any, np.ndarray]:
   from pyvinecopulib.sklearn import VineDensity
 
   rng = np.random.default_rng(0)
@@ -241,3 +244,73 @@ def test_vinedensity(torch_backend: bool) -> None:
   assert [type(m) for m in restored.distribution_.margins] == [
     type(m) for m in original.distribution_.margins
   ]
+
+
+def test_vinedist() -> None:
+  """A whole distribution, both halves, through `pickle`.
+
+  `Vinedist` is new in this release and was covered here only indirectly, via
+  the sklearn estimator that holds one.
+  """
+  rng = np.random.default_rng(0)
+  y = rng.normal(size=(300, 3)) + rng.normal(size=(300, 1))
+  dist = pv.Vinedist.from_data(y)
+  back = pickle.loads(pickle.dumps(dist))
+
+  grid = y[:20]
+  np.testing.assert_allclose(back.logpdf(grid), dist.logpdf(grid))
+  np.testing.assert_allclose(back.pdf(grid), dist.pdf(grid))
+  assert [type(m).__name__ for m in back.margins] == [
+    type(m).__name__ for m in dist.margins
+  ]
+  assert np.array_equal(
+    np.asarray(back.vinecop.structure.matrix),
+    np.asarray(dist.vinecop.structure.matrix),
+  )
+
+
+def test_scipy_margin() -> None:
+  """A parametric margin, including the criteria its payload has to carry."""
+  pytest.importorskip("scipy.stats")
+  from pyvinecopulib.margins import SciPyMargin
+
+  rng = np.random.default_rng(1)
+  y = rng.normal(size=250)
+  margin = SciPyMargin("norm").fit(y)
+  back = pickle.loads(pickle.dumps(margin))
+
+  q = np.array([-1.0, 0.0, 1.0])
+  np.testing.assert_allclose(back.pdf(q), margin.pdf(q))
+  np.testing.assert_allclose(back.cdf(q), margin.cdf(q))
+  assert back.family_name == margin.family_name
+  for name in ("loglik", "aic", "bic", "aicc"):
+    assert getattr(back, name)() == pytest.approx(getattr(margin, name)())
+
+
+def test_torch_tll_bicop() -> None:
+  """The renamed torch pair copula, with its cache mode and revision."""
+  torch = pytest.importorskip("torch")
+  from pyvinecopulib.torch import TorchTllBicop
+
+  rng = np.random.default_rng(2)
+  u = pv.to_pseudo_obs(rng.normal(size=(400, 2)) + rng.normal(size=(400, 1)))
+  pair = TorchTllBicop.from_data(torch.from_numpy(u))
+  back = pickle.loads(pickle.dumps(pair))
+
+  ut = torch.from_numpy(u[:30])
+  for name in ("pdf", "cdf", "hfunc1", "hfunc2"):
+    torch.testing.assert_close(getattr(back, name)(ut), getattr(pair, name)(ut))
+
+
+def test_torch_distribution_margin() -> None:
+  """The renamed torch margin: parameters are registered, so they travel."""
+  torch = pytest.importorskip("torch")
+  from pyvinecopulib.torch import TorchDistributionMargin
+
+  margin = TorchDistributionMargin.from_distribution(
+    torch.distributions.Normal(loc=torch.tensor(0.5), scale=torch.tensor(2.0))
+  )
+  back = pickle.loads(pickle.dumps(margin))
+  q = torch.tensor([-1.0, 0.0, 1.0], dtype=torch.float32)
+  torch.testing.assert_close(back.pdf(q), margin.pdf(q))
+  torch.testing.assert_close(back.cdf(q), margin.cdf(q))

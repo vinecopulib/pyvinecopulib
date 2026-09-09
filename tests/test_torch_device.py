@@ -1,13 +1,13 @@
 """The torch cascade on CUDA: same numbers, same placement, no host detours.
 
-The C++-parity suite in ``test_torch_bicop`` / ``test_torch_vinecop`` pins
+The C++-parity suite in ``test_torch_tll_bicop`` / ``test_torch_vinecop`` pins
 torch against the compiled library on the cpu, in float64. This file pins
 cuda against *that*, so the compiled-library agreement carries over to the
 device without running the whole parity suite twice.
 
 ``float32`` is compared only to our own ``float64`` answer, never to the
 compiled library: it is a lower precision, so the float64 tolerances do not
-apply to it and loosening them would weaken the gate that does.
+apply to it and loosening them would weaken the check that does.
 """
 
 from typing import Any
@@ -20,7 +20,7 @@ torch = pytest.importorskip("torch")
 import pyvinecopulib as pv  # noqa: E402
 from pyvinecopulib.torch import (  # noqa: E402
   FitControlsTorchVinecop,
-  TorchBicop,
+  TorchTllBicop,
   TorchKde1d,
   TorchVinecop,
   TorchVinedist,
@@ -28,7 +28,7 @@ from pyvinecopulib.torch import (  # noqa: E402
 from tests.helpers import assert_on_device, count_transfers  # noqa: E402
 
 # cuda vs cpu at the same dtype. Tight enough that the cpu-vs-C++ 1e-10
-# gates carry over to cuda by the triangle inequality.
+# tolerances carry over to cuda by the triangle inequality.
 DEVICE_TOL = {torch.float64: 1e-12, torch.float32: 2e-5}
 # float32 against our own float64 result.
 F32_VS_F64_TOL = 5e-5
@@ -159,7 +159,7 @@ def test_float32_keeps_arguments_inside_the_unit_square(device: str) -> None:
   cpp = pv.Bicop.from_data(
     u, controls=pv.FitControlsBicop(family_set=[pv.BicopFamily.tll])
   )
-  bc = TorchBicop.from_bicop(
+  bc = TorchTllBicop.from_bicop(
     cpp, device=torch.device(device), dtype=torch.float32
   )
   edge = torch.tensor(
@@ -178,7 +178,7 @@ def test_float16_keeps_arguments_inside_the_unit_square(
   device: str, cpp_vine: pv.Vinecop
 ) -> None:
   """The lower trim bound remains representable in half precision."""
-  bc = TorchBicop.from_bicop(
+  bc = TorchTllBicop.from_bicop(
     cpp_vine.get_pair_copula(0, 0),
     device=torch.device(device),
     dtype=torch.float16,
@@ -213,7 +213,7 @@ def test_evaluation_does_not_round_trip_through_the_host(
 
   ``fit`` / ``select`` legitimately do -- Kendall's tau goes through the
   compiled ``wdm`` -- which is why this is scoped to evaluation. The first
-  call is untimed: it bakes the batched cache, which reads the structure
+  call is untimed: it builds the batched cache, which reads the structure
   from the compiled extension.
   """
   vine = TorchVinecop.from_vinecop(cpp_vine, device=torch.device(device))
@@ -240,7 +240,7 @@ def test_batched_fit_peak_memory_stays_bounded(device: str) -> None:
   """
   if torch.device(device).type != "cuda":
     pytest.skip("peak allocation is only observable on cuda")
-  from pyvinecopulib.torch._fit_tll import _KDE_MEM_BUDGET_BYTES
+  from pyvinecopulib.torch._bicop_fit_tll import _KDE_MEM_BUDGET_BYTES
 
   d, n = 20, 8000
   u_np = _u(d, n, 7)
@@ -254,10 +254,10 @@ def test_batched_fit_peak_memory_stays_bounded(device: str) -> None:
   controls = FitControlsTorchVinecop(
     device=torch.device(device), batched_fit=True
   )
-  TorchVinecop.from_data(u, structure, controls=controls)  # warm
+  TorchVinecop.from_data(u, structure=structure, controls=controls)  # warm
   torch.cuda.empty_cache()
   torch.cuda.reset_peak_memory_stats()
-  TorchVinecop.from_data(u, structure, controls=controls)
+  TorchVinecop.from_data(u, structure=structure, controls=controls)
   peak = torch.cuda.max_memory_allocated()
   # Generous against the budget, the data and the fitted pairs sitting
   # outside it, and far under the ~1.8 GiB a fixed block took.
@@ -272,7 +272,7 @@ def test_fit_and_select_run_on_device(device: str) -> None:
   fixed = pv.Vinecop.from_data(
     u, controls=pv.FitControlsVinecop(family_set=[pv.BicopFamily.tll])
   )
-  vine = TorchVinecop.from_data(ut, fixed.structure, controls=ctl)
+  vine = TorchVinecop.from_data(ut, structure=fixed.structure, controls=ctl)
   assert vine.pdf(ut).device.type == torch.device(device).type
   selected = TorchVinecop.from_data(ut, controls=ctl)
   assert selected.pdf(ut).device.type == torch.device(device).type
@@ -285,7 +285,7 @@ def test_thresholded_pairs_land_where_the_data_is(
   """A thresholded edge follows the data, not `controls.device`.
 
   A thresholded edge is not fitted, so its pair is constructed rather than
-  derived from `u`, and it has to be placed deliberately. Taking the
+  derived from `u`, and it has to be placed explicitly. Taking the
   placement from `controls.device` gets it wrong whenever the caller left
   that `None` and let the data choose -- which is the documented way to pass
   an already-resident tensor.
@@ -299,7 +299,7 @@ def test_thresholded_pairs_land_where_the_data_is(
   d, n = 6, 400
   u = _u(d, n, 7)
   ut = torch.as_tensor(u, device=device)
-  # `controls.device` deliberately left None: the data carries the placement.
+  # `controls.device` left None: the data carries the placement.
   vine = TorchVinecop.from_data(
     ut, controls=FitControlsTorchVinecop(trunc_lvl=20, threshold=threshold)
   )
@@ -417,7 +417,7 @@ def test_batched_fit_matches_the_per_edge_fit_on_device(
   fits = {
     flag: TorchVinecop.from_data(
       u_t,
-      structure,
+      structure=structure,
       controls=FitControlsTorchVinecop(
         device=torch.device(device), batched_fit=flag
       ),

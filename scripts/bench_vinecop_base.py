@@ -146,7 +146,7 @@ class _ListVinecop(VinecopBase[Any]):
     self._pairs = pairs
     self._bind_vine(structure, var_types=var_types)
 
-  def _get_pair_copula(self, tree: int, edge: int) -> Any:
+  def get_pair_copula(self, tree: int, edge: int) -> Any:
     return self._pairs[tree][edge]
 
   def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Any:
@@ -200,7 +200,9 @@ def _timings(
       lambda: cpp.inverse_rosenblatt(w),
     ),
     "fit": (
-      lambda: VinecopBase.fit(cpp.structure, u, _fit_edge, var_types=var_types),
+      lambda: _ListVinecop.from_data(
+        u, structure=cpp.structure, var_types=var_types, fit_edge=_fit_edge
+      ),
       lambda: pv.Vinecop.from_data(
         u,
         structure=cpp.structure,
@@ -209,7 +211,9 @@ def _timings(
       ),
     ),
     "select": (
-      lambda: VinecopBase.select(u, _fit_edge, var_types=var_types),
+      lambda: _ListVinecop.from_data(
+        u, var_types=var_types, fit_edge=_fit_edge
+      ),
       lambda: pv.Vinecop.from_data(
         u, var_types=var_types, controls=_GAUSSIAN_VINE
       ),

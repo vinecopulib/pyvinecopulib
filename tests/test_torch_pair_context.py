@@ -3,20 +3,27 @@
 The conditional / non-simplified capability lives on the array-agnostic
 ``VinecopBase`` (``ConditioningContext`` + ``x``-threaded cascades + the
 ``fit`` engine), not on ``TorchVinecop`` (which stays an
-``nn.Module`` vine of ``TorchBicop`` pairs). These tests host a toy conditional
+``nn.Module`` vine of ``TorchTllBicop`` pairs). These tests host a toy conditional
 ``GaussianBicop`` (correlation depends on ``x`` via a position-weighted link, so
-it is genuinely non-simplified *and* sensitive to the C1 column order) in a
+it is actually non-simplified *and* sensitive to the C1 column order) in a
 minimal ``VinecopBase`` subclass — the pattern a downstream package (e.g. npcc)
 uses to build a conditional vine of scikit-style pairs. Covers:
 
 * the master correctness property — ``inverse_rosenblatt(rosenblatt(u, x), x)
   ≈ u`` for a non-simplified vine;
-* the C1 column-order contract is load-bearing (reversing ``u_D`` changes the
+* the C1 column-order contract is required (reversing ``u_D`` changes the
   density);
-* the public ``VinecopBase.fit`` conditional-fit seam;
+* the public ``VinecopBase.fit`` conditional-fit hook;
 * array-namespace agnosticism (the same ``VinecopBase`` cascades match on numpy
   and torch);
 * row alignment and the batched auto-fallback for a non-grid pair.
+
+``VinecopBase._fit_parts`` / ``._select_parts`` are reached directly here: they
+are the array-agnostic engines whose contract is exact parity with the compiled
+selector, and a parity assertion needs the loose ``(structure, pairs)`` the
+engines return rather than an assembled vine. The public ``fit`` / ``select`` /
+``from_data`` that install those parts are covered in
+``tests/test_structure_selection.py``.
 """
 
 from __future__ import annotations
@@ -32,6 +39,7 @@ import pyvinecopulib as pv
 torch = pytest.importorskip("torch")
 
 from pyvinecopulib.core import (  # noqa: E402
+  ConditioningContext,
   NonSimplifiedContext,
   SimplifiedContext,
   VinecopBase,
@@ -51,7 +59,7 @@ def _pairs(d: int) -> list[list[GaussianBicop]]:
   ]
 
 
-def _vine(d: int, context) -> HostedVinecop:
+def _vine(d: int, context: ConditioningContext[Any]) -> HostedVinecop:
   structure = pv.RVineStructure.from_order(list(range(1, d + 1)))
   return HostedVinecop(_pairs(d), structure, context=context)
 
@@ -82,7 +90,7 @@ def test_conditioning_changes_density() -> None:
   assert not torch.allclose(pdf_cond, pdf_simplified, atol=1e-6)
 
 
-class _ReversedCondContext(NonSimplifiedContext):
+class _ReversedCondContext(NonSimplifiedContext[Any]):
   """NonSimplifiedContext that reverses the u_D column order (breaks C1)."""
 
   def edge_context(
@@ -111,10 +119,10 @@ def test_c1_column_order_is_load_bearing() -> None:
   assert not torch.allclose(pdf_c1, pdf_rev, atol=1e-6)
 
 
-def test_fit_conditional_seam() -> None:
+def test_fit_conditional_hook() -> None:
   """``VinecopBase.fit`` threads x_e (C1 widths) into a conditional fit.
 
-  This is the public seam a downstream package drives to build a non-simplified
+  This is the public hook a downstream package drives to build a non-simplified
   vine: ``fit_edge(tree, edge, u_e, x_e) -> BicopLike`` receives ``x_e`` assembled
   per edge (conditioning-set values ``u_D`` in C1 order, then covariates ``x``).
   """
@@ -132,7 +140,7 @@ def test_fit_conditional_seam() -> None:
     seen.append((tree, edge, None if x_e is None else x_e.shape[1]))
     return GaussianBicop(scale=_SCALE, base_rho=_BASE_RHO)
 
-  pairs = VinecopBase.fit(
+  pairs = VinecopBase._fit_parts(
     structure, u, fit_edge, context=NonSimplifiedContext(), x=x
   )
 

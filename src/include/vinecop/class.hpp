@@ -32,7 +32,7 @@ inline void vinecop_plot_wrapper(const Vinecop& cop, nb::object tree,
                                  const std::string& layout,
                                  nb::object vars_names) {
   // Import the vinecop helper Python module
-  auto mod = nb::module_::import_("pyvinecopulib._python_helpers.vinecop");
+  auto mod = nb::module_::import_("pyvinecopulib.core._vinecop_plot");
 
   // Import the Python plotting function
   auto vinecop_plot = mod.attr("vinecop_plot");
@@ -68,11 +68,11 @@ inline Vinecop vc_from_structure(
 
 inline Vinecop vc_from_data(
     const Eigen::MatrixXd& data,
+    const FitControlsVinecop* controls_ptr = nullptr,
     std::optional<RVineStructure> structure = std::nullopt,
     std::optional<Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>>
         matrix = std::nullopt,
-    const std::vector<std::string>& var_types = {},
-    const FitControlsVinecop* controls_ptr = nullptr) {
+    const std::vector<std::string>& var_types = {}) {
   const FitControlsVinecop& controls =
       controls_ptr ? *controls_ptr : default_vinecop_controls();
   if (structure && matrix) {
@@ -140,20 +140,21 @@ are:
 
   Parameters
   ----------
-  data :
-      Input data matrix.
+  data : array, shape (n, d) or (n, d + k), dtype float
+      Input data matrix. With ``k`` discrete variables their left limits are
+      required too; see ``Vinecop.select`` on the layouts.
 
-  structure :
-      An ``RVineStructure``. Provide either this or `matrix`, but not both.
-
-  matrix :
-      RVine matrix. Provide either this or `structure`, but not both.
-
-  var_types :
-      Variable types for each variable (e.g., 'c' for continuous, 'd' for discrete). Defaults to all continuous.
-
-  controls :
+  controls : FitControlsVinecop, or None, optional
       Fit controls for the vinecop. Defaults to the default constructor.
+
+  structure : RVineStructure, or None, optional
+      An ``RVineStructure``. Provide either this or ``matrix``, but not both.
+
+  matrix : array, shape (d, d), dtype uint64, or None, optional
+      RVine matrix. Provide either this or ``structure``, but not both.
+
+  var_types : sequence of str, or None, optional
+      Variable types for each variable (e.g., 'c' for continuous, 'd' for discrete). Defaults to all continuous.
   )""";
 
   // Supplied inline rather than via the generated docstring: the C++ facade
@@ -344,17 +345,19 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
 
   Parameters
   ----------
-  structure :
-      An ``RVineStructure``. Provide either this or `matrix`, but not both.
+  structure : RVineStructure, or None, optional
+      The structure. Provide either this or ``matrix``, but not both.
 
-  matrix :
-      Vinecop matrix. Provide either this or `structure`, but not both.
+  matrix : array, shape (d, d), dtype uint64, or None, optional
+      The structure as a matrix. Provide either this or ``structure``, but
+      not both.
 
-  pair_copulas :
-      Pairwise copulas for each edge in the vine. Defaults to an empty list.
+  pair_copulas : list of list of Bicop, optional
+      Pair copulas for each edge in the vine. Defaults to an empty list.
 
-  var_types :
-      Variable types for each variable (e.g., 'c' for continuous, 'd' for discrete). Defaults to all continuous.
+  var_types : sequence of str, optional
+      Variable type per variable -- ``"c"`` for continuous, ``"d"`` for
+      discrete. Defaults to all continuous.
   )""";
 
   nb::class_<Vinecop>(module, "Vinecop", vinecop_doc.doc)
@@ -368,11 +371,17 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
                   "pair_copulas"_a = std::vector<std::vector<Bicop>>(),
                   "var_types"_a = std::vector<std::string>(),
                   from_structure_doc, nb::call_guard<nb::gil_scoped_release>())
+      // `controls` sits in the second positional slot, as it does on `fit`,
+      // `select` and every other estimator in the package -- it used to be
+      // fifth, behind `structure`, so `from_data(u, controls)` bound the
+      // controls object as a structure. The three declarations are
+      // keyword-only for the same reason.
       .def_static("from_data", &vc_from_data, "data"_a,
-                  "structure"_a = std::nullopt, "matrix"_a = std::nullopt,
-                  "var_types"_a = std::vector<std::string>(),
                   "controls"_a.sig("FitControlsVinecop()") = nb::none(),
-                  from_data_doc, nb::call_guard<nb::gil_scoped_release>())
+                  nb::kw_only(), "structure"_a = std::nullopt,
+                  "matrix"_a = std::nullopt,
+                  "var_types"_a = std::vector<std::string>(), from_data_doc,
+                  nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_file", &vc_from_file, "filename"_a, "check"_a = true,
                   vinecop_doc.ctor.doc_2args_filename_check,
                   nb::call_guard<nb::gil_scoped_release>())
@@ -474,25 +483,39 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
       .def_prop_ro("nobs", &Vinecop::get_nobs, vinecop_doc.get_nobs.doc)
       .def_prop_ro("threshold", &Vinecop::get_threshold,
                    vinecop_doc.get_threshold.doc)
+      // `fit` and `select` hand the object back so they compose like every
+      // other estimator in the package. The GIL is released around the fit
+      // itself rather than by a call guard, because handing back the object
+      // needs it. `fit` takes its thread count from the controls it is given,
+      // which already carry one, rather than from a second argument that could
+      // disagree with it.
       .def(
           "select",
           [](Vinecop& self, const Eigen::MatrixXd& data,
-             const FitControlsVinecop* controls) {
-            self.select(data,
-                        controls ? *controls : default_vinecop_controls());
+             const FitControlsVinecop* controls) -> Vinecop& {
+            {
+              nb::gil_scoped_release release;
+              self.select(data,
+                          controls ? *controls : default_vinecop_controls());
+            }
+            return self;
           },
           "data"_a, "controls"_a.sig("FitControlsVinecop()") = nb::none(),
-          vinecop_doc.select.doc, nb::call_guard<nb::gil_scoped_release>())
+          vinecop_doc.select.doc, nb::rv_policy::reference_internal)
       .def(
           "fit",
           [](Vinecop& self, const Eigen::MatrixXd& data,
-             const FitControlsBicop* controls, size_t num_threads) {
-            self.fit(data, controls ? *controls : default_bicop_controls(),
-                     num_threads);
+             const FitControlsBicop* controls) -> Vinecop& {
+            {
+              nb::gil_scoped_release release;
+              const FitControlsBicop& resolved =
+                  controls ? *controls : default_bicop_controls();
+              self.fit(data, resolved, resolved.get_num_threads());
+            }
+            return self;
           },
           "data"_a, "controls"_a.sig("FitControlsBicop()") = nb::none(),
-          "num_threads"_a = 1, vinecop_doc.fit.doc,
-          nb::call_guard<nb::gil_scoped_release>())
+          vinecop_doc.fit.doc, nb::rv_policy::reference_internal)
       // `parameters` (optional) selects the per-observation-parameter overload:
       // an n x npars matrix, one full-vine parameter vector per row, columns in
       // the (tree, edge, parameter) order of `scores()`. Continuous,
@@ -724,7 +747,7 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
       .def("plot", &vinecop_plot_wrapper, "tree"_a = nb::none(),
            "add_edge_labels"_a = true, "layout"_a = "graphviz",
            "vars_names"_a = nb::none(),
-           python_doc_helper("pyvinecopulib._python_helpers.vinecop",
+           python_doc_helper("pyvinecopulib.core._vinecop_plot",
                              "VINECOP_PLOT_DOC",
                              "Plot the vine copula (extended doc unavailable)")
                .c_str())

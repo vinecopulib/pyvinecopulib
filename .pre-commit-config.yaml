@@ -91,13 +91,16 @@ repos:
         files: ^src/pyvinecopulib/.*\.py$
         exclude: |
           (?x)^src/pyvinecopulib/(
-            _python_helpers/.*\.py |
+            core/_bicop_plot\.py |
+            core/_vinecop_plot\.py |
+            core/_margin_plot\.py |
+            core/_normal\.py |
             _deprecations\.py |
             sklearn/_base\.py |
-            torch/_batched\.py |
-            torch/_fit_tll\.py |
-            torch/_kde1d_interp\.py |
-            torch/_interp\.py
+            torch/_vinecop_batched\.py |
+            torch/_bicop_fit_tll\.py |
+            torch/_margin_kde1d_interp\.py |
+            torch/_bicop_interp\.py
           )$
 
   # C++ formatting with clang-format (only for src/ directory).

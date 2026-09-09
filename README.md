@@ -60,26 +60,53 @@ vine.loglik(u), vine.bic()           # fit diagnostics
 draws = vine.sample(100, seeds=[1])  # new copula-scale observations
 ```
 
-For a distribution on the original data scale, pair the fitted copula with
-one margin per variable through `pv.Vinedist`. Notebooks 03, 07, and 11 build
-out these core workflows.
+For a distribution on the original **data** scale — no rank transform, no
+`to_pseudo_obs` — pair the copula with one margin per variable through
+`pv.Vinedist`. It needs no extras: the default margin is a boundary-corrected
+kernel density.
+
+```python
+dist = pv.Vinedist.from_data(y)          # y is data, not pseudo-observations
+dist.logpdf(y)                           # joint log-density
+dist.sample(1000, seeds=[1])             # draws on the original scale
+```
+
+Bound a variable whose range you know, and the kernel density stops padding
+past it:
+
+```python
+from pyvinecopulib import FitControlsMargin
+dist = pv.Vinedist.from_data(
+  y, names=["income", "score"],
+  margin_controls={"income": FitControlsMargin(support=(0.0, None))},
+)
+```
+
+Notebooks 01, 02 and 03 build out these core workflows, and 07 covers the
+kernel-density margin they default to.
 
 ### Optional subpackages
 
 Three opt-in subpackages extend the core library:
 
 * `pyvinecopulib.margins` — parametric margins and family selection
-  (`ParametricMargin`, `MarginSelector`) to pair with `Vinedist` when a
+  (`SciPyMargin`, `OpenTURNSMargin`) to pair with `Vinedist` when a
   kernel-density margin is not what you want:
 
   ```python
   from pyvinecopulib.core import Vinedist
-  from pyvinecopulib.margins import MarginSelector
-  dist = Vinedist.from_data(x, margins=MarginSelector())
-  print(dist.margins[0].selected_)
+  from pyvinecopulib.margins import FitControlsMargin
+  dist = Vinedist.from_data(
+    x,
+    margins="parametric",  # a family per column, chosen from the data
+    margin_controls=FitControlsMargin(selection_criterion="bic"),
+  )
+  print(dist.margins[0].family_name)
   ```
 
-  Install with `pip install pyvinecopulib[scipy]` (or `[openturns]`).
+  `margins="parametric"` means `SciPyMargin`; install with
+  `pip install pyvinecopulib[scipy]`. For OpenTURNS' families pass
+  `margins=OpenTURNSMargin()` and install `pyvinecopulib[openturns]`.
 
 * `pyvinecopulib.sklearn` — scikit-learn-compatible estimators
   (`VineDensity`, `VineRegressor`). Drop a vine
@@ -94,7 +121,7 @@ Three opt-in subpackages extend the core library:
   Install with `pip install pyvinecopulib[sklearn]`.
 
 * `pyvinecopulib.torch` — pure-PyTorch evaluators and data-scale modules
-  (`TorchBicop`, `TorchVinecop`, `TorchKde1d`, `TorchMargin`, and
+  (`TorchTllBicop`, `TorchVinecop`, `TorchKde1d`, `TorchDistributionMargin`, and
   `TorchVinedist`) for GPU placement and autograd:
 
   ```python
@@ -119,31 +146,41 @@ Three opt-in subpackages extend the core library:
 stable: changes there follow semantic versioning, with a deprecation cycle
 before anything is removed.
 
-`pyvinecopulib.margins`, `pyvinecopulib.sklearn` and `pyvinecopulib.torch` are
-**provisional in 1.x**. Their contracts are new in this release and may still
-change in a minor version as they meet real data -- the margin contract
-(`MarginLike` / `MarginBase`) and the torch/C++ evaluation parity are the parts
-already treated as load-bearing. Pin an exact version if you depend on their
-surface.
+The four contracts and their canonical bases live in `core`, so they are
+stable too: `BicopLike` / `BicopBase`, `VinecopLike` / `VinecopBase`,
+`MarginLike` / `MarginBase`, `VinedistLike` / `VinedistBase`. Build a subclass
+on them with the same confidence as on `Vinecop`.
 
-### Custom and conditional pair copulas
+What is **provisional in 1.x** are the *implementations* in
+`pyvinecopulib.margins`, `pyvinecopulib.sklearn` and `pyvinecopulib.torch` --
+the curated family registry, the selection criteria, the backend and controls
+surfaces -- which may change in a minor version as they meet real data. The
+torch-to-core evaluation parity is treated as required regardless. Pin an
+exact version if you depend on those implementation surfaces.
 
-The core evaluators (`Bicop` / `Vinecop`, and their torch counterparts)
-implement two backend-neutral contracts, `BicopLike` and `VinecopLike`.
-Subclass the canonical, pure-Python `BicopBase` / `VinecopBase` (NumPy or
-PyTorch) to plug your **own** pair copula into a vine. A pair may depend on its
-vine conditioning-set values (a **non-simplified** vine), on row-aligned
-external covariates, or on both. `Vinedist` can compose covariate-dependent
+### Custom and conditional models
+
+The core evaluators (`Bicop` / `Vinecop` / `Kde1d` / `Vinedist`, and their torch
+counterparts) implement four backend-neutral contracts: `BicopLike`,
+`VinecopLike`, `MarginLike` and `VinedistLike`. Subclass the matching
+canonical, pure-Python base -- `BicopBase`, `VinecopBase`, `MarginBase` or
+`VinedistBase` (NumPy or PyTorch) -- to plug your **own** pair copula, margin
+or whole distribution into the library. Fitting has one shape on all four:
+`fit` returns `self`, `from_data` constructs, and configuration travels as a
+`ControlsLike` (anything with `to_dict()`).
+
+A pair may depend on its vine conditioning-set values (a **non-simplified**
+vine), on row-aligned external covariates, or on both. `Vinedist` can compose covariate-dependent
 margins and such a copula into a full data-scale distribution `Y | X`.
 
-This joint conditional model is an extension seam, not a built-in fitter:
+This joint conditional model is an extension point, not a built-in fitter:
 `Vinedist.from_data(y, x=...)` can fit custom conditional margin
 specifications, but fits an `x`-independent compiled `Vinecop` for the copula
 half. Fit custom conditional pairs through `VinecopBase.fit` and compose the
 parts explicitly when dependence must also vary with `X`. See the
 [concepts page](https://pyvinecopulib.readthedocs.io/en/latest/concepts.html)
 and notebooks `examples/10_extending_pyvinecopulib.ipynb` and
-`examples/11_vine_distributions.ipynb`.
+`examples/03_vine_distributions.ipynb`.
 
 ### Conditional sampling and likelihood diagnostics
 

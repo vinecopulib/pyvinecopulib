@@ -3,7 +3,7 @@
 
 Section 1 — Bicop precision. For each (family, params, n):
   - sample u_true ~ cop_true.sample(n) from the parametric family,
-  - fit two TorchBicops on u_true (cache_integrals=False vs True) using
+  - fit two TorchTllBicops on u_true (cache_integrals=False vs True) using
     the TLL fitter,
   - on M=10k iid eval points in [0.02, 0.98]^2 compute the integrated
     absolute error (IAE = mean |fit - true|) for pdf, cdf, hfunc1,
@@ -36,7 +36,7 @@ import pyvinecopulib as pv
 from pyvinecopulib.torch import (
   FitControlsTorchBicop,
   FitControlsTorchVinecop,
-  TorchBicop,
+  TorchTllBicop,
   TorchVinecop,
 )
 
@@ -74,7 +74,7 @@ def _bicop_truth(cop: pv.Bicop, u: np.ndarray) -> dict[str, np.ndarray]:
   }
 
 
-def _bicop_fit(bc: TorchBicop, u_t: torch.Tensor) -> dict[str, np.ndarray]:
+def _bicop_fit(bc: TorchTllBicop, u_t: torch.Tensor) -> dict[str, np.ndarray]:
   return {
     "pdf": bc.pdf(u_t).numpy(),
     "cdf": bc.cdf(u_t).numpy(),
@@ -111,9 +111,9 @@ def _run_bicop_section(
         for grid_size in grid_sizes:
           for cache in (False, True):
             ctl = FitControlsTorchBicop(
-              method="tll", grid_type=grid_type, grid_size=grid_size
+              grid_type=grid_type, grid_size=grid_size
             )
-            bc_fit = TorchBicop.from_data(
+            bc_fit = TorchTllBicop.from_data(
               torch.from_numpy(u_true),
               ctl,
               cache_integrals=cache,
@@ -188,11 +188,10 @@ def _run_vine_section(
       for cache in (False, True):
         vc_fit = TorchVinecop.from_data(
           torch.from_numpy(u_true),
-          cop_true.structure,
-          controls=FitControlsTorchVinecop(
-            bicop_controls=FitControlsTorchBicop(grid_type=grid_type),
-            cache_integrals=cache,
-          ),
+          # A vine's controls *are* pair controls, so the grid settings sit on
+          # the one object rather than a nested `bicop_controls`.
+          FitControlsTorchVinecop(grid_type=grid_type, cache_integrals=cache),
+          structure=cop_true.structure,
         )
         fit_pdf = vc_fit.pdf(u_eval_t).numpy()
         fit_rosen = vc_fit.rosenblatt(u_eval_t).numpy()

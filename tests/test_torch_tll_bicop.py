@@ -1,0 +1,1295 @@
+"""Tests for the optional ``pyvinecopulib.torch`` submodule.
+
+Skipped when PyTorch isn't installed. Compares the torch ``TorchTllBicop``
+against the C++ ``pv.Bicop`` (TLL family) for ``pdf`` / ``cdf`` / ``hfunc``
+on the same fitted interpolation grid and verifies ``hinv`` round-trips.
+"""
+
+from __future__ import annotations
+
+from fractions import Fraction
+from typing import cast
+
+import numpy as np
+import pytest
+
+import pyvinecopulib as pv
+
+torch = pytest.importorskip("torch")
+
+from pyvinecopulib.torch import FitControlsTorchBicop, TorchTllBicop  # noqa: E402
+
+_TLL_CONTROLS = pv.FitControlsBicop(family_set=[pv.families.tll], num_threads=1)
+
+
+def _fit_tll(u: np.ndarray) -> pv.Bicop:
+  return pv.Bicop.from_data(u, controls=_TLL_CONTROLS)
+
+
+def _eval_grid(n: int, seed: int = 0) -> np.ndarray:
+  rng = np.random.default_rng(seed)
+  return rng.uniform(0.02, 0.98, size=(n, 2))
+
+
+def test_pdf_matches_pvbicop() -> None:
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  u_fit = cop.sample(2000, seeds=[1, 2, 3])
+  cop_tll = _fit_tll(u_fit)
+
+  # Pin cache=False: this test verifies parity with the C++ on-the-fly
+  # integration math at 1e-10. The default cache_integrals=True uses
+  # bilinear-interp on the cache, which intentionally introduces a
+  # ~1e-3 IAE gap and is covered by test_cached_*_smoke below.
+  bc = TorchTllBicop.from_bicop(cop_tll, cache_integrals=False)
+  u_eval = _eval_grid(500, seed=11)
+
+  out_torch = bc.pdf(torch.from_numpy(u_eval)).numpy()
+  out_cpp = cop_tll.pdf(u_eval)
+  np.testing.assert_allclose(out_torch, out_cpp, atol=1e-10, rtol=1e-10)
+
+
+def test_cdf_matches_pvbicop() -> None:
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  u_fit = cop.sample(2000, seeds=[1, 2, 3])
+  cop_tll = _fit_tll(u_fit)
+
+  # Pin cache=False — C++ parity at 1e-10; see test_pdf_matches_pvbicop.
+  bc = TorchTllBicop.from_bicop(cop_tll, cache_integrals=False)
+  u_eval = _eval_grid(500, seed=12)
+
+  out_torch = bc.cdf(torch.from_numpy(u_eval)).numpy()
+  out_cpp = cop_tll.cdf(u_eval)
+  np.testing.assert_allclose(out_torch, out_cpp, atol=1e-10, rtol=1e-10)
+
+
+def test_hfunc_matches_pvbicop() -> None:
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  u_fit = cop.sample(2000, seeds=[1, 2, 3])
+  cop_tll = _fit_tll(u_fit)
+
+  # Pin cache=False — C++ parity at 1e-10; see test_pdf_matches_pvbicop.
+  bc = TorchTllBicop.from_bicop(cop_tll, cache_integrals=False)
+  u_eval = _eval_grid(500, seed=13)
+  u_t = torch.from_numpy(u_eval)
+
+  np.testing.assert_allclose(
+    bc.hfunc1(u_t).numpy(), cop_tll.hfunc1(u_eval), atol=1e-10, rtol=1e-10
+  )
+  np.testing.assert_allclose(
+    bc.hfunc2(u_t).numpy(), cop_tll.hfunc2(u_eval), atol=1e-10, rtol=1e-10
+  )
+
+
+def test_hinv_roundtrip() -> None:
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.7]]))
+  u_fit = cop.sample(2000, seeds=[4, 5, 6])
+  cop_tll = _fit_tll(u_fit)
+
+  # Pin cache=False: the closed-form inversion is the exact inverse of the
+  # on-the-fly h-function, so the round-trip holds to machine precision. The
+  # cached path inverts the same quadratic but reads `hfunc1` off the prefix
+  # tables, so it round-trips to summation-order noise rather than exactly.
+  bc = TorchTllBicop.from_bicop(cop_tll, cache_integrals=False)
+  u_eval = _eval_grid(400, seed=21)
+  u_t = torch.from_numpy(u_eval)
+
+  u2 = bc.hinv1(u_t).unsqueeze(-1)
+  back = bc.hfunc1(torch.cat([u_t[:, 0:1], u2], dim=-1)).numpy()
+  np.testing.assert_allclose(back, u_eval[:, 1], atol=1e-12, rtol=1e-12)
+
+  u1 = bc.hinv2(u_t).unsqueeze(-1)
+  back = bc.hfunc2(torch.cat([u1, u_t[:, 1:2]], dim=-1)).numpy()
+  np.testing.assert_allclose(back, u_eval[:, 0], atol=1e-12, rtol=1e-12)
+
+
+def test_hinv_closed_form_matches_cpp() -> None:
+  """The no-cache torch h-inverse ports the C++ closed-form conditional
+  quantile (vinecopulib#691), so torch and C++ agree to machine precision
+  on the same fitted grid."""
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.7]]))
+  u_fit = cop.sample(2000, seeds=[4, 5, 6])
+  cop_tll = _fit_tll(u_fit)
+
+  bc = TorchTllBicop.from_bicop(cop_tll, cache_integrals=False)
+  u_eval = _eval_grid(400, seed=22)
+  u_t = torch.from_numpy(u_eval)
+
+  np.testing.assert_allclose(
+    bc.hinv1(u_t).numpy(), cop_tll.hinv1(u_eval), atol=1e-12, rtol=1e-12
+  )
+  np.testing.assert_allclose(
+    bc.hinv2(u_t).numpy(), cop_tll.hinv2(u_eval), atol=1e-12, rtol=1e-12
+  )
+
+
+def test_inverse_integrate_1d() -> None:
+  """Unit test of the closed-form conditional quantile on the grid itself:
+  exact inverse of ``integrate_1d``, NaN propagation, shape validation."""
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
+  u_fit = cop.sample(1500, seeds=[7, 8, 9])
+  grid = TorchTllBicop.from_bicop(
+    _fit_tll(u_fit), cache_integrals=False
+  ).interp_grid
+
+  u_eval = _eval_grid(300, seed=23)
+  u_t = torch.from_numpy(u_eval)
+  for cond_var in (1, 2):
+    x = grid.inverse_integrate_1d(u_t, cond_var)
+    assert ((x >= 0) & (x <= 1)).all()
+    if cond_var == 1:
+      u_back = torch.stack([u_t[:, 0], x], dim=-1)
+      p = u_eval[:, 1]
+    else:
+      u_back = torch.stack([x, u_t[:, 1]], dim=-1)
+      p = u_eval[:, 0]
+    np.testing.assert_allclose(
+      grid.integrate_1d(u_back, cond_var).numpy(), p, atol=1e-12, rtol=1e-12
+    )
+
+  # NaN rows return NaN (mirroring the C++ binaryExpr_or_nan wrapper).
+  u_nan = u_t.clone()
+  u_nan[0, 0] = torch.nan
+  u_nan[1, 1] = torch.nan
+  out = grid.inverse_integrate_1d(u_nan, 1)
+  assert out[:2].isnan().all() and out[2:].isfinite().all()
+
+  with pytest.raises(ValueError, match="shape"):
+    grid.inverse_integrate_1d(u_t[:, 0], 1)
+
+
+def test_from_bicop_rejects_rotated() -> None:
+  """TLL pair-copulas in pyvinecopulib always have rotation=0; the
+  TorchTllBicop wrapper enforces this at construction."""
+
+  class _FakeCop:
+    family = _fit_tll(_eval_grid(100, seed=0)).family
+    rotation = 90
+    parameters = np.eye(2)
+
+  with pytest.raises(ValueError, match="rotation"):
+    TorchTllBicop.from_bicop(_FakeCop())
+
+
+# --------------------------------------------------------------------------- #
+# TorchTllBicop.from_data — pure-torch TLL fit                                    #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("n", [500, 2000])
+@pytest.mark.parametrize("rho", [0.3, 0.6, 0.9])
+def test_from_data_matches_cpp(n: int, rho: float) -> None:
+  """The pure-torch TLL constant fit produces the same density grid as
+  ``pv.Bicop.from_data`` to machine precision after the standard
+  margin normalization in :class:`InterpolationGrid2D`.
+  """
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[rho]]))
+  u_np = cop.sample(n, seeds=[1, 2, 3])
+  cop_cpp = pv.Bicop.from_data(
+    u_np,
+    controls=pv.FitControlsBicop(family_set=[pv.families.tll], num_threads=1),
+  )
+  bc_torch = TorchTllBicop.from_data(u_np)
+  np.testing.assert_allclose(
+    bc_torch.interp_grid.values.numpy(),
+    cop_cpp.parameters,
+    atol=1e-11,
+    rtol=1e-11,
+  )
+
+
+def test_from_data_evaluates_consistently() -> None:
+  """Fit on data, evaluate pdf/cdf/hfunc/hinv — sanity checks: finite,
+  in-range, hinv round-trips. Doesn't pin to a reference; the
+  matches-vs-cpp test covers the fit accuracy.
+
+  Pin cache_integrals=False so the hinv round-trip below is the exact
+  closed-form inverse; the cached path round-trips only to ~1e-3."""
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
+  u_np = cop.sample(1000, seeds=[11, 22, 33])
+  bc = TorchTllBicop.from_data(u_np, cache_integrals=False)
+
+  u_eval = _eval_grid(300, seed=99)
+  u_t = torch.from_numpy(u_eval)
+
+  pdf = bc.pdf(u_t)
+  assert pdf.isfinite().all() and (pdf > 0).all()
+  cdf = bc.cdf(u_t)
+  assert ((cdf > 0) & (cdf < 1)).all()
+  h1 = bc.hfunc1(u_t)
+  h2 = bc.hfunc2(u_t)
+  assert ((h1 >= 0) & (h1 <= 1)).all()
+  assert ((h2 >= 0) & (h2 <= 1)).all()
+
+  # hinv round-trip
+  u2 = bc.hinv1(u_t).unsqueeze(-1)
+  back = bc.hfunc1(torch.cat([u_t[:, 0:1], u2], dim=-1)).numpy()
+  np.testing.assert_allclose(back, u_eval[:, 1], atol=1e-9, rtol=1e-9)
+
+
+def test_cached_integrals_smoke() -> None:
+  """Sanity check that ``cache_integrals=True`` produces finite outputs in
+  range. We don't pin it to the trapezoidal path — the two paths agree only
+  at grid nodes and the off-node gap depends on the local curvature.
+  """
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
+  u_fit = cop.sample(2000, seeds=[10, 11, 12])
+  cop_tll = _fit_tll(u_fit)
+
+  bc_cache = TorchTllBicop.from_bicop(cop_tll, cache_integrals=True)
+  # All three prefix tables must be populated for a non-indep pair.
+  assert bc_cache._sy is not None
+  assert bc_cache._sx is not None
+  assert bc_cache._prefix is not None
+
+  u_t = torch.from_numpy(_eval_grid(200, seed=42))
+  for fn in (
+    bc_cache.cdf,
+    bc_cache.hfunc1,
+    bc_cache.hfunc2,
+    bc_cache.hinv1,
+    bc_cache.hinv2,
+  ):
+    out = fn(u_t)
+    assert torch.isfinite(out).all()
+    assert (out >= 0.0).all() and (out <= 1.0).all()
+
+
+def test_cached_and_uncached_hinv_agree() -> None:
+  """``hinv1`` / ``hinv2`` invert the same quadratic in either mode.
+
+  Locating the bracketing cell of the inverse needs the conditional cumulative
+  along the whole free axis, so unlike ``hfunc1`` / ``hfunc2`` there is no O(1)
+  exact lookup to cache. What the prefix tables do buy is that cumulative:
+  integration is linear, so blending two of their lines is the same quantity as
+  quadraturing the blended knots, and the two modes differ only in rounding.
+  """
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  u_fit = cop.sample(2000, seeds=[1, 2, 3])
+  cop_tll = _fit_tll(u_fit)
+
+  bc_bisect = TorchTllBicop.from_bicop(cop_tll, cache_integrals=False)
+  bc_cached = TorchTllBicop.from_bicop(cop_tll, cache_integrals=True)
+
+  u_t = torch.from_numpy(_eval_grid(500, seed=77))
+  for which in ("hinv1", "hinv2"):
+    out_bisect = getattr(bc_bisect, which)(u_t)
+    out_cached = getattr(bc_cached, which)(u_t)
+    torch.testing.assert_close(out_cached, out_bisect, atol=1e-12, rtol=0.0)
+
+
+def test_independent_bicop() -> None:
+  bc = TorchTllBicop()  # default: independence
+  u = torch.tensor([[0.2, 0.7], [0.5, 0.5], [0.9, 0.1]], dtype=torch.float64)
+  assert torch.allclose(bc.pdf(u), torch.ones(3, dtype=torch.float64))
+  assert torch.allclose(bc.cdf(u), u[:, 0] * u[:, 1])
+  assert torch.allclose(bc.hfunc1(u), u[:, 1])
+  assert torch.allclose(bc.hfunc2(u), u[:, 0])
+
+
+def test_simulate_smoke() -> None:
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
+  u_fit = cop.sample(2000, seeds=[20, 21, 22])
+  cop_tll = _fit_tll(u_fit)
+  bc = TorchTllBicop.from_bicop(cop_tll)
+
+  samples = bc.sample(n=1000, qrng=False, seeds=[0])
+  assert samples.shape == (1000, 2)
+  assert torch.isfinite(samples).all()
+  assert ((samples > 0.0) & (samples < 1.0)).all()
+
+  samples_sobol = bc.sample(n=500, qrng=True, seeds=[0])
+  assert samples_sobol.shape == (500, 2)
+  assert torch.isfinite(samples_sobol).all()
+  assert ((samples_sobol > 0.0) & (samples_sobol < 1.0)).all()
+
+
+def test_from_bicop_rejects_non_kernel_family() -> None:
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
+  with pytest.raises(ValueError, match="kernel-family"):
+    TorchTllBicop.from_bicop(cop)
+
+
+# --------------------------------------------------------------------------- #
+# TorchTllBicop linear-grid path                                                  #
+# --------------------------------------------------------------------------- #
+
+
+def test_linear_grid_roundtrip_and_range() -> None:
+  """``grid_type='linear'`` produces a usable fit: hinv round-trips and
+  all outputs are in-range. The linear-vs-normal disagreement on pdf is
+  small (~5e-2 max) since both fit the same KDE in z-space and only the
+  storage grid differs.
+  """
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
+  u_fit = cop.sample(2000, seeds=[10, 11, 12])
+  # cache=False so the hinv round-trip below is the exact inverse of the
+  # h-function it is composed with, holding at 1e-9.
+  bc_lin = TorchTllBicop.from_data(
+    u_fit, FitControlsTorchBicop(grid_type="linear"), cache_integrals=False
+  )
+  bc_nrm = TorchTllBicop.from_data(
+    u_fit, FitControlsTorchBicop(grid_type="normal"), cache_integrals=False
+  )
+
+  assert bc_lin.interp_grid._is_linear is True
+  assert bc_nrm.interp_grid._is_linear is False
+  # Linear grid points are equispaced after the [0,1] endpoint clamp.
+  gp = bc_lin.interp_grid.grid_points.numpy()
+  d = np.diff(gp[1:-1])
+  assert np.allclose(d, d[0], atol=1e-12), "interior spacing must be uniform"
+
+  u_t = torch.from_numpy(_eval_grid(300, seed=99))
+  pdf = bc_lin.pdf(u_t)
+  cdf = bc_lin.cdf(u_t)
+  h1 = bc_lin.hfunc1(u_t)
+  h2 = bc_lin.hfunc2(u_t)
+  assert (pdf > 0).all() and torch.isfinite(pdf).all()
+  assert ((cdf > 0) & (cdf < 1)).all()
+  assert ((h1 >= 0) & (h1 <= 1)).all()
+  assert ((h2 >= 0) & (h2 <= 1)).all()
+
+  # hinv round-trip
+  u2 = bc_lin.hinv1(u_t).unsqueeze(-1)
+  back = bc_lin.hfunc1(torch.cat([u_t[:, 0:1], u2], dim=-1)).numpy()
+  np.testing.assert_allclose(back, u_t[:, 1].numpy(), atol=1e-9, rtol=1e-9)
+
+
+def test_linear_grid_cell_index_matches_searchsorted() -> None:
+  """The O(1) floor-based cell index for the linear grid must agree with
+  the generic searchsorted-based cell index — same indices at every input.
+  """
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.4]]))
+  u_fit = cop.sample(500, seeds=[1, 2, 3])
+  bc_lin = TorchTllBicop.from_data(
+    u_fit, FitControlsTorchBicop(grid_type="linear")
+  )
+  grid = bc_lin.interp_grid
+
+  u = torch.linspace(0.0, 1.0, 1001, dtype=torch.float64)
+  # O(1) floor path
+  fast_idx = grid._cell_index(u)
+  # Force the searchsorted path for the same grid
+  grid._is_linear = False
+  slow_idx = grid._cell_index(u)
+  grid._is_linear = True
+  assert torch.equal(fast_idx, slow_idx)
+
+
+def test_linear_grid_cached_integrals_consistent() -> None:
+  """``cache_integrals=True`` must build all three prefix tables and produce
+  in-range outputs on the linear grid as well as on the normal grid."""
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  u_fit = cop.sample(1500, seeds=[7, 8, 9])
+  bc = TorchTllBicop.from_data(
+    u_fit, FitControlsTorchBicop(grid_type="linear"), cache_integrals=True
+  )
+  assert bc._sy is not None
+  assert bc._sx is not None
+  assert bc._prefix is not None
+
+  u_t = torch.from_numpy(_eval_grid(300, seed=21))
+  for fn in (bc.cdf, bc.hfunc1, bc.hfunc2, bc.hinv1, bc.hinv2):
+    out = fn(u_t)
+    assert torch.isfinite(out).all()
+    assert ((out >= 0.0) & (out <= 1.0)).all()
+
+
+def test_linear_rejects_invalid_grid_type() -> None:
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.4]]))
+  u_fit = cop.sample(200, seeds=[1, 2, 3])
+  with pytest.raises(ValueError, match="grid_type"):
+    TorchTllBicop.from_data(u_fit, FitControlsTorchBicop(grid_type="quadratic"))
+
+
+# --------------------------------------------------------------------------- #
+# User-facing input validation                                                #
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+  "op", ["pdf", "cdf", "hfunc1", "hfunc2", "hinv1", "hinv2"]
+)
+def test_eval_rejects_wrong_input_shape(op: str) -> None:
+  """Every eval entry point requires (n, 2) and raises ValueError otherwise."""
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
+  u_fit = cop.sample(500, seeds=[1, 2, 3])
+  bc = TorchTllBicop.from_data(u_fit)
+  fn = getattr(bc, op)
+  with pytest.raises(ValueError, match=r"shape \(n, 2\)"):
+    fn(torch.zeros(100, dtype=torch.float64))  # 1-D
+  with pytest.raises(ValueError, match=r"shape \(n, 2\)"):
+    fn(torch.zeros(100, 3, dtype=torch.float64))  # wrong second dim
+
+
+def test_from_data_rejects_wrong_input_shape() -> None:
+  """`from_data` rejects inputs that aren't ``(n, 2)``."""
+  with pytest.raises(ValueError, match="must have shape"):
+    TorchTllBicop.from_data(torch.zeros(100, dtype=torch.float64))
+  with pytest.raises(ValueError, match="must have shape"):
+    TorchTllBicop.from_data(torch.zeros(100, 3, dtype=torch.float64))
+
+
+def test_from_data_rejects_bad_args() -> None:
+  """`from_data` rejects grid_size < 2 and mult <= 0."""
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
+  u_fit = cop.sample(200, seeds=[1, 2, 3])
+  with pytest.raises(ValueError, match="grid_size"):
+    TorchTllBicop.from_data(u_fit, FitControlsTorchBicop(grid_size=1))
+  with pytest.raises(ValueError, match="mult"):
+    TorchTllBicop.from_data(u_fit, FitControlsTorchBicop(mult=0.0))
+
+
+def test_simulate_rejects_nonpositive_n() -> None:
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
+  u_fit = cop.sample(200, seeds=[1, 2, 3])
+  bc = TorchTllBicop.from_data(u_fit)
+  with pytest.raises(ValueError, match="must be > 0"):
+    bc.sample(n=0)
+  with pytest.raises(ValueError, match="must be > 0"):
+    bc.sample(n=-5)
+
+
+# ---------------------------------------------------------------------------
+# InterpolationGrid2D.normalize_margins
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_margins_balances_both_margins() -> None:
+  """Both margins end up uniform, and equally so.
+
+  The old scheme was three fixed row-then-column sweeps, which left the second
+  margin exact and dumped the whole residual on the first -- up to 3.3e-2 at
+  strong dependence, so a fitted grid was not a copula density in one direction.
+  Averaging the two sweep orders splits the residual, which is what makes the
+  balance assertion meaningful rather than tautological.
+  """
+  from pyvinecopulib.torch._bicop_interp import (
+    InterpolationGrid2D,
+    _trap_weights,
+  )
+
+  m = 16
+  grid = torch.linspace(0.0, 1.0, m, dtype=torch.float64)
+  rng = np.random.default_rng(0)
+  values = torch.from_numpy(rng.uniform(0.5, 1.5, size=(m, m)))
+
+  ig = InterpolationGrid2D(grid, values)
+  w = _trap_weights(ig.grid_points)
+  r = (ig.values @ w - 1.0).abs().max().item()
+  c = (ig.values.t().contiguous() @ w - 1.0).abs().max().item()
+  assert max(r, c) < 1e-10
+  # Neither margin is allowed to carry the whole residual.
+  assert max(r, c) < 10 * max(min(r, c), 1e-18)
+
+
+def test_normalize_margins_commutes_with_transposition() -> None:
+  """`normalize(V).T == normalize(V.T)`, exactly.
+
+  This is what makes `flip` correct: it transposes an already-normalized grid
+  without renormalizing, so if the normalization were not equivariant then
+  `fit(a, b).flip()` and `fit(b, a)` would be different models. Under the old
+  three-sweep scheme they differed by 2.7e-4.
+  """
+  from pyvinecopulib.torch._bicop_interp import InterpolationGrid2D
+
+  m = 16
+  grid = torch.linspace(0.0, 1.0, m, dtype=torch.float64)
+  rng = np.random.default_rng(1)
+  values = torch.from_numpy(rng.uniform(0.2, 2.0, size=(m, m)))
+
+  direct = InterpolationGrid2D(grid, values).values
+  swapped = InterpolationGrid2D(grid, values.t().contiguous()).values
+  torch.testing.assert_close(direct, swapped.t(), rtol=1e-13, atol=1e-15)
+
+
+def test_normalize_margins_leaves_a_normalized_grid_alone() -> None:
+  """An already-uniform grid costs one margin check and no scaling."""
+  from pyvinecopulib.torch._bicop_interp import InterpolationGrid2D
+
+  grid = torch.linspace(0.0, 1.0, 8, dtype=torch.float64)
+  values = torch.ones(8, 8, dtype=torch.float64)
+  ig = InterpolationGrid2D(grid, values)
+  torch.testing.assert_close(ig.values, values, rtol=0.0, atol=0.0)
+
+
+def test_flip_swaps_arguments() -> None:
+  # Rotated Clayton data give an asymmetric TLL fit, so the flip is a actual
+  # change (not a no-op). flip() must give c'(u1, u2) = c(u2, u1) with the
+  # h-functions swapped, exactly (it transposes the interpolation grid), and
+  # leave the original unchanged.
+  cop = pv.Bicop.from_family(
+    family=pv.families.clayton, rotation=90, parameters=np.array([[3.0]])
+  )
+  u_fit = cop.sample(4000, seeds=[1, 2, 3])
+  tb = TorchTllBicop.from_data(
+    u_fit, FitControlsTorchBicop(), cache_integrals=False
+  )
+  before = tb.pdf(torch.tensor([[0.3, 0.7]], dtype=torch.float64)).clone()
+  flipped = tb.flip()
+  u = torch.as_tensor(_eval_grid(300, seed=7), dtype=torch.float64)
+  swapped = u[:, [1, 0]]
+  np.testing.assert_allclose(
+    flipped.pdf(u).numpy(), tb.pdf(swapped).numpy(), atol=1e-12, rtol=1e-12
+  )
+  np.testing.assert_allclose(
+    flipped.hfunc1(u).numpy(),
+    tb.hfunc2(swapped).numpy(),
+    atol=1e-12,
+    rtol=1e-12,
+  )
+  np.testing.assert_allclose(
+    flipped.hfunc2(u).numpy(),
+    tb.hfunc1(swapped).numpy(),
+    atol=1e-12,
+    rtol=1e-12,
+  )
+  # Actually different from the unflipped copula on an asymmetric fit, and
+  # the original is left unchanged.
+  assert not np.allclose(flipped.pdf(u).numpy(), tb.pdf(u).numpy())
+  np.testing.assert_array_equal(
+    tb.pdf(torch.tensor([[0.3, 0.7]], dtype=torch.float64)).numpy(),
+    before.numpy(),
+  )
+
+
+# --- gradients ---------------------------------------------------------------- #
+
+
+def test_hinv_is_differentiable() -> None:
+  """Both hinv paths carry a gradient, and it is the right one.
+
+  Neither is a root-finder: cached is one bilinear lookup, uncached is the
+  closed-form quadratic root of the interpolated conditional cdf. Both were
+  nonetheless wrapped in `torch.no_grad()`, which detached them for no reason.
+  """
+  gauss = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  cop = _fit_tll(gauss.sample(2000, seeds=[6, 7, 8]))
+  q = torch.from_numpy(
+    np.random.default_rng(25).uniform(0.15, 0.85, size=(6, 2))
+  )
+
+  for cache in (True, False):
+    bc = TorchTllBicop.from_bicop(cop, cache_integrals=cache)
+    for name in ("hinv1", "hinv2"):
+      method = getattr(bc, name)
+      x = q.clone().requires_grad_(True)
+      out = method(x)
+      assert out.requires_grad, f"{name}, cache={cache}"
+      (grad,) = torch.autograd.grad(out.sum(), x)
+
+      fd = torch.zeros_like(q)
+      with torch.no_grad():
+        for j in range(2):
+          hi, lo = q.clone(), q.clone()
+          hi[:, j] += 1e-6
+          lo[:, j] -= 1e-6
+          fd[:, j] = (method(hi) - method(lo)) / 2e-6
+      rel = (grad - fd).abs().max().item() / fd.abs().max().item()
+      assert rel < 1e-6, f"{name}, cache={cache}: {rel:.3e}"
+
+
+def test_cached_integrals_carry_a_grid_gradient() -> None:
+  """The cached ``cdf`` is differentiable in the grid, and agrees with the
+  on-the-fly one.
+
+  The prefix tables are cumulative trapezoids of ``values``, so the closed-form
+  ``cdf`` read off them is an exact function of the grid -- not the bilinear
+  surrogate the previous cache interposed, which carried no such gradient at
+  all. Both directions matter: turning ``requires_grad`` on **after**
+  construction has to reach the tables (they are buffers, so a stale detached
+  copy would silently zero the gradient), and the two modes must agree.
+  """
+  gauss = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  cop = _fit_tll(gauss.sample(2000, seeds=[7, 8, 9]))
+  q = torch.from_numpy(
+    np.random.default_rng(26).uniform(0.15, 0.85, size=(8, 2))
+  )
+
+  grads = {}
+  for cache in (True, False):
+    bc = TorchTllBicop.from_bicop(cop, cache_integrals=cache)
+    bc.interp_grid.values.requires_grad_(True)
+    assert bc.pdf(q).requires_grad
+    out = bc.cdf(q)
+    assert out.requires_grad, f"cache={cache}: cdf lost its grid gradient"
+    (grad,) = torch.autograd.grad(out.sum(), bc.interp_grid.values)
+    assert torch.isfinite(grad).all()
+    assert grad.abs().sum().item() > 0.0
+    grads[cache] = grad
+
+  # Both are exact integrals of the same bilinear interpolant -- `integrate_2d`
+  # is piecewise-exact in each direction, the tables are cumulative trapezoids
+  # of the same pieces -- so they differ only in the order the terms are summed.
+  torch.testing.assert_close(grads[True], grads[False], atol=1e-10, rtol=1e-7)
+
+
+def _exact_rect_prob(
+  grid: list[Fraction], values: list[list[Fraction]], rect: tuple[Fraction, ...]
+) -> Fraction:
+  """The four-corner difference of the renormalized distribution function.
+
+  Exact rational arithmetic throughout, so it is the reference the float routes
+  are measured against. ``C(u1, u2) = M(u1, u2) * u2 / M(1, u2)``, the object
+  ``integrate_2d`` computes.
+  """
+  m = len(grid)
+
+  def weights(lo: Fraction, hi: Fraction) -> list[Fraction]:
+    w = [Fraction(0)] * m
+
+    def add(k: int, s0: Fraction, s1: Fraction) -> None:
+      h = grid[k + 1] - grid[k]
+      q = (s1 * s1 - s0 * s0) / 2
+      w[k] += h * (s1 - s0 - q)
+      w[k + 1] += h * q
+
+    def cell(x: Fraction) -> int:
+      k = 0
+      while k < m - 2 and grid[k + 1] <= x:
+        k += 1
+      return k
+
+    ka, kb = cell(lo), cell(hi)
+    if ka == kb:
+      h = grid[ka + 1] - grid[ka]
+      add(ka, (lo - grid[ka]) / h, (hi - grid[ka]) / h)
+      return w
+    add(ka, (lo - grid[ka]) / (grid[ka + 1] - grid[ka]), Fraction(1))
+    for k in range(ka + 1, kb):
+      h = (grid[k + 1] - grid[k]) / 2
+      w[k] += h
+      w[k + 1] += h
+    add(kb, Fraction(0), (hi - grid[kb]) / (grid[kb + 1] - grid[kb]))
+    return w
+
+  def mass(a1: Fraction, b1: Fraction, a2: Fraction, b2: Fraction) -> Fraction:
+    wx, wy = weights(a1, b1), weights(a2, b2)
+    return sum(
+      (
+        wx[i] * wy[j] * values[i][j]
+        for i in range(m)
+        if wx[i]
+        for j in range(m)
+        if wy[j]
+      ),
+      Fraction(0),
+    )
+
+  def cdf(u1: Fraction, u2: Fraction) -> Fraction:
+    total = mass(Fraction(0), Fraction(1), Fraction(0), u2)
+    return (
+      Fraction(0)
+      if total == 0
+      else mass(Fraction(0), u1, Fraction(0), u2) * u2 / total
+    )
+
+  a1, b1, a2, b2 = rect
+  return cdf(b1, b2) - cdf(a1, b2) - cdf(b1, a2) + cdf(a1, a2)
+
+
+# Both bounds move with the width, which is the point: differencing four
+# distribution values amplifies any absolute error by ~4 / (w1 w2), where
+# `rect_mass` amplifies by 1 / w2 alone -- one power instead of two, because
+# only its `lam` difference cancels and that multiplies a term of order w1.
+# Measuring both in one run is what shows the gap is the construction rather
+# than the test data: the two agree at 3/8 and are 3000x apart at 1/8192.
+# Dyadic endpoints keep `float(x) == x`, so the comparison is against the
+# algorithm and not against how the query points round.
+@pytest.mark.parametrize(
+  "width,tol_rect,tol_diff",
+  [
+    # One decade of tolerance per decade of width for `rect_mass`, two for the
+    # difference -- which is the finding, stated as the shape of the table.
+    (Fraction(3, 8), 3e-15, 3e-15),
+    (Fraction(1, 16), 3e-14, 1e-13),
+    (Fraction(1, 64), 1e-13, 3e-12),
+    (Fraction(1, 1024), 2e-12, 1e-9),
+    (Fraction(1, 8192), 1e-11, 3e-8),
+  ],
+)
+def test_rect_mass_is_exact_at_every_atom_width(
+  width: Fraction, tol_rect: float, tol_diff: float
+) -> None:
+  """``rect_mass`` against exact rational truth, with the differencing route
+  measured beside it.
+  """
+  from pyvinecopulib.torch._bicop_interp import InterpolationGrid2D
+
+  m = 30
+  grid_f = [Fraction(i, m - 1) for i in range(m)]
+  raw = np.random.default_rng(4).integers(1, 4000, size=(m, m))
+  values_f = [[Fraction(int(raw[i, j])) for j in range(m)] for i in range(m)]
+
+  gp = torch.tensor([float(x) for x in grid_f], dtype=torch.float64)
+  vals = torch.tensor(raw, dtype=torch.float64)
+  grid = InterpolationGrid2D(gp, vals, norm_maxiter=0, is_linear=True)
+
+  rng = np.random.default_rng(5)
+  lim = int((1 - width) * 512)
+  rects = []
+  for _ in range(40):
+    a1 = Fraction(int(rng.integers(1, lim)), 512)
+    a2 = Fraction(int(rng.integers(1, lim)), 512)
+    rects.append((a1, a1 + width, a2, a2 + width))
+  truth = np.array(
+    [float(_exact_rect_prob(grid_f, values_f, r)) for r in rects]
+  )
+
+  a1t, b1t, a2t, b2t = (
+    torch.tensor([float(r[k]) for r in rects], dtype=torch.float64)
+    for k in range(4)
+  )
+  got = grid.rect_mass(a1t, b1t, a2t, b2t).numpy()
+
+  def cdf(x1: torch.Tensor, x2: torch.Tensor) -> np.ndarray:
+    return grid.integrate_2d(torch.stack([x1, x2], dim=-1)).numpy()
+
+  diff4 = cdf(b1t, b2t) - cdf(a1t, b2t) - cdf(b1t, a2t) + cdf(a1t, a2t)
+  e_rect = np.max(np.abs(got - truth) / truth)
+  e_diff = np.max(np.abs(diff4 - truth) / truth)
+  assert e_rect < tol_rect, f"rect_mass: {e_rect:.3e}"
+  # The differencing route must stay inside its own, looser bound; if the two
+  # columns ever coincided, the parametrization would be measuring nothing.
+  assert e_diff < tol_diff, f"difference: {e_diff:.3e}"
+
+
+def test_rect_mass_reproduces_the_cdf_on_a_corner_rectangle() -> None:
+  """``rect_mass`` is the ``cdf``, not a different integral of the same grid.
+
+  On a rectangle anchored at the origin the four-corner difference collapses to
+  one ``cdf`` value, so the two must agree with no width-dependent slack.
+  Pinning it keeps them from drifting into two definitions.
+  """
+  gauss = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  cop = _fit_tll(gauss.sample(2000, seeds=[31, 32, 33]))
+  bc = TorchTllBicop.from_bicop(cop)
+  u = torch.from_numpy(_eval_grid(200, seed=34))
+  zero = torch.zeros_like(u[:, 0])
+  torch.testing.assert_close(
+    bc.rect_mass(zero, u[:, 0], zero, u[:, 1]),
+    bc.cdf(u),
+    rtol=1e-12,
+    atol=1e-12,
+  )
+
+
+def test_values_must_be_nonnegative() -> None:
+  """A density grid with a negative node is refused, not silently integrated.
+
+  The exact tables and ``rect_mass`` both rely on nonnegativity for their
+  no-cancellation bound, so it is a precondition rather than a nicety.
+  """
+  from pyvinecopulib.torch._bicop_interp import InterpolationGrid2D
+
+  gp = torch.linspace(0.0, 1.0, 8, dtype=torch.float64)
+  vals = torch.ones(8, 8, dtype=torch.float64)
+  vals[3, 4] = -1e-12
+  with pytest.raises(ValueError, match="nonnegative"):
+    InterpolationGrid2D(gp, vals, norm_maxiter=0, is_linear=True)
+
+
+def _win_reference(x: torch.Tensor, wl: int) -> torch.Tensor:
+  """``tools_stats::win`` spelled out: zero-pad, convolve, clamp the edges.
+
+  The slow O(n * wl) form, which is the definition the fast
+  implementation has to reproduce, so it is written here from the C++ rather
+  than shared with it.
+  """
+  import torch.nn.functional as F
+
+  n = x.shape[-1]
+  weight = torch.full(
+    (1, 1, 2 * wl + 1), 1.0 / (2 * wl + 1), dtype=x.dtype, device=x.device
+  )
+  out = F.conv1d(F.pad(x.reshape(-1, 1, n), (wl, wl)), weight)
+  out = out.reshape(x.shape).clone()
+  if wl > 0:
+    out[..., :wl] = out[..., wl : wl + 1]
+    out[..., -wl:] = out[..., n - wl - 1 : n - wl]
+  return out
+
+
+@pytest.mark.parametrize("n", [2, 3, 7, 64, 601, 2000])
+def test_win_smoother_is_a_box_mean(n: int) -> None:
+  """The prefix-sum smoother computes the convolution it replaced.
+
+  `_win_smoother` moved from an O(n * wl) convolution to an O(n) difference
+  of prefix sums. Both are box means, so this pins the contract -- window
+  width, zero-padding outside the data, and the two flat edges -- against a
+  transcription of the C++ rather than against the end-to-end fit, which
+  would not say which of the three went wrong.
+  """
+  from pyvinecopulib.torch._bicop_fit_tll import _win_smoother
+
+  wl = int(np.ceil(n / 5.0))
+  x = torch.from_numpy(np.random.default_rng(n).standard_normal(n))
+  got, want = _win_smoother(x, wl), _win_reference(x, wl)
+  # Prefix sums and a convolution round differently; the gap is bounded by
+  # the partial sums' magnitude, which is O(sqrt(n)) for standardized input.
+  torch.testing.assert_close(got, want, rtol=1e-13, atol=1e-14)
+
+
+def test_win_smoother_batches_over_leading_dims() -> None:
+  """One call over a stack equals a loop over its rows.
+
+  The smoother is the innermost thing the batched fit stacks on, so pinning
+  it here says whether a divergence upstack came from the smoother or from
+  what surrounds it.
+  """
+  from pyvinecopulib.torch._bicop_fit_tll import _win_smoother
+
+  n, wl = 501, 101
+  x = torch.from_numpy(np.random.default_rng(7).standard_normal((4, n)))
+  stacked = _win_smoother(x, wl)
+  for i in range(x.shape[0]):
+    torch.testing.assert_close(
+      stacked[i], _win_smoother(x[i], wl), rtol=0.0, atol=0.0
+    )
+
+
+def test_kde_grid_block_bounds_the_working_set() -> None:
+  """The grid block shrinks as the level grows, so the peak does not.
+
+  The kernel evaluation holds six ``(lanes, block, n)`` temporaries, so a
+  fixed block makes peak memory grow with both the sample and the level
+  width. Sizing the block from those two instead keeps the product -- and
+  so the footprint -- inside one budget however wide the level is.
+  """
+  from pyvinecopulib.torch._bicop_fit_tll import (
+    _KDE_MEM_BUDGET_BYTES,
+    _kde_grid_block,
+  )
+
+  grid = 900
+  for n, lanes in ((1000, 1), (12000, 1), (12000, 19), (20000, 24)):
+    block = _kde_grid_block(n, lanes, 8, grid)
+    assert 1 <= block <= grid
+    # The bound the sizing exists to hold, except where it has already
+    # bottomed out at a single grid point.
+    if block > 1:
+      assert 6 * 8 * block * n * lanes <= _KDE_MEM_BUDGET_BYTES
+
+  # Wider levels and longer samples both shrink it, never the reverse.
+  assert _kde_grid_block(12000, 19, 8, grid) < _kde_grid_block(
+    12000, 1, 8, grid
+  )
+  assert _kde_grid_block(20000, 1, 8, grid) <= _kde_grid_block(1000, 1, 8, grid)
+  # A small problem is not blocked at all.
+  assert _kde_grid_block(200, 1, 8, grid) == grid
+
+
+@pytest.mark.parametrize("budget", [1 << 20, 8 << 20, 1 << 30])
+def test_kde_grid_block_does_not_change_the_fit(
+  budget: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """Blocking the grid axis is exact, so the budget cannot move a value.
+
+  Grid points do not interact -- each one's density is a mean over the data
+  -- so the block is a scheduling choice and nothing else. Pinned at zero
+  because anything looser would let a real coupling hide.
+  """
+  from pyvinecopulib.torch import _bicop_fit_tll
+
+  u = torch.from_numpy(
+    pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]])).sample(
+      1500, seeds=[1, 2, 3]
+    )
+  )
+  # The module, not this file's same-named helper: the old module name
+  # shadowed it here, which the rename made visible.
+  monkeypatch.setattr(_bicop_fit_tll, "_KDE_MEM_BUDGET_BYTES", 1 << 30)
+  _, reference = _bicop_fit_tll.fit_tll_constant(u)
+  monkeypatch.setattr(_bicop_fit_tll, "_KDE_MEM_BUDGET_BYTES", budget)
+  _, got = _bicop_fit_tll.fit_tll_constant(u)
+  torch.testing.assert_close(got, reference, atol=0.0, rtol=0.0)
+
+
+def test_ace_freezes_each_lane_independently() -> None:
+  """A lane's ACE answer does not depend on which lanes it travelled with.
+
+  The batched bandwidth search advances every lane together and freezes
+  each as it converges. Were a freeze to leak -- a converged lane's state
+  still moving while its neighbors iterate -- a pair's answer would depend
+  on its companions, which is the one thing a scheduling choice must never
+  do.
+
+  Pinned at zero, and legitimately: both calls pass the same shape, dtype
+  and strides, so torch dispatches the same kernels and the batch-extent
+  effect that forces a tolerance elsewhere cannot arise. Only the
+  companions differ.
+
+  This assertion carries what the vine-level pdf comparisons no longer can.
+  Removing the freeze moves this comparison off zero by 5.6e-16 -- far under
+  the arithmetic noise the vine-level tolerances have to admit, so it is
+  undetectable there and unmistakable here.
+
+  The companions have to converge later than the probe or nothing is
+  frozen and the test is vacuous. Independent uniforms give ACE no signal,
+  so it grinds against its own rounding noise: 63 and 147 smoothing passes
+  against the probe's 30.
+  """
+  from pyvinecopulib.torch._bicop_fit_tll import _ace
+
+  rng = np.random.default_rng(4)
+  probe = pv.Bicop(
+    family=pv.families.gaussian, parameters=np.array([[0.3]])
+  ).sample(600, seeds=[7, 8, 9])
+  slow = [rng.uniform(size=(600, 2)) for _ in range(2)]
+  alone = torch.special.ndtri(torch.from_numpy(np.stack([probe, probe, probe])))
+  mixed = torch.special.ndtri(torch.from_numpy(np.stack([probe, *slow])))
+  torch.testing.assert_close(_ace(mixed)[0], _ace(alone)[0], atol=0.0, rtol=0.0)
+
+
+@pytest.mark.parametrize("n", [500, 2000])
+def test_from_data_batched_matches_the_per_pair_loop(n: int) -> None:
+  """Stacking pairs into one fit does not change what any of them gets.
+
+  The batched fitter advances every lane's bandwidth search together and
+  freezes each as it converges, so *which* lanes a pair travelled with does
+  not change its answer at all -- pinned exactly, on a fixed shape, by
+  `test_ace_freezes_each_lane_independently`. *How many* it travelled with
+  moves the last bits on every device: torch selects an elementwise kernel
+  by element count, and the bandwidth search's `pow` takes a vectorized
+  path past `2 * Vectorized<double>::size()` lanes -- 8 on AVX2, 4 on NEON.
+
+  The tolerance is far tighter than the vine-level ones because these are
+  raw grid values rather than a product over trees, and it has to stay
+  tight: a batched fit with no per-lane freeze at all shows up here at
+  ~1e-12.
+  """
+  # Ten lanes, so the stack crosses the 8-element boundary named above
+  # rather than sitting under it and agreeing by construction.
+  rhos = [-0.9, -0.7, -0.4, -0.1, 0.0, 0.2, 0.3, 0.55, 0.7, 0.95]
+  us = [
+    pv.Bicop(family=pv.families.gaussian, parameters=np.array([[r]])).sample(
+      n, seeds=[3, 4, 5]
+    )
+    for r in rhos
+  ]
+  stack = torch.from_numpy(np.stack(us))
+  batched = TorchTllBicop.from_data_batched(stack)
+  assert len(batched) == len(rhos)
+  for i, u in enumerate(us):
+    torch.testing.assert_close(
+      batched[i].interp_grid.values,
+      TorchTllBicop.from_data(u).interp_grid.values,
+      atol=1e-14,
+      rtol=1e-13,
+    )
+
+
+def test_ace_step_carries_its_own_state() -> None:
+  """A dead lane is left exactly where it was, state included.
+
+  The step advances the score *and* the three loop variables that decide
+  liveness, so that the whole pass is one region for the compiler to fuse.
+  That only reproduces the sequential answer if every one of them is masked
+  -- an unmasked trip counter would retire a frozen lane's neighbors early.
+  """
+  from pyvinecopulib.torch._bicop_fit_tll import _ace_step
+
+  torch.manual_seed(0)
+  n, p = 200, 3
+  z = torch.randn(p, n, dtype=torch.float64)
+  ind = z.argsort(dim=-1, stable=True)
+  ranks = torch.empty_like(ind).scatter_(-1, ind, torch.arange(n).expand(p, n))
+  state = [
+    z.clone(),
+    torch.ones(p, dtype=torch.float64),
+    torch.ones(p, dtype=torch.float64),
+    torch.ones(p, dtype=torch.long),
+  ]
+  dead = torch.tensor([True, False, True])
+  out = _ace_step(
+    z,
+    state[0],
+    dead,
+    state[1],
+    state[2],
+    state[3],
+    torch.ones(p, dtype=torch.bool),
+    n,
+    ind,
+    ranks,
+    40,
+    10,
+    1e-4,
+  )
+  for got, before in zip(out[:4], state):
+    torch.testing.assert_close(got[1], before[1], atol=0.0, rtol=0.0)
+
+
+@pytest.mark.compile
+def test_compile_fit_matches_the_eager_fit() -> None:
+  """Fusing the bandwidth search does not move the fit off the C++ check.
+
+  Fusion reorders the arithmetic, so this is not bit-identical and cannot
+  be: the grid moves by ~1e-15 and, since the outer criterion sits at the
+  float64 noise floor, a lane's iteration count can change with it. What has
+  to hold is the check that binds every other fit -- the compiled grid
+  against ``pv.Bicop.from_data`` at 1e-11 -- and agreement with the eager
+  torch fit well inside it.
+  """
+  u = pv.Bicop(
+    family=pv.families.gaussian, parameters=np.array([[0.6]])
+  ).sample(500, seeds=[1, 2, 3])
+  eager = TorchTllBicop.from_data(u, FitControlsTorchBicop())
+  fused = TorchTllBicop.from_data(u, FitControlsTorchBicop(compile_fit=True))
+  ref = _fit_tll(u).parameters
+  np.testing.assert_allclose(
+    fused.interp_grid.values.numpy(), ref, atol=1e-11, rtol=1e-11
+  )
+  np.testing.assert_allclose(
+    fused.interp_grid.values.numpy(),
+    eager.interp_grid.values.numpy(),
+    atol=1e-11,
+    rtol=1e-11,
+  )
+
+
+@pytest.mark.compile
+def test_compile_fit_batches_over_a_pair_axis() -> None:
+  """The fused step takes a lane count it was not compiled for.
+
+  A vine hands the step one width per tree level, so specializing on each
+  would exceed the compiler's variant cache and drop the widest levels back
+  to eager without saying so. The step is compiled with dynamic shapes for
+  that reason, and this is what would notice if it stopped being.
+  """
+  rhos = [-0.5, 0.2, 0.8]
+  us = [
+    pv.Bicop(family=pv.families.gaussian, parameters=np.array([[r]])).sample(
+      400, seeds=[3, 4, 5]
+    )
+    for r in rhos
+  ]
+  controls = FitControlsTorchBicop(compile_fit=True)
+  # Two different widths through one compiled step, then a single pair.
+  wide = TorchTllBicop.from_data_batched(
+    torch.from_numpy(np.stack(us)), controls
+  )
+  narrow = TorchTllBicop.from_data_batched(
+    torch.from_numpy(np.stack(us[:2])), controls
+  )
+  for i, u in enumerate(us[:2]):
+    solo = TorchTllBicop.from_data(u, controls)
+    for got in (wide[i], narrow[i]):
+      torch.testing.assert_close(
+        got.interp_grid.values,
+        solo.interp_grid.values,
+        atol=1e-11,
+        rtol=1e-11,
+      )
+
+
+def test_from_data_batched_matches_cpp() -> None:
+  """The batched fit clears the same C++ check the single-pair fit does.
+
+  Not implied by agreeing with the per-pair loop: that would also hold if
+  both had drifted together.
+  """
+  controls = pv.FitControlsBicop(family_set=[pv.families.tll], num_threads=1)
+  rhos = [0.3, 0.6, 0.9]
+  us = [
+    pv.Bicop(family=pv.families.gaussian, parameters=np.array([[r]])).sample(
+      2000, seeds=[1, 2, 3]
+    )
+    for r in rhos
+  ]
+  batched = TorchTllBicop.from_data_batched(torch.from_numpy(np.stack(us)))
+  for got, u in zip(batched, us):
+    np.testing.assert_allclose(
+      got.interp_grid.values.numpy(),
+      pv.Bicop.from_data(u, controls=controls).parameters,
+      atol=1e-11,
+      rtol=1e-11,
+    )
+
+
+def test_from_data_batched_rejects_a_non_stacked_input() -> None:
+  u = torch.from_numpy(
+    np.random.default_rng(0).uniform(0.05, 0.95, size=(64, 2))
+  )
+  with pytest.raises(ValueError, match=r"\(P, n, 2\)"):
+    TorchTllBicop.from_data_batched(u)
+
+
+def test_a_discrete_edge_is_refused_a_pair_axis() -> None:
+  """`find_latent_sample` is a compiled per-pair draw with no batch axis.
+
+  Refusing beats silently fitting the wrong thing: the discrete fit runs on
+  a latent sample reconstructed from a fixed-seed generator, so there is no
+  batched equivalent to fall back to.
+  """
+  from pyvinecopulib.torch._bicop_fit_tll import fit_tll_constant
+
+  rng = np.random.default_rng(5)
+  u = np.ceil(rng.uniform(0.0, 1.0, size=(200, 2)) * 4) / 4
+  wide = np.column_stack([u, np.maximum(u - 0.25, 0.0)])
+  stack = torch.from_numpy(np.stack([wide, wide]))
+  with pytest.raises(ValueError, match="leading pair axis"):
+    fit_tll_constant(stack[..., :2], discrete_data=stack)
+
+
+def test_from_data_batched_at_one_pair() -> None:
+  """A batch of one is the single-pair fit, exactly.
+
+  The degenerate end of the pair axis: every reduction runs over a leading
+  extent of one, and the masked freeze has a single lane to freeze. Worth
+  pinning because a vine's last tree level always has exactly one edge.
+
+  This one is exact rather than toleranced, and only because P is 1: the
+  bandwidth search's `pow` then has numel 1 in both modes, so no
+  architecture can dispatch it two different ways. Stacking more pairs
+  forfeits that -- see `test_from_data_batched_matches_the_per_pair_loop`.
+  """
+  u = pv.Bicop(
+    family=pv.families.gaussian, parameters=np.array([[0.5]])
+  ).sample(500, seeds=[1, 2, 3])
+  (batched,) = TorchTllBicop.from_data_batched(torch.from_numpy(u[None, ...]))
+  torch.testing.assert_close(
+    batched.interp_grid.values,
+    TorchTllBicop.from_data(u).interp_grid.values,
+    atol=0.0,
+    rtol=0.0,
+  )
+
+
+@pytest.mark.parametrize(
+  ("grid", "match"),
+  [
+    ([0.5], "at least two points"),
+    ([0.0, 0.7, 0.3, 1.0], "strictly increasing"),
+    ([0.0, 0.5, 0.5, 1.0], "strictly increasing"),
+  ],
+)
+def test_a_malformed_grid_is_refused_not_silently_wrong(
+  grid: list[float], match: str
+) -> None:
+  """The cell widths divide every interpolation, so they must be positive.
+
+  A one-point grid leaves no cell and returned NaN; a repeated or decreasing
+  point divided by a zero or negative width and returned a plausible-looking
+  wrong number. Neither raised.
+  """
+  points = torch.as_tensor(grid, dtype=torch.float64)
+  values = torch.ones(len(grid), len(grid), dtype=torch.float64)
+  with pytest.raises(ValueError, match=match):
+    TorchTllBicop(points, values)
+
+
+def test_state_dict_round_trip_preserves_the_grid_geometry() -> None:
+  """``grid_type`` decides what the grid buffers mean, and is not a tensor.
+
+  Two fits of the same size differ only in their spacing, so a load between
+  them lined every buffer up and went on reading them under the wrong
+  geometry -- silently, and by five orders of magnitude.
+  """
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  u = cop.sample(400, seeds=[11])
+  normal = TorchTllBicop.from_data(u, FitControlsTorchBicop(grid_type="normal"))
+  linear = TorchTllBicop.from_data(u, FitControlsTorchBicop(grid_type="linear"))
+  assert normal.interp_grid._is_linear is not linear.interp_grid._is_linear
+
+  linear.load_state_dict(normal.state_dict())
+  assert linear.interp_grid._is_linear is normal.interp_grid._is_linear
+  ut = torch.as_tensor(u, dtype=torch.float64)
+  torch.testing.assert_close(linear.pdf(ut), normal.pdf(ut), atol=0.0, rtol=0.0)
+
+
+def test_state_dict_carries_the_cache_mode_and_the_independence_flag() -> None:
+  """The other two non-tensor settings round-trip, and a mismatch is loud.
+
+  Unlike ``grid_type``, these two change which buffers exist, so a mismatched
+  load fails on the buffer names before it can be misread. They travel in the
+  extra state anyway, so the state is complete rather than complete-by-luck.
+  """
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  u = cop.sample(300, seeds=[12])
+  cached = TorchTllBicop.from_data(u, cache_integrals=True)
+  assert cached.get_extra_state()["cache_integrals"] is True
+  assert cached.get_extra_state()["is_indep"] is False
+
+  same = TorchTllBicop.from_data(u, cache_integrals=True)
+  same.load_state_dict(cached.state_dict())
+  assert same._cache_integrals is True
+  assert same.is_indep is False
+
+  # A different cache mode holds different buffers, so this cannot go quiet.
+  uncached = TorchTllBicop.from_data(u, cache_integrals=False)
+  with pytest.raises(RuntimeError, match="Unexpected key"):
+    uncached.load_state_dict(cached.state_dict())
+
+
+def test_set_extra_state_refuses_a_foreign_version() -> None:
+  """A format change must fail loudly rather than restore a wrong model."""
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  pair = TorchTllBicop.from_data(cop.sample(200, seeds=[13]))
+  with pytest.raises(RuntimeError, match="unsupported"):
+    pair.set_extra_state({"version": 99})
+
+
+def test_refitting_a_stored_pair_invalidates_the_vines_cache() -> None:
+  """A vine copies each grid, so replacing one must be noticed.
+
+  ``set_pair_copulas`` covers the vine's own ``fit`` and ``select``; refitting
+  a pair the vine already holds moves no ``requires_grad`` flag, so the grad
+  signature alone could not see it.
+  """
+  from pyvinecopulib.torch import FitControlsTorchVinecop, TorchVinecop
+
+  rng = np.random.default_rng(0)
+  d, n = 3, 400
+  first = pv.to_pseudo_obs(
+    rng.multivariate_normal(np.zeros(d), np.eye(d) + 0.8 * (1 - np.eye(d)), n)
+  )
+  second = pv.to_pseudo_obs(
+    rng.multivariate_normal(np.zeros(d), np.eye(d) - 0.5 * (1 - np.eye(d)), n)
+  )
+  vine = TorchVinecop.from_data(first, controls=FitControlsTorchVinecop())
+  points = torch.as_tensor(second, dtype=torch.float64)
+  vine.pdf(points, batched=True)  # cache against the first fit
+
+  # `get_pair_copula` is typed against the evaluation-only contract, which
+  # carries no `fit`; the stored pair is the concrete class.
+  stored = cast("TorchTllBicop", vine.get_pair_copula(0, 0))
+  stored.fit(second[:, :2])
+  torch.testing.assert_close(
+    vine.pdf(points, batched=True),
+    vine.pdf(points, batched=False),
+    atol=1e-12,
+    rtol=1e-12,
+  )
+
+
+def test_fitting_refuses_covariates_it_cannot_use() -> None:
+  """A TLL grid is unconditional, so a conditional *fit* must be refused.
+
+  The split is the one ``reject_covariates`` documents: evaluation accepts and
+  ignores an ``x``, since one vine may host conditional and unconditional pairs
+  that all see the same matrix, while fitting cannot -- estimating an
+  unconditional density when a conditional one was asked for returns a
+  different model than the caller believes they have.
+  """
+  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
+  u = cop.sample(200, seeds=[7])
+  covariates = torch.zeros(200, 2, dtype=torch.float64)
+
+  for call in (
+    lambda: TorchTllBicop.from_data(u, x=covariates),
+    lambda: TorchTllBicop.from_data(u).fit(u, x=covariates),
+  ):
+    with pytest.raises(ValueError, match="does not model covariates"):
+      call()
+
+  # The message must name the class, not the metaclass a classmethod's
+  # `type(cls)` would report.
+  with pytest.raises(ValueError, match="TorchTllBicop"):
+    TorchTllBicop.from_data(u, x=covariates)
+
+  # Evaluation still accepts and ignores it.
+  fitted = TorchTllBicop.from_data(u)
+  ut = torch.as_tensor(u, dtype=torch.float64)
+  torch.testing.assert_close(
+    fitted.pdf(ut, x=covariates), fitted.pdf(ut), atol=0.0, rtol=0.0
+  )

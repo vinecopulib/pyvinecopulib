@@ -13,14 +13,15 @@ into a distribution on the original scale: the univariate-margin
 contract (:class:`MarginLike`, :class:`MarginBase`), the
 boundary-corrected 1d kernel density estimator that serves as the
 default margin (:class:`Kde1d`), and the joint object composing the two
-halves of Sklar's theorem (:class:`Vinedist`).
+halves of Sklar's theorem, with its own contract and canonical base
+(:class:`Vinedist`, :class:`VinedistLike`, :class:`VinedistBase`).
 
 For higher-level scikit-learn-compatible wrappers around these
 primitives (with ``fit`` / ``predict``-style interfaces, DataFrame
 handling, and batched evaluation), see
 :mod:`pyvinecopulib.sklearn`. The
 ``examples/02_vine_copulas.ipynb`` and
-``examples/03_vine_copulas_fit_sample.ipynb`` notebooks walk through
+``examples/03_vine_distributions.ipynb`` notebooks walk through
 end-to-end use of these classes.
 
 Notes
@@ -43,21 +44,26 @@ Notes
 - *A distribution, not just a copula* — :class:`Vinedist`. It pairs any
   :class:`VinecopLike` with one margin per variable and evaluates
   ``pdf`` / ``cdf`` / ``sample`` on the original scale;
-  :meth:`Vinedist.from_data` fits the margins and an ``x``-independent compiled
-  copula in one call. An externally conditional copula is fitted through the
-  :meth:`VinecopBase.fit` extension seam and then composed with ``Vinedist``.
+  :meth:`Vinedist.from_data` fits the margins and an ``x``-independent
+  :class:`Vinecop` in one call. An externally conditional copula is fitted through the
+  :meth:`VinecopBase.fit` extension point and then composed with ``Vinedist``.
+- *A new kind of vine distribution* — subclass :class:`VinedistBase`. The
+  whole data-scale surface comes with it, since a vine distribution is
+  determined by its two halves; the three fit hooks are needed only to make
+  it fittable. :class:`Vinedist` is the NumPy subclass and
+  :class:`pyvinecopulib.torch.TorchVinedist` the PyTorch one.
 - *Margins* — :class:`Kde1d` is the default and needs no configuration
   beyond its variable type. Any object with ``pdf`` / ``cdf`` / ``icdf``
   works (:class:`MarginLike`); subclass :class:`MarginBase` to write
   one, or reach for the parametric families and family selection in
   :mod:`pyvinecopulib.margins`.
-- *A custom pair copula on a discrete edge* — :class:`DiscretePair`.
+- *A custom pair copula on a discrete edge* — :class:`DiscreteBicop`.
   Wrap a continuous pair copula (anything with a ``cdf``) in the variable
   types :meth:`VinecopBase.pair_var_types` derives for its slot, and it
   supplies the mixed-discrete density and h-functions the cascades ask for.
-- *An edge below a dependence threshold* — :class:`IndependencePair`.
+- *An edge below a dependence threshold* — :class:`IndependenceBicop`.
   What :meth:`VinecopBase.select` places on a surviving edge whose criterion
-  falls below ``threshold``, matching what the compiled selector leaves there:
+  falls below ``threshold``, matching what :meth:`Vinecop.select` leaves there:
   the edge is not fitted, and holds the independence copula.
 - *C-vine / D-vine special cases* — :class:`CVineStructure` and
   :class:`DVineStructure` are the path-shaped and star-shaped
@@ -83,22 +89,30 @@ from ..pyvinecopulib_ext import (
   Vinecop,
 )
 from .._deprecations import _method_alias
-from ._discrete import DiscretePair
-from ._independence import IndependencePair
+from ._vinecop_discrete import DiscreteBicop
+from .bicop_independence import IndependenceBicop
 from .bicop_base import BicopBase
-from .context import (
+from .vinecop_context import (
   ConditioningContext,
   NonSimplifiedContext,
   SimplifiedContext,
 )
-from ._serialization import (
+from ._margins import (
   margin_from_json,
   margin_to_json,
   register_margin_json,
 )
 from .margin_base import MarginBase
-from .protocols import BicopLike, MarginLike, VinecopLike
+from .margin_controls import FitControlsMargin
+from .protocols import (
+  BicopLike,
+  ControlsLike,
+  MarginLike,
+  VinecopLike,
+  VinedistLike,
+)
 from .vinedist import Vinedist
+from .vinedist_base import VinedistBase
 from .vinecop_base import VinecopBase
 
 # Deprecated aliases for the pre-1.0 `simulate` spelling. The canonical name is
@@ -118,12 +132,14 @@ __all__ = [
   "BicopFamily",
   "BicopLike",
   "ConditioningContext",
+  "ControlsLike",
   "CVineStructure",
-  "DiscretePair",
+  "DiscreteBicop",
   "DVineStructure",
   "FitControlsBicop",
+  "FitControlsMargin",
   "FitControlsVinecop",
-  "IndependencePair",
+  "IndependenceBicop",
   "Kde1d",
   "MarginBase",
   "margin_from_json",
@@ -137,4 +153,6 @@ __all__ = [
   "VinecopBase",
   "VinecopLike",
   "Vinedist",
+  "VinedistBase",
+  "VinedistLike",
 ]

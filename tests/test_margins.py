@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from collections.abc import Callable
+
 import numpy as np
 import pytest
 
@@ -20,7 +22,7 @@ import pyvinecopulib as pv
 from pyvinecopulib.core import MarginLike
 from pyvinecopulib.core import Kde1d
 from pyvinecopulib.margins import (
-  ParametricMargin,
+  SciPyMargin,
   as_margin,
   register_margin_adapter,
   resolve_margins,
@@ -143,7 +145,11 @@ def test_kde1d_margin_raises_before_fit() -> None:
 
 
 def test_kde1d_is_passed_through_by_as_margin(sample: np.ndarray) -> None:
-  """A `Kde1d` needs no adapter: it satisfies the contract already."""
+  """A `Kde1d` needs no adapter: it satisfies the contract already.
+
+  Anything this library made is returned unchanged, so routing every margin
+  through `as_margin` cannot re-wrap one.
+  """
   kde = Kde1d(xmin=0.0).fit(sample)
   assert as_margin(kde) is kde
   assert as_margin(as_margin(kde)) is kde
@@ -159,6 +165,33 @@ def test_resolve_margins_falls_back_to_the_given_default() -> None:
   assert resolved[0].type == "continuous"
   assert resolved[1].type == "zero-inflated"
   assert resolve_margins(None, 2, default=default)[0].type == "discrete"
+
+
+def test_resolve_margins_defers_a_default_no_variable_needs() -> None:
+  """A specification naming every variable must not build the default at all.
+
+  The `default` parameter documents this, and it matters because building one
+  can legitimately raise -- the sklearn estimators pass a callable that reads
+  the variable types off the data, and `Kde1d` refuses a categorical whose
+  levels are not integers. Every branch has to honor it, mapping included.
+  """
+  calls = {"n": 0}
+
+  def default() -> Any:
+    calls["n"] += 1
+    raise AssertionError("built a default no variable needed")
+
+  assert len(resolve_margins({0: Kde1d(), 1: Kde1d()}, 2, default=default)) == 2
+  assert len(resolve_margins([Kde1d(), Kde1d()], 2, default=default)) == 2
+  assert len(resolve_margins(Kde1d(), 2, default=default)) == 2
+  assert len(resolve_margins("kde", 2, default=default)) == 2
+  assert calls["n"] == 0
+
+  # And it *is* built when a variable is actually left over.
+  resolved = resolve_margins(
+    {0: Kde1d()}, 2, default=lambda: [Kde1d(), Kde1d(type="discrete")]
+  )
+  assert resolved[1].type == "discrete"
 
 
 def test_resolve_margins_checks_the_default_length() -> None:
@@ -185,7 +218,7 @@ def test_callable_margin_specifications_receive_weights() -> None:
 
   def make_margin(y: Any, **kwargs: Any) -> Any:
     seen.append(kwargs)
-    return ParametricMargin("norm", (float(np.mean(y)), 1.0))
+    return SciPyMargin("norm", (float(np.mean(y)), 1.0))
 
   rng = np.random.default_rng(8)
   data = rng.normal(size=(40, 2))
@@ -200,12 +233,6 @@ def test_callable_margin_specifications_receive_weights() -> None:
 # --- as_margin -------------------------------------------------------------- #
 
 
-def test_as_margin_is_idempotent(sample: np.ndarray) -> None:
-  """Anything this library made is returned unchanged."""
-  m = Kde1d().fit(sample)
-  assert as_margin(m) is m
-
-
 def test_as_margin_adopts_a_raw_kde1d(sample: np.ndarray) -> None:
   """A bare fitted `Kde1d` becomes a `Kde1d`."""
   kde = pv.core.Kde1d()
@@ -214,7 +241,7 @@ def test_as_margin_adopts_a_raw_kde1d(sample: np.ndarray) -> None:
 
 
 def test_as_margin_accepts_a_structural_margin() -> None:
-  """The documented `MarginLike` seam does not require a library base class."""
+  """The documented `MarginLike` hook does not require a library base class."""
 
   class StructuralMargin:
     def pdf(self, y: Any, /, *, x: Any = None) -> Any:
@@ -244,7 +271,9 @@ def test_as_margin_accepts_a_structural_margin() -> None:
     ),
   ],
 )
-def test_as_margin_coerces_scipy(factory, var_type: str) -> None:
+def test_as_margin_coerces_scipy(
+  factory: Callable[[], Any], var_type: str
+) -> None:
   """Both SciPy generations coerce, with the right variable type."""
   m: Any = as_margin(factory())
   assert isinstance(m, MarginLike)
@@ -266,7 +295,7 @@ def test_as_margin_coerces_scipy(factory, var_type: str) -> None:
   ],
 )
 def test_as_margin_discrete_pdf_is_the_mass_not_the_lebesgue_density(
-  factory, ref
+  factory: Callable[[], Any], ref: Callable[[np.ndarray], np.ndarray]
 ) -> None:
   """The trap: a modern SciPy discrete `pdf` is `+inf` at every atom.
 
@@ -327,7 +356,7 @@ def test_as_margin_scipy_forwards_native_log_density(raw: Any) -> None:
 
 
 def test_as_margin_rejects_the_unknown() -> None:
-  """An unrecognized object names both escape hatches."""
+  """An unrecognized object names both opt-outs."""
   with pytest.raises(TypeError, match="MarginBase"):
     as_margin(object())
 
@@ -339,7 +368,7 @@ def test_register_margin_adapter_takes_precedence() -> None:
     pass
 
   sentinel = _Sentinel()
-  target = ParametricMargin("norm", (0.0, 1.0))
+  target = SciPyMargin("norm", (0.0, 1.0))
   register_margin_adapter(lambda o: isinstance(o, _Sentinel), lambda o: target)
   assert as_margin(sentinel) is target
 
@@ -432,3 +461,89 @@ def test_as_margin_supports_torch_families_with_a_cdf(family: str) -> None:
   margin = as_margin(raw)
   p = torch.tensor([0.25, 0.5, 0.75], dtype=torch.float64)
   torch.testing.assert_close(margin.cdf(margin.icdf(p)), p, atol=1e-6, rtol=0)
+
+
+# --- persistence, for every margin this package ships ----------------------- #
+
+
+def _shipped_margin_classes() -> dict[str, type]:
+  """Every margin class reachable from a public namespace.
+
+  Discovered rather than listed, so a margin added without a JSON reader fails
+  this file instead of being found by a user.
+
+  Returns
+  -------
+  dict
+      Class name to class, for the extras that are installed.
+  """
+  import importlib
+  import inspect
+
+  from pyvinecopulib.core import MarginBase
+
+  found: dict[str, type] = {"Kde1d": Kde1d}
+  for name in (
+    "pyvinecopulib.core",
+    "pyvinecopulib.margins",
+    "pyvinecopulib.torch",
+  ):
+    try:
+      module = importlib.import_module(name)
+    except ImportError:  # the extra is not installed
+      continue
+    for attr, value in vars(module).items():
+      if (
+        inspect.isclass(value)
+        and issubclass(value, MarginBase)
+        and value is not MarginBase
+        and not attr.startswith("_")
+      ):
+        found[attr] = value
+  return found
+
+
+def _fitted(cls: type, y: np.ndarray) -> Any:
+  """One fitted instance of ``cls``, however that class is built."""
+  if cls.__name__ == "TorchDistributionMargin":
+    torch = pytest.importorskip("torch")
+    return cls(torch.distributions.Normal, {"loc": 0.3, "scale": 1.2})
+  if cls.__name__ == "TorchKde1d":
+    torch = pytest.importorskip("torch")
+    return cls().fit(torch.as_tensor(y))
+  if cls.__name__ == "OpenTURNSMargin":
+    pytest.importorskip("openturns")
+    return cls("Normal").fit(y)
+  if cls.__name__ == "SciPyMargin":
+    return cls("norm").fit(y)
+  return cls().fit(y)
+
+
+def test_every_shipped_margin_round_trips_through_json() -> None:
+  """`Vinedist.to_json` tells the caller only a *foreign* margin needs work.
+
+  Three of the five shipped classes had no `to_json` at all, so a distribution
+  holding one could not be stored -- which the promise did not say.
+  """
+  y = np.random.RandomState(0).normal(size=300)
+  classes = _shipped_margin_classes()
+  assert len(classes) >= 2, classes
+
+  for name, cls in sorted(classes.items()):
+    margin = _fitted(cls, y)
+    payload = pv.core.margin_to_json(margin)
+    assert payload["kind"] == name, (name, payload["kind"])
+    restored = pv.core.margin_from_json(payload)
+    assert type(restored) is cls, (name, type(restored))
+
+    probe = np.array([-0.5, 0.0, 0.5])
+    if name.startswith("Torch"):
+      torch = pytest.importorskip("torch")
+      probe_t = torch.as_tensor(probe, dtype=torch.float64)
+      torch.testing.assert_close(
+        restored.cdf(probe_t), margin.cdf(probe_t), atol=0, rtol=0
+      )
+    else:
+      np.testing.assert_array_equal(
+        np.asarray(restored.cdf(probe)), np.asarray(margin.cdf(probe)), name
+      )

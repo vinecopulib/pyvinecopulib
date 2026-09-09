@@ -27,9 +27,8 @@ accepts: an alias (``"kde"``, the default,
 ``"parametric"``), one margin broadcast to every column, a per-column
 sequence, a mapping keyed by feature name, or a callable. Fitting
 assembles both halves into a :class:`pyvinecopulib.core.Vinedist`,
-published as ``distribution_``; ``margin_summary_`` describes the
-margin each variable ended up with, and ``selection_report_`` carries
-the per-candidate table of any margin that chose its own family.
+published as ``distribution_``, and ``margin_summary_`` describes the
+margin each variable ended up with.
 
 **Backends.** By default the estimators run on ``Vinecop`` (the
 default backend), so the sklearn module
@@ -53,13 +52,13 @@ beyond the sklearn convenience layer. See each class docstring for
 the full methodology and references.
 """
 
-try:
+from ..core._validation import extra_required
+
+with extra_required(
+  extra="sklearn",
+  requirement="pyvinecopulib.sklearn requires scikit-learn.",
+):
   import sklearn  # noqa: F401
-except ImportError as e:
-  raise ImportError(
-    "pyvinecopulib.sklearn requires scikit-learn. "
-    "Install it with `pip install pyvinecopulib[sklearn]`."
-  ) from e
 
 from . import backends
 from .backends import (

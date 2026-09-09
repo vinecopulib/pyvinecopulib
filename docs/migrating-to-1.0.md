@@ -33,8 +33,9 @@ pip install --no-binary pyvinecopulib pyvinecopulib
 
 ## Nearly every fitted number moves
 
-The vendored C++ libraries advanced substantially, so a refit will not
-reproduce a 0.7.6 model exactly. Nothing raises; the numbers differ.
+The upstream `vinecopulib`, `wdm` and `kde1d` libraries advanced
+substantially, so a refit will not reproduce a 0.7.6 model exactly. Nothing
+raises; the numbers differ.
 
 - Every `tll` fit changes -- and `tll` is what family selection usually picks
   for a nonparametric pair. The interpolation grid's margins are now balanced
@@ -69,6 +70,35 @@ controls = pv.FitControlsVinecop(selection_criterion="bic")
 Saved models are unaffected — the criterion is a fit-time setting, not part of
 a serialized model.
 
+## `from_data` takes `controls` second, everywhere
+
+Every estimator in the package now reads the same way: the observations, then
+`controls`, then keyword-only whatever the object cannot infer. `fit` and
+`select` always did; `Vinecop.from_data` took `controls` *fifth*, behind
+`structure`, so the call you carry over from `fit` bound your controls object
+as a structure.
+
+```python
+# before
+pv.Vinecop.from_data(u, structure, matrix, var_types, controls)
+pv.Bicop.from_data(u, controls, var_types)
+
+# now
+pv.Vinecop.from_data(u, controls, structure=..., matrix=..., var_types=...)
+pv.Bicop.from_data(u, controls, var_types=...)
+```
+
+If you already passed `structure=` / `matrix=` / `var_types=` by keyword --
+which every example in this repository did -- nothing changes. The same order
+holds on `BicopBase`, `VinecopBase`, `VinedistBase` and their PyTorch
+subclasses; `MarginBase` and the margin classes already read this way.
+
+The one exception is `Kde1d` itself, whose second positional
+argument is `weights`. It takes no controls object at all, so there is nothing
+to confuse it with, and `kde.fit(x, w)` keeps working. That is specific to that
+class: every `MarginBase` margin, `TorchKde1d` included, reads
+`fit(y, controls, *, weights=...)` like the rest, so spell `weights=` there.
+
 ## Some arguments are keyword-only
 
 `parameters` on `Bicop.sample`, and `conditioning_set` on
@@ -79,6 +109,29 @@ what they always meant: `rosenblatt(u, 4)` is still `num_threads=4`, and
 
 You only need to change code that was already passing these by keyword, which
 is to say: none.
+
+## `Vinecop.fit` no longer takes `num_threads`
+
+It duplicated `FitControlsBicop.num_threads`, which `fit` already reads, so the
+argument is gone rather than kept as a second way to say the same thing. Both
+the positional and the keyword form now raise `TypeError`:
+
+```python
+vine.fit(u, controls, 4)              # 0.7.6
+vine.fit(u, num_threads=4)            # 0.7.6
+
+vine.fit(u, FitControlsBicop(num_threads=4))          # 1.0.0
+```
+
+This is the one exception to the section above: `fit`'s third positional
+argument did not survive.
+
+## A selected structure is labeled differently
+
+`RVineStructure` now puts the conditioned variable on the diagonal, matching
+what `Vinecop.select` finalizes. So `get_matrix()` and `order` can differ from
+0.7.6 for the *same* model. Densities, log-likelihoods and samples do not
+change — but a stored matrix diffed against a fresh fit will.
 
 ## Sampling methods are now called `sample`
 
@@ -103,15 +156,12 @@ top-level aliases below, these are scheduled for removal in 2.0.
 release, so only code written against a development build can be affected.
 
 The RNG hook that `MarginBase`, `BicopBase` and `VinecopBase` draw their
-uniforms through is renamed with them: `_simulate_uniform` becomes
-`_sample_uniform`. A renamed hook is the one rename that cannot fail visibly on
-its own — the base class simply stops calling the old name, so an override
-under the old name would be ignored and the inherited default would raise as
-though nothing had been overridden. A subclass that defines `_simulate_uniform`
-and not `_sample_uniform` therefore raises `TypeError` at class-definition
-time, naming both spellings.
+uniforms through is spelled `_sample_uniform`. It was `_simulate_uniform` in
+development builds only, so a subclass written against one of those needs the
+new name; nothing was released under the old one, and the bases no longer
+check for it.
 
-Two `sample` conventions now coexist, deliberately. The `core` classes keep the
+Two `sample` conventions now coexist. The `core` classes keep the
 quasi-random arguments they always had — `sample(n, qrng=False, seeds=[])`,
 where `seeds` is a list of `int`. The `pyvinecopulib.sklearn` estimators keep
 `sample(n_samples, random_state)`, because that is the signature scikit-learn's
@@ -162,7 +212,7 @@ The optional subpackages ship in the same distribution and have important 1.0
 changes. sklearn estimators now take a single `backend=` object instead of
 loose controls/structure/seed arguments; `seed` became `random_state`; and
 `VineRegressor` keeps a sample axis for one-row predictions. Torch fitting now
-uses `FitControlsTorchBicop` / `FitControlsTorchVinecop`, and `TorchBicop.sample`
+uses `FitControlsTorchBicop` / `FitControlsTorchVinecop`, and `TorchTllBicop.sample`
 uses the core-style `(n, qrng=False, seeds=[])` signature. See the complete
 breaking-change inventory in `CHANGELOG.md` before upgrading either surface.
 
@@ -173,13 +223,17 @@ here.
 
 `margins`, `sklearn` and `torch` are **provisional in 1.x**: they ship for the
 first time in this release, and their surfaces may change in a minor version.
-The margin contract and the torch/C++ parity guarantees are the parts already
-treated as load-bearing. Pin an exact version if you build on the rest.
+The margin contract and the `TorchVinecop`-against-`Vinecop` parity
+guarantees are the parts already treated as required. Pin an exact
+version if you build on the rest.
 
 ## What did not change
 
 - Serialized models. JSON and CBOR files written by 0.7.x load unchanged, and so
-  do pickles (through the deprecated aliases). `Kde1d`, `Vinedist` and the
-  `margins` types gain the same `to_json` / `from_json` surface in 1.0; the
-  `torch` modules use `state_dict` instead.
+  do pickles (through the deprecated aliases). `Kde1d`, `Vinedist` and
+  `SciPyMargin` gain a `to_json` surface in 1.0 -- `Kde1d` and `Vinedist` read
+  themselves back with `from_json`, a margin through
+  `core.margin_from_json`. `OpenTURNSMargin` does not serialize, so a
+  `Vinedist` holding one cannot be written to JSON. The `torch` modules use
+  `state_dict` instead.
 - Every evaluation signature other than the keyword-only arguments above.
