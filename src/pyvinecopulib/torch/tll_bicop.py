@@ -36,7 +36,8 @@ from torch import Tensor
 from ..core import BicopBase, ControlsLike
 from ..core._validation import reject_covariates
 from ..pyvinecopulib_ext import Bicop, tll as _TLL_FAMILY
-from ._bicop_interp import InterpolationGrid2D, _trim
+from ..core._trim import trim
+from ._bicop_interp import InterpolationGrid2D
 from .controls import FitControlsTorchBicop
 
 
@@ -406,7 +407,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     u_t = torch.as_tensor(u, dtype=dtype, device=device)
     if u_t.ndim != 3 or u_t.shape[-1] != 2:
       raise ValueError(f"u must have shape (P, n, 2); got {tuple(u_t.shape)}")
-    u_t = _trim(u_t)
+    u_t = trim(torch, u_t)
 
     from ._bicop_fit_tll import fit_tll_constant
 
@@ -515,7 +516,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       )
     # ``Bicop.select`` trims before ``TllBicop::fit``, so two values above
     # ``1 - 1e-10`` are one tie group there and would be two here.
-    u_t = _trim(u_t)
+    u_t = trim(torch, u_t)
     values_only = u_t[:, :2]
     # An atom repeats its distribution-function value, so the ranks have ties.
     # ``TllBicop::fit`` breaks them at random from a fixed seed; reuse that draw
@@ -773,7 +774,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     """
     u = self._prep_args(u)
     if self.is_indep:
-      return _trim(u[:, 0] * u[:, 1])
+      return trim(torch, u[:, 0] * u[:, 1])
     if self._sy is not None:
       sy, sx, pref = self._tables()
       return self.interp_grid.cdf_cached(u, sy, sx, pref)
@@ -851,16 +852,22 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     return self.interp_grid.integrate_1d(u, cond_var=cond_var)
 
   def hfunc1(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
+    # Neither branch clamps, and both are already inside the open interval:
+    # `_prep_args` is the domain step for the argument an independent pair
+    # returns as it stands, and every interpolation kernel `_hfunc_raw` /
+    # `_hinv_raw` reach ends in `trim`. The same holds for `hfunc2` / `hinv1`
+    # / `hinv2` below; `cdf` is the exception, since a *product* of two
+    # trimmed values reaches as low as their square.
     u = self._prep_args(u)
     if self.is_indep:
-      return _trim(u[:, 1])
-    return self._hfunc_raw(u, 1).clamp(0.0, 1.0)
+      return u[:, 1]
+    return self._hfunc_raw(u, 1)
 
   def hfunc2(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
     u = self._prep_args(u)
     if self.is_indep:
-      return _trim(u[:, 0])
-    return self._hfunc_raw(u, 2).clamp(0.0, 1.0)
+      return u[:, 0]
+    return self._hfunc_raw(u, 2)
 
   # --------------------------------------------------------------------- #
   # Inverse h-functions (closed-form conditional quantiles).               #
@@ -907,7 +914,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     """
     u = self._prep_args(u)
     if self.is_indep:
-      return _trim(u[:, 1])
+      return u[:, 1]
     return self._hinv_raw(u, 1)
 
   def hinv2(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
@@ -931,7 +938,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     """
     u = self._prep_args(u)
     if self.is_indep:
-      return _trim(u[:, 0])
+      return u[:, 0]
     return self._hinv_raw(u, 2)
 
   # --------------------------------------------------------------------- #
