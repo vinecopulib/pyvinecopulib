@@ -880,14 +880,9 @@ class VinecopBase(
   #
   # Numerically equivalent to the non-batched cascades on a simplified vine,
   # but each tree level fires one stacked pair-copula call over its edges
-  # instead of a Python loop. Only the grid state built by ``_build_batched``
-  # is subclass-specific; the loops below are array-agnostic (``xp``). The
-  # batched-vine surface used here: ``bv.level(t)`` / ``bv.grid_points`` and,
-  # per level, ``gather_inputs`` / ``pdf_h1_h2`` / ``h1_h2`` (each returning
-  # ``(N_t, n)`` slices over the ``N_t = n_pairs`` edges, fusing the shared
-  # bilinear cell search across pdf + both h-functions) plus the ``needs_h1`` /
-  # ``needs_h2`` masks. These receive already-prepped ``u`` (the public methods
-  # prep before dispatch).
+  # instead of a Python loop. Only the grid state `_build_batched` returns is
+  # subclass-specific; the loops below are array-agnostic, and receive `u`
+  # already prepped by the public method that dispatched.
   def _pdf_batched(self, u: Any) -> ArrayT:  # noqa: ANN401 - as `_pdf`
     """Batched vine pdf: product over per-tree-level stacked densities.
 
@@ -1714,15 +1709,11 @@ class VinecopBase(
       var_types: Sequence[str] = ("c", "c"),
     ) -> BicopLike[ArrayT]:
       del tree, edge
-      # `x_e` is forwarded rather than dropped: a pair class that cannot
-      # condition on covariates then refuses them -- `reject_covariates` on a
-      # `BicopBase` subclass, a `TypeError` from a compiled `Bicop`, which
-      # names no `x` at all -- instead of returning the unconditional model
-      # under a conditional name. Dropping it here is what let a
-      # non-simplified vine fit the simplified model and evaluate the
-      # conditional one. Passed only when there is one, so an unconditional
-      # vine reaches every pair class unchanged; the same rule
-      # `BicopBase.select` forwards by.
+      # Forwarded rather than dropped, so a pair class that cannot condition
+      # on covariates refuses them -- `reject_covariates` on a `BicopBase`
+      # subclass, a `TypeError` from a compiled `Bicop` -- instead of fitting
+      # the unconditional model under a conditional name. Passed only when
+      # there is one, the rule `BicopBase.select` forwards by.
       conditional = {} if x_e is None else {"x": x_e}
       return cast(
         "BicopLike[ArrayT]",

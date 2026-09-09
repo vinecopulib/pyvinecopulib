@@ -612,20 +612,14 @@ class TorchVinecop(
       )
     # Store the continuous grids; `get_pair_copula` re-wraps a discrete edge,
     # so the ModuleList holds only real nn.Modules. A thresholded edge arrives
-    # from `select` as a `core.IndependenceBicop`, which is not one -- it becomes
-    # the grid that *is* independence, whose `pdf` is exactly 1 and whose
-    # h-functions are exactly the identity, so it stores, moves and pickles like
-    # any other pair.
+    # as a `core.IndependenceBicop`, which is not one: the no-argument
+    # `TorchTllBicop` *is* independence -- a 2x2 sentinel short-circuiting
+    # every method on `is_indep`, exactly rather than to rounding -- so it
+    # needs no grid of its own and pickles like any other pair. `u_t.device`,
+    # as `fit_edge` uses: `resolved.device` is `None` whenever the caller let
+    # the data carry the placement.
     modules = [
       [
-        # A thresholded edge arrives from the engines as a
-        # `core.IndependenceBicop`, which is not an `nn.Module`. The
-        # no-argument `TorchTllBicop` *is* the independence copula -- a 2x2
-        # sentinel that short-circuits every method on `is_indep`, exactly
-        # rather than to rounding -- so it needs no grid of its own and
-        # cannot disagree with its siblings about one. `u_t.device`, as
-        # `fit_edge` uses: `resolved.device` is `None` whenever the caller
-        # let the data carry the placement.
         TorchTllBicop(device=u_t.device, dtype=eff_dtype)
         if isinstance(p, IndependenceBicop)
         else continuous_view(p)

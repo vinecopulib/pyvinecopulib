@@ -480,15 +480,11 @@ class VineBase(BaseEstimator):
           "discrete" if isinstance(dtype, pd.CategoricalDtype) else "continuous"
           for dtype in X_exp.dtypes
         ]
-        # Bounds are passed wherever the input states them, and left unset
-        # wherever they would be a guess. A categorical declares its levels, so
-        # its support is known rather than assumed: an expanded name absent from
-        # the input is a {0, 1} dummy, and any other categorical is bounded by
-        # its own categories. Without this the kernel-density grid is padded
-        # past the data and puts mass on values that cannot occur -- a count
-        # column picks up density below zero. A continuous column, or a discrete
-        # one declared through a pre-set `schema_`, has no stated support and
-        # keeps `None`.
+        # Bounds are passed wherever the input states them and left unset
+        # wherever they would be a guess: a categorical declares its levels, a
+        # continuous column states nothing. Without them the kernel-density
+        # grid is padded past the data and puts mass on values that cannot
+        # occur -- a count column picks up density below zero.
         original = set(X.columns)
         bounds: list[Optional[tuple[float, float]]] = []
         for name, dtype in zip(self._expanded_columns, X_exp.dtypes):

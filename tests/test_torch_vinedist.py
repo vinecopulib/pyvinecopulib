@@ -487,15 +487,13 @@ def test_holds_margins_with_atoms() -> None:
   u_np = u.detach().numpy()
 
   # Sklar's factorization, spelled out: the compiled vine supplies the copula
-  # term and the same torch margins supply theirs, so a wrong assembly -- a
-  # missing left limit, a mis-ordered column -- shows up as a wrong number.
-  # `structure=None`, as the torch fit used. Both selectors reuse the pairs they
-  # fitted while selecting, so a pair may arrive at its slot flipped -- and a
-  # flipped TLL fit is not the fit of the swapped arguments: the grid's margin
-  # renormalization runs a fixed three alternating sweeps, which does not commute
-  # with transposition (2.7e-4), and on a discrete edge the latent sample is
-  # drawn per column position on top of that (4.2e-3 on the density). Both are
-  # upstream's and reproduced exactly, so compare select to select.
+  # term and the same torch margins theirs, so a wrong assembly -- a missing
+  # left limit, a mis-ordered column -- is a wrong number. `structure=None`, as
+  # the torch fit used: both selectors reuse the pairs they fitted, so a pair
+  # can arrive at its slot flipped, and a flipped TLL fit is not the fit of the
+  # swapped arguments (2.7e-4 from the renormalization sweeps, 4.2e-3 more on a
+  # discrete edge). Both behaviors are upstream's, so compare select to
+  # select.
   cop = pv.Vinecop.from_data(
     u_np,
     var_types=["d", "c", "c"],
