@@ -1,3 +1,4 @@
+import math
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
@@ -5,6 +6,7 @@ import numpy as np
 import pytest
 
 import pyvinecopulib as pv
+from pyvinecopulib.core._normal import norm_cdf
 
 
 def assert_called_once_or_twice(mock: Any) -> None:
@@ -772,180 +774,290 @@ class TestVinecopHelpers:
                   assert args[1] == 1  # n_col
 
 
-class TestKde1dHelpers:
-  """Test kde1d.py helper functions directly"""
+class TestMarginPlot:
+  """What a margin plot draws, on real margins of all three variable types.
 
-  def test_make_plotting_grid_continuous(self) -> None:
-    """Test make_plotting_grid function for continuous data"""
+  Reached at the function rather than through ``.plot()``, which draws and
+  returns nothing: the grid, the marks and the limits are checkable here and
+  nowhere above it.
+  """
+
+  @staticmethod
+  def _continuous() -> pv.core.Kde1d:
+    kde = pv.core.Kde1d()
+    kde.fit(np.random.RandomState(123).beta(0.5, 2.0, 200))
+    return kde
+
+  @staticmethod
+  def _discrete(lo: int = 0, hi: int = 7) -> pv.core.Kde1d:
+    rng = np.random.RandomState(7)
+    y = np.clip(rng.poisson(3, 300), lo, hi).astype(float)
+    # Both ends present, so the lattice the grid should recover is `lo..hi`.
+    y[:2] = [float(lo), float(hi)]
+    kde = pv.core.Kde1d(type="discrete")
+    kde.fit(y)
+    return kde
+
+  @staticmethod
+  def _zero_inflated() -> pv.core.Kde1d:
+    rng = np.random.RandomState(5)
+    y = rng.exponential(2.0, 300)
+    y[rng.choice(300, 90, replace=False)] = 0.0
+    kde = pv.core.Kde1d(xmin=0, type="zero-inflated")
+    kde.fit(y)
+    return kde
+
+  def test_the_continuous_grid_spans_the_fitted_range(self) -> None:
     from pyvinecopulib.core._margin_plot import make_plotting_grid
 
-    # Create a mock Kde1d object
-    mock_kde = MagicMock()
-    mock_kde.type = "continuous"
-    mock_kde.grid_points = np.linspace(0, 5, 50)
-    mock_kde.xmin = np.nan
-    mock_kde.xmax = np.nan
+    kde = self._continuous()
+    grid = make_plotting_grid(kde, grid_size=100)
 
-    grid = make_plotting_grid(mock_kde, grid_size=100)
+    assert grid.shape == (100,)
+    assert np.all(np.diff(grid) > 0)
+    assert grid[0] == pytest.approx(kde.grid_points.min())
+    assert grid[-1] == pytest.approx(kde.grid_points.max())
 
-    # Check properties
-    assert isinstance(grid, np.ndarray)
-    assert len(grid) == 100
-    assert grid[0] >= np.min(mock_kde.grid_points)
-    assert grid[-1] <= np.max(mock_kde.grid_points)
-
-  def test_make_plotting_grid_discrete(self) -> None:
-    """Test make_plotting_grid function for discrete data"""
+  def test_a_declared_bound_wins_over_the_fitted_range(self) -> None:
     from pyvinecopulib.core._margin_plot import make_plotting_grid
 
-    # Create a mock Kde1d object
-    mock_kde = MagicMock()
-    mock_kde.type = "discrete"
-    mock_kde.grid_points = np.arange(0, 10)
-    mock_kde.xmin = np.nan
-    mock_kde.xmax = np.nan
+    kde = pv.core.Kde1d(xmin=0.0, xmax=1.0)
+    kde.fit(np.random.RandomState(1).beta(0.5, 2.0, 200))
+    grid = make_plotting_grid(kde, grid_size=50)
 
-    grid = make_plotting_grid(mock_kde, grid_size=100)
+    assert (grid[0], grid[-1]) == (0.0, 1.0)
+    assert np.all(np.diff(grid) > 0)
 
-    # Check properties
-    assert isinstance(grid, np.ndarray)
-    assert all(x == int(x) for x in grid)  # All should be integers
-    assert grid.min() >= 0
-    assert grid.max() <= 9
+  def test_the_discrete_grid_is_the_lattice_and_invents_no_level(self) -> None:
+    """A fitted grid runs half a unit past the support at each end.
 
-  def test_make_plotting_grid_zero_inflated(self) -> None:
-    """Test make_plotting_grid function for zero-inflated data"""
+    Rounding it outwards -- which is what ``floor`` / ``ceil`` do to
+    ``min - 0.25`` and ``max + 0.25`` -- plots one level below the smallest
+    observation and one above the largest, neither of which can occur.
+    """
     from pyvinecopulib.core._margin_plot import make_plotting_grid
 
-    # Create a mock Kde1d object
-    mock_kde = MagicMock()
-    mock_kde.type = "zero-inflated"
-    mock_kde.grid_points = np.linspace(0, 5, 50)
-    mock_kde.xmin = np.nan
-    mock_kde.xmax = np.nan
+    kde = self._discrete(lo=0, hi=7)
+    assert kde.grid_points.min() < 0 and kde.grid_points.max() > 7
 
-    grid = make_plotting_grid(mock_kde, grid_size=100)
+    grid = make_plotting_grid(kde)
+    np.testing.assert_array_equal(grid, np.arange(0.0, 8.0))
 
-    # Check properties
-    assert isinstance(grid, np.ndarray)
-    assert 0 not in grid  # Zero should be excluded for zero-inflated
-
-  def test_make_plotting_grid_with_bounds(self) -> None:
-    """Test make_plotting_grid function with specified bounds"""
+  def test_a_declared_discrete_bound_is_a_level(self) -> None:
     from pyvinecopulib.core._margin_plot import make_plotting_grid
 
-    # Create a mock Kde1d object with bounds
-    mock_kde = MagicMock()
-    mock_kde.type = "continuous"
-    mock_kde.grid_points = np.linspace(1, 4, 50)
-    mock_kde.xmin = 0.0
-    mock_kde.xmax = 5.0
+    y = np.clip(np.random.RandomState(3).poisson(3, 200), 0, 9).astype(float)
+    kde = pv.core.Kde1d(xmin=0, xmax=9, type="discrete")
+    kde.fit(y)
 
-    grid = make_plotting_grid(mock_kde, grid_size=100)
+    np.testing.assert_array_equal(make_plotting_grid(kde), np.arange(0.0, 10.0))
 
-    # Check bounds are respected
-    assert grid[0] == 0.0
-    assert grid[-1] == 5.0
+  def test_the_zero_inflated_grid_excludes_the_atom(self) -> None:
+    from pyvinecopulib.core._margin_plot import make_plotting_grid
 
-  def test_margin_plot_parameter_validation(self) -> None:
-    """Test margin_plot parameter validation"""
-    from pyvinecopulib.core._margin_plot import margin_plot
+    grid = make_plotting_grid(self._zero_inflated(), grid_size=101)
 
-    # Create a mock kde object that appears unfitted
-    mock_kde = MagicMock()
-    mock_kde.grid_points = np.array([])  # Empty grid indicates unfitted
+    assert 0.0 not in grid
+    assert grid.min() > 0.0
 
-    # Test unfitted kde raises error
-    with pytest.raises(ValueError, match="Kde1d object must be fitted"):
-      margin_plot(mock_kde)
+  def test_a_margin_with_no_grid_is_drawn_between_its_tails(self) -> None:
+    """A support with no last point is cut at the 0.1% quantiles."""
+    from pyvinecopulib.core._margin_plot import make_plotting_grid
 
-  @patch("matplotlib.pyplot.show")
-  @patch("matplotlib.pyplot.plot")
-  def test_margin_plot_continuous(self, mock_plot: Any, mock_show: Any) -> None:
-    """Test margin_plot with continuous data"""
-    from pyvinecopulib.core._margin_plot import margin_plot
+    scipy = pytest.importorskip("scipy")
+    del scipy
+    from pyvinecopulib.margins import SciPyMargin
 
-    # Create a mock fitted kde object
-    mock_kde = MagicMock()
-    mock_kde.type = "continuous"
-    mock_kde.grid_points = np.linspace(0, 5, 50)
-    mock_kde.xmin = np.nan
-    mock_kde.xmax = np.nan
-    mock_kde.pdf.return_value = np.ones(100) * 0.5
+    margin = SciPyMargin(family="norm").fit(
+      np.random.RandomState(0).normal(size=400)
+    )
+    grid = make_plotting_grid(margin, grid_size=64)
 
-    # Test continuous plot
-    margin_plot(mock_kde, grid_size=100)
+    assert grid.shape == (64,)
+    lo, hi = (
+      float(margin.icdf(np.array([1e-3]))[0]),
+      float(margin.icdf(np.array([1 - 1e-3]))[0]),
+    )
+    assert grid[0] == pytest.approx(lo)
+    assert grid[-1] == pytest.approx(hi)
 
-    # Verify matplotlib functions were called
-    mock_plot.assert_called()
-    mock_show.assert_called_once()
-
-  @patch("matplotlib.pyplot.show")
-  @patch("matplotlib.pyplot.plot")
-  def test_margin_plot_discrete(self, mock_plot: Any, mock_show: Any) -> None:
-    """Test margin_plot with discrete data"""
-    from pyvinecopulib.core._margin_plot import margin_plot
-
-    # Create a mock fitted kde object
-    mock_kde = MagicMock()
-    mock_kde.type = "discrete"
-    mock_kde.grid_points = np.arange(0, 10)
-    mock_kde.xmin = np.nan
-    mock_kde.xmax = np.nan
-    mock_kde.pdf.return_value = np.ones(10) * 0.1
-
-    # Test discrete plot
-    margin_plot(mock_kde, grid_size=50)
-
-    # Verify matplotlib functions were called
-    mock_plot.assert_called()
-    mock_show.assert_called_once()
-
-  @patch("matplotlib.pyplot.show")
-  @patch("matplotlib.pyplot.plot")
-  def test_margin_plot_zero_inflated(
-    self, mock_plot: Any, mock_show: Any
+  @pytest.mark.parametrize("kind", ["density", "cdf"])
+  @pytest.mark.parametrize("var_type", ["c", "d", "zi"])
+  def test_every_variable_type_draws_both_kinds(
+    self, var_type: str, kind: str
   ) -> None:
-    """Test margin_plot with zero-inflated data"""
     from pyvinecopulib.core._margin_plot import margin_plot
 
-    # Create a mock fitted kde object
-    mock_kde = MagicMock()
-    mock_kde.type = "zero-inflated"
-    mock_kde.grid_points = np.linspace(0, 5, 50)
-    mock_kde.xmin = np.nan
-    mock_kde.xmax = np.nan
-    mock_kde.pdf.return_value = np.ones(100) * 0.2
+    kde = {
+      "c": self._continuous,
+      "d": self._discrete,
+      "zi": self._zero_inflated,
+    }[var_type]()
+    assert kde.var_type == var_type
 
-    # Test zero-inflated plot
-    margin_plot(mock_kde, grid_size=100, show_zero_mass=True)
+    with (
+      patch("matplotlib.pyplot.show") as show,
+      patch("matplotlib.pyplot.plot") as plot,
+      patch("matplotlib.pyplot.ylabel") as ylabel,
+    ):
+      margin_plot(kde, kind=kind)
 
-    # Verify matplotlib functions were called (should be called twice - main plot + zero point)
-    assert mock_plot.call_count >= 1
-    mock_show.assert_called_once()
+    show.assert_called_once()
+    ylabel.assert_called_once_with(
+      "density" if kind == "density" else "probability"
+    )
+    # A discrete margin is marks, a continuous one a curve, and a
+    # zero-inflated one the curve plus its one emphasized atom.
+    first = plot.call_args_list[0]
+    assert (first.kwargs.get("linestyle") == "None") == (var_type == "d")
+    assert plot.call_count == (2 if var_type == "zi" else 1)
 
-  @patch("matplotlib.pyplot.show")
-  @patch("matplotlib.pyplot.plot")
-  def test_margin_plot_custom_limits(
-    self, mock_plot: Any, mock_show: Any
-  ) -> None:
-    """Test margin_plot with custom axis limits"""
+  def test_the_atom_is_droppable(self) -> None:
     from pyvinecopulib.core._margin_plot import margin_plot
 
-    # Create a mock fitted kde object
-    mock_kde = MagicMock()
-    mock_kde.type = "continuous"
-    mock_kde.grid_points = np.linspace(0, 5, 50)
-    mock_kde.xmin = np.nan
-    mock_kde.xmax = np.nan
-    mock_kde.pdf.return_value = np.ones(100) * 0.5
+    with patch("matplotlib.pyplot.show"), patch("matplotlib.pyplot.plot") as p:
+      margin_plot(self._zero_inflated(), show_zero_mass=False)
 
-    # Test with custom limits
-    margin_plot(mock_kde, xlim=(1, 4), ylim=(0, 1), grid_size=100)
+    assert p.call_count == 1
 
-    # Verify matplotlib functions were called
-    mock_plot.assert_called()
-    mock_show.assert_called_once()
+  def test_the_cdf_is_drawn_on_the_unit_interval(self) -> None:
+    from pyvinecopulib.core._margin_plot import margin_plot
+
+    with (
+      patch("matplotlib.pyplot.show"),
+      patch("matplotlib.pyplot.plot") as plot,
+      patch("matplotlib.pyplot.ylim") as ylim,
+    ):
+      margin_plot(self._continuous(), kind="cdf")
+
+    values = plot.call_args_list[0].args[1]
+    assert np.all((values >= 0) & (values <= 1))
+    assert np.all(np.diff(values) >= -1e-12)
+    ylim.assert_called_once_with(0, 1.05)
+
+  def test_explicit_limits_are_passed_through(self) -> None:
+    from pyvinecopulib.core._margin_plot import margin_plot
+
+    with (
+      patch("matplotlib.pyplot.show"),
+      patch("matplotlib.pyplot.plot"),
+      patch("matplotlib.pyplot.xlim") as xlim,
+      patch("matplotlib.pyplot.ylim") as ylim,
+    ):
+      margin_plot(self._continuous(), xlim=(0.1, 0.4), ylim=(0, 2))
+
+    xlim.assert_called_once_with((0.1, 0.4))
+    ylim.assert_called_once_with((0, 2))
+
+  def test_an_unknown_kind_is_refused(self) -> None:
+    from pyvinecopulib.core._margin_plot import margin_plot
+
+    with pytest.raises(ValueError, match="kind must be"):
+      margin_plot(self._continuous(), kind="quantile")
+
+  def test_an_unfitted_margin_is_refused(self) -> None:
+    from pyvinecopulib.core._margin_plot import margin_plot
+
+    with pytest.raises(ValueError, match="must be fitted"):
+      margin_plot(pv.core.Kde1d())
+
+  def test_a_margin_reading_no_covariates_refuses_x(self) -> None:
+    """The refusal is explicit, since forwarding to a margin is by flag.
+
+    ``declared_eval`` *skips* ``x`` for a margin that declares no
+    ``supports_covariates``, so nothing below would raise and the plot would
+    silently be the unconditional one.
+    """
+    from pyvinecopulib.core._margin_plot import margin_plot
+
+    with pytest.raises(ValueError, match="declares no `supports_covariates`"):
+      margin_plot(self._continuous(), x=np.zeros(2))
+
+  def test_a_conditional_margin_is_drawn_at_one_covariate_row(self) -> None:
+    margin = _ShiftedByCovariate(shift=2.0)
+    with patch("matplotlib.pyplot.show"), patch("matplotlib.pyplot.plot") as p:
+      margin.plot(x=np.array([1.0]))
+
+    grid, values = p.call_args_list[0].args[:2]
+    # Every row saw the same covariate, so the curve is the shifted density.
+    np.testing.assert_allclose(
+      values, np.exp(-0.5 * (grid - 2.0) ** 2) / np.sqrt(2.0 * np.pi)
+    )
+
+  def test_a_conditional_margin_refuses_more_than_one_row(self) -> None:
+    from pyvinecopulib.core._margin_plot import margin_plot
+
+    with pytest.raises(ValueError, match="single covariate row"):
+      margin_plot(_ShiftedByCovariate(), x=np.zeros((3, 1)))
+
+  def test_the_base_places_the_grid_on_the_margins_own_namespace(self) -> None:
+    """A margin on tensors plots without converting inside its own ``pdf``.
+
+    The grid is manufactured by the plot, so it is the one array the margin
+    did not supply and cannot infer a namespace from; ``_prep`` is what brings
+    it across, and ``pdf`` here would raise on anything else.
+    """
+    torch = pytest.importorskip("torch")
+    from pyvinecopulib.core import MarginBase
+
+    class _TensorMargin(MarginBase[Any]):
+      """A standard normal whose arrays are tensors, so ``_prep`` finds one."""
+
+      def __init__(self) -> None:
+        # The array `reference_array` infers placement from.
+        self._weights = torch.ones(4, dtype=torch.float64)
+        self.seen: list[Any] = []
+
+      def pdf(self, y: Any, /, *, x: Any = None) -> Any:
+        assert isinstance(y, torch.Tensor)
+        self.seen.append(y)
+        return torch.exp(-0.5 * y * y) / math.sqrt(2.0 * math.pi)
+
+      def cdf(self, y: Any, /, *, x: Any = None) -> Any:
+        assert isinstance(y, torch.Tensor)
+        return torch.special.ndtr(y)
+
+      @property
+      def support(self) -> tuple[float, float]:
+        return (-4.0, 4.0)
+
+    margin = _TensorMargin()
+    with patch("matplotlib.pyplot.show"), patch("matplotlib.pyplot.plot") as p:
+      margin.plot()
+
+    assert margin.seen and isinstance(margin.seen[0], torch.Tensor)
+    # The drawn values come back as NumPy, whatever the margin answered in.
+    assert isinstance(p.call_args_list[0].args[1], np.ndarray)
+
+
+class _ShiftedByCovariate(pv.core.MarginBase[np.ndarray]):
+  """A standard normal centered at ``shift * x[:, 0]``.
+
+  The one conditional margin the plot tests need: its density at a fixed
+  covariate row is a closed form, so what was drawn is checkable exactly.
+  """
+
+  supports_covariates = True
+
+  def __init__(self, *, shift: float = 1.0) -> None:
+    self._shift = float(shift)
+
+  def _center(self, y: np.ndarray, x: Any) -> np.ndarray:
+    if x is None:
+      return np.zeros(np.shape(y))
+    return self._shift * np.asarray(x, dtype=float)[:, 0]
+
+  def pdf(self, y: np.ndarray, /, *, x: Any = None) -> np.ndarray:
+    z = np.asarray(y, dtype=float) - self._center(y, x)
+    return np.exp(-0.5 * z * z) / np.sqrt(2.0 * np.pi)
+
+  def cdf(self, y: np.ndarray, /, *, x: Any = None) -> np.ndarray:
+    z = np.asarray(y, dtype=float) - self._center(y, x)
+    return norm_cdf(z)
+
+  @property
+  def support(self) -> tuple[float, float]:
+    return (-6.0, 6.0)
 
 
 class TestPlotDocstrings:

@@ -1,32 +1,18 @@
-from typing import Optional, Protocol
+"""What a margin plot draws, for every variable type it can describe.
+
+``margin_plot`` is bound to ``Kde1d.plot`` by the binding, which looks it up by
+module path, and is what ``MarginBase.plot`` forwards to -- so a compiled
+``Kde1d``, a ``TorchKde1d``, a ``SciPyMargin`` and a hand-written subclass all
+draw the same picture. It reads only ``var_type``, ``support``, ``is_fitted``
+and the requested one of ``pdf`` / ``cdf``, each of which ``MarginBase``
+supplies with a continuous-correct default, and prefers an optional
+``grid_points`` for the x-range where the margin has one.
+"""
+
+from typing import Any, Callable, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
-
-
-class _PlottableKde(Protocol):
-  """What these helpers read off a fitted ``Kde1d``.
-
-  Written as a protocol because the object arrives from the binding, which
-  ``ty`` cannot see into: naming the five members here says what a plot needs
-  of a kernel density -- the variable type, the fitted grid, the declared
-  bounds and the density itself.
-  """
-
-  @property
-  def type(self) -> str: ...
-
-  @property
-  def grid_points(self) -> np.ndarray: ...
-
-  @property
-  def xmin(self) -> float: ...
-
-  @property
-  def xmax(self) -> float: ...
-
-  def pdf(self, x: np.ndarray, /) -> np.ndarray: ...
-
 
 MARGIN_PLOT_DOC = """
     Generates a plot for the Kde1d object.
@@ -44,8 +30,8 @@ MARGIN_PLOT_DOC = """
         The number of grid points to use for continuous data.
     show_zero_mass : bool (default=True)
         Whether to show the point mass at zero for zero-inflated data.
-    **kwargs
-        Additional keyword arguments passed to matplotlib plotting functions.
+    kind : str (default="density")
+        What to draw: `"density"` or `"cdf"`.
 
     Returns
     -------
@@ -58,145 +44,210 @@ MARGIN_PLOT_DOC = """
     >>> # Continuous data
     >>> np.random.seed(123)
     >>> x = np.random.beta(0.5, 2.0, 100)
-    >>> kde = pv.Kde1d()
+    >>> kde = pv.core.Kde1d()
     >>> kde.fit(x)
     >>> kde.plot()
+    >>> kde.plot(kind="cdf")
     >>> # Discrete data
     >>> x_discrete = np.random.poisson(3, 100)
-    >>> kde_discrete = pv.Kde1d(type="discrete")
+    >>> kde_discrete = pv.core.Kde1d(type="discrete")
     >>> kde_discrete.fit(x_discrete)
     >>> kde_discrete.plot()
     >>> # Zero-inflated data
     >>> x_zi = np.random.exponential(2, 100)
     >>> x_zi[np.random.choice(100, 30, replace=False)] = 0
-    >>> kde_zi = pv.Kde1d(xmin=0, type="zero-inflated")
+    >>> kde_zi = pv.core.Kde1d(xmin=0, type="zero-inflated")
     >>> kde_zi.fit(x_zi)
     >>> kde_zi.plot()
 """
 
+#: The two quantiles a margin with an unbounded support is drawn between,
+#: reached only where there is no fitted grid to read the range off.
+_TAIL = (1e-3, 1 - 1e-3)
 
-def make_plotting_grid(kde: _PlottableKde, grid_size: int = 200) -> np.ndarray:
-  """Create appropriate plotting grid based on kde type and data."""
 
-  if kde.type == "discrete":
-    # The integer support, which is what carries mass. A declared bound *is*
-    # a level; only an undeclared one has to be read off the grid, and the
-    # grid runs half a unit wider than the support because that is where the
-    # jitter cells end -- so rounding it outwards would plot two levels that
-    # cannot occur.
-    grid_points = kde.grid_points
-    lo = kde.xmin if not np.isnan(kde.xmin) else np.floor(grid_points.min())
-    hi = (
-      kde.xmax
-      if not np.isnan(kde.xmax)
-      else max(lo, np.ceil(grid_points.max()))
+def _to_numpy(a: Any) -> np.ndarray:  # noqa: ANN401
+  """Bring one array of any namespace onto NumPy, host memory included."""
+  detach = getattr(a, "detach", None)
+  if detach is not None:
+    a = detach()
+  to_cpu = getattr(a, "cpu", None)
+  if to_cpu is not None:
+    a = to_cpu()
+  return np.asarray(a, dtype=float)
+
+
+def _support(margin: Any) -> tuple[float, float]:  # noqa: ANN401
+  """The margin's declared support, as two floats."""
+  lo, hi = getattr(margin, "support", (-np.inf, np.inf))
+  return (float(lo), float(hi))
+
+
+def _grid_points(margin: Any) -> Optional[np.ndarray]:  # noqa: ANN401
+  """The fitted evaluation grid, where the margin publishes one."""
+  gp = getattr(margin, "grid_points", None)
+  if gp is None:
+    return None
+  points = _to_numpy(gp)
+  return points if points.size else None
+
+
+def _draw_range(
+  margin: Any,  # noqa: ANN401
+  place: Optional[Callable[[np.ndarray], Any]],
+) -> tuple[float, float]:
+  """The interval to evaluate over.
+
+  A declared bound wins wherever there is one. What fills an undeclared bound
+  is the fitted grid where the margin publishes one -- that is the range the
+  density was estimated on -- and otherwise the quantile at ``_TAIL``, since
+  an unbounded support has no last point to draw.
+  """
+  lo, hi = _support(margin)
+  points = _grid_points(margin)
+  if points is not None:
+    return (
+      lo if np.isfinite(lo) else float(points.min()),
+      hi if np.isfinite(hi) else float(points.max()),
     )
-    return np.arange(int(lo), int(hi) + 1, dtype=float)
-  else:
-    # For continuous data, create smooth grid
-    grid_points = kde.grid_points
-    ev = np.linspace(grid_points.min(), grid_points.max(), grid_size)
+  if np.isfinite(lo) and np.isfinite(hi):
+    return (lo, hi)
+  icdf = getattr(margin, "icdf", None)
+  if icdf is None:
+    raise ValueError(
+      "cannot choose an x-range: the margin's support is unbounded and it "
+      "has no `icdf` to read a quantile from; pass `xlim=`"
+    )
+  p = np.asarray(_TAIL, dtype=float)
+  tails = _to_numpy(icdf(p if place is None else place(p)))
+  return (
+    lo if np.isfinite(lo) else float(tails[0]),
+    hi if np.isfinite(hi) else float(tails[1]),
+  )
 
-    # Adjust boundaries if specified
-    try:
-      if not np.isnan(kde.xmin):
-        ev[0] = kde.xmin
-      if not np.isnan(kde.xmax):
-        ev[-1] = kde.xmax
-    except (ValueError, TypeError):
-      # Handle case where xmin/xmax might be arrays or not available
-      pass
 
-    # For zero-inflated, exclude zero from the main grid
-    if kde.type == "zero-inflated":
-      ev = ev[ev != 0]
+def make_plotting_grid(
+  margin: Any,  # noqa: ANN401
+  grid_size: int = 200,
+  *,
+  place: Optional[Callable[[np.ndarray], Any]] = None,
+) -> np.ndarray:
+  """The points a margin's plot is evaluated on, by variable type."""
+  var_type = getattr(margin, "var_type", "c")
+  lo, hi = _draw_range(margin, place)
 
-    return np.asarray(ev)
+  if var_type == "d":
+    # The integer support, which is what carries mass. A fitted grid runs half
+    # a unit wider than that support, because that is where the jitter cells
+    # end, so it is rounded to the nearest level rather than outwards -- which
+    # would plot one level below and one above that cannot occur.
+    first, last = int(np.round(lo)), int(np.round(hi))
+    return np.arange(first, max(first, last) + 1, dtype=float)
+
+  ev = np.linspace(lo, hi, grid_size)
+  if var_type == "zi":
+    # The atom at zero is drawn on its own, so the continuous part excludes it.
+    ev = ev[ev != 0]
+  return np.asarray(ev)
 
 
 def margin_plot(
-  kde: _PlottableKde,
+  # A margin -- a `MarginLike`, or the `Kde1d` the binding hands here, which
+  # it looks this function up by name to reach. Importing the extension to
+  # name that type would invert the layering.
+  margin: Any,  # noqa: ANN401
   xlim: Optional[tuple[float, float]] = None,
   ylim: Optional[tuple[float, float]] = None,
   grid_size: int = 200,
   show_zero_mass: bool = True,
+  *,
+  kind: str = "density",
+  x: Optional[Any] = None,  # noqa: ANN401
+  place: Optional[Callable[[np.ndarray], Any]] = None,
 ) -> None:
   """{}""".format(MARGIN_PLOT_DOC)
 
-  # Check if kde is fitted
-  if kde.grid_points.size == 0:
-    raise ValueError("Kde1d object must be fitted before plotting")
+  if kind not in ("density", "cdf"):
+    raise ValueError(f"kind must be 'density' or 'cdf'; got {kind!r}")
 
-  # Create plotting grid
-  ev = make_plotting_grid(kde, grid_size)
+  ## A margin that publishes a grid says it is unfitted by leaving it empty,
+  ## which is the only signal one carrying no `is_fitted` gives.
+  empty_grid = (
+    getattr(margin, "grid_points", None) is not None
+    and _grid_points(margin) is None
+  )
+  if not getattr(margin, "is_fitted", True) or empty_grid:
+    raise ValueError("the margin must be fitted before plotting")
 
-  # Evaluate density
-  vals = kde.pdf(ev)
+  ## A conditional margin's density is a different curve at every covariate
+  ## value, so a 2-d plot shows one slice: a single row, repeated across the
+  ## grid. Placed but not clamped -- covariates are reals.
+  row: Optional[np.ndarray] = None
+  if x is not None:
+    if not getattr(margin, "supports_covariates", False):
+      raise ValueError(
+        "this margin declares no `supports_covariates`, so it models f(y) "
+        "and there is no covariate value to draw at; drop `x=`"
+      )
+    row = np.asarray(x, dtype=float)
+    if row.ndim == 1:
+      row = row.reshape(1, -1)
+    if row.ndim != 2 or row.shape[0] != 1:
+      raise ValueError(
+        "x must be a single covariate row, shape (p,) or (1, p): a 2-d plot "
+        f"shows the margin at one covariate value; got {tuple(row.shape)}"
+      )
 
-  # Create the main plot based on type
-  if kde.type == "discrete":
+  var_type = getattr(margin, "var_type", "c")
+  ev = make_plotting_grid(margin, grid_size, place=place)
+
+  ## The grid is manufactured here, so this is the one place a margin is
+  ## handed an array it did not supply and cannot infer a namespace from.
+  ## `place` brings it onto the margin's own namespace, dtype and device; a
+  ## compiled `Kde1d` passes none and keeps the NumPy grid it always had.
+  def evaluate(y: np.ndarray) -> np.ndarray:
+    ya: Any = y if place is None else place(y)
+    kwargs: dict[str, Any] = {}
+    if row is not None:
+      tiled = np.repeat(row, y.shape[0], axis=0)
+      kwargs["x"] = tiled if place is None else place(tiled)
+    fn = margin.pdf if kind == "density" else margin.cdf
+    return _to_numpy(fn(ya, **kwargs))
+
+  vals = evaluate(ev)
+  zero = evaluate(np.zeros(1)) if var_type == "zi" and show_zero_mass else None
+
+  ## A discrete margin carries mass only on its lattice, so it is drawn as
+  ## marks rather than a curve; a zero-inflated one is the continuous curve
+  ## plus the one emphasized atom.
+  if var_type == "d":
     plt.plot(ev, vals, marker="o", linestyle="None", markersize=6)
   else:
     plt.plot(ev, vals, linestyle="-", linewidth=2)
+  if zero is not None:
+    plt.plot(0, zero[0], "o", markersize=8, color="C0")
 
-  # Handle zero-inflated case
-  if kde.type == "zero-inflated" and show_zero_mass:
-    zero_density = kde.pdf(np.array([0]))
-    plt.plot(0, zero_density[0], "o", markersize=8, color="C0")
-
-  # Set axis limits
   if xlim is not None:
     plt.xlim(xlim)
   else:
-    # Auto-set x limits with some padding
-    try:
-      # Safely check if xmin and xmax are valid scalar values. Use
-      # isinstance (a real narrowing predicate, unlike hasattr) so ty can
-      # refine the array branch.
-      xmin_val = getattr(kde, "xmin", np.nan)
-      xmax_val = getattr(kde, "xmax", np.nan)
-
-      if isinstance(xmin_val, np.ndarray):
-        xmin_val = float(xmin_val) if xmin_val.size > 0 else np.nan
-      if isinstance(xmax_val, np.ndarray):
-        xmax_val = float(xmax_val) if xmax_val.size > 0 else np.nan
-
-      # Narrow with isinstance against real numeric types (not
-      # np.isscalar, which doesn't narrow for ty and leaves complex /
-      # str in the union, so float() below is rejected). This also
-      # excludes non-finite values via the np.isfinite guard.
-      real_scalar = (int, float, np.floating, np.integer)
-      if (
-        isinstance(xmin_val, real_scalar)
-        and isinstance(xmax_val, real_scalar)
-        and np.isfinite(xmin_val)
-        and np.isfinite(xmax_val)
-      ):
-        plt.xlim(float(xmin_val), float(xmax_val))
-      else:
-        x_range = ev.max() - ev.min()
-        plt.xlim(ev.min() - 0.05 * x_range, ev.max() + 0.05 * x_range)
-    except (ValueError, TypeError, AttributeError):
-      # Handle case where xmin/xmax might be arrays or other types
-      x_range = ev.max() - ev.min()
-      plt.xlim(ev.min() - 0.05 * x_range, ev.max() + 0.05 * x_range)
+    lo, hi = _support(margin)
+    if np.isfinite(lo) and np.isfinite(hi):
+      plt.xlim(lo, hi)
+    else:
+      pad = 0.05 * (ev.max() - ev.min())
+      plt.xlim(ev.min() - pad, ev.max() + pad)
 
   if ylim is not None:
     plt.ylim(ylim)
+  elif kind == "cdf":
+    plt.ylim(0, 1.05)
   else:
-    # Auto-set y limits
-    max_val = vals.max()
-    if kde.type == "zero-inflated" and show_zero_mass:
-      zero_density = kde.pdf(np.array([0]))
-      max_val = max(max_val, zero_density[0])
-    plt.ylim(0, 1.1 * max_val)
+    top = vals.max() if vals.size else 1.0
+    if zero is not None:
+      top = max(top, zero[0])
+    plt.ylim(0, 1.1 * top)
 
-  # Set labels
   plt.xlabel("x")
-  plt.ylabel("density")
-
-  # Add grid for better readability
+  plt.ylabel("density" if kind == "density" else "probability")
   plt.grid(True, alpha=0.3)
-
-  # Show the plot
   plt.show()

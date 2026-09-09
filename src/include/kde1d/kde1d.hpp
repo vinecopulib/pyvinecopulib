@@ -355,10 +355,11 @@ inline void kde1d_set_xmin_xmax(Kde1d& self,
 // Wrapper function to call the Python margin_plot function
 inline void kde1d_plot_wrapper(const Kde1d& kde, nb::object xlim,
                                nb::object ylim, int grid_size,
-                               bool show_zero_mass) {
+                               bool show_zero_mass, const std::string& kind) {
   auto mod = nb::module_::import_("pyvinecopulib.core._margin_plot");
   auto margin_plot = mod.attr("margin_plot");
-  margin_plot(nb::cast(kde), xlim, ylim, grid_size, show_zero_mass);
+  margin_plot(nb::cast(kde), xlim, ylim, grid_size, show_zero_mass,
+              "kind"_a = kind);
 }
 
 inline void init_kde1d(nb::module_& module) {
@@ -637,7 +638,7 @@ inline void init_kde1d(nb::module_& module) {
                "xmax"_a = std::nullopt, kde1d_doc.set_xmin_xmax.doc)
           .def("plot", &kde1d_plot_wrapper, "xlim"_a = nb::none(),
                "ylim"_a = nb::none(), "grid_size"_a = 200,
-               "show_zero_mass"_a = true,
+               "show_zero_mass"_a = true, nb::kw_only(), "kind"_a = "density",
                python_doc_helper("pyvinecopulib.core._margin_plot",
                                  "MARGIN_PLOT_DOC",
                                  "Plot the KDE (extended doc unavailable) ")

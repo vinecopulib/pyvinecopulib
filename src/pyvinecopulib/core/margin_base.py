@@ -29,6 +29,7 @@ import numpy as _np
 from array_api_compat import array_namespace
 
 from ._covariates import declared_eval, prepare
+from ._margin_plot import margin_plot
 from ._placement import PlacementMixin
 from ._rootfind import solve_increasing
 from ._validation import reject_array_controls, validate_weights
@@ -916,6 +917,73 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     x = prepare(self, x, n)
     base = self._sample_uniform(n, list(seeds) if seeds else [])
     return cast("ArrayT", declared_eval(self, "icdf", base, x))
+
+  def plot(
+    self,
+    xlim: Optional[tuple[float, float]] = None,
+    ylim: Optional[tuple[float, float]] = None,
+    grid_size: int = 200,
+    show_zero_mass: bool = True,
+    *,
+    kind: str = "density",
+    x: Optional[ArrayT] = None,
+  ) -> None:
+    """Plot the margin's density or distribution function.
+
+    Mirrors ``Kde1d.plot()``, and adds ``x`` for a conditional margin. Every
+    variable type is drawn as what it is: a continuous margin as a curve, a
+    discrete one as marks on its integer support, a zero-inflated one as the
+    curve with zero excised plus the one emphasized atom.
+
+    The evaluation grid is the one place this class manufactures an array from
+    nothing, so it is the one place a subclass could be handed the wrong array
+    type. It is placed through ``_prep`` first, which means a margin on
+    PyTorch plots without converting anything inside its own ``pdf``.
+
+    Parameters
+    ----------
+    xlim : tuple of float, or None, optional
+        Axis limits; ``None`` uses :attr:`support` where it is finite and pads
+        the drawn range otherwise.
+    ylim : tuple of float, or None, optional
+        Axis limits; ``None`` fits them to what was drawn.
+    grid_size : int, default=200
+        Number of grid points, for a continuous or zero-inflated margin. A
+        discrete one is drawn on its lattice, whose length it does not choose.
+    show_zero_mass : bool, default=True
+        Whether a zero-inflated margin's atom at zero is marked.
+    kind : str, default="density"
+        ``"density"`` for :meth:`pdf`, ``"cdf"`` for :meth:`cdf`.
+    x : array, shape (p,) or (1, p), or None, optional
+        One covariate row, for a conditional margin. The margin is a
+        different curve at every covariate value, so a plot shows the slice at
+        this one; the row is repeated across the grid.
+
+    Returns
+    -------
+    None
+        The figure is drawn with matplotlib.
+
+    Raises
+    ------
+    ValueError
+        If ``kind`` is neither ``"density"`` nor ``"cdf"``; if the margin is
+        not fitted; if ``x`` is not a single covariate row; or if ``x`` is
+        given and :attr:`supports_covariates` is ``False`` -- a margin that
+        reads no covariates has no covariate value to be drawn at, and
+        answering unconditionally under a conditional-looking call is the
+        outcome the refusal exists to prevent.
+    """
+    margin_plot(
+      self,
+      xlim,
+      ylim,
+      grid_size,
+      show_zero_mass,
+      kind=kind,
+      x=x,
+      place=self._prep,
+    )
 
   def _sample_uniform(self, n: int, seeds: list[int]) -> ArrayT:
     """Draw ``n`` uniforms on the subclass's array namespace.

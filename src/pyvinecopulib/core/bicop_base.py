@@ -571,6 +571,12 @@ class BicopBase(
     ------
     ValueError
         If ``x`` is not a single covariate row.
+    TypeError
+        If ``x`` is given and the pair copula's ``pdf`` takes none. A pair
+        copula declares its covariates by its signature rather than by a
+        flag, so the refusal is the argument binding's -- and it is a refusal,
+        not an oversight: drawing the unconditional density under a
+        conditional-looking call is the outcome it exists to prevent.
     """
     bicop_plot(
       self, plot_type, margin_type, xylim, grid_size, x=x, place=self._prep
