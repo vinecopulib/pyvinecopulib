@@ -228,14 +228,24 @@ def covariate_column(x: ArrayT, n: int, name: str = "x") -> ArrayT:
   a single column read from a frame -- and every consumer of one otherwise
   writes the same reshape in front of ``prepare_covariates``.
 
-  ``n`` is required, and is the whole of what makes this safe. The shape
-  ``(n,)`` carries no statement about which axis is which, so the caller
-  supplies that statement by choosing this function, and ``n`` is what lets
-  the values be *checked* against it rather than trusted: an ``x`` of the
-  wrong length is a misalignment, and one silently reshaped to ``(len(x), 1)``
-  would pair each observation with some other observation's covariate. That
-  is the failure the two-name split exists to prevent, so this does not
-  default ``n`` and does not infer it.
+  ``n`` is required, and what it buys is *where* the misalignment is caught
+  rather than whether. The shape ``(n,)`` carries no statement about which
+  axis is which, so the caller supplies that statement by choosing this
+  function, and ``n`` is what lets the values be checked against it rather
+  than trusted. A caller who hands the result straight to
+  ``prepare_covariates`` would have a wrong length rejected there too, by the
+  row check -- so this is not the only guard on that path, and claiming
+  otherwise would be wrong.
+
+  It is the only guard on the two paths that matter. The producer of a
+  covariate is what knows which axis is which -- it computed ``n`` -- and it
+  is the one place that can state the claim plainly; a consumer downstream
+  only knows it received "a covariate". And an array that travels before it
+  reaches an estimator -- built into an evaluation grid, stored, passed on --
+  meets no row check until it arrives, by which point the producer is gone.
+  So ``n`` is not defaulted and not inferred: a check the producer can run is
+  worth more than the same check run later by something that cannot say what
+  went wrong.
 
   Already-shaped input passes through: ``(n, 1)`` states the same thing
   explicitly and is returned unchanged, after the same row check. A second
