@@ -1228,8 +1228,24 @@ def test_a_non_finite_float_survives_the_round_trip() -> None:
 
   written = dumps({"kind": "K", "version": 1, "loglik": float("-inf")})
   assert read_payload(written, "K", kind="K")["loglik"] == float("-inf")
-  # The trap, spelled out: the standard library gets a string.
-  assert isinstance(json.loads(written)["loglik"], str)
+  # The trap, spelled out: the standard library gets the tagged object, not a
+  # float, and nothing about that reads as an error.
+  assert isinstance(json.loads(written)["loglik"], dict)
+
+  # All three values, and both signs of infinity.
+  for value in (float("-inf"), float("inf")):
+    payload = dumps({"kind": "K", "version": 1, "v": value})
+    assert read_payload(payload, "K", kind="K")["v"] == value
+  nan = dumps({"kind": "K", "version": 1, "v": float("nan")})
+  assert np.isnan(read_payload(nan, "K", kind="K")["v"])
+
+  # The reason the tag is an object and not a marked string: payloads carry
+  # arbitrary user text, and a marked string is a value user data can spell.
+  for text in ("__nonfinite__:0", "__pyvinecopulib_nonfinite__", "-inf"):
+    round_tripped = read_payload(
+      dumps({"kind": "K", "version": 1, "name": text}), "K", kind="K"
+    )["name"]
+    assert round_tripped == text, round_tripped
 
 
 def test_copula_var_types_dispatches_through_the_subclass() -> None:

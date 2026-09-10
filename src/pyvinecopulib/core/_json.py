@@ -4,8 +4,8 @@ Not about margins: :meth:`~pyvinecopulib.core.VinedistBase.to_json` stamps a
 whole distribution -- its copula and every margin -- through the same
 functions, so they live beside neither half.
 
-The payload carries a ``version`` a reader checks, and non-finite floats
-travel as strings because JSON has no spelling for them.
+The payload carries a ``version`` a reader checks, and a non-finite float
+travels as a one-key tagged object because JSON has no spelling for one.
 """
 
 from __future__ import annotations
@@ -22,13 +22,28 @@ __all__ = ["MODEL_JSON_VERSION", "dumps", "loads", "read_payload"]
 MODEL_JSON_VERSION = 1
 
 
+#: Single key marking a tagged non-finite float, namespaced so no payload
+#: field collides with it.
+_NONFINITE_KEY = "__pyvinecopulib_nonfinite__"
+
+#: The closed set of tags, which is what keeps the decode from being handed
+#: arbitrary text: anything else stays the mapping it arrived as.
+_NONFINITE_VALUES = {"nan": math.nan, "+inf": math.inf, "-inf": -math.inf}
+
+
 def _encode_nonfinite(value: object) -> object:
-  """Replace non-finite floats with strings, recursively.
+  """Replace non-finite floats with a tagged object, recursively.
 
   ``json.dumps`` writes ``Infinity`` / ``NaN``, which strict JSON has no
-  literal for -- and which the reader behind :func:`write_file` rejects.
-  They travel as strings and are restored on read, so a ``-inf`` log-likelihood
-  in a selection report survives exactly rather than becoming ``null``.
+  literal for -- and which the reader behind :func:`write_file` rejects. So
+  one travels as ``{_NONFINITE_KEY: tag}`` and is restored on read, and a
+  ``-inf`` log-likelihood in a selection report survives exactly rather than
+  becoming ``null``.
+
+  A one-key object rather than a marked *string*, because payloads carry
+  arbitrary user text -- a variable's name, a margin's ``family_name`` -- and
+  a marked string is a value user data can accidentally spell. One that did
+  came back a float.
 
   Parameters
   ----------
@@ -41,7 +56,11 @@ def _encode_nonfinite(value: object) -> object:
       The same structure with non-finite floats replaced.
   """
   if isinstance(value, float) and not math.isfinite(value):
-    return f"__nonfinite__:{value!r}"
+    if math.isnan(value):
+      tag = "nan"
+    else:
+      tag = "+inf" if value > 0 else "-inf"
+    return {_NONFINITE_KEY: tag}
   if isinstance(value, dict):
     return {k: _encode_nonfinite(v) for k, v in value.items()}
   if isinstance(value, (list, tuple)):
@@ -62,8 +81,15 @@ def _decode_nonfinite(value: object) -> object:
   object
       The same structure with the encoded floats restored.
   """
-  if isinstance(value, str) and value.startswith("__nonfinite__:"):
-    return float(value.split(":", 1)[1])
+  if (
+    isinstance(value, dict)
+    and len(value) == 1
+    and value.get(_NONFINITE_KEY) in _NONFINITE_VALUES
+  ):
+    return _NONFINITE_VALUES[cast("str", value[_NONFINITE_KEY])]
+  # An unrecognized tag stays a mapping rather than raising: a payload written
+  # by a newer build is caught by the version check in `read_payload`, which
+  # can say so, and this cannot.
   if isinstance(value, dict):
     return {k: _decode_nonfinite(v) for k, v in value.items()}
   if isinstance(value, list):

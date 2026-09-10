@@ -1687,7 +1687,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     """Instantiate from a string :meth:`to_json` produced.
 
     Decoding, the version check and the class check happen here; rebuilding
-    the two halves is :meth:`_from_payload`, which needs no override where the
+    the two halves is ``_from_payload``, which needs no override where the
     copula class is declared and reads its own JSON.
 
     Parameters
@@ -1707,7 +1707,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         different class, or if a margin's ``kind`` has no registered reader.
     NotImplementedError
         If this class names no ``vinecop_class`` that reads its own JSON and
-        does not override :meth:`_from_payload`.
+        does not override ``_from_payload``.
     """
     from ._json import read_payload
 
