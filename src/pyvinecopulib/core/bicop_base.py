@@ -35,7 +35,7 @@ from ._bicop_plot import (
   BICOP_PLOT_SUMMARY,
   bicop_plot,
 )
-from ._covariates import prepare
+from ._covariates import prepare_covariates
 from ._placement import PlacementMixin, QrngUniformMixin
 from ._trim import trim
 from ._rootfind import solve_increasing
@@ -158,7 +158,7 @@ class BicopBase(
         The summed log-density, carrying gradients wherever the array library
         tracks them.
     """
-    x = prepare(self, x, int(cast("Any", u).shape[0]))
+    x = prepare_covariates(self, x, int(cast("Any", u).shape[0]))
     # `u` is left to the subclass's own `pdf`, which is where the two-column
     # layout is checked -- the base cannot know whether a pair is on a
     # discrete edge, whose argument is four columns wide.
@@ -187,7 +187,7 @@ class BicopBase(
         The inverted values in ``[0, 1]``.
     """
     ua: Any = self._prep_args(u)
-    x = prepare(self, x, int(ua.shape[0]))
+    x = prepare_covariates(self, x, int(ua.shape[0]))
     xp = array_namespace(ua)
     u1, p = ua[:, 0], ua[:, 1]
     return cast(
@@ -217,7 +217,7 @@ class BicopBase(
         The inverted values in ``[0, 1]``.
     """
     ua: Any = self._prep_args(u)
-    x = prepare(self, x, int(ua.shape[0]))
+    x = prepare_covariates(self, x, int(ua.shape[0]))
     xp = array_namespace(ua)
     p, u2 = ua[:, 0], ua[:, 1]
     return cast(
@@ -475,7 +475,7 @@ class BicopBase(
     NotImplementedError
         If the subclass supplies no ``_sample_uniform``.
     """
-    x = prepare(self, x, n)
+    x = prepare_covariates(self, x, n)
     base_u: Any = self._sample_uniform(n, qrng, list(seeds) if seeds else [])
     xp = array_namespace(base_u)
     u2: Any = self.hinv1(base_u, x=x)
@@ -519,7 +519,7 @@ class BicopBase(
         If ``u`` is not two-dimensional with exactly two columns.
     """
     ua: Any = self._layout(self._prep(u))
-    return cast("ArrayT", trim(array_namespace(ua), ua))
+    return cast("ArrayT", trim(ua))
 
   def _layout(self, ua: ArrayT) -> ArrayT:
     """Check the two-column layout the pair-copula contract specifies."""

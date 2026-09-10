@@ -6,7 +6,7 @@ from matplotlib.colors import LinearSegmentedColormap
 from mpl_toolkits.mplot3d.axis3d import XAxis as XAxis3D, YAxis as YAxis3D
 
 from ..pyvinecopulib_ext import Bicop
-from ._covariates import pair_eval
+from ._covariates import covariate_row, pair_eval
 from ._placement import to_numpy
 from ._normal import (
   expon_cdf,
@@ -159,14 +159,7 @@ def bicop_plot(
   ## across the grid. Placed but not clamped -- covariates are reals.
   x_grid: Optional[Any] = None
   if x is not None:
-    row = np.asarray(x, dtype=float)
-    if row.ndim == 1:
-      row = row.reshape(1, -1)
-    if row.ndim != 2 or row.shape[0] != 1:
-      raise ValueError(
-        "x must be a single covariate row, shape (p,) or (1, p): a 2-d plot "
-        f"shows the density at one covariate value; got {tuple(row.shape)}"
-      )
+    row = covariate_row(np.asarray(x, dtype=float))
     tiled = np.repeat(row, grid.shape[0], axis=0)
     x_grid = tiled if place is None else place(tiled)
 

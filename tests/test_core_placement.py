@@ -1,10 +1,9 @@
 """Tests for the placement hook behind every base's ``_prep``.
 
-``pyvinecopulib.core._placement`` is reached directly here. It is the one step
-of the input pipeline whose whole contract is *inference* -- a subclass writes
-no conversion code, so what it infers from is the only thing that can be wrong
--- and none of that is observable through the public surface until an
-evaluation returns the wrong number.
+Placement is the one step of the input pipeline whose whole contract is
+*inference* -- a subclass writes no conversion code, so what it infers from is
+the only thing that can be wrong -- and none of that is observable through an
+evaluation until it returns the wrong number.
 """
 
 from __future__ import annotations
@@ -14,7 +13,12 @@ from typing import Any
 import numpy as np
 import pytest
 
-from pyvinecopulib.core._placement import place, reference_array
+from pyvinecopulib.core.extend import (
+  place,
+  prepare_covariates,
+  reference_array,
+  to_numpy,
+)
 
 
 class _Holder:
@@ -101,18 +105,16 @@ def test_a_torch_module_is_read_through_its_buffers() -> None:
 
 
 def test_covariates_are_placed_but_never_trimmed() -> None:
-  """`prepare` is the covariate half of the pipeline: place, do not clamp.
+  """The covariate half of the pipeline: place, and do not clamp.
 
   Covariates are arbitrary reals, so the domain step that copula arguments get
   would corrupt them -- while the placement step is what lets a NumPy `x` meet
   the conditioning columns a PyTorch vine gathered.
   """
-  from pyvinecopulib.core._covariates import prepare
-
   torch = pytest.importorskip("torch")
   u = torch.linspace(0.0, 1.0, 6, dtype=torch.float32).reshape(3, 2)
   x = np.array([[-3.0], [0.0], [7.5]])
-  placed = prepare(u, x, 3)
+  placed = prepare_covariates(u, x, 3)
   assert isinstance(placed, torch.Tensor)
   assert placed.dtype is torch.float32
   # Untouched values: no clamp into (0, 1), which is the point.
@@ -121,13 +123,11 @@ def test_covariates_are_placed_but_never_trimmed() -> None:
 
 def test_prepare_still_refuses_a_misaligned_covariate_matrix() -> None:
   """Placement does not replace the layout check; it follows it."""
-  from pyvinecopulib.core._covariates import prepare
-
   with pytest.raises(ValueError):
-    prepare(np.zeros((3, 2)), np.zeros((4, 1)), 3)
+    prepare_covariates(np.zeros((3, 2)), np.zeros((4, 1)), 3)
   with pytest.raises(ValueError):
-    prepare(np.zeros((3, 2)), np.zeros(3), 3)
-  assert prepare(np.zeros((3, 2)), None, 3) is None
+    prepare_covariates(np.zeros((3, 2)), np.zeros(3), 3)
+  assert prepare_covariates(np.zeros((3, 2)), None, 3) is None
 
 
 def test_a_matching_dtype_does_not_excuse_the_wrong_device() -> None:
@@ -218,3 +218,210 @@ def test_a_margin_with_an_integer_parameter_can_still_be_sampled() -> None:
     assert drawn.dtype is placed.dtype
     assert drawn.shape == (4,)
     assert bool(torch.all(drawn > 0.0))
+
+
+# --- the pipeline steps as a surface an extension can reach ------------------ #
+
+
+def test_the_extension_surface_is_exactly_the_six_names() -> None:
+  """`core.extend` is pinned in **both** directions, and the count is the point.
+
+  An export is a promise kept from 1.0.0 on, so the test that matters is the
+  one that fails when the surface *grows*: a name earns a place by being
+  needed to implement a documented hook correctly, and neither an internal
+  caller nor a private hook's docstring is that. Listing the six here is what
+  makes adding a seventh a decision rather than an import.
+  """
+  import pyvinecopulib.core as core
+
+  # `getattr` because the generated stub declares no `__all__`, as the
+  # neighboring surface and stub tests do for the same reason.
+  import pyvinecopulib.core.extend as extend
+
+  exported = set(getattr(extend, "__all__", ()))
+  # `place` / `reference_array` are the fix and the check of the `_prep`
+  # override, `prepare_covariates` / `covariate_row` the covariate composite
+  # and the single-row reading of one, `to_numpy` the return trip.
+  callables = {
+    "covariate_row",
+    "place",
+    "prepare_covariates",
+    "reference_array",
+    "to_numpy",
+  }
+  for name in sorted(callables):
+    assert name in exported, name
+    assert callable(getattr(extend, name)), name
+  # The one name that is not a callable, and the only one required by
+  # mechanism rather than by convenience: the dispatch layer catches this
+  # exact class, so an override declining the batched cascade must raise it.
+  assert "NotBatchable" in exported
+  assert issubclass(extend.NotBatchable, Exception)
+  # The closed direction. Everything else is private again -- the validators,
+  # `trim`, the vine's layout step, the pair unwrapper, the fit-callback
+  # aliases and the model codec -- and a subclass writes its own refusal or a
+  # plain `def` instead.
+  assert exported == callables | {"NotBatchable"}, sorted(exported)
+  for withdrawn in (
+    "FitEdge",
+    "FitLevel",
+    "MODEL_JSON_VERSION",
+    "collapse_data",
+    "continuous_view",
+    "model_from_json",
+    "reject_covariates",
+    "trim",
+    "usable_observations",
+    "validate_weights",
+  ):
+    assert not hasattr(extend, withdrawn), withdrawn
+  # `core` keeps the type variable those signatures are written in, and none
+  # of the rest: the two namespaces have different audiences.
+  core_exported = set(getattr(core, "__all__", ()))
+  assert "ArrayT" in core_exported
+  assert exported.isdisjoint(core_exported)
+
+
+def test_to_numpy_brings_back_what_asarray_refuses() -> None:
+  """The return trip exists because ``np.asarray`` raises on this tensor."""
+  torch = pytest.importorskip("torch")
+
+  tracked = torch.ones(3, dtype=torch.float64, requires_grad=True)
+  with pytest.raises(RuntimeError):
+    np.asarray(tracked)
+  back = to_numpy(tracked)
+  assert isinstance(back, np.ndarray)
+  np.testing.assert_array_equal(back, np.ones(3))
+  # Neither `detach` nor `cpu` exists on a NumPy array, which passes through.
+  plain = np.array([0.25, 0.75])
+  assert to_numpy(plain) is plain
+
+
+def test_a_part_holding_no_array_can_tell_that_placement_is_a_no_op() -> None:
+  """Inference's third answer, and the documented way to detect it.
+
+  ``_prep`` returns the values untouched when there is nothing to infer from:
+  right for a part that computes in whatever namespace it is handed, and
+  silently wrong for a torch part that keeps its device as a handle rather than
+  as a tensor. ``reference_array(self) is None`` separates the two, and
+  ``place`` taking an array as its own reference is the override.
+  """
+  torch = pytest.importorskip("torch")
+
+  class _Deviced:
+    """A device handle and a scalar; no array of its own."""
+
+    def __init__(self) -> None:
+      self.device = torch.device("cpu")
+      self.threshold = 0.5
+
+    def _prep(self, a: Any) -> Any:
+      return place(self, a)
+
+  part = _Deviced()
+  u = np.array([[0.25, 0.75]])
+  assert reference_array(part) is None
+  # The no-op the check reports, rather than a placement or a failure.
+  assert part._prep(u) is u
+  reference = torch.empty(0, dtype=torch.float32, device=part.device)
+  placed = place(reference, u)
+  assert isinstance(placed, torch.Tensor)
+  assert placed.dtype is torch.float32
+
+
+def test_covariates_are_placed_through_the_hook_not_around_it() -> None:
+  """``prepare_covariates`` honors an overridden ``_prep``.
+
+  It used to place through the module-level ``place``, so an object whose
+  placement is *declared* rather than inferable was honored on the argument
+  path (``_prep_args`` calls the hook) and skipped on the covariate path -- the
+  same object, the same call, two behaviors. Downstream that put a NumPy ``x``
+  inside a pair copula whose backend then failed on ``.to(dtype=...)``.
+  """
+
+  class _Declared:
+    """No array of its own, so only an override can place anything."""
+
+    def __init__(self) -> None:
+      self.seen: list[Any] = []
+
+    def _prep(self, a: Any) -> Any:
+      self.seen.append(a)
+      return np.asarray(a, dtype=np.float32)
+
+  onto = _Declared()
+  out = prepare_covariates(onto, np.array([[1.0], [2.0]]), 2)
+  assert onto.seen, "the hook was not consulted"
+  assert out is not None and out.dtype == np.float32
+
+  # An *array* as `onto` is the static fit engines' case: it has no hook, and
+  # falls back to placing onto itself rather than raising.
+  ref = np.zeros(2, dtype=np.float32)
+  placed = prepare_covariates(ref, np.array([[1.0], [2.0]]), 2)
+  assert placed is not None and placed.dtype == np.float32
+
+
+def test_a_single_covariate_row_is_accepted_in_both_spellings() -> None:
+  """``covariate_row`` is narrower than ``prepare_covariates``, on purpose.
+
+  ``prepare_covariates`` refuses a one-dimensional ``x`` because ``(n,)`` is
+  ambiguous per row. A single row is not, which is why a plot takes ``(p,)``.
+  """
+  from pyvinecopulib.core.extend import covariate_row
+
+  flat = covariate_row(np.array([1.0, 2.0, 3.0]))
+  assert flat.shape == (1, 3)
+  already = np.array([[1.0, 2.0, 3.0]])
+  np.testing.assert_array_equal(covariate_row(already), already)
+
+  for bad in (np.zeros((2, 3)), np.zeros((1, 2, 3))):
+    with pytest.raises(ValueError, match="single covariate row"):
+      covariate_row(bad)
+
+
+def test_place_makes_no_promise_about_a_gradient() -> None:
+  """What `place` inherits from the namespace, and the one case that raises.
+
+  Conversion goes through the array namespace's own ``asarray``, so whether a
+  tracked tensor stays tracked is that library's answer -- ``torch.asarray``
+  defaulted ``requires_grad`` to ``False`` up to 2.11 and to the input's value
+  from 2.13, so pinning either here would pin the installed torch rather than
+  anything about this package. What *is* stable is the NumPy-reference case,
+  and that it raises rather than silently detaching.
+  """
+  torch = pytest.importorskip("torch")
+
+  tracked = torch.ones((2, 1), dtype=torch.float64, requires_grad=True)
+  # A NumPy reference and a tracked tensor: reachable, because the static fit
+  # engines pass an array as `onto`.
+  with pytest.raises(RuntimeError, match="requires grad"):
+    prepare_covariates(np.zeros((2, 3)), tracked, 2)
+  # Detached, the same call is an ordinary placement onto NumPy.
+  assert isinstance(
+    prepare_covariates(np.zeros((2, 3)), tracked.detach(), 2), np.ndarray
+  )
+  # The torch route is the one that guarantees an answer, whatever the version.
+  from pyvinecopulib.torch import TensorPlacementMixin
+
+  class _Hooked(TensorPlacementMixin):
+    device = torch.device("cpu")
+    dtype = torch.float64
+
+  assert _Hooked()._prep(tracked).requires_grad
+
+
+def test_the_refusal_a_caller_hits_names_both_ways_out() -> None:
+  """`prepare_covariates` is where a one-dimensional `x` is actually rejected.
+
+  Refusing the ambiguous shape and naming both readings is all the safety
+  needed: the caller states which axis is which by reshaping or by calling
+  `covariate_row`, and a reshape of the wrong length is still caught -- by
+  the row check one call later, so a second helper would only move where.
+  """
+  with pytest.raises(
+    ValueError, match=r"reshape it to \(n, 1\).*covariate_row"
+  ):
+    prepare_covariates(np.zeros(3), np.arange(3.0), 3)
+  # The check that makes that reshape safe on its own.
+  with pytest.raises(ValueError, match="2 rows for 3 observations"):
+    prepare_covariates(np.zeros(3), np.arange(2.0).reshape(-1, 1), 3)

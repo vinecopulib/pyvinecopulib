@@ -30,11 +30,11 @@ from ..pyvinecopulib_ext import RVineStructure
 from ._rootfind import solve_increasing
 from ._trim import trim
 
-from ._covariates import pair_eval, prepare
+from ._covariates import pair_eval, prepare_covariates
 from .bicop_base import BicopBase, flip_of
 from .protocols import ArrayT, BicopLike
 
-__all__ = ["DiscreteBicop"]
+__all__ = ["DiscreteBicop", "collapse_data", "continuous_view"]
 
 
 class _ContinuousBicop(Protocol[ArrayT]):
@@ -545,7 +545,7 @@ class DiscreteBicop(BicopBase[ArrayT]):
     array, shape (n, 2), dtype float
         Samples in the unit square.
     """
-    x = prepare(self, x, n)
+    x = prepare_covariates(self, x, n)
     method = cast("BicopLike[ArrayT]", self._pair).sample
     draw_seeds = list(seeds) if seeds else []
     if x is None:
@@ -574,7 +574,7 @@ class DiscreteBicop(BicopBase[ArrayT]):
     # Trimmed before anything is subtracted, as ``Bicop::prep_for_abstract``
     # does: an h-function feeding the next tree may land exactly on 0 or 1, and
     # the atom width in the denominator has to be the width of the trimmed atom.
-    ut: Any = trim(xp, u)
+    ut: Any = trim(u, xp)
     u1, u2 = ut[:, 0], ut[:, 1]
     # A continuous argument's left limit is its own value
     # (``Bicop::format_data``), so the cascade's column for it is never read.

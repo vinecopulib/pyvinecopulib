@@ -65,6 +65,11 @@ Notes
   What :meth:`VinecopBase.select` places on a surviving edge whose criterion
   falls below ``threshold``, matching what :meth:`Vinecop.select` leaves there:
   the edge is not fitted, and holds the independence copula.
+- *Writing part of the input pipeline yourself* — the steps every base
+  applies to an incoming array, the validators that make a refusal read like
+  the library's own, and the rest of what an extension needs are in
+  ``pyvinecopulib.core.extend``, which is where they are documented. They are
+  kept out of this namespace because using pyvinecopulib needs none of them.
 - *C-vine / D-vine special cases* — :class:`CVineStructure` and
   :class:`DVineStructure` are the path-shaped and star-shaped
   specializations of :class:`RVineStructure` and can be passed
@@ -105,6 +110,7 @@ from ._margins import (
 from .margin_base import MarginBase
 from .margin_controls import FitControlsMargin
 from .protocols import (
+  ArrayT,
   BicopLike,
   ControlsLike,
   MarginLike,
@@ -130,6 +136,7 @@ __all__ = [
   "Bicop",
   "BicopBase",
   "BicopFamily",
+  "ArrayT",
   "BicopLike",
   "ConditioningContext",
   "ControlsLike",

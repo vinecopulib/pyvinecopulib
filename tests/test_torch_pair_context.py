@@ -205,7 +205,7 @@ def test_batched_falls_back_for_non_grid_pair() -> None:
   """batched=True on a non-grid (GaussianBicop) vine falls back cleanly.
 
   ``HostedVinecop`` has no ``_build_batched`` override, so the base raises
-  ``_NotBatchable`` and the dispatch layer transparently uses the non-batched
+  ``NotBatchable`` and the dispatch layer transparently uses the non-batched
   cascade.
   """
   d, n = 4, 150

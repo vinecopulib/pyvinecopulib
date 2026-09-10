@@ -88,7 +88,7 @@ from ._vinecop_plot import (
   VINECOP_PLOT_SUMMARY,
   vinecop_plot,
 )
-from ._covariates import pair_eval, prepare
+from ._covariates import pair_eval, prepare_covariates
 from ._vinecop_fit_engines import (
   FitEdge,
   FitLevel,
@@ -108,7 +108,7 @@ from ._placement import PlacementMixin, QrngUniformMixin
 from ._trim import trim
 
 
-__all__ = ["VinecopBase"]
+__all__ = ["NotBatchable", "VinecopBase"]
 
 
 #: Sentinel the core controls use for "no truncation"; the engines spell the
@@ -178,8 +178,8 @@ def _selection_options(controls: Optional[ControlsLike]) -> dict[str, Any]:
   return out
 
 
-class _NotBatchable(Exception):
-  """Raised by :meth:`VinecopBase._build_batched` when batching is unavailable.
+class NotBatchable(Exception):
+  """Raised by a ``_build_batched`` override when batching is unavailable.
 
   The dispatch layer catches it and falls back to the non-batched cascade.
   """
@@ -504,7 +504,7 @@ class VinecopBase(
     """
     ua: Any = self._prep(u)
     xp = self._namespace(ua)
-    return trim(xp, self._layout(ua, name, values_only))
+    return trim(self._layout(ua, name, values_only), xp)
 
   def _layout(self, ua: ArrayT, name: str, values_only: bool) -> ArrayT:
     """Validate ``ua``'s layout and reduce it to the columns the caller needs."""
@@ -526,7 +526,7 @@ class VinecopBase(
   def _build_batched(self) -> Any:  # noqa: ANN401 - subclass-specific state
     """Build the grid-batched state for the fast path (subclass-specific).
 
-    The default raises ``_NotBatchable``, so the dispatch layer falls back
+    The default raises ``NotBatchable``, so the dispatch layer falls back
     to the non-batched cascade. A grid subclass overrides this to return an
     object exposing the batched-vine surface the cascades call
     (``level`` / ``grid_points`` / per-level ``gather_inputs`` / ``pdf`` /
@@ -539,10 +539,10 @@ class VinecopBase(
 
     Raises
     ------
-    _NotBatchable
+    NotBatchable
         In the default implementation (no grid fast path available).
     """
-    raise _NotBatchable(
+    raise NotBatchable(
       f"{type(self).__name__} does not provide a batched fast path."
     )
 
@@ -556,6 +556,17 @@ class VinecopBase(
       # model. It is a memo of the pair copulas, not part of the model.
       object.__setattr__(self, "_batched", self._build_batched())
     return self._batched
+
+  def _invalidate_batched(self) -> None:
+    """Drop everything memoized from the current pair copulas.
+
+    Called wherever the pairs change without the structure changing, which
+    ``set_pair_copulas`` documents as the one place that happens. A subclass
+    that memoizes anything else derived from the pairs overrides this and
+    calls ``super()``, so the contract has a name to implement rather than an
+    attribute to assign.
+    """
+    self._batched = None
 
   def _eval_context(self) -> contextlib.AbstractContextManager[Any]:
     """Context manager disabling grad for inverse / sample / cdf.
@@ -803,7 +814,7 @@ class VinecopBase(
         left[:, j] = source[:, inv[j]]
       r: Any = self._sample_uniform(n, False, list(seeds or []))
       out = out * r + left * (1.0 - r)
-    return cast("ArrayT", trim(xp, out))
+    return cast("ArrayT", trim(out, xp))
 
   def _inverse_rosenblatt(
     self,
@@ -874,7 +885,7 @@ class VinecopBase(
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       out[:, j] = hinv2[0, inv[j], :]
-    return cast("ArrayT", trim(xp, out))
+    return cast("ArrayT", trim(out, xp))
 
   # --- batched cascades (grid fast path; array-agnostic loops) ---------- #
   #
@@ -965,7 +976,7 @@ class VinecopBase(
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       out[:, j] = hinv2[inv[j], :]
-    return cast("ArrayT", trim(xp, out))
+    return cast("ArrayT", trim(out, xp))
 
   def _rosenblatt_batched(self, u: Any) -> ArrayT:  # noqa: ANN401 - as `_pdf`
     """Batched Rosenblatt transform (per-tree-level stacked h-functions).
@@ -1002,7 +1013,7 @@ class VinecopBase(
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
       out[:, j] = hfunc2[:, inv[j]]
-    return cast("ArrayT", trim(xp, out))
+    return cast("ArrayT", trim(out, xp))
 
   # --- batched dispatch ------------------------------------------------- #
   def _namespace(self, a: object) -> ModuleType:
@@ -1062,7 +1073,7 @@ class VinecopBase(
     vine), so a raise would make an ordinary ``pdf(u)`` fail on a discrete vine
     for a reason the caller never asked about. Discreteness is a property of the
     vine, not of the subclass's grid, which is why it is decided here rather
-    than through ``_NotBatchable``.
+    than through ``NotBatchable``.
     """
     if self._context.assembles_conditioning or x is not None:
       return False
@@ -1196,11 +1207,11 @@ class VinecopBase(
     """
     del num_threads
     u_p = self._prep_args(u, "pdf")
-    x = prepare(self, x, int(cast("Any", u_p).shape[0]))
+    x = prepare_covariates(self, x, int(cast("Any", u_p).shape[0]))
     if self._resolve_batched(batched, x):
       try:
         return self._pdf_batched(u_p)
-      except _NotBatchable:
+      except NotBatchable:
         pass  # no grid fast path available -> non-batched cascade
     return self._pdf(u_p, x)
 
@@ -1265,11 +1276,11 @@ class VinecopBase(
         batched=batched,
       )
     u_p = self._prep_args(u, "rosenblatt")
-    x = prepare(self, x, int(cast("Any", u_p).shape[0]))
+    x = prepare_covariates(self, x, int(cast("Any", u_p).shape[0]))
     if self._resolve_batched(batched, x):
       try:
         return self._rosenblatt_batched(u_p)
-      except _NotBatchable:
+      except NotBatchable:
         pass  # no grid fast path available -> non-batched cascade
     return self._rosenblatt(u_p, x, randomize_discrete, seeds)
 
@@ -1321,12 +1332,12 @@ class VinecopBase(
     if view is not self:
       return view.inverse_rosenblatt(u, x=x, batched=batched)
     u_p = self._prep_args(u, "inverse_rosenblatt", values_only=True)
-    x = prepare(self, x, int(cast("Any", u_p).shape[0]))
+    x = prepare_covariates(self, x, int(cast("Any", u_p).shape[0]))
     with self._eval_context():
       if self._resolve_batched(batched, x):
         try:
           return self._inverse_rosenblatt_batched(u_p)
-        except _NotBatchable:
+        except NotBatchable:
           pass
       return self._inverse_rosenblatt(u_p, x)
 
@@ -1364,7 +1375,7 @@ class VinecopBase(
     """
     del num_threads
     seeds = list(seeds) if seeds else []
-    x = prepare(self, x, n)
+    x = prepare_covariates(self, x, n)
     with self._eval_context():
       base_u = self._sample_uniform(n, qrng, seeds)
       return self.inverse_rosenblatt(base_u, x=x, batched=batched)
@@ -1455,7 +1466,7 @@ class VinecopBase(
       )
     d = self.d
     n, n_cols = int(ua.shape[0]), int(ua.shape[1])
-    x = prepare(self, x, n)
+    x = prepare_covariates(self, x, n)
     view = self._reoriented(conditioning_set)
     if conditioning_set is None:
       cond_vars = self._infer_conditioning_set(n_cols)
@@ -1652,7 +1663,10 @@ class VinecopBase(
     An implementation that memoizes anything derived from the pairs must
     invalidate it here, since this is the one place they change without the
     structure changing -- ``_build_batched`` copies their grids, and
-    ``_bind_vine`` only covers the paths that rebind the structure.
+    ``_bind_vine`` only covers the paths that rebind the structure. Calling
+    ``_invalidate_batched`` is how: it drops the batched state, and a subclass
+    holding further derived state overrides it rather than reaching for the
+    attribute behind it.
 
     Parameters
     ----------
@@ -1805,7 +1819,13 @@ class VinecopBase(
     self.set_pair_copulas(
       self._fit_parts(
         self.structure,
-        u,
+        # Placed, not `_prep_args`-ed: the engines own the layout and read the
+        # discrete widths themselves, but they allocate their per-tree scratch
+        # in this array's namespace, so a vine whose pairs answer elsewhere
+        # then assigns across namespaces. `TorchVinecop.fit` on a CUDA vine
+        # raised `can't convert cuda:0 device type tensor to numpy` for a
+        # NumPy `u` before this.
+        self._prep(u),
         self._resolve_fit_edge(fit_edge, controls),
         context=self._context,
         x=x,
@@ -1822,7 +1842,7 @@ class VinecopBase(
     # pairs just changed; and the fit ran along the structure's own
     # conditioning order, so any order recorded from an earlier `select` is now
     # a claim about pairs that are gone.
-    self._batched = None
+    self._invalidate_batched()
     self._cond_order = {}
     self._cond_pos_cache = {}
     return self
@@ -1873,7 +1893,7 @@ class VinecopBase(
     self._check_selectable(fit_edge)
     types = list(self.var_types) if var_types is None else var_types
     structure, pair_copulas, cond_order = self._select_parts(
-      u,
+      self._prep(u),  # placed for the reason `fit` states
       self._resolve_fit_edge(fit_edge, controls),
       context=self._context,
       x=x,

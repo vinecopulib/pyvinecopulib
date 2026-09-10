@@ -65,6 +65,11 @@ test-examples: ## Execute example notebooks as tests
 	  $(UV) run pytest --nbmake --nbmake-timeout=600 examples/
 
 docs: ## Build HTML documentation
+# autosummary adds a stub per documented name under `_generate` and never
+# removes one, so a name that stops being public leaves an orphan stub whose
+# `autofunction` then fails the `-W` build. Both paths are generated, and
+# `_build` is left alone so the HTML stays incremental.
+	rm -rf docs/_generate docs/features.rst
 	$(UV) run sphinx-build -W -b html docs docs/_build/html
 
 sdist: ## Build source distribution only

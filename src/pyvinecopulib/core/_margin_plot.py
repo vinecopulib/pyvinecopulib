@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from ..pyvinecopulib_ext import Kde1d
+from ._covariates import covariate_row
 from ._placement import to_numpy
 from .protocols import ArrayT, MarginLike
 
@@ -194,14 +195,7 @@ def margin_plot(
         "this margin declares no `supports_covariates`, so it models f(y) "
         "and there is no covariate value to draw at; drop `x=`"
       )
-    row = np.asarray(x, dtype=float)
-    if row.ndim == 1:
-      row = row.reshape(1, -1)
-    if row.ndim != 2 or row.shape[0] != 1:
-      raise ValueError(
-        "x must be a single covariate row, shape (p,) or (1, p): a 2-d plot "
-        f"shows the margin at one covariate value; got {tuple(row.shape)}"
-      )
+    row = covariate_row(np.asarray(x, dtype=float))
 
   var_type = getattr(margin, "var_type", "c")
   ev = make_plotting_grid(margin, grid_size, place=place)

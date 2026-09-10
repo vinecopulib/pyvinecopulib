@@ -17,7 +17,8 @@ import sys
 import tempfile
 from pathlib import Path
 from types import BuiltinFunctionType, FunctionType
-from typing import Optional
+import builtins as builtins_module
+from typing import Optional, TypeVar
 
 
 def render_docstring(doc: str, indent: int) -> list[str]:
@@ -38,6 +39,118 @@ def wrap_known_types(sig: str, known_types: set[str]) -> str:
     sig = re.sub(rf"= *{name}\s*\.\w+", "= ...", sig)
     sig = re.sub(rf"\b{name}\b(?!\s*\()", f'"{name}"', sig)
   return sig
+
+
+def bind_referenced_names(stub: str, pkg, module_name: str) -> str:
+  """Import whatever the rendered annotations refer to and nothing binds.
+
+  An annotation naming something the stub neither defines nor imports parses
+  cleanly and then resolves to nothing for a consumer -- worse than `Any`,
+  which at least degrades predictably. It happens for a private class a public
+  signature mentions (the documented `resolve_backend` takes a
+  `_VinecopBackendBase`, which is in no `__all__`) and for a typing name only
+  one signature uses.
+
+  Two lookups, in the order that finds the most specific answer: a name in
+  `typing` joins the typing import, and a class reachable from one of the
+  package's own submodules gets a relative re-export. Anything else is left
+  alone, for `tests/test_stubs.py` to report rather than for this to guess at.
+  """
+  import ast
+  import importlib
+  import pkgutil
+  import typing
+
+  try:
+    tree = ast.parse(stub)
+  except SyntaxError:
+    return stub
+
+  bound = set(dir(builtins_module)) | {"typing"}
+  referenced: set[str] = set()
+  for node in ast.walk(tree):
+    if isinstance(node, ast.Import):
+      bound |= {(a.asname or a.name).split(".")[0] for a in node.names}
+    elif isinstance(node, ast.ImportFrom):
+      bound |= {a.asname or a.name for a in node.names}
+    elif isinstance(node, (ast.ClassDef, ast.FunctionDef)):
+      bound.add(node.name)
+    elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+      bound.add(node.target.id)
+    elif isinstance(node, ast.Assign):
+      bound |= {t.id for t in node.targets if isinstance(t, ast.Name)}
+    annotations = []
+    if isinstance(node, ast.arg) and node.annotation is not None:
+      annotations.append(node.annotation)
+    elif isinstance(node, ast.FunctionDef) and node.returns is not None:
+      annotations.append(node.returns)
+    elif isinstance(node, ast.AnnAssign):
+      annotations.append(node.annotation)
+    for annotation in annotations:
+      source = (
+        annotation.value
+        if isinstance(annotation, ast.Constant)
+        and isinstance(annotation.value, str)
+        else ast.unparse(annotation)
+      )
+      try:
+        referenced |= {
+          n.id
+          for n in ast.walk(ast.parse(source, mode="eval"))
+          if isinstance(n, ast.Name)
+        }
+      except SyntaxError:
+        continue
+
+  missing = sorted(referenced - bound)
+  if not missing:
+    return stub
+
+  from_typing: list[str] = []
+  extra: list[str] = []
+  submodules = [module_name]
+  if hasattr(pkg, "__path__"):
+    submodules += [
+      f"{module_name}.{info.name}"
+      for info in pkgutil.iter_modules(pkg.__path__)
+    ]
+  for name in missing:
+    if hasattr(typing, name):
+      from_typing.append(name)
+      continue
+    for candidate in submodules:
+      # `ImportError` alone, and named: a submodule behind an optional extra
+      # is absent on a build machine, which is the one failure this walk
+      # expects. Anything else is a generator bug and should surface.
+      try:
+        module = importlib.import_module(candidate)
+      except ImportError:
+        continue
+      obj = getattr(module, name, None)
+      canonical = getattr(obj, "__module__", None)
+      if obj is not None and isinstance(canonical, str):
+        spec = _relative_import_spec(canonical, module_name)
+        if spec:
+          extra.append(f"{spec} import {name} as {name}")
+        break
+
+  lines = stub.split("\n")
+  if from_typing:
+    for i, line in enumerate(lines):
+      if line.startswith("from typing import "):
+        have = [
+          n.strip() for n in line[len("from typing import ") :].split(",")
+        ]
+        lines[i] = "from typing import " + ", ".join(
+          sorted(set(have) | set(from_typing))
+        )
+        break
+  if extra:
+    for i, line in enumerate(lines):
+      if not line.startswith(("import ", "from ")):
+        lines[i:i] = extra
+        break
+  return "\n".join(lines)
 
 
 def render_python_function_stub(
@@ -278,7 +391,8 @@ def generate_stub(
   lines = [
     "import collections",
     "import typing",
-    "from typing import Any, Optional",
+    "from typing import Any, Optional, TypeVar",
+    "from types import ModuleType",
     "from numpy.typing import ArrayLike, NDArray",
     "from matplotlib.figure import Figure",
     "from matplotlib.axes import Axes",
@@ -348,6 +462,11 @@ def generate_stub(
       lines.append(f"{name}: list[BicopFamily] = ...\n")
     elif name == "__version__" and isinstance(obj, str):
       lines.append("__version__: str = ...\n")
+    elif isinstance(obj, TypeVar):
+      # Not `Any`: every generic signature in the stub refers to this name, so
+      # emitting a value here is what makes them all read as `Any` to a
+      # consumer -- silently, since nothing in the stub is then unsound.
+      lines.append(f"{name} = TypeVar({obj.__name__!r})\n")
     else:
       lines.append(f"{name}: Any = ...\n")
 
@@ -358,6 +477,7 @@ def generate_stub(
     lines.append("def __getattr__(name: str) -> Any: ...\n")
 
   stub = cleanup_stub("\n".join(lines))
+  stub = bind_referenced_names(stub, pkg, module_name)
   try:
     ast.parse(stub, filename=str(output_path))
   except SyntaxError as exc:

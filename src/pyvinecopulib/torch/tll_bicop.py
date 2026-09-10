@@ -407,7 +407,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     u_t = torch.as_tensor(u, dtype=dtype, device=device)
     if u_t.ndim != 3 or u_t.shape[-1] != 2:
       raise ValueError(f"u must have shape (P, n, 2); got {tuple(u_t.shape)}")
-    u_t = trim(torch, u_t)
+    u_t = trim(u_t, torch)
 
     from ._bicop_fit_tll import fit_tll_constant
 
@@ -516,7 +516,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       )
     # ``Bicop.select`` trims before ``TllBicop::fit``, so two values above
     # ``1 - 1e-10`` are one tie group there and would be two here.
-    u_t = trim(torch, u_t)
+    u_t = trim(u_t, torch)
     values_only = u_t[:, :2]
     # An atom repeats its distribution-function value, so the ranks have ties.
     # ``TllBicop::fit`` breaks them at random from a fixed seed; reuse that draw
@@ -774,7 +774,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     """
     u = self._prep_args(u)
     if self.is_indep:
-      return trim(torch, u[:, 0] * u[:, 1])
+      return trim(u[:, 0] * u[:, 1], torch)
     if self._sy is not None:
       sy, sx, pref = self._tables()
       return self.interp_grid.cdf_cached(u, sy, sx, pref)

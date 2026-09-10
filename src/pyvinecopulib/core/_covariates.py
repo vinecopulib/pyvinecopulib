@@ -34,11 +34,18 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional, Union, cast
 
+from array_api_compat import array_namespace
+
 from ._placement import place
 from ._validation import validate_covariates
 from .protocols import ArrayT
 
-__all__ = ["declared_eval", "pair_eval", "prepare"]
+__all__ = [
+  "covariate_row",
+  "declared_eval",
+  "pair_eval",
+  "prepare_covariates",
+]
 
 
 def pair_eval(
@@ -104,7 +111,9 @@ def declared_eval(
   return method(values, x=x, **kwargs)
 
 
-def prepare(onto: object, x: Optional[ArrayT], n: int) -> Optional[ArrayT]:
+def prepare_covariates(
+  onto: object, x: Optional[ArrayT], n: int
+) -> Optional[ArrayT]:
   """Validate covariates and place them where the numerics run.
 
   The two steps ``x`` needs and the third it must not get: it is checked for
@@ -115,6 +124,21 @@ def prepare(onto: object, x: Optional[ArrayT], n: int) -> Optional[ArrayT]:
   Placing is not cosmetic. A non-simplified vine concatenates ``x`` with the
   conditioning columns it gathered from the observations, so a NumPy ``x``
   handed to a PyTorch vine has to be brought across before they can meet.
+
+  **Every entry point that takes an ``x`` should route it through this**,
+  including the ones a subclass writes itself. Not doing so is easy to miss,
+  because what goes wrong is not a refusal: a covariate that skips the layout
+  check is simply never checked, and one that skips the placement reaches the
+  numerics in whatever namespace and precision the caller had -- a NumPy array
+  failing several frames deep inside a torch call rather than at the boundary,
+  or a ``float32`` one quietly setting the precision of everything it touches.
+
+  The layout it requires is not a subclass's to widen at its own entry
+  points: the bases call this directly from ``logpdf`` / ``cdf_left`` /
+  ``loglik`` / ``sample`` and from the vine and pair cascades, so a subclass
+  that accepts a different ``x`` shape on the methods it wrote still meets
+  this check on every method it inherited. Changing the layout means changing
+  it where the composite runs, not at the entry points.
 
   Parameters
   ----------
@@ -139,4 +163,56 @@ def prepare(onto: object, x: Optional[ArrayT], n: int) -> Optional[ArrayT]:
   if x is None:
     return None
   validate_covariates(x, n)
-  return cast("ArrayT", place(onto, x))
+  # Through the `_prep` hook where there is one, so that an object whose
+  # placement is *declared* rather than inferable is honored here as it is on
+  # the argument path -- `_prep`'s own docstring promises it is "equally
+  # correct for exogenous covariates", which routing around it made false.
+  # Guarded because `onto` is not always an object: the static fit engines
+  # pass an *array* as its own placement reference, and an array has no hook.
+  hook = getattr(onto, "_prep", None)
+  placed = hook(x) if callable(hook) else place(onto, x)
+  return cast("ArrayT", placed)
+
+
+def covariate_row(x: ArrayT, name: str = "x") -> ArrayT:
+  """Check that ``x`` is one covariate row, and shape it ``(1, p)``.
+
+  :func:`prepare_covariates` refuses a one-dimensional ``x``, since ``(n,)``
+  says nothing about which axis is which and is row-aligned with the data, so
+  guessing would align the wrong values. A *single row* is unambiguous whatever
+  ``n`` is, which is why the plots accept ``(p,)``: a conditional object is a
+  different surface at every covariate value, so drawing one shows the slice
+  at one value.
+
+  Placement is not applied here. This shapes the row; the caller places it,
+  and tiles it to ``(n, p)`` where it needs one row per observation.
+
+  Parameters
+  ----------
+  x : array, shape (p,) or (1, p), dtype float
+      One covariate row.
+  name : str, default="x"
+      Name to use in the error message.
+
+  Returns
+  -------
+  array, shape (1, p), dtype float
+      The same values, with a leading axis of length one.
+
+  Raises
+  ------
+  ValueError
+      If ``x`` has more than one row, or more than two axes.
+  """
+  a: Any = x
+  xp = array_namespace(a)
+  if getattr(a, "ndim", None) == 1:
+    a = xp.reshape(a, (1, -1))
+  if getattr(a, "ndim", None) != 2 or int(a.shape[0]) != 1:
+    raise ValueError(
+      f"{name} must be a single covariate row, shape (p,) or (1, p); got "
+      f"{tuple(getattr(x, 'shape', ()))}. For one covariate per observation, "
+      "which is the other reading of a one-dimensional x, reshape it to "
+      "(n, 1) and hand that to `prepare_covariates`."
+    )
+  return cast("ArrayT", a)

@@ -16,7 +16,6 @@ places every copula argument and every uniform draw at zero.
 
 from __future__ import annotations
 
-from itertools import chain
 from typing import TYPE_CHECKING, Any, Optional
 
 import torch
@@ -24,18 +23,19 @@ from torch import Tensor
 
 __all__ = ["TensorPlacementMixin", "reference_tensor"]
 
-# Everything the mixin does rests on being mixed into an `nn.Module`: it reads
-# the module's registered tensors. Declaring that to the type checker is what
-# lets `reference_tensor` name the type it actually takes, and it costs nothing
-# at runtime, `class X(object)` being `class X`. A real base here would put
-# `nn.Module` ahead of the canonical base in every subclass's MRO.
+# The mixin reads a module's registered tensors *when there are any*, so the
+# `nn.Module` declaration is for the type checker -- it lets `reference_tensor`
+# name the type it takes -- and costs nothing at run time, `class X(object)`
+# being `class X`. A real base here would put `nn.Module` ahead of the
+# canonical base in every subclass's MRO. A host that is not a module is
+# therefore fine, and resolves its placement from a declaration instead.
 if TYPE_CHECKING:
   _ModuleBase = torch.nn.Module
 else:
   _ModuleBase = object
 
 
-def reference_tensor(module: torch.nn.Module) -> Optional[Tensor]:
+def reference_tensor(module: object) -> Optional[Tensor]:
   """A floating-point tensor ``module`` holds, naming where its numerics run.
 
   ``parameters()`` and ``buffers()`` recurse, so a grid held by a submodule
@@ -46,10 +46,21 @@ def reference_tensor(module: torch.nn.Module) -> Optional[Tensor]:
   ``pyvinecopulib.core._placement``, where one still names a namespace and a
   device: every caller of this has a floating default of its own.
 
+  Either member may be absent or be something else of the same name: this is
+  exported, so it is reachable with an object that is no module at all. Each
+  is read on its own and skipped when it is not the member meant, which is the
+  shape ``core.extend.reference_array`` uses -- the two searches over one
+  object have to agree, and reading them as one expression meant a host with
+  ``parameters`` and no ``buffers`` raised rather than answering from its
+  parameters.
+
   Parameters
   ----------
-  module : torch.nn.Module
-      The module to read a placement from.
+  module : object
+      The module to read a placement from. Typed ``object`` rather than
+      ``nn.Module`` because the duck typing is the contract, as it is for
+      ``core.extend.reference_array``: anything exposing either member is
+      accepted, and one exposing neither answers ``None``.
 
   Returns
   -------
@@ -57,43 +68,80 @@ def reference_tensor(module: torch.nn.Module) -> Optional[Tensor]:
       A registered floating-point parameter or buffer, or ``None`` when the
       module registers none.
   """
-  for tensor in chain(module.parameters(), module.buffers()):
-    if tensor.is_floating_point():
-      return tensor
+  for name in ("parameters", "buffers"):
+    method = getattr(module, name, None)
+    if not callable(method):
+      continue
+    try:
+      tensors = list(method())
+    except TypeError:
+      # Not the `nn.Module` member of that name; try the next.
+      continue
+    for value in tensors:
+      if isinstance(value, Tensor) and value.is_floating_point():
+        return value
   return None
 
 
 class TensorPlacementMixin(_ModuleBase):
-  """The ``_prep`` hook for a module placed on its own registered tensors.
+  """The ``_prep`` hook for a class whose numerics run on tensors.
 
   The torch counterpart of
   ``pyvinecopulib.core._placement.PlacementMixin``, which it shadows: a
   subclass mixes this in **ahead** of its canonical base, so ``_prep``
   resolves here rather than to the array-API inference the other classes use.
+  Getting that order wrong is the failure to watch for -- the base's
+  ``PlacementMixin`` linearizes first and ``_prep`` silently becomes the
+  array-API inference again.
 
-  Only ordinary private members belong on a mixin at that position. It lands
-  ahead of ``torch.nn.Module`` in the resulting MRO, so anything defined here
-  that ``nn.Module`` also defines -- a dunder above all -- would silently
-  shadow it.
+  A host does **not** have to be an ``nn.Module``. Placement resolves in three
+  steps: a registered floating-point tensor if the host is a module and has
+  any, then a ``device`` and ``dtype`` the host *declares*, then an empty CPU
+  ``float64`` tensor. Being a module is what selects the first step, not
+  carrying a member named ``parameters`` -- a host that has one for its own
+  reasons resolves from its declaration. So a class that keeps its device as a handle rather than as a tensor
+  -- no parameters, no buffers -- says so once by exposing those two
+  attributes, instead of holding a dummy tensor for the inference to find or
+  writing the hook itself. Anything else overrides ``_ref_tensor``.
+
+  Only ordinary private members belong on a mixin at that position. Where the
+  host *is* an ``nn.Module`` this lands ahead of it in the MRO, so anything
+  defined here that ``nn.Module`` also defines -- a dunder above all -- would
+  silently shadow it.
   """
 
   def _ref_tensor(self) -> Tensor:
-    """A tensor carrying the dtype and device this module evaluates on.
+    """A tensor carrying the dtype and device this class evaluates on.
 
-    Falls back to an empty CPU ``float64`` tensor for a module that registers
-    none, so a factory holding no parameters still places its input.
+    Resolved in the three steps the class docstring lists. Override this where
+    none of them fits; returning ``torch.empty(0, dtype=..., device=...)`` is
+    all such an override needs.
     """
-    ref = reference_tensor(self)
-    if ref is None:
-      return torch.empty(0, dtype=torch.float64)
-    return ref
+    # `isinstance` rather than `hasattr("parameters")`: the registered-tensor
+    # step is about being a module, and a host that merely carries a member of
+    # that name -- a foreign estimator's hyperparameter dict, say -- has a
+    # declaration to fall back on instead. `_ModuleBase` is `object` at run
+    # time, so this is false for a mixin-only host.
+    if isinstance(self, torch.nn.Module):
+      ref = reference_tensor(self)
+      if ref is not None:
+        return ref
+    declared = torch.empty(
+      0,
+      dtype=getattr(self, "dtype", None) or torch.float64,
+      device=getattr(self, "device", None) or "cpu",
+    )
+    return declared
 
   def _prep(self, a: Any) -> Tensor:  # noqa: ANN401 - any array type, placed
     """Bring one input array onto this module's dtype and device.
 
     ``as_tensor`` rather than ``tensor`` or ``detach``, so a tensor that
     already matches is returned untouched and a gradient-carrying one stays in
-    the graph.
+    the graph. That is a *guarantee* here and not one the array-API route
+    makes: ``place`` converts through the namespace's own ``asarray``, whose
+    answer for a tracked tensor is that library's and has changed between
+    releases of it.
     """
     ref = self._ref_tensor()
     return torch.as_tensor(a, dtype=ref.dtype, device=ref.device)

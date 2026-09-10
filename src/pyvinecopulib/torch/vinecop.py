@@ -61,7 +61,7 @@ from ..core import (
 from ..core._vinecop_discrete import continuous_view
 from ..core.bicop_independence import IndependenceBicop
 from ..core._validation import reject_covariates
-from ..core.vinecop_base import FitEdge, FitLevel, _NotBatchable
+from ..core.vinecop_base import FitEdge, FitLevel, NotBatchable
 from ..pyvinecopulib_ext import (
   RVineStructure,
   Vinecop,
@@ -678,8 +678,7 @@ class TorchVinecop(
     # Same reason `load_state_dict` and `_apply` drop them: the stacked state
     # and the compiled cascades hold copies of the grids, not views, so pairs
     # replaced under them leave both answering from the old density.
-    self._batched = None
-    self._compiled = {}
+    self._invalidate_batched()
 
   def _pair_module(self, tree: int, edge: int) -> TorchTllBicop:
     """The stored (always continuous) pair copula at ``(tree, edge)``."""
@@ -919,8 +918,7 @@ class TorchVinecop(
     # views of them, so a load that replaces the grids leaves both answering
     # from the old density. `_apply` drops them for the same reason.
     out = super().load_state_dict(*args, **kwargs)
-    self._batched = None
-    self._compiled = {}
+    self._invalidate_batched()
     return cast("_IncompatibleKeys", out)
 
   def _apply(
@@ -934,10 +932,7 @@ class TorchVinecop(
     # them, but we drop the whole structure so it gets rebuilt from the
     # (already-moved) source pair_copulas on next use; that keeps the
     # wire-up tensors aligned with the destination dtype/device.
-    self._batched = None
-    # Compiled code is specialized on the tensors it was traced with; the
-    # guards would recompile anyway, so drop the stale entries.
-    self._compiled = {}
+    self._invalidate_batched()
     return cast("Self", super()._apply(fn, *args, **kwargs))
 
   def _grad_signature(self) -> tuple[bool, ...]:
@@ -982,6 +977,15 @@ class TorchVinecop(
       for tree in range(self.trunc_lvl)
       for edge in range(self.d - tree - 1)
     )
+
+  def _invalidate_batched(self) -> None:
+    """Drop the compiled cascades along with the stacked state.
+
+    Compiled code is specialized on the tensors it was traced with, so it is
+    derived from the pair copulas exactly as the stacked state is.
+    """
+    super()._invalidate_batched()
+    self._compiled = {}
 
   def _ensure_batched(self) -> "BatchedVine":
     """The batched state, rebuilt when grad tracking has changed under it.
@@ -1081,7 +1085,7 @@ class TorchVinecop(
 
     Raises
     ------
-    _NotBatchable
+    NotBatchable
         If any variable is discrete -- the stacked per-level grids carry no
         distribution function, which a discrete edge's h-functions are
         difference quotients of -- or if any pair lacks the grid internals the
@@ -1089,7 +1093,7 @@ class TorchVinecop(
         layer catches it and falls back to the non-batched cascade.
     """
     if self._n_discrete:
-      raise _NotBatchable(
+      raise NotBatchable(
         "batched path is continuous-only: the stacked per-level grids carry no "
         "distribution function, which a discrete edge's h-functions are "
         "difference quotients of"
@@ -1099,7 +1103,7 @@ class TorchVinecop(
       for t in range(self.trunc_lvl)
       for e in range(self.d - t - 1)
     ):
-      raise _NotBatchable(
+      raise NotBatchable(
         "batched path requires every pair to expose grid/cache internals "
         "(supports_batched=True); this vine has a non-grid pair copula."
       )

@@ -443,13 +443,20 @@ def test_refitting_in_place_invalidates_the_batched_cache() -> None:
 
 
 def test_setting_pair_copulas_invalidates_the_batched_cache() -> None:
-  """The write hook is the other way the pairs change under a cache."""
+  """The write hook is the other way the pairs change under a cache.
+
+  Both derived states go, and through the one ``_invalidate_batched`` the base
+  declares: the compiled cascades hold copies of the grids exactly as the
+  stacked state does, so a lane holding more than the base knows about
+  overrides that hook rather than assigning to the slot behind it.
+  """
   vine = TorchVinecop.from_data(
     _simulate(d=3, n=300, seed=911), controls=FitControlsTorchVinecop()
   )
   u_t = torch.from_numpy(_eval_grid(40, d=3, seed=912))
   vine.pdf(u_t, batched=True)
   assert vine._batched is not None
+  vine._compiled["_pdf_batched"] = lambda u: u
   vine.set_pair_copulas(
     [
       [vine.get_pair_copula(t, e) for e in range(vine.d - t - 1)]
@@ -457,6 +464,7 @@ def test_setting_pair_copulas_invalidates_the_batched_cache() -> None:
     ]
   )
   assert vine._batched is None
+  assert vine._compiled == {}
 
 
 @pytest.mark.parametrize("cache_integrals", [True, False])

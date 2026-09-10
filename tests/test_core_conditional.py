@@ -28,7 +28,7 @@ import pytest
 import pyvinecopulib as pv
 from pyvinecopulib.core import NonSimplifiedContext, VinecopBase
 
-from .conftest import GaussianBicop, HostedVinecop, host_vinecop
+from .conftest import GaussianBicop, HostedVinecop, MinimalBicop, host_vinecop
 
 _D = 5
 _N = 500
@@ -649,3 +649,27 @@ def test_a_custom_tree_criterion_receives_the_covariates() -> None:
   assert seen, "`_fit_parts` never called the criterion"
   assert all(s is not None for s in seen)
   assert all(np.asarray(s).shape == cov.shape for s in seen)
+
+
+def test_a_subclass_invalidation_hook_is_called_by_fit() -> None:
+  """`set_pair_copulas` documents an invalidation duty; `fit` has to honor it.
+
+  The torch lane covers the mechanism end to end -- `TorchVinecop` overrides
+  the hook to drop its compiled cascades as well -- but not the base-level
+  contract that `fit` calls whatever a subclass put there. A subclass
+  memoizing anything derived from the pairs is silently stale otherwise.
+  """
+  calls: list[str] = []
+
+  class _Memoizing(HostedVinecop):
+    def _invalidate_batched(self) -> None:
+      calls.append("invalidated")
+      super()._invalidate_batched()
+
+  u = _data(5, d=4)
+  vine = _Memoizing(
+    [[MinimalBicop() for _ in row] for row in ([0, 1, 2], [0, 1], [0])],
+    pv.RVineStructure.from_order([1, 2, 3, 4]),
+  )
+  assert vine.fit(u, fit_edge=_gaussian_fit_edge) is vine
+  assert calls == ["invalidated"]

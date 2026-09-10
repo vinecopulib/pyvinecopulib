@@ -26,7 +26,7 @@ import numpy as np
 from array_api_compat import array_namespace
 
 from ..pyvinecopulib_ext import RVineStructure
-from ._covariates import pair_eval, prepare
+from ._covariates import pair_eval, prepare_covariates
 from ._placement import to_numpy
 from ._vinecop_discrete import (
   check_var_types,
@@ -262,7 +262,7 @@ def fit_parts(
   pair_types = pair_var_types(structure, types) if "d" in types else None
   ua = collapse_data(ua, d, types, "fit")
   n = ua.shape[0]
-  x = prepare(ua, x, int(n))
+  x = prepare_covariates(ua, x, int(n))
   # The criterion hands these straight to the binding, so they are checked
   # here rather than there: this is the first point that knows both the
   # weights and the row count they must align with.
@@ -503,7 +503,7 @@ def select_parts(
   ctx: ConditioningContext[ArrayT] = (
     SimplifiedContext() if context is None else context
   )
-  x = prepare(u, x, n)
+  x = prepare_covariates(u, x, n)
   # With left-limit columns present, `u` is wider than the vine: `var_types`
   # is what fixes the dimension.
   d = len(var_types) if var_types is not None else int(u.shape[1])

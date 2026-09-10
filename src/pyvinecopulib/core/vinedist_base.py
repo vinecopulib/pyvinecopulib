@@ -34,7 +34,7 @@ from typing import Any, ClassVar, Optional, Self, Sequence, cast
 from array_api_compat import array_namespace
 
 from ..pyvinecopulib_ext import RVineStructure
-from ._covariates import declared_eval, prepare
+from ._covariates import declared_eval, prepare_covariates
 from .margin_base import derive_cdf_left, safe_log
 from ._placement import PlacementMixin
 from ._trim import trim
@@ -49,6 +49,32 @@ from .protocols import (
 from .protocols import _VINEDIST_EXAMPLE
 
 __all__ = ["VinedistBase"]
+
+
+#: What an optional field is allowed to fail with. A margin from another
+#: ecosystem contributes what it declares, and declining is a way of
+#: declaring: a property that raises is answering "not applicable", which is
+#: the same answer as not having it.
+_OPTIONAL_FIELD_ERRORS = (
+  RuntimeError,
+  TypeError,
+  ValueError,
+  NotImplementedError,
+  AttributeError,
+)
+
+
+def _declared(margin: object, name: str) -> Any:  # noqa: ANN401 - any field
+  """One optional summary field, or ``None`` where the margin declines it.
+
+  A bare ``getattr(margin, name, None)`` absorbs only ``AttributeError``, so a
+  margin whose property *raises* took the whole summary down with it -- while
+  ``loglik()`` beside it was already guarded. Both are the same question.
+  """
+  try:
+    return getattr(margin, name, None)
+  except _OPTIONAL_FIELD_ERRORS:
+    return None
 
 
 class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
@@ -268,19 +294,19 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       loglik = getattr(margin, "loglik", None)
       try:
         value = float(loglik()) if callable(loglik) else None
-      except (RuntimeError, TypeError, ValueError, NotImplementedError):
+      except _OPTIONAL_FIELD_ERRORS:
         # `loglik()` with no data is only defined for a margin that was fitted
         # here; a fixed or foreign one has no fit to report.
         value = None
       rows.append(
         {
           "variable": j,
-          "name": getattr(margin, "name", None),
+          "name": _declared(margin, "name"),
           "margin": type(margin).__name__,
-          "family": getattr(margin, "family_name", None),
+          "family": _declared(margin, "family_name"),
           "var_type": self._var_types[j],
-          "support": getattr(margin, "support", None),
-          "n_parameters": getattr(margin, "n_parameters", None),
+          "support": _declared(margin, "support"),
+          "n_parameters": _declared(margin, "n_parameters"),
           "loglik": value,
         }
       )
@@ -439,7 +465,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     # The margins' namespace, not the input's: a torch copula hosting NumPy
     # margins is legal, and `torch.stack` cannot consume NumPy columns.
     xp = array_namespace(cols[0])
-    return cast("ArrayT", trim(xp, xp.stack(cols, axis=-1)))
+    return cast("ArrayT", trim(xp.stack(cols, axis=-1), xp))
 
   def marginal_icdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Apply each margin's ``icdf`` to its column.
@@ -535,7 +561,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       raise ValueError(
         f"y must have shape (n, {len(resolved)}); got {tuple(ya.shape)}"
       )
-    x = prepare(ya, x, int(ya.shape[0]))
+    x = prepare_covariates(ya, x, int(ya.shape[0]))
     upper = [
       declared_eval(m, "cdf", ya[:, j], x) for j, m in enumerate(resolved)
     ]
@@ -565,7 +591,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         )
       lower.append(sub)
     block = xp.stack([*upper, *lower], axis=-1)
-    return cast("ArrayT", trim(xp, block))
+    return cast("ArrayT", trim(block, xp))
 
   def _check_covariates(self, x: Optional[ArrayT], n_rows: int) -> None:
     """Refuse covariates that neither half of this distribution reads.
@@ -1506,7 +1532,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         "unconditional while the call suggested otherwise. Fit the parts "
         "yourself if only one half is conditional."
       )
-    placed: Optional[ArrayT] = prepare(data, x, n)
+    placed: Optional[ArrayT] = prepare_covariates(data, x, n)
     checked: Optional[ArrayT] = validate_weights(
       weights, cast("Any", data)[:, 0]
     )
@@ -1658,10 +1684,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
 
   @classmethod
   def from_json(cls, json: str) -> Self:
-    """Raise; override to read this subclass back from a JSON string.
+    """Instantiate from a string :meth:`to_json` produced.
 
-    Deserialization has to name the concrete copula class it rebuilds, which
-    only a subclass knows.
+    Decoding, the version check and the class check happen here; rebuilding
+    the two halves is ``_from_payload``, which needs no override where the
+    copula class is declared and reads its own JSON.
 
     Parameters
     ----------
@@ -1671,19 +1698,68 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     Returns
     -------
     VinedistBase
-        The deserialized distribution — only when a subclass overrides this.
+        The deserialized distribution.
+
+    Raises
+    ------
+    ValueError
+        If the payload's version is unrecognized, if its ``kind`` names a
+        different class, or if a margin's ``kind`` has no registered reader.
+    NotImplementedError
+        If this class names no ``vinecop_class`` that reads its own JSON and
+        does not override ``_from_payload``.
+    """
+    from ._json import read_payload
+
+    return cls._from_payload(
+      read_payload(json, cls.__name__, kind=cls.__name__)
+    )
+
+  @classmethod
+  def _from_payload(cls, payload: dict[str, Any]) -> Self:
+    """Rebuild both halves from a payload already decoded and checked.
+
+    The default is a declaration rather than an implementation, as
+    ``from_data`` is: it rebuilds ``vinecop_class`` from its own ``from_json``
+    and every margin through the registry, so a subclass naming its copula
+    class inherits deserialization the way it inherits fitting. Override this
+    where the copula cannot read its own JSON, or where the parts need
+    assembling some other way.
+
+    Parameters
+    ----------
+    payload : dict
+        Carries ``copula`` and ``margins``, with ``version`` and ``kind``
+        already checked.
+
+    Returns
+    -------
+    VinedistBase
+        The deserialized distribution.
 
     Raises
     ------
     NotImplementedError
-        Always, unless a subclass provides a reader.
+        If ``vinecop_class`` is unset or reads no JSON of its own.
     """
-    del json
-    raise NotImplementedError(
-      f"{cls.__name__}.from_json is not defined: reading a distribution back "
-      "requires naming the copula class to rebuild. Use "
-      "pyvinecopulib.core.Vinedist for a core Vinecop, or persist this "
-      "subclass the way its own library does."
+    from ._margins import margin_from_json
+
+    reader = getattr(cls.vinecop_class, "from_json", None)
+    if not callable(reader):
+      named = getattr(cls.vinecop_class, "__name__", None)
+      raise NotImplementedError(
+        f"{cls.__name__}.from_json cannot rebuild the copula half: "
+        + (
+          f"{named} has no `from_json`"
+          if named
+          else f"{cls.__name__} names no `vinecop_class`"
+        )
+        + ". Override `_from_payload` to assemble the parts, or persist this "
+        "subclass the way its own library does."
+      )
+    return cls(
+      reader(payload["copula"]),
+      [margin_from_json(m) for m in payload["margins"]],
     )
 
   def __repr__(self) -> str:

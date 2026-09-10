@@ -225,6 +225,7 @@ def test_agents_md_public_api_lists_match_the_code() -> None:
   text = spec.read_text(encoding="utf-8")
 
   import pyvinecopulib.core as core
+  import pyvinecopulib.core.extend as extend
   import pyvinecopulib.families as families
   import pyvinecopulib.margins as margins
   import pyvinecopulib.utils as utils
@@ -233,6 +234,7 @@ def test_agents_md_public_api_lists_match_the_code() -> None:
   section = text[text.index("## Public APIs") :]
   for label, module in (
     ("`pyvinecopulib.core`", core),
+    ("`pyvinecopulib.core.extend`", extend),
     ("`pyvinecopulib.families`", families),
     ("`pyvinecopulib.utils`", utils),
     ("`pyvinecopulib.margins`", margins),
@@ -253,7 +255,12 @@ def test_agents_md_public_api_lists_match_the_code() -> None:
       "undocumented",
       sorted(exported - named),
     )
-    stale = {n for n in named if n in dir(module)} | (named & exported)
+    # Only class-shaped names in the second direction: these bullets name
+    # methods, parameters and prose words in backticks too, so a lowercase
+    # token the module does not export is more often prose than drift. A
+    # withdrawn *function* therefore leaves no signal here, which is what
+    # makes a tree-wide `git ls-files | xargs grep` the check when a public
+    # name is removed.
     invented = {
       n
       for n in named
@@ -263,7 +270,6 @@ def test_agents_md_public_api_lists_match_the_code() -> None:
       and n not in subpackages
     }
     assert invented == set(), (label, "claimed but absent", sorted(invented))
-    del stale
 
 
 #: The package root, which sits above every layer.
@@ -420,3 +426,44 @@ def test_no_test_guards_an_extra_by_a_first_party_import() -> None:
       ):
         offenders.append(f"{path.name}:{node.lineno} -> {first.value}")
   assert offenders == [], offenders
+
+
+def test_no_module_declares_a_name_twice() -> None:
+  """A duplicated ``__all__`` entry is invisible to every other test.
+
+  Python does not mind one, so nothing importing or star-importing the module
+  behaves differently, and no assertion anywhere can see it. It is a defect
+  only in the structure, so reading the structure is the only way to catch it
+  -- which is what this does, over every module in the package.
+  """
+  root = pathlib.Path(__file__).resolve().parents[1] / "src" / "pyvinecopulib"
+  if not root.is_dir():
+    pytest.skip("source tree not available")
+
+  duplicated: dict[str, list[str]] = {}
+  seen = 0
+  for path in sorted(root.rglob("*.py")):
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+      if not isinstance(node, ast.Assign):
+        continue
+      if not any(
+        isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets
+      ):
+        continue
+      if not isinstance(node.value, (ast.List, ast.Tuple)):
+        continue
+      names = [
+        e.value
+        for e in node.value.elts
+        if isinstance(e, ast.Constant) and isinstance(e.value, str)
+      ]
+      repeats = sorted({n for n in names if names.count(n) > 1})
+      seen += 1
+      if repeats:
+        duplicated[str(path.relative_to(root))] = repeats
+
+  assert duplicated == {}, duplicated
+  # Without this the test passes by reading nothing: a broken glob and a
+  # package with no duplicates report the same empty result.
+  assert seen > 1, f"only {seen} `__all__` lists found; the walk is not walking"

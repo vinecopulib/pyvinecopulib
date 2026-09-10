@@ -249,6 +249,7 @@ _CLASS_MODULE = {
   "FitControlsTorchVinecop": "pyvinecopulib.torch",
   "ControlsLike": "pyvinecopulib.core",
   "DiscreteBicop": "pyvinecopulib.core",
+  "NotBatchable": "pyvinecopulib.core.extend",
   "IndependenceBicop": "pyvinecopulib.core",
   "VinedistLike": "pyvinecopulib.core",
   "VinedistBase": "pyvinecopulib.core",
@@ -258,6 +259,11 @@ _CLASS_MODULE = {
 #: Kept apart from ``_CLASS_MODULE`` for that reason alone; both feed
 #: ``numpydoc_xref_aliases`` below.
 _FUNCTION_MODULE = {
+  "covariate_row": "pyvinecopulib.core.extend",
+  "place": "pyvinecopulib.core.extend",
+  "prepare_covariates": "pyvinecopulib.core.extend",
+  "reference_array": "pyvinecopulib.core.extend",
+  "to_numpy": "pyvinecopulib.core.extend",
   "margin_from_json": "pyvinecopulib.core",
   "margin_to_json": "pyvinecopulib.core",
   "register_margin_json": "pyvinecopulib.core",
@@ -424,6 +430,19 @@ DOCSTRING_SUBPACKAGES = {
       "margin_from_json",
       "margin_to_json",
       "register_margin_json",
+    ],
+  },
+  # `core.extend` is the extension surface, documented apart from `core`
+  # because using pyvinecopulib needs none of it -- listing machinery beside
+  # `to_pseudo_obs` serves the few at the cost of the many.
+  "core.extend": {
+    "classes": ["NotBatchable"],
+    "functions": [
+      "place",
+      "reference_array",
+      "to_numpy",
+      "prepare_covariates",
+      "covariate_row",
     ],
   },
   "families": {

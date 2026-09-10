@@ -109,6 +109,7 @@ from .distribution_margin import TorchDistributionMargin
 from .vinecop import TorchVinecop
 from .vinedist import TorchVinedist
 from .controls import FitControlsTorchBicop, FitControlsTorchVinecop
+from ._placement import TensorPlacementMixin, reference_tensor
 
 __all__ = [
   "TorchTllBicop",
@@ -118,6 +119,8 @@ __all__ = [
   "TorchVinedist",
   "FitControlsTorchBicop",
   "FitControlsTorchVinecop",
+  "TensorPlacementMixin",
+  "reference_tensor",
 ]
 
 
