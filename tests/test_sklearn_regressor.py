@@ -352,8 +352,8 @@ def test_predict_from_iter_honors_a_foreign_generator(
   row offsets into the `X` handed in, written straight to `y_pred[start:end]`
   rather than re-derived from a batch counter.
 
-  Two batches of a non-default size is the whole point -- a single batch
-  starts at zero and covers everything, so it hides every offset bug.
+  Two batches of a non-default size is what makes the test bite -- a single
+  batch starts at zero and covers everything, so it hides every offset bug.
   """
   X, y, _, _ = regression_data
   est = VineRegressor(mean=True, quantiles=[0.25, 0.75]).fit(X, y)

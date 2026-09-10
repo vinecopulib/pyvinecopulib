@@ -611,10 +611,12 @@ For any behavior change:
   `en-GB_to_en-US` dictionary, so the rule covers every British spelling
   rather than a list this repository happened to drift on.
   A banned word or phrase is occasionally the right one: wrap those lines in
-  `# codespell:ignore-begin` / `-end`, which both `codespell` and
+  `codespell:ignore-begin` / `-end`, which both `codespell` and
   `tests/test_prose.py` skip. Use that form rather than the single-line
-  `# codespell:ignore <word>`, which does not match a hyphenated entry and
-  reports the marker itself. It catches
+  `codespell:ignore <word>`, which does not match a hyphenated entry and
+  reports the marker itself. The marker goes inside whatever comment the file
+  uses -- `#`, `//`, or an HTML `<!-- ... -->` in Markdown; neither half
+  anchors it to the end of a line, so the trailing ` -->` is fine. It catches
   ordinary typos in the same pass. Configuration -- the skip list for
   generated and vendored files, and the domain vocabulary it would otherwise
   flag -- lives in `[tool.codespell]` in `pyproject.toml`; add a word there

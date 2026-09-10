@@ -325,13 +325,18 @@ builtin = "clear,rare,en-GB_to_en-US"
 # beginning with `-` is read as another flag.
 dictionary = ".codespell-prose.txt,-"
 # A banned word is sometimes the right word. To use one, wrap the lines in
-# `# codespell:ignore-begin` / `-end`, which is the form that works for every
-# entry -- the single-line `# codespell:ignore <word>` silently fails on a
-# hyphenated one, and flags the marker itself.
-ignore-multiline-regex = "codespell:ignore-begin *\\n.*?codespell:ignore-end *\\n"
+# `codespell:ignore-begin` / `-end`, which is the form that works for every
+# entry -- the single-line `codespell:ignore <word>` silently fails on a
+# hyphenated one, and flags the marker itself. The markers are matched
+# without anchoring to end of line, so the pair also works inside an HTML
+# comment, where `<!-- codespell:ignore-begin -->` has a trailing ` -->`.
+ignore-multiline-regex = "codespell:ignore-begin.*?\\n.*?codespell:ignore-end.*?\\n"
 # Generated or vendored. `docstr.hpp` and the `.pyi` stubs come from upstream
-# C++, so a typo there is fixed upstream.
-skip = "*/_build/*,*/_generate/*,*/_static/*,*/htmlcov/*,*/lib/*,*/uv.lock,*.pyi,*/docstr.hpp,*/docs/CHANGELOG.md,*/docs/README.md,*/docs/_README_inlined.md,*/docs/examples,*.codespell-prose.txt,*test_prose.py"
+# C++, so a typo there is fixed upstream. A pattern for a file at the repo
+# root takes no `*/` prefix: an explicitly passed path is matched as given,
+# and only a directory walk also tries the basename -- so `*/uv.lock` never
+# matched the lockfile `make lint` hands it.
+skip = "*/_build/*,*/_generate/*,*/_static/*,*/htmlcov/*,*/lib/*,*uv.lock,*.pyi,*/docstr.hpp,*/docs/CHANGELOG.md,*/docs/README.md,*/docs/_README_inlined.md,*/docs/examples,*.codespell-prose.txt,*test_prose.py"
 # `aas` is Kjersti Aas; `fonctions` is Sklar (1959)'s title, quoted verbatim.
 # The rest is domain vocabulary read as misspelled.
 ignore-words-list = "aas,fonctions,nd,iff,ans,strat,te"
