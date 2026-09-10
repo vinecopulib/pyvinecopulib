@@ -481,6 +481,110 @@ def test_a_declared_placement_serves_a_host_that_is_not_a_module(
   assert float(pair.loglik(u_np, x=np.array([[1.0], [2.0]]))) == 0.0
 
 
+def test_a_member_named_parameters_does_not_decide_the_placement(
+  device: str,
+) -> None:
+  """Being a module selects the registered-tensor step, not the member name.
+
+  A foreign estimator may carry a ``parameters`` of its own -- a dict of
+  hyperparameters is the obvious one -- and it says nothing about where the
+  numerics run. Reading it as though it were ``nn.Module.parameters`` raised
+  ``TypeError`` out of ``_prep`` rather than falling back to the declaration
+  the host had made, which is a refusal in place of an answer that was
+  available.
+  """
+  from pyvinecopulib.core import BicopBase
+  from pyvinecopulib.torch import TensorPlacementMixin
+
+  class _Coincidental(TensorPlacementMixin, BicopBase[torch.Tensor]):
+    # Not callable, and not tensors: exactly what a wrapped estimator's own
+    # hyperparameter record looks like.
+    parameters = {"n_estimators": 400, "depth": 6}
+
+    def __init__(self) -> None:
+      self.device = torch.device(device)
+      self.dtype = torch.float64
+
+    def pdf(self, u: Any, *, x: Any = None) -> Any:
+      return torch.ones(u.shape[0], dtype=u.dtype, device=u.device)
+
+    def hfunc1(self, u: Any, *, x: Any = None) -> Any:
+      return self._prep_args(u)[:, 1]
+
+    def hfunc2(self, u: Any, *, x: Any = None) -> Any:
+      return self._prep_args(u)[:, 0]
+
+  placed = _Coincidental()._prep(np.array([[0.3, 0.5]], dtype=np.float32))
+  assert placed.dtype is torch.float64 and placed.device.type == device
+
+
+def test_a_host_with_parameters_but_no_buffers_still_resolves(
+  device: str,
+) -> None:
+  """Each member is read on its own, so a partial one is not fatal.
+
+  ``parameters()`` and ``buffers()`` used to be read as one expression, and
+  both were evaluated before either was consumed -- so a host exposing only
+  the first raised ``AttributeError`` even when that first one held exactly
+  the tensor being looked for.
+  """
+  from pyvinecopulib.torch import reference_tensor
+
+  ref = torch.zeros(1, dtype=torch.float32, device=device)
+
+  class _HalfModule:
+    def parameters(self) -> Any:
+      return iter([ref])
+
+  # Read directly: `reference_tensor` is exported, so it is reachable with an
+  # object that is no module at all.
+  assert reference_tensor(_HalfModule()) is ref
+
+  class _BuffersOnly:
+    def buffers(self) -> Any:
+      return iter([ref])
+
+  assert reference_tensor(_BuffersOnly()) is ref
+  # An object exposing neither member answers `None` rather than raising, and
+  # so does one whose member of that name is something else entirely.
+  assert reference_tensor(object()) is None
+
+  class _Coincidental:
+    parameters = {"depth": 6}
+
+  assert reference_tensor(_Coincidental()) is None
+
+  # An integer tensor is no answer here: every caller has a floating default.
+  class _IntOnly:
+    def parameters(self) -> Any:
+      return iter([torch.zeros(1, dtype=torch.int64, device=device)])
+
+  assert reference_tensor(_IntOnly()) is None
+
+
+def test_a_declared_host_keeps_a_tracked_gradient(device: str) -> None:
+  """The declared fallback goes through ``as_tensor``, which preserves grad.
+
+  ``place`` cannot promise this -- it converts through the namespace's own
+  ``asarray``, whose answer for a tracked tensor changed between torch 2.11
+  and 2.13 -- so the guarantee belongs to this route and is worth pinning.
+  """
+  from pyvinecopulib.torch import TensorPlacementMixin
+
+  on = torch.device(device)
+
+  class _Declared(TensorPlacementMixin):
+    device = on
+    dtype = torch.float64
+
+  tracked = torch.ones(
+    2, dtype=torch.float64, device=device, requires_grad=True
+  )
+  placed = _Declared()._prep(tracked)
+  assert placed.requires_grad
+  assert placed.dtype is torch.float64 and placed.device.type == device
+
+
 def test_an_undeclared_host_gets_the_documented_default() -> None:
   """No registered tensor and no declaration is the third step, not a raise."""
   from pyvinecopulib.core import BicopBase

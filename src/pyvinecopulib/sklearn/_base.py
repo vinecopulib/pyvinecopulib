@@ -19,7 +19,7 @@ from sklearn.utils.validation import (
 from ..core import MarginLike, Vinedist
 from ..margins import resolve_margins
 from ..core._margins import MarginSpec, fit_margin
-from ..core._placement import to_numpy
+from ..core.extend import to_numpy
 from .backends import _VinecopBackendBase, resolve_backend
 
 # Shared docstring fragments interpolated into VineDensity / VineRegressor
@@ -120,7 +120,7 @@ def _as_ndarray(a: Any) -> np.ndarray:  # noqa: ANN401 - see the comment above
   """Bring one array back to NumPy at the estimator's public boundary.
 
   The estimators return NumPy whatever namespace their parts live on, and on the
-  torch backend the distribution answers in tensors. ``core._placement.to_numpy``
+  torch backend the distribution answers in tensors. ``core.extend.to_numpy``
   is the walk that gets one back; this adds the estimator boundary's own
   contract, which is a float array.
 

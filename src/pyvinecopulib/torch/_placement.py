@@ -16,7 +16,6 @@ places every copula argument and every uniform draw at zero.
 
 from __future__ import annotations
 
-from itertools import chain
 from typing import TYPE_CHECKING, Any, Optional
 
 import torch
@@ -36,7 +35,7 @@ else:
   _ModuleBase = object
 
 
-def reference_tensor(module: torch.nn.Module) -> Optional[Tensor]:
+def reference_tensor(module: object) -> Optional[Tensor]:
   """A floating-point tensor ``module`` holds, naming where its numerics run.
 
   ``parameters()`` and ``buffers()`` recurse, so a grid held by a submodule
@@ -47,10 +46,21 @@ def reference_tensor(module: torch.nn.Module) -> Optional[Tensor]:
   ``pyvinecopulib.core._placement``, where one still names a namespace and a
   device: every caller of this has a floating default of its own.
 
+  Either member may be absent or be something else of the same name: this is
+  exported, so it is reachable with an object that is no module at all. Each
+  is read on its own and skipped when it is not the member meant, which is the
+  shape ``core.extend.reference_array`` uses -- the two searches over one
+  object have to agree, and reading them as one expression meant a host with
+  ``parameters`` and no ``buffers`` raised rather than answering from its
+  parameters.
+
   Parameters
   ----------
-  module : torch.nn.Module
-      The module to read a placement from.
+  module : object
+      The module to read a placement from. Typed ``object`` rather than
+      ``nn.Module`` because the duck typing is the contract, as it is for
+      ``core.extend.reference_array``: anything exposing either member is
+      accepted, and one exposing neither answers ``None``.
 
   Returns
   -------
@@ -58,9 +68,18 @@ def reference_tensor(module: torch.nn.Module) -> Optional[Tensor]:
       A registered floating-point parameter or buffer, or ``None`` when the
       module registers none.
   """
-  for tensor in chain(module.parameters(), module.buffers()):
-    if tensor.is_floating_point():
-      return tensor
+  for name in ("parameters", "buffers"):
+    method = getattr(module, name, None)
+    if not callable(method):
+      continue
+    try:
+      tensors = list(method())
+    except TypeError:
+      # Not the `nn.Module` member of that name; try the next.
+      continue
+    for value in tensors:
+      if isinstance(value, Tensor) and value.is_floating_point():
+        return value
   return None
 
 
@@ -76,9 +95,11 @@ class TensorPlacementMixin(_ModuleBase):
   array-API inference again.
 
   A host does **not** have to be an ``nn.Module``. Placement resolves in three
-  steps: a registered floating-point tensor if the host has any, then a
-  ``device`` and ``dtype`` the host *declares*, then an empty CPU ``float64``
-  tensor. So a class that keeps its device as a handle rather than as a tensor
+  steps: a registered floating-point tensor if the host is a module and has
+  any, then a ``device`` and ``dtype`` the host *declares*, then an empty CPU
+  ``float64`` tensor. Being a module is what selects the first step, not
+  carrying a member named ``parameters`` -- a host that has one for its own
+  reasons resolves from its declaration. So a class that keeps its device as a handle rather than as a tensor
   -- no parameters, no buffers -- says so once by exposing those two
   attributes, instead of holding a dummy tensor for the inference to find or
   writing the hook itself. Anything else overrides ``_ref_tensor``.
@@ -96,11 +117,12 @@ class TensorPlacementMixin(_ModuleBase):
     none of them fits; returning ``torch.empty(0, dtype=..., device=...)`` is
     all such an override needs.
     """
-    # Guarded rather than called outright: `reference_tensor` reads
-    # `parameters()` / `buffers()`, which a host that is not an `nn.Module`
-    # does not have, and reaching for them there raised `AttributeError`
-    # instead of resolving a placement.
-    if hasattr(self, "parameters"):
+    # `isinstance` rather than `hasattr("parameters")`: the registered-tensor
+    # step is about being a module, and a host that merely carries a member of
+    # that name -- a foreign estimator's hyperparameter dict, say -- has a
+    # declaration to fall back on instead. `_ModuleBase` is `object` at run
+    # time, so this is false for a mixin-only host.
+    if isinstance(self, torch.nn.Module):
       ref = reference_tensor(self)
       if ref is not None:
         return ref

@@ -1689,6 +1689,15 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     Deserialization has to name the concrete copula class it rebuilds, which
     only a subclass knows.
 
+    Warnings
+    --------
+    The payload :meth:`to_json` writes is not plain JSON: a non-finite float
+    travels as a string, since JSON has no spelling for one. So an override
+    that reads it with the standard library's ``json.loads`` gets that string
+    where a ``-inf`` log-likelihood belongs, silently and without an error.
+    Persist the subclass the way its own library does, or round-trip through
+    ``pyvinecopulib.core.Vinedist``, rather than parsing this payload directly.
+
     Parameters
     ----------
     json : str

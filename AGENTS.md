@@ -153,6 +153,20 @@ message has to stand on its own. Source them **by commit**, not by pull
 request number: upstream's numbering has gaps where a pull request was
 closed unmerged, and some commits carry no number at all.
 
+**The changelog is the diff from one release to the next, not a log of the
+cycle.** So the baseline for every entry is the newest tag, and a change that
+only moves code added since that tag is not an entry: it **folds into the
+bullet that introduced the feature**, extending it and adding its `(#NNN)` to
+the citation. That covers more than it first looks like. A signature settled
+twice before shipping, a rename of something never released, a helper made
+public and then narrowed, and a bug fixed in code the same open cycle added
+are all invisible from the last release — a reader upgrading sees one feature,
+arrived at once. Writing them up separately produces a section that reads as
+the pull-request order rather than the release, and inflates one feature into
+a dozen bullets. The test is the same one the `!` marker uses: state the
+entry as a sentence about the newest tag, and if it is not a difference from
+it, there is no entry to write.
+
 ## Scope
 
 ### Included
@@ -298,7 +312,7 @@ pyvinecopulib/
         _rootfind.py             # solve_increasing (monotone bisection; internal)
         _json.py                 # how a model payload is encoded and written (internal)
         _margins.py              # everything about a margin but its contract: coercion, resolution, JSON (internal)
-        extend.py                # the extension surface: the pipeline steps, validators, sentinel, aliases, codec
+        extend.py                # the extension surface: placement, covariates, and the batching sentinel
         _trim.py                 # trim — the domain step of the input pipeline
         _validation.py           # the layout / weights / covariate validators (internal)
         _bicop_plot.py           # what `Bicop.plot` / `BicopBase.plot` draw (internal)
@@ -971,14 +985,17 @@ automatically.
     estimator boundary -- goes through the one walk rather than a fourth copy
     of it.
 
-    **The steps are exported; the inference is best-effort.** `place`,
-    `reference_array`, `trim`, `prepare_covariates` and `to_numpy` are named in
-    `pyvinecopulib.core`, because the two hooks a subclass writes (`_prep`,
-    `_layout`) and the composite they feed (`_prep_args`) were public while the
-    steps composing them were not — so an extension overriding `_prep_args` had
-    to import three private modules to reassemble it, and one that wrote its own
-    covariate check instead ran a second, 1-d-accepting contract on the same
-    object. And placement has a **third** answer besides a namespace and a
+    **Placement is exported; the rest of the pipeline is not, and the
+    inference is best-effort.** `place`, `reference_array`, `to_numpy`,
+    `prepare_covariates` and `covariate_row` are named in
+    `pyvinecopulib.core.extend` — never in `core` itself, which the two
+    namespaces being disjoint is tested for. What earns them the place is that
+    `_prep` is a real override with a documented recipe, and that an extension
+    which wrote its own covariate check instead ran a second, 1-d-accepting
+    contract on the same object. `trim` is *not* among them: it is the domain
+    step of a composite (`_prep_args`) that no subclass overrides, so nothing
+    documented reaches it. And placement has a **third** answer besides a
+    namespace and a
     failure: an object holding no array has nothing to infer from, so `place`
     returns the values untouched. That is right for a part that computes in
     whatever namespace it is handed and silently wrong for one that does not — a
@@ -1193,9 +1210,10 @@ Three groups:
   "not an import path": `core/protocols.py`, `bicop_base.py`, `vinedist.py`,
   `margin_controls.py` and `independence.py` carry no underscore because each
   is one public thing, while `core/_vinecop_discrete.py`, `core/_margins.py`,
-  `core/_placement.py`, `core/_trim.py` and `core/_covariates.py` keep theirs
+  `core/_placement.py` and `core/_covariates.py` keep theirs
   even though `DiscreteBicop`, `as_margin`, `resolve_margins`, the
-  `margin_*_json` helpers and the five input-pipeline steps are public -- the
+  `margin_*_json` helpers and the five `core.extend` names they hold are
+  public -- the
   internal layout helpers, the two registry tables, the per-ecosystem
   predicates, the specification shapes, the two mixins and the two forwarding
   rules are the bulk of those files, and the public names are reached
@@ -1614,20 +1632,31 @@ below are a quick orientation.
   `Vinedist`, `VinedistLike`, `VinedistBase`; plus the margin serialization
   helpers `margin_from_json`, `margin_to_json`, `register_margin_json`; plus
   `ArrayT`, the type variable those signatures are written in.
-- **`pyvinecopulib.core.extend`** — what an extension writes against rather
-  than what a caller uses: the input-pipeline steps `place`,
-  `reference_array`, `to_numpy`, `trim`, `prepare_covariates` and
-  `covariate_row`; the validators `reject_covariates`, `validate_weights` and
-  `usable_observations`, so a refusal reads like the library's own; the vine's
-  layout step `collapse_data` and the unwrapper `continuous_view`;
-  `NotBatchable`, which a `_build_batched` override raises to decline the grid
-  fast path; the callback aliases `FitEdge` / `FitLevel`; and the model codec
-  `model_from_json` / `MODEL_JSON_VERSION`. Reached as
+- **`pyvinecopulib.core.extend`** — **six** names, and the count is the
+  point: what an extension cannot be written without, rather than everything
+  it might find useful. `place` and `reference_array`, the fix and the check
+  of the `_prep` override; `prepare_covariates`, the composite every entry
+  point taking an `x` routes through, with `covariate_row` for the single-row
+  reading of one; `to_numpy`, the return trip; and `NotBatchable`, which a
+  `_build_batched` override raises to decline the grid fast path. Reached as
   `pyvinecopulib.core.extend`, the way `pyvinecopulib.sklearn.backends` is,
   and kept out of `core`'s own namespace because using pyvinecopulib needs
   none of it. The four canonical bases and their protocols stay in `core`:
   `README.md` tells users to subclass them, so they are part of the surface
   rather than machinery behind it.
+    - **An export is a promise, so the burden of proof is on keeping a name.**
+      It earns one by being needed to implement a documented hook *correctly* —
+      not because internal code calls it, and not because a private hook's
+      docstring names it: none of `_prep`, `_prep_args`, `_layout`,
+      `_build_batched` or `_coerce_fit_data` is rendered by Sphinx, so prose
+      inside one is source-only. `trim` and `collapse_data` failed that test
+      outright — `_prep_args` and `_layout` are overridden **nowhere** in
+      `src/` and appear in no recipe below — and so did the three validators,
+      `continuous_view`, the two fit-callback aliases and the model codec. All
+      are private, and a subclass writes its own refusal message or a plain
+      `def` instead. Note the aliases are named without backticks on purpose:
+      the test below reads a backticked capitalized name here as a claim that
+      the module exports it.
 - **`pyvinecopulib.families`** — `BicopFamily` enum; per-family
   constants (`indep`, `gaussian`, `student`, `clayton`, `gumbel`,
   `frank`, `joe`, `bb1`, `bb6`, `bb7`, `bb8`, `tawn`, `tll`); group
