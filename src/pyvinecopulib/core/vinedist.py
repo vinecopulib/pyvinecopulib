@@ -10,7 +10,7 @@ have to name the concrete copula.
 from __future__ import annotations
 
 import copy
-from typing import Any, ClassVar, Optional, Self, Sequence
+from typing import Any, ClassVar, Optional, Sequence
 
 import numpy as np
 
@@ -190,47 +190,3 @@ class Vinedist(VinedistBase[np.ndarray]):
       resolved = copy.deepcopy(resolved)
       resolved.weights = np.asarray(weights, dtype=float)
     return resolved
-
-  @classmethod
-  def from_json(cls, json: str) -> Self:
-    """Instantiate from a JSON string.
-
-    Parameters
-    ----------
-    json : str
-        A string produced by :meth:`to_json`.
-
-    Returns
-    -------
-    Vinedist
-        The deserialized distribution, with a ``Vinecop`` copula.
-
-    Raises
-    ------
-    ValueError
-        If the payload's version is unrecognized, if its ``kind`` names a
-        different class, or if a margin's ``kind`` has no registered reader.
-    """
-    from ..pyvinecopulib_ext import Vinecop
-    from ._json import MODEL_JSON_VERSION, loads
-    from ._margins import margin_from_json
-
-    payload = loads(json)
-    if payload.get("version") != MODEL_JSON_VERSION:
-      raise ValueError(
-        f"unsupported Vinedist JSON version {payload.get('version')!r}; this "
-        f"build reads version {MODEL_JSON_VERSION}"
-      )
-    # `to_json` writes the class name and nothing read it, so a subclass's
-    # payload loaded as this class -- quietly the wrong model, since a
-    # subclass is a different distribution.
-    kind = payload.get("kind")
-    if kind != cls.__name__:
-      raise ValueError(
-        f"this payload was written by {kind!r}, not {cls.__name__!r}; read it "
-        f"back with {kind}.from_json, or write it with {cls.__name__}.to_json"
-      )
-    return cls(
-      Vinecop.from_json(payload["copula"]),
-      [margin_from_json(m) for m in payload["margins"]],
-    )

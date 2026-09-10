@@ -43,7 +43,7 @@ from typing import Any, Callable, Optional, Sequence, Union, cast
 import numpy as np
 
 from ..pyvinecopulib_ext import Kde1d
-from ._json import MODEL_JSON_VERSION
+from ._json import MODEL_JSON_VERSION, read_payload
 from .margin_base import MarginBase, support_of
 from .protocols import ArrayT, ControlsLike, MarginLike
 
@@ -459,13 +459,10 @@ def margin_from_json(payload: dict[str, Any]) -> MarginLike[Any]:
   ValueError
       If ``kind`` is unknown or unregistered, or the version is unrecognized.
   """
+  # No `kind=` here: this reader dispatches on `kind` itself and says far
+  # more about an unknown one than a bare mismatch could.
+  payload = read_payload(payload, "margin")
   kind = payload.get("kind")
-  version = payload.get("version")
-  if version != MODEL_JSON_VERSION:
-    raise ValueError(
-      f"unsupported margin JSON version {version!r}; this build reads "
-      f"version {MODEL_JSON_VERSION}"
-    )
   reader = _READERS.get(kind) or _BUILTIN_READERS.get(kind)
   if reader is None:
     known = ", ".join(sorted({*_READERS, *_BUILTIN_READERS})) or "(none)"

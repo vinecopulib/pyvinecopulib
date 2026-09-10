@@ -1174,12 +1174,62 @@ def test_a_subclass_without_fit_hooks_refuses_to_fit() -> None:
     MyDist.from_data(np.random.default_rng(0).normal(size=(50, 2)))
 
 
-def test_base_from_json_names_the_concrete_route() -> None:
+def test_base_from_json_names_the_missing_part_not_the_method() -> None:
+  """Reading back is a declaration, so the refusal is about the declaration.
+
+  `from_json` itself is concrete -- it decodes, checks the version and checks
+  the `kind` -- so what a subclass can fail to supply is the copula class, and
+  that is what the message has to name.
+  """
+  from pyvinecopulib.core._json import dumps
+
   class MyDist(VinedistBase[Any]):
     pass
 
-  with pytest.raises(NotImplementedError, match="from_json is not defined"):
-    MyDist.from_json("{}")
+  payload = dumps(
+    {"kind": "MyDist", "version": 1, "copula": "{}", "margins": []}
+  )
+  with pytest.raises(NotImplementedError, match="names no `vinecop_class`"):
+    MyDist.from_json(payload)
+
+  # Declared but unable to read its own JSON is the other half, and the one
+  # `TorchVinedist` is in -- named, rather than reported as a missing method.
+  class Opaque:
+    pass
+
+  class Declared(VinedistBase[Any]):
+    vinecop_class = Opaque
+
+  with pytest.raises(NotImplementedError, match="Opaque has no `from_json`"):
+    Declared.from_json(dumps({"kind": "Declared", "version": 1}))
+
+
+def test_a_payload_is_refused_by_version_and_by_class() -> None:
+  """Both checks live in the base now, so every subclass inherits them."""
+  from pyvinecopulib.core._json import dumps
+
+  with pytest.raises(ValueError, match="unsupported Vinedist JSON version"):
+    pv.core.Vinedist.from_json(dumps({"kind": "Vinedist", "version": 999}))
+  # A subclass's payload read as its base is quietly the wrong model.
+  with pytest.raises(ValueError, match="written by 'Other', not 'Vinedist'"):
+    pv.core.Vinedist.from_json(dumps({"kind": "Other", "version": 1}))
+
+
+def test_a_non_finite_float_survives_the_round_trip() -> None:
+  """Why the decode belongs to the base and the codec stays private.
+
+  JSON has no literal for a non-finite float, so one travels as a string. An
+  override using `json.loads` would read that string back where a `-inf`
+  belongs, with no error to notice.
+  """
+  import json
+
+  from pyvinecopulib.core._json import dumps, read_payload
+
+  written = dumps({"kind": "K", "version": 1, "loglik": float("-inf")})
+  assert read_payload(written, "K", kind="K")["loglik"] == float("-inf")
+  # The trap, spelled out: the standard library gets a string.
+  assert isinstance(json.loads(written)["loglik"], str)
 
 
 def test_copula_var_types_dispatches_through_the_subclass() -> None:

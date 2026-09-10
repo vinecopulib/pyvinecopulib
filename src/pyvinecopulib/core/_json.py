@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Any, cast
+from typing import Any, Optional, Union, cast
 
-__all__ = ["MODEL_JSON_VERSION", "dumps", "loads"]
+__all__ = ["MODEL_JSON_VERSION", "dumps", "loads", "read_payload"]
 
 #: Bumped when a payload's shape changes incompatibly. One number for the
 #: whole model: a margin payload and the distribution payload that embeds it
@@ -147,3 +147,54 @@ def read_file(filename: str) -> str:
   from ..pyvinecopulib_ext import _file_to_json
 
   return cast("str", _file_to_json(filename))
+
+
+def read_payload(
+  payload: Union[str, dict[str, Any]],
+  what: str,
+  *,
+  kind: Optional[str] = None,
+) -> dict[str, Any]:
+  """Decode a payload if it is still a string, and check what it claims to be.
+
+  The three checks every reader owes, in one place: a payload is decoded
+  through :func:`loads` rather than ``json.loads`` so a non-finite float comes
+  back as one, its ``version`` is compared against this build's, and its
+  ``kind`` -- where the caller knows which class it is reading -- against the
+  class asked for. A subclass's payload read as its base is quietly the wrong
+  model, since a subclass is a different distribution.
+
+  Parameters
+  ----------
+  payload : str or dict
+      A JSON string, or an already-decoded mapping.
+  what : str
+      Names the thing being read, for the version message.
+  kind : str, or None, optional
+      Class name the payload must claim. ``None`` skips the check, for a
+      reader that dispatches on ``kind`` itself and can say more about it.
+
+  Returns
+  -------
+  dict
+      The decoded payload.
+
+  Raises
+  ------
+  ValueError
+      If the version is unrecognized, or ``kind`` names another class.
+  """
+  decoded = loads(payload) if isinstance(payload, str) else dict(payload)
+  version = decoded.get("version")
+  if version != MODEL_JSON_VERSION:
+    raise ValueError(
+      f"unsupported {what} JSON version {version!r}; this build reads "
+      f"version {MODEL_JSON_VERSION}"
+    )
+  claimed = decoded.get("kind")
+  if kind is not None and claimed != kind:
+    raise ValueError(
+      f"this payload was written by {claimed!r}, not {kind!r}; read it back "
+      f"with {claimed}.from_json, or write it with {kind}.to_json"
+    )
+  return decoded

@@ -337,3 +337,64 @@ def test_normalize_weights_does_not_move_the_conditional_mean(
   ]
   np.testing.assert_allclose(preds[0], preds[1], rtol=1e-10, atol=1e-10)
   assert np.std(preds[0]) < 5.0 * np.std(y)
+
+
+def test_predict_from_iter_honors_a_foreign_generator(
+  regression_data: _RegressionData,
+) -> None:
+  """The injection contract, which only a foreign `iter_weights` exercises.
+
+  `_predict_from_iter` takes the weight source as an argument so an
+  ensembling wrapper can average several vines' weights and reuse one
+  prediction step. In-library there is exactly one caller and it always passes
+  `self._iter_weights`, so nothing here pinned the part a foreign generator
+  depends on: that the triple is `(weights, start, end)` with `start`/`end`
+  row offsets into the `X` handed in, written straight to `y_pred[start:end]`
+  rather than re-derived from a batch counter.
+
+  Two batches of a non-default size is the whole point -- a single batch
+  starts at zero and covers everything, so it hides every offset bug.
+  """
+  X, y, _, _ = regression_data
+  est = VineRegressor(mean=True, quantiles=[0.25, 0.75]).fit(X, y)
+  X_test = X[:7]
+  expected = est.predict(X_test)
+
+  # The same weights the built-in generator would yield, rebatched: equality
+  # with `predict` is a claim about the offsets, so the weights must not vary.
+  n_nodes = est._y_nodes.shape[0]
+  splits = [(0, 3), (3, 7)]
+
+  def foreign(X_: np.ndarray) -> Any:
+    for start, end in splits:
+      w = est._weights_for_batch(X_[start:end])
+      assert w.shape == (end - start, n_nodes)
+      yield w, start, end
+
+  np.testing.assert_allclose(
+    est._predict_from_iter(X_test, foreign), expected, rtol=1e-12, atol=0.0
+  )
+
+  # Row-normalized weights are what an averaging wrapper hands over, and the
+  # mean is a ratio, so normalizing must not move the answer.
+  def normalized(X_: np.ndarray) -> Any:
+    for start, end in splits:
+      w = est._weights_for_batch(X_[start:end])
+      yield w / w.sum(axis=1, keepdims=True), start, end
+
+  np.testing.assert_allclose(
+    est._predict_from_iter(X_test, normalized), expected, rtol=1e-10, atol=0.0
+  )
+
+  # The offsets are read, not inferred: descending batches land where they say
+  # they do, which a batch counter would get wrong.
+  def reversed_order(X_: np.ndarray) -> Any:
+    for start, end in reversed(splits):
+      yield est._weights_for_batch(X_[start:end]), start, end
+
+  np.testing.assert_allclose(
+    est._predict_from_iter(X_test, reversed_order),
+    expected,
+    rtol=1e-12,
+    atol=0.0,
+  )

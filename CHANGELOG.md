@@ -160,7 +160,8 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
   `Kde1d`, `Vinedist` and `SciPyMargin` gain `to_json` /
   `from_json`, and `Kde1d` / `Vinedist` also `to_file` / `from_file`, which write
   CBOR when the filename ends in `.cbor`. A margin type from outside the package
-  joins in through `core.register_margin_json` (#320).
+  joins in through `core.register_margin_json` (#320, #334).
+    - a `VinedistBase` subclass inherits `from_json`: the base decodes, checks the payload's version and checks that its `kind` names the class being read, then rebuilds the halves from the declared `vinecop_class` — so reading back is a declaration, like fitting (#334)
 - Expose `utils.find_latent_sample(u, b, niter=3)`, which recovers a continuous sample from interval-censored copula data (#305).
 - Add `Kde1d.actual_grid_size`, the number of grid points a fit built (#312).
 - Add `Bicop.family_name`, `Bicop.flip`, `Bicop.as_continuous()`, a settable `Vinecop.pair_copulas`, and `FitControlsVinecop.from_bicop_controls` with its `bicop_controls` property, which read and replace the inherited pair-copula settings as a group (#237, #251).

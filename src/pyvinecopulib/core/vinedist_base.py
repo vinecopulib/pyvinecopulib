@@ -1684,19 +1684,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
 
   @classmethod
   def from_json(cls, json: str) -> Self:
-    """Raise; override to read this subclass back from a JSON string.
+    """Instantiate from a string :meth:`to_json` produced.
 
-    Deserialization has to name the concrete copula class it rebuilds, which
-    only a subclass knows.
-
-    Warnings
-    --------
-    The payload :meth:`to_json` writes is not plain JSON: a non-finite float
-    travels as a string, since JSON has no spelling for one. So an override
-    that reads it with the standard library's ``json.loads`` gets that string
-    where a ``-inf`` log-likelihood belongs, silently and without an error.
-    Persist the subclass the way its own library does, or round-trip through
-    ``pyvinecopulib.core.Vinedist``, rather than parsing this payload directly.
+    Decoding, the version check and the class check happen here; rebuilding
+    the two halves is :meth:`_from_payload`, which needs no override where the
+    copula class is declared and reads its own JSON.
 
     Parameters
     ----------
@@ -1706,19 +1698,68 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     Returns
     -------
     VinedistBase
-        The deserialized distribution — only when a subclass overrides this.
+        The deserialized distribution.
+
+    Raises
+    ------
+    ValueError
+        If the payload's version is unrecognized, if its ``kind`` names a
+        different class, or if a margin's ``kind`` has no registered reader.
+    NotImplementedError
+        If this class names no ``vinecop_class`` that reads its own JSON and
+        does not override :meth:`_from_payload`.
+    """
+    from ._json import read_payload
+
+    return cls._from_payload(
+      read_payload(json, cls.__name__, kind=cls.__name__)
+    )
+
+  @classmethod
+  def _from_payload(cls, payload: dict[str, Any]) -> Self:
+    """Rebuild both halves from a payload already decoded and checked.
+
+    The default is a declaration rather than an implementation, as
+    ``from_data`` is: it rebuilds ``vinecop_class`` from its own ``from_json``
+    and every margin through the registry, so a subclass naming its copula
+    class inherits deserialization the way it inherits fitting. Override this
+    where the copula cannot read its own JSON, or where the parts need
+    assembling some other way.
+
+    Parameters
+    ----------
+    payload : dict
+        Carries ``copula`` and ``margins``, with ``version`` and ``kind``
+        already checked.
+
+    Returns
+    -------
+    VinedistBase
+        The deserialized distribution.
 
     Raises
     ------
     NotImplementedError
-        Always, unless a subclass provides a reader.
+        If ``vinecop_class`` is unset or reads no JSON of its own.
     """
-    del json
-    raise NotImplementedError(
-      f"{cls.__name__}.from_json is not defined: reading a distribution back "
-      "requires naming the copula class to rebuild. Use "
-      "pyvinecopulib.core.Vinedist for a core Vinecop, or persist this "
-      "subclass the way its own library does."
+    from ._margins import margin_from_json
+
+    reader = getattr(cls.vinecop_class, "from_json", None)
+    if not callable(reader):
+      named = getattr(cls.vinecop_class, "__name__", None)
+      raise NotImplementedError(
+        f"{cls.__name__}.from_json cannot rebuild the copula half: "
+        + (
+          f"{named} has no `from_json`"
+          if named
+          else f"{cls.__name__} names no `vinecop_class`"
+        )
+        + ". Override `_from_payload` to assemble the parts, or persist this "
+        "subclass the way its own library does."
+      )
+    return cls(
+      reader(payload["copula"]),
+      [margin_from_json(m) for m in payload["margins"]],
     )
 
   def __repr__(self) -> str:

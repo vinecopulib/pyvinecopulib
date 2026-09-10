@@ -1845,6 +1845,18 @@ Round-trip / parity properties to preserve when touching numerics:
   `vinecop_class` and `margin_class` and `from_data` runs the two-step (IFM)
   estimator itself, in the base, leaving `_coerce_fit_data` the only real hook
   because the torch lane resolves a device and dtype before any part exists.
+  **Deserialization is the same declaration.** `from_json` decodes, checks the
+  payload's version and checks that its `kind` names this class, then hands a
+  plain mapping to `_from_payload`, whose default rebuilds `vinecop_class`
+  from its own `from_json` and every margin through the registry -- so
+  `Vinedist` overrides nothing. Only `_from_payload` is a hook, and only for a
+  copula that reads no JSON of its own, which is what `TorchVinedist` reports
+  by naming `TorchVinecop`. Keeping the decode in the base is what lets the
+  codec stay private: the payload is not plain JSON -- a non-finite float
+  travels as a string, JSON having no spelling for one -- so an override
+  reaching for the standard library's `json.loads` would read `-inf` back as
+  that string, silently. `_json.read_payload` is the one place those three
+  checks live, shared with `margin_from_json`.
   The one hook a lane normally overrides is `_copula_controls`, the single
   lane-specific step in the copula estimate: `Vinedist` writes `weights` into a
   copy of the controls there and `TorchVinedist` pins the device and dtype the
