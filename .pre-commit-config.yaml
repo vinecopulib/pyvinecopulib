@@ -57,6 +57,10 @@ repos:
       - id: check-toml
       - id: check-json
       - id: check-added-large-files
+        # The lockfile is the one large file this repository tracks on purpose:
+        # it pins every extra on every platform marker, so it is ~650 KB and
+        # grows with the dependency set.
+        exclude: ^uv\.lock$
       - id: check-merge-conflict
       - id: debug-statements
       - id: mixed-line-ending
@@ -117,7 +121,10 @@ repos:
   # alike. `--builtin en-GB_to_en-US` is what enforces the spelling rule; the
   # ignore list holds domain vocabulary codespell reads as misspellings.
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.1
+    # Pinned, and matching `[dependency-groups].dev`, so a local run and
+    # `make lint` read the same dictionaries: a new release adds entries, and
+    # an unpinned `make lint` would then fail a tree pre-commit had passed.
+    rev: v2.4.3
     hooks:
       - id: codespell
         additional_dependencies: [tomli]

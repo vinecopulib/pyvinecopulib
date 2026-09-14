@@ -14,6 +14,22 @@ updates:
     labels:
       - dependencies
 
+  - package-ecosystem: pre-commit
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+    labels:
+      - dependencies
+    ignore:
+      # Formatter output stability; see AGENTS.md. Same reason as the pip entry.
+      - dependency-name: ruff
+      # Kept in lockstep with `[dependency-groups].dev`, which pins both.
+      - dependency-name: bandit
+      - dependency-name: codespell
+
   - package-ecosystem: pip
     directory: /
     schedule:

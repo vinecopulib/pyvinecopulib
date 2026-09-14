@@ -114,7 +114,8 @@ test = [
 notebooks = ["nbmake", "jupyter", "nbconvert", "nbformat"]
 dev = [
   "ty",
-  "codespell[toml]",
+  # Pinned to the `.pre-commit-config.yaml` hook rev; see the note there.
+  "codespell[toml]==2.4.3",
   "ruff==0.11.6",
   "bandit[toml]==1.9.4",
   "pre-commit",
@@ -129,6 +130,11 @@ Repository = "https://github.com/vinecopulib/pyvinecopulib.git"
 Issues = "https://github.com/vinecopulib/pyvinecopulib/issues"
 
 [tool.scikit-build]
+# Below the `[build-system].requires` floor on purpose: the one behavior 0.5
+# turns on is `install.strip`, and `nanobind_add_module` already links with
+# `-Wl,-s`, so the published extension is stripped either way -- measured, the
+# same byte count. Raising it would move other version-dependent defaults for
+# nothing.
 minimum-version = "0.4"
 build-dir = "build/{wheel_tag}"
 wheel.py-api = "cp312"
@@ -152,6 +158,10 @@ sdist.exclude = [
   "build*/**",
   "**/__pycache__/**",
   "**/*.pyc",
+  # The lockfile pins the development and CI environments; a source build
+  # resolves `[build-system].requires` itself and never reads it, so shipping
+  # it would add 0.6 MB to every sdist for nothing.
+  "uv.lock",
 ]
 
 [tool.cibuildwheel]
@@ -160,8 +170,6 @@ skip = "cp3??t-*"
 test-command = "pytest {project}/tests"
 test-requires = ["pytest-cov", "pytest-rerunfailures"]
 
-[tool.cibuildwheel.macos.environment]
-MACOSX_DEPLOYMENT_TARGET = "10.14"
 
 [tool.ruff]
 line-length = 80
