@@ -182,12 +182,14 @@ parameters : ndarray, shape (n, npars), optional
 Returns
 -------
 dict
-    A dict with key ``"pdf"`` (an ndarray of length n, the copula density). If
-    ``keep_all`` is True, it also contains ``"pdf_edges"``, ``"hfunc1"``,
-    ``"hfunc2"``, ``"hfunc1_sub"`` and ``"hfunc2_sub"``, each a nested list
-    indexed ``[tree][edge]`` of length-n arrays. The ``_sub`` fields hold the
-    left-limit h-functions and are only populated when at least one variable is
-    discrete; for models without discrete variables they are empty lists.
+    A dict with keys ``"pdf"`` and ``"logpdf"`` (ndarrays of length n: the
+    copula density and its logarithm, the second still finite where the first
+    underflows). If ``keep_all`` is True, it also contains ``"pdf_edges"``,
+    ``"hfunc1"``, ``"hfunc2"``, ``"hfunc1_sub"`` and ``"hfunc2_sub"``, each a
+    nested list indexed ``[tree][edge]`` of length-n arrays. The ``_sub``
+    fields hold the left-limit h-functions and are only populated when at least
+    one variable is discrete; for models without discrete variables they are
+    empty lists.
 )""";
 
   // Hand-written for the same reason as `pdf_full_doc`: the C++ facade
@@ -253,6 +255,8 @@ ones. Continuous, all-parametric vines only.
 )""";
   const std::string pdf_perobs_doc =
       std::string(vinecop_doc.pdf.doc_2args) + per_obs_note;
+  const std::string logpdf_perobs_doc =
+      std::string(vinecop_doc.logpdf.doc_2args) + per_obs_note;
   const std::string loglik_perobs_doc =
       std::string(vinecop_doc.loglik.doc_2args) + per_obs_note;
   const std::string scores_perobs_doc =
@@ -533,6 +537,17 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
           "u"_a, "num_threads"_a = 1, "parameters"_a = nb::none(),
           pdf_perobs_doc.c_str(), nb::call_guard<nb::gil_scoped_release>())
       .def(
+          "logpdf",
+          [](const Vinecop& cop, Eigen::MatrixXd u, size_t num_threads,
+             const std::optional<Eigen::MatrixXd>& parameters)
+              -> Eigen::VectorXd {
+            if (parameters)
+              return cop.logpdf(std::move(u), *parameters, num_threads);
+            return cop.logpdf(std::move(u), num_threads);
+          },
+          "u"_a, "num_threads"_a = 1, "parameters"_a = nb::none(),
+          logpdf_perobs_doc.c_str(), nb::call_guard<nb::gil_scoped_release>())
+      .def(
           "pdf_full",
           [](const Vinecop& cop, Eigen::MatrixXd u, size_t num_threads,
              bool keep_all,
@@ -549,6 +564,7 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
             }
             nb::dict out;
             out["pdf"] = nb::cast(res.pdf);
+            out["logpdf"] = nb::cast(res.logpdf);
             if (keep_all) {
               out["pdf_edges"] = triangular_to_list(res.pdf_edges);
               out["hfunc1"] = triangular_to_list(res.hfunc1);

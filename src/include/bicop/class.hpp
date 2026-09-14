@@ -492,7 +492,9 @@ Bicop
             return flipped;
           },
           flip_doc.c_str(), nb::call_guard<nb::gil_scoped_release>())
-      .def("as_continuous", &Bicop::as_continuous, bicop_doc.as_continuous.doc,
+      .def("with_var_types", &Bicop::with_var_types,
+           "var_types"_a = std::vector<std::string>(2, "c"),
+           bicop_doc.with_var_types.doc,
            nb::call_guard<nb::gil_scoped_release>())
       // `fit` and `select` hand the object back so they compose like every
       // other estimator in the package. The GIL is released around the fit

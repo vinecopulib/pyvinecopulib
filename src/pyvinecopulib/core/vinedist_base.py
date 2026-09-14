@@ -35,7 +35,8 @@ from array_api_compat import array_namespace
 
 from ..pyvinecopulib_ext import RVineStructure
 from ._covariates import declared_eval, prepare_covariates
-from .margin_base import derive_cdf_left, safe_log
+from ._loglik import safe_log
+from .margin_base import derive_cdf_left
 from ._placement import PlacementMixin
 from ._trim import trim
 from ._validation import validate_covariates, validate_weights
@@ -652,9 +653,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   def logpdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Log-density of the joint distribution.
 
-    The primitive, rather than the log of :meth:`pdf`: the marginal term is the
-    one carrying the scale, and for even a moderate ``d`` the product of
-    marginal densities underflows long before the sum of their logs does.
+    The primitive, rather than the log of :meth:`pdf`: both terms carry a scale
+    that a product loses. The marginal densities underflow for even a moderate
+    ``d``, and so does the copula factor, which is itself a product of up to
+    ``d (d - 1) / 2`` pair-copula densities -- so each half is read in log
+    space where it offers one.
 
     Parameters
     ----------
@@ -670,9 +673,14 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         Joint log-density values.
     """
     _, ya, _ = self._columns(y)
-    copula_term: Any = declared_eval(
-      self._vinecop, "pdf", self.copula_layout(y, x=x), x
-    )
+    layout = self.copula_layout(y, x=x)
+    # The copula's own log-density where it declares one, as for a margin
+    # below: by the time a density arrives the product over edges has already
+    # underflowed, and no logarithm can recover it.
+    if getattr(self._vinecop, "logpdf", None) is not None:
+      total: Any = declared_eval(self._vinecop, "logpdf", layout, x)
+    else:
+      total = safe_log(declared_eval(self._vinecop, "pdf", layout, x))
     # The parts' namespace, not the input's, as `marginal_cdf` and
     # `copula_data` both do: a copula or a margin may legitimately answer in
     # another array type than it was handed -- a torch copula hosting NumPy
@@ -680,8 +688,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     # either raises or silently detaches. Each term is then coerced onto the
     # accumulator for the same reason: adding an ndarray to a tensor that
     # tracks grad sends NumPy looking for `__array__` and raises.
-    xp = array_namespace(copula_term)
-    total = xp.log(copula_term)
+    xp = array_namespace(total)
     for j, m in enumerate(self._margins):
       if getattr(m, "logpdf", None) is not None:
         term: Any = declared_eval(m, "logpdf", ya[:, j], x)

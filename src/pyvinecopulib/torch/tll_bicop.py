@@ -139,8 +139,9 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
   would have nothing to choose in any case -- a density grid has no family.
 
   Beyond ``BicopBase`` it brings its own exact ``cdf``, h-functions and their
-  inverses, ``sample``, ``flip``, and the extra
-  ``TorchTllBicop.rect_mass()``; ``loglik`` and ``plot`` are inherited. The grid
+  inverses, ``sample`` and ``flip``, and it overrides ``rect_prob`` /
+  ``cond_interval_prob`` to read an atom's probability off the grid rather than
+  by differencing; ``loglik`` and ``plot`` are inherited. The grid
   is a buffer rather than a parameter -- a fitted density, not a learned one --
   so optimizing it is opt-in: set ``requires_grad_(True)`` on the grid values
   and every method carries a gradient in them.
@@ -155,7 +156,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
   values : Tensor, shape (m, m), or None, optional
       Nonnegative density values at the tensor-product grid. The
       nonnegativity is a precondition rather than a convention: the integral
-      tables and ``TorchTllBicop.rect_mass()`` are free of cancellation only
+      tables and the two rectangle routines are free of cancellation only
       because every term they sum is nonnegative.
   cache_integrals : bool, default=True
       Precompute the three ``(m, m)`` cumulative-trapezoid prefix tables that
@@ -166,8 +167,8 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       in ``u``, so the two modes agree to summation order and carry the same
       gradients. ``hinv1`` / ``hinv2`` invert the same closed form either way,
       reading a table only to locate the cell they invert in, and are the one
-      member whose two modes differ by rounding. ``pdf`` and
-      ``TorchTllBicop.rect_mass()`` do not depend on the setting.
+      member whose two modes differ by rounding. ``pdf``, ``rect_prob`` and
+      ``cond_interval_prob`` do not depend on the setting.
   norm_maxiter : int, default=25
       Cap on the passes that rescale ``values`` until both margins integrate
       to 1; they stop as soon as both do, to within ``1e-10``. ``25`` is the
@@ -780,48 +781,103 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       return self.interp_grid.cdf_cached(u, sy, sx, pref)
     return self.interp_grid.integrate_2d(u)
 
-  def rect_mass(self, a1: Tensor, b1: Tensor, a2: Tensor, b2: Tensor) -> Tensor:
-    """Probability of the rectangle ``(a1, b1] x (a2, b2]``.
+  def _as_grid(self, *values: Tensor) -> tuple[Tensor, ...]:
+    """Coerce bounds onto the grid's dtype and device, without trimming.
 
-    The value a four-corner difference of ``TorchTllBicop.cdf()`` defines,
-    arranged so that almost none of it cancels: differencing amplifies an
-    absolute error by ``~4 / (w1 w2)`` in the rectangle's widths, where this
-    route amplifies by ``1 / w2`` alone. Available in both cache modes -- it
-    reads the density grid, not the prefix tables -- and cancellation-free
-    only because ``values`` is nonnegative.
+    ``[1e-10, 1-1e-10]`` is the guard ``cdf`` applies to a query point, and a
+    rectangle's lower bound is legitimately zero -- trimming it drops a sliver
+    of width ``1e-10`` per axis, which is what a corner rectangle would then
+    disagree with ``cdf`` by. The quadrature weights clamp to ``[0, 1]``
+    themselves.
+    """
+    ref = self.interp_grid.values
+    return tuple(
+      torch.as_tensor(t, dtype=ref.dtype, device=ref.device) for t in values
+    )
+
+  def rect_prob(
+    self,
+    a1: Tensor,
+    b1: Tensor,
+    a2: Tensor,
+    b2: Tensor,
+    *,
+    x: Optional[Tensor] = None,
+  ) -> Tensor:
+    """Probability of the rectangle ``(a1, b1] x (a2, b2]``, off the grid.
+
+    Overrides the four-corner difference
+    :meth:`~pyvinecopulib.core.BicopBase.rect_prob` reads it as, which
+    amplifies an absolute error by ``~4 / (w1 w2)`` in the rectangle's widths
+    where this route amplifies by ``1 / w2`` alone. Available in both cache
+    modes -- it reads the density grid, not the prefix tables -- and
+    cancellation-free only because ``values`` is nonnegative.
 
     Parameters
     ----------
     a1, b1, a2, b2 : Tensor, shape (n,), dtype float
-        Rectangle bounds per query. An empty or inverted interval gives zero.
+        Rectangle bounds per query, in either order. An empty rectangle gives
+        zero.
+    x : Tensor, or None, optional
+        Unused: a ``TorchTllBicop`` is unconditional. Accepted so the class
+        satisfies ``BicopLike``.
 
     Returns
     -------
     Tensor, shape (n,), dtype float
         Rectangle probabilities. The independence copula gives
-        ``(b1 - a1) * (b2 - a2)``.
+        ``|b1 - a1| * |b2 - a2|``.
 
     Notes
     -----
     A probability, not the density grid's own mass over the rectangle: the two
     differ by the rescaling ``TorchTllBicop.cdf()`` applies.
-    :class:`~pyvinecopulib.core.DiscreteBicop` leaves this
-    accuracy on the table and differences ``cdf`` instead, which is what keeps
-    a discrete torch vine in step with ``Vinecop``.
     """
-    # Coerced but *not* trimmed: `[1e-10, 1-1e-10]` is the guard `cdf` applies
-    # to a query point, and a rectangle's lower bound is legitimately zero --
-    # trimming it drops a sliver of width `1e-10` per axis, which is exactly
-    # what a corner rectangle would then disagree with `cdf` by. The weights
-    # clamp to `[0, 1]` themselves.
-    ref = self.interp_grid.values
-    a1, b1, a2, b2 = (
-      torch.as_tensor(t, dtype=ref.dtype, device=ref.device)
-      for t in (a1, b1, a2, b2)
-    )
+    del x
+    a1, b1, a2, b2 = self._as_grid(a1, b1, a2, b2)
     if self.is_indep:
-      return (b1 - a1).clamp_min(0.0) * (b2 - a2).clamp_min(0.0)
+      return (b1 - a1).abs() * (b2 - a2).abs()
     return self.interp_grid.rect_mass(a1, b1, a2, b2)
+
+  def cond_interval_prob(
+    self,
+    u_cond: Tensor,
+    lo: Tensor,
+    hi: Tensor,
+    cond_var: int,
+    *,
+    x: Optional[Tensor] = None,
+  ) -> Tensor:
+    """Probability of ``(lo, hi]`` in the free argument, given the other.
+
+    The conditional counterpart of :meth:`rect_prob`, and the same improvement
+    on the difference of two h-function values
+    :meth:`~pyvinecopulib.core.BicopBase.cond_interval_prob` reads it as: a
+    conditional distribution is one grid line over its own total, so this is a
+    ratio of nonnegative sums, and it is not clamped into the open unit
+    interval as an h-function value is.
+
+    Parameters
+    ----------
+    u_cond : Tensor, shape (n,), dtype float
+        The argument held fixed.
+    lo, hi : Tensor, shape (n,), dtype float
+        Bounds in the free argument, in either order.
+    cond_var : int
+        1 or 2, the argument held fixed.
+    x : Tensor, or None, optional
+        Unused, as for :meth:`rect_prob`.
+
+    Returns
+    -------
+    Tensor, shape (n,), dtype float
+        Conditional probabilities.
+    """
+    del x
+    u_cond, lo, hi = self._as_grid(u_cond, lo, hi)
+    if self.is_indep:
+      return (hi.clamp(0.0, 1.0) - lo.clamp(0.0, 1.0)).abs()
+    return self.interp_grid.cond_interval_mass(u_cond, lo, hi, cond_var)
 
   def _tables(self) -> tuple[Tensor, Tensor, Tensor]:
     """The prefix tables, rebuilt in-graph when a gradient is being taken.

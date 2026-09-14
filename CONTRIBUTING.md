@@ -19,6 +19,10 @@ mamba activate pyvinecopulib
 make sync
 ```
 
+CMake finds Eigen and Boost in config mode only. If the configure step cannot
+find one, set `CMAKE_PREFIX_PATH="$CONDA_PREFIX"`, or point `EIGEN3_INCLUDE_DIR`
+/ `Boost_INCLUDE_DIR` at the headers directly.
+
 `make sync` runs `uv sync --all-extras --group dev --group test --group notebooks`,
 performs the editable install, and installs pre-commit hooks.
 

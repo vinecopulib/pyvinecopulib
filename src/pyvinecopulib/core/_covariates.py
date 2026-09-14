@@ -49,7 +49,12 @@ __all__ = [
 
 
 def pair_eval(
-  method: Callable[..., ArrayT], u: ArrayT, x: Optional[ArrayT]
+  method: Callable[..., ArrayT],
+  # The method's positional arguments: one array for `pdf` / `cdf` /
+  # `hfunc*`, the four bounds for `rect_prob`, and the three plus an axis
+  # selector for `cond_interval_prob`.
+  *args: Union[ArrayT, int],
+  x: Optional[ArrayT],
 ) -> ArrayT:
   """Evaluate a pair-copula method, forwarding ``x`` whenever there is one.
 
@@ -57,9 +62,9 @@ def pair_eval(
   ----------
   method : callable
       The bound method to call, e.g. ``pair.hfunc1``.
-  u : array
-      The pair-copula argument, passed positionally.
-  x : array, shape (n, p), or None, optional
+  *args : array or int
+      The method's positional arguments.
+  x : array, shape (n, p), or None
       The edge's conditioning matrix, passed by keyword when not ``None``.
 
   Returns
@@ -67,7 +72,7 @@ def pair_eval(
   array
       Whatever ``method`` returns.
   """
-  return method(u) if x is None else method(u, x=x)
+  return method(*args) if x is None else method(*args, x=x)
 
 
 def declared_eval(
