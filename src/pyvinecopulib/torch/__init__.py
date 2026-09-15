@@ -29,7 +29,7 @@ Requires PyTorch. Install with ``pip install pyvinecopulib[torch]``.
 See Also
 --------
 pyvinecopulib.core : Reference vine-copula evaluators (default everywhere).
-pyvinecopulib.sklearn : sklearn-compatible vine-copula estimators that route through either backend.
+pyvinecopulib.sklearn : sklearn-compatible vine-copula estimators, which fit a ``TorchVinedist`` when handed one.
 
 Notes
 -----

@@ -1,4 +1,4 @@
-"""Tests for the backend-neutral ``pyvinecopulib.core`` pair-copula base.
+"""Tests for the array-agnostic ``pyvinecopulib.core`` pair-copula base.
 
 Exercises :class:`pyvinecopulib.core.BicopBase` — the canonical,
 array-backend-agnostic partial implementation of the ``BicopLike`` contract —

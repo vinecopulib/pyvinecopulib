@@ -1,4 +1,4 @@
-"""Tests for the backend-neutral ``pyvinecopulib.core`` margin base.
+"""Tests for the array-agnostic ``pyvinecopulib.core`` margin base.
 
 Exercises :class:`pyvinecopulib.core.MarginBase` — the canonical,
 array-backend-agnostic partial implementation of the ``MarginLike`` contract —

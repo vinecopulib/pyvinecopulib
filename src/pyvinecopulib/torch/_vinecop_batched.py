@@ -13,7 +13,7 @@ unbatched operations in :mod:`._interp` — plus :class:`BatchedTreeLevel`,
 grids and wire-up tensors.
 
 Intentionally side-by-side with :mod:`._interp` rather than rewriting it:
-the legacy / lazy backends stay untouched so any regression is bisectable
+the legacy / lazy paths stay untouched so any regression is bisectable
 to this file.
 """
 

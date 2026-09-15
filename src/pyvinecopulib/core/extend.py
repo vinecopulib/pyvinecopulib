@@ -23,7 +23,7 @@ different audiences. `core` names ``Bicop``, ``Vinedist``,
 -- and putting machinery beside them makes the surface harder to read for the
 many to serve the few, puts it in every ``from pyvinecopulib.core import *``,
 and lists it in the rendered API next to ``to_pseudo_obs``. Reached as
-``pyvinecopulib.core.extend``, the way ``pyvinecopulib.sklearn.backends`` is.
+``pyvinecopulib.core.extend``, rather than from ``core`` itself.
 
 The four canonical bases and their protocols stay in `core`: ``README.md``
 tells users to subclass them "with the same confidence as on ``Vinecop``", so
