@@ -295,7 +295,7 @@ pyvinecopulib/
       py.typed                   # PEP 561 marker (built by scripts/generate_stubs.py)
 
       core/__init__.py           # Bicop, Vinecop, *VineStructure, FitControls*, Kde1d (re-exports from ext)
-        protocols.py             # Bicop/Vinecop/Margin/Vinedist/Controls contracts
+        protocols.py             # every contract: the array and its namespace, then Bicop/Vinecop/Margin/Vinedist/Controls
         bicop_base.py            # BicopBase (canonical BicopLike partial impl)
         vinecop_base.py          # VinecopBase (array-agnostic cascades + fit/select)
         vinecop_context.py       # ConditioningContext / Simplified / NonSimplified

@@ -281,7 +281,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     *,
     trainable: bool = True,
     validate_args: Optional[bool] = None,
-    device: Optional[torch.device] = None,
+    device: torch.types.Device = None,
     dtype: torch.dtype = torch.float64,
   ) -> None:
     # Initialize nn.Module explicitly: TorchDistributionMargin also subclasses MarginBase
@@ -338,7 +338,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     distribution: Distribution,
     *,
     trainable: bool = True,
-    device: Optional[torch.device] = None,
+    device: torch.types.Device = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchDistributionMargin":
     """Lift an already-constructed ``torch.distributions`` object.

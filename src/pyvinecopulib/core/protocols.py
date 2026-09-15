@@ -54,24 +54,18 @@ nothing about their signatures. The signatures nonetheless agree: ``Bicop``,
 checks and ``tests/test_core_protocols.py`` pins, so a consumer may type against
 the contract instead of a concrete class.
 
-**Typing.** :data:`ArrayT` is an unbounded, invariant ``TypeVar`` carried on
-these signatures and on everything that implements them, so a concrete
-implementation (e.g.
-:class:`~pyvinecopulib.torch.TorchTllBicop`) inherits precise ``torch.Tensor``
-return types. Invariance is forced: it stands in both parameter and return
-position on essentially every member. It carries no bound because the natural
-Array-API one, ``__array_namespace__``, is what ``torch.Tensor`` lacks, and
-naming the two concrete array types instead would close the extension point
-these protocols advertise and pull ``torch`` into the type-check closure of a
-subpackage that imports without it.
+**Typing.** :data:`ArrayT` is the array type an implementation commits to --
+``numpy.ndarray`` or ``torch.Tensor`` -- carried on every signature here and on
+everything that implements them, so a concrete class returns its own array
+type: :class:`~pyvinecopulib.torch.TorchTllBicop` returns a ``torch.Tensor``,
+not something vaguer.
 
-Having no bound is also what bounds how far ``ArrayT`` reaches: it names no
-attribute and no operator, so it types an array a body only *forwards* --
-every signature in ``core``, and the arguments handed on to a part -- while a
-body that indexes an array or does arithmetic on it holds the value as ``Any``
-(``array_api_compat`` publishes no ``Array`` protocol to bound the variable
-with, and the array namespace it resolves is itself untyped). The namespace
-itself is a plain ``types.ModuleType``, conventionally ``xp``.
+It is bounded by ``Array``, which says what any array must provide: a
+shape, indexing, arithmetic and comparison. Write ``ArrayT`` in a signature and
+``Array`` where a value is only ever computed on.
+
+``Namespace`` is the same idea for the module that operates on arrays --
+conventionally ``xp`` -- and ``array_namespace`` resolves an array to it.
 """
 
 from __future__ import annotations
@@ -81,21 +75,107 @@ from typing import (
   Any,
   Optional,
   Protocol,
+  Self,
   Sequence,
   TypeVar,
+  Union,
+  cast,
   runtime_checkable,
 )
 
+from array_api_compat import array_namespace as _array_namespace
+
 from ..pyvinecopulib_ext import RVineStructure
+
+
+# The right-hand side of an array operator, or an index: an array, a scalar, a
+# slice, a mask, or a tuple of those. `Any` once here rather than at nineteen
+# sites, and not a shrug: a protocol parameter is checked bivariantly, and the
+# two reference array types accept unions that differ from each other, so any
+# narrower spelling would exclude one of them.
+_Operand = Any
+
+
+@runtime_checkable
+class Array(Protocol):
+  """What an array provides: a shape, indexing, arithmetic and comparison.
+
+  ``numpy.ndarray`` and ``torch.Tensor`` both satisfy it as they are -- there
+  is nothing to inherit from and nothing to register. It is the bound on
+  :data:`ArrayT`, so writing ``ArrayT`` in a signature already promises all of
+  this, and ``Array`` itself is what to write where a value is only ever
+  computed on rather than handed back.
+
+  ``dtype`` and ``device`` are opaque: pass either back to the
+  ``Namespace`` that produced the array rather than reading into it.
+  """
+
+  # `__array_namespace__`, `__eq__`, `T` / `mT`, `to` / `astype` and `__neg__`
+  # are all left out: one of the two reference array types cannot satisfy each.
+  # Use `xp.equal`, `xp.matrix_transpose` and `a * -1.0` instead.
+
+  @property
+  def shape(self) -> tuple[int, ...]: ...
+
+  @property
+  def ndim(self) -> int: ...
+
+  @property
+  def dtype(self) -> object: ...
+
+  @property
+  def device(self) -> object: ...
+
+  def __getitem__(self, key: _Operand, /) -> Self: ...
+
+  def __setitem__(self, key: _Operand, value: _Operand, /) -> None: ...
+
+  def __add__(self, other: _Operand, /) -> Self: ...
+  def __radd__(self, other: _Operand, /) -> Self: ...
+  def __sub__(self, other: _Operand, /) -> Self: ...
+  def __rsub__(self, other: _Operand, /) -> Self: ...
+  def __mul__(self, other: _Operand, /) -> Self: ...
+  def __rmul__(self, other: _Operand, /) -> Self: ...
+  def __truediv__(self, other: _Operand, /) -> Self: ...
+  def __rtruediv__(self, other: _Operand, /) -> Self: ...
+
+  # A comparison answers in booleans, so it is a `BoolArray` rather than
+  # `Self`: a boolean array is a different type from the float array compared,
+  # and could not satisfy `Self` even in principle.
+  def __lt__(self, other: _Operand, /) -> BoolArray: ...
+  def __le__(self, other: _Operand, /) -> BoolArray: ...
+  def __gt__(self, other: _Operand, /) -> BoolArray: ...
+
+  def __bool__(self) -> bool: ...
+
+
+@runtime_checkable
+class BoolArray(Array, Protocol):
+  """An array of booleans: what a comparison returns, and what indexes a mask.
+
+  Everything ``Array`` provides, plus ``~``, ``&`` and ``|``.
+  """
+
+  # Those three live here rather than on `Array` because they raise on a float
+  # array, which is what the bases are parameterized by.
+  def __invert__(self) -> Self: ...
+  def __and__(self, other: _Operand, /) -> Self: ...
+  def __or__(self, other: _Operand, /) -> Self: ...
+
 
 # PEP 695 syntax (``class BicopLike[ArrayT]``) needs 3.12 and a PEP 696
 # ``default=Any`` needs 3.13 in the standard library; the floor here is 3.11,
 # so neither is usable yet. Revisit both in one pass when it moves.
 #: Array type an implementation commits to (``numpy.ndarray`` | ``torch.Tensor``).
-ArrayT = TypeVar("ArrayT")
+ArrayT = TypeVar("ArrayT", bound=Array)
 
 __all__ = [
+  "Array",
   "ArrayT",
+  "BoolArray",
+  "FInfo",
+  "Namespace",
+  "array_namespace",
   "BicopLike",
   "ControlsLike",
   "MarginLike",
@@ -139,6 +219,194 @@ class ControlsLike(Protocol):
     dict
         One entry per setting, keyed by the attribute name.
     """
+
+
+@runtime_checkable
+class FInfo(Protocol):
+  """The floating-point limits of a dtype, as ``Namespace.finfo`` reports.
+
+  Attributes
+  ----------
+  eps : float
+      Smallest representable difference from one.
+  tiny : float
+      Smallest positive normal value.
+  """
+
+  eps: float
+  tiny: float
+
+
+class Namespace(Protocol[ArrayT]):
+  """The module that operates on arrays -- ``xp`` by convention.
+
+  Generic in the array type, so ``xp.stack(...)`` on a PyTorch model gives a
+  ``torch.Tensor`` and on a NumPy one an ``ndarray``. Reach it through
+  ``array_namespace`` rather than importing a particular array library,
+  which is what lets one implementation run on either.
+
+  ``dtype`` and ``device`` travel as opaque values: read one off an
+  ``Array`` and pass it back here.
+  """
+
+  # -- construction ------------------------------------------------------ #
+  def asarray(
+    self,
+    obj: object,
+    /,
+    *,
+    dtype: object = None,
+    device: object = None,
+    copy: Optional[bool] = None,
+  ) -> ArrayT: ...
+
+  def empty(
+    self,
+    shape: Union[int, tuple[int, ...]],
+    /,
+    *,
+    dtype: object = None,
+    device: object = None,
+  ) -> ArrayT: ...
+
+  def zeros(
+    self,
+    shape: Union[int, tuple[int, ...]],
+    /,
+    *,
+    dtype: object = None,
+    device: object = None,
+  ) -> ArrayT: ...
+
+  def full(
+    self,
+    shape: Union[int, tuple[int, ...]],
+    fill_value: Optional[bool, float],
+    /,
+    *,
+    dtype: object = None,
+    device: object = None,
+  ) -> ArrayT: ...
+
+  def empty_like(
+    self, x: ArrayT, /, *, dtype: object = None, device: object = None
+  ) -> ArrayT: ...
+
+  def zeros_like(
+    self, x: ArrayT, /, *, dtype: object = None, device: object = None
+  ) -> ArrayT: ...
+
+  def ones_like(
+    self, x: ArrayT, /, *, dtype: object = None, device: object = None
+  ) -> ArrayT: ...
+
+  def full_like(
+    self,
+    x: ArrayT,
+    /,
+    fill_value: Optional[bool, float],
+    *,
+    dtype: object = None,
+    device: object = None,
+  ) -> ArrayT: ...
+
+  # -- shape ------------------------------------------------------------- #
+  def stack(self, arrays: Sequence[ArrayT], /, *, axis: int = 0) -> ArrayT: ...
+
+  def concat(
+    self, arrays: Sequence[ArrayT], /, *, axis: Optional[int] = 0
+  ) -> ArrayT: ...
+
+  def reshape(
+    self, x: ArrayT, /, shape: tuple[int, ...], *, copy: Optional[bool] = None
+  ) -> ArrayT: ...
+
+  def matrix_transpose(self, x: ArrayT, /) -> ArrayT: ...
+
+  # -- elementwise ------------------------------------------------------- #
+  def abs(self, x: ArrayT, /) -> ArrayT: ...
+
+  def exp(self, x: ArrayT, /) -> ArrayT: ...
+
+  def log(self, x: ArrayT, /) -> ArrayT: ...
+
+  def round(self, x: ArrayT, /) -> ArrayT: ...
+
+  def minimum(self, x1: ArrayT, x2: ArrayT, /) -> ArrayT: ...
+
+  def maximum(self, x1: ArrayT, x2: ArrayT, /) -> ArrayT: ...
+
+  def clip(
+    self,
+    x: ArrayT,
+    /,
+    min: Optional[None, float, ArrayT] = None,
+    max: Optional[None, float, ArrayT] = None,
+  ) -> ArrayT: ...
+
+  # -- predicates, which answer in booleans ------------------------------ #
+  def isnan(self, x: ArrayT, /) -> BoolArray: ...
+
+  def isinf(self, x: ArrayT, /) -> BoolArray: ...
+
+  def isfinite(self, x: ArrayT, /) -> BoolArray: ...
+
+  def where(self, condition: Array, x1: ArrayT, x2: ArrayT, /) -> ArrayT: ...
+
+  # `any` / `all` reduce to a zero-dimensional array, which every caller here
+  # immediately passes to `bool()`.
+  def any(
+    self, x: Array, /, *, axis: Union[None, int, tuple[int, ...]] = None
+  ) -> Array: ...
+
+  def all(
+    self, x: Array, /, *, axis: Union[None, int, tuple[int, ...]] = None
+  ) -> Array: ...
+
+  # -- reduction and dtype ----------------------------------------------- #
+  def sum(
+    self,
+    x: ArrayT,
+    /,
+    *,
+    axis: Union[None, int, tuple[int, ...]] = None,
+    dtype: object = None,
+  ) -> ArrayT: ...
+
+  def mean(
+    self, x: ArrayT, /, *, axis: Union[None, int, tuple[int, ...]] = None
+  ) -> ArrayT: ...
+
+  def astype(
+    self, x: ArrayT, dtype: object, /, *, copy: bool = True
+  ) -> ArrayT: ...
+
+  def isdtype(
+    self, dtype: object, kind: Union[str, tuple[str, ...]], /
+  ) -> bool: ...
+
+  def finfo(self, type: object, /) -> FInfo: ...
+
+
+def array_namespace(*arrays: object) -> Namespace[Any]:
+  """The namespace that operates on ``arrays``.
+
+  ``array_api_compat``'s own resolver, typed. Loose in its arguments and its
+  parameterization, because a caller may hand it a NumPy array and
+  read a PyTorch one back out of the namespace it gets (``place`` does exactly
+  that), so pinning the two together would be wrong.
+
+  Parameters
+  ----------
+  *arrays : array
+      One or more arrays, which must share a namespace.
+
+  Returns
+  -------
+  Namespace
+      The namespace, typed to the functions this package calls.
+  """
+  return cast("Namespace[Any]", _array_namespace(*arrays))
 
 
 _VINEDIST_EXAMPLE = """

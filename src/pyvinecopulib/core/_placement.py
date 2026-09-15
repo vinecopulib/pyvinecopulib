@@ -48,7 +48,9 @@ from __future__ import annotations
 from typing import Any, Generic, Optional, cast
 
 import numpy as np
-from array_api_compat import array_namespace, device as _device_of
+from array_api_compat import device as _device_of
+
+from .protocols import array_namespace
 
 from .protocols import ArrayT
 
@@ -200,7 +202,7 @@ def _is_array(value: object) -> bool:
   return True
 
 
-def place(obj: object, a: Any) -> Any:  # noqa: ANN401
+def place(obj: object, a: object) -> Any:  # noqa: ANN401 - any array out
   """Coerce ``a`` onto the namespace, dtype and device ``obj`` evaluates on.
 
   Placement only: no shape is checked and no value is clamped, so this is
@@ -269,7 +271,7 @@ class PlacementMixin:
   ``place`` it delegates to.
   """
 
-  def _prep(self, a: Any) -> Any:  # noqa: ANN401
+  def _prep(self, a: object) -> Any:  # noqa: ANN401 - returns any array
     """Bring one input array onto the namespace this object evaluates on.
 
     Placement only -- no shape or layout check and no clamping -- so it is

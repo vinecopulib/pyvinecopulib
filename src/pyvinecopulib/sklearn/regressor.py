@@ -45,7 +45,7 @@ class VineRegressor(RegressorMixin, VineBase):
     self,
     mean: bool = True,
     quantiles: Optional[_YLike] = None,
-    backend: Optional[_VinecopBackendBase[Any]] = None,
+    backend: Optional[_VinecopBackendBase[Any, Any]] = None,
     margins: object = None,
     batch_size: int = 100,
     use_grid: bool = True,

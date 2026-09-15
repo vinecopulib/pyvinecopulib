@@ -72,6 +72,7 @@ from typing import (
   TYPE_CHECKING,
   Any,
   Generic,
+  Protocol,
   Optional,
   Self,
   Sequence,
@@ -108,7 +109,29 @@ def _default_cpp_controls() -> pv.FitControlsVinecop:
 _VineT = TypeVar("_VineT", bound=pv.core.VinecopLike[Any])
 
 
-class _VinecopBackendBase(Generic[_VineT]):
+class _TreeControls(Protocol):
+  """The tree-selection fields both lanes' controls carry.
+
+  The bound on `_CtrlT`, and everything the shared `with_*` derivations
+  read. Each concrete backend parameterizes the class with its own
+  controls type, so a lane-specific field -- `num_threads` on the compiled
+  lane, `device` / `dtype` on the torch one -- is read at the precise type
+  rather than off an `Any`.
+  """
+
+  tree_algorithm: str
+  seeds: list[int]
+
+  def to_dict(self) -> dict[str, Any]: ...
+
+
+#: The controls a backend holds. A type parameter for the same reason `_VineT`
+#: is one: the two lanes share no field beyond those above, so the base can
+#: only name what it reads and the subclass supplies the rest.
+_CtrlT = TypeVar("_CtrlT", bound=_TreeControls)
+
+
+class _VinecopBackendBase(Generic[_VineT, _CtrlT]):
   """Shared adapter surface for the vine-copula backends.
 
   Holds the vine-fit configuration and the fitted vine's evaluation surface,
@@ -135,23 +158,17 @@ class _VinecopBackendBase(Generic[_VineT]):
   def __init__(
     self,
     *,
-    controls: Optional[pv.core.ControlsLike] = None,
+    controls: Optional[_CtrlT] = None,
     structure: Optional[pv.RVineStructure] = None,
   ) -> None:
     self.controls = controls
     self.structure = structure
 
   # -- hooks a concrete backend provides ---------------------------------- #
-  def _default_controls(self) -> pv.core.ControlsLike:
+  def _default_controls(self) -> _CtrlT:
     raise NotImplementedError
 
-  # The two controls types share no field beyond `to_dict`, and both halves of
-  # this class read fields: the `with_*` derivations write `tree_algorithm` /
-  # `seeds` / `num_threads`, and each concrete backend reads its own lane's
-  # (`num_threads` here, `device` / `dtype` there). Every type narrow enough to
-  # name any of those excludes the other lane's controls, so the hook that
-  # hands them out is where the looseness lives.
-  def _effective_controls(self) -> Any:  # noqa: ANN401 - see above
+  def _effective_controls(self) -> _CtrlT:
     return (
       self.controls if self.controls is not None else self._default_controls()
     )
@@ -255,7 +272,7 @@ class _VinecopBackendBase(Generic[_VineT]):
 
     Returns
     -------
-    _VinecopBackendBase[Any]
+    _VinecopBackendBase[Any, Any]
         Independent backend configuration for one fit, of this backend's own
         class.
 
@@ -269,15 +286,10 @@ class _VinecopBackendBase(Generic[_VineT]):
     new.controls = controls
     return new
 
-  def with_num_threads(self, num_threads: int) -> Self:
-    new_controls = _copy.copy(self._effective_controls())
-    new_controls.num_threads = num_threads
-    new = _copy.copy(self)
-    new.controls = new_controls
-    return new
 
-
-class VinecopBackend(_VinecopBackendBase["pv.Vinecop"]):
+class VinecopBackend(
+  _VinecopBackendBase["pv.Vinecop", "pv.FitControlsVinecop"]
+):
   """Default backend. Wraps ``Vinecop``.
 
   Stores constructor arguments verbatim per the scikit-learn developer guide;
@@ -305,6 +317,28 @@ class VinecopBackend(_VinecopBackendBase["pv.Vinecop"]):
     structure: Optional[pv.RVineStructure] = None,
   ) -> None:
     super().__init__(controls=controls, structure=structure)
+
+  def with_num_threads(self, num_threads: int) -> Self:
+    """A copy of this backend fitting and evaluating on ``num_threads``.
+
+    On this lane only: PyTorch threading is global and device-bound, so
+    ``TorchVinecopBackend`` overrides it as a no-op.
+
+    Parameters
+    ----------
+    num_threads : int
+        Threads to use.
+
+    Returns
+    -------
+    VinecopBackend
+        A copy carrying the new thread count.
+    """
+    new_controls = _copy.copy(self._effective_controls())
+    new_controls.num_threads = num_threads
+    new = _copy.copy(self)
+    new.controls = new_controls
+    return new
 
   def _default_controls(self) -> pv.FitControlsVinecop:
     return _default_cpp_controls()
@@ -352,7 +386,9 @@ class VinecopBackend(_VinecopBackendBase["pv.Vinecop"]):
     )
 
 
-class TorchVinecopBackend(_VinecopBackendBase["TorchVinecop"]):
+class TorchVinecopBackend(
+  _VinecopBackendBase["TorchVinecop", "FitControlsTorchVinecop"]
+):
   """PyTorch backend. Wraps :class:`pyvinecopulib.torch.TorchVinecop`.
 
   Pick this backend for GPU placement (``.to("cuda")``), autograd through the
@@ -528,14 +564,14 @@ class _BackendVinecop:
 
   Parameters
   ----------
-  backend : _VinecopBackendBase[Any]
+  backend : _VinecopBackendBase[Any, Any]
       A resolved backend.
   vine : VinecopLike
       The vine that backend fitted.
   """
 
   def __init__(
-    self, backend: _VinecopBackendBase[Any], vine: pv.core.VinecopLike[Any]
+    self, backend: _VinecopBackendBase[Any, Any], vine: pv.core.VinecopLike[Any]
   ) -> None:
     self.backend = backend
     self.vine = vine
@@ -677,19 +713,19 @@ class _BackendVinecop:
 # which is narrower than the `Vinedist` the estimators publish as
 # `distribution_`, so naming the type here would narrow every read of it.
 def resolve_backend(
-  backend: Optional[_VinecopBackendBase[Any]],
+  backend: Optional[_VinecopBackendBase[Any, Any]],
 ) -> Any:  # noqa: ANN401 - see above
   """Coerce a user-supplied ``backend=`` value to a concrete backend.
 
   Parameters
   ----------
-  backend : _VinecopBackendBase[Any], or None, optional
+  backend : _VinecopBackendBase[Any, Any], or None, optional
       `None` returns a default-constructed :class:`VinecopBackend`; any other
       value (a backend instance) is returned unchanged.
 
   Returns
   -------
-  _VinecopBackendBase[Any]
+  _VinecopBackendBase[Any, Any]
       A concrete backend instance.
   """
   return backend if backend is not None else VinecopBackend()

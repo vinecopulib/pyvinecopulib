@@ -14,10 +14,9 @@ unchanged so that precision's results are unmoved.
 
 from __future__ import annotations
 
-from types import ModuleType
 from typing import Any, Optional, Tuple, cast
 
-from array_api_compat import array_namespace
+from .protocols import Namespace, array_namespace
 
 from .protocols import ArrayT
 
@@ -25,7 +24,7 @@ _TRIM_LO: float = 1e-10
 _TRIM_HI: float = 1.0 - 1e-10
 
 
-def trim_bounds(xp: ModuleType, dtype: object) -> Tuple[float, float]:
+def trim_bounds(xp: Namespace[ArrayT], dtype: object) -> Tuple[float, float]:
   """Clamp bounds for ``dtype``, strictly inside ``(0, 1)``.
 
   Parameters
@@ -45,7 +44,7 @@ def trim_bounds(xp: ModuleType, dtype: object) -> Tuple[float, float]:
   return max(_TRIM_LO, eps * eps), min(_TRIM_HI, 1.0 - eps)
 
 
-def trim(a: ArrayT, xp: Optional[ModuleType] = None) -> ArrayT:
+def trim(a: ArrayT, xp: Optional[Namespace[ArrayT]] = None) -> ArrayT:
   """Clamp ``a`` into the open unit interval at its own precision.
 
   For a value **this library produced** -- an h-function, a distribution

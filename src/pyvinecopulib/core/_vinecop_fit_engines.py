@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import Any, Callable, Optional, Sequence, cast
 
 import numpy as np
-from array_api_compat import array_namespace
+from .protocols import array_namespace
 
 from ..pyvinecopulib_ext import RVineStructure
 from ._covariates import pair_eval, prepare_covariates
@@ -577,13 +577,9 @@ def select_parts(
   weights = validate_weights(weights, u[:, 0])
   criterion = _make_criterion(tree_criterion, n, weights, criterion_function, x)
 
-  # A node is one edge of the previous tree (a single variable for the base
-  # tree). ``prev`` holds the two previous-tree vertex ids that this edge
-  # joined; a shared prev id is the proximity condition and picks which
-  # h-function feeds the next tree.
-  # A base-tree vertex is a single variable, so both of its slots carry that
-  # variable's type and its left limit fills the first slot only -- the base
-  # tree is a star, so every edge reads slot 0 (`make_base_tree`).
+  # A node is one edge of the previous tree, or a single variable in the base
+  # tree. ``prev`` holds the two vertex ids it joined; a shared one is the
+  # proximity condition and picks which h-function feeds the next tree.
   nodes: list[dict[str, Any]] = [
     {
       "all_indices": (i,),
@@ -691,14 +687,10 @@ def select_parts(
       for e in selected
     ]
     level_types = [cand_types[e] for e in selected]
-    # Each surviving edge's conditioned pair and its conditioning chains,
-    # resolved before anything is fitted: a conditional pair's conditioning
-    # matrix is part of its input, so it needs the same lookahead
-    # `survivors` does. `a_var` is v0's unique variable — the fitted pair's
-    # first argument — and `b_var` v1's, in the C++ `set_sym_diff` order.
-    # Extending an endpoint node's chain by the variable it conditioned away
-    # reads the finalized column downwards, which is what makes the chain
-    # the C1 order for the slot that endpoint ends up the diagonal of.
+    # Resolved before anything is fitted, since a conditional pair's
+    # conditioning matrix is part of its input. `a_var` / `b_var` are the two
+    # endpoints' unique variables, in the `set_sym_diff` order, and extending
+    # each chain by the variable it conditioned away gives the slot's C1 order.
     conditioned: list[tuple[int, int, list[int]]] = []
     chains: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
     for e in selected:
@@ -712,13 +704,9 @@ def select_parts(
     # The pair is fitted in the orientation the search built it in, so the
     # `a` chain is the order it is estimated on and the one recorded with it.
     contexts = [selection_context(chain_a) for chain_a, _ in chains]
-    # The weight above only decides which edges survive. Whether a surviving
-    # edge is *fitted* is a second question with the same answer upstream
-    # gives: an edge whose criterion falls below the threshold keeps a
-    # default-constructed pair -- independence -- and `select` is never
-    # called on it (tools_select.ipp fit_or_reuse_pair_copula). At the
-    # default `threshold=0.0` no non-negative criterion is below it, so
-    # nothing here is thresholded.
+    # The weight above decides which edges survive; this decides which are
+    # *fitted*. An edge below the threshold keeps independence and is never
+    # selected on (`tools_select.ipp` `fit_or_reuse_pair_copula`).
     thresholded = [cand_crits[e] < threshold for e in selected]
     to_fit = [i for i, skip in enumerate(thresholded) if not skip]
     fitted_level: Optional[dict[int, BicopLike[Any]]] = None
@@ -750,12 +738,9 @@ def select_parts(
         )
       pair = _declared(pair, edge_types)
       if not flip_checked and not thresholded[edge_idx]:
-        # `_check_selectable` settles this up front when the vine names a
-        # `bicop_class`; behind a caller's own `fit_edge` the class is not
-        # knowable until one pair exists, so probe that one rather than
-        # discovering it after every edge has been fitted. A thresholded
-        # edge is not one of theirs -- `IndependenceBicop.flip` returns
-        # `self` and would pass the probe for them.
+        # Behind a caller's own `fit_edge` the pair class is not knowable
+        # until one exists, so probe the first rather than discovering it
+        # after every edge is fitted. A thresholded edge is not one of theirs.
         flip_checked = True
         try:
           flip_of(pair)

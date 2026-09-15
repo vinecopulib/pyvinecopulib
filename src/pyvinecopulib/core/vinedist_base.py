@@ -31,7 +31,7 @@ from __future__ import annotations
 from abc import ABC
 from typing import Any, ClassVar, Optional, Self, Sequence, cast
 
-from array_api_compat import array_namespace
+from .protocols import array_namespace
 
 from ..pyvinecopulib_ext import RVineStructure
 from ._covariates import declared_eval, prepare_covariates
@@ -65,7 +65,7 @@ _OPTIONAL_FIELD_ERRORS = (
 )
 
 
-def _declared(margin: object, name: str) -> Any:  # noqa: ANN401 - any field
+def _declared(margin: object, name: str) -> object:
   """One optional summary field, or ``None`` where the margin declines it.
 
   A bare ``getattr(margin, name, None)`` absorbs only ``AttributeError``, so a
@@ -675,11 +675,9 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       total: Any = declared_eval(self._vinecop, "logpdf", layout, x)
     else:
       total = safe_log(declared_eval(self._vinecop, "pdf", layout, x))
-    # The parts' namespace, not the input's, as `marginal_cdf` and
-    # `copula_data` both do: a copula or a margin may legitimately answer in
-    # another array type than it was handed -- a torch copula hosting NumPy
-    # margins is legal -- and operating on that through the input's namespace
-    # either raises or silently detaches. Each term is then coerced onto the
+    # The parts' namespace, not the input's: a part may answer in another
+    # array type than it was handed, and the input's namespace would either
+    # raise on that or silently detach it. Each term is then coerced onto the
     # accumulator for the same reason: adding an ndarray to a tensor that
     # tracks grad sends NumPy looking for `__array__` and raises.
     xp = array_namespace(total)
@@ -1005,7 +1003,10 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
 
   @classmethod
   def _coerce_fit_data(
-    cls,
+    # Annotated, rather than left bare: `y` is `object` because the hook
+    # coerces whatever the caller brought, so `ArrayT` appears only in the
+    # return and the checker has nothing to bind it from otherwise.
+    cls: "type[VinedistBase[ArrayT]]",
     y: object,
     weights: Optional[ArrayT],
     controls: Optional[ControlsLike],

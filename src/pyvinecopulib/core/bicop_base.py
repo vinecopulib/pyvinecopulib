@@ -28,10 +28,9 @@ from __future__ import annotations
 import copy
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
-from types import ModuleType
 from typing import Any, Optional, Self, TypeVar, cast
 
-from array_api_compat import array_namespace
+from .protocols import Namespace, array_namespace
 
 from ._bicop_plot import (
   BICOP_PLOT_PARAMS,
@@ -45,16 +44,18 @@ from ._trim import trim
 from ._validation import check_var_types
 from ._rootfind import solve_increasing
 
-from .protocols import ArrayT, BicopLike, ControlsLike, _BICOP_EXAMPLE
+from .protocols import (
+  ArrayT,
+  BicopLike,
+  BoolArray,
+  ControlsLike,
+  _BICOP_EXAMPLE,
+)
 
 __all__ = ["BicopBase"]
 
-# A pair copula's own type, which `flip_of` hands back: every `flip` in the
-# library returns a pair of the same kind as the one it was asked of, and a
-# caller that established more about its pair than the contract requires --
-# a `cdf`, for a pair on a discrete edge -- still has it afterwards. Unbounded
-# on purpose: a foreign object that satisfies nothing at all is exactly what
-# the raise below is for, so this cannot demand `BicopLike`.
+# A pair copula's own type, which `flip_of` hands back unchanged. Unbounded:
+# an object satisfying nothing at all is what the raise below is for.
 _PairT = TypeVar("_PairT")
 
 
@@ -183,9 +184,7 @@ def rect_prob_from_cdf(
   x0, x1 = xp.minimum(a1, b1), xp.maximum(a1, b1)
   y0, y1 = xp.minimum(a2, b2), xp.maximum(a2, b2)
 
-  # `Any` on the corners: `ArrayT` is unbounded, so it names no comparison
-  # operator, and these are compared against `0.0` below.
-  def at(p: Any, q: Any) -> Any:
+  def at(p: ArrayT, q: ArrayT) -> ArrayT:
     val = pair_eval(cdf, xp.stack([p, q], axis=-1), x=x)
     # A bound of 0 is the distribution's own lower limit, so a corner on it
     # contributes nothing -- and `cdf` would have read a trimmed 1e-10 there.
@@ -193,7 +192,7 @@ def rect_prob_from_cdf(
 
   # Summed in two pairs, the grouping the reference pair copula sums them in:
   # it is what makes the two agree to the last bit rather than to rounding.
-  return cast("ArrayT", (at(x1, y1) + at(x0, y0)) - (at(x0, y1) + at(x1, y0)))
+  return (at(x1, y1) + at(x0, y0)) - (at(x0, y1) + at(x1, y0))
 
 
 def cond_interval_prob_from_hfunc(
@@ -233,12 +232,11 @@ def cond_interval_prob_from_hfunc(
   xp = array_namespace(any_lo)
   a, b = xp.minimum(lo, hi), xp.maximum(lo, hi)
 
-  # `Any` for the same reason as `rect_prob_from_cdf`'s corner helper.
-  def at(free: Any) -> Any:
+  def at(free: ArrayT) -> ArrayT:
     cols = [u_cond, free] if cond_var == 1 else [free, u_cond]
     return pair_eval(hfunc, xp.stack(cols, axis=-1), x=x)
 
-  return cast("ArrayT", at(b) - at(a))
+  return at(b) - at(a)
 
 
 class BicopBase(
@@ -351,12 +349,9 @@ class BicopBase(
     return other
 
   # --- the evaluation surface ------------------------------------------- #
-  # Each public member below dispatches on `var_types` and delegates to the
-  # `_*_raw` leaf a subclass writes, which always sees two continuous columns.
-  # This is `AbstractBicop`'s shape: the quotients that turn a derivative into
-  # an atom's probability belong to every pair copula, not to a wrapper around
-  # one, because whether an argument has atoms is a property of the edge the
-  # pair was fitted on.
+  # Each public member dispatches on `var_types` and delegates to the `_*_raw`
+  # leaf a subclass writes, which always sees two continuous columns --
+  # `AbstractBicop`'s shape.
   def pdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Density with respect to each argument's own reference measure.
 
@@ -381,13 +376,12 @@ class BicopBase(
     """
     xp, u1, u2, u1m, u2m, x = self._atoms(u, x)
     if self._d1 and self._d2:
-      return cast("ArrayT", self._pdf_d_d(xp, u1, u2, u1m, u2m, x))
+      return self._pdf_d_d(xp, u1, u2, u1m, u2m, x)
     if self._d1 or self._d2:
-      return cast(
-        "ArrayT",
-        self._pdf_mixed(xp, u1, u2, u1m, u2m, x, discrete=1 if self._d1 else 2),
+      return self._pdf_mixed(
+        xp, u1, u2, u1m, u2m, x, discrete=1 if self._d1 else 2
       )
-    return cast("ArrayT", self._pdf_c(xp, u1, u2, x))
+    return self._pdf_c(xp, u1, u2, x)
 
   def hfunc1(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """``P(U2 <= u2 | U1)``, conditioning on the atom when ``U1`` is discrete.
@@ -407,17 +401,14 @@ class BicopBase(
     """
     xp, u1, u2, u1m, _, x = self._atoms(u, x)
     if not self._d1:
-      return cast("ArrayT", self._h1_c(xp, u1, u2, x))
+      return self._h1_c(xp, u1, u2, x)
     # Conditioning on `u1^- < U1 <= u1` divides the rectangle probability by
     # the atom's width; the second argument enters at its value either way.
-    return cast(
-      "ArrayT",
-      self._quotient(
-        xp,
-        self._strip(xp, u1m, u1, u2, x, axis=1),
-        xp.abs(u1 - u1m),
-        self._h1_c(xp, 0.5 * (u1 + u1m), u2, x),
-      ),
+    return self._quotient(
+      xp,
+      self._strip(xp, u1m, u1, u2, x, axis=1),
+      xp.abs(u1 - u1m),
+      self._h1_c(xp, 0.5 * (u1 + u1m), u2, x),
     )
 
   def hfunc2(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
@@ -438,15 +429,12 @@ class BicopBase(
     """
     xp, u1, u2, _, u2m, x = self._atoms(u, x)
     if not self._d2:
-      return cast("ArrayT", self._h2_c(xp, u1, u2, x))
-    return cast(
-      "ArrayT",
-      self._quotient(
-        xp,
-        self._strip(xp, u2m, u2, u1, x, axis=2),
-        xp.abs(u2 - u2m),
-        self._h2_c(xp, u1, 0.5 * (u2 + u2m), x),
-      ),
+      return self._h2_c(xp, u1, u2, x)
+    return self._quotient(
+      xp,
+      self._strip(xp, u2m, u2, u1, x, axis=2),
+      xp.abs(u2 - u2m),
+      self._h2_c(xp, u1, 0.5 * (u2 + u2m), x),
     )
 
   def loglik(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
@@ -498,17 +486,10 @@ class BicopBase(
     """
     xp, u1, p, u1m, _, x = self._atoms(u, x)
     if not self._d1:
-      return cast(
-        "ArrayT", pair_eval(self._hinv1_raw, xp.stack([u1, p], axis=-1), x=x)
-      )
-    return cast(
-      "ArrayT",
-      solve_increasing(
-        lambda v: self.hfunc1(
-          cast("ArrayT", xp.stack([u1, v, u1m, v], axis=-1)), x=x
-        ),
-        p,
-      ),
+      return pair_eval(self._hinv1_raw, xp.stack([u1, p], axis=-1), x=x)
+    return solve_increasing(
+      lambda v: self.hfunc1(xp.stack([u1, v, u1m, v], axis=-1), x=x),
+      p,
     )
 
   def hinv2(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
@@ -532,17 +513,10 @@ class BicopBase(
     """
     xp, p, u2, _, u2m, x = self._atoms(u, x)
     if not self._d2:
-      return cast(
-        "ArrayT", pair_eval(self._hinv2_raw, xp.stack([p, u2], axis=-1), x=x)
-      )
-    return cast(
-      "ArrayT",
-      solve_increasing(
-        lambda v: self.hfunc2(
-          cast("ArrayT", xp.stack([v, u2, v, u2m], axis=-1)), x=x
-        ),
-        p,
-      ),
+      return pair_eval(self._hinv2_raw, xp.stack([p, u2], axis=-1), x=x)
+    return solve_increasing(
+      lambda v: self.hfunc2(xp.stack([v, u2, v, u2m], axis=-1), x=x),
+      p,
     )
 
   def cdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
@@ -567,7 +541,7 @@ class BicopBase(
         If the subclass supplies no ``_cdf_raw``.
     """
     xp, u1, u2, _, _, x = self._atoms(u, x)
-    return cast("ArrayT", self._cdf_c(xp, u1, u2, x))
+    return self._cdf_c(xp, u1, u2, x)
 
   def rect_prob(
     self,
@@ -875,13 +849,8 @@ class BicopBase(
   supports_batched: bool = False
 
   # --- the leaves a subclass writes -------------------------------------- #
-  # Each takes the two continuous columns, already placed, checked and clamped
-  # by the dispatcher above, and knows nothing about atoms. `_raw` is
-  # `AbstractBicop`'s own name for the same thing: the primitive that ignores
-  # `var_types`. Declaring `x` on one is optional and is what marks the pair
-  # conditional -- `pair_eval` forwards a matrix only to a leaf that takes one,
-  # and raises otherwise, so an unconditional pair writes `(self, u)` and is
-  # never handed covariates it cannot read.
+  # Each takes two continuous columns the dispatcher has already prepared, and
+  # knows nothing about atoms. Declaring `x` on one marks the pair conditional.
   @abstractmethod
   def _pdf_raw(self, u: ArrayT) -> ArrayT:
     """Continuous pair-copula density at each observation.
@@ -1040,15 +1009,13 @@ class BicopBase(
     )
 
   # --- the mixed-discrete quotients -------------------------------------- #
-  # Ported from `AbstractBicop`, which keeps them on the pair copula for the
-  # same reason: they are what a discrete declaration *means*, so every pair
-  # copula has them and none needs a wrapper to supply them. The bodies
-  # compute on the columns -- differences, quotients, comparisons -- so they
-  # hold their arguments as `Any`, which is what an unbounded `ArrayT`
-  # requires of a body that does arithmetic.
+  # On the pair copula, as `AbstractBicop` keeps them: they are what a discrete
+  # declaration means, so no wrapper has to supply them.
   def _atoms(
     self, u: ArrayT, x: Optional[ArrayT]
-  ) -> tuple[ModuleType, Any, Any, Any, Any, Optional[ArrayT]]:
+  ) -> tuple[
+    Namespace[ArrayT], ArrayT, ArrayT, ArrayT, ArrayT, Optional[ArrayT]
+  ]:
     """Namespace, the two values, their left limits, and the covariates."""
     ua: Any = self._prep_args(u)
     xp = array_namespace(ua)
@@ -1065,25 +1032,35 @@ class BicopBase(
       x,
     )
 
-  def _pdf_c(self, xp: ModuleType, a: Any, b: Any, x: Optional[ArrayT]) -> Any:
+  def _pdf_c(
+    self, xp: Namespace[ArrayT], a: ArrayT, b: ArrayT, x: Optional[ArrayT]
+  ) -> ArrayT:
     return pair_eval(self._pdf_raw, xp.stack([a, b], axis=-1), x=x)
 
-  def _cdf_c(self, xp: ModuleType, a: Any, b: Any, x: Optional[ArrayT]) -> Any:
+  def _cdf_c(
+    self, xp: Namespace[ArrayT], a: ArrayT, b: ArrayT, x: Optional[ArrayT]
+  ) -> ArrayT:
     return pair_eval(self._cdf_raw, xp.stack([a, b], axis=-1), x=x)
 
-  def _h1_c(self, xp: ModuleType, a: Any, b: Any, x: Optional[ArrayT]) -> Any:
+  def _h1_c(
+    self, xp: Namespace[ArrayT], a: ArrayT, b: ArrayT, x: Optional[ArrayT]
+  ) -> ArrayT:
     return pair_eval(self._hfunc1_raw, xp.stack([a, b], axis=-1), x=x)
 
-  def _h2_c(self, xp: ModuleType, a: Any, b: Any, x: Optional[ArrayT]) -> Any:
+  def _h2_c(
+    self, xp: Namespace[ArrayT], a: ArrayT, b: ArrayT, x: Optional[ArrayT]
+  ) -> ArrayT:
     return pair_eval(self._hfunc2_raw, xp.stack([a, b], axis=-1), x=x)
 
   @staticmethod
-  def _take(value: Optional[Any], mask: Any) -> Optional[Any]:
+  def _take(value: Optional[ArrayT], mask: BoolArray) -> Optional[ArrayT]:
     """Select rows from an optional conditioning matrix."""
     return None if value is None else value[mask]
 
   @staticmethod
-  def _quotient(xp: ModuleType, num: Any, delta: Any, fallback: Any) -> Any:
+  def _quotient(
+    xp: Namespace[ArrayT], num: ArrayT, delta: ArrayT, fallback: ArrayT
+  ) -> ArrayT:
     """``|num / delta|`` over a wide-enough atom, else ``|fallback|``."""
     wide = delta > DELTA_MIN
     safe = xp.where(wide, delta, xp.ones_like(delta))
@@ -1091,35 +1068,35 @@ class BicopBase(
 
   def _interval(
     self,
-    u_cond: Any,
-    lo: Any,
-    hi: Any,
+    u_cond: ArrayT,
+    lo: ArrayT,
+    hi: ArrayT,
     cond_var: int,
     x: Optional[ArrayT],
-  ) -> Any:
+  ) -> ArrayT:
     """``P(lo < U_free <= hi | U_cond = u_cond)``, a mixed edge's numerator."""
     return pair_eval(self.cond_interval_prob, u_cond, lo, hi, cond_var, x=x)
 
   def _rect(
     self,
-    a1: Any,
-    b1: Any,
-    a2: Any,
-    b2: Any,
+    a1: ArrayT,
+    b1: ArrayT,
+    a2: ArrayT,
+    b2: ArrayT,
     x: Optional[ArrayT],
-  ) -> Any:
+  ) -> ArrayT:
     """``P((a1, b1] x (a2, b2])``, through whichever route the pair declares."""
     return pair_eval(self.rect_prob, a1, b1, a2, b2, x=x)
 
   def _strip(
     self,
-    xp: ModuleType,
-    a1: Any,
-    b1: Any,
-    b2: Any,
+    xp: Namespace[ArrayT],
+    a1: ArrayT,
+    b1: ArrayT,
+    b2: ArrayT,
     x: Optional[ArrayT],
     axis: int,
-  ) -> Any:
+  ) -> ArrayT:
     """``P((a1, b1] x (0, b2])`` for ``axis=1``, transposed for ``axis=2``.
 
     The rectangle anchored at the origin, which an h-function's numerator is.
@@ -1134,15 +1111,15 @@ class BicopBase(
 
   def _pdf_mixed(
     self,
-    xp: ModuleType,
-    u1: Any,
-    u2: Any,
-    u1m: Any,
-    u2m: Any,
+    xp: Namespace[ArrayT],
+    u1: ArrayT,
+    u2: ArrayT,
+    u1m: ArrayT,
+    u2m: ArrayT,
     x: Optional[ArrayT],
     *,
     discrete: int,
-  ) -> Any:
+  ) -> ArrayT:
     """Evaluate only the quotient or derivative each row requires."""
     delta = xp.abs((u1 - u1m) if discrete == 1 else (u2 - u2m))
     wide = delta > DELTA_MIN
@@ -1168,13 +1145,13 @@ class BicopBase(
 
   def _pdf_d_d(
     self,
-    xp: ModuleType,
-    u1: Any,
-    u2: Any,
-    u1m: Any,
-    u2m: Any,
+    xp: Namespace[ArrayT],
+    u1: ArrayT,
+    u2: ArrayT,
+    u1m: ArrayT,
+    u2m: ArrayT,
     x: Optional[ArrayT],
-  ) -> Any:
+  ) -> ArrayT:
     """Rectangle probability per unit area, with the degenerate fallbacks."""
     d1, d2 = xp.abs(u1 - u1m), xp.abs(u2 - u2m)
     m1, m2 = 0.5 * (u1 + u1m), 0.5 * (u2 + u2m)

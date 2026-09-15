@@ -25,6 +25,7 @@ import torch
 from torch import Tensor
 
 from ..pyvinecopulib_ext import RVineStructure
+from ._placement import TENSOR_NS
 from ..core._trim import trim
 from ..core.vinecop_base import NotBatchable
 
@@ -227,7 +228,7 @@ def integrate_1d_batched(
   )  # (N, n)
   # Without the floor a grid line can carry no mass at all, so the
   # division needs its own guard.
-  return trim(number / denom.clamp_min(_MIN_MASS), torch)
+  return trim(number / denom.clamp_min(_MIN_MASS), TENSOR_NS)
 
 
 def _cond_strip(
@@ -316,7 +317,7 @@ def inverse_integrate_1d_batched(
   cond, p = (u[..., 0], u[..., 1]) if cond_var == 1 else (u[..., 1], u[..., 0])
   nan_mask = torch.isnan(cond) | torch.isnan(p)
   cond = cond.nan_to_num(0.5).clamp(0.0, 1.0)
-  p = trim(p.nan_to_num(0.5), torch)
+  p = trim(p.nan_to_num(0.5), TENSOR_NS)
 
   fixed_axis = 1 if cond_var == 1 else 2
   cell = _batched_cell_index(grid_points, cond, is_linear)
@@ -404,7 +405,7 @@ def integrate_2d_batched(
     tmpint * u2 / tmpint1.clamp_min(_MIN_MASS),
     torch.zeros_like(tmpint),
   )
-  return trim(out, torch)
+  return trim(out, TENSOR_NS)
 
 
 # --------------------------------------------------------------------------- #
@@ -471,7 +472,7 @@ def _hfunc_from_cells(
   den = torch.lerp(
     flat_s.gather(1, base_lo + last), flat_s.gather(1, base_hi + last), w
   )
-  return trim(num / den.clamp_min(_MIN_MASS), torch)
+  return trim(num / den.clamp_min(_MIN_MASS), TENSOR_NS)
 
 
 class BatchedTreeLevel(torch.nn.Module):
@@ -621,7 +622,7 @@ class BatchedTreeLevel(torch.nn.Module):
     # `hfunc1`, argument 1 for `hfunc2` -- which is the same swap again.
     both = torch.where(
       self.is_indep.repeat(2)[:, None],
-      trim(torch.cat([u[..., 1], u[..., 0]], 0), torch),
+      trim(torch.cat([u[..., 1], u[..., 0]], 0), TENSOR_NS),
       raw,
     )
     return both[: self.n_pairs], both[self.n_pairs :]
@@ -778,7 +779,7 @@ class BatchedWave(torch.nn.Module):
     raw = inverse_integrate_1d_batched(
       grid_points, self.values, u_e, 2, self._is_linear, self.sx
     )
-    inv = torch.where(self.is_indep[:, None], trim(col0, torch), raw)
+    inv = torch.where(self.is_indep[:, None], trim(col0, TENSOR_NS), raw)
     hinv2.index_copy_(0, self.out_hinv2, inv)
 
     if self.h1_rows.numel() == 0:
@@ -799,7 +800,7 @@ class BatchedWave(torch.nn.Module):
       h = integrate_1d_batched(grid_points, vals, u_after, 1, self._is_linear)
     h = torch.where(
       self.is_indep.index_select(0, rows)[:, None],
-      trim(u_after[..., 1], torch),
+      trim(u_after[..., 1], TENSOR_NS),
       h,
     )
     hfunc1.index_copy_(0, self.out_hfunc1, h)

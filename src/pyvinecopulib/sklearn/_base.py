@@ -284,7 +284,7 @@ class VineBase(BaseEstimator):
 
   def __init__(
     self,
-    backend: Optional[_VinecopBackendBase[Any]] = None,
+    backend: Optional[_VinecopBackendBase[Any, Any]] = None,
     margins: object = None,
     batch_size: int = 100,
     random_state: _RandomStateLike = None,
@@ -511,10 +511,9 @@ class VineBase(BaseEstimator):
             recoded = X_for_expansion[col].cat.set_categories(
               dtype_expected.categories, ordered=dtype_expected.ordered
             )
-            # `set_categories` maps a level the fit never saw to NaN, and the
-            # dummy expansion then reads an all-zero row -- indistinguishable
-            # from the reference level, so an unseen level used to return the
-            # reference level's density with no warning.
+            # `set_categories` maps a level the fit never saw to NaN, whose
+            # dummy expansion is an all-zero row -- indistinguishable from the
+            # reference level, so it has to be caught rather than evaluated.
             unseen = recoded.isna() & X_for_expansion[col].notna()
             if bool(unseen.any()):
               levels = sorted(

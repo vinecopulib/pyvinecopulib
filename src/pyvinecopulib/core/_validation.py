@@ -13,7 +13,7 @@ from __future__ import annotations
 import contextlib
 from typing import Any, Iterator, Optional, cast
 
-from array_api_compat import array_namespace
+from .protocols import array_namespace
 
 from .protocols import ArrayT
 

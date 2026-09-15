@@ -17,6 +17,7 @@ from torch import Tensor
 # ``_batched`` (they are shape-polymorphic over leading batch dims). The
 # scalar methods below are thin ``N=1`` wrappers so there is a single
 # source of truth for the numerics shared with the batched vine cascade.
+from ._placement import TENSOR_NS
 from ..core._trim import trim
 from ._vinecop_batched import (
   _batched_cell_index,
@@ -147,7 +148,7 @@ class InterpolationGrid2D(torch.nn.Module):
     grid_type: str,
     m: int,
     dtype: torch.dtype = torch.float64,
-    device: Optional[torch.device] = None,
+    device: torch.types.Device = None,
   ) -> Tensor:
     r"""Builds the storage grid for a kernel-style bicop on ``[0, 1]^2``.
 
@@ -201,7 +202,7 @@ class InterpolationGrid2D(torch.nn.Module):
     grid_type: str,
     m: int,
     dtype: torch.dtype = torch.float64,
-    device: Optional[torch.device] = None,
+    device: torch.types.Device = None,
   ) -> Tensor:
     """U-space points used by the TLL KDE evaluator.
 
@@ -498,7 +499,7 @@ class InterpolationGrid2D(torch.nn.Module):
     # the same expression at u1 = 1, where both first-argument partials vanish
     last = torch.full_like(jc, m - 1)
     total = p[last, jc] + al * sx[last, jc] + be * sx[last, jc + 1]
-    return trim(out * u2 / total.clamp_min(_MIN_MASS), torch)
+    return trim(out * u2 / total.clamp_min(_MIN_MASS), TENSOR_NS)
 
   def _interval_weights(self, lo: Tensor, hi: Tensor) -> Tensor:
     """Nonnegative quadrature weights for ``int_lo^hi`` on the grid.

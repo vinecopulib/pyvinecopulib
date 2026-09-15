@@ -24,7 +24,7 @@ class VineDensity(DensityMixin, VineBase):
 
   def __init__(
     self,
-    backend: Optional[_VinecopBackendBase[Any]] = None,
+    backend: Optional[_VinecopBackendBase[Any, Any]] = None,
     margins: object = None,
     batch_size: int = 100,
     random_state: _RandomStateLike = None,

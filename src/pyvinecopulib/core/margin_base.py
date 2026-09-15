@@ -26,7 +26,7 @@ from abc import ABC
 from typing import Any, Optional, Self, Union, cast
 
 import numpy as _np
-from array_api_compat import array_namespace
+from .protocols import array_namespace
 
 from ._covariates import declared_eval, prepare_covariates
 from ._loglik import safe_log

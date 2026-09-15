@@ -143,10 +143,14 @@ nitpick_ignore_regex = [
   # `Returns` beside each says the ecosystem type a reader wants
   # (`openturns.Distribution`). Retires if either library ships types.
   (r"py:.*", r"pyvinecopulib\.\w+\.\w+\._[A-Z]\w+"),
-  # `ArrayT` is the TypeVar the array-agnostic contracts are generic over. It
-  # appears in rendered signatures wherever one is parameterized, and a
-  # TypeVar has no page of its own to link to.
-  (r"py:class", r"pyvinecopulib\.core\.protocols\.ArrayT"),
+  # `ArrayT` is the TypeVar the array-agnostic contracts are generic over, and
+  # `Array` / `BoolArray` / `Namespace` / `FInfo` are the protocols bounding it
+  # and its namespace. All appear in rendered signatures wherever one is
+  # parameterized, and none has a page of its own to link to.
+  (
+    r"py:class",
+    r"pyvinecopulib\.core\.protocols\.(ArrayT|Array|BoolArray|Namespace|FInfo)",
+  ),
 ]
 
 
