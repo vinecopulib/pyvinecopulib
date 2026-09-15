@@ -36,7 +36,7 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing import Optional, Protocol, cast, runtime_checkable
 
-from array_api_compat import array_namespace
+from .protocols import array_namespace
 
 from .protocols import ArrayT
 

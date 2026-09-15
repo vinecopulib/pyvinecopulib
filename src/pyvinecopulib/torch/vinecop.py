@@ -272,7 +272,7 @@ class TorchVinecop(
     cls,
     cop: Vinecop,
     cache_integrals: Optional[bool] = None,
-    device: Optional[torch.device] = None,
+    device: torch.types.Device = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchVinecop":
     """Lift a fitted ``Vinecop`` into a ``TorchVinecop``.
@@ -351,7 +351,7 @@ class TorchVinecop(
     pair_copulas: list[list[TorchTllBicop]] = [],
     var_types: list[str] = [],
     *,
-    device: Optional[torch.device] = None,
+    device: torch.types.Device = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchVinecop":
     """Build a ``TorchVinecop`` from a structure and pair copulas.
@@ -608,14 +608,9 @@ class TorchVinecop(
         tree_criterion=resolved.tree_criterion,
         threshold=resolved.threshold,
       )
-    # Store the continuous grids; `get_pair_copula` re-wraps a discrete edge,
-    # so the ModuleList holds only real nn.Modules. A thresholded edge arrives
-    # as a `core.IndependenceBicop`, which is not one: the no-argument
-    # `TorchTllBicop` *is* independence -- a 2x2 sentinel short-circuiting
-    # every method on `is_indep`, exactly rather than to rounding -- so it
-    # needs no grid of its own and pickles like any other pair. `u_t.device`,
-    # as `fit_edge` uses: `resolved.device` is `None` whenever the caller let
-    # the data carry the placement.
+    # Only real `nn.Module`s go in the ModuleList. A thresholded edge arrives
+    # as a `core.IndependenceBicop`, which is not one; the no-argument
+    # `TorchTllBicop` is independence exactly, so it stands in.
     modules = [
       [
         TorchTllBicop(device=u_t.device, dtype=eff_dtype)
@@ -1072,9 +1067,8 @@ class TorchVinecop(
   # Batched fast path (`batched=True`)                                       #
   # ====================================================================== #
   #
-  # The batched *cascade loops* live on VinecopBase (array-agnostic). This hook
-  # supplies the TLL/grid-specific state they run on: a lazily-built BatchedVine
-  # (stacked, precomputed per-tree-level grids + caches).
+  # The cascade loops live on `VinecopBase`; this hook supplies the grid state
+  # they run on -- a lazily-built `BatchedVine`.
 
   def _build_batched(self) -> "BatchedVine":
     """Precompute the grid-batched state from this vine's ``TorchTllBicop`` pairs.

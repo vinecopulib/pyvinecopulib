@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any, Optional, cast
 
-from array_api_compat import array_namespace
+from .protocols import array_namespace
 
 from .bicop_base import BicopBase
 from .protocols import ArrayT

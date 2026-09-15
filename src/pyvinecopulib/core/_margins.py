@@ -1025,13 +1025,10 @@ def fit_margin(
     declare(var_type=var_type, support=support)
   estimator = getattr(margin, verb, None) or margin.fit
   if controls is not None:
-    # A `family_set` is an instruction to search, so whatever is about to run
-    # has to be able to. Two ways it cannot: the margin reads no controls at
-    # all, or the verb is `fit`, which estimates the family it already has.
-    # Either way, refusing beats fitting one family and looking like it chose.
-    # A declared type or support is a *default* rather than an instruction, so
-    # neither case refuses one -- an estimator that cannot read it has usually
-    # been built with it already.
+    # A `family_set` is an instruction to search, so a margin that reads no
+    # controls, or a `fit` that estimates the family it already has, refuses
+    # it rather than fitting one family and looking like it chose. A var_type
+    # or support that was declared is a default, so neither case refuses one.
     if getattr(controls, "family_set", None) is not None and (
       verb == "fit" or not getattr(margin, "supports_controls", False)
     ):

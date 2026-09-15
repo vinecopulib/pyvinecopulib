@@ -136,12 +136,9 @@ def _excluded_block(indent: str = "  ") -> str:
   )
 
 
-# SciPy ships no type information and `scipy-stubs` cannot be used here: its
-# releases require Python 3.12 while this package supports 3.11, and they pin
-# `scipy` to one minor version. Two of the objects crossing this boundary would
-# resist stubs anyway -- `_dist` is a name lookup, and the family surface fuses
-# `pdf` with `pmf`, which no single SciPy class carries. The numpydoc entry on
-# each signature names the real type.
+# SciPy ships no type information, and `scipy-stubs` needs Python 3.12 against
+# this package's 3.11 floor. The numpydoc entry on each signature names the
+# real type.
 
 
 def _stats() -> Any:  # noqa: ANN401

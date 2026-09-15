@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from array_api_compat import array_namespace
+from .protocols import array_namespace
 
 from .protocols import ArrayT
 
