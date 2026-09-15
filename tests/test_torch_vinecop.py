@@ -456,7 +456,7 @@ def test_setting_pair_copulas_invalidates_the_batched_cache() -> None:
   u_t = torch.from_numpy(_eval_grid(40, d=3, seed=912))
   vine.pdf(u_t, batched=True)
   assert vine._batched is not None
-  vine._compiled["_pdf_batched"] = lambda u: u
+  vine._compiled["_logpdf_batched"] = lambda u: u
   vine.set_pair_copulas(
     [
       [vine.get_pair_copula(t, e) for e in range(vine.d - t - 1)]
@@ -866,11 +866,11 @@ def _discrete_vinecop(var_types: list[str], u: np.ndarray) -> pv.Vinecop:
 )
 def test_from_vinecop_matches_discrete_vinecop(var_types: list[str]) -> None:
   # A discrete C++ vine lifted into torch. The stored grids are continuous and
-  # `DiscreteBicop` supplies the mixed-discrete surface, so what is compared is
-  # two difference quotients over the same grid: measured 1.0e-14 / 2.4e-14 /
-  # 5.6e-14 across the three type patterns. `cache_integrals=None` resolves to
-  # `False` here, which is what makes that floor reachable -- differencing the
-  # bilinearly interpolated cached cdf gives 38% instead.
+  # `DiscreteBicop` supplies the mixed-discrete surface, reading each atom's
+  # probability off the same grid the reference reads it off -- so what is
+  # compared is one expression summed in two orders: measured 7.0e-14 / 2.8e-14
+  # / 2.6e-15 relative across the three type patterns. Differencing four `cdf`
+  # values instead amplifies by `4 / (w1 w2)` and gives 8.5e-8.
   u = _discrete_data(var_types)
   cop = _discrete_vinecop(var_types, u)
   bc = TorchVinecop.from_vinecop(cop)

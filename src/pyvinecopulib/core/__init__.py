@@ -94,7 +94,7 @@ from ..pyvinecopulib_ext import (
   Vinecop,
 )
 from .._deprecations import _method_alias
-from ._vinecop_discrete import DiscreteBicop
+from .bicop_discrete import DiscreteBicop
 from .bicop_independence import IndependenceBicop
 from .bicop_base import BicopBase
 from .vinecop_context import (

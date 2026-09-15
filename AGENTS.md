@@ -304,12 +304,14 @@ pyvinecopulib/
         vinedist.py              # Vinedist (NumPy + compiled Vinecop)
         margin_controls.py       # FitControlsMargin (the marginal half of a fit)
         _covariates.py           # the two `x`-forwarding rules + `prepare_covariates`
-        _vinecop_discrete.py     # DiscreteBicop + the discrete layouts / per-edge types
+        bicop_discrete.py        # DiscreteBicop + the continuous / discrete views
+        _vinecop_discrete.py     # the discrete layouts / per-edge types
         _vinecop_fit_engines.py  # fit_parts / select_parts — the two fit engines (internal)
         bicop_independence.py    # IndependenceBicop
         _placement.py            # place / reference_array / to_numpy + the `_prep` and `_sample_uniform` hooks
         _vinecop_reorient.py     # relabel a structure onto a chosen order tail (internal)
         _rootfind.py             # solve_increasing (monotone bisection; internal)
+        _loglik.py               # safe_log / sum_loglik — the two likelihood steps (internal)
         _json.py                 # how a model payload is encoded and written (internal)
         _margins.py              # everything about a margin but its contract: coercion, resolution, JSON (internal)
         extend.py                # the extension surface: placement, covariates, and the batching sentinel
@@ -481,7 +483,7 @@ For any behavior change:
   `core/bicop_independence.py` are the reference. What that buys is worth the two
   casts: an `Any` in a *signature* erases the type for every caller and is
   published contract text, while one in a body is confined to an expression.
-  Where a whole file's `Any` is one reason (`core/_vinecop_discrete.py`'s difference
+  Where a whole file's `Any` is one reason (`core/bicop_discrete.py`'s difference
   quotients, OpenTURNS having no types at all) it goes in
   `per-file-ignores` with that reason stated once; everywhere else it is a
   `# noqa: ANN401` at the site, and `RUF100` fails the build when one goes
@@ -1066,15 +1068,22 @@ automatically.
     invisible on both sides for as long as it did. Note the identity **cannot**
     catch a cache regression: it telescopes to the four corners, so it reads
     `1 − 2e-10` for a correct density and for a 38%-wrong one alike.
-    A rectangle's probability is read by differencing four `cdf` values, which
-    is what the compiled pair does, so a `DiscreteBicop` is bit-identical to it.
-    `TorchTllBicop.rect_mass` would be more accurate — 1.2e-15 against 9.2e-15 at
-    a `1/8`-wide atom, measured against exact rational truth, and far more at
-    narrower ones — but it is **not used**: the density divides by
-    the atom's area, and the discrete cascade then turns a 1e-15 pair-level
-    difference into `8.5e-8` at the vine, a visible divergence from
-    `Vinecop`. The torch↔C++ cascade parity is a documented guarantee, and it
-    outranks the accuracy here; revisit only together.
+    **An atom's probability is read, not differenced, wherever the pair can read
+    it** — which is the choice `AbstractBicop` makes per family, mirrored here at
+    the same two levels. `BicopBase.rect_prob` / `cond_interval_prob` are
+    ordinary methods with the four-corner and two-term defaults, so
+    `DiscreteBicop` calls them unconditionally and a pair that overrides neither
+    is unaffected; `TorchTllBicop` overrides both onto its grid, as
+    `KernelBicop` overrides them onto `InterpolationGrid`. Differencing
+    amplifies an absolute error by `4/(w₁w₂)` in the atom widths and reading the
+    mass by `1/w₂` alone, which at the widths a vine's inner trees reach is the
+    difference between `8.5e-8` and `7.0e-14` on the torch↔`Vinecop` cascade
+    comparison. A pair with a *whole* discrete surface of its own is a separate
+    case and takes precedence: `DiscreteBicop` asks it for its own types back
+    through `with_var_types` and forwards, so a compiled `Bicop` on a discrete
+    edge is not approximated at all. `rect_mass` / `cond_interval_mass` stay
+    `InterpolationGrid2D`'s own names, as upstream keeps them
+    `InterpolationGrid`'s; nothing outside the torch grid reaches for them.
   - `sample_conditional` / `reorient` (`_vinecop_reorient.py`) — conditional
     sampling and
     the value-preserving relabeling it rests on. A **truncated** model relabels
@@ -1140,8 +1149,13 @@ automatically.
   builds the compact `(n, d + k)` matrix from `cdf` and `cdf_left`,
   clamps once, and checks `cdf_left <= cdf`, so callers never `hstack`
   a left-limit block by hand. `logpdf` sums logs rather than
-  accumulating a product, because the marginal term carries the scale
-  and a `d = 50` product underflows. `sample` is
+  accumulating a product, because **both** terms carry a scale a product
+  loses: the marginal densities underflow at a `d = 50` product, and so does
+  the copula factor, itself a product of up to `d(d-1)/2` pair densities. Each
+  half is therefore read in log space where it offers one — `logpdf` is an
+  optional capability on `VinecopLike` and on `MarginLike` alike, read with
+  `getattr` at this one consumer, with `safe_log` of the density as the
+  fallback. `sample` is
   `marginal_icdf(copula.sample(n, ...))`, so it inherits the copula's
   quasi-random and seeding options and never calls a margin's own
   sampler. `sample_conditional` is the same sandwich around the
@@ -1309,10 +1323,10 @@ layers at once.
 - `wdm` **raises** on weights whose sum is not finite and positive, rather
   than returning `NaN`.
 - The per-entry structure accessors (`struct_array`, `min_array`,
-  `needed_hfunc1` / `needed_hfunc2`) are wrapped in a bounds check: upstream
-  indexes the triangular array without one, so reading a tree above
-  `trunc_lvl` **segfaulted**. The real fix belongs upstream; the guard is here
-  because a crash takes the interpreter down.
+  `needed_hfunc1` / `needed_hfunc2`) raise on a tree above `trunc_lvl`, where
+  indexing the triangular array without a bounds check **segfaulted**. Fixed
+  upstream in vinecopulib#756 and pinned since; the binding only translates the
+  exception.
 - `find_latent_sample(u, b, niter=3)` recovers a continuous sample from
   interval-censored copula data — the transform a nonparametric fit on
   discrete margins runs on. The draw is deterministic and invariant to
@@ -1504,8 +1518,9 @@ Key surface:
   takes the four-column layout and reuses the compiled `find_latent_sample`,
   which is what `TllBicop::fit` now consumes for a discrete edge; the jittered
   ranks only seed the bandwidth. A discrete torch vine refuses the **batched
-  fast path**, whose stacked per-level grids carry no distribution function at
-  all. It does *not* refuse the **integral cache**: the prefix tables
+  fast path**, whose stacked levels gather `(N, n, 2)` where a discrete edge
+  needs `(N, n, 4)` and the parallel left-limit cascade behind it, and whose
+  `DELTA_MIN` split is per row. It does *not* refuse the **integral cache**: the prefix tables
   reconstruct the integral exactly, so a discrete edge can difference them and
   `cache_integrals` resolves the same way it does for a continuous vine.
 - `FitControlsTorchBicop` / `FitControlsTorchVinecop` — fit-time
@@ -1538,17 +1553,24 @@ Key surface:
     they reach differently, and agree to rounding rather than exactly.
     The tables are buffers, so `_tables` rebuilds them in-graph when `values`
     starts tracking grad after construction.
-  - `rect_mass(a1, b1, a2, b2)` is available in **both** cache modes: the exact
-    probability of a rectangle — the value a four-corner `cdf` difference
-    defines, arranged so that almost none of it cancels. That difference turns
-    an absolute error `ε` into `≈4ε/(w₁w₂)` in the atom widths; `rect_mass`
-    amplifies by `1/w₂` alone, since only its `λ(b₂) − λ(a₂)` term cancels and
-    that multiplies a term of order `w₁`. Measured on a `1.2e-4`-wide
-    rectangle: `2.9e-12` against `8.7e-9`. `values >= 0` is a constructor
-    precondition precisely because the nonnegative-weight bound depends on it.
-    Note it is the **probability**, not the density's mass: `cdf` renormalizes
-    each grid line by its own total, so the two differ, and a discrete edge is
-    defined against the distribution function.
+  - `rect_prob` / `cond_interval_prob` — the two `BicopBase` hooks, overridden
+    onto `InterpolationGrid2D.rect_mass` / `cond_interval_mass`, and available
+    in **both** cache modes: they read the density grid, not the prefix tables.
+    A four-corner `cdf` difference turns an absolute error `ε` into
+    `≈4ε/(w₁w₂)` in the atom widths; the rectangle amplifies by `1/w₂` alone,
+    since only its `λ(b₂) − λ(a₂)` term cancels and that multiplies a term of
+    order `w₁`. Measured on a `1.2e-4`-wide rectangle: `2.9e-12` against
+    `8.7e-9`. That bound is earned only by expanding the `λ` difference over
+    the common denominator, so it cancels against `b₂ − a₂` rather than against
+    one — formed as `λ(b₂) − λ(a₂)` it swamps the first term on a low-mass
+    rectangle, and the total is formed additively as `m_below + m_strip` for
+    the same reason. `values >= 0` is a constructor precondition precisely
+    because the nonnegative-weight bound depends on it. Note it is the
+    **probability**, not the density's mass: `cdf` renormalizes each grid line
+    by its own total, so the two differ, and a discrete edge is defined against
+    the distribution function. The conditional one is **not** clamped into the
+    open unit interval, unlike an h-function value, which is what makes the
+    masses of a partition sum to one.
   - `compile` — runs the batched cascades through `torch.compile`, on CUDA
     replayed as a CUDA graph. Off by default: the first call at each input
     shape pays tens of seconds of Inductor, so it is worth it for a cascade

@@ -17,9 +17,11 @@ conditioning-set values ``u_D`` and the optional external covariate matrix
 ``x`` (``None`` in the unconditional case) and skips the ``u_D`` gather,
 reproducing the classic simplified cascade at zero extra cost.
 
-The ``pdf`` cascade accumulates the vine density as a **product** of per-edge
-copula densities (there is no per-observation ``log_pdf``; ``loglik`` sums the
-log-density).
+The density cascade accumulates in **log space**, as ``Vinecop::pdf_full``
+does: ``logpdf`` is the primitive, ``pdf`` its exponential, and ``loglik`` the
+sum over the observations that have one. A product of up to ``d(d - 1) / 2``
+edge densities underflows to exactly 0 well before the log-density stops being
+representable.
 
 Discrete variables are declared through ``_bind_vine(..., var_types=...)``. A
 declared variable with atoms makes the forward cascades carry a **parallel
@@ -75,7 +77,6 @@ from ..pyvinecopulib_ext import RVineStructure
 from ._vinecop_discrete import (
   check_var_types,
   collapse_data,
-  continuous_view,
   disc_cols,
   edge_columns,
   pair_var_types,
@@ -89,6 +90,7 @@ from ._vinecop_plot import (
   vinecop_plot,
 )
 from ._covariates import pair_eval, prepare_covariates
+from ._loglik import safe_log, sum_loglik
 from ._vinecop_fit_engines import (
   FitEdge,
   FitLevel,
@@ -96,6 +98,7 @@ from ._vinecop_fit_engines import (
   select_parts,
 )
 from .bicop_base import BicopBase, flip_of
+from .bicop_discrete import continuous_view
 from .vinecop_context import ConditioningContext, SimplifiedContext
 from .protocols import (
   ArrayT,
@@ -668,7 +671,20 @@ class VinecopBase(
   # on what an unbounded `ArrayT` can type. Every one receives an
   # already-prepped array from a public method typed `ArrayT`.
   def _pdf(self, u: Any, x: Optional[ArrayT]) -> ArrayT:  # noqa: ANN401
-    """Vine density as a product of per-edge copula densities (``Vinecop::pdf``).
+    """Vine density, the exponential of :meth:`_logpdf` (``Vinecop::pdf``).
+
+    Parameters
+    ----------
+    u : array, shape (n, d + k), dtype float
+        Prepared pseudo-observations in the compact layout.
+    x : array, shape (n, p), or None, optional
+        External covariates threaded to each pair copula, or ``None``.
+    """
+    out: Any = self._logpdf(u, x)
+    return cast("ArrayT", array_namespace(out).exp(out))
+
+  def _logpdf(self, u: Any, x: Optional[ArrayT]) -> ArrayT:  # noqa: ANN401
+    """Vine log-density as a sum of per-edge log-densities (``Vinecop::logpdf``).
 
     Parameters
     ----------
@@ -682,9 +698,9 @@ class VinecopBase(
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
     if trunc_lvl == 0:
-      return cast("ArrayT", xp.ones(n, dtype=u.dtype, device=u.device))
+      return cast("ArrayT", xp.zeros(n, dtype=u.dtype, device=u.device))
     # Dense (n, d) h-function scratch; seed hfunc2 with the observations in
-    # natural order (class.ipp:399).
+    # natural order (Vinecop::pdf_full).
     hfunc1 = xp.zeros((n, d), dtype=u.dtype, device=u.device)
     hfunc2 = xp.empty((n, d), dtype=u.dtype, device=u.device)
     order = self.order
@@ -708,7 +724,7 @@ class VinecopBase(
       if self._context.assembles_conditioning
       else None
     )
-    pdf = xp.ones(n, dtype=u.dtype, device=u.device)
+    logpdf = xp.zeros(n, dtype=u.dtype, device=u.device)
     s = self.structure
     pair_types = self._pair_types
     for tree in range(trunc_lvl):
@@ -719,21 +735,22 @@ class VinecopBase(
         )
         u_e = stack_edge(xp, col0, col1, subs)
         x_e = self._edge_context(tree, edge, x, u_nat, None)
-        # Accumulate the density as a product over edges (cwiseProduct,
-        # class.ipp:1047).
-        pdf = pdf * pair_eval(edge_copula.pdf, u_e, x_e)
-        # h-functions only evaluated if a later tree needs them (class.ipp:1050).
+        # Accumulated in log space, as `Vinecop::pdf_full` accumulates it: the
+        # product of up to d(d - 1)/2 edge densities underflows to exactly 0
+        # well before the log-density stops being representable.
+        logpdf = logpdf + safe_log(pair_eval(edge_copula.pdf, u_e, x=x_e))
+        # h-functions only evaluated if a later tree needs them.
         if s.needed_hfunc1(tree, edge):
-          hfunc1[:, edge] = pair_eval(edge_copula.hfunc1, u_e, x_e)
+          hfunc1[:, edge] = pair_eval(edge_copula.hfunc1, u_e, x=x_e)
           if subs is not None and types[1] == "d":
             u_h1 = xp.stack([col0, subs[1], *subs], axis=-1)
-            hfunc1_sub[:, edge] = pair_eval(edge_copula.hfunc1, u_h1, x_e)
+            hfunc1_sub[:, edge] = pair_eval(edge_copula.hfunc1, u_h1, x=x_e)
         if s.needed_hfunc2(tree, edge):
-          hfunc2[:, edge] = pair_eval(edge_copula.hfunc2, u_e, x_e)
+          hfunc2[:, edge] = pair_eval(edge_copula.hfunc2, u_e, x=x_e)
           if subs is not None and types[0] == "d":
             u_h2 = xp.stack([subs[0], col1, *subs], axis=-1)
-            hfunc2_sub[:, edge] = pair_eval(edge_copula.hfunc2, u_h2, x_e)
-    return cast("ArrayT", pdf)
+            hfunc2_sub[:, edge] = pair_eval(edge_copula.hfunc2, u_h2, x=x_e)
+    return cast("ArrayT", logpdf)
 
   def _rosenblatt(
     self,
@@ -791,14 +808,14 @@ class VinecopBase(
         x_e = self._edge_context(tree, edge, x, u_nat, None)
         # hfunc1 only if needed downstream; hfunc2 is the running transform.
         if s.needed_hfunc1(tree, edge):
-          hfunc1[:, edge] = pair_eval(edge_copula.hfunc1, u_e, x_e)
+          hfunc1[:, edge] = pair_eval(edge_copula.hfunc1, u_e, x=x_e)
           if subs is not None and types[1] == "d":
             u_h1 = xp.stack([col0, subs[1], *subs], axis=-1)
-            hfunc1_sub[:, edge] = pair_eval(edge_copula.hfunc1, u_h1, x_e)
-        hfunc2[:, edge] = pair_eval(edge_copula.hfunc2, u_e, x_e)
+            hfunc1_sub[:, edge] = pair_eval(edge_copula.hfunc1, u_h1, x=x_e)
+        hfunc2[:, edge] = pair_eval(edge_copula.hfunc2, u_e, x=x_e)
         if subs is not None and types[0] == "d":
           u_h2 = xp.stack([subs[0], col1, *subs], axis=-1)
-          hfunc2_sub[:, edge] = pair_eval(edge_copula.hfunc2, u_h2, x_e)
+          hfunc2_sub[:, edge] = pair_eval(edge_copula.hfunc2, u_h2, x=x_e)
     # Scatter the transformed columns back to variable order.
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
@@ -875,12 +892,12 @@ class VinecopBase(
         # Conditioning u_D is read from the finalized hinv2[0] rows (the
         # conditioning variables are finalized before this var by the invariant).
         x_e = self._edge_context(tree, var, x, None, hinv2[0])
-        hinv2[tree, var, :] = pair_eval(edge_copula.hinv2, u_e, x_e)
+        hinv2[tree, var, :] = pair_eval(edge_copula.hinv2, u_e, x=x_e)
         # Propagate hfunc1 for the next-inner inversion when needed.
         if var < d - 1 and s.needed_hfunc1(tree, var):
           u_e_after = xp.stack([hinv2[tree, var, :], u_e_col1], axis=-1)
           hfunc1[tree + 1, var, :] = pair_eval(
-            edge_copula.hfunc1, u_e_after, x_e
+            edge_copula.hfunc1, u_e_after, x=x_e
           )
     out = xp.empty((n, d), dtype=u.dtype, device=u.device)
     for j in range(d):
@@ -895,9 +912,20 @@ class VinecopBase(
   # subclass-specific; the loops below are array-agnostic, and receive `u`
   # already prepped by the public method that dispatched.
   def _pdf_batched(self, u: Any) -> ArrayT:  # noqa: ANN401 - as `_pdf`
-    """Batched vine pdf: product over per-tree-level stacked densities.
+    """Batched vine pdf, the exponential of :meth:`_logpdf_batched`.
 
-    Numerically equivalent to ``_pdf`` on a simplified vine, but each tree
+    Parameters
+    ----------
+    u : array, shape (n, d), dtype float
+        Prepared pseudo-observations.
+    """
+    out: Any = self._logpdf_batched(u)
+    return cast("ArrayT", self._namespace(out).exp(out))
+
+  def _logpdf_batched(self, u: Any) -> ArrayT:  # noqa: ANN401 - as `_pdf`
+    """Batched vine log-density: a sum over per-tree-level stacked densities.
+
+    Numerically equivalent to ``_logpdf`` on a simplified vine, but each tree
     level fires one stacked (fused) pair-copula call over its edges.
 
     Parameters
@@ -909,22 +937,23 @@ class VinecopBase(
     d, trunc_lvl = self.d, self.trunc_lvl
     n = u.shape[0]
     if trunc_lvl == 0:
-      return cast("ArrayT", xp.ones(n, dtype=u.dtype, device=u.device))
+      return cast("ArrayT", xp.zeros(n, dtype=u.dtype, device=u.device))
     bv = self._ensure_batched()
     hfunc1 = xp.zeros((n, d), dtype=u.dtype, device=u.device)
     hfunc2 = xp.empty((n, d), dtype=u.dtype, device=u.device)
     order = self.order
     for j in range(d):
       hfunc2[:, j] = u[:, order[j] - 1]
-    pdf = xp.ones(n, dtype=u.dtype, device=u.device)
+    logpdf = xp.zeros(n, dtype=u.dtype, device=u.device)
     for t in range(trunc_lvl):
       lvl = bv.level(t)
       u_e = lvl.gather_inputs(hfunc1, hfunc2)  # (N_t, n, 2)
       # One fused lookup yields pdf + both h-functions (shared cell search).
       pdf_e, h1_e, h2_e = lvl.pdf_h1_h2(bv.grid_points, u_e)
-      # Product over the level's edges (axis 0), then into the running product
-      # (the batched analog of _pdf's per-edge cwiseProduct).
-      pdf = pdf * xp.prod(pdf_e, axis=0)
+      # Sum of the level's edge log-densities (axis 0), then into the running
+      # total: the batched analog of `_logpdf`'s per-edge accumulation, and in
+      # the same space, so the level reduction cannot underflow either.
+      logpdf = logpdf + xp.sum(safe_log(pdf_e), axis=0)
       # Overwrite the next-tree columns flagged by needs_h{1,2} (mirrors _pdf's
       # conditional per-edge writes).
       n_pairs = lvl.n_pairs
@@ -936,7 +965,7 @@ class VinecopBase(
       hfunc2[:, :n_pairs] = xp.where(
         lvl.needs_h2[None, :], h2_new, hfunc2[:, :n_pairs]
       )
-    return cast("ArrayT", pdf)
+    return cast("ArrayT", logpdf)
 
   def _inverse_rosenblatt_batched(self, u: Any) -> ArrayT:  # noqa: ANN401
     """Batched inverse Rosenblatt: one stacked call per dependency wave.
@@ -1214,6 +1243,53 @@ class VinecopBase(
       except NotBatchable:
         pass  # no grid fast path available -> non-batched cascade
     return self._pdf(u_p, x)
+
+  def logpdf(
+    self,
+    u: ArrayT,
+    *,
+    num_threads: int = 1,
+    x: Optional[ArrayT] = None,
+    batched: Optional[bool] = None,
+  ) -> ArrayT:
+    """Evaluate the vine-copula log-density ``log c(u_1, ..., u_d)``.
+
+    The primitive rather than the log of :meth:`pdf`, and the accurate way to
+    obtain it: a vine density is a product of up to ``d (d - 1) / 2``
+    pair-copula densities, so on a high-dimensional or strongly dependent model
+    :meth:`pdf` underflows to ``0`` and its logarithm to ``-inf``, while the
+    log-density is still exactly representable.
+
+    Parameters
+    ----------
+    u : array, shape (n, d), (n, d + k) or (n, 2d), dtype float
+        Pseudo-observations, in the layouts :meth:`pdf` takes them in.
+    num_threads : int, default=1
+        Accepted for parity with ``Vinecop.logpdf()``; ignored.
+    x : array, shape (n, p), or None, optional
+        External covariates threaded to each pair copula.
+    batched : bool, or None, optional
+        Fire one batched pair-copula call per tree level, resolved as for
+        :meth:`pdf`.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Joint log-density values.
+
+    See Also
+    --------
+    pdf : The density itself, and the full argument documentation.
+    """
+    del num_threads
+    u_p = self._prep_args(u, "logpdf")
+    x = prepare_covariates(self, x, int(cast("Any", u_p).shape[0]))
+    if self._resolve_batched(batched, x):
+      try:
+        return self._logpdf_batched(u_p)
+      except NotBatchable:
+        pass  # no grid fast path available -> non-batched cascade
+    return self._logpdf(u_p, x)
 
   def rosenblatt(
     self,
@@ -1596,6 +1672,11 @@ class VinecopBase(
   def loglik(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Total log-likelihood ``sum(log c(u))`` of the vine at ``u``.
 
+    Summed from :meth:`logpdf` rather than from the log of :meth:`pdf`, so it
+    stays finite wherever it is representable. An observation carrying a
+    ``nan`` has no log-density and is left out, as ``Vinecop.loglik()`` leaves
+    it out; a ``-inf`` is the model ruling an observation out and is kept.
+
     Parameters
     ----------
     u : array, shape (n, d), dtype float
@@ -1609,9 +1690,7 @@ class VinecopBase(
         The summed log-density (a differentiable scalar under autograd, e.g.
         PyTorch).
     """
-    dens: Any = self.pdf(u, x=x)
-    xp = array_namespace(dens)
-    return cast("ArrayT", xp.sum(xp.log(dens)))
+    return sum_loglik(self.logpdf(u, x=x))
 
   @property
   def dim(self) -> int:

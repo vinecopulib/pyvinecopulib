@@ -458,6 +458,13 @@ class VinecopLike(Protocol[ArrayT]):
   :class:`pyvinecopulib.core.Vinecop` and
   :class:`pyvinecopulib.torch.TorchVinecop` are the reference implementations.
 
+  Everything past that surface is an **optional capability**, read with
+  ``getattr`` where it is needed. ``logpdf`` is the one: the joint log-density,
+  which a vine distribution prefers over the logarithm of the density because
+  the density is a product of up to ``d (d - 1) / 2`` pair densities and
+  underflows on a deep or strongly dependent model. Both reference
+  implementations supply it.
+
   See Also
   --------
   pyvinecopulib.core.VinecopBase : Canonical partial implementation to subclass.

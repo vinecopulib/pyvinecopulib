@@ -236,6 +236,7 @@ def test_vinecop_pdf_full() -> None:
   assert isinstance(full, dict)
   assert set(full) == {
     "pdf",
+    "logpdf",
     "pdf_edges",
     "hfunc1",
     "hfunc2",
@@ -244,6 +245,10 @@ def test_vinecop_pdf_full() -> None:
   }
   assert isinstance(full["pdf"], np.ndarray) and full["pdf"].shape == (n,)
   np.testing.assert_allclose(full["pdf"], cop.pdf(u), rtol=1e-10, atol=1e-12)
+  # `logpdf` is the primitive the density is the exponential of, so it is
+  # present whatever `keep_all` says and agrees with `Vinecop.logpdf` exactly.
+  np.testing.assert_array_equal(full["logpdf"], cop.logpdf(u))
+  np.testing.assert_allclose(full["logpdf"], np.log(full["pdf"]), rtol=1e-12)
 
   # Triangular arrays are nested lists [tree][edge], with d - 1 edges in tree 0
   # and one fewer per subsequent tree. Per-edge densities are always length n;
@@ -267,7 +272,7 @@ def test_vinecop_pdf_full() -> None:
 
   # keep_all=False: only the density.
   simple = cop.pdf_full(u, keep_all=False)
-  assert set(simple) == {"pdf"}
+  assert set(simple) == {"pdf", "logpdf"}
   np.testing.assert_allclose(simple["pdf"], cop.pdf(u), rtol=1e-10, atol=1e-12)
 
   # num_threads must not change the result.
@@ -1014,3 +1019,88 @@ def test_one_controls_object_drives_a_vine_and_its_pairs() -> None:
   # ...and where vine controls are.
   vine = pv.Vinecop.from_data(u, controls=controls)
   assert vine.get_family(0, 0) == pv.families.gaussian
+
+
+def _underflowing_vine(d: int = 10) -> tuple[pv.Vinecop, np.ndarray]:
+  """A vine whose density underflows, and a point where it does.
+
+  A one-truncated D-vine of strongly dependent Gaussian pairs, evaluated with
+  the arguments alternating between the two tails: each of the ``d - 1`` edges
+  contributes about ``-85``, so the log-density is near ``-766`` -- comfortably
+  past ``log`` of the smallest subnormal, ``-744.44``, while still exact.
+  """
+  pairs = [
+    [
+      pv.Bicop.from_family(pv.families.gaussian, parameters=np.array([[0.9]]))
+      for _ in range(d - 1)
+    ]
+  ]
+  structure = pv.DVineStructure(list(range(1, d + 1)), trunc_lvl=1)
+  cop = pv.Vinecop.from_structure(structure=structure, pair_copulas=pairs)
+  return cop, np.tile(np.array([0.999, 0.001]), d // 2)[None, :]
+
+
+def test_logpdf_survives_where_the_density_underflows() -> None:
+  """The log-density is exact where the product of edge densities is not."""
+  cop, u = _underflowing_vine()
+  assert cop.pdf(u)[0] == 0.0
+  logpdf = cop.logpdf(u)[0]
+  assert np.isfinite(logpdf)
+  # Nine edges of the same pair at the same point, so the total is exactly
+  # nine times one edge's log-density.
+  edge = pv.Bicop.from_family(
+    pv.families.gaussian, parameters=np.array([[0.9]])
+  )
+  one = np.log(edge.pdf(np.array([[0.999, 0.001]])))[0]
+  np.testing.assert_allclose(logpdf, 9 * one, rtol=1e-12)
+
+
+def test_loglik_is_finite_where_the_density_underflows() -> None:
+  """`loglik` and the criteria follow `logpdf`, not `log(pdf)`."""
+  cop, u = _underflowing_vine()
+  loglik = cop.loglik(u)
+  assert np.isfinite(loglik)
+  np.testing.assert_allclose(loglik, cop.logpdf(u).sum(), rtol=1e-12)
+  for criterion in (cop.aic, cop.bic):
+    assert np.isfinite(criterion(u))
+
+
+def test_loglik_leaves_out_an_observation_it_cannot_evaluate() -> None:
+  """A ``nan`` row drops out; a ruled-out row stays as ``-inf``.
+
+  The rule ``Bicop.loglik`` has always followed, and the one that keeps a
+  single missing value from costing the whole sample.
+  """
+  rng = np.random.default_rng(3)
+  u = pv.to_pseudo_obs(rng.standard_normal((200, 3)))
+  cop = pv.Vinecop.from_data(
+    u, controls=pv.FitControlsVinecop(family_set=[pv.families.gaussian])
+  )
+  clean = cop.loglik(u)
+
+  with_nan = np.vstack([u, np.full((1, 3), np.nan)])
+  np.testing.assert_allclose(cop.loglik(with_nan), clean, rtol=1e-12)
+  assert np.isnan(cop.logpdf(with_nan)[-1])
+
+
+def test_a_multithreaded_fit_reproduces_the_serial_one() -> None:
+  """Concurrent edges must not read h-function columns a sibling is writing.
+
+  Every quantity a caller can see: the selected structure, every pair's family
+  and parameters, and the fitted log-likelihood.
+  """
+  rng = np.random.default_rng(11)
+  u = pv.to_pseudo_obs(rng.standard_normal((500, 6)))
+  fits = [
+    pv.Vinecop.from_data(u, controls=pv.FitControlsVinecop(num_threads=threads))
+    for threads in (1, 4)
+  ]
+  serial, parallel = fits
+  np.testing.assert_array_equal(serial.matrix, parallel.matrix)
+  assert serial.loglik() == parallel.loglik()
+  for tree in range(serial.dim - 1):
+    for edge in range(serial.dim - tree - 1):
+      assert serial.get_family(tree, edge) == parallel.get_family(tree, edge)
+      np.testing.assert_array_equal(
+        serial.get_parameters(tree, edge), parallel.get_parameters(tree, edge)
+      )

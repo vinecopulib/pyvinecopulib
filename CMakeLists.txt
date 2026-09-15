@@ -1,5 +1,9 @@
-# 3.14 for FetchContent_MakeAvailable in lib/vinecopulib/cmake; do not lower.
-cmake_minimum_required(VERSION 3.14)
+# 3.20 to match lib/vinecopulib, whose cmake/findDependencies.cmake this build
+# includes; the upper bound opts into policies through 4.0. Two of those are
+# read here: CMP0144 lets find_package see BOOST_ROOT / Eigen3_ROOT, which the
+# install-dependencies action exports, and CMP0167 drops the FindBoost module
+# that include no longer falls back to. Do not lower.
+cmake_minimum_required(VERSION 3.20...4.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -103,12 +107,15 @@ set(pyvinecopulib_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/src/include)
 
 set(BUILD_TESTING OFF)
 
-if(DEFINED ENV{EIGEN3_INCLUDE_DIR})
-  set(EIGEN3_INCLUDE_DIR $ENV{EIGEN3_INCLUDE_DIR})
+# Quoted, and tested against the empty string rather than with DEFINED: an empty
+# value must leave the variable unset, so that findDependencies.cmake runs its
+# find_package instead of building an imported target with no include directory.
+if(NOT "$ENV{EIGEN3_INCLUDE_DIR}" STREQUAL "")
+  set(EIGEN3_INCLUDE_DIR "$ENV{EIGEN3_INCLUDE_DIR}")
 endif()
 
-if(DEFINED ENV{Boost_INCLUDE_DIR})
-  set(Boost_INCLUDE_DIRS $ENV{Boost_INCLUDE_DIR})
+if(NOT "$ENV{Boost_INCLUDE_DIR}" STREQUAL "")
+  set(Boost_INCLUDE_DIRS "$ENV{Boost_INCLUDE_DIR}")
 endif()
 
 include(lib/vinecopulib/cmake/findDependencies.cmake REQUIRED)

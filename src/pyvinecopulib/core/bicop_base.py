@@ -26,6 +26,7 @@ signatures.
 from __future__ import annotations
 
 from abc import ABC
+from collections.abc import Callable
 from typing import Any, Optional, Self, TypeVar, cast
 
 from array_api_compat import array_namespace
@@ -35,7 +36,8 @@ from ._bicop_plot import (
   BICOP_PLOT_SUMMARY,
   bicop_plot,
 )
-from ._covariates import prepare_covariates
+from ._covariates import pair_eval, prepare_covariates
+from ._loglik import safe_log, sum_loglik
 from ._placement import PlacementMixin, QrngUniformMixin
 from ._trim import trim
 from ._rootfind import solve_increasing
@@ -96,6 +98,101 @@ def flip_of(pair: _PairT) -> _PairT:
   return cast("_PairT", method())
 
 
+def rect_prob_from_cdf(
+  cdf: Callable[..., ArrayT],
+  a1: ArrayT,
+  b1: ArrayT,
+  a2: ArrayT,
+  b2: ArrayT,
+  *,
+  x: Optional[ArrayT] = None,
+) -> ArrayT:
+  """``P((a1, b1] x (a2, b2])`` as the four-corner difference of ``cdf``.
+
+  The generic route to a rectangle's probability, shared by
+  :meth:`BicopBase.rect_prob` and by the fallback
+  :class:`~pyvinecopulib.core.DiscreteBicop` takes for a pair that declares no
+  ``rect_prob`` of its own, so the two cannot drift.
+
+  Parameters
+  ----------
+  cdf : callable
+      The pair's distribution function, taking an ``(n, 2)`` array.
+  a1, b1 : array, shape (n,), dtype float
+      Bounds in the first argument, in either order.
+  a2, b2 : array, shape (n,), dtype float
+      Bounds in the second argument, in either order.
+  x : array, shape (n, p), or None, optional
+      Exogenous covariates, forwarded to the pair.
+
+  Returns
+  -------
+  array, shape (n,), dtype float
+      Rectangle probabilities.
+  """
+  any_a1: Any = a1
+  xp = array_namespace(any_a1)
+  x0, x1 = xp.minimum(a1, b1), xp.maximum(a1, b1)
+  y0, y1 = xp.minimum(a2, b2), xp.maximum(a2, b2)
+
+  # `Any` on the corners: `ArrayT` is unbounded, so it names no comparison
+  # operator, and these are compared against `0.0` below.
+  def at(p: Any, q: Any) -> Any:  # noqa: ANN401
+    val = pair_eval(cdf, xp.stack([p, q], axis=-1), x=x)
+    # A bound of 0 is the distribution's own lower limit, so a corner on it
+    # contributes nothing -- and `cdf` would have read a trimmed 1e-10 there.
+    return xp.where((p <= 0.0) | (q <= 0.0), xp.zeros_like(val), val)
+
+  # Summed in two pairs, the grouping the reference pair copula sums them in:
+  # it is what makes the two agree to the last bit rather than to rounding.
+  return cast("ArrayT", (at(x1, y1) + at(x0, y0)) - (at(x0, y1) + at(x1, y0)))
+
+
+def cond_interval_prob_from_hfunc(
+  hfunc: Callable[..., ArrayT],
+  u_cond: ArrayT,
+  lo: ArrayT,
+  hi: ArrayT,
+  cond_var: int,
+  *,
+  x: Optional[ArrayT] = None,
+) -> ArrayT:
+  """``P(lo < U_free <= hi | U_cond = u_cond)`` as a difference of h-functions.
+
+  The conditional counterpart of :func:`rect_prob_from_cdf`, and shared for the
+  same reason. Each h-function value is clamped into the open unit interval, so
+  on a narrow interval this difference is the less accurate of the two routes.
+
+  Parameters
+  ----------
+  hfunc : callable
+      ``hfunc1`` for ``cond_var=1`` and ``hfunc2`` for ``cond_var=2``.
+  u_cond : array, shape (n,), dtype float
+      The argument held fixed.
+  lo, hi : array, shape (n,), dtype float
+      Bounds in the free argument, in either order.
+  cond_var : int
+      ``1`` or ``2``, the argument held fixed.
+  x : array, shape (n, p), or None, optional
+      Exogenous covariates, forwarded to the pair.
+
+  Returns
+  -------
+  array, shape (n,), dtype float
+      Conditional probabilities.
+  """
+  any_lo: Any = lo
+  xp = array_namespace(any_lo)
+  a, b = xp.minimum(lo, hi), xp.maximum(lo, hi)
+
+  # `Any` for the same reason as `rect_prob_from_cdf`'s corner helper.
+  def at(free: Any) -> Any:  # noqa: ANN401
+    cols = [u_cond, free] if cond_var == 1 else [free, u_cond]
+    return pair_eval(hfunc, xp.stack(cols, axis=-1), x=x)
+
+  return cast("ArrayT", at(b) - at(a))
+
+
 class BicopBase(
   BicopLike[ArrayT], QrngUniformMixin[ArrayT], PlacementMixin, ABC
 ):
@@ -132,6 +229,13 @@ class BicopBase(
     difference quotients of the distribution function. Add one and wrap the
     pair in :class:`~pyvinecopulib.core.DiscreteBicop` to sit on such an edge.
 
+  Two more are supplied rather than raising, and exist to be overridden:
+  :meth:`rect_prob` and :meth:`cond_interval_prob`, the two probabilities a
+  discrete edge's difference quotients are built from. Both default to the
+  difference of :meth:`cdf` or h-function values they replace, so a pair with
+  only a ``cdf`` needs nothing; a pair that can measure an atom without that
+  cancellation overrides them and is more accurate at a narrow atom.
+
   ``TorchTllBicop`` is the reference subclass: it supplies ``cdf``, both inverses,
   ``sample`` and ``flip`` natively, and fits its density grid in :meth:`fit`.
 
@@ -143,6 +247,10 @@ class BicopBase(
 
   def loglik(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Total log-likelihood ``sum(log c(u))`` of the pair at ``u``.
+
+    An observation carrying a ``nan`` has no log-density and is left out of the
+    total, as ``Bicop.loglik()`` leaves it out; a density of exactly zero is
+    the model ruling an observation out and contributes ``-inf``.
 
     Parameters
     ----------
@@ -162,9 +270,7 @@ class BicopBase(
     # `u` is left to the subclass's own `pdf`, which is where the two-column
     # layout is checked -- the base cannot know whether a pair is on a
     # discrete edge, whose argument is four columns wide.
-    dens: Any = self.pdf(u, x=x)
-    xp = array_namespace(dens)
-    return cast("ArrayT", xp.sum(xp.log(dens)))
+    return sum_loglik(safe_log(self.pdf(u, x=x)))
 
   def hinv1(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Inverse of ``hfunc1`` in its second argument.
@@ -262,6 +368,81 @@ class BicopBase(
       "to host this pair copula on a discrete edge, whose h-functions are "
       "difference quotients of the distribution function."
     )
+
+  def rect_prob(
+    self,
+    a1: ArrayT,
+    b1: ArrayT,
+    a2: ArrayT,
+    b2: ArrayT,
+    *,
+    x: Optional[ArrayT] = None,
+  ) -> ArrayT:
+    """Probability of the rectangle ``(a1, b1] x (a2, b2]``.
+
+    The quantity a discrete argument's difference quotient is built from. This
+    reads it as the four-corner difference of :meth:`cdf`, which any pair
+    copula with a distribution function can serve. A pair that can evaluate the
+    rectangle without that cancellation overrides this --
+    :class:`~pyvinecopulib.torch.TorchTllBicop` does, reading the mass off its
+    grid -- and gains accuracy at a narrow atom, where differencing amplifies
+    an absolute error by ``4 / (w1 w2)`` in the atom widths.
+
+    Parameters
+    ----------
+    a1, b1 : array, shape (n,), dtype float
+        Bounds in the first argument, in either order.
+    a2, b2 : array, shape (n,), dtype float
+        Bounds in the second argument, in either order.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, one row per observation.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Rectangle probabilities. A bound of ``0`` is the distribution's own
+        lower limit, so a corner on it contributes nothing.
+
+    See Also
+    --------
+    cond_interval_prob : The conditional counterpart, for a mixed edge.
+    """
+    return rect_prob_from_cdf(self.cdf, a1, b1, a2, b2, x=x)
+
+  def cond_interval_prob(
+    self,
+    u_cond: ArrayT,
+    lo: ArrayT,
+    hi: ArrayT,
+    cond_var: int,
+    *,
+    x: Optional[ArrayT] = None,
+  ) -> ArrayT:
+    """Probability that the free argument falls in ``(lo, hi]``, given the other.
+
+    What a mixed edge's density is built from, as :meth:`rect_prob` is what a
+    doubly discrete one is built from. This reads it as the difference of two
+    h-function values, each clamped into the open unit interval; a pair that
+    can evaluate the mass itself overrides this, and is then not clamped.
+
+    Parameters
+    ----------
+    u_cond : array, shape (n,), dtype float
+        The argument held fixed.
+    lo, hi : array, shape (n,), dtype float
+        Bounds in the free argument, in either order.
+    cond_var : int
+        ``1`` or ``2``, the argument held fixed.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, one row per observation.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Conditional probabilities.
+    """
+    h = self.hfunc1 if cond_var == 1 else self.hfunc2
+    return cond_interval_prob_from_hfunc(h, u_cond, lo, hi, cond_var, x=x)
 
   @classmethod
   def from_data(

@@ -597,9 +597,9 @@ def test_to_file_selects_cbor_by_extension(tmp_path: Path) -> None:
     ("all_nan_weights", "at least one observation standing"),
     ("all_zero_weights", "at least one observation standing"),
     ("all_nan_data", "at least one observation standing"),
-    ("inf", "must not contain infinite"),
+    ("inf", "must not be infinite"),
     ("negative", "nonnegative"),
-    ("wrong_length", "one weight per observation"),
+    ("wrong_length", "same size"),
   ],
 )
 def test_kde1d_refuses_inputs_that_leave_nothing_to_fit(
@@ -611,7 +611,8 @@ def test_kde1d_refuses_inputs_that_leave_nothing_to_fit(
   observation, and the fit rescales by what is left; when nothing is left it
   divided by zero and walked an empty grid, which reached the caller as a
   segfault. A negative weight is not a marker at all and used to fit a density
-  that was not the weighted one.
+  that was not the weighted one. Both refusals are the library's own, so the
+  messages are its wording rather than this package's.
   """
   y = np.random.default_rng(0).normal(size=100)
   data, weights = {
@@ -634,9 +635,9 @@ def test_kde1d_refuses_inputs_that_leave_nothing_to_fit(
 def test_kde1d_survives_the_inputs_that_used_to_crash_it() -> None:
   """The refusal must be an exception, not a crash.
 
-  Asserted out of process: if the guard is ever dropped, the failure is a
-  ``SIGSEGV`` that would take the whole pytest run down rather than fail a
-  single test, so ``pytest.raises`` cannot express it.
+  Asserted out of process because the failure this pins is a ``SIGSEGV``, which
+  would take the whole pytest run down rather than fail a single test, so
+  ``pytest.raises`` cannot express it.
   """
   import subprocess
   import sys

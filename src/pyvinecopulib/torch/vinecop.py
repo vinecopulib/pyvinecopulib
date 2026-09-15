@@ -58,7 +58,7 @@ from ..core import (
   DiscreteBicop,
   VinecopBase,
 )
-from ..core._vinecop_discrete import continuous_view
+from ..core.bicop_discrete import continuous_view
 from ..core.bicop_independence import IndependenceBicop
 from ..core._validation import reject_covariates
 from ..core.vinecop_base import FitEdge, FitLevel, NotBatchable
@@ -252,9 +252,9 @@ class TorchVinecop(
     A variable's type does not enter the decision: the prefix tables reconstruct
     the integral exactly rather than approximately, so an edge that reads its
     density from differences over an atom's width can difference them safely.
-    Such an edge still differences the distribution function rather than
-    calling ``rect_mass``, which is more accurate but would break the cascade
-    parity with ``Vinecop`` that its own difference quotients define.
+    A discrete edge reads its atom's probability off the density grid in any
+    case, through ``rect_prob`` / ``cond_interval_prob``, which depend on
+    neither mode.
 
     Parameters
     ----------
@@ -866,8 +866,11 @@ class TorchVinecop(
 
     return graphed
 
-  def _pdf_batched(self, u: Tensor) -> Tensor:
-    return self._cascade("_pdf_batched")(u)
+  # The log cascade is the compiled one, and `_pdf_batched` is its `exp`: an
+  # override on both would put one compiled graph inside another and leave two
+  # `_compiled` entries for one cascade.
+  def _logpdf_batched(self, u: Tensor) -> Tensor:
+    return self._cascade("_logpdf_batched")(u)
 
   def _rosenblatt_batched(self, u: Tensor) -> Tensor:
     return self._cascade("_rosenblatt_batched")(u)

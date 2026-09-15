@@ -753,8 +753,8 @@ def test_rect_mass_is_exact_at_every_atom_width(
   assert e_diff < tol_diff, f"difference: {e_diff:.3e}"
 
 
-def test_rect_mass_reproduces_the_cdf_on_a_corner_rectangle() -> None:
-  """``rect_mass`` is the ``cdf``, not a different integral of the same grid.
+def test_rect_prob_reproduces_the_cdf_on_a_corner_rectangle() -> None:
+  """``rect_prob`` is the ``cdf``, not a different integral of the same grid.
 
   On a rectangle anchored at the origin the four-corner difference collapses to
   one ``cdf`` value, so the two must agree with no width-dependent slack.
@@ -766,7 +766,7 @@ def test_rect_mass_reproduces_the_cdf_on_a_corner_rectangle() -> None:
   u = torch.from_numpy(_eval_grid(200, seed=34))
   zero = torch.zeros_like(u[:, 0])
   torch.testing.assert_close(
-    bc.rect_mass(zero, u[:, 0], zero, u[:, 1]),
+    bc.rect_prob(zero, u[:, 0], zero, u[:, 1]),
     bc.cdf(u),
     rtol=1e-12,
     atol=1e-12,
@@ -1293,3 +1293,75 @@ def test_fitting_refuses_covariates_it_cannot_use() -> None:
   torch.testing.assert_close(
     fitted.pdf(ut, x=covariates), fitted.pdf(ut), atol=0.0, rtol=0.0
   )
+
+
+@pytest.mark.parametrize("cond_var", [1, 2])
+def test_cond_interval_prob_partitions_the_conditional(cond_var: int) -> None:
+  """The masses of a partition sum to one, which is why it is not clamped.
+
+  ``integrate_1d`` clamps a conditional distribution value into
+  ``[1e-10, 1 - 1e-10]``, so differencing two of them loses the identity at
+  both ends of the line. The mass keeps it: an empty interval is exactly zero,
+  and the whole line is one to within an ulp -- the interval weights and the
+  line total are two quadratures of the same integral, so they agree to
+  summation order rather than bit for bit.
+  """
+  gauss = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.7]]))
+  cop = _fit_tll(gauss.sample(2000, seeds=[41, 42, 43]))
+  bc = TorchTllBicop.from_bicop(cop)
+
+  edges = torch.linspace(0.0, 1.0, 17, dtype=torch.float64)
+  cond = torch.full((16,), 0.42, dtype=torch.float64)
+  masses = bc.cond_interval_prob(cond, edges[:-1], edges[1:], cond_var)
+  torch.testing.assert_close(
+    masses.sum(), torch.tensor(1.0, dtype=torch.float64), rtol=1e-12, atol=1e-12
+  )
+  assert float(masses.min()) >= 0.0
+
+  one = torch.ones(1, dtype=torch.float64)
+  zero = torch.zeros(1, dtype=torch.float64)
+  whole = bc.cond_interval_prob(cond[:1], zero, one, cond_var)
+  torch.testing.assert_close(whole, one, rtol=4e-16, atol=0.0)
+  empty = bc.cond_interval_prob(cond[:1], cond[:1], cond[:1], cond_var)
+  assert float(empty[0]) == 0.0
+
+
+@pytest.mark.parametrize("cond_var", [1, 2])
+def test_cond_interval_prob_matches_the_h_function_difference(
+  cond_var: int,
+) -> None:
+  """Away from the clamp the two routes are the same quantity."""
+  gauss = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
+  cop = _fit_tll(gauss.sample(2000, seeds=[44, 45, 46]))
+  bc = TorchTllBicop.from_bicop(cop)
+
+  rng = np.random.default_rng(47)
+  cond = torch.from_numpy(rng.uniform(0.15, 0.85, size=64))
+  lo = torch.from_numpy(rng.uniform(0.1, 0.5, size=64))
+  hi = lo + 0.3
+
+  def at(v: torch.Tensor) -> torch.Tensor:
+    cols = [cond, v] if cond_var == 1 else [v, cond]
+    pts = torch.stack(cols, dim=-1)
+    return bc.hfunc1(pts) if cond_var == 1 else bc.hfunc2(pts)
+
+  torch.testing.assert_close(
+    bc.cond_interval_prob(cond, lo, hi, cond_var),
+    at(hi) - at(lo),
+    rtol=1e-12,
+    atol=1e-12,
+  )
+
+
+def test_rect_prob_and_cond_interval_prob_reject_a_bad_axis() -> None:
+  """``cond_var`` is 1 or 2; anything else is a caller error, not a default."""
+  bc = TorchTllBicop.from_bicop(
+    _fit_tll(
+      pv.Bicop(
+        family=pv.families.gaussian, parameters=np.array([[0.3]])
+      ).sample(500, seeds=[48, 49, 50])
+    )
+  )
+  one = torch.full((1,), 0.5, dtype=torch.float64)
+  with pytest.raises(ValueError, match="cond_var must be 1 or 2"):
+    bc.cond_interval_prob(one, one * 0.1, one * 0.9, 3)

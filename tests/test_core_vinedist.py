@@ -108,6 +108,37 @@ def test_logpdf_preserves_an_extreme_tail_copula_density() -> None:
   np.testing.assert_allclose(dist.logpdf(y), np.log(copula_density), rtol=1e-14)
 
 
+def test_logpdf_survives_a_copula_density_that_underflows() -> None:
+  """The copula half is read in log space, as the marginal half already was.
+
+  Closes vinecopulib/pyvinecopulib#335: by the time a density arrives the
+  product over the vine's edges has already underflowed to zero, and no
+  logarithm applied afterwards can recover it. A one-truncated D-vine of
+  strongly dependent Gaussian pairs, evaluated with the arguments alternating
+  between the two tails, puts the log-density near ``-766`` -- past ``log`` of
+  the smallest subnormal, ``-744.44``.
+  """
+  d = 10
+  pairs = [
+    [
+      pv.Bicop.from_family(pv.families.gaussian, parameters=np.array([[0.9]]))
+      for _ in range(d - 1)
+    ]
+  ]
+  structure = pv.DVineStructure(list(range(1, d + 1)), trunc_lvl=1)
+  copula = pv.Vinecop.from_structure(structure=structure, pair_copulas=pairs)
+  dist = Vinedist(copula, [stats.uniform()] * d)
+  y = np.tile(np.array([0.999, 0.001]), d // 2)[None, :]
+
+  assert np.asarray(copula.pdf(y))[0] == 0.0
+  logpdf = np.asarray(dist.logpdf(y))[0]
+  assert np.isfinite(logpdf)
+  # Uniform margins contribute nothing, so the joint log-density is the
+  # copula's own.
+  np.testing.assert_allclose(logpdf, copula.logpdf(y)[0], rtol=1e-12)
+  assert np.isfinite(np.asarray(dist.loglik(y)))
+
+
 # --- conditional sampling --------------------------------------------------- #
 
 
