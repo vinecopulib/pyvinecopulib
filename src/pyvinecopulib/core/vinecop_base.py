@@ -34,7 +34,7 @@ data enters in the expanded ``(n, 2d)`` or compact ``(n, d + k)`` layout that
 ``var_types`` too, handing each edge's types to the ``fit_edge`` callback so it
 can fit the pair copula the edge actually needs. A pair copula that reads only
 two columns is hosted on a discrete edge by wrapping it in
-:class:`~pyvinecopulib.core.DiscreteBicop`, which supplies the difference
+``BicopBase.with_var_types``, which supplies the difference
 quotients from its continuous ``pdf`` / ``cdf`` / ``hfunc1`` / ``hfunc2``.
 
 Two structural notes about what lives here rather than in a subclass. The
@@ -75,7 +75,6 @@ from array_api_compat import array_namespace
 
 from ..pyvinecopulib_ext import RVineStructure
 from ._vinecop_discrete import (
-  check_var_types,
   collapse_data,
   disc_cols,
   edge_columns,
@@ -83,6 +82,7 @@ from ._vinecop_discrete import (
   seed_left_limits,
   stack_edge,
 )
+from ._validation import check_var_types
 from ._vinecop_reorient import Reorientation, reorientation
 from ._vinecop_plot import (
   VINECOP_PLOT_PARAMS,
@@ -97,8 +97,7 @@ from ._vinecop_fit_engines import (
   fit_parts,
   select_parts,
 )
-from .bicop_base import BicopBase, flip_of
-from .bicop_discrete import continuous_view
+from .bicop_base import BicopBase, continuous_of, flip_of
 from .vinecop_context import ConditioningContext, SimplifiedContext
 from .protocols import (
   ArrayT,
@@ -277,7 +276,21 @@ class VinecopBase(
   """
 
   # --- layout installed by _bind_vine (hooks / state) ------------------- #
-  structure: RVineStructure
+  @property
+  def structure(self) -> RVineStructure:
+    """The R-vine structure this vine is bound to.
+
+    Returns
+    -------
+    RVineStructure
+        The structure the pair copulas are indexed by.
+    """
+    return self._structure
+
+  @structure.setter
+  def structure(self, value: RVineStructure) -> None:
+    self._structure = value
+
   d: int
   trunc_lvl: int
   order: tuple[int, ...]
@@ -670,7 +683,7 @@ class VinecopBase(
   # `device`, does arithmetic -- so it holds it as `Any`, per `protocols.py`
   # on what an unbounded `ArrayT` can type. Every one receives an
   # already-prepped array from a public method typed `ArrayT`.
-  def _pdf(self, u: Any, x: Optional[ArrayT]) -> ArrayT:  # noqa: ANN401
+  def _pdf(self, u: ArrayT, x: Optional[ArrayT]) -> ArrayT:
     """Vine density, the exponential of :meth:`_logpdf` (``Vinecop::pdf``).
 
     Parameters
@@ -879,7 +892,7 @@ class VinecopBase(
           # The inverse cascade *produces* the values a left limit would be
           # taken of, so it evaluates every pair as continuous -- exactly as
           # ``Vinecop::inverse_rosenblatt`` does.
-          edge_copula = continuous_view(edge_copula)
+          edge_copula = continuous_of(edge_copula)
         # Same m / on-diagonal rule as the forward cascades (class.ipp:1026),
         # but the inputs are rows of the transposed hinv2 / hfunc1 scratch.
         m = int(s.min_array(tree, var))
@@ -911,7 +924,7 @@ class VinecopBase(
   # instead of a Python loop. Only the grid state `_build_batched` returns is
   # subclass-specific; the loops below are array-agnostic, and receive `u`
   # already prepped by the public method that dispatched.
-  def _pdf_batched(self, u: Any) -> ArrayT:  # noqa: ANN401 - as `_pdf`
+  def _pdf_batched(self, u: ArrayT) -> ArrayT:
     """Batched vine pdf, the exponential of :meth:`_logpdf_batched`.
 
     Parameters
@@ -1841,8 +1854,16 @@ class VinecopBase(
     pair_cls = cls.bicop_class
     if fit_edge is not None or pair_cls is None:
       return
+    # Two shapes answer this. A class outside the base hierarchy -- the
+    # compiled `Bicop`, or a foreign pair -- carries its own `flip`. A
+    # `BicopBase` subclass inherits `flip`, which swaps the variable types on
+    # top of the copula's own swap, so there the question is whether the hook
+    # underneath it was overridden.
     flip = getattr(pair_cls, "flip", None)
-    if flip is None or flip is BicopBase.flip:
+    if flip is not None and flip is not BicopBase.flip:
+      return
+    flip_raw = getattr(pair_cls, "_flip_raw", None)
+    if flip_raw is None or flip_raw is BicopBase._flip_raw:
       raise NotImplementedError(
         f"{pair_cls.__name__} has no `flip`, which structure selection needs "
         "to reorient each pair onto its finalized slot. Implement it (return "

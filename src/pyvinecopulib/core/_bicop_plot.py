@@ -1,11 +1,10 @@
-from typing import Any, Callable, Optional, Union, cast
+from typing import Any, Callable, Optional, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 from mpl_toolkits.mplot3d.axis3d import XAxis as XAxis3D, YAxis as YAxis3D
 
-from ..pyvinecopulib_ext import Bicop
 from ._covariates import covariate_row, pair_eval
 from ._placement import to_numpy
 from ._normal import (
@@ -18,10 +17,6 @@ from ._normal import (
 )
 from .protocols import ArrayT, BicopLike
 
-
-#: `Bicop` is named outright because it satisfies `BicopLike` *nominally*
-#: only: its `pdf` takes per-row `parameters` where the contract takes `x`.
-_PairCopula = Union[BicopLike[ArrayT], Bicop]
 
 #: Shared with `BicopBase.plot`, which adds `x` and a `Raises`.
 BICOP_PLOT_PARAMS = """    plot_type : str, default="surface"
@@ -93,7 +88,7 @@ def get_default_grid_size(plot_type: str) -> int:
 
 
 def bicop_plot(
-  cop: _PairCopula[ArrayT],
+  cop: BicopLike[ArrayT],
   plot_type: str = "surface",
   margin_type: str = "unif",
   xylim: Optional[tuple[float, float]] = None,
@@ -163,29 +158,15 @@ def bicop_plot(
     tiled = np.repeat(row, grid.shape[0], axis=0)
     x_grid = tiled if place is None else place(tiled)
 
-  ## evaluate on grid. Use a continuous copy when the pair stores discrete
-  ## variable types. A third-party pair without that capability is restored in
-  ## a finally block, so plotting can never leave caller-owned model state
-  ## changed when density evaluation or plotting raises.
-  vt = getattr(cop, "var_types", None)
-  if vt is not None:
-    # Read the capability from the type: permissive proxy objects such as
-    # mocks synthesize arbitrary instance attributes on demand.
-    with_var_types = getattr(type(cop), "with_var_types", None)
-    if callable(with_var_types):
-      eval_cop = with_var_types(cop)
-      vals = pair_eval(eval_cop.pdf, u_grid, x=x_grid)
-    else:
-      # Written through a local, since `var_types` is a capability only the
-      # compiled class carries and the contract does not name.
-      mutable: Any = cop
-      mutable.var_types = ["c", "c"]
-      try:
-        vals = pair_eval(cop.pdf, u_grid, x=x_grid)
-      finally:
-        mutable.var_types = vt
-  else:
-    vals = pair_eval(cop.pdf, u_grid, x=x_grid)
+  ## evaluate on grid, as one continuous surface: a pair declared discrete
+  ## reads a four-column layout and returns atom probabilities, which is not
+  ## what a density plot draws.
+  # Imported here rather than at module scope: `bicop_base` imports this
+  # module for the shared docstring fragments, so the edge only runs one way
+  # at import time.
+  from .bicop_base import continuous_of
+
+  vals = pair_eval(continuous_of(cop).pdf, u_grid, x=x_grid)
   # Coerce the density so a torch-tensor return reshapes cleanly.
   grid_vals = np.reshape(to_numpy(vals), (grid_size, grid_size))
 

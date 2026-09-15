@@ -259,21 +259,6 @@ class TestBicopHelpers:
     with pytest.raises(ValueError, match="Unknown margin type"):
       bicop_plot(mock_cop, margin_type="invalid")
 
-  def test_bicop_plot_restores_discrete_type_after_failure(self) -> None:
-    """A plotting error cannot mutate a caller-owned discrete pair."""
-    from pyvinecopulib.core._bicop_plot import bicop_plot
-
-    class Pair:
-      var_types = ["d", "c"]
-
-      def pdf(self, u: np.ndarray) -> np.ndarray:
-        raise RuntimeError("density failed")
-
-    pair = Pair()
-    with pytest.raises(RuntimeError, match="density failed"):
-      bicop_plot(pair, grid_size=10)
-    assert pair.var_types == ["d", "c"]
-
   @patch("matplotlib.pyplot.show")
   @patch("matplotlib.pyplot.contour")
   @patch("matplotlib.pyplot.clabel")
@@ -1154,33 +1139,39 @@ class TestEdgeCases:
 def test_bicop_plot_refuses_x_on_a_pair_that_reads_no_covariates() -> None:
   """Better a loud refusal than an unconditional surface under a conditional call.
 
-  Exercised at the helper level because the object under test does
-  *not* conform to ``BicopLike``: a ``pdf`` with no ``x`` parameter is the
-  compiled ``Bicop``'s shape, and a ``BicopBase`` subclass cannot express it
-  without violating the contract -- which is itself why the forwarding rule
-  cannot rely on the parameter being absent.
+  A pair that models no covariates says so by not declaring ``x`` on its
+  primitives, which is what ``pair_eval`` turns into a ``TypeError`` the first
+  time an edge has one.
   """
   from pyvinecopulib.core._bicop_plot import bicop_plot
 
-  class NoCovariates:
-    var_types = None
-
-    def pdf(self, u: np.ndarray) -> np.ndarray:
+  class NoCovariates(pv.core.BicopBase[np.ndarray]):
+    def _pdf_raw(self, u: np.ndarray) -> np.ndarray:
       return np.ones(u.shape[0], dtype=float)
 
+    def _hfunc1_raw(self, u: np.ndarray) -> np.ndarray:
+      return u[:, 1]
+
+    def _hfunc2_raw(self, u: np.ndarray) -> np.ndarray:
+      return u[:, 0]
+
   with pytest.raises(TypeError):
-    bicop_plot(NoCovariates(), "contour", x=[0.5])
+    bicop_plot(NoCovariates(), "contour", x=np.array([[0.5]]))
 
 
 def test_bicop_plot_takes_one_covariate_row_only() -> None:
   """A 2-d surface shows the density at one covariate value, not many."""
   from pyvinecopulib.core._bicop_plot import bicop_plot
 
-  class Conditional:
-    var_types = None
-
-    def pdf(self, u: np.ndarray, *, x: Any = None) -> np.ndarray:
+  class Conditional(pv.core.BicopBase[np.ndarray]):
+    def _pdf_raw(self, u: np.ndarray, *, x: Any = None) -> np.ndarray:
       return np.ones(u.shape[0], dtype=float)
+
+    def _hfunc1_raw(self, u: np.ndarray, *, x: Any = None) -> np.ndarray:
+      return u[:, 1]
+
+    def _hfunc2_raw(self, u: np.ndarray, *, x: Any = None) -> np.ndarray:
+      return u[:, 0]
 
   for bad in (np.zeros((17, 1)), np.zeros((2, 2, 1))):
     with pytest.raises(ValueError, match="single covariate row"):
@@ -1193,12 +1184,16 @@ def test_bicop_plot_places_the_grid_through_the_supplied_hook() -> None:
 
   seen: dict[str, object] = {}
 
-  class Recording:
-    var_types = None
-
-    def pdf(self, u: np.ndarray) -> np.ndarray:
+  class Recording(pv.core.BicopBase[np.ndarray]):
+    def _pdf_raw(self, u: np.ndarray) -> np.ndarray:
       seen["type"] = type(u).__name__
       return np.ones(u.shape[0], dtype=float)
+
+    def _hfunc1_raw(self, u: np.ndarray) -> np.ndarray:
+      return u[:, 1]
+
+    def _hfunc2_raw(self, u: np.ndarray) -> np.ndarray:
+      return u[:, 0]
 
   # No `place`: the grid arrives exactly as it always did.
   bicop_plot(Recording(), "contour")

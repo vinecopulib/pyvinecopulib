@@ -16,7 +16,6 @@ import numpy as np
 import pytest
 
 import pyvinecopulib as pv
-from pyvinecopulib.core import DiscreteBicop
 
 torch = pytest.importorskip("torch")
 
@@ -955,10 +954,10 @@ def test_the_integral_cache_is_allowed_on_a_discrete_vine(
   edge = _pair_edge(types, seed=61)
   for method in ("pdf", "hfunc1", "hfunc2"):
     torch.testing.assert_close(
-      getattr(DiscreteBicop(cached._pair_module(tree, edge_ix), types), method)(
+      getattr(cached._pair_module(tree, edge_ix).with_var_types(types), method)(
         edge
       ),
-      getattr(DiscreteBicop(plain._pair_module(tree, edge_ix), types), method)(
+      getattr(plain._pair_module(tree, edge_ix).with_var_types(types), method)(
         edge
       ),
       rtol=1e-12,

@@ -836,7 +836,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
 
   # --- evaluation ---------------------------------------------------------- #
 
-  def pdf(self, y: np.ndarray, *, x: Optional[np.ndarray] = None) -> np.ndarray:
+  def pdf(self, y: np.ndarray) -> np.ndarray:
     return _at_points(self.distribution.computePDF, y)
 
   def logpdf(
@@ -861,7 +861,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     """
     return _at_points(self.distribution.computeLogPDF, y)
 
-  def cdf(self, y: np.ndarray, *, x: Optional[np.ndarray] = None) -> np.ndarray:
+  def cdf(self, y: np.ndarray) -> np.ndarray:
     return _at_points(self.distribution.computeCDF, y)
 
   def icdf(

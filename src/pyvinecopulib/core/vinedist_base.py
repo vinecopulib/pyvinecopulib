@@ -181,20 +181,14 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
 
   def __init__(
     self,
-    vinecop: Any,  # noqa: ANN401 - see the comment below
+    vinecop: VinecopLike[ArrayT],
     margins: object,
   ) -> None:
-    # `copula` is a `VinecopLike`, but typed `Any`: the compiled `Vinecop`
-    # satisfies that contract nominally, not statically (its signatures spell
-    # per-row `parameters` where the protocol spells the conditioning matrix
-    # `x`), so narrowing here would reject the commonest call. Same reason the
-    # sklearn backend layer returns `Any` from `fit_vine`.
     self._bind_dist(vinecop, margins)
 
   def _bind_dist(
     self,
-    # A `VinecopLike`, but `Any` for the reason `__init__` states.
-    vinecop: Any,  # noqa: ANN401
+    vinecop: VinecopLike[ArrayT],
     margins: object,
   ) -> None:
     """Install the copula and margins.

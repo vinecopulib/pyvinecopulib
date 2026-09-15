@@ -23,7 +23,7 @@ through :func:`torch.compile`.
 Variables with atoms are declared with ``var_types`` and passed in the layouts
 ``Vinecop`` takes. The stored pair copulas remain continuous interpolation
 grids; the mixed-discrete surface comes from
-:class:`~pyvinecopulib.core.DiscreteBicop`.
+``BicopBase.with_var_types``.
 
 See Also
 --------
@@ -55,10 +55,9 @@ from ..core import (
   BicopLike,
   ConditioningContext,
   ControlsLike,
-  DiscreteBicop,
   VinecopBase,
 )
-from ..core.bicop_discrete import continuous_view
+from ..core.bicop_base import continuous_of
 from ..core.bicop_independence import IndependenceBicop
 from ..core._validation import reject_covariates
 from ..core.vinecop_base import FitEdge, FitLevel, NotBatchable
@@ -131,7 +130,7 @@ class TorchVinecop(
   - ``get_pair_copula(tree, edge)`` returns the pair copula the cascades
     evaluate at a position. The stored modules are continuous grids, so an
     edge with a discrete variable comes back wrapped in
-    :class:`~pyvinecopulib.core.DiscreteBicop`. The wrapper itself is not
+    ``with_var_types``. The declared copy itself is not
     stored, which is what keeps ``state_dict`` / ``.to()`` / pickling over
     real ``torch.nn.Module`` parameters only.
   - ``set_pair_copulas(pair_copulas)`` stores fitted pairs, which is what
@@ -371,7 +370,7 @@ class TorchVinecop(
         Per-variable types, ``"c"`` (continuous) or ``"d"`` (discrete), in
         variable order; empty means all continuous. A discrete variable makes
         the cascades read its left limit too, and the pair copulas that see it
-        are evaluated through :class:`~pyvinecopulib.core.DiscreteBicop`.
+        are evaluated through ``BicopBase.with_var_types``.
     device : torch.device, or None, optional
         Placement of the independence pair copulas that fill missing edges.
     dtype : torch.dtype, default=torch.float64
@@ -522,11 +521,10 @@ class TorchVinecop(
         dtype=eff_dtype,
         var_types=list(var_types),
       )
-      # A discrete edge propagates through the mixed-discrete surface, which is
-      # also what the next tree's four-column input is built from.
-      if "d" not in var_types:
-        return bc
-      return DiscreteBicop(bc, (var_types[0], var_types[1]))
+      # A discrete edge propagates through the mixed-discrete surface, which
+      # is also what the next tree's four-column input is built from. The pair
+      # carries the declaration itself, so nothing wraps it.
+      return bc.with_var_types(var_types)
 
     if fit_edge is not None:
       # A caller who brings their own pair fitter overrides the built-in TLL
@@ -622,7 +620,7 @@ class TorchVinecop(
       [
         TorchTllBicop(device=u_t.device, dtype=eff_dtype)
         if isinstance(p, IndependenceBicop)
-        else continuous_view(p)
+        else continuous_of(p)
         for p in row
       ]
       for row in pairs
@@ -668,7 +666,7 @@ class TorchVinecop(
           [
             TorchTllBicop(device=ref.device, dtype=ref.dtype)
             if isinstance(pair, IndependenceBicop)
-            else cast("torch.nn.Module", continuous_view(pair))
+            else cast("torch.nn.Module", continuous_of(pair))
             for pair in row
           ]
         )
@@ -692,7 +690,7 @@ class TorchVinecop(
 
     The stored modules are continuous grids, so an edge with a discrete
     variable comes back wrapped in
-    :class:`~pyvinecopulib.core.DiscreteBicop`, which supplies the
+    ``with_var_types``, which supplies the
     mixed-discrete surface. Keeping the wrapper out of the stored
     ``torch.nn.ModuleList`` is what keeps ``state_dict`` / ``.to()`` /
     pickling over the real parameters only.
@@ -710,10 +708,10 @@ class TorchVinecop(
         The pair copula hosted at that position, wrapped for a discrete edge.
     """
     pair = self._pair_module(tree, edge)
-    types = self.pair_var_types(tree, edge)
-    if "d" not in types:
-      return pair
-    return DiscreteBicop(pair, types)
+    return cast(
+      "BicopLike[Tensor]",
+      pair.with_var_types(self.pair_var_types(tree, edge)),
+    )
 
   def get_extra_state(self) -> dict[str, Any]:
     """Return the non-tensor model identity for ``state_dict`` round-trips.

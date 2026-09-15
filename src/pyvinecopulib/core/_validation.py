@@ -24,6 +24,35 @@ __all__ = [
 ]
 
 
+def check_var_types(var_types: Optional[list[str]], d: int) -> tuple[str, ...]:
+  """Normalize and validate a vine's per-variable types.
+
+  Parameters
+  ----------
+  var_types : list of str, or None, optional
+      Per-variable types, ``"c"`` or ``"d"``; ``None`` means all continuous.
+  d : int
+      Dimension the types must cover.
+
+  Returns
+  -------
+  tuple of str
+      The validated types, one per variable.
+
+  Raises
+  ------
+  ValueError
+      If the length is not ``d`` or an entry is outside ``{"c", "d"}``.
+  """
+  types = ("c",) * d if var_types is None else tuple(var_types)
+  if len(types) != d:
+    raise ValueError(f"var_types has {len(types)} entries, expected {d}")
+  bad = [t for t in types if t not in ("c", "d")]
+  if bad:
+    raise ValueError(f"var_types entries must be 'c' or 'd'; got {bad[0]!r}")
+  return types
+
+
 def validate_univariate(values: ArrayT, *, name: str = "y") -> ArrayT:
   """Require the documented one-dimensional univariate-data layout.
 

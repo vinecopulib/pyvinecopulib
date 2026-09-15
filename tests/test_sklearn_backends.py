@@ -605,10 +605,14 @@ def test_the_fitted_distribution_samples_through_the_backend() -> None:
   original = est.backend_.sample
 
   def spy(
-    vine: VinecopLike[np.ndarray], n_samples: int, *, seeds: list[int]
+    vine: VinecopLike[np.ndarray],
+    n_samples: int,
+    *,
+    qrng: bool = False,
+    seeds: list[int],
   ) -> np.ndarray:
     seen.append(n_samples)
-    return original(vine, n_samples, seeds=seeds)
+    return original(vine, n_samples, qrng=qrng, seeds=seeds)
 
   est.backend_.sample = spy
   drawn = est.sample(5, random_state=1)

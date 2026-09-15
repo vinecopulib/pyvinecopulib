@@ -576,48 +576,65 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
           },
           "u"_a, "num_threads"_a = 1, "keep_all"_a = true,
           "parameters"_a = nb::none(), pdf_full_doc)
-      .def("cdf", &Vinecop::cdf, "u"_a, "N"_a = 10000, "num_threads"_a = 1,
-           "seeds"_a = std::vector<int>(), vinecop_doc.cdf.doc,
-           nb::call_guard<nb::gil_scoped_release>())
-      .def("sample", &Vinecop::simulate, "n"_a, "qrng"_a = false,
-           "num_threads"_a = 1, "seeds"_a = std::vector<int>(),
-           vinecop_doc.simulate.doc, nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "cdf",
+          [](const Vinecop& self, const Eigen::MatrixXd& u, size_t N,
+             size_t num_threads, const std::optional<std::vector<int>>& seeds) {
+            nb::gil_scoped_release release;
+            return self.cdf(u, N, num_threads,
+                            seeds.value_or(std::vector<int>{}));
+          },
+          "u"_a, "N"_a = 10000, "num_threads"_a = 1, "seeds"_a = nb::none(),
+          vinecop_doc.cdf.doc)
+      .def(
+          "sample",
+          [](const Vinecop& self, size_t n, bool qrng, size_t num_threads,
+             const std::optional<std::vector<int>>& seeds) {
+            nb::gil_scoped_release release;
+            return self.simulate(n, qrng, num_threads,
+                                 seeds.value_or(std::vector<int>{}));
+          },
+          "n"_a, "qrng"_a = false, "num_threads"_a = 1, "seeds"_a = nb::none(),
+          vinecop_doc.simulate.doc)
       .def(
           "sample_conditional",
           [](const Vinecop& self, const Eigen::MatrixXd& u_cond, bool qrng,
-             size_t num_threads, const std::vector<int>& seeds,
+             size_t num_threads, const std::optional<std::vector<int>>& seeds,
              const std::optional<std::vector<size_t>>& conditioning_set)
               -> Eigen::MatrixXd {
             nb::gil_scoped_release release;
             if (conditioning_set) {
-              return self.simulate_conditional(u_cond, *conditioning_set, qrng,
-                                               num_threads, seeds);
+              return self.simulate_conditional(
+                  u_cond, *conditioning_set, qrng, num_threads,
+                  seeds.value_or(std::vector<int>{}));
             }
-            return self.simulate_conditional(u_cond, qrng, num_threads, seeds);
+            return self.simulate_conditional(
+                u_cond, qrng, num_threads, seeds.value_or(std::vector<int>{}));
           },
           "u_cond"_a, "qrng"_a = false, "num_threads"_a = 1,
-          "seeds"_a = std::vector<int>(), nb::kw_only(),
+          "seeds"_a = nb::none(), nb::kw_only(),
           "conditioning_set"_a = nb::none(), sample_conditional_doc.c_str())
-      // `u` is taken by value and moved: the implementation uses it as a
-      // working buffer, and a const reference would force an n x d copy.
       // `u` is taken by value and moved: the implementation uses it as a
       // working buffer, and a const reference would force an n x d copy.
       .def(
           "rosenblatt",
           [](const Vinecop& self, Eigen::MatrixXd u, size_t num_threads,
-             bool randomize_discrete, const std::vector<int>& seeds,
+             bool randomize_discrete,
+             const std::optional<std::vector<int>>& seeds,
              const std::optional<std::vector<size_t>>& conditioning_set)
               -> Eigen::MatrixXd {
             nb::gil_scoped_release release;
             if (conditioning_set) {
               return self.rosenblatt(std::move(u), *conditioning_set,
-                                     num_threads, randomize_discrete, seeds);
+                                     num_threads, randomize_discrete,
+                                     seeds.value_or(std::vector<int>{}));
             }
             return self.rosenblatt(std::move(u), num_threads,
-                                   randomize_discrete, seeds);
+                                   randomize_discrete,
+                                   seeds.value_or(std::vector<int>{}));
           },
           "u"_a, "num_threads"_a = 1, "randomize_discrete"_a = true,
-          "seeds"_a = std::vector<int>(), nb::kw_only(),
+          "seeds"_a = nb::none(), nb::kw_only(),
           "conditioning_set"_a = nb::none(), rosenblatt_doc.c_str())
       .def(
           "inverse_rosenblatt",

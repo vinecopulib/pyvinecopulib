@@ -1368,7 +1368,9 @@ def test_vinedist_refuses_torch_parts() -> None:
 
   lifted = torch_mod.TorchVinecop.from_vinecop(copula)
   with pytest.raises(TypeError, match="TorchVinedist"):
-    Vinedist(lifted, margins)
+    # A torch vine satisfies `VinecopLike[Tensor]`, not the `[ndarray]` this
+    # class takes, so the cast is what a caller who skips type checking does.
+    Vinedist(cast("Any", lifted), margins)
 
   # And a torch margin, on an otherwise fine NumPy copula.
   with pytest.raises(TypeError, match="TorchVinedist"):

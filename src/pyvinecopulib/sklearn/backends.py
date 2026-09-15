@@ -73,7 +73,6 @@ from typing import (
   Any,
   Generic,
   Optional,
-  Protocol,
   Self,
   Sequence,
   TypeVar,
@@ -94,19 +93,6 @@ if TYPE_CHECKING:
   )
 
 
-class _FittedVine(Protocol):
-  """What a backend reads off a fitted vine, whichever lane fitted it.
-
-  Not ``VinecopLike``: the compiled ``Vinecop`` satisfies that contract
-  nominally rather than statically (its ``cdf`` takes no ``x``), and the two
-  lanes' ``pdf`` / ``cdf`` / ``sample`` take different keywords -- which is
-  what the concrete backends exist to adapt.
-  """
-
-  @property
-  def structure(self) -> pv.RVineStructure: ...
-
-
 def _default_cpp_controls() -> pv.FitControlsVinecop:
   return pv.FitControlsVinecop(
     family_set=[pv.families.tll], trunc_lvl=20, num_threads=1
@@ -116,7 +102,10 @@ def _default_cpp_controls() -> pv.FitControlsVinecop:
 #: The vine a backend fits. Carried as a type parameter so a concrete backend
 #: names its own class -- `Vinecop` or `TorchVinecop` -- in every signature
 #: without narrowing an inherited parameter, which an override may not do.
-_VineT = TypeVar("_VineT", bound=_FittedVine)
+#: A fitted vine, whichever lane fitted it. Bound to the public contract --
+#: both lanes satisfy it -- while each concrete backend names its own vine
+#: type, which is where the per-lane keywords (`num_threads`, batching) live.
+_VineT = TypeVar("_VineT", bound=pv.core.VinecopLike[Any])
 
 
 class _VinecopBackendBase(Generic[_VineT]):
@@ -179,18 +168,17 @@ class _VinecopBackendBase(Generic[_VineT]):
     raise NotImplementedError
 
   def sample(
-    self, vine: _VineT, n_samples: int, *, seeds: list[int]
+    self, vine: _VineT, n_samples: int, *, qrng: bool = False, seeds: list[int]
   ) -> np.ndarray:
     raise NotImplementedError
 
   # -- shared surface (single source of truth) ---------------------------- #
-  # The return is a `MarginLike`, typed `Any` for the reason `_FittedVine`
-  # states one level down: the compiled `Kde1d` this returns satisfies that
-  # contract nominally rather than statically, and a subclass supplies a margin
-  # on its own array namespace, so no closed union describes the hook either.
+  # `MarginLike[Any]` rather than a namespace-specific one: a backend whose
+  # vine lives on another array namespace supplies a margin on that namespace,
+  # so no single parameterization describes the hook.
   def default_margin(
     self, var_type: str, bounds: Optional[tuple[float, float]]
-  ) -> Any:  # noqa: ANN401 - see above
+  ) -> pv.core.MarginLike[Any]:
     """The margin an estimator should fit when the caller named none.
 
     A hook rather than an `isinstance` check, so a backend whose vine lives on
@@ -235,8 +223,10 @@ class _VinecopBackendBase(Generic[_VineT]):
     """
     return pv.core.Vinedist(_BackendVinecop(self, vine), list(margins))
 
-  def structure_of(self, vine: _FittedVine) -> pv.RVineStructure:
-    return vine.structure
+  def structure_of(self, vine: _VineT) -> pv.RVineStructure:
+    # `VinecopLike[Any]` resolves its members to `Unknown`, so the read is
+    # named rather than inferred.
+    return cast("pv.RVineStructure", vine.structure)
 
   def with_random_structure(self, d: int, seeds: list[int]) -> Self:
     new = _copy.copy(self)
@@ -345,11 +335,17 @@ class VinecopBackend(_VinecopBackendBase["pv.Vinecop"]):
     )
 
   def sample(
-    self, vine: pv.Vinecop, n_samples: int, *, seeds: list[int]
+    self,
+    vine: pv.Vinecop,
+    n_samples: int,
+    *,
+    qrng: bool = False,
+    seeds: list[int],
   ) -> np.ndarray:
     return np.asarray(
       vine.sample(
         n_samples,
+        qrng=qrng,
         num_threads=self._effective_controls().num_threads,
         seeds=seeds,
       )
@@ -431,9 +427,14 @@ class TorchVinecopBackend(_VinecopBackendBase["TorchVinecop"]):
     return out.detach().cpu().numpy()
 
   def sample(
-    self, vine: "TorchVinecop", n_samples: int, *, seeds: list[int]
+    self,
+    vine: "TorchVinecop",
+    n_samples: int,
+    *,
+    qrng: bool = False,
+    seeds: list[int],
   ) -> np.ndarray:
-    out = vine.sample(n_samples, qrng=False, seeds=seeds)
+    out = vine.sample(n_samples, qrng=qrng, seeds=seeds)
     return out.detach().cpu().numpy()
 
   def default_margin(
@@ -529,12 +530,12 @@ class _BackendVinecop:
   ----------
   backend : _VinecopBackendBase[Any]
       A resolved backend.
-  vine : _FittedVine
+  vine : VinecopLike
       The vine that backend fitted.
   """
 
   def __init__(
-    self, backend: _VinecopBackendBase[Any], vine: _FittedVine
+    self, backend: _VinecopBackendBase[Any], vine: pv.core.VinecopLike[Any]
   ) -> None:
     self.backend = backend
     self.vine = vine
@@ -587,13 +588,21 @@ class _BackendVinecop:
     """
     return self.backend.cdf(self.vine, u, N=N, seeds=list(seeds or []))
 
-  def sample(self, n: int, *, seeds: Optional[list[int]] = None) -> np.ndarray:
+  def sample(
+    self,
+    n: int,
+    *,
+    qrng: bool = False,
+    seeds: Optional[list[int]] = None,
+  ) -> np.ndarray:
     """Draw ``n`` samples on the copula scale.
 
     Parameters
     ----------
     n : int
         Number of samples.
+    qrng : bool, default=False
+        Draw quasi-random base uniforms instead of pseudo-random ones.
     seeds : list of int, or None, optional
         RNG seeds.
 
@@ -602,7 +611,52 @@ class _BackendVinecop:
     ndarray, shape (n, d), dtype float
         Samples in ``[0, 1]^d``.
     """
-    return self.backend.sample(self.vine, n, seeds=list(seeds or []))
+    return self.backend.sample(self.vine, n, qrng=qrng, seeds=list(seeds or []))
+
+  # The three members below are read off the vine unchanged -- the backend has
+  # nothing to adapt in them. They are written out rather than left to
+  # `__getattr__` so the class satisfies `VinecopLike` statically, which is
+  # what `Vinedist` asks for.
+  @property
+  def structure(self) -> pv.RVineStructure:
+    """The R-vine structure the vine was fitted on.
+
+    Returns
+    -------
+    RVineStructure
+        The structure.
+    """
+    return cast("pv.RVineStructure", self.vine.structure)
+
+  def rosenblatt(self, u: np.ndarray) -> np.ndarray:
+    """Rosenblatt transform, as the vine computes it.
+
+    Parameters
+    ----------
+    u : ndarray, shape (n, d), dtype float
+        Copula-scale observations.
+
+    Returns
+    -------
+    ndarray, shape (n, d), dtype float
+        Independent uniforms.
+    """
+    return np.asarray(self.vine.rosenblatt(u))
+
+  def inverse_rosenblatt(self, u: np.ndarray) -> np.ndarray:
+    """Inverse Rosenblatt transform, as the vine computes it.
+
+    Parameters
+    ----------
+    u : ndarray, shape (n, d), dtype float
+        Independent uniforms.
+
+    Returns
+    -------
+    ndarray, shape (n, d), dtype float
+        Copula-scale observations.
+    """
+    return np.asarray(self.vine.inverse_rosenblatt(u))
 
   def __repr__(self) -> str:
     """Name the backend and the vine it wraps.

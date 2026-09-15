@@ -304,7 +304,6 @@ pyvinecopulib/
         vinedist.py              # Vinedist (NumPy + compiled Vinecop)
         margin_controls.py       # FitControlsMargin (the marginal half of a fit)
         _covariates.py           # the two `x`-forwarding rules + `prepare_covariates`
-        bicop_discrete.py        # DiscreteBicop + the continuous / discrete views
         _vinecop_discrete.py     # the discrete layouts / per-edge types
         _vinecop_fit_engines.py  # fit_parts / select_parts — the two fit engines (internal)
         bicop_independence.py    # IndependenceBicop
@@ -597,7 +596,7 @@ For any behavior change:
   hosted somewhere particular is an optional capability.** `BicopLike` is
   `pdf` / `hfunc1` / `hfunc2` / `hinv1` / `hinv2` / `sample` -- the whole of
   what a vine's `pdf`, `rosenblatt`, `inverse_rosenblatt` and `sample` ask of a
-  pair. `cdf` (needed only on a **discrete** edge, via `DiscreteBicop`; a vine's
+  pair. `cdf` (needed only on a pair **declared discrete**; a vine's
   own `cdf` is Monte-Carlo) and `flip` (needed only in `select` and in a
   relabeling) are read with `getattr` instead. Requiring them made `isinstance`
   stricter than the documented contract and made implementing `BicopLike`
@@ -830,7 +829,7 @@ most of the rest is determined.
 | Base | Protocol requires | Abstract — no evaluating without it | Reports its own absence — only fitting needs it | Names its parts as |
 |---|---|---|---|---|
 | `MarginBase` | `pdf`, `cdf`, `icdf` | `pdf`, `cdf` | `fit` | — |
-| `BicopBase` | `pdf`, `hfunc1/2`, `hinv1/2`, `sample` | `pdf`, `hfunc1`, `hfunc2` | `fit`; `flip` and `cdf` to host the pair in *selection* or on a *discrete* edge | — |
+| `BicopBase` | `pdf`, `hfunc1/2`, `hinv1/2`, `sample` | `_pdf_raw`, `_hfunc1_raw`, `_hfunc2_raw` | `fit`; `_flip_raw` and `_cdf_raw` to host the pair in *selection* or to declare it *discrete* | — |
 | `VinecopBase` | `pdf`, `cdf`, `rosenblatt`, `inverse_rosenblatt`, `sample`, `structure` | `get_pair_copula` | `set_pair_copulas` | `bicop_class` |
 | `VinedistBase` | the ten above plus `logpdf`, `loglik`, `margins`, `vinecop`, `copula_layout` | *(none)* | `_coerce_fit_data` | `vinecop_class`, `margin_class` |
 
@@ -931,11 +930,15 @@ automatically.
   - `BicopLike[ArrayT]` / `VinecopLike[ArrayT]` (`protocols.py`) —
     generic, `runtime_checkable` protocols mirroring the `Bicop` /
     `Vinecop` evaluation surface on any array backend (NumPy or
-    PyTorch). `Bicop` / `Vinecop` satisfy them *nominally* — `isinstance` is
-    `True`, because a `runtime_checkable` Protocol compares method names and
-    nothing else. It is not a statement that the signatures agree: the
-    compiled classes take per-row `parameters` where the protocols take a
-    conditioning matrix `x`, which is why `x` is keyword-only on both.
+    PyTorch). `Bicop`, `Vinecop` and `Kde1d` satisfy them **structurally**,
+    which `ty` checks and `tests/test_core_protocols.py` pins, so downstream
+    code can type against the contract instead of a concrete class. What makes
+    that possible is that the protocols describe the *unconditional* surface:
+    a protocol may ask for **fewer** parameters than an implementation
+    provides, never more, so declaring the conditioning matrix `x` there would
+    put the three classes that model no covariates outside their own
+    contracts. `x` lives on the four bases instead, keyword-only, and a
+    subclass that reads covariates declares it on the primitives that do.
   - **One input pipeline, three separable steps, one owner per level.** Every
     layer does the same three things to an incoming array, and they are kept
     apart because they do not always apply together:
@@ -1047,43 +1050,56 @@ automatically.
     it survives the relabeling `conditioning_set=` performs. Do not "simplify"
     this back to `struct_array` — the two agree on 93% of slots, which is
     exactly enough for a spot check to pass.
-  - `DiscreteBicop` (`_vinecop_discrete.py`) — a *continuous* pair copula evaluated on a
-    discrete or mixed edge. **The vine owns the discrete layouts, the pair
-    copulas stay continuous**: `_bind_vine(..., var_types=)` declares which
-    variables have atoms, `pair_var_types(tree, edge)` derives the types each
-    slot sees from the structure alone, and the cascades hand a four-column
-    `[u1, u2, u1^-, u2^-]` argument to any pair whose types include `"d"`.
-    `BicopLike` is therefore unchanged — it stays a two-column continuous
-    contract — and a custom pair copula opts in by implementing `cdf` and
-    wrapping itself in `DiscreteBicop`. `fit` / `select` take `var_types` too and
-    forward each edge's types to `fit_edge` as a keyword, only on the edges that
-    have one (the rule `pair_eval` applies to `x`). The parity test that binds
-    is the **normalization identity** `Σ_atoms c(u₁,u₂)·(u₁ − u₁⁻) = 1`: the
-    quotients telescope, so it holds exactly and needs no reference
-    implementation and no tolerance argument. It is what established that
-    `DiscreteBicop` was right and the compiled `tll` pair was wrong
-    (fixed upstream in vinecopulib#739 and pinned since). Parametrize
-    pair-level parity over **every** family, not a representative couple —
-    covering only `gaussian` and `clayton` is why that class of defect stayed
-    invisible on both sides for as long as it did. Note the identity **cannot**
-    catch a cache regression: it telescopes to the four corners, so it reads
-    `1 − 2e-10` for a correct density and for a 38%-wrong one alike.
-    **An atom's probability is read, not differenced, wherever the pair can read
-    it** — which is the choice `AbstractBicop` makes per family, mirrored here at
-    the same two levels. `BicopBase.rect_prob` / `cond_interval_prob` are
-    ordinary methods with the four-corner and two-term defaults, so
-    `DiscreteBicop` calls them unconditionally and a pair that overrides neither
-    is unaffected; `TorchTllBicop` overrides both onto its grid, as
-    `KernelBicop` overrides them onto `InterpolationGrid`. Differencing
-    amplifies an absolute error by `4/(w₁w₂)` in the atom widths and reading the
-    mass by `1/w₂` alone, which at the widths a vine's inner trees reach is the
-    difference between `8.5e-8` and `7.0e-14` on the torch↔`Vinecop` cascade
-    comparison. A pair with a *whole* discrete surface of its own is a separate
-    case and takes precedence: `DiscreteBicop` asks it for its own types back
-    through `with_var_types` and forwards, so a compiled `Bicop` on a discrete
-    edge is not approximated at all. `rect_mass` / `cond_interval_mass` stay
-    `InterpolationGrid2D`'s own names, as upstream keeps them
-    `InterpolationGrid`'s; nothing outside the torch grid reaches for them.
+  - **Variable types are state on the pair copula, not a wrapper around it.**
+    `BicopBase` carries `var_types` (defaulting to `("c", "c")` as a *class*
+    attribute, so a subclass writing its own constructor is still continuous)
+    and a copy-returning `with_var_types`, exactly as `AbstractBicop` carries
+    `var_types_` and `Bicop::with_var_types` returns a copy. The types are
+    state because they enter the **fit**: a `tll` grid fitted on a discrete
+    edge goes through `find_latent_sample` and is a different estimate, not
+    the same copula viewed differently.
+    `pdf` / `cdf` / `hfunc1` / `hfunc2` / `hinv1` / `hinv2` are therefore
+    concrete **dispatchers** on the base, and a subclass writes the continuous
+    leaves `_pdf_raw` / `_hfunc1_raw` / `_hfunc2_raw` (plus `_cdf_raw`,
+    `_hinv1_raw`, `_hinv2_raw`, `_flip_raw` where it has them) — `_raw` being
+    `AbstractBicop`'s own name for the primitive that ignores `var_types`. A
+    leaf always sees two continuous columns, already placed, checked and
+    clamped, so it never calls `_prep_args` itself.
+    The vine still **owns** the layout: `_bind_vine(..., var_types=)` declares
+    which variables have atoms, `pair_var_types(tree, edge)` derives each
+    slot's types from the structure alone, the cascades hand a four-column
+    `[u1, u2, u1^-, u2^-]` argument to a slot whose types include `"d"`, and
+    the fit engines declare those types on each pair as it is fitted
+    (`_declared`), so a `fit_edge` callback never has to. `continuous_of` is
+    the one reading in the other direction, for the inverse Rosenblatt cascade
+    and the density plot, both of which evaluate every pair continuously.
+    **A discrete edge therefore needs a `BicopBase` subclass or a `Bicop`** —
+    an object implementing `BicopLike` directly carries no types, and the
+    protocol stays the unconditional two-column contract it was.
+    The parity test that binds is the **normalization identity**
+    `Σ_atoms c(u₁,u₂)·(u₁ − u₁⁻) = 1`: the quotients telescope, so it holds
+    exactly and needs no reference implementation and no tolerance argument.
+    It is what established that the Python quotients were right and the
+    compiled `tll` pair was wrong (fixed upstream in vinecopulib#739 and
+    pinned since). Parametrize pair-level parity over **every** family, not a
+    representative couple — covering only `gaussian` and `clayton` is why that
+    class of defect stayed invisible on both sides for as long as it did. Note
+    the identity **cannot** catch a cache regression: it telescopes to the four
+    corners, so it reads `1 − 2e-10` for a correct density and for a 38%-wrong
+    one alike.
+    **An atom's probability is read, not differenced, wherever the pair can
+    read it** — the choice `AbstractBicop` makes per family, mirrored here.
+    `BicopBase.rect_prob` / `cond_interval_prob` are ordinary methods with the
+    four-corner and two-term defaults, built on the *leaves* rather than the
+    public members, so the dispatchers cannot recur through them;
+    `TorchTllBicop` overrides both onto its grid, as `KernelBicop` overrides
+    them onto `InterpolationGrid`. Differencing amplifies an absolute error by
+    `4/(w₁w₂)` in the atom widths and reading the mass by `1/w₂` alone, which
+    at the widths a vine's inner trees reach is the difference between `8.5e-8`
+    and `7.0e-14` on the torch↔`Vinecop` cascade comparison. `rect_mass` /
+    `cond_interval_mass` stay `InterpolationGrid2D`'s own names, as upstream
+    keeps them `InterpolationGrid`'s; nothing outside the torch grid reaches
+    for them.
   - `sample_conditional` / `reorient` (`_vinecop_reorient.py`) — conditional
     sampling and
     the value-preserving relabeling it rests on. A **truncated** model relabels
@@ -1227,7 +1243,7 @@ Three groups:
   `margin_controls.py` and `independence.py` carry no underscore because each
   is one public thing, while `core/_vinecop_discrete.py`, `core/_margins.py`,
   `core/_placement.py` and `core/_covariates.py` keep theirs
-  even though `DiscreteBicop`, `as_margin`, `resolve_margins`, the
+  even though `as_margin`, `resolve_margins`, the
   `margin_*_json` helpers and the five `core.extend` names they hold are
   public -- the
   internal layout helpers, the two registry tables, the per-ecosystem
@@ -1378,7 +1394,7 @@ Both backends expose:
 backend.fit_vine(U, var_types=...) -> VinecopLike
 backend.pdf(vine, U)        -> np.ndarray
 backend.cdf(vine, U, N=..., seeds=...) -> np.ndarray
-backend.sample(vine, n, seeds=...) -> np.ndarray
+backend.sample(vine, n, qrng=..., seeds=...) -> np.ndarray
 backend.structure_of(vine)  -> RVineStructure
 backend.default_margin(var_type, bounds) -> MarginLike
 backend.bind_distribution(vine, margins) -> Vinedist
@@ -1513,8 +1529,9 @@ Key surface:
     integral per query.
 - Discrete variables are declared with `var_types` on `TorchVinecop`'s three
   constructors. The stored pair copulas stay continuous interpolation grids and
-  `get_pair_copula` wraps a discrete edge in `DiscreteBicop`, so `state_dict` /
-  `.to()` / pickling see only real `nn.Module` parameters. `TorchTllBicop.from_data`
+  `get_pair_copula` hands out `with_var_types(...)` of one, so `state_dict` /
+  `.to()` / pickling see only real `nn.Module` parameters and a continuous
+  slot copies nothing. `TorchTllBicop.from_data`
   takes the four-column layout and reuses the compiled `find_latent_sample`,
   which is what `TllBicop::fit` now consumes for a discrete edge; the jittered
   ranks only seed the bandwidth. A discrete torch vine refuses the **batched
@@ -1650,7 +1667,7 @@ below are a quick orientation.
   `FitControlsVinecop`, `FitControlsMargin`; plus the backend-neutral
   abstraction layer
   `BicopLike`, `VinecopLike`, `BicopBase`, `VinecopBase`, `ControlsLike`,
-  `DiscreteBicop`, `IndependenceBicop`, `ConditioningContext`,
+  `IndependenceBicop`, `ConditioningContext`,
   `SimplifiedContext`, `NonSimplifiedContext`; plus the marginal layer
   `MarginLike`, `MarginBase` and the joint object with its contract and base,
   `Vinedist`, `VinedistLike`, `VinedistBase`; plus the margin serialization
@@ -1782,14 +1799,16 @@ Round-trip / parity properties to preserve when touching numerics:
   `src/include/bicop/family.hpp` + `src/pyvinecopulib/families/__init__.py`
   to bind the new tag and group it appropriately.
 - **Custom pair copulas / vines (`pyvinecopulib.core`).** Subclass
-  `BicopBase` (define `pdf` / `hfunc1` / `hfunc2`) for a custom pair
-  copula, and host it by subclassing `VinecopBase` (define the one hook
+  `BicopBase` (define `_pdf_raw` / `_hfunc1_raw` / `_hfunc2_raw`) for a custom
+  pair copula, and host it by subclassing `VinecopBase` (define the one hook
   `get_pair_copula`); both run on NumPy or PyTorch and inherit the full
   evaluation surface. Implement `BicopLike` / `VinecopLike` directly for
   an immutable / functional backend. To put that pair on a **discrete**
-  edge, add a `cdf` and return `DiscreteBicop(pair, self.pair_var_types(t, e))`
-  from `get_pair_copula` (and from `fit_edge`, which receives the edge's
-  `var_types`); the vine supplies the left-limit columns. For a
+  edge, add a `_cdf_raw` and return `pair.with_var_types(self.pair_var_types(t,
+  e))` from `get_pair_copula`; the vine supplies the left-limit columns and
+  the fit engines declare the types on each pair as they fit it, so a
+  `fit_edge` callback does not have to. A pair implementing `BicopLike`
+  directly carries no types and cannot sit on a discrete edge. For a
   **non-simplified / conditional** vine, pass a `NonSimplifiedContext` and drive
   `VinecopBase.fit` with a `fit_edge` callback. To condition on a subset of
   variables, implement `flip` as well and use `sample_conditional` /
