@@ -438,7 +438,7 @@ def test_a_declared_placement_serves_a_host_that_is_not_a_module(
 ) -> None:
   """The mixin resolves a declaration, not only registered tensors.
 
-  A pair copula that is not an ``nn.Module`` -- backend
+  A pair copula that is not an ``nn.Module`` -- holding fitted
   estimators, a device handle and Python scalars, no tensor -- registers
   nothing for ``reference_tensor`` to find. Before this it reached
   ``self.parameters()`` and raised ``AttributeError``; the array-API inference

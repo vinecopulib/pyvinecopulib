@@ -96,7 +96,7 @@ _norm_inv_cdf = np.vectorize(statistics.NormalDist().inv_cdf, otypes=[float])
 
 
 def _std_normal_cdf(z: Any) -> Any:
-  """Standard normal CDF, dispatched by array backend (torch / numpy)."""
+  """Standard normal CDF, dispatched by array namespace (torch / numpy)."""
   if type(z).__module__.split(".", 1)[0] == "torch":
     import torch
 
@@ -105,7 +105,7 @@ def _std_normal_cdf(z: Any) -> Any:
 
 
 def _std_normal_ppf(p: Any) -> Any:
-  """Standard normal quantile, dispatched by array backend (torch / numpy)."""
+  """Standard normal quantile, dispatched by array namespace (torch / numpy)."""
   if type(p).__module__.split(".", 1)[0] == "torch":
     import torch
 
@@ -146,7 +146,7 @@ class GaussianBicop(BicopBase[Any]):
   ``rho_max < 1`` keeps ``rho`` away from ``±1`` (where the Gaussian copula
   degenerates and the cascade's ``[1e-10, 1-1e-10]`` clamp would break the
   round-trip); normalizing by the column count keeps it bounded across the
-  varying ``x_e`` widths of a vine. Array-backend-agnostic (numpy / torch); has
+  varying ``x_e`` widths of a vine. Array-agnostic (numpy / torch); has
   closed-form ``hfunc`` / ``hinv`` so the vine round-trip is exact.
   """
 
@@ -224,7 +224,7 @@ class MinimalBicop(BicopBase[Any]):
   Implements only the abstract surface (``pdf`` / ``hfunc1`` / ``hfunc2``), so
   ``hinv1`` / ``hinv2`` / ``cdf`` / ``flip`` come from :class:`BicopBase` --
   the two inverses numerically, the latter two as the raising stubs -- and are
-  what the tests hosting it exercise. Array-backend-agnostic apart from
+  what the tests hosting it exercise. Array-agnostic apart from
   ``_sample_uniform``, the one hook with no array-agnostic default.
   """
 

@@ -336,7 +336,7 @@ def test_covariates_are_placed_through_the_hook_not_around_it() -> None:
   placement is *declared* rather than inferable was honored on the argument
   path (``_prep_args`` calls the hook) and skipped on the covariate path -- the
   same object, the same call, two behaviors. Downstream that put a NumPy ``x``
-  inside a pair copula whose backend then failed on ``.to(dtype=...)``.
+  inside a pair copula whose array library then failed on ``.to(dtype=...)``.
   """
 
   class _Declared:
