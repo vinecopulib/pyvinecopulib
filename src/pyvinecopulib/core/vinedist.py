@@ -15,7 +15,7 @@ from typing import Any, ClassVar, Optional, Sequence
 import numpy as np
 
 from ..pyvinecopulib_ext import Kde1d, Vinecop
-from .protocols import ControlsLike, MarginLike
+from .protocols import ControlsLike, MarginLike, VinecopLike
 from .vinedist_base import VinedistBase
 
 __all__ = ["Vinedist"]
@@ -99,7 +99,7 @@ class Vinedist(VinedistBase[np.ndarray]):
 
   def _bind_dist(
     self,
-    vinecop: Any,  # noqa: ANN401 - as `VinedistBase.__init__`
+    vinecop: VinecopLike[np.ndarray],
     margins: object,
   ) -> None:
     """Install the parts, refusing PyTorch ones.

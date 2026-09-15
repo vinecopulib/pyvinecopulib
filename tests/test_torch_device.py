@@ -438,7 +438,7 @@ def test_a_declared_placement_serves_a_host_that_is_not_a_module(
 ) -> None:
   """The mixin resolves a declaration, not only registered tensors.
 
-  A pair copula that is not an ``nn.Module`` -- backend
+  A pair copula that is not an ``nn.Module`` -- holding fitted
   estimators, a device handle and Python scalars, no tensor -- registers
   nothing for ``reference_tensor`` to find. Before this it reached
   ``self.parameters()`` and raised ``AttributeError``; the array-API inference
@@ -455,7 +455,7 @@ def test_a_declared_placement_serves_a_host_that_is_not_a_module(
       self.device = torch.device(device)
       self.dtype = torch.float64
 
-    def pdf(self, u: Any, *, x: Any = None) -> Any:
+    def _pdf_raw(self, u: Any, *, x: Any = None) -> Any:
       u = self._prep_args(u)
       assert isinstance(u, torch.Tensor) and u.device.type == device
       assert x is None or (
@@ -463,10 +463,10 @@ def test_a_declared_placement_serves_a_host_that_is_not_a_module(
       )
       return torch.ones(u.shape[0], dtype=u.dtype, device=u.device)
 
-    def hfunc1(self, u: Any, *, x: Any = None) -> Any:
+    def _hfunc1_raw(self, u: Any) -> Any:
       return self._prep_args(u)[:, 1]
 
-    def hfunc2(self, u: Any, *, x: Any = None) -> Any:
+    def _hfunc2_raw(self, u: Any) -> Any:
       return self._prep_args(u)[:, 0]
 
   pair = _Declared()
@@ -505,13 +505,13 @@ def test_a_member_named_parameters_does_not_decide_the_placement(
       self.device = torch.device(device)
       self.dtype = torch.float64
 
-    def pdf(self, u: Any, *, x: Any = None) -> Any:
+    def _pdf_raw(self, u: Any) -> Any:
       return torch.ones(u.shape[0], dtype=u.dtype, device=u.device)
 
-    def hfunc1(self, u: Any, *, x: Any = None) -> Any:
+    def _hfunc1_raw(self, u: Any) -> Any:
       return self._prep_args(u)[:, 1]
 
-    def hfunc2(self, u: Any, *, x: Any = None) -> Any:
+    def _hfunc2_raw(self, u: Any) -> Any:
       return self._prep_args(u)[:, 0]
 
   placed = _Coincidental()._prep(np.array([[0.3, 0.5]], dtype=np.float32))
@@ -591,13 +591,13 @@ def test_an_undeclared_host_gets_the_documented_default() -> None:
   from pyvinecopulib.torch import TensorPlacementMixin
 
   class _Bare(TensorPlacementMixin, BicopBase[torch.Tensor]):
-    def pdf(self, u: Any, *, x: Any = None) -> Any:
+    def _pdf_raw(self, u: Any) -> Any:
       return torch.ones(u.shape[0], dtype=u.dtype)
 
-    def hfunc1(self, u: Any, *, x: Any = None) -> Any:
+    def _hfunc1_raw(self, u: Any) -> Any:
       return u[:, 1]
 
-    def hfunc2(self, u: Any, *, x: Any = None) -> Any:
+    def _hfunc2_raw(self, u: Any) -> Any:
       return u[:, 0]
 
   placed = _Bare()._prep(np.array([[0.3, 0.5]], dtype=np.float32))

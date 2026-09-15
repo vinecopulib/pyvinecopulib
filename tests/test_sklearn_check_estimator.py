@@ -8,7 +8,7 @@ opted out of. The skip list captures two categories:
   vine-regressor archetype (sparse inputs, 1-D / 1-feature degenerate
   cases, etc.).
 - **Known WIP**: checks that surface real sklearn-compliance gaps the
-  initial backend-refactor PR did not fix. Listed with ``TODO``
+  estimators do not yet meet. Listed with ``TODO``
   comments so future PRs can address them and shrink this list.
 
 The goal is to (a) prove that the basic sklearn-developer-guide

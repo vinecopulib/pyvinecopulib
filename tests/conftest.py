@@ -96,7 +96,7 @@ _norm_inv_cdf = np.vectorize(statistics.NormalDist().inv_cdf, otypes=[float])
 
 
 def _std_normal_cdf(z: Any) -> Any:
-  """Standard normal CDF, dispatched by array backend (torch / numpy)."""
+  """Standard normal CDF, dispatched by array namespace (torch / numpy)."""
   if type(z).__module__.split(".", 1)[0] == "torch":
     import torch
 
@@ -105,7 +105,7 @@ def _std_normal_cdf(z: Any) -> Any:
 
 
 def _std_normal_ppf(p: Any) -> Any:
-  """Standard normal quantile, dispatched by array backend (torch / numpy)."""
+  """Standard normal quantile, dispatched by array namespace (torch / numpy)."""
   if type(p).__module__.split(".", 1)[0] == "torch":
     import torch
 
@@ -146,7 +146,7 @@ class GaussianBicop(BicopBase[Any]):
   ``rho_max < 1`` keeps ``rho`` away from ``±1`` (where the Gaussian copula
   degenerates and the cascade's ``[1e-10, 1-1e-10]`` clamp would break the
   round-trip); normalizing by the column count keeps it bounded across the
-  varying ``x_e`` widths of a vine. Array-backend-agnostic (numpy / torch); has
+  varying ``x_e`` widths of a vine. Array-agnostic (numpy / torch); has
   closed-form ``hfunc`` / ``hinv`` so the vine round-trip is exact.
   """
 
@@ -174,7 +174,7 @@ class GaussianBicop(BicopBase[Any]):
     z = self._scale * position_weighted_mean(x, u)
     return self._rho_max * xp.tanh(z)
 
-  def pdf(self, u: Any, x: Optional[Any] = None) -> Any:
+  def _pdf_raw(self, u: Any, x: Optional[Any] = None) -> Any:
     xp = array_namespace(u)
     uc = xp.clip(u, 1e-10, 1.0 - 1e-10)
     z1, z2 = _std_normal_ppf(uc[:, 0]), _std_normal_ppf(uc[:, 1])
@@ -183,7 +183,7 @@ class GaussianBicop(BicopBase[Any]):
     quad = 2.0 * rho * z1 * z2 - rho * rho * (z1 * z1 + z2 * z2)
     return xp.exp(quad / (2.0 * one_minus)) / xp.sqrt(one_minus)
 
-  def hfunc1(self, u: Any, x: Optional[Any] = None) -> Any:
+  def _hfunc1_raw(self, u: Any, x: Optional[Any] = None) -> Any:
     # P(U2 <= u2 | U1 = u1) = Phi((z2 - rho z1) / sqrt(1 - rho^2)).
     xp = array_namespace(u)
     uc = xp.clip(u, 1e-10, 1.0 - 1e-10)
@@ -191,7 +191,7 @@ class GaussianBicop(BicopBase[Any]):
     rho = self._rho(u, x)
     return _std_normal_cdf((z2 - rho * z1) / xp.sqrt(1.0 - rho * rho))
 
-  def hfunc2(self, u: Any, x: Optional[Any] = None) -> Any:
+  def _hfunc2_raw(self, u: Any, x: Optional[Any] = None) -> Any:
     # P(U1 <= u1 | U2 = u2) = Phi((z1 - rho z2) / sqrt(1 - rho^2)).
     xp = array_namespace(u)
     uc = xp.clip(u, 1e-10, 1.0 - 1e-10)
@@ -199,7 +199,7 @@ class GaussianBicop(BicopBase[Any]):
     rho = self._rho(u, x)
     return _std_normal_cdf((z1 - rho * z2) / xp.sqrt(1.0 - rho * rho))
 
-  def hinv1(self, u: Any, x: Optional[Any] = None) -> Any:
+  def _hinv1_raw(self, u: Any, x: Optional[Any] = None) -> Any:
     # Invert hfunc1 w.r.t. u2: u = [u1, p] -> z2 = rho z1 + sqrt(1-rho^2) Phi^-1(p).
     xp = array_namespace(u)
     uc = xp.clip(u, 1e-10, 1.0 - 1e-10)
@@ -207,7 +207,7 @@ class GaussianBicop(BicopBase[Any]):
     rho = self._rho(u, x)
     return _std_normal_cdf(rho * z1 + xp.sqrt(1.0 - rho * rho) * zp)
 
-  def hinv2(self, u: Any, x: Optional[Any] = None) -> Any:
+  def _hinv2_raw(self, u: Any, x: Optional[Any] = None) -> Any:
     # Invert hfunc2 w.r.t. u1: u = [p, u2] -> z1 = rho z2 + sqrt(1-rho^2) Phi^-1(p).
     xp = array_namespace(u)
     uc = xp.clip(u, 1e-10, 1.0 - 1e-10)
@@ -224,18 +224,18 @@ class MinimalBicop(BicopBase[Any]):
   Implements only the abstract surface (``pdf`` / ``hfunc1`` / ``hfunc2``), so
   ``hinv1`` / ``hinv2`` / ``cdf`` / ``flip`` come from :class:`BicopBase` --
   the two inverses numerically, the latter two as the raising stubs -- and are
-  what the tests hosting it exercise. Array-backend-agnostic apart from
+  what the tests hosting it exercise. Array-agnostic apart from
   ``_sample_uniform``, the one hook with no array-agnostic default.
   """
 
-  def pdf(self, u: Any, *, x: Optional[Any] = None) -> Any:
+  def _pdf_raw(self, u: Any) -> Any:
     xp = array_namespace(u)
     return xp.ones((u.shape[0],), dtype=u.dtype, device=u.device)
 
-  def hfunc1(self, u: Any, *, x: Optional[Any] = None) -> Any:
+  def _hfunc1_raw(self, u: Any) -> Any:
     return u[:, 1]
 
-  def hfunc2(self, u: Any, *, x: Optional[Any] = None) -> Any:
+  def _hfunc2_raw(self, u: Any) -> Any:
     return u[:, 0]
 
   def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Any:

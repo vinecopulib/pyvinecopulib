@@ -1,4 +1,4 @@
-"""Tests for the backend-agnostic monotone root-finder.
+"""Tests for the array-agnostic monotone root-finder.
 
 `solve_increasing` backs two different inverses: the pair-copula h-inverses,
 which always search the unit interval, and the marginal `icdf`, which may have
@@ -113,7 +113,7 @@ def test_infinite_bracket_without_expansion_raises() -> None:
     solve_increasing(_norm_cdf, np.array([0.5]), lo=-np.inf, max_expand=0)
 
 
-def test_torch_backend_matches_numpy() -> None:
+def test_torch_matches_numpy() -> None:
   """The same code path runs on torch tensors and agrees with numpy."""
   torch = pytest.importorskip("torch")
   p_np = np.array([0.05, 0.5, 0.95])

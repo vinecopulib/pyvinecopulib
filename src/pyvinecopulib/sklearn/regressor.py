@@ -3,24 +3,27 @@ from numbers import Integral
 from typing import Any, Callable, Iterable, Iterator, Optional
 
 import numpy as np
+from scipy.special import logsumexp
 from sklearn.base import RegressorMixin
 from sklearn.metrics import r2_score
 from sklearn.utils._param_validation import Interval
 from sklearn.utils.validation import check_is_fitted
 
 from ..core import Vinedist
+import pyvinecopulib as pv
+
+from ..core import ControlsLike, VinedistBase
+from ..core.extend import to_numpy
 from ._base import (
   _DOC_DISCRETE,
   _DOC_FACTORIZATION,
   _DOC_PIPELINE,
   _DOC_REFERENCES,
   VineBase,
-  _as_ndarray,
   _RandomStateLike,
   _XLike,
   _YLike,
 )
-from .backends import _VinecopBackendBase
 
 # Half-width, in standard deviations, of the probit substitution behind the
 # quadrature nodes: the outermost node sits at Phi(-a), so this is how far into
@@ -45,7 +48,9 @@ class VineRegressor(RegressorMixin, VineBase):
     self,
     mean: bool = True,
     quantiles: Optional[_YLike] = None,
-    backend: Optional[_VinecopBackendBase[Any]] = None,
+    distribution: Optional[type[VinedistBase[Any]]] = None,
+    controls: Optional[ControlsLike] = None,
+    structure: Optional[pv.RVineStructure] = None,
     margins: object = None,
     batch_size: int = 100,
     use_grid: bool = True,
@@ -70,11 +75,18 @@ class VineRegressor(RegressorMixin, VineBase):
     quantiles : array-like of float, shape (n_quantiles,), or None, optional
         Quantile levels in ``(0, 1)`` to predict. ``None`` disables
         quantile prediction.
-    backend : VinecopBackend or compatible, or None, optional
-        Backend instance bundling fit-time controls and an optional
-        pre-specified structure on ``(Y, X_1, ..., X_d)`` (`Y`
-        always in the first dimension). `None` resolves to a default
-        ``VinecopBackend`` with the ``tll`` pair family at fit time.
+    distribution : type, or None, optional
+        The ``VinedistBase`` subclass to fit --- ``Vinedist`` (the default,
+        pairing ``Vinecop`` with ``Kde1d``) or
+        :class:`pyvinecopulib.torch.TorchVinedist` for the PyTorch lane.
+        Naming it is the whole lane choice, and importing ``TorchVinedist``
+        to name it is the explicit opt-in to PyTorch.
+    controls : ControlsLike, or None, optional
+        Fit-time controls for the copula half. `None` fits the nonparametric
+        ``tll`` pair family truncated at depth 20.
+    structure : RVineStructure, or None, optional
+        A pre-specified vine structure on ``(Y, X_1, ..., X_d)`` (`Y` always
+        in the first dimension); `None` selects one.
     margins : object, or None, optional
         The marginal half of the model, in any form
         :func:`pyvinecopulib.margins.resolve_margins` accepts. `None`
@@ -126,7 +138,9 @@ class VineRegressor(RegressorMixin, VineBase):
         it when a single vine is the whole job.
     """
     super().__init__(
-      backend=backend,
+      distribution=distribution,
+      controls=controls,
+      structure=structure,
       margins=margins,
       batch_size=batch_size,
       random_state=random_state,
@@ -202,7 +216,9 @@ class VineRegressor(RegressorMixin, VineBase):
     else:
       p_nodes, node_weights = self._probability_grid()
       self._u_nodes = p_nodes.reshape(-1, 1)
-      self._y_nodes = _as_ndarray(self._y_margin.icdf(p_nodes)).ravel()
+      self._y_nodes = to_numpy(
+        self._y_margin.icdf(p_nodes), dtype=float
+      ).ravel()
       self._node_weights = node_weights
     return self
 
@@ -275,21 +291,30 @@ class VineRegressor(RegressorMixin, VineBase):
     w = np.ones(n_grid)
     w[1:-1:2] = 4
     w[2:-1:2] = 2
-    simpson_factor = 1.0 / (n_grid - 1) / 3.0
+    log_factor = np.log(1.0 / (n_grid - 1) / 3.0)
 
-    out = np.empty(n_test)
+    log_out = np.empty(n_test)
 
+    # The quadrature runs in log space throughout. The integrand is a copula
+    # density -- a product over edges -- so on a deep or strongly dependent
+    # vine it underflows at the nodes long before the integral does, and
+    # summing the underflowed values reports zero mass where there is some.
+    # A row whose every node underflows is outside the model, and comes
+    # back `-inf`, which is the answer a caller can act on.
     for start in range(0, n_test, self.batch_size):
       end = min(start + self.batch_size, n_test)
       ux_batch = np.repeat(ux[start:end], n_grid, axis=0)
       uy_rep = np.tile(uy_nodes, (end - start, 1))
       u = np.column_stack([uy_rep, ux_batch])
 
-      vals = self.backend_.pdf(self._vine, u)
-      vals = np.asarray(vals).reshape(end - start, n_grid)
-      out[start:end] = simpson_factor * (vals * w[None, :]).sum(axis=1)
+      log_vals = to_numpy(
+        self._vine.logpdf(u, num_threads=self._num_threads), dtype=float
+      ).reshape(end - start, n_grid)
+      log_out[start:end] = (
+        logsumexp(log_vals, axis=1, b=w[None, :]) + log_factor
+      )
 
-    return np.log(np.clip(out, eps, None)) if log else out
+    return log_out if log else np.exp(log_out)
 
   def _weights_for_batch(self, X_batch: np.ndarray) -> np.ndarray:
     """Conditional copula weights for one batch of test rows.
@@ -330,7 +355,9 @@ class VineRegressor(RegressorMixin, VineBase):
     uy_rep = np.tile(self._u_nodes, (m, 1)).reshape(-1, 1)
     u_test = np.column_stack([uy_rep, ux_batch])
 
-    w = np.asarray(self.backend_.pdf(self._vine, u_test)).reshape(m, n_nodes)
+    w = to_numpy(
+      self._vine.pdf(u_test, num_threads=self._num_threads), dtype=float
+    ).reshape(m, n_nodes)
     if self._node_weights is not None:
       w = w * self._node_weights
     if self.normalize_weights:

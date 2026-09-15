@@ -8,51 +8,21 @@ the structure alone, and gathering an edge's columns out of the cascade's
 h-function buffers.
 
 The mixed-discrete evaluation those layouts feed is
-:class:`~pyvinecopulib.core.DiscreteBicop`, in ``core/bicop_discrete.py``.
+``BicopBase.with_var_types``, in ``core/bicop_base.py``.
 
 Internal: the vine cascades and the fit engines call these helpers.
 """
 
 from __future__ import annotations
 
-from types import ModuleType
 from typing import Any, Optional, cast
 
-from array_api_compat import array_namespace
+from .protocols import Namespace, array_namespace
 
 from ..pyvinecopulib_ext import RVineStructure
 from .protocols import ArrayT
 
 __all__ = ["collapse_data"]
-
-
-def check_var_types(var_types: Optional[list[str]], d: int) -> tuple[str, ...]:
-  """Normalize and validate a vine's per-variable types.
-
-  Parameters
-  ----------
-  var_types : list of str, or None, optional
-      Per-variable types, ``"c"`` or ``"d"``; ``None`` means all continuous.
-  d : int
-      Dimension the types must cover.
-
-  Returns
-  -------
-  tuple of str
-      The validated types, one per variable.
-
-  Raises
-  ------
-  ValueError
-      If the length is not ``d`` or an entry is outside ``{"c", "d"}``.
-  """
-  types = ("c",) * d if var_types is None else tuple(var_types)
-  if len(types) != d:
-    raise ValueError(f"var_types has {len(types)} entries, expected {d}")
-  bad = [t for t in types if t not in ("c", "d")]
-  if bad:
-    raise ValueError(f"var_types entries must be 'c' or 'd'; got {bad[0]!r}")
-  return types
 
 
 def disc_cols(var_types: tuple[str, ...]) -> tuple[int, ...]:
@@ -127,14 +97,14 @@ def collapse_data(
       f"{list(var_types)}; got {tuple(ua.shape)}"
     )
   if values_only or k == 0:
-    return cast("ArrayT", ua[:, :d])
+    return ua[:, :d]
   if int(ua.shape[1]) == d + k:
     return u
   # Expanded (n, 2d) -> compact (n, d + k): keep the left-limit columns of the
   # discrete variables only, in variable order.
   xp = array_namespace(ua)
   keep = [d + i for i, t in enumerate(var_types) if t == "d"]
-  return cast("ArrayT", xp.concat([ua[:, :d], ua[:, keep]], axis=1))
+  return xp.concat([ua[:, :d], ua[:, keep]], axis=1)
 
 
 def pair_var_types(
@@ -185,7 +155,7 @@ def seed_left_limits(
   order: tuple[int, ...],
   var_types: tuple[str, ...],
   offsets: tuple[int, ...],
-  xp: ModuleType,
+  xp: Namespace[ArrayT],
 ) -> Optional[ArrayT]:
   """Natural-order left limits read off the compact layout, or ``None``.
 
@@ -221,7 +191,7 @@ def seed_left_limits(
   for j in range(d):
     v = order[j] - 1
     sub[:, j] = ua[:, d + offsets[v] if var_types[v] == "d" else v]
-  return cast("ArrayT", sub)
+  return sub
 
 
 def edge_columns(
@@ -272,23 +242,23 @@ def edge_columns(
   h2_sub: Any = hfunc2_sub
   m = int(structure.min_array(tree, edge))
   on_diagonal = m == int(structure.struct_array(tree, edge, True))
-  col0 = cast("ArrayT", h2[:, edge])
-  col1 = cast("ArrayT", h2[:, m - 1] if on_diagonal else h1[:, m - 1])
+  col0 = h2[:, edge]
+  col1 = h2[:, m - 1] if on_diagonal else h1[:, m - 1]
   types = ("c", "c") if pair_types is None else pair_types[tree][edge]
   if hfunc2_sub is None or "d" not in types:
     return col0, col1, None, types
-  sub0 = cast("ArrayT", h2_sub[:, edge]) if types[0] == "d" else col0
+  sub0 = h2_sub[:, edge] if types[0] == "d" else col0
   if types[1] != "d":
     sub1 = col1
   elif on_diagonal:
-    sub1 = cast("ArrayT", h2_sub[:, m - 1])
+    sub1 = h2_sub[:, m - 1]
   else:
-    sub1 = cast("ArrayT", cast("Any", hfunc1_sub)[:, m - 1])
+    sub1 = cast("Any", hfunc1_sub)[:, m - 1]
   return col0, col1, (sub0, sub1), types
 
 
 def stack_edge(
-  xp: ModuleType,
+  xp: Namespace[ArrayT],
   col0: ArrayT,
   col1: ArrayT,
   subs: Optional[tuple[ArrayT, ArrayT]],
@@ -310,7 +280,7 @@ def stack_edge(
       ``[u1, u2]``, or ``[u1, u2, u1^-, u2^-]`` when left limits are given.
   """
   cols = [col0, col1] if subs is None else [col0, col1, *subs]
-  return cast("ArrayT", xp.stack(cols, axis=-1))
+  return xp.stack(cols, axis=-1)
 
 
 def with_left_limit(u_e: ArrayT, arg: int) -> ArrayT:
@@ -335,4 +305,4 @@ def with_left_limit(u_e: ArrayT, arg: int) -> ArrayT:
   xp = array_namespace(edge)
   cols = [edge[:, 0], edge[:, 1], edge[:, 2], edge[:, 3]]
   cols[arg] = edge[:, 2 + arg]
-  return cast("ArrayT", xp.stack(cols, axis=-1))
+  return xp.stack(cols, axis=-1)

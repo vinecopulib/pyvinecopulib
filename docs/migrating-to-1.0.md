@@ -209,12 +209,26 @@ indefinitely.
 ## sklearn and Torch changes
 
 The optional subpackages ship in the same distribution and have important 1.0
-changes. sklearn estimators now take a single `backend=` object instead of
-loose controls/structure/seed arguments; `seed` became `random_state`; and
+changes. sklearn estimators take `distribution=` -- the `VinedistBase` subclass
+they fit, `Vinedist` by default and `TorchVinedist` for the PyTorch lane --
+beside `controls=` and `structure=`; `seed` became `random_state`; and
 `VineRegressor` keeps a sample axis for one-row predictions. Torch fitting now
 uses `FitControlsTorchBicop` / `FitControlsTorchVinecop`, and `TorchTllBicop.sample`
 uses the core-style `(n, qrng=False, seeds=[])` signature. See the complete
 breaking-change inventory in `CHANGELOG.md` before upgrading either surface.
+
+Three things to know if you were tracking `main` rather than 0.7.x, since each
+is a silent change rather than an error:
+
+- `VinecopBase.structure` is a property now, so a subclass that assigned
+  `self.structure = ...` shadows it. Assign `self._structure` instead.
+- A `BicopBase` subclass defines `_pdf_raw` / `_hfunc1_raw` / `_hfunc2_raw`
+  rather than `pdf` / `hfunc1` / `hfunc2`: the base dispatches the public
+  members over those leaves so it can apply a pair's `var_types`. A subclass
+  that still defines the public members overrides the dispatcher, and its
+  leaves are then never called.
+- `ArrayT` is bounded by the `Array` protocol. It is an exported name, so a
+  signature written in it now has to be satisfied by something array-shaped.
 
 ## What 1.0 does and does not promise
 

@@ -1,7 +1,7 @@
-"""Tests for the backend-neutral ``pyvinecopulib.core`` pair-copula base.
+"""Tests for the array-agnostic ``pyvinecopulib.core`` pair-copula base.
 
 Exercises :class:`pyvinecopulib.core.BicopBase` — the canonical,
-array-backend-agnostic partial implementation of the ``BicopLike`` contract —
+array-agnostic partial implementation of the ``BicopLike`` contract —
 purely on NumPy, so it also confirms that the neutral ``core`` layer runs
 without PyTorch. A separate subprocess test pins the torch-free import
 guarantee (downstream packages can build custom pairs on ``BicopBase`` in a
@@ -36,13 +36,19 @@ class _SqrtPair(BicopBase[np.ndarray]):
   actually exercise the numerical (bisection) inverse.
   """
 
-  def pdf(self, u: np.ndarray, x: Optional[np.ndarray] = None) -> np.ndarray:
+  def _pdf_raw(
+    self, u: np.ndarray, x: Optional[np.ndarray] = None
+  ) -> np.ndarray:
     return np.ones(u.shape[0], dtype=u.dtype)
 
-  def hfunc1(self, u: np.ndarray, x: Optional[np.ndarray] = None) -> np.ndarray:
+  def _hfunc1_raw(
+    self, u: np.ndarray, x: Optional[np.ndarray] = None
+  ) -> np.ndarray:
     return u[:, 1] ** 2
 
-  def hfunc2(self, u: np.ndarray, x: Optional[np.ndarray] = None) -> np.ndarray:
+  def _hfunc2_raw(
+    self, u: np.ndarray, x: Optional[np.ndarray] = None
+  ) -> np.ndarray:
     return u[:, 0] ** 2
 
 
@@ -88,13 +94,13 @@ def test_bicopbase_loglik_preserves_extreme_tail_density() -> None:
   )
 
   class _Hosted(BicopBase[np.ndarray]):
-    def pdf(self, u: np.ndarray, *, x: Any = None) -> np.ndarray:
+    def _pdf_raw(self, u: np.ndarray) -> np.ndarray:
       return np.asarray(ref.pdf(u))
 
-    def hfunc1(self, u: np.ndarray, *, x: Any = None) -> np.ndarray:
+    def _hfunc1_raw(self, u: np.ndarray) -> np.ndarray:
       return np.asarray(ref.hfunc1(u))
 
-    def hfunc2(self, u: np.ndarray, *, x: Any = None) -> np.ndarray:
+    def _hfunc2_raw(self, u: np.ndarray) -> np.ndarray:
       return np.asarray(ref.hfunc2(u))
 
   u = np.array([[1e-6, 1 - 1e-6], [1e-5, 1 - 1e-5]])
@@ -114,7 +120,7 @@ def test_bicopbase_simulate_default() -> None:
 
 
 def test_bicopbase_simulate_requires_draw_hook() -> None:
-  """``sample`` raises when the backend has not provided ``_sample_uniform``."""
+  """``sample`` raises when a subclass has not provided ``_sample_uniform``."""
   cop = _SqrtPair()
   with pytest.raises(NotImplementedError):
     cop.sample(5)
@@ -174,34 +180,38 @@ def test_core_import_is_torch_free() -> None:
 def test_conditioning_matrix_is_keyword_only() -> None:
   """``x`` must not be passable where ``Bicop`` expects ``parameters``.
 
-  ``BicopLike`` is ``runtime_checkable``, so ``pv.Bicop`` satisfies it on
-  method names alone -- while its second positional argument is per-row
-  ``parameters``, not a conditioning matrix. If the cascade passed ``x``
-  positionally, hosting a ``pv.Bicop`` in a non-simplified vine would feed the
-  conditioning values in as parameters and return a wrong density instead of
-  raising.
+  ``BicopLike`` describes the unconditional surface, so covariates are declared
+  on ``BicopBase`` instead -- and there every member that takes one takes it
+  keyword-only. ``Bicop``'s second positional argument is per-row
+  ``parameters``, not a conditioning matrix, so a positional ``x`` would feed
+  the conditioning values in as parameters and return a wrong density instead
+  of raising.
   """
   import inspect
 
   from pyvinecopulib.core import BicopBase, BicopLike
 
-  for owner in (BicopLike, BicopBase):
-    for name in ("pdf", "cdf", "hfunc1", "hfunc2", "hinv1", "hinv2"):
-      member = getattr(owner, name, None)
-      if member is None:
-        # `cdf` is an optional capability on the protocol and a raising stub
-        # on the base, so only one of the two owners declares it.
-        assert (owner, name) == (BicopLike, "cdf")
-        continue
-      kind = inspect.signature(member).parameters["x"].kind
-      assert kind is inspect.Parameter.KEYWORD_ONLY, f"{owner.__name__}.{name}"
+  for name in ("pdf", "cdf", "hfunc1", "hfunc2", "hinv1", "hinv2"):
+    member = getattr(BicopBase, name)
+    kind = inspect.signature(member).parameters["x"].kind
+    assert kind is inspect.Parameter.KEYWORD_ONLY, f"BicopBase.{name}"
+    # The contract carries no `x` at all, which is what lets `Bicop` satisfy
+    # it: there is no slot for a covariate to be passed into by any spelling.
+    # `cdf` is an optional capability, so only the base declares it.
+    member = getattr(BicopLike, name, None)
+    if member is not None:
+      assert "x" not in inspect.signature(member).parameters
+    else:
+      assert name == "cdf"
 
   u = np.full((4, 2), 0.5)
   x = np.ones((4, 1))
   compiled = pv.Bicop(family=pv.families.clayton, parameters=np.array([[2.0]]))
   assert isinstance(compiled, BicopLike)
   # Dispatched through getattr so `ty` does not reject the call it is meant to
-  # reject -- a static error here is the same guarantee, one step earlier.
+  # reject -- a static error here is the same guarantee, one step earlier, and
+  # dropping `x` from the contract is what keeps that static error available
+  # for a concretely-typed `Bicop`.
   with pytest.raises(TypeError):
     getattr(compiled, "pdf")(u, x=x)
 
@@ -241,11 +251,16 @@ def test_independence_pair_is_the_independence_copula() -> None:
     pair.sample(20, seeds=[7]), ref.sample(20, seeds=[7])
   )
 
-  # A wider layout is accepted: the extra left-limit columns are ignored,
-  # which is what a discrete edge below the threshold would hand it.
+  # Declared discrete -- what a discrete edge below the threshold hands it --
+  # the pair reads the four-column layout and still agrees with `Bicop`.
   wide = np.hstack([u, u - 1e-3])
-  np.testing.assert_array_equal(pair.pdf(wide), np.ones(len(u)))
-  np.testing.assert_array_equal(pair.hfunc1(wide), u[:, 1])
+  disc = pair.with_var_types(["d", "c"])
+  disc_ref = pv.Bicop(family=pv.families.indep, var_types=["d", "c"])
+  assert pair.var_types == ["c", "c"], "with_var_types must not mutate"
+  for name in ("pdf", "hfunc1", "hfunc2"):
+    np.testing.assert_allclose(
+      getattr(disc, name)(wide), getattr(disc_ref, name)(wide), err_msg=name
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -296,7 +311,7 @@ def test_plot_places_its_grid_on_a_torch_pairs_namespace() -> None:
         else torch.tanh(self.rho_raw + x[:, 0])
       )
 
-    def pdf(self, u: Any, *, x: Optional[Any] = None) -> Any:
+    def _pdf_raw(self, u: Any, *, x: Optional[Any] = None) -> Any:
       assert isinstance(u, torch.Tensor), f"got {type(u).__name__}"
       assert u.dtype is torch.float32, f"got {u.dtype}"
       z1, z2 = torch.special.ndtri(u[:, 0]), torch.special.ndtri(u[:, 1])
@@ -305,12 +320,12 @@ def test_plot_places_its_grid_on_a_torch_pairs_namespace() -> None:
       quad = 2 * rho * z1 * z2 - rho * rho * (z1 * z1 + z2 * z2)
       return torch.exp(quad / (2 * one_minus)) / torch.sqrt(one_minus)
 
-    def hfunc1(self, u: Any, *, x: Optional[Any] = None) -> Any:
+    def _hfunc1_raw(self, u: Any, *, x: Optional[Any] = None) -> Any:
       rho = self._rho(u, x)
       z1, z2 = torch.special.ndtri(u[:, 0]), torch.special.ndtri(u[:, 1])
       return torch.special.ndtr((z2 - rho * z1) / torch.sqrt(1 - rho * rho))
 
-    def hfunc2(self, u: Any, *, x: Optional[Any] = None) -> Any:
+    def _hfunc2_raw(self, u: Any, *, x: Optional[Any] = None) -> Any:
       rho = self._rho(u, x)
       z1, z2 = torch.special.ndtri(u[:, 0]), torch.special.ndtri(u[:, 1])
       return torch.special.ndtr((z1 - rho * z2) / torch.sqrt(1 - rho * rho))
@@ -382,13 +397,13 @@ def test_fit_select_and_from_data_all_take_covariates() -> None:
       seen.append(("fit", None if x is None else tuple(np.shape(x))))
       return self
 
-    def pdf(self, u: np.ndarray, *, x: Optional[np.ndarray] = None) -> Any:
+    def _pdf_raw(self, u: np.ndarray) -> Any:
       return np.ones(u.shape[0], dtype=float)
 
-    def hfunc1(self, u: np.ndarray, *, x: Optional[np.ndarray] = None) -> Any:
+    def _hfunc1_raw(self, u: np.ndarray) -> Any:
       return u[:, 1]
 
-    def hfunc2(self, u: np.ndarray, *, x: Optional[np.ndarray] = None) -> Any:
+    def _hfunc2_raw(self, u: np.ndarray) -> Any:
       return u[:, 0]
 
   u = np.random.default_rng(0).uniform(0.05, 0.95, size=(20, 2))
@@ -422,15 +437,15 @@ def test_the_inherited_inverses_place_their_argument() -> None:
     def __init__(self) -> None:
       self.scale = torch.ones(1, dtype=torch.float32)
 
-    def pdf(self, u: Any, *, x: Any = None) -> Any:
+    def _pdf_raw(self, u: Any, *, x: Any = None) -> Any:
       del x
       return torch.ones(u.shape[0], dtype=u.dtype)
 
-    def hfunc1(self, u: Any, *, x: Any = None) -> Any:
+    def _hfunc1_raw(self, u: Any, *, x: Any = None) -> Any:
       del x
       return u[:, 1]
 
-    def hfunc2(self, u: Any, *, x: Any = None) -> Any:
+    def _hfunc2_raw(self, u: Any, *, x: Any = None) -> Any:
       del x
       return u[:, 0]
 

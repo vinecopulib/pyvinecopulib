@@ -4,17 +4,19 @@ import numpy as np
 from sklearn.base import DensityMixin
 from sklearn.utils.validation import check_is_fitted
 
+import pyvinecopulib as pv
+
+from ..core import ControlsLike, VinedistBase
+from ..core.extend import to_numpy
 from ._base import (
   _DOC_DISCRETE,
   _DOC_FACTORIZATION,
   _DOC_PIPELINE,
   _DOC_REFERENCES,
   VineBase,
-  _as_ndarray,
   _RandomStateLike,
   _XLike,
 )
-from .backends import _VinecopBackendBase
 
 
 class VineDensity(DensityMixin, VineBase):
@@ -24,7 +26,9 @@ class VineDensity(DensityMixin, VineBase):
 
   def __init__(
     self,
-    backend: Optional[_VinecopBackendBase[Any]] = None,
+    distribution: Optional[type[VinedistBase[Any]]] = None,
+    controls: Optional[ControlsLike] = None,
+    structure: Optional[pv.RVineStructure] = None,
     margins: object = None,
     batch_size: int = 100,
     random_state: _RandomStateLike = None,
@@ -34,12 +38,17 @@ class VineDensity(DensityMixin, VineBase):
 
     Parameters
     ----------
-    backend : VinecopBackend or compatible, or None, optional
-        Backend instance bundling fit-time controls and an optional
-        pre-specified structure. `None` resolves to a default
-        ``VinecopBackend`` at fit time, which calls ``Vinecop.from_data()``
-        with the nonparametric ``tll`` pair family. Pass
-        ``TorchVinecopBackend`` for the PyTorch backend.
+    distribution : type, or None, optional
+        The ``VinedistBase`` subclass to fit --- ``Vinedist`` (the default,
+        pairing ``Vinecop`` with ``Kde1d``) or
+        :class:`pyvinecopulib.torch.TorchVinedist` for the PyTorch lane.
+        Naming it is the whole lane choice, and importing ``TorchVinedist``
+        to name it is the explicit opt-in to PyTorch.
+    controls : ControlsLike, or None, optional
+        Fit-time controls for the copula half. `None` fits the nonparametric
+        ``tll`` pair family truncated at depth 20.
+    structure : RVineStructure, or None, optional
+        A pre-specified vine structure; `None` selects one.
     margins : object, or None, optional
         The marginal half of the model, in any form
         :func:`pyvinecopulib.margins.resolve_margins` accepts. `None`
@@ -65,7 +74,9 @@ class VineDensity(DensityMixin, VineBase):
         it when a single vine is the whole job.
     """
     super().__init__(
-      backend=backend,
+      distribution=distribution,
+      controls=controls,
+      structure=structure,
       margins=margins,
       batch_size=batch_size,
       random_state=random_state,
@@ -178,7 +189,12 @@ class VineDensity(DensityMixin, VineBase):
 
       rng = check_random_state(random_state)
     seeds = [int(x) for x in rng.randint(0, 2**31 - 1, size=5)]
-    return _as_ndarray(self.distribution_.sample(n_samples, seeds=seeds))
+    return to_numpy(
+      self.distribution_.sample(
+        n_samples, seeds=seeds, num_threads=self._num_threads
+      ),
+      dtype=float,
+    )
 
   def pdf(self, X: _XLike, copula_only: bool = False) -> np.ndarray:
     """Evaluates the joint density at the given samples.
@@ -216,7 +232,7 @@ class VineDensity(DensityMixin, VineBase):
     :math:`\\hat F(\\mathbf{x}) = \\hat C(\\hat F_1(x_1), \\ldots,
     \\hat F_d(x_d))` by applying the marginal CDFs to obtain
     pseudo-observations and evaluating the fitted copula CDF via
-    the backend's quasi-Monte-Carlo routine.
+    the vine's quasi-Monte-Carlo routine.
 
     Parameters
     ----------
@@ -247,8 +263,14 @@ class VineDensity(DensityMixin, VineBase):
 
       rng = check_random_state(random_state)
     seeds = [int(x) for x in rng.randint(0, 2**31 - 1, size=5)]
-    return _as_ndarray(
-      self.distribution_.cdf(np.asarray(X, dtype=float), N=N, seeds=seeds)
+    return to_numpy(
+      self.distribution_.cdf(
+        np.asarray(X, dtype=float),
+        N=N,
+        seeds=seeds,
+        num_threads=self._num_threads,
+      ),
+      dtype=float,
     )
 
 

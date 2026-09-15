@@ -279,7 +279,7 @@ annotated with the pair controls: the narrower type is all `fit` reads, and a
 vine controls object satisfies it. The same holds for
 :class:`~pyvinecopulib.torch.FitControlsTorchVinecop`.
 
-The backend-neutral :class:`~pyvinecopulib.core.VinecopBase` can go
+The array-agnostic :class:`~pyvinecopulib.core.VinecopBase` can go
 further: a :class:`~pyvinecopulib.core.NonSimplifiedContext` lets each
 pair copula also depend on its conditioning-set value
 :math:`\mathbf u_{D_e}`, giving a actually **non-simplified** vine.
@@ -1003,7 +1003,7 @@ the tail, and two tools arrange that:
   to an equivalent one whose order tail equals a given set, without refitting.
   This is value-preserving: ``pdf`` and ``loglik`` are invariant.
 
-The same three tools exist backend-neutrally, so a custom or PyTorch vine
+The same three tools are array-agnostic, so a custom or PyTorch vine
 conditions the same way: :meth:`pyvinecopulib.core.VinecopBase.sample_conditional`,
 ``conditioning_set`` on its Rosenblatt transforms, and
 :meth:`pyvinecopulib.core.VinecopBase.select`'s own ``conditioning_set``.
@@ -1104,14 +1104,12 @@ Where to next
   estimators :class:`~pyvinecopulib.sklearn.VineDensity` and
   :class:`~pyvinecopulib.sklearn.VineRegressor`. The notebook
   ``examples/08_sklearn_estimators.ipynb`` demonstrates them. Both
-  estimators accept a backend —
-  :class:`~pyvinecopulib.sklearn.backends.VinecopBackend` by default,
-  :class:`~pyvinecopulib.sklearn.backends.TorchVinecopBackend` for
-  PyTorch — from :mod:`pyvinecopulib.sklearn.backends`.
+  estimators fit a :class:`~pyvinecopulib.core.Vinedist` by default, and
+  ``distribution=TorchVinedist`` routes the same pipeline through PyTorch.
 * :mod:`pyvinecopulib.torch` — PyTorch evaluators
   :class:`~pyvinecopulib.torch.TorchTllBicop` and
   :class:`~pyvinecopulib.torch.TorchVinecop` for GPU placement and
-  autograd. Notebook ``examples/09_torch_backend.ipynb``.
+  autograd. Notebook ``examples/09_torch_evaluator.ipynb``.
 * :mod:`pyvinecopulib.utils` —
   :func:`~pyvinecopulib.utils.wdm` for weighted dependence
   measures (notebook ``examples/06_weighted_dependence_measures.ipynb``);
@@ -1155,7 +1153,7 @@ The evaluators :class:`pyvinecopulib.core.Bicop` /
 :class:`~pyvinecopulib.core.Vinecop` and their PyTorch counterparts
 :class:`pyvinecopulib.torch.TorchTllBicop` /
 :class:`~pyvinecopulib.torch.TorchVinecop` are concrete implementations
-of two backend-neutral contracts, evaluated on either NumPy or PyTorch
+of two array-agnostic contracts, evaluated on either NumPy or PyTorch
 arrays:
 
 * :class:`~pyvinecopulib.core.BicopLike` — a pair copula, exposing
@@ -1233,16 +1231,15 @@ is the hook for fitting either kind of custom vine edge by edge. See
 A custom pair copula reaches a :ref:`discrete <concepts-discrete>` edge
 too. The vine owns the discreteness: declare ``var_types`` when binding
 it, and :meth:`pyvinecopulib.core.VinecopBase.pair_var_types` says which
-of the pairs sees an argument with atoms. Wrapping such a pair in
-:class:`~pyvinecopulib.core.DiscreteBicop` builds the mixed-discrete
-density and h-functions out of its continuous ``pdf`` / ``cdf`` /
-``hfunc1`` / ``hfunc2``, so the only thing to add is a ``cdf``. A pair
-that can measure an atom more directly overrides
+of the pairs sees an argument with atoms. Declaring such a pair through
+``with_var_types`` builds the mixed-discrete density and h-functions out
+of its continuous primitives, so the only thing to add is a ``_cdf_raw``.
+A pair that can measure an atom more directly overrides
 :meth:`~pyvinecopulib.core.BicopBase.rect_prob` and
 :meth:`~pyvinecopulib.core.BicopBase.cond_interval_prob`, which is what
 :class:`~pyvinecopulib.torch.TorchTllBicop` does; one that models atoms
-itself is asked for its own variable types back, through
-``with_var_types``, and forwarded to.
+itself -- ``Bicop`` -- needs none of that: it is declared the same way
+and answers for the whole surface.
 :meth:`~pyvinecopulib.core.VinecopBase.fit` and
 :meth:`~pyvinecopulib.core.VinecopBase.select` take ``var_types`` as
 well, and hand each edge's types to the ``fit_edge`` callback.

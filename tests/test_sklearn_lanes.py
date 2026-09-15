@@ -1,4 +1,4 @@
-"""Tests for the backend system under ``pyvinecopulib.sklearn.backends``."""
+"""Which distribution the sklearn estimators fit, and on which lane."""
 
 from __future__ import annotations
 
@@ -19,12 +19,8 @@ from sklearn.utils._param_validation import (
 )
 
 from pyvinecopulib.core import VinecopLike
+from pyvinecopulib.core import Vinedist
 from pyvinecopulib.sklearn import VineDensity, VineRegressor
-from pyvinecopulib.sklearn.backends import (
-  TorchVinecopBackend,
-  VinecopBackend,
-  resolve_backend,
-)
 
 
 # ---------------------------------------------------------------------------
@@ -35,7 +31,7 @@ from pyvinecopulib.sklearn.backends import (
 class TestVinecopLikeProtocol:
   """Both ``pv.Vinecop`` and ``pv.torch.TorchVinecop`` satisfy the canonical
   :class:`pyvinecopulib.core.VinecopLike` protocol structurally, so either
-  backend's fitted vine is usable through the neutral contract."""
+  lane's fitted vine is usable through the neutral contract."""
 
   def test_cpp_vinecop_satisfies_protocol(self) -> None:
     rng = np.random.default_rng(0)
@@ -66,106 +62,121 @@ class TestVinecopLikeProtocol:
 
 
 # ---------------------------------------------------------------------------
-# resolve_backend
+# Caller-supplied controls and structure
 # ---------------------------------------------------------------------------
 
 
-class TestResolveBackend:
-  def test_none_defaults_to_vinecop_backend(self) -> None:
-    b = resolve_backend(None)
-    assert isinstance(b, VinecopBackend)
+class TestCallerControls:
+  """The estimator reads ``controls``; it never writes to the caller's copy."""
 
-  def test_instance_passthrough(self) -> None:
-    b = VinecopBackend()
-    assert resolve_backend(b) is b
+  @staticmethod
+  def _data() -> np.ndarray:
+    # Four variables: a bivariate vine admits only one structure, so a seed
+    # could not change it and the test below would pass vacuously.
+    rng = np.random.default_rng(0)
+    cov = np.full((4, 4), 0.5) + np.diag(np.full(4, 0.5))
+    return rng.multivariate_normal(np.zeros(4), cov, 400)
 
-
-# ---------------------------------------------------------------------------
-# with_* immutability — copy-on-write backend derivations
-# ---------------------------------------------------------------------------
-
-
-class TestVinecopBackendWith:
-  def test_with_num_threads_returns_new_instance(self) -> None:
-    # ``FitControlsVinecop`` clamps ``num_threads`` to the number of
-    # available CPU cores, so use a value that's safe on any CI
-    # runner (≥ 2 cores).
-    b = VinecopBackend()
-    b2 = b.with_num_threads(2)
-    assert b is not b2
-    assert b2.controls is not None
-    assert b2.controls.num_threads == 2
-
-  def test_with_random_structure(self) -> None:
-    b = VinecopBackend()
-    b2 = b.with_random_structure(3, seeds=[1, 2, 3, 4, 5])
-    assert b is not b2
-    assert b2.structure is not None
-    assert b.structure is None
-
-  def test_with_local_random_does_not_mutate_parent(self) -> None:
-    parent_controls = pv.FitControlsVinecop(
-      family_set=[pv.families.tll], num_threads=1
+  def test_fit_does_not_mutate_the_controls_it_was_given(self) -> None:
+    controls = pv.FitControlsVinecop(
+      family_set=[pv.families.tll],
+      num_threads=1,
+      tree_algorithm="random_weighted",
     )
-    parent_algo = parent_controls.tree_algorithm
-    b = VinecopBackend(controls=parent_controls)
-    b2 = b.with_local_random([7, 8, 9])
-    # `with_local_random` always materializes the controls; narrow
-    # the type for the assertions below.
-    new_controls = b2.controls
-    assert new_controls is not None
-    assert new_controls.tree_algorithm == "random_weighted"
-    assert list(new_controls.seeds) == [7, 8, 9]
-    # Parent controls instance must remain pristine.
-    assert parent_controls.tree_algorithm == parent_algo
+    before = (controls.tree_algorithm, list(controls.seeds))
+    VineDensity(controls=controls, random_state=0).fit(self._data())
+    assert (controls.tree_algorithm, list(controls.seeds)) == before
+
+  def test_caller_seeds_choose_the_structure(self) -> None:
+    """The seeds a caller names win; ``random_state`` only fills a gap."""
+
+    def fitted(seeds: list[int]) -> str:
+      controls = pv.FitControlsVinecop(
+        family_set=[pv.families.tll],
+        num_threads=1,
+        tree_algorithm="random_weighted",
+        seeds=seeds,
+      )
+      est = VineDensity(controls=controls, random_state=0).fit(self._data())
+      return str(est.structure_.matrix)
+
+    # Same `random_state` throughout, so any difference is the seeds.
+    assert fitted([1, 2, 3]) == fitted([1, 2, 3])
+    assert fitted([1, 2, 3]) != fitted([98, 99, 100])
+
+  def test_random_state_seeds_a_search_the_caller_left_unseeded(self) -> None:
+    def fitted(random_state: int) -> str:
+      controls = pv.FitControlsVinecop(
+        family_set=[pv.families.tll],
+        num_threads=1,
+        tree_algorithm="random_weighted",
+      )
+      assert list(controls.seeds) == []
+      est = VineDensity(controls=controls, random_state=random_state).fit(
+        self._data()
+      )
+      return str(est.structure_.matrix)
+
+    assert fitted(0) == fitted(0)
+
+  def test_a_named_structure_is_the_one_fitted(self) -> None:
+    structure = pv.RVineStructure.sample(4, seeds=[1, 2, 3, 4, 5])
+    est = VineDensity(structure=structure, random_state=0).fit(self._data())
+    np.testing.assert_array_equal(est.structure_.matrix, structure.matrix)
 
 
 class TestDefaultMargin:
-  """The backend chooses the *class* of the default margin.
+  """``distribution`` chooses the *class* of the default margin.
 
-  A hook rather than an `isinstance` check: fitting NumPy margins onto a torch
-  copula would put the two halves of one distribution on different array
-  namespaces, and every gradient would stop at the marginal transform.
+  Read off the distribution rather than by an `isinstance` check: fitting
+  NumPy margins onto a torch copula would put the two halves of one
+  distribution on different array namespaces, and every gradient would stop
+  at the marginal transform.
   """
 
-  def test_cpp_backend_gives_a_numpy_kde(self) -> None:
-    margin = VinecopBackend().default_margin("discrete", (0.0, 4.0))
+  def test_the_default_lane_gives_a_numpy_kde(self) -> None:
+    margin = VineDensity()._default_margin("discrete", (0.0, 4.0))
     assert isinstance(margin, pv.core.Kde1d)
     assert margin.support == (0.0, 4.0)
     assert margin.var_type == "d"
 
-  def test_torch_backend_gives_a_torch_kde(self) -> None:
+  def test_the_torch_lane_gives_a_torch_kde(self) -> None:
     torch = pytest.importorskip("torch")
+    from pyvinecopulib.torch import TorchVinedist
     from pyvinecopulib.torch import FitControlsTorchVinecop, TorchKde1d
 
-    margin = TorchVinecopBackend().default_margin("discrete", (0.0, 4.0))
+    est = VineDensity(distribution=TorchVinedist)
+    margin = est._default_margin("discrete", (0.0, 4.0))
     assert isinstance(margin, TorchKde1d)
     assert margin.support == (0.0, 4.0)
     assert margin.var_type == "d"
 
     # Precision follows the copula's, or a float32 vine would carry float64
     # margins.
-    single = TorchVinecopBackend(
-      controls=FitControlsTorchVinecop(dtype=torch.float32)
-    ).default_margin("continuous", None)
-    assert single.grid_points.dtype is torch.float32
+    single = VineDensity(
+      distribution=TorchVinedist,
+      controls=FitControlsTorchVinecop(dtype=torch.float32),
+    )._default_margin("continuous", None)
+    grid: Any = single
+    assert grid.grid_points.dtype is torch.float32
 
-  def test_the_estimators_fit_what_the_backend_named(self) -> None:
+  def test_the_estimators_fit_what_the_distribution_named(self) -> None:
     X = np.random.default_rng(0).multivariate_normal(
       [0.0, 0.0], [[1.0, 0.5], [0.5, 1.0]], size=200
     )
     est = VineDensity(random_state=0).fit(X)
     assert all(isinstance(m, pv.core.Kde1d) for m in est.distribution_.margins)
 
-  def test_the_response_margin_comes_from_the_backend_too(self) -> None:
+  def test_the_response_margin_comes_from_the_distribution_too(self) -> None:
     pytest.importorskip("torch")
+    from pyvinecopulib.torch import TorchVinedist
     from pyvinecopulib.torch import TorchKde1d
 
     # A per-column `margins=` says nothing about the response, so it takes the
-    # backend's default -- which must be the backend's, not a hardcoded `Kde1d`,
+    # distribution's default -- which must be that, not a hardcoded `Kde1d`,
     # or the regressor would mix namespaces.
     est = VineRegressor(
-      backend=TorchVinecopBackend(),
+      distribution=TorchVinedist,
       margins=[TorchKde1d(), TorchKde1d()],
       random_state=0,
     )
@@ -173,7 +184,7 @@ class TestDefaultMargin:
 
 
 class TestTorchDistribution:
-  """On the torch backend ``distribution_`` is a ``TorchVinedist``.
+  """On the torch lane ``distribution_`` is a ``TorchVinedist``.
 
   The point of publishing it is that it is torch throughout: one `.to(device)`
   moves it, and a loss through `logpdf` reaches the margins' buffers.
@@ -185,12 +196,12 @@ class TestTorchDistribution:
     cov = np.full((d, d), 0.5) + 0.5 * np.eye(d)
     return rng.multivariate_normal(np.zeros(d), cov, size=n)
 
-  def test_the_torch_backend_publishes_a_torch_distribution(self) -> None:
+  def test_the_torch_lane_publishes_a_torch_distribution(self) -> None:
     pytest.importorskip("torch")
     from pyvinecopulib.torch import TorchKde1d, TorchVinecop, TorchVinedist
 
     X = self._data()
-    est = VineDensity(backend=TorchVinecopBackend(), random_state=0).fit(X)
+    est = VineDensity(distribution=TorchVinedist, random_state=0).fit(X)
     assert isinstance(est.distribution_, TorchVinedist)
     assert isinstance(est.distribution_.vinecop, TorchVinecop)
     assert all(isinstance(m, TorchKde1d) for m in est.distribution_.margins)
@@ -209,12 +220,14 @@ class TestTorchDistribution:
     were gradient-dead while every gradient still looked finite.
     """
     torch = pytest.importorskip("torch")
+    from pyvinecopulib.torch import TorchVinedist
 
     X = self._data()
-    est = VineDensity(backend=TorchVinecopBackend(), random_state=0).fit(X)
+    est = VineDensity(distribution=TorchVinedist, random_state=0).fit(X)
     dist = est.distribution_
     y = torch.as_tensor(X[:50])
-    values = dist.margins[0].values
+    lifted: Any = dist.margins[0]
+    values = lifted.values
     values.requires_grad_(True)
 
     (grad,) = torch.autograd.grad(-dist.logpdf(y).mean(), values)
@@ -241,27 +254,28 @@ class TestTorchDistribution:
     from pyvinecopulib.torch import TorchKde1d, TorchVinedist
 
     X = self._data()
-    # `margins="kde"` resolves to the compiled `Kde1d`, so the backend has to
+    # `margins="kde"` resolves to the core `Kde1d`, so `TorchVinedist` has to
     # lift it -- otherwise a spec that names the default explicitly would raise
     # where `margins=None` works.
     est = VineDensity(
-      backend=TorchVinecopBackend(), margins="kde", random_state=0
+      distribution=TorchVinedist, margins="kde", random_state=0
     ).fit(X)
     assert isinstance(est.distribution_, TorchVinedist)
     assert all(isinstance(m, TorchKde1d) for m in est.distribution_.margins)
     # The lift is exact, so the estimator sees the same density either way.
     ref = VineDensity(
-      backend=TorchVinecopBackend(), random_state=0, margins=None
+      distribution=TorchVinedist, random_state=0, margins=None
     ).fit(X)
     np.testing.assert_allclose(est.pdf(X[:20]), ref.pdf(X[:20]), rtol=1e-12)
 
   def test_the_estimator_re_reads_the_lifted_margins(self) -> None:
     pytest.importorskip("torch")
+    from pyvinecopulib.torch import TorchVinedist
     from pyvinecopulib.torch import TorchKde1d
 
     X = self._data()
     est = VineDensity(
-      backend=TorchVinecopBackend(), margins="kde", random_state=0
+      distribution=TorchVinedist, margins="kde", random_state=0
     ).fit(X)
     # `_to_u_scale` reads the estimator's own margins; if the lift left two
     # copies behind they would be the unlifted ones.
@@ -275,7 +289,7 @@ class TestTorchDistribution:
 
     Z = self._data(n=400, d=3, seed=1)
     X, y = Z[:, 1:], Z[:, 0]
-    est = VineRegressor(backend=TorchVinecopBackend(), random_state=0).fit(X, y)
+    est = VineRegressor(distribution=TorchVinedist, random_state=0).fit(X, y)
     assert isinstance(est.distribution_, TorchVinedist)
     assert isinstance(est._y_margin, TorchKde1d)
     pred = est.predict(X[:25])
@@ -287,7 +301,7 @@ class TestTorchDistribution:
 
     `TorchKde1d` is the only torch margin that models atoms, and it supplies the
     `cdf_left` the copula's discrete cascade differences -- which is why the
-    backend's `default_margin` returning it is what makes this path work at all.
+    lane's default margin being it is what makes this path work at all.
     """
     pytest.importorskip("torch")
     import pandas as pd
@@ -303,40 +317,12 @@ class TestTorchDistribution:
         ),
       }
     )
-    est = VineDensity(backend=TorchVinecopBackend(), random_state=0).fit(df)
+    est = VineDensity(distribution=TorchVinedist, random_state=0).fit(df)
     assert isinstance(est.distribution_, TorchVinedist)
     assert all(isinstance(m, TorchKde1d) for m in est.distribution_.margins)
     assert est.distribution_.var_types == ["c", "d"]
     scores = est.score_samples(df)
     assert scores.shape == (300,) and np.all(np.isfinite(scores))
-
-
-class TestTorchBackendWith:
-  def test_with_num_threads_is_noop(self) -> None:
-    pytest.importorskip("torch")
-    b = TorchVinecopBackend()
-    assert b.with_num_threads(8) is b
-
-  def test_with_random_structure(self) -> None:
-    pytest.importorskip("torch")
-    b = TorchVinecopBackend()
-    b2 = b.with_random_structure(3, seeds=[1, 2, 3, 4, 5])
-    assert b2 is not b
-    assert b2.structure is not None
-    assert b.structure is None
-
-  def test_with_local_random_threads_seeds_into_controls(self) -> None:
-    pytest.importorskip("torch")
-    b = TorchVinecopBackend()
-    b2 = b.with_local_random([7, 8, 9])
-    assert b2.structure is None
-    # Seeds / tree algorithm land on the torch controls' native selection
-    # fields that `TorchVinecop.from_data(structure=None)` consumes directly.
-    assert b2.controls is not None
-    assert b2.controls.tree_algorithm == "random_weighted"
-    assert list(b2.controls.seeds) == [7, 8, 9]
-    # Parent backend's controls remain untouched (copy-on-write).
-    assert b.controls is None
 
 
 # ---------------------------------------------------------------------------
@@ -345,19 +331,22 @@ class TestTorchBackendWith:
 
 
 def test_lazy_torch_import() -> None:
-  """Importing ``pyvinecopulib.sklearn`` (and constructing a default
-  estimator + a :class:`VinecopBackend`) must not pull torch in."""
+  """The default lane must not pull torch in.
+
+  Naming ``TorchVinedist`` is what imports torch, which is why the opt-in is
+  a class a caller has to import rather than a string.
+  """
   code = (
     "import sys\n"
     "import pyvinecopulib.sklearn\n"
+    "from pyvinecopulib.core import Vinedist\n"
     "from pyvinecopulib.sklearn import VineDensity\n"
-    "from pyvinecopulib.sklearn.backends import VinecopBackend\n"
     "assert 'torch' not in sys.modules, "
     "'torch imported on default-only path'\n"
     "VineDensity()\n"
-    "VineDensity(backend=VinecopBackend())\n"
+    "VineDensity(distribution=Vinedist)\n"
     "assert 'torch' not in sys.modules, "
-    "'torch imported by cpp-only construction'\n"
+    "'torch imported by default-lane construction'\n"
   )
   subprocess.check_call([sys.executable, "-c", code])
 
@@ -375,9 +364,18 @@ def small_data() -> np.ndarray:
 
 class TestEstimatorWiring:
   def test_init_stores_params_verbatim(self) -> None:
-    b = VinecopBackend(controls=pv.FitControlsVinecop(num_threads=4))
-    est = VineDensity(backend=b, batch_size=50, random_state=7)
-    assert est.backend is b
+    controls = pv.FitControlsVinecop(num_threads=4)
+    structure = pv.RVineStructure.sample(3, seeds=[1, 2, 3])
+    est = VineDensity(
+      distribution=Vinedist,
+      controls=controls,
+      structure=structure,
+      batch_size=50,
+      random_state=7,
+    )
+    assert est.distribution is Vinedist
+    assert est.controls is controls
+    assert est.structure is structure
     assert est.batch_size == 50
     assert est.random_state == 7
 
@@ -391,11 +389,12 @@ class TestEstimatorWiring:
     reg = VineRegressor(quantiles=[1.5])  # 1.5 not in (0, 1)
     assert reg.quantiles == [1.5]
 
-  def test_fit_resolves_backend_and_random_state(
+  def test_fit_resolves_the_lane_and_the_random_state(
     self, small_data: np.ndarray
   ) -> None:
     est = VineDensity(random_state=42).fit(small_data)
-    assert isinstance(est.backend_, VinecopBackend)
+    assert est.distribution_class_ is Vinedist
+    assert isinstance(est.controls_, pv.FitControlsVinecop)
     assert isinstance(est.random_state_, np.random.RandomState)
 
   def test_fit_sets_feature_names_in(self, small_data: np.ndarray) -> None:
@@ -423,13 +422,14 @@ class TestEstimatorWiring:
   def test_clone_roundtrip_preserves_state(self) -> None:
     from sklearn.base import clone
 
-    b = VinecopBackend(controls=pv.FitControlsVinecop(num_threads=2))
-    est = VineDensity(backend=b, batch_size=25, random_state=3)
+    controls = pv.FitControlsVinecop(num_threads=2)
+    est = VineDensity(controls=controls, batch_size=25, random_state=3)
     est2 = clone(est)
-    # backend stored as-is — clone() copies it but the underlying
-    # FitControlsVinecop should carry the same num_threads.
-    assert isinstance(est2.backend, VinecopBackend)
-    assert est2.backend.controls.num_threads == 2
+    # `clone` deep-copies a non-estimator parameter, so each clone gets
+    # controls of its own -- which is what makes it the ensembling idiom:
+    # writing to one member's controls cannot reach another's.
+    assert est2.controls is not controls
+    assert est2.controls.num_threads == 2
     assert est2.batch_size == 25
     assert est2.random_state == 3
 
@@ -450,41 +450,43 @@ class TestEstimatorWiring:
 
 
 # ---------------------------------------------------------------------------
-# Cross-backend parity (skip if torch missing)
+# Cross-lane parity (skip if torch missing)
 # ---------------------------------------------------------------------------
 
 
-class TestCrossBackend:
+class TestCrossLane:
   def test_density_pdf_parity(self, small_data: np.ndarray) -> None:
     pytest.importorskip("torch")
+    from pyvinecopulib.torch import TorchVinedist
     from pyvinecopulib.torch import FitControlsTorchVinecop
 
     est_cpp = VineDensity().fit(small_data)
-    # Both backends select their structure independently, but the torch
+    # Both lanes select their structure independently, but the torch
     # selection is an exact port of Vinecop's (same structure, same reused
     # pairs), so the densities agree to TLL-fit precision. Pin
     # cache_integrals=False: the default cached evaluation trades ~1e-3 IAE
     # for speed.
     est_torch = VineDensity(
-      backend=TorchVinecopBackend(
-        controls=FitControlsTorchVinecop(cache_integrals=False)
-      )
+      distribution=TorchVinedist,
+      controls=FitControlsTorchVinecop(cache_integrals=False),
     ).fit(small_data)
     p_cpp = est_cpp.pdf(small_data[:10])
     p_torch = est_torch.pdf(small_data[:10])
     np.testing.assert_allclose(p_cpp, p_torch, rtol=1e-6)
 
-  def test_cdf_works_on_both_backends(self, small_data: np.ndarray) -> None:
+  def test_cdf_works_on_both_lanes(self, small_data: np.ndarray) -> None:
     pytest.importorskip("torch")
+    from pyvinecopulib.torch import TorchVinedist
+
     est_cpp = VineDensity().fit(small_data)
-    est_torch = VineDensity(backend=TorchVinecopBackend()).fit(small_data)
+    est_torch = VineDensity(distribution=TorchVinedist).fit(small_data)
     c_cpp = est_cpp.cdf(small_data[:5], N=5000, random_state=1)
     c_torch = est_torch.cdf(small_data[:5], N=5000, random_state=1)
     # Both are MC estimates with N=5000; agreement to ~5%.
     np.testing.assert_allclose(c_cpp, c_torch, atol=5e-2)
 
   def test_torch_fits_a_discrete_column(self) -> None:
-    """The torch backend fits a discrete column, and agrees with the default.
+    """The torch lane fits a discrete column, and agrees with the default.
 
     It used to reject any discrete variable, so an ordered categorical had
     nowhere to go. It now carries the same left-limit cascade the NumPy one
@@ -492,6 +494,8 @@ class TestCrossBackend:
     unchanged -- so what this pins is that the two land on the same density,
     not merely that neither declines.
     """
+    from pyvinecopulib.torch import TorchVinedist
+
     pytest.importorskip("torch")
     pd = pytest.importorskip("pandas")
     rng = np.random.default_rng(0)
@@ -501,12 +505,12 @@ class TestCrossBackend:
         "b": rng.standard_normal(200),
       }
     )
-    est = VineDensity(backend=TorchVinecopBackend()).fit(df)
+    est = VineDensity(distribution=TorchVinedist).fit(df)
     assert est.schema_ is not None
     scores = est.score_samples(df)
     assert scores.shape == (200,)
     assert np.all(np.isfinite(scores))
-    ref = VineDensity(backend=VinecopBackend()).fit(df).score_samples(df)
+    ref = VineDensity(distribution=Vinedist).fit(df).score_samples(df)
     np.testing.assert_allclose(scores, ref, rtol=1e-6, atol=1e-6)
 
 
@@ -541,7 +545,8 @@ class TestNJobs:
     X, _ = data
     est = VineDensity().fit(X)
     assert est.n_jobs is None
-    assert est.backend_._effective_controls().num_threads in (0, 1)
+    controls: Any = est.controls_
+    assert controls.num_threads in (0, 1)
 
   @pytest.mark.parametrize("n_jobs", [2, -1])
   def test_results_are_identical(
@@ -552,8 +557,8 @@ class TestNJobs:
     serial = VineDensity(random_state=0).fit(X)
     threaded = VineDensity(random_state=0, n_jobs=n_jobs).fit(X)
     np.testing.assert_array_equal(
-      threaded.backend_.structure_of(threaded._vine).matrix,
-      serial.backend_.structure_of(serial._vine).matrix,
+      threaded._vine.structure.matrix,
+      serial._vine.structure.matrix,
     )
     np.testing.assert_array_equal(
       threaded.score_samples(X[:50]), serial.score_samples(X[:50])
@@ -571,9 +576,8 @@ class TestNJobs:
     """`-1` means every processor, as everywhere else in scikit-learn."""
     X, _ = data
     est = VineDensity(n_jobs=-1).fit(X)
-    assert est.backend_._effective_controls().num_threads == (
-      os.cpu_count() or 1
-    )
+    controls: Any = est.controls_
+    assert controls.num_threads == (os.cpu_count() or 1)
 
   def test_it_is_a_validated_constructor_parameter(
     self, data: tuple[np.ndarray, np.ndarray]
@@ -589,28 +593,20 @@ class TestNJobs:
       VineDensity(n_jobs=bad_n_jobs).fit(X)
 
 
-def test_the_fitted_distribution_samples_through_the_backend() -> None:
-  """Every evaluation route must go through the backend that fitted the vine.
+def test_the_fitted_distribution_holds_the_vine_itself() -> None:
+  """`distribution_` holds the fitted vine, not an adapter around it.
 
-  The wrapper forwards unknown attributes to the raw vine, so a method it does
-  not define is answered by the vine directly — skipping the backend's own
-  conversion of its result. `sample` is the one that would then return whatever
-  the vine's array namespace produces.
+  An estimator returns NumPy whatever namespace its parts evaluate on, so the
+  conversion belongs at its own boundary rather than in a wrapper around the
+  copula — which is what lets `distribution_.vinecop` be the object a caller
+  can pickle, print and introspect.
   """
   rng = np.random.default_rng(0)
   X = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], size=200)
   est = VineDensity().fit(X)
 
-  seen = []
-  original = est.backend_.sample
+  assert est.distribution_.vinecop is est._vine
+  assert isinstance(est.distribution_.vinecop, pv.Vinecop)
 
-  def spy(
-    vine: VinecopLike[np.ndarray], n_samples: int, *, seeds: list[int]
-  ) -> np.ndarray:
-    seen.append(n_samples)
-    return original(vine, n_samples, seeds=seeds)
-
-  est.backend_.sample = spy
   drawn = est.sample(5, random_state=1)
-  assert seen == [5]
   assert isinstance(drawn, np.ndarray) and drawn.shape == (5, 2)

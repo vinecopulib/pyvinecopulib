@@ -1148,8 +1148,8 @@ def test_an_unknown_margin_kind_and_a_bad_version_both_raise() -> None:
 
 def test_both_shipped_distributions_satisfy_the_contract() -> None:
   # The contract is what downstream code types against, so both routes must
-  # satisfy it -- and the sklearn backend layer returns it from
-  # `bind_distribution`. The name says *both*, so check both: the torch half
+  # satisfy it -- and the sklearn estimators publish one as
+  # `distribution_`. The name says *both*, so check both: the torch half
   # went untested here, which is the lane where a `ModuleList` of margins and
   # an `nn.Module` copula could plausibly diverge from the protocol.
   copula = pv.Vinecop.from_data(
@@ -1368,7 +1368,9 @@ def test_vinedist_refuses_torch_parts() -> None:
 
   lifted = torch_mod.TorchVinecop.from_vinecop(copula)
   with pytest.raises(TypeError, match="TorchVinedist"):
-    Vinedist(lifted, margins)
+    # A torch vine satisfies `VinecopLike[Tensor]`, not the `[ndarray]` this
+    # class takes, so the cast is what a caller who skips type checking does.
+    Vinedist(cast("Any", lifted), margins)
 
   # And a torch margin, on an otherwise fine NumPy copula.
   with pytest.raises(TypeError, match="TorchVinedist"):

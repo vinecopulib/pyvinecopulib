@@ -174,7 +174,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     degree: int = 2,
     grid_size: int = 400,
     boundary_repair: bool = True,
-    device: Optional[torch.device] = None,
+    device: torch.types.Device = None,
     dtype: torch.dtype = torch.float64,
   ) -> None:
     # Initialize nn.Module explicitly: this also subclasses MarginBase (a
@@ -350,7 +350,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     cls,
     kde: Kde1d,
     *,
-    device: Optional[torch.device] = None,
+    device: torch.types.Device = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchKde1d":
     """Lift a fitted ``Kde1d`` onto tensors.
@@ -702,7 +702,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     if not self.is_fitted:
       raise RuntimeError("TorchKde1d is not fitted; call fit(y)")
 
-  def _as_tensor(self, values: Any) -> Tensor:  # noqa: ANN401 - as_tensor input
+  def _as_tensor(self, values: object) -> Tensor:
     """Coerce a query onto the buffers' dtype and device, flattened."""
     return torch.as_tensor(
       values, dtype=self.grid_points.dtype, device=self.grid_points.device
@@ -774,15 +774,13 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     )
     return torch.where(torch.isnan(y), y, out)
 
-  def pdf(self, y: Tensor, /, *, x: Optional[Tensor] = None) -> Tensor:
+  def pdf(self, y: Tensor, /) -> Tensor:
     """Density with respect to this margin's own reference measure.
 
     Parameters
     ----------
     y : Tensor, shape (n,)
         Evaluation points.
-    x : Tensor, or None, optional
-        Ignored; a kernel density reads no covariates.
 
     Returns
     -------
@@ -803,15 +801,13 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       )
     return self._pdf_continuous(ya)
 
-  def cdf(self, y: Tensor, /, *, x: Optional[Tensor] = None) -> Tensor:
+  def cdf(self, y: Tensor, /) -> Tensor:
     """Distribution function.
 
     Parameters
     ----------
     y : Tensor, shape (n,)
         Evaluation points.
-    x : Tensor, or None, optional
-        Ignored; a kernel density reads no covariates.
 
     Returns
     -------

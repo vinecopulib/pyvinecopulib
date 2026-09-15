@@ -281,7 +281,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     *,
     trainable: bool = True,
     validate_args: Optional[bool] = None,
-    device: Optional[torch.device] = None,
+    device: torch.types.Device = None,
     dtype: torch.dtype = torch.float64,
   ) -> None:
     # Initialize nn.Module explicitly: TorchDistributionMargin also subclasses MarginBase
@@ -338,7 +338,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     distribution: Distribution,
     *,
     trainable: bool = True,
-    device: Optional[torch.device] = None,
+    device: torch.types.Device = None,
     dtype: torch.dtype = torch.float64,
   ) -> "TorchDistributionMargin":
     """Lift an already-constructed ``torch.distributions`` object.
@@ -551,15 +551,13 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
   # Evaluation                                                             #
   # --------------------------------------------------------------------- #
 
-  def pdf(self, y: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
+  def pdf(self, y: Tensor) -> Tensor:
     """Density of the margin.
 
     Parameters
     ----------
     y : Tensor, shape (n,), dtype float
         Observations on the original scale.
-    x : Tensor, shape (n, p), or None, optional
-        Ignored; this margin is unconditional.
 
     Returns
     -------
@@ -604,15 +602,13 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     """
     return self.logpdf(y, x=x)
 
-  def cdf(self, y: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
+  def cdf(self, y: Tensor) -> Tensor:
     """Distribution function of the margin.
 
     Parameters
     ----------
     y : Tensor, shape (n,), dtype float
         Observations on the original scale.
-    x : Tensor, shape (n, p), or None, optional
-        Ignored; this margin is unconditional.
 
     Returns
     -------

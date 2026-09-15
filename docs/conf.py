@@ -143,10 +143,14 @@ nitpick_ignore_regex = [
   # `Returns` beside each says the ecosystem type a reader wants
   # (`openturns.Distribution`). Retires if either library ships types.
   (r"py:.*", r"pyvinecopulib\.\w+\.\w+\._[A-Z]\w+"),
-  # `ArrayT` is the TypeVar the array-agnostic contracts are generic over. It
-  # appears in rendered signatures wherever one is parameterized, and a
-  # TypeVar has no page of its own to link to.
-  (r"py:class", r"pyvinecopulib\.core\.protocols\.ArrayT"),
+  # `ArrayT` is the TypeVar the array-agnostic contracts are generic over, and
+  # `Array` / `BoolArray` / `Namespace` / `FInfo` are the protocols bounding it
+  # and its namespace. All appear in rendered signatures wherever one is
+  # parameterized, and none has a page of its own to link to.
+  (
+    r"py:class",
+    r"pyvinecopulib\.core\.protocols\.(ArrayT|Array|BoolArray|Namespace|FInfo)",
+  ),
 ]
 
 
@@ -238,8 +242,6 @@ _CLASS_MODULE = {
   "Kde1d": "pyvinecopulib.core",
   "VineDensity": "pyvinecopulib.sklearn",
   "VineRegressor": "pyvinecopulib.sklearn",
-  "VinecopBackend": "pyvinecopulib.sklearn.backends",
-  "TorchVinecopBackend": "pyvinecopulib.sklearn.backends",
   "TorchTllBicop": "pyvinecopulib.torch",
   "TorchKde1d": "pyvinecopulib.torch",
   "TorchDistributionMargin": "pyvinecopulib.torch",
@@ -248,7 +250,6 @@ _CLASS_MODULE = {
   "FitControlsTorchBicop": "pyvinecopulib.torch",
   "FitControlsTorchVinecop": "pyvinecopulib.torch",
   "ControlsLike": "pyvinecopulib.core",
-  "DiscreteBicop": "pyvinecopulib.core",
   "NotBatchable": "pyvinecopulib.core.extend",
   "IndependenceBicop": "pyvinecopulib.core",
   "VinedistLike": "pyvinecopulib.core",
@@ -305,7 +306,6 @@ def process_cross_references(content: str, is_docstring: bool = True) -> str:
     "pyvinecopulib.utils",
     "pyvinecopulib.margins",
     "pyvinecopulib.sklearn",
-    "pyvinecopulib.sklearn.backends",
     "pyvinecopulib.torch",
   ]
 
@@ -355,8 +355,8 @@ def process_cross_references(content: str, is_docstring: bool = True) -> str:
     content = re.sub(
       rf"{bt}{re.escape(func)}{bt}", f"{func_ref}~{mod}.{func}`", content
     )
-  # Module references — longest-prefix first so `pyvinecopulib.sklearn.backends`
-  # wins over `pyvinecopulib.sklearn`.
+  # Module references — longest-prefix first, so a nested module name wins
+  # over the package it sits in.
   for mod in sorted(modules, key=len, reverse=True):
     content = re.sub(rf"{bt}{re.escape(mod)}{bt}", rf"{mod_ref}{mod}`", content)
 
@@ -417,7 +417,6 @@ DOCSTRING_SUBPACKAGES = {
       "ConditioningContext",
       "SimplifiedContext",
       "NonSimplifiedContext",
-      "DiscreteBicop",
       "IndependenceBicop",
       "MarginLike",
       "MarginBase",
@@ -483,13 +482,6 @@ DOCSTRING_SUBPACKAGES = {
       "VineRegressor",
     ],
     "functions": [],
-  },
-  "sklearn.backends": {
-    "classes": [
-      "VinecopBackend",
-      "TorchVinecopBackend",
-    ],
-    "functions": ["resolve_backend"],
   },
   "torch": {
     "classes": [

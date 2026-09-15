@@ -8,7 +8,7 @@ Three modes selected via ``--mode``:
     - time ``pv.Bicop.from_data`` with TLL family per thread count,
     - time ``TorchTllBicop.from_data`` per device and grid_type (TLL).
   Output columns:
-    mode, n, backend, threads, device, grid_type, grid_size, time_ms
+    mode, n, lane, threads, device, grid_type, grid_size, time_ms
 
 * ``eval`` — fit once, time the eval ops (pdf, cdf, hfunc1, hfunc2,
   hinv1, hinv2) on a separate ``n_eval`` sample:
@@ -16,7 +16,7 @@ Three modes selected via ``--mode``:
       (TLL only has the Phi-spaced grid in C++).
     - Torch sweep: device x grid_type x grid_size x cache_integrals.
   Output columns:
-    mode, op, n_fit, n_eval, backend, threads, device,
+    mode, op, n_fit, n_eval, lane, threads, device,
     cache_integrals, grid_type, grid_size, time_ms
 
 * ``hinv`` — fit a TLL bicop once, then compare the three torch inverse
@@ -106,14 +106,14 @@ def _bench_fit(
   devices: list[str],
   grid_types: list[str],
   grid_sizes: list[int],
-  backends: list[str],
+  lanes: list[str],
   repeats: int,
   seed: int,
 ) -> list[dict]:
   u_np = _simulate(n=n, seed=seed)
   rows: list[dict] = []
 
-  if "cpp" in backends:
+  if "cpp" in lanes:
     for t in threads:
       for g in grid_sizes:
         ctl = pv.FitControlsBicop(
@@ -128,7 +128,7 @@ def _bench_fit(
           {
             "mode": "fit",
             "n": n,
-            "backend": "cpp",
+            "lane": "cpp",
             "threads": t,
             "device": "",
             "grid_type": "",
@@ -137,7 +137,7 @@ def _bench_fit(
           }
         )
 
-  if "torch" in backends:
+  if "torch" in lanes:
     for device in devices:
       sync = torch.cuda.synchronize if device.startswith("cuda") else None
       u_t = torch.from_numpy(u_np).to(device)
@@ -153,7 +153,7 @@ def _bench_fit(
             {
               "mode": "fit",
               "n": n,
-              "backend": "torch",
+              "lane": "torch",
               "threads": "",
               "device": device,
               "grid_type": grid_type,
@@ -180,7 +180,7 @@ def _bench_eval(
   grid_types: list[str],
   grid_sizes: list[int],
   caches: list[bool],
-  backends: list[str],
+  lanes: list[str],
   repeats: int,
   seed: int,
 ) -> list[dict]:
@@ -191,7 +191,7 @@ def _bench_eval(
 
   # C++ baseline: fit once per (thread, grid_size); threading affects fit, not
   # eval. TLL only has the Phi-spaced grid in C++.
-  if "cpp" in backends:
+  if "cpp" in lanes:
     for t in threads:
       for g in grid_sizes:
         ctl = pv.FitControlsBicop(
@@ -209,7 +209,7 @@ def _bench_eval(
               "op": op,
               "n_fit": n_fit,
               "n_eval": n_eval,
-              "backend": "cpp",
+              "lane": "cpp",
               "threads": t,
               "device": "",
               "cache_integrals": "",
@@ -219,7 +219,7 @@ def _bench_eval(
             }
           )
 
-  if "torch" in backends:
+  if "torch" in lanes:
     for device in devices:
       sync = torch.cuda.synchronize if device.startswith("cuda") else None
       u_fit_t = torch.from_numpy(u_fit_np).to(device)
@@ -243,7 +243,7 @@ def _bench_eval(
                   "op": op,
                   "n_fit": n_fit,
                   "n_eval": n_eval,
-                  "backend": "torch",
+                  "lane": "torch",
                   "threads": "",
                   "device": device,
                   "cache_integrals": str(cache).lower(),
@@ -431,7 +431,7 @@ def main() -> None:
     help="cache_integrals values to sweep (eval mode only; default false,true).",
   )
   ap.add_argument(
-    "--backends",
+    "--lanes",
     default="cpp,torch",
     type=_parse_str_list,
     help="Backends to bench (default: cpp,torch).",
@@ -451,13 +451,13 @@ def main() -> None:
     )
     devices = [d for d in devices if not d.startswith("cuda")]
 
-  backends = list(args.backends)
+  lanes = list(args.lanes)
 
   fieldnames_by_mode = {
     "fit": [
       "mode",
       "n",
-      "backend",
+      "lane",
       "threads",
       "device",
       "grid_type",
@@ -469,7 +469,7 @@ def main() -> None:
       "op",
       "n_fit",
       "n_eval",
-      "backend",
+      "lane",
       "threads",
       "device",
       "cache_integrals",
@@ -504,7 +504,7 @@ def main() -> None:
         devices=devices,
         grid_types=args.grid_types,
         grid_sizes=args.grid_sizes,
-        backends=backends,
+        lanes=lanes,
         repeats=args.repeats,
         seed=args.seed,
       )
@@ -517,7 +517,7 @@ def main() -> None:
         grid_types=args.grid_types,
         grid_sizes=args.grid_sizes,
         caches=args.cache,
-        backends=backends,
+        lanes=lanes,
         repeats=args.repeats,
         seed=args.seed,
       )

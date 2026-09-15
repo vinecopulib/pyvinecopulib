@@ -158,7 +158,7 @@ def test_fit_conditional_hook() -> None:
   assert torch.quantile(err, 0.99).item() < 1e-8
 
 
-def test_numpy_and_torch_backends_match() -> None:
+def test_numpy_and_torch_match() -> None:
   """The same ``VinecopBase`` cascades agree on numpy and torch (agnostic)."""
   d, n, p = 4, 150, 2
   structure = pv.RVineStructure.from_order(list(range(1, d + 1)))

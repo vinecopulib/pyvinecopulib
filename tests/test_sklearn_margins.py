@@ -106,10 +106,10 @@ def test_fit_publishes_the_distribution(
 def test_the_held_copula_still_answers_as_the_vine(
   sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
 ) -> None:
-  """Wrapping the vine for the backend does not hide the vine's own surface."""
+  """``distribution_`` holds the fitted vine itself, surface and all."""
   X, _, _ = sample_array_data
   est = VineDensity().fit(X)
-  copula = est.distribution_.vinecop
+  copula: Any = est.distribution_.vinecop
   assert copula.dim == est.n_features_in_
   assert copula.var_types == ["c", "c"]
   np.testing.assert_array_equal(
@@ -413,13 +413,15 @@ def test_the_estimator_honors_a_named_family_and_chooses_an_unnamed_one() -> (
   X = np.column_stack([rs.gamma(2.0, 1.0, 200), rs.gamma(3.0, 1.0, 200)])
 
   named = VineDensity(margins=SciPyMargin("norm"), random_state=0).fit(X)
-  assert [m.family_name for m in named.distribution_.margins] == [
+  named_margins: tuple[Any, ...] = named.distribution_.margins
+  assert [m.family_name for m in named_margins] == [
     "norm",
     "norm",
   ]
 
   chosen = VineDensity(margins="parametric", random_state=0).fit(X)
-  assert "norm" not in [m.family_name for m in chosen.distribution_.margins]
+  chosen_margins: tuple[Any, ...] = chosen.distribution_.margins
+  assert "norm" not in [m.family_name for m in chosen_margins]
 
 
 def test_selection_runs_per_expanded_column(
@@ -519,7 +521,7 @@ def test_an_integer_categorical_is_fitted_on_its_declared_support() -> None:
     }
   )
   est = VineDensity().fit(df)
-  margin = est.distribution_.margins[1]
+  margin: Any = est.distribution_.margins[1]
   assert est.schema_["bounds"][1] == (0.0, 3.0)
   grid = np.asarray(margin.grid_points)
   assert grid[0] == pytest.approx(-0.5)

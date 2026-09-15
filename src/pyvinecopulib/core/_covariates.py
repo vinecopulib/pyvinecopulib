@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional, Union, cast
 
-from array_api_compat import array_namespace
+from .protocols import array_namespace
 
 from ._placement import place
 from ._validation import validate_covariates
