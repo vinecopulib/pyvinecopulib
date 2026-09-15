@@ -31,7 +31,7 @@ from pyvinecopulib.sklearn import VineDensity, VineRegressor
 class TestVinecopLikeProtocol:
   """Both ``pv.Vinecop`` and ``pv.torch.TorchVinecop`` satisfy the canonical
   :class:`pyvinecopulib.core.VinecopLike` protocol structurally, so either
-  backend's fitted vine is usable through the neutral contract."""
+  lane's fitted vine is usable through the neutral contract."""
 
   def test_cpp_vinecop_satisfies_protocol(self) -> None:
     rng = np.random.default_rng(0)
@@ -62,7 +62,7 @@ class TestVinecopLikeProtocol:
 
 
 # ---------------------------------------------------------------------------
-# resolve_backend
+# Caller-supplied controls and structure
 # ---------------------------------------------------------------------------
 
 
@@ -184,7 +184,7 @@ class TestDefaultMargin:
 
 
 class TestTorchDistribution:
-  """On the torch backend ``distribution_`` is a ``TorchVinedist``.
+  """On the torch lane ``distribution_`` is a ``TorchVinedist``.
 
   The point of publishing it is that it is torch throughout: one `.to(device)`
   moves it, and a loss through `logpdf` reaches the margins' buffers.
@@ -254,7 +254,7 @@ class TestTorchDistribution:
     from pyvinecopulib.torch import TorchKde1d, TorchVinedist
 
     X = self._data()
-    # `margins="kde"` resolves to the compiled `Kde1d`, so the backend has to
+    # `margins="kde"` resolves to the core `Kde1d`, so `TorchVinedist` has to
     # lift it -- otherwise a spec that names the default explicitly would raise
     # where `margins=None` works.
     est = VineDensity(
@@ -301,7 +301,7 @@ class TestTorchDistribution:
 
     `TorchKde1d` is the only torch margin that models atoms, and it supplies the
     `cdf_left` the copula's discrete cascade differences -- which is why the
-    backend's `default_margin` returning it is what makes this path work at all.
+    lane's default margin being it is what makes this path work at all.
     """
     pytest.importorskip("torch")
     import pandas as pd
@@ -450,11 +450,11 @@ class TestEstimatorWiring:
 
 
 # ---------------------------------------------------------------------------
-# Cross-backend parity (skip if torch missing)
+# Cross-lane parity (skip if torch missing)
 # ---------------------------------------------------------------------------
 
 
-class TestCrossBackend:
+class TestCrossLane:
   def test_density_pdf_parity(self, small_data: np.ndarray) -> None:
     pytest.importorskip("torch")
     from pyvinecopulib.torch import TorchVinedist
@@ -474,7 +474,7 @@ class TestCrossBackend:
     p_torch = est_torch.pdf(small_data[:10])
     np.testing.assert_allclose(p_cpp, p_torch, rtol=1e-6)
 
-  def test_cdf_works_on_both_backends(self, small_data: np.ndarray) -> None:
+  def test_cdf_works_on_both_lanes(self, small_data: np.ndarray) -> None:
     pytest.importorskip("torch")
     from pyvinecopulib.torch import TorchVinedist
 
@@ -486,7 +486,7 @@ class TestCrossBackend:
     np.testing.assert_allclose(c_cpp, c_torch, atol=5e-2)
 
   def test_torch_fits_a_discrete_column(self) -> None:
-    """The torch backend fits a discrete column, and agrees with the default.
+    """The torch lane fits a discrete column, and agrees with the default.
 
     It used to reject any discrete variable, so an ordered categorical had
     nowhere to go. It now carries the same left-limit cascade the NumPy one

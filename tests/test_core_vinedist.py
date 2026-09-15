@@ -1148,8 +1148,8 @@ def test_an_unknown_margin_kind_and_a_bad_version_both_raise() -> None:
 
 def test_both_shipped_distributions_satisfy_the_contract() -> None:
   # The contract is what downstream code types against, so both routes must
-  # satisfy it -- and the sklearn backend layer returns it from
-  # `bind_distribution`. The name says *both*, so check both: the torch half
+  # satisfy it -- and the sklearn estimators publish one as
+  # `distribution_`. The name says *both*, so check both: the torch half
   # went untested here, which is the lane where a `ModuleList` of margins and
   # an `nn.Module` copula could plausibly diverge from the protocol.
   copula = pv.Vinecop.from_data(

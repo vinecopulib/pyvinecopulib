@@ -9,7 +9,7 @@ Two modes, selected with --mode:
   base draw and in a Monte-Carlo dominance count, so they are where a
   slow inverse shows up in practice. Columns:
 
-      mode, method, n, d, backend, threads, device, cache_integrals,
+      mode, method, n, d, lane, threads, device, cache_integrals,
       batched, compile, grid_type, grid_size, dtype, time_ms
 
 * ``fit`` times the fit itself -- ``TorchVinecop.from_data`` against
@@ -17,7 +17,7 @@ Two modes, selected with --mode:
   given, so the skeleton is selected as well) and ``fit`` (pair copulas
   fitted along the C++-selected skeleton). Columns:
 
-      mode, n, d, backend, threads, device, cache_integrals, grid_type,
+      mode, n, d, lane, threads, device, cache_integrals, grid_type,
       grid_size, dtype, structure, time_ms
 
 For each (n, d) cell both modes generate n correlated pseudo-obs of
@@ -334,7 +334,7 @@ def _reference_vine(
 
 
 #: Timed operations. `sample` takes a draw count instead of data and `cdf` a
-#: Monte-Carlo budget, so each backend builds its own call.
+#: Monte-Carlo budget, so each lane builds its own call.
 METHODS = ("pdf", "rosenblatt", "inverse_rosenblatt", "sample", "cdf")
 
 
@@ -384,7 +384,7 @@ def _bench_eval_cell(
   grid_types: list[str],
   grid_sizes: list[int],
   dtypes: list[str],
-  backends: list[str],
+  lanes: list[str],
   repeats: int,
   seed: int,
   mc: int,
@@ -399,7 +399,7 @@ def _bench_eval_cell(
   rows: list[dict] = []
 
   # ---- C++ side --------------------------------------------------------
-  if "cpp" in backends:
+  if "cpp" in lanes:
     # The first grid size's model *is* the selection, so a single-entry
     # sweep pays exactly one C++ fit per cell.
     cpp_by_g = {grid_sizes[0]: ref}
@@ -421,7 +421,7 @@ def _bench_eval_cell(
               "method": method,
               "n": n,
               "d": d,
-              "backend": "cpp",
+              "lane": "cpp",
               "threads": t,
               "device": "",
               "cache_integrals": "",
@@ -435,7 +435,7 @@ def _bench_eval_cell(
           )
 
   # ---- Torch side ------------------------------------------------------
-  if "torch" in backends:
+  if "torch" in lanes:
     for device in devices:
       sync = torch.cuda.synchronize if device.startswith("cuda") else None
       for grid_type in grid_types:
@@ -478,7 +478,7 @@ def _bench_eval_cell(
                         "method": method,
                         "n": n,
                         "d": d,
-                        "backend": "torch",
+                        "lane": "torch",
                         "threads": "",
                         "device": device,
                         "cache_integrals": str(cache).lower(),
@@ -512,7 +512,7 @@ def _bench_fit_cell(
   grid_sizes: list[int],
   dtypes: list[str],
   structures: list[str],
-  backends: list[str],
+  lanes: list[str],
   batched_fits: list[Optional[bool]],
   repeats: int,
   seed: int,
@@ -525,7 +525,7 @@ def _bench_fit_cell(
   rows: list[dict] = []
 
   # ---- C++ side --------------------------------------------------------
-  if "cpp" in backends:
+  if "cpp" in lanes:
     for arm in structures:
       for t in threads:
         for g in grid_sizes:
@@ -538,7 +538,7 @@ def _bench_fit_cell(
             "mode": "fit",
             "n": n,
             "d": d,
-            "backend": "cpp",
+            "lane": "cpp",
             "threads": t,
             "device": "",
             "cache_integrals": "",
@@ -556,7 +556,7 @@ def _bench_fit_cell(
           rows.append(row)
 
   # ---- Torch side ------------------------------------------------------
-  if "torch" in backends:
+  if "torch" in lanes:
     for device in devices:
       sync = torch.cuda.synchronize if device.startswith("cuda") else None
       for dtype_name in dtypes:
@@ -585,7 +585,7 @@ def _bench_fit_cell(
                     "mode": "fit",
                     "n": n,
                     "d": d,
-                    "backend": "torch",
+                    "lane": "torch",
                     "threads": "",
                     "device": device,
                     "cache_integrals": str(cache).lower(),
@@ -647,7 +647,7 @@ def _build_parser() -> argparse.ArgumentParser:
     help="Torch devices to sweep (default: cpu,cuda).",
   )
   ap.add_argument(
-    "--backends",
+    "--lanes",
     default="cpp,torch",
     type=_parse_str_list,
     help="Backends to bench (default: cpp,torch). The C++ selection runs "
@@ -750,7 +750,7 @@ _FIELDNAMES: dict[str, list[str]] = {
     "method",
     "n",
     "d",
-    "backend",
+    "lane",
     "threads",
     "device",
     "cache_integrals",
@@ -765,7 +765,7 @@ _FIELDNAMES: dict[str, list[str]] = {
     "mode",
     "n",
     "d",
-    "backend",
+    "lane",
     "threads",
     "device",
     "cache_integrals",
@@ -791,8 +791,8 @@ def _validate(ap: argparse.ArgumentParser, args: argparse.Namespace) -> None:
   bad_arms = [s for s in args.structures if s not in _STRUCTURES]
   if bad_arms:
     ap.error(f"unknown --structures {bad_arms}; expected {list(_STRUCTURES)}")
-  if not args.backends:
-    ap.error("--backends must name at least one of cpp, torch")
+  if not args.lanes:
+    ap.error("--lanes must name at least one of cpp, torch")
 
   # A flag that changes the CSV schema, or that cannot apply, is an error
   # rather than silently ignored.
@@ -857,7 +857,7 @@ def main() -> None:
           grid_sizes=args.grid_sizes,
           dtypes=args.dtypes,
           structures=args.structures,
-          backends=args.backends,
+          lanes=args.lanes,
           batched_fits=(
             [None] if args.batched_fit is None else list(args.batched_fit)
           ),
@@ -877,7 +877,7 @@ def main() -> None:
           grid_types=args.grid_types,
           grid_sizes=args.grid_sizes,
           dtypes=args.dtypes,
-          backends=args.backends,
+          lanes=args.lanes,
           repeats=args.repeats,
           seed=args.seed,
           mc=args.mc_samples,

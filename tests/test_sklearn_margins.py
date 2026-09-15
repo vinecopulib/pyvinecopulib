@@ -106,7 +106,7 @@ def test_fit_publishes_the_distribution(
 def test_the_held_copula_still_answers_as_the_vine(
   sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
 ) -> None:
-  """Wrapping the vine for the backend does not hide the vine's own surface."""
+  """``distribution_`` holds the fitted vine itself, surface and all."""
   X, _, _ = sample_array_data
   est = VineDensity().fit(X)
   copula: Any = est.distribution_.vinecop

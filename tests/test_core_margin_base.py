@@ -1,7 +1,7 @@
 """Tests for the array-agnostic ``pyvinecopulib.core`` margin base.
 
 Exercises :class:`pyvinecopulib.core.MarginBase` — the canonical,
-array-backend-agnostic partial implementation of the ``MarginLike`` contract —
+array-agnostic partial implementation of the ``MarginLike`` contract —
 purely on NumPy, so it also confirms that the neutral ``core`` layer runs
 without PyTorch. A conformance test pins that :class:`pyvinecopulib.core.Kde1d`
 satisfies ``MarginLike`` directly: it is the library's default margin, and the

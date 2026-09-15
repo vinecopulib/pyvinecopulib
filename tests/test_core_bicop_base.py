@@ -1,7 +1,7 @@
 """Tests for the array-agnostic ``pyvinecopulib.core`` pair-copula base.
 
 Exercises :class:`pyvinecopulib.core.BicopBase` — the canonical,
-array-backend-agnostic partial implementation of the ``BicopLike`` contract —
+array-agnostic partial implementation of the ``BicopLike`` contract —
 purely on NumPy, so it also confirms that the neutral ``core`` layer runs
 without PyTorch. A separate subprocess test pins the torch-free import
 guarantee (downstream packages can build custom pairs on ``BicopBase`` in a
@@ -120,7 +120,7 @@ def test_bicopbase_simulate_default() -> None:
 
 
 def test_bicopbase_simulate_requires_draw_hook() -> None:
-  """``sample`` raises when the backend has not provided ``_sample_uniform``."""
+  """``sample`` raises when a subclass has not provided ``_sample_uniform``."""
   cop = _SqrtPair()
   with pytest.raises(NotImplementedError):
     cop.sample(5)
