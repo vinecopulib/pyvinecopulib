@@ -1777,6 +1777,34 @@ Round-trip / parity properties to preserve when touching numerics:
   `select(conditioning_set=)`; see
   `examples/10_extending_pyvinecopulib.ipynb`. `TorchTllBicop` /
   `TorchVinecop` are the reference torch subclasses.
+
+  Four things a subclass author hits that the signatures do not say, each
+  reported by a third-party subclass built against this contract:
+
+  - **Write leaves, never override a dispatcher.** The public members carry
+    no per-call keywords, so a subclass with its own knobs is tempted to
+    override `pdf` or `cdf` to keep one. That silently orphans the leaf:
+    every internal caller goes through the public member (`loglik` ->
+    `self.pdf`, the plots through `pair_eval`, the vine cascade likewise), so
+    the mandatory `_pdf_raw` exists only to satisfy the ABC and never runs.
+    Put evaluation knobs on the `ControlsLike` instead.
+  - **Any pair that may sit in a conditional vine declares `x` on every
+    leaf**, whether or not it reads one. `pair_eval` forwards unconditionally
+    -- `method(*args) if x is None else method(*args, x=x)`, no introspection
+    -- so a leaf without `x` raises `TypeError` at the first covariate call.
+    `IndependenceBicop`'s `del x` is what that looks like.
+  - **`_prep_args` is about clamp width, not rejection.** Overriding it on a
+    *pair* installs no refusal on the cascade: `VinecopBase._prep_args` already
+    trims, and every public vine entry point calls it before the cascade
+    builds anything, so a pair only ever sees a clamped interior value.
+    Override it where the subclass's domain step differs from the library's --
+    `trim_bounds` is ~1e-10 at float64, which is about ten units of feature
+    space for a model fitted on `logit(u)`. Test the hook, not a density: a
+    density only notices where it varies.
+  - **`_hinv1_raw` / `_hinv2_raw` are optional, and the default is expensive.**
+    The inherited bisection of `_hfunc1_raw` costs `O(iterations)` in *model*
+    calls, not in arithmetic, so a pair backed by a learned model or one that
+    inverts in closed form should override both.
 - **Fitting has one shape across all four bases.** `MarginBase`, `BicopBase`,
   `VinecopBase` and `VinedistBase` each expose `fit(...) -> Self` (mutates in
   place, returns the object) and `from_data(...) -> cls` (constructs one), and
