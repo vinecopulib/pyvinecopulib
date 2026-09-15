@@ -208,35 +208,34 @@ def test_vinecop() -> None:
     )
 
 
-# `Any`, not the backend base class: that base is private, and the two
-# concrete backends cannot both be named here -- importing the torch one at
-# module scope would require the extra this file skips without.
-def _fitted_estimator(backend: Any) -> tuple[Any, np.ndarray]:
+# `Any`, not a distribution base class: importing the torch one at module
+# scope would require the extra this file skips without.
+def _fitted_estimator(distribution: Any) -> tuple[Any, np.ndarray]:
   from pyvinecopulib.sklearn import VineDensity
 
   rng = np.random.default_rng(0)
   cov = np.full((3, 3), 0.5) + 0.5 * np.eye(3)
   x = rng.multivariate_normal(np.zeros(3), cov, size=300)
-  return VineDensity(backend=backend, random_state=0).fit(x), x
+  return VineDensity(distribution=distribution, random_state=0).fit(x), x
 
 
-@pytest.mark.parametrize("torch_backend", [False, True])
-def test_vinedensity(torch_backend: bool) -> None:
+@pytest.mark.parametrize("torch_lane", [False, True])
+def test_vinedensity(torch_lane: bool) -> None:
   """A fitted estimator round-trips, including its ``distribution_``.
 
-  On the torch backend that attribute is a ``TorchVinedist`` -- an
+  On the torch lane that attribute is a ``TorchVinedist`` -- an
   ``nn.Module`` holding the copula and every margin as registered children --
   so this is the check that publishing it did not cost the pickling guarantee.
   """
   pytest.importorskip("sklearn")
-  backend = None
-  if torch_backend:
+  distribution = None
+  if torch_lane:
     pytest.importorskip("torch")
-    from pyvinecopulib.sklearn.backends import TorchVinecopBackend
+    from pyvinecopulib.torch import TorchVinedist
 
-    backend = TorchVinecopBackend()
+    distribution = TorchVinedist
 
-  original, x = _fitted_estimator(backend)
+  original, x = _fitted_estimator(distribution)
   restored = pickle.loads(pickle.dumps(original))
 
   np.testing.assert_allclose(restored.pdf(x[:50]), original.pdf(x[:50]))

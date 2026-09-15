@@ -242,8 +242,6 @@ _CLASS_MODULE = {
   "Kde1d": "pyvinecopulib.core",
   "VineDensity": "pyvinecopulib.sklearn",
   "VineRegressor": "pyvinecopulib.sklearn",
-  "VinecopBackend": "pyvinecopulib.sklearn.backends",
-  "TorchVinecopBackend": "pyvinecopulib.sklearn.backends",
   "TorchTllBicop": "pyvinecopulib.torch",
   "TorchKde1d": "pyvinecopulib.torch",
   "TorchDistributionMargin": "pyvinecopulib.torch",
@@ -308,7 +306,6 @@ def process_cross_references(content: str, is_docstring: bool = True) -> str:
     "pyvinecopulib.utils",
     "pyvinecopulib.margins",
     "pyvinecopulib.sklearn",
-    "pyvinecopulib.sklearn.backends",
     "pyvinecopulib.torch",
   ]
 
@@ -358,8 +355,8 @@ def process_cross_references(content: str, is_docstring: bool = True) -> str:
     content = re.sub(
       rf"{bt}{re.escape(func)}{bt}", f"{func_ref}~{mod}.{func}`", content
     )
-  # Module references — longest-prefix first so `pyvinecopulib.sklearn.backends`
-  # wins over `pyvinecopulib.sklearn`.
+  # Module references — longest-prefix first, so a nested module name wins
+  # over the package it sits in.
   for mod in sorted(modules, key=len, reverse=True):
     content = re.sub(rf"{bt}{re.escape(mod)}{bt}", rf"{mod_ref}{mod}`", content)
 
@@ -485,13 +482,6 @@ DOCSTRING_SUBPACKAGES = {
       "VineRegressor",
     ],
     "functions": [],
-  },
-  "sklearn.backends": {
-    "classes": [
-      "VinecopBackend",
-      "TorchVinecopBackend",
-    ],
-    "functions": ["resolve_backend"],
   },
   "torch": {
     "classes": [

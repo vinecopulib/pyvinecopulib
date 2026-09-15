@@ -48,6 +48,7 @@ from __future__ import annotations
 from typing import Any, Generic, Optional, cast
 
 import numpy as np
+import numpy.typing as npt
 from array_api_compat import device as _device_of
 
 from .protocols import array_namespace
@@ -63,7 +64,7 @@ __all__ = [
 ]
 
 
-def to_numpy(a: ArrayT) -> np.ndarray:
+def to_numpy(a: ArrayT, *, dtype: Optional[npt.DTypeLike] = None) -> np.ndarray:
   """Host NumPy view of ``a`` -- placement's return trip.
 
   The one direction inference cannot help with: a value has to come back to
@@ -77,6 +78,10 @@ def to_numpy(a: ArrayT) -> np.ndarray:
   ----------
   a : array
       Values in any array namespace.
+  dtype : dtype-like, or None, optional
+      Cast the result to this NumPy dtype. `None` keeps whatever dtype the
+      values arrived in; a public boundary promising a numeric type names it
+      here rather than casting again afterwards.
 
   Returns
   -------
@@ -90,7 +95,7 @@ def to_numpy(a: ArrayT) -> np.ndarray:
   cpu = getattr(v, "cpu", None)
   if cpu is not None:
     v = cpu()
-  return np.asarray(v)
+  return np.asarray(v, dtype=dtype)
 
 
 def reference_array(obj: object) -> Optional[Any]:  # noqa: ANN401

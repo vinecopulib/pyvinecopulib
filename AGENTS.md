@@ -33,11 +33,11 @@ extensions on top:
 
 1. `pyvinecopulib.core`, `pyvinecopulib.families`, `pyvinecopulib.utils`
    — re-exports of the bound C++ surface, organized by topic; `core`
-   additionally ships a backend-neutral abstraction layer
+   additionally ships an array-agnostic abstraction layer
    (`BicopLike` / `VinecopLike` / `MarginLike` / `VinedistLike` protocols,
    `BicopBase` / `VinecopBase` / `MarginBase` / `VinedistBase` canonical
    bases, `ControlsLike` for fit configuration, `ConditioningContext`
-   policies) that custom NumPy / PyTorch backends subclass, and `Vinedist`
+   policies) that custom NumPy / PyTorch parts subclass, and `Vinedist`
    — a vine copula combined with univariate margins, i.e. a full
    multivariate distribution on the data scale.
 2. `pyvinecopulib.margins` — the univariate marginal layer `Vinedist`
@@ -45,9 +45,8 @@ extensions on top:
    registry that presents a SciPy / PyTorch / other-ecosystem
    distribution object as a margin.
 3. `pyvinecopulib.sklearn` — scikit-learn-compatible estimators
-   (`VineDensity`, `VineRegressor`) on top of the core, with a
-   pluggable
-   backend layer.
+   (`VineDensity`, `VineRegressor`) on top of the core, fitting whichever
+   `VinedistBase` subclass they are handed.
 4. `pyvinecopulib.torch` — pure-PyTorch port of the evaluation
    cascade for GPU and autograd workflows.
 
@@ -78,7 +77,7 @@ when proposing API changes:
 | `pyvinecopulib.core`, `pyvinecopulib.families`, `pyvinecopulib.utils`, top-level `pyvinecopulib` (core class re-exports) | **Stable-ish** | Solid user base. Prefer deprecation aliases over breaks; document migrations in `CHANGELOG.md`. PR #207 is the model: the reorg kept old import paths working via `_deprecations.py` + `DeprecationWarning`. Breaks are allowed (e.g. the pybind11→nanobind migration; the #207 cleanup) but must be intentional, documented, and worth the churn. |
 | The four contracts and their bases in `core` (`BicopLike` / `BicopBase`, `VinecopLike` / `VinecopBase`, `MarginLike` / `MarginBase`, `VinedistLike` / `VinedistBase`) | **Stable from 1.0.0** | `README.md` tells users to subclass these "with the same confidence as on `Vinecop`", so they are covered by the same policy as the rest of `core` from the 1.0.0 tag onward. New in 1.0.0, which is why the argument order and the optional-capability split were settled *before* it shipped rather than after. A protocol may still gain an optional capability -- that widens it -- but not a required member. |
 | `pyvinecopulib.margins` | **Active development** | New in the vine-distribution work. The margin *contract* is stable (see the row above, where it belongs); the curated parametric family registry, the selection criteria, and the report schema are all expected to move as they meet real data. |
-| `pyvinecopulib.sklearn` | **Active development** | API may change in breaking ways between minor releases. The latest break is the `#218` public backend system (estimators now take a single `backend=` instead of loose `controls=`/`structure=`/`seed=` kwargs). |
+| `pyvinecopulib.sklearn` | **Active development** | API may change in breaking ways between minor releases. The latest break is `#339`, which deleted the `#218` backend layer: estimators now take `distribution=` / `controls=` / `structure=` directly. |
 | `pyvinecopulib.torch` | **Active development** | Same status. Defaults are still being tuned (cf. `990f997` device-aware `batched`, `cache_integrals=True`); the torch↔C++ cascade parity is a hard guarantee, but the `FitControlsTorchVinecop` surface and `TorchVinecop` method signatures may still shift. |
 | Every underscore-prefixed module, and `pyvinecopulib._deprecations` | **Internal** | Not part of any contract; rename / restructure freely. `_deprecations.py` itself is slated for removal in 2.0. |
 
@@ -208,35 +207,35 @@ it, there is no entry to write.
 - **Estimator ensembling / model averaging.** Combining several
   fitted vines — bagging, averaging over candidate structures,
   post-hoc selection among them — is left to downstream packages.
-  The library ships single-vine estimators plus the hooks such a
-  package needs. Do not remove any of these as "unused" — several have no
-  in-library caller *by design*, and all of them have one downstream:
+  The library ships single-vine estimators, and what such a package needs is
+  the *public* surface: `distribution=` / `controls=` / `structure=` name the
+  model to fit, and `sklearn.base.clone` deep-copies a non-estimator
+  parameter, so `clone(est).set_params(structure=...)` derives a member
+  without touching the parent. `#339` deleted the copy-on-write `with_*`
+  builders that predated that realization.
 
-  - the copy-on-write `with_*` backend derivations
-    (`with_random_structure` / `with_local_random` / `with_num_threads`);
-    the first two have no in-library caller at all
-  - a pre-settable `schema_`, honored across a *refit* and not only the first
-    `fit` — an ensembling wrapper refits its survivors, and re-inferring the
-    types there silently changes the model
-  - `VineRegressor.normalize_weights`, a real `__init__` parameter so it
-    survives `sklearn.base.clone`
-  - the `_weights_for_batch` / `_predict_from_iter` split, whose injection
-    contract only a foreign `iter_weights` exercises
-  - `VineRegressor._copula_marginal_density`, `VineBase._validate_input`,
-    `_pdf_samples(..., copula_only=True)`, `_y_margin` / `_y_nodes`, and the
-    fitted `backend_` (read *and written*) and `structure_`
+  Two behaviors here exist for ensembling and are not incidental: a
+  pre-settable `schema_` is honored across a *refit*, not only the first
+  `fit` (a wrapper refits its survivors, and re-inferring the types there
+  silently changes the model), and `VineRegressor.normalize_weights` is a
+  real `__init__` parameter so it survives `clone`.
 
-  The last group is the one at risk: those have no in-library caller and were
-  not listed here until a downstream package said it depends on them.
+  **No underscore-prefixed name is protected.** An earlier version of this
+  file listed private hooks that must not be removed "as unused" because a
+  downstream package reached for them. That rule is withdrawn: it froze
+  internals by decree and let a private hook substitute for API worth
+  designing. An internal with no in-library caller is a candidate for
+  deletion, and a downstream need is an argument for making something
+  *public*, not for pinning a private name.
 
 - **Scikit-learn-compatible estimators** — `VineDensity`,
-  `VineRegressor` with a pluggable backend (`VinecopBackend` /
-  `TorchVinecopBackend`).
+  `VineRegressor`, fitting whichever `VinedistBase` subclass they are
+  handed (`Vinedist`, or `TorchVinedist` for the PyTorch lane).
 - **PyTorch evaluator** — `TorchTllBicop`, `TorchVinecop` (pure-torch
   cascade with GPU placement, autograd, and an optional `batched`
   evaluation fast path; parity with the `Vinecop` cascade to
   floating-point tolerance).
-- **Backend-neutral extension layer** — the `BicopLike` / `VinecopLike`
+- **Array-agnostic extension layer** — the `BicopLike` / `VinecopLike`
   contracts and canonical `BicopBase` / `VinecopBase` bases (NumPy or
   PyTorch) for hosting custom pair copulas in a vine, including
   **non-simplified / conditional** vines via a `ConditioningContext`
@@ -328,8 +327,7 @@ pyvinecopulib/
         scipy.py                 # SciPyMargin (one SciPy family, or select one) — needs the [scipy] extra
         openturns.py             # OpenTURNSMargin — needs the [openturns] extra
 
-      sklearn/__init__.py        # VineDensity, VineRegressor, backends
-        backends.py              # VinecopBackend / TorchVinecopBackend + resolve_backend
+      sklearn/__init__.py        # VineDensity, VineRegressor
         _base.py                 # VineBase (parameter-constraints, schema, 3-step pipeline)
         density.py               # VineDensity
         regressor.py             # VineRegressor
@@ -727,12 +725,10 @@ For any behavior change:
   doctest — never a paste into `docs/*.rst` or a docstring. doctest is not
   currently wired up, so prose pages link a notebook cell rather than
   inlining code.
-- **Reserve "backend" for the sklearn layer.** In `core` (and other
-  user-facing) prose the word "backend" means the sklearn
-  `VinecopBackend` / `TorchVinecopBackend` context, which most core users
-  never touch — so don't use it for the NumPy-vs-PyTorch array
-  distinction there. Say "array namespace", "array library", or just
-  "NumPy or PyTorch" / "array-agnostic" instead.
+- **Do not say "backend".** It named the sklearn adapter layer that `#339`
+  deleted, and it was always the wrong word for the NumPy-vs-PyTorch array
+  distinction. Say "array namespace", "array library", "array-agnostic", or
+  just "NumPy or PyTorch"; for the two sides of the port, "lane".
 - **Docs cross-references must resolve (nitpicky).** The Sphinx build runs
   with `nitpicky = True` (`docs/conf.py`), so `make docs` — which passes `-W`
   and is enforced by the `verify_docs_build` CI job — fails on *any* unresolved
@@ -795,13 +791,13 @@ the reason written beside it — not something a stray import can do quietly.
   needs an argument of the same kind — a `core` API whose contract names the
   class — and not merely the same shape: everything an extension point can
   carry is registered by the module that owns the class instead.
-- **Within tier 2 there are exactly two edges.** `sklearn` imports `margins`
-  at module scope (both need no extra of `sklearn`'s own), and reaches
-  `torch` through a single function-local import inside
-  `TorchVinecopBackend` — constructing that class *is* the opt-in signal
-  that PyTorch is required, which is why the signal has to be the
-  constructor and never the module. `margins` and `torch` import neither of
-  the other two.
+- **Within tier 2 there is exactly one edge.** `sklearn` imports `margins`
+  at module scope (both need no extra of `sklearn`'s own). It does **not**
+  import `torch`, at module scope or inside a function: the PyTorch lane is
+  opted into by handing an estimator `distribution=TorchVinedist`, so the
+  caller's own import is the signal and no name in `sklearn` mentions torch.
+  That is why the parameter takes a class rather than a string. `margins` and
+  `torch` import neither of the other two.
 - **The callables the binding looks up by name live under `core`.**
   `Bicop.plot`, `Vinecop.plot` and `Kde1d.plot` are bound to
   `core/_bicop_plot.py`, `core/_vinecop_plot.py` and `core/_margin_plot.py`,
@@ -912,7 +908,7 @@ automatically.
 - `tree_algorithm` on `FitControlsVinecop`: `"mst_prim"` (default,
   Dissmann), `"mst_kruskal"`, `"random_weighted"` (Wilson-weighted random
   tree; reachable from the sklearn layer via
-  `VinecopBackend.with_local_random`) and `"random_unweighted"`.
+  `controls=`) and `"random_unweighted"`.
 - `FitControlsVinecop.conditioning_set` (property + pickled, not a
   positional ctor arg) drives conditioning-aware selection — the fitted
   order ends with the given 1-based variables so
@@ -924,12 +920,12 @@ automatically.
   convention, so `VinecopBase.select` assembles its selected trees through this
   same `from_trees` and matches the compiled selector's matrix exactly —
   one diagonal convention throughout.
-- **Backend-neutral abstraction layer** (pure Python; `core` imports
+- **Array-agnostic abstraction layer** (pure Python; `core` imports
   without PyTorch). The extension point for custom (e.g. neural,
   conditional) pair copulas and vines:
   - `BicopLike[ArrayT]` / `VinecopLike[ArrayT]` (`protocols.py`) —
     generic, `runtime_checkable` protocols mirroring the `Bicop` /
-    `Vinecop` evaluation surface on any array backend (NumPy or
+    `Vinecop` evaluation surface on any array namespace (NumPy or
     PyTorch). `Bicop`, `Vinecop` and `Kde1d` satisfy them **structurally**,
     which `ty` checks and `tests/test_core_protocols.py` pins, so downstream
     code can type against the contract instead of a concrete class. What makes
@@ -1266,7 +1262,7 @@ Three groups:
   edge that `tests/test_import_surface.py` refuses outright. The one exception
   is `Kde1d`, which `core` owns and can therefore name.
 - **Resolution** — `resolve_margins(spec, ...)` mirrors
-  `resolve_backend`: a string alias, one instance broadcast per column,
+  `resolve_margin_controls`: a string alias, one instance broadcast per column,
   a length-`d` sequence, or a dict keyed by column. Margins follow the
   library's own **construct-then-`fit`** pattern (`fit` returns `self`),
   so one class is both the specification and the fitted object, and a
@@ -1369,71 +1365,40 @@ sklearn.base.BaseEstimator
 │   └── VineRegressor (+ RegressorMixin)
 ```
 
-#### `pyvinecopulib.sklearn.backends`
+#### Which distribution an estimator fits
 
-Public extension point introduced in `#218`. Estimators do not call
-`pyvinecopulib.Vinecop.from_data(...)` directly — they go through a
-backend object. Two concrete backends ship, both subclassing the
-private `_VinecopBackendBase` (which owns `structure_of` and the
-copy-on-write `with_*` derivations; concrete backends override only the
-divergent members + hooks):
+Estimators take **`distribution=`**, a `VinedistBase` subclass, and fit it:
+`Vinedist` by default, `pyvinecopulib.torch.TorchVinedist` for the PyTorch
+lane. That one class names both halves of the model, so naming it is the
+whole lane choice -- `vinecop_class` says which vine is fitted, `margin_class`
+and `_default_margins` say which margin an unaddressed column gets, and the
+class itself is what `distribution_` ends up being. The copula's fit
+configuration is `controls=` and a pre-specified structure is `structure=`;
+both are stored verbatim and copied before the estimator writes to them.
 
-- `VinecopBackend(controls=None, structure=None)` — default. Wraps
-  `pyvinecopulib.Vinecop`; no PyTorch dependency.
-- `TorchVinecopBackend(controls=None, structure=None)` — wraps
-  `pyvinecopulib.torch.TorchVinecop`. Constructing this class imports
-  `torch` — it is the explicit opt-in signal that PyTorch is
-  required. The sklearn subpackage itself does not import torch. Since
-  `TorchVinecop.from_data` now auto-selects a structure (mirroring
-  `pv.Vinecop.from_data`), this backend delegates structure selection
-  to the vine rather than branching itself.
+There is **no backend layer**, and the word "backend" is not used anywhere in
+this repository. `#218`'s `VinecopBackend` / `TorchVinecopBackend` /
+`resolve_backend` / `_BackendVinecop` and the copy-on-write `with_*`
+derivations are all gone: once `VinecopLike` declared `structure` and both
+lanes accepted `num_threads`, every one of them restated something the
+distribution classes already declare. `sklearn.clone` deep-copies a
+non-estimator parameter, so it supplies the copy-on-write the `with_*`
+builders were written for, and `clone(est).set_params(structure=...)` is the
+ensembling idiom.
 
-Both backends expose:
+Two consequences worth knowing. **`sklearn` imports `torch` nowhere at all** --
+the opt-in is the caller importing `TorchVinedist` to name it, which is why
+the parameter takes a class rather than a string, and why
+`tests/test_import_surface.py` declares no `sklearn -> torch` edge. And
+**evaluation is the vine's own**: estimators call `self._vine.pdf(u,
+num_threads=...)` directly and convert at their public boundary with
+`core.extend.to_numpy(..., dtype=float)`, because `np.asarray` alone raises on
+a tensor that requires grad or lives on an accelerator.
 
-```python
-backend.fit_vine(U, var_types=...) -> VinecopLike
-backend.pdf(vine, U)        -> np.ndarray
-backend.cdf(vine, U, N=..., seeds=...) -> np.ndarray
-backend.sample(vine, n, qrng=..., seeds=...) -> np.ndarray
-backend.structure_of(vine)  -> RVineStructure
-backend.default_margin(var_type, bounds) -> MarginLike
-backend.bind_distribution(vine, margins) -> Vinedist
-backend.with_random_structure(d, seeds)  -> Backend  # copy-on-write
-backend.with_local_random(seeds)         -> Backend  # ditto
-backend.with_num_threads(n)              -> Backend  # ditto (torch: no-op)
-```
-
-`default_margin` and `bind_distribution` are what keep the *whole*
-distribution on one array namespace: the backend names the margin class an
-estimator fits when the caller named none, and it assembles the fitted parts.
-The default backend wraps its copula in `_BackendVinecop` so `distribution_`
-evaluates with the same threading and batching arguments the estimator uses;
-`TorchVinecopBackend` fits `TorchKde1d` margins (carrying `device` / `dtype`
-from its controls) and publishes a **`TorchVinedist` holding the raw
-`TorchVinecop`**, so `.to(device)`, `state_dict` and autograd reach the whole
-object. A compiled `Kde1d` the caller supplied is lifted with
-`TorchKde1d.from_kde1d` rather than refused, which is what makes
-`margins="kde"` behave like `margins=None` there. Two consequences: on the
-torch backend nothing passes `batched` at all -- every call lets the vine
-resolve it per device, which is what makes the sklearn path take the stacked
-cascade on CUDA like every other caller -- and every public
-estimator method converts back to NumPy through `_base._as_ndarray` —
-`np.asarray` alone raises on a tensor that requires grad or lives on an
-accelerator.
-
-`pyvinecopulib.core.VinecopLike` is the canonical `runtime_checkable`
-Protocol describing the post-fit vine surface (`pdf` / `cdf` /
-`rosenblatt` / `inverse_rosenblatt` / `sample`, plus a `structure`
-attribute); both `pv.Vinecop` and `pv.torch.TorchVinecop` satisfy it
-structurally (no inheritance). `fit_vine` returns conforming vines, so
-downstream code that only needs evaluation can type against
-`pyvinecopulib.core.VinecopLike` instead of either concrete class. The
-backend layer no longer defines its own copy.
-
-`resolve_backend(backend)` is the dispatch helper: `None` →
-default-constructed `VinecopBackend`; any other value is returned
-as-is. Estimators call this once at `fit()` time and pin the resolved
-backend as `self.backend_`.
+`TorchVinedist` lifts a `Kde1d` margin to `TorchKde1d` rather than refusing it
+(which is what makes `margins="kde"` behave like `margins=None` there) while
+still refusing anything else that is no `nn.Module`: the lift is exact and
+core's own class, whereas a SciPy margin would detach the graph silently.
 
 #### Estimator conventions (scikit-learn developer guide)
 
@@ -1444,11 +1409,12 @@ The rules that bind:
 - `__init__` performs **no** validation — it stores arguments
   verbatim. All checks live in `_parameter_constraints` +
   `_validate_params()`, called at the top of `fit()`.
-- The single backend parameter is `backend=` (no
-  `backend="cpp"` / `"torch"` shortcuts; pass an instance).
+- The lane parameter is `distribution=` and takes a **class**, never a
+  string shortcut: naming `TorchVinedist` is what imports torch, which a
+  string could not be.
 - Fitted attributes follow sklearn naming with a trailing underscore:
   `feature_names_in_`, `schema_`, `random_state_` (resolved RNG),
-  `backend_` (resolved backend pinned at fit time).
+  `distribution_class_` and `controls_` (both resolved at fit time).
 - Every post-fit method calls
   `sklearn.utils.validation.check_is_fitted` before doing anything.
 - `random_state` is the canonical RNG kwarg name throughout (no
@@ -1644,8 +1610,7 @@ working. Specifically:
   `from pyvinecopulib.core import Kde1d`), not the top-level alias.
 
 `pyvinecopulib.torch` and `pyvinecopulib.sklearn` resolve as attributes and
-as submodule imports, but neither is in `__all__` (see above). `sklearn.backends`
-is reached only as `pyvinecopulib.sklearn.backends`.
+as submodule imports, but neither is in `__all__` (see above).
 
 ### Internal: `_deprecations`
 
@@ -1664,7 +1629,7 @@ below are a quick orientation.
 
 - **`pyvinecopulib.core`** — `Bicop`, `Vinecop`, `Kde1d`, `RVineStructure`,
   `CVineStructure`, `DVineStructure`, `BicopFamily`, `FitControlsBicop`,
-  `FitControlsVinecop`, `FitControlsMargin`; plus the backend-neutral
+  `FitControlsVinecop`, `FitControlsMargin`; plus the array-agnostic
   abstraction layer
   `BicopLike`, `VinecopLike`, `BicopBase`, `VinecopBase`, `ControlsLike`,
   `IndependenceBicop`, `ConditioningContext`,
@@ -1680,8 +1645,8 @@ below are a quick orientation.
   point taking an `x` routes through, with `covariate_row` for the single-row
   reading of one; `to_numpy`, the return trip; and `NotBatchable`, which a
   `_build_batched` override raises to decline the grid fast path. Reached as
-  `pyvinecopulib.core.extend`, the way `pyvinecopulib.sklearn.backends` is,
-  and kept out of `core`'s own namespace because using pyvinecopulib needs
+  `pyvinecopulib.core.extend`, and kept out of `core`'s own namespace
+  because using pyvinecopulib needs
   none of it. The four canonical bases and their protocols stay in `core`:
   `README.md` tells users to subclass them, so they are part of the surface
   rather than machinery behind it.
@@ -1710,10 +1675,7 @@ below are a quick orientation.
 - **`pyvinecopulib.margins`** — `SciPyMargin`, `OpenTURNSMargin`,
   `FitControlsMargin`, `as_margin`, `register_margin_adapter`,
   `resolve_margins`, `resolve_margin_controls`.
-- **`pyvinecopulib.sklearn`** — `VineDensity`, `VineRegressor`,
- plus the `backends`
-  submodule (`VinecopBackend`, `TorchVinecopBackend`,
-  `resolve_backend`).
+- **`pyvinecopulib.sklearn`** — `VineDensity`, `VineRegressor`.
 - **`pyvinecopulib.torch`** — `TorchTllBicop`, `TorchVinecop`, `TorchKde1d`,
   `TorchDistributionMargin`, `TorchVinedist`, `FitControlsTorchBicop`,
   `FitControlsTorchVinecop`.
@@ -1803,7 +1765,7 @@ Round-trip / parity properties to preserve when touching numerics:
   pair copula, and host it by subclassing `VinecopBase` (define the one hook
   `get_pair_copula`); both run on NumPy or PyTorch and inherit the full
   evaluation surface. Implement `BicopLike` / `VinecopLike` directly for
-  an immutable / functional backend. To put that pair on a **discrete**
+  an immutable / functional part. To put that pair on a **discrete**
   edge, add a `_cdf_raw` and return `pair.with_var_types(self.pair_var_types(t,
   e))` from `get_pair_copula`; the vine supplies the left-limit columns and
   the fit engines declare the types on each pair as they fit it, so a
@@ -1938,21 +1900,19 @@ Round-trip / parity properties to preserve when touching numerics:
   OpenTURNS, TFP and NumPyro out of `core` while remaining usable, and
   what lets `as_margin` stay the single funnel every margin passes
   through.
-- **New `pyvinecopulib.sklearn` backends.** Subclass the private
-  `_VinecopBackendBase`, which already provides `structure_of`,
-  `default_margin`, `bind_distribution` and the
-  copy-on-write `with_*` derivations (`with_random_structure` /
-  `with_local_random` / `with_num_threads`); override the divergent
-  members (`fit_vine`, `pdf`, `cdf`, `sample`, `_default_controls`, which `_effective_controls` resolves
-  lazily). `resolve_backend`
-  accepts any such object (it only defaults `None`). Consider whether
-  the underlying vine satisfies the `pyvinecopulib.core.VinecopLike`
-  Protocol so downstream code can stay type-stable.
+- **A new lane for the sklearn estimators.** There is nothing to subclass:
+  write a `VinedistBase` subclass and hand it to an estimator as
+  `distribution=`. Naming `vinecop_class` is what makes its vine fittable,
+  `margin_class` (or a `_default_margins` override, where the margins need a
+  placement) is what an unaddressed column gets, and `_copula_controls` is
+  where a lane pins anything the margins resolved. The estimators add
+  nothing of their own: they call `vinecop_class.from_data(...)` and then
+  construct the distribution.
 - **A different torch pair-copula fitter.** There is no method registry to
   add to any more -- `FitControlsTorchBicop.method` was a one-value enum
   nothing dispatched on, and it is gone. `TorchTllBicop.from_data` fits a TLL
   grid, full stop. A different estimator is a different **class**: subclass
-  `BicopBase` **and** `torch.nn.Module` -- `BicopBase` is backend-neutral, so
+  `BicopBase` **and** `torch.nn.Module` -- `BicopBase` is array-agnostic, so
   the second base is what supplies `state_dict` / `.to(device)` and lets a
   vine own the pair as a child, and its `__init__` has to be called
   explicitly, as `TorchTllBicop` does -- give it `fit` / `from_data`, and host

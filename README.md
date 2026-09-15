@@ -114,7 +114,7 @@ Three opt-in subpackages extend the core library:
 
   ```python
   from pyvinecopulib.sklearn import VineDensity
-  density = VineDensity().fit(X)             # default backend (C++)
+  density = VineDensity().fit(X)             # fits a `Vinedist`
   density.score_samples(X[:3]); density.cdf(X[:3])
   ```
 
@@ -135,8 +135,8 @@ Three opt-in subpackages extend the core library:
   print(y.grad)                       # d log f / dy, on the GPU
   ```
 
-  The same evaluator backs the sklearn estimators through
-  `pyvinecopulib.sklearn.backends.TorchVinecopBackend`.
+  The same evaluator backs the sklearn estimators: pass
+  `distribution=TorchVinedist` to `VineDensity` or `VineRegressor`.
 
   Install with `pip install pyvinecopulib[torch]`.
 
@@ -153,15 +153,16 @@ on them with the same confidence as on `Vinecop`.
 
 What is **provisional in 1.x** are the *implementations* in
 `pyvinecopulib.margins`, `pyvinecopulib.sklearn` and `pyvinecopulib.torch` --
-the curated family registry, the selection criteria, the backend and controls
-surfaces -- which may change in a minor version as they meet real data. The
+the curated family registry, the selection criteria, and the estimator and
+controls surfaces -- which may change in a minor version as they meet real
+data. The
 torch-to-core evaluation parity is treated as required regardless. Pin an
 exact version if you depend on those implementation surfaces.
 
 ### Custom and conditional models
 
 The core evaluators (`Bicop` / `Vinecop` / `Kde1d` / `Vinedist`, and their torch
-counterparts) implement four backend-neutral contracts: `BicopLike`,
+counterparts) implement four array-agnostic contracts: `BicopLike`,
 `VinecopLike`, `MarginLike` and `VinedistLike`. Subclass the matching
 canonical, pure-Python base -- `BicopBase`, `VinecopBase`, `MarginBase` or
 `VinedistBase` (NumPy or PyTorch) -- to plug your **own** pair copula, margin

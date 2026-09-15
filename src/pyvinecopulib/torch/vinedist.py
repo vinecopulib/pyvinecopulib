@@ -26,14 +26,52 @@ from typing import Any, ClassVar, Optional, Sequence, cast
 import torch
 from torch import Tensor
 
-from ..core import ControlsLike, MarginLike, VinecopLike, VinedistBase
+from ..core import (
+  ControlsLike,
+  Kde1d,
+  MarginLike,
+  VinecopLike,
+  VinedistBase,
+)
 from ..core._margins import declared_kde_kwargs
-from ._placement import TensorPlacementMixin
+from ._placement import TensorPlacementMixin, reference_tensor
 from .controls import FitControlsTorchVinecop
 from .kde1d import TorchKde1d
 from .vinecop import TorchVinecop
 
 __all__ = ["TorchVinedist"]
+
+
+def _lift(margin: object, vinecop: object) -> object:
+  """A fitted ``Kde1d`` as a ``TorchKde1d`` on the copula's placement.
+
+  The one margin class this lane can convert rather than refuse: it is core's
+  own, and ``from_kde1d`` is an exact transfer of the same grid, so accepting
+  it costs no fidelity and detaches no gradient. Anything else is handed on
+  unchanged, for ``_check_margin`` to accept or refuse -- a SciPy family, say,
+  cannot be lifted at all, because it would return plain arrays and break the
+  graph silently.
+
+  Parameters
+  ----------
+  margin : object
+      One margin, of any class.
+  vinecop : object
+      The copula it is being bound to, read for its device and dtype.
+
+  Returns
+  -------
+  object
+      The lifted margin, or ``margin`` unchanged.
+  """
+  if not isinstance(margin, Kde1d):
+    return margin
+  placement = reference_tensor(vinecop)
+  if placement is None:
+    return TorchKde1d.from_kde1d(margin)
+  return TorchKde1d.from_kde1d(
+    margin, device=placement.device, dtype=placement.dtype
+  )
 
 
 def _check_margin(margin: object, name: str) -> None:
@@ -172,12 +210,14 @@ class TorchVinedist(
     vinecop: object,
     margins: object,
   ) -> None:
-    """Validate the parts, then install them as registered children."""
+    """Lift what can be lifted, validate the rest, then install as children."""
     _check_copula(vinecop)
     if isinstance(margins, (list, tuple)):
+      margins = [_lift(m, vinecop) for m in margins]
       for j, margin in enumerate(margins):
         _check_margin(margin, f"margins[{j}]")
     else:
+      margins = _lift(margins, vinecop)
       _check_margin(margins, "margins")
 
     # `object` on the way in so a caller who is not type-checking still gets

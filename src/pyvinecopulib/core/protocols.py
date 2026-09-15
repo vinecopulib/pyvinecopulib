@@ -10,7 +10,7 @@ canonical base for that layer (:class:`~pyvinecopulib.core.BicopBase`,
 :class:`~pyvinecopulib.core.MarginBase`,
 :class:`~pyvinecopulib.core.VinedistBase`), which fills in most or all of it —
 and the object plugs into the rest of the library: it can be hosted in a vine,
-composed into a distribution, or consumed by the sklearn backend layer. The
+composed into a distribution, or fitted by the sklearn estimators. The
 reference implementations are :class:`~pyvinecopulib.core.Bicop`,
 :class:`~pyvinecopulib.core.Vinecop`, :class:`~pyvinecopulib.core.Kde1d` and
 :class:`~pyvinecopulib.core.Vinedist`, and their PyTorch counterparts in
@@ -988,7 +988,7 @@ class VinedistLike(Protocol[ArrayT]):
   ``getattr``: ``dim``, ``var_types``, ``sample_conditional`` and
   ``margin_summary`` -- the last of which
   :class:`pyvinecopulib.sklearn.VineDensity` reads to publish
-  ``margin_summary_``, so a backend returning a distribution without one is
+  ``margin_summary_``, so a distribution class without one is
   told so by name.
 
   A distribution declares no ``supports_covariates`` of its own. It reads the

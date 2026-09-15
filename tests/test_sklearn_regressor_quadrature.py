@@ -212,3 +212,29 @@ def test_a_step_response_margin_degenerates_to_its_atoms() -> None:
   nodes = np.asarray(est.distribution_.margins[0].icdf(np.linspace(0.01, 0.99)))
   assert np.all(np.isin(np.round(nodes, 12), np.round(y, 12)))
   assert np.all(np.isfinite(est.predict(X[:10])))
+
+
+def test_the_marginal_copula_quadrature_is_not_floored() -> None:
+  """A row far outside the model reports its density, not a clip.
+
+  The quadrature runs in log space, so a copula density that underflows at
+  every node comes back as the small number it is. Flooring it instead --
+  which a linear-space sum plus ``log(clip(out, 1e-10, None))`` does -- makes
+  an excluded row score a finite, wrong value, and `#336` put the other half
+  of the same comparison (`_pdf_samples`) in log space already.
+  """
+  rng = np.random.default_rng(0)
+  X = rng.standard_normal((400, 6))
+  y = X.sum(axis=1) + 0.3 * rng.standard_normal(400)
+  est = VineRegressor(random_state=0).fit(X, y)
+
+  far = np.vstack([X[:1], np.full((1, 6), 60.0)])
+  log_d = est._copula_marginal_density(far, log=True)
+
+  assert log_d[0] > np.log(1e-10)
+  assert log_d[1] < np.log(1e-10)
+  # The two spellings are the same quantity.
+  linear = est._copula_marginal_density(X[:5], log=False)
+  np.testing.assert_allclose(
+    np.log(linear), est._copula_marginal_density(X[:5], log=True)
+  )

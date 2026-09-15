@@ -288,16 +288,16 @@ _LAYER_EDGES: dict[tuple[str, str], bool] = {
   (_TOP, "pyvinecopulib_ext"): False,
   (_TOP, "_cpu"): False,
   (_TOP, "_deprecations"): False,
-  # Tier 2 -> tier 1, plus the two edges within tier 2. Constructing
-  # `TorchVinecopBackend` is the opt-in signal that PyTorch is required, so
-  # that one import has to stay inside the constructor.
+  # Tier 2 -> tier 1, plus the one edge within tier 2. `sklearn` reaches
+  # `torch` at all: the PyTorch lane is opted into by handing an estimator
+  # `distribution=TorchVinedist`, so the caller's own import is the signal
+  # and the estimators name no torch class.
   ("margins", "core"): False,
   ("torch", "core"): False,
   ("torch", "utils"): False,
   ("torch", "pyvinecopulib_ext"): False,
   ("sklearn", "core"): False,
   ("sklearn", "margins"): False,
-  ("sklearn", "torch"): True,
   # Tier 1, and its one deferred hop: up into `margins` for `SciPyMargin`
   # (see `test_core_reaches_up_a_layer_only_where_it_must`).
   ("core", "pyvinecopulib_ext"): False,
