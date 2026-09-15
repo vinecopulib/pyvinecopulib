@@ -19,11 +19,22 @@ reference implementations are :class:`~pyvinecopulib.core.Bicop`,
 :class:`ControlsLike` is the odd one out: it describes *fit configuration*
 rather than a model, and asks for a single ``to_dict``.
 
-**Conditioning.** Every method carries an optional **keyword-only** ``x`` — the
-conditioning variables the model depends on (conditioning-set values and/or
-external covariates), row-aligned with the data. Unconditional models leave it
-``None``; a conditional pair copula reads it. In a vine, each pair's ``x`` is
-assembled per edge by a :class:`~pyvinecopulib.core.ConditioningContext`.
+**Conditioning is not here.** These contracts describe the *unconditional*
+surface — what every implementation serves, the reference ones included. A model
+that depends on conditioning variables (conditioning-set values and/or external
+covariates, row-aligned with the data) takes them as a keyword-only ``x``, which
+is a **widening** of the contract rather than part of it, and which the four
+canonical bases declare: subclass :class:`~pyvinecopulib.core.BicopBase` or
+:class:`~pyvinecopulib.core.MarginBase` and add ``x`` to the members that read
+one. In a vine, each pair's ``x`` is assembled per edge by a
+:class:`~pyvinecopulib.core.ConditioningContext`.
+
+Declaring ``x`` here instead would oblige every implementation to accept a
+parameter most of them model nothing by, and would make the contract
+unsatisfiable for :class:`~pyvinecopulib.core.Bicop`,
+:class:`~pyvinecopulib.core.Vinecop` and :class:`~pyvinecopulib.core.Kde1d`,
+which take none — the asymmetry that a protocol may ask for *less* than an
+implementation provides, never more.
 
 **Scope.** These describe the *evaluation* surface — enough to host a pair
 copula in a vine, to consume a fitted vine, or to compose a distribution — not
@@ -37,8 +48,11 @@ implementation to accept one. Accepting extra keyword arguments is a widening,
 so a class that takes more than a protocol asks still satisfies it.
 
 Every protocol here is ``runtime_checkable``, which compares member *names*
-only: ``isinstance(cop, BicopLike)`` reports that the names are present, not
-that the signatures agree.
+only, so ``isinstance(cop, BicopLike)`` reports that the names are present and
+nothing about their signatures. The signatures nonetheless agree: ``Bicop``,
+``Vinecop`` and ``Kde1d`` satisfy their contracts *structurally*, which ``ty``
+checks and ``tests/test_core_protocols.py`` pins, so a consumer may type against
+the contract instead of a concrete class.
 
 **Typing.** :data:`ArrayT` is an unbounded, invariant ``TypeVar`` carried on
 these signatures and on everything that implements them, so a concrete
@@ -169,13 +183,13 @@ _BICOP_EXAMPLE = """
       from pyvinecopulib.core import BicopBase
 
       class Independence(BicopBase[np.ndarray]):
-        def pdf(self, u, *, x=None):
+        def _pdf_raw(self, u):
           return np.ones(u.shape[0])
 
-        def hfunc1(self, u, *, x=None):
+        def _hfunc1_raw(self, u):
           return u[:, 1]
 
-        def hfunc2(self, u, *, x=None):
+        def _hfunc2_raw(self, u):
           return u[:, 0]
 
         def _sample_uniform(self, n, qrng, seeds):
@@ -299,12 +313,15 @@ class BicopLike(Protocol[ArrayT]):
   :class:`~pyvinecopulib.core.BicopBase` declares it ``False`` so the answer is
   findable rather than only discoverable by tripping the error.
 
-  There is **no** ``supports_covariates`` flag here, unlike on a
-  margin or a whole copula: the *signature* decides. Every method above
-  declares a keyword-only ``x``, which ``ty`` enforces on each
-  :class:`~pyvinecopulib.core.BicopBase` subclass, and a matrix is forwarded
-  whenever there is one -- so a pair that models none, ``Bicop`` above all,
-  raises rather than quietly answering unconditionally.
+  **Covariates are a widening, not a member.** There is no
+  ``supports_covariates`` flag here, unlike on a margin or a whole copula,
+  because for a pair copula the *signature* decides: a pair that reads
+  conditioning variables declares a keyword-only ``x`` on the members that read
+  one, and ``pair_eval`` forwards a matrix whenever there is one -- so a pair
+  that models none, :class:`~pyvinecopulib.core.Bicop` above all, raises rather
+  than quietly answering unconditionally. The contract above is the
+  unconditional surface every pair serves; declaring ``x`` in it would put
+  ``Bicop`` outside its own contract.
 
   See Also
   --------
@@ -314,15 +331,13 @@ class BicopLike(Protocol[ArrayT]):
   """
 
   @abstractmethod
-  def pdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def pdf(self, u: ArrayT) -> ArrayT:
     """Pair-copula density ``c(u)`` at each observation.
 
     Parameters
     ----------
     u : array, shape (n, 2), dtype float
         Pair pseudo-observations in the unit square.
-    x : array, shape (n, p), or None, optional
-        Conditioning variables; ignored by an unconditional copula.
 
     Returns
     -------
@@ -331,7 +346,7 @@ class BicopLike(Protocol[ArrayT]):
     """
 
   @abstractmethod
-  def hfunc1(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def hfunc1(self, u: ArrayT) -> ArrayT:
     """First h-function ``P(U2 <= u2 | U1 = u1)``.
 
     .. math::
@@ -342,8 +357,6 @@ class BicopLike(Protocol[ArrayT]):
     ----------
     u : array, shape (n, 2), dtype float
         Pair pseudo-observations; conditions on the first column.
-    x : array, shape (n, p), or None, optional
-        Conditioning variables; ignored by an unconditional copula.
 
     Returns
     -------
@@ -352,7 +365,7 @@ class BicopLike(Protocol[ArrayT]):
     """
 
   @abstractmethod
-  def hfunc2(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def hfunc2(self, u: ArrayT) -> ArrayT:
     """Second h-function ``P(U1 <= u1 | U2 = u2)``.
 
     .. math::
@@ -363,8 +376,6 @@ class BicopLike(Protocol[ArrayT]):
     ----------
     u : array, shape (n, 2), dtype float
         Pair pseudo-observations; conditions on the second column.
-    x : array, shape (n, p), or None, optional
-        Conditioning variables; ignored by an unconditional copula.
 
     Returns
     -------
@@ -373,7 +384,7 @@ class BicopLike(Protocol[ArrayT]):
     """
 
   @abstractmethod
-  def hinv1(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def hinv1(self, u: ArrayT) -> ArrayT:
     """Inverse of :meth:`hfunc1` in its second argument.
 
     Solves ``hfunc1([u1, .], x) = u2`` for the second argument.
@@ -383,8 +394,6 @@ class BicopLike(Protocol[ArrayT]):
     u : array, shape (n, 2), dtype float
         Column 0 is the conditioning value ``u1``; column 1 is the level to
         invert.
-    x : array, shape (n, p), or None, optional
-        Conditioning variables; ignored by an unconditional copula.
 
     Returns
     -------
@@ -393,7 +402,7 @@ class BicopLike(Protocol[ArrayT]):
     """
 
   @abstractmethod
-  def hinv2(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def hinv2(self, u: ArrayT) -> ArrayT:
     """Inverse of :meth:`hfunc2` in its first argument.
 
     Solves ``hfunc2([., u2], x) = u1`` for the first argument.
@@ -403,8 +412,6 @@ class BicopLike(Protocol[ArrayT]):
     u : array, shape (n, 2), dtype float
         Column 0 is the level to invert; column 1 is the conditioning value
         ``u2``.
-    x : array, shape (n, p), or None, optional
-        Conditioning variables; ignored by an unconditional copula.
 
     Returns
     -------
@@ -417,7 +424,6 @@ class BicopLike(Protocol[ArrayT]):
     self,
     n: int,
     *,
-    x: Optional[ArrayT] = None,
     qrng: bool = False,
     seeds: Optional[list[int]] = None,
   ) -> ArrayT:
@@ -427,8 +433,6 @@ class BicopLike(Protocol[ArrayT]):
     ----------
     n : int
         Number of samples to draw.
-    x : array, shape (n, p), or None, optional
-        Conditioning variables (one row per sample) for a conditional draw.
     qrng : bool, default=False
         Draw quasi-random base uniforms instead of pseudo-random ones.
     seeds : list of int, or None, optional
@@ -472,19 +476,28 @@ class VinecopLike(Protocol[ArrayT]):
   BicopLike : The pair-copula contract.
   """
 
-  structure: RVineStructure
+  @property
+  @abstractmethod
+  def structure(self) -> RVineStructure:
+    """The R-vine structure the model was built on.
+
+    Declared read-only, which is the weaker requirement: a vine that exposes a
+    settable attribute satisfies it just as one with a getter alone does.
+
+    Returns
+    -------
+    RVineStructure
+        The structure the pair copulas are indexed by.
+    """
 
   @abstractmethod
-  def pdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def pdf(self, u: ArrayT) -> ArrayT:
     """Joint vine-copula density ``c(u_1, ..., u_d)`` at each observation.
 
     Parameters
     ----------
     u : array, shape (n, d), dtype float
         Pseudo-observations in ``[0, 1]^d``.
-    x : array, shape (n, p), or None, optional
-        External covariates threaded to each pair copula. A simplified vine may
-        still depend on them; ``None`` means there are no external covariates.
 
     Returns
     -------
@@ -497,7 +510,6 @@ class VinecopLike(Protocol[ArrayT]):
     self,
     u: ArrayT,
     *,
-    x: Optional[ArrayT] = None,
     N: int = 10000,
     seeds: Optional[list[int]] = None,
   ) -> ArrayT:
@@ -507,11 +519,6 @@ class VinecopLike(Protocol[ArrayT]):
     ----------
     u : array, shape (m, d), dtype float
         Query points in ``[0, 1]^d``.
-    x : array, shape (m, p), or None, optional
-        External covariates, or ``None``. The canonical
-        :class:`~pyvinecopulib.core.VinecopBase` Monte-Carlo implementation does
-        not support a non-``None`` value; a conditional implementation may
-        override that limitation.
     N : int, default=10000
         Number of Monte-Carlo samples.
     seeds : list of int, or None, optional
@@ -524,15 +531,13 @@ class VinecopLike(Protocol[ArrayT]):
     """
 
   @abstractmethod
-  def rosenblatt(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def rosenblatt(self, u: ArrayT) -> ArrayT:
     """Rosenblatt transform: dependent uniforms to independent uniforms.
 
     Parameters
     ----------
     u : array, shape (n, d), dtype float
         Pseudo-observations in ``[0, 1]^d``.
-    x : array, shape (n, p), or None, optional
-        External covariates threaded to each pair copula, or ``None``.
 
     Returns
     -------
@@ -541,17 +546,13 @@ class VinecopLike(Protocol[ArrayT]):
     """
 
   @abstractmethod
-  def inverse_rosenblatt(
-    self, u: ArrayT, *, x: Optional[ArrayT] = None
-  ) -> ArrayT:
+  def inverse_rosenblatt(self, u: ArrayT) -> ArrayT:
     """Inverse Rosenblatt transform: independent uniforms to dependent uniforms.
 
     Parameters
     ----------
     u : array, shape (n, d), dtype float
         Independent uniforms in ``[0, 1]^d``.
-    x : array, shape (n, p), or None, optional
-        External covariates threaded to each pair copula, or ``None``.
 
     Returns
     -------
@@ -564,7 +565,6 @@ class VinecopLike(Protocol[ArrayT]):
     self,
     n: int,
     *,
-    x: Optional[ArrayT] = None,
     qrng: bool = False,
     seeds: Optional[list[int]] = None,
   ) -> ArrayT:
@@ -574,9 +574,6 @@ class VinecopLike(Protocol[ArrayT]):
     ----------
     n : int
         Number of samples to draw.
-    x : array, shape (n, p), or None, optional
-        External covariates for a conditional draw (one row per sample), else
-        ``None``.
     qrng : bool, default=False
         Draw quasi-random base uniforms instead of pseudo-random ones.
     seeds : list of int, or None, optional
@@ -645,16 +642,13 @@ class MarginLike(Protocol[ArrayT]):
   """
 
   @abstractmethod
-  def pdf(self, y: ArrayT, /, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def pdf(self, y: ArrayT, /) -> ArrayT:
     """Density of the margin with respect to its own reference measure.
 
     Parameters
     ----------
     y : array, shape (n,), dtype float
         Observations on the original scale.
-    x : array, shape (n, p), or None, optional
-        Exogenous covariates, one row per observation. Ignored by a margin that
-        does not model them.
 
     Returns
     -------
@@ -664,15 +658,13 @@ class MarginLike(Protocol[ArrayT]):
     """
 
   @abstractmethod
-  def cdf(self, y: ArrayT, /, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def cdf(self, y: ArrayT, /) -> ArrayT:
     """Distribution function ``F(y)``, right-continuous.
 
     Parameters
     ----------
     y : array, shape (n,), dtype float
         Observations on the original scale.
-    x : array, shape (n, p), or None, optional
-        Exogenous covariates, one row per observation.
 
     Returns
     -------
@@ -681,15 +673,13 @@ class MarginLike(Protocol[ArrayT]):
     """
 
   @abstractmethod
-  def icdf(self, p: ArrayT, /, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def icdf(self, p: ArrayT, /) -> ArrayT:
     """Inverse distribution function ``inf{y : F(y) >= p}``.
 
     Parameters
     ----------
     p : array, shape (n,), dtype float
         Probabilities in ``[0, 1]``.
-    x : array, shape (n, p), or None, optional
-        Exogenous covariates, one row per observation.
 
     Returns
     -------
@@ -751,15 +741,13 @@ class VinedistLike(Protocol[ArrayT]):
   margins: Sequence[MarginLike[ArrayT]]
 
   @abstractmethod
-  def logpdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def logpdf(self, y: ArrayT) -> ArrayT:
     """Joint log-density at each observation.
 
     Parameters
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, p), or None, optional
-        Exogenous covariates, forwarded to each part that reads them.
 
     Returns
     -------
@@ -768,15 +756,13 @@ class VinedistLike(Protocol[ArrayT]):
     """
 
   @abstractmethod
-  def pdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def pdf(self, y: ArrayT) -> ArrayT:
     """Joint density at each observation.
 
     Parameters
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, p), or None, optional
-        Exogenous covariates.
 
     Returns
     -------
@@ -785,15 +771,13 @@ class VinedistLike(Protocol[ArrayT]):
     """
 
   @abstractmethod
-  def loglik(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def loglik(self, y: ArrayT) -> ArrayT:
     """Log-likelihood of the observations.
 
     Parameters
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, p), or None, optional
-        Exogenous covariates.
 
     Returns
     -------
@@ -803,15 +787,13 @@ class VinedistLike(Protocol[ArrayT]):
     """
 
   @abstractmethod
-  def copula_layout(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def copula_layout(self, y: ArrayT) -> ArrayT:
     """This distribution's copula-scale data for ``y``.
 
     Parameters
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, p), or None, optional
-        Exogenous covariates.
 
     Returns
     -------
@@ -824,8 +806,6 @@ class VinedistLike(Protocol[ArrayT]):
   def cdf(
     self,
     y: ArrayT,
-    *,
-    x: Optional[ArrayT] = None,
     **kwargs: Any,  # noqa: ANN401 - forwarded to the implementation
   ) -> ArrayT:
     """Joint distribution function at each observation.
@@ -834,8 +814,6 @@ class VinedistLike(Protocol[ArrayT]):
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, p), or None, optional
-        Exogenous covariates.
     **kwargs : Any
         Forwarded to the copula's ``cdf``.
 
@@ -849,8 +827,6 @@ class VinedistLike(Protocol[ArrayT]):
   def rosenblatt(
     self,
     y: ArrayT,
-    *,
-    x: Optional[ArrayT] = None,
     **kwargs: Any,  # noqa: ANN401 - forwarded to the implementation
   ) -> ArrayT:
     """Rosenblatt transform: observations to independent uniforms.
@@ -859,8 +835,6 @@ class VinedistLike(Protocol[ArrayT]):
     ----------
     y : array, shape (n, d), dtype float
         Observations on the original scale.
-    x : array, shape (n, p), or None, optional
-        Exogenous covariates.
     **kwargs : Any
         Forwarded to the copula's ``rosenblatt``.
 
@@ -874,8 +848,6 @@ class VinedistLike(Protocol[ArrayT]):
   def inverse_rosenblatt(
     self,
     w: ArrayT,
-    *,
-    x: Optional[ArrayT] = None,
     **kwargs: Any,  # noqa: ANN401 - forwarded to the implementation
   ) -> ArrayT:
     """Inverse Rosenblatt transform: independent uniforms to observations.
@@ -884,8 +856,6 @@ class VinedistLike(Protocol[ArrayT]):
     ----------
     w : array, shape (n, d), dtype float
         Independent uniforms in ``[0, 1]^d``.
-    x : array, shape (n, p), or None, optional
-        Exogenous covariates.
     **kwargs : Any
         Forwarded to the copula's ``inverse_rosenblatt``.
 
@@ -899,8 +869,6 @@ class VinedistLike(Protocol[ArrayT]):
   def sample(
     self,
     n: int,
-    *,
-    x: Optional[ArrayT] = None,
     **kwargs: Any,  # noqa: ANN401 - forwarded to the implementation
   ) -> ArrayT:
     """Draw observations on the original scale.
@@ -909,8 +877,6 @@ class VinedistLike(Protocol[ArrayT]):
     ----------
     n : int
         Number of observations.
-    x : array, shape (n, p), or None, optional
-        Exogenous covariates.
     **kwargs : Any
         Forwarded to the copula's ``sample``.
 

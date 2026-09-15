@@ -36,7 +36,7 @@ class IndependenceBicop(BicopBase[ArrayT]):
   pyvinecopulib.core.VinecopBase.select : Places this on a thresholded edge.
   """
 
-  def pdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def _pdf_raw(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Density, which is one everywhere.
 
     Parameters
@@ -44,19 +44,19 @@ class IndependenceBicop(BicopBase[ArrayT]):
     u : array, shape (n, 2) or wider, dtype float
         Copula-scale observations. Only the shape is read.
     x : array, or None, optional
-        Ignored; the pair is unconditional.
+        Accepted and ignored; the independence copula models no covariates.
 
     Returns
     -------
     array, shape (n,), dtype float
         Ones.
     """
-    del x
+    del x  # declared so the pair can sit in a conditional vine
     cols = cast("Any", u)
     xp = array_namespace(cols)
     return cast("ArrayT", xp.ones_like(cols[:, 0]))
 
-  def cdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def _cdf_raw(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Distribution function ``u1 * u2``.
 
     Parameters
@@ -64,18 +64,18 @@ class IndependenceBicop(BicopBase[ArrayT]):
     u : array, shape (n, 2) or wider, dtype float
         Copula-scale observations.
     x : array, or None, optional
-        Ignored; the pair is unconditional.
+        Accepted and ignored; the independence copula models no covariates.
 
     Returns
     -------
     array, shape (n,), dtype float
         The product of the two arguments.
     """
-    del x
+    del x  # declared so the pair can sit in a conditional vine
     cols = cast("Any", u)
     return cast("ArrayT", cols[:, 0] * cols[:, 1])
 
-  def hfunc1(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def _hfunc1_raw(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """``P(U2 <= u2 | U1) = u2``.
 
     Parameters
@@ -83,17 +83,17 @@ class IndependenceBicop(BicopBase[ArrayT]):
     u : array, shape (n, 2) or wider, dtype float
         Copula-scale observations.
     x : array, or None, optional
-        Ignored; the pair is unconditional.
+        Accepted and ignored; the independence copula models no covariates.
 
     Returns
     -------
     array, shape (n,), dtype float
         The second argument.
     """
-    del x
+    del x  # declared so the pair can sit in a conditional vine
     return cast("ArrayT", cast("Any", u)[:, 1])
 
-  def hfunc2(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def _hfunc2_raw(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """``P(U1 <= u1 | U2) = u1``.
 
     Parameters
@@ -101,17 +101,17 @@ class IndependenceBicop(BicopBase[ArrayT]):
     u : array, shape (n, 2) or wider, dtype float
         Copula-scale observations.
     x : array, or None, optional
-        Ignored; the pair is unconditional.
+        Accepted and ignored; the independence copula models no covariates.
 
     Returns
     -------
     array, shape (n,), dtype float
         The first argument.
     """
-    del x
+    del x  # declared so the pair can sit in a conditional vine
     return cast("ArrayT", cast("Any", u)[:, 0])
 
-  def hinv1(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def _hinv1_raw(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Inverse of :meth:`hfunc1` in its second argument, which is identity.
 
     Parameters
@@ -119,17 +119,17 @@ class IndependenceBicop(BicopBase[ArrayT]):
     u : array, shape (n, 2) or wider, dtype float
         Conditioning value in column 0, level in column 1.
     x : array, or None, optional
-        Ignored; the pair is unconditional.
+        Accepted and ignored; the independence copula models no covariates.
 
     Returns
     -------
     array, shape (n,), dtype float
         The second argument.
     """
-    del x
+    del x  # declared so the pair can sit in a conditional vine
     return cast("ArrayT", cast("Any", u)[:, 1])
 
-  def hinv2(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def _hinv2_raw(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
     """Inverse of :meth:`hfunc2` in its first argument, which is identity.
 
     Parameters
@@ -137,17 +137,17 @@ class IndependenceBicop(BicopBase[ArrayT]):
     u : array, shape (n, 2) or wider, dtype float
         Level in column 0, conditioning value in column 1.
     x : array, or None, optional
-        Ignored; the pair is unconditional.
+        Accepted and ignored; the independence copula models no covariates.
 
     Returns
     -------
     array, shape (n,), dtype float
         The first argument.
     """
-    del x
+    del x  # declared so the pair can sit in a conditional vine
     return cast("ArrayT", cast("Any", u)[:, 0])
 
-  def flip(self) -> "IndependenceBicop[ArrayT]":
+  def _flip_raw(self) -> "IndependenceBicop[ArrayT]":
     """The argument-swapped copula, which is this one.
 
     Returns

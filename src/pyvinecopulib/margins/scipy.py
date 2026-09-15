@@ -1194,7 +1194,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
 
   # --- evaluation ---------------------------------------------------------- #
 
-  def pdf(self, y: np.ndarray, *, x: Optional[np.ndarray] = None) -> np.ndarray:
+  def pdf(self, y: np.ndarray) -> np.ndarray:
     params = self.parameters
     dist = self._dist
     values = np.asarray(y, dtype=float)
@@ -1229,7 +1229,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
       return np.asarray(dist.logpmf(values, *params), dtype=float)
     return np.asarray(dist.logpdf(values, *params), dtype=float)
 
-  def cdf(self, y: np.ndarray, *, x: Optional[np.ndarray] = None) -> np.ndarray:
+  def cdf(self, y: np.ndarray) -> np.ndarray:
     return np.asarray(
       self._dist.cdf(np.asarray(y, dtype=float), *self.parameters),
       dtype=float,

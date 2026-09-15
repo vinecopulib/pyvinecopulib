@@ -26,7 +26,7 @@ from typing import Any, ClassVar, Optional, Sequence, cast
 import torch
 from torch import Tensor
 
-from ..core import ControlsLike, MarginLike, VinedistBase
+from ..core import ControlsLike, MarginLike, VinecopLike, VinedistBase
 from ..core._margins import declared_kde_kwargs
 from ._placement import TensorPlacementMixin
 from .controls import FitControlsTorchVinecop
@@ -180,7 +180,10 @@ class TorchVinedist(
     else:
       _check_margin(margins, "margins")
 
-    super()._bind_dist(vinecop, margins)
+    # `object` on the way in so a caller who is not type-checking still gets
+    # the refusals above rather than an attribute error further down;
+    # `_check_copula` has just established what it is.
+    super()._bind_dist(cast("VinecopLike[Tensor]", vinecop), margins)
 
   def _set_margins(self, margins: Sequence[MarginLike[Tensor]]) -> None:
     """Install the margins as registered children.

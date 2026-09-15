@@ -57,7 +57,7 @@ Notes
   works (:class:`MarginLike`); subclass :class:`MarginBase` to write
   one, or reach for the parametric families and family selection in
   :mod:`pyvinecopulib.margins`.
-- *A custom pair copula on a discrete edge* — :class:`DiscreteBicop`.
+- *A custom pair copula on a discrete edge* — ``BicopBase.with_var_types``.
   Wrap a continuous pair copula (anything with a ``cdf``) in the variable
   types :meth:`VinecopBase.pair_var_types` derives for its slot, and it
   supplies the mixed-discrete density and h-functions the cascades ask for.
@@ -94,7 +94,6 @@ from ..pyvinecopulib_ext import (
   Vinecop,
 )
 from .._deprecations import _method_alias
-from .bicop_discrete import DiscreteBicop
 from .bicop_independence import IndependenceBicop
 from .bicop_base import BicopBase
 from .vinecop_context import (
@@ -141,7 +140,6 @@ __all__ = [
   "ConditioningContext",
   "ControlsLike",
   "CVineStructure",
-  "DiscreteBicop",
   "DVineStructure",
   "FitControlsBicop",
   "FitControlsMargin",

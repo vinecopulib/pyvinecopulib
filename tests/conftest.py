@@ -174,7 +174,7 @@ class GaussianBicop(BicopBase[Any]):
     z = self._scale * position_weighted_mean(x, u)
     return self._rho_max * xp.tanh(z)
 
-  def pdf(self, u: Any, x: Optional[Any] = None) -> Any:
+  def _pdf_raw(self, u: Any, x: Optional[Any] = None) -> Any:
     xp = array_namespace(u)
     uc = xp.clip(u, 1e-10, 1.0 - 1e-10)
     z1, z2 = _std_normal_ppf(uc[:, 0]), _std_normal_ppf(uc[:, 1])
@@ -183,7 +183,7 @@ class GaussianBicop(BicopBase[Any]):
     quad = 2.0 * rho * z1 * z2 - rho * rho * (z1 * z1 + z2 * z2)
     return xp.exp(quad / (2.0 * one_minus)) / xp.sqrt(one_minus)
 
-  def hfunc1(self, u: Any, x: Optional[Any] = None) -> Any:
+  def _hfunc1_raw(self, u: Any, x: Optional[Any] = None) -> Any:
     # P(U2 <= u2 | U1 = u1) = Phi((z2 - rho z1) / sqrt(1 - rho^2)).
     xp = array_namespace(u)
     uc = xp.clip(u, 1e-10, 1.0 - 1e-10)
@@ -191,7 +191,7 @@ class GaussianBicop(BicopBase[Any]):
     rho = self._rho(u, x)
     return _std_normal_cdf((z2 - rho * z1) / xp.sqrt(1.0 - rho * rho))
 
-  def hfunc2(self, u: Any, x: Optional[Any] = None) -> Any:
+  def _hfunc2_raw(self, u: Any, x: Optional[Any] = None) -> Any:
     # P(U1 <= u1 | U2 = u2) = Phi((z1 - rho z2) / sqrt(1 - rho^2)).
     xp = array_namespace(u)
     uc = xp.clip(u, 1e-10, 1.0 - 1e-10)
@@ -199,7 +199,7 @@ class GaussianBicop(BicopBase[Any]):
     rho = self._rho(u, x)
     return _std_normal_cdf((z1 - rho * z2) / xp.sqrt(1.0 - rho * rho))
 
-  def hinv1(self, u: Any, x: Optional[Any] = None) -> Any:
+  def _hinv1_raw(self, u: Any, x: Optional[Any] = None) -> Any:
     # Invert hfunc1 w.r.t. u2: u = [u1, p] -> z2 = rho z1 + sqrt(1-rho^2) Phi^-1(p).
     xp = array_namespace(u)
     uc = xp.clip(u, 1e-10, 1.0 - 1e-10)
@@ -207,7 +207,7 @@ class GaussianBicop(BicopBase[Any]):
     rho = self._rho(u, x)
     return _std_normal_cdf(rho * z1 + xp.sqrt(1.0 - rho * rho) * zp)
 
-  def hinv2(self, u: Any, x: Optional[Any] = None) -> Any:
+  def _hinv2_raw(self, u: Any, x: Optional[Any] = None) -> Any:
     # Invert hfunc2 w.r.t. u1: u = [p, u2] -> z1 = rho z2 + sqrt(1-rho^2) Phi^-1(p).
     xp = array_namespace(u)
     uc = xp.clip(u, 1e-10, 1.0 - 1e-10)
@@ -228,14 +228,14 @@ class MinimalBicop(BicopBase[Any]):
   ``_sample_uniform``, the one hook with no array-agnostic default.
   """
 
-  def pdf(self, u: Any, *, x: Optional[Any] = None) -> Any:
+  def _pdf_raw(self, u: Any) -> Any:
     xp = array_namespace(u)
     return xp.ones((u.shape[0],), dtype=u.dtype, device=u.device)
 
-  def hfunc1(self, u: Any, *, x: Optional[Any] = None) -> Any:
+  def _hfunc1_raw(self, u: Any) -> Any:
     return u[:, 1]
 
-  def hfunc2(self, u: Any, *, x: Optional[Any] = None) -> Any:
+  def _hfunc2_raw(self, u: Any) -> Any:
     return u[:, 0]
 
   def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Any:

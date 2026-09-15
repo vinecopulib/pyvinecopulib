@@ -774,15 +774,13 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     )
     return torch.where(torch.isnan(y), y, out)
 
-  def pdf(self, y: Tensor, /, *, x: Optional[Tensor] = None) -> Tensor:
+  def pdf(self, y: Tensor, /) -> Tensor:
     """Density with respect to this margin's own reference measure.
 
     Parameters
     ----------
     y : Tensor, shape (n,)
         Evaluation points.
-    x : Tensor, or None, optional
-        Ignored; a kernel density reads no covariates.
 
     Returns
     -------
@@ -803,15 +801,13 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       )
     return self._pdf_continuous(ya)
 
-  def cdf(self, y: Tensor, /, *, x: Optional[Tensor] = None) -> Tensor:
+  def cdf(self, y: Tensor, /) -> Tensor:
     """Distribution function.
 
     Parameters
     ----------
     y : Tensor, shape (n,)
         Evaluation points.
-    x : Tensor, or None, optional
-        Ignored; a kernel density reads no covariates.
 
     Returns
     -------

@@ -466,7 +466,7 @@ Bicop
       .def(
           "sample",
           [](const Bicop& self, std::optional<size_t> n, bool qrng,
-             const std::vector<int>& seeds,
+             const std::optional<std::vector<int>>& seeds,
              const std::optional<Eigen::MatrixXd>& parameters,
              size_t num_threads) -> Eigen::MatrixXd {
             if (n.has_value() == parameters.has_value()) {
@@ -475,13 +475,15 @@ Bicop
                   "already fixes the number of observations by its row "
                   "count");
             }
+            const std::vector<int> draw_seeds =
+                seeds.value_or(std::vector<int>{});
             nb::gil_scoped_release release;
             if (parameters) {
-              return self.simulate(*parameters, qrng, seeds, num_threads);
+              return self.simulate(*parameters, qrng, draw_seeds, num_threads);
             }
-            return self.simulate(*n, qrng, seeds);
+            return self.simulate(*n, qrng, draw_seeds);
           },
-          "n"_a = nb::none(), "qrng"_a = false, "seeds"_a = std::vector<int>(),
+          "n"_a = nb::none(), "qrng"_a = false, "seeds"_a = nb::none(),
           nb::kw_only(), "parameters"_a = nb::none(),
           "num_threads"_a = static_cast<size_t>(1), sample_doc.c_str())
       .def(

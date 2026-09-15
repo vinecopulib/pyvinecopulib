@@ -1233,16 +1233,15 @@ is the hook for fitting either kind of custom vine edge by edge. See
 A custom pair copula reaches a :ref:`discrete <concepts-discrete>` edge
 too. The vine owns the discreteness: declare ``var_types`` when binding
 it, and :meth:`pyvinecopulib.core.VinecopBase.pair_var_types` says which
-of the pairs sees an argument with atoms. Wrapping such a pair in
-:class:`~pyvinecopulib.core.DiscreteBicop` builds the mixed-discrete
-density and h-functions out of its continuous ``pdf`` / ``cdf`` /
-``hfunc1`` / ``hfunc2``, so the only thing to add is a ``cdf``. A pair
-that can measure an atom more directly overrides
+of the pairs sees an argument with atoms. Declaring such a pair through
+``with_var_types`` builds the mixed-discrete density and h-functions out
+of its continuous primitives, so the only thing to add is a ``_cdf_raw``.
+A pair that can measure an atom more directly overrides
 :meth:`~pyvinecopulib.core.BicopBase.rect_prob` and
 :meth:`~pyvinecopulib.core.BicopBase.cond_interval_prob`, which is what
 :class:`~pyvinecopulib.torch.TorchTllBicop` does; one that models atoms
-itself is asked for its own variable types back, through
-``with_var_types``, and forwarded to.
+itself -- ``Bicop`` -- needs none of that: it is declared the same way
+and answers for the whole surface.
 :meth:`~pyvinecopulib.core.VinecopBase.fit` and
 :meth:`~pyvinecopulib.core.VinecopBase.select` take ``var_types`` as
 well, and hand each edge's types to the ``fit_edge`` callback.

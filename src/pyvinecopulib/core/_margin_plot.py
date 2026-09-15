@@ -9,20 +9,14 @@ supplies with a continuous-correct default, and prefers an optional
 ``grid_points`` for the x-range where the margin has one.
 """
 
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-from ..pyvinecopulib_ext import Kde1d
 from ._covariates import covariate_row
 from ._placement import to_numpy
 from .protocols import ArrayT, MarginLike
-
-
-#: `Kde1d` is named outright because it satisfies `MarginLike` *nominally*
-#: only: its `pdf` / `cdf` take no covariate `x`, so a static check rejects it.
-_Margin = Union[MarginLike[ArrayT], Kde1d]
 
 
 #: Shared with `MarginBase.plot`, which adds `x` and a `Raises`.
@@ -86,13 +80,13 @@ MARGIN_PLOT_DOC = (
 _TAIL = (1e-3, 1 - 1e-3)
 
 
-def _support(margin: _Margin[Any]) -> tuple[float, float]:
+def _support(margin: MarginLike[Any]) -> tuple[float, float]:
   """The margin's declared support, as two floats."""
   lo, hi = getattr(margin, "support", (-np.inf, np.inf))
   return (float(lo), float(hi))
 
 
-def _grid_points(margin: _Margin[Any]) -> Optional[np.ndarray]:
+def _grid_points(margin: MarginLike[Any]) -> Optional[np.ndarray]:
   """The fitted evaluation grid, where the margin publishes one."""
   gp = getattr(margin, "grid_points", None)
   if gp is None:
@@ -102,7 +96,7 @@ def _grid_points(margin: _Margin[Any]) -> Optional[np.ndarray]:
 
 
 def _draw_range(
-  margin: _Margin[ArrayT],
+  margin: MarginLike[ArrayT],
   place: Optional[Callable[[np.ndarray], Any]],
 ) -> tuple[float, float]:
   """The interval to evaluate over.
@@ -136,7 +130,7 @@ def _draw_range(
 
 
 def make_plotting_grid(
-  margin: _Margin[ArrayT],
+  margin: MarginLike[ArrayT],
   grid_size: int = 200,
   *,
   place: Optional[Callable[[np.ndarray], Any]] = None,
@@ -161,7 +155,7 @@ def make_plotting_grid(
 
 
 def margin_plot(
-  margin: _Margin[ArrayT],
+  margin: MarginLike[ArrayT],
   xlim: Optional[tuple[float, float]] = None,
   ylim: Optional[tuple[float, float]] = None,
   grid_size: int = 200,

@@ -29,7 +29,6 @@ from ..pyvinecopulib_ext import RVineStructure
 from ._covariates import pair_eval, prepare_covariates
 from ._placement import to_numpy
 from ._vinecop_discrete import (
-  check_var_types,
   collapse_data,
   disc_cols,
   edge_columns,
@@ -40,7 +39,7 @@ from ._vinecop_discrete import (
 )
 from .bicop_independence import IndependenceBicop
 from ._vinecop_reorient import _SlotKey, _slot_key, reorientation
-from ._validation import validate_weights
+from ._validation import check_var_types, validate_weights
 from .bicop_base import flip_of
 from .vinecop_context import ConditioningContext, SimplifiedContext
 from .protocols import ArrayT, BicopLike
@@ -136,6 +135,24 @@ FitEdge = Callable[..., BicopLike[Any]]
 FitLevel = Callable[[int, Any, list[tuple[str, str]]], Sequence[BicopLike[Any]]]
 
 
+def _declared(
+  pair: BicopLike[Any], var_types: Optional[tuple[str, ...]]
+) -> BicopLike[Any]:
+  """Give a freshly fitted pair the edge's variable types.
+
+  The vine knows which of its variables have atoms and a pair fitter does not
+  have to, so the declaration is applied here rather than left to every
+  ``fit_edge`` callback -- and the cascade evaluates this pair immediately, to
+  build the next tree's input, which on a discrete edge is four columns wide.
+  Idempotent: a callback that already declared them gets its own object back,
+  and a pair carrying no ``with_var_types`` is returned untouched.
+  """
+  if not var_types or "d" not in var_types:
+    return pair
+  declare = getattr(pair, "with_var_types", None)
+  return pair if declare is None else declare(var_types)
+
+
 def _fit_edge_call(
   fit_edge: FitEdge,
   tree: int,
@@ -201,7 +218,7 @@ def fit_parts(
       An edge with a discrete argument gets a four-column ``u_e`` and the
       additional keyword ``var_types=[t1, t2]``; the pair it returns must read
       that layout, so wrap a continuous one in
-      :class:`~pyvinecopulib.core.DiscreteBicop`.
+      ``BicopBase.with_var_types``.
   context : ConditioningContext, or None, optional
       Conditioning-context policy (default: simplified / unconditional).
   x : array, shape (n, p), or None, optional
@@ -360,6 +377,7 @@ def fit_parts(
         edge_copula = fitted[edge]
       else:
         edge_copula = _fit_edge_call(fit_edge, tree, edge, u_e, x_e, edge_types)
+      edge_copula = _declared(edge_copula, edge_types)
       row.append(edge_copula)
       if s.needed_hfunc1(tree, edge):
         hfunc1[:, edge] = pair_eval(edge_copula.hfunc1, u_e, x=x_e)
@@ -730,6 +748,7 @@ def select_parts(
         pair = _fit_edge_call(
           fit_edge, len(trees), edge_idx, u_e, x_e, edge_types
         )
+      pair = _declared(pair, edge_types)
       if not flip_checked and not thresholded[edge_idx]:
         # `_check_selectable` settles this up front when the vine names a
         # `bicop_class`; behind a caller's own `fit_edge` the class is not
