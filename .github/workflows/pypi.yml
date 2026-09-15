@@ -25,6 +25,10 @@ permissions:
 env:
   BOOST_VERSION: 1.84.0
   EIGEN_VERSION: 3.4.0
+  # Pinned so `uvx` can serve it from cache: it is resolved from PyPI on each
+  # of the ten wheel legs, and one timeout there failed a leg whose wheel had
+  # already built.
+  TWINE_VERSION: 7.0.0
   EXPECTED_WHEEL_COUNT: 10  # 5 platforms × cp311/cp312-ABI3
 
 jobs:
@@ -46,7 +50,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          cache-dependency-glob: pyproject.toml
+          cache-dependency-glob: uv.lock
       - name: Install lint tooling
         run: uv sync --no-install-project --group dev
       - name: Lint, format-check, and security-lint
@@ -160,7 +164,6 @@ jobs:
       - name: Build and test wheels
         uses: pypa/cibuildwheel@v4.2.1
         env:
-          CIBW_REBUILD: 1
           CIBW_BUILD: cp${{ matrix.python }}-${{ matrix.cfg.cibw_id }}
           # Eigen is built from source into root_install_dir on every OS, so its
           # headers are at <root_install_dir>include\eigen3. Windows'
@@ -183,10 +186,19 @@ jobs:
             echo "::error ::Expected stub or marker files not found in $wheel"
             exit 1
           }
-          uvx --quiet twine check --strict wheelhouse/*.whl || {
+          ok=0
+          for attempt in 1 2 3; do
+            if uvx --quiet "twine==$TWINE_VERSION" check --strict wheelhouse/*.whl; then
+              ok=1
+              break
+            fi
+            echo "::warning ::twine check attempt $attempt failed; retrying"
+            sleep $((attempt * 15))
+          done
+          if [ "$ok" != 1 ]; then
             echo "::error ::Metadata check failed — would fail on PyPI upload."
             exit 1
-          }
+          fi
       - name: Upload binaries
         uses: actions/upload-artifact@v7
         with:
@@ -230,10 +242,19 @@ jobs:
           fi
 
           find dist -type f -name '*.whl' -printf "%P\n" | sort
-          uvx --quiet twine check --strict dist/* || {
+          ok=0
+          for attempt in 1 2 3; do
+            if uvx --quiet "twine==$TWINE_VERSION" check --strict dist/*; then
+              ok=1
+              break
+            fi
+            echo "::warning ::twine check attempt $attempt failed; retrying"
+            sleep $((attempt * 15))
+          done
+          if [ "$ok" != 1 ]; then
             echo "::error ::Metadata check failed — would fail on PyPI upload."
             exit 1
-          }
+          fi
 
   verify_docs_build:
     # RTD mirror against the PR's wheel; `-W` catches doc regressions pre-tag.
@@ -315,7 +336,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          cache-dependency-glob: pyproject.toml
+          cache-dependency-glob: uv.lock
       - name: Install Graphviz
         # The notebooks draw vine structures through `dot`.
         uses: ./.github/actions/install-graphviz
@@ -419,7 +440,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          cache-dependency-glob: pyproject.toml
+          cache-dependency-glob: uv.lock
       - name: Install Graphviz
         # The notebooks draw vine structures through `dot`.
         uses: ./.github/actions/install-graphviz
@@ -494,7 +515,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          cache-dependency-glob: pyproject.toml
+          cache-dependency-glob: uv.lock
       - name: Export Boost / Eigen include paths
         run: |
           echo "Boost_INCLUDE_DIR=${{steps.install-dependencies.outputs.BOOST_ROOT}}/include" >> $GITHUB_ENV
@@ -612,10 +633,16 @@ jobs:
           fi
 
           find dist -type f -name '*.whl' -printf "%P\n" | sort
-          uvx --quiet twine check dist/* || {
+          uvx --quiet "twine==$TWINE_VERSION" check dist/* || {
             echo "::error ::Metadata check failed — would fail on PyPI upload."
             exit 1
           }
+      # SHA-pinned like every other third-party action, and more so than most:
+      # this is the step holding the publish credential, `release/v1` is a
+      # branch rather than a tag, and dependabot does not track a branch ref.
+      # The trailing version comment is the form dependabot reads, so the pin
+      # is refreshed rather than left to rot.
+      #
       # Rehearsal for the real upload: the same artifacts, action and
       # credentialing path, against a registry where a mistake is survivable.
       # Manual because it is one-shot -- Test PyPI refuses a re-upload of a
@@ -626,7 +653,7 @@ jobs:
           job.status == 'success'
             && github.event_name == 'workflow_dispatch'
             && inputs.test_pypi
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           user: __token__
           password: ${{ secrets.test_pypi_password }}
@@ -636,7 +663,7 @@ jobs:
           job.status == 'success'
             && github.event_name == 'push'
             && startsWith(github.event.ref, 'refs/tags')
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           user: __token__
           password: ${{ secrets.pypi_password }}
