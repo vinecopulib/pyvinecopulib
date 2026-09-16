@@ -47,7 +47,7 @@ repos:
   # General code quality hooks. Whitespace-modifying hooks skip the
   # auto-generated files.
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
         exclude: &generated_files ^(src/pyvinecopulib/__init__\.pyi|src/include/docstr\.hpp)$
