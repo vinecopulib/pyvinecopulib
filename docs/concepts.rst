@@ -626,11 +626,14 @@ distribution API ``pdf`` at an atom is :math:`+\infty`, and the mass is
 ``pmf``, so a discrete SciPy object must be routed through
 ``as_margin`` rather than passed straight through.
 
-Everything past ``pdf`` / ``cdf`` / ``icdf`` is optional and discovered
-at run time: ``var_type`` (``"c"``, ``"d"``, ``"zi"``), ``cdf_left``
-for :math:`F(y^-)`, ``logpdf``, ``sample``, ``support``, and
-``supports_covariates``. Each has a correct default, so a margin that
-declares none of them behaves as an unconditional continuous margin.
+Everything past ``pdf`` / ``cdf`` / ``icdf`` carries a default in the
+protocol: ``var_type`` (``"c"``, ``"d"``, ``"zi"``), ``cdf_left``
+for :math:`F(y^-)`, ``logpdf``, ``sample``, ``support``,
+``supports_covariates`` / ``supports_weights``, and the ``fit`` / ``select``
+/ ``controls_class`` a vine distribution calls. Each default is the fallback
+its consumer would otherwise apply, so a margin that inherits
+:class:`~pyvinecopulib.core.MarginLike` and defines only ``pdf`` / ``cdf`` /
+``icdf`` behaves as a *fixed*, unconditional, continuous margin.
 
 
 .. _concepts-exogenous-conditional:
@@ -641,7 +644,7 @@ Exogenous conditional distributions
 An exogenous conditional distribution :math:`Y \mid X=x` is distinct
 from both a non-simplified vine and
 :ref:`conditioning-set sampling <concepts-conditional>`. It applies the
-same row-aligned covariate matrix, shape :math:`(n, k)`, to the two
+same row-aligned covariate matrix, shape :math:`(n, p)`, to the two
 halves of Sklar's factorization:
 
 .. math::
@@ -1164,9 +1167,11 @@ of two array-agnostic contracts, evaluated on either NumPy or PyTorch
 arrays:
 
 * :class:`~pyvinecopulib.core.BicopLike` — a pair copula, exposing
-  ``pdf`` / ``hfunc1`` / ``hfunc2`` / ``hinv1`` / ``hinv2`` / ``sample``
-  (``cdf`` and ``flip`` are optional capabilities, needed only on a discrete
-  edge and in structure selection respectively);
+  ``pdf`` / ``hfunc1`` / ``hfunc2`` / ``hinv1`` / ``hinv2`` / ``sample``,
+  plus what hosting it needs: ``cdf`` and ``with_var_types`` on a discrete
+  edge, ``flip`` in structure selection, and ``fit`` / ``select`` where it is
+  re-estimated. Those carry defaults that raise, naming the class, so
+  declining one is a clear refusal rather than a missing attribute;
 * :class:`~pyvinecopulib.core.VinecopLike` — a fitted vine, exposing
   ``pdf`` / ``cdf`` / ``rosenblatt`` / ``inverse_rosenblatt`` /
   ``sample`` on an :class:`~pyvinecopulib.core.RVineStructure`;

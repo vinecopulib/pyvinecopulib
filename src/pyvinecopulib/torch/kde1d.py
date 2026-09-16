@@ -337,11 +337,9 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       self.xmin, self.xmax = support
     # All of the knobs or none of them, as `kde1d_configured` does on the
     # compiled side: controls carry a value for every field, so reading them
-    # one at a time cannot tell a default from a choice.
-    #
-    # The construction *spec*, not `self.bandwidth`: a previous fit overwrote
-    # that with the bandwidth it selected, and passing a value back in pins
-    # it, so a refit on different data reused the first fit's bandwidth.
+    # one at a time cannot tell a default from a choice. The construction
+    # *spec*, not `self.bandwidth`, which holds what the last fit selected --
+    # passing that back in would pin an automatic bandwidth to one sample.
     knobs: dict[str, Any] = (
       {
         "multiplier": self.multiplier,

@@ -96,7 +96,8 @@ subclasses; `MarginBase` and the margin classes already read this way.
 There is no exception, and `Kde1d` used to be one. Its second positional
 argument was `weights`, on the grounds that it took no controls object at all;
 it takes one now, so `kde.fit(x, w)` raises rather than fitting unweighted
-behind a weighted-looking call.
+behind a weighted-looking call. The weights moved into that controls object
+too -- see the weights section below.
 
 ```python
 # before
@@ -104,7 +105,7 @@ kde.fit(x, w)
 kde.fit(x)  # kernel knobs only at construction
 
 # now
-kde.fit(y, weights=w)
+kde.fit(y, FitControlsKde1d(weights=w))
 kde.fit(y, FitControlsKde1d(bandwidth=0.4))
 ```
 
@@ -112,6 +113,33 @@ The observations are `y`, not `x`, on `fit` / `select` / `from_data`, because
 `x` means exogenous covariates everywhere else in the Python API. The
 evaluation methods (`pdf`, `cdf`, `icdf`, ...) still name theirs `x`; that
 rename belongs upstream in `lib/kde1d` and has not happened yet.
+
+## Observation weights ride in the controls
+
+`FitControlsBicop` and `FitControlsVinecop` already carried a `weights` field;
+`FitControlsKde1d` and `FitControlsMargin` carry one too, and no `fit` /
+`select` / `from_data` in the package takes a `weights=` argument any more.
+That is one transport for one quantity, and `supports_weights` on a class says
+whether it honors what the controls carry -- a class that does not refuses
+weighted controls rather than fitting them away.
+
+Nothing copies weights from one controls object to another. A vine
+distribution's margins and its copula take separate controls, so weighting
+both means saying so twice -- which is also what lets you weight them
+differently, or weight one and leave the other alone.
+
+```python
+# margins and copula weighted the same way
+w = ...
+pv.Vinedist.from_data(
+  y,
+  pv.FitControlsVinecop(weights=w),
+  margin_controls=pv.core.FitControlsKde1d(weights=w),
+)
+
+# the copula weighted, the margins fitted on every observation
+pv.Vinedist.from_data(y, pv.FitControlsVinecop(weights=w))
+```
 
 ## Some arguments are keyword-only
 
@@ -192,7 +220,9 @@ still resolves and warns; `utils.Kde1d` never shipped in a release and is gone.
 | --- | --- |
 | `kde.quantile(p)` | `kde.icdf(p)` — no alias |
 | `kde.loglik` (property) | `kde.loglik()` — a method taking optional data |
-| `kde.fit(x, w)` | `kde.fit(y, controls, *, weights=w)` |
+| `kde.fit(x, w)` | `kde.fit(y, FitControlsKde1d(weights=w))` |
+| `kde.type` | `kde.var_type` — `"c"` / `"d"` / `"zi"`, not `"continuous"` |
+| `Kde1d(type="discrete")` | `Kde1d(var_type="d")` — the long names still parse |
 | `pyvinecopulib.Kde1d` | `pyvinecopulib.core.Kde1d` |
 
 `icdf` is the name modern SciPy and `torch.distributions` use for the inverse
@@ -246,6 +276,16 @@ is a silent change rather than an error:
   leaves are then never called.
 - `ArrayT` is bounded by the `Array` protocol. It is an exported name, so a
   signature written in it now has to be satisfied by something array-shaped.
+- The four contracts declare more than the evaluation cascade: what hosting a
+  part needs (`cdf`, `flip`, `with_var_types`, the `supports_*` flags) and the
+  `fit` / `select` / `controls_class` a consumer calls. Every one of those has
+  a default, so **inherit the protocol** and override what you implement; a
+  duck-typed class defining only the evaluating members no longer satisfies
+  `isinstance`.
+- `device` and `dtype` are no longer fields on `FitControlsTorchVinecop`.
+  Where a fitted module lives is read from the data it was fitted on, and
+  `TorchVinecop.from_data(u, controls, device=..., dtype=...)` is where a
+  caller overrides that.
 
 ## What 1.0 does and does not promise
 

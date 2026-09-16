@@ -1266,15 +1266,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         ``family_set`` for one that cannot search -- either would answer the
         request with a different model than was asked for.
     """
-    # A margin with no estimator of its own is *fixed*: a frozen distribution
-    # from another ecosystem overrides neither verb, and there is nothing to
+    # A margin overriding neither verb is *fixed*: there is nothing to
     # re-estimate. `is_fitted` is the wrong test -- a fitted `SciPyMargin` is
-    # refittable, and `fit` / `select` must re-estimate it -- and so is `fit`
-    # alone, since a margin that only chooses between *kinds* of model
-    # overrides `select` and leaves `fit` raising. Whether the verb asked for
-    # is one it has is the verb's own to report.
-    # Against both suppliers of the default: a margin may take it from
-    # `MarginBase` or from `MarginLike` itself.
+    # refittable -- and so is `fit` alone, since a margin that chooses between
+    # *kinds* of model overrides `select` and leaves `fit` raising. Both
+    # suppliers of the default count: a margin may take it from either.
     inherited = (
       MarginBase.fit,
       MarginLike.fit,
@@ -1286,13 +1282,10 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       return margin
     reject_weights(margin, controls)
     # A `family_set` is an instruction to search, so a margin that cannot act
-    # on one -- or a `fit`, which estimates the family the margin already has
-    # -- refuses it rather than fitting one family and looking like it chose.
-    # A declared var_type or support is a default, so neither refuses one.
-    #
-    # "Can act on one" is read off the margin's own `controls_class`: a kernel
-    # density reads controls (`FitControlsKde1d`, the kernel knobs) and still
-    # has no family to choose, so *whether* it takes controls is the wrong
+    # on one -- or a `fit`, which estimates the family it already has --
+    # refuses it rather than fitting one family and looking like it chose.
+    # Whether it can is read off `controls_class`: a kernel density takes
+    # controls and still has no family to choose, so taking them is the wrong
     # question and only the field answers it.
     declared = margin.controls_class
     searches = declared is not None and hasattr(declared, "family_set")
@@ -1322,12 +1315,10 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     try:
       getattr(margin, verb)(y, controls, **passed)
     except ValueError as e:
-      # Substituting a different kind of margin is a decision about which
-      # margin this column gets, so it is made here rather than inside a
-      # margin that would have to stop being itself to make it. It is core's
-      # own `Kde1d`, adopted onto this lane -- and where the lane's own
-      # `margin_class` already is a kernel density, the substitute fails the
-      # same way and the original failure is the one the caller needs.
+      # Which margin a column gets is decided here rather than inside a
+      # margin that would have to stop being itself to decide it. Where the
+      # lane's own `margin_class` is already a kernel density the substitute
+      # fails the same way, and the original failure is the one to report.
       if getattr(controls, "on_failure", "raise") != "fallback":
         raise
       try:

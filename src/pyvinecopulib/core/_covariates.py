@@ -186,12 +186,10 @@ def prepare_covariates(onto: object, x: ArrayT | None, n: int) -> ArrayT | None:
   if x is None:
     return None
   validate_covariates(x, n)
-  # Through the `_prep` hook where there is one, so that an object whose
-  # placement is *declared* rather than inferable is honored here as it is on
-  # the argument path -- `_prep`'s own docstring promises it is "equally
-  # correct for exogenous covariates", which routing around it made false.
-  # Guarded because `onto` is not always an object: the static fit engines
-  # pass an *array* as its own placement reference, and an array has no hook.
+  # Through the `_prep` hook where there is one, so an object whose placement
+  # is *declared* rather than inferable is honored here as on the argument
+  # path. Guarded because `onto` is not always an object: the static fit
+  # engines pass an *array* as its own placement reference, which has no hook.
   hook = getattr(onto, "_prep", None)
   placed = hook(x) if callable(hook) else place(onto, x)
   return cast("ArrayT", placed)

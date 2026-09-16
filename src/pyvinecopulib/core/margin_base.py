@@ -327,13 +327,9 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     """
     return True
 
-  # The controls class this margin's estimator reads, or `None` where it reads
-  # none -- a margin configured entirely at construction, whose caller must
-  # then keep controls out of a call that has no room for them, and be told so
-  # when what they carry is an instruction to search rather than a default.
-  # Declared where `bicop_class` / `vinecop_class` / `margin_class` declare the
-  # parts, and a plain comment for the same reason: autosummary cannot generate
-  # a page for an attribute whose value is a class.
+  # The controls this margin's estimator reads, or `None` where it reads none.
+  # A plain comment, not a `#:` one: autosummary cannot generate a page for an
+  # attribute whose value is a class.
   controls_class: ClassVar[type[ControlsLike] | None] = FitControlsMargin
 
   #: The variable type a caller declared through ``var_type``, with

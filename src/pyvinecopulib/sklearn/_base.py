@@ -24,7 +24,6 @@ from ..core import (
   Vinedist,
   VinedistBase,
 )
-from ..core._loglik import safe_log
 from ..core._margins import resolve_margin_controls
 from ..core._validation import validate_declaration
 from ..core.extend import to_numpy
@@ -217,6 +216,11 @@ class VineBase(BaseEstimator):
   # `getattr(self, "schema_", None)` is still how a caller-set one is read.
   schema_: dict[str, Any]
 
+  # `Any`, not `ArrayT` or `Array`: the lane is chosen at run time by
+  # `distribution=`, so the array type varies per instance, `VineBase` is not
+  # generic and has nothing to bind a variable from, and `ArrayT` is invariant
+  # -- a `VinecopLike[ndarray]` is no `VinecopLike[Array]`, since it accepts
+  # only its own array type. The estimator converts at its public boundary.
   _vine: VinecopLike[Any]
 
   _parameter_constraints: ClassVar[dict[str, list[object]]] = {
@@ -457,13 +461,9 @@ class VineBase(BaseEstimator):
 
     if isinstance(X, pd.DataFrame):
       if reset:
-        # `_reset_fitted_schema` has already dropped a schema a previous fit
-        # derived, so anything left is the caller's own declaration -- and a
-        # frame declares its types itself. Honoring both would need the
-        # caller to have written one entry per *expanded* column, a width
-        # they cannot see before the fit runs; overwriting theirs instead
-        # drops a `"zi"` or a bound a dtype cannot express and models the
-        # column as continuous. Neither is something to do silently.
+        # Anything `_reset_fitted_schema` left is the caller's declaration,
+        # and a frame declares its types itself. Honoring both would need one
+        # entry per *expanded* column, a width the caller cannot see yet.
         declared = getattr(self, "schema_", None)
         if declared:
           raise ValueError(
@@ -1035,19 +1035,9 @@ class VineBase(BaseEstimator):
     dist = self.distribution_
     if copula_only:
       u = dist.copula_layout(Z)
-      # The copula's own log-density where it has one, as `logpdf` reads it in
-      # the branch below: the density is a product over edges and underflows
-      # on a deep or strongly dependent vine.
-      # A local `Any`: `logpdf` is an optional capability the `getattr` below
-      # checks for, and `num_threads` is a hint every `VinecopBase` subclass
-      # and the core `Vinecop` accept -- neither belongs on the protocol,
-      # which stays the narrow evaluation contract a foreign vine must meet.
-      vine: Any = dist.vinecop
-      nt = self._num_threads
-      if getattr(vine, "logpdf", None) is not None:
-        out = to_numpy(vine.logpdf(u, num_threads=nt), dtype=float)
-      else:
-        out = safe_log(to_numpy(vine.pdf(u, num_threads=nt), dtype=float))
+      # The log-density rather than the log of the density: a vine's is a
+      # product over edges and underflows on a deep or strongly dependent one.
+      out = to_numpy(self._threaded("logpdf")(u), dtype=float)
     else:
       out = to_numpy(dist.logpdf(Z), dtype=float)
 

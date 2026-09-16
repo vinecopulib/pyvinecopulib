@@ -53,10 +53,10 @@ rng = np.random.default_rng(0)
 cov = [[1.0, 0.7, 0.3], [0.7, 1.0, 0.5], [0.3, 0.5, 1.0]]
 x = rng.multivariate_normal([0, 0, 0], cov, size=500)
 
-u = pv.to_pseudo_obs(x)              # ranks, on the copula scale
-vine = pv.Vinecop.from_data(u)       # selects structure and families
-print(vine)                          # the fitted trees, pair by pair
-vine.loglik(u), vine.bic()           # fit diagnostics
+u = pv.to_pseudo_obs(x)  # ranks, on the copula scale
+vine = pv.Vinecop.from_data(u)  # selects structure and families
+print(vine)  # the fitted trees, pair by pair
+vine.loglik(u), vine.bic()  # fit diagnostics
 draws = vine.sample(100, seeds=[1])  # new copula-scale observations
 ```
 
@@ -66,9 +66,9 @@ For a distribution on the original **data** scale — no rank transform, no
 kernel density.
 
 ```python
-dist = pv.Vinedist.from_data(y)          # y is data, not pseudo-observations
-dist.logpdf(y)                           # joint log-density
-dist.sample(1000, seeds=[1])             # draws on the original scale
+dist = pv.Vinedist.from_data(y)  # y is data, not pseudo-observations
+dist.logpdf(y)  # joint log-density
+dist.sample(1000, seeds=[1])  # draws on the original scale
 ```
 
 Bound a variable whose range you know, and the kernel density stops padding
@@ -76,8 +76,10 @@ past it:
 
 ```python
 from pyvinecopulib import FitControlsMargin
+
 dist = pv.Vinedist.from_data(
-  y, names=["income", "score"],
+  y,
+  names=["income", "score"],
   margin_controls={"income": FitControlsMargin(support=(0.0, None))},
 )
 ```
@@ -97,8 +99,10 @@ Three opt-in subpackages extend the core library:
   from pyvinecopulib.core import Vinedist
   from pyvinecopulib.margins import FitControlsMargin, SciPyMargin
 
+
   class ParametricVinedist(Vinedist):
     margin_class = SciPyMargin  # a family per column, chosen from the data
+
 
   dist = ParametricVinedist.from_data(
     x, margin_controls=FitControlsMargin(selection_criterion="bic")
@@ -116,8 +120,10 @@ Three opt-in subpackages extend the core library:
 
   ```python
   from pyvinecopulib.sklearn import VineDensity
-  density = VineDensity().fit(X)             # fits a `Vinedist`
-  density.score_samples(X[:3]); density.cdf(X[:3])
+
+  density = VineDensity().fit(X)  # fits a `Vinedist`
+  density.score_samples(X[:3])
+  density.cdf(X[:3])
   ```
 
   Install with `pip install pyvinecopulib[sklearn]`.
@@ -129,12 +135,13 @@ Three opt-in subpackages extend the core library:
   ```python
   import torch
   from pyvinecopulib.torch import TorchVinedist, FitControlsTorchVinecop
+
   dist = TorchVinedist.from_data(
     torch.as_tensor(x), controls=FitControlsTorchVinecop(device="cuda")
   )
   y = torch.as_tensor(x[:5], device="cuda").requires_grad_(True)
-  dist.log_prob(y).sum().backward()   # autograd through the whole vine
-  print(y.grad)                       # d log f / dy, on the GPU
+  dist.log_prob(y).sum().backward()  # autograd through the whole vine
+  print(y.grad)  # d log f / dy, on the GPU
   ```
 
   The same evaluator backs the sklearn estimators: pass
@@ -171,6 +178,12 @@ canonical, pure-Python base -- `BicopBase`, `VinecopBase`, `MarginBase` or
 or whole distribution into the library. Fitting has one shape on all four:
 `fit` returns `self`, `from_data` constructs, and configuration travels as a
 `ControlsLike` (anything with `to_dict()`).
+
+A contract names everything the library may ask of that part, and everything
+past its evaluation surface has a default -- so inheriting the protocol
+directly is the other route: define what you implement, and a member you
+decline raises naming your class instead of failing somewhere inside a
+cascade.
 
 A pair may depend on its vine conditioning-set values (a **non-simplified**
 vine), on row-aligned external covariates, or on both. `Vinedist` can compose covariate-dependent
