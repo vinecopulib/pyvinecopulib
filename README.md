@@ -75,14 +75,13 @@ Bound a variable whose range you know, and the kernel density stops padding
 past it:
 
 ```python
-from pyvinecopulib import FitControlsMargin
-
-dist = pv.Vinedist.from_data(
-  y,
-  names=["income", "score"],
-  margin_controls={"income": FitControlsMargin(support=(0.0, None))},
-)
+dist = pv.Vinedist.from_data(y, supports=[(0.0, None), None])
 ```
+
+What a variable *is* — its bounds, its type — is a declaration about the data,
+so it travels beside the fit configuration rather than inside it:
+`margin_controls=` says how to estimate a margin, `supports=` and `var_types=`
+say what it is estimating.
 
 Notebooks 01, 02 and 03 build out these core workflows, and 07 covers the
 kernel-density margin they default to.
@@ -134,11 +133,11 @@ Three opt-in subpackages extend the core library:
 
   ```python
   import torch
-  from pyvinecopulib.torch import TorchVinedist, FitControlsTorchVinecop
+  from pyvinecopulib.torch import TorchVinedist
 
-  dist = TorchVinedist.from_data(
-    torch.as_tensor(x), controls=FitControlsTorchVinecop(device="cuda")
-  )
+  # Where the model lives is read from the data, so placing the data places
+  # the whole distribution -- margins and copula together.
+  dist = TorchVinedist.from_data(torch.as_tensor(x, device="cuda"))
   y = torch.as_tensor(x[:5], device="cuda").requires_grad_(True)
   dist.log_prob(y).sum().backward()  # autograd through the whole vine
   print(y.grad)  # d log f / dy, on the GPU

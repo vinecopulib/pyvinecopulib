@@ -130,7 +130,6 @@ differently, or weight one and leave the other alone.
 
 ```python
 # margins and copula weighted the same way
-w = ...
 pv.Vinedist.from_data(
   y,
   pv.FitControlsVinecop(weights=w),
