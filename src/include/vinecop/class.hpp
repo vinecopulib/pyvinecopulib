@@ -816,4 +816,9 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
   // read it instead of each naming FitControlsVinecop again.
   module.attr("Vinecop").attr("controls_class") =
       module.attr("FitControlsVinecop");
+  // Declared, not inferred: nanobind reports every bound signature as
+  // `(*args, **kwargs)`, so nothing can read off this class whether it takes
+  // covariates or honors weights. A consumer asks the declaration.
+  module.attr("Vinecop").attr("supports_covariates") = false;
+  module.attr("Vinecop").attr("supports_weights") = true;
 }

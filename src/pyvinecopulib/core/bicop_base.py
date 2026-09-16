@@ -32,7 +32,7 @@ from __future__ import annotations
 import copy
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
-from typing import Any, ClassVar, Self, TypeVar, cast
+from typing import Any, ClassVar, Self, cast
 
 from ._bicop_plot import (
   BICOP_PLOT_PARAMS,
@@ -57,103 +57,11 @@ from .protocols import (
 
 __all__ = ["BicopBase"]
 
-# A pair copula's own type, which `flip_of` hands back unchanged. Unbounded:
-# an object satisfying nothing at all is what the raise below is for.
-_PairT = TypeVar("_PairT")
-
 
 #: Atom width below which a difference quotient is replaced by the derivative
 #: at the atom's midpoint. ``AbstractBicop``'s own threshold, to the digit:
 #: below it the numerator and denominator both vanish and the ratio is noise.
 DELTA_MIN: float = 5e-5
-
-
-def flip_of(pair: _PairT) -> _PairT:
-  """The argument-swapped pair, for a caller that has established it has one.
-
-  ``flip`` is an optional capability on :class:`BicopLike` -- needed only to
-  host a pair in structure *selection* or in a relabeling, never to evaluate
-  one -- so the contract does not require it and the type checker will not let
-  it be called unguarded. This is the single place that reads it, so the guard
-  each caller relies on is named once rather than cast away four times:
-
-  - ``VinecopBase.select`` refuses a pair class without one up front
-    (``_check_selectable``), and probes the first fitted pair behind an opaque
-    ``fit_edge``;
-  - ``reorient`` and the reoriented view only reach slots of a vine that was
-    selected or built with flippable pairs;
-
-  Parameters
-  ----------
-  pair : BicopLike
-      The pair copula to flip.
-
-  Returns
-  -------
-  BicopLike
-      The pair with its two arguments swapped.
-
-  Raises
-  ------
-  NotImplementedError
-      If the pair has no ``flip``, which is what
-      :class:`~pyvinecopulib.core.BicopBase` raises and what the guards above
-      are there to turn into an earlier, clearer failure.
-  """
-  method = getattr(pair, "flip", None)
-  if method is None:
-    raise NotImplementedError(
-      f"{type(pair).__name__} has no `flip` (the argument-swapped copula), "
-      "which structure selection and relabeling need to reorient a pair onto "
-      "its slot. Implement it, or supply a structure and fit along it."
-    )
-  return cast("_PairT", method())
-
-
-def continuous_of(pair: BicopLike[ArrayT]) -> BicopLike[ArrayT]:
-  """Return ``pair`` evaluated as a continuous copula.
-
-  A pair copula carries its own variable types, so a slot declared discrete
-  holds one reading the four-column layout. The inverse Rosenblatt cascade
-  evaluates every pair as continuous -- it produces the very values a left
-  limit would be taken of -- and so does a density plot, which draws one
-  surface. Both reach the continuous reading through this.
-
-  Parameters
-  ----------
-  pair : BicopLike
-      The pair copula to view.
-
-  Returns
-  -------
-  BicopLike
-      The continuous view, or ``pair`` itself: a pair with no
-      ``with_var_types`` carries no types to begin with, and
-      :meth:`~pyvinecopulib.core.BicopBase.with_var_types` returns ``self``
-      when they already match, so neither costs a copy.
-
-  Raises
-  ------
-  ValueError
-      If ``pair`` declares discrete variables but offers no continuous view.
-  """
-  # Read off the instance, as `flip_of` reads `flip`: `with_var_types` is an
-  # optional capability, which is how every other one here is asked for.
-  view = getattr(pair, "with_var_types", None)
-  if callable(view):
-    return cast("BicopLike[ArrayT]", view())
-  # Declaring atoms on a pair that implements `BicopLike` directly is the
-  # mistake the extension docs warn about, and the cascade would otherwise
-  # hand it a four-column argument and fail several frames down. Same trade as
-  # `flip_of`: name the missing capability where it is missing.
-  types = getattr(pair, "var_types", None)
-  if types is not None and any(t != "c" for t in types):
-    raise ValueError(
-      f"{type(pair).__name__} declares var_types={list(types)} but has no "
-      "with_var_types(); subclass BicopBase, which supplies both, or add "
-      "with_var_types() to the pair copula."
-    )
-  return pair
 
 
 def rect_prob_from_cdf(
@@ -891,6 +799,13 @@ class BicopBase(
   #: state (declared ``False``) is distinguishable from "never heard of it"
   #: and a subclass author can find the flag without tripping its error.
   supports_batched: bool = False
+
+  #: Whether this pair copula's leaves accept exogenous covariates. Declared
+  #: for the same reason `supports_batched` is: a bound class reports
+  #: `(*args, **kwargs)`, so `pair_eval` cannot read the signature and asks
+  #: the declaration before forwarding a matrix. A subclass whose leaves take
+  #: `x` -- whether or not they read one -- sets this `True`.
+  supports_covariates: bool = False
 
   # --- the leaves a subclass writes -------------------------------------- #
   # Each takes two continuous columns the dispatcher has already prepared, and

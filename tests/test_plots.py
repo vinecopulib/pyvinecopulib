@@ -15,6 +15,7 @@ from .helpers import ShiftedNormalMargin
 #: double that claims capabilities its subject lacks tests the wrong object.
 _PAIR_SURFACE = [
   "pdf",
+  "with_var_types",
   "cdf",
   "hfunc1",
   "hfunc2",
@@ -268,6 +269,9 @@ class TestBicopHelpers:
     # Create a mock copula object
     mock_cop = MagicMock(spec=_PAIR_SURFACE)
     mock_cop.var_types = ["c", "c"]
+    # The continuous reading of an already-continuous pair is itself, which
+    # is what the contract's own `with_var_types` default returns.
+    mock_cop.with_var_types.return_value = mock_cop
     mock_cop.pdf.return_value = np.ones(100)
 
     # Test invalid plot type
@@ -290,6 +294,9 @@ class TestBicopHelpers:
     # Create a mock copula object
     mock_cop = MagicMock(spec=_PAIR_SURFACE)
     mock_cop.var_types = ["c", "c"]
+    # The continuous reading of an already-continuous pair is itself, which
+    # is what the contract's own `with_var_types` default returns.
+    mock_cop.with_var_types.return_value = mock_cop
     mock_cop.pdf.return_value = np.ones(10000)  # 100x100 grid
 
     # Test contour plot
@@ -315,6 +322,9 @@ class TestBicopHelpers:
     # Create a mock copula object
     mock_cop = MagicMock(spec=_PAIR_SURFACE)
     mock_cop.var_types = ["c", "c"]
+    # The continuous reading of an already-continuous pair is itself, which
+    # is what the contract's own `with_var_types` default returns.
+    mock_cop.with_var_types.return_value = mock_cop
     mock_cop.pdf.return_value = np.ones(1600)  # 40x40 grid
 
     # Test surface plot
@@ -337,6 +347,9 @@ class TestBicopHelpers:
     # Create a mock copula object
     mock_cop = MagicMock(spec=_PAIR_SURFACE)
     mock_cop.var_types = ["c", "c"]
+    # The continuous reading of an already-continuous pair is itself, which
+    # is what the contract's own `with_var_types` default returns.
+    mock_cop.with_var_types.return_value = mock_cop
     mock_cop.pdf.return_value = np.ones(10000)  # 100x100 grid
 
     margin_types = ["unif", "norm", "exp"]
@@ -363,6 +376,9 @@ class TestBicopHelpers:
     # Create a mock copula object
     mock_cop = MagicMock(spec=_PAIR_SURFACE)
     mock_cop.var_types = ["c", "c"]
+    # The continuous reading of an already-continuous pair is itself, which
+    # is what the contract's own `with_var_types` default returns.
+    mock_cop.with_var_types.return_value = mock_cop
     mock_cop.pdf.return_value = np.ones(2500)  # 50x50 grid
 
     # Test with custom parameters
@@ -1045,6 +1061,9 @@ class TestEdgeCases:
     # Create a mock copula that returns identical density values
     mock_cop = MagicMock(spec=_PAIR_SURFACE)
     mock_cop.var_types = ["c", "c"]
+    # The continuous reading of an already-continuous pair is itself, which
+    # is what the contract's own `with_var_types` default returns.
+    mock_cop.with_var_types.return_value = mock_cop
     mock_cop.pdf.return_value = np.ones(100)  # All values identical
 
     with patch("matplotlib.pyplot.show"), patch("matplotlib.pyplot.contour"):

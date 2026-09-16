@@ -162,9 +162,8 @@ def bicop_plot(
   # Imported here rather than at module scope: `bicop_base` imports this
   # module for the shared docstring fragments, so the edge only runs one way
   # at import time.
-  from .bicop_base import continuous_of
 
-  vals = pair_eval(continuous_of(cop).pdf, u_grid, x=x_grid)
+  vals = pair_eval(cop.with_var_types().pdf, u_grid, x=x_grid)
   # Coerce the density so a torch-tensor return reshapes cleanly.
   grid_vals = np.reshape(to_numpy(vals), (grid_size, grid_size))
 

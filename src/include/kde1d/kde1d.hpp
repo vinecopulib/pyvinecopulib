@@ -827,4 +827,7 @@ inline void init_kde1d(nb::module_& module) {
   // declare theirs: the one place that answers "what does `controls=None` mean
   // here", and what the margin layer reads instead of a separate boolean.
   cls.attr("controls_class") = module.attr("FitControlsKde1d");
+  // As `supports_weights` above: a kernel density reads no covariates, and
+  // the declaration is what says so, since the signature cannot.
+  cls.attr("supports_covariates") = false;
 }

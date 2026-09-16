@@ -55,7 +55,6 @@ from ..core import (
   VinecopBase,
 )
 from ..core._validation import reject_covariates
-from ..core.bicop_base import continuous_of
 from ..core.bicop_independence import IndependenceBicop
 from ..core.vinecop_base import FitEdge, FitLevel, NotBatchable
 from ..pyvinecopulib_ext import (
@@ -624,7 +623,7 @@ class TorchVinecop(
       [
         TorchTllBicop(device=u_t.device, dtype=eff_dtype)
         if isinstance(p, IndependenceBicop)
-        else continuous_of(p)
+        else p.with_var_types()
         for p in row
       ]
       for row in pairs
@@ -670,7 +669,7 @@ class TorchVinecop(
           [
             TorchTllBicop(device=ref.device, dtype=ref.dtype)
             if isinstance(pair, IndependenceBicop)
-            else cast("torch.nn.Module", continuous_of(pair))
+            else cast("torch.nn.Module", pair.with_var_types())
             for pair in row
           ]
         )

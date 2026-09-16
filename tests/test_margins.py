@@ -180,9 +180,15 @@ def test_as_margin_adopts_a_raw_kde1d(sample: np.ndarray) -> None:
 
 
 def test_as_margin_accepts_a_structural_margin() -> None:
-  """The documented `MarginLike` hook does not require a library base class."""
+  """The documented `MarginLike` hook needs `pdf` / `cdf` / `icdf` and no more.
 
-  class StructuralMargin:
+  Those three are the contract's only abstract members; everything a consumer
+  reads beyond them -- `var_type`, `support`, `logpdf`, `cdf_left`, and the
+  two capability flags -- comes from the protocol as a default, so a margin
+  that has nothing else to say still composes.
+  """
+
+  class StructuralMargin(MarginLike[Any]):
     def pdf(self, y: Any, /, *, x: Any = None) -> Any:
       return np.exp(-(np.asarray(y) ** 2) / 2) / np.sqrt(2 * np.pi)
 
@@ -195,6 +201,14 @@ def test_as_margin_accepts_a_structural_margin() -> None:
   margin = StructuralMargin()
   assert isinstance(margin, MarginLike)
   assert as_margin(margin) is margin
+  # The defaults a consumer reads, none of which this margin wrote.
+  assert margin.var_type == "c"
+  assert margin.support == (float("-inf"), float("inf"))
+  assert margin.supports_covariates is False
+  assert margin.supports_weights is False
+  y = np.array([0.0, 1.0])
+  np.testing.assert_allclose(margin.logpdf(y), np.log(margin.pdf(y)))
+  np.testing.assert_allclose(margin.cdf_left(y), margin.cdf(y))
 
 
 @pytest.mark.parametrize(

@@ -562,4 +562,9 @@ Bicop
   // that answers "what does `controls=None` mean here", so the Python layers
   // read it instead of each naming FitControlsBicop again.
   module.attr("Bicop").attr("controls_class") = module.attr("FitControlsBicop");
+  // Declared, not inferred: nanobind reports every bound signature as
+  // `(*args, **kwargs)`, so nothing can read off this class whether it takes
+  // covariates or honors weights. A consumer asks the declaration.
+  module.attr("Bicop").attr("supports_covariates") = false;
+  module.attr("Bicop").attr("supports_weights") = true;
 }

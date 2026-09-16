@@ -70,8 +70,29 @@ def pair_eval(
   -------
   array
       Whatever ``method`` returns.
+
+  Raises
+  ------
+  TypeError
+      If there is a matrix and the pair declares it reads none.
   """
-  return method(*args) if x is None else method(*args, x=x)
+  if x is None:
+    return method(*args)
+  # The declaration, checked before the call rather than after: a pair that
+  # takes no covariates raises here by name, where the alternative is
+  # `TypeError: pdf(): incompatible function arguments` listing every bound
+  # overload. The forwarding itself stays unconditional -- making *that*
+  # conditional on the flag would turn a forgotten one into a silent
+  # unconditional fit, the outcome neither forwarding rule may produce.
+  pair = getattr(method, "__self__", None)
+  if pair is not None and not getattr(pair, "supports_covariates", False):
+    raise TypeError(
+      f"{type(pair).__name__} declares `supports_covariates = False`, so it "
+      f"cannot be handed the conditioning matrix this vine is evaluating "
+      f"with. Host a pair copula that reads covariates, or evaluate without "
+      f"`x`."
+    )
+  return method(*args, x=x)
 
 
 def declared_eval(

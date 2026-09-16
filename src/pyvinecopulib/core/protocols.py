@@ -71,7 +71,7 @@ conventionally ``xp`` -- and ``array_namespace`` resolves an array to it.
 from __future__ import annotations
 
 from abc import abstractmethod
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import (
   Any,
   Protocol,
@@ -711,6 +711,124 @@ class BicopLike(Protocol[ArrayT]):
         Samples in the unit square.
     """
 
+  # --- what hosting a pair needs beyond evaluating one --------------------- #
+
+  def cdf(self, u: ArrayT, /) -> ArrayT:
+    """Pair-copula distribution function ``C(u)``.
+
+    Needed only on a pair **declared discrete**, whose h-functions are
+    difference quotients of this. A vine's own ``cdf`` is Monte-Carlo and
+    never asks for it.
+
+    Parameters
+    ----------
+    u : array, shape (n, 2), dtype float
+        Pair pseudo-observations in the unit square.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Distribution-function values.
+
+    Raises
+    ------
+    NotImplementedError
+        Unless the implementation defines one.
+    """
+    raise NotImplementedError(
+      f"{type(self).__name__} has no `cdf`; a vine's own cdf is Monte-Carlo, "
+      "so this is needed only to declare the pair copula discrete."
+    )
+
+  def flip(self) -> Self:
+    """The pair copula with its two arguments swapped.
+
+    Needed to reorient a fitted pair onto its finalized slot in structure
+    selection, and in a relabeling. Evaluation along a fixed structure never
+    asks for it.
+
+    Returns
+    -------
+    BicopLike
+        A pair copula reading ``(u2, u1)`` where this one reads ``(u1, u2)``.
+
+    Raises
+    ------
+    NotImplementedError
+        Unless the implementation defines one.
+    """
+    raise NotImplementedError(
+      f"{type(self).__name__} has no `flip`, which structure selection needs "
+      "to reorient a fitted pair. Implement it, or supply a structure and fit "
+      "along it."
+    )
+
+  @property
+  def var_types(self) -> Sequence[str]:
+    """Which of the pair's two variables have atoms.
+
+    Returns
+    -------
+    sequence of str
+        Two entries, each ``"c"`` or ``"d"``. Continuous unless the
+        implementation says otherwise.
+    """
+    return ("c", "c")
+
+  def with_var_types(self, var_types: Sequence[str] = ("c", "c")) -> Self:
+    """A copy of this pair copula declaring ``var_types``.
+
+    The inverse Rosenblatt cascade and the density plot both evaluate every
+    pair continuously, and reach that reading through this.
+
+    Parameters
+    ----------
+    var_types : sequence of str, default=("c", "c")
+        Two entries, each ``"c"`` or ``"d"``.
+
+    Returns
+    -------
+    BicopLike
+        The copy, or ``self`` where the types already match.
+
+    Raises
+    ------
+    ValueError
+        If the pair declares atoms and offers no continuous reading.
+    """
+    if tuple(var_types) == tuple(self.var_types):
+      return self
+    raise ValueError(
+      f"{type(self).__name__} declares var_types={list(self.var_types)} but "
+      "cannot be read as any other; subclass BicopBase, which supplies both, "
+      "or implement with_var_types()."
+    )
+
+  @property
+  def supports_covariates(self) -> bool:
+    """Whether this pair copula's members accept exogenous covariates.
+
+    Read before a covariate matrix is forwarded, because a bound class
+    reports ``(*args, **kwargs)`` and its signature cannot answer.
+
+    Returns
+    -------
+    bool
+        ``False`` unless the implementation says otherwise.
+    """
+    return False
+
+  @property
+  def supports_weights(self) -> bool:
+    """Whether a fit of this pair copula honors observation weights.
+
+    Returns
+    -------
+    bool
+        ``False`` unless the implementation says otherwise.
+    """
+    return False
+
 
 BicopLike.__doc__ = (BicopLike.__doc__ or "") + _BICOP_EXAMPLE
 
@@ -852,6 +970,64 @@ class VinecopLike(Protocol[ArrayT]):
         Samples in ``[0, 1]^d``.
     """
 
+  # --- what composing a vine needs beyond evaluating one ------------------- #
+
+  def logpdf(self, u: ArrayT) -> ArrayT:
+    """Vine log-density at each observation.
+
+    A vine distribution reads this rather than logging the density, because
+    a product of up to ``d(d-1)/2`` pair densities underflows.
+
+    Parameters
+    ----------
+    u : array, shape (n, d), dtype float
+        Copula-scale observations.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Log-density values.
+    """
+    # Local, because `_loglik` imports this module: the fallback belongs in
+    # the contract, and the one function it needs sits one layer down.
+    from ._loglik import safe_log
+
+    return safe_log(self.pdf(u))
+
+  @property
+  def var_types(self) -> Sequence[str]:
+    """Which variables have atoms.
+
+    Returns
+    -------
+    sequence of str
+        One entry per variable, each ``"c"`` or ``"d"``. Continuous unless
+        the implementation says otherwise.
+    """
+    return ["c"] * int(self.structure.dim)
+
+  @property
+  def supports_covariates(self) -> bool:
+    """Whether this vine's members accept exogenous covariates.
+
+    Returns
+    -------
+    bool
+        ``False`` unless the implementation says otherwise.
+    """
+    return False
+
+  @property
+  def supports_weights(self) -> bool:
+    """Whether a fit of this vine honors observation weights.
+
+    Returns
+    -------
+    bool
+        ``False`` unless the implementation says otherwise.
+    """
+    return False
+
 
 VinecopLike.__doc__ = (VinecopLike.__doc__ or "") + _VINECOP_EXAMPLE
 
@@ -953,6 +1129,116 @@ class MarginLike(Protocol[ArrayT]):
     array, shape (n,), dtype float
         Quantiles on the original scale.
     """
+
+  # --- what composing a margin needs beyond evaluating one ----------------- #
+
+  @property
+  def var_type(self) -> str:
+    """Variable type.
+
+    Returns
+    -------
+    str
+        ``"c"``, ``"d"`` or ``"zi"``. Continuous unless the implementation
+        says otherwise.
+    """
+    return "c"
+
+  @property
+  def support(self) -> tuple[float, float]:
+    """Closed bounds of the support.
+
+    Returns
+    -------
+    tuple of float
+        ``(lo, hi)``, unbounded on both sides unless the implementation says
+        otherwise.
+    """
+    return (float("-inf"), float("inf"))
+
+  def logpdf(self, y: ArrayT, /) -> ArrayT:
+    """Log-density with respect to the margin's own reference measure.
+
+    Parameters
+    ----------
+    y : array, shape (n,), dtype float
+        Observations on the original scale.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Log-density values.
+    """
+    from ._loglik import safe_log  # as `VinecopLike.logpdf`
+
+    return safe_log(self.pdf(y))
+
+  def cdf_left(self, y: ArrayT, /) -> ArrayT:
+    """Left limit ``F(y^-)`` of the distribution function.
+
+    The derived ``cdf(y) - pdf(y)`` cancels in the right tail, so a family
+    with an exact left limit should say so rather than inherit this.
+
+    Parameters
+    ----------
+    y : array, shape (n,), dtype float
+        Observations on the original scale.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Left-limit values; equal to ``cdf`` on a continuous margin.
+    """
+    if self.var_type == "c":
+      return self.cdf(y)
+    return self.cdf(y) - self.pdf(y)
+
+  def sample(self, n: int, *, seeds: list[int] | None = None) -> ArrayT:
+    """Draw ``n`` observations on the original scale.
+
+    Parameters
+    ----------
+    n : int
+        Number of observations to draw.
+    seeds : list of int, or None, optional
+        RNG seeds.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Draws on the original scale.
+
+    Raises
+    ------
+    NotImplementedError
+        Unless the implementation defines one.
+    """
+    raise NotImplementedError(
+      f"{type(self).__name__} has no `sample`; implement it to draw from this "
+      "margin."
+    )
+
+  @property
+  def supports_covariates(self) -> bool:
+    """Whether this margin's members accept exogenous covariates.
+
+    Returns
+    -------
+    bool
+        ``False`` unless the implementation says otherwise.
+    """
+    return False
+
+  @property
+  def supports_weights(self) -> bool:
+    """Whether a fit of this margin honors observation weights.
+
+    Returns
+    -------
+    bool
+        ``False`` unless the implementation says otherwise.
+    """
+    return False
 
 
 MarginLike.__doc__ = (MarginLike.__doc__ or "") + _MARGIN_EXAMPLE
@@ -1152,6 +1438,80 @@ class VinedistLike(Protocol[ArrayT]):
     array, shape (n, d), dtype float
         The drawn observations.
     """
+
+  # --- what a consumer of a distribution asks beyond evaluating one -------- #
+
+  @property
+  def dim(self) -> int:
+    """Number of variables.
+
+    Returns
+    -------
+    int
+        One per margin.
+    """
+    return len(self.margins)
+
+  @property
+  def var_types(self) -> Sequence[str]:
+    """Which variables have atoms, read from the margins.
+
+    Returns
+    -------
+    sequence of str
+        One entry per variable, each ``"c"`` or ``"d"``: a zero-inflated
+        margin sits on a discrete edge, so ``"zi"`` reads as ``"d"`` here.
+    """
+    return [
+      "d" if getattr(m, "var_type", "c") in ("d", "zi") else "c"
+      for m in self.margins
+    ]
+
+  def margin_summary(self) -> Sequence[Mapping[str, Any]]:
+    """One row per margin, describing what each one is.
+
+    Returns
+    -------
+    sequence of mapping
+        What the sklearn estimators publish as ``margin_summary_``.
+
+    Raises
+    ------
+    NotImplementedError
+        Unless the implementation defines one.
+    """
+    raise NotImplementedError(
+      f"{type(self).__name__} has no `margin_summary`, which the sklearn "
+      "estimators publish as `margin_summary_`."
+    )
+
+  def sample_conditional(
+    self,
+    y_cond: ArrayT,
+    **kwargs: Any,  # noqa: ANN401 - forwarded to the implementation
+  ) -> ArrayT:
+    """Draw observations given values of a subset of the variables.
+
+    Parameters
+    ----------
+    y_cond : array, shape (n, k), dtype float
+        Conditioning values on the original scale.
+    **kwargs : Any
+        Forwarded to the copula's ``sample_conditional``.
+
+    Returns
+    -------
+    array, shape (n, d), dtype float
+        The drawn observations.
+
+    Raises
+    ------
+    NotImplementedError
+        Unless the implementation defines one.
+    """
+    raise NotImplementedError(
+      f"{type(self).__name__} has no `sample_conditional`."
+    )
 
 
 VinedistLike.__doc__ = (VinedistLike.__doc__ or "") + _VINEDIST_EXAMPLE

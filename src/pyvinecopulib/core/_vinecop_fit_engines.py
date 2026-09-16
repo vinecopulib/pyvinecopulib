@@ -39,7 +39,6 @@ from ._vinecop_discrete import (
   with_left_limit,
 )
 from ._vinecop_reorient import _slot_key, _SlotKey, reorientation
-from .bicop_base import flip_of
 from .bicop_independence import IndependenceBicop
 from .protocols import ArrayT, BicopLike, array_namespace
 from .vinecop_context import ConditioningContext, SimplifiedContext
@@ -737,7 +736,7 @@ def select_parts(
         # after every edge is fitted. A thresholded edge is not one of theirs.
         flip_checked = True
         try:
-          flip_of(pair)
+          pair.flip()
         except NotImplementedError as err:
           raise NotImplementedError(
             f"{type(pair).__name__} has no `flip`, which structure "
@@ -810,7 +809,7 @@ def select_parts(
     for e in range(d - 1 - t):
       diag, key = _slot_key(structure, t, e)
       a_label, pair, chain = records[t][key]
-      row.append(pair if a_label == diag else flip_of(pair))
+      row.append(pair if a_label == diag else pair.flip())
       # `flip` swaps the pair's two arguments; nothing reorders the
       # conditioning columns, so the slot inherits the order its pair was
       # fitted on. On an unswapped slot that is the order the finalized

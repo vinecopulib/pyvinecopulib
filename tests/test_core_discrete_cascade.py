@@ -25,7 +25,6 @@ from pyvinecopulib.core import (
   BicopLike,
   VinecopBase,
 )
-from pyvinecopulib.core.bicop_base import continuous_of
 
 from .conftest import GaussianBicop, HostedVinecop
 
@@ -341,12 +340,17 @@ def test_batched_declines_on_a_discrete_vine() -> None:
     cont.pdf(u[:, :_D], batched=True)
 
 
-def test_continuous_of_passes_through_a_foreign_pair() -> None:
-  """A pair implementing ``BicopLike`` directly declares no variable types."""
-  from pyvinecopulib.core.bicop_base import continuous_of
+def test_the_continuous_reading_of_a_foreign_pair_is_itself() -> None:
+  """A pair that declares no atoms is already its own continuous reading.
 
-  class _Foreign:
-    """Six members, no `var_types`, no `with_var_types` -- the contract only."""
+  The cascades used to reach this through a `continuous_of` probe, because
+  `with_var_types` was not on `BicopLike`. It is a member now, and its default
+  returns `self` when the types already match -- so a pair that never declared
+  any costs no copy and needs no guard.
+  """
+
+  class _Foreign(BicopLike[Any]):
+    """The six evaluating members; everything else from the contract."""
 
     def pdf(self, u: np.ndarray) -> np.ndarray:
       return np.ones(u.shape[0])
@@ -368,7 +372,8 @@ def test_continuous_of_passes_through_a_foreign_pair() -> None:
 
   foreign = _Foreign()
   assert isinstance(foreign, BicopLike)
-  assert continuous_of(foreign) is foreign
+  assert tuple(foreign.var_types) == ("c", "c")
+  assert foreign.with_var_types() is foreign
 
 
 # ---------------------------------------------------------------------------
@@ -1026,19 +1031,42 @@ def test_wrapped_pairs_match_vinecop_on_count_margins(
 
 
 def test_a_discrete_pair_without_a_continuous_view_is_rejected() -> None:
-  # The inverse cascade evaluates every pair as continuous, so a pair copula that
-  # declares atoms has to offer a continuous view. Saying so beats the column-
-  # count error the pair itself would raise several frames down.
-  class _NoView:
-    var_types = ("d", "c")
+  """A pair declaring atoms has to offer a continuous reading of itself.
+
+  The inverse cascade evaluates every pair continuously, so a pair that
+  declares atoms and overrides neither `with_var_types` nor its own reading
+  has to say so. Saying so beats what the alternative measures: the
+  four-column layout reaches a two-column `pdf`, which may return a
+  plausible wrong density rather than raising at all.
+  """
+
+  class _NoView(BicopLike[Any]):
+    """Declares atoms, and does not override the contract's reading of them."""
+
+    @property
+    def var_types(self) -> Any:
+      return ("d", "c")
 
     def pdf(self, u: Any) -> Any:
       raise AssertionError("not reached")
 
-  with pytest.raises(ValueError, match="no with_var_types"):
-    # Off-contract on purpose: what is being checked is the answer a pair
-    # declaring atoms with no continuous reading gets back.
-    continuous_of(cast("Any", _NoView()))
+    def hfunc1(self, u: Any) -> Any:
+      raise AssertionError("not reached")
+
+    def hfunc2(self, u: Any) -> Any:
+      raise AssertionError("not reached")
+
+    def hinv1(self, u: Any) -> Any:
+      raise AssertionError("not reached")
+
+    def hinv2(self, u: Any) -> Any:
+      raise AssertionError("not reached")
+
+    def sample(self, n: int, **kwargs: Any) -> Any:
+      raise AssertionError("not reached")
+
+  with pytest.raises(ValueError, match="cannot be read as any other"):
+    _NoView().with_var_types()
 
 
 def test_a_pair_that_models_atoms_is_asked_for_its_own_surface() -> None:

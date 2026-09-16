@@ -93,7 +93,7 @@ from ._vinecop_plot import (
   vinecop_plot,
 )
 from ._vinecop_reorient import Reorientation, reorientation
-from .bicop_base import BicopBase, continuous_of, flip_of
+from .bicop_base import BicopBase
 from .protocols import (
   _VINECOP_EXAMPLE,
   ArrayT,
@@ -922,7 +922,7 @@ class VinecopBase(
           # The inverse cascade *produces* the values a left limit would be
           # taken of, so it evaluates every pair as continuous -- exactly as
           # ``Vinecop::inverse_rosenblatt`` does.
-          edge_copula = continuous_of(edge_copula)
+          edge_copula = edge_copula.with_var_types()
         # Same m / on-diagonal rule as the forward cascades (class.ipp:1026),
         # but the inputs are rows of the transposed hinv2 / hfunc1 scratch.
         m = int(s.min_array(tree, var))
@@ -1237,7 +1237,7 @@ class VinecopBase(
       for edge in range(self.d - 1 - tree):
         old_edge, flipped = r.locations[tree, edge]
         pair = self.get_pair_copula(tree, old_edge)
-        row.append(flip_of(pair) if flipped else pair)
+        row.append(pair.flip() if flipped else pair)
       pairs.append(row)
     return r.structure, pairs
 
@@ -2173,7 +2173,7 @@ class _ReorientedVine(VinecopBase[ArrayT]):
       # integral caches -- and each slot is read once per cascade pass, of which
       # conditional sampling makes two. Callers relabeling repeatedly should use
       # `reorient()` once and host the pairs it returns.
-      pair = flip_of(self._base.get_pair_copula(tree, old_edge))
+      pair = self._base.get_pair_copula(tree, old_edge).flip()
       self._flipped[key] = pair
     return pair
 

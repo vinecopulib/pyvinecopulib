@@ -588,21 +588,27 @@ For any behavior change:
 
 - **Two covariate-forwarding rules, and they are not interchangeable**
   (`core/_covariates.py`). `pair_eval` forwards `x` to a pair copula
-  **whenever there is one**: `ty` makes every `BicopBase` subclass declare the
-  parameter, so the signature *is* the declaration, and forwarding
-  unconditionally is what makes a pair that takes none -- `Bicop` above all --
-  raise instead of quietly modeling something else. `declared_eval` forwards
-  to a margin or a whole copula **only when it declares
-  `supports_covariates`**, because those are reached through structural
-  protocols that foreign objects satisfy (a SciPy distribution, `Vinecop`)
-  whose signatures answer nothing, and because one distribution may hold
-  conditional and unconditional parts side by side -- a per-column choice the
-  caller made, not an accident. Collapsing the first rule into the second
-  would make a forgotten flag a *silent* unconditional fit, which is the one
-  outcome neither rule may produce; what enforces the second instead is
-  that the object refuses covariates **nothing** reads
-  (`VinedistBase._check_covariates`). At fit time there is no skipping:
-  `reject_covariates` refuses outright.
+  **whenever there is one**, and *raises* first when the pair declares
+  `supports_covariates = False`. `declared_eval` forwards to a margin or a
+  whole copula **only when it declares the flag**, and *skips* silently when
+  it does not, because one distribution may hold conditional and
+  unconditional parts side by side -- a per-column choice the caller made,
+  not an accident. What enforces the second instead is that the object
+  refuses covariates **nothing** reads (`VinedistBase._check_covariates`).
+  At fit time there is no skipping: `reject_covariates` refuses outright.
+
+  Both now read the same flag, and the difference that matters is
+  raise-versus-skip, not read-versus-ignore. Collapsing the first into the
+  second -- making the *forwarding itself* conditional on the flag -- would
+  make a forgotten one
+  a **silent unconditional fit**, which is the one outcome neither rule may
+  produce. Raising on an absent declaration has no such failure mode, and the
+  forwarding itself stays unconditional for anything that passes. The
+  signature cannot serve as the declaration here even though `ty` makes every
+  `BicopBase` subclass write `x`: `inspect.signature(Bicop.pdf)` is
+  `(*args, **kwargs)`, so at runtime nothing can read it, and a vine
+  evaluating with covariates over pairs that take none used to fail as
+  nanobind's overload dump rather than by name.
 - **A mixin at the placement position defines only ordinary private methods.**
   `core/_placement.PlacementMixin`, `QrngUniformMixin` and
   `torch/_placement.TensorPlacementMixin` all land **ahead of
@@ -638,26 +644,42 @@ For any behavior change:
   under `-W`.
 
 - **A capability flag exists where a consumer reads it, and nowhere else.**
-  `supports_covariates` is declared on `MarginBase` and `VinecopBase` because
-  `declared_eval` reads it there; it is *absent* from `BicopBase`
-  (whose rule is the signature) and from `VinedistBase` (which nothing
-  composes). Adding either would be a declaration with no reader -- the thing
-  `supported_var_types` was deleted for. The same test applies to the
-  *protocols*: `BicopLike` and `VinedistLike` each documented a
-  `supports_covariates` no code reads at that level, and both entries are gone.
-- **A protocol requires what a cascade calls; anything a pair needs only to be
-  hosted somewhere particular is an optional capability.** `BicopLike` is
-  `pdf` / `hfunc1` / `hfunc2` / `hinv1` / `hinv2` / `sample` -- the whole of
-  what a vine's `pdf`, `rosenblatt`, `inverse_rosenblatt` and `sample` ask of a
-  pair. `cdf` (needed only on a pair **declared discrete**; a vine's
-  own `cdf` is Monte-Carlo) and `flip` (needed only in `select` and in a
-  relabeling) are read with `getattr` instead. Requiring them made `isinstance`
-  stricter than the documented contract and made implementing `BicopLike`
-  *directly* -- which the extension-point docs offer -- impossible without two
-  methods those same docs call optional. `BicopBase` keeps both as raising
-  stubs, which is where each explanation lives, and `bicop_base.flip_of` is the
-  one place that reads `flip`, so the guard each caller relies on is named once
-  rather than cast away at four sites.
+  `supports_covariates` is declared on `BicopBase`, `MarginBase` and
+  `VinecopBase` -- `pair_eval` reads the first and `declared_eval` the other
+  two -- and it means the same thing at each: *this part accepts `x`*.
+  `supports_weights` is declared on the same three, and means *a fit of this
+  honors `controls.weights`*. Both are absent from `VinedistBase`, where the
+  aggregate questions are derived from the parts instead
+  (`margin_class` and `vinecop_class`), so there is nothing to declare.
+  Adding a flag with no reader is the thing `supported_var_types` was deleted
+  for, and `supports_controls` after it -- `controls_class is None` says
+  "reads no controls" and carries the type besides.
+- **A protocol declares what hosting a part needs, and supplies its own
+  defaults.** `VinecopBase.bicop_class` is declared
+  `type[BicopLike[Any]] | None`, so `BicopLike` is by declaration "what a vine
+  may host" -- which is more than the six evaluating members. `cdf` and
+  `with_var_types` are what a **discrete** edge needs, `flip` what *selection*
+  needs, and `supports_covariates` / `supports_weights` what a consumer must
+  read before handing over a matrix or weights. All are members.
+
+  A member an implementation cannot serve gets a **default in the protocol
+  body**, and that default is *the fallback the consumer used to apply* --
+  `logpdf` is `safe_log(pdf)`, `var_type` is `"c"`, a capability flag is
+  `False`, and `flip` / `cdf` / `sample` raise naming the class. So the
+  `getattr` probes disappear from the consumers, and `isinstance` means
+  "hostable" rather than "evaluable". `bicop_base.flip_of` and
+  `continuous_of` existed only because `flip` and `with_var_types` were not
+  members, so `ty` would not let a `BicopLike`-typed value call them; both are
+  gone and their call sites read `pair.flip()` / `pair.with_var_types()`.
+
+  The cost, accepted rather than overlooked: **a Protocol's default reaches only
+  a nominal subclass.** `runtime_checkable` `isinstance` compares member
+  *names*, so a duck-typed class must define every member itself. The
+  documented way to implement a contract directly is therefore to *inherit*
+  it -- `class Mine(BicopLike[np.ndarray])` -- and write the abstract members;
+  everything else arrives with a default. A six-member duck type no longer
+  satisfies `BicopLike`, which is the point: it could not be selected on,
+  could not sit on a discrete edge, and said `True` anyway.
 - **American English** in code, comments, documentation, commit messages,
   and changelog entries: *behavior*, *normalize*, *serialize*, *finalize*,
   *center*, *modeling*, *honored*, *color*. There is no legacy exemption.
@@ -897,9 +919,12 @@ Three things in that table have a reason. Do not undo them:
   hosts pairs, or an immutable one, is still a valid subclass and says so at
   the one call it cannot serve. The rule is stated once, under
   *"`get_pair_copula` reads, `set_pair_copulas` writes"*.
-- **The protocol is always narrower than the base.** Everything past it is an
-  optional capability read with `getattr`, because each member added to a
-  protocol is one a foreign object must happen to have.
+- **The protocol is still narrower than the base, and now by less.** It
+  carries what a consumer in this library asks of the part, each member with
+  the default the consumer used to supply; the base adds the machinery --
+  the dispatcher/leaf split, the input pipeline, the inherited inverses and
+  samplers, the estimator surface. What a protocol may *not* gain is a member
+  no consumer reads.
 - **`VinedistBase` has no abstract member at all.** A vine distribution is
   determined by its two halves, so nothing has to be declared to evaluate
   one; naming the part classes is what makes it *fittable*, and `_fit_copula`
@@ -1139,9 +1164,10 @@ tests.
     (`_declared`), so a `fit_edge` callback never has to. `continuous_of` is
     the one reading in the other direction, for the inverse Rosenblatt cascade
     and the density plot, both of which evaluate every pair continuously.
-    **A discrete edge therefore needs a `BicopBase` subclass or a `Bicop`** —
-    an object implementing `BicopLike` directly carries no types, and the
-    protocol stays the unconditional two-column contract it was.
+    **A discrete edge needs a pair that overrides `with_var_types`** — the
+    protocol's own default answers only for a pair declaring no atoms, and
+    refuses by name otherwise, which is what a `BicopBase` subclass and a
+    `Bicop` both supply.
     The parity test that binds is the **normalization identity**
     `Σ_atoms c(u₁,u₂)·(u₁ − u₁⁻) = 1`: the quotients telescope, so it holds
     exactly and needs no reference implementation and no tolerance argument.
@@ -1224,12 +1250,12 @@ tests.
   a margin does not declare, because forwarding to a margin is by flag and
   `declared_eval` *skips* rather than raises: the alternative is the
   unconditional curve under a conditional-looking call.
-  Everything beyond `{pdf, cdf, icdf}` is an **optional capability**
-  read with `getattr` (`var_type` ∈ `{"c","d","zi"}`, `cdf_left`,
-  `logpdf`, `sample`, `support`, `supports_covariates`), per the house
-  precedent — each
-  member added to the protocol is one a foreign object must happen to
-  have.
+  `{pdf, cdf, icdf}` are the only **abstract** members; `var_type` ∈
+  `{"c","d","zi"}`, `support`, `cdf_left`, `logpdf`, `sample` and the two
+  capability flags are members carrying the default a consumer used to apply
+  — `"c"`, unbounded, `cdf`, `safe_log(pdf)`, a raise, and `False`. So a
+  margin with nothing else to say still composes, and one that has something
+  to say overrides it.
 - **`Vinedist`** (`vinedist.py`) composes a `VinecopLike` with one
   margin per variable. It owns the copula-scale layout: `copula_data`
   builds the compact `(n, d + k)` matrix from `cdf` and `cdf_left`,

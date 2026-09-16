@@ -205,6 +205,9 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
   FitControlsTorchBicop : Fit-time controls.
   """
 
+  #: Its leaves take `x`, so `pair_eval` may forward one.
+  supports_covariates: bool = True
+
   # The controls the TLL fit reads; `_torch_bicop_controls` resolves a
   # `None` through it rather than naming the class a second time.
   controls_class: ClassVar[type[ControlsLike] | None] = FitControlsTorchBicop

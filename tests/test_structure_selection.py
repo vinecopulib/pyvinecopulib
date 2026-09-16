@@ -237,8 +237,14 @@ def test_select_rejects_unknown_tree_algorithm() -> None:
 def test_select_skips_hfunctions_after_final_tree() -> None:
   calls = {"hfunc1": 0, "hfunc2": 0}
 
-  class CountingPair:
-    """A ``BicopLike`` that records which h-functions the cascade asks for."""
+  class CountingPair(BicopLike[Any]):
+    """A ``BicopLike`` that records which h-functions the cascade asks for.
+
+    Inherits the contract rather than duck-typing it, which is how a pair
+    that serves only part of the surface gets the rest: `cdf` and
+    `with_var_types` raise from the protocol's own defaults, and this pair
+    never reaches either.
+    """
 
     def __init__(self, bicop: pv.Bicop) -> None:
       self._b = bicop
@@ -631,6 +637,9 @@ class _ConditionalGaussian(BicopBase[np.ndarray]):
   ``parameters`` argument, rather than a hand-written Gaussian, so the two legs
   differ in exactly one thing.
   """
+
+  #: Its leaves take `x`, so `pair_eval` may forward one.
+  supports_covariates: bool = True
 
   def __init__(
     self,

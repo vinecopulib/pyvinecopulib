@@ -295,6 +295,9 @@ def test_plot_places_its_grid_on_a_torch_pairs_namespace() -> None:
   import matplotlib.pyplot as plt
 
   class TorchPair(BicopBase[Any], torch.nn.Module):
+    #: Its leaves take `x`, so `pair_eval` may forward one.
+    supports_covariates: bool = True
+
     def __init__(self) -> None:
       torch.nn.Module.__init__(self)
       self.rho_raw = torch.nn.Parameter(
@@ -459,19 +462,20 @@ def test_the_inherited_inverses_place_their_argument() -> None:
   )
 
 
-def test_the_contract_requires_only_what_a_cascade_calls() -> None:
-  """`cdf` and `flip` are optional capabilities, not members of `BicopLike`.
+def test_the_contract_is_what_a_vine_needs_to_host_a_pair() -> None:
+  """`BicopLike` is the hosting interface, and it supplies its own defaults.
 
-  A vine's `pdf` / `rosenblatt` / `inverse_rosenblatt` / `sample` ask a pair
-  for the six evaluation methods and nothing else: `cdf` is needed only on a
-  discrete edge and `flip` only in structure selection. Requiring them made
-  `isinstance` stricter than the documented contract, and made implementing
-  `BicopLike` directly -- which the extension-point docs offer -- impossible
-  without two methods those same docs call optional.
+  `VinecopBase.bicop_class` is declared `type[BicopLike[Any]] | None`, so the
+  contract is by declaration "what a vine may host" -- which is more than the
+  six evaluation methods: selection needs `flip`, a discrete edge needs `cdf`
+  and `with_var_types`, and forwarding covariates needs a declaration no bound
+  signature can answer. Writing six methods and *inheriting* the protocol
+  gets the rest as defaults that raise where they cannot serve, so a pair is
+  either hostable or says which part it cannot do.
   """
 
-  class _Minimal:
-    """Independence, with exactly the required surface and nothing more."""
+  class _Minimal(BicopLike[Any]):
+    """Independence, writing the six evaluating members and inheriting the rest."""
 
     def pdf(self, u: Any, *, x: Any = None) -> Any:
       return np.ones(u.shape[0])
@@ -499,25 +503,69 @@ def test_the_contract_requires_only_what_a_cascade_calls() -> None:
       return np.full((n, 2), 0.5)
 
   minimal = _Minimal()
-  assert not hasattr(minimal, "cdf") and not hasattr(minimal, "flip")
   assert isinstance(minimal, BicopLike)
-  # And a direct, nominal implementation instantiates.
-  assert "cdf" not in getattr(BicopLike, "__abstractmethods__", ())
-  assert "flip" not in getattr(BicopLike, "__abstractmethods__", ())
+  # The six it wrote answer; the rest carry the contract's defaults.
+  assert minimal.pdf(np.full((3, 2), 0.5)).shape == (3,)
+  assert tuple(minimal.var_types) == ("c", "c")
+  assert minimal.with_var_types(("c", "c")) is minimal
+  assert minimal.supports_covariates is False
+  assert minimal.supports_weights is False
+  # And each part it cannot serve says so by name rather than by AttributeError.
+  for call, needs in (
+    (minimal.flip, "flip"),
+    (lambda: minimal.cdf(np.full((3, 2), 0.5)), "cdf"),
+  ):
+    with pytest.raises(NotImplementedError, match=f"_Minimal has no `{needs}`"):
+      call()
+  with pytest.raises(ValueError, match="cannot be read as any other"):
+    minimal.with_var_types(("d", "c"))
+
+  # Only the six are abstract, so writing them is enough to instantiate.
+  assert set(getattr(BicopLike, "__abstractmethods__", ())) == {
+    "pdf",
+    "hfunc1",
+    "hfunc2",
+    "hinv1",
+    "hinv2",
+    "sample",
+  }
 
 
 def test_a_pair_without_flip_is_named_where_flip_is_required() -> None:
-  """The optional capability is read in one place, which reports its absence."""
-  from pyvinecopulib.core.bicop_base import flip_of
+  """A pair that cannot be flipped says so itself, by name.
 
+  This used to need a `flip_of` probe, because `flip` was not on `BicopLike`
+  and so could not be called on one without a guard. It is a member now, and
+  the raising default is what a pair that does not override it inherits --
+  from `BicopBase` for a subclass, from the protocol for a direct
+  implementation.
+  """
   with pytest.raises(NotImplementedError, match="MinimalBicop"):
-    flip_of(MinimalBicop())
+    MinimalBicop().flip()
 
-  class _Bare:
-    """A foreign pair that simply omits the capability."""
+  class _Bare(BicopLike[Any]):
+    """A direct implementation that simply does not override it."""
 
-  with pytest.raises(NotImplementedError, match=r"_Bare.*has no `flip`"):
-    flip_of(_Bare())
+    def pdf(self, u: Any) -> Any:
+      raise AssertionError("not reached")
+
+    def hfunc1(self, u: Any) -> Any:
+      raise AssertionError("not reached")
+
+    def hfunc2(self, u: Any) -> Any:
+      raise AssertionError("not reached")
+
+    def hinv1(self, u: Any) -> Any:
+      raise AssertionError("not reached")
+
+    def hinv2(self, u: Any) -> Any:
+      raise AssertionError("not reached")
+
+    def sample(self, n: int, **kwargs: Any) -> Any:
+      raise AssertionError("not reached")
+
+  with pytest.raises(NotImplementedError, match=r"_Bare has no `flip`"):
+    _Bare().flip()
 
 
 def test_every_estimator_takes_controls_in_the_second_slot() -> None:

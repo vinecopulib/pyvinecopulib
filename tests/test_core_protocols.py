@@ -116,6 +116,9 @@ def test_a_conditional_pair_declares_the_covariates_it_reads() -> None:
   """Widening the primitive is how a pair says it models covariates."""
 
   class Conditional(BicopBase[np.ndarray]):
+    #: Its leaves take `x`, so `pair_eval` may forward one.
+    supports_covariates: bool = True
+
     def _pdf_raw(self, u: Any, *, x: Any | None = None) -> Any:
       scale = 1.0 if x is None else 1.0 + float(x[0, 0])
       return np.full(u.shape[0], scale)

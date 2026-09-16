@@ -34,6 +34,9 @@ class IndependenceBicop(BicopBase[ArrayT]):
   pyvinecopulib.core.VinecopBase.select : Places this on a thresholded edge.
   """
 
+  #: Its leaves take `x`, so `pair_eval` may forward one.
+  supports_covariates: bool = True
+
   def _pdf_raw(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Density, which is one everywhere.
 
