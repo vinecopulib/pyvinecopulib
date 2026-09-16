@@ -266,8 +266,23 @@ def test_the_marginal_copula_quadrature_is_not_floored() -> None:
 
   assert log_d[0] > np.log(1e-10)
   assert log_d[1] < np.log(1e-10)
-  # The two spellings are the same quantity.
+  # The two spellings are the same quantity wherever both can hold it.
   linear = est._copula_marginal_density(X[:5], log=False)
   np.testing.assert_allclose(
     np.log(linear), est._copula_marginal_density(X[:5], log=True)
   )
+
+  # And where they cannot: at six variables the excluded row is 1.8e-132,
+  # under the old floor but still a float64. Twelve is what makes the claim
+  # the docstring above makes -- the density actually underflows, so the
+  # linear spelling holds exactly zero while the log one still carries the
+  # value. Anything reading the linear one would see `-inf`, or the floor.
+  wide = rng.standard_normal((400, 12))
+  est_wide = VineRegressor(random_state=0).fit(
+    wide, wide.sum(axis=1) + 0.3 * rng.standard_normal(400)
+  )
+  excluded = np.full((1, 12), 60.0)
+  log_excluded = float(est_wide._copula_marginal_density(excluded, log=True)[0])
+  assert np.isfinite(log_excluded)
+  assert log_excluded < -700.0
+  assert float(est_wide._copula_marginal_density(excluded, log=False)[0]) == 0.0
