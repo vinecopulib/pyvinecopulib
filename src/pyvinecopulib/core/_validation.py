@@ -17,10 +17,38 @@ from typing import Any, cast
 from .protocols import ArrayT, array_namespace
 
 __all__ = [
+  "declared_weights",
   "reject_covariates",
+  "reject_weights",
   "usable_observations",
   "validate_weights",
 ]
+
+
+def declared_weights(controls: object) -> Any:  # noqa: ANN401 - see below
+  """The observation weights a controls object carries, or ``None``.
+
+  One reading of the question every estimator in the package now asks of its
+  controls, because "no weights" has two spellings: ``FitControlsBicop`` and
+  ``FitControlsVinecop`` are upstream's and say it with an empty vector, while
+  the types this repository owns say it with ``None``.
+
+  Parameters
+  ----------
+  controls : object
+      Any controls object, or ``None``.
+
+  Returns
+  -------
+  array, or None
+      The weights, or ``None`` where there are none. Typed ``Any`` because it
+      is handed on to the ``ArrayT``-parameterized `validate_weights`, which a
+      bare ``Array`` does not satisfy.
+  """
+  weights = getattr(controls, "weights", None)
+  if weights is None:
+    return None
+  return None if len(weights) == 0 else weights
 
 
 def check_var_types(var_types: list[str] | None, d: int) -> tuple[str, ...]:
@@ -272,6 +300,45 @@ def reject_covariates(
       f"fitted with {name}=; write one whose fit reads them and that declares "
       f"supports_covariates, or drop {name}."
     )
+
+
+def reject_weights(part: object, controls: object) -> None:
+  """Raise if ``controls`` carries weights a part cannot honor.
+
+  The weights counterpart of `reject_covariates`, and refused for the same
+  reason: every controls object can carry weights, so an estimator that does
+  not read them would return the *unweighted* fit under a weighted-looking
+  call. Whether it reads them is the declaration `supports_weights`, which is
+  what this asks.
+
+  Parameters
+  ----------
+  part : object
+      The margin, pair copula or vine being fitted; named in the message.
+      Either the instance or the class, so a classmethod may pass ``cls``.
+  controls : object
+      The controls the caller passed, or ``None``.
+
+  Returns
+  -------
+  None
+
+  Raises
+  ------
+  TypeError
+      If ``controls`` carries weights and ``part`` declares
+      ``supports_weights`` ``False``.
+  """
+  if declared_weights(controls) is None:
+    return
+  if getattr(part, "supports_weights", False):
+    return
+  named = part if isinstance(part, type) else type(part)
+  raise TypeError(
+    f"{named.__name__} honors no observation weights, so controls.weights "
+    "would be fitted away; name a class that declares supports_weights, or "
+    "clear controls.weights."
+  )
 
 
 def validate_declaration(

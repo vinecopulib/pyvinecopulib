@@ -469,20 +469,24 @@ def test_setting_pair_copulas_invalidates_the_batched_cache() -> None:
 
 @pytest.mark.parametrize("cache_integrals", [True, False])
 def test_fit_and_from_data_agree_on_placement(cache_integrals: bool) -> None:
-  """The two entry points to one fit must read the same controls the same way.
+  """The two entry points to one fit must place their pairs the same way.
 
-  ``from_data`` passes the device, dtype and cache mode to each pair fit by
-  hand; ``fit`` and ``select`` are inherited, so they can only get them from
-  the controls -- which is where a vine's pair settings live anyway.
+  ``from_data`` reads the device and dtype off ``u`` and hands them to each
+  pair fit; ``fit`` and ``select`` are inherited and hand over neither, so a
+  pair reads them back off the data -- which the vine has already placed on
+  *itself*. That is what keeps a refit on the vine's own dtype, and it is why
+  neither is a control: where a module lives is the module's property.
   """
   u = _simulate(d=3, n=300, seed=921)
-  controls = FitControlsTorchVinecop(
-    dtype=torch.float32, cache_integrals=cache_integrals
+  controls = FitControlsTorchVinecop(cache_integrals=cache_integrals)
+  built = TorchVinecop.from_data(
+    torch.as_tensor(u, dtype=torch.float32), controls=controls
   )
-  built = TorchVinecop.from_data(u, controls=controls)
   assert built._pair_module(0, 0).interp_grid.values.dtype is torch.float32
 
-  refitted = built.fit(u, controls)
+  # Refitted from float64 data: the vine places it on itself first, so the
+  # pairs stay float32 rather than following the argument.
+  refitted = built.fit(torch.as_tensor(u, dtype=torch.float64), controls)
   pair = refitted._pair_module(0, 0)
   assert pair.interp_grid.values.dtype is torch.float32
   assert pair._cache_integrals is cache_integrals

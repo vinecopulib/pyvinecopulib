@@ -1,9 +1,11 @@
 #pragma once
 
+#include <nanobind/eigen/dense.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/string.h>
 
+#include <Eigen/Dense>
 #include <cmath>
 #include <optional>
 #include <sstream>
@@ -23,12 +25,22 @@ using namespace nb::literals;
 //! It carries the fit knobs only. A variable's type and its bounds are a
 //! *declaration*, which travels keyword-only, exactly as `var_types` does on
 //! `Bicop.from_data`.
+//!
+//! `weights` is among the knobs because observation weights travel in the
+//! controls at every level of this library, which is what lets a caller weight
+//! a vine distribution's margins and its copula differently.
 struct FitControlsKde1d {
   double multiplier = 1.0;
   std::optional<double> bandwidth = std::nullopt;
   size_t degree = 2;
   size_t grid_size = 400;
   bool boundary_repair = true;
+  std::optional<Eigen::VectorXd> weights = std::nullopt;
+
+  //! The weights as `Kde1d::fit` wants them: an empty vector for "none".
+  Eigen::VectorXd weights_or_empty() const {
+    return weights.value_or(Eigen::VectorXd());
+  }
 
   //! The bandwidth as `Kde1d`'s constructor wants it: NaN for "choose one".
   double bandwidth_or_nan() const {
@@ -47,6 +59,12 @@ struct FitControlsKde1d {
     ss << "Degree: " << degree << "\n";
     ss << "Grid size: " << grid_size << "\n";
     ss << "Boundary repair: " << (boundary_repair ? "yes" : "no") << "\n";
+    ss << "Weights: ";
+    if (weights.has_value()) {
+      ss << weights->size() << " observations\n";
+    } else {
+      ss << "none\n";
+    }
     return ss.str();
   }
 };
@@ -64,6 +82,15 @@ inline void check_kde1d_controls(const FitControlsKde1d& controls) {
   if (controls.grid_size < 4) {
     throw std::invalid_argument("grid_size must be at least 4");
   }
+  // Only the spelling is checked here. What a weight vector may *contain* is
+  // `Kde1d::fit`'s own question and it answers it against the data: `NaN` and
+  // zero are drop markers there, and a length has nothing to be compared with
+  // until the observations arrive. An empty vector is the one case this level
+  // can settle -- it would read as "unweighted", which is what `None` says.
+  if (controls.weights.has_value() && controls.weights->size() == 0) {
+    throw std::invalid_argument(
+        "weights is empty; pass None for an unweighted fit");
+  }
 }
 
 inline nb::dict kde1d_controls_to_dict(const FitControlsKde1d& controls) {
@@ -73,6 +100,7 @@ inline nb::dict kde1d_controls_to_dict(const FitControlsKde1d& controls) {
   state["degree"] = controls.degree;
   state["grid_size"] = controls.grid_size;
   state["boundary_repair"] = controls.boundary_repair;
+  state["weights"] = controls.weights;
   return state;
 }
 
@@ -98,25 +126,31 @@ grid_size : int, default=400
     Number of interpolation grid points; at least 4.
 boundary_repair : bool, default=True
     Whether a finite bound is fitted with a boundary correction.
+weights : array, shape (n,), dtype float, or None, optional
+    Observation weights, one per observation. A ``NaN`` or zero weight drops
+    its observation; the rest are rescaled to average one, so their scale does
+    not matter. The fit is what checks them against the data.
 
 Raises
 ------
 ValueError
     If ``multiplier`` or ``bandwidth`` is not positive, ``degree`` exceeds 2,
-    or ``grid_size`` is below 4.
+    ``grid_size`` is below 4, or ``weights`` is an empty array.
 )")
       .def(
           "__init__",
           [](FitControlsKde1d* self, double multiplier,
              std::optional<double> bandwidth, size_t degree, size_t grid_size,
-             bool boundary_repair) {
-            FitControlsKde1d controls{multiplier, bandwidth, degree, grid_size,
-                                      boundary_repair};
+             bool boundary_repair, std::optional<Eigen::VectorXd> weights) {
+            FitControlsKde1d controls{multiplier,      bandwidth,
+                                      degree,          grid_size,
+                                      boundary_repair, std::move(weights)};
             check_kde1d_controls(controls);
             new (self) FitControlsKde1d(std::move(controls));
           },
           "multiplier"_a = 1.0, "bandwidth"_a = nb::none(), "degree"_a = 2,
-          "grid_size"_a = 400, "boundary_repair"_a = true)
+          "grid_size"_a = 400, "boundary_repair"_a = true,
+          "weights"_a = nb::none())
       // Properties rather than plain fields, as `FitControlsBicop` binds
       // them: each setter re-runs the constructor's checks, so an assignment
       // is refused where the same value at construction would be. Assigning a
@@ -167,6 +201,15 @@ ValueError
             self.boundary_repair = value;
           },
           "Whether a finite bound gets a boundary correction.")
+      .def_prop_rw(
+          "weights", [](const FitControlsKde1d& self) { return self.weights; },
+          [](FitControlsKde1d& self, std::optional<Eigen::VectorXd> value) {
+            FitControlsKde1d updated = self;
+            updated.weights = std::move(value);
+            check_kde1d_controls(updated);
+            self = updated;
+          },
+          "Observation weights, or `None`.")
       .def("__repr__",
            [](const FitControlsKde1d& controls) {
              return "<pyvinecopulib.core.FitControlsKde1d>\n" + controls.str();
@@ -194,6 +237,7 @@ pyvinecopulib.core.ControlsLike : The contract this satisfies.
             nb::cast<std::optional<double>>(state["bandwidth"]),
             nb::cast<size_t>(state["degree"]),
             nb::cast<size_t>(state["grid_size"]),
-            nb::cast<bool>(state["boundary_repair"])};
+            nb::cast<bool>(state["boundary_repair"]),
+            nb::cast<std::optional<Eigen::VectorXd>>(state["weights"])};
       });
 }

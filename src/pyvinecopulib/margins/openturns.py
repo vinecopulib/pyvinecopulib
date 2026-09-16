@@ -30,6 +30,7 @@ from ..core._margins import register_margin_adapter, register_margin_json
 from ..core._validation import (
   extra_required,
   reject_covariates,
+  reject_weights,
   usable_observations,
   validate_declaration,
 )
@@ -591,7 +592,6 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     var_type: str | None = None,
     support: tuple[float | None, float | None] | None = None,
     x: np.ndarray | None = None,
-    weights: np.ndarray | None = None,
   ) -> Self:
     """Estimate the family's parameters with its OpenTURNS factory.
 
@@ -612,8 +612,6 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     x : array, shape (n, p), or None, optional
         Not supported; passing covariates raises rather than silently
         fitting an unconditional margin.
-    weights : array, shape (n,), or None, optional
-        Not supported; see the Notes on the class.
 
     Returns
     -------
@@ -623,18 +621,13 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     Raises
     ------
     TypeError
-        If ``weights`` is given, or if the margin was built from a
-        distribution that already carries its parameters.
+        If ``controls`` carries observation weights, or if the margin was
+        built from a distribution that already carries its parameters.
     ValueError
         If no observation survives.
     """
     reject_covariates(self, x)
-    if weights is not None:
-      raise TypeError(
-        f"OpenTURNSMargin({self.family_name!r}) cannot use observation "
-        "weights: an OpenTURNS Sample carries none. Pass margins='kde' for a "
-        "weighted fit, or drop weights="
-      )
+    reject_weights(self, controls)
     if self._factory is None:
       raise TypeError(
         f"OpenTURNSMargin({self.family_name!r}) was built from a distribution "
@@ -665,7 +658,6 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     var_type: str | None = None,
     support: tuple[float | None, float | None] | None = None,
     x: np.ndarray | None = None,
-    weights: np.ndarray | None = None,
   ) -> Self:
     """Choose a family from OpenTURNS' registry, fit it, and become it.
 
@@ -700,8 +692,6 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     x : array, shape (n, p), or None, optional
         Not supported; passing covariates raises rather than silently
         selecting an unconditional margin.
-    weights : array, shape (n,), or None, optional
-        Not supported; an OpenTURNS ``Sample`` carries none.
 
     Returns
     -------
@@ -711,7 +701,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     Raises
     ------
     TypeError
-        If ``weights`` is given.
+        If ``controls`` carries observation weights.
     ValueError
         If no observation survives, or if every candidate was refused.
 
@@ -733,11 +723,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
         chosen.family_name
     """
     reject_covariates(self, x)
-    if weights is not None:
-      raise TypeError(
-        "OpenTURNSMargin cannot use observation weights: an OpenTURNS Sample "
-        "carries none. Pass margins='kde' for a weighted fit, or drop weights="
-      )
+    reject_weights(self, controls)
     # The default is this class's own declaration, so a subclass that reads
     # another controls type is followed rather than overridden here.
     settings = (
@@ -755,7 +741,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
       # the base contract applies: reduce to `fit`. Replacing it silently would
       # answer a specification with a different model. A caller who does want
       # the search back asks for it by name, with `family_set`.
-      return self.fit(y, x=x, weights=weights)
+      return self.fit(y, x=x)
 
     openturns = _openturns()
     data = usable_observations(

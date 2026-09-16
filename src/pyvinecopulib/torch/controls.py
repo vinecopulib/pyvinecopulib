@@ -15,8 +15,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field, fields
 from typing import Any
 
-import torch
-
 #: Structure-selection algorithms accepted by ``FitControlsTorchVinecop``,
 #: mirroring ``FitControlsVinecop.tree_algorithm``.
 TREE_ALGORITHMS: tuple[str, ...] = (
@@ -145,12 +143,6 @@ default="tau"
       They reconstruct the uncached integrals up to summation order and rebuild
       in-graph when grid values require gradients. ``None`` resolves to
       ``True``, including for discrete vines.
-  device : torch.device or str or int, or None, default=None
-      Target torch device for the fitted pair copulas. ``None``
-      keeps the input's device.
-  dtype : torch.dtype or None, default=None
-      Target torch dtype. ``None`` defaults to ``torch.float64``
-      (parity with :class:`~pyvinecopulib.core.Vinecop`).
   compile : bool, default=False
       If ``True``, wrap the batched cascades in
       :func:`torch.compile` with ``dynamic=False``. Inductor fuses the
@@ -227,8 +219,6 @@ default="tau"
   seeds: list[int] = field(default_factory=list)
   conditioning_set: list[int] = field(default_factory=list)
   cache_integrals: bool | None = None
-  device: torch.types.Device = None
-  dtype: torch.dtype | None = None
   compile: bool = False
   batched_fit: bool | None = None
 

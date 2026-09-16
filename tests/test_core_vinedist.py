@@ -18,6 +18,7 @@ import pytest
 
 import pyvinecopulib as pv
 from pyvinecopulib.core import (
+  FitControlsKde1d,
   Kde1d,
   MarginBase,
   Vinedist,
@@ -471,13 +472,35 @@ def test_an_explicitly_aliased_sequence_is_taken_as_given(
   assert dist.margins[0] is dist.margins[1] is shared
 
 
-def test_weights_reach_both_halves(continuous: np.ndarray) -> None:
-  """Weighting changes the fit rather than being ignored."""
+def test_each_half_is_weighted_by_its_own_controls(
+  continuous: np.ndarray,
+) -> None:
+  """Weights ride in the controls, so each half carries its own -- or none.
+
+  There is no propagation rule, which is the point: one controls object per
+  part means a caller may weight the margins and the copula differently, or
+  weight one and leave the other alone.
+  """
   w = np.where(continuous[:, 0] > 0, 3.0, 1.0)
   plain = pv.Vinedist.from_data(continuous)
-  tilted = pv.Vinedist.from_data(continuous, weights=w)
+  copula_only = pv.Vinedist.from_data(
+    continuous, pv.FitControlsVinecop(weights=w)
+  )
+  margins_only = pv.Vinedist.from_data(
+    continuous, margin_controls=FitControlsKde1d(weights=w)
+  )
+
+  # Weighting the copula leaves the margins exactly where they were, and moves
+  # the copula; weighting the margins moves the margins.
+  np.testing.assert_array_equal(
+    copula_only.marginal_cdf(continuous), plain.marginal_cdf(continuous)
+  )
   assert not np.allclose(
-    plain.marginal_cdf(continuous), tilted.marginal_cdf(continuous)
+    widen(copula_only.vinecop).get_pair_copula(0, 0).parameters,
+    widen(plain.vinecop).get_pair_copula(0, 0).parameters,
+  )
+  assert not np.allclose(
+    margins_only.marginal_cdf(continuous), plain.marginal_cdf(continuous)
   )
 
 
@@ -489,8 +512,11 @@ def test_weights_on_a_margin_that_cannot_use_them_raises(
   class Unweighted(Vinedist):
     margin_class = _needs_fitting
 
-  with pytest.raises(TypeError, match="cannot use observation weights"):
-    Unweighted.from_data(continuous, weights=np.ones(continuous.shape[0]))
+  with pytest.raises(TypeError, match="honors no observation weights"):
+    Unweighted.from_data(
+      continuous,
+      margin_controls=FitControlsMargin(weights=np.ones(continuous.shape[0])),
+    )
 
 
 def _needs_fitting() -> Any:
@@ -1013,22 +1039,36 @@ def test_covariates_nothing_reads_are_refused(continuous: np.ndarray) -> None:
       call(continuous, x=cov)
   with pytest.raises(ValueError, match="supports_covariates"):
     dist.marginal_icdf(np.full_like(continuous, 0.5), x=cov)
-  with pytest.raises(ValueError, match="does not read them"):
+  with pytest.raises(ValueError, match="the fit would ignore"):
     pv.Vinedist.from_data(continuous, x=cov)
 
 
 def test_from_data_leaves_the_caller_s_controls_alone(
   continuous: np.ndarray,
 ) -> None:
-  """Weights must not be written into the controls object the caller owns."""
-  controls = pv.FitControlsVinecop()
+  """A fit reads the controls it is handed; it never writes to them.
+
+  Compared against what each object holds rather than against the input:
+  `FitControlsVinecop` rescales weights to average one as it stores them,
+  which is its own business and happens before any fit sees them.
+  """
   weights = np.linspace(0.5, 1.5, continuous.shape[0])
-  pv.Vinedist.from_data(continuous, weights=weights, controls=controls)
-  assert len(controls.weights) == 0
+  controls = pv.FitControlsVinecop(weights=weights)
+  margin_controls = FitControlsKde1d(weights=weights)
+  stored = np.array(controls.weights, copy=True)
+  margin_stored = np.array(margin_controls.weights, copy=True)
+  pv.Vinedist.from_data(continuous, controls, margin_controls=margin_controls)
+  np.testing.assert_array_equal(controls.weights, stored)
+  np.testing.assert_array_equal(margin_controls.weights, margin_stored)
 
 
-def test_explicit_weights_override_controls_weights() -> None:
-  """One explicit weighting design governs both halves of the fit."""
+def test_the_two_halves_may_be_weighted_differently() -> None:
+  """The copula reads the weights on its own controls and nobody else's.
+
+  Two subsamples with opposite dependence: whichever one the *copula's*
+  weights favor is the one its parameter takes after, whatever the margins
+  were weighted by.
+  """
   rng = np.random.default_rng(23)
   positive = rng.multivariate_normal(
     [0.0, 0.0], [[1.0, 0.9], [0.9, 1.0]], size=250
@@ -1037,31 +1077,24 @@ def test_explicit_weights_override_controls_weights() -> None:
     [0.0, 0.0], [[1.0, -0.9], [-0.9, 1.0]], size=250
   )
   y = stats.norm.cdf(np.vstack([positive, negative]))
-  explicit = np.r_[np.full(250, 10.0), np.ones(250)]
-  embedded = np.r_[np.ones(250), np.full(250, 10.0)]
+  favor_positive = np.r_[np.full(250, 10.0), np.ones(250)]
+  favor_negative = np.r_[np.ones(250), np.full(250, 10.0)]
 
-  reference_controls = pv.FitControlsVinecop(family_set=[pv.families.gaussian])
-  reference = Vinedist.from_data(
-    y,
-    weights=explicit,
-    controls=reference_controls,
-  )
+  def fitted(copula_weights: np.ndarray, margin_weights: np.ndarray) -> float:
+    dist = Vinedist.from_data(
+      y,
+      pv.FitControlsVinecop(
+        family_set=[pv.families.gaussian], weights=copula_weights
+      ),
+      margin_controls=FitControlsKde1d(weights=margin_weights),
+    )
+    return float(widen(dist.vinecop).get_pair_copula(0, 0).parameters[0, 0])
 
-  controls = pv.FitControlsVinecop(family_set=[pv.families.gaussian])
-  controls.weights = embedded
-  original_controls_weights = np.array(controls.weights, copy=True)
-  got = Vinedist.from_data(
-    y,
-    weights=explicit,
-    controls=controls,
-  )
-  np.testing.assert_allclose(
-    widen(got.vinecop).get_pair_copula(0, 0).parameters,
-    widen(reference.vinecop).get_pair_copula(0, 0).parameters,
-    rtol=0.0,
-    atol=0.0,
-  )
-  np.testing.assert_array_equal(controls.weights, original_controls_weights)
+  # The margins' weighting is varied against a fixed copula weighting, and the
+  # copula's against a fixed marginal one. Only the latter flips the sign.
+  assert fitted(favor_positive, favor_positive) > 0.0
+  assert fitted(favor_positive, favor_negative) > 0.0
+  assert fitted(favor_negative, favor_positive) < 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -1357,8 +1390,9 @@ def test_a_vinedist_base_subclass_fits_from_declared_parts(
     margin_class = Kde1d
 
     @classmethod
-    def _coerce_fit_data(cls, y: Any, weights: Any, controls: Any) -> Any:
-      return np.asarray(y, dtype=float), weights
+    def _coerce_fit_data(cls, y: Any, controls: Any) -> Any:
+      del controls
+      return np.asarray(y, dtype=float)
 
   y = random_state.normal(size=(400, 3))
   dist = MyDist.from_data(y)
@@ -1369,13 +1403,13 @@ def test_a_vinedist_base_subclass_fits_from_declared_parts(
   assert repr(dist).startswith("MyDist(dim=3")
 
 
-def test_a_subclass_that_declares_only_its_parts_refuses_weights() -> None:
-  """The inherited `_fit_copula` cannot weight the copula, so it must not try.
+def test_a_subclass_that_declares_only_its_parts_honors_weights() -> None:
+  """Naming two parts that honor weights is all it takes to honor them.
 
-  It has the part class and the caller's controls and nothing else, so applying
-  the weights is not something it can do -- and weighting the margins alone is
-  not the weighted fit of anything. `Vinedist` overrides the hook and declares
-  the capability; the base does neither.
+  There is nothing for the subclass to declare or override: the controls go to
+  the parts, and each part answers for itself. A distribution-level flag
+  restating the question is what made this answer `False` for a class composed
+  of `Vinecop` and `Kde1d`, both of which weight perfectly well.
   """
 
   class MyDist(VinedistBase[Any]):
@@ -1383,19 +1417,21 @@ def test_a_subclass_that_declares_only_its_parts_refuses_weights() -> None:
     margin_class = Kde1d
 
     @classmethod
-    def _coerce_fit_data(cls, y: Any, weights: Any, controls: Any) -> Any:
-      return np.asarray(y, dtype=float), weights
-
-  assert not MyDist.supports_weighted_copula
-  assert Vinedist.supports_weighted_copula
+    def _coerce_fit_data(cls, y: Any, controls: Any) -> Any:
+      del controls
+      return np.asarray(y, dtype=float)
 
   rng = np.random.default_rng(7)
   y = rng.normal(size=(200, 3))
   w = rng.uniform(0.5, 2.0, size=200)
-  with pytest.raises(ValueError, match="cannot weight the copula half"):
-    MyDist.from_data(y, weights=w)
-  # Unweighted still fits end to end.
-  assert np.all(np.isfinite(MyDist.from_data(y).logpdf(y)))
+  plain = MyDist.from_data(y)
+  weighted = MyDist.from_data(
+    y,
+    pv.FitControlsVinecop(weights=w),
+    margin_controls=FitControlsKde1d(weights=w),
+  )
+  assert np.all(np.isfinite(weighted.logpdf(y)))
+  assert not np.allclose(plain.logpdf(y), weighted.logpdf(y))
 
 
 def test_declaring_no_vinecop_class_reports_it() -> None:
@@ -1404,8 +1440,9 @@ def test_declaring_no_vinecop_class_reports_it() -> None:
     margin_class = Kde1d
 
     @classmethod
-    def _coerce_fit_data(cls, y: Any, weights: Any, controls: Any) -> Any:
-      return np.asarray(y, dtype=float), weights
+    def _coerce_fit_data(cls, y: Any, controls: Any) -> Any:
+      del controls
+      return np.asarray(y, dtype=float)
 
   with pytest.raises(NotImplementedError, match="vinecop_class"):
     MyDist.from_data(np.random.default_rng(0).normal(size=(60, 2)))
@@ -1430,19 +1467,6 @@ def test_vinedist_refuses_torch_parts() -> None:
   # And a torch margin, on an otherwise fine NumPy copula.
   with pytest.raises(TypeError, match="TorchVinedist"):
     Vinedist(copula, [torch_mod.TorchKde1d(), torch_mod.TorchKde1d()])
-
-
-def test_weights_reach_both_halves_on_the_numpy_lane(
-  random_state: Any,
-) -> None:
-  # The copula half is weighted now, not merely the margins, so the two
-  # weightings give different models.
-  y = random_state.normal(size=(500, 3))
-  w = random_state.uniform(0.1, 2.0, 500)
-  plain = Vinedist.from_data(y)
-  weighted = Vinedist.from_data(y, weights=w)
-  assert Vinedist.supports_weighted_copula
-  assert not np.allclose(plain.logpdf(y), weighted.logpdf(y))
 
 
 def test_logpdf_reads_the_parts_namespace_not_the_inputs() -> None:
@@ -1560,12 +1584,21 @@ def test_fit_reports_a_copula_that_cannot_re_estimate_itself(
 def test_a_weighted_refit_still_weights_both_halves(
   continuous: np.ndarray,
 ) -> None:
-  """Weights reach the copula through the same hook `from_data` uses."""
+  """A refit reads the controls the same way `from_data` does.
+
+  `fit` asks the copula it *holds* rather than the class, so this is the one
+  path where the part answering for the weights need not be an instance of
+  anything the distribution names.
+  """
   weights = np.linspace(0.5, 1.5, continuous.shape[0])
   flat = pv.Vinedist.from_data(continuous)
   flat.fit(continuous)
   weighted = pv.Vinedist.from_data(continuous)
-  weighted.fit(continuous, weights=weights)
+  weighted.fit(
+    continuous,
+    pv.FitControlsVinecop(weights=weights),
+    margin_controls=FitControlsKde1d(weights=weights),
+  )
   grid = continuous[:20]
   assert not np.allclose(flat.pdf(grid), weighted.pdf(grid))
 
@@ -1576,8 +1609,8 @@ def test_covariates_reach_the_parts_that_declare_them_only() -> None:
   `Vinedist`'s copula is a `Vinecop` of compiled pair copulas, which models no
   covariates and takes no `x` argument at all -- so `x` must not be forwarded
   to it. Reaching it anyway would raise instead of fitting something, and
-  dropping it silently is only correct because the *object* refuses covariates
-  nothing on the lane reads (`supports_fit_covariates`).
+  dropping it silently is only correct because `from_data` refuses covariates
+  nothing on the lane reads at all.
   """
   rng = np.random.default_rng(3)
   cov = rng.normal(size=(200, 1))
@@ -1595,9 +1628,8 @@ def test_covariates_reach_the_parts_that_declare_them_only() -> None:
       var_type: str | None = None,
       support: tuple[float | None, float | None] | None = None,
       x: Any | None = None,
-      weights: Any = None,
     ) -> Any:
-      del data, controls, var_type, support, x, weights
+      del data, controls, var_type, support, x
       return self
 
   assert getattr(pv.Vinecop, "supports_covariates", False) is False

@@ -609,6 +609,7 @@ def test_fit_controls_margin_defaults_and_to_dict() -> None:
     "family_set": None,
     "selection_criterion": "aic",
     "on_failure": "raise",
+    "weights": None,
   }
   assert FitControlsMargin(family_set=["norm"]).family_set == ["norm"]
   assert FitControlsMargin(family_set=("gamma",)).to_dict()["family_set"] == [

@@ -21,12 +21,14 @@ from pyvinecopulib.core import VinecopLike, Vinedist
 from pyvinecopulib.sklearn import VineDensity, VineRegressor
 
 
-def _default_margin_of(est: Any) -> Any:
-  """The margin one column gets: what `distribution`'s `margin_class` builds."""
+def _default_margin_of(est: Any, *, reference: Any = None) -> Any:
+  """The margin one column gets: what `distribution`'s `margin_class` builds.
+
+  Through `_default_margins`, not the class directly: the torch lane reads its
+  placement off the observations, which reach the hook as `reference`.
+  """
   cls = est.distribution or Vinedist
-  # Through `_default_margins`, not the class directly: the torch lane reads
-  # its placement off the *copula* controls.
-  built = cls._default_margins(1, est.controls, [None])
+  built = cls._default_margins(1, est.controls, [None], reference=reference)
   assert built is not None
   return built[0]
 
@@ -148,7 +150,6 @@ class TestDefaultMargin:
   def test_the_torch_lane_gives_a_torch_kde(self) -> None:
     torch = pytest.importorskip("torch")
     from pyvinecopulib.torch import (
-      FitControlsTorchVinecop,
       TorchKde1d,
       TorchVinedist,
     )
@@ -157,12 +158,11 @@ class TestDefaultMargin:
     assert isinstance(_default_margin_of(est), TorchKde1d)
 
     # Precision follows the copula's, or a float32 vine would carry float64
-    # margins.
+    # margins, whose placement now comes from the data rather than from the
+    # controls: a torch margin lands where the observations are.
     grid: Any = _default_margin_of(
-      VineDensity(
-        distribution=TorchVinedist,
-        controls=FitControlsTorchVinecop(dtype=torch.float32),
-      )
+      VineDensity(distribution=TorchVinedist),
+      reference=torch.zeros(1, dtype=torch.float32),
     )
     assert grid.grid_points.dtype is torch.float32
 

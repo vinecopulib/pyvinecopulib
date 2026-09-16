@@ -232,7 +232,7 @@ def test_kde1d_weighted_fit() -> None:
   weights = rng.exponential(1, 50)
 
   kde = pv.core.Kde1d()
-  kde.fit(x, weights=weights)
+  kde.fit(x, pv.core.FitControlsKde1d(weights=weights))
 
   # Should still work and produce valid results
   assert isinstance(kde.loglik(), float)
@@ -627,10 +627,11 @@ def test_kde1d_refuses_inputs_that_leave_nothing_to_fit(
     "negative": (y, np.where(np.arange(100) == 3, -1.0, 1.0)),
     "wrong_length": (y, np.ones(99)),
   }[bad]
+  controls = pv.core.FitControlsKde1d(weights=weights)
   for call in (
-    lambda: pv.core.Kde1d().fit(data, weights=weights),
-    lambda: pv.core.Kde1d().select(data, weights=weights),
-    lambda: pv.core.Kde1d.from_data(data, weights=weights),
+    lambda: pv.core.Kde1d().fit(data, controls),
+    lambda: pv.core.Kde1d().select(data, controls),
+    lambda: pv.core.Kde1d.from_data(data, controls),
   ):
     with pytest.raises(ValueError, match=match):
       call()
@@ -653,7 +654,7 @@ def test_kde1d_survives_the_inputs_that_used_to_crash_it() -> None:
     "         (np.full(100, np.nan), np.ones(100)))\n"
     "for data, w in cases:\n"
     "    try:\n"
-    "        pv.core.Kde1d().fit(data, weights=w)\n"
+    "        pv.core.Kde1d().fit(data, pv.core.FitControlsKde1d(weights=w))\n"
     "    except ValueError:\n"
     "        pass\n"
     "try:\n"
@@ -688,29 +689,37 @@ def test_kde1d_still_accepts_the_drop_markers_it_documents() -> None:
     (partial_nan_data, np.ones(200)),
   ):
     assert np.all(
-      np.isfinite(pv.core.Kde1d().fit(data, weights=weights).pdf(q))
+      np.isfinite(
+        pv.core.Kde1d()
+        .fit(data, pv.core.FitControlsKde1d(weights=weights))
+        .pdf(q)
+      )
     )
   # An omitted vector is the documented "no weights" default, not all-zero.
   assert np.all(np.isfinite(pv.core.Kde1d().fit(y).pdf(q)))
 
 
 # --------------------------------------------------------------------------- #
-# The uniform estimator signature: `(y, controls, *, var_type, support,        #
-# weights)` on all three verbs, the same shape every other margin reads and    #
-# the same shape `Bicop` reads for its own declaration.                        #
+# The uniform estimator signature: `(y, controls, *, var_type, support)` on    #
+# all three verbs, the same shape every other margin reads and the same shape  #
+# `Bicop` reads for its own declaration.                                       #
 # --------------------------------------------------------------------------- #
 
 
 def test_fit_controls_kde1d_round_trips() -> None:
-  """The five kernel knobs survive `to_dict` and a pickle, as `Bicop`'s do."""
+  """Every setting survives `to_dict` and a pickle, as `Bicop`'s do."""
+  weights = np.linspace(0.5, 1.5, 7)
   controls = pv.core.FitControlsKde1d(
     multiplier=2.0,
     bandwidth=0.25,
     degree=1,
     grid_size=128,
     boundary_repair=False,
+    weights=weights,
   )
-  assert controls.to_dict() == {
+  settings = controls.to_dict()
+  np.testing.assert_array_equal(settings.pop("weights"), weights)
+  assert settings == {
     "multiplier": 2.0,
     "bandwidth": 0.25,
     "degree": 1,
@@ -718,8 +727,11 @@ def test_fit_controls_kde1d_round_trips() -> None:
     "boundary_repair": False,
   }
   back = pickle.loads(pickle.dumps(controls))
-  assert back.to_dict() == controls.to_dict()
+  np.testing.assert_array_equal(back.weights, weights)
   assert pv.core.FitControlsKde1d().to_dict()["bandwidth"] is None
+  # The weights are what a round-trip used to drop: `__setstate__` rebuilt the
+  # struct field by field, so a field added to it has to be added there too.
+  assert pv.core.FitControlsKde1d().to_dict()["weights"] is None
 
 
 @pytest.mark.parametrize(
@@ -791,7 +803,9 @@ def test_weights_in_the_controls_slot_are_refused() -> None:
   # no checker at all.
   with pytest.raises(TypeError):
     pv.core.Kde1d().fit(y, cast("Any", w))
-  assert pv.core.Kde1d().fit(y, weights=w).loglik() < 0.0
+  assert (
+    pv.core.Kde1d().fit(y, pv.core.FitControlsKde1d(weights=w)).loglik() < 0.0
+  )
 
 
 def test_a_declaration_states_what_it_states_and_no_more() -> None:

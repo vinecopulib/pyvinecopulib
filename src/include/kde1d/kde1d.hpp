@@ -128,8 +128,11 @@ inline Kde1d& kde1d_fit(
     Kde1d& self, const Eigen::VectorXd& y, const FitControlsKde1d* controls,
     const std::optional<std::string>& var_type,
     const std::optional<
-        std::tuple<std::optional<double>, std::optional<double>>>& support,
-    const std::optional<Eigen::VectorXd>& weights) {
+        std::tuple<std::optional<double>, std::optional<double>>>& support) {
+  // Weights are a setting, so they arrive in the controls, as they do on
+  // `FitControlsBicop` and everywhere else in the package.
+  const Eigen::VectorXd weights =
+      controls == nullptr ? Eigen::VectorXd() : controls->weights_or_empty();
   // A declaration or a controls object means the grid has to be rebuilt: both
   // are read at construction, so re-estimating in place would silently keep
   // what the object was built with.
@@ -137,14 +140,14 @@ inline Kde1d& kde1d_fit(
     Kde1d rebuilt = kde1d_configured(self, controls, var_type, support);
     {
       nb::gil_scoped_release release;
-      rebuilt.fit(y, weights.value_or(Eigen::VectorXd()));
+      rebuilt.fit(y, weights);
     }
     self = std::move(rebuilt);
     return self;
   }
   {
     nb::gil_scoped_release release;
-    self.fit(y, weights.value_or(Eigen::VectorXd()));
+    self.fit(y, weights);
   }
   return self;
 }
@@ -527,15 +530,15 @@ inline void init_kde1d(nb::module_& module) {
           .def("fit", &kde1d_fit, "y"_a,
                "controls"_a.sig("FitControlsKde1d()") = nb::none(),
                nb::kw_only(), "var_type"_a = nb::none(),
-               "support"_a = nb::none(), "weights"_a = nb::none(),
+               "support"_a = nb::none(),
                "Estimate the density from data, in place.\n"
                "\n"
                "Observations that are ``NaN`` are dropped, as are those whose "
                "weight is\n"
-               "``NaN`` or zero; the weights are rescaled to average one, so "
-               "only their\n"
-               "relative sizes matter. A ``controls`` object or a declaration "
-               "rebuilds the\n"
+               "``NaN`` or zero; ``controls.weights`` are rescaled to average "
+               "one, so only\n"
+               "their relative sizes matter. A ``controls`` object or a "
+               "declaration rebuilds the\n"
                "grid, since a kernel density reads both when it is "
                "constructed; what\n"
                "neither states is kept from this object.\n"
@@ -554,9 +557,6 @@ inline void init_kde1d(nb::module_& module) {
                "support : tuple of float, or None, optional\n"
                "    Bounds of the support, either end `None` for unbounded.\n"
                "\n"
-               "weights : array, shape (n,), dtype float, optional\n"
-               "    Observation weights.\n"
-               "\n"
                "Returns\n"
                "-------\n"
                "Kde1d\n"
@@ -565,9 +565,9 @@ inline void init_kde1d(nb::module_& module) {
                "Raises\n"
                "------\n"
                "ValueError\n"
-               "    If ``y`` is empty, if ``weights`` has a different length "
-               "or holds an\n"
-               "    infinite or negative value, if the drops above leave no "
+               "    If ``y`` is empty, if ``controls.weights`` has a "
+               "different length or\n"
+               "    holds an infinite value, if the drops above leave no "
                "observation\n"
                "    standing, if the variable is discrete and an observation "
                "is not an\n"
@@ -585,7 +585,7 @@ inline void init_kde1d(nb::module_& module) {
               "select", &kde1d_fit, "y"_a,
               "controls"_a.sig("FitControlsKde1d()") = nb::none(),
               nb::kw_only(), "var_type"_a = nb::none(),
-              "support"_a = nb::none(), "weights"_a = nb::none(),
+              "support"_a = nb::none(),
               "Fit the density; there is no family to select.\n"
               "\n"
               "A kernel density is determined by its parameters, so choosing "
@@ -607,9 +607,6 @@ inline void init_kde1d(nb::module_& module) {
               "support : tuple of float, or None, optional\n"
               "    Bounds of the support, either end `None` for unbounded.\n"
               "\n"
-              "weights : array, shape (n,), dtype float, optional\n"
-              "    Observation weights.\n"
-              "\n"
               "Returns\n"
               "-------\n"
               "Kde1d\n"
@@ -620,19 +617,20 @@ inline void init_kde1d(nb::module_& module) {
               [](const Eigen::VectorXd& y, const FitControlsKde1d* controls,
                  const std::optional<std::string>& var_type,
                  const std::optional<std::tuple<
-                     std::optional<double>, std::optional<double>>>& support,
-                 const std::optional<Eigen::VectorXd>& weights) {
+                     std::optional<double>, std::optional<double>>>& support) {
                 Kde1d kde =
                     kde1d_configured(Kde1d{}, controls, var_type, support);
                 {
                   nb::gil_scoped_release release;
-                  kde.fit(y, weights.value_or(Eigen::VectorXd()));
+                  kde.fit(y, controls == nullptr
+                                 ? Eigen::VectorXd()
+                                 : controls->weights_or_empty());
                 }
                 return kde;
               },
               "y"_a, "controls"_a.sig("FitControlsKde1d()") = nb::none(),
               nb::kw_only(), "var_type"_a = nb::none(),
-              "support"_a = nb::none(), "weights"_a = nb::none(),
+              "support"_a = nb::none(),
               "Construct a margin and fit it to data.\n"
               "\n"
               "``Kde1d(...).fit(y)`` in one call, the factory every other\n"
@@ -651,9 +649,6 @@ inline void init_kde1d(nb::module_& module) {
               "\n"
               "support : tuple of float, or None, optional\n"
               "    Bounds of the support, either end `None` for unbounded.\n"
-              "\n"
-              "weights : array, shape (n,), dtype float, optional\n"
-              "    Observation weights.\n"
               "\n"
               "Returns\n"
               "-------\n"

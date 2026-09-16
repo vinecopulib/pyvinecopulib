@@ -9,8 +9,7 @@ have to name the concrete copula.
 
 from __future__ import annotations
 
-import copy
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar
 
 import numpy as np
 
@@ -93,10 +92,6 @@ class Vinedist(VinedistBase[np.ndarray]):
   vinecop_class: ClassVar[type[VinecopLike[Any]] | None] = Vinecop
   margin_class: ClassVar[type[MarginLike[Any]] | None] = Kde1d
 
-  #: `_copula_controls` writes weights into a copy of the controls, so both
-  #: halves of the fit are weighted by the one argument.
-  supports_weighted_copula: bool = True
-
   def _bind_dist(
     self,
     vinecop: VinecopLike[np.ndarray],
@@ -137,39 +132,11 @@ class Vinedist(VinedistBase[np.ndarray]):
   def _coerce_fit_data(
     cls,
     y: object,
-    weights: np.ndarray | None,
     controls: ControlsLike | None,
-  ) -> tuple[np.ndarray, np.ndarray | None]:
-    """Put the fit inputs on NumPy.
+  ) -> np.ndarray:
+    """Put the observations on NumPy.
 
-    NumPy carries no placement, so ``controls`` goes unread, and the weights
-    pass through unchanged — ``validate_weights`` coerces those against the
-    data.
+    NumPy carries no placement, so ``controls`` goes unread.
     """
     del controls
-    return np.asarray(y, dtype=float), weights
-
-  @classmethod
-  def _copula_controls(
-    cls,
-    controls: ControlsLike | None,
-    u: np.ndarray,
-    weights: np.ndarray | None,
-  ) -> ControlsLike | None:
-    """``controls`` with the explicit ``weights`` written in.
-
-    The explicit argument governs both halves of the fit, so it is written
-    into a *copy* -- overriding a controls object's own weights must not
-    mutate one the caller still holds.
-    """
-    del u
-    # The default is the vine's own declaration, not a class named again here.
-    resolved: Any = (
-      cast("Any", cls.vinecop_class).controls_class()
-      if controls is None
-      else controls
-    )
-    if weights is not None:
-      resolved = copy.deepcopy(resolved)
-      resolved.weights = np.asarray(weights, dtype=float)
-    return resolved
+    return np.asarray(y, dtype=float)

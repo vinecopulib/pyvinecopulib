@@ -25,6 +25,7 @@ from ..core._margins import register_margin_json
 from ..core._validation import (
   extra_required,
   reject_covariates,
+  reject_weights,
   usable_observations,
   validate_declaration,
 )
@@ -639,7 +640,6 @@ class SciPyMargin(MarginBase[np.ndarray]):
     var_type: str | None = None,
     support: tuple[float | None, float | None] | None = None,
     x: np.ndarray | None = None,
-    weights: np.ndarray | None = None,
   ) -> Self:
     """Choose a family from the candidate set, fit it, and become it.
 
@@ -678,8 +678,6 @@ class SciPyMargin(MarginBase[np.ndarray]):
     x : array, shape (n, p), or None, optional
         Not supported; passing covariates raises rather than silently
         selecting an unconditional margin.
-    weights : array, shape (n,), or None, optional
-        Not supported; SciPy's estimators do not accept them.
 
     Returns
     -------
@@ -689,7 +687,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
     Raises
     ------
     TypeError
-        If ``weights`` is given.
+        If ``controls`` carries observation weights.
     ValueError
         If no observation survives, or if every candidate is inadmissible and
         ``on_failure`` is ``"raise"``.
@@ -700,12 +698,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
     aic : Score the chosen fit.
     """
     reject_covariates(self, x)
-    if weights is not None:
-      raise TypeError(
-        "SciPyMargin cannot use observation weights: SciPy's estimators "
-        "do not accept them. Pass margins='kde' for a weighted fit, or drop "
-        "weights="
-      )
+    reject_weights(self, controls)
     # The default is this class's own declaration, so a subclass that reads
     # another controls type is followed rather than overridden here.
     settings = (
@@ -722,9 +715,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
       # the base contract applies: reduce to `fit`. Replacing it silently would
       # answer a specification with a different model. A caller who does want
       # the search back asks for it by name, with `family_set`.
-      return self.fit(
-        y, var_type=var_type, support=support, x=x, weights=weights
-      )
+      return self.fit(y, var_type=var_type, support=support, x=x)
 
     data = usable_observations(
       np.asarray(y, dtype=float), name="SciPyMargin.select's y"
@@ -1100,7 +1091,6 @@ class SciPyMargin(MarginBase[np.ndarray]):
     var_type: str | None = None,
     support: tuple[float | None, float | None] | None = None,
     x: np.ndarray | None = None,
-    weights: np.ndarray | None = None,
   ) -> Self:
     """Estimate the free parameters by maximum likelihood.
 
@@ -1121,8 +1111,6 @@ class SciPyMargin(MarginBase[np.ndarray]):
     x : array, shape (n, p), or None, optional
         Not supported; passing covariates raises rather than silently
         fitting an unconditional margin.
-    weights : array, shape (n,), or None, optional
-        Not supported; see the Notes on the class.
 
     Returns
     -------
@@ -1132,12 +1120,13 @@ class SciPyMargin(MarginBase[np.ndarray]):
     Raises
     ------
     TypeError
-        If ``weights`` is given.
+        If ``controls`` carries observation weights.
     ValueError
         If no observation survives, or a free discrete parameter has no search
         bound.
     """
     reject_covariates(self, x)
+    reject_weights(self, controls)
     if self._family is None:
       # `RuntimeError`, as the property readers use for the same missing
       # state -- and not `ValueError`, which `on_failure="fallback"` catches
@@ -1146,12 +1135,6 @@ class SciPyMargin(MarginBase[np.ndarray]):
       raise RuntimeError(
         "SciPyMargin() has no family yet; name one at construction, or call "
         "select(y) to choose from the candidate set"
-      )
-    if weights is not None:
-      raise TypeError(
-        f"SciPyMargin({self._family!r}) cannot use observation weights: "
-        "SciPy's estimators do not accept them. Pass margins='kde' for a "
-        "weighted fit, or drop weights="
       )
     data = usable_observations(
       np.asarray(y, dtype=float),

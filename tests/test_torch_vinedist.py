@@ -431,7 +431,7 @@ def test_supports_declare_a_bound() -> None:
 def test_from_data_refuses_covariates(data: np.ndarray) -> None:
   """No torch margin reads them, so an unconditional fit would be a lie."""
   y = torch.as_tensor(data, dtype=torch.float64)
-  with pytest.raises(NotImplementedError, match="takes no covariates"):
+  with pytest.raises(ValueError, match="the fit would ignore"):
     TorchVinedist.from_data(y, x=torch.zeros(y.shape[0], 2))
 
 
@@ -525,28 +525,22 @@ def test_rejects_a_margin_with_atoms_and_no_left_limit(
     TorchVinedist(torch_copula, [discrete for _ in range(3)])
 
 
-@pytest.mark.parametrize(
-  ("device", "dtype"),
-  [(None, None), (None, torch.float32), ("cpu", torch.float64)],
-)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_from_data_puts_everything_on_one_device_and_dtype(
-  device: str | None, dtype: torch.dtype | None
+  dtype: torch.dtype,
 ) -> None:
-  """`from_data` documents one device and one dtype for the whole object.
+  """`from_data` reads one device and one dtype off `y`, for both halves.
 
-  The margins took theirs from `y` while the copula took `controls.device`, so
-  `from_data(..., controls=FitControlsTorchVinecop(device="cuda"))` left every
-  margin on the CPU: `state_dict` spanned two devices and `logpdf` raised.
+  Where the object evaluates is a property of the object, so it is taken from
+  the data rather than named in the controls: there is nothing a caller can
+  set that would leave the margins on one device and the copula on another.
   """
   rng = np.random.default_rng(0)
-  y = torch.as_tensor(rng.normal(size=(200, 3)))
-  controls = FitControlsTorchVinecop(device=device, dtype=dtype)
-  dist = TorchVinedist.from_data(y, controls=controls)
+  y = torch.as_tensor(rng.normal(size=(200, 3)), dtype=dtype)
+  dist = TorchVinedist.from_data(y, controls=FitControlsTorchVinecop())
   tensors = [v for v in dist.state_dict().values() if hasattr(v, "device")]
-  assert len({t.device for t in tensors}) == 1
-  assert len({t.dtype for t in tensors}) == 1
-  if dtype is not None:
-    assert tensors[0].dtype == dtype
+  assert {t.device for t in tensors} == {y.device}
+  assert {t.dtype for t in tensors} == {dtype}
   # And the object it produced can evaluate its own data.
   assert torch.isfinite(dist.log_prob(dist.sample(4))).all()
 

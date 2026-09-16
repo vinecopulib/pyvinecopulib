@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 
 import pyvinecopulib as pv
-from pyvinecopulib.core import Kde1d, MarginLike
+from pyvinecopulib.core import FitControlsKde1d, Kde1d, MarginLike
 from pyvinecopulib.margins import (
   FitControlsMargin,
   SciPyMargin,
@@ -105,7 +105,7 @@ def test_kde1d_margin_supports_weights(sample: np.ndarray) -> None:
   assert Kde1d.supports_weights is True
   w = np.where(sample > np.median(sample), 3.0, 1.0)
   plain = Kde1d().fit(sample)
-  tilted = Kde1d().fit(sample, weights=w)
+  tilted = Kde1d().fit(sample, FitControlsKde1d(weights=w))
   assert tilted.icdf(np.array([0.5]))[0] > plain.icdf(np.array([0.5]))[0]
 
 

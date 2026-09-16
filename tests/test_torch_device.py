@@ -251,9 +251,7 @@ def test_batched_fit_peak_memory_stays_bounded(device: str) -> None:
     ),
   ).structure
   u = torch.as_tensor(u_np, device=device)
-  controls = FitControlsTorchVinecop(
-    device=torch.device(device), batched_fit=True
-  )
+  controls = FitControlsTorchVinecop(batched_fit=True)
   TorchVinecop.from_data(u, structure=structure, controls=controls)  # warm
   torch.cuda.empty_cache()
   torch.cuda.reset_peak_memory_stats()
@@ -268,7 +266,7 @@ def test_fit_and_select_run_on_device(device: str) -> None:
   """Fitting and structure selection work with device-resident data."""
   u = _u(4, 600, 11)
   ut = torch.as_tensor(u, device=device)
-  ctl = FitControlsTorchVinecop(device=torch.device(device))
+  ctl = FitControlsTorchVinecop()
   fixed = pv.Vinecop.from_data(
     u, controls=pv.FitControlsVinecop(family_set=[pv.BicopFamily.tll])
   )
@@ -418,9 +416,7 @@ def test_batched_fit_matches_the_per_edge_fit_on_device(
     flag: TorchVinecop.from_data(
       u_t,
       structure=structure,
-      controls=FitControlsTorchVinecop(
-        device=torch.device(device), batched_fit=flag
-      ),
+      controls=FitControlsTorchVinecop(batched_fit=flag),
     )
     for flag in (False, True)
   }
@@ -613,9 +609,7 @@ def test_fit_and_select_place_their_data(device: str) -> None:
   across namespaces. `from_data` was unaffected -- it places from the controls.
   """
   u_np = pv.to_pseudo_obs(np.random.default_rng(0).normal(size=(150, 3)))
-  controls = FitControlsTorchVinecop(
-    device=torch.device(device), dtype=torch.float64
-  )
+  controls = FitControlsTorchVinecop()
   vine = TorchVinecop.from_data(
     torch.as_tensor(u_np, dtype=torch.float64, device=device), controls
   )

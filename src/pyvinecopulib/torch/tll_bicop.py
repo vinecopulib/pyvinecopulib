@@ -48,42 +48,53 @@ def _resolve_placement(
   cache_integrals: bool | None,
   device: torch.types.Device,
   dtype: torch.dtype | None,
+  u: object,
 ) -> tuple[bool, torch.types.Device, torch.dtype]:
   """Fill in the placement and cache mode a fit was not given explicitly.
 
-  A vine's controls *are* pair controls, so the device, dtype and cache mode a
-  ``FitControlsTorchVinecop`` carries reach a pair fit the same way its grid
-  settings do. That is what makes ``TorchVinecop``'s inherited ``fit`` and
-  ``select`` agree with its own ``from_data``, which passes them by hand.
+  Where a fitted pair lives is a property of the pair, so an unnamed device
+  and dtype are read from the **data** rather than from the controls: a grid
+  fitted from a tensor belongs on that tensor, the way an ``nn.Module`` built
+  from data does. That is also what makes ``TorchVinecop``'s inherited ``fit``
+  and ``select`` agree with its own ``from_data`` -- the vine places ``u`` on
+  itself before the cascade reaches a pair, so the pair reads the vine's own
+  placement back off the data it is handed.
+
+  The cache mode is an actual setting and does come from the controls.
 
   Parameters
   ----------
   controls : FitControlsTorchBicop
-      The fit controls; a plain pair controls object carries none of the three.
+      The fit controls, read for ``cache_integrals``.
   cache_integrals : bool, or None, optional
       The explicit argument, or ``None`` to read ``controls``.
   device : torch.device, or None, optional
-      The explicit argument, or ``None`` to read ``controls``.
+      The explicit argument, or ``None`` to read ``u``.
   dtype : torch.dtype, or None, optional
-      The explicit argument, or ``None`` to read ``controls``.
+      The explicit argument, or ``None`` to read ``u``.
+  u : object
+      The observations the fit is about to run on.
 
   Returns
   -------
   tuple
       ``(cache_integrals, device, dtype)``, with the documented fallbacks
-      applied: ``True``, the default device, and ``torch.float64``.
+      applied: ``True``, and ``u``'s own placement -- ``torch.float64`` where
+      ``u`` names no floating dtype of its own, since an integer one is no
+      answer a density can use.
   """
   if cache_integrals is None:
     cache_integrals = getattr(controls, "cache_integrals", None)
     if cache_integrals is None:
       cache_integrals = True
-  if device is None:
-    device = cast("torch.types.Device", getattr(controls, "device", None))
-  if dtype is None:
-    dtype = (
-      cast("torch.dtype | None", getattr(controls, "dtype", None))
-      or torch.float64
-    )
+  if device is None or dtype is None:
+    reference = torch.as_tensor(u)
+    if device is None:
+      device = reference.device
+    if dtype is None:
+      dtype = (
+        reference.dtype if reference.dtype.is_floating_point else torch.float64
+      )
   return bool(cache_integrals), device, dtype
 
 
@@ -386,11 +397,10 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
         As on ``TorchTllBicop``, for each pair returned; ``None`` reads
         ``controls``, then ``True``.
     device : torch.device, or None, optional
-        As on ``TorchTllBicop``; ``None`` reads ``controls``, then the default
-        device.
+        As on ``TorchTllBicop``; ``None`` puts the grid where ``u`` is.
     dtype : torch.dtype, or None, optional
-        As on ``TorchTllBicop``; ``None`` reads ``controls``, then
-        ``torch.float64``.
+        As on ``TorchTllBicop``; ``None`` takes ``u``'s own dtype, or
+        ``torch.float64`` where that is not a floating one.
 
     Returns
     -------
@@ -419,7 +429,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     """
     controls = _torch_bicop_controls(controls)
     cache_integrals, device, dtype = _resolve_placement(
-      controls, cache_integrals, device, dtype
+      controls, cache_integrals, device, dtype, u
     )
     u_t = torch.as_tensor(u, dtype=dtype, device=device)
     if u_t.ndim != 3 or u_t.shape[-1] != 2:
@@ -494,11 +504,10 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     cache_integrals : bool, or None, optional
         As on ``TorchTllBicop``; ``None`` reads ``controls``, then ``True``.
     device : torch.device, or None, optional
-        As on ``TorchTllBicop``; ``None`` reads ``controls``, then the default
-        device.
+        As on ``TorchTllBicop``; ``None`` puts the grid where ``u`` is.
     dtype : torch.dtype, or None, optional
-        As on ``TorchTllBicop``; ``None`` reads ``controls``, then
-        ``torch.float64``.
+        As on ``TorchTllBicop``; ``None`` takes ``u``'s own dtype, or
+        ``torch.float64`` where that is not a floating one.
 
     Returns
     -------
@@ -519,7 +528,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     reject_covariates(cls, x)
     controls = _torch_bicop_controls(controls)
     cache_integrals, device, dtype = _resolve_placement(
-      controls, cache_integrals, device, dtype
+      controls, cache_integrals, device, dtype, u
     )
     types = ("c", "c") if var_types is None else tuple(var_types)
     discrete = "d" in types

@@ -65,8 +65,14 @@ def _bounded_response(y: np.ndarray) -> type[Vinedist]:
   class _Bounded(Vinedist):
     @classmethod
     def _default_margins(
-      cls, d: int, controls: Any = None, margin_controls: Any = None
+      cls,
+      d: int,
+      controls: Any = None,
+      margin_controls: Any = None,
+      *,
+      reference: Any = None,
     ) -> list[Any]:
+      del reference
       return [Kde1d(xmin=lo, xmax=hi), *(Kde1d() for _ in range(d - 1))]
 
   return _Bounded

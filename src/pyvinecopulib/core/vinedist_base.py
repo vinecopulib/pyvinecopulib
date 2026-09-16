@@ -33,12 +33,16 @@ from abc import ABC
 from collections.abc import Sequence
 from typing import Any, ClassVar, Self, cast
 
-from ..pyvinecopulib_ext import Kde1d, RVineStructure
+from ..pyvinecopulib_ext import FitControlsKde1d, Kde1d, RVineStructure
 from ._covariates import declared_eval, prepare_covariates
 from ._loglik import safe_log
 from ._placement import PlacementMixin, to_numpy
 from ._trim import trim
-from ._validation import validate_covariates, validate_weights
+from ._validation import (
+  declared_weights,
+  reject_weights,
+  validate_covariates,
+)
 from .margin_base import MarginBase, derive_cdf_left
 from .protocols import (
   _VINEDIST_EXAMPLE,
@@ -235,21 +239,20 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     without a ``margin_class`` an unaddressed variable falls back to a
     kernel-density margin.
   - ``_coerce_fit_data`` is the one real hook, and the only member fitting
-    strictly requires: a lane may have to resolve a placement — a device and a
-    dtype — before any part exists to read one from.
-  - ``_fit_copula`` fits the copula half and defaults to ``vinecop_class``.
-    Override it where a lane needs a step of its own:
-    :class:`~pyvinecopulib.core.Vinedist` writes ``weights`` into a copy of the
-    controls there.
+    strictly requires: a lane may have to put the observations on its own
+    array namespace before any part exists to read one from.
+  - ``_fit_copula`` fits the copula half and defaults to ``vinecop_class``;
+    a lane whose copula is built some other way overrides it.
   - ``_default_margins`` supplies the margin each variable gets when the caller
     named none, one ``margin_class`` per variable. Override it when those
     margins need an argument the class attribute cannot carry, as a placement
-    is; override ``_default_margins`` alone when the margin class takes
-    its variable type or its bounds at *construction*, as a kernel density
-    does.
-  - ``supports_weighted_copula`` and ``supports_fit_covariates`` declare what
-    the lane can honor. Either one ``False`` makes the matching request an
-    error up front, instead of a fit that applies it to one half only.
+    is.
+
+  What the lane can *honor* is asked of the parts rather than declared here.
+  Observation weights ride in each controls object, so they are refused by
+  whichever part is handed weights it does not read (``supports_weights``),
+  and covariates are refused by :meth:`from_data` when no part reads them at
+  all -- there is no flag on the distribution restating either question.
 
   See Also
   --------
@@ -1119,21 +1122,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   vinecop_class: ClassVar[type[VinecopLike[Any]] | None] = None
   margin_class: ClassVar[type[MarginLike[Any]] | None] = None
 
-  #: Whether this lane's copula fitter accepts observation weights. Declared
-  #: rather than discovered, so weights given to a lane that cannot apply them
-  #: to *both* halves are refused up front instead of yielding a fit whose
-  #: margins are weighted and whose copula is not. ``False`` here because the
-  #: default ``_fit_copula`` cannot apply them -- it has only the part
-  #: class and the caller's controls -- so a subclass declares ``True``
-  #: together with the override that honors them, as
-  #: :class:`~pyvinecopulib.core.Vinedist` does.
-  supports_weighted_copula: bool = False
-
-  #: Whether any margin on this array namespace can be fitted conditionally.
-  #: When ``False`` the refusal is categorical, so the estimators say so rather
-  #: than suggesting the caller pass margins that read covariates.
-  supports_fit_covariates: bool = True
-
   @classmethod
   def _coerce_fit_data(
     # Annotated, rather than left bare: `y` is `object` because the hook
@@ -1141,10 +1129,9 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     # return and the checker has nothing to bind it from otherwise.
     cls: type[VinedistBase[ArrayT]],
     y: object,
-    weights: ArrayT | None,
     controls: ControlsLike | None,
-  ) -> tuple[ArrayT, ArrayT | None]:
-    """Raise; override to put the fit inputs on this subclass's namespace.
+  ) -> ArrayT:
+    """Raise; override to put the observations on this subclass's namespace.
 
     Called once before any part is fitted, by every estimator on the class.
     That is why it is a classmethod and not the instance-level ``_prep``: the
@@ -1157,16 +1144,13 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     y : object
         The caller's observations, in whatever form they passed — including a
         DataFrame.
-    weights : object, or None, optional
-        The caller's observation weights, or ``None``.
     controls : ControlsLike, or None, optional
         Fit configuration, which may carry the placement.
 
     Returns
     -------
-    tuple
-        The observations and the weights, both on this subclass's namespace so
-        they cannot end up in different places.
+    array, shape (n, d)
+        The observations, on this subclass's namespace.
 
     Raises
     ------
@@ -1185,14 +1169,17 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     d: int,
     controls: ControlsLike | None,
     margin_controls: Sequence[ControlsLike | None] | None = None,
+    *,
+    reference: ArrayT | None = None,
   ) -> Sequence[MarginLike[ArrayT]] | None:
     """One ``margin_class`` per variable, declared as its controls say.
 
     Declaring ``margin_class`` is normally all it takes. Override this only
     where the margins need something no per-variable controls object carries,
-    which on the torch lane is the device and dtype the *copula* controls
-    name. The variable's type and bounds are not among them: those reach the
-    margin as the keyword-only declaration its ``fit`` takes.
+    which on the torch lane is the device and dtype to build them on --
+    read from ``reference``, the coerced observations, so the margins land
+    where the data is. The variable's type and bounds are not among them:
+    those reach the margin as the keyword-only declaration its ``fit`` takes.
 
     Parameters
     ----------
@@ -1231,7 +1218,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     var_type: str | None = None,
     support: tuple[float | None, float | None] | None = None,
     x: ArrayT | None = None,
-    weights: ArrayT | None = None,
   ) -> MarginLike[ArrayT]:
     """Estimate one variable's margin, in place.
 
@@ -1268,8 +1254,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     x : array, shape (n, p), or None, optional
         Exogenous covariates, reaching a margin that declares
         ``supports_covariates``.
-    weights : array, shape (n,), or None, optional
-        Observation weights.
 
     Returns
     -------
@@ -1280,7 +1264,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     Raises
     ------
     TypeError
-        If weights were given for a margin that cannot use them, or a
+        If ``controls`` carries weights a margin cannot use, or a
         ``family_set`` for one that cannot search -- either would answer the
         request with a different model than was asked for.
     """
@@ -1294,11 +1278,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     cls_of = type(margin)
     if cls_of.fit is MarginBase.fit and cls_of.select is MarginBase.select:
       return cast("MarginLike[ArrayT]", margin)
-    if weights is not None and not getattr(margin, "supports_weights", False):
-      raise TypeError(
-        f"{type(margin).__name__} cannot use observation weights; name a "
-        "`margin_class` that accepts them, or drop weights="
-      )
+    reject_weights(margin, controls)
     # A `family_set` is an instruction to search, so a margin that cannot act
     # on one -- or a `fit`, which estimates the family the margin already has
     # -- refuses it rather than fitting one family and looking like it chose.
@@ -1333,8 +1313,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       passed["support"] = support
     if x is not None and getattr(margin, "supports_covariates", False):
       passed["x"] = x
-    if weights is not None:
-      passed["weights"] = weights
     try:
       getattr(margin, verb)(y, controls, **passed)
     except ValueError as e:
@@ -1347,12 +1325,17 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       if getattr(controls, "on_failure", "raise") != "fallback":
         raise
       try:
+        weights = declared_weights(controls)
         substitute = cls._adopt_margin(
           Kde1d.from_data(
             to_numpy(y, dtype=float),
+            FitControlsKde1d(
+              weights=None
+              if weights is None
+              else to_numpy(weights, dtype=float)
+            ),
             var_type=var_type,
             support=support,
-            weights=None if weights is None else to_numpy(weights, dtype=float),
           ),
           y,
         )
@@ -1399,59 +1382,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     return cast("MarginLike[ArrayT]", margin)
 
   @classmethod
-  def _copula_controls(
-    cls,
-    controls: ControlsLike | None,
-    u: ArrayT,
-    weights: ArrayT | None,
-  ) -> ControlsLike | None:
-    """The controls the copula half is estimated with, for this lane.
-
-    The one lane-specific step in the copula estimate, and the only hook a
-    subclass normally overrides: :class:`~pyvinecopulib.core.Vinedist` writes
-    ``weights`` into a copy of the controls here, and
-    :class:`~pyvinecopulib.torch.TorchVinedist` pins the device and dtype the
-    margins resolved. Reading it in one place is what lets ``from_data`` and
-    ``fit`` share it -- one constructs the copula and the other re-estimates
-    the one already held, and both must configure it identically.
-
-    ``weights`` arrive explicitly rather than folded into ``controls``, so a
-    lane whose fitter cannot use them is not silently handed them: declare
-    ``supports_weighted_copula`` ``False`` instead and the estimators refuse
-    the request before fitting anything.
-
-    Parameters
-    ----------
-    controls : ControlsLike, or None, optional
-        What the caller passed.
-    u : array, shape (n, d + k), dtype float
-        The copula-scale layout, for a lane that reads its placement.
-    weights : array, shape (n,), or None, optional
-        Observation weights.
-
-    Returns
-    -------
-    ControlsLike, or None
-        The controls to estimate with; ``controls`` unchanged by default.
-
-    Raises
-    ------
-    NotImplementedError
-        If weights are given and this class declares
-        :attr:`supports_weighted_copula` without overriding this hook, which
-        is the half-weighted fit the declaration exists to prevent.
-    """
-    del u
-    if weights is not None:
-      raise NotImplementedError(
-        f"{cls.__name__} declares `supports_weighted_copula` but does not "
-        "override `_copula_controls`, which is where weights reach the "
-        "copula half. Override it to write them into the controls, or "
-        "declare `supports_weighted_copula = False`."
-      )
-    return controls
-
-  @classmethod
   def _fit_copula(
     cls,
     u: ArrayT,
@@ -1459,7 +1389,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     var_types: list[str],
     controls: ControlsLike | None,
     structure: RVineStructure | None,
-    weights: ArrayT | None,
     x: ArrayT | None = None,
   ) -> VinecopLike[ArrayT]:
     """Construct and fit the copula half on the pseudo-observations.
@@ -1469,8 +1398,8 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     object already holds instead -- see :meth:`_reestimate_copula` -- so a
     hosted :class:`~pyvinecopulib.core.VinecopLike` survives a refit.
 
-    Defaults to ``vinecop_class``, so most subclasses declare that and
-    override :meth:`_copula_controls` rather than this.
+    Defaults to ``vinecop_class``, so a subclass normally declares that and
+    overrides nothing here.
 
     Parameters
     ----------
@@ -1482,17 +1411,14 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         Fit configuration.
     structure : RVineStructure, or None, optional
         A fixed structure, or ``None`` to select one from the data.
-    weights : array, shape (n,), or None, optional
-        Observation weights.
     x : array, shape (n, p), or None, optional
         Exogenous covariates, forwarded to ``vinecop_class.from_data`` only
         when that class declares ``supports_covariates`` -- the rule
         ``_covariates.declared_eval`` applies to a whole copula at evaluation,
         applied here at fitting. A ``Vinecop`` of ``Bicop`` pairs models none,
         so a conditional ``Vinedist`` is one whose *margins* read ``x``; what
-        enforces that is the refusal one level up, where
-        ``supports_fit_covariates`` says whether anything on the lane is fitted
-        on covariates at all.
+        enforces that is the refusal in :meth:`from_data`, which asks whether
+        *anything* on the lane reads covariates.
 
     Returns
     -------
@@ -1503,8 +1429,9 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     ------
     NotImplementedError
         If this class names no ``vinecop_class`` and does not override this
-        hook, or if it declares :attr:`supports_weighted_copula` without
-        overriding this hook to apply the weights.
+        hook.
+    TypeError
+        If ``controls`` carries weights ``vinecop_class`` cannot honor.
     """
     if cls.vinecop_class is None:
       raise NotImplementedError(
@@ -1512,14 +1439,14 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         "`_fit_copula`, so it cannot fit a copula. Set one, or compose an "
         "already-fitted copula and margins by construction."
       )
-    resolved = cls._copula_controls(controls, u, weights)
-    kwargs: dict[str, Any] = {"structure": structure, "controls": resolved}
+    reject_weights(cls.vinecop_class, controls)
+    kwargs: dict[str, Any] = {"structure": structure, "controls": controls}
     if var_types is not None:
       kwargs["var_types"] = var_types
     # Declared, not attempted: a copula class that models no covariates takes
     # no `x` argument at all, so forwarding one would raise rather than fit
     # something. Whether *anything* on the lane reads them is settled before
-    # this, by `supports_fit_covariates`.
+    # this, in `from_data`.
     if x is not None and getattr(
       cls.vinecop_class, "supports_covariates", False
     ):
@@ -1532,7 +1459,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     *,
     var_types: list[str],
     controls: ControlsLike | None,
-    weights: ArrayT | None,
     x: ArrayT | None,
     verb: str,
   ) -> VinecopLike[ArrayT]:
@@ -1553,8 +1479,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         One ``"c"`` or ``"d"`` per variable.
     controls : ControlsLike, or None, optional
         Fit configuration.
-    weights : array, shape (n,), or None, optional
-        Observation weights.
     x : array, shape (n, p), or None, optional
         Exogenous covariates.
     verb : str
@@ -1565,6 +1489,8 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     NotImplementedError
         If the held copula has no estimator of that name -- an immutable or
         purely functional copula, which cannot be re-estimated in place.
+    TypeError
+        If ``controls`` carries weights the held copula cannot honor.
     """
     copula = self._vinecop
     estimator = getattr(copula, verb, None)
@@ -1574,7 +1500,9 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         f"{type(self).__name__} cannot re-estimate its copula half in place. "
         f"Use {type(self).__name__}.from_data to fit a fresh distribution."
       )
-    resolved = type(self)._copula_controls(controls, u, weights)
+    # The copula in hand, not the class this distribution names: on a refit
+    # the copula it holds need not be an instance of either.
+    reject_weights(copula, controls)
     # Forwarded one at a time, so a copula whose estimator declares only what
     # it uses still works -- the idiom `BicopBase.select` follows. `var_types`
     # is left to the copula it already carries: a refit along itself cannot
@@ -1582,7 +1510,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     passed: dict[str, Any] = {}
     if x is not None and getattr(copula, "supports_covariates", False):
       passed["x"] = x
-    estimator(u, resolved, **passed)
+    estimator(u, controls, **passed)
     return copula
 
   def fit(
@@ -1593,7 +1521,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     *,
     margin_controls: object = None,
     x: ArrayT | None = None,
-    weights: ArrayT | None = None,
   ) -> Self:
     """Re-estimate both halves of this distribution, in place.
 
@@ -1618,8 +1545,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     x : array, shape (n, p), or None, optional
         Exogenous covariates, reaching each margin that declares
         ``supports_covariates``.
-    weights : array, shape (n,), or None, optional
-        Observation weights, applied to both halves.
 
     Returns
     -------
@@ -1651,7 +1576,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       controls,
       margin_controls,
       x=x,
-      weights=weights,
       structure=self.vinecop.structure,
       verb="fit",
     )
@@ -1664,7 +1588,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     *,
     margin_controls: object = None,
     x: ArrayT | None = None,
-    weights: ArrayT | None = None,
   ) -> Self:
     """Re-select and re-estimate both halves, in place.
 
@@ -1685,8 +1608,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     x : array, shape (n, p), or None, optional
         Exogenous covariates, reaching each margin that declares
         ``supports_covariates``.
-    weights : array, shape (n,), or None, optional
-        Observation weights, applied to both halves.
 
     Returns
     -------
@@ -1703,7 +1624,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       controls,
       margin_controls,
       x=x,
-      weights=weights,
       structure=None,
       verb="select",
     )
@@ -1715,7 +1635,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     margin_controls: object,
     *,
     x: ArrayT | None,
-    weights: ArrayT | None,
     structure: RVineStructure | None,
     verb: str,
   ) -> Self:
@@ -1731,8 +1650,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         Marginal fit configuration.
     x : array, shape (n, p), or None, optional
         Exogenous covariates.
-    weights : array, shape (n,), or None, optional
-        Observation weights.
     structure : RVineStructure, or None, optional
         The structure to fit along, or ``None`` to select one.
     verb : str
@@ -1741,17 +1658,18 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     Raises
     ------
     ValueError
-        If ``y`` is not two-dimensional, if its width does not match this
-        distribution's dimension, or if weights are given that this lane
-        cannot apply to the copula half.
+        If ``y`` is not two-dimensional, or if its width does not match this
+        distribution's dimension.
+    TypeError
+        If a controls object carries weights the part it configures cannot
+        honor.
     NotImplementedError
-        If covariates are given and this lane cannot estimate both halves on
-        them, or if the held copula has no estimator to re-run.
+        If the held copula has no estimator to re-run.
     """
     from ._margins import resolve_margin_controls, unshare
 
     cls = type(self)
-    coerced, weights = cls._coerce_fit_data(y, weights, controls)
+    coerced = cls._coerce_fit_data(y, controls)
     data: Any = coerced
     if data.ndim != 2:
       raise ValueError(f"y must be two-dimensional; got {data.ndim} dimensions")
@@ -1763,7 +1681,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         f"use {cls.__name__}.from_data to fit a distribution of another "
         "dimension"
       )
-    x, weights = self._check_fit_inputs(x, weights, n, data, verb)
+    x = prepare_covariates(data, x, n)
+    # The parts this object holds, not the classes it names: `fit` and
+    # `select` re-estimate the margins already bound, which need not be
+    # instances of `margin_class` at all.
+    self._check_covariates(x, n)
 
     # A mapping may be keyed by name, but the only labels this object has are
     # whatever its margins carry -- nothing here assigns one. So a name-keyed
@@ -1785,7 +1707,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         per_variable[j],
         verb=verb,
         x=x,
-        weights=weights,
       )
       for j, margin in enumerate(unshare(self._margins))
     ]
@@ -1812,57 +1733,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       u,
       var_types=var_types,
       controls=controls,
-      weights=weights,
       x=x,
       verb=verb,
     )
     self._bind_dist(vinecop, margins)
     return self
-
-  @classmethod
-  def _check_fit_inputs(
-    cls,
-    x: ArrayT | None,
-    weights: ArrayT | None,
-    n: int,
-    data: ArrayT,
-    verb: str,
-  ) -> tuple[ArrayT | None, ArrayT | None]:
-    """Validate and place the covariates, and validate the weights.
-
-    Returns both, because placing is half the job: the covariates a margin's
-    estimator is handed have to live on the same namespace as the column it is
-    handed, and returning only the weights left the placed value dying with
-    this frame. The coerced observations are the reference for both: ``x`` is
-    placed onto them and their first column types the weights. ``verb`` is the
-    calling method's name, quoted in the error messages.
-
-    Raises
-    ------
-    NotImplementedError
-        If covariates are given and this lane declares it cannot estimate
-        both halves on them.
-    ValueError
-        If weights are given that the copula half cannot apply.
-    """
-    if x is not None and not cls.supports_fit_covariates:
-      raise NotImplementedError(
-        f"{cls.__name__}.{verb} takes no covariates: no part on this array "
-        f"namespace is fitted on them ({cls.__name__} declares "
-        "`supports_fit_covariates = False`), so the fit would come back "
-        "unconditional while the call suggested otherwise. Fit the parts "
-        "yourself if only one half is conditional."
-      )
-    placed: ArrayT | None = prepare_covariates(data, x, n)
-    checked: ArrayT | None = validate_weights(weights, cast("Any", data)[:, 0])
-    if checked is not None and not cls.supports_weighted_copula:
-      raise ValueError(
-        f"{cls.__name__}.{verb} cannot weight the copula half, so the "
-        "margins would be weighted and the copula would not -- which is not "
-        "the weighted fit of anything. Drop `weights`, or fit the margins "
-        "yourself and compose them with a copula you weighted."
-      )
-    return placed, checked
 
   @classmethod
   def from_data(
@@ -1876,7 +1751,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     supports: Sequence[tuple[float | None, float | None] | None] | None = None,
     structure: RVineStructure | None = None,
     x: ArrayT | None = None,
-    weights: ArrayT | None = None,
     names: Sequence[str] | None = None,
   ) -> Self:
     """Fit margins and a vine copula to data, in that order.
@@ -1918,9 +1792,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         ``supports_covariates`` is fitted conditionally on them, and the copula
         is then fitted on the resulting conditional probability-integral
         transforms.
-    weights : array, shape (n,), or None, optional
-        Observation weights, applied to both halves. Refused when this
-        subclass's copula fitter cannot apply them.
     names : sequence of str, or None, optional
         Variable names, so ``margin_controls`` may be a mapping keyed by name.
         Read from a DataFrame's columns when not given, and kept on the
@@ -1934,11 +1805,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     Raises
     ------
     ValueError
-        If ``y`` is not two-dimensional, or if weights are given that the
-        copula half cannot apply.
-    NotImplementedError
-        If covariates are given and this lane cannot estimate both halves on
-        them.
+        If ``y`` is not two-dimensional, or if covariates are given that no
+        part of this lane reads.
+    TypeError
+        If a controls object carries weights the part it configures cannot
+        honor.
 
     See Also
     --------
@@ -1953,12 +1824,12 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     """
     from ._margins import resolve_margin_controls
 
-    coerced, weights = cls._coerce_fit_data(y, weights, controls)
+    coerced = cls._coerce_fit_data(y, controls)
     data: Any = coerced
     if data.ndim != 2:
       raise ValueError(f"y must be two-dimensional; got {data.ndim} dimensions")
     n, d = int(data.shape[0]), int(data.shape[1])
-    x, weights = cls._check_fit_inputs(x, weights, n, coerced, "from_data")
+    x = prepare_covariates(coerced, x, n)
 
     if names is None:
       # A DataFrame carries its own names, and `margin_controls` is often
@@ -1970,7 +1841,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     per_variable = resolve_margin_controls(margin_controls, d, names=names)
     declared_types = _per_variable_declaration(var_types, d, "var_types")
     declared_supports = _per_variable_declaration(supports, d, "supports")
-    specs = cls._default_margins(d, controls, per_variable)
+    specs = cls._default_margins(d, controls, per_variable, reference=data)
     if specs is None:
       raise TypeError(
         f"{cls.__name__} names no `margin_class`, so it cannot fit margins "
@@ -1983,14 +1854,17 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         f"there are {d} variables"
       )
     if x is not None and not any(
-      getattr(spec, "supports_covariates", False) for spec in specs
+      getattr(part, "supports_covariates", False)
+      for part in (*specs, cls.vinecop_class)
     ):
       raise ValueError(
-        f"covariates were given, but {cls.__name__}'s `margin_class` "
-        f"({getattr(cls.margin_class, '__name__', cls.margin_class)}) does "
-        "not read them, so the fit would ignore `x` and return a model of "
-        "f(y) labeled as one of f(y | x). Name a `margin_class` that declares "
-        "supports_covariates, or drop x."
+        f"covariates were given, but neither {cls.__name__}'s margins "
+        f"({getattr(cls.margin_class, '__name__', cls.margin_class)}) nor its "
+        f"`vinecop_class` "
+        f"({getattr(cls.vinecop_class, '__name__', cls.vinecop_class)}) reads "
+        "them, so the fit would ignore `x` and return a model of f(y) labeled "
+        "as one of f(y | x). Name parts that declare supports_covariates, or "
+        "drop x."
       )
     fitted = []
     for j in range(d):
@@ -2004,7 +1878,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
             var_type=declared_types[j],
             support=declared_supports[j],
             x=x,
-            weights=weights,
           )
         )
       except (ValueError, RuntimeError, TypeError) as exc:
@@ -2021,7 +1894,6 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       var_types=var_types,
       controls=controls,
       structure=structure,
-      weights=weights,
       x=x,
     )
     dist = cls(vinecop, list(fitted))

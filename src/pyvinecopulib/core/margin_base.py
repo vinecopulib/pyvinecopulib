@@ -270,9 +270,11 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
   pyvinecopulib.margins.SciPyMargin : A reference subclass.
   """
 
-  #: Whether :meth:`fit` accepts observation weights. Declared per family so a
-  #: caller passing weights to a family that cannot use them gets an error
-  #: rather than a silently unweighted fit.
+  #: Whether a fit of this margin honors ``controls.weights``. Declared per
+  #: family, because every controls object can carry weights and only the
+  #: estimator knows whether it reads them: a consumer handing weighted
+  #: controls to a margin that declares ``False`` raises rather than fitting
+  #: them away.
   supports_weights: bool = False
 
   #: Whether this margin reads the exogenous covariates ``x``, i.e. whether it
@@ -350,7 +352,6 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     var_type: str | None = None,
     support: tuple[float | None, float | None] | None = None,
     x: ArrayT | None = None,
-    weights: ArrayT | None = None,
   ) -> Self:
     """Construct a margin and select it from data.
 
@@ -377,8 +378,6 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         unbounded on that side.
     x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation.
-    weights : array, shape (n,), or None, optional
-        Observation weights.
 
     Returns
     -------
@@ -390,9 +389,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     select : Choose a family for an already-constructed margin, in place.
     fit : Estimate the current family's parameters, leaving the family alone.
     """
-    return cls().select(
-      y, controls, var_type=var_type, support=support, x=x, weights=weights
-    )
+    return cls().select(y, controls, var_type=var_type, support=support, x=x)
 
   def fit(
     self,
@@ -403,7 +400,6 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     var_type: str | None = None,
     support: tuple[float | None, float | None] | None = None,
     x: ArrayT | None = None,
-    weights: ArrayT | None = None,
   ) -> Self:
     """Estimate the margin's parameters from data, in place.
 
@@ -428,8 +424,6 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation. Read only by a margin
         that declares :attr:`supports_covariates`.
-    weights : array, shape (n,), or None, optional
-        Observation weights; only accepted when :attr:`supports_weights`.
 
     Returns
     -------
@@ -460,7 +454,6 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     var_type: str | None = None,
     support: tuple[float | None, float | None] | None = None,
     x: ArrayT | None = None,
-    weights: ArrayT | None = None,
   ) -> Self:
     """Choose a family for this margin and estimate it, in place.
 
@@ -487,8 +480,6 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         unbounded on that side.
     x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation.
-    weights : array, shape (n,), or None, optional
-        Observation weights.
 
     Returns
     -------
@@ -500,9 +491,10 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     fit : Estimate the current family's parameters, leaving the family alone.
     """
     # Each argument is forwarded only when there is one, so a subclass whose
-    # `fit` takes no covariates, no weights or no controls still works through
-    # `select` -- and refuses loudly when handed one it cannot honor. The same
-    # rule `VinedistBase._fit_margin` applies one level up.
+    # `fit` takes no covariates or no controls still works through `select` --
+    # and refuses loudly when handed one it cannot honor. The same rule
+    # `VinedistBase._fit_margin` applies one level up. Weights need no entry
+    # here: they ride in `controls`, which is forwarded whole.
     passed: dict[str, Any] = {}
     if var_type is not None:
       passed["var_type"] = var_type
@@ -510,8 +502,6 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
       passed["support"] = support
     if x is not None:
       passed["x"] = x
-    if weights is not None:
-      passed["weights"] = weights
     if controls is None:
       return self.fit(y, **passed)
     return self.fit(y, controls, **passed)

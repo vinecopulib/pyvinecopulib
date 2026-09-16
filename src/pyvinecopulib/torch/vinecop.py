@@ -435,6 +435,8 @@ class TorchVinecop(
     x: Tensor | None = None,
     fit_edge: FitEdge | None = None,
     fit_level: FitLevel | None = None,
+    device: torch.types.Device = None,
+    dtype: torch.dtype | None = None,
   ) -> TorchVinecop:
     """Fit a vine to pseudo-observations, in PyTorch throughout.
 
@@ -478,6 +480,13 @@ class TorchVinecop(
         level at once, in place of the built-in batched TLL fit -- the
         level-wise counterpart of ``fit_edge``. ``None`` resolves it from
         ``controls.batched_fit``.
+    device : torch.device, or None, optional
+        Where the fitted vine lives; ``None`` puts it where ``u`` is.
+    dtype : torch.dtype, or None, optional
+        The precision it is fitted and evaluated in; ``None`` takes ``u``'s
+        own dtype, or the default float type where that is not a floating
+        one. Neither is a control: where a module lives is the module's own
+        property, so a fit reads them from the data rather than from settings.
 
     Returns
     -------
@@ -500,9 +509,14 @@ class TorchVinecop(
     if resolved is None:
       resolved = cast("Any", cls.controls_class)()
 
-    eff_dtype = resolved.dtype if resolved.dtype is not None else torch.float64
-    eff_device = resolved.device
-    u_t = torch.as_tensor(u, dtype=eff_dtype, device=eff_device)
+    # Where the data is, unless the caller says otherwise: a vine fitted from
+    # a tensor belongs on that tensor's device in its dtype, the way an
+    # `nn.Module` built from data does. An integer `u` has no dtype a density
+    # can use, so that one falls back to the default float type.
+    u_t = torch.as_tensor(u, dtype=dtype, device=device)
+    if not u_t.dtype.is_floating_point:
+      u_t = u_t.to(dtype=torch.get_default_dtype())
+    eff_dtype = u_t.dtype
     if u_t.ndim != 2:
       raise ValueError(f"u must be 2-D; got shape {tuple(u_t.shape)}")
     # With left-limit columns present `u` is wider than the vine, so it is

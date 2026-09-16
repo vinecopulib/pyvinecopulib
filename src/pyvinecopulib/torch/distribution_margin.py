@@ -196,7 +196,6 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     var_type: str | None = None,
     support: tuple[float | None, float | None] | None = None,
     x: Tensor | None = None,
-    weights: Tensor | None = None,
   ) -> TorchDistributionMargin:
     """Raise: this margin's parameters are given, not estimated here.
 
@@ -222,8 +221,6 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
         unbounded on that side.
     x : Tensor, or None, optional
         Ignored.
-    weights : Tensor, or None, optional
-        Ignored.
 
     Returns
     -------
@@ -235,7 +232,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     NotImplementedError
         Always.
     """
-    del y, controls, x, weights
+    del y, controls, x
     raise NotImplementedError(
       "TorchDistributionMargin has no maximum-likelihood fit: construct it "
       "with the parameters you want -- "
@@ -256,7 +253,6 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     var_type: str | None = None,
     support: tuple[float | None, float | None] | None = None,
     x: Tensor | None = None,
-    weights: Tensor | None = None,
   ) -> TorchDistributionMargin:
     """Raise: there is no family to estimate from data. See :meth:`fit`.
 
@@ -275,8 +271,6 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
         unbounded on that side.
     x : Tensor, or None, optional
         Ignored.
-    weights : Tensor, or None, optional
-        Ignored.
 
     Returns
     -------
@@ -290,7 +284,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
         ``cls()``, whose ``factory`` argument is required, so the failure was a
         bare ``TypeError`` naming a parameter the caller never saw.
     """
-    del y, controls, x, weights
+    del y, controls, x
     raise NotImplementedError(
       "TorchDistributionMargin cannot be fitted from data: it adapts a "
       "`torch.distributions` family whose parameters you supply. Use "

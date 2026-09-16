@@ -648,12 +648,41 @@ For any behavior change:
   `VinecopBase` -- `pair_eval` reads the first and `declared_eval` the other
   two -- and it means the same thing at each: *this part accepts `x`*.
   `supports_weights` is declared on the same three, and means *a fit of this
-  honors `controls.weights`*. Both are absent from `VinedistBase`, where the
-  aggregate questions are derived from the parts instead
-  (`margin_class` and `vinecop_class`), so there is nothing to declare.
+  honors `controls.weights`*. Both are absent from `VinedistBase`: a
+  distribution composes parts that each answer for themselves, so it has
+  nothing of its own to declare and nothing to aggregate either. It used to
+  carry `supports_weighted_copula` and `supports_fit_covariates`, and both are
+  gone rather than renamed -- the weights question is asked of whichever part
+  is handed the controls (`reject_weights`), and the covariates question by
+  `from_data`, of the parts it is about to build. What made the pair confusing
+  was that neither actually asked the parts: a distribution composed of
+  `Vinecop` and `Kde1d`, both of which weight perfectly well, answered `False`.
   Adding a flag with no reader is the thing `supported_var_types` was deleted
   for, and `supports_controls` after it -- `controls_class is None` says
   "reads no controls" and carries the type besides.
+- **Observation weights ride in the controls, at every level, with no
+  propagation rule.** `FitControlsBicop` and `FitControlsVinecop` are
+  upstream's and always did; `#339` gave `FitControlsKde1d` and
+  `FitControlsMargin` the same field and deleted the `weights=` keyword from
+  every `fit` / `select` / `from_data` in the package and in the binding. So
+  there is one transport rather than three, and `supports_weights` means what
+  it says.
+
+  Nothing copies weights from one controls object to another, and that is the
+  design rather than an omission: a vine distribution's margins and its copula
+  take **separate** controls, so a caller weights them differently, or weights
+  one and leaves the other alone. The cost is naming the weights twice in the
+  common case where both should carry the same ones, which is the right way
+  round -- a propagation rule would have to guess which part each slot's
+  controls belong to, and the slots are resolved before the margins exist.
+
+  A controls type gets the field only where its estimator reads it.
+  `FitControlsTorchBicop` has none: the torch TLL bandwidth search and the
+  torch tree criterion are both unweighted, so `TorchTllBicop` and
+  `TorchVinecop` declare `supports_weights = False` and a field there would be
+  one nothing reads. `MarginBase.loglik(y, weights=)` keeps its argument --
+  that is an evaluation verb, where the weights are the question rather than a
+  setting.
 - **A protocol declares what hosting a part needs, and supplies its own
   defaults.** `VinecopBase.bicop_class` is declared
   `type[BicopLike[Any]] | None`, so `BicopLike` is by declaration "what a vine
@@ -759,8 +788,9 @@ For any behavior change:
   then keyword-only whatever the object cannot infer.** `fit`, `select` and
   `from_data` take `(data, controls)` positionally on all four bases, on the
   torch lane and on the compiled `Bicop` / `Vinecop` -- and `structure`,
-  `matrix`, `var_types`, `margins`, `margin_controls`, `names`, `x`, `weights`
-  and the callback hooks are keyword-only. `Vinecop.from_data` used to take
+  `matrix`, `var_types`, `margins`, `margin_controls`, `names`, `x` and the
+  callback hooks are keyword-only. `weights` is on none of them: it is a
+  *setting*, so it rides in the controls (see the weights entry above). `Vinecop.from_data` used to take
   `controls` *fifth*, behind `structure`, so the call a user carries over from
   `fit` bound a controls object as a structure: a `TypeError` from the binding
   and an `AttributeError` naming `dim` from the Python lane. The rule is worth
@@ -768,9 +798,10 @@ For any behavior change:
   claimed it before the code did. There is **no** exception: `Kde1d` used to be
   one -- its second positional was `weights`, on the grounds that it took no
   controls at all -- and `#339` gave it `FitControlsKde1d` and the same
-  `(y, controls)` every other margin reads. What the exception actually cost
-  was a validator (`reject_array_controls`) whose whole job was catching the
-  carried-over `kde.fit(y, w)` at six call sites.
+  `(y, controls)` every other margin reads -- with the weights inside the
+  controls, so the old second positional has no spelling left at all. What the
+  exception actually cost was a validator (`reject_array_controls`) whose
+  whole job was catching the carried-over `kde.fit(y, w)` at six call sites.
 - **Bind alternative constructors as named factories, not overloads.** C++
   overloads a constructor; Python names it. Every alternative way to build an
   object is a `def_static` — `Bicop.from_family` / `from_data` / `from_file` /
@@ -1226,7 +1257,7 @@ tests.
   with no exception.** `Kde1d` was one: `lib/kde1d` names the observations `x`
   and `icdf`'s argument — a probability — `x` too, and the binding carried both
   through. `#339` renamed the three *fitting* verbs, whose signatures it writes
-  itself, to `(y, controls, *, var_type, support, weights)`. The evaluation
+  itself, to `(y, controls, *, var_type, support)`. The evaluation
   verbs (`pdf`, `cdf`, `logpdf`, `cdf_left`, `loglik`, `icdf`) still read `x` /
   `x`, and renaming them is an **upstream** change: their docstrings are lifted
   verbatim from `lib/kde1d`, so a local rename would document one name and bind
@@ -1683,8 +1714,18 @@ Key surface:
     independent pairs on shared rows — so several vines' levels concatenate
     into the same axis as readily as one vine's. A level carrying a discrete
     edge or a conditioning context cannot stack and stays per-edge.
-  - `device`, `dtype` — propagate to every tensor on construction;
-    fitted modules respect `.to(device)` afterwards.
+  - **`device` and `dtype` are not controls.** Where a module lives is a
+    property of the module, as it is for every other `nn.Module`, so the fit
+    reads them off the data instead: `from_data` places the grid where `u` is
+    (taking `torch.get_default_dtype()` where `u`'s own dtype is not a
+    floating one, since an integer grid is no answer a density can use), and
+    `fit` / `select` move the data onto the module first, so a refit keeps the
+    dtype the module already has. Both stay explicit keyword arguments on
+    `TorchTllBicop` / `TorchVinecop`'s constructors and factories for a caller
+    who wants to override the inference, and `.to(device)` moves a fitted one
+    afterwards. They were fields on `FitControlsTorchVinecop`, which is what
+    let `TorchVinedist.from_data` put the margins on the data's dtype and the
+    copula on the controls': a `state_dict` spanning two devices.
   - `trunc_lvl`, `tree_criterion`, `threshold`, `tree_algorithm`, `seeds`
     — `FitControlsTorchVinecop` only; the structure-selection knobs used
     when `TorchVinecop.from_data` is called with `structure=None`.
@@ -1987,15 +2028,17 @@ Round-trip / parity properties to preserve when touching numerics:
   `FitControlsTorchBicop`. So one controls object configures both halves of a
   vine fit: a vine reads the settings it owns and the rest reach its pair
   copulas unchanged, with no nested object and no accessor. That is also how
-  observation weights get to both halves.
+  observation weights reach the pair fits: one `weights` on the vine's
+  controls, read by the vine's own tree criterion and by every pair it fits.
 
 - **Custom margins (`pyvinecopulib.core`).** Subclass `MarginBase` and
   define `pdf` / `cdf`; `icdf`, `logpdf`, `cdf_left`, `loglik`,
   `sample`, `plot`, `support`, `nobs` and `n_parameters` come with it --
   a fit records the first two into the `_nobs` / `_n_free` slots the base
   owns, so the criteria work without a subclass restating them. Add
-  `fit(y, controls=None, *, var_type=None, support=None, x=None,
-  weights=None) -> Self` to make it an estimator, or leave it out for a fixed
+  `fit(y, controls=None, *, var_type=None, support=None, x=None) -> Self` to
+  make it an estimator -- reading `controls.weights` if it honors weights and
+  declaring `supports_weights` when it does -- or leave it out for a fixed
   margin — whether the class overrides `MarginBase.fit` is what a vine
   distribution's margin loop dispatches on, `is_fitted` being the wrong test
   (a fitted margin that *is* refittable must be re-estimated by `fit` and
@@ -2023,16 +2066,15 @@ Round-trip / parity properties to preserve when touching numerics:
   reaching for the standard library's `json.loads` would read `-inf` back as
   that string, silently. `_json.read_payload` is the one place those three
   checks live, shared with `margin_from_json`.
-  The one hook a lane normally overrides is `_copula_controls`, the single
-  lane-specific step in the copula estimate: `Vinedist` writes `weights` into a
-  copy of the controls there and `TorchVinedist` pins the device and dtype the
-  margins resolved. It is read from **both** copula paths, which is what keeps
-  them configured identically. `supports_weighted_copula` is `False` on the
-  base for that reason: the inherited `_copula_controls` cannot weight the
-  copula, so a lane declares the capability together with the override that
-  honors it. Declaring one a lane cannot honor is what produces a half-applied
-  fit, so the request is refused up front instead. The margin half has one
-  hook of the same kind, `_adopt_margin`: the identity on the base, and on the
+  There is **no lane hook between the caller's controls and the copula fit**.
+  `_copula_controls` was one, and `#339` deleted it: what it did was write the
+  `weights=` argument into a copy of the controls (`Vinedist`) and pin a device
+  and a dtype (`TorchVinedist`), and neither is anything any more -- weights
+  are already in the controls the caller passed, and placement is read from the
+  data. The controls reach both copula paths verbatim, which is what keeps them
+  configured identically, and a lane with nothing to add overrides nothing.
+  The margin half has one hook of a different kind, `_adopt_margin`: the
+  identity on the base, and on the
   torch lane the lift a `Kde1d` gets before it can join the others. It is
   reached only where the base *substitutes* a margin mid-fit
   (`on_failure="fallback"`), which is before `_bind_dist` runs and therefore
@@ -2043,12 +2085,12 @@ Round-trip / parity properties to preserve when touching numerics:
   `_default_margins` builds one margin per variable -- the hook a lane
   overrides to place them -- and `_fit_margin` calls that margin's own `fit` or
   `select` as `estimator(y, controls, ...)`, beside `_reestimate_copula`'s
-  `estimator(u, resolved, ...)`. What it adds around that call is the three
+  `estimator(u, controls, ...)`. What it adds around that call is the three
   decisions a margin cannot make about itself: whether it is *fixed* (it
-  overrides neither verb, so there is nothing to re-estimate), whether a
-  request it cannot honor was made (`weights` it cannot use, a `family_set` it
-  cannot search), and which margin the column gets when its own estimator
-  raises. Two tempting shortcuts for the first are both wrong: `is_fitted`,
+  overrides neither verb, so there is nothing to re-estimate), whether the
+  controls ask for something it cannot honor (`weights` it does not read, a
+  `family_set` it cannot search), and which margin the column gets when its
+  own estimator raises. Two tempting shortcuts for the first are both wrong: `is_fitted`,
   because a fitted `SciPyMargin` must be re-estimated, and `fit` alone,
   because a margin that chooses between *kinds* of model overrides `select`
   and leaves `fit` raising. Whether the verb asked for is one the margin has
@@ -2067,15 +2109,18 @@ Round-trip / parity properties to preserve when touching numerics:
   no way to be told new ones, so a margin that gained or lost atoms in the
   refit is refused by name, pointing at `from_data`, rather than reaching the
   copula as a layout of the wrong width.
-- **`supports_fit_covariates` is a lane-level "anything at all", not "both
-  halves".** A conditional `Vinedist` is one whose *margins* read `x`: the
-  compiled `Vinecop` models no covariates and takes no `x` argument, so the
-  copula half is never conditional there and `x` reaches only the margins that
-  declare it — the same per-part rule `declared_eval` applies at evaluation,
-  and `_fit_copula` forwards to a copula class only when *it* declares
-  `supports_covariates`. What enforces that is the object-level refusal:
-  the flag says whether anything on the lane is fitted on covariates, and when
-  nothing is, the request is refused rather than answered unconditionally.
+- **A conditional fit is per part, and "anything at all" is asked of the
+  parts themselves.** A conditional `Vinedist` is one whose *margins* read
+  `x`: the compiled `Vinecop` models no covariates and takes no `x` argument,
+  so the copula half is never conditional there and `x` reaches only the
+  margins that declare it — the same per-part rule `declared_eval` applies at
+  evaluation, and `_fit_copula` forwards to a copula class only when *it*
+  declares `supports_covariates`. What keeps that from becoming a silently
+  unconditional fit is `from_data`'s refusal, which asks the margins it is
+  about to build and the `vinecop_class` beside them, and raises when **none**
+  of them reads covariates. That is a reading of the parts rather than a flag
+  on the distribution: `supports_fit_covariates` was the flag, and a lane
+  could set it without any part honoring it.
   `Vinedist` (NumPy + compiled `Vinecop`) and `TorchVinedist` are the two
   reference subclasses; implement `VinedistLike` directly for an immutable /
   functional distribution.
@@ -2089,9 +2134,9 @@ Round-trip / parity properties to preserve when touching numerics:
 - **A new lane for the sklearn estimators.** There is nothing to subclass:
   write a `VinedistBase` subclass and hand it to an estimator as
   `distribution=`. Naming `vinecop_class` is what makes its vine fittable,
-  `margin_class` (or a `_default_margins` override, where the margins need a
-  placement) is what an unaddressed column gets, and `_copula_controls` is
-  where a lane pins anything the margins resolved. The estimators add
+  and `margin_class` (or a `_default_margins` override, where the margins need
+  a placement) is what an unaddressed column gets. There is nothing else to
+  write: the caller's controls reach both halves unchanged. The estimators add
   nothing of their own: they call `vinecop_class.from_data(...)` and then
   construct the distribution.
 - **A different torch pair-copula fitter.** There is no method registry to

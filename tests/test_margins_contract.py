@@ -322,10 +322,17 @@ def test_margin_controls_address_each_variable(eco: Ecosystem) -> None:
 
 @pytest.mark.parametrize("verb", ["fit", "select"])
 def test_margin_fitters_reject_weights(eco: Ecosystem, verb: str) -> None:
-  """Neither registry's estimator weights observations, so asking must raise."""
+  """Neither registry's estimator weights observations, so asking must raise.
+
+  Every controls object carries weights, so the refusal is the only thing
+  standing between a weighted call and the unweighted fit it would silently
+  return.
+  """
   margin = eco.cls(eco.real) if verb == "fit" else eco.cls()
-  with pytest.raises(TypeError, match="cannot use observation weights"):
-    getattr(margin, verb)(POSITIVE, weights=np.ones_like(POSITIVE))
+  assert margin.supports_weights is False
+  weighted = FitControlsMargin(weights=np.ones_like(POSITIVE))
+  with pytest.raises(TypeError, match="honors no observation weights"):
+    getattr(margin, verb)(POSITIVE, weighted)
 
 
 @pytest.mark.parametrize("verb", ["fit", "select"])

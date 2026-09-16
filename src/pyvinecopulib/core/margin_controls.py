@@ -30,12 +30,17 @@ class FitControlsMargin:
   the variables that need it and leave the rest alone
   (:func:`~pyvinecopulib.margins.resolve_margin_controls`).
 
-  Fit configuration only: every field here is about *searching for a family*,
-  which is what :meth:`~pyvinecopulib.margins.SciPyMargin.select` does. What
-  the caller knows about the variable -- its type and its bounds -- is a
-  *declaration*, and travels as the keyword-only ``var_type`` and ``support``
-  arguments of ``fit`` / ``select`` / ``from_data``, exactly as ``var_types``
-  does on ``Bicop.from_data``.
+  Fit configuration only: every field here is about *how* to estimate the
+  margin. What the caller knows about the variable -- its type and its bounds
+  -- is a *declaration*, and travels as the keyword-only ``var_type`` and
+  ``support`` arguments of ``fit`` / ``select`` / ``from_data``, exactly as
+  ``var_types`` does on ``Bicop.from_data``.
+
+  ``weights`` is here for the same reason it is on ``FitControlsBicop``:
+  observation weights are a setting, so they travel in the controls at every
+  level. There is no rule propagating them from one controls object to
+  another, which is what lets a vine distribution's margins and its copula be
+  weighted differently -- or one of them weighted and the other not.
 
   Attributes
   ----------
@@ -50,12 +55,15 @@ class FitControlsMargin:
   on_failure : {"raise", "fallback"}, default="raise"
       ``"raise"`` (the default) reports every candidate and why it lost;
       ``"fallback"`` substitutes a kernel-density margin with one warning.
+  weights : array, shape (n,), or None, optional
+      Observation weights. Refused by a margin that declares
+      ``supports_weights`` ``False``, rather than fitted away.
 
   Raises
   ------
   ValueError
       If ``selection_criterion`` or ``on_failure`` is not one of the accepted
-      values, or if ``family_set`` is empty.
+      values, if ``family_set`` is empty, or if ``weights`` is empty.
 
   See Also
   --------
@@ -71,6 +79,11 @@ class FitControlsMargin:
   family_set: Sequence[str] | None = None
   selection_criterion: str = "aic"
   on_failure: str = "raise"
+  # `Any` rather than `Array`: the weights are handed on to the
+  # `ArrayT`-parameterized `validate_weights`, which a bare `Array` does not
+  # satisfy, and this class is not itself generic -- one controls type serves
+  # a NumPy margin and a torch one alike.
+  weights: Any | None = None
 
   def __post_init__(self) -> None:
     """Validate the settings.
@@ -103,6 +116,8 @@ class FitControlsMargin:
       if not all(isinstance(f, str) for f in families):
         raise ValueError("family_set must name families as strings")
       self.family_set = families
+    if self.weights is not None and len(self.weights) == 0:
+      raise ValueError("weights is empty; pass None for an unweighted fit")
 
   def to_dict(self) -> dict[str, Any]:
     """Settings as a dictionary, which is what makes this a ``ControlsLike``.

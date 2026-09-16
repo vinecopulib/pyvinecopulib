@@ -283,7 +283,6 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     var_type: str | None = None,
     support: tuple[float | None, float | None] | None = None,
     x: Tensor | None = None,
-    weights: Tensor | None = None,
   ) -> TorchKde1d:
     """Estimate the density from one column of data, in place.
 
@@ -310,8 +309,6 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     x : Tensor, or None, optional
         Not supported; a kernel density reads no covariates, so passing them
         raises rather than fitting an unconditional margin silently.
-    weights : Tensor, shape (n,), or None, optional
-        Observation weights, one per observation.
 
     Returns
     -------
@@ -321,8 +318,8 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     Raises
     ------
     ValueError
-        If ``y`` or ``weights`` is not one-dimensional, if the two have
-        different lengths, or if ``x`` was supplied.
+        If ``y`` or ``controls.weights`` is not one-dimensional, if the two
+        have different lengths, or if ``x`` was supplied.
 
     See Also
     --------
@@ -356,17 +353,22 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       if controls is None
       else controls.to_dict()
     )
-    kde = Kde1d(xmin=self.xmin, xmax=self.xmax, var_type=self._type, **knobs)
     y_tensor = validate_univariate(torch.as_tensor(y))
     # The shared validators, not a local pair of shape checks: their dtype,
     # finiteness, nonnegativity and positive-sum rules are what keep a weight
     # array out of `Kde1d`'s bandwidth selection, which divides by the sum.
-    weight_tensor = validate_weights(weights, y_tensor)
+    # They go back in as the array the compiled fit wants, so the one
+    # validation covers whichever lane the caller set them from.
+    weight_tensor = validate_weights(knobs.pop("weights", None), y_tensor)
+    if weight_tensor is not None:
+      knobs["weights"] = weight_tensor.detach().cpu().numpy().astype(float)
     data = y_tensor.detach().cpu().numpy()
-    if weight_tensor is None:
-      kde.fit(data)
-    else:
-      kde.fit(data, weights=weight_tensor.detach().cpu().numpy())
+    kde = Kde1d.from_data(
+      data,
+      FitControlsKde1d(**knobs),
+      var_type=self._type,
+      support=(self.xmin, self.xmax),
+    )
     fitted = self._adopt(kde)
     # The retained rows, not the input length: `Kde1d` drops a NaN observation
     # and a NaN or zero weight, and the log-likelihood `_adopt` just read is

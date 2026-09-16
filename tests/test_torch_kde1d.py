@@ -279,13 +279,13 @@ def test_weights_change_the_fit() -> None:
   y = _sample("continuous")
   w = np.linspace(0.1, 2.0, y.size)
   plain = TorchKde1d().fit(_t(y))
-  weighted = TorchKde1d().fit(_t(y), weights=_t(w))
+  weighted = TorchKde1d().fit(_t(y), FitControlsKde1d(weights=_t(w)))
   assert not np.allclose(
     plain.values.numpy(), weighted.values.numpy(), atol=1e-8
   )
   # And they agree with the compiled fit on the same weights.
   reference = Kde1d()
-  reference.fit(y, weights=w)
+  reference.fit(y, FitControlsKde1d(weights=w))
   np.testing.assert_allclose(
     weighted.values.numpy(),
     np.asarray(reference.values),
@@ -420,16 +420,17 @@ def test_state_dict_round_trip() -> None:
 def test_fit_rejects_non_vector_data_and_weights() -> None:
   """Fitting accepts one observation vector and aligned vector weights.
 
-  The messages are the shared validators', so they read the same here as on
-  every other margin.
+  A length is checked against the data, so that one is the shared validator's
+  and reads the same here as on every other margin; a *shape* needs no data
+  and `FitControlsKde1d` refuses it as it is built.
   """
   y = _t(np.arange(5.0))
   with pytest.raises(ValueError, match=r"y must have shape \(n,\)"):
     TorchKde1d().fit(y[:, None])
+  with pytest.raises(TypeError, match="incompatible function arguments"):
+    FitControlsKde1d(weights=y[:, None])
   with pytest.raises(ValueError, match="one weight per observation"):
-    TorchKde1d().fit(y, weights=y[:, None])
-  with pytest.raises(ValueError, match="one weight per observation"):
-    TorchKde1d().fit(y, weights=y[:-1])
+    TorchKde1d().fit(y, FitControlsKde1d(weights=y[:-1]))
 
 
 @pytest.mark.parametrize(
@@ -465,7 +466,7 @@ def test_fit_refuses_weights_that_leave_nothing_to_fit(
     ),
   }[bad]
   with pytest.raises(ValueError, match=match):
-    TorchKde1d().fit(y, weights=weights)
+    TorchKde1d().fit(y, FitControlsKde1d(weights=weights))
 
 
 def test_fit_accepts_the_drop_markers_kde1d_documents() -> None:
@@ -483,7 +484,7 @@ def test_fit_accepts_the_drop_markers_kde1d_documents() -> None:
     torch.zeros(64, dtype=torch.float64),
   )
   for weights in (every_other, half_zero):
-    fitted = TorchKde1d().fit(y, weights=weights)
+    fitted = TorchKde1d().fit(y, FitControlsKde1d(weights=weights))
     assert bool(torch.isfinite(fitted.pdf(q)).all())
 
 
@@ -666,7 +667,10 @@ def test_nobs_counts_the_retained_rows_not_the_input() -> None:
   # A zero or NaN weight drops its row just as a NaN observation does.
   weights = np.where(np.arange(100) % 2 == 0, 1.0, 0.0)
   assert (
-    TorchKde1d().fit(_t(rng.normal(size=100)), weights=_t(weights)).nobs == 50
+    TorchKde1d()
+    .fit(_t(rng.normal(size=100)), FitControlsKde1d(weights=_t(weights)))
+    .nobs
+    == 50
   )
 
 
