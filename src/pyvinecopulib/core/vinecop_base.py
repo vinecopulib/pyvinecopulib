@@ -330,6 +330,14 @@ class VinecopBase(
   #: whose pairs are conditional.
   supports_covariates: bool = False
 
+  #: Whether a fit of this vine honors `controls.weights`. ``True`` because
+  #: `fit` and `select` read them off the controls and hand them to the
+  #: engines; a lane whose pair fitter or tree criterion is unweighted
+  #: declares ``False``, as `TorchVinecop` does. A plain class attribute, not
+  #: the contract's property: a consumer asks the *class*, where a property
+  #: object reads as truthy whatever it would answer on an instance.
+  supports_weights: bool = True
+
   # The pair-copula class this vine fits; see the class docstring. A plain
   # comment, not a `#:` one: autosummary cannot generate a page for an
   # attribute whose value is a class, so a subclass that sets this would leave

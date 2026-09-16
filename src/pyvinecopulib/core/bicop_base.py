@@ -807,6 +807,10 @@ class BicopBase(
   #: `x` -- whether or not they read one -- sets this `True`.
   supports_covariates: bool = False
 
+  #: Whether a fit of this pair copula honors `controls.weights`. ``False``
+  #: here because `BicopBase.fit` raises; a subclass that fits declares it.
+  supports_weights: bool = False
+
   # --- the leaves a subclass writes -------------------------------------- #
   # Each takes two continuous columns the dispatcher has already prepared, and
   # knows nothing about atoms. Declaring `x` on one marks the pair conditional.

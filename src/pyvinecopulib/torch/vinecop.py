@@ -192,6 +192,10 @@ class TorchVinecop(
   # The pair copula this vine fits, so `from_data` needs no callback and
   # selection can check `flip` before reading the data.
   bicop_class: ClassVar[type[BicopLike[Any]] | None] = TorchTllBicop
+
+  #: The torch TLL fitter and the tree criterion are both unweighted, so a
+  #: weighted request is refused rather than applied to part of the fit.
+  supports_weights: bool = False
   # And the controls both halves read -- a vine's controls are pair controls,
   # `FitControlsTorchVinecop` deriving from `FitControlsTorchBicop` as their
   # core counterparts do.
