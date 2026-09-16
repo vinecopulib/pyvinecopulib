@@ -61,9 +61,9 @@ def _t(values: np.ndarray) -> Any:
     ("continuous", {}),
     ("continuous", {"xmin": 0.0}),
     ("unit", {"xmin": 0.0, "xmax": 1.0}),
-    ("discrete", {"type": "discrete", "xmin": 0.0}),
-    ("discrete", {"type": "discrete"}),
-    ("zi", {"type": "zero-inflated", "xmin": 0.0}),
+    ("discrete", {"var_type": "d", "xmin": 0.0}),
+    ("discrete", {"var_type": "d"}),
+    ("zi", {"var_type": "zi", "xmin": 0.0}),
   ],
 )
 def test_pdf_and_cdf_match_the_compiled_estimator(
@@ -121,8 +121,8 @@ def _assert_quantiles_agree(
   ("kind", "kwargs"),
   [
     ("continuous", {}),
-    ("discrete", {"type": "discrete", "xmin": 0.0}),
-    ("zi", {"type": "zero-inflated", "xmin": 0.0}),
+    ("discrete", {"var_type": "d", "xmin": 0.0}),
+    ("zi", {"var_type": "zi", "xmin": 0.0}),
   ],
 )
 def test_icdf_matches_the_compiled_estimator(
@@ -195,7 +195,7 @@ def test_nan_in_gives_nan_out() -> None:
 
 def test_discrete_masses_sum_to_one_over_the_lattice() -> None:
   """The normalization is what the discrete branch exists for."""
-  _, lifted, _ = _fitted("discrete", type="discrete", xmin=0.0)
+  _, lifted, _ = _fitted("discrete", var_type="d", xmin=0.0)
   levels = _t(np.arange(-2.0, 40.0))
   assert float(lifted.pdf(levels).sum()) == pytest.approx(1.0, abs=1e-10)
   # Off-lattice points carry no mass at all.
@@ -204,7 +204,7 @@ def test_discrete_masses_sum_to_one_over_the_lattice() -> None:
 
 def test_cdf_left_is_derived_for_a_discrete_margin() -> None:
   """Inherited from `MarginBase`, which is what lets the copula difference it."""
-  kde, lifted, _ = _fitted("discrete", type="discrete", xmin=0.0)
+  kde, lifted, _ = _fitted("discrete", var_type="d", xmin=0.0)
   y = _t(np.arange(0.0, 8.0))
   np.testing.assert_allclose(
     lifted.cdf_left(y).numpy(),
@@ -231,21 +231,21 @@ def test_it_satisfies_the_margin_contract() -> None:
   ("kwargs", "expected"),
   [
     ({}, "c"),
-    ({"type": "discrete"}, "d"),
-    ({"type": "zero-inflated"}, "zi"),
+    ({"var_type": "d"}, "d"),
+    ({"var_type": "zi"}, "zi"),
   ],
 )
-def test_var_type_maps_the_compiled_spelling(
+def test_var_type_reports_the_declaration(
   kwargs: dict[str, Any], expected: str
 ) -> None:
-  """`kde_type` keeps the hyphenated compiled name; `var_type` is the contract's."""
+  """The declaration comes back in the one spelling the package uses."""
   margin = TorchKde1d(**kwargs)
   assert margin.var_type == expected
-  assert margin.kde_type == kwargs.get("type", "continuous")
+  assert margin.var_type == kwargs.get("var_type", "c")
 
 
-def test_type_does_not_shadow_the_module_dtype_cast() -> None:
-  """`nn.Module.type` has to keep working, which is why `kde_type` exists."""
+def test_var_type_does_not_shadow_the_module_dtype_cast() -> None:
+  """`nn.Module.type` keeps working: the declaration is `var_type`, not `type`."""
   _, lifted, _ = _fitted("continuous")
   assert lifted.type(torch.float32).grid_points.dtype is torch.float32
 
@@ -265,8 +265,8 @@ def test_an_unfitted_margin_refuses_to_evaluate() -> None:
 
 
 def test_an_unknown_type_is_refused_at_construction() -> None:
-  with pytest.raises(ValueError, match="unknown type"):
-    TorchKde1d(type="zero_inflated")  # the underscore spelling never existed
+  with pytest.raises(ValueError, match="var_type="):
+    TorchKde1d(var_type="ordinal")
 
 
 def test_covariates_are_refused_at_fit_time() -> None:
@@ -402,8 +402,8 @@ def test_the_quantile_is_differentiable_in_the_probability() -> None:
 
 
 def test_state_dict_round_trip() -> None:
-  _kde, lifted, _ = _fitted("discrete", type="discrete", xmin=0.0)
-  restored = TorchKde1d(type="discrete", xmin=0.0)
+  _kde, lifted, _ = _fitted("discrete", var_type="d", xmin=0.0)
+  restored = TorchKde1d(var_type="d", xmin=0.0)
   restored.load_state_dict(lifted.state_dict())
   q = _t(np.arange(0.0, 10.0))
   np.testing.assert_array_equal(restored.pdf(q).numpy(), lifted.pdf(q).numpy())
@@ -488,12 +488,12 @@ def test_fit_accepts_the_drop_markers_kde1d_documents() -> None:
 
 
 def test_pickle_round_trip() -> None:
-  _kde, lifted, _ = _fitted("zi", type="zero-inflated", xmin=0.0)
+  _kde, lifted, _ = _fitted("zi", var_type="zi", xmin=0.0)
   restored = pickle.loads(pickle.dumps(lifted))
   q = _t(np.array([0.0, 0.5, 1.0, 4.0]))
   np.testing.assert_array_equal(restored.pdf(q).numpy(), lifted.pdf(q).numpy())
   np.testing.assert_array_equal(restored.cdf(q).numpy(), lifted.cdf(q).numpy())
-  assert restored.kde_type == "zero-inflated"
+  assert restored.var_type == "zi"
   assert restored.support == lifted.support == (0.0, float("inf"))
 
 
@@ -513,7 +513,7 @@ def test_sample_lands_in_the_support() -> None:
 
 
 def test_a_discrete_sample_lands_on_the_lattice() -> None:
-  _, lifted, _ = _fitted("discrete", type="discrete", xmin=0.0)
+  _, lifted, _ = _fitted("discrete", var_type="d", xmin=0.0)
   draws = lifted.sample(256, seeds=[2])
   np.testing.assert_array_equal(draws.numpy(), np.round(draws.numpy()))
 
@@ -551,7 +551,7 @@ def test_the_discrete_support_matches_the_compiled_estimator(
   question as reading it off the bounds.
   """
   y = np.random.default_rng(42).integers(0, 5, 500).astype(float)
-  kde = Kde1d(type="discrete", xmin=xmin, xmax=xmax)
+  kde = Kde1d(var_type="d", xmin=xmin, xmax=xmax)
   kde.fit(y)
   lifted = TorchKde1d.from_kde1d(kde)
   lattice = np.arange(-4.0, 12.0)
@@ -583,7 +583,7 @@ def test_the_discrete_quantile_inverts_its_own_distribution_function() -> None:
   level it came from and the answer is legitimately the next one up.
   """
   y = np.random.default_rng(51).poisson(3.0, 600).astype(float)
-  kde = Kde1d(type="discrete", xmin=0.0)
+  kde = Kde1d(var_type="d", xmin=0.0)
   kde.fit(y)
   lifted = TorchKde1d.from_kde1d(kde)
   levels = np.arange(0.0, 9.0)
@@ -679,26 +679,28 @@ def test_nobs_survives_a_state_dict_round_trip() -> None:
   assert restored.bic() == fitted.bic()
 
 
-def test_the_type_keyword_takes_either_spelling() -> None:
-  """`TorchKde1d(type=...)` accepts what `Kde1d(type=...)` accepts.
+def test_var_type_takes_every_spelling_kde1d_takes() -> None:
+  """`TorchKde1d(var_type=...)` accepts what `Kde1d(var_type=...)` accepts.
 
   A variable type is `"c"` / `"d"` / `"zi"` everywhere in this package, and
-  `"continuous"` / `"discrete"` / `"zero-inflated"` only where `Kde1d`'s own
-  attribute is mirrored. Both constructors normalize, so a declaration
-  carried from one to the other does not have to be translated on the way.
+  both classes answer in that spelling. The long names are upstream's and
+  still arrive -- from a stored payload, or from a caller who knows `kde1d`
+  -- so both normalize rather than refusing one side of the boundary.
   """
   import pytest
 
+  import pyvinecopulib as pv
   from pyvinecopulib.torch import TorchKde1d
 
-  for short, long in (
-    ("c", "continuous"),
-    ("d", "discrete"),
-    ("zi", "zero-inflated"),
+  for spellings, answer in (
+    (("c", "cont", "continuous"), "c"),
+    (("d", "disc", "discrete"), "d"),
+    (("zi", "zinfl", "zero-inflated", "zero_inflated"), "zi"),
   ):
-    assert TorchKde1d(type=short).kde_type == long
-    assert TorchKde1d(type=long).kde_type == long
-    assert TorchKde1d(type=short).var_type == short
-    assert TorchKde1d(type=long).var_type == short
-  with pytest.raises(ValueError, match="unknown type"):
-    TorchKde1d(type="nope")
+    for spelling in spellings:
+      assert TorchKde1d(var_type=spelling).var_type == answer
+      assert pv.core.Kde1d(var_type=spelling).var_type == answer
+  with pytest.raises(ValueError, match="var_type="):
+    TorchKde1d(var_type="nope")
+  with pytest.raises(ValueError, match="variable type"):
+    pv.core.Kde1d(var_type="nope")

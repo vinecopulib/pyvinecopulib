@@ -16,7 +16,7 @@ def test_kde1d_initialization() -> None:
   kde = pv.core.Kde1d()
   assert kde.xmin != kde.xmin  # NaN check
   assert kde.xmax != kde.xmax  # NaN check
-  assert kde.type == "continuous"
+  assert kde.var_type == "c"
   assert kde.multiplier == 1.0  # noqa: RUF069 - the value this test set, read back
   assert kde.bandwidth != kde.bandwidth  # NaN check (not fitted yet)
   assert kde.degree == 2
@@ -26,7 +26,7 @@ def test_kde1d_initialization() -> None:
   kde = pv.core.Kde1d(
     xmin=0.0,
     xmax=1.0,
-    type="discrete",
+    var_type="d",
     multiplier=25,
     bandwidth=0.1,
     degree=1,
@@ -34,15 +34,15 @@ def test_kde1d_initialization() -> None:
   )
   assert kde.xmin == 0.0  # noqa: RUF069 - the value this test set, read back
   assert kde.xmax == 1.0  # noqa: RUF069 - the value this test set, read back
-  assert kde.type == "discrete"
+  assert kde.var_type == "d"
   assert kde.multiplier == 25
   assert kde.bandwidth == 0.1  # noqa: RUF069 - the value this test set, read back
   assert kde.degree == 1
   assert kde.grid_size == 200
 
   # Test zero-inflated type
-  kde = pv.core.Kde1d(type="zero_inflated")
-  assert kde.type == "zero-inflated"
+  kde = pv.core.Kde1d(var_type="zi")
+  assert kde.var_type == "zi"
 
 
 def test_kde1d_answers_the_three_fitting_verbs() -> None:
@@ -74,11 +74,11 @@ def test_kde1d_factory_methods() -> None:
 
   # Test from_params
   kde = pv.core.Kde1d.from_params(
-    xmin=0.0, xmax=1.0, type="continuous", multiplier=1.2
+    xmin=0.0, xmax=1.0, var_type="c", multiplier=1.2
   )
   assert kde.xmin == 0.0  # noqa: RUF069 - the value this test set, read back
   assert kde.xmax == 1.0  # noqa: RUF069 - the value this test set, read back
-  assert kde.type == "continuous"
+  assert kde.var_type == "c"
   assert kde.multiplier == 1.2  # noqa: RUF069 - the value this test set, read back
 
   # Test from_grid
@@ -92,12 +92,12 @@ def test_kde1d_factory_methods() -> None:
     values=values,
     xmin=-2.0,
     xmax=2.0,
-    type="continuous",
+    var_type="c",
   )
 
   assert kde_from_grid.xmin == -2.0  # noqa: RUF069 - the value this test set, read back
   assert kde_from_grid.xmax == 2.0  # noqa: RUF069 - the value this test set, read back
-  assert kde_from_grid.type == "continuous"
+  assert kde_from_grid.var_type == "c"
 
   # Should be able to evaluate (it's already "fitted" from grid)
   pdf_vals = kde_from_grid.pdf(np.array([0.0]))
@@ -123,7 +123,7 @@ def test_kde1d_properties() -> None:
   kde = pv.core.Kde1d(
     xmin=-1.0,
     xmax=1.0,
-    type="continuous",
+    var_type="c",
     multiplier=2.0,
     bandwidth=0.5,
     degree=1,
@@ -133,7 +133,7 @@ def test_kde1d_properties() -> None:
   # Test read-only properties
   assert kde.xmin == -1.0  # noqa: RUF069 - the value this test set, read back
   assert kde.xmax == 1.0  # noqa: RUF069 - the value this test set, read back
-  assert kde.type == "continuous"
+  assert kde.var_type == "c"
   assert kde.multiplier == 2.0  # noqa: RUF069 - the value this test set, read back
   assert kde.bandwidth == 0.5  # noqa: RUF069 - the value this test set, read back
   assert kde.degree == 1
@@ -218,7 +218,7 @@ def test_kde1d_fit_and_methods() -> None:
 def test_kde1d_discrete_cdf_left_between_atoms() -> None:
   """The left limit between lattice atoms equals the ordinary CDF there."""
   x = np.repeat(np.arange(4, dtype=float), [10, 20, 30, 40])
-  kde = pv.core.Kde1d(type="discrete").fit(x)
+  kde = pv.core.Kde1d(var_type="d").fit(x)
   points = np.array([1.0, 1.5, 2.0, 2.5])
   expected = kde.cdf(np.ceil(points) - 1.0)
   np.testing.assert_allclose(kde.cdf_left(points), expected, rtol=0.0, atol=0.0)
@@ -249,7 +249,7 @@ def test_kde1d_discrete_data() -> None:
   rng = np.random.RandomState(1234)
   x = rng.binomial(10, 0.3, 100).astype(float)
 
-  kde = pv.core.Kde1d(xmin=0, xmax=10, type="discrete")
+  kde = pv.core.Kde1d(xmin=0, xmax=10, var_type="d")
   kde.fit(x)
 
   # Test evaluation at integer points
@@ -410,7 +410,7 @@ def test_kde1d_zero_inflated() -> None:
   x = np.concatenate([x, zeros])
   rng.shuffle(x)
 
-  kde = pv.core.Kde1d(xmin=0.0, type="zero_inflated")
+  kde = pv.core.Kde1d(xmin=0.0, var_type="zi")
   kde.fit(x)
 
   # Check that prob0 is estimated
@@ -480,7 +480,7 @@ def test_the_grid_covers_a_discrete_variable_s_boundary_cells() -> None:
   for every ordered categorical, so it was the common case rather than a corner.
   """
   y = np.random.default_rng(13).integers(0, 4, 500).astype(float)
-  kde = pv.core.Kde1d(xmin=0.0, xmax=3.0, type="discrete").fit(y)
+  kde = pv.core.Kde1d(xmin=0.0, xmax=3.0, var_type="d").fit(y)
   grid = np.asarray(kde.grid_points)
   assert grid[0] == pytest.approx(-0.5)
   assert grid[-1] == pytest.approx(3.5)
@@ -493,11 +493,11 @@ def test_the_grid_covers_a_discrete_variable_s_boundary_cells() -> None:
 def test_discrete_bounds_and_data_must_be_integers() -> None:
   """A discrete variable lives on the integer lattice; a fractional bound is a mistake."""
   with pytest.raises(ValueError, match="discrete bounds must be integers"):
-    pv.core.Kde1d(xmin=0.5, type="discrete")
+    pv.core.Kde1d(xmin=0.5, var_type="d")
   with pytest.raises(ValueError, match="discrete bounds must be integers"):
-    pv.core.Kde1d(type="discrete").set_xmin_xmax(xmin=0.5)
+    pv.core.Kde1d(var_type="d").set_xmin_xmax(xmin=0.5)
   with pytest.raises(ValueError, match="discrete data must be integers"):
-    pv.core.Kde1d(type="discrete").fit(np.array([0.0, 1.5, 2.0]))
+    pv.core.Kde1d(var_type="d").fit(np.array([0.0, 1.5, 2.0]))
 
 
 def test_actual_grid_size_is_reported_separately() -> None:
@@ -537,12 +537,12 @@ def test_json_and_file_round_trips_are_exact() -> None:
     ("continuous", pv.core.Kde1d(), rng.normal(size=400)),
     (
       "discrete",
-      pv.core.Kde1d(type="discrete", xmin=0.0),
+      pv.core.Kde1d(var_type="d", xmin=0.0),
       rng.poisson(4, 400) * 1.0,
     ),
     (
       "zi",
-      pv.core.Kde1d(type="zi"),
+      pv.core.Kde1d(var_type="zi"),
       np.where(rng.random(400) < 0.3, 0.0, rng.gamma(2, size=400)),
     ),
   ]
@@ -561,7 +561,7 @@ def test_json_and_file_round_trips_are_exact() -> None:
       assert restored.loglik() == kde.loglik()
       assert restored.edf == kde.edf
       assert restored.bandwidth == kde.bandwidth
-      assert restored.type == kde.type
+      assert restored.var_type == kde.var_type
       assert restored.grid_size == kde.grid_size
 
 
@@ -575,13 +575,13 @@ def test_json_round_trip_preserves_unset_bounds() -> None:
 
 def test_json_round_trip_of_an_unfitted_estimator() -> None:
   """The configuration alone must survive, so a spec can be stored."""
-  kde = pv.core.Kde1d(type="discrete", xmin=0.0, bandwidth=0.7, grid_size=64)
+  kde = pv.core.Kde1d(var_type="d", xmin=0.0, bandwidth=0.7, grid_size=64)
   restored = pv.core.Kde1d.from_json(kde.to_json())
   assert not restored.is_fitted
   assert restored.bandwidth_spec == kde.bandwidth_spec
   assert restored.xmin == kde.xmin
   assert restored.grid_size == kde.grid_size
-  assert restored.type == kde.type
+  assert restored.var_type == kde.var_type
 
 
 def test_to_file_selects_cbor_by_extension(tmp_path: Path) -> None:
@@ -770,11 +770,11 @@ def test_the_declaration_is_keyword_only_on_every_verb() -> None:
   """
   counts = np.repeat(np.arange(5, dtype=float), [10, 20, 30, 25, 15])
   discrete = pv.core.Kde1d.from_data(counts, var_type="d", support=(0.0, 4.0))
-  assert discrete.type == "discrete"
+  assert discrete.var_type == "d"
   assert (discrete.xmin, discrete.xmax) == (0.0, 4.0)
   # And the same declaration through the other two verbs.
-  assert pv.core.Kde1d().fit(counts, var_type="d").type == "discrete"
-  assert pv.core.Kde1d().select(counts, var_type="d").type == "discrete"
+  assert pv.core.Kde1d().fit(counts, var_type="d").var_type == "d"
+  assert pv.core.Kde1d().select(counts, var_type="d").var_type == "d"
 
 
 def test_weights_in_the_controls_slot_are_refused() -> None:

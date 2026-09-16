@@ -43,9 +43,9 @@ xmin :
 xmax :
     Upper bound for the support of the density. `NaN` means no
     boundary.
-type :
-    Variable type. One of ``"continuous"``, ``"discrete"``, or
-    ``"zero_inflated"``.
+var_type : {"c", "d", "zi"}, default="c"
+    Variable type: continuous, discrete, or zero-inflated. The same
+    spelling ``var_types`` uses on ``Bicop`` and ``Vinecop``.
 multiplier :
     Bandwidth multiplier. The actual bandwidth used is
     ``bandwidth * multiplier``.
@@ -79,11 +79,14 @@ boundary_repair :
 inline std::string kde1d_type_of(const std::optional<std::string>& var_type) {
   if (!var_type.has_value()) return "continuous";
   const std::string& t = *var_type;
-  if (t == "d" || t == "discrete") return "discrete";
-  if (t == "zi" || t == "zero-inflated" || t == "zero_inflated") {
+  // The same spellings `Kde1d::as_enum` accepts, so a value that reaches the
+  // constructor is not refused here.
+  if (t == "d" || t == "disc" || t == "discrete") return "discrete";
+  if (t == "zi" || t == "zinfl" || t == "zero-inflated" ||
+      t == "zero_inflated") {
     return "zero-inflated";
   }
-  if (t == "c" || t == "continuous") return "continuous";
+  if (t == "c" || t == "cont" || t == "continuous") return "continuous";
   throw std::invalid_argument("var_type=" + t +
                               " is not one of ['c', 'd', 'zi']");
 }
@@ -148,21 +151,21 @@ inline Kde1d& kde1d_fit(
 
 inline Kde1d kde1d_from_params(std::optional<double> xmin = std::nullopt,
                                std::optional<double> xmax = std::nullopt,
-                               const std::string& type = "continuous",
+                               const std::string& var_type = "c",
                                double multiplier = 1.0,
                                std::optional<double> bandwidth = std::nullopt,
                                size_t degree = 2, size_t grid_size = 400,
                                bool boundary_repair = true) {
-  return Kde1d(xmin.value_or(NAN), xmax.value_or(NAN), type, multiplier,
+  return Kde1d(xmin.value_or(NAN), xmax.value_or(NAN), var_type, multiplier,
                bandwidth.value_or(NAN), degree, grid_size, boundary_repair);
 }
 
-// Factory function to create a Kde1d from grid, xmin, xmax, type string, prob0
+// Factory function to create a Kde1d from grid, xmin, xmax, var_type, prob0
 inline Kde1d kde1d_from_grid(const Eigen::VectorXd& grid_points,
                              const Eigen::VectorXd& values,
                              std::optional<double> xmin = std::nullopt,
                              std::optional<double> xmax = std::nullopt,
-                             const std::string& type = "continuous",
+                             const std::string& var_type = "c",
                              double prob0 = 0.0) {
   // Four, not two: `Kde1d`'s own constructors reject a `grid_size` below four,
   // so a two- or three-point object could be built here and then not be
@@ -172,7 +175,7 @@ inline Kde1d kde1d_from_grid(const Eigen::VectorXd& grid_points,
         "grid_points and values must contain at least four points");
   }
   interp::InterpolationGrid grid(grid_points, values, 0);
-  return Kde1d(grid, xmin.value_or(NAN), xmax.value_or(NAN), type, prob0);
+  return Kde1d(grid, xmin.value_or(NAN), xmax.value_or(NAN), var_type, prob0);
 }
 
 // JSON is the model-exchange format the copula classes use, so `Kde1d` --
@@ -390,24 +393,24 @@ inline void init_kde1d(nb::module_& module) {
           .def(
               "__init__",
               [](Kde1d* self, std::optional<double> xmin,
-                 std::optional<double> xmax, const std::string& type,
+                 std::optional<double> xmax, const std::string& var_type,
                  double multiplier, std::optional<double> bandwidth,
                  size_t degree, size_t grid_size, bool boundary_repair) {
-                new (self) Kde1d(xmin.value_or(NAN), xmax.value_or(NAN), type,
-                                 multiplier, bandwidth.value_or(NAN), degree,
-                                 grid_size, boundary_repair);
+                new (self) Kde1d(xmin.value_or(NAN), xmax.value_or(NAN),
+                                 var_type, multiplier, bandwidth.value_or(NAN),
+                                 degree, grid_size, boundary_repair);
               },
               "xmin"_a = std::nullopt, "xmax"_a = std::nullopt,
-              "type"_a = "continuous", "multiplier"_a = 1.0,
+              "var_type"_a = "c", "multiplier"_a = 1.0,
               "bandwidth"_a = std::nullopt, "degree"_a = 2, "grid_size"_a = 400,
               "boundary_repair"_a = true, kde1d_constructor_doc,
               nb::call_guard<nb::gil_scoped_release>())
           .def_static(
               "from_params", &kde1d_from_params, "xmin"_a = std::nullopt,
-              "xmax"_a = std::nullopt, "type"_a = "continuous",
-              "multiplier"_a = 1.0, "bandwidth"_a = std::nullopt,
-              "degree"_a = 2, "grid_size"_a = 400, "boundary_repair"_a = true,
-              kde1d_constructor_doc, nb::call_guard<nb::gil_scoped_release>())
+              "xmax"_a = std::nullopt, "var_type"_a = "c", "multiplier"_a = 1.0,
+              "bandwidth"_a = std::nullopt, "degree"_a = 2, "grid_size"_a = 400,
+              "boundary_repair"_a = true, kde1d_constructor_doc,
+              nb::call_guard<nb::gil_scoped_release>())
           .def_static(
               "from_json", &kde1d_from_json, "json"_a,
               "Instantiate from a JSON string.\n\nParameters\n----------\n"
@@ -442,7 +445,7 @@ inline void init_kde1d(nb::module_& module) {
               nb::call_guard<nb::gil_scoped_release>())
           .def_static("from_grid", &kde1d_from_grid, "grid_points"_a,
                       "values"_a, "xmin"_a = std::nullopt,
-                      "xmax"_a = std::nullopt, "type"_a = "continuous",
+                      "xmax"_a = std::nullopt, "var_type"_a = "c",
                       "prob0"_a = 0.0,
                       "Constructs a `Kde1d` from a pre-computed interpolation "
                       "grid (skipping the kernel-density fit).",
@@ -456,9 +459,6 @@ inline void init_kde1d(nb::module_& module) {
           .def_prop_ro(
               "xmax", [](const Kde1d& kde) { return kde.get_xmax(); },
               kde1d_doc.get_xmax.doc)
-          .def_prop_ro(
-              "type", [](const Kde1d& kde) { return kde.get_type_str(); },
-              kde1d_doc.get_type_str.doc)
           .def_prop_ro(
               "prob0", [](const Kde1d& kde) { return kde.get_prob0(); },
               kde1d_doc.get_prob0.doc)

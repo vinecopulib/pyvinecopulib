@@ -112,7 +112,7 @@ def test_kde1d_margin_supports_weights(sample: np.ndarray) -> None:
 def test_kde1d_margin_discrete_left_limit() -> None:
   """The inherited `cdf_left` steps back a lattice point for counts."""
   counts = np.random.default_rng(1).poisson(3.0, size=500).astype(float)
-  m = Kde1d(type="discrete", xmin=0.0, xmax=15.0).fit(counts)
+  m = Kde1d(var_type="d", xmin=0.0, xmax=15.0).fit(counts)
   assert m.var_type == "d"
   k = np.arange(0.0, 6.0)
   np.testing.assert_allclose(m.cdf_left(k), m.cdf(k - 1.0), atol=0.0)
@@ -123,7 +123,7 @@ def test_kde1d_margin_zero_inflated_left_limit() -> None:
   """For a zero-inflated margin the jump at 0 is the point mass."""
   rng = np.random.default_rng(2)
   data = np.where(rng.uniform(size=600) < 0.3, 0.0, rng.exponential(size=600))
-  m = Kde1d(type="zero-inflated", xmin=0.0).fit(data)
+  m = Kde1d(var_type="zi", xmin=0.0).fit(data)
   assert m.var_type == "zi"
   jump = m.cdf(np.array([0.0])) - m.cdf_left(np.array([0.0]))
   np.testing.assert_allclose(jump, m.prob0, atol=1e-12)
@@ -132,7 +132,7 @@ def test_kde1d_margin_zero_inflated_left_limit() -> None:
 def test_kde1d_margin_rejects_unknown_type() -> None:
   """The type is validated at construction, where the mistake is."""
   with pytest.raises(ValueError, match=r"variable type .* unknown"):
-    Kde1d(type="ordinal")
+    Kde1d(var_type="ordinal")
 
 
 def test_kde1d_margin_raises_before_fit() -> None:

@@ -389,22 +389,22 @@ def test_from_data_refuses_a_family_set_it_cannot_search(
 
 
 @pytest.mark.parametrize(
-  ("declared", "expected_kde_type", "expected_var_type"),
+  ("declared", "expected_copula_type"),
   [
-    ("c", "continuous", "c"),
-    ("d", "discrete", "d"),
-    ("zi", "zero-inflated", "d"),
+    ("c", "c"),
+    ("d", "d"),
+    ("zi", "d"),
   ],
 )
 def test_var_types_declare_the_variable_type(
-  declared: str, expected_kde_type: str, expected_var_type: str
+  declared: str, expected_copula_type: str
 ) -> None:
-  """Every declared type reaches the torch margin's constructor.
+  """Every declared type reaches the torch margin, and the copula's layout.
 
-  Parametrized over all three because the two lanes translate the declaration
-  separately: the core `Kde1d` accepts either spelling of the zero-inflated
-  type and `TorchKde1d` accepts only the hyphenated one, so a second copy of
-  the mapping diverged silently on exactly that value.
+  Parametrized over all three because the margin keeps the declaration as
+  given while the copula sees only whether the variable has atoms -- so a
+  zero-inflated margin sits on a `"d"` edge, and the two answers differ for
+  exactly that value.
   """
   rng = np.random.default_rng(0)
   y = torch.as_tensor(
@@ -412,8 +412,8 @@ def test_var_types_declare_the_variable_type(
   )
   dist = TorchVinedist.from_data(y, var_types=[None, declared])
   margin = cast("Any", dist.margins[1])
-  assert margin.kde_type == expected_kde_type
-  assert dist.var_types[1] == expected_var_type
+  assert margin.var_type == declared
+  assert dist.var_types[1] == expected_copula_type
   assert torch.isfinite(dist.logpdf(y)).all()
 
 
@@ -509,7 +509,7 @@ def test_rejects_a_margin_with_atoms_and_no_left_limit(
 
     cdf_left = None
 
-  discrete = _Atomic(type="discrete", xmin=0.0)
+  discrete = _Atomic(var_type="d", xmin=0.0)
   discrete.fit(
     torch.as_tensor(
       np.random.default_rng(6).poisson(3.0, 400).astype(float), dtype=_F64

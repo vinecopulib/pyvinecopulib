@@ -66,12 +66,12 @@ MARGIN_PLOT_DOC = (
     >>> kde = pv.core.Kde1d().fit(rng.beta(0.5, 2.0, 100))
     >>> kde.plot()
     >>> kde.plot(kind="cdf")
-    >>> counts = pv.core.Kde1d(type="discrete")
+    >>> counts = pv.core.Kde1d(var_type="d")
     >>> counts.fit(rng.poisson(3, 100).astype(float))
     >>> counts.plot()
     >>> y = rng.exponential(2, 100)
     >>> y[rng.choice(100, 30, replace=False)] = 0.0
-    >>> pv.core.Kde1d(xmin=0, type="zero-inflated").fit(y).plot()
+    >>> pv.core.Kde1d(xmin=0, var_type="zi").fit(y).plot()
 """
 )
 

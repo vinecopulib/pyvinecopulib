@@ -496,7 +496,7 @@ Vine fitting is a two-step procedure inherited from
    :class:`pyvinecopulib.core.Kde1d` (a boundary-corrected 1-d
    KDE) is the default both for the sklearn estimators and the
    notebook examples. ``Kde1d`` supports continuous, integer-discrete,
-   and zero-inflated numerical input via its ``type`` argument. Raw
+   and zero-inflated numerical input via its ``var_type`` argument. Raw
    categorical labels are not accepted; encode them before fitting only when
    an integer-valued model is appropriate.
 2. **Copula.** Given pseudo-observations
@@ -1136,7 +1136,7 @@ Nagler & Czado, 2025), which replaces the marginal CDF derivatives in
 :ref:`concepts-sklar` by finite differences (transparent to the
 user — pass ``var_types=["d", ...]`` to
 :meth:`pyvinecopulib.core.Vinecop.from_data` or set
-``type="d"`` on :class:`pyvinecopulib.core.Kde1d`).
+``var_type="d"`` on :class:`pyvinecopulib.core.Kde1d`).
 
 A discrete variable needs its left limit :math:`F(x^-)` alongside
 :math:`F(x)`, and there are two ways to supply them. The **expanded** layout is

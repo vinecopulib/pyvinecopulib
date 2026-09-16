@@ -735,7 +735,7 @@ class TestMarginPlot:
     y = np.clip(rng.poisson(3, 300), lo, hi).astype(float)
     # Both ends present, so the lattice the grid should recover is `lo..hi`.
     y[:2] = [float(lo), float(hi)]
-    kde = pv.core.Kde1d(type="discrete")
+    kde = pv.core.Kde1d(var_type="d")
     kde.fit(y)
     return kde
 
@@ -744,7 +744,7 @@ class TestMarginPlot:
     rng = np.random.RandomState(5)
     y = rng.exponential(2.0, 300)
     y[rng.choice(300, 90, replace=False)] = 0.0
-    kde = pv.core.Kde1d(xmin=0, type="zero-inflated")
+    kde = pv.core.Kde1d(xmin=0, var_type="zi")
     kde.fit(y)
     return kde
 
@@ -821,7 +821,7 @@ class TestMarginPlot:
     from pyvinecopulib.core._margin_plot import make_plotting_grid
 
     y = np.clip(np.random.RandomState(3).poisson(3, 200), 0, 9).astype(float)
-    kde = pv.core.Kde1d(xmin=0, xmax=9, type="discrete")
+    kde = pv.core.Kde1d(xmin=0, xmax=9, var_type="d")
     kde.fit(y)
 
     np.testing.assert_array_equal(make_plotting_grid(kde), np.arange(0.0, 10.0))

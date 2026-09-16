@@ -66,7 +66,7 @@ def compare_kde1d(kde1: Any, kde2: Any) -> None:
   )
 
   # Always compare basic properties
-  attrs = ["xmin", "xmax", "type"]
+  attrs = ["xmin", "xmax", "var_type"]
 
   if is_fitted1:
     # A fitted estimator is more than its evaluation grid: its controls and

@@ -569,17 +569,22 @@ For any behavior change:
   covariate matrix is always `(n, p)`, which is what `validate_covariates`'
   own error message says; it was documented `(n, k)` at 78 sites, colliding
   with both of `k`'s other uses in the same files.
-- **One spelling for a variable type: `"c"` / `"d"` / `"zi"`.** That is what
-  `MarginLike.var_type` answers, what `var_types` declares on a pair copula, a
-  vine and `VinedistBase.from_data`, and what the sklearn estimators record in
-  `schema_["var_types"]`. The long names -- `"continuous"`, `"discrete"`,
-  `"zero-inflated"` -- are `Kde1d`'s own, from upstream, and survive only where
-  that class's `type` attribute is mirrored: `Kde1d.type` reports one and
-  `TorchKde1d.kde_type` reproduces it. Both constructors **accept** either
-  spelling and normalize, so a caller never has to know which side of the
-  boundary they are on; nothing in this package *emits* a long name. There
-  used to be a `_VAR_TYPE_OF` translation table copied into two tier-2 modules
-  that cannot import each other, which is what a second spelling costs.
+- **One spelling for a variable type, and one name for it: `var_type` /
+  `var_types`, valued `"c"` / `"d"` / `"zi"`.** That is what `MarginLike`
+  answers, what a pair copula, a vine and `VinedistBase.from_data` declare,
+  what `Kde1d` and `TorchKde1d` take and report, and what the sklearn
+  estimators record in `schema_["var_types"]`. Nothing in this package emits
+  anything else.
+
+  The long names -- `"continuous"`, `"discrete"`, `"zero-inflated"` -- are
+  upstream's: `kde1d`'s `VarType` enum and the `as_str` that renders it. They
+  reach this package in two places and leave it in neither. Every constructor
+  **accepts** them, because upstream's own parser does and refusing what it
+  takes would be gratuitous; and a stored `Kde1d` payload carries one in its
+  `"type"` field, which is a format rather than an API and is normalized on
+  the way in. There used to be a `_VAR_TYPE_OF` translation table copied into
+  two tier-2 modules that cannot import each other, and a `Kde1d.type`
+  property beside `Kde1d.var_type` answering the same question differently.
 
 - **Two covariate-forwarding rules, and they are not interchangeable**
   (`core/_covariates.py`). `pair_eval` forwards `x` to a pair copula
@@ -1557,9 +1562,10 @@ Key surface:
     `-march=native` alone moves it 19 -- so no port can equal every build of
     it. The correction is conditional on
     grad being enabled, not on the grid being learned — a fitted fixed grid
-    still has to differentiate the quantile in `p`. Two of `Kde1d`'s attribute names could not
-    be reused: `type` is `nn.Module`'s dtype cast (read `kde_type`) and
-    `loglik` is the contract's method.
+    still has to differentiate the quantile in `p`. One of `Kde1d`'s names could not
+    be reused: `loglik` is the contract's method, so the fitted value is read
+    as `loglik()`. `type` is `nn.Module`'s dtype cast, which is no longer a
+    collision -- the declaration is `var_type` on both classes.
   - `torch/_margin_kde1d_interp.py` ports `kde1d`'s `InterpolationGrid`, and its
     contract is *fidelity*, not improvement. One C++ behavior looks like a bug
     and must be reproduced: `integrate` adds no tail contribution, so the

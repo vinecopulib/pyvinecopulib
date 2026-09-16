@@ -57,12 +57,20 @@ def _bound(value: float | None, unbounded: float) -> float:
   return unbounded if math.isnan(out) else out
 
 
-#: ``Kde1d``'s spellings of the variable type, and the contract's.
-_VAR_TYPE_OF = {"continuous": "c", "discrete": "d", "zero-inflated": "zi"}
-
-#: The same map read the other way, for a declaration arriving as "c" /
-#: "d" / "zi" rather than as this class's own spelling.
-_KDE_TYPE_OF = {v: k for k, v in _VAR_TYPE_OF.items()}
+#: Every spelling `Kde1d` accepts, mapped to the one this package uses.
+#: Reading a stored payload is the only place a long name still arrives.
+_VAR_TYPE_OF = {
+  "c": "c",
+  "cont": "c",
+  "continuous": "c",
+  "d": "d",
+  "disc": "d",
+  "discrete": "d",
+  "zi": "zi",
+  "zinfl": "zi",
+  "zero-inflated": "zi",
+  "zero_inflated": "zi",
+}
 
 
 class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
@@ -94,11 +102,8 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   optimize it calls ``values.requires_grad_(True)`` -- the same opt-in
   ``TorchTllBicop`` uses for its grid.
 
-  Two of ``Kde1d``'s attribute names cannot be reused here, because the base
-  classes already own them: ``type`` is ``nn.Module``'s legacy dtype cast, and
-  ``loglik`` is the contract's *method*. The constructor argument stays
-  ``type=``; read it back as :attr:`kde_type`, and read the fitted
-  log-likelihood as ``loglik()``.
+  One of ``Kde1d``'s names cannot be reused here: ``loglik`` is the contract's
+  *method*, so the fitted log-likelihood is read as ``loglik()``.
 
   Parameters
   ----------
@@ -110,9 +115,8 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   xmax : float, or None, optional
       Upper bound of the support, or ``None`` for unbounded; read as ``xmin``
       is, so the largest integer for a discrete variable.
-  type : {"continuous", "discrete", "zero-inflated"}, default="continuous"
-      The variable type, spelled as ``Kde1d`` reports it. The hyphen is not
-      optional here.
+  var_type : {"c", "d", "zi"}, default="c"
+      The variable type, spelled as ``var_types`` spells it everywhere else.
   multiplier : float, default=1.0
       Bandwidth multiplier: the bandwidth used is ``bandwidth * multiplier``.
   bandwidth : float, or None, optional
@@ -166,8 +170,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   # not a `#:` one: autosummary cannot page an attribute whose value is a
   # class, which is what this holds on a margin that does read controls.
   controls_class: ClassVar[type[ControlsLike] | None] = None
-  #: The variable type in ``Kde1d``'s spelling; read back as
-  #: :attr:`kde_type`, since ``type`` is ``nn.Module``'s dtype cast.
+  #: The variable type, read back as :attr:`var_type`.
   _type: str
 
   def __init__(
@@ -175,9 +178,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     *,
     xmin: float | None = None,
     xmax: float | None = None,
-    # Keeps one spelling across the lane: `Kde1d(type=...)` is the core
-    # class's keyword, and a torch caller should not have to learn another.
-    type: str = "continuous",  # noqa: A002
+    var_type: str = "c",
     multiplier: float = 1.0,
     bandwidth: float | None = None,
     degree: int = 2,
@@ -190,17 +191,11 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     # Protocol-derived ABC), whose __init__ chain would otherwise shadow
     # nn.Module's under super().
     torch.nn.Module.__init__(self)
-    # Both spellings, as `Kde1d` accepts both: a declaration arrives as the
-    # contract's `"c"` / `"d"` / `"zi"` as readily as this class's own.
-    kde_type = _KDE_TYPE_OF.get(type, type)
-    if kde_type not in _VAR_TYPE_OF:
-      raise ValueError(
-        f"unknown type={type!r}; expected one of "
-        f"{list(_VAR_TYPE_OF)} or {list(_KDE_TYPE_OF)}"
-      )
+    if var_type not in _VAR_TYPE_OF:
+      raise ValueError(f"var_type={var_type!r} is not one of ['c', 'd', 'zi']")
     self.xmin = xmin
     self.xmax = xmax
-    self._type = kde_type
+    self._type = _VAR_TYPE_OF[var_type]
     self.multiplier = multiplier
     self.bandwidth = bandwidth
     self._bandwidth_spec = bandwidth
@@ -339,14 +334,14 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     # density reads its type and bounds when the grid is built, so a fit that
     # ignored them would keep the construction-time answer.
     if var_type is not None:
-      self._type = _KDE_TYPE_OF[var_type]
+      self._type = var_type
     if support is not None:
       self.xmin, self.xmax = support
     del controls
     kde = Kde1d(
       xmin=self.xmin,
       xmax=self.xmax,
-      type=self._type,
+      var_type=self._type,
       multiplier=self.multiplier,
       # The construction spec, not `self.bandwidth`: a previous fit overwrote
       # that with the bandwidth it selected, and passing a value back in pins
@@ -417,7 +412,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     out = cls(
       xmin=kde.xmin,
       xmax=kde.xmax,
-      type=kde.type,
+      var_type=kde.var_type,
       multiplier=kde.multiplier,
       # `bandwidth_spec` is what the compiled object was *asked* for; its
       # `bandwidth` is what it selected. Adopting the latter as the spec would
@@ -498,7 +493,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self.prob0 = torch.as_tensor(
       float(kde.prob0), dtype=ref.dtype, device=ref.device
     )
-    self._type = kde.type
+    self._type = kde.var_type
     self.xmin = kde.xmin
     self.xmax = kde.xmax
     self.bandwidth = float(kde.bandwidth)
@@ -557,7 +552,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       prob0=float(payload.get("prob0", 0.0)),
       xmin=state.get("xmin"),
       xmax=state.get("xmax"),
-      type=str(state.get("type", "continuous")),
+      var_type=_VAR_TYPE_OF[str(state.get("type", "c"))],
       multiplier=float(state.get("multiplier", 1.0)),
       degree=int(state.get("degree", 2)),
       boundary_repair=bool(state.get("boundary_repair", True)),
@@ -610,7 +605,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       raise RuntimeError("unsupported TorchKde1d state-dict version")
     self.xmin = state["xmin"]
     self.xmax = state["xmax"]
-    self._type = state["type"]
+    self._type = _VAR_TYPE_OF[state["type"]]
     self.multiplier = state["multiplier"]
     self.bandwidth = state["bandwidth"]
     self._bandwidth_spec = state["bandwidth_spec"]
@@ -627,31 +622,15 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   # --- declared capabilities ------------------------------------------------ #
 
   @property
-  def kde_type(self) -> str:
-    """The variable type in ``Kde1d``'s spelling.
-
-    Not exposed as ``type``: ``nn.Module.type`` is the legacy dtype cast, and
-    shadowing it would break ``module.type(torch.float32)`` on this class alone.
-    The constructor argument keeps the familiar name.
-
-    Returns
-    -------
-    str
-        ``"continuous"``, ``"discrete"`` or ``"zero-inflated"``, hyphenated as
-        ``Kde1d`` spells it.
-    """
-    return self._type
-
-  @property
   def var_type(self) -> str:
-    """Variable type in the contract's spelling.
+    """Variable type.
 
     Returns
     -------
     str
         ``"c"``, ``"d"`` or ``"zi"``.
     """
-    return _VAR_TYPE_OF[self._type]
+    return self._type
 
   @property
   def support(self) -> tuple[float, float]:
@@ -822,9 +801,9 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     """
     self._check_fitted()
     ya = self._as_tensor(y)
-    if self._type == "discrete":
+    if self._type == "d":
       return self._pdf_discrete(ya)
-    if self._type == "zero-inflated":
+    if self._type == "zi":
       return torch.where(
         # Exact: a zero-inflated variable's atom sits at zero, so this asks
         # whether the observation *is* the atom, not whether it is near it.
@@ -849,9 +828,9 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     """
     self._check_fitted()
     ya = self._as_tensor(y)
-    if self._type == "discrete":
+    if self._type == "d":
       return self._cdf_discrete(ya)
-    if self._type == "zero-inflated":
+    if self._type == "zi":
       atom = (ya >= 0.0).to(ya.dtype)
       tail = (
         torch.zeros_like(ya)
@@ -926,7 +905,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       bool(torch.any(finite < 0.0)) or bool(torch.any(finite > 1.0))
     ):
       raise ValueError("probabilities must lie in [0, 1]")
-    if self._type == "discrete":
+    if self._type == "d":
       lvs, f_cum = self._level_cdf()
       # The lowest level whose cdf has reached `p`, not the lowest that has
       # passed it -- `lower_bound`, as the compiled quantile does. The two
@@ -937,7 +916,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
         max=lvs.numel() - 1,
       )
       return torch.where(torch.isnan(pa), pa, lvs[idx])
-    if self._type == "zero-inflated":
+    if self._type == "zi":
       zero = torch.zeros(1, dtype=pa.dtype, device=pa.device)
       if float(self.prob0) >= 1.0:
         # An all-zero column: the mass is the whole distribution and there is
@@ -976,10 +955,11 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
         The type, the grid size and the support.
     """
     if not self.is_fitted:
-      return f"TorchKde1d(type={self._type!r}, unfitted)"
+      return f"TorchKde1d(var_type={self._type!r}, unfitted)"
     lo, hi = self.support
     return (
-      f"TorchKde1d(type={self._type!r}, grid_size={self.grid_points.numel()}, "
+      f"TorchKde1d(var_type={self._type!r}, "
+      f"grid_size={self.grid_points.numel()}, "
       f"support=({lo}, {hi}))"
     )
 

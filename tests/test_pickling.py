@@ -147,7 +147,7 @@ def test_kde1d() -> None:
   original_kde = pv.core.Kde1d(
     xmin=-5.0,
     xmax=5.0,
-    type="continuous",
+    var_type="c",
     multiplier=1.5,
     degree=1,
     bandwidth=0.1,

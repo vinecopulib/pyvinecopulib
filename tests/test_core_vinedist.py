@@ -1082,7 +1082,7 @@ def test_vinedist_with_a_discrete_margin_uses_the_cascade() -> None:
   n = 300
   counts = rng.integers(0, 5, n).astype(float)
   x = np.column_stack([counts] + [rng.normal(size=n) for _ in range(_D - 1)])
-  margins = [Kde1d(type="discrete", xmin=0.0).fit(counts)] + [
+  margins = [Kde1d(var_type="d", xmin=0.0).fit(counts)] + [
     Kde1d().fit(x[:, j]) for j in range(1, _D)
   ]
   assert [m.var_type for m in margins] == var_types
