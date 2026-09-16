@@ -1186,10 +1186,13 @@ contract — most easily by subclassing the canonical partial
 implementations :class:`~pyvinecopulib.core.BicopBase` /
 :class:`~pyvinecopulib.core.VinecopBase`, which fill in almost
 everything from a few primitives. A ``BicopBase`` subclass need only
-define ``pdf`` / ``hfunc1`` / ``hfunc2`` and inherits numerical
-``hinv1`` / ``hinv2``, ``sample``, ``loglik``, and ``plot`` (``flip``
-and ``cdf`` are the two optional additions, needed to reuse the pair in
-structure selection and to host it on a discrete edge respectively); a
+define the *leaves* ``_pdf_raw`` / ``_hfunc1_raw`` / ``_hfunc2_raw`` and
+inherits numerical ``hinv1`` / ``hinv2``, ``sample``, ``loglik``, and
+``plot``. The public members are concrete dispatchers that apply the pair's
+``var_types`` before reaching a leaf, so overriding one of *those* orphans
+the leaf beneath it (``_flip_raw`` and ``_cdf_raw`` are the two optional
+additions, needed to reuse the pair in structure selection and to host it on
+a discrete edge respectively); a
 ``VinecopBase`` subclass need only return its pairs from
 ``get_pair_copula`` and inherits the whole tree-by-tree cascade. The
 bases are pure Python (no PyTorch), so custom pairs also work in a
