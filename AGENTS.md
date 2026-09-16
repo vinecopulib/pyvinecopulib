@@ -573,18 +573,24 @@ For any behavior change:
   `var_types`, valued `"c"` / `"d"` / `"zi"`.** That is what `MarginLike`
   answers, what a pair copula, a vine and `VinedistBase.from_data` declare,
   what `Kde1d` and `TorchKde1d` take and report, and what the sklearn
-  estimators record in `schema_["var_types"]`. Nothing in this package emits
-  anything else.
+  estimators record in `schema_["var_types"]`. No property, keyword or schema
+  key in this package answers anything else.
 
   The long names -- `"continuous"`, `"discrete"`, `"zero-inflated"` -- are
-  upstream's: `kde1d`'s `VarType` enum and the `as_str` that renders it. They
-  reach this package in two places and leave it in neither. Every constructor
-  **accepts** them, because upstream's own parser does and refusing what it
-  takes would be gratuitous; and a stored `Kde1d` payload carries one in its
-  `"type"` field, which is a format rather than an API and is normalized on
-  the way in. There used to be a `_VAR_TYPE_OF` translation table copied into
-  two tier-2 modules that cannot import each other, and a `Kde1d.type`
-  property beside `Kde1d.var_type` answering the same question differently.
+  upstream's: `kde1d`'s `VarType` enum and the `as_str` that renders it. Every
+  constructor **accepts** them, because upstream's own parser does and refusing
+  what it takes would be gratuitous, and a stored `Kde1d` payload carries one
+  in its `"type"` field, which is a format rather than an API and is normalized
+  on the way in. There used to be a `Kde1d.type` property beside
+  `Kde1d.var_type` answering the same question differently, and a `_VAR_TYPE_OF`
+  translation table copied into two tier-2 modules that cannot import each
+  other; the copy in `sklearn/_base.py` is gone and the one in `torch/kde1d.py`
+  is the single normalizer, with `kde1d_type_of` its counterpart in the binding.
+
+  **One long name still escapes, and it is upstream's to fix.** `repr(Kde1d())`
+  reads `type='continuous'`, because the binding lifts `Kde1d::str()` verbatim
+  -- the same reason `Kde1d`'s *evaluation* arguments are still named `x`. Both
+  need a `kde1d-cpp` change and a pin bump, not a local patch.
 
 - **Two covariate-forwarding rules, and they are not interchangeable**
   (`core/_covariates.py`). `pair_eval` forwards `x` to a pair copula

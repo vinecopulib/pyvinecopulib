@@ -561,8 +561,7 @@ class BicopLike(Protocol[ArrayT]):
   conditional distributions
   ``hfunc1(u) = P(U2 <= u2 | U1 = u1)`` / ``hfunc2(u) = P(U1 <= u1 | U2 = u2)``
   and their inverses (``hinv1`` / ``hinv2``, inverting in the second / first
-  argument), plus a sampler (``sample``). The distribution ``cdf`` is an
-  optional capability rather than a member; see below. The optional ``x`` of
+  argument), plus a sampler (``sample``). The optional ``x`` of
   shape ``(n, p)`` carries conditioning variables: a conditional copula reads
   them, an unconditional one ignores them.
 
@@ -573,23 +572,27 @@ class BicopLike(Protocol[ArrayT]):
   :class:`pyvinecopulib.core.Bicop` and
   :class:`pyvinecopulib.torch.TorchTllBicop` are the reference implementations.
 
-  **What is required is the evaluation surface.** ``pdf`` / ``hfunc1`` /
-  ``hfunc2`` / ``hinv1`` / ``hinv2`` / ``sample`` are all of it -- the
-  surface :class:`pyvinecopulib.core.Bicop` presents, so that the contract is
-  something a foreign pair copula can be typed against rather than a list of
-  whichever methods the cascades happen to call today. (``sample`` is in it for
-  that reason: no vine cascade asks a pair to sample, a vine drawing by inverse
+  **What must be written is the evaluation surface.** ``pdf`` / ``hfunc1`` /
+  ``hfunc2`` / ``hinv1`` / ``hinv2`` / ``sample`` are all of it -- the surface
+  :class:`pyvinecopulib.core.Bicop` presents, so that the contract is something
+  a foreign pair copula can be typed against rather than a list of whichever
+  methods the cascades happen to call today. (``sample`` is in it for that
+  reason: no vine cascade asks a pair to sample, a vine drawing by inverse
   Rosenblatt, but a pair copula that cannot be drawn from is not one.)
-  Everything else is an **optional capability**, read with ``getattr`` where it
-  is needed, so a foreign object provides it only if it applies. ``cdf`` and
-  ``flip`` are the two, and :class:`~pyvinecopulib.core.BicopBase` supplies
-  both as raising stubs, which is where the message explaining each lives -- so
-  a subclass gets a good error and a foreign object simply omits them. A third,
-  ``supports_batched``, is a plain declaration: whether a vine may stack this
-  pair into its stacked grid cascade, which reads an interpolation grid off
-  each pair. Absent means it may not, and
-  :class:`~pyvinecopulib.core.BicopBase` declares it ``False`` so the answer is
-  findable rather than only discoverable by tripping the error.
+
+  **The rest is what hosting the pair needs, each with a default.** ``cdf``
+  and ``with_var_types`` are what a **discrete** edge asks for and ``flip``
+  what structure *selection* asks for; ``var_types`` reports the pair's own
+  types; ``supports_covariates`` / ``supports_weights`` are what a consumer
+  reads before handing over a covariate matrix or weighted controls; and
+  ``fit`` / ``select`` / ``controls_class`` are what re-estimates one. Each
+  default is the fallback its consumer used to apply -- ``("c", "c")``,
+  ``False``, or a raise naming the class -- so declining a member is a clear
+  refusal at the call rather than an ``AttributeError`` from inside a cascade.
+
+  Because a Protocol's default reaches only a *nominal* subclass, the way to
+  implement this contract directly is to **inherit** it and override what you
+  implement; a duck-typed class has to define every member itself.
 
   **Covariates are a widening, not a member.** There is no
   ``supports_covariates`` flag here, unlike on a margin or a whole copula,
@@ -935,12 +938,16 @@ class VinecopLike(Protocol[ArrayT]):
   :class:`pyvinecopulib.core.Vinecop` and
   :class:`pyvinecopulib.torch.TorchVinecop` are the reference implementations.
 
-  Everything past that surface is an **optional capability**, read with
-  ``getattr`` where it is needed. ``logpdf`` is the one: the joint log-density,
-  which a vine distribution prefers over the logarithm of the density because
-  the density is a product of up to ``d (d - 1) / 2`` pair densities and
-  underflows on a deep or strongly dependent model. Both reference
-  implementations supply it.
+  Everything past that surface is a member carrying a **default**, so a vine
+  that has nothing of its own to say still satisfies the contract. ``logpdf``
+  defaults to the logarithm of the density, and a vine distribution prefers it
+  because the density is a product of up to ``d (d - 1) / 2`` pair densities
+  and underflows on a deep or strongly dependent model; ``var_types`` reports
+  which variables have atoms; ``supports_covariates`` / ``supports_weights``
+  answer ``False``; and ``fit`` / ``select`` / ``controls_class`` are what a
+  vine distribution calls to re-estimate the copula it holds, raising by
+  default -- which is the right answer for an immutable or purely functional
+  vine.
 
   See Also
   --------
@@ -1226,21 +1233,27 @@ class MarginLike(Protocol[ArrayT]):
 
   Notes
   -----
-  Discreteness, the left-limit cdf, log-densities, sampling and support are
-  **optional capabilities** rather than members of this contract, so that
-  objects from other ecosystems can satisfy it. Consumers discover them with
-  ``getattr(margin, name, None)``:
+  Only ``pdf`` / ``cdf`` / ``icdf`` are abstract. Everything else is a member
+  carrying the **default** its consumer would otherwise have applied, so a
+  margin that says nothing more behaves as a fixed, unconditional, continuous
+  one -- and a margin that has something to say overrides it:
 
-  - ``var_type`` — ``"c"``, ``"d"`` or ``"zi"``; absent means ``"c"``.
+  - ``var_type`` — ``"c"``, ``"d"`` or ``"zi"``; defaults to ``"c"``.
   - ``cdf_left`` — ``F(y^-)``, the left limit a margin with atoms needs;
-    absent means it coincides with ``cdf``.
-  - ``logpdf`` — absent means ``log(pdf)``.
-  - ``sample`` — absent means ``icdf`` of uniforms.
-  - ``support`` — a ``(lo, hi)`` pair; absent means unbounded. It describes the
+    defaults to coinciding with ``cdf``.
+  - ``logpdf`` — defaults to ``log(pdf)``.
+  - ``sample`` — raises by default; :class:`~pyvinecopulib.core.MarginBase`
+    supplies ``icdf`` of uniforms.
+  - ``support`` — a ``(lo, hi)`` pair; defaults to unbounded. It describes the
     margin as a whole, not one conditional slice: a margin whose support moves
     with ``x`` overrides ``icdf`` instead.
-  - ``supports_covariates`` — whether ``x`` is read rather than ignored; absent
-    means it is ignored, and a consumer then omits it entirely.
+  - ``supports_covariates`` / ``supports_weights`` — whether ``x`` is read
+    rather than ignored, and whether a fit honors ``controls.weights``; both
+    default to ``False``.
+  - ``fit`` / ``select`` / ``controls_class`` — what a vine distribution calls
+    to re-estimate this margin, and the configuration it reads. ``fit`` raises
+    by default, which is what a *fixed* margin is; a distribution's margin loop
+    dispatches on whether the class overrides either verb.
 
   See Also
   --------

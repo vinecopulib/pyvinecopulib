@@ -82,7 +82,7 @@ vine structure (Bedford & Cooke, 2002; Aas et al., 2009). Passing
 
 _DOC_DISCRETE = r"""Discrete (or expanded unordered-categorical)
 columns are handled by the margin's own variable type --- for the
-default ``Kde1d`` that is ``type="discrete"``:
+default ``Kde1d`` that is ``var_type="d"``:
 pseudo-observations stack :math:`\hat F_j(X_j)` and
 :math:`\hat F_j(X_j^-)` so the vine evaluation sees the appropriate
 continuous proxy. Handled transparently by `fit` and `pdf`.
