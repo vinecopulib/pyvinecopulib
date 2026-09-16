@@ -20,7 +20,7 @@ import pyvinecopulib as pv
 
 from ..core import (
   ControlsLike,
-  MarginLike,
+  VinecopLike,
   Vinedist,
   VinedistBase,
 )
@@ -217,15 +217,7 @@ class VineBase(BaseEstimator):
   # `getattr(self, "schema_", None)` is still how a caller-set one is read.
   schema_: dict[str, Any]
 
-  # The fitted vine, typed `Any` because this estimator reaches past
-  # `VinecopLike`: `logpdf` is an optional capability the protocol does not
-  # name, and `num_threads` is a knob both lanes accept that none requires.
-  _vine: Any
-
-  #: Whether this estimator reports a density on the original scale, and so
-  #: cannot accept a margin that has none. `VineRegressor` does not: its
-  #: quadrature reads the copula density and the response margin's `icdf` only.
-  _needs_marginal_density: bool = False
+  _vine: VinecopLike[Any]
 
   _parameter_constraints: ClassVar[dict[str, list[object]]] = {
     "distribution": [type, None],
@@ -311,6 +303,31 @@ class VineBase(BaseEstimator):
     self.batch_size = batch_size
     self.random_state = random_state
     self.n_jobs = n_jobs
+
+  def _threaded(self, name: str) -> Any:  # noqa: ANN401 - see below
+    """One of the fitted vine's evaluators, with the thread count bound in.
+
+    ``num_threads`` is a performance knob rather than part of ``VinecopLike``,
+    so a hosted vine is under no obligation to accept one -- and at the
+    default of a single thread there is nothing to ask for. Returning the
+    call rather than the value keeps that decision in one place for the two
+    evaluations that make it. Typed ``Any`` because the result is a callable
+    resolved by name.
+
+    Parameters
+    ----------
+    name : str
+        The evaluator to call, ``"pdf"`` or ``"logpdf"``.
+
+    Returns
+    -------
+    callable
+        ``f(u) -> array``.
+    """
+    method: Any = getattr(self._vine, name)
+    if self._num_threads == 1:
+      return method
+    return lambda u: method(u, num_threads=self._num_threads)
 
   def _reset_fitted_schema(self) -> None:
     """Drop the state a previous ``fit`` derived, before deriving it again.
@@ -595,41 +612,6 @@ class VineBase(BaseEstimator):
       return str(names[j])
     return f"x{j}"
 
-  def _require_density(
-    self, margin: MarginLike[Any], name: str, column: np.ndarray
-  ) -> None:
-    """Refuse a margin with no density, at fit time rather than at first score.
-
-    A margin whose ``pdf`` is undefined -- an atomic distribution, whose mass
-    is not a density -- cannot serve an estimator that reports one. Probed
-    rather than declared, so a margin from anywhere is caught.
-
-    Parameters
-    ----------
-    margin : MarginLike
-        The fitted margin.
-    name : str
-        The variable's name, for the message.
-    column : ndarray, shape (n_samples,), dtype float
-        The data it was fitted to, to probe at.
-
-    Raises
-    ------
-    ValueError
-        If the margin has no density.
-    """
-    probe = np.asarray(column, dtype=float)[:1]
-    density: Any = getattr(margin, "logpdf", None) or margin.pdf
-    try:
-      density(probe)
-    except NotImplementedError as exc:
-      raise ValueError(
-        f"{type(self).__name__} needs a density on the original scale, but the "
-        f"margin for {name!r} ({type(margin).__name__}) has none: {exc}. Name "
-        "a `margin_class` that reports a density on the distribution passed "
-        "as `distribution=`."
-      ) from exc
-
   @staticmethod
   def _check_response_is_continuous(margin: object) -> None:
     """Refuse a response margin with atoms.
@@ -762,9 +744,6 @@ class VineBase(BaseEstimator):
       # an unnamed `SciPyMargin` landing on `poisson` -- has no variable type
       # to declare until it has chosen one.
       self._check_response_is_continuous(self.distribution_.margins[0])
-    if self._needs_marginal_density:
-      for j, margin in enumerate(self.distribution_.margins):
-        self._require_density(margin, self._name_at(j, response), data[:, j])
 
   def _name_at(self, index: int, response: bool) -> str:
     """The name this estimator gives one variable in a message.

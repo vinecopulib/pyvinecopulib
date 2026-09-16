@@ -310,24 +310,21 @@ def test_clone_round_trips_the_distribution_parameter(
   )
 
 
-def test_a_density_less_margin_is_refused_at_fit_time(
+def test_a_density_less_margin_reports_itself(
   sample_array_data: tuple[np.ndarray, np.ndarray, np.ndarray],
 ) -> None:
-  """A margin that reports no density cannot serve an estimator that does.
+  """A margin with no density says so, from the margin, when one is asked for.
 
-  Caught at `fit`, not at the first `score_samples`, so the estimator never
-  reaches a state where its own contract cannot be met. Every shipped margin
-  has a density, so the guard is exercised through a double -- a third-party
-  margin may well be atomic, and this is what turns that into an error here
-  instead of a wrong number later.
+  `MarginLike` requires `pdf`, so a margin that declines it is outside the
+  contract rather than a case the estimators screen for: the refusal is the
+  margin's own and reaches whoever asked. `VineRegressor` never asks -- it
+  reads the copula density and the response's `icdf` only -- so the same
+  margin serves it.
   """
   X, _, _ = sample_array_data
-  with pytest.raises(ValueError, match="needs a density"):
-    VineDensity(distribution=AtomicVinedist).fit(X)
-  with pytest.raises(ValueError, match="`margin_class` that reports a density"):
-    VineDensity(distribution=AtomicVinedist).fit(X)
-  # `VineRegressor` reads the copula density and the response `icdf` only, so
-  # the same margin is fine there.
+  est = VineDensity(distribution=AtomicVinedist).fit(X)
+  with pytest.raises(NotImplementedError, match="no density"):
+    est.score_samples(X[:10])
   VineRegressor(distribution=AtomicVinedist, use_grid=False).fit(X, X[:, 0])
 
 

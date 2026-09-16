@@ -20,10 +20,6 @@ from ._base import (
 
 
 class VineDensity(DensityMixin, VineBase):
-  # `score_samples` reports a log-density on the original scale, so a margin
-  # without one is refused at fit time rather than at the first score.
-  _needs_marginal_density: bool = True
-
   def __init__(
     self,
     distribution: type[VinedistBase[Any]] | None = None,

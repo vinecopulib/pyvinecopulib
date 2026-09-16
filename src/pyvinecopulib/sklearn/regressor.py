@@ -295,9 +295,9 @@ class VineRegressor(RegressorMixin, VineBase):
       uy_rep = np.tile(uy_nodes, (end - start, 1))
       u = np.column_stack([uy_rep, ux_batch])
 
-      log_vals = to_numpy(
-        self._vine.logpdf(u, num_threads=self._num_threads), dtype=float
-      ).reshape(end - start, n_grid)
+      log_vals = to_numpy(self._threaded("logpdf")(u), dtype=float).reshape(
+        end - start, n_grid
+      )
       log_out[start:end] = (
         logsumexp(log_vals, axis=1, b=w[None, :]) + log_factor
       )
@@ -343,9 +343,7 @@ class VineRegressor(RegressorMixin, VineBase):
     uy_rep = np.tile(self._u_nodes, (m, 1)).reshape(-1, 1)
     u_test = np.column_stack([uy_rep, ux_batch])
 
-    w = to_numpy(
-      self._vine.pdf(u_test, num_threads=self._num_threads), dtype=float
-    ).reshape(m, n_nodes)
+    w = to_numpy(self._threaded("pdf")(u_test), dtype=float).reshape(m, n_nodes)
     if self._node_weights is not None:
       w = w * self._node_weights
     if self.normalize_weights:

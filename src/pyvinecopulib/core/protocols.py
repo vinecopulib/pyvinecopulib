@@ -36,16 +36,27 @@ unsatisfiable for :class:`~pyvinecopulib.core.Bicop`,
 which take none — the asymmetry that a protocol may ask for *less* than an
 implementation provides, never more.
 
-**Scope.** These describe the *evaluation* surface — enough to host a pair
-copula in a vine, to consume a fitted vine, or to compose a distribution — not
-the whole core API. :class:`~pyvinecopulib.core.Bicop` and
-:class:`~pyvinecopulib.core.Vinecop` carry considerably more (score and
-derivative families, per-row parameters, serialization, discrete data layouts)
-that a custom implementation is not expected to provide. A performance knob is
-likewise not part of a contract: ``num_threads`` lives on the classes that mean
-something by it and not here, since a protocol parameter would oblige every
-implementation to accept one. Accepting extra keyword arguments is a widening,
-so a class that takes more than a protocol asks still satisfies it.
+**Scope.** These describe what this library may ask of a part — the evaluation
+cascade, what hosting it needs, and the ``fit`` / ``select`` a consumer calls
+to re-estimate it — not the whole core API.
+:class:`~pyvinecopulib.core.Bicop` and :class:`~pyvinecopulib.core.Vinecop`
+carry considerably more (score and derivative families, per-row parameters,
+serialization, discrete data layouts) that a custom implementation is not
+expected to provide. A performance knob is likewise not part of a contract:
+``num_threads`` lives on the classes that mean something by it and not here,
+since a protocol parameter would oblige every implementation to accept one.
+Accepting extra keyword arguments is a widening, so a class that takes more
+than a protocol asks still satisfies it.
+
+Every member an implementation may decline carries a **default in the protocol
+body**, which is the fallback its consumer used to apply -- so declining one is
+a raise naming the class rather than an ``AttributeError`` from inside a
+cascade. That is why the fitting verbs belong here: whether a part can be
+re-estimated is exactly the kind of thing a consumer has to ask, and a raising
+default is the answer for a fixed margin or an immutable vine. What each
+estimator's ``controls`` *is* stays per implementation, named by
+``controls_class`` rather than promised by the signature -- ``Kde1d.fit`` takes
+a ``FitControlsKde1d`` and nothing else.
 
 Every protocol here is ``runtime_checkable``, which compares member *names*
 only, so ``isinstance(cop, BicopLike)`` reports that the names are present and
@@ -829,6 +840,83 @@ class BicopLike(Protocol[ArrayT]):
     """
     return False
 
+  @property
+  def controls_class(self) -> type[ControlsLike] | None:
+    """The fit configuration this pair copula's estimator reads, or ``None``.
+
+    A declaration rather than a contract: it says what ``controls=None``
+    means for this class, and carries the type besides, so a consumer builds
+    ``BicopLike.controls_class()`` instead of naming a ``FitControls*`` of its
+    own. Read-only, so an implementation may declare a narrower type.
+
+    Returns
+    -------
+    type, or None
+        ``None`` unless the implementation reads controls.
+    """
+    return None
+
+  def fit(
+    self,
+    u: ArrayT,
+    /,
+    # `Any`, not `ControlsLike`: which controls type an estimator accepts is
+    # its own, and `controls_class` is what names it.
+    controls: Any = None,  # noqa: ANN401
+  ) -> Self:
+    """Re-estimate this pair copula from data, in place.
+
+    Raises here, which is what an immutable or purely functional pair copula is.
+    A vine hosting one asks only to *evaluate* it, so a pair that
+    declines this still serves every cascade.
+
+    Parameters
+    ----------
+    u : array, shape (n, 2), dtype float
+        Copula-scale observations.
+    controls : ControlsLike, or None, optional
+        Fit configuration of the type ``controls_class`` names.
+
+    Returns
+    -------
+    BicopLike
+        ``self``, so the call chains.
+
+    Raises
+    ------
+    NotImplementedError
+        Always, unless the implementation estimates.
+    """
+    raise NotImplementedError(
+      f"{type(self).__name__} has no `fit`; implement it to re-estimate "
+      "this pair copula in place, or build a fresh one instead."
+    )
+
+  def select(
+    self,
+    u: ArrayT,
+    /,
+    controls: Any = None,  # noqa: ANN401 - as `fit`, above
+  ) -> Self:
+    """Re-select and re-estimate this pair copula, in place.
+
+    Defaults to :meth:`fit`, which is the right answer wherever there is
+    nothing to choose.
+
+    Parameters
+    ----------
+    u : array, shape (n, 2), dtype float
+        Copula-scale observations.
+    controls : ControlsLike, or None, optional
+        Fit configuration of the type ``controls_class`` names.
+
+    Returns
+    -------
+    BicopLike
+        ``self``, so the call chains.
+    """
+    return self.fit(u, controls)
+
 
 BicopLike.__doc__ = (BicopLike.__doc__ or "") + _BICOP_EXAMPLE
 
@@ -1027,6 +1115,83 @@ class VinecopLike(Protocol[ArrayT]):
         ``False`` unless the implementation says otherwise.
     """
     return False
+
+  @property
+  def controls_class(self) -> type[ControlsLike] | None:
+    """The fit configuration this vine's estimator reads, or ``None``.
+
+    A declaration rather than a contract: it says what ``controls=None``
+    means for this class, and carries the type besides, so a consumer builds
+    ``VinecopLike.controls_class()`` instead of naming a ``FitControls*`` of its
+    own. Read-only, so an implementation may declare a narrower type.
+
+    Returns
+    -------
+    type, or None
+        ``None`` unless the implementation reads controls.
+    """
+    return None
+
+  def fit(
+    self,
+    u: ArrayT,
+    /,
+    # `Any`, not `ControlsLike`: which controls type an estimator accepts is
+    # its own, and `controls_class` is what names it.
+    controls: Any = None,  # noqa: ANN401
+  ) -> Self:
+    """Re-estimate this vine from data, in place.
+
+    Raises here, which is what an immutable or purely functional vine is.
+    A vine distribution's ``fit`` and ``select`` ask the copula they
+    hold to re-estimate itself, so one that declines says so here.
+
+    Parameters
+    ----------
+    u : array, shape (n, d + k), dtype float
+        Copula-scale observations.
+    controls : ControlsLike, or None, optional
+        Fit configuration of the type ``controls_class`` names.
+
+    Returns
+    -------
+    VinecopLike
+        ``self``, so the call chains.
+
+    Raises
+    ------
+    NotImplementedError
+        Always, unless the implementation estimates.
+    """
+    raise NotImplementedError(
+      f"{type(self).__name__} has no `fit`; implement it to re-estimate "
+      "this vine in place, or build a fresh one instead."
+    )
+
+  def select(
+    self,
+    u: ArrayT,
+    /,
+    controls: Any = None,  # noqa: ANN401 - as `fit`, above
+  ) -> Self:
+    """Re-select and re-estimate this vine, in place.
+
+    Defaults to :meth:`fit`, which is the right answer wherever there is
+    nothing to choose.
+
+    Parameters
+    ----------
+    u : array, shape (n, d + k), dtype float
+        Copula-scale observations.
+    controls : ControlsLike, or None, optional
+        Fit configuration of the type ``controls_class`` names.
+
+    Returns
+    -------
+    VinecopLike
+        ``self``, so the call chains.
+    """
+    return self.fit(u, controls)
 
 
 VinecopLike.__doc__ = (VinecopLike.__doc__ or "") + _VINECOP_EXAMPLE
@@ -1239,6 +1404,102 @@ class MarginLike(Protocol[ArrayT]):
         ``False`` unless the implementation says otherwise.
     """
     return False
+
+  @property
+  def controls_class(self) -> type[ControlsLike] | None:
+    """The fit configuration this margin's estimator reads, or ``None``.
+
+    A declaration rather than a contract: it says what ``controls=None``
+    means for this class, and carries the type besides, so a consumer builds
+    ``margin.controls_class()`` instead of naming a ``FitControls*`` of its
+    own. Read-only here, so an implementation may declare a narrower type.
+
+    Returns
+    -------
+    type, or None
+        ``None`` unless the implementation reads controls.
+    """
+    return None
+
+  def fit(
+    self,
+    y: ArrayT,
+    /,
+    # `Any`, not `ControlsLike`: which controls type an estimator accepts is
+    # its own, and `controls_class` is what names it -- `Kde1d.fit` takes a
+    # `FitControlsKde1d` and nothing else, so a contract promising it any
+    # `ControlsLike` would put it outside its own.
+    controls: Any = None,  # noqa: ANN401
+    *,
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+  ) -> Self:
+    """Estimate this margin's parameters from data, in place.
+
+    Raises here, which is what a *fixed* margin is: one whose parameters were
+    given rather than estimated. A vine distribution's margin loop dispatches
+    on whether the class overrides this, so a margin that declines it is left
+    as it was built rather than being substituted.
+
+    Parameters
+    ----------
+    y : array, shape (n,), dtype float
+        Observations on the original scale.
+    controls : ControlsLike, or None, optional
+        Fit configuration of the type ``controls_class`` names, carrying
+        ``weights`` where this margin honors them.
+    var_type : {"c", "d", "zi"}, or None, optional
+        What the caller knows the variable to be.
+    support : tuple of float, or None, optional
+        Declared bounds as ``(lo, hi)``, either end ``None`` for unbounded.
+
+    Returns
+    -------
+    MarginLike
+        ``self``, so the call chains.
+
+    Raises
+    ------
+    NotImplementedError
+        Always, unless the implementation estimates.
+    """
+    raise NotImplementedError(
+      f"{type(self).__name__} has no `fit`; implement it to estimate this "
+      "margin from data, or construct it with explicit parameters."
+    )
+
+  def select(
+    self,
+    y: ArrayT,
+    /,
+    controls: Any = None,  # noqa: ANN401 - as `fit`, above
+    *,
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+  ) -> Self:
+    """Choose a family for this margin and estimate it, in place.
+
+    Defaults to :meth:`fit`, which is the right answer wherever there is
+    nothing to choose: a margin named with its family, or a nonparametric one,
+    is determined by its parameters.
+
+    Parameters
+    ----------
+    y : array, shape (n,), dtype float
+        Observations on the original scale.
+    controls : ControlsLike, or None, optional
+        Fit configuration; ``family_set`` is what bounds a search.
+    var_type : {"c", "d", "zi"}, or None, optional
+        What the caller knows the variable to be.
+    support : tuple of float, or None, optional
+        Declared bounds as ``(lo, hi)``, either end ``None`` for unbounded.
+
+    Returns
+    -------
+    MarginLike
+        ``self``, so the call chains.
+    """
+    return self.fit(y, controls, var_type=var_type, support=support)
 
 
 MarginLike.__doc__ = (MarginLike.__doc__ or "") + _MARGIN_EXAMPLE

@@ -691,6 +691,14 @@ For any behavior change:
   needs, and `supports_covariates` / `supports_weights` what a consumer must
   read before handing over a matrix or weights. All are members.
 
+  The same test admits the fitting verbs. `fit` and `select` are what
+  `VinedistBase` calls on the margin and the copula it holds, so a contract
+  that omitted them left `_fit_margin` taking `margin: Any` -- erasing every
+  other member it reads in order to reach two. They raise by default, which
+  *is* the answer for a fixed margin or an immutable vine, and which is what
+  `_fit_margin` dispatches on: a class overriding neither verb is fixed,
+  whether the default came from the base or from the protocol.
+
   A member an implementation cannot serve gets a **default in the protocol
   body**, and that default is *the fallback the consumer used to apply* --
   `logpdf` is `safe_log(pdf)`, `var_type` is `"c"`, a capability flag is
@@ -935,12 +943,20 @@ and a short list of members a subclass owes. Know which level you are writing
 and
 most of the rest is determined.
 
-| Base | Protocol requires | Abstract — no evaluating without it | Reports its own absence — only fitting needs it | Names its parts as |
+| Base | Protocol requires (no default) | Abstract — no evaluating without it | Reports its own absence — only fitting needs it | Names its parts as |
 |---|---|---|---|---|
 | `MarginBase` | `pdf`, `cdf`, `icdf` | `pdf`, `cdf` | `fit` | — |
 | `BicopBase` | `pdf`, `hfunc1/2`, `hinv1/2`, `sample` | `_pdf_raw`, `_hfunc1_raw`, `_hfunc2_raw` | `fit`; `_flip_raw` and `_cdf_raw` to host the pair in *selection* or to declare it *discrete* | — |
 | `VinecopBase` | `pdf`, `cdf`, `rosenblatt`, `inverse_rosenblatt`, `sample`, `structure` | `get_pair_copula` | `set_pair_copulas` | `bicop_class` |
 | `VinedistBase` | the ten above plus `logpdf`, `loglik`, `margins`, `vinecop`, `copula_layout` | *(none)* | `_coerce_fit_data` | `vinecop_class`, `margin_class` |
+
+The first column is what an implementation must supply. Each of the three part
+protocols carries more than that, every further member with a **default**: the
+hosting capabilities (`cdf`, `flip`, `with_var_types`, `var_types`, the two
+`supports_*` flags), the derived readings (`logpdf`, `cdf_left`, `var_type`,
+`support`), and the estimator surface (`fit`, `select`, `controls_class`).
+Those are what a consumer here may ask; declining one is a raise naming the
+class, not an `AttributeError`.
 
 Three things in that table have a reason. Do not undo them:
 
@@ -2005,10 +2021,16 @@ Round-trip / parity properties to preserve when touching numerics:
   margin it also replaces a boolean: `controls_class is None` **is** "reads no
   controls", and carries the type besides, so `supports_controls` is gone.
 
-  It is a declaration, not a contract. It is read with `getattr` like every
-  other optional capability, and it is **not** on the protocols: those are the
-  evaluation surface, and `fit` / `select` / `from_data` are not on them
-  either. `ControlsLike` stays what it is — anything with `to_dict()` — so a
+  It *is* on the three part protocols, as a read-only property answering
+  `None`, alongside the `fit` and `select` whose configuration it names: a
+  consumer asks all three of a part it holds, so all three are contract. What
+  it is **not** is a promise about the type -- `Kde1d.fit` accepts a
+  `FitControlsKde1d` and nothing else, so a protocol declaring
+  `controls: ControlsLike` would put it outside its own contract, and the
+  parameter is `Any` there with `controls_class` naming the real type.
+  `from_data` stays off them: it is a constructor, so nothing reads it on an
+  instance, and a part class is named as a `ClassVar` rather than passed as
+  one. `ControlsLike` stays what it is -- anything with `to_dict()` -- so a
   consumer still reads the settings it owns and refuses what it cannot honor.
 - **`get_pair_copula` reads, `set_pair_copulas` writes, and only the first is
   abstract.** Reading is required to *evaluate*, which every subclass does;

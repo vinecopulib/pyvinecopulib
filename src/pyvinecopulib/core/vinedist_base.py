@@ -1210,7 +1210,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   @classmethod
   def _fit_margin(
     cls,
-    margin: Any,  # noqa: ANN401 - MarginLike names none of what is read
+    margin: MarginLike[ArrayT],
     y: ArrayT,
     controls: ControlsLike | None,
     *,
@@ -1235,10 +1235,8 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
 
     Parameters
     ----------
-    margin : object
-        The margin to estimate. Typed loosely because ``fit`` / ``select`` /
-        ``supports_weights`` / ``controls_class`` / ``supports_covariates``
-        are optional capabilities, which ``MarginLike`` does not name.
+    margin : MarginLike
+        The margin to estimate.
     y : array, shape (n,), dtype float
         The variable's observations, on the original scale.
     controls : ControlsLike, or None, optional
@@ -1275,9 +1273,17 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     # alone, since a margin that only chooses between *kinds* of model
     # overrides `select` and leaves `fit` raising. Whether the verb asked for
     # is one it has is the verb's own to report.
+    # Against both suppliers of the default: a margin may take it from
+    # `MarginBase` or from `MarginLike` itself.
+    inherited = (
+      MarginBase.fit,
+      MarginLike.fit,
+      MarginBase.select,
+      MarginLike.select,
+    )
     cls_of = type(margin)
-    if cls_of.fit is MarginBase.fit and cls_of.select is MarginBase.select:
-      return cast("MarginLike[ArrayT]", margin)
+    if cls_of.fit in inherited and cls_of.select in inherited:
+      return margin
     reject_weights(margin, controls)
     # A `family_set` is an instruction to search, so a margin that cannot act
     # on one -- or a `fit`, which estimates the family the margin already has
@@ -1288,7 +1294,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     # density reads controls (`FitControlsKde1d`, the kernel knobs) and still
     # has no family to choose, so *whether* it takes controls is the wrong
     # question and only the field answers it.
-    declared = getattr(margin, "controls_class", None)
+    declared = margin.controls_class
     searches = declared is not None and hasattr(declared, "family_set")
     if getattr(controls, "family_set", None) is not None and (
       verb == "fit" or not searches
@@ -1311,7 +1317,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       passed["var_type"] = var_type
     if support is not None:
       passed["support"] = support
-    if x is not None and getattr(margin, "supports_covariates", False):
+    if x is not None and margin.supports_covariates:
       passed["x"] = x
     try:
       getattr(margin, verb)(y, controls, **passed)
@@ -1348,7 +1354,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         stacklevel=2,
       )
       return substitute
-    return cast("MarginLike[ArrayT]", margin)
+    return margin
 
   @classmethod
   def _adopt_margin(
