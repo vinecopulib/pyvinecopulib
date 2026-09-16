@@ -440,6 +440,23 @@ class VineBase(BaseEstimator):
 
     if isinstance(X, pd.DataFrame):
       if reset:
+        # `_reset_fitted_schema` has already dropped a schema a previous fit
+        # derived, so anything left is the caller's own declaration -- and a
+        # frame declares its types itself. Honoring both would need the
+        # caller to have written one entry per *expanded* column, a width
+        # they cannot see before the fit runs; overwriting theirs instead
+        # drops a `"zi"` or a bound a dtype cannot express and models the
+        # column as continuous. Neither is something to do silently.
+        declared = getattr(self, "schema_", None)
+        if declared:
+          raise ValueError(
+            f"{type(self).__name__} was given both a DataFrame and a "
+            "pre-set `schema_`, and a DataFrame states its own variable "
+            "types. Declaring what a dtype cannot express -- a "
+            "zero-inflated column, or a bound -- means fitting on "
+            "`X.to_numpy()`, where `schema_` is the only declaration there "
+            "is; otherwise clear `schema_` and let the frame speak."
+          )
         self.feature_names_in_ = np.asarray(X.columns, dtype=object)
         self._dtypes = X.dtypes.to_dict()
         self._categories = {

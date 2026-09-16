@@ -328,6 +328,31 @@ def test_a_caller_preset_schema_survives_fit() -> None:
   assert est.schema_["var_types"] == ["d", "c"]
 
 
+def test_a_preset_schema_and_a_dataframe_is_refused_not_discarded() -> None:
+  """A frame states its own types, so the two declarations are a conflict.
+
+  The frame's won silently, which drops exactly what a caller pre-sets
+  `schema_` to say: a `"zi"` column, or a bound, neither of which a pandas
+  dtype can express. The column was then modeled as continuous.
+  """
+  rng = np.random.RandomState(0)
+  frame = pd.DataFrame(
+    {
+      "zeros": np.where(rng.random(80) < 0.4, 0.0, rng.gamma(2.0, size=80)),
+      "plain": rng.normal(size=80),
+    }
+  )
+  est = VineDensity()
+  est.schema_ = {"var_types": ["zi", "c"], "bounds": [None] * 2}
+  with pytest.raises(ValueError, match="states its own variable types"):
+    est.fit(frame)
+  # And the route the message names does honor it.
+  clean = VineDensity()
+  clean.schema_ = {"var_types": ["zi", "c"], "bounds": [None] * 2}
+  clean.fit(frame.to_numpy())
+  assert clean.schema_["var_types"] == ["zi", "c"]
+
+
 def test_dataframe_after_an_array_fit_is_not_reported_unfitted() -> None:
   """A fitted estimator must never raise `NotFittedError`."""
   rng = np.random.RandomState(0)
