@@ -118,6 +118,35 @@ if(NOT "$ENV{Boost_INCLUDE_DIR}" STREQUAL "")
   set(Boost_INCLUDE_DIRS "$ENV{Boost_INCLUDE_DIR}")
 endif()
 
+# Boost here is header-only -- Graph, Math and Random, with BOOST_ALL_NO_LIB set
+# -- so a headers directory is the whole requirement, which is how every wheel
+# is built. But findDependencies.cmake reaches Boost in config mode only
+# (CMP0167 removed FindBoost), so a package shipping the headers without
+# BoostConfig.cmake -- conda-forge's libboost-headers -- fails there naming
+# Boost while the headers are in fact present. Fall back to the path, which is
+# the route the environment variable above already takes. Leaving
+# Boost_INCLUDE_DIRS unset where nothing suitable is found is what keeps the
+# clear configure-time failure for a Boost that is missing or too old.
+if(NOT DEFINED Boost_INCLUDE_DIRS)
+  find_package(Boost 1.75 QUIET CONFIG)
+  if(NOT Boost_FOUND)
+    find_path(PYVINECOPULIB_BOOST_HEADER_DIR boost/version.hpp)
+    # EXISTS rather than a truth test: the variable is a cache entry a caller
+    # may set by hand, and file(STRINGS) on a missing file is a fatal error.
+    if(EXISTS "${PYVINECOPULIB_BOOST_HEADER_DIR}/boost/version.hpp")
+      # BOOST_VERSION is major * 100000 + minor * 100 + patch; 1.75 is 107500.
+      file(STRINGS "${PYVINECOPULIB_BOOST_HEADER_DIR}/boost/version.hpp"
+           _boost_version_line REGEX "^#define BOOST_VERSION ")
+      string(REGEX MATCH "[0-9]+" _boost_version "${_boost_version_line}")
+      if(_boost_version AND NOT _boost_version LESS 107500)
+        set(Boost_INCLUDE_DIRS "${PYVINECOPULIB_BOOST_HEADER_DIR}")
+        message(STATUS "Found Boost headers without a config package: "
+                       "${Boost_INCLUDE_DIRS}")
+      endif()
+    endif()
+  endif()
+endif()
+
 include(lib/vinecopulib/cmake/findDependencies.cmake REQUIRED)
 
 find_package(

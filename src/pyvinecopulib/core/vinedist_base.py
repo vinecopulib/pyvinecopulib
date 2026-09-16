@@ -1249,7 +1249,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     ----------
     margin : object
         The margin to estimate. Typed loosely because ``fit`` / ``select`` /
-        ``supports_weights`` / ``supports_controls`` / ``supports_covariates``
+        ``supports_weights`` / ``controls_class`` / ``supports_covariates``
         are optional capabilities, which ``MarginLike`` does not name.
     y : array, shape (n,), dtype float
         The variable's observations, on the original scale.
@@ -1297,13 +1297,19 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         f"{type(margin).__name__} cannot use observation weights; name a "
         "`margin_class` that accepts them, or drop weights="
       )
-    # A `family_set` is an instruction to search, so a margin that reads no
-    # controls -- or a `fit`, which estimates the family the margin already
-    # has -- refuses it rather than fitting one family and looking like it
-    # chose. A declared var_type or support is a default, so neither refuses
-    # one.
+    # A `family_set` is an instruction to search, so a margin that cannot act
+    # on one -- or a `fit`, which estimates the family the margin already has
+    # -- refuses it rather than fitting one family and looking like it chose.
+    # A declared var_type or support is a default, so neither refuses one.
+    #
+    # "Can act on one" is read off the margin's own `controls_class`: a kernel
+    # density reads controls (`FitControlsKde1d`, the kernel knobs) and still
+    # has no family to choose, so *whether* it takes controls is the wrong
+    # question and only the field answers it.
+    declared = getattr(margin, "controls_class", None)
+    searches = declared is not None and hasattr(declared, "family_set")
     if getattr(controls, "family_set", None) is not None and (
-      verb == "fit" or not getattr(margin, "supports_controls", False)
+      verb == "fit" or not searches
     ):
       cannot = (
         "`fit` estimates the family it already has"

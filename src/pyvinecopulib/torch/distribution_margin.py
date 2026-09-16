@@ -30,7 +30,16 @@ TorchVinedist : The joint distribution these margins go into.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Iterable, Mapping, Optional, Union, cast
+from typing import (
+  Any,
+  Callable,
+  ClassVar,
+  Iterable,
+  Mapping,
+  Optional,
+  Union,
+  cast,
+)
 
 import torch
 from torch import Tensor
@@ -525,11 +534,12 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     """
     return self._parameter_names
 
-  #: This margin carries its parameters rather than estimating them -- it has
-  #: no `fit` -- so there is nothing for controls to configure. Declaring it is
-  #: what makes a `family_set` a refusal rather than a silently ignored
-  #: request, the same reason `TorchKde1d` declares it.
-  supports_controls: bool = False
+  # This margin carries its parameters rather than estimating them -- it has
+  # no `fit` -- so there is nothing for controls to configure. Declaring that
+  # is what makes a `family_set` a refusal rather than a silently ignored
+  # request, the same reason `TorchKde1d` declares it. A plain comment, not a
+  # `#:` one: autosummary cannot page an attribute whose value is a class.
+  controls_class: ClassVar[Optional[type]] = None
 
   @property
   def n_parameters(self) -> float:

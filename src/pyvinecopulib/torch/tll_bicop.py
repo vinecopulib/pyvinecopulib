@@ -27,7 +27,7 @@ FitControlsTorchBicop : Fit-time controls.
 
 from __future__ import annotations
 
-from typing import Any, Optional, Union, cast
+from typing import Any, ClassVar, Optional, Union, cast
 
 import numpy as np
 import torch
@@ -112,7 +112,11 @@ def _torch_bicop_controls(
       If ``controls`` is some other kind of controls object.
   """
   if controls is None:
-    return FitControlsTorchBicop()
+    # `cast` for the same reason `vinecop_class` is cast at its call sites: the
+    # declaration is `Optional[type]` on the base, and this class sets it.
+    return cast(
+      "FitControlsTorchBicop", cast("Any", TorchTllBicop.controls_class)()
+    )
   if not isinstance(controls, FitControlsTorchBicop):
     raise TypeError(
       f"TorchTllBicop needs FitControlsTorchBicop; got "
@@ -199,6 +203,10 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
   pyvinecopulib.core.BicopBase : The contract this class completes.
   FitControlsTorchBicop : Fit-time controls.
   """
+
+  # The controls the TLL fit reads; `_torch_bicop_controls` resolves a
+  # `None` through it rather than naming the class a second time.
+  controls_class: ClassVar[Optional[type]] = FitControlsTorchBicop
 
   is_indep: bool
   # Class-level hints so the prefix tables registered in __init__ are

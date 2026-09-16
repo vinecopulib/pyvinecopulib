@@ -272,7 +272,14 @@ def render_class_stub(
       print(f"skip {cls.__name__}.{attr_name}: {exc}", file=sys.stderr)
       continue
 
-    if callable(attr) and hasattr(attr, "__doc__"):
+    if isinstance(attr, type):
+      # A class bound as a class attribute -- a part declaration such as
+      # `controls_class`. Before the callable branch, since a class is callable
+      # and would otherwise be rendered as a method. `type[X]` rather than the
+      # bare name so `Cls.controls_class()` type-checks as a constructor call;
+      # the name resolves unqualified because the bound classes share one stub.
+      lines.append(f"{inner_indent}{attr_name}: type[{attr.__name__}] = ...")
+    elif callable(attr) and hasattr(attr, "__doc__"):
       doc = inspect.getdoc(attr) or ""
       decorator = infer_method_decorator(attr_name, doc)
       if decorator:

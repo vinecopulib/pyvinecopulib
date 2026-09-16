@@ -10,7 +10,7 @@ have to name the concrete copula.
 from __future__ import annotations
 
 import copy
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar, Optional, cast
 
 import numpy as np
 
@@ -163,9 +163,12 @@ class Vinedist(VinedistBase[np.ndarray]):
     mutate one the caller still holds.
     """
     del u
-    from ..pyvinecopulib_ext import FitControlsVinecop
-
-    resolved: Any = FitControlsVinecop() if controls is None else controls
+    # The default is the vine's own declaration, not a class named again here.
+    resolved: Any = (
+      cast("Any", cls.vinecop_class).controls_class()
+      if controls is None
+      else controls
+    )
     if weights is not None:
       resolved = copy.deepcopy(resolved)
       resolved.weights = np.asarray(weights, dtype=float)

@@ -28,7 +28,7 @@ from __future__ import annotations
 import copy
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
-from typing import Any, Optional, Self, TypeVar, cast
+from typing import Any, ClassVar, Optional, Self, TypeVar, cast
 
 from .protocols import Namespace, array_namespace
 
@@ -290,6 +290,13 @@ class BicopBase(
   pyvinecopulib.core.BicopLike : The contract this implements.
   pyvinecopulib.torch.TorchTllBicop : A concrete (grid / TLL) subclass.
   """
+
+  # The controls class this pair's fitter reads, or `None` where it reads none.
+  # The one place that answers what `controls=None` means here, so a vine and
+  # the lanes above read it instead of each naming a class of their own. A
+  # plain comment, not a `#:` one: autosummary cannot page an attribute whose
+  # value is a class.
+  controls_class: ClassVar[Optional[type]] = None
 
   # --- variable types --------------------------------------------------- #
   #: Mirrors ``AbstractBicop``'s in-class ``var_types_{"c", "c"}``: a class

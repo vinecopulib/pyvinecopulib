@@ -339,6 +339,10 @@ class VinecopBase(
   # attribute whose value is a class, so a subclass that sets this would leave
   # the inherited entry dangling and fail the nitpicky docs build.
   bicop_class: ClassVar[Optional[type]] = None
+  # The controls class this vine's fitter reads, or `None` where it reads none.
+  # The one place that answers what `controls=None` means here, so `from_data`
+  # and the lanes above read it instead of each naming a class of their own.
+  controls_class: ClassVar[Optional[type]] = None
   _context: ConditioningContext[ArrayT]
   _cond_pos_cache: dict[tuple[int, int], tuple[int, ...]]
   #: Slot -> the 1-based labels of its conditioning set in the order the pair

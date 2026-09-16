@@ -41,8 +41,8 @@ from .vinecop import TorchVinecop
 __all__ = ["TorchVinedist"]
 
 
-def _lift(margin: object, vinecop: object) -> object:
-  """A fitted ``Kde1d`` as a ``TorchKde1d`` on the copula's placement.
+def _lift(margin: object, placement: Optional[Tensor]) -> object:
+  """A fitted ``Kde1d`` as a ``TorchKde1d`` on a given placement.
 
   The one margin class this lane can convert rather than refuse: it is core's
   own, and ``from_kde1d`` is an exact transfer of the same grid, so accepting
@@ -55,8 +55,11 @@ def _lift(margin: object, vinecop: object) -> object:
   ----------
   margin : object
       One margin, of any class.
-  vinecop : object
-      The copula it is being bound to, read for its device and dtype.
+  placement : Tensor, or None, optional
+      A tensor whose device and dtype the lift adopts, or ``None`` to leave
+      ``TorchKde1d`` its own defaults. Passed rather than inferred because the
+      two callers hold different things: one a copula, whose placement is
+      ``reference_tensor``'s to find, and one the column itself.
 
   Returns
   -------
@@ -65,7 +68,6 @@ def _lift(margin: object, vinecop: object) -> object:
   """
   if not isinstance(margin, Kde1d):
     return margin
-  placement = reference_tensor(vinecop)
   if placement is None:
     return TorchKde1d.from_kde1d(margin)
   return TorchKde1d.from_kde1d(
@@ -227,11 +229,7 @@ class TorchVinedist(
     TypeError
         If the margin is no ``nn.Module``, so this lane cannot hold it.
     """
-    lifted: object = margin
-    if isinstance(margin, Kde1d):
-      lifted = TorchKde1d.from_kde1d(
-        margin, device=reference.device, dtype=reference.dtype
-      )
+    lifted = _lift(margin, reference)
     _check_margin(lifted, "margin")
     return cast("MarginLike[Tensor]", lifted)
 
@@ -242,12 +240,13 @@ class TorchVinedist(
   ) -> None:
     """Lift what can be lifted, validate the rest, then install as children."""
     _check_copula(vinecop)
+    placement = reference_tensor(vinecop)
     if isinstance(margins, (list, tuple)):
-      margins = [_lift(m, vinecop) for m in margins]
+      margins = [_lift(m, placement) for m in margins]
       for j, margin in enumerate(margins):
         _check_margin(margin, f"margins[{j}]")
     else:
-      margins = _lift(margins, vinecop)
+      margins = _lift(margins, placement)
       _check_margin(margins, "margins")
 
     # `object` on the way in so a caller who is not type-checking still gets
@@ -292,6 +291,32 @@ class TorchVinedist(
   # `VinedistBase` declares them as taking any `ControlsLike`, and narrowing a
   # parameter is what an override may not do.
   @classmethod
+  def _resolved_controls(
+    cls,
+    controls: Optional[ControlsLike],
+  ) -> Any:  # noqa: ANN401 - `device` / `dtype` are not on ControlsLike
+    """``controls``, or this lane's own default where the caller named none.
+
+    The default is read off ``vinecop_class.controls_class`` rather than named
+    here, so the three hooks below and the vine itself cannot drift apart on
+    what ``controls=None`` means.
+
+    Parameters
+    ----------
+    controls : ControlsLike, or None, optional
+        What the caller passed.
+
+    Returns
+    -------
+    ControlsLike
+        Typed ``Any``: the hooks read ``device`` and ``dtype``, which
+        ``ControlsLike`` does not name.
+    """
+    if controls is not None:
+      return controls
+    return cast("Any", cls.vinecop_class).controls_class()
+
+  @classmethod
   def _coerce_fit_data(
     cls,
     # Anything `torch.as_tensor` accepts, which is the hook's whole job: a
@@ -309,7 +334,7 @@ class TorchVinedist(
     would likewise have given the margins an integer grid.
     """
     ya = torch.as_tensor(y)
-    resolved: Any = controls or FitControlsTorchVinecop()
+    resolved = cls._resolved_controls(controls)
     device = resolved.device if resolved.device is not None else ya.device
     if resolved.dtype is not None:
       dtype = resolved.dtype
@@ -330,7 +355,7 @@ class TorchVinedist(
     margin_controls: Optional[Sequence[Optional[ControlsLike]]] = None,
   ) -> Sequence[TorchKde1d]:
     """One :class:`TorchKde1d` per variable, on the resolved placement."""
-    resolved: Any = controls or FitControlsTorchVinecop()
+    resolved = cls._resolved_controls(controls)
     # `TorchKde1d` fixes its own default dtype, so name one only when the
     # controls actually carry it.
     placement: dict[str, Any] = {"device": resolved.device}
@@ -352,7 +377,7 @@ class TorchVinedist(
     so the estimators refuse a weighted request before reaching this hook.
     """
     del weights
-    resolved: Any = controls or FitControlsTorchVinecop()
+    resolved = cls._resolved_controls(controls)
     return cast(
       "FitControlsTorchVinecop",
       dataclasses.replace(resolved, device=u.device, dtype=u.dtype),

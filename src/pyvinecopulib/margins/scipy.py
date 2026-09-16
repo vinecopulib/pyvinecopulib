@@ -18,6 +18,7 @@ from typing import (
   Self,
   Sequence,
   TypeVar,
+  cast,
 )
 
 import numpy as np
@@ -31,7 +32,6 @@ from ..core._validation import (
   validate_declaration,
 )
 from ..core.margin_base import criteria as _criteria
-from ..core.margin_controls import FitControlsMargin
 
 __all__ = ["SciPyMargin"]
 
@@ -706,7 +706,13 @@ class SciPyMargin(MarginBase[np.ndarray]):
         "do not accept them. Pass margins='kde' for a weighted fit, or drop "
         "weights="
       )
-    settings = controls if controls is not None else FitControlsMargin()
+    # The default is this class's own declaration, so a subclass that reads
+    # another controls type is followed rather than overridden here.
+    settings = (
+      controls
+      if controls is not None
+      else cast("Any", type(self).controls_class)()
+    )
     criterion = getattr(settings, "selection_criterion", "aic")
     family_set = getattr(settings, "family_set", None)
     var_type, support = validate_declaration(var_type, support)

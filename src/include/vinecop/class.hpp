@@ -810,4 +810,10 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
             nb::cast<std::vector<std::vector<Bicop>>>(state["pair_copulas"]),
             nb::cast<std::vector<std::string>>(state["var_types"]));
       });
+  // The controls class this estimator reads, declared where `bicop_class` /
+  // `vinecop_class` / `margin_class` declare the parts: it is the one place
+  // that answers "what does `controls=None` mean here", so the Python layers
+  // read it instead of each naming FitControlsVinecop again.
+  module.attr("Vinecop").attr("controls_class") =
+      module.attr("FitControlsVinecop");
 }

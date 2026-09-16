@@ -151,6 +151,18 @@ nitpick_ignore_regex = [
     r"py:class",
     r"pyvinecopulib\.core\.protocols\.(ArrayT|Array|BoolArray|Namespace|FInfo)",
   ),
+  # `controls_class` names the fit configuration a class reads, so wherever it
+  # is set its value really is a class -- on `MarginBase`, on the torch parts,
+  # and on the bound `Bicop` / `Vinecop` / `Kde1d`. numpydoc lists every public
+  # attribute in the class-member autosummary, and autosummary generates no
+  # page for one whose value is a class, so the entry it writes points at
+  # nothing. The declarations beside it (`bicop_class`, `vinecop_class`,
+  # `margin_class`) hold `None` on the bases and page normally; a Python
+  # subclass keeps its own out of the rendered API with a plain comment rather
+  # than a `#:` one, which a compiled class cannot carry. Retires if
+  # autosummary learns to page a class-valued attribute. The declaration is
+  # documented in `AGENTS.md` under "Declare the parts, inherit the fitting".
+  (r"py:obj", r"pyvinecopulib\.[\w.]+\.controls_class"),
 ]
 
 

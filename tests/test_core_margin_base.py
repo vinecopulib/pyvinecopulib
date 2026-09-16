@@ -11,7 +11,7 @@ contract was named after its surface so that it needs no wrapper.
 from __future__ import annotations
 
 import math
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import numpy as np
 import pytest
@@ -662,3 +662,62 @@ def test_a_conditional_margin_fitted_without_covariates_refuses() -> None:
   """A conditional margin says so rather than fitting the unconditional one."""
   with pytest.raises(ValueError, match="conditional"):
     _EstimatedShift().fit(np.zeros(3))
+
+
+def test_every_fittable_class_declares_the_controls_it_reads() -> None:
+  """`controls_class` answers what `controls=None` means, once per class.
+
+  Read off the class, so a consumer builds a default without naming a
+  `FitControls*` of its own -- and `None` says the class reads no controls at
+  all, which is what a `family_set` refusal dispatches on now that there is no
+  separate boolean to fall out of step with it.
+  """
+  import pyvinecopulib as pv
+  from pyvinecopulib.core import FitControlsMargin, MarginBase
+
+  # The bound classes carry it too, set from the binding.
+  assert pv.Bicop.controls_class is pv.FitControlsBicop
+  assert pv.Vinecop.controls_class is pv.FitControlsVinecop
+  assert pv.core.Kde1d.controls_class is pv.core.FitControlsKde1d
+  # A margin that reads controls names them; the base default covers the
+  # ecosystem adapters, which all read a `FitControlsMargin`.
+  assert MarginBase.controls_class is FitControlsMargin
+  # And each is constructible with no arguments, which is what makes it usable
+  # as "the default this class fits with".
+  for cls in (pv.Bicop, pv.Vinecop, pv.core.Kde1d, MarginBase):
+    declared: Any = cls.controls_class
+    assert isinstance(declared(), declared)
+
+
+def test_reading_controls_and_searching_a_family_are_different_questions() -> (
+  None
+):
+  """`Kde1d` takes controls and still has no family to choose.
+
+  The two were one boolean once, which made them impossible to tell apart:
+  a kernel density was declared to read no controls so that a `family_set`
+  would be refused, and `FitControlsKde1d` then had no way in. What the
+  refusal actually asks is whether the margin's controls carry a `family_set`
+  at all, which its declared class answers.
+  """
+  import pyvinecopulib as pv
+  from pyvinecopulib.core import FitControlsMargin
+
+  # Reads controls -- the kernel knobs -- but they carry no family set.
+  assert pv.core.Kde1d.controls_class is pv.core.FitControlsKde1d
+  assert not hasattr(pv.core.FitControlsKde1d, "family_set")
+  # The parametric margins read controls that do.
+  assert hasattr(FitControlsMargin, "family_set")
+
+  rng = np.random.default_rng(0)
+  y = np.column_stack([rng.lognormal(size=200), rng.normal(size=200)])
+  # So a `family_set` aimed at a kernel density is still refused ...
+  with pytest.raises(TypeError, match="cannot select a family"):
+    pv.Vinedist.from_data(
+      y, margin_controls=FitControlsMargin(family_set=["gamma"])
+    )
+  # ... while the kernel knobs reach it, which is what they are for.
+  fitted = pv.Vinedist.from_data(
+    y, margin_controls=pv.core.FitControlsKde1d(bandwidth=0.5)
+  )
+  assert float(cast("Any", fitted.margins[0]).bandwidth) == pytest.approx(0.5)

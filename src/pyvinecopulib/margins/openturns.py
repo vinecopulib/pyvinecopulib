@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import copy
 import warnings
-from typing import Any, Optional, Self, Sequence, Union
+from typing import Any, Optional, Self, Sequence, Union, cast
 
 import numpy as np
 
@@ -31,7 +31,7 @@ from ..core._validation import (
   usable_observations,
   validate_declaration,
 )
-from ..core.margin_controls import CRITERIA, FitControlsMargin
+from ..core.margin_controls import CRITERIA
 
 __all__ = ["OpenTURNSMargin"]
 
@@ -736,7 +736,13 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
         "OpenTURNSMargin cannot use observation weights: an OpenTURNS Sample "
         "carries none. Pass margins='kde' for a weighted fit, or drop weights="
       )
-    settings = controls if controls is not None else FitControlsMargin()
+    # The default is this class's own declaration, so a subclass that reads
+    # another controls type is followed rather than overridden here.
+    settings = (
+      controls
+      if controls is not None
+      else cast("Any", type(self).controls_class)()
+    )
     criterion = getattr(settings, "selection_criterion", "aic")
     family_set = getattr(settings, "family_set", None)
     var_type, support = validate_declaration(var_type, support)

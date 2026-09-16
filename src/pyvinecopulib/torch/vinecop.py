@@ -192,6 +192,10 @@ class TorchVinecop(
   # The pair copula this vine fits, so `from_data` needs no callback and
   # selection can check `flip` before reading the data.
   bicop_class: ClassVar[Optional[type]] = TorchTllBicop
+  # And the controls both halves read -- a vine's controls are pair controls,
+  # `FitControlsTorchVinecop` deriving from `FitControlsTorchBicop` as their
+  # core counterparts do.
+  controls_class: ClassVar[Optional[type]] = FitControlsTorchVinecop
 
   def __init__(
     self,
@@ -486,7 +490,7 @@ class TorchVinecop(
     reject_covariates(cls, x)
     resolved: Any = controls
     if resolved is None:
-      resolved = FitControlsTorchVinecop()
+      resolved = cast("Any", cls.controls_class)()
 
     eff_dtype = resolved.dtype if resolved.dtype is not None else torch.float64
     eff_device = resolved.device

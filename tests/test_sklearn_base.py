@@ -2,6 +2,8 @@
 Tests for VineBase functionality.
 """
 
+from typing import Any
+
 import numpy as np
 import pytest
 
@@ -375,3 +377,49 @@ def test_array_like_input_is_accepted() -> None:
   assert est.score_samples(rows[:3]).shape == (3,)
   with pytest.raises(ValueError, match="array-like of floats"):
     VineDensity().fit([["a", "b"], ["c", "d"]])
+
+
+def test_the_default_controls_are_resolvable_before_fitting() -> None:
+  """Which controls an estimator would fit with depends only on `__init__`.
+
+  It is answered from `distribution`, so it holds on an estimator nothing has
+  fitted; reading the fitted `distribution_class_` made it answerable only
+  *after* a fit, which is the wrong way round for a question about defaults --
+  and raised `AttributeError` for anyone who asked earlier.
+  """
+  from sklearn.utils.validation import check_is_fitted
+
+  import pyvinecopulib as pv
+
+  for est in (VineDensity(), VineRegressor(quantiles=[0.5])):
+    controls: Any = est._default_copula_controls()
+    assert controls is not None
+    assert list(controls.family_set) == [pv.families.tll]
+    assert controls.trunc_lvl == 20
+    # Asking must not leave the estimator looking fitted.
+    with pytest.raises(Exception, match="not fitted"):
+      check_is_fitted(est)
+
+
+def test_the_default_controls_come_from_the_vine_class_declaration() -> None:
+  """The default is built from `vinecop_class.controls_class`, not a name here.
+
+  A lane whose controls have no family to choose gets `None` instead, and the
+  vine resolves its own default -- which is what retired the `is pv.Vinecop`
+  identity check this used to dispatch on.
+  """
+  torch = pytest.importorskip("torch")
+  del torch
+  from pyvinecopulib.core import Vinedist
+  from pyvinecopulib.torch import TorchVinedist
+
+  import pyvinecopulib as pv
+
+  vinecop_class: Any = Vinedist.vinecop_class
+  assert vinecop_class.controls_class is pv.FitControlsVinecop
+  assert VineDensity()._default_copula_controls() is not None
+  # The torch vine fits TLL grids and nothing else, so there is no family set
+  # to narrow and no density default to express.
+  assert (
+    VineDensity(distribution=TorchVinedist)._default_copula_controls() is None
+  )

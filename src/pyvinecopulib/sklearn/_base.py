@@ -2,7 +2,7 @@ import copy
 import os
 import warnings
 from numbers import Integral
-from typing import Any, Optional, Sequence, Union, overload
+from typing import Any, Optional, Sequence, Union, cast, overload
 
 import numpy as np
 import pandas as pd
@@ -937,20 +937,34 @@ class VineBase(BaseEstimator):
     """The copula controls when the caller named none.
 
     Nonparametric (TLL) pair copulas truncated at depth 20 --- a density
-    estimator's default, rather than the copula library's parametric search.
-    A lane whose controls this cannot describe gets ``None``, which lets the
-    vine class resolve its own default.
+    estimator's default, rather than the copula library's parametric search,
+    which is why this is the estimator's to decide and not the vine class's.
+    A lane whose controls cannot express it gets ``None``, which lets the vine
+    resolve its own default instead.
+
+    Depends only on the constructor arguments, so it is answerable before
+    ``fit``; reading ``distribution_class_`` here made it answerable only
+    after one.
 
     Returns
     -------
     ControlsLike, or None
         The controls to fit with.
     """
-    if self.distribution_class_.vinecop_class is pv.Vinecop:
-      return pv.FitControlsVinecop(
-        family_set=[pv.families.tll], trunc_lvl=20, num_threads=1
-      )
-    return None
+    controls_class = getattr(
+      (self.distribution or Vinedist).vinecop_class, "controls_class", None
+    )
+    if controls_class is None:
+      return None
+    settings: Any = controls_class()
+    if not hasattr(settings, "family_set"):
+      # A lane whose pairs have no family to choose -- the torch grid fitter --
+      # cannot be told to be nonparametric, because it is nothing else.
+      return None
+    settings.family_set = [pv.families.tll]
+    settings.trunc_lvl = 20
+    settings.num_threads = 1
+    return cast("ControlsLike", settings)
 
   @property
   def _num_threads(self) -> int:

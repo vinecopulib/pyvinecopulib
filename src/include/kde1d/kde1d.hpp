@@ -823,4 +823,8 @@ inline void init_kde1d(nb::module_& module) {
   // Declared on the class, matching `MarginBase.supports_weights`, so the
   // margin layer's capability read works off the class or an instance.
   cls.attr("supports_weights") = true;
+  // The controls class this margin reads, declared where the Python margins
+  // declare theirs: the one place that answers "what does `controls=None` mean
+  // here", and what the margin layer reads instead of a separate boolean.
+  cls.attr("controls_class") = module.attr("FitControlsKde1d");
 }

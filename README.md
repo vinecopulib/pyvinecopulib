@@ -255,7 +255,7 @@ The main build time prerequisites are:
 
 When installing via `pip install .` (the default), all of these are pulled into an isolated build environment automatically via `[build-system] requires` in `pyproject.toml`; you don't need to install them yourself.
 
-To install from source, `Eigen` and `Boost` also need to be available, and CMake will try to find suitable versions automatically. Both are found in config mode only -- `FindBoost` was removed in CMake 3.30 -- so if the configure step cannot find one, either put its prefix on `CMAKE_PREFIX_PATH` or point the environment variables below at the headers directly.
+To install from source, `Eigen` and `Boost` also need to be available, and CMake will try to find suitable versions automatically. Both are looked for in config mode -- `FindBoost` was removed in CMake 3.30 -- so if the configure step cannot find one, either put its prefix on `CMAKE_PREFIX_PATH` or point the environment variables below at the headers directly. Boost has one extra fallback, because all this package needs of it is headers: where no `BoostConfig.cmake` is found, a plain search for `boost/version.hpp` is tried before giving up, so a headers-only package such as conda-forge's `libboost-headers` works.
 
 The recommended way to install `pyvinecopulib` from source is to use `conda`/`mamba` for the native build prerequisites and [`uv`](https://docs.astral.sh/uv/) for the Python side:
 

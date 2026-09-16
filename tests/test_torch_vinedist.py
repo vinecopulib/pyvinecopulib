@@ -376,7 +376,7 @@ def test_from_data_refuses_a_family_set_it_cannot_search(
   search, which is what turns the request into an error -- introspection cannot
   answer it, since the fit accepts a `controls` argument either way.
   """
-  assert not TorchKde1d.supports_controls
+  assert TorchKde1d.controls_class is None
   with pytest.raises(TypeError, match="cannot select a family"):
     TorchVinedist.from_data(
       torch.as_tensor(data, dtype=_F64),

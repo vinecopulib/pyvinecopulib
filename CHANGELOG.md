@@ -66,7 +66,7 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 #### The array-agnostic extension layer
 
 - Give the four canonical bases one fitting surface: `fit` returns `self`, `from_data` constructs, and `BicopBase` / `VinecopBase` add `select` where there is a family or a structure to choose (#326).
-- Declare the parts instead of hooking them: `VinecopBase.bicop_class` names the pair copula a vine fits, and `VinedistBase.vinecop_class` / `margin_class` its two halves, so `from_data` needs no callback -- a part class is itself a fitter (#326).
+- Declare the parts instead of hooking them: `VinecopBase.bicop_class` names the pair copula a vine fits, and `VinedistBase.vinecop_class` / `margin_class` its two halves, so `from_data` needs no callback -- a part class is itself a fitter. `controls_class` names the fit configuration each reads, so what `controls=None` means is answered once per class rather than at every site that had to construct one (#326, #339).
     - naming the pair class also lets `select` refuse one without `flip` before it reads the data, instead of after fitting an edge
 - Derive `FitControlsVinecop` from `FitControlsBicop` and `FitControlsTorchVinecop` from `FitControlsTorchBicop`, so one controls object configures both halves of a vine fit: a vine reads the settings it owns and the rest reach its pair copulas unchanged, `isinstance` included (#251, #326).
 - Weight the array-agnostic tree criterion, so `VinecopBase` selection honors `controls.weights` and reproduces `Vinecop.select` exactly (#326).
@@ -224,9 +224,10 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
   build targets the plain baseline and is never refused (#320).
 - Ship 10 wheels rather than 16: a cp311 wheel plus a cp312 ABI3 wheel for manylinux, musllinux, macOS x86-64, macOS arm64 and Windows, with macOS x86-64 returning on `macos-15-intel` (#220, #292).
 - Require CMake 3.20 and a C++17 compiler for a source build, following upstream.
-  Boost is found in config mode only, `FindBoost` having been removed in CMake
-  3.30; point `Boost_INCLUDE_DIR` at the headers if the configure step cannot
-  find it (#250, #336, [vinecopulib#711](https://github.com/vinecopulib/vinecopulib/pull/711), [vinecopulib#774](https://github.com/vinecopulib/vinecopulib/pull/774)).
+  Boost is looked for in config mode, `FindBoost` having been removed in CMake
+  3.30, and then by a plain search for its headers -- which is all this package
+  needs of it -- so an install with no `BoostConfig.cmake` works; point
+  `Boost_INCLUDE_DIR` at the headers to skip both (#250, #336, #339, [vinecopulib#711](https://github.com/vinecopulib/vinecopulib/pull/711), [vinecopulib#774](https://github.com/vinecopulib/vinecopulib/pull/774)).
 - Build the source distribution from an explicit allowlist, so a dirty worktree
   cannot leak build trees, caches or untracked notes into it (#320).
 - Require, before the tag-triggered PyPI upload runs, that the tagged commit is an ancestor of `main`, that the documentation build passes, and that the version in `pyproject.toml`, `CHANGELOG.md`, `CITATION.cff` and `.zenodo.json` matches the tag (#245, #253, #267, #320).

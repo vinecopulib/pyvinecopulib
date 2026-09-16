@@ -23,7 +23,7 @@ inherits precise return types.
 from __future__ import annotations
 
 from abc import ABC
-from typing import Any, Optional, Self, Union, cast
+from typing import Any, ClassVar, Optional, Self, Union, cast
 
 import numpy as _np
 from .protocols import array_namespace
@@ -38,6 +38,7 @@ from ._margin_plot import (
 from ._placement import PlacementMixin
 from ._rootfind import solve_increasing
 from ._validation import validate_weights
+from .margin_controls import FitControlsMargin
 from .protocols import _MARGIN_EXAMPLE, ArrayT, ControlsLike, MarginLike
 
 __all__ = ["MarginBase"]
@@ -252,7 +253,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
   consumer reads with ``getattr``, because each member added to the contract
   is one an object from another ecosystem must happen to have. Hence the
   declarations rather than inferences: :attr:`supports_weights`,
-  :attr:`supports_controls` and
+  ``controls_class`` and
   :attr:`supports_covariates`.
 
   See Also
@@ -317,12 +318,14 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     """
     return True
 
-  #: Whether :meth:`fit` and :meth:`select` take a ``controls`` argument.
-  #: ``True`` here, since both do. A margin whose estimator is configured
-  #: entirely at construction sets it ``False``, so a consumer keeps controls
-  #: out of a call that has no room for them -- and can say so when what they
-  #: carry is an instruction to search rather than a default.
-  supports_controls: bool = True
+  # The controls class this margin's estimator reads, or `None` where it reads
+  # none -- a margin configured entirely at construction, whose caller must
+  # then keep controls out of a call that has no room for them, and be told so
+  # when what they carry is an instruction to search rather than a default.
+  # Declared where `bicop_class` / `vinecop_class` / `margin_class` declare the
+  # parts, and a plain comment for the same reason: autosummary cannot generate
+  # a page for an attribute whose value is a class.
+  controls_class: ClassVar[Optional[type]] = FitControlsMargin
 
   #: The variable type a caller declared through ``var_type``, with
   #: ``"zi"`` reduced to ``"d"`` -- the partition a family registry offers. A
@@ -407,7 +410,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         Observations on the original scale.
     controls : ControlsLike, or None, optional
         Fit configuration, in whatever form the subclass accepts; a margin
-        that takes none declares :attr:`supports_controls` ``False``.
+        that takes none declares ``controls_class`` ``None``.
     var_type : {"c", "d", "zi"}, or None, optional
         What the caller knows the variable to be, or ``None`` to leave it
         to the margin. A declaration rather than fit configuration, which

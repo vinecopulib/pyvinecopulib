@@ -224,7 +224,7 @@ def test_it_satisfies_the_margin_contract() -> None:
   assert isinstance(lifted, MarginLike)
   assert isinstance(lifted, torch.nn.Module)
   assert lifted.supports_weights is True
-  assert lifted.supports_controls is False
+  assert lifted.controls_class is None
 
 
 @pytest.mark.parametrize(

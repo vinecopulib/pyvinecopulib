@@ -20,7 +20,7 @@ improvement on it.
 from __future__ import annotations
 
 import math
-from typing import Any, Optional, cast
+from typing import Any, ClassVar, Optional, cast
 
 import torch
 from torch import Tensor
@@ -159,10 +159,12 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   """
 
   supports_weights: bool = True
-  #: The bandwidth, bounds and variable type are named at construction, so
-  #: `fit` reads no controls. Declaring it is what makes a `family_set` a
-  #: refusal rather than a kernel density fitted in silence.
-  supports_controls: bool = False
+  # The bandwidth, bounds and variable type are named at construction, so
+  # `fit` reads no controls. Declaring that is what makes a `family_set` a
+  # refusal rather than a kernel density fitted in silence. A plain comment,
+  # not a `#:` one: autosummary cannot page an attribute whose value is a
+  # class, which is what this holds on a margin that does read controls.
+  controls_class: ClassVar[Optional[type]] = None
   #: The variable type in ``Kde1d``'s spelling; read back as
   #: :attr:`kde_type`, since ``type`` is ``nn.Module``'s dtype cast.
   _type: str

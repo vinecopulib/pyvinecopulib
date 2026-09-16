@@ -460,14 +460,14 @@ def test_the_criteria_do_not_warn_about_the_graph() -> None:
 def test_controls_are_refused_because_there_is_no_fit_to_configure() -> None:
   """This margin carries its parameters, so a `family_set` must not be ignored.
 
-  It inherited ``supports_controls = True`` from ``MarginBase`` while having no
+  It inherited ``MarginBase``'s ``controls_class`` while having no
   ``fit`` at all, which is what let a parametric request reach a class that
   could not act on it and be dropped instead of refused.
   """
   from pyvinecopulib.margins import FitControlsMargin
   from pyvinecopulib.torch import TorchVinecop, TorchVinedist
 
-  assert TorchDistributionMargin.supports_controls is False
+  assert TorchDistributionMargin.controls_class is None
   rng = np.random.default_rng(0)
   y = torch.as_tensor(rng.normal(size=(50, 2)), dtype=_F64)
   dist = TorchVinedist(

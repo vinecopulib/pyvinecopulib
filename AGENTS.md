@@ -1306,7 +1306,7 @@ Three groups:
   makes a bounded `Kde1d` reachable without naming a class. A margin that
   cannot honor a `family_set` **refuses** it rather than fitting one family and
   looking like it chose; whether controls are forwarded at all is the declared
-  `supports_controls`, because nanobind reports every bound signature as
+  `controls_class`, because nanobind reports every bound signature as
   `(*args, **kwargs)` and introspection cannot answer it.
 - **The kernel knobs are `FitControlsKde1d`**, a separate type rather than
   fields on `FitControlsMargin`: `multiplier` / `bandwidth` / `degree` /
@@ -1873,6 +1873,22 @@ Round-trip / parity properties to preserve when touching numerics:
   what lets `VinecopBase.select` refuse a pair copula without `flip` *before*
   it reads the data. `None` means the object only ever hosts parts it is
   handed, and fitting then needs an explicit `fit_edge`.
+
+  **`controls_class` is the fourth declaration of the same kind**, on all four
+  bases and on the bound `Bicop` / `Vinecop` / `Kde1d` (set from the binding,
+  the way `Kde1d` sets `supports_weights`): the fit configuration this class
+  reads, or `None` where it reads none. It answers *what does `controls=None`
+  mean here* once per class, so a consumer writes
+  `cls.vinecop_class.controls_class()` instead of naming a `FitControls*` of
+  its own — which seven sites used to do, three of them in one file. On a
+  margin it also replaces a boolean: `controls_class is None` **is** "reads no
+  controls", and carries the type besides, so `supports_controls` is gone.
+
+  It is a declaration, not a contract. It is read with `getattr` like every
+  other optional capability, and it is **not** on the protocols: those are the
+  evaluation surface, and `fit` / `select` / `from_data` are not on them
+  either. `ControlsLike` stays what it is — anything with `to_dict()` — so a
+  consumer still reads the settings it owns and refuses what it cannot honor.
 - **`get_pair_copula` reads, `set_pair_copulas` writes, and only the first is
   abstract.** Reading is required to *evaluate*, which every subclass does;
   writing is required only to *fit*, so a vine that merely hosts pairs — or an
