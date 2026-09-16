@@ -566,10 +566,10 @@ margin per variable, and evaluates on the scale of the data:
 
 .. code-block:: python
 
-   dist = pv.Vinedist.from_data(x)      # Kde1d margins by default
-   dist.logpdf(x)                       # log f(x), not log c(u)
-   dist.sample(1000, seeds=[1])         # draws on the x scale
-   dist.cdf(x)
+   dist = pv.Vinedist.from_data(y)      # Kde1d margins by default
+   dist.logpdf(y)                       # log f(y), not log c(u)
+   dist.sample(1000, seeds=[1])         # draws on the data scale
+   dist.cdf(y)
 
 Without it, using a fitted vine as a distribution means recomputing
 :math:`\hat F_j(x_j)` by hand, assembling the copula-scale matrix,
@@ -692,7 +692,7 @@ one entry per variable, exactly as ``var_types`` does on
 
 .. code-block:: python
 
-   pv.Vinedist.from_data(x)                       # `Kde1d` per column
+   pv.Vinedist.from_data(y)                       # `Kde1d` per column
 
    class ParametricVinedist(pv.Vinedist):         # a SciPy family per column
      margin_class = SciPyMargin
@@ -707,7 +707,7 @@ Margins follow the same construct-then-``fit`` pattern as ``Bicop``,
 ``Vinecop`` and ``Kde1d``, with ``fit`` returning ``self``. One class is
 therefore both the specification and the fitted object, which is what lets a
 distribution composed by construction mix the two: a margin with no ``fit`` of
-its own is *fixed*, so ``pv.Vinedist(copula, [frozen, Kde1d()]).fit(x)``
+its own is *fixed*, so ``pv.Vinedist(copula, [frozen, Kde1d()]).fit(y)``
 re-estimates the second and leaves the first exactly as it was built.
 
 Choosing that family is :meth:`pyvinecopulib.margins.SciPyMargin.select`,
