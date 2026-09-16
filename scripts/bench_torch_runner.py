@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Run paired Torch benchmark arms with raw samples, confidence intervals, and memory.
 
 Benchmark drivers call :func:`paired_repetitions` instead of reporting a
@@ -11,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pathlib
 import statistics
 import time
 from collections.abc import Callable
@@ -21,8 +21,8 @@ import torch
 
 def _rss_bytes() -> int:
   """Return this process's resident memory in bytes."""
-  with open("/proc/self/statm", encoding="utf-8") as statm:
-    pages = int(statm.read().split()[1])
+  statm = pathlib.Path("/proc/self/statm").read_text(encoding="utf-8")
+  pages = int(statm.split()[1])
   return pages * os.sysconf("SC_PAGE_SIZE")
 
 

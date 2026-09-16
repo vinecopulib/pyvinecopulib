@@ -5,8 +5,8 @@ is loaded by file path. These tests guard the rendered output rather than the
 gitignored stub artifacts on disk.
 """
 
-import builtins
 import ast
+import builtins
 import importlib.util
 from pathlib import Path
 from types import ModuleType
@@ -148,7 +148,9 @@ def test_no_binding_is_an_overload_set() -> None:
       for attr_name in dir(obj):
         try:
           attr = getattr(obj, attr_name)
-        except Exception:
+        # A bound class's attribute access raises whatever the binding
+        # raises; an attribute that cannot be read has no signature.
+        except Exception:  # noqa: BLE001, S112
           continue
         doc = inspect.getdoc(attr) or ""
         pattern = re.compile(rf"^{re.escape(attr_name)}\(.*\)\s*->")

@@ -36,8 +36,7 @@ _PWC_KWARGS: dict[str, Any] = {}
 if "xfail_strict" in inspect.signature(parametrize_with_checks).parameters:
   _PWC_KWARGS["xfail_strict"] = True
 
-from pyvinecopulib.sklearn import VineDensity, VineRegressor  # noqa: E402
-
+from pyvinecopulib.sklearn import VineDensity, VineRegressor
 
 # ---------------------------------------------------------------------------
 # Per-estimator opt-outs

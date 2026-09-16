@@ -11,7 +11,7 @@ contract was named after its surface so that it needs no wrapper.
 from __future__ import annotations
 
 import math
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -38,13 +38,13 @@ class _ShiftedExp(MarginBase[np.ndarray]):
   def support(self) -> tuple[float, float]:
     return (self.shift, float("inf"))
 
-  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def pdf(self, y: Any, *, x: Any | None = None) -> Any:
     inside = y >= self.shift
     return np.where(
       inside, self.rate * np.exp(-self.rate * (y - self.shift)), 0.0
     )
 
-  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def cdf(self, y: Any, *, x: Any | None = None) -> Any:
     inside = y >= self.shift
     return np.where(inside, 1.0 - np.exp(-self.rate * (y - self.shift)), 0.0)
 
@@ -64,10 +64,10 @@ class _Geometricish(MarginBase[np.ndarray]):
   def support(self) -> tuple[float, float]:
     return (0.0, float("inf"))
 
-  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def pdf(self, y: Any, *, x: Any | None = None) -> Any:
     return np.where(y >= 0.0, 0.5 ** (y + 1.0), 0.0)
 
-  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def cdf(self, y: Any, *, x: Any | None = None) -> Any:
     return np.where(y >= 0.0, 1.0 - 0.5 ** (y + 1.0), 0.0)
 
 
@@ -85,11 +85,11 @@ class _ZeroInflated(MarginBase[np.ndarray]):
   def support(self) -> tuple[float, float]:
     return (0.0, float("inf"))
 
-  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def pdf(self, y: Any, *, x: Any | None = None) -> Any:
     body = (1.0 - self.prob0) * np.exp(-y)
-    return np.where(y == 0.0, self.prob0, np.where(y > 0.0, body, 0.0))
+    return np.where(y == 0.0, self.prob0, np.where(y > 0.0, body, 0.0))  # noqa: RUF069 - an exact guarantee, not a computed approximation
 
-  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def cdf(self, y: Any, *, x: Any | None = None) -> Any:
     body = (1.0 - self.prob0) * (1.0 - np.exp(-y))
     return np.where(y >= 0.0, self.prob0 + body, 0.0)
 
@@ -128,7 +128,7 @@ def test_icdf_returns_exact_support_endpoints() -> None:
   """Endpoint probabilities are limits, not finite bracket approximations."""
   m = _ShiftedExp(rate=2.0, shift=1.0)
   got = m.icdf(np.array([0.0, 0.5, 1.0]))
-  assert got[0] == 1.0
+  assert got[0] == 1.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
   assert got[2] == np.inf
   np.testing.assert_allclose(got[1], m.exact_icdf(np.array([0.5]))[0])
 
@@ -217,7 +217,7 @@ def test_cdf_left_steps_back_a_lattice_point_when_discrete() -> None:
   left = m.cdf_left(k)
   np.testing.assert_allclose(left, m.cdf(k - 1.0), atol=0.0)
   np.testing.assert_allclose(left, m.cdf(k) - m.pdf(k), atol=1e-15)
-  assert left[0] == 0.0
+  assert left[0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
   assert np.all(left <= m.cdf(k))
 
 
@@ -290,11 +290,11 @@ class _Recording(ShiftedNormalMargin):
     super().__init__()
     self.seen: list[str] = []
 
-  def pdf(self, y: Any, /, *, x: Optional[Any] = None) -> Any:
+  def pdf(self, y: Any, /, *, x: Any | None = None) -> Any:
     self.seen.append("pdf" if x is not None else "pdf-bare")
     return super().pdf(y, x=x)
 
-  def cdf(self, y: Any, /, *, x: Optional[Any] = None) -> Any:
+  def cdf(self, y: Any, /, *, x: Any | None = None) -> Any:
     self.seen.append("cdf" if x is not None else "cdf-bare")
     return super().cdf(y, x=x)
 
@@ -334,7 +334,7 @@ def test_derived_members_require_row_aligned_covariates() -> None:
   ]
   for x in bad:
     for call in calls:
-      with pytest.raises(ValueError, match="one row per observation|shape"):
+      with pytest.raises(ValueError, match=r"one row per observation|shape"):
         call(_Seeded(), x)
 
 
@@ -373,7 +373,7 @@ def test_loglik_without_data_needs_a_fitted_value() -> None:
     def _fitted_loglik(self) -> float:
       return -12.5
 
-  assert _Stored().loglik() == -12.5
+  assert _Stored().loglik() == -12.5  # noqa: RUF069 - the value this test set, read back
 
 
 def test_a_discrete_icdf_lands_on_its_own_lattice() -> None:
@@ -406,10 +406,10 @@ def test_icdf_resolves_a_quantile_far_below_the_bracket() -> None:
     def support(self) -> tuple[float, float]:
       return (0.0, 1.0)
 
-    def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    def pdf(self, y: Any, *, x: Any | None = None) -> Any:
       return 0.05 * np.asarray(y, dtype=float) ** -0.95
 
-    def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+    def cdf(self, y: Any, *, x: Any | None = None) -> Any:
       return np.asarray(y, dtype=float) ** 0.05
 
   p = np.array([0.2, 0.1, 0.05])
@@ -470,7 +470,7 @@ def test_the_information_criteria_have_one_implementation() -> None:
   }
   # `aic` needs no `n`; the two that penalize by sample size do.
   unknown = criteria(-100.0, 2.0, None)
-  assert unknown["aic"] == 204.0
+  assert unknown["aic"] == 204.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
   assert unknown["bic"] == float("inf") and unknown["aicc"] == float("inf")
   # `aicc`'s correction needs n - k - 1 > 0.
   assert criteria(-100.0, 5.0, 6.0)["aicc"] == float("inf")
@@ -517,18 +517,18 @@ class _ConditionalPoisson(MarginBase[np.ndarray]):
     return (0.0, float("inf"))
 
   @staticmethod
-  def _mu(y: Any, x: Optional[Any]) -> Any:
+  def _mu(y: Any, x: Any | None) -> Any:
     if x is None:
       return np.ones(np.shape(y))
     return np.exp(np.asarray(x, dtype=float)[:, 0])
 
-  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def pdf(self, y: Any, *, x: Any | None = None) -> Any:
     k = np.asarray(y, dtype=float)
     mu = self._mu(y, x)
     logp = -mu + k * np.log(mu) - np.vectorize(math.lgamma)(k + 1.0)
     return np.where(k >= 0.0, np.exp(logp), 0.0)
 
-  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def cdf(self, y: Any, *, x: Any | None = None) -> Any:
     k = np.floor(np.asarray(y, dtype=float))
     mu = self._mu(y, x)
     # Sum the mass up to `k`, which needs no special function.
@@ -554,18 +554,18 @@ class _ConditionalZeroInflated(MarginBase[np.ndarray]):
     return (0.0, float("inf"))
 
   @staticmethod
-  def _prob0(y: Any, x: Optional[Any]) -> Any:
+  def _prob0(y: Any, x: Any | None) -> Any:
     if x is None:
       return np.full(np.shape(y), 0.5)
     return 1.0 / (1.0 + np.exp(-np.asarray(x, dtype=float)[:, 0]))
 
-  def pdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def pdf(self, y: Any, *, x: Any | None = None) -> Any:
     ya = np.asarray(y, dtype=float)
     p0 = self._prob0(y, x)
     body = (1.0 - p0) * np.exp(-ya)
-    return np.where(ya == 0.0, p0, np.where(ya > 0.0, body, 0.0))
+    return np.where(ya == 0.0, p0, np.where(ya > 0.0, body, 0.0))  # noqa: RUF069 - an exact guarantee, not a computed approximation
 
-  def cdf(self, y: Any, *, x: Optional[Any] = None) -> Any:
+  def cdf(self, y: Any, *, x: Any | None = None) -> Any:
     ya = np.asarray(y, dtype=float)
     p0 = self._prob0(y, x)
     return np.where(ya >= 0.0, p0 + (1.0 - p0) * (1.0 - np.exp(-ya)), 0.0)
@@ -582,7 +582,7 @@ def test_a_conditional_discrete_margin_steps_back_its_own_lattice() -> None:
   np.testing.assert_allclose(
     left, m.cdf(k, x=cov) - m.pdf(k, x=cov), atol=1e-12
   )
-  assert left[0] == 0.0
+  assert left[0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
   # The covariate actually moved it, so a dropped `x` would be visible.
   assert not np.allclose(left, m.cdf_left(k))
 
@@ -622,13 +622,13 @@ class _EstimatedShift(ShiftedNormalMargin):
     self,
     y: np.ndarray,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    var_type: Optional[str] = None,
-    support: Optional[tuple[Optional[float], Optional[float]]] = None,
-    x: Optional[np.ndarray] = None,
-    weights: Optional[np.ndarray] = None,
-  ) -> "_EstimatedShift":
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+    x: np.ndarray | None = None,
+    weights: np.ndarray | None = None,
+  ) -> _EstimatedShift:
     del controls, weights
     if x is None:
       raise ValueError("this margin is conditional; give it covariates")

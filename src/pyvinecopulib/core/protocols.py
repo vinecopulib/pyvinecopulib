@@ -71,14 +71,12 @@ conventionally ``xp`` -- and ``array_namespace`` resolves an array to it.
 from __future__ import annotations
 
 from abc import abstractmethod
+from collections.abc import Sequence
 from typing import (
   Any,
-  Optional,
   Protocol,
   Self,
-  Sequence,
   TypeVar,
-  Union,
   cast,
   runtime_checkable,
 )
@@ -86,7 +84,6 @@ from typing import (
 from array_api_compat import array_namespace as _array_namespace
 
 from ..pyvinecopulib_ext import RVineStructure
-
 
 # The right-hand side of an array operator, or an index: an array, a scalar, a
 # slice, a mask, or a tuple of those. `Any` once here rather than at nineteen
@@ -172,15 +169,15 @@ ArrayT = TypeVar("ArrayT", bound=Array)
 __all__ = [
   "Array",
   "ArrayT",
-  "BoolArray",
-  "FInfo",
-  "Namespace",
-  "array_namespace",
   "BicopLike",
+  "BoolArray",
   "ControlsLike",
+  "FInfo",
   "MarginLike",
+  "Namespace",
   "VinecopLike",
   "VinedistLike",
+  "array_namespace",
 ]
 
 
@@ -257,12 +254,12 @@ class Namespace(Protocol[ArrayT]):
     *,
     dtype: object = None,
     device: object = None,
-    copy: Optional[bool] = None,
+    copy: bool | None = None,
   ) -> ArrayT: ...
 
   def empty(
     self,
-    shape: Union[int, tuple[int, ...]],
+    shape: int | tuple[int, ...],
     /,
     *,
     dtype: object = None,
@@ -271,7 +268,7 @@ class Namespace(Protocol[ArrayT]):
 
   def zeros(
     self,
-    shape: Union[int, tuple[int, ...]],
+    shape: int | tuple[int, ...],
     /,
     *,
     dtype: object = None,
@@ -280,8 +277,8 @@ class Namespace(Protocol[ArrayT]):
 
   def full(
     self,
-    shape: Union[int, tuple[int, ...]],
-    fill_value: Optional[bool, float],
+    shape: int | tuple[int, ...],
+    fill_value: bool | float,
     /,
     *,
     dtype: object = None,
@@ -304,7 +301,7 @@ class Namespace(Protocol[ArrayT]):
     self,
     x: ArrayT,
     /,
-    fill_value: Optional[bool, float],
+    fill_value: bool | float,
     *,
     dtype: object = None,
     device: object = None,
@@ -314,11 +311,11 @@ class Namespace(Protocol[ArrayT]):
   def stack(self, arrays: Sequence[ArrayT], /, *, axis: int = 0) -> ArrayT: ...
 
   def concat(
-    self, arrays: Sequence[ArrayT], /, *, axis: Optional[int] = 0
+    self, arrays: Sequence[ArrayT], /, *, axis: int | None = 0
   ) -> ArrayT: ...
 
   def reshape(
-    self, x: ArrayT, /, shape: tuple[int, ...], *, copy: Optional[bool] = None
+    self, x: ArrayT, /, shape: tuple[int, ...], *, copy: bool | None = None
   ) -> ArrayT: ...
 
   def matrix_transpose(self, x: ArrayT, /) -> ArrayT: ...
@@ -340,8 +337,10 @@ class Namespace(Protocol[ArrayT]):
     self,
     x: ArrayT,
     /,
-    min: Optional[None, float, ArrayT] = None,
-    max: Optional[None, float, ArrayT] = None,
+    # Mirrors the array API standard's own `clip` signature, where these are
+    # the keyword names. Renaming them would describe a different function.
+    min: float | ArrayT | None = None,  # noqa: A002
+    max: float | ArrayT | None = None,  # noqa: A002
   ) -> ArrayT: ...
 
   # -- predicates, which answer in booleans ------------------------------ #
@@ -356,11 +355,11 @@ class Namespace(Protocol[ArrayT]):
   # `any` / `all` reduce to a zero-dimensional array, which every caller here
   # immediately passes to `bool()`.
   def any(
-    self, x: Array, /, *, axis: Union[None, int, tuple[int, ...]] = None
+    self, x: Array, /, *, axis: int | tuple[int, ...] | None = None
   ) -> Array: ...
 
   def all(
-    self, x: Array, /, *, axis: Union[None, int, tuple[int, ...]] = None
+    self, x: Array, /, *, axis: int | tuple[int, ...] | None = None
   ) -> Array: ...
 
   # -- reduction and dtype ----------------------------------------------- #
@@ -369,23 +368,23 @@ class Namespace(Protocol[ArrayT]):
     x: ArrayT,
     /,
     *,
-    axis: Union[None, int, tuple[int, ...]] = None,
+    axis: int | tuple[int, ...] | None = None,
     dtype: object = None,
   ) -> ArrayT: ...
 
   def mean(
-    self, x: ArrayT, /, *, axis: Union[None, int, tuple[int, ...]] = None
+    self, x: ArrayT, /, *, axis: int | tuple[int, ...] | None = None
   ) -> ArrayT: ...
 
   def astype(
     self, x: ArrayT, dtype: object, /, *, copy: bool = True
   ) -> ArrayT: ...
 
-  def isdtype(
-    self, dtype: object, kind: Union[str, tuple[str, ...]], /
-  ) -> bool: ...
+  def isdtype(self, dtype: object, kind: str | tuple[str, ...], /) -> bool: ...
 
-  def finfo(self, type: object, /) -> FInfo: ...
+  # The array API standard names this parameter `type`. Positional-only, so
+  # no caller spells it, but the protocol has to describe the signature.
+  def finfo(self, type: object, /) -> FInfo: ...  # noqa: A002
 
 
 def array_namespace(*arrays: object) -> Namespace[Any]:
@@ -615,7 +614,7 @@ class BicopLike(Protocol[ArrayT]):
 
   @abstractmethod
   def hfunc1(self, u: ArrayT) -> ArrayT:
-    """First h-function ``P(U2 <= u2 | U1 = u1)``.
+    r"""First h-function ``P(U2 <= u2 | U1 = u1)``.
 
     .. math::
 
@@ -634,7 +633,7 @@ class BicopLike(Protocol[ArrayT]):
 
   @abstractmethod
   def hfunc2(self, u: ArrayT) -> ArrayT:
-    """Second h-function ``P(U1 <= u1 | U2 = u2)``.
+    r"""Second h-function ``P(U1 <= u1 | U2 = u2)``.
 
     .. math::
 
@@ -693,7 +692,7 @@ class BicopLike(Protocol[ArrayT]):
     n: int,
     *,
     qrng: bool = False,
-    seeds: Optional[list[int]] = None,
+    seeds: list[int] | None = None,
   ) -> ArrayT:
     """Draw ``n`` samples from the pair copula.
 
@@ -779,7 +778,7 @@ class VinecopLike(Protocol[ArrayT]):
     u: ArrayT,
     *,
     N: int = 10000,
-    seeds: Optional[list[int]] = None,
+    seeds: list[int] | None = None,
   ) -> ArrayT:
     """Joint vine-copula distribution ``C(u)`` via Monte-Carlo.
 
@@ -834,7 +833,7 @@ class VinecopLike(Protocol[ArrayT]):
     n: int,
     *,
     qrng: bool = False,
-    seeds: Optional[list[int]] = None,
+    seeds: list[int] | None = None,
   ) -> ArrayT:
     """Draw ``n`` samples from the fitted vine copula.
 

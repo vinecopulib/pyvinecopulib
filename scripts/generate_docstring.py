@@ -28,8 +28,9 @@ SAMPLE_RENAMES = {
   "simulate": "sample",
 }
 SAMPLE_RENAME_RE = re.compile(
-  r"``((?:\w+\.)*)(%s)(\(\))?``"
-  % "|".join(sorted(SAMPLE_RENAMES, key=len, reverse=True))
+  r"``((?:\w+\.)*)({})(\(\))?``".format(
+    "|".join(sorted(SAMPLE_RENAMES, key=len, reverse=True))
+  )
 )
 
 CLASS_KINDS = [
@@ -154,14 +155,14 @@ def get_eigen_include(env_name: str) -> str:
 
 def get_boost_include(env_name: str) -> str:
   if "Boost_INCLUDE_DIR" in os.environ:
-    return os.environ["Boost_INCLUDE_DIR"]
+    return os.environ["BOOST_INCLUDE_DIR"]
   conda_prefix = os.environ.get("CONDA_PREFIX")
   if conda_prefix:
     return str(Path(conda_prefix) / "include")
   return str(Path.home() / f"miniforge3/envs/{env_name}/include")
 
 
-class Symbol(object):
+class Symbol:
   """
   Contains a cursor and additional processed metadata.
   """
@@ -187,9 +188,11 @@ def is_accepted_cursor(cursor, name_chain):
   """
   name = cursor.spelling
 
-  if name in SKIP_RECURSE_NAMES:
-    if tuple(name_chain) not in SKIP_RECURSE_EXCEPTIONS:
-      return False
+  if (
+    name in SKIP_RECURSE_NAMES
+    and tuple(name_chain) not in SKIP_RECURSE_EXCEPTIONS
+  ):
+    return False
 
   for bad in SKIP_PARTIAL_NAMES:
     if bad in name:
@@ -200,13 +203,9 @@ def is_accepted_cursor(cursor, name_chain):
   # TODO(eric.cousineau): Remove `cursor.is_default_method()`? May make
   # things unstable.
 
-  if cursor.kind in CLASS_KINDS and not cursor.is_definition():
-    # Don't process forward declarations.  If we did, we'd define the class
-    # overview documentation twice; both cursors have a .raw_comment value.
-
-    return False
-
-  return True
+  # Don't process forward declarations.  If we did, we'd define the class
+  # overview documentation twice; both cursors have a .raw_comment value.
+  return not (cursor.kind in CLASS_KINDS and not cursor.is_definition())
 
 
 def sanitize_name(name):
@@ -216,13 +215,11 @@ def sanitize_name(name):
   name = re.sub(r"type-parameter-0-([0-9]+)", r"T\1", name)
 
   for k, v in CPP_OPERATORS.items():
-    name = name.replace("operator%s" % k, "operator_%s" % v)
-  name = re.sub("<.*>", "", name)
+    name = name.replace(f"operator{k}", f"operator_{v}")
+  name = re.sub(r"<.*>", "", name)
   name = name.replace("::", "_")
   name = "".join([ch if ch.isalnum() else "_" for ch in name])
-  name = re.sub("_+", "_", name)
-
-  return name
+  return re.sub(r"_+", "_", name)
 
 
 def extract_comment(cursor, deprecations):
@@ -294,9 +291,9 @@ def extract_comment(cursor, deprecations):
 
   # Append the deprecation text.
   result += (
-    r" (Deprecated.) \deprecated {} "
-    + "This will be removed from vinecopulib on or after {}."
-  ).format(message, removal_date)
+    rf" (Deprecated.) \deprecated {message} "
+    f"This will be removed from vinecopulib on or after {removal_date}."
+  )
 
   return result
 
@@ -353,11 +350,9 @@ def c_type_to_numpy_type(c_spelling: str) -> str:
   # Strip cv-qualifiers and references; libclang reports these
   # via `cursor.type.spelling` for parameter types.
   for prefix in ("const ", "volatile "):
-    if s.startswith(prefix):
-      s = s[len(prefix) :]
+    s = s.removeprefix(prefix)
   for suffix in (" const", " volatile", "&&", "&"):
-    if s.endswith(suffix):
-      s = s[: -len(suffix)]
+    s = s.removesuffix(suffix)
   s = s.strip()
 
   # `std::optional<T>` → `"<T>, optional"`. Greedy `(.+)` so nested
@@ -406,7 +401,7 @@ def c_type_to_numpy_type(c_spelling: str) -> str:
 # Detect a shape/dimension mention in the prose (the LaTeX `\times`, a `x`
 # between dims, the words matrix / vector / length / shape / scalar).
 _SHAPE_IN_PROSE = re.compile(
-  r"shape|length|\\times|×|\b(?:matrix|matrices|vector|scalar)\b", re.I
+  r"shape|length|\\times|×|\b(?:matrix|matrices|vector|scalar)\b", re.IGNORECASE
 )
 
 
@@ -527,9 +522,10 @@ def _extract_cursor_types(cursor):
         if cursor.result_type and cursor.result_type.spelling
         else None
       )
-    return (param_types or None), return_type
   except Exception:
     return None, None
+  else:
+    return (param_types or None), return_type
 
 
 _DOXY_SECTION_PATTERNS = [
@@ -564,7 +560,7 @@ def _convert_doxy_sections(docstring: str) -> str:
 
 
 def _convert_doxy_raises(docstring: str) -> str:
-  """Reformat `$Raises:` blobs into a numpydoc Raises section.
+  r"""Reformat `$Raises:` blobs into a numpydoc Raises section.
 
   Doxygen `@throws ExceptionType description` / `@exception ...`
   arrive as `$Raises:\\n<body>` after `process_comment`. The body
@@ -722,11 +718,10 @@ def process_comment(comment, cursor=None):
   # Remove C++ comment syntax
   leading_spaces = float("inf")
 
-  for s in comment.expandtabs(tabsize=4).splitlines():
-    s = s.strip()
+  for line in comment.expandtabs(tabsize=4).splitlines():
+    s = line.strip()
 
-    if s.startswith("/*!"):
-      s = s[3:]
+    s = s.removeprefix("/*!")
 
     if s.startswith("/*"):
       s = s[2:].lstrip("*")
@@ -734,14 +729,12 @@ def process_comment(comment, cursor=None):
     if s.endswith("*/"):
       s = s[:-2].rstrip("*")
 
-    if s.startswith("///<"):
-      s = s[4:]
+    s = s.removeprefix("///<")
 
-    if s.startswith("///") or s.startswith("//!"):
+    if s.startswith(("///", "//!")):
       s = s[3:]
 
-    if s.startswith("*"):
-      s = s[1:]
+    s = s.removeprefix("*")
 
     if len(s) > 0:
       leading_spaces = min(leading_spaces, len(s) - len(s.lstrip()))
@@ -792,7 +785,7 @@ def process_comment(comment, cursor=None):
 
   def replace_with_header(pattern, token, s, **kwargs):
     def repl(match):
-      return "\n{}\n{}\n".format(match.group(1), token * len(match.group(1)))
+      return f"\n{match.group(1)}\n{token * len(match.group(1))}\n"
 
     return re.sub(pattern, repl, s, **kwargs)
 
@@ -805,20 +798,20 @@ def process_comment(comment, cursor=None):
   cpp_group = r"([\w:*()]+)"
   param_group = r"([\[\w,\]]+)"
 
-  s = re.sub(r"[@\\][cp]\s+%s" % cpp_group, r"``\1``", s)
-  s = re.sub(r"[@\\](?:a|e|em)\s+%s" % cpp_group, r"*\1*", s)
-  s = re.sub(r"[@\\]b\s+%s" % cpp_group, r"**\1**", s)
+  s = re.sub(rf"[@\\][cp]\s+{cpp_group}", r"``\1``", s)
+  s = re.sub(rf"[@\\](?:a|e|em)\s+{cpp_group}", r"*\1*", s)
+  s = re.sub(rf"[@\\]b\s+{cpp_group}", r"**\1**", s)
   s = re.sub(
-    r"[@\\]param%s?\s+%s" % (param_group, cpp_group),
+    rf"[@\\]param{param_group}?\s+{cpp_group}",
     r"\n\n$Parameter ``\2``:\n\n",
     s,
   )
   s = re.sub(
-    r"[@\\]tparam%s?\s+%s" % (param_group, cpp_group),
+    rf"[@\\]tparam{param_group}?\s+{cpp_group}",
     r"\n\n$Template parameter ``\2``:\n\n",
     s,
   )
-  s = re.sub(r"[@\\]retval\s+%s" % cpp_group, r"\n\n$Returns ``\1``:\n\n", s)
+  s = re.sub(rf"[@\\]retval\s+{cpp_group}", r"\n\n$Returns ``\1``:\n\n", s)
 
   # Ordering is significant for command names with a common prefix.
 
@@ -851,7 +844,7 @@ def process_comment(comment, cursor=None):
     ("version", "Version"),
     ("warning", "Warning"),
   ):
-    s = re.sub(r"[@\\]%s\s*" % in_, r"\n\n$%s:\n\n" % out_, s)
+    s = re.sub(rf"[@\\]{in_}\s*", rf"\n\n${out_}:\n\n", s)
 
   s = re.sub(r"[@\\]details\s*", r"\n\n", s)
   s = re.sub(r"[@\\](?:brief|short)\s*", r"", s)
@@ -870,7 +863,7 @@ def process_comment(comment, cursor=None):
 
   for start_, end_ in (("code", "endcode"), ("verbatim", "endverbatim")):
     s = re.sub(
-      r"[@\\]%s(?:\{\.\w+\})?\s?(.*?)\s?[@\\]%s" % (start_, end_),
+      rf"[@\\]{start_}(?:\{{\.\w+\}})?\s?(.*?)\s?[@\\]{end_}",
       r"```\n\1\n```\n",
       s,
       flags=re.DOTALL,
@@ -933,7 +926,7 @@ def process_comment(comment, cursor=None):
     "static",
     "tableofcontents",
   ):
-    s = re.sub(r"[@\\]%s\s+" % cmd_, r"", s)
+    s = re.sub(rf"[@\\]{cmd_}\s+", r"", s)
 
   # Remove these commands and their one optional single-word argument.
 
@@ -941,7 +934,7 @@ def process_comment(comment, cursor=None):
     "dir",
     "file",
   ]:
-    s = re.sub(r"[@\\]%s( +[\w:./]+)?\s+" % cmd_, r"", s)
+    s = re.sub(rf"[@\\]{cmd_}( +[\w:./]+)?\s+", r"", s)
 
   # Remove these commands and their one optional single-line argument.
 
@@ -949,7 +942,7 @@ def process_comment(comment, cursor=None):
     "mainpage",
     "nameoverload",
   ]:
-    s = re.sub(r"[@\\]%s( +.*)?\s+" % cmd_, r"", s)
+    s = re.sub(rf"[@\\]{cmd_}( +.*)?\s+", r"", s)
 
   # Remove these commands and their one single-word argument. Ordering is
   # significant for command names with a common prefix.
@@ -980,7 +973,7 @@ def process_comment(comment, cursor=None):
     "relates",
     "verbinclude",
   ]:
-    s = re.sub(r"[@\\]%s\s+[\w:.]+\s+" % cmd_, r"", s)
+    s = re.sub(rf"[@\\]{cmd_}\s+[\w:.]+\s+", r"", s)
 
   # Remove these commands and their one single-line argument. Ordering is
   # significant for command names with a common prefix.
@@ -997,7 +990,7 @@ def process_comment(comment, cursor=None):
     "until",
     "var",
   ]:
-    s = re.sub(r"[@\\]%s\s+.*\s+" % cmd_, r"", s)
+    s = re.sub(rf"[@\\]{cmd_}\s+.*\s+", r"", s)
 
   # Remove this command and its one single-word argument and one
   # optional single-word argument.
@@ -1010,7 +1003,7 @@ def process_comment(comment, cursor=None):
     "addtogroup",
     "weakgroup",
   ]:
-    s = re.sub(r"[@\\]%s\s+[\w:.]( +.*)?\s+" % cmd_, r"", s)
+    s = re.sub(rf"[@\\]{cmd_}\s+[\w:.]( +.*)?\s+", r"", s)
 
   # Remove these commands and their one single-word argument and one
   # single-line argument. Ordering is significant for command names with a
@@ -1021,7 +1014,7 @@ def process_comment(comment, cursor=None):
     "snippetlineno",
     "snippet",
   ]:
-    s = re.sub(r"[@\\]%s\s+[\w:.]\s+.*\s+" % cmd_, r"", s)
+    s = re.sub(rf"[@\\]{cmd_}\s+[\w:.]\s+.*\s+", r"", s)
 
   # Remove these commands and their one single-word argument and two
   # optional single-word arguments.
@@ -1034,7 +1027,7 @@ def process_comment(comment, cursor=None):
     "struct",
     "union",
   ]:
-    s = re.sub(r"[@\\]%s\s+[\w:.]+( +[\w:.]+){0,2}\s+" % cmd_, r"", s)
+    s = re.sub(rf"[@\\]{cmd_}\s+[\w:.]+( +[\w:.]+){{0,2}}\s+", r"", s)
 
   # Remove these commands and their one single-word argument, one optional
   # quoted argument, and one optional single-word arguments.
@@ -1045,7 +1038,7 @@ def process_comment(comment, cursor=None):
     "mscfile",
   ]:
     s = re.sub(
-      r'[@\\]%s\s+[\w:.]+(\s+".*?")?(\s+[\w:.]+=[\w:.]+)?s+' % cmd_, r"", s
+      rf'[@\\]{cmd_}\s+[\w:.]+(\s+".*?")?(\s+[\w:.]+=[\w:.]+)?s+', r"", s
     )
 
   # Remove these pairs of commands and any text in between.
@@ -1063,14 +1056,12 @@ def process_comment(comment, cursor=None):
     ("startuml", "enduml"),
     ("xmlonly", "endxmlonly"),
   ):
-    s = re.sub(
-      r"[@\\]%s\s?(.*?)\s?[@\\]%s" % (start_, end_), r"", s, flags=re.DOTALL
-    )
+    s = re.sub(rf"[@\\]{start_}\s?(.*?)\s?[@\\]{end_}", r"", s, flags=re.DOTALL)
 
     # Some command pairs may bridge multiple comment blocks, so individual
     # start and end commands may appear alone.
-    s = re.sub(r"[@\\]%s\s+" % start_, r"", s)
-    s = re.sub(r"[@\\]%s\s+" % end_, r"", s)
+    s = re.sub(rf"[@\\]{start_}\s+", r"", s)
+    s = re.sub(rf"[@\\]{end_}\s+", r"", s)
 
   # Remove auto-linking character. Be sure to remove only leading % signs.
   s = re.sub(r"(\s+)%(\S+)", r"\1\2", s)
@@ -1150,7 +1141,7 @@ def process_comment(comment, cursor=None):
     "@",
     "\\\\",
   ):
-    s = re.sub(r"[@\\](%s)" % escaped_, r"\1", s)
+    s = re.sub(rf"[@\\]({escaped_})", r"\1", s)
 
   # Reflow text where appropriate.
   wrapper = textwrap.TextWrapper()
@@ -1277,7 +1268,7 @@ def get_name_chain(cursor):
   return tuple(name_chain)
 
 
-class SymbolTree(object):
+class SymbolTree:
   """
   Contains symbols that (a) may have 0 or more pieces of documentation and
   (b) may have child objects.
@@ -1298,7 +1289,7 @@ class SymbolTree(object):
 
     return node
 
-  class Node(object):
+  class Node:
     """Node for a given name chain."""
 
     def __init__(self):
@@ -1453,7 +1444,7 @@ def choose_doc_var_names(symbols):
         result[i] = None
 
         continue
-      elif "@pyvinecopulib_mkdoc_identifier" in symbols[i].comment:
+      if "@pyvinecopulib_mkdoc_identifier" in symbols[i].comment:
         comment = symbols[i].comment
         # Allow the user to manually specify a doc_foo identifier.
         match = re.search(r"@pyvinecopulib_mkdoc_identifier\{(.*?)\}", comment)
@@ -1466,7 +1457,7 @@ def choose_doc_var_names(symbols):
         result[i] = "doc_" + identifier
 
         continue
-      elif len(symbols[i].comment) == 0 and not (
+      if len(symbols[i].comment) == 0 and not (
         cursor.is_default_constructor()
         and (len(cursor.type.argument_types()) == 0)
       ):
@@ -1485,7 +1476,7 @@ def choose_doc_var_names(symbols):
         result[i] = None
 
         continue
-      elif any([symbols[i].comment == x.comment for x in symbols[:i]]):
+      if any(symbols[i].comment == x.comment for x in symbols[:i]):
         # If a subsequent overload's API comment *exactly* matches a
         # prior overload's comment, the first overload's name wins.
         # This is important because when a function has separate
@@ -1498,7 +1489,7 @@ def choose_doc_var_names(symbols):
         result[i] = None
 
         continue
-      elif cursor.is_copy_constructor():
+      if cursor.is_copy_constructor():
         # Here, the semantics are distinct ("special member function")
         # so we should never use the "how many arguments" or "what are
         # the argument types" heuristics.
@@ -1568,7 +1559,7 @@ def choose_doc_var_names(symbols):
   ]
 
   # The argument count might be sufficient to disambiguate.
-  result = ["doc_{}args".format(len(types)) for types in overload_arg_types]
+  result = [f"doc_{len(types)}args" for types in overload_arg_types]
   specialize_well_known_doc_var_names()
 
   if is_unique(result):
@@ -1582,7 +1573,7 @@ def choose_doc_var_names(symbols):
       continue
     arg_names = overload_arg_names[i] or [""] * len(arg_types)
 
-    for arg_name, arg_type in zip(arg_names, arg_types):
+    for arg_name, arg_type in zip(arg_names, arg_types, strict=False):
       token = arg_name or sanitize_name(arg_type).replace("_", "")
       result[i] = result[i] + "_" + token
   specialize_well_known_doc_var_names()
@@ -1631,10 +1622,10 @@ def print_symbols(f, name, node, level=0):
       # compile; doc_symbols is empty for phantoms so no docs are dropped.
       name_var = sanitize_name(name)
       iprint("// Symbol: (synthesized intermediate)")
-      iprint("struct /* %s */ {" % name_var)
+      iprint(f"struct /* {name_var} */ {{")
       for k in sorted(node.children_map.keys()):
         print_symbols(f, k, node.children_map[k], level=level + 1)
-      iprint("} %s;" % name_var)
+      iprint(f"}} {name_var};")
       return
     full_name = name
   else:
@@ -1649,17 +1640,17 @@ def print_symbols(f, name, node, level=0):
   name_var = sanitize_name(name_var)
   # We may get empty symbols if `libclang` produces warnings.
   assert len(name_var) > 0, node.first_symbol.sorting_key()
-  iprint("// Symbol: {}".format(full_name))
+  iprint(f"// Symbol: {full_name}")
   modifier = ""
 
   if level == 0:
     modifier = "constexpr "
-  iprint("{}struct /* {} */ {{".format(modifier, name_var))
+  iprint(f"{modifier}struct /* {name_var} */ {{")
   # Print documentation items.
   symbol_iter = sorted(node.doc_symbols, key=Symbol.sorting_key)
   doc_vars = choose_doc_var_names(symbol_iter)
 
-  for symbol, doc_var in zip(symbol_iter, doc_vars):
+  for symbol, doc_var in zip(symbol_iter, doc_vars, strict=False):
     if doc_var is None:
       continue
     assert name_chain == symbol.name_chain
@@ -1668,25 +1659,25 @@ def print_symbols(f, name, node, level=0):
 
     if "\n" not in comment and len(comment) < 40:
       delim = " "
-    iprint("  // Source: {}:{}".format(symbol.include, symbol.line))
-    iprint(
-      '  const char* {} ={}R"""({})""";'.format(doc_var, delim, comment.strip())
-    )
+    iprint(f"  // Source: {symbol.include}:{symbol.line}")
+    iprint(f'  const char* {doc_var} ={delim}R"""({comment.strip()})""";')
   # Recurse into child elements.
   keys = sorted(node.children_map.keys())
 
   for key in keys:
     child = node.children_map[key]
     print_symbols(f, key, child, level=level + 1)
-  iprint("}} {};".format(name_var))
+  iprint(f"}} {name_var};")
 
 
-class FileDict(object):
+class FileDict:
   """
   Provides a dictionary that hashes based on a file's true path.
   """
 
-  def __init__(self, items=[]):
+  def __init__(self, items=None):
+    if items is None:
+      items = []
     self._d = {self._key(file): value for file, value in items}
 
   def _key(self, file):
@@ -1827,8 +1818,12 @@ def main():
     # Legacy fallback: derive Eigen/Boost paths from env name / CONDA_PREFIX
     # / EIGEN3_INCLUDE_DIR / Boost_INCLUDE_DIR. CMake passes -isystem
     # explicitly, so this branch only runs for stand-alone CLI invocations.
-    parameters.append(f"-isystem{get_eigen_include(env_name)}")
-    parameters.append(f"-isystem{get_boost_include(env_name)}")
+    parameters.extend(
+      (
+        f"-isystem{get_eigen_include(env_name)}",
+        f"-isystem{get_boost_include(env_name)}",
+      )
+    )
 
   if library_file and os.path.exists(library_file):
     # cindex.Config.set_library_path(os.path.dirname(library_file))
@@ -1839,142 +1834,141 @@ def main():
 
   if output_filename is None or len(filenames) == 0:
     eprint(
-      "Syntax: %s -output=<file> [.. a list of header files ..]" % sys.argv[0]
+      f"Syntax: {sys.argv[0]} -output=<file> [.. a list of header files ..]"
     )
     sys.exit(1)
 
-  f = open(output_filename, "w", encoding="utf-8")
-  # N.B. We substitute the `GENERATED FILE...` bits in this fashion because
-  # otherwise Reviewable gets confused.
-  f.write(
-    """#pragma once
-// {0} {1}
-// This file contains docstrings for the Python bindings that were
-// automatically extracted by mkdoc.py.
-#if defined(__GNUG__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#endif
-""".format("GENERATED FILE", "DO NOT EDIT")
-  )
+  with open(output_filename, "w", encoding="utf-8") as f:
+    # N.B. We substitute the `GENERATED FILE...` bits in this fashion because
+    # otherwise Reviewable gets confused.
+    f.write(
+      """#pragma once
+  // {} {}
+  // This file contains docstrings for the Python bindings that were
+  // automatically extracted by mkdoc.py.
+  #if defined(__GNUG__)
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wunused-variable"
+  #endif
+  """.format("GENERATED FILE", "DO NOT EDIT")
+    )
 
-  # Determine project include directories.
-  include_paths = []
-  for param in parameters:
+    # Determine project include directories.
     # Only check for normal include directories.
-    if param.startswith("-I"):
-      include_paths.append(param[2:])
-  # Use longest include directories first to get shortest include file
-  # overall.
-  include_paths = list(sorted(include_paths, key=len))[::-1]
-  include_files = []
-  # Create mapping from filename to include file.
-  include_file_map = FileDict()
-  for filename in filenames:
-    for include_path in include_paths:
-      prefix = include_path + "/"
-      if filename.startswith(prefix):
-        include_file = filename[len(prefix) :]
-        break
-    else:
-      raise RuntimeError(
-        "Filename not incorporated into -I includes: {}".format(filename)
-      )
-    for p in ignore_patterns:
-      if fnmatch(include_file, p):
-        break
-    else:
-      include_files.append(include_file)
-      include_file_map[filename] = include_file
-  assert len(include_files) > 0
-  # Generate the glue include file, which will include all relevant include
-  # files, and parse. Use a tempdir that is relative to the output file for
-  # usage with Bazel.
-  tmpdir = output_filename + ".tmp_artifacts"
-  shutil.rmtree(tmpdir, ignore_errors=True)
-  os.mkdir(tmpdir)
-  glue_filename = os.path.join(tmpdir, "mkdoc_glue.h")
-  with open(glue_filename, "w") as glue_f:
-    for include_file in sorted(include_files):
-      # .ipp files are reached transitively via each .hpp's bottom include
-      # and have no include guards; #include'ing them directly here would
-      # cause every symbol in them to be redefined when the .hpp is also
-      # in the include set (breaks the Windows build).
-      if include_file.endswith(".ipp"):
-        continue
-      line = '#include "{}"'.format(include_file)
-      glue_f.write(line + "\n")
-      f.write("// " + line + "\n")
-    f.write("\n")
-    glue_f.flush()
-    if not quiet:
-      eprint("Parse headers...")
-    index = cindex.Index(cindex.conf.lib.clang_createIndex(False, True))
-    eprint(parameters)
-    translation_unit = index.parse(
-      glue_filename,
-      parameters,
-      options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD,
-    )
-    # Fail loudly on *fatal* parse errors only. A fatal diagnostic (e.g. a
-    # missing C++ standard-library / Eigen / Boost header, or clang's
-    # "too many errors" stop) truncates the AST, so docstr.hpp would silently
-    # lose whole symbols and mis-disambiguate overloads — which only surfaces
-    # later as cryptic "no member named ..." compile errors. Surface that here.
-    #
-    # We do NOT abort on plain `error:`-severity diagnostics.
-    # libclang is not a full compiler, and parsing Eigen/Boost pulls in
-    # vendor intrinsic headers (xmmintrin.h, arm_neon.h, ...) whose builtins
-    # are version-specific; libclang emits ~100 harmless errors there. Those
-    # do not stop parsing or affect the *declarations* docstrings are read
-    # from. CMake passes `-ferror-limit=0` so this error noise never trips
-    # clang's default 20-error limit (which would itself become a fatal).
-    fatal = [
-      d
-      for d in translation_unit.diagnostics
-      if d.severity >= cindex.Diagnostic.Fatal
+    include_paths = [
+      param[2:] for param in parameters if param.startswith("-I")
     ]
-    if fatal:
-      eprint(
-        "libclang reported {} fatal diagnostic(s) while parsing the C++ "
-        "headers. The generated docstr.hpp would be incomplete (missing "
-        "symbols / mis-named overloads). This usually means the C++ standard "
-        "library or Eigen/Boost headers were not on the include path — pass "
-        "the host toolchain's system include dirs via -isystem (CMake does "
-        "this from CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES).".format(len(fatal))
+    # Use longest include directories first to get shortest include file
+    # overall.
+    include_paths = sorted(include_paths, key=len)[::-1]
+    include_files = []
+    # Create mapping from filename to include file.
+    include_file_map = FileDict()
+    for filename in filenames:
+      for include_path in include_paths:
+        prefix = include_path + "/"
+        if filename.startswith(prefix):
+          include_file = filename[len(prefix) :]
+          break
+      else:
+        raise RuntimeError(
+          f"Filename not incorporated into -I includes: {filename}"
+        )
+      for p in ignore_patterns:
+        if fnmatch(include_file, p):
+          break
+      else:
+        include_files.append(include_file)
+        include_file_map[filename] = include_file
+    assert len(include_files) > 0
+    # Generate the glue include file, which will include all relevant include
+    # files, and parse. Use a tempdir that is relative to the output file for
+    # usage with Bazel.
+    tmpdir = output_filename + ".tmp_artifacts"
+    shutil.rmtree(tmpdir, ignore_errors=True)
+    os.mkdir(tmpdir)
+    glue_filename = os.path.join(tmpdir, "mkdoc_glue.h")
+    with open(glue_filename, "w", encoding="utf-8") as glue_f:
+      for include_file in sorted(include_files):
+        # .ipp files are reached transitively via each .hpp's bottom include
+        # and have no include guards; #include'ing them directly here would
+        # cause every symbol in them to be redefined when the .hpp is also
+        # in the include set (breaks the Windows build).
+        if include_file.endswith(".ipp"):
+          continue
+        line = f'#include "{include_file}"'
+        glue_f.write(line + "\n")
+        f.write("// " + line + "\n")
+      f.write("\n")
+      glue_f.flush()
+      if not quiet:
+        eprint("Parse headers...")
+      index = cindex.Index(cindex.conf.lib.clang_createIndex(False, True))
+      eprint(parameters)
+      translation_unit = index.parse(
+        glue_filename,
+        parameters,
+        options=cindex.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD,
       )
-      for d in fatal:
-        eprint("  {}: {}".format(d.location, d.spelling))
+      # Fail loudly on *fatal* parse errors only. A fatal diagnostic (e.g. a
+      # missing C++ standard-library / Eigen / Boost header, or clang's
+      # "too many errors" stop) truncates the AST, so docstr.hpp would silently
+      # lose whole symbols and mis-disambiguate overloads — which only surfaces
+      # later as cryptic "no member named ..." compile errors. Surface that here.
+      #
+      # We do NOT abort on plain `error:`-severity diagnostics.
+      # libclang is not a full compiler, and parsing Eigen/Boost pulls in
+      # vendor intrinsic headers (xmmintrin.h, arm_neon.h, ...) whose builtins
+      # are version-specific; libclang emits ~100 harmless errors there. Those
+      # do not stop parsing or affect the *declarations* docstrings are read
+      # from. CMake passes `-ferror-limit=0` so this error noise never trips
+      # clang's default 20-error limit (which would itself become a fatal).
+      fatal = [
+        d
+        for d in translation_unit.diagnostics
+        if d.severity >= cindex.Diagnostic.Fatal
+      ]
+      if fatal:
+        eprint(
+          f"libclang reported {len(fatal)} fatal diagnostic(s) while parsing the C++ "
+          "headers. The generated docstr.hpp would be incomplete (missing "
+          "symbols / mis-named overloads). This usually means the C++ standard "
+          "library or Eigen/Boost headers were not on the include path — pass "
+          "the host toolchain's system include dirs via -isystem (CMake does "
+          "this from CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES)."
+        )
+        for d in fatal:
+          eprint(f"  {d.location}: {d.spelling}")
+        sys.exit(1)
+    shutil.rmtree(tmpdir)
+    # Extract symbols.
+    if not quiet:
+      eprint("Extract relevant symbols...")
+    symbol_tree = SymbolTree()
+    extract(include_file_map, translation_unit.cursor, symbol_tree)
+    # Write header file.
+    if not quiet:
+      eprint("Writing header file...")
+    try:
+      print_symbols(f, root_name, symbol_tree.root)
+    except UnicodeEncodeError as e:
+      # User-friendly error for #9903.
+      print(
+        f"""
+  Encountered unicode error: {e}
+  If you are on Ubuntu, please ensure you have en_US.UTF-8 locales generated:
+      sudo apt-get install --no-install-recommends  locales
+      sudo locale-gen en_US.UTF-8
+  """,
+        file=sys.stderr,
+      )
       sys.exit(1)
-  shutil.rmtree(tmpdir)
-  # Extract symbols.
-  if not quiet:
-    eprint("Extract relevant symbols...")
-  symbol_tree = SymbolTree()
-  extract(include_file_map, translation_unit.cursor, symbol_tree)
-  # Write header file.
-  if not quiet:
-    eprint("Writing header file...")
-  try:
-    print_symbols(f, root_name, symbol_tree.root)
-  except UnicodeEncodeError as e:
-    # User-friendly error for #9903.
-    print(
-      """
-Encountered unicode error: {}
-If you are on Ubuntu, please ensure you have en_US.UTF-8 locales generated:
-    sudo apt-get install --no-install-recommends  locales
-    sudo locale-gen en_US.UTF-8
-""".format(e),
-      file=sys.stderr,
-    )
-    sys.exit(1)
 
-  f.write("""
-#if defined(__GNUG__)
-#pragma GCC diagnostic pop
-#endif
-""")
+    f.write("""
+  #if defined(__GNUG__)
+  #pragma GCC diagnostic pop
+  #endif
+  """)
 
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@ engines return rather than an assembled vine. The public ``fit`` / ``select`` /
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import pytest
@@ -38,14 +38,13 @@ import pyvinecopulib as pv
 
 torch = pytest.importorskip("torch")
 
-from pyvinecopulib.core import (  # noqa: E402
+from pyvinecopulib.core import (
   ConditioningContext,
   NonSimplifiedContext,
   SimplifiedContext,
   VinecopBase,
 )
-
-from tests.conftest import GaussianBicop, HostedVinecop  # noqa: E402
+from tests.conftest import GaussianBicop, HostedVinecop
 
 _SCALE = 0.6
 _BASE_RHO = 0.3
@@ -94,8 +93,8 @@ class _ReversedCondContext(NonSimplifiedContext[Any]):
   """NonSimplifiedContext that reverses the u_D column order (breaks C1)."""
 
   def edge_context(
-    self, *, u_D: Optional[Any] = None, x: Optional[Any] = None
-  ) -> Optional[Any]:
+    self, *, u_D: Any | None = None, x: Any | None = None
+  ) -> Any | None:
     if u_D is not None:
       xp = array_namespace(u_D)
       u_D = xp.flip(u_D, axis=-1)
@@ -132,10 +131,10 @@ def test_fit_conditional_hook() -> None:
   x = torch.as_tensor(rng.standard_normal((n, p)), dtype=torch.float64)
   structure = pv.RVineStructure.from_order([1, 2, 3])
 
-  seen: list[tuple[int, int, Optional[int]]] = []
+  seen: list[tuple[int, int, int | None]] = []
 
   def fit_edge(
-    tree: int, edge: int, u_e: Any, x_e: Optional[Any]
+    tree: int, edge: int, u_e: Any, x_e: Any | None
   ) -> GaussianBicop:
     seen.append((tree, edge, None if x_e is None else x_e.shape[1]))
     return GaussianBicop(scale=_SCALE, base_rho=_BASE_RHO)
@@ -147,9 +146,9 @@ def test_fit_conditional_hook() -> None:
   # Every edge saw an x_e in the C1 order: tree-0 edges have |D|=0 so width == p;
   # the tree-1 edge has |D|=1 so width == 1 + p.
   widths = {(t, e): w for (t, e, w) in seen}
-  assert widths[(0, 0)] == p
-  assert widths[(0, 1)] == p
-  assert widths[(1, 0)] == 1 + p
+  assert widths[0, 0] == p
+  assert widths[0, 1] == p
+  assert widths[1, 0] == 1 + p
 
   # The fitted pairs assemble into a working conditional vine.
   vine = HostedVinecop(pairs, structure, context=NonSimplifiedContext())

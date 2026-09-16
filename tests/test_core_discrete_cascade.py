@@ -15,7 +15,7 @@ engines return rather than an assembled vine. The public ``fit`` / ``select`` /
 ``tests/test_structure_selection.py``.
 """
 
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -95,7 +95,7 @@ class _ListVinecop(HostedVinecop):
     self,
     pairs: list[list[pv.Bicop]],
     structure: pv.RVineStructure,
-    var_types: Optional[list[str]] = None,
+    var_types: list[str] | None = None,
   ) -> None:
     super().__init__(pairs, structure, var_types)
     for tree, row in enumerate(pairs):
@@ -371,17 +371,6 @@ def test_continuous_of_passes_through_a_foreign_pair() -> None:
   assert continuous_of(foreign) is foreign
 
 
-def test_continuous_of_refuses_a_discrete_pair_with_no_view() -> None:
-  """Declaring atoms without offering the continuous reading is an error."""
-  from pyvinecopulib.core.bicop_base import continuous_of
-
-  class _Declared:
-    var_types = ["d", "c"]
-
-  with pytest.raises(ValueError, match="no with_var_types"):
-    continuous_of(_Declared())  # ty: ignore[invalid-argument-type]
-
-
 # ---------------------------------------------------------------------------
 # DiscreteBicop: a continuous pair copula hosted on a discrete edge
 # ---------------------------------------------------------------------------
@@ -441,28 +430,28 @@ def test_discrete_pair_skips_unused_wide_atom_fallbacks() -> None:
 
   class CountingIndependence(pv.core.IndependenceBicop[np.ndarray]):
     def __init__(self) -> None:
-      self.calls = {name: 0 for name in ("pdf", "cdf", "hfunc1", "hfunc2")}
+      self.calls = dict.fromkeys(("pdf", "cdf", "hfunc1", "hfunc2"), 0)
 
     def _pdf_raw(
-      self, u: np.ndarray, *, x: Optional[np.ndarray] = None
+      self, u: np.ndarray, *, x: np.ndarray | None = None
     ) -> np.ndarray:
       self.calls["pdf"] += 1
       return super()._pdf_raw(u, x=x)
 
     def _cdf_raw(
-      self, u: np.ndarray, *, x: Optional[np.ndarray] = None
+      self, u: np.ndarray, *, x: np.ndarray | None = None
     ) -> np.ndarray:
       self.calls["cdf"] += 1
       return super()._cdf_raw(u, x=x)
 
     def _hfunc1_raw(
-      self, u: np.ndarray, *, x: Optional[np.ndarray] = None
+      self, u: np.ndarray, *, x: np.ndarray | None = None
     ) -> np.ndarray:
       self.calls["hfunc1"] += 1
       return super()._hfunc1_raw(u, x=x)
 
     def _hfunc2_raw(
-      self, u: np.ndarray, *, x: Optional[np.ndarray] = None
+      self, u: np.ndarray, *, x: np.ndarray | None = None
     ) -> np.ndarray:
       self.calls["hfunc2"] += 1
       return super()._hfunc2_raw(u, x=x)
@@ -720,7 +709,7 @@ class _WrappingVinecop(_ListVinecop):
     self,
     pairs: list[list[pv.Bicop]],
     structure: pv.RVineStructure,
-    var_types: Optional[list[str]] = None,
+    var_types: list[str] | None = None,
   ) -> None:
     self._pairs = pairs
     self._bind_vine(structure, var_types=var_types)
@@ -880,7 +869,7 @@ def test_fit_edge_receives_the_edge_types_and_four_columns() -> None:
   def recording(
     tree: int, edge: int, u_e: Any, x_e: Any, var_types: Any = ("c", "c")
   ) -> BicopLike[Any]:
-    seen[(tree, edge)] = (int(np.asarray(u_e).shape[1]), tuple(var_types))
+    seen[tree, edge] = (int(np.asarray(u_e).shape[1]), tuple(var_types))
     return _discrete_fit_edge(tree, edge, u_e, x_e, var_types)
 
   structure = _order_structure(len(var_types))
@@ -921,28 +910,42 @@ def test_fit_engines_reject_a_missing_left_limit_block(engine: str) -> None:
   var_types = ["d", "c", "c", "c"]
   d = len(var_types)
   u = _to_compact(_dependent_expanded(var_types, seed=8), var_types)
-  with pytest.raises(ValueError, match=f"{engine}: u must have shape"):
-    if engine == "fit":
-      VinecopBase._fit_parts(
+  call = (
+    (
+      lambda: VinecopBase._fit_parts(
         _order_structure(d), u[:, :d], _discrete_fit_edge, var_types=var_types
       )
-    else:
-      VinecopBase._select_parts(
+    )
+    if engine == "fit"
+    else (
+      lambda: VinecopBase._select_parts(
         u[:, :d], _discrete_fit_edge, var_types=var_types
       )
+    )
+  )
+  with pytest.raises(ValueError, match=f"{engine}: u must have shape"):
+    call()
 
 
 @pytest.mark.parametrize("engine", ["fit", "select"])
 def test_fit_engines_reject_an_unknown_variable_type(engine: str) -> None:
   var_types = ["d", "x", "c", "c"]
   u = _dependent_expanded(["d", "c", "c", "c"], seed=8)
-  with pytest.raises(ValueError, match="var_types entries must be 'c' or 'd'"):
-    if engine == "fit":
-      VinecopBase._fit_parts(
+  call = (
+    (
+      lambda: VinecopBase._fit_parts(
         _order_structure(4), u, _discrete_fit_edge, var_types=var_types
       )
-    else:
-      VinecopBase._select_parts(u, _discrete_fit_edge, var_types=var_types)
+    )
+    if engine == "fit"
+    else (
+      lambda: VinecopBase._select_parts(
+        u, _discrete_fit_edge, var_types=var_types
+      )
+    )
+  )
+  with pytest.raises(ValueError, match="var_types entries must be 'c' or 'd'"):
+    call()
 
 
 def test_fit_checks_var_types_against_the_structure() -> None:
@@ -1013,7 +1016,7 @@ def test_wrapped_pairs_match_vinecop_on_count_margins(
   mine = _WrappingVinecop(pairs, structure, var_types=var_types)
   ref = pv.Vinecop.from_structure(
     structure=structure,
-    pair_copulas=[[p for p in row] for row in pairs],
+    pair_copulas=[list(row) for row in pairs],
     var_types=var_types,
   )
   # The parity bounds, not exact equality: the same cross-toolchain last-bit
@@ -1027,7 +1030,7 @@ def test_a_discrete_pair_without_a_continuous_view_is_rejected() -> None:
   # declares atoms has to offer a continuous view. Saying so beats the column-
   # count error the pair itself would raise several frames down.
   class _NoView:
-    var_types = ["d", "c"]
+    var_types = ("d", "c")
 
     def pdf(self, u: Any) -> Any:
       raise AssertionError("not reached")

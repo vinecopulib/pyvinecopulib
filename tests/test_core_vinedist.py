@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -26,8 +26,8 @@ from pyvinecopulib.core import (
 )
 from pyvinecopulib.margins import FitControlsMargin, SciPyMargin
 
-from .helpers import FlatMargin, ShiftedNormalMargin, widen
 from .conftest import GaussianBicop, HostedVinecop
+from .helpers import FlatMargin, ShiftedNormalMargin, widen
 
 # The discrete cascade owns these; the end-to-end test at the bottom reuses them
 # rather than duplicating the type patterns and the parity bound.
@@ -173,7 +173,7 @@ def test_logpdf_survives_a_copula_density_that_underflows() -> None:
   dist = Vinedist(copula, [stats.uniform()] * d)
   y = np.tile(np.array([0.999, 0.001]), d // 2)[None, :]
 
-  assert np.asarray(copula.pdf(y))[0] == 0.0
+  assert np.asarray(copula.pdf(y))[0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
   logpdf = np.asarray(dist.logpdf(y))[0]
   assert np.isfinite(logpdf)
   # Uniform margins contribute nothing, so the joint log-density is the
@@ -253,7 +253,7 @@ def test_sample_conditional_validates_its_arguments(
   dist = pv.Vinedist.from_data(continuous)
   with pytest.raises(ValueError, match="must be two-dimensional"):
     dist.sample_conditional(np.zeros(5))
-  with pytest.raises(ValueError, match="must be in 1, ..., 2"):
+  with pytest.raises(ValueError, match=r"must be in 1, \.\.\., 2"):
     dist.sample_conditional(np.zeros((5, 1)), conditioning_set=[3])
   with pytest.raises(ValueError, match="invalid number of columns"):
     dist.sample_conditional(np.zeros((5, 2)))
@@ -351,10 +351,10 @@ def test_left_limit_above_the_cdf_is_refused_on_both_paths() -> None:
   class _Broken(FlatMargin):
     var_type = "d"
 
-    def cdf(self, y: Any, /, *, x: Optional[Any] = None) -> Any:
+    def cdf(self, y: Any, /, *, x: Any | None = None) -> Any:
       return np.full_like(np.asarray(y, dtype=float), 0.3)
 
-    def cdf_left(self, y: Any, /, *, x: Optional[Any] = None) -> Any:
+    def cdf_left(self, y: Any, /, *, x: Any | None = None) -> Any:
       return np.full_like(np.asarray(y, dtype=float), 0.9)
 
   # A discrete copula, so the var_types cross-check passes and the layout
@@ -654,11 +654,11 @@ def test_a_margin_that_only_selects_is_not_treated_as_fixed(
       /,
       controls: Any = None,
       *,
-      var_type: Optional[str] = None,
-      support: Optional[tuple[Optional[float], Optional[float]]] = None,
+      var_type: str | None = None,
+      support: tuple[float | None, float | None] | None = None,
       x: Any = None,
       weights: Any = None,
-    ) -> "_Chooses":
+    ) -> _Chooses:
       del controls, var_type, support, x, weights
       self.chosen = Kde1d().fit(np.asarray(y, dtype=float))
       return self
@@ -670,7 +670,9 @@ def test_a_margin_that_only_selects_is_not_treated_as_fixed(
   assert all(cast("Any", m).is_fitted for m in dist.margins)
   # And `fit`, which has nothing to re-estimate here, says so rather than
   # quietly leaving the margins where they were.
-  with pytest.raises(NotImplementedError, match="_Chooses.fit is not defined"):
+  with pytest.raises(
+    NotImplementedError, match=r"_Chooses\.fit is not defined"
+  ):
     dist.fit(continuous)
 
 
@@ -770,7 +772,7 @@ def test_declared_supports_bound_the_default_kde_margin(
   plain = pv.Vinedist.from_data(continuous)
   bounded = pv.Vinedist.from_data(continuous, supports=[None, (0.0, None)])
   margin: Any = bounded.margins[1]
-  assert isinstance(margin, Kde1d) and margin.xmin == 0.0
+  assert isinstance(margin, Kde1d) and margin.xmin == 0.0  # noqa: RUF069 - the value this test set, read back
   assert plain.sample(500, seeds=[1, 2, 3])[:, 1].min() < 0.0
   assert bounded.sample(500, seeds=[1, 2, 3])[:, 1].min() >= 0.0
 
@@ -891,19 +893,19 @@ def test_conditional_entry_points_reject_broadcasting_covariates() -> None:
   y = np.zeros((4, 2))
   for x in (np.zeros(4), np.zeros((1, 1))):
     calls = (
-      lambda: dist.marginal_cdf(y, x=x),
-      lambda: dist.marginal_icdf(np.full_like(y, 0.5), x=x),
-      lambda: dist.logpdf(y, x=x),
-      lambda: dist.cdf(y, x=x),
-      lambda: dist.rosenblatt(y, x=x),
-      lambda: dist.inverse_rosenblatt(np.full_like(y, 0.5), x=x),
-      lambda: dist.sample(4, x=x),
-      lambda: dist.sample_conditional(
+      lambda x=x: dist.marginal_cdf(y, x=x),
+      lambda x=x: dist.marginal_icdf(np.full_like(y, 0.5), x=x),
+      lambda x=x: dist.logpdf(y, x=x),
+      lambda x=x: dist.cdf(y, x=x),
+      lambda x=x: dist.rosenblatt(y, x=x),
+      lambda x=x: dist.inverse_rosenblatt(np.full_like(y, 0.5), x=x),
+      lambda x=x: dist.sample(4, x=x),
+      lambda x=x: dist.sample_conditional(
         np.zeros((4, 1)), conditioning_set=[2], x=x
       ),
     )
     for call in calls:
-      with pytest.raises(ValueError, match="one row per observation|shape"):
+      with pytest.raises(ValueError, match=r"one row per observation|shape"):
         call()
 
 
@@ -973,7 +975,7 @@ def test_from_data_fits_conditional_margins_on_the_covariates() -> None:
   cov = rng.normal(size=(200, 1))
   y = np.column_stack([cov[:, 0] + rng.normal(size=200), rng.normal(size=200)])
 
-  seen: list[Optional[Any]] = []
+  seen: list[Any | None] = []
 
   class _Recording(ShiftedNormalMargin):
     @property
@@ -986,9 +988,9 @@ def test_from_data_fits_conditional_margins_on_the_covariates() -> None:
       /,
       controls: Any = None,
       *,
-      var_type: Optional[str] = None,
-      support: Optional[tuple[Optional[float], Optional[float]]] = None,
-      x: Optional[Any] = None,
+      var_type: str | None = None,
+      support: tuple[float | None, float | None] | None = None,
+      x: Any | None = None,
       weights: Any = None,
     ) -> Any:
       del var_type, support
@@ -1459,11 +1461,11 @@ def test_logpdf_reads_the_parts_namespace_not_the_inputs() -> None:
   class NumpyNormal(MarginBase[Any]):
     """A NumPy margin: it answers in ndarray whatever it is handed."""
 
-    def pdf(self, y: Any, /, *, x: Optional[Any] = None) -> Any:
+    def pdf(self, y: Any, /, *, x: Any | None = None) -> Any:
       a = np.asarray(y, dtype=float)
       return np.exp(-0.5 * a * a) / math.sqrt(2.0 * math.pi)
 
-    def cdf(self, y: Any, /, *, x: Optional[Any] = None) -> Any:
+    def cdf(self, y: Any, /, *, x: Any | None = None) -> Any:
       a = np.asarray(y, dtype=float)
       return np.array([0.5 * (1.0 + math.erf(v / math.sqrt(2.0))) for v in a])
 
@@ -1590,9 +1592,9 @@ def test_covariates_reach_the_parts_that_declare_them_only() -> None:
       /,
       controls: Any = None,
       *,
-      var_type: Optional[str] = None,
-      support: Optional[tuple[Optional[float], Optional[float]]] = None,
-      x: Optional[Any] = None,
+      var_type: str | None = None,
+      support: tuple[float | None, float | None] | None = None,
+      x: Any | None = None,
       weights: Any = None,
     ) -> Any:
       del data, controls, var_type, support, x, weights

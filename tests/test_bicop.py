@@ -66,7 +66,7 @@ def test_bicop(unique_json_path: str) -> None:
 
   bicop.parameters = np.array([[3.0]])
   assert bicop.parameters.shape == (1, 1)
-  assert bicop.parameters[0, 0] == 3.0
+  assert bicop.parameters[0, 0] == 3.0  # noqa: RUF069 - the value this test set, read back
 
   bicop.var_types = ["d", "d"]
   assert bicop.var_types == ["d", "d"]
@@ -75,7 +75,9 @@ def test_bicop(unique_json_path: str) -> None:
   assert isinstance(bicop.tau, float)
   assert bicop.npars == 1
   with pytest.raises(AttributeError):
-    setattr(bicop, "npars", 2)
+    # Through `setattr`, so `ty` does not reject the assignment whose
+    # runtime refusal is the claim.
+    setattr(bicop, "npars", 2)  # noqa: B010
 
   # Test passing a single row of data (#169 & #170 fix)
   bicop.var_types = ["c", "c"]
@@ -498,12 +500,12 @@ def test_bicop_taildep_and_beta() -> None:
   td = clayton.taildep
   assert isinstance(td, np.ndarray) and td.shape == (2, 2)
   np.testing.assert_allclose(td[0, 0], 2 ** (-1 / 2), rtol=1e-12)
-  assert td[1, 1] == 0.0 and td[0, 1] == 0.0 and td[1, 0] == 0.0
+  assert td[1, 1] == 0.0 and td[0, 1] == 0.0 and td[1, 0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
 
   # Gumbel theta=2: upper tail dependence 2 - 2^(1/theta), no lower.
   gumbel = pv.Bicop(family=pv.families.gumbel, parameters=np.array([[2.0]]))
   np.testing.assert_allclose(gumbel.taildep[1, 1], 2 - 2**0.5, rtol=1e-12)
-  assert gumbel.taildep[0, 0] == 0.0
+  assert gumbel.taildep[0, 0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
 
   # Gaussian: no tail dependence in any corner.
   gaussian = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
@@ -528,12 +530,12 @@ def test_bicop_taildep_and_beta() -> None:
   np.testing.assert_allclose(
     clayton180.taildep[1, 1], clayton.taildep[0, 0], rtol=1e-12
   )
-  assert clayton180.taildep[0, 0] == 0.0
+  assert clayton180.taildep[0, 0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
   clayton90 = pv.Bicop(
     family=pv.families.clayton, rotation=90, parameters=np.array([[2.0]])
   )
   td90 = clayton90.taildep
-  assert td90[0, 0] == 0.0 and td90[1, 1] == 0.0
+  assert td90[0, 0] == 0.0 and td90[1, 1] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
   assert td90[0, 1] + td90[1, 0] > 0
   assert clayton90.beta < 0 < clayton.beta
 
@@ -655,7 +657,7 @@ def test_bicop_scores_family(
   # Per-row parity: constant per-row parameters equal to the object's own
   # reproduce the state-based result, and threading is consistent.
   pars_const = np.tile(cop.parameters.ravel(), (n, 1))
-  for method in _BICOP_SCORE_MATRIX_METHODS + ["gradient"]:
+  for method in [*_BICOP_SCORE_MATRIX_METHODS, "gradient"]:
     fn = getattr(cop, method)
     np.testing.assert_allclose(fn(u, pars_const), fn(u), rtol=1e-9, atol=1e-12)
     np.testing.assert_allclose(

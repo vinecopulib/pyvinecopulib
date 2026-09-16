@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 from sklearn.base import DensityMixin
@@ -26,13 +26,13 @@ class VineDensity(DensityMixin, VineBase):
 
   def __init__(
     self,
-    distribution: Optional[type[VinedistBase[Any]]] = None,
-    controls: Optional[ControlsLike] = None,
-    structure: Optional[pv.RVineStructure] = None,
+    distribution: type[VinedistBase[Any]] | None = None,
+    controls: ControlsLike | None = None,
+    structure: pv.RVineStructure | None = None,
     margin_controls: object = None,
     batch_size: int = 100,
     random_state: _RandomStateLike = None,
-    n_jobs: Optional[int] = None,
+    n_jobs: int | None = None,
   ) -> None:
     """Vine-copula based density estimator.
 
@@ -159,7 +159,7 @@ class VineDensity(DensityMixin, VineBase):
   def sample(
     self, n_samples: int = 1, random_state: _RandomStateLike = None
   ) -> np.ndarray:
-    """Draws samples from the fitted joint density.
+    r"""Draws samples from the fitted joint density.
 
     Samples :math:`U \\sim C` from the fitted copula and pushes each
     component back through the inverse marginal CDF :math:`F_j^{-1}`
@@ -199,7 +199,7 @@ class VineDensity(DensityMixin, VineBase):
     )
 
   def pdf(self, X: _XLike, copula_only: bool = False) -> np.ndarray:
-    """Evaluates the joint density at the given samples.
+    r"""Evaluates the joint density at the given samples.
 
     Returns the full joint density
     :math:`\\hat f(\\mathbf{x}) = \\hat c(\\hat F_1(x_1), \\ldots,
@@ -228,7 +228,7 @@ class VineDensity(DensityMixin, VineBase):
     N: int = 10000,
     random_state: _RandomStateLike = None,
   ) -> np.ndarray:
-    """Evaluates the joint CDF at the given samples.
+    r"""Evaluates the joint CDF at the given samples.
 
     Returns
     :math:`\\hat F(\\mathbf{x}) = \\hat C(\\hat F_1(x_1), \\ldots,

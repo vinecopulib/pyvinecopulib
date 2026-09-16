@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Check that every place the version is written agrees.
 
 The source of truth is ``[project].version`` in ``pyproject.toml``. Everything

@@ -28,9 +28,7 @@ from __future__ import annotations
 import copy
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
-from typing import Any, ClassVar, Optional, Self, TypeVar, cast
-
-from .protocols import Namespace, array_namespace
+from typing import Any, ClassVar, Self, TypeVar, cast
 
 from ._bicop_plot import (
   BICOP_PLOT_PARAMS,
@@ -40,16 +38,17 @@ from ._bicop_plot import (
 from ._covariates import pair_eval, prepare_covariates
 from ._loglik import safe_log, sum_loglik
 from ._placement import PlacementMixin, QrngUniformMixin
+from ._rootfind import solve_increasing
 from ._trim import trim
 from ._validation import check_var_types
-from ._rootfind import solve_increasing
-
 from .protocols import (
+  _BICOP_EXAMPLE,
   ArrayT,
   BicopLike,
   BoolArray,
   ControlsLike,
-  _BICOP_EXAMPLE,
+  Namespace,
+  array_namespace,
 )
 
 __all__ = ["BicopBase"]
@@ -124,19 +123,25 @@ def continuous_of(pair: BicopLike[ArrayT]) -> BicopLike[ArrayT]:
   Returns
   -------
   BicopLike
-      The continuous view, or ``pair`` itself when it is already continuous.
+      The continuous view, or ``pair`` itself: a pair with no
+      ``with_var_types`` carries no types to begin with, and
+      :meth:`~pyvinecopulib.core.BicopBase.with_var_types` returns ``self``
+      when they already match, so neither costs a copy.
 
   Raises
   ------
   ValueError
       If ``pair`` declares discrete variables but offers no continuous view.
   """
-  # Read the capability off the *type*: a permissive proxy such as a mock
-  # synthesizes instance attributes on demand, so `getattr(pair, ...)` would
-  # answer for an object that has no such method.
-  view = getattr(type(pair), "with_var_types", None)
+  # Read off the instance, as `flip_of` reads `flip`: `with_var_types` is an
+  # optional capability, which is how every other one here is asked for.
+  view = getattr(pair, "with_var_types", None)
   if callable(view):
-    return cast("BicopLike[ArrayT]", view(pair))
+    return cast("BicopLike[ArrayT]", view())
+  # Declaring atoms on a pair that implements `BicopLike` directly is the
+  # mistake the extension docs warn about, and the cascade would otherwise
+  # hand it a four-column argument and fail several frames down. Same trade as
+  # `flip_of`: name the missing capability where it is missing.
   types = getattr(pair, "var_types", None)
   if types is not None and any(t != "c" for t in types):
     raise ValueError(
@@ -154,7 +159,7 @@ def rect_prob_from_cdf(
   a2: ArrayT,
   b2: ArrayT,
   *,
-  x: Optional[ArrayT] = None,
+  x: ArrayT | None = None,
 ) -> ArrayT:
   """``P((a1, b1] x (a2, b2])`` as the four-corner difference of ``cdf``.
 
@@ -202,7 +207,7 @@ def cond_interval_prob_from_hfunc(
   hi: ArrayT,
   cond_var: int,
   *,
-  x: Optional[ArrayT] = None,
+  x: ArrayT | None = None,
 ) -> ArrayT:
   """``P(lo < U_free <= hi | U_cond = u_cond)`` as a difference of h-functions.
 
@@ -296,7 +301,7 @@ class BicopBase(
   # the lanes above read it instead of each naming a class of their own. A
   # plain comment, not a `#:` one: autosummary cannot page an attribute whose
   # value is a class.
-  controls_class: ClassVar[Optional[type]] = None
+  controls_class: ClassVar[type | None] = None
 
   # --- variable types --------------------------------------------------- #
   #: Mirrors ``AbstractBicop``'s in-class ``var_types_{"c", "c"}``: a class
@@ -359,7 +364,7 @@ class BicopBase(
   # Each public member dispatches on `var_types` and delegates to the `_*_raw`
   # leaf a subclass writes, which always sees two continuous columns --
   # `AbstractBicop`'s shape.
-  def pdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def pdf(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Density with respect to each argument's own reference measure.
 
     A continuous argument contributes a derivative and a discrete one the
@@ -390,7 +395,7 @@ class BicopBase(
       )
     return self._pdf_c(xp, u1, u2, x)
 
-  def hfunc1(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def hfunc1(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """``P(U2 <= u2 | U1)``, conditioning on the atom when ``U1`` is discrete.
 
     Parameters
@@ -418,7 +423,7 @@ class BicopBase(
       self._h1_c(xp, 0.5 * (u1 + u1m), u2, x),
     )
 
-  def hfunc2(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def hfunc2(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """``P(U1 <= u1 | U2)``, conditioning on the atom when ``U2`` is discrete.
 
     Parameters
@@ -444,7 +449,7 @@ class BicopBase(
       self._h2_c(xp, u1, 0.5 * (u2 + u2m), x),
     )
 
-  def loglik(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def loglik(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Total log-likelihood ``sum(log c(u))`` of the pair at ``u``.
 
     An observation carrying a ``nan`` has no log-density and is left out of the
@@ -471,7 +476,7 @@ class BicopBase(
     # discrete edge, whose argument is four columns wide.
     return sum_loglik(safe_log(self.pdf(u, x=x)))
 
-  def hinv1(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def hinv1(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Inverse of :meth:`hfunc1` in its second argument.
 
     Delegates to the continuous leaf when the conditioning argument is
@@ -499,7 +504,7 @@ class BicopBase(
       p,
     )
 
-  def hinv2(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def hinv2(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Inverse of :meth:`hfunc2` in its first argument.
 
     The counterpart of :meth:`hinv1`, on the other h-function.
@@ -526,7 +531,7 @@ class BicopBase(
       p,
     )
 
-  def cdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def cdf(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Distribution function ``C(u)``, which the left limits do not enter.
 
     Parameters
@@ -557,7 +562,7 @@ class BicopBase(
     a2: ArrayT,
     b2: ArrayT,
     *,
-    x: Optional[ArrayT] = None,
+    x: ArrayT | None = None,
   ) -> ArrayT:
     """Probability of the rectangle ``(a1, b1] x (a2, b2]``.
 
@@ -597,7 +602,7 @@ class BicopBase(
     hi: ArrayT,
     cond_var: int,
     *,
-    x: Optional[ArrayT] = None,
+    x: ArrayT | None = None,
   ) -> ArrayT:
     """Probability that the free argument falls in ``(lo, hi]``, given the other.
 
@@ -630,10 +635,10 @@ class BicopBase(
     cls,
     u: ArrayT,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    var_types: Optional[list[str]] = None,
-    x: Optional[ArrayT] = None,
+    var_types: list[str] | None = None,
+    x: ArrayT | None = None,
   ) -> Self:
     """Construct a pair copula and select it from data.
 
@@ -674,10 +679,10 @@ class BicopBase(
     self,
     u: ArrayT,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    var_types: Optional[list[str]] = None,
-    x: Optional[ArrayT] = None,
+    var_types: list[str] | None = None,
+    x: ArrayT | None = None,
   ) -> Self:
     """Raise; override to estimate this pair copula from data, in place.
 
@@ -729,10 +734,10 @@ class BicopBase(
     self,
     u: ArrayT,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    var_types: Optional[list[str]] = None,
-    x: Optional[ArrayT] = None,
+    var_types: list[str] | None = None,
+    x: ArrayT | None = None,
   ) -> Self:
     """Choose a family for this pair copula and estimate it, in place.
 
@@ -810,9 +815,9 @@ class BicopBase(
     self,
     n: int,
     *,
-    x: Optional[ArrayT] = None,
+    x: ArrayT | None = None,
     qrng: bool = False,
-    seeds: Optional[list[int]] = None,
+    seeds: list[int] | None = None,
   ) -> ArrayT:
     """Draw ``n`` samples from the pair copula.
 
@@ -934,7 +939,7 @@ class BicopBase(
       "difference quotients of the distribution function."
     )
 
-  def _hinv1_raw(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def _hinv1_raw(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Continuous inverse of ``_hfunc1_raw`` in its second argument.
 
     Solved by monotone bisection, so a subclass needs only ``_hfunc1_raw``;
@@ -964,7 +969,7 @@ class BicopBase(
       ),
     )
 
-  def _hinv2_raw(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def _hinv2_raw(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Continuous inverse of ``_hfunc2_raw`` in its first argument.
 
     The counterpart of :meth:`_hinv1_raw`, on the other h-function.
@@ -1019,10 +1024,8 @@ class BicopBase(
   # On the pair copula, as `AbstractBicop` keeps them: they are what a discrete
   # declaration means, so no wrapper has to supply them.
   def _atoms(
-    self, u: ArrayT, x: Optional[ArrayT]
-  ) -> tuple[
-    Namespace[ArrayT], ArrayT, ArrayT, ArrayT, ArrayT, Optional[ArrayT]
-  ]:
+    self, u: ArrayT, x: ArrayT | None
+  ) -> tuple[Namespace[ArrayT], ArrayT, ArrayT, ArrayT, ArrayT, ArrayT | None]:
     """Namespace, the two values, their left limits, and the covariates."""
     ua: Any = self._prep_args(u)
     xp = array_namespace(ua)
@@ -1040,27 +1043,27 @@ class BicopBase(
     )
 
   def _pdf_c(
-    self, xp: Namespace[ArrayT], a: ArrayT, b: ArrayT, x: Optional[ArrayT]
+    self, xp: Namespace[ArrayT], a: ArrayT, b: ArrayT, x: ArrayT | None
   ) -> ArrayT:
     return pair_eval(self._pdf_raw, xp.stack([a, b], axis=-1), x=x)
 
   def _cdf_c(
-    self, xp: Namespace[ArrayT], a: ArrayT, b: ArrayT, x: Optional[ArrayT]
+    self, xp: Namespace[ArrayT], a: ArrayT, b: ArrayT, x: ArrayT | None
   ) -> ArrayT:
     return pair_eval(self._cdf_raw, xp.stack([a, b], axis=-1), x=x)
 
   def _h1_c(
-    self, xp: Namespace[ArrayT], a: ArrayT, b: ArrayT, x: Optional[ArrayT]
+    self, xp: Namespace[ArrayT], a: ArrayT, b: ArrayT, x: ArrayT | None
   ) -> ArrayT:
     return pair_eval(self._hfunc1_raw, xp.stack([a, b], axis=-1), x=x)
 
   def _h2_c(
-    self, xp: Namespace[ArrayT], a: ArrayT, b: ArrayT, x: Optional[ArrayT]
+    self, xp: Namespace[ArrayT], a: ArrayT, b: ArrayT, x: ArrayT | None
   ) -> ArrayT:
     return pair_eval(self._hfunc2_raw, xp.stack([a, b], axis=-1), x=x)
 
   @staticmethod
-  def _take(value: Optional[ArrayT], mask: BoolArray) -> Optional[ArrayT]:
+  def _take(value: ArrayT | None, mask: BoolArray) -> ArrayT | None:
     """Select rows from an optional conditioning matrix."""
     return None if value is None else value[mask]
 
@@ -1079,7 +1082,7 @@ class BicopBase(
     lo: ArrayT,
     hi: ArrayT,
     cond_var: int,
-    x: Optional[ArrayT],
+    x: ArrayT | None,
   ) -> ArrayT:
     """``P(lo < U_free <= hi | U_cond = u_cond)``, a mixed edge's numerator."""
     return pair_eval(self.cond_interval_prob, u_cond, lo, hi, cond_var, x=x)
@@ -1090,7 +1093,7 @@ class BicopBase(
     b1: ArrayT,
     a2: ArrayT,
     b2: ArrayT,
-    x: Optional[ArrayT],
+    x: ArrayT | None,
   ) -> ArrayT:
     """``P((a1, b1] x (a2, b2])``, through whichever route the pair declares."""
     return pair_eval(self.rect_prob, a1, b1, a2, b2, x=x)
@@ -1101,7 +1104,7 @@ class BicopBase(
     a1: ArrayT,
     b1: ArrayT,
     b2: ArrayT,
-    x: Optional[ArrayT],
+    x: ArrayT | None,
     axis: int,
   ) -> ArrayT:
     """``P((a1, b1] x (0, b2])`` for ``axis=1``, transposed for ``axis=2``.
@@ -1123,7 +1126,7 @@ class BicopBase(
     u2: ArrayT,
     u1m: ArrayT,
     u2m: ArrayT,
-    x: Optional[ArrayT],
+    x: ArrayT | None,
     *,
     discrete: int,
   ) -> ArrayT:
@@ -1157,7 +1160,7 @@ class BicopBase(
     u2: ArrayT,
     u1m: ArrayT,
     u2m: ArrayT,
-    x: Optional[ArrayT],
+    x: ArrayT | None,
   ) -> ArrayT:
     """Rectangle probability per unit area, with the degenerate fallbacks."""
     d1, d2 = xp.abs(u1 - u1m), xp.abs(u2 - u2m)
@@ -1245,10 +1248,10 @@ class BicopBase(
     self,
     plot_type: str = "surface",
     margin_type: str = "unif",
-    xylim: Optional[tuple[float, float]] = None,
-    grid_size: Optional[int] = None,
+    xylim: tuple[float, float] | None = None,
+    grid_size: int | None = None,
     *,
-    x: Optional[ArrayT] = None,
+    x: ArrayT | None = None,
   ) -> None:
     bicop_plot(
       self, plot_type, margin_type, xylim, grid_size, x=x, place=self._prep

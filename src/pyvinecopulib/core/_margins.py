@@ -34,7 +34,8 @@ from __future__ import annotations
 
 import copy
 import operator
-from typing import Any, Callable, Optional, Sequence, Union
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -42,7 +43,6 @@ from ..pyvinecopulib_ext import Kde1d
 from ._json import MODEL_JSON_VERSION, read_payload
 from .margin_base import MarginBase, support_of
 from .protocols import ArrayT, MarginLike
-
 
 __all__ = [
   "as_margin",
@@ -117,11 +117,11 @@ class _WrappedMargin(MarginBase[ArrayT]):
     pdf: Callable[[ArrayT], ArrayT],
     cdf: Callable[[ArrayT], ArrayT],
     icdf: Callable[[ArrayT], ArrayT],
-    logpdf: Optional[Callable[[ArrayT], ArrayT]] = None,
+    logpdf: Callable[[ArrayT], ArrayT] | None = None,
     var_type: str = "c",
-    cdf_left: Optional[Callable[[ArrayT], ArrayT]] = None,
-    support: Optional[tuple[float, float]] = None,
-    family_name: Optional[str] = None,
+    cdf_left: Callable[[ArrayT], ArrayT] | None = None,
+    support: tuple[float, float] | None = None,
+    family_name: str | None = None,
   ) -> None:
     self.wrapped = obj
     self._pdf = pdf
@@ -141,21 +141,21 @@ class _WrappedMargin(MarginBase[ArrayT]):
   def support(self) -> tuple[float, float]:
     return self._support
 
-  def pdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def pdf(self, y: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     return self._pdf(y)
 
-  def logpdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def logpdf(self, y: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     if self._logpdf is None:
       return super().logpdf(y)
     return self._logpdf(y)
 
-  def cdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def cdf(self, y: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     return self._cdf(y)
 
-  def icdf(self, p: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def icdf(self, p: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     return self._icdf(p)
 
-  def cdf_left(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def cdf_left(self, y: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     if self._cdf_left is None:
       return super().cdf_left(y)
     return self._cdf_left(y)
@@ -275,9 +275,8 @@ def _adapt_torch(obj: Any) -> MarginLike[Any]:  # noqa: ANN401
     )
 
   cdf = getattr(type(obj), "cdf", None)
-  if (
-    cdf is None
-    or getattr(cdf, "__module__", "") == "torch.distributions.distribution"
+  if cdf is None or (
+    getattr(cdf, "__module__", "") == "torch.distributions.distribution"
     and getattr(cdf, "__qualname__", "") == "Distribution.cdf"
   ):
     raise TypeError(
@@ -487,7 +486,7 @@ _BUILTIN_READERS: dict[str, Callable[[dict[str, Any]], Any]] = {
 
 
 def _index_for(
-  key: Union[str, int], lookup: dict[str, int], d: int, label: str
+  key: str | int, lookup: dict[str, int], d: int, label: str
 ) -> int:
   """Resolve one mapping key to a variable position.
 
@@ -543,7 +542,7 @@ def _per_variable(
   spec: object,
   d: int,
   *,
-  names: Optional[Sequence[str]],
+  names: Sequence[str] | None,
   default: object,
   label: str,
   is_atom: Callable[[Any], bool],
@@ -606,7 +605,7 @@ def resolve_margin_controls(
   spec: object,
   d: int,
   *,
-  names: Optional[Sequence[str]] = None,
+  names: Sequence[str] | None = None,
 ) -> list[Any]:
   """Expand ``margin_controls=`` into one controls object per variable.
 

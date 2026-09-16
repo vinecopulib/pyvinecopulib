@@ -45,15 +45,13 @@ since ``MarginBase.sample`` offers none, and stays on ``MarginBase``.
 
 from __future__ import annotations
 
-from typing import Any, Generic, Optional, cast
+from typing import Any, Generic, cast
 
 import numpy as np
 import numpy.typing as npt
 from array_api_compat import device as _device_of
 
-from .protocols import array_namespace
-
-from .protocols import ArrayT
+from .protocols import ArrayT, array_namespace
 
 __all__ = [
   "PlacementMixin",
@@ -64,7 +62,7 @@ __all__ = [
 ]
 
 
-def to_numpy(a: ArrayT, *, dtype: Optional[npt.DTypeLike] = None) -> np.ndarray:
+def to_numpy(a: ArrayT, *, dtype: npt.DTypeLike | None = None) -> np.ndarray:
   """Host NumPy view of ``a`` -- placement's return trip.
 
   The one direction inference cannot help with: a value has to come back to
@@ -98,7 +96,7 @@ def to_numpy(a: ArrayT, *, dtype: Optional[npt.DTypeLike] = None) -> np.ndarray:
   return np.asarray(v, dtype=dtype)
 
 
-def reference_array(obj: object) -> Optional[Any]:  # noqa: ANN401
+def reference_array(obj: object) -> Any | None:  # noqa: ANN401
   """An array ``obj`` holds, naming where its numerics run.
 
   Looks in the two places an object keeps arrays, in the order that finds the
@@ -137,7 +135,7 @@ def reference_array(obj: object) -> Optional[Any]:  # noqa: ANN401
   """
   if _is_array(obj):
     return obj
-  fallback: Optional[Any] = None
+  fallback: Any | None = None
   for name in ("parameters", "buffers"):
     method = getattr(obj, name, None)
     if callable(method):

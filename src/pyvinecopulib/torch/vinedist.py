@@ -21,7 +21,8 @@ TorchVinecop : The copula this holds.
 from __future__ import annotations
 
 import dataclasses
-from typing import Any, ClassVar, Optional, Sequence, cast
+from collections.abc import Sequence
+from typing import Any, ClassVar, cast
 
 import torch
 from torch import Tensor
@@ -41,7 +42,7 @@ from .vinecop import TorchVinecop
 __all__ = ["TorchVinedist"]
 
 
-def _lift(margin: object, placement: Optional[Tensor]) -> object:
+def _lift(margin: object, placement: Tensor | None) -> object:
   """A fitted ``Kde1d`` as a ``TorchKde1d`` on a given placement.
 
   The one margin class this lane can convert rather than refuse: it is core's
@@ -103,7 +104,7 @@ def _check_margin(margin: object, name: str) -> None:
     getattr(margin, "cdf_left", None) is None
   ):
     raise NotImplementedError(
-      f"{name} declares var_type={getattr(margin, 'var_type')!r} but has no "
+      f"{name} declares var_type={margin.var_type!r} but has no "
       "`cdf_left`, so the copula cannot difference its atoms. Use TorchKde1d, "
       "which supplies one, or subclass MarginBase, which derives it."
     )
@@ -271,12 +272,12 @@ class TorchVinedist(
     registered = cast("list[torch.nn.Module]", list(margins))
     self._margins = cast("Any", torch.nn.ModuleList(registered))
 
-  vinecop_class: ClassVar[Optional[type]] = TorchVinecop
+  vinecop_class: ClassVar[type | None] = TorchVinecop
 
   #: The margin this route fits. `_default_margins` is still overridden: the
   #: placement comes from the *copula* controls, which no per-variable margin
   #: controls object carries.
-  margin_class: ClassVar[Optional[type]] = TorchKde1d
+  margin_class: ClassVar[type | None] = TorchKde1d
 
   #: The torch TLL fitter and the tree criterion are both unweighted, so a
   #: weighted request is refused rather than applied to the margins alone.
@@ -293,7 +294,7 @@ class TorchVinedist(
   @classmethod
   def _resolved_controls(
     cls,
-    controls: Optional[ControlsLike],
+    controls: ControlsLike | None,
   ) -> Any:  # noqa: ANN401 - `device` / `dtype` are not on ControlsLike
     """``controls``, or this lane's own default where the caller named none.
 
@@ -322,9 +323,9 @@ class TorchVinedist(
     # Anything `torch.as_tensor` accepts, which is the hook's whole job: a
     # caller may hand a NumPy array to a torch distribution.
     y: object,
-    weights: Optional[Tensor],
-    controls: Optional[ControlsLike],
-  ) -> tuple[Tensor, Optional[Tensor]]:
+    weights: Tensor | None,
+    controls: ControlsLike | None,
+  ) -> tuple[Tensor, Tensor | None]:
     """Put the fit inputs on one device, in one dtype.
 
     The controls decide the placement and the data follow, as documented.
@@ -351,8 +352,8 @@ class TorchVinedist(
   def _default_margins(
     cls,
     d: int,
-    controls: Optional[ControlsLike] = None,
-    margin_controls: Optional[Sequence[Optional[ControlsLike]]] = None,
+    controls: ControlsLike | None = None,
+    margin_controls: Sequence[ControlsLike | None] | None = None,
   ) -> Sequence[TorchKde1d]:
     """One :class:`TorchKde1d` per variable, on the resolved placement."""
     resolved = cls._resolved_controls(controls)
@@ -367,9 +368,9 @@ class TorchVinedist(
   @classmethod
   def _copula_controls(
     cls,
-    controls: Optional[ControlsLike],
+    controls: ControlsLike | None,
     u: Tensor,
-    weights: Optional[Tensor],
+    weights: Tensor | None,
   ) -> FitControlsTorchVinecop:
     """``controls`` with the placement the margins resolved pinned in.
 
@@ -387,7 +388,7 @@ class TorchVinedist(
   def margins(self) -> tuple[MarginLike[Tensor], ...]:
     return cast("tuple[MarginLike[Tensor], ...]", tuple(self._margins))
 
-  def log_prob(self, y: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
+  def log_prob(self, y: Tensor, *, x: Tensor | None = None) -> Tensor:
     """Alias of ``logpdf``, the ``torch.distributions`` spelling.
 
     Parameters

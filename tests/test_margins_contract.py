@@ -137,7 +137,7 @@ def test_an_unfitted_margin_answers_nothing(eco: Ecosystem) -> None:
   with pytest.raises(RuntimeError, match="is not fitted"):
     margin.pdf(np.array([1.0]))
   with pytest.raises(RuntimeError, match="is not fitted"):
-    margin.parameters
+    _ = margin.parameters
   with pytest.raises(RuntimeError, match="only defined after"):
     margin.loglik()
 
@@ -152,7 +152,7 @@ def test_an_unnamed_margin_has_no_family_until_select(eco: Ecosystem) -> None:
   margin = eco.cls()
   assert not margin.is_fitted
   with pytest.raises(RuntimeError, match="no family yet"):
-    margin.family_name
+    _ = margin.family_name
 
   chosen = margin.select(
     POSITIVE, FitControlsMargin(family_set=[eco.real, eco.true])

@@ -13,10 +13,9 @@ relevant dataclass and the dispatch in the corresponding ``from_data``
 from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
-from typing import Any, Optional
+from typing import Any
 
 import torch
-
 
 #: Structure-selection algorithms accepted by ``FitControlsTorchVinecop``,
 #: mirroring ``FitControlsVinecop.tree_algorithm``.
@@ -227,11 +226,11 @@ default="tau"
   tree_algorithm: str = "mst_prim"
   seeds: list[int] = field(default_factory=list)
   conditioning_set: list[int] = field(default_factory=list)
-  cache_integrals: Optional[bool] = None
+  cache_integrals: bool | None = None
   device: torch.types.Device = None
-  dtype: Optional[torch.dtype] = None
+  dtype: torch.dtype | None = None
   compile: bool = False
-  batched_fit: Optional[bool] = None
+  batched_fit: bool | None = None
 
   def __post_init__(self) -> None:
     super().__post_init__()

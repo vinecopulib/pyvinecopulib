@@ -11,11 +11,10 @@ same way.
 from __future__ import annotations
 
 import contextlib
-from typing import Any, Iterator, Optional, cast
+from collections.abc import Iterator
+from typing import Any, cast
 
-from .protocols import array_namespace
-
-from .protocols import ArrayT
+from .protocols import ArrayT, array_namespace
 
 __all__ = [
   "reject_covariates",
@@ -24,7 +23,7 @@ __all__ = [
 ]
 
 
-def check_var_types(var_types: Optional[list[str]], d: int) -> tuple[str, ...]:
+def check_var_types(var_types: list[str] | None, d: int) -> tuple[str, ...]:
   """Normalize and validate a vine's per-variable types.
 
   Parameters
@@ -80,7 +79,7 @@ def validate_univariate(values: ArrayT, *, name: str = "y") -> ArrayT:
 
 
 def validate_covariates(
-  x: Optional[ArrayT], n_rows: int, *, name: str = "x"
+  x: ArrayT | None, n_rows: int, *, name: str = "x"
 ) -> None:
   """Require a two-dimensional covariate matrix row-aligned with the data.
 
@@ -128,8 +127,8 @@ def validate_covariates(
 
 
 def validate_weights(
-  weights: Optional[ArrayT], values: ArrayT, *, name: str = "weights"
-) -> Optional[ArrayT]:
+  weights: ArrayT | None, values: ArrayT, *, name: str = "weights"
+) -> ArrayT | None:
   """Normalize and validate one real, finite, nonnegative weight per row.
 
   Parameters
@@ -235,7 +234,7 @@ def usable_observations(values: ArrayT, *, name: str = "y") -> ArrayT:
 
 
 def reject_covariates(
-  part: object, x: Optional[ArrayT], *, name: str = "x"
+  part: object, x: ArrayT | None, *, name: str = "x"
 ) -> None:
   """Raise if ``x`` was supplied to a part that fits unconditionally.
 
@@ -276,9 +275,9 @@ def reject_covariates(
 
 
 def validate_declaration(
-  var_type: Optional[str],
-  support: Optional[tuple[Optional[float], Optional[float]]],
-) -> tuple[Optional[str], Optional[tuple[Optional[float], Optional[float]]]]:
+  var_type: str | None,
+  support: tuple[float | None, float | None] | None,
+) -> tuple[str | None, tuple[float | None, float | None] | None]:
   """Check and normalize what a caller declared about one variable.
 
   The declaration a margin's ``fit`` / ``select`` / ``from_data`` takes

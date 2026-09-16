@@ -36,7 +36,7 @@ def regression_setup(
   regression_data: _RegressionData,
 ) -> _Setup:
   """Setup regression data and split."""
-  X, y, true_coef, noise_std = regression_data
+  X, y, true_coef, _noise_std = regression_data
   X_train, X_test = X[:200], X[200:]
   y_train, y_test = y[:200], y[200:]
 
@@ -51,7 +51,7 @@ def fitted_regressor(
   regression_setup: _Setup,
 ) -> _Fitted:
   """Fitted VineRegressor for testing."""
-  X_train, X_test, y_train, y_test, true_mean, true_coef = regression_setup
+  X_train, X_test, y_train, y_test, true_mean, _true_coef = regression_setup
   regressor = VineRegressor(
     mean=True
   )  # Only mean, no quantiles for simpler testing
@@ -74,7 +74,7 @@ def test_predict_mean_only(
   regression_setup: _Setup,
 ) -> None:
   """Test prediction with mean only."""
-  X_train, X_test, y_train, y_test, _, _ = regression_setup
+  X_train, X_test, y_train, _y_test, _, _ = regression_setup
   regressor = VineRegressor(mean=True)
   regressor.fit(X_train, y_train)
   pred_mean = regressor.predict(X_test)
@@ -88,7 +88,7 @@ def test_predict_quantiles_only(
   regression_setup: _Setup,
 ) -> None:
   """Test prediction with quantiles only."""
-  X_train, X_test, y_train, y_test, _, _ = regression_setup
+  X_train, X_test, y_train, _y_test, _, _ = regression_setup
   regressor = VineRegressor(mean=False, quantiles=[0.1, 0.5, 0.9])
   regressor.fit(X_train, y_train)
   pred_quant = regressor.predict(X_test)
@@ -115,7 +115,7 @@ def test_predict_mean_and_quantiles(
   regression_setup: _Setup,
 ) -> None:
   """Test prediction with both mean and quantiles."""
-  X_train, X_test, y_train, y_test, _, _ = regression_setup
+  X_train, X_test, y_train, _y_test, _, _ = regression_setup
   regressor = VineRegressor(mean=True, quantiles=[0.1, 0.9])
   regressor.fit(X_train, y_train)
   pred_both = regressor.predict(X_test)
@@ -127,7 +127,7 @@ def test_prediction_accuracy(
   fitted_regressor: _Fitted,
 ) -> None:
   """Test prediction accuracy against true mean."""
-  regressor, _, X_test, _, y_test, true_mean = fitted_regressor
+  regressor, _, X_test, _, _y_test, true_mean = fitted_regressor
 
   pred_mean = regressor.predict(X_test)
   true_mean_test = true_mean(X_test)
@@ -145,7 +145,7 @@ def test_quantile_predictions(
   regression_setup: _Setup,
 ) -> None:
   """Test quantile prediction properties."""
-  X_train, X_test, y_train, y_test, _, _ = regression_setup
+  X_train, X_test, y_train, _y_test, _, _ = regression_setup
 
   regressor_quant = VineRegressor(mean=False, quantiles=[0.1, 0.5, 0.9])
   regressor_quant.fit(X_train, y_train)
@@ -165,7 +165,7 @@ def test_wrong_dimensions(
   fitted_regressor: _Fitted,
 ) -> None:
   """Test error handling for wrong dimensions."""
-  regressor, _, X_test, _, y_test, _ = fitted_regressor
+  regressor, _, X_test, _, _y_test, _ = fitted_regressor
 
   # Wrong number of features
   X_wrong = X_test[:, :1]  # Only 1 feature instead of 2
@@ -257,7 +257,7 @@ def test_normalize_weights_parameter(
 def test_copula_marginal_density_single_covariate(
   regression_setup: _Setup,
 ) -> None:
-  """``_copula_marginal_density`` recovers :math:`c_X \\equiv 1` in 2-d.
+  r"""``_copula_marginal_density`` recovers :math:`c_X \\equiv 1` in 2-d.
 
   Integrating a bivariate copula density over one of its arguments is
   exactly one, so a fit with a single covariate pins the Simpson

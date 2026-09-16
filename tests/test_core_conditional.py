@@ -166,15 +166,15 @@ def test_vine_entry_points_require_row_aligned_external_covariates() -> None:
   u = np.full((5, 4), 0.5)
   for x in (np.zeros(5), np.zeros((1, 1))):
     calls = (
-      lambda: vine.pdf(u, x=x),
-      lambda: vine.rosenblatt(u, x=x),
-      lambda: vine.inverse_rosenblatt(u, x=x),
-      lambda: vine.loglik(u, x=x),
-      lambda: vine.sample(5, x=x),
-      lambda: vine.sample_conditional(np.full((5, 1), 0.5), x=x),
+      lambda x=x: vine.pdf(u, x=x),
+      lambda x=x: vine.rosenblatt(u, x=x),
+      lambda x=x: vine.inverse_rosenblatt(u, x=x),
+      lambda x=x: vine.loglik(u, x=x),
+      lambda x=x: vine.sample(5, x=x),
+      lambda x=x: vine.sample_conditional(np.full((5, 1), 0.5), x=x),
     )
     for call in calls:
-      with pytest.raises(ValueError, match="one row per observation|shape"):
+      with pytest.raises(ValueError, match=r"one row per observation|shape"):
         call()
 
 
@@ -552,7 +552,7 @@ def test_select_combines_a_conditioning_set_with_truncation(
   )
   assert int(structure.trunc_lvl) == trunc_lvl
   assert len(pairs) == trunc_lvl
-  assert set(int(v) for v in structure.order[-2:]) == set(cond)
+  assert {int(v) for v in structure.order[-2:]} == set(cond)
 
 
 class _FlippableGaussian(GaussianBicop):

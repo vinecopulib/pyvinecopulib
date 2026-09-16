@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import pytest
@@ -36,18 +36,16 @@ class _SqrtPair(BicopBase[np.ndarray]):
   actually exercise the numerical (bisection) inverse.
   """
 
-  def _pdf_raw(
-    self, u: np.ndarray, x: Optional[np.ndarray] = None
-  ) -> np.ndarray:
+  def _pdf_raw(self, u: np.ndarray, x: np.ndarray | None = None) -> np.ndarray:
     return np.ones(u.shape[0], dtype=u.dtype)
 
   def _hfunc1_raw(
-    self, u: np.ndarray, x: Optional[np.ndarray] = None
+    self, u: np.ndarray, x: np.ndarray | None = None
   ) -> np.ndarray:
     return u[:, 1] ** 2
 
   def _hfunc2_raw(
-    self, u: np.ndarray, x: Optional[np.ndarray] = None
+    self, u: np.ndarray, x: np.ndarray | None = None
   ) -> np.ndarray:
     return u[:, 0] ** 2
 
@@ -132,12 +130,12 @@ def test_bicopbase_requires_row_aligned_covariates() -> None:
   u = np.full((3, 2), 0.5)
   for x in (np.zeros(3), np.zeros((1, 1))):
     for call in (
-      lambda: cop.loglik(u, x=x),
-      lambda: cop.hinv1(u, x=x),
-      lambda: cop.hinv2(u, x=x),
-      lambda: cop.sample(3, x=x),
+      lambda x=x: cop.loglik(u, x=x),
+      lambda x=x: cop.hinv1(u, x=x),
+      lambda x=x: cop.hinv2(u, x=x),
+      lambda x=x: cop.sample(3, x=x),
     ):
-      with pytest.raises(ValueError, match="one row per observation|shape"):
+      with pytest.raises(ValueError, match=r"one row per observation|shape"):
         call()
 
 
@@ -172,7 +170,7 @@ def test_core_import_is_torch_free() -> None:
     "sys.exit(0 if 'torch' not in sys.modules else 1)"
   )
   result = subprocess.run(
-    [sys.executable, "-c", code], capture_output=True, text=True
+    [sys.executable, "-c", code], capture_output=True, text=True, check=False
   )
   assert result.returncode == 0, result.stderr
 
@@ -213,7 +211,7 @@ def test_conditioning_matrix_is_keyword_only() -> None:
   # dropping `x` from the contract is what keeps that static error available
   # for a concretely-typed `Bicop`.
   with pytest.raises(TypeError):
-    getattr(compiled, "pdf")(u, x=x)
+    getattr(compiled, "pdf")(u, x=x)  # noqa: B009
 
 
 def test_independence_pair_is_the_independence_copula() -> None:
@@ -303,7 +301,7 @@ def test_plot_places_its_grid_on_a_torch_pairs_namespace() -> None:
         torch.tensor([0.5], dtype=torch.float32)
       )
 
-    def _rho(self, u: Any, x: Optional[Any]) -> Any:
+    def _rho(self, u: Any, x: Any | None) -> Any:
       base = torch.tanh(self.rho_raw)
       return (
         base.expand(u.shape[0])
@@ -311,7 +309,7 @@ def test_plot_places_its_grid_on_a_torch_pairs_namespace() -> None:
         else torch.tanh(self.rho_raw + x[:, 0])
       )
 
-    def _pdf_raw(self, u: Any, *, x: Optional[Any] = None) -> Any:
+    def _pdf_raw(self, u: Any, *, x: Any | None = None) -> Any:
       assert isinstance(u, torch.Tensor), f"got {type(u).__name__}"
       assert u.dtype is torch.float32, f"got {u.dtype}"
       z1, z2 = torch.special.ndtri(u[:, 0]), torch.special.ndtri(u[:, 1])
@@ -320,12 +318,12 @@ def test_plot_places_its_grid_on_a_torch_pairs_namespace() -> None:
       quad = 2 * rho * z1 * z2 - rho * rho * (z1 * z1 + z2 * z2)
       return torch.exp(quad / (2 * one_minus)) / torch.sqrt(one_minus)
 
-    def _hfunc1_raw(self, u: Any, *, x: Optional[Any] = None) -> Any:
+    def _hfunc1_raw(self, u: Any, *, x: Any | None = None) -> Any:
       rho = self._rho(u, x)
       z1, z2 = torch.special.ndtri(u[:, 0]), torch.special.ndtri(u[:, 1])
       return torch.special.ndtr((z2 - rho * z1) / torch.sqrt(1 - rho * rho))
 
-    def _hfunc2_raw(self, u: Any, *, x: Optional[Any] = None) -> Any:
+    def _hfunc2_raw(self, u: Any, *, x: Any | None = None) -> Any:
       rho = self._rho(u, x)
       z1, z2 = torch.special.ndtri(u[:, 0]), torch.special.ndtri(u[:, 1])
       return torch.special.ndtr((z1 - rho * z2) / torch.sqrt(1 - rho * rho))
@@ -390,10 +388,10 @@ def test_fit_select_and_from_data_all_take_covariates() -> None:
       u: np.ndarray,
       /,
       controls: Any = None,
-      var_types: Optional[list[str]] = None,
+      var_types: list[str] | None = None,
       *,
-      x: Optional[np.ndarray] = None,
-    ) -> "Recording":
+      x: np.ndarray | None = None,
+    ) -> Recording:
       seen.append(("fit", None if x is None else tuple(np.shape(x))))
       return self
 
@@ -496,7 +494,7 @@ def test_the_contract_requires_only_what_a_cascade_calls() -> None:
       *,
       x: Any = None,
       qrng: bool = False,
-      seeds: Optional[list[int]] = None,
+      seeds: list[int] | None = None,
     ) -> Any:
       return np.full((n, 2), 0.5)
 
@@ -518,7 +516,7 @@ def test_a_pair_without_flip_is_named_where_flip_is_required() -> None:
   class _Bare:
     """A foreign pair that simply omits the capability."""
 
-  with pytest.raises(NotImplementedError, match="_Bare.*has no `flip`"):
+  with pytest.raises(NotImplementedError, match=r"_Bare.*has no `flip`"):
     flip_of(_Bare())
 
 

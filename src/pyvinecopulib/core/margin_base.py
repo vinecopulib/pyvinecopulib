@@ -23,10 +23,9 @@ inherits precise return types.
 from __future__ import annotations
 
 from abc import ABC
-from typing import Any, ClassVar, Optional, Self, Union, cast
+from typing import Any, ClassVar, Self, cast
 
-import numpy as _np
-from .protocols import array_namespace
+import numpy as np
 
 from ._covariates import declared_eval, prepare_covariates
 from ._loglik import safe_log
@@ -39,7 +38,13 @@ from ._placement import PlacementMixin
 from ._rootfind import solve_increasing
 from ._validation import validate_weights
 from .margin_controls import FitControlsMargin
-from .protocols import _MARGIN_EXAMPLE, ArrayT, ControlsLike, MarginLike
+from .protocols import (
+  _MARGIN_EXAMPLE,
+  ArrayT,
+  ControlsLike,
+  MarginLike,
+  array_namespace,
+)
 
 __all__ = ["MarginBase"]
 
@@ -77,7 +82,7 @@ def support_of(obj: object) -> tuple[float, float]:
   """
   unbounded = (float("-inf"), float("inf"))
 
-  def scalar(bound: Union[float, ArrayT, None], fallback: float) -> float:
+  def scalar(bound: float | ArrayT | None, fallback: float) -> float:
     if bound is None:
       return fallback
     b: Any = bound
@@ -89,7 +94,9 @@ def support_of(obj: object) -> tuple[float, float]:
   if callable(support):
     try:
       lo, hi = support()
-    except Exception:
+    # A caller's own callable, which may raise anything; whatever it is,
+    # it means the bounds are unreadable.
+    except Exception:  # noqa: BLE001
       return unbounded
     return (scalar(lo, unbounded[0]), scalar(hi, unbounded[1]))
   # A torch `Constraint`; only the interval-like ones carry usable bounds.
@@ -100,7 +107,7 @@ def support_of(obj: object) -> tuple[float, float]:
 
 
 def derive_cdf_left(
-  margin: MarginLike[ArrayT], y: ArrayT, x: Optional[ArrayT], var_type: str
+  margin: MarginLike[ArrayT], y: ArrayT, x: ArrayT | None, var_type: str
 ) -> ArrayT:
   """Left limit ``F(y^-)`` derived from a margin's ``cdf`` and ``var_type``.
 
@@ -153,7 +160,7 @@ def derive_cdf_left(
   )
 
 
-def criteria(loglik: float, k: float, n: Optional[float]) -> dict[str, float]:
+def criteria(loglik: float, k: float, n: float | None) -> dict[str, float]:
   """The three information criteria at one fit.
 
   The arithmetic in one place, because it is needed twice over: from a fitted
@@ -179,12 +186,12 @@ def criteria(loglik: float, k: float, n: Optional[float]) -> dict[str, float]:
       observations than ``aicc``'s correction can carry -- so a candidate can
       never win a search by being undefined.
   """
-  if not _np.isfinite(loglik):
+  if not np.isfinite(loglik):
     return {"aic": float("inf"), "bic": float("inf"), "aicc": float("inf")}
   aic = -2.0 * loglik + 2.0 * k
   if n is None:
     return {"aic": aic, "bic": float("inf"), "aicc": float("inf")}
-  bic = -2.0 * loglik + k * float(_np.log(n))
+  bic = -2.0 * loglik + k * float(np.log(n))
   tail = n - k - 1.0
   aicc = aic + (2.0 * k * (k + 1.0) / tail if tail > 0 else float("inf"))
   return {"aic": aic, "bic": bic, "aicc": aicc}
@@ -325,25 +332,25 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
   # Declared where `bicop_class` / `vinecop_class` / `margin_class` declare the
   # parts, and a plain comment for the same reason: autosummary cannot generate
   # a page for an attribute whose value is a class.
-  controls_class: ClassVar[Optional[type]] = FitControlsMargin
+  controls_class: ClassVar[type | None] = FitControlsMargin
 
   #: The variable type a caller declared through ``var_type``, with
   #: ``"zi"`` reduced to ``"d"`` -- the partition a family registry offers. A
   #: searching :meth:`select` reads it to decide which candidates apply;
   #: ``None`` means the caller said nothing and the sample decides.
-  _declared_var_type: Optional[str] = None
+  _declared_var_type: str | None = None
 
   @classmethod
   def from_data(
     cls,
     y: ArrayT,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    var_type: Optional[str] = None,
-    support: Optional[tuple[Optional[float], Optional[float]]] = None,
-    x: Optional[ArrayT] = None,
-    weights: Optional[ArrayT] = None,
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+    x: ArrayT | None = None,
+    weights: ArrayT | None = None,
   ) -> Self:
     """Construct a margin and select it from data.
 
@@ -391,12 +398,12 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     self,
     y: ArrayT,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    var_type: Optional[str] = None,
-    support: Optional[tuple[Optional[float], Optional[float]]] = None,
-    x: Optional[ArrayT] = None,
-    weights: Optional[ArrayT] = None,
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+    x: ArrayT | None = None,
+    weights: ArrayT | None = None,
   ) -> Self:
     """Estimate the margin's parameters from data, in place.
 
@@ -448,12 +455,12 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     self,
     y: ArrayT,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    var_type: Optional[str] = None,
-    support: Optional[tuple[Optional[float], Optional[float]]] = None,
-    x: Optional[ArrayT] = None,
-    weights: Optional[ArrayT] = None,
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+    x: ArrayT | None = None,
+    weights: ArrayT | None = None,
   ) -> Self:
     """Choose a family for this margin and estimate it, in place.
 
@@ -511,7 +518,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
 
   # --- derived evaluation surface ------------------------------------------ #
 
-  def logpdf(self, y: ArrayT, /, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def logpdf(self, y: ArrayT, /, *, x: ArrayT | None = None) -> ArrayT:
     """Log of :meth:`pdf`.
 
     Parameters
@@ -531,7 +538,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     dens: Any = declared_eval(self, "pdf", ya, x)
     return cast("ArrayT", safe_log(dens))
 
-  def cdf_left(self, y: ArrayT, /, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def cdf_left(self, y: ArrayT, /, *, x: ArrayT | None = None) -> ArrayT:
     """Left limit ``F(y^-)`` of the distribution function.
 
     A vine needs this wherever a margin has atoms: ``F(y)`` alone does not
@@ -567,7 +574,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     x = prepare_covariates(self, x, int(cast("Any", ya).shape[0]))
     return cast("ArrayT", derive_cdf_left(self, ya, x, self.var_type))
 
-  def icdf(self, p: ArrayT, /, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def icdf(self, p: ArrayT, /, *, x: ArrayT | None = None) -> ArrayT:
     """Inverse distribution function, by numerical inversion of ``cdf``.
 
     Inverted over :attr:`support`, so an infinite bound is no obstacle, but a
@@ -625,14 +632,14 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
 
   #: What :attr:`nobs` reports. A subclass's :meth:`fit` records the sample
   #: size here; ``None`` means the margin never estimated one.
-  _nobs: Optional[int] = None
+  _nobs: int | None = None
 
   #: What :attr:`n_parameters` reports. A subclass's :meth:`fit` records the
   #: number of parameters it freely estimated here.
   _n_free: float = 0.0
 
   @property
-  def nobs(self) -> Optional[int]:
+  def nobs(self) -> int | None:
     """Number of observations the fit used.
 
     Returns
@@ -683,14 +690,14 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
 
   def loglik(
     self,
-    y: Optional[ArrayT] = None,
+    y: ArrayT | None = None,
     /,
     *,
-    var_type: Optional[str] = None,
-    support: Optional[tuple[Optional[float], Optional[float]]] = None,
-    x: Optional[ArrayT] = None,
-    weights: Optional[ArrayT] = None,
-  ) -> Union[float, ArrayT]:
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+    x: ArrayT | None = None,
+    weights: ArrayT | None = None,
+  ) -> float | ArrayT:
     """Log-likelihood of the observations under the margin.
 
     Called without data, returns the value attained when the margin was
@@ -743,7 +750,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
       terms = terms * weights
     return cast("ArrayT", xp.sum(terms))
 
-  def aic(self, y: Optional[ArrayT] = None, /) -> float:
+  def aic(self, y: ArrayT | None = None, /) -> float:
     """Akaike information criterion of the fit.
 
     ``-2 loglik + 2 k``, for ``k`` freely estimated parameters, as
@@ -774,7 +781,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     """
     return criteria(self._loglik_value(y), self.n_parameters, None)["aic"]
 
-  def bic(self, y: Optional[ArrayT] = None, /) -> float:
+  def bic(self, y: ArrayT | None = None, /) -> float:
     """Bayesian information criterion of the fit.
 
     ``-2 loglik + k log n``, for ``k`` freely estimated parameters and ``n``
@@ -802,7 +809,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
       self._loglik_value(y), self.n_parameters, self._sample_size(y)
     )["bic"]
 
-  def aicc(self, y: Optional[ArrayT] = None, /) -> float:
+  def aicc(self, y: ArrayT | None = None, /) -> float:
     """Small-sample-corrected Akaike information criterion.
 
     :meth:`aic` plus ``2k(k + 1) / (n - k - 1)``, which is ``inf`` where that
@@ -830,7 +837,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
       self._loglik_value(y), self.n_parameters, self._sample_size(y)
     )["aicc"]
 
-  def _loglik_value(self, y: Optional[ArrayT]) -> float:
+  def _loglik_value(self, y: ArrayT | None) -> float:
     """Log-likelihood as a plain float.
 
     An information criterion is a number to compare, never a term to
@@ -841,7 +848,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     detach = getattr(value, "detach", None)
     return float(value if detach is None else detach())
 
-  def _sample_size(self, y: Optional[ArrayT]) -> float:
+  def _sample_size(self, y: ArrayT | None) -> float:
     """Number of observations the criterion penalizes against.
 
     Raises
@@ -863,8 +870,8 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     self,
     n: int,
     *,
-    x: Optional[ArrayT] = None,
-    seeds: Optional[list[int]] = None,
+    x: ArrayT | None = None,
+    seeds: list[int] | None = None,
   ) -> ArrayT:
     """Draw ``n`` samples from the margin.
 
@@ -897,13 +904,13 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
 
   def plot(
     self,
-    xlim: Optional[tuple[float, float]] = None,
-    ylim: Optional[tuple[float, float]] = None,
+    xlim: tuple[float, float] | None = None,
+    ylim: tuple[float, float] | None = None,
     grid_size: int = 200,
     show_zero_mass: bool = True,
     *,
     kind: str = "density",
-    x: Optional[ArrayT] = None,
+    x: ArrayT | None = None,
   ) -> None:
     margin_plot(
       self,

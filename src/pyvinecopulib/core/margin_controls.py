@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, fields
-from typing import Any, Optional, Sequence
+from typing import Any
 
 __all__ = ["FitControlsMargin"]
 
@@ -67,7 +68,7 @@ class FitControlsMargin:
   ['gamma', 'lognorm']
   """
 
-  family_set: Optional[Sequence[str]] = None
+  family_set: Sequence[str] | None = None
   selection_criterion: str = "aic"
   on_failure: str = "raise"
 

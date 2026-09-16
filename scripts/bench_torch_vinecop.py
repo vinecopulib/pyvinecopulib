@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Bench TorchVinecop against pv.Vinecop, on evaluation and on fitting.
 
 Two modes, selected with --mode:
@@ -50,7 +49,7 @@ Notes on the fit mode:
 * ``--profile-ace`` runs one extra, separately-reported fit under a probe
   that counts and times the host synchronizations a ``tll`` fit pays.
   ``.item()`` occurs in the whole installed package in five places, all
-  in ``pyvinecopulib.torch._fit_tll``, so patching ``torch.Tensor.item``
+  in ``pyvinecopulib.torch._bicop_fit_tll``, so patching ``torch.Tensor.item``
   is exact attribution rather than sampling. Reaching into a private
   module is intentional: a bench script may do what the library may not,
   the same rule already written beside ``cache_size_limit`` below.
@@ -63,13 +62,14 @@ default stdout, flushed per row, with a ``# <hardware>`` banner and
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import math
 import os
 import sys
 import time
 from statistics import median
-from typing import Any, Optional
+from typing import Any, Self
 
 import numpy as np
 import torch
@@ -79,8 +79,8 @@ from pyvinecopulib.torch import (
   FitControlsTorchBicop,
   FitControlsTorchVinecop,
   TorchVinecop,
-  _fit_tll,
 )
+from pyvinecopulib.torch import _bicop_fit_tll as _fit_tll
 
 
 def _parse_int_list(s: str) -> list[int]:
@@ -185,7 +185,7 @@ def _timed_or_nan(fn, repeats: int, sync=None, label: str = "") -> float:
   """
   try:
     return _time_repeats(fn, repeats, sync=sync)
-  except Exception as exc:
+  except Exception as exc:  # noqa: BLE001
     # Broad on purpose: the point is that no failure mode of a fit takes
     # the sweep down with it, and every one of them is reported.
     print(f"# FAILED {label}: {exc!r}", file=sys.stderr, flush=True)
@@ -224,7 +224,7 @@ class _AceProbe:
     self.sync_ms = 0.0
     self.ace_calls = 0
 
-  def __enter__(self) -> "_AceProbe":
+  def __enter__(self) -> Self:
     probe = self
     self._orig_item = torch.Tensor.item
     self._orig_bool = torch.Tensor.__bool__
@@ -303,7 +303,7 @@ def _torch_controls(
   trunc_lvl: int,
   device: str,
   dtype: torch.dtype,
-  batched_fit: Optional[bool] = None,
+  batched_fit: bool | None = None,
 ) -> FitControlsTorchVinecop:
   return FitControlsTorchVinecop(
     bicop_controls=FitControlsTorchBicop(
@@ -513,7 +513,7 @@ def _bench_fit_cell(
   dtypes: list[str],
   structures: list[str],
   lanes: list[str],
-  batched_fits: list[Optional[bool]],
+  batched_fits: list[bool | None],
   repeats: int,
   seed: int,
   profile: bool,
@@ -836,58 +836,65 @@ def main() -> None:
 
   print(f"# {_banner()}", file=sys.stderr, flush=True)
 
-  out = sys.stdout if args.output == "-" else open(args.output, "w", newline="")
-  fieldnames = list(_FIELDNAMES[args.mode])
-  if args.profile_ace:
-    fieldnames += _PROFILE_FIELDS
-  writer = csv.DictWriter(out, fieldnames=fieldnames)
-  writer.writeheader()
-  out.flush()
-  for n in args.n:
-    for d in args.d:
-      print(f"# {args.mode} cell n={n} d={d}", file=sys.stderr, flush=True)
-      if args.mode == "fit":
-        rows = _bench_fit_cell(
-          n=n,
-          d=d,
-          threads=args.threads,
-          devices=devices,
-          caches=args.cache,
-          grid_types=args.grid_types,
-          grid_sizes=args.grid_sizes,
-          dtypes=args.dtypes,
-          structures=args.structures,
-          lanes=args.lanes,
-          batched_fits=(
-            [None] if args.batched_fit is None else list(args.batched_fit)
-          ),
-          repeats=args.repeats,
-          seed=args.seed,
-          profile=args.profile_ace,
-        )
-      else:
-        rows = _bench_eval_cell(
-          n=n,
-          d=d,
-          threads=args.threads,
-          devices=devices,
-          caches=args.cache,
-          batched_modes=args.batched,
-          compile_modes=args.compile,
-          grid_types=args.grid_types,
-          grid_sizes=args.grid_sizes,
-          dtypes=args.dtypes,
-          lanes=args.lanes,
-          repeats=args.repeats,
-          seed=args.seed,
-          mc=args.mc_samples,
-        )
-      for row in rows:
-        row["time_ms"] = f"{row['time_ms']:.3f}"
-        writer.writerow(row)
-        out.flush()
-  if args.output != "-":
-    out.close()
+  with contextlib.ExitStack() as stack:
+    out = (
+      sys.stdout
+      if args.output == "-"
+      else stack.enter_context(
+        open(args.output, "w", encoding="utf-8", newline="")
+      )
+    )
+    fieldnames = list(_FIELDNAMES[args.mode])
+    if args.profile_ace:
+      fieldnames += _PROFILE_FIELDS
+    writer = csv.DictWriter(out, fieldnames=fieldnames)
+    writer.writeheader()
+    out.flush()
+    for n in args.n:
+      for d in args.d:
+        print(f"# {args.mode} cell n={n} d={d}", file=sys.stderr, flush=True)
+        if args.mode == "fit":
+          rows = _bench_fit_cell(
+            n=n,
+            d=d,
+            threads=args.threads,
+            devices=devices,
+            caches=args.cache,
+            grid_types=args.grid_types,
+            grid_sizes=args.grid_sizes,
+            dtypes=args.dtypes,
+            structures=args.structures,
+            lanes=args.lanes,
+            batched_fits=(
+              [None] if args.batched_fit is None else list(args.batched_fit)
+            ),
+            repeats=args.repeats,
+            seed=args.seed,
+            profile=args.profile_ace,
+          )
+        else:
+          rows = _bench_eval_cell(
+            n=n,
+            d=d,
+            threads=args.threads,
+            devices=devices,
+            caches=args.cache,
+            batched_modes=args.batched,
+            compile_modes=args.compile,
+            grid_types=args.grid_types,
+            grid_sizes=args.grid_sizes,
+            dtypes=args.dtypes,
+            lanes=args.lanes,
+            repeats=args.repeats,
+            seed=args.seed,
+            mc=args.mc_samples,
+          )
+        for row in rows:
+          row["time_ms"] = f"{row['time_ms']:.3f}"
+          writer.writerow(row)
+          out.flush()
+    if args.output != "-":
+      out.close()
 
 
 if __name__ == "__main__":

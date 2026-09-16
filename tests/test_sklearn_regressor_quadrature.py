@@ -128,7 +128,7 @@ def test_the_quadrature_converges(heavy: bool) -> None:
 
 
 def test_it_integrates_the_inverse_cdf_against_the_copula() -> None:
-  """The rule computes the integral it claims to, on an independent grid.
+  r"""The rule computes the integral it claims to, on an independent grid.
 
   The expectation here is a midpoint rule uniform in ``p`` -- a different node
   set and no probit substitution -- written out from the fitted distribution
@@ -285,4 +285,4 @@ def test_the_marginal_copula_quadrature_is_not_floored() -> None:
   log_excluded = float(est_wide._copula_marginal_density(excluded, log=True)[0])
   assert np.isfinite(log_excluded)
   assert log_excluded < -700.0
-  assert float(est_wide._copula_marginal_density(excluded, log=False)[0]) == 0.0
+  assert float(est_wide._copula_marginal_density(excluded, log=False)[0]) == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation

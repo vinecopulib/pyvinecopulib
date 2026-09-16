@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Bench TorchTllBicop / pv.Bicop bicop fitters on a shared Gaussian sample.
 
 Three modes selected via ``--mode``:
@@ -36,11 +35,12 @@ empty. For ``torch`` rows, ``threads`` is empty.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import sys
 import time
+from collections.abc import Callable
 from statistics import median
-from typing import Callable
 
 import numpy as np
 import torch
@@ -352,9 +352,9 @@ def _bench_hinv(
       for op in ("hinv1", "hinv2"):
         cv = 1 if op == "hinv1" else 2
         methods = {
-          "closed_form": lambda o=op, bp=bc_plain: getattr(bp, o)(u_t),
-          "cached": lambda o=op, bc=bc_cached: getattr(bc, o)(u_t),
-          "itp": lambda c=cv, bp=bc_plain: _hinv_itp(bp, u_t, c),
+          "closed_form": lambda o=op, bp=bc_plain, t=u_t: getattr(bp, o)(t),
+          "cached": lambda o=op, bc=bc_cached, t=u_t: getattr(bc, o)(t),
+          "itp": lambda c=cv, bp=bc_plain, t=u_t: _hinv_itp(bp, t, c),
         }
         for name, fn in methods.items():
           ms = _time_repeats(fn, repeats, sync=sync)
@@ -491,51 +491,58 @@ def main() -> None:
   }
   fieldnames = fieldnames_by_mode[args.mode]
 
-  out = sys.stdout if args.output == "-" else open(args.output, "w", newline="")
-  writer = csv.DictWriter(out, fieldnames=fieldnames)
-  writer.writeheader()
-  out.flush()
-  for n in args.n:
-    print(f"# {args.mode} cell n={n}", file=sys.stderr, flush=True)
-    if args.mode == "fit":
-      rows = _bench_fit(
-        n=n,
-        threads=args.threads,
-        devices=devices,
-        grid_types=args.grid_types,
-        grid_sizes=args.grid_sizes,
-        lanes=lanes,
-        repeats=args.repeats,
-        seed=args.seed,
+  with contextlib.ExitStack() as stack:
+    out = (
+      sys.stdout
+      if args.output == "-"
+      else stack.enter_context(
+        open(args.output, "w", encoding="utf-8", newline="")
       )
-    elif args.mode == "eval":
-      rows = _bench_eval(
-        n_fit=n,
-        n_eval=args.n_eval,
-        threads=args.threads,
-        devices=devices,
-        grid_types=args.grid_types,
-        grid_sizes=args.grid_sizes,
-        caches=args.cache,
-        lanes=lanes,
-        repeats=args.repeats,
-        seed=args.seed,
-      )
-    else:  # hinv
-      rows = _bench_hinv(
-        n_fit=n,
-        n_eval=args.n_eval,
-        devices=devices,
-        grid_sizes=args.grid_sizes,
-        repeats=args.repeats,
-        seed=args.seed,
-      )
-    for row in rows:
-      row["time_ms"] = f"{row['time_ms']:.3f}"
-      writer.writerow(row)
-      out.flush()
-  if args.output != "-":
-    out.close()
+    )
+    writer = csv.DictWriter(out, fieldnames=fieldnames)
+    writer.writeheader()
+    out.flush()
+    for n in args.n:
+      print(f"# {args.mode} cell n={n}", file=sys.stderr, flush=True)
+      if args.mode == "fit":
+        rows = _bench_fit(
+          n=n,
+          threads=args.threads,
+          devices=devices,
+          grid_types=args.grid_types,
+          grid_sizes=args.grid_sizes,
+          lanes=lanes,
+          repeats=args.repeats,
+          seed=args.seed,
+        )
+      elif args.mode == "eval":
+        rows = _bench_eval(
+          n_fit=n,
+          n_eval=args.n_eval,
+          threads=args.threads,
+          devices=devices,
+          grid_types=args.grid_types,
+          grid_sizes=args.grid_sizes,
+          caches=args.cache,
+          lanes=lanes,
+          repeats=args.repeats,
+          seed=args.seed,
+        )
+      else:  # hinv
+        rows = _bench_hinv(
+          n_fit=n,
+          n_eval=args.n_eval,
+          devices=devices,
+          grid_sizes=args.grid_sizes,
+          repeats=args.repeats,
+          seed=args.seed,
+        )
+      for row in rows:
+        row["time_ms"] = f"{row['time_ms']:.3f}"
+        writer.writerow(row)
+        out.flush()
+    if args.output != "-":
+      out.close()
 
 
 if __name__ == "__main__":

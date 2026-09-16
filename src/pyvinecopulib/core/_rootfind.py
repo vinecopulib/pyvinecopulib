@@ -11,18 +11,17 @@ the values, and the generic array type is unbounded, so it names no operators.
 from __future__ import annotations
 
 import math
-from typing import Any, Callable, Union, cast
+from collections.abc import Callable
+from typing import Any, cast
 
-from .protocols import Namespace, array_namespace
-
-from .protocols import ArrayT
+from .protocols import ArrayT, Namespace, array_namespace
 
 __all__ = ["solve_increasing"]
 
 
 def _is_finite_bound(
   xp: Namespace[ArrayT],
-  bound: Union[float, ArrayT],
+  bound: float | ArrayT,
   broadcast: ArrayT,
 ) -> bool:
   """Whether ``bound`` is finite everywhere.
@@ -119,8 +118,8 @@ def solve_increasing(
   f: Callable[[Any], Any],
   p: ArrayT,
   *,
-  lo: Union[float, ArrayT] = 0.0,
-  hi: Union[float, ArrayT] = 1.0,
+  lo: float | ArrayT = 0.0,
+  hi: float | ArrayT = 1.0,
   n_iter: int = 50,
   max_expand: int = 64,
 ) -> ArrayT:

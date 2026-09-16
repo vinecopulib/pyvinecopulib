@@ -213,7 +213,7 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 
 ### Build / packaging
 
-- Enforce the engineering conventions rather than documenting them: `ty` type-checks `src` and `tests` with ten off-by-default rules on, `ruff` runs `ANN` / `TC` / `PYI` / `RUF100` so an unjustified `Any` or a stale `noqa` fails the build, `codespell` holds the American-English rule and a banned-word list, and `tests/test_prose.py` covers the multi-word phrases and identifiers a tokenizer cannot see (#210, #252, #262, #326).
+- Enforce the engineering conventions rather than documenting them: `ty` type-checks `src` and `tests` with ten off-by-default rules on, `ruff` runs 33 rule families so an unjustified `Any`, a swallowed exception or a stale `noqa` fails the build, `codespell` holds the American-English rule and a banned-word list, and `tests/test_prose.py` covers the multi-word phrases and identifiers a tokenizer cannot see (#210, #252, #262, #326, #339).
 - Fail the documentation build on an unresolved cross-reference: Sphinx runs nitpicky with `-W`, `numpydoc` validation is a pre-commit check, and every code example is a notebook cell executed in CI rather than a paste (#214, #240, #243, #326).
 - Resolve the Eigen include directory from the `Eigen3::Eigen` target, so a
   source build works against Eigen 5.x (#235).

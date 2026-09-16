@@ -27,26 +27,27 @@ FitControlsTorchBicop : Fit-time controls.
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Optional, Union, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 import torch
 from torch import Tensor
 
 from ..core import BicopBase, ControlsLike
-from ..core._validation import reject_covariates
-from ..pyvinecopulib_ext import Bicop, tll as _TLL_FAMILY
-from ._placement import TENSOR_NS
 from ..core._trim import trim
+from ..core._validation import reject_covariates
+from ..pyvinecopulib_ext import Bicop
+from ..pyvinecopulib_ext import tll as _TLL_FAMILY
 from ._bicop_interp import InterpolationGrid2D
+from ._placement import TENSOR_NS
 from .controls import FitControlsTorchBicop
 
 
 def _resolve_placement(
   controls: FitControlsTorchBicop,
-  cache_integrals: Optional[bool],
+  cache_integrals: bool | None,
   device: torch.types.Device,
-  dtype: Optional[torch.dtype],
+  dtype: torch.dtype | None,
 ) -> tuple[bool, torch.types.Device, torch.dtype]:
   """Fill in the placement and cache mode a fit was not given explicitly.
 
@@ -80,14 +81,14 @@ def _resolve_placement(
     device = cast("torch.types.Device", getattr(controls, "device", None))
   if dtype is None:
     dtype = (
-      cast("Optional[torch.dtype]", getattr(controls, "dtype", None))
+      cast("torch.dtype | None", getattr(controls, "dtype", None))
       or torch.float64
     )
   return bool(cache_integrals), device, dtype
 
 
 def _torch_bicop_controls(
-  controls: Optional[ControlsLike],
+  controls: ControlsLike | None,
 ) -> FitControlsTorchBicop:
   """Resolve the fit configuration to this lane's own controls type.
 
@@ -206,7 +207,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
   # The controls the TLL fit reads; `_torch_bicop_controls` resolves a
   # `None` through it rather than naming the class a second time.
-  controls_class: ClassVar[Optional[type]] = FitControlsTorchBicop
+  controls_class: ClassVar[type | None] = FitControlsTorchBicop
 
   is_indep: bool
   # Class-level hints so the prefix tables registered in __init__ are
@@ -221,8 +222,8 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
   def __init__(
     self,
-    grid_points: Optional[Tensor] = None,
-    values: Optional[Tensor] = None,
+    grid_points: Tensor | None = None,
+    values: Tensor | None = None,
     cache_integrals: bool = True,
     norm_maxiter: int = 25,
     is_linear: bool = False,
@@ -287,7 +288,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     cache_integrals: bool = True,
     device: torch.types.Device = None,
     dtype: torch.dtype = torch.float64,
-  ) -> "TorchTllBicop":
+  ) -> TorchTllBicop:
     """Lift a fitted ``Bicop`` into a ``TorchTllBicop``.
 
     The density values are taken as fitted, so the lifted copula evaluates
@@ -353,12 +354,12 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
   def from_data_batched(
     cls,
     u: Tensor,
-    controls: Optional[FitControlsTorchBicop] = None,
+    controls: FitControlsTorchBicop | None = None,
     *,
-    cache_integrals: Optional[bool] = None,
+    cache_integrals: bool | None = None,
     device: torch.types.Device = None,
-    dtype: Optional[torch.dtype] = None,
-  ) -> "list[TorchTllBicop]":
+    dtype: torch.dtype | None = None,
+  ) -> list[TorchTllBicop]:
     """Fit ``P`` pair copulas from one stacked sample, in one call.
 
     What comes back is ``P`` ordinary ``TorchTllBicop`` objects; only the fit is
@@ -450,16 +451,16 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
   @classmethod
   def from_data(
     cls,
-    u: Union[np.ndarray, Tensor],
+    u: np.ndarray | Tensor,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    var_types: Optional[list[str]] = None,
-    x: Optional[Tensor] = None,
-    cache_integrals: Optional[bool] = None,
+    var_types: list[str] | None = None,
+    x: Tensor | None = None,
+    cache_integrals: bool | None = None,
     device: torch.types.Device = None,
-    dtype: Optional[torch.dtype] = None,
-  ) -> "TorchTllBicop":
+    dtype: torch.dtype | None = None,
+  ) -> TorchTllBicop:
     """Fit a pair copula on pseudo-observations, in pure PyTorch.
 
     Reproduces the ``tll`` fit of ``Bicop`` to floating-point tolerance.
@@ -572,13 +573,13 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
   def fit(
     self,
-    u: Union[np.ndarray, Tensor],
+    u: np.ndarray | Tensor,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    var_types: Optional[list[str]] = None,
-    x: Optional[Tensor] = None,
-  ) -> "TorchTllBicop":
+    var_types: list[str] | None = None,
+    x: Tensor | None = None,
+  ) -> TorchTllBicop:
     """Refit this pair copula's density grid, in place.
 
     The in-place counterpart of :meth:`from_data`, keeping this module's
@@ -625,7 +626,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     self._adopt(fitted)
     return self
 
-  def _adopt(self, other: "TorchTllBicop") -> None:
+  def _adopt(self, other: TorchTllBicop) -> None:
     """Take over another pair copula's grid and caches.
 
     Parameters
@@ -656,7 +657,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
         self.__dict__.pop(name, None)
         self.register_buffer(name, table)
 
-  def _flip_raw(self) -> "TorchTllBicop":
+  def _flip_raw(self) -> TorchTllBicop:
     """Return the copula with its two arguments swapped (``c'(u,v)=c(v,u)``).
 
     Returns
@@ -734,7 +735,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     values = self.interp_grid.values
     return torch.as_tensor(a, dtype=values.dtype, device=values.device)
 
-  def _pdf_raw(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
+  def _pdf_raw(self, u: Tensor, *, x: Tensor | None = None) -> Tensor:
     """Evaluate the copula density ``c(u1, u2)``.
 
     Parameters
@@ -756,8 +757,8 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       return torch.ones(u.shape[0], dtype=u.dtype, device=u.device)
     return self.interp_grid.interpolate(u).clamp_min(1e-20)
 
-  def _cdf_raw(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
-    """Evaluate the copula distribution function.
+  def _cdf_raw(self, u: Tensor, *, x: Tensor | None = None) -> Tensor:
+    r"""Evaluate the copula distribution function.
 
     .. math::
 
@@ -809,7 +810,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     a2: Tensor,
     b2: Tensor,
     *,
-    x: Optional[Tensor] = None,
+    x: Tensor | None = None,
   ) -> Tensor:
     """Probability of the rectangle ``(a1, b1] x (a2, b2]``, off the grid.
 
@@ -855,7 +856,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     hi: Tensor,
     cond_var: int,
     *,
-    x: Optional[Tensor] = None,
+    x: Tensor | None = None,
   ) -> Tensor:
     """Probability of ``(lo, hi]`` in the free argument, given the other.
 
@@ -918,7 +919,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       )
     return self.interp_grid.integrate_1d(u, cond_var=cond_var)
 
-  def _hfunc1_raw(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
+  def _hfunc1_raw(self, u: Tensor, *, x: Tensor | None = None) -> Tensor:
     del x  # declared so the pair can sit in a conditional vine
     # `u` arrives placed, checked and clamped by the dispatcher on
     # `BicopBase`, so no leaf repeats that. `_cdf_raw` still trims its own
@@ -928,7 +929,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       return u[:, 1]
     return self._hfunc_raw(u, 1)
 
-  def _hfunc2_raw(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
+  def _hfunc2_raw(self, u: Tensor, *, x: Tensor | None = None) -> Tensor:
     del x  # declared so the pair can sit in a conditional vine
     if self.is_indep:
       return u[:, 0]
@@ -956,7 +957,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       0.0, 1.0
     )
 
-  def _hinv1_raw(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
+  def _hinv1_raw(self, u: Tensor, *, x: Tensor | None = None) -> Tensor:
     """Invert ``TorchTllBicop.hfunc1()`` in its second argument.
 
     Given ``u = [u1, p]``, returns the ``u2`` at which
@@ -979,7 +980,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
       return u[:, 1]
     return self._hinv_raw(u, 1)
 
-  def _hinv2_raw(self, u: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
+  def _hinv2_raw(self, u: Tensor, *, x: Tensor | None = None) -> Tensor:
     """Invert ``TorchTllBicop.hfunc2()`` in its first argument.
 
     Given ``u = [p, u2]``, returns the ``u1`` at which
@@ -1011,9 +1012,9 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     self,
     n: int = 100,
     *,
-    x: Optional[Tensor] = None,
+    x: Tensor | None = None,
     qrng: bool = False,
-    seeds: Optional[list[int]] = None,
+    seeds: list[int] | None = None,
   ) -> Tensor:
     """Draw ``n`` samples from the pair copula.
 

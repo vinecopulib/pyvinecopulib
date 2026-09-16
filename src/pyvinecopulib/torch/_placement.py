@@ -16,7 +16,7 @@ places every copula argument and every uniform draw at zero.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import torch
 from torch import Tensor
@@ -41,7 +41,7 @@ else:
   _ModuleBase = object
 
 
-def reference_tensor(module: object) -> Optional[Tensor]:
+def reference_tensor(module: object) -> Tensor | None:
   """A floating-point tensor ``module`` holds, naming where its numerics run.
 
   ``parameters()`` and ``buffers()`` recurse, so a grid held by a submodule
@@ -132,12 +132,11 @@ class TensorPlacementMixin(_ModuleBase):
       ref = reference_tensor(self)
       if ref is not None:
         return ref
-    declared = torch.empty(
+    return torch.empty(
       0,
       dtype=getattr(self, "dtype", None) or torch.float64,
       device=getattr(self, "device", None) or "cpu",
     )
-    return declared
 
   def _prep(self, a: object) -> Tensor:
     """Bring one input array onto this module's dtype and device.

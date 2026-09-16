@@ -17,7 +17,7 @@ import pyvinecopulib as pv
 
 torch = pytest.importorskip("torch")
 
-from pyvinecopulib.torch import FitControlsTorchBicop, TorchTllBicop  # noqa: E402
+from pyvinecopulib.torch import FitControlsTorchBicop, TorchTllBicop
 
 _TLL_CONTROLS = pv.FitControlsBicop(family_set=[pv.families.tll], num_threads=1)
 
@@ -1015,7 +1015,7 @@ def test_ace_step_carries_its_own_state() -> None:
     10,
     1e-4,
   )
-  for got, before in zip(out[:4], state):
+  for got, before in zip(out[:4], state, strict=False):
     torch.testing.assert_close(got[1], before[1], atol=0.0, rtol=0.0)
 
 
@@ -1097,7 +1097,7 @@ def test_from_data_batched_matches_cpp() -> None:
     for r in rhos
   ]
   batched = TorchTllBicop.from_data_batched(torch.from_numpy(np.stack(us)))
-  for got, u in zip(batched, us):
+  for got, u in zip(batched, us, strict=False):
     np.testing.assert_allclose(
       got.interp_grid.values.numpy(),
       pv.Bicop.from_data(u, controls=controls).parameters,
@@ -1323,7 +1323,7 @@ def test_cond_interval_prob_partitions_the_conditional(cond_var: int) -> None:
   whole = bc.cond_interval_prob(cond[:1], zero, one, cond_var)
   torch.testing.assert_close(whole, one, rtol=4e-16, atol=0.0)
   empty = bc.cond_interval_prob(cond[:1], cond[:1], cond[:1], cond_var)
-  assert float(empty[0]) == 0.0
+  assert float(empty[0]) == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
 
 
 @pytest.mark.parametrize("cond_var", [1, 2])

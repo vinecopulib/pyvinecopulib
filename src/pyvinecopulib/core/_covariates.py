@@ -32,13 +32,12 @@ estimating ``f(y)`` when ``f(y | x)`` was asked for returns a different model.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional, Union, cast
-
-from .protocols import array_namespace
+from collections.abc import Callable
+from typing import Any, cast
 
 from ._placement import place
 from ._validation import validate_covariates
-from .protocols import ArrayT
+from .protocols import ArrayT, array_namespace
 
 __all__ = [
   "covariate_row",
@@ -53,8 +52,8 @@ def pair_eval(
   # The method's positional arguments: one array for `pdf` / `cdf` /
   # `hfunc*`, the four bounds for `rect_prob`, and the three plus an axis
   # selector for `cond_interval_prob`.
-  *args: Union[ArrayT, int],
-  x: Optional[ArrayT],
+  *args: ArrayT | int,
+  x: ArrayT | None,
 ) -> ArrayT:
   """Evaluate a pair-copula method, forwarding ``x`` whenever there is one.
 
@@ -80,8 +79,8 @@ def declared_eval(
   name: str,
   # The forwarded method's first positional argument: an array for `pdf` /
   # `cdf` / `icdf`, a draw count for `sample`.
-  values: Union[ArrayT, int],
-  x: Optional[ArrayT],
+  values: ArrayT | int,
+  x: ArrayT | None,
   # Forwarded to a method on a foreign object, so the keyword set is open --
   # and the answer may legitimately be another array type than `values`, which
   # is why the callers read `xp` off what came back rather than off the input.
@@ -116,9 +115,7 @@ def declared_eval(
   return method(values, x=x, **kwargs)
 
 
-def prepare_covariates(
-  onto: object, x: Optional[ArrayT], n: int
-) -> Optional[ArrayT]:
+def prepare_covariates(onto: object, x: ArrayT | None, n: int) -> ArrayT | None:
   """Validate covariates and place them where the numerics run.
 
   The two steps ``x`` needs and the third it must not get: it is checked for

@@ -18,13 +18,15 @@ it.
 from __future__ import annotations
 
 import copy
+import operator
 import warnings
-from typing import Any, Optional, Self, Sequence, Union, cast
+from collections.abc import Sequence
+from typing import Any, Self, cast
 
 import numpy as np
 
-from ..core._margins import register_margin_adapter, register_margin_json
 from ..core import ControlsLike, MarginBase, MarginLike
+from ..core._margins import register_margin_adapter, register_margin_json
 from ..core._validation import (
   extra_required,
   reject_covariates,
@@ -328,7 +330,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
       self._factory = None
       self._distribution = None
       self._var_type = "c"
-      self._loglik: Optional[float] = None
+      self._loglik: float | None = None
       self._unnamed = True
       return
     if factory is not None and distribution is not None:
@@ -357,7 +359,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     self._var_type = "d" if known.isDiscrete() else "c"
     self._loglik = None
 
-  def __deepcopy__(self, memo: dict[int, Any]) -> "OpenTURNSMargin":
+  def __deepcopy__(self, memo: dict[int, Any]) -> OpenTURNSMargin:
     """Copy the margin, rebuilding the one part OpenTURNS refuses to copy.
 
     ``DistributionFactory``'s copy dispatches to a constructor overload
@@ -390,7 +392,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     return clone
 
   @staticmethod
-  def from_distribution(distribution: Any) -> "OpenTURNSMargin":
+  def from_distribution(distribution: Any) -> OpenTURNSMargin:
     """Wrap a distribution that already carries its parameters.
 
     Parameters
@@ -459,7 +461,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     return payload
 
   @classmethod
-  def from_json_payload(cls, payload: dict[str, Any]) -> "OpenTURNSMargin":
+  def from_json_payload(cls, payload: dict[str, Any]) -> OpenTURNSMargin:
     """Rebuild a margin from the payload :meth:`to_json` produced.
 
     Parameters
@@ -584,12 +586,12 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     self,
     y: np.ndarray,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    var_type: Optional[str] = None,
-    support: Optional[tuple[Optional[float], Optional[float]]] = None,
-    x: Optional[np.ndarray] = None,
-    weights: Optional[np.ndarray] = None,
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+    x: np.ndarray | None = None,
+    weights: np.ndarray | None = None,
   ) -> Self:
     """Estimate the family's parameters with its OpenTURNS factory.
 
@@ -658,12 +660,12 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     self,
     y: np.ndarray,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    var_type: Optional[str] = None,
-    support: Optional[tuple[Optional[float], Optional[float]]] = None,
-    x: Optional[np.ndarray] = None,
-    weights: Optional[np.ndarray] = None,
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+    x: np.ndarray | None = None,
+    weights: np.ndarray | None = None,
   ) -> Self:
     """Choose a family from OpenTURNS' registry, fit it, and become it.
 
@@ -786,7 +788,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
         f"refused:\n  {detail}\nName a factory directly, or narrow "
         "family_set."
       )
-    scored.sort(key=lambda pair: pair[0])
+    scored.sort(key=operator.itemgetter(0))
     return self._adopt(scored[0][1])
 
   def _reads_as_discrete(self, data: np.ndarray) -> bool:
@@ -810,7 +812,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
 
   @staticmethod
   def _candidate_factories(
-    *, discrete: bool, family_set: Optional[Sequence[Any]]
+    *, discrete: bool, family_set: Sequence[Any] | None
   ) -> list[Any]:
     """Resolve the factories to try.
 
@@ -836,7 +838,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
       )
     return [_resolve_factory(entry) for entry in family_set]
 
-  def _adopt(self, winner: "OpenTURNSMargin") -> Self:
+  def _adopt(self, winner: OpenTURNSMargin) -> Self:
     """Become the selected candidate.
 
     Parameters
@@ -863,9 +865,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
   def pdf(self, y: np.ndarray) -> np.ndarray:
     return _at_points(self.distribution.computePDF, y)
 
-  def logpdf(
-    self, y: np.ndarray, *, x: Optional[np.ndarray] = None
-  ) -> np.ndarray:
+  def logpdf(self, y: np.ndarray, *, x: np.ndarray | None = None) -> np.ndarray:
     """Log of :meth:`pdf`, from OpenTURNS' own log-density.
 
     Overrides the inherited ``log(pdf(y))``, which loses the tails to underflow
@@ -888,13 +888,11 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
   def cdf(self, y: np.ndarray) -> np.ndarray:
     return _at_points(self.distribution.computeCDF, y)
 
-  def icdf(
-    self, p: np.ndarray, *, x: Optional[np.ndarray] = None
-  ) -> np.ndarray:
+  def icdf(self, p: np.ndarray, *, x: np.ndarray | None = None) -> np.ndarray:
     return _at_probabilities(self.distribution, p)
 
   def cdf_left(
-    self, y: np.ndarray, *, x: Optional[np.ndarray] = None
+    self, y: np.ndarray, *, x: np.ndarray | None = None
   ) -> np.ndarray:
     if self._var_type == "c":
       return self.cdf(y)
@@ -910,7 +908,9 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
       return f"OpenTURNSMargin({self.family_name!r}, unfitted)"
     shown = ", ".join(
       f"{name}={value:.4g}"
-      for name, value in zip(self.parameter_names, self.parameters)
+      for name, value in zip(
+        self.parameter_names, self.parameters, strict=False
+      )
     )
     return f"OpenTURNSMargin({self.family_name!r}, {shown})"
 
@@ -924,7 +924,7 @@ def _try_factory(
   sample: Any,
   *,
   discrete: bool,
-) -> tuple[Optional["OpenTURNSMargin"], Optional[str]]:
+) -> tuple[OpenTURNSMargin | None, str | None]:
   """Build one candidate and report why it is inadmissible, or ``None``.
 
   Parameters
@@ -951,7 +951,9 @@ def _try_factory(
     warnings.simplefilter("ignore")
     try:
       candidate = OpenTURNSMargin(factory).fit(data)
-    except Exception as e:
+    # A candidate family raises whatever OpenTURNS raises, and the
+    # contract is to report every rejection with its reason.
+    except Exception as e:  # noqa: BLE001
       return None, f"{type(e).__name__}: {e}"
   if (candidate.var_type == "d") != discrete:
     return None, (
@@ -968,7 +970,7 @@ def _openturns_criteria(
   sample: Any,
   distribution: Any,
   k: int,
-  loglik: Union[float, np.ndarray],
+  loglik: float | np.ndarray,
 ) -> dict[str, float]:
   """Evaluate every criterion at one fit, through ``openturns.FittingTest``.
 

@@ -30,25 +30,25 @@ from __future__ import annotations
 
 import warnings
 from abc import ABC
-from typing import Any, ClassVar, Optional, Self, Sequence, cast
-
-from .protocols import array_namespace
+from collections.abc import Sequence
+from typing import Any, ClassVar, Self, cast
 
 from ..pyvinecopulib_ext import Kde1d, RVineStructure
 from ._covariates import declared_eval, prepare_covariates
 from ._loglik import safe_log
-from .margin_base import MarginBase, derive_cdf_left
 from ._placement import PlacementMixin, to_numpy
 from ._trim import trim
 from ._validation import validate_covariates, validate_weights
+from .margin_base import MarginBase, derive_cdf_left
 from .protocols import (
+  _VINEDIST_EXAMPLE,
   ArrayT,
   ControlsLike,
   MarginLike,
   VinecopLike,
   VinedistLike,
+  array_namespace,
 )
-from .protocols import _VINEDIST_EXAMPLE
 
 __all__ = ["VinedistBase"]
 
@@ -80,7 +80,7 @@ def _declared(margin: object, name: str) -> object:
 
 
 def _per_variable_declaration(
-  declared: Optional[Sequence[Any]], d: int, name: str
+  declared: Sequence[Any] | None, d: int, name: str
 ) -> list[Any]:
   """One declaration per variable, or ``None`` where the caller named none.
 
@@ -113,7 +113,7 @@ def _per_variable_declaration(
   return entries
 
 
-def _name_at(names: Optional[Sequence[str]], index: int) -> str:
+def _name_at(names: Sequence[str] | None, index: int) -> str:
   """How to refer to one variable in a message.
 
   Parameters
@@ -155,7 +155,9 @@ def _named_for(name: str, exc: BaseException) -> BaseException:
   message = f"margin for {name!r}: {exc}"
   try:
     return type(exc)(message)
-  except Exception:  # any constructor that needs more than one argument
+  # Any exception type whose `__init__` takes something other than a
+  # message; the variable's name is worth more than the original type.
+  except Exception:  # noqa: BLE001
     return ValueError(message)
 
 
@@ -341,10 +343,10 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     return cast("VinecopLike[ArrayT]", self._vinecop)
 
   #: Variable names, when something knew them; see ``var_names``.
-  _var_names: Optional[list[str]] = None
+  _var_names: list[str] | None = None
 
   @property
-  def var_names(self) -> Optional[list[str]]:
+  def var_names(self) -> list[str] | None:
     """Variable names, in variable order, or ``None`` where none are known.
 
     Carried rather than derived: a fit from a named frame knows them, and
@@ -359,7 +361,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     return self._var_names
 
   @var_names.setter
-  def var_names(self, value: Optional[Sequence[str]]) -> None:
+  def var_names(self, value: Sequence[str] | None) -> None:
     if value is None:
       self._var_names = None
       return
@@ -370,7 +372,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       )
     self._var_names = names
 
-  def _name_of(self, index: Optional[int]) -> str:
+  def _name_of(self, index: int | None) -> str:
     """How to refer to one variable in a message.
 
     Parameters
@@ -567,7 +569,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       )
     return xp, ya, int(ya.shape[0])
 
-  def marginal_cdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def marginal_cdf(self, y: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Apply each margin's ``cdf`` to its column.
 
     Parameters
@@ -593,7 +595,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     xp = array_namespace(cols[0])
     return cast("ArrayT", trim(xp.stack(cols, axis=-1), xp))
 
-  def marginal_icdf(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def marginal_icdf(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Apply each margin's ``icdf`` to its column.
 
     Parameters
@@ -647,7 +649,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     margins: Sequence[Any],
     y: ArrayT,
     *,
-    x: Optional[ArrayT] = None,
+    x: ArrayT | None = None,
   ) -> ArrayT:
     """Assemble the copula-scale data in the layout a copula expects.
 
@@ -719,7 +721,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     block = xp.stack([*upper, *lower], axis=-1)
     return cast("ArrayT", trim(block, xp))
 
-  def _check_covariates(self, x: Optional[ArrayT], n_rows: int) -> None:
+  def _check_covariates(self, x: ArrayT | None, n_rows: int) -> None:
     """Refuse covariates that neither half of this distribution reads.
 
     Evaluation ignores ``x`` per margin, which is what lets conditional and
@@ -749,7 +751,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         "supports_covariates, or drop x."
       )
 
-  def copula_layout(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def copula_layout(self, y: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """This distribution's copula-scale data for ``y``.
 
     Parameters
@@ -775,7 +777,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
 
   # --- evaluation ---------------------------------------------------------- #
 
-  def logpdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def logpdf(self, y: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Log-density of the joint distribution.
 
     The primitive, rather than the log of :meth:`pdf`: both terms carry a scale
@@ -824,7 +826,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       total = total + term
     return cast("ArrayT", total)
 
-  def pdf(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def pdf(self, y: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Density of the joint distribution.
 
     Parameters
@@ -850,7 +852,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     self,
     y: ArrayT,
     *,
-    x: Optional[ArrayT] = None,
+    x: ArrayT | None = None,
     # Forwarded to the held copula, whose accepted keywords vary by
     # implementation -- `Vinecop.cdf` takes `N` and `seeds`, `TorchVinecop`
     # also `batched` -- and a custom `VinecopLike` may take its own. A
@@ -896,7 +898,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       ),
     )
 
-  def loglik(self, y: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def loglik(self, y: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Log-likelihood of the observations.
 
     Parameters
@@ -921,8 +923,8 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     self,
     y: ArrayT,
     *,
-    x: Optional[ArrayT] = None,
-    **kwargs: Any,  # noqa: ANN401 - open keyword set, as `cdf`
+    x: ArrayT | None = None,
+    **kwargs: Any,  # noqa: ANN401
   ) -> ArrayT:
     """Rosenblatt transform of observations to independent uniforms.
 
@@ -956,8 +958,8 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     self,
     w: ArrayT,
     *,
-    x: Optional[ArrayT] = None,
-    **kwargs: Any,  # noqa: ANN401 - open keyword set, as `cdf`
+    x: ArrayT | None = None,
+    **kwargs: Any,  # noqa: ANN401
   ) -> ArrayT:
     """Inverse Rosenblatt transform, from uniforms to the original scale.
 
@@ -987,8 +989,8 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     self,
     n: int,
     *,
-    x: Optional[ArrayT] = None,
-    **kwargs: Any,  # noqa: ANN401 - open keyword set, as `cdf`
+    x: ArrayT | None = None,
+    **kwargs: Any,  # noqa: ANN401
   ) -> ArrayT:
     """Draw ``n`` samples from the joint distribution.
 
@@ -1020,9 +1022,9 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     self,
     y_cond: ArrayT,
     *,
-    conditioning_set: Optional[list[int]] = None,
-    x: Optional[ArrayT] = None,
-    **kwargs: Any,  # noqa: ANN401 - open keyword set, as `cdf`
+    conditioning_set: list[int] | None = None,
+    x: ArrayT | None = None,
+    **kwargs: Any,  # noqa: ANN401
   ) -> ArrayT:
     """Sample the remaining variables given fixed values of some of them.
 
@@ -1114,8 +1116,8 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   # comments, not `#:` ones: autosummary cannot generate a page for an
   # attribute whose value is a class, so a subclass that sets one would leave
   # the inherited entry dangling and fail the nitpicky docs build.
-  vinecop_class: ClassVar[Optional[type]] = None
-  margin_class: ClassVar[Optional[type]] = None
+  vinecop_class: ClassVar[type | None] = None
+  margin_class: ClassVar[type | None] = None
 
   #: Whether this lane's copula fitter accepts observation weights. Declared
   #: rather than discovered, so weights given to a lane that cannot apply them
@@ -1137,11 +1139,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     # Annotated, rather than left bare: `y` is `object` because the hook
     # coerces whatever the caller brought, so `ArrayT` appears only in the
     # return and the checker has nothing to bind it from otherwise.
-    cls: "type[VinedistBase[ArrayT]]",
+    cls: type[VinedistBase[ArrayT]],
     y: object,
-    weights: Optional[ArrayT],
-    controls: Optional[ControlsLike],
-  ) -> tuple[ArrayT, Optional[ArrayT]]:
+    weights: ArrayT | None,
+    controls: ControlsLike | None,
+  ) -> tuple[ArrayT, ArrayT | None]:
     """Raise; override to put the fit inputs on this subclass's namespace.
 
     Called once before any part is fitted, by every estimator on the class.
@@ -1181,9 +1183,9 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   def _default_margins(
     cls,
     d: int,
-    controls: Optional[ControlsLike],
-    margin_controls: Optional[Sequence[Optional[ControlsLike]]] = None,
-  ) -> Optional[Sequence[MarginLike[ArrayT]]]:
+    controls: ControlsLike | None,
+    margin_controls: Sequence[ControlsLike | None] | None = None,
+  ) -> Sequence[MarginLike[ArrayT]] | None:
     """One ``margin_class`` per variable, declared as its controls say.
 
     Declaring ``margin_class`` is normally all it takes. Override this only
@@ -1223,13 +1225,13 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     cls,
     margin: Any,  # noqa: ANN401 - MarginLike names none of what is read
     y: ArrayT,
-    controls: Optional[ControlsLike],
+    controls: ControlsLike | None,
     *,
     verb: str,
-    var_type: Optional[str] = None,
-    support: Optional[tuple[Optional[float], Optional[float]]] = None,
-    x: Optional[ArrayT] = None,
-    weights: Optional[ArrayT] = None,
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+    x: ArrayT | None = None,
+    weights: ArrayT | None = None,
   ) -> MarginLike[ArrayT]:
     """Estimate one variable's margin, in place.
 
@@ -1399,10 +1401,10 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   @classmethod
   def _copula_controls(
     cls,
-    controls: Optional[ControlsLike],
+    controls: ControlsLike | None,
     u: ArrayT,
-    weights: Optional[ArrayT],
-  ) -> Optional[ControlsLike]:
+    weights: ArrayT | None,
+  ) -> ControlsLike | None:
     """The controls the copula half is estimated with, for this lane.
 
     The one lane-specific step in the copula estimate, and the only hook a
@@ -1455,10 +1457,10 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     u: ArrayT,
     *,
     var_types: list[str],
-    controls: Optional[ControlsLike],
-    structure: Optional[RVineStructure],
-    weights: Optional[ArrayT],
-    x: Optional[ArrayT] = None,
+    controls: ControlsLike | None,
+    structure: RVineStructure | None,
+    weights: ArrayT | None,
+    x: ArrayT | None = None,
   ) -> VinecopLike[ArrayT]:
     """Construct and fit the copula half on the pseudo-observations.
 
@@ -1529,9 +1531,9 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     u: ArrayT,
     *,
     var_types: list[str],
-    controls: Optional[ControlsLike],
-    weights: Optional[ArrayT],
-    x: Optional[ArrayT],
+    controls: ControlsLike | None,
+    weights: ArrayT | None,
+    x: ArrayT | None,
     verb: str,
   ) -> VinecopLike[ArrayT]:
     """Re-estimate the copula this distribution already holds, in place.
@@ -1587,11 +1589,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     self,
     y: ArrayT,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
     margin_controls: object = None,
-    x: Optional[ArrayT] = None,
-    weights: Optional[ArrayT] = None,
+    x: ArrayT | None = None,
+    weights: ArrayT | None = None,
   ) -> Self:
     """Re-estimate both halves of this distribution, in place.
 
@@ -1658,11 +1660,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     self,
     y: ArrayT,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
     margin_controls: object = None,
-    x: Optional[ArrayT] = None,
-    weights: Optional[ArrayT] = None,
+    x: ArrayT | None = None,
+    weights: ArrayT | None = None,
   ) -> Self:
     """Re-select and re-estimate both halves, in place.
 
@@ -1709,12 +1711,12 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   def _reestimate(
     self,
     y: ArrayT,
-    controls: Optional[ControlsLike],
+    controls: ControlsLike | None,
     margin_controls: object,
     *,
-    x: Optional[ArrayT],
-    weights: Optional[ArrayT],
-    structure: Optional[RVineStructure],
+    x: ArrayT | None,
+    weights: ArrayT | None,
+    structure: RVineStructure | None,
     verb: str,
   ) -> Self:
     """Re-estimate the held parts and rebind them, for ``fit`` and ``select``.
@@ -1770,7 +1772,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     labels = [getattr(m, "name", None) for m in self._margins]
     named = None if any(label is None for label in labels) else labels
     per_variable = resolve_margin_controls(
-      margin_controls, d, names=cast("Optional[Sequence[str]]", named)
+      margin_controls, d, names=cast("Sequence[str] | None", named)
     )
     # Each column is re-estimated from its own data, so margins tied together
     # at bind time have to come apart first: a margin estimates in place, and
@@ -1820,12 +1822,12 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   @classmethod
   def _check_fit_inputs(
     cls,
-    x: Optional[ArrayT],
-    weights: Optional[ArrayT],
+    x: ArrayT | None,
+    weights: ArrayT | None,
     n: int,
     data: ArrayT,
     verb: str,
-  ) -> tuple[Optional[ArrayT], Optional[ArrayT]]:
+  ) -> tuple[ArrayT | None, ArrayT | None]:
     """Validate and place the covariates, and validate the weights.
 
     Returns both, because placing is half the job: the covariates a margin's
@@ -1851,10 +1853,8 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         "unconditional while the call suggested otherwise. Fit the parts "
         "yourself if only one half is conditional."
       )
-    placed: Optional[ArrayT] = prepare_covariates(data, x, n)
-    checked: Optional[ArrayT] = validate_weights(
-      weights, cast("Any", data)[:, 0]
-    )
+    placed: ArrayT | None = prepare_covariates(data, x, n)
+    checked: ArrayT | None = validate_weights(weights, cast("Any", data)[:, 0])
     if checked is not None and not cls.supports_weighted_copula:
       raise ValueError(
         f"{cls.__name__}.{verb} cannot weight the copula half, so the "
@@ -1869,17 +1869,15 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     cls,
     y: ArrayT,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
     margin_controls: object = None,
-    var_types: Optional[Sequence[Optional[str]]] = None,
-    supports: Optional[
-      Sequence[Optional[tuple[Optional[float], Optional[float]]]]
-    ] = None,
-    structure: Optional[RVineStructure] = None,
-    x: Optional[ArrayT] = None,
-    weights: Optional[ArrayT] = None,
-    names: Optional[Sequence[str]] = None,
+    var_types: Sequence[str | None] | None = None,
+    supports: Sequence[tuple[float | None, float | None] | None] | None = None,
+    structure: RVineStructure | None = None,
+    x: ArrayT | None = None,
+    weights: ArrayT | None = None,
+    names: Sequence[str] | None = None,
   ) -> Self:
     """Fit margins and a vine copula to data, in that order.
 

@@ -164,8 +164,8 @@ def test_kde1d() -> None:
   compare_kde1d(original_kde, deserialized_kde)
 
   # Now test with fitted model
-  np.random.seed(1234)
-  x = np.random.normal(0, 1, 100)
+  rng = np.random.RandomState(1234)
+  x = rng.normal(0, 1, 100)
   original_kde.fit(x)
 
   # Serialize the fitted object

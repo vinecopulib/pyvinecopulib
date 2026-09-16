@@ -331,6 +331,7 @@ pyvinecopulib/
 
       sklearn/__init__.py        # VineDensity, VineRegressor
         _base.py                 # VineBase (parameter-constraints, schema, 3-step pipeline)
+        _sklearn_private.py      # the scikit-learn internals `_parameter_constraints` needs
         density.py               # VineDensity
         regressor.py             # VineRegressor
 
@@ -384,8 +385,21 @@ Conventions the toolchain enforces:
   crash on GHA when re-importing native extensions ("node down: Not
   properly terminated"). The note is in
   [pyproject.toml](pyproject.toml) next to `addopts`.
-- **`ruff` is pinned at `0.11.6`** (formatter output stability); only
-  bump only with a reason. Line length 80; indent width 2.
+- **`ruff` is pinned exactly** (formatter output stability), in
+  `[dependency-groups] dev` and in `.pre-commit-config.yaml`, which have to
+  move together; bump only with a reason. Line length 80; indent width 2.
+- **The rule set is 33 families wide and the repository is clean of it.** A
+  family goes in unless it contradicts a convention documented here, and an
+  exception is either a `# noqa` at the site with its reason or a
+  `per-file-ignores` entry where one reason covers the whole file. `ALL` is
+  not used: `E111` alone objects 2969 times to the indent width set above,
+  `D4xx` re-litigates what `numpydoc` validates, and `COM812` fights the
+  formatter. Two mechanics to know before running it: `--select` with `--fix`
+  makes every `noqa` for a *non-selected* rule read as unused and **deletes
+  it**, so narrow a run with `--statistics` or `--output-format`, never with
+  `--select --fix`; and `B009` / `B010` rewrite a `getattr` / `setattr` whose
+  whole purpose is to keep `ty` from rejecting the call a test means to make
+  at runtime.
 - **Tests for own deprecations are loud:** `filterwarnings` in
   `[tool.pytest.ini_options]` promotes `pyvinecopulib.*` deprecation
   warnings to errors, so internal code that still calls a deprecated
@@ -1273,7 +1287,7 @@ Three groups:
   the mass is `pmf`). **`core` holds the two registries and names no
   ecosystem.** An adapter or a JSON reader is registered by the module that
   owns the class it produces — `margins/scipy.py`, `margins/openturns.py`,
-  `pyvinecopulib/torch/__init__.py` — through the same
+  `torch/kde1d.py`, `torch/distribution_margin.py` — through the same
   `register_margin_adapter` / `register_margin_json` hooks a third party uses,
   so the first-party margins exercise the documented extension point rather
   than a private table beside it. Putting those tables in `core` instead is

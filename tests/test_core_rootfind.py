@@ -10,7 +10,8 @@ need.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import pytest
@@ -46,7 +47,7 @@ def _norm_cdf(x: Any) -> Any:
 def test_unit_interval_is_bit_for_bit_unchanged() -> None:
   """The default bracket reproduces the previous implementation exactly."""
   p = np.linspace(1e-10, 1 - 1e-10, 97)
-  for f in (lambda x: x, lambda x: x**3, lambda x: np.sqrt(x)):
+  for f in (lambda x: x, lambda x: x**3, np.sqrt):
     got = solve_increasing(f, p)
     want = _reference_unit_interval(f, p)
     assert np.array_equal(got, want)

@@ -22,8 +22,8 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from pyvinecopulib.core import Kde1d, MarginLike  # noqa: E402
-from pyvinecopulib.torch import TorchKde1d  # noqa: E402
+from pyvinecopulib.core import Kde1d, MarginLike
+from pyvinecopulib.torch import TorchKde1d
 
 _PROBS = np.array([1e-6, 0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99, 1 - 1e-6])
 
@@ -111,7 +111,7 @@ def _assert_quantiles_agree(
 ) -> None:
   """Compare a torch quantile against the compiled one; see `_QUANTILE_RTOL`."""
   rtol = _QUANTILE_RTOL[kind]
-  if rtol == 0.0:
+  if rtol == 0.0:  # noqa: RUF069 - an exact guarantee, not a computed approximation
     np.testing.assert_array_equal(got, want)
   else:
     np.testing.assert_allclose(got, want, rtol=rtol, atol=rtol)
@@ -199,7 +199,7 @@ def test_discrete_masses_sum_to_one_over_the_lattice() -> None:
   levels = _t(np.arange(-2.0, 40.0))
   assert float(lifted.pdf(levels).sum()) == pytest.approx(1.0, abs=1e-10)
   # Off-lattice points carry no mass at all.
-  assert float(lifted.pdf(_t(np.array([1.5, 2.25]))).abs().sum()) == 0.0
+  assert float(lifted.pdf(_t(np.array([1.5, 2.25]))).abs().sum()) == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
 
 
 def test_cdf_left_is_derived_for_a_discrete_margin() -> None:
@@ -402,7 +402,7 @@ def test_the_quantile_is_differentiable_in_the_probability() -> None:
 
 
 def test_state_dict_round_trip() -> None:
-  kde, lifted, _ = _fitted("discrete", type="discrete", xmin=0.0)
+  _kde, lifted, _ = _fitted("discrete", type="discrete", xmin=0.0)
   restored = TorchKde1d(type="discrete", xmin=0.0)
   restored.load_state_dict(lifted.state_dict())
   q = _t(np.arange(0.0, 10.0))
@@ -488,7 +488,7 @@ def test_fit_accepts_the_drop_markers_kde1d_documents() -> None:
 
 
 def test_pickle_round_trip() -> None:
-  kde, lifted, _ = _fitted("zi", type="zero-inflated", xmin=0.0)
+  _kde, lifted, _ = _fitted("zi", type="zero-inflated", xmin=0.0)
   restored = pickle.loads(pickle.dumps(lifted))
   q = _t(np.array([0.0, 0.5, 1.0, 4.0]))
   np.testing.assert_array_equal(restored.pdf(q).numpy(), lifted.pdf(q).numpy())

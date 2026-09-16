@@ -11,16 +11,14 @@ same as satisfying its semantics.
 
 from __future__ import annotations
 
-from typing import Any
-
 from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import pytest
 
 import pyvinecopulib as pv
-from pyvinecopulib.core import MarginLike
-from pyvinecopulib.core import Kde1d
+from pyvinecopulib.core import Kde1d, MarginLike
 from pyvinecopulib.margins import (
   FitControlsMargin,
   SciPyMargin,
@@ -133,7 +131,7 @@ def test_kde1d_margin_zero_inflated_left_limit() -> None:
 
 def test_kde1d_margin_rejects_unknown_type() -> None:
   """The type is validated at construction, where the mistake is."""
-  with pytest.raises(ValueError, match="variable type .* unknown"):
+  with pytest.raises(ValueError, match=r"variable type .* unknown"):
     Kde1d(type="ordinal")
 
 
@@ -293,7 +291,7 @@ def test_as_margin_scipy_forwards_native_log_density(raw: Any) -> None:
   margin: Any = as_margin(raw)
   np.testing.assert_allclose(margin.logpdf(far), raw.logpdf(far), atol=0)
   assert np.isfinite(margin.logpdf(far)).all()
-  assert margin.pdf(far)[0] == 0.0
+  assert margin.pdf(far)[0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
 
 
 def test_as_margin_rejects_the_unknown() -> None:
@@ -369,7 +367,7 @@ def test_as_margin_torch_forwards_native_log_density() -> None:
   margin_with_logpdf: Any = margin
   torch.testing.assert_close(margin_with_logpdf.logpdf(far), raw.log_prob(far))
   assert torch.isfinite(margin_with_logpdf.logpdf(far)).all()
-  assert margin.pdf(far).item() == 0.0
+  assert margin.pdf(far).item() == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
 
 
 @pytest.mark.parametrize("family", ["Poisson", "Bernoulli"])
@@ -377,7 +375,7 @@ def test_as_margin_rejects_discrete_torch_distributions(family: str) -> None:
   """Torch margins with atoms lack the cdf-left contract vines require."""
   torch = pytest.importorskip("torch")
   raw = getattr(torch.distributions, family)(torch.tensor(0.4))
-  with pytest.raises(TypeError, match="discrete torch distribution.*Kde1d"):
+  with pytest.raises(TypeError, match=r"discrete torch distribution.*Kde1d"):
     as_margin(raw)
 
 
@@ -387,7 +385,7 @@ def test_as_margin_rejects_torch_families_without_a_cdf(family: str) -> None:
   torch = pytest.importorskip("torch")
   args = (2.0, 3.0) if family == "Beta" else (5.0,)
   raw = getattr(torch.distributions, family)(*args)
-  with pytest.raises(TypeError, match="cdf is not implemented.*MarginBase"):
+  with pytest.raises(TypeError, match=r"cdf is not implemented.*MarginBase"):
     as_margin(raw)
 
 
@@ -433,14 +431,16 @@ def _shipped_margin_classes() -> dict[str, type]:
       module = importlib.import_module(name)
     except ImportError:  # the extra is not installed
       continue
-    for attr, value in vars(module).items():
-      if (
-        inspect.isclass(value)
+    found.update(
+      {
+        attr: value
+        for attr, value in vars(module).items()
+        if inspect.isclass(value)
         and issubclass(value, MarginBase)
         and value is not MarginBase
         and not attr.startswith("_")
-      ):
-        found[attr] = value
+      }
+    )
   return found
 
 

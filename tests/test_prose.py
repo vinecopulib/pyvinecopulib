@@ -1,4 +1,4 @@
-"""The writing rules codespell cannot express.
+r"""The writing rules codespell cannot express.
 
 `.codespell-prose.txt` bans single tokens, which covers most of the rule and
 runs in `make lint` and pre-commit. Two things are out of its reach and live
@@ -27,7 +27,7 @@ import io
 import pathlib
 import re
 import tokenize
-from typing import Iterator
+from collections.abc import Iterator
 
 import pytest
 
@@ -131,9 +131,11 @@ def _prose_of(path: pathlib.Path) -> list[tuple[int, str]]:
       doc = ast.get_docstring(node, clean=False)
       if doc:
         out.append((getattr(node, "lineno", 1), doc))
-  for tok in tokenize.generate_tokens(io.StringIO(src).readline):
-    if tok.type == tokenize.COMMENT:
-      out.append((tok.start[0], tok.string))
+  out.extend(
+    (tok.start[0], tok.string)
+    for tok in tokenize.generate_tokens(io.StringIO(src).readline)
+    if tok.type == tokenize.COMMENT
+  )
   return out
 
 

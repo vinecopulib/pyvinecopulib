@@ -234,7 +234,7 @@ Vinecop.get_trees : The same decomposition carrying the fitted pair copulas.
       .def_prop_ro("trunc_lvl", &RVineStructure::get_trunc_lvl,
                    rvinestructure_doc.get_trunc_lvl.doc)
       .def_prop_ro("order",
-                   (std::vector<size_t>(RVineStructure::*)() const) &
+                   (std::vector<size_t> (RVineStructure::*)() const) &
                        RVineStructure::get_order,
                    rvinestructure_doc.get_order.doc_0args,
                    nb::call_guard<nb::gil_scoped_release>())

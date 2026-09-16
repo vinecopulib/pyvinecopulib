@@ -19,15 +19,15 @@ to this file.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, cast
 
 import torch
 from torch import Tensor
 
-from ..pyvinecopulib_ext import RVineStructure
-from ._placement import TENSOR_NS
 from ..core._trim import trim
 from ..core.vinecop_base import NotBatchable
+from ..pyvinecopulib_ext import RVineStructure
+from ._placement import TENSOR_NS
 
 if TYPE_CHECKING:
   from .vinecop import TorchVinecop
@@ -127,7 +127,7 @@ def interpolate_batched(
   # `trim` applies to a copula argument. Every `.clamp(0.0, 1.0)` in this
   # module is one of these, and the kernels apply `trim` on the way out.
   u = u.clamp(0.0, 1.0)
-  N, n, _ = u.shape
+  _N, _n, _ = u.shape
 
   i, wx, _ = _locate(grid_points, u[..., 0], is_linear)
   j, wy, _ = _locate(grid_points, u[..., 1], is_linear)
@@ -198,7 +198,7 @@ def integrate_1d_batched(
   if cond_var not in (1, 2):
     raise ValueError(f"cond_var must be 1 or 2; got {cond_var}")
   u = u.clamp(0.0, 1.0)
-  N, n, _ = u.shape
+  _N, _n, _ = u.shape
   m = grid_points.shape[0]
 
   if cond_var == 1:
@@ -269,7 +269,7 @@ def inverse_integrate_1d_batched(
   u: Tensor,
   cond_var: int,
   is_linear: bool = False,
-  cum: Optional[Tensor] = None,
+  cum: Tensor | None = None,
 ) -> Tensor:
   """Batched closed-form inverse of :func:`integrate_1d_batched`.
 
@@ -352,8 +352,15 @@ def inverse_integrate_1d_batched(
   b = v_k
   c = below - target.squeeze(-1)
   denom = b + (b * b - 4.0 * a * c).clamp_min(0.0).sqrt()
-  safe_b = torch.where(b == 0.0, torch.ones_like(b), b)
-  safe_d = torch.where(denom == 0.0, torch.ones_like(denom), denom)
+  # Exact: these two guard a division, so what matters is whether the
+  # denominator is the value that cannot be divided by, not whether it is
+  # near it. A tolerance here would substitute 1.0 for a small real divisor.
+  safe_b = torch.where(b == 0.0, torch.ones_like(b), b)  # noqa: RUF069
+  safe_d = torch.where(
+    denom == 0.0,  # noqa: RUF069
+    torch.ones_like(denom),
+    denom,
+  )
   s = torch.where(
     denom <= 0.0,
     torch.zeros_like(denom),
@@ -569,8 +576,7 @@ class BatchedTreeLevel(torch.nn.Module):
     col1_h1 = hfunc1_prev.index_select(dim=1, index=self.col1_src)
     col1 = torch.where(self.col1_use_h1[None, :], col1_h1, col1_h2)
     # Stack into (N, n, 2): permute (n, N) -> (N, n) then stack on last dim.
-    u_e = torch.stack([col0.t(), col1.t()], dim=-1)
-    return u_e
+    return torch.stack([col0.t(), col1.t()], dim=-1)
 
   def _locate_both(self, grid_points: Tensor, u: Tensor) -> tuple[Tensor, ...]:
     """Grid location of both arguments: ``(i, wx, dx, j, wy, dy)``.
@@ -691,7 +697,7 @@ def inverse_waves(
         pred.add((m - 1, tree))
       elif tree - 1 >= 0:
         pred.add((m - 1, tree - 1))
-      deps[(var, tree)] = pred
+      deps[var, tree] = pred
   for cell in deps:
     deps[cell] &= deps.keys()
 
@@ -714,8 +720,8 @@ class BatchedWave(torch.nn.Module):
   """
 
   values: Tensor
-  sy: Optional[Tensor]
-  sx: Optional[Tensor]
+  sy: Tensor | None
+  sx: Tensor | None
   is_indep: Tensor
   col0_src: Tensor
   col1_src: Tensor
@@ -727,8 +733,8 @@ class BatchedWave(torch.nn.Module):
   def __init__(
     self,
     values: Tensor,
-    sy: Optional[Tensor],
-    sx: Optional[Tensor],
+    sy: Tensor | None,
+    sx: Tensor | None,
     is_indep: Tensor,
     col0_src: Tensor,
     col1_src: Tensor,
@@ -916,9 +922,10 @@ class BatchedVine(torch.nn.Module):
     inverse_order: list[int],
     d: int,
     trunc_lvl: int,
-    waves: "list[BatchedWave]" = [],
+    waves: list[BatchedWave] | None = None,
   ) -> None:
     super().__init__()
+    waves = waves or []
     self.register_buffer("grid_points", grid_points)
     self.levels = torch.nn.ModuleList(levels)
     self.waves = torch.nn.ModuleList(waves)
@@ -944,7 +951,7 @@ class BatchedVine(torch.nn.Module):
     return cast("BatchedTreeLevel", self.levels[t])
 
   @classmethod
-  def from_torch_vinecop(cls, tvc: TorchVinecop) -> "BatchedVine":
+  def from_torch_vinecop(cls, tvc: TorchVinecop) -> BatchedVine:
     """Build a ``BatchedVine`` from a fitted :class:`TorchVinecop`.
 
     Walks ``tvc.pair_copulas`` and ``tvc.structure`` once; precomputes per-pair

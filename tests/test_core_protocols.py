@@ -11,7 +11,7 @@ contract fails ``make check``. The runtime half is asserted here as well, since
 the two can disagree.
 """
 
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import pytest
@@ -116,15 +116,15 @@ def test_a_conditional_pair_declares_the_covariates_it_reads() -> None:
   """Widening the primitive is how a pair says it models covariates."""
 
   class Conditional(BicopBase[np.ndarray]):
-    def _pdf_raw(self, u: Any, *, x: Optional[Any] = None) -> Any:
+    def _pdf_raw(self, u: Any, *, x: Any | None = None) -> Any:
       scale = 1.0 if x is None else 1.0 + float(x[0, 0])
       return np.full(u.shape[0], scale)
 
-    def _hfunc1_raw(self, u: Any, *, x: Optional[Any] = None) -> Any:
+    def _hfunc1_raw(self, u: Any, *, x: Any | None = None) -> Any:
       del x
       return u[:, 1]
 
-    def _hfunc2_raw(self, u: Any, *, x: Optional[Any] = None) -> Any:
+    def _hfunc2_raw(self, u: Any, *, x: Any | None = None) -> Any:
       del x
       return u[:, 0]
 

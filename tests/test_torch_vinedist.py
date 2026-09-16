@@ -28,11 +28,13 @@ from .helpers import widen
 torch = pytest.importorskip("torch")
 stats = pytest.importorskip("scipy.stats")
 
-from pyvinecopulib.margins import FitControlsMargin  # noqa: E402
-from pyvinecopulib.torch import (  # noqa: E402
+from itertools import starmap
+
+from pyvinecopulib.margins import FitControlsMargin
+from pyvinecopulib.torch import (
   FitControlsTorchVinecop,
-  TorchKde1d,
   TorchDistributionMargin,
+  TorchKde1d,
   TorchVinecop,
   TorchVinedist,
 )
@@ -90,9 +92,7 @@ def test_logpdf_matches_the_numpy_vinedist(
   on-the-fly cascade, since the marginal terms are closed forms that agree to
   machine precision.
   """
-  reference = pv.Vinedist(
-    copula, [stats.norm(loc, scale) for loc, scale in _PARAMS]
-  )
+  reference = pv.Vinedist(copula, list(starmap(stats.norm, _PARAMS)))
   got = dist.logpdf(torch.as_tensor(data, dtype=_F64)).detach().numpy()
   np.testing.assert_allclose(
     got, reference.logpdf(data), atol=1e-10, rtol=1e-10
@@ -103,9 +103,7 @@ def test_marginal_cdf_matches_the_numpy_vinedist(
   data: np.ndarray, copula: pv.Vinecop, dist: TorchVinedist
 ) -> None:
   """The copula-scale transform agrees too, which is where a dtype slip shows."""
-  reference = pv.Vinedist(
-    copula, [stats.norm(loc, scale) for loc, scale in _PARAMS]
-  )
+  reference = pv.Vinedist(copula, list(starmap(stats.norm, _PARAMS)))
   got = dist.marginal_cdf(torch.as_tensor(data, dtype=_F64)).detach().numpy()
   np.testing.assert_allclose(
     got, reference.marginal_cdf(data), atol=1e-13, rtol=1e-13
@@ -330,7 +328,7 @@ def test_an_unfitted_broadcast_margin_is_copied_on_this_lane(
 def test_rejects_a_non_module_margin(copula: pv.Vinecop) -> None:
   """A SciPy margin would detach every gradient, so it is refused here."""
   torch_copula = TorchVinecop.from_vinecop(copula)
-  with pytest.raises(TypeError, match="torch.nn.Module"):
+  with pytest.raises(TypeError, match=r"torch\.nn\.Module"):
     TorchVinedist(torch_copula, [stats.norm(0, 1) for _ in range(3)])
 
 
@@ -424,7 +422,7 @@ def test_supports_declare_a_bound() -> None:
   rng = np.random.default_rng(1)
   y = torch.as_tensor(rng.gamma(2.0, 1.0, size=(400, 2)))
   bounded = TorchVinedist.from_data(y, supports=[(0.0, None)] * 2)
-  assert all(float(cast("Any", m).xmin) == 0.0 for m in bounded.margins)
+  assert all(float(cast("Any", m).xmin) == 0.0 for m in bounded.margins)  # noqa: RUF069 - the value this test set, read back
 
 
 def test_from_data_refuses_covariates(data: np.ndarray) -> None:

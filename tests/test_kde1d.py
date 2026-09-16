@@ -17,7 +17,7 @@ def test_kde1d_initialization() -> None:
   assert kde.xmin != kde.xmin  # NaN check
   assert kde.xmax != kde.xmax  # NaN check
   assert kde.type == "continuous"
-  assert kde.multiplier == 1.0
+  assert kde.multiplier == 1.0  # noqa: RUF069 - the value this test set, read back
   assert kde.bandwidth != kde.bandwidth  # NaN check (not fitted yet)
   assert kde.degree == 2
   assert kde.grid_size == 400  # Default grid size
@@ -32,11 +32,11 @@ def test_kde1d_initialization() -> None:
     degree=1,
     grid_size=200,
   )
-  assert kde.xmin == 0.0
-  assert kde.xmax == 1.0
+  assert kde.xmin == 0.0  # noqa: RUF069 - the value this test set, read back
+  assert kde.xmax == 1.0  # noqa: RUF069 - the value this test set, read back
   assert kde.type == "discrete"
   assert kde.multiplier == 25
-  assert kde.bandwidth == 0.1
+  assert kde.bandwidth == 0.1  # noqa: RUF069 - the value this test set, read back
   assert kde.degree == 1
   assert kde.grid_size == 200
 
@@ -57,7 +57,7 @@ def test_kde1d_answers_the_three_fitting_verbs() -> None:
 
   fitted = pv.core.Kde1d.from_data(y, support=(0.0, None))
   assert isinstance(fitted, pv.core.Kde1d)
-  assert fitted.xmin == 0.0
+  assert fitted.xmin == 0.0  # noqa: RUF069 - the value this test set, read back
   assert np.isfinite(fitted.loglik())
 
   # `select` is `fit`: the same object back, and the same fit.
@@ -76,10 +76,10 @@ def test_kde1d_factory_methods() -> None:
   kde = pv.core.Kde1d.from_params(
     xmin=0.0, xmax=1.0, type="continuous", multiplier=1.2
   )
-  assert kde.xmin == 0.0
-  assert kde.xmax == 1.0
+  assert kde.xmin == 0.0  # noqa: RUF069 - the value this test set, read back
+  assert kde.xmax == 1.0  # noqa: RUF069 - the value this test set, read back
   assert kde.type == "continuous"
-  assert kde.multiplier == 1.2
+  assert kde.multiplier == 1.2  # noqa: RUF069 - the value this test set, read back
 
   # Test from_grid
   # Create some sample grid data
@@ -95,8 +95,8 @@ def test_kde1d_factory_methods() -> None:
     type="continuous",
   )
 
-  assert kde_from_grid.xmin == -2.0
-  assert kde_from_grid.xmax == 2.0
+  assert kde_from_grid.xmin == -2.0  # noqa: RUF069 - the value this test set, read back
+  assert kde_from_grid.xmax == 2.0  # noqa: RUF069 - the value this test set, read back
   assert kde_from_grid.type == "continuous"
 
   # Should be able to evaluate (it's already "fitted" from grid)
@@ -131,28 +131,31 @@ def test_kde1d_properties() -> None:
   )
 
   # Test read-only properties
-  assert kde.xmin == -1.0
-  assert kde.xmax == 1.0
+  assert kde.xmin == -1.0  # noqa: RUF069 - the value this test set, read back
+  assert kde.xmax == 1.0  # noqa: RUF069 - the value this test set, read back
   assert kde.type == "continuous"
-  assert kde.multiplier == 2.0
-  assert kde.bandwidth == 0.5
+  assert kde.multiplier == 2.0  # noqa: RUF069 - the value this test set, read back
+  assert kde.bandwidth == 0.5  # noqa: RUF069 - the value this test set, read back
   assert kde.degree == 1
   assert kde.grid_size == 100
-  assert kde.prob0 == 0.0  # Default for non-zero-inflated
+  assert (
+    kde.prob0 == 0.0  # noqa: RUF069 - the value this test set, read back
+  )  # Default for non-zero-inflated
 
   # Test that properties are read-only
   with pytest.raises(AttributeError):
-    setattr(kde, "xmin", 0.0)
+    # As above: the assignment has to reach the property to be refused.
+    setattr(kde, "xmin", 0.0)  # noqa: B010
   with pytest.raises(AttributeError):
-    setattr(kde, "multiplier", 1.0)
+    setattr(kde, "multiplier", 1.0)  # noqa: B010
 
 
 def test_kde1d_fit_and_methods() -> None:
   """Test fitting and evaluation methods."""
 
   # Generate test data
-  np.random.seed(1234)
-  x = np.random.normal(0, 1, 100)
+  rng = np.random.RandomState(1234)
+  x = rng.normal(0, 1, 100)
 
   # Test fitting
   kde = pv.core.Kde1d()
@@ -160,7 +163,7 @@ def test_kde1d_fit_and_methods() -> None:
 
   # After fitting, should have valid loglik and edf
   assert isinstance(kde.loglik(), float)
-  assert not (kde.loglik() != kde.loglik())  # Should not be NaN
+  assert kde.loglik() == kde.loglik()  # Should not be NaN
   assert isinstance(kde.edf, float)
   assert kde.edf > 0
 
@@ -209,7 +212,7 @@ def test_kde1d_fit_and_methods() -> None:
 
   # Empty batches are legitimate and never reach Eigen reductions.
   assert kde.icdf(np.array([])).shape == (0,)
-  assert kde.loglik(np.array([])) == 0.0
+  assert kde.loglik(np.array([])) == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
 
 
 def test_kde1d_discrete_cdf_left_between_atoms() -> None:
@@ -224,16 +227,16 @@ def test_kde1d_discrete_cdf_left_between_atoms() -> None:
 def test_kde1d_weighted_fit() -> None:
   """Test fitting with weights."""
 
-  np.random.seed(1234)
-  x = np.random.normal(0, 1, 50)
-  weights = np.random.exponential(1, 50)
+  rng = np.random.RandomState(1234)
+  x = rng.normal(0, 1, 50)
+  weights = rng.exponential(1, 50)
 
   kde = pv.core.Kde1d()
   kde.fit(x, weights=weights)
 
   # Should still work and produce valid results
   assert isinstance(kde.loglik(), float)
-  assert not (kde.loglik() != kde.loglik())  # Should not be NaN
+  assert kde.loglik() == kde.loglik()  # Should not be NaN
 
   pdf_vals = kde.pdf(np.array([0.0]))
   assert len(pdf_vals) == 1
@@ -243,8 +246,8 @@ def test_kde1d_weighted_fit() -> None:
 def test_kde1d_discrete_data() -> None:
   """Test with discrete data."""
 
-  np.random.seed(1234)
-  x = np.random.binomial(10, 0.3, 100).astype(float)
+  rng = np.random.RandomState(1234)
+  x = rng.binomial(10, 0.3, 100).astype(float)
 
   kde = pv.core.Kde1d(xmin=0, xmax=10, type="discrete")
   kde.fit(x)
@@ -260,8 +263,8 @@ def test_kde1d_discrete_data() -> None:
 def test_kde1d_bounded_data() -> None:
   """Test with bounded support."""
 
-  np.random.seed(1234)
-  x = np.random.beta(2, 5, 100)  # Data in [0,1]
+  rng = np.random.RandomState(1234)
+  x = rng.beta(2, 5, 100)  # Data in [0,1]
 
   kde = pv.core.Kde1d(xmin=0.0, xmax=1.0)
   kde.fit(x)
@@ -309,8 +312,8 @@ def test_kde1d_is_fitted() -> None:
 def test_kde1d_check_fitted_parameter() -> None:
   """Test the check_fitted parameter in evaluation methods."""
 
-  np.random.seed(1234)
-  x = np.random.normal(0, 1, 50)
+  rng = np.random.RandomState(1234)
+  x = rng.normal(0, 1, 50)
   eval_points = np.array([0.0])
 
   kde = pv.core.Kde1d()
@@ -340,8 +343,8 @@ def test_kde1d_check_fitted_parameter() -> None:
 def test_kde1d_single_point_evaluation() -> None:
   """Test evaluation with single point (similar to bicop test)."""
 
-  np.random.seed(1234)
-  x = np.random.normal(0, 1, 100)
+  rng = np.random.RandomState(1234)
+  x = rng.normal(0, 1, 100)
 
   kde = pv.core.Kde1d()
   kde.fit(x)
@@ -384,8 +387,8 @@ def test_kde1d_error_conditions() -> None:
 def test_kde1d_different_degrees() -> None:
   """Test different polynomial degrees."""
 
-  np.random.seed(1234)
-  x = np.random.normal(0, 1, 100)
+  rng = np.random.RandomState(1234)
+  x = rng.normal(0, 1, 100)
 
   for degree in [0, 1, 2]:
     kde = pv.core.Kde1d(degree=degree)
@@ -400,12 +403,12 @@ def test_kde1d_different_degrees() -> None:
 def test_kde1d_zero_inflated() -> None:
   """Test zero-inflated data."""
 
-  np.random.seed(1234)
+  rng = np.random.RandomState(1234)
   # Create zero-inflated data
-  x = np.random.exponential(1, 80)
+  x = rng.exponential(1, 80)
   zeros = np.zeros(20)
   x = np.concatenate([x, zeros])
-  np.random.shuffle(x)
+  rng.shuffle(x)
 
   kde = pv.core.Kde1d(xmin=0.0, type="zero_inflated")
   kde.fit(x)
@@ -429,8 +432,8 @@ def test_kde1d_zero_inflated() -> None:
 def test_kde1d_large_data() -> None:
   """Test with larger dataset to ensure stability."""
 
-  np.random.seed(1234)
-  x = np.random.normal(0, 1, 1000)
+  rng = np.random.RandomState(1234)
+  x = rng.normal(0, 1, 1000)
 
   kde = pv.core.Kde1d()
   kde.fit(x)
@@ -660,7 +663,7 @@ def test_kde1d_survives_the_inputs_that_used_to_crash_it() -> None:
     "print('survived')\n"
   )
   done = subprocess.run(
-    [sys.executable, "-c", program], capture_output=True, text=True
+    [sys.executable, "-c", program], capture_output=True, text=True, check=False
   )
   assert done.returncode == 0, f"interpreter died: {done.returncode}"
   assert "survived" in done.stdout
@@ -801,7 +804,7 @@ def test_a_declaration_states_what_it_states_and_no_more() -> None:
   y = np.abs(np.random.default_rng(0).normal(size=300))
   built = pv.core.Kde1d(xmin=0.0, bandwidth=0.3, grid_size=64, degree=1)
   built.fit(y, var_type="c")
-  assert built.xmin == 0.0
+  assert built.xmin == 0.0  # noqa: RUF069 - the value this test set, read back
   assert built.bandwidth == pytest.approx(0.3)
   assert (built.grid_size, built.degree) == (64, 1)
 
@@ -815,4 +818,4 @@ def test_a_declaration_states_what_it_states_and_no_more() -> None:
   # all: that is what passing one means.
   built.fit(y, pv.core.FitControlsKde1d(grid_size=128))
   assert built.grid_size == 128
-  assert built.xmin == 0.0
+  assert built.xmin == 0.0  # noqa: RUF069 - the value this test set, read back

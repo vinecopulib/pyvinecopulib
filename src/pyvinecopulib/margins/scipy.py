@@ -7,24 +7,21 @@ SciPy is an optional dependency; it is imported when a
 
 from __future__ import annotations
 
+import operator
 import re
 import warnings
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import (
   Any,
-  Callable,
-  Iterable,
-  Mapping,
-  Optional,
   Self,
-  Sequence,
   TypeVar,
   cast,
 )
 
 import numpy as np
 
-from ..core._margins import register_margin_json
 from ..core import ControlsLike, MarginBase, MarginLike
+from ..core._margins import register_margin_json
 from ..core._validation import (
   extra_required,
   reject_covariates,
@@ -147,7 +144,7 @@ def _stats() -> Any:  # noqa: ANN401
     extra="scipy",
     requirement="pyvinecopulib.margins.SciPyMargin requires SciPy.",
   ):
-    import scipy.stats as stats
+    from scipy import stats
   return stats
 
 
@@ -217,8 +214,8 @@ def _anchoring_group(family: str, groups: Sequence[str]) -> str:
 def _curated_margin(
   family: str,
   partition: str,
-  bounds: Optional[tuple[float, float]] = None,
-) -> "SciPyMargin":
+  bounds: tuple[float, float] | None = None,
+) -> SciPyMargin:
   """Build a candidate with its group's fixed-parameter policy applied.
 
   Whether ``loc`` and ``scale`` are estimated or pinned is a property of the
@@ -256,7 +253,7 @@ def _curated_margin(
   )
 
 
-def _reject(candidate: MarginLike[np.ndarray], y: np.ndarray) -> Optional[str]:
+def _reject(candidate: MarginLike[np.ndarray], y: np.ndarray) -> str | None:
   """Return why a fitted candidate is inadmissible, or ``None`` if it is fine.
 
   Four things have to hold, and none of them implies the others. Every
@@ -287,7 +284,7 @@ def _reject(candidate: MarginLike[np.ndarray], y: np.ndarray) -> Optional[str]:
   values: Sequence[float] = getattr(margin, "parameters", ())
   if len(names) == len(values):
     limits = _LIMITS.get(getattr(margin, "family_name", ""), {})
-    for name, value in zip(names, values):
+    for name, value in zip(names, values, strict=False):
       if not np.isfinite(value):
         return f"non-finite parameter {name}={value}"
       lo, hi = limits.get(name, (float("-inf"), float("inf")))
@@ -304,7 +301,7 @@ def _reject(candidate: MarginLike[np.ndarray], y: np.ndarray) -> Optional[str]:
   if len(names) == len(values):
     spread = float(np.max(y) - np.min(y))
     floor = 1e-6 * spread if spread > 0.0 else 0.0
-    for name, value in zip(names, values):
+    for name, value in zip(names, values, strict=False):
       if name == "scale" and floor > 0.0 and value < floor:
         return (
           f"degenerate parameter scale={value:.6g}, below {floor:.6g} "
@@ -330,7 +327,7 @@ def _reject(candidate: MarginLike[np.ndarray], y: np.ndarray) -> Optional[str]:
   return None
 
 
-def _fit_candidate(candidate: "SciPyMargin", y: np.ndarray) -> Optional[str]:
+def _fit_candidate(candidate: SciPyMargin, y: np.ndarray) -> str | None:
   """Fit one candidate and report why it is inadmissible, or ``None``.
 
   Parameters
@@ -354,7 +351,9 @@ def _fit_candidate(candidate: "SciPyMargin", y: np.ndarray) -> Optional[str]:
       if not getattr(candidate, "is_fitted", True):
         candidate.fit(y)
       return _reject(candidate, y)
-    except Exception as e:
+    # As `openturns.py`: a candidate raises whatever SciPy raises, and
+    # every rejection is reported rather than skipped.
+    except Exception as e:  # noqa: BLE001
       return f"{type(e).__name__}: {e}"
 
 
@@ -516,13 +515,13 @@ class SciPyMargin(MarginBase[np.ndarray]):
 
   def __init__(
     self,
-    family: Optional[str] = None,
-    params: Optional[Sequence[float]] = None,
+    family: str | None = None,
+    params: Sequence[float] | None = None,
     *,
-    param_bounds: Optional[Mapping[str, tuple[float, float]]] = None,
+    param_bounds: Mapping[str, tuple[float, float]] | None = None,
     **fixed: float,
   ) -> None:
-    self._declared_support: Optional[tuple[float, float]] = None
+    self._declared_support: tuple[float, float] | None = None
     if family is None:
       if params is not None:
         raise ValueError(
@@ -534,7 +533,8 @@ class SciPyMargin(MarginBase[np.ndarray]):
     stats = _stats()
     dist = getattr(stats, family, None)
     if not isinstance(dist, (stats.rv_continuous, stats.rv_discrete)):
-      raise ValueError(
+      # `ValueError`: the family *name* is wrong, not the argument's type.
+      raise ValueError(  # noqa: TRY004
         f"unknown scipy.stats family {family!r}; expected the name of a "
         "distribution such as 'gamma' or 'poisson'"
       )
@@ -552,8 +552,8 @@ class SciPyMargin(MarginBase[np.ndarray]):
       else dict(_FIT_BOUNDS.get(family, {}))
     )
 
-    self._params: Optional[tuple[float, ...]] = None
-    self._loglik: Optional[float] = None
+    self._params: tuple[float, ...] | None = None
+    self._loglik: float | None = None
     if params is not None:
       values = tuple(float(v) for v in params)
       if len(values) != len(self._names):
@@ -565,7 +565,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
 
   def _unnamed(
     self,
-    param_bounds: Optional[Mapping[str, tuple[float, float]]],
+    param_bounds: Mapping[str, tuple[float, float]] | None,
     fixed: Mapping[str, float],
   ) -> None:
     """Initialize a margin whose family is not chosen yet.
@@ -586,14 +586,14 @@ class SciPyMargin(MarginBase[np.ndarray]):
     self._names: tuple[str, ...] = ()
     self._fixed: dict[str, float] = dict(fixed)
     self._bounds = dict(param_bounds) if param_bounds is not None else {}
-    self._params: Optional[tuple[float, ...]] = None
-    self._loglik: Optional[float] = None
+    self._params: tuple[float, ...] | None = None
+    self._loglik: float | None = None
 
   def _record_declaration(
     self,
     *,
-    var_type: Optional[str] = None,
-    support: Optional[tuple[Optional[float], Optional[float]]] = None,
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
   ) -> Self:
     """Take the declared support as well as the type.
 
@@ -634,12 +634,12 @@ class SciPyMargin(MarginBase[np.ndarray]):
     self,
     y: np.ndarray,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    var_type: Optional[str] = None,
-    support: Optional[tuple[Optional[float], Optional[float]]] = None,
-    x: Optional[np.ndarray] = None,
-    weights: Optional[np.ndarray] = None,
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+    x: np.ndarray | None = None,
+    weights: np.ndarray | None = None,
   ) -> Self:
     """Choose a family from the candidate set, fit it, and become it.
 
@@ -754,7 +754,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
         f"refused:\n  {detail}\nName a family directly, widen family_set, or "
         'pass on_failure="fallback" for a kernel-density margin.'
       )
-    scored.sort(key=lambda pair: pair[0])
+    scored.sort(key=operator.itemgetter(0))
     return self._adopt(scored[0][1])
 
   def _reads_as_counts(self, data: np.ndarray) -> bool:
@@ -779,8 +779,8 @@ class SciPyMargin(MarginBase[np.ndarray]):
     data: np.ndarray,
     *,
     counts: bool,
-    family_set: Optional[Sequence[str]],
-  ) -> list["SciPyMargin"]:
+    family_set: Sequence[str] | None,
+  ) -> list[SciPyMargin]:
     """Build the candidates to fit.
 
     Parameters
@@ -874,7 +874,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
         groups.append("unit")
     return groups
 
-  def _adopt(self, winner: "SciPyMargin") -> Self:
+  def _adopt(self, winner: SciPyMargin) -> Self:
     """Become the selected candidate.
 
     Parameters
@@ -1054,7 +1054,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
     return payload
 
   @classmethod
-  def from_json_payload(cls, payload: dict[str, Any]) -> "SciPyMargin":
+  def from_json_payload(cls, payload: dict[str, Any]) -> SciPyMargin:
     """Rebuild a margin from the payload :meth:`to_json` produced.
 
     Parameters
@@ -1095,12 +1095,12 @@ class SciPyMargin(MarginBase[np.ndarray]):
     self,
     y: np.ndarray,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    var_type: Optional[str] = None,
-    support: Optional[tuple[Optional[float], Optional[float]]] = None,
-    x: Optional[np.ndarray] = None,
-    weights: Optional[np.ndarray] = None,
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+    x: np.ndarray | None = None,
+    weights: np.ndarray | None = None,
   ) -> Self:
     """Estimate the free parameters by maximum likelihood.
 
@@ -1222,9 +1222,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
       return np.asarray(dist.pmf(values, *params), dtype=float)
     return np.asarray(dist.pdf(values, *params), dtype=float)
 
-  def logpdf(
-    self, y: np.ndarray, *, x: Optional[np.ndarray] = None
-  ) -> np.ndarray:
+  def logpdf(self, y: np.ndarray, *, x: np.ndarray | None = None) -> np.ndarray:
     """Log of :meth:`pdf`, from SciPy's own log-density.
 
     Overrides the inherited ``log(pdf(y))``, which loses the tails to underflow
@@ -1255,9 +1253,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
       dtype=float,
     )
 
-  def icdf(
-    self, p: np.ndarray, *, x: Optional[np.ndarray] = None
-  ) -> np.ndarray:
+  def icdf(self, p: np.ndarray, *, x: np.ndarray | None = None) -> np.ndarray:
     return np.asarray(
       self._dist.ppf(np.asarray(p, dtype=float), *self.parameters),
       dtype=float,
@@ -1267,8 +1263,8 @@ class SciPyMargin(MarginBase[np.ndarray]):
     self,
     n: int,
     *,
-    x: Optional[np.ndarray] = None,
-    seeds: Optional[list[int]] = None,
+    x: np.ndarray | None = None,
+    seeds: list[int] | None = None,
   ) -> np.ndarray:
     """Draw ``n`` samples from the family.
 
@@ -1296,7 +1292,8 @@ class SciPyMargin(MarginBase[np.ndarray]):
       pinned = ", ".join(f"{k}={v!r}" for k, v in self._fixed.items())
       return f"SciPyMargin({self._family!r}, unfitted, {pinned})"
     shown = ", ".join(
-      f"{name}={value:.4g}" for name, value in zip(self._names, self._params)
+      f"{name}={value:.4g}"
+      for name, value in zip(self._names, self._params, strict=False)
     )
     return f"SciPyMargin({self._family!r}, {shown})"
 
@@ -1324,7 +1321,7 @@ def _parameter_names(
   # the one place its value becomes a name the rest of the module compares.
   declared = str(dist.shapes or "")
   shapes = tuple(part.strip() for part in declared.split(",") if part.strip())
-  return shapes + ("loc",) if discrete else shapes + ("loc", "scale")
+  return (*shapes, "loc") if discrete else (*shapes, "loc", "scale")
 
 
 def _normalize_fixed(

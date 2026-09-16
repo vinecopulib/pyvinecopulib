@@ -1,4 +1,4 @@
-"""Utility primitives used alongside the core copula classes.
+r"""Utility primitives used alongside the core copula classes.
 
 This subpackage groups the supporting functionality that copula
 modeling typically needs but that doesn't fit inside the
@@ -60,7 +60,7 @@ __all__ = [
 # `simulate_uniform` shipped in 0.7.6 under that name. Served from `__getattr__`
 # rather than assigned, so it stays out of `__all__`, the generated stubs and the
 # docs while still resolving for existing callers.
-_DEPRECATED_FUNCTIONS = {"simulate_uniform": "sample_uniform"}
+_DEPRECATED_FUNCTIONS = {"simulate_uniform": "sample_uniform"}  # noqa: RUF067
 
 
 def __getattr__(name: str) -> Any:  # noqa: ANN401 - a name resolves to any

@@ -15,12 +15,10 @@ to substitute its own representation of independence when it takes delivery of
 
 from __future__ import annotations
 
-from typing import Any, Optional, cast
-
-from .protocols import array_namespace
+from typing import Any, cast
 
 from .bicop_base import BicopBase
-from .protocols import ArrayT
+from .protocols import ArrayT, array_namespace
 
 
 class IndependenceBicop(BicopBase[ArrayT]):
@@ -36,7 +34,7 @@ class IndependenceBicop(BicopBase[ArrayT]):
   pyvinecopulib.core.VinecopBase.select : Places this on a thresholded edge.
   """
 
-  def _pdf_raw(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def _pdf_raw(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Density, which is one everywhere.
 
     Parameters
@@ -56,7 +54,7 @@ class IndependenceBicop(BicopBase[ArrayT]):
     xp = array_namespace(cols)
     return cast("ArrayT", xp.ones_like(cols[:, 0]))
 
-  def _cdf_raw(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def _cdf_raw(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Distribution function ``u1 * u2``.
 
     Parameters
@@ -75,7 +73,7 @@ class IndependenceBicop(BicopBase[ArrayT]):
     cols = cast("Any", u)
     return cast("ArrayT", cols[:, 0] * cols[:, 1])
 
-  def _hfunc1_raw(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def _hfunc1_raw(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """``P(U2 <= u2 | U1) = u2``.
 
     Parameters
@@ -93,7 +91,7 @@ class IndependenceBicop(BicopBase[ArrayT]):
     del x  # declared so the pair can sit in a conditional vine
     return cast("ArrayT", cast("Any", u)[:, 1])
 
-  def _hfunc2_raw(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def _hfunc2_raw(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """``P(U1 <= u1 | U2) = u1``.
 
     Parameters
@@ -111,7 +109,7 @@ class IndependenceBicop(BicopBase[ArrayT]):
     del x  # declared so the pair can sit in a conditional vine
     return cast("ArrayT", cast("Any", u)[:, 0])
 
-  def _hinv1_raw(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def _hinv1_raw(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Inverse of :meth:`hfunc1` in its second argument, which is identity.
 
     Parameters
@@ -129,7 +127,7 @@ class IndependenceBicop(BicopBase[ArrayT]):
     del x  # declared so the pair can sit in a conditional vine
     return cast("ArrayT", cast("Any", u)[:, 1])
 
-  def _hinv2_raw(self, u: ArrayT, *, x: Optional[ArrayT] = None) -> ArrayT:
+  def _hinv2_raw(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Inverse of :meth:`hfunc2` in its first argument, which is identity.
 
     Parameters
@@ -147,7 +145,7 @@ class IndependenceBicop(BicopBase[ArrayT]):
     del x  # declared so the pair can sit in a conditional vine
     return cast("ArrayT", cast("Any", u)[:, 0])
 
-  def _flip_raw(self) -> "IndependenceBicop[ArrayT]":
+  def _flip_raw(self) -> IndependenceBicop[ArrayT]:
     """The argument-swapped copula, which is this one.
 
     Returns

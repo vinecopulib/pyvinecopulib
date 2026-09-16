@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Generate `.pyi` stubs for pyvinecopulib subpackages.
 
 CMake POST_BUILD invokes this after linking the extension. Sources and the
@@ -9,6 +8,7 @@ without scikit-learn) are skipped with a warning.
 
 import argparse
 import ast
+import builtins as builtins_module
 import importlib
 import inspect
 import re
@@ -17,8 +17,7 @@ import sys
 import tempfile
 from pathlib import Path
 from types import BuiltinFunctionType, FunctionType
-import builtins as builtins_module
-from typing import Optional, TypeVar
+from typing import TypeVar
 
 
 def render_docstring(doc: str, indent: int) -> list[str]:
@@ -154,7 +153,7 @@ def bind_referenced_names(stub: str, pkg, module_name: str) -> str:
 
 
 def render_python_function_stub(
-  fct, name: str, known_types: Optional[set[str]] = None, indent: int = 2
+  fct, name: str, known_types: set[str] | None = None, indent: int = 2
 ) -> list[str]:
   """Render stub for regular Python functions using inspect.signature()"""
   import inspect
@@ -180,7 +179,7 @@ def render_python_function_stub(
 
 
 def render_nanobind_function_stub(
-  fct, name: str, known_types: Optional[set[str]] = None, indent: int = 2
+  fct, name: str, known_types: set[str] | None = None, indent: int = 2
 ) -> list[str]:
   import inspect
   import re
@@ -212,7 +211,7 @@ def render_nanobind_function_stub(
   return lines
 
 
-def infer_method_decorator(name: str, docstring: str) -> Optional[str]:
+def infer_method_decorator(name: str, docstring: str) -> str | None:
   """Infer whether a method should be decorated as static or classmethod."""
   if not docstring:
     return []
@@ -242,7 +241,7 @@ def infer_method_decorator(name: str, docstring: str) -> Optional[str]:
 
 
 def render_class_stub(
-  cls, name: str, known_types: Optional[set[str]] = None, indent: int = 2
+  cls, name: str, known_types: set[str] | None = None, indent: int = 2
 ) -> list[str]:
   # A base is declared only when it is a bound class from the same module, so
   # the stub that names it also defines it; ``object`` and foreign bases such as
@@ -296,9 +295,11 @@ def render_class_stub(
       doc = inspect.getdoc(attr) or ""
       lines.append(f"{inner_indent}def {attr_name}(self) -> Any: ...")
       if attr.fset is not None:
-        lines.append(f"{inner_indent}@{attr_name}.setter")
-        lines.append(
-          f"{inner_indent}def {attr_name}(self, value: Any) -> None: ..."
+        lines.extend(
+          (
+            f"{inner_indent}@{attr_name}.setter",
+            f"{inner_indent}def {attr_name}(self, value: Any) -> None: ...",
+          )
         )
     elif isinstance(attr, cls):
       # Enum member exposed as a class attribute (e.g. ``BicopFamily.clayton``).
@@ -354,9 +355,7 @@ def cleanup_stub(stub: str) -> str:
   stub = re.sub(r"\bpyvinecopulib\.", "", stub)
 
   stub = re.sub(r"matplotlib\.figure\.Figure", "Figure", stub)
-  stub = re.sub(r"matplotlib\.axes\._axes\.Axes", "Axes", stub)
-
-  return stub
+  return re.sub(r"matplotlib\.axes\._axes\.Axes", "Axes", stub)
 
 
 def generate_stub(
@@ -441,9 +440,8 @@ def generate_stub(
       or type(obj).__name__ == "nb_func"
     ):
       try:
-        if (
-          type(obj).__name__ == "nb_func"
-          or hasattr(obj, "__module__")
+        if type(obj).__name__ == "nb_func" or (
+          hasattr(obj, "__module__")
           and obj.__module__
           and "pyvinecopulib_ext" in obj.__module__
         ):
@@ -459,10 +457,12 @@ def generate_stub(
             )
           )
       except Exception as e:
-        lines.append(
-          f"{indent_str}# def {name}(...):  # signature unavailable ({e})"
+        lines.extend(
+          (
+            f"{indent_str}# def {name}(...):  # signature unavailable ({e})",
+            f"{indent_str}...\n",
+          )
         )
-        lines.append(f"{indent_str}...\n")
     elif isinstance(obj, family_cls):
       lines.append(f"{name}: BicopFamily = ...\n")
     elif isinstance(obj, list) and all(isinstance(x, family_cls) for x in obj):

@@ -633,7 +633,7 @@ def test_vinecop_get_trees_and_roundtrip() -> None:
   st = copy.deepcopy(s)
   st.truncate(1)
   assert st.trunc_lvl == 1
-  assert s == s and s != st
+  assert s == s and s != st  # noqa: PLR0124
 
 
 def test_vinecop_per_observation_parameters() -> None:
@@ -728,7 +728,7 @@ def test_from_data_without_structure_or_matrix() -> None:
   u = pv.to_pseudo_obs(random_data(d, n))
   cop = pv.Vinecop.from_data(u)
   assert cop.dim == d
-  assert set(int(v) for v in cop.structure.order) == set(range(1, d + 1))
+  assert {int(v) for v in cop.structure.order} == set(range(1, d + 1))
 
 
 def test_vinecop_get_trees_feeds_rvinestructure_from_trees() -> None:
@@ -778,9 +778,9 @@ def test_fit_controls_vinecop_from_bicop_controls() -> None:
 
   assert controls.family_set == [pv.families.gaussian]
   assert controls.num_threads == 2
-  assert controls.psi0 == 0.5
+  assert controls.psi0 == 0.5  # noqa: RUF069 - the value this test set, read back
   assert controls.trunc_lvl == 2
-  assert controls.threshold == 0.1
+  assert controls.threshold == 0.1  # noqa: RUF069 - the value this test set, read back
   assert controls.bicop_controls.family_set == [pv.families.gaussian]
 
   controls.bicop_controls = pv.FitControlsBicop(
@@ -1043,7 +1043,7 @@ def _underflowing_vine(d: int = 10) -> tuple[pv.Vinecop, np.ndarray]:
 def test_logpdf_survives_where_the_density_underflows() -> None:
   """The log-density is exact where the product of edge densities is not."""
   cop, u = _underflowing_vine()
-  assert cop.pdf(u)[0] == 0.0
+  assert cop.pdf(u)[0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
   logpdf = cop.logpdf(u)[0]
   assert np.isfinite(logpdf)
   # Nine edges of the same pair at the same point, so the total is exactly

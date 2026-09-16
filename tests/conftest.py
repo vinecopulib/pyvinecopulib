@@ -2,9 +2,9 @@ import math
 import statistics
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, cast
 
-import matplotlib
+import matplotlib as mpl
 import numpy as np
 import pytest
 from array_api_compat import array_namespace
@@ -15,7 +15,7 @@ from pyvinecopulib.core import BicopBase, BicopLike, VinecopBase
 if TYPE_CHECKING:
   import pandas as pd
 
-matplotlib.use("Agg")
+mpl.use("Agg")
 
 
 class HostedVinecop(VinecopBase[Any]):
@@ -42,8 +42,8 @@ class HostedVinecop(VinecopBase[Any]):
     self,
     pairs: Any,
     structure: Any,
-    var_types: Optional[list[str]] = None,
-    context: Optional[Any] = None,
+    var_types: list[str] | None = None,
+    context: Any | None = None,
   ) -> None:
     self._pairs = pairs
     self._bind_vine(structure, context, var_types=var_types)
@@ -58,9 +58,7 @@ class HostedVinecop(VinecopBase[Any]):
     return pv.utils.sample_uniform(n, self.d, qrng, list(seeds))
 
 
-def host_vinecop(
-  cop: Any, var_types: Optional[list[str]] = None
-) -> HostedVinecop:
+def host_vinecop(cop: Any, var_types: list[str] | None = None) -> HostedVinecop:
   """Host a compiled ``Vinecop``'s pair copulas in a :class:`HostedVinecop`.
 
   Parameters
@@ -163,7 +161,7 @@ class GaussianBicop(BicopBase[Any]):
     self._base_rho = float(base_rho)
     self._rho_max = float(rho_max)
 
-  def _rho(self, u: Any, x: Optional[Any]) -> Any:
+  def _rho(self, u: Any, x: Any | None) -> Any:
     """Per-row correlation from the (position-weighted) conditioning ``x``."""
     xp = array_namespace(u)
     n = u.shape[0]
@@ -174,7 +172,7 @@ class GaussianBicop(BicopBase[Any]):
     z = self._scale * position_weighted_mean(x, u)
     return self._rho_max * xp.tanh(z)
 
-  def _pdf_raw(self, u: Any, x: Optional[Any] = None) -> Any:
+  def _pdf_raw(self, u: Any, x: Any | None = None) -> Any:
     xp = array_namespace(u)
     uc = xp.clip(u, 1e-10, 1.0 - 1e-10)
     z1, z2 = _std_normal_ppf(uc[:, 0]), _std_normal_ppf(uc[:, 1])
@@ -183,7 +181,7 @@ class GaussianBicop(BicopBase[Any]):
     quad = 2.0 * rho * z1 * z2 - rho * rho * (z1 * z1 + z2 * z2)
     return xp.exp(quad / (2.0 * one_minus)) / xp.sqrt(one_minus)
 
-  def _hfunc1_raw(self, u: Any, x: Optional[Any] = None) -> Any:
+  def _hfunc1_raw(self, u: Any, x: Any | None = None) -> Any:
     # P(U2 <= u2 | U1 = u1) = Phi((z2 - rho z1) / sqrt(1 - rho^2)).
     xp = array_namespace(u)
     uc = xp.clip(u, 1e-10, 1.0 - 1e-10)
@@ -191,7 +189,7 @@ class GaussianBicop(BicopBase[Any]):
     rho = self._rho(u, x)
     return _std_normal_cdf((z2 - rho * z1) / xp.sqrt(1.0 - rho * rho))
 
-  def _hfunc2_raw(self, u: Any, x: Optional[Any] = None) -> Any:
+  def _hfunc2_raw(self, u: Any, x: Any | None = None) -> Any:
     # P(U1 <= u1 | U2 = u2) = Phi((z1 - rho z2) / sqrt(1 - rho^2)).
     xp = array_namespace(u)
     uc = xp.clip(u, 1e-10, 1.0 - 1e-10)
@@ -199,7 +197,7 @@ class GaussianBicop(BicopBase[Any]):
     rho = self._rho(u, x)
     return _std_normal_cdf((z1 - rho * z2) / xp.sqrt(1.0 - rho * rho))
 
-  def _hinv1_raw(self, u: Any, x: Optional[Any] = None) -> Any:
+  def _hinv1_raw(self, u: Any, x: Any | None = None) -> Any:
     # Invert hfunc1 w.r.t. u2: u = [u1, p] -> z2 = rho z1 + sqrt(1-rho^2) Phi^-1(p).
     xp = array_namespace(u)
     uc = xp.clip(u, 1e-10, 1.0 - 1e-10)
@@ -207,7 +205,7 @@ class GaussianBicop(BicopBase[Any]):
     rho = self._rho(u, x)
     return _std_normal_cdf(rho * z1 + xp.sqrt(1.0 - rho * rho) * zp)
 
-  def _hinv2_raw(self, u: Any, x: Optional[Any] = None) -> Any:
+  def _hinv2_raw(self, u: Any, x: Any | None = None) -> Any:
     # Invert hfunc2 w.r.t. u1: u = [p, u2] -> z1 = rho z2 + sqrt(1-rho^2) Phi^-1(p).
     xp = array_namespace(u)
     uc = xp.clip(u, 1e-10, 1.0 - 1e-10)
@@ -309,11 +307,11 @@ def _cuda_available() -> bool:
   """Whether a CUDA device is usable, without requiring torch to be installed."""
   try:
     import torch
-  except Exception:  # torch is an optional extra
+  except Exception:  # noqa: BLE001 - torch is an optional extra
     return False
   try:
     return bool(torch.cuda.is_available())
-  except Exception:  # a half-installed driver must not break collection
+  except Exception:  # noqa: BLE001 - a half-installed driver must not break collection
     return False
 
 

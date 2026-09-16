@@ -1,12 +1,13 @@
-from typing import Any, Callable, Optional, cast
+from collections.abc import Callable
+from typing import Any, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
-from mpl_toolkits.mplot3d.axis3d import XAxis as XAxis3D, YAxis as YAxis3D
+from mpl_toolkits.mplot3d.axis3d import XAxis as XAxis3D
+from mpl_toolkits.mplot3d.axis3d import YAxis as YAxis3D
 
 from ._covariates import covariate_row, pair_eval
-from ._placement import to_numpy
 from ._normal import (
   expon_cdf,
   expon_pdf,
@@ -15,8 +16,8 @@ from ._normal import (
   norm_pdf,
   norm_ppf,
 )
+from ._placement import to_numpy
 from .protocols import ArrayT, BicopLike
-
 
 #: Shared with `BicopBase.plot`, which adds `x` and a `Raises`.
 BICOP_PLOT_PARAMS = """    plot_type : str, default="surface"
@@ -70,34 +71,31 @@ BICOP_PLOT_DOC = (
 def get_default_xylim(margin_type: str) -> tuple[float, float]:
   if margin_type == "unif":
     return (1e-2, 1 - 1e-2)
-  elif margin_type == "norm":
+  if margin_type == "norm":
     return (-3, 3)
-  elif margin_type == "exp":
+  if margin_type == "exp":
     return (0, 6)
-  else:
-    raise ValueError("Unknown margin type")
+  raise ValueError("Unknown margin type")
 
 
 def get_default_grid_size(plot_type: str) -> int:
   if plot_type == "contour":
     return 100
-  elif plot_type == "surface":
+  if plot_type == "surface":
     return 40
-  else:
-    raise ValueError("Unknown plot type")
+  raise ValueError("Unknown plot type")
 
 
 def bicop_plot(
   cop: BicopLike[ArrayT],
   plot_type: str = "surface",
   margin_type: str = "unif",
-  xylim: Optional[tuple[float, float]] = None,
-  grid_size: Optional[int] = None,
+  xylim: tuple[float, float] | None = None,
+  grid_size: int | None = None,
   *,
-  x: Optional[ArrayT] = None,
-  place: Optional[Callable[[np.ndarray], Any]] = None,
+  x: ArrayT | None = None,
+  place: Callable[[np.ndarray], Any] | None = None,
 ) -> None:
-  """{}""".format(BICOP_PLOT_DOC)
 
   if plot_type not in ["contour", "surface"]:
     raise ValueError("Unknown type")
@@ -152,7 +150,7 @@ def bicop_plot(
   ## A conditional pair copula's density is a different surface for every
   ## covariate value, so a 2-d plot shows one slice: a single row, repeated
   ## across the grid. Placed but not clamped -- covariates are reals.
-  x_grid: Optional[Any] = None
+  x_grid: Any | None = None
   if x is not None:
     row = covariate_row(np.asarray(x, dtype=float))
     tiled = np.repeat(row, grid.shape[0], axis=0)
@@ -231,3 +229,9 @@ def bicop_plot(
     plt.show()
   else:
     raise ValueError("Unknown plot type")
+
+
+# Assigned rather than written inline: an `f"""{BICOP_PLOT_DOC}"""` in the
+# function body is a joined string, not a docstring, so `bicop_plot.__doc__` was
+# `None` -- and this is the callable the binding resolves for `.plot()`.
+bicop_plot.__doc__ = BICOP_PLOT_DOC

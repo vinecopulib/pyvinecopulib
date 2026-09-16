@@ -9,6 +9,21 @@ import pyvinecopulib as pv
 
 from .helpers import ShiftedNormalMargin
 
+#: What a pair copula offers a plot. A bare `MagicMock` answers *every*
+#: attribute, so it satisfies each `getattr` capability probe the evaluation
+#: path makes -- including `with_var_types`, which only a `BicopBase` has. A
+#: double that claims capabilities its subject lacks tests the wrong object.
+_PAIR_SURFACE = [
+  "pdf",
+  "cdf",
+  "hfunc1",
+  "hfunc2",
+  "hinv1",
+  "hinv2",
+  "sample",
+  "var_types",
+]
+
 
 def assert_called_once_or_twice(mock: Any) -> None:
   """Helper to assert a mock was called once or twice"""
@@ -70,7 +85,7 @@ class TestPairCopulaData:
       pairs_copula_data([[0.1, 0.5], [0.5, 1.1]])
 
     # Test negative grid_size
-    valid_data = np.random.uniform(0.1, 0.9, size=(10, 2))
+    valid_data = np.random.RandomState(0).uniform(0.1, 0.9, size=(10, 2))
     with pytest.raises(
       ValueError, match="`grid_size` must be a positive integer"
     ):
@@ -100,7 +115,7 @@ class TestPairCopulaData:
       pairs_copula_data(valid_data, scatter_size=0.0)
 
     # Test too few observations
-    few_obs_data = np.random.uniform(0.1, 0.9, size=(1, 2))
+    few_obs_data = np.random.RandomState(0).uniform(0.1, 0.9, size=(1, 2))
     with pytest.raises(ValueError, match="Need at least 2 observations, got 1"):
       pairs_copula_data(few_obs_data)
 
@@ -108,7 +123,7 @@ class TestPairCopulaData:
     """Test parameter type validation"""
     from pyvinecopulib.utils import pairs_copula_data
 
-    valid_data = np.random.uniform(0.1, 0.9, size=(10, 2))
+    valid_data = np.random.RandomState(0).uniform(0.1, 0.9, size=(10, 2))
 
     # Test non-integer grid_size
     with pytest.raises(
@@ -131,8 +146,8 @@ class TestPairCopulaData:
     from pyvinecopulib.utils import pairs_copula_data
 
     # Create valid test data
-    np.random.seed(42)
-    data = np.random.uniform(0.1, 0.9, size=(10, 2))
+    rng = np.random.RandomState(42)
+    data = rng.uniform(0.1, 0.9, size=(10, 2))
 
     # Mock the plotting parts since we just want to test validation
     with patch("matplotlib.pyplot.subplots") as mock_subplots:
@@ -141,23 +156,25 @@ class TestPairCopulaData:
       mock_subplots.return_value = (mock_fig, mock_ax)
 
       # Mock the wdm and Bicop imports that would fail without the C++ extension
-      with patch("pyvinecopulib.utils._pair_plots.wdm"):
-        with patch("pyvinecopulib.utils._pair_plots.Bicop"):
-          with patch("pyvinecopulib.utils._pair_plots.norm_cdf"):
-            with patch("pyvinecopulib.utils._pair_plots.norm_pdf"):
-              with patch("pyvinecopulib.utils._pair_plots.plt.tight_layout"):
-                # This should not raise any validation errors
-                try:
-                  pairs_copula_data(data)
-                  validation_passed = True
-                except (ImportError, AttributeError):
-                  # Expected due to missing matplotlib/C++ extension interactions
-                  validation_passed = True
-                except ValueError:
-                  # This would be a validation error, which we don't expect
-                  validation_passed = False
+      with (
+        patch("pyvinecopulib.utils._pair_plots.wdm"),
+        patch("pyvinecopulib.utils._pair_plots.Bicop"),
+        patch("pyvinecopulib.utils._pair_plots.norm_cdf"),
+        patch("pyvinecopulib.utils._pair_plots.norm_pdf"),
+        patch("pyvinecopulib.utils._pair_plots.plt.tight_layout"),
+      ):
+        # This should not raise any validation errors
+        try:
+          pairs_copula_data(data)
+          validation_passed = True
+        except (ImportError, AttributeError):
+          # Expected due to missing matplotlib/C++ extension interactions
+          validation_passed = True
+        except ValueError:
+          # This would be a validation error, which we don't expect
+          validation_passed = False
 
-                assert validation_passed, "Valid data should pass validation"
+        assert validation_passed, "Valid data should pass validation"
 
   def test_pairs_copula_data_edge_cases(self) -> None:
     """Test edge cases that should be handled gracefully"""
@@ -171,47 +188,49 @@ class TestPairCopulaData:
       mock_ax = MagicMock()
       mock_subplots.return_value = (mock_fig, mock_ax)
 
-      with patch("pyvinecopulib.utils._pair_plots.norm_cdf"):
-        with patch("pyvinecopulib.utils._pair_plots.norm_pdf"):
-          with patch("pyvinecopulib.utils._pair_plots.plt.tight_layout"):
-            # This should not raise validation errors
-            try:
-              pairs_copula_data(min_data)
-              edge_case_passed = True
-            except (ImportError, AttributeError):
-              # Expected due to missing matplotlib/C++ extension interactions
-              edge_case_passed = True
-            except ValueError:
-              # This would be a validation error
-              edge_case_passed = False
+      with (
+        patch("pyvinecopulib.utils._pair_plots.norm_cdf"),
+        patch("pyvinecopulib.utils._pair_plots.norm_pdf"),
+        patch("pyvinecopulib.utils._pair_plots.plt.tight_layout"),
+      ):
+        # This should not raise validation errors
+        try:
+          pairs_copula_data(min_data)
+          edge_case_passed = True
+        except (ImportError, AttributeError):
+          # Expected due to missing matplotlib/C++ extension interactions
+          edge_case_passed = True
+        except ValueError:
+          # This would be a validation error
+          edge_case_passed = False
 
-            assert edge_case_passed, "Minimum valid data should pass validation"
+        assert edge_case_passed, "Minimum valid data should pass validation"
 
     # Test exactly at dimension limit
-    max_dim_data = np.random.uniform(0.1, 0.9, size=(5, 10))
+    max_dim_data = np.random.RandomState(0).uniform(0.1, 0.9, size=(5, 10))
 
     with patch("matplotlib.pyplot.subplots") as mock_subplots:
       mock_fig = MagicMock()
       mock_ax = MagicMock()
       mock_subplots.return_value = (mock_fig, mock_ax)
 
-      with patch("pyvinecopulib.utils._pair_plots.norm_cdf"):
-        with patch("pyvinecopulib.utils._pair_plots.norm_pdf"):
-          with patch("pyvinecopulib.utils._pair_plots.plt.tight_layout"):
-            # This should not raise validation errors
-            try:
-              pairs_copula_data(max_dim_data)
-              max_dim_passed = True
-            except (ImportError, AttributeError):
-              # Expected due to missing matplotlib/C++ extension interactions
-              max_dim_passed = True
-            except ValueError:
-              # This would be a validation error
-              max_dim_passed = False
+      with (
+        patch("pyvinecopulib.utils._pair_plots.norm_cdf"),
+        patch("pyvinecopulib.utils._pair_plots.norm_pdf"),
+        patch("pyvinecopulib.utils._pair_plots.plt.tight_layout"),
+      ):
+        # This should not raise validation errors
+        try:
+          pairs_copula_data(max_dim_data)
+          max_dim_passed = True
+        except (ImportError, AttributeError):
+          # Expected due to missing matplotlib/C++ extension interactions
+          max_dim_passed = True
+        except ValueError:
+          # This would be a validation error
+          max_dim_passed = False
 
-            assert max_dim_passed, (
-              "Maximum dimension data should pass validation"
-            )
+        assert max_dim_passed, "Maximum dimension data should pass validation"
 
 
 class TestBicopHelpers:
@@ -247,7 +266,7 @@ class TestBicopHelpers:
     from pyvinecopulib.core._bicop_plot import bicop_plot
 
     # Create a mock copula object
-    mock_cop = MagicMock()
+    mock_cop = MagicMock(spec=_PAIR_SURFACE)
     mock_cop.var_types = ["c", "c"]
     mock_cop.pdf.return_value = np.ones(100)
 
@@ -269,7 +288,7 @@ class TestBicopHelpers:
     from pyvinecopulib.core._bicop_plot import bicop_plot
 
     # Create a mock copula object
-    mock_cop = MagicMock()
+    mock_cop = MagicMock(spec=_PAIR_SURFACE)
     mock_cop.var_types = ["c", "c"]
     mock_cop.pdf.return_value = np.ones(10000)  # 100x100 grid
 
@@ -294,7 +313,7 @@ class TestBicopHelpers:
     mock_fig.add_subplot.return_value = mock_ax
 
     # Create a mock copula object
-    mock_cop = MagicMock()
+    mock_cop = MagicMock(spec=_PAIR_SURFACE)
     mock_cop.var_types = ["c", "c"]
     mock_cop.pdf.return_value = np.ones(1600)  # 40x40 grid
 
@@ -316,7 +335,7 @@ class TestBicopHelpers:
     from pyvinecopulib.core._bicop_plot import bicop_plot
 
     # Create a mock copula object
-    mock_cop = MagicMock()
+    mock_cop = MagicMock(spec=_PAIR_SURFACE)
     mock_cop.var_types = ["c", "c"]
     mock_cop.pdf.return_value = np.ones(10000)  # 100x100 grid
 
@@ -342,7 +361,7 @@ class TestBicopHelpers:
     from pyvinecopulib.core._bicop_plot import bicop_plot
 
     # Create a mock copula object
-    mock_cop = MagicMock()
+    mock_cop = MagicMock(spec=_PAIR_SURFACE)
     mock_cop.var_types = ["c", "c"]
     mock_cop.pdf.return_value = np.ones(2500)  # 50x50 grid
 
@@ -365,8 +384,8 @@ class TestVinecopHelpers:
   def setup_method(self) -> None:
     """Set up test fixtures"""
     # Create a simple vine copula for testing
-    np.random.seed(1234)
-    data = np.random.uniform(0, 1, size=(50, 4))
+    rng = np.random.RandomState(1234)
+    data = rng.uniform(0, 1, size=(50, 4))
     self.vinecop = pv.Vinecop.from_data(
       data, controls=pv.FitControlsVinecop(family_set=[pv.families.indep])
     )
@@ -425,9 +444,7 @@ class TestVinecopHelpers:
 
     # Check edge labels
     assert all(isinstance(label, str) for label in edge_labels.values())
-    assert all(
-      isinstance(key, tuple) and len(key) == 2 for key in edge_labels.keys()
-    )
+    assert all(isinstance(key, tuple) and len(key) == 2 for key in edge_labels)
 
   def test_get_graph_higher_trees(self) -> None:
     """Test get_graph for higher order trees"""
@@ -437,7 +454,7 @@ class TestVinecopHelpers:
 
     # Test for tree 1 if available
     if self.vinecop.trunc_lvl > 1:
-      adj_mat, node_labels, edge_labels = get_graph(1, self.vinecop, vars_names)
+      adj_mat, node_labels, _ = get_graph(1, self.vinecop, vars_names)
 
       # Check that dimensions decrease for higher trees
       assert adj_mat.shape[0] == self.vinecop.dim - 1
@@ -472,285 +489,230 @@ class TestVinecopHelpers:
 
     # Instead of mocking the complex matplotlib behavior,
     # let's test that the function accepts correct parameters and handles validation
-    with patch("matplotlib.pyplot.subplots") as mock_subplots:
-      with patch("matplotlib.pyplot.show"):
-        with patch("matplotlib.pyplot.tight_layout"):
-          with patch("networkx.draw"):
-            with patch(
-              "networkx.drawing.nx_pydot.graphviz_layout"
-            ) as mock_graphviz:
-              # Mock the return to avoid complex axis handling
-              mock_graphviz.return_value = {0: (0, 0), 1: (1, 1)}
-              mock_fig = MagicMock()
-              mock_ax = MagicMock()
-              mock_subplots.return_value = (mock_fig, mock_ax)
+    with (
+      patch("matplotlib.pyplot.subplots") as mock_subplots,
+      patch("matplotlib.pyplot.show"),
+      patch("matplotlib.pyplot.tight_layout"),
+      patch("networkx.draw"),
+      patch("networkx.drawing.nx_pydot.graphviz_layout") as mock_graphviz,
+    ):
+      # Mock the return to avoid complex axis handling
+      mock_graphviz.return_value = {0: (0, 0), 1: (1, 1)}
+      mock_fig = MagicMock()
+      mock_ax = MagicMock()
+      mock_subplots.return_value = (mock_fig, mock_ax)
 
-              # The key is that this doesn't raise an exception
-              try:
-                vinecop_plot(self.vinecop, tree=[0])
-                # If we get here, the function accepted our parameters
-                success = True
-              except AttributeError as e:
-                if "set_title" in str(e):
-                  # This is the known matplotlib mocking issue, not a real bug
-                  success = True
-                else:
-                  success = False
-              except Exception:
-                success = False
-
-              assert success, "vinecop_plot should accept valid parameters"
+      # The key is that this doesn't raise an exception
+      try:
+        vinecop_plot(self.vinecop, tree=[0])
+        # If we get here, the function accepted our parameters
+      except AttributeError as e:
+        # A mocked axis carries no `set_title`; that is the mock, not
+        # the code under test. Anything else is a real failure, and
+        # reaches the report with its traceback.
+        if "set_title" not in str(e):
+          raise
 
   def test_vinecop_plot_multiple_trees(self) -> None:
     """Test vinecop_plot with multiple trees"""
     from pyvinecopulib.core._vinecop_plot import vinecop_plot
 
     # Use the same simpler mocking approach as test_vinecop_plot_basic
-    with patch("matplotlib.pyplot.subplots") as mock_subplots:
-      with patch("matplotlib.pyplot.show"):
-        with patch("matplotlib.pyplot.tight_layout"):
-          with patch("networkx.draw"):
-            with patch("networkx.draw_networkx_edge_labels"):
-              with patch(
-                "networkx.drawing.nx_pydot.graphviz_layout"
-              ) as mock_graphviz:
-                # Mock the return to avoid complex axis handling
-                mock_graphviz.return_value = {0: (0, 0), 1: (1, 1)}
-                mock_fig = MagicMock()
-                mock_axes = np.array([[MagicMock(), MagicMock()]])
-                mock_subplots.return_value = (mock_fig, mock_axes)
+    with (
+      patch("matplotlib.pyplot.subplots") as mock_subplots,
+      patch("matplotlib.pyplot.show"),
+      patch("matplotlib.pyplot.tight_layout"),
+      patch("networkx.draw"),
+      patch("networkx.draw_networkx_edge_labels"),
+      patch("networkx.drawing.nx_pydot.graphviz_layout") as mock_graphviz,
+    ):
+      # Mock the return to avoid complex axis handling
+      mock_graphviz.return_value = {0: (0, 0), 1: (1, 1)}
+      mock_fig = MagicMock()
+      mock_axes = np.array([[MagicMock(), MagicMock()]])
+      mock_subplots.return_value = (mock_fig, mock_axes)
 
-                # Test with multiple trees
-                available_trees = min(3, self.vinecop.trunc_lvl)
-                tree_list = list(range(available_trees))
+      # Test with multiple trees
+      available_trees = min(3, self.vinecop.trunc_lvl)
+      tree_list = list(range(available_trees))
 
-                # For multiple trees, we need a proper axes array
-                if len(tree_list) > 1:
-                  # Create a mock axes array with enough elements
-                  mock_axes = np.array(
-                    [MagicMock() for _ in range(len(tree_list))]
-                  )
-                  mock_subplots.return_value = (mock_fig, mock_axes)
+      # For multiple trees, we need a proper axes array
+      if len(tree_list) > 1:
+        # Create a mock axes array with enough elements
+        mock_axes = np.array([MagicMock() for _ in range(len(tree_list))])
+        mock_subplots.return_value = (mock_fig, mock_axes)
 
-                try:
-                  vinecop_plot(self.vinecop, tree=tree_list)
-                  success = True
-                except AttributeError as e:
-                  if "set_title" in str(e):
-                    # This is the known matplotlib mocking issue, not a real bug
-                    success = True
-                  else:
-                    success = False
-                except Exception:
-                  success = False
-
-                assert success, "vinecop_plot should handle multiple trees"
+      try:
+        vinecop_plot(self.vinecop, tree=tree_list)
+      except AttributeError as e:
+        # A mocked axis carries no `set_title`; that is the mock, not
+        # the code under test. Anything else is a real failure, and
+        # reaches the report with its traceback.
+        if "set_title" not in str(e):
+          raise
 
   def test_vinecop_plot_edge_labels(self) -> None:
     """Test vinecop_plot with and without edge labels"""
     from pyvinecopulib.core._vinecop_plot import vinecop_plot
 
     # Use the same simpler mocking approach as test_vinecop_plot_basic
-    with patch("matplotlib.pyplot.subplots") as mock_subplots:
-      with patch("matplotlib.pyplot.show"):
-        with patch("matplotlib.pyplot.tight_layout"):
-          with patch("networkx.draw"):
-            with patch(
-              "networkx.draw_networkx_edge_labels"
-            ) as mock_edge_labels:
-              with patch(
-                "networkx.drawing.nx_pydot.graphviz_layout"
-              ) as mock_graphviz:
-                # Mock the return to avoid complex axis handling
-                mock_graphviz.return_value = {0: (0, 0), 1: (1, 1)}
-                mock_fig = MagicMock()
-                mock_ax = MagicMock()
-                mock_subplots.return_value = (mock_fig, mock_ax)
+    with (
+      patch("matplotlib.pyplot.subplots") as mock_subplots,
+      patch("matplotlib.pyplot.show"),
+      patch("matplotlib.pyplot.tight_layout"),
+      patch("networkx.draw"),
+      patch("networkx.draw_networkx_edge_labels") as mock_edge_labels,
+      patch("networkx.drawing.nx_pydot.graphviz_layout") as mock_graphviz,
+    ):
+      # Mock the return to avoid complex axis handling
+      mock_graphviz.return_value = {0: (0, 0), 1: (1, 1)}
+      mock_fig = MagicMock()
+      mock_ax = MagicMock()
+      mock_subplots.return_value = (mock_fig, mock_ax)
 
-                # Test with edge labels
-                try:
-                  vinecop_plot(self.vinecop, tree=[0], add_edge_labels=True)
-                  success = True
-                except AttributeError as e:
-                  if "set_title" in str(e):
-                    # This is the known matplotlib mocking issue, not a real bug
-                    success = True
-                  else:
-                    success = False
-                except Exception:
-                  success = False
+      # Test with edge labels
+      try:
+        vinecop_plot(self.vinecop, tree=[0], add_edge_labels=True)
+      except AttributeError as e:
+        # A mocked axis carries no `set_title`; that is the mock, not
+        # the code under test. Anything else is a real failure, and
+        # reaches the report with its traceback.
+        if "set_title" not in str(e):
+          raise
 
-                assert success, (
-                  "vinecop_plot should accept valid parameters with edge labels"
-                )
+      # Reset mocks
+      mock_edge_labels.reset_mock()
 
-                # Reset mocks
-                mock_edge_labels.reset_mock()
-
-                # Test without edge labels
-                try:
-                  vinecop_plot(self.vinecop, tree=[0], add_edge_labels=False)
-                  success = True
-                except AttributeError as e:
-                  if "set_title" in str(e):
-                    # This is the known matplotlib mocking issue, not a real bug
-                    success = True
-                  else:
-                    success = False
-                except Exception:
-                  success = False
-
-                assert success, (
-                  "vinecop_plot should accept valid parameters without edge labels"
-                )
+      # Test without edge labels
+      try:
+        vinecop_plot(self.vinecop, tree=[0], add_edge_labels=False)
+      except AttributeError as e:
+        # A mocked axis carries no `set_title`; that is the mock, not
+        # the code under test. Anything else is a real failure, and
+        # reaches the report with its traceback.
+        if "set_title" not in str(e):
+          raise
 
   def test_vinecop_plot_layouts(self) -> None:
     """Test vinecop_plot with different layouts"""
     from pyvinecopulib.core._vinecop_plot import vinecop_plot
 
     # Use the same simpler mocking approach as test_vinecop_plot_basic
-    with patch("matplotlib.pyplot.subplots") as mock_subplots:
-      with patch("matplotlib.pyplot.show"):
-        with patch("matplotlib.pyplot.tight_layout"):
-          with patch("networkx.draw"):
-            with patch(
-              "networkx.drawing.nx_pydot.graphviz_layout"
-            ) as mock_graphviz:
-              with patch("networkx.spring_layout") as mock_spring:
-                # Mock the return to avoid complex axis handling
-                mock_graphviz.return_value = {0: (0, 0), 1: (1, 1)}
-                mock_spring.return_value = {0: (0, 0), 1: (1, 1)}
-                mock_fig = MagicMock()
-                mock_ax = MagicMock()
-                mock_subplots.return_value = (mock_fig, mock_ax)
+    with (
+      patch("matplotlib.pyplot.subplots") as mock_subplots,
+      patch("matplotlib.pyplot.show"),
+      patch("matplotlib.pyplot.tight_layout"),
+      patch("networkx.draw"),
+      patch("networkx.drawing.nx_pydot.graphviz_layout") as mock_graphviz,
+      patch("networkx.spring_layout") as mock_spring,
+    ):
+      # Mock the return to avoid complex axis handling
+      mock_graphviz.return_value = {0: (0, 0), 1: (1, 1)}
+      mock_spring.return_value = {0: (0, 0), 1: (1, 1)}
+      mock_fig = MagicMock()
+      mock_ax = MagicMock()
+      mock_subplots.return_value = (mock_fig, mock_ax)
 
-                # Test graphviz layout
-                try:
-                  vinecop_plot(self.vinecop, tree=[0], layout="graphviz")
-                  success = True
-                except AttributeError as e:
-                  if "set_title" in str(e):
-                    # This is the known matplotlib mocking issue, not a real bug
-                    success = True
-                  else:
-                    success = False
-                except Exception:
-                  success = False
+      # Test graphviz layout
+      try:
+        vinecop_plot(self.vinecop, tree=[0], layout="graphviz")
+      except AttributeError as e:
+        # A mocked axis carries no `set_title`; that is the mock, not
+        # the code under test. Anything else is a real failure, and
+        # reaches the report with its traceback.
+        if "set_title" not in str(e):
+          raise
 
-                assert success, "vinecop_plot should accept graphviz layout"
-
-                # Test spring layout
-                try:
-                  vinecop_plot(self.vinecop, tree=[0], layout="spring_layout")
-                  success = True
-                except AttributeError as e:
-                  if "set_title" in str(e):
-                    # This is the known matplotlib mocking issue, not a real bug
-                    success = True
-                  else:
-                    success = False
-                except Exception:
-                  success = False
-
-                assert success, "vinecop_plot should accept spring layout"
+      # Test spring layout
+      try:
+        vinecop_plot(self.vinecop, tree=[0], layout="spring_layout")
+      except AttributeError as e:
+        # A mocked axis carries no `set_title`; that is the mock, not
+        # the code under test. Anything else is a real failure, and
+        # reaches the report with its traceback.
+        if "set_title" not in str(e):
+          raise
 
   def test_vinecop_plot_custom_variable_names(self) -> None:
     """Test vinecop_plot with custom variable names"""
     from pyvinecopulib.core._vinecop_plot import vinecop_plot
 
     # Use the same simpler mocking approach as test_vinecop_plot_basic
-    with patch("matplotlib.pyplot.subplots") as mock_subplots:
-      with patch("matplotlib.pyplot.show"):
-        with patch("matplotlib.pyplot.tight_layout"):
-          with patch("networkx.draw"):
-            with patch(
-              "networkx.drawing.nx_pydot.graphviz_layout"
-            ) as mock_graphviz:
-              # Mock the return to avoid complex axis handling
-              mock_graphviz.return_value = {0: (0, 0), 1: (1, 1)}
-              mock_fig = MagicMock()
-              mock_ax = MagicMock()
-              mock_subplots.return_value = (mock_fig, mock_ax)
+    with (
+      patch("matplotlib.pyplot.subplots") as mock_subplots,
+      patch("matplotlib.pyplot.show"),
+      patch("matplotlib.pyplot.tight_layout"),
+      patch("networkx.draw"),
+      patch("networkx.drawing.nx_pydot.graphviz_layout") as mock_graphviz,
+    ):
+      # Mock the return to avoid complex axis handling
+      mock_graphviz.return_value = {0: (0, 0), 1: (1, 1)}
+      mock_fig = MagicMock()
+      mock_ax = MagicMock()
+      mock_subplots.return_value = (mock_fig, mock_ax)
 
-              # Test with custom variable names
-              custom_vars = ["Var1", "Var2", "Var3", "Var4"]
-              try:
-                vinecop_plot(self.vinecop, tree=[0], vars_names=custom_vars)
-                success = True
-              except AttributeError as e:
-                if "set_title" in str(e):
-                  # This is the known matplotlib mocking issue, not a real bug
-                  success = True
-                else:
-                  success = False
-              except Exception:
-                success = False
-
-              assert success, "vinecop_plot should accept custom variable names"
+      # Test with custom variable names
+      custom_vars = ["Var1", "Var2", "Var3", "Var4"]
+      try:
+        vinecop_plot(self.vinecop, tree=[0], vars_names=custom_vars)
+      except AttributeError as e:
+        # A mocked axis carries no `set_title`; that is the mock, not
+        # the code under test. Anything else is a real failure, and
+        # reaches the report with its traceback.
+        if "set_title" not in str(e):
+          raise
 
   def test_vinecop_plot_subplot_calculation(self) -> None:
     """Test subplot layout calculation"""
     from pyvinecopulib.core._vinecop_plot import vinecop_plot
 
     # Use the same simpler mocking approach as test_vinecop_plot_basic
-    with patch("matplotlib.pyplot.subplots") as mock_subplots:
-      with patch("matplotlib.pyplot.show"):
-        with patch("matplotlib.pyplot.tight_layout"):
-          with patch("networkx.draw"):
-            with patch(
-              "networkx.drawing.nx_pydot.graphviz_layout"
-            ) as mock_graphviz:
-              # Mock the return to avoid complex axis handling
-              mock_graphviz.return_value = {0: (0, 0), 1: (1, 1)}
-              mock_fig = MagicMock()
-              mock_ax = MagicMock()
-              mock_subplots.return_value = (mock_fig, mock_ax)
+    with (
+      patch("matplotlib.pyplot.subplots") as mock_subplots,
+      patch("matplotlib.pyplot.show"),
+      patch("matplotlib.pyplot.tight_layout"),
+      patch("networkx.draw"),
+      patch("networkx.drawing.nx_pydot.graphviz_layout") as mock_graphviz,
+    ):
+      # Mock the return to avoid complex axis handling
+      mock_graphviz.return_value = {0: (0, 0), 1: (1, 1)}
+      mock_fig = MagicMock()
+      mock_ax = MagicMock()
+      mock_subplots.return_value = (mock_fig, mock_ax)
 
-              # Test with 1 tree (should be 1x1)
-              try:
-                vinecop_plot(self.vinecop, tree=[0])
-                success = True
-              except AttributeError as e:
-                if "set_title" in str(e):
-                  # This is the known matplotlib mocking issue, not a real bug
-                  success = True
-                else:
-                  success = False
-              except Exception:
-                success = False
+      # Test with 1 tree (should be 1x1)
+      try:
+        vinecop_plot(self.vinecop, tree=[0])
+      except AttributeError as e:
+        # A mocked axis carries no `set_title`; that is the mock, not
+        # the code under test. Anything else is a real failure, and
+        # reaches the report with its traceback.
+        if "set_title" not in str(e):
+          raise
 
-              assert success, "vinecop_plot should handle single tree layout"
+      # We can check the call args if the function succeeded
+      if mock_subplots.called:
+        args, _ = mock_subplots.call_args
+        assert args[0] == 1  # n_row
+        assert args[1] == 1  # n_col
 
-              # We can check the call args if the function succeeded
-              if mock_subplots.called:
-                args, kwargs = mock_subplots.call_args
-                assert args[0] == 1  # n_row
-                assert args[1] == 1  # n_col
+      # Test with 3 trees (should be 3x1) if available
+      if self.vinecop.trunc_lvl >= 3:
+        mock_subplots.reset_mock()
+        try:
+          vinecop_plot(self.vinecop, tree=[0, 1, 2])
+        except AttributeError as e:
+          # A mocked axis carries no `set_title`; that is the mock, not
+          # the code under test. Anything else is a real failure, and
+          # reaches the report with its traceback.
+          if "set_title" not in str(e):
+            raise
 
-              # Test with 3 trees (should be 3x1) if available
-              if self.vinecop.trunc_lvl >= 3:
-                mock_subplots.reset_mock()
-                try:
-                  vinecop_plot(self.vinecop, tree=[0, 1, 2])
-                  success = True
-                except AttributeError as e:
-                  if "set_title" in str(e):
-                    # This is the known matplotlib mocking issue, not a real bug
-                    success = True
-                  else:
-                    success = False
-                except Exception:
-                  success = False
-
-                assert success, (
-                  "vinecop_plot should handle multiple tree layout"
-                )
-
-                # We can check the call args if the function succeeded
-                if mock_subplots.called:
-                  args, kwargs = mock_subplots.call_args
-                  assert args[0] == 3  # n_row
-                  assert args[1] == 1  # n_col
+        # We can check the call args if the function succeeded
+        if mock_subplots.called:
+          args, _ = mock_subplots.call_args
+          assert args[0] == 3  # n_row
+          assert args[1] == 1  # n_col
 
 
 class TestMarginPlot:
@@ -1081,7 +1043,7 @@ class TestEdgeCases:
     from pyvinecopulib.core._bicop_plot import bicop_plot
 
     # Create a mock copula that returns identical density values
-    mock_cop = MagicMock()
+    mock_cop = MagicMock(spec=_PAIR_SURFACE)
     mock_cop.var_types = ["c", "c"]
     mock_cop.pdf.return_value = np.ones(100)  # All values identical
 
@@ -1095,8 +1057,8 @@ class TestEdgeCases:
     from pyvinecopulib.core._vinecop_plot import get_name
 
     # Create a simple 3D vine copula
-    np.random.seed(1234)
-    data = np.random.uniform(0, 1, size=(50, 3))
+    rng = np.random.RandomState(1234)
+    data = rng.uniform(0, 1, size=(50, 3))
     vinecop = pv.Vinecop.from_data(
       data, controls=pv.FitControlsVinecop(family_set=[pv.families.indep])
     )

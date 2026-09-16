@@ -118,7 +118,7 @@ def test_covariates_are_placed_but_never_trimmed() -> None:
   assert isinstance(placed, torch.Tensor)
   assert placed.dtype is torch.float32
   # Untouched values: no clamp into (0, 1), which is the point.
-  assert float(placed.min()) == -3.0 and float(placed.max()) == 7.5
+  assert float(placed.min()) == -3.0 and float(placed.max()) == 7.5  # noqa: RUF069 - the value this test set, read back
 
 
 def test_prepare_still_refuses_a_misaligned_covariate_matrix() -> None:
@@ -143,7 +143,9 @@ def test_a_matching_dtype_does_not_excuse_the_wrong_device() -> None:
 
   from pyvinecopulib.core._placement import place
 
-  class Holder:
+  # A plain object, which is what the inference walks; a dataclass would
+  # be testing a shape no caller has.
+  class Holder:  # noqa: B903
     def __init__(self, grid: object) -> None:
       self.grid = grid
 
@@ -232,11 +234,11 @@ def test_the_extension_surface_is_exactly_the_six_names() -> None:
   caller nor a private hook's docstring is that. Listing the six here is what
   makes adding a seventh a decision rather than an import.
   """
-  import pyvinecopulib.core as core
+  from pyvinecopulib import core
 
   # `getattr` because the generated stub declares no `__all__`, as the
   # neighboring surface and stub tests do for the same reason.
-  import pyvinecopulib.core.extend as extend
+  from pyvinecopulib.core import extend
 
   exported = set(getattr(extend, "__all__", ()))
   # `place` / `reference_array` are the fix and the check of the `_prep`

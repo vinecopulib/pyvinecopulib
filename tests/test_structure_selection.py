@@ -6,21 +6,20 @@ same selected structure (identical R-vine matrix encoding) and same reused
 pair copulas (identical density, no re-fit).
 """
 
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 import numpy as np
 import pytest
-
-import pyvinecopulib as pv
-from pyvinecopulib.core import BicopBase, BicopLike, NonSimplifiedContext
 
 # Internal C++ primitive backing Python structure selection (boost prim /
 # kruskal / Wilson). Imported from the extension directly as it has no public
 # wrapper; it is an implementation detail of ``VinecopBase.select``.
 from pyvinecopulib.pyvinecopulib_ext import _select_spanning_tree
 
-from .conftest import HostedVinecop, MinimalBicop, position_weighted_mean
+import pyvinecopulib as pv
+from pyvinecopulib.core import BicopBase, BicopLike, NonSimplifiedContext
 
+from .conftest import HostedVinecop, MinimalBicop, position_weighted_mean
 
 _GAUSSIAN = pv.FitControlsBicop(family_set=[pv.families.gaussian])
 _TLL = pv.FitControlsBicop(family_set=[pv.families.tll])
@@ -638,7 +637,7 @@ class _ConditionalGaussian(BicopBase[np.ndarray]):
     *,
     slope: float = 0.0,
     rho_max: float = 0.95,
-    bicop: Optional[pv.Bicop] = None,
+    bicop: pv.Bicop | None = None,
   ) -> None:
     self._slope = float(slope)
     self._rho_max = float(rho_max)
@@ -649,17 +648,17 @@ class _ConditionalGaussian(BicopBase[np.ndarray]):
     u: np.ndarray,
     /,
     controls: Any = None,
-    var_types: Optional[list[str]] = None,
+    var_types: list[str] | None = None,
     *,
-    x: Optional[np.ndarray] = None,
+    x: np.ndarray | None = None,
   ) -> "_ConditionalGaussian":
     del controls, var_types, x
     self._bicop = pv.Bicop.from_data(np.asarray(u), controls=_GAUSSIAN)
     return self
 
-  def _per_row(self, x: Optional[np.ndarray]) -> Optional[np.ndarray]:
+  def _per_row(self, x: np.ndarray | None) -> np.ndarray | None:
     """Per-row correlations, or ``None`` to take the scalar path."""
-    if x is None or self._slope == 0.0:
+    if x is None or self._slope == 0.0:  # noqa: RUF069 - an exact guarantee, not a computed approximation
       return None
     assert self._bicop is not None
     rho = float(np.asarray(self._bicop.parameters).ravel()[0])
@@ -672,23 +671,19 @@ class _ConditionalGaussian(BicopBase[np.ndarray]):
     z = anchor + shift
     return (self._rho_max * np.tanh(z)).reshape(-1, 1)
 
-  def _call(self, name: str, u: np.ndarray, x: Optional[np.ndarray]) -> Any:
+  def _call(self, name: str, u: np.ndarray, x: np.ndarray | None) -> Any:
     assert self._bicop is not None, "fit the pair first"
     method = getattr(self._bicop, name)
     per_row = self._per_row(x)
     return method(u) if per_row is None else method(u, per_row)
 
-  def _pdf_raw(self, u: np.ndarray, *, x: Optional[np.ndarray] = None) -> Any:
+  def _pdf_raw(self, u: np.ndarray, *, x: np.ndarray | None = None) -> Any:
     return self._call("pdf", u, x)
 
-  def _hfunc1_raw(
-    self, u: np.ndarray, *, x: Optional[np.ndarray] = None
-  ) -> Any:
+  def _hfunc1_raw(self, u: np.ndarray, *, x: np.ndarray | None = None) -> Any:
     return self._call("hfunc1", u, x)
 
-  def _hfunc2_raw(
-    self, u: np.ndarray, *, x: Optional[np.ndarray] = None
-  ) -> Any:
+  def _hfunc2_raw(self, u: np.ndarray, *, x: np.ndarray | None = None) -> Any:
     return self._call("hfunc2", u, x)
 
   def _flip_raw(self) -> "_ConditionalGaussian":
@@ -727,9 +722,9 @@ def test_a_conditional_pair_with_no_x_dependence_recovers_the_cpp_structure(
   )
   mine.select(
     u,
-    fit_edge=lambda t, e, u_e, x_e, var_types=("c", "c"): (
-      _ConditionalGaussian(slope=0.0).fit(u_e)
-    ),
+    fit_edge=lambda t, e, u_e, x_e, var_types=("c", "c"): _ConditionalGaussian(
+      slope=0.0
+    ).fit(u_e),
   )
   theirs = pv.Vinecop.from_data(
     u, controls=_vine_controls(pv.families.gaussian)
@@ -765,7 +760,7 @@ def test_the_same_pair_with_x_dependence_on_is_a_different_model() -> None:
     )
     for slope in (0.0, 1.5)
   ]
-  for vine, slope in zip(fitted, (0.0, 1.5)):
+  for vine, slope in zip(fitted, (0.0, 1.5), strict=False):
     vine.fit(
       u,
       fit_edge=lambda t, e, u_e, x_e, var_types=("c", "c"), s=slope: (
@@ -797,13 +792,13 @@ def test_select_fits_the_model_it_then_evaluates(seed: int, d: int) -> None:
   """
   slope = 0.6
   u = _correlated_pseudo_obs(seed, d, n=600)
-  fitted: list[tuple[Any, np.ndarray, Optional[np.ndarray]]] = []
+  fitted: list[tuple[Any, np.ndarray, np.ndarray | None]] = []
 
   def fit_edge(
     t: int,
     e: int,
     u_e: np.ndarray,
-    x_e: Optional[np.ndarray],
+    x_e: np.ndarray | None,
     var_types: tuple[str, str] = ("c", "c"),
   ) -> Any:
     pair = _ConditionalGaussian(slope=slope).fit(u_e)

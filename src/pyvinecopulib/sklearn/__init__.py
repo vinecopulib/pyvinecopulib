@@ -54,7 +54,7 @@ the full methodology and references.
 
 from ..core._validation import extra_required
 
-with extra_required(
+with extra_required(  # noqa: RUF067
   extra="sklearn",
   requirement="pyvinecopulib.sklearn requires scikit-learn.",
 ):

@@ -10,22 +10,22 @@ compiled library: it is a lower precision, so the float64 tolerances do not
 apply to it and loosening them would weaken the check that does.
 """
 
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import pytest
 
 torch = pytest.importorskip("torch")
 
-import pyvinecopulib as pv  # noqa: E402
-from pyvinecopulib.torch import (  # noqa: E402
+import pyvinecopulib as pv
+from pyvinecopulib.torch import (
   FitControlsTorchVinecop,
-  TorchTllBicop,
   TorchKde1d,
+  TorchTllBicop,
   TorchVinecop,
   TorchVinedist,
 )
-from tests.helpers import assert_on_device, count_transfers  # noqa: E402
+from tests.helpers import assert_on_device, count_transfers
 
 # cuda vs cpu at the same dtype. Tight enough that the cpu-vs-C++ 1e-10
 # tolerances carry over to cuda by the triangle inequality.
@@ -205,7 +205,7 @@ def test_every_buffer_follows_to_device(
   assert_on_device(vine, device, out, extra=(vine._batched,))
 
 
-@pytest.mark.parametrize("op", _EVAL_OPS + ("sample",))
+@pytest.mark.parametrize("op", (*_EVAL_OPS, "sample"))
 def test_evaluation_does_not_round_trip_through_the_host(
   device: str, op: str, cpp_vine: pv.Vinecop, u_eval: np.ndarray
 ) -> None:
@@ -478,7 +478,7 @@ def test_a_declared_placement_serves_a_host_that_is_not_a_module(
   # float32, and a downstream test had been pinning that as correct.
   assert pair._prep(u_np.astype(np.float32)).dtype is torch.float64
   # Both arguments arrive placed, so they can meet in one expression.
-  assert float(pair.loglik(u_np, x=np.array([[1.0], [2.0]]))) == 0.0
+  assert float(pair.loglik(u_np, x=np.array([[1.0], [2.0]]))) == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
 
 
 def test_a_member_named_parameters_does_not_decide_the_placement(
@@ -499,7 +499,7 @@ def test_a_member_named_parameters_does_not_decide_the_placement(
   class _Coincidental(TensorPlacementMixin, BicopBase[torch.Tensor]):
     # Not callable, and not tensors: exactly what a wrapped estimator's own
     # hyperparameter record looks like.
-    parameters = {"n_estimators": 400, "depth": 6}
+    parameters: ClassVar[dict[str, int]] = {"n_estimators": 400, "depth": 6}
 
     def __init__(self) -> None:
       self.device = torch.device(device)
@@ -550,7 +550,7 @@ def test_a_host_with_parameters_but_no_buffers_still_resolves(
   assert reference_tensor(object()) is None
 
   class _Coincidental:
-    parameters = {"depth": 6}
+    parameters: ClassVar[dict[str, int]] = {"depth": 6}
 
   assert reference_tensor(_Coincidental()) is None
 

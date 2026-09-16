@@ -101,7 +101,7 @@ behind a weighted-looking call.
 ```python
 # before
 kde.fit(x, w)
-kde.fit(x)                     # kernel knobs only at construction
+kde.fit(x)  # kernel knobs only at construction
 
 # now
 kde.fit(y, weights=w)
@@ -131,10 +131,10 @@ argument is gone rather than kept as a second way to say the same thing. Both
 the positional and the keyword form now raise `TypeError`:
 
 ```python
-vine.fit(u, controls, 4)              # 0.7.6
-vine.fit(u, num_threads=4)            # 0.7.6
+vine.fit(u, controls, 4)  # 0.7.6
+vine.fit(u, num_threads=4)  # 0.7.6
 
-vine.fit(u, FitControlsBicop(num_threads=4))          # 1.0.0
+vine.fit(u, FitControlsBicop(num_threads=4))  # 1.0.0
 ```
 
 This is the one exception to the section above: `fit`'s third positional

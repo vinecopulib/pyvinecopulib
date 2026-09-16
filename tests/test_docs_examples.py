@@ -80,8 +80,8 @@ def _examples() -> dict[str, list[str]]:
   """
   src = _SOURCE.read_text(encoding="utf-8")
   found: dict[str, list[str]] = {}
-  for name in re.findall(r"^(_\w+_EXAMPLE) = ", src, re.M):
-    match = re.search(rf'^{name} = """(.*?)^"""', src, re.S | re.M)
+  for name in re.findall(r"^(_\w+_EXAMPLE) = ", src, re.MULTILINE):
+    match = re.search(rf'^{name} = """(.*?)^"""', src, re.DOTALL | re.MULTILINE)
     assert match is not None, name
     found[name] = _literal_blocks(match.group(1))
   return found

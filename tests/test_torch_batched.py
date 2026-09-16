@@ -16,8 +16,8 @@ import pyvinecopulib as pv
 
 torch = pytest.importorskip("torch")
 
-from pyvinecopulib.torch import TorchTllBicop  # noqa: E402
-from pyvinecopulib.torch._vinecop_batched import (  # noqa: E402
+from pyvinecopulib.torch import TorchTllBicop
+from pyvinecopulib.torch._vinecop_batched import (
   int_on_grid_batched,
   integrate_1d_batched,
   integrate_2d_batched,

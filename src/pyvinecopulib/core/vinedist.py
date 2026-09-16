@@ -10,7 +10,7 @@ have to name the concrete copula.
 from __future__ import annotations
 
 import copy
-from typing import Any, ClassVar, Optional, cast
+from typing import Any, ClassVar, cast
 
 import numpy as np
 
@@ -90,8 +90,8 @@ class Vinedist(VinedistBase[np.ndarray]):
   # The two halves this route fits: NumPy arrays throughout. Plain comments,
   # not `#:` ones -- autosummary cannot resolve an attribute whose value is
   # itself a class, and the declarations are documented on the base.
-  vinecop_class: ClassVar[Optional[type]] = Vinecop
-  margin_class: ClassVar[Optional[type]] = Kde1d
+  vinecop_class: ClassVar[type | None] = Vinecop
+  margin_class: ClassVar[type | None] = Kde1d
 
   #: `_copula_controls` writes weights into a copy of the controls, so both
   #: halves of the fit are weighted by the one argument.
@@ -137,9 +137,9 @@ class Vinedist(VinedistBase[np.ndarray]):
   def _coerce_fit_data(
     cls,
     y: object,
-    weights: Optional[np.ndarray],
-    controls: Optional[ControlsLike],
-  ) -> tuple[np.ndarray, Optional[np.ndarray]]:
+    weights: np.ndarray | None,
+    controls: ControlsLike | None,
+  ) -> tuple[np.ndarray, np.ndarray | None]:
     """Put the fit inputs on NumPy.
 
     NumPy carries no placement, so ``controls`` goes unread, and the weights
@@ -152,10 +152,10 @@ class Vinedist(VinedistBase[np.ndarray]):
   @classmethod
   def _copula_controls(
     cls,
-    controls: Optional[ControlsLike],
+    controls: ControlsLike | None,
     u: np.ndarray,
-    weights: Optional[np.ndarray],
-  ) -> Optional[ControlsLike]:
+    weights: np.ndarray | None,
+  ) -> ControlsLike | None:
     """``controls`` with the explicit ``weights`` written in.
 
     The explicit argument governs both halves of the fit, so it is written

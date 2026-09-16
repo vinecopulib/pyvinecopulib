@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Precision-vs-truth benchmark for the torch backend.
 
 Section 1 — Bicop precision. For each (family, params, n):
@@ -26,6 +25,7 @@ Outputs a long-format CSV to --output (default stdout) with columns:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import sys
 
@@ -39,7 +39,6 @@ from pyvinecopulib.torch import (
   TorchTllBicop,
   TorchVinecop,
 )
-
 
 # --- shared helpers ------------------------------------------------------ #
 
@@ -97,10 +96,10 @@ def _run_bicop_section(
   for fam_label, fam, params in _BICOP_SPECS:
     cop_true = pv.Bicop(family=fam, parameters=np.array([params]))
     for n in n_list:
-      sim_seeds = list(
+      sim_seeds = [
         int(x)
         for x in rng_master.integers(1, 2**31 - 1, size=3, endpoint=False)
-      )
+      ]
       u_true = cop_true.sample(n, seeds=sim_seeds)
       eval_seed = int(rng_master.integers(1, 2**31 - 1))
       u_eval = _u_eval(np.random.default_rng(eval_seed), m_eval, d=2)
@@ -119,22 +118,22 @@ def _run_bicop_section(
               cache_integrals=cache,
             )
             fits = _bicop_fit(bc_fit, u_eval_t)
-            for q in truths:
-              rows.append(
-                {
-                  "section": "bicop",
-                  "family": fam_label,
-                  "params": ";".join(f"{p:g}" for p in params),
-                  "d": 2,
-                  "n": n,
-                  "quantity": q,
-                  "cache": int(cache),
-                  "method": "tll",
-                  "grid_type": grid_type,
-                  "grid_size": grid_size,
-                  "IAE": _iae(fits[q], truths[q]),
-                }
-              )
+            rows.extend(
+              {
+                "section": "bicop",
+                "family": fam_label,
+                "params": ";".join(f"{p:g}" for p in params),
+                "d": 2,
+                "n": n,
+                "quantity": q,
+                "cache": int(cache),
+                "method": "tll",
+                "grid_type": grid_type,
+                "grid_size": grid_size,
+                "IAE": _iae(fits[q], truths[q]),
+              }
+              for q in truths
+            )
       print(
         f"# bicop {fam_label}({params}) n={n} done", file=sys.stderr, flush=True
       )
@@ -168,9 +167,9 @@ def _run_vine_section(
   for d in d_list:
     structure_seed = int(rng_master.integers(1, 2**31 - 1))
     cop_true = _build_gaussian_vine(d, structure_seed=structure_seed)
-    sim_seeds = list(
+    sim_seeds = [
       int(x) for x in rng_master.integers(1, 2**31 - 1, size=3, endpoint=False)
-    )
+    ]
     u_true = cop_true.sample(n, seeds=sim_seeds)
     # Single eval sample: iid uniforms on [0.02, 0.98]^d. This keeps the
     # IAEs comparable across pdf / rosenblatt / inverse_rosenblatt (the
@@ -207,22 +206,20 @@ def _run_vine_section(
           "grid_type": grid_type,
           "grid_size": 30,  # TorchVinecop.from_data default; not yet swept
         }
-        rows.append(
-          {**base, "quantity": "pdf", "IAE": _iae(fit_pdf, truth_pdf)}
-        )
-        rows.append(
-          {
-            **base,
-            "quantity": "rosenblatt",
-            "IAE": _iae(fit_rosen, truth_rosen),
-          }
-        )
-        rows.append(
-          {
-            **base,
-            "quantity": "inverse_rosenblatt",
-            "IAE": _iae(fit_inv, truth_inv),
-          }
+        rows.extend(
+          (
+            {**base, "quantity": "pdf", "IAE": _iae(fit_pdf, truth_pdf)},
+            {
+              **base,
+              "quantity": "rosenblatt",
+              "IAE": _iae(fit_rosen, truth_rosen),
+            },
+            {
+              **base,
+              "quantity": "inverse_rosenblatt",
+              "IAE": _iae(fit_inv, truth_inv),
+            },
+          )
         )
     print(f"# vine d={d} done", file=sys.stderr, flush=True)
   return rows
@@ -299,29 +296,36 @@ def main() -> None:
       args.d_vine, grid_types, args.n_vine, args.m_eval, args.seed + 1
     )
 
-  out = sys.stdout if args.output == "-" else open(args.output, "w", newline="")
-  writer = csv.DictWriter(
-    out,
-    fieldnames=[
-      "section",
-      "family",
-      "params",
-      "d",
-      "n",
-      "quantity",
-      "cache",
-      "method",
-      "grid_type",
-      "grid_size",
-      "IAE",
-    ],
-  )
-  writer.writeheader()
-  for r in rows:
-    r["IAE"] = f"{r['IAE']:.6e}"
-    writer.writerow(r)
-  if args.output != "-":
-    out.close()
+  with contextlib.ExitStack() as stack:
+    out = (
+      sys.stdout
+      if args.output == "-"
+      else stack.enter_context(
+        open(args.output, "w", encoding="utf-8", newline="")
+      )
+    )
+    writer = csv.DictWriter(
+      out,
+      fieldnames=[
+        "section",
+        "family",
+        "params",
+        "d",
+        "n",
+        "quantity",
+        "cache",
+        "method",
+        "grid_type",
+        "grid_size",
+        "IAE",
+      ],
+    )
+    writer.writeheader()
+    for r in rows:
+      r["IAE"] = f"{r['IAE']:.6e}"
+      writer.writerow(r)
+    if args.output != "-":
+      out.close()
 
 
 if __name__ == "__main__":

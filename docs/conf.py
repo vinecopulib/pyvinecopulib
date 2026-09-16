@@ -2,11 +2,12 @@
 
 import inspect
 import os
+import pathlib
 import re
 from typing import Any
 
-import sphinx.ext.autodoc as autodoc
 import sphinx.util.inspect as sphinxinspect
+from sphinx.ext import autodoc
 from sphinx.ext.autodoc import AttributeDocumenter, ModuleDocumenter
 
 import pyvinecopulib as pv
@@ -172,9 +173,7 @@ nitpick_ignore_regex = [
 # otherwise-private members.
 def _skip_inherited(app, what, name, obj, skip, options):
   mod = getattr(obj, "__module__", "")
-  if isinstance(mod, str) and (
-    mod.startswith("sklearn") or mod.startswith("torch")
-  ):
+  if isinstance(mod, str) and (mod.startswith(("sklearn", "torch"))):
     return True
   return None
 
@@ -198,7 +197,9 @@ exclude_patterns = [
 ]
 
 project = "pyvinecopulib"
-copyright = "2024, Thomas Nagler and Thibault Vatter"
+# Sphinx reads this name from the config namespace, so it is the spelling
+# or nothing.
+copyright = "2024, Thomas Nagler and Thibault Vatter"  # noqa: A001
 author = "Thomas Nagler and Thibault Vatter"
 
 release = pv.__version__
@@ -543,12 +544,12 @@ def _stage_repo_files(docs_dir, repo_root):
   readme_src = os.path.join(docs_dir, "README.md")
   readme_inlined = os.path.join(docs_dir, "_README_inlined.md")
   if os.path.isfile(readme_src):
-    readme = open(readme_src).read()
+    readme = pathlib.Path(readme_src).read_text(encoding="utf-8")
     readme = process_cross_references(readme, is_docstring=False)
     # Drop the first 8 lines (title + badges) — matches the historical
     # `.. include:: README.md :start-line: 8`.
     readme = "\n".join(readme.splitlines()[8:])
-    with open(readme_inlined, "w") as f:
+    with open(readme_inlined, "w", encoding="utf-8") as f:
       f.write("```{eval-rst}\n.. currentmodule:: pyvinecopulib\n```\n")
       f.write(readme)
 
@@ -557,7 +558,7 @@ def _write_features_rst(out_path):
   """Generate API documentation RST: one section per subpackage."""
   rst_name = "API Documentation"
   bar = "=" * len(rst_name)
-  with open(out_path, "w") as f:
+  with open(out_path, "w", encoding="utf-8") as f:
     f.write(".. GENERATED FILE DO NOT EDIT\n\n")
     f.write(f"{bar}\n{rst_name}\n{bar}\n\n")
     for subpkg, contents in DOCSTRING_SUBPACKAGES.items():
@@ -569,15 +570,13 @@ def _write_features_rst(out_path):
       if classes:
         f.write("Classes\n^^^^^^^\n\n")
         f.write(".. autosummary::\n    :toctree: _generate\n\n")
-        for cls in classes:
-          f.write(f"    {module}.{cls}\n")
+        f.writelines(f"    {module}.{cls}\n" for cls in classes)
         f.write("\n")
       functions = contents.get("functions", [])
       if functions:
         f.write("Functions\n^^^^^^^^^\n\n")
         f.write(".. autosummary::\n    :toctree: _generate\n\n")
-        for fn in functions:
-          f.write(f"    {module}.{fn}\n")
+        f.writelines(f"    {module}.{fn}\n" for fn in functions)
         f.write("\n")
 
 
@@ -590,14 +589,13 @@ def _write_examples_rst(out_path, examples_dir):
   )
   if not notebooks:
     return
-  with open(out_path, "w") as f:
+  with open(out_path, "w", encoding="utf-8") as f:
     f.write("Examples\n========\n\n")
     f.write(
       "The following example notebooks are included in this documentation:\n\n"
     )
     f.write(".. toctree::\n   :maxdepth: 1\n   :titlesonly:\n\n")
-    for nb in notebooks:
-      f.write(f"   examples/{os.path.splitext(nb)[0]}\n")
+    f.writelines(f"   examples/{os.path.splitext(nb)[0]}\n" for nb in notebooks)
 
 
 # Stage docs and write features.rst / examples.rst at conf.py load time.

@@ -140,7 +140,7 @@ jobs:
         # Tracks the lib/vinecopulib pin, except while that pin is a pull-request
         # branch: a SHA only reachable from a branch stops resolving once the
         # branch is deleted, and this one is fetched at run time.
-        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@de90c65d86f401484272ce5940359512ea7e8db3
+        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@64b8e3864d513c22e72da6ac85a829f678b9e5d0
         with:
           os: ${{ matrix.cfg.os }}
           platform: ${{ matrix.cfg.platform }}
@@ -491,7 +491,7 @@ jobs:
         # Tracks the lib/vinecopulib pin, except while that pin is a pull-request
         # branch: a SHA only reachable from a branch stops resolving once the
         # branch is deleted, and this one is fetched at run time.
-        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@de90c65d86f401484272ce5940359512ea7e8db3
+        uses: vinecopulib/vinecopulib/.github/actions/install-dependencies@64b8e3864d513c22e72da6ac85a829f678b9e5d0
         with:
           os: "ubuntu-latest"
           boost_install_dir: "/home/runner/work"

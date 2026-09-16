@@ -8,30 +8,29 @@ same partial-cell handling as the C++ implementation.
 from __future__ import annotations
 
 import math
-from typing import Optional
 
 import torch
 from torch import Tensor
+
+from ..core._trim import trim
 
 # The trapezoidal-integration / bilinear-interpolation kernels live in
 # ``_batched`` (they are shape-polymorphic over leading batch dims). The
 # scalar methods below are thin ``N=1`` wrappers so there is a single
 # source of truth for the numerics shared with the batched vine cascade.
 from ._placement import TENSOR_NS
-from ..core._trim import trim
 from ._vinecop_batched import (
+  _MIN_MASS,
   _batched_cell_index,
+  _cond_strip,
+  _hfunc_from_cells,
+  _locate,
   int_on_grid_batched,
   integrate_1d_batched,
   integrate_2d_batched,
   interpolate_batched,
-  _MIN_MASS,
-  _cond_strip,
-  _hfunc_from_cells,
   inverse_integrate_1d_batched,
-  _locate,
 )
-
 
 #: Above this grid side the passes below stay on the device: the launch
 #: overhead they save no longer outweighs moving the grid to the host.
@@ -364,7 +363,7 @@ class InterpolationGrid2D(torch.nn.Module):
     ).squeeze(0)
 
   def inverse_integrate_1d(
-    self, u: Tensor, cond_var: int, cum: Optional[Tensor] = None
+    self, u: Tensor, cond_var: int, cum: Tensor | None = None
   ) -> Tensor:
     """Closed-form inverse of :meth:`integrate_1d` in its free argument.
 

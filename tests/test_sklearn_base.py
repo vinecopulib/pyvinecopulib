@@ -11,7 +11,6 @@ pytest.importorskip("sklearn")
 pytest.importorskip("pandas")
 
 import pandas as pd
-
 from sklearn.exceptions import DataConversionWarning
 
 from pyvinecopulib.sklearn import VineDensity, VineRegressor
@@ -289,7 +288,7 @@ def test_non_finite_input_raises_rather_than_crashing() -> None:
 
   bad_y = y.copy()
   bad_y[3] = np.inf
-  with pytest.raises(ValueError, match="infinity|inf"):
+  with pytest.raises(ValueError, match=r"infinity|inf"):
     VineRegressor().fit(X, bad_y)
 
 
@@ -362,7 +361,7 @@ def test_an_unseen_category_is_refused_not_silently_recoded(
     c for c in X_df.columns if isinstance(X_df[c].dtype, pd.CategoricalDtype)
   )
   bad = X_df.head(3).copy()
-  levels = list(X_df[cat_col].cat.categories) + ["!unseen!"]
+  levels = [*list(X_df[cat_col].cat.categories), "!unseen!"]
   bad[cat_col] = pd.Categorical(["!unseen!"] * 3, categories=levels)
   with pytest.raises(ValueError, match="not seen during fit"):
     est.score_samples(bad)
@@ -410,10 +409,9 @@ def test_the_default_controls_come_from_the_vine_class_declaration() -> None:
   """
   torch = pytest.importorskip("torch")
   del torch
+  import pyvinecopulib as pv
   from pyvinecopulib.core import Vinedist
   from pyvinecopulib.torch import TorchVinedist
-
-  import pyvinecopulib as pv
 
   vinecop_class: Any = Vinedist.vinecop_class
   assert vinecop_class.controls_class is pv.FitControlsVinecop

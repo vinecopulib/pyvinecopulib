@@ -10,7 +10,8 @@ independent vine; and confirms the truncation and discrete paths.
 from __future__ import annotations
 
 import pickle
-from typing import Any, Callable, cast
+from collections.abc import Callable
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -19,7 +20,7 @@ import pyvinecopulib as pv
 
 torch = pytest.importorskip("torch")
 
-from pyvinecopulib.torch import (  # noqa: E402
+from pyvinecopulib.torch import (
   FitControlsTorchBicop,
   FitControlsTorchVinecop,
   TorchTllBicop,
@@ -1574,7 +1575,7 @@ def test_cxi_criterion_thresholds_nothing_at_zero() -> None:
     (t, e)
     for t in range(fitted.trunc_lvl)
     for e in range(6 - t - 1)
-    if bool((rows[t][e].interp_grid.values == 1.0).all())
+    if bool((rows[t][e].interp_grid.values == 1.0).all())  # noqa: RUF069 - an exact guarantee, not a computed approximation
   ]
   assert thresholded == [], f"thresholded at threshold=0.0: {thresholded}"
 

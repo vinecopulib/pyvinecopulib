@@ -24,7 +24,6 @@ pytest.importorskip("sklearn")
 pytest.importorskip("pandas")
 
 import pandas as pd
-
 from sklearn.base import clone
 
 import pyvinecopulib as pv
@@ -170,8 +169,8 @@ def test_expanded_dummies_are_fitted_on_their_own_support(
     # members of `MarginLike`, so they are read off a loosely typed binding.
     margin: Any = est.distribution_.margins[j]
     assert margin.support == (0.0, 1.0)
-    assert margin.pdf(np.array([2.0])).item() == 0.0
-    assert margin.cdf(np.array([-1.0])).item() == 0.0
+    assert margin.pdf(np.array([2.0])).item() == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+    assert margin.cdf(np.array([-1.0])).item() == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
   # A continuous column states no support, so it stays unbounded.
   unbounded: Any = est.distribution_.margins[0]
   assert unbounded.support == (-np.inf, np.inf)
@@ -197,8 +196,8 @@ def test_ordered_categorical_is_fitted_on_its_declared_levels() -> None:
   assert margin.support == (float(np.min(counts)), float(np.max(counts)))
   # Padding the grid below the smallest level is what put mass on impossible
   # counts; the declared support removes it exactly rather than approximately.
-  assert margin.cdf(np.array([-1.0])).item() == 0.0
-  assert margin.pdf(np.array([-1.0])).item() == 0.0
+  assert margin.cdf(np.array([-1.0])).item() == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert margin.pdf(np.array([-1.0])).item() == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
 
 
 def test_the_schema_reaches_a_column_the_specification_addresses() -> None:
@@ -452,7 +451,7 @@ def test_selection_runs_per_expanded_column(
   )
   rows = est.margin_summary_
   assert len(rows) == len(expanded)
-  by_name = dict(zip(expanded, rows))
+  by_name = dict(zip(expanded, rows, strict=False))
   counts = ("poisson", "nbinom", "geom")
   assert by_name["cat1_B"]["var_type"] == "d"
   assert by_name["cat1_B"]["family"] in counts

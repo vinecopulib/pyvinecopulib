@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Any, Optional, Union, cast
+from typing import Any, cast
 
 __all__ = ["MODEL_JSON_VERSION", "dumps", "loads", "read_payload"]
 
@@ -56,10 +56,7 @@ def _encode_nonfinite(value: object) -> object:
       The same structure with non-finite floats replaced.
   """
   if isinstance(value, float) and not math.isfinite(value):
-    if math.isnan(value):
-      tag = "nan"
-    else:
-      tag = "+inf" if value > 0 else "-inf"
+    tag = "nan" if math.isnan(value) else "+inf" if value > 0 else "-inf"
     return {_NONFINITE_KEY: tag}
   if isinstance(value, dict):
     return {k: _encode_nonfinite(v) for k, v in value.items()}
@@ -134,7 +131,9 @@ def loads(text: str) -> dict[str, Any]:
   """
   payload = _decode_nonfinite(json.loads(text))
   if not isinstance(payload, dict):
-    raise ValueError("expected a JSON object")
+    # `ValueError`, not `TypeError`: the payload is a malformed model file,
+    # not an argument of the wrong type, and `from_json` documents this.
+    raise ValueError("expected a JSON object")  # noqa: TRY004
   return payload
 
 
@@ -176,10 +175,10 @@ def read_file(filename: str) -> str:
 
 
 def read_payload(
-  payload: Union[str, dict[str, Any]],
+  payload: str | dict[str, Any],
   what: str,
   *,
-  kind: Optional[str] = None,
+  kind: str | None = None,
 ) -> dict[str, Any]:
   """Decode a payload if it is still a string, and check what it claims to be.
 

@@ -15,12 +15,10 @@ Internal: the vine cascades and the fit engines call these helpers.
 
 from __future__ import annotations
 
-from typing import Any, Optional, cast
-
-from .protocols import Namespace, array_namespace
+from typing import Any, cast
 
 from ..pyvinecopulib_ext import RVineStructure
-from .protocols import ArrayT
+from .protocols import ArrayT, Namespace, array_namespace
 
 __all__ = ["collapse_data"]
 
@@ -156,7 +154,7 @@ def seed_left_limits(
   var_types: tuple[str, ...],
   offsets: tuple[int, ...],
   xp: Namespace[ArrayT],
-) -> Optional[ArrayT]:
+) -> ArrayT | None:
   """Natural-order left limits read off the compact layout, or ``None``.
 
   ``None`` for an all-continuous model, which is what switches the whole
@@ -196,14 +194,14 @@ def seed_left_limits(
 
 def edge_columns(
   structure: RVineStructure,
-  pair_types: Optional[tuple[tuple[tuple[str, str], ...], ...]],
+  pair_types: tuple[tuple[tuple[str, str], ...], ...] | None,
   tree: int,
   edge: int,
   hfunc1: ArrayT,
   hfunc2: ArrayT,
-  hfunc1_sub: Optional[ArrayT],
-  hfunc2_sub: Optional[ArrayT],
-) -> tuple[ArrayT, ArrayT, Optional[tuple[ArrayT, ArrayT]], tuple[str, str]]:
+  hfunc1_sub: ArrayT | None,
+  hfunc2_sub: ArrayT | None,
+) -> tuple[ArrayT, ArrayT, tuple[ArrayT, ArrayT] | None, tuple[str, str]]:
   """Resolve one edge's pair-copula input columns and its variable types.
 
   ``m`` is the min-array entry: the natural-order index of the column finalized
@@ -261,7 +259,7 @@ def stack_edge(
   xp: Namespace[ArrayT],
   col0: ArrayT,
   col1: ArrayT,
-  subs: Optional[tuple[ArrayT, ArrayT]],
+  subs: tuple[ArrayT, ArrayT] | None,
 ) -> ArrayT:
   """Assemble a pair-copula argument from its value columns and left limits.
 
