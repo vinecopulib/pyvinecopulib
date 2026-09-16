@@ -116,7 +116,7 @@ dev = [
   "ty",
   # Pinned to the `.pre-commit-config.yaml` hook rev; see the note there.
   "codespell[toml]==2.4.3",
-  "ruff==0.11.6",
+  "ruff==0.16.7",
   "bandit[toml]==1.9.4",
   "pre-commit",
   "twine",
