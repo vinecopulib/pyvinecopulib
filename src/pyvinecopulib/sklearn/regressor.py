@@ -9,7 +9,6 @@ from sklearn.metrics import r2_score
 from sklearn.utils._param_validation import Interval
 from sklearn.utils.validation import check_is_fitted
 
-from ..core import Vinedist
 import pyvinecopulib as pv
 
 from ..core import ControlsLike, VinedistBase
@@ -51,7 +50,7 @@ class VineRegressor(RegressorMixin, VineBase):
     distribution: Optional[type[VinedistBase[Any]]] = None,
     controls: Optional[ControlsLike] = None,
     structure: Optional[pv.RVineStructure] = None,
-    margins: object = None,
+    margin_controls: object = None,
     batch_size: int = 100,
     use_grid: bool = True,
     n_nodes: int = 401,
@@ -87,14 +86,15 @@ class VineRegressor(RegressorMixin, VineBase):
     structure : RVineStructure, or None, optional
         A pre-specified vine structure on ``(Y, X_1, ..., X_d)`` (`Y` always
         in the first dimension); `None` selects one.
-    margins : object, or None, optional
-        The marginal half of the model, in any form
-        :func:`pyvinecopulib.margins.resolve_margins` accepts. `None`
-        fits a ``Kde1d`` per column. The specification addresses
-        the covariates; one that broadcasts (an alias, a single margin,
-        a callable) applies to the response as well. The response
-        margin must be continuous, and any such margin works with
-        either `use_grid` setting.
+    margin_controls : object, or None, optional
+        How to fit each margin, in any form
+        :func:`pyvinecopulib.margins.resolve_margin_controls` accepts: one
+        :class:`pyvinecopulib.core.FitControlsMargin` broadcast to every
+        column, a sequence, or a mapping keyed by feature name or position.
+        The variable type and bounds inferred from the input are filled in
+        underneath, so a mapping addressing one column does not retype the
+        others. Which *class* each margin is comes from ``distribution``'s
+        ``margin_class``.
     batch_size : int, default=100
         Number of test points processed per batch in `predict`.
     use_grid : bool, default=True
@@ -141,7 +141,7 @@ class VineRegressor(RegressorMixin, VineBase):
       distribution=distribution,
       controls=controls,
       structure=structure,
-      margins=margins,
+      margin_controls=margin_controls,
       batch_size=batch_size,
       random_state=random_state,
       n_jobs=n_jobs,
@@ -189,27 +189,14 @@ class VineRegressor(RegressorMixin, VineBase):
       self.quantiles_ = q_arr
     else:
       self.quantiles_ = None
-    self._fit_marginals(X, y)
-    if getattr(self._y_margin, "supports_covariates", False):
-      raise ValueError(
-        "VineRegressor cannot use a conditional response margin "
-        f"({type(self._y_margin).__name__} declares supports_covariates): the "
-        "quadrature inverts one shared probability grid, which a margin whose "
-        "quantiles move with the covariates turns into one grid per test row."
-      )
-
-    uy_train = self._to_u_scale(y, is_y=True)
-    ux = self._to_u_scale(X)
-
-    # The response leads the joint model, and being continuous it adds no
-    # left-limit column, so its `u` column simply prepends to the covariates'
-    # own layout.
-    margins = (self._y_margin, *self._x_margins)
-    var_types = Vinedist.copula_var_types(margins)
-    self._fit_vine(np.column_stack([uy_train, ux]), var_types=var_types)
-    self._bind_distribution(margins)
+    # The response leads the joint model, so the whole thing is one fit on
+    # `(y, X)` and the response is simply variable zero.
+    self._fit_distribution(
+      np.column_stack([np.asarray(y, dtype=float), X]), response=True
+    )
 
     if not self.use_grid:
+      uy_train = self._to_u_scale(y, is_y=True)
       self._u_nodes = uy_train
       self._y_nodes = y
       self._node_weights = None

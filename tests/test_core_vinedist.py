@@ -36,6 +36,49 @@ from .test_core_discrete_cascade import _D, _assert_parity, _both
 stats = pytest.importorskip("scipy.stats")
 
 
+class ParametricVinedist(Vinedist):
+  """A `Vinedist` whose margins are parametric: the `margin_class` route."""
+
+  margin_class = SciPyMargin
+
+
+def fit_one(margin: Any, column: np.ndarray, x: Any = None) -> Any:
+  """Fit one margin to its column, leaving an already-fitted one alone."""
+  from pyvinecopulib.margins import as_margin
+
+  m: Any = as_margin(margin)
+  if getattr(m, "is_fitted", True):
+    return m
+  verb = getattr(m, "select", None) or m.fit
+  kwargs = (
+    {"x": x}
+    if x is not None and getattr(m, "supports_covariates", False)
+    else {}
+  )
+  verb(column, **kwargs)
+  return m
+
+
+def from_margins(
+  y: Any, margins: list[Any], x: Any = None, **kwargs: Any
+) -> Vinedist:
+  """Fit a copula onto margins the caller supplies: the constructor route.
+
+  The two-step estimator written out, for the tests that need the copula half
+  configured directly. A caller who only wants their own margins fitted writes
+  `Vinedist(copula, margins).select(y)` instead, which leaves a fixed margin
+  alone and re-estimates the rest.
+  """
+  data = np.asarray(y, dtype=float)
+  fitted = [fit_one(m, data[:, j], x) for j, m in enumerate(margins)]
+  vinecop = pv.Vinecop.from_data(
+    Vinedist.copula_data(fitted, data, x=x),
+    var_types=Vinedist.copula_var_types(fitted),
+    **kwargs,
+  )
+  return Vinedist(vinecop, fitted)
+
+
 @pytest.fixture
 def data() -> np.ndarray:
   """Three dependent columns: real-line, positive, and a count."""
@@ -72,7 +115,7 @@ def _sklar_logpdf(dist: Any, y: np.ndarray) -> np.ndarray:
 
 def test_logpdf_is_the_sklar_factorization(continuous: np.ndarray) -> None:
   """`logpdf` equals the copula term plus the marginal log-densities."""
-  dist = pv.Vinedist.from_data(continuous, margins="kde")
+  dist = pv.Vinedist.from_data(continuous)
   np.testing.assert_allclose(
     dist.logpdf(continuous), _sklar_logpdf(dist, continuous), atol=0.0
   )
@@ -150,7 +193,7 @@ def test_sample_conditional_matches_the_copula_scale(
   Same seeds, so the base uniforms are the same draw and the two agree to the
   bit rather than in distribution.
   """
-  dist = pv.Vinedist.from_data(continuous, margins="kde")
+  dist = pv.Vinedist.from_data(continuous)
   tail = int(dist.vinecop.structure.order[-1])
   y_cond = np.full((7, 1), float(np.median(continuous[:, tail - 1])))
 
@@ -172,7 +215,7 @@ def test_sample_conditional_returns_the_conditioners_it_was_given(
   Two of three variables are held, which is the widest set the copula accepts --
   conditioning on all of them would leave nothing to draw.
   """
-  dist = pv.Vinedist.from_data(data, margins=["kde", "kde", stats.poisson(3.0)])
+  dist = from_margins(data, [Kde1d(), Kde1d(), stats.poisson(3.0)])
   y_cond = np.column_stack(
     [np.linspace(-1.0, 1.0, 6), np.linspace(0.5, 2.0, 6)]
   )
@@ -189,7 +232,7 @@ def test_sample_conditional_derives_a_discrete_left_limit(
   On the copula scale that column is mandatory; here it comes from the
   variable's own margin, so `y_cond` stays one column per conditioner.
   """
-  dist = pv.Vinedist.from_data(data, margins=["kde", "kde", stats.poisson(3.0)])
+  dist = from_margins(data, [Kde1d(), Kde1d(), stats.poisson(3.0)])
   assert dist.var_types[2] == "d"
   out = dist.sample_conditional(
     np.full((8, 1), 3.0), conditioning_set=[3], seeds=[4, 5, 6]
@@ -207,7 +250,7 @@ def test_sample_conditional_validates_its_arguments(
   continuous: np.ndarray,
 ) -> None:
   """A bad conditioning specification is refused, not guessed at."""
-  dist = pv.Vinedist.from_data(continuous, margins="kde")
+  dist = pv.Vinedist.from_data(continuous)
   with pytest.raises(ValueError, match="must be two-dimensional"):
     dist.sample_conditional(np.zeros(5))
   with pytest.raises(ValueError, match="must be in 1, ..., 2"):
@@ -221,9 +264,7 @@ def test_sample_conditional_validates_its_arguments(
 
 def test_margin_summary_has_a_row_per_variable(data: np.ndarray) -> None:
   """Every variable is described, whether its margin chose a family or not."""
-  dist = pv.Vinedist.from_data(
-    data, margins=["kde", stats.norm(0.0, 1.0), stats.poisson(3.0)]
-  )
+  dist = from_margins(data, [Kde1d(), stats.norm(0.0, 1.0), stats.poisson(3.0)])
   rows = dist.margin_summary()
   assert [row["variable"] for row in rows] == [0, 1, 2]
   assert [row["var_type"] for row in rows] == dist.var_types
@@ -239,7 +280,7 @@ def test_margin_summary_has_a_row_per_variable(data: np.ndarray) -> None:
 
 def test_discrete_margin_builds_the_compact_layout(data: np.ndarray) -> None:
   """One extra column per variable with atoms, appended after the first block."""
-  dist = pv.Vinedist.from_data(data, margins=["kde", "kde", stats.poisson(3.0)])
+  dist = from_margins(data, [Kde1d(), Kde1d(), stats.poisson(3.0)])
   assert dist.var_types == ["c", "c", "d"]
   layout: Any = dist.copula_layout(data)
   assert layout.shape == (data.shape[0], 4)
@@ -254,8 +295,8 @@ def test_discrete_margin_builds_the_compact_layout(data: np.ndarray) -> None:
 def test_all_discrete_margins(data: np.ndarray) -> None:
   """A fully discrete model needs `2d` columns and still evaluates."""
   counts = np.round(np.abs(data)).astype(float)
-  dist = pv.Vinedist.from_data(
-    counts, margins=[stats.poisson(1.0), stats.poisson(2.0), stats.poisson(1.0)]
+  dist = from_margins(
+    counts, [stats.poisson(1.0), stats.poisson(2.0), stats.poisson(1.0)]
   )
   assert dist.var_types == ["d", "d", "d"]
   assert dist.copula_layout(counts).shape == (counts.shape[0], 6)
@@ -266,7 +307,7 @@ def test_all_discrete_margins(data: np.ndarray) -> None:
 
 def test_simulate_respects_a_discrete_margin(data: np.ndarray) -> None:
   """Draws through a count margin land on the lattice."""
-  dist = pv.Vinedist.from_data(data, margins=["kde", "kde", stats.poisson(3.0)])
+  dist = from_margins(data, [Kde1d(), Kde1d(), stats.poisson(3.0)])
   drawn = dist.sample(200, seeds=[1, 2, 3])
   assert drawn.shape == (200, 3)
   np.testing.assert_array_equal(drawn[:, 2], np.round(drawn[:, 2]))
@@ -275,7 +316,7 @@ def test_simulate_respects_a_discrete_margin(data: np.ndarray) -> None:
 def test_cdf_accepts_a_margin_with_atoms(data: np.ndarray) -> None:
   """A copula with atoms validates the whole layout, so the layout is what it
   gets -- even though a distribution function reads only the first block."""
-  dist = pv.Vinedist.from_data(data, margins=["kde", "kde", stats.poisson(3.0)])
+  dist = from_margins(data, [Kde1d(), Kde1d(), stats.poisson(3.0)])
   values = np.asarray(dist.cdf(data[:20], N=2000, seeds=[1, 2, 3]))
   assert values.shape == (20,)
   assert np.all((values >= 0.0) & (values <= 1.0))
@@ -337,7 +378,7 @@ def test_left_limit_above_the_cdf_is_refused_on_both_paths() -> None:
 def test_margins_may_mix_fitted_and_unfitted(continuous: np.ndarray) -> None:
   """A fixed margin stays fixed; an unfitted one gets estimated."""
   fixed = stats.norm(0.0, 1.0)
-  dist = pv.Vinedist.from_data(continuous, margins=[fixed, Kde1d()])
+  dist = from_margins(continuous, [fixed, Kde1d()])
   # The fixed margin is untouched, so its cdf is still the standard normal's.
   np.testing.assert_allclose(
     np.asarray(dist.margins[0].cdf(np.array([0.0]))), 0.5, atol=1e-12
@@ -346,32 +387,9 @@ def test_margins_may_mix_fitted_and_unfitted(continuous: np.ndarray) -> None:
   assert fitted.is_fitted
 
 
-def test_margins_mapping_is_keyed_by_name(continuous: np.ndarray) -> None:
-  """A mapping addresses variables by name over a default."""
-  dist = pv.Vinedist.from_data(
-    continuous, margins={"b": SciPyMargin()}, names=["a", "b"]
-  )
-  assert isinstance(dist.margins[0], Kde1d)
-  assert isinstance(dist.margins[1], SciPyMargin)
-
-
-def test_margins_mapping_rejects_an_unknown_name(
-  continuous: np.ndarray,
-) -> None:
-  """Naming a variable that does not exist is an error, not a silent no-op."""
-  with pytest.raises(ValueError, match="not a variable"):
-    pv.Vinedist.from_data(continuous, margins={"z": "kde"}, names=["a", "b"])
-
-
-def test_margins_sequence_length_is_checked(continuous: np.ndarray) -> None:
-  """A short sequence is caught rather than broadcast."""
-  with pytest.raises(ValueError, match="length 1, but there are 2"):
-    pv.Vinedist.from_data(continuous, margins=["kde"])
-
-
-def test_broadcast_margin_is_copied_not_shared(continuous: np.ndarray) -> None:
-  """One prototype must not carry a fit between variables."""
-  dist = pv.Vinedist.from_data(continuous, margins=Kde1d())
+def test_each_variable_gets_its_own_margin(continuous: np.ndarray) -> None:
+  """One `margin_class` must not carry a fit between variables."""
+  dist = pv.Vinedist.from_data(continuous)
   first: Any = dist.margins[0]
   second: Any = dist.margins[1]
   assert first is not second
@@ -453,23 +471,11 @@ def test_an_explicitly_aliased_sequence_is_taken_as_given(
   assert dist.margins[0] is dist.margins[1] is shared
 
 
-def test_callable_margin_is_used_as_a_fitter(continuous: np.ndarray) -> None:
-  """A plain callable receives the column and returns a margin."""
-  dist = pv.Vinedist.from_data(
-    continuous, margins=lambda col: stats.norm(col.mean(), col.std())
-  )
-  np.testing.assert_allclose(
-    np.asarray(dist.margins[0].cdf(np.array([continuous[:, 0].mean()]))),
-    0.5,
-    atol=1e-12,
-  )
-
-
 def test_weights_reach_both_halves(continuous: np.ndarray) -> None:
   """Weighting changes the fit rather than being ignored."""
   w = np.where(continuous[:, 0] > 0, 3.0, 1.0)
-  plain = pv.Vinedist.from_data(continuous, margins="kde")
-  tilted = pv.Vinedist.from_data(continuous, margins="kde", weights=w)
+  plain = pv.Vinedist.from_data(continuous)
+  tilted = pv.Vinedist.from_data(continuous, weights=w)
   assert not np.allclose(
     plain.marginal_cdf(continuous), tilted.marginal_cdf(continuous)
   )
@@ -479,12 +485,12 @@ def test_weights_on_a_margin_that_cannot_use_them_raises(
   continuous: np.ndarray,
 ) -> None:
   """Silently dropping weights would fit a different model than requested."""
+
+  class Unweighted(Vinedist):
+    margin_class = _needs_fitting
+
   with pytest.raises(TypeError, match="cannot use observation weights"):
-    pv.Vinedist.from_data(
-      continuous,
-      margins=[stats.norm(0, 1), _needs_fitting()],
-      weights=np.ones(continuous.shape[0]),
-    )
+    Unweighted.from_data(continuous, weights=np.ones(continuous.shape[0]))
 
 
 def _needs_fitting() -> Any:
@@ -559,7 +565,7 @@ def test_wrong_column_count_is_refused(continuous: np.ndarray) -> None:
 
 def test_repr_names_the_margin_families(continuous: np.ndarray) -> None:
   """`repr` shows the dimension and what each margin is."""
-  dist = pv.Vinedist.from_data(continuous, margins="kde")
+  dist = pv.Vinedist.from_data(continuous)
   assert repr(dist) == "Vinedist(dim=2, margins=[kde1d, kde1d])"
 
 
@@ -576,11 +582,12 @@ def _families(dist: Any) -> list[str]:
 
 
 def test_from_data_reads_dataframe_column_names(data: np.ndarray) -> None:
-  """A mapping keyed by column name works on a DataFrame without `names=`."""
+  """A DataFrame's own columns become the fitted distribution's names."""
   pd = pytest.importorskip("pandas")
   df = pd.DataFrame(data, columns=["real", "positive", "count"])
-  dist = pv.Vinedist.from_data(df, margins={"real": Kde1d()})
+  dist = pv.Vinedist.from_data(df)
   assert dist.dim == 3
+  assert dist.var_names == ["real", "positive", "count"]
 
 
 def test_parametric_margins_choose_a_family_per_variable(
@@ -592,9 +599,7 @@ def test_parametric_margins_choose_a_family_per_variable(
   two land in different support groups from the same call -- and
   `margin_summary` is what makes that readable, one row per variable.
   """
-  dist = pv.Vinedist.from_data(
-    data[:, :2], margins="parametric", names=["real", "positive"]
-  )
+  dist = ParametricVinedist.from_data(data[:, :2], names=["real", "positive"])
   assert all(isinstance(m, SciPyMargin) for m in dist.margins)
   rows = dist.margin_summary()
   assert [row["variable"] for row in rows] == [0, 1]
@@ -609,15 +614,64 @@ def test_from_data_honors_a_named_family_and_chooses_an_unnamed_one(
   The second column is lognormal, so the two spellings separate here: naming
   `norm` for it gets a normal, and leaving the family out gets the search.
   """
-  named = pv.Vinedist.from_data(
-    continuous, margins=[SciPyMargin("norm"), SciPyMargin("norm")]
-  )
+  named = from_margins(continuous, [SciPyMargin("norm"), SciPyMargin("norm")])
   assert _families(named) == ["norm", "norm"]
 
-  chosen = pv.Vinedist.from_data(
-    continuous, margins=[SciPyMargin(), SciPyMargin()]
-  )
+  chosen = from_margins(continuous, [SciPyMargin(), SciPyMargin()])
   assert _families(chosen) == ["norm", "lognorm"]
+
+
+def test_a_margin_that_only_selects_is_not_treated_as_fixed(
+  continuous: np.ndarray,
+) -> None:
+  """Overriding `select` and leaving `fit` raising is an estimator too.
+
+  A margin choosing between *kinds* of model -- a parametric family against a
+  kernel density, say -- has nothing for `fit` to re-estimate, so it overrides
+  `select` alone. Reading "no `fit`" as "fixed" left it unfitted and the
+  distribution evaluated a margin that had chosen nothing.
+  """
+
+  class _Chooses(MarginBase[np.ndarray]):
+    """Chooses a kernel density; `fit` stays the raising base one."""
+
+    def __init__(self) -> None:
+      self.chosen: Any = None
+
+    @property
+    def is_fitted(self) -> bool:
+      return self.chosen is not None
+
+    def pdf(self, y: np.ndarray, /, *, x: Any = None) -> np.ndarray:
+      return np.asarray(self.chosen.pdf(y), dtype=float)
+
+    def cdf(self, y: np.ndarray, /, *, x: Any = None) -> np.ndarray:
+      return np.asarray(self.chosen.cdf(y), dtype=float)
+
+    def select(
+      self,
+      y: np.ndarray,
+      /,
+      controls: Any = None,
+      *,
+      var_type: Optional[str] = None,
+      support: Optional[tuple[Optional[float], Optional[float]]] = None,
+      x: Any = None,
+      weights: Any = None,
+    ) -> "_Chooses":
+      del controls, var_type, support, x, weights
+      self.chosen = Kde1d().fit(np.asarray(y, dtype=float))
+      return self
+
+  class _Chooser(Vinedist):
+    margin_class = _Chooses
+
+  dist = _Chooser.from_data(continuous)
+  assert all(cast("Any", m).is_fitted for m in dist.margins)
+  # And `fit`, which has nothing to re-estimate here, says so rather than
+  # quietly leaving the margins where they were.
+  with pytest.raises(NotImplementedError, match="_Chooses.fit is not defined"):
+    dist.fit(continuous)
 
 
 def test_fit_keeps_the_family_where_select_replaces_it(
@@ -633,7 +687,7 @@ def test_fit_keeps_the_family_where_select_replaces_it(
   margins = [SciPyMargin("norm").fit(continuous[:, j]) for j in range(2)]
   # Already fitted, so `from_data` leaves both alone and the wrong family on
   # the second column survives to be re-estimated below.
-  dist = pv.Vinedist.from_data(continuous, margins=margins)
+  dist = from_margins(continuous, margins)
   assert _families(dist) == ["norm", "norm"]
 
   wider = FitControlsMargin(family_set=["norm", "lognorm"])
@@ -644,10 +698,10 @@ def test_fit_keeps_the_family_where_select_replaces_it(
     "lognorm",
   ]
 
-  # What `fit` *can* honor in the same controls object, it still does: a
-  # declared support is a default, not an instruction to search.
-  bounded = FitControlsMargin(support=(0.0, None))
-  assert _families(dist.fit(continuous, margin_controls=bounded)) == [
+  # A controls object naming no family set asks for no search, so `fit` has
+  # nothing to refuse and re-estimates the families the margins now hold.
+  quiet = FitControlsMargin(selection_criterion="bic")
+  assert _families(dist.fit(continuous, margin_controls=quiet)) == [
     "norm",
     "lognorm",
   ]
@@ -662,7 +716,7 @@ def test_a_margin_given_per_variable_is_fitted_in_place(
   form hands ownership over -- unlike the broadcast form, which has to copy.
   """
   spec = SciPyMargin()
-  dist = pv.Vinedist.from_data(continuous, margins=[spec, "kde"])
+  dist = from_margins(continuous, [spec, Kde1d()])
   assert dist.margins[0] is spec
   assert spec.is_fitted and spec.family_name == "norm"
 
@@ -689,34 +743,32 @@ def test_a_margin_given_per_variable_is_fitted_in_place(
 def test_margin_controls_are_resolved_per_variable(
   continuous: np.ndarray, spec: Any, expected: list[str]
 ) -> None:
-  """`margin_controls` follows `margins`' own resolution rules, form for form.
+  """`margin_controls` resolves by the same four shapes, form for form.
 
   A mapping configures the variables it addresses and leaves the rest to the
   curated search, which is what lets one call constrain the one variable whose
   family is known.
   """
-  dist = pv.Vinedist.from_data(
+  dist = ParametricVinedist.from_data(
     continuous,
-    margins="parametric",
     margin_controls=spec,
     names=["real", "positive"],
   )
   assert _families(dist) == expected
 
 
-def test_margin_controls_bound_the_default_kde_margin(
+def test_declared_supports_bound_the_default_kde_margin(
   continuous: np.ndarray,
 ) -> None:
   """A declared support reaches a margin the library itself constructs.
 
   Which is what makes a bounded default reachable without naming a class: the
   second column is positive, and an unbounded kernel density pads its grid past
-  zero, so the draws go where nothing can occur.
+  zero, so the draws go where nothing can occur. The declaration is per
+  variable and keyword-only, exactly as `var_types` is on `Vinecop.from_data`.
   """
   plain = pv.Vinedist.from_data(continuous)
-  bounded = pv.Vinedist.from_data(
-    continuous, margin_controls={1: FitControlsMargin(support=(0.0, None))}
-  )
+  bounded = pv.Vinedist.from_data(continuous, supports=[None, (0.0, None)])
   margin: Any = bounded.margins[1]
   assert isinstance(margin, Kde1d) and margin.xmin == 0.0
   assert plain.sample(500, seeds=[1, 2, 3])[:, 1].min() < 0.0
@@ -747,16 +799,14 @@ def test_margin_controls_fallback_substitutes_a_kde_margin(
   for, which is why the default is the refusal.
   """
   with pytest.raises(ValueError, match="no parametric family fits"):
-    pv.Vinedist.from_data(
+    ParametricVinedist.from_data(
       continuous,
-      margins="parametric",
       margin_controls=FitControlsMargin(family_set=["beta"]),
     )
 
   with pytest.warns(UserWarning, match="kernel-density margin was substituted"):
-    fallen_back = pv.Vinedist.from_data(
+    fallen_back = ParametricVinedist.from_data(
       continuous,
-      margins="parametric",
       margin_controls=FitControlsMargin(
         family_set=["beta"], on_failure="fallback"
       ),
@@ -864,7 +914,6 @@ def test_from_data_rejects_misaligned_covariates_before_fitting() -> None:
     Vinedist.from_data(
       y,
       x=np.zeros((1, 1)),
-      margins=[ShiftedNormalMargin(), ShiftedNormalMargin()],
     )
 
 
@@ -937,13 +986,16 @@ def test_from_data_fits_conditional_margins_on_the_covariates() -> None:
       /,
       controls: Any = None,
       *,
+      var_type: Optional[str] = None,
+      support: Optional[tuple[Optional[float], Optional[float]]] = None,
       x: Optional[Any] = None,
       weights: Any = None,
     ) -> Any:
+      del var_type, support
       seen.append(x)
       return self
 
-  dist = pv.Vinedist.from_data(y, x=cov, margins=[_Recording(), "kde"])
+  dist = from_margins(y, [_Recording(), Kde1d()], x=cov)
   assert len(seen) == 1 and seen[0] is not None
   # The kde margin never declared covariates, so it was fitted plainly.
   kde: Any = dist.margins[1]
@@ -959,7 +1011,7 @@ def test_covariates_nothing_reads_are_refused(continuous: np.ndarray) -> None:
       call(continuous, x=cov)
   with pytest.raises(ValueError, match="supports_covariates"):
     dist.marginal_icdf(np.full_like(continuous, 0.5), x=cov)
-  with pytest.raises(ValueError, match="no margin reads them"):
+  with pytest.raises(ValueError, match="does not read them"):
     pv.Vinedist.from_data(continuous, x=cov)
 
 
@@ -989,7 +1041,6 @@ def test_explicit_weights_override_controls_weights() -> None:
   reference_controls = pv.FitControlsVinecop(family_set=[pv.families.gaussian])
   reference = Vinedist.from_data(
     y,
-    margins=[stats.uniform(), stats.uniform()],
     weights=explicit,
     controls=reference_controls,
   )
@@ -999,7 +1050,6 @@ def test_explicit_weights_override_controls_weights() -> None:
   original_controls_weights = np.array(controls.weights, copy=True)
   got = Vinedist.from_data(
     y,
-    margins=[stats.uniform(), stats.uniform()],
     weights=explicit,
     controls=controls,
   )
@@ -1073,13 +1123,13 @@ def test_json_round_trip_is_exact_for_every_shipped_margin(
   x = rng.multivariate_normal([0.0, 0.0, 0.0], cov, size=400)
   q = x[:6]
   specs = {
-    "default": None,
+    "default": [pv.core.Kde1d() for _ in range(3)],
     "parametric": [SciPyMargin("norm") for _ in range(3)],
     "selected": [SciPyMargin() for _ in range(3)],
     "mixed": [pv.core.Kde1d(), SciPyMargin("norm"), SciPyMargin()],
   }
   for label, margins in specs.items():
-    dist = pv.core.Vinedist.from_data(x, margins=margins)
+    dist = from_margins(x, margins)
     restored = pv.core.Vinedist.from_json(dist.to_json())
     # Exactly, not approximately: the stored grid and parameters are the model.
     np.testing.assert_array_equal(restored.logpdf(q), dist.logpdf(q), label)
@@ -1348,6 +1398,9 @@ def test_a_subclass_that_declares_only_its_parts_refuses_weights() -> None:
 
 def test_declaring_no_vinecop_class_reports_it() -> None:
   class MyDist(VinedistBase[Any]):
+    # It names its margins, so the report it owes is about the other half.
+    margin_class = Kde1d
+
     @classmethod
     def _coerce_fit_data(cls, y: Any, weights: Any, controls: Any) -> Any:
       return np.asarray(y, dtype=float), weights
@@ -1537,14 +1590,16 @@ def test_covariates_reach_the_parts_that_declare_them_only() -> None:
       /,
       controls: Any = None,
       *,
+      var_type: Optional[str] = None,
+      support: Optional[tuple[Optional[float], Optional[float]]] = None,
       x: Optional[Any] = None,
       weights: Any = None,
     ) -> Any:
-      del data, controls, x, weights
+      del data, controls, var_type, support, x, weights
       return self
 
   assert getattr(pv.Vinecop, "supports_covariates", False) is False
-  dist = pv.Vinedist.from_data(y, x=cov, margins=[_Refittable(), _Refittable()])
+  dist = from_margins(y, [_Refittable(), _Refittable()], x=cov)
   # Both halves are there and the conditional margins were used, so the fit
   # completed rather than raising on the copula's missing `x`.
   assert isinstance(dist.vinecop, pv.Vinecop)

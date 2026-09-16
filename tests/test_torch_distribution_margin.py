@@ -465,18 +465,17 @@ def test_controls_are_refused_because_there_is_no_fit_to_configure() -> None:
   could not act on it and be dropped instead of refused.
   """
   from pyvinecopulib.margins import FitControlsMargin
-  from pyvinecopulib.core._margins import fit_margin
+  from pyvinecopulib.torch import TorchVinecop, TorchVinedist
 
   assert TorchDistributionMargin.supports_controls is False
-  margin = TorchDistributionMargin.from_distribution(_D.Normal(0.0, 1.0))
-  y = torch.as_tensor(np.random.default_rng(0).normal(size=50), dtype=_F64)
+  rng = np.random.default_rng(0)
+  y = torch.as_tensor(rng.normal(size=(50, 2)), dtype=_F64)
+  dist = TorchVinedist(
+    TorchVinecop.from_data(torch.rand(50, 2, dtype=_F64)),
+    [TorchDistributionMargin.from_distribution(_D.Normal(0.0, 1.0))] * 2,
+  )
   with pytest.raises(TypeError, match="cannot select a family"):
-    fit_margin(
-      margin,
-      y,
-      controls=FitControlsMargin(family_set=["norm"]),
-      refit=True,
-    )
+    dist.select(y, margin_controls=FitControlsMargin(family_set=["norm"]))
 
 
 # --------------------------------------------------------------------------- #

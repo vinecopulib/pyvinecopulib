@@ -680,28 +680,35 @@ sampling do accept row-aligned ``x``.
 Choosing margins
 ~~~~~~~~~~~~~~~~
 
-``margins=`` accepts a string alias, one margin broadcast across
-columns, a sequence of length :math:`d`, or a dict keyed by column;
-``margin_controls=`` accepts the same four shapes and says how each
-margin is fitted or selected:
+Which *class* each margin is comes from the distribution:
+``VinedistBase.margin_class``, beside the ``vinecop_class`` that names its
+copula half. ``pv.Vinedist`` names ``Kde1d``; naming another is a two-line
+subclass, and it is what the sklearn estimators' ``distribution=`` selects
+too. What varies per column is configuration and declaration, and they are
+separate arguments: ``margin_controls=`` says *how* a margin is fitted or
+selected, and ``var_types=`` / ``supports=`` say what the variable *is* --
+one entry per variable, exactly as ``var_types`` does on
+:meth:`pyvinecopulib.core.Bicop.from_data`.
 
 .. code-block:: python
 
-   pv.Vinedist.from_data(x)                       # "kde" (the default)
-   pv.Vinedist.from_data(x, margins="parametric")
-   pv.Vinedist.from_data(df, margins={"income": SciPyMargin(),
-                                      "score": st.norm(0, 1)})
-   pv.Vinedist.from_data(                         # bound one column only
-     df, margin_controls={"income": FitControlsMargin(support=(0.0, None))}
+   pv.Vinedist.from_data(x)                       # `Kde1d` per column
+
+   class ParametricVinedist(pv.Vinedist):         # a SciPy family per column
+     margin_class = SciPyMargin
+
+   ParametricVinedist.from_data(
+     df,
+     margin_controls={"income": FitControlsMargin(selection_criterion="bic")},
+     supports=[(0.0, None), None],                # bound one column only
    )
 
 Margins follow the same construct-then-``fit`` pattern as ``Bicop``,
 ``Vinecop`` and ``Kde1d``, with ``fit`` returning ``self``. One class is
-therefore both the specification and the fitted object, which is what
-lets a single ``margins=`` argument mix the two: ``from_data`` fits the
-margins that are not yet fitted and leaves the already-fitted ones
-alone. So ``st.norm(0, 1)`` above stays exactly :math:`N(0, 1)` while
-``SciPyMargin()`` chooses its family from the ``income`` column.
+therefore both the specification and the fitted object, which is what lets a
+distribution composed by construction mix the two: a margin with no ``fit`` of
+its own is *fixed*, so ``pv.Vinedist(copula, [frozen, Kde1d()]).fit(x)``
+re-estimates the second and leaves the first exactly as it was built.
 
 Choosing that family is :meth:`pyvinecopulib.margins.SciPyMargin.select`,
 a method on the margin rather than a separate class -- the shape

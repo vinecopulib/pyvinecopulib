@@ -27,7 +27,7 @@ from torch import Tensor
 
 from ..core import ControlsLike, Kde1d, MarginBase
 from ..core._validation import (
-  reject_array_controls,
+  validate_declaration,
   reject_covariates,
   validate_univariate,
   validate_weights,
@@ -58,6 +58,10 @@ def _bound(value: Optional[float], unbounded: float) -> float:
 
 #: ``Kde1d``'s spellings of the variable type, and the contract's.
 _VAR_TYPE_OF = {"continuous": "c", "discrete": "d", "zero-inflated": "zi"}
+
+#: The same map read the other way, for a declaration arriving as "c" /
+#: "d" / "zi" rather than as this class's own spelling.
+_KDE_TYPE_OF = {v: k for k, v in _VAR_TYPE_OF.items()}
 
 
 class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
@@ -269,6 +273,8 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     /,
     controls: Optional[ControlsLike] = None,
     *,
+    var_type: Optional[str] = None,
+    support: Optional[tuple[Optional[float], Optional[float]]] = None,
     x: Optional[Tensor] = None,
     weights: Optional[Tensor] = None,
   ) -> "TorchKde1d":
@@ -286,6 +292,13 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
         Unused; the bandwidth, bounds and variable type are named at
         construction, so a margin fitted differently is constructed
         differently. Accepted because every margin's fit takes one.
+    var_type : {"c", "d", "zi"}, or None, optional
+        What the caller knows the variable to be, or ``None`` to leave it
+        to the margin. A declaration rather than fit configuration, which
+        is why it sits beside ``controls`` rather than inside it.
+    support : tuple of float, or None, optional
+        Declared bounds as ``(lo, hi)``, either end ``None`` for
+        unbounded on that side.
     x : Tensor, or None, optional
         Not supported; a kernel density reads no covariates, so passing them
         raises rather than fitting an unconditional margin silently.
@@ -309,9 +322,15 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     from_kde1d : Lift a ``Kde1d`` that is already fitted.
     """
     reject_covariates(self, x)
-    # `kde.fit(x, w)` is the compiled `Kde1d`'s spelling, and here it would
-    # bind the weights to `controls` and fit unweighted.
-    reject_array_controls(self, controls)
+    var_type, support = validate_declaration(var_type, support)
+    # A declaration replaces what this margin was built with: a kernel
+    # density reads its type and bounds when the grid is built, so a fit that
+    # ignored them would keep the construction-time answer.
+    if var_type is not None:
+      self._type = _KDE_TYPE_OF[var_type]
+    if support is not None:
+      self.xmin, self.xmax = support
+    del controls
     kde = Kde1d(
       xmin=self.xmin,
       xmax=self.xmax,
@@ -334,7 +353,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     if weight_tensor is None:
       kde.fit(data)
     else:
-      kde.fit(data, weight_tensor.detach().cpu().numpy())
+      kde.fit(data, weights=weight_tensor.detach().cpu().numpy())
     fitted = self._adopt(kde)
     # The retained rows, not the input length: `Kde1d` drops a NaN observation
     # and a NaN or zero weight, and the log-likelihood `_adopt` just read is

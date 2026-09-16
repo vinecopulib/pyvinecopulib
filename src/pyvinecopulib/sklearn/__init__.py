@@ -21,14 +21,15 @@ Requires scikit-learn and pandas. Install with
 
 Notes
 -----
-**Margins.** The marginal half of the model is configured with
-``margins=``, in any form :func:`pyvinecopulib.margins.resolve_margins`
-accepts: an alias (``"kde"``, the default,
-``"parametric"``), one margin broadcast to every column, a per-column
-sequence, a mapping keyed by feature name, or a callable. Fitting
-assembles both halves into a :class:`pyvinecopulib.core.Vinedist`,
-published as ``distribution_``, and ``margin_summary_`` describes the
-margin each variable ended up with.
+**Margins.** Which margin class each variable gets is the distribution's:
+``distribution=`` names a :class:`pyvinecopulib.core.VinedistBase` subclass,
+and its ``margin_class`` is what an estimator fits per column. *How* each
+one is fitted is ``margin_controls=``, in any form
+:func:`pyvinecopulib.margins.resolve_margin_controls` accepts: one controls
+object broadcast to every column, a per-column sequence, or a mapping keyed
+by feature name. Fitting runs the whole two-step estimator on the
+distribution, published as ``distribution_``, and ``margin_summary_``
+describes the margin each variable ended up with.
 
 **Which lane.** By default the estimators fit a
 :class:`pyvinecopulib.core.Vinedist` --- ``Vinecop`` paired with ``Kde1d``

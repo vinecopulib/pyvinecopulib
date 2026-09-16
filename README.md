@@ -95,18 +95,20 @@ Three opt-in subpackages extend the core library:
 
   ```python
   from pyvinecopulib.core import Vinedist
-  from pyvinecopulib.margins import FitControlsMargin
-  dist = Vinedist.from_data(
-    x,
-    margins="parametric",  # a family per column, chosen from the data
-    margin_controls=FitControlsMargin(selection_criterion="bic"),
+  from pyvinecopulib.margins import FitControlsMargin, SciPyMargin
+
+  class ParametricVinedist(Vinedist):
+    margin_class = SciPyMargin  # a family per column, chosen from the data
+
+  dist = ParametricVinedist.from_data(
+    x, margin_controls=FitControlsMargin(selection_criterion="bic")
   )
   print(dist.margins[0].family_name)
   ```
 
-  `margins="parametric"` means `SciPyMargin`; install with
-  `pip install pyvinecopulib[scipy]`. For OpenTURNS' families pass
-  `margins=OpenTURNSMargin()` and install `pyvinecopulib[openturns]`.
+  `SciPyMargin` needs `pip install pyvinecopulib[scipy]`; for OpenTURNS'
+  families name `OpenTURNSMargin` instead and install
+  `pyvinecopulib[openturns]`.
 
 * `pyvinecopulib.sklearn` — scikit-learn-compatible estimators
   (`VineDensity`, `VineRegressor`). Drop a vine

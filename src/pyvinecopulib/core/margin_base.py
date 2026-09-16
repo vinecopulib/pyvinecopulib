@@ -37,7 +37,7 @@ from ._margin_plot import (
 )
 from ._placement import PlacementMixin
 from ._rootfind import solve_increasing
-from ._validation import reject_array_controls, validate_weights
+from ._validation import validate_weights
 from .protocols import _MARGIN_EXAMPLE, ArrayT, ControlsLike, MarginLike
 
 __all__ = ["MarginBase"]
@@ -235,11 +235,12 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
   - :meth:`from_data` is ``cls().select(...)``, so naming this class as a
     vine distribution's ``margin_class`` is enough to have one margin fitted
     per variable.
-  - :meth:`declare` accepts what the *caller* knows about the variable ahead
-    of the fit -- a type, declared bounds. Those are defaults, never
-    instructions: an explicit constructor argument outranks them. The type is
-    recorded in ``_declared_var_type``, which a searching :meth:`select`
-    reads.
+  - All three take what the *caller* knows about the variable -- its
+    ``var_type`` and its ``support`` -- keyword-only, beside the ``controls``
+    rather than inside them, exactly as ``var_types`` sits on
+    ``Bicop.from_data``. Those are defaults, never instructions: an explicit
+    constructor argument outranks them. The type is recorded in
+    ``_declared_var_type``, which a searching :meth:`select` reads.
 
   Called with no data, :meth:`loglik` and the criteria report the fit itself:
   the value a subclass records under ``_fitted_loglik``, penalized by
@@ -323,53 +324,11 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
   #: carry is an instruction to search rather than a default.
   supports_controls: bool = True
 
-  #: The variable type a caller declared through :meth:`declare`, with
+  #: The variable type a caller declared through ``var_type``, with
   #: ``"zi"`` reduced to ``"d"`` -- the partition a family registry offers. A
   #: searching :meth:`select` reads it to decide which candidates apply;
   #: ``None`` means the caller said nothing and the sample decides.
   _declared_var_type: Optional[str] = None
-
-  def declare(
-    self,
-    *,
-    var_type: Optional[str] = None,
-    support: Optional[tuple[float, float]] = None,
-  ) -> Self:
-    """Accept what the caller knows about the variable, before fitting it.
-
-    A caller often knows the variable type and the declared support when the
-    margin cannot infer them: an ordered categorical's levels, a column
-    documented as a count, a rate bounded below by zero. Without this, a
-    margin handed such a column re-infers both from the sample, which is
-    strictly less information -- a count column whose smallest observation is
-    3 looks unbounded from below.
-
-    A declared type is recorded in ``_declared_var_type`` for a searching
-    :meth:`select` to read, and nothing here honors it: a margin whose type is
-    fixed by construction keeps that type, which is what makes the caller's
-    schema a default rather than an instruction. ``support`` is recorded
-    nowhere, because what a bound narrows differs by family -- override this
-    to take one, as ``SciPyMargin`` does, and treat an explicit constructor
-    argument as authoritative there too.
-
-    Parameters
-    ----------
-    var_type : str, or None, optional
-        ``"c"``, ``"d"`` or ``"zi"``, or ``None`` when the caller does not
-        know.
-    support : tuple of float, or None, optional
-        Declared bounds as ``(lo, hi)``, or ``None``. An unbounded side is
-        ``-inf`` / ``inf``, or ``None`` as ``FitControlsMargin`` spells it.
-
-    Returns
-    -------
-    MarginBase
-        ``self``, so the call chains into :meth:`fit` or :meth:`select`.
-    """
-    del support
-    if var_type is not None:
-      self._declared_var_type = "d" if var_type == "zi" else var_type
-    return self
 
   @classmethod
   def from_data(
@@ -378,6 +337,8 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     /,
     controls: Optional[ControlsLike] = None,
     *,
+    var_type: Optional[str] = None,
+    support: Optional[tuple[Optional[float], Optional[float]]] = None,
     x: Optional[ArrayT] = None,
     weights: Optional[ArrayT] = None,
   ) -> Self:
@@ -397,6 +358,13 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         Observations on the original scale.
     controls : ControlsLike, or None, optional
         Fit configuration, in whatever form the subclass accepts.
+    var_type : {"c", "d", "zi"}, or None, optional
+        What the caller knows the variable to be, or ``None`` to leave it
+        to the margin. A declaration rather than fit configuration, which
+        is why it sits beside ``controls`` rather than inside it.
+    support : tuple of float, or None, optional
+        Declared bounds as ``(lo, hi)``, either end ``None`` for
+        unbounded on that side.
     x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation.
     weights : array, shape (n,), or None, optional
@@ -412,7 +380,9 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     select : Choose a family for an already-constructed margin, in place.
     fit : Estimate the current family's parameters, leaving the family alone.
     """
-    return cls().select(y, controls, x=x, weights=weights)
+    return cls().select(
+      y, controls, var_type=var_type, support=support, x=x, weights=weights
+    )
 
   def fit(
     self,
@@ -420,6 +390,8 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     /,
     controls: Optional[ControlsLike] = None,
     *,
+    var_type: Optional[str] = None,
+    support: Optional[tuple[Optional[float], Optional[float]]] = None,
     x: Optional[ArrayT] = None,
     weights: Optional[ArrayT] = None,
   ) -> Self:
@@ -436,6 +408,13 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     controls : ControlsLike, or None, optional
         Fit configuration, in whatever form the subclass accepts; a margin
         that takes none declares :attr:`supports_controls` ``False``.
+    var_type : {"c", "d", "zi"}, or None, optional
+        What the caller knows the variable to be, or ``None`` to leave it
+        to the margin. A declaration rather than fit configuration, which
+        is why it sits beside ``controls`` rather than inside it.
+    support : tuple of float, or None, optional
+        Declared bounds as ``(lo, hi)``, either end ``None`` for
+        unbounded on that side.
     x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation. Read only by a margin
         that declares :attr:`supports_covariates`.
@@ -468,6 +447,8 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     /,
     controls: Optional[ControlsLike] = None,
     *,
+    var_type: Optional[str] = None,
+    support: Optional[tuple[Optional[float], Optional[float]]] = None,
     x: Optional[ArrayT] = None,
     weights: Optional[ArrayT] = None,
   ) -> Self:
@@ -487,6 +468,13 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         Fit configuration, in whatever form the subclass accepts. The margins
         in ``pyvinecopulib.margins`` read a ``FitControlsMargin``, whose
         ``family_set`` and ``selection_criterion`` bound the search.
+    var_type : {"c", "d", "zi"}, or None, optional
+        What the caller knows the variable to be, or ``None`` to leave it
+        to the margin. A declaration rather than fit configuration, which
+        is why it sits beside ``controls`` rather than inside it.
+    support : tuple of float, or None, optional
+        Declared bounds as ``(lo, hi)``, either end ``None`` for
+        unbounded on that side.
     x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation.
     weights : array, shape (n,), or None, optional
@@ -501,12 +489,15 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     --------
     fit : Estimate the current family's parameters, leaving the family alone.
     """
-    reject_array_controls(self, controls)
     # Each argument is forwarded only when there is one, so a subclass whose
     # `fit` takes no covariates, no weights or no controls still works through
-    # `select` -- and refuses loudly when handed one it cannot honor. The rule
-    # `fit_margin` already applies.
+    # `select` -- and refuses loudly when handed one it cannot honor. The same
+    # rule `VinedistBase._fit_margin` applies one level up.
     passed: dict[str, Any] = {}
+    if var_type is not None:
+      passed["var_type"] = var_type
+    if support is not None:
+      passed["support"] = support
     if x is not None:
       passed["x"] = x
     if weights is not None:
@@ -692,6 +683,8 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     y: Optional[ArrayT] = None,
     /,
     *,
+    var_type: Optional[str] = None,
+    support: Optional[tuple[Optional[float], Optional[float]]] = None,
     x: Optional[ArrayT] = None,
     weights: Optional[ArrayT] = None,
   ) -> Union[float, ArrayT]:
@@ -704,6 +697,13 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     ----------
     y : array, shape (n,), or None, optional
         Observations on the original scale; the fitted value when ``None``.
+    var_type : {"c", "d", "zi"}, or None, optional
+        What the caller knows the variable to be, or ``None`` to leave it
+        to the margin. A declaration rather than fit configuration, which
+        is why it sits beside ``controls`` rather than inside it.
+    support : tuple of float, or None, optional
+        Declared bounds as ``(lo, hi)``, either end ``None`` for
+        unbounded on that side.
     x : array, shape (n, p), or None, optional
         Exogenous covariates, one row per observation.
     weights : array, shape (n,), or None, optional

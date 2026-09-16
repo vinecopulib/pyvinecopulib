@@ -22,10 +22,11 @@ import pyvinecopulib as pv
 from pyvinecopulib.core import MarginLike
 from pyvinecopulib.core import Kde1d
 from pyvinecopulib.margins import (
+  FitControlsMargin,
   SciPyMargin,
   as_margin,
   register_margin_adapter,
-  resolve_margins,
+  resolve_margin_controls,
 )
 
 scipy_stats = pytest.importorskip("scipy.stats")
@@ -155,79 +156,19 @@ def test_kde1d_is_passed_through_by_as_margin(sample: np.ndarray) -> None:
   assert as_margin(as_margin(kde)) is kde
 
 
-# --- resolve_margins -------------------------------------------------------- #
+# --- resolve_margin_controls ------------------------------------------------ #
 
 
-def test_resolve_margins_falls_back_to_the_given_default() -> None:
-  """An unaddressed variable takes the caller's default, not the library's."""
-  default = [Kde1d(type="discrete"), Kde1d(type="zero-inflated")]
-  resolved = resolve_margins({0: Kde1d()}, 2, default=default)
-  assert resolved[0].type == "continuous"
-  assert resolved[1].type == "zero-inflated"
-  assert resolve_margins(None, 2, default=default)[0].type == "discrete"
-
-
-def test_resolve_margins_defers_a_default_no_variable_needs() -> None:
-  """A specification naming every variable must not build the default at all.
-
-  The `default` parameter documents this, and it matters because building one
-  can legitimately raise -- the sklearn estimators pass a callable that reads
-  the variable types off the data, and `Kde1d` refuses a categorical whose
-  levels are not integers. Every branch has to honor it, mapping included.
-  """
-  calls = {"n": 0}
-
-  def default() -> Any:
-    calls["n"] += 1
-    raise AssertionError("built a default no variable needed")
-
-  assert len(resolve_margins({0: Kde1d(), 1: Kde1d()}, 2, default=default)) == 2
-  assert len(resolve_margins([Kde1d(), Kde1d()], 2, default=default)) == 2
-  assert len(resolve_margins(Kde1d(), 2, default=default)) == 2
-  assert len(resolve_margins("kde", 2, default=default)) == 2
-  assert calls["n"] == 0
-
-  # And it *is* built when a variable is actually left over.
-  resolved = resolve_margins(
-    {0: Kde1d()}, 2, default=lambda: [Kde1d(), Kde1d(type="discrete")]
-  )
-  assert resolved[1].type == "discrete"
-
-
-def test_resolve_margins_checks_the_default_length() -> None:
-  """A default is per variable, so its length is checked like a sequence's."""
-  with pytest.raises(ValueError, match="default has length 1"):
-    resolve_margins(None, 2, default=[Kde1d()])
-
-
-@pytest.mark.parametrize("key", [0.9, 1.0, np.float64(1.0)])
-def test_resolve_margins_rejects_noninteger_mapping_keys(key: Any) -> None:
+@pytest.mark.parametrize("key", [1.5, 0.5])
+def test_margin_controls_reject_noninteger_mapping_keys(key: Any) -> None:
   """A numeric key must be an integer position, never silently truncated."""
   with pytest.raises(ValueError, match="integer position"):
-    resolve_margins({key: Kde1d()}, 2)
+    resolve_margin_controls({key: FitControlsMargin()}, 2)
 
-  resolved = resolve_margins({np.int64(1): Kde1d(type="discrete")}, 2)
-  assert resolved[1].type == "discrete"
-
-
-def test_callable_margin_specifications_receive_weights() -> None:
-  """A callable owns its fitting, so observation weights must reach it."""
-  from pyvinecopulib.core import Vinedist
-
-  seen: list[dict[str, Any]] = []
-
-  def make_margin(y: Any, **kwargs: Any) -> Any:
-    seen.append(kwargs)
-    return SciPyMargin("norm", (float(np.mean(y)), 1.0))
-
-  rng = np.random.default_rng(8)
-  data = rng.normal(size=(40, 2))
-  weights = np.linspace(1.0, 2.0, data.shape[0])
-  Vinedist.from_data(data, margins=make_margin, weights=weights)
-
-  assert len(seen) == data.shape[1]
-  for kwargs in seen:
-    np.testing.assert_array_equal(kwargs["weights"], weights)
+  resolved = resolve_margin_controls(
+    {np.int64(1): FitControlsMargin(family_set=["norm"])}, 2
+  )
+  assert resolved[1].family_set == ["norm"]
 
 
 # --- as_margin -------------------------------------------------------------- #

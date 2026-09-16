@@ -249,11 +249,13 @@ class FlatMargin(MarginBase[NDArray[np.float64]]):
     /,
     controls: object = None,
     *,
+    var_type: Optional[str] = None,
+    support: Optional[tuple[Optional[float], Optional[float]]] = None,
     x: Optional[NDArray[np.float64]] = None,
     weights: Optional[NDArray[np.float64]] = None,
   ) -> "FlatMargin":
     reject_covariates(self, x)
-    del y, controls, weights
+    del y, controls, weights, var_type, support
     return self
 
   def pdf(
@@ -331,6 +333,8 @@ class AtomicMargin(MarginBase[NDArray[np.float64]]):
     /,
     controls: object = None,
     *,
+    var_type: Optional[str] = None,
+    support: Optional[tuple[Optional[float], Optional[float]]] = None,
     x: Optional[NDArray[np.float64]] = None,
     weights: Optional[NDArray[np.float64]] = None,
   ) -> "AtomicMargin":

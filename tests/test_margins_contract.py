@@ -19,12 +19,14 @@ from typing import Any, NamedTuple
 import numpy as np
 import pytest
 
-from pyvinecopulib.core import Kde1d, MarginLike, Vinedist
+from pyvinecopulib.core import Kde1d, MarginLike, Vinecop, Vinedist
 from pyvinecopulib.margins import (
   FitControlsMargin,
   OpenTURNSMargin,
   SciPyMargin,
 )
+from pyvinecopulib.utils import to_pseudo_obs
+
 from .helpers import widen
 
 
@@ -82,6 +84,11 @@ def eco(request: pytest.FixtureRequest) -> Ecosystem:
 
 #: 500 draws from a gamma(2.5, 1.5), the running example of the design.
 POSITIVE = np.random.default_rng(0).gamma(2.5, 1.5, size=500)
+
+
+def dist_for(eco: Any) -> Any:
+  """A `Vinedist` whose `margin_class` is this ecosystem's."""
+  return type("EcoVinedist", (Vinedist,), {"margin_class": eco.cls})
 
 
 # --- a margin, fitted or not ------------------------------------------------ #
@@ -186,19 +193,20 @@ def test_select_replaces_a_wrong_family_and_fit_keeps_it(
 def test_select_on_a_named_margin_keeps_the_family(eco: Ecosystem) -> None:
   """Naming a family *is* the choice, so `select` reduces to `fit`.
 
-  It matters because `fit_margin` calls `select` by default, so without it a
-  named margin comes back as whatever won the registry search -- answering a
-  specification with a different model. `family_set` is how a caller asks for
-  the search back on one.
+  It matters because a vine distribution's margin loop calls `select`, so
+  without it a named margin comes back as whatever won the registry search --
+  answering a specification with a different model. `family_set` is how a
+  caller asks for the search back on one.
   """
-  from pyvinecopulib.core._margins import fit_margin
-
   named = eco.cls(eco.real)
   assert not named.is_fitted
   assert named.select(POSITIVE).family_name == eco.real
 
-  # And through the resolution path a vine distribution actually takes.
-  resolved = widen(fit_margin(eco.cls(eco.real), POSITIVE))
+  # And through the path a vine distribution actually takes.
+  y = np.column_stack([POSITIVE, POSITIVE * 2.0])
+  copula = Vinecop.from_data(np.asarray(to_pseudo_obs(y)))
+  dist = Vinedist(copula, [eco.cls(eco.real), eco.cls(eco.real)]).select(y)
+  resolved = widen(dist.margins[0])
   assert isinstance(resolved, eco.cls)
   assert resolved.family_name == eco.real
 
@@ -265,9 +273,9 @@ def test_counts_select_a_count_family(
     chosen.pdf(k), chosen.cdf(k) - chosen.cdf_left(k), atol=1e-12
   )
 
-  forced_d = eco.cls().select(count_sample, FitControlsMargin(var_type="d"))
+  forced_d = eco.cls().select(count_sample, var_type="d")
   assert forced_d.family_name == eco.count
-  forced_c = eco.cls().select(count_sample, FitControlsMargin(var_type="c"))
+  forced_c = eco.cls().select(count_sample, var_type="c")
   assert forced_c.var_type == "c"
 
 
@@ -284,9 +292,8 @@ def test_margin_controls_address_each_variable(eco: Ecosystem) -> None:
   y = np.column_stack(
     [rng.gamma(2.5, 1.5, size=500), rng.normal(1.0, 2.0, size=500)]
   )
-  dist = Vinedist.from_data(
+  dist = dist_for(eco).from_data(
     y,
-    margins=eco.cls(),
     margin_controls={
       "positive": FitControlsMargin(family_set=[eco.true]),
       "real": FitControlsMargin(
@@ -301,9 +308,8 @@ def test_margin_controls_address_each_variable(eco: Ecosystem) -> None:
   assert np.all(dist.sample(200, seeds=[2])[:, 0] >= lo)
   assert np.all(np.isfinite(dist.logpdf(y[:20])))
 
-  shared = Vinedist.from_data(
+  shared = dist_for(eco).from_data(
     y,
-    margins=eco.cls(),
     margin_controls=FitControlsMargin(
       family_set=[eco.real, eco.true], selection_criterion="bic"
     ),
@@ -350,7 +356,7 @@ def test_on_failure_fallback_substitutes_a_kernel_density(
   )
   controls = FitControlsMargin(family_set=eco.impossible, on_failure="fallback")
   with pytest.warns(UserWarning, match="kernel-density margin was") as caught:
-    dist = Vinedist.from_data(trap, margins=eco.cls(), margin_controls=controls)
+    dist = dist_for(eco).from_data(trap, margin_controls=controls)
   assert all(isinstance(m, Kde1d) for m in dist.margins)
   assert len(caught) == 2  # one per column, and no more
   assert eco.reason in str(caught[0].message)

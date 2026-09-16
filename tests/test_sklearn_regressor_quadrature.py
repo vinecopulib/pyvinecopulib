@@ -16,6 +16,7 @@ code with the quadrature.
 from __future__ import annotations
 
 import math
+from typing import Any
 
 import numpy as np
 import pytest
@@ -23,12 +24,22 @@ import pytest
 pytest.importorskip("sklearn")
 
 import pyvinecopulib as pv
-from pyvinecopulib.core import Kde1d
+from pyvinecopulib.core import Kde1d, Vinedist
 from pyvinecopulib.sklearn import VineRegressor
 
 from .helpers import AtomicMargin
 
 BETA = np.array([1.0, -0.7])
+
+
+def _parametric_vinedist() -> type[Vinedist]:
+  """A distribution whose margins are SciPy families rather than densities."""
+  from pyvinecopulib.margins import SciPyMargin
+
+  class _Parametric(Vinedist):
+    margin_class = SciPyMargin
+
+  return _Parametric
 
 
 def _data(
@@ -41,10 +52,24 @@ def _data(
   return X, X @ BETA + 0.5 * noise
 
 
-def _bounded_kde(column: np.ndarray) -> Kde1d:
-  """A margin bounded by the observed range, so its own grid is non-uniform."""
-  column = np.asarray(column, dtype=float)
-  return Kde1d(xmin=float(column.min()), xmax=float(column.max())).fit(column)
+def _bounded_response(y: np.ndarray) -> type[Vinedist]:
+  """A distribution whose *response* margin is bounded by the observed range.
+
+  A bounded ``Kde1d`` grids its own support non-uniformly, and the response
+  leads the variable order, so this is where that grid meets the quadrature.
+  Which margin a variable gets is the distribution's to say, so a bound the
+  schema cannot infer is declared by overriding the hook that builds them.
+  """
+  lo, hi = float(np.min(y)), float(np.max(y))
+
+  class _Bounded(Vinedist):
+    @classmethod
+    def _default_margins(
+      cls, d: int, controls: Any = None, margin_controls: Any = None
+    ) -> list[Any]:
+      return [Kde1d(xmin=lo, xmax=hi), *(Kde1d() for _ in range(d - 1))]
+
+  return _Bounded
 
 
 def _relative_rmse(a: np.ndarray, b: np.ndarray, scale: float) -> float:
@@ -169,19 +194,20 @@ def test_a_bounded_response_margin_is_as_accurate_as_an_unbounded_one() -> None:
   """
   X, y = _data(1500)
   scale = float(np.std(y))
+  dist = _bounded_response(y)
   exact = (
-    VineRegressor(margins=_bounded_kde, use_grid=False)
-    .fit(X, y)
-    .predict(X[:25])
+    VineRegressor(distribution=dist, use_grid=False).fit(X, y).predict(X[:25])
   )
-  bounded = VineRegressor(margins=_bounded_kde).fit(X, y).predict(X[:25])
+  bounded = VineRegressor(distribution=dist).fit(X, y).predict(X[:25])
   assert _relative_rmse(bounded, exact, scale) < 0.05
 
 
 def test_the_nodes_stay_inside_the_response_support() -> None:
   """Predictions are convex combinations of points the margin can produce."""
   X, y = _data(400)
-  est = VineRegressor(quantiles=[0.05, 0.95], margins=_bounded_kde).fit(X, y)
+  est = VineRegressor(
+    quantiles=[0.05, 0.95], distribution=_bounded_response(y)
+  ).fit(X, y)
   pred = est.predict(X[:50])
   assert pred.min() >= y.min()
   assert pred.max() <= y.max()
@@ -194,8 +220,11 @@ def test_any_continuous_response_margin_works_on_the_grid(spec: str) -> None:
     pytest.importorskip("scipy")
   X, y = _data(1200)
   scale = float(np.std(y))
-  grid = VineRegressor(margins=spec).fit(X, y).predict(X[:25])
-  exact = VineRegressor(margins=spec, use_grid=False).fit(X, y).predict(X[:25])
+  dist = Vinedist if spec == "kde" else _parametric_vinedist()
+  grid = VineRegressor(distribution=dist).fit(X, y).predict(X[:25])
+  exact = (
+    VineRegressor(distribution=dist, use_grid=False).fit(X, y).predict(X[:25])
+  )
   assert np.all(np.isfinite(grid))
   # Correlation rather than a distance: a margin that extrapolates past the
   # data legitimately moves the conditional mean away from the weighted sum
@@ -208,7 +237,11 @@ def test_a_step_response_margin_degenerates_to_its_atoms() -> None:
   """A step inverse CDF returns order statistics, so the quadrature becomes a
   weighted sum over the observed responses."""
   X, y = _data(300)
-  est = VineRegressor(margins=AtomicMargin(), n_nodes=201).fit(X, y)
+
+  class _Atomic(Vinedist):
+    margin_class = AtomicMargin
+
+  est = VineRegressor(distribution=_Atomic, n_nodes=201).fit(X, y)
   nodes = np.asarray(est.distribution_.margins[0].icdf(np.linspace(0.01, 0.99)))
   assert np.all(np.isin(np.round(nodes, 12), np.round(y, 12)))
   assert np.all(np.isfinite(est.predict(X[:10])))

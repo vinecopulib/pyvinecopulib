@@ -20,6 +20,7 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Use one argument order on every estimator: the observations first, then `controls`, then keyword-only whatever the object cannot infer. `Vinecop.from_data` took `controls` fifth, behind `structure`, so the call carried over from `fit` bound a controls object as a structure (#326).
     - `pv.Vinecop.from_data(u, structure, matrix, var_types, controls)` -> `pv.Vinecop.from_data(u, controls, structure=..., matrix=..., var_types=...)`
     - `pv.Bicop.from_data(u, controls, var_types)` -> `pv.Bicop.from_data(u, controls, var_types=...)`
+    - `pv.core.Kde1d.fit(x, weights)` -> `pv.core.Kde1d.fit(y, controls, weights=...)`, and likewise `select`; the kernel knobs are `FitControlsKde1d` and the observations are `y`, because `x` means exogenous covariates everywhere in the Python API (#339)
     - likewise on `BicopBase`, `VinecopBase`, `VinedistBase` and their torch subclasses; `MarginBase` already read this way
 
 - Reorganize the public API into the `core`, `families` and `utils` subpackages; the family constants, `Kde1d` and the utility functions still resolve at the top level, but warn on access and are removed in 2.0 (#207, #292).
@@ -53,11 +54,11 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 
 - Add `Vinedist`, Sklar's theorem as an object: any vine copula plus one margin per variable, with `pdf` / `logpdf` / `cdf` / `loglik` / `sample` / `sample_conditional` / `rosenblatt` / `inverse_rosenblatt` on the data scale, for continuous, discrete and mixed margins alike (#292).
 - Add `pyvinecopulib.margins`, the univariate half of a vine distribution, so fitting a vine copula to pseudo-observations becomes one configuration of a vine distribution rather than a separate workflow (#292).
-- `Vinedist.from_data(y, margins=...)` runs the two-step (IFM) estimator, margins first and the copula on the pseudo-observations they produce, leaving any already-fitted margin alone (#292).
-- `Kde1d` *is* the default margin, with no wrapper, and gains `var_type` / `support` / `cdf_left` / `logpdf` / `n_parameters` / `family_name` / `is_fitted` plus a `fit` that returns `self` (#292).
+- `Vinedist.from_data(y, controls, *, margin_controls=, var_types=, supports=)` runs the two-step (IFM) estimator, margins first and the copula on the pseudo-observations they produce. Which *class* each margin is comes from the distribution's `margin_class`, beside the `vinecop_class` naming its other half (#292, #339).
+- `Kde1d` *is* the default margin, with no wrapper, and gains `var_type` / `support` / `cdf_left` / `logpdf` / `n_parameters` / `family_name` / `is_fitted` plus `fit` / `select` / `from_data` that read like every other estimator's and return `self` (#292, #339).
+- Add `FitControlsKde1d`, the kernel knobs (`multiplier`, `bandwidth`, `degree`, `grid_size`, `boundary_repair`) as a controls object, so a `Kde1d` margin is configured per variable through `margin_controls=` like any other (#339).
 - Add parametric margins behind a new `pyvinecopulib[scipy]` extra: `SciPyMargin` wraps one `scipy.stats` family, or selects one from a curated candidate set by AIC / BIC / AICc (#292, #326).
 - Add `as_margin`, which presents another ecosystem's distribution object as a margin, and `register_margin_adapter` for one it does not know (#292).
-- Add `resolve_margins`, which turns a `margins=` specification into one margin per variable: an alias, one instance broadcast per column, a length-`d` sequence, a mapping keyed by column, or a callable (#292).
 - Add `Vinedist.margin_summary()`, one row per variable naming the margin it ended up with, and `None` for any field a margin declines -- so a margin from another ecosystem contributes what it has (#292, #334).
 - Add `OpenTURNSMargin` behind a new `pyvinecopulib[openturns]` extra, fitting one OpenTURNS family or selecting one from its registry (#292, #326).
 - `Kde1d.plot` draws the distribution function too, with `kind="cdf"` (#330).
@@ -77,10 +78,11 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Refuse rather than half-apply: `supports_weighted_copula` and `supports_fit_covariates` are `False` on `TorchVinedist`, whose fitter is unweighted and whose margins read no covariates (#326).
 - Add `Vinedist.copula_layout`, the copula-scale layout a consumer of the fitted distribution needs (#326).
 - Add `select` to all four bases, defaulting to `fit` where there is nothing to choose -- upstream's own `select_families = false` equivalence -- so `from_data` is `cls().select(...)` throughout, as `Bicop`'s data constructor has always been (#326).
-- Add `VinedistBase.fit` and `.select`: `fit` re-estimates both halves along the structure and families it holds, `select` lets both change shape. `fit` refuses a `family_set` it cannot honor rather than dropping it, while a declared `var_type` or `support` in the same controls object is applied -- those are defaults, not instructions (#326).
+- Add `VinedistBase.fit` and `.select`: `fit` re-estimates both halves along the structure and families it holds, `select` lets both change shape. Each margin is asked for its own `fit` or `select`, so it keeps its class and its family exactly as a hosted copula keeps its pairs; a margin with no estimator of its own is left as it was built. `fit` refuses a `family_set` it cannot honor rather than dropping it, and neither verb may change which variables have atoms -- the held copula carries its own `var_types`, so that is `from_data`'s to decide (#326, #339).
 - Add `TorchTllBicop.fit`, which refits the density grid in place keeping the module's device, dtype and cache mode (#326).
 - Select a margin's family with `select` on the margin class that owns the families, the shape `Bicop.select` has: after the call the margin *is* the winning family. Naming a family is itself the choice, so `select` on a named margin reduces to `fit` and `family_set` is how a caller asks for the search back (#292, #326).
-- Add `FitControlsMargin` and `margin_controls=`, the marginal half of a vine-distribution fit, resolved per variable by the same four shapes `margins=` accepts -- so one call can bound the two variables whose bounds are known and leave the rest alone (#326).
+- Add `FitControlsMargin` and `margin_controls=`, the marginal half of a vine-distribution fit -- `family_set`, `selection_criterion`, `on_failure` -- resolved per variable four ways: one object broadcast, a length-`d` sequence, or a mapping keyed by position or name (#326, #339).
+- Declare a variable rather than configure it: `var_types=` and `supports=` are keyword-only on `VinedistBase.from_data` and on every margin's `fit` / `select` / `from_data`, one entry per variable, exactly as `var_types` is on `Bicop.from_data`. So one call bounds the variables whose bounds are known and leaves the rest alone, without a controls object carrying a claim about the data (#326, #339).
 - Add `MarginBase.aic` / `.bic` / `.aicc`, which `Bicop` and `Vinecop` have always had and margins did not (#326).
 - Plot a custom object from its base: `BicopBase.plot`, `VinecopBase.plot` and `MarginBase.plot` draw what `Bicop.plot`, `Vinecop.plot` and `Kde1d.plot` draw, so a hand-written pair copula, vine or margin is inspected like a fitted one (#327, #330).
     - `BicopBase.plot` and `MarginBase.plot` take an optional single-row `x`, since a conditional object is a different surface at every covariate value and a plot shows one slice; both refuse an `x` their object reads no covariates from (#327, #330)
@@ -146,8 +148,8 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 
 - Add `pyvinecopulib.sklearn` behind a `pyvinecopulib[sklearn]` extra: `VineDensity` and `VineRegressor`, scikit-learn-compatible estimators over mixed continuous and discrete input as a DataFrame or an ndarray (#211, #213, #263).
 
-- Both sklearn estimators take `distribution=`, the `VinedistBase` subclass they fit: `Vinedist` by default, `TorchVinedist` to run the same pipeline under PyTorch. That one class names both halves of the model, so `controls=` and `structure=` are all that go beside it (#218, #241, #339).
-- Both sklearn estimators take a `margins=` keyword and delegate their marginal half to `Vinedist`, publishing the fitted model as `distribution_` alongside `schema_`, `structure_`, `margin_summary_`, `controls_`, `distribution_class_` and `random_state_` (#218, #292, #339).
+- Both sklearn estimators take `distribution=`, the `VinedistBase` subclass they fit: `Vinedist` by default, `TorchVinedist` to run the same pipeline under PyTorch. That one class names both halves of the model, so `controls=`, `structure=` and `margin_controls=` are all that go beside it (#218, #241, #339).
+- Both sklearn estimators delegate the whole two-step fit to the distribution, handing it `margin_controls=` and the variable types and bounds `schema_` inferred, and publishing the result as `distribution_` alongside `schema_`, `structure_`, `margin_summary_`, `controls_`, `distribution_class_` and `random_state_` (#218, #292, #339).
 - Add `n_jobs` to `VineDensity` and `VineRegressor`, governing fitting *and* every evaluation where the fit-time thread count used to pin both; results are bit-identical at any thread count (#297).
 - `VineRegressor` accepts any continuous margin as its response, taking the `use_grid=True` quadrature on the probability scale so `n_nodes` fixes the number of probability levels (#292).
 

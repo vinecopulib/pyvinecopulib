@@ -187,7 +187,8 @@ def test_vinebase_marginal_fitting(
   density = VineDensity()
   X_processed = density._validate_input(X, reset=True)
   assert isinstance(X_processed, np.ndarray)
-  density._fit_marginals(X_processed)
+  density._resolve_runtime_state()
+  density._fit_distribution(X_processed)
 
   # Check that marginals are fitted
   assert len(density._x_margins) == 2
@@ -206,7 +207,8 @@ def test_vinebase_pseudoobservations(
   density = VineDensity()
   X_processed = density._validate_input(X, reset=True)
   assert isinstance(X_processed, np.ndarray)
-  density._fit_marginals(X_processed)
+  density._resolve_runtime_state()
+  density._fit_distribution(X_processed)
 
   U = density._to_u_scale(X_processed)
 

@@ -28,16 +28,17 @@ return types.
 
 from __future__ import annotations
 
+import warnings
 from abc import ABC
 from typing import Any, ClassVar, Optional, Self, Sequence, cast
 
 from .protocols import array_namespace
 
-from ..pyvinecopulib_ext import RVineStructure
+from ..pyvinecopulib_ext import Kde1d, RVineStructure
 from ._covariates import declared_eval, prepare_covariates
 from ._loglik import safe_log
-from .margin_base import derive_cdf_left
-from ._placement import PlacementMixin
+from .margin_base import MarginBase, derive_cdf_left
+from ._placement import PlacementMixin, to_numpy
 from ._trim import trim
 from ._validation import validate_covariates, validate_weights
 from .protocols import (
@@ -76,6 +77,86 @@ def _declared(margin: object, name: str) -> object:
     return getattr(margin, name, None)
   except _OPTIONAL_FIELD_ERRORS:
     return None
+
+
+def _per_variable_declaration(
+  declared: Optional[Sequence[Any]], d: int, name: str
+) -> list[Any]:
+  """One declaration per variable, or ``None`` where the caller named none.
+
+  Parameters
+  ----------
+  declared : sequence, or None, optional
+      What the caller passed: one entry per variable, or ``None``.
+  d : int
+      Number of variables.
+  name : str
+      The argument's name, for the message.
+
+  Returns
+  -------
+  list
+      Exactly ``d`` entries.
+
+  Raises
+  ------
+  ValueError
+      If a sequence was given with the wrong length.
+  """
+  if declared is None:
+    return [None] * d
+  entries = list(declared)
+  if len(entries) != d:
+    raise ValueError(
+      f"{name} has length {len(entries)}, but there are {d} variables"
+    )
+  return entries
+
+
+def _name_at(names: Optional[Sequence[str]], index: int) -> str:
+  """How to refer to one variable in a message.
+
+  Parameters
+  ----------
+  names : sequence of str, or None, optional
+      Variable names, where any are known.
+  index : int
+      The variable's position.
+
+  Returns
+  -------
+  str
+      The declared name where there is one, else the position.
+  """
+  if names is not None and index < len(names):
+    return str(names[index])
+  return f"variable {index}"
+
+
+def _named_for(name: str, exc: BaseException) -> BaseException:
+  """``exc`` with the variable it came from named, keeping its type where it can.
+
+  The type is preserved by rebuilding the exception from the new message,
+  which most accept; one whose constructor takes more than a message becomes a
+  ``ValueError`` rather than a confusing failure inside the handler.
+
+  Parameters
+  ----------
+  name : str
+      The variable the failure belongs to.
+  exc : BaseException
+      What the margin raised.
+
+  Returns
+  -------
+  BaseException
+      The same failure, with the variable named.
+  """
+  message = f"margin for {name!r}: {exc}"
+  try:
+    return type(exc)(message)
+  except Exception:  # any constructor that needs more than one argument
+    return ValueError(message)
 
 
 class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
@@ -258,6 +339,56 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         The copula this distribution was built on.
     """
     return cast("VinecopLike[ArrayT]", self._vinecop)
+
+  #: Variable names, when something knew them; see ``var_names``.
+  _var_names: Optional[list[str]] = None
+
+  @property
+  def var_names(self) -> Optional[list[str]]:
+    """Variable names, in variable order, or ``None`` where none are known.
+
+    Carried rather than derived: a fit from a named frame knows them, and
+    everything that reports a variable -- a plot's labels, the column an error
+    names -- would otherwise fall back to an integer index.
+
+    Returns
+    -------
+    list of str, or None
+        One name per variable.
+    """
+    return self._var_names
+
+  @var_names.setter
+  def var_names(self, value: Optional[Sequence[str]]) -> None:
+    if value is None:
+      self._var_names = None
+      return
+    names = [str(v) for v in value]
+    if len(names) != self.dim:
+      raise ValueError(
+        f"var_names has length {len(names)}, but there are {self.dim} variables"
+      )
+    self._var_names = names
+
+  def _name_of(self, index: Optional[int]) -> str:
+    """How to refer to one variable in a message.
+
+    Parameters
+    ----------
+    index : int, or None, optional
+        Variable position, or ``None`` for a variable with no position.
+
+    Returns
+    -------
+    str
+        The declared name where there is one, else the position.
+    """
+    if index is None:
+      return "the response"
+    names = self._var_names
+    if names is not None and index < len(names):
+      return repr(names[index])
+    return f"variable {index}"
 
   @property
   def margins(self) -> tuple[MarginLike[ArrayT], ...]:
@@ -1053,18 +1184,13 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     controls: Optional[ControlsLike],
     margin_controls: Optional[Sequence[Optional[ControlsLike]]] = None,
   ) -> Optional[Sequence[MarginLike[ArrayT]]]:
-    """The margin each variable gets when the caller named none.
+    """One ``margin_class`` per variable, declared as its controls say.
 
-    One ``margin_class`` per variable, which is why most subclasses declare
-    that instead of overriding this. Override it when the margins need an
-    argument the class attribute cannot carry -- a placement, or a family.
-
-    The base ignores ``margin_controls``, which is right for a margin class
-    that reads its controls at fit time. A subclass whose ``margin_class``
-    takes its variable type or its bounds at *construction* overrides this --
-    ``Vinedist`` does, since a kernel density fitted unbounded has already
-    padded past the data by the time anything could tell it otherwise. That is what makes a
-    bounded default reachable without naming a class.
+    Declaring ``margin_class`` is normally all it takes. Override this only
+    where the margins need something no per-variable controls object carries,
+    which on the torch lane is the device and dtype the *copula* controls
+    name. The variable's type and bounds are not among them: those reach the
+    margin as the keyword-only declaration its ``fit`` takes.
 
     Parameters
     ----------
@@ -1080,16 +1206,189 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     Returns
     -------
     sequence, or None
-        One unfitted margin per variable, or ``None`` to accept
-        :func:`~pyvinecopulib.margins.resolve_margins`' own default (a
-        kernel-density margin throughout).
+        One unfitted margin per variable, or ``None`` where this class names
+        no ``margin_class`` and therefore only ever hosts margins it is
+        handed.
     """
     del controls
     if cls.margin_class is None:
       return None
+    del margin_controls
     return cast(
       "list[MarginLike[ArrayT]]", [cls.margin_class() for _ in range(d)]
     )
+
+  @classmethod
+  def _fit_margin(
+    cls,
+    margin: Any,  # noqa: ANN401 - MarginLike names none of what is read
+    y: ArrayT,
+    controls: Optional[ControlsLike],
+    *,
+    verb: str,
+    var_type: Optional[str] = None,
+    support: Optional[tuple[Optional[float], Optional[float]]] = None,
+    x: Optional[ArrayT] = None,
+    weights: Optional[ArrayT] = None,
+  ) -> MarginLike[ArrayT]:
+    """Estimate one variable's margin, in place.
+
+    The margin half's counterpart of :meth:`_reestimate_copula`, and the same
+    call: the margin is asked for its own ``fit`` or ``select`` as
+    ``estimator(y, controls, ...)``, so it keeps its class and its family
+    across a refit exactly as a hosted copula keeps its pairs. There is no
+    counterpart of :meth:`_fit_copula` here because :meth:`_default_margins`
+    is it -- a margin is *built* there, where a lane can place it, and
+    estimated here.
+
+    What this adds around that call is the three decisions a margin cannot
+    make about itself: whether it is fixed, whether a request it cannot honor
+    was made, and which margin the column gets when its own estimator fails.
+
+    Parameters
+    ----------
+    margin : object
+        The margin to estimate. Typed loosely because ``fit`` / ``select`` /
+        ``supports_weights`` / ``supports_controls`` / ``supports_covariates``
+        are optional capabilities, which ``MarginLike`` does not name.
+    y : array, shape (n,), dtype float
+        The variable's observations, on the original scale.
+    controls : ControlsLike, or None, optional
+        Marginal fit configuration for this variable.
+    verb : str
+        ``"fit"`` to estimate the family the margin already has, ``"select"``
+        to choose one.
+    var_type : str, or None, optional
+        The variable type the caller declared, forwarded as the keyword-only
+        declaration every margin's estimator takes.
+    support : tuple of float, or None, optional
+        The bounds the caller declared, forwarded the same way.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, reaching a margin that declares
+        ``supports_covariates``.
+    weights : array, shape (n,), or None, optional
+        Observation weights.
+
+    Returns
+    -------
+    MarginLike
+        The fitted margin -- ``margin`` itself, unless it was fixed or was
+        substituted under ``on_failure="fallback"``.
+
+    Raises
+    ------
+    TypeError
+        If weights were given for a margin that cannot use them, or a
+        ``family_set`` for one that cannot search -- either would answer the
+        request with a different model than was asked for.
+    """
+    # A margin with no estimator of its own is *fixed*: a frozen distribution
+    # from another ecosystem overrides neither verb, and there is nothing to
+    # re-estimate. `is_fitted` is the wrong test -- a fitted `SciPyMargin` is
+    # refittable, and `fit` / `select` must re-estimate it -- and so is `fit`
+    # alone, since a margin that only chooses between *kinds* of model
+    # overrides `select` and leaves `fit` raising. Whether the verb asked for
+    # is one it has is the verb's own to report.
+    cls_of = type(margin)
+    if cls_of.fit is MarginBase.fit and cls_of.select is MarginBase.select:
+      return cast("MarginLike[ArrayT]", margin)
+    if weights is not None and not getattr(margin, "supports_weights", False):
+      raise TypeError(
+        f"{type(margin).__name__} cannot use observation weights; name a "
+        "`margin_class` that accepts them, or drop weights="
+      )
+    # A `family_set` is an instruction to search, so a margin that reads no
+    # controls -- or a `fit`, which estimates the family the margin already
+    # has -- refuses it rather than fitting one family and looking like it
+    # chose. A declared var_type or support is a default, so neither refuses
+    # one.
+    if getattr(controls, "family_set", None) is not None and (
+      verb == "fit" or not getattr(margin, "supports_controls", False)
+    ):
+      cannot = (
+        "`fit` estimates the family it already has"
+        if verb == "fit"
+        else f"{type(margin).__name__} cannot select a family"
+      )
+      raise TypeError(
+        f"family_set= would be ignored: {cannot}. Use select (or "
+        f"`{cls.__name__}.select`) to choose a family, name a `margin_class` "
+        "that searches one, or drop family_set"
+      )
+    # Forwarded one at a time, as `_reestimate_copula` forwards to the copula:
+    # the covariates reach only a margin that declares it reads them, and the
+    # declaration travels as the keyword it is.
+    passed: dict[str, Any] = {}
+    if var_type is not None:
+      passed["var_type"] = var_type
+    if support is not None:
+      passed["support"] = support
+    if x is not None and getattr(margin, "supports_covariates", False):
+      passed["x"] = x
+    if weights is not None:
+      passed["weights"] = weights
+    try:
+      getattr(margin, verb)(y, controls, **passed)
+    except ValueError as e:
+      # Substituting a different kind of margin is a decision about which
+      # margin this column gets, so it is made here rather than inside a
+      # margin that would have to stop being itself to make it. It is core's
+      # own `Kde1d`, adopted onto this lane -- and where the lane's own
+      # `margin_class` already is a kernel density, the substitute fails the
+      # same way and the original failure is the one the caller needs.
+      if getattr(controls, "on_failure", "raise") != "fallback":
+        raise
+      try:
+        substitute = cls._adopt_margin(
+          Kde1d.from_data(
+            to_numpy(y, dtype=float),
+            var_type=var_type,
+            support=support,
+            weights=None if weights is None else to_numpy(weights, dtype=float),
+          ),
+          y,
+        )
+      except (ValueError, TypeError, RuntimeError, NotImplementedError):
+        raise e from None
+      warnings.warn(
+        f"{type(margin).__name__} could not fit this variable, so a "
+        f"kernel-density margin was substituted. The cause was:\n{e}",
+        UserWarning,
+        stacklevel=2,
+      )
+      return substitute
+    return cast("MarginLike[ArrayT]", margin)
+
+  @classmethod
+  def _adopt_margin(
+    cls, margin: object, reference: ArrayT
+  ) -> MarginLike[ArrayT]:
+    """One margin, brought onto this lane's array namespace.
+
+    The identity here, since a NumPy lane already holds what it is handed.
+    A lane that evaluates elsewhere overrides it to convert what it can and
+    refuse what it cannot: :class:`~pyvinecopulib.torch.TorchVinedist` lifts a
+    ``Kde1d`` to a ``TorchKde1d``, an exact transfer of the same grid, and
+    refuses anything that is no ``nn.Module``. Reached where the base
+    substitutes a margin mid-fit, which is before the parts are bound and so
+    before ``_bind_dist`` could do it: the copula-scale layout is assembled
+    from the columns the margins return, so a substitute on another namespace
+    would not stack with the rest.
+
+    Parameters
+    ----------
+    margin : object
+        The margin to adopt.
+    reference : array, shape (n,), dtype float
+        The column it was fitted on, for a lane that reads its placement.
+
+    Returns
+    -------
+    MarginLike
+        The margin this lane will hold.
+    """
+    del reference
+    return cast("MarginLike[ArrayT]", margin)
 
   @classmethod
   def _copula_controls(
@@ -1441,7 +1740,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         If covariates are given and this lane cannot estimate both halves on
         them, or if the held copula has no estimator to re-run.
     """
-    from ._margins import fit_margin, resolve_margin_controls, unshare
+    from ._margins import resolve_margin_controls, unshare
 
     cls = type(self)
     coerced, weights = cls._coerce_fit_data(y, weights, controls)
@@ -1468,22 +1767,34 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       margin_controls, d, names=cast("Optional[Sequence[str]]", named)
     )
     # Each column is re-estimated from its own data, so margins tied together
-    # at bind time have to come apart first: `fit_margin` estimates in place,
-    # and a shared one would be fitted once per column with only the last fit
+    # at bind time have to come apart first: a margin estimates in place, and
+    # a shared one would be fitted once per column with only the last fit
     # surviving.
     margins = [
-      fit_margin(
+      cls._fit_margin(
         margin,
         data[:, j],
+        per_variable[j],
+        verb=verb,
         x=x,
         weights=weights,
-        controls=per_variable[j],
-        verb=verb,
-        refit=True,
       )
       for j, margin in enumerate(unshare(self._margins))
     ]
     var_types = cls.copula_var_types(margins)
+    declared = getattr(self._vinecop, "var_types", None)
+    if declared is not None and list(declared) != var_types:
+      # The copula re-estimates itself, and nothing in either verb's contract
+      # lets it change which variables have atoms -- so a margin that just
+      # gained or lost them has produced a layout the held copula cannot read.
+      # Saying so beats the width mismatch the copula would report instead.
+      raise ValueError(
+        f"{cls.__name__}.{verb} re-estimated margins implying "
+        f"var_types={var_types}, but the copula it holds declares "
+        f"{list(declared)}. A refit cannot change which variables have atoms; "
+        f"use {cls.__name__}.from_data to fit a distribution on the new "
+        "layout."
+      )
     u = cls.copula_data(margins, data, x=x)
     # The copula re-estimates *itself*, so a hosted `VinecopLike` keeps its
     # class -- `structure` is already the held one for `fit`, and `select`
@@ -1554,8 +1865,11 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     /,
     controls: Optional[ControlsLike] = None,
     *,
-    margins: object = None,
     margin_controls: object = None,
+    var_types: Optional[Sequence[Optional[str]]] = None,
+    supports: Optional[
+      Sequence[Optional[tuple[Optional[float], Optional[float]]]]
+    ] = None,
     structure: Optional[RVineStructure] = None,
     x: Optional[ArrayT] = None,
     weights: Optional[ArrayT] = None,
@@ -1565,13 +1879,12 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
 
     The two-step estimator: each margin is fitted from its own column, the
     data are transformed to the copula scale, and the copula is fitted on the
-    result (Joe and Xu, 1996). Margins already fitted are left alone, so a
-    fixed margin and one to estimate can be mixed freely.
+    result (Joe and Xu, 1996).
 
     Unlike :meth:`fit` and :meth:`select`, which re-estimate the parts a
-    distribution already holds, this is where the margins are *chosen*: what
-    each variable gets comes from ``margins``, or from the lane's own default
-    when the caller names none.
+    distribution already holds, this one *builds* both halves: the margins
+    from ``margin_class`` (through ``_default_margins``, so a lane can place
+    them) and the copula from ``vinecop_class``.
 
     Parameters
     ----------
@@ -1580,14 +1893,20 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         read as ``names`` when that is not given.
     controls : ControlsLike, or None, optional
         Copula fit configuration, in the form this subclass's fitter takes.
-    margins : object, or None, optional
-        What to use for each variable; see
-        :func:`pyvinecopulib.margins.resolve_margins` for the accepted forms.
     margin_controls : object, or None, optional
-        Marginal fit configuration, reaching every margin that is estimated
-        here. The two halves are configured separately because they are fitted
-        separately: ``margins`` says which class each variable gets, and this
-        says how to fit or select it.
+        Marginal fit configuration, one object per variable: a single object
+        broadcast to every variable, a length-``d`` sequence, or a mapping
+        keyed by position or name. See
+        :func:`pyvinecopulib.margins.resolve_margin_controls`.
+    var_types : sequence of str, or None, optional
+        What each variable *is* --- ``"c"``, ``"d"``, ``"zi"``, or ``None`` to
+        leave it to the margin --- one entry per variable. A declaration
+        rather than configuration, so it travels beside ``margin_controls``
+        exactly as ``var_types`` does on
+        :meth:`~pyvinecopulib.core.Bicop.from_data`.
+    supports : sequence of tuple, or None, optional
+        Declared bounds as ``(lo, hi)`` per variable, either end ``None`` for
+        unbounded, and the whole entry ``None`` where nothing is declared.
     structure : RVineStructure, or None, optional
         A fixed vine structure; selected from the data when ``None``.
     x : array, shape (n, p), or None, optional
@@ -1599,7 +1918,9 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         Observation weights, applied to both halves. Refused when this
         subclass's copula fitter cannot apply them.
     names : sequence of str, or None, optional
-        Variable names, so ``margins`` may be a mapping keyed by name.
+        Variable names, so ``margin_controls`` may be a mapping keyed by name.
+        Read from a DataFrame's columns when not given, and kept on the
+        result as ``var_names``.
 
     Returns
     -------
@@ -1626,7 +1947,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
            functions for margins for multivariate models.* Technical Report
            166, Department of Statistics, University of British Columbia.
     """
-    from ._margins import fit_margin, resolve_margin_controls, resolve_margins
+    from ._margins import resolve_margin_controls
 
     coerced, weights = cls._coerce_fit_data(y, weights, controls)
     data: Any = coerced
@@ -1636,38 +1957,55 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     x, weights = cls._check_fit_inputs(x, weights, n, coerced, "from_data")
 
     if names is None:
-      # A DataFrame carries its own names, and `margins` is often keyed by
-      # them. Duck-typed: pandas is an extra, not a dependency of `core`.
+      # A DataFrame carries its own names, and `margin_controls` is often
+      # keyed by them. Duck-typed: pandas is an extra, not a dependency here.
       columns = getattr(y, "columns", None)
       if columns is not None:
         names = [str(c) for c in columns]
 
     per_variable = resolve_margin_controls(margin_controls, d, names=names)
-    specs = resolve_margins(
-      margins,
-      d,
-      names=names,
-      default=lambda: cls._default_margins(d, controls, per_variable),
-    )
+    declared_types = _per_variable_declaration(var_types, d, "var_types")
+    declared_supports = _per_variable_declaration(supports, d, "supports")
+    specs = cls._default_margins(d, controls, per_variable)
+    if specs is None:
+      raise TypeError(
+        f"{cls.__name__} names no `margin_class`, so it cannot fit margins "
+        "from data. Declare one, or compose the distribution by construction "
+        "from margins you fitted yourself."
+      )
+    if len(specs) != d:
+      raise ValueError(
+        f"{cls.__name__}._default_margins returned {len(specs)} margins, but "
+        f"there are {d} variables"
+      )
     if x is not None and not any(
       getattr(spec, "supports_covariates", False) for spec in specs
     ):
       raise ValueError(
-        "covariates were given, but no margin reads them: every specification "
-        "in `margins` is unconditional, so the fit would ignore `x` and return "
-        "a model of f(y) labeled as one of f(y | x). Pass margins that declare "
+        f"covariates were given, but {cls.__name__}'s `margin_class` "
+        f"({getattr(cls.margin_class, '__name__', cls.margin_class)}) does "
+        "not read them, so the fit would ignore `x` and return a model of "
+        "f(y) labeled as one of f(y | x). Name a `margin_class` that declares "
         "supports_covariates, or drop x."
       )
-    fitted = [
-      fit_margin(
-        specs[j],
-        data[:, j],
-        x=x,
-        weights=weights,
-        controls=per_variable[j],
-      )
-      for j in range(d)
-    ]
+    fitted = []
+    for j in range(d):
+      try:
+        fitted.append(
+          cls._fit_margin(
+            specs[j],
+            data[:, j],
+            per_variable[j],
+            verb="select",
+            var_type=declared_types[j],
+            support=declared_supports[j],
+            x=x,
+            weights=weights,
+          )
+        )
+      except (ValueError, RuntimeError, TypeError) as exc:
+        # A margin sees one column and cannot say which it was; this can.
+        raise _named_for(_name_at(names, j), exc) from exc
 
     # A copula needs its var_types up front, so both come from the fitted
     # margins before the copula exists; `_bind_dist` then re-derives and
@@ -1682,7 +2020,10 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       weights=weights,
       x=x,
     )
-    return cls(vinecop, list(fitted))
+    dist = cls(vinecop, list(fitted))
+    if names is not None:
+      dist.var_names = names
+    return dist
 
   @classmethod
   def from_json(cls, json: str) -> Self:

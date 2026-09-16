@@ -324,15 +324,6 @@ def test_an_unfitted_broadcast_margin_is_copied_on_this_lane(
     assert closest == j
 
 
-def test_resolve_margins_copies_an_unfitted_torch_margin() -> None:
-  """The same guard, at the resolver every `from_data` goes through."""
-  from pyvinecopulib.margins import resolve_margins
-
-  resolved = resolve_margins(TorchKde1d(), 3)
-  assert len({id(m) for m in resolved}) == 3
-  assert all(isinstance(m, TorchKde1d) for m in resolved)
-
-
 # --- boundaries ------------------------------------------------------------- #
 
 
@@ -385,18 +376,16 @@ def test_from_data_refuses_a_family_set_it_cannot_search(
   search, which is what turns the request into an error -- introspection cannot
   answer it, since the fit accepts a `controls` argument either way.
   """
-  from pyvinecopulib.margins import FitControlsMargin
-
   assert not TorchKde1d.supports_controls
   with pytest.raises(TypeError, match="cannot select a family"):
     TorchVinedist.from_data(
       torch.as_tensor(data, dtype=_F64),
       margin_controls=FitControlsMargin(family_set=["gamma"]),
     )
-  # A declared type or support is a *default*, so it is still honored.
+  # And a declaration is not a controls object, so it is honored regardless.
   fitted = TorchVinedist.from_data(
     torch.as_tensor(data, dtype=_F64),
-    margin_controls=FitControlsMargin(support=(-10.0, 10.0)),
+    supports=[(-10.0, 10.0)] * data.shape[1],
   )
   assert all(isinstance(m, TorchKde1d) for m in fitted.margins)
 
@@ -409,7 +398,7 @@ def test_from_data_refuses_a_family_set_it_cannot_search(
     ("zi", "zero-inflated", "d"),
   ],
 )
-def test_margin_controls_declare_the_variable_type(
+def test_var_types_declare_the_variable_type(
   declared: str, expected_kde_type: str, expected_var_type: str
 ) -> None:
   """Every declared type reaches the torch margin's constructor.
@@ -423,22 +412,18 @@ def test_margin_controls_declare_the_variable_type(
   y = torch.as_tensor(
     np.column_stack([rng.normal(size=300), rng.poisson(3.0, 300).astype(float)])
   )
-  dist = TorchVinedist.from_data(
-    y, margin_controls={1: FitControlsMargin(var_type=declared)}
-  )
+  dist = TorchVinedist.from_data(y, var_types=[None, declared])
   margin = cast("Any", dist.margins[1])
   assert margin.kde_type == expected_kde_type
   assert dist.var_types[1] == expected_var_type
   assert torch.isfinite(dist.logpdf(y)).all()
 
 
-def test_margin_controls_declare_a_bound() -> None:
+def test_supports_declare_a_bound() -> None:
   """A declared support bounds the margin the library builds."""
   rng = np.random.default_rng(1)
   y = torch.as_tensor(rng.gamma(2.0, 1.0, size=(400, 2)))
-  bounded = TorchVinedist.from_data(
-    y, margin_controls=FitControlsMargin(support=(0.0, None))
-  )
+  bounded = TorchVinedist.from_data(y, supports=[(0.0, None)] * 2)
   assert all(float(cast("Any", m).xmin) == 0.0 for m in bounded.margins)
 
 
@@ -468,14 +453,12 @@ def test_holds_margins_with_atoms() -> None:
     ]
   )
   # `from_data` does not guess a variable's type any more than the NumPy
-  # `Vinedist.from_data` does -- the caller declares it on the margin.
+  # `Vinedist.from_data` does -- the caller declares it, keyword-only and one
+  # entry per variable, exactly as `Bicop.from_data` takes `var_types`.
   dist = TorchVinedist.from_data(
     torch.as_tensor(y, dtype=_F64),
-    margins=[
-      TorchKde1d(type="discrete", xmin=0.0),
-      TorchKde1d(),
-      TorchKde1d(),
-    ],
+    var_types=["d", None, None],
+    supports=[(0.0, None), None, None],
   )
   assert dist.var_types == ["d", "c", "c"]
 

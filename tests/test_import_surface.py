@@ -97,7 +97,6 @@ def test_core_owns_the_margin_internals_and_margins_re_exports_them() -> None:
     "FitControlsMargin",
     "as_margin",
     "register_margin_adapter",
-    "resolve_margins",
     "resolve_margin_controls",
   ):
     shared = getattr(margins, name)
@@ -109,20 +108,20 @@ def test_core_owns_the_margin_internals_and_margins_re_exports_them() -> None:
 
 
 def test_core_reaches_up_a_layer_only_where_it_must() -> None:
-  """`core` must not import `margins` at module scope, and barely at all.
+  """`core` must not import `margins`, at module scope or anywhere.
 
   Read statically rather than by watching `sys.modules`: importing
   `pyvinecopulib.core` runs the top-level `__init__`, which loads `margins`
   eagerly by design, so a runtime check would measure the wrong thing.
 
-  Exactly one function-local import is expected, and it is forced: the
-  ``"parametric"`` alias is a string ``core``'s own ``resolve_margins``
-  accepts, so ``core`` has to be able to resolve it to a class that lives
-  behind an extra. Everything else an extension point can carry does --
-  ``as_margin``'s adapters and ``margin_from_json``'s readers are registered
-  by the module that owns each class, through the same public hooks a third
-  party uses. Any more, or any at module scope, is the layer inversion coming
-  back.
+  **Zero** is the expected count. There used to be one, forced: the
+  ``"parametric"`` alias was a string ``core``'s own margin resolution
+  accepted, so ``core`` had to resolve it to a class living behind an extra.
+  Deleting the alias deleted the exception. Everything an extension point can
+  carry is registered by the module that owns each class, through the same
+  public hooks a third party uses -- ``as_margin``'s adapters and
+  ``margin_from_json``'s readers. Any import here is the layer inversion
+  coming back.
   """
   import ast
   import pathlib
@@ -158,9 +157,7 @@ def test_core_reaches_up_a_layer_only_where_it_must() -> None:
         where.append(f"{path.name}:{node.lineno} -> {target}")
 
   assert module_scope == [], module_scope
-  assert len(deferred) == 1, deferred
-  # And neither reaches a private module of the layer above.
-  assert not any("._" in d.split("-> ")[1] for d in deferred), deferred
+  assert deferred == [], deferred
 
 
 def test_the_fit_callback_aliases_resolve_from_any_module() -> None:
@@ -297,12 +294,10 @@ _LAYER_EDGES: dict[tuple[str, str], bool] = {
   ("torch", "utils"): False,
   ("torch", "pyvinecopulib_ext"): False,
   ("sklearn", "core"): False,
-  ("sklearn", "margins"): False,
   # Tier 1, and its one deferred hop: up into `margins` for `SciPyMargin`
   # (see `test_core_reaches_up_a_layer_only_where_it_must`).
   ("core", "pyvinecopulib_ext"): False,
   ("core", "_deprecations"): False,
-  ("core", "margins"): True,
   ("families", "pyvinecopulib_ext"): False,
   ("utils", "pyvinecopulib_ext"): False,
   ("utils", "core"): False,

@@ -20,14 +20,13 @@ import pyvinecopulib as pv
 
 from ..core import (
   ControlsLike,
-  FitControlsMargin,
   MarginLike,
   Vinedist,
   VinedistBase,
 )
-from ..margins import resolve_margins
+from ..core._margins import resolve_margin_controls
+from ..core._validation import validate_declaration
 from ..core._loglik import safe_log
-from ..core._margins import MarginSpec, fit_margin
 from ..core.extend import to_numpy
 
 # Shared docstring fragments interpolated into VineDensity / VineRegressor
@@ -43,16 +42,16 @@ the pseudo-observations. For columns with atoms the left limit
 proxy. Unordered categoricals are first expanded to ordered
 ``{0, 1}`` dummies via `expand_factors`.
 
-The two halves are configured separately and symmetrically. Margins
-come from ``margins=``, which defaults to a boundary-corrected kernel
-density (``Kde1d``) per column and accepts anything
-:func:`pyvinecopulib.margins.resolve_margins` understands --- an alias
-such as ``"parametric"``, one margin broadcast to
-every column, a per-column sequence, or a mapping keyed by feature
-name. Both halves come from ``distribution=``: the default
-``Vinedist`` pairs ``Vinecop`` with ``Kde1d`` and has no extra
-dependencies, while :class:`pyvinecopulib.torch.TorchVinedist` routes the
-same pipeline through the PyTorch evaluator (GPU / autograd).
+Both halves come from ``distribution=``: the default ``Vinedist`` pairs
+``Vinecop`` with a boundary-corrected kernel density (``Kde1d``) per column
+and has no extra dependencies, while
+:class:`pyvinecopulib.torch.TorchVinedist` routes the same pipeline through
+the PyTorch evaluator (GPU / autograd). Naming one class is the whole model
+choice. What is configured per column is how each half is *fitted*:
+``controls=`` for the copula, ``margin_controls=`` for the margins, in any
+form :func:`pyvinecopulib.margins.resolve_margin_controls` understands ---
+one controls object broadcast to every column, a per-column sequence, or a
+mapping keyed by feature name.
 
 Fitting assembles a ``Vinedist`` --- the copula and its margins as one
 object --- and every post-fit method evaluates through it. It is
@@ -106,6 +105,7 @@ _DOC_REFERENCES = r"""References
 #: `schema_["kde1d_types"]` carries `Kde1d`'s spellings; a margin declares the
 #: contract's. One map, so the two never drift apart.
 _VAR_TYPE_OF = {"continuous": "c", "discrete": "d", "zero-inflated": "zi"}
+
 
 #: What an estimator accepts for ``X``: the two shapes the pipeline models
 #: directly, or any nested sequence of rows -- sklearn's convention is that
@@ -248,6 +248,11 @@ class VineBase(BaseEstimator):
   # `getattr(self, "schema_", None)` is still how a caller-set one is read.
   schema_: dict[str, Any]
 
+  # The fitted vine, typed `Any` because this estimator reaches past
+  # `VinecopLike`: `logpdf` is an optional capability the protocol does not
+  # name, and `num_threads` is a knob both lanes accept that none requires.
+  _vine: Any
+
   #: Whether this estimator reports a density on the original scale, and so
   #: cannot accept a margin that has none. `VineRegressor` does not: its
   #: quadrature reads the copula density and the response margin's `icdf` only.
@@ -257,7 +262,7 @@ class VineBase(BaseEstimator):
     "distribution": [type, None],
     "controls": [object, None],
     "structure": [object, None],
-    "margins": [object, None],
+    "margin_controls": [object, None],
     "batch_size": [Interval(Integral, 1, None, closed="left")],
     "random_state": ["random_state"],
     "n_jobs": [
@@ -272,7 +277,7 @@ class VineBase(BaseEstimator):
     distribution: Optional[type[VinedistBase[Any]]] = None,
     controls: Optional[ControlsLike] = None,
     structure: Optional[pv.RVineStructure] = None,
-    margins: object = None,
+    margin_controls: object = None,
     batch_size: int = 100,
     random_state: _RandomStateLike = None,
     n_jobs: Optional[int] = None,
@@ -297,19 +302,17 @@ class VineBase(BaseEstimator):
     structure : RVineStructure, or None, optional
         A pre-specified vine structure; when given, structure selection is
         skipped and the vine is fitted on it. `None` selects one.
-    margins : object, or None, optional
-        What to fit to each column, in any form
-        :func:`pyvinecopulib.margins.resolve_margins` accepts: an alias
-        (``"kde"``, ``"parametric"``), one margin
-        broadcast to every column, a sequence of length
-        ``n_features_in_``, a mapping keyed by feature name or
-        position, or a callable taking a column and returning a
-        margin. `None` fits the distribution's own kernel-density margin
-        per column --- ``Kde1d``, or ``TorchKde1d`` under
-        ``TorchVinedist`` --- carrying the variable type inferred from the input
-        and, for the ``{0, 1}`` dummies of an expanded unordered
-        categorical, the bounds of its support. Stored as-is and never
-        mutated: every specification is fitted on a copy.
+    margin_controls : object, or None, optional
+        How to fit each margin, in any form
+        :func:`pyvinecopulib.margins.resolve_margin_controls` accepts: one
+        :class:`pyvinecopulib.core.FitControlsMargin` broadcast to every
+        column, a sequence of length ``n_features_in_``, or a mapping keyed by
+        feature name or position. Stored as-is and never mutated. Which
+        *class* each margin is comes from ``distribution``'s ``margin_class``
+        --- ``Kde1d``, or ``TorchKde1d`` under ``TorchVinedist``. The variable
+        type inferred from the input, and the ``{0, 1}`` bounds of a dummy an
+        unordered categorical was expanded into, are filled in underneath as
+        the declaration they are.
     batch_size : int, default=100
         Number of test points to process per batch when making
         predictions. ``1`` minimizes memory at the cost of speed;
@@ -335,7 +338,7 @@ class VineBase(BaseEstimator):
     self.distribution = distribution
     self.controls = controls
     self.structure = structure
-    self.margins = margins
+    self.margin_controls = margin_controls
     self.batch_size = batch_size
     self.random_state = random_state
     self.n_jobs = n_jobs
@@ -600,156 +603,6 @@ class VineBase(BaseEstimator):
       return str(names[j])
     return f"x{j}"
 
-  def _default_margin_specs(self) -> list[MarginLike[Any]]:
-    """One unfitted kernel-density margin per column, from the schema.
-
-    This is what ``margins=None`` means, and what a column a ``margins=``
-    mapping does not address falls back to. The *class* comes from
-    ``distribution``, so a torch copula gets torch margins: fitting NumPy ones
-    onto it would put the whole distribution on two array namespaces and stop
-    every gradient at the marginal transform.
-
-    Returns
-    -------
-    list of MarginLike
-        One margin per feature, carrying the variable type and whatever bounds
-        the input told us about.
-    """
-    types = self.schema_["kde1d_types"]
-    bounds = self.schema_.get("bounds") or [None] * len(types)
-    specs = []
-    for j, (type_, bound) in enumerate(zip(types, bounds)):
-      pair = None if bound is None else (float(bound[0]), float(bound[1]))
-      try:
-        specs.append(self._default_margin(type_, pair))
-      except (ValueError, RuntimeError) as exc:
-        # The bounds come from the column's own dtype, so a margin that refuses
-        # them is a statement about that column -- most often an ordered
-        # categorical whose levels are not integers, which cannot be a discrete
-        # `Kde1d`. The margin cannot name the column; we can.
-        raise _named_for(self._column_name(j), exc) from exc
-    return specs
-
-  def _default_margin(
-    self, var_type: str, bounds: Optional[tuple[float, float]]
-  ) -> MarginLike[Any]:
-    """One unfitted margin of the distribution's own margin class.
-
-    Routed through ``_default_margins``, which is where each lane already
-    states how its margin class takes a variable type and bounds at
-    construction --- a kernel density fitted unbounded has padded past the
-    data by the time anything could tell it otherwise.
-
-    Resolved rather than read off a fitted attribute: this is an internal a
-    caller may reach before ``fit`` has pinned one, and the resolution is
-    cheap and idempotent.
-
-    Parameters
-    ----------
-    var_type : str
-        ``Kde1d``'s spelling of the variable type, as ``schema_`` carries it.
-    bounds : tuple of float, or None, optional
-        Declared support, or ``None`` where the input states none.
-
-    Returns
-    -------
-    MarginLike
-        An unfitted margin, on the distribution's own array namespace.
-    """
-    cls: type[VinedistBase[Any]] = getattr(
-      self, "distribution_class_", None
-    ) or (self.distribution or Vinedist)
-    controls = getattr(self, "controls_", None) or self.controls
-    declared = FitControlsMargin(
-      var_type=_VAR_TYPE_OF.get(var_type, var_type), support=bounds
-    )
-    margins = cls._default_margins(1, controls, [declared])
-    if margins is None:
-      raise TypeError(
-        f"{cls.__name__} names no `margin_class`, so it cannot supply the "
-        "default margin an unaddressed column needs. Pass `margins=` "
-        "explicitly, or name a `margin_class` on the distribution."
-      )
-    return margins[0]
-
-  def _declared_for(
-    self, index: Optional[int]
-  ) -> tuple[Optional[str], Optional[tuple[float, float]]]:
-    """What :attr:`schema_` knows about one feature.
-
-    ``_default_margin_specs`` only reaches the columns a ``margins=`` argument
-    leaves unaddressed, so without this a `margins="parametric"` on a frame with
-    an ordered categorical would have the margin re-infer both the type and the
-    bounds from the sample -- less than the input already stated.
-
-    Parameters
-    ----------
-    index : int, or None, optional
-        The feature's position, or ``None`` for the response.
-
-    Returns
-    -------
-    tuple
-        ``(var_type, support)``, either entry ``None`` when unknown.
-    """
-    if index is None:
-      return None, None
-    types = self.schema_["kde1d_types"]
-    var_type = _VAR_TYPE_OF.get(types[index])
-    bounds = (self.schema_.get("bounds") or [None] * len(types))[index]
-    support = None if bounds is None else (float(bounds[0]), float(bounds[1]))
-    return var_type, support
-
-  def _fit_one_margin(
-    self,
-    spec: MarginSpec,
-    column: np.ndarray,
-    name: str,
-    *,
-    index: Optional[int] = None,
-  ) -> MarginLike[Any]:
-    """Fit one column's margin.
-
-    Parameters
-    ----------
-    spec : MarginSpec
-        A specification from :func:`pyvinecopulib.margins.resolve_margins`.
-    column : ndarray, shape (n_samples,), dtype float
-        The column to fit.
-    name : str
-        The variable's name, for a selector's report.
-    index : int, or None, optional
-        Which feature this is, used to hand the margin the variable type and
-        bounds from :attr:`schema_`. ``None`` for the response, whose type the
-        estimator already constrains to continuous.
-
-    Returns
-    -------
-    MarginLike
-        The fitted margin.
-    """
-    # Fitting a margin mutates it, and `self.margins` is a constructor argument
-    # that has to survive `fit` untouched so `clone` reproduces the estimator;
-    # hence every specification is fitted on a copy of itself.
-    spec = copy.deepcopy(spec)
-    var_type, support = self._declared_for(index)
-    try:
-      margin = fit_margin(
-        spec,
-        np.asarray(column, dtype=float),
-        var_type=var_type,
-        support=support,
-      )
-    except (ValueError, RuntimeError) as exc:
-      # Whatever went wrong, the caller needs to know which column it was: the
-      # margin only ever sees one array and cannot name it. `Kde1d` refusing a
-      # non-integer discrete bound or observation is the common case, and it is
-      # reachable from an ordered categorical whose levels are not integers.
-      raise _named_for(name, exc) from exc
-    if self._needs_marginal_density:
-      self._require_density(margin, name, column)
-    return margin
-
   def _require_density(
     self, margin: MarginLike[Any], name: str, column: np.ndarray
   ) -> None:
@@ -780,31 +633,10 @@ class VineBase(BaseEstimator):
     except NotImplementedError as exc:
       raise ValueError(
         f"{type(self).__name__} needs a density on the original scale, but the "
-        f"margin for {name!r} ({type(margin).__name__}) has none: {exc}. Pass "
-        'margins="kde" (the default), or any margin that reports a density, '
-        "for that column."
+        f"margin for {name!r} ({type(margin).__name__}) has none: {exc}. Name "
+        "a `margin_class` that reports a density on the distribution passed "
+        "as `distribution=`."
       ) from exc
-
-  def _response_margin_spec(self) -> MarginSpec:
-    """The specification for the response margin.
-
-    ``margins`` addresses the features, so a per-variable form -- a sequence, or
-    a mapping over the feature names -- says nothing about the response, which
-    keeps the default. Anything that broadcasts (an alias, one margin, a
-    callable) applies to the response too, so ``margins="parametric"`` means
-    what it looks like.
-
-    Returns
-    -------
-    MarginSpec
-        One specification, not yet fitted.
-    """
-    if isinstance(self.margins, (list, tuple, dict)):
-      # Same hook as `_default_margin_specs`: without it the torch lane would
-      # give the covariates torch margins and the response a NumPy one. Under
-      # `Vinedist` this *is* `Kde1d()`.
-      return self._default_margin("continuous", None)
-    return resolve_margins(self.margins, 1)[0]
 
   @staticmethod
   def _check_response_is_continuous(margin: object) -> None:
@@ -812,9 +644,9 @@ class VineBase(BaseEstimator):
 
     The joint model orders the response first and gives it no left-limit
     column, which the prediction paths rely on. Called twice: once on the
-    specification, so a margin that declares its type up front is refused
-    before anything is fitted, and once on the fitted margin, for the
-    specifications that can only declare one afterwards.
+    unfitted margin, so a class that declares its type up front is refused
+    before anything is fitted, and once on the fitted one, for a margin that
+    has no type to declare until it has chosen a family.
 
     Parameters
     ----------
@@ -841,57 +673,177 @@ class VineBase(BaseEstimator):
       f"var_type={getattr(margin, 'var_type', 'c')!r}."
     )
 
-  def _fit_marginals(
-    self, X: np.ndarray, y: np.ndarray | None = None
-  ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
-    """
-    Fit one margin per feature column, and the response's when given.
+  def _declaration_for(
+    self, response: bool
+  ) -> tuple[list[Optional[str]], list[Any]]:
+    """What the schema knows about each variable, per variable.
+
+    The variable types and bounds inferred from the input: which columns are
+    categorical, and the ``{0, 1}`` support of a dummy an unordered one was
+    expanded into. A declaration, so it travels as ``var_types`` / ``supports``
+    rather than inside the controls.
 
     Parameters
     ----------
-    X : ndarray
-        Input features.
-    y : ndarray, or None, optional
-        Target values. If None, only X marginals are fitted.
+    response : bool
+        Whether the response leads the variable order, as it does on the
+        regressor.
 
     Returns
     -------
-    X : ndarray
-        Input features (unchanged).
-    y : ndarray, or None
-        Target values (unchanged) if provided, None otherwise.
+    tuple of list
+        One variable type and one support per variable, response first when
+        there is one.
     """
-    specs = resolve_margins(
-      self.margins,
-      self.n_model_features_,
-      names=getattr(self, "_expanded_columns", None),
-      # Lazily: building it constructs one margin per column, which can refuse
-      # a column outright, and a specification naming every column never uses
-      # it.
-      default=self._default_margin_specs,
-    )
-    y_spec = None if y is None else self._response_margin_spec()
-    if y_spec is not None:
-      self._check_response_is_continuous(y_spec)
+    types = self.schema_["kde1d_types"]
+    bounds = self.schema_.get("bounds") or [None] * len(types)
+    var_types: list[Optional[str]] = [_VAR_TYPE_OF.get(t, t) for t in types]
+    supports: list[Any] = [
+      None if b is None else (float(b[0]), float(b[1])) for b in bounds
+    ]
+    # The response is continuous by construction and declares nothing.
+    if response:
+      var_types.insert(0, None)
+      supports.insert(0, None)
+    return var_types, supports
 
-    self._x_margins = tuple(
-      self._fit_one_margin(specs[j], X[:, j], self._column_name(j), index=j)
-      for j in range(self.n_model_features_)
-    )
-    fitted = list(self._x_margins)
+  def _controls_names(self, response: bool) -> Optional[list[str]]:
+    """Variable names a ``margin_controls`` mapping may be keyed by.
 
-    if y_spec is not None:
-      self._y_margin = self._fit_one_margin(
-        y_spec, np.asarray(y, dtype=float), "y"
+    Parameters
+    ----------
+    response : bool
+        Whether the response leads the variable order.
+
+    Returns
+    -------
+    list of str, or None
+        The expanded column names, response first where there is one.
+    """
+    names = getattr(self, "_expanded_columns", None)
+    if names is None:
+      return None
+    return ["y", *names] if response else list(names)
+
+  def _fit_distribution(
+    self, data: np.ndarray, *, response: bool = False
+  ) -> None:
+    """Fit both halves and publish them, through the distribution's own fit.
+
+    The two-step (IFM) estimator lives on ``VinedistBase``; this supplies the
+    per-variable declarations the schema knows and lets the distribution run
+    it. What stays here is what the estimator knows and the base cannot: the
+    column a failure belongs to, and the refusals a particular estimator makes.
+
+    Parameters
+    ----------
+    data : ndarray, shape (n_samples, d), dtype float
+        Model-scale data, response first where there is one.
+    response : bool, default=False
+        Whether the response leads the variable order.
+
+    Returns
+    -------
+    None
+    """
+    cls = self.distribution_class_
+    names = self._controls_names(response)
+    var_types, supports = self._declaration_for(response)
+    per_variable = resolve_margin_controls(
+      self.margin_controls, len(var_types), names=names
+    )
+    self._check_margin_specs(cls, var_types, supports, response=response)
+
+    controls = self._seeded_controls(data.shape[1])
+    self.distribution_ = cls.from_data(
+      data,
+      controls,
+      margin_controls=per_variable,
+      var_types=var_types,
+      supports=supports,
+      structure=self.structure,
+      names=names,
+    )
+    self._publish_distribution(response=response)
+    if response:
+      # Again, on the fitted margin: a margin that selects its own family --
+      # an unnamed `SciPyMargin` landing on `poisson` -- has no variable type
+      # to declare until it has chosen one.
+      self._check_response_is_continuous(self.distribution_.margins[0])
+    if self._needs_marginal_density:
+      for j, margin in enumerate(self.distribution_.margins):
+        self._require_density(margin, self._name_at(j, response), data[:, j])
+
+  def _name_at(self, index: int, response: bool) -> str:
+    """The name this estimator gives one variable in a message.
+
+    Parameters
+    ----------
+    index : int
+        Position in the fitted variable order.
+    response : bool
+        Whether the response leads that order.
+
+    Returns
+    -------
+    str
+        The column's name, or ``"y"`` for the response.
+    """
+    if response:
+      return "y" if index == 0 else self._column_name(index - 1)
+    return self._column_name(index)
+
+  def _check_margin_specs(
+    self,
+    cls: type[VinedistBase[Any]],
+    var_types: list[Optional[str]],
+    supports: list[Any],
+    *,
+    response: bool,
+  ) -> None:
+    """Refuse what this estimator cannot fit, before anything is fitted.
+
+    Run on the unfitted specifications rather than on the result: a discrete
+    response would otherwise be refused only after a copula had been fitted on
+    the layout it implies, which is a different model.
+
+    Parameters
+    ----------
+    cls : type
+        The distribution class about to be fitted.
+    per_variable : list
+        One controls object per variable, response first where there is one.
+    response : bool
+        Whether the response leads the variable order.
+
+    Returns
+    -------
+    None
+    """
+    # One column at a time, so a refusal names the column it belongs to.
+    specs = cls._default_margins(len(var_types), self.controls_, None)
+    if specs is None:
+      raise TypeError(
+        f"{cls.__name__} names no `margin_class`, so it cannot fit margins "
+        "from data. Name one on the distribution passed as `distribution=`."
       )
-      self._check_response_is_continuous(self._y_margin)
-      fitted.append(self._y_margin)
+    for j, (var_type, support) in enumerate(zip(var_types, supports)):
+      try:
+        validate_declaration(var_type, support)
+      except ValueError as exc:
+        raise _named_for(self._name_at(j, response), exc) from exc
+    if not response:
+      return
+    self._check_response_is_continuous(specs[0])
+    if getattr(specs[0], "supports_covariates", False):
+      raise ValueError(
+        "VineRegressor cannot use a conditional response margin "
+        f"({type(specs[0]).__name__} declares supports_covariates): the "
+        "quadrature inverts one shared probability grid, which a margin whose "
+        "quantiles move with the covariates turns into one grid per test row."
+      )
 
-    if y is not None:
-      return X, y
-    return X
-
-  def _bind_distribution(self, margins: Sequence[MarginLike[Any]]) -> None:
+  def _publish_distribution(self, *, response: bool = False) -> None:
     """Publish the fitted vine and its margins as one distribution.
 
     The class is ``distribution``'s, so the object is on the same array
@@ -902,20 +854,22 @@ class VineBase(BaseEstimator):
 
     Parameters
     ----------
-    margins : sequence of MarginLike
-        The fitted margins, in the vine's variable order.
+    response : bool, default=False
+        Whether the response leads the variable order, as it does on the
+        regressor.
 
     Returns
     -------
     None
     """
-    self.distribution_ = self.distribution_class_(self._vine, list(margins))
     bound = self.distribution_.margins
-    if hasattr(self, "_y_margin"):
+    if response:
       self._y_margin = bound[0]
       self._x_margins = tuple(bound[1:])
     else:
       self._x_margins = tuple(bound)
+    self._vine = self.distribution_.vinecop
+    self.structure_ = self._vine.structure
     # An optional capability on `VinedistLike`, read the way the contract
     # says -- but this estimator publishes `margin_summary_`, so a
     # distribution that has none is named rather than silently summaryless.
@@ -928,6 +882,34 @@ class VineBase(BaseEstimator):
         "`margin_summary()` to the one you pass."
       )
     self.margin_summary_ = summary()
+
+  def _seeded_controls(self, d: int) -> Any:  # noqa: ANN401 - `ControlsLike`
+    """``controls_``, seeded from ``random_state`` where nothing else says.
+
+    Seeds the caller named win; ``random_state`` only fills in for a random
+    tree search that would otherwise draw from entropy.
+
+    Parameters
+    ----------
+    d : int
+        Number of variables, for the seed draw.
+
+    Returns
+    -------
+    ControlsLike
+        The controls to fit with, copied before any write.
+    """
+    del d
+    controls = self.controls_
+    if (
+      self.structure is None
+      and not getattr(controls, "seeds", None)
+      and getattr(controls, "tree_algorithm", "").startswith("random")
+    ):
+      seeded: Any = copy.copy(controls)
+      seeded.seeds = self._draw_seeds()
+      return seeded
+    return controls
 
   def _resolve_runtime_state(self) -> None:
     """Resolve the random state, the distribution class and the controls.
@@ -1020,44 +1002,6 @@ class VineBase(BaseEstimator):
         Vinedist.copula_data([self._y_margin], Z.reshape(-1, 1)), dtype=float
       )
     return to_numpy(Vinedist.copula_data(self._x_margins, Z), dtype=float)
-
-  def _fit_vine(
-    self, U: np.ndarray, var_types: list[str] | None = None
-  ) -> "VineBase":
-    """
-    Fit vine copula to pseudo-observations.
-
-    Parameters
-    ----------
-    U : ndarray
-        Pseudo-observations in [0,1]^d.
-    var_types : list, or None, optional
-        Variable types for vine fitting. If None, inferred from schema.
-
-    Returns
-    -------
-    self
-    """
-    if var_types is None:
-      var_types = Vinedist.copula_var_types(self._x_margins)
-
-    controls = self.controls_
-    # Seeds the caller named win; `random_state` only fills in for a random
-    # tree search that would otherwise draw from entropy.
-    if (
-      self.structure is None
-      and not getattr(controls, "seeds", None)
-      and getattr(controls, "tree_algorithm", "").startswith("random")
-    ):
-      seeded: Any = copy.copy(controls)
-      seeded.seeds = self._draw_seeds()
-      controls = seeded
-    vinecop_class: Any = self.distribution_class_.vinecop_class
-    self._vine = vinecop_class.from_data(
-      U, controls, structure=self.structure, var_types=var_types
-    )
-    self.structure_ = self._vine.structure
-    return self
 
   # `copula_only=True` skips the marginal-density product and returns
   # the copula factor c(u) alone; `VineDensity.pdf` exposes it directly.

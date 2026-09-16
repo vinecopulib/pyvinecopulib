@@ -187,6 +187,8 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     /,
     controls: Optional[ControlsLike] = None,
     *,
+    var_type: Optional[str] = None,
+    support: Optional[tuple[Optional[float], Optional[float]]] = None,
     x: Optional[Tensor] = None,
     weights: Optional[Tensor] = None,
   ) -> "TorchDistributionMargin":
@@ -205,6 +207,13 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
         Ignored.
     controls : ControlsLike, or None, optional
         Ignored.
+    var_type : {"c", "d", "zi"}, or None, optional
+        What the caller knows the variable to be, or ``None`` to leave it
+        to the margin. A declaration rather than fit configuration, which
+        is why it sits beside ``controls`` rather than inside it.
+    support : tuple of float, or None, optional
+        Declared bounds as ``(lo, hi)``, either end ``None`` for
+        unbounded on that side.
     x : Tensor, or None, optional
         Ignored.
     weights : Tensor, or None, optional
@@ -238,6 +247,8 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     /,
     controls: Optional[ControlsLike] = None,
     *,
+    var_type: Optional[str] = None,
+    support: Optional[tuple[Optional[float], Optional[float]]] = None,
     x: Optional[Tensor] = None,
     weights: Optional[Tensor] = None,
   ) -> "TorchDistributionMargin":
@@ -249,6 +260,13 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
         Ignored.
     controls : ControlsLike, or None, optional
         Ignored.
+    var_type : {"c", "d", "zi"}, or None, optional
+        What the caller knows the variable to be, or ``None`` to leave it
+        to the margin. A declaration rather than fit configuration, which
+        is why it sits beside ``controls`` rather than inside it.
+    support : tuple of float, or None, optional
+        Declared bounds as ``(lo, hi)``, either end ``None`` for
+        unbounded on that side.
     x : Tensor, or None, optional
         Ignored.
     weights : Tensor, or None, optional

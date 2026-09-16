@@ -11,7 +11,7 @@ contract was named after its surface so that it needs no wrapper.
 from __future__ import annotations
 
 import math
-from typing import Any, Optional, cast
+from typing import Any, Optional
 
 import numpy as np
 import pytest
@@ -421,19 +421,6 @@ def test_icdf_resolves_a_quantile_far_below_the_bracket() -> None:
   assert np.all(np.diff(got) < 0.0)
 
 
-def test_declare_is_a_no_op_that_chains() -> None:
-  """A margin fixed by construction ignores the caller's schema.
-
-  `declare` exists so a caller with schema knowledge can hand it over before
-  fitting; a margin whose type and support are settled needs nothing from it, so
-  the base implementation must accept the call and change nothing.
-  """
-  m = _ShiftedExp(rate=2.0, shift=1.0)
-  assert m.declare(var_type="d", support=(0.0, 10.0)) is m
-  assert m.var_type == "c"
-  assert m.support == (1.0, math.inf)
-
-
 def test_a_margin_places_and_checks_its_own_argument() -> None:
   """The margin level applies the two steps its siblings do.
 
@@ -505,32 +492,6 @@ def test_the_information_criteria_have_one_implementation() -> None:
   expected = criteria(float(margin.loglik(y)), 0.0, float(y.size))
   for name, value in expected.items():
     assert getattr(margin, name)(y) == pytest.approx(value)
-
-
-def test_an_array_in_the_controls_slot_is_refused_across_the_margin_level() -> (
-  None
-):
-  """`kde.fit(x, w)` is the compiled `Kde1d`'s spelling and nothing else's.
-
-  Every `MarginBase` margin reads `fit(y, controls, *, weights=...)`, so the
-  carried-over positional spelling binds the weights to `controls`, where they
-  are ignored -- an unweighted fit behind a weighted-looking call. Nothing in
-  the library passes an array there, so refusing one costs nothing.
-  """
-  rng = np.random.default_rng(0)
-  y = rng.normal(size=200)
-  w = np.linspace(0.1, 3.0, 200)
-
-  # `cast` because the wrongness is the subject: `controls` is typed
-  # `ControlsLike`, so a type-checked caller cannot reach this at all, and the
-  # guard exists for the one who is not.
-  with pytest.raises(TypeError, match="array where `controls` goes"):
-    FlatMargin().select(y, cast("ControlsLike", w))
-  # The legitimate spellings are untouched.
-  assert FlatMargin().select(y, weights=w) is not None
-  assert FlatMargin().select(y) is not None
-  # And the documented exception still reads the way its own docs say.
-  assert pv.core.Kde1d().fit(y, w) is not None
 
 
 # --------------------------------------------------------------------------- #
@@ -663,6 +624,8 @@ class _EstimatedShift(ShiftedNormalMargin):
     /,
     controls: Optional[ControlsLike] = None,
     *,
+    var_type: Optional[str] = None,
+    support: Optional[tuple[Optional[float], Optional[float]]] = None,
     x: Optional[np.ndarray] = None,
     weights: Optional[np.ndarray] = None,
   ) -> "_EstimatedShift":

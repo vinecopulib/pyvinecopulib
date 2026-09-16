@@ -1,6 +1,7 @@
 import math
 import pickle
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -54,7 +55,7 @@ def test_kde1d_answers_the_three_fitting_verbs() -> None:
   """
   y = np.random.default_rng(0).gamma(2.0, 1.0, size=300)
 
-  fitted = pv.core.Kde1d.from_data(y, xmin=0.0)
+  fitted = pv.core.Kde1d.from_data(y, support=(0.0, None))
   assert isinstance(fitted, pv.core.Kde1d)
   assert fitted.xmin == 0.0
   assert np.isfinite(fitted.loglik())
@@ -228,7 +229,7 @@ def test_kde1d_weighted_fit() -> None:
   weights = np.random.exponential(1, 50)
 
   kde = pv.core.Kde1d()
-  kde.fit(x, weights)
+  kde.fit(x, weights=weights)
 
   # Should still work and produce valid results
   assert isinstance(kde.loglik(), float)
@@ -624,9 +625,9 @@ def test_kde1d_refuses_inputs_that_leave_nothing_to_fit(
     "wrong_length": (y, np.ones(99)),
   }[bad]
   for call in (
-    lambda: pv.core.Kde1d().fit(data, weights),
-    lambda: pv.core.Kde1d().select(data, weights),
-    lambda: pv.core.Kde1d.from_data(data, weights),
+    lambda: pv.core.Kde1d().fit(data, weights=weights),
+    lambda: pv.core.Kde1d().select(data, weights=weights),
+    lambda: pv.core.Kde1d.from_data(data, weights=weights),
   ):
     with pytest.raises(ValueError, match=match):
       call()
@@ -649,7 +650,7 @@ def test_kde1d_survives_the_inputs_that_used_to_crash_it() -> None:
     "         (np.full(100, np.nan), np.ones(100)))\n"
     "for data, w in cases:\n"
     "    try:\n"
-    "        pv.core.Kde1d().fit(data, w)\n"
+    "        pv.core.Kde1d().fit(data, weights=w)\n"
     "    except ValueError:\n"
     "        pass\n"
     "try:\n"
@@ -683,6 +684,135 @@ def test_kde1d_still_accepts_the_drop_markers_it_documents() -> None:
     (y, half_zero),
     (partial_nan_data, np.ones(200)),
   ):
-    assert np.all(np.isfinite(pv.core.Kde1d().fit(data, weights).pdf(q)))
+    assert np.all(
+      np.isfinite(pv.core.Kde1d().fit(data, weights=weights).pdf(q))
+    )
   # An omitted vector is the documented "no weights" default, not all-zero.
   assert np.all(np.isfinite(pv.core.Kde1d().fit(y).pdf(q)))
+
+
+# --------------------------------------------------------------------------- #
+# The uniform estimator signature: `(y, controls, *, var_type, support,        #
+# weights)` on all three verbs, the same shape every other margin reads and    #
+# the same shape `Bicop` reads for its own declaration.                        #
+# --------------------------------------------------------------------------- #
+
+
+def test_fit_controls_kde1d_round_trips() -> None:
+  """The five kernel knobs survive `to_dict` and a pickle, as `Bicop`'s do."""
+  controls = pv.core.FitControlsKde1d(
+    multiplier=2.0,
+    bandwidth=0.25,
+    degree=1,
+    grid_size=128,
+    boundary_repair=False,
+  )
+  assert controls.to_dict() == {
+    "multiplier": 2.0,
+    "bandwidth": 0.25,
+    "degree": 1,
+    "grid_size": 128,
+    "boundary_repair": False,
+  }
+  back = pickle.loads(pickle.dumps(controls))
+  assert back.to_dict() == controls.to_dict()
+  assert pv.core.FitControlsKde1d().to_dict()["bandwidth"] is None
+
+
+@pytest.mark.parametrize(
+  ("field", "bad"),
+  [("grid_size", 2), ("degree", 3), ("multiplier", -1.0), ("bandwidth", 0.0)],
+)
+def test_fit_controls_kde1d_checks_an_assignment(
+  field: str, bad: float
+) -> None:
+  """A setter refuses what the constructor refuses, as `FitControlsBicop` does.
+
+  Otherwise the same value is an error in one spelling and a failure from
+  inside the fit in the other.
+  """
+  kwargs: dict[str, Any] = {field: bad}
+  with pytest.raises(ValueError):
+    pv.core.FitControlsKde1d(**kwargs)
+  controls = pv.core.FitControlsKde1d()
+  with pytest.raises(ValueError):
+    setattr(controls, field, bad)
+  assert controls.to_dict() == pv.core.FitControlsKde1d().to_dict()
+
+
+@pytest.mark.parametrize("verb", ["fit", "select", "from_data"])
+def test_controls_reach_the_fitted_grid(verb: str) -> None:
+  """The second positional is the controls object, and it is read.
+
+  `bandwidth` is the knob with no path at all before this: a caller could only
+  reach it by constructing the margin themselves, which is exactly what naming
+  a `margin_class` is supposed to spare them.
+  """
+  y = np.random.default_rng(0).normal(size=300)
+  controls = pv.core.FitControlsKde1d(bandwidth=0.4, grid_size=64)
+  if verb == "from_data":
+    fitted = pv.core.Kde1d.from_data(y, controls)
+  else:
+    fitted = getattr(pv.core.Kde1d(), verb)(y, controls)
+  assert fitted.bandwidth == pytest.approx(0.4)
+  assert fitted.grid_size == 64
+  assert fitted.loglik() < 0.0
+
+
+def test_the_declaration_is_keyword_only_on_every_verb() -> None:
+  """`var_type` / `support` are the caller's, exactly as `Bicop`'s `var_types`.
+
+  A declaration is not fit configuration: it says what the variable *is*, which
+  is why it travels beside `controls` rather than inside it.
+  """
+  counts = np.repeat(np.arange(5, dtype=float), [10, 20, 30, 25, 15])
+  discrete = pv.core.Kde1d.from_data(counts, var_type="d", support=(0.0, 4.0))
+  assert discrete.type == "discrete"
+  assert (discrete.xmin, discrete.xmax) == (0.0, 4.0)
+  # And the same declaration through the other two verbs.
+  assert pv.core.Kde1d().fit(counts, var_type="d").type == "discrete"
+  assert pv.core.Kde1d().select(counts, var_type="d").type == "discrete"
+
+
+def test_weights_in_the_controls_slot_are_refused() -> None:
+  """`kde.fit(y, w)` was the old spelling, and it now names the wrong thing.
+
+  It used to bind the weights to the second positional and fit them; the
+  positional is `controls` on every margin now, so carrying the old call over
+  has to fail rather than quietly fitting unweighted.
+  """
+  y = np.random.default_rng(0).normal(size=100)
+  w = np.linspace(0.1, 3.0, 100)
+  # `cast` because the wrongness is the subject: `controls` is annotated, so
+  # `ty` refuses this call outright and the guard is for the caller who runs
+  # no checker at all.
+  with pytest.raises(TypeError):
+    pv.core.Kde1d().fit(y, cast("Any", w))
+  assert pv.core.Kde1d().fit(y, weights=w).loglik() < 0.0
+
+
+def test_a_declaration_states_what_it_states_and_no_more() -> None:
+  """Declaring one thing must not discard what the object was built with.
+
+  A kernel density reads its bounds, its type and its kernel knobs when the
+  grid is built, so a fit that carries a declaration has to rebuild --- from
+  the object it was called on, not from the defaults.
+  """
+  y = np.abs(np.random.default_rng(0).normal(size=300))
+  built = pv.core.Kde1d(xmin=0.0, bandwidth=0.3, grid_size=64, degree=1)
+  built.fit(y, var_type="c")
+  assert built.xmin == 0.0
+  assert built.bandwidth == pytest.approx(0.3)
+  assert (built.grid_size, built.degree) == (64, 1)
+
+  # An automatic bandwidth stays automatic: carrying the *selected* value
+  # forward would pin a refit to the first sample the object ever saw.
+  auto = pv.core.Kde1d(xmin=0.0)
+  first = auto.fit(y).bandwidth
+  assert auto.fit(y[:80], var_type="c").bandwidth != pytest.approx(first)
+
+  # And a controls object replaces the knobs wholesale, since it names them
+  # all: that is what passing one means.
+  built.fit(y, pv.core.FitControlsKde1d(grid_size=128))
+  assert built.grid_size == 128
+  assert built.xmin == 0.0

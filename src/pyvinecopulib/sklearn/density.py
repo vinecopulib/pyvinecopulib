@@ -29,7 +29,7 @@ class VineDensity(DensityMixin, VineBase):
     distribution: Optional[type[VinedistBase[Any]]] = None,
     controls: Optional[ControlsLike] = None,
     structure: Optional[pv.RVineStructure] = None,
-    margins: object = None,
+    margin_controls: object = None,
     batch_size: int = 100,
     random_state: _RandomStateLike = None,
     n_jobs: Optional[int] = None,
@@ -49,11 +49,15 @@ class VineDensity(DensityMixin, VineBase):
         ``tll`` pair family truncated at depth 20.
     structure : RVineStructure, or None, optional
         A pre-specified vine structure; `None` selects one.
-    margins : object, or None, optional
-        The marginal half of the model, in any form
-        :func:`pyvinecopulib.margins.resolve_margins` accepts. `None`
-        fits a ``Kde1d`` per column with the variable type
-        inferred from the input.
+    margin_controls : object, or None, optional
+        How to fit each margin, in any form
+        :func:`pyvinecopulib.margins.resolve_margin_controls` accepts: one
+        :class:`pyvinecopulib.core.FitControlsMargin` broadcast to every
+        column, a sequence, or a mapping keyed by feature name or position.
+        The variable type and bounds inferred from the input are filled in
+        underneath, so a mapping addressing one column does not retype the
+        others. Which *class* each margin is comes from ``distribution``'s
+        ``margin_class``.
     batch_size : int, default=100
         Number of test points processed per batch when evaluating
         the density. Higher values trade memory for throughput.
@@ -77,7 +81,7 @@ class VineDensity(DensityMixin, VineBase):
       distribution=distribution,
       controls=controls,
       structure=structure,
-      margins=margins,
+      margin_controls=margin_controls,
       batch_size=batch_size,
       random_state=random_state,
       n_jobs=n_jobs,
@@ -104,9 +108,7 @@ class VineDensity(DensityMixin, VineBase):
     self._validate_params()
     X = self._validate_input(X, reset=True)
     self._resolve_runtime_state()
-    self._fit_marginals(X)
-    self._fit_vine(self._to_u_scale(X))
-    self._bind_distribution(self._x_margins)
+    self._fit_distribution(X)
     return self
 
   def score_samples(self, X: _XLike) -> np.ndarray:

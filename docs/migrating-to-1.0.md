@@ -93,11 +93,25 @@ which every example in this repository did -- nothing changes. The same order
 holds on `BicopBase`, `VinecopBase`, `VinedistBase` and their PyTorch
 subclasses; `MarginBase` and the margin classes already read this way.
 
-The one exception is `Kde1d` itself, whose second positional
-argument is `weights`. It takes no controls object at all, so there is nothing
-to confuse it with, and `kde.fit(x, w)` keeps working. That is specific to that
-class: every `MarginBase` margin, `TorchKde1d` included, reads
-`fit(y, controls, *, weights=...)` like the rest, so spell `weights=` there.
+There is no exception, and `Kde1d` used to be one. Its second positional
+argument was `weights`, on the grounds that it took no controls object at all;
+it takes one now, so `kde.fit(x, w)` raises rather than fitting unweighted
+behind a weighted-looking call.
+
+```python
+# before
+kde.fit(x, w)
+kde.fit(x)                     # kernel knobs only at construction
+
+# now
+kde.fit(y, weights=w)
+kde.fit(y, FitControlsKde1d(bandwidth=0.4))
+```
+
+The observations are `y`, not `x`, on `fit` / `select` / `from_data`, because
+`x` means exogenous covariates everywhere else in the Python API. The
+evaluation methods (`pdf`, `cdf`, `icdf`, ...) still name theirs `x`; that
+rename belongs upstream in `lib/kde1d` and has not happened yet.
 
 ## Some arguments are keyword-only
 
@@ -178,11 +192,14 @@ still resolves and warns; `utils.Kde1d` never shipped in a release and is gone.
 | --- | --- |
 | `kde.quantile(p)` | `kde.icdf(p)` — no alias |
 | `kde.loglik` (property) | `kde.loglik()` — a method taking optional data |
+| `kde.fit(x, w)` | `kde.fit(y, controls, *, weights=w)` |
 | `pyvinecopulib.Kde1d` | `pyvinecopulib.core.Kde1d` |
 
 `icdf` is the name modern SciPy and `torch.distributions` use for the inverse
 distribution function, and `loglik()` now matches `Bicop.loglik` /
-`Vinecop.loglik`.
+`Vinecop.loglik`. The kernel knobs `Kde1d`'s constructor takes are also a
+`FitControlsKde1d`, so a margin the library builds for you can be configured
+per variable; see the argument-order section above.
 
 ## Python 3.10 is no longer supported
 

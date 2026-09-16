@@ -275,6 +275,37 @@ class VinecopBase(
   """
 
   # --- layout installed by _bind_vine (hooks / state) ------------------- #
+  #: Variable names, when something knew them. A class attribute so a
+  #: subclass that writes its own constructor still has one.
+  _var_names: Optional[list[str]] = None
+
+  @property
+  def var_names(self) -> Optional[list[str]]:
+    """Variable names, in variable order, or ``None`` where none are known.
+
+    Carried rather than derived: a fit from a named frame knows them, and
+    everything that reports a variable -- a plot's labels, the column an error
+    names -- would otherwise fall back to an integer index.
+
+    Returns
+    -------
+    list of str, or None
+        One name per variable.
+    """
+    return self._var_names
+
+  @var_names.setter
+  def var_names(self, value: Optional[Sequence[str]]) -> None:
+    if value is None:
+      self._var_names = None
+      return
+    names = [str(v) for v in value]
+    if len(names) != self.d:
+      raise ValueError(
+        f"var_names has length {len(names)}, but there are {self.d} variables"
+      )
+    self._var_names = names
+
   @property
   def structure(self) -> RVineStructure:
     """The R-vine structure this vine is bound to.
@@ -1731,6 +1762,8 @@ class VinecopBase(
     layout: str = "graphviz",
     vars_names: Optional[list[str]] = None,
   ) -> None:
+    if vars_names is None:
+      vars_names = self.var_names
     vinecop_plot(self, tree, add_edge_labels, layout, vars_names)
 
   def __repr__(self) -> str:

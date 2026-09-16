@@ -12,6 +12,9 @@ import numpy as np
 import pytest
 
 pytest.importorskip("sklearn")
+pytest.importorskip("pandas")
+
+import pandas as pd
 
 import pyvinecopulib as pv
 from sklearn.utils._param_validation import (
@@ -21,6 +24,16 @@ from sklearn.utils._param_validation import (
 from pyvinecopulib.core import VinecopLike
 from pyvinecopulib.core import Vinedist
 from pyvinecopulib.sklearn import VineDensity, VineRegressor
+
+
+def _default_margin_of(est: Any) -> Any:
+  """The margin one column gets: what `distribution`'s `margin_class` builds."""
+  cls = est.distribution or Vinedist
+  # Through `_default_margins`, not the class directly: the torch lane reads
+  # its placement off the *copula* controls.
+  built = cls._default_margins(1, est.controls, [None])
+  assert built is not None
+  return built[0]
 
 
 # ---------------------------------------------------------------------------
@@ -135,10 +148,7 @@ class TestDefaultMargin:
   """
 
   def test_the_default_lane_gives_a_numpy_kde(self) -> None:
-    margin = VineDensity()._default_margin("discrete", (0.0, 4.0))
-    assert isinstance(margin, pv.core.Kde1d)
-    assert margin.support == (0.0, 4.0)
-    assert margin.var_type == "d"
+    assert isinstance(_default_margin_of(VineDensity()), pv.core.Kde1d)
 
   def test_the_torch_lane_gives_a_torch_kde(self) -> None:
     torch = pytest.importorskip("torch")
@@ -146,19 +156,42 @@ class TestDefaultMargin:
     from pyvinecopulib.torch import FitControlsTorchVinecop, TorchKde1d
 
     est = VineDensity(distribution=TorchVinedist)
-    margin = est._default_margin("discrete", (0.0, 4.0))
-    assert isinstance(margin, TorchKde1d)
-    assert margin.support == (0.0, 4.0)
-    assert margin.var_type == "d"
+    assert isinstance(_default_margin_of(est), TorchKde1d)
 
     # Precision follows the copula's, or a float32 vine would carry float64
     # margins.
-    single = VineDensity(
-      distribution=TorchVinedist,
-      controls=FitControlsTorchVinecop(dtype=torch.float32),
-    )._default_margin("continuous", None)
-    grid: Any = single
+    grid: Any = _default_margin_of(
+      VineDensity(
+        distribution=TorchVinedist,
+        controls=FitControlsTorchVinecop(dtype=torch.float32),
+      )
+    )
     assert grid.grid_points.dtype is torch.float32
+
+  @pytest.mark.parametrize("lane", ["numpy", "torch"])
+  def test_the_declaration_reaches_the_margin_the_lane_built(
+    self, lane: str
+  ) -> None:
+    """A declaration is not what `_default_margins` builds; it is what `fit`
+    hands the margin it built, on either lane."""
+    distribution = None
+    if lane == "torch":
+      pytest.importorskip("torch")
+      from pyvinecopulib.torch import TorchVinedist
+
+      distribution = TorchVinedist
+    rng = np.random.default_rng(0)
+    frame = pd.DataFrame(
+      {
+        "count": rng.integers(0, 5, size=200).astype(float),
+        "value": rng.normal(size=200),
+      }
+    )
+    frame["count"] = pd.Categorical(frame["count"], ordered=True)
+    est = VineDensity(distribution=distribution, random_state=0).fit(frame)
+    declared: Any = est.distribution_.margins[0]
+    assert declared.var_type == "d"
+    assert declared.support == (0.0, 4.0)
 
   def test_the_estimators_fit_what_the_distribution_named(self) -> None:
     X = np.random.default_rng(0).multivariate_normal(
@@ -172,15 +205,14 @@ class TestDefaultMargin:
     from pyvinecopulib.torch import TorchVinedist
     from pyvinecopulib.torch import TorchKde1d
 
-    # A per-column `margins=` says nothing about the response, so it takes the
-    # distribution's default -- which must be that, not a hardcoded `Kde1d`,
-    # or the regressor would mix namespaces.
-    est = VineRegressor(
-      distribution=TorchVinedist,
-      margins=[TorchKde1d(), TorchKde1d()],
-      random_state=0,
-    )
-    assert isinstance(est._response_margin_spec(), TorchKde1d)
+    # The response is variable zero of the joint fit, so it takes the
+    # distribution's own `margin_class` like every other column -- not a
+    # hardcoded `Kde1d`, which would mix namespaces.
+    rng = np.random.default_rng(0)
+    X = rng.multivariate_normal([0.0, 0.0], [[1.0, 0.6], [0.6, 1.0]], 200)
+    y = X @ [1.0, -0.5] + 0.3 * rng.standard_normal(200)
+    est = VineRegressor(distribution=TorchVinedist, random_state=0).fit(X, y)
+    assert isinstance(est.distribution_.margins[0], TorchKde1d)
 
 
 class TestTorchDistribution:
@@ -249,24 +281,24 @@ class TestTorchDistribution:
           float(grad[k]), (up - down) / (2 * h), rtol=2e-4, atol=1e-8
         )
 
-  def test_margins_from_the_kde_alias_are_lifted(self) -> None:
-    pytest.importorskip("torch")
+  def test_a_core_kde_margin_is_lifted(self) -> None:
+    torch = pytest.importorskip("torch")
     from pyvinecopulib.torch import TorchKde1d, TorchVinedist
 
     X = self._data()
-    # `margins="kde"` resolves to the core `Kde1d`, so `TorchVinedist` has to
-    # lift it -- otherwise a spec that names the default explicitly would raise
-    # where `margins=None` works.
-    est = VineDensity(
-      distribution=TorchVinedist, margins="kde", random_state=0
-    ).fit(X)
-    assert isinstance(est.distribution_, TorchVinedist)
-    assert all(isinstance(m, TorchKde1d) for m in est.distribution_.margins)
-    # The lift is exact, so the estimator sees the same density either way.
-    ref = VineDensity(
-      distribution=TorchVinedist, random_state=0, margins=None
-    ).fit(X)
-    np.testing.assert_allclose(est.pdf(X[:20]), ref.pdf(X[:20]), rtol=1e-12)
+    # A core `Kde1d` handed to the torch lane is lifted rather than refused,
+    # so composing a distribution from margins fitted on the NumPy lane works.
+    est = VineDensity(distribution=TorchVinedist, random_state=0).fit(X)
+    core_margins = [pv.core.Kde1d().fit(X[:, j]) for j in range(X.shape[1])]
+    lifted = TorchVinedist(est.distribution_.vinecop, core_margins)
+    assert all(isinstance(m, TorchKde1d) for m in lifted.margins)
+    # The lift is exact, so the density is the same either way.
+    one: Any = lifted.margins[0]
+    np.testing.assert_allclose(
+      np.asarray(one.pdf(torch.as_tensor(X[:5, 0]))),
+      np.asarray(core_margins[0].pdf(X[:5, 0])),
+      rtol=1e-12,
+    )
 
   def test_the_estimator_re_reads_the_lifted_margins(self) -> None:
     pytest.importorskip("torch")
@@ -274,10 +306,8 @@ class TestTorchDistribution:
     from pyvinecopulib.torch import TorchKde1d
 
     X = self._data()
-    est = VineDensity(
-      distribution=TorchVinedist, margins="kde", random_state=0
-    ).fit(X)
-    # `_to_u_scale` reads the estimator's own margins; if the lift left two
+    est = VineDensity(distribution=TorchVinedist, random_state=0).fit(X)
+    # `_to_u_scale` reads the estimator's own margins; if the bind left two
     # copies behind they would be the unlifted ones.
     assert all(isinstance(m, TorchKde1d) for m in est._x_margins)
     u = est._to_u_scale(X[:10])

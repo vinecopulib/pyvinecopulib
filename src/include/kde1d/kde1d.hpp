@@ -68,14 +68,80 @@ boundary_repair :
 
 // Factory function to create a Kde1d from xmin, xmax, type string, multiplier,
 // bandwidth, degree
+// The observations, then `controls`, then keyword-only whatever the object
+// cannot infer -- the argument order every estimator in the package takes. A
+// variable's type and bounds are a declaration, so they are keyword-only, as
+// `var_types` is on `Bicop.from_data`.
+//
 // `fit` and `select` are the same call: a kernel density has no family to
 // choose. `from_data` cannot share this, because it builds its `Kde1d` by
 // value and the deduced `Kde1d&` return would dangle.
-inline Kde1d& kde1d_fit(Kde1d& self, const Eigen::VectorXd& x,
-                        const Eigen::VectorXd& weights) {
+inline std::string kde1d_type_of(const std::optional<std::string>& var_type) {
+  if (!var_type.has_value()) return "continuous";
+  const std::string& t = *var_type;
+  if (t == "d" || t == "discrete") return "discrete";
+  if (t == "zi" || t == "zero-inflated" || t == "zero_inflated") {
+    return "zero-inflated";
+  }
+  if (t == "c" || t == "continuous") return "continuous";
+  throw std::invalid_argument("var_type=" + t +
+                              " is not one of ['c', 'd', 'zi']");
+}
+
+// A fresh `Kde1d` carrying what the controls configure and the declaration
+// states. Both halves reach it at construction because that is the only place
+// a kernel density can read them: the grid is built by the fit.
+//
+// `base` supplies whatever the call leaves unsaid, so a declaration states
+// what it states and no more -- `Kde1d(bandwidth=0.3).fit(y, var_type="d")`
+// keeps the bandwidth. `get_bandwidth_spec` rather than `get_bandwidth`: the
+// latter is the value the previous fit *selected*, and carrying that forward
+// would pin an automatic bandwidth to the first sample it saw.
+inline Kde1d kde1d_configured(
+    const Kde1d& base, const FitControlsKde1d* controls,
+    const std::optional<std::string>& var_type,
+    const std::optional<
+        std::tuple<std::optional<double>, std::optional<double>>>& support) {
+  double xmin = base.get_xmin();
+  double xmax = base.get_xmax();
+  if (support.has_value()) {
+    const auto& [lo, hi] = *support;
+    xmin = lo.has_value() ? *lo : NAN;
+    xmax = hi.has_value() ? *hi : NAN;
+  }
+  const std::string type =
+      var_type.has_value() ? kde1d_type_of(var_type) : base.get_type_str();
+  if (controls == nullptr) {
+    return Kde1d(xmin, xmax, type, base.get_multiplier(),
+                 base.get_bandwidth_spec(), base.get_degree(),
+                 base.get_grid_size(), base.get_boundary_repair());
+  }
+  return Kde1d(xmin, xmax, type, controls->multiplier,
+               controls->bandwidth_or_nan(), controls->degree,
+               controls->grid_size, controls->boundary_repair);
+}
+
+inline Kde1d& kde1d_fit(
+    Kde1d& self, const Eigen::VectorXd& y, const FitControlsKde1d* controls,
+    const std::optional<std::string>& var_type,
+    const std::optional<
+        std::tuple<std::optional<double>, std::optional<double>>>& support,
+    const std::optional<Eigen::VectorXd>& weights) {
+  // A declaration or a controls object means the grid has to be rebuilt: both
+  // are read at construction, so re-estimating in place would silently keep
+  // what the object was built with.
+  if (controls != nullptr || var_type.has_value() || support.has_value()) {
+    Kde1d rebuilt = kde1d_configured(self, controls, var_type, support);
+    {
+      nb::gil_scoped_release release;
+      rebuilt.fit(y, weights.value_or(Eigen::VectorXd()));
+    }
+    self = std::move(rebuilt);
+    return self;
+  }
   {
     nb::gil_scoped_release release;
-    self.fit(x, weights);
+    self.fit(y, weights.value_or(Eigen::VectorXd()));
   }
   return self;
 }
@@ -450,18 +516,76 @@ inline void init_kde1d(nb::module_& module) {
                        "Effective degrees of freedom, under the margin layer's "
                        "name for a parameter count. See also ``edf``.")
 
-          // Methods — auto-extracted from `lib/kde1d` upstream `//!` comments.
+          // Methods — auto-extracted from `lib/kde1d` upstream `//!` comments,
+          // except the three fitting verbs: their signature is this binding's
+          // own, carrying a `controls` object and a declaration that
+          // `Kde1d::fit` has no parameters for, so no upstream comment can
+          // describe them.
           // Returns `self` so a fit chains, as it does on every Python
           // estimator. The GIL is released around the fit itself rather than by
           // a call guard, because handing back the object needs it.
-          .def("fit", &kde1d_fit, "x"_a, "weights"_a = Eigen::VectorXd(),
-               kde1d_doc.fit.doc, nb::rv_policy::reference_internal)
+          .def("fit", &kde1d_fit, "y"_a,
+               "controls"_a.sig("FitControlsKde1d()") = nb::none(),
+               nb::kw_only(), "var_type"_a = nb::none(),
+               "support"_a = nb::none(), "weights"_a = nb::none(),
+               "Estimate the density from data, in place.\n"
+               "\n"
+               "Observations that are ``NaN`` are dropped, as are those whose "
+               "weight is\n"
+               "``NaN`` or zero; the weights are rescaled to average one, so "
+               "only their\n"
+               "relative sizes matter. A ``controls`` object or a declaration "
+               "rebuilds the\n"
+               "grid, since a kernel density reads both when it is "
+               "constructed; what\n"
+               "neither states is kept from this object.\n"
+               "\n"
+               "Parameters\n"
+               "----------\n"
+               "y : array, shape (n,), dtype float\n"
+               "    Observations.\n"
+               "\n"
+               "controls : FitControlsKde1d, or None, optional\n"
+               "    Fit configuration.\n"
+               "\n"
+               "var_type : {\"c\", \"d\", \"zi\"}, or None, optional\n"
+               "    The variable's type.\n"
+               "\n"
+               "support : tuple of float, or None, optional\n"
+               "    Bounds of the support, either end `None` for unbounded.\n"
+               "\n"
+               "weights : array, shape (n,), dtype float, optional\n"
+               "    Observation weights.\n"
+               "\n"
+               "Returns\n"
+               "-------\n"
+               "Kde1d\n"
+               "    ``self``, so the call chains.\n"
+               "\n"
+               "Raises\n"
+               "------\n"
+               "ValueError\n"
+               "    If ``y`` is empty, if ``weights`` has a different length "
+               "or holds an\n"
+               "    infinite or negative value, if the drops above leave no "
+               "observation\n"
+               "    standing, if the variable is discrete and an observation "
+               "is not an\n"
+               "    integer, or if an observation lies outside the declared "
+               "bounds -- for a\n"
+               "    zero-inflated variable, any nonzero observation.\n"
+               "RuntimeError\n"
+               "    If the discrete masses cannot be normalized.",
+               nb::rv_policy::reference_internal)
           // `select` and `from_data` complete the fitting surface every
           // other margin has. A kernel density has no family to choose, so
           // `select` reduces to `fit` -- the equivalence upstream states for
           // `Bicop::select` with `select_families = false`.
           .def(
-              "select", &kde1d_fit, "x"_a, "weights"_a = Eigen::VectorXd(),
+              "select", &kde1d_fit, "y"_a,
+              "controls"_a.sig("FitControlsKde1d()") = nb::none(),
+              nb::kw_only(), "var_type"_a = nb::none(),
+              "support"_a = nb::none(), "weights"_a = nb::none(),
               "Fit the density; there is no family to select.\n"
               "\n"
               "A kernel density is determined by its parameters, so choosing "
@@ -471,8 +595,17 @@ inline void init_kde1d(nb::module_& module) {
               "\n"
               "Parameters\n"
               "----------\n"
-              "x : array, shape (n,), dtype float\n"
+              "y : array, shape (n,), dtype float\n"
               "    Observations.\n"
+              "\n"
+              "controls : FitControlsKde1d, or None, optional\n"
+              "    Fit configuration.\n"
+              "\n"
+              "var_type : {\"c\", \"d\", \"zi\"}, or None, optional\n"
+              "    The variable's type.\n"
+              "\n"
+              "support : tuple of float, or None, optional\n"
+              "    Bounds of the support, either end `None` for unbounded.\n"
               "\n"
               "weights : array, shape (n,), dtype float, optional\n"
               "    Observation weights.\n"
@@ -484,40 +617,43 @@ inline void init_kde1d(nb::module_& module) {
               nb::rv_policy::reference_internal)
           .def_static(
               "from_data",
-              [](const Eigen::VectorXd& x, const Eigen::VectorXd& weights,
-                 std::optional<double> xmin, std::optional<double> xmax,
-                 const std::string& type) {
-                Kde1d kde(xmin.value_or(NAN), xmax.value_or(NAN), type);
+              [](const Eigen::VectorXd& y, const FitControlsKde1d* controls,
+                 const std::optional<std::string>& var_type,
+                 const std::optional<std::tuple<
+                     std::optional<double>, std::optional<double>>>& support,
+                 const std::optional<Eigen::VectorXd>& weights) {
+                Kde1d kde =
+                    kde1d_configured(Kde1d{}, controls, var_type, support);
                 {
                   nb::gil_scoped_release release;
-                  kde.fit(x, weights);
+                  kde.fit(y, weights.value_or(Eigen::VectorXd()));
                 }
                 return kde;
               },
-              "x"_a, "weights"_a = Eigen::VectorXd(), "xmin"_a = std::nullopt,
-              "xmax"_a = std::nullopt, "type"_a = "continuous",
+              "y"_a, "controls"_a.sig("FitControlsKde1d()") = nb::none(),
+              nb::kw_only(), "var_type"_a = nb::none(),
+              "support"_a = nb::none(), "weights"_a = nb::none(),
               "Construct a margin and fit it to data.\n"
               "\n"
-              "``Kde1d(...).fit(x)`` in one call, the factory every other\n"
+              "``Kde1d(...).fit(y)`` in one call, the factory every other\n"
               "margin in the package provides.\n"
               "\n"
               "Parameters\n"
               "----------\n"
-              "x : array, shape (n,), dtype float\n"
+              "y : array, shape (n,), dtype float\n"
               "    Observations.\n"
+              "\n"
+              "controls : FitControlsKde1d, or None, optional\n"
+              "    Fit configuration.\n"
+              "\n"
+              "var_type : {\"c\", \"d\", \"zi\"}, or None, optional\n"
+              "    The variable's type.\n"
+              "\n"
+              "support : tuple of float, or None, optional\n"
+              "    Bounds of the support, either end `None` for unbounded.\n"
               "\n"
               "weights : array, shape (n,), dtype float, optional\n"
               "    Observation weights.\n"
-              "\n"
-              "xmin : float, optional\n"
-              "    Lower bound of the support.\n"
-              "\n"
-              "xmax : float, optional\n"
-              "    Upper bound of the support.\n"
-              "\n"
-              "type : str, optional\n"
-              "    ``\"continuous\"``, ``\"discrete\"`` or "
-              "``\"zero-inflated\"``.\n"
               "\n"
               "Returns\n"
               "-------\n"

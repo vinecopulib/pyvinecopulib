@@ -51,6 +51,12 @@ def normal_sample() -> np.ndarray:
 # --- marshaling ------------------------------------------------------------ #
 
 
+class OTVinedist(Vinedist):
+  """A `Vinedist` whose margins are OpenTURNS families."""
+
+  margin_class = OpenTURNSMargin
+
+
 def test_as_margin_matches_openturns_own_values() -> None:
   """`pdf` / `cdf` / `icdf` agree with OpenTURNS point by point."""
   dist = openturns.Normal(1.0, 2.0)
@@ -260,11 +266,11 @@ def test_select_honors_a_declared_variable_type(
   """Caller schema wins over the integer-valued-data heuristic."""
   families = ["Normal", "Poisson"]
   as_counts = OpenTURNSMargin().select(
-    count_sample, FitControlsMargin(family_set=families, var_type="d")
+    count_sample, FitControlsMargin(family_set=families), var_type="d"
   )
   assert (as_counts.family_name, as_counts.var_type) == ("Poisson", "d")
   as_continuous = OpenTURNSMargin().select(
-    count_sample, FitControlsMargin(family_set=families, var_type="c")
+    count_sample, FitControlsMargin(family_set=families), var_type="c"
   )
   assert (as_continuous.family_name, as_continuous.var_type) == ("Normal", "c")
 
@@ -280,7 +286,7 @@ def test_select_never_compares_masses_against_densities(
   """
   with pytest.raises(ValueError, match="not comparable") as refusal:
     OpenTURNSMargin().select(
-      count_sample, FitControlsMargin(family_set=["Normal"], var_type="d")
+      count_sample, FitControlsMargin(family_set=["Normal"]), var_type="d"
     )
   assert "Normal" in str(refusal.value)
 
@@ -294,9 +300,8 @@ def test_select_names_every_refused_candidate(
   ) as refused:
     OpenTURNSMargin().select(
       count_sample,
-      FitControlsMargin(
-        family_set=["Bernoulli", "Dirac", "Geometric"], var_type="d"
-      ),
+      FitControlsMargin(family_set=["Bernoulli", "Dirac", "Geometric"]),
+      var_type="d",
     )
   message = str(refused.value)
   # Poisson(4) counts are neither 0/1 nor constant nor strictly positive, so
@@ -322,15 +327,13 @@ def test_the_declared_type_survives_the_fallback() -> None:
   )
   substituted = "kernel-density margin was substituted"
   with pytest.warns(UserWarning, match=substituted):
-    dist = Vinedist.from_data(
+    dist = OTVinedist.from_data(
       y,
-      margins=OpenTURNSMargin(),
       margin_controls={
-        0: FitControlsMargin(
-          family_set=["Normal"], var_type="d", on_failure="fallback"
-        ),
+        0: FitControlsMargin(family_set=["Normal"], on_failure="fallback"),
         1: FitControlsMargin(family_set=["Normal"]),
       },
+      var_types=["d", "c"],
     )
   margins: tuple[Any, ...] = dist.margins
   # The declared type survives the substitution: the counts keep their atoms.
@@ -381,7 +384,9 @@ def test_one_instance_broadcasts_across_every_column() -> None:
   noticed, because the margin suite and the vinedist suite were written apart.
   """
   y = np.random.default_rng(0).normal(size=(150, 3))
-  dist = Vinedist.from_data(y, margins=OpenTURNSMargin("Normal"))
+  dist = OTVinedist.from_data(
+    y, margin_controls=FitControlsMargin(family_set=["Normal"])
+  )
 
   assert [type(m).__name__ for m in dist.margins] == ["OpenTURNSMargin"] * 3
   # Independent objects, not three references to the one that was passed in.

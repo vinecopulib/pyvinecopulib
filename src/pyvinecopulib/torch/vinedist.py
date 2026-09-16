@@ -33,7 +33,6 @@ from ..core import (
   VinecopLike,
   VinedistBase,
 )
-from ..core._margins import declared_kde_kwargs
 from ._placement import TensorPlacementMixin, reference_tensor
 from .controls import FitControlsTorchVinecop
 from .kde1d import TorchKde1d
@@ -205,6 +204,37 @@ class TorchVinedist(
     torch.nn.Module.__init__(self)
     self._bind_dist(vinecop, margins)
 
+  @classmethod
+  def _adopt_margin(
+    cls, margin: object, reference: Tensor
+  ) -> MarginLike[Tensor]:
+    """Lift a ``Kde1d`` onto this lane, and refuse what cannot be lifted.
+
+    Parameters
+    ----------
+    margin : object
+        The margin to adopt.
+    reference : Tensor, shape (n,), dtype float
+        The column it was fitted on, whose device and dtype it takes.
+
+    Returns
+    -------
+    MarginLike
+        The lifted margin.
+
+    Raises
+    ------
+    TypeError
+        If the margin is no ``nn.Module``, so this lane cannot hold it.
+    """
+    lifted: object = margin
+    if isinstance(margin, Kde1d):
+      lifted = TorchKde1d.from_kde1d(
+        margin, device=reference.device, dtype=reference.dtype
+      )
+    _check_margin(lifted, "margin")
+    return cast("MarginLike[Tensor]", lifted)
+
   def _bind_dist(
     self,
     vinecop: object,
@@ -242,9 +272,12 @@ class TorchVinedist(
     registered = cast("list[torch.nn.Module]", list(margins))
     self._margins = cast("Any", torch.nn.ModuleList(registered))
 
-  # The vine copula this route fits; the margins need a placement, so
-  # `_default_margins` is overridden rather than declared.
   vinecop_class: ClassVar[Optional[type]] = TorchVinecop
+
+  #: The margin this route fits. `_default_margins` is still overridden: the
+  #: placement comes from the *copula* controls, which no per-variable margin
+  #: controls object carries.
+  margin_class: ClassVar[Optional[type]] = TorchKde1d
 
   #: The torch TLL fitter and the tree criterion are both unweighted, so a
   #: weighted request is refused rather than applied to the margins alone.
@@ -303,10 +336,8 @@ class TorchVinedist(
     placement: dict[str, Any] = {"device": resolved.device}
     if resolved.dtype is not None:
       placement["dtype"] = resolved.dtype
-    per_variable = margin_controls or [None] * d
-    return [
-      TorchKde1d(**placement, **declared_kde_kwargs(mc)) for mc in per_variable
-    ]
+    del margin_controls
+    return [TorchKde1d(**placement) for _ in range(d)]
 
   @classmethod
   def _copula_controls(

@@ -22,13 +22,15 @@ whose parameters are given at construction is already fitted.
   ``Gamma`` and ``LogNormal`` are supported; discrete Torch distributions are
   rejected because they do not expose the left-limit cdf a vine needs.
 
-- **Resolution** — :func:`resolve_margins` expands a ``margins=`` argument
-  (an alias, one margin, a sequence, a mapping, or a callable) into one
-  specification per variable, and :func:`resolve_margin_controls` does the same
-  for ``margin_controls=``. The two are complementary: ``margins`` says which
-  class each variable gets, and :class:`~pyvinecopulib.core.FitControlsMargin` says how to fit or
-  select it — so one call can bound the two variables whose bounds are known
-  and leave the rest alone.
+- **Resolution** — :func:`resolve_margin_controls` expands a
+  ``margin_controls=`` argument (one controls object, a sequence, or a mapping
+  keyed by name or position) into one
+  :class:`~pyvinecopulib.core.FitControlsMargin` per variable, so one call can
+  bound the search on the variables that need it and leave the rest alone.
+  Which *class* each variable gets is the distribution's ``margin_class``, and
+  what the caller knows about a variable -- its type and its bounds -- is a
+  declaration, passed as ``var_types=`` / ``supports=`` rather than as
+  configuration.
 
 Custom margins subclass :class:`pyvinecopulib.core.MarginBase`, which needs only
 ``pdf`` and ``cdf``; a custom *distribution* to put them in subclasses
@@ -47,7 +49,7 @@ from ..core._margins import as_margin, register_margin_adapter
 # adapter with `as_margin`, and it imports OpenTURNS itself only when used.
 from .openturns import OpenTURNSMargin
 from ..core.margin_controls import FitControlsMargin
-from ..core._margins import resolve_margin_controls, resolve_margins
+from ..core._margins import resolve_margin_controls
 from .scipy import SciPyMargin
 
 __all__ = [
@@ -56,6 +58,5 @@ __all__ = [
   "SciPyMargin",
   "as_margin",
   "resolve_margin_controls",
-  "resolve_margins",
   "register_margin_adapter",
 ]

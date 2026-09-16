@@ -285,7 +285,7 @@ def test_weights_change_the_fit() -> None:
   )
   # And they agree with the compiled fit on the same weights.
   reference = Kde1d()
-  reference.fit(y, w)
+  reference.fit(y, weights=w)
   np.testing.assert_allclose(
     weighted.values.numpy(),
     np.asarray(reference.values),

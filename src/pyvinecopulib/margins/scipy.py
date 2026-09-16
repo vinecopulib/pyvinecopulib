@@ -26,9 +26,9 @@ from ..core._margins import register_margin_json
 from ..core import ControlsLike, MarginBase, MarginLike
 from ..core._validation import (
   extra_required,
-  reject_array_controls,
   reject_covariates,
   usable_observations,
+  validate_declaration,
 )
 from ..core.margin_base import criteria as _criteria
 from ..core.margin_controls import FitControlsMargin
@@ -589,11 +589,11 @@ class SciPyMargin(MarginBase[np.ndarray]):
     self._params: Optional[tuple[float, ...]] = None
     self._loglik: Optional[float] = None
 
-  def declare(
+  def _record_declaration(
     self,
     *,
     var_type: Optional[str] = None,
-    support: Optional[tuple[float, float]] = None,
+    support: Optional[tuple[Optional[float], Optional[float]]] = None,
   ) -> Self:
     """Take the declared support as well as the type.
 
@@ -615,7 +615,8 @@ class SciPyMargin(MarginBase[np.ndarray]):
     SciPyMargin
         ``self``, so the call chains into :meth:`select`.
     """
-    super().declare(var_type=var_type)
+    if var_type is not None:
+      self._declared_var_type = "d" if var_type == "zi" else var_type
     if support is not None:
       lo, hi = support
       if (
@@ -635,6 +636,8 @@ class SciPyMargin(MarginBase[np.ndarray]):
     /,
     controls: Optional[ControlsLike] = None,
     *,
+    var_type: Optional[str] = None,
+    support: Optional[tuple[Optional[float], Optional[float]]] = None,
     x: Optional[np.ndarray] = None,
     weights: Optional[np.ndarray] = None,
   ) -> Self:
@@ -665,6 +668,13 @@ class SciPyMargin(MarginBase[np.ndarray]):
         ``selection_criterion`` scores them, ``var_type`` and ``support`` say
         what the caller knows, and ``on_failure`` decides what an
         all-candidates-failed variable does.
+    var_type : {"c", "d", "zi"}, or None, optional
+        What the caller knows the variable to be, or ``None`` to leave it
+        to the margin. A declaration rather than fit configuration, which
+        is why it sits beside ``controls`` rather than inside it.
+    support : tuple of float, or None, optional
+        Declared bounds as ``(lo, hi)``, either end ``None`` for
+        unbounded on that side.
     x : array, shape (n, p), or None, optional
         Not supported; passing covariates raises rather than silently
         selecting an unconditional margin.
@@ -689,7 +699,6 @@ class SciPyMargin(MarginBase[np.ndarray]):
     fit : Estimate a named family, leaving the family alone.
     aic : Score the chosen fit.
     """
-    reject_array_controls(self, controls)
     reject_covariates(self, x)
     if weights is not None:
       raise TypeError(
@@ -700,16 +709,16 @@ class SciPyMargin(MarginBase[np.ndarray]):
     settings = controls if controls is not None else FitControlsMargin()
     criterion = getattr(settings, "selection_criterion", "aic")
     family_set = getattr(settings, "family_set", None)
-    self.declare(
-      var_type=getattr(settings, "var_type", None),
-      support=getattr(settings, "support", None),
-    )
+    var_type, support = validate_declaration(var_type, support)
+    self._record_declaration(var_type=var_type, support=support)
     if self._family is not None and family_set is None:
       # Naming a family *is* the choice, so there is nothing left to select and
       # the base contract applies: reduce to `fit`. Replacing it silently would
       # answer a specification with a different model. A caller who does want
       # the search back asks for it by name, with `family_set`.
-      return self.fit(y, x=x, weights=weights)
+      return self.fit(
+        y, var_type=var_type, support=support, x=x, weights=weights
+      )
 
     data = usable_observations(
       np.asarray(y, dtype=float), name="SciPyMargin.select's y"
@@ -1082,6 +1091,8 @@ class SciPyMargin(MarginBase[np.ndarray]):
     /,
     controls: Optional[ControlsLike] = None,
     *,
+    var_type: Optional[str] = None,
+    support: Optional[tuple[Optional[float], Optional[float]]] = None,
     x: Optional[np.ndarray] = None,
     weights: Optional[np.ndarray] = None,
   ) -> Self:
@@ -1094,6 +1105,13 @@ class SciPyMargin(MarginBase[np.ndarray]):
     controls : ControlsLike, or None, optional
         Unused; the family is fixed here, so there is nothing to configure.
         A search over families is :meth:`select`.
+    var_type : {"c", "d", "zi"}, or None, optional
+        What the caller knows the variable to be, or ``None`` to leave it
+        to the margin. A declaration rather than fit configuration, which
+        is why it sits beside ``controls`` rather than inside it.
+    support : tuple of float, or None, optional
+        Declared bounds as ``(lo, hi)``, either end ``None`` for
+        unbounded on that side.
     x : array, shape (n, p), or None, optional
         Not supported; passing covariates raises rather than silently
         fitting an unconditional margin.
@@ -1113,13 +1131,12 @@ class SciPyMargin(MarginBase[np.ndarray]):
         If no observation survives, or a free discrete parameter has no search
         bound.
     """
-    reject_array_controls(self, controls)
     reject_covariates(self, x)
     if self._family is None:
       # `RuntimeError`, as the property readers use for the same missing
-      # state -- and not `ValueError`, which `fit_margin`'s
-      # `on_failure="fallback"` catches: a margin with no family is a misuse,
-      # not a variable no family fits.
+      # state -- and not `ValueError`, which `on_failure="fallback"` catches
+      # to substitute a margin: a margin with no family is a misuse, not a
+      # variable no family fits.
       raise RuntimeError(
         "SciPyMargin() has no family yet; name one at construction, or call "
         "select(y) to choose from the candidate set"

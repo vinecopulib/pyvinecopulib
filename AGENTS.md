@@ -193,9 +193,10 @@ it, there is no entry to write.
   `pyvinecopulib.margins` layer on top of it: `Kde1d` *is* the
   nonparametric margin, `SciPyMargin` the parametric one — named, it fits
   that family; unnamed, `select` chooses one by AIC / BIC / AICc over a
-  curated candidate set — plus `FitControlsMargin` to configure either, and
-  an adapter registry (`as_margin` / `register_margin_adapter`) that accepts
-  a SciPy or PyTorch distribution object as a margin.
+  curated candidate set — plus `FitControlsMargin` to configure either and
+  `FitControlsKde1d` for the kernel knobs, and an adapter registry
+  (`as_margin` / `register_margin_adapter`) that accepts a SciPy or PyTorch
+  distribution object as a margin.
 - **Vine distributions** — `Vinedist`: any `VinecopLike` combined with
   one margin per variable, giving `pdf` / `logpdf` / `cdf` / `loglik` /
   `sample` / `sample_conditional` / `rosenblatt` /
@@ -286,6 +287,7 @@ pyvinecopulib/
     include/                     # binding-side C++ headers
       pyvinecopulib.hpp          # init_* declarations
       bicop/, vinecop/, kde1d/, misc/   # per-topic binding headers
+      kde1d/controls.hpp         # FitControlsKde1d — the one type defined here, not upstream
       docstr.hpp                 # AUTO-GENERATED via scripts/generate_docstring.py (gitignored)
 
     pyvinecopulib/
@@ -301,7 +303,7 @@ pyvinecopulib/
         margin_base.py           # MarginBase (canonical MarginLike partial impl)
         vinedist_base.py         # VinedistBase (array-agnostic cascade + IFM fit)
         vinedist.py              # Vinedist (NumPy + compiled Vinecop)
-        margin_controls.py       # FitControlsMargin (the marginal half of a fit)
+        margin_controls.py       # FitControlsMargin (the family search a margin runs)
         _covariates.py           # the two `x`-forwarding rules + `prepare_covariates`
         _vinecop_discrete.py     # the discrete layouts / per-edge types
         _vinecop_fit_engines.py  # fit_parts / select_parts — the two fit engines (internal)
@@ -688,9 +690,12 @@ For any behavior change:
   `fit` bound a controls object as a structure: a `TypeError` from the binding
   and an `AttributeError` naming `dim` from the Python lane. The rule is worth
   more than the two characters it costs at a call site, and the changelog
-  claimed it before the code did. The one exception is the compiled
-  `Kde1d`, whose second positional is `weights`: it takes no controls at all,
-  so there is nothing to confuse it with, and it is on a Stable-ish surface.
+  claimed it before the code did. There is **no** exception: `Kde1d` used to be
+  one -- its second positional was `weights`, on the grounds that it took no
+  controls at all -- and `#339` gave it `FitControlsKde1d` and the same
+  `(y, controls)` every other margin reads. What the exception actually cost
+  was a validator (`reject_array_controls`) whose whole job was catching the
+  carried-over `kde.fit(y, w)` at six call sites.
 - **Bind alternative constructors as named factories, not overloads.** C++
   overloads a constructor; Python names it. Every alternative way to build an
   object is a `def_static` — `Bicop.from_family` / `from_data` / `from_file` /
@@ -783,13 +788,15 @@ the reason written beside it — not something a stray import can do quietly.
 
 - **Tier 1 depends on no optional extra and on nothing above it.** That is
   what makes `import pyvinecopulib` work with nothing but NumPy installed,
-  and most of the rules below follow from it. **One** function-local import
-  reaches up into `margins`, and it is the documented exception: `"parametric"`
-  is a string `core`'s own `resolve_margins` accepts, so `core` has to resolve
-  it to `SciPyMargin`, which it can *name* but not *contain* because that needs
-  the SciPy extra. Deferring the import is the only way to have both. A second
-  needs an argument of the same kind — a `core` API whose contract names the
-  class — and not merely the same shape: everything an extension point can
+  and most of the rules below follow from it. **No** import reaches up into
+  `margins`, at module scope or inside a function. There used to be one, and
+  what it resolved is why it is gone: `margins="parametric"` was a string
+  `core` accepted and had to turn into `SciPyMargin`, a class it can *name*
+  but not *contain* because that needs the SciPy extra. `#339` deleted the
+  argument rather than the deferral — a caller names the class as a
+  `margin_class`, which is their own import. A new such import needs an
+  argument of the same kind, a `core` API whose contract names a class behind
+  an extra, and not merely the same shape: everything an extension point can
   carry is registered by the module that owns the class instead.
 - **Within tier 2 there is exactly one edge.** `sklearn` imports `margins`
   at module scope (both need no extra of `sklearn`'s own). It does **not**
@@ -879,6 +886,16 @@ Behavior and API changes belong upstream. The Python repo only:
 
 Cloning requires `--recursive` (see README); CI does this
 automatically.
+
+**`src/include/` may define a C++ type of its own, and one does.**
+`src/include/kde1d/controls.hpp` declares `FitControlsKde1d`, which exists
+nowhere upstream: `lib/kde1d`'s own API takes the kernel knobs as constructor
+arguments and needs no struct. What the struct is for is **Python API shape** --
+one controls object per class, so `Kde1d` reads `(y, controls)` like every
+other estimator here -- which is this repo's concern and not upstream's.
+That is the test for a second one: binding-side shape, not behavior. Anything
+a C++ caller would want belongs upstream, where it also gets upstream's
+tests.
 
 ### `pyvinecopulib_ext` (the nanobind extension)
 
@@ -1126,12 +1143,16 @@ automatically.
     `MarginBase.icdf` on an infinite support.
 - **The marginal layer.** `MarginLike[ArrayT]` (`protocols.py`) is
   `{pdf, cdf, icdf}` and declares no attributes, the same discipline as
-  `BicopLike`. **`x` means exogenous covariates everywhere in the
-  Python API, and the compiled `Kde1d` is the one settled exception**: its
-  bindings name the observations `x` and `icdf`'s argument — a probability —
-  `x` too. That is `lib/kde1d`'s long-standing convention and it **stays**;
-  the Python API diverges here on purpose, so do not "fix" the binding and do
-  not raise it again. The divergence is contained by design rather than by
+  `BicopLike`. **`x` means exogenous covariates everywhere in the Python API,
+  with no exception.** `Kde1d` was one: `lib/kde1d` names the observations `x`
+  and `icdf`'s argument — a probability — `x` too, and the binding carried both
+  through. `#339` renamed the three *fitting* verbs, whose signatures it writes
+  itself, to `(y, controls, *, var_type, support, weights)`. The evaluation
+  verbs (`pdf`, `cdf`, `logpdf`, `cdf_left`, `loglik`, `icdf`) still read `x` /
+  `x`, and renaming them is an **upstream** change: their docstrings are lifted
+  verbatim from `lib/kde1d`, so a local rename would document one name and bind
+  another. Fix it there and bump the pin; do not patch `src/include/**`.
+  Nothing in the library depends on either spelling, by design rather than by
   luck: the protocol makes the observations **positional-only** for exactly
   this reason, and `declared_eval` calls every margin method positionally, so
   the argument name is never used as a keyword. `pdf` means *the density with respect to the margin's own
@@ -1142,7 +1163,7 @@ automatically.
   likelihood path. `MarginBase` (`margin_base.py`) needs only `pdf` /
   `cdf` and supplies `icdf` (bisection), `logpdf`, `cdf_left`, `loglik`,
   `sample`, `plot`, `var_type`, `support`, `is_fitted`, the `nobs` /
-  `n_parameters` a criterion penalizes against, `declare` and a raising `fit`.
+  `n_parameters` a criterion penalizes against, and a raising `fit`.
   `plot` draws the density or the distribution function of any of the three
   variable types, on the `BicopBase.plot` pattern -- the grid is manufactured
   from nothing, so it is placed through `_prep`, and one covariate row is a
@@ -1192,15 +1213,13 @@ The two ecosystem adapters, kept out of `core` because they are the only part
 that needs an extra. The **contract internals live in `core`**, which own the
 half a `Vinedist` fit runs on: `MarginLike` / `MarginBase`, `FitControlsMargin`
 (`core/margin_controls.py`) and everything in `core/_margins.py` -- the two
-registries, the `margins=` resolution and `fit_margin`. None of those needs
+registries and the `margin_controls=` resolution. None of those needs
 SciPy -- they
 import stdlib, NumPy and `core` -- and putting them here had `core` reaching
 *up* a layer at ten sites, three of them into a private module of a package
 above it, all deferred to hide the cycle. `pyvinecopulib.margins` re-exports
 them, so its documented surface is unchanged and it stays where a user looks
-for margins. One function-local `core` -> `margins` import remains and is
-irreducible: resolving the `"parametric"` string alias, which `core`'s own
-`resolve_margins` accepts, to a class behind an extra.
+for margins. No `core` -> `margins` import remains, deferred or otherwise.
 
 Three groups:
 
@@ -1239,7 +1258,7 @@ Three groups:
   `margin_controls.py` and `independence.py` carry no underscore because each
   is one public thing, while `core/_vinecop_discrete.py`, `core/_margins.py`,
   `core/_placement.py` and `core/_covariates.py` keep theirs
-  even though `as_margin`, `resolve_margins`, the
+  even though `as_margin`, `resolve_margin_controls`, the
   `margin_*_json` helpers and the five `core.extend` names they hold are
   public -- the
   internal layout helpers, the two registry tables, the per-ecosystem
@@ -1261,27 +1280,41 @@ Three groups:
   what forced `core` to name a class from every extra, and a `core` -> `torch`
   edge that `tests/test_import_surface.py` refuses outright. The one exception
   is `Kde1d`, which `core` owns and can therefore name.
-- **Resolution** — `resolve_margins(spec, ...)` mirrors
-  `resolve_margin_controls`: a string alias, one instance broadcast per column,
-  a length-`d` sequence, or a dict keyed by column. Margins follow the
-  library's own **construct-then-`fit`** pattern (`fit` returns `self`),
-  so one class is both the specification and the fitted object, and a
-  spec may freely mix already-fitted margins with unfitted ones —
-  `from_data` fits only the latter.
-- **Configuration** — `FitControlsMargin` is the marginal half of a
-  `Vinedist` fit, and `resolve_margin_controls` expands `margin_controls=`
-  by the *same four shapes* `margins=` accepts. The two are complementary:
-  `margins` says which class each variable gets, controls say how to fit or
-  select it, so one call can bound the two variables with known bounds and
-  leave the rest alone. A declared `var_type` / `support` is a **default**,
-  not an instruction — a margin the caller constructed keeps what it was
-  built with — except where the library is the one constructing the margin,
-  which is what makes a bounded `Kde1d` reachable without naming a class
-  (`VinedistBase._margin_from_controls`). A margin that cannot honor a
-  `family_set` **refuses** it rather than fitting one family and looking
-  like it chose; whether controls are forwarded at all is the declared
+- **Which class a variable gets is the distribution's `margin_class`**, not a
+  per-call argument. `#339` deleted `margins=` from `VinedistBase` and from the
+  estimators: one class per distribution is what `vinecop_class` already meant
+  on the copula half, and a caller who wants another margin subclasses or
+  composes rather than re-specifying it at every call. `_default_margins` is
+  the hook a lane overrides where its margins need something no controls object
+  carries — on the torch lane, the device and dtype the *copula* controls name.
+  Margins still follow the library's **construct-then-`fit`** pattern (`fit`
+  returns `self`), so one class is both the specification and the fitted
+  object, and a margin with no `fit` of its own is *fixed*: the loop leaves it
+  as it is instead of substituting one it can estimate.
+- **Configuration** — `FitControlsMargin` is the marginal half of a `Vinedist`
+  fit, and `resolve_margin_controls` expands `margin_controls=` four ways: one
+  object broadcast per variable, a length-`d` sequence, or a mapping keyed by
+  position or by name. It carries `family_set` / `selection_criterion` /
+  `on_failure` and nothing else: **the declaration is not fit configuration**.
+  What a variable *is* — its `var_type` and its `support` — travels keyword-only
+  beside the controls, exactly as `var_types` does on `Bicop.from_data`, one
+  entry per variable on `VinedistBase.from_data(y, controls, *, var_types=,
+  supports=)`. That split is what retired `MarginBase.declare` and the three
+  helpers that existed to move a declaration out of a controls object and into
+  a constructor. A declaration is still a **default**, not an instruction — a
+  margin the caller constructed keeps what it was built with — and it is what
+  makes a bounded `Kde1d` reachable without naming a class. A margin that
+  cannot honor a `family_set` **refuses** it rather than fitting one family and
+  looking like it chose; whether controls are forwarded at all is the declared
   `supports_controls`, because nanobind reports every bound signature as
   `(*args, **kwargs)` and introspection cannot answer it.
+- **The kernel knobs are `FitControlsKde1d`**, a separate type rather than
+  fields on `FitControlsMargin`: `multiplier` / `bandwidth` / `degree` /
+  `grid_size` / `boundary_repair` configure a kernel density, and a family
+  search has no use for any of them. `ControlsLike` already unifies the two --
+  it asks only for `to_dict()`, which is how one signature accepts both
+  `FitControlsVinecop` and `FitControlsTorchVinecop` -- so there is no
+  hierarchy to build and no field either type has to ignore.
 
 Conventions that bind: the fit is **two-step (IFM)** — margins first,
 then the copula on the resulting pseudo-observations — never fit all of
@@ -1292,9 +1325,9 @@ rejection is reported with its reason, and a column where everything fails
 substitutes `Kde1d` with one warning instead -- available, but not the
 default, because answering a parametric request nonparametrically is the
 same class of silent downgrade the weights contract already refuses. The
-substitution happens in `fit_margin`, not in the margin: a `SciPyMargin`
-would have to stop being parametric to make it, so the decision belongs to
-whatever chooses which margin a column gets.
+substitution happens in `VinedistBase._fit_margin`, not in the margin: a
+`SciPyMargin` would have to stop being parametric to make it, so the decision
+belongs to whatever chooses which margin a column gets.
 
 There is **no structured selection report**. The copula layer's
 answer to the same question is `show_trace` printing to stdout, and margins
@@ -1395,10 +1428,10 @@ num_threads=...)` directly and convert at their public boundary with
 `core.extend.to_numpy(..., dtype=float)`, because `np.asarray` alone raises on
 a tensor that requires grad or lives on an accelerator.
 
-`TorchVinedist` lifts a `Kde1d` margin to `TorchKde1d` rather than refusing it
-(which is what makes `margins="kde"` behave like `margins=None` there) while
-still refusing anything else that is no `nn.Module`: the lift is exact and
-core's own class, whereas a SciPy margin would detach the graph silently.
+`TorchVinedist` lifts a `Kde1d` margin to `TorchKde1d` rather than refusing it,
+while still refusing anything else that is no `nn.Module`: the lift is exact
+and core's own class, whereas a SciPy margin would detach the graph silently.
+It is what lets the `on_failure="fallback"` substitution land on this lane.
 
 #### Estimator conventions (scikit-learn developer guide)
 
@@ -1629,7 +1662,8 @@ below are a quick orientation.
 
 - **`pyvinecopulib.core`** — `Bicop`, `Vinecop`, `Kde1d`, `RVineStructure`,
   `CVineStructure`, `DVineStructure`, `BicopFamily`, `FitControlsBicop`,
-  `FitControlsVinecop`, `FitControlsMargin`; plus the array-agnostic
+  `FitControlsVinecop`, `FitControlsMargin`, `FitControlsKde1d`; plus the
+  array-agnostic
   abstraction layer
   `BicopLike`, `VinecopLike`, `BicopBase`, `VinecopBase`, `ControlsLike`,
   `IndependenceBicop`, `ConditioningContext`,
@@ -1674,7 +1708,7 @@ below are a quick orientation.
   `pairs_copula_data`.
 - **`pyvinecopulib.margins`** — `SciPyMargin`, `OpenTURNSMargin`,
   `FitControlsMargin`, `as_margin`, `register_margin_adapter`,
-  `resolve_margins`, `resolve_margin_controls`.
+  `resolve_margin_controls`.
 - **`pyvinecopulib.sklearn`** — `VineDensity`, `VineRegressor`.
 - **`pyvinecopulib.torch`** — `TorchTllBicop`, `TorchVinecop`, `TorchKde1d`,
   `TorchDistributionMargin`, `TorchVinedist`, `FitControlsTorchBicop`,
@@ -1861,12 +1895,15 @@ Round-trip / parity properties to preserve when touching numerics:
 
 - **Custom margins (`pyvinecopulib.core`).** Subclass `MarginBase` and
   define `pdf` / `cdf`; `icdf`, `logpdf`, `cdf_left`, `loglik`,
-  `sample`, `plot`, `support`, `nobs`, `n_parameters` and `declare` come with
-  it --
+  `sample`, `plot`, `support`, `nobs` and `n_parameters` come with it --
   a fit records the first two into the `_nobs` / `_n_free` slots the base
-  owns, so the criteria work without a subclass restating them. Add `fit(y, weights=None) ->
-  Self` to make it an estimator, or leave it out for a fixed margin —
-  `is_fitted` is what `resolve_margins` dispatches on. Override
+  owns, so the criteria work without a subclass restating them. Add
+  `fit(y, controls=None, *, var_type=None, support=None, x=None,
+  weights=None) -> Self` to make it an estimator, or leave it out for a fixed
+  margin — whether the class overrides `MarginBase.fit` is what a vine
+  distribution's margin loop dispatches on, `is_fitted` being the wrong test
+  (a fitted margin that *is* refittable must be re-estimated by `fit` and
+  `select`). Override
   `cdf_left` whenever the family has an exact left limit (Poisson's
   `gammaincc(k, μ)`, a categorical's `cumsum(probs)[k-1]`): the derived
   `cdf(x) - pdf(x)` cancels in the right tail and `cdf(x - 1)` is
@@ -1898,7 +1935,28 @@ Round-trip / parity properties to preserve when touching numerics:
   base for that reason: the inherited `_copula_controls` cannot weight the
   copula, so a lane declares the capability together with the override that
   honors it. Declaring one a lane cannot honor is what produces a half-applied
-  fit, so the request is refused up front instead.
+  fit, so the request is refused up front instead. The margin half has one
+  hook of the same kind, `_adopt_margin`: the identity on the base, and on the
+  torch lane the lift a `Kde1d` gets before it can join the others. It is
+  reached only where the base *substitutes* a margin mid-fit
+  (`on_failure="fallback"`), which is before `_bind_dist` runs and therefore
+  before the lift that happens there -- and the copula-scale layout is
+  assembled from the columns the margins return, so a substitute on another
+  namespace would not stack with the rest.
+- **The margin half fits the same way the copula half does.**
+  `_default_margins` builds one margin per variable -- the hook a lane
+  overrides to place them -- and `_fit_margin` calls that margin's own `fit` or
+  `select` as `estimator(y, controls, ...)`, beside `_reestimate_copula`'s
+  `estimator(u, resolved, ...)`. What it adds around that call is the three
+  decisions a margin cannot make about itself: whether it is *fixed* (it
+  overrides neither verb, so there is nothing to re-estimate), whether a
+  request it cannot honor was made (`weights` it cannot use, a `family_set` it
+  cannot search), and which margin the column gets when its own estimator
+  raises. Two tempting shortcuts for the first are both wrong: `is_fitted`,
+  because a fitted `SciPyMargin` must be re-estimated, and `fit` alone,
+  because a margin that chooses between *kinds* of model overrides `select`
+  and leaves `fit` raising. Whether the verb asked for is one the margin has
+  is the verb's own to report.
 - **`from_data` constructs the copula; `fit` and `select` re-estimate the one
   already held.** `_fit_copula` builds `vinecop_class` and is the *construction*
   path only; `fit` / `select` go through `_reestimate_copula`, which calls the
@@ -1908,7 +1966,11 @@ Round-trip / parity properties to preserve when touching numerics:
   exactly as a margin keeps its family. Building a fresh `vinecop_class` in
   `fit` silently replaced the caller's vine with the default one, which is the
   defect that established the split; a copula with no `fit` now reports that
-  instead of being swapped.
+  instead of being swapped. One thing neither verb may change is **which
+  variables have atoms**: the held copula carries its own `var_types` and has
+  no way to be told new ones, so a margin that gained or lost atoms in the
+  refit is refused by name, pointing at `from_data`, rather than reaching the
+  copula as a layout of the wrong width.
 - **`supports_fit_covariates` is a lane-level "anything at all", not "both
   halves".** A conditional `Vinedist` is one whose *margins* read `x`: the
   compiled `Vinecop` models no covariates and takes no `x` argument, so the

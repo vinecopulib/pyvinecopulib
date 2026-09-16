@@ -275,45 +275,45 @@ def reject_covariates(
     )
 
 
-def reject_array_controls(part: object, controls: object) -> None:
-  """Raise if an array landed in the ``controls`` slot.
+def validate_declaration(
+  var_type: Optional[str],
+  support: Optional[tuple[Optional[float], Optional[float]]],
+) -> tuple[Optional[str], Optional[tuple[Optional[float], Optional[float]]]]:
+  """Check and normalize what a caller declared about one variable.
 
-  Every estimator in the package takes the observations, then ``controls``.
-  ``Kde1d`` is the documented exception -- its second positional argument is
-  ``weights`` -- so ``kde.fit(x, w)`` is a spelling a reader carries over, and
-  on any other margin it binds the weights to ``controls``, where they are
-  ignored: an unweighted fit under a weighted-looking call.
-
-  Nothing in the library passes an array here, so refusing one costs nothing
-  and turns that typo into a message naming the keyword to use.
+  The declaration a margin's ``fit`` / ``select`` / ``from_data`` takes
+  keyword-only, checked in one place so every margin refuses the same things
+  with the same message.
 
   Parameters
   ----------
-  part : object
-      The margin being fitted; named in the message. Either the instance or
-      the class, so a classmethod may pass ``cls``.
-  controls : object
-      Whatever arrived in the controls slot.
+  var_type : {"c", "d", "zi"}, or None, optional
+      The variable's type, or ``None`` to leave it to the margin.
+  support : tuple of float, or None, optional
+      Declared bounds as ``(lo, hi)``, either end ``None`` for unbounded.
 
   Returns
   -------
-  None
+  tuple
+      The pair, with ``support`` normalized to a 2-tuple.
 
   Raises
   ------
-  TypeError
-      If ``controls`` looks like an array rather than a configuration object.
+  ValueError
+      If ``var_type`` is not one of the accepted values, or ``support`` is not
+      an increasing pair.
   """
-  if controls is None or hasattr(controls, "to_dict"):
-    return
-  if not any(hasattr(controls, name) for name in ("shape", "__array__")):
-    return
-  named = part if isinstance(part, type) else type(part)
-  raise TypeError(
-    f"{named.__name__} received an array where `controls` goes. Observation "
-    "weights are the keyword-only `weights=`; `Kde1d` is the one class whose "
-    "second positional argument is `weights`."
-  )
+  if var_type is not None and var_type not in ("c", "d", "zi"):
+    raise ValueError(f"var_type={var_type!r} is not one of ['c', 'd', 'zi']")
+  if support is None:
+    return var_type, None
+  bounds = tuple(support)
+  if len(bounds) != 2:
+    raise ValueError(f"support must be a (lo, hi) pair; got {bounds!r}")
+  lo, hi = bounds
+  if lo is not None and hi is not None and not lo < hi:
+    raise ValueError(f"support={bounds!r} is not an increasing interval")
+  return var_type, (lo, hi)
 
 
 @contextlib.contextmanager

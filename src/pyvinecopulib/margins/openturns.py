@@ -27,9 +27,9 @@ from ..core._margins import register_margin_adapter, register_margin_json
 from ..core import ControlsLike, MarginBase, MarginLike
 from ..core._validation import (
   extra_required,
-  reject_array_controls,
   reject_covariates,
   usable_observations,
+  validate_declaration,
 )
 from ..core.margin_controls import CRITERIA, FitControlsMargin
 
@@ -586,6 +586,8 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     /,
     controls: Optional[ControlsLike] = None,
     *,
+    var_type: Optional[str] = None,
+    support: Optional[tuple[Optional[float], Optional[float]]] = None,
     x: Optional[np.ndarray] = None,
     weights: Optional[np.ndarray] = None,
   ) -> Self:
@@ -598,6 +600,13 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     controls : ControlsLike, or None, optional
         Unused; this margin's family is named at construction, so there is
         nothing left to configure.
+    var_type : {"c", "d", "zi"}, or None, optional
+        What the caller knows the variable to be, or ``None`` to leave it
+        to the margin. A declaration rather than fit configuration, which
+        is why it sits beside ``controls`` rather than inside it.
+    support : tuple of float, or None, optional
+        Declared bounds as ``(lo, hi)``, either end ``None`` for
+        unbounded on that side.
     x : array, shape (n, p), or None, optional
         Not supported; passing covariates raises rather than silently
         fitting an unconditional margin.
@@ -617,7 +626,6 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     ValueError
         If no observation survives.
     """
-    reject_array_controls(self, controls)
     reject_covariates(self, x)
     if weights is not None:
       raise TypeError(
@@ -652,6 +660,8 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     /,
     controls: Optional[ControlsLike] = None,
     *,
+    var_type: Optional[str] = None,
+    support: Optional[tuple[Optional[float], Optional[float]]] = None,
     x: Optional[np.ndarray] = None,
     weights: Optional[np.ndarray] = None,
   ) -> Self:
@@ -678,6 +688,13 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
         registry to search. ``support`` is ignored: the registries are
         partitioned by variable type rather than by support, so bounds do not
         narrow them.
+    var_type : {"c", "d", "zi"}, or None, optional
+        What the caller knows the variable to be, or ``None`` to leave it
+        to the margin. A declaration rather than fit configuration, which
+        is why it sits beside ``controls`` rather than inside it.
+    support : tuple of float, or None, optional
+        Declared bounds as ``(lo, hi)``, either end ``None`` for
+        unbounded on that side.
     x : array, shape (n, p), or None, optional
         Not supported; passing covariates raises rather than silently
         selecting an unconditional margin.
@@ -713,7 +730,6 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
         )
         chosen.family_name
     """
-    reject_array_controls(self, controls)
     reject_covariates(self, x)
     if weights is not None:
       raise TypeError(
@@ -723,7 +739,9 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     settings = controls if controls is not None else FitControlsMargin()
     criterion = getattr(settings, "selection_criterion", "aic")
     family_set = getattr(settings, "family_set", None)
-    self.declare(var_type=getattr(settings, "var_type", None))
+    var_type, support = validate_declaration(var_type, support)
+    if var_type is not None:
+      self._declared_var_type = "d" if var_type == "zi" else var_type
     if not self._unnamed and family_set is None:
       # Naming a family *is* the choice, so there is nothing left to select and
       # the base contract applies: reduce to `fit`. Replacing it silently would
