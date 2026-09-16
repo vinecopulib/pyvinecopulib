@@ -515,7 +515,9 @@ def test_a_private_import_outside_src_names_this_package() -> None:
           continue
         if module.startswith("__"):
           continue
-        foreign[module] = str(path.relative_to(root))
+        # `as_posix`, not `str`: the allowlist keys are written with
+        # forward slashes and Windows would report `tests\helpers.py`.
+        foreign[module] = path.relative_to(root).as_posix()
   assert foreign == _THIRD_PARTY_PRIVATES, (
     "a private import of another package appeared outside `src/`; add it to "
     "`_THIRD_PARTY_PRIVATES` with the reason no public name exists, or use "
