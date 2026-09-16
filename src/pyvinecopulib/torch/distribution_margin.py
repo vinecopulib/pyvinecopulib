@@ -30,14 +30,10 @@ TorchVinedist : The joint distribution these margins go into.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable, Mapping
 from typing import (
   Any,
-  Callable,
   ClassVar,
-  Iterable,
-  Mapping,
-  Optional,
-  Union,
   cast,
 )
 
@@ -46,13 +42,14 @@ from torch import Tensor
 from torch.distributions import Distribution
 
 from ..core import ControlsLike, MarginBase
+from ..core._margins import register_margin_json
 from ..core.margin_base import support_of
 from ._placement import reference_tensor
 
 __all__ = ["TorchDistributionMargin"]
 
 #: Accepted spellings of the ``parameters`` argument: anything ``dict`` takes.
-ParameterSpec = Union[Mapping[str, Any], Iterable[tuple[str, Any]]]
+ParameterSpec = Mapping[str, Any] | Iterable[tuple[str, Any]]
 
 
 def _implements(distribution: Distribution, name: str) -> bool:
@@ -194,13 +191,13 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     self,
     y: Tensor,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    var_type: Optional[str] = None,
-    support: Optional[tuple[Optional[float], Optional[float]]] = None,
-    x: Optional[Tensor] = None,
-    weights: Optional[Tensor] = None,
-  ) -> "TorchDistributionMargin":
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+    x: Tensor | None = None,
+    weights: Tensor | None = None,
+  ) -> TorchDistributionMargin:
     """Raise: this margin's parameters are given, not estimated here.
 
     The inherited default says "implement it", which is advice for a subclass
@@ -254,13 +251,13 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     cls,
     y: Tensor,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    var_type: Optional[str] = None,
-    support: Optional[tuple[Optional[float], Optional[float]]] = None,
-    x: Optional[Tensor] = None,
-    weights: Optional[Tensor] = None,
-  ) -> "TorchDistributionMargin":
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+    x: Tensor | None = None,
+    weights: Tensor | None = None,
+  ) -> TorchDistributionMargin:
     """Raise: there is no family to estimate from data. See :meth:`fit`.
 
     Parameters
@@ -307,7 +304,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     parameters: ParameterSpec = (),
     *,
     trainable: bool = True,
-    validate_args: Optional[bool] = None,
+    validate_args: bool | None = None,
     device: torch.types.Device = None,
     dtype: torch.dtype = torch.float64,
   ) -> None:
@@ -367,7 +364,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     trainable: bool = True,
     device: torch.types.Device = None,
     dtype: torch.dtype = torch.float64,
-  ) -> "TorchDistributionMargin":
+  ) -> TorchDistributionMargin:
     """Lift an already-constructed ``torch.distributions`` object.
 
     The family and the names of its parameters are read off the object, and the
@@ -488,7 +485,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
   @classmethod
   def from_json_payload(
     cls, payload: dict[str, Any]
-  ) -> "TorchDistributionMargin":
+  ) -> TorchDistributionMargin:
     """Rebuild a margin from the payload :meth:`to_json` produced.
 
     Parameters
@@ -539,7 +536,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
   # is what makes a `family_set` a refusal rather than a silently ignored
   # request, the same reason `TorchKde1d` declares it. A plain comment, not a
   # `#:` one: autosummary cannot page an attribute whose value is a class.
-  controls_class: ClassVar[Optional[type]] = None
+  controls_class: ClassVar[type | None] = None
 
   @property
   def n_parameters(self) -> float:
@@ -594,7 +591,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     """
     return self.distribution.log_prob(y).exp()
 
-  def logpdf(self, y: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
+  def logpdf(self, y: Tensor, *, x: Tensor | None = None) -> Tensor:
     """Log-density of the margin.
 
     Finite far into the tails, where ``pdf`` itself underflows to zero.
@@ -613,7 +610,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     """
     return self.distribution.log_prob(y)
 
-  def log_prob(self, y: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
+  def log_prob(self, y: Tensor, *, x: Tensor | None = None) -> Tensor:
     """The ``torch.distributions`` spelling of ``logpdf``.
 
     Parameters
@@ -645,7 +642,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     """
     return self.distribution.cdf(y)
 
-  def icdf(self, p: Tensor, *, x: Optional[Tensor] = None) -> Tensor:
+  def icdf(self, p: Tensor, *, x: Tensor | None = None) -> Tensor:
     """Inverse distribution function of the margin.
 
     The family's own ``icdf`` where it has one, and otherwise ``cdf`` inverted
@@ -679,7 +676,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     # untyped and has re-signed across releases.
     *args: Any,  # noqa: ANN401
     **kwargs: Any,  # noqa: ANN401
-  ) -> "TorchDistributionMargin":
+  ) -> TorchDistributionMargin:
     """Keep the fallback placement current across a ``.to()``.
 
     A factory that closes over its own parameters registers none, so the
@@ -709,7 +706,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
   def _sample_uniform(self, n: int, seeds: list[int]) -> Tensor:
     """Draw ``n`` uniforms on the registered tensors' dtype/device."""
     ref = self._ref_tensor()
-    generator: Optional[torch.Generator] = None
+    generator: torch.Generator | None = None
     if seeds:
       generator = torch.Generator(device=ref.device).manual_seed(int(seeds[0]))
     return torch.rand(
@@ -729,3 +726,10 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
       for name in self._parameter_names
     )
     return f"{type(self).__name__}({self.family_name}({body}))"
+
+
+# `core` holds the registry and names no ecosystem, so the module that
+# owns the class is the one that teaches `margin_from_json` to rebuild it.
+register_margin_json(
+  "TorchDistributionMargin", TorchDistributionMargin.from_json_payload
+)

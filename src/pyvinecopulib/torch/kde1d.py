@@ -20,22 +20,23 @@ improvement on it.
 from __future__ import annotations
 
 import math
-from typing import Any, ClassVar, Optional, cast
+from typing import Any, ClassVar, cast
 
 import torch
 from torch import Tensor
 
 from ..core import ControlsLike, Kde1d, MarginBase
+from ..core._margins import register_margin_json
 from ..core._validation import (
-  validate_declaration,
   reject_covariates,
+  validate_declaration,
   validate_univariate,
   validate_weights,
 )
 from . import _margin_kde1d_interp as interp
 
 
-def _bound(value: Optional[float], unbounded: float) -> float:
+def _bound(value: float | None, unbounded: float) -> float:
   """One end of a support, with ``Kde1d``'s ``nan`` normalized.
 
   Parameters
@@ -53,7 +54,7 @@ def _bound(value: Optional[float], unbounded: float) -> float:
   if value is None:
     return unbounded
   out = float(value)
-  return unbounded if out != out else out
+  return unbounded if math.isnan(out) else out
 
 
 #: ``Kde1d``'s spellings of the variable type, and the contract's.
@@ -164,7 +165,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   # refusal rather than a kernel density fitted in silence. A plain comment,
   # not a `#:` one: autosummary cannot page an attribute whose value is a
   # class, which is what this holds on a margin that does read controls.
-  controls_class: ClassVar[Optional[type]] = None
+  controls_class: ClassVar[type | None] = None
   #: The variable type in ``Kde1d``'s spelling; read back as
   #: :attr:`kde_type`, since ``type`` is ``nn.Module``'s dtype cast.
   _type: str
@@ -172,11 +173,13 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   def __init__(
     self,
     *,
-    xmin: Optional[float] = None,
-    xmax: Optional[float] = None,
-    type: str = "continuous",
+    xmin: float | None = None,
+    xmax: float | None = None,
+    # Keeps one spelling across the lane: `Kde1d(type=...)` is the core
+    # class's keyword, and a torch caller should not have to learn another.
+    type: str = "continuous",  # noqa: A002
     multiplier: float = 1.0,
-    bandwidth: Optional[float] = None,
+    bandwidth: float | None = None,
     degree: int = 2,
     grid_size: int = 400,
     boundary_repair: bool = True,
@@ -200,9 +203,9 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self.degree = degree
     self.grid_size = grid_size
     self.boundary_repair = boundary_repair
-    self._loglik: Optional[float] = None
-    self.edf: Optional[float] = None
-    self._selected_bandwidth: Optional[float] = None
+    self._loglik: float | None = None
+    self.edf: float | None = None
+    self._selected_bandwidth: float | None = None
     self._dtype = dtype
     self._device = device
     self.register_buffer(
@@ -248,15 +251,18 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     for name in ("grid_points", "values", "prob0"):
       incoming = state_dict.get(prefix + name)
       current = getattr(self, name, None)
-      if incoming is not None and current is not None:
-        if incoming.shape != current.shape:
-          setattr(
-            self,
-            name,
-            torch.empty(
-              incoming.shape, dtype=current.dtype, device=current.device
-            ),
-          )
+      if (
+        incoming is not None
+        and current is not None
+        and incoming.shape != current.shape
+      ):
+        setattr(
+          self,
+          name,
+          torch.empty(
+            incoming.shape, dtype=current.dtype, device=current.device
+          ),
+        )
     super()._load_from_state_dict(
       state_dict,
       prefix,
@@ -273,13 +279,13 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self,
     y: Tensor,
     /,
-    controls: Optional[ControlsLike] = None,
+    controls: ControlsLike | None = None,
     *,
-    var_type: Optional[str] = None,
-    support: Optional[tuple[Optional[float], Optional[float]]] = None,
-    x: Optional[Tensor] = None,
-    weights: Optional[Tensor] = None,
-  ) -> "TorchKde1d":
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+    x: Tensor | None = None,
+    weights: Tensor | None = None,
+  ) -> TorchKde1d:
     """Estimate the density from one column of data, in place.
 
     The fit is ``Kde1d``'s, and the grid it settles on is what this margin
@@ -373,7 +379,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     *,
     device: torch.types.Device = None,
     dtype: torch.dtype = torch.float64,
-  ) -> "TorchKde1d":
+  ) -> TorchKde1d:
     """Lift a fitted ``Kde1d`` onto tensors.
 
     An exact transfer rather than a second fit: the same grid, bounds,
@@ -429,7 +435,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     *,
     prob0: float = 0.0,
     **kwargs: Any,  # noqa: ANN401 - forwarded to `__init__`
-  ) -> "TorchKde1d":
+  ) -> TorchKde1d:
     """Build a margin directly from a grid, with no fit.
 
     The fit-free injection point, mirroring ``Kde1d.from_grid``: a density
@@ -476,7 +482,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     )
     return out
 
-  def _adopt(self, kde: Kde1d) -> "TorchKde1d":
+  def _adopt(self, kde: Kde1d) -> TorchKde1d:
     """Copy a fitted ``Kde1d``'s state onto this module's buffers."""
     ref = self.grid_points
     self.grid_points = torch.as_tensor(
@@ -527,7 +533,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     }
 
   @classmethod
-  def from_json_payload(cls, payload: dict[str, Any]) -> "TorchKde1d":
+  def from_json_payload(cls, payload: dict[str, Any]) -> TorchKde1d:
     """Rebuild a margin from the payload :meth:`to_json` produced.
 
     Parameters
@@ -612,7 +618,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self.edf = state["edf"]
     # The payload is an opaque ``object``, and the retained sample size is
     # declared on ``MarginBase`` as what the `nobs` property answers.
-    self._nobs = cast("Optional[int]", state["nobs"])
+    self._nobs = cast("int | None", state["nobs"])
 
   # --- declared capabilities ------------------------------------------------ #
 
@@ -670,7 +676,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     return int(self.grid_points.numel()) > 0
 
   @property
-  def nobs(self) -> Optional[int]:
+  def nobs(self) -> int | None:
     """Number of observations the fit **retained**.
 
     ``Kde1d`` drops a NaN observation and a NaN or zero weight, so this falls
@@ -752,7 +758,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       if hi_b == math.inf
       else torch.as_tensor(hi_b, dtype=g.dtype, device=g.device)
     )
-    n = int(round(float(hi - lo))) + 1
+    n = round(float(hi - lo)) + 1
     return lo + torch.arange(n, dtype=g.dtype, device=g.device)
 
   def _pdf_continuous(self, y: Tensor) -> Tensor:
@@ -816,7 +822,9 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       return self._pdf_discrete(ya)
     if self._type == "zero-inflated":
       return torch.where(
-        ya == 0.0,
+        # Exact: a zero-inflated variable's atom sits at zero, so this asks
+        # whether the observation *is* the atom, not whether it is near it.
+        ya == 0.0,  # noqa: RUF069
         self.prob0.expand_as(ya),
         (1.0 - self.prob0) * self._pdf_continuous(ya),
       )
@@ -878,7 +886,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     corrected = q - residual / torch.clamp(density, min=tiny)
     return corrected + (q - corrected).detach()
 
-  def icdf(self, p: Tensor, /, *, x: Optional[Tensor] = None) -> Tensor:
+  def icdf(self, p: Tensor, /, *, x: Tensor | None = None) -> Tensor:
     """Quantile function.
 
     Parameters
@@ -948,7 +956,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   def _sample_uniform(self, n: int, seeds: list[int]) -> Tensor:
     """Draw ``n`` uniforms on the buffers' dtype and device."""
     ref = self.grid_points
-    generator: Optional[torch.Generator] = None
+    generator: torch.Generator | None = None
     if seeds:
       generator = torch.Generator(device=ref.device).manual_seed(int(seeds[0]))
     return torch.rand(
@@ -970,3 +978,8 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       f"TorchKde1d(type={self._type!r}, grid_size={self.grid_points.numel()}, "
       f"support=({lo}, {hi}))"
     )
+
+
+# `core` holds the registry and names no ecosystem, so the module that
+# owns the class is the one that teaches `margin_from_json` to rebuild it.
+register_margin_json("TorchKde1d", TorchKde1d.from_json_payload)
