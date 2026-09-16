@@ -85,7 +85,6 @@ htmlcov/
 # uv
 .venv
 .venv-*
-uv.lock
 
 # Vendored / nested
 lib/boost
