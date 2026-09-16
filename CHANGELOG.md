@@ -110,6 +110,7 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Add conditioning-aware structure selection: `FitControlsVinecop.conditioning_set` puts the conditioning set at the tail of the fitted order, and `Vinecop.reorient` relabels an already-fitted vine onto a chosen tail without refitting (#246, [vinecopulib#697](https://github.com/vinecopulib/vinecopulib/pull/697)).
 - `Vinecop.rosenblatt` and `Vinecop.inverse_rosenblatt` accept a keyword-only `conditioning_set` and a truncated model (#255, #306, [vinecopulib#715](https://github.com/vinecopulib/vinecopulib/pull/715), [vinecopulib#743](https://github.com/vinecopulib/vinecopulib/pull/743), [vinecopulib#752](https://github.com/vinecopulib/vinecopulib/pull/752)).
 - The array-agnostic layer gets the same three, reproducing the compiled versions bit for bit: `VinecopBase.sample_conditional`, `reorient` and `select(conditioning_set=)`, plus the data-scale `Vinedist.sample_conditional` (#292, #306).
+- Read an atom's probability rather than differencing four `cdf` values, where a pair copula can: `BicopBase.rect_prob` / `cond_interval_prob` are the two hooks, `DiscreteBicop` calls them, and a pair that models atoms itself -- `Bicop`, through the renamed `with_var_types` -- is handed its own types back instead (#336, [vinecopulib#771](https://github.com/vinecopulib/vinecopulib/pull/771), [vinecopulib#777](https://github.com/vinecopulib/vinecopulib/pull/777)).
 
 #### Inference and diagnostics
 
@@ -122,6 +123,7 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
   [vinecopulib#694](https://github.com/vinecopulib/vinecopulib/pull/694), [vinecopulib#699](https://github.com/vinecopulib/vinecopulib/pull/699)).
 - Evaluate with per-observation parameters: `Bicop.pdf` / `cdf` / `hfunc*` / `hinv*` / `loglik` / `sample` take an `(n, p)` `parameters` array, and `Vinecop.pdf` / `pdf_full` / `loglik` and its score family an `(n, npars)` one (#227, #246, #254, [vinecopulib#675](https://github.com/vinecopulib/vinecopulib/pull/675), [vinecopulib#699](https://github.com/vinecopulib/vinecopulib/pull/699), [vinecopulib#719](https://github.com/vinecopulib/vinecopulib/pull/719)).
 - Add tail dependence and Blomqvist's beta to `Bicop`: the `taildep` and `beta` properties plus `parameters_to_taildep` / `parameters_to_beta` (#230, [vinecopulib#682](https://github.com/vinecopulib/vinecopulib/pull/682)).
+- Add `Vinecop.logpdf` and `VinecopBase.logpdf`, the per-observation log-density, plus a `"logpdf"` key on `Vinecop.pdf_full`. The accurate way to obtain it: a vine density is a product of up to `d(d-1)/2` pair densities, so `pdf` underflows to `0` well before the log-density stops being representable (#336, [vinecopulib#770](https://github.com/vinecopulib/vinecopulib/pull/770)).
 
 #### PyTorch
 
@@ -132,7 +134,7 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - The torch cascades gain a batched fast path that evaluates a whole tree level at once, resolved per device and 3-12x faster on CUDA than the per-edge cascade on
   `pdf` and `rosenblatt`; `FitControlsTorchVinecop.compile` additionally runs them through `torch.compile` (#219, #239, #264, #305, #307).
 
-- `cache_integrals=True` is now the default and exact, with `cdf` and `hfunc*` read in closed form from cumulative-trapezoid prefix tables carrying an exact gradient, plus `TorchTllBicop.rect_mass` for a rectangle's exact probability (#219, #305, #307).
+- `cache_integrals=True` is now the default and exact, with `cdf` and `hfunc*` read in closed form from cumulative-trapezoid prefix tables carrying an exact gradient, plus `TorchTllBicop.rect_prob` / `cond_interval_prob` for an atom's exact probability (#219, #305, #307, #336).
 - Compute the `tll` window smoother in `O(n)` rather than `O(n**2)`: the window
   grows with the data, so at `n = 12000` it was 97% of a vine fit, and a
   fixed-structure CUDA fit at `d = 9` is 26x faster (#313, #315).
@@ -164,7 +166,7 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
     - a `VinedistBase` subclass inherits `from_json`: the base decodes, checks the payload's version and checks that its `kind` names the class being read, then rebuilds the halves from the declared `vinecop_class` — so reading back is a declaration, like fitting (#334)
 - Expose `utils.find_latent_sample(u, b, niter=3)`, which recovers a continuous sample from interval-censored copula data (#305).
 - Add `Kde1d.actual_grid_size`, the number of grid points a fit built (#312).
-- Add `Bicop.family_name`, `Bicop.flip`, `Bicop.as_continuous()`, a settable `Vinecop.pair_copulas`, and `FitControlsVinecop.from_bicop_controls` with its `bicop_controls` property, which read and replace the inherited pair-copula settings as a group (#237, #251).
+- Add `Bicop.family_name`, `Bicop.flip`, `Bicop.with_var_types()`, a settable `Vinecop.pair_copulas`, and `FitControlsVinecop.from_bicop_controls` with its `bicop_controls` property, which read and replace the inherited pair-copula settings as a group (#237, #251).
 
 #### Documentation and examples
 
@@ -173,7 +175,10 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 
 ### Bug fixes in `pyvinecopulib`
 
-- `Kde1d.fit`, `.select` and `.from_data` refuse inputs that leave no observation standing, where all-`NaN` or all-zero weights and all-`NaN` observations each terminated the process: a `NaN` observation, a `NaN` weight and a zero weight are drop markers, and the fit rescales by what survives them. An infinite or negative weight is refused too, the latter having silently fitted an unweighted density (#326, [kde1d#40](https://github.com/vinecopulib/kde1d-cpp/pull/40)).
+- `Vinecop.loglik`, `aic`, `bic` and `mbicv` stay finite wherever the log-likelihood is representable, where the density was accumulated as a running product and underflowed to `0` below about `-745`; an observation carrying a `NaN` is left out of the total rather than making it `NaN`. `VinecopBase`, `TorchVinecop` and `BicopBase` follow, and `Vinedist.logpdf` reads the copula's log-density rather than logging its density (#335, #336, [vinecopulib#770](https://github.com/vinecopulib/vinecopulib/pull/770)).
+- A multithreaded `Vinecop.fit` reproduces the serial one: concurrent edges read h-function columns their siblings were writing (#336, [vinecopulib#774](https://github.com/vinecopulib/vinecopulib/pull/774)).
+- `Vinecop.pdf` and `logpdf` do not depend on how many rows they are handed, nor on `num_threads` (#336, [vinecopulib#779](https://github.com/vinecopulib/vinecopulib/pull/779)).
+- `Kde1d.fit`, `.select` and `.from_data` refuse inputs that leave no observation standing, where all-`NaN` or all-zero weights and all-`NaN` observations each terminated the process: a `NaN` observation, a `NaN` weight and a zero weight are drop markers, and the fit rescales by what survives them. An infinite or negative weight is refused too, the latter having silently fitted an unweighted density (#326, #336, [kde1d#40](https://github.com/vinecopulib/kde1d-cpp/pull/40)).
 - Every discrete or mixed `tll` fit is corrected: the fit uses its latent sample rather than discarding it, and evaluation computes a real discrete density whose atom masses sum to one, where the midpoint density missed that sum by up
   to 10% and single cells by 40% (#306, [vinecopulib#739](https://github.com/vinecopulib/vinecopulib/pull/739)).
 - `tree_algorithm="random_weighted"` no longer hangs: Wilson's walk could not leave a vertex whose incident weights were all zero, which happens for every edge at `n <= 10` and wherever a degenerate pair
@@ -214,8 +219,10 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
   `ImportError` naming the missing feature rather than a `SIGILL`; a source
   build targets the plain baseline and is never refused (#320).
 - Ship 10 wheels rather than 16: a cp311 wheel plus a cp312 ABI3 wheel for manylinux, musllinux, macOS x86-64, macOS arm64 and Windows, with macOS x86-64 returning on `macos-15-intel` (#220, #292).
-- Require CMake 3.14 and a C++17 compiler for a source build, following upstream
-  (#250, [vinecopulib#711](https://github.com/vinecopulib/vinecopulib/pull/711)).
+- Require CMake 3.20 and a C++17 compiler for a source build, following upstream.
+  Boost is found in config mode only, `FindBoost` having been removed in CMake
+  3.30; point `Boost_INCLUDE_DIR` at the headers if the configure step cannot
+  find it (#250, #336, [vinecopulib#711](https://github.com/vinecopulib/vinecopulib/pull/711), [vinecopulib#774](https://github.com/vinecopulib/vinecopulib/pull/774)).
 - Build the source distribution from an explicit allowlist, so a dirty worktree
   cannot leak build trees, caches or untracked notes into it (#320).
 - Require, before the tag-triggered PyPI upload runs, that the tagged commit is an ancestor of `main`, that the documentation build passes, and that the version in `pyproject.toml`, `CHANGELOG.md`, `CITATION.cff` and `.zenodo.json` matches the tag (#245, #253, #267, #320).
@@ -230,7 +237,7 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - `[examples]` adds `xlrd>=2.0`, and `[doc]` takes version ranges instead of exact pins and adds `numpydoc` (#220, #259).
 - Pin `lib/vinecopulib` to its 1.0.0 line (#229, #251, #305, #312, #319).
 - Bump `lib/wdm` to `v0.3.0`, which is where Chatterjee's xi comes from (#305, #312).
-- Bump `lib/kde1d` past `v1.2.0`, across eleven pull requests plus the fitted-state retention that `Kde1d` pickling needs (#220, #292, #312, #320).
+- Bump `lib/kde1d` to `v1.2.2`, across thirteen pull requests (#220, #292, #312, #320, #336).
 
 ### Changes in `vinecopulib`
 
@@ -241,17 +248,22 @@ These changes originate from [`vinecopulib`](https://github.com/vinecopulib/vine
 - Store the R-vine structure with the conditioned variable on the diagonal, so `get_matrix`, `order`, `get_struct_array` and edge orientation differ for the same model; densities and log-likelihoods do not ([#702](https://github.com/vinecopulib/vinecopulib/pull/702)).
 - Require C++17, CMake 3.14 and Boost 1.75 -- narrowed to Graph, Math and Random -- and put `-march=native` behind `VINECOPULIB_NATIVE_ARCH`, so the default release build is redistributable ([#711](https://github.com/vinecopulib/vinecopulib/pull/711), [#714](https://github.com/vinecopulib/vinecopulib/pull/714)).
 - Remove `Vinecop::select_all`, `Vinecop::select_families` and the `*_truncation_level` accessors, deprecated since 0.3.1 ([#718](https://github.com/vinecopulib/vinecopulib/pull/718)).
+- Rename `Bicop::as_continuous()` to `with_var_types()`, which takes the variable types rather than assuming both continuous and so goes in either direction: the same fitted copula can be evaluated on a discrete or mixed edge without being refitted. The old spelling is the default argument ([#777](https://github.com/vinecopulib/vinecopulib/pull/777)).
 
 #### BEHAVIOR CHANGES
 
 - Every `tll` fit moves: the interpolation grid's margins are balanced across both sweep orders and iterated to a tolerance, `hfunc` and `hinv` no longer floor the interpolated density at `1e-4`, and the discrete latent sample no longer depends on which variable is passed first ([#751](https://github.com/vinecopulib/vinecopulib/pull/751)).
 - Every discrete or mixed `tll` fit moves again: the fit uses its latent sample instead of the jittered ranks, and evaluation computes a real discrete density whose atom masses sum to one ([#739](https://github.com/vinecopulib/vinecopulib/pull/739)).
+- `Vinecop::pdf()` is the exponential of a log-space sum rather than a running product of edge densities, so its values move at the `1e-15` level ([#770](https://github.com/vinecopulib/vinecopulib/pull/770)).
+- A discrete `tll` pair reads each atom's probability off its interpolation grid instead of differencing four distribution values, moving the density by about `1e-9` and the log-likelihood by `9e-10`; the fourteen parametric families are bit-identical ([#771](https://github.com/vinecopulib/vinecopulib/pull/771)).
 - Kendall's tau of `bb6`, `bb7`, `bb8` and `tawn` changes, the worst case having returned about `1e-11` where the true value was `0.33` ([#713](https://github.com/vinecopulib/vinecopulib/pull/713)).
 - The density of a discrete/discrete pair moves by `O(atom width)` wherever an atom is narrower than `5e-5`, the collapsed argument now being the atom midpoint in both h-function evaluations ([#744](https://github.com/vinecopulib/vinecopulib/pull/744)).
 - Maximum-likelihood estimates shift in the low digits: BOBYQA is replaced by Brent and BFGS, and `tawn` starts from a tau-based initial value ([#685](https://github.com/vinecopulib/vinecopulib/pull/685)).
 - `Vinecop::fit` raises when the model has no pair copulas to fit instead of returning it unfitted, and a structure truncated at zero records the independence fit ([#752](https://github.com/vinecopulib/vinecopulib/pull/752)).
 
 #### NEW FEATURES
+
+- Add `Vinecop::logpdf()`, the per-observation log-density, and a `logpdf` field on `pdf_full()`; `loglik()` sums it ([#770](https://github.com/vinecopulib/vinecopulib/pull/770)).
 
 - Add Chatterjee's xi as a `tree_criterion`, spelled `"cxi"` and symmetrized as `max(xi(x, y), xi(y, x))`; like `"hoeffd"` it picks up non-monotonic dependence, and unlike it, relationships that are not smooth ([#754](https://github.com/vinecopulib/vinecopulib/pull/754)).
 - Add the analytic-inference surface: scores, gradient, Hessian and score covariance
@@ -275,6 +287,11 @@ These changes originate from [`vinecopulib`](https://github.com/vinecopulib/vine
 
 #### BUG FIXES
 
+- `Vinecop::loglik()` and the criteria built on it stay finite wherever the log-likelihood is representable, and leave out an observation carrying a `NaN` rather than returning `NaN` for the whole sample ([#770](https://github.com/vinecopulib/vinecopulib/pull/770)).
+- A multithreaded `Vinecop::fit()` reproduces the serial one: concurrent edges read h-function columns their siblings were writing ([#774](https://github.com/vinecopulib/vinecopulib/pull/774)).
+- `Vinecop::pdf()` and `logpdf()` do not depend on how many rows they are handed, nor on `num_threads`: past a thousand rows Eigen reaches its vectorized logarithm, which rounds differently from the scalar one ([#779](https://github.com/vinecopulib/vinecopulib/pull/779)).
+- A `ThreadPool` stays usable after a job throws, where the stored exception was rethrown by every later `wait()` and the work queued in the meantime was cleared without running; the pool's own state is also read under its lock ([#764](https://github.com/vinecopulib/vinecopulib/pull/764), [#774](https://github.com/vinecopulib/vinecopulib/pull/774)).
+- Widen `find_latent_sample`'s sweep counter, which wrapped to zero and never terminated for `niter > 65535`; the draw is unchanged ([#764](https://github.com/vinecopulib/vinecopulib/pull/764)).
 - Validate user-supplied shapes before indexing them: a parameter matrix of the wrong
   shape on `parameters_to_tau` / `parameters_to_taildep` / `parameters_to_beta`, an
   empty `RVineStructure(mat)`, and a `Vinecop::set_var_types` vector shorter than the
@@ -294,7 +311,7 @@ These changes originate from [`vinecopulib`](https://github.com/vinecopulib/vine
 
 ### Changes in `kde1d`
 
-These changes originate from [`kde1d`](https://github.com/vinecopulib/kde1d-cpp), the 1-d kernel-density library behind `Kde1d`. The pin is a commit on its `main` past the `v1.2.0` tag rather than a tagged release, so the entries below cite pull requests.
+These changes originate from [`kde1d`](https://github.com/vinecopulib/kde1d-cpp), the 1-d kernel-density library behind `Kde1d`. The pin is its `v1.2.2` tag; the entries below cite the pull requests behind it.
 
 #### BREAKING API CHANGES
 
@@ -318,6 +335,8 @@ These changes originate from [`kde1d`](https://github.com/vinecopulib/kde1d-cpp)
 
 #### BUG FIXES
 
+- Refuse fit inputs that leave no observation standing, and weights that are infinite or negative: the rescaling divided by zero and the grid was built from an empty sample, which terminated the process ([#40](https://github.com/vinecopulib/kde1d-cpp/pull/40)).
+- Avoid a zero-size `realloc` in `remove_nans`, which is deprecated in C17, undefined in C23 and an error under valgrind; reachable from a zero-inflated fit whose observations are all zero ([#41](https://github.com/vinecopulib/kde1d-cpp/pull/41)).
 - Re-select the bandwidth when an estimator is refitted, where `fit` fed the previous fit's bandwidth back into the selector ([#28](https://github.com/vinecopulib/kde1d-cpp/pull/28)).
 - Report defined `multiplier` / `bandwidth` / `degree` on a density built from a grid, where they were indeterminate ([#28](https://github.com/vinecopulib/kde1d-cpp/pull/28)).
 - Rewrite the public `//!` comments this package lifts verbatim into its Python API documentation ([#26](https://github.com/vinecopulib/kde1d-cpp/pull/26), [#27](https://github.com/vinecopulib/kde1d-cpp/pull/27), [#38](https://github.com/vinecopulib/kde1d-cpp/pull/38)).

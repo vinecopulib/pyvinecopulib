@@ -29,6 +29,7 @@ import numpy as _np
 from array_api_compat import array_namespace
 
 from ._covariates import declared_eval, prepare_covariates
+from ._loglik import safe_log
 from ._margin_plot import (
   MARGIN_PLOT_PARAMS,
   MARGIN_PLOT_SUMMARY,
@@ -186,37 +187,6 @@ def criteria(loglik: float, k: float, n: Optional[float]) -> dict[str, float]:
   tail = n - k - 1.0
   aicc = aic + (2.0 * k * (k + 1.0) / tail if tail > 0 else float("inf"))
   return {"aic": aic, "bic": bic, "aicc": aicc}
-
-
-def safe_log(dens: ArrayT) -> ArrayT:
-  """Log of a density, with a zero mapped to ``-inf`` rather than a warning.
-
-  A density is legitimately zero off its support, and ``log(0)`` there is the
-  right answer -- but computing it directly warns, and on some namespaces
-  returns a ``nan``. The mask is applied before the log rather than after, so
-  nothing invalid is evaluated.
-
-  Lives here because both halves of a vine distribution need it: a margin's own ``logpdf`` and the fallback
-  :class:`~pyvinecopulib.core.VinedistBase` applies to a foreign margin that
-  supplies no ``logpdf`` of its own.
-
-  Parameters
-  ----------
-  dens : array
-      Density or mass values, nonnegative.
-
-  Returns
-  -------
-  array
-      ``log(dens)``, and ``-inf`` wherever ``dens`` is not positive.
-  """
-  d: Any = dens
-  xp = array_namespace(d)
-  positive = d > 0
-  safe = xp.where(positive, d, xp.ones_like(d))
-  return cast(
-    "ArrayT", xp.where(positive, xp.log(safe), xp.full_like(d, float("-inf")))
-  )
 
 
 class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):

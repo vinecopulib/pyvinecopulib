@@ -102,7 +102,7 @@ build = [
   "networkx>=3.0",
   "array_api_compat>=1.7",
   "ninja",
-  "cmake>=3.14",
+  "cmake>=3.20",
 ]
 test = [
   "pytest>=8.0",
@@ -187,7 +187,7 @@ ignore = ["TC001", "TC002", "TC003"]
 # each one many sites share a single reason -- see the AGENTS.md rule.
 # `DiscreteBicop`'s private helpers compute difference quotients on array
 # columns, which an unbounded `ArrayT` cannot type.
-"src/pyvinecopulib/core/_vinecop_discrete.py" = ["ANN401"]
+"src/pyvinecopulib/core/bicop_discrete.py" = ["ANN401"]
 # OpenTURNS is SWIG-generated: no `py.typed` and no stub package.
 "src/pyvinecopulib/margins/openturns.py" = ["ANN401"]
 # A test passes a wrong type on purpose to prove a runtime guard fires.

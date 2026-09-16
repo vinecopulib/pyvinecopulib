@@ -687,7 +687,7 @@ def test_bicop_scores_family_rejects_nonparametric_and_discrete() -> None:
       getattr(discrete, method)(u_disc)
 
 
-def test_bicop_family_name_and_as_continuous() -> None:
+def test_bicop_family_name_and_with_var_types() -> None:
   cop = pv.Bicop.from_family(
     pv.families.gumbel, rotation=90, parameters=np.array([[2.0]])
   )
@@ -696,7 +696,7 @@ def test_bicop_family_name_and_as_continuous() -> None:
   discrete = pv.Bicop.from_family(
     pv.families.gaussian, parameters=np.array([[0.5]]), var_types=["d", "d"]
   )
-  continuous = discrete.as_continuous()
+  continuous = discrete.with_var_types()
   assert continuous.var_types == ["c", "c"]
   assert discrete.var_types == ["d", "d"]
   assert continuous.family == discrete.family

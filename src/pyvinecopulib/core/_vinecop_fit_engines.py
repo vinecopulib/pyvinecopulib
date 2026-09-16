@@ -362,16 +362,16 @@ def fit_parts(
         edge_copula = _fit_edge_call(fit_edge, tree, edge, u_e, x_e, edge_types)
       row.append(edge_copula)
       if s.needed_hfunc1(tree, edge):
-        hfunc1[:, edge] = pair_eval(edge_copula.hfunc1, u_e, x_e)
+        hfunc1[:, edge] = pair_eval(edge_copula.hfunc1, u_e, x=x_e)
         if subs is not None and edge_types[1] == "d":
           hfunc1_sub[:, edge] = pair_eval(
-            edge_copula.hfunc1, with_left_limit(u_e, 1), x_e
+            edge_copula.hfunc1, with_left_limit(u_e, 1), x=x_e
           )
       if s.needed_hfunc2(tree, edge):
-        hfunc2[:, edge] = pair_eval(edge_copula.hfunc2, u_e, x_e)
+        hfunc2[:, edge] = pair_eval(edge_copula.hfunc2, u_e, x=x_e)
         if subs is not None and edge_types[0] == "d":
           hfunc2_sub[:, edge] = pair_eval(
-            edge_copula.hfunc2, with_left_limit(u_e, 0), x_e
+            edge_copula.hfunc2, with_left_limit(u_e, 0), x=x_e
           )
     pairs.append(row)
   return pairs
@@ -763,17 +763,17 @@ def select_parts(
         new_nodes.append(
           {
             "all_indices": tuple(sorted((a_var, b_var, *conditioning))),
-            "h1": pair_eval(pair.hfunc1, u_e, x_e),
-            "h2": pair_eval(pair.hfunc2, u_e, x_e),
+            "h1": pair_eval(pair.hfunc1, u_e, x=x_e),
+            "h2": pair_eval(pair.hfunc2, u_e, x=x_e),
             # A discrete argument's next tree needs the h-function at the
             # atom's lower end too, exactly as the cascades compute it.
             "h1_sub": (
-              pair_eval(pair.hfunc1, with_left_limit(u_e, 1), x_e)
+              pair_eval(pair.hfunc1, with_left_limit(u_e, 1), x=x_e)
               if edge_types[1] == "d"
               else None
             ),
             "h2_sub": (
-              pair_eval(pair.hfunc2, with_left_limit(u_e, 0), x_e)
+              pair_eval(pair.hfunc2, with_left_limit(u_e, 0), x=x_e)
               if edge_types[0] == "d"
               else None
             ),

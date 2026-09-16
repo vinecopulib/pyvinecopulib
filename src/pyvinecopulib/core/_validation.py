@@ -160,9 +160,10 @@ def validate_weights(
   # `NaN < 0` is False, so this reads only the entries that are not drops.
   if bool(xp.any(weights < 0)):
     raise ValueError(f"{name} must be nonnegative")
-  # Every entry being a drop marker leaves nothing to fit: `Kde1d` rescales by
-  # the surviving sum, so it reaches the caller as a crash rather than an
-  # error, and `utils.wdm` refuses the same input for the same reason.
+  # Every entry being a drop marker leaves nothing to fit, which `Kde1d` and
+  # `utils.wdm` both refuse. Checked here too so that the message names the
+  # argument the caller passed, and so that a margin that delegates to neither
+  # is held to the same rule.
   kept = weights[~xp.isnan(weights)]
   if not float(xp.sum(kept)) > 0.0:
     raise ValueError(

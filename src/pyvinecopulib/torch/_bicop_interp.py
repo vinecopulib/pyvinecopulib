@@ -25,6 +25,7 @@ from ._vinecop_batched import (
   integrate_2d_batched,
   interpolate_batched,
   _MIN_MASS,
+  _cond_strip,
   _hfunc_from_cells,
   inverse_integrate_1d_batched,
   _locate,
@@ -557,17 +558,79 @@ class InterpolationGrid2D(torch.nn.Module):
       w = w.scatter_add(1, col.unsqueeze(1), val.unsqueeze(1))
     return w
 
-  def _raw_mass(self, a1: Tensor, b1: Tensor, a2: Tensor, b2: Tensor) -> Tensor:
-    """The mass of the interpolant over ``[a1, b1] x [a2, b2]``, exactly.
+  def _row_cum(self) -> Tensor:
+    """Each grid line's cumulative integral along the second argument.
 
-    Nonnegative weights against a nonnegative grid, so every term of the sum is
-    nonnegative and the result carries no cancellation whatever the rectangle's
-    width. This is the density's own mass; :meth:`rect_mass` wraps it in the
-    renormalization the distribution function applies.
+    The ``sy`` of :meth:`build_caches`, which this repeats rather than reads:
+    the rectangle routines run in both cache modes, and it is ``O(m^2)`` where
+    a per-query sweep along every line would be ``O(n m^2)``.
     """
-    wx = self._interval_weights(a1, b1)
-    wy = self._interval_weights(a2, b2)
-    return (wx * (wy @ self.values.t())).sum(dim=1)
+    inc = 0.5 * (self.values[:, :-1] + self.values[:, 1:]) * self._dgrid
+    return torch.cat([torch.zeros_like(inc[:, :1]), inc.cumsum(dim=1)], dim=1)
+
+  def _row_integrals(self, u: Tensor) -> Tensor:
+    """Every grid line's integral over ``[0, u]``, one row per query.
+
+    Parameters
+    ----------
+    u : Tensor, shape (n,), dtype float
+        Upper limits, clamped to ``[0, 1]``.
+
+    Returns
+    -------
+    Tensor, shape (n, m), dtype float
+        One integral per grid line.
+    """
+    y = u.clamp(0.0, 1.0)
+    j, frac, s = _locate(self.grid_points, y, self._is_linear)
+    vt = self.values.t()
+    v0, v1 = vt[j], vt[j + 1]
+    part = (2.0 * v0 + (v1 - v0) * frac[:, None]) * s[:, None] / 2.0
+    return self._row_cum().t()[j] + part
+
+  def cond_interval_mass(
+    self, u_cond: Tensor, lo: Tensor, hi: Tensor, cond_var: int
+  ) -> Tensor:
+    """Probability that the free argument falls in ``(lo, hi]``, given the other.
+
+    A conditional distribution is the grid line at ``u_cond`` over its own
+    total, so this is a ratio of nonnegative sums and does not cancel at all.
+    Not clamped into the open unit interval, unlike :meth:`integrate_1d`: an
+    empty interval is exactly ``0`` and the whole line exactly ``1``, which is
+    what makes the masses of a partition sum to one.
+
+    Parameters
+    ----------
+    u_cond : Tensor, shape (n,), dtype float
+        The argument held fixed.
+    lo, hi : Tensor, shape (n,), dtype float
+        Bounds in the free argument, in either order.
+    cond_var : int
+        1 or 2, the argument held fixed, as for :meth:`integrate_1d`.
+
+    Returns
+    -------
+    Tensor, shape (n,), dtype float
+        Conditional probabilities.
+    """
+    if cond_var not in (1, 2):
+      raise ValueError(f"cond_var must be 1 or 2; got {cond_var}")
+    m = self.grid_points.shape[0]
+    cell, t, _ = _locate(
+      self.grid_points, u_cond.clamp(0.0, 1.0), self._is_linear
+    )
+    # Same gather the batched h-function does: axis 1 holds the grid lines of
+    # the first argument, axis 2 those of the second.
+    line = _cond_strip(
+      self.values.unsqueeze(0),
+      cell.unsqueeze(0),
+      t.unsqueeze(0).unsqueeze(-1),
+      1 if cond_var == 1 else 2,
+      m,
+    ).squeeze(0)
+    w = self._interval_weights(torch.minimum(lo, hi), torch.maximum(lo, hi))
+    total = (line @ self.trap_weights).clamp_min(_MIN_MASS)
+    return (w * line).sum(dim=1) / total
 
   def rect_mass(self, a1: Tensor, b1: Tensor, a2: Tensor, b2: Tensor) -> Tensor:
     """The exact probability of ``(a1, b1] x (a2, b2]``, without the cancellation.
@@ -581,30 +644,51 @@ class InterpolationGrid2D(torch.nn.Module):
 
     ``cdf`` renormalizes each line of the grid by its own total, so the
     probability is not simply the mass. Writing ``lam(y) = y / M(1, y)`` for that
-    factor, ``M`` for the mass and ``R`` for the rectangle's own mass, the
-    four-corner difference is ``lam(b2) * R + (lam(b2) - lam(a2)) * S``, where
-    ``S`` is the mass of ``(a1, b1] x (0, a2]``. ``R`` and ``S`` are sums of
-    nonnegative terms and do not cancel at all; only the ``lam`` difference does,
-    and it multiplies a term of order ``w1`` rather than one of order one, which
-    is where the second power goes.
+    factor, ``R`` for the rectangle's own mass and ``S`` for the mass of
+    ``(a1, b1] x (0, a2]``, the four-corner difference is
+    ``lam(b2) R + (lam(b2) - lam(a2)) S``. ``R`` and ``S`` are sums of
+    nonnegative terms and do not cancel at all; only the ``lam`` difference
+    does, and expanded over the common denominator it cancels against
+    ``b2 - a2`` rather than against one -- formed as ``lam(b2) - lam(a2)`` it
+    would swamp the first term on a low-mass rectangle.
 
     Parameters
     ----------
     a1, b1, a2, b2 : Tensor, shape (n,), dtype float
-        Rectangle bounds per query. An empty or inverted interval gives zero.
+        Rectangle bounds per query, in either order. An empty rectangle gives
+        zero.
 
     Returns
     -------
     Tensor, shape (n,), dtype float
         Rectangle probabilities.
     """
-    zero = torch.zeros_like(a1)
-    one = torch.ones_like(a1)
-    lam_b = b2 / self._raw_mass(zero, one, zero, b2).clamp_min(_MIN_MASS)
-    lam_a = a2 / self._raw_mass(zero, one, zero, a2).clamp_min(_MIN_MASS)
-    return lam_b * self._raw_mass(a1, b1, a2, b2) + (
-      lam_b - lam_a
-    ) * self._raw_mass(a1, b1, zero, a2)
+    # Rotating the data can leave a left limit above its own value.
+    x0, x1 = torch.minimum(a1, b1), torch.maximum(a1, b1)
+    y0, y1 = torch.minimum(a2, b2), torch.maximum(a2, b2)
+
+    wx = self._interval_weights(x0, x1)
+    below = self._row_integrals(y0)
+    # With nothing below to subtract the cumulative integrals are the strip
+    # itself, which is the case every discrete h-function hits.
+    strip = torch.where(
+      (y0 > 0.0).unsqueeze(-1),
+      self._interval_weights(y0, y1) @ self.values.t(),
+      self._row_integrals(y1),
+    )
+
+    w = self.trap_weights
+    m_strip = strip @ w
+    m_below = (below @ w).clamp_min(_MIN_MASS)
+    # Formed additively, so that the two terms below are consistent: an
+    # independent quadrature of the whole column would not cancel against the
+    # strip it is supposed to contain.
+    total = (m_below + m_strip).clamp_min(_MIN_MASS)
+    dlam = ((y1 - y0) * m_below - y0 * m_strip) / (total * m_below)
+    out = y1 * (wx * strip).sum(dim=1) / total
+    out = out + dlam * (wx * below).sum(dim=1)
+    empty = ~((x1 > x0) & (y1 > y0))
+    return torch.where(empty, torch.zeros_like(out), out)
 
   def hfunc_cached(self, u: Tensor, cond_var: int, sy: Tensor) -> Tensor:
     """The exact conditional distribution function at ``u``, in O(1) per point.

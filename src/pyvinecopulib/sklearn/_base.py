@@ -18,6 +18,7 @@ from sklearn.utils.validation import (
 
 from ..core import MarginLike, Vinedist
 from ..margins import resolve_margins
+from ..core._loglik import safe_log
 from ..core._margins import MarginSpec, fit_margin
 from ..core.extend import to_numpy
 from .backends import _VinecopBackendBase, resolve_backend
@@ -1024,7 +1025,14 @@ class VineBase(BaseEstimator):
     dist = self.distribution_
     if copula_only:
       u = dist.copula_layout(Z)
-      out = np.log(_as_ndarray(dist.vinecop.pdf(u)))
+      # The copula's own log-density where it has one, as `logpdf` reads it in
+      # the branch below: the density is a product over edges and underflows
+      # on a deep or strongly dependent vine.
+      vine = dist.vinecop
+      if getattr(vine, "logpdf", None) is not None:
+        out = _as_ndarray(vine.logpdf(u))
+      else:
+        out = safe_log(_as_ndarray(vine.pdf(u)))
     else:
       out = _as_ndarray(dist.logpdf(Z))
 

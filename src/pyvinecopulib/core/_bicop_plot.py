@@ -171,21 +171,21 @@ def bicop_plot(
   if vt is not None:
     # Read the capability from the type: permissive proxy objects such as
     # mocks synthesize arbitrary instance attributes on demand.
-    as_continuous = getattr(type(cop), "as_continuous", None)
-    if callable(as_continuous):
-      eval_cop = as_continuous(cop)
-      vals = pair_eval(eval_cop.pdf, u_grid, x_grid)
+    with_var_types = getattr(type(cop), "with_var_types", None)
+    if callable(with_var_types):
+      eval_cop = with_var_types(cop)
+      vals = pair_eval(eval_cop.pdf, u_grid, x=x_grid)
     else:
       # Written through a local, since `var_types` is a capability only the
       # compiled class carries and the contract does not name.
       mutable: Any = cop
       mutable.var_types = ["c", "c"]
       try:
-        vals = pair_eval(cop.pdf, u_grid, x_grid)
+        vals = pair_eval(cop.pdf, u_grid, x=x_grid)
       finally:
         mutable.var_types = vt
   else:
-    vals = pair_eval(cop.pdf, u_grid, x_grid)
+    vals = pair_eval(cop.pdf, u_grid, x=x_grid)
   # Coerce the density so a torch-tensor return reshapes cleanly.
   grid_vals = np.reshape(to_numpy(vals), (grid_size, grid_size))
 
