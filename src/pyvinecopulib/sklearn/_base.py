@@ -1,15 +1,15 @@
 import copy
 import os
 import warnings
+from collections.abc import Sequence
 from numbers import Integral
-from typing import Any, Optional, Sequence, Union, cast, overload
+from typing import Any, ClassVar, cast, overload
 
 import numpy as np
 import pandas as pd
 from pandas.api.extensions import ExtensionDtype
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import DataConversionWarning
-from sklearn.utils._param_validation import Interval, Options
 from sklearn.utils.validation import (
   assert_all_finite,
   check_is_fitted,
@@ -24,10 +24,12 @@ from ..core import (
   Vinedist,
   VinedistBase,
 )
+from ..core._loglik import safe_log
 from ..core._margins import resolve_margin_controls
 from ..core._validation import validate_declaration
-from ..core._loglik import safe_log
 from ..core.extend import to_numpy
+from ..core.vinedist_base import _named_for
+from ._sklearn_private import Interval, Options
 
 # Shared docstring fragments interpolated into VineDensity / VineRegressor
 # class docstrings via f-strings. Defined once here, used by both subclasses
@@ -110,48 +112,20 @@ _VAR_TYPE_OF = {"continuous": "c", "discrete": "d", "zero-inflated": "zi"}
 #: What an estimator accepts for ``X``: the two shapes the pipeline models
 #: directly, or any nested sequence of rows -- sklearn's convention is that
 #: an array-like is valid input, and `VineBase._validate_input` coerces one.
-_XLike = Union[np.ndarray, pd.DataFrame, Sequence[Sequence[object]]]
+_XLike = np.ndarray | pd.DataFrame | Sequence[Sequence[object]]
 
 #: What it accepts for ``y``, and for per-observation weights: one column of
 #: numbers, as an array or a sequence.
-_YLike = Union[np.ndarray, Sequence[float]]
+_YLike = np.ndarray | Sequence[float]
 
 #: What ``random_state=`` accepts, per the scikit-learn convention that
 #: `sklearn.utils.check_random_state` implements.
-_RandomStateLike = Union[int, np.random.RandomState, None]
-
-
-def _named_for(name: str, exc: BaseException) -> BaseException:
-  """``exc`` with the column it came from named, keeping its type where it can.
-
-  A margin sees one array and cannot say which column it was, so the estimator
-  says it. The type is preserved by rebuilding the exception from the new
-  message, which most exceptions accept; the ones that do not -- anything whose
-  constructor takes more than a message -- become a ``ValueError`` rather than
-  a confusing ``TypeError`` raised from inside the handler.
-
-  Parameters
-  ----------
-  name : str
-      The column's name.
-  exc : BaseException
-      What the margin raised.
-
-  Returns
-  -------
-  BaseException
-      The exception to raise, to be chained from ``exc``.
-  """
-  message = f"margin for {name!r}: {exc}"
-  try:
-    return type(exc)(message)
-  except Exception:
-    return ValueError(message)
+_RandomStateLike = int | np.random.RandomState | None
 
 
 def _categorical_bounds(
-  dtype: Union[np.dtype, ExtensionDtype],
-) -> Optional[tuple[float, float]]:
+  dtype: np.dtype | ExtensionDtype,
+) -> tuple[float, float] | None:
   """Exact support of an ordered categorical column, when it states one.
 
   Parameters
@@ -204,9 +178,9 @@ def expand_factors(df: pd.DataFrame) -> pd.DataFrame:
   out_parts: list[pd.Series | pd.DataFrame] = []
 
   for colname, x in df.items():
-    if pd.api.types.is_numeric_dtype(x):
-      out_parts.append(x)
-    elif isinstance(x.dtype, pd.CategoricalDtype) and x.dtype.ordered:
+    if pd.api.types.is_numeric_dtype(x) or (
+      isinstance(x.dtype, pd.CategoricalDtype) and x.dtype.ordered
+    ):
       out_parts.append(x)
     elif isinstance(x.dtype, pd.CategoricalDtype) and not x.dtype.ordered:
       dummies_int = pd.get_dummies(x, drop_first=True).astype("int")
@@ -258,7 +232,7 @@ class VineBase(BaseEstimator):
   #: quadrature reads the copula density and the response margin's `icdf` only.
   _needs_marginal_density: bool = False
 
-  _parameter_constraints: dict[str, list[object]] = {
+  _parameter_constraints: ClassVar[dict[str, list[object]]] = {
     "distribution": [type, None],
     "controls": [object, None],
     "structure": [object, None],
@@ -274,13 +248,13 @@ class VineBase(BaseEstimator):
 
   def __init__(
     self,
-    distribution: Optional[type[VinedistBase[Any]]] = None,
-    controls: Optional[ControlsLike] = None,
-    structure: Optional[pv.RVineStructure] = None,
+    distribution: type[VinedistBase[Any]] | None = None,
+    controls: ControlsLike | None = None,
+    structure: pv.RVineStructure | None = None,
     margin_controls: object = None,
     batch_size: int = 100,
     random_state: _RandomStateLike = None,
-    n_jobs: Optional[int] = None,
+    n_jobs: int | None = None,
   ) -> None:
     """Base vine copula estimator.
 
@@ -384,10 +358,10 @@ class VineBase(BaseEstimator):
   def _validate_input(
     self,
     X: _XLike,
-    y: Optional[_YLike] = None,
+    y: _YLike | None = None,
     *,
     reset: bool,
-  ) -> Union[np.ndarray, tuple[np.ndarray, np.ndarray]]:
+  ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
     """Validate the ``X`` (and optional ``y``) input.
 
     For DataFrames, captures the canonical
@@ -428,8 +402,8 @@ class VineBase(BaseEstimator):
         )
       if X.shape[1] == 0:
         raise ValueError(
-          "0 feature(s) (shape=(%d, 0)) while a minimum of 1 is required."
-          % X.shape[0]
+          f"0 feature(s) (shape=({X.shape[0]}, 0)) while a minimum of 1 "
+          "is required."
         )
     if y is not None:
       y = np.asarray(y)
@@ -489,8 +463,10 @@ class VineBase(BaseEstimator):
         # grid is padded past the data and puts mass on values that cannot
         # occur -- a count column picks up density below zero.
         original = set(X.columns)
-        bounds: list[Optional[tuple[float, float]]] = []
-        for name, dtype in zip(self._expanded_columns, X_exp.dtypes):
+        bounds: list[tuple[float, float] | None] = []
+        for name, dtype in zip(
+          self._expanded_columns, X_exp.dtypes, strict=False
+        ):
           if name not in original:
             bounds.append((0.0, 1.0))
           else:
@@ -509,7 +485,11 @@ class VineBase(BaseEstimator):
           dtype_expected = self._dtypes[col]
           if isinstance(dtype_expected, pd.CategoricalDtype):
             if not isinstance(X_for_expansion[col].dtype, pd.CategoricalDtype):
-              raise ValueError(f"Column {col} must be categorical.")
+              # `ValueError`: this is input data disagreeing with the
+              # schema, which is what sklearn raises for bad input.
+              raise ValueError(  # noqa: TRY004
+                f"Column {col} must be categorical."
+              )
             recoded = X_for_expansion[col].cat.set_categories(
               dtype_expected.categories, ordered=dtype_expected.ordered
             )
@@ -675,7 +655,7 @@ class VineBase(BaseEstimator):
 
   def _declaration_for(
     self, response: bool
-  ) -> tuple[list[Optional[str]], list[Any]]:
+  ) -> tuple[list[str | None], list[Any]]:
     """What the schema knows about each variable, per variable.
 
     The variable types and bounds inferred from the input: which columns are
@@ -697,7 +677,7 @@ class VineBase(BaseEstimator):
     """
     types = self.schema_["kde1d_types"]
     bounds = self.schema_.get("bounds") or [None] * len(types)
-    var_types: list[Optional[str]] = [_VAR_TYPE_OF.get(t, t) for t in types]
+    var_types: list[str | None] = [_VAR_TYPE_OF.get(t, t) for t in types]
     supports: list[Any] = [
       None if b is None else (float(b[0]), float(b[1])) for b in bounds
     ]
@@ -707,7 +687,7 @@ class VineBase(BaseEstimator):
       supports.insert(0, None)
     return var_types, supports
 
-  def _controls_names(self, response: bool) -> Optional[list[str]]:
+  def _controls_names(self, response: bool) -> list[str] | None:
     """Variable names a ``margin_controls`` mapping may be keyed by.
 
     Parameters
@@ -796,7 +776,7 @@ class VineBase(BaseEstimator):
   def _check_margin_specs(
     self,
     cls: type[VinedistBase[Any]],
-    var_types: list[Optional[str]],
+    var_types: list[str | None],
     supports: list[Any],
     *,
     response: bool,
@@ -827,7 +807,9 @@ class VineBase(BaseEstimator):
         f"{cls.__name__} names no `margin_class`, so it cannot fit margins "
         "from data. Name one on the distribution passed as `distribution=`."
       )
-    for j, (var_type, support) in enumerate(zip(var_types, supports)):
+    for j, (var_type, support) in enumerate(
+      zip(var_types, supports, strict=False)
+    ):
       try:
         validate_declaration(var_type, support)
       except ValueError as exc:
@@ -933,7 +915,7 @@ class VineBase(BaseEstimator):
       controls = threaded
     self.controls_ = controls
 
-  def _default_copula_controls(self) -> Optional[ControlsLike]:
+  def _default_copula_controls(self) -> ControlsLike | None:
     """The copula controls when the caller named none.
 
     Nonparametric (TLL) pair copulas truncated at depth 20 --- a density

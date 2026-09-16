@@ -1,12 +1,12 @@
 import math
+from collections.abc import Callable, Iterable, Iterator
 from numbers import Integral
-from typing import Any, Callable, Iterable, Iterator, Optional
+from typing import Any, ClassVar
 
 import numpy as np
 from scipy.special import logsumexp
 from sklearn.base import RegressorMixin
 from sklearn.metrics import r2_score
-from sklearn.utils._param_validation import Interval
 from sklearn.utils.validation import check_is_fitted
 
 import pyvinecopulib as pv
@@ -23,6 +23,7 @@ from ._base import (
   _XLike,
   _YLike,
 )
+from ._sklearn_private import Interval
 
 # Half-width, in standard deviations, of the probit substitution behind the
 # quadrature nodes: the outermost node sits at Phi(-a), so this is how far into
@@ -34,7 +35,7 @@ _PROBIT_HALF_WIDTH = 5.0
 
 class VineRegressor(RegressorMixin, VineBase):
   # Inherits VineBase._parameter_constraints; extend with regressor knobs.
-  _parameter_constraints: dict[str, list[object]] = {
+  _parameter_constraints: ClassVar[dict[str, list[object]]] = {
     **VineBase._parameter_constraints,
     "mean": ["boolean"],
     "quantiles": ["array-like", None],
@@ -46,19 +47,19 @@ class VineRegressor(RegressorMixin, VineBase):
   def __init__(
     self,
     mean: bool = True,
-    quantiles: Optional[_YLike] = None,
-    distribution: Optional[type[VinedistBase[Any]]] = None,
-    controls: Optional[ControlsLike] = None,
-    structure: Optional[pv.RVineStructure] = None,
+    quantiles: _YLike | None = None,
+    distribution: type[VinedistBase[Any]] | None = None,
+    controls: ControlsLike | None = None,
+    structure: pv.RVineStructure | None = None,
     margin_controls: object = None,
     batch_size: int = 100,
     use_grid: bool = True,
     n_nodes: int = 401,
     normalize_weights: bool = True,
     random_state: _RandomStateLike = None,
-    n_jobs: Optional[int] = None,
+    n_jobs: int | None = None,
   ) -> None:
-    """Sklearn-compatible vine-copula regressor.
+    r"""Sklearn-compatible vine-copula regressor.
 
     Predicts the conditional mean
     :math:`\\hat{\\mathbb{E}}[Y \\mid X = x]` and/or conditional
@@ -210,7 +211,7 @@ class VineRegressor(RegressorMixin, VineBase):
     return self
 
   def _probability_grid(self) -> tuple[np.ndarray, np.ndarray]:
-    """Quadrature nodes on ``(0, 1)``, and their weights.
+    r"""Quadrature nodes on ``(0, 1)``, and their weights.
 
     The rule integrates
     :math:`\\int_0^1 F_Y^{-1}(p)\\, c(p, u_x)\\, dp` under the
@@ -239,7 +240,7 @@ class VineRegressor(RegressorMixin, VineBase):
   def _copula_marginal_density(
     self, X: np.ndarray, log: bool = False, n_grid: int = 101
   ) -> np.ndarray:
-    """Computes :math:`c_X(u_X) = \\int_0^1 c_{Y, X}(u_Y, u_X)\\, du_Y`.
+    r"""Computes :math:`c_X(u_X) = \\int_0^1 c_{Y, X}(u_Y, u_X)\\, du_Y`.
 
     Numerical approximation via Simpson's rule. This is the term
     that turns the joint copula density into the conditional
@@ -304,7 +305,7 @@ class VineRegressor(RegressorMixin, VineBase):
     return log_out if log else np.exp(log_out)
 
   def _weights_for_batch(self, X_batch: np.ndarray) -> np.ndarray:
-    """Conditional copula weights for one batch of test rows.
+    r"""Conditional copula weights for one batch of test rows.
 
     Single source of truth for the weight math: `_iter_weights` is
     the batched generator over it and `_predict_from_iter` the
@@ -444,7 +445,7 @@ class VineRegressor(RegressorMixin, VineBase):
     return y_pred[:, 0] if y_pred.shape[1] == 1 else y_pred
 
   def predict(self, X: _XLike) -> np.ndarray:
-    """Predicts the conditional mean and/or quantiles of ``Y`` given ``X``.
+    r"""Predicts the conditional mean and/or quantiles of ``Y`` given ``X``.
 
     Computes weights :math:`w_k(x)` from the fitted copula
     (`_iter_weights`) and returns the weighted statistics over the
@@ -477,7 +478,7 @@ class VineRegressor(RegressorMixin, VineBase):
     self,
     X: _XLike,
     y: _YLike,
-    sample_weight: Optional[_YLike] = None,
+    sample_weight: _YLike | None = None,
   ) -> float:
     """Return :math:`R^2` for the fitted conditional mean.
 

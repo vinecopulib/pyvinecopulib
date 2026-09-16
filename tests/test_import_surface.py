@@ -29,7 +29,7 @@ _EXTRAS = ("torch", "sklearn", "scipy")
 def _run(source: str) -> subprocess.CompletedProcess[str]:
   """Run ``source`` in a fresh interpreter, so no import is already cached."""
   return subprocess.run(
-    [sys.executable, "-c", source], capture_output=True, text=True
+    [sys.executable, "-c", source], capture_output=True, text=True, check=False
   )
 
 
@@ -90,8 +90,7 @@ def test_core_owns_the_margin_internals_and_margins_re_exports_them() -> None:
   every use. They live in `core` and `margins` re-exports them, so the
   documented surface is unchanged.
   """
-  import pyvinecopulib.core as core
-  import pyvinecopulib.margins as margins
+  from pyvinecopulib import core, margins
 
   for name in (
     "FitControlsMargin",
@@ -192,7 +191,9 @@ def test_agents_md_names_every_module_that_exists() -> None:
   if not spec.is_file() or not root.is_dir():
     pytest.skip("source tree not available")
 
-  tree = re.search(r"```text\n(.*?)```", spec.read_text(encoding="utf-8"), re.S)
+  tree = re.search(
+    r"```text\n(.*?)```", spec.read_text(encoding="utf-8"), re.DOTALL
+  )
   assert tree is not None, "AGENTS.md has no package-structure block"
   listed = {
     os.path.basename(token)
@@ -221,11 +222,8 @@ def test_agents_md_public_api_lists_match_the_code() -> None:
     pytest.skip("source tree not available")
   text = spec.read_text(encoding="utf-8")
 
-  import pyvinecopulib.core as core
-  import pyvinecopulib.core.extend as extend
-  import pyvinecopulib.families as families
-  import pyvinecopulib.margins as margins
-  import pyvinecopulib.utils as utils
+  from pyvinecopulib import core, families, margins, utils
+  from pyvinecopulib.core import extend
 
   subpackages = {"core", "families", "utils", "margins", "sklearn", "torch"}
   section = text[text.index("## Public APIs") :]
@@ -462,3 +460,64 @@ def test_no_module_declares_a_name_twice() -> None:
   # Without this the test passes by reading nothing: a broken glob and a
   # package with no duplicates report the same empty result.
   assert seen > 1, f"only {seen} `__all__` lists found; the walk is not walking"
+
+
+#: Third-party internals this repository reaches for outside `src/`, each with
+#: the reason no public spelling exists. `PLC2701` is off under `tests/` and
+#: `scripts/` because it cannot tell this package's internals from another's;
+#: this table is what keeps that exemption from covering the latter. An entry
+#: is a maintenance obligation: the name may move in any release of its
+#: package, and nothing but this test says where to look.
+_THIRD_PARTY_PRIVATES: dict[str, str] = {
+  # `TorchDispatchMode` is exported from nowhere else, checked against torch
+  # 2.13. Reached only on CUDA, so a move breaks a helper and nothing shipped.
+  "torch.utils._python_dispatch": "tests/helpers.py",
+}
+
+
+def _private_imports(path: pathlib.Path) -> set[str]:
+  """Every module an `import` in ``path`` names whose path has a private part."""
+  tree = ast.parse(path.read_text(encoding="utf-8"))
+  found: set[str] = set()
+  for node in ast.walk(tree):
+    if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+      parts = node.module.split(".")
+      names = [a.name for a in node.names]
+    elif isinstance(node, ast.Import):
+      for alias in node.names:
+        if any(p.startswith("_") for p in alias.name.split(".")):
+          found.add(alias.name)
+      continue
+    else:
+      continue
+    if any(p.startswith("_") for p in parts):
+      found.add(node.module)
+    else:
+      found.update(f"{node.module}.{n}" for n in names if n.startswith("_"))
+  return found
+
+
+def test_a_private_import_outside_src_names_this_package() -> None:
+  """Only `pyvinecopulib`'s own internals, or an allowlisted third-party name.
+
+  AGENTS.md keeps tests on public namespaces with two carve-outs, and ruff's
+  `PLC2701` would say the same -- except it reads `pyvinecopulib.core._json`
+  and `torch.utils._python_dispatch` alike, so the per-file exemption the
+  first needs would hand the second a free pass. This is the line between
+  them, drawn where it can be read.
+  """
+  root = pathlib.Path(__file__).resolve().parent.parent
+  foreign: dict[str, str] = {}
+  for folder in ("tests", "scripts"):
+    for path in sorted((root / folder).rglob("*.py")):
+      for module in _private_imports(path):
+        if module.split(".")[0] in {"pyvinecopulib", "helpers", "conftest"}:
+          continue
+        if module.startswith("__"):
+          continue
+        foreign[module] = str(path.relative_to(root))
+  assert foreign == _THIRD_PARTY_PRIVATES, (
+    "a private import of another package appeared outside `src/`; add it to "
+    "`_THIRD_PARTY_PRIVATES` with the reason no public name exists, or use "
+    f"the public spelling: {foreign}"
+  )

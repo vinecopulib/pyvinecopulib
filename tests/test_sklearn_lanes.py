@@ -17,12 +17,7 @@ pytest.importorskip("pandas")
 import pandas as pd
 
 import pyvinecopulib as pv
-from sklearn.utils._param_validation import (
-  InvalidParameterError,
-)
-
-from pyvinecopulib.core import VinecopLike
-from pyvinecopulib.core import Vinedist
+from pyvinecopulib.core import VinecopLike, Vinedist
 from pyvinecopulib.sklearn import VineDensity, VineRegressor
 
 
@@ -152,8 +147,11 @@ class TestDefaultMargin:
 
   def test_the_torch_lane_gives_a_torch_kde(self) -> None:
     torch = pytest.importorskip("torch")
-    from pyvinecopulib.torch import TorchVinedist
-    from pyvinecopulib.torch import FitControlsTorchVinecop, TorchKde1d
+    from pyvinecopulib.torch import (
+      FitControlsTorchVinecop,
+      TorchKde1d,
+      TorchVinedist,
+    )
 
     est = VineDensity(distribution=TorchVinedist)
     assert isinstance(_default_margin_of(est), TorchKde1d)
@@ -202,8 +200,7 @@ class TestDefaultMargin:
 
   def test_the_response_margin_comes_from_the_distribution_too(self) -> None:
     pytest.importorskip("torch")
-    from pyvinecopulib.torch import TorchVinedist
-    from pyvinecopulib.torch import TorchKde1d
+    from pyvinecopulib.torch import TorchKde1d, TorchVinedist
 
     # The response is variable zero of the joint fit, so it takes the
     # distribution's own `margin_class` like every other column -- not a
@@ -302,8 +299,7 @@ class TestTorchDistribution:
 
   def test_the_estimator_re_reads_the_lifted_margins(self) -> None:
     pytest.importorskip("torch")
-    from pyvinecopulib.torch import TorchVinedist
-    from pyvinecopulib.torch import TorchKde1d
+    from pyvinecopulib.torch import TorchKde1d, TorchVinedist
 
     X = self._data()
     est = VineDensity(distribution=TorchVinedist, random_state=0).fit(X)
@@ -487,8 +483,7 @@ class TestEstimatorWiring:
 class TestCrossLane:
   def test_density_pdf_parity(self, small_data: np.ndarray) -> None:
     pytest.importorskip("torch")
-    from pyvinecopulib.torch import TorchVinedist
-    from pyvinecopulib.torch import FitControlsTorchVinecop
+    from pyvinecopulib.torch import FitControlsTorchVinecop, TorchVinedist
 
     est_cpp = VineDensity().fit(small_data)
     # Both lanes select their structure independently, but the torch
@@ -619,8 +614,31 @@ class TestNJobs:
     # parameter grid or a config file as readily as from a literal, which is
     # what `_parameter_constraints` is there to catch.
     bad_n_jobs: Any = "all"
-    with pytest.raises(InvalidParameterError):
+    # `InvalidParameterError` is a `ValueError`, and only
+    # `sklearn.utils._param_validation` exports the subclass -- so the
+    # public assertion is the base plus the message naming the parameter.
+    with pytest.raises(ValueError, match="'n_jobs' parameter"):
       VineDensity(n_jobs=bad_n_jobs).fit(X)
+
+  @pytest.mark.parametrize(
+    ("name", "value"), [("n_jobs", 0), ("batch_size", 0)]
+  )
+  def test_the_interval_constraints_reject_below_their_bound(
+    self, data: tuple[np.ndarray, np.ndarray], name: str, value: int
+  ) -> None:
+    """`Interval(Integral, 1, None, closed="left")` still means what it says.
+
+    `sklearn.utils._param_validation` is private and reached through
+    `sklearn/_sklearn_private.py`; this is what fails if a release moves the
+    class or changes what `closed="left"` admits, rather than an import
+    error at some estimator.
+    """
+    X, _ = data
+    # Off-annotation for the same reason as the case above: the constraint is
+    # what a parameter grid hits, not what an annotated call site does.
+    bad: dict[str, Any] = {name: value}
+    with pytest.raises(ValueError, match=f"'{name}' parameter"):
+      VineDensity(**bad).fit(X)
 
 
 def test_the_fitted_distribution_holds_the_vine_itself() -> None:
