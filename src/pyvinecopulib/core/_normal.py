@@ -19,7 +19,7 @@ def polevl(x: float, coefs: list[float], N: int) -> float:
 
 
 def p1evl(x: float, coefs: list[float], N: int) -> float:
-  return polevl(x, [1] + coefs, N)
+  return polevl(x, [1, *coefs], N)
 
 
 def inv_erf(z: float) -> float:
@@ -116,8 +116,7 @@ def inv_erf(z: float) -> float:
       y = y - 0.5
       y2 = y * y
       x = y + y * (y2 * polevl(y2, P0, 4) / p1evl(y2, Q0, 8))
-      x = x * s2pi
-      return x
+      return x * s2pi
 
     x = math.sqrt(-2.0 * math.log(y))
     x0 = x - math.log(x) / x
@@ -134,14 +133,14 @@ def inv_erf(z: float) -> float:
 
     return x
 
-  result = ndtri((z + 1) / 2.0) / math.sqrt(2)
-
-  return result
+  return ndtri((z + 1) / 2.0) / math.sqrt(2)
 
 
-# Vectorized version of custom inv_erf function
-erf_vec = np.vectorize(math.erf)
-erfinv_vec = np.vectorize(inv_erf)
+# Vectorized version of custom inv_erf function. `otypes` is what makes an
+# empty argument work: `np.vectorize` cannot infer a result dtype from no
+# elements and raises instead.
+erf_vec = np.vectorize(math.erf, otypes=[np.float64])
+erfinv_vec = np.vectorize(inv_erf, otypes=[np.float64])
 
 
 # Cumulative Distribution Function (CDF)
@@ -180,7 +179,9 @@ def expon_cdf(x: ArrayLike, scale: float = 1) -> NDArray[np.float64]:
 def expon_ppf(p: ArrayLike, scale: float = 1) -> NDArray[np.float64]:
   p = np.asarray(p, dtype=np.float64)
   result = np.empty_like(p)
-  mask = p == 1.0
+  # Exact: `p` is a probability and 1.0 is the endpoint whose quantile is
+  # `inf`, so the comparison is against the value itself, not a neighborhood.
+  mask = p == 1.0  # noqa: RUF069
   result[mask] = np.inf
   result[~mask] = -scale * np.log(1 - p[~mask])
   return result

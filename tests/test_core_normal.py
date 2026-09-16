@@ -56,7 +56,7 @@ class TestInverseErrorFunction:
 
   def test_inv_erf_boundary_values(self) -> None:
     """Test inverse error function at boundary values"""
-    assert inv_erf(0.0) == 0.0
+    assert inv_erf(0.0) == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
     assert inv_erf(1.0) == math.inf
     assert inv_erf(-1.0) == -math.inf
 
@@ -259,24 +259,12 @@ class TestEdgeCases:
     """Test functions with empty arrays"""
     empty = np.array([])
 
-    # Check that functions handle empty arrays correctly
-    # Some might fail due to numpy.vectorize limitations with empty arrays
-    try:
-      assert norm_pdf(empty).size == 0
-    except Exception:
-      pass  # Expected to fail due to vectorize limitation
+    # Every one of these answers with an empty array. The three `np.vectorize`
+    # ones need `otypes` to do it, which is why they are named separately.
+    assert norm_pdf(empty).size == 0
+    assert norm_cdf(empty).size == 0
+    assert norm_ppf(empty).size == 0
 
-    try:
-      assert norm_cdf(empty).size == 0
-    except Exception:
-      pass  # Expected to fail due to vectorize limitation
-
-    try:
-      assert norm_ppf(empty).size == 0
-    except Exception:
-      pass  # Expected to fail due to vectorize limitation
-
-    # Test non-vectorized functions
     assert expon_pdf(empty).size == 0
     assert expon_cdf(empty).size == 0
     assert expon_ppf(empty).size == 0
