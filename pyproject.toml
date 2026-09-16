@@ -178,15 +178,51 @@ extend-include = ["*.ipynb"]
 exclude = ["lib", "src/pyvinecopulib/**/__init__.pyi", "src/pyvinecopulib/__init__.pyi"]
 
 [tool.ruff.lint]
-# These sets complement `ty` instead of restating conventions AGENTS.md
-# already states, which is why `ALL` is not used. `preview` lets `PYI` read
-# `.py` files as well as stubs.
-extend-select = ["ANN", "TC", "PYI", "PGH003", "RUF045", "RUF100"]
+# Broad on purpose: these have caught real defects here, so a family goes in
+# unless it contradicts a convention this repository documents. `ALL` is still
+# not used, and what it would add is why -- `E111` alone fires 2969 times
+# objecting to the two-space indent set above, `D4xx` re-litigates docstrings
+# `numpydoc` already validates, and `COM812` fights the formatter.
+# `preview` lets `PYI` read `.py` files as well as stubs.
+extend-select = [
+  "A", "ANN", "ASYNC", "B", "BLE", "C4", "DTZ", "EXE", "FA", "FURB", "G",
+  "I", "ICN", "INT", "ISC", "LOG", "NPY", "PERF", "PGH", "PIE", "PLC",
+  "PLE", "PLW", "PYI", "RET", "RSE", "RUF", "SIM", "SLOT", "TC", "TRY",
+  "UP", "YTT",
+]
+# `RUF001`/`RUF002` read a Unicode character that resembles an ASCII one as a
+# probable typo. These three are the character meant: Spearman's rho, the
+# multiplication sign a shape is written with, and the right single quote
+# inside a quoted copy of codespell's own word regex.
+allowed-confusables = ["\u03c1", "\u00d7", "\u2019"]
 preview = true
-# Annotations resolve at runtime here -- the docs build reads them through
-# sphinx-autodoc-typehints -- so moving an import behind `TYPE_CHECKING` makes
-# the signature that uses it unresolvable. `TC006` stays.
-ignore = ["TC001", "TC002", "TC003"]
+ignore = [
+  # Every annotation on the public surface resolves at runtime, and these
+  # three break that. Measured by applying them to `vinecop_base.py` and
+  # `vinedist.py`: `typing.get_type_hints` then raises `NameError` on eight
+  # members -- `fit`, `select`, `matrix` and `reorient` among them -- where
+  # the current tree has none anywhere. The docs build still passes, because
+  # sphinx-autodoc-typehints falls back to the docstring's own type field,
+  # which is what makes the breakage silent rather than loud, and leaves
+  # every other consumer of `get_type_hints` with nothing. The escape hatch
+  # is no answer either: `runtime-evaluated-base-classes` exempts the fields
+  # of a listed base, not the functions and properties of an ordinary class.
+  # `TC006` stays.
+  "TC001", "TC002", "TC003",
+  # Policy: a validation site raises a built-in with the explanatory message
+  # the caller needs. This rule pushes that text into a custom exception class
+  # instead; a custom class is worth defining when a caller must *distinguish*
+  # a failure category, which is a design decision and not this rule's to force.
+  "TRY003",
+  # A function-local import is how the layering rule is honored: `core` must
+  # import with no optional extra, and `sklearn` must not name `torch` at
+  # module scope. Both are stated in AGENTS.md and tested by
+  # `tests/test_import_surface.py`.
+  "PLC0415",
+  # `# noqa` is the spelling AGENTS.md documents and every other tool reads;
+  # `# ruff: ignore` is a preview-only preference.
+  "RUF105",
+]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F403", "F405"]
@@ -196,12 +232,25 @@ ignore = ["TC001", "TC002", "TC003"]
 # OpenTURNS is SWIG-generated: no `py.typed` and no stub package.
 "src/pyvinecopulib/margins/openturns.py" = ["ANN401"]
 # A test passes a wrong type on purpose to prove a runtime guard fires.
-"tests/**" = ["ANN401"]
+# `PLC2701` is AGENTS.md's own "tests import from public namespaces" rule,
+# whose carve-outs are stated there -- the TLL kernels and the three plot
+# modules -- and it cannot tell this package's internals from another's. The
+# exemption is for the former only, which
+# `test_a_private_import_outside_src_names_this_package` is what enforces:
+# the allowlist of third-party privates lives there, one entry with its
+# reason, so a new one is a reviewed edit rather than a silent inheritance.
+"tests/**" = ["ANN401", "PLC2701"]
 # AGENTS.md scopes the type-hint requirement to public Python source. A
 # teaching notebook, a libclang-walking build helper, and Sphinx's own
 # unannotated hook signatures are none of it.
 "examples/**" = ["ANN"]
-"scripts/**" = ["ANN"]
+"scripts/**" = ["ANN", "PLC2701"]
+# Both generators walk a foreign tree -- libclang's AST and nanobind's
+# introspection -- where any node may raise and a node that does is
+# skipped rather than fatal. That is one reason covering every site in
+# each file, and the degradation is the documented contract.
+"scripts/generate_docstring.py" = ["ANN", "PLC2701", "BLE001", "PLW0717"]
+"scripts/generate_stubs.py" = ["ANN", "PLC2701", "BLE001"]
 "docs/conf.py" = ["ANN"]
 
 [tool.ty.src]
