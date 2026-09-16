@@ -536,7 +536,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
   # is what makes a `family_set` a refusal rather than a silently ignored
   # request, the same reason `TorchKde1d` declares it. A plain comment, not a
   # `#:` one: autosummary cannot page an attribute whose value is a class.
-  controls_class: ClassVar[type | None] = None
+  controls_class: ClassVar[type[ControlsLike] | None] = None
 
   @property
   def n_parameters(self) -> float:

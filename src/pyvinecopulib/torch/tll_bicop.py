@@ -207,7 +207,7 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
 
   # The controls the TLL fit reads; `_torch_bicop_controls` resolves a
   # `None` through it rather than naming the class a second time.
-  controls_class: ClassVar[type | None] = FitControlsTorchBicop
+  controls_class: ClassVar[type[ControlsLike] | None] = FitControlsTorchBicop
 
   is_indep: bool
   # Class-level hints so the prefix tables registered in __init__ are

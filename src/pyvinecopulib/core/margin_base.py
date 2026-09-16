@@ -332,7 +332,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
   # Declared where `bicop_class` / `vinecop_class` / `margin_class` declare the
   # parts, and a plain comment for the same reason: autosummary cannot generate
   # a page for an attribute whose value is a class.
-  controls_class: ClassVar[type | None] = FitControlsMargin
+  controls_class: ClassVar[type[ControlsLike] | None] = FitControlsMargin
 
   #: The variable type a caller declared through ``var_type``, with
   #: ``"zi"`` reduced to ``"d"`` -- the partition a family registry offers. A

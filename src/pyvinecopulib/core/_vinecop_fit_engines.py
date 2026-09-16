@@ -180,6 +180,8 @@ def fit_parts(
   # The engines index `u`, read its shape and compute the tree criterion on
   # it, which an unbounded `ArrayT` cannot type (see `protocols.py`). The
   # public `fit` / `select` that call these are typed.
+  # `Any`, not `Array`: `u` is handed to `edge_context` and
+  # `validate_weights`, both parameterized by `ArrayT`.
   u: Any,  # noqa: ANN401
   fit_edge: FitEdge,
   *,
@@ -399,6 +401,8 @@ def select_parts(
   # The engines index `u`, read its shape and compute the tree criterion on
   # it, which an unbounded `ArrayT` cannot type (see `protocols.py`). The
   # public `fit` / `select` that call these are typed.
+  # `Any`, not `Array`: `u` is handed to `edge_context` and
+  # `validate_weights`, both parameterized by `ArrayT`.
   u: Any,  # noqa: ANN401
   fit_edge: FitEdge,
   *,

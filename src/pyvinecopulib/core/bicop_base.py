@@ -2,10 +2,14 @@
 
 ``BicopBase`` is the array-agnostic (NumPy or PyTorch) base class for
 ``BicopLike``, and the short path to hosting a custom pair copula in a vine: a
-subclass writes the density ``pdf`` and the two h-functions ``hfunc1`` /
-``hfunc2``, and inherits the rest of the evaluation surface together with the
-estimator surface ``fit`` / ``select`` / ``from_data``. The member inventory,
-and which members ship a raising default, is on ``BicopBase`` itself.
+subclass writes three ``_raw`` leaves -- ``_pdf_raw``, the density, and
+``_hfunc1_raw`` / ``_hfunc2_raw``, the two h-functions -- and inherits the rest
+of the evaluation surface together with the estimator surface ``fit`` /
+``select`` / ``from_data``. The public ``pdf`` / ``hfunc1`` / ``hfunc2`` are
+concrete *dispatchers* that prepare the argument and apply the pair's
+``var_types`` before calling a leaf; overriding one orphans the leaf it hides.
+The member inventory, and which members ship a raising default, is on
+``BicopBase`` itself.
 
 ``x`` is keyword-only on every method, as it is on the contract: it carries the
 covariates a conditional pair copula reads, row-aligned with ``u``. ``Bicop``
@@ -249,9 +253,36 @@ class BicopBase(
 ):
   """Canonical partial implementation of ``BicopLike``.
 
-  A subclass writes three methods -- ``pdf``, the pair density, and ``hfunc1``
-  / ``hfunc2``, its two conditional distributions -- and inherits the rest of
-  the evaluation surface:
+  A subclass writes three ``_raw`` leaves, and they are the only abstract
+  members of the class:
+
+  - ``_pdf_raw(u)``, the pair density.
+  - ``_hfunc1_raw(u)`` / ``_hfunc2_raw(u)``, its two conditional distribution
+    functions.
+
+  ``_raw`` is ``AbstractBicop``'s own name for the primitive that ignores
+  ``var_types``. The public ``pdf`` / ``cdf`` / ``hfunc1`` / ``hfunc2`` /
+  ``hinv1`` / ``hinv2`` are concrete **dispatchers**: each places the argument
+  on the pair's array namespace, checks its layout, clamps it into the open
+  unit square, and applies the pair's ``var_types`` -- so a leaf always sees
+  two already-prepared continuous columns and never calls ``_prep_args``
+  itself.
+
+  **Do not override a dispatcher.** Every internal caller goes through the
+  public member -- :meth:`loglik` calls ``self.pdf``, the plots and the vine
+  cascade go through ``pair_eval`` -- so an override leaves the mandatory leaf
+  defined and never run. A subclass with per-call knobs puts them on its
+  ``controls_class`` instead. Any pair that may sit in a *conditional* vine
+  declares ``x`` on every leaf whether or not it reads one, because
+  ``pair_eval`` forwards unconditionally.
+
+  Four further leaves are optional, each backing a dispatcher that otherwise
+  falls back: ``_cdf_raw`` (needed to declare the pair discrete),
+  ``_hinv1_raw`` / ``_hinv2_raw`` (the inherited bisection costs
+  ``O(iterations)`` in *model* calls, so a pair backed by a learned model or
+  one that inverts in closed form should write them), and ``_flip_raw``.
+
+  Everything else is inherited:
 
   - :meth:`hinv1` / :meth:`hinv2`, the h-function inverses. An h-function
     increases in the argument being inverted, so these need nothing beyond
@@ -275,10 +306,11 @@ class BicopBase(
 
   - :meth:`flip`, the pair with its arguments swapped, which structure
     selection needs to reorient a fitted pair onto its finalized slot;
-    evaluation along a fixed structure never asks for it.
+    evaluation along a fixed structure never asks for it. Write
+    ``_flip_raw``.
   - :meth:`cdf`, needed on a **discrete** edge, whose h-functions are
-    difference quotients of the distribution function. Add one and wrap the
-    ``_cdf_raw`` and declare the pair discrete with ``with_var_types``.
+    difference quotients of the distribution function. Write ``_cdf_raw`` and
+    declare the pair discrete with ``with_var_types``.
 
   Two more are supplied rather than raising, and exist to be overridden:
   :meth:`rect_prob` and :meth:`cond_interval_prob`, the two probabilities a
@@ -301,7 +333,7 @@ class BicopBase(
   # the lanes above read it instead of each naming a class of their own. A
   # plain comment, not a `#:` one: autosummary cannot page an attribute whose
   # value is a class.
-  controls_class: ClassVar[type | None] = None
+  controls_class: ClassVar[type[ControlsLike] | None] = None
 
   # --- variable types --------------------------------------------------- #
   #: Mirrors ``AbstractBicop``'s in-class ``var_types_{"c", "c"}``: a class

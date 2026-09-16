@@ -334,11 +334,11 @@ class VinecopBase(
   # comment, not a `#:` one: autosummary cannot generate a page for an
   # attribute whose value is a class, so a subclass that sets this would leave
   # the inherited entry dangling and fail the nitpicky docs build.
-  bicop_class: ClassVar[type | None] = None
+  bicop_class: ClassVar[type[BicopLike[Any]] | None] = None
   # The controls class this vine's fitter reads, or `None` where it reads none.
   # The one place that answers what `controls=None` means here, so `from_data`
   # and the lanes above read it instead of each naming a class of their own.
-  controls_class: ClassVar[type | None] = None
+  controls_class: ClassVar[type[ControlsLike] | None] = None
   _context: ConditioningContext[ArrayT]
   _cond_pos_cache: dict[tuple[int, int], tuple[int, ...]]
   #: Slot -> the 1-based labels of its conditioning set in the order the pair
@@ -726,7 +726,7 @@ class VinecopBase(
     out: Any = self._logpdf(u, x)
     return cast("ArrayT", array_namespace(out).exp(out))
 
-  def _logpdf(self, u: Any, x: ArrayT | None) -> ArrayT:  # noqa: ANN401
+  def _logpdf(self, u: ArrayT, x: ArrayT | None) -> ArrayT:
     """Vine log-density as a sum of per-edge log-densities (``Vinecop::logpdf``).
 
     Parameters
@@ -797,7 +797,7 @@ class VinecopBase(
 
   def _rosenblatt(
     self,
-    u: Any,  # noqa: ANN401 - computed on, as `_pdf`
+    u: ArrayT,
     x: ArrayT | None,
     randomize_discrete: bool = True,
     seeds: list[int] | None = None,
@@ -878,7 +878,7 @@ class VinecopBase(
 
   def _inverse_rosenblatt(
     self,
-    u: Any,  # noqa: ANN401 - computed on, as `_pdf`
+    u: ArrayT,
     x: ArrayT | None,
   ) -> ArrayT:
     """Inverse Rosenblatt transform (``Vinecop::inverse_rosenblatt``).
@@ -963,7 +963,9 @@ class VinecopBase(
     out: Any = self._logpdf_batched(u)
     return self._namespace(out).exp(out)
 
-  def _logpdf_batched(self, u: Any) -> ArrayT:  # noqa: ANN401 - as `_pdf`
+  # `Any`, not `Array`: `TorchVinecop` overrides this with `Tensor`, which
+  # narrows the parameter and only an `Any` admits.
+  def _logpdf_batched(self, u: Any) -> ArrayT:  # noqa: ANN401
     """Batched vine log-density: a sum over per-tree-level stacked densities.
 
     Numerically equivalent to ``_logpdf`` on a simplified vine, but each tree
@@ -1008,6 +1010,8 @@ class VinecopBase(
       )
     return logpdf
 
+  # `Any`, not `Array`: `TorchVinecop` overrides this with `Tensor`, which
+  # narrows the parameter and only an `Any` admits.
   def _inverse_rosenblatt_batched(self, u: Any) -> ArrayT:  # noqa: ANN401
     """Batched inverse Rosenblatt: one stacked call per dependency wave.
 
@@ -1048,7 +1052,9 @@ class VinecopBase(
       out[:, j] = hinv2[inv[j], :]
     return trim(out, xp)
 
-  def _rosenblatt_batched(self, u: Any) -> ArrayT:  # noqa: ANN401 - as `_pdf`
+  # `Any`, not `Array`: `TorchVinecop` overrides this with `Tensor`, which
+  # narrows the parameter and only an `Any` admits.
+  def _rosenblatt_batched(self, u: Any) -> ArrayT:  # noqa: ANN401
     """Batched Rosenblatt transform (per-tree-level stacked h-functions).
 
     Numerically equivalent to ``_rosenblatt`` on a simplified vine.

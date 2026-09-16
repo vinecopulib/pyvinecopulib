@@ -15,7 +15,7 @@ from typing import Any, ClassVar, cast
 import numpy as np
 
 from ..pyvinecopulib_ext import Kde1d, Vinecop
-from .protocols import ControlsLike, VinecopLike
+from .protocols import ControlsLike, MarginLike, VinecopLike
 from .vinedist_base import VinedistBase
 
 __all__ = ["Vinedist"]
@@ -90,8 +90,8 @@ class Vinedist(VinedistBase[np.ndarray]):
   # The two halves this route fits: NumPy arrays throughout. Plain comments,
   # not `#:` ones -- autosummary cannot resolve an attribute whose value is
   # itself a class, and the declarations are documented on the base.
-  vinecop_class: ClassVar[type | None] = Vinecop
-  margin_class: ClassVar[type | None] = Kde1d
+  vinecop_class: ClassVar[type[VinecopLike[Any]] | None] = Vinecop
+  margin_class: ClassVar[type[MarginLike[Any]] | None] = Kde1d
 
   #: `_copula_controls` writes weights into a copy of the controls, so both
   #: halves of the fit are weighted by the one argument.

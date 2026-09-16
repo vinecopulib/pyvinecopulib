@@ -1116,8 +1116,8 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
   # comments, not `#:` ones: autosummary cannot generate a page for an
   # attribute whose value is a class, so a subclass that sets one would leave
   # the inherited entry dangling and fail the nitpicky docs build.
-  vinecop_class: ClassVar[type | None] = None
-  margin_class: ClassVar[type | None] = None
+  vinecop_class: ClassVar[type[VinecopLike[Any]] | None] = None
+  margin_class: ClassVar[type[MarginLike[Any]] | None] = None
 
   #: Whether this lane's copula fitter accepts observation weights. Declared
   #: rather than discovered, so weights given to a lane that cannot apply them

@@ -272,12 +272,12 @@ class TorchVinedist(
     registered = cast("list[torch.nn.Module]", list(margins))
     self._margins = cast("Any", torch.nn.ModuleList(registered))
 
-  vinecop_class: ClassVar[type | None] = TorchVinecop
+  vinecop_class: ClassVar[type[VinecopLike[Any]] | None] = TorchVinecop
 
   #: The margin this route fits. `_default_margins` is still overridden: the
   #: placement comes from the *copula* controls, which no per-variable margin
   #: controls object carries.
-  margin_class: ClassVar[type | None] = TorchKde1d
+  margin_class: ClassVar[type[MarginLike[Any]] | None] = TorchKde1d
 
   #: The torch TLL fitter and the tree criterion are both unweighted, so a
   #: weighted request is refused rather than applied to the margins alone.

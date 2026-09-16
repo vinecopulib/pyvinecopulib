@@ -192,11 +192,11 @@ class TorchVinecop(
 
   # The pair copula this vine fits, so `from_data` needs no callback and
   # selection can check `flip` before reading the data.
-  bicop_class: ClassVar[type | None] = TorchTllBicop
+  bicop_class: ClassVar[type[BicopLike[Any]] | None] = TorchTllBicop
   # And the controls both halves read -- a vine's controls are pair controls,
   # `FitControlsTorchVinecop` deriving from `FitControlsTorchBicop` as their
   # core counterparts do.
-  controls_class: ClassVar[type | None] = FitControlsTorchVinecop
+  controls_class: ClassVar[type[ControlsLike] | None] = FitControlsTorchVinecop
 
   def __init__(
     self,
