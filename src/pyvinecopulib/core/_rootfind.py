@@ -56,10 +56,8 @@ def _bracket(
   xp: Namespace[ArrayT],
   f: Callable[[Any], Any],
   p: ArrayT,
-  # `Any`, not `Array`: a bracket may be a float, and both are handed to
-  # `Namespace[ArrayT]` methods, which `Array` does not satisfy.
-  a: Any,  # noqa: ANN401
-  b: Any,  # noqa: ANN401
+  a: ArrayT,
+  b: ArrayT,
   finite_lo: bool,
   finite_hi: bool,
   max_expand: int,

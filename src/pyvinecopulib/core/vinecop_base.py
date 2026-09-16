@@ -963,9 +963,7 @@ class VinecopBase(
     out: Any = self._logpdf_batched(u)
     return self._namespace(out).exp(out)
 
-  # `Any`, not `Array`: `TorchVinecop` overrides this with `Tensor`, which
-  # narrows the parameter and only an `Any` admits.
-  def _logpdf_batched(self, u: Any) -> ArrayT:  # noqa: ANN401
+  def _logpdf_batched(self, u: ArrayT) -> ArrayT:
     """Batched vine log-density: a sum over per-tree-level stacked densities.
 
     Numerically equivalent to ``_logpdf`` on a simplified vine, but each tree
@@ -1010,9 +1008,7 @@ class VinecopBase(
       )
     return logpdf
 
-  # `Any`, not `Array`: `TorchVinecop` overrides this with `Tensor`, which
-  # narrows the parameter and only an `Any` admits.
-  def _inverse_rosenblatt_batched(self, u: Any) -> ArrayT:  # noqa: ANN401
+  def _inverse_rosenblatt_batched(self, u: ArrayT) -> ArrayT:
     """Batched inverse Rosenblatt: one stacked call per dependency wave.
 
     Bit-identical to ``_inverse_rosenblatt`` on a simplified vine: the
@@ -1052,9 +1048,7 @@ class VinecopBase(
       out[:, j] = hinv2[inv[j], :]
     return trim(out, xp)
 
-  # `Any`, not `Array`: `TorchVinecop` overrides this with `Tensor`, which
-  # narrows the parameter and only an `Any` admits.
-  def _rosenblatt_batched(self, u: Any) -> ArrayT:  # noqa: ANN401
+  def _rosenblatt_batched(self, u: ArrayT) -> ArrayT:
     """Batched Rosenblatt transform (per-tree-level stacked h-functions).
 
     Numerically equivalent to ``_rosenblatt`` on a simplified vine.
@@ -1092,7 +1086,7 @@ class VinecopBase(
     return trim(out, xp)
 
   # --- batched dispatch ------------------------------------------------- #
-  def _namespace(self, a: object) -> Namespace[ArrayT]:
+  def _namespace(self, a: ArrayT) -> Namespace[ArrayT]:
     """The array namespace of this vine's working arrays, resolved once.
 
     Resolving it per call would put a type-dispatch table walk inside each

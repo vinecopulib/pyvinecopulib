@@ -177,12 +177,7 @@ def _fit_edge_call(
 
 def fit_parts(
   structure: RVineStructure,
-  # The engines index `u`, read its shape and compute the tree criterion on
-  # it, which an unbounded `ArrayT` cannot type (see `protocols.py`). The
-  # public `fit` / `select` that call these are typed.
-  # `Any`, not `Array`: `u` is handed to `edge_context` and
-  # `validate_weights`, both parameterized by `ArrayT`.
-  u: Any,  # noqa: ANN401
+  u: ArrayT,
   fit_edge: FitEdge,
   *,
   context: ConditioningContext[ArrayT] | None = None,
@@ -398,12 +393,7 @@ def fit_parts(
 
 
 def select_parts(
-  # The engines index `u`, read its shape and compute the tree criterion on
-  # it, which an unbounded `ArrayT` cannot type (see `protocols.py`). The
-  # public `fit` / `select` that call these are typed.
-  # `Any`, not `Array`: `u` is handed to `edge_context` and
-  # `validate_weights`, both parameterized by `ArrayT`.
-  u: Any,  # noqa: ANN401
+  u: ArrayT,
   fit_edge: FitEdge,
   *,
   context: ConditioningContext[ArrayT] | None = None,

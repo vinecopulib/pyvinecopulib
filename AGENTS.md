@@ -497,14 +497,23 @@ For any behavior change:
   API standard's own, whose bound is `__array_namespace__` and which
   `torch.Tensor` therefore fails.
 
-  Three things still take `Any`, and each says which at the site: a value
-  handed to a `Namespace[ArrayT]` method or to an `ArrayT`-parameterized
-  helper, which a bare `Array` does not satisfy (`core/_rootfind.py`'s
-  brackets, `core/_vinecop_fit_engines.py`'s `u`, `core/_placement.py`'s
-  return); a hook a lane *narrows*, since `TorchVinecop` declares `Tensor` on
-  the three `_*_batched` hooks and only an `Any` on the base admits that; and
-  a foreign object the package cannot name, a `*args` / `**kwargs` it only
-  forwards, or a name resolved at attribute access. An `Any` in a *signature*
+  A **subclass declaring `Tensor` where the base says `ArrayT` is not a
+  narrowing** and needs no hatch: every torch class is parameterized
+  (`TorchVinecop(VinecopBase[torch.Tensor])`, and likewise for the other
+  four), so `Tensor` *is* the substituted signature. Three `_*_batched` hooks
+  carried an `Any` on that mistaken reasoning and no longer do.
+
+  What still takes `Any` is one of four things, each stated at the site: a
+  `*args` / `**kwargs` it only forwards; a name resolved at attribute access
+  (a module `__getattr__`, the deprecation shim); a foreign object the package
+  cannot name (SciPy under a 3.11 floor, the ecosystem adapters in
+  `core/_margins.py`, and `declared_eval`, whose return type is open because
+  a margin may answer in another array type than it was handed); and a hook
+  whose real type needs a structure that does not exist yet --
+  `_build_batched` / `_ensure_batched` want a protocol naming what a batched
+  vine offers, and `place` / `_prep` / `reference_array` want
+  `PlacementMixin` to be `Generic[ArrayT]`, which it is not. Those last are
+  the standing list; the rest are permanent. An `Any` in a *signature*
   erases the type for every caller and is published contract text, while one
   in a body is confined to an expression -- which is why a body hands its
   result back through `cast("ArrayT", ...)`, as `core/bicop_base.py` and
