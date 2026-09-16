@@ -30,6 +30,7 @@ stats = pytest.importorskip("scipy.stats")
 
 from itertools import starmap
 
+from pyvinecopulib.core import FitControlsKde1d
 from pyvinecopulib.margins import FitControlsMargin
 from pyvinecopulib.torch import (
   FitControlsTorchVinecop,
@@ -367,14 +368,16 @@ def test_from_data_fits_end_to_end_in_torch(data: np.ndarray) -> None:
 def test_from_data_refuses_a_family_set_it_cannot_search(
   data: np.ndarray,
 ) -> None:
-  """`TorchKde1d` reads no controls, so a `family_set` must be a refusal.
+  """A kernel density reads controls and still cannot choose a family.
 
   Answering a parametric request with a kernel density is the silent downgrade
-  the weights contract already refuses. The margin declares that it cannot
-  search, which is what turns the request into an error -- introspection cannot
-  answer it, since the fit accepts a `controls` argument either way.
+  the weights contract already refuses. *Whether* the margin takes controls is
+  the wrong question -- `TorchKde1d` takes `FitControlsKde1d`, the kernel
+  knobs -- so what the refusal reads is whether the declared controls type
+  carries a `family_set` at all.
   """
-  assert TorchKde1d.controls_class is None
+  assert TorchKde1d.controls_class is FitControlsKde1d
+  assert not hasattr(FitControlsKde1d(), "family_set")
   with pytest.raises(TypeError, match="cannot select a family"):
     TorchVinedist.from_data(
       torch.as_tensor(data, dtype=_F64),

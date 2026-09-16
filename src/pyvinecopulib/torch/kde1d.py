@@ -25,7 +25,7 @@ from typing import Any, ClassVar, cast
 import torch
 from torch import Tensor
 
-from ..core import ControlsLike, Kde1d, MarginBase
+from ..core import ControlsLike, FitControlsKde1d, Kde1d, MarginBase
 from ..core._margins import register_margin_json
 from ..core._validation import (
   reject_covariates,
@@ -169,7 +169,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   # refusal rather than a kernel density fitted in silence. A plain comment,
   # not a `#:` one: autosummary cannot page an attribute whose value is a
   # class, which is what this holds on a margin that does read controls.
-  controls_class: ClassVar[type[ControlsLike] | None] = None
+  controls_class: ClassVar[type[ControlsLike] | None] = FitControlsKde1d
   #: The variable type, read back as :attr:`var_type`.
   _type: str
 
@@ -295,10 +295,11 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     ----------
     y : Tensor, shape (n,)
         Observations on the original scale.
-    controls : ControlsLike, or None, optional
-        Unused; the bandwidth, bounds and variable type are named at
-        construction, so a margin fitted differently is constructed
-        differently. Accepted because every margin's fit takes one.
+    controls : FitControlsKde1d, or None, optional
+        The kernel knobs this fit runs with -- all of them, as on ``Kde1d``:
+        a controls object carries a value for every field, so passing one
+        replaces the construction values rather than merging with them.
+        ``None`` keeps what this margin was constructed with.
     var_type : {"c", "d", "zi"}, or None, optional
         What the caller knows the variable to be, or ``None`` to leave it
         to the margin. A declaration rather than fit configuration, which
@@ -337,20 +338,25 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       self._type = var_type
     if support is not None:
       self.xmin, self.xmax = support
-    del controls
-    kde = Kde1d(
-      xmin=self.xmin,
-      xmax=self.xmax,
-      var_type=self._type,
-      multiplier=self.multiplier,
-      # The construction spec, not `self.bandwidth`: a previous fit overwrote
-      # that with the bandwidth it selected, and passing a value back in pins
-      # it, so a refit on different data reused the first fit's bandwidth.
-      bandwidth=self._bandwidth_spec,
-      degree=self.degree,
-      grid_size=self.grid_size,
-      boundary_repair=self.boundary_repair,
+    # All of the knobs or none of them, as `kde1d_configured` does on the
+    # compiled side: controls carry a value for every field, so reading them
+    # one at a time cannot tell a default from a choice.
+    #
+    # The construction *spec*, not `self.bandwidth`: a previous fit overwrote
+    # that with the bandwidth it selected, and passing a value back in pins
+    # it, so a refit on different data reused the first fit's bandwidth.
+    knobs: dict[str, Any] = (
+      {
+        "multiplier": self.multiplier,
+        "bandwidth": self._bandwidth_spec,
+        "degree": self.degree,
+        "grid_size": self.grid_size,
+        "boundary_repair": self.boundary_repair,
+      }
+      if controls is None
+      else controls.to_dict()
     )
+    kde = Kde1d(xmin=self.xmin, xmax=self.xmax, var_type=self._type, **knobs)
     y_tensor = validate_univariate(torch.as_tensor(y))
     # The shared validators, not a local pair of shape checks: their dtype,
     # finiteness, nonnegativity and positive-sum rules are what keep a weight

@@ -22,7 +22,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from pyvinecopulib.core import Kde1d, MarginLike
+from pyvinecopulib.core import FitControlsKde1d, Kde1d, MarginLike
 from pyvinecopulib.torch import TorchKde1d
 
 _PROBS = np.array([1e-6, 0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99, 1 - 1e-6])
@@ -224,7 +224,7 @@ def test_it_satisfies_the_margin_contract() -> None:
   assert isinstance(lifted, MarginLike)
   assert isinstance(lifted, torch.nn.Module)
   assert lifted.supports_weights is True
-  assert lifted.controls_class is None
+  assert lifted.controls_class is FitControlsKde1d
 
 
 @pytest.mark.parametrize(
@@ -704,3 +704,49 @@ def test_var_type_takes_every_spelling_kde1d_takes() -> None:
     TorchKde1d(var_type="nope")
   with pytest.raises(ValueError, match="variable type"):
     pv.core.Kde1d(var_type="nope")
+
+
+def test_the_kernel_knobs_arrive_through_the_controls() -> None:
+  """`FitControlsKde1d` configures this fit exactly as it configures `Kde1d`.
+
+  The knobs used to be construction-only here: `fit` took a controls object
+  and discarded it, so a core caller configured the kernel one way and a
+  torch caller another, for the same estimator. Passing controls replaces
+  every knob, as `kde1d_configured` does on the compiled side -- a controls
+  object carries a value for each field, so there is no "unset" to merge.
+  """
+  y = np.random.default_rng(0).gamma(2.0, 1.5, 600)
+  q = np.array([0.5, 1.0, 2.0, 4.0])
+  for controls in (
+    None,
+    FitControlsKde1d(multiplier=2.5),
+    FitControlsKde1d(degree=0, grid_size=64),
+  ):
+    compiled = Kde1d().fit(y, controls)
+    lifted = TorchKde1d().fit(_t(y), controls)
+    np.testing.assert_allclose(
+      lifted.grid_points.numpy(),
+      np.asarray(compiled.grid_points),
+      rtol=1e-12,
+      atol=1e-12,
+    )
+    np.testing.assert_allclose(
+      lifted.pdf(_t(q)).numpy(), np.asarray(compiled.pdf(q)), rtol=1e-12
+    )
+
+  # Not vacuous: the multiplier really does move the density.
+  plain = TorchKde1d().fit(_t(y)).pdf(_t(q)).numpy()
+  widened = (
+    TorchKde1d().fit(_t(y), FitControlsKde1d(multiplier=2.5)).pdf(_t(q)).numpy()
+  )
+  assert not np.allclose(plain, widened)
+
+  # Controls replace the construction values wholesale, on both lanes.
+  built = TorchKde1d(grid_size=64).fit(_t(y), FitControlsKde1d(multiplier=2.5))
+  assert built.grid_points.numel() == 401
+  assert (
+    Kde1d(grid_size=64).fit(y, FitControlsKde1d(multiplier=2.5)).grid_size
+    == 400
+  )
+  # And with no controls the construction values stand.
+  assert TorchKde1d(grid_size=64).fit(_t(y)).grid_points.numel() == 65
