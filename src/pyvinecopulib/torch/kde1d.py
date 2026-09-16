@@ -165,7 +165,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
   # refusal rather than a kernel density fitted in silence. A plain comment,
   # not a `#:` one: autosummary cannot page an attribute whose value is a
   # class, which is what this holds on a margin that does read controls.
-  controls_class: ClassVar[type | None] = None
+  controls_class: ClassVar[type[ControlsLike] | None] = None
   #: The variable type in ``Kde1d``'s spelling; read back as
   #: :attr:`kde_type`, since ``type`` is ``nn.Module``'s dtype cast.
   _type: str
@@ -190,13 +190,17 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     # Protocol-derived ABC), whose __init__ chain would otherwise shadow
     # nn.Module's under super().
     torch.nn.Module.__init__(self)
-    if type not in _VAR_TYPE_OF:
+    # Both spellings, as `Kde1d` accepts both: a declaration arrives as the
+    # contract's `"c"` / `"d"` / `"zi"` as readily as this class's own.
+    kde_type = _KDE_TYPE_OF.get(type, type)
+    if kde_type not in _VAR_TYPE_OF:
       raise ValueError(
-        f"unknown type={type!r}; expected one of {list(_VAR_TYPE_OF)}"
+        f"unknown type={type!r}; expected one of "
+        f"{list(_VAR_TYPE_OF)} or {list(_KDE_TYPE_OF)}"
       )
     self.xmin = xmin
     self.xmax = xmax
-    self._type = type
+    self._type = kde_type
     self.multiplier = multiplier
     self.bandwidth = bandwidth
     self._bandwidth_spec = bandwidth

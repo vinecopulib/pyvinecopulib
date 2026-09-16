@@ -677,3 +677,28 @@ def test_nobs_survives_a_state_dict_round_trip() -> None:
   restored.load_state_dict(fitted.state_dict())
   assert restored.nobs == fitted.nobs == 180
   assert restored.bic() == fitted.bic()
+
+
+def test_the_type_keyword_takes_either_spelling() -> None:
+  """`TorchKde1d(type=...)` accepts what `Kde1d(type=...)` accepts.
+
+  A variable type is `"c"` / `"d"` / `"zi"` everywhere in this package, and
+  `"continuous"` / `"discrete"` / `"zero-inflated"` only where `Kde1d`'s own
+  attribute is mirrored. Both constructors normalize, so a declaration
+  carried from one to the other does not have to be translated on the way.
+  """
+  import pytest
+
+  from pyvinecopulib.torch import TorchKde1d
+
+  for short, long in (
+    ("c", "continuous"),
+    ("d", "discrete"),
+    ("zi", "zero-inflated"),
+  ):
+    assert TorchKde1d(type=short).kde_type == long
+    assert TorchKde1d(type=long).kde_type == long
+    assert TorchKde1d(type=short).var_type == short
+    assert TorchKde1d(type=long).var_type == short
+  with pytest.raises(ValueError, match="unknown type"):
+    TorchKde1d(type="nope")

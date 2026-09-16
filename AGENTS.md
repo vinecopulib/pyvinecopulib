@@ -487,20 +487,33 @@ For any behavior change:
 - **Type hints are required** on public Python source. `ty` checks
   them; the only allowed unresolved import is
   `pyvinecopulib.pyvinecopulib_ext` (the compiled `.so`).
-- **A signature says `ArrayT`; a body that computes holds `Any`.** `ArrayT` is
-  unbounded, so it names no operator, no `.shape` and no `__getitem__`
-  (`core/protocols.py` says why, and why bounding it is not available: the
-  standard's bound is `__array_namespace__`, which `torch.Tensor` lacks). So a
-  body that indexes or does arithmetic takes a local `Any` and hands the result
-  back through `cast("ArrayT", ...)` -- `core/bicop_base.py` and
-  `core/bicop_independence.py` are the reference. What that buys is worth the two
-  casts: an `Any` in a *signature* erases the type for every caller and is
-  published contract text, while one in a body is confined to an expression.
-  Where a whole file's `Any` is one reason (`core/bicop_discrete.py`'s difference
-  quotients, OpenTURNS having no types at all) it goes in
-  `per-file-ignores` with that reason stated once; everywhere else it is a
-  `# noqa: ANN401` at the site, and `RUF100` fails the build when one goes
-  stale.
+- **A signature says `ArrayT`; `Any` is what is left when even `Array` will not
+  do.** `ArrayT` is **bounded** by `Array` (`core/protocols.py`), which names
+  `shape`, `ndim`, `dtype`, `device`, `__getitem__` / `__setitem__`, the four
+  arithmetic operators with their reflections and the three comparisons -- so a
+  body that indexes or does arithmetic writes `ArrayT` and needs no hatch, and
+  `Array` itself is for a value only ever computed on rather than handed back.
+  The bound is written out member by member rather than aliased to the array
+  API standard's own, whose bound is `__array_namespace__` and which
+  `torch.Tensor` therefore fails.
+
+  Three things still take `Any`, and each says which at the site: a value
+  handed to a `Namespace[ArrayT]` method or to an `ArrayT`-parameterized
+  helper, which a bare `Array` does not satisfy (`core/_rootfind.py`'s
+  brackets, `core/_vinecop_fit_engines.py`'s `u`, `core/_placement.py`'s
+  return); a hook a lane *narrows*, since `TorchVinecop` declares `Tensor` on
+  the three `_*_batched` hooks and only an `Any` on the base admits that; and
+  a foreign object the package cannot name, a `*args` / `**kwargs` it only
+  forwards, or a name resolved at attribute access. An `Any` in a *signature*
+  erases the type for every caller and is published contract text, while one
+  in a body is confined to an expression -- which is why a body hands its
+  result back through `cast("ArrayT", ...)`, as `core/bicop_base.py` and
+  `core/bicop_independence.py` do.
+
+  Where a whole file's `Any` is one reason -- OpenTURNS having no types at all
+  -- it goes in `per-file-ignores` with that reason stated once; everywhere
+  else it is a `# noqa: ANN401` at the site, and `RUF100` fails the build when
+  one goes stale.
 - **`__init__.py` files use explicit `__all__`** to define the public
   surface; ruff's per-file ignore (`F403`/`F405`) covers the
   re-export pattern. No wildcard re-exports elsewhere.
@@ -547,6 +560,18 @@ For any behavior change:
   covariate matrix is always `(n, p)`, which is what `validate_covariates`'
   own error message says; it was documented `(n, k)` at 78 sites, colliding
   with both of `k`'s other uses in the same files.
+- **One spelling for a variable type: `"c"` / `"d"` / `"zi"`.** That is what
+  `MarginLike.var_type` answers, what `var_types` declares on a pair copula, a
+  vine and `VinedistBase.from_data`, and what the sklearn estimators record in
+  `schema_["var_types"]`. The long names -- `"continuous"`, `"discrete"`,
+  `"zero-inflated"` -- are `Kde1d`'s own, from upstream, and survive only where
+  that class's `type` attribute is mirrored: `Kde1d.type` reports one and
+  `TorchKde1d.kde_type` reproduces it. Both constructors **accept** either
+  spelling and normalize, so a caller never has to know which side of the
+  boundary they are on; nothing in this package *emits* a long name. There
+  used to be a `_VAR_TYPE_OF` translation table copied into two tier-2 modules
+  that cannot import each other, which is what a second spelling costs.
+
 - **Two covariate-forwarding rules, and they are not interchangeable**
   (`core/_covariates.py`). `pair_eval` forwards `x` to a pair copula
   **whenever there is one**: `ty` makes every `BicopBase` subclass declare the

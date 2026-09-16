@@ -104,11 +104,6 @@ _DOC_REFERENCES = r"""References
 """
 
 
-#: `schema_["kde1d_types"]` carries `Kde1d`'s spellings; a margin declares the
-#: contract's. One map, so the two never drift apart.
-_VAR_TYPE_OF = {"continuous": "c", "discrete": "d", "zero-inflated": "zi"}
-
-
 #: What an estimator accepts for ``X``: the two shapes the pipeline models
 #: directly, or any nested sequence of rows -- sklearn's convention is that
 #: an array-like is valid input, and `VineBase._validate_input` coerces one.
@@ -366,9 +361,9 @@ class VineBase(BaseEstimator):
 
     For DataFrames, captures the canonical
     :attr:`feature_names_in_`, expands unordered categoricals via
-    :func:`expand_factors`, and infers ``kde1d_types``. For ndarrays,
+    :func:`expand_factors`, and infers ``var_types``. For ndarrays,
     captures :attr:`n_features_in_` and assumes all-continuous unless
-    a previously-set ``schema_["kde1d_types"]`` says otherwise.
+    a previously-set ``schema_["var_types"]`` says otherwise.
 
     Parameters
     ----------
@@ -453,8 +448,8 @@ class VineBase(BaseEstimator):
         }
         X_exp = expand_factors(X)
         self._expanded_columns = list(X_exp.columns)
-        kde1d_types = [
-          "discrete" if isinstance(dtype, pd.CategoricalDtype) else "continuous"
+        var_types = [
+          "d" if isinstance(dtype, pd.CategoricalDtype) else "c"
           for dtype in X_exp.dtypes
         ]
         # Bounds are passed wherever the input states them and left unset
@@ -471,7 +466,7 @@ class VineBase(BaseEstimator):
             bounds.append((0.0, 1.0))
           else:
             bounds.append(_categorical_bounds(dtype))
-        self.schema_ = {"kde1d_types": kde1d_types, "bounds": bounds}
+        self.schema_ = {"var_types": var_types, "bounds": bounds}
         self._schema_from_fit = True
         self.n_features_in_ = X.shape[1]
         self.n_model_features_ = X_exp.shape[1]
@@ -516,21 +511,21 @@ class VineBase(BaseEstimator):
         # ``fit`` to declare per-column kde1d types, and otherwise
         # treat every column as continuous.
         existing = getattr(self, "schema_", None) or {}
-        if "kde1d_types" in existing:
-          kde1d_types = existing["kde1d_types"]
-          if len(kde1d_types) != X.shape[1]:
+        if "var_types" in existing:
+          var_types = existing["var_types"]
+          if len(var_types) != X.shape[1]:
             raise ValueError(
-              "schema_['kde1d_types'] length does not match number of "
+              "schema_['var_types'] length does not match number of "
               "features in X."
             )
         else:
-          kde1d_types = ["continuous"] * X.shape[1]
+          var_types = ["c"] * X.shape[1]
         bounds = existing.get("bounds") or [None] * X.shape[1]
         if len(bounds) != X.shape[1]:
           raise ValueError(
             "schema_['bounds'] length does not match number of features in X."
           )
-        self.schema_ = {"kde1d_types": kde1d_types, "bounds": bounds}
+        self.schema_ = {"var_types": var_types, "bounds": bounds}
         # Only a schema this estimator derived on its own may be discarded on
         # the next `fit`. A caller who pre-set one is declaring something the
         # array cannot show -- which columns are discrete, where a variable is
@@ -675,9 +670,9 @@ class VineBase(BaseEstimator):
         One variable type and one support per variable, response first when
         there is one.
     """
-    types = self.schema_["kde1d_types"]
+    types = self.schema_["var_types"]
     bounds = self.schema_.get("bounds") or [None] * len(types)
-    var_types: list[str | None] = [_VAR_TYPE_OF.get(t, t) for t in types]
+    var_types: list[str | None] = list(types)
     supports: list[Any] = [
       None if b is None else (float(b[0]), float(b[1])) for b in bounds
     ]

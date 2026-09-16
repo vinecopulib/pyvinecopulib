@@ -247,7 +247,7 @@ def test_a_declared_support_reaches_a_selected_family() -> None:
   X = np.column_stack([rng.uniform(0.0, 1.0, 300), rng.normal(size=300)])
   est = VineDensity(distribution=ParametricVineDensity, random_state=0)
   est.schema_ = {
-    "kde1d_types": ["continuous", "continuous"],
+    "var_types": ["c", "c"],
     "bounds": [(0.0, 1.0), None],
   }
   est.fit(X)
@@ -371,7 +371,7 @@ def test_a_preset_schema_supplies_what_an_array_cannot_carry() -> None:
   X = np.column_stack([rng.poisson(3.0, size=200) * 1.0, rng.normal(size=200)])
   est = VineDensity()
   est.schema_ = {
-    "kde1d_types": ["discrete", "continuous"],
+    "var_types": ["d", "c"],
     "bounds": [(0.0, 20.0), None],
   }
   est.fit(X)
@@ -534,7 +534,7 @@ def test_a_failing_margin_names_its_column(cat_df: pd.DataFrame) -> None:
   plain = np.column_stack([rs.normal(size=200), rs.normal(size=200)])
   est = VineDensity()
   est.schema_ = {
-    "kde1d_types": ["discrete", "continuous"],
+    "var_types": ["d", "c"],
     "bounds": [None, None],
   }
   with pytest.raises(

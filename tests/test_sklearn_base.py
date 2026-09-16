@@ -87,8 +87,8 @@ def test_vinebase_array_input_validation(
   assert X_processed.shape == X.shape
   assert density.n_features_in_ == 2
   assert density.schema_ is not None
-  assert len(density.schema_["kde1d_types"]) == 2
-  assert all(t == "continuous" for t in density.schema_["kde1d_types"])
+  assert len(density.schema_["var_types"]) == 2
+  assert all(t == "c" for t in density.schema_["var_types"])
 
 
 def test_dataframe_prediction_does_not_mutate_caller_categories() -> None:
@@ -123,15 +123,9 @@ def test_vinebase_dataframe_expansion(
   assert density._expanded_columns == expected_expanded_cols
 
   # Check schema creation
-  expected_types = [
-    "continuous",
-    "continuous",
-    "discrete",
-    "discrete",
-    "continuous",
-  ]
+  expected_types = ["c", "c", "d", "d", "c"]
   assert density.schema_ is not None
-  assert density.schema_["kde1d_types"] == expected_types
+  assert density.schema_["var_types"] == expected_types
 
 
 def test_vinebase_dataframe_prediction_validation(
@@ -159,17 +153,17 @@ def test_vinebase_schema_attribute(
 ) -> None:
   """Pre-set ``schema_`` overrides the auto-inferred schema."""
   X, _, _ = sample_array_data
-  schema = {"kde1d_types": ["continuous", "discrete"]}
+  schema = {"var_types": ["c", "d"]}
   density = VineDensity()
   density.schema_ = schema
 
   density._validate_input(X, reset=True)
   assert density.schema_ is not None
-  assert density.schema_["kde1d_types"] == ["continuous", "discrete"]
+  assert density.schema_["var_types"] == ["c", "d"]
 
   # Schema length mismatch raises.
   density_wrong = VineDensity()
-  density_wrong.schema_ = {"kde1d_types": ["continuous"]}  # Too short
+  density_wrong.schema_ = {"var_types": ["c"]}  # Too short
   with pytest.raises(ValueError):
     density_wrong._validate_input(X, reset=True)
 
@@ -324,14 +318,14 @@ def test_a_caller_preset_schema_survives_fit() -> None:
   """The pre-settable `schema_` hook still overrides the array default."""
   est = VineDensity()
   est.schema_ = {
-    "kde1d_types": ["discrete", "continuous"],
+    "var_types": ["d", "c"],
     "bounds": [None] * 2,
   }
   rng = np.random.RandomState(0)
   est.fit(
     np.column_stack([rng.poisson(3, 80).astype(float), rng.normal(size=80)])
   )
-  assert est.schema_["kde1d_types"] == ["discrete", "continuous"]
+  assert est.schema_["var_types"] == ["d", "c"]
 
 
 def test_dataframe_after_an_array_fit_is_not_reported_unfitted() -> None:
