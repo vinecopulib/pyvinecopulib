@@ -848,6 +848,33 @@ class BicopLike(Protocol[ArrayT]):
     return False
 
   @property
+  def npars(self) -> float:
+    """Number of freely estimated parameters, which a criterion penalizes.
+
+    Only what a fit actually estimated counts, not the length of a parameter
+    vector: a pinned parameter is one fewer here, by enough to reverse a close
+    comparison, since it moves ``aic`` by 2 per parameter.
+
+    Returns
+    -------
+    float
+        The count.
+
+    Raises
+    ------
+    NotImplementedError
+        Unless the implementation reports one. It raises rather than
+        answering ``0`` because a model that estimated no parameters and one
+        that never said are different claims, and answering ``0`` for the second
+        turns ``aic`` into a penalty-free ``-2 loglik`` -- a plausible number
+        with nothing wrong-looking about it.
+    """
+    raise NotImplementedError(
+      f"{type(self).__name__} reports no `npars`, so no criterion can "
+      f"penalize this pair copula. Implement it to enable `aic` / `bic`."
+    )
+
+  @property
   def controls_class(self) -> type[ControlsLike] | None:
     """The fit configuration this pair copula's estimator reads, or ``None``.
 
@@ -1126,6 +1153,33 @@ class VinecopLike(Protocol[ArrayT]):
         ``False`` unless the implementation says otherwise.
     """
     return False
+
+  @property
+  def npars(self) -> float:
+    """Number of freely estimated parameters, which a criterion penalizes.
+
+    Only what a fit actually estimated counts, not the length of a parameter
+    vector: a pinned parameter is one fewer here, by enough to reverse a close
+    comparison, since it moves ``aic`` by 2 per parameter.
+
+    Returns
+    -------
+    float
+        The count.
+
+    Raises
+    ------
+    NotImplementedError
+        Unless the implementation reports one. It raises rather than
+        answering ``0`` because a model that estimated no parameters and one
+        that never said are different claims, and answering ``0`` for the second
+        turns ``aic`` into a penalty-free ``-2 loglik`` -- a plausible number
+        with nothing wrong-looking about it.
+    """
+    raise NotImplementedError(
+      f"{type(self).__name__} reports no `npars`, so no criterion can "
+      f"penalize this vine. Implement it to enable `aic` / `bic`."
+    )
 
   @property
   def controls_class(self) -> type[ControlsLike] | None:
@@ -1421,6 +1475,33 @@ class MarginLike(Protocol[ArrayT]):
         ``False`` unless the implementation says otherwise.
     """
     return False
+
+  @property
+  def npars(self) -> float:
+    """Number of freely estimated parameters, which a criterion penalizes.
+
+    Only what a fit actually estimated counts, not the length of a parameter
+    vector: a pinned parameter is one fewer here, by enough to reverse a close
+    comparison, since it moves ``aic`` by 2 per parameter.
+
+    Returns
+    -------
+    float
+        The count.
+
+    Raises
+    ------
+    NotImplementedError
+        Unless the implementation reports one. It raises rather than
+        answering ``0`` because a model that estimated no parameters and one
+        that never said are different claims, and answering ``0`` for the second
+        turns ``aic`` into a penalty-free ``-2 loglik`` -- a plausible number
+        with nothing wrong-looking about it.
+    """
+    raise NotImplementedError(
+      f"{type(self).__name__} reports no `npars`, so no criterion can "
+      f"penalize this margin. Implement it to enable `aic` / `bic`."
+    )
 
   @property
   def controls_class(self) -> type[ControlsLike] | None:
@@ -1813,6 +1894,28 @@ class VinedistLike(Protocol[ArrayT]):
     """
     raise NotImplementedError(
       f"{type(self).__name__} has no `sample_conditional`."
+    )
+
+  @property
+  def npars(self) -> float:
+    """Freely estimated parameters of both halves together.
+
+    Derived rather than declared: a vine distribution *is* its copula and its
+    margins, so it has no count of its own to report and nothing to keep in
+    step with theirs.
+
+    Returns
+    -------
+    float
+        ``vinecop.npars`` plus the margins'.
+
+    Raises
+    ------
+    NotImplementedError
+        If any part reports none, from that part and naming it.
+    """
+    return float(self.vinecop.npars) + sum(
+      float(margin.npars) for margin in self.margins
     )
 
   def fit(

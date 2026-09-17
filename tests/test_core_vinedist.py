@@ -1738,7 +1738,7 @@ def test_margin_summary_survives_a_margin_that_declines_a_field() -> None:
   """Every field is optional, and declining is a way of declaring.
 
   The docstring promises `None` for whatever a margin does not contribute, but
-  `name` / `family_name` / `support` / `n_parameters` were read with a bare
+  `name` / `family_name` / `support` / `npars` were read with a bare
   `getattr(..., None)`, which absorbs only `AttributeError` -- so a property
   that *raises* took the whole summary down, while `loglik()` beside it was
   already guarded. A margin wrapping a regressor with no well-defined free
@@ -1747,7 +1747,7 @@ def test_margin_summary_survives_a_margin_that_declines_a_field() -> None:
 
   class _Declines(ShiftedNormalMargin):
     @property
-    def n_parameters(self) -> float:
+    def npars(self) -> float:
       raise NotImplementedError("no well-defined free-parameter count")
 
     @property
@@ -1763,6 +1763,6 @@ def test_margin_summary_survives_a_margin_that_declines_a_field() -> None:
   rows = dist.margin_summary()
   assert len(rows) == 2
   for row in rows:
-    assert row["n_parameters"] is None
+    assert row["npars"] is None
     assert row["support"] is None
     assert row["margin"] == "_Declines"

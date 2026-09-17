@@ -273,7 +273,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
       ``distribution``.
   distribution : openturns.Distribution, or None, optional
       A distribution that already carries its parameters. Given here, the
-      margin is already fitted and :attr:`n_parameters` is 0, since nothing was
+      margin is already fitted and :attr:`npars` is 0, since nothing was
       estimated from data. :meth:`from_distribution` is the readable spelling.
 
   Raises
@@ -404,7 +404,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
     Returns
     -------
     OpenTURNSMargin
-        A fitted margin, with :attr:`n_parameters` 0.
+        A fitted margin, with :attr:`npars` 0.
     """
     return OpenTURNSMargin(distribution=distribution)
 
@@ -762,7 +762,7 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
       score = _openturns_criteria(
         sample,
         candidate.distribution,
-        int(candidate.n_parameters),
+        int(candidate.npars),
         candidate.loglik(),
       )[criterion]
       scored.append((score, candidate))

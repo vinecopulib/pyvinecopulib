@@ -493,7 +493,6 @@ inline void init_kde1d(nb::module_& module) {
               kde1d_doc.get_actual_grid_size.doc)
           .def_prop_ro("boundary_repair", &Kde1d::get_boundary_repair,
                        kde1d_doc.get_boundary_repair.doc)
-          .def_prop_ro("edf", &Kde1d::get_edf, kde1d_doc.get_edf.doc)
           .def_prop_ro(
               "grid_points",
               [](const Kde1d& kde) { return kde.get_grid_points(); },
@@ -515,9 +514,10 @@ inline void init_kde1d(nb::module_& module) {
           .def_prop_ro(
               "family_name", [](const Kde1d&) { return std::string("kde1d"); },
               "Family name, as a selection report spells it.")
-          .def_prop_ro("n_parameters", &Kde1d::get_edf,
-                       "Effective degrees of freedom, under the margin layer's "
-                       "name for a parameter count. See also ``edf``.")
+          .def_prop_ro("npars", &Kde1d::get_edf,
+                       "Effective degrees of freedom, which is this "
+                       "estimator's parameter count -- the name ``Bicop`` and "
+                       "``Vinecop`` answer, and what the criteria penalize.")
 
           // Methods — auto-extracted from `lib/kde1d` upstream `//!` comments,
           // except the three fitting verbs: their signature is this binding's

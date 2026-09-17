@@ -43,7 +43,7 @@ from ._validation import (
   reject_weights,
   validate_covariates,
 )
-from .margin_base import MarginBase, derive_cdf_left
+from .margin_base import MarginBase, criteria, derive_cdf_left
 from .protocols import (
   _VINEDIST_EXAMPLE,
   ArrayT,
@@ -437,7 +437,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
           "family": _declared(margin, "family_name"),
           "var_type": self._var_types[j],
           "support": _declared(margin, "support"),
-          "n_parameters": _declared(margin, "n_parameters"),
+          "npars": _declared(margin, "npars"),
           "loglik": value,
         }
       )
@@ -925,6 +925,54 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     observation out and is kept.
     """
     return sum_loglik(self.logpdf(y, x=x))
+
+  def aic(self, y: ArrayT, /) -> float:
+    """Akaike information criterion at these observations, minimized.
+
+    Parameters
+    ----------
+    y : array, shape (n, d), dtype float
+        Observations to evaluate the log-likelihood on. Required, unlike on
+        ``Bicop`` / ``Vinecop``, which carry the value their own fit attained;
+        a distribution may host parts it did not fit, so there is no such value here.
+
+    Returns
+    -------
+    float
+        ``-2 loglik + 2 npars``.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``npars`` reports none.
+
+    See Also
+    --------
+    bic : The same, penalizing by ``log n`` per parameter.
+    """
+    return criteria(float(to_numpy(self.loglik(y))), self.npars, None)["aic"]
+
+  def bic(self, y: ArrayT, /) -> float:
+    """Bayesian information criterion at these observations, minimized.
+
+    Parameters
+    ----------
+    y : array, shape (n, d), dtype float
+        Observations to evaluate the log-likelihood on; their row count is the
+        ``n`` the penalty uses.
+
+    Returns
+    -------
+    float
+        ``-2 loglik + npars log n``.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``npars`` reports none.
+    """
+    rows = float(self._prep(y).shape[0])
+    return criteria(float(to_numpy(self.loglik(y))), self.npars, rows)["bic"]
 
   def rosenblatt(
     self,

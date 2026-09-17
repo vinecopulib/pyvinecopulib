@@ -41,10 +41,11 @@ from ._bicop_plot import (
 )
 from ._covariates import pair_eval, prepare_covariates
 from ._loglik import safe_log, sum_loglik
-from ._placement import PlacementMixin, QrngUniformMixin
+from ._placement import PlacementMixin, QrngUniformMixin, to_numpy
 from ._rootfind import solve_increasing
 from ._trim import trim
 from ._validation import check_var_types
+from .margin_base import criteria
 from .protocols import (
   _BICOP_EXAMPLE,
   ArrayT,
@@ -415,6 +416,54 @@ class BicopBase(
     # layout is checked -- the base cannot know whether a pair is on a
     # discrete edge, whose argument is four columns wide.
     return sum_loglik(safe_log(self.pdf(u, x=x)))
+
+  def aic(self, u: ArrayT, /) -> float:
+    """Akaike information criterion at these observations, minimized.
+
+    Parameters
+    ----------
+    u : array, shape (n, 2), dtype float
+        Observations to evaluate the log-likelihood on. Required, unlike on
+        ``Bicop`` / ``Vinecop``, which carry the value their own fit attained;
+        a pair copula may host parts it did not fit, so there is no such value here.
+
+    Returns
+    -------
+    float
+        ``-2 loglik + 2 npars``.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``npars`` reports none.
+
+    See Also
+    --------
+    bic : The same, penalizing by ``log n`` per parameter.
+    """
+    return criteria(float(to_numpy(self.loglik(u))), self.npars, None)["aic"]
+
+  def bic(self, u: ArrayT, /) -> float:
+    """Bayesian information criterion at these observations, minimized.
+
+    Parameters
+    ----------
+    u : array, shape (n, 2), dtype float
+        Observations to evaluate the log-likelihood on; their row count is the
+        ``n`` the penalty uses.
+
+    Returns
+    -------
+    float
+        ``-2 loglik + npars log n``.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``npars`` reports none.
+    """
+    rows = float(self._prep(u).shape[0])
+    return criteria(float(to_numpy(self.loglik(u))), self.npars, rows)["bic"]
 
   def hinv1(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Inverse of :meth:`hfunc1` in its second argument.

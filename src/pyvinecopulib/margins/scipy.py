@@ -436,7 +436,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
   params : sequence of float, or None, optional
       The full parameter vector in SciPy's order (shape parameters, then
       ``loc``, then ``scale`` for a continuous family). Given here, the margin
-      is already fitted and :attr:`n_parameters` is 0, since nothing was
+      is already fitted and :attr:`npars` is 0, since nothing was
       estimated from data.
   param_bounds : mapping of str to tuple of float, or None, optional
       Search bounds **per parameter name**, used only by the discrete
@@ -509,7 +509,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
       x = np.random.default_rng(0).gamma(2.5, 1.5, size=500)
       m = SciPyMargin("gamma", floc=0.0).fit(x)
       m.parameters       # -> (shape, 0.0, scale)
-      m.n_parameters     # -> 2, not 3: `loc` was pinned
+      m.npars     # -> 2, not 3: `loc` was pinned
   """
 
   supports_weights: bool = False
@@ -733,7 +733,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
       loglik = candidate._loglik
       score = _criteria(
         float("-inf") if loglik is None else float(loglik),
-        candidate.n_parameters,
+        candidate.npars,
         int(data.size),
       )[criterion]
       scored.append((score, candidate))
@@ -1077,7 +1077,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
       margin._loglik = float(payload["loglik"])
     if payload.get("nobs") is not None:
       margin._nobs = int(payload["nobs"])
-    # `n_free` is what `n_parameters` reports, and it separates a fitted margin
+    # `n_free` is what `npars` reports, and it separates a fitted margin
     # from one constructed with `params=` pinned.
     margin._n_free = int(payload.get("n_free", 0))
     return margin

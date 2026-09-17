@@ -223,7 +223,7 @@ def test_criteria_match_their_definitions(eco: Ecosystem) -> None:
   rather than needing the sample again.
   """
   m = eco.cls(eco.true).fit(POSITIVE)
-  loglik, k, n = m.loglik(), m.n_parameters, float(m.nobs or 0)
+  loglik, k, n = m.loglik(), m.npars, float(m.nobs or 0)
   assert n == POSITIVE.size
   assert m.aic() == pytest.approx(-2.0 * loglik + 2.0 * k)
   assert m.bic() == pytest.approx(-2.0 * loglik + k * np.log(n))

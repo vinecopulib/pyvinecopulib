@@ -164,8 +164,8 @@ def test_kde1d_fit_and_methods() -> None:
   # After fitting, should have valid loglik and edf
   assert isinstance(kde.loglik(), float)
   assert kde.loglik() == kde.loglik()  # Should not be NaN
-  assert isinstance(kde.edf, float)
-  assert kde.edf > 0
+  assert isinstance(kde.npars, float)
+  assert kde.npars > 0
 
   # Test grid points and values are available
   grid_points = kde.grid_points
@@ -440,7 +440,7 @@ def test_kde1d_large_data() -> None:
 
   # Should handle large datasets
   assert isinstance(kde.loglik(), float)
-  assert kde.edf > 0
+  assert kde.npars > 0
 
   # Test evaluation on many points
   eval_points = np.linspace(-3, 3, 100)
@@ -559,7 +559,7 @@ def test_json_and_file_round_trips_are_exact() -> None:
       np.testing.assert_array_equal(restored.icdf(probs), kde.icdf(probs))
       # The fitted diagnostics travel too, not only the grid.
       assert restored.loglik() == kde.loglik()
-      assert restored.edf == kde.edf
+      assert restored.npars == kde.npars
       assert restored.bandwidth == kde.bandwidth
       assert restored.var_type == kde.var_type
       assert restored.grid_size == kde.grid_size

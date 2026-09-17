@@ -203,7 +203,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self.grid_size = grid_size
     self.boundary_repair = boundary_repair
     self._loglik: float | None = None
-    self.edf: float | None = None
+    self._npars: float | None = None
     self._selected_bandwidth: float | None = None
     self._dtype = dtype
     self._device = device
@@ -445,7 +445,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
 
     The fit-free injection point, mirroring ``Kde1d.from_grid``: a density
     obtained some other way -- optimized, transferred, hand-built -- becomes a
-    margin. Nothing was estimated, so ``loglik()`` and ``n_parameters`` have no
+    margin. Nothing was estimated, so ``loglik()`` and ``npars`` have no
     fitted value to report.
 
     Parameters
@@ -508,7 +508,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self.multiplier = kde.multiplier
     self.boundary_repair = kde.boundary_repair
     self._loglik = float(kde.loglik())
-    self.edf = float(kde.edf)
+    self._npars = float(kde.npars)
     return self
 
   def to_json(self) -> dict[str, Any]:
@@ -590,7 +590,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       "grid_size": self.grid_size,
       "boundary_repair": self.boundary_repair,
       "loglik": self._loglik,
-      "edf": self.edf,
+      "edf": self._npars,
       "nobs": self._nobs,
     }
 
@@ -620,7 +620,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self.grid_size = state["grid_size"]
     self.boundary_repair = state["boundary_repair"]
     self._loglik = state["loglik"]
-    self.edf = state["edf"]
+    self._npars = state["edf"]
     # The payload is an opaque ``object``, and the retained sample size is
     # declared on ``MarginBase`` as what the `nobs` property answers.
     self._nobs = cast("int | None", state["nobs"])
@@ -679,7 +679,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     return self._nobs
 
   @property
-  def n_parameters(self) -> float:
+  def npars(self) -> float:
     """Effective degrees of freedom of the fit.
 
     Returns
@@ -689,7 +689,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
         marginal and the copula side. ``nan`` for a grid supplied directly,
         which was not fitted here.
     """
-    return float("nan") if self.edf is None else self.edf
+    return float("nan") if self._npars is None else self._npars
 
   @property
   def family_name(self) -> str:

@@ -173,7 +173,7 @@ def test_estimator_recovers_the_generating_parameters(
   assert margin.family_name == "Normal"
   assert margin.parameter_names == ("mu_0", "sigma_0")
   np.testing.assert_allclose(margin.parameters, (1.0, 2.0), atol=0.2)
-  assert margin.n_parameters == 2.0  # noqa: RUF069 - an integer count, typed float
+  assert margin.npars == 2.0  # noqa: RUF069 - an integer count, typed float
 
 
 def test_estimator_accepts_a_factory_object(count_sample: np.ndarray) -> None:
@@ -200,7 +200,7 @@ def test_estimator_from_distribution_estimated_nothing() -> None:
   """A margin given its parameters is fitted, and has none to its name."""
   margin = OpenTURNSMargin.from_distribution(openturns.Normal(1.0, 2.0))
   assert margin.is_fitted
-  assert margin.n_parameters == 0.0  # noqa: RUF069 - an integer count, typed float
+  assert margin.npars == 0.0  # noqa: RUF069 - an integer count, typed float
   with pytest.raises(TypeError, match="already carries its parameters"):
     margin.fit(np.zeros(10))
 
@@ -251,7 +251,7 @@ def test_criteria_are_on_the_usual_scale(count_sample: np.ndarray) -> None:
   """OpenTURNS reports per observation; a margin reports the sample total."""
   margin = OpenTURNSMargin("Poisson").fit(count_sample)
   sample = openturns.Sample(count_sample.reshape(-1, 1))
-  n, k = float(count_sample.size), int(margin.n_parameters)
+  n, k = float(count_sample.size), int(margin.npars)
   for name, method in (("aic", "AIC"), ("bic", "BIC"), ("aicc", "AICC")):
     test = getattr(openturns.FittingTest, method)
     per_observation = float(test(sample, margin.distribution, k))

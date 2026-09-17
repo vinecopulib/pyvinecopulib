@@ -40,6 +40,8 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Drop `Vinecop.fit`'s `num_threads` argument, which duplicated `FitControlsBicop.num_threads` (#326).
     - `vine.fit(u, controls, num_threads=4)` -> `vine.fit(u, FitControlsBicop(num_threads=4))`
 - Rename `Kde1d`'s `quantile` to `icdf`, the name modern SciPy and `torch.distributions` use for the inverse distribution function, with no alias (#292).
+- Rename `Kde1d`'s `edf` to `npars`, the name `Bicop` and `Vinecop` already answer for the same quantity, with no alias. It was bound twice -- `edf` and `n_parameters` were the same getter -- so one class offered two live names for one number; `npars` is now the only spelling, on the compiled classes, on `MarginBase` and on the four contracts (#345).
+    - `kde.edf` -> `kde.npars`
     - `kde.quantile(p)` -> `kde.icdf(p)`
 - Rename `Kde1d`'s `type` to `var_type`, on the property and on every constructor, and spell a variable's type `"c"` / `"d"` / `"zi"` throughout -- the one spelling `var_types` already used on `Bicop` and `Vinecop`. Both constructors still accept the long names, so only the attribute is a break; nothing in the package emits one (#339).
     - `pv.core.Kde1d(type="continuous")` -> `pv.core.Kde1d(var_type="c")`, and likewise on `from_params` / `from_grid`

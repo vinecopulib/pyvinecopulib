@@ -651,7 +651,7 @@ def test_a_margin_estimated_from_covariates_recovers_the_truth() -> None:
   assert m.is_fitted is False
   assert m.fit(y, x=cov) is m
   assert m.slope == pytest.approx(slope, abs=0.05)
-  assert (m.nobs, m.n_parameters) == (4000, 1)
+  assert (m.nobs, m.npars) == (4000, 1)
 
   # And the fitted margin evaluates at the covariates it was fitted on.
   at_zero = m.icdf(np.full(3, 0.5), x=np.array([[0.0], [1.0], [-1.0]]))

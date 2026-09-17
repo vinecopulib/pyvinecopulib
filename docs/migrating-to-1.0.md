@@ -218,6 +218,7 @@ still resolves and warns; `utils.Kde1d` never shipped in a release and is gone.
 | 0.7.6 | 1.0.0 |
 | --- | --- |
 | `kde.quantile(p)` | `kde.icdf(p)` — no alias |
+| `kde.edf` | `kde.npars` — no alias; it was the same number as `n_parameters` |
 | `kde.loglik` (property) | `kde.loglik()` — a method taking optional data |
 | `kde.fit(x, w)` | `kde.fit(y, FitControlsKde1d(weights=w))` |
 | `kde.type` | `kde.var_type` — `"c"` / `"d"` / `"zi"`, not `"continuous"` |

@@ -490,7 +490,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
   controls_class: ClassVar[type[ControlsLike] | None] = None
 
   @property
-  def n_parameters(self) -> float:
+  def npars(self) -> float:
     """Number of free parameters, for the information criteria.
 
     The registered tensors that carry gradients: a ``trainable=False`` margin
