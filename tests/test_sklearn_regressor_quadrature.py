@@ -114,7 +114,7 @@ def test_the_node_count_is_n_nodes() -> None:
   """``n_nodes`` sets the width of the weight matrix, whatever the sample."""
   X, y = _data(300)
   est = VineRegressor(n_nodes=17).fit(X, y)
-  assert est._weights_for_batch(X[:4]).shape == (4, 17)
+  assert est.conditional_weights(X[:4]).shape == (4, 17)
 
 
 @pytest.mark.parametrize("heavy", [False, True])

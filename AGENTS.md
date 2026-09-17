@@ -218,8 +218,12 @@ it, there is no entry to write.
   Two behaviors here exist for ensembling and are not incidental: a
   pre-settable `schema_` is honored across a *refit*, not only the first
   `fit` (a wrapper refits its survivors, and re-inferring the types there
-  silently changes the model), and `VineRegressor.normalize_weights` is a
-  real `__init__` parameter so it survives `clone`.
+  silently changes the model), and `VineRegressor.conditional_weights` is
+  public, since the weights are what a wrapper averages and a prediction is
+  already a ratio of them -- which is also what `normalize_weights` is for,
+  a real `__init__` parameter so it survives `clone`. It reached a private
+  `_weights_for_batch` before, and the prediction step took the weight source
+  as an argument for a caller that never existed.
 
   **No underscore-prefixed name is protected.** An earlier version of this
   file listed private hooks that must not be removed "as unused" because a

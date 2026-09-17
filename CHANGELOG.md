@@ -160,6 +160,7 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Both sklearn estimators delegate the whole two-step fit to the distribution, handing it `margin_controls=` and the variable types and bounds `schema_` inferred, and publishing the result as `distribution_` alongside `schema_`, `structure_`, `margin_summary_`, `controls_`, `distribution_class_` and `random_state_` (#218, #292, #339).
 - Add `n_jobs` to `VineDensity` and `VineRegressor`, governing fitting *and* every evaluation where the fit-time thread count used to pin both; results are bit-identical at any thread count (#297).
 - `VineRegressor` accepts any continuous margin as its response, taking the `use_grid=True` quadrature on the probability scale so `n_nodes` fixes the number of probability levels (#292).
+- `VineRegressor` publishes the two halves of its estimator: `conditional_weights(X)` gives the per-row copula weights and `y_nodes_` the response nodes they sit on, which is what a wrapper averaging several fitted vines works with and what `normalize_weights` changes -- a prediction is a ratio of them and is the same either way. `copula_marginal_density` is public for the same reason (#292, #345).
 
 #### Structures, utilities and persistence
 
