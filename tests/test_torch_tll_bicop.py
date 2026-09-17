@@ -37,9 +37,10 @@ def test_pdf_matches_pvbicop() -> None:
   cop_tll = _fit_tll(u_fit)
 
   # Pin cache=False: this test verifies parity with the C++ on-the-fly
-  # integration math at 1e-10. The default cache_integrals=True uses
-  # bilinear-interp on the cache, which intentionally introduces a
-  # ~1e-3 IAE gap and is covered by test_cached_*_smoke below.
+  # integration math at 1e-10. The default cache_integrals=True reconstructs
+  # the same integral in closed form from prefix tables, so it agrees to
+  # summation-order noise rather than trading accuracy; it is covered by
+  # test_cached_*_smoke below.
   bc = TorchTllBicop.from_bicop(cop_tll, cache_integrals=False)
   u_eval = _eval_grid(500, seed=11)
 
@@ -202,8 +203,8 @@ def test_from_data_evaluates_consistently() -> None:
   in-range, hinv round-trips. Doesn't pin to a reference; the
   matches-vs-cpp test covers the fit accuracy.
 
-  Pin cache_integrals=False so the hinv round-trip below is the exact
-  closed-form inverse; the cached path round-trips only to ~1e-3."""
+  Pin cache_integrals=False so the hinv round-trip below runs the on-the-fly
+  cumulative rather than the prefix tables; the two agree to rounding."""
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   u_np = cop.sample(1000, seeds=[11, 22, 33])
   bc = TorchTllBicop.from_data(u_np, cache_integrals=False)

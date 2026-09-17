@@ -447,8 +447,11 @@ class TorchVinecop(
     ``conditioning_set`` settings on ``controls``. A supplied ``structure`` is
     taken as given and only its pair copulas are fitted, ``threshold`` still
     leaving an edge below it independent. Either way the result reproduces a
-    ``Vinecop`` TLL fit on the same data: the selected structure down to its
-    matrix encoding, the density to floating-point tolerance.
+    ``Vinecop`` TLL fit **run with the same controls**: the selected structure
+    down to its matrix encoding, the density to floating-point tolerance. The
+    defaults are not the same controls -- ``FitControlsTorchVinecop.trunc_lvl``
+    is 20 where ``FitControlsVinecop`` is untruncated -- so above ``d = 21``
+    the two lanes fit different models unless the truncation is set to match.
 
     Parameters
     ----------

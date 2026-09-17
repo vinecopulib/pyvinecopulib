@@ -73,7 +73,7 @@ def rect_prob_from_cdf(
   *,
   x: ArrayT | None = None,
 ) -> ArrayT:
-  """``P((a1, b1] x (a2, b2])`` as the four-corner difference of ``cdf``.
+  """``P((a1, b1] x (a2, b2])`` as the four-corner difference of ``_cdf_raw``.
 
   The generic route to a rectangle's probability, shared by
   :meth:`BicopBase.rect_prob` and by the fallback
@@ -507,8 +507,11 @@ class BicopBase(
     """Probability of the rectangle ``(a1, b1] x (a2, b2]``.
 
     The quantity a discrete argument's difference quotient is built from. This
-    reads it as the four-corner difference of :meth:`cdf`, which any pair
-    copula with a distribution function can serve. A pair that can evaluate the
+    reads it as the four-corner difference of ``_cdf_raw``, the continuous
+    leaf, which any pair copula with a distribution function can serve. The
+    leaf rather than :meth:`cdf` so the dispatcher cannot recur through it --
+    which also means the bounds arrive already placed and clamped, as the
+    cascades hand them over, and are not prepared here. A pair that can evaluate the
     rectangle without that cancellation overrides this --
     :class:`~pyvinecopulib.torch.TorchTllBicop` does, reading the mass off its
     grid -- and gains accuracy at a narrow atom, where differencing amplifies

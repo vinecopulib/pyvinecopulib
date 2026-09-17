@@ -489,8 +489,8 @@ class TestCrossLane:
     # Both lanes select their structure independently, but the torch
     # selection is an exact port of Vinecop's (same structure, same reused
     # pairs), so the densities agree to TLL-fit precision. Pin
-    # cache_integrals=False: the default cached evaluation trades ~1e-3 IAE
-    # for speed.
+    # cache_integrals=False to exercise the on-the-fly path; the cached one
+    # reconstructs the same integral exactly.
     est_torch = VineDensity(
       distribution=TorchVinedist,
       controls=FitControlsTorchVinecop(cache_integrals=False),
