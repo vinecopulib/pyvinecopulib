@@ -91,13 +91,13 @@ def test_an_unconditional_pair_needs_no_covariate_parameter() -> None:
   """The same, one level up: three primitives, none of them declaring ``x``."""
 
   class Independence(BicopBase[np.ndarray]):
-    def _pdf_raw(self, u: Any) -> Any:
+    def _pdf_raw(self, u: Any, *, x: Any = None) -> Any:
       return np.ones(u.shape[0])
 
-    def _hfunc1_raw(self, u: Any) -> Any:
+    def _hfunc1_raw(self, u: Any, *, x: Any = None) -> Any:
       return u[:, 1]
 
-    def _hfunc2_raw(self, u: Any) -> Any:
+    def _hfunc2_raw(self, u: Any, *, x: Any = None) -> Any:
       return u[:, 0]
 
   pair = Independence()

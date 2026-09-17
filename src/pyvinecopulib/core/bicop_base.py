@@ -816,15 +816,22 @@ class BicopBase(
 
   # --- the leaves a subclass writes -------------------------------------- #
   # Each takes two continuous columns the dispatcher has already prepared, and
-  # knows nothing about atoms. Declaring `x` on one marks the pair conditional.
+  # knows nothing about atoms. Every leaf declares `x` because `pair_eval`
+  # forwards one unconditionally; whether the pair *reads* it is
+  # `supports_covariates`.
   @abstractmethod
-  def _pdf_raw(self, u: ArrayT) -> ArrayT:
+  def _pdf_raw(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Continuous pair-copula density at each observation.
 
     Parameters
     ----------
     u : array, shape (n, 2), dtype float
         Pair pseudo-observations in the unit square.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, one row per observation. ``pair_eval`` forwards
+        one unconditionally whenever the caller supplies it, so every leaf
+        declares it even where it reads none -- ``del x`` is what that looks
+        like.
 
     Returns
     -------
@@ -833,13 +840,15 @@ class BicopBase(
     """
 
   @abstractmethod
-  def _hfunc1_raw(self, u: ArrayT) -> ArrayT:
+  def _hfunc1_raw(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Continuous first h-function ``P(U2 <= u2 | U1 = u1)``.
 
     Parameters
     ----------
     u : array, shape (n, 2), dtype float
         Pair pseudo-observations in the unit square.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, as on ``_pdf_raw``.
 
     Returns
     -------
@@ -848,13 +857,15 @@ class BicopBase(
     """
 
   @abstractmethod
-  def _hfunc2_raw(self, u: ArrayT) -> ArrayT:
+  def _hfunc2_raw(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Continuous second h-function ``P(U1 <= u1 | U2 = u2)``.
 
     Parameters
     ----------
     u : array, shape (n, 2), dtype float
         Pair pseudo-observations in the unit square.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, as on ``_pdf_raw``.
 
     Returns
     -------
@@ -862,7 +873,7 @@ class BicopBase(
         Conditional distribution values.
     """
 
-  def _cdf_raw(self, u: ArrayT) -> ArrayT:
+  def _cdf_raw(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Raise; override to give the pair copula a distribution ``C(u)``.
 
     Needed only to declare the pair discrete, whose h-functions are difference
@@ -874,6 +885,8 @@ class BicopBase(
     ----------
     u : array, shape (n, 2), dtype float
         Pair pseudo-observations in the unit square.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, as on ``_pdf_raw``.
 
     Returns
     -------
@@ -885,7 +898,7 @@ class BicopBase(
     NotImplementedError
         Always, unless a subclass provides one.
     """
-    del u
+    del u, x
     raise NotImplementedError(
       f"{type(self).__name__} has no `cdf`; the vine cdf uses Monte-Carlo "
       "simulation and does not require a per-pair distribution. Implement "

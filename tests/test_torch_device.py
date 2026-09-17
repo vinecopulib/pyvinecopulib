@@ -459,10 +459,10 @@ def test_a_declared_placement_serves_a_host_that_is_not_a_module(
       )
       return torch.ones(u.shape[0], dtype=u.dtype, device=u.device)
 
-    def _hfunc1_raw(self, u: Any) -> Any:
+    def _hfunc1_raw(self, u: Any, *, x: Any = None) -> Any:
       return self._prep_args(u)[:, 1]
 
-    def _hfunc2_raw(self, u: Any) -> Any:
+    def _hfunc2_raw(self, u: Any, *, x: Any = None) -> Any:
       return self._prep_args(u)[:, 0]
 
   pair = _Declared()
@@ -501,13 +501,13 @@ def test_a_member_named_parameters_does_not_decide_the_placement(
       self.device = torch.device(device)
       self.dtype = torch.float64
 
-    def _pdf_raw(self, u: Any) -> Any:
+    def _pdf_raw(self, u: Any, *, x: Any = None) -> Any:
       return torch.ones(u.shape[0], dtype=u.dtype, device=u.device)
 
-    def _hfunc1_raw(self, u: Any) -> Any:
+    def _hfunc1_raw(self, u: Any, *, x: Any = None) -> Any:
       return self._prep_args(u)[:, 1]
 
-    def _hfunc2_raw(self, u: Any) -> Any:
+    def _hfunc2_raw(self, u: Any, *, x: Any = None) -> Any:
       return self._prep_args(u)[:, 0]
 
   placed = _Coincidental()._prep(np.array([[0.3, 0.5]], dtype=np.float32))
@@ -587,13 +587,13 @@ def test_an_undeclared_host_gets_the_documented_default() -> None:
   from pyvinecopulib.torch import TensorPlacementMixin
 
   class _Bare(TensorPlacementMixin, BicopBase[torch.Tensor]):
-    def _pdf_raw(self, u: Any) -> Any:
+    def _pdf_raw(self, u: Any, *, x: Any = None) -> Any:
       return torch.ones(u.shape[0], dtype=u.dtype)
 
-    def _hfunc1_raw(self, u: Any) -> Any:
+    def _hfunc1_raw(self, u: Any, *, x: Any = None) -> Any:
       return u[:, 1]
 
-    def _hfunc2_raw(self, u: Any) -> Any:
+    def _hfunc2_raw(self, u: Any, *, x: Any = None) -> Any:
       return u[:, 0]
 
   placed = _Bare()._prep(np.array([[0.3, 0.5]], dtype=np.float32))

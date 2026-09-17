@@ -229,14 +229,14 @@ class MinimalBicop(BicopBase[Any]):
   ``_sample_uniform``, the one hook with no array-agnostic default.
   """
 
-  def _pdf_raw(self, u: Any) -> Any:
+  def _pdf_raw(self, u: Any, *, x: Any = None) -> Any:
     xp = array_namespace(u)
     return xp.ones((u.shape[0],), dtype=u.dtype, device=u.device)
 
-  def _hfunc1_raw(self, u: Any) -> Any:
+  def _hfunc1_raw(self, u: Any, *, x: Any = None) -> Any:
     return u[:, 1]
 
-  def _hfunc2_raw(self, u: Any) -> Any:
+  def _hfunc2_raw(self, u: Any, *, x: Any = None) -> Any:
     return u[:, 0]
 
   def _sample_uniform(self, n: int, qrng: bool, seeds: list[int]) -> Any:

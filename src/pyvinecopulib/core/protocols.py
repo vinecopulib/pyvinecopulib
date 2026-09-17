@@ -455,19 +455,23 @@ _BICOP_EXAMPLE = """
   --------
   A minimal independence pair on NumPy — implement only the three primitives and
   inherit ``hinv1`` / ``hinv2`` / ``sample`` / ``loglik`` / ``plot`` /
-  ``__repr__`` from :class:`~pyvinecopulib.core.BicopBase`::
+  ``__repr__`` from :class:`~pyvinecopulib.core.BicopBase`. Every leaf declares
+  a keyword-only ``x``, whether or not it reads one: a vine forwards its
+  conditioning matrix to each pair unconditionally, so a leaf that omits the
+  parameter raises at the first covariate call rather than answering
+  unconditionally::
 
       import numpy as np
       from pyvinecopulib.core import BicopBase
 
       class Independence(BicopBase[np.ndarray]):
-        def _pdf_raw(self, u):
+        def _pdf_raw(self, u, *, x=None):
           return np.ones(u.shape[0])
 
-        def _hfunc1_raw(self, u):
+        def _hfunc1_raw(self, u, *, x=None):
           return u[:, 1]
 
-        def _hfunc2_raw(self, u):
+        def _hfunc2_raw(self, u, *, x=None):
           return u[:, 0]
 
         def _sample_uniform(self, n, qrng, seeds):

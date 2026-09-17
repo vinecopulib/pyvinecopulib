@@ -462,13 +462,13 @@ def test_a_thresholded_edge_does_not_consume_the_flip_probe() -> None:
   assert seen and min(seen) > 0
 
   class _NoFlipPair(pv.core.BicopBase[Any]):
-    def _pdf_raw(self, u: Any) -> Any:
+    def _pdf_raw(self, u: Any, *, x: Any = None) -> Any:
       return np.ones(u.shape[0])
 
-    def _hfunc1_raw(self, u: Any) -> Any:
+    def _hfunc1_raw(self, u: Any, *, x: Any = None) -> Any:
       return u[:, 1]
 
-    def _hfunc2_raw(self, u: Any) -> Any:
+    def _hfunc2_raw(self, u: Any, *, x: Any = None) -> Any:
       return u[:, 0]
 
   def fit_edge(tree: int, edge: int, u_e: Any, x_e: Any) -> Any:

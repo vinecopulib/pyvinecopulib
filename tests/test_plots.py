@@ -1120,20 +1120,29 @@ class TestEdgeCases:
 def test_bicop_plot_refuses_x_on_a_pair_that_reads_no_covariates() -> None:
   """Better a loud refusal than an unconditional surface under a conditional call.
 
-  A pair that models no covariates says so by not declaring ``x`` on its
-  primitives, which is what ``pair_eval`` turns into a ``TypeError`` the first
-  time an edge has one.
+  A pair that models no covariates says so with ``supports_covariates``, which
+  ``pair_eval`` reads *before* the call and turns into a ``TypeError`` naming
+  the class. The refusal does not come from the primitives' signatures: every
+  leaf declares ``x`` whether or not it reads one, because ``pair_eval``
+  forwards unconditionally and a leaf without the parameter would raise
+  nanobind's overload dump instead of a message naming the pair.
   """
   from pyvinecopulib.core._bicop_plot import bicop_plot
 
   class NoCovariates(pv.core.BicopBase[np.ndarray]):
-    def _pdf_raw(self, u: np.ndarray) -> np.ndarray:
+    def _pdf_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
       return np.ones(u.shape[0], dtype=float)
 
-    def _hfunc1_raw(self, u: np.ndarray) -> np.ndarray:
+    def _hfunc1_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
       return u[:, 1]
 
-    def _hfunc2_raw(self, u: np.ndarray) -> np.ndarray:
+    def _hfunc2_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
       return u[:, 0]
 
   with pytest.raises(TypeError):
@@ -1166,14 +1175,20 @@ def test_bicop_plot_places_the_grid_through_the_supplied_hook() -> None:
   seen: dict[str, object] = {}
 
   class Recording(pv.core.BicopBase[np.ndarray]):
-    def _pdf_raw(self, u: np.ndarray) -> np.ndarray:
+    def _pdf_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
       seen["type"] = type(u).__name__
       return np.ones(u.shape[0], dtype=float)
 
-    def _hfunc1_raw(self, u: np.ndarray) -> np.ndarray:
+    def _hfunc1_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
       return u[:, 1]
 
-    def _hfunc2_raw(self, u: np.ndarray) -> np.ndarray:
+    def _hfunc2_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
       return u[:, 0]
 
   # No `place`: the grid arrives exactly as it always did.

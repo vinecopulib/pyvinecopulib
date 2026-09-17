@@ -92,13 +92,19 @@ def test_bicopbase_loglik_preserves_extreme_tail_density() -> None:
   )
 
   class _Hosted(BicopBase[np.ndarray]):
-    def _pdf_raw(self, u: np.ndarray) -> np.ndarray:
+    def _pdf_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
       return np.asarray(ref.pdf(u))
 
-    def _hfunc1_raw(self, u: np.ndarray) -> np.ndarray:
+    def _hfunc1_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
       return np.asarray(ref.hfunc1(u))
 
-    def _hfunc2_raw(self, u: np.ndarray) -> np.ndarray:
+    def _hfunc2_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
       return np.asarray(ref.hfunc2(u))
 
   u = np.array([[1e-6, 1 - 1e-6], [1e-5, 1 - 1e-5]])
@@ -212,6 +218,82 @@ def test_conditioning_matrix_is_keyword_only() -> None:
   # for a concretely-typed `Bicop`.
   with pytest.raises(TypeError):
     getattr(compiled, "pdf")(u, x=x)  # noqa: B009
+
+
+def test_every_raw_leaf_accepts_the_conditioning_matrix() -> None:
+  """A conditional pair can write the leaves exactly as the base declares them.
+
+  ``pair_eval`` forwards the conditioning matrix unconditionally -- there is no
+  introspection to do, since a bound class reports ``(*args, **kwargs)`` -- so
+  a leaf that omits the parameter raises ``TypeError`` at the first covariate
+  call instead of answering unconditionally. The base declared ``x`` on
+  ``_hinv1_raw`` / ``_hinv2_raw`` only, which left the four leaves a subclass
+  actually writes unimplementable as documented.
+  """
+  import inspect
+
+  # The declaration is the contract here: it is what a subclass author copies,
+  # so a leaf missing `x` produces a pair that raises on its first conditional
+  # call. Asserting the signature is what catches that, since a subclass that
+  # happens to declare `x` anyway works either way.
+  for name in (
+    "_pdf_raw",
+    "_cdf_raw",
+    "_hfunc1_raw",
+    "_hfunc2_raw",
+    "_hinv1_raw",
+    "_hinv2_raw",
+  ):
+    parameters = inspect.signature(getattr(BicopBase, name)).parameters
+    assert "x" in parameters, f"BicopBase.{name} declares no `x`"
+    assert parameters["x"].kind is inspect.Parameter.KEYWORD_ONLY, (
+      f"BicopBase.{name}"
+    )
+
+  seen: set[str] = set()
+
+  class Conditional(BicopBase[np.ndarray]):
+    supports_covariates = True
+
+    def _pdf_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
+      seen.add("pdf")
+      assert x is not None
+      return np.ones(u.shape[0])
+
+    def _cdf_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
+      seen.add("cdf")
+      assert x is not None
+      return u[:, 0] * u[:, 1]
+
+    def _hfunc1_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
+      seen.add("hfunc1")
+      assert x is not None
+      return u[:, 1]
+
+    def _hfunc2_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
+      seen.add("hfunc2")
+      assert x is not None
+      return u[:, 0]
+
+  pair = Conditional()
+  u = np.full((3, 2), 0.5)
+  x = np.ones((3, 1))
+
+  np.testing.assert_array_equal(pair.pdf(u, x=x), np.ones(3))
+  np.testing.assert_allclose(pair.cdf(u, x=x), 0.25)
+  np.testing.assert_array_equal(pair.hfunc1(u, x=x), u[:, 1])
+  np.testing.assert_array_equal(pair.hfunc2(u, x=x), u[:, 0])
+  # The inherited bisection reaches `_hfunc1_raw` with the same matrix.
+  np.testing.assert_allclose(pair.hinv1(u, x=x), u[:, 1], atol=1e-8)
+  assert seen == {"pdf", "cdf", "hfunc1", "hfunc2"}
 
 
 def test_independence_pair_is_the_independence_copula() -> None:
@@ -398,13 +480,13 @@ def test_fit_select_and_from_data_all_take_covariates() -> None:
       seen.append(("fit", None if x is None else tuple(np.shape(x))))
       return self
 
-    def _pdf_raw(self, u: np.ndarray) -> Any:
+    def _pdf_raw(self, u: np.ndarray, *, x: np.ndarray | None = None) -> Any:
       return np.ones(u.shape[0], dtype=float)
 
-    def _hfunc1_raw(self, u: np.ndarray) -> Any:
+    def _hfunc1_raw(self, u: np.ndarray, *, x: np.ndarray | None = None) -> Any:
       return u[:, 1]
 
-    def _hfunc2_raw(self, u: np.ndarray) -> Any:
+    def _hfunc2_raw(self, u: np.ndarray, *, x: np.ndarray | None = None) -> Any:
       return u[:, 0]
 
   u = np.random.default_rng(0).uniform(0.05, 0.95, size=(20, 2))
