@@ -308,7 +308,7 @@ class VineRegressor(RegressorMixin, VineBase):
     r"""Conditional copula weights over the response nodes, one row per query.
 
     The estimator itself, before it is summarized: :meth:`predict` is these
-    weights against :attr:`y_nodes_`, as a ratio for the mean and through
+    weights against ``y_nodes_``, as a ratio for the mean and through
     :func:`numpy.quantile` for a level. Public because a caller combining
     several fitted vines needs them -- which is also what
     ``normalize_weights=False`` is for, since a prediction is a ratio and
@@ -336,7 +336,7 @@ class VineRegressor(RegressorMixin, VineBase):
     Returns
     -------
     ndarray, shape (n_samples, n_nodes), dtype float
-        One row of weights per query, against :attr:`y_nodes_`.
+        One row of weights per query, against ``y_nodes_``.
 
     See Also
     --------
@@ -463,7 +463,7 @@ class VineRegressor(RegressorMixin, VineBase):
 
     Computes weights :math:`w_k(x)` from the fitted copula
     (:meth:`conditional_weights`) and returns the weighted statistics over
-    the response nodes :attr:`y_nodes_`:
+    the response nodes ``y_nodes_``:
     :math:`\\hat{\\mathbb{E}}[Y \\mid X = x] = \\sum_k w_k(x)\\, y_k`
     for the mean (closed-form solution of the estimating equation
     :math:`\\int (y - \\beta) \\hat f(y \\mid x)\\, dy = 0`) and the

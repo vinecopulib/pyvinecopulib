@@ -67,8 +67,7 @@ inline Vinecop vc_from_structure(
 }
 
 inline Vinecop vc_from_data(
-    const Eigen::MatrixXd& u,
-    const FitControlsVinecop* controls_ptr = nullptr,
+    const Eigen::MatrixXd& u, const FitControlsVinecop* controls_ptr = nullptr,
     std::optional<RVineStructure> structure = std::nullopt,
     std::optional<Eigen::Matrix<size_t, Eigen::Dynamic, Eigen::Dynamic>>
         matrix = std::nullopt,
@@ -499,8 +498,7 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
              const FitControlsVinecop* controls) -> Vinecop& {
             {
               nb::gil_scoped_release release;
-              self.select(u,
-                          controls ? *controls : default_vinecop_controls());
+              self.select(u, controls ? *controls : default_vinecop_controls());
             }
             return self;
           },
@@ -534,8 +532,9 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
               return cop.pdf(std::move(u), *parameters, num_threads);
             return cop.pdf(std::move(u), num_threads);
           },
-          "u"_a, nb::kw_only(), "num_threads"_a = 1, "parameters"_a = nb::none(),
-          pdf_perobs_doc.c_str(), nb::call_guard<nb::gil_scoped_release>())
+          "u"_a, nb::kw_only(), "num_threads"_a = 1,
+          "parameters"_a = nb::none(), pdf_perobs_doc.c_str(),
+          nb::call_guard<nb::gil_scoped_release>())
       .def(
           "logpdf",
           [](const Vinecop& cop, Eigen::MatrixXd u, size_t num_threads,
@@ -545,8 +544,9 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
               return cop.logpdf(std::move(u), *parameters, num_threads);
             return cop.logpdf(std::move(u), num_threads);
           },
-          "u"_a, nb::kw_only(), "num_threads"_a = 1, "parameters"_a = nb::none(),
-          logpdf_perobs_doc.c_str(), nb::call_guard<nb::gil_scoped_release>())
+          "u"_a, nb::kw_only(), "num_threads"_a = 1,
+          "parameters"_a = nb::none(), logpdf_perobs_doc.c_str(),
+          nb::call_guard<nb::gil_scoped_release>())
       .def(
           "pdf_full",
           [](const Vinecop& cop, Eigen::MatrixXd u, size_t num_threads,
@@ -584,8 +584,8 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
             return self.cdf(u, N, num_threads,
                             seeds.value_or(std::vector<int>{}));
           },
-          "u"_a, "N"_a = 10000, nb::kw_only(), "num_threads"_a = 1, "seeds"_a = nb::none(),
-          vinecop_doc.cdf.doc)
+          "u"_a, "N"_a = 10000, nb::kw_only(), "num_threads"_a = 1,
+          "seeds"_a = nb::none(), vinecop_doc.cdf.doc)
       .def(
           "sample",
           [](const Vinecop& self, size_t n, bool qrng, size_t num_threads,
@@ -594,8 +594,8 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
             return self.simulate(n, qrng, num_threads,
                                  seeds.value_or(std::vector<int>{}));
           },
-          "n"_a, "qrng"_a = false, nb::kw_only(), "num_threads"_a = 1, "seeds"_a = nb::none(),
-          vinecop_doc.simulate.doc)
+          "n"_a, "qrng"_a = false, nb::kw_only(), "num_threads"_a = 1,
+          "seeds"_a = nb::none(), vinecop_doc.simulate.doc)
       .def(
           "sample_conditional",
           [](const Vinecop& self, const Eigen::MatrixXd& u_cond, bool qrng,
@@ -612,8 +612,8 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
                 u_cond, qrng, num_threads, seeds.value_or(std::vector<int>{}));
           },
           "u_cond"_a, "qrng"_a = false, nb::kw_only(), "num_threads"_a = 1,
-          "seeds"_a = nb::none(),
-          "conditioning_set"_a = nb::none(), sample_conditional_doc.c_str())
+          "seeds"_a = nb::none(), "conditioning_set"_a = nb::none(),
+          sample_conditional_doc.c_str())
       // `u` is taken by value and moved: the implementation uses it as a
       // working buffer, and a const reference would force an n x d copy.
       .def(
@@ -667,24 +667,25 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
              size_t num_threads) {
             return u ? cop.aic(*u, num_threads) : cop.get_aic();
           },
-          "u"_a = nb::none(), nb::kw_only(), "num_threads"_a = 1, vinecop_doc.aic.doc,
-          nb::call_guard<nb::gil_scoped_release>())
+          "u"_a = nb::none(), nb::kw_only(), "num_threads"_a = 1,
+          vinecop_doc.aic.doc, nb::call_guard<nb::gil_scoped_release>())
       .def(
           "bic",
           [](const Vinecop& cop, const std::optional<Eigen::MatrixXd>& u,
              size_t num_threads) {
             return u ? cop.bic(*u, num_threads) : cop.get_bic();
           },
-          "u"_a = nb::none(), nb::kw_only(), "num_threads"_a = 1, vinecop_doc.bic.doc,
-          nb::call_guard<nb::gil_scoped_release>())
+          "u"_a = nb::none(), nb::kw_only(), "num_threads"_a = 1,
+          vinecop_doc.bic.doc, nb::call_guard<nb::gil_scoped_release>())
       .def(
           "mbicv",
           [](const Vinecop& cop, const std::optional<Eigen::MatrixXd>& u,
              double psi0, size_t num_threads) {
             return u ? cop.mbicv(*u, psi0, num_threads) : cop.get_mbicv(psi0);
           },
-          "u"_a = nb::none(), "psi0"_a = 0.9, nb::kw_only(), "num_threads"_a = 1,
-          vinecop_doc.mbicv.doc, nb::call_guard<nb::gil_scoped_release>())
+          "u"_a = nb::none(), "psi0"_a = 0.9, nb::kw_only(),
+          "num_threads"_a = 1, vinecop_doc.mbicv.doc,
+          nb::call_guard<nb::gil_scoped_release>())
       .def("scores", make_step_dispatch(&Vinecop::scores, &Vinecop::scores),
            "u"_a, "step_wise"_a = true, nb::kw_only(), "num_threads"_a = 1,
            "parameters"_a = nb::none(), scores_perobs_doc.c_str(),
@@ -727,8 +728,8 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
             }
             return out;
           },
-          "u"_a, "step_wise"_a = true, nb::kw_only(), "num_threads"_a = 1, "keep_all"_a = true,
-          "parameters"_a = nb::none(), scores_full_doc)
+          "u"_a, "step_wise"_a = true, nb::kw_only(), "num_threads"_a = 1,
+          "keep_all"_a = true, "parameters"_a = nb::none(), scores_full_doc)
       .def("hessian", make_step_dispatch(&Vinecop::hessian, &Vinecop::hessian),
            "u"_a, "step_wise"_a = true, nb::kw_only(), "num_threads"_a = 1,
            "parameters"_a = nb::none(), hessian_perobs_doc.c_str(),

@@ -685,9 +685,7 @@ def test_vinecop_per_observation_parameters() -> None:
   # The settings are keyword-only, so the two classes' orders -- which
   # disagreed -- cannot be told apart from a call site. `step_wise` stays
   # positional: `Bicop` has no such argument, so there is nothing to collide.
-  np.testing.assert_allclose(
-    cop.pdf(u, num_threads=2), cop.pdf(u), rtol=1e-12
-  )
+  np.testing.assert_allclose(cop.pdf(u, num_threads=2), cop.pdf(u), rtol=1e-12)
   np.testing.assert_allclose(
     cop.scores(u, False, num_threads=2),
     cop.scores(u, step_wise=False),

@@ -42,8 +42,7 @@ inline Bicop bc_from_data(const Eigen::MatrixXd& u,
                           const FitControlsBicop* controls,
                           const std::vector<std::string>& var_types = {"c",
                                                                        "c"}) {
-  return Bicop(u, controls ? *controls : default_bicop_controls(),
-               var_types);
+  return Bicop(u, controls ? *controls : default_bicop_controls(), var_types);
 }
 
 // Factory function to create a Bicop from a filename
@@ -237,8 +236,8 @@ Bicop
       .def(nb::init<const BicopFamily, const int,
                     const nb::DRef<Eigen::MatrixXd>&,
                     const std::vector<std::string>&>(),
-           "family"_a = BicopFamily::indep, "rotation"_a = 0,
-           nb::kw_only(), "parameters"_a = Eigen::MatrixXd(),
+           "family"_a = BicopFamily::indep, "rotation"_a = 0, nb::kw_only(),
+           "parameters"_a = Eigen::MatrixXd(),
            "var_types"_a = std::vector<std::string>(2, "c"),
            default_constructor_doc, nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_family", &bc_from_family,
@@ -520,8 +519,7 @@ Bicop
              const FitControlsBicop* controls) -> Bicop& {
             {
               nb::gil_scoped_release release;
-              self.select(u,
-                          controls ? *controls : default_bicop_controls());
+              self.select(u, controls ? *controls : default_bicop_controls());
             }
             return self;
           },

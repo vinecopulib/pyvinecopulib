@@ -165,9 +165,9 @@ methods, `qrng` on `sample`, and `deriv` on the `Bicop` derivative methods. So
 and `parameters_to_tau(pars)` is unchanged -- there `parameters` is the data.
 
 ```python
-cop.pdf(u, pars)              # -> cop.pdf(u, parameters=pars)
+cop.pdf(u, pars)  # -> cop.pdf(u, parameters=pars)
 cop.sample(n, False, [1, 2])  # -> cop.sample(n, False, seeds=[1, 2])
-vine.pdf(u, 4)                # -> vine.pdf(u, num_threads=4)
+vine.pdf(u, 4)  # -> vine.pdf(u, num_threads=4)
 ```
 
 Code that already passed these by keyword needs no change.

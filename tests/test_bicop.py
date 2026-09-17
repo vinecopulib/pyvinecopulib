@@ -196,7 +196,9 @@ def test_bicop_per_row_parameters(
   # and matches the state-based loglik under constant parameters.
   ll = cop.loglik(u, parameters=pars)
   assert isinstance(ll, float)
-  np.testing.assert_allclose(ll, np.nansum(np.log(cop.pdf(u, parameters=pars))), rtol=1e-9)
+  np.testing.assert_allclose(
+    ll, np.nansum(np.log(cop.pdf(u, parameters=pars))), rtol=1e-9
+  )
   np.testing.assert_allclose(
     cop.loglik(u, parameters=pars_const), cop.loglik(u), rtol=1e-9, atol=1e-12
   )
