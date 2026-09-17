@@ -667,7 +667,7 @@ class _ConditionalGaussian(BicopBase[np.ndarray]):
 
   def _per_row(self, x: np.ndarray | None) -> np.ndarray | None:
     """Per-row correlations, or ``None`` to take the scalar path."""
-    if x is None or self._slope == 0.0:  # noqa: RUF069 - an exact guarantee, not a computed approximation
+    if x is None or self._slope == 0.0:
       return None
     assert self._bicop is not None
     rho = float(np.asarray(self._bicop.parameters).ravel()[0])

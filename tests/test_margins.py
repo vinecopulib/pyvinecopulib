@@ -306,7 +306,7 @@ def test_as_margin_scipy_forwards_native_log_density(raw: Any) -> None:
   margin: Any = as_margin(raw)
   np.testing.assert_allclose(margin.logpdf(far), raw.logpdf(far), atol=0)
   assert np.isfinite(margin.logpdf(far)).all()
-  assert margin.pdf(far)[0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert margin.pdf(far)[0] == 0.0
 
 
 def test_as_margin_rejects_the_unknown() -> None:
@@ -382,7 +382,7 @@ def test_as_margin_torch_forwards_native_log_density() -> None:
   margin_with_logpdf: Any = margin
   torch.testing.assert_close(margin_with_logpdf.logpdf(far), raw.log_prob(far))
   assert torch.isfinite(margin_with_logpdf.logpdf(far)).all()
-  assert margin.pdf(far).item() == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert margin.pdf(far).item() == 0.0
 
 
 @pytest.mark.parametrize("family", ["Poisson", "Bernoulli"])

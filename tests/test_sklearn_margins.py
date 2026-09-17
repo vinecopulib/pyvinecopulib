@@ -170,8 +170,8 @@ def test_expanded_dummies_are_fitted_on_their_own_support(
     # members of `MarginLike`, so they are read off a loosely typed binding.
     margin: Any = est.distribution_.margins[j]
     assert margin.support == (0.0, 1.0)
-    assert margin.pdf(np.array([2.0])).item() == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
-    assert margin.cdf(np.array([-1.0])).item() == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+    assert margin.pdf(np.array([2.0])).item() == 0.0
+    assert margin.cdf(np.array([-1.0])).item() == 0.0
   # A continuous column states no support, so it stays unbounded.
   unbounded: Any = est.distribution_.margins[0]
   assert unbounded.support == (-np.inf, np.inf)
@@ -188,7 +188,7 @@ def test_ordered_categorical_is_fitted_on_its_declared_levels() -> None:
     }
   )
   est = VineDensity(random_state=0).fit(X_df)
-  assert est.schema_["bounds"][0] == (
+  assert est.schema_["supports"][0] == (
     float(np.min(counts)),
     float(np.max(counts)),
   )
@@ -197,8 +197,8 @@ def test_ordered_categorical_is_fitted_on_its_declared_levels() -> None:
   assert margin.support == (float(np.min(counts)), float(np.max(counts)))
   # Padding the grid below the smallest level is what put mass on impossible
   # counts; the declared support removes it exactly rather than approximately.
-  assert margin.cdf(np.array([-1.0])).item() == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
-  assert margin.pdf(np.array([-1.0])).item() == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert margin.cdf(np.array([-1.0])).item() == 0.0
+  assert margin.pdf(np.array([-1.0])).item() == 0.0
 
 
 def test_the_schema_reaches_a_column_the_specification_addresses() -> None:
@@ -249,7 +249,7 @@ def test_a_declared_support_reaches_a_selected_family() -> None:
   est = VineDensity(distribution=ParametricVineDensity, random_state=0)
   est.schema_ = {
     "var_types": ["c", "c"],
-    "bounds": [(0.0, 1.0), None],
+    "supports": [(0.0, 1.0), None],
   }
   est.fit(X)
   bounded: Any = est.distribution_.margins[0]
@@ -370,7 +370,7 @@ def test_a_preset_schema_supplies_what_an_array_cannot_carry() -> None:
   est = VineDensity()
   est.schema_ = {
     "var_types": ["d", "c"],
-    "bounds": [(0.0, 20.0), None],
+    "supports": [(0.0, 20.0), None],
   }
   est.fit(X)
   counts: Any = est.distribution_.margins[0]
@@ -533,7 +533,7 @@ def test_a_failing_margin_names_its_column(cat_df: pd.DataFrame) -> None:
   est = VineDensity()
   est.schema_ = {
     "var_types": ["d", "c"],
-    "bounds": [None, None],
+    "supports": [None, None],
   }
   with pytest.raises(
     ValueError, match=r"margin for 'variable 0': discrete data"
@@ -559,7 +559,7 @@ def test_an_integer_categorical_is_fitted_on_its_declared_support() -> None:
   )
   est = VineDensity().fit(df)
   margin: Any = est.distribution_.margins[1]
-  assert est.schema_["bounds"][1] == (0.0, 3.0)
+  assert est.schema_["supports"][1] == (0.0, 3.0)
   grid = np.asarray(margin.grid_points)
   assert grid[0] == pytest.approx(-0.5)
   assert grid[-1] == pytest.approx(3.5)

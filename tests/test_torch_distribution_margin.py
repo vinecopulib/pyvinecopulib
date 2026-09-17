@@ -190,8 +190,8 @@ def test_python_floats_keep_full_precision() -> None:
   """
   margin = _normal(-0.2, 0.8)
   assert widen(margin.loc).dtype == _F64
-  assert widen(margin.loc).item() == -0.2  # noqa: RUF069 - the value this test set, read back
-  assert widen(margin.scale).item() == 0.8  # noqa: RUF069 - the value this test set, read back
+  assert widen(margin.loc).item() == -0.2
+  assert widen(margin.scale).item() == 0.8
 
 
 def test_the_distribution_is_rebuilt_from_the_current_parameters() -> None:
@@ -419,7 +419,7 @@ def test_the_criteria_penalize_the_trainable_parameters() -> None:
   """
   y = torch.as_tensor(np.random.default_rng(1).normal(size=200), dtype=_F64)
   margin = TorchDistributionMargin.from_distribution(_D.Normal(0.0, 1.0))
-  assert margin.npars == 2.0  # noqa: RUF069 - an integer count, typed float
+  assert margin.npars == 2.0
   aic, bic, aicc = margin.aic(y), margin.bic(y), margin.aicc(y)
   assert len({round(float(v), 9) for v in (aic, bic, aicc)}) == 3
   # `aic` is exactly `-2 * loglik + 2 * k`, so the penalty is visible.
@@ -432,7 +432,7 @@ def test_a_frozen_margin_is_penalized_for_nothing() -> None:
   margin = TorchDistributionMargin.from_distribution(
     _D.Normal(0.0, 1.0), trainable=False
   )
-  assert margin.npars == 0.0  # noqa: RUF069 - an integer count, typed float
+  assert margin.npars == 0.0
   y = torch.as_tensor(np.random.default_rng(2).normal(size=120), dtype=_F64)
   loglik = float(margin.loglik(y))
   assert float(margin.aic(y)) == pytest.approx(-2.0 * loglik)

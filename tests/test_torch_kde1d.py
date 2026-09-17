@@ -111,7 +111,7 @@ def _assert_quantiles_agree(
 ) -> None:
   """Compare a torch quantile against the compiled one; see `_QUANTILE_RTOL`."""
   rtol = _QUANTILE_RTOL[kind]
-  if rtol == 0.0:  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  if rtol == 0.0:
     np.testing.assert_array_equal(got, want)
   else:
     np.testing.assert_allclose(got, want, rtol=rtol, atol=rtol)
@@ -199,7 +199,7 @@ def test_discrete_masses_sum_to_one_over_the_lattice() -> None:
   levels = _t(np.arange(-2.0, 40.0))
   assert float(lifted.pdf(levels).sum()) == pytest.approx(1.0, abs=1e-10)
   # Off-lattice points carry no mass at all.
-  assert float(lifted.pdf(_t(np.array([1.5, 2.25]))).abs().sum()) == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert float(lifted.pdf(_t(np.array([1.5, 2.25]))).abs().sum()) == 0.0
 
 
 def test_cdf_left_is_derived_for_a_discrete_margin() -> None:

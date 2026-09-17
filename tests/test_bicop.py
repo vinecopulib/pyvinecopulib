@@ -67,7 +67,7 @@ def test_the_writable_properties_refuse_what_they_cannot_hold(
     gumbel.rotation = 45
 
   assert gumbel.parameters.shape == (1, 1)
-  assert gumbel.parameters[0, 0] == 3.0  # noqa: RUF069 - the value this test set, read back
+  assert gumbel.parameters[0, 0] == 3.0
 
   gumbel.var_types = ["d", "d"]
   assert gumbel.var_types == ["d", "d"]
@@ -479,12 +479,12 @@ def test_bicop_taildep_and_beta() -> None:
   td = clayton.taildep
   assert isinstance(td, np.ndarray) and td.shape == (2, 2)
   np.testing.assert_allclose(td[0, 0], 2 ** (-1 / 2), rtol=1e-12)
-  assert td[1, 1] == 0.0 and td[0, 1] == 0.0 and td[1, 0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert td[1, 1] == 0.0 and td[0, 1] == 0.0 and td[1, 0] == 0.0
 
   # Gumbel theta=2: upper tail dependence 2 - 2^(1/theta), no lower.
   gumbel = pv.Bicop(family=pv.families.gumbel, parameters=np.array([[2.0]]))
   np.testing.assert_allclose(gumbel.taildep[1, 1], 2 - 2**0.5, rtol=1e-12)
-  assert gumbel.taildep[0, 0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert gumbel.taildep[0, 0] == 0.0
 
   # Gaussian: no tail dependence in any corner.
   gaussian = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
@@ -509,12 +509,12 @@ def test_bicop_taildep_and_beta() -> None:
   np.testing.assert_allclose(
     clayton180.taildep[1, 1], clayton.taildep[0, 0], rtol=1e-12
   )
-  assert clayton180.taildep[0, 0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert clayton180.taildep[0, 0] == 0.0
   clayton90 = pv.Bicop(
     family=pv.families.clayton, rotation=90, parameters=np.array([[2.0]])
   )
   td90 = clayton90.taildep
-  assert td90[0, 0] == 0.0 and td90[1, 1] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert td90[0, 0] == 0.0 and td90[1, 1] == 0.0
   assert td90[0, 1] + td90[1, 0] > 0
   assert clayton90.beta < 0 < clayton.beta
 

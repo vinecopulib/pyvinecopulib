@@ -474,7 +474,7 @@ def test_a_declared_placement_serves_a_host_that_is_not_a_module(
   # float32, and a downstream test had been pinning that as correct.
   assert pair._prep(u_np.astype(np.float32)).dtype is torch.float64
   # Both arguments arrive placed, so they can meet in one expression.
-  assert float(pair.loglik(u_np, x=np.array([[1.0], [2.0]]))) == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert float(pair.loglik(u_np, x=np.array([[1.0], [2.0]]))) == 0.0
 
 
 def test_a_member_named_parameters_does_not_decide_the_placement(

@@ -198,7 +198,7 @@ def test_logpdf_survives_a_copula_density_that_underflows() -> None:
   dist = Vinedist(copula, [stats.uniform()] * d)
   y = np.tile(np.array([0.999, 0.001]), d // 2)[None, :]
 
-  assert np.asarray(copula.pdf(y))[0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert np.asarray(copula.pdf(y))[0] == 0.0
   logpdf = np.asarray(dist.logpdf(y))[0]
   assert np.isfinite(logpdf)
   # Uniform margins contribute nothing, so the joint log-density is the
@@ -822,7 +822,7 @@ def test_declared_supports_bound_the_default_kde_margin(
   plain = pv.Vinedist.from_data(continuous)
   bounded = pv.Vinedist.from_data(continuous, supports=[None, (0.0, None)])
   margin: Any = bounded.margins[1]
-  assert isinstance(margin, Kde1d) and margin.xmin == 0.0  # noqa: RUF069 - the value this test set, read back
+  assert isinstance(margin, Kde1d) and margin.xmin == 0.0
   assert plain.sample(500, seeds=[1, 2, 3])[:, 1].min() < 0.0
   assert bounded.sample(500, seeds=[1, 2, 3])[:, 1].min() >= 0.0
 

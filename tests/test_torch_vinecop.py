@@ -1546,7 +1546,7 @@ def test_cxi_criterion_thresholds_nothing_at_zero() -> None:
     (t, e)
     for t in range(fitted.trunc_lvl)
     for e in range(6 - t - 1)
-    if bool((rows[t][e].interp_grid.values == 1.0).all())  # noqa: RUF069 - an exact guarantee, not a computed approximation
+    if bool((rows[t][e].interp_grid.values == 1.0).all())
   ]
   assert thresholded == [], f"thresholded at threshold=0.0: {thresholded}"
 

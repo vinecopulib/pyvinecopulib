@@ -268,14 +268,14 @@ def test_the_marginal_copula_quadrature_is_not_floored() -> None:
   est = VineRegressor(random_state=0).fit(X, y)
 
   far = np.vstack([X[:1], np.full((1, 6), 60.0)])
-  log_d = est._copula_marginal_density(far, log=True)
+  log_d = est.copula_marginal_density(far, log=True)
 
   assert log_d[0] > np.log(1e-10)
   assert log_d[1] < np.log(1e-10)
   # The two spellings are the same quantity wherever both can hold it.
-  linear = est._copula_marginal_density(X[:5], log=False)
+  linear = est.copula_marginal_density(X[:5], log=False)
   np.testing.assert_allclose(
-    np.log(linear), est._copula_marginal_density(X[:5], log=True)
+    np.log(linear), est.copula_marginal_density(X[:5], log=True)
   )
 
   # And where they cannot: at six variables the excluded row is 1.8e-132,
@@ -288,7 +288,7 @@ def test_the_marginal_copula_quadrature_is_not_floored() -> None:
     wide, wide.sum(axis=1) + 0.3 * rng.standard_normal(400)
   )
   excluded = np.full((1, 12), 60.0)
-  log_excluded = float(est_wide._copula_marginal_density(excluded, log=True)[0])
+  log_excluded = float(est_wide.copula_marginal_density(excluded, log=True)[0])
   assert np.isfinite(log_excluded)
   assert log_excluded < -700.0
-  assert float(est_wide._copula_marginal_density(excluded, log=False)[0]) == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert float(est_wide.copula_marginal_density(excluded, log=False)[0]) == 0.0

@@ -83,8 +83,8 @@ def test_parametric_margin_counts_only_free_parameters(
   pinned = SciPyMargin("gamma", floc=0.0).fit(gamma_sample)
   # SciPy returns three numbers either way; only one of the two estimated three.
   assert len(free.parameters) == len(pinned.parameters) == 3
-  assert free.npars == 3.0  # noqa: RUF069 - an integer count, typed float
-  assert pinned.npars == 2.0  # noqa: RUF069 - an integer count, typed float
+  assert free.npars == 3.0
+  assert pinned.npars == 2.0
   assert pinned.fixed_parameters == {"loc": 0.0}
   # And pinning it is what makes the support the family's own half-line.
   assert pinned.support == (0.0, float("inf"))
@@ -94,7 +94,7 @@ def test_parametric_margin_fully_specified_is_already_fitted() -> None:
   """Parameters given at construction need no data, and estimate nothing."""
   m = SciPyMargin("norm", (0.0, 1.0))
   assert m.is_fitted
-  assert m.npars == 0.0  # noqa: RUF069 - an integer count, typed float
+  assert m.npars == 0.0
   np.testing.assert_allclose(m.cdf(np.array([0.0])), [0.5], atol=1e-12)
 
 
@@ -126,7 +126,7 @@ def test_parametric_margin_pins_the_discrete_lattice_offset(
   m = SciPyMargin("poisson").fit(count_sample)
   assert m.var_type == "d"
   assert m.fixed_parameters == {"loc": 0.0}
-  assert m.npars == 1.0  # noqa: RUF069 - an integer count, typed float
+  assert m.npars == 1.0
   # `pdf` is the probability mass, and `cdf_left` steps back one lattice point.
   k = np.array([0.0, 1.0, 4.0])
   np.testing.assert_allclose(m.pdf(k), m.cdf(k) - m.cdf_left(k), atol=1e-12)
@@ -137,7 +137,7 @@ def test_parametric_margin_fits_when_nothing_is_free() -> None:
   x = np.random.default_rng(2).uniform(1.0, 3.0, size=100)
   m = SciPyMargin("uniform", floc=1.0, fscale=2.0).fit(x)
   assert m.parameters == (1.0, 2.0)
-  assert m.npars == 0.0  # noqa: RUF069 - an integer count, typed float
+  assert m.npars == 0.0
   assert m.loglik() == pytest.approx(100 * np.log(0.5))
 
 
@@ -262,7 +262,7 @@ def test_select_picks_the_true_family(gamma_sample: np.ndarray) -> None:
   """Gamma data select a gamma, ahead of ten other admissible candidates."""
   m = SciPyMargin().select(gamma_sample)
   assert m.family_name == "gamma"
-  assert m.npars == 2.0  # noqa: RUF069 - an integer count, typed float
+  assert m.npars == 2.0
   assert m.fixed_parameters == {"loc": 0.0}
   assert m.nobs == gamma_sample.size
 
@@ -301,7 +301,7 @@ def test_select_adds_the_unit_group_for_data_inside_the_unit_interval() -> None:
   assert m.family_name == "beta"
   # The unit group pins both endpoints, so only the two shapes are estimated.
   assert m.fixed_parameters == {"loc": 0.0, "scale": 1.0}
-  assert m.npars == 2.0  # noqa: RUF069 - an integer count, typed float
+  assert m.npars == 2.0
 
 
 def test_declared_bounds_anchor_the_candidates() -> None:
@@ -310,7 +310,7 @@ def test_declared_bounds_anchor_the_candidates() -> None:
   m = SciPyMargin().select(x, support=(1.0, 3.0))
   assert m.family_name == "uniform"
   assert m.support == (1.0, 3.0)
-  assert m.npars == 0.0  # noqa: RUF069 - an integer count, typed float
+  assert m.npars == 0.0
 
 
 def test_a_half_bounded_support_is_not_a_bounded_one() -> None:
@@ -556,7 +556,7 @@ def test_criteria_take_a_sample_or_read_the_fitted_value(
   """
   fixed = SciPyMargin("norm", (0.0, 1.0))
   deviance = -2.0 * float(np.sum(fixed.logpdf(gamma_sample)))
-  assert fixed.npars == 0.0  # noqa: RUF069 - an integer count, typed float
+  assert fixed.npars == 0.0
   assert fixed.aic(gamma_sample) == pytest.approx(deviance)
   assert fixed.bic(gamma_sample) == pytest.approx(deviance)
   assert fixed.aicc(gamma_sample) == pytest.approx(deviance)

@@ -425,7 +425,7 @@ def test_supports_declare_a_bound() -> None:
   rng = np.random.default_rng(1)
   y = torch.as_tensor(rng.gamma(2.0, 1.0, size=(400, 2)))
   bounded = TorchVinedist.from_data(y, supports=[(0.0, None)] * 2)
-  assert all(float(cast("Any", m).xmin) == 0.0 for m in bounded.margins)  # noqa: RUF069 - the value this test set, read back
+  assert all(float(cast("Any", m).xmin) == 0.0 for m in bounded.margins)
 
 
 def test_a_distribution_margin_is_fixed_across_a_refit(

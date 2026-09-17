@@ -195,6 +195,9 @@ extend-select = [
 # multiplication sign a shape is written with, and the right single quote
 # inside a quoted copy of codespell's own word regex.
 allowed-confusables = ["\u03c1", "\u00d7", "\u2019"]
+# Required rather than preferred: the selectors below name rules instead of
+# coding them -- which `rule-codes-in-selectors` asks for and which ruff reads
+# only in preview.
 preview = true
 ignore = [
   # Every annotation on the public surface resolves at runtime, and these
@@ -239,7 +242,13 @@ ignore = [
 # `test_a_private_import_outside_src_names_this_package` is what enforces:
 # the allowlist of third-party privates lives there, one entry with its
 # reason, so a new one is a reviewed edit rather than a silent inheritance.
-"tests/**" = ["any-type", "import-private-name"]
+# `float-equality-comparison` reads a float `==` as a probable typo. In a test
+# it is usually the claim: a value the test itself set and reads back, or an
+# exact guarantee rather than a computed approximation. That one reason covered
+# 66 sites, which is the per-file case AGENTS.md describes rather than the same
+# sentence 66 times. `src` keeps its four site-level suppressions, each of
+# which has a reason of its own.
+"tests/**" = ["any-type", "import-private-name", "float-equality-comparison"]
 # AGENTS.md scopes the type-hint requirement to public Python source. A
 # teaching notebook, a libclang-walking build helper, and Sphinx's own
 # unannotated hook signatures are none of it.

@@ -1293,7 +1293,7 @@ def test_cond_interval_prob_partitions_the_conditional(cond_var: int) -> None:
   whole = bc.cond_interval_prob(cond[:1], zero, one, cond_var)
   torch.testing.assert_close(whole, one, rtol=4e-16, atol=0.0)
   empty = bc.cond_interval_prob(cond[:1], cond[:1], cond[:1], cond_var)
-  assert float(empty[0]) == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert float(empty[0]) == 0.0
 
 
 @pytest.mark.parametrize("cond_var", [1, 2])
