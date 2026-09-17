@@ -1777,7 +1777,7 @@ working. Specifically:
   them, because discovery and star-binding are different questions.
 - `__getattr__` provides two things: lazy import of `sklearn` (the
   extra is only triggered on `import pyvinecopulib.sklearn` or
-  attribute access) and a deprecation shim for the 35 pre-#207
+  attribute access) and a deprecation shim for the 33 pre-#207
   top-level names (every family constant, every utility function from
   `utils`). Each access emits a `DeprecationWarning` pointing at the
   new canonical path.
@@ -1855,7 +1855,7 @@ below are a quick orientation.
 - **`pyvinecopulib.sklearn`** — `VineDensity`, `VineRegressor`.
 - **`pyvinecopulib.torch`** — `TorchTllBicop`, `TorchVinecop`, `TorchKde1d`,
   `TorchDistributionMargin`, `TorchVinedist`, `FitControlsTorchBicop`,
-  `FitControlsTorchVinecop`.
+  `FitControlsTorchVinecop`, `TensorPlacementMixin`, `reference_tensor`.
 
 Top-level `pyvinecopulib` re-exports the ten classes named above and
 `to_pseudo_obs`; everything else — including the `core` abstraction
