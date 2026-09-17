@@ -29,26 +29,33 @@ from pyvinecopulib.core._normal import (
 class TestPolynomialHelpers:
   """Test polynomial evaluation helper functions"""
 
+  # `N` is the polynomial's **degree**, as in cephes, so `N + 1` coefficients
+  # are read. These used to pass it as a *count*, which is the convention the
+  # implementation had adopted and no call site uses: every real one reads
+  # `polevl(y2, P0, 4)` against a five-entry `P0`.
+
   def test_polevl_basic(self) -> None:
-    """Test basic polynomial evaluation"""
-    # Test p(x) = 2x^2 + 3x + 1 at x=2
-    coefs = [2.0, 3.0, 1.0]  # highest to lowest degree
-    result = polevl(2.0, coefs, 3)
-    expected = 2 * 4 + 3 * 2 + 1  # 2*x^2 + 3*x + 1 = 15
-    assert result == expected
+    """p(x) = 2x^2 + 3x + 1 at x = 2, degree 2."""
+    result = polevl(2.0, [2.0, 3.0, 1.0], 2)
+    assert result == 2 * 4 + 3 * 2 + 1
 
   def test_polevl_single_coef(self) -> None:
-    """Test polynomial with single coefficient"""
-    result = polevl(5.0, [3.0], 1)
-    assert result == 3
+    """A degree-0 polynomial is its own constant."""
+    assert polevl(5.0, [3.0], 0) == 3
+
+  def test_polevl_reads_every_coefficient(self) -> None:
+    """Reading `N` coefficients instead of `N + 1` drops the constant term.
+
+    That is the defect this pins: it is invisible to a boundary check and to
+    an antisymmetry check, and it moved `norm_ppf` by 1.1e-2 at the quartiles.
+    """
+    assert polevl(2.0, [2.0, 3.0, 5.0], 2) == 19.0  # noqa: RUF069 - exact arithmetic on small integers
+    assert p1evl(2.0, [3.0, 5.0], 2) == 15.0  # noqa: RUF069 - exact arithmetic on small integers
 
   def test_p1evl_basic(self) -> None:
-    """Test p1evl which prepends coefficient 1"""
-    # Test p(x) = 1*x^2 + 2*x + 3 at x=2
-    coefs = [2.0, 3.0]  # p1evl adds 1 as first coefficient
-    result = p1evl(2.0, coefs, 3)
-    expected = 1 * 4 + 2 * 2 + 3  # 1*x^2 + 2*x + 3 = 11
-    assert result == expected
+    """p1evl prepends an implicit leading 1: x^2 + 2x + 3 at x = 2."""
+    result = p1evl(2.0, [2.0, 3.0], 2)
+    assert result == 1 * 4 + 2 * 2 + 3
 
 
 class TestInverseErrorFunction:
@@ -79,10 +86,35 @@ class TestInverseErrorFunction:
       assert_allclose(inv_erf(-val), -inv_erf(val), rtol=1e-10)
 
   def test_inv_erf_known_values(self) -> None:
-    """Test inverse error function against known values"""
-    # Test a few known values with reasonable tolerance - using looser tolerance since this is custom implementation
-    assert_allclose(inv_erf(0.5), 0.469004, rtol=1e-3)
-    assert_allclose(inv_erf(-0.5), -0.469004, rtol=1e-3)
+    """The inverse error function against values that do not come from it.
+
+    The previous expectation here, `0.469004`, was this implementation's own
+    output pinned to six figures, so it locked in a wrong answer and read as
+    a "known value". The truth is `erfinv(0.5) = 0.4769362762044699`, which
+    that assertion rejects.
+    """
+    assert_allclose(inv_erf(0.5), 0.4769362762044699, rtol=1e-12)
+    assert_allclose(inv_erf(-0.5), -0.4769362762044699, rtol=1e-12)
+
+  def test_matches_scipy_across_the_range(self) -> None:
+    """The module is a port of cephes, so scipy is the reference for it.
+
+    Antisymmetry and the boundary values cannot catch a systematic error: a
+    wrong odd function is still odd, and 0 / +/-1 are special-cased before the
+    polynomial runs. Only a comparison against an independent implementation
+    reaches the coefficients.
+    """
+    special = pytest.importorskip("scipy.special")
+    stats = pytest.importorskip("scipy.stats")
+    # Tolerances just above the measured worst case (2.2e-14 and 1.1e-12):
+    # this is a float64 port of cephes, so it tracks scipy to rounding rather
+    # than exactly, and a systematic coefficient error is orders larger.
+    z = np.linspace(-0.999, 0.999, 201)
+    assert_allclose(
+      [inv_erf(float(v)) for v in z], special.erfinv(z), rtol=0, atol=1e-13
+    )
+    p = np.linspace(1e-6, 1 - 1e-6, 201)
+    assert_allclose(norm_ppf(p), stats.norm.ppf(p), rtol=1e-11, atol=0)
 
 
 class TestNormalDistribution:

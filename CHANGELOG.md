@@ -203,6 +203,7 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - `Kde1d.icdf` returns an empty array for an empty input instead of terminating the process (#320).
 - `Bicop.plot` evaluates a continuous copy of a discrete copula instead of retyping the caller's model in place (#320).
 - `Kde1d.plot` draws a discrete margin on its own integer support, where rounding the fitted grid outwards added one level below the smallest observation and one above the largest; its continuous grid is monotone rather than overwritten at the first point (#330).
+- `core`'s SciPy-free `norm_ppf` / `inv_erf` evaluate every polynomial coefficient, where `polevl` read `N` of them instead of cephes' `N + 1` and dropped each constant term: `norm_ppf(0.25)` was `-0.663271` against `-0.674490`, worst at the quartiles, which misplaced the axes of a normal-scale `Bicop.plot`. The test that would have caught it pinned the implementation's own output as a "known value" (#339).
 - `utils.wdm` releases the GIL, so it no longer serializes against other Python threads (#320).
 - `utils.wdm` raises on weights that are not finite and nonnegative with a positive sum, where it returned `NaN` (#305, [wdm#21](https://github.com/tnagler/wdm/pull/21)).
 - `utils.to_pseudo_obs(..., ties_method="random")` breaks ties uniformly; the random offsets were one step out of phase, so a tie group of two always came out equal (#305, [wdm#17](https://github.com/tnagler/wdm/pull/17)).

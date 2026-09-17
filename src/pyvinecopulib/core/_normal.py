@@ -8,9 +8,16 @@ from numpy.typing import ArrayLike, NDArray
 # https://stackoverflow.com/questions/42381244/pure-python-inverse-error-function
 # This is a pure Python implementation of the inverse error function from the scipy library.
 def polevl(x: float, coefs: list[float], N: int) -> float:
+  """Evaluate the degree-``N`` polynomial ``coefs`` at ``x``, cephes-style.
+
+  ``N`` is the **degree**, so ``N + 1`` coefficients are read, highest power
+  first: ``coefs[0] * x**N + ... + coefs[N]``. Reading ``N`` of them instead
+  drops the constant term, which is a systematic error of the size of that
+  term -- 1.1e-2 on `norm_ppf` at the quartiles.
+  """
   ans = 0.0
-  power = len(coefs) - 1
-  for coef in coefs[:N]:
+  power = N
+  for coef in coefs[: N + 1]:
     # `float ** int` is a float, but typeshed also offers the reflected
     # `int.__rpow__`, whose result is `Any`.
     ans += cast("float", coef * x**power)
