@@ -26,6 +26,26 @@ _PAIR_SURFACE = [
 ]
 
 
+def _drawn(call: Any) -> None:
+  """Run a plot call against mocked axes, tolerating only the mock's own gap.
+
+  A `MagicMock` axis carries no `set_title`, which is the mock rather than the
+  code under test. Anything else is a real failure and reaches the report with
+  its traceback. Written once: the same six-line guard was pasted at every
+  `vinecop_plot` call site.
+
+  Parameters
+  ----------
+  call : callable
+      The plot call, taking no arguments.
+  """
+  try:
+    call()
+  except AttributeError as e:
+    if "set_title" not in str(e):
+      raise
+
+
 def assert_called_once_or_twice(mock: Any) -> None:
   """Helper to assert a mock was called once or twice"""
   if not mock.called:
@@ -62,9 +82,7 @@ class TestPairCopulaData:
       pairs_copula_data(cast("Any", None))
 
     # Test non-numeric data
-    with pytest.raises(
-      ValueError, match="Could not convert `data` to numeric array"
-    ):
+    with pytest.raises(ValueError, match="Could not convert `data`"):
       pairs_copula_data([["a", "b"], ["c", "d"]])
 
     # Test wrong dimensions
@@ -152,9 +170,7 @@ class TestPairCopulaData:
 
     # Mock the plotting parts since we just want to test validation
     with patch("matplotlib.pyplot.subplots") as mock_subplots:
-      mock_fig = MagicMock()
-      mock_ax = MagicMock()
-      mock_subplots.return_value = (mock_fig, mock_ax)
+      mock_subplots.return_value = (MagicMock(), MagicMock())
 
       # Mock the wdm and Bicop imports that would fail without the C++ extension
       with (
@@ -185,9 +201,7 @@ class TestPairCopulaData:
     min_data = np.array([[0.1], [0.9]])
 
     with patch("matplotlib.pyplot.subplots") as mock_subplots:
-      mock_fig = MagicMock()
-      mock_ax = MagicMock()
-      mock_subplots.return_value = (mock_fig, mock_ax)
+      mock_subplots.return_value = (MagicMock(), MagicMock())
 
       with (
         patch("pyvinecopulib.utils._pair_plots.norm_cdf"),
@@ -211,9 +225,7 @@ class TestPairCopulaData:
     max_dim_data = np.random.RandomState(0).uniform(0.1, 0.9, size=(5, 10))
 
     with patch("matplotlib.pyplot.subplots") as mock_subplots:
-      mock_fig = MagicMock()
-      mock_ax = MagicMock()
-      mock_subplots.return_value = (mock_fig, mock_ax)
+      mock_subplots.return_value = (MagicMock(), MagicMock())
 
       with (
         patch("pyvinecopulib.utils._pair_plots.norm_cdf"),
@@ -481,9 +493,7 @@ class TestVinecopHelpers:
     from pyvinecopulib.core._vinecop_plot import vinecop_plot
 
     # Test with wrong number of variable names
-    with pytest.raises(
-      ValueError, match="The number of variable names must be equal"
-    ):
+    with pytest.raises(ValueError, match="number of variable names"):
       vinecop_plot(self.vinecop, vars_names=["X1", "X2"])
 
   def test_vinecop_plot_high_dimension_error(self) -> None:
@@ -494,9 +504,7 @@ class TestVinecopHelpers:
     mock_vinecop = MagicMock()
     mock_vinecop.trunc_lvl = 10
 
-    with pytest.raises(
-      ValueError, match="The dimension and truncation level are too high"
-    ):
+    with pytest.raises(ValueError, match="too high to visualize"):
       vinecop_plot(mock_vinecop)
 
   def test_vinecop_plot_basic(self) -> None:
@@ -514,20 +522,10 @@ class TestVinecopHelpers:
     ):
       # Mock the return to avoid complex axis handling
       mock_graphviz.return_value = {0: (0, 0), 1: (1, 1)}
-      mock_fig = MagicMock()
-      mock_ax = MagicMock()
-      mock_subplots.return_value = (mock_fig, mock_ax)
+      mock_subplots.return_value = (MagicMock(), MagicMock())
 
       # The key is that this doesn't raise an exception
-      try:
-        vinecop_plot(self.vinecop, tree=[0])
-        # If we get here, the function accepted our parameters
-      except AttributeError as e:
-        # A mocked axis carries no `set_title`; that is the mock, not
-        # the code under test. Anything else is a real failure, and
-        # reaches the report with its traceback.
-        if "set_title" not in str(e):
-          raise
+      _drawn(lambda: vinecop_plot(self.vinecop, tree=[0]))
 
   def test_vinecop_plot_multiple_trees(self) -> None:
     """Test vinecop_plot with multiple trees"""
@@ -558,14 +556,7 @@ class TestVinecopHelpers:
         mock_axes = np.array([MagicMock() for _ in range(len(tree_list))])
         mock_subplots.return_value = (mock_fig, mock_axes)
 
-      try:
-        vinecop_plot(self.vinecop, tree=tree_list)
-      except AttributeError as e:
-        # A mocked axis carries no `set_title`; that is the mock, not
-        # the code under test. Anything else is a real failure, and
-        # reaches the report with its traceback.
-        if "set_title" not in str(e):
-          raise
+      _drawn(lambda: vinecop_plot(self.vinecop, tree=tree_list))
 
   def test_vinecop_plot_edge_labels(self) -> None:
     """Test vinecop_plot with and without edge labels"""
@@ -582,32 +573,18 @@ class TestVinecopHelpers:
     ):
       # Mock the return to avoid complex axis handling
       mock_graphviz.return_value = {0: (0, 0), 1: (1, 1)}
-      mock_fig = MagicMock()
-      mock_ax = MagicMock()
-      mock_subplots.return_value = (mock_fig, mock_ax)
+      mock_subplots.return_value = (MagicMock(), MagicMock())
 
       # Test with edge labels
-      try:
-        vinecop_plot(self.vinecop, tree=[0], add_edge_labels=True)
-      except AttributeError as e:
-        # A mocked axis carries no `set_title`; that is the mock, not
-        # the code under test. Anything else is a real failure, and
-        # reaches the report with its traceback.
-        if "set_title" not in str(e):
-          raise
+      _drawn(lambda: vinecop_plot(self.vinecop, tree=[0], add_edge_labels=True))
 
       # Reset mocks
       mock_edge_labels.reset_mock()
 
       # Test without edge labels
-      try:
-        vinecop_plot(self.vinecop, tree=[0], add_edge_labels=False)
-      except AttributeError as e:
-        # A mocked axis carries no `set_title`; that is the mock, not
-        # the code under test. Anything else is a real failure, and
-        # reaches the report with its traceback.
-        if "set_title" not in str(e):
-          raise
+      _drawn(
+        lambda: vinecop_plot(self.vinecop, tree=[0], add_edge_labels=False)
+      )
 
   def test_vinecop_plot_layouts(self) -> None:
     """Test vinecop_plot with different layouts"""
@@ -625,29 +602,15 @@ class TestVinecopHelpers:
       # Mock the return to avoid complex axis handling
       mock_graphviz.return_value = {0: (0, 0), 1: (1, 1)}
       mock_spring.return_value = {0: (0, 0), 1: (1, 1)}
-      mock_fig = MagicMock()
-      mock_ax = MagicMock()
-      mock_subplots.return_value = (mock_fig, mock_ax)
+      mock_subplots.return_value = (MagicMock(), MagicMock())
 
       # Test graphviz layout
-      try:
-        vinecop_plot(self.vinecop, tree=[0], layout="graphviz")
-      except AttributeError as e:
-        # A mocked axis carries no `set_title`; that is the mock, not
-        # the code under test. Anything else is a real failure, and
-        # reaches the report with its traceback.
-        if "set_title" not in str(e):
-          raise
+      _drawn(lambda: vinecop_plot(self.vinecop, tree=[0], layout="graphviz"))
 
       # Test spring layout
-      try:
-        vinecop_plot(self.vinecop, tree=[0], layout="spring_layout")
-      except AttributeError as e:
-        # A mocked axis carries no `set_title`; that is the mock, not
-        # the code under test. Anything else is a real failure, and
-        # reaches the report with its traceback.
-        if "set_title" not in str(e):
-          raise
+      _drawn(
+        lambda: vinecop_plot(self.vinecop, tree=[0], layout="spring_layout")
+      )
 
   def test_vinecop_plot_custom_variable_names(self) -> None:
     """Test vinecop_plot with custom variable names"""
@@ -663,20 +626,13 @@ class TestVinecopHelpers:
     ):
       # Mock the return to avoid complex axis handling
       mock_graphviz.return_value = {0: (0, 0), 1: (1, 1)}
-      mock_fig = MagicMock()
-      mock_ax = MagicMock()
-      mock_subplots.return_value = (mock_fig, mock_ax)
+      mock_subplots.return_value = (MagicMock(), MagicMock())
 
       # Test with custom variable names
       custom_vars = ["Var1", "Var2", "Var3", "Var4"]
-      try:
-        vinecop_plot(self.vinecop, tree=[0], vars_names=custom_vars)
-      except AttributeError as e:
-        # A mocked axis carries no `set_title`; that is the mock, not
-        # the code under test. Anything else is a real failure, and
-        # reaches the report with its traceback.
-        if "set_title" not in str(e):
-          raise
+      _drawn(
+        lambda: vinecop_plot(self.vinecop, tree=[0], vars_names=custom_vars)
+      )
 
   def test_vinecop_plot_subplot_calculation(self) -> None:
     """Test subplot layout calculation"""
@@ -692,19 +648,10 @@ class TestVinecopHelpers:
     ):
       # Mock the return to avoid complex axis handling
       mock_graphviz.return_value = {0: (0, 0), 1: (1, 1)}
-      mock_fig = MagicMock()
-      mock_ax = MagicMock()
-      mock_subplots.return_value = (mock_fig, mock_ax)
+      mock_subplots.return_value = (MagicMock(), MagicMock())
 
       # Test with 1 tree (should be 1x1)
-      try:
-        vinecop_plot(self.vinecop, tree=[0])
-      except AttributeError as e:
-        # A mocked axis carries no `set_title`; that is the mock, not
-        # the code under test. Anything else is a real failure, and
-        # reaches the report with its traceback.
-        if "set_title" not in str(e):
-          raise
+      _drawn(lambda: vinecop_plot(self.vinecop, tree=[0]))
 
       # We can check the call args if the function succeeded
       if mock_subplots.called:
@@ -1120,20 +1067,29 @@ class TestEdgeCases:
 def test_bicop_plot_refuses_x_on_a_pair_that_reads_no_covariates() -> None:
   """Better a loud refusal than an unconditional surface under a conditional call.
 
-  A pair that models no covariates says so by not declaring ``x`` on its
-  primitives, which is what ``pair_eval`` turns into a ``TypeError`` the first
-  time an edge has one.
+  A pair that models no covariates says so with ``supports_covariates``, which
+  ``pair_eval`` reads *before* the call and turns into a ``TypeError`` naming
+  the class. The refusal does not come from the primitives' signatures: every
+  leaf declares ``x`` whether or not it reads one, because ``pair_eval``
+  forwards unconditionally and a leaf without the parameter would raise
+  nanobind's overload dump instead of a message naming the pair.
   """
   from pyvinecopulib.core._bicop_plot import bicop_plot
 
   class NoCovariates(pv.core.BicopBase[np.ndarray]):
-    def _pdf_raw(self, u: np.ndarray) -> np.ndarray:
+    def _pdf_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
       return np.ones(u.shape[0], dtype=float)
 
-    def _hfunc1_raw(self, u: np.ndarray) -> np.ndarray:
+    def _hfunc1_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
       return u[:, 1]
 
-    def _hfunc2_raw(self, u: np.ndarray) -> np.ndarray:
+    def _hfunc2_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
       return u[:, 0]
 
   with pytest.raises(TypeError):
@@ -1166,14 +1122,20 @@ def test_bicop_plot_places_the_grid_through_the_supplied_hook() -> None:
   seen: dict[str, object] = {}
 
   class Recording(pv.core.BicopBase[np.ndarray]):
-    def _pdf_raw(self, u: np.ndarray) -> np.ndarray:
+    def _pdf_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
       seen["type"] = type(u).__name__
       return np.ones(u.shape[0], dtype=float)
 
-    def _hfunc1_raw(self, u: np.ndarray) -> np.ndarray:
+    def _hfunc1_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
       return u[:, 1]
 
-    def _hfunc2_raw(self, u: np.ndarray) -> np.ndarray:
+    def _hfunc2_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
       return u[:, 0]
 
   # No `place`: the grid arrives exactly as it always did.

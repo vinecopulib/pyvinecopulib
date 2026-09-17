@@ -11,7 +11,7 @@ A ``torch.distributions.Distribution`` is not a module — it has no
 distribution is rebuilt from them on every call. That is the same shape
 ``TorchTllBicop`` uses for its interpolation grid.
 
-This is the torch member of a trio -- ``SciPyMargin``, ``OpenTURNSMargin``,
+This is the torch member of a pair -- ``SciPyMargin``
 ``TorchDistributionMargin`` -- each adapting one ecosystem's family registry.
 What is particular to this one is that torch's families are differentiable, so
 the adapter's parameters are learnable; the design is otherwise the same.
@@ -42,7 +42,8 @@ from torch import Tensor
 from torch.distributions import Distribution
 
 from ..core import ControlsLike, MarginBase
-from ..core._margins import register_margin_json
+from ..core._json import read_payload
+from ..core._margins import margin_json, register_margin_json
 from ..core.margin_base import support_of
 from ._placement import reference_tensor
 
@@ -172,6 +173,19 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
   parameter with ``torch.distributions.transform_to`` if that matters, or
   pass ``trainable=False`` to freeze it.
 
+  There is no maximum-likelihood ``fit``: construct the margin with the
+  parameters you want and *learn* them by leaving ``trainable=True`` and
+  stepping an optimizer over the registered tensors, which is what registering
+  them is for. For a fitted parametric margin use
+  :class:`~pyvinecopulib.margins.SciPyMargin`, and for a fitted nonparametric
+  one :class:`~pyvinecopulib.torch.TorchKde1d`.
+
+  Because it overrides neither ``fit`` nor ``select``, a vine distribution
+  holding these treats them as **fixed** and re-estimates only its copula --
+  which is what makes ``TorchVinedist.fit`` work. Overriding ``fit`` to raise
+  a better message instead made the margin look refittable and turned every
+  refit into that message.
+
   Examples
   --------
   A standard-normal margin whose parameters are learnable::
@@ -186,62 +200,6 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
       margin.cdf(torch.tensor([-1.0, 0.0, 1.0], dtype=torch.float64))
       list(margin.state_dict())  # ['loc', 'scale']
   """
-
-  def fit(
-    self,
-    y: Tensor,
-    /,
-    controls: ControlsLike | None = None,
-    *,
-    var_type: str | None = None,
-    support: tuple[float | None, float | None] | None = None,
-    x: Tensor | None = None,
-  ) -> TorchDistributionMargin:
-    """Raise: this margin's parameters are given, not estimated here.
-
-    The inherited default says "implement it", which is advice for a subclass
-    author and wrong for a caller holding one of these: the class
-    has no maximum-likelihood step. A ``torch.distributions`` family is
-    constructed with the parameters you want, and *learned* by leaving
-    ``trainable=True`` and stepping an optimizer over them -- which is the
-    point of registering them.
-
-    Parameters
-    ----------
-    y : Tensor, shape (n,), dtype float
-        Ignored.
-    controls : ControlsLike, or None, optional
-        Ignored.
-    var_type : {"c", "d", "zi"}, or None, optional
-        What the caller knows the variable to be, or ``None`` to leave it
-        to the margin. A declaration rather than fit configuration, which
-        is why it sits beside ``controls`` rather than inside it.
-    support : tuple of float, or None, optional
-        Declared bounds as ``(lo, hi)``, either end ``None`` for
-        unbounded on that side.
-    x : Tensor, or None, optional
-        Ignored.
-
-    Returns
-    -------
-    TorchDistributionMargin
-        Never returns.
-
-    Raises
-    ------
-    NotImplementedError
-        Always.
-    """
-    del y, controls, x
-    raise NotImplementedError(
-      "TorchDistributionMargin has no maximum-likelihood fit: construct it "
-      "with the parameters you want -- "
-      "`TorchDistributionMargin.from_distribution(torch.distributions.Normal("
-      "loc, scale))` -- and optimize them by stepping an optimizer over its "
-      "registered parameters, which is what `trainable=True` is for. For a "
-      "fitted parametric margin use `SciPyMargin`, and for a fitted "
-      "nonparametric one `TorchKde1d`."
-    )
 
   @classmethod
   def from_data(
@@ -437,7 +395,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
       kwargs["validate_args"] = self._validate_args
     return self._factory(**kwargs)
 
-  def to_json(self) -> dict[str, Any]:
+  def to_json(self) -> str:
     """Return this margin's JSON payload.
 
     Returns
@@ -461,31 +419,32 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
         f"{factory!r}: only a `torch.distributions` class can be named in a "
         "payload and resolved back from one"
       )
-    return {
-      "kind": "TorchDistributionMargin",
-      "family": str(name),
-      "parameters": {
-        # Detached: a trainable parameter carries a graph, and reading a
-        # scalar off one warns.
-        key: [
-          float(v)
-          for v in torch.as_tensor(getattr(self, key)).detach().flatten()
-        ]
-        for key in self._parameter_names
+    return margin_json(
+      self,
+      {
+        "kind": "TorchDistributionMargin",
+        "family": str(name),
+        "parameters": {
+          # Detached: a trainable parameter carries a graph, and reading a
+          # scalar off one warns.
+          key: [
+            float(v)
+            for v in torch.as_tensor(getattr(self, key)).detach().flatten()
+          ]
+          for key in self._parameter_names
+        },
+        "validate_args": self._validate_args,
       },
-      "validate_args": self._validate_args,
-    }
+    )
 
   @classmethod
-  def from_json_payload(
-    cls, payload: dict[str, Any]
-  ) -> TorchDistributionMargin:
-    """Rebuild a margin from the payload :meth:`to_json` produced.
+  def from_json(cls, json: str) -> TorchDistributionMargin:
+    """Rebuild a margin from the text :meth:`to_json` produced.
 
     Parameters
     ----------
-    payload : dict
-        The mapping :meth:`to_json` returned.
+    json : str
+        The text :meth:`to_json` returned.
 
     Returns
     -------
@@ -497,6 +456,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     ValueError
         If ``torch.distributions`` has no family of that name.
     """
+    payload = read_payload(json, "margin")
     family = str(payload["family"])
     factory = getattr(torch.distributions, family, None)
     if factory is None:
@@ -533,7 +493,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
   controls_class: ClassVar[type[ControlsLike] | None] = None
 
   @property
-  def n_parameters(self) -> float:
+  def npars(self) -> float:
     """Number of free parameters, for the information criteria.
 
     The registered tensors that carry gradients: a ``trainable=False`` margin
@@ -725,5 +685,5 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
 # `core` holds the registry and names no ecosystem, so the module that
 # owns the class is the one that teaches `margin_from_json` to rebuild it.
 register_margin_json(
-  "TorchDistributionMargin", TorchDistributionMargin.from_json_payload
+  "TorchDistributionMargin", TorchDistributionMargin.from_json
 )

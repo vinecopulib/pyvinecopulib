@@ -1,12 +1,14 @@
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
+import pandas as pd
 from sklearn.base import DensityMixin
 from sklearn.utils.validation import check_is_fitted
 
 import pyvinecopulib as pv
 
-from ..core import ControlsLike, VinedistBase
+from ..core import ControlsLike, VinedistLike
 from ..core.extend import to_numpy
 from ._base import (
   _DOC_DISCRETE,
@@ -14,20 +16,18 @@ from ._base import (
   _DOC_PIPELINE,
   _DOC_REFERENCES,
   VineBase,
-  _RandomStateLike,
-  _XLike,
 )
 
 
 class VineDensity(DensityMixin, VineBase):
   def __init__(
     self,
-    distribution: type[VinedistBase[Any]] | None = None,
+    distribution: type[VinedistLike[Any]] | None = None,
     controls: ControlsLike | None = None,
     structure: pv.RVineStructure | None = None,
     margin_controls: object = None,
     batch_size: int = 100,
-    random_state: _RandomStateLike = None,
+    random_state: int | np.random.RandomState | None = None,
     n_jobs: int | None = None,
   ) -> None:
     """Vine-copula based density estimator.
@@ -83,7 +83,11 @@ class VineDensity(DensityMixin, VineBase):
       n_jobs=n_jobs,
     )
 
-  def fit(self, X: _XLike, y: object = None) -> "VineDensity":
+  def fit(
+    self,
+    X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]],
+    y: object = None,
+  ) -> "VineDensity":
     """Fits the joint density to the training data.
 
     Parameters
@@ -107,7 +111,9 @@ class VineDensity(DensityMixin, VineBase):
     self._fit_distribution(X)
     return self
 
-  def score_samples(self, X: _XLike) -> np.ndarray:
+  def score_samples(
+    self, X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]]
+  ) -> np.ndarray:
     """Evaluates the per-sample log-likelihood under the fitted density.
 
     Equivalent to ``np.log(self.pdf(X, copula_only=False))`` but
@@ -127,7 +133,7 @@ class VineDensity(DensityMixin, VineBase):
 
   def score(
     self,
-    X: _XLike,
+    X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]],
     y: object = None,
   ) -> float:
     """Mean log-likelihood over a sample (sklearn ``score`` convention).
@@ -153,7 +159,9 @@ class VineDensity(DensityMixin, VineBase):
     return float(self.score_samples(X).mean())
 
   def sample(
-    self, n_samples: int = 1, random_state: _RandomStateLike = None
+    self,
+    n_samples: int = 1,
+    random_state: int | np.random.RandomState | None = None,
   ) -> np.ndarray:
     r"""Draws samples from the fitted joint density.
 
@@ -194,7 +202,11 @@ class VineDensity(DensityMixin, VineBase):
       dtype=float,
     )
 
-  def pdf(self, X: _XLike, copula_only: bool = False) -> np.ndarray:
+  def pdf(
+    self,
+    X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]],
+    copula_only: bool = False,
+  ) -> np.ndarray:
     r"""Evaluates the joint density at the given samples.
 
     Returns the full joint density
@@ -220,9 +232,9 @@ class VineDensity(DensityMixin, VineBase):
 
   def cdf(
     self,
-    X: _XLike,
+    X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]],
     N: int = 10000,
-    random_state: _RandomStateLike = None,
+    random_state: int | np.random.RandomState | None = None,
   ) -> np.ndarray:
     r"""Evaluates the joint CDF at the given samples.
 

@@ -462,13 +462,13 @@ def test_a_thresholded_edge_does_not_consume_the_flip_probe() -> None:
   assert seen and min(seen) > 0
 
   class _NoFlipPair(pv.core.BicopBase[Any]):
-    def _pdf_raw(self, u: Any) -> Any:
+    def _pdf_raw(self, u: Any, *, x: Any = None) -> Any:
       return np.ones(u.shape[0])
 
-    def _hfunc1_raw(self, u: Any) -> Any:
+    def _hfunc1_raw(self, u: Any, *, x: Any = None) -> Any:
       return u[:, 1]
 
-    def _hfunc2_raw(self, u: Any) -> Any:
+    def _hfunc2_raw(self, u: Any, *, x: Any = None) -> Any:
       return u[:, 0]
 
   def fit_edge(tree: int, edge: int, u_e: Any, x_e: Any) -> Any:
@@ -667,7 +667,7 @@ class _ConditionalGaussian(BicopBase[np.ndarray]):
 
   def _per_row(self, x: np.ndarray | None) -> np.ndarray | None:
     """Per-row correlations, or ``None`` to take the scalar path."""
-    if x is None or self._slope == 0.0:  # noqa: RUF069 - an exact guarantee, not a computed approximation
+    if x is None or self._slope == 0.0:
       return None
     assert self._bicop is not None
     rho = float(np.asarray(self._bicop.parameters).ravel()[0])
@@ -684,7 +684,7 @@ class _ConditionalGaussian(BicopBase[np.ndarray]):
     assert self._bicop is not None, "fit the pair first"
     method = getattr(self._bicop, name)
     per_row = self._per_row(x)
-    return method(u) if per_row is None else method(u, per_row)
+    return method(u) if per_row is None else method(u, parameters=per_row)
 
   def _pdf_raw(self, u: np.ndarray, *, x: np.ndarray | None = None) -> Any:
     return self._call("pdf", u, x)

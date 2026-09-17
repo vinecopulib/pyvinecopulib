@@ -585,7 +585,7 @@ cdf). That is the whole required surface — the
 :class:`pyvinecopulib.core.MarginLike` protocol — and it is
 small, because every member added is one a foreign distribution object
 must happen to have. Structural implementations of the protocol and ``Kde1d``
-are accepted directly. ``scipy.stats`` distributions and OpenTURNS
+are accepted directly. ``scipy.stats`` distributions
 distributions are adapted automatically, as are continuous
 ``torch.distributions`` families that implement ``cdf`` (including ``Normal``,
 ``Gamma`` and ``LogNormal``). Torch distributions with atoms are rejected
@@ -1101,7 +1101,6 @@ Where to next
   ``examples/07_kde1d.ipynb``).
 * :mod:`pyvinecopulib.margins` — the marginal half of a vine distribution:
   :class:`~pyvinecopulib.margins.SciPyMargin` and
-  :class:`~pyvinecopulib.margins.OpenTURNSMargin` for a parametric family
   (named, or chosen from the data), and
   :class:`~pyvinecopulib.core.FitControlsMargin` to configure either
   (notebook ``examples/03_vine_distributions.ipynb``).

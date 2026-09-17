@@ -19,79 +19,48 @@ torch = pytest.importorskip("torch")
 
 from pyvinecopulib.torch import FitControlsTorchBicop, TorchTllBicop
 
+from .conftest import eval_grid, fit_tll_bicop
+
 _TLL_CONTROLS = pv.FitControlsBicop(family_set=[pv.families.tll], num_threads=1)
 
 
-def _fit_tll(u: np.ndarray) -> pv.Bicop:
-  return pv.Bicop.from_data(u, controls=_TLL_CONTROLS)
+@pytest.mark.parametrize("op", ["pdf", "cdf", "hfunc1", "hfunc2"])
+def test_evaluation_matches_pvbicop(op: str) -> None:
+  """Each member reproduces the compiled `Bicop` it was lifted from.
 
+  Parametrized over the op rather than written out per member: the four bodies
+  differed in one identifier, and the pdf and cdf versions measured 0.991
+  textual similarity.
 
-def _eval_grid(n: int, seed: int = 0) -> np.ndarray:
-  rng = np.random.default_rng(seed)
-  return rng.uniform(0.02, 0.98, size=(n, 2))
-
-
-def test_pdf_matches_pvbicop() -> None:
+  Pinned to `cache_integrals=False`: this is parity with the C++ on-the-fly
+  integration math at 1e-10. The default reconstructs the same integral in
+  closed form from prefix tables, so it agrees to summation-order noise rather
+  than trading accuracy, and `test_cached_*_smoke` below covers it.
+  """
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
-  u_fit = cop.sample(2000, seeds=[1, 2, 3])
-  cop_tll = _fit_tll(u_fit)
-
-  # Pin cache=False: this test verifies parity with the C++ on-the-fly
-  # integration math at 1e-10. The default cache_integrals=True reconstructs
-  # the same integral in closed form from prefix tables, so it agrees to
-  # summation-order noise rather than trading accuracy; it is covered by
-  # test_cached_*_smoke below.
+  cop_tll = fit_tll_bicop(cop.sample(2000, seeds=[1, 2, 3]))
   bc = TorchTllBicop.from_bicop(cop_tll, cache_integrals=False)
-  u_eval = _eval_grid(500, seed=11)
-
-  out_torch = bc.pdf(torch.from_numpy(u_eval)).numpy()
-  out_cpp = cop_tll.pdf(u_eval)
-  np.testing.assert_allclose(out_torch, out_cpp, atol=1e-10, rtol=1e-10)
-
-
-def test_cdf_matches_pvbicop() -> None:
-  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
-  u_fit = cop.sample(2000, seeds=[1, 2, 3])
-  cop_tll = _fit_tll(u_fit)
-
-  # Pin cache=False — C++ parity at 1e-10; see test_pdf_matches_pvbicop.
-  bc = TorchTllBicop.from_bicop(cop_tll, cache_integrals=False)
-  u_eval = _eval_grid(500, seed=12)
-
-  out_torch = bc.cdf(torch.from_numpy(u_eval)).numpy()
-  out_cpp = cop_tll.cdf(u_eval)
-  np.testing.assert_allclose(out_torch, out_cpp, atol=1e-10, rtol=1e-10)
-
-
-def test_hfunc_matches_pvbicop() -> None:
-  cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
-  u_fit = cop.sample(2000, seeds=[1, 2, 3])
-  cop_tll = _fit_tll(u_fit)
-
-  # Pin cache=False — C++ parity at 1e-10; see test_pdf_matches_pvbicop.
-  bc = TorchTllBicop.from_bicop(cop_tll, cache_integrals=False)
-  u_eval = _eval_grid(500, seed=13)
-  u_t = torch.from_numpy(u_eval)
+  u_eval = eval_grid(500, seed=11)
 
   np.testing.assert_allclose(
-    bc.hfunc1(u_t).numpy(), cop_tll.hfunc1(u_eval), atol=1e-10, rtol=1e-10
-  )
-  np.testing.assert_allclose(
-    bc.hfunc2(u_t).numpy(), cop_tll.hfunc2(u_eval), atol=1e-10, rtol=1e-10
+    getattr(bc, op)(torch.from_numpy(u_eval)).numpy(),
+    getattr(cop_tll, op)(u_eval),
+    atol=1e-10,
+    rtol=1e-10,
   )
 
 
 def test_hinv_roundtrip() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.7]]))
   u_fit = cop.sample(2000, seeds=[4, 5, 6])
-  cop_tll = _fit_tll(u_fit)
+  cop_tll = fit_tll_bicop(u_fit)
 
   # Pin cache=False: the closed-form inversion is the exact inverse of the
   # on-the-fly h-function, so the round-trip holds to machine precision. The
   # cached path inverts the same quadratic but reads `hfunc1` off the prefix
   # tables, so it round-trips to summation-order noise rather than exactly.
   bc = TorchTllBicop.from_bicop(cop_tll, cache_integrals=False)
-  u_eval = _eval_grid(400, seed=21)
+  u_eval = eval_grid(400, seed=21)
   u_t = torch.from_numpy(u_eval)
 
   u2 = bc.hinv1(u_t).unsqueeze(-1)
@@ -109,10 +78,10 @@ def test_hinv_closed_form_matches_cpp() -> None:
   on the same fitted grid."""
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.7]]))
   u_fit = cop.sample(2000, seeds=[4, 5, 6])
-  cop_tll = _fit_tll(u_fit)
+  cop_tll = fit_tll_bicop(u_fit)
 
   bc = TorchTllBicop.from_bicop(cop_tll, cache_integrals=False)
-  u_eval = _eval_grid(400, seed=22)
+  u_eval = eval_grid(400, seed=22)
   u_t = torch.from_numpy(u_eval)
 
   np.testing.assert_allclose(
@@ -129,10 +98,10 @@ def test_inverse_integrate_1d() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   u_fit = cop.sample(1500, seeds=[7, 8, 9])
   grid = TorchTllBicop.from_bicop(
-    _fit_tll(u_fit), cache_integrals=False
+    fit_tll_bicop(u_fit), cache_integrals=False
   ).interp_grid
 
-  u_eval = _eval_grid(300, seed=23)
+  u_eval = eval_grid(300, seed=23)
   u_t = torch.from_numpy(u_eval)
   for cond_var in (1, 2):
     x = grid.inverse_integrate_1d(u_t, cond_var)
@@ -163,7 +132,7 @@ def test_from_bicop_rejects_rotated() -> None:
   TorchTllBicop wrapper enforces this at construction."""
 
   class _FakeCop:
-    family = _fit_tll(_eval_grid(100, seed=0)).family
+    family = fit_tll_bicop(eval_grid(100, seed=0)).family
     rotation = 90
     parameters = np.eye(2)
 
@@ -209,7 +178,7 @@ def test_from_data_evaluates_consistently() -> None:
   u_np = cop.sample(1000, seeds=[11, 22, 33])
   bc = TorchTllBicop.from_data(u_np, cache_integrals=False)
 
-  u_eval = _eval_grid(300, seed=99)
+  u_eval = eval_grid(300, seed=99)
   u_t = torch.from_numpy(u_eval)
 
   pdf = bc.pdf(u_t)
@@ -234,7 +203,7 @@ def test_cached_integrals_smoke() -> None:
   """
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   u_fit = cop.sample(2000, seeds=[10, 11, 12])
-  cop_tll = _fit_tll(u_fit)
+  cop_tll = fit_tll_bicop(u_fit)
 
   bc_cache = TorchTllBicop.from_bicop(cop_tll, cache_integrals=True)
   # All three prefix tables must be populated for a non-indep pair.
@@ -242,7 +211,7 @@ def test_cached_integrals_smoke() -> None:
   assert bc_cache._sx is not None
   assert bc_cache._prefix is not None
 
-  u_t = torch.from_numpy(_eval_grid(200, seed=42))
+  u_t = torch.from_numpy(eval_grid(200, seed=42))
   for fn in (
     bc_cache.cdf,
     bc_cache.hfunc1,
@@ -266,12 +235,12 @@ def test_cached_and_uncached_hinv_agree() -> None:
   """
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
   u_fit = cop.sample(2000, seeds=[1, 2, 3])
-  cop_tll = _fit_tll(u_fit)
+  cop_tll = fit_tll_bicop(u_fit)
 
   bc_bisect = TorchTllBicop.from_bicop(cop_tll, cache_integrals=False)
   bc_cached = TorchTllBicop.from_bicop(cop_tll, cache_integrals=True)
 
-  u_t = torch.from_numpy(_eval_grid(500, seed=77))
+  u_t = torch.from_numpy(eval_grid(500, seed=77))
   for which in ("hinv1", "hinv2"):
     out_bisect = getattr(bc_bisect, which)(u_t)
     out_cached = getattr(bc_cached, which)(u_t)
@@ -290,7 +259,7 @@ def test_independent_bicop() -> None:
 def test_simulate_smoke() -> None:
   cop = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
   u_fit = cop.sample(2000, seeds=[20, 21, 22])
-  cop_tll = _fit_tll(u_fit)
+  cop_tll = fit_tll_bicop(u_fit)
   bc = TorchTllBicop.from_bicop(cop_tll)
 
   samples = bc.sample(n=1000, qrng=False, seeds=[0])
@@ -339,7 +308,7 @@ def test_linear_grid_roundtrip_and_range() -> None:
   d = np.diff(gp[1:-1])
   assert np.allclose(d, d[0], atol=1e-12), "interior spacing must be uniform"
 
-  u_t = torch.from_numpy(_eval_grid(300, seed=99))
+  u_t = torch.from_numpy(eval_grid(300, seed=99))
   pdf = bc_lin.pdf(u_t)
   cdf = bc_lin.cdf(u_t)
   h1 = bc_lin.hfunc1(u_t)
@@ -388,7 +357,7 @@ def test_linear_grid_cached_integrals_consistent() -> None:
   assert bc._sx is not None
   assert bc._prefix is not None
 
-  u_t = torch.from_numpy(_eval_grid(300, seed=21))
+  u_t = torch.from_numpy(eval_grid(300, seed=21))
   for fn in (bc.cdf, bc.hfunc1, bc.hfunc2, bc.hinv1, bc.hinv2):
     out = fn(u_t)
     assert torch.isfinite(out).all()
@@ -527,7 +496,7 @@ def test_flip_swaps_arguments() -> None:
   )
   before = tb.pdf(torch.tensor([[0.3, 0.7]], dtype=torch.float64)).clone()
   flipped = tb.flip()
-  u = torch.as_tensor(_eval_grid(300, seed=7), dtype=torch.float64)
+  u = torch.as_tensor(eval_grid(300, seed=7), dtype=torch.float64)
   swapped = u[:, [1, 0]]
   np.testing.assert_allclose(
     flipped.pdf(u).numpy(), tb.pdf(swapped).numpy(), atol=1e-12, rtol=1e-12
@@ -564,7 +533,7 @@ def test_hinv_is_differentiable() -> None:
   nonetheless wrapped in `torch.no_grad()`, which detached them for no reason.
   """
   gauss = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
-  cop = _fit_tll(gauss.sample(2000, seeds=[6, 7, 8]))
+  cop = fit_tll_bicop(gauss.sample(2000, seeds=[6, 7, 8]))
   q = torch.from_numpy(
     np.random.default_rng(25).uniform(0.15, 0.85, size=(6, 2))
   )
@@ -601,7 +570,7 @@ def test_cached_integrals_carry_a_grid_gradient() -> None:
   copy would silently zero the gradient), and the two modes must agree.
   """
   gauss = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
-  cop = _fit_tll(gauss.sample(2000, seeds=[7, 8, 9]))
+  cop = fit_tll_bicop(gauss.sample(2000, seeds=[7, 8, 9]))
   q = torch.from_numpy(
     np.random.default_rng(26).uniform(0.15, 0.85, size=(8, 2))
   )
@@ -762,9 +731,9 @@ def test_rect_prob_reproduces_the_cdf_on_a_corner_rectangle() -> None:
   Pinning it keeps them from drifting into two definitions.
   """
   gauss = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.6]]))
-  cop = _fit_tll(gauss.sample(2000, seeds=[31, 32, 33]))
+  cop = fit_tll_bicop(gauss.sample(2000, seeds=[31, 32, 33]))
   bc = TorchTllBicop.from_bicop(cop)
-  u = torch.from_numpy(_eval_grid(200, seed=34))
+  u = torch.from_numpy(eval_grid(200, seed=34))
   zero = torch.zeros_like(u[:, 0])
   torch.testing.assert_close(
     bc.rect_prob(zero, u[:, 0], zero, u[:, 1]),
@@ -1036,7 +1005,7 @@ def test_compile_fit_matches_the_eager_fit() -> None:
   ).sample(500, seeds=[1, 2, 3])
   eager = TorchTllBicop.from_data(u, FitControlsTorchBicop())
   fused = TorchTllBicop.from_data(u, FitControlsTorchBicop(compile_fit=True))
-  ref = _fit_tll(u).parameters
+  ref = fit_tll_bicop(u).parameters
   np.testing.assert_allclose(
     fused.interp_grid.values.numpy(), ref, atol=1e-11, rtol=1e-11
   )
@@ -1308,7 +1277,7 @@ def test_cond_interval_prob_partitions_the_conditional(cond_var: int) -> None:
   summation order rather than bit for bit.
   """
   gauss = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.7]]))
-  cop = _fit_tll(gauss.sample(2000, seeds=[41, 42, 43]))
+  cop = fit_tll_bicop(gauss.sample(2000, seeds=[41, 42, 43]))
   bc = TorchTllBicop.from_bicop(cop)
 
   edges = torch.linspace(0.0, 1.0, 17, dtype=torch.float64)
@@ -1324,7 +1293,7 @@ def test_cond_interval_prob_partitions_the_conditional(cond_var: int) -> None:
   whole = bc.cond_interval_prob(cond[:1], zero, one, cond_var)
   torch.testing.assert_close(whole, one, rtol=4e-16, atol=0.0)
   empty = bc.cond_interval_prob(cond[:1], cond[:1], cond[:1], cond_var)
-  assert float(empty[0]) == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert float(empty[0]) == 0.0
 
 
 @pytest.mark.parametrize("cond_var", [1, 2])
@@ -1333,7 +1302,7 @@ def test_cond_interval_prob_matches_the_h_function_difference(
 ) -> None:
   """Away from the clamp the two routes are the same quantity."""
   gauss = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
-  cop = _fit_tll(gauss.sample(2000, seeds=[44, 45, 46]))
+  cop = fit_tll_bicop(gauss.sample(2000, seeds=[44, 45, 46]))
   bc = TorchTllBicop.from_bicop(cop)
 
   rng = np.random.default_rng(47)
@@ -1357,7 +1326,7 @@ def test_cond_interval_prob_matches_the_h_function_difference(
 def test_rect_prob_and_cond_interval_prob_reject_a_bad_axis() -> None:
   """``cond_var`` is 1 or 2; anything else is a caller error, not a default."""
   bc = TorchTllBicop.from_bicop(
-    _fit_tll(
+    fit_tll_bicop(
       pv.Bicop(
         family=pv.families.gaussian, parameters=np.array([[0.3]])
       ).sample(500, seeds=[48, 49, 50])

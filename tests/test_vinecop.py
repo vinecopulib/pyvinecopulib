@@ -25,105 +25,109 @@ def _raising_criterion(data: np.ndarray, weights: np.ndarray) -> float:
   raise ValueError("custom criterion failure")
 
 
-def test_vinecop(unique_json_path: str) -> None:
-  d = 5
-  n = 1000
-  u = pv.to_pseudo_obs(random_data(d, n))
+#: The dimension and sample size every assertion below is written against.
+_D, _N = 5, 1000
 
+
+@pytest.fixture
+def gaussian_vine() -> pv.Vinecop:
+  """A Gaussian vine on `_D` variables, the fixture these assertions read."""
+  u = pv.to_pseudo_obs(random_data(_D, _N))
   controls = pv.FitControlsVinecop(family_set=[pv.families.gaussian])
   assert controls.family_set == [pv.families.gaussian]
-  cop = pv.Vinecop.from_data(u, controls=controls)
+  return pv.Vinecop.from_data(u, controls=controls)
 
-  # Test get_pair_copula method
-  for t in range(1, d):
-    for e in range(d - t - 1):
-      pair_copula = cop.get_pair_copula(t, e)
-      assert isinstance(pair_copula, pv.Bicop)
 
-      # Test get_family method
-      family = cop.get_family(0, 0)
-      assert family == pv.families.gaussian
+@pytest.fixture
+def gaussian_u() -> np.ndarray:
+  """The pseudo-observations `gaussian_vine` was fitted to."""
+  return pv.to_pseudo_obs(random_data(_D, _N))
 
-      # Test get_rotation method
-      rotation = cop.get_rotation(0, 0)
-      assert rotation == 0
 
-      # Test get_parameters method
-      parameters = cop.get_parameters(0, 0)
+def test_every_pair_slot_reports_the_family_it_was_fitted_with(
+  gaussian_vine: pv.Vinecop,
+) -> None:
+  """A constrained family set means every slot holds that family."""
+  for t in range(1, _D):
+    for e in range(_D - t - 1):
+      assert isinstance(gaussian_vine.get_pair_copula(t, e), pv.Bicop)
+      assert gaussian_vine.get_family(t, e) == pv.families.gaussian
+      assert gaussian_vine.get_rotation(t, e) == 0
+      parameters = gaussian_vine.get_parameters(t, e)
       assert isinstance(parameters, np.ndarray)
       assert parameters.shape == (1, 1)
       assert -1 < parameters[0, 0] < 1
+      assert isinstance(gaussian_vine.get_tau(t, e), float)
 
-      # Test get_tau method
-      tau = cop.get_tau(0, 0)
-      assert isinstance(tau, float)
 
-  for method in ["pdf", "cdf"]:
-    values = getattr(cop, method)(u)
+def test_every_evaluation_member_answers_with_a_shape(
+  gaussian_vine: pv.Vinecop, gaussian_u: np.ndarray
+) -> None:
+  """Including a single row, which used to come back a scalar (#169, #170)."""
+  for method in ("pdf", "cdf"):
+    values = getattr(gaussian_vine, method)(gaussian_u)
     assert isinstance(values, np.ndarray)
-    assert values.shape == (n,)
+    assert values.shape == (_N,)
     assert values.dtype == np.float64
 
-  for method in ["rosenblatt", "inverse_rosenblatt"]:
-    values = getattr(cop, method)(u)
+    one = getattr(gaussian_vine, method)(gaussian_u[0, :].reshape(1, _D))
+    assert isinstance(one, np.ndarray)
+    assert one.shape == (1,)
+
+  for method in ("rosenblatt", "inverse_rosenblatt"):
+    values = getattr(gaussian_vine, method)(gaussian_u)
     assert isinstance(values, np.ndarray)
-    assert values.shape == (n, d)
+    assert values.shape == (_N, _D)
     assert values.dtype == np.float64
 
-  # Test passing a single row of data (#169 & #170 fix)
-  u1 = u[0, :].reshape(1, d)
-  for method in ["pdf", "cdf"]:
-    values = getattr(cop, method)(u1)
-    assert isinstance(values, np.ndarray)
-    assert values.shape == (1,)
+  assert gaussian_vine.sample(_N).shape == (_N, _D)
 
-  # Test sample method
-  simulated_data = cop.sample(n)
-  assert simulated_data.shape == (n, d)
 
-  # Test loglik method
-  loglik_value = cop.loglik(u)
-  assert isinstance(loglik_value, float)
+def test_the_fit_criteria_are_floats(
+  gaussian_vine: pv.Vinecop, gaussian_u: np.ndarray
+) -> None:
+  """`loglik` and the three criteria the compiled class has always had."""
+  assert isinstance(gaussian_vine.loglik(gaussian_u), float)
+  assert isinstance(gaussian_vine.aic(gaussian_u), float)
+  assert isinstance(gaussian_vine.bic(gaussian_u), float)
+  assert isinstance(gaussian_vine.mbicv(gaussian_u), float)
 
-  # Test AIC method
-  aic_value = cop.aic(u)
-  assert isinstance(aic_value, float)
 
-  # Test BIC method
-  bic_value = cop.bic(u)
-  assert isinstance(bic_value, float)
-
-  # Test MBICV method
-  mbicv_value = cop.mbicv(u)
-  assert isinstance(mbicv_value, float)
-
-  # Test truncate method
-  cop.truncate(2)
-  assert cop.trunc_lvl == 2
-
-  # Test order and structure
-  assert isinstance(cop.order, list)
-  assert set(cop.order) == set(range(1, d + 1))
-  assert isinstance(cop.structure, pv.RVineStructure)
-  matrix = cop.matrix
+def test_the_structure_it_reports_is_a_valid_r_vine(
+  gaussian_vine: pv.Vinecop,
+) -> None:
+  """`order`, `structure` and `matrix` agree on the same `_D` variables."""
+  assert isinstance(gaussian_vine.order, list)
+  assert set(gaussian_vine.order) == set(range(1, _D + 1))
+  assert isinstance(gaussian_vine.structure, pv.RVineStructure)
+  matrix = gaussian_vine.matrix
   assert isinstance(matrix, np.ndarray)
-  assert matrix.shape == (d, d)
+  assert matrix.shape == (_D, _D)
   assert matrix.dtype == np.uint64
-  assert np.all(np.logical_and(matrix >= 0, matrix <= d))
+  assert np.all(np.logical_and(matrix >= 0, matrix <= _D))
 
-  # Test to_json and from_json
-  new_cop = pv.Vinecop.from_json(cop.to_json())
-  compare_vinecop(cop, new_cop)
+
+def test_truncating_drops_the_trees_above_the_level(
+  gaussian_vine: pv.Vinecop,
+) -> None:
+  """`truncate` is in place, and `trunc_lvl` reports what it left."""
+  gaussian_vine.truncate(2)
+  assert gaussian_vine.trunc_lvl == 2
+
+
+def test_it_round_trips_through_json_and_both_file_formats(
+  gaussian_vine: pv.Vinecop, unique_json_path: str
+) -> None:
+  """Text for a `.json` name, binary for `.cbor` (vinecopulib#684)."""
+  compare_vinecop(gaussian_vine, pv.Vinecop.from_json(gaussian_vine.to_json()))
+
   filename = os.fspath(unique_json_path)
-  cop.to_file(filename)
-  new_cop = pv.Vinecop.from_file(filename)
-  compare_vinecop(cop, new_cop)
+  gaussian_vine.to_file(filename)
+  compare_vinecop(gaussian_vine, pv.Vinecop.from_file(filename))
 
-  # CBOR round-trip: a ``.cbor`` filename selects the binary format
-  # (vinecopulib#684).
   cbor_filename = filename.removesuffix(".json") + ".cbor"
-  cop.to_file(cbor_filename)
-  compare_vinecop(cop, pv.Vinecop.from_file(cbor_filename))
+  gaussian_vine.to_file(cbor_filename)
+  compare_vinecop(gaussian_vine, pv.Vinecop.from_file(cbor_filename))
   with open(cbor_filename, "rb") as f:
     assert f.read(1) != b"{"
 
@@ -678,11 +682,19 @@ def test_vinecop_per_observation_parameters() -> None:
   hf_p, hf_0 = cop.hessian_full(u, parameters=pars), cop.hessian_full(u)
   np.testing.assert_allclose(hf_p[0][0], hf_0[0][0], rtol=1e-8, atol=1e-10)
 
-  # Existing positional signatures still work (parameters appended last).
-  np.testing.assert_allclose(cop.pdf(u, 2), cop.pdf(u), rtol=1e-12)
+  # The settings are keyword-only, so the two classes' orders -- which
+  # disagreed -- cannot be told apart from a call site. `step_wise` stays
+  # positional: `Bicop` has no such argument, so there is nothing to collide.
+  np.testing.assert_allclose(cop.pdf(u, num_threads=2), cop.pdf(u), rtol=1e-12)
   np.testing.assert_allclose(
-    cop.scores(u, False, 2), cop.scores(u, step_wise=False), rtol=1e-10
+    cop.scores(u, False, num_threads=2),
+    cop.scores(u, step_wise=False),
+    rtol=1e-10,
   )
+  with pytest.raises(TypeError):
+    # `getattr` so the call survives `ty`, which is right to reject it: that
+    # it no longer binds is what this asserts.
+    getattr(cop, "pdf")(u, 2)  # noqa: B009
 
 
 def test_fit_controls_vinecop_conditioning_set() -> None:
@@ -778,9 +790,9 @@ def test_fit_controls_vinecop_from_bicop_controls() -> None:
 
   assert controls.family_set == [pv.families.gaussian]
   assert controls.num_threads == 2
-  assert controls.psi0 == 0.5  # noqa: RUF069 - the value this test set, read back
+  assert controls.psi0 == 0.5
   assert controls.trunc_lvl == 2
-  assert controls.threshold == 0.1  # noqa: RUF069 - the value this test set, read back
+  assert controls.threshold == 0.1
   assert controls.bicop_controls.family_set == [pv.families.gaussian]
 
   controls.bicop_controls = pv.FitControlsBicop(
@@ -841,16 +853,24 @@ def test_rosenblatt_conditioning_set_matches_reorient() -> None:
   )
 
 
-def test_rosenblatt_second_positional_is_still_num_threads() -> None:
-  # C++ puts `conditioning_set` in position 2; Python keeps `num_threads`
-  # there, so `rosenblatt(u, 4)` must not silently become a conditioning set.
+def test_rosenblatt_takes_only_the_data_positionally() -> None:
+  # C++ puts `conditioning_set` in position 2 and Python used to put
+  # `num_threads` there, so the same second positional meant two things. It
+  # now means nothing: every setting is keyword-only and a stray positional
+  # is refused rather than bound to whichever the binding happened to list.
   cop, u = _cop_and_data(d=4, n=200)
   np.testing.assert_allclose(
-    cop.rosenblatt(u, 4), cop.rosenblatt(u), rtol=1e-12
+    cop.rosenblatt(u, num_threads=4), cop.rosenblatt(u), rtol=1e-12
   )
   np.testing.assert_allclose(
-    cop.inverse_rosenblatt(u, 2), cop.inverse_rosenblatt(u), rtol=1e-12
+    cop.inverse_rosenblatt(u, num_threads=2),
+    cop.inverse_rosenblatt(u),
+    rtol=1e-12,
   )
+  for name in ("rosenblatt", "inverse_rosenblatt"):
+    with pytest.raises(TypeError):
+      # `getattr` so the call survives `ty` -- see the note in the pdf test.
+      getattr(cop, name)(u, 4)
 
 
 @pytest.mark.parametrize(
@@ -1043,7 +1063,7 @@ def _underflowing_vine(d: int = 10) -> tuple[pv.Vinecop, np.ndarray]:
 def test_logpdf_survives_where_the_density_underflows() -> None:
   """The log-density is exact where the product of edge densities is not."""
   cop, u = _underflowing_vine()
-  assert cop.pdf(u)[0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert cop.pdf(u)[0] == 0.0
   logpdf = cop.logpdf(u)[0]
   assert np.isfinite(logpdf)
   # Nine edges of the same pair at the same point, so the total is exactly

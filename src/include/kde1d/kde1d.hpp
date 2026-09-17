@@ -37,33 +37,33 @@ Constructs a `Kde1d` instance.
 
 Parameters
 ----------
-xmin :
+xmin : float, or None, optional
     Lower bound for the support of the density. `NaN` means no
     boundary.
-xmax :
+xmax : float, or None, optional
     Upper bound for the support of the density. `NaN` means no
     boundary.
 var_type : {"c", "d", "zi"}, default="c"
     Variable type: continuous, discrete, or zero-inflated. The same
     spelling ``var_types`` uses on ``Bicop`` and ``Vinecop``.
-multiplier :
+multiplier : float, default=1.0
     Bandwidth multiplier. The actual bandwidth used is
     ``bandwidth * multiplier``.
-bandwidth :
+bandwidth : float, or None, optional
     Bandwidth parameter. `None` / `NaN` selects the bandwidth
     automatically via the plug-in methodology.
-degree :
+degree : int, default=2
     Degree of the local polynomial (0, 1, or 2 for log-constant,
     log-linear, or log-quadratic fitting).
-grid_size :
+grid_size : int, default=400
     Number of grid points for the interpolation grid (must be
     >= 4).
-boundary_repair :
+boundary_repair : bool, default=True
     Whether a finite bound may be fitted with a dedicated boundary
-    estimator instead of the transformed bulk fit. Eligibility, not a
-    guarantee: it needs a finite bound and at least 16 observations,
-    and an endpoint whose local behavior is unclear keeps the bulk
-    estimate. Has no effect when neither bound is set.
+    estimator instead of the transformed bulk fit. This is eligibility
+    rather than a promise: it needs a finite bound and at least 16
+    observations, and an endpoint whose local behavior is unclear keeps
+    the bulk estimate. Has no effect when neither bound is set.
 )""";
 
 // Factory function to create a Kde1d from xmin, xmax, type string, multiplier,
@@ -493,7 +493,6 @@ inline void init_kde1d(nb::module_& module) {
               kde1d_doc.get_actual_grid_size.doc)
           .def_prop_ro("boundary_repair", &Kde1d::get_boundary_repair,
                        kde1d_doc.get_boundary_repair.doc)
-          .def_prop_ro("edf", &Kde1d::get_edf, kde1d_doc.get_edf.doc)
           .def_prop_ro(
               "grid_points",
               [](const Kde1d& kde) { return kde.get_grid_points(); },
@@ -515,9 +514,10 @@ inline void init_kde1d(nb::module_& module) {
           .def_prop_ro(
               "family_name", [](const Kde1d&) { return std::string("kde1d"); },
               "Family name, as a selection report spells it.")
-          .def_prop_ro("n_parameters", &Kde1d::get_edf,
-                       "Effective degrees of freedom, under the margin layer's "
-                       "name for a parameter count. See also ``edf``.")
+          .def_prop_ro("npars", &Kde1d::get_edf,
+                       "Effective degrees of freedom, which is this "
+                       "estimator's parameter count -- the name ``Bicop`` and "
+                       "``Vinecop`` answer, and what the criteria penalize.")
 
           // Methods — auto-extracted from `lib/kde1d` upstream `//!` comments,
           // except the three fitting verbs: their signature is this binding's

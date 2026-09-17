@@ -136,13 +136,10 @@ nitpick_ignore_regex = [
     r"pyvinecopulib\.\w+\.\w+\.(bicop|vinecop|margin)_class",
   ),
   # The structural Protocols that type an unimported ecosystem's objects --
-  # `margins/openturns.py`'s `_Distribution`, `_Factory` and their kin. Neither
-  # SciPy nor OpenTURNS ships `py.typed`, and `scipy-stubs` needs Python 3.12
   # against this project's 3.11 floor, so a Protocol naming exactly the members
   # the code calls is what types those boundaries. They are private, so
   # autosummary generates no page for them to point at, while the numpydoc
   # `Returns` beside each says the ecosystem type a reader wants
-  # (`openturns.Distribution`). Retires if either library ships types.
   (r"py:.*", r"pyvinecopulib\.\w+\.\w+\._[A-Z]\w+"),
   # `ArrayT` is the TypeVar the array-agnostic contracts are generic over, and
   # `Array` / `BoolArray` / `Namespace` / `FInfo` are the protocols bounding it
@@ -236,7 +233,6 @@ _CLASS_MODULE = {
   "BicopBase": "pyvinecopulib.core",
   "MarginLike": "pyvinecopulib.core",
   "MarginBase": "pyvinecopulib.core",
-  "OpenTURNSMargin": "pyvinecopulib.margins",
   "SciPyMargin": "pyvinecopulib.margins",
   "FitControlsMargin": "pyvinecopulib.core",
   "FitControlsKde1d": "pyvinecopulib.core",
@@ -481,7 +477,6 @@ DOCSTRING_SUBPACKAGES = {
     # `process_cross_references` resolves the bare name to `core`.
     "classes": [
       "SciPyMargin",
-      "OpenTURNSMargin",
     ],
     "functions": [
       "as_margin",

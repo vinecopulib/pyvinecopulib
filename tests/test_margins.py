@@ -11,6 +11,7 @@ same as satisfying its semantics.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -305,7 +306,7 @@ def test_as_margin_scipy_forwards_native_log_density(raw: Any) -> None:
   margin: Any = as_margin(raw)
   np.testing.assert_allclose(margin.logpdf(far), raw.logpdf(far), atol=0)
   assert np.isfinite(margin.logpdf(far)).all()
-  assert margin.pdf(far)[0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert margin.pdf(far)[0] == 0.0
 
 
 def test_as_margin_rejects_the_unknown() -> None:
@@ -381,7 +382,7 @@ def test_as_margin_torch_forwards_native_log_density() -> None:
   margin_with_logpdf: Any = margin
   torch.testing.assert_close(margin_with_logpdf.logpdf(far), raw.log_prob(far))
   assert torch.isfinite(margin_with_logpdf.logpdf(far)).all()
-  assert margin.pdf(far).item() == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert margin.pdf(far).item() == 0.0
 
 
 @pytest.mark.parametrize("family", ["Poisson", "Bernoulli"])
@@ -466,9 +467,6 @@ def _fitted(cls: type, y: np.ndarray) -> Any:
   if cls.__name__ == "TorchKde1d":
     torch = pytest.importorskip("torch")
     return cls().fit(torch.as_tensor(y))
-  if cls.__name__ == "OpenTURNSMargin":
-    pytest.importorskip("openturns")
-    return cls("Normal").fit(y)
   if cls.__name__ == "SciPyMargin":
     return cls("norm").fit(y)
   return cls().fit(y)
@@ -486,9 +484,10 @@ def test_every_shipped_margin_round_trips_through_json() -> None:
 
   for name, cls in sorted(classes.items()):
     margin = _fitted(cls, y)
-    payload = pv.core.margin_to_json(margin)
-    assert payload["kind"] == name, (name, payload["kind"])
-    restored = pv.core.margin_from_json(payload)
+    text = pv.core.margin_to_json(margin)
+    assert isinstance(text, str), (name, type(text))
+    assert json.loads(text)["kind"] == name, (name, text[:80])
+    restored = pv.core.margin_from_json(text)
     assert type(restored) is cls, (name, type(restored))
 
     probe = np.array([-0.5, 0.0, 0.5])

@@ -87,10 +87,13 @@ def pair_eval(
   pair = getattr(method, "__self__", None)
   if pair is not None and not getattr(pair, "supports_covariates", False):
     raise TypeError(
-      f"{type(pair).__name__} declares `supports_covariates = False`, so it "
-      f"cannot be handed the conditioning matrix this vine is evaluating "
-      f"with. Host a pair copula that reads covariates, or evaluate without "
-      f"`x`."
+      f"{type(pair).__name__} does not declare `supports_covariates = True`, "
+      f"so it cannot be handed the conditioning matrix this vine is "
+      f"evaluating with. If it does read covariates, declare the flag on the "
+      f"class -- declaring `x` on its leaves is not enough, because a bound "
+      f"class reports `(*args, **kwargs)` and the flag is what a consumer "
+      f"reads. Otherwise host a pair copula that reads covariates, or "
+      f"evaluate without `x`."
     )
   return method(*args, x=x)
 

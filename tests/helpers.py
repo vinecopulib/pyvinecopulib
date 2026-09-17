@@ -80,8 +80,7 @@ def compare_kde1d(kde1: Any, kde2: Any) -> None:
       "degree",
       "grid_size",
       "boundary_repair",
-      "edf",
-      "n_parameters",
+      "npars",
     ]
   else:
     # For unfitted models: compare fitting parameters. Every one of them has

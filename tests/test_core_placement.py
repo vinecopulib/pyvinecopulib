@@ -118,7 +118,7 @@ def test_covariates_are_placed_but_never_trimmed() -> None:
   assert isinstance(placed, torch.Tensor)
   assert placed.dtype is torch.float32
   # Untouched values: no clamp into (0, 1), which is the point.
-  assert float(placed.min()) == -3.0 and float(placed.max()) == 7.5  # noqa: RUF069 - the value this test set, read back
+  assert float(placed.min()) == -3.0 and float(placed.max()) == 7.5
 
 
 def test_prepare_still_refuses_a_misaligned_covariate_matrix() -> None:

@@ -218,8 +218,12 @@ it, there is no entry to write.
   Two behaviors here exist for ensembling and are not incidental: a
   pre-settable `schema_` is honored across a *refit*, not only the first
   `fit` (a wrapper refits its survivors, and re-inferring the types there
-  silently changes the model), and `VineRegressor.normalize_weights` is a
-  real `__init__` parameter so it survives `clone`.
+  silently changes the model), and `VineRegressor.conditional_weights` is
+  public, since the weights are what a wrapper averages and a prediction is
+  already a ratio of them -- which is also what `normalize_weights` is for,
+  a real `__init__` parameter so it survives `clone`. It reached a private
+  `_weights_for_batch` before, and the prediction step took the weight source
+  as an argument for a caller that never existed.
 
   **No underscore-prefixed name is protected.** An earlier version of this
   file listed private hooks that must not be removed "as unused" because a
@@ -250,10 +254,10 @@ it, there is no entry to write.
   `lib/vinecopulib` submodule pin; local C++ patches under
   `lib/` are not accepted.
 - **A copula-family registry to adapt.** The three parametric margin classes
-  (`SciPyMargin`, `OpenTURNSMargin`, `TorchDistributionMargin`) each adapt one
+  (`SciPyMargin`, `TorchDistributionMargin`) each adapt one
   ecosystem's family registry. There is no pair-copula counterpart, and that is
   settled rather than pending: scipy and `torch.distributions` ship no
-  copulas at all, and OpenTURNS' 19 are **not** adapted either — pair copulas
+  copulas at all — pair copulas
   are `lib/vinecopulib`'s own domain (rotations, h-functions, discrete
   handling, tau maps). A learnable pair copula is written by subclassing
   `BicopBase`, which `TorchVinecop` hosts like any other; see
@@ -327,7 +331,6 @@ pyvinecopulib/
 
       margins/__init__.py        # the two ecosystem adapters + re-exports of core's margin internals
         scipy.py                 # SciPyMargin (one SciPy family, or select one) — needs the [scipy] extra
-        openturns.py             # OpenTURNSMargin — needs the [openturns] extra
 
       sklearn/__init__.py        # VineDensity, VineRegressor
         _base.py                 # VineBase (parameter-constraints, schema, 3-step pipeline)
@@ -519,9 +522,7 @@ For any behavior change:
   result back through `cast("ArrayT", ...)`, as `core/bicop_base.py` and
   `core/bicop_independence.py` do.
 
-  Where a whole file's `Any` is one reason -- OpenTURNS having no types at all
-  -- it goes in `per-file-ignores` with that reason stated once; everywhere
-  else it is a `# noqa: ANN401` at the site, and `RUF100` fails the build when
+  An `Any` is a `# noqa: ANN401` at the site, and `RUF100` fails the build when
   one goes stale.
 - **`__init__.py` files use explicit `__all__`** to define the public
   surface; ruff's per-file ignore (`F403`/`F405`) covers the
@@ -666,6 +667,16 @@ For any behavior change:
   Adding a flag with no reader is the thing `supported_var_types` was deleted
   for, and `supports_controls` after it -- `controls_class is None` says
   "reads no controls" and carries the type besides.
+
+  **`plot` is absent from `VinedistBase` for the same reason**, and that is a
+  decision rather than a gap. The other three bases each draw the one thing
+  they are: a margin's density or distribution function, a pair's density
+  surface, a vine's trees. A vine distribution is `d` margins and a copula,
+  so "its" plot is at least three different pictures -- a panel of the
+  margins, the copula's trees, or a pairs plot of a sample -- and each is
+  already reachable: `dist.margins[j].plot()`, `dist.vinecop.plot()`, and
+  `utils.pairs_copula_data(dist.sample(n))`. Picking one of the three as the
+  method would make the other two look unsupported.
 - **Observation weights ride in the controls, at every level, with no
   propagation rule.** `FitControlsBicop` and `FitControlsVinecop` are
   upstream's and always did; `#339` gave `FitControlsKde1d` and
@@ -816,6 +827,51 @@ For any behavior change:
   controls, so the old second positional has no spelling left at all. What the
   exception actually cost was a validator (`reject_array_controls`) whose
   whole job was catching the carried-over `kde.fit(y, w)` at six call sites.
+
+  **The evaluation verbs read the same rule: the data, then keyword-only.**
+  `parameters`, `num_threads`, `seeds` and `randomize_discrete` are settings,
+  so they are keyword-only on every bound method of `Bicop` and `Vinecop`. Each
+  class was internally consistent and the two disagreed with each other:
+  `Bicop` ordered `(u, parameters, num_threads)` across eight methods and
+  `Vinecop` ordered `(u, num_threads, parameters)` across eight more, and
+  `sample` swapped `seeds` against `num_threads` on top of that. So the call a
+  user carried from one class to the other bound a parameter matrix as a thread
+  count. Keyword-only is what makes the two orders unobservable rather than
+  picking one and breaking the other class's positional callers; what stays
+  positional is the data and the arguments only one of the two classes has
+  (`N`, `psi0`, `step_wise`, `qrng`, `deriv`). Two places keep `parameters`
+  positional, and both are the same reason -- there it is not a setting:
+  `parameters_to_tau` and its two siblings, where it *is* the data; and
+  `Bicop`'s constructor and `from_family`, where it is part of the model
+  specification beside `family` and `rotation`, so `Bicop(gaussian, 0, par)`
+  keeps working.
+
+  **The fitting verbs read `u` too, and that rename went upstream.** They bound
+  the observations as `data` where every evaluation verb and all four Python
+  bases call them `u`. The fix was not available here: the docstrings are
+  lifted verbatim from `lib/vinecopulib`, so a local rename would document one
+  name and bind another -- the same reason `Kde1d`'s evaluation verbs still
+  read `x`. So the parameter was renamed upstream
+  ([vinecopulib#781](https://github.com/vinecopulib/vinecopulib/pull/781)) and
+  the pin bumped, which is the route for any of these: fix it there, bump, then
+  adjust `src/include/**` to the new name. Note the generated docstring key
+  follows it -- `doc_3args_data_controls_var_types` became
+  `doc_3args_u_controls_var_types` -- so the binding fails to compile rather
+  than silently attaching the wrong text.
+
+  **Nothing here can catch a `@param` that does not match the signature, and
+  upstream doxygen is the only check that does.** It rejects one
+  warnings-as-errors, which is
+  what caught four comments the rename missed while the binding already said
+  `u`. Downstream had no detector and can have none: the pre-commit
+  `numpydoc-validation` hook is `files: ^src/pyvinecopulib/.*\.py$`, so a
+  docstring living in the extension is never handed to it, and turning on
+  numpydoc's `PR01` / `PR02` for the bound classes does not work either --
+  `inspect.signature` **raises** on a nanobind method or answers
+  `(*args, **kwargs)`, so the rules compare the documented names against
+  nothing. Measured over the seven bound classes: 30 `PR01` and 90 `PR02`,
+  every one of them false. So do not reach for that check; fix the comment
+  upstream, where it is checked.
 - **Bind alternative constructors as named factories, not overloads.** C++
   overloads a constructor; Python names it. Every alternative way to build an
   object is a `def_static` — `Bicop.from_family` / `from_data` / `from_file` /
@@ -1379,8 +1435,7 @@ Three groups:
   criteria stop being comparable.
 
   **A margin class is named for the ecosystem whose families it wraps** --
-  `SciPyMargin` in `margins/scipy.py`, `OpenTURNSMargin` in
-  `margins/openturns.py`. Neither module is underscore-prefixed, because each
+  `SciPyMargin` in `margins/scipy.py`. The module is not underscore-prefixed, because it
   *is* an import path a user may reasonably reach for -- both are named for an
   ecosystem and behind its extra; the same-named modules do not shadow
   the real packages, since Python 3 resolves `import scipy` absolutely.
@@ -1404,7 +1459,7 @@ Three groups:
   past on a bare `pdf` (in SciPy's new API `pdf` is `+∞` at an atom;
   the mass is `pmf`). **`core` holds the two registries and names no
   ecosystem.** An adapter or a JSON reader is registered by the module that
-  owns the class it produces — `margins/scipy.py`, `margins/openturns.py`,
+  owns the class it produces — `margins/scipy.py`,
   `torch/kde1d.py`, `torch/distribution_margin.py` — through the same
   `register_margin_adapter` / `register_margin_json` hooks a third party uses,
   so the first-party margins exercise the documented extension point rather
@@ -1692,14 +1747,19 @@ Key surface:
     it is piecewise linear and its integral is piecewise linear across cells.
     So the cache costs nothing in accuracy — it agrees with the on-the-fly
     path to summation-order noise — and it carries an exact gradient in
-    `values` as well as in `u`. `hinv*` get less from them than `hfunc*` do but
-    not nothing: there is no `O(1)` lookup, because locating the bracketing
+    `values` as well as in `u`. The default is earned on `cdf` and
+    `hfunc*`, worth 8x and 2.6x at `n = 1000` and 103x and 4x at
+    `n = 20000`. `hinv*` get **nothing**, which is measured rather than
+    reasoned: there is no `O(1)` lookup, because locating the bracketing
     cell needs the conditional cumulative along the whole free axis, but that
     cumulative is exactly what a prefix table holds. Integration is linear, so
     blending two of its lines is the same quantity as integrating the blended
     knots -- a gather instead of a trapezoid and a scan, agreeing to 2e-16. So
     the two cache modes run the same closed-form inversion on a cumulative
-    they reach differently, and agree to rounding rather than exactly.
+    they reach differently, and agree to rounding rather than exactly. What
+    the gather is worth in time is within 1.2x either way up to `n = 20000`
+    and 1.7x *slower* for `hinv1` at `n = 200000`, so an inversion-bound
+    caller is the one case for turning the cache off.
     The tables are buffers, so `_tables` rebuilds them in-graph when `values`
     starts tracking grad after construction.
   - `rect_prob` / `cond_interval_prob` — the two `BicopBase` hooks, overridden
@@ -1777,7 +1837,7 @@ working. Specifically:
   them, because discovery and star-binding are different questions.
 - `__getattr__` provides two things: lazy import of `sklearn` (the
   extra is only triggered on `import pyvinecopulib.sklearn` or
-  attribute access) and a deprecation shim for the 35 pre-#207
+  attribute access) and a deprecation shim for the 33 pre-#207
   top-level names (every family constant, every utility function from
   `utils`). Each access emits a `DeprecationWarning` pointing at the
   new canonical path.
@@ -1813,7 +1873,7 @@ below are a quick orientation.
   `SimplifiedContext`, `NonSimplifiedContext`; plus the marginal layer
   `MarginLike`, `MarginBase` and the joint object with its contract and base,
   `Vinedist`, `VinedistLike`, `VinedistBase`; plus the margin serialization
-  helpers `margin_from_json`, `margin_to_json`, `register_margin_json`; plus
+  helpers `margin_from_json`, `margin_json`, `margin_to_json`, `register_margin_json`; plus
   `ArrayT`, the type variable those signatures are written in.
 - **`pyvinecopulib.core.extend`** — **six** names, and the count is the
   point: what an extension cannot be written without, rather than everything
@@ -1849,13 +1909,13 @@ below are a quick orientation.
 - **`pyvinecopulib.utils`** — `to_pseudo_obs`, `wdm`,
   `find_latent_sample`, `sobol`, `ghalton`, `sample_uniform`,
   `pairs_copula_data`.
-- **`pyvinecopulib.margins`** — `SciPyMargin`, `OpenTURNSMargin`,
+- **`pyvinecopulib.margins`** — `SciPyMargin`,
   `FitControlsMargin`, `as_margin`, `register_margin_adapter`,
   `resolve_margin_controls`.
 - **`pyvinecopulib.sklearn`** — `VineDensity`, `VineRegressor`.
 - **`pyvinecopulib.torch`** — `TorchTllBicop`, `TorchVinecop`, `TorchKde1d`,
   `TorchDistributionMargin`, `TorchVinedist`, `FitControlsTorchBicop`,
-  `FitControlsTorchVinecop`.
+  `FitControlsTorchVinecop`, `TensorPlacementMixin`, `reference_tensor`.
 
 Top-level `pyvinecopulib` re-exports the ten classes named above and
 `to_pseudo_obs`; everything else — including the `core` abstraction
@@ -2156,7 +2216,7 @@ Round-trip / parity properties to preserve when touching numerics:
 - **Another ecosystem's distributions (`pyvinecopulib.margins`).** Call
   `register_margin_adapter(predicate, adapter)` — from a package or a
   notebook cell — rather than editing `core/_margins.py`. That is what keeps
-  OpenTURNS, TFP and NumPyro out of `core` while remaining usable, and
+  TFP, NumPyro and OpenTURNS out of `core` while remaining usable, and
   what lets `as_margin` stay the single funnel every margin passes
   through.
 - **A new lane for the sklearn estimators.** There is nothing to subclass:

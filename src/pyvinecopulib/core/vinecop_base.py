@@ -56,6 +56,7 @@ generic ``ArrayT`` lives on the public signatures.
 from __future__ import annotations
 
 import contextlib
+import math
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
 from typing import (
@@ -70,7 +71,7 @@ import numpy as np
 from ..pyvinecopulib_ext import RVineStructure
 from ._covariates import pair_eval, prepare_covariates
 from ._loglik import safe_log, sum_loglik
-from ._placement import PlacementMixin, QrngUniformMixin
+from ._placement import PlacementMixin, QrngUniformMixin, to_numpy
 from ._trim import trim
 from ._validation import check_var_types
 from ._vinecop_discrete import (
@@ -94,6 +95,7 @@ from ._vinecop_plot import (
 )
 from ._vinecop_reorient import Reorientation, reorientation
 from .bicop_base import BicopBase
+from .margin_base import criteria
 from .protocols import (
   _VINECOP_EXAMPLE,
   ArrayT,
@@ -1712,6 +1714,66 @@ class VinecopBase(
         PyTorch).
     """
     return sum_loglik(self.logpdf(u, x=x))
+
+  def aic(self, u: ArrayT, /) -> float:
+    """Akaike information criterion at these observations, minimized.
+
+    Parameters
+    ----------
+    u : array, shape (n, d), dtype float
+        Observations to evaluate the log-likelihood on. Required, unlike on
+        ``Bicop`` / ``Vinecop``, which carry the value their own fit attained;
+        a vine may host parts it did not fit, so there is no such value here.
+
+    Returns
+    -------
+    float
+        ``-2 loglik + 2 npars``.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``npars`` reports none.
+
+    See Also
+    --------
+    bic : The same, penalizing by ``log n`` per parameter.
+    """
+    npars = self.npars
+    if not math.isfinite(npars):
+      raise NotImplementedError(
+        f"{type(self).__name__} reports no `npars`, so no criterion can "
+        "penalize it. Implement `npars` to enable `aic` / `bic`."
+      )
+    return criteria(float(to_numpy(self.loglik(u))), npars, None)["aic"]
+
+  def bic(self, u: ArrayT, /) -> float:
+    """Bayesian information criterion at these observations, minimized.
+
+    Parameters
+    ----------
+    u : array, shape (n, d), dtype float
+        Observations to evaluate the log-likelihood on; their row count is the
+        ``n`` the penalty uses.
+
+    Returns
+    -------
+    float
+        ``-2 loglik + npars log n``.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``npars`` reports none.
+    """
+    npars = self.npars
+    if not math.isfinite(npars):
+      raise NotImplementedError(
+        f"{type(self).__name__} reports no `npars`, so no criterion can "
+        "penalize it. Implement `npars` to enable `aic` / `bic`."
+      )
+    rows = float(self._prep(u).shape[0])
+    return criteria(float(to_numpy(self.loglik(u))), npars, rows)["bic"]
 
   @property
   def dim(self) -> int:

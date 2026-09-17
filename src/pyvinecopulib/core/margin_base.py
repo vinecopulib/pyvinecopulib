@@ -215,7 +215,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
   Everything else comes with the class: :meth:`logpdf`; :meth:`cdf_left`, the
   left limit a variable with atoms needs; :meth:`icdf`, by numerical inversion
   of ``cdf`` over :attr:`support`; :meth:`loglik`, the fit record
-  :attr:`nobs` / :attr:`n_parameters`, and the criteria :meth:`aic` /
+  :attr:`nobs` / :attr:`npars`, and the criteria :meth:`aic` /
   :meth:`bic` / :meth:`aicc` on top of the three; :meth:`sample`, which
   needs a ``_sample_uniform`` hook for the array namespace's RNG; and
   ``__repr__``. Override any of them where the family has a closed form --
@@ -252,7 +252,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
 
   Called with no data, :meth:`loglik` and the criteria report the fit itself:
   the value a subclass records under ``_fitted_loglik``, penalized by
-  :attr:`n_parameters` and, for :meth:`bic` and :meth:`aicc`, by :attr:`nobs`.
+  :attr:`npars` and, for :meth:`bic` and :meth:`aicc`, by :attr:`nobs`.
   An estimator records those two in ``_n_free`` and ``_nobs`` and inherits both
   properties, so a fitted margin is comparable with every other one.
 
@@ -620,7 +620,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
   #: size here; ``None`` means the margin never estimated one.
   _nobs: int | None = None
 
-  #: What :attr:`n_parameters` reports. A subclass's :meth:`fit` records the
+  #: What :attr:`npars` reports. A subclass's :meth:`fit` records the
   #: number of parameters it freely estimated here.
   _n_free: float = 0.0
 
@@ -637,7 +637,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     return self._nobs
 
   @property
-  def n_parameters(self) -> float:
+  def npars(self) -> float:
     """Number of freely estimated parameters.
 
     Only what a fit actually estimated counts, not the length of the parameter
@@ -765,7 +765,7 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
     bic : The same, penalizing by ``log n`` per parameter.
     aicc : The same, with a small-sample correction.
     """
-    return criteria(self._loglik_value(y), self.n_parameters, None)["aic"]
+    return criteria(self._loglik_value(y), self.npars, None)["aic"]
 
   def bic(self, y: ArrayT | None = None, /) -> float:
     """Bayesian information criterion of the fit.
@@ -791,9 +791,9 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         If called without data on a margin that did not record its sample
         size, since the penalty needs ``n``.
     """
-    return criteria(
-      self._loglik_value(y), self.n_parameters, self._sample_size(y)
-    )["bic"]
+    return criteria(self._loglik_value(y), self.npars, self._sample_size(y))[
+      "bic"
+    ]
 
   def aicc(self, y: ArrayT | None = None, /) -> float:
     """Small-sample-corrected Akaike information criterion.
@@ -819,9 +819,9 @@ class MarginBase(MarginLike[ArrayT], PlacementMixin, ABC):
         If called without data on a margin that did not record its sample
         size.
     """
-    return criteria(
-      self._loglik_value(y), self.n_parameters, self._sample_size(y)
-    )["aicc"]
+    return criteria(self._loglik_value(y), self.npars, self._sample_size(y))[
+      "aicc"
+    ]
 
   def _loglik_value(self, y: ArrayT | None) -> float:
     """Log-likelihood as a plain float.

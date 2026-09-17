@@ -144,6 +144,25 @@ Alternatives to instantiate structures are:
 - ``RVineStructure.from_json()``: Instantiate from a JSON string.
 )""";
 
+  const char* from_json_doc = R"""(
+  Instantiates an ``RVineStructure`` from a JSON string.
+
+  Takes the JSON text ``RVineStructure.to_json()`` writes, not a decoded object.
+
+  Parameters
+  ----------
+  json : str
+      The JSON text to read, as ``RVineStructure.to_json()`` writes it.
+
+  check : bool, default=True
+      Whether to check that the matrix is a valid R-vine structure.
+
+  Returns
+  -------
+  RVineStructure
+      The structure the text describes.
+  )""";
+
   const char* from_trees_doc =
       R"""(Assemble an ``RVineStructure`` from a list-of-trees decomposition.
 
@@ -219,8 +238,7 @@ Vinecop.get_trees : The same decomposition carrying the fitted pair copulas.
                   rvinestructure_doc.ctor.doc_2args_filename_check,
                   nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_json", &rv_from_json, "json"_a, "check"_a = true,
-                  rvinestructure_doc.ctor.doc_2args_input_check,
-                  nb::call_guard<nb::gil_scoped_release>())
+                  from_json_doc, nb::call_guard<nb::gil_scoped_release>())
       .def("to_file", &RVineStructure::to_file, "filename"_a,
            rvinestructure_doc.to_file.doc,
            nb::call_guard<nb::gil_scoped_release>())

@@ -26,7 +26,8 @@ import torch
 from torch import Tensor
 
 from ..core import ControlsLike, FitControlsKde1d, Kde1d, MarginBase
-from ..core._margins import register_margin_json
+from ..core._json import read_payload
+from ..core._margins import margin_json, register_margin_json
 from ..core._validation import (
   reject_covariates,
   validate_declaration,
@@ -203,7 +204,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self.grid_size = grid_size
     self.boundary_repair = boundary_repair
     self._loglik: float | None = None
-    self.edf: float | None = None
+    self._npars: float | None = None
     self._selected_bandwidth: float | None = None
     self._dtype = dtype
     self._device = device
@@ -445,7 +446,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
 
     The fit-free injection point, mirroring ``Kde1d.from_grid``: a density
     obtained some other way -- optimized, transferred, hand-built -- becomes a
-    margin. Nothing was estimated, so ``loglik()`` and ``n_parameters`` have no
+    margin. Nothing was estimated, so ``loglik()`` and ``npars`` have no
     fitted value to report.
 
     Parameters
@@ -508,17 +509,16 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self.multiplier = kde.multiplier
     self.boundary_repair = kde.boundary_repair
     self._loglik = float(kde.loglik())
-    self.edf = float(kde.edf)
+    self._npars = float(kde.npars)
     return self
 
-  def to_json(self) -> dict[str, Any]:
+  def to_json(self) -> str:
     """Return this margin's JSON payload.
 
     Returns
     -------
-    dict
-        A JSON-serializable mapping that
-        :func:`~pyvinecopulib.core.margin_from_json` reads back.
+    str
+        JSON text that :func:`~pyvinecopulib.core.margin_from_json` reads back.
 
     Raises
     ------
@@ -529,28 +529,32 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       raise ValueError(
         "an unfitted TorchKde1d cannot be serialized; call fit(y) first"
       )
-    return {
-      "kind": "TorchKde1d",
-      "state": self.get_extra_state(),
-      "grid_points": [float(v) for v in self.grid_points.tolist()],
-      "values": [float(v) for v in self.values.tolist()],
-      "prob0": float(self.prob0),
-    }
+    return margin_json(
+      self,
+      {
+        "kind": "TorchKde1d",
+        "state": self.get_extra_state(),
+        "grid_points": [float(v) for v in self.grid_points.tolist()],
+        "values": [float(v) for v in self.values.tolist()],
+        "prob0": float(self.prob0),
+      },
+    )
 
   @classmethod
-  def from_json_payload(cls, payload: dict[str, Any]) -> TorchKde1d:
-    """Rebuild a margin from the payload :meth:`to_json` produced.
+  def from_json(cls, json: str) -> TorchKde1d:
+    """Rebuild a margin from the text :meth:`to_json` produced.
 
     Parameters
     ----------
-    payload : dict
-        The mapping :meth:`to_json` returned.
+    json : str
+        The text :meth:`to_json` returned.
 
     Returns
     -------
     TorchKde1d
         The reconstructed margin, on the default device and dtype.
     """
+    payload = read_payload(json, "margin")
     state = dict(payload["state"])
     out = cls.from_grid(
       torch.as_tensor(payload["grid_points"], dtype=torch.float64),
@@ -590,7 +594,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
       "grid_size": self.grid_size,
       "boundary_repair": self.boundary_repair,
       "loglik": self._loglik,
-      "edf": self.edf,
+      "edf": self._npars,
       "nobs": self._nobs,
     }
 
@@ -620,7 +624,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     self.grid_size = state["grid_size"]
     self.boundary_repair = state["boundary_repair"]
     self._loglik = state["loglik"]
-    self.edf = state["edf"]
+    self._npars = state["edf"]
     # The payload is an opaque ``object``, and the retained sample size is
     # declared on ``MarginBase`` as what the `nobs` property answers.
     self._nobs = cast("int | None", state["nobs"])
@@ -679,7 +683,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
     return self._nobs
 
   @property
-  def n_parameters(self) -> float:
+  def npars(self) -> float:
     """Effective degrees of freedom of the fit.
 
     Returns
@@ -689,7 +693,7 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
         marginal and the copula side. ``nan`` for a grid supplied directly,
         which was not fitted here.
     """
-    return float("nan") if self.edf is None else self.edf
+    return float("nan") if self._npars is None else self._npars
 
   @property
   def family_name(self) -> str:
@@ -972,4 +976,4 @@ class TorchKde1d(MarginBase[Tensor], torch.nn.Module):
 
 # `core` holds the registry and names no ecosystem, so the module that
 # owns the class is the one that teaches `margin_from_json` to rebuild it.
-register_margin_json("TorchKde1d", TorchKde1d.from_json_payload)
+register_margin_json("TorchKde1d", TorchKde1d.from_json)

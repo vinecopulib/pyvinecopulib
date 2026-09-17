@@ -37,10 +37,20 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
     - `Bicop.simulate(n)` -> `Bicop.sample(n)`, and likewise on `Vinecop`, `RVineStructure` and `Kde1d`
     - `pyvinecopulib.simulate_uniform` -> `pyvinecopulib.utils.sample_uniform`
 - Return `self` from `Bicop.fit` / `.select` and `Vinecop.fit` / `.select` instead of `None`, so every estimator in the package composes the same way (#326).
+- Make `parameters`, `num_threads`, `seeds` and `randomize_discrete` keyword-only on the evaluation methods of `Bicop` and `Vinecop`: each class was internally consistent and the two disagreed, `Bicop` reading `(u, parameters, num_threads)` where `Vinecop` read `(u, num_threads, parameters)`, so a call carried between them bound a parameter matrix as a thread count. `Bicop(family, rotation, parameters)`, `from_family` and `parameters_to_tau` keep theirs positional, where `parameters` specifies the model rather than the call. Keyword calls are unaffected (#345).
+    - `cop.pdf(u, pars)` -> `cop.pdf(u, parameters=pars)`
+    - `cop.sample(n, False, [1, 2])` -> `cop.sample(n, False, seeds=[1, 2])`
+- Name the observations `u` on `Bicop` / `Vinecop`'s `fit` / `select` / `from_data`, which is what every evaluation method on the same class already called them. Renamed upstream rather than in the binding, whose docstrings are lifted verbatim ([vinecopulib#781](https://github.com/vinecopulib/vinecopulib/pull/781), #345).
+    - `cop.fit(data=u)` -> `cop.fit(u=u)`, and likewise on `select` / `from_data`
 - Drop `Vinecop.fit`'s `num_threads` argument, which duplicated `FitControlsBicop.num_threads` (#326).
     - `vine.fit(u, controls, num_threads=4)` -> `vine.fit(u, FitControlsBicop(num_threads=4))`
 - Rename `Kde1d`'s `quantile` to `icdf`, the name modern SciPy and `torch.distributions` use for the inverse distribution function, with no alias (#292).
+- Rename `Kde1d`'s `edf` to `npars`, the name `Bicop` and `Vinecop` already answer for the same quantity, with no alias. It was bound twice -- `edf` and `n_parameters` were the same getter -- so one class offered two live names for one number; `npars` is now the only spelling, on the compiled classes, on `MarginBase` and on the four contracts (#345).
+    - `kde.edf` -> `kde.npars`
     - `kde.quantile(p)` -> `kde.icdf(p)`
+- Serialize every margin the same way: `to_json` returns JSON **text** on `SciPyMargin`, `TorchKde1d` and `TorchDistributionMargin` as it already did on `Bicop` / `Vinecop` / `Kde1d` / `Vinedist`, and the reader is `from_json(json)` rather than `from_json_payload(payload)`. A margin's own `to_json` builds its mapping and hands it to `margin_json`, which stamps `kind` and `version` and runs the shared codec -- so a non-finite parameter still travels as a tagged string and a subclass still reads back. `register_margin_json` takes a `Callable[[str], Any]` (#345).
+    - `margin.to_json()` returns `str`, not `dict`
+    - `Cls.from_json_payload(payload)` -> `Cls.from_json(json)`
 - Rename `Kde1d`'s `type` to `var_type`, on the property and on every constructor, and spell a variable's type `"c"` / `"d"` / `"zi"` throughout -- the one spelling `var_types` already used on `Bicop` and `Vinecop`. Both constructors still accept the long names, so only the attribute is a break; nothing in the package emits one (#339).
     - `pv.core.Kde1d(type="continuous")` -> `pv.core.Kde1d(var_type="c")`, and likewise on `from_params` / `from_grid`
     - `kde.type` -> `kde.var_type`, which answers `"c"` / `"d"` / `"zi"` where `type` answered `"continuous"` / `"discrete"` / `"zero_inflated"`
@@ -64,7 +74,6 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Add parametric margins behind a new `pyvinecopulib[scipy]` extra: `SciPyMargin` wraps one `scipy.stats` family, or selects one from a curated candidate set by AIC / BIC / AICc (#292, #326).
 - Add `as_margin`, which presents another ecosystem's distribution object as a margin, and `register_margin_adapter` for one it does not know (#292).
 - Add `Vinedist.margin_summary()`, one row per variable naming the margin it ended up with, and `None` for any field a margin declines -- so a margin from another ecosystem contributes what it has (#292, #334).
-- Add `OpenTURNSMargin` behind a new `pyvinecopulib[openturns]` extra, fitting one OpenTURNS family or selecting one from its registry (#292, #326).
 - `Kde1d.plot` draws the distribution function too, with `kind="cdf"` (#330).
 
 #### The array-agnostic extension layer
@@ -156,6 +165,7 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Both sklearn estimators delegate the whole two-step fit to the distribution, handing it `margin_controls=` and the variable types and bounds `schema_` inferred, and publishing the result as `distribution_` alongside `schema_`, `structure_`, `margin_summary_`, `controls_`, `distribution_class_` and `random_state_` (#218, #292, #339).
 - Add `n_jobs` to `VineDensity` and `VineRegressor`, governing fitting *and* every evaluation where the fit-time thread count used to pin both; results are bit-identical at any thread count (#297).
 - `VineRegressor` accepts any continuous margin as its response, taking the `use_grid=True` quadrature on the probability scale so `n_nodes` fixes the number of probability levels (#292).
+- `VineRegressor` publishes the two halves of its estimator: `conditional_weights(X)` gives the per-row copula weights and `y_nodes_` the response nodes they sit on, which is what a wrapper averaging several fitted vines works with and what `normalize_weights` changes -- a prediction is a ratio of them and is the same either way. `copula_marginal_density` is public for the same reason (#292, #345).
 
 #### Structures, utilities and persistence
 
@@ -243,7 +253,7 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 
 - Raise the NumPy floor to `numpy>=2.0`, up from `>=1.14` (#211).
 - Add `array_api_compat>=1.7` as a runtime dependency, which the array-agnostic `core` layer resolves its array namespace through (#236).
-- Add four extras: `[sklearn]` (`scikit-learn>=1.4`, `pandas>=2.0`), `[torch]` (`torch>=2.2`), `[scipy]` (`scipy>=1.16`) and `[openturns]` (`openturns>=1.16`). Do not install `[openturns]` and `[torch]` together on macOS arm64: the OpenTURNS wheel carries its own OpenMP runtime and the pair segfaults the interpreter (#211, #216, #292, #307).
+- Add three extras: `[sklearn]` (`scikit-learn>=1.4`, `pandas>=2.0`), `[torch]` (`torch>=2.2`) and `[scipy]` (`scipy>=1.16`) (#211, #216, #292, #307).
 - `[examples]` adds `xlrd>=2.0`, and `[doc]` takes version ranges instead of exact pins and adds `numpydoc` (#220, #259).
 - Pin `lib/vinecopulib` to its 1.0.0 line (#229, #251, #305, #312, #319).
 - Bump `lib/wdm` to `v0.3.0`, which is where Chatterjee's xi comes from (#305, #312).

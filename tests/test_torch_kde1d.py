@@ -22,7 +22,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from pyvinecopulib.core import FitControlsKde1d, Kde1d, MarginLike
+from pyvinecopulib.core import FitControlsKde1d, Kde1d
 from pyvinecopulib.torch import TorchKde1d
 
 _PROBS = np.array([1e-6, 0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99, 1 - 1e-6])
@@ -111,7 +111,7 @@ def _assert_quantiles_agree(
 ) -> None:
   """Compare a torch quantile against the compiled one; see `_QUANTILE_RTOL`."""
   rtol = _QUANTILE_RTOL[kind]
-  if rtol == 0.0:  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  if rtol == 0.0:
     np.testing.assert_array_equal(got, want)
   else:
     np.testing.assert_allclose(got, want, rtol=rtol, atol=rtol)
@@ -199,7 +199,7 @@ def test_discrete_masses_sum_to_one_over_the_lattice() -> None:
   levels = _t(np.arange(-2.0, 40.0))
   assert float(lifted.pdf(levels).sum()) == pytest.approx(1.0, abs=1e-10)
   # Off-lattice points carry no mass at all.
-  assert float(lifted.pdf(_t(np.array([1.5, 2.25]))).abs().sum()) == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert float(lifted.pdf(_t(np.array([1.5, 2.25]))).abs().sum()) == 0.0
 
 
 def test_cdf_left_is_derived_for_a_discrete_margin() -> None:
@@ -216,15 +216,6 @@ def test_cdf_left_is_derived_for_a_discrete_margin() -> None:
 
 
 # --- the contract ----------------------------------------------------------- #
-
-
-def test_it_satisfies_the_margin_contract() -> None:
-  """Structurally, so it drops into a `Vinedist` with no adapter."""
-  _, lifted, _ = _fitted("continuous")
-  assert isinstance(lifted, MarginLike)
-  assert isinstance(lifted, torch.nn.Module)
-  assert lifted.supports_weights is True
-  assert lifted.controls_class is FitControlsKde1d
 
 
 @pytest.mark.parametrize(
@@ -300,10 +291,10 @@ def test_probabilities_outside_the_unit_interval_are_refused() -> None:
     lifted.icdf(_t(np.array([-0.1])))
 
 
-def test_loglik_and_n_parameters_come_from_the_fit() -> None:
+def test_loglik_and_npars_come_from_the_fit() -> None:
   kde, lifted, y = _fitted("continuous")
   assert lifted.loglik() == pytest.approx(float(kde.loglik()), abs=1e-12)
-  assert lifted.n_parameters == pytest.approx(float(kde.edf), abs=1e-12)
+  assert lifted.npars == pytest.approx(float(kde.npars), abs=1e-12)
   # With data it evaluates instead, as `MarginBase.loglik` promises.
   assert float(lifted.loglik(_t(y))) == pytest.approx(
     float(kde.loglik(y)), rel=1e-10
@@ -317,7 +308,7 @@ def test_a_grid_supplied_directly_reports_no_fitted_loglik() -> None:
     _t(np.asarray(kde.values, dtype=float)),
   )
   assert built.is_fitted
-  assert np.isnan(built.n_parameters)
+  assert np.isnan(built.npars)
   with pytest.raises(RuntimeError, match="supplied directly"):
     built.loglik()
 
@@ -414,7 +405,7 @@ def test_state_dict_round_trip() -> None:
     "prob0",
   }
   assert restored.loglik() == lifted.loglik()
-  assert restored.edf == lifted.edf
+  assert restored.npars == lifted.npars
 
 
 def test_fit_rejects_non_vector_data_and_weights() -> None:
@@ -427,7 +418,9 @@ def test_fit_rejects_non_vector_data_and_weights() -> None:
   y = _t(np.arange(5.0))
   with pytest.raises(ValueError, match=r"y must have shape \(n,\)"):
     TorchKde1d().fit(y[:, None])
-  with pytest.raises(TypeError, match="incompatible function arguments"):
+  # `TypeError` alone: the message here is the binding's own overload dump,
+  # not this package's text, so matching it pins something nothing here owns.
+  with pytest.raises(TypeError):
     FitControlsKde1d(weights=y[:, None])
   with pytest.raises(ValueError, match="one weight per observation"):
     TorchKde1d().fit(y, FitControlsKde1d(weights=y[:-1]))

@@ -214,6 +214,7 @@ def test_agents_md_public_api_lists_match_the_code() -> None:
   Two copies drift, and this one had: it placed `Kde1d` in `utils`, where it
   has never been.
   """
+  import importlib
   import pathlib
   import re
 
@@ -225,17 +226,47 @@ def test_agents_md_public_api_lists_match_the_code() -> None:
   from pyvinecopulib import core, families, margins, utils
   from pyvinecopulib.core import extend
 
-  subpackages = {"core", "families", "utils", "margins", "sklearn", "torch"}
-  section = text[text.index("## Public APIs") :]
-  for label, module in (
+  checked = [
     ("`pyvinecopulib.core`", core),
     ("`pyvinecopulib.core.extend`", extend),
     ("`pyvinecopulib.families`", families),
     ("`pyvinecopulib.utils`", utils),
     ("`pyvinecopulib.margins`", margins),
+  ]
+  # The two behind an extra are checked too, where the extra is installed.
+  # Leaving them out is what let the `torch` bullet drift to seven names
+  # against a nine-name `__all__`: the one list nothing compared.
+  #
+  # Not `importorskip`: these subpackages rewrite a missing extra into an
+  # `ImportError` naming it, and pytest re-raises that rather than skipping --
+  # it reads as a broken module, not an absent one. Skipping the *bullet* also
+  # beats skipping the test, which would drop the five that are checkable.
+  for label, name in (
+    ("`pyvinecopulib.sklearn`", "pyvinecopulib.sklearn"),
+    ("`pyvinecopulib.torch`", "pyvinecopulib.torch"),
   ):
+    try:
+      checked.append((label, importlib.import_module(name)))
+    except ImportError:
+      continue
+
+  subpackages = {"core", "families", "utils", "margins", "sklearn", "torch"}
+  section = text[text.index("## Public APIs") :]
+  for label, module in checked:
     start = section.index(f"- **{label}**")
-    entry = section[start : section.index("\n- **", start + 1)]
+    # A bullet runs to the next one, or -- for the last in the list -- to the
+    # blank line that ends the list. Without the second bound the final bullet
+    # swallows the prose after it, whose backticked class names then read as
+    # names that bullet claims.
+    bounds = [
+      i
+      for i in (
+        section.find("\n- **", start + 1),
+        section.find("\n\n", start + 1),
+      )
+      if i != -1
+    ]
+    entry = section[start : min(bounds)] if bounds else section[start:]
     named = set(re.findall(r"`([A-Za-z_][A-Za-z_0-9]*)`", entry))
     exported = {
       name

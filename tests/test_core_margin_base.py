@@ -87,19 +87,11 @@ class _ZeroInflated(MarginBase[np.ndarray]):
 
   def pdf(self, y: Any, *, x: Any | None = None) -> Any:
     body = (1.0 - self.prob0) * np.exp(-y)
-    return np.where(y == 0.0, self.prob0, np.where(y > 0.0, body, 0.0))  # noqa: RUF069 - an exact guarantee, not a computed approximation
+    return np.where(y == 0.0, self.prob0, np.where(y > 0.0, body, 0.0))
 
   def cdf(self, y: Any, *, x: Any | None = None) -> Any:
     body = (1.0 - self.prob0) * (1.0 - np.exp(-y))
     return np.where(y >= 0.0, self.prob0 + body, 0.0)
-
-
-def test_kde1d_satisfies_the_margin_contract() -> None:
-  """`Kde1d` is a `MarginLike` with no adapter, fitted or not."""
-  kde = pv.core.Kde1d()
-  assert isinstance(kde, MarginLike)
-  kde.fit(np.random.default_rng(0).normal(size=300))
-  assert isinstance(kde, MarginLike)
 
 
 def test_subclass_satisfies_the_contract() -> None:
@@ -128,7 +120,7 @@ def test_icdf_returns_exact_support_endpoints() -> None:
   """Endpoint probabilities are limits, not finite bracket approximations."""
   m = _ShiftedExp(rate=2.0, shift=1.0)
   got = m.icdf(np.array([0.0, 0.5, 1.0]))
-  assert got[0] == 1.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert got[0] == 1.0
   assert got[2] == np.inf
   np.testing.assert_allclose(got[1], m.exact_icdf(np.array([0.5]))[0])
 
@@ -217,7 +209,7 @@ def test_cdf_left_steps_back_a_lattice_point_when_discrete() -> None:
   left = m.cdf_left(k)
   np.testing.assert_allclose(left, m.cdf(k - 1.0), atol=0.0)
   np.testing.assert_allclose(left, m.cdf(k) - m.pdf(k), atol=1e-15)
-  assert left[0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert left[0] == 0.0
   assert np.all(left <= m.cdf(k))
 
 
@@ -373,7 +365,7 @@ def test_loglik_without_data_needs_a_fitted_value() -> None:
     def _fitted_loglik(self) -> float:
       return -12.5
 
-  assert _Stored().loglik() == -12.5  # noqa: RUF069 - the value this test set, read back
+  assert _Stored().loglik() == -12.5
 
 
 def test_a_discrete_icdf_lands_on_its_own_lattice() -> None:
@@ -470,7 +462,7 @@ def test_the_information_criteria_have_one_implementation() -> None:
   }
   # `aic` needs no `n`; the two that penalize by sample size do.
   unknown = criteria(-100.0, 2.0, None)
-  assert unknown["aic"] == 204.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert unknown["aic"] == 204.0
   assert unknown["bic"] == float("inf") and unknown["aicc"] == float("inf")
   # `aicc`'s correction needs n - k - 1 > 0.
   assert criteria(-100.0, 5.0, 6.0)["aicc"] == float("inf")
@@ -563,7 +555,7 @@ class _ConditionalZeroInflated(MarginBase[np.ndarray]):
     ya = np.asarray(y, dtype=float)
     p0 = self._prob0(y, x)
     body = (1.0 - p0) * np.exp(-ya)
-    return np.where(ya == 0.0, p0, np.where(ya > 0.0, body, 0.0))  # noqa: RUF069 - an exact guarantee, not a computed approximation
+    return np.where(ya == 0.0, p0, np.where(ya > 0.0, body, 0.0))
 
   def cdf(self, y: Any, *, x: Any | None = None) -> Any:
     ya = np.asarray(y, dtype=float)
@@ -582,7 +574,7 @@ def test_a_conditional_discrete_margin_steps_back_its_own_lattice() -> None:
   np.testing.assert_allclose(
     left, m.cdf(k, x=cov) - m.pdf(k, x=cov), atol=1e-12
   )
-  assert left[0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert left[0] == 0.0
   # The covariate actually moved it, so a dropped `x` would be visible.
   assert not np.allclose(left, m.cdf_left(k))
 
@@ -651,7 +643,7 @@ def test_a_margin_estimated_from_covariates_recovers_the_truth() -> None:
   assert m.is_fitted is False
   assert m.fit(y, x=cov) is m
   assert m.slope == pytest.approx(slope, abs=0.05)
-  assert (m.nobs, m.n_parameters) == (4000, 1)
+  assert (m.nobs, m.npars) == (4000, 1)
 
   # And the fitted margin evaluates at the covariates it was fitted on.
   at_zero = m.icdf(np.full(3, 0.5), x=np.array([[0.0], [1.0], [-1.0]]))
@@ -672,7 +664,6 @@ def test_every_fittable_class_declares_the_controls_it_reads() -> None:
   all, which is what a `family_set` refusal dispatches on now that there is no
   separate boolean to fall out of step with it.
   """
-  import pyvinecopulib as pv
   from pyvinecopulib.core import FitControlsMargin, MarginBase
 
   # The bound classes carry it too, set from the binding.
@@ -700,7 +691,6 @@ def test_reading_controls_and_searching_a_family_are_different_questions() -> (
   refusal actually asks is whether the margin's controls carry a `family_set`
   at all, which its declared class answers.
   """
-  import pyvinecopulib as pv
   from pyvinecopulib.core import FitControlsMargin
 
   # Reads controls -- the kernel knobs -- but they carry no family set.

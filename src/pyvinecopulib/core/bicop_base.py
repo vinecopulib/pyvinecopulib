@@ -30,6 +30,7 @@ signatures.
 from __future__ import annotations
 
 import copy
+import math
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
 from typing import Any, ClassVar, Self, cast
@@ -41,10 +42,11 @@ from ._bicop_plot import (
 )
 from ._covariates import pair_eval, prepare_covariates
 from ._loglik import safe_log, sum_loglik
-from ._placement import PlacementMixin, QrngUniformMixin
+from ._placement import PlacementMixin, QrngUniformMixin, to_numpy
 from ._rootfind import solve_increasing
 from ._trim import trim
 from ._validation import check_var_types
+from .margin_base import criteria
 from .protocols import (
   _BICOP_EXAMPLE,
   ArrayT,
@@ -389,6 +391,32 @@ class BicopBase(
       self._h2_c(xp, u1, 0.5 * (u2 + u2m), x),
     )
 
+  def logpdf(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
+    """Log-density of the pair copula at each observation.
+
+    The other three bases answer this and `BicopBase` did not, so a custom
+    pair was the one part a caller had to log themselves. Taken through
+    `safe_log` rather than a bare logarithm: a copula density is legitimately
+    zero off its support, where `log` warns or answers `nan`.
+
+    Not on `BicopLike`: the compiled `Bicop` has no `logpdf`, and a contract
+    member it lacks would put it outside its own contract -- `isinstance`
+    compares member names.
+
+    Parameters
+    ----------
+    u : array, shape (n, 2), dtype float
+        Pair pseudo-observations in the unit square.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, one row per observation.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Log-density values, ``-inf`` where the density is zero.
+    """
+    return safe_log(self.pdf(u, x=x))
+
   def loglik(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Total log-likelihood ``sum(log c(u))`` of the pair at ``u``.
 
@@ -415,6 +443,66 @@ class BicopBase(
     # layout is checked -- the base cannot know whether a pair is on a
     # discrete edge, whose argument is four columns wide.
     return sum_loglik(safe_log(self.pdf(u, x=x)))
+
+  def aic(self, u: ArrayT, /) -> float:
+    """Akaike information criterion at these observations, minimized.
+
+    Parameters
+    ----------
+    u : array, shape (n, 2), dtype float
+        Observations to evaluate the log-likelihood on. Required, unlike on
+        ``Bicop`` / ``Vinecop``, which carry the value their own fit attained;
+        a pair copula may host parts it did not fit, so there is no such value here.
+
+    Returns
+    -------
+    float
+        ``-2 loglik + 2 npars``.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``npars`` reports none.
+
+    See Also
+    --------
+    bic : The same, penalizing by ``log n`` per parameter.
+    """
+    npars = self.npars
+    if not math.isfinite(npars):
+      raise NotImplementedError(
+        f"{type(self).__name__} reports no `npars`, so no criterion can "
+        "penalize it. Implement `npars` to enable `aic` / `bic`."
+      )
+    return criteria(float(to_numpy(self.loglik(u))), npars, None)["aic"]
+
+  def bic(self, u: ArrayT, /) -> float:
+    """Bayesian information criterion at these observations, minimized.
+
+    Parameters
+    ----------
+    u : array, shape (n, 2), dtype float
+        Observations to evaluate the log-likelihood on; their row count is the
+        ``n`` the penalty uses.
+
+    Returns
+    -------
+    float
+        ``-2 loglik + npars log n``.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``npars`` reports none.
+    """
+    npars = self.npars
+    if not math.isfinite(npars):
+      raise NotImplementedError(
+        f"{type(self).__name__} reports no `npars`, so no criterion can "
+        "penalize it. Implement `npars` to enable `aic` / `bic`."
+      )
+    rows = float(self._prep(u).shape[0])
+    return criteria(float(to_numpy(self.loglik(u))), npars, rows)["bic"]
 
   def hinv1(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Inverse of :meth:`hfunc1` in its second argument.
@@ -508,10 +596,11 @@ class BicopBase(
 
     The quantity a discrete argument's difference quotient is built from. This
     reads it as the four-corner difference of ``_cdf_raw``, the continuous
-    leaf, which any pair copula with a distribution function can serve. The
-    leaf rather than :meth:`cdf` so the dispatcher cannot recur through it --
-    which also means the bounds arrive already placed and clamped, as the
-    cascades hand them over, and are not prepared here. A pair that can evaluate the
+    leaf, which any pair copula with a distribution function can serve -- the
+    leaf rather than :meth:`cdf` so the dispatcher cannot recur through it.
+    The bounds are placed and not clamped: ``0`` and ``1`` are the
+    distribution's own limits here, where a copula argument's ``1e-10`` would
+    be. A pair that can evaluate the
     rectangle without that cancellation overrides this --
     :class:`~pyvinecopulib.torch.TorchTllBicop` does, reading the mass off its
     grid -- and gains accuracy at a narrow atom, where differencing amplifies
@@ -536,7 +625,14 @@ class BicopBase(
     --------
     cond_interval_prob : The conditional counterpart, for a mixed edge.
     """
-    return rect_prob_from_cdf(self._cdf_raw, a1, b1, a2, b2, x=x)
+    return rect_prob_from_cdf(
+      self._cdf_raw,
+      self._prep(a1),
+      self._prep(b1),
+      self._prep(a2),
+      self._prep(b2),
+      x=x,
+    )
 
   def cond_interval_prob(
     self,
@@ -552,7 +648,8 @@ class BicopBase(
     What a mixed edge's density is built from, as :meth:`rect_prob` is what a
     doubly discrete one is built from. This reads it as the difference of two
     h-function values, each clamped into the open unit interval; a pair that
-    can evaluate the mass itself overrides this, and is then not clamped.
+    can evaluate the mass itself overrides this, and is then not clamped. The
+    arguments are placed, as :meth:`rect_prob`'s bounds are.
 
     Parameters
     ----------
@@ -571,7 +668,9 @@ class BicopBase(
         Conditional probabilities.
     """
     h = self._hfunc1_raw if cond_var == 1 else self._hfunc2_raw
-    return cond_interval_prob_from_hfunc(h, u_cond, lo, hi, cond_var, x=x)
+    return cond_interval_prob_from_hfunc(
+      h, self._prep(u_cond), self._prep(lo), self._prep(hi), cond_var, x=x
+    )
 
   @classmethod
   def from_data(
@@ -794,17 +893,8 @@ class BicopBase(
     u2: Any = self.hinv1(base_u, x=x)
     return cast("ArrayT", xp.stack([base_u[:, 0], u2], axis=-1))
 
-  #: Whether a vine may stack this pair into its grid-batched
-  #: cascade. ``False`` here because the fast path reads an interpolation grid
-  #: off each pair and a pair copula in general has none -- so a subclass opts
-  #: in only if it exposes one. Declared rather than discovered, and declared
-  #: on the base rather than left to a ``getattr`` default, so that the third
-  #: state (declared ``False``) is distinguishable from "never heard of it"
-  #: and a subclass author can find the flag without tripping its error.
-  supports_batched: bool = False
-
   #: Whether this pair copula's leaves accept exogenous covariates. Declared
-  #: for the same reason `supports_batched` is: a bound class reports
+  #: because a bound class reports
   #: `(*args, **kwargs)`, so `pair_eval` cannot read the signature and asks
   #: the declaration before forwarding a matrix. A subclass whose leaves take
   #: `x` -- whether or not they read one -- sets this `True`.
@@ -816,15 +906,22 @@ class BicopBase(
 
   # --- the leaves a subclass writes -------------------------------------- #
   # Each takes two continuous columns the dispatcher has already prepared, and
-  # knows nothing about atoms. Declaring `x` on one marks the pair conditional.
+  # knows nothing about atoms. Every leaf declares `x` because `pair_eval`
+  # forwards one unconditionally; whether the pair *reads* it is
+  # `supports_covariates`.
   @abstractmethod
-  def _pdf_raw(self, u: ArrayT) -> ArrayT:
+  def _pdf_raw(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Continuous pair-copula density at each observation.
 
     Parameters
     ----------
     u : array, shape (n, 2), dtype float
         Pair pseudo-observations in the unit square.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, one row per observation. ``pair_eval`` forwards
+        one unconditionally whenever the caller supplies it, so every leaf
+        declares it even where it reads none -- ``del x`` is what that looks
+        like.
 
     Returns
     -------
@@ -833,13 +930,15 @@ class BicopBase(
     """
 
   @abstractmethod
-  def _hfunc1_raw(self, u: ArrayT) -> ArrayT:
+  def _hfunc1_raw(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Continuous first h-function ``P(U2 <= u2 | U1 = u1)``.
 
     Parameters
     ----------
     u : array, shape (n, 2), dtype float
         Pair pseudo-observations in the unit square.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, as on ``_pdf_raw``.
 
     Returns
     -------
@@ -848,13 +947,15 @@ class BicopBase(
     """
 
   @abstractmethod
-  def _hfunc2_raw(self, u: ArrayT) -> ArrayT:
+  def _hfunc2_raw(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Continuous second h-function ``P(U1 <= u1 | U2 = u2)``.
 
     Parameters
     ----------
     u : array, shape (n, 2), dtype float
         Pair pseudo-observations in the unit square.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, as on ``_pdf_raw``.
 
     Returns
     -------
@@ -862,7 +963,7 @@ class BicopBase(
         Conditional distribution values.
     """
 
-  def _cdf_raw(self, u: ArrayT) -> ArrayT:
+  def _cdf_raw(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Raise; override to give the pair copula a distribution ``C(u)``.
 
     Needed only to declare the pair discrete, whose h-functions are difference
@@ -874,6 +975,8 @@ class BicopBase(
     ----------
     u : array, shape (n, 2), dtype float
         Pair pseudo-observations in the unit square.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, as on ``_pdf_raw``.
 
     Returns
     -------
@@ -885,7 +988,7 @@ class BicopBase(
     NotImplementedError
         Always, unless a subclass provides one.
     """
-    del u
+    del u, x
     raise NotImplementedError(
       f"{type(self).__name__} has no `cdf`; the vine cdf uses Monte-Carlo "
       "simulation and does not require a per-pair distribution. Implement "

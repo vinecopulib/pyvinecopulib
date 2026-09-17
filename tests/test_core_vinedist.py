@@ -138,6 +138,30 @@ def test_loglik_sums_logpdf(continuous: np.ndarray) -> None:
   np.testing.assert_allclose(total, dist.logpdf(continuous).sum(), rtol=1e-12)
 
 
+def test_loglik_leaves_out_an_observation_with_no_log_density(
+  continuous: np.ndarray,
+) -> None:
+  """A `nan` row costs its own row, not the whole sample.
+
+  This is `Vinecop.loglik`'s documented behavior one level up, and the two
+  levels disagreed: the copula summed through `sum_loglik` and the
+  distribution through a bare `xp.sum`, so one missing value turned a whole
+  vine distribution's log-likelihood into `nan`.
+  """
+  dist = pv.Vinedist.from_data(continuous)
+  clean = dist.loglik(continuous)
+
+  holed = continuous.copy()
+  holed[0, 0] = np.nan
+  total = dist.loglik(holed)
+
+  assert np.isfinite(total), "one nan row poisoned the total"
+  # Exactly the clean total less the row that has no log-density.
+  np.testing.assert_allclose(
+    total, clean - dist.logpdf(continuous)[0], rtol=1e-10
+  )
+
+
 def test_logpdf_preserves_an_extreme_tail_copula_density() -> None:
   """The copula term is logged without replacing valid tiny densities."""
   pair = pv.Bicop.from_family(
@@ -174,7 +198,7 @@ def test_logpdf_survives_a_copula_density_that_underflows() -> None:
   dist = Vinedist(copula, [stats.uniform()] * d)
   y = np.tile(np.array([0.999, 0.001]), d // 2)[None, :]
 
-  assert np.asarray(copula.pdf(y))[0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert np.asarray(copula.pdf(y))[0] == 0.0
   logpdf = np.asarray(dist.logpdf(y))[0]
   assert np.isfinite(logpdf)
   # Uniform margins contribute nothing, so the joint log-density is the
@@ -798,7 +822,7 @@ def test_declared_supports_bound_the_default_kde_margin(
   plain = pv.Vinedist.from_data(continuous)
   bounded = pv.Vinedist.from_data(continuous, supports=[None, (0.0, None)])
   margin: Any = bounded.margins[1]
-  assert isinstance(margin, Kde1d) and margin.xmin == 0.0  # noqa: RUF069 - the value this test set, read back
+  assert isinstance(margin, Kde1d) and margin.xmin == 0.0
   assert plain.sample(500, seeds=[1, 2, 3])[:, 1].min() < 0.0
   assert bounded.sample(500, seeds=[1, 2, 3])[:, 1].min() >= 0.0
 
@@ -1207,10 +1231,10 @@ def test_a_registered_custom_margin_round_trips() -> None:
   copula = pv.core.Vinedist.from_data(x).vinecop
 
   class Uniform(FlatMargin):
-    def to_json(self) -> dict[str, Any]:
-      return {"kind": "_TestUniform"}
+    def to_json(self) -> str:
+      return pv.core.margin_json(self, {"kind": "_TestUniform"})
 
-  pv.core.register_margin_json("_TestUniform", lambda payload: Uniform())
+  pv.core.register_margin_json("_TestUniform", lambda json: Uniform())
   dist = pv.core.Vinedist(copula, [Uniform(), pv.core.Kde1d().fit(x[:, 1])])
   restored = pv.core.Vinedist.from_json(dist.to_json())
   assert isinstance(restored.margins[0], pv.core.MarginBase)
@@ -1219,11 +1243,12 @@ def test_a_registered_custom_margin_round_trips() -> None:
 def test_an_unknown_margin_kind_and_a_bad_version_both_raise() -> None:
   """A format change must fail loudly rather than build a wrong model."""
   from pyvinecopulib.core import margin_from_json
+  from pyvinecopulib.core._json import dumps
 
   with pytest.raises(ValueError, match="no reader registered"):
-    margin_from_json({"kind": "NotAMargin", "version": 1})
+    margin_from_json(dumps({"kind": "NotAMargin", "version": 1}))
   with pytest.raises(ValueError, match="unsupported margin JSON version"):
-    margin_from_json({"kind": "Kde1d", "version": 999})
+    margin_from_json(dumps({"kind": "Kde1d", "version": 999}))
 
 
 # ---------------------------------------------------------------------------
@@ -1714,7 +1739,7 @@ def test_margin_summary_survives_a_margin_that_declines_a_field() -> None:
   """Every field is optional, and declining is a way of declaring.
 
   The docstring promises `None` for whatever a margin does not contribute, but
-  `name` / `family_name` / `support` / `n_parameters` were read with a bare
+  `name` / `family_name` / `support` / `npars` were read with a bare
   `getattr(..., None)`, which absorbs only `AttributeError` -- so a property
   that *raises* took the whole summary down, while `loglik()` beside it was
   already guarded. A margin wrapping a regressor with no well-defined free
@@ -1723,7 +1748,7 @@ def test_margin_summary_survives_a_margin_that_declines_a_field() -> None:
 
   class _Declines(ShiftedNormalMargin):
     @property
-    def n_parameters(self) -> float:
+    def npars(self) -> float:
       raise NotImplementedError("no well-defined free-parameter count")
 
     @property
@@ -1739,6 +1764,6 @@ def test_margin_summary_survives_a_margin_that_declines_a_field() -> None:
   rows = dist.margin_summary()
   assert len(rows) == 2
   for row in rows:
-    assert row["n_parameters"] is None
+    assert row["npars"] is None
     assert row["support"] is None
     assert row["margin"] == "_Declines"

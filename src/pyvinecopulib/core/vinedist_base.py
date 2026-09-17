@@ -28,6 +28,7 @@ return types.
 
 from __future__ import annotations
 
+import math
 import warnings
 from abc import ABC
 from collections.abc import Sequence
@@ -35,7 +36,7 @@ from typing import Any, ClassVar, Self, cast
 
 from ..pyvinecopulib_ext import FitControlsKde1d, Kde1d, RVineStructure
 from ._covariates import declared_eval, prepare_covariates
-from ._loglik import safe_log
+from ._loglik import sum_loglik
 from ._placement import PlacementMixin, to_numpy
 from ._trim import trim
 from ._validation import (
@@ -43,7 +44,7 @@ from ._validation import (
   reject_weights,
   validate_covariates,
 )
-from .margin_base import MarginBase, derive_cdf_left
+from .margin_base import MarginBase, criteria
 from .protocols import (
   _VINEDIST_EXAMPLE,
   ArrayT,
@@ -437,7 +438,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
           "family": _declared(margin, "family_name"),
           "var_type": self._var_types[j],
           "support": _declared(margin, "support"),
-          "n_parameters": _declared(margin, "n_parameters"),
+          "npars": _declared(margin, "npars"),
           "loglik": value,
         }
       )
@@ -642,8 +643,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     from ._margins import as_margin
 
     return [
-      "d" if getattr(as_margin(m), "var_type", "c") in ("d", "zi") else "c"
-      for m in margins
+      "d" if as_margin(m).var_type in ("d", "zi") else "c" for m in margins
     ]
 
   @classmethod
@@ -709,12 +709,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
       # the derived one: copying its `cdf` column would leave the pair copula a
       # zero-width rectangle, the marginal mass would stop canceling, and the
       # joint "density" would not integrate to one.
-      left = getattr(m, "cdf_left", None)
-      sub = (
-        declared_eval(m, "cdf_left", ya[:, j], x)
-        if left is not None
-        else derive_cdf_left(m, ya[:, j], x, var_types[j])
-      )
+      sub = declared_eval(m, "cdf_left", ya[:, j], x)
       if bool(xp.any(sub > upper[j] + 1e-12)):
         raise ValueError(
           f"margin {j} reports cdf_left > cdf, which cannot happen for a "
@@ -743,9 +738,9 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     # each part places it for itself, so placing here would be a tensor copy
     # per call whose result nothing reads.
     validate_covariates(x, n_rows)
-    readers = [
-      getattr(m, "supports_covariates", False) for m in self._margins
-    ] + [getattr(self._vinecop, "supports_covariates", False)]
+    readers = [m.supports_covariates for m in self._margins] + [
+      self._vinecop.supports_covariates
+    ]
     if not any(readers):
       raise ValueError(
         "covariates were given, but neither the margins nor the copula read "
@@ -807,10 +802,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     # The copula's own log-density where it declares one, as for a margin
     # below: by the time a density arrives the product over edges has already
     # underflowed, and no logarithm can recover it.
-    if getattr(self._vinecop, "logpdf", None) is not None:
-      total: Any = declared_eval(self._vinecop, "logpdf", layout, x)
-    else:
-      total = safe_log(declared_eval(self._vinecop, "pdf", layout, x))
+    total: Any = declared_eval(self._vinecop, "logpdf", layout, x)
     # The parts' namespace, not the input's: a part may answer in another
     # array type than it was handed, and the input's namespace would either
     # raise on that or silently detach it. Each term is then coerced onto the
@@ -818,10 +810,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     # tracks grad sends NumPy looking for `__array__` and raises.
     xp = array_namespace(total)
     for j, m in enumerate(self._margins):
-      if getattr(m, "logpdf", None) is not None:
-        term: Any = declared_eval(m, "logpdf", ya[:, j], x)
-      else:
-        term = safe_log(declared_eval(m, "pdf", ya[:, j], x))
+      term: Any = declared_eval(m, "logpdf", ya[:, j], x)
       # Only when they actually differ: coercing a tensor that already
       # tracks grad through `asarray` warns about the flag it inherits.
       if array_namespace(term) is not xp:
@@ -917,10 +906,74 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     array, shape (), dtype float
         A 0-d array, so it stays differentiable on an array namespace that
         carries gradients.
+
+    Notes
+    -----
+    An observation carrying a ``nan`` has no log-density and is left out, as
+    ``Vinecop.loglik()`` leaves it out; a ``-inf`` is the model ruling an
+    observation out and is kept.
     """
-    terms: Any = self.logpdf(y, x=x)
-    xp = array_namespace(terms)
-    return cast("ArrayT", xp.sum(terms))
+    return sum_loglik(self.logpdf(y, x=x))
+
+  def aic(self, y: ArrayT, /) -> float:
+    """Akaike information criterion at these observations, minimized.
+
+    Parameters
+    ----------
+    y : array, shape (n, d), dtype float
+        Observations to evaluate the log-likelihood on. Required, unlike on
+        ``Bicop`` / ``Vinecop``, which carry the value their own fit attained;
+        a distribution may host parts it did not fit, so there is no such value here.
+
+    Returns
+    -------
+    float
+        ``-2 loglik + 2 npars``.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``npars`` reports none.
+
+    See Also
+    --------
+    bic : The same, penalizing by ``log n`` per parameter.
+    """
+    npars = self.npars
+    if not math.isfinite(npars):
+      raise NotImplementedError(
+        f"{type(self).__name__} reports no `npars`, so no criterion can "
+        "penalize it. Implement `npars` to enable `aic` / `bic`."
+      )
+    return criteria(float(to_numpy(self.loglik(y))), npars, None)["aic"]
+
+  def bic(self, y: ArrayT, /) -> float:
+    """Bayesian information criterion at these observations, minimized.
+
+    Parameters
+    ----------
+    y : array, shape (n, d), dtype float
+        Observations to evaluate the log-likelihood on; their row count is the
+        ``n`` the penalty uses.
+
+    Returns
+    -------
+    float
+        ``-2 loglik + npars log n``.
+
+    Raises
+    ------
+    NotImplementedError
+        If ``npars`` reports none.
+    """
+    npars = self.npars
+    if not math.isfinite(npars):
+      raise NotImplementedError(
+        f"{type(self).__name__} reports no `npars`, so no criterion can "
+        "penalize it. Implement `npars` to enable `aic` / `bic`."
+      )
+    rows = float(self._prep(y).shape[0])
+    return criteria(float(to_numpy(self.loglik(y))), npars, rows)["bic"]
 
   def rosenblatt(
     self,
@@ -1266,20 +1319,10 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         ``family_set`` for one that cannot search -- either would answer the
         request with a different model than was asked for.
     """
-    # A margin overriding neither verb is *fixed*: there is nothing to
-    # re-estimate. `is_fitted` is the wrong test -- a fitted `SciPyMargin` is
-    # refittable -- and so is `fit` alone, since a margin that chooses between
-    # *kinds* of model overrides `select` and leaves `fit` raising. Both
-    # suppliers of the default count: a margin may take it from either.
-    inherited = (
-      MarginBase.fit,
-      MarginLike.fit,
-      MarginBase.select,
-      MarginLike.select,
-    )
-    cls_of = type(margin)
-    if cls_of.fit in inherited and cls_of.select in inherited:
-      return margin
+    # Refusals first, and before the *fixed* check below: a margin that
+    # cannot honor what the controls ask must say so whether or not it is
+    # refittable. Returning early on `fixed` dropped a `family_set` silently,
+    # which is the outcome these refusals exist to prevent.
     reject_weights(margin, controls)
     # A `family_set` is an instruction to search, so a margin that cannot act
     # on one -- or a `fit`, which estimates the family it already has --
@@ -1302,6 +1345,19 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         f"`{cls.__name__}.select`) to choose a family, name a `margin_class` "
         "that searches one, or drop family_set"
       )
+    # A margin overriding neither verb is *fixed*: there is nothing to
+    # re-estimate. `is_fitted` is the wrong test -- a fitted `SciPyMargin` is
+    # refittable -- and so is `fit` alone, since a margin that chooses between
+    # *kinds* of model overrides `select` and leaves `fit` raising. Both
+    # suppliers of the default count: a margin may take it from either.
+    inherited = (
+      MarginBase.fit,
+      MarginLike.fit,
+      MarginBase.select,
+      MarginLike.select,
+    )
+    if type(margin).fit in inherited and type(margin).select in inherited:
+      return margin
     # Forwarded one at a time, as `_reestimate_copula` forwards to the copula:
     # the covariates reach only a margin that declares it reads them, and the
     # declaration travels as the keyword it is.
@@ -1505,7 +1561,7 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     # is left to the copula it already carries: a refit along itself cannot
     # change which variables have atoms.
     passed: dict[str, Any] = {}
-    if x is not None and getattr(copula, "supports_covariates", False):
+    if x is not None and copula.supports_covariates:
       passed["x"] = x
     estimator(u, controls, **passed)
     return copula

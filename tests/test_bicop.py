@@ -1,4 +1,3 @@
-import json
 import os
 from collections.abc import Callable
 
@@ -8,150 +7,130 @@ import pytest
 import pyvinecopulib as pv
 
 
-def test_bicop(unique_json_path: str) -> None:
-  bicop = pv.Bicop()
+@pytest.fixture
+def gumbel() -> pv.Bicop:
+  """A one-parameter Gumbel, the fixture most of these assertions read."""
+  cop = pv.Bicop(family=pv.families.gumbel, rotation=90)
+  cop.rotation = 0
+  cop.parameters = np.array([[3.0]])
+  return cop
 
-  # Test default initialization
-  assert bicop.family == pv.families.indep
-  assert bicop.rotation == 0
-  assert bicop.parameters.shape == (0, 0)
-  assert bicop.var_types == ["c", "c"]
 
-  # Test initialization with arguments
-  data = np.array([[0.1, 0.2], [0.3, 0.4]])
-  controls = pv.FitControlsBicop()
-  bicop = pv.Bicop.from_data(data, controls)
+#: Two rows, enough for every per-observation member to answer with a shape.
+_U = np.array([[0.1, 0.2], [0.3, 0.4]])
 
-  assert bicop.family == pv.families.indep
-  assert bicop.rotation == 0
-  assert bicop.parameters.shape == (0, 0)
-  assert bicop.var_types == ["c", "c"]
 
-  # Test to_json method
-  new_bicop = pv.Bicop.from_json(bicop.to_json())
-  assert bicop.family == new_bicop.family
-  assert bicop.rotation == new_bicop.rotation
-  assert bicop.parameters.shape == new_bicop.parameters.shape
-  assert bicop.var_types == new_bicop.var_types
+def test_a_default_bicop_is_the_independence_copula() -> None:
+  """And so is one fitted to two rows that carry no dependence."""
+  for cop in (pv.Bicop(), pv.Bicop.from_data(_U, pv.FitControlsBicop())):
+    assert cop.family == pv.families.indep
+    assert cop.rotation == 0
+    assert cop.parameters.shape == (0, 0)
+    assert cop.var_types == ["c", "c"]
+
+
+def test_it_round_trips_through_json_and_both_file_formats(
+  unique_json_path: str,
+) -> None:
+  """Text for a `.json` name, binary for `.cbor`, and the model survives both."""
+  cop = pv.Bicop.from_data(_U, pv.FitControlsBicop())
+
+  def same(other: pv.Bicop) -> None:
+    assert cop.family == other.family
+    assert cop.rotation == other.rotation
+    assert cop.parameters.shape == other.parameters.shape
+    assert cop.var_types == other.var_types
+
+  same(pv.Bicop.from_json(cop.to_json()))
+
   filename = os.fspath(unique_json_path)
-  bicop.to_file(filename)
+  cop.to_file(filename)
   assert os.path.exists(filename)
-  new_bicop = pv.Bicop.from_file(filename)
-  assert bicop.family == new_bicop.family
-  assert bicop.rotation == new_bicop.rotation
-  assert bicop.parameters.shape == new_bicop.parameters.shape
-  assert bicop.var_types == new_bicop.var_types
+  same(pv.Bicop.from_file(filename))
+  # A non-`.cbor` name keeps writing JSON text.
+  with open(filename, "rb") as f:
+    assert f.read(1) == b"{"
 
-  # A non-.cbor filename keeps writing JSON text (backwards compatibility) ...
-  with open(filename, encoding="utf-8") as f:
-    json.load(f)
-
-  # ... while a ``.cbor`` filename selects binary CBOR (vinecopulib#684).
-  cbor_filename = filename.removesuffix(".json") + ".cbor"
-  bicop.to_file(cbor_filename)
-  new_bicop = pv.Bicop.from_file(cbor_filename)
-  assert bicop.family == new_bicop.family
-  assert bicop.rotation == new_bicop.rotation
-  assert bicop.parameters.shape == new_bicop.parameters.shape
-  assert bicop.var_types == new_bicop.var_types
+  cbor_filename = filename.replace(".json", ".cbor")
+  cop.to_file(cbor_filename)
+  same(pv.Bicop.from_file(cbor_filename))
   with open(cbor_filename, "rb") as f:
     assert f.read(1) != b"{"
 
-  # Test properties
-  bicop = pv.Bicop(family=pv.families.gumbel, rotation=90)
-  bicop.rotation = 0
-  assert bicop.rotation == 0
+
+def test_the_writable_properties_refuse_what_they_cannot_hold(
+  gumbel: pv.Bicop,
+) -> None:
+  """`rotation` takes the four right angles; `parameters` and `var_types` set."""
+  assert gumbel.rotation == 0
   with pytest.raises(RuntimeError):
-    bicop.rotation = 45
+    gumbel.rotation = 45
 
-  bicop.parameters = np.array([[3.0]])
-  assert bicop.parameters.shape == (1, 1)
-  assert bicop.parameters[0, 0] == 3.0  # noqa: RUF069 - the value this test set, read back
+  assert gumbel.parameters.shape == (1, 1)
+  assert gumbel.parameters[0, 0] == 3.0
 
-  bicop.var_types = ["d", "d"]
-  assert bicop.var_types == ["d", "d"]
+  gumbel.var_types = ["d", "d"]
+  assert gumbel.var_types == ["d", "d"]
 
-  # Test read-only properties
-  assert isinstance(bicop.tau, float)
-  assert bicop.npars == 1
+
+def test_the_read_only_properties_are_read_only(gumbel: pv.Bicop) -> None:
+  """`npars` is the fit's own count and no caller's to set."""
+  assert isinstance(gumbel.tau, float)
+  assert gumbel.npars == 1
   with pytest.raises(AttributeError):
     # Through `setattr`, so `ty` does not reject the assignment whose
     # runtime refusal is the claim.
-    setattr(bicop, "npars", 2)  # noqa: B010
+    setattr(gumbel, "npars", 2)  # noqa: B010
 
-  # Test passing a single row of data (#169 & #170 fix)
-  bicop.var_types = ["c", "c"]
-  u = np.array([[0.1, 0.2]])
-  d = bicop.pdf(u)
-  assert isinstance(d, np.ndarray) and d.shape == (1,)
 
-  # Test loglik method
-  u = np.array([[0.1, 0.2], [0.3, 0.4]])
-  loglik = bicop.loglik(u)
-  assert isinstance(loglik, float)
+def test_every_evaluation_member_answers_with_a_shape(
+  gumbel: pv.Bicop,
+) -> None:
+  """Including a single row, which used to come back a scalar (#169, #170)."""
+  one = gumbel.pdf(np.array([[0.1, 0.2]]))
+  assert isinstance(one, np.ndarray) and one.shape == (1,)
 
-  # Test aic method
-  aic = bicop.aic(u)
-  assert isinstance(aic, float)
-
-  # Test bic method
-  bic = bicop.bic(u)
-  assert isinstance(bic, float)
-
-  # Test mbic method
-  psi0 = 0.9
-  mbic = bicop.mbic(u, psi0)
-  assert isinstance(mbic, float)
-
-  # Test __repr__ method
-  assert isinstance(repr(bicop), str)
-
-  # Test str method
-  assert isinstance(str(bicop), str)
-
-  # Test parameters_to_tau method. The argument must have the family's own
-  # shape: the leaf indexes it positionally, so a 2x2 matrix handed to a
-  # one-parameter family used to read past its own storage and return a tau
-  # computed from whatever was there.
-  tau = bicop.parameters_to_tau(bicop.parameters)
-  assert isinstance(tau, float)
-  with pytest.raises(RuntimeError, match="wrong shape"):
-    bicop.parameters_to_tau(np.array([[0.5, 0.6], [0.7, 0.8]]))
-
-  # Test tau_to_parameters method
-  tau = 0.5
-  parameters = bicop.tau_to_parameters(tau)
-  assert isinstance(parameters, np.ndarray)
-
-  # Test parameters_lower_bounds method
-  lower_bounds = bicop.parameters_lower_bounds
-  assert isinstance(lower_bounds, np.ndarray)
-  assert lower_bounds == np.array([1.0])
-
-  # Test parameters_upper_bounds method
-  upper_bounds = bicop.parameters_upper_bounds
-  assert isinstance(upper_bounds, np.ndarray)
-  assert upper_bounds == np.array([50.0])
-
-  for method in ["pdf", "cdf", "hfunc1", "hfunc2", "hinv1", "hinv2"]:
-    values = getattr(bicop, method)(u)
+  for method in ("pdf", "cdf", "hfunc1", "hfunc2", "hinv1", "hinv2"):
+    values = getattr(gumbel, method)(_U)
     assert isinstance(values, np.ndarray)
     assert values.shape == (2,)
 
-  # Test sample method
-  n = 100
-  qrng = False
-  seeds: list[int] = []
-  samples = bicop.sample(n, qrng, seeds)
-  assert samples.shape == (n, 2)
 
-  # Test fit method
-  controls = pv.FitControlsBicop()
-  bicop.fit(u, controls)
+def test_the_fit_criteria_are_floats(gumbel: pv.Bicop) -> None:
+  """`loglik` and the three criteria the compiled class has always had."""
+  assert isinstance(gumbel.loglik(_U), float)
+  assert isinstance(gumbel.aic(_U), float)
+  assert isinstance(gumbel.bic(_U), float)
+  assert isinstance(gumbel.mbic(_U, 0.9), float)
 
-  # Test select method
-  controls = pv.FitControlsBicop()
-  bicop.select(u, controls)
+
+def test_it_renders(gumbel: pv.Bicop) -> None:
+  """`repr` and `str` both answer, which the notebooks depend on."""
+  assert isinstance(repr(gumbel), str)
+  assert isinstance(str(gumbel), str)
+
+
+def test_the_tau_maps_require_the_family_s_own_parameter_shape(
+  gumbel: pv.Bicop,
+) -> None:
+  """A wrong shape used to read past the family's own storage and answer."""
+  assert isinstance(gumbel.parameters_to_tau(gumbel.parameters), float)
+  with pytest.raises(RuntimeError, match="wrong shape"):
+    gumbel.parameters_to_tau(np.array([[0.5, 0.6], [0.7, 0.8]]))
+  assert isinstance(gumbel.tau_to_parameters(0.5), np.ndarray)
+
+
+def test_the_parameter_bounds_are_the_family_s(gumbel: pv.Bicop) -> None:
+  """Gumbel's parameter runs from 1 to 50."""
+  assert gumbel.parameters_lower_bounds == np.array([1.0])
+  assert gumbel.parameters_upper_bounds == np.array([50.0])
+
+
+def test_sampling_and_the_two_fitting_verbs(gumbel: pv.Bicop) -> None:
+  """`sample` answers `(n, 2)`, and `fit` / `select` both run."""
+  assert gumbel.sample(100, False, seeds=[]).shape == (100, 2)
+  gumbel.fit(_U, pv.FitControlsBicop())
+  gumbel.select(_U, pv.FitControlsBicop())
 
 
 _PER_ROW_METHODS = ["pdf", "cdf", "hfunc1", "hfunc2", "hinv1", "hinv2"]
@@ -188,17 +167,19 @@ def test_bicop_per_row_parameters(
   for method in _PER_ROW_METHODS:
     fn = getattr(cop, method)
     # Shape: (n, 2) data + (n, p) parameters -> (n,) output.
-    values = fn(u, pars)
+    values = fn(u, parameters=pars)
     assert isinstance(values, np.ndarray)
     assert values.shape == (n,)
 
     # Identity parity: constant per-row parameters equal to the object's own
     # parameters reproduce the state-based (single-argument) result.
-    np.testing.assert_allclose(fn(u, pars_const), fn(u), rtol=1e-9, atol=1e-12)
+    np.testing.assert_allclose(
+      fn(u, parameters=pars_const), fn(u), rtol=1e-9, atol=1e-12
+    )
 
     # Threading must not change the result.
     np.testing.assert_allclose(
-      fn(u, pars, num_threads=2), values, rtol=1e-12, atol=1e-14
+      fn(u, parameters=pars, num_threads=2), values, rtol=1e-12, atol=1e-14
     )
 
     # Strong per-row parity: row i with parameters pars[i] equals a fresh
@@ -213,12 +194,36 @@ def test_bicop_per_row_parameters(
 
   # loglik with per-row parameters: scalar, NaN-ignoring sum of log-densities,
   # and matches the state-based loglik under constant parameters.
-  ll = cop.loglik(u, pars)
+  ll = cop.loglik(u, parameters=pars)
   assert isinstance(ll, float)
-  np.testing.assert_allclose(ll, np.nansum(np.log(cop.pdf(u, pars))), rtol=1e-9)
   np.testing.assert_allclose(
-    cop.loglik(u, pars_const), cop.loglik(u), rtol=1e-9, atol=1e-12
+    ll, np.nansum(np.log(cop.pdf(u, parameters=pars))), rtol=1e-9
   )
+  np.testing.assert_allclose(
+    cop.loglik(u, parameters=pars_const), cop.loglik(u), rtol=1e-9, atol=1e-12
+  )
+
+
+def test_the_model_specification_stays_positional() -> None:
+  """`parameters` is keyword-only where it is a setting, and only there.
+
+  On the evaluation methods it is a per-call override and moved behind the
+  `*`. On the constructor and `from_family` it is what the copula *is*, beside
+  `family` and `rotation`, so `Bicop(gaussian, 0, par)` still binds -- which is
+  how every notebook builds a pair copula. `parameters_to_tau` takes it as the
+  data and is unchanged.
+  """
+  par = np.array([[0.5]])
+  built = pv.Bicop(pv.families.gaussian, 0, par)
+  factory = pv.Bicop.from_family(pv.families.gaussian, 0, par)
+  assert built.family == factory.family == pv.families.gaussian
+  np.testing.assert_allclose(built.parameters, par)
+  assert built.parameters_to_tau(par) == pytest.approx(factory.tau, abs=1e-12)
+
+  # And on an evaluation method it is not positional.
+  u = np.array([[0.4, 0.6]])
+  with pytest.raises(TypeError):
+    getattr(built, "pdf")(u, par)  # noqa: B009
 
 
 def test_bicop_per_row_parameters_errors() -> None:
@@ -234,27 +239,27 @@ def test_bicop_per_row_parameters_errors() -> None:
     data, pv.FitControlsBicop(family_set=[pv.families.tll])
   )
   with pytest.raises(RuntimeError):
-    tll.pdf(u, np.ones((n, 1)))
+    tll.pdf(u, parameters=np.ones((n, 1)))
 
   # Wrong number of parameter rows (must equal u.rows()).
   with pytest.raises(RuntimeError):
-    cop.pdf(u, pars[:-1])
+    cop.pdf(u, parameters=pars[:-1])
 
   # Wrong number of parameter columns (must equal the family's parameter count).
   with pytest.raises(RuntimeError):
-    cop.pdf(u, np.ones((n, 2)))
+    cop.pdf(u, parameters=np.ones((n, 2)))
 
   # Non-finite parameters are rejected.
   pars_nan = pars.copy()
   pars_nan[0, 0] = np.nan
   with pytest.raises(RuntimeError):
-    cop.pdf(u, pars_nan)
+    cop.pdf(u, parameters=pars_nan)
 
   # Out-of-bounds parameters are rejected.
   pars_oob = pars.copy()
   pars_oob[0, 0] = -5.0
   with pytest.raises(RuntimeError):
-    cop.pdf(u, pars_oob)
+    cop.pdf(u, parameters=pars_oob)
 
 
 _FIRST_ORDER_DERIVS = [
@@ -375,17 +380,17 @@ def test_bicop_deriv_per_row_parameters() -> None:
 
   for method, sel in selectors.items():
     fn = getattr(cop, method)
-    values = fn(u, sel, pars)
+    values = fn(u, sel, parameters=pars)
     assert isinstance(values, np.ndarray) and values.shape == (n,)
 
     # Constant per-row parameters reproduce the state-based call.
     np.testing.assert_allclose(
-      fn(u, sel, pars_const), fn(u, sel), rtol=1e-9, atol=1e-12
+      fn(u, sel, parameters=pars_const), fn(u, sel), rtol=1e-9, atol=1e-12
     )
 
     # Threading must not change the result.
     np.testing.assert_allclose(
-      fn(u, sel, pars, num_threads=2), values, rtol=1e-12, atol=1e-14
+      fn(u, sel, parameters=pars, num_threads=2), values, rtol=1e-12, atol=1e-14
     )
 
     # Strong per-row parity vs fresh copulas built with the row's parameters.
@@ -500,12 +505,12 @@ def test_bicop_taildep_and_beta() -> None:
   td = clayton.taildep
   assert isinstance(td, np.ndarray) and td.shape == (2, 2)
   np.testing.assert_allclose(td[0, 0], 2 ** (-1 / 2), rtol=1e-12)
-  assert td[1, 1] == 0.0 and td[0, 1] == 0.0 and td[1, 0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert td[1, 1] == 0.0 and td[0, 1] == 0.0 and td[1, 0] == 0.0
 
   # Gumbel theta=2: upper tail dependence 2 - 2^(1/theta), no lower.
   gumbel = pv.Bicop(family=pv.families.gumbel, parameters=np.array([[2.0]]))
   np.testing.assert_allclose(gumbel.taildep[1, 1], 2 - 2**0.5, rtol=1e-12)
-  assert gumbel.taildep[0, 0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert gumbel.taildep[0, 0] == 0.0
 
   # Gaussian: no tail dependence in any corner.
   gaussian = pv.Bicop(family=pv.families.gaussian, parameters=np.array([[0.5]]))
@@ -530,12 +535,12 @@ def test_bicop_taildep_and_beta() -> None:
   np.testing.assert_allclose(
     clayton180.taildep[1, 1], clayton.taildep[0, 0], rtol=1e-12
   )
-  assert clayton180.taildep[0, 0] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert clayton180.taildep[0, 0] == 0.0
   clayton90 = pv.Bicop(
     family=pv.families.clayton, rotation=90, parameters=np.array([[2.0]])
   )
   td90 = clayton90.taildep
-  assert td90[0, 0] == 0.0 and td90[1, 1] == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert td90[0, 0] == 0.0 and td90[1, 1] == 0.0
   assert td90[0, 1] + td90[1, 0] > 0
   assert clayton90.beta < 0 < clayton.beta
 
@@ -659,7 +664,9 @@ def test_bicop_scores_family(
   pars_const = np.tile(cop.parameters.ravel(), (n, 1))
   for method in [*_BICOP_SCORE_MATRIX_METHODS, "gradient"]:
     fn = getattr(cop, method)
-    np.testing.assert_allclose(fn(u, pars_const), fn(u), rtol=1e-9, atol=1e-12)
+    np.testing.assert_allclose(
+      fn(u, parameters=pars_const), fn(u), rtol=1e-9, atol=1e-12
+    )
     np.testing.assert_allclose(
       fn(u, parameters=pars_const, num_threads=2), fn(u), rtol=1e-9, atol=1e-12
     )
@@ -799,7 +806,7 @@ def test_simulate_positional_signature_is_unchanged() -> None:
   # `sample(n, qrng, seeds)` predates the per-row overload and must keep
   # meaning what it meant.
   cop = pv.Bicop.from_family(pv.families.gaussian, parameters=np.array([[0.5]]))
-  assert cop.sample(12, False, [1, 2]).shape == (12, 2)
+  assert cop.sample(12, False, seeds=[1, 2]).shape == (12, 2)
 
 
 def _discrete_pair(

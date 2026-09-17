@@ -56,35 +56,54 @@ def _rendered(cls: type, name: str) -> str:
   return "\n".join(cast("list[str]", gen.render_class_stub(cls, name)))
 
 
-def test_keyword_only_arguments_survive_into_the_stub() -> None:
-  """The new conditioning / per-row arguments are keyword-only.
+def test_the_settings_are_keyword_only_in_the_stub() -> None:
+  """Every setting on `Bicop` / `Vinecop` sits after a bare ``*``.
+
+  `parameters`, `num_threads`, `seeds`, `randomize_discrete` and
+  `conditioning_set` are settings, and the two classes ordered them
+  differently -- `Bicop` put `parameters` first, `Vinecop` `num_threads` --
+  so a call carried between them bound one as the other. Keyword-only is what
+  makes the two orders unobservable, and a dropped ``nb::kw_only()`` would
+  otherwise reach users' type checkers unnoticed.
 
   A nanobind overload set renders as ``"Overloaded function."`` and loses its
-  signature entirely, so each of these is bound as one method with an internal
-  dispatch. Pin the rendered signature: a dropped ``*`` or a renamed
-  ``nb::arg`` would otherwise reach users' type checkers unnoticed.
+  signature entirely, so this also pins that each stays one method with an
+  internal dispatch.
   """
   from pyvinecopulib.core import Bicop, Vinecop
 
-  bicop = _rendered(Bicop, "Bicop")
-  vinecop = _rendered(Vinecop, "Vinecop")
-
-  for haystack, needle in [
-    (bicop, "def sample(self, n: int | None = None"),
-    (bicop, "*, parameters:"),
-    (vinecop, "def rosenblatt(self"),
-    (vinecop, "def inverse_rosenblatt(self"),
-    (vinecop, "def sample_conditional(self"),
-  ]:
-    assert needle in haystack, f"missing {needle!r}"
-
-  # `conditioning_set` must appear after a bare `*` on all three methods, so
-  # position 2 keeps meaning `num_threads` / `qrng`.
-  for method in ("rosenblatt", "inverse_rosenblatt", "sample_conditional"):
-    line = next(
-      line for line in vinecop.splitlines() if f"def {method}(self" in line
-    )
-    assert "*, conditioning_set:" in line, line
+  settings = (
+    "parameters",
+    "num_threads",
+    "seeds",
+    "randomize_discrete",
+    "conditioning_set",
+  )
+  checked = 0
+  for cls, name in ((Bicop, "Bicop"), (Vinecop, "Vinecop")):
+    for line in _rendered(cls, name).splitlines():
+      if not line.lstrip().startswith("def ") or "(self" not in line:
+        continue
+      _, sep, tail = line.partition("*, ")
+      first = line.partition("(self, ")[2].partition(":")[0]
+      # `parameters` is not a setting on the constructor: it is what the copula
+      # *is*, beside `family` and `rotation`, so it stays positional there and
+      # on `from_family`. `Bicop(gaussian, 0, par)` is how the notebooks build
+      # one.
+      builds_the_model = "def __init__(self, family:" in line
+      for setting in settings:
+        # Nor where the name *is* the data: `parameters_to_tau(parameters)`
+        # and its two siblings, and `reorient(conditioning_set)`.
+        if f"{setting}:" not in line or first == setting:
+          continue
+        if builds_the_model and setting == "parameters":
+          assert f"{setting}:" not in tail, f"should stay positional: {line}"
+          continue
+        assert sep, f"no keyword-only marker: {line}"
+        assert f"{setting}:" in tail, f"{setting} is positional: {line}"
+        checked += 1
+  # Every method of both classes that takes one, not an arbitrary few.
+  assert checked >= 40, checked
 
 
 def test_a_deprecated_alias_renders_with_a_real_signature() -> None:

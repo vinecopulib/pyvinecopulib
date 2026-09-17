@@ -455,19 +455,23 @@ _BICOP_EXAMPLE = """
   --------
   A minimal independence pair on NumPy — implement only the three primitives and
   inherit ``hinv1`` / ``hinv2`` / ``sample`` / ``loglik`` / ``plot`` /
-  ``__repr__`` from :class:`~pyvinecopulib.core.BicopBase`::
+  ``__repr__`` from :class:`~pyvinecopulib.core.BicopBase`. Every leaf declares
+  a keyword-only ``x``, whether or not it reads one: a vine forwards its
+  conditioning matrix to each pair unconditionally, so a leaf that omits the
+  parameter raises at the first covariate call rather than answering
+  unconditionally::
 
       import numpy as np
       from pyvinecopulib.core import BicopBase
 
       class Independence(BicopBase[np.ndarray]):
-        def _pdf_raw(self, u):
+        def _pdf_raw(self, u, *, x=None):
           return np.ones(u.shape[0])
 
-        def _hfunc1_raw(self, u):
+        def _hfunc1_raw(self, u, *, x=None):
           return u[:, 1]
 
-        def _hfunc2_raw(self, u):
+        def _hfunc2_raw(self, u, *, x=None):
           return u[:, 0]
 
         def _sample_uniform(self, n, qrng, seeds):
@@ -844,6 +848,33 @@ class BicopLike(Protocol[ArrayT]):
     return False
 
   @property
+  def npars(self) -> float:
+    """Number of freely estimated parameters, which a criterion penalizes.
+
+    Only what a fit actually estimated counts, not the length of a parameter
+    vector: a pinned parameter is one fewer here, by enough to reverse a close
+    comparison, since it moves ``aic`` by 2 per parameter.
+
+    Returns
+    -------
+    float
+        The count.
+
+    Notes
+    -----
+    ``nan`` -- the default -- means *not reported*, which is a different claim
+    from ``0``: a model that estimated no parameters and one that never said
+    would otherwise agree, and ``aic`` would be a penalty-free ``-2 loglik``, a
+    plausible number with nothing wrong-looking about it. ``aic`` and ``bic``
+    refuse a ``nan`` rather than propagating it.
+
+    It answers rather than raising because a ``runtime_checkable`` protocol
+    evaluates its data members during ``isinstance`` on Python 3.11, so a
+    raising property makes the conformance check itself raise.
+    """
+    return float("nan")
+
+  @property
   def controls_class(self) -> type[ControlsLike] | None:
     """The fit configuration this pair copula's estimator reads, or ``None``.
 
@@ -1122,6 +1153,33 @@ class VinecopLike(Protocol[ArrayT]):
         ``False`` unless the implementation says otherwise.
     """
     return False
+
+  @property
+  def npars(self) -> float:
+    """Number of freely estimated parameters, which a criterion penalizes.
+
+    Only what a fit actually estimated counts, not the length of a parameter
+    vector: a pinned parameter is one fewer here, by enough to reverse a close
+    comparison, since it moves ``aic`` by 2 per parameter.
+
+    Returns
+    -------
+    float
+        The count.
+
+    Notes
+    -----
+    ``nan`` -- the default -- means *not reported*, which is a different claim
+    from ``0``: a model that estimated no parameters and one that never said
+    would otherwise agree, and ``aic`` would be a penalty-free ``-2 loglik``, a
+    plausible number with nothing wrong-looking about it. ``aic`` and ``bic``
+    refuse a ``nan`` rather than propagating it.
+
+    It answers rather than raising because a ``runtime_checkable`` protocol
+    evaluates its data members during ``isinstance`` on Python 3.11, so a
+    raising property makes the conformance check itself raise.
+    """
+    return float("nan")
 
   @property
   def controls_class(self) -> type[ControlsLike] | None:
@@ -1419,12 +1477,39 @@ class MarginLike(Protocol[ArrayT]):
     return False
 
   @property
+  def npars(self) -> float:
+    """Number of freely estimated parameters, which a criterion penalizes.
+
+    Only what a fit actually estimated counts, not the length of a parameter
+    vector: a pinned parameter is one fewer here, by enough to reverse a close
+    comparison, since it moves ``aic`` by 2 per parameter.
+
+    Returns
+    -------
+    float
+        The count.
+
+    Notes
+    -----
+    ``nan`` -- the default -- means *not reported*, which is a different claim
+    from ``0``: a model that estimated no parameters and one that never said
+    would otherwise agree, and ``aic`` would be a penalty-free ``-2 loglik``, a
+    plausible number with nothing wrong-looking about it. ``aic`` and ``bic``
+    refuse a ``nan`` rather than propagating it.
+
+    It answers rather than raising because a ``runtime_checkable`` protocol
+    evaluates its data members during ``isinstance`` on Python 3.11, so a
+    raising property makes the conformance check itself raise.
+    """
+    return float("nan")
+
+  @property
   def controls_class(self) -> type[ControlsLike] | None:
     """The fit configuration this margin's estimator reads, or ``None``.
 
     A declaration rather than a contract: it says what ``controls=None``
     means for this class, and carries the type besides, so a consumer builds
-    ``margin.controls_class()`` instead of naming a ``FitControls*`` of its
+    ``MarginLike.controls_class()`` instead of naming a ``FitControls*`` of its
     own. Read-only here, so an implementation may declare a narrower type.
 
     Returns
@@ -1542,13 +1627,13 @@ class VinedistLike(Protocol[ArrayT]):
 
   Notes
   -----
-  Discreteness, conditioning and the fit-time reports are **optional
-  capabilities** rather than members of this contract, discovered with
-  ``getattr``: ``dim``, ``var_types``, ``sample_conditional`` and
-  ``margin_summary`` -- the last of which
-  :class:`pyvinecopulib.sklearn.VineDensity` reads to publish
-  ``margin_summary_``, so a distribution class without one is
-  told so by name.
+  ``dim``, ``var_types``, ``sample_conditional`` and ``margin_summary`` are
+  **members** of this contract, each carrying the default a consumer used to
+  apply -- the first two derived from the margins, the last two raising by
+  name. So a consumer calls them rather than probing with ``getattr``:
+  :class:`pyvinecopulib.sklearn.VineDensity` reads ``margin_summary`` to
+  publish ``margin_summary_``, and a distribution that declines it says so
+  itself.
 
   A distribution declares no ``supports_covariates`` of its own. It reads the
   flag on the parts it holds -- every margin, and the copula -- and refuses an
@@ -1564,8 +1649,32 @@ class VinedistLike(Protocol[ArrayT]):
   MarginLike : The marginal half's contract.
   """
 
-  vinecop: VinecopLike[ArrayT]
-  margins: Sequence[MarginLike[ArrayT]]
+  @property
+  def vinecop(self) -> VinecopLike[ArrayT]:
+    """The copula half.
+
+    Read-only: every implementation supplies it as a property, and a mutable
+    data member is invariant -- a `tuple` return would not be assignable to a
+    declared `Sequence`, which is what put a `VinedistBase` subclass outside
+    `type[VinedistLike[Any]]`.
+
+    Returns
+    -------
+    VinecopLike
+        The vine copula this distribution composes.
+    """
+    ...
+
+  @property
+  def margins(self) -> Sequence[MarginLike[ArrayT]]:
+    """The marginal half, one per variable, as :attr:`vinecop`.
+
+    Returns
+    -------
+    sequence of MarginLike
+        One margin per variable, in column order.
+    """
+    ...
 
   @abstractmethod
   def logpdf(self, y: ArrayT) -> ArrayT:
@@ -1736,10 +1845,7 @@ class VinedistLike(Protocol[ArrayT]):
         One entry per variable, each ``"c"`` or ``"d"``: a zero-inflated
         margin sits on a discrete edge, so ``"zi"`` reads as ``"d"`` here.
     """
-    return [
-      "d" if getattr(m, "var_type", "c") in ("d", "zi") else "c"
-      for m in self.margins
-    ]
+    return ["d" if m.var_type in ("d", "zi") else "c" for m in self.margins]
 
   def margin_summary(self) -> Sequence[Mapping[str, Any]]:
     """One row per margin, describing what each one is.
@@ -1785,6 +1891,138 @@ class VinedistLike(Protocol[ArrayT]):
     """
     raise NotImplementedError(
       f"{type(self).__name__} has no `sample_conditional`."
+    )
+
+  @property
+  def npars(self) -> float:
+    """Freely estimated parameters of both halves together.
+
+    Derived rather than declared: a vine distribution *is* its copula and its
+    margins, so it has no count of its own to report and nothing to keep in
+    step with theirs.
+
+    Returns
+    -------
+    float
+        ``vinecop.npars`` plus the margins'.
+
+    Raises
+    ------
+    NotImplementedError
+        If any part reports none, from that part and naming it.
+    """
+    return float(self.vinecop.npars) + sum(
+      float(margin.npars) for margin in self.margins
+    )
+
+  def fit(
+    self,
+    y: ArrayT,
+    /,
+    # `Any`, not `ControlsLike`: which controls type an estimator accepts is
+    # its own, and `controls_class` is what names it.
+    controls: Any = None,  # noqa: ANN401
+  ) -> Self:
+    """Re-estimate both halves along the structure and families held.
+
+    Parameters
+    ----------
+    y : array, shape (n, d), dtype float
+        Observations on the original scale.
+    controls : object, or None, optional
+        Fit configuration, of whatever type this implementation reads.
+
+    Returns
+    -------
+    Self
+        This distribution, re-estimated in place.
+
+    Raises
+    ------
+    NotImplementedError
+        Unless the implementation overrides it. Not overriding it *is* the
+        answer for a fixed distribution.
+    """
+    del y, controls
+    raise NotImplementedError(
+      f"{type(self).__name__} has no `fit`; implement it to re-estimate this "
+      "distribution in place, or build a fresh one instead."
+    )
+
+  def select(
+    self,
+    y: ArrayT,
+    /,
+    controls: Any = None,  # noqa: ANN401 - as `fit`, above
+  ) -> Self:
+    """Re-estimate, letting both halves change shape.
+
+    Parameters
+    ----------
+    y : array, shape (n, d), dtype float
+        Observations on the original scale.
+    controls : object, or None, optional
+        Fit configuration, of whatever type this implementation reads.
+
+    Returns
+    -------
+    Self
+        This distribution, re-selected in place.
+    """
+    return self.fit(y, controls)
+
+  @classmethod
+  def from_data(
+    cls,
+    y: ArrayT,
+    /,
+    controls: Any = None,  # noqa: ANN401 - as `fit`, above
+    *,
+    margin_controls: object = None,
+    var_types: Sequence[str | None] | None = None,
+    supports: Sequence[tuple[float | None, float | None] | None] | None = None,
+    structure: RVineStructure | None = None,
+    names: Sequence[str] | None = None,
+  ) -> Self:
+    """Fit a distribution from data, margins first and then the copula.
+
+    Declared on the contract rather than only on the base because a consumer
+    handed the class -- the scikit-learn estimators take one as
+    ``distribution=`` -- calls this on it. A protocol read on instances needs
+    no constructor; one used as ``type[...]`` must name what is called on the
+    class.
+
+    Parameters
+    ----------
+    y : array, shape (n, d), dtype float
+        Observations on the original scale.
+    controls : object, or None, optional
+        Copula fit configuration, of whatever type this implementation reads.
+    margin_controls : object, or None, optional
+        Marginal fit configuration, one per variable or broadcast.
+    var_types : sequence of str, or None, optional
+        What each variable is, one entry per variable.
+    supports : sequence of tuple, or None, optional
+        Declared bounds, one entry per variable.
+    structure : RVineStructure, or None, optional
+        A fixed structure, or ``None`` to select one.
+    names : sequence of str, or None, optional
+        Variable names.
+
+    Returns
+    -------
+    Self
+        The fitted distribution.
+
+    Raises
+    ------
+    NotImplementedError
+        Unless the implementation overrides it.
+    """
+    del y, controls, margin_controls, var_types, supports, structure, names
+    raise NotImplementedError(
+      f"{cls.__name__} has no `from_data`; implement it to fit this "
+      "distribution from observations."
     )
 
 

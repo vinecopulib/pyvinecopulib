@@ -17,7 +17,7 @@ def test_kde1d_initialization() -> None:
   assert kde.xmin != kde.xmin  # NaN check
   assert kde.xmax != kde.xmax  # NaN check
   assert kde.var_type == "c"
-  assert kde.multiplier == 1.0  # noqa: RUF069 - the value this test set, read back
+  assert kde.multiplier == 1.0
   assert kde.bandwidth != kde.bandwidth  # NaN check (not fitted yet)
   assert kde.degree == 2
   assert kde.grid_size == 400  # Default grid size
@@ -32,11 +32,11 @@ def test_kde1d_initialization() -> None:
     degree=1,
     grid_size=200,
   )
-  assert kde.xmin == 0.0  # noqa: RUF069 - the value this test set, read back
-  assert kde.xmax == 1.0  # noqa: RUF069 - the value this test set, read back
+  assert kde.xmin == 0.0
+  assert kde.xmax == 1.0
   assert kde.var_type == "d"
   assert kde.multiplier == 25
-  assert kde.bandwidth == 0.1  # noqa: RUF069 - the value this test set, read back
+  assert kde.bandwidth == 0.1
   assert kde.degree == 1
   assert kde.grid_size == 200
 
@@ -57,7 +57,7 @@ def test_kde1d_answers_the_three_fitting_verbs() -> None:
 
   fitted = pv.core.Kde1d.from_data(y, support=(0.0, None))
   assert isinstance(fitted, pv.core.Kde1d)
-  assert fitted.xmin == 0.0  # noqa: RUF069 - the value this test set, read back
+  assert fitted.xmin == 0.0
   assert np.isfinite(fitted.loglik())
 
   # `select` is `fit`: the same object back, and the same fit.
@@ -76,10 +76,10 @@ def test_kde1d_factory_methods() -> None:
   kde = pv.core.Kde1d.from_params(
     xmin=0.0, xmax=1.0, var_type="c", multiplier=1.2
   )
-  assert kde.xmin == 0.0  # noqa: RUF069 - the value this test set, read back
-  assert kde.xmax == 1.0  # noqa: RUF069 - the value this test set, read back
+  assert kde.xmin == 0.0
+  assert kde.xmax == 1.0
   assert kde.var_type == "c"
-  assert kde.multiplier == 1.2  # noqa: RUF069 - the value this test set, read back
+  assert kde.multiplier == 1.2
 
   # Test from_grid
   # Create some sample grid data
@@ -95,8 +95,8 @@ def test_kde1d_factory_methods() -> None:
     var_type="c",
   )
 
-  assert kde_from_grid.xmin == -2.0  # noqa: RUF069 - the value this test set, read back
-  assert kde_from_grid.xmax == 2.0  # noqa: RUF069 - the value this test set, read back
+  assert kde_from_grid.xmin == -2.0
+  assert kde_from_grid.xmax == 2.0
   assert kde_from_grid.var_type == "c"
 
   # Should be able to evaluate (it's already "fitted" from grid)
@@ -131,16 +131,14 @@ def test_kde1d_properties() -> None:
   )
 
   # Test read-only properties
-  assert kde.xmin == -1.0  # noqa: RUF069 - the value this test set, read back
-  assert kde.xmax == 1.0  # noqa: RUF069 - the value this test set, read back
+  assert kde.xmin == -1.0
+  assert kde.xmax == 1.0
   assert kde.var_type == "c"
-  assert kde.multiplier == 2.0  # noqa: RUF069 - the value this test set, read back
-  assert kde.bandwidth == 0.5  # noqa: RUF069 - the value this test set, read back
+  assert kde.multiplier == 2.0
+  assert kde.bandwidth == 0.5
   assert kde.degree == 1
   assert kde.grid_size == 100
-  assert (
-    kde.prob0 == 0.0  # noqa: RUF069 - the value this test set, read back
-  )  # Default for non-zero-inflated
+  assert kde.prob0 == 0.0  # Default for non-zero-inflated
 
   # Test that properties are read-only
   with pytest.raises(AttributeError):
@@ -164,8 +162,8 @@ def test_kde1d_fit_and_methods() -> None:
   # After fitting, should have valid loglik and edf
   assert isinstance(kde.loglik(), float)
   assert kde.loglik() == kde.loglik()  # Should not be NaN
-  assert isinstance(kde.edf, float)
-  assert kde.edf > 0
+  assert isinstance(kde.npars, float)
+  assert kde.npars > 0
 
   # Test grid points and values are available
   grid_points = kde.grid_points
@@ -212,7 +210,7 @@ def test_kde1d_fit_and_methods() -> None:
 
   # Empty batches are legitimate and never reach Eigen reductions.
   assert kde.icdf(np.array([])).shape == (0,)
-  assert kde.loglik(np.array([])) == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+  assert kde.loglik(np.array([])) == 0.0
 
 
 def test_kde1d_discrete_cdf_left_between_atoms() -> None:
@@ -440,7 +438,7 @@ def test_kde1d_large_data() -> None:
 
   # Should handle large datasets
   assert isinstance(kde.loglik(), float)
-  assert kde.edf > 0
+  assert kde.npars > 0
 
   # Test evaluation on many points
   eval_points = np.linspace(-3, 3, 100)
@@ -559,7 +557,7 @@ def test_json_and_file_round_trips_are_exact() -> None:
       np.testing.assert_array_equal(restored.icdf(probs), kde.icdf(probs))
       # The fitted diagnostics travel too, not only the grid.
       assert restored.loglik() == kde.loglik()
-      assert restored.edf == kde.edf
+      assert restored.npars == kde.npars
       assert restored.bandwidth == kde.bandwidth
       assert restored.var_type == kde.var_type
       assert restored.grid_size == kde.grid_size
@@ -818,7 +816,7 @@ def test_a_declaration_states_what_it_states_and_no_more() -> None:
   y = np.abs(np.random.default_rng(0).normal(size=300))
   built = pv.core.Kde1d(xmin=0.0, bandwidth=0.3, grid_size=64, degree=1)
   built.fit(y, var_type="c")
-  assert built.xmin == 0.0  # noqa: RUF069 - the value this test set, read back
+  assert built.xmin == 0.0
   assert built.bandwidth == pytest.approx(0.3)
   assert (built.grid_size, built.degree) == (64, 1)
 
@@ -832,4 +830,4 @@ def test_a_declaration_states_what_it_states_and_no_more() -> None:
   # all: that is what passing one means.
   built.fit(y, pv.core.FitControlsKde1d(grid_size=128))
   assert built.grid_size == 128
-  assert built.xmin == 0.0  # noqa: RUF069 - the value this test set, read back
+  assert built.xmin == 0.0

@@ -40,7 +40,7 @@ from typing import Any
 import numpy as np
 
 from ..pyvinecopulib_ext import Kde1d
-from ._json import MODEL_JSON_VERSION, read_payload
+from ._json import MODEL_JSON_VERSION, dumps, loads, read_payload
 from .margin_base import MarginBase, support_of
 from .protocols import ArrayT, MarginLike
 
@@ -270,7 +270,7 @@ def _adapt_torch(obj: Any) -> MarginLike[Any]:  # noqa: ANN401
     raise TypeError(
       f"cannot adapt discrete torch distribution {type(obj).__name__!r}: "
       "torch.distributions does not provide the cdf and left-limit cdf a "
-      "discrete vine margin needs. Use Kde1d, a SciPy or OpenTURNS margin, "
+      "discrete vine margin needs. Use Kde1d or a SciPy margin, "
       "or implement MarginBase.cdf_left explicitly."
     )
 
@@ -282,7 +282,7 @@ def _adapt_torch(obj: Any) -> MarginLike[Any]:  # noqa: ANN401
     raise TypeError(
       f"cannot adapt torch distribution {type(obj).__name__!r}: its cdf is "
       "not implemented. Use a continuous torch distribution with a cdf, "
-      "provide a MarginBase implementation, or use a SciPy/OpenTURNS margin."
+      "provide a MarginBase implementation, or use a SciPy margin."
     )
 
   lo, hi = support_of(obj)
@@ -370,12 +370,10 @@ _BUILTIN_ADAPTERS: tuple[
 
 #: Readers registered by a caller. Consulted before ``_BUILTIN_READERS``, so a
 #: caller may replace a shipped one.
-_READERS: dict[str, Callable[[dict[str, Any]], Any]] = {}
+_READERS: dict[str, Callable[[str], Any]] = {}
 
 
-def register_margin_json(
-  kind: str, reader: Callable[[dict[str, Any]], Any]
-) -> None:
+def register_margin_json(kind: str, reader: Callable[[str], Any]) -> None:
   """Teach :func:`margin_from_json` how to rebuild one margin type.
 
   Parameters
@@ -398,8 +396,35 @@ def register_margin_json(
   _READERS[kind] = reader
 
 
-def margin_to_json(margin: object) -> dict[str, Any]:
-  """Return one margin's JSON payload.
+def margin_json(margin: object, payload: dict[str, Any]) -> str:
+  """Serialize one margin's fields, stamped and encoded the shared way.
+
+  What a margin's own ``to_json`` calls, so every class produces the same
+  envelope through the same codec rather than reaching for the private
+  encoder itself. Two things it carries that a bare ``json.dumps`` would
+  lose: ``inf`` / ``nan`` travel as tagged strings, JSON having no spelling
+  for either, and ``kind`` is pinned so a **subclass** reads back as itself.
+
+  Parameters
+  ----------
+  margin : object
+      The margin being serialized; names the default ``kind``.
+  payload : dict
+      Its fields. A ``kind`` already present is kept.
+
+  Returns
+  -------
+  str
+      The JSON text ``margin_from_json`` reads back.
+  """
+  out = dict(payload)
+  out.setdefault("kind", type(margin).__name__)
+  out.setdefault("version", MODEL_JSON_VERSION)
+  return dumps(out)
+
+
+def margin_to_json(margin: object) -> str:
+  """Return one margin's JSON text.
 
   Parameters
   ----------
@@ -409,8 +434,8 @@ def margin_to_json(margin: object) -> dict[str, Any]:
 
   Returns
   -------
-  dict
-      A JSON-serializable mapping carrying ``kind`` and ``version``.
+  str
+      JSON text carrying ``kind`` and ``version``.
 
   Raises
   ------
@@ -421,27 +446,34 @@ def margin_to_json(margin: object) -> dict[str, Any]:
   if to_json is None:
     raise TypeError(
       f"{type(margin).__name__} cannot be serialized: it has no `to_json`. "
-      "Implement `to_json` returning a JSON-serializable mapping, and call "
+      "Implement `to_json` returning JSON text -- "
+      "`pyvinecopulib.core.margin_json` builds the envelope -- and call "
       "`pyvinecopulib.core.register_margin_json` so it can be read back."
     )
-  payload = to_json()
-  if isinstance(payload, str):
-    # A compiled margin (`Kde1d`) serializes itself to a JSON string.
-    payload = {"kind": type(margin).__name__, "json": payload}
-  else:
-    payload = dict(payload)
-    payload.setdefault("kind", type(margin).__name__)
+  text = to_json()
+  payload = loads(text)
+  if "kind" not in payload:
+    # A compiled margin (`Kde1d`) serializes to upstream's own JSON, which
+    # carries neither `kind` nor `version`, so the envelope is synthesized
+    # around it rather than merged into it.
+    return dumps(
+      {
+        "kind": type(margin).__name__,
+        "version": MODEL_JSON_VERSION,
+        "json": text,
+      }
+    )
   payload.setdefault("version", MODEL_JSON_VERSION)
-  return payload
+  return dumps(payload)
 
 
-def margin_from_json(payload: dict[str, Any]) -> MarginLike[Any]:
-  """Rebuild one margin from the payload :func:`margin_to_json` produced.
+def margin_from_json(payload: str) -> MarginLike[Any]:
+  """Rebuild one margin from the text :func:`margin_to_json` produced.
 
   Parameters
   ----------
-  payload : dict
-      A mapping carrying ``kind`` and ``version``.
+  payload : str
+      JSON text carrying ``kind`` and ``version``.
 
   Returns
   -------
@@ -455,8 +487,8 @@ def margin_from_json(payload: dict[str, Any]) -> MarginLike[Any]:
   """
   # No `kind=` here: this reader dispatches on `kind` itself and says far
   # more about an unknown one than a bare mismatch could.
-  payload = read_payload(payload, "margin")
-  kind = payload.get("kind")
+  decoded = read_payload(payload, "margin")
+  kind = decoded.get("kind")
   reader = _READERS.get(kind) or _BUILTIN_READERS.get(kind)
   if reader is None:
     known = ", ".join(sorted({*_READERS, *_BUILTIN_READERS})) or "(none)"
@@ -470,9 +502,9 @@ def margin_from_json(payload: dict[str, Any]) -> MarginLike[Any]:
   return reader(payload)
 
 
-def _read_kde1d(payload: dict[str, Any]) -> Kde1d:
-  """Rebuild a ``Kde1d``, whose own JSON is a string rather than a mapping."""
-  return Kde1d.from_json(payload["json"])
+def _read_kde1d(payload: str) -> Kde1d:
+  """Rebuild a ``Kde1d``, whose own JSON is upstream's rather than ours."""
+  return Kde1d.from_json(read_payload(payload, "margin")["json"])
 
 
 #: ``kind`` -> the reader for it. Only ``Kde1d`` is here: it is a ``core``
@@ -480,7 +512,7 @@ def _read_kde1d(payload: dict[str, Any]) -> Kde1d:
 #: reader from its own module through :func:`register_margin_json`, which is
 #: what keeps ``core`` from naming a class it must not import -- and makes the
 #: first-party margins use the same hook a third party does.
-_BUILTIN_READERS: dict[str, Callable[[dict[str, Any]], Any]] = {
+_BUILTIN_READERS: dict[str, Callable[[str], Any]] = {
   "Kde1d": _read_kde1d,
 }
 

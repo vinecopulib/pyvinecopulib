@@ -70,12 +70,6 @@ scipy = [
   # surface, which is much older.
   "scipy>=1.16",
 ]
-openturns = [
-  # An extra rather than a dependency on two counts: OpenTURNS is LGPL where
-  # this package is MIT, and its wheel is ~60 MB. 1.16 is the floor for
-  # `FittingTest.AICC`, one of the three criteria `OpenTURNSMargin.select` offers.
-  "openturns>=1.16",
-]
 doc = [
   # Ranges, not exact pins: `sphinx==7.0` held `sphinx-autodoc-typehints` back
   # to its 2023 releases while the other four floated, so whichever of them
@@ -195,6 +189,9 @@ extend-select = [
 # multiplication sign a shape is written with, and the right single quote
 # inside a quoted copy of codespell's own word regex.
 allowed-confusables = ["\u03c1", "\u00d7", "\u2019"]
+# Required rather than preferred: the selectors below name rules instead of
+# coding them -- which `rule-codes-in-selectors` asks for and which ruff reads
+# only in preview.
 preview = true
 ignore = [
   # Every annotation on the public surface resolves at runtime, and these
@@ -208,29 +205,27 @@ ignore = [
   # is no answer either: `runtime-evaluated-base-classes` exempts the fields
   # of a listed base, not the functions and properties of an ordinary class.
   # `TC006` stays.
-  "TC001", "TC002", "TC003",
+  "typing-only-first-party-import", "typing-only-third-party-import", "typing-only-standard-library-import",
   # Policy: a validation site raises a built-in with the explanatory message
   # the caller needs. This rule pushes that text into a custom exception class
   # instead; a custom class is worth defining when a caller must *distinguish*
   # a failure category, which is a design decision and not this rule's to force.
-  "TRY003",
+  "raise-vanilla-args",
   # A function-local import is how the layering rule is honored: `core` must
   # import with no optional extra, and `sklearn` must not name `torch` at
   # module scope. Both are stated in AGENTS.md and tested by
   # `tests/test_import_surface.py`.
-  "PLC0415",
+  "import-outside-top-level",
   # `# noqa` is the spelling AGENTS.md documents and every other tool reads;
   # `# ruff: ignore` is a preview-only preference.
-  "RUF105",
+  "noqa-comments",
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F403", "F405"]
+"__init__.py" = ["undefined-local-with-import-star", "undefined-local-with-import-star-usage"]
 # `ANN401` is on everywhere, and every `Any` in `src` states its reason at the
 # site with a `# noqa: ANN401`. One file is the exception, because in it many
 # sites share a single reason -- see the AGENTS.md rule.
-# OpenTURNS is SWIG-generated: no `py.typed` and no stub package.
-"src/pyvinecopulib/margins/openturns.py" = ["ANN401"]
 # A test passes a wrong type on purpose to prove a runtime guard fires.
 # `PLC2701` is AGENTS.md's own "tests import from public namespaces" rule,
 # whose carve-outs are stated there -- the TLL kernels and the three plot
@@ -239,18 +234,24 @@ ignore = [
 # `test_a_private_import_outside_src_names_this_package` is what enforces:
 # the allowlist of third-party privates lives there, one entry with its
 # reason, so a new one is a reviewed edit rather than a silent inheritance.
-"tests/**" = ["ANN401", "PLC2701"]
+# `float-equality-comparison` reads a float `==` as a probable typo. In a test
+# it is usually the claim: a value the test itself set and reads back, or an
+# exact guarantee rather than a computed approximation. That one reason covered
+# 66 sites, which is the per-file case AGENTS.md describes rather than the same
+# sentence 66 times. `src` keeps its four site-level suppressions, each of
+# which has a reason of its own.
+"tests/**" = ["any-type", "import-private-name", "float-equality-comparison"]
 # AGENTS.md scopes the type-hint requirement to public Python source. A
 # teaching notebook, a libclang-walking build helper, and Sphinx's own
 # unannotated hook signatures are none of it.
 "examples/**" = ["ANN"]
-"scripts/**" = ["ANN", "PLC2701"]
+"scripts/**" = ["ANN", "import-private-name"]
 # Both generators walk a foreign tree -- libclang's AST and nanobind's
 # introspection -- where any node may raise and a node that does is
 # skipped rather than fatal. That is one reason covering every site in
 # each file, and the degradation is the documented contract.
-"scripts/generate_docstring.py" = ["ANN", "PLC2701", "BLE001", "PLW0717"]
-"scripts/generate_stubs.py" = ["ANN", "PLC2701", "BLE001"]
+"scripts/generate_docstring.py" = ["ANN", "import-private-name", "blind-except", "too-many-statements-in-try-clause"]
+"scripts/generate_stubs.py" = ["ANN", "import-private-name", "blind-except"]
 "docs/conf.py" = ["ANN"]
 
 [tool.ty.src]

@@ -25,7 +25,7 @@ import torch
 from torch import Tensor
 
 from ..core._trim import trim
-from ..core.vinecop_base import NotBatchable
+from ..core.extend import NotBatchable
 from ..pyvinecopulib_ext import RVineStructure
 from ._placement import TENSOR_NS
 

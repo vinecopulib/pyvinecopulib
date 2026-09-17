@@ -49,8 +49,8 @@ class TestPolynomialHelpers:
     That is the defect this pins: it is invisible to a boundary check and to
     an antisymmetry check, and it moved `norm_ppf` by 1.1e-2 at the quartiles.
     """
-    assert polevl(2.0, [2.0, 3.0, 5.0], 2) == 19.0  # noqa: RUF069 - exact arithmetic on small integers
-    assert p1evl(2.0, [3.0, 5.0], 2) == 15.0  # noqa: RUF069 - exact arithmetic on small integers
+    assert polevl(2.0, [2.0, 3.0, 5.0], 2) == 19.0
+    assert p1evl(2.0, [3.0, 5.0], 2) == 15.0
 
   def test_p1evl_basic(self) -> None:
     """p1evl prepends an implicit leading 1: x^2 + 2x + 3 at x = 2."""
@@ -63,7 +63,7 @@ class TestInverseErrorFunction:
 
   def test_inv_erf_boundary_values(self) -> None:
     """Test inverse error function at boundary values"""
-    assert inv_erf(0.0) == 0.0  # noqa: RUF069 - an exact guarantee, not a computed approximation
+    assert inv_erf(0.0) == 0.0
     assert inv_erf(1.0) == math.inf
     assert inv_erf(-1.0) == -math.inf
 

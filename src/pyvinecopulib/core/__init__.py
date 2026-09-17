@@ -97,6 +97,7 @@ from ..pyvinecopulib_ext import (
 )
 from ._margins import (
   margin_from_json,
+  margin_json,
   margin_to_json,
   register_margin_json,
 )
@@ -166,6 +167,7 @@ __all__ = [
   "VinedistBase",
   "VinedistLike",
   "margin_from_json",
+  "margin_json",
   "margin_to_json",
   "register_margin_json",
 ]

@@ -91,7 +91,7 @@ kernel-density margin they default to.
 Three opt-in subpackages extend the core library:
 
 * `pyvinecopulib.margins` — parametric margins and family selection
-  (`SciPyMargin`, `OpenTURNSMargin`) to pair with `Vinedist` when a
+  (`SciPyMargin`) to pair with `Vinedist` when a
   kernel-density margin is not what you want:
 
   ```python
@@ -109,9 +109,9 @@ Three opt-in subpackages extend the core library:
   print(dist.margins[0].family_name)
   ```
 
-  `SciPyMargin` needs `pip install pyvinecopulib[scipy]`; for OpenTURNS'
-  families name `OpenTURNSMargin` instead and install
-  `pyvinecopulib[openturns]`.
+  `SciPyMargin` needs `pip install pyvinecopulib[scipy]`. Another
+  ecosystem's distributions reach a vine through
+  `pyvinecopulib.margins.register_margin_adapter`.
 
 * `pyvinecopulib.sklearn` — scikit-learn-compatible estimators
   (`VineDensity`, `VineRegressor`). Drop a vine

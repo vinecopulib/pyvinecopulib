@@ -14,14 +14,14 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import (
   Any,
   Self,
-  TypeVar,
   cast,
 )
 
 import numpy as np
 
 from ..core import ControlsLike, MarginBase, MarginLike
-from ..core._margins import register_margin_json
+from ..core._json import read_payload
+from ..core._margins import margin_json, register_margin_json
 from ..core._validation import (
   extra_required,
   reject_covariates,
@@ -32,11 +32,6 @@ from ..core._validation import (
 from ..core.margin_base import criteria as _criteria
 
 __all__ = ["SciPyMargin"]
-
-#: One margin, of whatever kind was handed in. Unbounded on purpose: a
-#: candidate set may hold margins from anywhere, `Kde1d` included, and those
-#: satisfy the contract nominally rather than statically.
-_MarginT = TypeVar("_MarginT")
 
 #: Curated candidate families, grouped by the support they can represent.
 #: `SciPyMargin.select` draws its candidates from the groups the data are
@@ -352,63 +347,45 @@ def _fit_candidate(candidate: SciPyMargin, y: np.ndarray) -> str | None:
       if not getattr(candidate, "is_fitted", True):
         candidate.fit(y)
       return _reject(candidate, y)
-    # As `openturns.py`: a candidate raises whatever SciPy raises, and
+    # A candidate raises whatever SciPy raises, and
     # every rejection is reported rather than skipped.
     except Exception as e:  # noqa: BLE001
       return f"{type(e).__name__}: {e}"
 
 
-def _dedupe(candidates: Iterable[_MarginT]) -> list[_MarginT]:
+def _dedupe(candidates: Iterable[SciPyMargin]) -> list[SciPyMargin]:
   """Drop candidates that would tie with one already present.
 
   Two unfitted candidates of the same family with the same pinned parameters
   and search bounds fit the same model, so they tie exactly on every criterion:
   the winner becomes an artifact of iteration order, and the report carries the
   row twice. Ready-made fitted candidates additionally include their parameter
-  vectors in their identity. Anything whose identity cannot be read this way is
-  kept, since dropping it would be a guess.
+  vectors in their identity, and an unnamed candidate -- the signal to search
+  rather than a model -- is kept as it is.
 
   Parameters
   ----------
-  candidates : iterable
-      Unfitted candidate margins, in preference order.
+  candidates : iterable of SciPyMargin
+      Candidate margins, in preference order.
 
   Returns
   -------
-  list
+  list of SciPyMargin
       The first candidate of each distinct family, pins, and search bounds,
       order preserved.
   """
   seen: set[tuple[Any, ...]] = set()
-  out: list[_MarginT] = []
+  out: list[SciPyMargin] = []
   for margin in candidates:
-    family = getattr(margin, "family_name", None)
-    if family is None:
+    if margin.family_name is None:
       out.append(margin)
       continue
-    fixed = getattr(margin, "fixed_parameters", None) or {}
-    search_bounds = (
-      tuple(sorted(margin._bounds.items()))
-      if isinstance(margin, SciPyMargin)
-      else ()
-    )
-    is_fitted = bool(getattr(margin, "is_fitted", False))
-    if is_fitted:
-      raw_parameters = getattr(margin, "parameters", None)
-      if raw_parameters is None:
-        # Fitted state without a readable identity may represent any model.
-        # Keeping it is the only ownership-safe choice.
-        out.append(margin)
-        continue
-      parameters = tuple(raw_parameters)
-    else:
-      parameters = ()
     key = (
-      str(family),
-      tuple(sorted(fixed.items())),
-      search_bounds,
-      is_fitted,
-      parameters,
+      margin.family_name,
+      tuple(sorted((margin.fixed_parameters or {}).items())),
+      tuple(sorted(margin._bounds.items())),
+      margin.is_fitted,
+      margin.parameters if margin.is_fitted else (),
     )
     if key in seen:
       continue
@@ -436,7 +413,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
   params : sequence of float, or None, optional
       The full parameter vector in SciPy's order (shape parameters, then
       ``loc``, then ``scale`` for a continuous family). Given here, the margin
-      is already fitted and :attr:`n_parameters` is 0, since nothing was
+      is already fitted and :attr:`npars` is 0, since nothing was
       estimated from data.
   param_bounds : mapping of str to tuple of float, or None, optional
       Search bounds **per parameter name**, used only by the discrete
@@ -460,7 +437,6 @@ class SciPyMargin(MarginBase[np.ndarray]):
 
   See Also
   --------
-  pyvinecopulib.margins.OpenTURNSMargin : The OpenTURNS counterpart.
   pyvinecopulib.core.Kde1d : The nonparametric default.
 
   Notes
@@ -509,7 +485,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
       x = np.random.default_rng(0).gamma(2.5, 1.5, size=500)
       m = SciPyMargin("gamma", floc=0.0).fit(x)
       m.parameters       # -> (shape, 0.0, scale)
-      m.n_parameters     # -> 2, not 3: `loc` was pinned
+      m.npars     # -> 2, not 3: `loc` was pinned
   """
 
   supports_weights: bool = False
@@ -733,7 +709,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
       loglik = candidate._loglik
       score = _criteria(
         float("-inf") if loglik is None else float(loglik),
-        candidate.n_parameters,
+        candidate.npars,
         int(data.size),
       )[criterion]
       scored.append((score, candidate))
@@ -1017,14 +993,14 @@ class SciPyMargin(MarginBase[np.ndarray]):
     """
     return getattr(_stats(), self.family_name)
 
-  def to_json(self) -> dict[str, Any]:
+  def to_json(self) -> str:
     """Return this margin's JSON payload.
 
     Returns
     -------
-    dict
-        A JSON-serializable mapping that
-        :func:`~pyvinecopulib.core.margin_from_json` reads back.
+    str
+        JSON text that :func:`~pyvinecopulib.core.margin_from_json` reads
+        back.
     """
     payload: dict[str, Any] = {
       "kind": "SciPyMargin",
@@ -1042,22 +1018,23 @@ class SciPyMargin(MarginBase[np.ndarray]):
       # not the other two.
       payload["nobs"] = self._nobs
     payload["n_free"] = self._n_free
-    return payload
+    return margin_json(self, payload)
 
   @classmethod
-  def from_json_payload(cls, payload: dict[str, Any]) -> SciPyMargin:
-    """Rebuild a margin from the payload :meth:`to_json` produced.
+  def from_json(cls, json: str) -> SciPyMargin:
+    """Rebuild a margin from the text :meth:`to_json` produced.
 
     Parameters
     ----------
-    payload : dict
-        The mapping :meth:`to_json` returned.
+    json : str
+        The text :meth:`to_json` returned.
 
     Returns
     -------
     SciPyMargin
         The reconstructed margin.
     """
+    payload = read_payload(json, "margin")
     bounds = {
       k: (float(v[0]), float(v[1]))
       for k, v in (payload.get("bounds") or {}).items()
@@ -1077,7 +1054,7 @@ class SciPyMargin(MarginBase[np.ndarray]):
       margin._loglik = float(payload["loglik"])
     if payload.get("nobs") is not None:
       margin._nobs = int(payload["nobs"])
-    # `n_free` is what `n_parameters` reports, and it separates a fitted margin
+    # `n_free` is what `npars` reports, and it separates a fitted margin
     # from one constructed with `params=` pinned.
     margin._n_free = int(payload.get("n_free", 0))
     return margin
@@ -1357,4 +1334,4 @@ SciPyMargin.__doc__ = re.sub(
 
 # Registered here, beside the class it rebuilds: `core` cannot name a class
 # living behind an extra, and this is the same hook a third party uses.
-register_margin_json("SciPyMargin", SciPyMargin.from_json_payload)
+register_margin_json("SciPyMargin", SciPyMargin.from_json)
