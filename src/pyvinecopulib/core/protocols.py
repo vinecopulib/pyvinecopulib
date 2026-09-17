@@ -1264,340 +1264,340 @@ VinecopLike.__doc__ = (VinecopLike.__doc__ or "") + _VINECOP_EXAMPLE
 
 @runtime_checkable
 class MarginLike(Protocol[ArrayT]):
-    """Contract for a fitted univariate margin.
+  """Contract for a fitted univariate margin.
 
-    A margin maps observations ``y`` on the original scale to a density
-    (``pdf``), a distribution (``cdf``), and the inverse distribution
-    (``icdf``) — enough to turn a vine copula into a full multivariate
-    distribution and back.
+  A margin maps observations ``y`` on the original scale to a density
+  (``pdf``), a distribution (``cdf``), and the inverse distribution
+  (``icdf``) — enough to turn a vine copula into a full multivariate
+  distribution and back.
 
-    Every member also accepts optional exogenous covariates ``x``, so a margin
-    may be *conditional*: ``f(y | x)`` rather than ``f(y)``. As on
-    :class:`BicopLike`, ``x`` is keyword-only and the observations are
-    positional-only — a margin from another library names its first parameter
-    whatever it likes (:class:`pyvinecopulib.core.Kde1d` calls it ``x``, which is
-    exactly the collision this shape avoids), and a covariate matrix must never
-    bind to some unrelated positional slot. A margin that does not model
-    covariates ignores ``x``, as one vine distribution may mix conditional and
-    unconditional margins.
+  Every member also accepts optional exogenous covariates ``x``, so a margin
+  may be *conditional*: ``f(y | x)`` rather than ``f(y)``. As on
+  :class:`BicopLike`, ``x`` is keyword-only and the observations are
+  positional-only — a margin from another library names its first parameter
+  whatever it likes (:class:`pyvinecopulib.core.Kde1d` calls it ``x``, which is
+  exactly the collision this shape avoids), and a covariate matrix must never
+  bind to some unrelated positional slot. A margin that does not model
+  covariates ignores ``x``, as one vine distribution may mix conditional and
+  unconditional margins.
 
-    ``pdf`` is the density with respect to **the margin's own reference
-    measure**: a Lebesgue density for a continuous margin, a probability mass at
-    an atom, and whichever applies pointwise for a mixed (e.g. zero-inflated)
-    one. That is what makes the Sklar factorization hold unchanged in all three
-    cases, with no branch on the variable type::
+  ``pdf`` is the density with respect to **the margin's own reference
+  measure**: a Lebesgue density for a continuous margin, a probability mass at
+  an atom, and whichever applies pointwise for a mixed (e.g. zero-inflated)
+  one. That is what makes the Sklar factorization hold unchanged in all three
+  cases, with no branch on the variable type::
 
-        log f(x) = log c(F_1(x_1), ..., F_d(x_d)) + sum_j log pdf_j(x_j)
+      log f(x) = log c(F_1(x_1), ..., F_d(x_d)) + sum_j log pdf_j(x_j)
+
+  Notes
+  -----
+  Only ``pdf`` / ``cdf`` / ``icdf`` are abstract. Everything else is a member
+  carrying the **default** its consumer would otherwise have applied, so a
+  margin that says nothing more behaves as a fixed, unconditional, continuous
+  one -- and a margin that has something to say overrides it:
+
+  - ``var_type`` — ``"c"``, ``"d"`` or ``"zi"``; defaults to ``"c"``.
+  - ``cdf_left`` — ``F(y^-)``, the left limit a margin with atoms needs;
+    defaults to coinciding with ``cdf``.
+  - ``logpdf`` — defaults to ``log(pdf)``.
+  - ``sample`` — raises by default; :class:`~pyvinecopulib.core.MarginBase`
+    supplies ``icdf`` of uniforms.
+  - ``support`` — a ``(lo, hi)`` pair; defaults to unbounded. It describes the
+    margin as a whole, not one conditional slice: a margin whose support moves
+    with ``x`` overrides ``icdf`` instead.
+  - ``supports_covariates`` / ``supports_weights`` — whether ``x`` is read
+    rather than ignored, and whether a fit honors ``controls.weights``; both
+    default to ``False``.
+  - ``fit`` / ``select`` / ``controls_class`` — what a vine distribution calls
+    to re-estimate this margin, and the configuration it reads. ``fit`` raises
+    by default, which is what a *fixed* margin is; a distribution's margin loop
+    dispatches on whether the class overrides either verb.
+
+  See Also
+  --------
+  pyvinecopulib.core.MarginBase : Canonical partial implementation to subclass.
+  pyvinecopulib.core.Kde1d : The default nonparametric margin.
+  BicopLike : The pair-copula contract.
+  """
+
+  @abstractmethod
+  def pdf(self, y: ArrayT, /) -> ArrayT:
+    """Density of the margin with respect to its own reference measure.
+
+    Parameters
+    ----------
+    y : array, shape (n,), dtype float
+        Observations on the original scale.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        A density, a probability mass, or a mixture of the two, depending on
+        the margin.
+    """
+
+  @abstractmethod
+  def cdf(self, y: ArrayT, /) -> ArrayT:
+    """Distribution function ``F(y)``, right-continuous.
+
+    Parameters
+    ----------
+    y : array, shape (n,), dtype float
+        Observations on the original scale.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Distribution values in ``[0, 1]``.
+    """
+
+  @abstractmethod
+  def icdf(self, p: ArrayT, /) -> ArrayT:
+    """Inverse distribution function ``inf{y : F(y) >= p}``.
+
+    Parameters
+    ----------
+    p : array, shape (n,), dtype float
+        Probabilities in ``[0, 1]``.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Quantiles on the original scale.
+    """
+
+  # --- what composing a margin needs beyond evaluating one ----------------- #
+
+  @property
+  def var_type(self) -> str:
+    """Variable type.
+
+    Returns
+    -------
+    str
+        ``"c"``, ``"d"`` or ``"zi"``. Continuous unless the implementation
+        says otherwise.
+    """
+    return "c"
+
+  @property
+  def support(self) -> tuple[float, float]:
+    """Closed bounds of the support.
+
+    Returns
+    -------
+    tuple of float
+        ``(lo, hi)``, unbounded on both sides unless the implementation says
+        otherwise.
+    """
+    return (float("-inf"), float("inf"))
+
+  def logpdf(self, y: ArrayT, /) -> ArrayT:
+    """Log-density with respect to the margin's own reference measure.
+
+    Parameters
+    ----------
+    y : array, shape (n,), dtype float
+        Observations on the original scale.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Log-density values.
+    """
+    from ._loglik import safe_log  # as `VinecopLike.logpdf`
+
+    return safe_log(self.pdf(y))
+
+  def cdf_left(self, y: ArrayT, /) -> ArrayT:
+    """Left limit ``F(y^-)`` of the distribution function.
+
+    The derived ``cdf(y) - pdf(y)`` cancels in the right tail, so a family
+    with an exact left limit should say so rather than inherit this.
+
+    Parameters
+    ----------
+    y : array, shape (n,), dtype float
+        Observations on the original scale.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Left-limit values; equal to ``cdf`` on a continuous margin.
+    """
+    if self.var_type == "c":
+      return self.cdf(y)
+    return self.cdf(y) - self.pdf(y)
+
+  def sample(self, n: int, *, seeds: list[int] | None = None) -> ArrayT:
+    """Draw ``n`` observations on the original scale.
+
+    Parameters
+    ----------
+    n : int
+        Number of observations to draw.
+    seeds : list of int, or None, optional
+        RNG seeds.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Draws on the original scale.
+
+    Raises
+    ------
+    NotImplementedError
+        Unless the implementation defines one.
+    """
+    raise NotImplementedError(
+      f"{type(self).__name__} has no `sample`; implement it to draw from this "
+      "margin."
+    )
+
+  @property
+  def supports_covariates(self) -> bool:
+    """Whether this margin's members accept exogenous covariates.
+
+    Returns
+    -------
+    bool
+        ``False`` unless the implementation says otherwise.
+    """
+    return False
+
+  @property
+  def supports_weights(self) -> bool:
+    """Whether a fit of this margin honors observation weights.
+
+    Returns
+    -------
+    bool
+        ``False`` unless the implementation says otherwise.
+    """
+    return False
+
+  @property
+  def npars(self) -> float:
+    """Number of freely estimated parameters, which a criterion penalizes.
+
+    Only what a fit actually estimated counts, not the length of a parameter
+    vector: a pinned parameter is one fewer here, by enough to reverse a close
+    comparison, since it moves ``aic`` by 2 per parameter.
+
+    Returns
+    -------
+    float
+        The count.
 
     Notes
     -----
-    Only ``pdf`` / ``cdf`` / ``icdf`` are abstract. Everything else is a member
-    carrying the **default** its consumer would otherwise have applied, so a
-    margin that says nothing more behaves as a fixed, unconditional, continuous
-    one -- and a margin that has something to say overrides it:
+    ``nan`` -- the default -- means *not reported*, which is a different claim
+    from ``0``: a model that estimated no parameters and one that never said
+    would otherwise agree, and ``aic`` would be a penalty-free ``-2 loglik``, a
+    plausible number with nothing wrong-looking about it. ``aic`` and ``bic``
+    refuse a ``nan`` rather than propagating it.
 
-    - ``var_type`` — ``"c"``, ``"d"`` or ``"zi"``; defaults to ``"c"``.
-    - ``cdf_left`` — ``F(y^-)``, the left limit a margin with atoms needs;
-      defaults to coinciding with ``cdf``.
-    - ``logpdf`` — defaults to ``log(pdf)``.
-    - ``sample`` — raises by default; :class:`~pyvinecopulib.core.MarginBase`
-      supplies ``icdf`` of uniforms.
-    - ``support`` — a ``(lo, hi)`` pair; defaults to unbounded. It describes the
-      margin as a whole, not one conditional slice: a margin whose support moves
-      with ``x`` overrides ``icdf`` instead.
-    - ``supports_covariates`` / ``supports_weights`` — whether ``x`` is read
-      rather than ignored, and whether a fit honors ``controls.weights``; both
-      default to ``False``.
-    - ``fit`` / ``select`` / ``controls_class`` — what a vine distribution calls
-      to re-estimate this margin, and the configuration it reads. ``fit`` raises
-      by default, which is what a *fixed* margin is; a distribution's margin loop
-      dispatches on whether the class overrides either verb.
-
-    See Also
-    --------
-    pyvinecopulib.core.MarginBase : Canonical partial implementation to subclass.
-    pyvinecopulib.core.Kde1d : The default nonparametric margin.
-    BicopLike : The pair-copula contract.
+    It answers rather than raising because a ``runtime_checkable`` protocol
+    evaluates its data members during ``isinstance`` on Python 3.11, so a
+    raising property makes the conformance check itself raise.
     """
+    return float("nan")
 
-    @abstractmethod
-    def pdf(self, y: ArrayT, /) -> ArrayT:
-        """Density of the margin with respect to its own reference measure.
+  @property
+  def controls_class(self) -> type[ControlsLike] | None:
+    """The fit configuration this margin's estimator reads, or ``None``.
 
-        Parameters
-        ----------
-        y : array, shape (n,), dtype float
-            Observations on the original scale.
+    A declaration rather than a contract: it says what ``controls=None``
+    means for this class, and carries the type besides, so a consumer builds
+    ``MarginLike.controls_class()`` instead of naming a ``FitControls*`` of its
+    own. Read-only here, so an implementation may declare a narrower type.
 
-        Returns
-        -------
-        array, shape (n,), dtype float
-            A density, a probability mass, or a mixture of the two, depending on
-            the margin.
-        """
+    Returns
+    -------
+    type, or None
+        ``None`` unless the implementation reads controls.
+    """
+    return None
 
-    @abstractmethod
-    def cdf(self, y: ArrayT, /) -> ArrayT:
-        """Distribution function ``F(y)``, right-continuous.
+  def fit(
+    self,
+    y: ArrayT,
+    /,
+    # `Any`, not `ControlsLike`: which controls type an estimator accepts is
+    # its own, and `controls_class` is what names it -- `Kde1d.fit` takes a
+    # `FitControlsKde1d` and nothing else, so a contract promising it any
+    # `ControlsLike` would put it outside its own.
+    controls: Any = None,  # noqa: ANN401
+    *,
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+  ) -> Self:
+    """Estimate this margin's parameters from data, in place.
 
-        Parameters
-        ----------
-        y : array, shape (n,), dtype float
-            Observations on the original scale.
+    Raises here, which is what a *fixed* margin is: one whose parameters were
+    given rather than estimated. A vine distribution's margin loop dispatches
+    on whether the class overrides this, so a margin that declines it is left
+    as it was built rather than being substituted.
 
-        Returns
-        -------
-        array, shape (n,), dtype float
-            Distribution values in ``[0, 1]``.
-        """
+    Parameters
+    ----------
+    y : array, shape (n,), dtype float
+        Observations on the original scale.
+    controls : ControlsLike, or None, optional
+        Fit configuration of the type ``controls_class`` names, carrying
+        ``weights`` where this margin honors them.
+    var_type : {"c", "d", "zi"}, or None, optional
+        What the caller knows the variable to be.
+    support : tuple of float, or None, optional
+        Declared bounds as ``(lo, hi)``, either end ``None`` for unbounded.
 
-    @abstractmethod
-    def icdf(self, p: ArrayT, /) -> ArrayT:
-        """Inverse distribution function ``inf{y : F(y) >= p}``.
+    Returns
+    -------
+    MarginLike
+        ``self``, so the call chains.
 
-        Parameters
-        ----------
-        p : array, shape (n,), dtype float
-            Probabilities in ``[0, 1]``.
+    Raises
+    ------
+    NotImplementedError
+        Always, unless the implementation estimates.
+    """
+    raise NotImplementedError(
+      f"{type(self).__name__} has no `fit`; implement it to estimate this "
+      "margin from data, or construct it with explicit parameters."
+    )
 
-        Returns
-        -------
-        array, shape (n,), dtype float
-            Quantiles on the original scale.
-        """
+  def select(
+    self,
+    y: ArrayT,
+    /,
+    controls: Any = None,  # noqa: ANN401 - as `fit`, above
+    *,
+    var_type: str | None = None,
+    support: tuple[float | None, float | None] | None = None,
+  ) -> Self:
+    """Choose a family for this margin and estimate it, in place.
 
-    # --- what composing a margin needs beyond evaluating one ----------------- #
+    Defaults to :meth:`fit`, which is the right answer wherever there is
+    nothing to choose: a margin named with its family, or a nonparametric one,
+    is determined by its parameters.
 
-    @property
-    def var_type(self) -> str:
-        """Variable type.
+    Parameters
+    ----------
+    y : array, shape (n,), dtype float
+        Observations on the original scale.
+    controls : ControlsLike, or None, optional
+        Fit configuration; ``family_set`` is what bounds a search.
+    var_type : {"c", "d", "zi"}, or None, optional
+        What the caller knows the variable to be.
+    support : tuple of float, or None, optional
+        Declared bounds as ``(lo, hi)``, either end ``None`` for unbounded.
 
-        Returns
-        -------
-        str
-            ``"c"``, ``"d"`` or ``"zi"``. Continuous unless the implementation
-            says otherwise.
-        """
-        return "c"
-
-    @property
-    def support(self) -> tuple[float, float]:
-        """Closed bounds of the support.
-
-        Returns
-        -------
-        tuple of float
-            ``(lo, hi)``, unbounded on both sides unless the implementation says
-            otherwise.
-        """
-        return (float("-inf"), float("inf"))
-
-    def logpdf(self, y: ArrayT, /) -> ArrayT:
-        """Log-density with respect to the margin's own reference measure.
-
-        Parameters
-        ----------
-        y : array, shape (n,), dtype float
-            Observations on the original scale.
-
-        Returns
-        -------
-        array, shape (n,), dtype float
-            Log-density values.
-        """
-        from ._loglik import safe_log  # as `VinecopLike.logpdf`
-
-        return safe_log(self.pdf(y))
-
-    def cdf_left(self, y: ArrayT, /) -> ArrayT:
-        """Left limit ``F(y^-)`` of the distribution function.
-
-        The derived ``cdf(y) - pdf(y)`` cancels in the right tail, so a family
-        with an exact left limit should say so rather than inherit this.
-
-        Parameters
-        ----------
-        y : array, shape (n,), dtype float
-            Observations on the original scale.
-
-        Returns
-        -------
-        array, shape (n,), dtype float
-            Left-limit values; equal to ``cdf`` on a continuous margin.
-        """
-        if self.var_type == "c":
-            return self.cdf(y)
-        return self.cdf(y) - self.pdf(y)
-
-    def sample(self, n: int, *, seeds: list[int] | None = None) -> ArrayT:
-        """Draw ``n`` observations on the original scale.
-
-        Parameters
-        ----------
-        n : int
-            Number of observations to draw.
-        seeds : list of int, or None, optional
-            RNG seeds.
-
-        Returns
-        -------
-        array, shape (n,), dtype float
-            Draws on the original scale.
-
-        Raises
-        ------
-        NotImplementedError
-            Unless the implementation defines one.
-        """
-        raise NotImplementedError(
-            f"{type(self).__name__} has no `sample`; implement it to draw from this "
-            "margin."
-        )
-
-    @property
-    def supports_covariates(self) -> bool:
-        """Whether this margin's members accept exogenous covariates.
-
-        Returns
-        -------
-        bool
-            ``False`` unless the implementation says otherwise.
-        """
-        return False
-
-    @property
-    def supports_weights(self) -> bool:
-        """Whether a fit of this margin honors observation weights.
-
-        Returns
-        -------
-        bool
-            ``False`` unless the implementation says otherwise.
-        """
-        return False
-
-    @property
-    def npars(self) -> float:
-        """Number of freely estimated parameters, which a criterion penalizes.
-
-        Only what a fit actually estimated counts, not the length of a parameter
-        vector: a pinned parameter is one fewer here, by enough to reverse a close
-        comparison, since it moves ``aic`` by 2 per parameter.
-
-        Returns
-        -------
-        float
-            The count.
-
-        Notes
-        -----
-        ``nan`` -- the default -- means *not reported*, which is a different claim
-        from ``0``: a model that estimated no parameters and one that never said
-        would otherwise agree, and ``aic`` would be a penalty-free ``-2 loglik``, a
-        plausible number with nothing wrong-looking about it. ``aic`` and ``bic``
-        refuse a ``nan`` rather than propagating it.
-
-        It answers rather than raising because a ``runtime_checkable`` protocol
-        evaluates its data members during ``isinstance`` on Python 3.11, so a
-        raising property makes the conformance check itself raise.
-        """
-        return float("nan")
-
-    @property
-    def controls_class(self) -> type[ControlsLike] | None:
-        """The fit configuration this margin's estimator reads, or ``None``.
-
-        A declaration rather than a contract: it says what ``controls=None``
-        means for this class, and carries the type besides, so a consumer builds
-        ``MarginLike.controls_class()`` instead of naming a ``FitControls*`` of its
-        own. Read-only here, so an implementation may declare a narrower type.
-
-        Returns
-        -------
-        type, or None
-            ``None`` unless the implementation reads controls.
-        """
-        return None
-
-    def fit(
-        self,
-        y: ArrayT,
-        /,
-        # `Any`, not `ControlsLike`: which controls type an estimator accepts is
-        # its own, and `controls_class` is what names it -- `Kde1d.fit` takes a
-        # `FitControlsKde1d` and nothing else, so a contract promising it any
-        # `ControlsLike` would put it outside its own.
-        controls: Any = None,  # noqa: ANN401
-        *,
-        var_type: str | None = None,
-        support: tuple[float | None, float | None] | None = None,
-    ) -> Self:
-        """Estimate this margin's parameters from data, in place.
-
-        Raises here, which is what a *fixed* margin is: one whose parameters were
-        given rather than estimated. A vine distribution's margin loop dispatches
-        on whether the class overrides this, so a margin that declines it is left
-        as it was built rather than being substituted.
-
-        Parameters
-        ----------
-        y : array, shape (n,), dtype float
-            Observations on the original scale.
-        controls : ControlsLike, or None, optional
-            Fit configuration of the type ``controls_class`` names, carrying
-            ``weights`` where this margin honors them.
-        var_type : {"c", "d", "zi"}, or None, optional
-            What the caller knows the variable to be.
-        support : tuple of float, or None, optional
-            Declared bounds as ``(lo, hi)``, either end ``None`` for unbounded.
-
-        Returns
-        -------
-        MarginLike
-            ``self``, so the call chains.
-
-        Raises
-        ------
-        NotImplementedError
-            Always, unless the implementation estimates.
-        """
-        raise NotImplementedError(
-            f"{type(self).__name__} has no `fit`; implement it to estimate this "
-            "margin from data, or construct it with explicit parameters."
-        )
-
-    def select(
-        self,
-        y: ArrayT,
-        /,
-        controls: Any = None,  # noqa: ANN401 - as `fit`, above
-        *,
-        var_type: str | None = None,
-        support: tuple[float | None, float | None] | None = None,
-    ) -> Self:
-        """Choose a family for this margin and estimate it, in place.
-
-        Defaults to :meth:`fit`, which is the right answer wherever there is
-        nothing to choose: a margin named with its family, or a nonparametric one,
-        is determined by its parameters.
-
-        Parameters
-        ----------
-        y : array, shape (n,), dtype float
-            Observations on the original scale.
-        controls : ControlsLike, or None, optional
-            Fit configuration; ``family_set`` is what bounds a search.
-        var_type : {"c", "d", "zi"}, or None, optional
-            What the caller knows the variable to be.
-        support : tuple of float, or None, optional
-            Declared bounds as ``(lo, hi)``, either end ``None`` for unbounded.
-
-        Returns
-        -------
-        MarginLike
-            ``self``, so the call chains.
-        """
-        return self.fit(y, controls, var_type=var_type, support=support)
+    Returns
+    -------
+    MarginLike
+        ``self``, so the call chains.
+    """
+    return self.fit(y, controls, var_type=var_type, support=support)
 
 
 MarginLike.__doc__ = (MarginLike.__doc__ or "") + _MARGIN_EXAMPLE

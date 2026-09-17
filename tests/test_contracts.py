@@ -84,6 +84,15 @@ MARGINS = [
     ),
     extra="torch",
   ),
+  Impl(
+    "TorchDistributionMargin",
+    lambda: (
+      __import__("pyvinecopulib.torch", fromlist=["TorchDistributionMargin"])
+      .TorchDistributionMargin()
+      .fit(__import__("torch").as_tensor(_Y[:, 0]))
+    ),
+    extra="torch",
+  ),
 ]
 
 BICOPS = [
