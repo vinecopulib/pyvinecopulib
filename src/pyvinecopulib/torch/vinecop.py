@@ -56,7 +56,8 @@ from ..core import (
 )
 from ..core._validation import reject_covariates
 from ..core.bicop_independence import IndependenceBicop
-from ..core.vinecop_base import FitEdge, FitLevel, NotBatchable
+from ..core.extend import NotBatchable
+from ..core.vinecop_base import FitEdge, FitLevel
 from ..pyvinecopulib_ext import (
   RVineStructure,
   Vinecop,

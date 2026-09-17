@@ -30,6 +30,7 @@ signatures.
 from __future__ import annotations
 
 import copy
+import math
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
 from typing import Any, ClassVar, Self, cast
@@ -441,7 +442,13 @@ class BicopBase(
     --------
     bic : The same, penalizing by ``log n`` per parameter.
     """
-    return criteria(float(to_numpy(self.loglik(u))), self.npars, None)["aic"]
+    npars = self.npars
+    if not math.isfinite(npars):
+      raise NotImplementedError(
+        f"{type(self).__name__} reports no `npars`, so no criterion can "
+        "penalize it. Implement `npars` to enable `aic` / `bic`."
+      )
+    return criteria(float(to_numpy(self.loglik(u))), npars, None)["aic"]
 
   def bic(self, u: ArrayT, /) -> float:
     """Bayesian information criterion at these observations, minimized.
@@ -462,8 +469,14 @@ class BicopBase(
     NotImplementedError
         If ``npars`` reports none.
     """
+    npars = self.npars
+    if not math.isfinite(npars):
+      raise NotImplementedError(
+        f"{type(self).__name__} reports no `npars`, so no criterion can "
+        "penalize it. Implement `npars` to enable `aic` / `bic`."
+      )
     rows = float(self._prep(u).shape[0])
-    return criteria(float(to_numpy(self.loglik(u))), self.npars, rows)["bic"]
+    return criteria(float(to_numpy(self.loglik(u))), npars, rows)["bic"]
 
   def hinv1(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Inverse of :meth:`hfunc1` in its second argument.

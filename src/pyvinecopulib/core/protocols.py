@@ -860,19 +860,19 @@ class BicopLike(Protocol[ArrayT]):
     float
         The count.
 
-    Raises
-    ------
-    NotImplementedError
-        Unless the implementation reports one. It raises rather than
-        answering ``0`` because a model that estimated no parameters and one
-        that never said are different claims, and answering ``0`` for the second
-        turns ``aic`` into a penalty-free ``-2 loglik`` -- a plausible number
-        with nothing wrong-looking about it.
+    Notes
+    -----
+    ``nan`` -- the default -- means *not reported*, which is a different claim
+    from ``0``: a model that estimated no parameters and one that never said
+    would otherwise agree, and ``aic`` would be a penalty-free ``-2 loglik``, a
+    plausible number with nothing wrong-looking about it. ``aic`` and ``bic``
+    refuse a ``nan`` rather than propagating it.
+
+    It answers rather than raising because a ``runtime_checkable`` protocol
+    evaluates its data members during ``isinstance`` on Python 3.11, so a
+    raising property makes the conformance check itself raise.
     """
-    raise NotImplementedError(
-      f"{type(self).__name__} reports no `npars`, so no criterion can "
-      f"penalize this pair copula. Implement it to enable `aic` / `bic`."
-    )
+    return float("nan")
 
   @property
   def controls_class(self) -> type[ControlsLike] | None:
@@ -1167,19 +1167,19 @@ class VinecopLike(Protocol[ArrayT]):
     float
         The count.
 
-    Raises
-    ------
-    NotImplementedError
-        Unless the implementation reports one. It raises rather than
-        answering ``0`` because a model that estimated no parameters and one
-        that never said are different claims, and answering ``0`` for the second
-        turns ``aic`` into a penalty-free ``-2 loglik`` -- a plausible number
-        with nothing wrong-looking about it.
+    Notes
+    -----
+    ``nan`` -- the default -- means *not reported*, which is a different claim
+    from ``0``: a model that estimated no parameters and one that never said
+    would otherwise agree, and ``aic`` would be a penalty-free ``-2 loglik``, a
+    plausible number with nothing wrong-looking about it. ``aic`` and ``bic``
+    refuse a ``nan`` rather than propagating it.
+
+    It answers rather than raising because a ``runtime_checkable`` protocol
+    evaluates its data members during ``isinstance`` on Python 3.11, so a
+    raising property makes the conformance check itself raise.
     """
-    raise NotImplementedError(
-      f"{type(self).__name__} reports no `npars`, so no criterion can "
-      f"penalize this vine. Implement it to enable `aic` / `bic`."
-    )
+    return float("nan")
 
   @property
   def controls_class(self) -> type[ControlsLike] | None:
@@ -1489,19 +1489,19 @@ class MarginLike(Protocol[ArrayT]):
     float
         The count.
 
-    Raises
-    ------
-    NotImplementedError
-        Unless the implementation reports one. It raises rather than
-        answering ``0`` because a model that estimated no parameters and one
-        that never said are different claims, and answering ``0`` for the second
-        turns ``aic`` into a penalty-free ``-2 loglik`` -- a plausible number
-        with nothing wrong-looking about it.
+    Notes
+    -----
+    ``nan`` -- the default -- means *not reported*, which is a different claim
+    from ``0``: a model that estimated no parameters and one that never said
+    would otherwise agree, and ``aic`` would be a penalty-free ``-2 loglik``, a
+    plausible number with nothing wrong-looking about it. ``aic`` and ``bic``
+    refuse a ``nan`` rather than propagating it.
+
+    It answers rather than raising because a ``runtime_checkable`` protocol
+    evaluates its data members during ``isinstance`` on Python 3.11, so a
+    raising property makes the conformance check itself raise.
     """
-    raise NotImplementedError(
-      f"{type(self).__name__} reports no `npars`, so no criterion can "
-      f"penalize this margin. Implement it to enable `aic` / `bic`."
-    )
+    return float("nan")
 
   @property
   def controls_class(self) -> type[ControlsLike] | None:

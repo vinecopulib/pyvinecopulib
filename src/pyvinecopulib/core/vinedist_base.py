@@ -28,6 +28,7 @@ return types.
 
 from __future__ import annotations
 
+import math
 import warnings
 from abc import ABC
 from collections.abc import Sequence
@@ -950,7 +951,13 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     --------
     bic : The same, penalizing by ``log n`` per parameter.
     """
-    return criteria(float(to_numpy(self.loglik(y))), self.npars, None)["aic"]
+    npars = self.npars
+    if not math.isfinite(npars):
+      raise NotImplementedError(
+        f"{type(self).__name__} reports no `npars`, so no criterion can "
+        "penalize it. Implement `npars` to enable `aic` / `bic`."
+      )
+    return criteria(float(to_numpy(self.loglik(y))), npars, None)["aic"]
 
   def bic(self, y: ArrayT, /) -> float:
     """Bayesian information criterion at these observations, minimized.
@@ -971,8 +978,14 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     NotImplementedError
         If ``npars`` reports none.
     """
+    npars = self.npars
+    if not math.isfinite(npars):
+      raise NotImplementedError(
+        f"{type(self).__name__} reports no `npars`, so no criterion can "
+        "penalize it. Implement `npars` to enable `aic` / `bic`."
+      )
     rows = float(self._prep(y).shape[0])
-    return criteria(float(to_numpy(self.loglik(y))), self.npars, rows)["bic"]
+    return criteria(float(to_numpy(self.loglik(y))), npars, rows)["bic"]
 
   def rosenblatt(
     self,
