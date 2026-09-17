@@ -41,9 +41,15 @@ class FitControlsTorchBicop:
   mult : float, default=1.0
       *TLL only.* Bandwidth multiplier.
   grid_type : {"normal", "linear"}, default="normal"
-      *TLL only.* Storage grid type — ``"normal"`` (Phi-spaced,
-      the ``Bicop``-parity default) or ``"linear"``
-      (uniform on ``[0, 1]`` with the O(1) cell-finding fast-path).
+      *TLL only.* How the storage grid is spaced -- ``"normal"``
+      (Phi-spaced) or ``"linear"`` (uniform on ``[0, 1]``, so locating a
+      cell is arithmetic rather than a search).
+
+      ``"normal"`` is the default and stays it: it is the spacing ``Bicop``
+      and ``Kde1d`` use, so a lifted grid and a fitted one mean the same
+      thing. The search it costs is not what any of these evaluations spend
+      their time on -- measured at ``n = 200000``, ``"linear"`` is 1.35x on
+      ``pdf`` and within 1.05x on ``cdf`` / ``hfunc*`` / ``hinv*``.
   compile_fit : bool, default=False
       *TLL only.* Fuse the bandwidth search's per-pass body with
       ``torch.compile``. The pass is 39 kernel launches over tensors small
@@ -144,6 +150,12 @@ default="tau"
       They reconstruct the uncached integrals up to summation order and rebuild
       in-graph when grid values require gradients. ``None`` resolves to
       ``True``, including for discrete vines.
+
+      What it is worth is ``cdf`` and ``hfunc*``: 8x and 2.6x at ``n = 1000``,
+      103x and 4x at ``n = 20000``. ``hinv*`` read a table only to locate the
+      cell they invert in, and gain nothing -- within 1.2x either way to
+      ``n = 20000``, and 1.7x slower for ``hinv1`` at ``n = 200000``, which is
+      the one reason to turn it off. ``pdf`` does not read the tables at all.
   compile : bool, default=False
       If ``True``, wrap the batched cascades in
       :func:`torch.compile` with ``dynamic=False``. Inductor fuses the

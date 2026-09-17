@@ -1692,14 +1692,19 @@ Key surface:
     it is piecewise linear and its integral is piecewise linear across cells.
     So the cache costs nothing in accuracy — it agrees with the on-the-fly
     path to summation-order noise — and it carries an exact gradient in
-    `values` as well as in `u`. `hinv*` get less from them than `hfunc*` do but
-    not nothing: there is no `O(1)` lookup, because locating the bracketing
+    `values` as well as in `u`. The default is earned on `cdf` and
+    `hfunc*`, worth 8x and 2.6x at `n = 1000` and 103x and 4x at
+    `n = 20000`. `hinv*` get **nothing**, which is measured rather than
+    reasoned: there is no `O(1)` lookup, because locating the bracketing
     cell needs the conditional cumulative along the whole free axis, but that
     cumulative is exactly what a prefix table holds. Integration is linear, so
     blending two of its lines is the same quantity as integrating the blended
     knots -- a gather instead of a trapezoid and a scan, agreeing to 2e-16. So
     the two cache modes run the same closed-form inversion on a cumulative
-    they reach differently, and agree to rounding rather than exactly.
+    they reach differently, and agree to rounding rather than exactly. What
+    the gather is worth in time is within 1.2x either way up to `n = 20000`
+    and 1.7x *slower* for `hinv1` at `n = 200000`, so an inversion-bound
+    caller is the one case for turning the cache off.
     The tables are buffers, so `_tables` rebuilds them in-graph when `values`
     starts tracking grad after construction.
   - `rect_prob` / `cond_interval_prob` — the two `BicopBase` hooks, overridden
