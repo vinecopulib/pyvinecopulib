@@ -86,10 +86,18 @@ def test_the_settings_are_keyword_only_in_the_stub() -> None:
         continue
       _, sep, tail = line.partition("*, ")
       first = line.partition("(self, ")[2].partition(":")[0]
+      # `parameters` is not a setting on the constructor: it is what the copula
+      # *is*, beside `family` and `rotation`, so it stays positional there and
+      # on `from_family`. `Bicop(gaussian, 0, par)` is how the notebooks build
+      # one.
+      builds_the_model = "def __init__(self, family:" in line
       for setting in settings:
-        # Not where the name *is* the data: `parameters_to_tau(parameters)`
+        # Nor where the name *is* the data: `parameters_to_tau(parameters)`
         # and its two siblings, and `reorient(conditioning_set)`.
         if f"{setting}:" not in line or first == setting:
+          continue
+        if builds_the_model and setting == "parameters":
+          assert f"{setting}:" not in tail, f"should stay positional: {line}"
           continue
         assert sep, f"no keyword-only marker: {line}"
         assert f"{setting}:" in tail, f"{setting} is positional: {line}"

@@ -90,6 +90,22 @@ Alternatives to instantiate bivariate copulas are:
 - ``Bicop.from_json()``: Instantiate from a JSON string.
 )""";
 
+  const char* from_json_doc = R"""(
+  Instantiates a ``Bicop`` from a JSON string.
+
+  Takes the JSON text ``Bicop.to_json()`` writes, not a decoded object.
+
+  Parameters
+  ----------
+  json : str
+      The JSON text to read, as ``Bicop.to_json()`` writes it.
+
+  Returns
+  -------
+  Bicop
+      The bivariate copula the text describes.
+  )""";
+
   // `simulate` takes either a sample size or one parameter set per drawn
   // observation (vinecopulib#719), which fixes the sample size by its row
   // count. `parameters` is keyword-only so that the long-standing positional
@@ -236,13 +252,13 @@ Bicop
       .def(nb::init<const BicopFamily, const int,
                     const nb::DRef<Eigen::MatrixXd>&,
                     const std::vector<std::string>&>(),
-           "family"_a = BicopFamily::indep, "rotation"_a = 0, nb::kw_only(),
-           "parameters"_a = Eigen::MatrixXd(),
+           "family"_a = BicopFamily::indep, "rotation"_a = 0,
+           "parameters"_a = Eigen::MatrixXd(), nb::kw_only(),
            "var_types"_a = std::vector<std::string>(2, "c"),
            default_constructor_doc, nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_family", &bc_from_family,
                   "family"_a = BicopFamily::indep, "rotation"_a = 0,
-                  nb::kw_only(), "parameters"_a = Eigen::MatrixXd(),
+                  "parameters"_a = Eigen::MatrixXd(), nb::kw_only(),
                   "var_types"_a = std::vector<std::string>(2, "c"),
                   bicop_doc.ctor.doc_4args_family_rotation_parameters_var_types,
                   nb::call_guard<nb::gil_scoped_release>())
@@ -258,8 +274,7 @@ Bicop
       .def_static("from_file", &bc_from_file, "filename"_a,
                   bicop_doc.ctor.doc_1args_filename,
                   nb::call_guard<nb::gil_scoped_release>())
-      .def_static("from_json", &bc_from_json, "json"_a,
-                  bicop_doc.ctor.doc_1args_input,
+      .def_static("from_json", &bc_from_json, "json"_a, from_json_doc,
                   nb::call_guard<nb::gil_scoped_release>())
       .def("to_file", &Bicop::to_file, "filename"_a, bicop_doc.to_file.doc,
            nb::call_guard<nb::gil_scoped_release>())

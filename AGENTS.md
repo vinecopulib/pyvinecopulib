@@ -839,8 +839,12 @@ For any behavior change:
   count. Keyword-only is what makes the two orders unobservable rather than
   picking one and breaking the other class's positional callers; what stays
   positional is the data and the arguments only one of the two classes has
-  (`N`, `psi0`, `step_wise`, `qrng`, `deriv`). `parameters_to_tau` and its two
-  siblings keep theirs positional -- there `parameters` *is* the data.
+  (`N`, `psi0`, `step_wise`, `qrng`, `deriv`). Two places keep `parameters`
+  positional, and both are the same reason -- there it is not a setting:
+  `parameters_to_tau` and its two siblings, where it *is* the data; and
+  `Bicop`'s constructor and `from_family`, where it is part of the model
+  specification beside `family` and `rotation`, so `Bicop(gaussian, 0, par)`
+  keeps working.
 
   **The fitting verbs read `u` too, and that rename went upstream.** They bound
   the observations as `data` where every evaluation verb and all four Python

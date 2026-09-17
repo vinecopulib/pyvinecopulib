@@ -134,6 +134,52 @@ are:
 - ``Vinecop.from_json()``: Instantiate from a JSON string.
 )""";
 
+  // Written here rather than lifted: the binding drops the C++ `num_threads`
+  // argument (#326), reading the count off the controls instead, so the
+  // upstream text documents a parameter this signature does not have.
+  const char* fit_doc = R"""(
+  Fits the pair copulas of a pre-specified vine copula model.
+
+  The structure and the pair-copula families are taken as given, so this is
+  ``Bicop.fit()`` on each pair copula in turn. ``Vinecop.select()`` with
+  ``select_families=False`` on its controls does the same thing.
+
+  Parameters
+  ----------
+  u : array, shape (n, d) or (n, d + k), dtype float
+      Input data matrix. With ``k`` discrete variables their left limits are
+      required too; see ``Vinecop.select`` on the layouts.
+
+  controls : FitControlsBicop, or None, optional
+      The controls for each bivariate fit, whose ``num_threads`` is the thread
+      count the fit runs at. Defaults to the default constructor.
+
+  Returns
+  -------
+  Vinecop
+      The fitted model, which is this object.
+  )""";
+
+  const char* from_json_doc = R"""(
+  Instantiates a ``Vinecop`` from a JSON string.
+
+  Takes the JSON text ``Vinecop.to_json()`` writes, not a decoded object.
+
+  Parameters
+  ----------
+  json : str
+      The JSON text to read, as ``Vinecop.to_json()`` writes it.
+
+  check : bool, default=True
+      Whether to check that the ``"structure"`` node is a valid R-vine
+      structure.
+
+  Returns
+  -------
+  Vinecop
+      The vine copula the text describes.
+  )""";
+
   const char* from_data_doc = R"""(
   Factory function to create a Vinecop from data.
 
@@ -389,8 +435,7 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
                   vinecop_doc.ctor.doc_2args_filename_check,
                   nb::call_guard<nb::gil_scoped_release>())
       .def_static("from_json", &vc_from_json, "json"_a, "check"_a = true,
-                  vinecop_doc.ctor.doc_2args_input_check,
-                  nb::call_guard<nb::gil_scoped_release>())
+                  from_json_doc, nb::call_guard<nb::gil_scoped_release>())
       .def("to_file", &Vinecop::to_file, "filename"_a, vinecop_doc.to_file.doc,
            nb::call_guard<nb::gil_scoped_release>())
       .def(
@@ -516,8 +561,8 @@ RVineStructure.get_trees : The bare structure decomposition (no pair-copulas).
             }
             return self;
           },
-          "u"_a, "controls"_a.sig("FitControlsBicop()") = nb::none(),
-          vinecop_doc.fit.doc, nb::rv_policy::reference_internal)
+          "u"_a, "controls"_a.sig("FitControlsBicop()") = nb::none(), fit_doc,
+          nb::rv_policy::reference_internal)
       // `parameters` (optional) selects the per-observation-parameter overload:
       // an n x npars matrix, one full-vine parameter vector per row, columns in
       // the (tree, edge, parameter) order of `scores()`. Continuous,

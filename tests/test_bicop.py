@@ -204,6 +204,28 @@ def test_bicop_per_row_parameters(
   )
 
 
+def test_the_model_specification_stays_positional() -> None:
+  """`parameters` is keyword-only where it is a setting, and only there.
+
+  On the evaluation methods it is a per-call override and moved behind the
+  `*`. On the constructor and `from_family` it is what the copula *is*, beside
+  `family` and `rotation`, so `Bicop(gaussian, 0, par)` still binds -- which is
+  how every notebook builds a pair copula. `parameters_to_tau` takes it as the
+  data and is unchanged.
+  """
+  par = np.array([[0.5]])
+  built = pv.Bicop(pv.families.gaussian, 0, par)
+  factory = pv.Bicop.from_family(pv.families.gaussian, 0, par)
+  assert built.family == factory.family == pv.families.gaussian
+  np.testing.assert_allclose(built.parameters, par)
+  assert built.parameters_to_tau(par) == pytest.approx(factory.tau, abs=1e-12)
+
+  # And on an evaluation method it is not positional.
+  u = np.array([[0.4, 0.6]])
+  with pytest.raises(TypeError):
+    getattr(built, "pdf")(u, par)  # noqa: B009
+
+
 def test_bicop_per_row_parameters_errors() -> None:
   rng = np.random.RandomState(0)
   n = 20

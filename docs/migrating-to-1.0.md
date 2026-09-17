@@ -161,8 +161,12 @@ that without picking one class's order and breaking the other's callers.
 What stays positional is the data and the arguments only one of the two
 classes has: `N` on `Vinecop.cdf`, `psi0` on `mbicv`, `step_wise` on the score
 methods, `qrng` on `sample`, and `deriv` on the `Bicop` derivative methods. So
-`rosenblatt(u)` and `sample(1000, True)` still mean what they always meant,
-and `parameters_to_tau(pars)` is unchanged -- there `parameters` is the data.
+`rosenblatt(u)` and `sample(1000, True)` still mean what they always meant.
+
+`parameters` also stays positional wherever it specifies the model rather than
+the call: `Bicop(family, rotation, parameters)` and `Bicop.from_family` build a
+copula out of it, and `parameters_to_tau(pars)` takes it as the data. Only the
+evaluation methods moved.
 
 ```python
 cop.pdf(u, pars)  # -> cop.pdf(u, parameters=pars)
