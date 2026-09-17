@@ -304,7 +304,5 @@ version if you build on the rest.
   do pickles (through the deprecated aliases). `Kde1d`, `Vinedist` and
   `SciPyMargin` gain a `to_json` surface in 1.0 -- `Kde1d` and `Vinedist` read
   themselves back with `from_json`, a margin through
-  `core.margin_from_json`. `OpenTURNSMargin` does not serialize, so a
-  `Vinedist` holding one cannot be written to JSON. The `torch` modules use
   `state_dict` instead.
 - Every evaluation signature other than the keyword-only arguments above.

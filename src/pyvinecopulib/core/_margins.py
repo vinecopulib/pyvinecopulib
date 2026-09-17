@@ -270,7 +270,7 @@ def _adapt_torch(obj: Any) -> MarginLike[Any]:  # noqa: ANN401
     raise TypeError(
       f"cannot adapt discrete torch distribution {type(obj).__name__!r}: "
       "torch.distributions does not provide the cdf and left-limit cdf a "
-      "discrete vine margin needs. Use Kde1d, a SciPy or OpenTURNS margin, "
+      "discrete vine margin needs. Use Kde1d or a SciPy margin, "
       "or implement MarginBase.cdf_left explicitly."
     )
 
@@ -282,7 +282,7 @@ def _adapt_torch(obj: Any) -> MarginLike[Any]:  # noqa: ANN401
     raise TypeError(
       f"cannot adapt torch distribution {type(obj).__name__!r}: its cdf is "
       "not implemented. Use a continuous torch distribution with a cdf, "
-      "provide a MarginBase implementation, or use a SciPy/OpenTURNS margin."
+      "provide a MarginBase implementation, or use a SciPy margin."
     )
 
   lo, hi = support_of(obj)

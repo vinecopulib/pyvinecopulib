@@ -11,7 +11,7 @@ A ``torch.distributions.Distribution`` is not a module — it has no
 distribution is rebuilt from them on every call. That is the same shape
 ``TorchTllBicop`` uses for its interpolation grid.
 
-This is the torch member of a trio -- ``SciPyMargin``, ``OpenTURNSMargin``,
+This is the torch member of a pair -- ``SciPyMargin``
 ``TorchDistributionMargin`` -- each adapting one ecosystem's family registry.
 What is particular to this one is that torch's families are differentiable, so
 the adapter's parameters are learnable; the design is otherwise the same.

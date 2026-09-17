@@ -62,7 +62,7 @@ Notes
 - :class:`TorchDistributionMargin` — a margin on a ``torch.distributions``
   family, whose **parameters an optimizer learns**. It is the torch member of
   the same trio as :class:`~pyvinecopulib.margins.SciPyMargin` and
-  :class:`~pyvinecopulib.margins.OpenTURNSMargin`: each adapts one ecosystem's
+  each adapts one ecosystem's
   family registry. Registers the family's parameters and rebuilds the
   distribution on each call, so ``.to(device)``, ``state_dict()`` and autograd
   all reach them. Continuous families only, and only those implementing

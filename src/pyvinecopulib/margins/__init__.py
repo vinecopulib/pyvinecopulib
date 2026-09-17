@@ -11,13 +11,11 @@ whose parameters are given at construction is already fitted.
 - **Parametric** — :class:`SciPyMargin` wraps one SciPy family. Named,
   ``fit`` estimates its parameters; unnamed, ``select`` chooses the family too,
   from a curated candidate set scored by AIC / BIC / AICc. It needs the
-  ``scipy`` extra. :class:`OpenTURNSMargin` is the OpenTURNS counterpart, over
-  that library's families and its own ``FittingTest`` criteria; it needs the
-  ``openturns`` extra.
+  ``scipy`` extra.
 - **Interoperability** — :func:`as_margin` presents a distribution object from
   another ecosystem as a margin, and :func:`register_margin_adapter` teaches it
-  about one it does not know. SciPy's modern and legacy distributions,
-  OpenTURNS distributions, and continuous ``torch.distributions`` families
+  about one it does not know. SciPy's modern and legacy distributions
+  and continuous ``torch.distributions`` families
   with an implemented ``cdf`` are recognized out of the box. Torch ``Normal``,
   ``Gamma`` and ``LogNormal`` are supported; discrete Torch distributions are
   rejected because they do not expose the left-limit cdf a vine needs.
@@ -49,15 +47,10 @@ from ..core._margins import (
   resolve_margin_controls,
 )
 from ..core.margin_controls import FitControlsMargin
-
-# Imported for its side effect as much as its names: it registers the OpenTURNS
-# adapter with `as_margin`, and it imports OpenTURNS itself only when used.
-from .openturns import OpenTURNSMargin
 from .scipy import SciPyMargin
 
 __all__ = [
   "FitControlsMargin",
-  "OpenTURNSMargin",
   "SciPyMargin",
   "as_margin",
   "register_margin_adapter",

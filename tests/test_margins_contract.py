@@ -1,14 +1,14 @@
 """The margin contract, checked once against every ecosystem adapter.
 
-`SciPyMargin` and `OpenTURNSMargin` wrap different family registries but answer
+`SciPyMargin` wraps one ecosystem's family registry and answers
 the same questions, so the answers are pinned here over the `ECOSYSTEMS` table
 and a third adapter inherits the suite by adding a row.
 
-What stays in `test_margins_scipy.py` / `test_margins_openturns.py` is what is
+What stays in `test_margins_scipy.py` is what is
 actually one ecosystem's: SciPy's curated candidate set, its traps and its
-admissibility check; OpenTURNS' marshaling conventions and its
+admissibility check; and its
 `DistributionFactory`; and each lane's own refusal messages -- including the
-discrete split, which SciPy pre-filters with a warning where OpenTURNS refuses
+discrete split, which SciPy pre-filters with a warning
 candidate by candidate.
 """
 
@@ -22,7 +22,6 @@ import pytest
 from pyvinecopulib.core import Kde1d, MarginLike, Vinecop, Vinedist
 from pyvinecopulib.margins import (
   FitControlsMargin,
-  OpenTURNSMargin,
   SciPyMargin,
 )
 from pyvinecopulib.utils import to_pseudo_obs
@@ -60,16 +59,6 @@ ECOSYSTEMS = [
     competitors=["norm", "logistic", "laplace"],
     impossible=["t"],
     reason="t: degenerate parameter scale",
-  ),
-  Ecosystem(
-    cls=OpenTURNSMargin,
-    module="openturns",
-    real="Normal",
-    true="Gamma",
-    count="Poisson",
-    competitors=["Normal", "Logistic", "Laplace"],
-    impossible=["Poisson"],
-    reason="Poisson: TypeError",
   ),
 ]
 

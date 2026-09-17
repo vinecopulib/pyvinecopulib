@@ -250,10 +250,10 @@ it, there is no entry to write.
   `lib/vinecopulib` submodule pin; local C++ patches under
   `lib/` are not accepted.
 - **A copula-family registry to adapt.** The three parametric margin classes
-  (`SciPyMargin`, `OpenTURNSMargin`, `TorchDistributionMargin`) each adapt one
+  (`SciPyMargin`, `TorchDistributionMargin`) each adapt one
   ecosystem's family registry. There is no pair-copula counterpart, and that is
   settled rather than pending: scipy and `torch.distributions` ship no
-  copulas at all, and OpenTURNS' 19 are **not** adapted either — pair copulas
+  copulas at all — pair copulas
   are `lib/vinecopulib`'s own domain (rotations, h-functions, discrete
   handling, tau maps). A learnable pair copula is written by subclassing
   `BicopBase`, which `TorchVinecop` hosts like any other; see
@@ -327,7 +327,6 @@ pyvinecopulib/
 
       margins/__init__.py        # the two ecosystem adapters + re-exports of core's margin internals
         scipy.py                 # SciPyMargin (one SciPy family, or select one) — needs the [scipy] extra
-        openturns.py             # OpenTURNSMargin — needs the [openturns] extra
 
       sklearn/__init__.py        # VineDensity, VineRegressor
         _base.py                 # VineBase (parameter-constraints, schema, 3-step pipeline)
@@ -519,9 +518,7 @@ For any behavior change:
   result back through `cast("ArrayT", ...)`, as `core/bicop_base.py` and
   `core/bicop_independence.py` do.
 
-  Where a whole file's `Any` is one reason -- OpenTURNS having no types at all
-  -- it goes in `per-file-ignores` with that reason stated once; everywhere
-  else it is a `# noqa: ANN401` at the site, and `RUF100` fails the build when
+  An `Any` is a `# noqa: ANN401` at the site, and `RUF100` fails the build when
   one goes stale.
 - **`__init__.py` files use explicit `__all__`** to define the public
   surface; ruff's per-file ignore (`F403`/`F405`) covers the
@@ -1379,8 +1376,7 @@ Three groups:
   criteria stop being comparable.
 
   **A margin class is named for the ecosystem whose families it wraps** --
-  `SciPyMargin` in `margins/scipy.py`, `OpenTURNSMargin` in
-  `margins/openturns.py`. Neither module is underscore-prefixed, because each
+  `SciPyMargin` in `margins/scipy.py`. The module is not underscore-prefixed, because it
   *is* an import path a user may reasonably reach for -- both are named for an
   ecosystem and behind its extra; the same-named modules do not shadow
   the real packages, since Python 3 resolves `import scipy` absolutely.
@@ -1404,7 +1400,7 @@ Three groups:
   past on a bare `pdf` (in SciPy's new API `pdf` is `+∞` at an atom;
   the mass is `pmf`). **`core` holds the two registries and names no
   ecosystem.** An adapter or a JSON reader is registered by the module that
-  owns the class it produces — `margins/scipy.py`, `margins/openturns.py`,
+  owns the class it produces — `margins/scipy.py`,
   `torch/kde1d.py`, `torch/distribution_margin.py` — through the same
   `register_margin_adapter` / `register_margin_json` hooks a third party uses,
   so the first-party margins exercise the documented extension point rather
@@ -1849,7 +1845,7 @@ below are a quick orientation.
 - **`pyvinecopulib.utils`** — `to_pseudo_obs`, `wdm`,
   `find_latent_sample`, `sobol`, `ghalton`, `sample_uniform`,
   `pairs_copula_data`.
-- **`pyvinecopulib.margins`** — `SciPyMargin`, `OpenTURNSMargin`,
+- **`pyvinecopulib.margins`** — `SciPyMargin`,
   `FitControlsMargin`, `as_margin`, `register_margin_adapter`,
   `resolve_margin_controls`.
 - **`pyvinecopulib.sklearn`** — `VineDensity`, `VineRegressor`.
@@ -2156,7 +2152,7 @@ Round-trip / parity properties to preserve when touching numerics:
 - **Another ecosystem's distributions (`pyvinecopulib.margins`).** Call
   `register_margin_adapter(predicate, adapter)` — from a package or a
   notebook cell — rather than editing `core/_margins.py`. That is what keeps
-  OpenTURNS, TFP and NumPyro out of `core` while remaining usable, and
+  TFP, NumPyro and OpenTURNS out of `core` while remaining usable, and
   what lets `as_margin` stay the single funnel every margin passes
   through.
 - **A new lane for the sklearn estimators.** There is nothing to subclass:

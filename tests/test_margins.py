@@ -467,9 +467,6 @@ def _fitted(cls: type, y: np.ndarray) -> Any:
   if cls.__name__ == "TorchKde1d":
     torch = pytest.importorskip("torch")
     return cls().fit(torch.as_tensor(y))
-  if cls.__name__ == "OpenTURNSMargin":
-    pytest.importorskip("openturns")
-    return cls("Normal").fit(y)
   if cls.__name__ == "SciPyMargin":
     return cls("norm").fit(y)
   return cls().fit(y)

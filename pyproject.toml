@@ -70,12 +70,6 @@ scipy = [
   # surface, which is much older.
   "scipy>=1.16",
 ]
-openturns = [
-  # An extra rather than a dependency on two counts: OpenTURNS is LGPL where
-  # this package is MIT, and its wheel is ~60 MB. 1.16 is the floor for
-  # `FittingTest.AICC`, one of the three criteria `OpenTURNSMargin.select` offers.
-  "openturns>=1.16",
-]
 doc = [
   # Ranges, not exact pins: `sphinx==7.0` held `sphinx-autodoc-typehints` back
   # to its 2023 releases while the other four floated, so whichever of them
@@ -232,8 +226,6 @@ ignore = [
 # `ANN401` is on everywhere, and every `Any` in `src` states its reason at the
 # site with a `# noqa: ANN401`. One file is the exception, because in it many
 # sites share a single reason -- see the AGENTS.md rule.
-# OpenTURNS is SWIG-generated: no `py.typed` and no stub package.
-"src/pyvinecopulib/margins/openturns.py" = ["any-type"]
 # A test passes a wrong type on purpose to prove a runtime guard fires.
 # `PLC2701` is AGENTS.md's own "tests import from public namespaces" rule,
 # whose carve-outs are stated there -- the TLL kernels and the three plot
