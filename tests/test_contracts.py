@@ -21,6 +21,7 @@ from typing import Any, NamedTuple
 
 import numpy as np
 import pytest
+import torch
 
 import pyvinecopulib as pv
 from pyvinecopulib.core import (
@@ -86,10 +87,10 @@ MARGINS = [
   ),
   Impl(
     "TorchDistributionMargin",
-    lambda: (
-      __import__("pyvinecopulib.torch", fromlist=["TorchDistributionMargin"])
-      .TorchDistributionMargin()
-      .fit(__import__("torch").as_tensor(_Y[:, 0]))
+    lambda: __import__(
+      "pyvinecopulib.torch", fromlist=["TorchDistributionMargin"]
+    ).TorchDistributionMargin(
+      torch.distributions.Normal, {"loc": 0.0, "scale": 1.0}
     ),
     extra="torch",
   ),

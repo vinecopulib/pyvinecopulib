@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 import numpy as np
+import pandas as pd
 import pytest
 
 pytest.importorskip("sklearn")
@@ -282,6 +283,23 @@ def testcopula_marginal_density_single_covariate(
 
   log_c = reg.copula_marginal_density(X_test[:20, :1], n_grid=200, log=True)
   assert np.allclose(log_c, np.log(c_x))
+
+
+def test_regressor_dataframe_inputs_are_validated(
+  regression_setup: _Setup,
+) -> None:
+  """The regressor accepts DataFrames at fit and marginal-density time."""
+  X_train, X_test, y_train, _, _, _ = regression_setup
+  train = pd.DataFrame({"x": X_train[:, 0]})
+  query = pd.DataFrame({"x": X_test[:20, 0]})
+  reg = VineRegressor(mean=True, batch_size=7).fit(train, y_train.tolist())
+
+  density = reg.copula_marginal_density(query, n_grid=200)
+  assert density.shape == (len(query),)
+  assert np.all(np.isfinite(density))
+
+  with pytest.raises(ValueError, match="Column names/order do not match"):
+    reg.copula_marginal_density(query.rename(columns={"x": "other"}))
 
 
 def test_vine_regressor_is_a_regressor_to_sklearn() -> None:

@@ -1,9 +1,10 @@
 import math
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from numbers import Integral
 from typing import Any, ClassVar
 
 import numpy as np
+import pandas as pd
 from scipy.special import logsumexp
 from sklearn.base import RegressorMixin
 from sklearn.metrics import r2_score
@@ -19,9 +20,6 @@ from ._base import (
   _DOC_PIPELINE,
   _DOC_REFERENCES,
   VineBase,
-  _RandomStateLike,
-  _XLike,
-  _YLike,
 )
 from ._sklearn_private import Interval
 
@@ -47,7 +45,7 @@ class VineRegressor(RegressorMixin, VineBase):
   def __init__(
     self,
     mean: bool = True,
-    quantiles: _YLike | None = None,
+    quantiles: np.ndarray | Sequence[float] | None = None,
     distribution: type[VinedistLike[Any]] | None = None,
     controls: ControlsLike | None = None,
     structure: pv.RVineStructure | None = None,
@@ -56,7 +54,7 @@ class VineRegressor(RegressorMixin, VineBase):
     use_grid: bool = True,
     n_nodes: int = 401,
     normalize_weights: bool = True,
-    random_state: _RandomStateLike = None,
+    random_state: int | np.random.RandomState | None = None,
     n_jobs: int | None = None,
   ) -> None:
     r"""Sklearn-compatible vine-copula regressor.
@@ -153,14 +151,19 @@ class VineRegressor(RegressorMixin, VineBase):
     self.n_nodes = n_nodes
     self.normalize_weights = normalize_weights
 
-  def fit(self, X: np.ndarray, y: np.ndarray) -> "VineRegressor":
+  def fit(
+    self,
+    X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]],
+    y: np.ndarray | Sequence[float],
+  ) -> "VineRegressor":
     """Fits a vine copula to the joint distribution of ``(Y, X)``.
 
     Parameters
     ----------
-    X : ndarray, shape (n_samples, n_features), dtype float
-        Training covariates.
-    y : ndarray, shape (n_samples,), dtype float
+    X : array-like of float, shape (n_samples, n_features), or DataFrame
+        Training covariates. A DataFrame may mix numeric,
+        ordered-categorical, and unordered-categorical columns.
+    y : array-like of float, shape (n_samples,)
         Training responses (continuous).
 
     Returns
@@ -238,7 +241,10 @@ class VineRegressor(RegressorMixin, VineBase):
     return p, weights[np.newaxis, :]
 
   def copula_marginal_density(
-    self, X: np.ndarray, log: bool = False, n_grid: int = 101
+    self,
+    X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]],
+    log: bool = False,
+    n_grid: int = 101,
   ) -> np.ndarray:
     r"""Computes :math:`c_X(u_X) = \\int_0^1 c_{Y, X}(u_Y, u_X)\\, du_Y`.
 
@@ -250,8 +256,8 @@ class VineRegressor(RegressorMixin, VineBase):
 
     Parameters
     ----------
-    X : ndarray, shape (n_samples, n_features), dtype float
-        Conditioning covariates.
+    X : array-like of float, shape (n_samples, n_features), or DataFrame
+        Conditioning covariates. Must match the training schema.
     log : bool, default=False
         If ``True``, return the log-density.
     n_grid : int, default=101
@@ -265,7 +271,7 @@ class VineRegressor(RegressorMixin, VineBase):
     """
     check_is_fitted(self, attributes=["_vine"])
 
-    X = np.asarray(X)
+    X = self._validate_input(X, reset=False)
     ux = self._to_u_scale(X)
     n_test = ux.shape[0]
 
@@ -304,7 +310,9 @@ class VineRegressor(RegressorMixin, VineBase):
 
     return log_out if log else np.exp(log_out)
 
-  def conditional_weights(self, X: _XLike) -> np.ndarray:
+  def conditional_weights(
+    self, X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]]
+  ) -> np.ndarray:
     r"""Conditional copula weights over the response nodes, one row per query.
 
     The estimator itself, before it is summarized: :meth:`predict` is these
@@ -458,7 +466,9 @@ class VineRegressor(RegressorMixin, VineBase):
     # `squeeze()` turns a one-row prediction into a scalar.
     return y_pred[:, 0] if y_pred.shape[1] == 1 else y_pred
 
-  def predict(self, X: _XLike) -> np.ndarray:
+  def predict(
+    self, X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]]
+  ) -> np.ndarray:
     r"""Predicts the conditional mean and/or quantiles of ``Y`` given ``X``.
 
     Computes weights :math:`w_k(x)` from the fitted copula
@@ -490,9 +500,9 @@ class VineRegressor(RegressorMixin, VineBase):
 
   def score(
     self,
-    X: _XLike,
-    y: _YLike,
-    sample_weight: _YLike | None = None,
+    X: np.ndarray | pd.DataFrame | Sequence[Sequence[object]],
+    y: np.ndarray | Sequence[float],
+    sample_weight: np.ndarray | Sequence[float] | None = None,
   ) -> float:
     """Return :math:`R^2` for the fitted conditional mean.
 
