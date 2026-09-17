@@ -1813,7 +1813,7 @@ below are a quick orientation.
   `SimplifiedContext`, `NonSimplifiedContext`; plus the marginal layer
   `MarginLike`, `MarginBase` and the joint object with its contract and base,
   `Vinedist`, `VinedistLike`, `VinedistBase`; plus the margin serialization
-  helpers `margin_from_json`, `margin_to_json`, `register_margin_json`; plus
+  helpers `margin_from_json`, `margin_json`, `margin_to_json`, `register_margin_json`; plus
   `ArrayT`, the type variable those signatures are written in.
 - **`pyvinecopulib.core.extend`** — **six** names, and the count is the
   point: what an extension cannot be written without, rather than everything

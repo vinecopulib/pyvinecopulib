@@ -1231,10 +1231,10 @@ def test_a_registered_custom_margin_round_trips() -> None:
   copula = pv.core.Vinedist.from_data(x).vinecop
 
   class Uniform(FlatMargin):
-    def to_json(self) -> dict[str, Any]:
-      return {"kind": "_TestUniform"}
+    def to_json(self) -> str:
+      return pv.core.margin_json(self, {"kind": "_TestUniform"})
 
-  pv.core.register_margin_json("_TestUniform", lambda payload: Uniform())
+  pv.core.register_margin_json("_TestUniform", lambda json: Uniform())
   dist = pv.core.Vinedist(copula, [Uniform(), pv.core.Kde1d().fit(x[:, 1])])
   restored = pv.core.Vinedist.from_json(dist.to_json())
   assert isinstance(restored.margins[0], pv.core.MarginBase)
@@ -1243,11 +1243,12 @@ def test_a_registered_custom_margin_round_trips() -> None:
 def test_an_unknown_margin_kind_and_a_bad_version_both_raise() -> None:
   """A format change must fail loudly rather than build a wrong model."""
   from pyvinecopulib.core import margin_from_json
+  from pyvinecopulib.core._json import dumps
 
   with pytest.raises(ValueError, match="no reader registered"):
-    margin_from_json({"kind": "NotAMargin", "version": 1})
+    margin_from_json(dumps({"kind": "NotAMargin", "version": 1}))
   with pytest.raises(ValueError, match="unsupported margin JSON version"):
-    margin_from_json({"kind": "Kde1d", "version": 999})
+    margin_from_json(dumps({"kind": "Kde1d", "version": 999}))
 
 
 # ---------------------------------------------------------------------------

@@ -21,7 +21,8 @@ from typing import (
 import numpy as np
 
 from ..core import ControlsLike, MarginBase, MarginLike
-from ..core._margins import register_margin_json
+from ..core._json import read_payload
+from ..core._margins import margin_json, register_margin_json
 from ..core._validation import (
   extra_required,
   reject_covariates,
@@ -1017,14 +1018,14 @@ class SciPyMargin(MarginBase[np.ndarray]):
     """
     return getattr(_stats(), self.family_name)
 
-  def to_json(self) -> dict[str, Any]:
+  def to_json(self) -> str:
     """Return this margin's JSON payload.
 
     Returns
     -------
-    dict
-        A JSON-serializable mapping that
-        :func:`~pyvinecopulib.core.margin_from_json` reads back.
+    str
+        JSON text that :func:`~pyvinecopulib.core.margin_from_json` reads
+        back.
     """
     payload: dict[str, Any] = {
       "kind": "SciPyMargin",
@@ -1042,22 +1043,23 @@ class SciPyMargin(MarginBase[np.ndarray]):
       # not the other two.
       payload["nobs"] = self._nobs
     payload["n_free"] = self._n_free
-    return payload
+    return margin_json(self, payload)
 
   @classmethod
-  def from_json_payload(cls, payload: dict[str, Any]) -> SciPyMargin:
-    """Rebuild a margin from the payload :meth:`to_json` produced.
+  def from_json(cls, json: str) -> SciPyMargin:
+    """Rebuild a margin from the text :meth:`to_json` produced.
 
     Parameters
     ----------
-    payload : dict
-        The mapping :meth:`to_json` returned.
+    json : str
+        The text :meth:`to_json` returned.
 
     Returns
     -------
     SciPyMargin
         The reconstructed margin.
     """
+    payload = read_payload(json, "margin")
     bounds = {
       k: (float(v[0]), float(v[1]))
       for k, v in (payload.get("bounds") or {}).items()
@@ -1357,4 +1359,4 @@ SciPyMargin.__doc__ = re.sub(
 
 # Registered here, beside the class it rebuilds: `core` cannot name a class
 # living behind an extra, and this is the same hook a third party uses.
-register_margin_json("SciPyMargin", SciPyMargin.from_json_payload)
+register_margin_json("SciPyMargin", SciPyMargin.from_json)

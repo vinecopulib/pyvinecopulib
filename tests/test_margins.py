@@ -11,6 +11,7 @@ same as satisfying its semantics.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -486,9 +487,10 @@ def test_every_shipped_margin_round_trips_through_json() -> None:
 
   for name, cls in sorted(classes.items()):
     margin = _fitted(cls, y)
-    payload = pv.core.margin_to_json(margin)
-    assert payload["kind"] == name, (name, payload["kind"])
-    restored = pv.core.margin_from_json(payload)
+    text = pv.core.margin_to_json(margin)
+    assert isinstance(text, str), (name, type(text))
+    assert json.loads(text)["kind"] == name, (name, text[:80])
+    restored = pv.core.margin_from_json(text)
     assert type(restored) is cls, (name, type(restored))
 
     probe = np.array([-0.5, 0.0, 0.5])

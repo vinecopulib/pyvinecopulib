@@ -42,7 +42,8 @@ from torch import Tensor
 from torch.distributions import Distribution
 
 from ..core import ControlsLike, MarginBase
-from ..core._margins import register_margin_json
+from ..core._json import read_payload
+from ..core._margins import margin_json, register_margin_json
 from ..core.margin_base import support_of
 from ._placement import reference_tensor
 
@@ -394,7 +395,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
       kwargs["validate_args"] = self._validate_args
     return self._factory(**kwargs)
 
-  def to_json(self) -> dict[str, Any]:
+  def to_json(self) -> str:
     """Return this margin's JSON payload.
 
     Returns
@@ -418,31 +419,32 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
         f"{factory!r}: only a `torch.distributions` class can be named in a "
         "payload and resolved back from one"
       )
-    return {
-      "kind": "TorchDistributionMargin",
-      "family": str(name),
-      "parameters": {
-        # Detached: a trainable parameter carries a graph, and reading a
-        # scalar off one warns.
-        key: [
-          float(v)
-          for v in torch.as_tensor(getattr(self, key)).detach().flatten()
-        ]
-        for key in self._parameter_names
+    return margin_json(
+      self,
+      {
+        "kind": "TorchDistributionMargin",
+        "family": str(name),
+        "parameters": {
+          # Detached: a trainable parameter carries a graph, and reading a
+          # scalar off one warns.
+          key: [
+            float(v)
+            for v in torch.as_tensor(getattr(self, key)).detach().flatten()
+          ]
+          for key in self._parameter_names
+        },
+        "validate_args": self._validate_args,
       },
-      "validate_args": self._validate_args,
-    }
+    )
 
   @classmethod
-  def from_json_payload(
-    cls, payload: dict[str, Any]
-  ) -> TorchDistributionMargin:
-    """Rebuild a margin from the payload :meth:`to_json` produced.
+  def from_json(cls, json: str) -> TorchDistributionMargin:
+    """Rebuild a margin from the text :meth:`to_json` produced.
 
     Parameters
     ----------
-    payload : dict
-        The mapping :meth:`to_json` returned.
+    json : str
+        The text :meth:`to_json` returned.
 
     Returns
     -------
@@ -454,6 +456,7 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
     ValueError
         If ``torch.distributions`` has no family of that name.
     """
+    payload = read_payload(json, "margin")
     family = str(payload["family"])
     factory = getattr(torch.distributions, family, None)
     if factory is None:
@@ -682,5 +685,5 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
 # `core` holds the registry and names no ecosystem, so the module that
 # owns the class is the one that teaches `margin_from_json` to rebuild it.
 register_margin_json(
-  "TorchDistributionMargin", TorchDistributionMargin.from_json_payload
+  "TorchDistributionMargin", TorchDistributionMargin.from_json
 )

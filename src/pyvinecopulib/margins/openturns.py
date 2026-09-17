@@ -26,7 +26,12 @@ from typing import Any, Self, cast
 import numpy as np
 
 from ..core import ControlsLike, MarginBase, MarginLike
-from ..core._margins import register_margin_adapter, register_margin_json
+from ..core._json import read_payload
+from ..core._margins import (
+  margin_json,
+  register_margin_adapter,
+  register_margin_json,
+)
 from ..core._validation import (
   extra_required,
   reject_covariates,
@@ -431,14 +436,14 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
       )
     return self._distribution
 
-  def to_json(self) -> dict[str, Any]:
+  def to_json(self) -> str:
     """Return this margin's JSON payload.
 
     Returns
     -------
-    dict
-        A JSON-serializable mapping that
-        :func:`~pyvinecopulib.core.margin_from_json` reads back.
+    str
+        JSON text that :func:`~pyvinecopulib.core.margin_from_json` reads
+        back.
 
     Raises
     ------
@@ -459,22 +464,23 @@ class OpenTURNSMargin(MarginBase[np.ndarray]):
       payload["parameters"] = list(self.parameters)
     if self._loglik is not None:
       payload["loglik"] = self._loglik
-    return payload
+    return margin_json(self, payload)
 
   @classmethod
-  def from_json_payload(cls, payload: dict[str, Any]) -> OpenTURNSMargin:
-    """Rebuild a margin from the payload :meth:`to_json` produced.
+  def from_json(cls, json: str) -> OpenTURNSMargin:
+    """Rebuild a margin from the text :meth:`to_json` produced.
 
     Parameters
     ----------
-    payload : dict
-        The mapping :meth:`to_json` returned.
+    json : str
+        The text :meth:`to_json` returned.
 
     Returns
     -------
     OpenTURNSMargin
         The reconstructed margin.
     """
+    payload = read_payload(json, "margin")
     openturns = _openturns()
     family = str(payload["family"])
     parameters = payload.get("parameters")
@@ -1032,4 +1038,4 @@ def _adapt_openturns(obj: Any) -> MarginLike[Any]:
 # import. The other three build a generic wrapper and need no such class, so
 # they sit with the registry.
 register_margin_adapter(_is_openturns_distribution, _adapt_openturns)
-register_margin_json("OpenTURNSMargin", OpenTURNSMargin.from_json_payload)
+register_margin_json("OpenTURNSMargin", OpenTURNSMargin.from_json)

@@ -43,6 +43,9 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
 - Rename `Kde1d`'s `edf` to `npars`, the name `Bicop` and `Vinecop` already answer for the same quantity, with no alias. It was bound twice -- `edf` and `n_parameters` were the same getter -- so one class offered two live names for one number; `npars` is now the only spelling, on the compiled classes, on `MarginBase` and on the four contracts (#345).
     - `kde.edf` -> `kde.npars`
     - `kde.quantile(p)` -> `kde.icdf(p)`
+- Serialize every margin the same way: `to_json` returns JSON **text** on `SciPyMargin`, `OpenTURNSMargin`, `TorchKde1d` and `TorchDistributionMargin` as it already did on `Bicop` / `Vinecop` / `Kde1d` / `Vinedist`, and the reader is `from_json(json)` rather than `from_json_payload(payload)`. A margin's own `to_json` builds its mapping and hands it to `margin_json`, which stamps `kind` and `version` and runs the shared codec -- so a non-finite parameter still travels as a tagged string and a subclass still reads back. `register_margin_json` takes a `Callable[[str], Any]` (#345).
+    - `margin.to_json()` returns `str`, not `dict`
+    - `Cls.from_json_payload(payload)` -> `Cls.from_json(json)`
 - Rename `Kde1d`'s `type` to `var_type`, on the property and on every constructor, and spell a variable's type `"c"` / `"d"` / `"zi"` throughout -- the one spelling `var_types` already used on `Bicop` and `Vinecop`. Both constructors still accept the long names, so only the attribute is a break; nothing in the package emits one (#339).
     - `pv.core.Kde1d(type="continuous")` -> `pv.core.Kde1d(var_type="c")`, and likewise on `from_params` / `from_grid`
     - `kde.type` -> `kde.var_type`, which answers `"c"` / `"d"` / `"zi"` where `type` answered `"continuous"` / `"discrete"` / `"zero_inflated"`
