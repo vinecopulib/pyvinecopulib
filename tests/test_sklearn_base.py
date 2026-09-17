@@ -169,8 +169,8 @@ def test_vinebase_schema_attribute(
 
   # So does a pre-set bounds list of the wrong length.
   density_bounds = VineDensity()
-  density_bounds.schema_ = {"bounds": [(0.0, 1.0)]}  # Too short
-  with pytest.raises(ValueError, match="bounds"):
+  density_bounds.schema_ = {"supports": [(0.0, 1.0)]}  # Too short
+  with pytest.raises(ValueError, match="supports"):
     density_bounds._validate_input(X, reset=True)
 
 
@@ -314,12 +314,34 @@ def test_fit_resets_the_schema_a_previous_fit_derived(
   assert not hasattr(est, "feature_names_in_")
 
 
+def test_an_array_is_read_as_the_modeled_layout() -> None:
+  """After an expanding fit, an array is the wide layout and only that.
+
+  `sample` emits the modeled width, so the estimator's own output has to be a
+  legal input to its own density. The public width has no reading as an array:
+  which columns are the levels of which factor is what the frame carries.
+  """
+  rng = np.random.RandomState(0)
+  train = pd.DataFrame(
+    {
+      "x": rng.normal(size=60),
+      "c": pd.Categorical(rng.choice(["a", "b", "c"], size=60)),
+    }
+  )
+  est = VineDensity().fit(train)
+  assert (est.n_features_in_, est.n_model_features_) == (2, 3)
+
+  assert est.score_samples(est.sample(5)).shape == (5,)
+  with pytest.raises(ValueError, match="expecting 3 features"):
+    est.score_samples(rng.normal(size=(5, 2)))
+
+
 def test_a_caller_preset_schema_survives_fit() -> None:
   """The pre-settable `schema_` hook still overrides the array default."""
   est = VineDensity()
   est.schema_ = {
     "var_types": ["d", "c"],
-    "bounds": [None] * 2,
+    "supports": [None] * 2,
   }
   rng = np.random.RandomState(0)
   est.fit(
@@ -343,12 +365,12 @@ def test_a_preset_schema_and_a_dataframe_is_refused_not_discarded() -> None:
     }
   )
   est = VineDensity()
-  est.schema_ = {"var_types": ["zi", "c"], "bounds": [None] * 2}
+  est.schema_ = {"var_types": ["zi", "c"], "supports": [None] * 2}
   with pytest.raises(ValueError, match="states its own variable types"):
     est.fit(frame)
   # And the route the message names does honor it.
   clean = VineDensity()
-  clean.schema_ = {"var_types": ["zi", "c"], "bounds": [None] * 2}
+  clean.schema_ = {"var_types": ["zi", "c"], "supports": [None] * 2}
   clean.fit(frame.to_numpy())
   assert clean.schema_["var_types"] == ["zi", "c"]
 

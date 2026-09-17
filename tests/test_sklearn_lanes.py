@@ -404,7 +404,7 @@ class TestEstimatorWiring:
     est = VineDensity().fit(small_data)
     assert est.schema_ == {
       "var_types": ["c"] * 3,
-      "bounds": [None] * 3,
+      "supports": [None] * 3,
     }
 
   def test_fit_sets_structure_underscore(self, small_data: np.ndarray) -> None:

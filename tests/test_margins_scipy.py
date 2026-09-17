@@ -25,7 +25,7 @@ from typing import Any
 import numpy as np
 import pytest
 
-from pyvinecopulib.core import Kde1d, Vinedist
+from pyvinecopulib.core import Vinedist
 from pyvinecopulib.margins import (
   FitControlsMargin,
   SciPyMargin,
@@ -536,10 +536,14 @@ def test_candidates_that_would_tie_are_deduplicated(
   )
   assert families(bounded) == ["nbinom", "nbinom"]
 
-  # Two already-fitted models with no exposed parameter vector have unreadable
-  # identities. Neither may be discarded merely because the family names tie.
-  fitted_kdes = [Kde1d().fit(count_sample), Kde1d().fit(count_sample + 3.0)]
-  assert len(_dedupe(fitted_kdes)) == 2
+  # Two already-fitted models of one family are two models: the estimates are
+  # part of the identity, so neither is discarded because the names tie.
+  fitted = [
+    SciPyMargin("norm").fit(count_sample),
+    SciPyMargin("norm").fit(count_sample + 3.0),
+  ]
+  assert len(_dedupe(fitted)) == 2
+  assert len(_dedupe([fitted[0], fitted[0]])) == 1
 
 
 # --- criteria --------------------------------------------------------------- #

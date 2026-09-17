@@ -506,7 +506,7 @@ class VineBase(BaseEstimator):
             bounds.append((0.0, 1.0))
           else:
             bounds.append(_categorical_bounds(dtype))
-        self.schema_ = {"var_types": var_types, "bounds": bounds}
+        self.schema_ = {"var_types": var_types, "supports": bounds}
         self._schema_from_fit = True
         self.n_features_in_ = X.shape[1]
         self.n_model_features_ = X_exp.shape[1]
@@ -560,12 +560,12 @@ class VineBase(BaseEstimator):
             )
         else:
           var_types = ["c"] * X.shape[1]
-        bounds = existing.get("bounds") or [None] * X.shape[1]
+        bounds = existing.get("supports") or [None] * X.shape[1]
         if len(bounds) != X.shape[1]:
           raise ValueError(
-            "schema_['bounds'] length does not match number of features in X."
+            "schema_['supports'] length does not match number of features in X."
           )
-        self.schema_ = {"var_types": var_types, "bounds": bounds}
+        self.schema_ = {"var_types": var_types, "supports": bounds}
         # Only a schema this estimator derived on its own may be discarded on
         # the next `fit`. A caller who pre-set one is declaring something the
         # array cannot show -- which columns are discrete, where a variable is
@@ -576,15 +576,17 @@ class VineBase(BaseEstimator):
         self.n_model_features_ = X.shape[1]
       else:
         check_is_fitted(self, attributes=["n_features_in_"])
-        # `sample` emits the modeled layout, which is wider than the public
-        # one whenever a categorical was expanded, so the estimator's own
-        # output has to be a legal input to its own density.
-        accepted = {self.n_features_in_, self.n_model_features_}
-        if X.shape[1] not in accepted:
-          expected = " or ".join(str(n) for n in sorted(accepted))
+        # An array is read as the modeled layout, which is wider than the
+        # public one whenever a categorical was expanded: `sample` emits that
+        # layout, so the estimator's own output has to be a legal input to its
+        # own density. The public width is reachable as a frame, where the
+        # levels are named and the expansion can be redone -- as an array it
+        # would have to be guessed at, and the two widths coincide wherever
+        # nothing was expanded.
+        if X.shape[1] != self.n_model_features_:
           raise ValueError(
             f"X has {X.shape[1]} features, but {type(self).__name__} is "
-            f"expecting {expected} features as input"
+            f"expecting {self.n_model_features_} features as input"
           )
       X_arr = X
 
@@ -676,7 +678,7 @@ class VineBase(BaseEstimator):
         there is one.
     """
     types = self.schema_["var_types"]
-    bounds = self.schema_.get("bounds") or [None] * len(types)
+    bounds = self.schema_.get("supports") or [None] * len(types)
     var_types: list[str | None] = list(types)
     supports: list[Any] = [
       None if b is None else (float(b[0]), float(b[1])) for b in bounds

@@ -254,10 +254,10 @@ def test_normalize_weights_parameter(
   assert not np.allclose(w_default, w_raw)
 
 
-def test_copula_marginal_density_single_covariate(
+def testcopula_marginal_density_single_covariate(
   regression_setup: _Setup,
 ) -> None:
-  r"""``_copula_marginal_density`` recovers :math:`c_X \\equiv 1` in 2-d.
+  r"""``copula_marginal_density`` recovers :math:`c_X \\equiv 1` in 2-d.
 
   Integrating a bivariate copula density over one of its arguments is
   exactly one, so a fit with a single covariate pins the Simpson
@@ -268,7 +268,7 @@ def test_copula_marginal_density_single_covariate(
   X_train, X_test, y_train, _, _, _ = regression_setup
   reg = VineRegressor(mean=True, batch_size=7).fit(X_train[:, :1], y_train)
 
-  c_x = reg._copula_marginal_density(X_test[:20, :1], n_grid=200)
+  c_x = reg.copula_marginal_density(X_test[:20, :1], n_grid=200)
   assert c_x.shape == (20,)
   assert np.all(c_x > 0)
   assert np.all(np.isfinite(c_x))
@@ -278,7 +278,7 @@ def test_copula_marginal_density_single_covariate(
   assert abs(np.median(c_x) - 1.0) < 1e-2
   assert np.allclose(c_x, 1.0, atol=0.25)
 
-  log_c = reg._copula_marginal_density(X_test[:20, :1], n_grid=200, log=True)
+  log_c = reg.copula_marginal_density(X_test[:20, :1], n_grid=200, log=True)
   assert np.allclose(log_c, np.log(c_x))
 
 

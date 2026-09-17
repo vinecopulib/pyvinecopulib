@@ -237,7 +237,7 @@ class VineRegressor(RegressorMixin, VineBase):
     weights = np.exp(-0.5 * z**2) * (dz / math.sqrt(2.0 * math.pi))
     return p, weights[np.newaxis, :]
 
-  def _copula_marginal_density(
+  def copula_marginal_density(
     self, X: np.ndarray, log: bool = False, n_grid: int = 101
   ) -> np.ndarray:
     r"""Computes :math:`c_X(u_X) = \\int_0^1 c_{Y, X}(u_Y, u_X)\\, du_Y`.

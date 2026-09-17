@@ -14,7 +14,6 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import (
   Any,
   Self,
-  TypeVar,
   cast,
 )
 
@@ -33,11 +32,6 @@ from ..core._validation import (
 from ..core.margin_base import criteria as _criteria
 
 __all__ = ["SciPyMargin"]
-
-#: One margin, of whatever kind was handed in. Unbounded on purpose: a
-#: candidate set may hold margins from anywhere, `Kde1d` included, and those
-#: satisfy the contract nominally rather than statically.
-_MarginT = TypeVar("_MarginT")
 
 #: Curated candidate families, grouped by the support they can represent.
 #: `SciPyMargin.select` draws its candidates from the groups the data are
@@ -353,63 +347,45 @@ def _fit_candidate(candidate: SciPyMargin, y: np.ndarray) -> str | None:
       if not getattr(candidate, "is_fitted", True):
         candidate.fit(y)
       return _reject(candidate, y)
-    # As `openturns.py`: a candidate raises whatever SciPy raises, and
+    # A candidate raises whatever SciPy raises, and
     # every rejection is reported rather than skipped.
     except Exception as e:  # noqa: BLE001
       return f"{type(e).__name__}: {e}"
 
 
-def _dedupe(candidates: Iterable[_MarginT]) -> list[_MarginT]:
+def _dedupe(candidates: Iterable[SciPyMargin]) -> list[SciPyMargin]:
   """Drop candidates that would tie with one already present.
 
   Two unfitted candidates of the same family with the same pinned parameters
   and search bounds fit the same model, so they tie exactly on every criterion:
   the winner becomes an artifact of iteration order, and the report carries the
   row twice. Ready-made fitted candidates additionally include their parameter
-  vectors in their identity. Anything whose identity cannot be read this way is
-  kept, since dropping it would be a guess.
+  vectors in their identity, and an unnamed candidate -- the signal to search
+  rather than a model -- is kept as it is.
 
   Parameters
   ----------
-  candidates : iterable
-      Unfitted candidate margins, in preference order.
+  candidates : iterable of SciPyMargin
+      Candidate margins, in preference order.
 
   Returns
   -------
-  list
+  list of SciPyMargin
       The first candidate of each distinct family, pins, and search bounds,
       order preserved.
   """
   seen: set[tuple[Any, ...]] = set()
-  out: list[_MarginT] = []
+  out: list[SciPyMargin] = []
   for margin in candidates:
-    family = getattr(margin, "family_name", None)
-    if family is None:
+    if margin.family_name is None:
       out.append(margin)
       continue
-    fixed = getattr(margin, "fixed_parameters", None) or {}
-    search_bounds = (
-      tuple(sorted(margin._bounds.items()))
-      if isinstance(margin, SciPyMargin)
-      else ()
-    )
-    is_fitted = bool(getattr(margin, "is_fitted", False))
-    if is_fitted:
-      raw_parameters = getattr(margin, "parameters", None)
-      if raw_parameters is None:
-        # Fitted state without a readable identity may represent any model.
-        # Keeping it is the only ownership-safe choice.
-        out.append(margin)
-        continue
-      parameters = tuple(raw_parameters)
-    else:
-      parameters = ()
     key = (
-      str(family),
-      tuple(sorted(fixed.items())),
-      search_bounds,
-      is_fitted,
-      parameters,
+      margin.family_name,
+      tuple(sorted((margin.fixed_parameters or {}).items())),
+      tuple(sorted(margin._bounds.items())),
+      margin.is_fitted,
+      margin.parameters if margin.is_fitted else (),
     )
     if key in seen:
       continue
@@ -461,7 +437,6 @@ class SciPyMargin(MarginBase[np.ndarray]):
 
   See Also
   --------
-  pyvinecopulib.margins.OpenTURNSMargin : The OpenTURNS counterpart.
   pyvinecopulib.core.Kde1d : The nonparametric default.
 
   Notes
