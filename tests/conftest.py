@@ -345,3 +345,100 @@ def device(request: pytest.FixtureRequest) -> str:
 def count_sample() -> np.ndarray:
   """400 Poisson(4) counts, including zeros."""
   return np.random.default_rng(1).poisson(4.0, size=400).astype(float)
+
+
+# --- the TLL fits the torch parity suites are all built on ----------------- #
+# Four files grew their own copies of these -- `_fit_tll`, `_fit_tll_vine`,
+# `_fit_tll_bicop`, and a `copula` fixture -- differing only in which
+# arguments they hard-coded. One definition each, since what they pin is the
+# *same* fit: TLL, single-threaded, so the torch lane has a fixed reference.
+
+#: TLL on one thread, the reference every torch parity test fits against.
+TLL_BICOP = pv.FitControlsBicop(family_set=[pv.families.tll], num_threads=1)
+TLL_VINECOP = pv.FitControlsVinecop(family_set=[pv.families.tll], num_threads=1)
+
+
+def eval_grid(n: int, d: int = 2, seed: int = 0) -> np.ndarray:
+  """``n`` rows of ``d`` uniforms, inside the unit square's interior.
+
+  Parameters
+  ----------
+  n : int
+      Number of rows.
+  d : int, default=2
+      Number of columns.
+  seed : int, default=0
+      Seed for the generator.
+
+  Returns
+  -------
+  ndarray, shape (n, d), dtype float
+      Evaluation points, clear of the boundary the cascades clamp at.
+  """
+  return np.random.default_rng(seed).uniform(0.02, 0.98, size=(n, d))
+
+
+def banded_pseudo_obs(d: int, n: int, seed: int = 0) -> np.ndarray:
+  """Pseudo-observations of ``d`` correlated normals: a factor plus noise.
+
+  A smoothly varying density per pair, which is what a TLL fit needs to be
+  worth comparing against.
+
+  Parameters
+  ----------
+  d : int
+      Number of columns.
+  n : int
+      Number of rows.
+  seed : int, default=0
+      Seed for the generator.
+
+  Returns
+  -------
+  ndarray, shape (n, d), dtype float
+      Pseudo-observations in the unit hypercube.
+  """
+  rng = np.random.default_rng(seed)
+  base = rng.standard_normal(size=(n, 1))
+  return pv.to_pseudo_obs(0.6 * base + 0.4 * rng.standard_normal(size=(n, d)))
+
+
+def fit_tll_bicop(u: np.ndarray) -> pv.Bicop:
+  """A TLL pair copula fitted to ``u``.
+
+  Parameters
+  ----------
+  u : ndarray, shape (n, 2), dtype float
+      Pseudo-observations.
+
+  Returns
+  -------
+  Bicop
+      The fitted pair copula.
+  """
+  return pv.Bicop.from_data(u, controls=TLL_BICOP)
+
+
+def fit_tll_vinecop(u: np.ndarray, **extra: Any) -> pv.Vinecop:
+  """A TLL vine fitted to ``u``.
+
+  Parameters
+  ----------
+  u : ndarray, shape (n, d), dtype float
+      Pseudo-observations.
+  **extra : Any
+      Further ``FitControlsVinecop`` settings, for a test that needs one.
+
+  Returns
+  -------
+  Vinecop
+      The fitted vine.
+  """
+  controls = (
+    TLL_VINECOP
+    if not extra
+    else pv.FitControlsVinecop(
+      family_set=[pv.families.tll], num_threads=1, **extra
+    )
+  )
+  return pv.Vinecop.from_data(u, controls=controls)

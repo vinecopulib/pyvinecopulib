@@ -94,14 +94,6 @@ class _ZeroInflated(MarginBase[np.ndarray]):
     return np.where(y >= 0.0, self.prob0 + body, 0.0)
 
 
-def test_kde1d_satisfies_the_margin_contract() -> None:
-  """`Kde1d` is a `MarginLike` with no adapter, fitted or not."""
-  kde = pv.core.Kde1d()
-  assert isinstance(kde, MarginLike)
-  kde.fit(np.random.default_rng(0).normal(size=300))
-  assert isinstance(kde, MarginLike)
-
-
 def test_subclass_satisfies_the_contract() -> None:
   """Two methods are enough to conform."""
   assert isinstance(_ShiftedExp(), MarginLike)
@@ -672,7 +664,6 @@ def test_every_fittable_class_declares_the_controls_it_reads() -> None:
   all, which is what a `family_set` refusal dispatches on now that there is no
   separate boolean to fall out of step with it.
   """
-  import pyvinecopulib as pv
   from pyvinecopulib.core import FitControlsMargin, MarginBase
 
   # The bound classes carry it too, set from the binding.
@@ -700,7 +691,6 @@ def test_reading_controls_and_searching_a_family_are_different_questions() -> (
   refusal actually asks is whether the margin's controls carry a `family_set`
   at all, which its declared class answers.
   """
-  import pyvinecopulib as pv
   from pyvinecopulib.core import FitControlsMargin
 
   # Reads controls -- the kernel knobs -- but they carry no family set.

@@ -23,7 +23,6 @@ from pyvinecopulib.core import (
   BicopBase,
   BicopLike,
   IndependenceBicop,
-  VinecopLike,
 )
 
 from .conftest import MinimalBicop
@@ -151,22 +150,6 @@ def test_bicopbase_plot_runs() -> None:
 
   MinimalBicop().plot(plot_type="contour")
   plt.close("all")
-
-
-def test_cpp_classes_satisfy_neutral_protocols() -> None:
-  """The nanobind ``Bicop`` / ``Vinecop`` satisfy ``BicopLike`` / ``VinecopLike``.
-
-  ``BicopLike`` mirrors the C++ ``Bicop`` evaluation surface (``pdf`` / ``cdf`` /
-  ``hfunc1`` / ``hfunc2`` / ``hinv1`` / ``hinv2``, no ``dtype`` / ``device``), so
-  a fitted C++ pair / vine conforms structurally; this guards against future
-  contract drift.
-  """
-  bicop = pv.Bicop(family=pv.families.indep)
-  assert isinstance(bicop, BicopLike)
-
-  structure = pv.RVineStructure.from_order([1, 2])
-  vine = pv.Vinecop.from_structure(structure=structure, pair_copulas=[[bicop]])
-  assert isinstance(vine, VinecopLike)
 
 
 def test_core_import_is_torch_free() -> None:

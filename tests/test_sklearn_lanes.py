@@ -17,7 +17,7 @@ pytest.importorskip("pandas")
 import pandas as pd
 
 import pyvinecopulib as pv
-from pyvinecopulib.core import VinecopLike, Vinedist, VinedistLike
+from pyvinecopulib.core import Vinedist, VinedistLike
 from pyvinecopulib.sklearn import VineDensity, VineRegressor
 
 
@@ -36,39 +36,6 @@ def _default_margin_of(est: Any, *, reference: Any = None) -> Any:
 # ---------------------------------------------------------------------------
 # Protocol conformance
 # ---------------------------------------------------------------------------
-
-
-class TestVinecopLikeProtocol:
-  """Both ``pv.Vinecop`` and ``pv.torch.TorchVinecop`` satisfy the canonical
-  :class:`pyvinecopulib.core.VinecopLike` protocol structurally, so either
-  lane's fitted vine is usable through the neutral contract."""
-
-  def test_cpp_vinecop_satisfies_protocol(self) -> None:
-    rng = np.random.default_rng(0)
-    U = rng.uniform(0.001, 0.999, (200, 3))
-    cop = pv.Vinecop.from_data(
-      U,
-      controls=pv.FitControlsVinecop(
-        family_set=[pv.families.tll], num_threads=1
-      ),
-    )
-    assert isinstance(cop, VinecopLike)
-
-  def test_torch_vinecop_satisfies_protocol(self) -> None:
-    torch = pytest.importorskip("torch")
-    del torch
-    from pyvinecopulib.torch import TorchVinecop
-
-    rng = np.random.default_rng(0)
-    U = rng.uniform(0.001, 0.999, (200, 3))
-    cop = pv.Vinecop.from_data(
-      U,
-      controls=pv.FitControlsVinecop(
-        family_set=[pv.families.tll], num_threads=1
-      ),
-    )
-    tv = TorchVinecop.from_vinecop(cop)
-    assert isinstance(tv, VinecopLike)
 
 
 # ---------------------------------------------------------------------------

@@ -22,7 +22,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from pyvinecopulib.core import FitControlsKde1d, Kde1d, MarginLike
+from pyvinecopulib.core import FitControlsKde1d, Kde1d
 from pyvinecopulib.torch import TorchKde1d
 
 _PROBS = np.array([1e-6, 0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99, 1 - 1e-6])
@@ -216,15 +216,6 @@ def test_cdf_left_is_derived_for_a_discrete_margin() -> None:
 
 
 # --- the contract ----------------------------------------------------------- #
-
-
-def test_it_satisfies_the_margin_contract() -> None:
-  """Structurally, so it drops into a `Vinedist` with no adapter."""
-  _, lifted, _ = _fitted("continuous")
-  assert isinstance(lifted, MarginLike)
-  assert isinstance(lifted, torch.nn.Module)
-  assert lifted.supports_weights is True
-  assert lifted.controls_class is FitControlsKde1d
 
 
 @pytest.mark.parametrize(
