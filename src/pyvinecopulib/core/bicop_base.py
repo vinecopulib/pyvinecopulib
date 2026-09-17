@@ -794,17 +794,8 @@ class BicopBase(
     u2: Any = self.hinv1(base_u, x=x)
     return cast("ArrayT", xp.stack([base_u[:, 0], u2], axis=-1))
 
-  #: Whether a vine may stack this pair into its grid-batched
-  #: cascade. ``False`` here because the fast path reads an interpolation grid
-  #: off each pair and a pair copula in general has none -- so a subclass opts
-  #: in only if it exposes one. Declared rather than discovered, and declared
-  #: on the base rather than left to a ``getattr`` default, so that the third
-  #: state (declared ``False``) is distinguishable from "never heard of it"
-  #: and a subclass author can find the flag without tripping its error.
-  supports_batched: bool = False
-
   #: Whether this pair copula's leaves accept exogenous covariates. Declared
-  #: for the same reason `supports_batched` is: a bound class reports
+  #: because a bound class reports
   #: `(*args, **kwargs)`, so `pair_eval` cannot read the signature and asks
   #: the declaration before forwarding a matrix. A subclass whose leaves take
   #: `x` -- whether or not they read one -- sets this `True`.

@@ -1121,7 +1121,7 @@ class TorchVinecop(
         If any variable is discrete -- the stacked per-level grids carry no
         distribution function, which a discrete edge's h-functions are
         difference quotients of -- or if any pair lacks the grid internals the
-        batched path reads (``supports_batched`` is ``False``). The dispatch
+        batched path reads (it declares no ``supports_batched``). The dispatch
         layer catches it and falls back to the non-batched cascade.
     """
     if self._n_discrete:

@@ -433,29 +433,6 @@ def test_plot_takes_one_covariate_row_only(bad: Any) -> None:
     MinimalBicop().plot(x=bad)
 
 
-def test_supports_batched_is_declared_on_the_base() -> None:
-  """The grid fast path is opt-in, and the answer must be findable.
-
-  It was a three-valued contract with no home: declared on two concrete
-  classes, read at one ``getattr(..., False)`` site, and absent from every base
-  and every protocol -- so a subclass author could only discover it by
-  tripping its error.
-  """
-  assert BicopBase.supports_batched is False
-  assert MinimalBicop().supports_batched is False
-  # A pair that exposes an interpolation grid opts in.
-  torch = pytest.importorskip("torch")
-  del torch
-  from pyvinecopulib.torch import TorchTllBicop
-
-  assert TorchTllBicop.supports_batched is True
-
-
-# --------------------------------------------------------------------------- #
-# `x` on the estimator surface: threaded everywhere, refused where unusable    #
-# --------------------------------------------------------------------------- #
-
-
 def test_fit_select_and_from_data_all_take_covariates() -> None:
   """A conditional pair must be able to express a conditional *fit*.
 

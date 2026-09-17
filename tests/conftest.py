@@ -151,8 +151,6 @@ class GaussianBicop(BicopBase[Any]):
   #: Its leaves take `x`, so `pair_eval` may forward one.
   supports_covariates: bool = True
 
-  supports_batched: bool = False
-
   def __init__(
     self,
     *,
