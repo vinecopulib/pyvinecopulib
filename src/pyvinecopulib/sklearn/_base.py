@@ -20,9 +20,10 @@ import pyvinecopulib as pv
 
 from ..core import (
   ControlsLike,
+  MarginLike,
   VinecopLike,
   Vinedist,
-  VinedistBase,
+  VinedistLike,
 )
 from ..core._margins import resolve_margin_controls
 from ..core._validation import validate_declaration
@@ -192,6 +193,11 @@ def expand_factors(df: pd.DataFrame) -> pd.DataFrame:
   return pd.concat(out_parts, axis=1)
 
 
+#: Distinguishes "declares no `margin_class`" -- a `VinedistLike`
+#: implementation -- from "declares one and left it `None`".
+_NOT_DECLARED = object()
+
+
 class VineBase(BaseEstimator):
   """
   Base class for vine-copula based estimators.
@@ -239,7 +245,7 @@ class VineBase(BaseEstimator):
 
   def __init__(
     self,
-    distribution: type[VinedistBase[Any]] | None = None,
+    distribution: type[VinedistLike[Any]] | None = None,
     controls: ControlsLike | None = None,
     structure: pv.RVineStructure | None = None,
     margin_controls: object = None,
@@ -766,7 +772,7 @@ class VineBase(BaseEstimator):
 
   def _check_margin_specs(
     self,
-    cls: type[VinedistBase[Any]],
+    cls: type[VinedistLike[Any]],
     var_types: list[str | None],
     supports: list[Any],
     *,
@@ -791,13 +797,25 @@ class VineBase(BaseEstimator):
     -------
     None
     """
-    # One column at a time, so a refusal names the column it belongs to.
-    specs = cls._default_margins(len(var_types), self.controls_, None)
-    if specs is None:
+    # `margin_class` is `VinedistBase`'s declaration, not the contract's -- a
+    # protocol `ClassVar` is invariant, so putting it there would force every
+    # implementation to restate the wide annotation and forbid narrowing it.
+    # So this pre-check is available for a base subclass and skipped for a
+    # class that declares no such attribute: that is a `VinedistLike`
+    # implementation supplying its own `from_data`, which is where its own
+    # refusals belong. A base subclass that names `None` is still refused --
+    # it declared the attribute and left it empty.
+    declared: Any = getattr(cls, "margin_class", _NOT_DECLARED)
+    if declared is _NOT_DECLARED:
+      return
+    margin_class = cast("type[MarginLike[Any]] | None", declared)
+    if margin_class is None:
       raise TypeError(
         f"{cls.__name__} names no `margin_class`, so it cannot fit margins "
         "from data. Name one on the distribution passed as `distribution=`."
       )
+    # One column at a time, so a refusal names the column it belongs to.
+    specs = [margin_class() for _ in range(len(var_types))]
     for j, (var_type, support) in enumerate(
       zip(var_types, supports, strict=False)
     ):
@@ -843,18 +861,10 @@ class VineBase(BaseEstimator):
       self._x_margins = tuple(bound)
     self._vine = self.distribution_.vinecop
     self.structure_ = self._vine.structure
-    # An optional capability on `VinedistLike`, read the way the contract
-    # says -- but this estimator publishes `margin_summary_`, so a
-    # distribution that has none is named rather than silently summaryless.
-    summary = getattr(self.distribution_, "margin_summary", None)
-    if summary is None:
-      raise TypeError(
-        f"{type(self.distribution_).__name__} has no `margin_summary`, which "
-        f"{type(self).__name__} publishes as `margin_summary_`. Return a "
-        "`VinedistBase` subclass as `distribution`, or add a "
-        "`margin_summary()` to the one you pass."
-      )
-    self.margin_summary_ = summary()
+    # A member of `VinedistLike`, so it is called rather than probed: a
+    # distribution that declines it raises from its own default, naming
+    # itself.
+    self.margin_summary_ = self.distribution_.margin_summary()
 
   def _seeded_controls(self, d: int) -> Any:  # noqa: ANN401 - `ControlsLike`
     """``controls_``, seeded from ``random_state`` where nothing else says.
@@ -924,9 +934,14 @@ class VineBase(BaseEstimator):
     ControlsLike, or None
         The controls to fit with.
     """
-    controls_class = getattr(
-      (self.distribution or Vinedist).vinecop_class, "controls_class", None
+    # `vinecop_class` is `VinedistBase`'s declaration rather than the
+    # contract's, for the invariance reason `_check_margin_specs` states, so
+    # it is read the same way: a pure `VinedistLike` implementation names its
+    # own controls and gets `None` here.
+    vinecop_class = getattr(
+      self.distribution or Vinedist, "vinecop_class", None
     )
+    controls_class = getattr(vinecop_class, "controls_class", None)
     if controls_class is None:
       return None
     settings: Any = controls_class()

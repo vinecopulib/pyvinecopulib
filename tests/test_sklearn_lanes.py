@@ -17,7 +17,7 @@ pytest.importorskip("pandas")
 import pandas as pd
 
 import pyvinecopulib as pv
-from pyvinecopulib.core import VinecopLike, Vinedist
+from pyvinecopulib.core import VinecopLike, Vinedist, VinedistLike
 from pyvinecopulib.sklearn import VineDensity, VineRegressor
 
 
@@ -658,3 +658,78 @@ def test_the_fitted_distribution_holds_the_vine_itself() -> None:
 
   drawn = est.sample(5, random_state=1)
   assert isinstance(drawn, np.ndarray) and drawn.shape == (5, 2)
+
+
+class _Delegating(VinedistLike[np.ndarray]):
+  """Implements the contract directly rather than subclassing the base.
+
+  Holds a `Vinedist` instead of being one, which is the "immutable /
+  functional distribution" `VinedistLike` documents. Every member is
+  delegation, so what this exercises is the contract's surface rather than any
+  arithmetic of its own.
+  """
+
+  def __init__(self, inner: Vinedist) -> None:
+    self._inner = inner
+
+  @property
+  def vinecop(self) -> Any:
+    return self._inner.vinecop
+
+  @property
+  def margins(self) -> Any:
+    return self._inner.margins
+
+  def logpdf(self, y: np.ndarray, **kwargs: Any) -> Any:
+    return self._inner.logpdf(y, **kwargs)
+
+  def pdf(self, y: np.ndarray, **kwargs: Any) -> Any:
+    return self._inner.pdf(y, **kwargs)
+
+  def loglik(self, y: np.ndarray, **kwargs: Any) -> Any:
+    return self._inner.loglik(y, **kwargs)
+
+  def copula_layout(self, y: np.ndarray, **kwargs: Any) -> Any:
+    return self._inner.copula_layout(y, **kwargs)
+
+  def cdf(self, y: np.ndarray, **kwargs: Any) -> Any:
+    return self._inner.cdf(y, **kwargs)
+
+  def rosenblatt(self, y: np.ndarray, **kwargs: Any) -> Any:
+    return self._inner.rosenblatt(y, **kwargs)
+
+  def inverse_rosenblatt(self, w: np.ndarray, **kwargs: Any) -> Any:
+    return self._inner.inverse_rosenblatt(w, **kwargs)
+
+  def sample(self, n: int, **kwargs: Any) -> Any:
+    return self._inner.sample(n, **kwargs)
+
+  def margin_summary(self) -> Any:
+    return self._inner.margin_summary()
+
+  @classmethod
+  def from_data(
+    cls, y: np.ndarray, /, controls: Any = None, **kwargs: Any
+  ) -> _Delegating:
+    return cls(Vinedist.from_data(y, controls, **kwargs))
+
+
+def test_an_estimator_fits_a_contract_implementer_not_only_a_base_subclass(
+  sample_array_data: Any,
+) -> None:
+  """`distribution=` takes what `VinedistLike` describes, not only its base.
+
+  The contract is kept so a third party can plug a custom distribution into an
+  estimator -- but the estimator was typed, and its refusal written, against
+  `VinedistBase`, so the one class the contract exists for was refused at
+  exactly that point. `VinedistLike` now declares the fitting verbs a consumer
+  calls, and this holds a `Vinedist` rather than being one.
+  """
+  X, _, _ = sample_array_data
+  est = VineDensity(distribution=_Delegating).fit(X)
+
+  assert isinstance(est.distribution_, _Delegating)
+  assert not isinstance(est.distribution_, pv.core.VinedistBase)
+  assert isinstance(est.distribution_, VinedistLike)
+  assert est.score_samples(X[:3]).shape == (3,)
+  assert len(est.margin_summary_) == X.shape[1]

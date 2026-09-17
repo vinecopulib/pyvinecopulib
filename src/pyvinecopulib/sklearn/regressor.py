@@ -11,7 +11,7 @@ from sklearn.utils.validation import check_is_fitted
 
 import pyvinecopulib as pv
 
-from ..core import ControlsLike, VinedistBase
+from ..core import ControlsLike, VinedistLike
 from ..core.extend import to_numpy
 from ._base import (
   _DOC_DISCRETE,
@@ -48,7 +48,7 @@ class VineRegressor(RegressorMixin, VineBase):
     self,
     mean: bool = True,
     quantiles: _YLike | None = None,
-    distribution: type[VinedistBase[Any]] | None = None,
+    distribution: type[VinedistLike[Any]] | None = None,
     controls: ControlsLike | None = None,
     structure: pv.RVineStructure | None = None,
     margin_controls: object = None,

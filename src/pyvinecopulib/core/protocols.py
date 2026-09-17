@@ -1546,13 +1546,13 @@ class VinedistLike(Protocol[ArrayT]):
 
   Notes
   -----
-  Discreteness, conditioning and the fit-time reports are **optional
-  capabilities** rather than members of this contract, discovered with
-  ``getattr``: ``dim``, ``var_types``, ``sample_conditional`` and
-  ``margin_summary`` -- the last of which
-  :class:`pyvinecopulib.sklearn.VineDensity` reads to publish
-  ``margin_summary_``, so a distribution class without one is
-  told so by name.
+  ``dim``, ``var_types``, ``sample_conditional`` and ``margin_summary`` are
+  **members** of this contract, each carrying the default a consumer used to
+  apply -- the first two derived from the margins, the last two raising by
+  name. So a consumer calls them rather than probing with ``getattr``:
+  :class:`pyvinecopulib.sklearn.VineDensity` reads ``margin_summary`` to
+  publish ``margin_summary_``, and a distribution that declines it says so
+  itself.
 
   A distribution declares no ``supports_covariates`` of its own. It reads the
   flag on the parts it holds -- every margin, and the copula -- and refuses an
@@ -1568,8 +1568,32 @@ class VinedistLike(Protocol[ArrayT]):
   MarginLike : The marginal half's contract.
   """
 
-  vinecop: VinecopLike[ArrayT]
-  margins: Sequence[MarginLike[ArrayT]]
+  @property
+  def vinecop(self) -> VinecopLike[ArrayT]:
+    """The copula half.
+
+    Read-only: every implementation supplies it as a property, and a mutable
+    data member is invariant -- a `tuple` return would not be assignable to a
+    declared `Sequence`, which is what put a `VinedistBase` subclass outside
+    `type[VinedistLike[Any]]`.
+
+    Returns
+    -------
+    VinecopLike
+        The vine copula this distribution composes.
+    """
+    ...
+
+  @property
+  def margins(self) -> Sequence[MarginLike[ArrayT]]:
+    """The marginal half, one per variable, as :attr:`vinecop`.
+
+    Returns
+    -------
+    sequence of MarginLike
+        One margin per variable, in column order.
+    """
+    ...
 
   @abstractmethod
   def logpdf(self, y: ArrayT) -> ArrayT:
@@ -1789,6 +1813,117 @@ class VinedistLike(Protocol[ArrayT]):
     """
     raise NotImplementedError(
       f"{type(self).__name__} has no `sample_conditional`."
+    )
+
+  def fit(
+    self,
+    y: ArrayT,
+    /,
+    # `Any`, not `ControlsLike`: which controls type an estimator accepts is
+    # its own, and `controls_class` is what names it.
+    controls: Any = None,  # noqa: ANN401
+  ) -> Self:
+    """Re-estimate both halves along the structure and families held.
+
+    Parameters
+    ----------
+    y : array, shape (n, d), dtype float
+        Observations on the original scale.
+    controls : object, or None, optional
+        Fit configuration, of whatever type :attr:`controls_class` names.
+
+    Returns
+    -------
+    Self
+        This distribution, re-estimated in place.
+
+    Raises
+    ------
+    NotImplementedError
+        Unless the implementation overrides it. Not overriding it *is* the
+        answer for a fixed distribution.
+    """
+    del y, controls
+    raise NotImplementedError(
+      f"{type(self).__name__} has no `fit`; implement it to re-estimate this "
+      "distribution in place, or build a fresh one instead."
+    )
+
+  def select(
+    self,
+    y: ArrayT,
+    /,
+    controls: Any = None,  # noqa: ANN401 - as `fit`, above
+  ) -> Self:
+    """Re-estimate, letting both halves change shape.
+
+    Parameters
+    ----------
+    y : array, shape (n, d), dtype float
+        Observations on the original scale.
+    controls : object, or None, optional
+        Fit configuration, of whatever type :attr:`controls_class` names.
+
+    Returns
+    -------
+    Self
+        This distribution, re-selected in place.
+    """
+    return self.fit(y, controls)
+
+  @classmethod
+  def from_data(
+    cls,
+    y: ArrayT,
+    /,
+    controls: Any = None,  # noqa: ANN401 - as `fit`, above
+    *,
+    margin_controls: object = None,
+    var_types: Sequence[str | None] | None = None,
+    supports: Sequence[tuple[float | None, float | None] | None] | None = None,
+    structure: RVineStructure | None = None,
+    names: Sequence[str] | None = None,
+  ) -> Self:
+    """Fit a distribution from data, margins first and then the copula.
+
+    Declared on the contract rather than only on the base because a consumer
+    handed the class -- the scikit-learn estimators take one as
+    ``distribution=`` -- calls this on it. A protocol read on instances needs
+    no constructor; one used as ``type[...]`` must name what is called on the
+    class.
+
+    Parameters
+    ----------
+    y : array, shape (n, d), dtype float
+        Observations on the original scale.
+    controls : object, or None, optional
+        Copula fit configuration, of whatever type :attr:`controls_class`
+        names.
+    margin_controls : object, or None, optional
+        Marginal fit configuration, one per variable or broadcast.
+    var_types : sequence of str, or None, optional
+        What each variable is, one entry per variable.
+    supports : sequence of tuple, or None, optional
+        Declared bounds, one entry per variable.
+    structure : RVineStructure, or None, optional
+        A fixed structure, or ``None`` to select one.
+    names : sequence of str, or None, optional
+        Variable names.
+
+    Returns
+    -------
+    Self
+        The fitted distribution.
+
+    Raises
+    ------
+    NotImplementedError
+        Unless the implementation overrides it.
+    """
+    del y, controls, margin_controls, var_types, supports, structure, names
+    raise NotImplementedError(
+      f"{cls.__name__} has no `from_data`; implement it to fit this "
+      "distribution from observations."
     )
 
 

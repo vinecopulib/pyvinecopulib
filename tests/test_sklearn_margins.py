@@ -15,6 +15,7 @@ puts mass on values that cannot occur.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -392,7 +393,7 @@ def test_parametric_margins_select_a_family_per_column(
   pytest.importorskip("scipy")
   X, _, _ = sample_array_data
   est = VineDensity(distribution=ParametricVineDensity).fit(X)
-  margins: tuple[Any, ...] = est.distribution_.margins
+  margins: Sequence[Any] = est.distribution_.margins
   assert all(isinstance(margin, SciPyMargin) for margin in margins)
   assert all(margin.is_fitted for margin in margins)
   rows = est.margin_summary_
@@ -419,7 +420,7 @@ def test_the_estimator_honors_a_named_family_and_chooses_an_unnamed_one() -> (
     margin_controls=FitControlsMargin(family_set=["norm"]),
     random_state=0,
   ).fit(X)
-  named_margins: tuple[Any, ...] = named.distribution_.margins
+  named_margins: Sequence[Any] = named.distribution_.margins
   assert [m.family_name for m in named_margins] == [
     "norm",
     "norm",
@@ -428,7 +429,7 @@ def test_the_estimator_honors_a_named_family_and_chooses_an_unnamed_one() -> (
   chosen = VineDensity(distribution=ParametricVineDensity, random_state=0).fit(
     X
   )
-  chosen_margins: tuple[Any, ...] = chosen.distribution_.margins
+  chosen_margins: Sequence[Any] = chosen.distribution_.margins
   assert "norm" not in [m.family_name for m in chosen_margins]
 
 
