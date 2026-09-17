@@ -4,11 +4,12 @@ from collections.abc import Callable
 from typing import Any
 
 import numpy as np
-import pandas as pd
 import pytest
 
 pytest.importorskip("sklearn")
+pytest.importorskip("pandas")
 
+import pandas as pd
 from sklearn.exceptions import NotFittedError
 
 from pyvinecopulib.sklearn import VineRegressor
