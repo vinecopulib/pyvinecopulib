@@ -841,9 +841,6 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
     a1, b1, a2, b2 : Tensor, shape (n,), dtype float
         Rectangle bounds per query, in either order. An empty rectangle gives
         zero.
-    x : Tensor, or None, optional
-        Unused: a ``TorchTllBicop`` is unconditional. Accepted so the class
-        satisfies ``BicopLike``.
     x : Tensor, shape (n, p), or None, optional
         Accepted and ignored; a ``TorchTllBicop`` is unconditional.
 
@@ -890,8 +887,6 @@ class TorchTllBicop(BicopBase[torch.Tensor], torch.nn.Module):
         Bounds in the free argument, in either order.
     cond_var : int
         1 or 2, the argument held fixed.
-    x : Tensor, or None, optional
-        Unused, as for :meth:`rect_prob`.
     x : Tensor, shape (n, p), or None, optional
         Accepted and ignored; a ``TorchTllBicop`` is unconditional.
 

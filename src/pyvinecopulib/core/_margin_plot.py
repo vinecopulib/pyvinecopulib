@@ -136,7 +136,7 @@ def make_plotting_grid(
   place: Callable[[np.ndarray], Any] | None = None,
 ) -> np.ndarray:
   """The points a margin's plot is evaluated on, by variable type."""
-  var_type = getattr(margin, "var_type", "c")
+  var_type = margin.var_type
   lo, hi = _draw_range(margin, place)
 
   if var_type == "d":
@@ -183,14 +183,14 @@ def margin_plot(
   ## grid. Placed but not clamped -- covariates are reals.
   row: np.ndarray | None = None
   if x is not None:
-    if not getattr(margin, "supports_covariates", False):
+    if not margin.supports_covariates:
       raise ValueError(
         "this margin declares no `supports_covariates`, so it models f(y) "
         "and there is no covariate value to draw at; drop `x=`"
       )
     row = covariate_row(np.asarray(x, dtype=float))
 
-  var_type = getattr(margin, "var_type", "c")
+  var_type = margin.var_type
   ev = make_plotting_grid(margin, grid_size, place=place)
 
   ## The grid is manufactured here, so this is the one place a margin is

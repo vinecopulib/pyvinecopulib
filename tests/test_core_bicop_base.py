@@ -35,16 +35,18 @@ class _SqrtPair(BicopBase[np.ndarray]):
   actually exercise the numerical (bisection) inverse.
   """
 
-  def _pdf_raw(self, u: np.ndarray, x: np.ndarray | None = None) -> np.ndarray:
+  def _pdf_raw(
+    self, u: np.ndarray, *, x: np.ndarray | None = None
+  ) -> np.ndarray:
     return np.ones(u.shape[0], dtype=u.dtype)
 
   def _hfunc1_raw(
-    self, u: np.ndarray, x: np.ndarray | None = None
+    self, u: np.ndarray, *, x: np.ndarray | None = None
   ) -> np.ndarray:
     return u[:, 1] ** 2
 
   def _hfunc2_raw(
-    self, u: np.ndarray, x: np.ndarray | None = None
+    self, u: np.ndarray, *, x: np.ndarray | None = None
   ) -> np.ndarray:
     return u[:, 0] ** 2
 
@@ -82,6 +84,21 @@ def test_bicopbase_loglik() -> None:
   cop = MinimalBicop()
   u = np.array([[0.3, 0.7], [0.5, 0.5], [0.9, 0.1]])
   assert float(cop.loglik(u)) == pytest.approx(0.0, abs=1e-12)
+
+
+def test_bicopbase_logpdf_is_the_log_of_the_density() -> None:
+  """``logpdf`` answers per observation, and ``-inf`` off the support."""
+  cop = _SqrtPair()
+  u = np.array([[0.3, 0.7], [0.5, 0.5]])
+  np.testing.assert_allclose(cop.logpdf(u), np.log(cop.pdf(u)))
+
+  class _HalfSupport(_SqrtPair):
+    def _pdf_raw(
+      self, u: np.ndarray, *, x: np.ndarray | None = None
+    ) -> np.ndarray:
+      return (u[:, 0] < 0.5).astype(u.dtype) * 2.0
+
+  assert float(_HalfSupport().logpdf(u)[1]) == -np.inf
 
 
 def test_bicopbase_loglik_preserves_extreme_tail_density() -> None:
@@ -502,6 +519,48 @@ def test_the_inherited_inverses_place_their_argument() -> None:
   np.testing.assert_allclose(
     np.asarray(pair.hinv1(u), dtype=float), u[:, 1], atol=1e-6
   )
+
+
+def test_the_two_probabilities_place_their_bounds() -> None:
+  """`rect_prob` / `cond_interval_prob` are public, so they place too.
+
+  `TorchTllBicop` places in its own overrides; the defaults did not, so the
+  same call on a torch-hosted pair reached the leaf with NumPy bounds. The
+  bounds are placed and not clamped -- ``0`` is a real limit here.
+  """
+  torch = pytest.importorskip("torch")
+
+  class _TorchIndep(BicopBase[Any]):
+    def __init__(self) -> None:
+      self.scale = torch.ones(1, dtype=torch.float32)
+
+    def _pdf_raw(self, u: Any, *, x: Any = None) -> Any:
+      del x
+      return torch.ones(u.shape[0], dtype=u.dtype)
+
+    def _hfunc1_raw(self, u: Any, *, x: Any = None) -> Any:
+      del x
+      return u[:, 1]
+
+    def _hfunc2_raw(self, u: Any, *, x: Any = None) -> Any:
+      del x
+      return u[:, 0]
+
+    def _cdf_raw(self, u: Any, *, x: Any = None) -> Any:
+      del x
+      return u[:, 0] * u[:, 1]
+
+  pair = _TorchIndep()
+  zero, a, b = (np.array([v, v]) for v in (0.0, 0.25, 0.75))
+  rect = pair.rect_prob(zero, b, a, b)
+  assert isinstance(rect, torch.Tensor)
+  # The independence copula: a corner on 0 contributes nothing, so the
+  # rectangle is the product of its widths rather than 1e-10 short of it.
+  np.testing.assert_allclose(np.asarray(rect, dtype=float), 0.75 * 0.5)
+
+  cond = pair.cond_interval_prob(b, a, b, 1)
+  assert isinstance(cond, torch.Tensor)
+  np.testing.assert_allclose(np.asarray(cond, dtype=float), 0.5, atol=1e-6)
 
 
 def test_the_contract_is_what_a_vine_needs_to_host_a_pair() -> None:

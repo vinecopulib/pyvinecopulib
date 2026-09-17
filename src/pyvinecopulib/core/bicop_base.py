@@ -391,6 +391,32 @@ class BicopBase(
       self._h2_c(xp, u1, 0.5 * (u2 + u2m), x),
     )
 
+  def logpdf(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
+    """Log-density of the pair copula at each observation.
+
+    The other three bases answer this and `BicopBase` did not, so a custom
+    pair was the one part a caller had to log themselves. Taken through
+    `safe_log` rather than a bare logarithm: a copula density is legitimately
+    zero off its support, where `log` warns or answers `nan`.
+
+    Not on `BicopLike`: the compiled `Bicop` has no `logpdf`, and a contract
+    member it lacks would put it outside its own contract -- `isinstance`
+    compares member names.
+
+    Parameters
+    ----------
+    u : array, shape (n, 2), dtype float
+        Pair pseudo-observations in the unit square.
+    x : array, shape (n, p), or None, optional
+        Exogenous covariates, one row per observation.
+
+    Returns
+    -------
+    array, shape (n,), dtype float
+        Log-density values, ``-inf`` where the density is zero.
+    """
+    return safe_log(self.pdf(u, x=x))
+
   def loglik(self, u: ArrayT, *, x: ArrayT | None = None) -> ArrayT:
     """Total log-likelihood ``sum(log c(u))`` of the pair at ``u``.
 
@@ -570,10 +596,11 @@ class BicopBase(
 
     The quantity a discrete argument's difference quotient is built from. This
     reads it as the four-corner difference of ``_cdf_raw``, the continuous
-    leaf, which any pair copula with a distribution function can serve. The
-    leaf rather than :meth:`cdf` so the dispatcher cannot recur through it --
-    which also means the bounds arrive already placed and clamped, as the
-    cascades hand them over, and are not prepared here. A pair that can evaluate the
+    leaf, which any pair copula with a distribution function can serve -- the
+    leaf rather than :meth:`cdf` so the dispatcher cannot recur through it.
+    The bounds are placed and not clamped: ``0`` and ``1`` are the
+    distribution's own limits here, where a copula argument's ``1e-10`` would
+    be. A pair that can evaluate the
     rectangle without that cancellation overrides this --
     :class:`~pyvinecopulib.torch.TorchTllBicop` does, reading the mass off its
     grid -- and gains accuracy at a narrow atom, where differencing amplifies
@@ -598,7 +625,14 @@ class BicopBase(
     --------
     cond_interval_prob : The conditional counterpart, for a mixed edge.
     """
-    return rect_prob_from_cdf(self._cdf_raw, a1, b1, a2, b2, x=x)
+    return rect_prob_from_cdf(
+      self._cdf_raw,
+      self._prep(a1),
+      self._prep(b1),
+      self._prep(a2),
+      self._prep(b2),
+      x=x,
+    )
 
   def cond_interval_prob(
     self,
@@ -614,7 +648,8 @@ class BicopBase(
     What a mixed edge's density is built from, as :meth:`rect_prob` is what a
     doubly discrete one is built from. This reads it as the difference of two
     h-function values, each clamped into the open unit interval; a pair that
-    can evaluate the mass itself overrides this, and is then not clamped.
+    can evaluate the mass itself overrides this, and is then not clamped. The
+    arguments are placed, as :meth:`rect_prob`'s bounds are.
 
     Parameters
     ----------
@@ -633,7 +668,9 @@ class BicopBase(
         Conditional probabilities.
     """
     h = self._hfunc1_raw if cond_var == 1 else self._hfunc2_raw
-    return cond_interval_prob_from_hfunc(h, u_cond, lo, hi, cond_var, x=x)
+    return cond_interval_prob_from_hfunc(
+      h, self._prep(u_cond), self._prep(lo), self._prep(hi), cond_var, x=x
+    )
 
   @classmethod
   def from_data(

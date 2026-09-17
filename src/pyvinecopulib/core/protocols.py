@@ -1845,10 +1845,7 @@ class VinedistLike(Protocol[ArrayT]):
         One entry per variable, each ``"c"`` or ``"d"``: a zero-inflated
         margin sits on a discrete edge, so ``"zi"`` reads as ``"d"`` here.
     """
-    return [
-      "d" if getattr(m, "var_type", "c") in ("d", "zi") else "c"
-      for m in self.margins
-    ]
+    return ["d" if m.var_type in ("d", "zi") else "c" for m in self.margins]
 
   def margin_summary(self) -> Sequence[Mapping[str, Any]]:
     """One row per margin, describing what each one is.
