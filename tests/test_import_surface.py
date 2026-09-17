@@ -214,6 +214,7 @@ def test_agents_md_public_api_lists_match_the_code() -> None:
   Two copies drift, and this one had: it placed `Kde1d` in `utils`, where it
   has never been.
   """
+  import importlib
   import pathlib
   import re
 
@@ -235,12 +236,19 @@ def test_agents_md_public_api_lists_match_the_code() -> None:
   # The two behind an extra are checked too, where the extra is installed.
   # Leaving them out is what let the `torch` bullet drift to seven names
   # against a nine-name `__all__`: the one list nothing compared.
+  #
+  # Not `importorskip`: these subpackages rewrite a missing extra into an
+  # `ImportError` naming it, and pytest re-raises that rather than skipping --
+  # it reads as a broken module, not an absent one. Skipping the *bullet* also
+  # beats skipping the test, which would drop the five that are checkable.
   for label, name in (
     ("`pyvinecopulib.sklearn`", "pyvinecopulib.sklearn"),
     ("`pyvinecopulib.torch`", "pyvinecopulib.torch"),
   ):
-    module = pytest.importorskip(name)
-    checked.append((label, module))
+    try:
+      checked.append((label, importlib.import_module(name)))
+    except ImportError:
+      continue
 
   subpackages = {"core", "families", "utils", "margins", "sklearn", "torch"}
   section = text[text.index("## Public APIs") :]
