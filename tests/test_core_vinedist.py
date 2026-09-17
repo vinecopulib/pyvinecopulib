@@ -138,6 +138,30 @@ def test_loglik_sums_logpdf(continuous: np.ndarray) -> None:
   np.testing.assert_allclose(total, dist.logpdf(continuous).sum(), rtol=1e-12)
 
 
+def test_loglik_leaves_out_an_observation_with_no_log_density(
+  continuous: np.ndarray,
+) -> None:
+  """A `nan` row costs its own row, not the whole sample.
+
+  This is `Vinecop.loglik`'s documented behavior one level up, and the two
+  levels disagreed: the copula summed through `sum_loglik` and the
+  distribution through a bare `xp.sum`, so one missing value turned a whole
+  vine distribution's log-likelihood into `nan`.
+  """
+  dist = pv.Vinedist.from_data(continuous)
+  clean = dist.loglik(continuous)
+
+  holed = continuous.copy()
+  holed[0, 0] = np.nan
+  total = dist.loglik(holed)
+
+  assert np.isfinite(total), "one nan row poisoned the total"
+  # Exactly the clean total less the row that has no log-density.
+  np.testing.assert_allclose(
+    total, clean - dist.logpdf(continuous)[0], rtol=1e-10
+  )
+
+
 def test_logpdf_preserves_an_extreme_tail_copula_density() -> None:
   """The copula term is logged without replacing valid tiny densities."""
   pair = pv.Bicop.from_family(

@@ -35,7 +35,7 @@ from typing import Any, ClassVar, Self, cast
 
 from ..pyvinecopulib_ext import FitControlsKde1d, Kde1d, RVineStructure
 from ._covariates import declared_eval, prepare_covariates
-from ._loglik import safe_log
+from ._loglik import safe_log, sum_loglik
 from ._placement import PlacementMixin, to_numpy
 from ._trim import trim
 from ._validation import (
@@ -917,10 +917,14 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
     array, shape (), dtype float
         A 0-d array, so it stays differentiable on an array namespace that
         carries gradients.
+
+    Notes
+    -----
+    An observation carrying a ``nan`` has no log-density and is left out, as
+    ``Vinecop.loglik()`` leaves it out; a ``-inf`` is the model ruling an
+    observation out and is kept.
     """
-    terms: Any = self.logpdf(y, x=x)
-    xp = array_namespace(terms)
-    return cast("ArrayT", xp.sum(terms))
+    return sum_loglik(self.logpdf(y, x=x))
 
   def rosenblatt(
     self,
