@@ -172,6 +172,19 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
   parameter with ``torch.distributions.transform_to`` if that matters, or
   pass ``trainable=False`` to freeze it.
 
+  There is no maximum-likelihood ``fit``: construct the margin with the
+  parameters you want and *learn* them by leaving ``trainable=True`` and
+  stepping an optimizer over the registered tensors, which is what registering
+  them is for. For a fitted parametric margin use
+  :class:`~pyvinecopulib.margins.SciPyMargin`, and for a fitted nonparametric
+  one :class:`~pyvinecopulib.torch.TorchKde1d`.
+
+  Because it overrides neither ``fit`` nor ``select``, a vine distribution
+  holding these treats them as **fixed** and re-estimates only its copula --
+  which is what makes ``TorchVinedist.fit`` work. Overriding ``fit`` to raise
+  a better message instead made the margin look refittable and turned every
+  refit into that message.
+
   Examples
   --------
   A standard-normal margin whose parameters are learnable::
@@ -185,18 +198,6 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
       )
       margin.cdf(torch.tensor([-1.0, 0.0, 1.0], dtype=torch.float64))
       list(margin.state_dict())  # ['loc', 'scale']
-  There is no maximum-likelihood ``fit``: construct the margin with the
-  parameters you want and *learn* them by leaving ``trainable=True`` and
-  stepping an optimizer over the registered tensors, which is what registering
-  them is for. For a fitted parametric margin use
-  :class:`~pyvinecopulib.margins.SciPyMargin`, and for a fitted nonparametric
-  one :class:`~pyvinecopulib.torch.TorchKde1d`.
-
-  Because it overrides neither ``fit`` nor ``select``, a vine distribution
-  holding these treats them as **fixed** and re-estimates only its copula --
-  which is what makes ``TorchVinedist.fit`` work. Overriding ``fit`` to raise
-  a better message instead made the margin look refittable and turned every
-  refit into that message.
   """
 
   @classmethod

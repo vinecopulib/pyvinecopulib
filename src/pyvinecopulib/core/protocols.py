@@ -1830,7 +1830,7 @@ class VinedistLike(Protocol[ArrayT]):
     y : array, shape (n, d), dtype float
         Observations on the original scale.
     controls : object, or None, optional
-        Fit configuration, of whatever type :attr:`controls_class` names.
+        Fit configuration, of whatever type this implementation reads.
 
     Returns
     -------
@@ -1862,7 +1862,7 @@ class VinedistLike(Protocol[ArrayT]):
     y : array, shape (n, d), dtype float
         Observations on the original scale.
     controls : object, or None, optional
-        Fit configuration, of whatever type :attr:`controls_class` names.
+        Fit configuration, of whatever type this implementation reads.
 
     Returns
     -------
@@ -1897,8 +1897,7 @@ class VinedistLike(Protocol[ArrayT]):
     y : array, shape (n, d), dtype float
         Observations on the original scale.
     controls : object, or None, optional
-        Copula fit configuration, of whatever type :attr:`controls_class`
-        names.
+        Copula fit configuration, of whatever type this implementation reads.
     margin_controls : object, or None, optional
         Marginal fit configuration, one per variable or broadcast.
     var_types : sequence of str, or None, optional
