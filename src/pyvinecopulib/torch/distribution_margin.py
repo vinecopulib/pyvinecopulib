@@ -185,63 +185,19 @@ class TorchDistributionMargin(MarginBase[Tensor], torch.nn.Module):
       )
       margin.cdf(torch.tensor([-1.0, 0.0, 1.0], dtype=torch.float64))
       list(margin.state_dict())  # ['loc', 'scale']
+  There is no maximum-likelihood ``fit``: construct the margin with the
+  parameters you want and *learn* them by leaving ``trainable=True`` and
+  stepping an optimizer over the registered tensors, which is what registering
+  them is for. For a fitted parametric margin use
+  :class:`~pyvinecopulib.margins.SciPyMargin`, and for a fitted nonparametric
+  one :class:`~pyvinecopulib.torch.TorchKde1d`.
+
+  Because it overrides neither ``fit`` nor ``select``, a vine distribution
+  holding these treats them as **fixed** and re-estimates only its copula --
+  which is what makes ``TorchVinedist.fit`` work. Overriding ``fit`` to raise
+  a better message instead made the margin look refittable and turned every
+  refit into that message.
   """
-
-  def fit(
-    self,
-    y: Tensor,
-    /,
-    controls: ControlsLike | None = None,
-    *,
-    var_type: str | None = None,
-    support: tuple[float | None, float | None] | None = None,
-    x: Tensor | None = None,
-  ) -> TorchDistributionMargin:
-    """Raise: this margin's parameters are given, not estimated here.
-
-    The inherited default says "implement it", which is advice for a subclass
-    author and wrong for a caller holding one of these: the class
-    has no maximum-likelihood step. A ``torch.distributions`` family is
-    constructed with the parameters you want, and *learned* by leaving
-    ``trainable=True`` and stepping an optimizer over them -- which is the
-    point of registering them.
-
-    Parameters
-    ----------
-    y : Tensor, shape (n,), dtype float
-        Ignored.
-    controls : ControlsLike, or None, optional
-        Ignored.
-    var_type : {"c", "d", "zi"}, or None, optional
-        What the caller knows the variable to be, or ``None`` to leave it
-        to the margin. A declaration rather than fit configuration, which
-        is why it sits beside ``controls`` rather than inside it.
-    support : tuple of float, or None, optional
-        Declared bounds as ``(lo, hi)``, either end ``None`` for
-        unbounded on that side.
-    x : Tensor, or None, optional
-        Ignored.
-
-    Returns
-    -------
-    TorchDistributionMargin
-        Never returns.
-
-    Raises
-    ------
-    NotImplementedError
-        Always.
-    """
-    del y, controls, x
-    raise NotImplementedError(
-      "TorchDistributionMargin has no maximum-likelihood fit: construct it "
-      "with the parameters you want -- "
-      "`TorchDistributionMargin.from_distribution(torch.distributions.Normal("
-      "loc, scale))` -- and optimize them by stepping an optimizer over its "
-      "registered parameters, which is what `trainable=True` is for. For a "
-      "fitted parametric margin use `SciPyMargin`, and for a fitted "
-      "nonparametric one `TorchKde1d`."
-    )
 
   @classmethod
   def from_data(

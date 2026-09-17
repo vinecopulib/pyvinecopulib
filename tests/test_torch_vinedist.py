@@ -428,6 +428,40 @@ def test_supports_declare_a_bound() -> None:
   assert all(float(cast("Any", m).xmin) == 0.0 for m in bounded.margins)  # noqa: RUF069 - the value this test set, read back
 
 
+def test_a_distribution_margin_is_fixed_across_a_refit(
+  data: np.ndarray,
+) -> None:
+  """`fit` re-estimates the copula and leaves a parameter-given margin alone.
+
+  `_fit_margin` treats a margin that overrides neither `fit` nor `select` as
+  fixed. `TorchDistributionMargin` used to override `fit` to raise a better
+  message than the inherited one, which made it look refittable -- so every
+  `TorchVinedist.fit` and `.select` raised that message instead of refitting
+  the copula. The guidance now lives in the class docstring, where a user
+  reads it, rather than in an exception composition has to walk into.
+  """
+  y = torch.as_tensor(data, dtype=torch.float64)
+  u = torch.as_tensor(pv.to_pseudo_obs(data), dtype=torch.float64)
+  copula = TorchVinecop.from_data(u)
+
+  def standard_normal() -> TorchDistributionMargin:
+    return TorchDistributionMargin.from_distribution(
+      torch.distributions.Normal(
+        torch.tensor(0.0, dtype=torch.float64),
+        torch.tensor(1.0, dtype=torch.float64),
+      )
+    )
+
+  dist = TorchVinedist(
+    copula, margins=[standard_normal() for _ in range(data.shape[1])]
+  )
+  held = list(dist.margins)
+
+  for verb in ("fit", "select"):
+    getattr(dist, verb)(y)
+    assert all(m is h for m, h in zip(dist.margins, held, strict=True)), verb
+
+
 def test_from_data_refuses_covariates(data: np.ndarray) -> None:
   """No torch margin reads them, so an unconditional fit would be a lie."""
   y = torch.as_tensor(data, dtype=torch.float64)

@@ -112,10 +112,11 @@ class FitControlsTorchVinecop(FitControlsTorchBicop):
 
   Attributes
   ----------
-  trunc_lvl : int, default=20
+  trunc_lvl : int, or None, optional
       Maximum number of trees to select when
       :meth:`~pyvinecopulib.torch.TorchVinecop.from_data` is called with
-      ``structure=None``.
+      ``structure=None``. ``None`` selects every tree, which is what
+      ``FitControlsVinecop`` does, so the two lanes fit the same model.
   tree_criterion : {"tau", "rho", "hoeffd", "mcor", "cxi", "joe"}, \
 default="tau"
       Dependence measure used to weight candidate edges during structure
@@ -203,7 +204,8 @@ default="tau"
   -----
   Structure selection runs natively on the torch interpolation grids. It is
   TLL-only, and the criteria for automatic truncation / thresholding (``aic`` /
-  ``bic`` / ``mbicv``) are not available here: ``trunc_lvl`` is a fixed cap.
+  ``bic`` / ``mbicv``) are not available here: ``trunc_lvl`` is a fixed cap,
+  and ``None`` -- the default -- caps nothing.
 
   This *is* a :class:`FitControlsTorchBicop`, so the settings governing each
   pair-copula fit are its own attributes rather than a nested object, and one
@@ -212,7 +214,7 @@ default="tau"
   :class:`~pyvinecopulib.core.FitControlsBicop`.
   """
 
-  trunc_lvl: int = 20
+  trunc_lvl: int | None = None
   tree_criterion: str = "tau"
   threshold: float = 0.0
   tree_algorithm: str = "mst_prim"

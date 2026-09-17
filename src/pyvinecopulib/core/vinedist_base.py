@@ -1270,20 +1270,10 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         ``family_set`` for one that cannot search -- either would answer the
         request with a different model than was asked for.
     """
-    # A margin overriding neither verb is *fixed*: there is nothing to
-    # re-estimate. `is_fitted` is the wrong test -- a fitted `SciPyMargin` is
-    # refittable -- and so is `fit` alone, since a margin that chooses between
-    # *kinds* of model overrides `select` and leaves `fit` raising. Both
-    # suppliers of the default count: a margin may take it from either.
-    inherited = (
-      MarginBase.fit,
-      MarginLike.fit,
-      MarginBase.select,
-      MarginLike.select,
-    )
-    cls_of = type(margin)
-    if cls_of.fit in inherited and cls_of.select in inherited:
-      return margin
+    # Refusals first, and before the *fixed* check below: a margin that
+    # cannot honor what the controls ask must say so whether or not it is
+    # refittable. Returning early on `fixed` dropped a `family_set` silently,
+    # which is the outcome these refusals exist to prevent.
     reject_weights(margin, controls)
     # A `family_set` is an instruction to search, so a margin that cannot act
     # on one -- or a `fit`, which estimates the family it already has --
@@ -1306,6 +1296,19 @@ class VinedistBase(VinedistLike[ArrayT], PlacementMixin, ABC):
         f"`{cls.__name__}.select`) to choose a family, name a `margin_class` "
         "that searches one, or drop family_set"
       )
+    # A margin overriding neither verb is *fixed*: there is nothing to
+    # re-estimate. `is_fitted` is the wrong test -- a fitted `SciPyMargin` is
+    # refittable -- and so is `fit` alone, since a margin that chooses between
+    # *kinds* of model overrides `select` and leaves `fit` raising. Both
+    # suppliers of the default count: a margin may take it from either.
+    inherited = (
+      MarginBase.fit,
+      MarginLike.fit,
+      MarginBase.select,
+      MarginLike.select,
+    )
+    if type(margin).fit in inherited and type(margin).select in inherited:
+      return margin
     # Forwarded one at a time, as `_reestimate_copula` forwards to the copula:
     # the covariates reach only a margin that declares it reads them, and the
     # declaration travels as the keyword it is.

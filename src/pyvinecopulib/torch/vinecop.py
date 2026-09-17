@@ -449,9 +449,9 @@ class TorchVinecop(
     leaving an edge below it independent. Either way the result reproduces a
     ``Vinecop`` TLL fit **run with the same controls**: the selected structure
     down to its matrix encoding, the density to floating-point tolerance. The
-    defaults are not the same controls -- ``FitControlsTorchVinecop.trunc_lvl``
-    is 20 where ``FitControlsVinecop`` is untruncated -- so above ``d = 21``
-    the two lanes fit different models unless the truncation is set to match.
+    defaults now agree too -- both leave the vine untruncated -- where
+    ``FitControlsTorchVinecop.trunc_lvl`` used to cap at 20 and the two lanes
+    fitted different models above ``d = 21`` without saying so.
 
     Parameters
     ----------
@@ -461,8 +461,8 @@ class TorchVinecop(
         Fit configuration for both halves of the fit -- the structure
         selection the vine runs and the pair-copula fits its edges run -- plus
         placement, precision, and the cascade variants. ``None`` defaults to
-        TLL on a 30x30 normal-spaced grid, float64, and ``mst_prim`` with
-        ``trunc_lvl=20``.
+        TLL on a 30x30 normal-spaced grid, float64, and ``mst_prim``,
+        untruncated.
     structure : RVineStructure, or None, optional
         A fixed structure. Selected from the data when ``None``.
     var_types : list of str, or None, optional
