@@ -342,14 +342,11 @@ jobs:
         uses: ./.github/actions/install-graphviz
       - name: Create uv venv and install test/notebooks deps
         # --no-install-project: we test the cibw wheel, not a source build.
-        #
         shell: bash
         run: |
           uv venv --python ${{ steps.pyver.outputs.version }}
-          extras="--extra examples --extra sklearn --extra torch"
-          if [ "$RUNNER_OS" != "macOS" ]; then
-          fi
-          uv sync --no-install-project --group test --group notebooks $extras
+          uv sync --no-install-project --group test --group notebooks \
+            --extra examples --extra sklearn --extra torch
       - name: Download built wheel (<=3.11)
         if: ${{ matrix.python <= 311 }}
         uses: actions/download-artifact@v8

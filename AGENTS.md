@@ -854,6 +854,20 @@ For any behavior change:
   follows it -- `doc_3args_data_controls_var_types` became
   `doc_3args_u_controls_var_types` -- so the binding fails to compile rather
   than silently attaching the wrong text.
+
+  **Nothing here can catch a `@param` that does not match the signature, and
+  upstream doxygen is the only check that does.** It rejects one
+  warnings-as-errors, which is
+  what caught four comments the rename missed while the binding already said
+  `u`. Downstream had no detector and can have none: the pre-commit
+  `numpydoc-validation` hook is `files: ^src/pyvinecopulib/.*\.py$`, so a
+  docstring living in the extension is never handed to it, and turning on
+  numpydoc's `PR01` / `PR02` for the bound classes does not work either --
+  `inspect.signature` **raises** on a nanobind method or answers
+  `(*args, **kwargs)`, so the rules compare the documented names against
+  nothing. Measured over the seven bound classes: 30 `PR01` and 90 `PR02`,
+  every one of them false. So do not reach for that check; fix the comment
+  upstream, where it is checked.
 - **Bind alternative constructors as named factories, not overloads.** C++
   overloads a constructor; Python names it. Every alternative way to build an
   object is a `def_static` — `Bicop.from_family` / `from_data` / `from_file` /
