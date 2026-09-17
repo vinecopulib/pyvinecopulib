@@ -418,7 +418,9 @@ def test_fit_rejects_non_vector_data_and_weights() -> None:
   y = _t(np.arange(5.0))
   with pytest.raises(ValueError, match=r"y must have shape \(n,\)"):
     TorchKde1d().fit(y[:, None])
-  with pytest.raises(TypeError, match="incompatible function arguments"):
+  # `TypeError` alone: the message here is the binding's own overload dump,
+  # not this package's text, so matching it pins something nothing here owns.
+  with pytest.raises(TypeError):
     FitControlsKde1d(weights=y[:, None])
   with pytest.raises(ValueError, match="one weight per observation"):
     TorchKde1d().fit(y, FitControlsKde1d(weights=y[:-1]))

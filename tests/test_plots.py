@@ -82,9 +82,7 @@ class TestPairCopulaData:
       pairs_copula_data(cast("Any", None))
 
     # Test non-numeric data
-    with pytest.raises(
-      ValueError, match="Could not convert `data` to numeric array"
-    ):
+    with pytest.raises(ValueError, match="Could not convert `data`"):
       pairs_copula_data([["a", "b"], ["c", "d"]])
 
     # Test wrong dimensions
@@ -495,9 +493,7 @@ class TestVinecopHelpers:
     from pyvinecopulib.core._vinecop_plot import vinecop_plot
 
     # Test with wrong number of variable names
-    with pytest.raises(
-      ValueError, match="The number of variable names must be equal"
-    ):
+    with pytest.raises(ValueError, match="number of variable names"):
       vinecop_plot(self.vinecop, vars_names=["X1", "X2"])
 
   def test_vinecop_plot_high_dimension_error(self) -> None:
@@ -508,9 +504,7 @@ class TestVinecopHelpers:
     mock_vinecop = MagicMock()
     mock_vinecop.trunc_lvl = 10
 
-    with pytest.raises(
-      ValueError, match="The dimension and truncation level are too high"
-    ):
+    with pytest.raises(ValueError, match="too high to visualize"):
       vinecop_plot(mock_vinecop)
 
   def test_vinecop_plot_basic(self) -> None:
