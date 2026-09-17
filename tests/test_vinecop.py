@@ -682,11 +682,21 @@ def test_vinecop_per_observation_parameters() -> None:
   hf_p, hf_0 = cop.hessian_full(u, parameters=pars), cop.hessian_full(u)
   np.testing.assert_allclose(hf_p[0][0], hf_0[0][0], rtol=1e-8, atol=1e-10)
 
-  # Existing positional signatures still work (parameters appended last).
-  np.testing.assert_allclose(cop.pdf(u, 2), cop.pdf(u), rtol=1e-12)
+  # The settings are keyword-only, so the two classes' orders -- which
+  # disagreed -- cannot be told apart from a call site. `step_wise` stays
+  # positional: `Bicop` has no such argument, so there is nothing to collide.
   np.testing.assert_allclose(
-    cop.scores(u, False, 2), cop.scores(u, step_wise=False), rtol=1e-10
+    cop.pdf(u, num_threads=2), cop.pdf(u), rtol=1e-12
   )
+  np.testing.assert_allclose(
+    cop.scores(u, False, num_threads=2),
+    cop.scores(u, step_wise=False),
+    rtol=1e-10,
+  )
+  with pytest.raises(TypeError):
+    # `getattr` so the call survives `ty`, which is right to reject it: that
+    # it no longer binds is what this asserts.
+    getattr(cop, "pdf")(u, 2)  # noqa: B009
 
 
 def test_fit_controls_vinecop_conditioning_set() -> None:
@@ -845,16 +855,24 @@ def test_rosenblatt_conditioning_set_matches_reorient() -> None:
   )
 
 
-def test_rosenblatt_second_positional_is_still_num_threads() -> None:
-  # C++ puts `conditioning_set` in position 2; Python keeps `num_threads`
-  # there, so `rosenblatt(u, 4)` must not silently become a conditioning set.
+def test_rosenblatt_takes_only_the_data_positionally() -> None:
+  # C++ puts `conditioning_set` in position 2 and Python used to put
+  # `num_threads` there, so the same second positional meant two things. It
+  # now means nothing: every setting is keyword-only and a stray positional
+  # is refused rather than bound to whichever the binding happened to list.
   cop, u = _cop_and_data(d=4, n=200)
   np.testing.assert_allclose(
-    cop.rosenblatt(u, 4), cop.rosenblatt(u), rtol=1e-12
+    cop.rosenblatt(u, num_threads=4), cop.rosenblatt(u), rtol=1e-12
   )
   np.testing.assert_allclose(
-    cop.inverse_rosenblatt(u, 2), cop.inverse_rosenblatt(u), rtol=1e-12
+    cop.inverse_rosenblatt(u, num_threads=2),
+    cop.inverse_rosenblatt(u),
+    rtol=1e-12,
   )
+  for name in ("rosenblatt", "inverse_rosenblatt"):
+    with pytest.raises(TypeError):
+      # `getattr` so the call survives `ty` -- see the note in the pdf test.
+      getattr(cop, name)(u, 4)
 
 
 @pytest.mark.parametrize(

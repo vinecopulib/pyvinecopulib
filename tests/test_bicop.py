@@ -128,7 +128,7 @@ def test_the_parameter_bounds_are_the_family_s(gumbel: pv.Bicop) -> None:
 
 def test_sampling_and_the_two_fitting_verbs(gumbel: pv.Bicop) -> None:
   """`sample` answers `(n, 2)`, and `fit` / `select` both run."""
-  assert gumbel.sample(100, False, []).shape == (100, 2)
+  assert gumbel.sample(100, False, seeds=[]).shape == (100, 2)
   gumbel.fit(_U, pv.FitControlsBicop())
   gumbel.select(_U, pv.FitControlsBicop())
 
@@ -167,17 +167,19 @@ def test_bicop_per_row_parameters(
   for method in _PER_ROW_METHODS:
     fn = getattr(cop, method)
     # Shape: (n, 2) data + (n, p) parameters -> (n,) output.
-    values = fn(u, pars)
+    values = fn(u, parameters=pars)
     assert isinstance(values, np.ndarray)
     assert values.shape == (n,)
 
     # Identity parity: constant per-row parameters equal to the object's own
     # parameters reproduce the state-based (single-argument) result.
-    np.testing.assert_allclose(fn(u, pars_const), fn(u), rtol=1e-9, atol=1e-12)
+    np.testing.assert_allclose(
+      fn(u, parameters=pars_const), fn(u), rtol=1e-9, atol=1e-12
+    )
 
     # Threading must not change the result.
     np.testing.assert_allclose(
-      fn(u, pars, num_threads=2), values, rtol=1e-12, atol=1e-14
+      fn(u, parameters=pars, num_threads=2), values, rtol=1e-12, atol=1e-14
     )
 
     # Strong per-row parity: row i with parameters pars[i] equals a fresh
@@ -192,11 +194,11 @@ def test_bicop_per_row_parameters(
 
   # loglik with per-row parameters: scalar, NaN-ignoring sum of log-densities,
   # and matches the state-based loglik under constant parameters.
-  ll = cop.loglik(u, pars)
+  ll = cop.loglik(u, parameters=pars)
   assert isinstance(ll, float)
-  np.testing.assert_allclose(ll, np.nansum(np.log(cop.pdf(u, pars))), rtol=1e-9)
+  np.testing.assert_allclose(ll, np.nansum(np.log(cop.pdf(u, parameters=pars))), rtol=1e-9)
   np.testing.assert_allclose(
-    cop.loglik(u, pars_const), cop.loglik(u), rtol=1e-9, atol=1e-12
+    cop.loglik(u, parameters=pars_const), cop.loglik(u), rtol=1e-9, atol=1e-12
   )
 
 
@@ -213,27 +215,27 @@ def test_bicop_per_row_parameters_errors() -> None:
     data, pv.FitControlsBicop(family_set=[pv.families.tll])
   )
   with pytest.raises(RuntimeError):
-    tll.pdf(u, np.ones((n, 1)))
+    tll.pdf(u, parameters=np.ones((n, 1)))
 
   # Wrong number of parameter rows (must equal u.rows()).
   with pytest.raises(RuntimeError):
-    cop.pdf(u, pars[:-1])
+    cop.pdf(u, parameters=pars[:-1])
 
   # Wrong number of parameter columns (must equal the family's parameter count).
   with pytest.raises(RuntimeError):
-    cop.pdf(u, np.ones((n, 2)))
+    cop.pdf(u, parameters=np.ones((n, 2)))
 
   # Non-finite parameters are rejected.
   pars_nan = pars.copy()
   pars_nan[0, 0] = np.nan
   with pytest.raises(RuntimeError):
-    cop.pdf(u, pars_nan)
+    cop.pdf(u, parameters=pars_nan)
 
   # Out-of-bounds parameters are rejected.
   pars_oob = pars.copy()
   pars_oob[0, 0] = -5.0
   with pytest.raises(RuntimeError):
-    cop.pdf(u, pars_oob)
+    cop.pdf(u, parameters=pars_oob)
 
 
 _FIRST_ORDER_DERIVS = [
@@ -354,17 +356,17 @@ def test_bicop_deriv_per_row_parameters() -> None:
 
   for method, sel in selectors.items():
     fn = getattr(cop, method)
-    values = fn(u, sel, pars)
+    values = fn(u, sel, parameters=pars)
     assert isinstance(values, np.ndarray) and values.shape == (n,)
 
     # Constant per-row parameters reproduce the state-based call.
     np.testing.assert_allclose(
-      fn(u, sel, pars_const), fn(u, sel), rtol=1e-9, atol=1e-12
+      fn(u, sel, parameters=pars_const), fn(u, sel), rtol=1e-9, atol=1e-12
     )
 
     # Threading must not change the result.
     np.testing.assert_allclose(
-      fn(u, sel, pars, num_threads=2), values, rtol=1e-12, atol=1e-14
+      fn(u, sel, parameters=pars, num_threads=2), values, rtol=1e-12, atol=1e-14
     )
 
     # Strong per-row parity vs fresh copulas built with the row's parameters.
@@ -638,7 +640,9 @@ def test_bicop_scores_family(
   pars_const = np.tile(cop.parameters.ravel(), (n, 1))
   for method in [*_BICOP_SCORE_MATRIX_METHODS, "gradient"]:
     fn = getattr(cop, method)
-    np.testing.assert_allclose(fn(u, pars_const), fn(u), rtol=1e-9, atol=1e-12)
+    np.testing.assert_allclose(
+      fn(u, parameters=pars_const), fn(u), rtol=1e-9, atol=1e-12
+    )
     np.testing.assert_allclose(
       fn(u, parameters=pars_const, num_threads=2), fn(u), rtol=1e-9, atol=1e-12
     )
@@ -778,7 +782,7 @@ def test_simulate_positional_signature_is_unchanged() -> None:
   # `sample(n, qrng, seeds)` predates the per-row overload and must keep
   # meaning what it meant.
   cop = pv.Bicop.from_family(pv.families.gaussian, parameters=np.array([[0.5]]))
-  assert cop.sample(12, False, [1, 2]).shape == (12, 2)
+  assert cop.sample(12, False, seeds=[1, 2]).shape == (12, 2)
 
 
 def _discrete_pair(

@@ -140,16 +140,37 @@ pv.Vinedist.from_data(
 pv.Vinedist.from_data(y, pv.FitControlsVinecop(weights=w))
 ```
 
-## Some arguments are keyword-only
+## The settings are keyword-only
 
-`parameters` on `Bicop.sample`, and `conditioning_set` on
-`Vinecop.rosenblatt` / `inverse_rosenblatt` / `sample_conditional`, are
-keyword-only. This is what keeps the long-standing positional forms meaning
-what they always meant: `rosenblatt(u, 4)` is still `num_threads=4`, and
-`sample(1000, True)` is still `n=1000, qrng=True`.
+On `Bicop` and `Vinecop`, every method takes its data positionally and its
+settings by keyword: `parameters`, `num_threads`, `seeds`,
+`randomize_discrete` and `conditioning_set`.
 
-You only need to change code that was already passing these by keyword, which
-is to say: none.
+Each class was already consistent with itself, and the two disagreed with each
+other:
+
+| | `Bicop` | `Vinecop` |
+|---|---|---|
+| `pdf` / `cdf` / `loglik` / `scores` / … | `(u, parameters, num_threads)` | `(u, num_threads, parameters)` |
+| `sample` | `(n, qrng, seeds, …)` | `(n, qrng, num_threads, seeds)` |
+
+So `vine.pdf(u, pars)`, carried over from `cop.pdf(u, pars)`, bound a
+parameter matrix as a thread count. Making them keyword-only is what settles
+that without picking one class's order and breaking the other's callers.
+
+What stays positional is the data and the arguments only one of the two
+classes has: `N` on `Vinecop.cdf`, `psi0` on `mbicv`, `step_wise` on the score
+methods, `qrng` on `sample`, and `deriv` on the `Bicop` derivative methods. So
+`rosenblatt(u)` and `sample(1000, True)` still mean what they always meant,
+and `parameters_to_tau(pars)` is unchanged -- there `parameters` is the data.
+
+```python
+cop.pdf(u, pars)              # -> cop.pdf(u, parameters=pars)
+cop.sample(n, False, [1, 2])  # -> cop.sample(n, False, seeds=[1, 2])
+vine.pdf(u, 4)                # -> vine.pdf(u, num_threads=4)
+```
+
+Code that already passed these by keyword needs no change.
 
 ## `Vinecop.fit` no longer takes `num_threads`
 

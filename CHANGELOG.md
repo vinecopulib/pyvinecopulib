@@ -37,6 +37,11 @@ It also advances all three vendored C++ libraries, so nearly every `tll` and
     - `Bicop.simulate(n)` -> `Bicop.sample(n)`, and likewise on `Vinecop`, `RVineStructure` and `Kde1d`
     - `pyvinecopulib.simulate_uniform` -> `pyvinecopulib.utils.sample_uniform`
 - Return `self` from `Bicop.fit` / `.select` and `Vinecop.fit` / `.select` instead of `None`, so every estimator in the package composes the same way (#326).
+- Make `parameters`, `num_threads`, `seeds` and `randomize_discrete` keyword-only on every method of `Bicop` and `Vinecop`: each class was internally consistent and the two disagreed, `Bicop` reading `(u, parameters, num_threads)` where `Vinecop` read `(u, num_threads, parameters)`, so a call carried between them bound a parameter matrix as a thread count. Keyword calls are unaffected (#345).
+    - `cop.pdf(u, pars)` -> `cop.pdf(u, parameters=pars)`
+    - `cop.sample(n, False, [1, 2])` -> `cop.sample(n, False, seeds=[1, 2])`
+- Name the observations `u` on `Bicop` / `Vinecop`'s `fit` / `select` / `from_data`, which is what every evaluation method on the same class already called them. Renamed upstream rather than in the binding, whose docstrings are lifted verbatim ([vinecopulib#781](https://github.com/vinecopulib/vinecopulib/pull/781), #345).
+    - `cop.fit(data=u)` -> `cop.fit(u=u)`, and likewise on `select` / `from_data`
 - Drop `Vinecop.fit`'s `num_threads` argument, which duplicated `FitControlsBicop.num_threads` (#326).
     - `vine.fit(u, controls, num_threads=4)` -> `vine.fit(u, FitControlsBicop(num_threads=4))`
 - Rename `Kde1d`'s `quantile` to `icdf`, the name modern SciPy and `torch.distributions` use for the inverse distribution function, with no alias (#292).

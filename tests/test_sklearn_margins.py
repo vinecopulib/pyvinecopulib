@@ -92,7 +92,7 @@ def test_default_margins_reproduce_the_kde1d_pipeline(
     )
 
   vine = pv.Vinecop.from_data(
-    data=transform(X),
+    u=transform(X),
     var_types=["c"] * X.shape[1],
     controls=pv.FitControlsVinecop(
       family_set=[pv.families.tll], trunc_lvl=20, num_threads=1

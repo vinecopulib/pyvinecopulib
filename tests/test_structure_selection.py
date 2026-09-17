@@ -684,7 +684,7 @@ class _ConditionalGaussian(BicopBase[np.ndarray]):
     assert self._bicop is not None, "fit the pair first"
     method = getattr(self._bicop, name)
     per_row = self._per_row(x)
-    return method(u) if per_row is None else method(u, per_row)
+    return method(u) if per_row is None else method(u, parameters=per_row)
 
   def _pdf_raw(self, u: np.ndarray, *, x: np.ndarray | None = None) -> Any:
     return self._call("pdf", u, x)

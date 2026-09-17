@@ -667,6 +667,16 @@ For any behavior change:
   Adding a flag with no reader is the thing `supported_var_types` was deleted
   for, and `supports_controls` after it -- `controls_class is None` says
   "reads no controls" and carries the type besides.
+
+  **`plot` is absent from `VinedistBase` for the same reason**, and that is a
+  decision rather than a gap. The other three bases each draw the one thing
+  they are: a margin's density or distribution function, a pair's density
+  surface, a vine's trees. A vine distribution is `d` margins and a copula,
+  so "its" plot is at least three different pictures -- a panel of the
+  margins, the copula's trees, or a pairs plot of a sample -- and each is
+  already reachable: `dist.margins[j].plot()`, `dist.vinecop.plot()`, and
+  `utils.pairs_copula_data(dist.sample(n))`. Picking one of the three as the
+  method would make the other two look unsupported.
 - **Observation weights ride in the controls, at every level, with no
   propagation rule.** `FitControlsBicop` and `FitControlsVinecop` are
   upstream's and always did; `#339` gave `FitControlsKde1d` and
@@ -817,6 +827,33 @@ For any behavior change:
   controls, so the old second positional has no spelling left at all. What the
   exception actually cost was a validator (`reject_array_controls`) whose
   whole job was catching the carried-over `kde.fit(y, w)` at six call sites.
+
+  **The evaluation verbs read the same rule: the data, then keyword-only.**
+  `parameters`, `num_threads`, `seeds` and `randomize_discrete` are settings,
+  so they are keyword-only on every bound method of `Bicop` and `Vinecop`. Each
+  class was internally consistent and the two disagreed with each other:
+  `Bicop` ordered `(u, parameters, num_threads)` across eight methods and
+  `Vinecop` ordered `(u, num_threads, parameters)` across eight more, and
+  `sample` swapped `seeds` against `num_threads` on top of that. So the call a
+  user carried from one class to the other bound a parameter matrix as a thread
+  count. Keyword-only is what makes the two orders unobservable rather than
+  picking one and breaking the other class's positional callers; what stays
+  positional is the data and the arguments only one of the two classes has
+  (`N`, `psi0`, `step_wise`, `qrng`, `deriv`). `parameters_to_tau` and its two
+  siblings keep theirs positional -- there `parameters` *is* the data.
+
+  **The fitting verbs read `u` too, and that rename went upstream.** They bound
+  the observations as `data` where every evaluation verb and all four Python
+  bases call them `u`. The fix was not available here: the docstrings are
+  lifted verbatim from `lib/vinecopulib`, so a local rename would document one
+  name and bind another -- the same reason `Kde1d`'s evaluation verbs still
+  read `x`. So the parameter was renamed upstream
+  ([vinecopulib#781](https://github.com/vinecopulib/vinecopulib/pull/781)) and
+  the pin bumped, which is the route for any of these: fix it there, bump, then
+  adjust `src/include/**` to the new name. Note the generated docstring key
+  follows it -- `doc_3args_data_controls_var_types` became
+  `doc_3args_u_controls_var_types` -- so the binding fails to compile rather
+  than silently attaching the wrong text.
 - **Bind alternative constructors as named factories, not overloads.** C++
   overloads a constructor; Python names it. Every alternative way to build an
   object is a `def_static` — `Bicop.from_family` / `from_data` / `from_file` /
