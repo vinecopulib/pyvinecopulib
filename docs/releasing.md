@@ -55,15 +55,16 @@ indistinguishable from an unreleased one.
    > number.** A mistagged release cannot be undone — only superseded by a new
    > version. Confirm the tag points at the commit you mean before pushing.
 
-7. **Confirm the release landed**: wheels and the sdist on PyPI, Read the Docs
-   built the tag with `stable` repointed at it, and the Zenodo deposition. Then
-   create the GitHub release manually from the matching changelog section; that
-   release event is what Zenodo uses for its deposition when the repository is
+7. **Confirm the release landed**: wheels and the sdist on PyPI, the GitHub
+   release populated from the matching changelog section, Read the Docs built
+   the tag with `stable` repointed at it, and the Zenodo deposition. The GitHub
+   release is created only after the PyPI publication succeeds; its release
+   event is what Zenodo uses for its deposition when the repository is
    connected to Zenodo.
 
-8. **Open the next cycle immediately.** Add a fresh
-   `## X.Y+1.0 (unreleased)` heading to `CHANGELOG.md` in a follow-up pull
-   request, so the next change has somewhere to go.
+8. **Open the next cycle immediately.** Add a fresh incremented version
+   heading such as `## 1.1.0 (unreleased)` to `CHANGELOG.md` in a follow-up
+   pull request, so the next change has somewhere to go.
 
 9. **If the release surfaced a problem in the C++ library**, file it upstream
    rather than working around it here — the docstrings, signatures and CMake
@@ -77,7 +78,9 @@ indistinguishable from an unreleased one.
 | wheels, sdist, tests, docs | every pull request |
 | `scripts/check_version.py --released --tag` | on a `v*` tag push, before publishing |
 | publish to PyPI | on a `v*` tag push, after wheels, sdist, tests and docs |
-| GitHub release + Zenodo deposition | maintainer action after PyPI publication |
+| GitHub release | on a successful `v*` tag publication, from `CHANGELOG.md` |
+| release-drift check | weekly and manually; catches a dated heading without its tag |
+| Zenodo deposition | GitHub release event, when the repository is connected to Zenodo |
 | publish to Test PyPI | manually, from the Actions tab (see step 4) |
 
 ## Version numbers

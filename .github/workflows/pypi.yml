@@ -656,3 +656,39 @@ jobs:
         with:
           user: __token__
           password: ${{ secrets.pypi_password }}
+
+  publish_github_release:
+    needs: [upload_to_pypi]
+    if: |
+      github.event_name == 'push'
+        && startsWith(github.event.ref, 'refs/tags')
+    name: Publish GitHub release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      # The tagged tree keeps the notes stable after the next cycle opens.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Extract this version's changelog section
+        run: |
+          awk '/^## [0-9]+\.[0-9]+\.[0-9]+ \(/{n++; if (n > 1) exit} n == 1 {print}' \
+            CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::Refusing to publish an empty release body."
+            exit 1
+          fi
+          echo "--- release body ---"
+          cat release-notes.md
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "pyvinecopulib ${GITHUB_REF_NAME#v}" \
+            --notes-file release-notes.md \
+            --verify-tag
