@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0 (2026-08-17)
+## 1.0.0 (2026-09-18)
 
 This release ships the whole vine-modeling stack rather than the copula half of
 it. `Vinedist` and the new `pyvinecopulib.margins` layer put Sklar's theorem on
