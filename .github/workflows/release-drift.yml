@@ -1,0 +1,44 @@
+name: Release drift
+
+# A release pull request intentionally leaves a short dated-but-untagged
+# window between merge and the irreversible tag push. Check it on a schedule
+# so that window cannot silently become a forgotten release.
+on:
+  schedule:
+    - cron: '17 6 * * 1' # Mondays, 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: Declared release is tagged
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Require a tag for a dated release
+        run: |
+          version=$(python3 -c 'import tomllib; from pathlib import Path; print(tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"])')
+          heading=$(grep -m1 '^## [0-9]\+\.[0-9]\+\.[0-9]\+ (' CHANGELOG.md)
+          echo "Declared version: $version"
+          echo "Top changelog heading: $heading"
+
+          if printf '%s' "$heading" | grep -qi '(unreleased)'; then
+            echo "Version $version is marked unreleased; nothing to tag yet."
+            exit 0
+          fi
+
+          python3 scripts/check_version.py --released --tag "v$version"
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "Tag v$version exists. No drift."
+            exit 0
+          fi
+
+          echo "::error::CHANGELOG.md declares $version as released but tag v$version does not exist."
+          echo "Push the tag (see docs/releasing.md) or restore the heading to (unreleased)."
+          exit 1
